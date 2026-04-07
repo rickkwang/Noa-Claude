@@ -2761,7 +2761,50 @@ async function run(): Promise<CommanderCommand> {
       // fetch was kicked off early (line ~2558) so only residual time blocks
       // here. --bare skips claude.ai entirely for perf-sensitive scripts.
       profileCheckpoint('before_connectMcp');
-      await connectMcpBatch(regularMcpConfigs, 'regular');
+      const DEFAULT_NON_INTERACTIVE_AUTO_MCP_CONNECT_TIMEOUT_MS = 1000;
+      const DEFAULT_NON_INTERACTIVE_EXPLICIT_MCP_CONNECT_TIMEOUT_MS = 2500;
+      const hasExplicitMcpConfig = Array.isArray(mcpConfig) && mcpConfig.length > 0;
+      const configuredRegularMcpTimeoutMs = parseInt(
+        process.env.CLAUDE_CODE_REGULAR_MCP_CONNECT_TIMEOUT_MS || '',
+        10,
+      );
+      const regularMcpConnectTimeoutMs =
+        configuredRegularMcpTimeoutMs > 0
+          ? configuredRegularMcpTimeoutMs
+          : hasExplicitMcpConfig
+            ? DEFAULT_NON_INTERACTIVE_EXPLICIT_MCP_CONNECT_TIMEOUT_MS
+            : DEFAULT_NON_INTERACTIVE_AUTO_MCP_CONNECT_TIMEOUT_MS;
+
+      // Keep first-turn MCP guarantees for explicit flows that depend on it
+      // (strict mode, SDK transport, custom permission prompt MCP tool).
+      const shouldAllowRegularMcpBackgroundFallback =
+        !strictMcpConfig && !sdkUrl && !options.permissionPromptTool;
+
+      if (
+        shouldAllowRegularMcpBackgroundFallback &&
+        Object.keys(regularMcpConfigs).length > 0
+      ) {
+        let regularConnectTimer: ReturnType<typeof setTimeout> | undefined;
+        const regularConnectPromise = connectMcpBatch(regularMcpConfigs, 'regular');
+        const regularConnectTimedOut = await Promise.race([
+          regularConnectPromise.then(() => false),
+          new Promise<boolean>(resolve => {
+            regularConnectTimer = setTimeout(
+              resolve,
+              regularMcpConnectTimeoutMs,
+              true,
+            );
+          }),
+        ]);
+        if (regularConnectTimer) clearTimeout(regularConnectTimer);
+        if (regularConnectTimedOut) {
+          logForDebugging(
+            `[MCP] regular servers not ready after ${regularMcpConnectTimeoutMs}ms — proceeding; background connection continues`,
+          );
+        }
+      } else {
+        await connectMcpBatch(regularMcpConfigs, 'regular');
+      }
       profileCheckpoint('after_connectMcp');
       // Dedup: suppress plugin MCP servers that duplicate a claude.ai
       // connector (connector wins), then connect claude.ai servers.

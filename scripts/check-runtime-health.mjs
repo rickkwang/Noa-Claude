@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { spawnSync } from 'child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import { getSessionId } from '../src/bootstrap/state.ts';
@@ -271,6 +271,75 @@ function checkLauncherFailurePaths() {
   }
 }
 
+function checkNonInteractiveMcpTimeoutFallback() {
+  const runtimeDir = mkdtempSync(join(tmpdir(), 'claude-agent-mcp-timeout-'));
+  const mcpConfigPath = join(runtimeDir, 'mcp-timeout.json');
+  const debugLogPath = join(runtimeDir, 'debug.log');
+
+  try {
+    writeFileSync(
+      mcpConfigPath,
+      JSON.stringify(
+        {
+          mcpServers: {
+            hang_stdio: {
+              type: 'stdio',
+              command: 'bash',
+              args: ['-lc', 'sleep 60'],
+            },
+          },
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    const timeoutRun = spawnSync(
+      '/opt/homebrew/bin/timeout',
+      [
+        '8',
+        agentBin,
+        '--debug-file',
+        debugLogPath,
+        '--print',
+        'ping',
+        '--mcp-config',
+        mcpConfigPath,
+      ],
+      {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        stdio: 'pipe',
+        env: {
+          ...process.env,
+          ANTHROPIC_API_KEY:
+            process.env.ANTHROPIC_API_KEY ?? 'sk-test-runtime-timeout-check',
+          CLAUDE_CODE_REGULAR_MCP_CONNECT_TIMEOUT_MS: '400',
+        },
+      },
+    );
+
+    // timeout(1) exits with 124 when it kills the child; that's expected here.
+    assert(
+      timeoutRun.status === 124 || timeoutRun.status === 0,
+      'MCP timeout fallback smoke run returned unexpected status',
+      timeoutRun.stderr || timeoutRun.stdout,
+    );
+
+    const debugLog = readFileSync(debugLogPath, 'utf8');
+    assert(
+      debugLog.includes(
+        'regular servers not ready after 400ms — proceeding; background connection continues',
+      ),
+      'Missing regular MCP timeout fallback log in non-interactive mode',
+      debugLog,
+    );
+  } finally {
+    rmSync(runtimeDir, { recursive: true, force: true });
+  }
+}
+
 console.log('Checking sandbox runtime compatibility...');
 checkSandboxCompatibility();
 
@@ -282,6 +351,9 @@ await checkRipgrep();
 
 console.log('Checking launcher failure paths...');
 checkLauncherFailurePaths();
+
+console.log('Checking non-interactive MCP timeout fallback...');
+checkNonInteractiveMcpTimeoutFallback();
 
 console.log('Runtime health checks passed.');
 process.exit(0);
