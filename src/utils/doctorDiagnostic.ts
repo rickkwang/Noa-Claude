@@ -603,7 +603,7 @@ export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
   const sandboxRuntimeCompatibility = getSandboxRuntimeCompatibility()
   if (!sandboxRuntimeCompatibility.compatible) {
     warnings.push({
-      issue: `sandbox runtime is missing ${sandboxRuntimeCompatibility.missingMethods.length} expected methods`,
+      issue: `sandbox runtime${sandboxRuntimeCompatibility.version ? ` v${sandboxRuntimeCompatibility.version}` : ''} is missing ${sandboxRuntimeCompatibility.missingMethods.length} expected methods`,
       fix: `Compatibility fallbacks are active. Align @anthropic-ai/sandbox-runtime with this build, or keep the adapter fallback layer in place. Missing: ${sandboxRuntimeCompatibility.missingMethods.join(', ')}`,
     })
   }

@@ -196,6 +196,7 @@ function writeSettings(dir, settings) {
 function checkLauncherFailurePaths() {
   const invalidBaseDir = mkdtempSync(join(tmpdir(), 'claude-agent-invalid-base-'));
   const missingTokenDir = mkdtempSync(join(tmpdir(), 'claude-agent-missing-token-'));
+  const oauthFallbackDir = mkdtempSync(join(tmpdir(), 'claude-agent-oauth-fallback-'));
 
   try {
     writeSettings(invalidBaseDir, {
@@ -239,9 +240,34 @@ function checkLauncherFailurePaths() {
       'Missing token should fail with a clear launcher error',
       missingToken.stderr || missingToken.stdout,
     );
+
+    writeSettings(oauthFallbackDir, {
+      env: {
+        ANTHROPIC_BASE_URL: 'https://api.minimaxi.com/anthropic',
+      },
+      model: 'MiniMax-M2.7',
+    });
+    const oauthFallback = runAgent(['--print', '--tools', '', 'Reply with exactly ok'], {
+      env: {
+        ...process.env,
+        CLAUDE_CODE_PRODUCT_DIR: oauthFallbackDir,
+        ANTHROPIC_AUTH_TOKEN: '',
+        ANTHROPIC_API_KEY: '',
+        CLAUDE_CODE_OAUTH_TOKEN: 'oauth-token-should-not-be-used',
+        CLAUDE_CODE_ENTRYPOINT: '',
+        CLAUDE_CODE_REMOTE: '',
+      },
+    });
+    assert(
+      oauthFallback.status !== 0 &&
+        `${oauthFallback.stderr}${oauthFallback.stdout}`.includes('Missing MiniMax credentials'),
+      'Third-party MiniMax path must not fall back to Claude OAuth credentials',
+      oauthFallback.stderr || oauthFallback.stdout,
+    );
   } finally {
     rmSync(invalidBaseDir, { recursive: true, force: true });
     rmSync(missingTokenDir, { recursive: true, force: true });
+    rmSync(oauthFallbackDir, { recursive: true, force: true });
   }
 }
 

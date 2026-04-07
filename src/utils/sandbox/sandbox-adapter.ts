@@ -23,6 +23,7 @@ import {
 import { rmSync, statSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { memoize } from 'lodash-es'
+import { createRequire } from 'module'
 import { join, resolve, sep } from 'path'
 import {
   getAdditionalDirectoriesForClaudeMd,
@@ -937,6 +938,7 @@ export interface ISandboxManager {
 
 const fallbackSandboxViolationStore = new SandboxViolationStore()
 const missingRuntimeMethodWarnings = new Set<string>()
+const require = createRequire(import.meta.url)
 const SANDBOX_RUNTIME_COMPAT_METHODS = [
   'getFsReadConfig',
   'getFsWriteConfig',
@@ -1012,13 +1014,26 @@ function getSafeNetworkRestrictionConfig(): NetworkRestrictionConfig {
 export function getSandboxRuntimeCompatibility(): {
   compatible: boolean
   missingMethods: string[]
+  version: string | null
 } {
   const missingMethods = SANDBOX_RUNTIME_COMPAT_METHODS.filter(
     name => typeof BaseSandboxManager?.[name] !== 'function',
   )
+  let version: string | null = null
+  try {
+    const sandboxRuntimePackage = require('@anthropic-ai/sandbox-runtime/package.json')
+    version =
+      sandboxRuntimePackage &&
+      typeof sandboxRuntimePackage.version === 'string'
+        ? sandboxRuntimePackage.version
+        : null
+  } catch {
+    version = null
+  }
   return {
     compatible: missingMethods.length === 0,
     missingMethods,
+    version,
   }
 }
 

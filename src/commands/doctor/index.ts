@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { Command } from '../../commands.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 
