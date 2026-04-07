@@ -1,0 +1,10 @@
+**/.DS_Store
+node_modules/
+dist/
+.bun/
+package-lock.json
+*.log
+*.tmp
+*.swp
+.env
+.env.*

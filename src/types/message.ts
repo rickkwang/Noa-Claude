@@ -1,0 +1,184 @@
+// @ts-nocheck
+import { z } from 'zod/v4'
+import type { UUID } from 'crypto'
+
+export const MessageSchema = z.object({
+  type: z.string(),
+  id: z.string(),
+  sessionId: z.string().optional(),
+})
+
+export type MessageUsage = {
+  input_tokens?: number
+  output_tokens?: number
+  cache_creation_input_tokens?: number
+  cache_read_input_tokens?: number
+}
+
+export type CompactPreservedSegment = {
+  headUuid: UUID
+  anchorUuid: UUID
+  tailUuid: UUID
+}
+
+export type Message = z.infer<typeof MessageSchema> & {
+  uuid?: UUID | string
+  parentUuid?: UUID | null
+  logicalParentUuid?: UUID | null
+  sessionId?: string
+  timestamp?: string
+  content?: unknown
+  message?: {
+    content?: unknown
+    role?: string
+    id?: string
+    usage?: MessageUsage
+    stop_reason?: string | null
+  }
+  isMeta?: boolean
+  isCompactSummary?: boolean
+  isVisibleInTranscriptOnly?: boolean
+  isVirtual?: boolean
+  isSidechain?: boolean
+  sourceToolAssistantUUID?: UUID
+  toolUseResult?: unknown
+  compactMetadata?: {
+    trigger?: 'manual' | 'auto'
+    preTokens?: number
+    userContext?: string
+    messagesSummarized?: number
+    preservedSegment?: CompactPreservedSegment
+  }
+  microcompactMetadata?: {
+    trigger?: 'auto'
+    preTokens?: number
+    tokensSaved?: number
+    compactedToolIds?: string[]
+    clearedAttachmentUUIDs?: string[]
+  }
+  attachment?: {
+    type?: string
+  } & Record<string, unknown>
+  attachments?: unknown[]
+  preservedSegment?: unknown
+  agentId?: string
+  teamName?: string
+  agentName?: string
+  agentColor?: string
+  subtype?: string
+  messageCount?: number
+} & Record<string, unknown>
+
+export type UserMessage = Message & {
+  type: 'user'
+  content: string
+}
+
+export type NormalizedUserMessage = Message & {
+  type: 'user'
+  content: string
+}
+
+export type AssistantMessage = Message & {
+  type: 'assistant'
+  content: string
+}
+
+export type ProgressMessage<T = unknown> = Message & {
+  type: 'progress'
+  data: T
+}
+
+export type HookResultMessage = Message & {
+  type: 'hook_result'
+  hookEvent: string
+  result: unknown
+}
+
+export type AttachmentMessage = Message & {
+  type: 'attachment'
+  attachments: unknown[]
+  attachment?: {
+    type?: string
+  } & Record<string, unknown>
+}
+
+export type SystemMessage = Message & {
+  type: 'system'
+  content: string
+}
+
+export type SystemAPIErrorMessage = SystemMessage & {
+  subtype: 'api_error'
+  error: string
+}
+
+export type SystemBridgeStatusMessage = SystemMessage & {
+  subtype: 'bridge_status'
+  connected: boolean
+}
+
+export type SystemTurnDurationMessage = SystemMessage & {
+  subtype: 'turn_duration'
+  durationMs: number
+  messageCount?: number
+}
+
+export type SystemThinkingMessage = SystemMessage & {
+  subtype: 'thinking'
+  thinking: string
+}
+
+export type SystemMemorySavedMessage = SystemMessage & {
+  subtype: 'memory_saved'
+  path: string
+}
+
+export type SystemStopHookSummaryMessage = SystemMessage & {
+  subtype: 'stop_hook_summary'
+  summary: string
+}
+
+export type RenderableMessage = Message
+
+export type PartialCompactDirection = Message & {
+  type: 'partial_compact_direction'
+  direction: 'compact' | 'expand'
+}
+
+export type NormalizedMessage = Message
+
+export type SystemInformationalMessage = SystemMessage
+
+export type SystemCompactBoundaryMessage = SystemMessage & {
+  subtype: 'compact_boundary'
+  compactMetadata: {
+    trigger: 'manual' | 'auto'
+    preTokens: number
+    userContext?: string
+    messagesSummarized?: number
+    preservedSegment?: CompactPreservedSegment
+  }
+  logicalParentUuid?: UUID
+}
+
+export type SystemMicrocompactBoundaryMessage = SystemMessage & {
+  subtype: 'microcompact_boundary'
+  microcompactMetadata: {
+    trigger: 'auto'
+    preTokens: number
+    tokensSaved: number
+    compactedToolIds: string[]
+    clearedAttachmentUUIDs: string[]
+  }
+}
+
+export type CollapsedReadSearchGroup = Message & {
+  type: 'collapsed_read_search_group'
+  reads: unknown[]
+}
+
+export type GroupedToolUseMessage = Message & {
+  type: 'grouped_tool_use'
+  toolUses: unknown[]
+}

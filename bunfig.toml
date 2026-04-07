@@ -1,0 +1,9 @@
+[install]
+auto = "fallback"
+production = false
+
+[install.cache]
+disable = false
+
+[run]
+bun = true
