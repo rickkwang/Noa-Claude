@@ -3,15 +3,14 @@
 Private engineering fork focused on:
 - isolated runtime/data paths
 - stable CLI chain
-- MiniMax (Anthropic-compatible) default backend
+- configurable model backends
 - repeatable engineering smoke checks
 
 ## Project Status
 - Main entrypoint: `claude-agent`
 - Compatibility alias: `claude-code`
 - Default config root: `~/.claude-agent`
-- Default backend base URL: `https://api.minimaxi.com/anthropic`
-- Default model: `MiniMax-M2.7`
+- Backend selection and model choice are controlled through config and env
 
 ## Quick Start
 1. Install dependencies:
@@ -42,10 +41,10 @@ Typical minimal config:
 ```json
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "https://api.minimaxi.com/anthropic",
-    "ANTHROPIC_API_KEY": "YOUR_MINIMAX_KEY"
+    "ANTHROPIC_BASE_URL": "https://your-provider.example/v1",
+    "ANTHROPIC_API_KEY": "YOUR_API_KEY"
   },
-  "model": "MiniMax-M2.7"
+  "model": "YOUR_MODEL_NAME"
 }
 ```
 
