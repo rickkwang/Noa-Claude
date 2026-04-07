@@ -5,6 +5,7 @@ import { z } from 'zod/v4'
 import { getCwd } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { lazySchema } from '../../utils/lazySchema.js'
+import { getProjectSubdirCandidates, getPrimaryProjectSubdir } from '../../utils/productPaths.js'
 import { jsonParse, jsonStringify } from '../../utils/slowOperations.js'
 import { type AgentMemoryScope, getAgentMemoryDir } from './agentMemory.js'
 
@@ -27,10 +28,28 @@ type SyncedMeta = z.infer<ReturnType<typeof syncedMetaSchema>>
 
 /**
  * Returns the path to the snapshot directory for an agent in the current project.
- * e.g., <cwd>/.claude/agent-memory-snapshots/<agentType>/
+ * e.g., <cwd>/.claude-agent/agent-memory-snapshots/<agentType>/
  */
 export function getSnapshotDirForAgent(agentType: string): string {
-  return join(getCwd(), '.claude', SNAPSHOT_BASE, agentType)
+  return join(getPrimaryProjectSubdir(getCwd(), SNAPSHOT_BASE), agentType)
+}
+
+async function getExistingSnapshotDirForAgent(
+  agentType: string,
+): Promise<string> {
+  const cwd = getCwd()
+  for (const baseDir of getProjectSubdirCandidates(cwd, SNAPSHOT_BASE)) {
+    const candidate = join(baseDir, agentType)
+    try {
+      const dirents = await readdir(candidate, { withFileTypes: true })
+      if (dirents.length >= 0) {
+        return candidate
+      }
+    } catch {
+      continue
+    }
+  }
+  return getSnapshotDirForAgent(agentType)
 }
 
 function getSnapshotJsonPath(agentType: string): string {
@@ -58,7 +77,7 @@ async function copySnapshotToLocal(
   agentType: string,
   scope: AgentMemoryScope,
 ): Promise<void> {
-  const snapshotMemDir = getSnapshotDirForAgent(agentType)
+  const snapshotMemDir = await getExistingSnapshotDirForAgent(agentType)
   const localMemDir = getAgentMemoryDir(agentType, scope)
 
   await mkdir(localMemDir, { recursive: true })

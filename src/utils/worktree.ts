@@ -2,6 +2,7 @@
 import { feature } from 'bun:bundle'
 import chalk from 'chalk'
 import { spawnSync } from 'child_process'
+import { statSync } from 'fs'
 import {
   copyFile,
   mkdir,
@@ -40,6 +41,10 @@ import {
 import { containsPathTraversal } from './path.js'
 import { getPlatform } from './platform.js'
 import {
+  getPrimaryProjectSubdir,
+  getProjectWorktreeDirCandidates,
+} from './productPaths.js'
+import {
   getInitialSettings,
   getRelativeSettingsFilePathForSource,
 } from './settings/settings.js'
@@ -52,7 +57,7 @@ const MAX_WORKTREE_SLUG_LENGTH = 64
 /**
  * Validates a worktree slug to prevent path traversal and directory escape.
  *
- * The slug is joined into `.claude/worktrees/<slug>` via path.join, which
+ * The slug is joined into `.claude-agent/worktrees/<slug>` via path.join, which
  * normalizes `..` segments — so `../../../target` would escape the worktrees
  * directory. Similarly, an absolute path (leading `/` or `C:\`) would discard
  * the prefix entirely.
@@ -202,15 +207,35 @@ const GIT_NO_PROMPT_ENV = {
   GIT_ASKPASS: '',
 }
 
+function pathExists(path: string): boolean {
+  try {
+    statSync(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
 function worktreesDir(repoRoot: string): string {
-  return join(repoRoot, '.claude', 'worktrees')
+  return getPrimaryProjectSubdir(repoRoot, 'worktrees')
+}
+
+function getExistingWorktreePath(repoRoot: string, slug: string): string | null {
+  const flattenedSlug = flattenSlug(slug)
+  for (const dir of getProjectWorktreeDirCandidates(repoRoot)) {
+    const candidate = join(dir, flattenedSlug)
+    if (pathExists(candidate)) {
+      return candidate
+    }
+  }
+  return null
 }
 
 // Flatten nested slugs (`user/feature` → `user+feature`) for both the branch
 // name and the directory path. Nesting in either location is unsafe:
 //   - git refs: `worktree-user` (file) vs `worktree-user/feature` (needs dir)
 //     is a D/F conflict that git rejects.
-//   - directory: `.claude/worktrees/user/feature/` lives inside the `user`
+//   - directory: `.claude-agent/worktrees/user/feature/` lives inside the `user`
 //     worktree; `git worktree remove` on the parent deletes children with
 //     uncommitted work.
 // `+` is valid in git branch names and filesystem paths but NOT in the
@@ -224,7 +249,7 @@ export function worktreeBranchName(slug: string): string {
 }
 
 function worktreePathFor(repoRoot: string, slug: string): string {
-  return join(worktreesDir(repoRoot), flattenSlug(slug))
+  return getExistingWorktreePath(repoRoot, slug) ?? join(worktreesDir(repoRoot), flattenSlug(slug))
 }
 
 /**
@@ -1064,64 +1089,69 @@ export async function cleanupStaleAgentWorktrees(
     return 0
   }
 
-  const dir = worktreesDir(gitRoot)
-  let entries: string[]
-  try {
-    entries = await readdir(dir)
-  } catch {
-    return 0
-  }
-
   const cutoffMs = cutoffDate.getTime()
   const currentPath = currentWorktreeSession?.worktreePath
   let removed = 0
 
-  for (const slug of entries) {
-    if (!EPHEMERAL_WORKTREE_PATTERNS.some(p => p.test(slug))) {
-      continue
-    }
-
-    const worktreePath = join(dir, slug)
-    if (currentPath === worktreePath) {
-      continue
-    }
-
-    let mtimeMs: number
+  for (const dir of getProjectWorktreeDirCandidates(gitRoot)) {
+    let entries: string[]
     try {
-      mtimeMs = (await stat(worktreePath)).mtimeMs
+      entries = await readdir(dir)
     } catch {
       continue
     }
-    if (mtimeMs >= cutoffMs) {
-      continue
-    }
 
-    // Both checks must succeed with empty output. Non-zero exit (corrupted
-    // worktree, git not recognizing it, etc.) means skip — we don't know
-    // what's in there.
-    const [status, unpushed] = await Promise.all([
-      execFileNoThrowWithCwd(
-        gitExe(),
-        ['--no-optional-locks', 'status', '--porcelain', '-uno'],
-        { cwd: worktreePath },
-      ),
-      execFileNoThrowWithCwd(
-        gitExe(),
-        ['rev-list', '--max-count=1', 'HEAD', '--not', '--remotes'],
-        { cwd: worktreePath },
-      ),
-    ])
-    if (status.code !== 0 || status.stdout.trim().length > 0) {
-      continue
-    }
-    if (unpushed.code !== 0 || unpushed.stdout.trim().length > 0) {
-      continue
-    }
+    for (const slug of entries) {
+      if (!EPHEMERAL_WORKTREE_PATTERNS.some(p => p.test(slug))) {
+        continue
+      }
 
-    if (
-      await removeAgentWorktree(worktreePath, worktreeBranchName(slug), gitRoot)
-    ) {
-      removed++
+      const worktreePath = join(dir, slug)
+      if (currentPath === worktreePath) {
+        continue
+      }
+
+      let mtimeMs: number
+      try {
+        mtimeMs = (await stat(worktreePath)).mtimeMs
+      } catch {
+        continue
+      }
+      if (mtimeMs >= cutoffMs) {
+        continue
+      }
+
+      // Both checks must succeed with empty output. Non-zero exit (corrupted
+      // worktree, git not recognizing it, etc.) means skip — we don't know
+      // what's in there.
+      const [status, unpushed] = await Promise.all([
+        execFileNoThrowWithCwd(
+          gitExe(),
+          ['--no-optional-locks', 'status', '--porcelain', '-uno'],
+          { cwd: worktreePath },
+        ),
+        execFileNoThrowWithCwd(
+          gitExe(),
+          ['rev-list', '--max-count=1', 'HEAD', '--not', '--remotes'],
+          { cwd: worktreePath },
+        ),
+      ])
+      if (status.code !== 0 || status.stdout.trim().length > 0) {
+        continue
+      }
+      if (unpushed.code !== 0 || unpushed.stdout.trim().length > 0) {
+        continue
+      }
+
+      if (
+        await removeAgentWorktree(
+          worktreePath,
+          worktreeBranchName(slug),
+          gitRoot,
+        )
+      ) {
+        removed++
+      }
     }
   }
 
@@ -1282,8 +1312,6 @@ export async function execIntoTmuxWorktree(args: string[]): Promise<{
     }
 
     repoName = basename(repoRoot)
-    worktreeDir = worktreePathFor(repoRoot, worktreeName)
-
     // Create or resume worktree
     try {
       const result = await getOrCreateWorktree(
@@ -1291,6 +1319,7 @@ export async function execIntoTmuxWorktree(args: string[]): Promise<{
         worktreeName,
         prNumber !== null ? { prNumber } : undefined,
       )
+      worktreeDir = result.worktreePath
       if (!result.existed) {
         // biome-ignore lint/suspicious/noConsole: intentional console output
         console.log(

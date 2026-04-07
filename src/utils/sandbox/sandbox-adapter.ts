@@ -33,6 +33,10 @@ import {
 import { logForDebugging } from '../debug.js'
 import { expandPath } from '../path.js'
 import { getPlatform, type Platform } from '../platform.js'
+import {
+  getProjectSettingsRelativePathCandidates,
+  getProjectSubdirCandidates,
+} from '../productPaths.js'
 import { settingsChangeDetector } from '../settings/changeDetector.js'
 import { SETTING_SOURCES, type SettingSource } from '../settings/constants.js'
 import { getManagedSettingsDropInDir } from '../settings/managedPath.js'
@@ -241,18 +245,24 @@ export function convertToSandboxRuntimeConfig(
   const cwd = getCwdState()
   const originalCwd = getOriginalCwd()
   if (cwd !== originalCwd) {
-    denyWrite.push(resolve(cwd, '.claude', 'settings.json'))
-    denyWrite.push(resolve(cwd, '.claude', 'settings.local.json'))
+    for (const relativePath of getProjectSettingsRelativePathCandidates(
+      'settings.json',
+    ).concat(getProjectSettingsRelativePathCandidates('settings.local.json'))) {
+      denyWrite.push(resolve(cwd, relativePath))
+    }
   }
 
-  // Block writes to .claude/skills in both original and current working directories.
-  // The sandbox-runtime's getDangerousDirectories() protects .claude/commands and
-  // .claude/agents but not .claude/skills. Skills have the same privilege level
-  // (auto-discovered, auto-loaded, full Claude capabilities) so they need the
-  // same OS-level sandbox protection.
-  denyWrite.push(resolve(originalCwd, '.claude', 'skills'))
+  // Block writes to project skills in both original and current working
+  // directories. Skills have the same privilege level as commands/agents
+  // (auto-discovered, auto-loaded, full agent capabilities), so both the
+  // product and legacy project skill directories need OS-level protection.
+  for (const skillsDir of getProjectSubdirCandidates(originalCwd, 'skills')) {
+    denyWrite.push(skillsDir)
+  }
   if (cwd !== originalCwd) {
-    denyWrite.push(resolve(cwd, '.claude', 'skills'))
+    for (const skillsDir of getProjectSubdirCandidates(cwd, 'skills')) {
+      denyWrite.push(skillsDir)
+    }
   }
 
   // SECURITY: Git's is_git_directory() treats cwd as a bare repo if it has

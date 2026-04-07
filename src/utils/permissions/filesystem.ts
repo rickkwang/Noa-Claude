@@ -10,7 +10,9 @@ import { isAgentMemoryPath } from 'src/tools/AgentTool/agentMemory.js'
 import {
   CLAUDE_FOLDER_PERMISSION_PATTERN,
   FILE_EDIT_TOOL_NAME,
+  GLOBAL_PRODUCT_CONFIG_FOLDER_PERMISSION_PATTERN,
   GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN,
+  PRODUCT_CONFIG_FOLDER_PERMISSION_PATTERN,
 } from 'src/tools/FileEditTool/constants.js'
 import type { z } from 'zod/v4'
 import { getOriginalCwd, getSessionId } from '../../bootstrap/state.js'
@@ -40,6 +42,13 @@ import {
 import { containsVulnerableUncPath } from '../shell/readOnlyCommandValidation.js'
 import { getToolResultsDir } from '../toolResultStorage.js'
 import { windowsPathToPosixPath } from '../windowsPaths.js'
+import {
+  getProjectLaunchConfigCandidates,
+  getProjectSettingsRelativePathCandidates,
+  getProjectSubdirCandidates,
+  LEGACY_PROJECT_DIR,
+  PRODUCT_PROJECT_DIR,
+} from '../productPaths.js'
 import type {
   PermissionDecision,
   PermissionResult,
@@ -77,6 +86,7 @@ export const DANGEROUS_DIRECTORIES = [
   '.vscode',
   '.idea',
   '.claude',
+  '.claude-agent',
 ] as const
 
 /**
@@ -93,7 +103,7 @@ export function normalizeCaseForComparison(path: string): string {
 }
 
 /**
- * If filePath is inside a .claude/skills/{name}/ directory (project or global),
+ * If filePath is inside a product or legacy skills/{name}/ directory (project or global),
  * return the skill name and a session-allow pattern scoped to just that skill.
  * Used to offer a narrower "allow edits to this skill only" option in the
  * permission dialog and SDK suggestions, so iterating on one skill doesn't
@@ -107,12 +117,16 @@ export function getClaudeSkillScope(
 
   const bases = [
     {
-      dir: expandPath(join(getOriginalCwd(), '.claude', 'skills')),
-      prefix: '/.claude/skills/',
+      dir: expandPath(join(getOriginalCwd(), PRODUCT_PROJECT_DIR, 'skills')),
+      prefix: `/${PRODUCT_PROJECT_DIR}/skills/`,
     },
     {
-      dir: expandPath(join(homedir(), '.claude', 'skills')),
-      prefix: '~/.claude/skills/',
+      dir: expandPath(join(getOriginalCwd(), LEGACY_PROJECT_DIR, 'skills')),
+      prefix: `/${LEGACY_PROJECT_DIR}/skills/`,
+    },
+    {
+      dir: expandPath(join(getClaudeConfigHomeDir(), 'skills')),
+      prefix: '~/.claude-agent/skills/',
     },
   ]
 
@@ -209,10 +223,15 @@ export function isClaudeSettingsPath(filePath: string): boolean {
 
   // Use platform separator so endsWith checks work on both Unix (/) and Windows (\)
   if (
-    normalizedPath.endsWith(`${sep}.claude${sep}settings.json`) ||
-    normalizedPath.endsWith(`${sep}.claude${sep}settings.local.json`)
+    getProjectSettingsRelativePathCandidates('settings.json')
+      .concat(getProjectSettingsRelativePathCandidates('settings.local.json'))
+      .some(relativePath =>
+        normalizedPath.endsWith(
+          `${sep}${relativePath.split('/').join(sep)}`.toLowerCase(),
+        ),
+      )
   ) {
-    // Include .claude/settings.json even for other projects
+    // Include project settings files even for other projects
     return true
   }
   // Check for current project's settings files (including managed settings and CLI args)
@@ -228,18 +247,20 @@ function isClaudeConfigFilePath(filePath: string): boolean {
     return true
   }
 
-  // Check if file is within .claude/commands or .claude/agents directories
+  // Check if file is within project config command/agent/skill directories
   // using proper path segment validation (not string matching with includes())
   // pathInWorkingPath now handles case-insensitive comparison to prevent bypasses
-  const commandsDir = join(getOriginalCwd(), '.claude', 'commands')
-  const agentsDir = join(getOriginalCwd(), '.claude', 'agents')
-  const skillsDir = join(getOriginalCwd(), '.claude', 'skills')
+  for (const commandsDir of getProjectSubdirCandidates(getOriginalCwd(), 'commands')) {
+    if (pathInWorkingPath(filePath, commandsDir)) return true
+  }
+  for (const agentsDir of getProjectSubdirCandidates(getOriginalCwd(), 'agents')) {
+    if (pathInWorkingPath(filePath, agentsDir)) return true
+  }
+  for (const skillsDir of getProjectSubdirCandidates(getOriginalCwd(), 'skills')) {
+    if (pathInWorkingPath(filePath, skillsDir)) return true
+  }
 
-  return (
-    pathInWorkingPath(filePath, commandsDir) ||
-    pathInWorkingPath(filePath, agentsDir) ||
-    pathInWorkingPath(filePath, skillsDir)
-  )
+  return false
 }
 
 // Check if file is the plan file for the current session
@@ -454,11 +475,11 @@ function isDangerousFilePathToAutoEdit(path: string): boolean {
         continue
       }
 
-      // Special case: .claude/worktrees/ is a structural path (where Claude stores
-      // git worktrees), not a user-created dangerous directory. Skip the .claude
-      // segment when it's followed by 'worktrees'. Any nested .claude directories
-      // within the worktree (not followed by 'worktrees') are still blocked.
-      if (dir === '.claude') {
+      // Special case: project worktree roots are structural paths, not
+      // user-created dangerous directories. Skip the product/legacy config
+      // root segment when it's followed by 'worktrees'. Any nested config
+      // directories within the worktree remain blocked.
+      if (dir === '.claude' || dir === '.claude-agent') {
         const nextSegment = pathSegments[i + 1]
         if (
           nextSegment &&
@@ -1282,7 +1303,13 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
     const ruleContent = claudeFolderAllowRule.ruleValue.ruleContent
     if (
       ruleContent &&
-      (ruleContent.startsWith(CLAUDE_FOLDER_PERMISSION_PATTERN.slice(0, -2)) ||
+      (ruleContent.startsWith(
+        PRODUCT_CONFIG_FOLDER_PERMISSION_PATTERN.slice(0, -2),
+      ) ||
+        ruleContent.startsWith(CLAUDE_FOLDER_PERMISSION_PATTERN.slice(0, -2)) ||
+        ruleContent.startsWith(
+          GLOBAL_PRODUCT_CONFIG_FOLDER_PERMISSION_PATTERN.slice(0, -2),
+        ) ||
         ruleContent.startsWith(
           GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN.slice(0, -2),
         )) &&
@@ -1581,16 +1608,20 @@ export function checkEditableInternalPath(
     }
   }
 
-  // .claude/launch.json — desktop preview config (dev server command + port).
+  // Project launch.json — desktop preview config (dev server command + port).
   // The desktop's preview_start MCP tool instructs Claude to create/update
   // this file as part of the preview workflow. Without this carve-out the
-  // .claude/ DANGEROUS_DIRECTORIES check prompts for it, which in SDK mode
+  // project config DANGEROUS_DIRECTORIES check prompts for it, which in SDK mode
   // cascades: user clicks "Always allow" → setMode:acceptEdits suggestion
   // applied → silent downgrade from auto mode. Matches the project-level
-  // .claude/ only (not ~/.claude/) since launch.json is per-project.
+  // config directories only (not ~/.claude-agent/) since launch.json is
+  // per-project.
   if (
-    normalizeCaseForComparison(normalizedPath) ===
-    normalizeCaseForComparison(join(getOriginalCwd(), '.claude', 'launch.json'))
+    getProjectLaunchConfigCandidates(getOriginalCwd()).some(
+      launchPath =>
+        normalizeCaseForComparison(normalizedPath) ===
+        normalizeCaseForComparison(launchPath),
+    )
   ) {
     return {
       behavior: 'allow',

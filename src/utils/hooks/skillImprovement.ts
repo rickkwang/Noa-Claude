@@ -192,11 +192,29 @@ export async function applySkillImprovement(
 ): Promise<void> {
   if (!skillName) return
 
-  const { join } = await import('path')
+  const { dirname, join } = await import('path')
   const fs = await import('fs/promises')
+  const { getPrimaryProjectSubdir, getProjectSubdirCandidates } = await import(
+    '../productPaths.js'
+  )
 
-  // Skills live at .claude/skills/<name>/SKILL.md relative to CWD
-  const filePath = join(getCwd(), '.claude', 'skills', skillName, 'SKILL.md')
+  const cwd = getCwd()
+  const targetFilePath = join(
+    getPrimaryProjectSubdir(cwd, 'skills'),
+    skillName,
+    'SKILL.md',
+  )
+  let filePath = targetFilePath
+  for (const dir of getProjectSubdirCandidates(cwd, 'skills')) {
+    const candidate = join(dir, skillName, 'SKILL.md')
+    try {
+      await fs.stat(candidate)
+      filePath = candidate
+      break
+    } catch {
+      continue
+    }
+  }
 
   let currentContent: string
   try {
@@ -261,7 +279,8 @@ Rules:
   }
 
   try {
-    await fs.writeFile(filePath, updatedContent, 'utf-8')
+    await fs.mkdir(dirname(targetFilePath), { recursive: true })
+    await fs.writeFile(targetFilePath, updatedContent, 'utf-8')
   } catch (e) {
     logError(toError(e))
   }

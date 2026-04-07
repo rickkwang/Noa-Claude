@@ -22,6 +22,7 @@ import { addFileGlobRuleToGitignore } from '../git/gitignore.js'
 import { safeParseJSON } from '../json.js'
 import { logError } from '../log.js'
 import { getPlatform } from '../platform.js'
+import { getProjectSettingsRelativePathCandidates } from '../productPaths.js'
 import { clone, jsonStringify } from '../slowOperations.js'
 import { profileCheckpoint } from '../startupProfiler.js'
 import {
@@ -296,14 +297,33 @@ export function getSettingsFilePathForSource(
   }
 }
 
+export function getSettingsFilePathCandidatesForSource(
+  source: SettingSource,
+): string[] {
+  switch (source) {
+    case 'projectSettings':
+      return getProjectSettingsRelativePathCandidates('settings.json').map(
+        relativePath => join(getSettingsRootPathForSource(source), relativePath),
+      )
+    case 'localSettings':
+      return getProjectSettingsRelativePathCandidates('settings.local.json').map(
+        relativePath => join(getSettingsRootPathForSource(source), relativePath),
+      )
+    default: {
+      const filePath = getSettingsFilePathForSource(source)
+      return filePath ? [filePath] : []
+    }
+  }
+}
+
 export function getRelativeSettingsFilePathForSource(
   source: 'projectSettings' | 'localSettings',
 ): string {
   switch (source) {
     case 'projectSettings':
-      return join('.claude', 'settings.json')
+      return getProjectSettingsRelativePathCandidates('settings.json')[0]!
     case 'localSettings':
-      return join('.claude', 'settings.local.json')
+      return getProjectSettingsRelativePathCandidates('settings.local.json')[0]!
   }
 }
 
@@ -345,10 +365,19 @@ function getSettingsForSourceUncached(
     return null
   }
 
-  const settingsFilePath = getSettingsFilePathForSource(source)
-  const { settings: fileSettings } = settingsFilePath
-    ? parseSettingsFile(settingsFilePath)
-    : { settings: null }
+  const settingsFilePaths = getSettingsFilePathCandidatesForSource(source)
+  const parsedSettings = settingsFilePaths
+    .map(filePath => parseSettingsFile(filePath).settings)
+    .filter((settings): settings is SettingsJson => settings !== null)
+    .reverse()
+  const fileSettings =
+    parsedSettings.length === 0
+      ? null
+      : parsedSettings.reduce<SettingsJson>(
+          (merged, settings) =>
+            mergeWith(merged, settings, settingsMergeCustomizer),
+          {},
+        )
 
   // For flagSettings, merge in any inline settings set via the SDK
   if (source === 'flagSettings') {

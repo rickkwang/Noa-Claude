@@ -8,7 +8,9 @@ import type { ToolPermissionContext } from '../../../Tool.js'
 import {
   CLAUDE_FOLDER_PERMISSION_PATTERN,
   FILE_EDIT_TOOL_NAME,
+  GLOBAL_PRODUCT_CONFIG_FOLDER_PERMISSION_PATTERN,
   GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN,
+  PRODUCT_CONFIG_FOLDER_PERMISSION_PATTERN,
 } from '../../../tools/FileEditTool/constants.js'
 import { env } from '../../../utils/env.js'
 import { generateSuggestions } from '../../../utils/permissions/filesystem.js'
@@ -107,19 +109,23 @@ function handleAcceptSession(
     options?.scope === 'claude-folder' ||
     options?.scope === 'global-claude-folder'
   ) {
-    const pattern =
+    const patterns =
       options.scope === 'global-claude-folder'
-        ? GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN
-        : CLAUDE_FOLDER_PERMISSION_PATTERN
+        ? [
+            GLOBAL_PRODUCT_CONFIG_FOLDER_PERMISSION_PATTERN,
+            GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN,
+          ]
+        : [
+            PRODUCT_CONFIG_FOLDER_PERMISSION_PATTERN,
+            CLAUDE_FOLDER_PERMISSION_PATTERN,
+          ]
     const suggestions: PermissionUpdate[] = [
       {
         type: 'addRules',
-        rules: [
-          {
-            toolName: FILE_EDIT_TOOL_NAME,
-            ruleContent: pattern,
-          },
-        ],
+        rules: patterns.map(pattern => ({
+          toolName: FILE_EDIT_TOOL_NAME,
+          ruleContent: pattern,
+        })),
         behavior: 'allow',
         destination: 'session',
       },

@@ -18,6 +18,12 @@ import type { FrontmatterData } from './frontmatterParser.js'
 import { parseFrontmatter } from './frontmatterParser.js'
 import { findCanonicalGitRoot, findGitRoot } from './git.js'
 import { parseToolListFromCLI } from './permissions/permissionSetup.js'
+import {
+  getLegacyProjectSubdir,
+  getPrimaryProjectSubdir,
+  getProjectSubdirCandidates,
+  getUserScopedSubdir,
+} from './productPaths.js'
 import { ripGrep } from './ripgrep.js'
 import {
   isSettingSourceEnabled,
@@ -251,18 +257,19 @@ export function getProjectDirsUpToHome(
       break
     }
 
-    const claudeSubdir = join(current, '.claude', subdir)
-    // Filter to existing dirs. This is a perf filter (avoids spawning
-    // ripgrep on non-existent dirs downstream) and the worktree fallback
-    // in loadMarkdownFilesForSubdir relies on it. statSync + explicit error
-    // handling instead of existsSync — re-throws unexpected errors rather
-    // than silently swallowing them. Downstream loadMarkdownFiles handles
-    // the TOCTOU window (dir disappearing before read) gracefully.
-    try {
-      statSync(claudeSubdir)
-      dirs.push(claudeSubdir)
-    } catch (e: unknown) {
-      if (!isFsInaccessible(e)) throw e
+    for (const configSubdir of getProjectSubdirCandidates(current, subdir)) {
+      // Filter to existing dirs. This is a perf filter (avoids spawning
+      // ripgrep on non-existent dirs downstream) and the worktree fallback
+      // in loadMarkdownFilesForSubdir relies on it. statSync + explicit error
+      // handling instead of existsSync — re-throws unexpected errors rather
+      // than silently swallowing them. Downstream loadMarkdownFiles handles
+      // the TOCTOU window (dir disappearing before read) gracefully.
+      try {
+        statSync(configSubdir)
+        dirs.push(configSubdir)
+      } catch (e: unknown) {
+        if (!isFsInaccessible(e)) throw e
+      }
     }
 
     // Stop after processing the git root directory - this prevents commands from parent
@@ -301,7 +308,7 @@ export const loadMarkdownFilesForSubdir = memoize(
     cwd: string,
   ): Promise<MarkdownFile[]> {
     const searchStartTime = Date.now()
-    const userDir = join(getClaudeConfigHomeDir(), subdir)
+    const userDir = getUserScopedSubdir(subdir)
     const managedDir = join(getManagedFilePath(), '.claude', subdir)
     const projectDirs = getProjectDirsUpToHome(subdir, cwd)
 
@@ -321,16 +328,24 @@ export const loadMarkdownFilesForSubdir = memoize(
     const gitRoot = findGitRoot(cwd)
     const canonicalRoot = findCanonicalGitRoot(cwd)
     if (gitRoot && canonicalRoot && canonicalRoot !== gitRoot) {
-      const worktreeSubdir = normalizePathForComparison(
-        join(gitRoot, '.claude', subdir),
+      const worktreeHasAnySubdir = getProjectSubdirCandidates(
+        gitRoot,
+        subdir,
+      ).some(candidate =>
+        projectDirs.some(
+          dir =>
+            normalizePathForComparison(dir) ===
+            normalizePathForComparison(candidate),
+        ),
       )
-      const worktreeHasSubdir = projectDirs.some(
-        dir => normalizePathForComparison(dir) === worktreeSubdir,
-      )
-      if (!worktreeHasSubdir) {
-        const mainClaudeSubdir = join(canonicalRoot, '.claude', subdir)
-        if (!projectDirs.includes(mainClaudeSubdir)) {
-          projectDirs.push(mainClaudeSubdir)
+      if (!worktreeHasAnySubdir) {
+        for (const mainSubdir of [
+          getPrimaryProjectSubdir(canonicalRoot, subdir),
+          getLegacyProjectSubdir(canonicalRoot, subdir),
+        ]) {
+          if (!projectDirs.includes(mainSubdir)) {
+            projectDirs.push(mainSubdir)
+          }
         }
       }
     }
@@ -571,7 +586,11 @@ async function loadMarkdownFiles(dir: string): Promise<
     // Handle missing/inaccessible dir directly instead of pre-checking
     // existence (TOCTOU). findMarkdownFilesNative already catches internally;
     // ripGrep rejects on inaccessible target paths.
-    if (isFsInaccessible(e)) return []
+    const rgMissingTarget =
+      e instanceof Error &&
+      e.message.includes('IO error for operation on') &&
+      e.message.includes('(os error 2)')
+    if (isFsInaccessible(e) || rgMissingTarget) return []
     throw e
   }
 

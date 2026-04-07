@@ -5,9 +5,10 @@ import mapValues from 'lodash-es/mapValues.js'
 import memoize from 'lodash-es/memoize.js'
 import { dirname, join, parse } from 'path'
 import { getPlatform } from 'src/utils/platform.js'
-import type { PluginError } from '../../types/plugin.js'
+import type { PluginError, PluginLoadResult } from '../../types/plugin.js'
 import { getPluginErrorMessage } from '../../types/plugin.js'
 import { isClaudeInChromeMCPServer } from '../../utils/claudeInChrome/common.js'
+import { getIsNonInteractiveSession } from '../../bootstrap/state.js'
 import {
   getCurrentProjectConfig,
   getGlobalConfig,
@@ -56,6 +57,38 @@ import {
   type ScopedMcpServerConfig,
 } from './types.js'
 import { getProjectMcpServerStatus } from './utils.js'
+
+const NON_INTERACTIVE_PLUGIN_MCP_TIMEOUT_MS = 3000
+
+async function loadPluginMcpCandidates(): Promise<PluginLoadResult> {
+  if (!getIsNonInteractiveSession()) {
+    return loadAllPluginsCacheOnly()
+  }
+
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      loadAllPluginsCacheOnly(),
+      new Promise<PluginLoadResult>(resolve => {
+        timeoutId = setTimeout(() => {
+          logForDebugging(
+            `Non-interactive MCP plugin discovery timed out after ${NON_INTERACTIVE_PLUGIN_MCP_TIMEOUT_MS}ms; continuing without plugin MCP servers`,
+            { level: 'warn' },
+          )
+          resolve({
+            enabled: [],
+            disabled: [],
+            errors: [],
+          })
+        }, NON_INTERACTIVE_PLUGIN_MCP_TIMEOUT_MS)
+      }),
+    ])
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId)
+    }
+  }
+}
 
 /**
  * Get the path to the managed MCP configuration file
@@ -1115,7 +1148,7 @@ export async function getClaudeCodeMcpConfigs(
   // Load plugin MCP servers
   const pluginMcpServers: Record<string, ScopedMcpServerConfig> = {}
 
-  const pluginResult = await loadAllPluginsCacheOnly()
+  const pluginResult = await loadPluginMcpCandidates()
 
   // Collect MCP-specific errors during server loading
   const mcpErrors: PluginError[] = []

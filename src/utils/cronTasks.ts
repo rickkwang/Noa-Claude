@@ -13,7 +13,7 @@
 import { randomUUID } from 'crypto'
 import { readFileSync } from 'fs'
 import { mkdir, writeFile } from 'fs/promises'
-import { join } from 'path'
+import { dirname } from 'path'
 import {
   addSessionCronTask,
   getProjectRoot,
@@ -26,6 +26,10 @@ import { isFsInaccessible } from './errors.js'
 import { getFsImplementation } from './fsOperations.js'
 import { safeParseJSON } from './json.js'
 import { logError } from './log.js'
+import {
+  getPrimaryProjectScheduledTasksPath,
+  getProjectScheduledTasksPathCandidates,
+} from './productPaths.js'
 import { jsonStringify } from './slowOperations.js'
 
 export type CronTask = {
@@ -72,15 +76,17 @@ export type CronTask = {
 
 type CronFile = { tasks: CronTask[] }
 
-const CRON_FILE_REL = join('.claude', 'scheduled_tasks.json')
-
 /**
  * Path to the cron file. `dir` defaults to getProjectRoot() — pass it
  * explicitly from contexts that don't run through main.tsx (e.g. the Agent
  * SDK daemon, which has no bootstrap state).
  */
 export function getCronFilePath(dir?: string): string {
-  return join(dir ?? getProjectRoot(), CRON_FILE_REL)
+  return getPrimaryProjectScheduledTasksPath(dir ?? getProjectRoot())
+}
+
+export function getCronFilePathCandidates(dir?: string): string[] {
+  return getProjectScheduledTasksPathCandidates(dir ?? getProjectRoot())
 }
 
 /**
@@ -91,14 +97,18 @@ export function getCronFilePath(dir?: string): string {
  */
 export async function readCronTasks(dir?: string): Promise<CronTask[]> {
   const fs = getFsImplementation()
-  let raw: string
-  try {
-    raw = await fs.readFile(getCronFilePath(dir), { encoding: 'utf-8' })
-  } catch (e: unknown) {
-    if (isFsInaccessible(e)) return []
-    logError(e)
-    return []
+  let raw: string | undefined
+  for (const path of getCronFilePathCandidates(dir)) {
+    try {
+      raw = await fs.readFile(path, { encoding: 'utf-8' })
+      break
+    } catch (e: unknown) {
+      if (isFsInaccessible(e)) continue
+      logError(e)
+      return []
+    }
   }
+  if (raw === undefined) return []
 
   const parsed = safeParseJSON(raw, false)
   if (!parsed || typeof parsed !== 'object') return []
@@ -145,13 +155,17 @@ export async function readCronTasks(dir?: string): Promise<CronTask[]> {
  * cronScheduler.start() to decide whether to auto-enable. One file read.
  */
 export function hasCronTasksSync(dir?: string): boolean {
-  let raw: string
-  try {
-    // eslint-disable-next-line custom-rules/no-sync-fs -- called once from cronScheduler.start()
-    raw = readFileSync(getCronFilePath(dir), 'utf-8')
-  } catch {
-    return false
+  let raw: string | undefined
+  for (const path of getCronFilePathCandidates(dir)) {
+    try {
+      // eslint-disable-next-line custom-rules/no-sync-fs -- called once from cronScheduler.start()
+      raw = readFileSync(path, 'utf-8')
+      break
+    } catch {
+      continue
+    }
   }
+  if (raw === undefined) return false
   const parsed = safeParseJSON(raw, false)
   if (!parsed || typeof parsed !== 'object') return false
   const tasks = (parsed as Partial<CronFile>).tasks
@@ -168,7 +182,8 @@ export async function writeCronTasks(
   dir?: string,
 ): Promise<void> {
   const root = dir ?? getProjectRoot()
-  await mkdir(join(root, '.claude'), { recursive: true })
+  const targetPath = getCronFilePath(root)
+  await mkdir(dirname(targetPath), { recursive: true })
   // Strip the runtime-only `durable` flag — everything on disk is durable
   // by definition, and keeping the flag out means readCronTasks() naturally
   // yields durable: undefined without having to set it explicitly.
@@ -176,7 +191,7 @@ export async function writeCronTasks(
     tasks: tasks.map(({ durable: _durable, ...rest }) => rest),
   }
   await writeFile(
-    getCronFilePath(root),
+    targetPath,
     jsonStringify(body, null, 2) + '\n',
     'utf-8',
   )

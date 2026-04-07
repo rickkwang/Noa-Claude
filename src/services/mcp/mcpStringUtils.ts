@@ -17,10 +17,13 @@ import { normalizeNameForMCP } from './normalization.js'
  * instead of server="my__server" and tool="tool". This is rare in practice since server
  * names typically don't contain double underscores.
  */
-export function mcpInfoFromString(toolString: string): {
+export function mcpInfoFromString(toolString: string | null | undefined): {
   serverName: string
   toolName: string | undefined
 } | null {
+  if (typeof toolString !== 'string' || toolString.length === 0) {
+    return null
+  }
   const parts = toolString.split('__')
   const [mcpPart, serverName, ...toolNameParts] = parts
   if (mcpPart !== 'mcp' || !serverName) {

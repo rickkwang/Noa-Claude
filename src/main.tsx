@@ -1806,9 +1806,18 @@ async function run(): Promise<CommanderCommand> {
     // --bare skips auto-discovered MCP (.mcp.json, user settings, plugins) —
     // only explicit --mcp-config works. dynamicMcpConfig is spread onto
     // allMcpConfigs downstream so it survives this skip.
+    const NON_INTERACTIVE_MCP_CONFIG_TIMEOUT_MS = 3000;
     const mcpConfigPromise = (strictMcpConfig || isBareMode() ? Promise.resolve({
       servers: {} as Record<string, ScopedMcpServerConfig>
-    }) : getClaudeCodeMcpConfigs(dynamicMcpConfig)).then(result => {
+    }) : isNonInteractiveSession ? Promise.race([getClaudeCodeMcpConfigs(dynamicMcpConfig), new Promise<{
+      servers: Record<string, ScopedMcpServerConfig>;
+      errors?: unknown[];
+    }>(resolve => setTimeout(() => {
+      logForDebugging(`MCP config auto-discovery exceeded ${NON_INTERACTIVE_MCP_CONFIG_TIMEOUT_MS}ms in non-interactive mode; continuing without auto-loaded MCP servers`);
+      resolve({
+        servers: {}
+      });
+    }, NON_INTERACTIVE_MCP_CONFIG_TIMEOUT_MS))]) : getClaudeCodeMcpConfigs(dynamicMcpConfig)).then(result => {
       mcpConfigResolvedMs = Date.now() - mcpConfigStart;
       return result;
     });
@@ -1858,14 +1867,29 @@ async function run(): Promise<CommanderCommand> {
       process.exit(1);
     }
     const effectivePrompt = prompt || '';
+    logForDebugging('[STARTUP] Resolving input prompt...');
     let inputPrompt = await getInputPrompt(effectivePrompt, (inputFormat ?? 'text') as 'text' | 'stream-json');
+    logForDebugging('[STARTUP] Input prompt resolved');
     profileCheckpoint('action_after_input_prompt');
 
-    // Activate proactive mode BEFORE getTools() so SleepTool.isEnabled()
-    // (which returns isProactiveActive()) passes and Sleep is included.
-    // The later REPL-path maybeActivateProactive() calls are idempotent.
-    maybeActivateProactive(options);
-    let tools = getTools(toolPermissionContext);
+    const explicitBaseTools = parseToolListFromCLI(baseTools);
+    const skipBuiltinTools =
+      isNonInteractiveSession &&
+      process.argv.includes('--tools') &&
+      explicitBaseTools.length === 0;
+    let tools = [];
+    if (skipBuiltinTools) {
+      logForDebugging('[STARTUP] Skipping built-in tool initialization because --tools explicitly disabled all tools');
+    } else {
+      // Activate proactive mode BEFORE getTools() so SleepTool.isEnabled()
+      // (which returns isProactiveActive()) passes and Sleep is included.
+      // The later REPL-path maybeActivateProactive() calls are idempotent.
+      logForDebugging('[STARTUP] Activating proactive mode...');
+      maybeActivateProactive(options);
+      logForDebugging('[STARTUP] Proactive mode activation complete');
+      logForDebugging('[STARTUP] Loading tools...');
+      tools = getTools(toolPermissionContext);
+    }
 
     // Apply coordinator mode tool filtering for headless path
     // (mirrors useMergedTools.ts filtering for REPL/interactive path)
@@ -1875,6 +1899,7 @@ async function run(): Promise<CommanderCommand> {
       } = await import('./utils/toolPool.js');
       tools = applyCoordinatorToolFilter(tools);
     }
+    logForDebugging('[STARTUP] Tools loaded');
     profileCheckpoint('action_tools_loaded');
     let jsonSchema: ToolInputJSONSchema | undefined;
     if (isSyntheticOutputToolEnabled({
@@ -2555,8 +2580,18 @@ async function run(): Promise<CommanderCommand> {
     if (isBareMode()) {
       // skip — no-op
     } else if (isNonInteractiveSession) {
-      // In headless mode, await to ensure plugin sync completes before CLI exits
-      await initializeVersionedPlugins();
+      // Headless sessions should not block indefinitely on plugin bookkeeping.
+      // If migration/sync is slow, continue startup and let a later interactive
+      // session reconcile versioned plugin state.
+      const NON_INTERACTIVE_PLUGIN_INIT_TIMEOUT_MS = 3000;
+      let pluginsInitTimedOut = false;
+      await Promise.race([initializeVersionedPlugins(), new Promise<void>(resolve => setTimeout(() => {
+        pluginsInitTimedOut = true;
+        resolve();
+      }, NON_INTERACTIVE_PLUGIN_INIT_TIMEOUT_MS))]);
+      if (pluginsInitTimedOut) {
+        logForDebugging(`Versioned plugin init exceeded ${NON_INTERACTIVE_PLUGIN_INIT_TIMEOUT_MS}ms in non-interactive mode; continuing startup`);
+      }
       profileCheckpoint('action_after_plugins_init');
       void cleanupOrphanedPluginVersionsInBackground().then(() => getGlobExclusionsForPluginCache());
     } else {

@@ -9,8 +9,9 @@
 // Pattern mirrors computerUseLock.ts: O_EXCL atomic create, PID liveness
 // probe, stale-lock recovery, cleanup-on-exit.
 
+import { statSync } from 'fs'
 import { mkdir, readFile, unlink, writeFile } from 'fs/promises'
-import { dirname, join } from 'path'
+import { dirname } from 'path'
 import { z } from 'zod/v4'
 import { getProjectRoot, getSessionId } from '../bootstrap/state.js'
 import { registerCleanup } from './cleanupRegistry.js'
@@ -19,9 +20,12 @@ import { getErrnoCode } from './errors.js'
 import { isProcessRunning } from './genericProcessUtils.js'
 import { safeParseJSON } from './json.js'
 import { lazySchema } from './lazySchema.js'
+import {
+  getLegacyProjectScheduledTasksPath,
+  getPrimaryProjectScheduledTasksPath,
+  getProjectScheduledTasksLockCandidates,
+} from './productPaths.js'
 import { jsonStringify } from './slowOperations.js'
-
-const LOCK_FILE_REL = join('.claude', 'scheduled_tasks.lock')
 
 const schedulerLockSchema = lazySchema(() =>
   z.object({
@@ -48,7 +52,29 @@ let unregisterCleanup: (() => void) | undefined
 let lastBlockedBy: string | undefined
 
 function getLockPath(dir?: string): string {
-  return join(dir ?? getProjectRoot(), LOCK_FILE_REL)
+  const root = dir ?? getProjectRoot()
+  const candidates = getProjectScheduledTasksLockCandidates(root)
+  return (
+    candidates.find(candidate => {
+      try {
+        statSync(candidate)
+        return true
+      } catch {
+        return false
+      }
+    }) ??
+    (() => {
+      try {
+        statSync(getPrimaryProjectScheduledTasksPath(root))
+        return candidates[0]
+      } catch {}
+      try {
+        statSync(getLegacyProjectScheduledTasksPath(root))
+        return candidates[1] ?? candidates[0]
+      } catch {}
+      return candidates[0]
+    })()
+  )
 }
 
 async function readLock(dir?: string): Promise<SchedulerLock | undefined> {
