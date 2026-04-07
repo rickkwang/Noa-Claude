@@ -228,6 +228,12 @@ function logManagedSettings(): void {
   }
 }
 
+type DiagnosticErrorCode = 'CONFIG_ERROR' | 'AUTH_ERROR' | 'MCP_TIMEOUT' | 'MCP_CONNECT_ERROR' | 'SANDBOX_UNAVAILABLE' | 'RUNTIME_COMPAT_ERROR';
+
+function formatDiagnosticError(code: DiagnosticErrorCode, message: string): string {
+  return `[${code}] ${message}`;
+}
+
 // Check if running in debug/inspection mode
 function isBeingDebugged() {
   const isBun = isRunningWithBun();
@@ -2750,7 +2756,14 @@ async function run(): Promise<CommanderCommand> {
               commands: uniqBy([...prev.mcp.commands, ...commands], 'name')
             }
           }));
-        }, configs).catch(err => logForDebugging(`[MCP] ${label} connect error: ${err}`));
+        }, configs).catch(err => {
+          const summary = formatDiagnosticError(
+            'MCP_CONNECT_ERROR',
+            `${label} MCP connection failed: ${errorMessage(err)}`,
+          );
+          process.stderr.write(`${summary}\n`);
+          logForDebugging(`[MCP] ${label} connect error: ${err}`);
+        });
       };
       // Await all MCP configs — print mode is often single-turn, so
       // "late-connecting servers visible next turn" doesn't help. SDK init
@@ -2798,6 +2811,9 @@ async function run(): Promise<CommanderCommand> {
         ]);
         if (regularConnectTimer) clearTimeout(regularConnectTimer);
         if (regularConnectTimedOut) {
+          process.stderr.write(
+            `${formatDiagnosticError('MCP_TIMEOUT', `regular MCP not ready after ${regularMcpConnectTimeoutMs}ms; continuing startup`) }\n`,
+          );
           logForDebugging(
             `[MCP] regular servers not ready after ${regularMcpConnectTimeoutMs}ms — proceeding; background connection continues`,
           );
@@ -2882,6 +2898,9 @@ async function run(): Promise<CommanderCommand> {
       })]);
       if (claudeaiTimer) clearTimeout(claudeaiTimer);
       if (claudeaiTimedOut) {
+        process.stderr.write(
+          `${formatDiagnosticError('MCP_TIMEOUT', `claude.ai MCP connectors not ready after ${CLAUDE_AI_MCP_TIMEOUT_MS}ms; continuing startup`) }\n`,
+        );
         logForDebugging(`[MCP] claude.ai connectors not ready after ${CLAUDE_AI_MCP_TIMEOUT_MS}ms — proceeding; background connection continues`);
       }
       profileCheckpoint('after_connectMcp_claudeai');

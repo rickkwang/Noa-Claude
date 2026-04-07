@@ -13,6 +13,7 @@
     "build": "bun run build.ts",
     "dev": "bun ./dev-launcher.js",
     "check:runtime": "bun ./scripts/check-runtime-health.mjs",
+    "smoke:perf": "bun ./scripts/smoke-perf.mjs",
     "smoke:engine": "bun ./scripts/smoke-engineering.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx"

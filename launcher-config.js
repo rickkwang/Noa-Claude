@@ -2,6 +2,19 @@ import { homedir } from 'os';
 import { join } from 'path';
 import { mkdirSync, readFileSync } from 'fs';
 
+export const DIAGNOSTIC_ERROR_CODES = {
+  CONFIG_ERROR: 'CONFIG_ERROR',
+  AUTH_ERROR: 'AUTH_ERROR',
+  MCP_TIMEOUT: 'MCP_TIMEOUT',
+  MCP_CONNECT_ERROR: 'MCP_CONNECT_ERROR',
+  SANDBOX_UNAVAILABLE: 'SANDBOX_UNAVAILABLE',
+  RUNTIME_COMPAT_ERROR: 'RUNTIME_COMPAT_ERROR',
+};
+
+export function formatDiagnosticError(code, message) {
+  return `[${code}] ${message}`;
+}
+
 export const PRODUCT_NAMESPACE =
   process.env.CLAUDE_CODE_PRODUCT_NAMESPACE ?? 'claude-agent';
 
@@ -48,7 +61,10 @@ function safeReadSettingsFile() {
       return {};
     }
     throw new Error(
-      `Invalid product settings at ${PRODUCT_SETTINGS_PATH}: ${error?.message ?? error}`,
+      formatDiagnosticError(
+        DIAGNOSTIC_ERROR_CODES.CONFIG_ERROR,
+        `Invalid product settings at ${PRODUCT_SETTINGS_PATH}: ${error?.message ?? error}`,
+      ),
     );
   }
 }
@@ -104,25 +120,37 @@ export function validateLauncherConfiguration(argv = process.argv) {
     new URL(apiBaseUrl);
   } catch (error) {
     throw new Error(
-      `Invalid ANTHROPIC_BASE_URL in ${PRODUCT_SETTINGS_PATH}: ${error?.message ?? error}`,
+      formatDiagnosticError(
+        DIAGNOSTIC_ERROR_CODES.CONFIG_ERROR,
+        `Invalid ANTHROPIC_BASE_URL in ${PRODUCT_SETTINGS_PATH}: ${error?.message ?? error}`,
+      ),
     );
   }
 
   if (apiKey?.includes('<SECRET_TOKEN_PLACEHOLDER>')) {
     throw new Error(
-      `ANTHROPIC_API_KEY in ${PRODUCT_SETTINGS_PATH} still contains a placeholder value`,
+      formatDiagnosticError(
+        DIAGNOSTIC_ERROR_CODES.CONFIG_ERROR,
+        `ANTHROPIC_API_KEY in ${PRODUCT_SETTINGS_PATH} still contains a placeholder value`,
+      ),
     );
   }
 
   if (authToken?.includes('<SECRET_TOKEN_PLACEHOLDER>')) {
     throw new Error(
-      `ANTHROPIC_AUTH_TOKEN in ${PRODUCT_SETTINGS_PATH} still contains a placeholder value`,
+      formatDiagnosticError(
+        DIAGNOSTIC_ERROR_CODES.CONFIG_ERROR,
+        `ANTHROPIC_AUTH_TOKEN in ${PRODUCT_SETTINGS_PATH} still contains a placeholder value`,
+      ),
     );
   }
 
   if (!isInfoOnly && isNonInteractive && !apiKey && !authToken) {
     throw new Error(
-      `Missing MiniMax credentials. Set env.ANTHROPIC_API_KEY or env.ANTHROPIC_AUTH_TOKEN in ${PRODUCT_SETTINGS_PATH}`,
+      formatDiagnosticError(
+        DIAGNOSTIC_ERROR_CODES.AUTH_ERROR,
+        `Missing API credentials. Set env.ANTHROPIC_API_KEY or env.ANTHROPIC_AUTH_TOKEN in ${PRODUCT_SETTINGS_PATH}`,
+      ),
     );
   }
 }

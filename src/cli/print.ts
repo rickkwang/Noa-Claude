@@ -408,6 +408,18 @@ function toBlocks(v: PromptValue): ContentBlockParam[] {
   return typeof v === 'string' ? [{ type: 'text', text: v }] : v
 }
 
+type DiagnosticErrorCode =
+  | 'CONFIG_ERROR'
+  | 'AUTH_ERROR'
+  | 'MCP_TIMEOUT'
+  | 'MCP_CONNECT_ERROR'
+  | 'SANDBOX_UNAVAILABLE'
+  | 'RUNTIME_COMPAT_ERROR'
+
+function formatDiagnosticError(code: DiagnosticErrorCode, message: string): string {
+  return `[${code}] ${message}`
+}
+
 /**
  * Join prompt values from multiple queued commands into one. Strings are
  * newline-joined; if any value is a block array, all values are normalized
@@ -588,14 +600,14 @@ export async function runHeadless(
   if (sandboxUnavailableReason) {
     if (SandboxManager.isSandboxRequired()) {
       process.stderr.write(
-        `\nError: sandbox required but unavailable: ${sandboxUnavailableReason}\n` +
+        `\n${formatDiagnosticError('SANDBOX_UNAVAILABLE', `sandbox required but unavailable: ${sandboxUnavailableReason}`)}\n` +
           `  sandbox.failIfUnavailable is set — refusing to start without a working sandbox.\n\n`,
       )
       gracefulShutdownSync(1)
       return
     }
     process.stderr.write(
-      `\n⚠ Sandbox disabled: ${sandboxUnavailableReason}\n` +
+      `\n${formatDiagnosticError('SANDBOX_UNAVAILABLE', `sandbox disabled: ${sandboxUnavailableReason}`)}\n` +
         `  Commands will run WITHOUT sandboxing. Network and filesystem restrictions will NOT be enforced.\n\n`,
     )
   } else if (SandboxManager.isSandboxingEnabled()) {
@@ -605,7 +617,9 @@ export async function runHeadless(
     try {
       await SandboxManager.initialize(structuredIO.createSandboxAskCallback())
     } catch (err) {
-      process.stderr.write(`\n❌ Sandbox Error: ${errorMessage(err)}\n`)
+      process.stderr.write(
+        `\n${formatDiagnosticError('RUNTIME_COMPAT_ERROR', `sandbox initialization failed: ${errorMessage(err)}`)}\n`,
+      )
       gracefulShutdownSync(1, 'other')
       return
     }

@@ -215,6 +215,7 @@ function checkLauncherFailurePaths() {
     });
     assert(
       invalidBase.status !== 0 &&
+        `${invalidBase.stderr}${invalidBase.stdout}`.includes('[CONFIG_ERROR]') &&
         `${invalidBase.stderr}${invalidBase.stdout}`.includes('Invalid ANTHROPIC_BASE_URL'),
       'Invalid base URL should fail before startup',
       invalidBase.stderr || invalidBase.stdout,
@@ -236,7 +237,8 @@ function checkLauncherFailurePaths() {
     });
     assert(
       missingToken.status !== 0 &&
-        `${missingToken.stderr}${missingToken.stdout}`.includes('Missing MiniMax credentials'),
+        `${missingToken.stderr}${missingToken.stdout}`.includes('[AUTH_ERROR]') &&
+        `${missingToken.stderr}${missingToken.stdout}`.includes('Missing API credentials'),
       'Missing token should fail with a clear launcher error',
       missingToken.stderr || missingToken.stdout,
     );
@@ -260,7 +262,8 @@ function checkLauncherFailurePaths() {
     });
     assert(
       oauthFallback.status !== 0 &&
-        `${oauthFallback.stderr}${oauthFallback.stdout}`.includes('Missing MiniMax credentials'),
+        `${oauthFallback.stderr}${oauthFallback.stdout}`.includes('[AUTH_ERROR]') &&
+        `${oauthFallback.stderr}${oauthFallback.stdout}`.includes('Missing API credentials'),
       'Third-party MiniMax path must not fall back to Claude OAuth credentials',
       oauthFallback.stderr || oauthFallback.stdout,
     );

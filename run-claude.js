@@ -2,12 +2,26 @@
 
 import {
   applyLauncherDefaults,
+  DIAGNOSTIC_ERROR_CODES,
+  formatDiagnosticError,
   LAUNCHER_MACRO,
   validateLauncherConfiguration,
 } from './launcher-config.js';
 
-applyLauncherDefaults();
-validateLauncherConfiguration(process.argv);
+function printAndExit(code, message) {
+  console.error(formatDiagnosticError(code, message));
+  process.exit(1);
+}
+
+try {
+  applyLauncherDefaults();
+  validateLauncherConfiguration(process.argv);
+} catch (error) {
+  printAndExit(
+    DIAGNOSTIC_ERROR_CODES.CONFIG_ERROR,
+    error?.message ?? String(error),
+  );
+}
 
 function getFlagValue(argv, flagNames) {
   const args = argv.slice(2);
@@ -31,11 +45,10 @@ if (cwdOverride) {
   try {
     process.chdir(cwdOverride);
   } catch (error) {
-    console.error(
-      `Error: unable to change directory to ${cwdOverride}:`,
-      error?.message ?? error,
+    printAndExit(
+      DIAGNOSTIC_ERROR_CODES.CONFIG_ERROR,
+      `unable to change directory to ${cwdOverride}: ${error?.message ?? error}`,
     );
-    process.exit(1);
   }
 }
 
@@ -72,5 +85,8 @@ try {
     });
   }
 } catch (e) {
-  console.error('Error during import or main():', e.message, e.stack);
+  printAndExit(
+    DIAGNOSTIC_ERROR_CODES.RUNTIME_COMPAT_ERROR,
+    `Error during import or main(): ${e?.message ?? e}`,
+  );
 }
