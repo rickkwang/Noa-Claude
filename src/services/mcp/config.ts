@@ -58,7 +58,7 @@ import {
 } from './types.js'
 import { getProjectMcpServerStatus } from './utils.js'
 
-const NON_INTERACTIVE_PLUGIN_MCP_TIMEOUT_MS = 3000
+const NON_INTERACTIVE_PLUGIN_MCP_TIMEOUT_MS = 1200
 
 async function loadPluginMcpCandidates(): Promise<PluginLoadResult> {
   if (!getIsNonInteractiveSession()) {

@@ -13,6 +13,11 @@ const EXPECTED_TIMEOUTS = {
   explicit: 2500,
 };
 
+const MAX_FALLBACK_WALL_MS = {
+  auto: 1200,
+  explicit: 2800,
+};
+
 function fail(message, details) {
   if (details) {
     console.error(message, details);
@@ -73,7 +78,14 @@ function writeHangMcpConfig(filePath, serverName) {
   writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
 }
 
-function runScenario({ name, cwd, args, serverName, expectedTimeoutMs }) {
+function runScenario({
+  name,
+  cwd,
+  args,
+  serverName,
+  expectedTimeoutMs,
+  maxFallbackWallMs,
+}) {
   const debugLogPath = join(cwd, `${name}-debug.log`);
   const startWall = Date.now();
   const result = spawnSync(
@@ -105,7 +117,7 @@ function runScenario({ name, cwd, args, serverName, expectedTimeoutMs }) {
   );
   assert(
     typeof parsed.fallbackWallMs === 'number' &&
-      parsed.fallbackWallMs <= expectedTimeoutMs + 800,
+      parsed.fallbackWallMs <= maxFallbackWallMs,
     `Fallback took too long in ${name} scenario`,
     parsed,
   );
@@ -116,6 +128,7 @@ function runScenario({ name, cwd, args, serverName, expectedTimeoutMs }) {
     didTriggerFallback: Boolean(parsed.timeoutLine),
     configuredTimeoutMs: parsed.configuredTimeoutMs,
     fallbackWallMs: parsed.fallbackWallMs,
+    maxFallbackWallMs,
   };
 }
 
@@ -136,6 +149,7 @@ try {
     args: [],
     serverName: 'hang-auto',
     expectedTimeoutMs: EXPECTED_TIMEOUTS.auto,
+    maxFallbackWallMs: MAX_FALLBACK_WALL_MS.auto,
   });
 
   const explicitMetrics = runScenario({
@@ -144,6 +158,7 @@ try {
     args: ['--mcp-config', explicitMcpFile],
     serverName: 'hang-explicit',
     expectedTimeoutMs: EXPECTED_TIMEOUTS.explicit,
+    maxFallbackWallMs: MAX_FALLBACK_WALL_MS.explicit,
   });
 
   console.log(JSON.stringify(autoMetrics));

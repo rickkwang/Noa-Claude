@@ -1812,7 +1812,7 @@ async function run(): Promise<CommanderCommand> {
     // --bare skips auto-discovered MCP (.mcp.json, user settings, plugins) —
     // only explicit --mcp-config works. dynamicMcpConfig is spread onto
     // allMcpConfigs downstream so it survives this skip.
-    const NON_INTERACTIVE_MCP_CONFIG_TIMEOUT_MS = 3000;
+    const NON_INTERACTIVE_MCP_CONFIG_TIMEOUT_MS = 1200;
     const mcpConfigPromise = (strictMcpConfig || isBareMode() ? Promise.resolve({
       servers: {} as Record<string, ScopedMcpServerConfig>
     }) : isNonInteractiveSession ? Promise.race([getClaudeCodeMcpConfigs(dynamicMcpConfig), new Promise<{
@@ -2589,12 +2589,14 @@ async function run(): Promise<CommanderCommand> {
       // Headless sessions should not block indefinitely on plugin bookkeeping.
       // If migration/sync is slow, continue startup and let a later interactive
       // session reconcile versioned plugin state.
-      const NON_INTERACTIVE_PLUGIN_INIT_TIMEOUT_MS = 3000;
+      const NON_INTERACTIVE_PLUGIN_INIT_TIMEOUT_MS = 1200;
+      const pluginsInitStartMs = Date.now();
       let pluginsInitTimedOut = false;
       await Promise.race([initializeVersionedPlugins(), new Promise<void>(resolve => setTimeout(() => {
         pluginsInitTimedOut = true;
         resolve();
       }, NON_INTERACTIVE_PLUGIN_INIT_TIMEOUT_MS))]);
+      logForDebugging(`[STARTUP][PERF] non-interactive plugin init wait ${Date.now() - pluginsInitStartMs}ms`);
       if (pluginsInitTimedOut) {
         logForDebugging(`Versioned plugin init exceeded ${NON_INTERACTIVE_PLUGIN_INIT_TIMEOUT_MS}ms in non-interactive mode; continuing startup`);
       }
@@ -3498,7 +3500,9 @@ async function run(): Promise<CommanderCommand> {
       // --remote and --teleport both create/resume Claude Code Web (CCR) sessions.
       // Remote Control (--rc) is a separate feature gated in initReplBridge.ts.
       if (remote !== null || teleport) {
+        const policyLimitsWaitStartMs = Date.now();
         await waitForPolicyLimitsToLoad();
+        logForDebugging(`[STARTUP][PERF] policy limits readiness wait ${Date.now() - policyLimitsWaitStartMs}ms`);
         if (!isPolicyAllowed('allow_remote_sessions')) {
           return await exitWithError(root, "Error: Remote sessions are disabled by your organization's policy.", () => gracefulShutdown(1));
         }

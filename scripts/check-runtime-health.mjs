@@ -48,6 +48,12 @@ function assert(condition, message, details) {
   }
 }
 
+function parseIsoMs(line) {
+  const match = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)/);
+  if (!match) return undefined;
+  return Date.parse(match[1]);
+}
+
 function runAgent(args, options = {}) {
   return spawnSync(agentBin, args, {
     cwd: repoRoot,
@@ -337,6 +343,32 @@ function checkNonInteractiveMcpTimeoutFallback() {
       ),
       'Missing regular MCP timeout fallback log in non-interactive mode',
       debugLog,
+    );
+
+    const debugLines = debugLog.split('\n').filter(Boolean);
+    const startLine = debugLines.find(line =>
+      line.includes('MCP server "hang_stdio": Starting connection'),
+    );
+    const fallbackLine = debugLines.find(line =>
+      line.includes('regular servers not ready after 400ms'),
+    );
+    assert(
+      Boolean(startLine) && Boolean(fallbackLine),
+      'Unable to parse MCP timeout fallback timing lines',
+      { startLine, fallbackLine },
+    );
+    const startMs = startLine ? parseIsoMs(startLine) : undefined;
+    const fallbackMs = fallbackLine ? parseIsoMs(fallbackLine) : undefined;
+    assert(
+      startMs !== undefined && fallbackMs !== undefined,
+      'Unable to parse MCP timeout fallback timestamps',
+      { startLine, fallbackLine },
+    );
+    const fallbackWallMs = fallbackMs - startMs;
+    assert(
+      fallbackWallMs <= 700,
+      'MCP timeout fallback exceeded runtime health SLO',
+      { fallbackWallMs },
     );
   } finally {
     rmSync(runtimeDir, { recursive: true, force: true });
