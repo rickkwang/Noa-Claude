@@ -24,19 +24,28 @@ The current product baseline includes:
 npm install
 ```
 
-2. Build the CLI:
+2. Make the command available in your shell:
+
+If you want to type `claude-agent` directly instead of running `./bin/claude-agent.js`, add the repository's `bin/` directory to your `PATH`, or create a local symlink in a directory that is already on your `PATH`:
+
+```bash
+ln -sf /Users/myrickwang/Desktop/Coding/Claude/bin/claude-agent.js ~/.local/bin/claude-agent
+ln -sf /Users/myrickwang/Desktop/Coding/Claude/bin/claude-code.js ~/.local/bin/claude-code
+```
+
+3. Build the CLI:
 
 ```bash
 bun run build
 ```
 
-3. Start the assistant:
+4. Start the assistant:
 
 ```bash
 ./bin/claude-agent.js
 ```
 
-4. Check the version:
+5. Check the version:
 
 ```bash
 ./bin/claude-agent.js --version
