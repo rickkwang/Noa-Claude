@@ -2,14 +2,11 @@ import type { Command } from '../../types/command.js'
 
 const workflows = {
   name: 'workflows',
-  description: 'Manage workflows',
+  description: 'Manage local reusable workflows',
   type: 'local-jsx' as const,
-  isHidden: true,
-  load: async () => ({
-    call: async () => {
-      throw new Error('Workflows feature is not available in this build')
-    },
-  }),
+  argumentHint: 'list | create <name> :: <step1> ;; <step2> | run <name> [k=v] | delete <name>',
+  isHidden: false,
+  load: () => import('./workflows.js'),
 } satisfies Command
 
 export default workflows

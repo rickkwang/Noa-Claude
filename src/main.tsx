@@ -2799,6 +2799,7 @@ async function run(): Promise<CommanderCommand> {
         shouldAllowRegularMcpBackgroundFallback &&
         Object.keys(regularMcpConfigs).length > 0
       ) {
+        const regularConnectWaitStartMs = Date.now();
         let regularConnectTimer: ReturnType<typeof setTimeout> | undefined;
         const regularConnectPromise = connectMcpBatch(regularMcpConfigs, 'regular');
         const regularConnectTimedOut = await Promise.race([
@@ -2812,6 +2813,9 @@ async function run(): Promise<CommanderCommand> {
           }),
         ]);
         if (regularConnectTimer) clearTimeout(regularConnectTimer);
+        logForDebugging(
+          `[STARTUP][PERF] regular MCP wait ${Date.now() - regularConnectWaitStartMs}ms (timedOut=${regularConnectTimedOut})`,
+        );
         if (regularConnectTimedOut) {
           process.stderr.write(
             `${formatDiagnosticError('MCP_TIMEOUT', `regular MCP not ready after ${regularMcpConnectTimeoutMs}ms; continuing startup`) }\n`,
@@ -2831,7 +2835,15 @@ async function run(): Promise<CommanderCommand> {
       // climbed to 76s. If fetch+connect doesn't finish in time, proceed;
       // the promise keeps running and updates headlessStore in the
       // background so turn 2+ still sees connectors.
-      const CLAUDE_AI_MCP_TIMEOUT_MS = 5_000;
+      const DEFAULT_CLAUDE_AI_MCP_TIMEOUT_MS = 2_800;
+      const configuredClaudeAiMcpTimeoutMs = parseInt(
+        process.env.CLAUDE_CODE_CLAUDEAI_MCP_CONNECT_TIMEOUT_MS || '',
+        10,
+      );
+      const claudeAiMcpTimeoutMs =
+        configuredClaudeAiMcpTimeoutMs > 0
+          ? configuredClaudeAiMcpTimeoutMs
+          : DEFAULT_CLAUDE_AI_MCP_TIMEOUT_MS;
       const claudeaiConnect = claudeaiConfigPromise.then(claudeaiConfigs => {
         if (Object.keys(claudeaiConfigs).length > 0) {
           const claudeaiSigs = new Set<string>();
@@ -2894,16 +2906,20 @@ async function run(): Promise<CommanderCommand> {
         } = dedupClaudeAiMcpServers(claudeaiConfigs, nonPluginConfigs);
         return connectMcpBatch(dedupedClaudeAi, 'claudeai');
       });
+      const claudeAiConnectWaitStartMs = Date.now();
       let claudeaiTimer: ReturnType<typeof setTimeout> | undefined;
       const claudeaiTimedOut = await Promise.race([claudeaiConnect.then(() => false), new Promise<boolean>(resolve => {
-        claudeaiTimer = setTimeout(r => r(true), CLAUDE_AI_MCP_TIMEOUT_MS, resolve);
+        claudeaiTimer = setTimeout(r => r(true), claudeAiMcpTimeoutMs, resolve);
       })]);
       if (claudeaiTimer) clearTimeout(claudeaiTimer);
+      logForDebugging(
+        `[STARTUP][PERF] claude.ai MCP wait ${Date.now() - claudeAiConnectWaitStartMs}ms (timedOut=${claudeaiTimedOut})`,
+      );
       if (claudeaiTimedOut) {
         process.stderr.write(
-          `${formatDiagnosticError('MCP_TIMEOUT', `claude.ai MCP connectors not ready after ${CLAUDE_AI_MCP_TIMEOUT_MS}ms; continuing startup`) }\n`,
+          `${formatDiagnosticError('MCP_TIMEOUT', `claude.ai MCP connectors not ready after ${claudeAiMcpTimeoutMs}ms; continuing startup`) }\n`,
         );
-        logForDebugging(`[MCP] claude.ai connectors not ready after ${CLAUDE_AI_MCP_TIMEOUT_MS}ms — proceeding; background connection continues`);
+        logForDebugging(`[MCP] claude.ai connectors not ready after ${claudeAiMcpTimeoutMs}ms — proceeding; background connection continues`);
       }
       profileCheckpoint('after_connectMcp_claudeai');
 

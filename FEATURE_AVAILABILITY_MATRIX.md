@@ -1,6 +1,6 @@
 # Feature Availability Matrix
 
-Last updated: 2026-04-07
+Last updated: 2026-04-08
 
 ## Scope
 - This matrix reflects the current repository build/runtime behavior.
@@ -27,13 +27,19 @@ Last updated: 2026-04-07
 | `/thinkback-play` | Hidden-Internal | Internal helper for thinkback flow; gated + plugin-dependent. |
 | `/rate-limit-options` | Hidden-Internal | Internal flow, subscriber-oriented and UI-triggered. |
 
+## Slash Commands: Product-Available
+| Command | Status | Notes |
+|---|---|---|
+| `/fork` | Available | Creates a resumable fork of the current conversation. |
+| `/workflows` | Available | Supports local `list/create/run/delete` and project workflow discovery. |
+| `/summary` | Available | Produces structured short or detailed session summaries. |
+| `/share` | Available | Exports local session share snapshots under `.claude-agent/shares`. |
+
 ## Slash Commands: Build-Excluded (Hard Fail in This Build)
 | Command | Status |
 |---|---|
 | `/assistant` | Build-Excluded |
-| `/workflows` | Build-Excluded |
 | `/proactive` | Build-Excluded |
-| `/fork` | Build-Excluded |
 | `/peers` | Build-Excluded |
 | `/agents-platform` | Build-Excluded |
 | `/remoteControlServer` | Build-Excluded |
@@ -41,11 +47,9 @@ Last updated: 2026-04-07
 | `/force-snip` | Build-Excluded |
 | `/subscribe-pr` | Build-Excluded |
 
-## Slash Commands: Stub Placeholders
+## Slash Commands: Internal or Placeholder Surfaces
 | Command | Status |
 |---|---|
-| `/share` | Stub |
-| `/summary` | Stub |
 | `/onboarding` | Stub |
 | `/autofix-pr` | Stub |
 | `/bughunter` | Stub |
@@ -77,9 +81,9 @@ Last updated: 2026-04-07
 
 ## Engineering Interpretation
 - Current product is operational for primary usage: interactive coding and non-interactive `--print`.
+- `/fork`, `/workflows`, `/summary`, and `/share` are now part of the supported product baseline and are covered by dedicated non-live smoke checks.
 - Excluded/stub commands are not a runtime defect; they are deliberate build-scope or placeholder surfaces.
 - For roadmap prioritization, treat these categories differently:
   - `Build-Excluded`: requires feature delivery, not a simple toggle.
   - `Stub`: requires net-new implementation.
   - `Hidden-Internal`: selectively expose only when user-facing value is real and stable.
-

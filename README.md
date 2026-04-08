@@ -52,6 +52,7 @@ Notes:
 - Non-interactive calls (`--print`) require valid API credentials.
 - Third-party backend failures are designed to fail explicitly; no silent fallback to official OAuth flow.
 - `CLAUDE_CODE_REGULAR_MCP_CONNECT_TIMEOUT_MS` can override the non-interactive regular MCP connect timeout.
+- `CLAUDE_CODE_CLAUDEAI_MCP_CONNECT_TIMEOUT_MS` can override the non-interactive claude.ai MCP connect timeout.
 
 ## Verification Baseline
 Use these as minimum engineering gates:
@@ -59,6 +60,7 @@ Use these as minimum engineering gates:
 bun run build
 npm run typecheck -- --pretty false
 npm run check:runtime
+npm run smoke:features
 npm run smoke:perf
 npm run smoke:engine
 ```
@@ -66,6 +68,12 @@ npm run smoke:engine
 ## Runtime/Command Availability
 For command/runtime capability matrix (Available / Hidden-Internal / Build-Excluded / Stub), see:
 - [FEATURE_AVAILABILITY_MATRIX.md](/Users/myrickwang/Desktop/Coding/Claude/FEATURE_AVAILABILITY_MATRIX.md)
+
+User-facing completion in the current product baseline includes:
+- `/fork`
+- `/workflows`
+- `/summary`
+- `/share`
 
 ## Legal and Attribution Notice
 - This repository is an independent/private derivative engineering project.

@@ -173,6 +173,64 @@ async function createFork(customTitle?: string): Promise<{
   }
 }
 
+export type ConversationForkResult = {
+  sessionId: UUID
+  originalSessionId: string
+  title: string | undefined
+  effectiveTitle: string
+  forkPath: string
+  serializedMessages: SerializedMessage[]
+  contentReplacementRecords: ContentReplacementEntry['replacements']
+  forkLog: LogOption
+}
+
+export async function createConversationFork(
+  customTitle?: string,
+): Promise<ConversationForkResult> {
+  const originalSessionId = getSessionId()
+  const {
+    sessionId,
+    title,
+    forkPath,
+    serializedMessages,
+    contentReplacementRecords,
+  } = await createFork(customTitle)
+
+  const now = new Date()
+  const firstPrompt = deriveFirstPrompt(
+    serializedMessages.find(m => m.type === 'user'),
+  )
+  const baseName = title ?? firstPrompt
+  const effectiveTitle = await getUniqueForkName(baseName)
+  await saveCustomTitle(sessionId, effectiveTitle, forkPath)
+
+  const forkLog: LogOption = {
+    date: now.toISOString().split('T')[0]!,
+    messages: serializedMessages,
+    fullPath: forkPath,
+    value: now.getTime(),
+    created: now,
+    modified: now,
+    firstPrompt,
+    messageCount: serializedMessages.length,
+    isSidechain: false,
+    sessionId,
+    customTitle: effectiveTitle,
+    contentReplacements: contentReplacementRecords,
+  }
+
+  return {
+    sessionId,
+    originalSessionId,
+    title,
+    effectiveTitle,
+    forkPath,
+    serializedMessages,
+    contentReplacementRecords,
+    forkLog,
+  }
+}
+
 /**
  * Generates a unique fork name by checking for collisions with existing session names.
  * If "baseName (Branch)" already exists, tries "baseName (Branch 2)", "baseName (Branch 3)", etc.
@@ -227,50 +285,19 @@ export async function call(
 ): Promise<React.ReactNode> {
   const customTitle = args?.trim() || undefined
 
-  const originalSessionId = getSessionId()
-
   try {
     const {
       sessionId,
       title,
-      forkPath,
+      originalSessionId,
       serializedMessages,
-      contentReplacementRecords,
-    } = await createFork(customTitle)
-
-    // Build LogOption for resume
-    const now = new Date()
-    const firstPrompt = deriveFirstPrompt(
-      serializedMessages.find(m => m.type === 'user'),
-    )
-
-    // Save custom title - use provided title or firstPrompt as default
-    // This ensures /status and /resume show the same session name
-    // Always add " (Branch)" suffix to make it clear this is a branched session
-    // Handle collisions by adding a number suffix (e.g., " (Branch 2)", " (Branch 3)")
-    const baseName = title ?? firstPrompt
-    const effectiveTitle = await getUniqueForkName(baseName)
-    await saveCustomTitle(sessionId, effectiveTitle, forkPath)
+      forkLog,
+    } = await createConversationFork(customTitle)
 
     logEvent('tengu_conversation_forked', {
       message_count: serializedMessages.length,
       has_custom_title: !!title,
     })
-
-    const forkLog: LogOption = {
-      date: now.toISOString().split('T')[0]!,
-      messages: serializedMessages,
-      fullPath: forkPath,
-      value: now.getTime(),
-      created: now,
-      modified: now,
-      firstPrompt,
-      messageCount: serializedMessages.length,
-      isSidechain: false,
-      sessionId,
-      customTitle: effectiveTitle,
-      contentReplacements: contentReplacementRecords,
-    }
 
     // Resume into the fork
     const titleInfo = title ? ` "${title}"` : ''

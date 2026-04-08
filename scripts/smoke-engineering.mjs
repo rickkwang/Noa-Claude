@@ -127,6 +127,9 @@ assertInteractiveStartupStaysAlive();
 console.log('Checking runtime health...');
 runCommand('bun', ['./scripts/check-runtime-health.mjs']);
 
+console.log('Checking feature smoke...');
+runCommand('bun', ['./scripts/smoke-features.mjs']);
+
 console.log('Checking startup performance fallback...');
 runCommand('bun', ['./scripts/smoke-perf.mjs']);
 

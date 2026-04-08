@@ -2,14 +2,12 @@ import type { Command } from '../../types/command.js'
 
 const fork = {
   name: 'fork',
-  description: 'Fork a sub-agent session',
-  type: 'local-jsx' as const,
-  isHidden: true,
-  load: async () => ({
-    call: async () => {
-      throw new Error('Fork feature is not available in this build')
-    },
-  }),
+  description: 'Fork the current conversation and return a resumable session ID',
+  type: 'local' as const,
+  argumentHint: '[name]',
+  isHidden: false,
+  supportsNonInteractive: true,
+  load: () => import('./fork.js'),
 } satisfies Command
 
 export default fork
