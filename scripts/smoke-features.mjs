@@ -54,6 +54,7 @@ const workflowShared = await import('../src/commands/workflows/shared.ts');
 const forkCommand = await import('../src/commands/fork/fork.ts');
 const summaryCommand = await import('../src/commands/summary/summary.ts');
 const shareCommand = await import('../src/commands/share/share.ts');
+const mcpConfig = await import('../src/services/mcp/config.ts');
 const productPaths = await import('../src/utils/productPaths.ts');
 
 function prepareProject(projectDir) {
@@ -272,11 +273,79 @@ async function runShareSmoke() {
   );
 }
 
+async function runMcpPathSmoke() {
+  const projectDir = join(tempRoot, 'mcp-project');
+  prepareProject(projectDir);
+
+  const primaryMcpPath = productPaths.getPrimaryProjectMcpPath(projectDir);
+  const legacyMcpPath = productPaths.getLegacyProjectMcpPath(projectDir);
+  mkdirSync(dirname(primaryMcpPath), { recursive: true });
+  mkdirSync(dirname(legacyMcpPath), { recursive: true });
+
+  writeFileSync(
+    legacyMcpPath,
+    `${JSON.stringify(
+      {
+        mcpServers: {
+          legacy: {
+            command: 'legacy-mcp',
+          },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+
+  writeFileSync(
+    primaryMcpPath,
+    `${JSON.stringify(
+      {
+        mcpServers: {
+          product: {
+            command: 'product-mcp',
+          },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+
+  const withProduct = mcpConfig.getProjectMcpConfigsFromCwd();
+  assert(
+    withProduct.configPath === primaryMcpPath,
+    'Project MCP loader did not prefer the product path',
+    withProduct,
+  );
+  assert(
+    withProduct.servers.product,
+    'Project MCP loader did not load product-configured server',
+    withProduct,
+  );
+
+  rmSync(primaryMcpPath);
+  const withLegacy = mcpConfig.getProjectMcpConfigsFromCwd();
+  assert(
+    withLegacy.configPath === legacyMcpPath,
+    'Project MCP loader did not fall back to the legacy path',
+    withLegacy,
+  );
+  assert(
+    withLegacy.servers.legacy,
+    'Project MCP loader did not load legacy-configured server',
+    withLegacy,
+  );
+}
+
 try {
   await runForkSmoke();
   await runWorkflowSmoke();
   await runSummarySmoke();
   await runShareSmoke();
+  await runMcpPathSmoke();
   console.log('Feature smoke checks passed.');
 } finally {
   rmSync(tempRoot, { recursive: true, force: true });

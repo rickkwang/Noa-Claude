@@ -135,10 +135,11 @@ function runScenario({
 const workdir = mkdtempSync(join(tmpdir(), 'claude-agent-smoke-perf-'));
 try {
   const autoProjectDir = join(workdir, 'auto-project');
-  const autoMcpFile = join(autoProjectDir, '.mcp.json');
+  const autoMcpFile = join(autoProjectDir, '.claude-agent', 'mcp.json');
   const explicitMcpFile = join(workdir, 'explicit-mcp.json');
 
   mkdirSync(autoProjectDir, { recursive: true });
+  mkdirSync(join(autoProjectDir, '.claude-agent'), { recursive: true });
 
   writeHangMcpConfig(autoMcpFile, 'hang-auto');
   writeHangMcpConfig(explicitMcpFile, 'hang-explicit');

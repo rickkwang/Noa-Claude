@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { feature } from 'bun:bundle'
-import { chmod, open, rename, stat, unlink } from 'fs/promises'
+import { existsSync } from 'fs'
+import { chmod, mkdir, open, rename, stat, unlink } from 'fs/promises'
 import mapValues from 'lodash-es/mapValues.js'
 import memoize from 'lodash-es/memoize.js'
 import { dirname, join, parse } from 'path'
@@ -57,8 +58,21 @@ import {
   type ScopedMcpServerConfig,
 } from './types.js'
 import { getProjectMcpServerStatus } from './utils.js'
+import {
+  getPrimaryProjectMcpPath,
+  getProjectMcpPathCandidates,
+} from '../../utils/productPaths.js'
 
 const NON_INTERACTIVE_PLUGIN_MCP_TIMEOUT_MS = 1200
+
+function getExistingProjectMcpPath(cwd: string): string | null {
+  for (const path of getProjectMcpPathCandidates(cwd)) {
+    if (existsSync(path)) {
+      return path
+    }
+  }
+  return null
+}
 
 async function loadPluginMcpCandidates(): Promise<PluginLoadResult> {
   if (!getIsNonInteractiveSession()) {
@@ -120,7 +134,8 @@ function addScopeToServers(
  * Uses the original path for rename (does not follow symlinks).
  */
 async function writeMcpjsonFile(config: McpJsonConfig): Promise<void> {
-  const mcpJsonPath = join(getCwd(), '.mcp.json')
+  const mcpJsonPath = getPrimaryProjectMcpPath(getCwd())
+  await mkdir(dirname(mcpJsonPath), { recursive: true })
 
   // Read existing file permissions to preserve them
   let existingMode: number | undefined
@@ -715,9 +730,11 @@ export async function addMcpConfig(
   // Check if server already exists in the target scope
   switch (scope) {
     case 'project': {
-      const { servers } = getProjectMcpConfigsFromCwd()
+      const { configPath, servers } = getProjectMcpConfigsFromCwd()
       if (servers[name]) {
-        throw new Error(`MCP server ${name} already exists in .mcp.json`)
+        throw new Error(
+          `MCP server ${name} already exists in ${configPath ?? 'project MCP config'}`,
+        )
       }
       break
     }
@@ -746,7 +763,8 @@ export async function addMcpConfig(
   // Add based on scope
   switch (scope) {
     case 'project': {
-      const { servers: existingServers } = getProjectMcpConfigsFromCwd()
+      const { configPath, servers: existingServers } =
+        getProjectMcpConfigsFromCwd()
 
       const mcpServers: Record<string, McpServerConfig> = {}
       for (const [serverName, serverConfig] of Object.entries(
@@ -758,11 +776,11 @@ export async function addMcpConfig(
       mcpServers[name] = validatedConfig
       const mcpConfig = { mcpServers }
 
-      // Write back to .mcp.json
+      // Write back to the product project MCP config path.
       try {
         await writeMcpjsonFile(mcpConfig)
       } catch (error) {
-        throw new Error(`Failed to write to .mcp.json: ${error}`)
+        throw new Error(`Failed to write project MCP config: ${error}`)
       }
       break
     }
@@ -806,13 +824,16 @@ export async function removeMcpConfig(
 ): Promise<void> {
   switch (scope) {
     case 'project': {
-      const { servers: existingServers } = getProjectMcpConfigsFromCwd()
+      const { configPath, servers: existingServers } =
+        getProjectMcpConfigsFromCwd()
 
       if (!existingServers[name]) {
-        throw new Error(`No MCP server found with name: ${name} in .mcp.json`)
+        throw new Error(
+          `No MCP server found with name: ${name} in ${configPath ?? 'project MCP config'}`,
+        )
       }
 
-      // Strip scope information when writing back to .mcp.json
+      // Strip scope information when writing back to the product project MCP config.
       const mcpServers: Record<string, McpServerConfig> = {}
       for (const [serverName, serverConfig] of Object.entries(
         existingServers,
@@ -826,7 +847,7 @@ export async function removeMcpConfig(
       try {
         await writeMcpjsonFile(mcpConfig)
       } catch (error) {
-        throw new Error(`Failed to remove from .mcp.json: ${error}`)
+        throw new Error(`Failed to update project MCP config: ${error}`)
       }
       break
     }
@@ -875,15 +896,20 @@ export async function removeMcpConfig(
  * @returns Servers with scope information and any validation errors from current directory's .mcp.json
  */
 export function getProjectMcpConfigsFromCwd(): {
+  configPath: string | null
   servers: Record<string, ScopedMcpServerConfig>
   errors: ValidationError[]
 } {
   // Check if project source is enabled
   if (!isSettingSourceEnabled('projectSettings')) {
-    return { servers: {}, errors: [] }
+    return { configPath: null, servers: {}, errors: [] }
   }
 
-  const mcpJsonPath = join(getCwd(), '.mcp.json')
+  const mcpJsonPath = getExistingProjectMcpPath(getCwd())
+
+  if (!mcpJsonPath) {
+    return { configPath: null, servers: {}, errors: [] }
+  }
 
   const { config, errors } = parseMcpConfigFromFilePath({
     filePath: mcpJsonPath,
@@ -901,12 +927,13 @@ export function getProjectMcpConfigsFromCwd(): {
         `MCP config errors for ${mcpJsonPath}: ${jsonStringify(nonMissingErrors.map(e => e.message))}`,
         { level: 'error' },
       )
-      return { servers: {}, errors: nonMissingErrors }
+      return { configPath: mcpJsonPath, servers: {}, errors: nonMissingErrors }
     }
-    return { servers: {}, errors: [] }
+    return { configPath: mcpJsonPath, servers: {}, errors: [] }
   }
 
   return {
+    configPath: mcpJsonPath,
     servers: config.mcpServers
       ? addScopeToServers(config.mcpServers, 'project')
       : {},
@@ -955,7 +982,10 @@ export function getMcpConfigsByScope(
 
       // Process from root downward to CWD (so closer files have higher priority)
       for (const dir of dirs.reverse()) {
-        const mcpJsonPath = join(dir, '.mcp.json')
+        const mcpJsonPath = getExistingProjectMcpPath(dir)
+        if (!mcpJsonPath) {
+          continue
+        }
 
         const { config, errors } = parseMcpConfigFromFilePath({
           filePath: mcpJsonPath,
@@ -963,18 +993,12 @@ export function getMcpConfigsByScope(
           scope: 'project',
         })
 
-        // Missing .mcp.json in parent directories is expected, but malformed files should report errors
         if (!config) {
-          const nonMissingErrors = errors.filter(
-            e => !e.message.startsWith('MCP config file not found'),
+          logForDebugging(
+            `MCP config errors for ${mcpJsonPath}: ${jsonStringify(errors.map(e => e.message))}`,
+            { level: 'error' },
           )
-          if (nonMissingErrors.length > 0) {
-            logForDebugging(
-              `MCP config errors for ${mcpJsonPath}: ${jsonStringify(nonMissingErrors.map(e => e.message))}`,
-              { level: 'error' },
-            )
-            allErrors.push(...nonMissingErrors)
-          }
+          allErrors.push(...errors)
           continue
         }
 

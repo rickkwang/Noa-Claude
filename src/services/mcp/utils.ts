@@ -8,6 +8,11 @@ import type { Tool } from '../../Tool.js'
 import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
 import { getCwd } from '../../utils/cwd.js'
 import { getGlobalClaudeFile } from '../../utils/env.js'
+import {
+  getPrimaryProjectMcpPath,
+  LEGACY_MCP_FILENAME,
+  PRODUCT_MCP_FILENAME,
+} from '../../utils/productPaths.js'
 import { isSettingSourceEnabled } from '../../utils/settings/constants.js'
 import {
   getSettings_DEPRECATED,
@@ -266,7 +271,7 @@ export function describeMcpConfigFilePath(scope: ConfigScope): string {
     case 'user':
       return getGlobalClaudeFile()
     case 'project':
-      return join(getCwd(), '.mcp.json')
+      return getPrimaryProjectMcpPath(getCwd())
     case 'local':
       return `${getGlobalClaudeFile()} [project: ${getCwd()}]`
     case 'dynamic':
@@ -285,7 +290,7 @@ export function getScopeLabel(scope: ConfigScope): string {
     case 'local':
       return 'Local config (private to you in this project)'
     case 'project':
-      return 'Project config (shared via .mcp.json)'
+      return `Project config (shared via ${PRODUCT_MCP_FILENAME}, legacy ${LEGACY_MCP_FILENAME})`
     case 'user':
       return 'User config (available in all your projects)'
     case 'dynamic':

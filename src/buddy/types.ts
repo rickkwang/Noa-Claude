@@ -98,6 +98,14 @@ export const STAT_NAMES = [
 ] as const
 export type StatName = (typeof STAT_NAMES)[number]
 
+export type CompanionStyle = Partial<{
+  rarity: Rarity
+  species: Species
+  eye: Eye
+  hat: Hat
+  shiny: boolean
+}>
+
 // Deterministic parts — derived from hash(userId)
 export type CompanionBones = {
   rarity: Rarity
@@ -123,6 +131,10 @@ export type Companion = CompanionBones &
 // on every read so species renames don't break stored companions and users
 // can't edit their way to a legendary.
 export type StoredCompanion = CompanionSoul & { hatchedAt: number }
+  & {
+    rerollSeed?: string
+    rerollStyle?: CompanionStyle
+  }
 
 export const RARITY_WEIGHTS = {
   common: 60,

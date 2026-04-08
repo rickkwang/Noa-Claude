@@ -44,6 +44,7 @@ import { getToolResultsDir } from '../toolResultStorage.js'
 import { windowsPathToPosixPath } from '../windowsPaths.js'
 import {
   getProjectLaunchConfigCandidates,
+  getProjectMcpPathCandidates,
   getProjectSettingsRelativePathCandidates,
   getProjectSubdirCandidates,
   LEGACY_PROJECT_DIR,
@@ -74,6 +75,7 @@ export const DANGEROUS_FILES = [
   '.profile',
   '.ripgreprc',
   '.mcp.json',
+  '.claude-agent/mcp.json',
   '.claude.json',
 ] as const
 
@@ -258,6 +260,9 @@ function isClaudeConfigFilePath(filePath: string): boolean {
   }
   for (const skillsDir of getProjectSubdirCandidates(getOriginalCwd(), 'skills')) {
     if (pathInWorkingPath(filePath, skillsDir)) return true
+  }
+  for (const mcpPath of getProjectMcpPathCandidates(getOriginalCwd())) {
+    if (pathInWorkingPath(filePath, mcpPath)) return true
   }
 
   return false

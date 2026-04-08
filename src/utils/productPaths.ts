@@ -7,6 +7,8 @@ export const PRODUCT_MEMORY_FILENAME = 'CLAUDE.md'
 export const PRODUCT_LAUNCH_CONFIG = 'launch.json'
 export const PRODUCT_SCHEDULED_TASKS_FILE = 'scheduled_tasks.json'
 export const PRODUCT_SCHEDULED_TASKS_LOCK = 'scheduled_tasks.lock'
+export const PRODUCT_MCP_FILENAME = 'mcp.json'
+export const LEGACY_MCP_FILENAME = '.mcp.json'
 
 export function getPrimaryProjectConfigRoot(cwd: string): string {
   return join(cwd, PRODUCT_PROJECT_DIR)
@@ -122,6 +124,21 @@ export function getProjectScheduledTasksLockCandidates(cwd: string): string[] {
 
 export function getProjectLaunchConfigCandidates(cwd: string): string[] {
   return getProjectFileCandidates(cwd, PRODUCT_LAUNCH_CONFIG)
+}
+
+export function getPrimaryProjectMcpPath(cwd: string): string {
+  return getPrimaryProjectFile(cwd, PRODUCT_MCP_FILENAME)
+}
+
+export function getLegacyProjectMcpPath(cwd: string): string {
+  return getLegacyProjectFile(cwd, LEGACY_MCP_FILENAME)
+}
+
+export function getProjectMcpPathCandidates(cwd: string): string[] {
+  return [
+    getPrimaryProjectMcpPath(cwd),
+    getLegacyProjectMcpPath(cwd),
+  ]
 }
 
 export function getUserScopedSubdir(subdir: string): string {

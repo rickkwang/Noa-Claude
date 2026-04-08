@@ -3,6 +3,7 @@ import { getGlobalConfig } from '../utils/config.js'
 import {
   type Companion,
   type CompanionBones,
+  type CompanionStyle,
   EYES,
   HATS,
   RARITIES,
@@ -89,14 +90,25 @@ export type Roll = {
   inspirationSeed: number
 }
 
-function rollFrom(rng: () => number): Roll {
-  const rarity = rollRarity(rng)
+function serializeStyle(style?: CompanionStyle): string {
+  if (!style) return ''
+  return [
+    style.rarity ?? '',
+    style.species ?? '',
+    style.eye ?? '',
+    style.hat ?? '',
+    style.shiny === undefined ? '' : style.shiny ? '1' : '0',
+  ].join('|')
+}
+
+function rollFrom(rng: () => number, style?: CompanionStyle): Roll {
+  const rarity = style?.rarity ?? rollRarity(rng)
   const bones: CompanionBones = {
     rarity,
-    species: pick(rng, SPECIES),
-    eye: pick(rng, EYES),
-    hat: rarity === 'common' ? 'none' : pick(rng, HATS),
-    shiny: rng() < 0.01,
+    species: style?.species ?? pick(rng, SPECIES),
+    eye: style?.eye ?? pick(rng, EYES),
+    hat: style?.hat ?? (rarity === 'common' ? 'none' : pick(rng, HATS)),
+    shiny: style?.shiny ?? rng() < 0.01,
     stats: rollStats(rng, rarity),
   }
   return { bones, inspirationSeed: Math.floor(rng() * 1e9) }
@@ -105,16 +117,16 @@ function rollFrom(rng: () => number): Roll {
 // Called from three hot paths (500ms sprite tick, per-keystroke PromptInput,
 // per-turn observer) with the same userId → cache the deterministic result.
 let rollCache: { key: string; value: Roll } | undefined
-export function roll(userId: string): Roll {
-  const key = userId + SALT
+export function roll(userId: string, style?: CompanionStyle): Roll {
+  const key = `${userId}${SALT}${serializeStyle(style)}`
   if (rollCache?.key === key) return rollCache.value
-  const value = rollFrom(mulberry32(hashString(key)))
+  const value = rollFrom(mulberry32(hashString(key)), style)
   rollCache = { key, value }
   return value
 }
 
-export function rollWithSeed(seed: string): Roll {
-  return rollFrom(mulberry32(hashString(seed)))
+export function rollWithSeed(seed: string, style?: CompanionStyle): Roll {
+  return rollFrom(mulberry32(hashString(seed)), style)
 }
 
 export function companionUserId(): string {
@@ -128,7 +140,7 @@ export function companionUserId(): string {
 export function getCompanion(): Companion | undefined {
   const stored = getGlobalConfig().companion
   if (!stored) return undefined
-  const { bones } = roll(companionUserId())
+  const { bones } = roll(stored.rerollSeed ?? companionUserId(), stored.rerollStyle)
   // bones last so stale bones fields in old-format configs get overridden
   return { ...stored, ...bones }
 }
