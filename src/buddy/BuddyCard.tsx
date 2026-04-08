@@ -2,6 +2,7 @@
 import * as React from 'react'
 import { Box, Text } from '../ink.js'
 import { useKeybinding } from '../keybindings/useKeybinding.js'
+import { useExitOnCtrlCDWithKeybindings } from '../hooks/useExitOnCtrlCDWithKeybindings.js'
 import { ProgressBar } from '../components/design-system/ProgressBar.js'
 import { renderSprite } from './sprites.js'
 import {
@@ -92,6 +93,7 @@ function StatRow({ name, value, color }) {
 }
 
 export function BuddyCard({ companion, onClose }: Props) {
+  useExitOnCtrlCDWithKeybindings(onClose)
   useKeybinding('confirm:no', onClose, { context: 'Confirmation' })
   const sprite = renderSprite(companion, 0)
   const stars = RARITY_STARS[companion.rarity]
