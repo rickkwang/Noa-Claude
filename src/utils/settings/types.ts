@@ -553,6 +553,7 @@ export const SettingsSchema = lazySchema(() =>
           type: z.literal('command'),
           command: z.string(),
           padding: z.number().optional(),
+          refreshIntervalMs: z.number().int().positive().optional(),
         })
         .optional()
         .describe('Custom status line display configuration'),

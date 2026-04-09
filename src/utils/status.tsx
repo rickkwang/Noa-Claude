@@ -11,16 +11,26 @@ import { getAWSRegion, getDefaultVertexRegion, isEnvTruthy } from './envUtils.js
 import { getDisplayPath } from './file.js';
 import { formatNumber } from './format.js';
 import { getIdeClientName, type IDEExtensionInstallationStatus, isJetBrainsIde, toIDEDisplayName } from './ide.js';
+import { getInitializationStatus, isLspConnected } from '../services/lsp/manager.js';
 import { getClaudeAiUserDefaultModelDescription, modelDisplayString } from './model/model.js';
 import { getAPIProvider } from './model/providers.js';
 import { getMTLSConfig } from './mtls.js';
 import { checkInstall } from './nativeInstaller/index.js';
+import { getGlobalConfig } from './config.js';
 import { getProxyUrl } from './proxy.js';
-import { SandboxManager } from './sandbox/sandbox-adapter.js';
+import { getRipgrepStatus } from './ripgrep.js';
+import { SandboxManager, getSandboxRuntimeCompatibility } from './sandbox/sandbox-adapter.js';
 import { getSettingsWithAllErrors } from './settings/allErrors.js';
 import { getEnabledSettingSources, getSettingSourceDisplayNameCapitalized } from './settings/constants.js';
 import { getManagedFileSettingsPresence, getPolicySettingsOrigin, getSettingsForSource } from './settings/settings.js';
+import {
+  getSettingsFilePathCandidatesForSource,
+  getSettingsFilePathForSource,
+} from './settings/settings.js';
+import { getClaudeConfigHomeDir } from './envUtils.js';
 import type { ThemeName } from './theme.js';
+import { getInvokedBinary } from './doctorDiagnostic.js';
+import { getCurrentWorktreeSession } from './worktree.js';
 export type Property = {
   label?: string;
   value: React.ReactNode | Array<string>;
@@ -31,9 +41,71 @@ export function buildSandboxProperties(): Property[] {
     return [];
   }
   const isSandboxed = SandboxManager.isSandboxingEnabled();
-  return [{
+  const compatibility = getSandboxRuntimeCompatibility();
+  const properties: Property[] = [{
     label: 'Bash Sandbox',
     value: isSandboxed ? 'Enabled' : 'Disabled'
+  }];
+  if (compatibility.compatible) {
+    properties.push({
+      label: 'Sandbox runtime',
+      value: compatibility.version ? `Compatible (v${compatibility.version})` : 'Compatible'
+    });
+  } else if (compatibility.isStubRuntime) {
+    properties.push({
+      label: 'Sandbox runtime',
+      value: 'Stub runtime loaded; compatibility fallbacks active'
+    });
+  } else {
+    properties.push({
+      label: 'Sandbox runtime',
+      value: compatibility.version ? `Partial compatibility (v${compatibility.version})` : 'Partial compatibility'
+    });
+  }
+  return properties;
+}
+export function buildLspProperties(): Property[] {
+  const status = getInitializationStatus();
+  switch (status.status) {
+    case 'success':
+      return [{
+        label: 'LSP',
+        value: isLspConnected() ? 'Connected' : 'Initialized with no active servers'
+      }];
+    case 'pending':
+      return [{
+        label: 'LSP',
+        value: 'Initializing'
+      }];
+    case 'failed':
+      return [{
+        label: 'LSP',
+        value: `Failed to initialize: ${status.error.message}`
+      }];
+    default:
+      return [{
+        label: 'LSP',
+        value: 'Not started'
+      }];
+  }
+}
+export function buildPluginProperties(enabledPlugins: unknown[] = [], pluginErrors: unknown[] = [], needsRefresh: boolean = false): Property[] {
+  if (enabledPlugins.length === 0 && pluginErrors.length === 0 && !needsRefresh) {
+    return [];
+  }
+  const parts: string[] = [];
+  if (enabledPlugins.length > 0) {
+    parts.push(`${enabledPlugins.length} enabled`);
+  }
+  if (pluginErrors.length > 0) {
+    parts.push(`${pluginErrors.length} failed`);
+  }
+  if (needsRefresh) {
+    parts.push('reload needed');
+  }
+  return [{
+    label: 'Plugins',
+    value: parts.join(', ')
   }];
 }
 export function buildIDEProperties(mcpClients: MCPServerConnection[], ideInstallationStatus: IDEExtensionInstallationStatus | null = null, theme: ThemeName): Property[] {
@@ -196,6 +268,13 @@ export async function buildInstallationHealthDiagnostics(): Promise<Diagnostic[]
   if (diagnostic.hasUpdatePermissions === false) {
     items.push('No write permissions for auto-updates (requires sudo)');
   }
+  if (!diagnostic.ripgrepStatus.working) {
+    items.push(
+      diagnostic.ripgrepStatus.mode === 'system'
+        ? `ripgrep is not working at ${diagnostic.ripgrepStatus.systemPath ?? 'system path'}`
+        : 'ripgrep fallback is active; file search may be degraded',
+    );
+  }
   return items;
 }
 export function buildAccountProperties(): Property[] {
@@ -254,6 +333,13 @@ export function buildAPIProviderProperties(): Property[] {
   }
   if (apiProvider === 'firstParty') {
     const anthropicBaseUrl = process.env.ANTHROPIC_BASE_URL;
+    const isThirdPartyAnthropicCompatible = !!anthropicBaseUrl && !anthropicBaseUrl.includes('anthropic.com');
+    if (isThirdPartyAnthropicCompatible) {
+      properties.push({
+        label: 'Auth mode',
+        value: 'API key/token (third-party compatible backend)',
+      });
+    }
     if (anthropicBaseUrl) {
       properties.push({
         label: 'Anthropic base URL',
@@ -351,6 +437,93 @@ export function buildAPIProviderProperties(): Property[] {
     }
   }
   return properties;
+}
+
+export function buildProductPathsProperties(): Property[] {
+  const properties: Property[] = [{
+    label: 'Product config dir',
+    value: getClaudeConfigHomeDir(),
+  }, {
+    label: 'CLI entry',
+    value: getInvokedBinary(),
+  }];
+  const configuredInstallMethod = getGlobalConfig().installMethod;
+  if (configuredInstallMethod) {
+    properties.push({
+      label: 'Configured install method',
+      value: configuredInstallMethod,
+    });
+  }
+
+  const userSettingsPath = getSettingsFilePathForSource('userSettings');
+  if (userSettingsPath) {
+    properties.push({
+      label: 'User settings file',
+      value: userSettingsPath,
+    });
+  }
+
+  const projectSettingsCandidates = getSettingsFilePathCandidatesForSource(
+    'projectSettings',
+  );
+  if (projectSettingsCandidates.length > 0) {
+    properties.push({
+      label: 'Project settings candidates',
+      value: projectSettingsCandidates,
+    });
+  }
+
+  const localSettingsCandidates = getSettingsFilePathCandidatesForSource(
+    'localSettings',
+  );
+  if (localSettingsCandidates.length > 0) {
+    properties.push({
+      label: 'Local settings candidates',
+      value: localSettingsCandidates,
+    });
+  }
+
+  return properties;
+}
+export function buildWorktreeProperties(): Property[] {
+  const session = getCurrentWorktreeSession();
+  if (!session) {
+    return [];
+  }
+  const properties: Property[] = [{
+    label: 'Worktree',
+    value: session.worktreeName,
+  }, {
+    label: 'Worktree path',
+    value: session.worktreePath,
+  }];
+  if (session.worktreeBranch) {
+    properties.push({
+      label: 'Worktree branch',
+      value: session.worktreeBranch,
+    });
+  }
+  if (session.originalCwd) {
+    properties.push({
+      label: 'Original cwd',
+      value: session.originalCwd,
+    });
+  }
+  return properties;
+}
+export function buildSearchToolProperties(): Property[] {
+  const ripgrepStatus = getRipgrepStatus();
+  if (!ripgrepStatus.mode) {
+    return [];
+  }
+  const value =
+    ripgrepStatus.mode === 'system'
+      ? `ripgrep (${ripgrepStatus.working === false ? 'unhealthy' : 'ready'})`
+      : `${ripgrepStatus.mode} ripgrep fallback`;
+  return [{
+    label: 'Search tool',
+    value,
+  }];
 }
 export function getModelDisplayLabel(mainLoopModel: string | null): string {
   let modelLabel = modelDisplayString(mainLoopModel);

@@ -1025,6 +1025,7 @@ export function getSandboxRuntimeCompatibility(): {
   compatible: boolean
   missingMethods: string[]
   version: string | null
+  isStubRuntime: boolean
 } {
   const missingMethods = SANDBOX_RUNTIME_COMPAT_METHODS.filter(
     name => typeof BaseSandboxManager?.[name] !== 'function',
@@ -1040,10 +1041,19 @@ export function getSandboxRuntimeCompatibility(): {
   } catch {
     version = null
   }
+  const isStubRuntime =
+    version === '0.0.0' &&
+    SANDBOX_RUNTIME_COMPAT_METHODS.every(
+      name => typeof BaseSandboxManager?.[name] !== 'function',
+    )
+
   return {
     compatible: missingMethods.length === 0,
     missingMethods,
-    version,
+    // 0.0.0 is the placeholder shim version used by stub runtimes.
+    // Treat it as "unknown" in user-facing diagnostics.
+    version: version === '0.0.0' ? null : version,
+    isStubRuntime,
   }
 }
 

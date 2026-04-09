@@ -49,6 +49,7 @@ export function AgentsMenu(t0) {
   const agentDefinitions = useAppState(_temp);
   const mcpTools = useAppState(_temp2);
   const toolPermissionContext = useAppState(_temp3);
+  const tasks = useAppState(s => s.tasks);
   const setAppState = useSetAppState();
   const {
     allAgents,
@@ -63,6 +64,7 @@ export function AgentsMenu(t0) {
   }
   const [changes, setChanges] = useState(t2);
   const mergedTools = useMergedTools(tools, mcpTools, toolPermissionContext);
+  const runningAgentCount = useMemo(() => Object.values(tasks ?? {}).filter(task => task && (task.type === 'remote_agent' && (task.status === 'running' || task.status === 'pending') || task.type === 'local_agent' && task.status === 'running')).length, [tasks]);
   useExitOnCtrlCDWithKeybindings();
   let t3;
   if ($[2] !== allAgents) {
@@ -253,7 +255,7 @@ export function AgentsMenu(t0) {
         }
         let t18;
         if ($[40] !== changes || $[41] !== modeState.source || $[42] !== resolvedAgents || $[43] !== t15 || $[44] !== t16) {
-          t18 = <AgentsList source={modeState.source} agents={resolvedAgents} onBack={t15} onSelect={t16} onCreateNew={t17} changes={changes} />;
+          t18 = <AgentsList source={modeState.source} agents={resolvedAgents} onBack={t15} onSelect={t16} onCreateNew={t17} changes={changes} runningAgentCount={runningAgentCount} />;
           $[40] = changes;
           $[41] = modeState.source;
           $[42] = resolvedAgents;

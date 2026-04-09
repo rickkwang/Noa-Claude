@@ -51,6 +51,7 @@ export const call: LocalCommandCall = async (args, context) => {
   }
 
   const customInstructions = args.trim()
+  const displayMode = customInstructions ? 'custom' : 'default'
 
   try {
     // Try session memory compaction first if no custom instructions
@@ -78,7 +79,7 @@ export const call: LocalCommandCall = async (args, context) => {
         return {
           type: 'compact',
           compactionResult: sessionMemoryResult,
-          displayText: buildDisplayText(context),
+          displayText: buildDisplayText(context, displayMode),
         }
       }
     }
@@ -121,18 +122,22 @@ export const call: LocalCommandCall = async (args, context) => {
     return {
       type: 'compact',
       compactionResult: result,
-      displayText: buildDisplayText(context, result.userDisplayMessage),
+      displayText: buildDisplayText(
+        context,
+        displayMode,
+        result.userDisplayMessage,
+      ),
     }
   } catch (error) {
     if (abortController.signal.aborted) {
-      throw new Error('Compaction canceled.')
+      throw new Error(formatCompactError('aborted'))
     } else if (hasExactErrorMessage(error, ERROR_MESSAGE_NOT_ENOUGH_MESSAGES)) {
-      throw new Error(ERROR_MESSAGE_NOT_ENOUGH_MESSAGES)
+      throw new Error(formatCompactError('not_enough_messages'))
     } else if (hasExactErrorMessage(error, ERROR_MESSAGE_INCOMPLETE_RESPONSE)) {
-      throw new Error(ERROR_MESSAGE_INCOMPLETE_RESPONSE)
+      throw new Error(formatCompactError('incomplete'))
     } else {
       logError(error)
-      throw new Error(`Error during compaction: ${error}`)
+      throw new Error(formatCompactError('failed', error))
     }
   }
 }
@@ -218,7 +223,11 @@ async function compactViaReactive(
         ...outcome.result,
         userDisplayMessage: combinedMessage,
       },
-      displayText: buildDisplayText(context, combinedMessage),
+      displayText: buildDisplayText(
+        context,
+        customInstructions ? 'custom' : 'default',
+        combinedMessage,
+      ),
     }
   } finally {
     context.setStreamMode?.('requesting')
@@ -228,8 +237,25 @@ async function compactViaReactive(
   }
 }
 
-function buildDisplayText(
+export function formatCompactError(
+  reason: 'aborted' | 'not_enough_messages' | 'incomplete' | 'failed',
+  cause?: unknown,
+): string {
+  switch (reason) {
+    case 'aborted':
+      return 'Compaction canceled.'
+    case 'not_enough_messages':
+      return 'Nothing to compact yet.'
+    case 'incomplete':
+      return 'Compaction did not complete cleanly. Try again.'
+    case 'failed':
+      return `Compaction failed: ${String(cause)}`
+  }
+}
+
+export function buildDisplayText(
   context: ToolUseContext,
+  mode: 'default' | 'custom',
   userDisplayMessage?: string,
 ): string {
   const upgradeMessage = getUpgradeMessage('tip')
@@ -238,14 +264,20 @@ function buildDisplayText(
     'Global',
     'ctrl+o',
   )
-  const dimmed = [
-    ...(context.options.verbose
-      ? []
-      : [`(${expandShortcut} to see full summary)`]),
+  const headline =
+    mode === 'custom'
+      ? 'Conversation compacted with custom instructions.'
+      : 'Conversation compacted.'
+  const details = [
+    'Continue in this session.',
+    `${expandShortcut} to review compacted history.`,
     ...(userDisplayMessage ? [userDisplayMessage] : []),
     ...(upgradeMessage ? [upgradeMessage] : []),
   ]
-  return chalk.dim('Compacted ' + dimmed.join('\n'))
+  if (context.options.verbose) {
+    return [headline, ...details].join('\n')
+  }
+  return [headline, ...details.map(line => chalk.dim(line))].join('\n')
 }
 
 async function getCacheSharingParams(

@@ -10,7 +10,7 @@ import { Box, Text, useTheme } from '../../ink.js';
 import { type AppState, useAppState } from '../../state/AppState.js';
 import { getCwd } from '../../utils/cwd.js';
 import { getCurrentSessionTitle } from '../../utils/sessionStorage.js';
-import { buildAccountProperties, buildAPIProviderProperties, buildIDEProperties, buildInstallationDiagnostics, buildInstallationHealthDiagnostics, buildMcpProperties, buildMemoryDiagnostics, buildSandboxProperties, buildSettingSourcesProperties, type Diagnostic, getModelDisplayLabel, type Property } from '../../utils/status.js';
+import { buildAccountProperties, buildAPIProviderProperties, buildIDEProperties, buildInstallationDiagnostics, buildInstallationHealthDiagnostics, buildLspProperties, buildMcpProperties, buildMemoryDiagnostics, buildPluginProperties, buildProductPathsProperties, buildSandboxProperties, buildSearchToolProperties, buildSettingSourcesProperties, buildWorktreeProperties, type Diagnostic, getModelDisplayLabel, type Property } from '../../utils/status.js';
 import type { ThemeName } from '../../utils/theme.js';
 import { ConfigurableShortcutHint } from '../ConfigurableShortcutHint.js';
 type Props = {
@@ -33,16 +33,18 @@ function buildPrimarySection(): Property[] {
   }, {
     label: 'cwd',
     value: getCwd()
-  }, ...buildAccountProperties(), ...buildAPIProviderProperties()];
+  }, ...buildProductPathsProperties(), ...buildWorktreeProperties(), ...buildAccountProperties(), ...buildAPIProviderProperties()];
 }
 function buildSecondarySection({
   mainLoopModel,
   mcp,
+  plugins,
   theme,
   context
 }: {
   mainLoopModel: AppState['mainLoopModel'];
   mcp: AppState['mcp'];
+  plugins: AppState['plugins'];
   theme: ThemeName;
   context: LocalJSXCommandContext;
 }): Property[] {
@@ -50,7 +52,7 @@ function buildSecondarySection({
   return [{
     label: 'Model',
     value: modelLabel
-  }, ...buildIDEProperties(mcp.clients, context.options.ideInstallationStatus, theme), ...buildMcpProperties(mcp.clients, theme), ...buildSandboxProperties(), ...buildSettingSourcesProperties()];
+  }, ...buildIDEProperties(mcp.clients, context.options.ideInstallationStatus, theme), ...buildMcpProperties(mcp.clients, theme), ...buildLspProperties(), ...buildPluginProperties(plugins.enabled, plugins.errors, plugins.needsRefresh), ...buildSandboxProperties(), ...buildSearchToolProperties(), ...buildSettingSourcesProperties()];
 }
 export async function buildDiagnostics(): Promise<Diagnostic[]> {
   return [...(await buildInstallationDiagnostics()), ...(await buildInstallationHealthDiagnostics()), ...(await buildMemoryDiagnostics())];
@@ -101,13 +103,14 @@ function PropertyValue(t0) {
   return value;
 }
 export function Status(t0) {
-  const $ = _c(20);
+  const $ = _c(21);
   const {
     context,
     diagnosticsPromise
   } = t0;
   const mainLoopModel = useAppState(_temp);
   const mcp = useAppState(_temp2);
+  const plugins = useAppState(_tempPlugins);
   const [theme] = useTheme();
   let t1;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
@@ -117,79 +120,81 @@ export function Status(t0) {
     t1 = $[0];
   }
   let t2;
-  if ($[1] !== context || $[2] !== mainLoopModel || $[3] !== mcp || $[4] !== theme) {
+  if ($[1] !== context || $[2] !== mainLoopModel || $[3] !== mcp || $[4] !== plugins || $[5] !== theme) {
     t2 = buildSecondarySection({
       mainLoopModel,
       mcp,
+      plugins,
       theme,
       context
     });
     $[1] = context;
     $[2] = mainLoopModel;
     $[3] = mcp;
-    $[4] = theme;
-    $[5] = t2;
+    $[4] = plugins;
+    $[5] = theme;
+    $[6] = t2;
   } else {
-    t2 = $[5];
+    t2 = $[6];
   }
   let t3;
-  if ($[6] !== t2) {
+  if ($[7] !== t2) {
     t3 = [t1, t2];
-    $[6] = t2;
-    $[7] = t3;
+    $[7] = t2;
+    $[8] = t3;
   } else {
-    t3 = $[7];
+    t3 = $[8];
   }
   const sections = t3;
   const grow = useIsInsideModal() ? 1 : undefined;
   let t4;
-  if ($[8] !== sections) {
+  if ($[9] !== sections) {
     t4 = sections.map(_temp4);
-    $[8] = sections;
-    $[9] = t4;
+    $[9] = sections;
+    $[10] = t4;
   } else {
-    t4 = $[9];
+    t4 = $[10];
   }
   let t5;
-  if ($[10] !== diagnosticsPromise) {
+  if ($[11] !== diagnosticsPromise) {
     t5 = <Suspense fallback={null}><Diagnostics promise={diagnosticsPromise} /></Suspense>;
-    $[10] = diagnosticsPromise;
-    $[11] = t5;
+    $[11] = diagnosticsPromise;
+    $[12] = t5;
   } else {
-    t5 = $[11];
+    t5 = $[12];
   }
   let t6;
-  if ($[12] !== grow || $[13] !== t4 || $[14] !== t5) {
+  if ($[13] !== grow || $[14] !== t4 || $[15] !== t5) {
     t6 = <Box flexDirection="column" gap={1} flexGrow={grow}>{t4}{t5}</Box>;
-    $[12] = grow;
-    $[13] = t4;
-    $[14] = t5;
-    $[15] = t6;
+    $[13] = grow;
+    $[14] = t4;
+    $[15] = t5;
+    $[16] = t6;
   } else {
-    t6 = $[15];
+    t6 = $[16];
   }
   let t7;
-  if ($[16] === Symbol.for("react.memo_cache_sentinel")) {
+  if ($[17] === Symbol.for("react.memo_cache_sentinel")) {
     t7 = <Text dimColor={true}><ConfigurableShortcutHint action="confirm:no" context="Settings" fallback="Esc" description="cancel" /></Text>;
-    $[16] = t7;
+    $[17] = t7;
   } else {
-    t7 = $[16];
+    t7 = $[17];
   }
   let t8;
-  if ($[17] !== grow || $[18] !== t6) {
+  if ($[18] !== grow || $[19] !== t6) {
     t8 = <Box flexDirection="column" flexGrow={grow}>{t6}{t7}</Box>;
-    $[17] = grow;
-    $[18] = t6;
-    $[19] = t8;
+    $[18] = grow;
+    $[19] = t6;
+    $[20] = t8;
   } else {
-    t8 = $[19];
+    t8 = $[20];
   }
   return t8;
 }
 function _temp4(properties, i) {
-  return properties.length > 0 && <Box key={i} flexDirection="column">{properties.map(_temp3)}</Box>;
+  return properties.length > 0 && <Box key={i} flexDirection="column">{properties.map(_tempProperty)}</Box>;
 }
-function _temp3(t0, j) {
+function _tempProperty(t0, j) {
   const {
     label,
     value
@@ -198,6 +203,9 @@ function _temp3(t0, j) {
 }
 function _temp2(s_0) {
   return s_0.mcp;
+}
+function _tempPlugins(s_0) {
+  return s_0.plugins;
 }
 function _temp(s) {
   return s.mainLoopModel;

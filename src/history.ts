@@ -75,6 +75,20 @@ export function parseReferences(
     .filter(match => match.id > 0)
 }
 
+export function normalizeHistorySearchText(text: string): string {
+  return text.toLocaleLowerCase()
+}
+
+export function findHistorySearchMatchPosition(
+  text: string,
+  query: string,
+): number {
+  if (!query) return -1
+  return normalizeHistorySearchText(text).lastIndexOf(
+    normalizeHistorySearchText(query),
+  )
+}
+
 /**
  * Replace [Pasted text #N] placeholders in input with their actual content.
  * Image refs are left alone — they become content blocks, not inlined text.

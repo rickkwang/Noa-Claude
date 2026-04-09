@@ -485,7 +485,13 @@ export async function loadConversationForResume(
     let messages: Message[] | null = null
     let sessionId: UUID | undefined
 
-    if (source === undefined) {
+    if (sourceJsonlFile) {
+      // A transcript path is an explicit resume target and must win over the
+      // implicit "most recent session" fallback used by --continue.
+      const loaded = await loadMessagesFromJsonlPath(sourceJsonlFile)
+      messages = loaded.messages
+      sessionId = loaded.sessionId
+    } else if (source === undefined) {
       // --continue: most recent session, skipping live --bg/daemon sessions
       // that are actively writing their own transcript.
       const logsPromise = loadMessageLogs()
@@ -511,13 +517,6 @@ export async function loadConversationForResume(
           const id = getSessionIdFromLog(l)
           return !id || !skip.has(id)
         }) ?? null
-    } else if (sourceJsonlFile) {
-      // --resume with a .jsonl path (cli/print.ts routes on suffix).
-      // Same chain walk as the sid branch below — only the starting
-      // path differs.
-      const loaded = await loadMessagesFromJsonlPath(sourceJsonlFile)
-      messages = loaded.messages
-      sessionId = loaded.sessionId
     } else if (typeof source === 'string') {
       // Load specific session by ID
       log = await getLastSessionLog(source as UUID)

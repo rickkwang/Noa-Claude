@@ -247,6 +247,20 @@ export type MemoryFileInfo = {
   rawContent?: string
 }
 
+function dedupeMemoryFiles(
+  files: MemoryFileInfo[],
+): MemoryFileInfo[] {
+  const seen = new Set<string>()
+  const deduped: MemoryFileInfo[] = []
+  for (const file of files) {
+    const key = normalizePathForComparison(file.path)
+    if (seen.has(key)) continue
+    seen.add(key)
+    deduped.push(file)
+  }
+  return deduped
+}
+
 function pathInOriginalCwd(path: string): boolean {
   return pathInWorkingPath(path, getOriginalCwd())
 }
@@ -989,26 +1003,28 @@ export const getMemoryFiles = memoize(
       }
     }
 
-    const totalContentLength = result.reduce(
+    const dedupedResult = dedupeMemoryFiles(result)
+
+    const totalContentLength = dedupedResult.reduce(
       (sum, f) => sum + f.content.length,
       0,
     )
 
     logForDiagnosticsNoPII('info', 'memory_files_completed', {
       duration_ms: Date.now() - startTime,
-      file_count: result.length,
+      file_count: dedupedResult.length,
       total_content_length: totalContentLength,
     })
 
     const typeCounts: Record<string, number> = {}
-    for (const f of result) {
+    for (const f of dedupedResult) {
       typeCounts[f.type] = (typeCounts[f.type] ?? 0) + 1
     }
 
     if (!hasLoggedInitialLoad) {
       hasLoggedInitialLoad = true
       logEvent('tengu_claudemd__initial_load', {
-        file_count: result.length,
+        file_count: dedupedResult.length,
         total_content_length: totalContentLength,
         user_count: typeCounts['User'] ?? 0,
         project_count: typeCounts['Project'] ?? 0,
@@ -1037,7 +1053,7 @@ export const getMemoryFiles = memoize(
     if (!forceIncludeExternal) {
       const eagerLoadReason = consumeNextEagerLoadReason()
       if (eagerLoadReason !== undefined && hasInstructionsLoadedHook()) {
-        for (const file of result) {
+        for (const file of dedupedResult) {
           if (!isInstructionsMemoryType(file.type)) continue
           const loadReason = file.parent ? 'include' : eagerLoadReason
           void executeInstructionsLoadedHooks(
@@ -1053,7 +1069,7 @@ export const getMemoryFiles = memoize(
       }
     }
 
-    return result
+    return dedupedResult
   },
 )
 

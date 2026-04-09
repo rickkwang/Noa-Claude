@@ -5,7 +5,11 @@ import {
   getModeFromInput,
   getValueFromInput,
 } from '../components/PromptInput/inputModes.js'
-import { makeHistoryReader } from '../history.js'
+import {
+  findHistorySearchMatchPosition,
+  getTimestampedHistory,
+} from '../history.js'
+import type { TimestampedHistoryEntry } from '../history.js'
 import { KeyboardEvent } from '../ink/events/keyboard-event.js'
 // eslint-disable-next-line custom-rules/prefer-use-keybindings -- backward-compat bridge until consumers wire handleKeyDown to <Box onKeyDown>
 import { useInput } from '../ink.js'
@@ -29,6 +33,7 @@ export function useHistorySearch(
   historyQuery: string
   setHistoryQuery: (query: string) => void
   historyMatch: HistoryEntry | undefined
+  historyMatchTimestamp: number | undefined
   historyFailedMatch: boolean
   handleKeyDown: (e: KeyboardEvent) => void
 } {
@@ -43,7 +48,10 @@ export function useHistorySearch(
   const [historyMatch, setHistoryMatch] = useState<HistoryEntry | undefined>(
     undefined,
   )
-  const historyReader = useRef<AsyncGenerator<HistoryEntry> | undefined>(
+  const [historyMatchTimestamp, setHistoryMatchTimestamp] = useState<
+    number | undefined
+  >(undefined)
+  const historyReader = useRef<AsyncGenerator<TimestampedHistoryEntry> | undefined>(
     undefined,
   )
   const seenPrompts = useRef<Set<string>>(new Set())
@@ -67,6 +75,7 @@ export function useHistorySearch(
     setOriginalMode('prompt')
     setOriginalPastedContents({})
     setHistoryMatch(undefined)
+    setHistoryMatchTimestamp(undefined)
     closeHistoryReader()
     seenPrompts.current.clear()
   }, [setIsSearching, closeHistoryReader])
@@ -81,6 +90,7 @@ export function useHistorySearch(
         closeHistoryReader()
         seenPrompts.current.clear()
         setHistoryMatch(undefined)
+        setHistoryMatchTimestamp(undefined)
         setHistoryFailedMatch(false)
         onInputChange(originalInput)
         onCursorChange(originalCursorOffset)
@@ -91,7 +101,7 @@ export function useHistorySearch(
 
       if (!resume) {
         closeHistoryReader()
-        historyReader.current = makeHistoryReader()
+        historyReader.current = getTimestampedHistory()
         seenPrompts.current.clear()
       }
 
@@ -112,20 +122,27 @@ export function useHistorySearch(
         }
 
         const display = item.value.display
-
-        const matchPosition = display.lastIndexOf(historyQuery)
+        const matchPosition = findHistorySearchMatchPosition(
+          display,
+          historyQuery,
+        )
         if (matchPosition !== -1 && !seenPrompts.current.has(display)) {
           seenPrompts.current.add(display)
-          setHistoryMatch(item.value)
+          const resolved = await item.value.resolve()
+          setHistoryMatch(resolved)
+          setHistoryMatchTimestamp(item.value.timestamp)
           setHistoryFailedMatch(false)
           const mode = getModeFromInput(display)
           onModeChange(mode)
           onInputChange(display)
-          setPastedContents(item.value.pastedContents)
+          setPastedContents(resolved.pastedContents)
 
           // Position cursor relative to the clean value, not the display
           const value = getValueFromInput(display)
-          const cleanMatchPosition = value.lastIndexOf(historyQuery)
+          const cleanMatchPosition = findHistorySearchMatchPosition(
+            value,
+            historyQuery,
+          )
           onCursorChange(
             cleanMatchPosition !== -1 ? cleanMatchPosition : matchPosition,
           )
@@ -155,7 +172,8 @@ export function useHistorySearch(
     setOriginalCursorOffset(currentCursorOffset)
     setOriginalMode(currentMode)
     setOriginalPastedContents(currentPastedContents)
-    historyReader.current = makeHistoryReader()
+    setHistoryMatchTimestamp(undefined)
+    historyReader.current = getTimestampedHistory()
     seenPrompts.current.clear()
   }, [
     setIsSearching,
@@ -298,6 +316,7 @@ export function useHistorySearch(
     historyQuery,
     setHistoryQuery,
     historyMatch,
+    historyMatchTimestamp,
     historyFailedMatch,
     handleKeyDown,
   }

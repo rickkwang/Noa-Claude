@@ -37,6 +37,7 @@ import {
 } from '../services/analytics/index.js'
 import type { AppState } from '../state/AppState.js'
 import { runCleanupFunctions } from './cleanupRegistry.js'
+import { getPreferredCliCommandName } from './commandName.js'
 import { logForDebugging } from './debug.js'
 import { logForDiagnosticsNoPII } from './diagLogs.js'
 import { isEnvTruthy } from './envUtils.js'
@@ -170,10 +171,11 @@ function printResumeHint(): void {
         resumeArg = sessionId
       }
 
+      const cliCommand = getPreferredCliCommandName()
       writeSync(
         1,
         chalk.dim(
-          `\nResume this session with:\nclaude-agent --resume ${resumeArg}\n`,
+          `\nResume this session with:\n${cliCommand} --resume ${resumeArg}\n`,
         ),
       )
       resumeHintPrinted = true

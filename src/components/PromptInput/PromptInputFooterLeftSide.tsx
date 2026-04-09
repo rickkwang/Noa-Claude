@@ -69,6 +69,7 @@ type Props = {
   isSearching: boolean;
   historyQuery: string;
   setHistoryQuery: (query: string) => void;
+  historyMatchTimestamp: number | undefined;
   historyFailedMatch: boolean;
   onOpenTasksDialog?: (taskId?: string) => void;
 };
@@ -126,7 +127,7 @@ function ProactiveCountdown() {
   return t4;
 }
 export function PromptInputFooterLeftSide(t0) {
-  const $ = _c(27);
+  const $ = _c(28);
   const {
     exitMessage,
     vimMode,
@@ -142,6 +143,7 @@ export function PromptInputFooterLeftSide(t0) {
     isSearching,
     historyQuery,
     setHistoryQuery,
+    historyMatchTimestamp,
     historyFailedMatch,
     onOpenTasksDialog
   } = t0;
@@ -177,50 +179,51 @@ export function PromptInputFooterLeftSide(t0) {
   }
   const showVim = t1;
   let t2;
-  if ($[6] !== historyFailedMatch || $[7] !== historyQuery || $[8] !== isSearching || $[9] !== setHistoryQuery) {
-    t2 = isSearching && <HistorySearchInput value={historyQuery} onChange={setHistoryQuery} historyFailedMatch={historyFailedMatch} />;
+  if ($[6] !== historyFailedMatch || $[7] !== historyMatchTimestamp || $[8] !== historyQuery || $[9] !== isSearching || $[10] !== setHistoryQuery) {
+    t2 = isSearching && <HistorySearchInput value={historyQuery} onChange={setHistoryQuery} historyFailedMatch={historyFailedMatch} historyMatchTimestamp={historyMatchTimestamp} />;
     $[6] = historyFailedMatch;
-    $[7] = historyQuery;
-    $[8] = isSearching;
-    $[9] = setHistoryQuery;
-    $[10] = t2;
+    $[7] = historyMatchTimestamp;
+    $[8] = historyQuery;
+    $[9] = isSearching;
+    $[10] = setHistoryQuery;
+    $[11] = t2;
   } else {
-    t2 = $[10];
+    t2 = $[11];
   }
   let t3;
-  if ($[11] !== showVim) {
+  if ($[12] !== showVim) {
     t3 = showVim ? <Text dimColor={true} key="vim-insert">-- INSERT --</Text> : null;
-    $[11] = showVim;
-    $[12] = t3;
+    $[12] = showVim;
+    $[13] = t3;
   } else {
-    t3 = $[12];
+    t3 = $[13];
   }
   const t4 = !suppressHint && !showVim;
   let t5;
-  if ($[13] !== isLoading || $[14] !== mode || $[15] !== onOpenTasksDialog || $[16] !== t4 || $[17] !== tasksSelected || $[18] !== teammateFooterIndex || $[19] !== teamsSelected || $[20] !== tmuxSelected || $[21] !== toolPermissionContext) {
+  if ($[14] !== isLoading || $[15] !== mode || $[16] !== onOpenTasksDialog || $[17] !== t4 || $[18] !== tasksSelected || $[19] !== teammateFooterIndex || $[20] !== teamsSelected || $[21] !== tmuxSelected || $[22] !== toolPermissionContext) {
     t5 = <ModeIndicator mode={mode} toolPermissionContext={toolPermissionContext} showHint={t4} isLoading={isLoading} tasksSelected={tasksSelected} teamsSelected={teamsSelected} teammateFooterIndex={teammateFooterIndex} tmuxSelected={tmuxSelected} onOpenTasksDialog={onOpenTasksDialog} />;
-    $[13] = isLoading;
-    $[14] = mode;
-    $[15] = onOpenTasksDialog;
-    $[16] = t4;
-    $[17] = tasksSelected;
-    $[18] = teammateFooterIndex;
-    $[19] = teamsSelected;
-    $[20] = tmuxSelected;
-    $[21] = toolPermissionContext;
-    $[22] = t5;
+    $[14] = isLoading;
+    $[15] = mode;
+    $[16] = onOpenTasksDialog;
+    $[17] = t4;
+    $[18] = tasksSelected;
+    $[19] = teammateFooterIndex;
+    $[20] = teamsSelected;
+    $[21] = tmuxSelected;
+    $[22] = toolPermissionContext;
+    $[23] = t5;
   } else {
-    t5 = $[22];
+    t5 = $[23];
   }
   let t6;
-  if ($[23] !== t2 || $[24] !== t3 || $[25] !== t5) {
+  if ($[24] !== t2 || $[25] !== t3 || $[26] !== t5) {
     t6 = <Box justifyContent="flex-start" gap={1}>{t2}{t3}{t5}</Box>;
-    $[23] = t2;
-    $[24] = t3;
-    $[25] = t5;
-    $[26] = t6;
+    $[24] = t2;
+    $[25] = t3;
+    $[26] = t5;
+    $[27] = t6;
   } else {
-    t6 = $[26];
+    t6 = $[27];
   }
   return t6;
 }

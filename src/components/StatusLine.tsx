@@ -75,7 +75,12 @@ function buildStatusLineCommandInput(permissionMode: PermissionMode, exceeds200k
     workspace: {
       current_dir: getCwd(),
       project_dir: getOriginalCwd(),
-      added_dirs: addedDirs
+      added_dirs: addedDirs,
+      git_worktree: !!worktreeSession,
+      ...(worktreeSession && {
+        git_worktree_name: worktreeSession.worktreeName,
+        git_worktree_branch: worktreeSession.worktreeBranch
+      })
     },
     version: MACRO.VERSION,
     output_style: {
@@ -248,6 +253,7 @@ function StatusLineInner({
 
   // When the statusLine command changes (hot reload), log the next result
   const statusLineCommand = settings?.statusLine?.command;
+  const statusLineRefreshIntervalMs = settings?.statusLine?.refreshIntervalMs;
   const isFirstSettingsRender = useRef(true);
   useEffect(() => {
     if (isFirstSettingsRender.current) {
@@ -258,13 +264,27 @@ function StatusLineInner({
     void doUpdate();
   }, [statusLineCommand, doUpdate]);
 
+  useEffect(() => {
+    if (statusLineRefreshIntervalMs === undefined) {
+      return;
+    }
+    const intervalMs = Math.min(60000, Math.max(1000, statusLineRefreshIntervalMs));
+    const intervalId = setInterval(() => {
+      void doUpdate();
+    }, intervalMs);
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [statusLineRefreshIntervalMs, doUpdate]);
+
   // Separate effect for logging on mount
   useEffect(() => {
     const statusLine = settings?.statusLine;
     if (statusLine) {
       logEvent('tengu_status_line_mount', {
         command_length: statusLine.command.length,
-        padding: statusLine.padding
+        padding: statusLine.padding,
+        refresh_interval_ms: statusLine.refreshIntervalMs
       });
       // Log if status line is configured but disabled by disableAllHooks
       if (settings.disableAllHooks === true) {

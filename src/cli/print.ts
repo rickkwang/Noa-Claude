@@ -203,6 +203,7 @@ import {
 } from 'src/bootstrap/state.js'
 import { createSyntheticOutputTool } from 'src/tools/SyntheticOutputTool/SyntheticOutputTool.js'
 import { parseSessionIdentifier } from 'src/utils/sessionUrl.js'
+import { getPreferredCliCommandName } from 'src/utils/commandName.js'
 import {
   hydrateRemoteSession,
   hydrateFromCCRv2InternalEvents,
@@ -5032,10 +5033,14 @@ async function loadInitialMessages(
         typeof options.resume === 'string' ? options.resume : '',
       )
       if (!parsedSessionId) {
+        const cliCommand = getPreferredCliCommandName()
         let errorMessage =
-          'Error: --resume requires a valid session ID when used with --print. Usage: claude -p --resume <session-id>'
+          formatDiagnosticError(
+            'CONFIG_ERROR',
+            `--resume requires a valid session ID when used with --print. Usage: ${cliCommand} --print --resume <session-id>`,
+          )
         if (typeof options.resume === 'string') {
-          errorMessage += `. Session IDs must be in UUID format (e.g., 550e8400-e29b-41d4-a716-446655440000). Provided value "${options.resume}" is not a valid UUID`
+          errorMessage += ` Session IDs must be in UUID format (e.g., 550e8400-e29b-41d4-a716-446655440000). Provided value "${options.resume}" is not a valid UUID.`
         }
         emitLoadError(errorMessage, options.outputFormat)
         gracefulShutdownSync(1)
@@ -5091,7 +5096,10 @@ async function loadInitialMessages(
           }
         } else {
           emitLoadError(
-            `No conversation found with session ID: ${parsedSessionId.sessionId}`,
+            formatDiagnosticError(
+              'CONFIG_ERROR',
+              `No conversation found with session ID: ${parsedSessionId.sessionId}`,
+            ),
             options.outputFormat,
           )
           gracefulShutdownSync(1)
@@ -5106,7 +5114,10 @@ async function loadInitialMessages(
         )
         if (index < 0) {
           emitLoadError(
-            `No message found with message.uuid of: ${options.resumeSessionAt}`,
+            formatDiagnosticError(
+              'CONFIG_ERROR',
+              `No message found with message.uuid of: ${options.resumeSessionAt}`,
+            ),
             options.outputFormat,
           )
           gracefulShutdownSync(1)
@@ -5176,8 +5187,14 @@ async function loadInitialMessages(
       logError(error)
       const errorMessage =
         error instanceof Error
-          ? `Failed to resume session: ${error.message}`
-          : 'Failed to resume session with --print mode'
+          ? formatDiagnosticError(
+              'RUNTIME_COMPAT_ERROR',
+              `Failed to resume session: ${error.message}`,
+            )
+          : formatDiagnosticError(
+              'RUNTIME_COMPAT_ERROR',
+              'Failed to resume session with --print mode',
+            )
       emitLoadError(errorMessage, options.outputFormat)
       gracefulShutdownSync(1)
       return { messages: [] }

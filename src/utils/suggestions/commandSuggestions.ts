@@ -103,6 +103,17 @@ export type MidInputSlashCommand = {
   partialCommand: string // e.g., "com"
 }
 
+const COMPLETION_BOUNDARY_RE =
+  /[\s　。．，、！!？?：:；;（）()［］\[\]【】「」『』〈〉《》〔〕｛｝{}＜＞<>]/u
+
+export function isCompletionBoundaryChar(char: string | undefined): boolean {
+  return char === undefined || COMPLETION_BOUNDARY_RE.test(char)
+}
+
+export function hasCompletionBoundaryAt(text: string, index: number): boolean {
+  return index <= 0 || isCompletionBoundaryChar(text[index - 1])
+}
+
 /**
  * Finds a slash command token that appears mid-input (not at position 0).
  * A mid-input slash command is a "/" preceded by whitespace, where the cursor
@@ -121,37 +132,36 @@ export function findMidInputSlashCommand(
     return null
   }
 
-  // Look backwards from cursor to find a "/" preceded by whitespace
   const beforeCursor = input.slice(0, cursorOffset)
+  let slashPos = beforeCursor.lastIndexOf('/')
+  while (slashPos >= 0) {
+    if (!hasCompletionBoundaryAt(beforeCursor, slashPos)) {
+      slashPos = beforeCursor.lastIndexOf('/', slashPos - 1)
+      continue
+    }
 
-  // Find the last "/" in the text before cursor
-  // Pattern: whitespace followed by "/" then optional alphanumeric/dash characters.
-  // Lookbehind (?<=\s) is avoided — it defeats YARR JIT in JSC, and the
-  // interpreter scans O(n) even with the $ anchor. Capture the whitespace
-  // instead and offset match.index by 1.
-  const match = beforeCursor.match(/\s\/([a-zA-Z0-9_:-]*)$/)
-  if (!match || match.index === undefined) {
-    return null
+    const partialCommand = beforeCursor.slice(slashPos + 1)
+    if (!/^[a-zA-Z0-9_:-]*$/.test(partialCommand)) {
+      slashPos = beforeCursor.lastIndexOf('/', slashPos - 1)
+      continue
+    }
+
+    const textAfterSlash = input.slice(slashPos + 1)
+    const commandMatch = textAfterSlash.match(/^[a-zA-Z0-9_:-]*/)
+    const fullCommand = commandMatch ? commandMatch[0] : ''
+
+    if (cursorOffset > slashPos + 1 + fullCommand.length) {
+      return null
+    }
+
+    return {
+      token: '/' + fullCommand,
+      startPos: slashPos,
+      partialCommand: fullCommand,
+    }
   }
 
-  // Get the full token (may extend past cursor)
-  const slashPos = match.index + 1
-  const textAfterSlash = input.slice(slashPos + 1)
-
-  // Extract the command portion (until whitespace or end)
-  const commandMatch = textAfterSlash.match(/^[a-zA-Z0-9_:-]*/)
-  const fullCommand = commandMatch ? commandMatch[0] : ''
-
-  // If cursor is past the command (after a space), don't show ghost text
-  if (cursorOffset > slashPos + 1 + fullCommand.length) {
-    return null
-  }
-
-  return {
-    token: '/' + fullCommand,
-    startPos: slashPos,
-    partialCommand: fullCommand,
-  }
+  return null
 }
 
 /**

@@ -37,6 +37,7 @@ import {
   getUserSpecifiedModelSetting,
 } from '../../utils/model/model.js'
 import { getPlatform } from '../../utils/platform.js'
+import { getPreferredCliCommandName } from '../../utils/commandName.js'
 import { isPluginInstalled } from '../../utils/plugins/installedPluginsManager.js'
 import { loadKnownMarketplacesConfigSafe } from '../../utils/plugins/marketplaceManager.js'
 import { OFFICIAL_MARKETPLACE_NAME } from '../../utils/plugins/officialMarketplace.js'
@@ -377,7 +378,7 @@ const externalTips: Tip[] = [
   {
     id: 'continue',
     content: async () =>
-      'Run claude-agent --continue or claude-agent --resume to resume a conversation',
+      `Run ${getPreferredCliCommandName()} --continue or ${getPreferredCliCommandName()} --resume to resume a conversation`,
     cooldownSessions: 10,
     isRelevant: async () => true,
   },
@@ -392,7 +393,7 @@ const externalTips: Tip[] = [
   {
     id: 'custom-commands',
     content: async () =>
-      'Create skills by adding .md files to .claude/skills/ in your project or ~/.claude/skills/ for skills that work in any project',
+      'Create skills by adding .md files to .claude-agent/skills/ in your project or ~/.claude-agent/skills/ for skills that work in any project',
     cooldownSessions: 15,
     async isRelevant() {
       const config = getGlobalConfig()

@@ -23,7 +23,7 @@ import { generateProgressiveArgumentHint, parseArguments } from '../utils/argume
 import { getShellCompletions, type ShellCompletionType } from '../utils/bash/shellCompletion.js';
 import { formatLogMetadata } from '../utils/format.js';
 import { getSessionIdFromLog, searchSessionsByCustomTitle } from '../utils/sessionStorage.js';
-import { applyCommandSuggestion, findMidInputSlashCommand, generateCommandSuggestions, getBestCommandMatch, isCommandInput } from '../utils/suggestions/commandSuggestions.js';
+import { applyCommandSuggestion, findMidInputSlashCommand, generateCommandSuggestions, getBestCommandMatch, hasCompletionBoundaryAt, isCommandInput } from '../utils/suggestions/commandSuggestions.js';
 import { getDirectoryCompletions, getPathCompletions, isPathLikeToken } from '../utils/suggestions/directoryCompletion.js';
 import { getShellHistoryCompletion } from '../utils/suggestions/shellHistoryCompletion.js';
 import { getSlackChannelSuggestions, hasSlackMcpServer } from '../utils/suggestions/slackChannelSuggestions.js';
@@ -39,7 +39,6 @@ const AT_TOKEN_HEAD_RE = /^@[\p{L}\p{N}\p{M}_\-./\\()[\]~:]*/u;
 const PATH_CHAR_HEAD_RE = /^[\p{L}\p{N}\p{M}_\-./\\()[\]~:]+/u;
 const TOKEN_WITH_AT_RE = /(@[\p{L}\p{N}\p{M}_\-./\\()[\]~:]*|[\p{L}\p{N}\p{M}_\-./\\()[\]~:]+)$/u;
 const TOKEN_WITHOUT_AT_RE = /[\p{L}\p{N}\p{M}_\-./\\()[\]~:]+$/u;
-const HAS_AT_SYMBOL_RE = /(^|\s)@([\p{L}\p{N}\p{M}_\-./\\()[\]~:]*|"[^"]*"?)$/u;
 const HASH_CHANNEL_RE = /(^|\s)#([a-z0-9][a-z0-9_-]*)$/;
 
 // Type guard for path completion metadata
@@ -194,12 +193,42 @@ export function applyShellSuggestion(suggestion: SuggestionItem, input: string, 
   onInputChange(newInput);
   setCursorOffset(wordStart + replacementText.length);
 }
-const DM_MEMBER_RE = /(^|\s)@[\w-]*$/;
 function applyTriggerSuggestion(suggestion: SuggestionItem, input: string, cursorOffset: number, triggerRe: RegExp, onInputChange: (value: string) => void, setCursorOffset: (offset: number) => void): void {
   const m = input.slice(0, cursorOffset).match(triggerRe);
   if (!m || m.index === undefined) return;
   const prefixStart = m.index + (m[1]?.length ?? 0);
   const before = input.slice(0, prefixStart);
+  const newInput = before + suggestion.displayText + ' ' + input.slice(cursorOffset);
+  onInputChange(newInput);
+  setCursorOffset(before.length + suggestion.displayText.length + 1);
+}
+function findAtTokenStart(textBeforeCursor: string): number | null {
+  const atIdx = textBeforeCursor.lastIndexOf('@');
+  if (atIdx < 0 || !hasCompletionBoundaryAt(textBeforeCursor, atIdx)) {
+    return null;
+  }
+  return atIdx;
+}
+function hasBoundaryAtToken(textBeforeCursor: string): boolean {
+  const atIdx = findAtTokenStart(textBeforeCursor);
+  if (atIdx === null) {
+    return false;
+  }
+  const tail = textBeforeCursor.slice(atIdx);
+  return /^@([\p{L}\p{N}\p{M}_\-./\\()[\]~:]*|"[^"]*"?)$/u.test(tail);
+}
+function hasBoundaryDmMention(textBeforeCursor: string): boolean {
+  const atIdx = findAtTokenStart(textBeforeCursor);
+  if (atIdx === null) {
+    return false;
+  }
+  return /^@[\w-]*$/.test(textBeforeCursor.slice(atIdx));
+}
+function applyBoundaryAtSuggestion(suggestion: SuggestionItem, input: string, cursorOffset: number, onInputChange: (value: string) => void, setCursorOffset: (offset: number) => void): void {
+  const beforeCursor = input.slice(0, cursorOffset);
+  const atIdx = findAtTokenStart(beforeCursor);
+  if (atIdx === null) return;
+  const before = input.slice(0, atIdx);
   const newInput = before + suggestion.displayText + ' ' + input.slice(cursorOffset);
   onInputChange(newInput);
   setCursorOffset(before.length + suggestion.displayText.length + 1);
@@ -290,7 +319,7 @@ export function extractCompletionToken(text: string, cursorPos: number, includeA
   // Fast path for @ tokens: use lastIndexOf to avoid expensive $ anchor scan
   if (includeAtSymbol) {
     const atIdx = textBeforeCursor.lastIndexOf('@');
-    if (atIdx >= 0 && (atIdx === 0 || /\s/.test(textBeforeCursor[atIdx - 1]!))) {
+    if (atIdx >= 0 && hasCompletionBoundaryAt(textBeforeCursor, atIdx)) {
       const fromAt = textBeforeCursor.substring(atIdx);
       const atHeadMatch = fromAt.match(AT_TOKEN_HEAD_RE);
       if (atHeadMatch && atHeadMatch[0].length === fromAt.length) {
@@ -651,7 +680,7 @@ export function useTypeahead({
 
     // Check for @ symbol to trigger file suggestions (including quoted paths)
     // Includes colon for MCP resources (e.g., server:resource/path)
-    const hasAtSymbol = value.substring(0, effectiveCursorOffset).match(HAS_AT_SYMBOL_RE);
+    const hasAtSymbol = hasBoundaryAtToken(value.substring(0, effectiveCursorOffset));
 
     // First, check for slash command suggestions (higher priority than @ symbol)
     // Only show slash command selector if cursor is not on the "/" character itself
@@ -809,7 +838,7 @@ export function useTypeahead({
     if (suggestionType === 'agent' && suggestionsRef.current.some((s: SuggestionItem) => s.id?.startsWith('dm-'))) {
       // If we had team member suggestions but the input no longer has @
       // we need to clear the suggestions.
-      const hasAt = value.substring(0, effectiveCursorOffset).match(/(^|\s)@([\w-]*)$/);
+      const hasAt = hasBoundaryDmMention(value.substring(0, effectiveCursorOffset));
       if (!hasAt) {
         clearSuggestions();
       }
@@ -1022,7 +1051,7 @@ export function useTypeahead({
       } else if (suggestionType === 'agent' && suggestions.length > 0 && suggestions[index]?.id?.startsWith('dm-')) {
         const suggestion = suggestions[index];
         if (suggestion) {
-          applyTriggerSuggestion(suggestion, input, cursorOffset, DM_MEMBER_RE, onInputChange, setCursorOffset);
+          applyBoundaryAtSuggestion(suggestion, input, cursorOffset, onInputChange, setCursorOffset);
           clearSuggestions();
         }
       } else if (suggestionType === 'slack-channel' && suggestions.length > 0) {
@@ -1167,7 +1196,7 @@ export function useTypeahead({
         clearSuggestions();
       }
     } else if (suggestionType === 'agent' && selectedSuggestion < suggestions.length && suggestion?.id?.startsWith('dm-')) {
-      applyTriggerSuggestion(suggestion, input, cursorOffset, DM_MEMBER_RE, onInputChange, setCursorOffset);
+      applyBoundaryAtSuggestion(suggestion, input, cursorOffset, onInputChange, setCursorOffset);
       debouncedFetchFileSuggestions.cancel();
       clearSuggestions();
     } else if (suggestionType === 'slack-channel' && selectedSuggestion < suggestions.length) {

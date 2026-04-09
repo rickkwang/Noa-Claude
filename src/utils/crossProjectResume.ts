@@ -3,6 +3,7 @@ import { sep } from 'path'
 import { getOriginalCwd } from '../bootstrap/state.js'
 import type { LogOption } from '../types/logs.js'
 import { quote } from './bash/shellQuote.js'
+import { getPreferredCliCommandName } from './commandName.js'
 import { getSessionIdFromLog } from './sessionStorage.js'
 
 export type CrossProjectResumeResult =
@@ -39,18 +40,6 @@ export function checkCrossProjectResume(
     return { isCrossProject: false }
   }
 
-  // Gate worktree detection to ants only for staged rollout
-  if (process.env.USER_TYPE !== 'ant') {
-    const sessionId = getSessionIdFromLog(log)
-    const command = `cd ${quote([log.projectPath])} && claude-agent --resume ${sessionId}`
-    return {
-      isCrossProject: true,
-      isSameRepoWorktree: false,
-      command,
-      projectPath: log.projectPath,
-    }
-  }
-
   // Check if log.projectPath is under a worktree of the same repo
   const isSameRepo = worktreePaths.some(
     wt => log.projectPath === wt || log.projectPath!.startsWith(wt + sep),
@@ -66,7 +55,7 @@ export function checkCrossProjectResume(
 
   // Different repo - generate cd command
   const sessionId = getSessionIdFromLog(log)
-  const command = `cd ${quote([log.projectPath])} && claude-agent --resume ${sessionId}`
+  const command = `cd ${quote([log.projectPath])} && ${getPreferredCliCommandName()} --resume ${sessionId}`
   return {
     isCrossProject: true,
     isSameRepoWorktree: false,

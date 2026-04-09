@@ -295,6 +295,14 @@ export function CollapsedReadSearchContent({
   // Build non-memory parts first (search, read, repl, mcp, bash) — these render
   // before memory so the line reads "Ran 3 bash commands, recalled 1 memory".
   const nonMemParts: React.ReactNode[] = [];
+  function pushCountPart(key: string, activeVerb: string, pastVerb: string, count_0: number, singular: string, plural: string): void {
+    const isFirst = nonMemParts.length === 0;
+    const verb = isActiveGroup ? isFirst ? activeVerb[0]!.toUpperCase() + activeVerb.slice(1) : activeVerb : isFirst ? pastVerb[0]!.toUpperCase() + pastVerb.slice(1) : pastVerb;
+    if (!isFirst) nonMemParts.push(<Text key={`comma-${key}`}>, </Text>);
+    nonMemParts.push(<Text key={key}>
+        {verb} <Text bold>{count_0}</Text> {count_0 === 1 ? singular : plural}
+      </Text>);
+  }
 
   // Git operations lead the line — they're the load-bearing outcome.
   function pushPart(key: string, verb: string, body: React.ReactNode): void {
@@ -344,47 +352,16 @@ export function CollapsedReadSearchContent({
     }
   }
   if (searchCount > 0) {
-    const isFirst_0 = nonMemParts.length === 0;
-    const searchVerb = isActiveGroup ? isFirst_0 ? 'Searching for' : 'searching for' : isFirst_0 ? 'Searched for' : 'searched for';
-    if (!isFirst_0) {
-      nonMemParts.push(<Text key="comma-s">, </Text>);
-    }
-    nonMemParts.push(<Text key="search">
-        {searchVerb} <Text bold>{searchCount}</Text>{' '}
-        {searchCount === 1 ? 'pattern' : 'patterns'}
-      </Text>);
+    pushCountPart('search', 'searching', 'searched', searchCount, 'pattern', 'patterns');
   }
   if (readCount > 0) {
-    const isFirst_1 = nonMemParts.length === 0;
-    const readVerb = isActiveGroup ? isFirst_1 ? 'Reading' : 'reading' : isFirst_1 ? 'Read' : 'read';
-    if (!isFirst_1) {
-      nonMemParts.push(<Text key="comma-r">, </Text>);
-    }
-    nonMemParts.push(<Text key="read">
-        {readVerb} <Text bold>{readCount}</Text>{' '}
-        {readCount === 1 ? 'file' : 'files'}
-      </Text>);
+    pushCountPart('read', 'reading', 'read', readCount, 'file', 'files');
   }
   if (listCount > 0) {
-    const isFirst_2 = nonMemParts.length === 0;
-    const listVerb = isActiveGroup ? isFirst_2 ? 'Listing' : 'listing' : isFirst_2 ? 'Listed' : 'listed';
-    if (!isFirst_2) {
-      nonMemParts.push(<Text key="comma-l">, </Text>);
-    }
-    nonMemParts.push(<Text key="list">
-        {listVerb} <Text bold>{listCount}</Text>{' '}
-        {listCount === 1 ? 'directory' : 'directories'}
-      </Text>);
+    pushCountPart('list', 'listing', 'listed', listCount, 'directory', 'directories');
   }
   if (replCount > 0) {
-    const replVerb = isActiveGroup ? "REPL'ing" : "REPL'd";
-    if (nonMemParts.length > 0) {
-      nonMemParts.push(<Text key="comma-repl">, </Text>);
-    }
-    nonMemParts.push(<Text key="repl">
-        {replVerb} <Text bold>{replCount}</Text>{' '}
-        {replCount === 1 ? 'time' : 'times'}
-      </Text>);
+    pushCountPart('repl', 'using REPL', 'used REPL', replCount, 'time', 'times');
   }
   if (mcpCallCount > 0) {
     const serverLabel = message.mcpServerNames?.map(n => n.replace(/^claude\.ai /, '')).join(', ') || 'MCP';
@@ -402,15 +379,7 @@ export function CollapsedReadSearchContent({
       </Text>);
   }
   if (isFullscreenEnvEnabled() && bashCount > 0) {
-    const isFirst_4 = nonMemParts.length === 0;
-    const verb_1 = isActiveGroup ? isFirst_4 ? 'Running' : 'running' : isFirst_4 ? 'Ran' : 'ran';
-    if (!isFirst_4) {
-      nonMemParts.push(<Text key="comma-bash">, </Text>);
-    }
-    nonMemParts.push(<Text key="bash">
-        {verb_1} <Text bold>{bashCount}</Text> bash{' '}
-        {bashCount === 1 ? 'command' : 'commands'}
-      </Text>);
+    pushCountPart('bash', 'running', 'ran', bashCount, 'bash command', 'bash commands');
   }
 
   // Build memory parts (auto-memory) — rendered after nonMemParts

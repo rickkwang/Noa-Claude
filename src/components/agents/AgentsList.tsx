@@ -19,6 +19,7 @@ type Props = {
   onSelect: (agent: AgentDefinition) => void;
   onCreateNew?: () => void;
   changes?: string[];
+  runningAgentCount?: number;
 };
 export function AgentsList(t0) {
   const $ = _c(96);
@@ -28,7 +29,8 @@ export function AgentsList(t0) {
     onBack,
     onSelect,
     onCreateNew,
-    changes
+    changes,
+    runningAgentCount
   } = t0;
   const [selectedAgent, setSelectedAgent] = React.useState(null);
   const [isCreateNewSelected, setIsCreateNewSelected] = React.useState(true);
@@ -297,7 +299,7 @@ export function AgentsList(t0) {
       } else {
         t23 = $[74];
       }
-      t18 = `${t23} agents`;
+      t18 = runningAgentCount && runningAgentCount > 0 ? `${t23} agents · ${runningAgentCount} running` : `${t23} agents`;
       t19 = onBack;
       t20 = true;
       if ($[75] !== changes) {

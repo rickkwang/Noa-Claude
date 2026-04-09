@@ -140,9 +140,15 @@ export function restoreSessionStateFromLog(
 ): void {
   // Restore file history state
   if (result.fileHistorySnapshots && result.fileHistorySnapshots.length > 0) {
-    fileHistoryRestoreStateFromLog(result.fileHistorySnapshots, newState => {
-      setAppState(prev => ({ ...prev, fileHistory: newState }))
-    })
+    try {
+      fileHistoryRestoreStateFromLog(result.fileHistorySnapshots, newState => {
+        setAppState(prev => ({ ...prev, fileHistory: newState }))
+      })
+    } catch (error) {
+      logForDebugging(
+        `Skipping file history restore due to malformed snapshot data: ${String(error)}`,
+      )
+    }
   }
 
   // Restore attribution state (ant-only feature)
@@ -151,9 +157,15 @@ export function restoreSessionStateFromLog(
     result.attributionSnapshots &&
     result.attributionSnapshots.length > 0
   ) {
-    attributionRestoreStateFromLog(result.attributionSnapshots, newState => {
-      setAppState(prev => ({ ...prev, attribution: newState }))
-    })
+    try {
+      attributionRestoreStateFromLog(result.attributionSnapshots, newState => {
+        setAppState(prev => ({ ...prev, attribution: newState }))
+      })
+    } catch (error) {
+      logForDebugging(
+        `Skipping attribution restore due to malformed snapshot data: ${String(error)}`,
+      )
+    }
   }
 
   // Restore context-collapse commit log + staged snapshot. Must run before
@@ -163,12 +175,18 @@ export function restoreSessionStateFromLog(
   // first — without that, an in-session /resume into a session with no
   // commits would leave the prior session's stale commit log intact.
   if (feature('CONTEXT_COLLAPSE')) {
-    /* eslint-disable @typescript-eslint/no-require-imports */
-    loadContextCollapsePersist().restoreFromEntries(
-      result.contextCollapseCommits ?? [],
-      result.contextCollapseSnapshot,
-    )
-    /* eslint-enable @typescript-eslint/no-require-imports */
+    try {
+      /* eslint-disable @typescript-eslint/no-require-imports */
+      loadContextCollapsePersist().restoreFromEntries(
+        result.contextCollapseCommits ?? [],
+        result.contextCollapseSnapshot,
+      )
+      /* eslint-enable @typescript-eslint/no-require-imports */
+    } catch (error) {
+      logForDebugging(
+        `Skipping context-collapse restore due to malformed session data: ${String(error)}`,
+      )
+    }
   }
 
   // Restore TodoWrite state from transcript (SDK/non-interactive only).
@@ -490,7 +508,7 @@ export async function processResumedConversation(
     // copy source messages into the new JSONL via recordTranscript, but
     // content-replacement entries are a separate entry type only written by
     // recordContentReplacement (which query.ts calls for newlyReplaced, never
-    // the pre-loaded records). Without this seed, `claude -r {newSessionId}`
+    // the pre-loaded records). Without this seed, `claude-agent --resume {newSessionId}`
     // finds source tool_use_ids in messages but no matching replacement records
     // → they're classified as FROZEN → full content sent (cache miss, permanent
     // overage). insertContentReplacement stamps sessionId = getSessionId() =
@@ -528,12 +546,18 @@ export async function processResumedConversation(
   // --continue/--resume goes through here instead. Called unconditionally
   // — see the restoreSessionStateFromLog callsite above for why.
   if (feature('CONTEXT_COLLAPSE')) {
-    /* eslint-disable @typescript-eslint/no-require-imports */
-    loadContextCollapsePersist().restoreFromEntries(
-      result.contextCollapseCommits ?? [],
-      result.contextCollapseSnapshot,
-    )
-    /* eslint-enable @typescript-eslint/no-require-imports */
+    try {
+      /* eslint-disable @typescript-eslint/no-require-imports */
+      loadContextCollapsePersist().restoreFromEntries(
+        result.contextCollapseCommits ?? [],
+        result.contextCollapseSnapshot,
+      )
+      /* eslint-enable @typescript-eslint/no-require-imports */
+    } catch (error) {
+      logForDebugging(
+        `Skipping context-collapse restore during processResumedConversation: ${String(error)}`,
+      )
+    }
   }
 
   // Restore agent setting from resumed session

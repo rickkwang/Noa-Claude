@@ -1932,7 +1932,7 @@ export function REPL({
       // Skipped for in-session /branch: the existing ref is already correct
       // (branch preserves tool_use_ids), so there's no need to reconstruct.
       // createFork() does write content-replacement entries to the forked
-      // JSONL with the fork's sessionId, so `claude -r {forkId}` also works.
+      // JSONL with the fork's sessionId, so `claude-agent --resume {forkId}` also works.
       if (contentReplacementStateRef.current && entrypoint !== 'fork') {
         contentReplacementStateRef.current = reconstructContentReplacementState(messages, log.contentReplacements ?? []);
       }
