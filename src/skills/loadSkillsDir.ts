@@ -89,7 +89,7 @@ export function getSkillsPath(
 ): string {
   switch (source) {
     case 'policySettings':
-      return join(getManagedFilePath(), '.claude', dir)
+      return join(getManagedFilePath(), PRODUCT_PROJECT_DIR, dir)
     case 'userSettings':
       return getUserScopedSubdir(dir)
     case 'projectSettings':
@@ -646,11 +646,14 @@ async function loadSkillsFromCommandsDir(
 export const getSkillDirCommands = memoize(
   async (cwd: string): Promise<Command[]> => {
     const userSkillsDir = getUserScopedSubdir('skills')
-    const managedSkillsDir = join(getManagedFilePath(), '.claude', 'skills')
+    const managedSkillsDirs = [
+      join(getManagedFilePath(), PRODUCT_PROJECT_DIR, 'skills'),
+      join(getManagedFilePath(), LEGACY_PROJECT_DIR, 'skills'),
+    ]
     const projectSkillsDirs = getProjectDirsUpToHome('skills', cwd)
 
     logForDebugging(
-      `Loading skills from: managed=${managedSkillsDir}, user=${userSkillsDir}, project=[${projectSkillsDirs.join(', ')}]`,
+      `Loading skills from: managed=[${managedSkillsDirs.join(', ')}], user=${userSkillsDir}, project=[${projectSkillsDirs.join(', ')}]`,
     )
 
     // Load from additional directories (--add-dir)
@@ -684,7 +687,7 @@ export const getSkillDirCommands = memoize(
     // Load from /skills/ directories, additional dirs, and legacy /commands/ in parallel
     // (all independent — different directories, no shared state)
     const [
-      managedSkills,
+      managedSkillsNested,
       userSkills,
       projectSkillsNested,
       additionalSkillsNested,
@@ -692,7 +695,11 @@ export const getSkillDirCommands = memoize(
     ] = await Promise.all([
       isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_POLICY_SKILLS)
         ? Promise.resolve([])
-        : loadSkillsFromSkillsDir(managedSkillsDir, 'policySettings'),
+        : Promise.all(
+            managedSkillsDirs.map(dir =>
+              loadSkillsFromSkillsDir(dir, 'policySettings'),
+            ),
+          ),
       isSettingSourceEnabled('userSettings') && !skillsLocked
         ? loadSkillsFromSkillsDir(userSkillsDir, 'userSettings')
         : Promise.resolve([]),
@@ -721,7 +728,7 @@ export const getSkillDirCommands = memoize(
 
     // Flatten and combine all skills
     const allSkillsWithPaths = [
-      ...managedSkills,
+      ...managedSkillsNested.flat(),
       ...userSkills,
       ...projectSkillsNested.flat(),
       ...additionalSkillsNested.flat(),
@@ -802,7 +809,7 @@ export const getSkillDirCommands = memoize(
     }
 
     logForDebugging(
-      `Loaded ${deduplicatedSkills.length} unique skills (${unconditionalSkills.length} unconditional, ${newConditionalSkills.length} conditional, managed: ${managedSkills.length}, user: ${userSkills.length}, project: ${projectSkillsNested.flat().length}, additional: ${additionalSkillsNested.flat().length}, legacy commands: ${legacyCommands.length})`,
+      `Loaded ${deduplicatedSkills.length} unique skills (${unconditionalSkills.length} unconditional, ${newConditionalSkills.length} conditional, managed: ${managedSkillsNested.flat().length}, user: ${userSkills.length}, project: ${projectSkillsNested.flat().length}, additional: ${additionalSkillsNested.flat().length}, legacy commands: ${legacyCommands.length})`,
     )
 
     return unconditionalSkills
@@ -889,7 +896,7 @@ export async function discoverSkillDirsForPaths(
           try {
             await fs.stat(skillDir)
             // Skills dir exists. Before loading, check if the containing dir
-            // is gitignored — blocks e.g. node_modules/pkg/.claude/skills from
+            // is gitignored — blocks e.g. node_modules/pkg/.claude-agent/skills from
             // loading silently. `git check-ignore` handles nested .gitignore,
             // .git/info/exclude, and global gitignore. Fails open outside a
             // git repo (exit 128 → false); the invocation-time trust dialog

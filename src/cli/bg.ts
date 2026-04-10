@@ -79,7 +79,7 @@ export async function psHandler(_args: string[]): Promise<void> {
 
 export async function logsHandler(sessionOrPid?: string): Promise<void> {
   if (!sessionOrPid) {
-    cliError('Usage: claude logs <session-id|pid>')
+    cliError('Usage: claude-agent logs <session-id|pid>')
   }
 
   const entries = await readSessionRegistryEntries()
@@ -105,7 +105,7 @@ export async function logsHandler(sessionOrPid?: string): Promise<void> {
 
 export async function attachHandler(sessionOrPid?: string): Promise<void> {
   if (!sessionOrPid) {
-    cliError('Usage: claude attach <session-id|pid>')
+    cliError('Usage: claude-agent attach <session-id|pid>')
   }
   cliError(
     `Attach for "${sessionOrPid}" is not available in this build. Use the main interactive session instead.`,
@@ -114,7 +114,7 @@ export async function attachHandler(sessionOrPid?: string): Promise<void> {
 
 export async function killHandler(sessionOrPid?: string): Promise<void> {
   if (!sessionOrPid) {
-    cliError('Usage: claude kill <session-id|pid>')
+    cliError('Usage: claude-agent kill <session-id|pid>')
   }
 
   const entries = await readSessionRegistryEntries()
