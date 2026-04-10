@@ -104,7 +104,7 @@ export type MidInputSlashCommand = {
 }
 
 const COMPLETION_BOUNDARY_RE =
-  /[\s　。．，、！!？?：:；;（）()［］\[\]【】「」『』〈〉《》〔〕｛｝{}＜＞<>]/u
+  /[\s　。．，、・！!？?：:；;…—（）()［］\[\]【】「」『』〈〉《》〔〕｛｝{}＜＞<>]/u
 
 export function isCompletionBoundaryChar(char: string | undefined): boolean {
   return char === undefined || COMPLETION_BOUNDARY_RE.test(char)

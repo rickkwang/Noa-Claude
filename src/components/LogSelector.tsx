@@ -138,8 +138,10 @@ function buildLogMetadata(log: LogOption, options?: {
   // Match the child prefix width for proper alignment
   const childPadding = isChild ? '    ' : ''; // 4 spaces to match '  ▸ '
   const baseMetadata = formatLogMetadata(log);
+  const activeCwd = getOriginalCwd();
   const projectSuffix = showProjectPath && log.projectPath ? ` · ${log.projectPath}` : '';
-  return childPadding + baseMetadata + projectSuffix;
+  const cwdSuffix = !showProjectPath && log.projectPath && activeCwd && log.projectPath !== activeCwd ? ` · cwd:${log.projectPath}` : '';
+  return childPadding + baseMetadata + projectSuffix + cwdSuffix;
 }
 export function LogSelector(t0) {
   const $ = _c(247);

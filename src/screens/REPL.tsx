@@ -358,7 +358,7 @@ function TranscriptModeFooter(t0) {
   const t2 = searchBadge ? " \xB7 n/N to navigate" : virtualScroll ? ` · ${figures.arrowUp}${figures.arrowDown} scroll · home/end top/bottom` : suppressShowAll ? "" : ` · ${showAllShortcut} to ${showAllInTranscript ? "collapse" : "show all"}`;
   let t3;
   if ($[0] !== t2 || $[1] !== toggleShortcut) {
-    t3 = <Text dimColor={true}>Showing detailed transcript · {toggleShortcut} to toggle{t2}</Text>;
+    t3 = <Text dimColor={true}>Transcript focus view · {toggleShortcut} to toggle{t2}</Text>;
     $[0] = t2;
     $[1] = toggleShortcut;
     $[2] = t3;

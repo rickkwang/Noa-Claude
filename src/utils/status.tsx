@@ -333,6 +333,19 @@ export function buildAccountProperties(): Property[] {
 export function buildAPIProviderProperties(): Property[] {
   const apiProvider = getAPIProvider();
   const properties: Property[] = [];
+  if (apiProvider === 'firstParty') {
+    const anthropicBaseUrl = process.env.ANTHROPIC_BASE_URL;
+    const isThirdPartyAnthropicCompatible = !!anthropicBaseUrl && !anthropicBaseUrl.includes('anthropic.com');
+    properties.push({
+      label: 'Backend mode',
+      value: isThirdPartyAnthropicCompatible ? 'Third-party Anthropic-compatible' : 'Official Anthropic'
+    });
+  } else {
+    properties.push({
+      label: 'Backend mode',
+      value: 'Cloud provider gateway'
+    });
+  }
   if (apiProvider !== 'firstParty') {
     const providerLabel = {
       bedrock: 'AWS Bedrock',

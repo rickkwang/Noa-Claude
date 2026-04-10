@@ -206,6 +206,10 @@ export function formatLogMetadata(log: {
   messageCount: number
   fileSize?: number
   gitBranch?: string
+  worktreeSession?: {
+    worktreeName: string
+    worktreeBranch?: string
+  } | null
   tag?: string
   agentSetting?: string
   prNumber?: number
@@ -215,9 +219,13 @@ export function formatLogMetadata(log: {
     log.fileSize !== undefined
       ? formatFileSize(log.fileSize)
       : `${log.messageCount} messages`
+  const branchLabel = log.worktreeSession?.worktreeBranch ?? log.gitBranch
   const parts = [
     formatRelativeTimeAgo(log.modified, { style: 'short' }),
-    ...(log.gitBranch ? [log.gitBranch] : []),
+    ...(branchLabel ? [branchLabel] : []),
+    ...(log.worktreeSession?.worktreeName
+      ? [`wt:${log.worktreeSession.worktreeName}`]
+      : []),
     sizeOrCount,
   ]
   if (log.tag) {
