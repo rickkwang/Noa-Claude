@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    },
+    "openspace": {
+      "command": "/Library/Frameworks/Python.framework/Versions/3.12/bin/openspace-mcp",
+      "args": ["--transport", "stdio"]
+    }
+  }
+}

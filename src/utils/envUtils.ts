@@ -8,7 +8,7 @@ import { join } from 'path'
 export const getClaudeConfigHomeDir = memoize(
   (): string => {
     return (
-      process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
+      process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude-agent')
     ).normalize('NFC')
   },
   () => process.env.CLAUDE_CONFIG_DIR,

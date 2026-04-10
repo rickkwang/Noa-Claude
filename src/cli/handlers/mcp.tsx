@@ -24,9 +24,50 @@ import { gracefulShutdown } from '../../utils/gracefulShutdown.js';
 import { safeParseJSON } from '../../utils/json.js';
 import { getPlatform } from '../../utils/platform.js';
 import { cliError, cliOk } from '../exit.js';
+
+const MCP_HEALTHCHECK_TIMEOUT_MS = Math.max(
+  1000,
+  Math.min(
+    30000,
+    Number.parseInt(process.env.CLAUDE_AGENT_MCP_HEALTHCHECK_TIMEOUT_MS || '', 10) || 1500
+  )
+);
+
+const MCP_PLUGIN_HEALTHCHECK_TIMEOUT_MS = Math.max(
+  500,
+  Math.min(
+    5000,
+    Number.parseInt(process.env.CLAUDE_AGENT_MCP_PLUGIN_HEALTHCHECK_TIMEOUT_MS || '', 10) || 1500
+  )
+);
+
+function getMcpHealthcheckTimeoutMs(server: ScopedMcpServerConfig): number {
+  if (
+    server.pluginSource ||
+    (server.type === 'stdio' &&
+      (server.command === 'npx' ||
+        server.command.includes('context7-mcp') ||
+        server.command.includes('@upstash/context7-mcp')))
+  ) {
+    return MCP_PLUGIN_HEALTHCHECK_TIMEOUT_MS;
+  }
+  return MCP_HEALTHCHECK_TIMEOUT_MS;
+}
+
 async function checkMcpServerHealth(name: string, server: ScopedMcpServerConfig): Promise<string> {
+  let timeoutId: NodeJS.Timeout | undefined;
+  const timeoutMs = getMcpHealthcheckTimeoutMs(server);
   try {
-    const result = await connectToServer(name, server);
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error('MCP healthcheck timeout'));
+      }, timeoutMs);
+      timeoutId.unref();
+    });
+    const result = await Promise.race([connectToServer(name, server), timeoutPromise]);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
     if (result.type === 'connected') {
       return '✓ Connected';
     } else if (result.type === 'needs-auth') {
@@ -34,7 +75,13 @@ async function checkMcpServerHealth(name: string, server: ScopedMcpServerConfig)
     } else {
       return '✗ Failed to connect';
     }
-  } catch (_error) {
+  } catch (error) {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    if (error instanceof Error && error.message === 'MCP healthcheck timeout') {
+      return `! timeout(degraded, ${timeoutMs}ms)`;
+    }
     return '✗ Connection error';
   }
 }

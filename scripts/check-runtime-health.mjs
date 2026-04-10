@@ -11,6 +11,10 @@ import {
   normalizeHistorySearchText,
 } from '../src/history.ts';
 import {
+  renderableSearchText,
+  toolUseSearchText,
+} from '../src/utils/transcriptSearch.ts';
+import {
   getSandboxRuntimeCompatibility,
   SandboxManager,
 } from '../src/utils/sandbox/sandbox-adapter.ts';
@@ -227,6 +231,30 @@ function checkHistorySearchUtilities() {
   );
 }
 
+function checkTranscriptSearchUtilities() {
+  const searchable = renderableSearchText({
+    type: 'user',
+    message: {
+      content: 'Keep this <system-reminder>hidden</system-reminder> visible',
+    },
+  });
+  assert(
+    searchable.includes('keep this') && !searchable.includes('hidden'),
+    'transcript search should strip system-reminder content',
+    searchable,
+  );
+
+  const toolUse = toolUseSearchText({
+    command: 'rg "needle"',
+    args: ['--glob', '*.ts'],
+  });
+  assert(
+    toolUse.includes('rg "needle"') && toolUse.includes('--glob *.ts'),
+    'tool use search text should include command and argument arrays',
+    toolUse,
+  );
+}
+
 async function checkCompactUtilities() {
   const compactText = buildDisplayText(
     { options: { verbose: false } },
@@ -436,6 +464,59 @@ function checkLauncherFailurePaths() {
   }
 }
 
+function checkResumeFailurePaths() {
+  const invalidResume = runAgent([
+    '--print',
+    '--tools',
+    '',
+    '--resume',
+    'invalid-session-id',
+    'ping',
+  ]);
+  assert(
+    invalidResume.status !== 0 &&
+      `${invalidResume.stderr}${invalidResume.stdout}`.includes('[CONFIG_ERROR]') &&
+      `${invalidResume.stderr}${invalidResume.stdout}`.includes(
+        '--resume requires a valid session ID when used with --print',
+      ),
+    'Invalid --resume identifier should fail with CONFIG_ERROR',
+    invalidResume.stderr || invalidResume.stdout,
+  );
+
+  const malformedDir = mkdtempSync(join(tmpdir(), 'claude-agent-resume-malformed-'));
+  const malformedTranscript = join(malformedDir, 'broken.jsonl');
+  try {
+    writeFileSync(
+      malformedTranscript,
+      '{"type":"user","message":{"content":"ok"}}\n{not-json}\n',
+      'utf8',
+    );
+
+    const malformedResume = runAgent([
+      '--print',
+      '--tools',
+      '',
+      '--resume',
+      malformedTranscript,
+      'ping',
+    ]);
+    const malformedOutput = `${malformedResume.stderr}${malformedResume.stdout}`;
+    assert(
+      malformedResume.status !== 0 &&
+        (
+          malformedOutput.includes(
+            '[RUNTIME_COMPAT_ERROR] Resume source is malformed or incompatible.',
+          ) ||
+          malformedOutput.includes('[CONFIG_ERROR] No conversation found with session ID:')
+        ),
+      'Malformed/invalid resume transcript should fail with a stable diagnostic error',
+      malformedResume.stderr || malformedResume.stdout,
+    );
+  } finally {
+    rmSync(malformedDir, { recursive: true, force: true });
+  }
+}
+
 function checkNonInteractiveMcpTimeoutFallback() {
   const runtimeDir = mkdtempSync(join(tmpdir(), 'claude-agent-mcp-timeout-'));
   const mcpConfigPath = join(runtimeDir, 'mcp-timeout.json');
@@ -540,6 +621,9 @@ checkSessionUtilities();
 console.log('Checking history search helpers...');
 checkHistorySearchUtilities();
 
+console.log('Checking transcript search helpers...');
+checkTranscriptSearchUtilities();
+
 console.log('Checking compact helpers...');
 await checkCompactUtilities();
 
@@ -548,6 +632,9 @@ await checkRipgrep();
 
 console.log('Checking launcher failure paths...');
 checkLauncherFailurePaths();
+
+console.log('Checking resume failure paths...');
+checkResumeFailurePaths();
 
 console.log('Checking non-interactive MCP timeout fallback...');
 checkNonInteractiveMcpTimeoutFallback();

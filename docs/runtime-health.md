@@ -15,6 +15,7 @@ Use `/status` to inspect current runtime state:
 - plugin state
 - search tool state
 - sandbox runtime compatibility
+- running/pending agent visibility from `/agents`
 
 `/status` is for current state and current configuration sources.
 
@@ -37,6 +38,20 @@ Current doctor coverage includes:
 - LSP startup state
 - config and environment validation
 - context usage warnings
+- actionable next step hints per failing layer
+
+## MCP Healthcheck Degradation
+
+`claude-agent mcp list` keeps startup/list operations responsive when slow MCP
+servers are present:
+
+- direct/project/user servers use `CLAUDE_AGENT_MCP_HEALTHCHECK_TIMEOUT_MS`
+- plugin-like servers use `CLAUDE_AGENT_MCP_PLUGIN_HEALTHCHECK_TIMEOUT_MS`
+- timed out servers are marked as `timeout(degraded, Nms)` instead of blocking
+  the whole command
+
+Default values are tuned for non-blocking checks and can be overridden with
+environment variables.
 
 ## Expected Workflow
 

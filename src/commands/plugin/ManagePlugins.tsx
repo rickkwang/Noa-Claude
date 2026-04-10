@@ -469,7 +469,7 @@ export function ManagePlugins({
       // User can configure later via the Configure options menu if they want.
       setViewState('plugin-list');
       setSelectedPlugin(null);
-      setResult('Plugin enabled. Configuration skipped — run /reload-plugins to apply.');
+      setResult('Plugin enabled. Configuration skipped — run /reload-plugins in ~/.claude-agent to apply.');
       if (onManageComplete) {
         void onManageComplete();
       }
@@ -491,7 +491,7 @@ export function ManagePlugins({
       });
     } else {
       if (pendingToggles.size > 0) {
-        setResult('Run /reload-plugins to apply plugin changes.');
+        setResult('Run /reload-plugins in ~/.claude-agent to apply plugin changes.');
         return;
       }
       setParentViewState({
@@ -1044,7 +1044,7 @@ export function ManagePlugins({
           {
             if (isBuiltin) break; // guarded above; narrows pluginScope
             if (!isInstallableScope(pluginScope)) break;
-            // If the plugin is enabled in .claude/settings.json (shared with the
+            // If the plugin is enabled in .claude-agent/settings.json (shared with the
             // team), divert to a confirmation dialog that offers to disable in
             // settings.local.json instead. Check the settings file directly —
             // `pluginScope` (from installed_plugins.json) can be 'user' even when
@@ -1125,7 +1125,7 @@ export function ManagePlugins({
       // Single-line warning — notification timeout is ~8s, multi-line would scroll off.
       // The persistent record is in the Errors tab (dependency-unsatisfied after reload).
       const depWarn = reverseDependents && reverseDependents.length > 0 ? ` · required by ${reverseDependents.join(', ')}` : '';
-      const message = `✓ ${operationName} ${selectedPlugin.plugin.name}${depWarn}. Run /reload-plugins to apply.`;
+      const message = `✓ ${operationName} ${selectedPlugin.plugin.name}${depWarn}. Run /reload-plugins in ~/.claude-agent to apply.`;
       setResult(message);
       if (onManageComplete) {
         await onManageComplete();
@@ -1524,7 +1524,7 @@ export function ManagePlugins({
         return;
       }
       clearAllCaches();
-      setResult(`✓ Disabled ${selectedPlugin.plugin.name} in .claude-agent/settings.local.json. Run /reload-plugins to apply.`);
+      setResult(`✓ Disabled ${selectedPlugin.plugin.name} in .claude-agent/settings.local.json. Run /reload-plugins in ~/.claude-agent to apply.`);
       if (onManageComplete) void onManageComplete();
       setParentViewState({
         type: 'menu'
@@ -1646,10 +1646,10 @@ export function ManagePlugins({
     return <PluginOptionsFlow plugin={selectedPlugin.plugin} pluginId={pluginId_10} onDone={(outcome, detail) => {
       switch (outcome) {
         case 'configured':
-          finish(`✓ Enabled and configured ${selectedPlugin.plugin.name}. Run /reload-plugins to apply.`);
+          finish(`✓ Enabled and configured ${selectedPlugin.plugin.name}. Run /reload-plugins in ~/.claude-agent to apply.`);
           break;
         case 'skipped':
-          finish(`✓ Enabled ${selectedPlugin.plugin.name}. Run /reload-plugins to apply.`);
+          finish(`✓ Enabled ${selectedPlugin.plugin.name}. Run /reload-plugins in ~/.claude-agent to apply.`);
           break;
         case 'error':
           finish(`Failed to save configuration: ${detail}`);
@@ -1665,7 +1665,7 @@ export function ManagePlugins({
       try {
         savePluginOptions(pluginId_11, values, viewState.schema);
         clearAllCaches();
-        setResult('Configuration saved. Run /reload-plugins for changes to take effect.');
+        setResult('Configuration saved. Run /reload-plugins in ~/.claude-agent for changes to take effect.');
       } catch (err_3) {
         setProcessError(`Failed to save configuration: ${errorMessage(err_3)}`);
       }
@@ -1705,7 +1705,7 @@ export function ManagePlugins({
         setProcessError(null);
         setConfigNeeded(null);
         setViewState('plugin-details');
-        setResult('Configuration saved. Run /reload-plugins for changes to take effect.');
+        setResult('Configuration saved. Run /reload-plugins in ~/.claude-agent for changes to take effect.');
       } catch (err_4) {
         const errorMsg_0 = errorMessage(err_4);
         setProcessError(`Failed to save configuration: ${errorMsg_0}`);
@@ -2208,7 +2208,7 @@ export function ManagePlugins({
       {/* Reload disclaimer for plugin changes */}
       {pendingToggles.size > 0 && <Box marginLeft={1}>
           <Text dimColor italic>
-            Run /reload-plugins to apply changes
+            Run /reload-plugins in ~/.claude-agent to apply changes
           </Text>
         </Box>}
     </Box>;

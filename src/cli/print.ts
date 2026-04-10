@@ -421,6 +421,53 @@ function formatDiagnosticError(code: DiagnosticErrorCode, message: string): stri
   return `[${code}] ${message}`
 }
 
+function classifyResumeFailure(error: unknown): {
+  code: DiagnosticErrorCode
+  message: string
+} {
+  const raw =
+    error instanceof Error
+      ? `${error.name}: ${error.message}`.toLowerCase()
+      : ''
+
+  if (
+    raw.includes('enoent') ||
+    raw.includes('not found') ||
+    raw.includes('no such file')
+  ) {
+    return {
+      code: 'CONFIG_ERROR',
+      message: 'Resume source not found.',
+    }
+  }
+
+  if (
+    raw.includes('json') ||
+    raw.includes('parse') ||
+    raw.includes('unexpected token')
+  ) {
+    return {
+      code: 'RUNTIME_COMPAT_ERROR',
+      message: 'Resume source is malformed or incompatible.',
+    }
+  }
+
+  if (raw.includes('aborted') || raw.includes('interrupted')) {
+    return {
+      code: 'RUNTIME_COMPAT_ERROR',
+      message: 'Resume interrupted before completion.',
+    }
+  }
+
+  return {
+    code: 'RUNTIME_COMPAT_ERROR',
+    message:
+      error instanceof Error
+        ? `Failed to resume session: ${error.message}`
+        : 'Failed to resume session with --print mode',
+  }
+}
+
 /**
  * Join prompt values from multiple queued commands into one. Strings are
  * newline-joined; if any value is a block array, all values are normalized
@@ -5185,16 +5232,11 @@ async function loadInitialMessages(
       }
     } catch (error) {
       logError(error)
-      const errorMessage =
-        error instanceof Error
-          ? formatDiagnosticError(
-              'RUNTIME_COMPAT_ERROR',
-              `Failed to resume session: ${error.message}`,
-            )
-          : formatDiagnosticError(
-              'RUNTIME_COMPAT_ERROR',
-              'Failed to resume session with --print mode',
-            )
+      const classified = classifyResumeFailure(error)
+      const errorMessage = formatDiagnosticError(
+        classified.code,
+        classified.message,
+      )
       emitLoadError(errorMessage, options.outputFormat)
       gracefulShutdownSync(1)
       return { messages: [] }

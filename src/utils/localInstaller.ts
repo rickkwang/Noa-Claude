@@ -28,8 +28,9 @@ export function getLocalClaudePath(): string {
  * Check if we're running from our managed local installation
  */
 export function isRunningFromLocalInstallation(): boolean {
-  const execPath = process.argv[1] || ''
-  return execPath.includes('/.claude/local/node_modules/')
+  const execPath = (process.argv[1] || '').replace(/\\/g, '/')
+  const localInstallDir = getLocalInstallDir().replace(/\\/g, '/')
+  return execPath.includes(`${localInstallDir}/node_modules/`)
 }
 
 /**

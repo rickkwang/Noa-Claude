@@ -81,6 +81,9 @@ Notes:
 - Third-party backend failures are surfaced explicitly. They do not silently fall back to the official Claude OAuth flow.
 - `CLAUDE_CODE_REGULAR_MCP_CONNECT_TIMEOUT_MS` controls the non-interactive regular MCP connect timeout.
 - `CLAUDE_CODE_CLAUDEAI_MCP_CONNECT_TIMEOUT_MS` controls the non-interactive claude.ai MCP connect timeout.
+- `CLAUDE_AGENT_MCP_HEALTHCHECK_TIMEOUT_MS` controls `mcp list` timeout for direct servers.
+- `CLAUDE_AGENT_MCP_PLUGIN_HEALTHCHECK_TIMEOUT_MS` controls `mcp list` timeout for plugin-like servers.
+- `mcp list` marks slow servers as `timeout(degraded, Nms)` instead of blocking the full result.
 
 ## Working With Projects
 

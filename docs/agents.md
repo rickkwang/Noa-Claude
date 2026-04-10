@@ -25,6 +25,7 @@ The productized `/agents` surface is intended to answer four questions quickly:
 - what model and permissions it uses
 - whether it runs in foreground or background
 - whether it uses isolation, hooks, memory, or skills
+- how many agents are currently running/pending in this session
 
 ## Operational Rules
 

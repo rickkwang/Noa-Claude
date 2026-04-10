@@ -28,6 +28,8 @@ Expected behavior:
 - invalid IDs fail clearly
 - compacted sessions still resume correctly
 - project-local session metadata is restored consistently
+- malformed transcript sources fail with a stable compatibility error
+- interrupted resume paths fail explicitly instead of silent state drift
 
 ## Progress Artifacts
 

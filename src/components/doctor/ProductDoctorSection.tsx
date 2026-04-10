@@ -93,7 +93,7 @@ export function ProductDoctorSection() {
           </Text>
           {plugins.needsRefresh && (
             <Text dimColor={true}>
-              └ Action: run /reload-plugins before relying on newly installed plugins or language servers
+              └ Action: run /reload-plugins in ~/.claude-agent before relying on newly installed plugins or language servers
             </Text>
           )}
         </>

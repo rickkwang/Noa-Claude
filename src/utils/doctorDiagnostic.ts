@@ -12,7 +12,7 @@ import {
   type InstallMethod,
 } from './config.js'
 import { getCwd } from './cwd.js'
-import { isEnvTruthy } from './envUtils.js'
+import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
 import { execFileNoThrow } from './execFileNoThrow.js'
 import { getFsImplementation } from './fsOperations.js'
 import {
@@ -54,6 +54,8 @@ export type InstallationType =
   | 'package-manager'
   | 'development'
   | 'unknown'
+
+const PREFERRED_BINARIES = ['claude-agent', 'claude'] as const
 
 export type DiagnosticInfo = {
   installationType: InstallationType
@@ -165,21 +167,26 @@ async function getInstallationPath(): Promise<string> {
       // This function doesn't expect errors
     }
 
-    try {
-      const path = await which('claude')
-      if (path) {
-        return path
+    for (const binary of PREFERRED_BINARIES) {
+      try {
+        const path = await which(binary)
+        if (path) {
+          return path
+        }
+      } catch {
+        // This function doesn't expect errors
       }
-    } catch {
-      // This function doesn't expect errors
     }
 
     // If we can't find it, check common locations
-    try {
-      await getFsImplementation().stat(join(homedir(), '.local/bin/claude'))
-      return join(homedir(), '.local/bin/claude')
-    } catch {
-      // Not found
+    for (const binary of PREFERRED_BINARIES) {
+      const path = join(homedir(), `.local/bin/${binary}`)
+      try {
+        await getFsImplementation().stat(path)
+        return path
+      } catch {
+        // Not found
+      }
     }
     return 'native'
   }
@@ -213,7 +220,7 @@ async function detectMultipleInstallations(): Promise<
   const installations: Array<{ type: string; path: string }> = []
 
   // Check for local installation
-  const localPath = join(homedir(), '.claude', 'local')
+  const localPath = join(getClaudeConfigHomeDir(), 'local')
   if (await localInstallationExists()) {
     installations.push({ type: 'npm-local', path: localPath })
   }
@@ -233,22 +240,24 @@ async function detectMultipleInstallations(): Promise<
     const npmPrefix = npmResult.stdout.trim()
     const isWindows = getPlatform() === 'windows'
 
-    // First check for active installations via bin/claude
-    // Linux / macOS have prefix/bin/claude and prefix/lib/node_modules
-    // Windows has prefix/claude and prefix/node_modules
-    const globalBinPath = isWindows
-      ? join(npmPrefix, 'claude')
-      : join(npmPrefix, 'bin', 'claude')
+    // Check active installations via bin/claude-agent (preferred), then legacy claude
+    // Linux / macOS have prefix/bin/<binary>, Windows has prefix/<binary>
+    const globalBinPaths = PREFERRED_BINARIES.map(binary =>
+      isWindows ? join(npmPrefix, binary) : join(npmPrefix, 'bin', binary),
+    )
 
-    let globalBinExists = false
-    try {
-      await fs.stat(globalBinPath)
-      globalBinExists = true
-    } catch {
-      // Not found
+    let globalBinPath: string | null = null
+    for (const candidate of globalBinPaths) {
+      try {
+        await fs.stat(candidate)
+        globalBinPath = candidate
+        break
+      } catch {
+        // Not found
+      }
     }
 
-    if (globalBinExists) {
+    if (globalBinPath) {
       // Check if this is actually a Homebrew cask installation, not npm-global
       // When npm is installed via Homebrew, both can exist at /opt/homebrew/bin/claude
       // We need to resolve the symlink to see where it actually points
@@ -271,7 +280,7 @@ async function detectMultipleInstallations(): Promise<
         installations.push({ type: 'npm-global', path: globalBinPath })
       }
     } else {
-      // If no bin/claude exists, check for orphaned packages (no bin/claude symlink)
+      // If no managed binary exists, check for orphaned packages
       for (const packageName of packagesToCheck) {
         const globalPackagePath = isWindows
           ? join(npmPrefix, 'node_modules', packageName)
@@ -293,12 +302,15 @@ async function detectMultipleInstallations(): Promise<
   // Check for native installation
 
   // Check common native installation paths
-  const nativeBinPath = join(homedir(), '.local', 'bin', 'claude')
-  try {
-    await fs.stat(nativeBinPath)
-    installations.push({ type: 'native', path: nativeBinPath })
-  } catch {
-    // Not found
+  for (const binary of PREFERRED_BINARIES) {
+    const nativeBinPath = join(homedir(), '.local', 'bin', binary)
+    try {
+      await fs.stat(nativeBinPath)
+      installations.push({ type: 'native', path: nativeBinPath })
+      break
+    } catch {
+      // Not found
+    }
   }
 
   // Also check if config indicates native installation
@@ -439,14 +451,14 @@ async function detectConfigurationIssues(
     if (type === 'npm-local' && config.installMethod !== 'local') {
       warnings.push({
         issue: `Running from local installation but config install method is '${config.installMethod}'`,
-        fix: 'Consider using native installation: claude install',
+        fix: 'Consider using native installation: claude-agent install',
       })
     }
 
     if (type === 'native' && config.installMethod !== 'native') {
       warnings.push({
         issue: `Running native installation but config install method is '${config.installMethod}'`,
-        fix: 'Run claude install to update configuration',
+        fix: 'Run claude-agent install to update configuration',
       })
     }
   }
@@ -454,7 +466,7 @@ async function detectConfigurationIssues(
   if (type === 'npm-global' && (await localInstallationExists())) {
     warnings.push({
       issue: 'Local installation exists but not being used',
-      fix: 'Consider using native installation: claude install',
+      fix: 'Consider using native installation: claude-agent install',
     })
   }
 
@@ -464,8 +476,9 @@ async function detectConfigurationIssues(
   // Check if running local installation but it's not in PATH
   if (type === 'npm-local') {
     // Check if claude is already accessible via PATH
-    const whichResult = await which('claude')
-    const claudeInPath = !!whichResult
+    const whichResultAgent = await which('claude-agent')
+    const whichResultLegacy = await which('claude')
+    const claudeInPath = !!whichResultAgent || !!whichResultLegacy
 
     // Only show warning if claude is NOT in PATH AND no valid alias exists
     if (!claudeInPath && !validAlias) {
@@ -473,13 +486,13 @@ async function detectConfigurationIssues(
         // Alias exists but points to invalid target
         warnings.push({
           issue: 'Local installation not accessible',
-          fix: `Alias exists but points to invalid target: ${existingAlias}. Update alias: alias claude="~/.claude/local/claude"`,
+          fix: `Alias exists but points to invalid target: ${existingAlias}. Update alias: alias claude-agent="${getClaudeConfigHomeDir()}/local/claude"`,
         })
       } else {
         // No alias exists and not in PATH
         warnings.push({
           issue: 'Local installation not accessible',
-          fix: 'Create alias: alias claude="~/.claude/local/claude"',
+          fix: `Create alias: alias claude-agent="${getClaudeConfigHomeDir()}/local/claude"`,
         })
       }
     }
@@ -584,7 +597,7 @@ export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
     if (!hasUpdatePermissions && !getAutoUpdaterDisabledReason()) {
       warnings.push({
         issue: 'Insufficient permissions for auto-updates',
-        fix: 'Do one of: (1) Re-install node without sudo, or (2) Use `claude install` for native installation',
+        fix: 'Do one of: (1) Re-install node without sudo, or (2) Use `claude-agent install` for native installation',
       })
     }
   }
