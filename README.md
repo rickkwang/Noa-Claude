@@ -129,6 +129,9 @@ Supported subcommands:
 Workflow files are stored in `.claude-agent/workflows` and legacy `.claude/workflows` is still accepted for reads.
 
 Project-level MCP servers are stored in `.claude-agent/mcp.json`. Legacy `.mcp.json` is still read when present, but new writes go to `.claude-agent/mcp.json`.
+`/mcp` and `claude-agent mcp list` show MCP servers only. Plugins that do not
+declare an MCP server (for example skills-only plugins) are still enabled but
+won't appear in MCP server listings.
 
 ### `/summary`
 

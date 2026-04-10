@@ -162,13 +162,13 @@ export function ResumeTask({
   const options = sessionMetadata.map(({
     timeString,
     title,
-    id
+    id,
+    repo,
   }) => {
     const paddedTime = timeString.padEnd(maxTimeStringLength, ' ');
-
-    // TODO: include branch name when API returns it
+    const branchSuffix = repo?.default_branch ? ` · ${repo.default_branch}` : ''
     return {
-      label: `${paddedTime}  ${title}`,
+      label: `${paddedTime}  ${title}${branchSuffix}`,
       value: id
     };
   });

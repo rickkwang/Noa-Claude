@@ -29,6 +29,61 @@ type ResumeResult = {
   arg: string;
   count: number;
 };
+
+type ResumeErrorCode =
+  | 'SESSION_NOT_FOUND'
+  | 'SESSION_COMPAT_ERROR'
+  | 'SESSION_RESTORE_INTERRUPTED'
+  | 'SESSION_UNKNOWN_ERROR'
+
+function classifyResumeError(error: unknown): {
+  code: ResumeErrorCode
+  message: string
+} {
+  const rawMessage =
+    error instanceof Error ? error.message : String(error ?? 'unknown error')
+  const normalized = rawMessage.toLowerCase()
+
+  if (
+    normalized.includes('not found') ||
+    normalized.includes('no conversation') ||
+    normalized.includes('missing session')
+  ) {
+    return {
+      code: 'SESSION_NOT_FOUND',
+      message: 'Conversation not found. Check the session ID and try again.',
+    }
+  }
+
+  if (
+    normalized.includes('compat') ||
+    normalized.includes('schema') ||
+    normalized.includes('deserialize') ||
+    normalized.includes('invalid transcript')
+  ) {
+    return {
+      code: 'SESSION_COMPAT_ERROR',
+      message: 'Conversation data is incompatible with this build.',
+    }
+  }
+
+  if (
+    normalized.includes('aborted') ||
+    normalized.includes('interrupt') ||
+    normalized.includes('cancel')
+  ) {
+    return {
+      code: 'SESSION_RESTORE_INTERRUPTED',
+      message: 'Resume was interrupted before completion.',
+    }
+  }
+
+  return {
+    code: 'SESSION_UNKNOWN_ERROR',
+    message: 'Resume failed due to an unexpected error.',
+  }
+}
+
 function resumeHelpMessage(result: ResumeResult): string {
   switch (result.resultType) {
     case 'sessionNotFound':
@@ -201,7 +256,8 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
       });
     } catch (error) {
       logError(error as Error);
-      onDone(`Failed to resume: ${(error as Error).message}`);
+      const classified = classifyResumeError(error)
+      onDone(`${classified.message} (${classified.code})`)
     }
   };
   const arg = args?.trim();

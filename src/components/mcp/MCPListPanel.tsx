@@ -432,7 +432,7 @@ export function MCPListPanel(t0) {
   }
   let t27;
   if ($[62] === Symbol.for("react.memo_cache_sentinel")) {
-    t27 = <Text dimColor={true}><Link url="https://code.claude.com/docs/en/mcp">https://code.claude.com/docs/en/mcp</Link>{" "}for help</Text>;
+    t27 = <Box flexDirection="column"><Text dimColor={true}>Only MCP servers are listed here. Plugins that provide only skills/agents/hooks will not appear in this list.</Text><Text dimColor={true}><Link url="https://code.claude.com/docs/en/mcp">https://code.claude.com/docs/en/mcp</Link>{" "}for help</Text></Box>;
     $[62] = t27;
   } else {
     t27 = $[62];

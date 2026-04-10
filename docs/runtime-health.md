@@ -50,6 +50,12 @@ servers are present:
 - timed out servers are marked as `timeout(degraded, Nms)` instead of blocking
   the whole command
 
+Important visibility rule:
+
+- `/mcp` and `mcp list` show MCP servers, not total enabled plugins
+- plugins that only provide skills/agents/hooks and no MCP server do not appear
+  in MCP server lists
+
 Default values are tuned for non-blocking checks and can be overridden with
 environment variables.
 
