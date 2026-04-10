@@ -22,7 +22,7 @@ type Props = {
   runningAgentCount?: number;
 };
 export function AgentsList(t0) {
-  const $ = _c(96);
+  const $ = _c(98);
   const {
     source,
     agents,
@@ -299,7 +299,15 @@ export function AgentsList(t0) {
       } else {
         t23 = $[74];
       }
-      t18 = runningAgentCount && runningAgentCount > 0 ? `${t23} agents · ${runningAgentCount} running` : `${t23} agents`;
+      let t23b;
+      if ($[96] !== sortedAgents) {
+        t23b = count(sortedAgents, _tempBackground);
+        $[96] = sortedAgents;
+        $[97] = t23b;
+      } else {
+        t23b = $[97];
+      }
+      t18 = `${t23} agents${t23b > 0 ? ` · ${t23b} background-ready` : ''}${runningAgentCount && runningAgentCount > 0 ? ` · ${runningAgentCount} running` : ''}`;
       t19 = onBack;
       t20 = true;
       if ($[75] !== changes) {
@@ -403,6 +411,9 @@ export function AgentsList(t0) {
     t24 = $[95];
   }
   return t24;
+}
+function _tempBackground(a_7b) {
+  return !a_7b.overriddenBy && !!a_7b.background;
 }
 function _temp1(a_9) {
   return a_9.source === "built-in";

@@ -117,6 +117,9 @@ runCommand('bun', ['run', 'build']);
 console.log('Running typecheck...');
 runCommand('npm', ['run', 'typecheck', '--', '--pretty', 'false']);
 
+console.log('Checking docs consistency...');
+runCommand('npm', ['run', 'check:docs']);
+
 console.log('Checking version entrypoints...');
 runCommand(agentBin, ['--version']);
 runCommand(agentBin, ['--cwd', '/tmp', '--version']);

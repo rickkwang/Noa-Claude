@@ -162,8 +162,32 @@ try {
     maxFallbackWallMs: MAX_FALLBACK_WALL_MS.explicit,
   });
 
+  assert(
+    typeof autoMetrics.fallbackWallMs === 'number' &&
+      typeof explicitMetrics.fallbackWallMs === 'number' &&
+      autoMetrics.fallbackWallMs < explicitMetrics.fallbackWallMs,
+    'Auto-discovery fallback should remain faster than explicit MCP config fallback',
+    {
+      autoFallbackWallMs: autoMetrics.fallbackWallMs,
+      explicitFallbackWallMs: explicitMetrics.fallbackWallMs,
+    },
+  );
+
+  const autoHeadroomMs =
+    autoMetrics.maxFallbackWallMs - autoMetrics.fallbackWallMs;
+  const explicitHeadroomMs =
+    explicitMetrics.maxFallbackWallMs - explicitMetrics.fallbackWallMs;
+
   console.log(JSON.stringify(autoMetrics));
   console.log(JSON.stringify(explicitMetrics));
+  console.log(
+    JSON.stringify({
+      scenario: 'comparison',
+      assertion: 'auto_faster_than_explicit',
+      autoHeadroomMs,
+      explicitHeadroomMs,
+    }),
+  );
   console.log('Performance smoke checks passed.');
 } finally {
   rmSync(workdir, { recursive: true, force: true });

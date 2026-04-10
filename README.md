@@ -93,6 +93,17 @@ Project-specific assets live under `.claude-agent/` in the current project:
 
 Legacy `.claude/` paths are still read for compatibility when present, but new writes go to `.claude-agent/`.
 
+## Product Guides
+
+Focused product docs live under `docs/`:
+
+- [docs/agents.md](/Users/myrickwang/Desktop/Coding/Claude/docs/agents.md)
+- [docs/runtime-health.md](/Users/myrickwang/Desktop/Coding/Claude/docs/runtime-health.md)
+- [docs/session-continuity.md](/Users/myrickwang/Desktop/Coding/Claude/docs/session-continuity.md)
+- [docs/progress-artifacts.md](/Users/myrickwang/Desktop/Coding/Claude/docs/progress-artifacts.md)
+- [docs/worktrees.md](/Users/myrickwang/Desktop/Coding/Claude/docs/worktrees.md)
+- [docs/decisions/README.md](/Users/myrickwang/Desktop/Coding/Claude/docs/decisions/README.md)
+
 ## Built-In Commands
 
 ### `/fork`

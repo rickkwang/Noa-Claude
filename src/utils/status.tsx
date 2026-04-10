@@ -11,7 +11,7 @@ import { getAWSRegion, getDefaultVertexRegion, isEnvTruthy } from './envUtils.js
 import { getDisplayPath } from './file.js';
 import { formatNumber } from './format.js';
 import { getIdeClientName, type IDEExtensionInstallationStatus, isJetBrainsIde, toIDEDisplayName } from './ide.js';
-import { getInitializationStatus, isLspConnected } from '../services/lsp/manager.js';
+import { getInitializationStatus, getLspServerManager, isLspConnected } from '../services/lsp/manager.js';
 import { getClaudeAiUserDefaultModelDescription, modelDisplayString } from './model/model.js';
 import { getAPIProvider } from './model/providers.js';
 import { getMTLSConfig } from './mtls.js';
@@ -66,11 +66,18 @@ export function buildSandboxProperties(): Property[] {
 }
 export function buildLspProperties(): Property[] {
   const status = getInitializationStatus();
+  const manager = getLspServerManager();
+  const servers = manager ? Array.from(manager.getAllServers().values()) : [];
+  const healthyCount = servers.filter(server => server.state !== 'error').length;
+  const failedCount = servers.filter(server => server.state === 'error').length;
   switch (status.status) {
     case 'success':
       return [{
         label: 'LSP',
-        value: isLspConnected() ? 'Connected' : 'Initialized with no active servers'
+        value: isLspConnected() ? `Connected (${healthyCount} server${healthyCount === 1 ? '' : 's'} ready${failedCount > 0 ? `, ${failedCount} failed` : ''})` : 'Initialized with no active servers'
+      }, {
+        label: 'LSP features',
+        value: 'Diagnostics, hover, go-to-definition, references'
       }];
     case 'pending':
       return [{
@@ -81,11 +88,17 @@ export function buildLspProperties(): Property[] {
       return [{
         label: 'LSP',
         value: `Failed to initialize: ${status.error.message}`
+      }, {
+        label: 'LSP action',
+        value: 'Check /doctor for startup errors or reload plugins if language servers were just installed'
       }];
     default:
       return [{
         label: 'LSP',
         value: 'Not started'
+      }, {
+        label: 'LSP action',
+        value: 'LSP starts in normal interactive mode; bare/print mode does not initialize it'
       }];
   }
 }

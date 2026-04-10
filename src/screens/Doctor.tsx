@@ -14,6 +14,7 @@ import { Pane } from '../components/design-system/Pane.js';
 import { PressEnterToContinue } from '../components/PressEnterToContinue.js';
 import { SandboxDoctorSection } from '../components/sandbox/SandboxDoctorSection.js';
 import { ValidationErrorsList } from '../components/ValidationErrorsList.js';
+import { ProductDoctorSection } from '../components/doctor/ProductDoctorSection.js';
 import { useSettingsErrors } from '../hooks/notifs/useSettingsErrors.js';
 import { useExitOnCtrlCDWithKeybindings } from '../hooks/useExitOnCtrlCDWithKeybindings.js';
 import { Box, Text } from '../ink.js';
@@ -487,7 +488,7 @@ export function Doctor(t0) {
   }
   let t41;
   if ($[76] !== t23 || $[77] !== t30 || $[78] !== t35 || $[79] !== t36 || $[80] !== t37 || $[81] !== t38 || $[82] !== t39) {
-    t41 = <Pane>{t23}{t30}{t31}{t32}{t33}{t34}{t35}{t36}{t37}{t38}{t39}{t40}</Pane>;
+    t41 = <Pane>{t23}{t30}<ProductDoctorSection />{t31}{t32}{t33}{t34}{t35}{t36}{t37}{t38}{t39}{t40}</Pane>;
     $[76] = t23;
     $[77] = t30;
     $[78] = t35;
