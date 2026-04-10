@@ -1,6 +1,10 @@
 // @ts-nocheck
 import { feature } from 'bun:bundle'
+import { clearCommandMemoizationCaches } from '../../commands.js'
 import { getIsRemoteMode } from '../../bootstrap/state.js'
+import { getAgentDefinitionsWithOverrides } from '../../tools/AgentTool/loadAgentsDir.js'
+import { getOriginalCwd } from '../../bootstrap/state.js'
+import { getPluginCommands } from '../../utils/plugins/loadPluginCommands.js'
 import { redownloadUserSettings } from '../../services/settingsSync/index.js'
 import type { LocalCommandCall } from '../../types/command.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
@@ -35,7 +39,61 @@ export const call: LocalCommandCall = async (_args, context) => {
     }
   }
 
+  const [beforePluginCommands, beforeAgentDefinitions] = await Promise.all([
+    getPluginCommands(),
+    getAgentDefinitionsWithOverrides(getOriginalCwd()),
+  ])
+
+  const beforeSkillFingerprintByName = new Map(
+    beforePluginCommands.map(command => [
+      command.name,
+      `${command.description}|${command.whenToUse ?? ''}|${command.version ?? ''}`,
+    ]),
+  )
+  const beforeAgentFingerprintByKey = new Map(
+    beforeAgentDefinitions.allAgents.map(agent => [
+      `${agent.source}:${agent.agentType}`,
+      `${agent.model ?? ''}|${agent.memory ?? ''}|${agent.prompt ?? ''}|${agent.baseDir ?? ''}`,
+    ]),
+  )
+
   const r = await refreshActivePlugins(context.setAppState)
+  clearCommandMemoizationCaches()
+
+  const afterSkillFingerprintByName = new Map(
+    r.pluginCommands.map(command => [
+      command.name,
+      `${command.description}|${command.whenToUse ?? ''}|${command.version ?? ''}`,
+    ]),
+  )
+  const afterAgentFingerprintByKey = new Map(
+    r.agentDefinitions.allAgents.map(agent => [
+      `${agent.source}:${agent.agentType}`,
+      `${agent.model ?? ''}|${agent.memory ?? ''}|${agent.prompt ?? ''}|${agent.baseDir ?? ''}`,
+    ]),
+  )
+
+  let addedSkillCount = 0
+  let changedSkillCount = 0
+  for (const [name, afterFingerprint] of afterSkillFingerprintByName) {
+    const beforeFingerprint = beforeSkillFingerprintByName.get(name)
+    if (!beforeFingerprint) {
+      addedSkillCount++
+    } else if (beforeFingerprint !== afterFingerprint) {
+      changedSkillCount++
+    }
+  }
+
+  let addedAgentCount = 0
+  let changedAgentCount = 0
+  for (const [key, afterFingerprint] of afterAgentFingerprintByKey) {
+    const beforeFingerprint = beforeAgentFingerprintByKey.get(key)
+    if (!beforeFingerprint) {
+      addedAgentCount++
+    } else if (beforeFingerprint !== afterFingerprint) {
+      changedAgentCount++
+    }
+  }
 
   const parts = [
     n(r.enabled_count, 'plugin'),
@@ -49,6 +107,8 @@ export const call: LocalCommandCall = async (_args, context) => {
     n(r.lsp_count, 'plugin LSP server'),
   ]
   let msg = `Reloaded: ${parts.join(' · ')}`
+  msg += `\nHot-reload: skills +${addedSkillCount}/~${changedSkillCount} · agents +${addedAgentCount}/~${changedAgentCount}`
+  msg += '\nPlugin skills are active in this session.'
 
   if (r.error_count > 0) {
     msg += `\n${n(r.error_count, 'error')} during load. Run /doctor for details.`

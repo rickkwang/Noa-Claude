@@ -59,5 +59,6 @@ When debugging startup or tool failures:
 
 1. check `/status`
 2. run `/doctor`
-3. use `npm run check:runtime` for repository-level verification
-4. use `npm run smoke:engine` before treating a fix as complete
+3. run `/reload-plugins` when plugin skills/agents changed on disk
+4. use `npm run check:runtime` for repository-level verification
+5. use `npm run smoke:engine` before treating a fix as complete
