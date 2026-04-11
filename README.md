@@ -85,6 +85,21 @@ Notes:
 - `CLAUDE_AGENT_MCP_PLUGIN_HEALTHCHECK_TIMEOUT_MS` controls `mcp list` timeout for plugin-like servers.
 - `mcp list` marks slow servers as `timeout(degraded, Nms)` instead of blocking the full result.
 
+### Privacy, Guardrails, and Feature-Gate Defaults
+
+This build uses hard product defaults (not opt-in toggles):
+
+- Telemetry reporting is hard-disabled in runtime code paths (OTEL export, 1P event reporting, feedback telemetry sink, tracing exporters).
+- Security prompt guardrail injection is hard-removed from the system prompt assembly layer.
+- Remote managed-settings overlays and remote policy-limits overlays are hard-disabled in this build.
+- GrowthBook remote fetch is hard-disabled. Local GrowthBook evaluation remains enabled for local runtime feature-gate behavior.
+- Experimental feature unlock is part of the build profile baseline:
+  - `bun run build` uses `--profile=full-unlocked`
+  - `bun run compile` and `bun run build:dev` use `--profile=baseline`
+  - `bun run build:dev:full` uses `--profile=full-unlocked`
+
+For an auditable unlockability/result table, see [FEATURES.md](/Users/myrickwang/Desktop/Coding/Claude/FEATURES.md).
+
 ## Working With Projects
 
 Project-specific assets live under `.claude-agent/` in the current project:

@@ -18,7 +18,6 @@ import { getPlatform, getWslVersion } from '../../utils/platform.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import { profileCheckpoint } from '../../utils/startupProfiler.js'
 import { getCoreUserData } from '../../utils/user.js'
-import { isAnalyticsDisabled } from './config.js'
 import { FirstPartyEventLoggingExporter } from './firstPartyEventLoggingExporter.js'
 import type { GrowthBookUserAttributes } from './growthbook.js'
 import { getDynamicConfig_CACHED_MAY_BE_STALE } from './growthbook.js'
@@ -140,8 +139,8 @@ export async function shutdown1PEventLogging(): Promise<void> {
  * metrics opt-out via API. It follows the same pattern as Statsig event logging.
  */
 export function is1PEventLoggingEnabled(): boolean {
-  // Respect standard analytics opt-outs
-  return !isAnalyticsDisabled()
+  // Telemetry is hard-disabled in this build.
+  return false
 }
 
 /**

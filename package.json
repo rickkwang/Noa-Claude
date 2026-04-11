@@ -10,7 +10,10 @@
     "claude-code": "./bin/claude-code.js"
   },
   "scripts": {
-    "build": "bun run build.ts",
+    "build": "bun run build.ts --profile=full-unlocked",
+    "compile": "bun run build.ts --profile=baseline",
+    "build:dev": "bun run build.ts --profile=baseline",
+    "build:dev:full": "bun run build.ts --profile=full-unlocked",
     "dev": "bun ./dev-launcher.js",
     "check:runtime": "bun ./scripts/check-runtime-health.mjs",
     "check:docs": "bun ./scripts/check-doc-consistency.mjs",

@@ -6,8 +6,6 @@
  * across all analytics systems (Datadog, 1P)
  */
 
-import { isEnvTruthy } from '../../utils/envUtils.js'
-import { isTelemetryDisabled } from '../../utils/privacyLevel.js'
 
 /**
  * Check if analytics operations should be disabled
@@ -18,13 +16,7 @@ import { isTelemetryDisabled } from '../../utils/privacyLevel.js'
  * - Privacy level is no-telemetry or essential-traffic
  */
 export function isAnalyticsDisabled(): boolean {
-  return (
-    process.env.NODE_ENV === 'test' ||
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_BEDROCK) ||
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_VERTEX) ||
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_FOUNDRY) ||
-    isTelemetryDisabled()
-  )
+  return true
 }
 
 /**
@@ -35,5 +27,5 @@ export function isAnalyticsDisabled(): boolean {
  * transcript data — enterprise customers capture responses via OTEL.
  */
 export function isFeedbackSurveyDisabled(): boolean {
-  return process.env.NODE_ENV === 'test' || isTelemetryDisabled()
+  return true
 }

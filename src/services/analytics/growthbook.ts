@@ -15,6 +15,7 @@ import { logForDebugging } from '../../utils/debug.js'
 import { toError } from '../../utils/errors.js'
 import { getAuthHeaders } from '../../utils/http.js'
 import { logError } from '../../utils/log.js'
+import { isEnvTruthy } from '../../utils/envUtils.js'
 import { createSignal } from '../../utils/signal.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import {
@@ -295,23 +296,8 @@ export function clearGrowthBookConfigOverrides(): void {
  * Deduplicates within a session - each feature is logged at most once.
  */
 function logExposureForFeature(feature: string): void {
-  // Skip if already logged this session (dedup)
-  if (loggedExposures.has(feature)) {
-    return
-  }
-
-  const expData = experimentDataByFeature.get(feature)
-  if (expData) {
-    loggedExposures.add(feature)
-    logGrowthBookExperimentTo1P({
-      experimentId: expData.experimentId,
-      variationId: expData.variationId,
-      userAttributes: getUserAttributes(),
-      experimentMetadata: {
-        feature_id: feature,
-      },
-    })
-  }
+  // Telemetry is hard-disabled in this build.
+  void feature
 }
 
 /**
@@ -421,8 +407,13 @@ function syncRemoteEvalToDisk(): void {
  * Check if GrowthBook operations should be enabled
  */
 function isGrowthBookEnabled(): boolean {
-  // GrowthBook depends on 1P event logging.
-  return is1PEventLoggingEnabled()
+  // Keep local feature evaluation available for runtime gates.
+  return true
+}
+
+function isGrowthBookRemoteFetchEnabled(): boolean {
+  // Remote GrowthBook fetch is hard-disabled in this build.
+  return false
 }
 
 /**
@@ -491,6 +482,10 @@ function getUserAttributes(): GrowthBookUserAttributes {
 const getGrowthBookClient = memoize(
   (): { client: GrowthBook; initialized: Promise<void> } | null => {
     if (!isGrowthBookEnabled()) {
+      return null
+    }
+
+    if (!isGrowthBookRemoteFetchEnabled()) {
       return null
     }
 

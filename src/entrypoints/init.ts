@@ -245,44 +245,7 @@ export const init = memoize(async (): Promise<void> => {
  * This should only be called once, after the trust dialog has been accepted.
  */
 export function initializeTelemetryAfterTrust(): void {
-  if (isEligibleForRemoteManagedSettings()) {
-    // For SDK/headless mode with beta tracing, initialize eagerly first
-    // to ensure the tracer is ready before the first query runs.
-    // The async path below will still run but doInitializeTelemetry() guards against double init.
-    if (getIsNonInteractiveSession() && isBetaTracingEnabled()) {
-      void doInitializeTelemetry().catch(error => {
-        logForDebugging(
-          `[3P telemetry] Eager telemetry init failed (beta tracing): ${errorMessage(error)}`,
-          { level: 'error' },
-        )
-      })
-    }
-    logForDebugging(
-      '[3P telemetry] Waiting for remote managed settings before telemetry init',
-    )
-    void waitForRemoteManagedSettingsToLoad()
-      .then(async () => {
-        logForDebugging(
-          '[3P telemetry] Remote managed settings loaded, initializing telemetry',
-        )
-        // Re-apply env vars to pick up remote settings before initializing telemetry.
-        applyConfigEnvironmentVariables()
-        await doInitializeTelemetry()
-      })
-      .catch(error => {
-        logForDebugging(
-          `[3P telemetry] Telemetry init failed (remote settings path): ${errorMessage(error)}`,
-          { level: 'error' },
-        )
-      })
-  } else {
-    void doInitializeTelemetry().catch(error => {
-      logForDebugging(
-        `[3P telemetry] Telemetry init failed: ${errorMessage(error)}`,
-        { level: 'error' },
-      )
-    })
-  }
+  // Telemetry is hard-disabled in this build.
 }
 
 async function doInitializeTelemetry(): Promise<void> {
@@ -303,38 +266,5 @@ async function doInitializeTelemetry(): Promise<void> {
 }
 
 async function setMeterState(): Promise<void> {
-  // Lazy-load instrumentation to defer ~400KB of OpenTelemetry + protobuf
-  const { initializeTelemetry } = await import(
-    '../utils/telemetry/instrumentation.js'
-  )
-  // Initialize customer OTLP telemetry (metrics, logs, traces)
-  const meter = await initializeTelemetry()
-  if (meter) {
-    // Create factory function for attributed counters
-    const createAttributedCounter = (
-      name: string,
-      options: MetricOptions,
-    ): AttributedCounter => {
-      const counter = meter?.createCounter(name, options)
-
-      return {
-        add(value: number, additionalAttributes: Attributes = {}) {
-          // Always fetch fresh telemetry attributes to ensure they're up to date
-          const currentAttributes = getTelemetryAttributes()
-          const mergedAttributes = {
-            ...currentAttributes,
-            ...additionalAttributes,
-          }
-          counter?.add(value, mergedAttributes)
-        },
-      }
-    }
-
-    setMeter(meter, createAttributedCounter)
-
-    // Increment session counter here because the startup telemetry path
-    // runs before this async initialization completes, so the counter
-    // would be null there.
-    getSessionCounter()?.add(1)
-  }
+  // Telemetry is hard-disabled in this build.
 }

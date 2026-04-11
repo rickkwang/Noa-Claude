@@ -1,6 +1,6 @@
 # Feature Availability Matrix
 
-Last updated: 2026-04-08
+Last updated: 2026-04-11
 
 ## Scope
 - This matrix reflects the current repository build/runtime behavior.
@@ -9,6 +9,17 @@ Last updated: 2026-04-08
   - `Hidden-Internal`: implemented but intentionally hidden from normal help/UX.
   - `Build-Excluded`: command exists but hard-fails with `not available in this build`.
   - `Stub`: placeholder only (`isEnabled: () => false`), no functional implementation.
+- Build profile baseline in this repo is `full-unlocked` for `bun run build`.
+- Experimental unlockability details are maintained in [FEATURES.md](/Users/myrickwang/Desktop/Coding/Claude/FEATURES.md).
+
+## Build Guardrails and Telemetry Posture
+| Surface | Status | Notes |
+|---|---|---|
+| Telemetry exporters/reporting | Removed | Runtime analytics/reporting paths are hard no-op in this build. |
+| Security prompt guardrail injection | Removed | Extra injected guardrail prompt blocks are removed from prompt assembly. |
+| Remote managed-settings overlay | Disabled | Remote eligibility path is hard-disabled in this build. |
+| Remote policy-limits overlay | Disabled | Remote eligibility path is hard-disabled in this build. |
+| Experimental unlock profile | Available | `full-unlocked` profile is the default build profile. |
 
 ## Core Product Chains
 | Chain | Status | Notes |
