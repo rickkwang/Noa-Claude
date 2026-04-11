@@ -10,10 +10,11 @@
     "claude-code": "./bin/claude-code.js"
   },
   "scripts": {
-    "build": "bun run build.ts --profile=full-unlocked",
-    "compile": "bun run build.ts --profile=baseline",
-    "build:dev": "bun run build.ts --profile=baseline",
-    "build:dev:full": "bun run build.ts --profile=full-unlocked",
+    "build": "bun run build.ts",
+    "build:dev": "bun run build.ts --dev",
+    "build:dev:full": "bun run build.ts --dev --feature-set=dev-full",
+    "compile": "bun run build.ts --compile",
+    "compile:dev": "bun run build.ts --compile --dev",
     "dev": "bun ./dev-launcher.js",
     "check:runtime": "bun ./scripts/check-runtime-health.mjs",
     "check:docs": "bun ./scripts/check-doc-consistency.mjs",
@@ -26,7 +27,7 @@
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^0.27.0",
     "@anthropic-ai/foundry-sdk": "^0.2.3",
-    "@anthropic-ai/sdk": "^0.52.0",
+    "@anthropic-ai/sdk": "^0.80.0",
     "@aws-sdk/client-bedrock": "^3.700.0",
     "@aws-sdk/client-bedrock-runtime": "^3.700.0",
     "@aws-sdk/client-sts": "^3.1022.0",

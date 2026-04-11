@@ -38,6 +38,12 @@ bun run build
 ./bin/claude-agent.js
 ```
 
+Or use the standalone executable (no bun required):
+
+```bash
+./dist/cli
+```
+
 3. Check the version:
 
 ```bash
@@ -86,10 +92,10 @@ This build uses hard product defaults (not opt-in toggles):
 - Security prompt guardrail injection is hard-removed from the system prompt assembly layer.
 - Remote managed-settings overlays and remote policy-limits overlays are hard-disabled in this build.
 - GrowthBook remote fetch is hard-disabled. Local GrowthBook evaluation remains enabled for local runtime feature-gate behavior.
-- Experimental feature unlock is part of the build profile baseline:
-  - `bun run build` uses `--profile=full-unlocked`
-  - `bun run compile` and `bun run build:dev` use `--profile=baseline`
-  - `bun run build:dev:full` uses `--profile=full-unlocked`
+- Experimental features are enabled via `--feature=FLAG` at build time:
+  - `bun run build` enables VOICE_MODE by default
+  - `bun run build:dev --feature-set=dev-full` enables all experimental features
+  - `bun run compile` produces a standalone executable
 
 For an auditable unlockability/result table, see [FEATURES.md](/Users/myrickwang/Desktop/Coding/Claude/FEATURES.md).
 
@@ -106,13 +112,16 @@ Legacy `.claude/` paths are still read for compatibility when present, but new w
 
 ## Build Modes
 
-The repository exposes two build profiles:
+The repository exposes multiple build configurations:
 
-- `bun run build` uses `--profile=full-unlocked`
-- `bun run compile` uses `--profile=baseline`
-- `bun run build:dev` uses `--profile=baseline`
-- `bun run build:dev:full` uses `--profile=full-unlocked`
+- `bun run build` - builds `dist/main.js` with VOICE_MODE enabled
+- `bun run build:dev` - development build with verbose output
+- `bun run build:dev:full` - development build with all experimental features
+- `bun run compile` - produces standalone executable `dist/cli` (no bun runtime required)
+- `bun run compile:dev` - standalone executable with dev metadata
 - `--bare` / `--local-only` / `CLAUDE_CODE_SIMPLE=1` is the local-minimal runtime mode: it skips telemetry, 1P logging init, GrowthBook refresh, remote managed settings, policy limits, startup analytics, and session data upload.
+
+Feature flags can be added individually with `--feature=FLAG_NAME` or all at once with `--feature-set=dev-full`.
 
 For the current feature audit and unlockability status, see [FEATURES.md](/Users/myrickwang/Desktop/Coding/Claude/FEATURES.md).
 
@@ -181,11 +190,18 @@ Use these commands to check that the local installation is healthy:
 
 ```bash
 bun run build
+bun run compile
 bun run typecheck
 bun run check:runtime
 bun run smoke:features
 bun run smoke:perf
 bun run smoke:engine
+```
+
+To test the standalone executable:
+
+```bash
+./dist/cli --version
 ```
 
 ## Command Availability
