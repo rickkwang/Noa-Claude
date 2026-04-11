@@ -1,7 +1,6 @@
 import { chmodSync, existsSync, mkdirSync } from 'fs'
 import { dirname, resolve } from 'path'
 import { readFileSync, writeFileSync } from 'fs'
-import { spawn } from 'child_process'
 import { getLauncherBootstrapCode } from './launcher-config.js'
 
 const args = process.argv.slice(2)
@@ -78,24 +77,28 @@ const fullExperimentalFeatures = [
 ] as const
 
 function runCommand(cmd: string[]): string | null {
-  const proc = spawn({
+  const proc = Bun.spawn({
     cmd,
     cwd: process.cwd(),
-    stdio: 'pipe',
+    stdio: ['pipe', 'pipe', 'pipe'],
   })
 
   let stdout = ''
   let stderr = ''
 
-  proc.stdout?.on('data', data => {
-    stdout += data.toString()
-  })
-  proc.stderr?.on('data', data => {
-    stderr += data.toString()
-  })
+  if (proc.stdout) {
+    new Response(proc.stdout).text().then(text => {
+      stdout += text
+    })
+  }
+  if (proc.stderr) {
+    new Response(proc.stderr).text().then(text => {
+      stderr += text
+    })
+  }
 
   return new Promise<string | null>(resolve => {
-    proc.on('close', code => {
+    proc.exited.then(code => {
       if (code !== 0) {
         resolve(null)
       } else {
@@ -142,7 +145,7 @@ for (let i = 0; i < args.length; i++) {
     i += 1
     continue
   }
-  if (arg.startsWith('--feature=')) {
+  if (arg?.startsWith('--feature=')) {
     featureSet.add(arg.slice('--feature='.length))
   }
 }
@@ -241,9 +244,11 @@ for (const [key, value] of Object.entries(defines)) {
   cmd.push('--define', `${key}=${value}`)
 }
 
-const proc = spawn(cmd[0], cmd.slice(1), { stdio: 'inherit' })
+const proc = Bun.spawn(cmd, {
+  stdio: ['inherit', 'inherit', 'inherit'],
+})
 
-proc.on('close', code => {
+proc.exited.then(code => {
   if (code === 0 && existsSync(outfile)) {
     chmodSync(outfile, 0o755)
     console.log(`Built ${outfile}`)
@@ -254,7 +259,7 @@ proc.on('close', code => {
 
 // For non-compile mode, patch the output
 if (!compile) {
-  proc.on('close', code => {
+  proc.exited.then(code => {
     if (code === 0) {
       const content = readFileSync(outfile, 'utf-8')
       let patched = content
