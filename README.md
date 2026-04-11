@@ -1,22 +1,22 @@
 # Claude Agent
 
-开源重建的终端 AI 编程助手。基于 Claude Code 泄露源码重构。
+An open-source build of Claude Code based on the publicly exposed source code.
 
-## 核心改动
+## Core Modifications
 
-相比官方版本做了三个关键修改：
+Three key changes from the upstream:
 
-1. **遥测已移除** — 所有出站 OpenTelemetry、GrowthBook 分析、Sentry 错误上报均已禁用
-2. **安全护栏已剥离** — 对话中的系统级注入指令（硬编码拒绝模式、网络风险指令块）已移除
-3. **实验特性已解锁** — 68 个可编译的 feature flag 全部启用
+1. **Telemetry removed** — All outbound OpenTelemetry, GrowthBook analytics, Sentry error reporting, and custom event logging are dead-code-eliminated or stubbed.
+2. **Security guardrails stripped** — System-level instructions injected into conversations (hardcoded refusal patterns, cyber risk instruction blocks) are removed.
+3. **Experimental features unlocked** — 68 of 88 feature flags that compile cleanly are enabled.
 
-## 快速安装
+## Quick Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/rickkwang/Claude-Agent/main/install.sh | bash
 ```
 
-或手动构建：
+Or build from source:
 
 ```bash
 git clone https://github.com/rickkwang/Claude-Agent.git && cd Claude-Agent
@@ -24,49 +24,47 @@ bun run compile
 ./dist/cli --version
 ```
 
-## 构建命令
+## Build Commands
 
-| 命令 | 输出 | 说明 |
-|------|------|------|
-| `bun run build` | `dist/main.js` | 需 bun 运行 |
-| `bun run compile` | `dist/cli` | standalone 可执行文件 |
-| `bun run build:dev:full` | `dist/main-dev.js` | 开发版 + 全部实验特性 |
+| Command | Output | Note |
+|---------|--------|------|
+| `bun run build` | `dist/main.js` | Requires bun runtime |
+| `bun run compile` | `dist/cli` | Standalone executable |
+| `bun run build:dev:full` | `dist/main-dev.js` | Dev build + all experimental features |
 
-## 支持的提供商
+## Supported Providers
 
-| 提供商 | 环境变量 |
-|--------|----------|
-| Anthropic (默认) | `ANTHROPIC_API_KEY` |
-| AWS Bedrock | `ANTHROPIC_BASE_URL` + Bedrock 凭证 |
-| Google Vertex | `ANTHROPIC_BASE_URL` + Vertex 凭证 |
+| Provider | Environment |
+|----------|-------------|
+| Anthropic (default) | `ANTHROPIC_API_KEY` |
+| AWS Bedrock | `ANTHROPIC_BASE_URL` + Bedrock credentials |
+| Google Vertex | `ANTHROPIC_BASE_URL` + Vertex credentials |
 
-## 主要命令
+## Key Commands
 
-- `/fork` - 分叉会话为可恢复分支
-- `/workflows` - 管理本地可复用工作流
-- `/summary` - 生成结构化会话摘要
-- `/share` - 导出会话快照
+- `/fork` - Fork session into a resumable branch
+- `/workflows` - Manage local reusable workflows
+- `/summary` - Generate structured session summary
+- `/share` - Export session snapshot
 
-## 技术栈
+## Privacy
 
-Bun + TypeScript, React + Ink (终端 UI), Commander.js, Zod, MCP/LSP 协议
+This build ships with hardcoded privacy defaults (no configuration needed):
 
-## 隐私声明
+- All telemetry paths hard-disabled
+- GrowthBook remote fetch hard-disabled
+- Remote policy overlays hard-disabled
 
-本构建内置硬编码的隐私策略（无需配置）：
-
-- 所有遥测路径硬禁用
-- GrowthBook 远程拉取硬禁用
-- 远程策略覆盖硬禁用
-
-## 验证
+## Verification
 
 ```bash
 bun run build && ./dist/cli --version
 ```
 
-## 免责声明
+## License Note
 
-- 本项目是独立/私人工程衍生项目
-- 非 Anthropic 官方发布或支持产品
-- Anthropic、Claude、Claude Code 名称保留给各自所有者
+This repository is a reconstruction based on publicly exposed source code. The original Claude Code source is the property of Anthropic. This build exists because the source was publicly exposed through their npm distribution.
+
+- Not an official Anthropic release or supported product
+- Anthropic, Claude, and Claude Code are trademarks of their respective owners
+- Use at your own discretion
