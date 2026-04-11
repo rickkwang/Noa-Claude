@@ -135,7 +135,7 @@ const buildExcluded: CommandSurfaceEntry[] = [
     errorContract: BUILD_EXCLUDED_ERROR_CONTRACTS['agents-platform'],
   },
   {
-    command: '/remoteControlServer',
+    command: '/remote-control',
     category: 'build-excluded',
     discoverability: 'hidden',
     supportsNonInteractive: null,

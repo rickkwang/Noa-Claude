@@ -37,7 +37,7 @@ These commands are intentionally not available in this build and must remain hid
 - `/proactive`
 - `/peers`
 - `/agents-platform`
-- `/remoteControlServer`
+- `/remote-control`
 - `/torch`
 - `/force-snip`
 - `/subscribe-pr`

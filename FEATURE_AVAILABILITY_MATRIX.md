@@ -53,7 +53,7 @@ Last updated: 2026-04-11
 | `/proactive` | Build-Excluded |
 | `/peers` | Build-Excluded |
 | `/agents-platform` | Build-Excluded |
-| `/remoteControlServer` | Build-Excluded |
+| `/remote-control` | Build-Excluded |
 | `/torch` | Build-Excluded |
 | `/force-snip` | Build-Excluded |
 | `/subscribe-pr` | Build-Excluded |

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { feature } from 'bun:bundle'
+import React from 'react'
 import {
   E_ASSISTANT_INVALID_ARGUMENT,
   E_ASSISTANT_SETTINGS_WRITE_FAILED,
@@ -76,4 +77,21 @@ export const call: LocalCommandCall = async args => {
   }
 
   return writeAssistantPreference(false)
+}
+
+// Backward-compatible exports used by launchAssistantInstallWizard().
+// This build intentionally does not ship the historical assistant installer UI.
+export async function computeDefaultInstallDir(): Promise<string> {
+  return ''
+}
+
+export function NewInstallWizard({
+  onError,
+}: {
+  onError: (message: string) => void
+}) {
+  React.useEffect(() => {
+    onError('Assistant install wizard is not available in this build')
+  }, [onError])
+  return null
 }

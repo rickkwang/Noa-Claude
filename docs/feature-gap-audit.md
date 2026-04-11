@@ -23,7 +23,7 @@ These surfaces are present only as build exclusions or stubs and require actual 
 | `/proactive` | Build-Excluded | Intentionally excluded from this build. | Requires full feature delivery (not visibility toggle). |
 | `/peers` | Build-Excluded | Intentionally excluded from this build. | Requires full feature delivery (not visibility toggle). |
 | `/agents-platform` | Build-Excluded | Intentionally excluded from this build. | Requires full feature delivery (not visibility toggle). |
-| `/remoteControlServer` | Build-Excluded | Intentionally excluded from this build. | Requires full feature delivery (not visibility toggle). |
+| `/remote-control` | Build-Excluded | Intentionally excluded from this build. | Requires full feature delivery (not visibility toggle). |
 | `/torch` | Build-Excluded | Intentionally excluded from this build. | Requires full feature delivery (not visibility toggle). |
 | `/force-snip` | Build-Excluded | Intentionally excluded from this build. | Requires full feature delivery (not visibility toggle). |
 | `/subscribe-pr` | Build-Excluded | Intentionally excluded from this build. | Requires full feature delivery (not visibility toggle). |

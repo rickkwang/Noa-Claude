@@ -440,7 +440,7 @@ async function runBuildExcludedCommandSmoke() {
     '/proactive': proactiveIndex.default,
     '/peers': peersIndex.default,
     '/agents-platform': agentsPlatformIndex.default,
-    '/remoteControlServer': remoteControlServerIndex.default,
+    '/remote-control': remoteControlServerIndex.default,
     '/torch': torchRuntime.default,
     '/force-snip': forceSnipRuntime.default,
     '/subscribe-pr': subscribePrRuntime.default,
