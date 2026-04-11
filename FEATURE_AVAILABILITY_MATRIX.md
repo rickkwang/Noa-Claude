@@ -5,8 +5,8 @@ Last updated: 2026-04-11
 ## Scope
 - This matrix reflects the current repository build/runtime behavior.
 - Status definitions:
-  - `Available`: usable in current build.
-  - `Hidden-Internal`: implemented but intentionally hidden from normal help/UX.
+  - `Baseline`: primary user-facing supported workflow.
+  - `Implemented but Non-Baseline`: callable, but not part of primary workflow.
   - `Build-Excluded`: command exists but hard-fails with `not available in this build`.
   - `Stub`: placeholder only (`isEnabled: () => false`), no functional implementation.
 - Build profile baseline in this repo is `full-unlocked` for `bun run build`.
@@ -30,13 +30,14 @@ Last updated: 2026-04-11
 | MiniMax Anthropic-compatible backend | Available | Default product path and launcher checks in place. |
 | Official Claude OAuth fallback on 3P path | Disabled by policy | Missing/invalid 3P token fails clearly; no OAuth fallback. |
 
-## Slash Commands: Hidden but Implemented
+## Slash Commands: Implemented but Non-Baseline
 | Command | Status | Notes |
 |---|---|---|
-| `/heapdump` | Available | Recently unhidden for engineering diagnostics. |
-| `/output-style` | Hidden-Internal | Deprecated shim; points users to `/config`. |
-| `/thinkback-play` | Hidden-Internal | Internal helper for thinkback flow; gated + plugin-dependent. |
-| `/rate-limit-options` | Hidden-Internal | Internal flow, subscriber-oriented and UI-triggered. |
+| `/assistant` | Available | Assistant preference/status command implemented; full assistant runtime remains gated by build/runtime capabilities. |
+| `/heapdump` | Available | Exposed for engineering diagnostics. |
+| `/output-style` | Available | Deprecated shim; points users to `/config`. |
+| `/thinkback-play` | Available | Thinkback helper; still gated by runtime feature availability. |
+| `/rate-limit-options` | Available | Rate-limit action sheet; still gated by subscriber/runtime availability. |
 
 ## Slash Commands: Product-Available
 | Command | Status | Notes |
@@ -46,10 +47,9 @@ Last updated: 2026-04-11
 | `/summary` | Available | Produces structured short or detailed session summaries. |
 | `/share` | Available | Exports local session share snapshots under `.claude-agent/shares`. |
 
-## Slash Commands: Build-Excluded (Hard Fail in This Build)
+## Slash Commands: Build-Excluded
 | Command | Status |
 |---|---|
-| `/assistant` | Build-Excluded |
 | `/proactive` | Build-Excluded |
 | `/peers` | Build-Excluded |
 | `/agents-platform` | Build-Excluded |
@@ -58,7 +58,7 @@ Last updated: 2026-04-11
 | `/force-snip` | Build-Excluded |
 | `/subscribe-pr` | Build-Excluded |
 
-## Slash Commands: Internal or Placeholder Surfaces
+## Slash Commands: Stub
 | Command | Status |
 |---|---|
 | `/onboarding` | Stub |
@@ -97,4 +97,4 @@ Last updated: 2026-04-11
 - For roadmap prioritization, treat these categories differently:
   - `Build-Excluded`: requires feature delivery, not a simple toggle.
   - `Stub`: requires net-new implementation.
-  - `Hidden-Internal`: selectively expose only when user-facing value is real and stable.
+  - `Implemented but Non-Baseline`: implemented and callable, but not a primary user workflow.

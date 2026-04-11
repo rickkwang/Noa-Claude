@@ -46,6 +46,7 @@ const repoRoot = resolve(import.meta.dir, '..');
 const tempRoot = mkdtempSync(join(tmpdir(), 'claude-agent-smoke-features-'));
 process.env.NODE_ENV = 'test';
 process.env.CLAUDE_CONFIG_DIR = join(tempRoot, 'config');
+process.env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || 'test-smoke-key';
 
 const state = await import('../src/bootstrap/state.ts');
 const sessionStorage = await import('../src/utils/sessionStorage.ts');
@@ -56,6 +57,22 @@ const summaryCommand = await import('../src/commands/summary/summary.ts');
 const shareCommand = await import('../src/commands/share/share.ts');
 const mcpConfig = await import('../src/services/mcp/config.ts');
 const productPaths = await import('../src/utils/productPaths.ts');
+const commandsModule = await import('../src/commands.ts');
+const surfaceStatus = await import('../src/commands/surfaceStatus.ts');
+const settings = await import('../src/utils/settings/settings.ts');
+const forkIndex = await import('../src/commands/fork/index.ts');
+const assistantIndex = await import('../src/commands/assistant/index.ts');
+const assistantCommand = await import('../src/commands/assistant/assistant.js');
+const summaryIndex = await import('../src/commands/summary/index.ts');
+const shareIndex = await import('../src/commands/share/index.ts');
+const thinkbackPlayIndex = await import('../src/commands/thinkback-play/index.ts');
+const proactiveIndex = await import('../src/commands/proactive/index.ts');
+const peersIndex = await import('../src/commands/peers/index.ts');
+const agentsPlatformIndex = await import('../src/commands/agents-platform/index.ts');
+const remoteControlServerIndex = await import('../src/commands/remoteControlServer/index.ts');
+const torchRuntime = await import('../src/commands/torch.js');
+const forceSnipRuntime = await import('../src/commands/force-snip.js');
+const subscribePrRuntime = await import('../src/commands/subscribe-pr.js');
 
 function prepareProject(projectDir) {
   mkdirSync(projectDir, { recursive: true });
@@ -340,12 +357,130 @@ async function runMcpPathSmoke() {
   );
 }
 
+async function runCommandSurfaceSmoke() {
+  const projectDir = join(tempRoot, 'commands-project');
+  prepareProject(projectDir);
+
+  const commands = await commandsModule.getCommands(projectDir);
+  const names = new Set(commands.map(command => commandsModule.getCommandName(command)));
+  const requiredBaseline = surfaceStatus
+    .getCommandSurfacesByCategory('baseline')
+    .map(entry => entry.command.replace('/', ''));
+
+  for (const commandName of requiredBaseline) {
+    assert(
+      names.has(commandName),
+      `Baseline command /${commandName} was not discoverable from command loader`,
+      { available: [...names].sort() },
+    );
+  }
+}
+
+function runNonInteractiveBoundarySmoke() {
+  assert(
+    forkIndex.default.supportsNonInteractive === true,
+    'Fork command must remain non-interactive compatible',
+    forkIndex.default,
+  );
+  assert(
+    summaryIndex.default.supportsNonInteractive === true,
+    'Summary command must remain non-interactive compatible',
+    summaryIndex.default,
+  );
+  assert(
+    shareIndex.default.supportsNonInteractive === true,
+    'Share command must remain non-interactive compatible',
+    shareIndex.default,
+  );
+  assert(
+    thinkbackPlayIndex.default.supportsNonInteractive === false,
+    'Thinkback-play command must stay interactive-only',
+    thinkbackPlayIndex.default,
+  );
+  assert(
+    assistantIndex.default.supportsNonInteractive === true,
+    'Assistant command must stay non-interactive compatible',
+    assistantIndex.default,
+  );
+}
+
+async function runAssistantCommandSmoke() {
+  const projectDir = join(tempRoot, 'assistant-project');
+  prepareProject(projectDir);
+
+  const status = await assistantCommand.call('status');
+  assert(
+    status.value.includes('Assistant status:'),
+    'Assistant status output is not stable',
+    status.value,
+  );
+
+  const enabled = await assistantCommand.call('enable');
+  assert(
+    enabled.value.includes('Assistant enabled.'),
+    'Assistant enable did not report success',
+    enabled.value,
+  );
+
+  const userSettingsPath = settings.getSettingsFilePathForSource('userSettings');
+  writeFileSync(userSettingsPath, '{invalid-json', 'utf8');
+  const failedDisable = await assistantCommand.call('disable');
+  assert(
+    failedDisable.value.includes('E_ASSISTANT_SETTINGS_WRITE_FAILED'),
+    'Assistant disable did not return stable settings write failure ID',
+    failedDisable.value,
+  );
+}
+
+async function runBuildExcludedCommandSmoke() {
+  const buildExcluded = surfaceStatus
+    .getCommandSurfacesByCategory('build-excluded')
+    .map(entry => entry.command);
+  const modules = {
+    '/proactive': proactiveIndex.default,
+    '/peers': peersIndex.default,
+    '/agents-platform': agentsPlatformIndex.default,
+    '/remoteControlServer': remoteControlServerIndex.default,
+    '/torch': torchRuntime.default,
+    '/force-snip': forceSnipRuntime.default,
+    '/subscribe-pr': subscribePrRuntime.default,
+  };
+
+  for (const commandName of buildExcluded) {
+    const command = modules[commandName];
+    assert(command, `No module mapping found for build-excluded command ${commandName}`);
+    assert(command?.isHidden === true, `Build-excluded command ${command?.name} must stay hidden`, command);
+    const loaded = await command.load();
+    let error = null;
+    try {
+      await loaded.call(() => {}, {}, '');
+    } catch (err) {
+      error = err;
+    }
+    assert(error instanceof Error, `Build-excluded command ${command.name} did not throw`, error);
+    assert(
+      /not available in this build/i.test(error.message),
+      `Build-excluded command ${command.name} must throw stable unavailable message`,
+      error.message,
+    );
+    assert(
+      typeof error.errorId === 'string' && error.errorId.startsWith('E_BUILD_EXCLUDED_'),
+      `Build-excluded command ${command.name} must throw stable build-excluded errorId`,
+      error,
+    );
+  }
+}
+
 try {
   await runForkSmoke();
   await runWorkflowSmoke();
   await runSummarySmoke();
   await runShareSmoke();
   await runMcpPathSmoke();
+  await runCommandSurfaceSmoke();
+  runNonInteractiveBoundarySmoke();
+  await runAssistantCommandSmoke();
+  await runBuildExcludedCommandSmoke();
   console.log('Feature smoke checks passed.');
 } finally {
   rmSync(tempRoot, { recursive: true, force: true });

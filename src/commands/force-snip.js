@@ -1,3 +1,5 @@
+import { throwBuildExcludedCommand } from './buildExcluded.js'
+
 const forceSnip = {
   name: 'force-snip',
   description: 'Force session snipping',
@@ -5,7 +7,7 @@ const forceSnip = {
   isHidden: true,
   load: async () => ({
     call: async () => {
-      throw new Error('Force-snip feature is not available in this build')
+      throwBuildExcludedCommand('force-snip')
     },
   }),
 }

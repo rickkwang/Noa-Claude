@@ -1,3 +1,5 @@
+import { throwBuildExcludedCommand } from './buildExcluded.js'
+
 const subscribePr = {
   name: 'subscribe-pr',
   description: 'Subscribe to PR notifications',
@@ -5,7 +7,7 @@ const subscribePr = {
   isHidden: true,
   load: async () => ({
     call: async () => {
-      throw new Error('Subscribe-PR feature is not available in this build')
+      throwBuildExcludedCommand('subscribe-pr')
     },
   }),
 }

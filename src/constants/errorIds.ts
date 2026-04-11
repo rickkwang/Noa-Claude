@@ -10,7 +10,10 @@
  * ADDING A NEW ERROR TYPE:
  * 1. Add a const based on Next ID.
  * 2. Increment Next ID.
- * Next ID: 346
+ * Next ID: 349
  */
 
 export const E_TOOL_USE_SUMMARY_GENERATION_FAILED = 344
+export const E_BUILD_EXCLUDED_COMMAND = 346
+export const E_ASSISTANT_INVALID_ARGUMENT = 347
+export const E_ASSISTANT_SETTINGS_WRITE_FAILED = 348

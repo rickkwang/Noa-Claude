@@ -1,4 +1,5 @@
 import type { Command } from '../../types/command.js'
+import { throwBuildExcludedCommand } from '../buildExcluded.js'
 
 const remoteControlServer = {
   name: 'remote-control',
@@ -7,7 +8,7 @@ const remoteControlServer = {
   isHidden: true,
   load: async () => ({
     call: async () => {
-      throw new Error('Remote control server is not available in this build')
+      throwBuildExcludedCommand('remote-control')
     },
   }),
 } satisfies Command

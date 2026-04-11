@@ -1,5 +1,6 @@
 // @ts-nocheck
 import type { Command } from '../../types/command.js'
+import { throwBuildExcludedCommand } from '../buildExcluded.js'
 
 const peers = {
   name: 'peers',
@@ -8,7 +9,7 @@ const peers = {
   isHidden: true,
   load: async () => ({
     call: async () => {
-      throw new Error('Peers feature is not available in this build')
+      throwBuildExcludedCommand('peers')
     },
   }),
 } satisfies Command

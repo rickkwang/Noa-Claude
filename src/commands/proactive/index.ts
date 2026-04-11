@@ -1,5 +1,6 @@
 // @ts-nocheck
 import type { Command } from '../../types/command.js'
+import { throwBuildExcludedCommand } from '../buildExcluded.js'
 
 const proactive = {
   name: 'proactive',
@@ -8,7 +9,7 @@ const proactive = {
   isHidden: true,
   load: async () => ({
     call: async () => {
-      throw new Error('Proactive mode is not available in this build')
+      throwBuildExcludedCommand('proactive')
     },
   }),
 } satisfies Command

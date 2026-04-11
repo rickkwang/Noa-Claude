@@ -123,6 +123,8 @@ Focused product docs live under `docs/`:
 - [docs/runtime-health.md](/Users/myrickwang/Desktop/Coding/Claude/docs/runtime-health.md)
 - [docs/session-continuity.md](/Users/myrickwang/Desktop/Coding/Claude/docs/session-continuity.md)
 - [docs/progress-artifacts.md](/Users/myrickwang/Desktop/Coding/Claude/docs/progress-artifacts.md)
+- [docs/optimization-roadmap.md](/Users/myrickwang/Desktop/Coding/Claude/docs/optimization-roadmap.md)
+- [docs/command-surface-governance.md](/Users/myrickwang/Desktop/Coding/Claude/docs/command-surface-governance.md)
 - [docs/worktrees.md](/Users/myrickwang/Desktop/Coding/Claude/docs/worktrees.md)
 - [docs/decisions/README.md](/Users/myrickwang/Desktop/Coding/Claude/docs/decisions/README.md)
 

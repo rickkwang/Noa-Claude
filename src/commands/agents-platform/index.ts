@@ -1,4 +1,5 @@
 import type { Command } from '../../types/command.js'
+import { throwBuildExcludedCommand } from '../buildExcluded.js'
 
 const agentsPlatform = {
   name: 'agents-platform',
@@ -7,7 +8,7 @@ const agentsPlatform = {
   isHidden: true,
   load: async () => ({
     call: async () => {
-      throw new Error('Agents platform is not available in this build')
+      throwBuildExcludedCommand('agents-platform')
     },
   }),
 } satisfies Command

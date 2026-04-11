@@ -1,3 +1,5 @@
+import { throwBuildExcludedCommand } from './buildExcluded.js'
+
 const torch = {
   name: 'torch',
   description: 'Torch command',
@@ -5,7 +7,7 @@ const torch = {
   isHidden: true,
   load: async () => ({
     call: async () => {
-      throw new Error('Torch feature is not available in this build')
+      throwBuildExcludedCommand('torch')
     },
   }),
 }
