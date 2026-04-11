@@ -16,45 +16,38 @@ The current product baseline includes:
 - `/summary` - generate a structured summary of the current session
 - `/share` - export a local share snapshot for a session
 
+## Quick Install
+
+```bash
+./install.sh
+```
+
+This script installs dependencies, builds the CLI, and links `claude-agent` and `claude-code` into `~/.local/bin`.
+
 ## Quick Start
 
-1. Install dependencies:
-
-```bash
-npm install
-```
-
-2. Make the command available in your shell:
-
-If you want to type `claude-agent` directly instead of running `./bin/claude-agent.js`, add the repository's `bin/` directory to your `PATH`, or create a local symlink in a directory that is already on your `PATH`:
-
-```bash
-ln -sf /Users/myrickwang/Desktop/Coding/Claude/bin/claude-agent.js ~/.local/bin/claude-agent
-ln -sf /Users/myrickwang/Desktop/Coding/Claude/bin/claude-code.js ~/.local/bin/claude-code
-```
-
-3. Build the CLI:
+1. Build the CLI:
 
 ```bash
 bun run build
 ```
 
-4. Start the assistant:
+2. Start the assistant:
 
 ```bash
 ./bin/claude-agent.js
 ```
 
-5. Check the version:
+3. Check the version:
 
 ```bash
-./bin/claude-agent.js --version
+claude-agent --version
 ```
 
 You can also use the compatibility alias:
 
 ```bash
-./bin/claude-code.js --version
+claude-code --version
 ```
 
 ## Configuration
@@ -110,6 +103,17 @@ Project-specific assets live under `.claude-agent/` in the current project:
 - `.claude-agent/CLAUDE.md`
 
 Legacy `.claude/` paths are still read for compatibility when present, but new writes go to `.claude-agent/`.
+
+## Build Modes
+
+The repository exposes two build profiles:
+
+- `bun run build` uses `--profile=full-unlocked`
+- `bun run compile` uses `--profile=baseline`
+- `bun run build:dev` uses `--profile=baseline`
+- `bun run build:dev:full` uses `--profile=full-unlocked`
+
+For the current feature audit and unlockability status, see [FEATURES.md](/Users/myrickwang/Desktop/Coding/Claude/FEATURES.md).
 
 ## Product Guides
 
