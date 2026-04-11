@@ -20,6 +20,7 @@ import {
   SandboxRuntimeConfigSchema,
   SandboxViolationStore,
 } from '@anthropic-ai/sandbox-runtime'
+import { EventEmitter } from 'events'
 import { rmSync, statSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { memoize } from 'lodash-es'
@@ -946,7 +947,37 @@ export interface ISandboxManager {
   reset(): Promise<void>
 }
 
-const fallbackSandboxViolationStore = new SandboxViolationStore()
+/**
+ * Fallback implementation of SandboxViolationStore for when sandbox-runtime is not available.
+ * The stub from sandbox-runtime is missing subscribe() and getTotalCount() methods.
+ */
+class FallbackSandboxViolationStore extends EventEmitter {
+  private violations: SandboxViolationEvent[] = []
+
+  subscribe(callback: (violations: SandboxViolationEvent[]) => void): () => void {
+    const handler = (violations: SandboxViolationEvent[]) => callback(violations)
+    this.on('change', handler)
+    return () => this.off('change', handler)
+  }
+
+  get(): SandboxViolationEvent[] {
+    return this.violations
+  }
+
+  getTotalCount(): number {
+    return this.violations.length
+  }
+
+  add(_event: SandboxViolationEvent): void {
+    // No-op in fallback - violations are not tracked without sandbox-runtime
+  }
+
+  clear(): void {
+    this.violations = []
+  }
+}
+
+const fallbackSandboxViolationStore = new FallbackSandboxViolationStore()
 const missingRuntimeMethodWarnings = new Set<string>()
 const require = createRequire(import.meta.url)
 const SANDBOX_RUNTIME_COMPAT_METHODS = [
