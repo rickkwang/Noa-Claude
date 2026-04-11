@@ -65,6 +65,7 @@ declare global {
       SESSION_INGRESS_URL?: string
       CLAUDE_CODE_REMOTE?: string
       CLAUDE_CODE_SIMPLE?: string
+      CLAUDE_CODE_LOCAL_ONLY?: string
       CLAUDE_CODE_ABLATION_BASELINE?: string
       CLAUDE_CODE_ENTRYPOINT?: string
       CLAUDE_CODE_REMOTE_CONTROL?: string

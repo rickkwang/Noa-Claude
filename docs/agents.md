@@ -1,53 +1,5 @@
 # Agents
 
-This product supports local subagents through `/agents`.
+This page is now part of [operating-guide.md](./operating-guide.md).
 
-## Agent Sources
-
-Agents can come from these scopes:
-
-- built-in
-- user settings
-- project settings
-- local settings
-- plugin sources
-- managed policy sources
-
-The `/agents` UI resolves precedence for you. If two agents share the same
-name, the higher-priority source wins and lower-priority definitions are shown
-as shadowed.
-
-## What `/agents` Shows
-
-The productized `/agents` surface is intended to answer four questions quickly:
-
-- where the agent came from
-- what model and permissions it uses
-- whether it runs in foreground or background
-- whether it uses isolation, hooks, memory, or skills
-- how many agents are currently running/pending in this session
-
-`/agents` now uses two focused panes:
-
-- `Running`: currently running/pending agent instances in this session
-- `Library`: available agent definitions (built-in/user/project/plugin)
-
-This keeps instance visibility and agent catalog management separate without
-changing command semantics.
-
-## Operational Rules
-
-- agent edits affect new runs, not already-running background agents
-- built-in agents are visible but not editable
-- project agents should live in project-local product paths, not legacy paths
-- plugin skill/agent updates can be activated in-session via `/reload-plugins`
-
-## Product Paths
-
-Preferred product paths:
-
-- user-level: `~/.claude-agent/agents`
-- project-level: `.claude-agent/agents`
-
-Legacy `.claude/agents` may still be read for compatibility, but new product
-usage should prefer `.claude-agent/agents`.
+Keep this file only as a compatibility pointer for existing links.

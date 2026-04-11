@@ -9,22 +9,8 @@ import {
 const root = process.cwd()
 const readme = readFileSync(resolve(root, 'README.md'), 'utf8')
 const matrix = readFileSync(resolve(root, 'FEATURE_AVAILABILITY_MATRIX.md'), 'utf8')
-const progressArtifacts = readFileSync(
-  resolve(root, 'docs', 'progress-artifacts.md'),
-  'utf8',
-)
-const roadmap = readFileSync(
-  resolve(root, 'docs', 'optimization-roadmap.md'),
-  'utf8',
-)
-const governance = readFileSync(
-  resolve(root, 'docs', 'command-surface-governance.md'),
-  'utf8',
-)
-const featureGapAudit = readFileSync(
-  resolve(root, 'docs', 'feature-gap-audit.md'),
-  'utf8',
-)
+const operatingGuide = readFileSync(resolve(root, 'docs', 'operating-guide.md'), 'utf8')
+const productGovernance = readFileSync(resolve(root, 'docs', 'product-governance.md'), 'utf8')
 
 const baselineCommands = getCommandSurfacesByCategory('baseline').map(
   entry => entry.command,
@@ -68,27 +54,11 @@ for (const command of implementedNonBaselineCommands) {
       `Feature matrix does not mark implemented non-baseline command ${command} as Available`,
     )
   }
-  if (!governance.includes(command)) {
-    failures.push(
-      `Governance doc is missing implemented non-baseline command ${command}`,
-    )
-  }
-  if (!featureGapAudit.includes(command)) {
-    failures.push(
-      `Feature gap audit is missing implemented non-baseline command ${command}`,
-    )
-  }
 }
 
 for (const command of buildExcludedCommands) {
   if (!matrix.includes(command)) {
     failures.push(`Feature matrix is missing build-excluded command ${command}`)
-  }
-  if (!governance.includes(command)) {
-    failures.push(`Governance doc is missing build-excluded command ${command}`)
-  }
-  if (!featureGapAudit.includes(command)) {
-    failures.push(`Feature gap audit is missing build-excluded command ${command}`)
   }
 }
 
@@ -134,32 +104,106 @@ if (/## Slash Commands: Hidden but Implemented/.test(matrix)) {
   )
 }
 
-if (!readme.includes('docs/progress-artifacts.md')) {
-  failures.push('README is missing focused docs link for progress artifacts')
+if (!readme.includes('docs/operating-guide.md')) {
+  failures.push('README is missing focused docs link for operating guide')
 }
 
-if (!readme.includes('docs/optimization-roadmap.md')) {
-  failures.push('README is missing focused docs link for optimization roadmap')
+if (!readme.includes('docs/product-governance.md')) {
+  failures.push('README is missing focused docs link for product governance')
 }
 
-if (!readme.includes('docs/command-surface-governance.md')) {
-  failures.push('README is missing focused docs link for command surface governance')
+for (const scriptName of [
+  'bun run typecheck',
+  'bun run check:runtime',
+  'bun run smoke:features',
+]) {
+  if (!readme.includes(scriptName)) {
+    failures.push(`README verification section is missing "${scriptName}"`)
+  }
 }
 
-if (!progressArtifacts.includes('.claude-agent/progress.md')) {
-  failures.push('Progress artifacts doc is missing the project-local progress path')
+if (!/This document merges the runtime, session, worktree, agent, and progress-artifact notes/.test(
+  operatingGuide,
+)) {
+  failures.push('Operating guide is missing merge summary')
 }
 
-if (!/## Phase 1: Truth and Guardrails/.test(roadmap)) {
-  failures.push('Optimization roadmap is missing Phase 1 section')
+for (const command of baselineCommands) {
+  if (!productGovernance.includes(command)) {
+    failures.push(`Product governance doc is missing baseline command ${command}`)
+  }
 }
 
-if (!/## Build-Excluded Commands/.test(governance)) {
-  failures.push('Command surface governance doc is missing Build-Excluded section')
+for (const command of implementedNonBaselineCommands) {
+  if (!productGovernance.includes(command)) {
+    failures.push(
+      `Product governance doc is missing implemented non-baseline command ${command}`,
+    )
+  }
 }
 
-if (!/Upgrade condition/.test(featureGapAudit)) {
-  failures.push('Feature gap audit must include an "Upgrade condition" column')
+if (!/\/output-style[\s\S]*deprecated shim/i.test(productGovernance)) {
+  failures.push(
+    'Product governance doc must mark /output-style as a deprecated shim',
+  )
+}
+
+if (
+  !/\/output-style[\s\S]*not eligible for baseline promotion/i.test(
+    productGovernance,
+  )
+) {
+  failures.push(
+    'Product governance doc must state that /output-style is not baseline-promotable as a shim',
+  )
+}
+
+for (const command of buildExcludedCommands) {
+  if (!productGovernance.includes(command)) {
+    failures.push(`Product governance doc is missing build-excluded command ${command}`)
+  }
+}
+
+if (
+  !/\/remote-control[\s\S]*slash command surface[\s\S]*bridge\/remote runtime code/i.test(
+    productGovernance,
+  )
+) {
+  failures.push(
+    'Product governance doc must distinguish /remote-control command surface vs runtime bridge code',
+  )
+}
+
+if (
+  !/\/remote-control[\s\S]*slash command surface only[\s\S]*E_BUILD_EXCLUDED_/i.test(
+    matrix,
+  )
+) {
+  failures.push(
+    'Feature matrix must distinguish /remote-control slash command surface and build-excluded runtime contract',
+  )
+}
+
+for (const command of stubCommands) {
+  if (!productGovernance.includes(command)) {
+    failures.push(`Product governance doc is missing stub command ${command}`)
+  }
+}
+
+if (!/## Runtime Health/.test(operatingGuide)) {
+  failures.push('Operating guide is missing runtime health section')
+}
+
+if (!/## Session Continuity/.test(operatingGuide)) {
+  failures.push('Operating guide is missing session continuity section')
+}
+
+if (!/## Worktrees/.test(operatingGuide)) {
+  failures.push('Operating guide is missing worktrees section')
+}
+
+if (!/## Agents/.test(operatingGuide)) {
+  failures.push('Operating guide is missing agents section')
 }
 
 if (failures.length > 0) {

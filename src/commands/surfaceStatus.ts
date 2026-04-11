@@ -79,12 +79,22 @@ const implementedNonBaseline: CommandSurfaceEntry[] = [
       'Promote only if converted to user-facing diagnostics workflow.',
   },
   {
+    command: '/cleanup-data',
+    category: 'implemented-non-baseline',
+    discoverability: 'visible',
+    supportsNonInteractive: true,
+    reason: 'Unified local tracking-data cleanup command with explicit confirm gate.',
+    upgradeCondition:
+      'Promote only after retention policy and backup/restore UX are finalized.',
+  },
+  {
     command: '/output-style',
     category: 'implemented-non-baseline',
     discoverability: 'visible',
     supportsNonInteractive: null,
-    reason: 'Deprecated compatibility shim.',
-    upgradeCondition: 'Promote only if shim is replaced with supported UX.',
+    reason: 'Deprecated compatibility shim that redirects users to /config.',
+    upgradeCondition:
+      'Not eligible for baseline promotion unless replaced with a supported configuration workflow.',
   },
   {
     command: '/thinkback-play',

@@ -112,6 +112,7 @@ The repository exposes two build profiles:
 - `bun run compile` uses `--profile=baseline`
 - `bun run build:dev` uses `--profile=baseline`
 - `bun run build:dev:full` uses `--profile=full-unlocked`
+- `--bare` / `--local-only` / `CLAUDE_CODE_SIMPLE=1` is the local-minimal runtime mode: it skips telemetry, 1P logging init, GrowthBook refresh, remote managed settings, policy limits, startup analytics, and session data upload.
 
 For the current feature audit and unlockability status, see [FEATURES.md](/Users/myrickwang/Desktop/Coding/Claude/FEATURES.md).
 
@@ -119,13 +120,8 @@ For the current feature audit and unlockability status, see [FEATURES.md](/Users
 
 Focused product docs live under `docs/`:
 
-- [docs/agents.md](/Users/myrickwang/Desktop/Coding/Claude/docs/agents.md)
-- [docs/runtime-health.md](/Users/myrickwang/Desktop/Coding/Claude/docs/runtime-health.md)
-- [docs/session-continuity.md](/Users/myrickwang/Desktop/Coding/Claude/docs/session-continuity.md)
-- [docs/progress-artifacts.md](/Users/myrickwang/Desktop/Coding/Claude/docs/progress-artifacts.md)
-- [docs/optimization-roadmap.md](/Users/myrickwang/Desktop/Coding/Claude/docs/optimization-roadmap.md)
-- [docs/command-surface-governance.md](/Users/myrickwang/Desktop/Coding/Claude/docs/command-surface-governance.md)
-- [docs/worktrees.md](/Users/myrickwang/Desktop/Coding/Claude/docs/worktrees.md)
+- [docs/operating-guide.md](/Users/myrickwang/Desktop/Coding/Claude/docs/operating-guide.md)
+- [docs/product-governance.md](/Users/myrickwang/Desktop/Coding/Claude/docs/product-governance.md)
 - [docs/decisions/README.md](/Users/myrickwang/Desktop/Coding/Claude/docs/decisions/README.md)
 
 ## Built-In Commands
@@ -169,17 +165,27 @@ Exports a local snapshot of the current session for sharing or archiving.
 
 Snapshots are written under `.claude-agent/shares`.
 
+### `/cleanup-data`
+
+Previews or deletes local tracking data while keeping config/settings files.
+
+Examples:
+
+- `/cleanup-data project` (preview)
+- `/cleanup-data project --confirm` (execute)
+- `/cleanup-data all --confirm` (also clears global prompt history)
+
 ## Verification
 
 Use these commands to check that the local installation is healthy:
 
 ```bash
 bun run build
-npm run typecheck -- --pretty false
-npm run check:runtime
-npm run smoke:features
-npm run smoke:perf
-npm run smoke:engine
+bun run typecheck
+bun run check:runtime
+bun run smoke:features
+bun run smoke:perf
+bun run smoke:engine
 ```
 
 ## Command Availability

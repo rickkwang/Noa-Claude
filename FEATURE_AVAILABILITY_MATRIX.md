@@ -34,8 +34,9 @@ Last updated: 2026-04-11
 | Command | Status | Notes |
 |---|---|---|
 | `/assistant` | Available | Assistant preference/status command implemented; full assistant runtime remains gated by build/runtime capabilities. |
+| `/cleanup-data` | Available | Unified cleanup command for local tracking data; requires `--confirm` to execute deletions. |
 | `/heapdump` | Available | Exposed for engineering diagnostics. |
-| `/output-style` | Available | Deprecated shim; points users to `/config`. |
+| `/output-style` | Available | Deprecated shim only; compatibility prompt to `/config`, not promotable to baseline unless replaced by a supported configuration workflow. |
 | `/thinkback-play` | Available | Thinkback helper; still gated by runtime feature availability. |
 | `/rate-limit-options` | Available | Rate-limit action sheet; still gated by subscriber/runtime availability. |
 
@@ -57,6 +58,9 @@ Last updated: 2026-04-11
 | `/torch` | Build-Excluded |
 | `/force-snip` | Build-Excluded |
 | `/subscribe-pr` | Build-Excluded |
+
+`/remote-control` in this section refers to the slash command surface only.
+Bridge/remote runtime modules can exist in source, but this build keeps the command unavailable and guarded by `E_BUILD_EXCLUDED_*` error contracts.
 
 ## Slash Commands: Stub
 | Command | Status |
