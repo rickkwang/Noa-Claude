@@ -89,7 +89,7 @@ function runScenario({
   const debugLogPath = join(cwd, `${name}-debug.log`);
   const startWall = Date.now();
   const result = spawnSync(
-    '/opt/homebrew/bin/timeout',
+    'timeout',
     ['10', agentBin, '--debug-file', debugLogPath, '--print', 'ping', ...args],
     {
       cwd,

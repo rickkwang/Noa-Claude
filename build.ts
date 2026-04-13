@@ -76,48 +76,35 @@ const fullExperimentalFeatures = [
   'WORKFLOW_SCRIPTS',
 ] as const
 
-function runCommand(cmd: string[]): string | null {
+async function runCommand(cmd: string[]): Promise<string | null> {
   const proc = Bun.spawn({
     cmd,
     cwd: process.cwd(),
     stdio: ['pipe', 'pipe', 'pipe'],
   })
 
-  let stdout = ''
-  let stderr = ''
+  const [stdout, stderr] = await Promise.all([
+    proc.stdout ? new Response(proc.stdout).text() : Promise.resolve(''),
+    proc.stderr ? new Response(proc.stderr).text() : Promise.resolve(''),
+  ])
 
-  if (proc.stdout) {
-    new Response(proc.stdout).text().then(text => {
-      stdout += text
-    })
+  const code = await proc.exited
+  if (code !== 0) {
+    return null
   }
-  if (proc.stderr) {
-    new Response(proc.stderr).text().then(text => {
-      stderr += text
-    })
-  }
-
-  return new Promise<string | null>(resolve => {
-    proc.exited.then(code => {
-      if (code !== 0) {
-        resolve(null)
-      } else {
-        resolve(stdout.trim() || null)
-      }
-    })
-  }) as unknown as string | null
+  return stdout.trim() || null
 }
 
-function getDevVersion(baseVersion: string): string {
+async function getDevVersion(baseVersion: string): Promise<string> {
   const timestamp = new Date().toISOString()
   const date = timestamp.slice(0, 10).replaceAll('-', '')
   const time = timestamp.slice(11, 19).replaceAll(':', '')
-  const sha = runCommand(['git', 'rev-parse', '--short=8', 'HEAD']) ?? 'unknown'
+  const sha = (await runCommand(['git', 'rev-parse', '--short=8', 'HEAD'])) ?? 'unknown'
   return `${baseVersion}-dev.${date}.t${time}.sha${sha}`
 }
 
-function getVersionChangelog(): string {
-  return runCommand(['git', 'log', '--format=%h %s', '-20']) ?? 'Local development build'
+async function getVersionChangelog(): Promise<string> {
+  return (await runCommand(['git', 'log', '--format=%h %s', '-20'])) ?? 'Local development build'
 }
 
 const defaultFeatures = ['VOICE_MODE']
@@ -166,7 +153,7 @@ const outfile = compile
     : './dist/main.js'
 
 const buildTime = new Date().toISOString()
-const version = dev ? getDevVersion(pkg.version) : pkg.version
+const version = dev ? await getDevVersion(pkg.version) : pkg.version
 
 const outDir = dirname(outfile)
 if (outDir !== '.') {
@@ -179,12 +166,9 @@ const externals = [
   'modifiers-napi',
   'url-handler-napi',
   'sharp',
-  'image-processor-napi',
 ]
 
-// In compile mode, @ant packages cannot be external since they're not in the binary's node_modules
-// So we include them in the bundle instead
-const antPackages = ['@ant/claude-for-chrome-mcp']
+const versionChangelog = dev ? await getVersionChangelog() : 'https://github.com/anthropics/claude-code'
 
 const defines: Record<string, string> = {
   'process.env.USER_TYPE': JSON.stringify('external'),
@@ -203,9 +187,7 @@ const defines: Record<string, string> = {
   'MACRO.ISSUES_EXPLAINER': JSON.stringify(
     'This reconstructed source snapshot does not include Anthropic internal issue routing.',
   ),
-  'MACRO.VERSION_CHANGELOG': JSON.stringify(
-    dev ? getVersionChangelog() : 'https://github.com/anthropics/claude-code',
-  ),
+  'MACRO.VERSION_CHANGELOG': JSON.stringify(versionChangelog),
 }
 
 console.log('Building Claude Agent...')
@@ -248,29 +230,24 @@ const proc = Bun.spawn(cmd, {
   stdio: ['inherit', 'inherit', 'inherit'],
 })
 
-proc.exited.then(code => {
-  if (code === 0 && existsSync(outfile)) {
-    chmodSync(outfile, 0o755)
-    console.log(`Built ${outfile}`)
-  } else if (code !== 0) {
-    process.exit(code ?? 1)
-  }
-})
+const code = await proc.exited
+if (code === 0 && existsSync(outfile)) {
+  chmodSync(outfile, 0o755)
+  console.log(`Built ${outfile}`)
+} else if (code !== 0) {
+  process.exit(code ?? 1)
+}
 
 // For non-compile mode, patch the output
-if (!compile) {
-  proc.exited.then(code => {
-    if (code === 0) {
-      const content = readFileSync(outfile, 'utf-8')
-      let patched = content
-      patched = patched
-        .replace(/"external"\s*===\s*'ant'/g, 'true')
-        .replace(/'external'\s*===\s*"ant"/g, 'true')
-        .replace(/"external"\s*!==\s*'ant'/g, 'false')
-        .replace(/'external'\s*!==\s*"ant"/g, 'false')
+if (!compile && code === 0) {
+  const content = readFileSync(outfile, 'utf-8')
+  let patched = content
+  patched = patched
+    .replace(/"external"\s*===\s*'ant'/g, 'true')
+    .replace(/'external'\s*===\s*"ant"/g, 'true')
+    .replace(/"external"\s*!==\s*'ant'/g, 'false')
+    .replace(/'external'\s*!==\s*"ant"/g, 'false')
 
-      writeFileSync(outfile, patched + '\n' + getLauncherBootstrapCode())
-      console.log(`Build complete: ${outfile}`)
-    }
-  })
+  writeFileSync(outfile, patched + '\n' + getLauncherBootstrapCode())
+  console.log(`Build complete: ${outfile}`)
 }

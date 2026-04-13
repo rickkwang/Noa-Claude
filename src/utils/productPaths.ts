@@ -3,7 +3,9 @@ import { getClaudeConfigHomeDir } from './envUtils.js'
 
 export const PRODUCT_PROJECT_DIR = '.claude-agent'
 export const LEGACY_PROJECT_DIR = '.claude'
-export const PRODUCT_MEMORY_FILENAME = 'CLAUDE.md'
+export const PRIMARY_PROJECT_INSTRUCTION_FILE = 'AGENTS.md'
+export const FALLBACK_PROJECT_INSTRUCTION_FILE = 'CLAUDE.md'
+export const PRODUCT_MEMORY_FILENAME = 'CLAUDE.md' // Legacy name, use PRIMARY_PROJECT_INSTRUCTION_FILE for new code
 export const PRODUCT_LAUNCH_CONFIG = 'launch.json'
 export const PRODUCT_SCHEDULED_TASKS_FILE = 'scheduled_tasks.json'
 export const PRODUCT_SCHEDULED_TASKS_LOCK = 'scheduled_tasks.lock'
@@ -83,10 +85,14 @@ export function getProjectSettingsRelativePathCandidates(
 }
 
 export function getProjectMemoryFileCandidates(cwd: string): string[] {
+  // AGENTS.md takes priority over CLAUDE.md per OpenClaude project convention
   return [
-    join(getPrimaryProjectConfigRoot(cwd), PRODUCT_MEMORY_FILENAME),
-    join(cwd, PRODUCT_MEMORY_FILENAME),
-    join(getLegacyProjectConfigRoot(cwd), PRODUCT_MEMORY_FILENAME),
+    join(getPrimaryProjectConfigRoot(cwd), PRIMARY_PROJECT_INSTRUCTION_FILE),
+    join(cwd, PRIMARY_PROJECT_INSTRUCTION_FILE),
+    join(getPrimaryProjectConfigRoot(cwd), FALLBACK_PROJECT_INSTRUCTION_FILE),
+    join(cwd, FALLBACK_PROJECT_INSTRUCTION_FILE),
+    join(getLegacyProjectConfigRoot(cwd), PRIMARY_PROJECT_INSTRUCTION_FILE),
+    join(getLegacyProjectConfigRoot(cwd), FALLBACK_PROJECT_INSTRUCTION_FILE),
   ]
 }
 

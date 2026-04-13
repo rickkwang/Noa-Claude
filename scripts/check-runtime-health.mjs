@@ -542,7 +542,7 @@ function checkNonInteractiveMcpTimeoutFallback() {
     );
 
     const timeoutRun = spawnSync(
-      '/opt/homebrew/bin/timeout',
+      'timeout',
       [
         '8',
         agentBin,

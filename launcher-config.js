@@ -57,13 +57,20 @@ function safeReadSettingsFile() {
     }
     return JSON.parse(raw);
   } catch (error) {
-    if (error && typeof error === 'object' && error.code === 'ENOENT') {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === 'ENOENT'
+    ) {
       return {};
     }
     throw new Error(
       formatDiagnosticError(
         DIAGNOSTIC_ERROR_CODES.CONFIG_ERROR,
-        `Invalid product settings at ${PRODUCT_SETTINGS_PATH}: ${error?.message ?? error}`,
+        `Invalid product settings at ${PRODUCT_SETTINGS_PATH}: ${
+          typeof error?.message === 'string' ? error.message : String(error)
+        }`,
       ),
     );
   }

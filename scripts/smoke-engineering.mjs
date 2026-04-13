@@ -41,7 +41,7 @@ function runCommand(command, args, options = {}) {
 
 function assertInteractiveStartupStaysAlive() {
   const result = spawnSync(
-    '/opt/homebrew/bin/timeout',
+    'timeout',
     ['3', '/usr/bin/script', '-q', '/dev/null', '/bin/zsh', '-lc', agentBin],
     {
       cwd: repoRoot,
@@ -115,7 +115,7 @@ console.log('Running build...');
 runCommand('bun', ['run', 'build']);
 
 console.log('Running typecheck...');
-runCommand('npm', ['run', 'typecheck', '--', '--pretty', 'false']);
+runCommand('bun', ['run', 'typecheck']);
 
 console.log('Checking docs consistency...');
 runCommand('npm', ['run', 'check:docs']);
