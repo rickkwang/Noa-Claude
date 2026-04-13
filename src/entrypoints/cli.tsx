@@ -295,6 +295,11 @@ async function main(): Promise<void> {
     main: cliMain
   } = await import('../main.js');
   profileCheckpoint('cli_after_main_import');
+
+  // Print the gradient startup screen before the Ink UI loads
+  const { printStartupScreen } = await import('../components/StartupScreen.js');
+  printStartupScreen();
+
   await cliMain();
   profileCheckpoint('cli_after_main_complete');
 }

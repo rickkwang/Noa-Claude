@@ -34,7 +34,9 @@ import { plural } from '../utils/stringUtils.js';
 import { renderableSearchText } from '../utils/transcriptSearch.js';
 import { Divider } from './design-system/Divider.js';
 import type { UnseenDivider } from './FullscreenLayout.js';
+import { GradientBanner } from './LogoV2/GradientBanner.js';
 import { LogoV2 } from './LogoV2/LogoV2.js';
+import { getStartupBannerMode } from './StartupScreen.js';
 import { StreamingMarkdown } from './Markdown.js';
 import { hasContentAfterIndex, MessageRow } from './MessageRow.js';
 import { InVirtualListContext, type MessageActionsNav, MessageActionsSelectedContext, type MessageActionsState } from './messageActions.js';
@@ -53,25 +55,39 @@ import type { JumpHandle } from './VirtualMessageList.js';
 // and pegs CPU at 100%. Memo on agentDefinitions so a new messages array
 // doesn't invalidate the logo subtree. LogoV2/StatusNotices internally
 // subscribe to useAppState/useSettings for their own updates.
+// startup-banner modes:
+//   'openclaude' - show gradient banner only (no LogoV2)
+//   'both'       - show both gradient banner AND LogoV2
+//   'official'   - show LogoV2 only
 const LogoHeader = React.memo(function LogoHeader(t0) {
   const $ = _c(3);
   const {
     agentDefinitions
   } = t0;
+  // Read banner mode on each render to pick up config file changes
+  const startupBannerMode = getStartupBannerMode()
+  const showGradientBanner = startupBannerMode === 'openclaude' || startupBannerMode === 'both'
+  const showLogoV2 = startupBannerMode !== 'openclaude'
+
+  // Cache key includes startupBannerMode to re-render when it changes
+  const cacheKey = Symbol.for(`logo:${startupBannerMode}`)
+
   let t1;
-  if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
-    t1 = <LogoV2 />;
-    $[0] = t1;
+  if ($[0] !== cacheKey) {
+    t1 = showGradientBanner ? <GradientBanner /> : null;
+    $[0] = cacheKey;
+    $[1] = t1;
   } else {
-    t1 = $[0];
+    t1 = $[1];
   }
+
   let t2;
-  if ($[1] !== agentDefinitions) {
-    t2 = <OffscreenFreeze><Box flexDirection="column" gap={1}>{t1}<React.Suspense fallback={null}><StatusNotices agentDefinitions={agentDefinitions} /></React.Suspense></Box></OffscreenFreeze>;
-    $[1] = agentDefinitions;
-    $[2] = t2;
+  if ($[2] !== agentDefinitions) {
+    t2 = <OffscreenFreeze><Box flexDirection="column" gap={1}>{t1}{showLogoV2 && <LogoV2 />}<React.Suspense fallback={null}><StatusNotices agentDefinitions={agentDefinitions} /></React.Suspense></Box></OffscreenFreeze>;
+    $[2] = agentDefinitions;
+    $[3] = t2;
   } else {
-    t2 = $[2];
+    t2 = $[3];
   }
   return t2;
 });

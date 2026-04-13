@@ -591,6 +591,10 @@ const _pendingSSH: PendingSSH | undefined = feature('SSH_REMOTE') ? {
 export async function main() {
   profileCheckpoint('main_function_start');
 
+  // Print the gradient startup screen before the Ink UI loads
+  const { printStartupScreen } = await import('./components/StartupScreen.js');
+  printStartupScreen();
+
   // SECURITY: Prevent Windows from executing commands from current directory
   // This must be set before ANY command execution to prevent PATH hijacking attacks
   // See: https://docs.microsoft.com/en-us/windows/win32/api/processenv/nf-processenv-searchpathw
