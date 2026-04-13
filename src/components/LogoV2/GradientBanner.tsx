@@ -127,12 +127,18 @@ export function GradientBanner() {
       {/* Logo */}
       {logoLines}
 
+      {/* Spacer */}
+      <Text> </Text>
+
       {/* Tagline */}
       <Text>
         <Text color={ACCENT_HEX}>  ✦  </Text>
-        <Text color={CREAM_HEX}>Any model. Every tool. Zero limits.</Text>
+        <Text color={CREAM_HEX}>Dream bigger. Think faster. Ship instantly.</Text>
         <Text color={ACCENT_HEX}>  ✦</Text>
       </Text>
+
+      {/* Spacer */}
+      <Text> </Text>
 
       {/* Top border */}
       <Text color={BORDER_HEX}>╔{'═'.repeat(W - 2)}╗</Text>

@@ -192,7 +192,7 @@ export function printStartupScreen(): void {
   out.push('')
 
   // Tagline
-  out.push(`  ${rgb(...ACCENT)}✦${RESET} ${rgb(...CREAM)}Any model. Every tool. Zero limits.${RESET} ${rgb(...ACCENT)}✦${RESET}`)
+  out.push(`  ${rgb(...ACCENT)}✦${RESET} ${rgb(...CREAM)}Dream bigger. Think faster. Ship instantly.${RESET} ${rgb(...ACCENT)}✦${RESET}`)
   out.push('')
 
   // Provider info box
