@@ -328,6 +328,13 @@ export function getExtraBodyParams(betaHeaders?: string[]): JsonObject {
     }
   }
 
+  // Privacy: disable training data collection for third-party providers.
+  // First-party Anthropic has its own privacy mechanism, so only add
+  // store:false for Bedrock, Vertex, Foundry, and OpenAI-compatible.
+  if (getAPIProvider() !== 'firstParty') {
+    result.store = false
+  }
+
   return result
 }
 

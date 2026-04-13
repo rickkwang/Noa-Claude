@@ -9,6 +9,11 @@ import { getModelCapability } from './model/modelCapabilities.js'
 // Model context window size (200k tokens for all models right now)
 export const MODEL_CONTEXT_WINDOW_DEFAULT = 200_000
 
+// Fallback context window for unknown OpenAI-compatible models (128k).
+// OpenAI-compatible providers may not support 200k, so unknown models
+// should use a conservative 128k to prevent compact threshold underestimation.
+export const UNKNOWN_OPENAI_COMPAT_CONTEXT_WINDOW = 128_000
+
 // Maximum output tokens for compact operations
 export const COMPACT_MAX_OUTPUT_TOKENS = 20_000
 
@@ -94,6 +99,11 @@ export function getContextWindowForModel(
     if (antModel?.contextWindow) {
       return antModel.contextWindow
     }
+  }
+  // For OpenAI-compatible providers with unknown models, use conservative 128k
+  // instead of 200k to prevent compact threshold from going negative.
+  if (isEnvTruthy(process.env.CLAUDE_CODE_USE_OPENAI)) {
+    return UNKNOWN_OPENAI_COMPAT_CONTEXT_WINDOW
   }
   return MODEL_CONTEXT_WINDOW_DEFAULT
 }

@@ -1,6 +1,6 @@
 # Operating Guide
 
-Last updated: 2026-04-11
+Last updated: 2026-04-13
 
 This document merges the runtime, session, worktree, agent, and progress-artifact notes into one operational guide.
 
@@ -112,12 +112,23 @@ Agents can come from these scopes:
 
 The `/agents` UI resolves precedence for you.
 
+## Auto-fix
+
+File edits can automatically trigger lint and test commands via the auto-fix hook (configured in `settings.json` under `autoFix`).
+
+When enabled, the following workflow executes after each file edit:
+
+1. Collect modified files by tool (Bash, Edit, Write, Grep, Glob)
+2. Run configured lint/test commands
+3. On lint failure: present linter output with fix options
+4. On test failure: pause for user decision to retry, skip, or abort
+
 ## Verification
 
 Repository-level verification for these operational surfaces:
 
-- `npm run check:runtime`
-- `npm run smoke:engine`
+- `bun run check:runtime`
+- `bun run smoke:engine`
 
 ## Related Documents
 

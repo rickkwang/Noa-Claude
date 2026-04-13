@@ -50,6 +50,18 @@ const COMPACTABLE_TOOLS = new Set<string>([
   FILE_WRITE_TOOL_NAME,
 ])
 
+/**
+ * Check if a tool is compactable.
+ * Built-in tools are listed in COMPACTABLE_TOOLS.
+ * MCP tools follow the pattern mcp__serverName__toolName and are always compactable.
+ */
+function isCompactableTool(toolName: string): boolean {
+  if (COMPACTABLE_TOOLS.has(toolName)) return true
+  // MCP tools format: mcp__serverName__toolName
+  if (toolName.startsWith('mcp__')) return true
+  return false
+}
+
 // --- Cached microcompact state (ant-only, gated by feature('CACHED_MICROCOMPACT')) ---
 
 // Lazy-initialized cached MC module and state to avoid importing in external builds.
@@ -221,8 +233,8 @@ export type MicrocompactResult = {
 }
 
 /**
- * Walk messages and collect tool_use IDs whose tool name is in
- * COMPACTABLE_TOOLS, in encounter order. Shared by both microcompact paths.
+ * Walk messages and collect tool_use IDs whose tool name is compactable,
+ * in encounter order. Shared by both microcompact paths.
  */
 function collectCompactableToolIds(messages: Message[]): string[] {
   const ids: string[] = []
@@ -232,7 +244,7 @@ function collectCompactableToolIds(messages: Message[]): string[] {
       Array.isArray(message.message.content)
     ) {
       for (const block of message.message.content) {
-        if (block.type === 'tool_use' && COMPACTABLE_TOOLS.has(block.name)) {
+        if (block.type === 'tool_use' && isCompactableTool(block.name)) {
           ids.push(block.id)
         }
       }

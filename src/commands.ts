@@ -32,6 +32,7 @@ import logout from './commands/logout/index.js'
 import installGitHubApp from './commands/install-github-app/index.js'
 import installSlackApp from './commands/install-slack-app/index.js'
 import breakCache from './commands/break-cache/index.js'
+import cacheProbe from './commands/cache-probe/index.js'
 import mcp from './commands/mcp/index.js'
 import mobile from './commands/mobile/index.js'
 import onboarding from './commands/onboarding/index.js'
@@ -157,6 +158,8 @@ import rateLimitOptions from './commands/rate-limit-options/index.js'
 import statusline from './commands/statusline.js'
 import effort from './commands/effort/index.js'
 import stats from './commands/stats/index.js'
+import provider from './commands/provider/index.js'
+import wiki from './commands/wiki/index.js'
 // insights.ts is 113KB (3200 lines, includes diffLines/html rendering). Lazy
 // shim defers the heavy module until /insights is actually invoked.
 const usageReport: Command = {
@@ -234,6 +237,7 @@ const COMMANDS = memoize((): Command[] => [
   chrome,
   clear,
   cleanupData,
+  cacheProbe,
   color,
   compact,
   config,
@@ -290,6 +294,7 @@ const COMMANDS = memoize((): Command[] => [
   usage,
   usageReport,
   vim,
+  wiki,
   ...(webCmd ? [webCmd] : []),
   ...(forkCmd ? [forkCmd] : []),
   ...(buddy ? [buddy] : []),
@@ -304,6 +309,7 @@ const COMMANDS = memoize((): Command[] => [
   permissions,
   plan,
   privacySettings,
+  provider,
   hooks,
   exportCommand,
   sandboxToggle,

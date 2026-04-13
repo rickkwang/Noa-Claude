@@ -46,6 +46,7 @@ import { isFastModeEnabled } from './utils/fastMode.js'
 import { formatDuration, formatNumber } from './utils/format.js'
 import type { FpsMetrics } from './utils/fpsTracker.js'
 import { getCanonicalName } from './utils/model/model.js'
+import { getAPIProvider } from './utils/model/providers.js'
 import { calculateUSDCost } from './utils/modelCost.js'
 export {
   getTotalCostUSD as getTotalCost,
@@ -248,6 +249,30 @@ function round(number: number, precision: number): number {
   return Math.round(number * precision) / precision
 }
 
+/**
+ * Normalizes usage to Anthropic's token-accounting convention.
+ *
+ * OpenAI-compatible providers report `input_tokens` as the *total* prompt
+ * tokens (cached + non-cached), while Anthropic reports them separately:
+ *   - input_tokens          = non-cached tokens only
+ *   - cache_read_input_tokens = cached tokens (billed at a lower rate)
+ *
+ * Without this normalization, `calculateUSDCost` would double-count the
+ * cached portion: once inside `input_tokens` at the full input rate, and
+ * again via `cache_read_input_tokens` at the cache-read rate — producing
+ * a cost that is higher than the actual charge (often ~2× when roughly
+ * half the prompt is served from cache).
+ */
+function normalizeUsageForCostAccounting(usage: Usage): Usage {
+  if (getAPIProvider() !== 'openaiCompatible') return usage
+  const cacheRead = usage.cache_read_input_tokens ?? 0
+  if (cacheRead === 0) return usage
+  return {
+    ...usage,
+    input_tokens: Math.max(0, usage.input_tokens - cacheRead),
+  }
+}
+
 function addToTotalModelUsage(
   cost: number,
   usage: Usage,
@@ -281,28 +306,39 @@ export function addToTotalSessionCost(
   usage: Usage,
   model: string,
 ): number {
-  const modelUsage = addToTotalModelUsage(cost, usage, model)
-  addToTotalCostState(cost, modelUsage, model)
+  // Normalize usage to Anthropic convention before any accounting.
+  // For OpenAI-compatible providers, input_tokens already includes
+  // cache_read_input_tokens, so we subtract to avoid double-counting.
+  const normalizedUsage = normalizeUsageForCostAccounting(usage)
+  // Recompute the cost from the normalized usage so the cached-token
+  // portion is billed at the cache-read rate, not the full input rate.
+  const normalizedCost =
+    normalizedUsage !== usage
+      ? calculateUSDCost(model, normalizedUsage)
+      : cost
+
+  const modelUsage = addToTotalModelUsage(normalizedCost, normalizedUsage, model)
+  addToTotalCostState(normalizedCost, modelUsage, model)
 
   const attrs =
-    isFastModeEnabled() && usage.speed === 'fast'
+    isFastModeEnabled() && normalizedUsage.speed === 'fast'
       ? { model, speed: 'fast' }
       : { model }
 
-  getCostCounter()?.add(cost, attrs)
-  getTokenCounter()?.add(usage.input_tokens, { ...attrs, type: 'input' })
-  getTokenCounter()?.add(usage.output_tokens, { ...attrs, type: 'output' })
-  getTokenCounter()?.add(usage.cache_read_input_tokens ?? 0, {
+  getCostCounter()?.add(normalizedCost, attrs)
+  getTokenCounter()?.add(normalizedUsage.input_tokens, { ...attrs, type: 'input' })
+  getTokenCounter()?.add(normalizedUsage.output_tokens, { ...attrs, type: 'output' })
+  getTokenCounter()?.add(normalizedUsage.cache_read_input_tokens ?? 0, {
     ...attrs,
     type: 'cacheRead',
   })
-  getTokenCounter()?.add(usage.cache_creation_input_tokens ?? 0, {
+  getTokenCounter()?.add(normalizedUsage.cache_creation_input_tokens ?? 0, {
     ...attrs,
     type: 'cacheCreation',
   })
 
-  let totalCost = cost
-  for (const advisorUsage of getAdvisorUsage(usage)) {
+  let totalCost = normalizedCost
+  for (const advisorUsage of getAdvisorUsage(normalizedUsage)) {
     const advisorCost = calculateUSDCost(advisorUsage.model, advisorUsage)
     logEvent('tengu_advisor_tool_token_usage', {
       advisor_model:

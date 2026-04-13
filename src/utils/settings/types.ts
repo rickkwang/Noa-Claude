@@ -397,6 +397,19 @@ export const SettingsSchema = lazySchema(() =>
             'model ID (e.g. a Bedrock inference profile ARN). Typically set in managed settings by ' +
             'enterprise administrators.',
         ),
+      agentRouting: z
+        .record(z.string())
+        .optional()
+        .describe(
+          'Routing configuration for agents to models. Maps agent name (or subagentType or "default") ' +
+            'to a model key defined in agentModels.',
+        ),
+      agentModels: z
+        .record(z.string())
+        .optional()
+        .describe(
+          'Model configurations for agent routing. Maps model key to base URL for API requests.',
+        ),
       // Whether to automatically approve all MCP servers in the project
       enableAllProjectMcpServers: z
         .boolean()
@@ -1069,6 +1082,37 @@ export const SettingsSchema = lazySchema(() =>
             'Only read from policy settings (managed-settings.json / MDM). ' +
             'Useful for enterprise administrators to add organization-specific context ' +
             '(e.g., "All plugins from our internal marketplace are vetted and approved.").',
+        ),
+      autoFix: z
+        .object({
+          enabled: z
+            .boolean()
+            .optional()
+            .describe('Enable auto-fix after file edits'),
+          lint: z
+            .string()
+            .optional()
+            .describe('Lint command to run after file edits (e.g., "bun run lint")'),
+          test: z
+            .string()
+            .optional()
+            .describe('Test command to run after lint passes (e.g., "bun run test")'),
+          maxRetries: z
+            .number()
+            .int()
+            .nonnegative()
+            .optional()
+            .describe('Maximum retries for lint command (default: 3)'),
+          timeout: z
+            .number()
+            .int()
+            .nonnegative()
+            .optional()
+            .describe('Timeout for commands in milliseconds (default: 30000)'),
+        })
+        .optional()
+        .describe(
+          'Auto-fix configuration: runs lint/test after AI file edits to automatically fix errors.',
         ),
     })
     .passthrough(),

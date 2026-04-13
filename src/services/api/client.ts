@@ -305,6 +305,29 @@ export async function getAnthropicClient({
     return new AnthropicVertex(vertexArgs) as unknown as Anthropic
   }
 
+  if (isEnvTruthy(process.env.CLAUDE_CODE_USE_OPENAI)) {
+    // OpenAI-compatible provider using standard Anthropic SDK
+    // Supports OPENAI_BASE_URL for custom endpoint and OPENAI_MODEL for model override
+    const resolvedApiKey = apiKey || getAnthropicApiKey()
+
+    if (!resolvedApiKey) {
+      throw new Error(
+        `OpenAI-compatible backend requires ANTHROPIC_API_KEY. Configure env.ANTHROPIC_API_KEY in ${getClaudeConfigHomeDir()}/settings.json.`,
+      )
+    }
+
+    const clientConfig: ConstructorParameters<typeof Anthropic>[0] = {
+      apiKey: resolvedApiKey,
+      ...(process.env.OPENAI_BASE_URL
+        ? { baseURL: process.env.OPENAI_BASE_URL }
+        : {}),
+      ...ARGS,
+      ...(isDebugToStdErr() && { logger: createStderrLogger() }),
+    }
+
+    return new Anthropic(clientConfig)
+  }
+
   const resolvedApiKey = apiKey || getAnthropicApiKey()
   const resolvedAuthToken = process.env.ANTHROPIC_AUTH_TOKEN
 

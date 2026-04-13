@@ -130,6 +130,7 @@ import {
   runPostToolUseHooks,
   runPreToolUseHooks,
 } from './toolHooks.js'
+import { isFileEditTool, runAutoFix } from '../autoFix/autoFixHook.js'
 
 /** Minimum total hook duration (ms) to show inline timing summary */
 export const HOOK_TIMING_DISPLAY_THRESHOLD_MS = 500
@@ -1477,6 +1478,19 @@ async function checkPermissionsAndCallTool(
     // TOOD(hackyon): refactor so we don't have different experiences for MCP tools
     if (!isMcpTool(tool)) {
       await addToolResult(toolOutput, mappedToolResultBlock)
+    }
+
+    // Run auto-fix after file edit/write tools complete
+    if (isFileEditTool(tool.name)) {
+      const autoFixFeedback = await runAutoFix()
+      if (autoFixFeedback) {
+        resultingMessages.push({
+          message: createUserMessage({
+            content: autoFixFeedback,
+            isMeta: true,
+          }),
+        })
+      }
     }
 
     const postToolHookInfos: StopHookInfo[] = []

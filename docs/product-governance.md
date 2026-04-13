@@ -1,6 +1,6 @@
 # Product Governance
 
-Last updated: 2026-04-11
+Last updated: 2026-04-13
 
 This document replaces the separate command surface, feature gap, and roadmap notes with one product-facing control surface.
 
@@ -33,6 +33,9 @@ These commands are callable, but they are not core product workflows:
 - `/output-style`
 - `/thinkback-play`
 - `/rate-limit-options`
+- `/cache-probe`
+- `/wiki`
+- `/provider`
 
 Policy:
 
@@ -49,6 +52,9 @@ Tracked surfaces:
 - `/output-style`
 - `/thinkback-play`
 - `/rate-limit-options`
+- `/cache-probe`
+- `/wiki`
+- `/provider`
 
 ### Build-Excluded
 

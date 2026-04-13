@@ -30,6 +30,10 @@ import { trySessionMemoryCompaction } from './sessionMemoryCompact.js'
 // Based on p99.99 of compact summary output being 17,387 tokens.
 const MAX_OUTPUT_TOKENS_FOR_SUMMARY = 20_000
 
+// Safety floor: ensure effective context never drops below this value
+// This prevents compact threshold from becoming negative and triggering infinite loops
+const MIN_EFFECTIVE_CONTEXT_FLOOR = 13_000
+
 // Returns the context window size minus the max output tokens for the model
 export function getEffectiveContextWindowSize(model: string): number {
   const reservedTokensForSummary = Math.min(
@@ -46,7 +50,11 @@ export function getEffectiveContextWindowSize(model: string): number {
     }
   }
 
-  return contextWindow - reservedTokensForSummary
+  const effectiveContext = contextWindow - reservedTokensForSummary
+
+  // Safety floor: ensure effective context never drops below minimum
+  // This prevents compact threshold from becoming negative
+  return Math.max(effectiveContext, MIN_EFFECTIVE_CONTEXT_FLOOR)
 }
 
 export type AutoCompactTrackingState = {

@@ -1,6 +1,6 @@
 # Feature Availability Matrix
 
-Last updated: 2026-04-11
+Last updated: 2026-04-13
 
 ## Scope
 - This matrix reflects the current repository build/runtime behavior.
@@ -39,6 +39,9 @@ Last updated: 2026-04-11
 | `/output-style` | Available | Deprecated shim only; compatibility prompt to `/config`, not promotable to baseline unless replaced by a supported configuration workflow. |
 | `/thinkback-play` | Available | Thinkback helper; still gated by runtime feature availability. |
 | `/rate-limit-options` | Available | Rate-limit action sheet; still gated by subscriber/runtime availability. |
+| `/cache-probe` | Available | Probe API cache hit rate by sending identical requests and comparing `cached_tokens` values. |
+| `/wiki` | Available | Project documentation management via `init`, `status`, `ingest` subcommands. |
+| `/provider` | Available | Manage named provider configurations (create, list, switch, delete profiles). |
 
 ## Slash Commands: Product-Available
 | Command | Status | Notes |
