@@ -20,6 +20,8 @@ import {
 
 declare const MACRO: { VERSION: string; DISPLAY_VERSION?: string }
 
+let startupScreenPrinted = false
+
 const ESC = '\x1b['
 const RESET = `${ESC}0m`
 const DIM = `${ESC}2m`
@@ -165,12 +167,17 @@ export function getStartupBannerMode(): string | null {
   return null
 }
 
+export function hasPrintedStartupScreen(): boolean {
+  return startupScreenPrinted
+}
+
 export function printStartupScreen(): void {
   const mode = getStartupBannerMode()
   if (mode !== 'claude') return
 
   // Skip in non-interactive / CI / print mode
   if (process.env.CI || !process.stdout.isTTY) return
+  startupScreenPrinted = true
 
   const p = detectProvider()
   const W = 62
