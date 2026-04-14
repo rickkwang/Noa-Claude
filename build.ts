@@ -107,6 +107,14 @@ async function getVersionChangelog(): Promise<string> {
   return (await runCommand(['git', 'log', '--format=%h %s', '-20'])) ?? 'Local development build'
 }
 
+function getBundledReleaseNotes(): string {
+  try {
+    return readFileSync('./docs/release-notes.md', 'utf-8').trim()
+  } catch {
+    return ''
+  }
+}
+
 const defaultFeatures = ['VOICE_MODE']
 const featureSet = new Set<string>(defaultFeatures)
 
@@ -164,7 +172,7 @@ const externals = [
   'sharp',
 ]
 
-const versionChangelog = dev ? await getVersionChangelog() : 'https://github.com/anthropics/claude-code'
+const versionChangelog = getBundledReleaseNotes()
 
 const defines: Record<string, string> = {
   'process.env.USER_TYPE': JSON.stringify('external'),

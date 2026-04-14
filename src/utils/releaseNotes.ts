@@ -1,5 +1,4 @@
 // @ts-nocheck
-import axios from 'axios'
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import { coerce } from 'semver'
@@ -8,28 +7,14 @@ import { getGlobalConfig, saveGlobalConfig } from './config.js'
 import { getClaudeConfigHomeDir } from './envUtils.js'
 import { toError } from './errors.js'
 import { logError } from './log.js'
-import { isEssentialTrafficOnly } from './privacyLevel.js'
 import { gt } from './semver.js'
+import { PRODUCT_RELEASE_NOTES_URL } from '../constants/docs.js'
 
 const MAX_RELEASE_NOTES_SHOWN = 5
 
-/**
- * We fetch the changelog from GitHub instead of bundling it with the build.
- *
- * This is necessary because Ink's static rendering makes it difficult to
- * dynamically update/show components after initial render. By storing the
- * changelog in config, we ensure it's available on the next startup without
- * requiring a full re-render of the current UI.
- *
- * The flow is:
- * 1. User updates to a new version
- * 2. We fetch the changelog in the background and store it in config
- * 3. Next time the user starts Claude, the cached changelog is available immediately
- */
-export const CHANGELOG_URL =
-  'https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md'
-const RAW_CHANGELOG_URL =
-  'https://raw.githubusercontent.com/anthropics/claude-code/refs/heads/main/CHANGELOG.md'
+function getBundledChangelog(): string {
+  return (MACRO.VERSION_CHANGELOG ?? '').trim()
+}
 
 /**
  * Get the path for the cached changelog file.
@@ -49,7 +34,7 @@ export function _resetChangelogCacheForTesting(): void {
 }
 
 /**
- * Migrate changelog from old config-based storage to file-based storage.
+ * Migrate release notes from old config-based storage to file-based storage.
  * This should be called once at startup to ensure the migration happens
  * before any other config saves that might re-add the deprecated field.
  */
@@ -76,51 +61,36 @@ export async function migrateChangelogFromConfig(): Promise<void> {
   saveGlobalConfig(({ cachedChangelog: _, ...rest }) => rest)
 }
 
-/**
- * Fetch the changelog from GitHub and store it in cache file
- * This runs in the background and doesn't block the UI
- */
-export async function fetchAndStoreChangelog(): Promise<void> {
+export async function seedBundledChangelogCache(): Promise<void> {
   // Skip in noninteractive mode
   if (getIsNonInteractiveSession()) {
     return
   }
 
-  // Skip network requests if nonessential traffic is disabled
-  if (isEssentialTrafficOnly()) {
+  const changelogContent = getBundledChangelog()
+  if (!changelogContent || changelogContent === changelogMemoryCache) {
     return
   }
 
-  const response = await axios.get(RAW_CHANGELOG_URL)
-  if (response.status === 200) {
-    const changelogContent = response.data
+  const cachePath = getChangelogCachePath()
 
-    // Skip write if content unchanged — writing Date.now() defeats the
-    // dirty-check in saveGlobalConfig since the timestamp always differs.
-    if (changelogContent === changelogMemoryCache) {
-      return
-    }
+  // Ensure cache directory exists
+  await mkdir(dirname(cachePath), { recursive: true })
 
-    const cachePath = getChangelogCachePath()
+  // Write bundled release notes to cache file
+  await writeFile(cachePath, changelogContent, { encoding: 'utf-8' })
+  changelogMemoryCache = changelogContent
 
-    // Ensure cache directory exists
-    await mkdir(dirname(cachePath), { recursive: true })
-
-    // Write changelog to cache file
-    await writeFile(cachePath, changelogContent, { encoding: 'utf-8' })
-    changelogMemoryCache = changelogContent
-
-    // Update timestamp in config
-    const changelogLastFetched = Date.now()
-    saveGlobalConfig(current => ({
-      ...current,
-      changelogLastFetched,
-    }))
-  }
+  // Update timestamp in config so the cached notes are considered fresh.
+  const changelogLastFetched = Date.now()
+  saveGlobalConfig(current => ({
+    ...current,
+    changelogLastFetched,
+  }))
 }
 
 /**
- * Get the stored changelog from cache file if available.
+ * Get the stored release notes from cache file if available.
  * Populates the in-memory cache for subsequent sync reads.
  * @returns The cached changelog content or empty string if not available
  */
@@ -134,13 +104,14 @@ export async function getStoredChangelog(): Promise<string> {
     changelogMemoryCache = content
     return content
   } catch {
-    changelogMemoryCache = ''
-    return ''
+    const bundled = getBundledChangelog()
+    changelogMemoryCache = bundled
+    return bundled
   }
 }
 
 /**
- * Synchronous accessor for the changelog, reading only from the in-memory cache.
+ * Synchronous accessor for the release notes, reading only from the in-memory cache.
  * Returns empty string if the async getStoredChangelog() hasn't been called yet.
  * Intended for React render paths where async is not possible; setup.ts ensures
  * the cache is populated before first render via `await checkForReleaseNotes()`.
@@ -150,8 +121,8 @@ export function getStoredChangelogFromMemory(): string {
 }
 
 /**
- * Parses a changelog string in markdown format into a structured format
- * @param content - The changelog content string
+ * Parses a release notes string in markdown format into a structured format
+ * @param content - The release notes content string
  * @returns Record mapping version numbers to arrays of release notes
  */
 export function parseChangelog(content: string): Record<string, string[]> {
@@ -279,7 +250,7 @@ export function getAllReleaseNotes(
 /**
  * Checks if there are release notes to show based on the last seen version.
  * Can be used by multiple components to determine whether to display release notes.
- * Also triggers a fetch of the latest changelog if the version has changed.
+ * Also seeds the local changelog cache from the bundled release notes when needed.
  *
  * @param lastSeenVersion The last version of release notes the user has seen
  * @param currentVersion The current application version, defaults to MACRO.VERSION
@@ -289,29 +260,13 @@ export async function checkForReleaseNotes(
   lastSeenVersion: string | null | undefined,
   currentVersion: string = MACRO.VERSION,
 ): Promise<{ hasReleaseNotes: boolean; releaseNotes: string[] }> {
-  // For Ant builds, use VERSION_CHANGELOG bundled at build time
-  if (process.env.USER_TYPE === 'ant') {
-    const changelog = MACRO.VERSION_CHANGELOG
-    if (changelog) {
-      const commits = changelog.trim().split('\n').filter(Boolean)
-      return {
-        hasReleaseNotes: commits.length > 0,
-        releaseNotes: commits,
-      }
-    }
-    return {
-      hasReleaseNotes: false,
-      releaseNotes: [],
-    }
-  }
-
   // Ensure the in-memory cache is populated for subsequent sync reads
   const cachedChangelog = await getStoredChangelog()
 
-  // If the version has changed or we don't have a cached changelog, fetch a new one
-  // This happens in the background and doesn't block the UI
+  // If the version has changed or we don't have cached notes, seed the cache.
+  // This stays local and does not touch the network.
   if (lastSeenVersion !== currentVersion || !cachedChangelog) {
-    fetchAndStoreChangelog().catch(error => logError(toError(error)))
+    seedBundledChangelogCache().catch(error => logError(toError(error)))
   }
 
   const releaseNotes = getRecentReleaseNotes(
@@ -337,22 +292,6 @@ export function checkForReleaseNotesSync(
   lastSeenVersion: string | null | undefined,
   currentVersion: string = MACRO.VERSION,
 ): { hasReleaseNotes: boolean; releaseNotes: string[] } {
-  // For Ant builds, use VERSION_CHANGELOG bundled at build time
-  if (process.env.USER_TYPE === 'ant') {
-    const changelog = MACRO.VERSION_CHANGELOG
-    if (changelog) {
-      const commits = changelog.trim().split('\n').filter(Boolean)
-      return {
-        hasReleaseNotes: commits.length > 0,
-        releaseNotes: commits,
-      }
-    }
-    return {
-      hasReleaseNotes: false,
-      releaseNotes: [],
-    }
-  }
-
   const releaseNotes = getRecentReleaseNotes(currentVersion, lastSeenVersion)
   return {
     hasReleaseNotes: releaseNotes.length > 0,
