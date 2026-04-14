@@ -144,13 +144,9 @@ const pkg = JSON.parse(readFileSync('./package.json', 'utf-8')) as {
   version: string
 }
 
-const outfile = compile
-  ? dev
-    ? './dist/cli-dev'
-    : './dist/cli'
-  : dev
-    ? './dist/main-dev.js'
-    : './dist/main.js'
+const cliOutfile = dev ? './dist/cli-dev' : './dist/cli'
+const bundleOutfile = dev ? './dist/main-dev.js' : './dist/main.js'
+const outfile = bundleOutfile
 
 const buildTime = new Date().toISOString()
 const version = dev ? await getDevVersion(pkg.version) : pkg.version
@@ -192,16 +188,21 @@ const defines: Record<string, string> = {
 
 console.log('Building Claude Agent...')
 console.log(`Version: ${version}`)
-console.log(`Output: ${outfile}`)
+if (compile) {
+  console.log(`Bundle output: ${bundleOutfile}`)
+  console.log(`Binary output: ${cliOutfile}`)
+} else {
+  console.log(`Output: ${outfile}`)
+}
 console.log(`Compile: ${compile}`)
 if (features.length > 0) {
   console.log(`Features: ${features.join(', ')}`)
 }
 
-const cmd = [
+const bundleCmd = [
   'bun',
   'build',
-  compile ? './src/entrypoints/cli.tsx' : './src/main.tsx',
+  './src/main.tsx',
   '--target',
   'bun',
   '--format',
@@ -210,23 +211,19 @@ const cmd = [
   outfile,
 ]
 
-if (compile) {
-  cmd.push('--compile', '--bytecode', '--packages', 'bundle')
-}
-
 for (const external of externals) {
-  cmd.push('--external', external)
+  bundleCmd.push('--external', external)
 }
 
 for (const feature of features) {
-  cmd.push(`--feature=${feature}`)
+  bundleCmd.push(`--feature=${feature}`)
 }
 
 for (const [key, value] of Object.entries(defines)) {
-  cmd.push('--define', `${key}=${value}`)
+  bundleCmd.push('--define', `${key}=${value}`)
 }
 
-const proc = Bun.spawn(cmd, {
+const proc = Bun.spawn(bundleCmd, {
   stdio: ['inherit', 'inherit', 'inherit'],
 })
 
@@ -238,8 +235,8 @@ if (code === 0 && existsSync(outfile)) {
   process.exit(code ?? 1)
 }
 
-// For non-compile mode, patch the output
-if (!compile && code === 0) {
+// Patch the bundled output before optional binary compilation.
+if (code === 0) {
   const content = readFileSync(outfile, 'utf-8')
   let patched = content
   patched = patched
@@ -250,4 +247,38 @@ if (!compile && code === 0) {
 
   writeFileSync(outfile, patched + '\n' + getLauncherBootstrapCode())
   console.log(`Build complete: ${outfile}`)
+}
+
+if (compile && code === 0) {
+  const compileCmd = [
+    'bun',
+    'build',
+    bundleOutfile,
+    '--target',
+    'bun',
+    '--format',
+    'esm',
+    '--compile',
+    '--bytecode',
+    '--outfile',
+    cliOutfile,
+  ]
+
+  for (const external of externals) {
+    compileCmd.push('--external', external)
+  }
+
+  const compileProc = Bun.spawn(compileCmd, {
+    stdio: ['inherit', 'inherit', 'inherit'],
+  })
+  const compileCode = await compileProc.exited
+  if (compileCode !== 0) {
+    process.exit(compileCode ?? 1)
+  }
+  if (!existsSync(cliOutfile)) {
+    console.error(`Compiled binary missing: ${cliOutfile}`)
+    process.exit(1)
+  }
+  chmodSync(cliOutfile, 0o755)
+  console.log(`Built standalone binary: ${cliOutfile}`)
 }

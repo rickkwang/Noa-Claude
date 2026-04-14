@@ -9,7 +9,7 @@ Last updated: 2026-04-13
   - `Implemented but Non-Baseline`: callable, but not part of primary workflow.
   - `Build-Excluded`: command exists but hard-fails with `not available in this build`.
   - `Stub`: placeholder only (`isEnabled: () => false`), no functional implementation.
-- Build profile baseline in this repo is `full-unlocked` for `bun run build`.
+- Default `bun run build` profile in this repo is conservative; expanded unlock profile is opt-in via `bun run build:dev:full`.
 - Experimental unlockability details are maintained in [FEATURES.md](/Users/myrickwang/Desktop/Coding/Claude/FEATURES.md).
 
 ## Build Guardrails and Telemetry Posture
@@ -19,7 +19,7 @@ Last updated: 2026-04-13
 | Security prompt guardrail injection | Removed | Extra injected guardrail prompt blocks are removed from prompt assembly. |
 | Remote managed-settings overlay | Disabled | Remote eligibility path is hard-disabled in this build. |
 | Remote policy-limits overlay | Disabled | Remote eligibility path is hard-disabled in this build. |
-| Experimental unlock profile | Available | `full-unlocked` profile is the default build profile. |
+| Experimental unlock profile | Available | Expanded profile is available via `bun run build:dev:full` (not default). |
 
 ## Core Product Chains
 | Chain | Status | Notes |

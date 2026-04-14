@@ -1,18 +1,22 @@
 /**
- * OpenClaude-style startup screen — gradient-filled block text logo.
+ * Claude-style startup screen — gradient-filled block text logo.
  * Called once at CLI startup before the Ink UI renders.
  *
- * Enabled via STARTUP_BANNER env var or .claude-agent/startup-banner.json:
- *   - "openclaude" : Show OpenClaude-style banner
- *   - "both"       : Show banner AND keep WelcomeV2 in-UI
- *   - "official"   : Skip (use only WelcomeV2)
+ * Enabled via STARTUP_BANNER env var or global startup-banner.json under
+ * CLAUDE_CONFIG_DIR (defaults to ~/.claude-agent):
+ *   - "claude"     : Show Claude-style gradient banner
+ *   - "clawd"      : Show Clawd official logo
  *   - not set      : Skip (use only WelcomeV2)
  */
 
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { getAPIProvider } from '../utils/model/providers.js'
-import { getOriginalCwd } from '../bootstrap/state.js'
+import { getClaudeConfigHomeDir } from '../utils/envUtils.js'
+import {
+  normalizeStartupBannerMode,
+  STARTUP_BANNER_SETTINGS_FILENAME,
+} from '../utils/startupBannerMode.js'
 
 declare const MACRO: { VERSION: string; DISPLAY_VERSION?: string }
 
@@ -147,26 +151,23 @@ function boxRow(content: string, width: number, rawLen: number): string {
 export function getStartupBannerMode(): string | null {
   // Env var takes precedence
   if (process.env.STARTUP_BANNER) {
-    return process.env.STARTUP_BANNER
+    const envMode = normalizeStartupBannerMode(process.env.STARTUP_BANNER)
+    if (envMode) return envMode
   }
-  // Check settings file
+  // Read startup banner mode from the global config file.
   try {
-    const settingsPath = join(getOriginalCwd(), '.claude-agent', 'startup-banner.json')
+    const settingsPath = join(getClaudeConfigHomeDir(), STARTUP_BANNER_SETTINGS_FILENAME)
     if (existsSync(settingsPath)) {
       const data = JSON.parse(readFileSync(settingsPath, 'utf-8'))
-      if (data.mode === 'openclaude' || data.mode === 'both' || data.mode === 'official') {
-        return data.mode
-      }
+      return normalizeStartupBannerMode(data.mode)
     }
   } catch {}
   return null
 }
 
 export function printStartupScreen(): void {
-  // Skip if banner mode is not set to openclaude or both
   const mode = getStartupBannerMode()
-  // Both 'openclaude' and 'both' now render in-UI via GradientBanner component
-  if (!mode || mode === 'openclaude' || mode === 'both') return
+  if (mode !== 'claude') return
 
   // Skip in non-interactive / CI / print mode
   if (process.env.CI || !process.stdout.isTTY) return

@@ -93,17 +93,27 @@ function runOptionalLiveSmoke() {
     return;
   }
 
+  const smokeTimeoutMs = Number(process.env.CLAUDE_AGENT_SMOKE_LIVE_TIMEOUT_MS || 20000);
+  console.log(`Running live MiniMax request smoke (timeout ${smokeTimeoutMs}ms)...`);
   const result = runCommand(agentBin, [
     '--print',
     '--dangerously-skip-permissions',
     '--output-format',
     'text',
-    '--tools',
-    '',
     'Reply with exactly ok',
-  ]);
+  ], {
+    timeout: smokeTimeoutMs,
+    killSignal: 'SIGKILL',
+  });
 
-  if (!result.stdout.toLowerCase().includes('ok')) {
+  let lastLine;
+  for (const rawLine of result.stdout.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line.length > 0) {
+      lastLine = line.toLowerCase();
+    }
+  }
+  if (lastLine !== 'ok') {
     fail('Live MiniMax smoke did not return the expected output', result.stdout);
   }
 }
@@ -118,7 +128,7 @@ console.log('Running typecheck...');
 runCommand('bun', ['run', 'typecheck']);
 
 console.log('Checking docs consistency...');
-runCommand('npm', ['run', 'check:docs']);
+runCommand('bun', ['run', 'check:docs']);
 
 console.log('Checking version entrypoints...');
 runCommand(agentBin, ['--version']);

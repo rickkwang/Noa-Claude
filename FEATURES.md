@@ -6,13 +6,13 @@ This file is the build/runtime audit for experimental feature flags in this repo
 
 ## Build Profiles
 
-- `baseline`: compiles without external unlock patching.
-- `full-unlocked`: default profile for this repository, applies external-build unlock patching.
+- `baseline`: default `bun run build` profile in this repository.
+- `dev-full`: opt-in profile (`bun run build:dev:full`) that enables expanded experimental unlocks.
 
 ## Scope
 
 - Flags listed below are discovered from source `feature('FLAG')` usage.
-- "Unlocked" here means the flag is compiled into the default `full-unlocked` build.
+- "Unlocked" here means the flag can be enabled in the expanded `dev-full` profile.
 - Runtime availability can still depend on auth/provider/environment prerequisites.
 
 ## Unlocked & Runtime-Active

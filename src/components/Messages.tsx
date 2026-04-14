@@ -56,9 +56,8 @@ import type { JumpHandle } from './VirtualMessageList.js';
 // doesn't invalidate the logo subtree. LogoV2/StatusNotices internally
 // subscribe to useAppState/useSettings for their own updates.
 // startup-banner modes:
-//   'openclaude' - show gradient banner only (no LogoV2)
-//   'both'       - show both gradient banner AND LogoV2
-//   'official'   - show LogoV2 only
+//   'claude' - show gradient banner only (no LogoV2)
+//   'clawd'  - show LogoV2 only
 const LogoHeader = React.memo(function LogoHeader(t0) {
   const $ = _c(3);
   const {
@@ -66,8 +65,8 @@ const LogoHeader = React.memo(function LogoHeader(t0) {
   } = t0;
   // Read banner mode on each render to pick up config file changes
   const startupBannerMode = getStartupBannerMode()
-  const showGradientBanner = startupBannerMode === 'openclaude' || startupBannerMode === 'both'
-  const showLogoV2 = startupBannerMode !== 'openclaude'
+  const showGradientBanner = startupBannerMode === 'claude'
+  const showLogoV2 = startupBannerMode !== 'claude'
 
   // Cache key includes startupBannerMode to re-render when it changes
   const cacheKey = Symbol.for(`logo:${startupBannerMode}`)

@@ -8,7 +8,7 @@ Three key changes from the upstream:
 
 1. **Telemetry removed** — All outbound OpenTelemetry, GrowthBook analytics, Sentry error reporting, and custom event logging are dead-code-eliminated or stubbed.
 2. **Security guardrails stripped** — System-level instructions injected into conversations (hardcoded refusal patterns, cyber risk instruction blocks) are removed.
-3. **Experimental features unlocked** — 68 of 88 feature flags that compile cleanly are enabled.
+3. **Experimental profile available** — opt-in `dev-full` profile enables additional feature flags for internal/dev scenarios.
 
 ## Capability Highlights
 
@@ -45,8 +45,8 @@ bun run compile
 | Command | Output | Note |
 |---------|--------|------|
 | `bun run build` | `dist/main.js` | Requires bun runtime |
-| `bun run compile` | `dist/cli` | Standalone executable |
-| `bun run build:dev:full` | `dist/main-dev.js` | Dev build + all experimental features |
+| `bun run compile` | `dist/cli` + `dist/main.js` | Standalone binary + bundled JS entry |
+| `bun run build:dev:full` | `dist/main-dev.js` | Dev build + expanded experimental feature profile |
 
 ## Supported Providers
 
@@ -81,10 +81,14 @@ This build ships with hardcoded privacy defaults (no configuration needed):
 ## Verification
 
 ```bash
-bun run build && ./dist/cli --version
+bun run compile && ./dist/cli --version
 bun run typecheck
+bun run lint
 bun run check:runtime
 bun run smoke:features
+bun run smoke:engine
+# optional real endpoint smoke:
+bun run smoke:engine:live
 ```
 
 ## License Note

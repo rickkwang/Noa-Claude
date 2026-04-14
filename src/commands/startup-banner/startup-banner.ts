@@ -2,14 +2,16 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { getOriginalCwd } from '../../bootstrap/state.js'
-
-type StartupBannerMode = 'openclaude' | 'official' | 'both'
-
-const VALID_MODES: StartupBannerMode[] = ['openclaude', 'official', 'both']
-const SETTINGS_FILENAME = 'startup-banner.json'
+import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
+import {
+  normalizeStartupBannerMode,
+  STARTUP_BANNER_MODES,
+  STARTUP_BANNER_SETTINGS_FILENAME,
+  type StartupBannerMode,
+} from '../../utils/startupBannerMode.js'
 
 function getSettingsPath(): string {
-  return join(getOriginalCwd(), '.claude-agent', SETTINGS_FILENAME)
+  return join(getClaudeConfigHomeDir(), STARTUP_BANNER_SETTINGS_FILENAME)
 }
 
 function readCurrentMode(): StartupBannerMode | null {
@@ -17,15 +19,13 @@ function readCurrentMode(): StartupBannerMode | null {
   if (!existsSync(path)) return null
   try {
     const data = JSON.parse(readFileSync(path, 'utf-8'))
-    if (VALID_MODES.includes(data.mode)) {
-      return data.mode
-    }
+    return normalizeStartupBannerMode(data.mode)
   } catch {}
   return null
 }
 
 function writeMode(mode: StartupBannerMode): void {
-  const dir = join(getOriginalCwd(), '.claude-agent')
+  const dir = getClaudeConfigHomeDir()
   const path = getSettingsPath()
 
   // Ensure directory exists
@@ -40,26 +40,26 @@ function writeMode(mode: StartupBannerMode): void {
 }
 
 function cycleMode(current: StartupBannerMode | null): StartupBannerMode {
-  if (!current) return 'openclaude'
-  const idx = VALID_MODES.indexOf(current)
-  return VALID_MODES[(idx + 1) % VALID_MODES.length]
+  if (!current) return 'claude'
+  const idx = STARTUP_BANNER_MODES.indexOf(current)
+  return STARTUP_BANNER_MODES[(idx + 1) % STARTUP_BANNER_MODES.length]
 }
 
 export const call = async (args: string): Promise<{ type: 'text'; value: string }> => {
   try {
     const arg = args?.trim().toLowerCase() ?? ''
 
-    if (arg && !VALID_MODES.includes(arg as StartupBannerMode)) {
+    if (arg && !STARTUP_BANNER_MODES.includes(arg as StartupBannerMode)) {
       return {
         type: 'text',
-        value: `Invalid mode: ${arg}\nValid modes: ${VALID_MODES.join(', ')}`,
+        value: `Invalid mode: ${arg}\nValid modes: ${STARTUP_BANNER_MODES.join(', ')}`,
       }
     }
 
     const current = readCurrentMode()
 
     let newMode: StartupBannerMode
-    if (arg && VALID_MODES.includes(arg as StartupBannerMode)) {
+    if (arg && STARTUP_BANNER_MODES.includes(arg as StartupBannerMode)) {
       newMode = arg as StartupBannerMode
     } else {
       newMode = cycleMode(current)
@@ -68,12 +68,15 @@ export const call = async (args: string): Promise<{ type: 'text'; value: string 
     writeMode(newMode)
 
     let message: string
-    if (newMode === 'openclaude') {
-      message = 'Startup banner: OpenClaude gradient logo (shown before WelcomeV2)'
-    } else if (newMode === 'both') {
-      message = 'Startup banner: Both OpenClaude logo and WelcomeV2 will be shown'
-    } else {
-      message = 'Startup banner: Official WelcomeV2 only (no gradient logo)'
+    message =
+      newMode === 'claude'
+        ? 'Startup banner: Claude gradient logo'
+        : 'Startup banner: Clawd official logo'
+
+    const legacyPath = join(getOriginalCwd(), '.claude-agent', STARTUP_BANNER_SETTINGS_FILENAME)
+    const globalPath = getSettingsPath()
+    if (existsSync(legacyPath) && legacyPath !== globalPath) {
+      message += `\nNote: legacy project override detected at ${legacyPath}. It is ignored; startup banner now uses global config at ${globalPath}.`
     }
 
     return { type: 'text', value: message }

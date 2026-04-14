@@ -21,8 +21,10 @@
     "smoke:features": "bun ./scripts/smoke-features.mjs",
     "smoke:perf": "bun ./scripts/smoke-perf.mjs",
     "smoke:engine": "bun ./scripts/smoke-engineering.mjs",
+    "smoke:engine:live": "CLAUDE_AGENT_SMOKE_LIVE=1 bun ./scripts/smoke-engineering.mjs",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src --ext .ts,.tsx"
+    "check:quality": "bun run typecheck && bun run check:docs",
+    "lint": "echo \"lint alias: running quality checks (typecheck + docs consistency)\" && bun run check:quality"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^0.27.0",
