@@ -3,6 +3,7 @@ import { c as _c } from "react/compiler-runtime";
 import React, { useCallback } from 'react';
 import { logEvent } from 'src/services/analytics/index.js';
 import { Box, Link, Text } from '../ink.js';
+import { PRODUCT_HELP_URL } from '../constants/docs.js';
 import type { ExternalClaudeMdInclude } from '../utils/claudemd.js';
 import { saveCurrentProjectConfig } from '../utils/config.js';
 import { Select } from './CustomSelect/index.js';
@@ -75,7 +76,7 @@ export function ClaudeMdExternalIncludesDialog(t0) {
   }
   let t8;
   if ($[8] === Symbol.for("react.memo_cache_sentinel")) {
-    t8 = <Text dimColor={true}>Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks{" "}<Link url="https://code.claude.com/docs/en/security" />{" "}</Text>;
+    t8 = <Text dimColor={true}>Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks{" "}<Link url={PRODUCT_HELP_URL} />{" "}</Text>;
     $[8] = t8;
   } else {
     t8 = $[8];

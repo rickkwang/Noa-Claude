@@ -14,6 +14,7 @@ import { checkHasTrustDialogAccepted, saveCurrentProjectConfig } from '../../uti
 import { getCwd } from '../../utils/cwd.js';
 import { getFsImplementation } from '../../utils/fsOperations.js';
 import { gracefulShutdownSync } from '../../utils/gracefulShutdown.js';
+import { PRODUCT_HELP_URL } from '../../constants/docs.js';
 import { Select } from '../CustomSelect/index.js';
 import { PermissionDialog } from '../permissions/PermissionDialog.js';
 import { getApiKeyHelperSources, getAwsCommandsSources, getBashPermissionSources, getDangerousEnvVarsSources, getGcpCommandsSources, getHooksSources, getOtelHeadersHelperSources } from './utils.js';
@@ -218,7 +219,7 @@ export function TrustDialog(t0) {
   }
   let t19;
   if ($[23] === Symbol.for("react.memo_cache_sentinel")) {
-    t19 = <Text dimColor={true}><Link url="https://code.claude.com/docs/en/security">Security guide</Link></Text>;
+    t19 = <Text dimColor={true}><Link url={PRODUCT_HELP_URL}>Security guide</Link></Text>;
     $[23] = t19;
   } else {
     t19 = $[23];
