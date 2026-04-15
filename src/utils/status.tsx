@@ -31,6 +31,8 @@ import { getClaudeConfigHomeDir } from './envUtils.js';
 import type { ThemeName } from './theme.js';
 import { getInvokedBinary } from './doctorDiagnostic.js';
 import { getCurrentWorktreeSession } from './worktree.js';
+import { getQuerySourceForREPL } from './promptCategory.js';
+import { getPromptCache1hDiagnostic } from './promptCache1h.js';
 export type Property = {
   label?: string;
   value: React.ReactNode | Array<string>;
@@ -257,6 +259,38 @@ export function buildSettingSourcesProperties(): Property[] {
     label: 'Setting sources',
     value: sourceNames
   }];
+}
+
+function promptCacheReasonLabel(reason: string): string {
+  switch (reason) {
+    case 'enabled':
+      return 'enabled'
+    case 'enabled_bedrock_env':
+      return 'enabled (Bedrock env override)'
+    case 'not_eligible':
+      return 'disabled (not eligible: requires ant or subscriber without overage)'
+    case 'allowlist_miss':
+      return 'disabled (querySource not in allowlist)'
+    case 'missing_query_source':
+      return 'disabled (missing querySource)'
+    default:
+      return `disabled (${reason})`
+  }
+}
+
+export function buildPromptCacheProperties(): Property[] {
+  const querySource = getQuerySourceForREPL()
+  const diag = getPromptCache1hDiagnostic(querySource)
+  return [{
+    label: 'Prompt cache 1h',
+    value: promptCacheReasonLabel(diag.reason),
+  }, {
+    label: 'Prompt cache querySource',
+    value: diag.querySource ?? 'n/a',
+  }, {
+    label: 'Prompt cache allowlist',
+    value: diag.allowlist.length > 0 ? diag.allowlist : ['(empty)'],
+  }]
 }
 export async function buildInstallationDiagnostics(): Promise<Diagnostic[]> {
   const installWarnings = await checkInstall();

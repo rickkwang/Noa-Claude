@@ -10,7 +10,7 @@ import { Box, Text, useTheme } from '../../ink.js';
 import { type AppState, useAppState } from '../../state/AppState.js';
 import { getCwd } from '../../utils/cwd.js';
 import { getCurrentSessionTitle } from '../../utils/sessionStorage.js';
-import { buildAccountProperties, buildAPIProviderProperties, buildIDEProperties, buildInstallationDiagnostics, buildInstallationHealthDiagnostics, buildLspProperties, buildMcpProperties, buildMemoryDiagnostics, buildPluginProperties, buildProductPathsProperties, buildSandboxProperties, buildSearchToolProperties, buildSettingSourcesProperties, buildWorktreeProperties, type Diagnostic, getModelDisplayLabel, type Property } from '../../utils/status.js';
+import { buildAccountProperties, buildAPIProviderProperties, buildIDEProperties, buildInstallationDiagnostics, buildInstallationHealthDiagnostics, buildLspProperties, buildMcpProperties, buildMemoryDiagnostics, buildPluginProperties, buildProductPathsProperties, buildPromptCacheProperties, buildSandboxProperties, buildSearchToolProperties, buildSettingSourcesProperties, buildWorktreeProperties, type Diagnostic, getModelDisplayLabel, type Property } from '../../utils/status.js';
 import type { ThemeName } from '../../utils/theme.js';
 import { ConfigurableShortcutHint } from '../ConfigurableShortcutHint.js';
 type Props = {
@@ -52,7 +52,7 @@ function buildSecondarySection({
   return [{
     label: 'Model',
     value: modelLabel
-  }, ...buildIDEProperties(mcp.clients, context.options.ideInstallationStatus, theme), ...buildMcpProperties(mcp.clients, theme), ...buildLspProperties(), ...buildPluginProperties(plugins.enabled, plugins.errors, plugins.needsRefresh), ...buildSandboxProperties(), ...buildSearchToolProperties(), ...buildSettingSourcesProperties()];
+  }, ...buildIDEProperties(mcp.clients, context.options.ideInstallationStatus, theme), ...buildMcpProperties(mcp.clients, theme), ...buildLspProperties(), ...buildPluginProperties(plugins.enabled, plugins.errors, plugins.needsRefresh), ...buildSandboxProperties(), ...buildSearchToolProperties(), ...buildPromptCacheProperties(), ...buildSettingSourcesProperties()];
 }
 export async function buildDiagnostics(): Promise<Diagnostic[]> {
   return [...(await buildInstallationDiagnostics()), ...(await buildInstallationHealthDiagnostics()), ...(await buildMemoryDiagnostics())];

@@ -36,7 +36,7 @@ import { Divider } from './design-system/Divider.js';
 import type { UnseenDivider } from './FullscreenLayout.js';
 import { GradientBanner } from './LogoV2/GradientBanner.js';
 import { LogoV2 } from './LogoV2/LogoV2.js';
-import { getStartupBannerMode, hasPrintedStartupScreen } from './StartupScreen.js';
+import { getStartupBannerMode } from './StartupScreen.js';
 import { StreamingMarkdown } from './Markdown.js';
 import { hasContentAfterIndex, MessageRow } from './MessageRow.js';
 import { InVirtualListContext, type MessageActionsNav, MessageActionsSelectedContext, type MessageActionsState } from './messageActions.js';
@@ -63,9 +63,6 @@ const LogoHeader = React.memo(function LogoHeader(t0) {
   const {
     agentDefinitions
   } = t0;
-  if (hasPrintedStartupScreen()) {
-    return null;
-  }
   // Read banner mode on each render to pick up config file changes
   const startupBannerMode = getStartupBannerMode()
   const showGradientBanner = startupBannerMode === 'claude'

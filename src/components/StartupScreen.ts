@@ -1,12 +1,10 @@
 /**
- * Claude-style startup screen — gradient-filled block text logo.
- * Called once at CLI startup before the Ink UI renders.
+ * Startup banner mode resolver plus legacy startup-screen renderer.
  *
- * Enabled via STARTUP_BANNER env var or global startup-banner.json under
- * CLAUDE_CONFIG_DIR (defaults to ~/.claude-agent):
- *   - "claude"     : Show Claude-style gradient banner
- *   - "clawd"      : Show Clawd official logo
- *   - not set      : Skip (use only WelcomeV2)
+ * Runtime UI currently reads only `getStartupBannerMode()`:
+ *   - "claude"     : show GradientBanner
+ *   - "clawd"      : show LogoV2
+ *   - not set      : default LogoV2
  */
 
 import { existsSync, readFileSync } from 'fs'
@@ -19,8 +17,6 @@ import {
 } from '../utils/startupBannerMode.js'
 
 declare const MACRO: { VERSION: string; DISPLAY_VERSION?: string }
-
-let startupScreenPrinted = false
 
 const ESC = '\x1b['
 const RESET = `${ESC}0m`
@@ -167,17 +163,12 @@ export function getStartupBannerMode(): string | null {
   return null
 }
 
-export function hasPrintedStartupScreen(): boolean {
-  return startupScreenPrinted
-}
-
 export function printStartupScreen(): void {
   const mode = getStartupBannerMode()
   if (mode !== 'claude') return
 
   // Skip in non-interactive / CI / print mode
   if (process.env.CI || !process.stdout.isTTY) return
-  startupScreenPrinted = true
 
   const p = detectProvider()
   const W = 62

@@ -46,6 +46,7 @@ import {
 } from './shellConfig.js'
 import { jsonParse } from './slowOperations.js'
 import { which } from './which.js'
+import { getPromptCache1hDiagnostic } from './promptCache1h.js'
 
 export type InstallationType =
   | 'npm-global'
@@ -536,6 +537,35 @@ export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
   const invokedBinary = getInvokedBinary()
   const multipleInstallations = await detectMultipleInstallations()
   const warnings = await detectConfigurationIssues(installationType)
+  const promptCacheDiag = getPromptCache1hDiagnostic('repl_main_thread')
+
+  if (promptCacheDiag.allowlist.length === 0) {
+    warnings.push({
+      issue: 'Prompt cache 1h allowlist is empty; requests will fall back to 5m TTL',
+      fix: 'Set cachedGrowthBookFeatures.tengu_prompt_cache_1h_config.allowlist in global config (for example: repl_main_thread*, sdk, auto_mode).',
+    })
+  } else if (
+    !promptCacheDiag.allowlist.some(
+      pattern =>
+        pattern === 'repl_main_thread' ||
+        pattern === 'repl_main_thread*' ||
+        pattern === '*',
+    )
+  ) {
+    warnings.push({
+      issue:
+        'Prompt cache 1h allowlist does not include repl_main_thread; interactive sessions will fall back to 5m TTL',
+      fix: 'Add repl_main_thread* to cachedGrowthBookFeatures.tengu_prompt_cache_1h_config.allowlist in global config.',
+    })
+  }
+
+  if (promptCacheDiag.reason === 'not_eligible') {
+    warnings.push({
+      issue:
+        'Prompt cache 1h is currently ineligible (requires ant user type or Claude.ai subscriber without overage)',
+      fix: 'If token costs are unexpectedly high, verify account subscription state and whether overage mode is active.',
+    })
+  }
 
   // Add glob pattern warnings for Linux sandboxing
   warnings.push(...detectLinuxGlobPatternWarnings())
