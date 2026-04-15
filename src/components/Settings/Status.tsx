@@ -52,7 +52,7 @@ function buildSecondarySection({
   return [{
     label: 'Model',
     value: modelLabel
-  }, ...buildIDEProperties(mcp.clients, context.options.ideInstallationStatus, theme), ...buildMcpProperties(mcp.clients, theme), ...buildLspProperties(), ...buildPluginProperties(plugins.enabled, plugins.errors, plugins.needsRefresh), ...buildSandboxProperties(), ...buildSearchToolProperties(), ...buildPromptCacheProperties(), ...buildSettingSourcesProperties()];
+  }, ...buildIDEProperties(mcp.clients, context.options.ideInstallationStatus, theme), ...buildMcpProperties(mcp.clients, theme), ...buildLspProperties(), ...buildPluginProperties(plugins.enabled, plugins.errors, plugins.needsRefresh), ...buildSandboxProperties(), ...buildSearchToolProperties(), ...buildPromptCacheProperties(mainLoopModel), ...buildSettingSourcesProperties()];
 }
 export async function buildDiagnostics(): Promise<Diagnostic[]> {
   return [...(await buildInstallationDiagnostics()), ...(await buildInstallationHealthDiagnostics()), ...(await buildMemoryDiagnostics())];

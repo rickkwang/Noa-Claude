@@ -8,10 +8,16 @@ import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growt
 import { isClaudeAISubscriber } from './auth.js'
 import { isEnvTruthy } from './envUtils.js'
 import { getAPIProvider } from './model/providers.js'
+import {
+  getDefaultOpusModel,
+  getDefaultSonnetModel,
+  getSmallFastModel,
+} from './model/model.js'
 
 export type PromptCache1hReason =
   | 'enabled'
   | 'enabled_bedrock_env'
+  | 'prompt_caching_disabled'
   | 'not_eligible'
   | 'allowlist_miss'
   | 'missing_query_source'
@@ -34,7 +40,55 @@ function matchAllowlist(querySource: string, allowlist: string[]): boolean {
 
 export function getPromptCache1hDiagnostic(
   querySource?: string,
+  model?: string,
 ): PromptCache1hDiagnostic {
+  const resolvedModel = model ?? getDefaultSonnetModel()
+  if (isEnvTruthy(process.env.DISABLE_PROMPT_CACHING)) {
+    return {
+      enabled: false,
+      reason: 'prompt_caching_disabled',
+      querySource,
+      userEligible: false,
+      allowlist: [],
+    }
+  }
+  if (
+    isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_HAIKU) &&
+    resolvedModel === getSmallFastModel()
+  ) {
+    return {
+      enabled: false,
+      reason: 'prompt_caching_disabled',
+      querySource,
+      userEligible: false,
+      allowlist: [],
+    }
+  }
+  if (
+    isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_SONNET) &&
+    resolvedModel === getDefaultSonnetModel()
+  ) {
+    return {
+      enabled: false,
+      reason: 'prompt_caching_disabled',
+      querySource,
+      userEligible: false,
+      allowlist: [],
+    }
+  }
+  if (
+    isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_OPUS) &&
+    resolvedModel === getDefaultOpusModel()
+  ) {
+    return {
+      enabled: false,
+      reason: 'prompt_caching_disabled',
+      querySource,
+      userEligible: false,
+      allowlist: [],
+    }
+  }
+
   if (
     getAPIProvider() === 'bedrock' &&
     isEnvTruthy(process.env.ENABLE_PROMPT_CACHING_1H_BEDROCK)
@@ -100,4 +154,3 @@ export function getPromptCache1hDiagnostic(
     allowlist,
   }
 }
-

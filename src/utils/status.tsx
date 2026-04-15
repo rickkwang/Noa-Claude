@@ -267,6 +267,8 @@ function promptCacheReasonLabel(reason: string): string {
       return 'enabled'
     case 'enabled_bedrock_env':
       return 'enabled (Bedrock env override)'
+    case 'prompt_caching_disabled':
+      return 'disabled (prompt caching disabled by environment/model switch)'
     case 'not_eligible':
       return 'disabled (not eligible: requires ant or subscriber without overage)'
     case 'allowlist_miss':
@@ -278,9 +280,11 @@ function promptCacheReasonLabel(reason: string): string {
   }
 }
 
-export function buildPromptCacheProperties(): Property[] {
+export function buildPromptCacheProperties(
+  mainLoopModel?: string | null,
+): Property[] {
   const querySource = getQuerySourceForREPL()
-  const diag = getPromptCache1hDiagnostic(querySource)
+  const diag = getPromptCache1hDiagnostic(querySource, mainLoopModel ?? undefined)
   return [{
     label: 'Prompt cache 1h',
     value: promptCacheReasonLabel(diag.reason),

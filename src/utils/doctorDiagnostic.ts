@@ -39,6 +39,7 @@ import {
 } from './sandbox/sandbox-adapter.js'
 import { getManagedFilePath } from './settings/managedPath.js'
 import { CUSTOMIZATION_SURFACES } from './settings/types.js'
+import { getQuerySourceForREPL } from './promptCategory.js'
 import {
   findClaudeAlias,
   findValidClaudeAlias,
@@ -537,25 +538,27 @@ export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
   const invokedBinary = getInvokedBinary()
   const multipleInstallations = await detectMultipleInstallations()
   const warnings = await detectConfigurationIssues(installationType)
-  const promptCacheDiag = getPromptCache1hDiagnostic('repl_main_thread')
+  const querySource = getQuerySourceForREPL()
+  const promptCacheDiag = getPromptCache1hDiagnostic(querySource)
 
   if (promptCacheDiag.allowlist.length === 0) {
     warnings.push({
       issue: 'Prompt cache 1h allowlist is empty; requests will fall back to 5m TTL',
       fix: 'Set cachedGrowthBookFeatures.tengu_prompt_cache_1h_config.allowlist in global config (for example: repl_main_thread*, sdk, auto_mode).',
     })
-  } else if (
-    !promptCacheDiag.allowlist.some(
-      pattern =>
-        pattern === 'repl_main_thread' ||
-        pattern === 'repl_main_thread*' ||
-        pattern === '*',
-    )
-  ) {
+  } else if (promptCacheDiag.reason === 'allowlist_miss') {
     warnings.push({
       issue:
-        'Prompt cache 1h allowlist does not include repl_main_thread; interactive sessions will fall back to 5m TTL',
-      fix: 'Add repl_main_thread* to cachedGrowthBookFeatures.tengu_prompt_cache_1h_config.allowlist in global config.',
+        `Prompt cache 1h allowlist does not include ${querySource}; interactive sessions will fall back to 5m TTL`,
+      fix: `Add ${querySource} (or ${querySource.split(':')[0]}*) to cachedGrowthBookFeatures.tengu_prompt_cache_1h_config.allowlist in global config.`,
+    })
+  }
+
+  if (promptCacheDiag.reason === 'prompt_caching_disabled') {
+    warnings.push({
+      issue:
+        'Prompt cache 1h is disabled by environment/model switch; requests will fall back to 5m TTL',
+      fix: 'Unset DISABLE_PROMPT_CACHING* environment variables if this is unintended.',
     })
   }
 
