@@ -1,13 +1,12 @@
 {
-  "name": "claude-agent",
+  "name": "noa",
   "version": "1.0.0",
   "type": "module",
   "private": true,
-  "description": "Claude Agent - isolated AI coding assistant",
+  "description": "Noa Claude - isolated AI coding assistant",
   "bin": {
-    "claude-agent": "./bin/claude-agent.js",
     "claude-agent-import": "./bin/claude-agent-import.js",
-    "claude-code": "./bin/claude-code.js"
+    "noa": "./bin/noa.js"
   },
   "scripts": {
     "build": "bun run build.ts",

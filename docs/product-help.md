@@ -1,6 +1,6 @@
 # Product Help
 
-This document is the default local help hub for Claude Agent.
+This document is the default local help hub for Noa Claude.
 
 ## Getting Started
 

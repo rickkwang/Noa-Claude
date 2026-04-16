@@ -1,6 +1,6 @@
-# Claude Agent
+# Noa Claude
 
-An open-source build of Claude Code based on the publicly exposed source code.
+An open-source build of Claude Code based on the publicly exposed source code, branded as Noa Claude.
 
 ## Core Modifications
 

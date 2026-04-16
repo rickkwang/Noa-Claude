@@ -184,15 +184,15 @@ export function printStartupScreen(): void {
   out.push('')
 
   // Gradient logo
-  const allLogo = [...LOGO_OPEN, '', ...LOGO_CLAUDE]
-  const total = allLogo.length
-  for (let i = 0; i < total; i++) {
+  const total = LOGO_OPEN.length + LOGO_CLAUDE.length
+  for (let i = 0; i < LOGO_OPEN.length; i++) {
     const t = total > 1 ? i / (total - 1) : 0
-    if (allLogo[i] === '') {
-      out.push('')
-    } else {
-      out.push(paintLine(allLogo[i]!, SUNSET_GRAD, t))
-    }
+    out.push(paintLine(LOGO_OPEN[i]!, SUNSET_GRAD, t))
+  }
+  out.push('')
+  for (let i = 0; i < LOGO_CLAUDE.length; i++) {
+    const t = total > 1 ? (LOGO_OPEN.length + i) / (total - 1) : 0
+    out.push(paintLine(LOGO_CLAUDE[i]!, SUNSET_GRAD, t))
   }
 
   out.push('')
@@ -227,7 +227,7 @@ export function printStartupScreen(): void {
   out.push(boxRow(sRow, W, sLen))
 
   out.push(`${rgb(...BORDER)}╚${'═'.repeat(W - 2)}╝${RESET}`)
-  out.push(`  ${DIM}${rgb(...DIMCOL)}claude ${RESET}${rgb(...ACCENT)}v${MACRO.DISPLAY_VERSION ?? MACRO.VERSION}${RESET}`)
+  out.push(`  ${DIM}${rgb(...DIMCOL)}Noa Claude ${RESET}${rgb(...ACCENT)}v${MACRO.DISPLAY_VERSION ?? MACRO.VERSION}${RESET}`)
   out.push('')
 
   process.stdout.write(out.join('\n') + '\n')

@@ -14,14 +14,14 @@ cd "$ROOT_DIR"
 echo "Installing dependencies..."
 bun install
 
-echo "Building claude-agent..."
+echo "Building Noa Claude..."
 bun run build
 
 mkdir -p "$BIN_DIR"
-ln -sf "$ROOT_DIR/bin/claude-agent.js" "$BIN_DIR/claude-agent"
+ln -sf "$ROOT_DIR/bin/noa.js" "$BIN_DIR/noa"
 ln -sf "$ROOT_DIR/bin/claude-code.js" "$BIN_DIR/claude-code"
 
 echo "Installed:"
-echo "  $BIN_DIR/claude-agent"
+echo "  $BIN_DIR/noa"
 echo "  $BIN_DIR/claude-code"
-echo "Run: claude-agent --version"
+echo "Run: noa --version"

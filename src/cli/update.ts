@@ -128,7 +128,7 @@ export async function update() {
         writeToStdout(`Update available: ${MACRO.VERSION} → ${latest}\n`)
         writeToStdout('\n')
         writeToStdout('To update, run:\n')
-        writeToStdout(chalk.bold('  brew upgrade claude-code') + '\n')
+        writeToStdout(chalk.bold('  brew upgrade noa') + '\n')
       } else {
         writeToStdout('Claude is up to date!\n')
       }
@@ -140,7 +140,7 @@ export async function update() {
         writeToStdout('\n')
         writeToStdout('To update, run:\n')
         writeToStdout(
-          chalk.bold('  winget upgrade Anthropic.ClaudeCode') + '\n',
+          chalk.bold('  winget upgrade Noa.Claude') + '\n',
         )
       } else {
         writeToStdout('Claude is up to date!\n')
@@ -152,7 +152,7 @@ export async function update() {
         writeToStdout(`Update available: ${MACRO.VERSION} → ${latest}\n`)
         writeToStdout('\n')
         writeToStdout('To update, run:\n')
-        writeToStdout(chalk.bold('  apk upgrade claude-code') + '\n')
+        writeToStdout(chalk.bold('  apk upgrade noa') + '\n')
       } else {
         writeToStdout('Claude is up to date!\n')
       }
@@ -393,7 +393,7 @@ export async function update() {
       } else {
         process.stderr.write('Try running with sudo or fix npm permissions\n')
         process.stderr.write(
-          'Or consider using native installation with: claude-agent install\n',
+        'Or consider using native installation with: claude-agent install\n',
         )
       }
       await gracefulShutdown(1)

@@ -46,6 +46,16 @@ const DIMCOL_HEX = rgbToHex(120, 100, 82)
 const BORDER_HEX = rgbToHex(100, 80, 65)
 const GREEN_HEX = rgbToHex(130, 175, 130)
 
+const LOGO_OPEN = [
+  `  ███╗   ██╗ ████████╗ ████████╗`,
+  `  ████╗  ██║ ██╔═══██║ ██╔═══██║`,
+  `  ██╔██╗ ██║ ██║   ██║ ████████║`,
+  `  ██║╚██╗██║ ██║   ██║ ██╔═══██║`,
+  `  ██║ ╚████║ ████████║ ██║   ██║`,
+  `  ╚═╝  ╚═══╝ ╚═══════╝ ╚═╝   ╚═╝`,
+]
+
+
 const LOGO_CLAUDE = [
   `  ████████╗ ██╗      ████████╗ ██╗   ██╗ ████████╗ ████████╗`,
   `  ██╔═════╝ ██║      ██╔═══██║ ██║   ██║ ██╔═══██║ ██╔═════╝`,
@@ -94,24 +104,20 @@ export function GradientBanner() {
   const p = detectProvider()
   const W = 62
 
-  const allLogo = LOGO_CLAUDE
-  const total = allLogo.length
+  const renderLogoSection = (lines: string[], offset: number, total: number): React.ReactNode[] =>
+    lines.map((line, i) => {
+      const t = total > 1 ? (offset + i) / (total - 1) : 0
+      const tokens: React.ReactNode[] = []
+      for (let j = 0; j < line.length; j++) {
+        const charT = line.length > 1 ? t * 0.5 + (j / (line.length - 1)) * 0.5 : t
+        const [r, g, b] = gradAt(SUNSET_GRAD, charT)
+        tokens.push(<Text key={j} color={rgbToHex(r, g, b)}>{line[j]}</Text>)
+      }
+      return <Box key={`logo-${offset + i}`}>{tokens}</Box>
+    })
 
-  // Build logo lines with per-character gradient colors
-  const logoLines: React.ReactNode[] = []
-  for (let i = 0; i < total; i++) {
-    const t = total > 1 ? i / (total - 1) : 0
-    const tokens: React.ReactNode[] = []
-    const line = allLogo[i]!
-    for (let j = 0; j < line.length; j++) {
-      const charT = line.length > 1 ? t * 0.5 + (j / (line.length - 1)) * 0.5 : t
-      const [r, g, b] = gradAt(SUNSET_GRAD, charT)
-      tokens.push(
-        <Text key={j} color={rgbToHex(r, g, b)}>{line[j]}</Text>
-      )
-    }
-    logoLines.push(<Box key={`logo-${i}`}>{tokens}</Box>)
-  }
+  const logoTop = renderLogoSection(LOGO_OPEN, 0, LOGO_OPEN.length + LOGO_CLAUDE.length)
+  const logoBottom = renderLogoSection(LOGO_CLAUDE, LOGO_OPEN.length, LOGO_OPEN.length + LOGO_CLAUDE.length)
 
   const provColor = p.isLocal ? GREEN_HEX : ACCENT_HEX
   const ep = p.baseUrl.length > 38 ? p.baseUrl.slice(0, 35) + '...' : p.baseUrl
@@ -125,10 +131,9 @@ export function GradientBanner() {
   return (
     <Box flexDirection="column">
       {/* Logo */}
-      {logoLines}
-
-      {/* Spacer */}
-      <Text> </Text>
+      {logoTop}
+      <Box height={1} />
+      {logoBottom}
 
       {/* Tagline */}
       <Text>
@@ -189,7 +194,7 @@ export function GradientBanner() {
 
       {/* Version */}
       <Text>
-        <Text dimColor>  claude </Text>
+        <Text dimColor>  Noa Claude </Text>
         <Text color={ACCENT_HEX}>v{MACRO.DISPLAY_VERSION ?? MACRO.VERSION}</Text>
       </Text>
     </Box>

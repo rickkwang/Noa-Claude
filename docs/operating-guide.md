@@ -35,7 +35,7 @@ It is intended to answer:
 
 ### MCP Healthcheck Degradation
 
-`claude-agent mcp list` keeps startup/list operations responsive when slow MCP servers are present:
+`noa mcp list` keeps startup/list operations responsive when slow MCP servers are present:
 
 - direct/project/user servers use `CLAUDE_AGENT_MCP_HEALTHCHECK_TIMEOUT_MS`
 - plugin-like servers use `CLAUDE_AGENT_MCP_PLUGIN_HEALTHCHECK_TIMEOUT_MS`
