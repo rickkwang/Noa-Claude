@@ -10,7 +10,7 @@ Last updated: 2026-04-13
   - `Build-Excluded`: command exists but hard-fails with `not available in this build`.
   - `Stub`: placeholder only (`isEnabled: () => false`), no functional implementation.
 - Default `bun run build` profile in this repo is conservative; expanded unlock profile is opt-in via `bun run build:dev:full`.
-- Experimental unlockability details are maintained in [FEATURES.md](/Users/myrickwang/Desktop/Coding/Claude/FEATURES.md).
+- Experimental unlockability details are maintained in [FEATURES.md](./FEATURES.md).
 
 ## Build Guardrails and Telemetry Posture
 | Surface | Status | Notes |
