@@ -1,5 +1,6 @@
 // @ts-nocheck
 import type { ZodIssueCode } from 'zod/v4'
+import { PRODUCT_HELP_URL } from '../../constants/links.js'
 
 // v4 ZodIssueCode is a value, not a type - use typeof to get the type
 type ZodIssueCodeType = (typeof ZodIssueCode)[keyof typeof ZodIssueCode]
@@ -24,8 +25,6 @@ type TipMatcher = {
   tip: ValidationTip
 }
 
-const DOCUMENTATION_BASE = 'https://code.claude.com/docs/en'
-
 const TIP_MATCHERS: TipMatcher[] = [
   {
     matches: (ctx): boolean =>
@@ -33,7 +32,7 @@ const TIP_MATCHERS: TipMatcher[] = [
     tip: {
       suggestion:
         'Valid modes: "acceptEdits" (ask before file changes), "plan" (analysis only), "bypassPermissions" (auto-accept all), or "default" (standard behavior)',
-      docLink: `${DOCUMENTATION_BASE}/iam#permission-modes`,
+      docLink: PRODUCT_HELP_URL,
     },
   },
   {
@@ -60,7 +59,7 @@ const TIP_MATCHERS: TipMatcher[] = [
     tip: {
       suggestion:
         'Environment variables must be strings. Wrap numbers and booleans in quotes. Example: "DEBUG": "true", "PORT": "3000"',
-      docLink: `${DOCUMENTATION_BASE}/settings#environment-variables`,
+      docLink: PRODUCT_HELP_URL,
     },
   },
   {
@@ -99,7 +98,7 @@ const TIP_MATCHERS: TipMatcher[] = [
     tip: {
       suggestion:
         'Check for typos or refer to the documentation for valid fields',
-      docLink: `${DOCUMENTATION_BASE}/settings`,
+      docLink: PRODUCT_HELP_URL,
     },
   },
   {
@@ -127,15 +126,15 @@ const TIP_MATCHERS: TipMatcher[] = [
     tip: {
       suggestion:
         'Must be an array of directory paths. Example: ["~/projects", "/tmp/workspace"]. You can also use --add-dir flag or /add-dir command',
-      docLink: `${DOCUMENTATION_BASE}/iam#working-directories`,
+      docLink: PRODUCT_HELP_URL,
     },
   },
 ]
 
 const PATH_DOC_LINKS: Record<string, string> = {
-  permissions: `${DOCUMENTATION_BASE}/iam#configuring-permissions`,
-  env: `${DOCUMENTATION_BASE}/settings#environment-variables`,
-  hooks: `${DOCUMENTATION_BASE}/hooks`,
+  permissions: PRODUCT_HELP_URL,
+  env: PRODUCT_HELP_URL,
+  hooks: PRODUCT_HELP_URL,
 }
 
 export function getValidationTip(context: TipContext): ValidationTip | null {

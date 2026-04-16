@@ -3,6 +3,7 @@ import { c as _c } from "react/compiler-runtime";
 import figures from 'figures';
 import React, { useCallback, useState } from 'react';
 import type { CommandResultDisplay } from '../../commands.js';
+import { PRODUCT_MCP_URL } from '../../constants/links.js';
 import { Box, color, Link, Text, useTheme } from '../../ink.js';
 import { useKeybindings } from '../../keybindings/useKeybinding.js';
 import type { ConfigScope } from '../../services/mcp/types.js';
@@ -432,7 +433,7 @@ export function MCPListPanel(t0) {
   }
   let t27;
   if ($[62] === Symbol.for("react.memo_cache_sentinel")) {
-    t27 = <Box flexDirection="column"><Text dimColor={true}>Only MCP servers are listed here. Plugins that provide only skills/agents/hooks will not appear in this list.</Text><Text dimColor={true}><Link url="https://code.claude.com/docs/en/mcp">https://code.claude.com/docs/en/mcp</Link>{" "}for help</Text></Box>;
+    t27 = <Box flexDirection="column"><Text dimColor={true}>Only MCP servers are listed here. Plugins that provide only skills/agents/hooks will not appear in this list.</Text><Text dimColor={true}><Link url={PRODUCT_MCP_URL}>{PRODUCT_MCP_URL}</Link>{" "}for help</Text></Box>;
     $[62] = t27;
   } else {
     t27 = $[62];

@@ -15,7 +15,9 @@ import type { MarketplaceSource } from './schemas.js'
  */
 export const OFFICIAL_MARKETPLACE_SOURCE = {
   source: 'github',
-  repo: 'anthropics/claude-plugins-official',
+  repo:
+    process.env.CLAUDE_AGENT_OFFICIAL_MARKETPLACE_REPO ||
+    'rickkwang/Claude-Agent',
 } as const satisfies MarketplaceSource
 
 /**

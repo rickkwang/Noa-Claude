@@ -46,6 +46,10 @@ export type OfficialMarketplaceSkipReason =
  * Check if official marketplace auto-install is disabled via environment variable.
  */
 export function isOfficialMarketplaceAutoInstallDisabled(): boolean {
+  // Default-chain isolation: official marketplace auto-install is opt-in.
+  if (!isEnvTruthy(process.env.CLAUDE_AGENT_ENABLE_OFFICIAL_MARKETPLACE)) {
+    return true
+  }
   return isEnvTruthy(
     process.env.CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL,
   )
@@ -221,10 +225,11 @@ export async function checkAndInstallOfficialMarketplace(): Promise<OfficialMark
     // entirely.
     const cacheDir = getMarketplacesCacheDir()
     const installLocation = join(cacheDir, OFFICIAL_MARKETPLACE_NAME)
-    const gcsSha = await fetchOfficialMarketplaceFromGcs(
-      installLocation,
-      cacheDir,
+    const gcsSha = isEnvTruthy(
+      process.env.CLAUDE_AGENT_ENABLE_OFFICIAL_MARKETPLACE_GCS,
     )
+      ? await fetchOfficialMarketplaceFromGcs(installLocation, cacheDir)
+      : null
     if (gcsSha !== null) {
       const known = await loadKnownMarketplacesConfig()
       known[OFFICIAL_MARKETPLACE_NAME] = {
@@ -250,8 +255,7 @@ export async function checkAndInstallOfficialMarketplace(): Promise<OfficialMark
       })
       return { installed: true, skipped: false }
     }
-    // GCS failed (404 until backend writes, or network). Fall through to git
-    // ONLY if the kill-switch allows — same gate as refreshMarketplace().
+    // GCS failed/disabled. Fall through to git ONLY if kill-switch allows.
     if (
       !getFeatureValue_CACHED_MAY_BE_STALE(
         'tengu_plugin_official_mkt_git_fallback',

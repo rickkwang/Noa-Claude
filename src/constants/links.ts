@@ -1,0 +1,27 @@
+export const PROJECT_REPO_BASE_URL = 'https://github.com/rickkwang/Claude-Agent'
+
+export const PROJECT_DOCS_BASE_URL = `${PROJECT_REPO_BASE_URL}/blob/master/docs`
+
+export const PROJECT_ISSUES_URL = `${PROJECT_REPO_BASE_URL}/issues`
+
+export const PRODUCT_HELP_URL = `${PROJECT_DOCS_BASE_URL}/product-help.md`
+
+export const PRODUCT_RELEASE_NOTES_URL = `${PROJECT_DOCS_BASE_URL}/release-notes.md`
+
+export const CLAUDE_CODE_DOCS_MAP_URL = PRODUCT_HELP_URL
+
+export const PRODUCT_COSTS_URL = PRODUCT_HELP_URL
+
+export const PRODUCT_FAST_MODE_URL = PRODUCT_HELP_URL
+
+export const PRODUCT_HOOKS_URL = PRODUCT_HELP_URL
+
+export const PRODUCT_KEYBINDINGS_URL = PRODUCT_HELP_URL
+
+export const PRODUCT_MCP_URL = PRODUCT_HELP_URL
+
+export const PRODUCT_MEMORY_URL = PRODUCT_HELP_URL
+
+export const PRODUCT_MODEL_CONFIG_URL = PRODUCT_HELP_URL
+
+export const PRODUCT_SANDBOXING_URL = PRODUCT_HELP_URL

@@ -9,14 +9,13 @@ import { WEB_SEARCH_TOOL_NAME } from 'src/tools/WebSearchTool/prompt.js'
 import { isUsing3PServices } from 'src/utils/auth.js'
 import { hasEmbeddedSearchTools } from 'src/utils/embeddedTools.js'
 import { getSettings_DEPRECATED } from 'src/utils/settings/settings.js'
+import { CLAUDE_CODE_DOCS_MAP_URL } from '../../../constants/links.js'
 import { jsonStringify } from '../../../utils/slowOperations.js'
 import type {
   AgentDefinition,
   BuiltInAgentDefinition,
 } from '../loadAgentsDir.js'
 
-const CLAUDE_CODE_DOCS_MAP_URL =
-  'https://code.claude.com/docs/en/claude_code_docs_map.md'
 const CDP_DOCS_MAP_URL = 'https://platform.claude.com/llms.txt'
 
 export const CLAUDE_CODE_GUIDE_AGENT_TYPE = 'claude-code-guide'

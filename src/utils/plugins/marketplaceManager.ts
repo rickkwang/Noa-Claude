@@ -96,6 +96,33 @@ type LoadedPluginMarketplace = {
   cachePath: string
 }
 
+const LEGACY_OFFICIAL_MARKETPLACE_REPOS = new Set([
+  'anthropics/claude-plugins-official',
+])
+
+function normalizeKnownMarketplacesConfig(
+  config: KnownMarketplacesConfig,
+): KnownMarketplacesConfig {
+  const entry = config[OFFICIAL_MARKETPLACE_NAME]
+  if (
+    entry?.source.source === 'github' &&
+    LEGACY_OFFICIAL_MARKETPLACE_REPOS.has(entry.source.repo)
+  ) {
+    return {
+      ...config,
+      [OFFICIAL_MARKETPLACE_NAME]: {
+        ...entry,
+        source: OFFICIAL_MARKETPLACE_SOURCE,
+      },
+    }
+  }
+  return config
+}
+
+function isOfficialMarketplaceExternalRefreshEnabled(): boolean {
+  return isEnvTruthy(process.env.CLAUDE_AGENT_ENABLE_OFFICIAL_MARKETPLACE)
+}
+
 /**
  * Get the path to the known marketplaces configuration file
  * Using a function instead of a constant allows proper mocking in tests
@@ -280,7 +307,7 @@ export async function loadKnownMarketplacesConfig(): Promise<KnownMarketplacesCo
       })
       throw new ConfigParseError(errorMsg, configFile, data)
     }
-    return parsed.data
+    return normalizeKnownMarketplacesConfig(parsed.data)
   } catch (error) {
     if (isENOENT(error)) {
       return {}
@@ -329,7 +356,8 @@ export async function saveKnownMarketplacesConfig(
   config: KnownMarketplacesConfig,
 ): Promise<void> {
   // Validate before saving
-  const parsed = KnownMarketplacesFileSchema().safeParse(config)
+  const normalized = normalizeKnownMarketplacesConfig(config)
+  const parsed = KnownMarketplacesFileSchema().safeParse(normalized)
   const configFile = getKnownMarketplacesFile()
 
   if (!parsed.success) {
@@ -2313,6 +2341,12 @@ export async function refreshAllMarketplaces(): Promise<void> {
     // inc-5046: same GCS intercept as refreshMarketplace() — bulk update
     // hits this path on `claude plugin marketplace update` (no name arg).
     if (name === OFFICIAL_MARKETPLACE_NAME) {
+      if (!isOfficialMarketplaceExternalRefreshEnabled()) {
+        logForDebugging(
+          `Skipping official marketplace bulk refresh: official marketplace is disabled`,
+        )
+        continue
+      }
       const sha = await fetchOfficialMarketplaceFromGcs(
         entry.installLocation,
         getMarketplacesCacheDir(),
@@ -2431,6 +2465,11 @@ export async function refreshMarketplace(
     // no data migration is needed — existing known_marketplaces.json entries
     // still say source:'github', which is true (GCS is a mirror).
     if (name === OFFICIAL_MARKETPLACE_NAME) {
+      if (!isOfficialMarketplaceExternalRefreshEnabled()) {
+        throw new Error(
+          'Official marketplace refresh is disabled. Set CLAUDE_AGENT_ENABLE_OFFICIAL_MARKETPLACE=1 to enable external marketplace refresh.',
+        )
+      }
       const sha = await fetchOfficialMarketplaceFromGcs(
         installLocation,
         getMarketplacesCacheDir(),

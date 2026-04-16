@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { c as _c } from "react/compiler-runtime";
 import React from 'react';
+import { PRODUCT_SANDBOXING_URL } from '../../constants/links.js';
 import { Box, color, Link, Text, useTheme } from '../../ink.js';
 import { useKeybindings } from '../../keybindings/useKeybinding.js';
 import type { CommandResultDisplay } from '../../types/command.js';
@@ -278,7 +279,7 @@ function SandboxModeTab(t0) {
   }
   let t6;
   if ($[12] === Symbol.for("react.memo_cache_sentinel")) {
-    t6 = <Box flexDirection="column" marginTop={1} gap={1}>{t5}<Text dimColor={true}>Learn more:{" "}<Link url="https://code.claude.com/docs/en/sandboxing">code.claude.com/docs/en/sandboxing</Link></Text></Box>;
+    t6 = <Box flexDirection="column" marginTop={1} gap={1}>{t5}<Text dimColor={true}>Learn more:{" "}<Link url={PRODUCT_SANDBOXING_URL}>{PRODUCT_SANDBOXING_URL}</Link></Text></Box>;
     $[12] = t6;
   } else {
     t6 = $[12];

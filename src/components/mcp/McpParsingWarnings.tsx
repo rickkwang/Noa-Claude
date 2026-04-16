@@ -5,6 +5,7 @@ import { getMcpConfigsByScope } from 'src/services/mcp/config.js';
 import type { ConfigScope } from 'src/services/mcp/types.js';
 import { describeMcpConfigFilePath, getScopeLabel } from 'src/services/mcp/utils.js';
 import type { ValidationError } from 'src/utils/settings/validation.js';
+import { PRODUCT_MCP_URL } from '../../constants/links.js';
 import { Box, Link, Text } from '../../ink.js';
 function McpConfigErrorSection(t0) {
   const $ = _c(26);
@@ -182,7 +183,7 @@ export function McpParsingWarnings() {
   }
   let t5;
   if ($[5] === Symbol.for("react.memo_cache_sentinel")) {
-    t5 = <Box flexDirection="column" marginTop={1} marginBottom={1}>{t4}<Box marginTop={1}><Text dimColor={true}>For help configuring MCP servers, see:{" "}<Link url="https://code.claude.com/docs/en/mcp">https://code.claude.com/docs/en/mcp</Link></Text></Box>{scopes.map(_temp5)}</Box>;
+    t5 = <Box flexDirection="column" marginTop={1} marginBottom={1}>{t4}<Box marginTop={1}><Text dimColor={true}>For help configuring MCP servers, see:{" "}<Link url={PRODUCT_MCP_URL}>{PRODUCT_MCP_URL}</Link></Text></Box>{scopes.map(_temp5)}</Box>;
     $[5] = t5;
   } else {
     t5 = $[5];

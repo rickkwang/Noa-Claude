@@ -5,6 +5,7 @@
  */
 
 import { jsonStringify } from '../utils/slowOperations.js'
+import { PRODUCT_KEYBINDINGS_URL } from '../constants/links.js'
 import { DEFAULT_BINDINGS } from './defaultBindings.js'
 import {
   NON_REBINDABLE,
@@ -45,7 +46,7 @@ export function generateKeybindingsTemplate(): string {
   // Format as object wrapper with bindings array
   const config = {
     $schema: 'https://www.schemastore.org/claude-code-keybindings.json',
-    $docs: 'https://code.claude.com/docs/en/keybindings',
+    $docs: PRODUCT_KEYBINDINGS_URL,
     bindings,
   }
 

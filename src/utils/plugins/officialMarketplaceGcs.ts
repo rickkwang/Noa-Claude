@@ -15,6 +15,7 @@ import { dirname, join, resolve, sep } from 'path'
 import { waitForScrollIdle } from '../../bootstrap/state.js'
 import type { AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from '../../services/analytics/index.js'
 import { logEvent } from '../../services/analytics/index.js'
+import { isEnvTruthy } from '../envUtils.js'
 import { logForDebugging } from '../debug.js'
 import { parseZipModes, unzipFile } from '../dxt/zip.js'
 import { errorMessage, getErrnoCode } from '../errors.js'
@@ -27,6 +28,7 @@ type SafeString = AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
 // `latest` has Cache-Control: max-age=300 so CDN staleness is bounded.
 // Backend (anthropic#317037) populates this prefix.
 const GCS_BASE =
+  process.env.CLAUDE_AGENT_OFFICIAL_MARKETPLACE_GCS_BASE_URL ||
   'https://downloads.claude.ai/claude-code-releases/plugins/claude-plugins-official'
 
 // Zip arc paths are seed-dir-relative (marketplaces/claude-plugins-official/…)
@@ -49,6 +51,10 @@ export async function fetchOfficialMarketplaceFromGcs(
   installLocation: string,
   marketplacesCacheDir: string,
 ): Promise<string | null> {
+  if (!isEnvTruthy(process.env.CLAUDE_AGENT_ENABLE_OFFICIAL_MARKETPLACE_GCS)) {
+    return null
+  }
+
   // Defense in depth: this function does `rm(installLocation, {recursive})`
   // during the atomic swap. A corrupted known_marketplaces.json (gh-32793 —
   // Windows path read on WSL, literal tilde, manual edit) could point at the

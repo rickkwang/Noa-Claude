@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { getDynamicConfig_CACHED_MAY_BE_STALE } from './growthbook.js'
+import { isEnvTruthy } from '../../utils/envUtils.js'
 
 // Mangled name: per-sink analytics killswitch
 const SINK_KILLSWITCH_CONFIG_NAME = 'tengu_frond_boric'
@@ -17,6 +18,24 @@ export type SinkName = 'datadog' | 'firstParty'
  * Call at per-event dispatch sites instead.
  */
 export function isSinkKilled(sink: SinkName): boolean {
+  // Local override for isolated deployments. Example:
+  // CLAUDE_AGENT_ANALYTICS_SINKS_DISABLED=datadog,firstParty
+  const localList = process.env.CLAUDE_AGENT_ANALYTICS_SINKS_DISABLED
+  if (localList) {
+    const disabled = new Set(
+      localList
+        .split(',')
+        .map(item => item.trim())
+        .filter(Boolean),
+    )
+    if (disabled.has(sink)) {
+      return true
+    }
+  }
+  if (isEnvTruthy(process.env.CLAUDE_AGENT_DISABLE_ALL_ANALYTICS_SINKS)) {
+    return true
+  }
+
   const config = getDynamicConfig_CACHED_MAY_BE_STALE<
     Partial<Record<SinkName, boolean>>
   >(SINK_KILLSWITCH_CONFIG_NAME, {})

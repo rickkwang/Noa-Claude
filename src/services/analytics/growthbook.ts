@@ -416,6 +416,12 @@ function isGrowthBookRemoteFetchEnabled(): boolean {
   return false
 }
 
+function isRemoteGateEvalEnabled(): boolean {
+  // Default-chain isolation: do not let cached remote gate state influence
+  // runtime behavior unless the user explicitly opts in.
+  return isEnvTruthy(process.env.CLAUDE_AGENT_ENABLE_REMOTE_GATES)
+}
+
 /**
  * Hostname of ANTHROPIC_BASE_URL when it points at a non-Anthropic proxy.
  *
@@ -908,6 +914,10 @@ export async function checkGate_CACHED_OR_BLOCKING(
   const configOverrides = getConfigOverrides()
   if (configOverrides && gate in configOverrides) {
     return Boolean(configOverrides[gate])
+  }
+
+  if (!isRemoteGateEvalEnabled()) {
+    return false
   }
 
   if (!isGrowthBookEnabled()) {

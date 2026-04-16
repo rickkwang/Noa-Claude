@@ -4,6 +4,7 @@ import chalk from 'chalk';
 import * as React from 'react';
 import type { CommandResultDisplay } from '../../commands.js';
 import { ModelPicker } from '../../components/ModelPicker.js';
+import { PRODUCT_MODEL_CONFIG_URL } from '../../constants/links.js';
 import { COMMON_HELP_ARGS, COMMON_INFO_ARGS } from '../../constants/xml.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from '../../services/analytics/index.js';
 import { useAppState, useSetAppState } from '../../state/AppState.js';
@@ -151,13 +152,13 @@ function SetModelAndClose({
 
       // @[MODEL LAUNCH]: Update check for 1M access.
       if (model && isOpus1mUnavailable(model)) {
-        onDone(`Opus 4.6 with 1M context is not available for your account. Learn more: https://code.claude.com/docs/en/model-config#extended-context-with-1m`, {
+        onDone(`Opus 4.6 with 1M context is not available for your account. Learn more: ${PRODUCT_MODEL_CONFIG_URL}`, {
           display: 'system'
         });
         return;
       }
       if (model && isSonnet1mUnavailable(model)) {
-        onDone(`Sonnet 4.6 with 1M context is not available for your account. Learn more: https://code.claude.com/docs/en/model-config#extended-context-with-1m`, {
+        onDone(`Sonnet 4.6 with 1M context is not available for your account. Learn more: ${PRODUCT_MODEL_CONFIG_URL}`, {
           display: 'system'
         });
         return;

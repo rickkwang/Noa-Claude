@@ -12,6 +12,7 @@ import {
   KEYBINDING_CONTEXT_DESCRIPTIONS,
   KEYBINDING_CONTEXTS,
 } from '../../keybindings/schema.js'
+import { PRODUCT_KEYBINDINGS_URL } from '../../constants/links.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import { registerBundledSkill } from '../bundledSkills.js'
 
@@ -114,7 +115,7 @@ function generateReservedShortcuts(): string {
 
 const FILE_FORMAT_EXAMPLE: KeybindingsSchemaType = {
   $schema: 'https://www.schemastore.org/claude-code-keybindings.json',
-  $docs: 'https://code.claude.com/docs/en/keybindings',
+  $docs: PRODUCT_KEYBINDINGS_URL,
   bindings: [
     {
       context: 'Chat',

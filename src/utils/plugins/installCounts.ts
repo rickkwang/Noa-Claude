@@ -14,6 +14,7 @@ import { randomBytes } from 'crypto'
 import { readFile, rename, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { logForDebugging } from '../debug.js'
+import { isEnvTruthy } from '../envUtils.js'
 import { errorMessage, getErrnoCode } from '../errors.js'
 import { getFsImplementation } from '../fsOperations.js'
 import { logError } from '../log.js'
@@ -234,6 +235,11 @@ export async function getInstallCounts(): Promise<Map<string, number> | null> {
       map.set(entry.plugin, entry.unique_installs)
     }
     return map
+  }
+
+  if (!isEnvTruthy(process.env.CLAUDE_AGENT_ENABLE_OFFICIAL_MARKETPLACE)) {
+    logForDebugging('Skipping install counts fetch: official marketplace disabled')
+    return null
   }
 
   // Cache miss or stale - fetch from GitHub

@@ -5,6 +5,7 @@ import type { CommandResultDisplay } from '../../commands.js';
 import { Dialog } from '../../components/design-system/Dialog.js';
 import { MemoryFileSelector } from '../../components/memory/MemoryFileSelector.js';
 import { getRelativeMemoryPath } from '../../components/memory/MemoryUpdateNotification.js';
+import { PRODUCT_MEMORY_URL } from '../../constants/links.js';
 import { Box, Link, Text } from '../../ink.js';
 import type { LocalJSXCommandCall } from '../../types/command.js';
 import { clearMemoryFileCaches, getMemoryFiles } from '../../utils/claudemd.js';
@@ -75,7 +76,7 @@ function MemoryCommand({
 
         <Box marginTop={1}>
           <Text dimColor>
-            Learn more: <Link url="https://code.claude.com/docs/en/memory" />
+            Learn more: <Link url={PRODUCT_MEMORY_URL} />
           </Text>
         </Box>
       </Box>

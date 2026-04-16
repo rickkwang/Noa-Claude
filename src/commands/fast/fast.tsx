@@ -5,6 +5,7 @@ import { useState } from 'react';
 import type { CommandResultDisplay, LocalJSXCommandContext } from '../../commands.js';
 import { Dialog } from '../../components/design-system/Dialog.js';
 import { FastIcon, getFastIconString } from '../../components/FastIcon.js';
+import { PRODUCT_FAST_MODE_URL } from '../../constants/links.js';
 import { Box, Link, Text } from '../../ink.js';
 import { useKeybindings } from '../../keybindings/useKeybinding.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from '../../services/analytics/index.js';
@@ -192,7 +193,7 @@ export function FastModePicker(t0) {
   }
   let t11;
   if ($[25] === Symbol.for("react.memo_cache_sentinel")) {
-    t11 = <Text dimColor={true}>Learn more:{" "}<Link url="https://code.claude.com/docs/en/fast-mode">https://code.claude.com/docs/en/fast-mode</Link></Text>;
+    t11 = <Text dimColor={true}>Learn more:{" "}<Link url={PRODUCT_FAST_MODE_URL}>{PRODUCT_FAST_MODE_URL}</Link></Text>;
     $[25] = t11;
   } else {
     t11 = $[25];
