@@ -1947,6 +1947,7 @@ NOTES
   - You must be logged in with a Claude account that has a subscription
   - Run \`claude\` first in the directory to accept the workspace trust dialog
 ${serverNote}`
+  // explicit cloud entry, excluded from default-chain isolation
   // biome-ignore lint/suspicious/noConsole: intentional help output
   console.log(help)
 }

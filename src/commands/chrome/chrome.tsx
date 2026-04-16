@@ -12,6 +12,7 @@ import { isChromeExtensionInstalled } from '../../utils/claudeInChrome/setup.js'
 import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js';
 import { env } from '../../utils/env.js';
 import { isRunningOnHomespace } from '../../utils/envUtils.js';
+// explicit cloud entry, excluded from default-chain isolation
 const CHROME_EXTENSION_URL = 'https://claude.ai/chrome';
 const CHROME_PERMISSIONS_URL = 'https://clau.de/chrome/permissions';
 const CHROME_RECONNECT_URL = 'https://clau.de/chrome/reconnect';
