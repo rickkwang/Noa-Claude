@@ -8,7 +8,8 @@ Three key changes from the upstream:
 
 1. **Telemetry removed** — All outbound OpenTelemetry, GrowthBook analytics, Sentry error reporting, and custom event logging are dead-code-eliminated or stubbed.
 2. **Security guardrails stripped** — System-level instructions injected into conversations (hardcoded refusal patterns, cyber risk instruction blocks) are removed.
-3. **Experimental profile available** — opt-in `dev-full` profile enables additional feature flags for internal/dev scenarios.
+3. **Default links localized** — default help, release notes, validation hints, and other runtime-facing guidance resolve to repository-local or project-owned URLs instead of upstream docs.
+4. **Experimental profile available** — opt-in `dev-full` profile enables additional feature flags for internal/dev scenarios.
 
 ## Capability Highlights
 
@@ -77,6 +78,7 @@ This build ships with hardcoded privacy defaults (no configuration needed):
 - All telemetry paths hard-disabled
 - GrowthBook remote fetch hard-disabled
 - Remote policy overlays hard-disabled
+- Default runtime help and guidance resolved to local/project-owned links
 
 ## Verification
 
