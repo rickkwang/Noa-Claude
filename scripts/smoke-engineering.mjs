@@ -71,19 +71,25 @@ function assertConfig() {
   const parsedSettings = JSON.parse(readFileSync(PRODUCT_SETTINGS_PATH, 'utf8'));
   const { apiBaseUrl, apiKey, model } = getResolvedLauncherConfig();
 
-  if (parsedSettings?.env?.ANTHROPIC_BASE_URL !== DEFAULT_MINIMAX_CN_BASE_URL) {
-    fail(
-      `Unexpected MiniMax base URL in ${PRODUCT_SETTINGS_PATH}: ${parsedSettings?.env?.ANTHROPIC_BASE_URL}`,
-    );
-  }
-  if (!apiKey) {
-    fail(`Missing ANTHROPIC_API_KEY in ${PRODUCT_SETTINGS_PATH}`);
-  }
-  if (apiBaseUrl !== DEFAULT_MINIMAX_CN_BASE_URL) {
-    fail(`Resolved base URL mismatch: ${apiBaseUrl}`);
-  }
-  if (model !== 'MiniMax-M2.7') {
-    fail(`Resolved model mismatch: ${model}`);
+  const configuredBaseUrl = parsedSettings?.env?.ANTHROPIC_BASE_URL;
+  // Only enforce MiniMax CN defaults when that specific provider is configured.
+  // Allow first-party Anthropic API (no base URL) and other third-party providers.
+  if (configuredBaseUrl !== undefined && configuredBaseUrl !== DEFAULT_MINIMAX_CN_BASE_URL) {
+    // Non-MiniMax third-party URL detected — skip MiniMax-specific assertions.
+    console.log(`Detected non-MiniMax provider: ${configuredBaseUrl} — skipping MiniMax CN defaults check.`);
+  } else if (configuredBaseUrl === undefined) {
+    console.log('Using first-party Anthropic API — skipping MiniMax CN defaults check.');
+  } else {
+    // MiniMax CN is configured — validate the full config is consistent.
+    if (!apiKey) {
+      fail(`Missing ANTHROPIC_API_KEY in ${PRODUCT_SETTINGS_PATH}`);
+    }
+    if (apiBaseUrl !== DEFAULT_MINIMAX_CN_BASE_URL) {
+      fail(`Resolved base URL mismatch: ${apiBaseUrl}`);
+    }
+    if (model !== 'MiniMax-M2.7') {
+      fail(`Resolved model mismatch: ${model}`);
+    }
   }
 }
 

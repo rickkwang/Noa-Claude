@@ -275,6 +275,8 @@ export async function clearActiveProviderProfile(): Promise<void> {
   const profiles = await loadProviderProfiles()
   if (!profiles.some(profile => profile.active)) return
   await saveProviderProfiles(profiles.map(profile => ({ ...profile, active: false })))
+  // Also clear provider env keys from settings so stale URLs don't pollute.
+  persistProviderEnvToUserSettings({})
 }
 
 export async function applyActiveProviderProfileEnv(): Promise<ProviderProfile | null> {
