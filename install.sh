@@ -23,5 +23,5 @@ ln -sf "$ROOT_DIR/bin/claude-code.js" "$BIN_DIR/claude-code"
 
 echo "Installed:"
 echo "  $BIN_DIR/noa"
-echo "  $BIN_DIR/claude-code"
+echo "  $BIN_DIR/noa"
 echo "Run: noa --version"
