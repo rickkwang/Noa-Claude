@@ -157,7 +157,7 @@ export const PROVIDER_TYPE_DEFAULTS: Record<ProviderType, { baseUrl?: string; mo
     model: 'deepseek-chat',
   },
   kimi: {
-    baseUrl: 'https://api.kimi.com/coding/',
+    baseUrl: 'https://api.kimi.com/coding',
     model: 'kimi-k2.5',
   },
   minimax: {
@@ -221,7 +221,6 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
       setEnvKey(env, 'ANTHROPIC_DEFAULT_SONNET_MODEL', profile.model)
       setEnvKey(env, 'ANTHROPIC_DEFAULT_HAIKU_MODEL', profile.model)
       setEnvKey(env, 'CLAUDE_CODE_SUBAGENT_MODEL', profile.model)
-      env.ENABLE_TOOL_SEARCH = 'false'
       break
     case 'openai':
     case 'gemini':
@@ -269,14 +268,6 @@ export async function setActiveProviderProfile(
   if (!activeProfile) return null
   await saveProviderProfiles(nextProfiles)
   return activeProfile
-}
-
-export async function clearActiveProviderProfile(): Promise<void> {
-  const profiles = await loadProviderProfiles()
-  if (!profiles.some(profile => profile.active)) return
-  await saveProviderProfiles(profiles.map(profile => ({ ...profile, active: false })))
-  // Also clear provider env keys from settings so stale URLs don't pollute.
-  persistProviderEnvToUserSettings({})
 }
 
 export async function applyActiveProviderProfileEnv(): Promise<ProviderProfile | null> {

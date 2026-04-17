@@ -419,6 +419,17 @@ async function* openaiStreamToAnthropic(
     }
   }
 
+  // Handle any leftover data in buffer (incomplete JSON from early disconnect)
+  const leftover = buffer.trim()
+  if (leftover && leftover !== 'data: [DONE]' && leftover.startsWith('data: ')) {
+    try {
+      JSON.parse(leftover.slice(6))
+    } catch {
+      // Incomplete JSON — log warning but don't crash
+      console.error('[OpenAI Shim] Incomplete chunk in stream buffer, discarding:', leftover.slice(0, 100))
+    }
+  }
+
   yield { type: 'message_stop' }
 }
 
