@@ -79,9 +79,7 @@ try {
         console.error('main() promise resolved');
       }
     }).catch((e) => {
-      if (launcherDebugEnabled) {
-        console.error('main() promise rejected:', e.message);
-      }
+      console.error('main() promise rejected:', e?.message ?? e);
     });
   }
 } catch (e) {

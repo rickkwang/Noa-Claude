@@ -12,7 +12,7 @@ import {
 } from '../launcher-config.js';
 
 const repoRoot = resolve(import.meta.dir, '..');
-const agentBin = resolve(repoRoot, 'bin/claude-agent.js');
+const agentBin = resolve(repoRoot, 'bin/noa.js');
 
 function fail(message, details) {
   if (details) {
@@ -51,7 +51,7 @@ function assertInteractiveStartupStaysAlive() {
   );
   if (result.status !== 124) {
     fail(
-      'claude-agent did not stay alive for the interactive startup window',
+      'noa did not stay alive for the interactive startup window',
       result.stderr || result.stdout,
     );
   }

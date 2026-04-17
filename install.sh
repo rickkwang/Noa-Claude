@@ -19,9 +19,8 @@ bun run build
 
 mkdir -p "$BIN_DIR"
 ln -sf "$ROOT_DIR/bin/noa.js" "$BIN_DIR/noa"
-ln -sf "$ROOT_DIR/bin/claude-code.js" "$BIN_DIR/claude-code"
 
-echo "Installed:"
+echo "Installed: Noa Claude"
 echo "  $BIN_DIR/noa"
-echo "  $BIN_DIR/noa"
+echo ""
 echo "Run: noa --version"
