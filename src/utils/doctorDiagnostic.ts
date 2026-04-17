@@ -453,14 +453,14 @@ async function detectConfigurationIssues(
     if (type === 'npm-local' && config.installMethod !== 'local') {
       warnings.push({
         issue: `Running from local installation but config install method is '${config.installMethod}'`,
-        fix: 'Consider using native installation: claude-agent install',
+        fix: 'Consider using native installation: noa install',
       })
     }
 
     if (type === 'native' && config.installMethod !== 'native') {
       warnings.push({
         issue: `Running native installation but config install method is '${config.installMethod}'`,
-        fix: 'Run claude-agent install to update configuration',
+        fix: 'Run noa install to update configuration',
       })
     }
   }
@@ -468,7 +468,7 @@ async function detectConfigurationIssues(
   if (type === 'npm-global' && (await localInstallationExists())) {
     warnings.push({
       issue: 'Local installation exists but not being used',
-      fix: 'Consider using native installation: claude-agent install',
+      fix: 'Consider using native installation: noa install',
     })
   }
 
@@ -630,7 +630,7 @@ export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
     if (!hasUpdatePermissions && !getAutoUpdaterDisabledReason()) {
       warnings.push({
         issue: 'Insufficient permissions for auto-updates',
-        fix: 'Do one of: (1) Re-install node without sudo, or (2) Use `claude-agent install` for native installation',
+        fix: 'Do one of: (1) Re-install node without sudo, or (2) Use `noa install` for native installation',
       })
     }
   }

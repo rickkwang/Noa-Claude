@@ -97,7 +97,7 @@ function buildSnapshotContent(params: {
   }
 
   return [
-    '# Claude Agent Share Snapshot',
+    '# Noa Claude Share Snapshot',
     '',
     `GeneratedAt: ${now}`,
     `SessionId: ${sessionId}`,

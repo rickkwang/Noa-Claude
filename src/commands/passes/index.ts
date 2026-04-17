@@ -11,9 +11,9 @@ export default {
   get description() {
     const reward = getCachedReferrerReward()
     if (reward) {
-      return 'Share a free week of Claude Agent with friends and earn extra usage'
+      return 'Share a free week of Noa Claude with friends and earn extra usage'
     }
-    return 'Share a free week of Claude Agent with friends'
+    return 'Share a free week of Noa Claude with friends'
   },
   get isHidden() {
     const { eligible, hasCache } = checkCachedPassesEligibility()

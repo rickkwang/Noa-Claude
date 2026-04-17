@@ -36,7 +36,7 @@ export async function sendNotification(
   })
 }
 
-const DEFAULT_TITLE = 'Claude Agent'
+const DEFAULT_TITLE = 'Noa Claude'
 
 async function sendToChannel(
   channel: string,

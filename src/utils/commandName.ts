@@ -8,10 +8,10 @@ function normalizeCandidate(raw: string | undefined): string | undefined {
   if (!base) return undefined
   if (KNOWN_COMMANDS.has(base)) return base
   // npm/global wrappers often execute *claude-agent*/*noa*/*claude-code* scripts by path.
-  if (base.includes('claude-agent')) return 'claude-agent'
+  if (base.includes('claude-agent')) return 'noa'
   if (base.includes('noa')) return 'noa'
-  if (base.includes('claude-code')) return 'claude-code'
-  if (base === 'claude') return 'claude'
+  if (base.includes('claude-code')) return 'noa'
+  if (base === 'claude') return 'noa'
   return undefined
 }
 
@@ -20,6 +20,6 @@ export function getPreferredCliCommandName(): string {
     normalizeCandidate(process.env.CLAUDE_CLI_NAME) ??
     normalizeCandidate(process.argv[1]) ??
     normalizeCandidate(process.argv[0]) ??
-    'claude-agent'
+    'noa'
   )
 }

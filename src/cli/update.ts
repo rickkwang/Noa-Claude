@@ -240,7 +240,7 @@ export async function update() {
 
       if (result.latestVersion === MACRO.VERSION) {
         writeToStdout(
-          chalk.green(`Claude Agent is up to date (${MACRO.VERSION})`) + '\n',
+          chalk.green(`Noa Claude is up to date (${MACRO.VERSION})`) + '\n',
         )
       } else {
         writeToStdout(
@@ -254,7 +254,7 @@ export async function update() {
     } catch (error) {
       process.stderr.write('Error: Failed to install native update\n')
       process.stderr.write(String(error) + '\n')
-      process.stderr.write('Try running "claude-agent doctor" for diagnostics\n')
+      process.stderr.write('Try running "noa doctor" for diagnostics\n')
       await gracefulShutdown(1)
     }
   }
@@ -310,7 +310,7 @@ export async function update() {
   // Check if versions match exactly, including any build metadata (like SHA)
   if (latestVersion === MACRO.VERSION) {
     writeToStdout(
-      chalk.green(`Claude Agent is up to date (${MACRO.VERSION})`) + '\n',
+      chalk.green(`Noa Claude is up to date (${MACRO.VERSION})`) + '\n',
     )
     await gracefulShutdown(0)
   }
@@ -393,7 +393,7 @@ export async function update() {
       } else {
         process.stderr.write('Try running with sudo or fix npm permissions\n')
         process.stderr.write(
-        'Or consider using native installation with: claude-agent install\n',
+        'Or consider using native installation with: noa install\n',
         )
       }
       await gracefulShutdown(1)
@@ -407,7 +407,7 @@ export async function update() {
         )
       } else {
         process.stderr.write(
-          'Or consider using native installation with: claude-agent install\n',
+          'Or consider using native installation with: noa install\n',
         )
       }
       await gracefulShutdown(1)
