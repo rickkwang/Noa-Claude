@@ -338,43 +338,54 @@ export function BackgroundTasksDialog({
     await RemoteAgentTask.kill(taskId_3, setAppState);
   }
   async function cancelScheduledJob(taskId_4: string): Promise<void> {
-    await removeCronTasks([taskId_4]);
-    await refreshScheduledTasks();
+    try {
+      await removeCronTasks([taskId_4]);
+      await refreshScheduledTasks();
+    } catch (error) {
+      logForDebugging(`[BackgroundTasksDialog] failed to cancel scheduled job ${taskId_4}: ${String(error)}`);
+    }
+  }
+  async function runTaskAction(actionName: string, action: () => Promise<void> | void): Promise<void> {
+    try {
+      await action();
+    } catch (error) {
+      logForDebugging(`[BackgroundTasksDialog] ${actionName} failed: ${String(error)}`);
+    }
   }
   async function stopOrCancelSelectedItem(item: ListItem): Promise<void> {
     if (item.type === 'local_bash' && item.status === 'running') {
-      await killShellTask(item.id);
+      await runTaskAction('kill local shell', () => killShellTask(item.id));
       return;
     }
     if (item.type === 'local_agent' && item.status === 'running') {
-      await killAgentTask(item.id);
+      await runTaskAction('kill local agent', () => killAgentTask(item.id));
       return;
     }
     if (item.type === 'in_process_teammate' && item.status === 'running') {
-      await killTeammateTask(item.id);
+      await runTaskAction('kill teammate', () => killTeammateTask(item.id));
       return;
     }
     if (item.type === 'local_workflow' && item.status === 'running' && killWorkflowTask) {
-      killWorkflowTask(item.id, setAppState);
+      await runTaskAction('kill workflow', () => killWorkflowTask(item.id, setAppState));
       return;
     }
     if (item.type === 'monitor_mcp' && item.status === 'running' && killMonitorMcp) {
-      killMonitorMcp(item.id, setAppState);
+      await runTaskAction('kill monitor task', () => killMonitorMcp(item.id, setAppState));
       return;
     }
     if (item.type === 'dream' && item.status === 'running') {
-      await killDreamTask(item.id);
+      await runTaskAction('kill dream task', () => killDreamTask(item.id));
       return;
     }
     if (item.type === 'scheduled_job') {
-      await cancelScheduledJob(item.id);
+      await runTaskAction('cancel scheduled job', () => cancelScheduledJob(item.id));
       return;
     }
     if (item.type === 'remote_agent' && item.status === 'running') {
       if (item.task.isUltraplan) {
-        await stopUltraplan(item.id, item.task.sessionId, setAppState);
+        await runTaskAction('stop ultraplan remote agent', () => stopUltraplan(item.id, item.task.sessionId, setAppState));
       } else {
-        await killRemoteAgentTask(item.id);
+        await runTaskAction('kill remote agent', () => killRemoteAgentTask(item.id));
       }
     }
   }
