@@ -61,7 +61,7 @@ import type { JumpHandle } from './VirtualMessageList.js';
 const LogoHeader = React.memo(function LogoHeader(t0) {
   const $ = _c(3);
   const {
-    agentDefinitions
+    agentDefinitions,
   } = t0;
   // Read banner mode on each render to pick up config file changes
   const startupBannerMode = getStartupBannerMode()

@@ -8,6 +8,9 @@ import {
   addProviderProfile,
   updateProviderProfile,
   deleteProviderProfile,
+  getActiveProviderProfile,
+  setActiveProviderProfile,
+  applyActiveProviderProfileEnv,
   PROVIDER_TYPE_LABELS,
   PROVIDER_TYPE_DEFAULTS,
 } from '../../utils/providerProfile.js'
@@ -18,10 +21,12 @@ function ProviderList({
   profiles,
   onSelect,
   onAdd,
+  activeProfileId,
 }: {
   profiles: ProviderProfile[]
   onSelect: (profile: ProviderProfile) => void
   onAdd: () => void
+  activeProfileId?: string | null
 }): React.ReactNode {
   if (profiles.length === 0) {
     return (
@@ -55,6 +60,7 @@ function ProviderList({
             <Text bold>[{index + 1}]</Text>
             <Text bold>{profile.name}</Text>
             <Text dimColor>({PROVIDER_TYPE_LABELS[profile.type]})</Text>
+            {profile.id === activeProfileId && <Text color="green">active</Text>}
           </Box>
           <Box flexDirection="column" marginLeft={4}>
             {profile.baseUrl && (
@@ -70,7 +76,7 @@ function ProviderList({
         </Box>
       ))}
       <Box marginTop={1}>
-        <Text dimColor>Commands: add, edit &lt;id&gt;, delete &lt;id&gt;</Text>
+        <Text dimColor>Commands: use &lt;id&gt;, add, edit &lt;id&gt;, delete &lt;id&gt;</Text>
       </Box>
     </Box>
   )
@@ -217,6 +223,7 @@ export const call: LocalJSXCommandCall = async (
   const idArg = commandArgs[0]
 
   const [profiles, setProfiles] = React.useState<ProviderProfile[]>([])
+  const [activeProfileId, setActiveProfileId] = React.useState<string | null>(null)
   const [view, setView] = React.useState<View>('list')
   const [selectedProfile, setSelectedProfile] = React.useState<ProviderProfile | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -224,14 +231,20 @@ export const call: LocalJSXCommandCall = async (
   React.useEffect(() => {
     loadProviderProfiles().then(p => {
       setProfiles(p)
+      setActiveProfileId(getActiveProviderProfile(p)?.id ?? null)
       setLoading(false)
     })
   }, [])
 
   const handleAdd = async (data: Omit<ProviderProfile, 'id'>) => {
-    await addProviderProfile(data)
+    const created = await addProviderProfile(data)
+    if (profiles.length === 0) {
+      await setActiveProviderProfile(created.id)
+      await applyActiveProviderProfileEnv()
+    }
     const updated = await loadProviderProfiles()
     setProfiles(updated)
+    setActiveProfileId(getActiveProviderProfile(updated)?.id ?? null)
     setView('list')
     onDone(`Added provider: ${data.name}`, { display: 'system' })
   }
@@ -239,8 +252,10 @@ export const call: LocalJSXCommandCall = async (
   const handleEdit = async (data: Omit<ProviderProfile, 'id'>) => {
     if (!selectedProfile) return
     await updateProviderProfile(selectedProfile.id, data)
+    await applyActiveProviderProfileEnv()
     const updated = await loadProviderProfiles()
     setProfiles(updated)
+    setActiveProfileId(getActiveProviderProfile(updated)?.id ?? null)
     setSelectedProfile(null)
     setView('list')
     onDone(`Updated provider: ${data.name}`, { display: 'system' })
@@ -250,11 +265,29 @@ export const call: LocalJSXCommandCall = async (
     if (!selectedProfile) return
     const name = selectedProfile.name
     await deleteProviderProfile(selectedProfile.id)
+    await applyActiveProviderProfileEnv()
     const updated = await loadProviderProfiles()
     setProfiles(updated)
+    setActiveProfileId(getActiveProviderProfile(updated)?.id ?? null)
     setSelectedProfile(null)
     setView('list')
     onDone(`Deleted provider: ${name}`, { display: 'system' })
+  }
+
+  const handleUse = async (profile: ProviderProfile) => {
+    await setActiveProviderProfile(profile.id)
+    await applyActiveProviderProfileEnv()
+    context.onChangeAPIKey()
+    context.setAppState(prev => ({
+      ...prev,
+      mainLoopModel: null,
+      mainLoopModelForSession: null,
+      authVersion: prev.authVersion + 1,
+    }))
+    const updated = await loadProviderProfiles()
+    setProfiles(updated)
+    setActiveProfileId(profile.id)
+    onDone(`Activated provider: ${profile.name}`, { display: 'system' })
   }
 
   // Handle commands from args
@@ -263,6 +296,13 @@ export const call: LocalJSXCommandCall = async (
 
     if (subCommand === 'add') {
       setView('add')
+    } else if (subCommand === 'use' && idArg) {
+      const profile = profiles.find(p => p.id === idArg || p.name.toLowerCase() === idArg.toLowerCase())
+      if (profile) {
+        void handleUse(profile)
+      } else {
+        onDone(`Provider not found: ${idArg}`, { display: 'system' })
+      }
     } else if (subCommand === 'edit' && idArg) {
       const profile = profiles.find(p => p.id === idArg || p.name.toLowerCase() === idArg.toLowerCase())
       if (profile) {
@@ -332,11 +372,9 @@ export const call: LocalJSXCommandCall = async (
   return (
     <ProviderList
       profiles={profiles}
-      onSelect={p => {
-        setSelectedProfile(p)
-        setView('edit')
-      }}
+      onSelect={handleUse}
       onAdd={() => setView('add')}
+      activeProfileId={activeProfileId}
     />
   )
 }

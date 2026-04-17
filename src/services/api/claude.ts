@@ -583,9 +583,11 @@ export async function verifyApiKey(
     // Check for authentication error
     if (
       error instanceof Error &&
-      error.message.includes(
+      (error.message.includes(
         '{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}',
-      )
+      ) ||
+        /OpenAI API error 401:/i.test(error.message) ||
+        /invalid authentication/i.test(error.message))
     ) {
       return false
     }

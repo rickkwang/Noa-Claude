@@ -111,9 +111,9 @@ export function getDefaultOpusModel(): ModelName {
   // even when values match, since 3P availability lags firstParty and
   // these will diverge again at the next model launch.
   if (getAPIProvider() !== 'firstParty') {
-    return getModelStrings().opus46
+    return getModelStrings().opus46 || 'claude-opus-4-6'
   }
-  return getModelStrings().opus46
+  return getModelStrings().opus46 || 'claude-opus-4-6'
 }
 
 // @[MODEL LAUNCH]: Update the default Sonnet model (3P providers may lag so keep defaults unchanged).
@@ -123,9 +123,9 @@ export function getDefaultSonnetModel(): ModelName {
   }
   // Default to Sonnet 4.5 for 3P since they may not have 4.6 yet
   if (getAPIProvider() !== 'firstParty') {
-    return getModelStrings().sonnet45
+    return getModelStrings().sonnet45 || 'claude-sonnet-4-5'
   }
-  return getModelStrings().sonnet46
+  return getModelStrings().sonnet46 || 'claude-sonnet-4-6'
 }
 
 // @[MODEL LAUNCH]: Update the default Haiku model (3P providers may lag so keep defaults unchanged).
@@ -135,7 +135,7 @@ export function getDefaultHaikuModel(): ModelName {
   }
 
   // Haiku 4.5 is available on all platforms (first-party, Foundry, Bedrock, Vertex)
-  return getModelStrings().haiku45
+  return getModelStrings().haiku45 || 'claude-haiku-4-5'
 }
 
 /**
@@ -215,7 +215,10 @@ export function getDefaultMainLoopModel(): ModelName {
  * 'us.anthropic.claude-opus-4-6-v1:0'). Does not touch settings, so safe at
  * module top-level (see MODEL_COSTS in modelCost.ts).
  */
-export function firstPartyNameToCanonical(name: ModelName): ModelShortName {
+export function firstPartyNameToCanonical(name: ModelName | undefined): ModelShortName {
+  if (!name) {
+    return '' as ModelShortName
+  }
   name = name.toLowerCase()
   // Special cases for Claude 4+ models to differentiate versions
   // Order matters: check more specific versions first (4-5 before 4)
@@ -277,7 +280,10 @@ export function firstPartyNameToCanonical(name: ModelName): ModelShortName {
  * @param fullModelName The full model name (e.g., 'claude-3-5-haiku-20241022')
  * @returns The short name (e.g., 'claude-3-5-haiku') if found, or the original name if no mapping exists
  */
-export function getCanonicalName(fullModelName: ModelName): ModelShortName {
+export function getCanonicalName(fullModelName: ModelName | undefined): ModelShortName {
+  if (!fullModelName) {
+    return '' as ModelShortName
+  }
   // Resolve overridden model IDs (e.g. Bedrock ARNs) back to canonical names.
   // resolved is always a 1P-format ID, so firstPartyNameToCanonical can handle it.
   return firstPartyNameToCanonical(resolveOverriddenModel(fullModelName))
@@ -297,8 +303,11 @@ export function getClaudeAiUserDefaultModelDescription(
 }
 
 export function renderDefaultModelSetting(
-  setting: ModelName | ModelAlias,
+  setting: ModelName | ModelAlias | undefined | null,
 ): string {
+  if (!setting) {
+    return renderModelName(getDefaultMainLoopModel())
+  }
   if (setting === 'opusplan') {
     return 'Opus 4.6 in plan mode, else Sonnet 4.6'
   }
@@ -444,9 +453,15 @@ export function getPublicModelName(model: ModelName): string {
  * @param modelInput The model alias or name provided by the user.
  */
 export function parseUserSpecifiedModel(
-  modelInput: ModelName | ModelAlias,
+  modelInput: ModelName | ModelAlias | undefined | null,
 ): ModelName {
+  if (typeof modelInput !== 'string') {
+    return getDefaultSonnetModel()
+  }
   const modelInputTrimmed = modelInput.trim()
+  if (!modelInputTrimmed) {
+    return getDefaultSonnetModel()
+  }
   const normalizedModel = modelInputTrimmed.toLowerCase()
 
   const has1mTag = has1mContext(normalizedModel)
@@ -568,7 +583,10 @@ export function modelDisplayString(model: ModelSetting): string {
 }
 
 // @[MODEL LAUNCH]: Add a marketing name mapping for the new model below.
-export function getMarketingNameForModel(modelId: string): string | undefined {
+export function getMarketingNameForModel(modelId: string | undefined): string | undefined {
+  if (!modelId) {
+    return undefined
+  }
   if (getAPIProvider() === 'foundry') {
     // deployment ID is user-defined in Foundry, so it may have no relation to the actual model
     return undefined

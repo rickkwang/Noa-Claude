@@ -7,6 +7,7 @@ import {
   isProviderManagedEnvVar,
   SAFE_ENV_VARS,
 } from './managedEnvConstants.js'
+import { applyActiveProviderProfileEnv } from './providerProfile.js'
 import { clearMTLSCache } from './mtls.js'
 import { clearProxyCache, configureGlobalAgents } from './proxy.js'
 import { isSettingSourceEnabled } from './settings/constants.js'
@@ -176,6 +177,8 @@ export function applySafeConfigEnvironmentVariables(): void {
       process.env[key] = value
     }
   }
+
+  void applyActiveProviderProfileEnv()
 }
 
 /**
@@ -197,4 +200,6 @@ export function applyConfigEnvironmentVariables(): void {
 
   // Reconfigure proxy/mTLS agents to pick up any proxy env vars from settings
   configureGlobalAgents()
+
+  void applyActiveProviderProfileEnv()
 }

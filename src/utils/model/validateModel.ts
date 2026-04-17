@@ -36,6 +36,13 @@ export async function validateModel(
     }
   }
 
+  // OpenAI-compatible providers are treated as user-specified model strings.
+  // We don't have a reliable cross-provider model-list validation path here,
+  // and probing them with Anthropic-style requests produces false negatives.
+  if (getAPIProvider() === 'openaiCompatible') {
+    return { valid: true }
+  }
+
   // Check if it's a known alias (these are always valid)
   const lowerModel = normalizedModel.toLowerCase()
   if ((MODEL_ALIASES as readonly string[]).includes(lowerModel)) {
@@ -142,7 +149,10 @@ function handleValidationError(
 /**
  * Suggest a fallback model for 3P users when the selected model is unavailable.
  */
-function get3PFallbackSuggestion(model: string): string | undefined {
+function get3PFallbackSuggestion(model: string | undefined): string | undefined {
+  if (!model) {
+    return undefined
+  }
   if (getAPIProvider() === 'firstParty') {
     return undefined
   }

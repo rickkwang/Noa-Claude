@@ -19,6 +19,7 @@ import {
   isThirdPartyAnthropicCompatibleProvider,
 } from 'src/utils/model/providers.js'
 import { getProxyFetchOptions } from 'src/utils/proxy.js'
+import { createOpenAIShimClient } from './openaiShim.js'
 import {
   getIsNonInteractiveSession,
   getSessionId,
@@ -306,26 +307,23 @@ export async function getAnthropicClient({
   }
 
   if (isEnvTruthy(process.env.CLAUDE_CODE_USE_OPENAI)) {
-    // OpenAI-compatible provider using standard Anthropic SDK
-    // Supports OPENAI_BASE_URL for custom endpoint and OPENAI_MODEL for model override
-    const resolvedApiKey = apiKey || getAnthropicApiKey()
+    // OpenAI-compatible provider using the local shim.
+    // Supports OPENAI_BASE_URL for custom endpoint and OPENAI_MODEL for model override.
+    const resolvedApiKey = apiKey || process.env.OPENAI_API_KEY
 
-    if (!resolvedApiKey) {
+    if (!resolvedApiKey && !process.env.OPENAI_BASE_URL) {
       throw new Error(
-        `OpenAI-compatible backend requires ANTHROPIC_API_KEY. Configure env.ANTHROPIC_API_KEY in ${getClaudeConfigHomeDir()}/settings.json.`,
+        `OpenAI-compatible backend requires OPENAI_API_KEY. Configure env.OPENAI_API_KEY in ${getClaudeConfigHomeDir()}/settings.json.`,
       )
     }
 
-    const clientConfig: ConstructorParameters<typeof Anthropic>[0] = {
-      apiKey: resolvedApiKey,
-      ...(process.env.OPENAI_BASE_URL
-        ? { baseURL: process.env.OPENAI_BASE_URL }
-        : {}),
-      ...ARGS,
-      ...(isDebugToStdErr() && { logger: createStderrLogger() }),
-    }
-
-    return new Anthropic(clientConfig)
+    return createOpenAIShimClient({
+      apiKey: resolvedApiKey ?? undefined,
+      baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+      defaultHeaders,
+      timeoutMs: parseInt(process.env.API_TIMEOUT_MS || String(600 * 1000), 10),
+      fetchOverride,
+    }) as unknown as Anthropic
   }
 
   const resolvedApiKey = apiKey || getAnthropicApiKey()
@@ -341,12 +339,24 @@ export async function getAnthropicClient({
     )
   }
 
-  // Determine authentication method based on available tokens
+  // Determine authentication method based on available tokens.
+  // For third-party Anthropic-compatible providers (for example Kimi),
+  // Bearer auth via authToken is often required instead of x-api-key.
+  const useThirdPartyAuthToken =
+    thirdPartyAnthropicCompatible &&
+    !isClaudeAISubscriber() &&
+    !!resolvedAuthToken
+
   const clientConfig: ConstructorParameters<typeof Anthropic>[0] = {
-    apiKey: isClaudeAISubscriber() ? null : resolvedApiKey,
+    apiKey:
+      isClaudeAISubscriber() || useThirdPartyAuthToken
+        ? null
+        : resolvedApiKey,
     authToken: isClaudeAISubscriber()
       ? getClaudeAIOAuthTokens()?.accessToken
-      : undefined,
+      : useThirdPartyAuthToken
+        ? resolvedAuthToken
+        : undefined,
     // Set baseURL from OAuth config when using staging OAuth
     ...(process.env.USER_TYPE === 'ant' &&
     isEnvTruthy(process.env.USE_STAGING_OAUTH)
