@@ -13,9 +13,11 @@ import { logForDebugging } from '../../utils/debug.js'
 import { withOAuth401Retry } from '../../utils/http.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
+import { discoverOpenAICompatibleModelOptions } from '../../utils/model/openaiModelDiscovery.js'
 import { getAPIProvider } from '../../utils/model/providers.js'
 import { isEssentialTrafficOnly } from '../../utils/privacyLevel.js'
 import { getClaudeCodeUserAgent } from '../../utils/userAgent.js'
+import { mergeModelOptions } from './modelOptionMerge.js'
 
 const bootstrapResponseSchema = lazySchema(() =>
   z.object({
@@ -115,10 +117,22 @@ async function fetchBootstrapAPI(): Promise<BootstrapResponse | null> {
 export async function fetchBootstrapData(): Promise<void> {
   try {
     const response = await fetchBootstrapAPI()
-    if (!response) return
+    const clientData = response?.client_data ?? null
+    let additionalModelOptions = response?.additional_model_options ?? []
+    const discoveredOpenAIModels =
+      await discoverOpenAICompatibleModelOptions().catch(error => {
+        const message = error instanceof Error ? error.message : String(error)
+        logForDebugging(
+          `[Bootstrap] OpenAI-compatible model discovery failed: ${message}`,
+        )
+        return []
+      })
+    additionalModelOptions = mergeModelOptions(
+      additionalModelOptions,
+      discoveredOpenAIModels,
+    )
 
-    const clientData = response.client_data ?? null
-    const additionalModelOptions = response.additional_model_options ?? []
+    if (!response && discoveredOpenAIModels.length === 0) return
 
     // Only persist if data actually changed — avoids a config write on every startup.
     const config = getGlobalConfig()

@@ -49,9 +49,10 @@ export function ModelPicker(t0) {
     headerText,
     skipSettingsWrite
   } = t0;
+  const safeInitial = typeof initial === 'string' || initial === null ? initial : null;
   const setAppState = useSetAppState();
   const exitState = useExitOnCtrlCDWithKeybindings();
-  const initialValue = initial === null ? NO_PREFERENCE : initial;
+  const initialValue = safeInitial === null ? NO_PREFERENCE : safeInitial;
   const [focusedValue, setFocusedValue] = useState(initialValue);
   const isFastMode = useAppState(_temp);
   const [hasToggledEffort, setHasToggledEffort] = useState(false);
@@ -77,23 +78,23 @@ export function ModelPicker(t0) {
   const modelOptions = t3;
   let t4;
   bb0: {
-    if (initial !== null && !modelOptions.some(opt => opt.value === initial)) {
+    if (safeInitial !== null && !modelOptions.some(opt => opt.value === safeInitial)) {
       let t5;
-      if ($[4] !== initial) {
-        t5 = modelDisplayString(initial);
-        $[4] = initial;
+      if ($[4] !== safeInitial) {
+        t5 = modelDisplayString(safeInitial);
+        $[4] = safeInitial;
         $[5] = t5;
       } else {
         t5 = $[5];
       }
       let t6;
-      if ($[6] !== initial || $[7] !== t5) {
+      if ($[6] !== safeInitial || $[7] !== t5) {
         t6 = {
-          value: initial,
+          value: safeInitial,
           label: t5,
           description: "Current model"
         };
-        $[6] = initial;
+        $[6] = safeInitial;
         $[7] = t5;
         $[8] = t6;
       } else {

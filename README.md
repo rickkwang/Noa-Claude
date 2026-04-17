@@ -25,6 +25,9 @@ This build adds several enhancements beyond upstream:
 - **Cache-probe** — `/cache-probe` command to diagnose API cache hit rate by comparing `cached_tokens` across identical requests.
 - **Wiki Commands** — `/wiki init`, `/wiki status`, `/wiki ingest` for project documentation management.
 - **Provider Profile Manager** — `/provider` command to create and manage named provider configurations.
+- **OpenAI-Compatible Model Discovery** — `/model` merges static options with runtime-discovered models from `/v1/models` or `/models` (with Ollama `/api/tags` fallback).
+- **Gemini Multi-Auth** — Gemini OpenAI-compatible endpoint supports `api-key`, `access-token`, and `adc` authentication modes.
+- **PR Intent Scan** — CI checks PR added lines for suspicious links/download patterns and fails on high-severity findings.
 - **SSRF Protection** — URL resolution validated against IPv4/IPv6 private ranges before outbound requests.
 
 ## Quick Install
@@ -59,6 +62,23 @@ bun run compile
 | Google Vertex | `ANTHROPIC_BASE_URL` + Vertex credentials | `CLAUDE_CODE_USE_VERTEX=1` |
 | Microsoft Foundry | `ANTHROPIC_BASE_URL` + Foundry credentials | `CLAUDE_CODE_USE_FOUNDRY=1` |
 
+### OpenAI-Compatible Model Discovery
+
+- Enabled only when `CLAUDE_CODE_USE_OPENAI=1`.
+- Discovery probes `GET /v1/models` and `GET /models` from `OPENAI_BASE_URL`.
+- Azure endpoints include `api-key` and optional `api-version` (`OPENAI_API_VERSION`) during discovery.
+- If model listing fails and the endpoint looks local/Ollama-compatible, it probes `GET /api/tags`.
+- Discovery failures do not block startup or `/model`; they are debug-log only.
+
+### Gemini Auth Modes
+
+- `GEMINI_AUTH_MODE=api-key|access-token|adc`
+- `api-key`: `GEMINI_API_KEY` (fallback `GOOGLE_API_KEY`)
+- `access-token`: `GEMINI_ACCESS_TOKEN`
+- `adc`: local ADC (`GOOGLE_APPLICATION_CREDENTIALS` or default gcloud ADC file)
+
+When credentials are missing, Noa Claude returns a mode-specific actionable error instead of a generic provider failure.
+
 ## Key Commands
 
 - `/fork` - Fork session into a resumable branch
@@ -68,6 +88,8 @@ bun run compile
 - `/cache-probe` - Probe API cache hit rate by sending identical requests
 - `/wiki` - Project documentation management (init / status / ingest)
 - `/provider` - Manage named provider configurations
+- `/loop` - Run fixed-interval recurring tasks or dynamic self-rescheduling maintenance loops
+- `/tasks` - View and manage background tasks plus scheduled loops/jobs
 
 See [docs/operating-guide.md](docs/operating-guide.md) for runtime, session, worktree, agent, and progress-artifact documentation. See [docs/product-governance.md](docs/product-governance.md) for command surface governance.
 
@@ -89,6 +111,7 @@ bun run lint
 bun run check:runtime
 bun run smoke:features
 bun run smoke:engine
+bun run scan:pr-intent
 # optional real endpoint smoke:
 bun run smoke:engine:live
 ```

@@ -8,6 +8,7 @@ import {
   isAnthropicAuthEnabled,
   isClaudeAISubscriber,
 } from '../utils/auth.js'
+import { getAPIProvider } from '../utils/model/providers.js'
 
 export type VerificationStatus =
   | 'loading'
@@ -24,6 +25,10 @@ export type ApiKeyVerificationResult = {
 
 export function useApiKeyVerification(): ApiKeyVerificationResult {
   const [status, setStatus] = useState<VerificationStatus>(() => {
+    // OpenAI-compatible mode does not use Anthropic key validation.
+    if (getAPIProvider() === 'openaiCompatible') {
+      return 'valid'
+    }
     if (!isAnthropicAuthEnabled() || isClaudeAISubscriber()) {
       return 'valid'
     }
@@ -42,6 +47,13 @@ export function useApiKeyVerification(): ApiKeyVerificationResult {
   const [error, setError] = useState<Error | null>(null)
 
   const verify = useCallback(async (): Promise<void> => {
+    // OpenAI-compatible mode validates credentials at request-time against its
+    // own provider endpoint; skip Anthropic key verification to avoid false errors.
+    if (getAPIProvider() === 'openaiCompatible') {
+      setError(null)
+      setStatus('valid')
+      return
+    }
     if (!isAnthropicAuthEnabled() || isClaudeAISubscriber()) {
       setStatus('valid')
       return

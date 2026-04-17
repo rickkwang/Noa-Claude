@@ -32,6 +32,10 @@ import {
   getVertexRegionForModel,
   isEnvTruthy,
 } from '../../utils/envUtils.js'
+import {
+  getGeminiAuthMissingCredentialHint,
+  resolveGeminiCredential,
+} from '../../utils/geminiAuth.js'
 
 /**
  * Environment variables for different client types:
@@ -87,6 +91,41 @@ function createStderrLogger(): ClientOptions['logger'] {
       // biome-ignore lint/suspicious/noConsole:: intentional console output -- SDK logger must use console
       console.error('[Anthropic SDK DEBUG]', msg, ...args),
   }
+}
+
+function isOpenAIApiKeyPlaceholder(value: string | undefined): boolean {
+  if (!value) return false
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return false
+  return [
+    'your-api-key',
+    'your_openai_api_key',
+    'your-openai-api-key',
+    'your_api_key',
+    'openai_api_key',
+    'api_key_here',
+    'replace_me',
+    'changeme',
+  ].includes(normalized)
+}
+
+function isLikelyLocalOpenAIEndpoint(baseUrl: string): boolean {
+  const value = baseUrl.trim().toLowerCase()
+  return (
+    value.startsWith('http://localhost:') ||
+    value.startsWith('http://127.0.0.1:') ||
+    value.startsWith('http://0.0.0.0:') ||
+    value.startsWith('http://[::1]:')
+  )
+}
+
+function isGeminiOpenAIBaseUrl(baseUrl: string): boolean {
+  const lower = baseUrl.trim().toLowerCase()
+  return (
+    lower.includes('generativelanguage.googleapis.com') ||
+    lower.includes('googleapis.com/v1beta/openai') ||
+    lower.includes('googleapis.com/v1/openai')
+  )
 }
 
 export async function getAnthropicClient({
@@ -310,6 +349,30 @@ export async function getAnthropicClient({
     // OpenAI-compatible provider using the local shim.
     // Supports OPENAI_BASE_URL for custom endpoint and OPENAI_MODEL for model override.
     const resolvedApiKey = apiKey || process.env.OPENAI_API_KEY
+    const resolvedBaseUrl =
+      process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
+    const defaultHeadersForShim = { ...defaultHeaders }
+
+    if (isGeminiOpenAIBaseUrl(resolvedBaseUrl)) {
+      const resolvedGemini = await resolveGeminiCredential()
+      if (resolvedGemini.kind === 'none') {
+        throw new Error(getGeminiAuthMissingCredentialHint())
+      }
+      if (resolvedGemini.kind === 'api-key') {
+        defaultHeadersForShim['x-goog-api-key'] = resolvedGemini.credential
+      } else {
+        defaultHeadersForShim.Authorization = `Bearer ${resolvedGemini.credential}`
+      }
+    }
+
+    if (
+      isOpenAIApiKeyPlaceholder(resolvedApiKey) &&
+      !isLikelyLocalOpenAIEndpoint(resolvedBaseUrl)
+    ) {
+      throw new Error(
+        `OPENAI_API_KEY appears to be a placeholder value (${resolvedApiKey}). Replace it with a real key or unset it if your endpoint does not require Authorization.`,
+      )
+    }
 
     if (!resolvedApiKey && !process.env.OPENAI_BASE_URL) {
       throw new Error(
@@ -319,8 +382,8 @@ export async function getAnthropicClient({
 
     return createOpenAIShimClient({
       apiKey: resolvedApiKey ?? undefined,
-      baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
-      defaultHeaders,
+      baseURL: resolvedBaseUrl,
+      defaultHeaders: defaultHeadersForShim,
       timeoutMs: parseInt(process.env.API_TIMEOUT_MS || String(600 * 1000), 10),
       fetchOverride,
     }) as unknown as Anthropic

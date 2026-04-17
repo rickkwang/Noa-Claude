@@ -1,0 +1,39 @@
+name: PR Intent Scan
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run suspicious intent scan
+        run: |
+          node ./scripts/pr-intent-scan.mjs \
+            --base "${{ github.event.pull_request.base.sha }}" \
+            --head "${{ github.event.pull_request.head.sha }}" \
+            --fail-on high
+
+      - name: Upload JSON report
+        if: always()
+        run: |
+          node ./scripts/pr-intent-scan.mjs \
+            --base "${{ github.event.pull_request.base.sha }}" \
+            --head "${{ github.event.pull_request.head.sha }}" \
+            --fail-on high \
+            --json > pr-intent-scan.json
+      - name: Attach report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-intent-scan
+          path: pr-intent-scan.json

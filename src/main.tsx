@@ -352,8 +352,15 @@ function runMigrations(): void {
     });
   }
   // Async migration - fire and forget since it's non-blocking
-  migrateChangelogFromConfig().catch(() => {
-    // Silently ignore migration errors - will retry on next startup
+  migrateChangelogFromConfig().catch(error => {
+    // Keep startup non-blocking, but surface failure in debug logs so issues
+    // are diagnosable instead of silently swallowed.
+    logForDebugging(
+      `Changelog migration failed during startup: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { level: 'error' },
+    )
   });
 }
 

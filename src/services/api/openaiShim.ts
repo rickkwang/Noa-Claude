@@ -1,4 +1,8 @@
 // @ts-nocheck
+import {
+  classifyOpenAICompatibleError,
+  resolveMaxTokensParam,
+} from './openaiCompatibleHelpers.js';
 
 type OpenAIMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool'
@@ -519,7 +523,7 @@ class OpenAIShimMessages {
     }
 
     const apiKey = this.config.apiKey ?? process.env.OPENAI_API_KEY ?? ''
-    if (apiKey) {
+    if (apiKey && !headers['x-goog-api-key']) {
       headers.Authorization = `Bearer ${apiKey}`
     }
 
@@ -527,7 +531,11 @@ class OpenAIShimMessages {
       model: params.model,
       messages: convertMessages(params.messages, params.system),
       stream: !!params.stream,
-      ...(params.max_tokens !== undefined ? { max_tokens: params.max_tokens } : {}),
+      ...(params.max_tokens !== undefined
+        ? {
+            [resolveMaxTokensParam(this.config.baseURL)]: params.max_tokens,
+          }
+        : {}),
       ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
       ...(params.stop_sequences ? { stop: params.stop_sequences } : {}),
       ...(params.tools ? { tools: convertTools(params.tools) } : {}),
@@ -548,7 +556,11 @@ class OpenAIShimMessages {
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => 'unknown error')
-      throw new Error(`OpenAI API error ${response.status}: ${errorBody}`)
+      const classification = classifyOpenAICompatibleError(
+        response.status,
+        errorBody,
+      )
+      throw new Error(`${classification} Response: ${errorBody}`)
     }
 
     return response
