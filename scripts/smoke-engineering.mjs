@@ -93,37 +93,6 @@ function assertConfig() {
   }
 }
 
-function runOptionalLiveSmoke() {
-  if (process.env.CLAUDE_AGENT_SMOKE_LIVE !== '1') {
-    console.log('Skipping live MiniMax request smoke. Set CLAUDE_AGENT_SMOKE_LIVE=1 to enable.');
-    return;
-  }
-
-  const smokeTimeoutMs = Number(process.env.CLAUDE_AGENT_SMOKE_LIVE_TIMEOUT_MS || 20000);
-  console.log(`Running live MiniMax request smoke (timeout ${smokeTimeoutMs}ms)...`);
-  const result = runCommand(agentBin, [
-    '--print',
-    '--dangerously-skip-permissions',
-    '--output-format',
-    'text',
-    'Reply with exactly ok',
-  ], {
-    timeout: smokeTimeoutMs,
-    killSignal: 'SIGKILL',
-  });
-
-  let lastLine;
-  for (const rawLine of result.stdout.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (line.length > 0) {
-      lastLine = line.toLowerCase();
-    }
-  }
-  if (lastLine !== 'ok') {
-    fail('Live MiniMax smoke did not return the expected output', result.stdout);
-  }
-}
-
 console.log('Verifying isolated config and MiniMax defaults...');
 assertConfig();
 
@@ -151,7 +120,5 @@ runCommand('bun', ['./scripts/smoke-features.mjs']);
 
 console.log('Checking startup performance fallback...');
 runCommand('bun', ['./scripts/smoke-perf.mjs']);
-
-runOptionalLiveSmoke();
 
 console.log('Engineering smoke checks passed.');

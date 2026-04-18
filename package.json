@@ -20,7 +20,7 @@
     "smoke:features": "bun ./scripts/smoke-features.mjs",
     "smoke:perf": "bun ./scripts/smoke-perf.mjs",
     "smoke:engine": "bun ./scripts/smoke-engineering.mjs",
-    "smoke:engine:live": "CLAUDE_AGENT_SMOKE_LIVE=1 bun ./scripts/smoke-engineering.mjs",
+    "smoke:engine:live": "bun ./scripts/smoke-engineering-live.mjs",
     "scan:pr-intent": "node ./scripts/pr-intent-scan.mjs --fail-on high",
     "typecheck": "tsc --noEmit",
     "check:quality": "bun run typecheck && bun run check:docs",

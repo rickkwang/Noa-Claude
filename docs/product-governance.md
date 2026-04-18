@@ -139,6 +139,30 @@ The implementation roadmap is in [optimization-roadmap.md](./optimization-roadma
 
 The compatibility layer for previous roadmap links is retained in the small pointer file at `docs/optimization-roadmap.md`.
 
+## Maintenance Freeze
+
+The current freeze policy lives in [maintenance-freeze-plan.md](./maintenance-freeze-plan.md).
+
+Use it as the default freeze-period decision framework for bug fixes, stability work, validation changes, and any proposed product-surface expansion. This page remains the command-surface boundary; the maintenance plan defines what changes are allowed during freeze.
+
+## Operating Principles
+
+- Treat `/fork`, `/workflows`, `/summary`, and `/share` as the supported product baseline.
+- Treat implemented-but-non-baseline commands as stable-but-not-core.
+- Treat build-excluded commands as deliberate build scope; do not describe them as regressions in this build.
+- Treat stubs as implementation gaps and keep them out of baseline claims.
+- When in doubt, verify behavior with smoke coverage before promoting a surface.
+
+## Verification Targets
+
+Use these checks when changing product surface area:
+
+- `bun run check:docs`
+- `bun run smoke:features`
+- `bun run smoke:engine`
+- `bun run smoke:engine:live` for endpoint-verified changes
+- `bun run scan:pr-intent` for PR safety review
+
 ## Promotion Checklist
 
 Before moving any command to baseline:

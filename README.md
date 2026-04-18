@@ -11,6 +11,14 @@ Three key changes from the upstream:
 3. **Default links localized** — default help, release notes, validation hints, and other runtime-facing guidance resolve to repository-local or project-owned URLs instead of upstream docs.
 4. **Experimental profile available** — opt-in `dev-full` profile enables additional feature flags for internal/dev scenarios.
 
+## Product Positioning
+
+Noa Claude is a mature core coding agent with an intentionally scoped surface area.
+
+- The primary agent loop, tool execution, session resume, compact, and remote/session plumbing are production-grade.
+- Baseline workflows are limited to the product-owned surfaces documented in `docs/product-governance.md`.
+- Non-baseline, build-excluded, and stubbed commands are deliberate scope controls, not accidental omissions.
+
 ## Capability Highlights
 
 This build adds several enhancements beyond upstream:
@@ -104,6 +112,8 @@ This build ships with hardcoded privacy defaults (no configuration needed):
 
 ## Verification
 
+Default local maintenance checks:
+
 ```bash
 bun run compile && ./dist/cli --version
 bun run typecheck
@@ -112,9 +122,29 @@ bun run check:runtime
 bun run smoke:features
 bun run smoke:engine
 bun run scan:pr-intent
-# optional real endpoint smoke:
+```
+
+Release candidate provider check:
+
+```bash
 bun run smoke:engine:live
 ```
+
+`smoke:engine:live` requires provider credentials (at minimum `ANTHROPIC_API_KEY`).
+For CI, use the manual workflow in `.github/workflows/smoke-engineering-live.yml`.
+
+## Engineering Bar
+
+The repo treats these as first-class stability signals:
+
+- interactive startup stays alive
+- `--print` stays usable for non-interactive coding
+- resume/continue survive compaction and transcript recovery
+- MCP startup degrades instead of blocking the shell
+- tool orchestration preserves permission boundaries and retry safety
+- remote/session plumbing keeps trust, auth, and reconnect behavior explicit
+
+When making runtime changes, prefer fixing the failure-mode regression or validation gap before adding new surface area.
 
 ## License Note
 

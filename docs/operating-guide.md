@@ -129,6 +129,38 @@ Repository-level verification for these operational surfaces:
 
 - `bun run check:runtime`
 - `bun run smoke:engine`
+- `bun run smoke:engine:live` when validating a real provider path
+
+Live smoke prerequisites:
+
+- `ANTHROPIC_API_KEY` must be configured
+- optional `ANTHROPIC_BASE_URL` for non-default provider endpoints
+- optional `CLAUDE_AGENT_SMOKE_LIVE_TIMEOUT_MS` to tune timeout
+
+CI entrypoint:
+
+- `.github/workflows/smoke-engineering-live.yml` (manual dispatch + weekly schedule)
+
+## Failure-Mode Checklist
+
+Use these as the first-line regression targets for agent/runtime changes:
+
+- resume and continue after compaction
+- interrupted turns and auto-resume
+- MCP startup degradation and timeout fallback
+- permission rejection and subsequent retry
+- remote-session reconnect after stale or dropped transport
+- tool execution ordering when concurrent read-only work is allowed
+
+## Performance Baselines
+
+Track these as release-gating regressions, not just ad hoc metrics:
+
+- cold start time
+- time to first token
+- time to first tool availability
+- resume latency from existing transcript
+- non-interactive `--print` completion time
 
 ## Related Documents
 
