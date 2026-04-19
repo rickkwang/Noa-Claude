@@ -8,6 +8,21 @@ import { execFileNoThrow } from './execFileNoThrow.js'
 let loggedTmuxCcDisable = false
 let checkedTmuxMouseHint = false
 
+const NO_FLICKER_ENV = 'NOA_CLAUDE_NO_FLICKER'
+const LEGACY_NO_FLICKER_ENV = 'CLAUDE_CODE_NO_FLICKER'
+const DISABLE_MOUSE_ENV = 'NOA_CLAUDE_DISABLE_MOUSE'
+const LEGACY_DISABLE_MOUSE_ENV = 'CLAUDE_CODE_DISABLE_MOUSE'
+const DISABLE_MOUSE_CLICKS_ENV = 'NOA_CLAUDE_DISABLE_MOUSE_CLICKS'
+const LEGACY_DISABLE_MOUSE_CLICKS_ENV = 'CLAUDE_CODE_DISABLE_MOUSE_CLICKS'
+
+function getEnvValueWithLegacyFallback(primaryName: string, legacyName: string): string | undefined {
+  const primaryValue = process.env[primaryName]
+  if (primaryValue !== undefined && primaryValue.trim() !== '') return primaryValue
+  const legacyValue = process.env[legacyName]
+  if (legacyValue !== undefined) return legacyValue
+  return primaryValue
+}
+
 /**
  * Cached result from `tmux display-message -p '#{client_control_mode}'`.
  * undefined = not yet queried (or probe failed) — env heuristic stays authoritative.
@@ -106,22 +121,23 @@ export function _resetTmuxControlModeProbeForTesting(): void {
 }
 
 /**
- * Runtime env-var check only. Ants default to on (CLAUDE_CODE_NO_FLICKER=0
- * to opt out); external users default to off (CLAUDE_CODE_NO_FLICKER=1 to
- * opt in).
+ * Runtime env-var check only. Ants default to on (NOA_CLAUDE_NO_FLICKER=0
+ * to opt out); external users default to off (NOA_CLAUDE_NO_FLICKER=1 to
+ * opt in). Legacy CLAUDE_CODE_NO_FLICKER is still accepted for compatibility.
  */
 export function isFullscreenEnvEnabled(): boolean {
+  const noFlickerEnv = getEnvValueWithLegacyFallback(NO_FLICKER_ENV, LEGACY_NO_FLICKER_ENV)
   // Explicit user opt-out always wins.
-  if (isEnvDefinedFalsy(process.env.CLAUDE_CODE_NO_FLICKER)) return false
+  if (isEnvDefinedFalsy(noFlickerEnv)) return false
   // Explicit opt-in overrides auto-detection (escape hatch).
-  if (isEnvTruthy(process.env.CLAUDE_CODE_NO_FLICKER)) return true
+  if (isEnvTruthy(noFlickerEnv)) return true
   // Auto-disable under tmux -CC: alt-screen + mouse tracking corrupts
   // terminal state on double-click and mouse wheel is dead.
   if (isTmuxControlMode()) {
     if (!loggedTmuxCcDisable) {
       loggedTmuxCcDisable = true
       logForDebugging(
-        'fullscreen disabled: tmux -CC (iTerm2 integration mode) detected · set CLAUDE_CODE_NO_FLICKER=1 to override',
+        `fullscreen disabled: tmux -CC (iTerm2 integration mode) detected · set ${NO_FLICKER_ENV}=1 to override`,
       )
     }
     return false
@@ -131,26 +147,28 @@ export function isFullscreenEnvEnabled(): boolean {
 
 /**
  * Whether fullscreen mode should enable SGR mouse tracking (DEC 1000/1002/1006).
- * Set CLAUDE_CODE_DISABLE_MOUSE=1 to keep alt-screen + virtualized scroll
+ * Set NOA_CLAUDE_DISABLE_MOUSE=1 to keep alt-screen + virtualized scroll
  * (keyboard PgUp/PgDn/Ctrl+Home/End still work) but skip mouse capture,
  * so tmux/kitty/terminal-native copy-on-select keeps working.
  *
- * Compare with CLAUDE_CODE_NO_FLICKER=0 which is all-or-nothing — it also
+ * Compare with NOA_CLAUDE_NO_FLICKER=0 which is all-or-nothing — it also
  * disables alt-screen and virtualized scrollback.
  */
 export function isMouseTrackingEnabled(): boolean {
-  return !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_MOUSE)
+  const disableMouseEnv = getEnvValueWithLegacyFallback(DISABLE_MOUSE_ENV, LEGACY_DISABLE_MOUSE_ENV)
+  return !isEnvTruthy(disableMouseEnv)
 }
 
 /**
  * Whether mouse click handling is disabled (clicks/drags ignored, wheel still
- * works). Set CLAUDE_CODE_DISABLE_MOUSE_CLICKS=1 to prevent accidental clicks
+ * works). Set NOA_CLAUDE_DISABLE_MOUSE_CLICKS=1 to prevent accidental clicks
  * from triggering cursor positioning, text selection, or message expansion.
  *
- * Fullscreen-specific — only reachable when CLAUDE_CODE_NO_FLICKER is active.
+ * Fullscreen-specific — only reachable when NOA_CLAUDE_NO_FLICKER is active.
  */
 export function isMouseClicksDisabled(): boolean {
-  return isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_MOUSE_CLICKS)
+  const disableMouseClicksEnv = getEnvValueWithLegacyFallback(DISABLE_MOUSE_CLICKS_ENV, LEGACY_DISABLE_MOUSE_CLICKS_ENV)
+  return isEnvTruthy(disableMouseClicksEnv)
 }
 
 /**
