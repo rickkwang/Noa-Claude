@@ -15,6 +15,12 @@ import {
   toolUseSearchText,
 } from '../src/utils/transcriptSearch.ts';
 import {
+  _resetTmuxControlModeProbeForTesting,
+  isFullscreenEnvEnabled,
+  isMouseClicksDisabled,
+  isMouseTrackingEnabled,
+} from '../src/utils/fullscreen.ts';
+import {
   getSandboxRuntimeCompatibility,
   SandboxManager,
 } from '../src/utils/sandbox/sandbox-adapter.ts';
@@ -81,6 +87,51 @@ function runAgent(args, options = {}) {
     killSignal: 'SIGKILL',
     ...options,
   });
+}
+
+const fullscreenEnvKeys = [
+  'USER_TYPE',
+  'TMUX',
+  'TERM_PROGRAM',
+  'NOA_CLAUDE_NO_FLICKER',
+  'CLAUDE_CODE_NO_FLICKER',
+  'NOA_CLAUDE_DISABLE_MOUSE',
+  'CLAUDE_CODE_DISABLE_MOUSE',
+  'NOA_CLAUDE_DISABLE_MOUSE_CLICKS',
+  'CLAUDE_CODE_DISABLE_MOUSE_CLICKS',
+];
+
+function withFullscreenEnv(overrides, callback) {
+  const snapshot = new Map(
+    fullscreenEnvKeys.map(key => [key, process.env[key]]),
+  );
+
+  try {
+    for (const key of fullscreenEnvKeys) {
+      if (Object.prototype.hasOwnProperty.call(overrides, key)) {
+        const value = overrides[key];
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      } else {
+        delete process.env[key];
+      }
+    }
+    _resetTmuxControlModeProbeForTesting();
+    return callback();
+  } finally {
+    for (const key of fullscreenEnvKeys) {
+      const value = snapshot.get(key);
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+    _resetTmuxControlModeProbeForTesting();
+  }
 }
 
 function checkSandboxCompatibility() {
@@ -228,6 +279,170 @@ function checkHistorySearchUtilities() {
   assert(
     findHistorySearchMatchPosition('Fix parser issue', 'missing') === -1,
     'history search should report no match when query is absent',
+  );
+}
+
+function checkFullscreenEnvToggleUtilities() {
+  withFullscreenEnv(
+    { USER_TYPE: 'user' },
+    () => {
+      assert(
+        isFullscreenEnvEnabled() === false,
+        'fullscreen should default off for external users',
+      );
+      assert(
+        isMouseTrackingEnabled() === true,
+        'mouse tracking should default on when not explicitly disabled',
+      );
+      assert(
+        isMouseClicksDisabled() === false,
+        'mouse click handling should default enabled when not explicitly disabled',
+      );
+    },
+  );
+
+  withFullscreenEnv(
+    { USER_TYPE: 'ant' },
+    () => {
+      assert(
+        isFullscreenEnvEnabled() === true,
+        'fullscreen should default on for ants',
+      );
+    },
+  );
+
+  withFullscreenEnv(
+    { USER_TYPE: 'user', NOA_CLAUDE_NO_FLICKER: '1' },
+    () => {
+      assert(
+        isFullscreenEnvEnabled() === true,
+        'NOA_CLAUDE_NO_FLICKER=1 should enable fullscreen',
+      );
+    },
+  );
+
+  withFullscreenEnv(
+    { USER_TYPE: 'ant', NOA_CLAUDE_NO_FLICKER: '0' },
+    () => {
+      assert(
+        isFullscreenEnvEnabled() === false,
+        'NOA_CLAUDE_NO_FLICKER=0 should disable fullscreen',
+      );
+    },
+  );
+
+  withFullscreenEnv(
+    { USER_TYPE: 'user', CLAUDE_CODE_NO_FLICKER: '1' },
+    () => {
+      assert(
+        isFullscreenEnvEnabled() === true,
+        'legacy CLAUDE_CODE_NO_FLICKER=1 should still enable fullscreen',
+      );
+    },
+  );
+
+  withFullscreenEnv(
+    {
+      USER_TYPE: 'user',
+      NOA_CLAUDE_NO_FLICKER: '0',
+      CLAUDE_CODE_NO_FLICKER: '1',
+    },
+    () => {
+      assert(
+        isFullscreenEnvEnabled() === false,
+        'NOA_CLAUDE_NO_FLICKER should take precedence over legacy fallback',
+      );
+    },
+  );
+
+  withFullscreenEnv(
+    {
+      USER_TYPE: 'user',
+      NOA_CLAUDE_NO_FLICKER: '',
+      CLAUDE_CODE_NO_FLICKER: '1',
+    },
+    () => {
+      assert(
+        isFullscreenEnvEnabled() === true,
+        'empty NOA_CLAUDE_NO_FLICKER should fall back to legacy fullscreen toggle',
+      );
+    },
+  );
+
+  withFullscreenEnv(
+    { USER_TYPE: 'user', NOA_CLAUDE_DISABLE_MOUSE: '1' },
+    () => {
+      assert(
+        isMouseTrackingEnabled() === false,
+        'NOA_CLAUDE_DISABLE_MOUSE=1 should disable mouse tracking',
+      );
+      assert(
+        isMouseClicksDisabled() === false,
+        'mouse click handling should remain enabled when only mouse tracking is disabled',
+      );
+    },
+  );
+
+  withFullscreenEnv(
+    { USER_TYPE: 'user', CLAUDE_CODE_DISABLE_MOUSE: '1' },
+    () => {
+      assert(
+        isMouseTrackingEnabled() === false,
+        'legacy CLAUDE_CODE_DISABLE_MOUSE=1 should still disable mouse tracking',
+      );
+    },
+  );
+
+  withFullscreenEnv(
+    {
+      USER_TYPE: 'user',
+      NOA_CLAUDE_DISABLE_MOUSE: '',
+      CLAUDE_CODE_DISABLE_MOUSE: '1',
+    },
+    () => {
+      assert(
+        isMouseTrackingEnabled() === false,
+        'empty NOA_CLAUDE_DISABLE_MOUSE should fall back to legacy mouse tracking toggle',
+      );
+    },
+  );
+
+  withFullscreenEnv(
+    { USER_TYPE: 'user', NOA_CLAUDE_DISABLE_MOUSE_CLICKS: '1' },
+    () => {
+      assert(
+        isMouseClicksDisabled() === true,
+        'NOA_CLAUDE_DISABLE_MOUSE_CLICKS=1 should disable mouse clicks',
+      );
+      assert(
+        isMouseTrackingEnabled() === true,
+        'mouse tracking should stay enabled when only click handling is disabled',
+      );
+    },
+  );
+
+  withFullscreenEnv(
+    { USER_TYPE: 'user', CLAUDE_CODE_DISABLE_MOUSE_CLICKS: '1' },
+    () => {
+      assert(
+        isMouseClicksDisabled() === true,
+        'legacy CLAUDE_CODE_DISABLE_MOUSE_CLICKS=1 should still disable mouse clicks',
+      );
+    },
+  );
+
+  withFullscreenEnv(
+    {
+      USER_TYPE: 'user',
+      NOA_CLAUDE_DISABLE_MOUSE_CLICKS: '',
+      CLAUDE_CODE_DISABLE_MOUSE_CLICKS: '1',
+    },
+    () => {
+      assert(
+        isMouseClicksDisabled() === true,
+        'empty NOA_CLAUDE_DISABLE_MOUSE_CLICKS should fall back to legacy click toggle',
+      );
+    },
   );
 }
 
@@ -620,6 +835,9 @@ checkSessionUtilities();
 
 console.log('Checking history search helpers...');
 checkHistorySearchUtilities();
+
+console.log('Checking fullscreen env toggle helpers...');
+checkFullscreenEnvToggleUtilities();
 
 console.log('Checking transcript search helpers...');
 checkTranscriptSearchUtilities();

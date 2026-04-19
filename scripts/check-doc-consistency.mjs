@@ -130,6 +130,16 @@ if (!/Default local maintenance checks:[\s\S]*bun run smoke:engine[\s\S]*bun run
   failures.push('README verification section is missing default local maintenance checks')
 }
 
+if (
+  !/## Runtime Toggles[\s\S]*NOA_CLAUDE_NO_FLICKER=1[\s\S]*NOA_CLAUDE_DISABLE_MOUSE=1[\s\S]*NOA_CLAUDE_DISABLE_MOUSE_CLICKS=1[\s\S]*Legacy `CLAUDE_CODE_\*` names are still accepted for compatibility/.test(
+    readme,
+  )
+) {
+  failures.push(
+    'README is missing the Noa fullscreen runtime toggles or their compatibility note',
+  )
+}
+
 if (/Default local maintenance checks:[\s\S]*bun run smoke:engine:live[\s\S]*Release candidate provider check:/.test(readme)) {
   failures.push('README must not list smoke:engine:live as a default local maintenance check')
 }
@@ -146,6 +156,16 @@ if (!/This document merges the runtime, session, worktree, agent, and progress-a
   operatingGuide,
 )) {
   failures.push('Operating guide is missing merge summary')
+}
+
+if (
+  !/Runtime behavior switches are driven by environment variables:[\s\S]*NOA_CLAUDE_NO_FLICKER[\s\S]*NOA_CLAUDE_DISABLE_MOUSE[\s\S]*NOA_CLAUDE_DISABLE_MOUSE_CLICKS[\s\S]*Legacy `CLAUDE_CODE_\*` names remain supported for compatibility/.test(
+    operatingGuide,
+  )
+) {
+  failures.push(
+    'Operating guide is missing the Noa fullscreen runtime toggles or their compatibility note',
+  )
 }
 
 for (const command of baselineCommands) {
