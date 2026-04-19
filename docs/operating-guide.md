@@ -8,6 +8,14 @@ This document merges the runtime, session, worktree, agent, and progress-artifac
 
 The primary runtime inspection surfaces are `/status` and `/doctor`.
 
+Runtime behavior switches are driven by environment variables:
+
+- `NOA_CLAUDE_NO_FLICKER` controls the fullscreen anti-flicker REPL layout
+- `NOA_CLAUDE_DISABLE_MOUSE` keeps fullscreen layout but skips mouse tracking
+- `NOA_CLAUDE_DISABLE_MOUSE_CLICKS` keeps mouse tracking but ignores clicks and drags
+
+Legacy `CLAUDE_CODE_*` names remain supported for compatibility.
+
 ### `/status`
 
 Use `/status` to inspect current runtime state:

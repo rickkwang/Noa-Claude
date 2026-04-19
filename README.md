@@ -60,6 +60,17 @@ bun run compile
 | `bun run compile` | `dist/cli` + `dist/main.js` | Standalone binary + bundled JS entry |
 | `bun run build:dev:full` | `dist/main-dev.js` | Dev build + expanded experimental feature profile |
 
+## Runtime Toggles
+
+Use these environment variables when starting `noa`:
+
+- `NOA_CLAUDE_NO_FLICKER=1` enables the fullscreen anti-flicker REPL layout
+- `NOA_CLAUDE_NO_FLICKER=0` disables it
+- `NOA_CLAUDE_DISABLE_MOUSE=1` keeps fullscreen layout but turns off mouse tracking
+- `NOA_CLAUDE_DISABLE_MOUSE_CLICKS=1` keeps mouse tracking but ignores clicks and drags
+
+Legacy `CLAUDE_CODE_*` names are still accepted for compatibility, but `NOA_CLAUDE_*` is the preferred brand prefix.
+
 ## Supported Providers
 
 | Provider | Environment | Enable |
