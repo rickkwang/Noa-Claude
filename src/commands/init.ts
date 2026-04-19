@@ -8,7 +8,7 @@ import {
   FALLBACK_PROJECT_INSTRUCTION_FILE,
 } from '../utils/projectInstructions.js'
 
-const OLD_INIT_PROMPT = `Please analyze this codebase and create a ${PRIMARY_PROJECT_INSTRUCTION_FILE} file, which will be given to future instances of Claude Code to operate in this repository.
+const OLD_INIT_PROMPT = `Please analyze this codebase and create a ${PRIMARY_PROJECT_INSTRUCTION_FILE} file, which will be given to future instances of Noa Claude to operate in this repository.
 
 What to add:
 1. Commands that will be commonly used, such as how to build, lint, and run tests. Include the necessary commands to develop in this codebase, such as how to run a single test.
@@ -27,10 +27,10 @@ Usage notes:
 \`\`\`
 # ${PRIMARY_PROJECT_INSTRUCTION_FILE}
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Noa Claude when working with code in this repository.
 \`\`\``
 
-const NEW_INIT_PROMPT = `Set up a minimal ${PRIMARY_PROJECT_INSTRUCTION_FILE} (and optionally skills and hooks) for this repo. ${PRIMARY_PROJECT_INSTRUCTION_FILE} is loaded into every Claude Code session, so it must be concise — only include what Claude would get wrong without it.
+const NEW_INIT_PROMPT = `Set up a minimal ${PRIMARY_PROJECT_INSTRUCTION_FILE} (and optionally skills and hooks) for this repo. ${PRIMARY_PROJECT_INSTRUCTION_FILE} is loaded into every Noa Claude session, so it must be concise — only include what Noa Claude would get wrong without it.
 
 ## Phase 1: Ask what to set up
 
@@ -43,12 +43,12 @@ Use AskUserQuestion to find out what the user wants:
 
 - "Also set up skills and hooks?"
   Options: "Skills + hooks" | "Skills only" | "Hooks only" | "Neither, just ${PRIMARY_PROJECT_INSTRUCTION_FILE}"
-  Description for skills: "On-demand capabilities you or Claude invoke with \`/skill-name\` — good for repeatable workflows and reference knowledge."
-  Description for hooks: "Deterministic shell commands that run on tool events (e.g., format after every edit). Claude can't skip them."
+  Description for skills: "On-demand capabilities you or Noa Claude invoke with \`/skill-name\` — good for repeatable workflows and reference knowledge."
+  Description for hooks: "Deterministic shell commands that run on tool events (e.g., format after every edit). Noa Claude can't skip them."
 
 ## Phase 2: Explore the codebase
 
-Launch a subagent to survey the codebase, and ask it to read key files to understand the project: manifest files (package.json, Cargo.toml, pyproject.toml, go.mod, pom.xml, etc.), README, Makefile/build configs, CI config, existing ${PRIMARY_PROJECT_INSTRUCTION_FILE}, .claude-agent/rules/ (and legacy .claude/rules/), ${FALLBACK_PROJECT_INSTRUCTION_FILE}, .cursor/rules or .cursorrules, .github/copilot-instructions.md, .windsurfrules, .clinerules, .mcp.json.
+Launch a subagent to survey the codebase, and ask it to read key files to understand the project: manifest files (package.json, Cargo.toml, pyproject.toml, go.mod, pom.xml, etc.), README, Makefile/build configs, CI config, existing ${PRIMARY_PROJECT_INSTRUCTION_FILE}, .claude-agent/rules/ (and legacy .claude/rules/), ${FALLBACK_PROJECT_INSTRUCTION_FILE}, .cursor/rules or .cursorrules, .github/copilot-instructions.md, .windsurfrules, .clinerules, .claude-agent/mcp.json (with legacy .mcp.json fallback).
 
 Detect:
 - Build, test, and lint commands (especially non-standard ones)
@@ -70,16 +70,16 @@ If the user chose project ${PRIMARY_PROJECT_INSTRUCTION_FILE} or both: ask about
 
 If the user chose personal CLAUDE.local.md or both: ask about them, not the codebase. Do not mark any options as "recommended" — this is about their personal preferences, not best practices. Examples of questions:
   - What's their role on the team? (e.g., "backend engineer", "data scientist", "new hire onboarding")
-  - How familiar are they with this codebase and its languages/frameworks? (so Claude can calibrate explanation depth)
-  - Do they have personal sandbox URLs, test accounts, API key paths, or local setup details Claude should know?
+  - How familiar are they with this codebase and its languages/frameworks? (so Noa Claude can calibrate explanation depth)
+  - Do they have personal sandbox URLs, test accounts, API key paths, or local setup details Noa Claude should know?
   - Only if Phase 2 found multiple git worktrees: ask whether their worktrees are nested inside the main repo (e.g., \`.claude-agent/worktrees/<name>/\`) or siblings/external (e.g., \`../myrepo-feature/\`). If nested, the upward file walk finds the main repo's CLAUDE.local.md automatically — no special handling needed. If sibling/external, the personal content should live in a home-directory file (e.g., \`~/.claude-agent/<project-name>-instructions.md\`) and each worktree gets a one-line CLAUDE.local.md stub that imports it: \`@~/.claude-agent/<project-name>-instructions.md\`. Never put this import in the project ${PRIMARY_PROJECT_INSTRUCTION_FILE} — that would check a personal reference into the team-shared file.
   - Any communication preferences? (e.g., "be terse", "always explain tradeoffs", "don't summarize at the end")
 
 **Synthesize a proposal from Phase 2 findings** — e.g., format-on-edit if a formatter exists, a \`/verify\` skill if tests exist, a ${PRIMARY_PROJECT_INSTRUCTION_FILE} note for anything from the gap-fill answers that's a guideline rather than a workflow. For each, pick the artifact type that fits, **constrained by the Phase 1 skills+hooks choice**:
 
-  - **Hook** (stricter) — deterministic shell command on a tool event; Claude can't skip it. Fits mechanical, fast, per-edit steps: formatting, linting, running a quick test on the changed file.
-  - **Skill** (on-demand) — you or Claude invoke \`/skill-name\` when you want it. Fits workflows that don't belong on every edit: deep verification, session reports, deploys.
-  - **${PRIMARY_PROJECT_INSTRUCTION_FILE} note** (looser) — influences Claude's behavior but not enforced. Fits communication/thinking preferences: "plan before coding", "be terse", "explain tradeoffs".
+  - **Hook** (stricter) — deterministic shell command on a tool event; Noa Claude can't skip it. Fits mechanical, fast, per-edit steps: formatting, linting, running a quick test on the changed file.
+  - **Skill** (on-demand) — you or Noa Claude invoke \`/skill-name\` when you want it. Fits workflows that don't belong on every edit: deep verification, session reports, deploys.
+  - **${PRIMARY_PROJECT_INSTRUCTION_FILE} note** (looser) — influences Noa Claude's behavior but not enforced. Fits communication/thinking preferences: "plan before coding", "be terse", "explain tradeoffs".
 
   **Respect Phase 1's skills+hooks choice as a hard filter**: if the user picked "Skills only", downgrade any hook you'd suggest to a skill or a ${PRIMARY_PROJECT_INSTRUCTION_FILE} note. If "Hooks only", downgrade skills to hooks (where mechanically possible) or notes. If "Neither", everything becomes a ${PRIMARY_PROJECT_INSTRUCTION_FILE} note. Never propose an artifact type the user didn't opt into.
 
@@ -99,12 +99,12 @@ If the user chose personal CLAUDE.local.md or both: ask about them, not the code
 
 ## Phase 4: Write ${PRIMARY_PROJECT_INSTRUCTION_FILE} (if user chose project or both)
 
-Write a minimal ${PRIMARY_PROJECT_INSTRUCTION_FILE} at the project root. Every line must pass this test: "Would removing this cause Claude to make mistakes?" If no, cut it.
+Write a minimal ${PRIMARY_PROJECT_INSTRUCTION_FILE} at the project root. Every line must pass this test: "Would removing this cause Noa Claude to make mistakes?" If no, cut it.
 
-**Consume \`note\` entries from the Phase 3 preference queue whose target is ${PRIMARY_PROJECT_INSTRUCTION_FILE}** (team-level notes) — add each as a concise line in the most relevant section. These are the behaviors the user wants Claude to follow but didn't need guaranteed (e.g., "propose a plan before implementing", "explain the tradeoffs when refactoring"). Leave personal-targeted notes for Phase 5.
+**Consume \`note\` entries from the Phase 3 preference queue whose target is ${PRIMARY_PROJECT_INSTRUCTION_FILE}** (team-level notes) — add each as a concise line in the most relevant section. These are the behaviors the user wants Noa Claude to follow but didn't need guaranteed (e.g., "propose a plan before implementing", "explain the tradeoffs when refactoring"). Leave personal-targeted notes for Phase 5.
 
 Include:
-- Build/test/lint commands Claude can't guess (non-standard scripts, flags, or sequences)
+- Build/test/lint commands Noa Claude can't guess (non-standard scripts, flags, or sequences)
 - Code style rules that DIFFER from language defaults (e.g., "prefer type over interface")
 - Testing instructions and quirks (e.g., "run single test with: pytest -k 'test_name'")
 - Repo etiquette (branch naming, PR conventions, commit style)
@@ -113,11 +113,11 @@ Include:
 - Important parts from existing AI coding tool configs if they exist (${FALLBACK_PROJECT_INSTRUCTION_FILE}, .cursor/rules, .cursorrules, .github/copilot-instructions.md, .windsurfrules, .clinerules)
 
 Exclude:
-- File-by-file structure or component lists (Claude can discover these by reading the codebase)
-- Standard language conventions Claude already knows
+- File-by-file structure or component lists (Noa Claude can discover these by reading the codebase)
+- Standard language conventions Noa Claude already knows
 - Generic advice ("write clean code", "handle errors")
 - Detailed API docs or long references — use \`@path/to/import\` syntax instead (e.g., \`@docs/api-reference.md\`) to inline content on demand without bloating ${PRIMARY_PROJECT_INSTRUCTION_FILE}
-- Information that changes frequently — reference the source with \`@path/to/import\` so Claude always reads the current version
+- Information that changes frequently — reference the source with \`@path/to/import\` so Noa Claude always reads the current version
 - Long tutorials or walkthroughs (move to a separate file and reference with \`@path/to/import\`, or put in a skill)
 - Commands obvious from manifest files (e.g., standard "npm test", "cargo test", "pytest")
 
@@ -130,14 +130,14 @@ Prefix the file with:
 \`\`\`
 # ${PRIMARY_PROJECT_INSTRUCTION_FILE}
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Noa Claude when working with code in this repository.
 \`\`\`
 
 If ${PRIMARY_PROJECT_INSTRUCTION_FILE} already exists: read it, propose specific changes as diffs, and explain why each change improves it. Do not silently overwrite. If only ${FALLBACK_PROJECT_INSTRUCTION_FILE} exists, suggest migrating to ${PRIMARY_PROJECT_INSTRUCTION_FILE}.
 
 For projects with multiple concerns, suggest organizing instructions into \`.claude-agent/rules/\` as separate focused files (e.g., \`code-style.md\`, \`testing.md\`, \`security.md\`). These are loaded automatically alongside ${PRIMARY_PROJECT_INSTRUCTION_FILE} and can be scoped to specific file paths using \`paths\` frontmatter. Legacy \`.claude/rules/\` remains readable for compatibility.
 
-For projects with distinct subdirectories (monorepos, multi-module projects, etc.): mention that subdirectory ${PRIMARY_PROJECT_INSTRUCTION_FILE} files can be added for module-specific instructions (they're loaded automatically when Claude works in those directories). Offer to create them if the user wants.
+For projects with distinct subdirectories (monorepos, multi-module projects, etc.): mention that subdirectory ${PRIMARY_PROJECT_INSTRUCTION_FILE} files can be added for module-specific instructions (they're loaded automatically when Noa Claude works in those directories). Offer to create them if the user wants.
 
 ## Phase 5: Write CLAUDE.local.md (if user chose personal or both)
 
@@ -146,11 +146,11 @@ Write a minimal CLAUDE.local.md at the project root. This file is automatically 
 **Consume \`note\` entries from the Phase 3 preference queue whose target is CLAUDE.local.md** (personal-level notes) — add each as a concise line. If the user chose personal-only in Phase 1, this is the sole consumer of note entries.
 
 Include:
-- The user's role and familiarity with the codebase (so Claude can calibrate explanations)
+- The user's role and familiarity with the codebase (so Noa Claude can calibrate explanations)
 - Personal sandbox URLs, test accounts, or local setup details
 - Personal workflow or communication preferences
 
-Keep it short — only include what would make Claude's responses noticeably better for this user.
+Keep it short — only include what would make Noa Claude's responses noticeably better for this user.
 
 If Phase 2 found multiple git worktrees and the user confirmed they use sibling/external worktrees (not nested inside the main repo): the upward file walk won't find a single CLAUDE.local.md from all worktrees. Write the actual personal content to \`~/.claude-agent/<project-name>-instructions.md\` and make CLAUDE.local.md a one-line stub that imports it: \`@~/.claude-agent/<project-name>-instructions.md\`. The user can copy this one-line stub to each sibling worktree. Never put this import in the project ${PRIMARY_PROJECT_INSTRUCTION_FILE}. If worktrees are nested inside the main repo (e.g., \`.claude-agent/worktrees/\`), no special handling is needed — the main repo's CLAUDE.local.md is found automatically.
 
@@ -158,7 +158,7 @@ If CLAUDE.local.md already exists: read it, propose specific additions, and do n
 
 ## Phase 6: Suggest and create skills (if user chose "Skills + hooks" or "Skills only")
 
-Skills add capabilities Claude can use on demand without bloating every session.
+Skills add capabilities Noa Claude can use on demand without bloating every session.
 
 **First, consume \`skill\` entries from the Phase 3 preference queue.** Each queued skill preference becomes a SKILL.md tailored to what the user described. For each:
 - Name it from the preference (e.g., "verify-deep", "session-report", "deploy-sandbox")
@@ -181,10 +181,10 @@ name: <skill-name>
 description: <what the skill does and when to use it>
 ---
 
-<Instructions for Claude>
+<Instructions for Noa Claude>
 \`\`\`
 
-Both the user (\`/<skill-name>\`) and Claude can invoke skills by default. For workflows with side effects (e.g., \`/deploy\`, \`/fix-issue 123\`), add \`disable-model-invocation: true\` so only the user can trigger it, and use \`$ARGUMENTS\` to accept input.
+Both the user (\`/<skill-name>\`) and Noa Claude can invoke skills by default. For workflows with side effects (e.g., \`/deploy\`, \`/fix-issue 123\`), add \`disable-model-invocation: true\` so only the user can trigger it, and use \`$ARGUMENTS\` to accept input.
 
 ## Phase 7: Suggest additional optimizations
 
@@ -192,9 +192,9 @@ Tell the user you're going to suggest a few additional optimizations now that ${
 
 Check the environment and ask about each gap you find (use AskUserQuestion):
 
-- **GitHub CLI**: Run \`which gh\` (or \`where gh\` on Windows). If it's missing AND the project uses GitHub (check \`git remote -v\` for github.com), ask the user if they want to install it. Explain that the GitHub CLI lets Claude help with commits, pull requests, issues, and code review directly.
+- **GitHub CLI**: Run \`which gh\` (or \`where gh\` on Windows). If it's missing AND the project uses GitHub (check \`git remote -v\` for github.com), ask the user if they want to install it. Explain that the GitHub CLI lets Noa Claude help with commits, pull requests, issues, and code review directly.
 
-- **Linting**: If Phase 2 found no lint config (no .eslintrc, ruff.toml, .golangci.yml, etc. for the project's language), ask the user if they want Claude to set up linting for this codebase. Explain that linting catches issues early and gives Claude fast feedback on its own edits.
+- **Linting**: If Phase 2 found no lint config (no .eslintrc, ruff.toml, .golangci.yml, etc. for the project's language), ask the user if they want Noa Claude to set up linting for this codebase. Explain that linting catches issues early and gives Noa Claude fast feedback on its own edits.
 
 - **Proposal-sourced hooks** (if user chose "Skills + hooks" or "Hooks only"): Consume \`hook\` entries from the Phase 3 preference queue. If Phase 2 found a formatter and the queue has no formatting hook, offer format-on-edit as a fallback. If the user chose "Neither" or "Skills only" in Phase 1, skip this bullet entirely.
 
@@ -204,9 +204,9 @@ Check the environment and ask about each gap you find (use AskUserQuestion):
 
   2. Pick the event and matcher from the preference:
      - "after every edit" → \`PostToolUse\` with matcher \`Write|Edit\`
-     - "when Claude finishes" / "before I review" → \`Stop\` event (fires at the end of every turn — including read-only ones)
+     - "when Noa Claude finishes" / "before I review" → \`Stop\` event (fires at the end of every turn — including read-only ones)
      - "before running bash" → \`PreToolUse\` with matcher \`Bash\`
-     - "before committing" (literal git-commit gate) → **not a hooks.json hook.** Matchers can't filter Bash by command content, so there's no way to target only \`git commit\`. Route this to a git pre-commit hook (\`.git/hooks/pre-commit\`, husky, pre-commit framework) instead — offer to write one. If the user actually means "before I review and commit Claude's output", that's \`Stop\` — probe to disambiguate.
+     - "before committing" (literal git-commit gate) → **not a hooks.json hook.** Matchers can't filter Bash by command content, so there's no way to target only \`git commit\`. Route this to a git pre-commit hook (\`.git/hooks/pre-commit\`, husky, pre-commit framework) instead — offer to write one. If the user actually means "before I review and commit Noa Claude's output", that's \`Stop\` — probe to disambiguate.
      Probe if the preference is ambiguous.
 
   3. **Load the hook reference** (once per \`/init\` run, before the first hook): invoke the Skill tool with \`skill: 'update-config'\` and args starting with \`[hooks-only]\` followed by a one-line summary of what you're building — e.g., \`[hooks-only] Constructing a PostToolUse/Write|Edit format hook for .claude-agent/settings.json using ruff\`. This loads the hooks schema and verification flow into context. Subsequent hooks reuse it — don't re-invoke.
@@ -219,13 +219,13 @@ Act on each "yes" before moving on.
 
 Recap what was set up — which files were written and the key points included in each. Remind the user these files are a starting point: they should review and tweak them, and can run \`/init\` again anytime to re-scan.
 
-Then tell the user that you'll be introducing a few more suggestions for optimizing their codebase and Claude Code setup based on what you found. Present these as a single, well-formatted to-do list where every item is relevant to this repo. Put the most impactful items first.
+Then tell the user that you'll be introducing a few more suggestions for optimizing their codebase and Noa Claude setup based on what you found. Present these as a single, well-formatted to-do list where every item is relevant to this repo. Put the most impactful items first.
 
 When building the list, work through these checks and include only what applies:
-- If frontend code was detected (React, Vue, Svelte, etc.): \`/plugin install frontend-design@claude-plugins-official\` gives Claude design principles and component patterns so it produces polished UI; \`/plugin install playwright@claude-plugins-official\` lets Claude launch a real browser, screenshot what it built, and fix visual bugs itself.
+- If frontend code was detected (React, Vue, Svelte, etc.): \`/plugin install frontend-design@claude-plugins-official\` gives Noa Claude design principles and component patterns so it produces polished UI; \`/plugin install playwright@claude-plugins-official\` lets Noa Claude launch a real browser, screenshot what it built, and fix visual bugs itself.
 - If you found gaps in Phase 7 (missing GitHub CLI, missing linting) and the user said no: list them here with a one-line reason why each helps.
-- If tests are missing or sparse: suggest setting up a test framework so Claude can verify its own changes.
-- To help you create skills and optimize existing skills using evals, Claude Code has an official skill-creator plugin you can install. Install it with \`/plugin install skill-creator@claude-plugins-official\`, then run \`/skill-creator <skill-name>\` to create new skills or refine any existing skill. (Always include this one.)
+- If tests are missing or sparse: suggest setting up a test framework so Noa Claude can verify its own changes.
+- To help you create skills and optimize existing skills using evals, Noa Claude has an official skill-creator plugin you can install. Install it with \`/plugin install skill-creator@claude-plugins-official\`, then run \`/skill-creator <skill-name>\` to create new skills or refine any existing skill. (Always include this one.)
 - Browse official plugins with \`/plugin\` — these bundle skills, agents, hooks, and MCP servers that you may find helpful. You can also create your own custom plugins to share them with others. (Always include this one.)`
 
 const command = {

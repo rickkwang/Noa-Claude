@@ -52,7 +52,7 @@ Analyze the project to detect what's in different subdirectories. The project ma
 
 3. **Installed verification packages** (for web apps)
    - Check if Playwright is installed (look in package.json dependencies/devDependencies)
-   - Check MCP configuration (.mcp.json) for browser automation tools:
+   - Check MCP configuration (.claude-agent/mcp.json, with legacy .mcp.json fallback) for browser automation tools:
      - Playwright MCP server
      - Chrome DevTools MCP server
      - Claude Chrome Extension MCP (browser-use via Claude's Chrome extension)
@@ -84,11 +84,11 @@ Based on what was detected in Phase 1, help the user set up appropriate verifica
 
 4. **If user chooses Chrome DevTools MCP or Claude Chrome Extension**:
    - These require MCP server configuration rather than package installation
-   - Ask if they want you to add the MCP server configuration to .mcp.json
+   - Ask if they want you to add the MCP server configuration to .claude-agent/mcp.json
    - For Claude Chrome Extension, inform them they need the extension installed from the Chrome Web Store
 
 5. **MCP Server Setup** (if applicable):
-   - If user selected an MCP-based option, configure the appropriate entry in .mcp.json
+   - If user selected an MCP-based option, configure the appropriate entry in .claude-agent/mcp.json
    - Update the verifier skill's allowed-tools to use the appropriate mcp__* tools
 
 ### For CLI Tools
