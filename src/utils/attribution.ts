@@ -78,7 +78,9 @@ export function getAttributionTexts(): AttributionTexts {
       ? getPublicModelName(model)
       : 'Claude Opus 4.6'
   const defaultAttribution = `🤖 Generated with [Claude Code](${PRODUCT_URL})`
-  const defaultCommit = `Co-Authored-By: ${modelName} <noreply@anthropic.com>`
+  // Do not add Claude co-author trailers by default. Commit attribution is
+  // opt-in via settings.attribution.commit for users who explicitly want it.
+  const defaultCommit = ''
 
   const settings = getInitialSettings()
 
@@ -90,8 +92,9 @@ export function getAttributionTexts(): AttributionTexts {
     }
   }
 
-  // Backward compatibility: deprecated includeCoAuthoredBy setting
-  if (settings.includeCoAuthoredBy === false) {
+  // Backward compatibility: deprecated includeCoAuthoredBy setting.
+  // Keep it as a no-op so old configs cannot re-enable Claude co-author trailers.
+  if (settings.includeCoAuthoredBy === false || settings.includeCoAuthoredBy === true) {
     return { commit: '', pr: '' }
   }
 
@@ -316,79 +319,16 @@ export async function getEnhancedPRAttribution(
 
   const settings = getInitialSettings()
 
-  // If user has custom PR attribution, use that
+  // If user has custom PR attribution, use that.
   if (settings.attribution?.pr) {
     return settings.attribution.pr
   }
 
-  // Backward compatibility: deprecated includeCoAuthoredBy setting
-  if (settings.includeCoAuthoredBy === false) {
+  // Keep the deprecated setting as a no-op so old configs do not re-enable
+  // Claude attribution by accident.
+  if (settings.includeCoAuthoredBy === false || settings.includeCoAuthoredBy === true) {
     return ''
   }
 
-  const defaultAttribution = `🤖 Generated with [Claude Code](${PRODUCT_URL})`
-
-  // Get AppState first
-  const appState = getAppState()
-
-  logForDebugging(
-    `PR Attribution: appState.attribution exists: ${!!appState.attribution}`,
-  )
-  if (appState.attribution) {
-    const fileStates = appState.attribution.fileStates
-    const isMap = fileStates instanceof Map
-    const fileCount = isMap ? fileStates.size : Object.keys(fileStates).length
-    logForDebugging(`PR Attribution: fileStates count: ${fileCount}`)
-  }
-
-  // Get attribution stats (transcript is read once for both prompt count and memory access)
-  const [attributionData, { promptCount, memoryAccessCount }, isInternal] =
-    await Promise.all([
-      getPRAttributionData(appState),
-      getTranscriptStats(),
-      isInternalModelRepo(),
-    ])
-
-  const claudePercent = attributionData?.summary.claudePercent ?? 0
-
-  logForDebugging(
-    `PR Attribution: claudePercent: ${claudePercent}, promptCount: ${promptCount}, memoryAccessCount: ${memoryAccessCount}`,
-  )
-
-  // Get short model name, sanitized for non-internal repos
-  const rawModelName = getCanonicalName(getMainLoopModel())
-  const shortModelName = isInternal
-    ? rawModelName
-    : sanitizeModelName(rawModelName)
-
-  // If no attribution data, return default
-  if (claudePercent === 0 && promptCount === 0 && memoryAccessCount === 0) {
-    logForDebugging('PR Attribution: returning default (no data)')
-    return defaultAttribution
-  }
-
-  // Build the enhanced attribution: "🤖 Generated with Claude Code (93% 3-shotted by claude-opus-4-5, 2 memories recalled)"
-  const memSuffix =
-    memoryAccessCount > 0
-      ? `, ${memoryAccessCount} ${memoryAccessCount === 1 ? 'memory' : 'memories'} recalled`
-      : ''
-  const summary = `🤖 Generated with [Claude Code](${PRODUCT_URL}) (${claudePercent}% ${promptCount}-shotted by ${shortModelName}${memSuffix})`
-
-  // Append trailer lines for squash-merge survival. Only for allowlisted repos
-  // (INTERNAL_MODEL_REPOS) and only in builds with COMMIT_ATTRIBUTION enabled —
-  // attributionTrailer.ts contains excluded strings, so reach it via dynamic
-  // import behind feature(). When the repo is configured with
-  // squash_merge_commit_message=PR_BODY (cli, apps), the PR body becomes the
-  // squash commit body verbatim — trailer lines at the end become proper git
-  // trailers on the squash commit.
-  if (feature('COMMIT_ATTRIBUTION') && isInternal && attributionData) {
-    const { buildPRTrailers } = await import('./attributionTrailer.js')
-    const trailers = buildPRTrailers(attributionData, appState.attribution)
-    const result = `${summary}\n\n${trailers.join('\n')}`
-    logForDebugging(`PR Attribution: returning with trailers: ${result}`)
-    return result
-  }
-
-  logForDebugging(`PR Attribution: returning summary: ${summary}`)
-  return summary
+  return ''
 }
