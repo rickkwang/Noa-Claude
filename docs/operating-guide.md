@@ -41,6 +41,8 @@ It is intended to answer:
 - which layer is failing
 - what action should the user take next
 
+It is part of the Noa Claude runtime inspection surface and should be read as a local installation health check, not a product support page for the old Claude Code naming.
+
 ### MCP Healthcheck Degradation
 
 `noa mcp list` keeps startup/list operations responsive when slow MCP servers are present:

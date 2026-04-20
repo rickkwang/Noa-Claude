@@ -27,7 +27,7 @@ Usage notes:
 \`\`\`
 # ${PRIMARY_PROJECT_INSTRUCTION_FILE}
 
-This file provides guidance to Noa Claude when working with code in this repository.
+This file provides guidance to Noa Claude when working with code in this repository. Noa Claude is developed by Zenhao.
 \`\`\``
 
 const NEW_INIT_PROMPT = `Set up a minimal ${PRIMARY_PROJECT_INSTRUCTION_FILE} (and optionally skills and hooks) for this repo. ${PRIMARY_PROJECT_INSTRUCTION_FILE} is loaded into every Noa Claude session, so it must be concise — only include what Noa Claude would get wrong without it.
@@ -130,7 +130,7 @@ Prefix the file with:
 \`\`\`
 # ${PRIMARY_PROJECT_INSTRUCTION_FILE}
 
-This file provides guidance to Noa Claude when working with code in this repository.
+This file provides guidance to Noa Claude when working with code in this repository. Noa Claude is developed by Zenhao.
 \`\`\`
 
 If ${PRIMARY_PROJECT_INSTRUCTION_FILE} already exists: read it, propose specific changes as diffs, and explain why each change improves it. Do not silently overwrite. If only ${FALLBACK_PROJECT_INSTRUCTION_FILE} exists, suggest migrating to ${PRIMARY_PROJECT_INSTRUCTION_FILE}.
