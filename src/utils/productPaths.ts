@@ -75,10 +75,10 @@ export function getProjectSettingsRelativePathCandidates(
 
 export function getProjectMemoryFileCandidates(cwd: string): string[] {
   return [
-    join(getPrimaryProjectConfigRoot(cwd), FALLBACK_PROJECT_INSTRUCTION_FILE),
-    join(cwd, FALLBACK_PROJECT_INSTRUCTION_FILE),
     join(getPrimaryProjectConfigRoot(cwd), PRIMARY_PROJECT_INSTRUCTION_FILE),
     join(cwd, PRIMARY_PROJECT_INSTRUCTION_FILE),
+    join(getPrimaryProjectConfigRoot(cwd), FALLBACK_PROJECT_INSTRUCTION_FILE),
+    join(cwd, FALLBACK_PROJECT_INSTRUCTION_FILE),
   ]
 }
 
