@@ -22,7 +22,10 @@ export function getLegacyProjectConfigRoot(cwd: string): string {
 }
 
 export function getProjectConfigRoots(cwd: string): string[] {
-  return [getPrimaryProjectConfigRoot(cwd)]
+  return [
+    getPrimaryProjectConfigRoot(cwd),
+    getLegacyProjectConfigRoot(cwd),
+  ]
 }
 
 export function getPrimaryProjectSubdir(cwd: string, subdir: string): string {
@@ -37,7 +40,10 @@ export function getProjectSubdirCandidates(
   cwd: string,
   subdir: string,
 ): string[] {
-  return [getPrimaryProjectSubdir(cwd, subdir)]
+  return [
+    getPrimaryProjectSubdir(cwd, subdir),
+    getLegacyProjectSubdir(cwd, subdir),
+  ]
 }
 
 export function getPrimaryProjectFile(cwd: string, filename: string): string {
@@ -52,7 +58,10 @@ export function getProjectFileCandidates(
   cwd: string,
   filename: string,
 ): string[] {
-  return [getPrimaryProjectFile(cwd, filename)]
+  return [
+    getPrimaryProjectFile(cwd, filename),
+    getLegacyProjectFile(cwd, filename),
+  ]
 }
 
 export function getPrimaryProjectSettingsRelativePath(
@@ -70,7 +79,10 @@ export function getLegacyProjectSettingsRelativePath(
 export function getProjectSettingsRelativePathCandidates(
   filename: 'settings.json' | 'settings.local.json',
 ): string[] {
-  return [getPrimaryProjectSettingsRelativePath(filename)]
+  return [
+    getPrimaryProjectSettingsRelativePath(filename),
+    getLegacyProjectSettingsRelativePath(filename),
+  ]
 }
 
 export function getProjectMemoryFileCandidates(cwd: string): string[] {

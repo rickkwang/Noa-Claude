@@ -20,11 +20,7 @@ import { getErrnoCode } from './errors.js'
 import { isProcessRunning } from './genericProcessUtils.js'
 import { safeParseJSON } from './json.js'
 import { lazySchema } from './lazySchema.js'
-import {
-  getLegacyProjectScheduledTasksPath,
-  getPrimaryProjectScheduledTasksPath,
-  getProjectScheduledTasksLockCandidates,
-} from './productPaths.js'
+import { getProjectScheduledTasksLockCandidates } from './productPaths.js'
 import { jsonStringify } from './slowOperations.js'
 
 const schedulerLockSchema = lazySchema(() =>
@@ -62,18 +58,7 @@ function getLockPath(dir?: string): string {
       } catch {
         return false
       }
-    }) ??
-    (() => {
-      try {
-        statSync(getPrimaryProjectScheduledTasksPath(root))
-        return candidates[0]
-      } catch {}
-      try {
-        statSync(getLegacyProjectScheduledTasksPath(root))
-        return candidates[1] ?? candidates[0]
-      } catch {}
-      return candidates[0]
-    })()
+    }) ?? candidates[0]
   )
 }
 

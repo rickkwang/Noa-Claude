@@ -295,25 +295,7 @@ async function runMcpPathSmoke() {
   prepareProject(projectDir);
 
   const primaryMcpPath = productPaths.getPrimaryProjectMcpPath(projectDir);
-  const legacyMcpPath = productPaths.getLegacyProjectMcpPath(projectDir);
   mkdirSync(dirname(primaryMcpPath), { recursive: true });
-  mkdirSync(dirname(legacyMcpPath), { recursive: true });
-
-  writeFileSync(
-    legacyMcpPath,
-    `${JSON.stringify(
-      {
-        mcpServers: {
-          legacy: {
-            command: 'legacy-mcp',
-          },
-        },
-      },
-      null,
-      2,
-    )}\n`,
-    'utf8',
-  );
 
   writeFileSync(
     primaryMcpPath,
@@ -344,16 +326,16 @@ async function runMcpPathSmoke() {
   );
 
   rmSync(primaryMcpPath);
-  const withLegacy = mcpConfig.getProjectMcpConfigsFromCwd();
+  const withoutConfig = mcpConfig.getProjectMcpConfigsFromCwd();
   assert(
-    withLegacy.configPath === legacyMcpPath,
-    'Project MCP loader did not fall back to the legacy path',
-    withLegacy,
+    withoutConfig.configPath === null,
+    'Project MCP loader should not fall back to legacy path',
+    withoutConfig,
   );
   assert(
-    withLegacy.servers.legacy,
-    'Project MCP loader did not load legacy-configured server',
-    withLegacy,
+    Object.keys(withoutConfig.servers).length === 0,
+    'Project MCP loader should return no servers when config is missing',
+    withoutConfig,
   );
 }
 
