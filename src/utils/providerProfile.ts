@@ -165,7 +165,7 @@ export const PROVIDER_TYPE_DEFAULTS: Record<ProviderType, { baseUrl?: string; mo
     model: 'MiniMax-M2.5',
   },
   glm: {
-    baseUrl: 'https://api.z.ai/api/anthropic',
+    baseUrl: 'https://open.bigmodel.cn/api/anthropic',
     model: 'glm-5.1',
   },
   together: {
