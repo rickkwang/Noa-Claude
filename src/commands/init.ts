@@ -5,7 +5,6 @@ import { maybeMarkProjectOnboardingComplete } from '../projectOnboardingState.js
 import { isEnvTruthy } from '../utils/envUtils.js'
 import {
   PRIMARY_PROJECT_INSTRUCTION_FILE,
-  FALLBACK_PROJECT_INSTRUCTION_FILE,
 } from '../utils/projectInstructions.js'
 
 const OLD_INIT_PROMPT = `Please analyze this codebase and create a ${PRIMARY_PROJECT_INSTRUCTION_FILE} file, which will be given to future instances of Noa Claude to operate in this repository.
@@ -15,7 +14,7 @@ What to add:
 2. High-level code architecture and structure so that future instances can be productive more quickly. Focus on the "big picture" architecture that requires reading multiple files to understand.
 
 Usage notes:
-- If there's already a ${PRIMARY_PROJECT_INSTRUCTION_FILE}, suggest improvements to it. If only ${FALLBACK_PROJECT_INSTRUCTION_FILE} exists, suggest migrating to ${PRIMARY_PROJECT_INSTRUCTION_FILE}.
+- If there's already a ${PRIMARY_PROJECT_INSTRUCTION_FILE}, suggest improvements to it. If the repo also has CLAUDE.md, read it too and fold the useful parts into ${PRIMARY_PROJECT_INSTRUCTION_FILE}, with ${PRIMARY_PROJECT_INSTRUCTION_FILE} taking priority when the two disagree.
 - When you make the initial ${PRIMARY_PROJECT_INSTRUCTION_FILE}, do not repeat yourself and do not include obvious instructions like "Provide helpful error messages to users", "Write unit tests for all new utilities", "Never include sensitive information (API keys, tokens) in code or commits".
 - Avoid listing every component or file structure that can be easily discovered.
 - Don't include generic development practices.
@@ -38,7 +37,7 @@ Use AskUserQuestion to find out what the user wants:
 
 - "Which project instruction files should /init set up?"
   Options: "Project ${PRIMARY_PROJECT_INSTRUCTION_FILE}" | "Personal CLAUDE.local.md" | "Both project + personal"
-  Description for project: "Team-shared instructions checked into source control — architecture, coding standards, common workflows. Uses ${PRIMARY_PROJECT_INSTRUCTION_FILE} (preferred) or ${FALLBACK_PROJECT_INSTRUCTION_FILE} as fallback."
+  Description for project: "Team-shared instructions checked into source control — architecture, coding standards, common workflows. Uses ${PRIMARY_PROJECT_INSTRUCTION_FILE} as the project entry point."
   Description for personal: "Your private preferences for this project (gitignored, not shared) — your role, sandbox URLs, preferred test data, workflow quirks."
 
 - "Also set up skills and hooks?"
@@ -48,7 +47,7 @@ Use AskUserQuestion to find out what the user wants:
 
 ## Phase 2: Explore the codebase
 
-Launch a subagent to survey the codebase, and ask it to read key files to understand the project: manifest files (package.json, Cargo.toml, pyproject.toml, go.mod, pom.xml, etc.), README, Makefile/build configs, CI config, existing ${PRIMARY_PROJECT_INSTRUCTION_FILE}, .claude-agent/rules/ (and legacy .claude/rules/), ${FALLBACK_PROJECT_INSTRUCTION_FILE}, .cursor/rules or .cursorrules, .github/copilot-instructions.md, .windsurfrules, .clinerules, .claude-agent/mcp.json (with legacy .mcp.json fallback).
+Launch a subagent to survey the codebase, and ask it to read key files to understand the project: manifest files (package.json, Cargo.toml, pyproject.toml, go.mod, pom.xml, etc.), README, Makefile/build configs, CI config, existing ${PRIMARY_PROJECT_INSTRUCTION_FILE}, CLAUDE.md, .claude-agent/rules/, .cursor/rules or .cursorrules, .github/copilot-instructions.md, .windsurfrules, .clinerules, .claude-agent/mcp.json.
 
 Detect:
 - Build, test, and lint commands (especially non-standard ones)
@@ -56,7 +55,7 @@ Detect:
 - Project structure (monorepo with workspaces, multi-module, or single project)
 - Code style rules that differ from language defaults
 - Non-obvious gotchas, required env vars, or workflow quirks
-- Existing .claude-agent/skills/ and .claude-agent/rules/ directories, plus any legacy .claude/ counterparts
+- Existing .claude-agent/skills/ and .claude-agent/rules/ directories, plus any repo-root CLAUDE.md already in use
 - Formatter configuration (prettier, biome, ruff, black, gofmt, rustfmt, or a unified format script like \`npm run format\` / \`make fmt\`)
 - Git worktree usage: run \`git worktree list\` to check if this repo has multiple worktrees (only relevant if the user wants a personal CLAUDE.local.md)
 
@@ -110,7 +109,7 @@ Include:
 - Repo etiquette (branch naming, PR conventions, commit style)
 - Required env vars or setup steps
 - Non-obvious gotchas or architectural decisions
-- Important parts from existing AI coding tool configs if they exist (${FALLBACK_PROJECT_INSTRUCTION_FILE}, .cursor/rules, .cursorrules, .github/copilot-instructions.md, .windsurfrules, .clinerules)
+- Important parts from existing AI coding tool configs if they exist (.cursor/rules, .cursorrules, .github/copilot-instructions.md, .windsurfrules, .clinerules)
 
 Exclude:
 - File-by-file structure or component lists (Noa Claude can discover these by reading the codebase)
@@ -133,9 +132,9 @@ Prefix the file with:
 This file provides guidance to Noa Claude when working with code in this repository. Noa Claude is developed by Zenhao.
 \`\`\`
 
-If ${PRIMARY_PROJECT_INSTRUCTION_FILE} already exists: read it, propose specific changes as diffs, and explain why each change improves it. Do not silently overwrite. If only ${FALLBACK_PROJECT_INSTRUCTION_FILE} exists, suggest migrating to ${PRIMARY_PROJECT_INSTRUCTION_FILE}.
+If ${PRIMARY_PROJECT_INSTRUCTION_FILE} already exists: read it, propose specific changes as diffs, and explain why each change improves it. If CLAUDE.md also exists, read it too and resolve conflicts in favor of ${PRIMARY_PROJECT_INSTRUCTION_FILE}. Do not silently overwrite.
 
-For projects with multiple concerns, suggest organizing instructions into \`.claude-agent/rules/\` as separate focused files (e.g., \`code-style.md\`, \`testing.md\`, \`security.md\`). These are loaded automatically alongside ${PRIMARY_PROJECT_INSTRUCTION_FILE} and can be scoped to specific file paths using \`paths\` frontmatter. Legacy \`.claude/rules/\` remains readable for compatibility.
+For projects with multiple concerns, suggest organizing instructions into \`.claude-agent/rules/\` as separate focused files (e.g., \`code-style.md\`, \`testing.md\`, \`security.md\`). These are loaded automatically alongside ${PRIMARY_PROJECT_INSTRUCTION_FILE} and can be scoped to specific file paths using \`paths\` frontmatter.
 
 For projects with distinct subdirectories (monorepos, multi-module projects, etc.): mention that subdirectory ${PRIMARY_PROJECT_INSTRUCTION_FILE} files can be added for module-specific instructions (they're loaded automatically when Noa Claude works in those directories). Offer to create them if the user wants.
 
@@ -171,7 +170,7 @@ Skills add capabilities Noa Claude can use on demand without bloating every sess
 
 For each suggested skill, provide: name, one-line purpose, and why it fits this repo.
 
-If \`.claude-agent/skills/\` already exists with skills, review them first. Also check legacy \`.claude/skills/\` for compatibility. Do not overwrite existing skills — only propose new ones that complement what is already there.
+If \`.claude-agent/skills/\` already exists with skills, review them first. Do not overwrite existing skills — only propose new ones that complement what is already there.
 
 Create each skill at \`.claude-agent/skills/<skill-name>/SKILL.md\`:
 

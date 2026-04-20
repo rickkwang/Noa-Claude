@@ -10,3 +10,6 @@ package-lock.json
 .env.*
 latest
 .claude-agent/mcp.json
+AGENTS.md
+CLAUDE.md
+CLAUDE.local.md

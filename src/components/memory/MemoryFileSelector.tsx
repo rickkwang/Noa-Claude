@@ -22,7 +22,7 @@ import { getClaudeConfigHomeDir } from '../../utils/envUtils.js';
 import { getDisplayPath } from '../../utils/file.js';
 import { formatRelativeTimeAgo } from '../../utils/format.js';
 import { projectIsInGitRepo } from '../../utils/memory/versions.js';
-import { getProjectMemoryFileCandidates } from '../../utils/productPaths.js';
+import { getPreferredProjectMemoryFilePath } from '../../utils/productPaths.js';
 import { updateSettingsForSource } from '../../utils/settings/settings.js';
 import { Select } from '../CustomSelect/index.js';
 import { ListItem } from '../design-system/ListItem.js';
@@ -51,7 +51,7 @@ export function MemoryFileSelector(t0) {
   } = t0;
   const existingMemoryFiles = use(getMemoryFiles());
   const userMemoryPath = join(getClaudeConfigHomeDir(), "CLAUDE.md");
-  const projectMemoryPath = getProjectMemoryFileCandidates(getOriginalCwd())[0] || join(getOriginalCwd(), "CLAUDE.md");
+  const projectMemoryPath = getPreferredProjectMemoryFilePath(getOriginalCwd());
   const hasUserMemory = existingMemoryFiles.some(f => f.path === userMemoryPath);
   const hasProjectMemory = existingMemoryFiles.some(f_0 => f_0.path === projectMemoryPath);
   const allMemoryFiles = [...existingMemoryFiles.filter(_temp).map(_temp2), ...(hasUserMemory ? [] : [{
@@ -92,7 +92,7 @@ export function MemoryFileSelector(t0) {
       description = "Saved in ~/.claude-agent/CLAUDE.md";
     } else {
       if (file.type === "Project" && !file.isNested && file.path === projectMemoryPath) {
-        description = `${isGit ? "Checked in at" : "Saved in"} ./.claude-agent/CLAUDE.md`;
+        description = `${isGit ? "Checked in at" : "Saved in"} ${displayPath}`;
       } else {
         if (file.parent) {
           description = "@-imported";

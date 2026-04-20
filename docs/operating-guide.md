@@ -14,8 +14,6 @@ Runtime behavior switches are driven by environment variables:
 - `NOA_CLAUDE_DISABLE_MOUSE` keeps fullscreen layout but skips mouse tracking
 - `NOA_CLAUDE_DISABLE_MOUSE_CLICKS` keeps mouse tracking but ignores clicks and drags
 
-Legacy `CLAUDE_CODE_*` names remain supported for compatibility.
-
 ### `/status`
 
 Use `/status` to inspect current runtime state:
@@ -41,7 +39,7 @@ It is intended to answer:
 - which layer is failing
 - what action should the user take next
 
-It is part of the Noa Claude runtime inspection surface and should be read as a local installation health check, not a product support page for the old Claude Code naming.
+It is part of the Noa Claude runtime inspection surface and should be read as a local installation health check.
 
 ### MCP Healthcheck Degradation
 

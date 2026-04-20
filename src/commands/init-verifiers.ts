@@ -52,7 +52,7 @@ Analyze the project to detect what's in different subdirectories. The project ma
 
 3. **Installed verification packages** (for web apps)
    - Check if Playwright is installed (look in package.json dependencies/devDependencies)
-   - Check MCP configuration (.claude-agent/mcp.json, with legacy .mcp.json fallback) for browser automation tools:
+   - Check MCP configuration (.claude-agent/mcp.json) for browser automation tools:
      - Playwright MCP server
      - Chrome DevTools MCP server
      - Claude Chrome Extension MCP (browser-use via Claude's Chrome extension)
@@ -163,7 +163,7 @@ Based on the areas detected in Phase 1, you may need to create multiple verifier
 
 ## Phase 4: Generate Verifier Skill
 
-**All verifier skills are created in the project root's \`.claude-agent/skills/\` directory.** This is the preferred product path and ensures they are automatically loaded when the agent runs in the project. Legacy \`.claude/skills/\` remains compatible for existing repos.
+**All verifier skills are created in the project root's \`.claude-agent/skills/\` directory.** This is the preferred product path and ensures they are automatically loaded when the agent runs in the project.
 
 Write the skill file to \`.claude-agent/skills/<verifier-name>/SKILL.md\`.
 

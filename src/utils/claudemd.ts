@@ -4,7 +4,7 @@
  *
  * 1. Managed memory (eg. /etc/claude-code/CLAUDE.md) - Global instructions for all users
  * 2. User memory (~/.claude-agent/CLAUDE.md) - Private global instructions for all projects
- * 3. Project memory (.claude-agent/CLAUDE.md, CLAUDE.md, .claude/CLAUDE.md, and rules/*.md in project roots) - Instructions checked into the codebase
+ * 3. Project memory (AGENTS.md and CLAUDE.md, plus rules/*.md in project roots) - Instructions checked into the codebase
  * 4. Local memory (CLAUDE.local.md in project roots) - Private project-specific instructions
  *
  * Files are loaded in reverse order of priority, i.e. the latest files are highest priority
@@ -14,7 +14,7 @@
  * - User memory is loaded from the user's home directory
  * - Project and Local files are discovered by traversing from the current directory up to root
  * - Files closer to the current directory have higher priority (loaded later)
- * - .claude-agent/CLAUDE.md, CLAUDE.md, .claude/CLAUDE.md, and all .md files in project rules dirs are checked in each directory for Project memory
+ * - AGENTS.md and CLAUDE.md are checked in each directory for Project memory, along with all .md files in project rules dirs
  *
  * Memory @include directive:
  * - Memory files can include other files using @ notation
@@ -878,11 +878,11 @@ export const getMemoryFiles = memoize(
     // When running from a git worktree nested inside its main repo (e.g.,
     // .claude/worktrees/<name>/ from `claude -w`), the upward walk passes
     // through both the worktree root and the main repo root. Both contain
-    // checked-in files like CLAUDE.md and .claude/rules/*.md, so the same
-    // content gets loaded twice. Skip Project-type (checked-in) files from
-    // directories above the worktree but within the main repo — the worktree
-    // already has its own checkout. CLAUDE.local.md is gitignored so it only
-    // exists in the main repo and is still loaded.
+    // checked-in files like AGENTS.md / CLAUDE.md and .claude/rules/*.md, so
+    // the same content gets loaded twice. Skip Project-type (checked-in)
+    // files from directories above the worktree but within the main repo —
+    // the worktree already has its own checkout. CLAUDE.local.md is
+    // gitignored so it only exists in the main repo and is still loaded.
     // See: https://github.com/anthropics/claude-code/issues/29599
     const gitRoot = findGitRoot(originalCwd)
     const canonicalRoot = findCanonicalGitRoot(originalCwd)
@@ -941,7 +941,7 @@ export const getMemoryFiles = memoize(
       }
     }
 
-    // Process CLAUDE.md from additional directories (--add-dir) if env var is enabled
+    // Process AGENTS.md / CLAUDE.md from additional directories (--add-dir) if env var is enabled
     // This is controlled by CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD and defaults to off
     // Note: we don't check isSettingSourceEnabled('projectSettings') here because --add-dir
     // is an explicit user action and the SDK defaults settingSources to [] when not specified
@@ -1252,7 +1252,7 @@ export async function getMemoryFilesForNestedDirectory(
 ): Promise<MemoryFileInfo[]> {
   const result: MemoryFileInfo[] = []
 
-  // Process project memory files (.claude-agent/CLAUDE.md, CLAUDE.md, .claude/CLAUDE.md)
+  // Process project memory files (AGENTS.md and CLAUDE.md, plus rules/*.md)
   if (isSettingSourceEnabled('projectSettings')) {
     for (const projectPath of getProjectMemoryFileCandidates(dir)) {
       result.push(

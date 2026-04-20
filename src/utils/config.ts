@@ -30,7 +30,7 @@ import { logError } from './log.js'
 import type { MemoryType } from './memory/types.js'
 import { normalizePathForConfigKey } from './path.js'
 import { getEssentialTrafficOnlyReason } from './privacyLevel.js'
-import { getProjectMemoryFileCandidates } from './productPaths.js'
+import { getPreferredProjectMemoryFilePath } from './productPaths.js'
 import { getManagedFilePath } from './settings/managedPath.js'
 import type { ThemeSetting } from './theme.js'
 
@@ -1787,7 +1787,7 @@ export function getMemoryPath(memoryType: MemoryType): string {
     case 'Local':
       return join(cwd, 'CLAUDE.local.md')
     case 'Project':
-      return getProjectMemoryFileCandidates(cwd)[0] ?? join(cwd, 'CLAUDE.md')
+      return getPreferredProjectMemoryFilePath(cwd)
     case 'Managed':
       return join(getManagedFilePath(), 'CLAUDE.md')
     case 'AutoMem':

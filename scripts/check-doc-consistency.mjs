@@ -15,6 +15,27 @@ const maintenanceFreezePlan = readFileSync(
   resolve(root, 'docs', 'maintenance-freeze-plan.md'),
   'utf8',
 )
+const initPrompt = readFileSync(resolve(root, 'src', 'commands', 'init.ts'), 'utf8')
+const initVerifiersPrompt = readFileSync(
+  resolve(root, 'src', 'commands', 'init-verifiers.ts'),
+  'utf8',
+)
+const productPaths = readFileSync(
+  resolve(root, 'src', 'utils', 'productPaths.ts'),
+  'utf8',
+)
+const skillChangeDetector = readFileSync(
+  resolve(root, 'src', 'utils', 'skills', 'skillChangeDetector.ts'),
+  'utf8',
+)
+const mcpApprovalDialog = readFileSync(
+  resolve(root, 'src', 'components', 'MCPServerApprovalDialog.tsx'),
+  'utf8',
+)
+const mcpMultiselectDialog = readFileSync(
+  resolve(root, 'src', 'components', 'MCPServerMultiselectDialog.tsx'),
+  'utf8',
+)
 
 const baselineCommands = getCommandSurfacesByCategory('baseline').map(
   entry => entry.command,
@@ -159,13 +180,17 @@ if (!/This document merges the runtime, session, worktree, agent, and progress-a
 }
 
 if (
-  !/Runtime behavior switches are driven by environment variables:[\s\S]*NOA_CLAUDE_NO_FLICKER[\s\S]*NOA_CLAUDE_DISABLE_MOUSE[\s\S]*NOA_CLAUDE_DISABLE_MOUSE_CLICKS[\s\S]*Legacy `CLAUDE_CODE_\*` names remain supported for compatibility/.test(
+  !/Runtime behavior switches are driven by environment variables:[\s\S]*NOA_CLAUDE_NO_FLICKER[\s\S]*NOA_CLAUDE_DISABLE_MOUSE[\s\S]*NOA_CLAUDE_DISABLE_MOUSE_CLICKS/.test(
     operatingGuide,
   )
 ) {
   failures.push(
-    'Operating guide is missing the Noa fullscreen runtime toggles or their compatibility note',
+    'Operating guide is missing the Noa fullscreen runtime toggles',
   )
+}
+
+if (/Legacy `CLAUDE_CODE_\*` names remain supported for compatibility/.test(operatingGuide)) {
+  failures.push('Operating guide still advertises legacy CLAUDE_CODE_* compatibility')
 }
 
 for (const command of baselineCommands) {
@@ -266,6 +291,25 @@ if (!/## Worktrees/.test(operatingGuide)) {
 
 if (!/## Agents/.test(operatingGuide)) {
   failures.push('Operating guide is missing agents section')
+}
+
+for (const [label, text] of [
+  ['init prompt', initPrompt],
+  ['init verifier prompt', initVerifiersPrompt],
+  ['product paths', productPaths],
+  ['skill change detector', skillChangeDetector],
+  ['MCP approval dialog', mcpApprovalDialog],
+  ['MCP multiselect dialog', mcpMultiselectDialog],
+]) {
+  if (/legacy .*\.mcp\.json fallback/i.test(text)) {
+    failures.push(`${label} still mentions legacy .mcp.json fallback`)
+  }
+  if (/legacy \\.claude\/skills/i.test(text)) {
+    failures.push(`${label} still mentions legacy .claude/skills`)
+  }
+  if (/legacy \\.claude\/commands/i.test(text)) {
+    failures.push(`${label} still mentions legacy .claude/commands`)
+  }
 }
 
 if (failures.length > 0) {

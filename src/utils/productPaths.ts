@@ -1,5 +1,6 @@
 import { join } from 'path'
 import { getClaudeConfigHomeDir } from './envUtils.js'
+import { getNearestProjectInstructionFilePath } from './projectInstructions.js'
 
 export const PRODUCT_PROJECT_DIR = '.claude-agent'
 export const LEGACY_PROJECT_DIR = '.claude'
@@ -21,10 +22,7 @@ export function getLegacyProjectConfigRoot(cwd: string): string {
 }
 
 export function getProjectConfigRoots(cwd: string): string[] {
-  return [
-    getPrimaryProjectConfigRoot(cwd),
-    getLegacyProjectConfigRoot(cwd),
-  ]
+  return [getPrimaryProjectConfigRoot(cwd)]
 }
 
 export function getPrimaryProjectSubdir(cwd: string, subdir: string): string {
@@ -39,10 +37,7 @@ export function getProjectSubdirCandidates(
   cwd: string,
   subdir: string,
 ): string[] {
-  return [
-    getPrimaryProjectSubdir(cwd, subdir),
-    getLegacyProjectSubdir(cwd, subdir),
-  ]
+  return [getPrimaryProjectSubdir(cwd, subdir)]
 }
 
 export function getPrimaryProjectFile(cwd: string, filename: string): string {
@@ -57,10 +52,7 @@ export function getProjectFileCandidates(
   cwd: string,
   filename: string,
 ): string[] {
-  return [
-    getPrimaryProjectFile(cwd, filename),
-    getLegacyProjectFile(cwd, filename),
-  ]
+  return [getPrimaryProjectFile(cwd, filename)]
 }
 
 export function getPrimaryProjectSettingsRelativePath(
@@ -78,22 +70,24 @@ export function getLegacyProjectSettingsRelativePath(
 export function getProjectSettingsRelativePathCandidates(
   filename: 'settings.json' | 'settings.local.json',
 ): string[] {
-  return [
-    getPrimaryProjectSettingsRelativePath(filename),
-    getLegacyProjectSettingsRelativePath(filename),
-  ]
+  return [getPrimaryProjectSettingsRelativePath(filename)]
 }
 
 export function getProjectMemoryFileCandidates(cwd: string): string[] {
-  // AGENTS.md takes priority over CLAUDE.md per OpenClaude project convention
   return [
-    join(getPrimaryProjectConfigRoot(cwd), PRIMARY_PROJECT_INSTRUCTION_FILE),
-    join(cwd, PRIMARY_PROJECT_INSTRUCTION_FILE),
     join(getPrimaryProjectConfigRoot(cwd), FALLBACK_PROJECT_INSTRUCTION_FILE),
     join(cwd, FALLBACK_PROJECT_INSTRUCTION_FILE),
-    join(getLegacyProjectConfigRoot(cwd), PRIMARY_PROJECT_INSTRUCTION_FILE),
-    join(getLegacyProjectConfigRoot(cwd), FALLBACK_PROJECT_INSTRUCTION_FILE),
+    join(getPrimaryProjectConfigRoot(cwd), PRIMARY_PROJECT_INSTRUCTION_FILE),
+    join(cwd, PRIMARY_PROJECT_INSTRUCTION_FILE),
   ]
+}
+
+export function getPreferredProjectMemoryFilePath(cwd: string): string {
+  const nearestInstruction = getNearestProjectInstructionFilePath(cwd)
+  if (nearestInstruction !== null) {
+    return nearestInstruction
+  }
+  return join(cwd, PRIMARY_PROJECT_INSTRUCTION_FILE)
 }
 
 export function getProjectRulesDirCandidates(cwd: string): string[] {
@@ -141,10 +135,7 @@ export function getLegacyProjectMcpPath(cwd: string): string {
 }
 
 export function getProjectMcpPathCandidates(cwd: string): string[] {
-  return [
-    getPrimaryProjectMcpPath(cwd),
-    getLegacyProjectMcpPath(cwd),
-  ]
+  return [getPrimaryProjectMcpPath(cwd)]
 }
 
 export function getUserScopedSubdir(subdir: string): string {
