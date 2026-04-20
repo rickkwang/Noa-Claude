@@ -97,7 +97,7 @@ export function ManagedSettingsSecurityDialog(t0) {
       label: "Yes, I trust these settings",
       value: "accept"
     }, {
-      label: "No, exit Claude Code",
+      label: "No, exit Noa Claude",
       value: "exit"
     }];
     $[11] = t15;

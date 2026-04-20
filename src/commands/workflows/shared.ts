@@ -134,19 +134,12 @@ export async function deleteWorkflow(
   name: string,
 ): Promise<number> {
   const filename = `${normalizeWorkflowName(name)}.json`
-  const candidates = getProjectSubdirCandidates(cwd, 'workflows').map(dir =>
-    join(dir, filename),
-  )
-  let removed = 0
-  await Promise.all(
-    candidates.map(async path => {
-      try {
-        await rm(path)
-        removed += 1
-      } catch {
-        // Ignore missing files
-      }
-    }),
-  )
-  return removed
+  const path = join(getPrimaryProjectSubdir(cwd, 'workflows'), filename)
+  try {
+    await rm(path)
+    return 1
+  } catch {
+    // Ignore missing files
+    return 0
+  }
 }

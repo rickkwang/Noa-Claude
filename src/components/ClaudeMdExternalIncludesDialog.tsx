@@ -76,7 +76,7 @@ export function ClaudeMdExternalIncludesDialog(t0) {
   }
   let t8;
   if ($[8] === Symbol.for("react.memo_cache_sentinel")) {
-    t8 = <Text dimColor={true}>Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks{" "}<Link url={PRODUCT_HELP_URL} />{" "}</Text>;
+    t8 = <Text dimColor={true}>Important: Only use Noa Claude with files you trust. Accessing untrusted files may pose security risks{" "}<Link url={PRODUCT_HELP_URL} />{" "}</Text>;
     $[8] = t8;
   } else {
     t8 = $[8];
