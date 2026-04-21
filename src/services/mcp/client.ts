@@ -207,9 +207,9 @@ export function isMcpSessionExpiredError(error: Error): boolean {
 }
 
 /**
- * Default timeout for MCP tool calls (effectively infinite - ~27.8 hours).
+ * Default timeout for MCP tool calls.
  */
-const DEFAULT_MCP_TOOL_TIMEOUT_MS = 100_000_000
+const DEFAULT_MCP_TOOL_TIMEOUT_MS = 10 * 60 * 1000
 
 /**
  * Cap on MCP tool descriptions and server instructions sent to the model.
@@ -220,13 +220,11 @@ const MAX_MCP_DESCRIPTION_LENGTH = 2048
 
 /**
  * Gets the timeout for MCP tool calls in milliseconds.
- * Uses MCP_TOOL_TIMEOUT environment variable if set, otherwise defaults to ~27.8 hours.
+ * Uses MCP_TOOL_TIMEOUT environment variable if set, otherwise defaults to 10 minutes.
  */
 function getMcpToolTimeoutMs(): number {
-  return (
-    parseInt(process.env.MCP_TOOL_TIMEOUT || '', 10) ||
-    DEFAULT_MCP_TOOL_TIMEOUT_MS
-  )
+  const configured = parseInt(process.env.MCP_TOOL_TIMEOUT || '', 10)
+  return configured > 0 ? configured : DEFAULT_MCP_TOOL_TIMEOUT_MS
 }
 
 import { isClaudeInChromeMCPServer } from '../../utils/claudeInChrome/common.js'
@@ -268,14 +266,29 @@ function getMcpAuthCachePath(): string {
 // on write (setMcpAuthCacheEntry) and clear (clearMcpAuthCache). Not using
 // lodash memoize because we need to null out the cache, not delete by key.
 let authCachePromise: Promise<McpAuthCacheData> | null = null
+const pendingAuthCacheEntries = new Map<string, number>()
 
-function getMcpAuthCache(): Promise<McpAuthCacheData> {
+function readMcpAuthCacheFromDisk(): Promise<McpAuthCacheData> {
+  return readFile(getMcpAuthCachePath(), 'utf-8')
+    .then(data => jsonParse(data) as McpAuthCacheData)
+    .catch(() => ({}))
+}
+
+async function getMcpAuthCache(): Promise<McpAuthCacheData> {
   if (!authCachePromise) {
-    authCachePromise = readFile(getMcpAuthCachePath(), 'utf-8')
-      .then(data => jsonParse(data) as McpAuthCacheData)
-      .catch(() => ({}))
+    authCachePromise = readMcpAuthCacheFromDisk()
   }
-  return authCachePromise
+  const cache = await authCachePromise
+  if (pendingAuthCacheEntries.size === 0) return cache
+  return {
+    ...cache,
+    ...Object.fromEntries(
+      Array.from(pendingAuthCacheEntries, ([serverId, timestamp]) => [
+        serverId,
+        { timestamp },
+      ]),
+    ),
+  }
 }
 
 async function isMcpAuthCached(serverId: string): Promise<boolean> {
@@ -292,16 +305,27 @@ async function isMcpAuthCached(serverId: string): Promise<boolean> {
 let writeChain = Promise.resolve()
 
 function setMcpAuthCacheEntry(serverId: string): void {
+  pendingAuthCacheEntries.set(serverId, Date.now())
+  authCachePromise = null
   writeChain = writeChain
+    .catch(() => {
+      // Best-effort cache write; keep the chain alive for future entries.
+    })
     .then(async () => {
-      const cache = await getMcpAuthCache()
-      cache[serverId] = { timestamp: Date.now() }
+      // Read from disk inside the serialized section. Reusing the memoized
+      // read here can drop entries when multiple concurrent auth failures
+      // enqueue writes against the same stale cache snapshot.
+      authCachePromise = null
+      const cache = await readMcpAuthCacheFromDisk()
+      for (const [pendingServerId, timestamp] of pendingAuthCacheEntries) {
+        cache[pendingServerId] = { timestamp }
+      }
       const cachePath = getMcpAuthCachePath()
       await mkdir(dirname(cachePath), { recursive: true })
       await writeFile(cachePath, jsonStringify(cache))
-      // Invalidate the read cache so subsequent reads see the new entry.
-      // Safe because writeChain serializes writes: the next write's
-      // getMcpAuthCache() call will re-read the file with this entry present.
+      pendingAuthCacheEntries.delete(serverId)
+      // Invalidate the read cache so subsequent reads see the newly written
+      // merged cache rather than a pre-write memoized snapshot.
       authCachePromise = null
     })
     .catch(() => {
@@ -311,9 +335,36 @@ function setMcpAuthCacheEntry(serverId: string): void {
 
 export function clearMcpAuthCache(): void {
   authCachePromise = null
+  pendingAuthCacheEntries.clear()
   void unlink(getMcpAuthCachePath()).catch(() => {
     // Cache file may not exist
   })
+}
+
+export function _setMcpAuthCacheEntryForTesting(serverId: string): void {
+  setMcpAuthCacheEntry(serverId)
+}
+
+export async function _waitForMcpAuthCacheWritesForTesting(): Promise<void> {
+  await writeChain
+}
+
+export async function _readMcpAuthCacheForTesting(): Promise<McpAuthCacheData> {
+  authCachePromise = null
+  return getMcpAuthCache()
+}
+
+export async function _resetMcpAuthCacheForTesting(): Promise<void> {
+  await writeChain.catch(() => {})
+  authCachePromise = null
+  pendingAuthCacheEntries.clear()
+  await unlink(getMcpAuthCachePath()).catch(() => {
+    // Cache file may not exist
+  })
+}
+
+export function _getMcpToolTimeoutMsForTesting(): number {
+  return getMcpToolTimeoutMs()
 }
 
 /**

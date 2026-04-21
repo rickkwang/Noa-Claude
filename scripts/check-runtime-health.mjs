@@ -51,6 +51,13 @@ import {
   createUserMessage,
   getMessagesAfterCompactBoundary,
 } from '../src/utils/messages.ts';
+import {
+  _getMcpToolTimeoutMsForTesting,
+  _readMcpAuthCacheForTesting,
+  _resetMcpAuthCacheForTesting,
+  _setMcpAuthCacheEntryForTesting,
+  _waitForMcpAuthCacheWritesForTesting,
+} from '../src/services/mcp/client.ts';
 
 applyLauncherDefaults();
 
@@ -827,6 +834,105 @@ function checkNonInteractiveMcpTimeoutFallback() {
   }
 }
 
+async function checkMcpAuthCacheConcurrency() {
+  await _resetMcpAuthCacheForTesting();
+  try {
+    const serverIds = [
+      'runtime-auth-cache-a',
+      'runtime-auth-cache-b',
+      'runtime-auth-cache-c',
+      'runtime-auth-cache-d',
+    ];
+
+    for (const serverId of serverIds) {
+      _setMcpAuthCacheEntryForTesting(serverId);
+    }
+    await _waitForMcpAuthCacheWritesForTesting();
+
+    const cache = await _readMcpAuthCacheForTesting();
+    for (const serverId of serverIds) {
+      assert(
+        cache[serverId]?.timestamp,
+        'MCP auth cache concurrent write dropped an entry',
+        { serverId, cache },
+      );
+    }
+
+    // Prime the memoized read, then enqueue another write. The queued write
+    // must not reuse this stale snapshot and overwrite the existing entries.
+    await _readMcpAuthCacheForTesting();
+    const lateServerId = 'runtime-auth-cache-late';
+    _setMcpAuthCacheEntryForTesting(lateServerId);
+    await _waitForMcpAuthCacheWritesForTesting();
+
+    const updatedCache = await _readMcpAuthCacheForTesting();
+    for (const serverId of [...serverIds, lateServerId]) {
+      assert(
+        updatedCache[serverId]?.timestamp,
+        'MCP auth cache stale memoized read lost an entry',
+        { serverId, updatedCache },
+      );
+    }
+  } finally {
+    await _resetMcpAuthCacheForTesting();
+  }
+}
+
+function checkMcpToolTimeoutDefault() {
+  const previous = process.env.MCP_TOOL_TIMEOUT;
+  try {
+    delete process.env.MCP_TOOL_TIMEOUT;
+    assert(
+      _getMcpToolTimeoutMsForTesting() === 600000,
+      'MCP tool timeout should default to 10 minutes',
+      _getMcpToolTimeoutMsForTesting(),
+    );
+
+    process.env.MCP_TOOL_TIMEOUT = '12345';
+    assert(
+      _getMcpToolTimeoutMsForTesting() === 12345,
+      'MCP_TOOL_TIMEOUT should override the default MCP tool timeout',
+      _getMcpToolTimeoutMsForTesting(),
+    );
+
+    process.env.MCP_TOOL_TIMEOUT = 'not-a-number';
+    assert(
+      _getMcpToolTimeoutMsForTesting() === 600000,
+      'Invalid MCP_TOOL_TIMEOUT should fall back to the default',
+      _getMcpToolTimeoutMsForTesting(),
+    );
+
+    process.env.MCP_TOOL_TIMEOUT = '-1';
+    assert(
+      _getMcpToolTimeoutMsForTesting() === 600000,
+      'Negative MCP_TOOL_TIMEOUT should fall back to the default',
+      _getMcpToolTimeoutMsForTesting(),
+    );
+  } finally {
+    if (previous === undefined) {
+      delete process.env.MCP_TOOL_TIMEOUT;
+    } else {
+      process.env.MCP_TOOL_TIMEOUT = previous;
+    }
+  }
+}
+
+function checkQueryEnginePermissionDenialsAreTurnScoped() {
+  const source = readFileSync(join(repoRoot, 'src/QueryEngine.ts'), 'utf8');
+  assert(
+    source.includes('const turnPermissionDenials: SDKPermissionDenial[] = []'),
+    'QueryEngine should create turn-scoped permission denials in submitMessage',
+  );
+  assert(
+    source.includes('turnPermissionDenials.push({'),
+    'QueryEngine should record permission denials into the turn-scoped array',
+  );
+  assert(
+    !source.includes('permission_denials: this.permissionDenials'),
+    'QueryEngine result messages must not use engine-lifetime permission denials',
+  );
+}
+
 console.log('Checking sandbox runtime compatibility...');
 checkSandboxCompatibility();
 
@@ -856,6 +962,15 @@ checkResumeFailurePaths();
 
 console.log('Checking non-interactive MCP timeout fallback...');
 checkNonInteractiveMcpTimeoutFallback();
+
+console.log('Checking MCP auth cache concurrency...');
+await checkMcpAuthCacheConcurrency();
+
+console.log('Checking MCP tool timeout defaults...');
+checkMcpToolTimeoutDefault();
+
+console.log('Checking QueryEngine permission denial scoping...');
+checkQueryEnginePermissionDenialsAreTurnScoped();
 
 console.log('Runtime health checks passed.');
 process.exit(0);

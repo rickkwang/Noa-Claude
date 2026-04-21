@@ -42,7 +42,7 @@ import type { AgentDefinition } from './tools/AgentTool/loadAgentsDir.js'
 import { SYNTHETIC_OUTPUT_TOOL_NAME } from './tools/SyntheticOutputTool/SyntheticOutputTool.js'
 import type { Message } from './types/message.js'
 import type { OrphanedPermission } from './types/textInputTypes.js'
-import { createAbortController } from './utils/abortController.js'
+import { createAbortController, createChildAbortController } from './utils/abortController.js'
 import type { AttributionState } from './utils/commitAttribution.js'
 import { getGlobalConfig } from './utils/config.js'
 import { getCwd } from './utils/cwd.js'
@@ -186,7 +186,6 @@ export class QueryEngine {
   private config: QueryEngineConfig
   private mutableMessages: Message[]
   private abortController: AbortController
-  private permissionDenials: SDKPermissionDenial[]
   private totalUsage: NonNullableUsage
   private hasHandledOrphanedPermission = false
   private readFileState: FileStateCache
@@ -202,7 +201,6 @@ export class QueryEngine {
     this.config = config
     this.mutableMessages = config.initialMessages ?? []
     this.abortController = config.abortController ?? createAbortController()
-    this.permissionDenials = []
     this.readFileState = config.readFileCache
     this.totalUsage = EMPTY_USAGE
   }
@@ -241,6 +239,16 @@ export class QueryEngine {
     const persistSession = !isSessionPersistenceDisabled()
     const startTime = Date.now()
 
+    // Create a per-turn AbortController so that a previous interrupt() does
+    // not permanently disable this engine. If the caller supplied an external
+    // controller we create a child so the parent still propagates aborts.
+    const turnAbortController = this.config.abortController
+      ? createChildAbortController(this.config.abortController)
+      : createAbortController()
+    this.abortController = turnAbortController
+
+    const turnPermissionDenials: SDKPermissionDenial[] = []
+
     // Wrap canUseTool to track permission denials
     const wrappedCanUseTool: CanUseToolFn = async (
       tool,
@@ -261,7 +269,7 @@ export class QueryEngine {
 
       // Track denials for SDK reporting
       if (result.behavior !== 'allow') {
-        this.permissionDenials.push({
+        turnPermissionDenials.push({
           tool_name: sdkCompatToolName(tool.name),
           tool_use_id: toolUseID,
           tool_input: input,
@@ -366,7 +374,7 @@ export class QueryEngine {
       },
       getAppState,
       setAppState,
-      abortController: this.abortController,
+      abortController: turnAbortController,
       readFileState: this.readFileState,
       nestedMemoryAttachmentTriggers: new Set<string>(),
       loadedNestedMemoryPaths: this.loadedNestedMemoryPaths,
@@ -514,7 +522,7 @@ export class QueryEngine {
       },
       getAppState,
       setAppState,
-      abortController: this.abortController,
+      abortController: turnAbortController,
       readFileState: this.readFileState,
       nestedMemoryAttachmentTriggers: new Set<string>(),
       loadedNestedMemoryPaths: this.loadedNestedMemoryPaths,
@@ -629,7 +637,7 @@ export class QueryEngine {
         total_cost_usd: getTotalCost(),
         usage: this.totalUsage,
         modelUsage: getModelUsage(),
-        permission_denials: this.permissionDenials,
+        permission_denials: turnPermissionDenials,
         fast_mode_state: getFastModeState(
           mainLoopModel,
           initialAppState.fastMode,
@@ -861,7 +869,7 @@ export class QueryEngine {
               total_cost_usd: getTotalCost(),
               usage: this.totalUsage,
               modelUsage: getModelUsage(),
-              permission_denials: this.permissionDenials,
+              permission_denials: turnPermissionDenials,
               fast_mode_state: getFastModeState(
                 mainLoopModel,
                 initialAppState.fastMode,
@@ -991,7 +999,7 @@ export class QueryEngine {
           total_cost_usd: getTotalCost(),
           usage: this.totalUsage,
           modelUsage: getModelUsage(),
-          permission_denials: this.permissionDenials,
+          permission_denials: turnPermissionDenials,
           fast_mode_state: getFastModeState(
             mainLoopModel,
             initialAppState.fastMode,
@@ -1034,7 +1042,7 @@ export class QueryEngine {
             total_cost_usd: getTotalCost(),
             usage: this.totalUsage,
             modelUsage: getModelUsage(),
-            permission_denials: this.permissionDenials,
+            permission_denials: turnPermissionDenials,
             fast_mode_state: getFastModeState(
               mainLoopModel,
               initialAppState.fastMode,
@@ -1093,7 +1101,7 @@ export class QueryEngine {
         total_cost_usd: getTotalCost(),
         usage: this.totalUsage,
         modelUsage: getModelUsage(),
-        permission_denials: this.permissionDenials,
+        permission_denials: turnPermissionDenials,
         fast_mode_state: getFastModeState(
           mainLoopModel,
           initialAppState.fastMode,
@@ -1146,7 +1154,7 @@ export class QueryEngine {
       total_cost_usd: getTotalCost(),
       usage: this.totalUsage,
       modelUsage: getModelUsage(),
-      permission_denials: this.permissionDenials,
+      permission_denials: turnPermissionDenials,
       structured_output: structuredOutputFromTool,
       fast_mode_state: getFastModeState(
         mainLoopModel,
