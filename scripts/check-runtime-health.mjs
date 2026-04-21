@@ -52,6 +52,7 @@ import {
   getMessagesAfterCompactBoundary,
 } from '../src/utils/messages.ts';
 import {
+  clearMcpAuthCache,
   _getMcpToolTimeoutMsForTesting,
   _readMcpAuthCacheForTesting,
   _resetMcpAuthCacheForTesting,
@@ -874,6 +875,26 @@ async function checkMcpAuthCacheConcurrency() {
         { serverId, updatedCache },
       );
     }
+
+    // clearMcpAuthCache() must win against in-flight writes: once clear is
+    // called, an older queued write must not resurrect stale needs-auth entries.
+    let staleEntryResurrections = 0;
+    for (let i = 0; i < 40; i++) {
+      const raceServerId = `runtime-auth-cache-race-${i}`;
+      _setMcpAuthCacheEntryForTesting(raceServerId);
+      await new Promise(resolve => setTimeout(resolve, 0));
+      clearMcpAuthCache();
+      await _waitForMcpAuthCacheWritesForTesting();
+      const raceCache = await _readMcpAuthCacheForTesting();
+      if (raceCache[raceServerId]?.timestamp) {
+        staleEntryResurrections++;
+      }
+    }
+    assert(
+      staleEntryResurrections === 0,
+      'clearMcpAuthCache should prevent stale in-flight writes from reappearing',
+      { staleEntryResurrections },
+    );
   } finally {
     await _resetMcpAuthCacheForTesting();
   }
@@ -931,6 +952,20 @@ function checkQueryEnginePermissionDenialsAreTurnScoped() {
   assert(
     !source.includes('permission_denials: this.permissionDenials'),
     'QueryEngine result messages must not use engine-lifetime permission denials',
+  );
+}
+
+function checkStartupPrefetchDiagnosticsDebugSignals() {
+  const source = readFileSync(join(repoRoot, 'src/main.tsx'), 'utf8');
+  assert(
+    source.includes("process.env.DEBUG === '1'") &&
+      source.includes("process.env.DEBUG === 'true'"),
+    'Startup prefetch diagnostics should honor DEBUG env',
+  );
+  assert(
+    source.includes("process.env.DEBUG_SDK === '1'") &&
+      source.includes("process.env.DEBUG_SDK === 'true'"),
+    'Startup prefetch diagnostics should honor DEBUG_SDK env',
   );
 }
 
@@ -1014,6 +1049,9 @@ checkMcpToolTimeoutDefault();
 
 console.log('Checking QueryEngine permission denial scoping...');
 checkQueryEnginePermissionDenialsAreTurnScoped();
+
+console.log('Checking startup prefetch diagnostics debug signals...');
+checkStartupPrefetchDiagnosticsDebugSignals();
 
 console.log('Checking cleanup timeout diagnostics...');
 await checkCleanupTimeoutDiagnostics();

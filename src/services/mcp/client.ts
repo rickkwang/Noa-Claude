@@ -256,6 +256,7 @@ import { jsonParse, jsonStringify } from '../../utils/slowOperations.js'
 const MCP_AUTH_CACHE_TTL_MS = 15 * 60 * 1000 // 15 min
 
 type McpAuthCacheData = Record<string, { timestamp: number }>
+type PendingMcpAuthCacheEntry = { timestamp: number; generation: number }
 
 function getMcpAuthCachePath(): string {
   return join(getClaudeConfigHomeDir(), 'mcp-needs-auth-cache.json')
@@ -266,7 +267,8 @@ function getMcpAuthCachePath(): string {
 // on write (setMcpAuthCacheEntry) and clear (clearMcpAuthCache). Not using
 // lodash memoize because we need to null out the cache, not delete by key.
 let authCachePromise: Promise<McpAuthCacheData> | null = null
-const pendingAuthCacheEntries = new Map<string, number>()
+const pendingAuthCacheEntries = new Map<string, PendingMcpAuthCacheEntry>()
+let authCacheGeneration = 0
 
 function readMcpAuthCacheFromDisk(): Promise<McpAuthCacheData> {
   return readFile(getMcpAuthCachePath(), 'utf-8')
@@ -283,9 +285,9 @@ async function getMcpAuthCache(): Promise<McpAuthCacheData> {
   return {
     ...cache,
     ...Object.fromEntries(
-      Array.from(pendingAuthCacheEntries, ([serverId, timestamp]) => [
+      Array.from(pendingAuthCacheEntries, ([serverId, entry]) => [
         serverId,
-        { timestamp },
+        { timestamp: entry.timestamp },
       ]),
     ),
   }
@@ -304,26 +306,54 @@ async function isMcpAuthCached(serverId: string): Promise<boolean> {
 // read-modify-write races when multiple servers return 401 in the same batch
 let writeChain = Promise.resolve()
 
+function removePendingAuthCacheEntryIfUnchanged(
+  serverId: string,
+  entry: PendingMcpAuthCacheEntry,
+): void {
+  const current = pendingAuthCacheEntries.get(serverId)
+  if (
+    current?.generation === entry.generation &&
+    current.timestamp === entry.timestamp
+  ) {
+    pendingAuthCacheEntries.delete(serverId)
+  }
+}
+
 function setMcpAuthCacheEntry(serverId: string): void {
-  pendingAuthCacheEntries.set(serverId, Date.now())
+  const entry: PendingMcpAuthCacheEntry = {
+    timestamp: Date.now(),
+    generation: authCacheGeneration,
+  }
+  pendingAuthCacheEntries.set(serverId, entry)
   authCachePromise = null
   writeChain = writeChain
     .catch(() => {
       // Best-effort cache write; keep the chain alive for future entries.
     })
     .then(async () => {
+      const writeGeneration = entry.generation
+      if (writeGeneration !== authCacheGeneration) {
+        removePendingAuthCacheEntryIfUnchanged(serverId, entry)
+        return
+      }
       // Read from disk inside the serialized section. Reusing the memoized
       // read here can drop entries when multiple concurrent auth failures
       // enqueue writes against the same stale cache snapshot.
       authCachePromise = null
       const cache = await readMcpAuthCacheFromDisk()
-      for (const [pendingServerId, timestamp] of pendingAuthCacheEntries) {
-        cache[pendingServerId] = { timestamp }
+      if (writeGeneration !== authCacheGeneration) {
+        removePendingAuthCacheEntryIfUnchanged(serverId, entry)
+        return
+      }
+      for (const [pendingServerId, pendingEntry] of pendingAuthCacheEntries) {
+        if (pendingEntry.generation === writeGeneration) {
+          cache[pendingServerId] = { timestamp: pendingEntry.timestamp }
+        }
       }
       const cachePath = getMcpAuthCachePath()
       await mkdir(dirname(cachePath), { recursive: true })
       await writeFile(cachePath, jsonStringify(cache))
-      pendingAuthCacheEntries.delete(serverId)
+      removePendingAuthCacheEntryIfUnchanged(serverId, entry)
       // Invalidate the read cache so subsequent reads see the newly written
       // merged cache rather than a pre-write memoized snapshot.
       authCachePromise = null
@@ -334,11 +364,22 @@ function setMcpAuthCacheEntry(serverId: string): void {
 }
 
 export function clearMcpAuthCache(): void {
+  authCacheGeneration += 1
   authCachePromise = null
   pendingAuthCacheEntries.clear()
-  void unlink(getMcpAuthCachePath()).catch(() => {
-    // Cache file may not exist
-  })
+  writeChain = writeChain
+    .catch(() => {
+      // Best-effort cache clear; keep the chain alive for future entries.
+    })
+    .then(async () => {
+      await unlink(getMcpAuthCachePath()).catch(() => {
+        // Cache file may not exist
+      })
+      authCachePromise = null
+    })
+    .catch(() => {
+      // Best-effort cache clear
+    })
 }
 
 export function _setMcpAuthCacheEntryForTesting(serverId: string): void {
@@ -356,6 +397,7 @@ export async function _readMcpAuthCacheForTesting(): Promise<McpAuthCacheData> {
 
 export async function _resetMcpAuthCacheForTesting(): Promise<void> {
   await writeChain.catch(() => {})
+  authCacheGeneration = 0
   authCachePromise = null
   pendingAuthCacheEntries.clear()
   await unlink(getMcpAuthCachePath()).catch(() => {

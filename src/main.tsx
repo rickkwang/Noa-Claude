@@ -12,6 +12,10 @@ import { profileCheckpoint, profileReport } from './utils/startupProfiler.js';
 const shouldLogStartupPrefetchDiagnostics =
   process.env.CLAUDE_CODE_LAUNCHER_DEBUG === '1' ||
   process.env.CLAUDE_CODE_LAUNCHER_DEBUG === 'true' ||
+  process.env.DEBUG === '1' ||
+  process.env.DEBUG === 'true' ||
+  process.env.DEBUG_SDK === '1' ||
+  process.env.DEBUG_SDK === 'true' ||
   process.argv.includes('--debug') ||
   process.argv.includes('-d') ||
   process.argv.includes('--debug-to-stderr') ||
