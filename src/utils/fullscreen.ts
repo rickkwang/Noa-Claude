@@ -4,6 +4,7 @@ import { getIsInteractive } from '../bootstrap/state.js'
 import { logForDebugging } from './debug.js'
 import { isEnvDefinedFalsy, isEnvTruthy } from './envUtils.js'
 import { execFileNoThrow } from './execFileNoThrow.js'
+import { getSettingsForSource, updateSettingsForSource } from './settings/settings.js'
 
 let loggedTmuxCcDisable = false
 let checkedTmuxMouseHint = false
@@ -120,19 +121,40 @@ export function _resetTmuxControlModeProbeForTesting(): void {
   loggedTmuxCcDisable = false
 }
 
+export type FullscreenMode = 'default' | 'fullscreen' | 'auto'
+
+export function getFullscreenMode(): FullscreenMode {
+  const noFlickerEnv = getEnvValueWithLegacyFallback(NO_FLICKER_ENV, LEGACY_NO_FLICKER_ENV)
+  if (isEnvDefinedFalsy(noFlickerEnv)) return 'default'
+  if (isEnvTruthy(noFlickerEnv)) return 'fullscreen'
+
+  const settings = getSettingsForSource('userSettings')
+  if (settings?.tuiMode === 'fullscreen') return 'fullscreen'
+  if (settings?.tuiMode === 'default') return 'default'
+
+  return 'auto'
+}
+
+export function setFullscreenMode(mode: 'default' | 'fullscreen'): void {
+  updateSettingsForSource('userSettings', { tuiMode: mode })
+  process.env[NO_FLICKER_ENV] = mode === 'fullscreen' ? '1' : '0'
+}
+
 /**
  * Runtime env-var check only. Ants default to on (NOA_CLAUDE_NO_FLICKER=0
  * to opt out); external users default to off (NOA_CLAUDE_NO_FLICKER=1 to
  * opt in). Legacy CLAUDE_CODE_NO_FLICKER is still accepted for compatibility.
  */
 export function isFullscreenEnvEnabled(): boolean {
+  const mode = getFullscreenMode()
+  if (mode === 'default') return false
+  if (mode === 'fullscreen') return true
+
+  // auto: fall through to env / tmux / USER_TYPE detection
+  // (re-read env here since getFullscreenMode() returned 'auto' meaning it wasn't set)
   const noFlickerEnv = getEnvValueWithLegacyFallback(NO_FLICKER_ENV, LEGACY_NO_FLICKER_ENV)
-  // Explicit user opt-out always wins.
   if (isEnvDefinedFalsy(noFlickerEnv)) return false
-  // Explicit opt-in overrides auto-detection (escape hatch).
   if (isEnvTruthy(noFlickerEnv)) return true
-  // Auto-disable under tmux -CC: alt-screen + mouse tracking corrupts
-  // terminal state on double-click and mouse wheel is dead.
   if (isTmuxControlMode()) {
     if (!loggedTmuxCcDisable) {
       loggedTmuxCcDisable = true
