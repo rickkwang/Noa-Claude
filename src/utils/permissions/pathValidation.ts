@@ -327,6 +327,7 @@ const WINDOWS_DRIVE_CHILD_REGEX = /^[A-Za-z]:\/[^/]+$/
  * - Root directory (/)
  * - Home directory (~)
  * - Direct children of root (/usr, /tmp, /etc, etc.)
+ * - macOS /private/ system directories (/private/etc, /private/var, /private/tmp, etc.)
  * - Windows drive root (C:\, D:\) and direct children (C:\Windows, C:\Users)
  */
 export function isDangerousRemovalPath(resolvedPath: string): boolean {
@@ -357,6 +358,13 @@ export function isDangerousRemovalPath(resolvedPath: string): boolean {
   // Direct children of root: /usr, /tmp, /etc (but not /usr/local)
   const parentDir = dirname(normalizedPath)
   if (parentDir === '/') {
+    return true
+  }
+
+  // macOS /private/ system directories
+  // These are symlinks to system directories on macOS and should be protected
+  // even though their parent is /private rather than /
+  if (parentDir === '/private') {
     return true
   }
 

@@ -109,6 +109,43 @@ function checkDangerousRemovalPaths(
 }
 
 /**
+ * Checks if a find command contains dangerous action flags like -exec or -delete
+ * that should require explicit user approval even if allowlist rules exist.
+ * This prevents commands like `find . -exec rm -rf {} \;` from being auto-approved.
+ */
+function checkFindExecDelete(command: string): PermissionResult {
+  // Only check find commands
+  const trimmedCmd = command.trim()
+  if (!trimmedCmd.startsWith('find ')) {
+    return { behavior: 'passthrough', message: 'Not a find command' }
+  }
+
+  // Extract just the arguments after 'find'
+  const findArgs = trimmedCmd.slice(5)
+
+  // Check for dangerous action flags: -exec, -execdir, -ok, -okdir, -delete, -fls, -fprint0, -fprint, -fprintf
+  // These flags can execute arbitrary commands or delete files
+  const dangerousFindFlags = /\s-(?:exec(?:dir)?|ok(?:dir)?|delete|fls|fprint0?|fprintf)\b/
+
+  if (dangerousFindFlags.test(findArgs)) {
+    return {
+      behavior: 'ask',
+      message:
+        'find command with dangerous action flags (-exec, -delete, etc.) detected.\n\nThese flags can execute arbitrary commands or delete files. This requires explicit approval and cannot be auto-allowed by permission rules.',
+      decisionReason: {
+        type: 'other',
+        reason:
+          'find command with dangerous action flags: ' +
+          findArgs.match(dangerousFindFlags)?.[0],
+      },
+      suggestions: [],
+    }
+  }
+
+  return { behavior: 'passthrough', message: 'No dangerous find flags detected' }
+}
+
+/**
  * SECURITY: Extract positional (non-flag) arguments, correctly handling the
  * POSIX `--` end-of-options delimiter.
  *
@@ -1100,6 +1137,15 @@ export function checkPathConstraints(
         return result
       }
     }
+  }
+
+  // Check for find commands with dangerous action flags (-exec, -delete, etc.)
+  // This check runs AFTER path validation but BEFORE allow rules auto-approve the command.
+  // It ensures that even if a user has Bash(find:*) allow rule, find -exec/-delete
+  // still requires explicit user approval.
+  const findExecDeleteResult = checkFindExecDelete(input.command)
+  if (findExecDeleteResult.behavior !== 'passthrough') {
+    return findExecDeleteResult
   }
 
   // Always return passthrough to let other permission checks handle the command
