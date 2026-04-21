@@ -58,6 +58,7 @@ import {
   _setMcpAuthCacheEntryForTesting,
   _waitForMcpAuthCacheWritesForTesting,
 } from '../src/services/mcp/client.ts';
+import { _runCleanupFunctionForTesting } from '../src/utils/cleanupRegistry.ts';
 
 applyLauncherDefaults();
 
@@ -933,6 +934,48 @@ function checkQueryEnginePermissionDenialsAreTurnScoped() {
   );
 }
 
+async function checkCleanupTimeoutDiagnostics() {
+  const previousDebug = process.env.DEBUG;
+  const stderrChunks = [];
+  const originalStderrWrite = process.stderr.write.bind(process.stderr);
+  process.env.DEBUG = '1';
+  process.stderr.write = (chunk, ...args) => {
+    stderrChunks.push(String(chunk));
+    if (typeof args[1] === 'function') {
+      args[1]();
+    }
+    return true;
+  };
+
+  try {
+    const startMs = Date.now();
+    await _runCleanupFunctionForTesting(async function runtimeHealthCleanupTimeout() {
+      await new Promise(resolve => setTimeout(resolve, 2100));
+    });
+    const elapsedMs = Date.now() - startMs;
+
+    assert(
+      elapsedMs < 2600,
+      'Cleanup timeout diagnostic check exceeded expected timeout budget',
+      { elapsedMs },
+    );
+
+    const stderrOutput = stderrChunks.join('');
+    assert(
+      stderrOutput.includes('[cleanupRegistry] cleanup "runtimeHealthCleanupTimeout" failed: cleanup timed out'),
+      'Missing cleanup timeout diagnostic log',
+      stderrOutput,
+    );
+  } finally {
+    process.stderr.write = originalStderrWrite;
+    if (previousDebug === undefined) {
+      delete process.env.DEBUG;
+    } else {
+      process.env.DEBUG = previousDebug;
+    }
+  }
+}
+
 console.log('Checking sandbox runtime compatibility...');
 checkSandboxCompatibility();
 
@@ -971,6 +1014,9 @@ checkMcpToolTimeoutDefault();
 
 console.log('Checking QueryEngine permission denial scoping...');
 checkQueryEnginePermissionDenialsAreTurnScoped();
+
+console.log('Checking cleanup timeout diagnostics...');
+await checkCleanupTimeoutDiagnostics();
 
 console.log('Runtime health checks passed.');
 process.exit(0);

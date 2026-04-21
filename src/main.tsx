@@ -9,16 +9,34 @@
 //    (~65ms on every macOS startup)
 import { profileCheckpoint, profileReport } from './utils/startupProfiler.js';
 
+const shouldLogStartupPrefetchDiagnostics =
+  process.env.CLAUDE_CODE_LAUNCHER_DEBUG === '1' ||
+  process.env.CLAUDE_CODE_LAUNCHER_DEBUG === 'true' ||
+  process.argv.includes('--debug') ||
+  process.argv.includes('-d') ||
+  process.argv.includes('--debug-to-stderr') ||
+  process.argv.includes('-d2e') ||
+  process.argv.some(arg => arg.startsWith('--debug=')) ||
+  process.argv.some(arg => arg === '--debug-file' || arg.startsWith('--debug-file='));
+
+function logStartupPrefetchError(step: string, error: unknown): void {
+  if (!shouldLogStartupPrefetchDiagnostics) return;
+  const details = error instanceof Error ? error.message : String(error);
+  process.stderr.write(
+    `${new Date().toISOString()} [WARN] [startup] ${step} failed: ${details}\n`,
+  );
+}
+
 // eslint-disable-next-line custom-rules/no-top-level-side-effects
-profileCheckpoint('main_tsx_entry');
+try { profileCheckpoint('main_tsx_entry'); } catch (error) { logStartupPrefetchError('profileCheckpoint(main_tsx_entry)', error); }
 import { startMdmRawRead } from './utils/settings/mdm/rawRead.js';
 
 // eslint-disable-next-line custom-rules/no-top-level-side-effects
-startMdmRawRead();
+try { startMdmRawRead(); } catch (error) { logStartupPrefetchError('startMdmRawRead', error); }
 import { ensureKeychainPrefetchCompleted, startKeychainPrefetch } from './utils/secureStorage/keychainPrefetch.js';
 
 // eslint-disable-next-line custom-rules/no-top-level-side-effects
-startKeychainPrefetch();
+try { startKeychainPrefetch(); } catch (error) { logStartupPrefetchError('startKeychainPrefetch', error); }
 import { feature } from 'bun:bundle';
 import { Command as CommanderCommand, Option } from '@commander-js/extra-typings';
 import { configureProgramOptions } from './cli/programOptions.js';

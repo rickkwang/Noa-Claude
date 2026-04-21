@@ -96,6 +96,7 @@ function shouldRetry529(querySource: QuerySource | undefined): boolean {
 // until there's a dedicated keep-alive channel.
 const PERSISTENT_MAX_BACKOFF_MS = 5 * 60 * 1000
 const PERSISTENT_RESET_CAP_MS = 6 * 60 * 60 * 1000
+const PERSISTENT_TOTAL_TIMEOUT_MS = 24 * 60 * 60 * 1000
 const HEARTBEAT_INTERVAL_MS = 30_000
 
 function isPersistentRetryEnabled(): boolean {
@@ -187,6 +188,7 @@ export async function* withRetry<T>(
   let consecutive529Errors = options.initialConsecutive529Errors ?? 0
   let lastError: unknown
   let persistentAttempt = 0
+  const persistentStartTime = Date.now()
   for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
     if (options.signal?.aborted) {
       throw new APIUserAbortError()
@@ -369,6 +371,12 @@ export async function* withRetry<T>(
       const persistent =
         isPersistentRetryEnabled() && isTransientCapacityError(error)
       if (attempt > maxRetries && !persistent) {
+        throw new CannotRetryError(error, retryContext)
+      }
+      if (
+        persistent &&
+        Date.now() - persistentStartTime > PERSISTENT_TOTAL_TIMEOUT_MS
+      ) {
         throw new CannotRetryError(error, retryContext)
       }
 

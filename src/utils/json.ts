@@ -182,7 +182,13 @@ function parseJSONLString<T>(data: string): T[] {
  */
 export function parseJSONL<T>(data: string | Buffer): T[] {
   if (bunJSONLParse) {
-    return parseJSONLBun<T>(data)
+    try {
+      return parseJSONLBun<T>(data)
+    } catch {
+      // Bun native parser may choke on a truncated trailing line (e.g.
+      // process crashed mid-write). Fall back to line-by-line parsing
+      // which skips malformed lines individually.
+    }
   }
   if (typeof data === 'string') {
     return parseJSONLString<T>(data)
