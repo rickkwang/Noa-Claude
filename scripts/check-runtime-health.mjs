@@ -4,7 +4,18 @@ import { spawnSync } from 'child_process';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
-import { consumePostCompaction, getSessionId } from '../src/bootstrap/state.ts';
+import {
+  QueryEngine,
+  _createTurnScopedCanUseToolForTesting,
+} from '../src/QueryEngine.ts';
+import {
+  consumePostCompaction,
+  getSessionId,
+  isSessionPersistenceDisabled,
+  setSessionPersistenceDisabled,
+} from '../src/bootstrap/state.ts';
+import { call as callStartupBannerCommand } from '../src/commands/startup-banner/startup-banner.ts';
+import { getStartupBannerMode } from '../src/components/StartupScreen.ts';
 import { buildDisplayText, formatCompactError } from '../src/commands/compact/compact.ts';
 import {
   findHistorySearchMatchPosition,
@@ -48,9 +59,13 @@ import { getOriginalCwd } from '../src/bootstrap/state.ts';
 import { applyLauncherDefaults, DEFAULT_PRODUCT_DIR } from '../launcher-config.js';
 import {
   createCompactBoundaryMessage,
+  createAssistantMessage,
   createUserMessage,
   getMessagesAfterCompactBoundary,
 } from '../src/utils/messages.ts';
+import { getDefaultAppState } from '../src/state/AppStateStore.ts';
+import { createFileStateCacheWithSizeLimit } from '../src/utils/fileStateCache.ts';
+import { STARTUP_BANNER_SETTINGS_FILENAME } from '../src/utils/startupBannerMode.ts';
 import {
   clearMcpAuthCache,
   _getMcpToolTimeoutMsForTesting,
@@ -62,6 +77,12 @@ import {
 import { _runCleanupFunctionForTesting } from '../src/utils/cleanupRegistry.ts';
 
 applyLauncherDefaults();
+globalThis.MACRO ??= {
+  VERSION: '0.0.0-runtime-health',
+  DISPLAY_VERSION: '0.0.0-runtime-health',
+  BUILD_TIME: '',
+  PACKAGE_URL: '',
+};
 
 const repoRoot = resolve(import.meta.dir, '..');
 const agentBin = resolve(repoRoot, 'bin/claude-agent.js');
@@ -879,10 +900,10 @@ async function checkMcpAuthCacheConcurrency() {
     // clearMcpAuthCache() must win against in-flight writes: once clear is
     // called, an older queued write must not resurrect stale needs-auth entries.
     let staleEntryResurrections = 0;
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 220; i++) {
       const raceServerId = `runtime-auth-cache-race-${i}`;
       _setMcpAuthCacheEntryForTesting(raceServerId);
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 4)));
       clearMcpAuthCache();
       await _waitForMcpAuthCacheWritesForTesting();
       const raceCache = await _readMcpAuthCacheForTesting();
@@ -893,7 +914,7 @@ async function checkMcpAuthCacheConcurrency() {
     assert(
       staleEntryResurrections === 0,
       'clearMcpAuthCache should prevent stale in-flight writes from reappearing',
-      { staleEntryResurrections },
+      { staleEntryResurrections, iterations: 220 },
     );
   } finally {
     await _resetMcpAuthCacheForTesting();
@@ -939,33 +960,210 @@ function checkMcpToolTimeoutDefault() {
   }
 }
 
-function checkQueryEnginePermissionDenialsAreTurnScoped() {
-  const source = readFileSync(join(repoRoot, 'src/QueryEngine.ts'), 'utf8');
-  assert(
-    source.includes('const turnPermissionDenials: SDKPermissionDenial[] = []'),
-    'QueryEngine should create turn-scoped permission denials in submitMessage',
+async function checkQueryEnginePermissionDenialsAreTurnScoped() {
+  const wrapperDecisions = [{ behavior: 'deny' }, { behavior: 'allow' }];
+  const baseCanUseTool = async () =>
+    wrapperDecisions.shift() ?? { behavior: 'allow' };
+
+  const turn1Denials = [];
+  const turn1CanUseTool = _createTurnScopedCanUseToolForTesting(
+    baseCanUseTool,
+    turn1Denials,
+  );
+  await turn1CanUseTool(
+    { name: 'bash' },
+    { command: 'ls' },
+    {},
+    {},
+    'turn-1-tool-use',
   );
   assert(
-    source.includes('turnPermissionDenials.push({'),
-    'QueryEngine should record permission denials into the turn-scoped array',
+    turn1Denials.length === 1 &&
+      turn1Denials[0]?.tool_use_id === 'turn-1-tool-use',
+    'QueryEngine should report permission denials for the active turn',
+    turn1Denials,
+  );
+
+  const turn2Denials = [];
+  const turn2CanUseTool = _createTurnScopedCanUseToolForTesting(
+    baseCanUseTool,
+    turn2Denials,
+  );
+  await turn2CanUseTool(
+    { name: 'bash' },
+    { command: 'pwd' },
+    {},
+    {},
+    'turn-2-tool-use',
   );
   assert(
-    !source.includes('permission_denials: this.permissionDenials'),
-    'QueryEngine result messages must not use engine-lifetime permission denials',
+    turn2Denials.length === 0,
+    'QueryEngine should not leak permission denials from previous turns',
+    { turn1Denials, turn2Denials },
   );
+
+  const previousSessionPersistenceDisabled = isSessionPersistenceDisabled();
+  const previousNodeEnv = process.env.NODE_ENV;
+  let appState = getDefaultAppState();
+  const submitDecisions = [{ behavior: 'deny' }, { behavior: 'allow' }];
+  const submitCanUseTool = async () =>
+    submitDecisions.shift() ?? { behavior: 'allow' };
+  const queryRunner = async function* ({ canUseTool, toolUseContext }) {
+    await canUseTool(
+      { name: 'bash' },
+      { command: 'runtime-health' },
+      toolUseContext,
+      {},
+      `submit-turn-${submitDecisions.length}`,
+    );
+    yield createAssistantMessage({ content: 'ok' });
+  };
+  const engine = new QueryEngine({
+    cwd: repoRoot,
+    tools: [],
+    commands: [],
+    mcpClients: [],
+    agents: [],
+    canUseTool: submitCanUseTool,
+    getAppState: () => appState,
+    setAppState: updater => {
+      appState = updater(appState);
+    },
+    readFileCache: createFileStateCacheWithSizeLimit(10),
+    customSystemPrompt: '',
+    thinkingConfig: { type: 'disabled' },
+    queryRunner,
+  });
+
+  try {
+    process.env.NODE_ENV = 'test';
+    setSessionPersistenceDisabled(true);
+    const turn1Messages = [];
+    for await (const message of engine.submitMessage('turn 1')) {
+      turn1Messages.push(message);
+    }
+    const turn1Result = turn1Messages.find(message => message.type === 'result');
+    assert(
+      turn1Result?.permission_denials?.length === 1,
+      'QueryEngine.submitMessage should return active-turn permission denials',
+      turn1Result,
+    );
+
+    const turn2Messages = [];
+    for await (const message of engine.submitMessage('turn 2')) {
+      turn2Messages.push(message);
+    }
+    const turn2Result = turn2Messages.find(message => message.type === 'result');
+    assert(
+      Array.isArray(turn2Result?.permission_denials) &&
+        turn2Result.permission_denials.length === 0,
+      'QueryEngine.submitMessage should clear permission denials between turns',
+      { turn1Result, turn2Result },
+    );
+  } finally {
+    setSessionPersistenceDisabled(previousSessionPersistenceDisabled);
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+  }
+}
+
+async function checkStartupBannerDiagnostics() {
+  const previousConfigDir = process.env.CLAUDE_CONFIG_DIR;
+  const previousDebug = process.env.DEBUG;
+  const previousDebugSdk = process.env.DEBUG_SDK;
+  const stderrChunks = [];
+  const originalStderrWrite = process.stderr.write.bind(process.stderr);
+
+  process.stderr.write = (chunk, ...args) => {
+    stderrChunks.push(String(chunk));
+    if (typeof args[1] === 'function') {
+      args[1]();
+    }
+    return true;
+  };
+
+  const runtimeDir = mkdtempSync(join(tmpdir(), 'claude-agent-startup-banner-'));
+  const settingsPath = join(runtimeDir, STARTUP_BANNER_SETTINGS_FILENAME);
+
+  try {
+    process.env.CLAUDE_CONFIG_DIR = runtimeDir;
+    delete process.env.DEBUG;
+    delete process.env.DEBUG_SDK;
+    writeFileSync(settingsPath, '{bad-json', 'utf8');
+
+    const mode = getStartupBannerMode();
+    assert(mode === null, 'startup banner mode should degrade to null on invalid config');
+    assert(
+      stderrChunks.length === 0,
+      'startup banner diagnostics should be silent when debug is disabled',
+      stderrChunks.join(''),
+    );
+
+    process.env.DEBUG = '1';
+    void getStartupBannerMode();
+    assert(
+      stderrChunks.join('').includes('[startup-banner] failed to read startup banner settings'),
+      'startup banner diagnostics should log in debug mode',
+      stderrChunks.join(''),
+    );
+
+    stderrChunks.length = 0;
+    writeFileSync(settingsPath, '{bad-json', 'utf8');
+    await callStartupBannerCommand('claude');
+    assert(
+      stderrChunks.join('').includes('[startup-banner-command] failed to parse startup banner settings'),
+      'startup banner command should log parse diagnostics in debug mode',
+      stderrChunks.join(''),
+    );
+
+    const nonDirectoryConfigDir = join(runtimeDir, 'not-a-directory');
+    writeFileSync(nonDirectoryConfigDir, 'x', 'utf8');
+    process.env.CLAUDE_CONFIG_DIR = nonDirectoryConfigDir;
+    const writeFailure = await callStartupBannerCommand('claude');
+    assert(
+      writeFailure.value.startsWith('Error:'),
+      'startup banner command should surface write failures to the user',
+      writeFailure,
+    );
+  } finally {
+    process.stderr.write = originalStderrWrite;
+    if (previousConfigDir === undefined) {
+      delete process.env.CLAUDE_CONFIG_DIR;
+    } else {
+      process.env.CLAUDE_CONFIG_DIR = previousConfigDir;
+    }
+    if (previousDebug === undefined) {
+      delete process.env.DEBUG;
+    } else {
+      process.env.DEBUG = previousDebug;
+    }
+    if (previousDebugSdk === undefined) {
+      delete process.env.DEBUG_SDK;
+    } else {
+      process.env.DEBUG_SDK = previousDebugSdk;
+    }
+    rmSync(runtimeDir, { recursive: true, force: true });
+  }
 }
 
 function checkStartupPrefetchDiagnosticsDebugSignals() {
-  const source = readFileSync(join(repoRoot, 'src/main.tsx'), 'utf8');
+  const mainSource = readFileSync(join(repoRoot, 'src/main.tsx'), 'utf8');
   assert(
-    source.includes("process.env.DEBUG === '1'") &&
-      source.includes("process.env.DEBUG === 'true'"),
-    'Startup prefetch diagnostics should honor DEBUG env',
+    mainSource.includes('isDebugDiagnosticsEnabled({') &&
+      mainSource.includes('includeLauncherDebug: true'),
+    'Startup prefetch diagnostics should use shared debug diagnostics helper',
+  );
+  const helperSource = readFileSync(
+    join(repoRoot, 'src/utils/debugDiagnostics.ts'),
+    'utf8',
   );
   assert(
-    source.includes("process.env.DEBUG_SDK === '1'") &&
-      source.includes("process.env.DEBUG_SDK === 'true'"),
-    'Startup prefetch diagnostics should honor DEBUG_SDK env',
+    helperSource.includes('process.env.DEBUG') &&
+      helperSource.includes('process.env.DEBUG_SDK'),
+    'Shared debug diagnostics helper should honor DEBUG and DEBUG_SDK',
   );
 }
 
@@ -1048,10 +1246,13 @@ console.log('Checking MCP tool timeout defaults...');
 checkMcpToolTimeoutDefault();
 
 console.log('Checking QueryEngine permission denial scoping...');
-checkQueryEnginePermissionDenialsAreTurnScoped();
+await checkQueryEnginePermissionDenialsAreTurnScoped();
 
 console.log('Checking startup prefetch diagnostics debug signals...');
 checkStartupPrefetchDiagnosticsDebugSignals();
+
+console.log('Checking startup banner diagnostics...');
+await checkStartupBannerDiagnostics();
 
 console.log('Checking cleanup timeout diagnostics...');
 await checkCleanupTimeoutDiagnostics();

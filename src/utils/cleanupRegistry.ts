@@ -5,44 +5,12 @@
  */
 
 import { withTimeout } from './sleep.js'
+import { logDebugDiagnosticWarn } from './debugDiagnostics.js'
 
 const CLEANUP_TIMEOUT_MS = 2000
 
 // Global registry for cleanup functions
 const cleanupFunctions = new Set<() => Promise<void>>()
-
-function isTruthyEnv(value: string | undefined): boolean {
-  if (!value) return false
-  const normalized = value.toLowerCase().trim()
-  return normalized === '1' || normalized === 'true' || normalized === 'yes'
-}
-
-function shouldLogCleanupDiagnostics(): boolean {
-  return (
-    isTruthyEnv(process.env.DEBUG) ||
-    isTruthyEnv(process.env.DEBUG_SDK) ||
-    process.argv.includes('--debug') ||
-    process.argv.includes('-d') ||
-    process.argv.includes('--debug-to-stderr') ||
-    process.argv.includes('-d2e') ||
-    process.argv.some(arg => arg.startsWith('--debug=')) ||
-    process.argv.some(arg => arg === '--debug-file' || arg.startsWith('--debug-file='))
-  )
-}
-
-function formatCleanupError(error: unknown): string {
-  if (error instanceof Error) return error.message
-  return String(error)
-}
-
-function logCleanupDiagnostic(cleanupName: string, error: unknown): void {
-  if (!shouldLogCleanupDiagnostics()) return
-  const timestamp = new Date().toISOString()
-  const message = formatCleanupError(error)
-  process.stderr.write(
-    `${timestamp} [WARN] [cleanupRegistry] cleanup "${cleanupName}" failed: ${message}\n`,
-  )
-}
 
 async function runCleanupFunction(cleanupFn: () => Promise<void>): Promise<void> {
   const cleanupName = cleanupFn.name || '<anonymous>'
@@ -53,7 +21,11 @@ async function runCleanupFunction(cleanupFn: () => Promise<void>): Promise<void>
       'cleanup timed out',
     )
   } catch (error) {
-    logCleanupDiagnostic(cleanupName, error)
+    logDebugDiagnosticWarn(
+      'cleanupRegistry',
+      `cleanup "${cleanupName}" failed`,
+      error,
+    )
   }
 }
 

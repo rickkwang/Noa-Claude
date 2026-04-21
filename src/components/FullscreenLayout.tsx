@@ -11,6 +11,7 @@ import instances from '../ink/instances.js';
 import { Box, Text } from '../ink.js';
 import type { Message } from '../types/message.js';
 import { openBrowser, openPath } from '../utils/browser.js';
+import { logDebugDiagnosticWarn } from '../utils/debugDiagnostics.js';
 import { isFullscreenEnvEnabled } from '../utils/fullscreen.js';
 import { plural } from '../utils/stringUtils.js';
 import { isNullRenderingAttachment } from './messages/nullRenderingAttachments.js';
@@ -483,7 +484,13 @@ function _temp2(url) {
   if (url.startsWith("file:")) {
     try {
       openPath(fileURLToPath(url));
-    } catch {}
+    } catch (error) {
+      logDebugDiagnosticWarn(
+        'fullscreenLayout',
+        `failed to open hyperlink path: ${url}`,
+        error,
+      );
+    }
   } else {
     openBrowser(url);
   }

@@ -171,6 +171,48 @@ export type QueryEngineConfig = {
     yieldedSystemMsg: Message,
     store: Message[],
   ) => { messages: Message[]; executed: boolean } | undefined
+  /** Internal test hook for exercising submitMessage() without a live model. */
+  queryRunner?: typeof query
+}
+
+function createTurnScopedCanUseTool(
+  canUseTool: CanUseToolFn,
+  turnPermissionDenials: SDKPermissionDenial[],
+): CanUseToolFn {
+  return async (
+    tool,
+    input,
+    toolUseContext,
+    assistantMessage,
+    toolUseID,
+    forceDecision,
+  ) => {
+    const result = await canUseTool(
+      tool,
+      input,
+      toolUseContext,
+      assistantMessage,
+      toolUseID,
+      forceDecision,
+    )
+
+    if (result.behavior !== 'allow') {
+      turnPermissionDenials.push({
+        tool_name: sdkCompatToolName(tool.name),
+        tool_use_id: toolUseID,
+        tool_input: input,
+      })
+    }
+
+    return result
+  }
+}
+
+export function _createTurnScopedCanUseToolForTesting(
+  canUseTool: CanUseToolFn,
+  turnPermissionDenials: SDKPermissionDenial[],
+): CanUseToolFn {
+  return createTurnScopedCanUseTool(canUseTool, turnPermissionDenials)
 }
 
 /**
@@ -248,36 +290,10 @@ export class QueryEngine {
     this.abortController = turnAbortController
 
     const turnPermissionDenials: SDKPermissionDenial[] = []
-
-    // Wrap canUseTool to track permission denials
-    const wrappedCanUseTool: CanUseToolFn = async (
-      tool,
-      input,
-      toolUseContext,
-      assistantMessage,
-      toolUseID,
-      forceDecision,
-    ) => {
-      const result = await canUseTool(
-        tool,
-        input,
-        toolUseContext,
-        assistantMessage,
-        toolUseID,
-        forceDecision,
-      )
-
-      // Track denials for SDK reporting
-      if (result.behavior !== 'allow') {
-        turnPermissionDenials.push({
-          tool_name: sdkCompatToolName(tool.name),
-          tool_use_id: toolUseID,
-          tool_input: input,
-        })
-      }
-
-      return result
-    }
+    const wrappedCanUseTool = createTurnScopedCanUseTool(
+      canUseTool,
+      turnPermissionDenials,
+    )
 
     const initialAppState = getAppState()
     const initialMainLoopModel = userSpecifiedModel
@@ -681,7 +697,9 @@ export class QueryEngine {
       ? countToolCalls(this.mutableMessages, SYNTHETIC_OUTPUT_TOOL_NAME)
       : 0
 
-    for await (const message of query({
+    const runQuery = this.config.queryRunner ?? query
+
+    for await (const message of runQuery({
       messages,
       systemPrompt,
       userContext,

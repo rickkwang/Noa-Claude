@@ -1,8 +1,9 @@
 // @ts-nocheck
-import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { getOriginalCwd } from '../../bootstrap/state.js'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
+import { logDebugDiagnosticWarn } from '../../utils/debugDiagnostics.js'
 import {
   normalizeStartupBannerMode,
   STARTUP_BANNER_MODES,
@@ -20,7 +21,13 @@ function readCurrentMode(): StartupBannerMode | null {
   try {
     const data = JSON.parse(readFileSync(path, 'utf-8'))
     return normalizeStartupBannerMode(data.mode)
-  } catch {}
+  } catch (error) {
+    logDebugDiagnosticWarn(
+      'startup-banner-command',
+      'failed to parse startup banner settings',
+      error,
+    )
+  }
   return null
 }
 
@@ -29,12 +36,9 @@ function writeMode(mode: StartupBannerMode): void {
   const path = getSettingsPath()
 
   // Ensure directory exists
-  try {
-    if (!existsSync(dir)) {
-      const { mkdirSync } = require('fs')
-      mkdirSync(dir, { recursive: true })
-    }
-  } catch {}
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true })
+  }
 
   writeFileSync(path, JSON.stringify({ mode }, null, 2), 'utf-8')
 }

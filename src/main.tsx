@@ -8,27 +8,18 @@
 //    sequentially via sync spawn inside applySafeConfigEnvironmentVariables()
 //    (~65ms on every macOS startup)
 import { profileCheckpoint, profileReport } from './utils/startupProfiler.js';
+import { isDebugDiagnosticsEnabled, logDebugDiagnosticWarn } from './utils/debugDiagnostics.js';
 
 const shouldLogStartupPrefetchDiagnostics =
-  process.env.CLAUDE_CODE_LAUNCHER_DEBUG === '1' ||
-  process.env.CLAUDE_CODE_LAUNCHER_DEBUG === 'true' ||
-  process.env.DEBUG === '1' ||
-  process.env.DEBUG === 'true' ||
-  process.env.DEBUG_SDK === '1' ||
-  process.env.DEBUG_SDK === 'true' ||
-  process.argv.includes('--debug') ||
-  process.argv.includes('-d') ||
-  process.argv.includes('--debug-to-stderr') ||
-  process.argv.includes('-d2e') ||
-  process.argv.some(arg => arg.startsWith('--debug=')) ||
-  process.argv.some(arg => arg === '--debug-file' || arg.startsWith('--debug-file='));
+  isDebugDiagnosticsEnabled({
+    includeLauncherDebug: true,
+  });
 
 function logStartupPrefetchError(step: string, error: unknown): void {
   if (!shouldLogStartupPrefetchDiagnostics) return;
-  const details = error instanceof Error ? error.message : String(error);
-  process.stderr.write(
-    `${new Date().toISOString()} [WARN] [startup] ${step} failed: ${details}\n`,
-  );
+  logDebugDiagnosticWarn('startup', `${step} failed`, error, {
+    includeLauncherDebug: true,
+  });
 }
 
 // eslint-disable-next-line custom-rules/no-top-level-side-effects

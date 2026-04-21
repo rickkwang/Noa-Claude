@@ -11,6 +11,7 @@ import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { getAPIProvider } from '../utils/model/providers.js'
 import { getClaudeConfigHomeDir } from '../utils/envUtils.js'
+import { logDebugDiagnosticWarn } from '../utils/debugDiagnostics.js'
 import {
   normalizeStartupBannerMode,
   STARTUP_BANNER_SETTINGS_FILENAME,
@@ -166,7 +167,13 @@ export function getStartupBannerMode(): string | null {
       const data = JSON.parse(readFileSync(settingsPath, 'utf-8'))
       return normalizeStartupBannerMode(data.mode)
     }
-  } catch {}
+  } catch (error) {
+    logDebugDiagnosticWarn(
+      'startup-banner',
+      'failed to read startup banner settings',
+      error,
+    )
+  }
   return null
 }
 

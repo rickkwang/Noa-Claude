@@ -19,6 +19,7 @@ import { loadKnownMarketplacesConfig, removeMarketplaceSource } from '../../util
 import { getPluginEditableScopes } from '../../utils/plugins/pluginStartupCheck.js';
 import type { EditableSettingSource } from '../../utils/settings/constants.js';
 import { getSettingsForSource, updateSettingsForSource } from '../../utils/settings/settings.js';
+import { logDebugDiagnosticWarn } from '../../utils/debugDiagnostics.js';
 import { AddMarketplace } from './AddMarketplace.js';
 import { BrowseMarketplace } from './BrowseMarketplace.js';
 import { DiscoverPlugins } from './DiscoverPlugins.js';
@@ -386,7 +387,9 @@ function ErrorsTabContent(t0) {
             failures
           } = await loadMarketplacesWithGracefulDegradation(config);
           setMarketplaceLoadFailures(failures);
-        } catch {}
+        } catch (error) {
+          logDebugDiagnosticWarn('pluginSettings', 'failed to refresh marketplace load failures', error);
+        }
       })();
     };
     t3 = [];

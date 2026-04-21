@@ -11,7 +11,8 @@ import {
   parseDebugFilter,
   shouldShowDebugMessage,
 } from './debugFilter.js'
-import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
+import { isDebugDiagnosticsEnabled } from './debugDiagnostics.js'
+import { getClaudeConfigHomeDir } from './envUtils.js'
 import { getFsImplementation } from './fsOperations.js'
 import { writeToStderr } from './process.js'
 import { jsonStringify } from './slowOperations.js'
@@ -43,18 +44,7 @@ export const getMinDebugLogLevel = memoize((): DebugLogLevel => {
 let runtimeDebugEnabled = false
 
 export const isDebugMode = memoize((): boolean => {
-  return (
-    runtimeDebugEnabled ||
-    isEnvTruthy(process.env.DEBUG) ||
-    isEnvTruthy(process.env.DEBUG_SDK) ||
-    process.argv.includes('--debug') ||
-    process.argv.includes('-d') ||
-    isDebugToStdErr() ||
-    // Also check for --debug=pattern syntax
-    process.argv.some(arg => arg.startsWith('--debug=')) ||
-    // --debug-file implicitly enables debug mode
-    getDebugFilePath() !== null
-  )
+  return runtimeDebugEnabled || isDebugDiagnosticsEnabled()
 })
 
 /**
