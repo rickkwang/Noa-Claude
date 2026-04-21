@@ -31,6 +31,7 @@ import {
   isMouseClicksDisabled,
   isMouseTrackingEnabled,
 } from '../src/utils/fullscreen.ts';
+import { resetSettingsCache } from '../src/utils/settings/settingsCache.ts';
 import {
   getSandboxRuntimeCompatibility,
   SandboxManager,
@@ -129,6 +130,7 @@ const fullscreenEnvKeys = [
   'CLAUDE_CODE_DISABLE_MOUSE',
   'NOA_CLAUDE_DISABLE_MOUSE_CLICKS',
   'CLAUDE_CODE_DISABLE_MOUSE_CLICKS',
+  'CLAUDE_CONFIG_DIR',
 ];
 
 function withFullscreenEnv(overrides, callback) {
@@ -149,7 +151,14 @@ function withFullscreenEnv(overrides, callback) {
         delete process.env[key];
       }
     }
+    // Point to a non-existent config dir so no user settings are loaded.
+    // This ensures isFullscreenEnvEnabled() falls through to the auto-detect
+    // path (tmux / USER_TYPE) rather than reading tuiMode from disk.
+    if (!process.env.CLAUDE_CONFIG_DIR) {
+      process.env.CLAUDE_CONFIG_DIR = '/nonexistent-claude-config-dir';
+    }
     _resetTmuxControlModeProbeForTesting();
+    resetSettingsCache();
     return callback();
   } finally {
     for (const key of fullscreenEnvKeys) {
