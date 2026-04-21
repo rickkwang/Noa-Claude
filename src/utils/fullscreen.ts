@@ -124,10 +124,12 @@ export function _resetTmuxControlModeProbeForTesting(): void {
 export type FullscreenMode = 'default' | 'fullscreen' | 'auto'
 
 export function getFullscreenMode(): FullscreenMode {
+  // Env var is explicit runtime override — highest priority
   const noFlickerEnv = getEnvValueWithLegacyFallback(NO_FLICKER_ENV, LEGACY_NO_FLICKER_ENV)
   if (isEnvDefinedFalsy(noFlickerEnv)) return 'default'
   if (isEnvTruthy(noFlickerEnv)) return 'fullscreen'
 
+  // Settings tuiMode is persistent user preference — next priority
   const settings = getSettingsForSource('userSettings')
   if (settings?.tuiMode === 'fullscreen') return 'fullscreen'
   if (settings?.tuiMode === 'default') return 'default'
