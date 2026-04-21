@@ -125,7 +125,8 @@ function checkFindExecDelete(command: string): PermissionResult {
 
   // Check for dangerous action flags: -exec, -execdir, -ok, -okdir, -delete, -fls, -fprint0, -fprint, -fprintf
   // These flags can execute arbitrary commands or delete files
-  const dangerousFindFlags = /\s-(?:exec(?:dir)?|ok(?:dir)?|delete|fls|fprint0?|fprintf)\b/
+  // Use (?:^|\s) to match both start-of-string (find -exec) and space-prefixed (-exec) forms
+  const dangerousFindFlags = /(?:^|\s)-(?:exec(?:dir)?|ok(?:dir)?|delete|fls|fprint0?|fprintf)\b/
 
   if (dangerousFindFlags.test(findArgs)) {
     return {
