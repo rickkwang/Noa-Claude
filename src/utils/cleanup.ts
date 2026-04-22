@@ -45,6 +45,17 @@ export function addCleanupResults(
   }
 }
 
+export function _convertFileNameToDateForTesting(filename: string): Date {
+  return convertFileNameToDate(filename)
+}
+
+export function _addCleanupResultsForTesting(
+  a: CleanupResult,
+  b: CleanupResult,
+): CleanupResult {
+  return addCleanupResults(a, b)
+}
+
 export function convertFileNameToDate(filename: string): Date {
   const isoStr = filename
     .split('.')[0]!

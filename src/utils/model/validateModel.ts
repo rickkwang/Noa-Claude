@@ -181,3 +181,8 @@ function get3PFallbackSuggestion(model: string | undefined): string | undefined 
   }
   return undefined
 }
+
+// @[MODEL LAUNCH]: Add a fallback suggestion chain for the new model → previous version
+export function _get3PFallbackSuggestionForTesting(model: string | undefined): string | undefined {
+  return get3PFallbackSuggestion(model)
+}

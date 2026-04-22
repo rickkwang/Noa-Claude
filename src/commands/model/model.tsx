@@ -152,7 +152,7 @@ function SetModelAndClose({
 
       // @[MODEL LAUNCH]: Update check for 1M access.
       if (model && isOpus1mUnavailable(model)) {
-        onDone(`Opus 4.6 with 1M context is not available for your account. Learn more: ${PRODUCT_MODEL_CONFIG_URL}`, {
+        onDone(`Opus 4.7 with 1M context is not available for your account. Learn more: ${PRODUCT_MODEL_CONFIG_URL}`, {
           display: 'system'
         });
         return;

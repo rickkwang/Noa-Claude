@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 
 import { spawnSync } from 'child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import * as fs from 'fs/promises';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import {
@@ -91,11 +92,24 @@ import {
   _logResumeListLoadFailureForTesting,
 } from '../src/commands/resume/resume.tsx';
 import { _isForkSubagentEnabledForTesting } from '../src/tools/AgentTool/forkSubagent.ts';
+import { _checkFindExecDeleteForTesting } from '../src/tools/BashTool/pathValidation.ts';
 import {
   RESUME_SUMMARY_GATE_LARGE_BYTES,
   RESUME_SUMMARY_GATE_STALE_MS,
   shouldUseResumeSummaryGate,
 } from '../src/utils/resumeSummaryGate.ts';
+import { isDangerousRemovalPath } from '../src/utils/permissions/pathValidation.ts';
+import { homedir } from 'os';
+import { _getThinkingTextForTesting } from '../src/components/Spinner/SpinnerAnimationRow.tsx';
+import { _get3PFallbackSuggestionForTesting } from '../src/utils/model/validateModel.ts';
+import { getPublicModelDisplayName, getDefaultOpusModel, getBestModel } from '../src/utils/model/model.ts';
+import { getModelStrings } from '../src/utils/model/modelStrings.ts';
+import { modelSupportsEffort, modelSupportsMaxEffort } from '../src/utils/effort.ts';
+import {
+  _convertFileNameToDateForTesting,
+  _addCleanupResultsForTesting,
+  cleanupOldTaskFiles,
+} from '../src/utils/cleanup.ts';
 
 applyLauncherDefaults();
 globalThis.MACRO ??= {
@@ -1475,6 +1489,298 @@ function checkResumeSummaryGatePredicate() {
   );
 }
 
+// ============================================================================
+// Priority 1: model fallback suggestion (3P path)
+// ============================================================================
+function checkModelFallbackSuggestions() {
+  // Set provider to 3P so get3PFallbackSuggestion returns actual fallback chains.
+  // This env var must be set before any model module is imported (they cache state).
+  const prev = process.env.CLAUDE_CODE_USE_OPENAI;
+  try {
+    process.env.CLAUDE_CODE_USE_OPENAI = '1';
+    // Re-import with 3P provider set — imports are cached, so we call the
+    // function directly (it reads getAPIProvider() at call time, not import time).
+    assert(
+      _get3PFallbackSuggestionForTesting('opus-4-7') === 'claude-opus-4-6',
+      'opus-4-7 should fallback to opus-4-6',
+    );
+    assert(
+      _get3PFallbackSuggestionForTesting('OPUS-4-7') === 'claude-opus-4-6',
+      'opus-4-7 (uppercase) should fallback to opus-4-6',
+    );
+    assert(
+      _get3PFallbackSuggestionForTesting('opus_4_7') === 'claude-opus-4-6',
+      'opus_4_7 (underscore) should fallback to opus-4-6',
+    );
+    assert(
+      _get3PFallbackSuggestionForTesting('opus-4-6') === 'claude-opus-4-1-20250805',
+      'opus-4-6 should fallback to opus-4-1-20250805',
+    );
+    assert(
+      _get3PFallbackSuggestionForTesting('sonnet-4-6') === 'claude-sonnet-4-5-20250929',
+      'sonnet-4-6 should fallback to sonnet-4-5-20250929',
+    );
+    assert(
+      _get3PFallbackSuggestionForTesting('sonnet-4-5') === 'claude-sonnet-4-20250514',
+      'sonnet-4-5 should fallback to sonnet-4-20250514',
+    );
+    assert(
+      _get3PFallbackSuggestionForTesting('claude-3-5-sonnet') === undefined,
+      'old model with no mapping should return undefined',
+    );
+    assert(
+      _get3PFallbackSuggestionForTesting(undefined) === undefined,
+      'undefined model should return undefined',
+    );
+    assert(
+      _get3PFallbackSuggestionForTesting('') === undefined,
+      'empty model should return undefined',
+    );
+  } finally {
+    if (prev === undefined) delete process.env.CLAUDE_CODE_USE_OPENAI;
+    else process.env.CLAUDE_CODE_USE_OPENAI = prev;
+  }
+}
+
+// ============================================================================
+// Opus 4.7: user-facing path coverage
+// ============================================================================
+function checkOpus47UserPaths() {
+  // getPublicModelDisplayName for opus-4-7
+  const opus47DisplayName = getPublicModelDisplayName(getModelStrings().opus47);
+  assert(opus47DisplayName === 'Opus 4.7', `getPublicModelDisplayName(opus47) should return 'Opus 4.7', got: ${opus47DisplayName}`);
+  const opus47_1mDisplayName = getPublicModelDisplayName(getModelStrings().opus47 + '[1m]');
+  assert(opus47_1mDisplayName === 'Opus 4.7 (1M context)', `opus47[1m] display name should be 'Opus 4.7 (1M context)', got: ${opus47_1mDisplayName}`);
+
+  // getDefaultOpusModel — first-party path returns opus-4-7
+  const defaultOpus = getDefaultOpusModel();
+  assert(defaultOpus === getModelStrings().opus47, `getDefaultOpusModel() should return opus47 for first-party, got: ${defaultOpus}`);
+
+  // getBestModel is an alias for getDefaultOpusModel
+  const bestModel = getBestModel();
+  assert(bestModel === getModelStrings().opus47, `getBestModel() should equal opus47 for first-party, got: ${bestModel}`);
+
+  // modelSupportsEffort for opus-4-7
+  assert(modelSupportsEffort('opus-4-7') === true, 'opus-4-7 should support effort');
+  assert(modelSupportsEffort('claude-opus-4-7') === true, 'claude-opus-4-7 should support effort');
+
+  // modelSupportsMaxEffort for opus-4-7
+  assert(modelSupportsMaxEffort('opus-4-7') === true, 'opus-4-7 should support max effort');
+  assert(modelSupportsMaxEffort('claude-opus-4-7') === true, 'claude-opus-4-7 should support max effort');
+}
+
+// ============================================================================
+// Priority 2: dangerous removal path
+// ============================================================================
+function checkDangerousRemovalPath() {
+  // Always dangerous
+  assert(isDangerousRemovalPath('*') === true, '* wildcard is dangerous');
+  assert(isDangerousRemovalPath('/') === true, 'root / is dangerous');
+  assert(isDangerousRemovalPath('/path/to/dir/*') === true, 'glob /* is dangerous');
+  assert(isDangerousRemovalPath('C:\\foo\\*') === true, 'Windows glob /* is dangerous');
+
+  // macOS /private/ system dirs are dangerous because dirname(/private/etc) = /private
+  assert(isDangerousRemovalPath('/private/etc') === true, 'macOS /private/etc is dangerous');
+  assert(isDangerousRemovalPath('/private/var') === true, 'macOS /private/var is dangerous');
+  assert(isDangerousRemovalPath('/private/tmp') === true, 'macOS /private/tmp is dangerous');
+  assert(isDangerousRemovalPath('/private/usr') === true, 'macOS /private/usr is dangerous');
+  // /private itself: dirname('/private') = '/' so it's caught by the root-child check
+  assert(isDangerousRemovalPath('/private') === true, '/private is dangerous (direct child of root)');
+
+  // Direct children of root
+  assert(isDangerousRemovalPath('/usr') === true, '/usr is direct child of root');
+  assert(isDangerousRemovalPath('/tmp') === true, '/tmp is direct child of root');
+  assert(isDangerousRemovalPath('/etc') === true, '/etc is direct child of root');
+  // Two levels deep is safe
+  assert(isDangerousRemovalPath('/usr/local') === false, '/usr/local is safe (2 levels)');
+  assert(isDangerousRemovalPath('/tmp/claude') === false, '/tmp/claude is safe');
+  assert(isDangerousRemovalPath('/var/log') === false, '/var/log is safe (2 levels)');
+
+  // Home dir
+  const home = homedir();
+  assert(isDangerousRemovalPath(home) === true, 'home dir is dangerous');
+  assert(isDangerousRemovalPath(join(home, 'code')) === false, 'home/subdir is safe');
+  assert(isDangerousRemovalPath(join(home, 'code', 'project')) === false, 'home/subdir/subdir is safe');
+
+  // Windows drive roots
+  assert(isDangerousRemovalPath('C:\\') === true, 'Windows C:\\ is dangerous');
+  assert(isDangerousRemovalPath('D:\\') === true, 'Windows D:\\ is dangerous');
+  // Direct children of drive root
+  assert(isDangerousRemovalPath('C:\\Windows') === true, 'Windows C:\\Windows is dangerous');
+  assert(isDangerousRemovalPath('C:\\Users') === true, 'Windows C:\\Users is dangerous');
+  // Two levels deep is safe
+  assert(isDangerousRemovalPath('C:\\Windows\\System32') === false, 'Windows C:\\Windows\\System32 is safe');
+  assert(isDangerousRemovalPath('C:\\Users\\Admin') === false, 'Windows C:\\Users\\Admin is safe');
+
+  // Safe project paths
+  assert(isDangerousRemovalPath('/home/user/project/src') === false, 'nested project path is safe');
+  assert(isDangerousRemovalPath('/var/www/html') === false, '/var/www/html is safe');
+  // Trailing slash variant
+  assert(isDangerousRemovalPath('/usr/') === true, '/usr/ (trailing slash) is dangerous');
+}
+
+// ============================================================================
+// Priority 3: cleanup utilities
+// ============================================================================
+async function checkCleanupUtilities() {
+  const prevNodeEnv = process.env.NODE_ENV;
+  try {
+    process.env.NODE_ENV = 'test';
+
+    // Unit: convertFileNameToDate
+    const d1 = _convertFileNameToDateForTesting('2024-01-15T10-30-00-000Z.json');
+    assert(d1 instanceof Date && !isNaN(d1.getTime()), 'ISO timestamp parsed to valid Date');
+    assert(d1.getUTCFullYear() === 2024, 'year correct');
+    assert(d1.getUTCMonth() === 0, 'month is January (0-indexed)');
+    assert(d1.getUTCDate() === 15, 'day correct');
+    assert(d1.getUTCHours() === 10, 'hours correct');
+    assert(d1.getUTCMinutes() === 30, 'minutes correct');
+    assert(d1.getUTCSeconds() === 0, 'seconds correct');
+    assert(d1.getUTCMilliseconds() === 0, 'milliseconds correct');
+
+    const d2 = _convertFileNameToDateForTesting('2023-12-31T23-59-59-999Z.json');
+    assert(d2.getUTCFullYear() === 2023, 'year 2023 correct');
+    assert(d2.getUTCMonth() === 11, 'month is December');
+    assert(d2.getUTCDate() === 31, 'day is 31');
+
+    // Unit: addCleanupResults
+    const r1 = _addCleanupResultsForTesting({ messages: 3, errors: 1 }, { messages: 2, errors: 0 });
+    assert(r1.messages === 5 && r1.errors === 1, 'addCleanupResults sums correctly');
+    const r2 = _addCleanupResultsForTesting({ messages: 0, errors: 0 }, { messages: 10, errors: 5 });
+    assert(r2.messages === 10 && r2.errors === 5, 'addCleanupResults handles zero inputs');
+
+    // Integration: cleanupOldTaskFiles — old files deleted, recent files kept
+    const workdir = mkdtempSync(join(tmpdir(), 'claude-cleanup-test-'));
+    const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = workdir;
+
+    const tasksDir = join(workdir, 'tasks');
+    mkdirSync(tasksDir, { recursive: true });
+
+    const oldFile = join(tasksDir, 'old-task.md');
+    const newFile = join(tasksDir, 'new-task.md');
+    writeFileSync(oldFile, 'old task', 'utf8');
+    writeFileSync(newFile, 'new task', 'utf8');
+
+    // Set old file's mtime to 60 days ago
+    const sixtyDaysAgo = Date.now() - (60 * 24 * 60 * 60 * 1000);
+    await fs.utimes(oldFile, new Date(sixtyDaysAgo), new Date(sixtyDaysAgo));
+
+    const oldBefore = existsSync(oldFile);
+    const newBefore = existsSync(newFile);
+    await cleanupOldTaskFiles();
+    const oldAfter = existsSync(oldFile);
+    const newAfter = existsSync(newFile);
+
+    process.env.CLAUDE_CONFIG_DIR = originalConfigDir;
+    rmSync(workdir, { recursive: true, force: true });
+
+    assert(oldBefore === true && oldAfter === false,
+      'old task file should be removed', { oldBefore, oldAfter });
+    assert(newBefore === true && newAfter === true,
+      'recent task file should be preserved', { newBefore, newAfter });
+  } finally {
+    process.env.NODE_ENV = prevNodeEnv;
+  }
+}
+
+// ============================================================================
+// Priority 4: find exec/delete security check
+// ============================================================================
+function checkFindExecDeleteSecurity() {
+  // Non-find commands pass through
+  const lsResult = _checkFindExecDeleteForTesting('ls -la /');
+  assert(lsResult.behavior === 'passthrough', 'ls should passthrough');
+
+  const grepResult = _checkFindExecDeleteForTesting('grep -r "pattern" .');
+  assert(grepResult.behavior === 'passthrough', 'grep should passthrough');
+
+  // find without dangerous flags passes through
+  const safeFind1 = _checkFindExecDeleteForTesting('find . -name "*.txt"');
+  assert(safeFind1.behavior === 'passthrough', 'plain find should passthrough');
+  const safeFind2 = _checkFindExecDeleteForTesting('find /home -type f');
+  assert(safeFind2.behavior === 'passthrough', 'find with -type f should passthrough');
+  const safeFind3 = _checkFindExecDeleteForTesting('find . -mtime +7');
+  assert(safeFind3.behavior === 'passthrough', 'find with -mtime should passthrough');
+
+  // -exec triggers ask
+  const execFind = _checkFindExecDeleteForTesting('find . -exec rm -rf {} \\;');
+  assert(execFind.behavior === 'ask', 'find -exec should ask');
+  assert(execFind.message.includes('dangerous action flags'), 'message mentions dangerous flags');
+
+  // -execdir triggers ask
+  const execdirFind = _checkFindExecDeleteForTesting('find . -execdir echo {}');
+  assert(execdirFind.behavior === 'ask', 'find -execdir should ask');
+
+  // -delete triggers ask
+  const deleteFind = _checkFindExecDeleteForTesting('find /tmp -name "*.log" -delete');
+  assert(deleteFind.behavior === 'ask', 'find -delete should ask');
+
+  // -ok triggers ask (interactive confirm)
+  const okFind = _checkFindExecDeleteForTesting('find . -ok echo {} \\;');
+  assert(okFind.behavior === 'ask', 'find -ok should ask');
+
+  // -fls, -fprint, -fprintf triggers ask
+  const flsFind = _checkFindExecDeleteForTesting('find . -fls output.txt');
+  assert(flsFind.behavior === 'ask', 'find -fls should ask');
+  const fprintFind = _checkFindExecDeleteForTesting('find . -fprint output.txt');
+  assert(fprintFind.behavior === 'ask', 'find -fprint should ask');
+  const fprintfFind = _checkFindExecDeleteForTesting('find . -fprintf output.txt %p');
+  assert(fprintfFind.behavior === 'ask', 'find -fprintf should ask');
+
+  // Deep find with -exec mid-command
+  const deepFind = _checkFindExecDeleteForTesting('find /var/log -type f -name "*.log" -exec rm {} \\;');
+  assert(deepFind.behavior === 'ask', 'deep find with -exec should ask');
+
+  // -fprint0 triggers ask
+  const fprint0Find = _checkFindExecDeleteForTesting('find . -fprint0 output.txt');
+  assert(fprint0Find.behavior === 'ask', 'find -fprint0 should ask');
+}
+
+// ============================================================================
+// Priority 5: thinking spinner text thresholds
+// ============================================================================
+function checkThinkingSpinnerThresholds() {
+  const effSuffix = ' (medium effort)';
+
+  // Status: 'thinking' with various elapsed times
+  assert(_getThinkingTextForTesting('thinking', 5_000, '') === 'thinking',
+    '0-10s: shows "thinking"');
+  assert(_getThinkingTextForTesting('thinking', 5_000, effSuffix) === `thinking${effSuffix}`,
+    'with effort suffix: appended');
+  assert(_getThinkingTextForTesting('thinking', 0, '') === 'thinking',
+    '0ms: still shows "thinking"');
+
+  assert(_getThinkingTextForTesting('thinking', 10_000, '') === 'still thinking',
+    'at 10s exactly: shows "still thinking"');
+  assert(_getThinkingTextForTesting('thinking', 29_999, '') === 'still thinking',
+    'just under 30s threshold');
+
+  assert(_getThinkingTextForTesting('thinking', 30_000, '') === 'thinking more',
+    'at 30s exactly: shows "thinking more"');
+  assert(_getThinkingTextForTesting('thinking', 59_999, '') === 'thinking more',
+    'just under 60s threshold');
+
+  assert(_getThinkingTextForTesting('thinking', 60_000, '') === 'almost done thinking',
+    'at 60s exactly: shows "almost done thinking"');
+  assert(_getThinkingTextForTesting('thinking', 300_000, '') === 'almost done thinking',
+    '5min: still "almost done thinking"');
+
+  // Status: number (seconds thought)
+  assert(_getThinkingTextForTesting(5_000, 0, '') === 'thought for 5s',
+    '5000ms → "thought for 5s"');
+  assert(_getThinkingTextForTesting(100, 0, '') === 'thought for 1s',
+    'sub-second rounds up to 1s (Math.max(1, ...))');
+  assert(_getThinkingTextForTesting(60_000, 0, '') === 'thought for 60s',
+    '60s thought');
+  assert(_getThinkingTextForTesting(1000, 0, '') === 'thought for 1s',
+    '1s exactly');
+
+  // Status: null
+  assert(_getThinkingTextForTesting(null, 0, '') === null,
+    'null status returns null');
+}
+
 console.log('Checking sandbox runtime compatibility...');
 checkSandboxCompatibility();
 
@@ -1537,6 +1843,24 @@ await checkCleanupTimeoutDiagnostics();
 
 console.log('Checking resume summary gate predicate...');
 checkResumeSummaryGatePredicate();
+
+console.log('Checking model fallback suggestions...');
+checkModelFallbackSuggestions();
+
+console.log('Checking Opus 4.7 user paths...');
+checkOpus47UserPaths();
+
+console.log('Checking dangerous removal path...');
+checkDangerousRemovalPath();
+
+console.log('Checking cleanup utilities...');
+await checkCleanupUtilities();
+
+console.log('Checking find exec/delete security...');
+checkFindExecDeleteSecurity();
+
+console.log('Checking thinking spinner thresholds...');
+checkThinkingSpinnerThresholds();
 
 console.log('Runtime health checks passed.');
 process.exit(0);

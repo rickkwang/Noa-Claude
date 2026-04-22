@@ -146,6 +146,10 @@ function checkFindExecDelete(command: string): PermissionResult {
   return { behavior: 'passthrough', message: 'No dangerous find flags detected' }
 }
 
+export function _checkFindExecDeleteForTesting(command: string): PermissionResult {
+  return checkFindExecDelete(command)
+}
+
 /**
  * SECURITY: Extract positional (non-flag) arguments, correctly handling the
  * POSIX `--` end-of-options delimiter.
