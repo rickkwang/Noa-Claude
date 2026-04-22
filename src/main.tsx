@@ -149,6 +149,7 @@ import { DEFAULT_TASKS_MODE_TASK_LIST_ID, TASK_STATUSES } from './utils/tasks.js
 import { logPluginLoadErrors, logPluginsEnabledForSession } from './utils/telemetry/pluginTelemetry.js';
 import { logSkillsLoaded } from './utils/telemetry/skillLoadedEvent.js';
 import { generateTempFilePath } from './utils/tempfile.js';
+import { shouldUseResumeSummaryGate } from './utils/resumeSummaryGate.js';
 import { validateUuid } from './utils/uuid.js';
 // Plugin startup checks are now handled non-blockingly in REPL.tsx
 
@@ -181,8 +182,9 @@ import { parseSettingSourcesFlag } from 'src/utils/settings/constants.js';
 import { plural } from 'src/utils/stringUtils.js';
 import { type ChannelEntry, getInitialMainLoopModel, getIsNonInteractiveSession, getSdkBetas, getSessionId, getUserMsgOptIn, setAllowedChannels, setAllowedSettingSources, setChromeFlagOverride, setClientType, setCwdState, setDirectConnectServerUrl, setFlagSettingsPath, setInitialMainLoopModel, setInlinePlugins, setIsInteractive, setKairosActive, setOriginalCwd, setQuestionPreviewFormat, setSdkBetas, setSessionBypassPermissionsMode, setSessionPersistenceDisabled, setSessionSource, setUserMsgOptIn, switchSession } from './bootstrap/state.js';
 
-/* eslint-disable @typescript-eslint/no-require-imports */
-const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER') ? require('./utils/permissions/autoModeState.js') as typeof import('./utils/permissions/autoModeState.js') : null;
+const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
+  ? await import('./utils/permissions/autoModeState.js')
+  : null;
 
 // TeleportRepoMismatchDialog, TeleportResumeWrapper dynamically imported at call sites
 import { migrateAutoUpdatesToSettings } from './migrations/migrateAutoUpdatesToSettings.js';
@@ -270,16 +272,19 @@ function isBeingDebugged() {
   const hasInspectEnv = process.env.NODE_OPTIONS && /--inspect(-brk)?|--debug(-brk)?/.test(process.env.NODE_OPTIONS);
 
   // Check if inspector is available and active (indicates debugging)
+  // Use globalThis.require which is available in both CJS and ESM runtimes (Node.js)
+  // We suppress the lint rule here since this is the only practical way to do a
+  // sync inspector check — dynamic import() is async and can't guard top-level code.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let hasInspectorUrl = false;
   try {
-    // Dynamic import would be better but is async - use global object instead
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const inspector = (global as any).require('inspector');
-    const hasInspectorUrl = !!inspector.url();
-    return hasInspectorUrl || hasInspectArg || hasInspectEnv;
+    const inspector = (globalThis as any).require?.('inspector');
+    hasInspectorUrl = !!inspector?.url();
   } catch {
-    // Ignore error and fall back to argument detection
-    return hasInspectArg || hasInspectEnv;
+    // Inspector module not available — not running under Node debugger
   }
+  return hasInspectorUrl || hasInspectArg || hasInspectEnv;
 }
 
 // Exit if we detect node debugging or inspection
@@ -908,6 +913,37 @@ async function getInputPrompt(prompt: string, inputFormat: 'text' | 'stream-json
   }
   return prompt;
 }
+
+/**
+ * CLI prompt for stale large session resume confirmation.
+ * Returns true to proceed, false to skip.
+ * In non-TTY mode (piped input), defaults to proceeding.
+ */
+async function promptResumeConfirmation(summary: string): Promise<boolean> {
+  if (!process.stdin.isTTY) {
+    return true
+  }
+  const trimmedSummary = summary.trim()
+  if (trimmedSummary.length > 0) {
+    const maxPreviewLength = 280
+    const preview =
+      trimmedSummary.length > maxPreviewLength
+        ? `${trimmedSummary.slice(0, maxPreviewLength).trimEnd()}...`
+        : trimmedSummary
+    process.stdout.write(`\nSession summary:\n${preview}\n`)
+  }
+  const readline = await import('readline')
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  })
+  const answer = await new Promise<string>(resolve => {
+    rl.question('\nStale large session detected. Resume anyway? [Y/n] ', resolve)
+  })
+  rl.close()
+  return answer.trim().toLowerCase() !== 'n'
+}
+
 async function run(): Promise<CommanderCommand> {
   profileCheckpoint('run_function_start');
 
@@ -3711,6 +3747,13 @@ async function run(): Promise<CommanderCommand> {
             try {
               const resumeStart = performance.now();
               const logOption = await loadCcshare(ccshareId);
+              if (shouldUseResumeSummaryGate(logOption)) {
+                const confirmed = await promptResumeConfirmation(logOption.summary?.trim() ?? '')
+                if (!confirmed) {
+                  process.stderr.write('Skipping stale session resume.\n')
+                  await gracefulShutdown(0)
+                }
+              }
               const result = await loadConversationForResume(logOption, undefined);
               if (result) {
                 processedResume = await processResumedConversation(result, {
@@ -3752,25 +3795,34 @@ async function run(): Promise<CommanderCommand> {
                 // ENOENT: not a file path — fall through to session-ID handling
               }
               if (logOption) {
-                const result = await loadConversationForResume(logOption, undefined /* sourceFile */);
-                if (result) {
-                  processedResume = await processResumedConversation(result, {
-                    forkSession: !!options.forkSession,
-                    transcriptPath: result.fullPath
-                  }, resumeContext);
-                  if (processedResume.restoredAgentDef) {
-                    mainThreadAgentDefinition = processedResume.restoredAgentDef;
+                if (shouldUseResumeSummaryGate(logOption)) {
+                  const confirmed = await promptResumeConfirmation(logOption.summary?.trim() ?? '')
+                  if (!confirmed) {
+                    process.stderr.write('Skipping stale session resume.\n')
+                    logOption = undefined
                   }
-                  logEvent('tengu_session_resumed', {
-                    entrypoint: 'file' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-                    success: true,
-                    resume_duration_ms: Math.round(performance.now() - resumeStart)
-                  });
-                } else {
-                  logEvent('tengu_session_resumed', {
-                    entrypoint: 'file' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-                    success: false
-                  });
+                }
+                if (logOption) {
+                  const result = await loadConversationForResume(logOption, undefined /* sourceFile */);
+                  if (result) {
+                    processedResume = await processResumedConversation(result, {
+                      forkSession: !!options.forkSession,
+                      transcriptPath: result.fullPath
+                    }, resumeContext);
+                    if (processedResume.restoredAgentDef) {
+                      mainThreadAgentDefinition = processedResume.restoredAgentDef;
+                    }
+                    logEvent('tengu_session_resumed', {
+                      entrypoint: 'file' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+                      success: true,
+                      resume_duration_ms: Math.round(performance.now() - resumeStart)
+                    });
+                  } else {
+                    logEvent('tengu_session_resumed', {
+                      entrypoint: 'file' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+                      success: false
+                    });
+                  }
                 }
               }
             } catch (error) {
@@ -3791,9 +3843,23 @@ async function run(): Promise<CommanderCommand> {
         const sessionId = maybeSessionId;
         try {
           const resumeStart = performance.now();
-          // Use matchedLog if available (for cross-worktree resume by custom title)
-          // Otherwise fall back to sessionId string (for direct UUID resume)
+          // Use matchedLog if available (for cross-worktree resume by custom title).
+          // For direct UUID resume (no matchedLog), load first then gate on the result.
+          if (matchedLog && shouldUseResumeSummaryGate(matchedLog)) {
+            const confirmed = await promptResumeConfirmation(matchedLog.summary?.trim() ?? '')
+            if (!confirmed) {
+              process.stderr.write('Skipping stale session resume.\n')
+              await gracefulShutdown(0)
+            }
+          }
           const result = await loadConversationForResume(matchedLog ?? sessionId, undefined);
+          if (matchedLog === null && shouldUseResumeSummaryGate(result ?? undefined)) {
+            const confirmed = await promptResumeConfirmation(result?.summary?.trim() ?? '')
+            if (!confirmed) {
+              process.stderr.write('Skipping stale session resume.\n')
+              await gracefulShutdown(0)
+            }
+          }
           if (!result) {
             logEvent('tengu_session_resumed', {
               entrypoint: 'cli_flag' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,

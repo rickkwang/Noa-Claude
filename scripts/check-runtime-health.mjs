@@ -91,6 +91,11 @@ import {
   _logResumeListLoadFailureForTesting,
 } from '../src/commands/resume/resume.tsx';
 import { _isForkSubagentEnabledForTesting } from '../src/tools/AgentTool/forkSubagent.ts';
+import {
+  RESUME_SUMMARY_GATE_LARGE_BYTES,
+  RESUME_SUMMARY_GATE_STALE_MS,
+  shouldUseResumeSummaryGate,
+} from '../src/utils/resumeSummaryGate.ts';
 
 applyLauncherDefaults();
 globalThis.MACRO ??= {
@@ -1428,6 +1433,48 @@ async function checkCleanupTimeoutDiagnostics() {
   }
 }
 
+function checkResumeSummaryGatePredicate() {
+  const now = Date.now();
+  const staleModified = new Date(now - RESUME_SUMMARY_GATE_STALE_MS - 1_000);
+  const freshModified = new Date(now - 1_000);
+
+  assert(
+    shouldUseResumeSummaryGate({
+      modified: staleModified,
+      fileSize: RESUME_SUMMARY_GATE_LARGE_BYTES,
+      summary: 'stale session summary',
+    }, now),
+    'stale+large sessions with summary should trigger resume summary gate',
+  );
+
+  assert(
+    !shouldUseResumeSummaryGate({
+      modified: freshModified,
+      fileSize: RESUME_SUMMARY_GATE_LARGE_BYTES,
+      summary: 'recent session summary',
+    }, now),
+    'fresh sessions should not trigger resume summary gate',
+  );
+
+  assert(
+    !shouldUseResumeSummaryGate({
+      modified: staleModified,
+      fileSize: RESUME_SUMMARY_GATE_LARGE_BYTES - 1,
+      summary: 'small session summary',
+    }, now),
+    'small sessions should not trigger resume summary gate',
+  );
+
+  assert(
+    !shouldUseResumeSummaryGate({
+      modified: staleModified,
+      fileSize: RESUME_SUMMARY_GATE_LARGE_BYTES,
+      summary: '',
+    }, now),
+    'sessions without summary should not trigger resume summary gate',
+  );
+}
+
 console.log('Checking sandbox runtime compatibility...');
 checkSandboxCompatibility();
 
@@ -1487,6 +1534,9 @@ await checkStartupBannerDiagnostics();
 
 console.log('Checking cleanup timeout diagnostics...');
 await checkCleanupTimeoutDiagnostics();
+
+console.log('Checking resume summary gate predicate...');
+checkResumeSummaryGatePredicate();
 
 console.log('Runtime health checks passed.');
 process.exit(0);

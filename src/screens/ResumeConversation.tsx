@@ -6,7 +6,9 @@ import React from 'react';
 import { useTerminalSize } from 'src/hooks/useTerminalSize.js';
 import { getOriginalCwd, switchSession } from '../bootstrap/state.js';
 import type { Command } from '../commands.js';
+import { Select } from '../components/CustomSelect/select.js';
 import { LogSelector } from '../components/LogSelector.js';
+import { ResumeSummaryGate } from '../components/ResumeSummaryGate.js';
 import { Spinner } from '../components/Spinner.js';
 import { restoreCostStateForSession } from '../cost-tracker.js';
 import { setClipboard } from '../ink/termio/osc.js';
@@ -29,6 +31,7 @@ import { checkCrossProjectResume } from '../utils/crossProjectResume.js';
 import type { FileHistorySnapshot } from '../utils/fileHistory.js';
 import { logError } from '../utils/log.js';
 import { createSystemMessage } from '../utils/messages.js';
+import { shouldUseResumeSummaryGate } from '../utils/resumeSummaryGate.js';
 import { computeStandaloneAgentContext, restoreAgentFromSession, restoreWorktreeForResume } from '../utils/sessionRestore.js';
 import { adoptResumedSessionFile, enrichLogs, isCustomTitleEnabled, loadAllProjectsMessageLogsProgressive, loadSameRepoMessageLogsProgressive, recordContentReplacement, resetSessionFilePointer, restoreSessionMetadata, type SessionLogResult } from '../utils/sessionStorage.js';
 import type { ThinkingConfig } from '../utils/thinking.js';
@@ -85,14 +88,13 @@ export function ResumeConversation({
   thinkingConfig,
   onTurnComplete
 }: Props): React.ReactNode {
-  const {
-    rows
-  } = useTerminalSize();
+  const { rows, columns } = useTerminalSize();
   const agentDefinitions = useAppState(s => s.agentDefinitions);
   const setAppState = useSetAppState();
   const [logs, setLogs] = React.useState<LogOption[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [resuming, setResuming] = React.useState(false);
+  const [summaryGateTarget, setSummaryGateTarget] = React.useState<LogOption | null>(null);
   const [showAllProjects, setShowAllProjects] = React.useState(false);
   const [resumeData, setResumeData] = React.useState<{
     messages: Message[];
@@ -176,7 +178,7 @@ export function ResumeConversation({
     // eslint-disable-next-line custom-rules/no-process-exit
     process.exit(1);
   }
-  async function onSelect(log_0: LogOption) {
+  async function onSelect(log_0: LogOption, skipSummaryGate = false) {
     setResuming(true);
     const resumeStart = performance.now();
     const crossProjectCheck = checkCrossProjectResume(log_0, showAllProjects, worktreePaths);
@@ -187,6 +189,15 @@ export function ResumeConversation({
         setCrossProjectCommand(crossProjectCheck.command);
         return;
       }
+    }
+    try {
+      if (!skipSummaryGate && shouldUseResumeSummaryGate(log_0)) {
+        setSummaryGateTarget(log_0);
+        setResuming(false);
+        return;
+      }
+    } catch (error_1) {
+      logError(error_1 as Error);
     }
     try {
       const result_3 = await loadConversationForResume(log_0, undefined);
@@ -309,10 +320,19 @@ export function ResumeConversation({
         <Text> Resuming conversation…</Text>
       </Box>;
   }
+  if (summaryGateTarget) {
+    return <ResumeSummaryGate log={summaryGateTarget} onContinue={() => {
+      setSummaryGateTarget(null);
+      void onSelect(summaryGateTarget, true);
+    }} onBack={() => {
+      setSummaryGateTarget(null);
+      setResuming(false);
+    }} />;
+  }
   if (filteredLogs.length === 0) {
     return <NoConversationsMessage />;
   }
-  return <LogSelector logs={filteredLogs} maxHeight={rows} onCancel={onCancel} onSelect={onSelect} onLogsChanged={isResumeWithRenameEnabled ? () => loadLogs(showAllProjects) : undefined} onLoadMore={loadMoreLogs} initialSearchQuery={initialSearchQuery} showAllProjects={showAllProjects} onToggleAllProjects={handleToggleAllProjects} onAgenticSearch={agenticSessionSearch} />;
+  return <LogSelector logs={filteredLogs} maxHeight={rows} forceWidth={Math.max(0, columns - 4)} showTopDivider={false} onCancel={onCancel} onSelect={onSelect} onLogsChanged={isResumeWithRenameEnabled ? () => loadLogs(showAllProjects) : undefined} onLoadMore={loadMoreLogs} initialSearchQuery={initialSearchQuery} showAllProjects={showAllProjects} onToggleAllProjects={handleToggleAllProjects} onAgenticSearch={agenticSessionSearch} />;
 }
 function NoConversationsMessage() {
   const $ = _c(2);

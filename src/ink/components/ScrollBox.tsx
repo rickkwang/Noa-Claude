@@ -156,6 +156,11 @@ function ScrollBox({
       if (!el) return;
       el.pendingScrollDelta = undefined;
       el.stickyScroll = true;
+      // Clear virtual-scroll clamp immediately. Otherwise the first sticky
+      // frame can still be clamped to the previous non-sticky range and paint
+      // a blank spacer viewport before useVirtualScroll's layout effect runs.
+      el.scrollClampMin = undefined;
+      el.scrollClampMax = undefined;
       markDirty(el);
       notify();
       forceRender(n => n + 1);

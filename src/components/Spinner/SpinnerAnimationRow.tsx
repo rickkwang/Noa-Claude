@@ -170,7 +170,18 @@ export function SpinnerAnimationRow({
   const tokensWidth = stringWidth(tokensText);
 
   // === Thinking text (may shrink to fit) ===
-  let thinkingText = thinkingStatus === 'thinking' ? `thinking${effortSuffix}` : typeof thinkingStatus === 'number' ? `thought for ${Math.max(1, Math.round(thinkingStatus / 1000))}s` : null;
+  let thinkingText =
+    thinkingStatus === 'thinking'
+      ? effectiveElapsedMs >= 60_000
+        ? `almost done thinking${effortSuffix}`
+        : effectiveElapsedMs >= 30_000
+          ? `thinking more${effortSuffix}`
+          : effectiveElapsedMs >= 10_000
+            ? `still thinking${effortSuffix}`
+            : `thinking${effortSuffix}`
+      : typeof thinkingStatus === 'number'
+        ? `thought for ${Math.max(1, Math.round(thinkingStatus / 1000))}s`
+        : null
   let thinkingWidthValue = thinkingText ? stringWidth(thinkingText) : 0;
 
   // === Progressive width gating ===

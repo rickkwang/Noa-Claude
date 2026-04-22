@@ -8,7 +8,9 @@ import { getOriginalCwd, getSessionId } from '../../bootstrap/state.js';
 import type { CommandResultDisplay, ResumeEntrypoint } from '../../commands.js';
 import { LogSelector } from '../../components/LogSelector.js';
 import { MessageResponse } from '../../components/MessageResponse.js';
+import { ResumeSummaryGate } from '../../components/ResumeSummaryGate.js';
 import { Spinner } from '../../components/Spinner.js';
+import { Select } from '../../components/CustomSelect/select.js';
 import { useIsInsideModal } from '../../context/modalContext.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { setClipboard } from '../../ink/termio/osc.js';
@@ -21,6 +23,7 @@ import { logDebugDiagnosticWarn } from '../../utils/debugDiagnostics.js';
 import { getErrnoCode } from '../../utils/errors.js';
 import { getWorktreePaths } from '../../utils/getWorktreePaths.js';
 import { logError } from '../../utils/log.js';
+import { shouldUseResumeSummaryGate } from '../../utils/resumeSummaryGate.js';
 import { getLastSessionLog, getSessionIdFromLog, isCustomTitleEnabled, isLiteLog, loadAllProjectsMessageLogs, loadFullLog, loadSameRepoMessageLogs, searchSessionsByCustomTitle } from '../../utils/sessionStorage.js';
 import { validateUuid } from '../../utils/uuid.js';
 type ResumeResult = {
@@ -212,6 +215,7 @@ function ResumeError(t0) {
   }
   return t5;
 }
+
 function ResumeCommand({
   onDone,
   onResume
@@ -225,29 +229,38 @@ function ResumeCommand({
   const [worktreePaths, setWorktreePaths] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [resuming, setResuming] = React.useState(false);
+  const [summaryGateTarget, setSummaryGateTarget] = React.useState<{
+    sessionId: UUID;
+    log: LogOption;
+  } | null>(null);
   const [showAllProjects, setShowAllProjects] = React.useState(false);
   const {
-    rows
+    rows,
+    columns
   } = useTerminalSize();
   const insideModal = useIsInsideModal();
+  // Store onDone in a ref so loadLogs doesn't need to re-run when the parent
+  // re-renders with a new callback reference (avoids spurious reload of the list).
+  const onDoneRef = React.useRef(onDone);
+  onDoneRef.current = onDone;
   const loadLogs = React.useCallback(async (allProjects: boolean, paths: string[]) => {
     setLoading(true);
     try {
       const allLogs = allProjects ? await loadAllProjectsMessageLogs() : await loadSameRepoMessageLogs(paths);
       const resumable = filterResumableSessions(allLogs, getSessionId());
       if (resumable.length === 0) {
-        onDone('No conversations found to resume');
+        onDoneRef.current('No conversations found to resume');
         return;
       }
       setLogs(resumable);
     } catch (error) {
       logError(error as Error);
       _logResumeListLoadFailureForTesting(error);
-      onDone(_formatResumeListLoadFailureForTesting(error));
+      onDoneRef.current(_formatResumeListLoadFailureForTesting(error));
     } finally {
       setLoading(false);
     }
-  }, [onDone]);
+  }, []);
   React.useEffect(() => {
     async function init() {
       const paths_0 = await getWorktreePaths(getOriginalCwd());
@@ -261,10 +274,10 @@ function ResumeCommand({
     setShowAllProjects(newValue);
     void loadLogs(newValue, worktreePaths);
   }, [showAllProjects, loadLogs, worktreePaths]);
-  async function handleSelect(log: LogOption) {
+  const handleSelect = React.useCallback(async (log: LogOption) => {
     const sessionId = validateUuid(getSessionIdFromLog(log));
     if (!sessionId) {
-      onDone('Failed to resume conversation');
+      onDoneRef.current('Failed to resume conversation');
       return;
     }
 
@@ -287,18 +300,29 @@ function ResumeCommand({
 
       // Format the output message
       const message = ['', 'This conversation is from a different directory.', '', 'To resume, run:', `  ${crossProjectCheck.command}`, '', '(Command copied to clipboard)', ''].join('\n');
-      onDone(message, {
+      onDoneRef.current(message, {
         display: 'user'
       });
       return;
     }
 
     // Same directory - proceed with resume
+    try {
+      if (shouldUseResumeSummaryGate(fullLog)) {
+        setSummaryGateTarget({
+          sessionId,
+          log: fullLog
+        });
+        return;
+      }
+    } catch (error) {
+      logError(error as Error);
+    }
     setResuming(true);
     void onResume(sessionId, fullLog, 'slash_command_picker');
-  }
+  }, [showAllProjects, worktreePaths, onResume]);
   function handleCancel() {
-    onDone('Resume cancelled', {
+    onDoneRef.current('Resume cancelled', {
       display: 'system'
     });
   }
@@ -314,7 +338,14 @@ function ResumeCommand({
         <Text> Resuming conversation…</Text>
       </Box>;
   }
-  return <LogSelector logs={logs} maxHeight={insideModal ? Math.floor(rows / 2) : rows - 2} onCancel={handleCancel} onSelect={handleSelect} onLogsChanged={() => loadLogs(showAllProjects, worktreePaths)} showAllProjects={showAllProjects} onToggleAllProjects={handleToggleAllProjects} onAgenticSearch={agenticSessionSearch} />;
+  if (summaryGateTarget) {
+    return <ResumeSummaryGate log={summaryGateTarget.log} useMessageResponse onContinue={() => {
+      setSummaryGateTarget(null);
+      setResuming(true);
+      void onResume(summaryGateTarget.sessionId, summaryGateTarget.log, 'slash_command_picker');
+    }} onBack={() => setSummaryGateTarget(null)} />;
+  }
+  return <LogSelector logs={logs} maxHeight={insideModal ? Math.floor(rows / 2) : rows - 2} forceWidth={insideModal ? Math.max(0, columns - 4) : undefined} showTopDivider={!insideModal} onCancel={handleCancel} onSelect={handleSelect} onLogsChanged={() => loadLogs(showAllProjects, worktreePaths)} showAllProjects={showAllProjects} onToggleAllProjects={handleToggleAllProjects} onAgenticSearch={agenticSessionSearch} />;
 }
 export function filterResumableSessions(logs: LogOption[], currentSessionId: string): LogOption[] {
   return logs.filter(l => !l.isSidechain && getSessionIdFromLog(l) !== currentSessionId);

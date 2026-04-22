@@ -47,6 +47,7 @@ export type LogSelectorProps = {
   logs: LogOption[];
   maxHeight?: number;
   forceWidth?: number;
+  showTopDivider?: boolean;
   onCancel?: () => void;
   onSelect: (log: LogOption) => void;
   onLogsChanged?: () => void;
@@ -144,11 +145,12 @@ function buildLogMetadata(log: LogOption, options?: {
   return childPadding + baseMetadata + projectSuffix + cwdSuffix;
 }
 export function LogSelector(t0) {
-  const $ = _c(247);
+  const $ = _c(248);
   const {
     logs,
     maxHeight: t1,
     forceWidth,
+    showTopDivider: topDividerProp,
     onCancel,
     onSelect,
     onLogsChanged,
@@ -159,6 +161,7 @@ export function LogSelector(t0) {
     onAgenticSearch
   } = t0;
   const maxHeight = t1 === undefined ? Infinity : t1;
+  const showTopDivider = topDividerProp === undefined ? true : topDividerProp;
   const showAllProjects = t2 === undefined ? false : t2;
   const terminalSize = useTerminalSize();
   const columns = forceWidth === undefined ? terminalSize.columns : forceWidth;
@@ -1250,13 +1253,7 @@ export function LogSelector(t0) {
     return t58;
   }
   const t57 = maxHeight - 1;
-  let t58;
-  if ($[164] === Symbol.for("react.memo_cache_sentinel")) {
-    t58 = <Box flexShrink={0}><Divider color="suggestion" /></Box>;
-    $[164] = t58;
-  } else {
-    t58 = $[164];
-  }
+  const t58 = showTopDivider ? <Box flexShrink={0}><Divider color="suggestion" width={columns} /></Box> : null;
   let t59;
   if ($[165] === Symbol.for("react.memo_cache_sentinel")) {
     t59 = <Box flexShrink={0}><Text> </Text></Box>;
@@ -1293,13 +1290,13 @@ export function LogSelector(t0) {
     t62 = $[180];
   }
   let t63;
-  if ($[181] !== filterIndicators || $[182] !== viewMode) {
+  if ($[182] !== filterIndicators || $[183] !== viewMode) {
     t63 = filterIndicators.length > 0 && viewMode !== "search" && <Box flexShrink={0} paddingLeft={2}><Text dimColor={true}><Byline>{filterIndicators}</Byline></Text></Box>;
-    $[181] = filterIndicators;
-    $[182] = viewMode;
-    $[183] = t63;
+    $[182] = filterIndicators;
+    $[183] = viewMode;
+    $[184] = t63;
   } else {
-    t63 = $[183];
+    t63 = $[184];
   }
   let t64;
   if ($[184] === Symbol.for("react.memo_cache_sentinel")) {
@@ -1429,25 +1426,7 @@ export function LogSelector(t0) {
   } else {
     t71 = $[234];
   }
-  let t72;
-  if ($[235] !== t57 || $[236] !== t60 || $[237] !== t62 || $[238] !== t63 || $[239] !== t65 || $[240] !== t66 || $[241] !== t67 || $[242] !== t68 || $[243] !== t69 || $[244] !== t70 || $[245] !== t71) {
-    t72 = <Box flexDirection="column" height={t57}>{t58}{t59}{t60}{t62}{t63}{t64}{t65}{t66}{t67}{t68}{t69}{t70}{t71}</Box>;
-    $[235] = t57;
-    $[236] = t60;
-    $[237] = t62;
-    $[238] = t63;
-    $[239] = t65;
-    $[240] = t66;
-    $[241] = t67;
-    $[242] = t68;
-    $[243] = t69;
-    $[244] = t70;
-    $[245] = t71;
-    $[246] = t72;
-  } else {
-    t72 = $[246];
-  }
-  return t72;
+  return <Box flexDirection="column" height={t57}>{t58}{t59}{t60}{t62}{t63}{t64}{t65}{t66}{t67}{t68}{t69}{t70}{t71}</Box>;
 }
 
 /**

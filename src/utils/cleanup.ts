@@ -13,7 +13,6 @@ import { logError } from './log.js'
 import { cleanupOldVersions } from './nativeInstaller/index.js'
 import { cleanupOldPastes } from './pasteStore.js'
 import { getProjectsDir } from './sessionStorage.js'
-import { getSettingsWithAllErrors } from './settings/allErrors.js'
 import {
   getSettings_DEPRECATED,
   rawSettingsContainsKey,
@@ -97,8 +96,11 @@ export async function cleanupOldMessageFiles(): Promise<CleanupResult> {
   const errorPath = CACHE_PATHS.errors()
   const baseCachePath = CACHE_PATHS.baseLogs()
 
-  // Clean up message and error logs
+  // Clean up error logs first, then message logs
+  // errorPath → isMessagePath=false (increment result.errors)
+  // baseCachePath → isMessagePath=true (increment result.messages)
   let result = await cleanupOldFilesInDirectory(errorPath, cutoffDate, false)
+  result = addCleanupResults(result, await cleanupOldFilesInDirectory(baseCachePath, cutoffDate, true))
 
   // Clean up MCP logs
   try {
@@ -301,6 +303,16 @@ async function cleanupSingleDirectory(
 export function cleanupOldPlanFiles(): Promise<CleanupResult> {
   const plansDir = join(getClaudeConfigHomeDir(), 'plans')
   return cleanupSingleDirectory(plansDir, '.md')
+}
+
+export function cleanupOldTaskFiles(): Promise<CleanupResult> {
+  const tasksDir = join(getClaudeConfigHomeDir(), 'tasks')
+  return cleanupSingleDirectory(tasksDir, '', false)
+}
+
+export function cleanupOldShellSnapshotDirs(): Promise<CleanupResult> {
+  const shellSnapshotsDir = join(getClaudeConfigHomeDir(), 'shell-snapshots')
+  return cleanupSingleDirectory(shellSnapshotsDir, '', false)
 }
 
 export async function cleanupOldFileHistoryBackups(): Promise<CleanupResult> {
@@ -574,14 +586,9 @@ export async function cleanupOldVersionsThrottled(): Promise<void> {
 }
 
 export async function cleanupOldMessageFilesInBackground(): Promise<void> {
-  // If settings have validation errors but the user explicitly set cleanupPeriodDays,
-  // skip cleanup entirely rather than falling back to the default (30 days).
-  // This prevents accidentally deleting files when the user intended a different retention period.
-  const { errors } = getSettingsWithAllErrors()
-  if (errors.length > 0 && rawSettingsContainsKey('cleanupPeriodDays')) {
-    logForDebugging(
-      'Skipping cleanup: settings have validation errors but cleanupPeriodDays was explicitly set. Fix settings errors to enable cleanup.',
-    )
+  // If cleanupPeriodDays was explicitly set in settings, always run cleanup
+  // (even when other settings have validation errors, cleaning up old files is safe)
+  if (!rawSettingsContainsKey('cleanupPeriodDays')) {
     return
   }
 
@@ -597,6 +604,8 @@ export async function cleanupOldMessageFilesInBackground(): Promise<void> {
   if (removedWorktrees > 0) {
     logEvent('tengu_worktree_cleanup', { removed: removedWorktrees })
   }
+  await cleanupOldTaskFiles()
+  await cleanupOldShellSnapshotDirs()
   if (process.env.USER_TYPE === 'ant') {
     await cleanupNpmCacheForAnthropicPackages()
   }

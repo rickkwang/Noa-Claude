@@ -12,7 +12,10 @@ import {
 } from '@anthropic-ai/sdk'
 import { getModelStrings } from './modelStrings.js'
 
-// Cache valid models to avoid repeated API calls
+// Cache valid models to avoid repeated API calls.
+// Evict oldest entries when the cache grows beyond 200 entries to prevent
+// unbounded memory growth during long sessions.
+const MAX_MODEL_CACHE_SIZE = 200
 const validModelCache = new Map<string, boolean>()
 
 /**
@@ -82,6 +85,13 @@ export async function validateModel(
     })
 
     // If we got here, the model is valid
+    // Evict oldest entries if cache is getting large
+    if (validModelCache.size >= MAX_MODEL_CACHE_SIZE) {
+      const oldestKey = validModelCache.keys().next().value
+      if (oldestKey !== undefined) {
+        validModelCache.delete(oldestKey)
+      }
+    }
     validModelCache.set(normalizedModel, true)
     return { valid: true }
   } catch (error) {
@@ -157,6 +167,9 @@ function get3PFallbackSuggestion(model: string | undefined): string | undefined 
     return undefined
   }
   const lowerModel = model.toLowerCase()
+  if (lowerModel.includes('opus-4-7') || lowerModel.includes('opus_4_7')) {
+    return getModelStrings().opus46
+  }
   if (lowerModel.includes('opus-4-6') || lowerModel.includes('opus_4_6')) {
     return getModelStrings().opus41
   }
