@@ -36,6 +36,10 @@ import {
   loadMarketplacesWithGracefulDegradation,
 } from '../../utils/plugins/marketplaceHelpers.js'
 import {
+  isDebugDiagnosticsEnabled,
+  logDebugDiagnosticWarn,
+} from '../../utils/debugDiagnostics.js'
+import {
   addMarketplaceSource,
   loadKnownMarketplacesConfig,
   refreshAllMarketplaces,
@@ -62,6 +66,141 @@ import { cliError, cliOk } from '../exit.js'
 
 // Re-export for main.tsx to reference in option definitions
 export { VALID_INSTALLABLE_SCOPES, VALID_UPDATE_SCOPES }
+
+const PLUGIN_AVAILABLE_DEGRADED_CODE = 'PLUGIN_AVAILABLE_DEGRADED'
+const PLUGIN_AVAILABLE_CONFIG_LOAD_FAILED = 'config_load_failed'
+const PLUGIN_AVAILABLE_INSTALL_COUNTS_UNAVAILABLE =
+  'install_counts_unavailable'
+const PLUGIN_AVAILABLE_MARKETPLACES_LOAD_FAILED = 'marketplaces_load_failed'
+
+type AvailablePluginEntry = {
+  pluginId: string
+  name: string
+  description?: string
+  marketplaceName: string
+  version?: string
+  source: PluginSource
+  installCount?: number
+}
+
+export function _formatAvailablePluginsWarningForTesting(
+  reasons: string[],
+  detail?: string,
+): string {
+  const reasonSegment =
+    reasons.length > 0 ? ` Reasons: ${reasons.join(', ')}` : ''
+  const suffix =
+    detail && detail.length > 0 ? ` Details: ${detail}` : ''
+  return `[${PLUGIN_AVAILABLE_DEGRADED_CODE}] Available plugin results may be stale.${reasonSegment}.${suffix}`
+}
+
+export async function _loadAvailablePluginsForTesting(
+  deps?: {
+    loadConfig?: typeof loadKnownMarketplacesConfig
+    loadInstallCounts?: typeof getInstallCounts
+    loadMarketplaces?: typeof loadMarketplacesWithGracefulDegradation
+    isPluginInstalledFn?: typeof isPluginInstalled
+  },
+): Promise<{ available: AvailablePluginEntry[]; warning?: string }> {
+  const loadConfig = deps?.loadConfig ?? loadKnownMarketplacesConfig
+  const loadInstallCounts = deps?.loadInstallCounts ?? getInstallCounts
+  const loadMarketplaces =
+    deps?.loadMarketplaces ?? loadMarketplacesWithGracefulDegradation
+  const isInstalled = deps?.isPluginInstalledFn ?? isPluginInstalled
+
+  const available: AvailablePluginEntry[] = []
+  const warningReasons: string[] = []
+  const warningDetails: string[] = []
+
+  let config: Awaited<ReturnType<typeof loadKnownMarketplacesConfig>> = {}
+  try {
+    config = await loadConfig()
+  } catch (error) {
+    logError(error)
+    warningReasons.push(PLUGIN_AVAILABLE_CONFIG_LOAD_FAILED)
+    if (isDebugDiagnosticsEnabled()) {
+      logDebugDiagnosticWarn(
+        'plugin',
+        'failed to load known marketplaces config for plugin list --available',
+        error,
+      )
+      warningDetails.push(`config: ${errorMessage(error)}`)
+    }
+  }
+
+  let installCounts: Awaited<ReturnType<typeof getInstallCounts>> = undefined
+  try {
+    installCounts = await loadInstallCounts()
+  } catch (error) {
+    logError(error)
+    warningReasons.push(PLUGIN_AVAILABLE_INSTALL_COUNTS_UNAVAILABLE)
+    if (isDebugDiagnosticsEnabled()) {
+      logDebugDiagnosticWarn(
+        'plugin',
+        'failed to load install counts for plugin list --available',
+        error,
+      )
+      warningDetails.push(`install-counts: ${errorMessage(error)}`)
+    }
+  }
+
+  let marketplaces:
+    | Awaited<ReturnType<typeof loadMarketplacesWithGracefulDegradation>>['marketplaces']
+    | null = null
+  try {
+    marketplaces = (await loadMarketplaces(config)).marketplaces
+  } catch (error) {
+    logError(error)
+    warningReasons.push(PLUGIN_AVAILABLE_MARKETPLACES_LOAD_FAILED)
+    if (isDebugDiagnosticsEnabled()) {
+      logDebugDiagnosticWarn(
+        'plugin',
+        'failed to load marketplaces for plugin list --available',
+        error,
+      )
+      warningDetails.push(`marketplaces: ${errorMessage(error)}`)
+    }
+  }
+
+  if (marketplaces) {
+    const installMemo = new Map<string, boolean>()
+    for (const {
+      name: marketplaceName,
+      data: marketplace,
+    } of marketplaces) {
+      if (!marketplace) continue
+      for (const entry of marketplace.plugins) {
+        const pluginId = createPluginId(entry.name, marketplaceName)
+        let installed = installMemo.get(pluginId)
+        if (installed === undefined) {
+          installed = isInstalled(pluginId)
+          installMemo.set(pluginId, installed)
+        }
+        if (installed) continue
+        available.push({
+          pluginId,
+          name: entry.name,
+          description: entry.description,
+          marketplaceName,
+          version: entry.version,
+          source: entry.source,
+          installCount: installCounts?.get(pluginId),
+        })
+      }
+    }
+  }
+
+  return {
+    available,
+    warning:
+      warningReasons.length > 0
+        ? _formatAvailablePluginsWarningForTesting(
+            warningReasons,
+            warningDetails.length > 0 ? warningDetails.join('; ') : undefined,
+          )
+        : undefined,
+  }
+}
 
 /**
  * Helper function to handle marketplace command errors consistently.
@@ -297,48 +436,9 @@ export async function pluginListHandler(options: {
 
     // If --available is set, also load available plugins from marketplaces
     if (options.available) {
-      const available: Array<{
-        pluginId: string
-        name: string
-        description?: string
-        marketplaceName: string
-        version?: string
-        source: PluginSource
-        installCount?: number
-      }> = []
-
-      try {
-        const [config, installCounts] = await Promise.all([
-          loadKnownMarketplacesConfig(),
-          getInstallCounts(),
-        ])
-        const { marketplaces } =
-          await loadMarketplacesWithGracefulDegradation(config)
-
-        for (const {
-          name: marketplaceName,
-          data: marketplace,
-        } of marketplaces) {
-          if (marketplace) {
-            for (const entry of marketplace.plugins) {
-              const pluginId = createPluginId(entry.name, marketplaceName)
-              // Only include plugins that are not already installed
-              if (!isPluginInstalled(pluginId)) {
-                available.push({
-                  pluginId,
-                  name: entry.name,
-                  description: entry.description,
-                  marketplaceName,
-                  version: entry.version,
-                  source: entry.source,
-                  installCount: installCounts?.get(pluginId),
-                })
-              }
-            }
-          }
-        }
-      } catch {
-        // Silently ignore marketplace loading errors
+      const { available, warning } = await _loadAvailablePluginsForTesting()
+      if (warning) {
+        process.stderr.write(warning + '\n')
       }
 
       cliOk(jsonStringify({ installed: plugins, available }, null, 2))

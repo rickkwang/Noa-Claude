@@ -17,6 +17,8 @@ import type { LocalJSXCommandCall } from '../../types/command.js';
 import type { LogOption } from '../../types/logs.js';
 import { agenticSessionSearch } from '../../utils/agenticSessionSearch.js';
 import { checkCrossProjectResume } from '../../utils/crossProjectResume.js';
+import { logDebugDiagnosticWarn } from '../../utils/debugDiagnostics.js';
+import { getErrnoCode } from '../../utils/errors.js';
 import { getWorktreePaths } from '../../utils/getWorktreePaths.js';
 import { logError } from '../../utils/log.js';
 import { getLastSessionLog, getSessionIdFromLog, isCustomTitleEnabled, isLiteLog, loadAllProjectsMessageLogs, loadFullLog, loadSameRepoMessageLogs, searchSessionsByCustomTitle } from '../../utils/sessionStorage.js';
@@ -31,10 +33,78 @@ type ResumeResult = {
 };
 
 type ResumeErrorCode =
+  | 'SESSION_LIST_LOAD_IO_ERROR'
+  | 'SESSION_LIST_LOAD_PERMISSION_ERROR'
+  | 'SESSION_LIST_LOAD_PARSE_ERROR'
+  | 'SESSION_LIST_LOAD_FAILED'
   | 'SESSION_NOT_FOUND'
   | 'SESSION_COMPAT_ERROR'
   | 'SESSION_RESTORE_INTERRUPTED'
   | 'SESSION_UNKNOWN_ERROR'
+
+function classifyResumeListLoadError(error: unknown): {
+  code: ResumeErrorCode
+  message: string
+} {
+  const rawMessage =
+    error instanceof Error ? error.message : String(error ?? 'unknown error')
+  const normalized = rawMessage.toLowerCase()
+  const errno = getErrnoCode(error)
+
+  if (errno === 'EACCES' || errno === 'EPERM') {
+    return {
+      code: 'SESSION_LIST_LOAD_PERMISSION_ERROR',
+      message:
+        'Failed to load conversations due to file permission restrictions.',
+    }
+  }
+
+  if (
+    errno === 'ENOENT' ||
+    errno === 'ENOTDIR' ||
+    errno === 'EISDIR' ||
+    errno === 'EIO' ||
+    errno === 'EMFILE' ||
+    errno === 'ENFILE'
+  ) {
+    return {
+      code: 'SESSION_LIST_LOAD_IO_ERROR',
+      message: 'Failed to load conversations due to local I/O issues.',
+    }
+  }
+
+  if (
+    normalized.includes('parse') ||
+    normalized.includes('json') ||
+    normalized.includes('invalid transcript')
+  ) {
+    return {
+      code: 'SESSION_LIST_LOAD_PARSE_ERROR',
+      message:
+        'Failed to load conversations because session metadata is malformed.',
+    }
+  }
+
+  return {
+    code: 'SESSION_LIST_LOAD_FAILED',
+    message: 'Failed to load conversations due to an unexpected error.',
+  }
+}
+
+export function _classifyResumeListLoadErrorForTesting(
+  error: unknown,
+): ResumeErrorCode {
+  return classifyResumeListLoadError(error).code
+}
+
+export function _formatResumeListLoadFailureForTesting(error?: unknown): string {
+  const classified = classifyResumeListLoadError(error)
+  return `${classified.message} Run /doctor if this persists. (${classified.code})`
+}
+
+export function _logResumeListLoadFailureForTesting(error: unknown): void {
+  logDebugDiagnosticWarn('resume', 'failed to load conversation list', error)
+}
 
 function classifyResumeError(error: unknown): {
   code: ResumeErrorCode
@@ -170,8 +240,10 @@ function ResumeCommand({
         return;
       }
       setLogs(resumable);
-    } catch (_err) {
-      onDone('Failed to load conversations');
+    } catch (error) {
+      logError(error as Error);
+      _logResumeListLoadFailureForTesting(error);
+      onDone(_formatResumeListLoadFailureForTesting(error));
     } finally {
       setLoading(false);
     }
@@ -269,7 +341,15 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
 
   // Load logs to search (includes same-repo worktrees)
   const worktreePaths = await getWorktreePaths(getOriginalCwd());
-  const logs = await loadSameRepoMessageLogs(worktreePaths);
+  let logs: LogOption[]
+  try {
+    logs = await loadSameRepoMessageLogs(worktreePaths);
+  } catch (error) {
+    logError(error as Error)
+    _logResumeListLoadFailureForTesting(error)
+    const message = _formatResumeListLoadFailureForTesting(error)
+    return <ResumeError message={message} args={arg} onDone={() => onDone(message)} />
+  }
   if (logs.length === 0) {
     const message = 'No conversations found to resume.';
     return <ResumeError message={message} args={arg} onDone={() => onDone(message)} />;

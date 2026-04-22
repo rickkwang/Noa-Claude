@@ -13,6 +13,7 @@ Runtime behavior switches are driven by environment variables:
 - `NOA_CLAUDE_NO_FLICKER` controls the fullscreen anti-flicker REPL layout
 - `NOA_CLAUDE_DISABLE_MOUSE` keeps fullscreen layout but skips mouse tracking
 - `NOA_CLAUDE_DISABLE_MOUSE_CLICKS` keeps mouse tracking but ignores clicks and drags
+- `CLAUDE_CODE_FORK_SUBAGENT=1` enables fork-subagent behavior on external builds (internal builds keep the default behavior)
 
 ### `/status`
 

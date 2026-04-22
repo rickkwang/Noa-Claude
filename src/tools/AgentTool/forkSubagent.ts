@@ -13,6 +13,7 @@ import type {
   Message as MessageType,
 } from '../../types/message.js'
 import { logForDebugging } from '../../utils/debug.js'
+import { isEnvTruthy } from '../../utils/envUtils.js'
 import { createUserMessage } from '../../utils/messages.js'
 import type { BuiltInAgentDefinition } from './loadAgentsDir.js'
 
@@ -32,11 +33,33 @@ import type { BuiltInAgentDefinition } from './loadAgentsDir.js'
  */
 export function isForkSubagentEnabled(): boolean {
   if (feature('FORK_SUBAGENT')) {
-    if (isCoordinatorMode()) return false
-    if (getIsNonInteractiveSession()) return false
-    return true
+    return _isForkSubagentEnabledForTesting({
+      featureEnabled: true,
+      userType: process.env.USER_TYPE,
+      forkSubagentEnv: process.env.CLAUDE_CODE_FORK_SUBAGENT,
+      isCoordinator: isCoordinatorMode(),
+      isNonInteractive: getIsNonInteractiveSession(),
+    })
   }
   return false
+}
+
+export function _isForkSubagentEnabledForTesting(options: {
+  featureEnabled: boolean
+  userType?: string
+  forkSubagentEnv?: string
+  isCoordinator: boolean
+  isNonInteractive: boolean
+}): boolean {
+  if (!options.featureEnabled) return false
+  if (options.isCoordinator) return false
+  if (options.isNonInteractive) return false
+
+  const isInternalBuild = options.userType === 'ant'
+  if (!isInternalBuild && !isEnvTruthy(options.forkSubagentEnv)) {
+    return false
+  }
+  return true
 }
 
 /** Synthetic agent type name used for analytics when the fork path fires. */

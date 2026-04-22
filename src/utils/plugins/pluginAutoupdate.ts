@@ -42,6 +42,59 @@ let pluginUpdateCallback: PluginAutoUpdateCallback | null = null
 // This handles the race condition where updates complete before REPL mounts
 let pendingNotification: string[] | null = null
 
+const PLUGIN_AUTOUPDATE_DEGRADED_CODE = 'PLUGIN_AUTOUPDATE_REFRESH_FAILED'
+const PLUGIN_AUTOUPDATE_WARNING_TTL_MS = 5 * 60 * 1000
+const recentAutoupdateWarnings = new Map<string, number>()
+
+export function _formatPluginAutoupdateWarningForTesting(
+  failedMarketplaces: string[],
+): string {
+  const names = failedMarketplaces.join(', ')
+  return `[${PLUGIN_AUTOUPDATE_DEGRADED_CODE}] Marketplace refresh failed (${names}); plugin autoupdate may be stale.`
+}
+
+function buildAutoupdateWarningKey(failedMarketplaces: string[]): string {
+  return failedMarketplaces.slice().sort().join('|')
+}
+
+function shouldEmitPluginAutoupdateWarning(
+  failedMarketplaces: string[],
+  nowMs = Date.now(),
+): boolean {
+  const key = buildAutoupdateWarningKey(failedMarketplaces)
+  const previous = recentAutoupdateWarnings.get(key)
+  if (
+    previous !== undefined &&
+    nowMs - previous < PLUGIN_AUTOUPDATE_WARNING_TTL_MS
+  ) {
+    return false
+  }
+  recentAutoupdateWarnings.set(key, nowMs)
+  return true
+}
+
+function emitPluginAutoupdateWarning(
+  failedMarketplaces: string[],
+  nowMs = Date.now(),
+): void {
+  if (failedMarketplaces.length === 0) return
+  if (!shouldEmitPluginAutoupdateWarning(failedMarketplaces, nowMs)) return
+  process.stderr.write(
+    _formatPluginAutoupdateWarningForTesting(failedMarketplaces) + '\n',
+  )
+}
+
+export function _emitPluginAutoupdateWarningForTesting(
+  failedMarketplaces: string[],
+  nowMs?: number,
+): void {
+  emitPluginAutoupdateWarning(failedMarketplaces, nowMs)
+}
+
+export function _resetPluginAutoupdateWarningStateForTesting(): void {
+  recentAutoupdateWarnings.clear()
+}
+
 /**
  * Register a callback to be notified when plugins are auto-updated.
  * This is used by the REPL to show restart notifications.
@@ -242,26 +295,30 @@ export function autoUpdateMarketplacesAndPluginsInBackground(): void {
       }
 
       // Refresh only marketplaces with autoUpdate enabled
-      const refreshResults = await Promise.allSettled(
+      const refreshResults = await Promise.all(
         Array.from(autoUpdateEnabledMarketplaces).map(async name => {
           try {
             await refreshMarketplace(name, undefined, {
               disableCredentialHelper: true,
             })
+            return { name, success: true as const }
           } catch (error) {
             logForDebugging(
               `Plugin autoupdate: failed to refresh marketplace ${name}: ${errorMessage(error)}`,
               { level: 'warn' },
             )
+            return { name, success: false as const }
           }
         }),
       )
 
-      // Log any refresh failures
-      const failures = refreshResults.filter(r => r.status === 'rejected')
-      if (failures.length > 0) {
+      const failedMarketplaces = refreshResults
+        .filter(result => !result.success)
+        .map(result => result.name)
+      if (failedMarketplaces.length > 0) {
+        emitPluginAutoupdateWarning(failedMarketplaces)
         logForDebugging(
-          `Plugin autoupdate: ${failures.length} marketplace refresh(es) failed`,
+          `Plugin autoupdate: ${failedMarketplaces.length} marketplace refresh(es) failed`,
           { level: 'warn' },
         )
       }

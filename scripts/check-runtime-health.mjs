@@ -76,6 +76,21 @@ import {
   _waitForMcpAuthCacheWritesForTesting,
 } from '../src/services/mcp/client.ts';
 import { _runCleanupFunctionForTesting } from '../src/utils/cleanupRegistry.ts';
+import {
+  _formatAvailablePluginsWarningForTesting,
+  _loadAvailablePluginsForTesting,
+} from '../src/cli/handlers/plugins.ts';
+import {
+  _emitPluginAutoupdateWarningForTesting,
+  _formatPluginAutoupdateWarningForTesting,
+  _resetPluginAutoupdateWarningStateForTesting,
+} from '../src/utils/plugins/pluginAutoupdate.ts';
+import {
+  _classifyResumeListLoadErrorForTesting,
+  _formatResumeListLoadFailureForTesting,
+  _logResumeListLoadFailureForTesting,
+} from '../src/commands/resume/resume.tsx';
+import { _isForkSubagentEnabledForTesting } from '../src/tools/AgentTool/forkSubagent.ts';
 
 applyLauncherDefaults();
 globalThis.MACRO ??= {
@@ -969,6 +984,201 @@ function checkMcpToolTimeoutDefault() {
   }
 }
 
+async function checkPluginAvailableDiagnostics() {
+  const { available, warning } = await _loadAvailablePluginsForTesting({
+    loadConfig: async () => ({}),
+    loadInstallCounts: async () => new Map(),
+    loadMarketplaces: async () => {
+      throw new Error('simulated marketplace failure');
+    },
+    isPluginInstalledFn: () => false,
+  });
+
+  assert(
+    Array.isArray(available) && available.length === 0,
+    'plugin list --available degraded path should return no available plugins',
+    available,
+  );
+  assert(
+    typeof warning === 'string' &&
+      warning.includes('PLUGIN_AVAILABLE_DEGRADED'),
+    'plugin list --available degraded path should return a visible warning',
+    warning,
+  );
+  assert(
+    warning.includes('marketplaces_load_failed'),
+    'plugin list --available degraded warning should include reason details',
+    warning,
+  );
+
+  const jsonPayload = JSON.stringify({ installed: [], available });
+  assert(
+    JSON.parse(jsonPayload).available.length === 0,
+    'plugin list --available JSON output should remain parseable',
+    jsonPayload,
+  );
+  assert(
+    _formatAvailablePluginsWarningForTesting(['marketplaces_load_failed']).includes(
+      'PLUGIN_AVAILABLE_DEGRADED',
+    ),
+    'plugin warning formatter should include a stable error code',
+  );
+}
+
+function checkPluginAutoupdateDiagnostics() {
+  const previousDebug = process.env.DEBUG;
+  const stderrChunks = [];
+  const originalStderrWrite = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (chunk, ...args) => {
+    stderrChunks.push(String(chunk));
+    if (typeof args[1] === 'function') {
+      args[1]();
+    }
+    return true;
+  };
+  try {
+    delete process.env.DEBUG;
+    _resetPluginAutoupdateWarningStateForTesting();
+    _emitPluginAutoupdateWarningForTesting(['alpha', 'beta'], 1000);
+    _emitPluginAutoupdateWarningForTesting(['beta', 'alpha'], 2000);
+    const dedupedOutput = stderrChunks.join('');
+    assert(
+      dedupedOutput.match(/PLUGIN_AUTOUPDATE_REFRESH_FAILED/g)?.length === 1,
+      'plugin autoupdate warning should be deduplicated within TTL',
+      dedupedOutput,
+    );
+
+    _emitPluginAutoupdateWarningForTesting(['alpha', 'beta'], 1000 + 6 * 60 * 1000);
+    const output = stderrChunks.join('');
+    assert(
+      output.includes('PLUGIN_AUTOUPDATE_REFRESH_FAILED') &&
+        output.includes('alpha, beta'),
+      'plugin autoupdate warning should be visible and include failed marketplace names',
+      output,
+    );
+    assert(
+      output.match(/PLUGIN_AUTOUPDATE_REFRESH_FAILED/g)?.length === 2,
+      'plugin autoupdate warning should be emitted again after TTL',
+      output,
+    );
+    assert(
+      _formatPluginAutoupdateWarningForTesting(['alpha']).includes(
+        'PLUGIN_AUTOUPDATE_REFRESH_FAILED',
+      ),
+      'plugin autoupdate warning formatter should include a stable error code',
+    );
+  } finally {
+    process.stderr.write = originalStderrWrite;
+    if (previousDebug === undefined) {
+      delete process.env.DEBUG;
+    } else {
+      process.env.DEBUG = previousDebug;
+    }
+  }
+}
+
+function checkResumeDiagnostics() {
+  const previousDebug = process.env.DEBUG;
+  const stderrChunks = [];
+  const originalStderrWrite = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (chunk, ...args) => {
+    stderrChunks.push(String(chunk));
+    if (typeof args[1] === 'function') {
+      args[1]();
+    }
+    return true;
+  };
+  try {
+    const message = _formatResumeListLoadFailureForTesting(
+      new Error('invalid transcript json parse error'),
+    );
+    assert(
+      message.includes('SESSION_LIST_LOAD_PARSE_ERROR'),
+      'resume list failure should include parse-specific stable error code',
+      message,
+    );
+    assert(
+      _classifyResumeListLoadErrorForTesting({ code: 'EACCES' }) ===
+        'SESSION_LIST_LOAD_PERMISSION_ERROR',
+      'resume list failure classifier should detect permission errors',
+    );
+    assert(
+      _classifyResumeListLoadErrorForTesting({ code: 'ENOENT' }) ===
+        'SESSION_LIST_LOAD_IO_ERROR',
+      'resume list failure classifier should detect I/O errors',
+    );
+
+    delete process.env.DEBUG;
+    _logResumeListLoadFailureForTesting(new Error('hidden by default'));
+    assert(
+      stderrChunks.length === 0,
+      'resume list debug diagnostics should be silent without debug',
+      stderrChunks,
+    );
+
+    process.env.DEBUG = '1';
+    _logResumeListLoadFailureForTesting(new Error('visible in debug'));
+    const output = stderrChunks.join('');
+    assert(
+      output.includes('[resume] failed to load conversation list') &&
+        output.includes('visible in debug'),
+      'resume list debug diagnostics should include error details when debug is enabled',
+      output,
+    );
+  } finally {
+    process.stderr.write = originalStderrWrite;
+    if (previousDebug === undefined) {
+      delete process.env.DEBUG;
+    } else {
+      process.env.DEBUG = previousDebug;
+    }
+  }
+}
+
+function checkForkSubagentRuntimeGate() {
+  assert(
+    _isForkSubagentEnabledForTesting({
+      featureEnabled: true,
+      userType: 'ant',
+      isCoordinator: false,
+      isNonInteractive: false,
+    }),
+    'fork subagent should be enabled for internal users when feature is on',
+  );
+
+  assert(
+    !_isForkSubagentEnabledForTesting({
+      featureEnabled: true,
+      userType: undefined,
+      forkSubagentEnv: undefined,
+      isCoordinator: false,
+      isNonInteractive: false,
+    }),
+    'fork subagent should be disabled for external builds without opt-in env',
+  );
+
+  assert(
+    _isForkSubagentEnabledForTesting({
+      featureEnabled: true,
+      userType: undefined,
+      forkSubagentEnv: '1',
+      isCoordinator: false,
+      isNonInteractive: false,
+    }),
+    'fork subagent should be enabled for external builds with explicit env opt-in',
+  );
+
+  assert(
+    !_isForkSubagentEnabledForTesting({
+      featureEnabled: true,
+      userType: 'ant',
+      isCoordinator: false,
+      isNonInteractive: true,
+    }),
+    'fork subagent should remain disabled in non-interactive mode',
+  );
+}
+
 async function checkQueryEnginePermissionDenialsAreTurnScoped() {
   const wrapperDecisions = [{ behavior: 'deny' }, { behavior: 'allow' }];
   const baseCanUseTool = async () =>
@@ -1253,6 +1463,18 @@ await checkMcpAuthCacheConcurrency();
 
 console.log('Checking MCP tool timeout defaults...');
 checkMcpToolTimeoutDefault();
+
+console.log('Checking plugin available degradation diagnostics...');
+await checkPluginAvailableDiagnostics();
+
+console.log('Checking plugin autoupdate degradation diagnostics...');
+checkPluginAutoupdateDiagnostics();
+
+console.log('Checking resume diagnostics...');
+checkResumeDiagnostics();
+
+console.log('Checking fork subagent runtime gate...');
+checkForkSubagentRuntimeGate();
 
 console.log('Checking QueryEngine permission denial scoping...');
 await checkQueryEnginePermissionDenialsAreTurnScoped();
