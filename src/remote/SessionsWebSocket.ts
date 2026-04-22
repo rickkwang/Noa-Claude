@@ -244,6 +244,10 @@ export class SessionsWebSocket {
     const previousState = this.state
     this.state = 'closed'
 
+    logForDebugging(
+      `[SessionsWebSocket] handleClose: previousState=${previousState} closeCode=${closeCode}`,
+    )
+
     // Permanent codes: stop reconnecting — server has definitively ended the session
     if (PERMANENT_CLOSE_CODES.has(closeCode)) {
       logForDebugging(
@@ -269,6 +273,29 @@ export class SessionsWebSocket {
         RECONNECT_DELAY_MS * this.sessionNotFoundRetries,
         `4001 attempt ${this.sessionNotFoundRetries}/${MAX_SESSION_NOT_FOUND_RETRIES}`,
       )
+      return
+    }
+
+    // Transient close during the handshake (before 'open' fired).
+    // These are network/proxy blips — the socket never fully established.
+    // Only retry on clean/going-away codes; other codes during handshake
+    // mean the server is actively rejecting the connection.
+    if (previousState === 'connecting') {
+      if (closeCode === 1000 || closeCode === 1001 || closeCode === 1006) {
+        logForDebugging(
+          `[SessionsWebSocket] Handshake close (code ${closeCode}), scheduling reconnect`,
+        )
+        this.scheduleReconnect(
+          RECONNECT_DELAY_MS,
+          `handshake reconnect (code ${closeCode})`,
+        )
+        return
+      }
+      // Unexpected code — server rejected definitively
+      logForDebugging(
+        `[SessionsWebSocket] Handshake close with unexpected code ${closeCode}, not reconnecting`,
+      )
+      this.callbacks.onClose?.()
       return
     }
 

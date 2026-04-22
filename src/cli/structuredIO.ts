@@ -581,6 +581,7 @@ export class StructuredIO {
           input,
           toolUseContext,
           mainPermissionResult.suggestions,
+          hookAbortController,
         ).then(decision => ({ source: 'hook' as const, decision }))
 
         // Start the SDK permission prompt immediately (don't wait for hooks)
@@ -629,8 +630,12 @@ export class StructuredIO {
           )
         }
 
-        // SDK prompt responded first — use its result (hook still running
-        // in background but its result will be ignored)
+        // SDK prompt responded first — abort the background hook and use SDK result.
+        // hookAbortController.abort() cancels the SDK HTTP request (no-op here since
+        // SDK already won) AND the hook generator (signal now shared).
+        // toolUseContext.abortController.abort() cascades the abort upward.
+        hookAbortController.abort()
+        toolUseContext.abortController.abort()
         return permissionPromptToolResultToPermissionDecision(
           winner.result,
           tool,
@@ -791,6 +796,7 @@ async function executePermissionRequestHooksForSDK(
   input: Record<string, unknown>,
   toolUseContext: ToolUseContext,
   suggestions: PermissionUpdate[] | undefined,
+  hookAbortController: AbortController,
 ): Promise<PermissionDecision | undefined> {
   const appState = toolUseContext.getAppState()
   const permissionMode = appState.toolPermissionContext.mode
@@ -803,7 +809,7 @@ async function executePermissionRequestHooksForSDK(
     toolUseContext,
     permissionMode,
     suggestions,
-    toolUseContext.abortController.signal,
+    hookAbortController.signal,
   )
 
   for await (const hookResult of hookGenerator) {
@@ -815,6 +821,9 @@ async function executePermissionRequestHooksForSDK(
       const decision = hookResult.permissionRequestResult
       if (decision.behavior === 'allow') {
         const finalInput = decision.updatedInput || input
+
+        // Guard: if SDK won the race and abort was triggered, discard this decision
+        if (hookAbortController.signal.aborted) return undefined
 
         // Apply permission updates if provided by hook ("always allow")
         const permissionUpdates = decision.updatedPermissions ?? []
