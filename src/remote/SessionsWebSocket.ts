@@ -84,6 +84,7 @@ export class SessionsWebSocket {
   private ws: WebSocketLike | null = null
   private state: WebSocketState = 'closed'
   private reconnectAttempts = 0
+  private handshakeReconnectAttempts = 0
   private sessionNotFoundRetries = 0
   private pingInterval: NodeJS.Timeout | null = null
   private reconnectTimer: NodeJS.Timeout | null = null
@@ -282,8 +283,16 @@ export class SessionsWebSocket {
     // mean the server is actively rejecting the connection.
     if (previousState === 'connecting') {
       if (closeCode === 1000 || closeCode === 1001 || closeCode === 1006) {
+        if (this.handshakeReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+          logForDebugging(
+            `[SessionsWebSocket] Handshake reconnect budget exhausted (${MAX_RECONNECT_ATTEMPTS}), not reconnecting`,
+          )
+          this.callbacks.onClose?.()
+          return
+        }
+        this.handshakeReconnectAttempts++
         logForDebugging(
-          `[SessionsWebSocket] Handshake close (code ${closeCode}), scheduling reconnect`,
+          `[SessionsWebSocket] Handshake close (code ${closeCode}), scheduling reconnect (attempt ${this.handshakeReconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`,
         )
         this.scheduleReconnect(
           RECONNECT_DELAY_MS,
@@ -421,6 +430,7 @@ export class SessionsWebSocket {
   reconnect(): void {
     logForDebugging('[SessionsWebSocket] Force reconnecting')
     this.reconnectAttempts = 0
+    this.handshakeReconnectAttempts = 0
     this.sessionNotFoundRetries = 0
     this.close()
     // Small delay before reconnecting (stored in reconnectTimer so it can be cancelled)

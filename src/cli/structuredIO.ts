@@ -633,9 +633,7 @@ export class StructuredIO {
         // SDK prompt responded first — abort the background hook and use SDK result.
         // hookAbortController.abort() cancels the SDK HTTP request (no-op here since
         // SDK already won) AND the hook generator (signal now shared).
-        // toolUseContext.abortController.abort() cascades the abort upward.
         hookAbortController.abort()
-        toolUseContext.abortController.abort()
         return permissionPromptToolResultToPermissionDecision(
           winner.result,
           tool,
