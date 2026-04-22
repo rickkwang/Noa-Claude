@@ -135,6 +135,7 @@ export class SessionsWebSocket {
         )
         this.state = 'connected'
         this.reconnectAttempts = 0
+        this.handshakeReconnectAttempts = 0
         this.sessionNotFoundRetries = 0
         this.startPingInterval()
         this.callbacks.onConnected?.()
@@ -179,6 +180,7 @@ export class SessionsWebSocket {
         // Auth is handled via headers, so we're immediately connected
         this.state = 'connected'
         this.reconnectAttempts = 0
+        this.handshakeReconnectAttempts = 0
         this.sessionNotFoundRetries = 0
         this.startPingInterval()
         this.callbacks.onConnected?.()

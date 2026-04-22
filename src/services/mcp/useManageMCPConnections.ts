@@ -157,6 +157,16 @@ export function useManageMCPConnections(
   // Track active reconnection attempts to allow cancellation
   const reconnectTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
 
+  // Clean up reconnect timers on unmount to prevent memory leaks and zombie callbacks
+  useEffect(() => {
+    return () => {
+      for (const timer of reconnectTimersRef.current.values()) {
+        clearTimeout(timer)
+      }
+      reconnectTimersRef.current.clear()
+    }
+  }, [])
+
   // Dedup the --channels blocked warning per skip kind so that a user who
   // sees "run /login" (auth skip), logs in, then hits the policy gate
   // gets a second toast.
