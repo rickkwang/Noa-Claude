@@ -14,7 +14,6 @@ import { useInput } from '../ink.js';
 import { useSearchInput } from '../hooks/useSearchInput.js';
 import { useTerminalSize } from '../hooks/useTerminalSize.js';
 import { useSearchHighlight } from '../ink/hooks/use-search-highlight.js';
-import { isRemoteSessionMode, pickActiveRemoteMode } from '../entrypoints/modes/index.js';
 import type { JumpHandle } from '../components/VirtualMessageList.js';
 import { renderMessagesToPlainText } from '../utils/exportRenderer.js';
 import { openFileInExternalEditor } from '../utils/editor.js';
@@ -622,7 +621,7 @@ export function REPL({
   sshSession,
   thinkingConfig
 }: Props): React.ReactNode {
-  const isRemoteSession = isRemoteSessionMode(remoteSessionConfig);
+  const isRemoteSession = !!remoteSessionConfig;
 
   // Env-var gates hoisted to mount-time — isEnvTruthy does toLowerCase+trim+
   // includes, and these were on the render path (hot during PageUp spam).
@@ -1438,11 +1437,7 @@ export function REPL({
   });
 
   // Use whichever remote mode is active
-  const activeRemote = pickActiveRemoteMode({
-    ssh: sshRemote,
-    direct: directConnect,
-    remote: remoteSession
-  });
+  const activeRemote = sshRemote.isRemoteMode ? sshRemote : directConnect.isRemoteMode ? directConnect : remoteSession;
   const [pastedContents, setPastedContents] = useState<Record<number, PastedContent>>({});
   const [submitCount, setSubmitCount] = useState(0);
   // Ref instead of state to avoid triggering React re-renders on every

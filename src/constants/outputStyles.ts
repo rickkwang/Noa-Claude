@@ -1,13 +1,11 @@
 // @ts-nocheck
 import figures from 'figures'
 import memoize from 'lodash-es/memoize.js'
-import {
-  clearOutputStyleResourceCaches,
-  loadOutputStyleResources,
-} from '../services/resources/outputStyles.js'
+import { getOutputStyleDirStyles } from '../outputStyles/loadOutputStylesDir.js'
 import type { OutputStyle } from '../utils/config.js'
 import { getCwd } from '../utils/cwd.js'
 import { logForDebugging } from '../utils/debug.js'
+import { loadPluginOutputStyles } from '../utils/plugins/loadPluginOutputStyles.js'
 import type { SettingSource } from '../utils/settings/constants.js'
 import { getSettings_DEPRECATED } from '../utils/settings/settings.js'
 
@@ -140,7 +138,8 @@ ${EXPLANATORY_FEATURE_PROMPT}`,
 export const getAllOutputStyles = memoize(async function getAllOutputStyles(
   cwd: string,
 ): Promise<{ [styleName: string]: OutputStyleConfig | null }> {
-  const { customStyles, pluginStyles } = await loadOutputStyleResources(cwd)
+  const customStyles = await getOutputStyleDirStyles(cwd)
+  const pluginStyles = await loadPluginOutputStyles()
 
   // Start with built-in modes
   const allStyles = {
@@ -178,7 +177,6 @@ export const getAllOutputStyles = memoize(async function getAllOutputStyles(
 
 export function clearAllOutputStylesCache(): void {
   getAllOutputStyles.cache?.clear?.()
-  clearOutputStyleResourceCaches()
 }
 
 export async function getOutputStyleConfig(): Promise<OutputStyleConfig | null> {

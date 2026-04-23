@@ -128,11 +128,10 @@ import { logError } from './utils/log.js'
 import { toError } from './utils/errors.js'
 import { logForDebugging } from './utils/debug.js'
 import {
-  clearSkillResourceCaches,
-  getDynamicSkills,
   getSkillDirCommands,
-} from './services/resources/skills.js'
-import { clearRegisteredPluginCommands, replaceRegisteredPluginCommands } from './services/extensions/registry.js'
+  clearSkillCaches,
+  getDynamicSkills,
+} from './skills/loadSkillsDir.js'
 import { getBundledSkills } from './skills/bundledSkills.js'
 import { getBuiltinPluginSkillCommands } from './plugins/builtinPlugins.js'
 import {
@@ -438,7 +437,6 @@ const loadAllCommands = memoize(async (cwd: string): Promise<Command[]> => {
     getPluginCommands(),
     getWorkflowCommands ? getWorkflowCommands(cwd) : Promise.resolve([]),
   ])
-  replaceRegisteredPluginCommands(pluginCommands)
 
   return [
     ...bundledSkills,
@@ -518,8 +516,7 @@ export function clearCommandsCache(): void {
   clearCommandMemoizationCaches()
   clearPluginCommandCache()
   clearPluginSkillsCache()
-  clearSkillResourceCaches()
-  clearRegisteredPluginCommands()
+  clearSkillCaches()
 }
 
 /**

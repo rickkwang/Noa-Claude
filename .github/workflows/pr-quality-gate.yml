@@ -32,8 +32,5 @@ jobs:
       - name: Runtime health
         run: bun run check:runtime
 
-      - name: Architecture boundaries (soft gate)
-        run: bun run check:architecture || true
-
       - name: Critical path tests
         run: bun run test
