@@ -46,8 +46,6 @@ function toPosixRelative(absolutePath) {
 }
 
 function classifyLayer(relativePath) {
-  if (relativePath.startsWith('src/entrypoints/bootstrap/subcommands/'))
-    return 'entrypoints-bootstrap-subcommands';
   if (relativePath.startsWith('src/entrypoints/bootstrap/')) return 'entrypoints-bootstrap';
   if (relativePath.startsWith('src/entrypoints/modes/')) return 'entrypoints-modes';
   if (relativePath.startsWith('src/services/resources/')) return 'services-resources';
@@ -69,19 +67,8 @@ async function resolveImportPath(filePath, specifier) {
   }
 
   const basePath = path.resolve(path.dirname(filePath), specifier);
-  const jsLikeBasePath = basePath.replace(/\.(?:[cm]?js)$/i, '');
-  const jsAliasCandidates =
-    jsLikeBasePath !== basePath
-      ? [
-          `${jsLikeBasePath}.ts`,
-          `${jsLikeBasePath}.tsx`,
-          `${jsLikeBasePath}.mts`,
-          `${jsLikeBasePath}.cts`,
-        ]
-      : [];
   const candidates = [
     basePath,
-    ...jsAliasCandidates,
     `${basePath}.ts`,
     `${basePath}.tsx`,
     `${basePath}.js`,
@@ -101,13 +88,6 @@ async function resolveImportPath(filePath, specifier) {
 }
 
 function violatesBoundary(sourceLayer, targetPath) {
-  if (
-    sourceLayer === 'entrypoints-bootstrap-subcommands' &&
-    (targetPath.startsWith('src/screens/') || targetPath.startsWith('src/hooks/'))
-  ) {
-    return 'entrypoints/bootstrap/subcommands should not depend on screens/hooks layers';
-  }
-
   if (
     (sourceLayer === 'services-resources' ||
       sourceLayer === 'services-extensions' ||
@@ -132,37 +112,6 @@ function violatesBoundary(sourceLayer, targetPath) {
   }
 
   return null;
-}
-
-async function checkMainEntrypointResidue() {
-  const mainPath = path.join(srcRoot, 'main.tsx');
-  if (!(await pathExists(mainPath))) {
-    return [];
-  }
-
-  const content = await fs.readFile(mainPath, 'utf8');
-  const commandResidues = [
-    { name: 'mcp', pattern: /\bprogram\.command\(['"]mcp['"]\)/ },
-    { name: 'auth', pattern: /\bprogram\.command\(['"]auth['"]\)/ },
-    { name: 'plugin', pattern: /\bprogram\.command\(['"]plugin['"]\)/ },
-  ];
-
-  const violations = [];
-  for (const residue of commandResidues) {
-    if (!residue.pattern.test(content)) {
-      continue;
-    }
-
-    violations.push({
-      file: 'src/main.tsx',
-      importPath: `program.command('${residue.name}')`,
-      resolved: 'inline registration',
-      reason:
-        `main.tsx should delegate ${residue.name} registration to entrypoints/bootstrap/subcommands`,
-    });
-  }
-
-  return violations;
 }
 
 async function main() {
@@ -197,9 +146,6 @@ async function main() {
       }
     }
   }
-
-  const mainResidues = await checkMainEntrypointResidue();
-  violations.push(...mainResidues);
 
   if (violations.length === 0) {
     console.log('[architecture] no boundary violations detected');

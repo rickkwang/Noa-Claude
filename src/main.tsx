@@ -33,7 +33,7 @@ import { ensureKeychainPrefetchCompleted, startKeychainPrefetch } from './utils/
 // eslint-disable-next-line custom-rules/no-top-level-side-effects
 try { startKeychainPrefetch(); } catch (error) { logStartupPrefetchError('startKeychainPrefetch', error); }
 import { feature } from 'bun:bundle';
-import { Command as CommanderCommand } from '@commander-js/extra-typings';
+import { Command as CommanderCommand, Option } from '@commander-js/extra-typings';
 import { configureProgramOptions } from './cli/programOptions.js';
 import chalk from 'chalk';
 import { readFileSync } from 'fs';
@@ -44,7 +44,7 @@ import React from 'react';
 import { getOauthConfig } from './constants/oauth.js';
 import { getRemoteSessionUrl } from './constants/product.js';
 import { getSystemContext, getUserContext } from './context.js';
-import { buildProgram, createSortedHelpConfig, registerAuthCommands, registerDefaultAction, registerMcpCommands, registerPluginCommands, registerPreAction, registerSubcommands, registerUtilityCommands } from './entrypoints/bootstrap/index.js';
+import { buildProgram, createSortedHelpConfig, registerDefaultAction, registerPreAction, registerSubcommands } from './entrypoints/bootstrap/index.js';
 import { init, initializeTelemetryAfterTrust } from './entrypoints/init.js';
 import { addToHistory } from './history.js';
 import type { Root } from './ink.js';
@@ -109,6 +109,7 @@ import { initBuiltinPlugins } from './plugins/bundled/index.js';
 /* eslint-enable @typescript-eslint/no-require-imports */
 import { checkQuotaStatus } from './services/claudeAiLimits.js';
 import { getMcpToolsCommandsAndResources, prefetchAllMcpResources } from './services/mcp/client.js';
+import { VALID_INSTALLABLE_SCOPES, VALID_UPDATE_SCOPES } from './services/plugins/pluginCliCommands.js';
 import { initBundledSkills } from './skills/bundled/index.js';
 import type { AgentColorName } from './tools/AgentTool/agentColorManager.js';
 import { getActiveAgentsFromList, getAgentDefinitionsWithOverrides, isBuiltInAgent, isCustomAgent, parseAgentsFromJson } from './tools/AgentTool/loadAgentsDir.js';
@@ -153,11 +154,14 @@ import { shouldUseResumeSummaryGate } from './utils/resumeSummaryGate.js';
 import { validateUuid } from './utils/uuid.js';
 // Plugin startup checks are now handled non-blockingly in REPL.tsx
 
+import { registerMcpAddCommand } from 'src/commands/mcp/addCommand.js';
+import { registerMcpXaaIdpCommand } from 'src/commands/mcp/xaaIdpCommand.js';
 import { logPermissionContextForAnts } from 'src/services/internalLogging.js';
 import { fetchClaudeAIMcpConfigsIfEligible } from 'src/services/mcp/claudeai.js';
 import { clearServerCache } from 'src/services/mcp/client.js';
 import { areMcpConfigsAllowedWithEnterpriseMcpConfig, dedupClaudeAiMcpServers, doesEnterpriseMcpConfigExist, filterMcpServersByPolicy, getClaudeCodeMcpConfigs, getMcpServerSignature, parseMcpConfig, parseMcpConfigFromFilePath } from 'src/services/mcp/config.js';
 import { excludeCommandsByServer, excludeResourcesByServer } from 'src/services/mcp/utils.js';
+import { isXaaEnabled } from 'src/services/mcp/xaaIdpLogin.js';
 import { getRelevantTips } from 'src/services/tips/tipRegistry.js';
 import { logContextMetrics } from 'src/utils/api.js';
 import { CLAUDE_IN_CHROME_MCP_SERVER_NAME, isClaudeInChromeMCPServer } from 'src/utils/claudeInChrome/common.js';
@@ -4001,8 +4005,73 @@ async function run(): Promise<CommanderCommand> {
   }
 
   registerSubcommands(program, () => {
-    // claude mcp
-    registerMcpCommands(program, createSortedHelpConfig);
+  // claude mcp
+
+  const mcp = program.command('mcp').description('Configure and manage MCP servers').configureHelp(createSortedHelpConfig()).enablePositionalOptions();
+  mcp.command('serve').description(`Start the Noa Claude MCP server`).option('-d, --debug', 'Enable debug mode', () => true).option('--verbose', 'Override verbose mode setting from config', () => true).action(async ({
+    debug,
+    verbose
+  }: {
+    debug?: boolean;
+    verbose?: boolean;
+  }) => {
+    const {
+      mcpServeHandler
+    } = await import('./cli/handlers/mcp.js');
+    await mcpServeHandler({
+      debug,
+      verbose
+    });
+  });
+
+  // Register the mcp add subcommand (extracted for testability)
+  registerMcpAddCommand(mcp);
+  if (isXaaEnabled()) {
+    registerMcpXaaIdpCommand(mcp);
+  }
+  mcp.command('remove <name>').description('Remove an MCP server').option('-s, --scope <scope>', 'Configuration scope (local, user, or project) - if not specified, removes from whichever scope it exists in').action(async (name: string, options: {
+    scope?: string;
+  }) => {
+    const {
+      mcpRemoveHandler
+    } = await import('./cli/handlers/mcp.js');
+    await mcpRemoveHandler(name, options);
+  });
+  mcp.command('list').description('List configured MCP servers. Note: The workspace trust dialog is skipped and stdio servers from .mcp.json are spawned for health checks. Only use this command in directories you trust.').action(async () => {
+    const {
+      mcpListHandler
+    } = await import('./cli/handlers/mcp.js');
+    await mcpListHandler();
+  });
+  mcp.command('get <name>').description('Get details about an MCP server. Note: The workspace trust dialog is skipped and stdio servers from .mcp.json are spawned for health checks. Only use this command in directories you trust.').action(async (name: string) => {
+    const {
+      mcpGetHandler
+    } = await import('./cli/handlers/mcp.js');
+    await mcpGetHandler(name);
+  });
+  mcp.command('add-json <name> <json>').description('Add an MCP server (stdio or SSE) with a JSON string').option('-s, --scope <scope>', 'Configuration scope (local, user, or project)', 'local').option('--client-secret', 'Prompt for OAuth client secret (or set MCP_CLIENT_SECRET env var)').action(async (name: string, json: string, options: {
+    scope?: string;
+    clientSecret?: true;
+  }) => {
+    const {
+      mcpAddJsonHandler
+    } = await import('./cli/handlers/mcp.js');
+    await mcpAddJsonHandler(name, json, options);
+  });
+  mcp.command('add-from-claude-desktop').description('Import MCP servers from Claude Desktop (Mac and WSL only)').option('-s, --scope <scope>', 'Configuration scope (local, user, or project)', 'local').action(async (options: {
+    scope?: string;
+  }) => {
+    const {
+      mcpAddFromDesktopHandler
+    } = await import('./cli/handlers/mcp.js');
+    await mcpAddFromDesktopHandler(options);
+  });
+  mcp.command('reset-project-choices').description('Reset all approved and rejected project-scoped (.mcp.json) servers within this project').action(async () => {
+    const {
+      mcpResetChoicesHandler
+    } = await import('./cli/handlers/mcp.js');
+    await mcpResetChoicesHandler();
+  });
 
   // claude server
   if (feature('DIRECT_CONNECT')) {
@@ -4142,12 +4211,193 @@ async function run(): Promise<CommanderCommand> {
     });
   }
 
-    // claude auth
-    registerAuthCommands(program, createSortedHelpConfig);
-    // claude plugin
-    registerPluginCommands(program, createSortedHelpConfig);
-    // setup-token / agents
-    registerUtilityCommands(program);
+  // claude auth
+
+  const auth = program.command('auth').description('Manage authentication').configureHelp(createSortedHelpConfig());
+  auth.command('login').description('Sign in to your Anthropic account').option('--email <email>', 'Pre-populate email address on the login page').option('--sso', 'Force SSO login flow').option('--console', 'Use Anthropic Console (API usage billing) instead of Claude subscription').option('--claudeai', 'Use Claude subscription (default)').action(async ({
+    email,
+    sso,
+    console: useConsole,
+    claudeai
+  }: {
+    email?: string;
+    sso?: boolean;
+    console?: boolean;
+    claudeai?: boolean;
+  }) => {
+    const {
+      authLogin
+    } = await import('./cli/handlers/auth.js');
+    await authLogin({
+      email,
+      sso,
+      console: useConsole,
+      claudeai
+    });
+  });
+  auth.command('status').description('Show authentication status').option('--json', 'Output as JSON (default)').option('--text', 'Output as human-readable text').action(async (opts: {
+    json?: boolean;
+    text?: boolean;
+  }) => {
+    const {
+      authStatus
+    } = await import('./cli/handlers/auth.js');
+    await authStatus(opts);
+  });
+  auth.command('logout').description('Log out from your Anthropic account').action(async () => {
+    const {
+      authLogout
+    } = await import('./cli/handlers/auth.js');
+    await authLogout();
+  });
+
+  /**
+   * Helper function to handle marketplace command errors consistently.
+   * Logs the error and exits the process with status 1.
+   * @param error The error that occurred
+   * @param action Description of the action that failed
+   */
+  // Hidden flag on all plugin/marketplace subcommands to target cowork_plugins.
+  const coworkOption = () => new Option('--cowork', 'Use cowork_plugins directory').hideHelp();
+
+  // Plugin validate command
+  const pluginCmd = program.command('plugin').alias('plugins').description('Manage Noa Claude plugins').configureHelp(createSortedHelpConfig());
+  pluginCmd.command('validate <path>').description('Validate a plugin or marketplace manifest').addOption(coworkOption()).action(async (manifestPath: string, options: {
+    cowork?: boolean;
+  }) => {
+    const {
+      pluginValidateHandler
+    } = await import('./cli/handlers/plugins.js');
+    await pluginValidateHandler(manifestPath, options);
+  });
+
+  // Plugin list command
+  pluginCmd.command('list').description('List installed plugins').option('--json', 'Output as JSON').option('--available', 'Include available plugins from marketplaces (requires --json)').addOption(coworkOption()).action(async (options: {
+    json?: boolean;
+    available?: boolean;
+    cowork?: boolean;
+  }) => {
+    const {
+      pluginListHandler
+    } = await import('./cli/handlers/plugins.js');
+    await pluginListHandler(options);
+  });
+
+  // Marketplace subcommands
+  const marketplaceCmd = pluginCmd.command('marketplace').description('Manage Noa Claude marketplaces').configureHelp(createSortedHelpConfig());
+  marketplaceCmd.command('add <source>').description('Add a marketplace from a URL, path, or GitHub repo').addOption(coworkOption()).option('--sparse <paths...>', 'Limit checkout to specific directories via git sparse-checkout (for monorepos). Example: --sparse .claude-plugin plugins').option('--scope <scope>', 'Where to declare the marketplace: user (default), project, or local').action(async (source: string, options: {
+    cowork?: boolean;
+    sparse?: string[];
+    scope?: string;
+  }) => {
+    const {
+      marketplaceAddHandler
+    } = await import('./cli/handlers/plugins.js');
+    await marketplaceAddHandler(source, options);
+  });
+  marketplaceCmd.command('list').description('List all configured marketplaces').option('--json', 'Output as JSON').addOption(coworkOption()).action(async (options: {
+    json?: boolean;
+    cowork?: boolean;
+  }) => {
+    const {
+      marketplaceListHandler
+    } = await import('./cli/handlers/plugins.js');
+    await marketplaceListHandler(options);
+  });
+  marketplaceCmd.command('remove <name>').alias('rm').description('Remove a configured marketplace').addOption(coworkOption()).action(async (name: string, options: {
+    cowork?: boolean;
+  }) => {
+    const {
+      marketplaceRemoveHandler
+    } = await import('./cli/handlers/plugins.js');
+    await marketplaceRemoveHandler(name, options);
+  });
+  marketplaceCmd.command('update [name]').description('Update marketplace(s) from their source - updates all if no name specified').addOption(coworkOption()).action(async (name: string | undefined, options: {
+    cowork?: boolean;
+  }) => {
+    const {
+      marketplaceUpdateHandler
+    } = await import('./cli/handlers/plugins.js');
+    await marketplaceUpdateHandler(name, options);
+  });
+
+  // Plugin install command
+  pluginCmd.command('install <plugin>').alias('i').description('Install a plugin from available marketplaces (use plugin@marketplace for specific marketplace)').option('-s, --scope <scope>', 'Installation scope: user, project, or local', 'user').addOption(coworkOption()).action(async (plugin: string, options: {
+    scope?: string;
+    cowork?: boolean;
+  }) => {
+    const {
+      pluginInstallHandler
+    } = await import('./cli/handlers/plugins.js');
+    await pluginInstallHandler(plugin, options);
+  });
+
+  // Plugin uninstall command
+  pluginCmd.command('uninstall <plugin>').alias('remove').alias('rm').description('Uninstall an installed plugin').option('-s, --scope <scope>', 'Uninstall from scope: user, project, or local', 'user').option('--keep-data', "Preserve the plugin's persistent data directory (~/.claude/plugins/data/{id}/)").addOption(coworkOption()).action(async (plugin: string, options: {
+    scope?: string;
+    cowork?: boolean;
+    keepData?: boolean;
+  }) => {
+    const {
+      pluginUninstallHandler
+    } = await import('./cli/handlers/plugins.js');
+    await pluginUninstallHandler(plugin, options);
+  });
+
+  // Plugin enable command
+  pluginCmd.command('enable <plugin>').description('Enable a disabled plugin').option('-s, --scope <scope>', `Installation scope: ${VALID_INSTALLABLE_SCOPES.join(', ')} (default: auto-detect)`).addOption(coworkOption()).action(async (plugin: string, options: {
+    scope?: string;
+    cowork?: boolean;
+  }) => {
+    const {
+      pluginEnableHandler
+    } = await import('./cli/handlers/plugins.js');
+    await pluginEnableHandler(plugin, options);
+  });
+
+  // Plugin disable command
+  pluginCmd.command('disable [plugin]').description('Disable an enabled plugin').option('-a, --all', 'Disable all enabled plugins').option('-s, --scope <scope>', `Installation scope: ${VALID_INSTALLABLE_SCOPES.join(', ')} (default: auto-detect)`).addOption(coworkOption()).action(async (plugin: string | undefined, options: {
+    scope?: string;
+    cowork?: boolean;
+    all?: boolean;
+  }) => {
+    const {
+      pluginDisableHandler
+    } = await import('./cli/handlers/plugins.js');
+    await pluginDisableHandler(plugin, options);
+  });
+
+  // Plugin update command
+  pluginCmd.command('update <plugin>').description('Update a plugin to the latest version (restart required to apply)').option('-s, --scope <scope>', `Installation scope: ${VALID_UPDATE_SCOPES.join(', ')} (default: user)`).addOption(coworkOption()).action(async (plugin: string, options: {
+    scope?: string;
+    cowork?: boolean;
+  }) => {
+    const {
+      pluginUpdateHandler
+    } = await import('./cli/handlers/plugins.js');
+    await pluginUpdateHandler(plugin, options);
+  });
+  // END ANT-ONLY
+
+  // Setup token command
+  program.command('setup-token').description('Set up a long-lived authentication token (requires Claude subscription)').action(async () => {
+    const [{
+      setupTokenHandler
+    }, {
+      createRoot
+    }] = await Promise.all([import('./cli/handlers/util.js'), import('./ink.js')]);
+    const root = await createRoot(getBaseRenderOptions(false));
+    await setupTokenHandler(root);
+  });
+
+  // Agents command - list configured agents
+  program.command('agents').description('List configured agents').option('--setting-sources <sources>', 'Comma-separated list of setting sources to load (user, project, local).').action(async () => {
+    const {
+      agentsHandler
+    } = await import('./cli/handlers/agents.js');
+    await agentsHandler();
+    process.exit(0);
+  });
   if (feature('TRANSCRIPT_CLASSIFIER')) {
     // Skip when tengu_auto_mode_config.enabled === 'disabled' (circuit breaker).
     // Reads from disk cache — GrowthBook isn't initialized at registration time.

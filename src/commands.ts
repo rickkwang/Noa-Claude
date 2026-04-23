@@ -132,10 +132,7 @@ import {
   getDynamicSkills,
   getSkillDirCommands,
 } from './services/resources/skills.js'
-import {
-  clearRegisteredPluginCommands,
-  getOrLoadRegisteredPluginCommands,
-} from './services/extensions/registry.js'
+import { clearRegisteredPluginCommands, replaceRegisteredPluginCommands } from './services/extensions/registry.js'
 import { getBundledSkills } from './skills/bundledSkills.js'
 import { getBuiltinPluginSkillCommands } from './plugins/builtinPlugins.js'
 import {
@@ -438,9 +435,10 @@ const loadAllCommands = memoize(async (cwd: string): Promise<Command[]> => {
     workflowCommands,
   ] = await Promise.all([
     getSkills(cwd),
-    getOrLoadRegisteredPluginCommands(() => getPluginCommands()),
+    getPluginCommands(),
     getWorkflowCommands ? getWorkflowCommands(cwd) : Promise.resolve([]),
   ])
+  replaceRegisteredPluginCommands(pluginCommands)
 
   return [
     ...bundledSkills,

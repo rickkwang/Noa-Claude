@@ -20,7 +20,6 @@
 
 import { getOriginalCwd } from '../../bootstrap/state.js'
 import type { Command } from '../../commands.js'
-import { getOrLoadRegisteredPluginCommands } from '../../services/extensions/index.js'
 import { reinitializeLspServerManager } from '../../services/lsp/manager.js'
 import type { AppState } from '../../state/AppState.js'
 import type { AgentDefinitionsResult } from '../../tools/AgentTool/loadAgentsDir.js'
@@ -89,9 +88,7 @@ export async function refreshActivePlugins(
   // cache-only memoize on completion, so the awaits below are ~free.
   const pluginResult = await loadAllPlugins()
   const [pluginCommands, agentDefinitions] = await Promise.all([
-    getOrLoadRegisteredPluginCommands(() => getPluginCommands(), {
-      forceReload: true,
-    }),
+    getPluginCommands(),
     getAgentDefinitionsWithOverrides(getOriginalCwd()),
   ])
 

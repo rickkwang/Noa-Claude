@@ -6,10 +6,6 @@ import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
   logEvent,
 } from '../services/analytics/index.js'
-import {
-  clearRegisteredPluginCommands,
-  getOrLoadRegisteredPluginCommands,
-} from '../services/extensions/index.js'
 import { reinitializeLspServerManager } from '../services/lsp/manager.js'
 import { useAppState, useSetAppState } from '../state/AppState.js'
 import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
@@ -78,14 +74,8 @@ export function useManagePlugins({
       let agents: AgentDefinition[] = []
 
       try {
-        commands = [
-          ...(await getOrLoadRegisteredPluginCommands(
-            () => getPluginCommands(),
-            { forceReload: true },
-          )),
-        ]
+        commands = await getPluginCommands()
       } catch (error) {
-        clearRegisteredPluginCommands()
         const errorMessage =
           error instanceof Error ? error.message : String(error)
         errors.push({
@@ -236,7 +226,6 @@ export function useManagePlugins({
       const errorObj = toError(error)
       logError(errorObj)
       logForDebugging(`Error loading plugins: ${error}`)
-      clearRegisteredPluginCommands()
       // Set empty state on error, but preserve LSP errors and add the new error
       setAppState(prevState => {
         // Keep existing LSP/non-plugin-loading errors
