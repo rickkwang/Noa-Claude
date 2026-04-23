@@ -4,6 +4,7 @@ import { onGrowthBookRefresh } from '../services/analytics/growthbook.js'
 import { useAppState } from '../state/AppState.js'
 import {
   getDefaultMainLoopModelSetting,
+  getUserSpecifiedModelSetting,
   type ModelName,
   parseUserSpecifiedModel,
 } from '../utils/model/model.js'
@@ -14,6 +15,9 @@ import {
 export function useMainLoopModel(): ModelName {
   const mainLoopModel = useAppState(s => s.mainLoopModel)
   const mainLoopModelForSession = useAppState(s => s.mainLoopModelForSession)
+  // Auth/provider switches bump authVersion and may rewrite env-backed model
+  // settings without touching mainLoopModel fields.
+  useAppState(s => s.authVersion)
 
   // parseUserSpecifiedModel reads tengu_ant_model_override via
   // _CACHED_MAY_BE_STALE (in resolveAntModel). Until GB init completes,
@@ -29,6 +33,7 @@ export function useMainLoopModel(): ModelName {
   const model = parseUserSpecifiedModel(
     mainLoopModelForSession ??
       mainLoopModel ??
+      getUserSpecifiedModelSetting() ??
       getDefaultMainLoopModelSetting(),
   )
   return model

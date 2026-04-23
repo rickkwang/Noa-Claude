@@ -47,6 +47,9 @@ import { renderModelSetting } from '../../utils/model/model.js';
 const LEFT_PANEL_MAX_WIDTH = 50;
 export function LogoV2() {
   const $ = _c(94);
+  // Login/provider switch bumps authVersion; subscribe so header/billing data
+  // refreshes immediately after auth changes.
+  useAppState(s => s.authVersion);
   const activities = getRecentActivitySync();
   const username = getGlobalConfig().oauthAccount?.displayName ?? "";
   const {

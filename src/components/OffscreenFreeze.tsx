@@ -2,6 +2,7 @@
 import React, { useContext, useRef } from 'react';
 import { useTerminalViewport } from '../ink/hooks/use-terminal-viewport.js';
 import { Box } from '../ink.js';
+import { isFullscreenEnvEnabled } from '../utils/fullscreen.js';
 import { InVirtualListContext } from './messageActions.js';
 type Props = {
   children: React.ReactNode;
@@ -29,6 +30,10 @@ export function OffscreenFreeze({
   'use no memo';
 
   const inVirtualList = useContext(InVirtualListContext);
+  // Non-fullscreen mode does not benefit from scrollback freezing and can
+  // hold stale header/banner content after auth/provider changes. Keep the
+  // subtree live in default mode.
+  const isFullscreen = isFullscreenEnvEnabled();
   const [ref, {
     isVisible
   }] = useTerminalViewport();
@@ -37,7 +42,7 @@ export function OffscreenFreeze({
   // viewport, so there's nothing to freeze. Freezing there also blocks
   // click-to-expand since useTerminalViewport's visibility calc can disagree
   // with the ScrollBox's virtual scroll position.
-  if (isVisible || inVirtualList) {
+  if (!isFullscreen || isVisible || inVirtualList) {
     cached.current = children;
   }
   return <Box ref={ref}>{cached.current}</Box>;

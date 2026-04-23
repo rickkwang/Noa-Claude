@@ -1,5 +1,8 @@
 // @ts-nocheck
-import { setMainLoopModelOverride } from '../bootstrap/state.js'
+import {
+  getMainLoopModelOverride,
+  setMainLoopModelOverride,
+} from '../bootstrap/state.js'
 import {
   clearApiKeyHelperCache,
   clearAwsCredentialsCache,
@@ -92,14 +95,19 @@ export function onChangeAppState({
     notifyPermissionModeChanged(newMode)
   }
 
-  // mainLoopModel: remove it from settings?
-  if (
-    newState.mainLoopModel !== oldState.mainLoopModel &&
-    newState.mainLoopModel === null
-  ) {
+  // mainLoopModel: remove it from settings / clear runtime override?
+  // We intentionally do NOT require a state transition here: if mainLoopModel
+  // is already null but bootstrap override is still set (e.g. stale from a
+  // prior /model), auth/provider switches must still clear it so banner and
+  // runtime resolve against current provider env.
+  if (newState.mainLoopModel === null) {
     // Remove from settings
     updateSettingsForSource('userSettings', { model: undefined })
-    setMainLoopModelOverride(null)
+    if (getMainLoopModelOverride() !== undefined) {
+      // Null means "use default model" in AppState, but bootstrap override
+      // should be cleared so env/provider-backed model settings can resolve.
+      setMainLoopModelOverride(undefined)
+    }
   }
 
   // mainLoopModel: add it to settings?

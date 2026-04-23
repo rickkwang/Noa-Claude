@@ -16,6 +16,7 @@ import { useTerminalNotification } from '../ink/useTerminalNotification.js';
 import { Box, Text } from '../ink.js';
 import { useShortcutDisplay } from '../keybindings/useShortcutDisplay.js';
 import type { Screen } from '../screens/REPL.js';
+import { useAppState } from '../state/AppState.js';
 import type { Tools } from '../Tool.js';
 import { findToolByName } from '../Tool.js';
 import type { AgentDefinitionsResult } from '../tools/AgentTool/loadAgentsDir.js';
@@ -59,10 +60,13 @@ import type { JumpHandle } from './VirtualMessageList.js';
 //   'claude' - show gradient banner only (no LogoV2)
 //   'clawd'  - show LogoV2 only
 const LogoHeader = React.memo(function LogoHeader(t0) {
-  const $ = _c(3);
+  const $ = _c(5);
   const {
     agentDefinitions,
   } = t0;
+  // Login/provider switch increments authVersion. Include it in this wrapper's
+  // cache dependencies so clawd/gradient banners refresh immediately.
+  const authVersion = useAppState(s => s.authVersion);
   // Read banner mode on each render to pick up config file changes
   const startupBannerMode = getStartupBannerMode()
   const showGradientBanner = startupBannerMode === 'claude'
@@ -81,12 +85,13 @@ const LogoHeader = React.memo(function LogoHeader(t0) {
   }
 
   let t2;
-  if ($[2] !== agentDefinitions) {
+  if ($[2] !== agentDefinitions || $[3] !== authVersion) {
     t2 = <OffscreenFreeze><Box flexDirection="column" gap={1}>{t1}{showLogoV2 && <LogoV2 />}<React.Suspense fallback={null}><StatusNotices agentDefinitions={agentDefinitions} /></React.Suspense></Box></OffscreenFreeze>;
     $[2] = agentDefinitions;
-    $[3] = t2;
+    $[3] = authVersion;
+    $[4] = t2;
   } else {
-    t2 = $[3];
+    t2 = $[4];
   }
   return t2;
 });

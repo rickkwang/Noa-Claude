@@ -5,6 +5,8 @@
 
 import React from 'react'
 import { Box, Text } from '../../ink.js'
+import { useAppState } from '../../state/AppState.js'
+import type { AppState } from '../../state/AppStateStore.js'
 import { getAPIProvider } from '../../utils/model/providers.js'
 
 declare const MACRO: { VERSION: string; DISPLAY_VERSION?: string }
@@ -101,6 +103,9 @@ function detectProvider() {
 }
 
 export function GradientBanner() {
+  // Login/provider switch bumps authVersion; subscribe so provider/model/baseUrl
+  // rows re-read process.env immediately after auth changes.
+  useAppState((s: AppState) => s.authVersion)
   const p = detectProvider()
   const W = 62
 
