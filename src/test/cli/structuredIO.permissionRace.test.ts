@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   _runPermissionRequestRaceForTesting,
   StructuredIO,
-} from './structuredIO.js'
+} from '../../cli/structuredIO.js'
 
 describe('structuredIO permission race', () => {
   test('when SDK resolves first, hook side is aborted and parent signal stays active', async () => {

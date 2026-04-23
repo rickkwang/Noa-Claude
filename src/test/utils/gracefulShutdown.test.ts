@@ -5,7 +5,7 @@ import {
   _setFailsafeTimerForTesting,
   _setOrphanCheckIntervalForTesting,
   resetShutdownState,
-} from './gracefulShutdown.js'
+} from '../../utils/gracefulShutdown.js'
 
 describe('gracefulShutdown reset state', () => {
   afterEach(() => {

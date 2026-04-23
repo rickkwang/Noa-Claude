@@ -3,7 +3,7 @@ import {
   checkForLSPDiagnostics,
   registerPendingLSPDiagnostic,
   resetAllLSPDiagnosticState,
-} from './LSPDiagnosticRegistry.js'
+} from '../../../services/lsp/LSPDiagnosticRegistry.js'
 
 describe('LSPDiagnosticRegistry deduplication', () => {
   afterEach(() => {

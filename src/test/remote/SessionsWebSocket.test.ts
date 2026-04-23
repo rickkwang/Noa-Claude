@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { SessionsWebSocket } from './SessionsWebSocket.js'
+import { SessionsWebSocket } from '../../remote/SessionsWebSocket.js'
 
 const MAX_RECONNECT_ATTEMPTS = 5
 
