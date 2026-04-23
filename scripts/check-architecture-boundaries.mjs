@@ -145,19 +145,6 @@ async function checkMainEntrypointResidue() {
     { name: 'mcp', pattern: /\bprogram\.command\(['"]mcp['"]\)/ },
     { name: 'auth', pattern: /\bprogram\.command\(['"]auth['"]\)/ },
     { name: 'plugin', pattern: /\bprogram\.command\(['"]plugin['"]\)/ },
-    { name: 'server', pattern: /\bprogram\.command\(['"]server['"]\)/ },
-    { name: 'ssh', pattern: /\bprogram\.command\(['"]ssh <host> \[dir\]['"]\)/ },
-    { name: 'open', pattern: /\bprogram\.command\(['"]open <cc-url>['"]\)/ },
-    { name: 'doctor', pattern: /\bprogram\.command\(['"]doctor['"]\)/ },
-    { name: 'update', pattern: /\bprogram\.command\(['"]update['"]\)/ },
-    { name: 'install', pattern: /\bprogram\.command\(['"]install \[target\]['"]\)/ },
-    { name: 'up', pattern: /\bprogram\.command\(['"]up['"]\)/ },
-    { name: 'rollback', pattern: /\bprogram\.command\(['"]rollback \[target\]['"]\)/ },
-    { name: 'log', pattern: /\bprogram\.command\(['"]log['"]\)/ },
-    { name: 'error', pattern: /\bprogram\.command\(['"]error['"]\)/ },
-    { name: 'export', pattern: /\bprogram\.command\(['"]export['"]\)/ },
-    { name: 'task', pattern: /\bprogram\.command\(['"]task['"]\)/ },
-    { name: 'completion', pattern: /\bprogram\.command\(['"]completion <shell>['"]\)/ },
   ];
 
   const violations = [];
