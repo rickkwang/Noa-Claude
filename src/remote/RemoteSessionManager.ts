@@ -165,14 +165,12 @@ export class RemoteSessionManager {
     if (message.type === 'control_cancel_request') {
       const { request_id } = message
       const pendingRequest = this.pendingPermissionRequests.get(request_id)
+      const toolUseId = pendingRequest?.tool_use_id
       logForDebugging(
         `[RemoteSessionManager] Permission request cancelled: ${request_id}`,
       )
       this.pendingPermissionRequests.delete(request_id)
-      this.callbacks.onPermissionCancelled?.(
-        request_id,
-        pendingRequest?.tool_use_id,
-      )
+      this.callbacks.onPermissionCancelled?.(request_id, toolUseId)
       return
     }
 

@@ -147,8 +147,11 @@ export class SessionsWebSocket {
         this.handleMessage(data)
       })
 
-      ws.addEventListener('error', () => {
-        const err = new Error('[SessionsWebSocket] WebSocket error')
+      ws.addEventListener('error', (event: Event) => {
+        // Bun WebSocket error events don't carry an Error object with details.
+        // Log what we can identify from the event type for debugging.
+        const message = event.constructor?.name ?? 'Event'
+        const err = new Error(`[SessionsWebSocket] WebSocket error (${message})`)
         logError(err)
         this.callbacks.onError?.(err)
       })
