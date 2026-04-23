@@ -224,9 +224,9 @@ export function getAllReleaseNotes(
   try {
     const releaseNotes = parseChangelog(changelogContent)
 
-    // Sort versions with oldest first
+    // Sort versions with newest first so the latest release appears at the top.
     const sortedVersions = Object.keys(releaseNotes).sort((a, b) =>
-      gt(a, b) ? 1 : -1,
+      gt(a, b) ? -1 : 1,
     )
 
     // Return array of [version, notes] arrays
