@@ -114,10 +114,13 @@ export function calculateTokenWarningState(
     ? autoCompactThreshold
     : getEffectiveContextWindowSize(model)
 
-  const percentLeft = Math.max(
-    0,
-    Math.round(((threshold - tokenUsage) / threshold) * 100),
-  )
+  const percentLeft =
+    threshold > 0
+      ? Math.max(
+          0,
+          Math.round(((threshold - tokenUsage) / threshold) * 100),
+        )
+      : 0
 
   const warningThreshold = threshold - WARNING_THRESHOLD_BUFFER_TOKENS
   const errorThreshold = threshold - ERROR_THRESHOLD_BUFFER_TOKENS

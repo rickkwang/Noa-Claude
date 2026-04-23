@@ -39,8 +39,36 @@ import {
   type CompactionResult,
   createPlanAttachmentIfNeeded,
 } from './compact.js'
+import {
+  roughTokenCountEstimation,
+  roughTokenCountEstimationForMessages,
+} from '../tokenEstimation.js'
 import { estimateMessageTokens } from './microCompact.js'
 import { getCompactUserSummaryMessage } from './prompt.js'
+
+/**
+ * Estimate token count for a full post-compact message array.
+ * Builds on roughTokenCountEstimationForMessages (which handles assistant,
+ * user, and attachment types) and adds system + hook_result coverage that
+ * the upstream function intentionally skips.
+ */
+function estimatePostCompactTokens(messages: Message[]): number {
+  let total = roughTokenCountEstimationForMessages(messages)
+  for (const message of messages) {
+    if (message.type === 'system') {
+      const content = (message as Record<string, unknown>).content
+      if (typeof content === 'string') {
+        total += roughTokenCountEstimation(content)
+      }
+    } else if (message.type === 'hook_result') {
+      const result = (message as Record<string, unknown>).result
+      total += roughTokenCountEstimation(
+        typeof result === 'string' ? result : JSON.stringify(result ?? {}),
+      )
+    }
+  }
+  return total
+}
 
 /**
  * Configuration for session memory compaction thresholds
@@ -383,16 +411,17 @@ export function calculateMessagesToKeepIndex(
   for (let i = startIndex - 1; i >= floor; i--) {
     const msg = messages[i]!
     const msgTokens = estimateMessageTokens([msg])
+
+    // Stop if adding this message would exceed the hard cap
+    if (totalTokens + msgTokens > config.maxTokens) {
+      break
+    }
+
     totalTokens += msgTokens
     if (hasTextBlocks(msg)) {
       textBlockMessageCount++
     }
     startIndex = i
-
-    // Stop if we hit the max cap
-    if (totalTokens >= config.maxTokens) {
-      break
-    }
 
     // Stop if we meet both minimums
     if (
@@ -495,6 +524,16 @@ function createCompactionResultFromSessionMemory(
   const planAttachment = createPlanAttachmentIfNeeded(agentId)
   const attachments = planAttachment ? [planAttachment] : []
 
+  const initialPostCompactMessages = [
+    boundaryMarker,
+    ...summaryMessages,
+    ...messagesToKeep,
+    ...attachments,
+    ...hookResults,
+  ]
+  const initialPostCompactTokens =
+    estimatePostCompactTokens(initialPostCompactMessages)
+
   return {
     boundaryMarker: annotateBoundaryWithPreservedSegment(
       boundaryMarker,
@@ -508,8 +547,8 @@ function createCompactionResultFromSessionMemory(
     preCompactTokenCount,
     // SM-compact has no compact-API-call, so postCompactTokenCount (kept for
     // event continuity) and truePostCompactTokenCount converge to the same value.
-    postCompactTokenCount: estimateMessageTokens(summaryMessages),
-    truePostCompactTokenCount: estimateMessageTokens(summaryMessages),
+    postCompactTokenCount: initialPostCompactTokens,
+    truePostCompactTokenCount: initialPostCompactTokens,
   }
 }
 
@@ -610,7 +649,7 @@ export async function trySessionMemoryCompaction(
 
     const postCompactMessages = buildPostCompactMessages(compactionResult)
 
-    const postCompactTokenCount = estimateMessageTokens(postCompactMessages)
+    const postCompactTokenCount = estimatePostCompactTokens(postCompactMessages)
 
     // Only check threshold if one was provided (for autocompact)
     if (
