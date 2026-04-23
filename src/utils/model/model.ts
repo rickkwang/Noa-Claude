@@ -64,7 +64,7 @@ export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
   let specifiedModel: ModelSetting | undefined
 
   const modelOverride = getMainLoopModelOverride()
-  if (modelOverride !== undefined) {
+  if (modelOverride !== undefined && modelOverride !== null) {
     specifiedModel = modelOverride
   } else {
     const settings = getSettings_DEPRECATED() || {}

@@ -742,9 +742,12 @@ export function getAssistantMessageFromError(
     error.message.toLowerCase().includes('invalid model name') &&
     (isNonCustomOpusModel(model) || model === 'opus')
   ) {
+    const hint = getIsNonInteractiveSession()
+      ? `check your plan and extra usage settings at ${PRODUCT_USAGE_URL}, then run --model to switch models if needed`
+      : 'check your plan and /extra-usage settings, or run /model to switch models'
     return createAssistantAPIErrorMessage({
       content:
-        'Claude Opus is not available with the Claude Pro plan. If you have updated your subscription plan recently, run /logout and /login for the plan to take effect.',
+        `Claude Opus is not currently available for this account. ${hint}. If your plan changed recently, run /logout and /login.`,
       error: 'invalid_request',
     })
   }

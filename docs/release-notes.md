@@ -1,5 +1,11 @@
 # Release Notes
 
+## 1.0.2
+
+- Unified `/status`, `/config`, `/usage`, and `/stats` onto the new status panel, with corrected tab navigation and layout.
+- Fixed banner/provider refresh so clawd and gradient banner content updates correctly after `/login` and provider switches in default TUI mode.
+- Improved model resolution after auth changes so provider-backed defaults are picked up consistently.
+
 ## 1.0.1
 
 - Added `/tui` command to toggle between default and fullscreen (no-flicker) terminal UI mode.
