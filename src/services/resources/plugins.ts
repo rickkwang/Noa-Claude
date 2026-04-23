@@ -1,10 +1,12 @@
 // @ts-nocheck
-import type { HookEvent } from '../../entrypoints/agentSdkTypes.js';
+import type { HooksSettings } from '../../schemas/hooks.js';
 import type { LoadedPlugin } from '../../types/plugin.js';
 import { logForDebugging } from '../../utils/debug.js';
 import type { PluginHookMatcher } from '../../utils/settings/types.js';
 import { loadAllPluginsCacheOnly } from '../../utils/plugins/pluginLoader.js';
 import { createEmptyPluginHookRegistry } from '../extensions/registry.js';
+
+type HookEvent = keyof HooksSettings;
 
 function convertPluginHooksToMatchers(
   plugin: LoadedPlugin,

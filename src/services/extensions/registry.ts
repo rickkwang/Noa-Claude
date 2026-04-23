@@ -4,9 +4,11 @@ import {
   getRegisteredHooks,
   registerHookCallbacks,
 } from '../../bootstrap/state.js';
-import type { HookEvent } from '../../entrypoints/agentSdkTypes.js';
+import type { HooksSettings } from '../../schemas/hooks.js';
 import type { Command } from '../../types/command.js';
 import type { PluginHookMatcher } from '../../utils/settings/types.js';
+
+type HookEvent = keyof HooksSettings;
 
 export function createEmptyPluginHookRegistry(): Record<
   HookEvent,
@@ -74,6 +76,8 @@ export function prunePluginHookRegistryByRoots(enabledRoots: Set<string>): void 
 
 let registeredPluginCommands: readonly Command[] = [];
 
+export type PluginCommandLoader = () => Promise<readonly Command[]>;
+
 export function replaceRegisteredPluginCommands(
   commands: readonly Command[],
 ): void {
@@ -86,4 +90,21 @@ export function getRegisteredPluginCommands(): readonly Command[] {
 
 export function clearRegisteredPluginCommands(): void {
   registeredPluginCommands = [];
+}
+
+export async function getOrLoadRegisteredPluginCommands(
+  loader: PluginCommandLoader,
+  options?: {
+    forceReload?: boolean;
+  },
+): Promise<readonly Command[]> {
+  const forceReload = options?.forceReload ?? false;
+
+  if (!forceReload && registeredPluginCommands.length > 0) {
+    return registeredPluginCommands;
+  }
+
+  const loadedCommands = await loader();
+  replaceRegisteredPluginCommands(loadedCommands);
+  return registeredPluginCommands;
 }

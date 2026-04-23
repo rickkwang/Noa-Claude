@@ -22,6 +22,9 @@ export function createSortedHelpConfig(): {
   );
 }
 
+export type SortedHelpConfig = ReturnType<typeof createSortedHelpConfig>;
+export type SortedHelpConfigFactory = typeof createSortedHelpConfig;
+
 export function buildProgram(): CommanderCommand {
   return new CommanderCommand()
     .configureHelp(createSortedHelpConfig())
