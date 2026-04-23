@@ -16,6 +16,7 @@
     "compile:dev": "bun run build.ts --compile --dev",
     "dev": "bun ./dev-launcher.js",
     "check:runtime": "bun ./scripts/check-runtime-health.mjs",
+    "check:architecture": "node ./scripts/check-architecture-boundaries.mjs",
     "check:docs": "bun ./scripts/check-doc-consistency.mjs",
     "smoke:features": "bun ./scripts/smoke-features.mjs",
     "smoke:perf": "bun ./scripts/smoke-perf.mjs",

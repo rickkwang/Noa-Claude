@@ -44,6 +44,7 @@ import React from 'react';
 import { getOauthConfig } from './constants/oauth.js';
 import { getRemoteSessionUrl } from './constants/product.js';
 import { getSystemContext, getUserContext } from './context.js';
+import { buildProgram, createSortedHelpConfig, registerDefaultAction, registerPreAction, registerSubcommands } from './entrypoints/bootstrap/index.js';
 import { init, initializeTelemetryAfterTrust } from './entrypoints/init.js';
 import { addToHistory } from './history.js';
 import type { Root } from './ink.js';
@@ -223,6 +224,13 @@ import { getTmuxInstallInstructions, isTmuxAvailable, parsePRReference } from '.
 
 // eslint-disable-next-line custom-rules/no-top-level-side-effects
 profileCheckpoint('main_tsx_imports_loaded');
+
+export {
+  buildProgram,
+  registerDefaultAction,
+  registerPreAction,
+  registerSubcommands,
+};
 
 /**
  * Log managed settings keys to Statsig for analytics.
@@ -947,27 +955,12 @@ async function promptResumeConfirmation(summary: string): Promise<boolean> {
 async function run(): Promise<CommanderCommand> {
   profileCheckpoint('run_function_start');
 
-  // Create help config that sorts options by long option name.
-  // Commander supports compareOptions at runtime but @commander-js/extra-typings
-  // doesn't include it in the type definitions, so we use Object.assign to add it.
-  function createSortedHelpConfig(): {
-    sortSubcommands: true;
-    sortOptions: true;
-  } {
-    const getOptionSortKey = (opt: Option): string => opt.long?.replace(/^--/, '') ?? opt.short?.replace(/^-/, '') ?? '';
-    return Object.assign({
-      sortSubcommands: true,
-      sortOptions: true
-    } as const, {
-      compareOptions: (a: Option, b: Option) => getOptionSortKey(a).localeCompare(getOptionSortKey(b))
-    });
-  }
-  const program = new CommanderCommand().configureHelp(createSortedHelpConfig()).enablePositionalOptions();
+  const program = buildProgram();
   profileCheckpoint('run_commander_initialized');
 
   // Use preAction hook to run initialization only when executing a command,
   // not when displaying help. This avoids the need for env variable signaling.
-  program.hook('preAction', async thisCommand => {
+  registerPreAction(program, async thisCommand => {
     profileCheckpoint('preAction_start');
     // Await async subprocess loads started at module evaluation (lines 12-20).
     // Nearly free — subprocesses complete during the ~135ms of imports above.
@@ -1033,7 +1026,7 @@ async function run(): Promise<CommanderCommand> {
   profileCheckpoint('run_main_options_built');
 
   // -p/--print mode: skip subcommand registration
-  program.action(async (prompt, options) => {
+  registerDefaultAction(program, async (prompt, options) => {
     profileCheckpoint('action_handler_start');
 
     // --bare = one-switch minimal mode. Sets SIMPLE so all the existing
@@ -3992,7 +3985,7 @@ async function run(): Promise<CommanderCommand> {
         pendingHookMessages
       }, renderAndRun);
     }
-  }).version(`${MACRO.VERSION} (Noa Claude)`, '-v, --version', 'Output the version number');
+  }, `${MACRO.VERSION} (Noa Claude)`);
 
   // -p/--print mode: skip subcommand registration. The 52 subcommands
   // (mcp, auth, plugin, skill, task, config, doctor, update, etc.) are
@@ -4011,6 +4004,7 @@ async function run(): Promise<CommanderCommand> {
     return program;
   }
 
+  registerSubcommands(program, () => {
   // claude mcp
 
   const mcp = program.command('mcp').description('Configure and manage MCP servers').configureHelp(createSortedHelpConfig()).enablePositionalOptions();
@@ -4622,6 +4616,7 @@ Examples:
       await completionHandler(shell, opts, program);
     });
   }
+  });
   profileCheckpoint('run_before_parse');
   await program.parseAsync(process.argv);
   profileCheckpoint('run_after_parse');
