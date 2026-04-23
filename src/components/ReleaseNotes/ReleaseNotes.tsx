@@ -115,8 +115,11 @@ export function ReleaseNotes({ notes, onClose }: Props): React.ReactNode {
     }
   });
 
-  const listWidth = Math.min(44, Math.max(28, Math.floor(columns * 0.42)));
-  const useSideBySide = columns >= 96;
+  const useSideBySide = columns >= 116;
+  const listWidth = useSideBySide
+    ? Math.min(50, Math.max(34, Math.floor(columns * 0.38)))
+    : undefined;
+  const countColumnWidth = 11;
 
   const detail = selectedEntry === null ? (
     <Text dimColor={true}>Select a version and press Enter to view its notes.</Text>
@@ -139,7 +142,7 @@ export function ReleaseNotes({ notes, onClose }: Props): React.ReactNode {
         </Text>
         <Text dimColor={true}>Select a version to view its notes.</Text>
         <Box flexDirection={useSideBySide ? 'row' : 'column'} gap={2} marginTop={1}>
-          <Box flexDirection="column" flexShrink={0} width={useSideBySide ? listWidth : undefined}>
+          <Box flexDirection="column" flexShrink={0} width={listWidth}>
             {entries.map((entry, index) => {
               const isFocused = index === focusedIndex;
               const isSelected = index === selectedIndex;
@@ -151,14 +154,28 @@ export function ReleaseNotes({ notes, onClose }: Props): React.ReactNode {
                   : `${entry.count} ${plural(entry.count, 'item')}`;
 
               return (
-                <Text key={entry.kind === 'all' ? 'all' : entry.version} color={labelColor} bold={isFocused || isSelected}>
-                  {prefix} {index + 1}. {entry.title}{" "}
-                  <Text dimColor={true}>{countLabel}</Text>
-                </Text>
+                <Box
+                  key={entry.kind === 'all' ? 'all' : entry.version}
+                  flexDirection="row"
+                  justifyContent="space-between"
+                  flexShrink={0}
+                >
+                  <Text color={labelColor} bold={isFocused || isSelected} wrap="truncate-end">
+                    {prefix} {index + 1}. {entry.title}
+                  </Text>
+                  <Box width={countColumnWidth} justifyContent="flex-end" flexShrink={0}>
+                    <Text dimColor={true}>{countLabel}</Text>
+                  </Box>
+                </Box>
               );
             })}
           </Box>
-          <Box flexDirection="column" flexGrow={1} marginTop={useSideBySide ? 0 : 1}>
+          {useSideBySide ? (
+            <Box flexShrink={0} marginLeft={1} marginRight={1}>
+              <Text dimColor={true}>│</Text>
+            </Box>
+          ) : null}
+          <Box flexDirection="column" flexGrow={1} marginTop={useSideBySide ? 0 : 1} minWidth={0}>
             <Box flexDirection="column" gap={1}>
               <Text bold={true}>Details</Text>
               {detail}
