@@ -117,6 +117,70 @@ function buildRequiresActionDetails(
   }
 }
 
+export type PermissionRaceResult =
+  | {
+      winner: 'hook'
+      decision: PermissionDecision
+    }
+  | {
+      winner: 'sdk'
+      result: PermissionToolOutput
+    }
+
+export async function _runPermissionRequestRaceForTesting(
+  hookPromise: Promise<PermissionDecision | undefined>,
+  sdkPromise: Promise<PermissionToolOutput>,
+  hookAbortController: AbortController,
+  debugContext: {
+    toolName: string
+    toolUseID: string
+  },
+): Promise<PermissionRaceResult> {
+  const taggedHookPromise = hookPromise.then(decision => ({
+    source: 'hook' as const,
+    decision,
+  }))
+  const taggedSdkPromise = sdkPromise.then(result => ({
+    source: 'sdk' as const,
+    result,
+  }))
+
+  const winner = await Promise.race([taggedHookPromise, taggedSdkPromise])
+  if (winner.source === 'hook') {
+    if (winner.decision) {
+      // Hook decided first; cancel the SDK prompt request and return hook result.
+      taggedSdkPromise.catch(() => {})
+      hookAbortController.abort()
+      logForDebugging(
+        `[structuredIO] permission-race winner=hook loser=sdk abort_target=hook_abort_controller tool=${debugContext.toolName} toolUseID=${debugContext.toolUseID} decision=${winner.decision.behavior}`,
+      )
+      return {
+        winner: 'hook',
+        decision: winner.decision,
+      }
+    }
+    // Hook returned no decision (passthrough): use SDK result when available.
+    const sdkResult = await taggedSdkPromise
+    logForDebugging(
+      `[structuredIO] permission-race winner=sdk loser=hook(passthrough) abort_target=none tool=${debugContext.toolName} toolUseID=${debugContext.toolUseID}`,
+    )
+    return {
+      winner: 'sdk',
+      result: sdkResult.result,
+    }
+  }
+
+  // SDK prompt resolved first; cancel background hooks and use SDK result.
+  hookAbortController.abort()
+  logForDebugging(
+    `[structuredIO] permission-race winner=sdk loser=hook abort_target=hook_abort_controller tool=${debugContext.toolName} toolUseID=${debugContext.toolUseID} decision=${winner.result.behavior}`,
+  )
+  return {
+    winner: 'sdk',
+    result: winner.result,
+  }
+}
+
 type PendingRequest<T> = {
   resolve: (result: T) => void
   reject: (error: unknown) => void
@@ -582,7 +646,7 @@ export class StructuredIO {
           toolUseContext,
           mainPermissionResult.suggestions,
           hookAbortController,
-        ).then(decision => ({ source: 'hook' as const, decision }))
+        )
 
         // Start the SDK permission prompt immediately (don't wait for hooks)
         const requestId = randomUUID()
@@ -605,37 +669,22 @@ export class StructuredIO {
           permissionToolOutputSchema(),
           hookAbortController.signal,
           requestId,
-        ).then(result => ({ source: 'sdk' as const, result }))
+        )
 
-        // Race: hook completion vs SDK prompt response.
-        // The hook promise always resolves (never rejects), returning
-        // undefined if no hook made a decision.
-        const winner = await Promise.race([hookPromise, sdkPromise])
-
-        if (winner.source === 'hook') {
-          if (winner.decision) {
-            // Hook decided — abort the pending SDK request.
-            // Suppress the expected AbortError rejection from sdkPromise.
-            sdkPromise.catch(() => {})
-            hookAbortController.abort()
-            return winner.decision
-          }
-          // Hook passed through (no decision) — wait for the SDK prompt
-          const sdkResult = await sdkPromise
-          return permissionPromptToolResultToPermissionDecision(
-            sdkResult.result,
-            tool,
-            input,
-            toolUseContext,
-          )
+        const raceResult = await _runPermissionRequestRaceForTesting(
+          hookPromise,
+          sdkPromise,
+          hookAbortController,
+          {
+            toolName: tool.name,
+            toolUseID,
+          },
+        )
+        if (raceResult.winner === 'hook') {
+          return raceResult.decision
         }
-
-        // SDK prompt responded first — abort the background hook and use SDK result.
-        // hookAbortController.abort() cancels the SDK HTTP request (no-op here since
-        // SDK already won) AND the hook generator (signal now shared).
-        hookAbortController.abort()
         return permissionPromptToolResultToPermissionDecision(
-          winner.result,
+          raceResult.result,
           tool,
           input,
           toolUseContext,

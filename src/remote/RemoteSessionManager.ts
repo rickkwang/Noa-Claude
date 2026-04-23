@@ -123,6 +123,10 @@ export class RemoteSessionManager {
       },
       onReconnecting: () => {
         logForDebugging('[RemoteSessionManager] Reconnecting')
+        // Clear pending permission requests from the previous connection.
+        // If the server doesn't re-send them on reconnect, stale entries would
+        // conflict with new requests that reuse the same request IDs.
+        this.pendingPermissionRequests.clear()
         this.callbacks.onReconnecting?.()
       },
       onError: error => {

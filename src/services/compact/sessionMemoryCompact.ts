@@ -106,28 +106,35 @@ async function initSessionMemoryCompactConfig(): Promise<void> {
   }
 
   initPromise = (async () => {
-    // Load config from GrowthBook, merging with defaults
-    const remoteConfig = await getDynamicConfig_BLOCKS_ON_INIT<
-      Partial<SessionMemoryCompactConfig>
-    >('tengu_sm_compact_config', {})
+    try {
+      // Load config from GrowthBook, merging with defaults
+      const remoteConfig = await getDynamicConfig_BLOCKS_ON_INIT<
+        Partial<SessionMemoryCompactConfig>
+      >('tengu_sm_compact_config', {})
 
-    // Only use remote values if they are explicitly set (positive numbers)
-    // This ensures sensible defaults aren't overridden by zero values
-    const config: SessionMemoryCompactConfig = {
-      minTokens:
-        remoteConfig.minTokens && remoteConfig.minTokens > 0
-          ? remoteConfig.minTokens
-          : DEFAULT_SM_COMPACT_CONFIG.minTokens,
-      minTextBlockMessages:
-        remoteConfig.minTextBlockMessages && remoteConfig.minTextBlockMessages > 0
-          ? remoteConfig.minTextBlockMessages
-          : DEFAULT_SM_COMPACT_CONFIG.minTextBlockMessages,
-      maxTokens:
-        remoteConfig.maxTokens && remoteConfig.maxTokens > 0
-          ? remoteConfig.maxTokens
-          : DEFAULT_SM_COMPACT_CONFIG.maxTokens,
+      // Only use remote values if they are explicitly set (positive numbers)
+      // This ensures sensible defaults aren't overridden by zero values
+      const config: SessionMemoryCompactConfig = {
+        minTokens:
+          remoteConfig.minTokens && remoteConfig.minTokens > 0
+            ? remoteConfig.minTokens
+            : DEFAULT_SM_COMPACT_CONFIG.minTokens,
+        minTextBlockMessages:
+          remoteConfig.minTextBlockMessages && remoteConfig.minTextBlockMessages > 0
+            ? remoteConfig.minTextBlockMessages
+            : DEFAULT_SM_COMPACT_CONFIG.minTextBlockMessages,
+        maxTokens:
+          remoteConfig.maxTokens && remoteConfig.maxTokens > 0
+            ? remoteConfig.maxTokens
+            : DEFAULT_SM_COMPACT_CONFIG.maxTokens,
+      }
+      setSessionMemoryCompactConfig(config)
+    } catch (error) {
+      // Reset initPromise so the next call can retry rather than returning
+      // the permanently-rejected promise.
+      initPromise = null
+      throw error
     }
-    setSessionMemoryCompactConfig(config)
   })()
 
   return initPromise

@@ -139,16 +139,30 @@ function deduplicateDiagnosticFiles(
 ): DiagnosticFile[] {
   // Group diagnostics by file URI
   const fileMap = new Map<string, Set<string>>()
+  const dedupedFilesByUri = new Map<string, DiagnosticFile>()
   const dedupedFiles: DiagnosticFile[] = []
 
   for (const file of allFiles) {
     if (!fileMap.has(file.uri)) {
       fileMap.set(file.uri, new Set())
-      dedupedFiles.push({ uri: file.uri, diagnostics: [] })
+      const dedupedFile: DiagnosticFile = { uri: file.uri, diagnostics: [] }
+      dedupedFilesByUri.set(file.uri, dedupedFile)
+      dedupedFiles.push(dedupedFile)
     }
 
     const seenDiagnostics = fileMap.get(file.uri)!
-    const dedupedFile = dedupedFiles.find(f => f.uri === file.uri)!
+    // Use Map lookup for O(1) first-seen; fall back to find() only if the Map
+    // entry is missing (defensive — should not happen in normal flow). This
+    // avoids duplicate entries in dedupedFiles that would survive the final filter.
+    const dedupedFile =
+      dedupedFilesByUri.get(file.uri) ??
+      dedupedFiles.find(f => f.uri === file.uri) ??
+      (() => {
+        const fallback: DiagnosticFile = { uri: file.uri, diagnostics: [] }
+        dedupedFilesByUri.set(file.uri, fallback)
+        dedupedFiles.push(fallback)
+        return fallback
+      })()
 
     // Get previously delivered diagnostics for this file (for cross-turn dedup)
     const previouslyDelivered = deliveredDiagnostics.get(file.uri) || new Set()

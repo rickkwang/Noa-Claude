@@ -106,6 +106,17 @@ export function resetLastMemoryMessageUuid(): void {
   lastMemoryMessageUuid = undefined
 }
 
+/**
+ * Reset session memory module state at session start.
+ * Clears lastMemoryMessageUuid and hasLoggedGateFailure so state from one
+ * session doesn't leak into the next when multiple sessions run in the same
+ * process (daemon mode, tests).
+ */
+function resetSessionMemoryState(): void {
+  lastMemoryMessageUuid = undefined
+  hasLoggedGateFailure = false
+}
+
 function countToolCallsSince(
   messages: Message[],
   sinceUuid: string | undefined,
@@ -356,6 +367,10 @@ const extractSessionMemory = sequential(async function (
  * The gate check and config loading happen lazily when the hook runs.
  */
 export function initSessionMemory(): void {
+  // Reset module-level state so previous session data doesn't leak into this session.
+  // This matters for daemon mode and tests where multiple sessions run in one process.
+  resetSessionMemoryState()
+
   if (getIsRemoteMode()) return
   // Session memory is used for compaction, so respect auto-compact settings
   const autoCompactEnabled = isAutoCompactEnabled()

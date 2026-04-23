@@ -248,13 +248,26 @@ export class SessionsWebSocket {
     this.state = 'closed'
 
     logForDebugging(
-      `[SessionsWebSocket] handleClose: previousState=${previousState} closeCode=${closeCode}`,
+      `[SessionsWebSocket] close_event ${jsonStringify({
+        closeCode,
+        previousState,
+        reconnectAttempts: this.reconnectAttempts,
+        reconnectBudget: MAX_RECONNECT_ATTEMPTS,
+        handshakeReconnectAttempts: this.handshakeReconnectAttempts,
+        handshakeReconnectBudget: MAX_RECONNECT_ATTEMPTS,
+        sessionNotFoundRetries: this.sessionNotFoundRetries,
+        sessionNotFoundBudget: MAX_SESSION_NOT_FOUND_RETRIES,
+      })}`,
     )
 
     // Permanent codes: stop reconnecting — server has definitively ended the session
     if (PERMANENT_CLOSE_CODES.has(closeCode)) {
       logForDebugging(
-        `[SessionsWebSocket] Permanent close code ${closeCode}, not reconnecting`,
+        `[SessionsWebSocket] close_decision ${jsonStringify({
+          trigger: 'permanent_close_code',
+          closeCode,
+          action: 'close',
+        })}`,
       )
       this.callbacks.onClose?.()
       return
@@ -267,7 +280,13 @@ export class SessionsWebSocket {
       this.sessionNotFoundRetries++
       if (this.sessionNotFoundRetries > MAX_SESSION_NOT_FOUND_RETRIES) {
         logForDebugging(
-          `[SessionsWebSocket] 4001 retry budget exhausted (${MAX_SESSION_NOT_FOUND_RETRIES}), not reconnecting`,
+          `[SessionsWebSocket] close_decision ${jsonStringify({
+            trigger: 'session_not_found',
+            closeCode,
+            sessionNotFoundRetries: this.sessionNotFoundRetries,
+            sessionNotFoundBudget: MAX_SESSION_NOT_FOUND_RETRIES,
+            action: 'close',
+          })}`,
         )
         this.callbacks.onClose?.()
         return
@@ -287,7 +306,13 @@ export class SessionsWebSocket {
       if (closeCode === 1000 || closeCode === 1001 || closeCode === 1006) {
         if (this.handshakeReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
           logForDebugging(
-            `[SessionsWebSocket] Handshake reconnect budget exhausted (${MAX_RECONNECT_ATTEMPTS}), not reconnecting`,
+            `[SessionsWebSocket] close_decision ${jsonStringify({
+              trigger: 'handshake_reconnect_budget_exhausted',
+              closeCode,
+              handshakeReconnectAttempts: this.handshakeReconnectAttempts,
+              handshakeReconnectBudget: MAX_RECONNECT_ATTEMPTS,
+              action: 'close',
+            })}`,
           )
           this.callbacks.onClose?.()
           return
@@ -304,7 +329,11 @@ export class SessionsWebSocket {
       }
       // Unexpected code — server rejected definitively
       logForDebugging(
-        `[SessionsWebSocket] Handshake close with unexpected code ${closeCode}, not reconnecting`,
+        `[SessionsWebSocket] close_decision ${jsonStringify({
+          trigger: 'handshake_unexpected_close_code',
+          closeCode,
+          action: 'close',
+        })}`,
       )
       this.callbacks.onClose?.()
       return
@@ -321,7 +350,15 @@ export class SessionsWebSocket {
         `attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`,
       )
     } else {
-      logForDebugging('[SessionsWebSocket] Not reconnecting')
+      logForDebugging(
+        `[SessionsWebSocket] close_decision ${jsonStringify({
+          trigger: 'connected_reconnect_budget_exhausted',
+          closeCode,
+          reconnectAttempts: this.reconnectAttempts,
+          reconnectBudget: MAX_RECONNECT_ATTEMPTS,
+          action: 'close',
+        })}`,
+      )
       this.callbacks.onClose?.()
     }
   }
@@ -329,7 +366,14 @@ export class SessionsWebSocket {
   private scheduleReconnect(delay: number, label: string): void {
     this.callbacks.onReconnecting?.()
     logForDebugging(
-      `[SessionsWebSocket] Scheduling reconnect (${label}) in ${delay}ms`,
+      `[SessionsWebSocket] reconnect_scheduled ${jsonStringify({
+        label,
+        delayMs: delay,
+        reconnectAttempts: this.reconnectAttempts,
+        reconnectBudget: MAX_RECONNECT_ATTEMPTS,
+        handshakeReconnectAttempts: this.handshakeReconnectAttempts,
+        handshakeReconnectBudget: MAX_RECONNECT_ATTEMPTS,
+      })}`,
     )
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null

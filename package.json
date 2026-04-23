@@ -22,6 +22,7 @@
     "smoke:engine": "bun ./scripts/smoke-engineering.mjs",
     "smoke:engine:live": "bun ./scripts/smoke-engineering-live.mjs",
     "scan:pr-intent": "node ./scripts/pr-intent-scan.mjs --fail-on high",
+    "test": "bun test",
     "typecheck": "tsc --noEmit",
     "check:quality": "bun run typecheck && bun run check:docs",
     "lint": "echo \"lint alias: running quality checks (typecheck + docs consistency)\" && bun run check:quality"

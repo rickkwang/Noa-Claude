@@ -504,6 +504,9 @@ export async function initEnvLessBridgeCore(
         // Don't wire/connect/schedule — we'd re-arm timers after cancelAll()
         // and fire onInboundMessage into a torn-down bridge.
         transport.close()
+        // Also clear connectDeadline so the timeout callback won't fire
+        // after the bridge has been torn down.
+        clearTimeout(connectDeadline)
         return
       }
       wireTransportCallbacks()
@@ -520,6 +523,11 @@ export async function initEnvLessBridgeCore(
       // init fails (4091), events drop — but only recentPostedUUIDs
       // (per-instance) is populated, so re-enabling the bridge re-flushes.
       drainFlushGate()
+    } catch (error) {
+      // Attempt to drain queued messages even on failure so they aren't
+      // silently dropped. If drain fails the finally block still drops.
+      await drainFlushGate()
+      throw error
     } finally {
       // End the gate on failure paths too — drainFlushGate already ended
       // it on success. Queued messages are dropped (transport still dead).

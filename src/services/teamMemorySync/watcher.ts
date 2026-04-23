@@ -91,6 +91,13 @@ async function executePush(): Promise<void> {
     const result = await pushTeamMemory(syncState)
     if (result.success) {
       hasPendingChanges = false
+      // Clear suppression if a push succeeds — the user may have fixed the
+      // underlying issue (e.g., authenticated after a 'no_oauth' failure).
+      // Previously suppression was only cleared by file unlink, so a user
+      // who fixed auth without deleting any files would stay suppressed forever.
+      if (pushSuppressedReason !== null) {
+        pushSuppressedReason = null
+      }
     }
     if (result.success && result.filesUploaded > 0) {
       logForDebugging(
@@ -218,8 +225,9 @@ async function startFileWatcher(teamDir: string): Promise<void> {
     })
   } catch (err) {
     // fs.watch throws synchronously on ENOENT (race: dir deleted between
-    // mkdir and watch) or EACCES. watcherStarted is already true above,
-    // so notifyTeamMemoryWrite's explicit schedulePush path still works.
+    // mkdir and watch) or EACCES. Reset watcherStarted so the next call
+    // can retry rather than silently returning early forever.
+    watcherStarted = false
     logForDebugging(
       `team-memory-watcher: failed to watch ${teamDir}: ${errorMessage(err)}`,
       { level: 'warn' },

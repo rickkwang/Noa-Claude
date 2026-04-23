@@ -431,6 +431,13 @@ export function createLSPClient(
         isStopping = false // Reset for potential restart
         // Don't reset startFailed - preserve error state for diagnostics
         // startFailed and startError remain as-is
+
+        // Clear any queued handlers so they don't get re-applied on the next start().
+        // Handlers were drained in start() only after connection was established; if stop()
+        // is called before start() completes, or if stop() is called multiple times,
+        // stale handlers would be applied to a new connection without this reset.
+        pendingHandlers.length = 0
+        pendingRequestHandlers.length = 0
         if (shutdownError) {
           startFailed = true
           startError = shutdownError

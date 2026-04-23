@@ -327,5 +327,11 @@ export function useSwarmPermissionPoller(): void {
     if (isSwarmWorker()) {
       void poll()
     }
+    return () => {
+      // Remove any pending callbacks from the module-level registry so stale
+      // callbacks don't fire after this hook instance unmounts. A remounted
+      // hook will re-register its own callbacks when needed.
+      clearAllPendingCallbacks()
+    }
   }, [poll])
 }

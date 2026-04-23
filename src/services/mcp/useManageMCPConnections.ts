@@ -157,13 +157,25 @@ export function useManageMCPConnections(
   // Track active reconnection attempts to allow cancellation
   const reconnectTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
 
+  // Per-server generation counter to prevent stale reconnectWithBackoff loops
+  // from racing with new ones. When onclose fires, we increment the generation.
+  // Each reconnectWithBackoff checks that the stored generation matches its own
+  // at every loop iteration — if it doesn't, the loop exits immediately.
+  const reconnectGenerationRef = useRef<Map<string, number>>(new Map())
+
+  // Track unmount state so flushPendingUpdates doesn't call setAppState after
+  // the component has been unmounted (the setTimeout may fire after cleanup).
+  const isUnmountedRef = useRef(false)
+
   // Clean up reconnect timers on unmount to prevent memory leaks and zombie callbacks
   useEffect(() => {
     return () => {
+      isUnmountedRef.current = true
       for (const timer of reconnectTimersRef.current.values()) {
         clearTimeout(timer)
       }
       reconnectTimersRef.current.clear()
+      reconnectGenerationRef.current.clear()
     }
   }, [])
 
@@ -226,6 +238,10 @@ export function useManageMCPConnections(
 
   const flushPendingUpdates = useCallback(() => {
     flushTimerRef.current = null
+    // Guard against calling setAppState after the component has unmounted.
+    // The setTimeout may fire after useEffect cleanup runs.
+    if (isUnmountedRef.current) return
+
     const updates = pendingUpdatesRef.current
     if (updates.length === 0) return
     pendingUpdatesRef.current = []
@@ -378,6 +394,14 @@ export function useManageMCPConnections(
                 reconnectTimersRef.current.delete(client.name)
               }
 
+              // Bump the generation counter so any in-flight reconnectWithBackoff
+              // loop will exit when it next checks. This prevents concurrent loops
+              // from racing when a server is toggled off/on rapidly.
+              const gen =
+                (reconnectGenerationRef.current.get(client.name) ?? 0) + 1
+              reconnectGenerationRef.current.set(client.name, gen)
+              const serverGen = gen
+
               // Attempt reconnection with exponential backoff
               const reconnectWithBackoff = async () => {
                 for (
@@ -385,6 +409,16 @@ export function useManageMCPConnections(
                   attempt <= MAX_RECONNECT_ATTEMPTS;
                   attempt++
                 ) {
+                  // Check if the generation has changed — a newer onclose fired
+                  // (e.g., user toggled the server), so abort this loop.
+                  if (
+                    reconnectGenerationRef.current.get(client.name) !==
+                    serverGen
+                  ) {
+                    reconnectTimersRef.current.delete(client.name)
+                    return
+                  }
+
                   // Check if server was disabled while we were waiting
                   if (isMcpServerDisabled(client.name)) {
                     logMCPDebug(
@@ -392,6 +426,7 @@ export function useManageMCPConnections(
                       `Server disabled during reconnection, stopping retry`,
                     )
                     reconnectTimersRef.current.delete(client.name)
+                    reconnectGenerationRef.current.delete(client.name)
                     return
                   }
 
@@ -416,6 +451,9 @@ export function useManageMCPConnections(
                         `${transportType} reconnection successful after ${elapsed}ms (attempt ${attempt})`,
                       )
                       reconnectTimersRef.current.delete(client.name)
+                      // Also clear the generation so a fresh reconnect loop can start
+                      // if this connection closes again.
+                      reconnectGenerationRef.current.delete(client.name)
                       onConnectionAttempt(result)
                       return
                     }
@@ -432,6 +470,7 @@ export function useManageMCPConnections(
                         `Max reconnection attempts (${MAX_RECONNECT_ATTEMPTS}) reached, giving up`,
                       )
                       reconnectTimersRef.current.delete(client.name)
+                      reconnectGenerationRef.current.delete(client.name)
                       onConnectionAttempt(result)
                       return
                     }
@@ -449,6 +488,7 @@ export function useManageMCPConnections(
                         `Max reconnection attempts (${MAX_RECONNECT_ATTEMPTS}) reached, giving up`,
                       )
                       reconnectTimersRef.current.delete(client.name)
+                      reconnectGenerationRef.current.delete(client.name)
                       updateServer({ ...client, type: 'failed' })
                       return
                     }
@@ -809,15 +849,18 @@ export function useManageMCPConnections(
         //   3. clearServerCache internally calls connectToServer (memoized).
         //      For never-connected servers (disabled/pending/failed) the
         //      cache is empty → real connect attempt → spawn/OAuth just to
-        //      immediately kill it. Only connected servers need cleanup.
+        //      immediately kill it. Only connected servers need cache cleanup.
         for (const s of stale) {
           const timer = reconnectTimersRef.current.get(s.name)
           if (timer) {
             clearTimeout(timer)
             reconnectTimersRef.current.delete(s.name)
           }
+          // Clear onclose for ALL stale server states (not just 'connected').
+          // Without this, a 'pending' server whose transport closes would still
+          // fire the reconnectWithBackoff closure with the old config.
+          s.client.onclose = undefined
           if (s.type === 'connected') {
-            s.client.onclose = undefined
             void clearServerCache(s.name, s.config).catch(() => {})
           }
         }
@@ -1038,10 +1081,12 @@ export function useManageMCPConnections(
   useEffect(() => {
     const timers = reconnectTimersRef.current
     return () => {
+      isUnmountedRef.current = true
       for (const timer of timers.values()) {
         clearTimeout(timer)
       }
       timers.clear()
+      reconnectGenerationRef.current.clear()
       // Flush any pending batched MCP updates before unmount
       if (flushTimerRef.current !== null) {
         clearTimeout(flushTimerRef.current)

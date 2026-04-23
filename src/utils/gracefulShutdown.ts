@@ -378,6 +378,10 @@ export function resetShutdownState(): void {
     clearTimeout(failsafeTimer)
     failsafeTimer = undefined
   }
+  if (orphanCheckInterval !== undefined) {
+    clearInterval(orphanCheckInterval)
+    orphanCheckInterval = undefined
+  }
   pendingShutdown = undefined
 }
 
@@ -387,6 +391,30 @@ export function resetShutdownState(): void {
  */
 export function getPendingShutdownForTesting(): Promise<void> | undefined {
   return pendingShutdown
+}
+
+export function _setOrphanCheckIntervalForTesting(
+  interval: ReturnType<typeof setInterval> | undefined,
+): void {
+  orphanCheckInterval = interval
+}
+
+export function _getOrphanCheckIntervalForTesting():
+  | ReturnType<typeof setInterval>
+  | undefined {
+  return orphanCheckInterval
+}
+
+export function _setFailsafeTimerForTesting(
+  timer: ReturnType<typeof setTimeout> | undefined,
+): void {
+  failsafeTimer = timer
+}
+
+export function _getFailsafeTimerForTesting():
+  | ReturnType<typeof setTimeout>
+  | undefined {
+  return failsafeTimer
 }
 
 // Graceful shutdown function that drains the event loop

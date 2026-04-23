@@ -541,7 +541,7 @@ export function useRemoteSession({
           ? COMPACTION_TIMEOUT_MS
           : RESPONSE_TIMEOUT_MS
         responseTimeoutRef.current = setTimeout(
-          (setMessages, manager) => {
+          setMessages => {
             logForDebugging(
               '[useRemoteSession] Response timeout - attempting reconnect',
             )
@@ -552,12 +552,13 @@ export function useRemoteSession({
             )
             setMessages(prev => [...prev, warningMessage])
 
-            // Attempt to reconnect the WebSocket - the subscription may have become stale
-            manager.reconnect()
+            // Attempt to reconnect the WebSocket — use managerRef.current so we
+            // always call reconnect() on the live manager, not a stale reference
+            // captured when setTimeout was scheduled.
+            managerRef.current?.reconnect()
           },
           timeoutMs,
           setMessages,
-          manager,
         )
       }
 

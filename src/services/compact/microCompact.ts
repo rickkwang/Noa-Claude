@@ -268,6 +268,11 @@ export async function microcompactMessages(
   toolUseContext?: ToolUseContext,
   querySource?: QuerySource,
 ): Promise<MicrocompactResult> {
+  // Reset pending cache edits from the previous turn. If the previous API call
+  // failed, pendingCacheEdits would still hold stale edits that would be applied
+  // to the wrong message positions in this turn.
+  pendingCacheEdits = null
+
   // Clear suppression flag at start of new microcompact attempt
   clearCompactWarningSuppression()
 

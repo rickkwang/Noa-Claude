@@ -116,14 +116,29 @@ let runner:
     ) => Promise<void>)
   | null = null
 
+// Flags stale runner instances so they exit early. When initAutoDream()
+// is called again (e.g., test setup), the old runner's async operations will
+// see this flag and bail out before calling setAppState on a stale closure.
+let isRunnerStaleRef = { current: false }
+
 /**
  * Call once at startup (from backgroundHousekeeping alongside
  * initExtractMemories), or per-test in beforeEach for a fresh closure.
  */
 export function initAutoDream(): void {
+  // Mark any existing runner as stale so its async operations exit early
+  // instead of calling setAppState on a now-orphaned closure.
+  isRunnerStaleRef.current = true
+
   let lastSessionScanAt = 0
 
   runner = async function runAutoDream(context, appendSystemMessage) {
+    // If this runner was superseded by a newer initAutoDream call, bail out.
+    // The newer runner holds the fresh closure for setAppState.
+    if (isRunnerStaleRef.current) {
+      isRunnerStaleRef.current = false
+      return
+    }
     const cfg = getConfig()
     const force = isForced()
     if (!force && !isGateOpen()) return
