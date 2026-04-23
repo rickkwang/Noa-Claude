@@ -4,7 +4,7 @@ import type { Command } from '../../commands.js'
 const stats = {
   type: 'local-jsx',
   name: 'stats',
-  description: 'Show your Noa Claude usage statistics and activity',
+  description: 'Deprecated: use /usage',
   load: () => import('./stats.js'),
 } satisfies Command
 

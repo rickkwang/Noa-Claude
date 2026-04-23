@@ -36,6 +36,7 @@ type Props = {
   onClose: (result?: string, options?: {
     display?: CommandResultDisplay;
   }) => void;
+  embedded?: boolean;
 };
 type StatsResult = {
   type: 'success';
@@ -83,7 +84,8 @@ function createAllTimeStatsPromise(): Promise<StatsResult> {
 export function Stats(t0) {
   const $ = _c(4);
   const {
-    onClose
+    onClose,
+    embedded
   } = t0;
   let t1;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
@@ -102,7 +104,7 @@ export function Stats(t0) {
   }
   let t3;
   if ($[2] !== onClose) {
-    t3 = <Suspense fallback={t2}><StatsContent allTimePromise={allTimePromise} onClose={onClose} /></Suspense>;
+    t3 = <Suspense fallback={t2}><StatsContent allTimePromise={allTimePromise} onClose={onClose} embedded={embedded} /></Suspense>;
     $[2] = onClose;
     $[3] = t3;
   } else {
@@ -113,6 +115,7 @@ export function Stats(t0) {
 type StatsContentProps = {
   allTimePromise: Promise<StatsResult>;
   onClose: Props['onClose'];
+  embedded?: boolean;
 };
 
 /**
@@ -123,8 +126,13 @@ function StatsContent(t0) {
   const $ = _c(34);
   const {
     allTimePromise,
-    onClose
+    onClose,
+    embedded
   } = t0;
+  const {
+    headerFocused: outerHeaderFocused,
+    focusHeader: focusOuterHeader
+  } = useTabHeaderFocus();
   const allTimeResult = use(allTimePromise);
   const [dateRange, setDateRange] = useState("all");
   let t1;
@@ -195,40 +203,37 @@ function StatsContent(t0) {
   let t5;
   if ($[7] === Symbol.for("react.memo_cache_sentinel")) {
     t5 = {
-      context: "Confirmation"
+      context: "Settings"
     };
     $[7] = t5;
   } else {
     t5 = $[7];
   }
   useKeybinding("confirm:no", handleClose, t5);
-  let t6;
-  if ($[8] !== activeTab || $[9] !== dateRange || $[10] !== displayStats || $[11] !== onClose) {
-    t6 = (input, key) => {
-      if (key.ctrl && (input === "c" || input === "d")) {
-        onClose("Stats dialog dismissed", {
-          display: "system"
-        });
-      }
-      if (key.tab) {
-        setActiveTab(_temp);
-      }
-      if (input === "r" && !key.ctrl && !key.meta) {
-        setDateRange(getNextDateRange(dateRange));
-      }
-      if (key.ctrl && input === "s" && displayStats) {
-        handleScreenshot(displayStats, activeTab, setCopyStatus);
-      }
-    };
-    $[8] = activeTab;
-    $[9] = dateRange;
-    $[10] = displayStats;
-    $[11] = onClose;
-    $[12] = t6;
-  } else {
-    t6 = $[12];
-  }
-  useInput(t6);
+  useInput((input, key) => {
+    if (key.ctrl && (input === "c" || input === "d")) {
+      onClose("Stats dialog dismissed", {
+        display: "system"
+      });
+      return;
+    }
+    // Two-level focus model only:
+    // level 1 = outer Status/Config/Usage/Stats tabs
+    // level 2 = inner Overview/Models tabs
+    if (!outerHeaderFocused && key.upArrow) {
+      focusOuterHeader();
+      return;
+    }
+    if (key.tab) {
+      setActiveTab(_temp);
+    }
+    if (input === "r" && !key.ctrl && !key.meta) {
+      setDateRange(getNextDateRange(dateRange));
+    }
+    if (key.ctrl && input === "s" && displayStats) {
+      handleScreenshot(displayStats, activeTab, setCopyStatus);
+    }
+  });
   if (allTimeResult.type === "error") {
     let t7;
     if ($[13] !== allTimeResult.message) {
@@ -262,7 +267,7 @@ function StatsContent(t0) {
   }
   let t7;
   if ($[17] !== allTimeStats || $[18] !== dateRange || $[19] !== displayStats || $[20] !== isLoadingFiltered) {
-    t7 = <Tab title="Overview"><OverviewTab stats={displayStats} allTimeStats={allTimeStats} dateRange={dateRange} isLoading={isLoadingFiltered} /></Tab>;
+    t7 = <Tab title="Overview"><OverviewTab stats={displayStats} allTimeStats={allTimeStats} dateRange={dateRange} isLoading={isLoadingFiltered} copyStatus={copyStatus} /></Tab>;
     $[17] = allTimeStats;
     $[18] = dateRange;
     $[19] = displayStats;
@@ -272,41 +277,36 @@ function StatsContent(t0) {
     t7 = $[21];
   }
   let t8;
-  if ($[22] !== dateRange || $[23] !== displayStats || $[24] !== isLoadingFiltered) {
-    t8 = <Tab title="Models"><ModelsTab stats={displayStats} dateRange={dateRange} isLoading={isLoadingFiltered} /></Tab>;
-    $[22] = dateRange;
-    $[23] = displayStats;
-    $[24] = isLoadingFiltered;
-    $[25] = t8;
+  if ($[22] !== copyStatus || $[23] !== dateRange || $[24] !== displayStats || $[25] !== isLoadingFiltered || $[26] !== outerHeaderFocused) {
+    t8 = <Tab title="Models"><ModelsTab stats={displayStats} dateRange={dateRange} isLoading={isLoadingFiltered} copyStatus={copyStatus} outerHeaderFocused={outerHeaderFocused} /></Tab>;
+    $[22] = copyStatus;
+    $[23] = dateRange;
+    $[24] = displayStats;
+    $[25] = isLoadingFiltered;
+    $[26] = outerHeaderFocused;
+    $[27] = t8;
   } else {
-    t8 = $[25];
+    t8 = $[27];
   }
   let t9;
-  if ($[26] !== t7 || $[27] !== t8) {
+  if ($[28] !== t7 || $[29] !== t8) {
     t9 = <Box flexDirection="row" gap={1} marginBottom={1}><Tabs title="" color="claude" defaultTab="Overview">{t7}{t8}</Tabs></Box>;
-    $[26] = t7;
-    $[27] = t8;
-    $[28] = t9;
+    $[28] = t7;
+    $[29] = t8;
+    $[30] = t9;
   } else {
-    t9 = $[28];
-  }
-  const t10 = copyStatus ? ` · ${copyStatus}` : "";
-  let t11;
-  if ($[29] !== t10) {
-    t11 = <Box paddingLeft={2}><Text dimColor={true}>Esc to cancel · r to cycle dates · ctrl+s to copy{t10}</Text></Box>;
-    $[29] = t10;
-    $[30] = t11;
-  } else {
-    t11 = $[30];
+    t9 = $[30];
   }
   let t12;
-  if ($[31] !== t11 || $[32] !== t9) {
-    t12 = <Pane color="claude">{t9}{t11}</Pane>;
-    $[31] = t11;
-    $[32] = t9;
+  if ($[31] !== t9) {
+    t12 = <Pane color="claude">{t9}</Pane>;
+    $[31] = t9;
     $[33] = t12;
   } else {
     t12 = $[33];
+  }
+  if (embedded) {
+    return <Box flexDirection="column">{t9}</Box>;
   }
   return t12;
 }
@@ -358,12 +358,14 @@ function OverviewTab({
   stats,
   allTimeStats,
   dateRange,
-  isLoading
+  isLoading,
+  copyStatus
 }: {
   stats: ClaudeCodeStats;
   allTimeStats: ClaudeCodeStats;
   dateRange: StatsDateRange;
   isLoading: boolean;
+  copyStatus: string | null;
 }): React.ReactNode {
   const {
     columns: terminalWidth
@@ -575,6 +577,21 @@ function OverviewTab({
       {factoid && <Box marginTop={1}>
           <Text color="suggestion">{factoid}</Text>
         </Box>}
+
+      <StatsFooter copyStatus={copyStatus} />
+    </Box>;
+}
+
+function StatsFooter({
+  copyStatus
+}: {
+  copyStatus: string | null;
+}): React.ReactNode {
+  const statusSuffix = copyStatus ? ` · ${copyStatus}` : '';
+  return <Box marginTop={1} paddingLeft={2}>
+      <Text dimColor={true}>
+        ↑ usage · ←/→ switch view · r to cycle dates · ctrl+s to copy{statusSuffix}
+      </Text>
     </Box>;
 }
 
@@ -719,40 +736,26 @@ function ModelsTab(t0) {
   const {
     stats,
     dateRange,
-    isLoading
+    isLoading,
+    copyStatus,
+    outerHeaderFocused
   } = t0;
-  const {
-    headerFocused,
-    focusHeader
-  } = useTabHeaderFocus();
   const [scrollOffset, setScrollOffset] = useState(0);
   const {
     columns: terminalWidth
   } = useTerminalSize();
   const modelEntries = Object.entries(stats.modelUsage).sort(_temp7);
-  const t1 = !headerFocused;
-  let t2;
-  if ($[0] !== t1) {
-    t2 = {
-      isActive: t1
-    };
-    $[0] = t1;
-    $[1] = t2;
-  } else {
-    t2 = $[1];
-  }
   useInput((_input, key) => {
+    if (outerHeaderFocused) {
+      return;
+    }
+    if (key.upArrow) {
+      return;
+    }
     if (key.downArrow && scrollOffset < modelEntries.length - 4) {
       setScrollOffset(prev => Math.min(prev + 2, modelEntries.length - 4));
     }
-    if (key.upArrow) {
-      if (scrollOffset > 0) {
-        setScrollOffset(_temp8);
-      } else {
-        focusHeader();
-      }
-    }
-  }, t2);
+  });
   if (modelEntries.length === 0) {
     let t3;
     if ($[2] === Symbol.for("react.memo_cache_sentinel")) {
@@ -812,7 +815,7 @@ function ModelsTab(t0) {
   return <Box flexDirection="column" marginTop={1}>{chartOutput && <Box flexDirection="column" marginBottom={1}><Text bold={true}>Tokens per Day</Text><Ansi>{chartOutput.chart}</Ansi><Text color="subtle">{chartOutput.xAxisLabels}</Text><Box>{chartOutput.legend.map(_temp1)}</Box></Box>}{t3}<Box flexDirection="row" gap={4}><Box flexDirection="column" width={36}>{leftModels.map(t4 => {
           const [model_0, usage_0] = t4;
           return <ModelEntry key={model_0} model={model_0} usage={usage_0} totalTokens={totalTokens} />;
-        })}</Box>{t9}</Box>{t10}</Box>;
+        })}</Box>{t9}</Box>{t10}<StatsFooter copyStatus={copyStatus} /></Box>;
 }
 function _temp1(item, i) {
   return <Text key={item.model}>{i > 0 ? " \xB7 " : ""}<Ansi>{item.coloredBullet}</Ansi> {item.model}</Text>;
@@ -824,9 +827,6 @@ function _temp0(t0) {
 function _temp9(sum, t0) {
   const [, usage] = t0;
   return sum + usage.inputTokens + usage.outputTokens;
-}
-function _temp8(prev_0) {
-  return Math.max(prev_0 - 2, 0);
 }
 function _temp7(t0, t1) {
   const [, a] = t0;

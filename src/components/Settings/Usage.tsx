@@ -3,13 +3,13 @@ import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { extraUsage as extraUsageCommand } from 'src/commands/extra-usage/index.js';
-import { formatCost } from 'src/cost-tracker.js';
+import { formatCost, getModelUsage, getTotalCacheCreationInputTokens, getTotalCacheReadInputTokens, getTotalCost, getTotalInputTokens, getTotalOutputTokens } from 'src/cost-tracker.js';
 import { getSubscriptionType } from 'src/utils/auth.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { Box, Text } from '../../ink.js';
 import { useKeybinding } from '../../keybindings/useKeybinding.js';
 import { type ExtraUsage, fetchUtilization, type RateLimit, type Utilization } from '../../services/api/usage.js';
-import { formatResetText } from '../../utils/format.js';
+import { formatNumber, formatResetText } from '../../utils/format.js';
 import { logError } from '../../utils/log.js';
 import { jsonStringify } from '../../utils/slowOperations.js';
 import { ConfigurableShortcutHint } from '../ConfigurableShortcutHint.js';
@@ -245,10 +245,11 @@ export function Usage(): React.ReactNode {
     title: 'Current week (Sonnet only)',
     limit: utilization.seven_day_sonnet
   }] : [])];
+  const hasRemoteLimits = limits.some(({
+    limit
+  }) => limit);
   return <Box flexDirection="column" gap={1} width="100%">
-      {limits.some(({
-      limit
-    }) => limit) || <Text dimColor>/usage is only available for subscription plans.</Text>}
+      {!hasRemoteLimits && <LocalUsageSummary />}
 
       {limits.map(({
       title,
@@ -269,6 +270,31 @@ type ExtraUsageSectionProps = {
   maxWidth: number;
 };
 const EXTRA_USAGE_SECTION_TITLE = 'Extra usage';
+function LocalUsageSummary(): React.ReactNode {
+  const totalInput = getTotalInputTokens();
+  const totalOutput = getTotalOutputTokens();
+  const totalCacheRead = getTotalCacheReadInputTokens();
+  const totalCacheWrite = getTotalCacheCreationInputTokens();
+  const totalCost = getTotalCost();
+  const modelsUsed = Object.keys(getModelUsage()).length;
+  const hasAnyUsage = totalInput + totalOutput + totalCacheRead + totalCacheWrite > 0;
+  if (!hasAnyUsage) {
+    return <Box flexDirection="column">
+        <Text dimColor={true}>No plan limits are available for this account.</Text>
+        <Text dimColor={true}>Local usage will appear after you run at least one request.</Text>
+      </Box>;
+  }
+  return <Box flexDirection="column">
+      <Text dimColor={true}>No plan limits are available for this account. Showing local session usage:</Text>
+      <Text>
+        Tokens: <Text color="claude">{formatNumber(totalInput + totalOutput + totalCacheRead + totalCacheWrite)}</Text>{' '}
+        (<Text dimColor={true}>in {formatNumber(totalInput)} · out {formatNumber(totalOutput)} · cache read {formatNumber(totalCacheRead)} · cache write {formatNumber(totalCacheWrite)}</Text>)
+      </Text>
+      <Text>
+        Cost: <Text color="claude">{formatCost(totalCost, 2)}</Text> · Models used: <Text color="claude">{modelsUsed}</Text>
+      </Text>
+    </Box>;
+}
 function ExtraUsageSection(t0) {
   const $ = _c(20);
   const {

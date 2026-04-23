@@ -112,7 +112,7 @@ export function Config({
   const {
     rows
   } = useTerminalSize();
-  // contentHeight is set by Settings.tsx (same value passed to Tabs to fix
+  // contentHeight is set by UsageDashboard.tsx (same value passed to Tabs to fix
   // pane height across all tabs — prevents layout jank when switching).
   // Reserve ~10 rows for chrome (search box, gaps, footer, scroll hints).
   // Fallback calc for standalone rendering (tests).
@@ -1429,7 +1429,7 @@ export function Config({
     }
     // List mode: left/right/tab cycle the selected option's value. These
     // keys used to switch tabs; now they only do so when the tab row is
-    // explicitly focused (see headerFocused in Settings.tsx).
+    // explicitly focused (see headerFocused in UsageDashboard.tsx).
     if (e.key === 'left' || e.key === 'right' || e.key === 'tab') {
       e.preventDefault();
       toggleSetting();
