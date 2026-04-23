@@ -10,7 +10,7 @@ import { Box, Text, useTheme } from '../../ink.js';
 import { type AppState, useAppState } from '../../state/AppState.js';
 import { getCwd } from '../../utils/cwd.js';
 import { getCurrentSessionTitle } from '../../utils/sessionStorage.js';
-import { buildAccountProperties, buildAPIProviderProperties, buildIDEProperties, buildInstallationDiagnostics, buildInstallationHealthDiagnostics, buildLspProperties, buildMcpProperties, buildMemoryDiagnostics, buildPluginProperties, buildProductPathsProperties, buildPromptCacheProperties, buildSandboxProperties, buildSearchToolProperties, buildSettingSourcesProperties, buildWorktreeProperties, type Diagnostic, getModelDisplayLabel, type Property } from '../../utils/status.js';
+import { buildAccountProperties, buildInstallationDiagnostics, buildInstallationHealthDiagnostics, buildMcpProperties, buildMemoryDiagnostics, buildSettingSourcesProperties, type Diagnostic, getModelDisplayLabel, type Property } from '../../utils/status.js';
 import type { ThemeName } from '../../utils/theme.js';
 import { ConfigurableShortcutHint } from '../ConfigurableShortcutHint.js';
 type Props = {
@@ -33,26 +33,22 @@ function buildPrimarySection(): Property[] {
   }, {
     label: 'cwd',
     value: getCwd()
-  }, ...buildProductPathsProperties(), ...buildWorktreeProperties(), ...buildAccountProperties(), ...buildAPIProviderProperties()];
+  }, ...buildAccountProperties()];
 }
 function buildSecondarySection({
   mainLoopModel,
   mcp,
-  plugins,
-  theme,
-  context
+  theme
 }: {
   mainLoopModel: AppState['mainLoopModel'];
   mcp: AppState['mcp'];
-  plugins: AppState['plugins'];
   theme: ThemeName;
-  context: LocalJSXCommandContext;
 }): Property[] {
   const modelLabel = getModelDisplayLabel(mainLoopModel);
   return [{
     label: 'Model',
     value: modelLabel
-  }, ...buildIDEProperties(mcp.clients, context.options.ideInstallationStatus, theme), ...buildMcpProperties(mcp.clients, theme), ...buildLspProperties(), ...buildPluginProperties(plugins.enabled, plugins.errors, plugins.needsRefresh), ...buildSandboxProperties(), ...buildSearchToolProperties(), ...buildPromptCacheProperties(mainLoopModel), ...buildSettingSourcesProperties()];
+  }, ...buildMcpProperties(mcp.clients, theme), ...buildSettingSourcesProperties()];
 }
 export async function buildDiagnostics(): Promise<Diagnostic[]> {
   return [...(await buildInstallationDiagnostics()), ...(await buildInstallationHealthDiagnostics()), ...(await buildMemoryDiagnostics())];
@@ -110,7 +106,6 @@ export function Status(t0) {
   } = t0;
   const mainLoopModel = useAppState(_temp);
   const mcp = useAppState(_temp2);
-  const plugins = useAppState(_tempPlugins);
   const [theme] = useTheme();
   let t1;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
@@ -120,92 +115,91 @@ export function Status(t0) {
     t1 = $[0];
   }
   let t2;
-  if ($[1] !== context || $[2] !== mainLoopModel || $[3] !== mcp || $[4] !== plugins || $[5] !== theme) {
+  if ($[1] !== context || $[2] !== mainLoopModel || $[3] !== mcp || $[4] !== theme) {
     t2 = buildSecondarySection({
       mainLoopModel,
       mcp,
-      plugins,
-      theme,
-      context
+      theme
     });
     $[1] = context;
     $[2] = mainLoopModel;
     $[3] = mcp;
-    $[4] = plugins;
-    $[5] = theme;
-    $[6] = t2;
+    $[4] = theme;
+    $[5] = t2;
   } else {
-    t2 = $[6];
+    t2 = $[5];
   }
   let t3;
-  if ($[7] !== t2) {
+  if ($[6] !== t2) {
     t3 = [t1, t2];
-    $[7] = t2;
-    $[8] = t3;
+    $[6] = t2;
+    $[7] = t3;
   } else {
-    t3 = $[8];
+    t3 = $[7];
   }
   const sections = t3;
   const grow = useIsInsideModal() ? 1 : undefined;
   let t4;
-  if ($[9] !== sections) {
+  if ($[8] !== sections) {
     t4 = sections.map(_temp4);
-    $[9] = sections;
-    $[10] = t4;
+    $[8] = sections;
+    $[9] = t4;
   } else {
-    t4 = $[10];
+    t4 = $[9];
   }
   let t5;
-  if ($[11] !== diagnosticsPromise) {
+  if ($[10] !== diagnosticsPromise) {
     t5 = <Suspense fallback={null}><Diagnostics promise={diagnosticsPromise} /></Suspense>;
-    $[11] = diagnosticsPromise;
-    $[12] = t5;
+    $[10] = diagnosticsPromise;
+    $[11] = t5;
   } else {
-    t5 = $[12];
+    t5 = $[11];
   }
   let t6;
-  if ($[13] !== grow || $[14] !== t4 || $[15] !== t5) {
+  if ($[12] !== grow || $[13] !== t4 || $[14] !== t5) {
     t6 = <Box flexDirection="column" gap={1} flexGrow={grow}>{t4}{t5}</Box>;
-    $[13] = grow;
-    $[14] = t4;
-    $[15] = t5;
-    $[16] = t6;
+    $[12] = grow;
+    $[13] = t4;
+    $[14] = t5;
+    $[15] = t6;
   } else {
-    t6 = $[16];
+    t6 = $[15];
   }
   let t7;
-  if ($[17] === Symbol.for("react.memo_cache_sentinel")) {
+  if ($[16] === Symbol.for("react.memo_cache_sentinel")) {
     t7 = <Text dimColor={true}><ConfigurableShortcutHint action="confirm:no" context="Settings" fallback="Esc" description="cancel" /></Text>;
-    $[17] = t7;
+    $[16] = t7;
   } else {
-    t7 = $[17];
+    t7 = $[16];
   }
   let t8;
-  if ($[18] !== grow || $[19] !== t6) {
+  if ($[17] !== grow || $[18] !== t6) {
     t8 = <Box flexDirection="column" flexGrow={grow}>{t6}{t7}</Box>;
-    $[18] = grow;
-    $[19] = t6;
-    $[20] = t8;
+    $[17] = grow;
+    $[18] = t6;
+    $[19] = t8;
   } else {
-    t8 = $[20];
+    t8 = $[19];
   }
   return t8;
 }
 function _temp4(properties, i) {
-  return properties.length > 0 && <Box key={i} flexDirection="column">{properties.map(_tempProperty)}</Box>;
+  return properties.length > 0 && <Box key={i} flexDirection="column" gap={0}>{properties.map(_tempProperty)}</Box>;
 }
 function _tempProperty(t0, j) {
   const {
     label,
     value
   } = t0;
-  return <Box key={j} flexDirection="row" gap={1} flexShrink={0}>{label !== undefined && <Text bold={true}>{label}:</Text>}<PropertyValue value={value} /></Box>;
+  return <Box key={j} flexDirection="row" gap={1}>
+      {label !== undefined && <Box width={18} flexShrink={0}><Text bold={true}>{label}:</Text></Box>}
+      <Box flexGrow={1} flexShrink={1}>
+        <PropertyValue value={value} />
+      </Box>
+    </Box>;
 }
 function _temp2(s_0) {
   return s_0.mcp;
-}
-function _tempPlugins(s_0) {
-  return s_0.plugins;
 }
 function _temp(s) {
   return s.mainLoopModel;
