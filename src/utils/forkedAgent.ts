@@ -42,6 +42,7 @@ import {
   type ContentReplacementState,
   cloneContentReplacementState,
 } from './toolResultStorage.js'
+import { addForkOutputTokens } from '../bootstrap/state.js'
 import { createAgentId } from './uuid.js'
 
 /**
@@ -602,6 +603,11 @@ export async function runForkedAgent({
     isolatedToolUseContext.readFileState.clear()
     // Release the cloned fork context messages
     initialMessages.length = 0
+    // Exclude fork output tokens from the parent agent's budget calculation.
+    // Fork API calls write into STATE.modelUsage via addToTotalSessionCost,
+    // which contaminates getTotalOutputTokens(). We record the fork's own
+    // output here so getTurnOutputTokens() can subtract it.
+    addForkOutputTokens(totalUsage.output_tokens)
   }
 
   logForDebugging(

@@ -54,6 +54,19 @@ export const MODULE_LOADING_CMDLETS = new Set([
 ])
 
 /**
+ * Cmdlets that capture, extract, or manipulate credentials. These can be
+ * used to steal secrets (Get-Credential, ConvertFrom-SecureString) or
+ * persist reversible credential data (Export-Clixml) for later exfiltration.
+ */
+export const CREDENTIAL_CMDLETS = new Set([
+  'get-credential',
+  'convertto-securestring',
+  'convertfrom-securestring',
+  'export-clixml',
+  'import-clixml',
+])
+
+/**
  * Shells and process spawners. Small, stable — add here only for cmdlets
  * not covered by the validator lists above.
  */
@@ -162,6 +175,7 @@ export const NEVER_SUGGEST: ReadonlySet<string> = (() => {
     ...FILEPATH_EXECUTION_CMDLETS,
     ...DANGEROUS_SCRIPT_BLOCK_CMDLETS,
     ...MODULE_LOADING_CMDLETS,
+    ...CREDENTIAL_CMDLETS,
     ...NETWORK_CMDLETS,
     ...ALIAS_HIJACK_CMDLETS,
     ...WMI_CIM_CMDLETS,

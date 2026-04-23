@@ -29,9 +29,32 @@ class InProcessTransport implements Transport {
       throw new Error('Transport is closed')
     }
     // Deliver to the other side asynchronously to avoid stack depth issues
-    // with synchronous request/response cycles
-    queueMicrotask(() => {
-      this.peer?.onmessage?.(message)
+    // with synchronous request/response cycles.
+    // Wait for the microtask to complete so we can detect delivery failures
+    // (peer closed before the message was delivered) and surface the error.
+    return new Promise<void>((resolve, reject) => {
+      queueMicrotask(() => {
+        if (!this.peer) {
+          const error = new Error('Peer transport not connected')
+          this.onerror?.(error)
+          reject(error)
+          return
+        }
+        if (this.peer.closed) {
+          const error = new Error('Peer transport is closed')
+          this.onerror?.(error)
+          reject(error)
+          return
+        }
+        if (!this.peer.onmessage) {
+          const error = new Error('Peer onmessage handler not set')
+          this.onerror?.(error)
+          reject(error)
+          return
+        }
+        this.peer.onmessage(message)
+        resolve()
+      })
     })
   }
 

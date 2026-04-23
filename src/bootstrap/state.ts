@@ -724,8 +724,21 @@ export function getTotalWebSearchRequests(): number {
 
 let outputTokensAtTurnStart = 0
 let currentTurnTokenBudget: number | null = null
+
+// Track fork output tokens separately so they don't contaminate the parent
+// agent's budget calculation. Fork API calls write into STATE.modelUsage
+// (via addToTotalSessionCost), so getTotalOutputTokens() includes them.
+// We snapshot the cumulative fork tokens at turn start and subtract the
+// delta from getTurnOutputTokens().
+let forkOutputTokens = 0
+let forkOutputTokensSnapshot = 0
+
 export function getTurnOutputTokens(): number {
-  return getTotalOutputTokens() - outputTokensAtTurnStart
+  return (
+    getTotalOutputTokens() -
+    outputTokensAtTurnStart -
+    (forkOutputTokens - forkOutputTokensSnapshot)
+  )
 }
 export function getCurrentTurnTokenBudget(): number | null {
   return currentTurnTokenBudget
@@ -735,6 +748,16 @@ export function snapshotOutputTokensForTurn(budget: number | null): void {
   outputTokensAtTurnStart = getTotalOutputTokens()
   currentTurnTokenBudget = budget
   budgetContinuationCount = 0
+  forkOutputTokensSnapshot = forkOutputTokens
+}
+
+/**
+ * Add fork output tokens to the exclusion counter. Called by runForkedAgent
+ * when a fork completes so its tokens are not counted against the parent
+ * turn budget.
+ */
+export function addForkOutputTokens(tokens: number): void {
+  forkOutputTokens += tokens
 }
 export function getBudgetContinuationCount(): number {
   return budgetContinuationCount
@@ -873,6 +896,11 @@ export function resetCostState(): void {
   STATE.hasUnknownModelCost = false
   STATE.modelUsage = {}
   STATE.promptId = null
+  outputTokensAtTurnStart = 0
+  currentTurnTokenBudget = null
+  budgetContinuationCount = 0
+  forkOutputTokens = 0
+  forkOutputTokensSnapshot = 0
 }
 
 /**
@@ -927,6 +955,8 @@ export function resetStateForTests(): void {
   outputTokensAtTurnStart = 0
   currentTurnTokenBudget = null
   budgetContinuationCount = 0
+  forkOutputTokens = 0
+  forkOutputTokensSnapshot = 0
   sessionSwitched.clear()
 }
 

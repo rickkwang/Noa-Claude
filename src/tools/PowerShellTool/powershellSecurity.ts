@@ -10,6 +10,7 @@
  */
 
 import {
+  CREDENTIAL_CMDLETS,
   DANGEROUS_SCRIPT_BLOCK_CMDLETS,
   FILEPATH_EXECUTION_CMDLETS,
   MODULE_LOADING_CMDLETS,
@@ -98,6 +99,31 @@ function psExeHasParamAbbreviation(
     ),
   }
   return commandHasArgAbbreviation(normalized, fullParam, minPrefix)
+}
+
+/**
+ * Checks if a PowerShell command uses credential-related cmdlets that can
+ * capture secrets (Get-Credential), extract plaintext (ConvertFrom-SecureString),
+ * or persist reversible credential data (Export-Clixml / Import-Clixml).
+ *
+ * A captured credential object exposes methods like GetNetworkCredential()
+ * that return plaintext passwords without any additional command approval,
+ * making credential capture a high-value pivot point.
+ */
+function checkCredentialCmdlets(
+  parsed: ParsedPowerShellCommand,
+): PowerShellSecurityResult {
+  for (const cmd of getAllCommands(parsed)) {
+    const lower = cmd.name?.toLowerCase()
+    if (lower && CREDENTIAL_CMDLETS.has(lower)) {
+      return {
+        behavior: 'ask',
+        message:
+          'Command uses a credential-related cmdlet that can capture or extract secrets',
+      }
+    }
+  }
+  return { behavior: 'passthrough' }
 }
 
 /**
@@ -1053,6 +1079,7 @@ export function powershellCommandIsSafe(
   }
 
   const validators = [
+    checkCredentialCmdlets,
     checkInvokeExpression,
     checkDynamicCommandName,
     checkEncodedCommand,
