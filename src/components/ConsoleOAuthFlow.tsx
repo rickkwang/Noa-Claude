@@ -121,7 +121,7 @@ const PLATFORM_PRESETS: PlatformPreset[] = [{
   type: 'kimi',
   profileName: 'Kimi Code',
   baseUrl: 'https://api.kimi.com/coding',
-  model: 'kimi-k2.5'
+  model: 'kimi-for-coding'
 }, {
   value: 'deepseek',
   name: 'DeepSeek',

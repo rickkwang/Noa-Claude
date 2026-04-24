@@ -158,7 +158,7 @@ export const PROVIDER_TYPE_DEFAULTS: Record<ProviderType, { baseUrl?: string; mo
   },
   kimi: {
     baseUrl: 'https://api.kimi.com/coding',
-    model: 'kimi-k2.5',
+    model: 'kimi-for-coding',
   },
   minimax: {
     baseUrl: 'https://api.minimaxi.com/anthropic',
@@ -207,19 +207,24 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
 
   switch (profile.type) {
     case 'anthropic':
-    case 'minimax':
       setEnvKey(env, 'ANTHROPIC_BASE_URL', normalizedBaseUrl)
       setEnvKey(env, 'ANTHROPIC_API_KEY', profile.apiKey)
       setEnvKey(env, 'ANTHROPIC_MODEL', profile.model)
       break
+    case 'minimax':
     case 'kimi':
+      // Third-party Anthropic-compatible providers typically expect Bearer
+      // authentication (Authorization header) rather than x-api-key.
       setEnvKey(env, 'ANTHROPIC_BASE_URL', normalizedBaseUrl)
+      setEnvKey(env, 'ANTHROPIC_AUTH_TOKEN', profile.apiKey)
       setEnvKey(env, 'ANTHROPIC_API_KEY', profile.apiKey)
       setEnvKey(env, 'ANTHROPIC_MODEL', profile.model)
-      setEnvKey(env, 'ANTHROPIC_DEFAULT_OPUS_MODEL', profile.model)
-      setEnvKey(env, 'ANTHROPIC_DEFAULT_SONNET_MODEL', profile.model)
-      setEnvKey(env, 'ANTHROPIC_DEFAULT_HAIKU_MODEL', profile.model)
-      setEnvKey(env, 'CLAUDE_CODE_SUBAGENT_MODEL', profile.model)
+      if (profile.type === 'kimi') {
+        setEnvKey(env, 'ANTHROPIC_DEFAULT_OPUS_MODEL', profile.model)
+        setEnvKey(env, 'ANTHROPIC_DEFAULT_SONNET_MODEL', profile.model)
+        setEnvKey(env, 'ANTHROPIC_DEFAULT_HAIKU_MODEL', profile.model)
+        setEnvKey(env, 'CLAUDE_CODE_SUBAGENT_MODEL', profile.model)
+      }
       break
     case 'openai':
     case 'gemini':
