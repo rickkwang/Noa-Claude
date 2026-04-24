@@ -213,11 +213,11 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
       break
     case 'minimax':
     case 'kimi':
-      // Third-party Anthropic-compatible providers typically expect Bearer
-      // authentication (Authorization header) rather than x-api-key.
+      // These providers use Bearer auth (Authorization header), not x-api-key.
+      // Only set ANTHROPIC_AUTH_TOKEN to avoid the "both token and API key set"
+      // conflict warning from the SDK.
       setEnvKey(env, 'ANTHROPIC_BASE_URL', normalizedBaseUrl)
       setEnvKey(env, 'ANTHROPIC_AUTH_TOKEN', profile.apiKey)
-      setEnvKey(env, 'ANTHROPIC_API_KEY', profile.apiKey)
       setEnvKey(env, 'ANTHROPIC_MODEL', profile.model)
       if (profile.type === 'kimi') {
         setEnvKey(env, 'ANTHROPIC_DEFAULT_OPUS_MODEL', profile.model)
@@ -260,6 +260,13 @@ function getNormalizedBaseUrl(profile: ProviderProfile): string | undefined {
   return baseUrl.replace(/\/+$/, '')
 }
 
+export async function deactivateAllProviderProfiles(): Promise<void> {
+  const profiles = await loadProviderProfiles()
+  if (profiles.some(p => p.active)) {
+    await saveProviderProfiles(profiles.map(p => ({ ...p, active: false })))
+  }
+}
+
 export async function setActiveProviderProfile(
   id: string,
 ): Promise<ProviderProfile | null> {
@@ -279,10 +286,23 @@ export async function applyActiveProviderProfileEnv(): Promise<ProviderProfile |
   const profiles = await loadProviderProfiles()
   const active = getActiveProviderProfile(profiles)
   const providerEnvKeys = [
+    'CLAUDE_CODE_USE_BEDROCK',
+    'CLAUDE_CODE_USE_VERTEX',
+    'CLAUDE_CODE_USE_FOUNDRY',
     'CLAUDE_CODE_USE_OPENAI',
+    'ANTHROPIC_BEDROCK_BASE_URL',
+    'ANTHROPIC_VERTEX_BASE_URL',
+    'ANTHROPIC_FOUNDRY_BASE_URL',
+    'ANTHROPIC_FOUNDRY_RESOURCE',
+    'ANTHROPIC_VERTEX_PROJECT_ID',
     'OPENAI_BASE_URL',
     'OPENAI_API_KEY',
     'OPENAI_MODEL',
+    'AWS_BEARER_TOKEN_BEDROCK',
+    'ANTHROPIC_FOUNDRY_API_KEY',
+    'CLAUDE_CODE_SKIP_BEDROCK_AUTH',
+    'CLAUDE_CODE_SKIP_VERTEX_AUTH',
+    'CLAUDE_CODE_SKIP_FOUNDRY_AUTH',
     'ANTHROPIC_BASE_URL',
     'ANTHROPIC_API_KEY',
     'ANTHROPIC_AUTH_TOKEN',
@@ -314,10 +334,23 @@ export async function applyActiveProviderProfileEnv(): Promise<ProviderProfile |
 
 function persistProviderEnvToUserSettings(env: Record<string, string>): void {
   const nextEnv: Record<string, string | undefined> = {
+    CLAUDE_CODE_USE_BEDROCK: undefined,
+    CLAUDE_CODE_USE_VERTEX: undefined,
+    CLAUDE_CODE_USE_FOUNDRY: undefined,
     CLAUDE_CODE_USE_OPENAI: undefined,
+    ANTHROPIC_BEDROCK_BASE_URL: undefined,
+    ANTHROPIC_VERTEX_BASE_URL: undefined,
+    ANTHROPIC_FOUNDRY_BASE_URL: undefined,
+    ANTHROPIC_FOUNDRY_RESOURCE: undefined,
+    ANTHROPIC_VERTEX_PROJECT_ID: undefined,
     OPENAI_BASE_URL: undefined,
     OPENAI_API_KEY: undefined,
     OPENAI_MODEL: undefined,
+    AWS_BEARER_TOKEN_BEDROCK: undefined,
+    ANTHROPIC_FOUNDRY_API_KEY: undefined,
+    CLAUDE_CODE_SKIP_BEDROCK_AUTH: undefined,
+    CLAUDE_CODE_SKIP_VERTEX_AUTH: undefined,
+    CLAUDE_CODE_SKIP_FOUNDRY_AUTH: undefined,
     ANTHROPIC_BASE_URL: undefined,
     ANTHROPIC_API_KEY: undefined,
     ANTHROPIC_AUTH_TOKEN: undefined,
@@ -338,7 +371,7 @@ function persistProviderEnvToUserSettings(env: Record<string, string>): void {
 }
 
 function persistProviderApiKeyApprovalToGlobalConfig(env: Record<string, string>): void {
-  const apiKey = env.ANTHROPIC_API_KEY
+  const apiKey = env.ANTHROPIC_API_KEY ?? env.ANTHROPIC_AUTH_TOKEN
   if (!apiKey) return
 
   const normalizedApiKey = normalizeApiKeyForConfig(apiKey)

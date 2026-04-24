@@ -16,6 +16,10 @@ import { refreshRemoteManagedSettings } from '../../services/remoteManagedSettin
 import type { LocalJSXCommandOnDone } from '../../types/command.js';
 import { stripSignatureBlocks } from '../../utils/messages.js';
 import { checkAndDisableAutoModeIfNeeded, checkAndDisableBypassPermissionsIfNeeded, resetAutoModeGateCheck, resetBypassPermissionsCheck } from '../../utils/permissions/bypassPermissionsKillswitch.js';
+import {
+  applyActiveProviderProfileEnv,
+  deactivateAllProviderProfiles,
+} from '../../utils/providerProfile.js';
 import { resetUserCache } from '../../utils/user.js';
 type LoginCompletion = ConsoleOAuthFlowResult | {
   type: 'cancel';
@@ -27,6 +31,13 @@ export async function call(onDone: LocalJSXCommandOnDone, context: LocalJSXComma
       return;
     }
     const isProviderSetup = result.type === 'provider-setup'
+    if (!isProviderSetup) {
+      // Standard OAuth login: deactivate any active 3P provider profile so the
+      // new OAuth token takes effect. applyActiveProviderProfileEnv with no
+      // active profile clears ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN etc.
+      await deactivateAllProviderProfiles()
+      await applyActiveProviderProfileEnv()
+    }
     context.onChangeAPIKey();
     // Clear any lingering session model override so the newly selected
     // provider/profile default model becomes authoritative.
@@ -49,12 +60,11 @@ export async function call(onDone: LocalJSXCommandOnDone, context: LocalJSXComma
     resetUserCache();
     // Refresh GrowthBook after login to get updated feature flags (e.g., for claude.ai MCPs)
     refreshGrowthBookAfterAuthChange();
-    // Clear any stale trusted device token from a previous account before
-    // re-enrolling — prevents sending the old token on bridge calls while
-    // the async enrollTrustedDevice() is in-flight.
-    clearTrustedDeviceToken();
-    // Enroll as a trusted device for Remote Control (10-min fresh-session window)
-    void enrollTrustedDevice();
+    if (!isProviderSetup) {
+      // Trusted device enrollment is Anthropic-specific; skip for 3P providers.
+      clearTrustedDeviceToken();
+      void enrollTrustedDevice();
+    }
     // Reset killswitch gate checks and re-run with new org
     resetBypassPermissionsCheck();
     const appState = context.getAppState();
