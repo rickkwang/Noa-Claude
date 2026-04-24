@@ -174,12 +174,14 @@ function ProviderForm({
 
       <Box marginTop={1}>
         <Text dimColor>
-          Enter name, then select type (1-7), enter URL, model, API key
+          {isEdit
+            ? 'Usage: /provider edit <id> <name> <type> <baseUrl> <model> [apiKey]'
+            : 'Usage: /provider add <name> <type> <baseUrl> <model> [apiKey]'}
         </Text>
       </Box>
 
       <Box marginTop={1}>
-        <Text dimColor>Press Enter to save, Esc to cancel</Text>
+        <Text dimColor>Press Esc to cancel</Text>
       </Box>
     </Box>
   )
@@ -214,13 +216,65 @@ function DeleteConfirm({
 
 export const call: LocalJSXCommandCall = async (
   onDone,
-  _context,
+  context,
   args,
 ): Promise<React.ReactNode> => {
   const trimmedArgs = args.trim()
   const [command, ...commandArgs] = trimmedArgs.split(/\s+/)
   const subCommand = command.toLowerCase()
   const idArg = commandArgs[0]
+
+  // Parameterized add/edit: execute immediately without entering interactive UI
+  if (subCommand === 'add' && commandArgs.length >= 4) {
+    const [name, type, baseUrl, model, ...rest] = commandArgs
+    const apiKey = rest.join(' ')
+    if (!PROVIDER_TYPE_LABELS[type as ProviderType]) {
+      return onDone(
+        `Unknown provider type: ${type}. Valid: ${Object.keys(PROVIDER_TYPE_LABELS).join(', ')}`,
+        { display: 'system' },
+      )
+    }
+    const created = await addProviderProfile({
+      name,
+      type: type as ProviderType,
+      baseUrl: baseUrl.trim() || undefined,
+      model: model.trim() || undefined,
+      apiKey: apiKey.trim() || undefined,
+    })
+    const updated = await loadProviderProfiles()
+    if (!getActiveProviderProfile(updated)) {
+      await setActiveProviderProfile(created.id)
+      await applyActiveProviderProfileEnv()
+    }
+    return onDone(`Added provider: ${name}`, { display: 'system' })
+  }
+
+  if (subCommand === 'edit' && idArg && commandArgs.length >= 5) {
+    const profiles = await loadProviderProfiles()
+    const profile = profiles.find(
+      p => p.id === idArg || p.name.toLowerCase() === idArg.toLowerCase(),
+    )
+    if (!profile) {
+      return onDone(`Provider not found: ${idArg}`, { display: 'system' })
+    }
+    const [name, type, baseUrl, model, ...rest] = commandArgs.slice(1)
+    const apiKey = rest.join(' ')
+    if (!PROVIDER_TYPE_LABELS[type as ProviderType]) {
+      return onDone(
+        `Unknown provider type: ${type}. Valid: ${Object.keys(PROVIDER_TYPE_LABELS).join(', ')}`,
+        { display: 'system' },
+      )
+    }
+    await updateProviderProfile(profile.id, {
+      name,
+      type: type as ProviderType,
+      baseUrl: baseUrl.trim() || undefined,
+      model: model.trim() || undefined,
+      apiKey: apiKey.trim() || undefined,
+    })
+    await applyActiveProviderProfileEnv()
+    return onDone(`Updated provider: ${name}`, { display: 'system' })
+  }
 
   const [profiles, setProfiles] = React.useState<ProviderProfile[]>([])
   const [activeProfileId, setActiveProfileId] = React.useState<string | null>(null)

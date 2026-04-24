@@ -57,6 +57,12 @@ function isAzureOpenAIBaseUrl(baseUrl: string): boolean {
 }
 
 function getModelListUrls(baseUrl: string): string[] {
+  if (isAzureOpenAIBaseUrl(baseUrl)) {
+    // Azure OpenAI uses a different endpoint structure for model discovery.
+    // Standard OpenAI /v1/models is not available on deployment-scoped URLs.
+    return []
+  }
+
   const primary = baseUrl.endsWith('/v1')
     ? `${baseUrl}/models`
     : `${baseUrl}/v1/models`

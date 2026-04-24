@@ -354,7 +354,12 @@ export async function getAnthropicClient({
     const defaultHeadersForShim = { ...defaultHeaders }
 
     if (isGeminiOpenAIBaseUrl(resolvedBaseUrl)) {
-      const resolvedGemini = await resolveGeminiCredential()
+      let resolvedGemini = await resolveGeminiCredential()
+      // Profile apiKey is stored in OPENAI_API_KEY by buildProviderEnv.
+      // If no dedicated Gemini credential found, fall back to the profile key.
+      if (resolvedGemini.kind === 'none' && resolvedApiKey) {
+        resolvedGemini = { kind: 'api-key', credential: resolvedApiKey }
+      }
       if (resolvedGemini.kind === 'none') {
         throw new Error(getGeminiAuthMissingCredentialHint())
       }

@@ -134,7 +134,7 @@ export const PROVIDER_TYPE_DEFAULTS: Record<ProviderType, { baseUrl?: string; mo
   },
   gemini: {
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    model: 'gemini-2.0-flash',
+    model: 'gemini-2.5-pro',
   },
   github: {
     baseUrl: 'https://models.inference.ai.dev/api',
@@ -165,7 +165,7 @@ export const PROVIDER_TYPE_DEFAULTS: Record<ProviderType, { baseUrl?: string; mo
     model: 'MiniMax-M2.5',
   },
   glm: {
-    baseUrl: 'https://open.bigmodel.cn/api/anthropic',
+    baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
     model: 'glm-5.1',
   },
   together: {
@@ -208,7 +208,6 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
   switch (profile.type) {
     case 'anthropic':
     case 'minimax':
-    case 'glm':
       setEnvKey(env, 'ANTHROPIC_BASE_URL', normalizedBaseUrl)
       setEnvKey(env, 'ANTHROPIC_API_KEY', profile.apiKey)
       setEnvKey(env, 'ANTHROPIC_MODEL', profile.model)
@@ -229,6 +228,7 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
     case 'ollama':
     case 'codex':
     case 'deepseek':
+    case 'glm':
     case 'together':
     case 'groq':
     case 'azure-openai':
@@ -249,10 +249,10 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
 function getNormalizedBaseUrl(profile: ProviderProfile): string | undefined {
   const baseUrl = profile.baseUrl?.trim()
   if (!baseUrl) {
-    return baseUrl
+    return undefined
   }
 
-  return baseUrl
+  return baseUrl.replace(/\/+$/, '')
 }
 
 export async function setActiveProviderProfile(

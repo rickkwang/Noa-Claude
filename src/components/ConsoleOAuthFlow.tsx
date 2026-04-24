@@ -99,12 +99,28 @@ const PLATFORM_PRESETS: PlatformPreset[] = [{
   baseUrl: 'https://api.openai.com/v1',
   model: 'gpt-4o'
 }, {
+  value: 'github',
+  name: 'GitHub Models',
+  description: 'GitHub Models API endpoint',
+  type: 'github',
+  profileName: 'GitHub Models',
+  baseUrl: 'https://models.inference.ai.dev/api',
+  model: 'gpt-4o'
+}, {
+  value: 'codex',
+  name: 'OpenAI Codex',
+  description: 'OpenAI Codex endpoint',
+  type: 'codex',
+  profileName: 'OpenAI Codex',
+  baseUrl: 'https://api.openai.com/v1',
+  model: 'gpt-4o'
+}, {
   value: 'kimi',
   name: 'Kimi Code',
   description: 'Kimi For Coding Anthropic-compatible endpoint',
   type: 'kimi',
   profileName: 'Kimi Code',
-  baseUrl: 'https://api.kimi.com/coding/',
+  baseUrl: 'https://api.kimi.com/coding',
   model: 'kimi-k2.5'
 }, {
   value: 'deepseek',
@@ -157,10 +173,10 @@ const PLATFORM_PRESETS: PlatformPreset[] = [{
 }, {
   value: 'glm',
   name: 'Z.AI GLM',
-  description: 'Z.AI Anthropic-compatible endpoint (China)',
+  description: 'Z.AI GLM Coding Plan (China)',
   type: 'glm',
   profileName: 'Z.AI GLM',
-  baseUrl: 'https://api.z.ai/api/anthropic',
+  baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
   model: 'glm-5.1'
 }, {
   value: 'azure-openai',
@@ -429,7 +445,7 @@ function ProviderSetupWizard({
         </Box> : <Box flexDirection="column" gap={1}>
           <Text color="remember" bold={true}>Create provider profile</Text>
           <Text dimColor={true}>{PROVIDER_FORM_STEPS.find(_ => _.key === step)?.helpText ?? ''}</Text>
-          <Text dimColor={true}>Provider type: {selectedPreset?.type === 'anthropic' || selectedPreset?.type === 'glm' || selectedPreset?.type === 'minimax' ? 'Anthropic native API' : 'OpenAI-compatible API'}</Text>
+          <Text dimColor={true}>Provider type: {selectedPreset?.type === 'anthropic' || selectedPreset?.type === 'minimax' ? 'Anthropic native API' : 'OpenAI-compatible API'}</Text>
           <Text dimColor={true}>Step {step === 'name' ? '1' : step === 'baseUrl' ? '2' : step === 'model' ? '3' : '4'} of 4: {PROVIDER_FORM_STEPS.find(_ => _.key === step)?.label ?? ''}</Text>
           <Box>
             <Text>&gt; </Text>
