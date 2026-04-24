@@ -37,8 +37,8 @@ export const DEFAULT_PRODUCT_MODEL =
   process.env.CLAUDE_AGENT_DEFAULT_MODEL ?? 'MiniMax-M2.7';
 
 export const LAUNCHER_MACRO = {
-  VERSION: '2.1.89',
-  BUILD_TIME: '2026-03-15',
+  VERSION: '1.0.2',
+  BUILD_TIME: '2026-04-24T12:44:02.000Z',
   FEEDBACK_CHANNEL: `#${PRODUCT_NAMESPACE}`,
   ISSUES_EXPLAINER: 'https://github.com/anthropics/claude-code/issues',
   PACKAGE_URL: 'claude-agent',

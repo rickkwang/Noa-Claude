@@ -120,24 +120,11 @@ The current gap inventory is split into three buckets:
 - build-excluded
 - stubbed
 
-The authoritative table lives in [feature-gap-audit.md](./feature-gap-audit.md).
-
-The compatibility layer for previous doc links is retained in the small pointer files for:
-
-- `docs/command-surface-governance.md`
-- `docs/feature-gap-audit.md`
-- `docs/optimization-roadmap.md`
-- `docs/runtime-health.md`
-- `docs/session-continuity.md`
-- `docs/worktrees.md`
-- `docs/agents.md`
-- `docs/progress-artifacts.md`
+The authoritative table lives in this document.
 
 ## Roadmap
 
-The implementation roadmap is in [optimization-roadmap.md](./optimization-roadmap.md).
-
-The compatibility layer for previous roadmap links is retained in the small pointer file at `docs/optimization-roadmap.md`.
+The implementation roadmap is in this document.
 
 ## Maintenance Freeze
 

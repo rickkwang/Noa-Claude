@@ -171,11 +171,3 @@ Track these as release-gating regressions, not just ad hoc metrics:
 - resume latency from existing transcript
 - non-interactive `--print` completion time
 
-## Related Documents
-
-- [command-surface-governance.md](./command-surface-governance.md)
-- [feature-gap-audit.md](./feature-gap-audit.md)
-- [progress-artifacts.md](./progress-artifacts.md)
-- [session-continuity.md](./session-continuity.md)
-- [worktrees.md](./worktrees.md)
-- [agents.md](./agents.md)
