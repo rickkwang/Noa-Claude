@@ -159,7 +159,6 @@ import rateLimitOptions from './commands/rate-limit-options/index.js'
 import statusline from './commands/statusline.js'
 import effort from './commands/effort/index.js'
 import stats from './commands/stats/index.js'
-import provider from './commands/provider/index.js'
 import startupBanner from './commands/startup-banner/index.js'
 import wiki from './commands/wiki/index.js'
 // insights.ts is 113KB (3200 lines, includes diffLines/html rendering). Lazy
@@ -313,7 +312,6 @@ const COMMANDS = memoize((): Command[] => [
   permissions,
   plan,
   privacySettings,
-  provider,
   hooks,
   exportCommand,
   sandboxToggle,

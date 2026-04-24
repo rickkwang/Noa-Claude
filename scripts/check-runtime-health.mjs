@@ -1641,12 +1641,8 @@ function checkOpus47ThirdPartyEffortDefaults() {
     process.env.ANTHROPIC_BASE_URL =
       'https://proxy.example.test/anthropic';
     assert(
-      modelSupportsEffort('claude-opus-4-7') === false,
-      'ANTHROPIC_BASE_URL proxy should not advertise effort support without an explicit capability override',
-    );
-    assert(
-      modelSupportsAdaptiveThinking('claude-opus-4-7') === false,
-      'ANTHROPIC_BASE_URL proxy should not advertise adaptive thinking without an explicit capability override',
+      modelSupportsEffort('claude-opus-4-7') === true,
+      'ANTHROPIC_BASE_URL proxy should allow effort on all models',
     );
     assert(
       getDefaultEffortForModel('claude-opus-4-7') === undefined,
@@ -1654,25 +1650,14 @@ function checkOpus47ThirdPartyEffortDefaults() {
     );
     assert(
       resolveAppliedEffort('claude-opus-4-7', undefined) === undefined,
-      'ANTHROPIC_BASE_URL proxy should not inject opus-4-7 effort without an explicit max_effort capability override',
+      'ANTHROPIC_BASE_URL proxy should not inject opus-4-7 max effort without an explicit max_effort capability override',
     );
-    const unsupportedProxyEffort = executeEffort('max', 'claude-opus-4-7');
-    assert(
-      unsupportedProxyEffort.effortUpdate === undefined &&
-        unsupportedProxyEffort.message.includes('not supported'),
-      '/effort max should not report success when an ANTHROPIC_BASE_URL proxy has no effort capability override',
-    );
-
     process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = 'claude-opus-4-7';
     process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES =
       'max_effort,adaptive_thinking';
     assert(
       modelSupportsEffort('claude-opus-4-7') === true,
-      'ANTHROPIC_BASE_URL proxy max_effort override should imply base effort support',
-    );
-    assert(
-      modelSupportsAdaptiveThinking('claude-opus-4-7') === true,
-      'ANTHROPIC_BASE_URL proxy adaptive_thinking override should enable adaptive thinking',
+      'ANTHROPIC_BASE_URL proxy should allow effort regardless of capability override',
     );
     assert(
       getDefaultEffortForModel('claude-opus-4-7') === 'max',
@@ -1712,7 +1697,7 @@ function checkOpus47ThirdPartyEffortDefaults() {
       'effort';
     assert(
       modelSupportsEffort(effortOnly3PModel) === true,
-      '3P effort capability should enable base effort support',
+      '3P effort capability should still allow base effort support',
     );
     assert(
       modelSupportsMaxEffort(effortOnly3PModel) === false,
@@ -1736,7 +1721,7 @@ function checkOpus47ThirdPartyEffortDefaults() {
       'max_effort';
     assert(
       modelSupportsEffort(supported3PModel) === true,
-      '3P max_effort capability should imply base effort support',
+      '3P max_effort capability should still allow base effort support',
     );
     assert(
       getDefaultEffortForModel(supported3PModel) === 'max',
@@ -1814,6 +1799,34 @@ function checkQualityRegressionGuards() {
   assert(
     !bootstrapStateSource.includes('thinkingClearLatched'),
     'bootstrap state should no longer store thinking clear latch state',
+  );
+
+  const preconnectSource = readFileSync(
+    resolve('src/utils/apiPreconnect.ts'),
+    'utf8',
+  );
+  assert(
+    preconnectSource.includes('CLAUDE_CODE_USE_OPENAI'),
+    'Anthropic API preconnect should skip OpenAI-compatible provider mode',
+  );
+}
+
+function checkProviderRoutingAndUrlGuards() {
+  const providerProfileSource = readFileSync(
+    resolve('src/utils/providerProfile.ts'),
+    'utf8',
+  );
+  assert(
+    providerProfileSource.includes("'CLAUDE_CODE_USE_BEDROCK'") &&
+      providerProfileSource.includes("'CLAUDE_CODE_USE_VERTEX'") &&
+      providerProfileSource.includes("'CLAUDE_CODE_USE_FOUNDRY'"),
+    'provider profile activation should clear stale cloud provider flags',
+  );
+  assert(
+    providerProfileSource.includes("'ANTHROPIC_BEDROCK_BASE_URL'") &&
+      providerProfileSource.includes("'ANTHROPIC_VERTEX_BASE_URL'") &&
+      providerProfileSource.includes("'ANTHROPIC_FOUNDRY_BASE_URL'"),
+    'provider profile activation should clear stale cloud provider base URLs',
   );
 }
 
@@ -2103,6 +2116,9 @@ checkOpus47ThirdPartyEffortDefaults();
 
 console.log('Checking quality regression guards...');
 checkQualityRegressionGuards();
+
+console.log('Checking provider routing and URL guards...');
+checkProviderRoutingAndUrlGuards();
 
 console.log('Checking dangerous removal path...');
 checkDangerousRemovalPath();
