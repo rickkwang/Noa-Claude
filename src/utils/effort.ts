@@ -20,43 +20,10 @@ export type EffortValue = EffortLevel | number
 
 // @[MODEL LAUNCH]: Add the new model to the allowlist if it supports the effort parameter.
 export function modelSupportsEffort(model: string): boolean {
-  const m = model.toLowerCase()
   if (isEnvTruthy(process.env.CLAUDE_CODE_ALWAYS_ENABLE_EFFORT)) {
     return true
   }
-  const supported3P = get3PModelCapabilityOverride(model, 'effort')
-  const supported3PMaxEffort = get3PModelCapabilityOverride(model, 'max_effort')
-  if (supported3PMaxEffort === true) {
-    return true
-  }
-  if (supported3P !== undefined) {
-    return supported3P
-  }
-  const provider = getAPIProvider()
-  const directFirstParty =
-    provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()
-
-  // Supported by a subset of Claude 4 models on direct Anthropic API and Foundry.
-  if (
-    (directFirstParty || provider === 'foundry') &&
-    (m.includes('opus-4-6') ||
-      m.includes('opus-4-7') ||
-      m.includes('sonnet-4-6'))
-  ) {
-    return true
-  }
-  // Exclude any other known legacy models (haiku, older opus/sonnet variants)
-  if (m.includes('haiku') || m.includes('sonnet') || m.includes('opus')) {
-    return false
-  }
-
-  // IMPORTANT: Do not change the default effort support without notifying
-  // the model launch DRI and research. This is a sensitive setting that can
-  // greatly affect model quality and bashing.
-
-  // Default to true for unknown model strings only on direct 1P. Do not default
-  // to true for 3P or ANTHROPIC_BASE_URL proxies as they may reject output_config.
-  return directFirstParty
+  return true
 }
 
 // @[MODEL LAUNCH]: Add the new model to the allowlist if it supports 'max' effort.

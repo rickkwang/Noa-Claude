@@ -453,7 +453,14 @@ function configureEffortParams(
   }
 
   if (effortValue === undefined) {
-    betas.push(EFFORT_BETA_HEADER)
+    // Only opt into the effort beta for first-party / foundry. 3P proxies don't
+    // understand this header and should not receive it when effort is unset.
+    const provider = getAPIProvider()
+    const directFirstParty =
+      provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()
+    if (directFirstParty || provider === 'foundry') {
+      betas.push(EFFORT_BETA_HEADER)
+    }
   } else if (typeof effortValue === 'string') {
     // Send string effort level as is
     outputConfig.effort = effortValue
