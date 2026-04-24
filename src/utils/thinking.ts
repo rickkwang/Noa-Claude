@@ -6,7 +6,7 @@ import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growt
 import { resolveAntModel } from './model/antModels.js'
 import { getCanonicalName } from './model/model.js'
 import { get3PModelCapabilityOverride } from './model/modelSupportOverrides.js'
-import { getAPIProvider } from './model/providers.js'
+import { getAPIProvider, isFirstPartyAnthropicBaseUrl } from './model/providers.js'
 import { getSettingsWithErrors } from './settings/settings.js'
 
 export type ThinkingConfig =
@@ -118,8 +118,17 @@ export function modelSupportsAdaptiveThinking(model: string): boolean {
     return supported3P
   }
   const canonical = getCanonicalName(model)
-  // Supported by a subset of Claude 4 models
-  if (canonical.includes('opus-4-6') || canonical.includes('sonnet-4-6')) {
+  const provider = getAPIProvider()
+  const directFirstParty =
+    provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()
+
+  // First-party and Foundry Claude 4.6+ Opus/Sonnet models use adaptive thinking.
+  if (
+    (directFirstParty || provider === 'foundry') &&
+    (canonical.includes('opus-4-6') ||
+      canonical.includes('opus-4-7') ||
+      canonical.includes('sonnet-4-6'))
+  ) {
     return true
   }
   // Exclude any other known legacy models (allowlist above catches 4-6 variants first)
@@ -141,8 +150,7 @@ export function modelSupportsAdaptiveThinking(model: string): boolean {
   // Default to true for unknown model strings on 1P and Foundry (because Foundry
   // is a proxy). Do not default to true for other 3P as they have different formats
   // for their model strings.
-  const provider = getAPIProvider()
-  return provider === 'firstParty' || provider === 'foundry'
+  return directFirstParty || provider === 'foundry'
 }
 
 export function shouldEnableThinkingByDefault(): boolean {

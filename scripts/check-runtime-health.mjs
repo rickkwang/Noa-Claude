@@ -91,6 +91,7 @@ import {
   _formatResumeListLoadFailureForTesting,
   _logResumeListLoadFailureForTesting,
 } from '../src/commands/resume/resume.tsx';
+import { executeEffort } from '../src/commands/effort/effort.tsx';
 import { _isForkSubagentEnabledForTesting } from '../src/tools/AgentTool/forkSubagent.ts';
 import { _checkFindExecDeleteForTesting } from '../src/tools/BashTool/pathValidation.ts';
 import {
@@ -104,7 +105,14 @@ import { _getThinkingTextForTesting } from '../src/components/Spinner/SpinnerAni
 import { _get3PFallbackSuggestionForTesting } from '../src/utils/model/validateModel.ts';
 import { getPublicModelDisplayName, getDefaultOpusModel, getBestModel } from '../src/utils/model/model.ts';
 import { getModelStrings } from '../src/utils/model/modelStrings.ts';
-import { modelSupportsEffort, modelSupportsMaxEffort } from '../src/utils/effort.ts';
+import {
+  getDefaultEffortForModel,
+  modelSupportsEffort,
+  modelSupportsMaxEffort,
+  resolveAppliedEffort,
+} from '../src/utils/effort.ts';
+import { modelSupportsAdaptiveThinking } from '../src/utils/thinking.ts';
+import { getAPIContextManagement } from '../src/services/compact/apiMicrocompact.ts';
 import {
   _convertFileNameToDateForTesting,
   _addCleanupResultsForTesting,
@@ -1546,6 +1554,19 @@ function checkModelFallbackSuggestions() {
 // Opus 4.7: user-facing path coverage
 // ============================================================================
 function checkOpus47UserPaths() {
+  const prevUseBedrock = process.env.CLAUDE_CODE_USE_BEDROCK;
+  const prevUseVertex = process.env.CLAUDE_CODE_USE_VERTEX;
+  const prevUseFoundry = process.env.CLAUDE_CODE_USE_FOUNDRY;
+  const prevUseOpenAI = process.env.CLAUDE_CODE_USE_OPENAI;
+  const prevBaseUrl = process.env.ANTHROPIC_BASE_URL;
+  const prevUserType = process.env.USER_TYPE;
+  delete process.env.CLAUDE_CODE_USE_BEDROCK;
+  delete process.env.CLAUDE_CODE_USE_VERTEX;
+  delete process.env.CLAUDE_CODE_USE_FOUNDRY;
+  delete process.env.CLAUDE_CODE_USE_OPENAI;
+  delete process.env.ANTHROPIC_BASE_URL;
+  delete process.env.USER_TYPE;
+  try {
   // getPublicModelDisplayName for opus-4-7
   const opus47DisplayName = getPublicModelDisplayName(getModelStrings().opus47);
   assert(opus47DisplayName === 'Opus 4.7', `getPublicModelDisplayName(opus47) should return 'Opus 4.7', got: ${opus47DisplayName}`);
@@ -1567,6 +1588,233 @@ function checkOpus47UserPaths() {
   // modelSupportsMaxEffort for opus-4-7
   assert(modelSupportsMaxEffort('opus-4-7') === true, 'opus-4-7 should support max effort');
   assert(modelSupportsMaxEffort('claude-opus-4-7') === true, 'claude-opus-4-7 should support max effort');
+
+  // External default effort should no longer silently downgrade Opus 4.7.
+  assert(
+    getDefaultEffortForModel('claude-opus-4-7') === 'max',
+    'claude-opus-4-7 should default to max effort for first-party external users',
+  );
+  assert(
+    resolveAppliedEffort('claude-opus-4-7', undefined) === 'max',
+    'claude-opus-4-7 should resolve to max effort by default for first-party external users',
+  );
+  assert(
+    getDefaultEffortForModel('claude-opus-4-6') === undefined,
+    'claude-opus-4-6 should not force a default effort',
+  );
+  assert(
+    resolveAppliedEffort('claude-opus-4-6', undefined) === undefined,
+    'claude-opus-4-6 should not inject effort by default',
+  );
+
+  // Opus 4.7 should use adaptive thinking.
+  assert(
+    modelSupportsAdaptiveThinking('claude-opus-4-7') === true,
+    'claude-opus-4-7 should support adaptive thinking',
+  );
+  } finally {
+    if (prevUseBedrock === undefined) delete process.env.CLAUDE_CODE_USE_BEDROCK;
+    else process.env.CLAUDE_CODE_USE_BEDROCK = prevUseBedrock;
+    if (prevUseVertex === undefined) delete process.env.CLAUDE_CODE_USE_VERTEX;
+    else process.env.CLAUDE_CODE_USE_VERTEX = prevUseVertex;
+    if (prevUseFoundry === undefined) delete process.env.CLAUDE_CODE_USE_FOUNDRY;
+    else process.env.CLAUDE_CODE_USE_FOUNDRY = prevUseFoundry;
+    if (prevUseOpenAI === undefined) delete process.env.CLAUDE_CODE_USE_OPENAI;
+    else process.env.CLAUDE_CODE_USE_OPENAI = prevUseOpenAI;
+    if (prevBaseUrl === undefined) delete process.env.ANTHROPIC_BASE_URL;
+    else process.env.ANTHROPIC_BASE_URL = prevBaseUrl;
+    if (prevUserType === undefined) delete process.env.USER_TYPE;
+    else process.env.USER_TYPE = prevUserType;
+  }
+}
+
+function checkOpus47ThirdPartyEffortDefaults() {
+  const prevUseBedrock = process.env.CLAUDE_CODE_USE_BEDROCK;
+  const prevBaseUrl = process.env.ANTHROPIC_BASE_URL;
+  const prevPinnedOpus = process.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
+  const prevPinnedCapabilities =
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES;
+  const prevUserType = process.env.USER_TYPE;
+  try {
+    delete process.env.CLAUDE_CODE_USE_BEDROCK;
+    delete process.env.USER_TYPE;
+    process.env.ANTHROPIC_BASE_URL =
+      'https://proxy.example.test/anthropic';
+    assert(
+      modelSupportsEffort('claude-opus-4-7') === false,
+      'ANTHROPIC_BASE_URL proxy should not advertise effort support without an explicit capability override',
+    );
+    assert(
+      modelSupportsAdaptiveThinking('claude-opus-4-7') === false,
+      'ANTHROPIC_BASE_URL proxy should not advertise adaptive thinking without an explicit capability override',
+    );
+    assert(
+      getDefaultEffortForModel('claude-opus-4-7') === undefined,
+      'ANTHROPIC_BASE_URL proxy should not default opus-4-7 to max without an explicit max_effort capability override',
+    );
+    assert(
+      resolveAppliedEffort('claude-opus-4-7', undefined) === undefined,
+      'ANTHROPIC_BASE_URL proxy should not inject opus-4-7 effort without an explicit max_effort capability override',
+    );
+    const unsupportedProxyEffort = executeEffort('max', 'claude-opus-4-7');
+    assert(
+      unsupportedProxyEffort.effortUpdate === undefined &&
+        unsupportedProxyEffort.message.includes('not supported'),
+      '/effort max should not report success when an ANTHROPIC_BASE_URL proxy has no effort capability override',
+    );
+
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = 'claude-opus-4-7';
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES =
+      'max_effort,adaptive_thinking';
+    assert(
+      modelSupportsEffort('claude-opus-4-7') === true,
+      'ANTHROPIC_BASE_URL proxy max_effort override should imply base effort support',
+    );
+    assert(
+      modelSupportsAdaptiveThinking('claude-opus-4-7') === true,
+      'ANTHROPIC_BASE_URL proxy adaptive_thinking override should enable adaptive thinking',
+    );
+    assert(
+      getDefaultEffortForModel('claude-opus-4-7') === 'max',
+      'ANTHROPIC_BASE_URL proxy should default opus-4-7 to max when max_effort is explicitly advertised',
+    );
+    assert(
+      resolveAppliedEffort('claude-opus-4-7', undefined) === 'max',
+      'ANTHROPIC_BASE_URL proxy should inject max effort when max_effort is explicitly advertised',
+    );
+    const supportedProxyEffort = executeEffort('max', 'claude-opus-4-7');
+    assert(
+      supportedProxyEffort.effortUpdate?.value === 'max',
+      '/effort max should be accepted when an ANTHROPIC_BASE_URL proxy advertises max_effort',
+    );
+    if (prevBaseUrl === undefined) delete process.env.ANTHROPIC_BASE_URL;
+    else process.env.ANTHROPIC_BASE_URL = prevBaseUrl;
+
+    process.env.CLAUDE_CODE_USE_BEDROCK = '1';
+
+    const unsupported3PModel =
+      'anthropic.claude-opus-4-7-runtime-health-no-max';
+    delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
+    delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES;
+    assert(
+      getDefaultEffortForModel(unsupported3PModel) === undefined,
+      '3P opus-4-7 should not default to max without an explicit max_effort capability override',
+    );
+    assert(
+      resolveAppliedEffort(unsupported3PModel, undefined) === undefined,
+      '3P opus-4-7 should not inject effort without an explicit max_effort capability override',
+    );
+
+    const effortOnly3PModel =
+      'anthropic.claude-opus-4-7-runtime-health-effort-only';
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = effortOnly3PModel;
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES =
+      'effort';
+    assert(
+      modelSupportsEffort(effortOnly3PModel) === true,
+      '3P effort capability should enable base effort support',
+    );
+    assert(
+      modelSupportsMaxEffort(effortOnly3PModel) === false,
+      '3P effort capability should not imply max effort support',
+    );
+    assert(
+      resolveAppliedEffort(effortOnly3PModel, 'max') === 'high',
+      '3P effort-only models should clamp a stale max setting to high',
+    );
+    const effortOnlyMaxCommand = executeEffort('max', effortOnly3PModel);
+    assert(
+      effortOnlyMaxCommand.effortUpdate === undefined &&
+        effortOnlyMaxCommand.message.includes('Max effort is not supported'),
+      '/effort max should not report success when 3P only advertises base effort',
+    );
+
+    const supported3PModel =
+      'anthropic.claude-opus-4-7-runtime-health-with-max';
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = supported3PModel;
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES =
+      'max_effort';
+    assert(
+      modelSupportsEffort(supported3PModel) === true,
+      '3P max_effort capability should imply base effort support',
+    );
+    assert(
+      getDefaultEffortForModel(supported3PModel) === 'max',
+      '3P opus-4-7 should default to max when max_effort is explicitly advertised',
+    );
+  } finally {
+    if (prevUseBedrock === undefined) delete process.env.CLAUDE_CODE_USE_BEDROCK;
+    else process.env.CLAUDE_CODE_USE_BEDROCK = prevUseBedrock;
+    if (prevBaseUrl === undefined) delete process.env.ANTHROPIC_BASE_URL;
+    else process.env.ANTHROPIC_BASE_URL = prevBaseUrl;
+    if (prevPinnedOpus === undefined) delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
+    else process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = prevPinnedOpus;
+    if (prevPinnedCapabilities === undefined) {
+      delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES;
+    } else {
+      process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES =
+        prevPinnedCapabilities;
+    }
+    if (prevUserType === undefined) delete process.env.USER_TYPE;
+    else process.env.USER_TYPE = prevUserType;
+  }
+}
+
+function checkQualityRegressionGuards() {
+  const promptsSource = readFileSync(
+    resolve('src/constants/prompts.ts'),
+    'utf8',
+  );
+  assert(
+    !promptsSource.includes('Be extra concise.'),
+    'external prompt should not contain the strongest brevity directive',
+  );
+  assert(
+    !promptsSource.includes("If you can say it in one sentence, don't use three."),
+    'external prompt should not contain the one-sentence compression directive',
+  );
+  assert(
+    promptsSource.includes(
+      'include enough detail to cover blockers, verification, and important implementation context.',
+    ),
+    'external prompt should preserve concise-but-complete communication guidance',
+  );
+
+  const contextManagement = getAPIContextManagement({
+    hasThinking: true,
+    isRedactThinkingActive: false,
+    clearAllThinking: false,
+  });
+  assert(
+    contextManagement?.edits?.[0]?.keep === 'all',
+    'default context management should preserve all thinking turns',
+  );
+
+  const claudeApiSource = readFileSync(
+    resolve('src/services/api/claude.ts'),
+    'utf8',
+  );
+  assert(
+    !claudeApiSource.includes('getThinkingClearLatched'),
+    'claude API path should not reference latched thinking clear state',
+  );
+  assert(
+    !claudeApiSource.includes('setThinkingClearLatched'),
+    'claude API path should not persist thinking clear state',
+  );
+  assert(
+    claudeApiSource.includes('clearAllThinking: false'),
+    'claude API path should force non-destructive thinking preservation by default',
+  );
+
+  const bootstrapStateSource = readFileSync(
+    resolve('src/bootstrap/state.ts'),
+    'utf8',
+  );
+  assert(
+    !bootstrapStateSource.includes('thinkingClearLatched'),
+    'bootstrap state should no longer store thinking clear latch state',
+  );
 }
 
 // ============================================================================
@@ -1849,6 +2097,12 @@ checkModelFallbackSuggestions();
 
 console.log('Checking Opus 4.7 user paths...');
 checkOpus47UserPaths();
+
+console.log('Checking Opus 4.7 third-party effort defaults...');
+checkOpus47ThirdPartyEffortDefaults();
+
+console.log('Checking quality regression guards...');
+checkQualityRegressionGuards();
 
 console.log('Checking dangerous removal path...');
 checkDangerousRemovalPath();

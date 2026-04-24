@@ -19,7 +19,7 @@ type Props = {
 };
 const AUTO_DISMISS_MS = 30_000;
 export function EffortCallout(t0) {
-  const $ = _c(18);
+  const $ = _c(22);
   const {
     model,
     onDone
@@ -103,57 +103,64 @@ export function EffortCallout(t0) {
   }
   const handleSelect = t8;
   let t9;
-  if ($[11] === Symbol.for("react.memo_cache_sentinel")) {
+  if ($[11] !== defaultLevel) {
+    const maxText = defaultLevel === "max" ? "Max (recommended)" : "Max";
+    const highText = defaultLevel === "high" ? "High (recommended)" : "High";
+    const mediumText = defaultLevel === "medium" ? "Medium (recommended)" : "Medium";
     t9 = [{
-      label: <EffortOptionLabel level="medium" text="Medium (recommended)" />,
-      value: "medium"
+      label: <EffortOptionLabel level="max" text={maxText} />,
+      value: "max"
     }, {
-      label: <EffortOptionLabel level="high" text="High" />,
+      label: <EffortOptionLabel level="high" text={highText} />,
       value: "high"
+    }, {
+      label: <EffortOptionLabel level="medium" text={mediumText} />,
+      value: "medium"
     }, {
       label: <EffortOptionLabel level="low" text="Low" />,
       value: "low"
     }];
-    $[11] = t9;
+    $[11] = defaultLevel;
+    $[12] = t9;
   } else {
-    t9 = $[11];
+    t9 = $[12];
   }
   const options = t9;
   let t10;
-  if ($[12] === Symbol.for("react.memo_cache_sentinel")) {
+  if ($[13] === Symbol.for("react.memo_cache_sentinel")) {
     t10 = <Box marginBottom={1} flexDirection="column"><Text>{defaultEffortConfig.dialogDescription}</Text></Box>;
-    $[12] = t10;
+    $[13] = t10;
   } else {
-    t10 = $[12];
+    t10 = $[13];
   }
   let t11;
-  if ($[13] === Symbol.for("react.memo_cache_sentinel")) {
+  if ($[14] === Symbol.for("react.memo_cache_sentinel")) {
     t11 = <EffortIndicatorSymbol level="low" />;
-    $[13] = t11;
+    $[14] = t11;
   } else {
-    t11 = $[13];
+    t11 = $[14];
   }
   let t12;
-  if ($[14] === Symbol.for("react.memo_cache_sentinel")) {
+  if ($[15] === Symbol.for("react.memo_cache_sentinel")) {
     t12 = <EffortIndicatorSymbol level="medium" />;
-    $[14] = t12;
+    $[15] = t12;
   } else {
-    t12 = $[14];
+    t12 = $[15];
   }
   let t13;
-  if ($[15] === Symbol.for("react.memo_cache_sentinel")) {
-    t13 = <Box marginBottom={1}><Text dimColor={true}>{t11} low {"\xB7"}{" "}{t12} medium {"\xB7"}{" "}<EffortIndicatorSymbol level="high" /> high</Text></Box>;
-    $[15] = t13;
+  if ($[16] === Symbol.for("react.memo_cache_sentinel")) {
+    t13 = <Box marginBottom={1}><Text dimColor={true}>{t11} low {"\xB7"}{" "}{t12} medium {"\xB7"}{" "}<EffortIndicatorSymbol level="high" /> high {"\xB7"}{" "}<EffortIndicatorSymbol level="max" /> max</Text></Box>;
+    $[16] = t13;
   } else {
-    t13 = $[15];
+    t13 = $[16];
   }
   let t14;
-  if ($[16] !== handleSelect) {
+  if ($[17] !== handleSelect) {
     t14 = <PermissionDialog title={defaultEffortConfig.dialogTitle}><Box flexDirection="column" paddingX={2} paddingY={1}>{t10}{t13}<Select options={options} onChange={handleSelect} onCancel={handleCancel} /></Box></PermissionDialog>;
-    $[16] = handleSelect;
-    $[17] = t14;
+    $[17] = handleSelect;
+    $[18] = t14;
   } else {
-    t14 = $[17];
+    t14 = $[18];
   }
   return t14;
 }
@@ -210,17 +217,12 @@ function EffortOptionLabel(t0) {
 }
 
 /**
- * Check whether to show the effort callout.
- *
- * Audience:
- * - Pro: already had medium default; show unless they saw v1 (effortCalloutDismissed)
- * - Max/Team: getting medium via tengu_grey_step2 config; show when enabled
- * - Everyone else: mark as dismissed so it never shows
+ * Show the callout only when the current model has an explicit default effort
+ * so the user can opt out of that recommendation once.
  */
 export function shouldShowEffortCallout(model: string): boolean {
-  // Only show for Opus 4.6 for now
   const parsed = parseUserSpecifiedModel(model);
-  if (!parsed.toLowerCase().includes('opus-4-6')) {
+  if (getDefaultEffortForModel(parsed) === undefined) {
     return false;
   }
   const config = getGlobalConfig();
@@ -233,8 +235,8 @@ export function shouldShowEffortCallout(model: string): boolean {
     return false;
   }
 
-  // Pro users already had medium default before this PR. Show the new copy,
-  // but skip if they already saw the v1 dialog — no point nagging twice.
+  // Reuse the v1 dismissal bit so users who already dismissed the earlier
+  // effort guidance do not get prompted again.
   if (isProSubscriber()) {
     if (config.effortCalloutDismissed) {
       markV2Dismissed();
@@ -243,9 +245,6 @@ export function shouldShowEffortCallout(model: string): boolean {
     return getOpusDefaultEffortConfig().enabled;
   }
 
-  // Max/Team are the target of the tengu_grey_step2 config.
-  // Don't mark dismissed when config is disabled — they should see the dialog
-  // once it's enabled for them.
   if (isMaxSubscriber() || isTeamSubscriber()) {
     return getOpusDefaultEffortConfig().enabled;
   }

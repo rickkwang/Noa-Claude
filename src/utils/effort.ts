@@ -1,10 +1,8 @@
 // @ts-nocheck
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
-import { isUltrathinkEnabled } from './thinking.js'
 import { getInitialSettings } from './settings/settings.js'
-import { isProSubscriber, isMaxSubscriber, isTeamSubscriber } from './auth.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from 'src/services/analytics/growthbook.js'
-import { getAPIProvider } from './model/providers.js'
+import { getAPIProvider, isFirstPartyAnthropicBaseUrl } from './model/providers.js'
 import { get3PModelCapabilityOverride } from './model/modelSupportOverrides.js'
 import { isEnvTruthy } from './envUtils.js'
 import type { EffortLevel } from 'src/entrypoints/sdk/runtimeTypes.js'
@@ -27,14 +25,23 @@ export function modelSupportsEffort(model: string): boolean {
     return true
   }
   const supported3P = get3PModelCapabilityOverride(model, 'effort')
+  const supported3PMaxEffort = get3PModelCapabilityOverride(model, 'max_effort')
+  if (supported3PMaxEffort === true) {
+    return true
+  }
   if (supported3P !== undefined) {
     return supported3P
   }
-  // Supported by a subset of Claude 4 models
+  const provider = getAPIProvider()
+  const directFirstParty =
+    provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()
+
+  // Supported by a subset of Claude 4 models on direct Anthropic API and Foundry.
   if (
-    m.includes('opus-4-6') ||
-    m.includes('opus-4-7') ||
-    m.includes('sonnet-4-6')
+    (directFirstParty || provider === 'foundry') &&
+    (m.includes('opus-4-6') ||
+      m.includes('opus-4-7') ||
+      m.includes('sonnet-4-6'))
   ) {
     return true
   }
@@ -47,10 +54,9 @@ export function modelSupportsEffort(model: string): boolean {
   // the model launch DRI and research. This is a sensitive setting that can
   // greatly affect model quality and bashing.
 
-  // Default to true for unknown model strings on 1P.
-  // Do not default to true for 3P as they have different formats for their
-  // model strings (ex. anthropics/claude-code#30795)
-  return getAPIProvider() === 'firstParty'
+  // Default to true for unknown model strings only on direct 1P. Do not default
+  // to true for 3P or ANTHROPIC_BASE_URL proxies as they may reject output_config.
+  return directFirstParty
 }
 
 // @[MODEL LAUNCH]: Add the new model to the allowlist if it supports 'max' effort.
@@ -60,9 +66,13 @@ export function modelSupportsMaxEffort(model: string): boolean {
   if (supported3P !== undefined) {
     return supported3P
   }
+  const provider = getAPIProvider()
+  const directFirstParty =
+    provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()
   if (
-    model.toLowerCase().includes('opus-4-6') ||
-    model.toLowerCase().includes('opus-4-7')
+    (directFirstParty || provider === 'foundry') &&
+    (model.toLowerCase().includes('opus-4-6') ||
+      model.toLowerCase().includes('opus-4-7'))
   ) {
     return true
   }
@@ -267,9 +277,9 @@ export type OpusDefaultEffortConfig = {
 
 const OPUS_DEFAULT_EFFORT_CONFIG_DEFAULT: OpusDefaultEffortConfig = {
   enabled: true,
-  dialogTitle: 'We recommend medium effort for Opus',
+  dialogTitle: 'Choose the default effort for Opus',
   dialogDescription:
-    'Effort determines how long Claude thinks for when completing your task. We recommend medium effort for most tasks to balance speed and intelligence and maximize rate limits. Use ultrathink to trigger high effort when needed.',
+    'Effort determines how long Claude thinks for when completing your task. Opus 4.7 defaults to max effort for the strongest reasoning. You can lower it when you want faster responses or lower usage.',
 }
 
 export function getOpusDefaultEffortConfig(): OpusDefaultEffortConfig {
@@ -312,26 +322,18 @@ export function getDefaultEffortForModel(
   // the model launch DRI and research. Default effort is a sensitive setting
   // that can greatly affect model quality and bashing.
 
-  // Default effort on Opus 4.6+ to medium for Pro.
-  // Max/Team also get medium when the tengu_grey_step2 config is enabled.
+  // External Opus 4.7 defaults to max only on providers known to support it,
+  // or when a 3P provider explicitly advertises max_effort.
+  const provider = getAPIProvider()
+  const maxEffortOverride = get3PModelCapabilityOverride(model, 'max_effort')
   if (
-    model.toLowerCase().includes('opus-4-6') ||
-    model.toLowerCase().includes('opus-4-7')
+    model.toLowerCase().includes('opus-4-7') &&
+    ((provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()) ||
+      provider === 'foundry' ||
+      maxEffortOverride === true) &&
+    modelSupportsMaxEffort(model)
   ) {
-    if (isProSubscriber()) {
-      return 'medium'
-    }
-    if (
-      getOpusDefaultEffortConfig().enabled &&
-      (isMaxSubscriber() || isTeamSubscriber())
-    ) {
-      return 'medium'
-    }
-  }
-
-  // When ultrathink feature is on, default effort to medium (ultrathink bumps to high)
-  if (isUltrathinkEnabled() && modelSupportsEffort(model)) {
-    return 'medium'
+    return 'max'
   }
 
   // Fallback to undefined, which means we don't set an effort level. This

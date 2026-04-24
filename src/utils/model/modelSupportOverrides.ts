@@ -1,6 +1,9 @@
 // @ts-nocheck
 import memoize from 'lodash-es/memoize.js'
-import { getAPIProvider } from './providers.js'
+import {
+  getAPIProvider,
+  isThirdPartyAnthropicCompatibleProvider,
+} from './providers.js'
 
 export type ModelCapabilityOverride =
   | 'effort'
@@ -30,7 +33,10 @@ const TIERS = [
  */
 export const get3PModelCapabilityOverride = memoize(
   (model: string, capability: ModelCapabilityOverride): boolean | undefined => {
-    if (getAPIProvider() === 'firstParty') {
+    if (
+      getAPIProvider() === 'firstParty' &&
+      !isThirdPartyAnthropicCompatibleProvider()
+    ) {
       return undefined
     }
     const m = model.toLowerCase()
@@ -47,5 +53,17 @@ export const get3PModelCapabilityOverride = memoize(
     }
     return undefined
   },
-  (model, capability) => `${model.toLowerCase()}:${capability}`,
+  (model, capability) =>
+    [
+      model.toLowerCase(),
+      capability,
+      getAPIProvider(),
+      process.env.ANTHROPIC_BASE_URL ?? '',
+      process.env.ANTHROPIC_DEFAULT_OPUS_MODEL ?? '',
+      process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES ?? '',
+      process.env.ANTHROPIC_DEFAULT_SONNET_MODEL ?? '',
+      process.env.ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES ?? '',
+      process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL ?? '',
+      process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES ?? '',
+    ].join(':'),
 )

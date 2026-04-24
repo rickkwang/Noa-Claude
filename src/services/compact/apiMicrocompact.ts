@@ -77,9 +77,8 @@ export function getAPIContextManagement(options?: {
 
   // Preserve thinking blocks in previous assistant turns. Skip when
   // redact-thinking is active — redacted blocks have no model-visible content.
-  // When clearAllThinking is set (>1h idle = cache miss), keep only the last
-  // thinking turn — the API schema requires value >= 1, and omitting the edit
-  // falls back to the model-policy default (often "all"), which wouldn't clear.
+  // clearAllThinking is a caller-controlled escape hatch; the default path
+  // keeps all thinking turns to avoid degrading continuity.
   if (hasThinking && !isRedactThinkingActive) {
     strategies.push({
       type: 'clear_thinking_20251015',

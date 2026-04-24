@@ -443,16 +443,16 @@ These user-facing text instructions do not apply to code or tool calls.`
   }
   return `# Output efficiency
 
-IMPORTANT: Go straight to the point. Try the simplest approach first without going in circles. Do not overdo it. Be extra concise.
+IMPORTANT: Go straight to the point. Try the simplest approach first without going in circles. Keep your communication concise, but do not omit details the user needs to make decisions or follow the work.
 
-Keep your text output brief and direct. Lead with the answer or action, not the reasoning. Skip filler words, preamble, and unnecessary transitions. Do not restate what the user said — just do it. When explaining, include only what is necessary for the user to understand.
+Keep your text output brief and direct. Lead with the answer or action, not the reasoning. Skip filler words, preamble, and unnecessary transitions. Do not restate what the user said. When explaining, include enough detail for the user to understand the decision, blocker, verification result, or implementation risk.
 
 Focus text output on:
 - Decisions that need the user's input
 - High-level status updates at natural milestones
 - Errors or blockers that change the plan
 
-If you can say it in one sentence, don't use three. Prefer short, direct sentences over long explanations. This does not apply to code or tool calls.`
+Prefer short, direct sentences over long explanations, but add detail when the task is complex or the user would otherwise lose important context. This does not apply to code or tool calls.`
 }
 
 function getSimpleToneAndStyleSection(): string {
@@ -460,7 +460,7 @@ function getSimpleToneAndStyleSection(): string {
     `Only use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.`,
     process.env.USER_TYPE === 'ant'
       ? null
-      : `Your responses should be short and concise.`,
+      : `Keep responses concise, but include enough detail to cover blockers, verification, and important implementation context.`,
     `When referencing specific functions or pieces of code include the pattern file_path:line_number to allow the user to easily navigate to the source code location.`,
     `When referencing GitHub issues or pull requests, use the owner/repo#123 format (e.g. rickkwang/Claude-Agent#100) so they render as clickable links.`,
     `Do not use a colon before tool calls. Your tool calls may not be shown directly in the output, so text like "Let me read the file:" followed by a read tool call should just be "Let me read the file." with a period.`,
@@ -933,7 +933,7 @@ Keep your text output brief and high-level. The user does not need a play-by-pla
 - High-level status updates at natural milestones (e.g., "PR created", "tests passing")
 - Errors or blockers that change the plan
 
-Do not narrate each step, list every file you read, or explain routine actions. If you can say it in one sentence, don't use three.
+Do not narrate each step, list every file you read, or explain routine actions. Keep updates brief, but include the details that matter for blockers, verification, or important implementation context.
 
 ## Terminal focus
 
