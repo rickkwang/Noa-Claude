@@ -1,5 +1,13 @@
 # Release Notes
 
+## 1.0.3
+
+- Fixed plan mode state inconsistency: `/plan open` and `/plan <description>` now work regardless of current mode.
+- Fixed MCP OAuth error handling when auth server returns non-JSON (captive portals, proxy auth pages).
+- Fixed Windows CRLF paste handling in prompt input.
+- Improved command suggestion highlighting in autocomplete.
+- Refactored SkillsMenu to standard React patterns (removed React compiler runtime dependency).
+
 ## 1.0.2
 
 - Unified `/status`, `/config`, `/usage`, and `/stats` onto the new status panel, with corrected tab navigation and layout.
