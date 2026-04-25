@@ -1,13 +1,17 @@
 // @ts-nocheck
 import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
+import { useEffect, useState } from 'react';
 import { useMainLoopModel } from '../../hooks/useMainLoopModel.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from '../../services/analytics/index.js';
 import { useAppState, useSetAppState } from '../../state/AppState.js';
 import type { LocalJSXCommandOnDone } from '../../types/command.js';
-import { type EffortValue, getDisplayedEffortLevel, getEffortEnvOverride, getEffortValueDescription, isEffortLevel, modelSupportsEffort, modelSupportsMaxEffort, toPersistableEffort } from '../../utils/effort.js';
+import { type EffortValue, getDisplayedEffortLevel, getEffortEnvOverride, getEffortValueDescription, isEffortLevel, modelSupportsEffort, modelSupportsMaxEffort, modelSupportsXhighEffort, toPersistableEffort } from '../../utils/effort.js';
 import { getMainLoopModel } from '../../utils/model/model.js';
 import { updateSettingsForSource } from '../../utils/settings/settings.js';
+import { Box, Text, useInput } from '../../ink.js';
+import { useTerminalSize } from '../../hooks/useTerminalSize.js';
+import { getRainbowColor } from '../../utils/thinking.js';
 const COMMON_HELP_ARGS = ['help', '-h', '--help'];
 type EffortCommandResult = {
   message: string;
@@ -24,6 +28,11 @@ function setEffortValue(effortValue: EffortValue, model?: string): EffortCommand
   if (model !== undefined && effortValue === 'max' && !modelSupportsMaxEffort(model)) {
     return {
       message: `Max effort is not supported for current model/provider (${model}); use high instead`
+    };
+  }
+  if (model !== undefined && effortValue === 'xhigh' && !modelSupportsXhighEffort(model)) {
+    return {
+      message: `xhigh effort is not supported for current model/provider (${model}); use high or max instead`
     };
   }
   const persistable = toPersistableEffort(effortValue);
@@ -123,7 +132,7 @@ export function executeEffort(args: string, model?: string): EffortCommandResult
   }
   if (!isEffortLevel(normalized)) {
     return {
-      message: `Invalid argument: ${args}. Valid options are: low, medium, high, max, auto`
+      message: `Invalid argument: ${args}. Valid options are: low, medium, high, xhigh, max, auto`
     };
   }
   return setEffortValue(normalized, model);
@@ -180,14 +189,130 @@ function ApplyEffortAndClose(t0) {
   React.useEffect(t1, t2);
   return null;
 }
+const SLIDER_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+const SEGMENT_WIDTH = 11;
+
+type SliderLevel = (typeof SLIDER_LEVELS)[number];
+
+function useShimmerOffset(active: boolean): number {
+  const [offset, setOffset] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setOffset(o => o + 1), 120);
+    return () => clearInterval(id);
+  }, [active]);
+  return offset;
+}
+
+function RainbowText({ text, shimmer, offset, bold = false }: { text: string; shimmer: boolean; offset: number; bold?: boolean }): React.ReactNode {
+  return (
+    <Text bold={bold}>
+      {[...text].map((ch, i) => (
+        <Text key={i} color={getRainbowColor(i + offset, shimmer) as any} bold={bold}>
+          {ch}
+        </Text>
+      ))}
+    </Text>
+  );
+}
+
+function LevelLabel({ level, selected, shimmerOffset }: { level: SliderLevel; selected: boolean; shimmerOffset: number }): React.ReactNode {
+  if (!selected) return <Text dimColor>{level}</Text>;
+  if (level === 'xhigh') return <RainbowText text={level} shimmer={true} offset={shimmerOffset} bold />;
+  if (level === 'max') return <RainbowText text={level} shimmer={false} offset={shimmerOffset} bold />;
+  // Color values must use the 'ansi:' prefix in this fork's Color type.
+  const colorMap: Record<string, string> = {
+    low: 'ansi:yellowBright',
+    medium: 'ansi:greenBright',
+    high: 'ansi:magentaBright',
+  };
+  return (
+    <Text color={colorMap[level] as any} bold>
+      {level}
+    </Text>
+  );
+}
+
+function EffortSlider({ onDone, model }: { onDone: LocalJSXCommandOnDone; model: string }): React.ReactNode {
+  const currentEffort = useAppState((s: any) => s.effortValue);
+  const setAppState = useSetAppState();
+  const { columns } = useTerminalSize();
+
+  const initialIdx = (() => {
+    if (typeof currentEffort === 'string') {
+      const i = SLIDER_LEVELS.indexOf(currentEffort as any);
+      if (i !== -1) return i;
+    }
+    return 1;
+  })();
+
+  const [selectedIdx, setSelectedIdx] = useState(initialIdx);
+  const selectedLevel = SLIDER_LEVELS[selectedIdx];
+  const shimmerActive = selectedLevel === 'xhigh' || selectedLevel === 'max';
+  const shimmerOffset = useShimmerOffset(shimmerActive);
+
+  useInput((_input: string, key: any) => {
+    if (key.leftArrow) {
+      setSelectedIdx((i: number) => Math.max(0, i - 1));
+    } else if (key.rightArrow) {
+      setSelectedIdx((i: number) => Math.min(SLIDER_LEVELS.length - 1, i + 1));
+    } else if (key.return) {
+      const level = SLIDER_LEVELS[selectedIdx];
+      const result = setEffortValue(level, model);
+      if (result.effortUpdate) {
+        setAppState((prev: any) => ({ ...prev, effortValue: result.effortUpdate!.value }));
+      }
+      onDone(result.message);
+    } else if (key.escape) {
+      onDone('Effort unchanged', { display: 'system' } as any);
+    }
+  });
+
+  // Labels are left-aligned in fixed-width slots (SEGMENT_WIDTH). The line
+  // spans from the start of the first label to the end of the last label, and
+  // the triangle sits at the center of the selected label's text.
+  const lastLabel = SLIDER_LEVELS[SLIDER_LEVELS.length - 1];
+  const sliderWidth = (SLIDER_LEVELS.length - 1) * SEGMENT_WIDTH + lastLabel.length;
+  const trianglePos = selectedIdx * SEGMENT_WIDTH + Math.floor((SLIDER_LEVELS[selectedIdx].length - 1) / 2);
+  const line = '─'.repeat(trianglePos) + '▲' + '─'.repeat(sliderWidth - trianglePos - 1);
+  const leftPad = Math.max(0, Math.floor((columns - sliderWidth) / 2));
+
+  return (
+    <Box flexDirection="column" paddingTop={1} paddingBottom={1}>
+      <Box flexDirection="column" paddingLeft={leftPad}>
+        <Box flexDirection="row" width={sliderWidth} justifyContent="space-between">
+          <Text dimColor>Speed</Text>
+          <Text dimColor>Intelligence</Text>
+        </Box>
+        <Text dimColor>{line}</Text>
+        <Box flexDirection="row">
+          {SLIDER_LEVELS.map((level, i) => {
+            const isLast = i === SLIDER_LEVELS.length - 1;
+            const trailing = isLast ? 0 : SEGMENT_WIDTH - level.length;
+            return (
+              <React.Fragment key={level}>
+                <LevelLabel level={level} selected={i === selectedIdx} shimmerOffset={shimmerOffset} />
+                {trailing > 0 && <Text>{' '.repeat(trailing)}</Text>}
+              </React.Fragment>
+            );
+          })}
+        </Box>
+      </Box>
+      <Box marginTop={1}>
+        <Text dimColor>{'←/→to change effort · Enter to confirm'}</Text>
+      </Box>
+    </Box>
+  );
+}
+
 export async function call(onDone: LocalJSXCommandOnDone, _context: unknown, args?: string): Promise<React.ReactNode> {
   args = args?.trim() || '';
   if (COMMON_HELP_ARGS.includes(args)) {
-    onDone('Usage: /effort [low|medium|high|max|auto]\n\nEffort levels:\n- low: Quick, straightforward implementation\n- medium: Balanced approach with standard testing\n- high: Comprehensive implementation with extensive testing\n- max: Maximum capability with deepest reasoning (Opus 4.6+)\n- auto: Use the default effort level for your model');
+    onDone('Usage: /effort [low|medium|high|xhigh|max|auto]\n\nEffort levels:\n- low: Quick, straightforward implementation\n- medium: Balanced approach with standard testing\n- high: Comprehensive implementation with extensive testing\n- xhigh: Extended capability for long-horizon agentic work (Opus 4.7+)\n- max: Maximum capability with deepest reasoning (Opus 4.6+)\n- auto: Use the default effort level for your model');
     return;
   }
   if (!args || args === 'current' || args === 'status') {
-    return <ShowCurrentEffort onDone={onDone} />;
+    return <EffortSlider onDone={onDone} model={getMainLoopModel()} />;
   }
   const result = executeEffort(args, getMainLoopModel());
   return <ApplyEffortAndClose result={result} onDone={onDone} />;

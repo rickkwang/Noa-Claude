@@ -13,6 +13,7 @@ export const EFFORT_LEVELS = [
   'low',
   'medium',
   'high',
+  'xhigh',
   'max',
 ] as const satisfies readonly EffortLevel[]
 
@@ -40,6 +41,28 @@ export function modelSupportsMaxEffort(model: string): boolean {
     (directFirstParty || provider === 'foundry') &&
     (model.toLowerCase().includes('opus-4-6') ||
       model.toLowerCase().includes('opus-4-7'))
+  ) {
+    return true
+  }
+  if (process.env.USER_TYPE === 'ant' && resolveAntModel(model)) {
+    return true
+  }
+  return false
+}
+
+// @[MODEL LAUNCH]: Add the new model to the allowlist if it supports 'xhigh' effort.
+// Per API docs, 'xhigh' is Opus 4.7+ only — earlier models return an error.
+export function modelSupportsXhighEffort(model: string): boolean {
+  const supported3P = get3PModelCapabilityOverride(model, 'xhigh_effort')
+  if (supported3P !== undefined) {
+    return supported3P
+  }
+  const provider = getAPIProvider()
+  const directFirstParty =
+    provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()
+  if (
+    (directFirstParty || provider === 'foundry') &&
+    model.toLowerCase().includes('opus-4-7')
   ) {
     return true
   }
@@ -80,7 +103,12 @@ export function parseEffortValue(value: unknown): EffortValue | undefined {
 export function toPersistableEffort(
   value: EffortValue | undefined,
 ): EffortLevel | undefined {
-  if (value === 'low' || value === 'medium' || value === 'high') {
+  if (
+    value === 'low' ||
+    value === 'medium' ||
+    value === 'high' ||
+    value === 'xhigh'
+  ) {
     return value
   }
   if (value === 'max' && process.env.USER_TYPE === 'ant') {
@@ -146,6 +174,10 @@ export function resolveAppliedEffort(
     envOverride ?? appStateEffortValue ?? getDefaultEffortForModel(model)
   // API rejects 'max' on non-Opus-4.6 models — downgrade to 'high'.
   if (resolved === 'max' && !modelSupportsMaxEffort(model)) {
+    return 'high'
+  }
+  // API rejects 'xhigh' on non-Opus-4.7 models — downgrade to 'high'.
+  if (resolved === 'xhigh' && !modelSupportsXhighEffort(model)) {
     return 'high'
   }
   return resolved
@@ -214,6 +246,8 @@ export function getEffortLevelDescription(level: EffortLevel): string {
       return 'Balanced approach with standard implementation and testing'
     case 'high':
       return 'Comprehensive implementation with extensive testing and documentation'
+    case 'xhigh':
+      return 'Extended capability for long-horizon agentic work (Opus 4.7+)'
     case 'max':
       return 'Maximum capability with deepest reasoning (Opus 4.6+)'
   }
