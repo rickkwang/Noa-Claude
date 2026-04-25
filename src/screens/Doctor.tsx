@@ -6,6 +6,7 @@ import React, { Suspense, use, useCallback, useEffect, useMemo, useState } from 
 import { KeybindingWarnings } from 'src/components/KeybindingWarnings.js';
 import { McpParsingWarnings } from 'src/components/mcp/McpParsingWarnings.js';
 import { getModelMaxOutputTokens } from 'src/utils/context.js';
+import { getMainLoopModel } from '../utils/model/model.js';
 import { getClaudeConfigHomeDir } from 'src/utils/envUtils.js';
 import type { SettingSource } from 'src/utils/settings/constants.js';
 import { getOriginalCwd } from '../bootstrap/state.js';
@@ -153,7 +154,7 @@ export function Doctor(t0) {
       upperLimit: TASK_MAX_OUTPUT_UPPER_LIMIT
     }, {
       name: "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
-      ...getModelMaxOutputTokens("claude-opus-4-6")
+      ...getModelMaxOutputTokens(getMainLoopModel())
     }];
     t4 = envVars.map(_temp8).filter(_temp9);
     $[5] = t4;

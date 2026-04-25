@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { getAnthropicClient } from '../../services/api/client.js'
+import { getMainLoopModel } from '../../utils/model/model.js'
 import type { LocalCommandCall } from '../../types/command.js'
 
 // Large system prompt (~6000 chars) to cross the 1024 token cache threshold
@@ -61,11 +62,12 @@ async function probeCache(): Promise<{ cold: ProbeResult; warm: ProbeResult }> {
   })
 
   const systemPrompt = LARGE_SYSTEM_PROMPT
+  const model = getMainLoopModel()
 
   // Cold call
   const coldStart = Date.now()
   const coldResponse = await client.messages.create({
-    model: 'claude-sonnet-4-7-20250514',
+    model,
     max_tokens: 100,
     system: systemPrompt,
     messages: [{ role: 'user', content: 'Say "test" if you can hear me.' }],
@@ -85,7 +87,7 @@ async function probeCache(): Promise<{ cold: ProbeResult; warm: ProbeResult }> {
   // Warm call (same prompt, should hit cache)
   const warmStart = Date.now()
   const warmResponse = await client.messages.create({
-    model: 'claude-sonnet-4-7-20250514',
+    model,
     max_tokens: 100,
     system: systemPrompt,
     messages: [{ role: 'user', content: 'Say "test" if you can hear me.' }],

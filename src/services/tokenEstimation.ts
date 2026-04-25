@@ -23,6 +23,7 @@ import {
   normalizeModelStringForAPI,
 } from '../utils/model/model.js'
 import { jsonStringify } from '../utils/slowOperations.js'
+import { modelSupportsAdaptiveThinking } from '../utils/thinking.js'
 import { isToolReferenceBlock } from '../utils/toolSearch.js'
 import { getAPIMetadata, getExtraBodyParams } from './api/claude.js'
 import { getAnthropicClient } from './api/client.js'
@@ -180,10 +181,12 @@ export async function countMessagesTokensWithAPI(
         ...(filteredBetas.length > 0 && { betas: filteredBetas }),
         // Enable thinking if messages contain thinking blocks
         ...(containsThinking && {
-          thinking: {
-            type: 'enabled',
-            budget_tokens: TOKEN_COUNT_THINKING_BUDGET,
-          },
+          thinking: modelSupportsAdaptiveThinking(model)
+            ? { type: 'adaptive' }
+            : {
+                type: 'enabled',
+                budget_tokens: TOKEN_COUNT_THINKING_BUDGET,
+              },
         }),
       })
 
@@ -310,10 +313,12 @@ export async function countTokensViaHaikuFallback(
     ...getExtraBodyParams(),
     // Enable thinking if messages contain thinking blocks
     ...(containsThinking && {
-      thinking: {
-        type: 'enabled',
-        budget_tokens: TOKEN_COUNT_THINKING_BUDGET,
-      },
+      thinking: modelSupportsAdaptiveThinking(model)
+        ? { type: 'adaptive' }
+        : {
+            type: 'enabled',
+            budget_tokens: TOKEN_COUNT_THINKING_BUDGET,
+          },
     }),
   })
 

@@ -10,6 +10,7 @@
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { getAPIProvider } from '../utils/model/providers.js'
+import { getDefaultSonnetModel } from '../utils/model/model.js'
 import { getClaudeConfigHomeDir } from '../utils/envUtils.js'
 import { logDebugDiagnosticWarn } from '../utils/debugDiagnostics.js'
 import {
@@ -101,21 +102,21 @@ function detectProvider(): { name: string; model: string; baseUrl: string; isLoc
     case 'bedrock':
       return {
         name: 'Amazon Bedrock',
-        model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
+        model: process.env.ANTHROPIC_MODEL || getDefaultSonnetModel(),
         baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://bedrock.amazonaws.com',
         isLocal: false,
       }
     case 'vertex':
       return {
         name: 'Google Vertex AI',
-        model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
+        model: process.env.ANTHROPIC_MODEL || getDefaultSonnetModel(),
         baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://vertexai.googleapis.com',
         isLocal: false,
       }
     case 'foundry':
       return {
         name: 'Microsoft Foundry',
-        model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
+        model: process.env.ANTHROPIC_MODEL || getDefaultSonnetModel(),
         baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://foundry.ai.azure.com',
         isLocal: false,
       }
@@ -134,7 +135,7 @@ function detectProvider(): { name: string; model: string; baseUrl: string; isLoc
     }
     case 'firstParty':
     default: {
-      const modelSetting = process.env.ANTHROPIC_MODEL || process.env.CLAUDE_MODEL || 'claude-sonnet-4-6'
+      const modelSetting = process.env.ANTHROPIC_MODEL || process.env.CLAUDE_MODEL || getDefaultSonnetModel()
       return {
         name: 'Anthropic',
         model: modelSetting,

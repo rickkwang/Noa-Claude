@@ -18,6 +18,7 @@ import { getAnthropicClient } from '../services/api/client.js'
 import { getModelBetas, modelSupportsStructuredOutputs } from './betas.js'
 import { computeFingerprint } from './fingerprint.js'
 import { normalizeModelStringForAPI } from './model/model.js'
+import { modelSupportsAdaptiveThinking } from './thinking.js'
 
 type MessageParam = Anthropic.MessageParam
 type TextBlockParam = Anthropic.TextBlockParam
@@ -171,10 +172,12 @@ export async function sideQuery(opts: SideQueryOptions): Promise<BetaMessage> {
   if (thinking === false) {
     thinkingConfig = { type: 'disabled' }
   } else if (thinking !== undefined) {
-    thinkingConfig = {
-      type: 'enabled',
-      budget_tokens: Math.min(thinking, max_tokens - 1),
-    }
+    thinkingConfig = modelSupportsAdaptiveThinking(model)
+      ? { type: 'adaptive' }
+      : {
+          type: 'enabled',
+          budget_tokens: Math.min(thinking, max_tokens - 1),
+        }
   }
 
   const normalizedModel = normalizeModelStringForAPI(model)
