@@ -49,7 +49,7 @@ function cycleMode(current: StartupBannerMode | null): StartupBannerMode {
   return STARTUP_BANNER_MODES[(idx + 1) % STARTUP_BANNER_MODES.length]
 }
 
-export const call = async (args: string): Promise<{ type: 'text'; value: string }> => {
+export const call = async (args: string, context?: { setAppState?: (updater: (prev: any) => any) => void }): Promise<{ type: 'text'; value: string }> => {
   try {
     const arg = args?.trim().toLowerCase() ?? ''
 
@@ -70,6 +70,10 @@ export const call = async (args: string): Promise<{ type: 'text'; value: string 
     }
 
     writeMode(newMode)
+    context?.setAppState?.(prev => ({
+      ...prev,
+      authVersion: prev.authVersion + 1,
+    }))
 
     let message: string
     message =

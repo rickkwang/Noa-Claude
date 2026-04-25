@@ -60,7 +60,7 @@ import type { JumpHandle } from './VirtualMessageList.js';
 //   'claude' - show gradient banner only (no LogoV2)
 //   'clawd'  - show LogoV2 only
 const LogoHeader = React.memo(function LogoHeader(t0) {
-  const $ = _c(5);
+  const $ = _c(6);
   const {
     agentDefinitions,
   } = t0;
@@ -85,11 +85,12 @@ const LogoHeader = React.memo(function LogoHeader(t0) {
   }
 
   let t2;
-  if ($[2] !== agentDefinitions || $[3] !== authVersion) {
+  if ($[2] !== agentDefinitions || $[3] !== authVersion || $[5] !== cacheKey) {
     t2 = <OffscreenFreeze><Box flexDirection="column" gap={1}>{t1}{showLogoV2 && <LogoV2 />}<React.Suspense fallback={null}><StatusNotices agentDefinitions={agentDefinitions} /></React.Suspense></Box></OffscreenFreeze>;
     $[2] = agentDefinitions;
     $[3] = authVersion;
     $[4] = t2;
+    $[5] = cacheKey;
   } else {
     t2 = $[4];
   }
