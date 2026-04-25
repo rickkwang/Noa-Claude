@@ -252,7 +252,9 @@ function EffortSlider({ onDone, model }: { onDone: LocalJSXCommandOnDone; model:
   const shimmerOffset = useShimmerOffset(shimmerActive);
 
   useInput((_input: string, key: any) => {
-    if (key.leftArrow) {
+    if (key.ctrl && key.c) {
+      onDone('Effort unchanged', { display: 'system' } as any);
+    } else if (key.leftArrow) {
       setSelectedIdx((i: number) => Math.max(0, i - 1));
     } else if (key.rightArrow) {
       setSelectedIdx((i: number) => Math.min(SLIDER_LEVELS.length - 1, i + 1));
