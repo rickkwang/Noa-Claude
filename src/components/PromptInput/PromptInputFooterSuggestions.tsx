@@ -14,6 +14,7 @@ export type SuggestionItem = {
   description?: string;
   metadata?: unknown;
   color?: keyof Theme;
+  matchedPrefix?: string;
 };
 export type SuggestionType = 'command' | 'file' | 'directory' | 'agent' | 'shell' | 'custom-title' | 'slack-channel' | 'none';
 export const OVERLAY_MAX_ITEMS = 5;
@@ -158,47 +159,36 @@ const SuggestionItemRow = memo(function SuggestionItemRow(t0) {
     t1 = $[21];
   }
   const truncatedDescription = t1;
-  let t2;
-  if ($[22] !== paddedDisplayText || $[23] !== shouldDim || $[24] !== textColor_0) {
-    t2 = <Text color={textColor_0} dimColor={shouldDim}>{paddedDisplayText}</Text>;
-    $[22] = paddedDisplayText;
-    $[23] = shouldDim;
-    $[24] = textColor_0;
-    $[25] = t2;
-  } else {
-    t2 = $[25];
-  }
-  let t3;
-  if ($[26] !== tagText) {
-    t3 = tagText ? <Text dimColor={true}>{tagText}</Text> : null;
-    $[26] = tagText;
-    $[27] = t3;
-  } else {
-    t3 = $[27];
-  }
-  const t4 = isSelected ? "suggestion" : undefined;
-  const t5 = !isSelected;
-  let t6;
-  if ($[28] !== t4 || $[29] !== t5 || $[30] !== truncatedDescription) {
-    t6 = <Text color={t4} dimColor={t5}>{truncatedDescription}</Text>;
-    $[28] = t4;
-    $[29] = t5;
-    $[30] = truncatedDescription;
-    $[31] = t6;
-  } else {
-    t6 = $[31];
-  }
-  let t7;
-  if ($[32] !== t2 || $[33] !== t3 || $[34] !== t6) {
-    t7 = <Text wrap="truncate">{t2}{t3}{t6}</Text>;
-    $[32] = t2;
-    $[33] = t3;
-    $[34] = t6;
-    $[35] = t7;
-  } else {
-    t7 = $[35];
-  }
-  return t7;
+  const highlightQuery = item.matchedPrefix;
+  const renderHighlighted = (text, color, dim) => {
+    if (!highlightQuery || !text) {
+      return <Text color={color} dimColor={dim}>{text}</Text>;
+    }
+    const q = highlightQuery.toLowerCase();
+    const lower = text.toLowerCase();
+    const parts = [];
+    let i = 0;
+    let key = 0;
+    while (i < text.length) {
+      const idx = lower.indexOf(q, i);
+      if (idx === -1) {
+        parts.push(<Text key={key++} color={color} dimColor={dim}>{text.slice(i)}</Text>);
+        break;
+      }
+      if (idx > i) {
+        parts.push(<Text key={key++} color={color} dimColor={dim}>{text.slice(i, idx)}</Text>);
+      }
+      parts.push(<Text key={key++} color="suggestion">{text.slice(idx, idx + q.length)}</Text>);
+      i = idx + q.length;
+    }
+    return <>{parts}</>;
+  };
+  const nameNode = <Text wrap="truncate">{renderHighlighted(paddedDisplayText, textColor_0, shouldDim)}</Text>;
+  const tagNode = tagText ? <Text dimColor={true}>{tagText}</Text> : null;
+  const descColor = isSelected ? "suggestion" : undefined;
+  const descDim = !isSelected;
+  const descNode = renderHighlighted(truncatedDescription, descColor, descDim);
+  return <Text wrap="truncate">{nameNode}{tagNode}{descNode}</Text>;
 });
 type Props = {
   suggestions: SuggestionItem[];

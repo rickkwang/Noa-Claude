@@ -1198,7 +1198,7 @@ function PromptInput({
   function onTextPaste(rawText: string) {
     pendingSpaceAfterPillRef.current = false;
     // Clean up pasted text - strip ANSI escape codes and normalize line endings and tabs
-    let text = stripAnsi(rawText).replace(/\r/g, '\n').replaceAll('\t', '    ');
+    let text = stripAnsi(rawText).replace(/\r\n?/g, '\n').replaceAll('\t', '    ');
 
     // Match typed/auto-suggest: `!cmd` pasted into empty input enters bash mode.
     if (input.length === 0) {

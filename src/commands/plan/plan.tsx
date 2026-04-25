@@ -69,9 +69,12 @@ export async function call(onDone: LocalJSXCommandOnDone, context: LocalJSXComma
   } = context;
   const appState = getAppState();
   const currentMode = appState.toolPermissionContext.mode;
+  const wasInPlanMode = currentMode === 'plan';
 
-  // If not in plan mode, enable it
-  if (currentMode !== 'plan') {
+  // Step 1: enter plan mode if not already. Done once up front so every
+  // branch below sees a consistent mode regardless of how the user invoked
+  // the command.
+  if (!wasInPlanMode) {
     handlePlanModeTransition(currentMode, 'plan');
     setAppState(prev => ({
       ...prev,
@@ -81,41 +84,49 @@ export async function call(onDone: LocalJSXCommandOnDone, context: LocalJSXComma
         destination: 'session'
       })
     }));
-    const description = args.trim();
-    if (description && description !== 'open') {
-      onDone('Enabled plan mode', {
-        shouldQuery: true
-      });
-    } else {
-      onDone('Enabled plan mode');
+  }
+
+  const trimmedArgs = args.trim();
+  const argList = trimmedArgs.split(/\s+/).filter(Boolean);
+  const sub = argList[0];
+  const modePrefix = wasInPlanMode ? '' : 'Enabled plan mode. ';
+
+  // Step 2: `/plan open` — always try to open the plan file in editor.
+  if (sub === 'open' && argList.length === 1) {
+    const planPath = getPlanFilePath();
+    if (!getPlan()) {
+      onDone(`${modePrefix}No plan written yet.`);
+      return null;
     }
-    return null;
-  }
-
-  // Already in plan mode - show the current plan
-  const planContent = getPlan();
-  const planPath = getPlanFilePath();
-  if (!planContent) {
-    onDone('Already in plan mode. No plan written yet.');
-    return null;
-  }
-
-  // If user typed "/plan open", open in editor
-  const argList = args.trim().split(/\s+/);
-  if (argList[0] === 'open') {
     const result = await editFileInEditor(planPath);
     if (result.error) {
       onDone(`Failed to open plan in editor: ${result.error}`);
     } else {
-      onDone(`Opened plan in editor: ${planPath}`);
+      onDone(`${modePrefix}Opened plan in editor: ${planPath}`);
     }
+    return null;
+  }
+
+  // Step 3: `/plan <description>` — treat free text as a prompt to the model.
+  // Semantics of the command shouldn't change based on whether plan mode
+  // was already active: a description always means "plan this".
+  if (trimmedArgs.length > 0) {
+    onDone(wasInPlanMode ? 'Planning' : 'Enabled plan mode', {
+      shouldQuery: true
+    });
+    return null;
+  }
+
+  // Step 4: bare `/plan` — show the current plan.
+  const planContent = getPlan();
+  const planPath = getPlanFilePath();
+  if (!planContent) {
+    onDone(`${modePrefix}No plan written yet.`);
     return null;
   }
   const editor = getExternalEditor();
   const editorName = editor ? toIDEDisplayName(editor) : undefined;
   const display = <PlanDisplay planContent={planContent} planPath={planPath} editorName={editorName} />;
-
-  // Render to string and pass to onDone like local commands do
   const output = await renderToString(display);
   onDone(output);
   return null;

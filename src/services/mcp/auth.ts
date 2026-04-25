@@ -272,7 +272,18 @@ async function fetchAuthServerMetadata(
       headers: { Accept: 'application/json' },
     })
     if (response.ok) {
-      return OAuthMetadataSchema.parse(await response.json())
+      // Captive portals and proxy auth pages return 200 with HTML.
+      // Guard response.json() so users get a pointed error instead of a
+      // raw SyntaxError on "<!DOCTYPE ...".
+      let body: unknown
+      try {
+        body = await response.json()
+      } catch {
+        throw new Error(
+          `MCP OAuth: configured auth server metadata returned non-JSON at ${configuredMetadataUrl} (captive portal or proxy?)`,
+        )
+      }
+      return OAuthMetadataSchema.parse(body)
     }
     throw new Error(
       `HTTP ${response.status} fetching configured auth server metadata from ${configuredMetadataUrl}`,
