@@ -46,15 +46,11 @@ const launcherDebugEnabled =
   process.env.CLAUDE_CODE_LAUNCHER_DEBUG === 'true';
 
 process.on('unhandledRejection', (reason) => {
-  if (launcherDebugEnabled) {
-    console.error('Unhandled rejection:', reason);
-  }
+  console.error('Unhandled rejection:', reason);
 });
 
 process.on('uncaughtException', (error) => {
-  if (launcherDebugEnabled) {
-    console.error('Uncaught exception:', error.message, error.stack);
-  }
+  console.error('Uncaught exception:', error.message, error.stack);
 });
 
 try {

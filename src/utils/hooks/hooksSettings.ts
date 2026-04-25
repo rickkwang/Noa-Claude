@@ -109,7 +109,7 @@ export function getAllHooks(appState: AppState): IndividualHookConfig[] {
 
     // Track which settings files we've already processed to avoid duplicates
     // (e.g., when running from home directory, userSettings and projectSettings
-    // both resolve to ~/.claude/settings.json)
+    // both resolve to ~/.claude-agent/settings.json)
     const seenFiles = new Set<string>()
 
     for (const source of sources) {

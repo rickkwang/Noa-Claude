@@ -188,7 +188,7 @@ const defines: Record<string, string> = {
   'MACRO.NATIVE_PACKAGE_URL': 'undefined',
   'MACRO.FEEDBACK_CHANNEL': JSON.stringify('github'),
   'MACRO.ISSUES_EXPLAINER': JSON.stringify(
-    'This reconstructed source snapshot does not include Anthropic internal issue routing.',
+    'https://github.com/rickkwang/Claude-Agent/issues',
   ),
   'MACRO.VERSION_CHANGELOG': JSON.stringify(versionChangelog),
 }
@@ -251,6 +251,12 @@ if (code === 0) {
     .replace(/'external'\s*===\s*"ant"/g, 'true')
     .replace(/"external"\s*!==\s*'ant'/g, 'false')
     .replace(/'external'\s*!==\s*"ant"/g, 'false')
+
+  if (patched === content) {
+    console.warn(
+      'Build patch: no USER_TYPE ant/external replacements found (may already be inlined by bundler)',
+    )
+  }
 
   writeFileSync(outfile, patched + '\n' + getLauncherBootstrapCode())
   console.log(`Build complete: ${outfile}`)

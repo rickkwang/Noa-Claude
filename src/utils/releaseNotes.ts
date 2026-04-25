@@ -18,7 +18,7 @@ function getBundledChangelog(): string {
 
 /**
  * Get the path for the cached changelog file.
- * The changelog is stored at ~/.claude/cache/changelog.md
+ * The changelog is stored at ~/.claude-agent/cache/changelog.md
  */
 function getChangelogCachePath(): string {
   return join(getClaudeConfigHomeDir(), 'cache', 'changelog.md')

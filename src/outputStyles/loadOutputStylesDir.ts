@@ -22,7 +22,7 @@ import { clearPluginOutputStyleCache } from '../utils/plugins/loadPluginOutputSt
  * Structure:
  * - Project .claude-agent/output-styles/*.md -> project styles
  * - User ~/.claude-agent/output-styles/*.md -> user styles
- * - Legacy .claude/output-styles/*.md is read for compatibility
+ * - Legacy .claude-agent/output-styles/*.md is read for compatibility
  *
  * @param cwd Current working directory for project directory traversal
  */

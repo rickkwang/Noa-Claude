@@ -128,7 +128,7 @@ globalThis.MACRO ??= {
 };
 
 const repoRoot = resolve(import.meta.dir, '..');
-const agentBin = resolve(repoRoot, 'bin/claude-agent.js');
+const agentBin = resolve(repoRoot, 'bin/noa.js');
 
 function fail(message, details) {
   if (details) {

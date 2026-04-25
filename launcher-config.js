@@ -2,6 +2,10 @@ import { homedir } from 'os';
 import { join } from 'path';
 import { mkdirSync, readFileSync } from 'fs';
 
+const pkg = JSON.parse(
+  readFileSync(join(import.meta.dirname, 'package.json'), 'utf-8'),
+);
+
 export const DIAGNOSTIC_ERROR_CODES = {
   CONFIG_ERROR: 'CONFIG_ERROR',
   AUTH_ERROR: 'AUTH_ERROR',
@@ -37,10 +41,10 @@ export const DEFAULT_PRODUCT_MODEL =
   process.env.CLAUDE_AGENT_DEFAULT_MODEL ?? 'MiniMax-M2.7';
 
 export const LAUNCHER_MACRO = {
-  VERSION: '1.0.2',
+  VERSION: pkg.version,
   BUILD_TIME: '2026-04-24T12:44:02.000Z',
   FEEDBACK_CHANNEL: `#${PRODUCT_NAMESPACE}`,
-  ISSUES_EXPLAINER: 'https://github.com/anthropics/claude-code/issues',
+  ISSUES_EXPLAINER: 'https://github.com/rickkwang/Claude-Agent/issues',
   PACKAGE_URL: 'claude-agent',
   NATIVE_PACKAGE_URL: 'claude-agent',
 };
