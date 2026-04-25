@@ -2,6 +2,7 @@
 import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { useEffect, useState } from 'react';
+import { useExitOnCtrlCDWithKeybindings } from '../../hooks/useExitOnCtrlCDWithKeybindings.js';
 import { useMainLoopModel } from '../../hooks/useMainLoopModel.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from '../../services/analytics/index.js';
 import { useAppState, useSetAppState } from '../../state/AppState.js';
@@ -237,6 +238,7 @@ function EffortSlider({ onDone, model }: { onDone: LocalJSXCommandOnDone; model:
   const currentEffort = useAppState((s: any) => s.effortValue);
   const setAppState = useSetAppState();
   const { columns } = useTerminalSize();
+  const exitState = useExitOnCtrlCDWithKeybindings();
 
   const initialIdx = (() => {
     if (typeof currentEffort === 'string') {
@@ -251,10 +253,8 @@ function EffortSlider({ onDone, model }: { onDone: LocalJSXCommandOnDone; model:
   const shimmerActive = selectedLevel === 'xhigh' || selectedLevel === 'max';
   const shimmerOffset = useShimmerOffset(shimmerActive);
 
-  useInput((input: string, key: any) => {
-    if (input === 'c' && key.ctrl) {
-      onDone('Effort unchanged', { display: 'system' } as any);
-    } else if (key.leftArrow) {
+  useInput((_input: string, key: any) => {
+    if (key.leftArrow) {
       setSelectedIdx((i: number) => Math.max(0, i - 1));
     } else if (key.rightArrow) {
       setSelectedIdx((i: number) => Math.min(SLIDER_LEVELS.length - 1, i + 1));
@@ -301,7 +301,11 @@ function EffortSlider({ onDone, model }: { onDone: LocalJSXCommandOnDone; model:
         </Box>
       </Box>
       <Box marginTop={1}>
-        <Text dimColor>{'←/→to change effort · Enter to confirm'}</Text>
+        <Text dimColor>
+          {exitState.pending
+            ? `Press ${exitState.keyName} again to exit`
+            : '←/→ to change effort · Enter to confirm · Esc to cancel'}
+        </Text>
       </Box>
     </Box>
   );
