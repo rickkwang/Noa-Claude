@@ -86,3 +86,11 @@ export function getTeammateModeFromSnapshot(): TeammateMode {
   // Fallback to 'auto' if somehow still null (shouldn't happen, but safe)
   return initialTeammateMode ?? 'auto'
 }
+
+/**
+ * Get the raw teammate mode snapshot (may be null if not captured yet).
+ * Used for diagnostic / debugging purposes.
+ */
+export function getTeammateModeSnapshot(): TeammateMode | null {
+  return initialTeammateMode
+}

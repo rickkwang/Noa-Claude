@@ -320,6 +320,11 @@ export function FullscreenLayout(t0) {
       if (!s || dividerY == null) {
         return false;
       }
+      // scrollToBottom() sets stickyScroll=true but doesn't update scrollTop
+      // synchronously — the Ink renderer drains it later without re-notifying
+      // subscribers. Check sticky here so notify() from scrollToBottom() hides
+      // the pill immediately instead of waiting for the renderer.
+      if (s.isSticky()) return false;
       return s.getScrollTop() + s.getPendingDelta() + s.getViewportHeight() < dividerY;
     };
     $[3] = dividerYRef;
@@ -525,7 +530,7 @@ function NewMessagesPill(t0) {
   }
   let t5;
   if ($[4] !== t3 || $[5] !== t4) {
-    t5 = <Text backgroundColor={t3} dimColor={true}>{" "}{t4}{" "}{figures.arrowDown}{" "}</Text>;
+    t5 = <Text backgroundColor={t3} color="white">{" "}{t4}{" "}{figures.arrowDown}{" "}</Text>;
     $[4] = t3;
     $[5] = t4;
     $[6] = t5;
