@@ -1521,9 +1521,22 @@ function runHeadlessStreaming(
       appState.toolPermissionContext,
       appState.mcp.tools,
     )
+    // Filter sdkTools and dynamicMcpState.tools by deny rules so that
+    // --tools / --disallowed-tools are respected even for late-connecting SDK
+    // MCP servers. Without this, uniqBy in mergeAndFilterTools keeps the
+    // unfiltered sdkTools entry (first occurrence) and silently shadows the
+    // correctly-filtered assembledTools entry, letting denied tools through.
+    const filteredSdkTools = filterToolsByDenyRules(
+      sdkTools,
+      appState.toolPermissionContext,
+    )
+    const filteredDynamicTools = filterToolsByDenyRules(
+      dynamicMcpState.tools,
+      appState.toolPermissionContext,
+    )
     let allTools = uniqBy(
       mergeAndFilterTools(
-        [...tools, ...sdkTools, ...dynamicMcpState.tools],
+        [...tools, ...filteredSdkTools, ...filteredDynamicTools],
         assembledTools,
         appState.toolPermissionContext.mode,
       ),

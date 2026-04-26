@@ -280,7 +280,7 @@ const OPUS_DEFAULT_EFFORT_CONFIG_DEFAULT: OpusDefaultEffortConfig = {
   enabled: true,
   dialogTitle: 'Choose the default effort for Opus',
   dialogDescription:
-    'Effort determines how long Claude thinks for when completing your task. Opus 4.7 defaults to max effort for the strongest reasoning. You can lower it when you want faster responses or lower usage.',
+    'Effort determines how long Claude thinks for when completing your task. Opus 4.7 defaults to high effort. You can raise it when you want stronger reasoning or lower it when you want faster responses or lower usage.',
 }
 
 export function getOpusDefaultEffortConfig(): OpusDefaultEffortConfig {
@@ -323,18 +323,16 @@ export function getDefaultEffortForModel(
   // the model launch DRI and research. Default effort is a sensitive setting
   // that can greatly affect model quality and bashing.
 
-  // External Opus 4.7 defaults to max only on providers known to support it,
-  // or when a 3P provider explicitly advertises max_effort.
+  // External Opus 4.7 defaults to high. We still gate on providers known to
+  // support effort so unknown 3P proxies keep the legacy "unset/high" path.
   const provider = getAPIProvider()
-  const maxEffortOverride = get3PModelCapabilityOverride(model, 'max_effort')
   if (
     model.toLowerCase().includes('opus-4-7') &&
     ((provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()) ||
       provider === 'foundry' ||
-      maxEffortOverride === true) &&
-    modelSupportsMaxEffort(model)
+      get3PModelCapabilityOverride(model, 'effort') === true)
   ) {
-    return 'max'
+    return 'high'
   }
 
   // Fallback to undefined, which means we don't set an effort level. This

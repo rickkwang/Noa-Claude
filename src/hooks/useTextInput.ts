@@ -330,6 +330,13 @@ export function useTextInput({
           // Return the current cursor unchanged - handleEscape manages state internally
           return cursor
         }
+      // Cmd+Left/Right (super = macOS Command key via kitty/Ghostty/WezTerm
+      // sending \x1b[1;9D/C). macOS convention: jump to line start/end.
+      // Must precede the ctrl/meta/fn word-jump cases (switch(true) first-match).
+      case key.leftArrow && key.super:
+        return () => cursor.startOfLine()
+      case key.rightArrow && key.super:
+        return () => cursor.endOfLine()
       case key.leftArrow && (key.ctrl || key.meta || key.fn):
         return () => cursor.prevWord()
       case key.rightArrow && (key.ctrl || key.meta || key.fn):

@@ -582,6 +582,47 @@ export function ScrollKeybindingHandler({
     isActive: isActive && isModal
   });
 
+  // When Shift+↑/↓ tries to extend a selection past the viewport edge, scroll
+  // the viewport by one row so the selection can grow into newly revealed
+  // content. Models drag-to-scroll: anchor tracks content (shiftAnchor), focus
+  // stays at the edge row, rows scrolling out of view are captured so
+  // getSelectedText still returns the full text. Returns true when a scroll
+  // happened (caller should stop propagation and skip moveFocus).
+  function tryScrollExtendSelection(move: 'up' | 'down'): boolean {
+    const s = scrollRef.current;
+    if (!s) return false;
+    const sel = selection.getState();
+    if (!sel?.anchor || !sel.focus) return false;
+    if (s.getPendingDelta() !== 0) return false; // wait for pending scroll to drain
+    const top = s.getViewportTop();
+    const bottom = top + s.getViewportHeight() - 1;
+    // Only apply within scrollable content — anchor outside means selection
+    // spans a non-scrolling region (header/footer); don't auto-scroll there.
+    if (sel.anchor.row < top || sel.anchor.row > bottom) return false;
+    if (move === 'up') {
+      if (sel.focus.row !== top) return false;
+      const scrollTop = s.getScrollTop();
+      if (scrollTop <= 0) return false;
+      // Rows at the bottom scroll out of view when content moves down.
+      selection.captureScrolledRows(bottom, bottom, 'below');
+      selection.shiftAnchor(1, top, bottom);
+      s.scrollBy(-1);
+      onScroll?.(false, s);
+      return true;
+    } else {
+      if (sel.focus.row !== bottom) return false;
+      const max = Math.max(0, s.getScrollHeight() - s.getViewportHeight());
+      const scrollTop = s.getScrollTop();
+      if (scrollTop >= max) return false;
+      // Rows at the top scroll out of view when content moves up.
+      selection.captureScrolledRows(top, top, 'above');
+      selection.shiftAnchor(-1, top, bottom);
+      s.scrollBy(1);
+      onScroll?.(false, s);
+      return true;
+    }
+  }
+
   // Esc clears selection; any other keystroke also clears it (matches
   // native terminal behavior where selection disappears on input).
   // Ctrl+C copies when a selection exists — needed on legacy terminals
@@ -607,6 +648,10 @@ export function ScrollKeybindingHandler({
     }
     const move = selectionFocusMoveForKey(key_0);
     if (move) {
+      if ((move === 'up' || move === 'down') && tryScrollExtendSelection(move)) {
+        event_0.stopImmediatePropagation();
+        return;
+      }
       selection.moveFocus(move);
       event_0.stopImmediatePropagation();
       return;
@@ -694,7 +739,7 @@ function useDragToScroll(scrollRef: RefObject<ScrollBoxHandle | null>, selection
         // overwrites them. Only rows inside the selection are captured
         // (captureScrolledRows intersects with selection bounds).
         selection.captureScrolledRows(bottom - actual + 1, bottom, 'below');
-        selection.shiftAnchor(actual, 0, bottom);
+        selection.shiftAnchor(actual, top, bottom);
         s.scrollBy(-AUTOSCROLL_LINES);
       } else {
         const max = Math.max(0, s.getScrollHeight() - s.getViewportHeight());

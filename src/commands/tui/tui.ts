@@ -15,12 +15,12 @@ export const call = (args: string): LocalCommandResult => {
 
   if (arg === 'default') {
     setFullscreenMode('default')
-    return { value: 'Terminal UI mode set to: default\nRestart REPL to apply: exit and run \'noa\'' }
+    return { value: 'Terminal UI mode set to: default (applied to current session)' }
   }
 
   if (arg === 'fullscreen') {
     setFullscreenMode('fullscreen')
-    return { value: 'Terminal UI mode set to: fullscreen\nRestart REPL to apply: exit and run \'noa\'' }
+    return { value: 'Terminal UI mode set to: fullscreen (applied to current session)' }
   }
 
   return { value: `Invalid mode: "${arg}". Use: /tui [default | fullscreen]` }
