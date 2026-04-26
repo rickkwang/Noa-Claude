@@ -3,7 +3,7 @@ import React, { useCallback, useState } from 'react'
 import type { Key } from '../ink.js'
 import type { VimInputState, VimMode } from '../types/textInputTypes.js'
 import { Cursor } from '../utils/Cursor.js'
-import { lastGrapheme } from '../utils/intl.js'
+import { getGraphemeSegmenter, lastGrapheme } from '../utils/intl.js'
 import {
   executeIndent,
   executeJoin,
@@ -13,9 +13,11 @@ import {
   executeOperatorTextObj,
   executeReplace,
   executeToggleCase,
+  executeVisualOperator,
   executeX,
   type OperatorContext,
 } from '../vim/operators.js'
+import { resolveMotion } from '../vim/motions.js'
 import { type TransitionContext, transition } from '../vim/transitions.js'
 import {
   createInitialPersistentState,
@@ -24,6 +26,7 @@ import {
   type RecordedChange,
   type VimState,
 } from '../vim/types.js'
+import { countCharInString } from '../utils/stringUtils.js'
 import { type UseTextInputProps, useTextInput } from './useTextInput.js'
 
 type UseVimInputProps = Omit<UseTextInputProps, 'inputFilter'> & {
@@ -79,6 +82,28 @@ export function useVimInput(props: UseVimInputProps): VimInputState {
     setMode('NORMAL')
     onModeChange?.('NORMAL')
   }, [onModeChange, textInput, props.value])
+
+  const switchToVisualMode = useCallback((): void => {
+    vimStateRef.current = {
+      mode: 'VISUAL',
+      visual: { linewise: false, anchor: textInput.offset },
+    }
+    setMode('VISUAL')
+    onModeChange?.('VISUAL')
+  }, [textInput, onModeChange])
+
+  const switchToVisualLineMode = useCallback((): void => {
+    const anchorLine = countCharInString(
+      props.value.slice(0, textInput.offset),
+      '\n',
+    )
+    vimStateRef.current = {
+      mode: 'VISUAL_LINE',
+      visual: { linewise: true, anchorLine },
+    }
+    setMode('VISUAL_LINE')
+    onModeChange?.('VISUAL_LINE')
+  }, [textInput, props.value, onModeChange])
 
   function createOperatorContext(
     cursor: Cursor,
@@ -173,6 +198,111 @@ export function useVimInput(props: UseVimInputProps): VimInputState {
     }
   }
 
+  // Compute [from, to) byte range for a visual selection.
+  function getVisualRange(
+    state: VimState & { mode: 'VISUAL' | 'VISUAL_LINE' },
+    cursorOffset: number,
+  ): [number, number] {
+    const text = props.value
+    if (state.mode === 'VISUAL_LINE') {
+      const anchorLine = state.visual.anchorLine
+      const currentLine = countCharInString(text.slice(0, cursorOffset), '\n')
+      const topLine = Math.min(anchorLine, currentLine)
+      const botLine = Math.max(anchorLine, currentLine)
+      // start of topLine
+      let lineStart = 0
+      let nl = -1
+      for (let i = 0; i < topLine; i++) {
+        nl = text.indexOf('\n', nl + 1)
+        if (nl === -1) { lineStart = text.length; break }
+        lineStart = nl + 1
+      }
+      // end of botLine (include trailing newline if present)
+      let lineEnd = lineStart
+      let remaining = botLine - topLine + 1
+      while (remaining > 0) {
+        const next = text.indexOf('\n', lineEnd)
+        if (next === -1) { lineEnd = text.length; break }
+        lineEnd = next + 1
+        remaining--
+      }
+      return [lineStart, lineEnd]
+    } else {
+      const anchor = state.visual.anchor
+      return [Math.min(anchor, cursorOffset), Math.max(anchor, cursorOffset) + 1]
+    }
+  }
+
+  function handleVisualInput(
+    state: VimState & { mode: 'VISUAL' | 'VISUAL_LINE' },
+    input: string,
+    key: Key,
+  ): void {
+    const cursor = Cursor.fromText(props.value, props.columns, textInput.offset)
+    const ctx = createOperatorContext(cursor, false)
+    const linewise = state.mode === 'VISUAL_LINE'
+
+    // Motion keys: move cursor, extending the selection
+    let motionInput: string | null = null
+    if (key.leftArrow) motionInput = 'h'
+    else if (key.rightArrow) motionInput = 'l'
+    else if (key.upArrow) motionInput = 'k'
+    else if (key.downArrow) motionInput = 'j'
+    else if ('hjklwbeWBE0$'.includes(input) && input.length === 1) motionInput = input
+    else if (input === '^') motionInput = input
+
+    if (motionInput !== null) {
+      const target = resolveMotion(motionInput, cursor, 1)
+      if (!target.equals(cursor)) {
+        textInput.setOffset(target.offset)
+      }
+      return
+    }
+
+    // Operator keys: apply to selection then return to NORMAL
+    if (input === 'd' || input === 'x') {
+      const [from, to] = getVisualRange(state, textInput.offset)
+      executeVisualOperator('delete', from, to, linewise, ctx)
+      vimStateRef.current = { mode: 'NORMAL', command: { type: 'idle' } }
+      setMode('NORMAL')
+      onModeChange?.('NORMAL')
+      return
+    }
+
+    if (input === 'y') {
+      const [from, to] = getVisualRange(state, textInput.offset)
+      executeVisualOperator('yank', from, to, linewise, ctx)
+      vimStateRef.current = { mode: 'NORMAL', command: { type: 'idle' } }
+      setMode('NORMAL')
+      onModeChange?.('NORMAL')
+      return
+    }
+
+    if (input === 'c') {
+      const [from, to] = getVisualRange(state, textInput.offset)
+      // executeVisualOperator 'change' calls ctx.enterInsert() internally
+      executeVisualOperator('change', from, to, linewise, ctx)
+      // state is now INSERT (set by enterInsert → switchToInsertMode)
+      return
+    }
+
+    if (input === '~') {
+      const [from, to] = getVisualRange(state, textInput.offset)
+      const text = props.value
+      let toggled = ''
+      for (const { segment } of getGraphemeSegmenter().segment(text.slice(from, to))) {
+        const up = segment.toUpperCase()
+        toggled += up !== segment ? up : segment.toLowerCase()
+      }
+      props.onChange(text.slice(0, from) + toggled + text.slice(to))
+      textInput.setOffset(from)
+      vimStateRef.current = { mode: 'NORMAL', command: { type: 'idle' } }
+      setMode('NORMAL')
+      onModeChange?.('NORMAL')
+      return
+    }
+  }
+
   function handleVimInput(rawInput: string, key: Key): void {
     const state = vimStateRef.current
     // Run inputFilter in all modes so stateful filters disarm on any key,
@@ -201,6 +331,14 @@ export function useVimInput(props: UseVimInputProps): VimInputState {
       return
     }
 
+    // Escape in VISUAL / VISUAL_LINE returns to NORMAL without changing text
+    if (key.escape && (state.mode === 'VISUAL' || state.mode === 'VISUAL_LINE')) {
+      vimStateRef.current = { mode: 'NORMAL', command: { type: 'idle' } }
+      setMode('NORMAL')
+      onModeChange?.('NORMAL')
+      return
+    }
+
     // Pass Enter to base handler regardless of mode (allows submission from NORMAL)
     if (key.return) {
       textInput.onInput(input, key)
@@ -226,6 +364,11 @@ export function useVimInput(props: UseVimInputProps): VimInputState {
         }
       }
       textInput.onInput(input, key)
+      return
+    }
+
+    if (state.mode === 'VISUAL' || state.mode === 'VISUAL_LINE') {
+      handleVisualInput(state, input, key)
       return
     }
 
@@ -271,6 +414,12 @@ export function useVimInput(props: UseVimInputProps): VimInputState {
     else if (expectsMotion && state.command.type !== 'count' && key.delete)
       vimInput = 'x'
 
+    // In idle NORMAL state, v/V enter visual modes
+    if (state.command.type === 'idle') {
+      if (vimInput === 'v') { switchToVisualMode(); return }
+      if (vimInput === 'V') { switchToVisualLineMode(); return }
+    }
+
     const result = transition(state.command, vimInput, ctx)
 
     if (result.execute) {
@@ -299,13 +448,27 @@ export function useVimInput(props: UseVimInputProps): VimInputState {
     (newMode: VimMode) => {
       if (newMode === 'INSERT') {
         vimStateRef.current = { mode: 'INSERT', insertedText: '' }
+      } else if (newMode === 'VISUAL') {
+        vimStateRef.current = {
+          mode: 'VISUAL',
+          visual: { linewise: false, anchor: textInput.offset },
+        }
+      } else if (newMode === 'VISUAL_LINE') {
+        const anchorLine = countCharInString(
+          props.value.slice(0, textInput.offset),
+          '\n',
+        )
+        vimStateRef.current = {
+          mode: 'VISUAL_LINE',
+          visual: { linewise: true, anchorLine },
+        }
       } else {
         vimStateRef.current = { mode: 'NORMAL', command: { type: 'idle' } }
       }
       setMode(newMode)
       onModeChange?.(newMode)
     },
-    [onModeChange],
+    [onModeChange, textInput, props.value],
   )
 
   return {

@@ -555,3 +555,17 @@ export function executeOperatorGg(
   applyOperator(op, range.from, range.to, ctx, range.linewise)
   ctx.recordChange({ type: 'operator', op, motion: 'gg', count })
 }
+
+/**
+ * Execute an operator on an explicit byte range (used by VISUAL mode).
+ * Note: intentionally does not call ctx.recordChange — visual ops are not dot-repeatable.
+ */
+export function executeVisualOperator(
+  op: Operator,
+  from: number,
+  to: number,
+  linewise: boolean,
+  ctx: OperatorContext,
+): void {
+  applyOperator(op, from, to, ctx, linewise)
+}

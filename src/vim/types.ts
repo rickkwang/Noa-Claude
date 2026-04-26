@@ -42,14 +42,25 @@ export type TextObjScope = 'inner' | 'around'
 // ============================================================================
 
 /**
+ * Visual selection anchor. Linewise tracks the anchor row; charwise tracks the
+ * anchor byte offset. The current cursor offset is always the live endpoint.
+ */
+export type VisualState =
+  | { linewise: false; anchor: number }
+  | { linewise: true; anchorLine: number }
+
+/**
  * Complete vim state. Mode determines what data is tracked.
  *
  * INSERT mode: Track text being typed (for dot-repeat)
  * NORMAL mode: Track command being parsed (state machine)
+ * VISUAL / VISUAL_LINE: Track visual selection anchor
  */
 export type VimState =
   | { mode: 'INSERT'; insertedText: string }
   | { mode: 'NORMAL'; command: CommandState }
+  | { mode: 'VISUAL'; visual: VisualState & { linewise: false } }
+  | { mode: 'VISUAL_LINE'; visual: VisualState & { linewise: true } }
 
 /**
  * Command state machine for NORMAL mode.

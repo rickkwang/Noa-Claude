@@ -127,7 +127,7 @@ function ProactiveCountdown() {
   return t4;
 }
 export function PromptInputFooterLeftSide(t0) {
-  const $ = _c(28);
+  const $ = _c(29);
   const {
     exitMessage,
     vimMode,
@@ -170,7 +170,8 @@ export function PromptInputFooterLeftSide(t0) {
   }
   let t1;
   if ($[3] !== isSearching || $[4] !== vimMode) {
-    t1 = isVimModeEnabled() && vimMode === "INSERT" && !isSearching;
+    t1 = isVimModeEnabled() && !isSearching &&
+      (vimMode === "INSERT" || vimMode === "VISUAL" || vimMode === "VISUAL_LINE");
     $[3] = isSearching;
     $[4] = vimMode;
     $[5] = t1;
@@ -191,39 +192,43 @@ export function PromptInputFooterLeftSide(t0) {
     t2 = $[11];
   }
   let t3;
-  if ($[12] !== showVim) {
-    t3 = showVim ? <Text dimColor={true} key="vim-insert">-- INSERT --</Text> : null;
+  if ($[12] !== showVim || $[13] !== vimMode) {
+    const vimLabel = vimMode === "VISUAL" ? "-- VISUAL --"
+      : vimMode === "VISUAL_LINE" ? "-- VISUAL LINE --"
+      : "-- INSERT --";
+    t3 = showVim ? <Text dimColor={true} key="vim-mode">{vimLabel}</Text> : null;
     $[12] = showVim;
-    $[13] = t3;
+    $[13] = vimMode;
+    $[14] = t3;
   } else {
-    t3 = $[13];
+    t3 = $[14];
   }
   const t4 = !suppressHint && !showVim;
   let t5;
-  if ($[14] !== isLoading || $[15] !== mode || $[16] !== onOpenTasksDialog || $[17] !== t4 || $[18] !== tasksSelected || $[19] !== teammateFooterIndex || $[20] !== teamsSelected || $[21] !== tmuxSelected || $[22] !== toolPermissionContext) {
+  if ($[15] !== isLoading || $[16] !== mode || $[17] !== onOpenTasksDialog || $[18] !== t4 || $[19] !== tasksSelected || $[20] !== teammateFooterIndex || $[21] !== teamsSelected || $[22] !== tmuxSelected || $[23] !== toolPermissionContext) {
     t5 = <ModeIndicator mode={mode} toolPermissionContext={toolPermissionContext} showHint={t4} isLoading={isLoading} tasksSelected={tasksSelected} teamsSelected={teamsSelected} teammateFooterIndex={teammateFooterIndex} tmuxSelected={tmuxSelected} onOpenTasksDialog={onOpenTasksDialog} />;
-    $[14] = isLoading;
-    $[15] = mode;
-    $[16] = onOpenTasksDialog;
-    $[17] = t4;
-    $[18] = tasksSelected;
-    $[19] = teammateFooterIndex;
-    $[20] = teamsSelected;
-    $[21] = tmuxSelected;
-    $[22] = toolPermissionContext;
-    $[23] = t5;
+    $[15] = isLoading;
+    $[16] = mode;
+    $[17] = onOpenTasksDialog;
+    $[18] = t4;
+    $[19] = tasksSelected;
+    $[20] = teammateFooterIndex;
+    $[21] = teamsSelected;
+    $[22] = tmuxSelected;
+    $[23] = toolPermissionContext;
+    $[24] = t5;
   } else {
-    t5 = $[23];
+    t5 = $[24];
   }
   let t6;
-  if ($[24] !== t2 || $[25] !== t3 || $[26] !== t5) {
+  if ($[25] !== t2 || $[26] !== t3 || $[27] !== t5) {
     t6 = <Box justifyContent="flex-start" gap={1}>{t2}{t3}{t5}</Box>;
-    $[24] = t2;
-    $[25] = t3;
-    $[26] = t5;
-    $[27] = t6;
+    $[25] = t2;
+    $[26] = t3;
+    $[27] = t5;
+    $[28] = t6;
   } else {
-    t6 = $[27];
+    t6 = $[28];
   }
   return t6;
 }
