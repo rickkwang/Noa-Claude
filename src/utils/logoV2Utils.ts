@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { getDirectConnectServerUrl, getSessionId } from '../bootstrap/state.js'
+import { isEnvTruthy } from './envUtils.js'
 import { stringWidth } from '../ink/stringWidth.js'
 import type { LogOption } from '../types/logs.js'
 import { getSubscriptionName, isClaudeAISubscriber } from './auth.js'
@@ -251,9 +252,11 @@ export function getLogoDisplayData(): {
   const displayPath = process.env.DEMO_VERSION
     ? '/code/claude'
     : getDisplayPath(getCwd())
-  const cwd = serverUrl
-    ? `${displayPath} in ${serverUrl.replace(/^https?:\/\//, '')}`
-    : displayPath
+  const cwd = isEnvTruthy(process.env.CLAUDE_CODE_HIDE_CWD)
+    ? '~'
+    : serverUrl
+      ? `${displayPath} in ${serverUrl.replace(/^https?:\/\//, '')}`
+      : displayPath
   const billingType = isClaudeAISubscriber()
     ? getSubscriptionName()
     : 'API Usage Billing'

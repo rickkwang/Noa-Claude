@@ -268,6 +268,11 @@ export type GlobalConfig = {
     [tipId: string]: number // Key is tipId, value is the numStartups when tip was last shown
   }
 
+  // Custom PR/MR URL template for non-GitHub platforms.
+  // Supports {owner}, {repo}, {number} placeholders.
+  // Example GitLab: "https://gitlab.com/{owner}/{repo}/-/merge_requests/{number}"
+  prUrlTemplate?: string
+
   // /buddy companion soul — bones regenerated from userId on read. See src/buddy/.
   companion?: import('../buddy/types.js').StoredCompanion
   companionMuted?: boolean
@@ -1740,6 +1745,9 @@ export function getAutoUpdaterDisabledReason(): AutoUpdaterDisabledReason | null
   }
   if (isEnvTruthy(process.env.DISABLE_AUTOUPDATER)) {
     return { type: 'env', envVar: 'DISABLE_AUTOUPDATER' }
+  }
+  if (isEnvTruthy(process.env.DISABLE_UPDATES)) {
+    return { type: 'env', envVar: 'DISABLE_UPDATES' }
   }
   const essentialTrafficEnvVar = getEssentialTrafficOnlyReason()
   if (essentialTrafficEnvVar) {
