@@ -441,6 +441,7 @@ export const PostToolUseHookInputSchema = lazySchema(() =>
       tool_input: z.unknown(),
       tool_response: z.unknown(),
       tool_use_id: z.string(),
+      duration_ms: z.number().optional(),
     }),
   ),
 )
@@ -454,6 +455,7 @@ export const PostToolUseFailureHookInputSchema = lazySchema(() =>
       tool_use_id: z.string(),
       error: z.string(),
       is_interrupt: z.boolean().optional(),
+      duration_ms: z.number().optional(),
     }),
   ),
 )

@@ -47,6 +47,7 @@ export async function* runPostToolUseHooks<Input extends AnyObject, Output>(
   requestId: string | undefined,
   mcpServerType: McpServerType,
   mcpServerBaseUrl: string | undefined,
+  durationMs?: number,
 ): AsyncGenerator<PostToolUseHooksResult<Output>> {
   const postToolStartTime = Date.now()
   try {
@@ -62,6 +63,7 @@ export async function* runPostToolUseHooks<Input extends AnyObject, Output>(
       toolUseContext,
       permissionMode,
       toolUseContext.abortController.signal,
+      durationMs,
     )) {
       try {
         // Check if we were aborted during hook execution
@@ -202,6 +204,7 @@ export async function* runPostToolUseFailureHooks<Input extends AnyObject>(
   requestId: string | undefined,
   mcpServerType: McpServerType,
   mcpServerBaseUrl: string | undefined,
+  durationMs?: number,
 ): AsyncGenerator<
   MessageUpdateLazy<AttachmentMessage | ProgressMessage<HookProgress>>
 > {
@@ -219,6 +222,7 @@ export async function* runPostToolUseFailureHooks<Input extends AnyObject>(
       isInterrupt,
       permissionMode,
       toolUseContext.abortController.signal,
+      durationMs,
     )) {
       try {
         // Check if we were aborted during hook execution

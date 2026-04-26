@@ -3456,6 +3456,7 @@ export async function* executePostToolHooks<ToolInput, ToolResponse>(
   toolUseContext: ToolUseContext,
   permissionMode?: string,
   signal?: AbortSignal,
+  durationMs?: number,
   timeoutMs: number = TOOL_HOOK_EXECUTION_TIMEOUT_MS,
 ): AsyncGenerator<AggregatedHookResult> {
   const hookInput: PostToolUseHookInput = {
@@ -3465,6 +3466,7 @@ export async function* executePostToolHooks<ToolInput, ToolResponse>(
     tool_input: toolInput,
     tool_response: toolResponse,
     tool_use_id: toolUseID,
+    ...(durationMs !== undefined && { duration_ms: durationMs }),
   }
 
   yield* executeHooks({
@@ -3499,6 +3501,7 @@ export async function* executePostToolUseFailureHooks<ToolInput>(
   isInterrupt?: boolean,
   permissionMode?: string,
   signal?: AbortSignal,
+  durationMs?: number,
   timeoutMs: number = TOOL_HOOK_EXECUTION_TIMEOUT_MS,
 ): AsyncGenerator<AggregatedHookResult> {
   const appState = toolUseContext.getAppState()
@@ -3515,6 +3518,7 @@ export async function* executePostToolUseFailureHooks<ToolInput>(
     tool_use_id: toolUseID,
     error,
     is_interrupt: isInterrupt,
+    ...(durationMs !== undefined && { duration_ms: durationMs }),
   }
 
   yield* executeHooks({
