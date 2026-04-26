@@ -76,7 +76,7 @@ How to use the statusLine command:
        }
      },
      "vim": {                     // Optional, only present when vim mode is enabled
-       "mode": "INSERT" | "NORMAL"  // Current vim editor mode
+       "mode": "INSERT" | "NORMAL" | "VISUAL" | "VISUAL_LINE"  // Current vim editor mode
      },
      "agent": {                    // Optional, only present when Claude is started with --agent flag
        "name": "string",           // Agent name (e.g., "code-architect", "test-runner")
@@ -88,6 +88,12 @@ How to use the statusLine command:
        "branch": "string",         // Optional: Git branch name for the worktree
        "original_cwd": "string",   // The directory Claude was in before entering the worktree
        "original_branch": "string" // Optional: Branch that was checked out before entering the worktree
+     },
+     "effort": {                   // Optional, only present on models that support effort parameter
+       "level": "string"           // Current effort level (e.g., "low", "medium", "high", "max")
+     },
+     "thinking": {                 // Optional, only present on models that support thinking
+       "enabled": boolean          // Whether extended thinking is currently enabled
      }
    }
    
