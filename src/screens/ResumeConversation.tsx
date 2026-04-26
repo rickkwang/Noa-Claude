@@ -36,17 +36,14 @@ import { computeStandaloneAgentContext, restoreAgentFromSession, restoreWorktree
 import { adoptResumedSessionFile, enrichLogs, isCustomTitleEnabled, loadAllProjectsMessageLogsProgressive, loadSameRepoMessageLogsProgressive, recordContentReplacement, resetSessionFilePointer, restoreSessionMetadata, type SessionLogResult } from '../utils/sessionStorage.js';
 import type { ThinkingConfig } from '../utils/thinking.js';
 import type { ContentReplacementRecord } from '../utils/toolResultStorage.js';
+import { parsePRReference } from '../utils/worktree.js';
 import { REPL } from './REPL.js';
 function parsePrIdentifier(value: string): number | null {
   const directNumber = parseInt(value, 10);
   if (!isNaN(directNumber) && directNumber > 0) {
     return directNumber;
   }
-  const urlMatch = value.match(/github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/);
-  if (urlMatch?.[1]) {
-    return parseInt(urlMatch[1], 10);
-  }
-  return null;
+  return parsePRReference(value);
 }
 type Props = {
   commands: Command[];

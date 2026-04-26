@@ -657,14 +657,28 @@ async function performPostCreationSetup(
  * Returns the PR number or null if the string is not a recognized PR reference.
  */
 export function parsePRReference(input: string): number | null {
-  // GitHub-style PR URL: https://<host>/owner/repo/pull/123 (with optional trailing slash, query, hash)
-  // The /pull/N path shape is specific to GitHub — GitLab uses /-/merge_requests/N,
-  // Bitbucket uses /pull-requests/N — so matching any host here is safe.
+  // GitHub-style PR URL: https://<host>/owner/repo/pull/123
   const urlMatch = input.match(
     /^https?:\/\/[^/]+\/[^/]+\/[^/]+\/pull\/(\d+)\/?(?:[?#].*)?$/i,
   )
   if (urlMatch?.[1]) {
     return parseInt(urlMatch[1], 10)
+  }
+
+  // GitLab: https://<host>/owner/repo/-/merge_requests/N
+  const gitlabMatch = input.match(
+    /^https?:\/\/[^/]+\/[^/]+\/[^/]+\/-\/merge_requests\/(\d+)\/?(?:[?#].*)?$/i,
+  )
+  if (gitlabMatch?.[1]) {
+    return parseInt(gitlabMatch[1], 10)
+  }
+
+  // Bitbucket: https://<host>/owner/repo/pull-requests/N
+  const bitbucketMatch = input.match(
+    /^https?:\/\/[^/]+\/[^/]+\/[^/]+\/pull-requests\/(\d+)\/?(?:[?#].*)?$/i,
+  )
+  if (bitbucketMatch?.[1]) {
+    return parseInt(bitbucketMatch[1], 10)
   }
 
   // #N format
