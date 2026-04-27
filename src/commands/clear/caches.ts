@@ -31,6 +31,7 @@ import { resetGetMemoryFilesCache } from '../../utils/claudemd.js'
 import { clearRepositoryCaches } from '../../utils/detectRepository.js'
 import { clearResolveGitDirCache } from '../../utils/git/gitFilesystem.js'
 import { clearStoredImagePaths } from '../../utils/imageStore.js'
+import { logError } from '../../utils/log.js'
 import { clearSessionEnvVars } from '../../utils/sessionEnvVars.js'
 
 /**
@@ -99,14 +100,14 @@ export function clearSessionCaches(
         clearSessionsWithTungstenUsage()
         resetInitializationState()
       },
-    )
+    ).catch(err => logError(err as Error))
   }
   // Clear attribution caches (file content cache, pending bash states)
   // Dynamic import to preserve dead code elimination for COMMIT_ATTRIBUTION feature flag
   if (feature('COMMIT_ATTRIBUTION')) {
     void import('../../utils/attributionHooks.js').then(
       ({ clearAttributionCaches }) => clearAttributionCaches(),
-    )
+    ).catch(err => logError(err as Error))
   }
   // Clear repository detection caches
   clearRepositoryCaches()
@@ -129,17 +130,17 @@ export function clearSessionCaches(
   // Clear WebFetch URL cache (up to 50MB of cached page content)
   void import('../../tools/WebFetchTool/utils.js').then(
     ({ clearWebFetchCache }) => clearWebFetchCache(),
-  )
+  ).catch(err => logError(err as Error))
   // Clear ToolSearch description cache (full tool prompts, ~500KB for 50 MCP tools)
   void import('../../tools/ToolSearchTool/ToolSearchTool.js').then(
     ({ clearToolSearchDescriptionCache }) => clearToolSearchDescriptionCache(),
-  )
+  ).catch(err => logError(err as Error))
   // Clear agent definitions cache (accumulates per-cwd via EnterWorktreeTool)
   void import('../../tools/AgentTool/loadAgentsDir.js').then(
     ({ clearAgentDefinitionsCache }) => clearAgentDefinitionsCache(),
-  )
+  ).catch(err => logError(err as Error))
   // Clear SkillTool prompt cache (accumulates per project root)
   void import('../../tools/SkillTool/prompt.js').then(({ clearPromptCache }) =>
     clearPromptCache(),
-  )
+  ).catch(err => logError(err as Error))
 }

@@ -91,6 +91,7 @@ function ToggleTagAndClose(t0) {
   let t3;
   if ($[2] !== normalizedTag || $[3] !== onDone) {
     t2 = () => {
+      let cancelled = false;
       const id = getSessionId() as UUID;
       if (!id) {
         onDone("No active session to tag", {
@@ -117,11 +118,14 @@ function ToggleTagAndClose(t0) {
         (async () => {
           const fullPath = getTranscriptPath();
           await saveTag(id, normalizedTag, fullPath);
-          onDone(`Tagged session with ${chalk.cyan(`#${normalizedTag}`)}`, {
-            display: "system"
-          });
+          if (!cancelled) {
+            onDone(`Tagged session with ${chalk.cyan(`#${normalizedTag}`)}`, {
+              display: "system"
+            });
+          }
         })();
       }
+      return () => { cancelled = true; };
     };
     t3 = [normalizedTag, onDone];
     $[2] = normalizedTag;

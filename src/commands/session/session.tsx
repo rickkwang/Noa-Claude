@@ -18,7 +18,7 @@ function SessionInfo(t0) {
     onDone
   } = t0;
   const remoteSessionUrl = useAppState(_temp);
-  const [qrCode, setQrCode] = useState("");
+  const [qrCode, setQrCode] = useState<string | null>("");
   let t1;
   let t2;
   if ($[0] !== remoteSessionUrl) {
@@ -34,7 +34,7 @@ function SessionInfo(t0) {
         });
         setQrCode(qr);
       };
-      generateQRCode().catch(_temp2);
+      generateQRCode().catch(e => { logForDebugging("QR code generation failed", e); setQrCode(null); });
     };
     t2 = [remoteSessionUrl];
     $[0] = remoteSessionUrl;
@@ -69,8 +69,8 @@ function SessionInfo(t0) {
   let t4;
   let t5;
   if ($[5] !== qrCode) {
-    const lines = qrCode.split("\n").filter(_temp3);
-    const isLoading = lines.length === 0;
+    const lines = qrCode ? qrCode.split("\n").filter(_temp3) : [];
+    const isLoading = qrCode !== null && lines.length === 0;
     T0 = Pane;
     if ($[9] === Symbol.for("react.memo_cache_sentinel")) {
       t4 = <Box marginBottom={1}><Text bold={true}>Remote session</Text></Box>;
@@ -78,7 +78,7 @@ function SessionInfo(t0) {
     } else {
       t4 = $[9];
     }
-    t5 = isLoading ? <Text dimColor={true}>Generating QR code…</Text> : lines.map(_temp4);
+    t5 = qrCode === null ? <Text dimColor={true}>QR code unavailable</Text> : isLoading ? <Text dimColor={true}>Generating QR code…</Text> : lines.map(_temp4);
     $[5] = qrCode;
     $[6] = T0;
     $[7] = t4;
@@ -128,9 +128,6 @@ function _temp4(line_0, i) {
 }
 function _temp3(line) {
   return line.length > 0;
-}
-function _temp2(e) {
-  logForDebugging("QR code generation failed", e);
 }
 function _temp(s) {
   return s.remoteSessionUrl;

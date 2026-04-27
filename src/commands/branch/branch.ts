@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { randomUUID, type UUID } from 'crypto'
-import { mkdir, readFile, writeFile } from 'fs/promises'
+import { mkdir, readFile, rename, writeFile } from 'fs/promises'
 import { getOriginalCwd, getSessionId } from '../../bootstrap/state.js'
 import type { LocalJSXCommandContext } from '../../commands.js'
 import { logEvent } from '../../services/analytics/index.js'
@@ -159,11 +159,13 @@ async function createFork(customTitle?: string): Promise<{
     lines.push(jsonStringify(forkedReplacementEntry))
   }
 
-  // Write the fork session file
-  await writeFile(forkSessionPath, lines.join('\n') + '\n', {
+  // Write the fork session file atomically via tmp + rename
+  const tmpPath = `${forkSessionPath}.tmp`
+  await writeFile(tmpPath, lines.join('\n') + '\n', {
     encoding: 'utf8',
     mode: 0o600,
   })
+  await rename(tmpPath, forkSessionPath)
 
   return {
     sessionId: forkSessionId,

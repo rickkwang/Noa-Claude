@@ -111,10 +111,14 @@ export async function clearConversation({
 
   // Clear context-blocked flag so proactive ticks resume after /clear
   if (feature('PROACTIVE') || feature('KAIROS')) {
-    /* eslint-disable @typescript-eslint/no-require-imports */
-    const { setContextBlocked } = require('../../proactive/index.js')
-    /* eslint-enable @typescript-eslint/no-require-imports */
-    setContextBlocked(false)
+    try {
+      /* eslint-disable @typescript-eslint/no-require-imports */
+      const { setContextBlocked } = require('../../proactive/index.js')
+      /* eslint-enable @typescript-eslint/no-require-imports */
+      setContextBlocked(false)
+    } catch (err) {
+      logError(err as Error)
+    }
   }
 
   // Force logo re-render by updating conversationId
@@ -229,13 +233,17 @@ export async function clearConversation({
   // wiped both from the cache, but the process is still in the same mode
   // and (if applicable) the same worktree directory.
   if (feature('COORDINATOR_MODE')) {
-    /* eslint-disable @typescript-eslint/no-require-imports */
-    const { saveMode } = require('../../utils/sessionStorage.js')
-    const {
-      isCoordinatorMode,
-    } = require('../../coordinator/coordinatorMode.js')
-    /* eslint-enable @typescript-eslint/no-require-imports */
-    saveMode(isCoordinatorMode() ? 'coordinator' : 'normal')
+    try {
+      /* eslint-disable @typescript-eslint/no-require-imports */
+      const { saveMode } = require('../../utils/sessionStorage.js')
+      const {
+        isCoordinatorMode,
+      } = require('../../coordinator/coordinatorMode.js')
+      /* eslint-enable @typescript-eslint/no-require-imports */
+      saveMode(isCoordinatorMode() ? 'coordinator' : 'normal')
+    } catch (err) {
+      logError(err as Error)
+    }
   }
   const worktreeSession = getCurrentWorktreeSession()
   if (worktreeSession) {
