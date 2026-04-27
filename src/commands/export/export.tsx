@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { writeFile } from 'fs/promises';
 import { join } from 'path';
 import React from 'react';
 import { ExportDialog } from '../../components/ExportDialog.js';
@@ -7,7 +8,6 @@ import type { LocalJSXCommandOnDone } from '../../types/command.js';
 import type { Message } from '../../types/message.js';
 import { getCwd } from '../../utils/cwd.js';
 import { renderMessagesToPlainText } from '../../utils/exportRenderer.js';
-import { writeFileSync_DEPRECATED } from '../../utils/slowOperations.js';
 function formatTimestamp(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -56,15 +56,12 @@ export async function call(onDone: LocalJSXCommandOnDone, context: ToolUseContex
   const content = await exportWithReactRenderer(context);
 
   // If args are provided, write directly to file and skip dialog
-  const filename = args.trim();
+  const filename = sanitizeFilename(args.trim());
   if (filename) {
-    const finalFilename = filename.endsWith('.txt') ? filename : filename.replace(/\.[^.]+$/, '') + '.txt';
+    const finalFilename = filename.endsWith('.txt') ? filename : filename + '.txt';
     const filepath = join(getCwd(), finalFilename);
     try {
-      writeFileSync_DEPRECATED(filepath, content, {
-        encoding: 'utf-8',
-        flush: true
-      });
+      await writeFile(filepath, content, 'utf-8');
       onDone(`Conversation exported to: ${filepath}`);
       return null;
     } catch (error) {

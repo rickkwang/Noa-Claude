@@ -60,11 +60,19 @@ export function collectRecentAssistantTexts(messages: Message[]): string[] {
   }
   return texts;
 }
+const LANG_ALIASES: Record<string, string> = {
+  'c++': 'cpp',
+  'c#': 'cs',
+  'f#': 'fsharp',
+  'objective-c': 'm',
+  'objective-c++': 'mm',
+}
 export function fileExtension(lang: string | undefined): string {
   if (lang) {
+    const aliased = LANG_ALIASES[lang.toLowerCase()] ?? lang
     // Sanitize to prevent path traversal (e.g. ```../../etc/passwd)
     // Language identifiers are alphanumeric: python, tsx, jsonc, etc.
-    const sanitized = lang.replace(/[^a-zA-Z0-9]/g, '');
+    const sanitized = aliased.replace(/[^a-zA-Z0-9]/g, '');
     if (sanitized && sanitized !== 'plaintext') {
       return `.${sanitized}`;
     }

@@ -60,7 +60,7 @@ function MemoryCommand({
       });
     } catch (error) {
       logError(error);
-      onDone(`Error opening memory file: ${error}`);
+      onDone(`Error opening memory file: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
   const handleCancel = () => {

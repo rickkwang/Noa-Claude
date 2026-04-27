@@ -10,6 +10,7 @@ import type {
   LocalJSXCommandContext,
   LocalJSXCommandOnDone,
 } from '../../types/command.js'
+import { logError } from '../../utils/log.js'
 import { getMessagesAfterCompactBoundary } from '../../utils/messages.js'
 import {
   getTranscriptPath,
@@ -69,7 +70,7 @@ export async function call(
         updateBridgeSessionTitle(bridgeSessionId, newName, {
           baseUrl: getBridgeBaseUrlOverride(),
           getAccessToken: tokenOverride ? () => tokenOverride : undefined,
-        }).catch(() => {}),
+        }).catch(err => logError(err as Error)),
     )
   }
 
