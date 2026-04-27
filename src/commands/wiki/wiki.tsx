@@ -102,8 +102,10 @@ function WikiIngest({
       return
     }
 
+    let ingestMessage = ''
     ingestFile(path).then(result => {
-      setMessage(result.message)
+      ingestMessage = result.message
+      setMessage(ingestMessage)
       if (result.success) {
         // Rebuild index after ingest
         return buildIndex()
@@ -117,7 +119,7 @@ function WikiIngest({
         setStatus('done')
       }
       setTimeout(() => {
-        onDone(result?.success ? `${message}. ${result?.message}` : message, {
+        onDone(result?.success ? `${ingestMessage}. ${result?.message}` : ingestMessage, {
           display: 'system',
         })
       }, 1000)
@@ -125,7 +127,7 @@ function WikiIngest({
       setStatus('error')
       setMessage(err.message || 'Failed to ingest file')
     })
-  }, [path, onDone, message])
+  }, [path, onDone])
 
   return (
     <Box flexDirection="column" padding={1}>
