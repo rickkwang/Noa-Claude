@@ -296,6 +296,10 @@ export const ERROR_MESSAGE_PROMPT_TOO_LONG =
 export const ERROR_MESSAGE_USER_ABORT = 'API Error: Request was aborted.'
 export const ERROR_MESSAGE_INCOMPLETE_RESPONSE =
   'Compaction interrupted · This may be due to network issues — please try again.'
+export const ERROR_MESSAGE_COMPACT_EXHAUSTED =
+  'Compaction stopped: not enough context remaining to summarize.'
+export const ERROR_MESSAGE_COMPACT_MEDIA_UNSTRIPPABLE =
+  'Compaction skipped: conversation contains media that cannot be summarized.'
 
 export interface CompactionResult {
   boundaryMarker: SystemMessage

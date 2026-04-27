@@ -9,6 +9,8 @@ import { notifyCompaction } from '../../services/api/promptCacheBreakDetection.j
 import {
   type CompactionResult,
   compactConversation,
+  ERROR_MESSAGE_COMPACT_EXHAUSTED,
+  ERROR_MESSAGE_COMPACT_MEDIA_UNSTRIPPABLE,
   ERROR_MESSAGE_INCOMPLETE_RESPONSE,
   ERROR_MESSAGE_NOT_ENOUGH_MESSAGES,
   ERROR_MESSAGE_USER_ABORT,
@@ -133,6 +135,10 @@ export const call: LocalCommandCall = async (args, context) => {
       throw new Error(formatCompactError('aborted'))
     } else if (hasExactErrorMessage(error, ERROR_MESSAGE_NOT_ENOUGH_MESSAGES)) {
       throw new Error(formatCompactError('not_enough_messages'))
+    } else if (hasExactErrorMessage(error, ERROR_MESSAGE_COMPACT_EXHAUSTED)) {
+      throw new Error(formatCompactError('exhausted'))
+    } else if (hasExactErrorMessage(error, ERROR_MESSAGE_COMPACT_MEDIA_UNSTRIPPABLE)) {
+      throw new Error(formatCompactError('media'))
     } else if (hasExactErrorMessage(error, ERROR_MESSAGE_INCOMPLETE_RESPONSE)) {
       throw new Error(formatCompactError('incomplete'))
     } else {
@@ -194,8 +200,10 @@ async function compactViaReactive(
         case 'aborted':
           throw new Error(ERROR_MESSAGE_USER_ABORT)
         case 'exhausted':
-        case 'error':
+          throw new Error(ERROR_MESSAGE_COMPACT_EXHAUSTED)
         case 'media_unstrippable':
+          throw new Error(ERROR_MESSAGE_COMPACT_MEDIA_UNSTRIPPABLE)
+        case 'error':
           throw new Error(ERROR_MESSAGE_INCOMPLETE_RESPONSE)
       }
     }
@@ -238,7 +246,7 @@ async function compactViaReactive(
 }
 
 export function formatCompactError(
-  reason: 'aborted' | 'not_enough_messages' | 'incomplete' | 'failed',
+  reason: 'aborted' | 'not_enough_messages' | 'incomplete' | 'exhausted' | 'media' | 'failed',
   cause?: unknown,
 ): string {
   switch (reason) {
@@ -246,6 +254,10 @@ export function formatCompactError(
       return 'Compaction canceled.'
     case 'not_enough_messages':
       return 'Nothing to compact yet.'
+    case 'exhausted':
+      return 'Compaction stopped: not enough context remaining to summarize.'
+    case 'media':
+      return 'Compaction skipped: conversation contains media that cannot be summarized.'
     case 'incomplete':
       return 'Compaction did not complete cleanly. Try again.'
     case 'failed':
