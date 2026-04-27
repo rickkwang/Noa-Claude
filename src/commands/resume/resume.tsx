@@ -116,6 +116,21 @@ function classifyResumeError(error: unknown): {
   const rawMessage =
     error instanceof Error ? error.message : String(error ?? 'unknown error')
   const normalized = rawMessage.toLowerCase()
+  const errno = getErrnoCode(error)
+
+  if (errno === 'ENOENT' || errno === 'ENOTDIR') {
+    return {
+      code: 'SESSION_NOT_FOUND',
+      message: 'Conversation not found. Check the session ID and try again.',
+    }
+  }
+
+  if (errno === 'EACCES' || errno === 'EPERM') {
+    return {
+      code: 'SESSION_UNKNOWN_ERROR',
+      message: 'Resume failed: insufficient permissions to read conversation.',
+    }
+  }
 
   if (
     normalized.includes('not found') ||
@@ -243,10 +258,13 @@ function ResumeCommand({
   // re-renders with a new callback reference (avoids spurious reload of the list).
   const onDoneRef = React.useRef(onDone);
   onDoneRef.current = onDone;
+  const loadGenRef = React.useRef(0);
   const loadLogs = React.useCallback(async (allProjects: boolean, paths: string[]) => {
+    const gen = ++loadGenRef.current;
     setLoading(true);
     try {
       const allLogs = allProjects ? await loadAllProjectsMessageLogs() : await loadSameRepoMessageLogs(paths);
+      if (gen !== loadGenRef.current) return;
       const resumable = filterResumableSessions(allLogs, getSessionId());
       if (resumable.length === 0) {
         onDoneRef.current('No conversations found to resume');
@@ -254,11 +272,12 @@ function ResumeCommand({
       }
       setLogs(resumable);
     } catch (error) {
+      if (gen !== loadGenRef.current) return;
       logError(error as Error);
       _logResumeListLoadFailureForTesting(error);
       onDoneRef.current(_formatResumeListLoadFailureForTesting(error));
     } finally {
-      setLoading(false);
+      if (gen === loadGenRef.current) setLoading(false);
     }
   }, []);
   React.useEffect(() => {
@@ -290,7 +309,7 @@ function ResumeCommand({
       if (crossProjectCheck.isSameRepoWorktree) {
         // Same repo worktree - can resume directly
         setResuming(true);
-        void onResume(sessionId, fullLog, 'slash_command_picker');
+        void onResume(sessionId, fullLog, 'slash_command_picker').finally(() => setResuming(false));
         return;
       }
 
@@ -319,7 +338,7 @@ function ResumeCommand({
       logError(error as Error);
     }
     setResuming(true);
-    void onResume(sessionId, fullLog, 'slash_command_picker');
+    void onResume(sessionId, fullLog, 'slash_command_picker').finally(() => setResuming(false));
   }, [showAllProjects, worktreePaths, onResume]);
   function handleCancel() {
     onDoneRef.current('Resume cancelled', {
@@ -342,7 +361,7 @@ function ResumeCommand({
     return <ResumeSummaryGate log={summaryGateTarget.log} useMessageResponse onContinue={() => {
       setSummaryGateTarget(null);
       setResuming(true);
-      void onResume(summaryGateTarget.sessionId, summaryGateTarget.log, 'slash_command_picker');
+      void onResume(summaryGateTarget.sessionId, summaryGateTarget.log, 'slash_command_picker').finally(() => setResuming(false));
     }} onBack={() => setSummaryGateTarget(null)} />;
   }
   return <LogSelector logs={logs} maxHeight={insideModal ? Math.floor(rows / 2) : rows - 2} forceWidth={insideModal ? Math.max(0, columns - 4) : undefined} showTopDivider={!insideModal} onCancel={handleCancel} onSelect={handleSelect} onLogsChanged={() => loadLogs(showAllProjects, worktreePaths)} showAllProjects={showAllProjects} onToggleAllProjects={handleToggleAllProjects} onAgenticSearch={agenticSessionSearch} />;
@@ -367,7 +386,7 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
 
   // No argument provided - show picker
   if (!arg) {
-    return <ResumeCommand key={Date.now()} onDone={onDone} onResume={onResume} />;
+    return <ResumeCommand onDone={onDone} onResume={onResume} />;
   }
 
   // Load logs to search (includes same-repo worktrees)
