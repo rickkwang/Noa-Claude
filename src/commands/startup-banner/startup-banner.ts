@@ -1,5 +1,6 @@
 // @ts-nocheck
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync } from 'fs'
+import { mkdir, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { getOriginalCwd } from '../../bootstrap/state.js'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
@@ -15,13 +16,13 @@ function getSettingsPath(): string {
   return join(getClaudeConfigHomeDir(), STARTUP_BANNER_SETTINGS_FILENAME)
 }
 
-function readCurrentMode(): StartupBannerMode | null {
+async function readCurrentMode(): Promise<StartupBannerMode | null> {
   const path = getSettingsPath()
-  if (!existsSync(path)) return null
   try {
-    const data = JSON.parse(readFileSync(path, 'utf-8'))
+    const data = JSON.parse(await readFile(path, 'utf-8'))
     return normalizeStartupBannerMode(data.mode)
   } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return null
     logDebugDiagnosticWarn(
       'startup-banner-command',
       'failed to parse startup banner settings',
@@ -31,16 +32,11 @@ function readCurrentMode(): StartupBannerMode | null {
   return null
 }
 
-function writeMode(mode: StartupBannerMode): void {
+async function writeMode(mode: StartupBannerMode): Promise<void> {
   const dir = getClaudeConfigHomeDir()
   const path = getSettingsPath()
-
-  // Ensure directory exists
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true })
-  }
-
-  writeFileSync(path, JSON.stringify({ mode }, null, 2), 'utf-8')
+  await mkdir(dir, { recursive: true })
+  await writeFile(path, JSON.stringify({ mode }, null, 2), 'utf-8')
 }
 
 function cycleMode(current: StartupBannerMode | null): StartupBannerMode {
@@ -60,7 +56,7 @@ export const call = async (args: string, context?: { setAppState?: (updater: (pr
       }
     }
 
-    const current = readCurrentMode()
+    const current = await readCurrentMode()
 
     let newMode: StartupBannerMode
     if (arg && STARTUP_BANNER_MODES.includes(arg as StartupBannerMode)) {
@@ -69,7 +65,7 @@ export const call = async (args: string, context?: { setAppState?: (updater: (pr
       newMode = cycleMode(current)
     }
 
-    writeMode(newMode)
+    await writeMode(newMode)
     context?.setAppState?.(prev => ({
       ...prev,
       authVersion: prev.authVersion + 1,
