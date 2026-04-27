@@ -12,16 +12,31 @@ An open-source coding agent built from publicly exposed Claude Code source.
 
 ## Key Commands
 
+**Baseline workflows** (`[baseline]` — supported core surface):
+
+```
+/fork      - Create a resumable fork of the current conversation
+/workflows - Manage local reusable workflows
+/summary   - Generate structured session summaries
+/share     - Export local session share snapshots under .claude-agent/shares
+```
+
+**Other frequently used commands:**
+
 ```
 /help      - Inspect built-in command surface and skill registry
-/fork      - Create a resumable fork of the current conversation      [baseline]
-/workflows - Manage local reusable workflows                          [baseline]
-/summary   - Generate structured session summaries                        [baseline]
-/share     - Export local session share snapshots under .claude-agent/shares [baseline]
+/resume    - Resume a previous conversation
 /compact   - Summarize and compact conversation history
+/export    - Export conversation to a file
+/rename    - Rename the current session
+/tag       - Tag the current session for quick lookup
+/memory    - Open and edit memory files
+/clear     - Clear the current conversation and start fresh
+/copy      - Copy recent assistant response or code blocks to clipboard
 /status    - Inspect current runtime state, MCP, plugins, and agents
 /config    - View and edit settings
 /model     - Switch model or list available models
+/provider  - Manage named provider configurations
 /login     - Authenticate with your provider
 /logout    - Clear stored credentials
 /doctor    - Diagnose installation health and configuration
@@ -29,8 +44,6 @@ An open-source coding agent built from publicly exposed Claude Code source.
 /usage     - View token usage for current session
 /cost      - Estimate cost of the current conversation
 ```
-
-Baseline commands (`[baseline]`) are the supported product workflows. Other commands are available but not part of the core surface.
 
 ## Quick Install
 
@@ -42,7 +55,9 @@ Or build from source:
 
 ```bash
 git clone https://github.com/rickkwang/Noa-Claude.git && cd Noa-Claude
-bun run compile
+bun run dev                    # run directly from source (fastest for development)
+# or
+bun run compile                # build standalone binary
 ./dist/cli --version
 ```
 
@@ -50,16 +65,21 @@ bun run compile
 
 | Command | Output | Note |
 |---------|--------|------|
-| `bun run build` | `dist/main.js` | Requires bun runtime |
+| `bun run dev` | — | Run directly from source (fastest iteration) |
+| `bun run build` | `dist/main.js` | Production JS bundle |
+| `bun run build:dev` | `dist/main-dev.js` | Dev build with dev version string |
+| `bun run build:dev:full` | `dist/main-dev.js` | Dev build + all ~70 experimental features enabled |
 | `bun run compile` | `dist/cli` + `dist/main.js` | Standalone binary + bundled JS entry |
-| `bun run build:dev:full` | `dist/main-dev.js` | Dev build + expanded experimental feature profile |
+
+All build commands require [Bun](https://bun.sh).
 
 ## Runtime Toggles
 
-- `NOA_CLAUDE_NO_FLICKER=1` enables the fullscreen anti-flicker REPL layout
-- `NOA_CLAUDE_NO_FLICKER=0` disables it
-- `NOA_CLAUDE_DISABLE_MOUSE=1` keeps fullscreen layout but turns off mouse tracking
-- `NOA_CLAUDE_DISABLE_MOUSE_CLICKS=1` keeps mouse tracking but ignores clicks and drags
+- `NOA_CLAUDE_NO_FLICKER=1` — Enable fullscreen anti-flicker REPL layout
+- `NOA_CLAUDE_DISABLE_MOUSE=1` — Keep fullscreen layout but turn off mouse tracking
+- `NOA_CLAUDE_DISABLE_MOUSE_CLICKS=1` — Keep mouse tracking but ignore clicks and drags
+- `CLAUDE_CODE_HIDE_CWD=1` — Hide current working directory from the status bar
+- `DISABLE_UPDATES=1` — Disable automatic update checks on startup
 
 Legacy `CLAUDE_CODE_*` names are still accepted for compatibility, but `NOA_CLAUDE_*` is the preferred brand prefix.
 
@@ -116,6 +136,8 @@ Default local maintenance checks:
 ```bash
 bun run compile && ./dist/cli --version
 bun run typecheck
+bun test                    # run all tests
+bun test <path>             # run a single test file
 bun run check:runtime
 bun run smoke:features
 bun run smoke:engine
