@@ -14,7 +14,7 @@ import { withOAuth401Retry } from '../../utils/http.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
 import { discoverOpenAICompatibleModelOptions } from '../../utils/model/openaiModelDiscovery.js'
-import { getAPIProvider } from '../../utils/model/providers.js'
+import { getAPIProvider, isFirstPartyAnthropicBaseUrl } from '../../utils/model/providers.js'
 import { isEssentialTrafficOnly } from '../../utils/privacyLevel.js'
 import { getClaudeCodeUserAgent } from '../../utils/userAgent.js'
 import { mergeModelOptions } from './modelOptionMerge.js'
@@ -50,6 +50,14 @@ async function fetchBootstrapAPI(): Promise<BootstrapResponse | null> {
 
   if (getAPIProvider() !== 'firstParty') {
     logForDebugging('[Bootstrap] Skipped: 3P provider')
+    return null
+  }
+
+  // noa: avoid pinging api.anthropic.com when the user pointed
+  // ANTHROPIC_BASE_URL at a non-Anthropic endpoint. Bootstrap data only
+  // makes sense against the canonical first-party API.
+  if (!isFirstPartyAnthropicBaseUrl()) {
+    logForDebugging('[Bootstrap] Skipped: custom ANTHROPIC_BASE_URL')
     return null
   }
 

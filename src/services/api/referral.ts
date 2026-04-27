@@ -9,6 +9,7 @@ import {
 import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { logError } from '../../utils/log.js'
+import { isFirstPartyAnthropicBaseUrl } from '../../utils/model/providers.js'
 import { isEssentialTrafficOnly } from '../../utils/privacyLevel.js'
 import { getOAuthHeaders, prepareApiRequest } from '../../utils/teleport/api.js'
 import type {
@@ -275,6 +276,12 @@ export async function getCachedOrFetchPassesEligibility(): Promise<ReferralEligi
 export async function prefetchPassesEligibility(): Promise<void> {
   // Skip network requests if nonessential traffic is disabled
   if (isEssentialTrafficOnly()) {
+    return
+  }
+
+  // noa: skip when ANTHROPIC_BASE_URL points at a non-Anthropic endpoint —
+  // referral/passes only exists on the first-party API.
+  if (!isFirstPartyAnthropicBaseUrl()) {
     return
   }
 

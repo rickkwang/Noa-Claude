@@ -2,6 +2,7 @@
 import axios from 'axios'
 import { logForDebugging } from '../../utils/debug.js'
 import { errorMessage } from '../../utils/errors.js'
+import { isFirstPartyAnthropicBaseUrl } from '../../utils/model/providers.js'
 
 type RegistryServer = {
   server: {
@@ -33,6 +34,13 @@ function normalizeUrl(url: string): string | undefined {
  */
 export async function prefetchOfficialMcpUrls(): Promise<void> {
   if (process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC) {
+    return
+  }
+
+  // noa: skip when ANTHROPIC_BASE_URL points at a non-Anthropic endpoint —
+  // the registry only lives on api.anthropic.com and the lookup is just used
+  // to tag known MCP URLs as "official", which is meaningless for noa users.
+  if (!isFirstPartyAnthropicBaseUrl()) {
     return
   }
 
