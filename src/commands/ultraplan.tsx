@@ -23,7 +23,6 @@ import { pollForApprovedExitPlanMode, UltraplanPollError } from '../utils/ultrap
 
 // Multi-agent exploration is slow; 30min timeout.
 const ULTRAPLAN_TIMEOUT_MS = 30 * 60 * 1000;
-export const CCR_TERMS_URL = 'https://code.claude.com/docs/en/claude-code-on-the-web';
 
 // CCR runs against the first-party API — use the canonical ID, not the
 // provider-specific string getModelStrings() would return (which may be a
@@ -273,7 +272,7 @@ export async function launchUltraplan(opts: {
     return [
     // Rendered via <Markdown>; raw <message> is tokenized as HTML
     // and dropped. Backslash-escape the brackets.
-    'Usage: /ultraplan \\<prompt\\>, or include "ultraplan" anywhere', 'in your prompt', '', 'Advanced multi-agent plan mode with our most powerful model', '(Opus). Runs in Noa Claude on the web. When the plan is ready,', 'you can execute it in the web session or send it back here.', 'Terminal stays free while the remote plans.', 'Requires /login.', '', `Terms: ${CCR_TERMS_URL}`].join('\n');
+    'Usage: /ultraplan \\<prompt\\>, or include "ultraplan" anywhere', 'in your prompt', '', 'Advanced multi-agent plan mode with our most powerful model', '(Opus). Runs in Noa Claude on the web. When the plan is ready,', 'you can execute it in the web session or send it back here.', 'Terminal stays free while the remote plans.', 'Requires /login.'].join('\n');
   }
 
   // Set synchronously before the detached flow to prevent duplicate launches
@@ -462,7 +461,7 @@ const call: LocalJSXCommandCall = async (onDone, context, args) => {
 export default {
   type: 'local-jsx',
   name: 'ultraplan',
-  description: `~10–30 min · Noa Claude on the web drafts an advanced plan you can edit and approve. See ${CCR_TERMS_URL}`,
+  description: `~10–30 min · Noa Claude on the web drafts an advanced plan you can edit and approve.`,
   argumentHint: '<prompt>',
   isEnabled: () => "external" === 'ant',
   load: () => Promise.resolve({

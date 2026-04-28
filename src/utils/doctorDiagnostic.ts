@@ -69,7 +69,6 @@ export type DiagnosticInfo = {
   hasUpdatePermissions: boolean | null
   multipleInstallations: Array<{ type: string; path: string }>
   warnings: Array<{ issue: string; fix: string }>
-  recommendation?: string
   packageManager?: string
   ripgrepStatus: {
     working: boolean
@@ -541,32 +540,16 @@ export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
   const querySource = getQuerySourceForREPL()
   const promptCacheDiag = getPromptCache1hDiagnostic(querySource)
 
-  if (promptCacheDiag.allowlist.length === 0) {
-    warnings.push({
-      issue: 'Prompt cache 1h allowlist is empty; requests will fall back to 5m TTL',
-      fix: 'Set cachedGrowthBookFeatures.tengu_prompt_cache_1h_config.allowlist in global config (for example: repl_main_thread*, sdk, auto_mode).',
-    })
-  } else if (promptCacheDiag.reason === 'allowlist_miss') {
-    warnings.push({
-      issue:
-        `Prompt cache 1h allowlist does not include ${querySource}; interactive sessions will fall back to 5m TTL`,
-      fix: `Add ${querySource} (or ${querySource.split(':')[0]}*) to cachedGrowthBookFeatures.tengu_prompt_cache_1h_config.allowlist in global config.`,
-    })
-  }
+  // Note: allowlist-driven warnings are intentionally suppressed here.
+  // The 1h-cache allowlist lives in a server-managed GrowthBook cache
+  // (cachedGrowthBookFeatures.tengu_*) that end users can't author; surfacing
+  // it here only produces actionless noise.
 
   if (promptCacheDiag.reason === 'prompt_caching_disabled') {
     warnings.push({
       issue:
         'Prompt cache 1h is disabled by environment/model switch; requests will fall back to 5m TTL',
       fix: 'Unset DISABLE_PROMPT_CACHING* environment variables if this is unintended.',
-    })
-  }
-
-  if (promptCacheDiag.reason === 'not_eligible') {
-    warnings.push({
-      issue:
-        'Prompt cache 1h is currently ineligible (requires ant user type or Claude.ai subscriber without overage)',
-      fix: 'If token costs are unexpectedly high, verify account subscription state and whether overage mode is active.',
     })
   }
 

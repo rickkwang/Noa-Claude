@@ -414,7 +414,7 @@ export function Doctor(t0) {
   }
   let t30;
   if ($[58] !== t26 || $[59] !== t27) {
-    t30 = <Box flexDirection="column">{t24}{t26}{t27}{t28}{t29}</Box>;
+    t30 = <Box flexDirection="column" marginTop={1}>{t24}{t26}{t27}{t28}{t29}</Box>;
     $[58] = t26;
     $[59] = t27;
     $[60] = t30;
@@ -442,7 +442,7 @@ export function Doctor(t0) {
   }
   let t35;
   if ($[65] !== versionLockInfo) {
-    t35 = versionLockInfo?.enabled && <Box flexDirection="column"><Text bold={true}>Version Locks</Text>{versionLockInfo.staleLocksCleaned > 0 && <Text dimColor={true}>└ Cleaned {versionLockInfo.staleLocksCleaned} stale lock(s)</Text>}{versionLockInfo.locks.length === 0 ? <Text dimColor={true}>└ No active version locks</Text> : versionLockInfo.locks.map(_temp12)}</Box>;
+    t35 = versionLockInfo?.enabled && <Box flexDirection="column" marginTop={1}><Text bold={true}>Version Locks</Text>{versionLockInfo.staleLocksCleaned > 0 && <Text dimColor={true}>└ Cleaned {versionLockInfo.staleLocksCleaned} stale lock(s)</Text>}{versionLockInfo.locks.length === 0 ? <Text dimColor={true}>└ No active version locks</Text> : versionLockInfo.locks.map(_temp12)}</Box>;
     $[65] = versionLockInfo;
     $[66] = t35;
   } else {
@@ -482,7 +482,7 @@ export function Doctor(t0) {
   }
   let t40;
   if ($[75] === Symbol.for("react.memo_cache_sentinel")) {
-    t40 = <Box><PressEnterToContinue /></Box>;
+    t40 = <Box flexDirection="column" marginTop={1}><PressEnterToContinue /></Box>;
     $[75] = t40;
   } else {
     t40 = $[75];

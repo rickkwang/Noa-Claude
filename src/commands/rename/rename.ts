@@ -14,8 +14,7 @@ import { logError } from '../../utils/log.js'
 import { getMessagesAfterCompactBoundary } from '../../utils/messages.js'
 import {
   getTranscriptPath,
-  saveAgentName,
-  saveCustomTitle,
+  saveTitleAndAgentName,
 } from '../../utils/sessionStorage.js'
 import { isTeammate } from '../../utils/teammate.js'
 import { generateSessionName } from './generateSessionName.js'
@@ -55,9 +54,6 @@ export async function call(
   const sessionId = getSessionId() as UUID
   const fullPath = getTranscriptPath()
 
-  // Always save the custom title (session name)
-  await saveCustomTitle(sessionId, newName, fullPath)
-
   // Sync title to bridge session on claude.ai/code (best-effort, non-blocking).
   // v2 env-less bridge stores cse_* in replBridgeSessionId —
   // updateBridgeSessionTitle retags internally for the compat endpoint.
@@ -74,8 +70,9 @@ export async function call(
     )
   }
 
-  // Also persist as the session's agent name for prompt-bar display
-  await saveAgentName(sessionId, newName, fullPath)
+  // Atomically persist both the custom title and agent name in one append
+  // so a crash can't leave the session with one but not the other.
+  await saveTitleAndAgentName(sessionId, newName, fullPath)
   context.setAppState(prev => ({
     ...prev,
     standaloneAgentContext: {

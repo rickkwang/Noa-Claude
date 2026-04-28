@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { c as _c } from "react/compiler-runtime";
+import { mkdtempSync, statSync } from 'fs';
 import { mkdir, writeFile } from 'fs/promises';
 import { marked, type Tokens } from 'marked';
 import { tmpdir } from 'os';
@@ -21,7 +22,23 @@ import type { AssistantMessage, Message } from '../../types/message.js';
 import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js';
 import { extractTextContent, stripPromptXMLTags } from '../../utils/messages.js';
 import { countCharInString } from '../../utils/stringUtils.js';
-const COPY_DIR = join(tmpdir(), 'claude');
+// Per-uid suffix on Linux avoids collision with another user's /tmp/claude;
+// on macOS/Windows tmpdir() is already user-private, so the suffix is harmless.
+const COPY_DIR_BASE = join(tmpdir(), `claude-${process.getuid?.() ?? 'user'}`);
+
+// If COPY_DIR_BASE exists but isn't owned by us or has group/other bits set
+// (attacker pre-occupied the path), fall back to a unique private mkdtemp dir.
+function resolveCopyDir(): string {
+  try {
+    const st = statSync(COPY_DIR_BASE);
+    const uid = process.getuid?.();
+    if (uid === undefined) return COPY_DIR_BASE;
+    if (st.uid === uid && (st.mode & 0o077) === 0) return COPY_DIR_BASE;
+    return mkdtempSync(join(tmpdir(), 'claude-'));
+  } catch {
+    return COPY_DIR_BASE;
+  }
+}
 const RESPONSE_FILENAME = 'response.md';
 const MAX_LOOKBACK = 20;
 type CodeBlock = {
@@ -80,11 +97,10 @@ export function fileExtension(lang: string | undefined): string {
   return '.txt';
 }
 async function writeToFile(text: string, filename: string): Promise<string> {
-  const filePath = join(COPY_DIR, filename);
-  await mkdir(COPY_DIR, {
-    recursive: true
-  });
-  await writeFile(filePath, text, 'utf-8');
+  const dir = resolveCopyDir();
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  const filePath = join(dir, filename);
+  await writeFile(filePath, text, { encoding: 'utf-8', mode: 0o600 });
   return filePath;
 }
 async function copyOrWriteToFile(text: string, filename: string): Promise<string> {

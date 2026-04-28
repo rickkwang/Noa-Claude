@@ -2844,6 +2844,50 @@ export function reAppendSessionMetadata(): void {
   getProject().reAppendSessionMetadata()
 }
 
+/**
+ * Atomically write both custom-title and agent-name entries in a single
+ * appendFileSync. POSIX guarantees atomicity for appends < PIPE_BUF (4KB);
+ * two metadata records are well under that. Avoids the "half state" where
+ * a crash between two separate writes leaves a session with title but no
+ * agent name (or vice versa).
+ */
+/* eslint-disable custom-rules/no-sync-fs -- atomic dual-write requires sync */
+export async function saveTitleAndAgentName(
+  sessionId: UUID,
+  name: string,
+  fullPath?: string,
+  source: 'user' | 'auto' = 'user',
+) {
+  const resolvedPath = fullPath ?? getTranscriptPathForSession(sessionId)
+  const titleLine =
+    jsonStringify({ type: 'custom-title', customTitle: name, sessionId }) + '\n'
+  const agentLine =
+    jsonStringify({ type: 'agent-name', agentName: name, sessionId }) + '\n'
+  const fs = getFsImplementation()
+  const combined = titleLine + agentLine
+  try {
+    fs.appendFileSync(resolvedPath, combined, { mode: 0o600 })
+  } catch {
+    fs.mkdirSync(dirname(resolvedPath), { mode: 0o700 })
+    fs.appendFileSync(resolvedPath, combined, { mode: 0o600 })
+  }
+  if (sessionId === getSessionId()) {
+    const project = getProject()
+    project.currentSessionTitle = name
+    project.currentSessionAgentName = name
+    void updateSessionName(name)
+  }
+  logEvent('tengu_session_renamed', {
+    source:
+      source as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+  })
+  logEvent('tengu_agent_name_set', {
+    source:
+      source as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+  })
+}
+/* eslint-enable custom-rules/no-sync-fs */
+
 export async function saveAgentName(
   sessionId: UUID,
   agentName: string,

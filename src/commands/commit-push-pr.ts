@@ -36,8 +36,11 @@ function getPromptContent(
   const username = process.env.USER || ''
 
   let prefix = ''
-  let reviewerArg = ' and `--reviewer anthropics/claude-code`'
-  let addReviewerArg = ' (and add `--add-reviewer anthropics/claude-code`)'
+  // Reviewer suggestion is Anthropic-internal (anthropics/claude-code GitHub org).
+  // Default to empty so noa/external users don't get a broken --reviewer arg
+  // pointing at an org they have no access to.
+  let reviewerArg = ''
+  let addReviewerArg = ''
   let changelogSection = `
 
 ## Changelog
@@ -47,12 +50,16 @@ function getPromptContent(
   let slackStep = `
 
 5. After creating/updating the PR, check if the user's AGENTS.md or CLAUDE.md mentions posting to Slack channels. If it does, use ToolSearch to search for "slack send message" tools. If ToolSearch finds a Slack tool, ask the user if they'd like you to post the PR URL to the relevant Slack channel. Only post if the user confirms. If ToolSearch returns no results or errors, skip this step silently—do not mention the failure, do not attempt workarounds, and do not try alternative approaches.`
-  if (process.env.USER_TYPE === 'ant' && isUndercover()) {
-    prefix = getUndercoverInstructions() + '\n'
-    reviewerArg = ''
-    addReviewerArg = ''
-    changelogSection = ''
-    slackStep = ''
+  if (process.env.USER_TYPE === 'ant') {
+    if (isUndercover()) {
+      prefix = getUndercoverInstructions() + '\n'
+      changelogSection = ''
+      slackStep = ''
+    } else {
+      // Anthropic-internal default flow: suggest the canonical reviewer.
+      reviewerArg = ' and `--reviewer anthropics/claude-code`'
+      addReviewerArg = ' (and add `--add-reviewer anthropics/claude-code`)'
+    }
   }
 
   return `${prefix}## Context
