@@ -16,20 +16,13 @@ import { getClaudeAiUserDefaultModelDescription, modelDisplayString } from './mo
 import { getAPIProvider } from './model/providers.js';
 import { getMTLSConfig } from './mtls.js';
 import { checkInstall } from './nativeInstaller/index.js';
-import { getGlobalConfig } from './config.js';
 import { getProxyUrl } from './proxy.js';
 import { getRipgrepStatus } from './ripgrep.js';
 import { SandboxManager, getSandboxRuntimeCompatibility } from './sandbox/sandbox-adapter.js';
 import { getSettingsWithAllErrors } from './settings/allErrors.js';
 import { getEnabledSettingSources, getSettingSourceDisplayNameCapitalized } from './settings/constants.js';
 import { getManagedFileSettingsPresence, getPolicySettingsOrigin, getSettingsForSource } from './settings/settings.js';
-import {
-  getSettingsFilePathCandidatesForSource,
-  getSettingsFilePathForSource,
-} from './settings/settings.js';
-import { getClaudeConfigHomeDir } from './envUtils.js';
 import type { ThemeName } from './theme.js';
-import { getInvokedBinary } from './doctorDiagnostic.js';
 import { getCurrentWorktreeSession } from './worktree.js';
 import { getQuerySourceForREPL } from './promptCategory.js';
 import { getPromptCache1hDiagnostic } from './promptCache1h.js';
@@ -503,52 +496,6 @@ export function buildAPIProviderProperties(): Property[] {
   return properties;
 }
 
-export function buildProductPathsProperties(): Property[] {
-  const properties: Property[] = [{
-    label: 'Product config dir',
-    value: getClaudeConfigHomeDir(),
-  }, {
-    label: 'CLI entry',
-    value: getInvokedBinary(),
-  }];
-  const configuredInstallMethod = getGlobalConfig().installMethod;
-  if (configuredInstallMethod) {
-    properties.push({
-      label: 'Configured install method',
-      value: configuredInstallMethod,
-    });
-  }
-
-  const userSettingsPath = getSettingsFilePathForSource('userSettings');
-  if (userSettingsPath) {
-    properties.push({
-      label: 'User settings file',
-      value: userSettingsPath,
-    });
-  }
-
-  const projectSettingsCandidates = getSettingsFilePathCandidatesForSource(
-    'projectSettings',
-  );
-  if (projectSettingsCandidates.length > 0) {
-    properties.push({
-      label: 'Project settings candidates',
-      value: projectSettingsCandidates,
-    });
-  }
-
-  const localSettingsCandidates = getSettingsFilePathCandidatesForSource(
-    'localSettings',
-  );
-  if (localSettingsCandidates.length > 0) {
-    properties.push({
-      label: 'Local settings candidates',
-      value: localSettingsCandidates,
-    });
-  }
-
-  return properties;
-}
 export function buildWorktreeProperties(): Property[] {
   const session = getCurrentWorktreeSession();
   if (!session) {
