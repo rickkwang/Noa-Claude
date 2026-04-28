@@ -330,7 +330,8 @@ export function getDefaultEffortForModel(
     model.toLowerCase().includes('opus-4-7') &&
     ((provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()) ||
       provider === 'foundry' ||
-      get3PModelCapabilityOverride(model, 'effort') === true)
+      get3PModelCapabilityOverride(model, 'effort') === true ||
+      get3PModelCapabilityOverride(model, 'max_effort') === true)
   ) {
     return 'high'
   }
