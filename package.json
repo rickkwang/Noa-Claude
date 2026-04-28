@@ -1,6 +1,6 @@
 {
   "name": "noa",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "type": "module",
   "private": true,
   "description": "Noa Claude - isolated AI coding assistant",

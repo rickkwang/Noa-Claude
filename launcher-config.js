@@ -42,7 +42,7 @@ export const DEFAULT_PRODUCT_MODEL =
 
 export const LAUNCHER_MACRO = {
   VERSION: pkg.version,
-  BUILD_TIME: '2026-04-24T12:44:02.000Z',
+  BUILD_TIME: '2026-04-28T00:00:00.000Z',
   FEEDBACK_CHANNEL: `#${PRODUCT_NAMESPACE}`,
   ISSUES_EXPLAINER: 'https://github.com/rickkwang/Claude-Agent/issues',
   PACKAGE_URL: 'claude-agent',
