@@ -115,7 +115,7 @@ function getBundledReleaseNotes(): string {
   }
 }
 
-const defaultFeatures = ['VOICE_MODE']
+const defaultFeatures = ['VOICE_MODE', 'AUTO_THEME']
 const featureSet = new Set<string>(defaultFeatures)
 
 for (let i = 0; i < args.length; i++) {
