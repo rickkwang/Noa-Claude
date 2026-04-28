@@ -198,8 +198,22 @@ export const HookMatcherSchema = lazySchema(() =>
       .string()
       .optional()
       .describe('String pattern to match (e.g. tool names like "Write")'), // String (e.g. Write) to match values related to the hook event, e.g. tool names
+    // Gracefully drop malformed hooks instead of rejecting the entire
+    // settings.json. A single bad hook entry should not invalidate every
+    // other config in the file.
     hooks: z
-      .array(HookCommandSchema())
+      .array(z.any())
+      .transform(arr => {
+        const valid: Array<z.infer<ReturnType<typeof HookCommandSchema>>> = []
+        for (const item of arr) {
+          const result = HookCommandSchema().safeParse(item)
+          if (result.success) {
+            valid.push(result.data)
+          }
+        }
+        return valid
+      })
+      .pipe(z.array(HookCommandSchema()))
       .describe('List of hooks to execute when the matcher matches'),
   }),
 )

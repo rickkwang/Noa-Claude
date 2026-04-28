@@ -1,24 +1,23 @@
 // @ts-nocheck
 import { randomUUID, type UUID } from 'crypto'
-import { mkdir, readFile, rename, writeFile } from 'fs/promises'
+import { mkdir, rename, writeFile } from 'fs/promises'
 import { getOriginalCwd, getSessionId } from '../../bootstrap/state.js'
 import type { LocalJSXCommandContext } from '../../commands.js'
 import { logEvent } from '../../services/analytics/index.js'
 import type { LocalJSXCommandOnDone } from '../../types/command.js'
 import type {
   ContentReplacementEntry,
-  Entry,
   LogOption,
   SerializedMessage,
   TranscriptMessage,
 } from '../../types/logs.js'
-import { parseJSONL } from '../../utils/json.js'
 import { getPreferredCliCommandName } from '../../utils/commandName.js'
 import {
   getProjectDir,
   getTranscriptPath,
   getTranscriptPathForSession,
   isTranscriptMessage,
+  loadTranscriptFile,
   saveCustomTitle,
   searchSessionsByCustomTitle,
 } from '../../utils/sessionStorage.js'
@@ -76,23 +75,21 @@ async function createFork(customTitle?: string): Promise<{
   // Ensure project directory exists
   await mkdir(projectDir, { recursive: true, mode: 0o700 })
 
-  // Read current transcript file
-  let transcriptContent: Buffer
-  try {
-    transcriptContent = await readFile(currentTranscriptPath)
-  } catch {
+  // Load the current transcript through loadTranscriptFile so that compact
+  // boundaries and snip removals are applied. Without this, forked transcripts
+  // copy entries that have been compacted or snipped away, which can leave
+  // dangling tool_use blocks without matching tool_result blocks on resume.
+  const {
+    messages,
+    contentReplacements,
+  } = await loadTranscriptFile(currentTranscriptPath)
+
+  if (messages.size === 0) {
     throw new Error('No conversation to branch')
   }
 
-  if (transcriptContent.length === 0) {
-    throw new Error('No conversation to branch')
-  }
-
-  // Parse all transcript entries (messages + metadata entries like content-replacement)
-  const entries = parseJSONL<Entry>(transcriptContent)
-
-  // Filter to only main conversation messages (exclude sidechains and non-message entries)
-  const mainConversationEntries = entries.filter(
+  // Filter to only main conversation messages (exclude sidechains).
+  const mainConversationEntries = Array.from(messages.values()).filter(
     (entry): entry is TranscriptMessage =>
       isTranscriptMessage(entry) && !entry.isSidechain,
   )
@@ -104,13 +101,8 @@ async function createFork(customTitle?: string): Promise<{
   // as FROZEN and sent as full content (prompt cache miss + permanent overage).
   // sessionId must be rewritten since loadTranscriptFile keys lookup by the
   // session's messages' sessionId.
-  const contentReplacementRecords = entries
-    .filter(
-      (entry): entry is ContentReplacementEntry =>
-        entry.type === 'content-replacement' &&
-        entry.sessionId === originalSessionId,
-    )
-    .flatMap(entry => entry.replacements)
+  const contentReplacementRecords =
+    contentReplacements.get(originalSessionId) ?? []
 
   if (mainConversationEntries.length === 0) {
     throw new Error('No messages to branch')
