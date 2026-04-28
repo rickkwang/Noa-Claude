@@ -1281,8 +1281,10 @@ async function checkQueryEnginePermissionDenialsAreTurnScoped() {
     queryRunner,
   });
 
+  const previousApiKey = process.env.ANTHROPIC_API_KEY;
   try {
     process.env.NODE_ENV = 'test';
+    process.env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || 'sk-test-runtime-check';
     setSessionPersistenceDisabled(true);
     const turn1Messages = [];
     for await (const message of engine.submitMessage('turn 1')) {
@@ -1312,6 +1314,11 @@ async function checkQueryEnginePermissionDenialsAreTurnScoped() {
       delete process.env.NODE_ENV;
     } else {
       process.env.NODE_ENV = previousNodeEnv;
+    }
+    if (previousApiKey === undefined) {
+      delete process.env.ANTHROPIC_API_KEY;
+    } else {
+      process.env.ANTHROPIC_API_KEY = previousApiKey;
     }
   }
 }
@@ -1560,12 +1567,17 @@ function checkOpus47UserPaths() {
   const prevUseOpenAI = process.env.CLAUDE_CODE_USE_OPENAI;
   const prevBaseUrl = process.env.ANTHROPIC_BASE_URL;
   const prevUserType = process.env.USER_TYPE;
+  const prevDefaultOpusModel = process.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
+  const prevDefaultOpusCapabilities =
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES;
   delete process.env.CLAUDE_CODE_USE_BEDROCK;
   delete process.env.CLAUDE_CODE_USE_VERTEX;
   delete process.env.CLAUDE_CODE_USE_FOUNDRY;
   delete process.env.CLAUDE_CODE_USE_OPENAI;
   delete process.env.ANTHROPIC_BASE_URL;
   delete process.env.USER_TYPE;
+  delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
+  delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES;
   try {
   // getPublicModelDisplayName for opus-4-7
   const opus47DisplayName = getPublicModelDisplayName(getModelStrings().opus47);
@@ -1589,14 +1601,14 @@ function checkOpus47UserPaths() {
   assert(modelSupportsMaxEffort('opus-4-7') === true, 'opus-4-7 should support max effort');
   assert(modelSupportsMaxEffort('claude-opus-4-7') === true, 'claude-opus-4-7 should support max effort');
 
-  // External default effort should no longer silently downgrade Opus 4.7.
+  // External default effort for Opus 4.7 is high (not max, to avoid overthinking).
   assert(
-    getDefaultEffortForModel('claude-opus-4-7') === 'max',
-    'claude-opus-4-7 should default to max effort for first-party external users',
+    getDefaultEffortForModel('claude-opus-4-7') === 'high',
+    'claude-opus-4-7 should default to high effort for first-party external users',
   );
   assert(
-    resolveAppliedEffort('claude-opus-4-7', undefined) === 'max',
-    'claude-opus-4-7 should resolve to max effort by default for first-party external users',
+    resolveAppliedEffort('claude-opus-4-7', undefined) === 'high',
+    'claude-opus-4-7 should resolve to high effort by default for first-party external users',
   );
   assert(
     getDefaultEffortForModel('claude-opus-4-6') === undefined,
@@ -1625,6 +1637,14 @@ function checkOpus47UserPaths() {
     else process.env.ANTHROPIC_BASE_URL = prevBaseUrl;
     if (prevUserType === undefined) delete process.env.USER_TYPE;
     else process.env.USER_TYPE = prevUserType;
+    if (prevDefaultOpusModel === undefined)
+      delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
+    else process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = prevDefaultOpusModel;
+    if (prevDefaultOpusCapabilities === undefined)
+      delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES;
+    else
+      process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES =
+        prevDefaultOpusCapabilities;
   }
 }
 
@@ -1646,26 +1666,26 @@ function checkOpus47ThirdPartyEffortDefaults() {
     );
     assert(
       getDefaultEffortForModel('claude-opus-4-7') === undefined,
-      'ANTHROPIC_BASE_URL proxy should not default opus-4-7 to max without an explicit max_effort capability override',
+      'ANTHROPIC_BASE_URL proxy should not default opus-4-7 effort without an explicit effort capability override',
     );
     assert(
       resolveAppliedEffort('claude-opus-4-7', undefined) === undefined,
-      'ANTHROPIC_BASE_URL proxy should not inject opus-4-7 max effort without an explicit max_effort capability override',
+      'ANTHROPIC_BASE_URL proxy should not inject opus-4-7 effort without an explicit effort capability override',
     );
     process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = 'claude-opus-4-7';
     process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES =
-      'max_effort,adaptive_thinking';
+      'effort,max_effort,adaptive_thinking';
     assert(
       modelSupportsEffort('claude-opus-4-7') === true,
       'ANTHROPIC_BASE_URL proxy should allow effort regardless of capability override',
     );
     assert(
-      getDefaultEffortForModel('claude-opus-4-7') === 'max',
-      'ANTHROPIC_BASE_URL proxy should default opus-4-7 to max when max_effort is explicitly advertised',
+      getDefaultEffortForModel('claude-opus-4-7') === 'high',
+      'ANTHROPIC_BASE_URL proxy should default opus-4-7 to high when effort is explicitly advertised',
     );
     assert(
-      resolveAppliedEffort('claude-opus-4-7', undefined) === 'max',
-      'ANTHROPIC_BASE_URL proxy should inject max effort when max_effort is explicitly advertised',
+      resolveAppliedEffort('claude-opus-4-7', undefined) === 'high',
+      'ANTHROPIC_BASE_URL proxy should inject high effort when effort is explicitly advertised',
     );
     const supportedProxyEffort = executeEffort('max', 'claude-opus-4-7');
     assert(
@@ -1683,11 +1703,11 @@ function checkOpus47ThirdPartyEffortDefaults() {
     delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES;
     assert(
       getDefaultEffortForModel(unsupported3PModel) === undefined,
-      '3P opus-4-7 should not default to max without an explicit max_effort capability override',
+      '3P opus-4-7 should not default effort without an explicit effort capability override',
     );
     assert(
       resolveAppliedEffort(unsupported3PModel, undefined) === undefined,
-      '3P opus-4-7 should not inject effort without an explicit max_effort capability override',
+      '3P opus-4-7 should not inject effort without an explicit effort capability override',
     );
 
     const effortOnly3PModel =
@@ -1724,8 +1744,8 @@ function checkOpus47ThirdPartyEffortDefaults() {
       '3P max_effort capability should still allow base effort support',
     );
     assert(
-      getDefaultEffortForModel(supported3PModel) === 'max',
-      '3P opus-4-7 should default to max when max_effort is explicitly advertised',
+      getDefaultEffortForModel(supported3PModel) === 'high',
+      '3P opus-4-7 should default to high when effort is explicitly advertised',
     );
   } finally {
     if (prevUseBedrock === undefined) delete process.env.CLAUDE_CODE_USE_BEDROCK;
