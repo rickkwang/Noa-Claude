@@ -40,7 +40,6 @@ import {
 import { hasWorktreeCreateHook } from './utils/hooks.js'
 import { checkAndRestoreITerm2Backup } from './utils/iTermBackup.js'
 import { logError } from './utils/log.js'
-import { getRecentActivity } from './utils/logoV2Utils.js'
 import { lockCurrentVersion } from './utils/nativeInstaller/index.js'
 import type { PermissionMode } from './utils/permissions/PermissionMode.js'
 import { getPlanSlug } from './utils/plans.js'
@@ -372,11 +371,9 @@ export async function setup(
   void prefetchApiKeyFromApiKeyHelperIfSafe(getIsNonInteractiveSession()) // Prefetch safely - only executes if trust already confirmed
   profileCheckpoint('setup_after_prefetch')
 
-  // Pre-fetch data for Logo v2. Recent activity is independent from release
-  // notes, so always warm the cache in non-bare mode.
-  if (!isBareMode()) {
-    void getRecentActivity()
-  }
+  // Recent Activity is now loaded lazily by LogoV2 on mount (see
+  // LogoV2.tsx). Avoiding the eager prefetch here saves a loadMessageLogs(10)
+  // disk read during startup, which competes with other startup I/O.
 
   // If permission mode is set to bypass, verify we're in a safe environment
   if (

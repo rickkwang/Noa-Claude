@@ -145,8 +145,9 @@ export async function* runPostToolUseHooks<Input extends AnyObject, Output>(
           }
         }
 
-        // If hooks provided updatedMCPToolOutput, yield it if this is an MCP tool
-        if (result.updatedMCPToolOutput && isMcpTool(tool)) {
+        // If hooks provided updatedMCPToolOutput, apply it for any tool.
+        // The field name is kept for backward compatibility but applies to all tools.
+        if (result.updatedMCPToolOutput) {
           toolOutput = result.updatedMCPToolOutput as Output
           yield {
             updatedMCPToolOutput: toolOutput,

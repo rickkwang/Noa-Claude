@@ -1475,24 +1475,11 @@ async function checkPermissionsAndCallTool(
       })
     }
 
-    // TOOD(hackyon): refactor so we don't have different experiences for MCP tools
-    if (!isMcpTool(tool)) {
-      await addToolResult(toolOutput, mappedToolResultBlock)
-    }
-
-    // Run auto-fix after file edit/write tools complete
-    if (isFileEditTool(tool.name)) {
-      const autoFixFeedback = await runAutoFix()
-      if (autoFixFeedback) {
-        resultingMessages.push({
-          message: createUserMessage({
-            content: autoFixFeedback,
-            isMeta: true,
-          }),
-        })
-      }
-    }
-
+    // PostToolUse hooks run BEFORE addToolResult so they can replace the
+    // tool output for ANY tool (not just MCP). Hook attachment messages are
+    // collected in hookResults and flushed after addToolResult to preserve
+    // the user-facing ordering: tool result → autoFix → hook attachments.
+    let outputModifiedByHook = false
     const postToolHookInfos: StopHookInfo[] = []
     const postToolHookStart = Date.now()
     for await (const hookResult of runPostToolUseHooks(
@@ -1508,27 +1495,10 @@ async function checkPermissionsAndCallTool(
       durationMs,
     )) {
       if ('updatedMCPToolOutput' in hookResult) {
-        if (isMcpTool(tool)) {
-          toolOutput = hookResult.updatedMCPToolOutput
-        }
-      } else if (isMcpTool(tool)) {
-        hookResults.push(hookResult)
-        if (hookResult.message.type === 'attachment') {
-          const att = hookResult.message.attachment
-          if (
-            'command' in att &&
-            att.command !== undefined &&
-            'durationMs' in att &&
-            att.durationMs !== undefined
-          ) {
-            postToolHookInfos.push({
-              command: att.command,
-              durationMs: att.durationMs,
-            })
-          }
-        }
+        toolOutput = hookResult.updatedMCPToolOutput
+        outputModifiedByHook = true
       } else {
-        resultingMessages.push(hookResult)
+        hookResults.push(hookResult)
         if (hookResult.message.type === 'attachment') {
           const att = hookResult.message.attachment
           if (
@@ -1553,8 +1523,40 @@ async function checkPermissionsAndCallTool(
       )
     }
 
+    // Add tool result. Reuse the cached mapped block when hooks didn't modify
+    // the output (the common fast path); remap from scratch otherwise.
+    // For non-MCP tools, hook-replaced output may not match the tool's
+    // native data shape, which would crash mapToolResultToToolResultBlockParam.
+    // Bypass the tool-specific mapper and build a generic text content block
+    // from the hook's payload (stringified if non-string).
     if (isMcpTool(tool)) {
       await addToolResult(toolOutput)
+    } else if (outputModifiedByHook) {
+      const hookContent =
+        typeof toolOutput === 'string'
+          ? toolOutput
+          : JSON.stringify(toolOutput)
+      await addToolResult(toolOutput, {
+        tool_use_id: toolUseID,
+        type: 'tool_result',
+        content: hookContent,
+        ...(mappedToolResultBlock.is_error && { is_error: true }),
+      })
+    } else {
+      await addToolResult(toolOutput, mappedToolResultBlock)
+    }
+
+    // Run auto-fix after file edit/write tools complete
+    if (isFileEditTool(tool.name)) {
+      const autoFixFeedback = await runAutoFix()
+      if (autoFixFeedback) {
+        resultingMessages.push({
+          message: createUserMessage({
+            content: autoFixFeedback,
+            isMeta: true,
+          }),
+        })
+      }
     }
 
     // Show PostToolUse hook timing inline below tool result when > 500ms.

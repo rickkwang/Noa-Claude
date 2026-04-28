@@ -5,7 +5,7 @@ import * as React from 'react';
 import { Box, Text, color } from '../../ink.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { stringWidth } from '../../ink/stringWidth.js';
-import { getLayoutMode, calculateLayoutDimensions, calculateOptimalLeftWidth, formatWelcomeMessage, truncatePath, getRecentActivitySync, getRecentReleaseNotesSync, getLogoDisplayData } from '../../utils/logoV2Utils.js';
+import { getLayoutMode, calculateLayoutDimensions, calculateOptimalLeftWidth, formatWelcomeMessage, truncatePath, getRecentActivity, getRecentActivitySync, getRecentReleaseNotesSync, getLogoDisplayData } from '../../utils/logoV2Utils.js';
 import { truncate } from '../../utils/format.js';
 import { getDisplayPath } from '../../utils/file.js';
 import { Clawd } from './Clawd.js';
@@ -50,6 +50,22 @@ export function LogoV2() {
   // Login/provider switch bumps authVersion; subscribe so header/billing data
   // refreshes immediately after auth changes.
   useAppState(s => s.authVersion);
+
+  // Lazy-load Recent Activity on mount instead of eagerly prefetching during
+  // startup (was in setup.ts). Saves a loadMessageLogs(10) disk read on every
+  // startup; the panel renders empty for one frame, then re-renders when the
+  // cache is populated. The cache is module-scoped, so subsequent mounts in
+  // the same process are instant.
+  const [, setActivityVersion] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    void getRecentActivity().then(() => {
+      if (!cancelled) setActivityVersion(v => v + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const activities = getRecentActivitySync();
   const username = getGlobalConfig().oauthAccount?.displayName ?? "";
   const {
