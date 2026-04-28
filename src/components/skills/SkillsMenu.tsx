@@ -1,7 +1,7 @@
 // @ts-nocheck
 import capitalize from 'lodash-es/capitalize.js'
 import * as React from 'react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   type Command,
   type CommandBase,
@@ -9,8 +9,9 @@ import {
   getCommandName,
   type PromptCommand,
 } from '../../commands.js'
-import { Box, Text } from '../../ink.js'
-import { useKeybinding } from '../../keybindings/useKeybinding.js'
+import { Box, Text, useInput, useTerminalFocus } from '../../ink.js'
+import { useSearchInput } from '../../hooks/useSearchInput.js'
+import { useKeybindings } from '../../keybindings/useKeybinding.js'
 import { estimateSkillFrontmatterTokens, getSkillsPath } from '../../skills/loadSkillsDir.js'
 import { getDisplayPath } from '../../utils/file.js'
 import { formatTokens } from '../../utils/format.js'
@@ -18,6 +19,7 @@ import { getSettingSourceName, type SettingSource } from '../../utils/settings/c
 import { plural } from '../../utils/stringUtils.js'
 import { ConfigurableShortcutHint } from '../ConfigurableShortcutHint.js'
 import { Dialog } from '../design-system/Dialog.js'
+import { SearchBox } from '../SearchBox.js'
 
 type SkillCommand = CommandBase & PromptCommand
 type SkillSource = SettingSource | 'plugin' | 'mcp'
@@ -77,6 +79,8 @@ function getSourceSubtitle(
 }
 
 export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
+  const isTerminalFocused = useTerminalFocus()
+
   const skills = useMemo(
     () =>
       commands.filter(
@@ -117,22 +121,53 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
     [skillsBySource],
   )
 
+  const [isSearchMode, setIsSearchMode] = useState(false)
+  const [sortAlpha, setSortAlpha] = useState(false)
   const [selectedIdx, setSelectedIdx] = useState(0)
-  const clampedIdx =
-    orderedSkills.length === 0
-      ? 0
-      : Math.min(Math.max(selectedIdx, 0), orderedSkills.length - 1)
 
-  const handleCancel = (): void => {
-    onExit('Skills dialog dismissed', { display: 'system' })
-  }
+  const { query, setQuery, cursorOffset } = useSearchInput({
+    isActive: isSearchMode,
+    onExit: () => setIsSearchMode(false),
+    onCancel: () => {
+      setQuery('')
+      setIsSearchMode(false)
+    },
+    backspaceExitsOnEmpty: true,
+  })
 
-  const handleConfirm = (): void => {
-    const skill = orderedSkills[clampedIdx]
-    if (!skill) {
-      handleCancel()
-      return
+  // Reset selection when query changes
+  useEffect(() => {
+    setSelectedIdx(0)
+  }, [query])
+
+  // Apply sort and filter
+  const displaySkills = useMemo<SkillCommand[]>(() => {
+    let list = orderedSkills
+    if (sortAlpha) {
+      list = [...list].sort((a, b) =>
+        getCommandName(a).localeCompare(getCommandName(b)),
+      )
     }
+    if (query) {
+      const lower = query.toLowerCase()
+      list = list.filter(s => getCommandName(s).toLowerCase().includes(lower))
+    }
+    return list
+  }, [orderedSkills, sortAlpha, query])
+
+  const clampedIdx =
+    displaySkills.length === 0
+      ? 0
+      : Math.min(Math.max(selectedIdx, 0), displaySkills.length - 1)
+
+  const handleCancel = React.useCallback((): void => {
+    onExit('Skills dialog dismissed', { display: 'system' })
+  }, [onExit])
+
+  const handleConfirm = React.useCallback((): void | false => {
+    const skill = displaySkills[clampedIdx]
+    if (!skill) return false
+
     // Fill the prompt with `/<name> ` so the user can add args or press
     // Enter again to execute. `submitNextInput: false` is deliberate —
     // many skills take arguments, and direct execution would surprise.
@@ -141,28 +176,53 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
       nextInput: `/${getCommandName(skill)} `,
       submitNextInput: false,
     })
-  }
+  }, [clampedIdx, displaySkills, onExit])
 
-  const navEnabled = orderedSkills.length > 0
-  useKeybinding(
-    'select:next',
-    () =>
-      setSelectedIdx(i =>
-        orderedSkills.length === 0 ? 0 : (i + 1) % orderedSkills.length,
-      ),
-    navEnabled,
+  const handleNext = React.useCallback((): void | false => {
+    if (displaySkills.length === 0) return false
+    setSelectedIdx(i => (i + 1) % displaySkills.length)
+  }, [displaySkills.length])
+
+  const handlePrevious = React.useCallback((): void | false => {
+    if (displaySkills.length === 0) return false
+    setSelectedIdx(i => (i - 1 + displaySkills.length) % displaySkills.length)
+  }, [displaySkills.length])
+
+  useKeybindings(
+    {
+      'select:next': handleNext,
+      'select:previous': handlePrevious,
+      'select:accept': handleConfirm,
+      'select:cancel': handleCancel,
+    },
+    { context: 'Select', isActive: !isSearchMode },
   )
-  useKeybinding(
-    'select:previous',
-    () =>
-      setSelectedIdx(i =>
-        orderedSkills.length === 0
-          ? 0
-          : (i - 1 + orderedSkills.length) % orderedSkills.length,
-      ),
-    navEnabled,
+
+  useKeybindings(
+    {
+      'confirm:yes': handleConfirm,
+      'confirm:no': handleCancel,
+    },
+    { context: 'Confirmation', isActive: !isSearchMode },
   )
-  useKeybinding('confirm:yes', handleConfirm, navEnabled)
+
+  // Raw input for Skills-only actions that do not have configurable actions yet.
+  useInput(
+    (input, key, event) => {
+      if (input === '/') {
+        event.stopImmediatePropagation()
+        setIsSearchMode(true)
+        setSelectedIdx(0)
+        return
+      }
+      if (input === 't') {
+        event.stopImmediatePropagation()
+        setSortAlpha(s => !s)
+        return
+      }
+    },
+    { isActive: !isSearchMode },
+  )
 
   if (skills.length === 0) {
     return (
@@ -198,73 +258,92 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
       skill.source === 'plugin'
         ? skill.pluginInfo?.pluginManifest.name
         : undefined
+    const sourceLabel = skill.source === 'plugin' || skill.source === 'mcp'
+      ? skill.source
+      : getSettingSourceName(skill.source as SettingSource)
+    const isUserOnly = skill.userInvocable === true && skill.disableModelInvocation === true
     return (
       <Box key={`${skill.name}-${skill.source}`}>
         <Text color={isSelected ? 'suggestion' : undefined}>
           {isSelected ? '❯ ' : '  '}
+        </Text>
+        <Box width={14}>
+          {isUserOnly ? (
+            <Text dimColor>{'🔒 user-only'}</Text>
+          ) : (
+            <Text color="success">{'✔ on'}</Text>
+          )}
+        </Box>
+        <Text color={isSelected ? 'suggestion' : undefined}>
           {getCommandName(skill)}
         </Text>
         <Text dimColor>
-          {pluginName ? ` · ${pluginName}` : ''} · {tokenDisplay} description
-          tokens
+          {pluginName ? ` · ${pluginName}` : ` · ${sourceLabel}`} · {tokenDisplay} tok
         </Text>
       </Box>
     )
   }
 
-  // Walk groups in the same order as orderedSkills, advancing a shared cursor
-  // so globalIdx matches the flat list used by nav keybindings.
-  let cursor = 0
-  const groupElements: React.ReactNode[] = []
-  for (const source of GROUP_ORDER) {
-    const groupSkills = skillsBySource[source]
-    if (groupSkills.length === 0) continue
-    const title = getSourceTitle(source)
-    const subtitle = getSourceSubtitle(source, groupSkills)
-    const startIdx = cursor
-    const rendered = groupSkills.map((skill, i) =>
-      renderSkill(skill, startIdx + i),
+  // Render skill list — flat when searching/sorting, grouped otherwise
+  let listElement: React.ReactNode
+  if (isSearchMode || sortAlpha || query) {
+    listElement = (
+      <Box flexDirection="column">
+        {displaySkills.length === 0
+          ? <Text dimColor>No skills match "{query}"</Text>
+          : displaySkills.map((skill, i) => renderSkill(skill, i))}
+      </Box>
     )
-    cursor += groupSkills.length
-    groupElements.push(
-      <Box flexDirection="column" key={source}>
-        <Box>
-          <Text bold dimColor>
-            {title}
-          </Text>
-          {subtitle && <Text dimColor> ({subtitle})</Text>}
-        </Box>
-        {rendered}
-      </Box>,
-    )
+  } else {
+    // Walk groups in the same order as orderedSkills, advancing a shared cursor
+    // so globalIdx matches the flat list used by nav keybindings.
+    let cursor = 0
+    const groupElements: React.ReactNode[] = []
+    for (const source of GROUP_ORDER) {
+      const groupSkills = skillsBySource[source]
+      if (groupSkills.length === 0) continue
+      const title = getSourceTitle(source)
+      const subtitle = getSourceSubtitle(source, groupSkills)
+      const startIdx = cursor
+      const rendered = groupSkills.map((skill, i) =>
+        renderSkill(skill, startIdx + i),
+      )
+      cursor += groupSkills.length
+      groupElements.push(
+        <Box flexDirection="column" key={source}>
+          <Box>
+            <Text bold dimColor>
+              {title}
+            </Text>
+            {subtitle && <Text dimColor> ({subtitle})</Text>}
+          </Box>
+          {rendered}
+        </Box>,
+      )
+    }
+    listElement = <Box flexDirection="column" gap={1}>{groupElements}</Box>
   }
+
+  const subtitleCount = query
+    ? `${displaySkills.length}/${skills.length} ${plural(skills.length, 'skill')}`
+    : `${skills.length} ${plural(skills.length, 'skill')}`
 
   return (
     <Dialog
       title="Skills"
-      subtitle={`${skills.length} ${plural(skills.length, 'skill')}`}
+      subtitle={`${subtitleCount} · Enter to use, / to search, t to sort, Esc to close`}
       onCancel={handleCancel}
       hideInputGuide
+      isCancelActive={!isSearchMode}
     >
-      <Box flexDirection="column" gap={1}>
-        {groupElements}
-      </Box>
-      <Text dimColor italic>
-        ↑/↓ navigate  ·  {' '}
-        <ConfigurableShortcutHint
-          action="confirm:yes"
-          context="Confirmation"
-          fallback="↵"
-          description="fill"
-        />
-        {'  ·  '}
-        <ConfigurableShortcutHint
-          action="confirm:no"
-          context="Confirmation"
-          fallback="Esc"
-          description="close"
-        />
-      </Text>
+      <SearchBox
+        query={query}
+        placeholder="Search skills..."
+        isFocused={isSearchMode}
+        isTerminalFocused={isTerminalFocused}
+        cursorOffset={cursorOffset}
+      />
+      {listElement}
     </Dialog>
   )
 }
