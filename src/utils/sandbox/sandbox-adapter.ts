@@ -1045,11 +1045,27 @@ function getSafeFsWriteConfig(): FsWriteRestrictionConfig {
   })
 }
 
+function normalizeNetworkRestrictionConfig(
+  config: NetworkRestrictionConfig | undefined,
+): NetworkRestrictionConfig {
+  if (config === undefined || config === null || typeof config !== 'object') {
+    return {
+      allowedHosts: [],
+      deniedHosts: [],
+    }
+  }
+  const raw = config as Record<string, unknown>
+  return {
+    ...config,
+    allowedHosts: Array.isArray(raw.allowedHosts) ? raw.allowedHosts : [],
+    deniedHosts: Array.isArray(raw.deniedHosts) ? raw.deniedHosts : [],
+  }
+}
+
 function getSafeNetworkRestrictionConfig(): NetworkRestrictionConfig {
-  return callBaseSandboxMethod('getNetworkRestrictionConfig', {
-    allowedHosts: [],
-    deniedHosts: [],
-  })
+  return normalizeNetworkRestrictionConfig(
+    callBaseSandboxMethod('getNetworkRestrictionConfig', undefined),
+  )
 }
 
 export function getSandboxRuntimeCompatibility(): {
