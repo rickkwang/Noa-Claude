@@ -4,7 +4,7 @@ import type { Command } from '../commands.js';
 import { AGENT_TOOL_NAME } from '../tools/AgentTool/constants.js';
 const statusline = {
   type: 'prompt',
-  description: "Set up Noa Claude's status line UI",
+  description: "Set up Noa Claude's status line UI (settings in ~/.claude-agent/settings.json)",
   contentLength: 0,
   // Dynamic content
   aliases: [],

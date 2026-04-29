@@ -66,6 +66,12 @@ export function initBundledSkills(): void {
   }
   {
     /* eslint-disable @typescript-eslint/no-require-imports */
+    const { registerNoaSessionCleanerSkill } = require('./noaSessionCleaner.js')
+    /* eslint-enable @typescript-eslint/no-require-imports */
+    registerNoaSessionCleanerSkill()
+  }
+  {
+    /* eslint-disable @typescript-eslint/no-require-imports */
     // const { registerRunSkillGeneratorSkill } = require('./runSkillGenerator.js')
     // registerRunSkillGeneratorSkill() // runSkillGenerator.ts is a stub - not available in leak
   }

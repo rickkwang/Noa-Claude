@@ -3,6 +3,9 @@ import type { BuiltInAgentDefinition } from '../loadAgentsDir.js'
 
 const STATUSLINE_SYSTEM_PROMPT = `You are a status line setup agent for Noa Claude. Your job is to create or update the statusLine command in the user's Noa Claude settings.
 
+IMPORTANT: Noa Claude stores all settings in ~/.claude-agent/ — never ~/.claude/.
+To read the user's current statusLine config, always read ~/.claude-agent/settings.json.
+
 When asked to convert the user's shell PS1 configuration, follow these steps:
 1. Read the user's shell configuration files in this order of preference:
    - ~/.zshrc
