@@ -4,7 +4,7 @@ const cleanupData = {
   type: 'local',
   name: 'cleanup-data',
   description:
-    'Preview or delete local tracking data (sessions, memory, shares, history)',
+    'Preview or delete local tracking data (memory, shares, progress, history)',
   argumentHint: '[project|all] [--confirm]',
   supportsNonInteractive: true,
   load: () => import('./cleanup-data.js'),

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { rm } from 'fs/promises'
 import { join } from 'path'
 import { getProjectRoot } from '../../bootstrap/state.js'
@@ -11,7 +10,6 @@ import {
   getPrimaryProjectFile,
   getPrimaryProjectSubdir,
 } from '../../utils/productPaths.js'
-import { getProjectDir } from '../../utils/sessionStoragePortable.js'
 
 type CleanupScope = 'project' | 'all'
 
@@ -38,7 +36,6 @@ function parseArgs(args: string): {
 
 function buildTargets(scope: CleanupScope): CleanupTarget[] {
   const projectRoot = getProjectRoot()
-  const projectSessionDir = getProjectDir(projectRoot)
   const autoMemPath = getAutoMemPath().replace(/[\\/]+$/, '')
   const historyPath = join(getClaudeConfigHomeDir(), 'history.jsonl')
 
@@ -58,10 +55,6 @@ function buildTargets(scope: CleanupScope): CleanupTarget[] {
     {
       path: getLegacyProjectFile(projectRoot, 'progress.md'),
       reason: 'Legacy project progress artifact',
-    },
-    {
-      path: projectSessionDir,
-      reason: 'Session transcripts and metadata for this project',
     },
     {
       path: autoMemPath,
@@ -107,6 +100,7 @@ export const call: LocalCommandCall = async args => {
     const header = [
       `Cleanup scope: ${scope}`,
       'This command removes local tracking data and keeps settings/config files.',
+      'Session transcripts are not deleted here; use /clean-sessions for resume sessions.',
       '',
       'Targets:',
       ...targets.map(t => `- ${t.path} (${t.reason})`),

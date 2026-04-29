@@ -10,6 +10,7 @@ import feedback from './commands/feedback/index.js'
 import clear from './commands/clear/index.js'
 import color from './commands/color/index.js'
 import cleanupData from './commands/cleanup-data/index.js'
+import cleanSessions from './commands/clean-sessions/index.js'
 import commit from './commands/commit.js'
 import copy from './commands/copy/index.js'
 import desktop from './commands/desktop/index.js'
@@ -237,6 +238,7 @@ const COMMANDS = memoize((): Command[] => [
   btw,
   chrome,
   clear,
+  cleanSessions,
   cleanupData,
   cacheProbe,
   color,
