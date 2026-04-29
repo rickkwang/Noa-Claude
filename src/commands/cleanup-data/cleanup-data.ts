@@ -1,8 +1,10 @@
-import { rm } from 'fs/promises'
+import { homedir } from 'os'
+import { readdir, rm, stat } from 'fs/promises'
 import { join } from 'path'
 import { getProjectRoot } from '../../bootstrap/state.js'
 import type { LocalCommandCall } from '../../types/command.js'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
+import { formatFileSize } from '../../utils/format.js'
 import { getAutoMemPath } from '../../memdir/paths.js'
 import {
   getLegacyProjectFile,
@@ -18,10 +20,14 @@ type CleanupTarget = {
   reason: string
 }
 
+type ResolvedTarget = CleanupTarget & {
+  exists: boolean
+  size: number
+}
+
 function parseArgs(args: string): {
   scope: CleanupScope
   confirm: boolean
-  dryRun: boolean
 } {
   const parts = args
     .split(/\s+/)
@@ -30,8 +36,53 @@ function parseArgs(args: string): {
 
   const scope: CleanupScope = parts.includes('all') ? 'all' : 'project'
   const confirm = parts.includes('--confirm') || parts.includes('confirm')
-  const dryRun = parts.includes('--dry-run') || parts.includes('dry-run')
-  return { scope, confirm, dryRun }
+  return { scope, confirm }
+}
+
+async function pathSize(path: string): Promise<{ exists: boolean; size: number }> {
+  let info
+  try {
+    info = await stat(path)
+  } catch {
+    return { exists: false, size: 0 }
+  }
+  if (info.isFile()) return { exists: true, size: info.size }
+  if (!info.isDirectory()) return { exists: true, size: 0 }
+
+  let total = 0
+  const walk = async (dir: string): Promise<void> => {
+    let entries
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        await walk(full)
+      } else if (entry.isFile()) {
+        try {
+          total += (await stat(full)).size
+        } catch {
+          // Broken symlink / raced delete — skip.
+        }
+      }
+    }
+  }
+  await walk(path)
+  return { exists: true, size: total }
+}
+
+async function resolveTargets(
+  targets: CleanupTarget[],
+): Promise<ResolvedTarget[]> {
+  return Promise.all(
+    targets.map(async target => ({
+      ...target,
+      ...(await pathSize(target.path)),
+    })),
+  )
 }
 
 function buildTargets(scope: CleanupScope): CleanupTarget[] {
@@ -79,45 +130,97 @@ function buildTargets(scope: CleanupScope): CleanupTarget[] {
   return [...dedup.values()].sort((a, b) => a.path.localeCompare(b.path))
 }
 
-async function deleteTargets(targets: CleanupTarget[]): Promise<string[]> {
+type DeleteOutcome = {
+  deleted: string[]
+  failed: { path: string; error: string }[]
+}
+
+async function deleteTargets(
+  targets: ResolvedTarget[],
+): Promise<DeleteOutcome> {
   const deleted: string[] = []
+  const failed: { path: string; error: string }[] = []
   for (const target of targets) {
+    if (!target.exists) continue
     try {
       await rm(target.path, { recursive: true, force: true })
       deleted.push(target.path)
-    } catch {
-      // Keep going. rm(force:true) already swallows most "missing path" cases.
+    } catch (err) {
+      failed.push({
+        path: target.path,
+        error: err instanceof Error ? err.message : String(err),
+      })
     }
   }
-  return deleted
+  return { deleted, failed }
+}
+
+function describeScope(scope: CleanupScope): string {
+  return scope === 'all'
+    ? "this project's tracking data + global prompt history"
+    : "this project's tracking data"
+}
+
+function tildify(path: string): string {
+  const home = homedir()
+  if (home && path === home) return '~'
+  if (home && path.startsWith(home + '/')) return '~' + path.slice(home.length)
+  return path
+}
+
+function formatTargetSize(size: number): string {
+  return size === 0 ? '(empty)' : formatFileSize(size)
 }
 
 export const call: LocalCommandCall = async args => {
-  const { scope, confirm, dryRun } = parseArgs(args || '')
+  const { scope, confirm } = parseArgs(args || '')
   const targets = buildTargets(scope)
+  const resolved = await resolveTargets(targets)
 
-  if (!confirm || dryRun) {
+  const present = resolved.filter(t => t.exists)
+  const missing = resolved.filter(t => !t.exists)
+  const totalBytes = present.reduce((sum, t) => sum + t.size, 0)
+
+  if (!confirm) {
     const header = [
-      `Cleanup scope: ${scope}`,
-      'This command removes local tracking data and keeps settings/config files.',
-      'Session transcripts are not deleted here; use /clean-sessions for resume sessions.',
+      `Scope: ${describeScope(scope)}`,
+      'This removes local tracking data; settings/config files are kept.',
+      'Session transcripts are not touched here — use /clean-sessions for those.',
       '',
-      'Targets:',
-      ...targets.map(t => `- ${t.path} (${t.reason})`),
-      '',
-      'No files deleted.',
-      `Run /cleanup-data ${scope} --confirm to execute.`,
     ]
+    if (present.length === 0) {
+      header.push('No matching data found. Nothing to clean up.')
+      return { type: 'text', value: header.join('\n') }
+    }
+    header.push(`Will delete ${present.length} target(s), ${formatFileSize(totalBytes)} total:`)
+    header.push('```')
+    for (const t of present) {
+      header.push(`${formatTargetSize(t.size).padEnd(10)} ${t.reason}`)
+      header.push(`           ${tildify(t.path)}`)
+    }
+    header.push('```')
+    if (missing.length > 0) {
+      header.push('', `Skipping ${missing.length} target(s) that don't exist.`)
+    }
+    header.push('', `Run /cleanup-data ${scope} --confirm to execute.`)
     return { type: 'text', value: header.join('\n') }
   }
 
-  const deleted = await deleteTargets(targets)
-  return {
-    type: 'text',
-    value: [
-      `Cleanup complete (${scope}).`,
-      `Deleted targets: ${deleted.length}/${targets.length}`,
-      ...deleted.map(path => `- ${path}`),
-    ].join('\n'),
+  const { deleted, failed } = await deleteTargets(resolved)
+  const lines = [
+    `Cleanup complete (${describeScope(scope)}).`,
+    `Deleted: ${deleted.length}/${present.length}  (${formatFileSize(totalBytes)} reclaimed)`,
+  ]
+  if (deleted.length > 0) {
+    lines.push('```')
+    for (const path of deleted) lines.push(tildify(path))
+    lines.push('```')
   }
+  if (failed.length > 0) {
+    lines.push('', `Failed: ${failed.length}`)
+    lines.push('```')
+    for (const f of failed) lines.push(`${tildify(f.path)}: ${f.error}`)
+    lines.push('```')
+  }
+  return { type: 'text', value: lines.join('\n') }
 }
