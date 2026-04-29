@@ -9,6 +9,7 @@ import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growt
 import { generateAwaySummary } from '../services/awaySummary.js'
 import type { Message } from '../types/message.js'
 import { createAwaySummaryMessage } from '../utils/messages.js'
+import { getInitialSettings } from '../utils/settings/settings.js'
 
 const BLUR_DELAY_MS = 5 * 60_000
 
@@ -53,6 +54,7 @@ export function useAwaySummary(
 
   useEffect(() => {
     if (!feature('AWAY_SUMMARY')) return
+    if (getInitialSettings().awaySummaryEnabled === false) return
     if (!gbEnabled) return
 
     function clearTimer(): void {

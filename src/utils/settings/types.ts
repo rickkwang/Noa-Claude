@@ -753,6 +753,12 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           'When true, the plan-approval dialog offers a "clear context" option. Defaults to false.',
         ),
+      awaySummaryEnabled: z
+        .boolean()
+        .optional()
+        .describe(
+          'When false, disables the automatic "while you were away" summary. Defaults to true.',
+        ),
       agent: z
         .string()
         .optional()
