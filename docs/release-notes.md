@@ -1,5 +1,23 @@
 # Release Notes
 
+## 1.0.5
+
+### New Features
+
+- Exposed `bypass permissions` to local users.
+- Improved trust handling so the home directory can be trusted without leaking that trust to child directories.
+
+### Bug Fixes
+
+- Fixed fullscreen exit cleanup so residual screen artifacts no longer linger after leaving `/tui fullscreen`.
+- Fixed onboarding and trust dialogs so setup screens render and dismiss more consistently.
+- Fixed Bedrock `application-inference-profile` requests for Opus 4.7 by resolving the backing model before thinking/effort capability checks.
+- Fixed `thinking.type.enabled is not supported` 400s on Bedrock Opus 4.7 inference profiles.
+
+### Chores
+
+- Added runtime coverage for the Bedrock Opus 4.7 thinking path and home-directory trust inheritance.
+
 ## 1.0.4
 
 ### New Features

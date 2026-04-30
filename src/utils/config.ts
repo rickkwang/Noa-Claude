@@ -4,6 +4,7 @@ import { randomBytes } from 'crypto'
 import { unwatchFile, watchFile } from 'fs'
 import memoize from 'lodash-es/memoize.js'
 import pickBy from 'lodash-es/pickBy.js'
+import { homedir } from 'os'
 import { basename, dirname, join, resolve } from 'path'
 import { getOriginalCwd, getSessionTrustAccepted } from '../bootstrap/state.js'
 import { getAutoMemEntrypoint } from '../memdir/paths.js'
@@ -710,31 +711,38 @@ export function checkHasTrustDialogAccepted(): boolean {
 }
 
 function computeTrustDialogAccepted(): boolean {
-  // Check session-level trust (for home directory case where trust is not persisted)
-  // When running from home dir, trust dialog is shown but acceptance is stored
-  // in memory only. This allows hooks and other features to work during the session.
+  // Session-level trust covers the current process immediately after accepting
+  // the dialog. Home directory trust is persisted, but intentionally does not
+  // imply trust for every child directory under the user's home.
   if (getSessionTrustAccepted()) {
     return true
   }
 
   const config = getGlobalConfig()
+  const cwdPath = normalizePathForConfigKey(getCwd())
 
   // Always check where trust would be saved (git root or original cwd)
   // This is the primary location where trust is persisted by saveCurrentProjectConfig
   const projectPath = getProjectPathForConfig()
   const projectConfig = config.projects?.[projectPath]
-  if (projectConfig?.hasTrustDialogAccepted) {
+  if (
+    projectConfig?.hasTrustDialogAccepted &&
+    !shouldSkipInheritedHomeTrust(projectPath, cwdPath)
+  ) {
     return true
   }
 
   // Now check from current working directory and its parents
   // Normalize paths for consistent JSON key lookup
-  let currentPath = normalizePathForConfigKey(getCwd())
+  let currentPath = cwdPath
 
   // Traverse all parent directories
   while (true) {
     const pathConfig = config.projects?.[currentPath]
-    if (pathConfig?.hasTrustDialogAccepted) {
+    if (
+      pathConfig?.hasTrustDialogAccepted &&
+      !shouldSkipInheritedHomeTrust(currentPath, cwdPath)
+    ) {
       return true
     }
 
@@ -758,13 +766,30 @@ function computeTrustDialogAccepted(): boolean {
  */
 export function isPathTrusted(dir: string): boolean {
   const config = getGlobalConfig()
-  let currentPath = normalizePathForConfigKey(resolve(dir))
+  const targetPath = normalizePathForConfigKey(resolve(dir))
+  let currentPath = targetPath
   while (true) {
-    if (config.projects?.[currentPath]?.hasTrustDialogAccepted) return true
+    if (
+      config.projects?.[currentPath]?.hasTrustDialogAccepted &&
+      !shouldSkipInheritedHomeTrust(currentPath, targetPath)
+    ) {
+      return true
+    }
     const parentPath = normalizePathForConfigKey(resolve(currentPath, '..'))
     if (parentPath === currentPath) return false
     currentPath = parentPath
   }
+}
+
+export function shouldSkipInheritedHomeTrust(
+  trustedPath: string,
+  targetPath: string,
+): boolean {
+  const homePath = normalizePathForConfigKey(homedir())
+  return (
+    normalizePathForConfigKey(trustedPath) === homePath &&
+    normalizePathForConfigKey(targetPath) !== homePath
+  )
 }
 
 // We have to put this test code here because Jest doesn't support mocking ES modules :O

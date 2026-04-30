@@ -3,7 +3,6 @@ import { c as _c } from "react/compiler-runtime";
 import { homedir } from 'os';
 import React from 'react';
 import { logEvent } from 'src/services/analytics/index.js';
-import { setSessionTrustAccepted } from '../../bootstrap/state.js';
 import type { Command } from '../../commands.js';
 import { useExitOnCtrlCDWithKeybindings } from '../../hooks/useExitOnCtrlCDWithKeybindings.js';
 import { Box, Link, Text } from '../../ink.js';
@@ -173,11 +172,7 @@ export function TrustDialog(t0) {
         hasOtelHeadersHelper,
         hasDangerousEnvVars
       });
-      if (isHomeDir_0) {
-        setSessionTrustAccepted(true);
-      } else {
-        saveCurrentProjectConfig(_temp5);
-      }
+      saveCurrentProjectConfig(_temp5);
       onDone();
     };
     $[16] = hasAnyBashExecution;
