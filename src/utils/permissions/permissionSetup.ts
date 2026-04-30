@@ -928,8 +928,9 @@ export async function initializeToolPermissionContext({
     })
   }
 
-  // Check if bypassPermissions mode is available (not disabled by Statsig gate or settings)
-  // Use cached values to avoid blocking on startup
+  // Check if bypassPermissions mode is available.
+  // Local interactive sessions expose it to all users unless disabled by policy
+  // or settings. Remote sessions still require an explicit startup request.
   const growthBookDisableBypassPermissionsMode =
     checkStatsigFeatureGate_CACHED_MAY_BE_STALE(
       'tengu_disable_bypass_permissions_mode',
@@ -937,9 +938,12 @@ export async function initializeToolPermissionContext({
   const settings = getSettings_DEPRECATED() || {}
   const settingsDisableBypassPermissionsMode =
     settings.permissions?.disableBypassPermissionsMode === 'disable'
+  const bypassPermissionsAvailabilityRequested =
+    !isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) ||
+    permissionMode === 'bypassPermissions' ||
+    allowDangerouslySkipPermissions
   const isBypassPermissionsModeAvailable =
-    (permissionMode === 'bypassPermissions' ||
-      allowDangerouslySkipPermissions) &&
+    bypassPermissionsAvailabilityRequested &&
     !growthBookDisableBypassPermissionsMode &&
     !settingsDisableBypassPermissionsMode
 

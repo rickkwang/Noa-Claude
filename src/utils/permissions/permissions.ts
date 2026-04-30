@@ -1265,11 +1265,11 @@ async function hasPermissionsToUseToolInner(
   appState = context.getAppState()
   // Check if permissions should be bypassed:
   // - Direct bypassPermissions mode
-  // - Plan mode when the user originally started with bypass mode (isBypassPermissionsModeAvailable)
+  // - Plan mode when the user entered plan mode from bypassPermissions
   const shouldBypassPermissions =
     appState.toolPermissionContext.mode === 'bypassPermissions' ||
     (appState.toolPermissionContext.mode === 'plan' &&
-      appState.toolPermissionContext.isBypassPermissionsModeAvailable)
+      appState.toolPermissionContext.prePlanMode === 'bypassPermissions')
   if (shouldBypassPermissions) {
     return {
       behavior: 'allow',
