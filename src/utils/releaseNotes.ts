@@ -112,12 +112,11 @@ export async function getStoredChangelog(): Promise<string> {
 
 /**
  * Synchronous accessor for the release notes, reading only from the in-memory cache.
- * Returns empty string if the async getStoredChangelog() hasn't been called yet.
- * Intended for React render paths where async is not possible; setup.ts ensures
- * the cache is populated before first render via `await checkForReleaseNotes()`.
+ * Falls back to bundled notes when async cache seeding has not run yet.
+ * Intended for React render paths where async is not possible.
  */
 export function getStoredChangelogFromMemory(): string {
-  return changelogMemoryCache ?? ''
+  return changelogMemoryCache ?? getBundledChangelog()
 }
 
 /**
@@ -284,9 +283,8 @@ export async function checkForReleaseNotes(
 
 /**
  * Synchronous variant of checkForReleaseNotes for React render paths.
- * Reads only from the in-memory cache populated by the async version.
- * setup.ts awaits checkForReleaseNotes() before first render, so this
- * returns accurate results in component render bodies.
+ * Reads from the in-memory cache, falling back to bundled release notes when
+ * startup has not populated the async cache yet.
  */
 export function checkForReleaseNotesSync(
   lastSeenVersion: string | null | undefined,

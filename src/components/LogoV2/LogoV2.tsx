@@ -114,12 +114,15 @@ export function LogoV2() {
     }
   }, [showOnboarding]);
   useEffect(() => {
+    if (!hasReleaseNotes) {
+      return;
+    }
     const currentConfig = getGlobalConfig();
     if (currentConfig.lastReleaseNotesSeen === MACRO.VERSION) {
       return;
     }
     saveGlobalConfig(_temp3);
-  }, [config]);
+  }, [config, hasReleaseNotes]);
   let t4;
   if ($[5] === Symbol.for("react.memo_cache_sentinel")) {
     t4 = !hasReleaseNotes && !showOnboarding && !isEnvTruthy(process.env.CLAUDE_CODE_FORCE_FULL_LOGO);
