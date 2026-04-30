@@ -4,13 +4,14 @@
 
 ### Bug Fixes
 
-- Fixed workspace trust so accepting `~` persists again without leaking trust into child directories.
+- Fixed release notes panel sometimes not appearing after upgrade because `lastReleaseNotesSeen` was written before the async changelog cache had loaded.
+- Fixed release notes panel flicker on startup by reading `hasReleaseNotes` once via lazy initialization instead of re-evaluating each render.
 - Fixed `/release-notes` so Enter expands the selected entry instead of immediately dismissing the panel.
-- Fixed `/release-notes` expanded view to stay within a fixed viewport and scroll instead of jumping to the bottom.
+- Fixed `/release-notes` expanded view to stay within a fixed viewport and scroll instead of overflowing the terminal.
 
 ### Chores
 
-- Improved release note and trust coverage for the updated interaction flows.
+- Added regression coverage for the synchronous release notes accessor's bundled-changelog fallback.
 
 ## 1.0.5
 
