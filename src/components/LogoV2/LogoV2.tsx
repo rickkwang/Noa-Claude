@@ -105,9 +105,7 @@ export function LogoV2() {
     }
     return config.numStartups === 1 ? announcements[0] : announcements[Math.floor(Math.random() * announcements.length)];
   });
-  const {
-    hasReleaseNotes
-  } = checkForReleaseNotesSync(config.lastReleaseNotesSeen);
+  const [hasReleaseNotes] = useState(() => checkForReleaseNotesSync(config.lastReleaseNotesSeen).hasReleaseNotes);
   useEffect(() => {
     if (showOnboarding) {
       incrementProjectOnboardingSeenCount();
