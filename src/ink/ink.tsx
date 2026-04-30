@@ -152,6 +152,10 @@ export default class Ink {
   // Set alongside altScreenActive so SIGCONT resume knows whether to
   // re-enable mouse tracking (not all <AlternateScreen> uses want it).
   private altScreenMouseTracking = false;
+  // Set when Ink-level teardown already emitted the terminal-side alt-screen
+  // exit. Prevents <AlternateScreen>'s React cleanup from sending a second
+  // 1049l while the shell is already repainting on the main screen.
+  private suppressAltScreenExitSequence = false;
   // True when the previous frame's screen buffer cannot be trusted for
   // blit — selection overlay mutated it, resetFramesForAltScreen()
   // replaced it with blanks, or forceRedraw() reset it to 0×0. Forces
@@ -873,6 +877,10 @@ export default class Ink {
     return this.altScreenActive;
   }
 
+  shouldSuppressAltScreenExitSequence(): boolean {
+    return this.suppressAltScreenExitSequence;
+  }
+
   /**
    * Re-assert terminal modes after a gap (>5s stdin silence or event-loop
    * stall). Catches tmux detach→attach, ssh reconnect, and laptop
@@ -932,6 +940,7 @@ export default class Ink {
    */
   detachForShutdown(): void {
     this.isUnmounted = true;
+    this.suppressAltScreenExitSequence = true;
     // Cancel any pending throttled render so it doesn't fire between
     // cleanupTerminalModes() and process.exit() and write to main screen.
     this.scheduleRender.cancel?.();
@@ -1457,6 +1466,7 @@ export default class Ink {
     if (this.isUnmounted) {
       return;
     }
+    this.suppressAltScreenExitSequence = this.altScreenActive;
     this.onRender();
     this.unsubscribeExit();
     if (typeof this.restoreConsole === 'function') {

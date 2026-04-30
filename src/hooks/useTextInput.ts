@@ -222,12 +222,20 @@ export function useTextInput({
     return Cursor.fromText(newText, columns, newOffset)
   }
 
+  function ctrlA(): Cursor {
+    return multiline ? cursor.startOfLogicalLine() : cursor.startOfLine()
+  }
+
+  function ctrlE(): Cursor {
+    return multiline ? cursor.endOfLogicalLine() : cursor.endOfLine()
+  }
+
   const handleCtrl = mapInput([
-    ['a', () => cursor.startOfLine()],
+    ['a', ctrlA],
     ['b', () => cursor.left()],
     ['c', handleCtrlC],
     ['d', handleCtrlD],
-    ['e', () => cursor.endOfLine()],
+    ['e', ctrlE],
     ['f', () => cursor.right()],
     ['h', () => cursor.deleteTokenBefore() ?? cursor.backspace()],
     ['k', killToLineEnd],

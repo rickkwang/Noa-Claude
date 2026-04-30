@@ -53,7 +53,9 @@ export function AlternateScreen(t0) {
       return () => {
         ink?.setAltScreenActive(false);
         ink?.clearTextSelection();
-        writeRaw((mouseTracking ? DISABLE_MOUSE_TRACKING : "") + EXIT_ALT_SCREEN);
+        if (!ink?.shouldSuppressAltScreenExitSequence()) {
+          writeRaw((mouseTracking ? DISABLE_MOUSE_TRACKING : "") + EXIT_ALT_SCREEN);
+        }
       };
     };
     t3 = [writeRaw, mouseTracking];

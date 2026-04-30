@@ -257,6 +257,33 @@ import {
 type JsonValue = string | number | boolean | null | JsonObject | JsonArray
 type JsonObject = { [key: string]: JsonValue }
 type JsonArray = JsonValue[]
+type ExtraBodyOptions = {
+  stripEffort?: boolean
+}
+
+function stripExtraBodyEffort(params: JsonObject): JsonObject {
+  if ('effort' in params) {
+    delete params.effort
+  }
+
+  const outputConfig = params.output_config
+  if (
+    outputConfig &&
+    typeof outputConfig === 'object' &&
+    !Array.isArray(outputConfig) &&
+    'effort' in outputConfig
+  ) {
+    const nextOutputConfig = { ...outputConfig }
+    delete nextOutputConfig.effort
+    if (Object.keys(nextOutputConfig).length === 0) {
+      delete params.output_config
+    } else {
+      params.output_config = nextOutputConfig
+    }
+  }
+
+  return params
+}
 
 /**
  * Assemble the extra body parameters for the API request, based on the
@@ -266,7 +293,10 @@ type JsonArray = JsonValue[]
  * @param betaHeaders - An array of beta headers to include in the request.
  * @returns A JSON object representing the extra body parameters.
  */
-export function getExtraBodyParams(betaHeaders?: string[]): JsonObject {
+export function getExtraBodyParams(
+  betaHeaders?: string[],
+  options?: ExtraBodyOptions,
+): JsonObject {
   // Parse user's extra body parameters first
   const extraBodyStr = process.env.CLAUDE_CODE_EXTRA_BODY
   let result: JsonObject = {}
@@ -329,6 +359,10 @@ export function getExtraBodyParams(betaHeaders?: string[]): JsonObject {
   // store:false for Bedrock, Vertex, Foundry, and OpenAI-compatible.
   if (getAPIProvider() !== 'firstParty') {
     result.store = false
+  }
+
+  if (options?.stripEffort) {
+    stripExtraBodyEffort(result)
   }
 
   return result
@@ -1455,6 +1489,7 @@ async function* queryModel(
   }
 
   const effort = resolveAppliedEffort(options.model, options.effortValue)
+  const shouldStripExtraBodyEffort = options.agentId !== undefined
 
   if (feature('PROMPT_CACHE_BREAK_DETECTION')) {
     // Exclude defer_loading tools from the hash -- the API strips them from the
@@ -1480,7 +1515,9 @@ async function* queryModel(
       isUsingOverage: currentLimits.isUsingOverage ?? false,
       cachedMCEnabled: cacheEditingHeaderLatched,
       effortValue: effort,
-      extraBodyParams: getExtraBodyParams(),
+      extraBodyParams: getExtraBodyParams(undefined, {
+        stripEffort: shouldStripExtraBodyEffort,
+      }),
     })
   }
 
@@ -1553,7 +1590,9 @@ async function* queryModel(
             ...(toolSearchHeader ? [toolSearchHeader] : []),
           ]
         : []
-    const extraBodyParams = getExtraBodyParams(bedrockBetas)
+    const extraBodyParams = getExtraBodyParams(bedrockBetas, {
+      stripEffort: shouldStripExtraBodyEffort,
+    })
 
     const outputConfig: BetaOutputConfig = {
       ...((extraBodyParams.output_config as BetaOutputConfig) ?? {}),

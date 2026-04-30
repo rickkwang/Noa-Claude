@@ -9,6 +9,7 @@ import type { Command } from './commands.js';
 import { createStatsStore, type StatsStore } from './context/stats.js';
 import { getSystemContext } from './context.js';
 import { initializeTelemetryAfterTrust } from './entrypoints/init.js';
+import { AlternateScreen } from './ink/components/AlternateScreen.js';
 import { isSynchronizedOutputSupported } from './ink/terminal.js';
 import type { RenderOptions, Root, TextProps } from './ink.js';
 import { KeybindingSetup } from './keybindings/KeybindingProviderSetup.js';
@@ -24,6 +25,7 @@ import { checkHasTrustDialogAccepted, getCustomApiKeyStatus, getGlobalConfig, sa
 import { updateDeepLinkTerminalPreference } from './utils/deepLink/terminalPreference.js';
 import { isEnvTruthy, isRunningOnHomespace } from './utils/envUtils.js';
 import { type FpsMetrics, FpsTracker } from './utils/fpsTracker.js';
+import { isFullscreenEnvEnabled, isMouseTrackingEnabled } from './utils/fullscreen.js';
 import { updateGithubRepoPathMapping } from './utils/githubRepoPathMapping.js';
 import { applyConfigEnvironmentVariables } from './utils/managedEnv.js';
 import type { PermissionMode } from './utils/permissions/PermissionMode.js';
@@ -87,9 +89,15 @@ export async function exitWithMessage(root: Root, message: string, options?: {
 export function showSetupDialog<T = void>(root: Root, renderer: (done: (result: T) => void) => React.ReactNode, options?: {
   onChangeAppState?: typeof onChangeAppState;
 }): Promise<T> {
-  return showDialog<T>(root, done => <AppStateProvider onChangeAppState={options?.onChangeAppState}>
-      <KeybindingSetup>{renderer(done)}</KeybindingSetup>
-    </AppStateProvider>);
+  return showDialog<T>(root, done => {
+    const content = <AppStateProvider onChangeAppState={options?.onChangeAppState}>
+        <KeybindingSetup>{renderer(done)}</KeybindingSetup>
+      </AppStateProvider>;
+    if (!isFullscreenEnvEnabled()) {
+      return content;
+    }
+    return <AlternateScreen mouseTracking={isMouseTrackingEnabled()}>{content}</AlternateScreen>;
+  });
 }
 
 /**

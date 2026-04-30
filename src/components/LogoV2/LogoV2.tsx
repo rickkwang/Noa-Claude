@@ -108,31 +108,18 @@ export function LogoV2() {
   const {
     hasReleaseNotes
   } = checkForReleaseNotesSync(config.lastReleaseNotesSeen);
-  let t2;
-  if ($[2] === Symbol.for("react.memo_cache_sentinel")) {
-    t2 = () => {
-      const currentConfig = getGlobalConfig();
-      if (currentConfig.lastReleaseNotesSeen === MACRO.VERSION) {
-        return;
-      }
-      saveGlobalConfig(_temp3);
-      if (showOnboarding) {
-        incrementProjectOnboardingSeenCount();
-      }
-    };
-    $[2] = t2;
-  } else {
-    t2 = $[2];
-  }
-  let t3;
-  if ($[3] !== config) {
-    t3 = [config, showOnboarding];
-    $[3] = config;
-    $[4] = t3;
-  } else {
-    t3 = $[4];
-  }
-  useEffect(t2, t3);
+  useEffect(() => {
+    if (showOnboarding) {
+      incrementProjectOnboardingSeenCount();
+    }
+  }, [showOnboarding]);
+  useEffect(() => {
+    const currentConfig = getGlobalConfig();
+    if (currentConfig.lastReleaseNotesSeen === MACRO.VERSION) {
+      return;
+    }
+    saveGlobalConfig(_temp3);
+  }, [config]);
   let t4;
   if ($[5] === Symbol.for("react.memo_cache_sentinel")) {
     t4 = !hasReleaseNotes && !showOnboarding && !isEnvTruthy(process.env.CLAUDE_CODE_FORCE_FULL_LOGO);

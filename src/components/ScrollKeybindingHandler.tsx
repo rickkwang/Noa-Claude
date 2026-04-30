@@ -402,6 +402,27 @@ export function ScrollKeybindingHandler({
     if (text_0) showCopiedToast(text_0);
   }
 
+  // Fullscreen convenience: without an active text selection, Shift+↑/↓
+  // scrolls the transcript directly. With a selection, the later handler keeps
+  // the native selection-extension behavior.
+  useInput((_input, key, event) => {
+    if (selection.hasSelection()) return;
+    if (!key.shift || key.ctrl || key.meta || key.super) return;
+    if (!key.upArrow && !key.downArrow) return;
+    const s = scrollRef.current;
+    if (!s || s.getScrollHeight() <= s.getViewportHeight()) return;
+    if (key.upArrow) {
+      scrollUp(s, 1);
+      onScroll?.(false, s);
+    } else {
+      const reachedBottom = scrollDown(s, 1);
+      onScroll?.(reachedBottom, s);
+    }
+    event.stopImmediatePropagation();
+  }, {
+    isActive
+  });
+
   // Translate selection to track a keyboard page jump. Selection coords are
   // screen-buffer-local; a scrollTo that moves content by N rows must also
   // shift anchor+focus by N so the highlight stays on the same text (native
