@@ -122,12 +122,13 @@ export function modelSupportsAdaptiveThinking(model: string): boolean {
   const directFirstParty =
     provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()
 
-  // First-party and Foundry Claude 4.6+ Opus/Sonnet models use adaptive thinking.
+  // First-party, Foundry, and Bedrock Opus 4.7 use adaptive thinking.
   if (
-    (directFirstParty || provider === 'foundry') &&
-    (canonical.includes('opus-4-6') ||
-      canonical.includes('opus-4-7') ||
-      canonical.includes('sonnet-4-6'))
+    ((directFirstParty || provider === 'foundry') &&
+      (canonical.includes('opus-4-6') ||
+        canonical.includes('opus-4-7') ||
+        canonical.includes('sonnet-4-6'))) ||
+    (provider === 'bedrock' && canonical.includes('opus-4-7'))
   ) {
     return true
   }

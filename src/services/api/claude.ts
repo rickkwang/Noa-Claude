@@ -1107,6 +1107,7 @@ async function* queryModel(
       ? ((await getInferenceProfileBackingModel(options.model)) ??
         options.model)
       : options.model
+  const apiModel = resolvedModel
 
   queryCheckpoint('query_tool_schema_build_start')
   const isAgenticQuery =
@@ -1115,7 +1116,7 @@ async function* queryModel(
     options.querySource === 'sdk' ||
     options.querySource === 'hook_agent' ||
     options.querySource === 'verification_agent'
-  const betas = getMergedBetas(options.model, { isAgenticQuery })
+  const betas = getMergedBetas(apiModel, { isAgenticQuery })
 
   // Always send the advisor beta header when advisor is enabled, so
   // non-agentic queries (compact, side_question, extract_memories, etc.)
@@ -1506,7 +1507,7 @@ async function* queryModel(
       system,
       toolSchemas: toolsForCacheDetection,
       querySource: options.querySource,
-      model: options.model,
+      model: apiModel,
       agentId: options.agentId,
       fastMode: fastModeHeaderLatched,
       globalCacheStrategy,
@@ -1586,7 +1587,7 @@ async function* queryModel(
     const bedrockBetas =
       getAPIProvider() === 'bedrock'
         ? [
-            ...getBedrockExtraBodyParamsBetas(retryContext.model),
+            ...getBedrockExtraBodyParamsBetas(apiModel),
             ...(toolSearchHeader ? [toolSearchHeader] : []),
           ]
         : []
@@ -1603,7 +1604,7 @@ async function* queryModel(
       outputConfig,
       extraBodyParams,
       betasParams,
-      options.model,
+      apiModel,
     )
 
     configureTaskBudgetParams(
@@ -1618,7 +1619,7 @@ async function* queryModel(
       outputConfig.format = options.outputFormat as BetaJSONOutputFormat
       // Add beta header if not already present and provider supports it
       if (
-        modelSupportsStructuredOutputs(options.model) &&
+        modelSupportsStructuredOutputs(apiModel) &&
         !betasParams.includes(STRUCTURED_OUTPUTS_BETA_HEADER)
       ) {
         betasParams.push(STRUCTURED_OUTPUTS_BETA_HEADER)
@@ -1629,7 +1630,7 @@ async function* queryModel(
     const maxOutputTokens =
       retryContext?.maxTokensOverride ||
       options.maxOutputTokensOverride ||
-      getMaxOutputTokensForModel(options.model)
+      getMaxOutputTokensForModel(apiModel)
 
     const hasThinking =
       thinkingConfig.type !== 'disabled' &&
@@ -1639,10 +1640,10 @@ async function* queryModel(
     // IMPORTANT: Do not change the adaptive-vs-budget thinking selection below
     // without notifying the model launch DRI and research. This is a sensitive
     // setting that can greatly affect model quality and bashing.
-    if (hasThinking && modelSupportsThinking(options.model)) {
+    if (hasThinking && modelSupportsThinking(apiModel)) {
       if (
         !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING) &&
-        modelSupportsAdaptiveThinking(options.model)
+        modelSupportsAdaptiveThinking(apiModel)
       ) {
         // For models that support adaptive thinking, always use adaptive
         // thinking without a budget.
@@ -1652,7 +1653,7 @@ async function* queryModel(
       } else {
         // For models that do not support adaptive thinking, use the default
         // thinking budget unless explicitly specified.
-        let thinkingBudget = getMaxThinkingTokensForModel(options.model)
+        let thinkingBudget = getMaxThinkingTokensForModel(apiModel)
         if (
           thinkingConfig.type === 'enabled' &&
           thinkingConfig.budgetTokens !== undefined
@@ -2290,12 +2291,12 @@ async function* queryModel(
             costUSD += addToTotalSessionCost(
               costUSDForPart,
               usage,
-              options.model,
+              apiModel,
             )
 
             const refusalMessage = getErrorMessageIfRefusal(
               part.delta.stop_reason,
-              options.model,
+              apiModel,
             )
             if (refusalMessage) {
               yield refusalMessage
@@ -2863,7 +2864,7 @@ async function* queryModel(
       costUSD += addToTotalSessionCost(
         fallbackCost,
         fallbackUsage,
-        options.model,
+        apiModel,
       )
     }
   }
