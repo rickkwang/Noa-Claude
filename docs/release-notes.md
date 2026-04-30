@@ -1,5 +1,17 @@
 # Release Notes
 
+## 1.0.6
+
+### Bug Fixes
+
+- Fixed workspace trust so accepting `~` persists again without leaking trust into child directories.
+- Fixed `/release-notes` so Enter expands the selected entry instead of immediately dismissing the panel.
+- Fixed `/release-notes` expanded view to stay within a fixed viewport and scroll instead of jumping to the bottom.
+
+### Chores
+
+- Improved release note and trust coverage for the updated interaction flows.
+
 ## 1.0.5
 
 ### New Features
