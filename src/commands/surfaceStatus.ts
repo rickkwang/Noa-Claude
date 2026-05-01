@@ -88,24 +88,6 @@ const implementedNonBaseline: CommandSurfaceEntry[] = [
       'Promote only after retention policy and backup/restore UX are finalized.',
   },
   {
-    command: '/output-style',
-    category: 'implemented-non-baseline',
-    discoverability: 'visible',
-    supportsNonInteractive: null,
-    reason: 'Deprecated compatibility shim that redirects users to /config.',
-    upgradeCondition:
-      'Not eligible for baseline promotion unless replaced with a supported configuration workflow.',
-  },
-  {
-    command: '/thinkback-play',
-    category: 'implemented-non-baseline',
-    discoverability: 'visible',
-    supportsNonInteractive: false,
-    reason: 'Helper command gated by runtime feature flag.',
-    upgradeCondition:
-      'Promote only if ungated and integrated as stable workflow.',
-  },
-  {
     command: '/rate-limit-options',
     category: 'implemented-non-baseline',
     discoverability: 'visible',

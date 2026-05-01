@@ -278,10 +278,6 @@ function getWarningUpsellText(
       return null
     }
 
-    // Pro/Max users: prompt to upgrade
-    if (subscriptionType === 'pro' || subscriptionType === 'max') {
-      return '/upgrade to keep using Noa Claude'
-    }
   }
 
   // Overage warning (approaching spending limit)

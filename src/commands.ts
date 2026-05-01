@@ -13,7 +13,6 @@ import cleanupData from './commands/cleanup-data/index.js'
 import cleanSessions from './commands/clean-sessions/index.js'
 import commit from './commands/commit.js'
 import copy from './commands/copy/index.js'
-import desktop from './commands/desktop/index.js'
 import commitPushPr from './commands/commit-push-pr.js'
 import compact from './commands/compact/index.js'
 import config from './commands/config/index.js'
@@ -31,11 +30,9 @@ import keybindings from './commands/keybindings/index.js'
 import login from './commands/login/index.js'
 import logout from './commands/logout/index.js'
 import installGitHubApp from './commands/install-github-app/index.js'
-import installSlackApp from './commands/install-slack-app/index.js'
 import breakCache from './commands/break-cache/index.js'
 import cacheProbe from './commands/cache-probe/index.js'
 import mcp from './commands/mcp/index.js'
-import mobile from './commands/mobile/index.js'
 import onboarding from './commands/onboarding/index.js'
 import pr_comments from './commands/pr_comments/index.js'
 import releaseNotes from './commands/release-notes/index.js'
@@ -96,12 +93,9 @@ const buddy = (
   require('./commands/buddy/index.js') as typeof import('./commands/buddy/index.js')
 ).default
 /* eslint-enable @typescript-eslint/no-require-imports */
-import thinkback from './commands/thinkback/index.js'
-import thinkbackPlay from './commands/thinkback-play/index.js'
 import permissions from './commands/permissions/index.js'
 import plan from './commands/plan/index.js'
 import fast from './commands/fast/index.js'
-import passes from './commands/passes/index.js'
 import privacySettings from './commands/privacy-settings/index.js'
 import hooks from './commands/hooks/index.js'
 import files from './commands/files/index.js'
@@ -123,7 +117,6 @@ import antTrace from './commands/ant-trace/index.js'
 import perfIssue from './commands/perf-issue/index.js'
 import sandboxToggle from './commands/sandbox-toggle/index.js'
 import chrome from './commands/chrome/index.js'
-import stickers from './commands/stickers/index.js'
 import advisor from './commands/advisor.js'
 import { logError } from './utils/log.js'
 import { toError } from './utils/errors.js'
@@ -149,9 +142,7 @@ import exit from './commands/exit/index.js'
 import exportCommand from './commands/export/index.js'
 import model from './commands/model/index.js'
 import tag from './commands/tag/index.js'
-import outputStyle from './commands/output-style/index.js'
 import remoteEnv from './commands/remote-env/index.js'
-import upgrade from './commands/upgrade/index.js'
 import {
   extraUsage,
   extraUsageNonInteractive,
@@ -245,7 +236,6 @@ const COMMANDS = memoize((): Command[] => [
   compact,
   config,
   copy,
-  desktop,
   context,
   contextNonInteractive,
   cost,
@@ -261,12 +251,9 @@ const COMMANDS = memoize((): Command[] => [
   init,
   keybindings,
   installGitHubApp,
-  installSlackApp,
   mcp,
   memory,
-  mobile,
   model,
-  outputStyle,
   remoteEnv,
   plugin,
   pr_comments,
@@ -281,7 +268,6 @@ const COMMANDS = memoize((): Command[] => [
   status,
   statusline,
   startupBanner,
-  stickers,
   summary,
   tag,
   theme,
@@ -292,7 +278,6 @@ const COMMANDS = memoize((): Command[] => [
   rewind,
   securityReview,
   terminalSetup,
-  upgrade,
   extraUsage,
   extraUsageNonInteractive,
   rateLimitOptions,
@@ -309,8 +294,6 @@ const COMMANDS = memoize((): Command[] => [
   ...(bridge ? [bridge] : []),
   ...(remoteControlServerCommand ? [remoteControlServerCommand] : []),
   ...(voiceCommand ? [voiceCommand] : []),
-  thinkback,
-  thinkbackPlay,
   permissions,
   plan,
   privacySettings,
@@ -318,7 +301,6 @@ const COMMANDS = memoize((): Command[] => [
   exportCommand,
   sandboxToggle,
   ...(!isUsing3PServices() ? [logout, login()] : []),
-  passes,
   ...(peersCmd ? [peersCmd] : []),
   tasks,
   ...(workflowsCmd ? [workflowsCmd] : []),
@@ -610,8 +592,6 @@ export const REMOTE_SAFE_COMMANDS: Set<Command> = new Set([
   plan, // Plan mode toggle
   keybindings, // Keybinding management
   statusline, // Status line toggle
-  stickers, // Stickers
-  mobile, // Mobile QR code
 ])
 
 /**

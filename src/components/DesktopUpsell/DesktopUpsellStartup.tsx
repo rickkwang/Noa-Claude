@@ -24,12 +24,7 @@ function isSupportedPlatform(): boolean {
   return process.platform === 'darwin' || process.platform === 'win32' && process.arch === 'x64';
 }
 export function shouldShowDesktopUpsellStartup(): boolean {
-  if (!isSupportedPlatform()) return false;
-  if (!getDesktopUpsellConfig().enable_startup_dialog) return false;
-  const config = getGlobalConfig();
-  if (config.desktopUpsellDismissed) return false;
-  if ((config.desktopUpsellSeenCount ?? 0) >= 3) return false;
-  return true;
+  return false;
 }
 type DesktopUpsellSelection = 'try' | 'not-now' | 'never';
 type Props = {

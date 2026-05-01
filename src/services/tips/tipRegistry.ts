@@ -8,7 +8,6 @@ import {
   getSettingsForSource,
 } from 'src/utils/settings/settings.js'
 import { shouldOfferTerminalSetup } from '../../commands/terminalSetup/terminalSetup.js'
-import { getDesktopUpsellConfig } from '../../components/DesktopUpsell/DesktopUpsellStartup.js'
 import { color } from '../../components/design-system/color.js'
 import { shouldShowOverageCreditUpsell } from '../../components/LogoV2/OverageCreditUpsell.js'
 import { getShortcutDisplay } from '../../keybindings/shortcutFormat.js'
@@ -50,11 +49,6 @@ import {
   formatGrantAmount,
   getCachedOverageCreditGrant,
 } from '../api/overageCreditGrant.js'
-import {
-  checkCachedPassesEligibility,
-  formatCreditAmount,
-  getCachedReferrerReward,
-} from '../api/referral.js'
 import { getSessionsSinceLastShown } from './tipHistory.js'
 import type { Tip, TipContext } from './types.js'
 
@@ -332,12 +326,6 @@ const externalTips: Tip[] = [
     isRelevant: async () => !getGlobalConfig().githubActionSetupCount,
   },
   {
-    id: 'install-slack-app',
-    content: async () => 'Run /install-slack-app to use Claude in Slack',
-    cooldownSessions: 10,
-    isRelevant: async () => !getGlobalConfig().slackAppInstallCount,
-  },
-  {
     id: 'permissions',
     content: async () =>
       'Use /permissions to pre-approve and pre-deny bash, edit, and MCP tools',
@@ -437,38 +425,9 @@ const externalTips: Tip[] = [
     },
   },
   {
-    id: 'desktop-app',
-    content: async () =>
-      'Run Noa Claude locally or remotely using the Claude desktop app: clau.de/desktop',
-    cooldownSessions: 15,
-    isRelevant: async () => getPlatform() !== 'linux',
-  },
-  {
-    id: 'desktop-shortcut',
-    content: async ctx => {
-      const blue = color('suggestion', ctx.theme)
-      return `Continue your session in Noa Claude Desktop with ${blue('/desktop')}`
-    },
-    cooldownSessions: 15,
-    isRelevant: async () => {
-      if (!getDesktopUpsellConfig().enable_shortcut_tip) return false
-      return (
-        process.platform === 'darwin' ||
-        (process.platform === 'win32' && process.arch === 'x64')
-      )
-    },
-  },
-  {
     id: 'web-app',
     content: async () =>
       'Run tasks in the cloud while you keep coding locally · clau.de/web',
-    cooldownSessions: 15,
-    isRelevant: async () => true,
-  },
-  {
-    id: 'mobile-app',
-    content: async () =>
-      '/mobile to use Noa Claude from the Claude app on your phone',
     cooldownSessions: 15,
     isRelevant: async () => true,
   },
@@ -587,25 +546,6 @@ const externalTips: Tip[] = [
           'off',
         ) !== 'off'
       )
-    },
-  },
-  {
-    id: 'guest-passes',
-    content: async ctx => {
-      const claude = color('claude', ctx.theme)
-      const reward = getCachedReferrerReward()
-      return reward
-        ? `Share Noa Claude and earn ${claude(formatCreditAmount(reward))} of extra usage · ${claude('/passes')}`
-        : `You have free guest passes to share · ${claude('/passes')}`
-    },
-    cooldownSessions: 3,
-    isRelevant: async () => {
-      const config = getGlobalConfig()
-      if (config.hasVisitedPasses) {
-        return false
-      }
-      const { eligible } = checkCachedPassesEligibility()
-      return eligible
     },
   },
   {
