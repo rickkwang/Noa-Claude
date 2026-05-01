@@ -5,7 +5,9 @@ import { Box, Text } from '../../ink.js';
 import { env } from '../../utils/env.js';
 export type ClawdPose = 'default' | 'arms-up' // both arms raised (used during jump)
 | 'look-left' // both pupils shifted left
-| 'look-right'; // both pupils shifted right
+| 'look-right' // both pupils shifted right
+| 'wave-left' // left arm raised
+| 'wave-right'; // right arm raised
 
 type Props = {
   pose?: ClawdPose;
@@ -60,6 +62,20 @@ const POSES: Record<ClawdPose, Segments> = {
     r1R: '▙▖',
     r2L: ' ▜',
     r2R: '▛ '
+  },
+  'wave-left': {
+    r1L: '▗▟',
+    r1E: '▛███▜',
+    r1R: '▌',
+    r2L: ' ▜',
+    r2R: '▛▘'
+  },
+  'wave-right': {
+    r1L: ' ▐',
+    r1E: '▛███▜',
+    r1R: '▙▖',
+    r2L: '▝▜',
+    r2R: '▛ '
   }
 };
 
@@ -69,7 +85,9 @@ const APPLE_EYES: Record<ClawdPose, string> = {
   default: ' ▗   ▖ ',
   'look-left': ' ▘   ▘ ',
   'look-right': ' ▝   ▝ ',
-  'arms-up': ' ▗   ▖ '
+  'arms-up': ' ▗   ▖ ',
+  'wave-left': ' ▗   ▖ ',
+  'wave-right': ' ▗   ▖ '
 };
 export function Clawd(t0) {
   const $ = _c(26);

@@ -1,4 +1,6 @@
 // @ts-nocheck
+import { APIError } from '@anthropic-ai/sdk'
+import { logForDebugging } from '../../utils/debug.js'
 import {
   classifyOpenAICompatibleError,
   resolveMaxTokensParam,
@@ -527,6 +529,16 @@ class OpenAIShimMessages {
       headers.Authorization = `Bearer ${apiKey}`
     }
 
+    if (params.thinking !== undefined) {
+      // Anthropic-style thinking has no portable OpenAI equivalent. Drop it
+      // explicitly and log so callers see why extended reasoning isn't
+      // happening on this provider.
+      logForDebugging(
+        `[openaiShim] thinking parameter dropped (not supported on OpenAI-compatible endpoint at ${this.config.baseURL})`,
+        { level: 'warn' },
+      )
+    }
+
     const body: Record<string, unknown> = {
       model: params.model,
       messages: convertMessages(params.messages, params.system),
@@ -560,7 +572,18 @@ class OpenAIShimMessages {
         response.status,
         errorBody,
       )
-      throw new Error(`${classification} Response: ${errorBody}`)
+      // Throw an APIError-shaped error so upstream `instanceof APIError`
+      // checks (claude.ts retry/logging paths) can read .status, .headers,
+      // and .requestID instead of falling through to the plain-Error branch
+      // and losing those fields.
+      const message = `${classification} Response: ${errorBody}`
+      throw new APIError(
+        response.status,
+        { message, error: { type: 'api_error', message: classification } },
+        message,
+        // eslint-disable-next-line eslint-plugin-n/no-unsupported-features/node-builtins
+        new globalThis.Headers(response.headers),
+      )
     }
 
     return response

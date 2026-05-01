@@ -3,6 +3,7 @@ import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Box } from '../../ink.js';
+import { env } from '../../utils/env.js';
 import { getInitialSettings } from '../../utils/settings/settings.js';
 import { Clawd, type ClawdPose } from './Clawd.js';
 type Frame = {
@@ -38,7 +39,19 @@ const JUMP_WAVE: readonly Frame[] = [...hold('default', 1, 2),
 
 // Click animation: glance right, then left, then back.
 const LOOK_AROUND: readonly Frame[] = [...hold('look-right', 0, 5), ...hold('look-left', 0, 5), ...hold('default', 0, 1)];
-const CLICK_ANIMATIONS: readonly (readonly Frame[])[] = [JUMP_WAVE, LOOK_AROUND];
+
+// Click animation: wave left and right.
+const WAVE: readonly Frame[] = [
+  ...hold('wave-left', 0, 2),
+  ...hold('default', 0, 2),
+  ...hold('wave-right', 0, 2),
+  ...hold('default', 0, 2),
+  ...hold('wave-left', 0, 2),
+  ...hold('default', 0, 1),
+];
+
+const CLICK_ANIMATIONS: readonly (readonly Frame[])[] = [JUMP_WAVE, LOOK_AROUND, WAVE];
+const APPLE_TERMINAL_CLICK_ANIMATIONS: readonly (readonly Frame[])[] = [JUMP_WAVE, LOOK_AROUND];
 const IDLE: Frame = {
   pose: 'default',
   offset: 0
@@ -48,8 +61,8 @@ const incrementFrame = (i: number) => i + 1;
 const CLAWD_HEIGHT = 3;
 
 /**
- * Clawd with click-triggered animations (crouch-jump with arms up, or
- * look-around). Container height is fixed at CLAWD_HEIGHT — same footprint
+ * Clawd with click-triggered animations (crouch-jump with arms up,
+ * look-around, or wave). Container height is fixed at CLAWD_HEIGHT — same footprint
  * as a bare `<Clawd />` — so the surrounding layout never shifts. During a
  * crouch only the feet row clips (see comment above). Click only fires when
  * mouse tracking is enabled (i.e. inside `<AlternateScreen>` / fullscreen);
@@ -102,7 +115,11 @@ function useClawdAnimation(): {
   const sequenceRef = useRef<readonly Frame[]>(JUMP_WAVE);
   const onClick = () => {
     if (reducedMotion || frameIndex !== -1) return;
-    sequenceRef.current = CLICK_ANIMATIONS[Math.floor(Math.random() * CLICK_ANIMATIONS.length)]!;
+    const animations =
+      env.terminal === "Apple_Terminal"
+        ? APPLE_TERMINAL_CLICK_ANIMATIONS
+        : CLICK_ANIMATIONS;
+    sequenceRef.current = animations[Math.floor(Math.random() * animations.length)]!;
     setFrameIndex(0);
   };
   useEffect(() => {
