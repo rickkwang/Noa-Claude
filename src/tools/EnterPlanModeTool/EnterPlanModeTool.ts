@@ -3,6 +3,7 @@ import { feature } from 'bun:bundle'
 import { z } from 'zod/v4'
 import {
   getAllowedChannels,
+  getIsInteractive,
   handlePlanModeTransition,
 } from '../../bootstrap/state.js'
 import type { Tool } from '../../Tool.js'
@@ -55,11 +56,12 @@ export const EnterPlanModeTool: Tool<InputSchema, Output> = buildTool({
   },
   shouldDefer: true,
   isEnabled() {
-    // When --channels is active, ExitPlanMode is disabled (its approval
-    // dialog needs the terminal). Disable entry too so plan mode isn't a
-    // trap the model can enter but never leave.
+    // In headless channel sessions, ExitPlanMode's approval dialog cannot be
+    // answered locally. Keep interactive TUI sessions enabled: --channels is
+    // just an additional input path there, not a replacement for the terminal.
     if (
       (feature('KAIROS') || feature('KAIROS_CHANNELS')) &&
+      !getIsInteractive() &&
       getAllowedChannels().length > 0
     ) {
       return false

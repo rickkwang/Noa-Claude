@@ -179,6 +179,36 @@ function isWithheldMaxOutputTokens(
   return msg?.type === 'assistant' && msg.apiError === 'max_output_tokens'
 }
 
+function hasAssistantOutputContent(message: AssistantMessage): boolean {
+  const content = message.message?.content
+  if (!Array.isArray(content)) {
+    return false
+  }
+  return content.some(block => {
+    switch (block.type) {
+      case 'thinking':
+      case 'redacted_thinking':
+        return false
+      case 'text':
+        return typeof block.text === 'string' && block.text.trim().length > 0
+      case 'connector_text':
+        return (
+          typeof block.connector_text === 'string' &&
+          block.connector_text.trim().length > 0
+        )
+      default:
+        return true
+    }
+  })
+}
+
+function isEmptyAssistantTurn(assistantMessages: AssistantMessage[]): boolean {
+  return (
+    assistantMessages.length === 0 ||
+    !assistantMessages.some(hasAssistantOutputContent)
+  )
+}
+
 export type QueryParams = {
   messages: Message[]
   systemPrompt: SystemPrompt
@@ -1262,6 +1292,20 @@ async function* queryLoop(
       // error → hook blocking → retry → error → …
       if (lastMessage?.isApiErrorMessage) {
         void executeStopFailureHooks(lastMessage, toolUseContext)
+        return { reason: 'completed' }
+      }
+
+      if (isEmptyAssistantTurn(assistantMessages)) {
+        logEvent('tengu_empty_assistant_turn_prevented', {
+          assistantMessages: assistantMessages.length,
+          queryChainId: queryChainIdForAnalytics,
+          queryDepth: queryTracking.depth,
+        })
+        yield createAssistantAPIErrorMessage({
+          content:
+            'Claude finished thinking but produced no response. Please retry your request.',
+          error: 'empty_response',
+        })
         return { reason: 'completed' }
       }
 

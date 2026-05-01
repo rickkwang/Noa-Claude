@@ -348,15 +348,18 @@ export type AnyObject = z.ZodType<{ [key: string]: unknown }>
  */
 export function toolMatchesName(
   tool: { name: string; aliases?: string[] },
-  name: string,
+  name: unknown,
 ): boolean {
+  if (typeof name !== 'string') {
+    return false
+  }
   return tool.name === name || (tool.aliases?.includes(name) ?? false)
 }
 
 /**
  * Finds a tool by name or alias from a list of tools.
  */
-export function findToolByName(tools: Tools, name: string): Tool | undefined {
+export function findToolByName(tools: Tools, name: unknown): Tool | undefined {
   return tools.find(t => toolMatchesName(t, name))
 }
 

@@ -70,6 +70,7 @@ import {
 } from '../../utils/errors.js'
 import { executePermissionDeniedHooks } from '../../utils/hooks.js'
 import { logError } from '../../utils/log.js'
+import { formatToolNameForError } from '../../utils/toolName.js'
 import {
   CANCEL_MESSAGE,
   createProgressMessage,
@@ -283,9 +284,12 @@ export type McpServerType =
   | undefined
 
 function findMcpServerConnection(
-  toolName: string,
+  toolName: unknown,
   mcpClients: MCPServerConnection[],
 ): MCPServerConnection | undefined {
+  if (typeof toolName !== 'string') {
+    return undefined
+  }
   if (!toolName.startsWith('mcp__')) {
     return undefined
   }
@@ -308,7 +312,7 @@ function findMcpServerConnection(
  * or undefined for built-in tools.
  */
 function getMcpServerType(
-  toolName: string,
+  toolName: unknown,
   mcpClients: MCPServerConnection[],
 ): McpServerType {
   const serverConnection = findMcpServerConnection(toolName, mcpClients)
@@ -326,7 +330,7 @@ function getMcpServerType(
  * Returns undefined for stdio servers, built-in tools, or if the server is not connected.
  */
 function getMcpServerBaseUrlFromToolName(
-  toolName: string,
+  toolName: unknown,
   mcpClients: MCPServerConnection[],
 ): string | undefined {
   const serverConnection = findMcpServerConnection(toolName, mcpClients)
@@ -334,6 +338,15 @@ function getMcpServerBaseUrlFromToolName(
     return undefined
   }
   return getLoggingSafeMcpBaseUrl(serverConnection.config)
+}
+
+function sanitizeUnknownToolNameForAnalytics(
+  toolName: unknown,
+): AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS {
+  if (typeof toolName !== 'string') {
+    return 'malformed_tool_name' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
+  }
+  return sanitizeToolNameForAnalytics(toolName)
 }
 
 export async function* runToolUse(
@@ -369,15 +382,16 @@ export async function* runToolUse(
 
   // Check if the tool exists
   if (!tool) {
-    const sanitizedToolName = sanitizeToolNameForAnalytics(toolName)
-    logForDebugging(`Unknown tool ${toolName}: ${toolUse.id}`)
+    const sanitizedToolName = sanitizeUnknownToolNameForAnalytics(toolName)
+    const toolNameForMessage = formatToolNameForError(toolName)
+    logForDebugging(`Unknown tool ${toolNameForMessage}: ${toolUse.id}`)
     logEvent('tengu_tool_use_error', {
       error:
         `No such tool available: ${sanitizedToolName}` as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       toolName: sanitizedToolName,
       toolUseID:
         toolUse.id as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      isMcp: toolName.startsWith('mcp__'),
+      isMcp: typeof toolName === 'string' && toolName.startsWith('mcp__'),
       queryChainId: toolUseContext.queryTracking
         ?.chainId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       queryDepth: toolUseContext.queryTracking?.depth,
@@ -393,19 +407,25 @@ export async function* runToolUse(
         requestId:
           requestId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       }),
-      ...mcpToolDetailsForAnalytics(toolName, mcpServerType, mcpServerBaseUrl),
+      ...(typeof toolName === 'string'
+        ? mcpToolDetailsForAnalytics(
+            toolName,
+            mcpServerType,
+            mcpServerBaseUrl,
+          )
+        : {}),
     })
     yield {
       message: createUserMessage({
         content: [
           {
             type: 'tool_result',
-            content: `<tool_use_error>Error: No such tool available: ${toolName}</tool_use_error>`,
+            content: `<tool_use_error>Error: No such tool available: ${toolNameForMessage}</tool_use_error>`,
             is_error: true,
             tool_use_id: toolUse.id,
           },
         ],
-        toolUseResult: `Error: No such tool available: ${toolName}`,
+        toolUseResult: `Error: No such tool available: ${toolNameForMessage}`,
         sourceToolAssistantUUID: assistantMessage.uuid,
       }),
     }

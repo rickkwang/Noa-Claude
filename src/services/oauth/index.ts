@@ -12,6 +12,8 @@ import type {
   SubscriptionType,
 } from './types.js'
 
+const OAUTH_AUTHORIZATION_TIMEOUT_MS = 15 * 60 * 1000
+
 /**
  * OAuth service that handles the OAuth 2.0 authorization code flow with PKCE.
  *
@@ -48,9 +50,19 @@ export class OAuthService {
       skipBrowserOpen?: boolean
     },
   ): Promise<OAuthTokens> {
-    // Create OAuth callback listener and start it
-    this.authCodeListener = new AuthCodeListener()
-    this.port = await this.authCodeListener.start()
+    // Create OAuth callback listener and start it. If localhost callbacks are
+    // unavailable (devcontainers, IPv6-only setups, locked-down hosts), keep
+    // the manual copy/paste flow working instead of failing before showing it.
+    try {
+      this.authCodeListener = new AuthCodeListener()
+      this.port = await this.authCodeListener.start()
+    } catch (error) {
+      logEvent('tengu_oauth_callback_listener_unavailable', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+      this.authCodeListener = null
+      this.port = null
+    }
 
     // Generate PKCE values and state
     const codeChallenge = crypto.generateCodeChallenge(this.codeVerifier)
@@ -60,7 +72,7 @@ export class OAuthService {
     const opts = {
       codeChallenge,
       state,
-      port: this.port,
+      port: this.port ?? 0,
       loginWithClaudeAi: options?.loginWithClaudeAi,
       inferenceOnly: options?.inferenceOnly,
       orgUUID: options?.orgUUID,
@@ -68,7 +80,10 @@ export class OAuthService {
       loginMethod: options?.loginMethod,
     }
     const manualFlowUrl = client.buildAuthUrl({ ...opts, isManual: true })
-    const automaticFlowUrl = client.buildAuthUrl({ ...opts, isManual: false })
+    const automaticFlowUrl =
+      this.authCodeListener && this.port !== null
+        ? client.buildAuthUrl({ ...opts, isManual: false })
+        : undefined
 
     // Wait for either automatic or manual auth code
     const authorizationCode = await this.waitForAuthorizationCode(
@@ -77,11 +92,15 @@ export class OAuthService {
         if (options?.skipBrowserOpen) {
           // Hand both URLs to the caller. The automatic one still works
           // if the caller opens it on the same host (localhost listener
-          // is running); the manual one works from anywhere.
-          await authURLHandler(manualFlowUrl, automaticFlowUrl)
+          // is running); the manual one works from anywhere. Some SDK callers
+          // require an automaticUrl field, so fall back to the manual URL when
+          // localhost callbacks are unavailable.
+          await authURLHandler(manualFlowUrl, automaticFlowUrl ?? manualFlowUrl)
         } else {
           await authURLHandler(manualFlowUrl) // Show manual option to user
-          await openBrowser(automaticFlowUrl) // Try automatic flow
+          // Prefer automatic localhost callback when available; otherwise open
+          // the manual URL so remote/container users can still copy the code.
+          await openBrowser(automaticFlowUrl ?? manualFlowUrl)
         }
       },
     )
@@ -96,7 +115,7 @@ export class OAuthService {
         authorizationCode,
         state,
         this.codeVerifier,
-        this.port!,
+        this.port ?? 0,
         !isAutomaticFlow, // Pass isManual=true if it's NOT automatic flow
         options?.expiresIn,
       )
@@ -137,19 +156,47 @@ export class OAuthService {
     onReady: () => Promise<void>,
   ): Promise<string> {
     return new Promise((resolve, reject) => {
+      let settled = false
+      const settle = (fn: () => void) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeout)
+        fn()
+      }
+      const timeout = setTimeout(() => {
+        this.manualAuthCodeResolver = null
+        this.authCodeListener?.close()
+        settle(() =>
+          reject(
+            new Error(
+              'OAuth login timed out. If your browser cannot reach localhost, retry and use the manual code paste option.',
+            ),
+          ),
+        )
+      }, OAUTH_AUTHORIZATION_TIMEOUT_MS)
+
       // Set up manual auth code resolver
-      this.manualAuthCodeResolver = resolve
+      this.manualAuthCodeResolver = authorizationCode =>
+        settle(() => resolve(authorizationCode))
 
       // Start automatic flow
+      if (!this.authCodeListener) {
+        void onReady().catch(error => {
+          this.manualAuthCodeResolver = null
+          settle(() => reject(error))
+        })
+        return
+      }
+
       this.authCodeListener
-        ?.waitForAuthorization(state, onReady)
+        .waitForAuthorization(state, onReady)
         .then(authorizationCode => {
           this.manualAuthCodeResolver = null
-          resolve(authorizationCode)
+          settle(() => resolve(authorizationCode))
         })
         .catch(error => {
           this.manualAuthCodeResolver = null
-          reject(error)
+          settle(() => reject(error))
         })
     })
   }

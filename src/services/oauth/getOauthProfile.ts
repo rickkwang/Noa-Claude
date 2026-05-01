@@ -1,6 +1,10 @@
 // @ts-nocheck
 import axios from 'axios'
-import { getOauthConfig, OAUTH_BETA_HEADER } from 'src/constants/oauth.js'
+import {
+  getOauthConfig,
+  OAUTH_BETA_HEADER,
+  OAUTH_NETWORK_TIMEOUT_MS,
+} from 'src/constants/oauth.js'
 import type { OAuthProfileResponse } from 'src/services/oauth/types.js'
 import { getAnthropicApiKey } from 'src/utils/auth.js'
 import { getGlobalConfig } from 'src/utils/config.js'
@@ -27,7 +31,7 @@ export async function getOauthProfileFromApiKey(): Promise<
       params: {
         account_uuid: accountUuid,
       },
-      timeout: 10000,
+      timeout: OAUTH_NETWORK_TIMEOUT_MS,
     })
     return response.data
   } catch (error) {
@@ -45,7 +49,7 @@ export async function getOauthProfileFromOauthToken(
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
-      timeout: 10000,
+      timeout: OAUTH_NETWORK_TIMEOUT_MS,
     })
     return response.data
   } catch (error) {

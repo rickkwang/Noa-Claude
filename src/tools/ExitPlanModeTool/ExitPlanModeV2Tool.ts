@@ -4,6 +4,7 @@ import { writeFile } from 'fs/promises'
 import { z } from 'zod/v4'
 import {
   getAllowedChannels,
+  getIsInteractive,
   hasExitedPlanModeInSession,
   setHasExitedPlanMode,
   setNeedsAutoModeExitAttachment,
@@ -166,11 +167,12 @@ export const ExitPlanModeV2Tool: Tool<InputSchema, Output> = buildTool({
   },
   shouldDefer: true,
   isEnabled() {
-    // When --channels is active the user is likely on Telegram/Discord, not
-    // watching the TUI. The plan-approval dialog would hang. Paired with the
-    // same gate on EnterPlanMode so plan mode isn't a trap.
+    // In headless channel sessions, the approval dialog cannot be answered
+    // locally. Interactive TUI sessions still have the terminal available, so
+    // --channels must not hide the plan approval tool.
     if (
       (feature('KAIROS') || feature('KAIROS_CHANNELS')) &&
+      !getIsInteractive() &&
       getAllowedChannels().length > 0
     ) {
       return false

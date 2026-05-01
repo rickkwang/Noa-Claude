@@ -261,6 +261,26 @@ type ExtraBodyOptions = {
   stripEffort?: boolean
 }
 
+function hasAssistantOutputContent(
+  content: Array<BetaContentBlock | ConnectorTextBlock>,
+): boolean {
+  return content.some(block => {
+    switch (block.type) {
+      case 'text':
+        return block.text.trim().length > 0
+      case 'connector_text':
+        return block.connector_text.trim().length > 0
+      case 'tool_use':
+      case 'server_tool_use':
+      case 'mcp_tool_use':
+        return true
+      default:
+        // thinking, redacted_thinking, and any future thinking-like variants
+        return false
+    }
+  })
+}
+
 function stripExtraBodyEffort(params: JsonObject): JsonObject {
   if ('effort' in params) {
     delete params.effort
@@ -1904,18 +1924,34 @@ async function* queryModel(
     stopReason = null
     isAdvisorInProgress = false
 
-    // Streaming idle timeout watchdog: abort the stream if no chunks arrive
-    // for STREAM_IDLE_TIMEOUT_MS. Unlike the stall detection below (which only
-    // fires when the *next* chunk arrives), this uses setTimeout to actively
-    // kill hung streams. Without this, a silently dropped connection can hang
-    // the session indefinitely since the SDK's request timeout only covers the
-    // initial fetch(), not the streaming body.
+    // Streaming idle timeout watchdog: abort the stream if no chunks arrive.
+    // Unlike the stall detection below (which only fires when the *next* chunk
+    // arrives), this uses setTimeout to actively kill hung streams. Without
+    // this, a silently dropped connection can hang the session indefinitely
+    // since the SDK's request timeout only covers the initial fetch(), not the
+    // streaming body. Background/remote thinking requests get a longer window:
+    // those sessions are more likely to run high-effort thinking while nobody
+    // is watching the spinner, so the normal 90s idle timeout can be a false
+    // positive rather than a dead connection.
     const streamWatchdogEnabled = isEnvTruthy(
       process.env.CLAUDE_ENABLE_STREAM_WATCHDOG,
     )
     const STREAM_IDLE_TIMEOUT_MS =
       parseInt(process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS || '', 10) || 90_000
-    const STREAM_IDLE_WARNING_MS = STREAM_IDLE_TIMEOUT_MS / 2
+    const STREAM_IDLE_THINKING_TIMEOUT_MS =
+      parseInt(process.env.CLAUDE_STREAM_THINKING_IDLE_TIMEOUT_MS || '', 10) ||
+      10 * 60_000
+    const STREAM_IDLE_SLEEP_DRIFT_MS =
+      parseInt(process.env.CLAUDE_STREAM_IDLE_SLEEP_DRIFT_MS || '', 10) ||
+      30_000
+    const hasThinkingForIdleWatchdog =
+      thinkingConfig.type !== 'disabled' &&
+      !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_THINKING)
+    const isRemoteOrBackgroundQuery =
+      isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) ||
+      options.querySource.startsWith('agent:') ||
+      options.agentId !== undefined
+    let isThinkingBlockInProgress = false
     let streamIdleAborted = false
     // performance.now() snapshot when watchdog fires, for measuring abort propagation delay
     let streamWatchdogFiredAt: number | null = null
@@ -1936,22 +1972,76 @@ async function* queryModel(
       if (!streamWatchdogEnabled) {
         return
       }
+      const idleTimeoutMs =
+        hasThinkingForIdleWatchdog &&
+        (isRemoteOrBackgroundQuery || isThinkingBlockInProgress)
+          ? Math.max(
+              STREAM_IDLE_TIMEOUT_MS,
+              STREAM_IDLE_THINKING_TIMEOUT_MS,
+            )
+          : STREAM_IDLE_TIMEOUT_MS
+      const idleWarningMs = idleTimeoutMs / 2
+      const warningExpectedAt = Date.now() + idleWarningMs
       streamIdleWarningTimer = setTimeout(
-        warnMs => {
+        (warnMs, expectedAt) => {
+          const driftMs = Date.now() - expectedAt
+          if (driftMs > STREAM_IDLE_SLEEP_DRIFT_MS) {
+            logForDebugging(
+              `Streaming idle warning skipped after likely sleep/wake drift (${driftMs}ms)`,
+              { level: 'warn' },
+            )
+            logEvent('tengu_streaming_idle_sleep_wake_drift', {
+              phase:
+                'warning' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+              drift_ms: driftMs,
+              timeout_ms: warnMs,
+              request_id: (streamRequestId ??
+                'unknown') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+              model:
+                options.model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+            })
+            resetStreamIdleTimer()
+            return
+          }
           logForDebugging(
             `Streaming idle warning: no chunks received for ${warnMs / 1000}s`,
             { level: 'warn' },
           )
           logForDiagnosticsNoPII('warn', 'cli_streaming_idle_warning')
         },
-        STREAM_IDLE_WARNING_MS,
-        STREAM_IDLE_WARNING_MS,
+        idleWarningMs,
+        idleWarningMs,
+        warningExpectedAt,
       )
-      streamIdleTimer = setTimeout(() => {
+      const timeoutExpectedAt = Date.now() + idleTimeoutMs
+      streamIdleTimer = setTimeout((timeoutMs: number) => {
+        const driftMs = Date.now() - timeoutExpectedAt
+        if (driftMs > STREAM_IDLE_SLEEP_DRIFT_MS) {
+          logForDebugging(
+            `Streaming idle timeout skipped after likely sleep/wake drift (${driftMs}ms)`,
+            { level: 'warn' },
+          )
+          logForDiagnosticsNoPII(
+            'warn',
+            'cli_streaming_idle_sleep_wake_drift',
+          )
+          logEvent('tengu_streaming_idle_sleep_wake_drift', {
+            phase:
+              'timeout' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+            drift_ms: driftMs,
+            timeout_ms: timeoutMs,
+            request_id: (streamRequestId ??
+              'unknown') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+            model:
+              options.model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          })
+          resetStreamIdleTimer()
+          return
+        }
         streamIdleAborted = true
         streamWatchdogFiredAt = performance.now()
         logForDebugging(
-          `Streaming idle timeout: no chunks received for ${STREAM_IDLE_TIMEOUT_MS / 1000}s, aborting stream`,
+          `Streaming idle timeout: no chunks received for ${timeoutMs / 1000}s, aborting stream`,
           { level: 'error' },
         )
         logForDiagnosticsNoPII('error', 'cli_streaming_idle_timeout')
@@ -1960,10 +2050,12 @@ async function* queryModel(
             options.model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
           request_id: (streamRequestId ??
             'unknown') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-          timeout_ms: STREAM_IDLE_TIMEOUT_MS,
+          timeout_ms: timeoutMs,
+          thinking_active: isThinkingBlockInProgress,
+          remote_or_background: isRemoteOrBackgroundQuery,
         })
         releaseStreamResources()
-      }, STREAM_IDLE_TIMEOUT_MS)
+      }, idleTimeoutMs, idleTimeoutMs)
     }
     resetStreamIdleTimer()
 
@@ -2067,6 +2159,8 @@ async function* queryModel(
                 }
                 break
               case 'thinking':
+                isThinkingBlockInProgress = true
+                resetStreamIdleTimer()
                 contentBlocks[part.index] = {
                   ...part.content_block,
                   // also awkward
@@ -2227,6 +2321,10 @@ async function* queryModel(
                   part.type as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
               })
               throw new Error('Message not found')
+            }
+            if (contentBlock.type === 'thinking') {
+              isThinkingBlockInProgress = false
+              resetStreamIdleTimer()
             }
             const m: AssistantMessage = {
               message: {
@@ -2400,6 +2498,29 @@ async function* queryModel(
             'unknown') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
         })
         throw new Error('Stream ended without receiving any events')
+      }
+
+      if (
+        newMessages.length > 0 &&
+        !newMessages.some(msg =>
+          hasAssistantOutputContent(
+            msg.message.content as Array<BetaContentBlock | ConnectorTextBlock>,
+          ),
+        )
+      ) {
+        logForDebugging(
+          'Stream completed with thinking-only assistant output - triggering non-streaming fallback',
+          { level: 'error' },
+        )
+        logEvent('tengu_stream_thinking_only_output', {
+          model:
+            options.model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          request_id: (streamRequestId ??
+            'unknown') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          stop_reason: (stopReason ??
+            'unknown') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        })
+        throw new Error('Stream ended after thinking without a response')
       }
 
       // Log summary if any stalls occurred during streaming
@@ -2628,9 +2749,33 @@ async function* queryModel(
           advisorModel,
         }),
       }
-      newMessages.push(m)
-      fallbackMessage = m
-      yield m
+      if (
+        hasAssistantOutputContent(
+          m.message.content as Array<BetaContentBlock | ConnectorTextBlock>,
+        )
+      ) {
+        newMessages.push(m)
+        fallbackMessage = m
+        yield m
+      } else {
+        logForDebugging(
+          'Non-streaming fallback completed with thinking-only assistant output',
+          { level: 'error' },
+        )
+        logEvent('tengu_nonstreaming_thinking_only_output', {
+          model:
+            options.model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          request_id: (streamRequestId ??
+            'unknown') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          stop_reason: (m.message.stop_reason ??
+            'unknown') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        })
+        yield createAssistantAPIErrorMessage({
+          content:
+            'Claude finished thinking but produced no response. Please retry your request.',
+          error: 'empty_response',
+        })
+      }
     } finally {
       clearStreamIdleTimers()
     }
@@ -2721,9 +2866,33 @@ async function* queryModel(
             research !== undefined && { research }),
           ...(advisorModel && { advisorModel }),
         }
-        newMessages.push(m)
-        fallbackMessage = m
-        yield m
+        if (
+          hasAssistantOutputContent(
+            m.message.content as Array<BetaContentBlock | ConnectorTextBlock>,
+          )
+        ) {
+          newMessages.push(m)
+          fallbackMessage = m
+          yield m
+        } else {
+          logForDebugging(
+            '404 non-streaming fallback completed with thinking-only assistant output',
+            { level: 'error' },
+          )
+          logEvent('tengu_nonstreaming_thinking_only_output', {
+            model:
+              options.model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+            request_id:
+              failedRequestId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+            stop_reason: (m.message.stop_reason ??
+              'unknown') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          })
+          yield createAssistantAPIErrorMessage({
+            content:
+              'Claude finished thinking but produced no response. Please retry your request.',
+            error: 'empty_response',
+          })
+        }
 
         // Continue to success logging below
       } catch (fallbackError) {

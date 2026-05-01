@@ -10,6 +10,7 @@ import { findToolByName, type Tools, type ToolUseContext } from '../../Tool.js'
 import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
 import type { AssistantMessage, Message } from '../../types/message.js'
 import { createChildAbortController } from '../../utils/abortController.js'
+import { formatToolNameForError } from '../../utils/toolName.js'
 import { runToolUse } from './toolExecution.js'
 
 type MessageUpdate = {
@@ -77,6 +78,7 @@ export class StreamingToolExecutor {
   addTool(block: ToolUseBlock, assistantMessage: AssistantMessage): void {
     const toolDefinition = findToolByName(this.toolDefinitions, block.name)
     if (!toolDefinition) {
+      const toolNameForMessage = formatToolNameForError(block.name)
       this.tools.push({
         id: block.id,
         block,
@@ -89,12 +91,12 @@ export class StreamingToolExecutor {
             content: [
               {
                 type: 'tool_result',
-                content: `<tool_use_error>Error: No such tool available: ${block.name}</tool_use_error>`,
+                content: `<tool_use_error>Error: No such tool available: ${toolNameForMessage}</tool_use_error>`,
                 is_error: true,
                 tool_use_id: block.id,
               },
             ],
-            toolUseResult: `Error: No such tool available: ${block.name}`,
+            toolUseResult: `Error: No such tool available: ${toolNameForMessage}`,
             sourceToolAssistantUUID: assistantMessage.uuid,
           }),
         ],
@@ -247,9 +249,9 @@ export class StreamingToolExecutor {
     if (typeof summary === 'string' && summary.length > 0) {
       const truncated =
         summary.length > 40 ? summary.slice(0, 40) + '\u2026' : summary
-      return `${tool.block.name}(${truncated})`
+      return `${formatToolNameForError(tool.block.name)}(${truncated})`
     }
-    return tool.block.name
+    return formatToolNameForError(tool.block.name)
   }
 
   private updateInterruptibleState(): void {

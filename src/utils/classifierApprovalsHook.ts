@@ -7,6 +7,8 @@
 
 import { useSyncExternalStore } from 'react'
 import {
+  getClassifierCheckingVersion,
+  hasAnyClassifierChecking,
   isClassifierChecking,
   subscribeClassifierChecking,
 } from './classifierApprovals.js'
@@ -14,5 +16,17 @@ import {
 export function useIsClassifierChecking(toolUseID: string): boolean {
   return useSyncExternalStore(subscribeClassifierChecking, () =>
     isClassifierChecking(toolUseID),
+  )
+}
+
+export function useHasAnyClassifierChecking(): boolean {
+  return useSyncExternalStore(subscribeClassifierChecking, () =>
+    hasAnyClassifierChecking(),
+  )
+}
+
+export function useClassifierCheckingVersion(): number {
+  return useSyncExternalStore(subscribeClassifierChecking, () =>
+    getClassifierCheckingVersion(),
   )
 }

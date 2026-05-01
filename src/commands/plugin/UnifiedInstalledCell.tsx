@@ -19,7 +19,10 @@ export function UnifiedInstalledCell(t0) {
   if (item.type === "plugin") {
     let statusIcon;
     let statusText;
-    if (item.pendingToggle) {
+    if (item.isUninstalled) {
+      statusIcon = color("inactive", theme)(figures.radioOff);
+      statusText = "Uninstalled";
+    } else if (item.pendingToggle) {
       let t1;
       if ($[0] !== theme) {
         t1 = color("suggestion", theme)(figures.arrowRight);

@@ -116,6 +116,7 @@ type PluginState = {
   scope?: 'user' | 'project' | 'local' | 'managed' | 'builtin';
   pendingEnable?: boolean; // Toggle enable/disable
   pendingUpdate?: boolean; // Marked for update
+  isUninstalled?: boolean;
 };
 
 /**
@@ -440,6 +441,26 @@ export function ManagePlugins({
   const [pluginStates, setPluginStates] = useState<PluginState[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingToggles, setPendingToggles] = useState<Map<string, 'will-enable' | 'will-disable'>>(new Map());
+  const markPluginUninstalled = useCallback((pluginId: string) => {
+    setPluginStates(states => states.map(state => `${state.plugin.name}@${state.marketplace}` === pluginId ? {
+      ...state,
+      isUninstalled: true,
+      pendingEnable: undefined,
+      pendingUpdate: false
+    } : state));
+    setSelectedPlugin(current => current && `${current.plugin.name}@${current.marketplace}` === pluginId ? {
+      ...current,
+      isUninstalled: true,
+      pendingEnable: undefined,
+      pendingUpdate: false
+    } : current);
+    setPendingToggles(current => {
+      if (!current.has(pluginId)) return current;
+      const next = new Map(current);
+      next.delete(pluginId);
+      return next;
+    });
+  }, []);
 
   // Guard to prevent auto-navigation from re-triggering after the user
   // navigates away (targetPlugin is never cleared by the parent).
@@ -573,6 +594,7 @@ export function ManagePlugins({
           marketplace: state.marketplace,
           scope: originalScope,
           isEnabled,
+          isUninstalled: state.isUninstalled === true,
           errorCount: errors.length,
           errors,
           plugin: state.plugin,
@@ -1075,6 +1097,7 @@ export function ManagePlugins({
             if (!result_0.success) {
               throw new Error(result_0.message);
             }
+            markPluginUninstalled(pluginId_3);
             reverseDependents = result_0.reverseDependents;
             break;
           }
@@ -1560,6 +1583,7 @@ export function ManagePlugins({
       try {
         const result_3 = await uninstallPluginOp(pluginId_9, pluginScope_2, deleteDataDir);
         if (!result_3.success) throw new Error(result_3.message);
+        markPluginUninstalled(pluginId_9);
         clearAllCaches();
         const suffix = deleteDataDir ? '' : ' · data preserved';
         setResult(`${figures.tick} ${result_3.message}${suffix}`);
@@ -1815,6 +1839,7 @@ export function ManagePlugins({
     const mergedSettings_2 = getSettings_DEPRECATED(); // Use merged settings to respect all layers
     const pluginId_13 = `${selectedPlugin.plugin.name}@${selectedPlugin.marketplace}`;
     const isEnabled_2 = mergedSettings_2?.enabledPlugins?.[pluginId_13] !== false;
+    const isUninstalled = selectedPlugin.isUninstalled === true;
 
     // Compute plugin errors section
     const filteredPluginErrors = pluginErrors.filter(e_1 => 'plugin' in e_1 && e_1.plugin === selectedPlugin.plugin.name || e_1.source === pluginId_13 || e_1.source.startsWith(`${selectedPlugin.plugin.name}@`));
@@ -1864,8 +1889,8 @@ export function ManagePlugins({
         {/* Current status */}
         <Box marginBottom={1}>
           <Text dimColor>Status: </Text>
-          <Text color={isEnabled_2 ? 'success' : 'warning'}>
-            {isEnabled_2 ? 'Enabled' : 'Disabled'}
+          <Text color={isUninstalled ? 'inactive' : isEnabled_2 ? 'success' : 'warning'}>
+            {isUninstalled ? 'Uninstalled' : isEnabled_2 ? 'Enabled' : 'Disabled'}
           </Text>
           {selectedPlugin.pendingUpdate && <Text color="suggestion"> · Marked for update</Text>}
         </Box>

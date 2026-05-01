@@ -9,6 +9,7 @@ import {
   ALL_OAUTH_SCOPES,
   CLAUDE_AI_INFERENCE_SCOPE,
   CLAUDE_AI_OAUTH_SCOPES,
+  OAUTH_NETWORK_TIMEOUT_MS,
   getOauthConfig,
 } from '../../constants/oauth.js'
 import {
@@ -130,7 +131,7 @@ export async function exchangeCodeForTokens(
 
   const response = await axios.post(getOauthConfig().TOKEN_URL, requestBody, {
     headers: { 'Content-Type': 'application/json' },
-    timeout: 15000,
+    timeout: OAUTH_NETWORK_TIMEOUT_MS,
   })
 
   if (response.status !== 200) {
@@ -166,7 +167,7 @@ export async function refreshOAuthToken(
   try {
     const response = await axios.post(getOauthConfig().TOKEN_URL, requestBody, {
       headers: { 'Content-Type': 'application/json' },
-      timeout: 15000,
+      timeout: OAUTH_NETWORK_TIMEOUT_MS,
     })
 
     if (response.status !== 200) {

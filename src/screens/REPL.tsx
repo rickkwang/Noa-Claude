@@ -95,6 +95,7 @@ import { useTeammateViewAutoExit } from '../hooks/useTeammateViewAutoExit.js';
 import { errorMessage } from '../utils/errors.js';
 import { isHumanTurn } from '../utils/messagePredicates.js';
 import { logError } from '../utils/log.js';
+import { useClassifierCheckingVersion, useHasAnyClassifierChecking } from '../utils/classifierApprovalsHook.js';
 
 type FrustrationDetectionHook = (
   messages: Message[],
@@ -118,6 +119,7 @@ type UndercoverAutoCalloutComponent = React.ComponentType<{
 
 const UltraplanChoiceDialog: React.ComponentType<any> | null = null;
 const UltraplanLaunchDialog: React.ComponentType<any> | null = null;
+const AUTO_MODE_CLASSIFIER_STALL_MS = 5000;
 // Dead code elimination: conditional imports
 /* eslint-disable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
 const useVoiceIntegration: typeof import('../hooks/useVoiceIntegration.js').useVoiceIntegration = require('../hooks/useVoiceIntegration.js').useVoiceIntegration;
@@ -1494,6 +1496,9 @@ export function REPL({
   const [spinnerMessage, setSpinnerMessage] = useState<string | null>(null);
   const [spinnerColor, setSpinnerColor] = useState<keyof Theme | null>(null);
   const [spinnerShimmerColor, setSpinnerShimmerColor] = useState<keyof Theme | null>(null);
+  const [isAutoModeClassifierStalled, setIsAutoModeClassifierStalled] = useState(false);
+  const hasAnyClassifierChecking = useHasAnyClassifierChecking();
+  const classifierCheckingVersion = useClassifierCheckingVersion();
   const [isMessageSelectorVisible, setIsMessageSelectorVisible] = useState(false);
   const [messageSelectorPreselect, setMessageSelectorPreselect] = useState<UserMessage | undefined>(undefined);
   const [showCostDialog, setShowCostDialog] = useState(false);
@@ -1700,6 +1705,24 @@ export function REPL({
   // Hide spinner when streaming text is visible (the text IS the feedback),
   // but keep it when isBriefOnly suppresses the streaming text display
   !visibleStreamingText || isBriefOnly);
+
+  const autoClassifierActive =
+    hasAnyClassifierChecking &&
+    (toolPermissionContext.mode === 'auto' ||
+      (toolPermissionContext.mode === 'plan' &&
+        !!toolPermissionContext.strippedDangerousRules));
+  useEffect(() => {
+    if (!autoClassifierActive) {
+      setIsAutoModeClassifierStalled(false);
+      return;
+    }
+    setIsAutoModeClassifierStalled(false);
+    const timer = setTimeout(setIsAutoModeClassifierStalled, AUTO_MODE_CLASSIFIER_STALL_MS, true);
+    return () => clearTimeout(timer);
+  }, [autoClassifierActive, classifierCheckingVersion]);
+
+  const effectiveSpinnerColor = spinnerColor ?? (isAutoModeClassifierStalled ? 'error' : null);
+  const effectiveSpinnerShimmerColor = spinnerShimmerColor ?? (isAutoModeClassifierStalled ? 'error' : null);
 
   // Check if any permission or ask question prompt is currently visible
   // This is used to prevent the survey from opening while prompts are active
@@ -4588,7 +4611,7 @@ export function REPL({
               {"external" === 'ant' && <TungstenLiveMonitor />}
               {WebBrowserPanel ? <WebBrowserPanel /> : null}
               <Box flexGrow={1} />
-              {showSpinner && <SpinnerWithVerb mode={streamMode} spinnerTip={spinnerTip} responseLengthRef={responseLengthRef} apiMetricsRef={apiMetricsRef} overrideMessage={spinnerMessage} spinnerSuffix={stopHookSpinnerSuffix} verbose={verbose} loadingStartTimeRef={loadingStartTimeRef} totalPausedMsRef={totalPausedMsRef} pauseStartTimeRef={pauseStartTimeRef} overrideColor={spinnerColor} overrideShimmerColor={spinnerShimmerColor} hasActiveTools={inProgressToolUseIDs.size > 0} leaderIsIdle={!isLoading} />}
+              {showSpinner && <SpinnerWithVerb mode={streamMode} spinnerTip={spinnerTip} responseLengthRef={responseLengthRef} apiMetricsRef={apiMetricsRef} overrideMessage={spinnerMessage} spinnerSuffix={stopHookSpinnerSuffix} verbose={verbose} loadingStartTimeRef={loadingStartTimeRef} totalPausedMsRef={totalPausedMsRef} pauseStartTimeRef={pauseStartTimeRef} overrideColor={effectiveSpinnerColor} overrideShimmerColor={effectiveSpinnerShimmerColor} hasActiveTools={inProgressToolUseIDs.size > 0} leaderIsIdle={!isLoading} />}
               {!showSpinner && !isLoading && !userInputOnProcessing && !hasRunningTeammates && isBriefOnly && !viewedAgentTask && <BriefIdleStatus />}
               {isFullscreenEnvEnabled() && <PromptInputQueuedCommands />}
             </>} bottom={<Box flexDirection={companionNarrow ? 'column' : 'row'} width="100%" alignItems={companionNarrow ? undefined : 'flex-end'}>

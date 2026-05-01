@@ -114,6 +114,34 @@ export function expandPastedTextRefs(
   return expanded
 }
 
+export function removeImageRefsFromDisplay(
+  display: string,
+  removedImageIds: Set<number>,
+): string {
+  if (removedImageIds.size === 0) {
+    return display
+  }
+
+  const refs = parseReferences(display).slice().sort((a, b) => a.index - b.index)
+  let cleaned = display
+
+  // Splice from the end so earlier match offsets stay valid.
+  for (let i = refs.length - 1; i >= 0; i--) {
+    const ref = refs[i]!
+    if (!removedImageIds.has(ref.id) || !ref.match.startsWith('[Image')) {
+      continue
+    }
+
+    const before = cleaned.slice(0, ref.index)
+    let after = cleaned.slice(ref.index + ref.match.length)
+    after = after.replace(/^[.,;:]/, '')
+    const removeLeadingSpace = before.endsWith(' ') && after.startsWith(' ')
+    cleaned = before.slice(0, removeLeadingSpace ? -1 : undefined) + after
+  }
+
+  return cleaned.trimEnd()
+}
+
 function deserializeLogEntry(line: string): LogEntry {
   return jsonParse(line) as LogEntry
 }
@@ -279,16 +307,27 @@ async function resolveStoredPastedContent(
  */
 async function logEntryToHistoryEntry(entry: LogEntry): Promise<HistoryEntry> {
   const pastedContents: Record<number, PastedContent> = {}
+  const removedImageIds = new Set<number>()
 
   for (const [id, stored] of Object.entries(entry.pastedContents || {})) {
     const resolved = await resolveStoredPastedContent(stored)
     if (resolved) {
-      pastedContents[Number(id)] = resolved
+      const numericId = Number(id)
+
+      // New history writes never persist images, but older history files may
+      // contain base64 image payloads. Do not rehydrate those into the prompt:
+      // they can bypass paste-time resizing and repeatedly break the session.
+      if (resolved.type === 'image') {
+        removedImageIds.add(numericId)
+        continue
+      }
+
+      pastedContents[numericId] = resolved
     }
   }
 
   return {
-    display: entry.display,
+    display: removeImageRefsFromDisplay(entry.display, removedImageIds),
     pastedContents,
   }
 }

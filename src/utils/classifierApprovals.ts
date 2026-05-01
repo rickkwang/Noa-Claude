@@ -15,6 +15,7 @@ type ClassifierApproval = {
 
 const CLASSIFIER_APPROVALS = new Map<string, ClassifierApproval>()
 const CLASSIFIER_CHECKING = new Set<string>()
+let classifierCheckingVersion = 0
 const classifierChecking = createSignal()
 
 export function setClassifierApproval(
@@ -62,13 +63,16 @@ export function getYoloClassifierApproval(
 
 export function setClassifierChecking(toolUseID: string): void {
   if (!feature('BASH_CLASSIFIER') && !feature('TRANSCRIPT_CLASSIFIER')) return
+  if (CLASSIFIER_CHECKING.has(toolUseID)) return
   CLASSIFIER_CHECKING.add(toolUseID)
+  classifierCheckingVersion += 1
   classifierChecking.emit()
 }
 
 export function clearClassifierChecking(toolUseID: string): void {
   if (!feature('BASH_CLASSIFIER') && !feature('TRANSCRIPT_CLASSIFIER')) return
-  CLASSIFIER_CHECKING.delete(toolUseID)
+  if (!CLASSIFIER_CHECKING.delete(toolUseID)) return
+  classifierCheckingVersion += 1
   classifierChecking.emit()
 }
 
@@ -78,12 +82,23 @@ export function isClassifierChecking(toolUseID: string): boolean {
   return CLASSIFIER_CHECKING.has(toolUseID)
 }
 
+export function hasAnyClassifierChecking(): boolean {
+  return CLASSIFIER_CHECKING.size > 0
+}
+
+export function getClassifierCheckingVersion(): number {
+  return classifierCheckingVersion
+}
+
 export function deleteClassifierApproval(toolUseID: string): void {
   CLASSIFIER_APPROVALS.delete(toolUseID)
 }
 
 export function clearClassifierApprovals(): void {
   CLASSIFIER_APPROVALS.clear()
+  const hadClassifierChecking = CLASSIFIER_CHECKING.size > 0
   CLASSIFIER_CHECKING.clear()
+  if (!hadClassifierChecking) return
+  classifierCheckingVersion += 1
   classifierChecking.emit()
 }
