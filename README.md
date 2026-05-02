@@ -1,14 +1,42 @@
 # Noa Claude
 
-An open-source coding agent built from publicly exposed Claude Code source.
+A local-first coding agent for real software work: long sessions, resumable forks, multi-provider routing, and stronger privacy defaults.
 
-## Core Differences from Upstream
+Noa Claude is built from publicly exposed Claude Code source and extended into a more productized open-source fork. The focus is not just parity with upstream, but a dependable daily driver for people who want local control, provider flexibility, and a runtime that takes continuity and verification seriously.
 
-- **Telemetry removed** — All outbound OpenTelemetry, GrowthBook analytics, Sentry error reporting, and custom event logging are dead-code-eliminated or stubbed.
-- **Security guardrails stripped** — System-level instruction blocks injected into conversations are removed.
-- **Multi-provider support** — OpenAI-compatible, AWS Bedrock, Google Vertex, Microsoft Foundry alongside Anthropic's first-party API.
-- **Local default links** — Default help, release notes, validation hints, and runtime guidance resolve to repository-local or project-owned URLs instead of upstream docs.
-- **dev-full profile** — Opt-in `bun run build:dev:full` enables additional feature flags for internal/dev scenarios.
+## Why Noa Claude
+
+- **Local-first by default** — Runtime guidance, help links, and operational docs resolve to repository-local or project-owned surfaces instead of upstream-owned endpoints.
+- **Privacy-forward build** — Telemetry, analytics, and remote policy overlays are hard-disabled or stubbed out.
+- **Multi-provider ready** — Anthropic, OpenAI-compatible backends, AWS Bedrock, Google Vertex, and Microsoft Foundry are supported in one CLI.
+- **Built for long-running work** — Resume, compaction, forks, agents, and MCP degradation behavior are treated as core runtime quality, not side details.
+- **Developer-oriented builds** — `bun run build:dev:full` enables the full dev profile for internal testing and experimentation.
+
+## Quick Start
+
+Install:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rickkwang/Noa-Claude/main/install.sh | bash
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/rickkwang/Noa-Claude.git && cd Noa-Claude
+bun run dev
+```
+
+Typical first session:
+
+```bash
+noa
+/login
+/doctor
+/help
+```
+
+Then open a project directory and ask for real work: fix a bug, explain a subsystem, review a diff, or fork a branch of investigation with `/fork`.
 
 ## Key Commands
 
@@ -43,22 +71,6 @@ An open-source coding agent built from publicly exposed Claude Code source.
 /tui       - Switch between default and fullscreen REPL layout
 /usage     - View token usage for current session
 /cost      - Estimate cost of the current conversation
-```
-
-## Quick Install
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/rickkwang/Noa-Claude/main/install.sh | bash
-```
-
-Or build from source:
-
-```bash
-git clone https://github.com/rickkwang/Noa-Claude.git && cd Noa-Claude
-bun run dev                    # run directly from source (fastest for development)
-# or
-bun run compile                # build standalone binary
-./dist/cli --version
 ```
 
 ## Build Commands
@@ -106,7 +118,7 @@ Enabled only when `CLAUDE_CODE_USE_OPENAI=1`. Discovery probes `GET /v1/models` 
 
 ## Capability Highlights
 
-- **Multi-Provider Support** — OpenAI-compatible, AWS Bedrock, Google Vertex, Microsoft Foundry alongside Anthropic's first-party API.
+- **Multi-Provider Support** — OpenAI-compatible, AWS Bedrock, Google Vertex, Microsoft Foundry, and Anthropic's first-party API.
 - **Agent Routing** — Assign different models to different agents via `settings.json` (`agentModels`, `agentRouting`).
 - **MCP Tool Compaction** — MCP tool results are included in context compaction, reducing token usage 20–40% for MCP-heavy sessions.
 - **128k Fallback** — Unknown OpenAI-compatible models use a conservative 128k context window to prevent compact threshold underestimation.
