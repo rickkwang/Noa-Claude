@@ -12,6 +12,7 @@ import { sendNotification } from '../services/notifier.js';
 import { OAuthService } from '../services/oauth/index.js';
 import { getOauthAccountInfo, validateForceLoginOrg } from '../utils/auth.js';
 import { logError } from '../utils/log.js';
+import { discoverProviderModelNames } from '../utils/model/openaiModelDiscovery.js';
 import {
   addProviderProfile,
   applyActiveProviderProfileEnv,
@@ -122,6 +123,14 @@ const PLATFORM_PRESETS: PlatformPreset[] = [{
   profileName: 'Kimi Code',
   baseUrl: 'https://api.kimi.com/coding',
   model: 'kimi-for-coding'
+}, {
+  value: 'moonshot',
+  name: 'Moonshot CN',
+  description: 'Kimi API China endpoint',
+  type: 'moonshot',
+  profileName: 'Moonshot CN',
+  baseUrl: 'https://api.moonshot.cn/v1',
+  model: 'kimi-k2.6'
 }, {
   value: 'deepseek',
   name: 'DeepSeek',
@@ -255,9 +264,9 @@ type ProviderSetupWizardProps = {
   onComplete: (message: string) => void;
   onError: (message: string) => void;
 };
-type ProviderSetupStep = 'select' | 'name' | 'baseUrl' | 'model' | 'apiKey';
+type ProviderSetupStep = 'select' | 'name' | 'baseUrl' | 'apiKey' | 'modelSelect' | 'model';
 const PROVIDER_FORM_STEPS: Array<{
-  key: Exclude<ProviderSetupStep, 'select'>;
+  key: Exclude<ProviderSetupStep, 'select' | 'modelSelect'>;
   label: string;
   placeholder: string;
   helpText: string;
@@ -272,15 +281,15 @@ const PROVIDER_FORM_STEPS: Array<{
   placeholder: 'e.g. https://api.deepseek.com/v1',
   helpText: 'API base URL used for this provider profile.'
 }, {
-  key: 'model',
-  label: 'Default model',
-  placeholder: 'e.g. deepseek-chat',
-  helpText: 'Model name(s) to use. Separate multiple with commas; first is default.'
-}, {
   key: 'apiKey',
   label: 'API key',
   placeholder: 'Leave empty if your provider does not require one',
   helpText: 'Optional. Press Enter with empty value to skip.'
+}, {
+  key: 'model',
+  label: 'Default model',
+  placeholder: 'e.g. deepseek-chat',
+  helpText: 'Model name to use when automatic discovery is unavailable.'
 }];
 function ProviderSetupWizard({
   onCancel,
@@ -293,6 +302,8 @@ function ProviderSetupWizard({
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
+  const [discoveryStatus, setDiscoveryStatus] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [cursorOffset, setCursorOffset] = useState(0);
   const [formError, setFormError] = useState<string | null>(null);
@@ -316,9 +327,23 @@ function ProviderSetupWizard({
       setStep('name');
       return;
     }
-    if (step === 'model') {
+    if (step === 'apiKey') {
       setInputValue(baseUrl);
       setStep('baseUrl');
+      return;
+    }
+    if (step === 'modelSelect') {
+      setInputValue(apiKey);
+      setStep('apiKey');
+      return;
+    }
+    if (step === 'model') {
+      if (discoveredModels.length > 0) {
+        setStep('modelSelect');
+        return;
+      }
+      setInputValue(apiKey);
+      setStep('apiKey');
       return;
     }
     setInputValue(model);
@@ -332,6 +357,8 @@ function ProviderSetupWizard({
     setBaseUrl(preset.baseUrl);
     setModel(preset.model);
     setApiKey('');
+    setDiscoveredModels([]);
+    setDiscoveryStatus(null);
     setInputValue(preset.profileName);
     setFormError(null);
     setStep('name');
@@ -352,6 +379,53 @@ function ProviderSetupWizard({
     if (trimmed.length < 8) return false;
     if (/^\d+$/.test(trimmed)) return false;
     return true;
+  };
+  const activateSelectedProvider = (nextModel: string, nextApiKey?: string) => {
+    if (!selectedPreset) return;
+    setFormError(null);
+    setModel(nextModel);
+    setSaving(true);
+    void activateProviderPreset(selectedPreset.value, {
+      profileName: name,
+      baseUrl,
+      model: nextModel,
+      apiKey: (nextApiKey ?? apiKey) || undefined
+    }).then(result => {
+      onComplete(`✓ ${result.presetName} preset is active. Active profile: ${result.profileName}.`);
+    }).catch(err => {
+      const message = err instanceof Error ? err.message : String(err);
+      onError(`Provider setup failed: ${message}`);
+    }).finally(() => {
+      setSaving(false);
+    });
+  };
+  const discoverModelsAndContinue = (nextApiKey?: string) => {
+    if (!selectedPreset) return;
+    setSaving(true);
+    setDiscoveryStatus('Fetching available models…');
+    setDiscoveredModels([]);
+    void discoverProviderModelNames({
+      type: selectedPreset.type,
+      baseUrl,
+      apiKey: nextApiKey
+    }).then(names => {
+      if (names.length > 0) {
+        setDiscoveredModels(names);
+        setDiscoveryStatus(null);
+        setStep('modelSelect');
+        return;
+      }
+      setDiscoveryStatus('Could not fetch models from this endpoint.');
+      setInputValue(model || selectedPreset.model);
+      setStep('model');
+    }).catch(error => {
+      const message = error instanceof Error ? error.message : String(error);
+      setDiscoveryStatus(`Could not fetch models: ${message}`);
+      setInputValue(model || selectedPreset.model);
+      setStep('model');
+    }).finally(() => {
+      setSaving(false);
+    });
   };
   const submitStep = (raw: string) => {
     if (!selectedPreset || saving) return;
@@ -376,8 +450,23 @@ function ProviderSetupWizard({
       }
       setFormError(null);
       setBaseUrl(next);
-      setInputValue(model || selectedPreset.model);
-      setStep('model');
+      setInputValue(apiKey);
+      setStep('apiKey');
+      return;
+    }
+    if (step === 'apiKey') {
+      const nextApiKey = value || undefined;
+      if (requiresApiKey(selectedPreset) && !nextApiKey) {
+        setFormError('API key is required for this provider.');
+        return;
+      }
+      if (nextApiKey && !isLikelyValidApiKey(nextApiKey)) {
+        setFormError('API key looks invalid (too short or numeric-only).');
+        return;
+      }
+      setFormError(null);
+      setApiKey(value);
+      discoverModelsAndContinue(nextApiKey);
       return;
     }
     if (step === 'model') {
@@ -386,39 +475,23 @@ function ProviderSetupWizard({
         setFormError('Model is required.');
         return;
       }
-      setFormError(null);
-      setModel(next);
-      setInputValue(apiKey);
-      setStep('apiKey');
-      return;
+      activateSelectedProvider(next);
     }
-    const nextApiKey = value || undefined;
-    if (requiresApiKey(selectedPreset) && !nextApiKey) {
-      setFormError('API key is required for this provider.');
-      return;
-    }
-    if (nextApiKey && !isLikelyValidApiKey(nextApiKey)) {
-      setFormError('API key looks invalid (too short or numeric-only).');
-      return;
-    }
-    setFormError(null);
-    setApiKey(value);
-    setSaving(true);
-    void activateProviderPreset(selectedPreset.value, {
-      profileName: name,
-      baseUrl,
-      model,
-      apiKey: nextApiKey
-    }).then(result => {
-      onComplete(`✓ ${result.presetName} preset is active. Active profile: ${result.profileName}.`);
-    }).catch(err => {
-      const message = err instanceof Error ? err.message : String(err);
-      onError(`Provider setup failed: ${message}`);
-    }).finally(() => {
-      setSaving(false);
-    });
   };
-  const options = PLATFORM_PRESETS.map(preset => {
+  const modelOptions = [
+    ...discoveredModels.map(name => ({
+      label: <Text>{name}</Text>,
+      value: name
+    })),
+    {
+      label: <Text dimColor>Enter manually</Text>,
+      value: '__manual__'
+    }
+  ];
+  const sortedPlatformPresets = [...PLATFORM_PRESETS].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+  const options = sortedPlatformPresets.map(preset => {
     const spacer = ' '.repeat(Math.max(1, 14 - preset.name.length));
     return {
       label: <Text>{preset.name}{spacer}<Text dimColor>{preset.description}</Text></Text>,
@@ -441,22 +514,36 @@ function ProviderSetupWizard({
             startPresetFlow(String(value));
           }} onCancel={onCancel} />
           </Box>
-          <Text dimColor={true}>China endpoints included: Moonshot (Kimi), DeepSeek, Z.AI GLM, MiniMax.</Text>
+          <Text dimColor={true}>China endpoints included: DeepSeek, Kimi Code, MiniMax, Moonshot CN, Z.AI GLM.</Text>
+        </Box> : step === 'modelSelect' ? <Box flexDirection="column" gap={1}>
+          <Text color="remember" bold={true}>Select model</Text>
+          <Text dimColor={true}>Fetched from {selectedPreset?.name} endpoint.</Text>
+          <Box>
+            <Select options={modelOptions} onChange={value => {
+            if (value === '__manual__') {
+              setInputValue(model || selectedPreset?.model || '');
+              setStep('model');
+              return;
+            }
+            activateSelectedProvider(String(value));
+          }} onCancel={handleStepBack} />
+          </Box>
         </Box> : <Box flexDirection="column" gap={1}>
           <Text color="remember" bold={true}>Create provider profile</Text>
           <Text dimColor={true}>{PROVIDER_FORM_STEPS.find(_ => _.key === step)?.helpText ?? ''}</Text>
-          <Text dimColor={true}>Provider type: {selectedPreset?.type === 'anthropic' || selectedPreset?.type === 'minimax' ? 'Anthropic native API' : 'OpenAI-compatible API'}</Text>
-          <Text dimColor={true}>Step {step === 'name' ? '1' : step === 'baseUrl' ? '2' : step === 'model' ? '3' : '4'} of 4: {PROVIDER_FORM_STEPS.find(_ => _.key === step)?.label ?? ''}</Text>
+          <Text dimColor={true}>Provider type: {selectedPreset?.type === 'anthropic' || selectedPreset?.type === 'kimi' || selectedPreset?.type === 'minimax' ? 'Anthropic-compatible API' : 'OpenAI-compatible API'}</Text>
+          <Text dimColor={true}>Step {step === 'name' ? '1' : step === 'baseUrl' ? '2' : step === 'apiKey' ? '3' : '4'} of 4: {PROVIDER_FORM_STEPS.find(_ => _.key === step)?.label ?? ''}</Text>
           <Box>
             <Text>&gt; </Text>
             <TextInput value={inputValue} onChange={setInputValue} onSubmit={submitStep} onExit={handleStepBack} focus={true} showCursor={true} cursorOffset={cursorOffset} onChangeCursorOffset={setCursorOffset} columns={inputColumns} placeholder={PROVIDER_FORM_STEPS.find(_ => _.key === step)?.placeholder} mask={step === 'apiKey' ? '*' : undefined} />
           </Box>
           {formError ? <Text color="error">{formError}</Text> : null}
+          {discoveryStatus ? <Text dimColor={true}>{discoveryStatus}</Text> : null}
           <Text dimColor={true}>Press Enter to continue. Press Esc to go back.</Text>
         </Box>}
       {saving && <Box>
           <Spinner />
-          <Text>Saving provider profile…</Text>
+          <Text>{discoveryStatus === 'Fetching available models…' ? 'Fetching available models…' : 'Saving provider profile…'}</Text>
         </Box>}
     </Box>;
 }
@@ -774,20 +861,20 @@ function OAuthStatusMessage({
     case 'idle': {
       const promptText = startingMessage ?? 'Noa Claude can be used with your Claude subscription or billed based on API usage through your Console account.';
       const loginOptions = [{
-        label: <Text>Claude account with subscription · <Text dimColor={true}>Pro, Max, Team, or Enterprise</Text>{'\n'}</Text>,
+        label: <Text>Claude account with subscription · <Text dimColor={true}>Pro, Max, Team, or Enterprise</Text></Text>,
         value: 'claudeai' as const
       }, {
-        label: <Text>Anthropic Console account · <Text dimColor={true}>API usage billing</Text>{'\n'}</Text>,
+        label: <Text>Anthropic Console account · <Text dimColor={true}>API usage billing</Text></Text>,
         value: 'console' as const
       }, {
-        label: <Text>3rd-party platform · <Text dimColor={true}>OpenAI, Gemini, Bedrock, Ollama, Kimi, DeepSeek, GLM, MiniMax, and more</Text>{'\n'}</Text>,
+        label: <Text>3rd-party platform · <Text dimColor={true}>OpenAI, Gemini, Bedrock, Ollama, Kimi, DeepSeek, GLM, MiniMax, and more</Text></Text>,
         value: 'platform' as const
       }];
       return <Box flexDirection="column" gap={1} marginTop={1}>
           <Text bold={true}>{promptText}</Text>
           <Text>Select login method:</Text>
           <Box>
-            <Select options={loginOptions} onChange={value => {
+            <Select options={loginOptions} layout="compact-vertical" onChange={value => {
             if (value === 'platform') {
               logEvent('tengu_oauth_platform_selected', {});
               setOAuthStatus({

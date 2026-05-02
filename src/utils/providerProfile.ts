@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
@@ -17,6 +16,7 @@ export type ProviderType =
   | 'codex'
   | 'deepseek'
   | 'kimi'
+  | 'moonshot'
   | 'minimax'
   | 'glm'
   | 'together'
@@ -79,9 +79,14 @@ export async function updateProviderProfile(
   if (index === -1) {
     return null
   }
-  profiles[index] = { ...profiles[index], ...updates }
+  const existing = profiles[index]
+  if (!existing) {
+    return null
+  }
+  const updated: ProviderProfile = { ...existing, ...updates }
+  profiles[index] = updated
   await saveProviderProfiles(profiles)
-  return profiles[index]
+  return updated
 }
 
 export async function deleteProviderProfile(
@@ -114,6 +119,7 @@ export const PROVIDER_TYPE_LABELS: Record<ProviderType, string> = {
   codex: 'OpenAI Codex',
   deepseek: 'DeepSeek',
   kimi: 'Kimi',
+  moonshot: 'Moonshot',
   minimax: 'MiniMax',
   glm: 'Z.AI GLM',
   together: 'Together AI',
@@ -159,6 +165,10 @@ export const PROVIDER_TYPE_DEFAULTS: Record<ProviderType, { baseUrl?: string; mo
   kimi: {
     baseUrl: 'https://api.kimi.com/coding',
     model: 'kimi-for-coding',
+  },
+  moonshot: {
+    baseUrl: 'https://api.moonshot.cn/v1',
+    model: 'kimi-k2.6',
   },
   minimax: {
     baseUrl: 'https://api.minimaxi.com/anthropic',
@@ -233,6 +243,7 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
     case 'ollama':
     case 'codex':
     case 'deepseek':
+    case 'moonshot':
     case 'glm':
     case 'together':
     case 'groq':

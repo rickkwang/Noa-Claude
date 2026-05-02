@@ -1,8 +1,8 @@
-// @ts-nocheck
 import axios from 'axios'
 import { logForDebugging } from '../debug.js'
 import type { ModelOption } from './modelOptions.js'
 import { getAPIProvider } from './providers.js'
+import type { ProviderType } from '../providerProfile.js'
 
 const DISCOVERY_TIMEOUT_MS = 5000
 const DISCOVERED_MODEL_DESCRIPTION = 'Discovered from OpenAI-compatible endpoint'
@@ -17,6 +17,12 @@ type OllamaTagsResponse = {
   models?: Array<{
     name?: string | null
   }>
+}
+
+export type ProviderModelDiscoveryRequest = {
+  type: ProviderType
+  baseUrl: string
+  apiKey?: string
 }
 
 function readTrimmedEnv(
@@ -88,8 +94,10 @@ function getModelListUrls(baseUrl: string): string[] {
   return [addApiVersion(primary), addApiVersion(secondary)]
 }
 
-function getOpenAIAuthHeaders(baseUrl: string): Record<string, string> {
-  const apiKey = readTrimmedEnv('OPENAI_API_KEY')
+function getOpenAIAuthHeaders(
+  baseUrl: string,
+  apiKey = readTrimmedEnv('OPENAI_API_KEY'),
+): Record<string, string> {
   if (!apiKey) return {}
 
   const headers: Record<string, string> = {
@@ -97,6 +105,31 @@ function getOpenAIAuthHeaders(baseUrl: string): Record<string, string> {
   }
   if (isAzureOpenAIBaseUrl(baseUrl)) {
     headers['api-key'] = apiKey
+  }
+  return headers
+}
+
+function getAnthropicModelListUrls(baseUrl: string): string[] {
+  const normalized = normalizeBaseUrl(baseUrl)
+  const primary = normalized.endsWith('/v1')
+    ? `${normalized}/models`
+    : `${normalized}/v1/models`
+  const secondary = `${normalized}/models`
+  return primary === secondary ? [primary] : [primary, secondary]
+}
+
+function getAnthropicAuthHeaders(
+  type: ProviderType,
+  apiKey: string | undefined,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    'anthropic-version': '2023-06-01',
+  }
+  if (!apiKey) return headers
+  if (type === 'kimi' || type === 'minimax') {
+    headers.Authorization = `Bearer ${apiKey}`
+  } else {
+    headers['x-api-key'] = apiKey
   }
   return headers
 }
@@ -127,6 +160,11 @@ function uniqueModelNames(modelNames: string[]): string[] {
   return unique
 }
 
+function normalizeKimiCodeModelName(modelName: string): string {
+  const compact = modelName.replace(/\s+/g, '')
+  return compact === 'kimi-for-coding' ? compact : modelName
+}
+
 async function fetchOpenAIModels(
   urls: string[],
   headers: Record<string, string>,
@@ -147,6 +185,32 @@ async function fetchOpenAIModels(
       const message = error instanceof Error ? error.message : String(error)
       logForDebugging(
         `[ModelDiscovery] Failed OpenAI models request ${url}: ${message}`,
+      )
+    }
+  }
+  return []
+}
+
+async function fetchAnthropicCompatibleModels(
+  urls: string[],
+  headers: Record<string, string>,
+): Promise<string[]> {
+  for (const url of urls) {
+    try {
+      const response = await axios.get<OpenAIModelsResponse>(url, {
+        headers,
+        timeout: DISCOVERY_TIMEOUT_MS,
+      })
+      const modelNames = uniqueModelNames(
+        (response.data?.data ?? [])
+          .map(model => model.id ?? '')
+          .filter(isNonEmptyString),
+      )
+      if (modelNames.length > 0) return modelNames
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logForDebugging(
+        `[ModelDiscovery] Failed Anthropic-compatible models request ${url}: ${message}`,
       )
     }
   }
@@ -198,4 +262,65 @@ export async function discoverOpenAICompatibleModelOptions(): Promise<
     label: name,
     description: DISCOVERED_MODEL_DESCRIPTION,
   }))
+}
+
+export async function discoverProviderModelNames({
+  type,
+  baseUrl,
+  apiKey,
+}: ProviderModelDiscoveryRequest): Promise<string[]> {
+  const normalizedBaseUrl = normalizeBaseUrl(baseUrl)
+  switch (type) {
+    case 'anthropic':
+    case 'minimax':
+      return fetchAnthropicCompatibleModels(
+        getAnthropicModelListUrls(normalizedBaseUrl),
+        getAnthropicAuthHeaders(type, apiKey),
+      )
+    case 'kimi': {
+      const names = await fetchAnthropicCompatibleModels(
+        getAnthropicModelListUrls(normalizedBaseUrl),
+        getAnthropicAuthHeaders(type, apiKey),
+      )
+      const normalizedNames = uniqueModelNames(
+        names.map(normalizeKimiCodeModelName),
+      )
+      return normalizedNames.length > 0
+        ? normalizedNames
+        : ['kimi-for-coding']
+    }
+    case 'ollama': {
+      const tagsUrl = getOllamaTagsUrl(normalizedBaseUrl)
+      return tagsUrl ? fetchOllamaModels(tagsUrl, {}) : []
+    }
+    case 'openai':
+    case 'gemini':
+    case 'github':
+    case 'mistral':
+    case 'codex':
+    case 'deepseek':
+    case 'moonshot':
+    case 'glm':
+    case 'together':
+    case 'groq':
+    case 'azure-openai':
+    case 'openrouter':
+    case 'lmstudio': {
+      const headers =
+        type === 'gemini' && apiKey
+          ? { 'x-goog-api-key': apiKey }
+          : getOpenAIAuthHeaders(normalizedBaseUrl, apiKey)
+      let names = await fetchOpenAIModels(
+        getModelListUrls(normalizedBaseUrl),
+        headers,
+      )
+      if (names.length === 0) {
+        const ollamaTagsUrl = getOllamaTagsUrl(normalizedBaseUrl)
+        if (ollamaTagsUrl) {
+          names = await fetchOllamaModels(ollamaTagsUrl, headers)
+        }
+      }
+      return names
+    }
+  }
 }
