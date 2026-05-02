@@ -398,14 +398,14 @@ export const SettingsSchema = lazySchema(() =>
             'enterprise administrators.',
         ),
       agentRouting: z
-        .record(z.string())
+        .record(z.string(), z.string())
         .optional()
         .describe(
           'Routing configuration for agents to models. Maps agent name (or subagentType or "default") ' +
             'to a model key defined in agentModels.',
         ),
       agentModels: z
-        .record(z.string())
+        .record(z.string(), z.string())
         .optional()
         .describe(
           'Model configurations for agent routing. Maps model key to base URL for API requests.',
