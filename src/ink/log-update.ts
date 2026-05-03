@@ -371,12 +371,16 @@ export class LogUpdate {
         currentStyleId = stylePool.none
         currentHyperlink = undefined
 
+        // Wide chars occupy 2 terminal columns. The SpacerTail at x+1 is
+        // skipped by the diff loop, so we must clear both columns here to
+        // avoid leaving the right half of the glyph visible as a ghost block.
+        const clearWidth = removed.width === CellWidth.Wide ? 2 : 1
         screen.txn(() => {
           const patches: Diff = []
           transitionStyle(patches, stylePool, styleIdToReset, stylePool.none)
           transitionHyperlink(patches, hyperlinkToReset, undefined)
-          patches.push({ type: 'stdout', content: ' ' })
-          return [patches, { dx: 1, dy: 0 }]
+          patches.push({ type: 'stdout', content: ' '.repeat(clearWidth) })
+          return [patches, { dx: clearWidth, dy: 0 }]
         })
       }
     })
