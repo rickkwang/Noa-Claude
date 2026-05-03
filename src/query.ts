@@ -58,6 +58,11 @@ import {
 import { generateToolUseSummary } from './services/toolUseSummary/toolUseSummaryGenerator.js'
 import { prependUserContext, appendSystemContext } from './utils/api.js'
 import {
+  shouldInjectGoalPrompt,
+  getGoalPromptForStatus,
+} from './utils/goalPrompts.js'
+import { accountGoalUsage } from './utils/goalAccounting.js'
+import {
   createAttachmentMessage,
   filterDuplicateMemoryAttachments,
   getAttachmentMessages,
@@ -600,6 +605,25 @@ async function* queryLoop(
 
     const appState = toolUseContext.getAppState()
     const permissionMode = appState.toolPermissionContext.mode
+
+    // Inject goal continuation prompt on first turn only
+    if (
+      turnCount === 1 &&
+      !toolUseContext.agentId &&
+      permissionMode !== 'plan'
+    ) {
+      const goal = appState.goal
+      if (shouldInjectGoalPrompt(goal)) {
+        messagesForQuery = [
+          createUserMessage({
+            content: getGoalPromptForStatus(goal),
+            isMeta: true,
+          }),
+          ...messagesForQuery,
+        ]
+      }
+    }
+
     let currentModel = getRuntimeMainLoopModel({
       permissionMode,
       mainLoopModel: toolUseContext.options.mainLoopModel,
@@ -1309,6 +1333,16 @@ async function* queryLoop(
         return { reason: 'completed' }
       }
 
+      const goalAccounting = accountGoalUsage({
+        assistantMessages,
+        getAppState: toolUseContext.getAppState,
+        setAppState: toolUseContext.setAppState,
+        includeModelNotice: false,
+      })
+      if (goalAccounting.userNotice) {
+        yield goalAccounting.userNotice
+      }
+
       const stopHookResult = yield* handleStopHooks(
         messagesForQuery,
         assistantMessages,
@@ -1452,6 +1486,20 @@ async function* queryLoop(
       }
     }
     queryCheckpoint('query_tool_execution_end')
+
+    const goalAccounting = accountGoalUsage({
+      assistantMessages,
+      getAppState: toolUseContext.getAppState,
+      setAppState: toolUseContext.setAppState,
+      includeModelNotice: true,
+      goalAtTurnStart: appState.goal,
+    })
+    if (goalAccounting.userNotice) {
+      yield goalAccounting.userNotice
+    }
+    if (goalAccounting.modelNotice) {
+      toolResults.push(goalAccounting.modelNotice)
+    }
 
     // Generate tool use summary after tool batch completes — passed to next recursive call
     let nextPendingToolUseSummary:

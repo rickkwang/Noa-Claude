@@ -10,6 +10,7 @@ import {
   switchSession,
 } from '../bootstrap/state.js'
 import { clearSystemPromptSections } from '../constants/systemPromptSections.js'
+import { COMMAND_ARGS_TAG, COMMAND_NAME_TAG } from '../constants/xml.js'
 import { restoreCostStateForSession } from '../cost-tracker.js'
 import type { AppState } from '../state/AppState.js'
 import type { AgentColorName } from '../tools/AgentTool/agentColorManager.js'
@@ -21,6 +22,7 @@ import {
 } from '../tools/AgentTool/loadAgentsDir.js'
 import { TODO_WRITE_TOOL_NAME } from '../tools/TodoWriteTool/constants.js'
 import { asSessionId } from '../types/ids.js'
+import type { ThreadGoal } from '../types/goal.js'
 import type {
   AttributionSnapshotMessage,
   ContextCollapseCommitEntry,
@@ -40,7 +42,7 @@ import { getCwd } from './cwd.js'
 import { logForDebugging } from './debug.js'
 import type { FileHistorySnapshot } from './fileHistory.js'
 import { fileHistoryRestoreStateFromLog } from './fileHistory.js'
-import { createSystemMessage } from './messages.js'
+import { createSystemMessage, extractTag, getContentText } from './messages.js'
 import { parseUserSpecifiedModel } from './model/model.js'
 import { getPlansDirectory } from './plans.js'
 import { setCwd } from './Shell.js'
@@ -73,6 +75,16 @@ type ToolUseBlock = {
   type: 'tool_use'
   name: string
   input: unknown
+}
+
+type GoalToolResult = {
+  goal?: {
+    objective?: unknown
+    status?: unknown
+    token_budget?: unknown
+    tokens_used?: unknown
+    time_used_seconds?: unknown
+  } | null
 }
 
 function isToolUseBlock(block: unknown): block is ToolUseBlock {
@@ -128,6 +140,180 @@ function extractTodosFromTranscript(messages: Message[]): TodoList {
     return parsed.success ? parsed.data : []
   }
   return []
+}
+
+function timestampMs(message: Message): number {
+  const parsed = message.timestamp ? Date.parse(message.timestamp) : NaN
+  return Number.isFinite(parsed) ? parsed : Date.now()
+}
+
+function parseGoalBudget(args: string): {
+  objective: string
+  tokenBudget: number | null
+} | null {
+  const budgetMatch = args.match(/--budget\s+(\d+)/)
+  let tokenBudget: number | null = null
+  let objective = args.trim()
+  if (budgetMatch) {
+    const parsed = parseInt(budgetMatch[1]!, 10)
+    if (!Number.isFinite(parsed) || parsed <= 0) return null
+    tokenBudget = parsed
+    objective = args.replace(/--budget\s+\d+/, '').trim()
+  }
+  if (!objective) return null
+  return { objective, tokenBudget }
+}
+
+function applyGoalCommand(
+  goal: ThreadGoal | undefined,
+  args: string,
+  now: number,
+): ThreadGoal | undefined {
+  const trimmed = args.trim()
+  if (!trimmed) return goal
+  const [sub] = trimmed.split(/\s+/)
+  if (sub === 'pause') {
+    return goal ? { ...goal, status: 'paused', updatedAt: now } : goal
+  }
+  if (sub === 'resume') {
+    return goal ? { ...goal, status: 'active', updatedAt: now } : goal
+  }
+  if (sub === 'clear') return undefined
+
+  const parsed = parseGoalBudget(trimmed)
+  if (!parsed) return goal
+  const { objective, tokenBudget } = parsed
+  if (goal && goal.objective === objective && goal.status !== 'complete') {
+    return {
+      ...goal,
+      status: 'active',
+      tokenBudget: tokenBudget ?? goal.tokenBudget,
+      updatedAt: now,
+    }
+  }
+  return {
+    objective,
+    status: 'active',
+    tokenBudget,
+    tokensUsed: 0,
+    timeUsedSeconds: 0,
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+function applyGoalToolUse(
+  goal: ThreadGoal | undefined,
+  input: unknown,
+  now: number,
+): ThreadGoal | undefined {
+  if (input === null || typeof input !== 'object') return goal
+  const record = input as Record<string, unknown>
+  if (record.operation === 'create_goal') {
+    const objective =
+      typeof record.objective === 'string' ? record.objective.trim() : ''
+    if (!objective) return goal
+    if (goal && goal.status !== 'complete') return goal
+    const tokenBudget =
+      typeof record.token_budget === 'number' &&
+      Number.isInteger(record.token_budget) &&
+      record.token_budget > 0
+        ? record.token_budget
+        : null
+    return {
+      objective,
+      status: 'active',
+      tokenBudget,
+      tokensUsed: 0,
+      timeUsedSeconds: 0,
+      createdAt: now,
+      updatedAt: now,
+    }
+  }
+  if (record.operation === 'update_goal' && record.status === 'complete') {
+    return goal ? { ...goal, status: 'complete', updatedAt: now } : goal
+  }
+  return goal
+}
+
+function applyGoalToolResult(
+  goal: ThreadGoal | undefined,
+  output: unknown,
+  now: number,
+): ThreadGoal | undefined {
+  if (output === null || typeof output !== 'object') return goal
+  const outputGoal = (output as GoalToolResult).goal
+  if (!outputGoal) return goal
+  if (
+    typeof outputGoal.objective !== 'string' ||
+    typeof outputGoal.status !== 'string'
+  ) {
+    return goal
+  }
+  return {
+    objective: outputGoal.objective,
+    status:
+      outputGoal.status === 'active' ||
+      outputGoal.status === 'paused' ||
+      outputGoal.status === 'budget_limited' ||
+      outputGoal.status === 'complete'
+        ? outputGoal.status
+        : (goal?.status ?? 'active'),
+    tokenBudget:
+      typeof outputGoal.token_budget === 'number'
+        ? outputGoal.token_budget
+        : null,
+    tokensUsed:
+      typeof outputGoal.tokens_used === 'number' ? outputGoal.tokens_used : 0,
+    timeUsedSeconds:
+      typeof outputGoal.time_used_seconds === 'number'
+        ? outputGoal.time_used_seconds
+        : 0,
+    createdAt: goal?.createdAt ?? now,
+    updatedAt: now,
+  }
+}
+
+function extractGoalFromTranscript(messages: Message[]): ThreadGoal | undefined {
+  let goal: ThreadGoal | undefined
+  for (const message of messages) {
+    const now = timestampMs(message)
+    if (message.type === 'system' && message.subtype === 'local_command') {
+      const content = typeof message.content === 'string' ? message.content : ''
+      const commandName = extractTag(content, COMMAND_NAME_TAG)
+      if (commandName === '/goal') {
+        goal = applyGoalCommand(
+          goal,
+          extractTag(content, COMMAND_ARGS_TAG) ?? '',
+          now,
+        )
+      }
+      continue
+    }
+
+    if (message.type === 'assistant' && Array.isArray(message.message?.content)) {
+      for (const block of message.message.content) {
+        if (isToolUseBlock(block) && block.name === 'goal') {
+          goal = applyGoalToolUse(goal, block.input, now)
+        }
+      }
+      continue
+    }
+
+    if (message.type === 'user') {
+      goal = applyGoalToolResult(goal, message.toolUseResult, now)
+      if (!Array.isArray(message.message?.content)) continue
+      const text = getContentText(message.message.content)
+      if (!text) continue
+      try {
+        goal = applyGoalToolResult(goal, JSON.parse(text), now)
+      } catch {
+        // Older goal tool results were plain text; the tool_use replay above
+        // still restores the objective/status for those sessions.
+      }
+    }
+  }
+  return goal
 }
 
 /**
@@ -200,6 +386,11 @@ export function restoreSessionStateFromLog(
         todos: { ...prev.todos, [agentId]: todos },
       }))
     }
+  }
+
+  if (result.messages && result.messages.length > 0) {
+    const goal = extractGoalFromTranscript(result.messages)
+    setAppState(prev => ({ ...prev, goal }))
   }
 }
 

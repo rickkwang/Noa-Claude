@@ -150,6 +150,7 @@ import {
 import rateLimitOptions from './commands/rate-limit-options/index.js'
 import statusline from './commands/statusline.js'
 import effort from './commands/effort/index.js'
+import goal from './commands/goal/index.js'
 import stats from './commands/stats/index.js'
 import startupBanner from './commands/startup-banner/index.js'
 import wiki from './commands/wiki/index.js'
@@ -296,6 +297,7 @@ const COMMANDS = memoize((): Command[] => [
   ...(voiceCommand ? [voiceCommand] : []),
   permissions,
   plan,
+  goal,
   privacySettings,
   hooks,
   exportCommand,
@@ -590,6 +592,7 @@ export const REMOTE_SAFE_COMMANDS: Set<Command> = new Set([
   btw, // Quick note
   feedback, // Send feedback
   plan, // Plan mode toggle
+  goal, // Goal management
   keybindings, // Keybinding management
   statusline, // Status line toggle
 ])
