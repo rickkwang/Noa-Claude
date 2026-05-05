@@ -83,18 +83,21 @@ export function subprocessEnv(): NodeJS.ProcessEnv {
   // proxy is disabled or not registered (non-CCR), so this is a no-op outside
   // CCR containers.
   const proxyEnv = _getUpstreamProxyEnv?.() ?? {}
-
-  if (!isEnvTruthy(process.env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB)) {
-    return Object.keys(proxyEnv).length > 0
-      ? { ...process.env, ...proxyEnv }
-      : process.env
-  }
   const env = { ...process.env, ...proxyEnv }
-  for (const k of GHA_SUBPROCESS_SCRUB) {
-    delete env[k]
-    // GitHub Actions auto-creates INPUT_<NAME> for `with:` inputs, duplicating
-    // secrets like INPUT_ANTHROPIC_API_KEY. No-op for vars that aren't action inputs.
-    delete env[`INPUT_${k}`]
+
+  // Strip OTEL_* unconditionally so OTEL-instrumented apps run via Bash/MCP/LSP/hooks
+  // don't pick up the CLI's own OTLP endpoint, service name, or resource attributes.
+  for (const k of Object.keys(env)) {
+    if (k.startsWith('OTEL_')) delete env[k]
+  }
+
+  if (isEnvTruthy(process.env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB)) {
+    for (const k of GHA_SUBPROCESS_SCRUB) {
+      delete env[k]
+      // GitHub Actions auto-creates INPUT_<NAME> for `with:` inputs, duplicating
+      // secrets like INPUT_ANTHROPIC_API_KEY. No-op for vars that aren't action inputs.
+      delete env[`INPUT_${k}`]
+    }
   }
   return env
 }

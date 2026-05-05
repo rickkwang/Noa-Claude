@@ -622,15 +622,35 @@ const MessagesImpl = ({
     progress
   } = useTerminalNotification();
   const prevProgressState = useRef<string | null>(null);
+  const clearProgressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const progressEnabled = getGlobalConfig().terminalProgressBarEnabled && !getIsRemoteMode() && !(proactiveModule?.isProactiveActive() ?? false);
   useEffect(() => {
     const state = progressEnabled ? hasToolsInProgress ? 'indeterminate' : 'completed' : null;
     if (prevProgressState.current === state) return;
+    // Cancel any pending clear so sequential tools don't flicker the indicator off.
+    if (clearProgressTimeoutRef.current) {
+      clearTimeout(clearProgressTimeoutRef.current);
+      clearProgressTimeoutRef.current = null;
+    }
+    if (state === 'completed') {
+      // Debounce the clear: if another tool starts within 300ms, keep the indicator on.
+      clearProgressTimeoutRef.current = setTimeout(() => {
+        prevProgressState.current = state;
+        progress(state);
+        clearProgressTimeoutRef.current = null;
+      }, 300);
+      return;
+    }
     prevProgressState.current = state;
     progress(state);
   }, [progress, progressEnabled, hasToolsInProgress]);
   useEffect(() => {
-    return () => progress(null);
+    return () => {
+      if (clearProgressTimeoutRef.current) {
+        clearTimeout(clearProgressTimeoutRef.current);
+      }
+      progress(null);
+    };
   }, [progress]);
   const messageKey = useCallback((msg_7: RenderableMessage) => `${msg_7.uuid}-${conversationId}`, [conversationId]);
   const renderMessageRow = (msg_8: RenderableMessage, index: number) => {

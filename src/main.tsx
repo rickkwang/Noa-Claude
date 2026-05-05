@@ -894,9 +894,20 @@ async function getInputPrompt(prompt: string, inputFormat: 'text' | 'stream-json
       return process.stdin;
     }
     process.stdin.setEncoding('utf8');
+    // Cap accumulated stdin to avoid OOM / V8 string-limit crash loops on
+    // huge pipes (>10MB). Producer keeps draining; we just stop appending.
+    const MAX_STDIN_CHARS = 10 * 1024 * 1024;
     let data = '';
+    let truncated = false;
     const onData = (chunk: string) => {
-      data += chunk;
+      if (truncated) return;
+      const remaining = MAX_STDIN_CHARS - data.length;
+      if (chunk.length > remaining) {
+        data += chunk.slice(0, remaining);
+        truncated = true;
+      } else {
+        data += chunk;
+      }
     };
     process.stdin.on('data', onData);
     // If no data arrives in 3s, stop waiting and warn. Stdin is likely an
@@ -908,6 +919,9 @@ async function getInputPrompt(prompt: string, inputFormat: 'text' | 'stream-json
     process.stdin.off('data', onData);
     if (timedOut) {
       process.stderr.write('Warning: no stdin data received in 3s, proceeding without it. ' + 'If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.\n');
+    }
+    if (truncated) {
+      process.stderr.write('Warning: stdin truncated at 10MB. Use --input-format stream-json for larger inputs.\n');
     }
     return [prompt, data].filter(Boolean).join('\n');
   }

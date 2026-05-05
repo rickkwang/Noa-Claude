@@ -974,10 +974,10 @@ async function classifyYoloActionXml(
     return {
       shouldBlock: true,
       reason: tooLong
-        ? 'Classifier transcript exceeded context window'
+        ? 'Classifier transcript exceeded context window — try /compact to shrink context, or run with --debug for details.'
         : stage1Usage
-          ? 'Stage 2 classifier error - blocking based on stage 1 assessment'
-          : 'Classifier unavailable - blocking for safety',
+          ? 'Stage 2 classifier error — blocking based on stage 1 assessment. Retry, or run with --debug for details.'
+          : 'Classifier unavailable — blocking for safety. Retry, or run with --debug for details.',
       model,
       unavailable: stage1Usage === undefined,
       transcriptTooLong: Boolean(tooLong),

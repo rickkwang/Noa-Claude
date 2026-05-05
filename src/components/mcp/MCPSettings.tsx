@@ -75,18 +75,21 @@ export function MCPSettings(t0) {
           const isSSE = client_0.config.type === "sse";
           const isHTTP = client_0.config.type === "http";
           const isClaudeAIProxy = client_0.config.type === "claudeai-proxy";
+          const serverTools = client_0.type === "connected" ? filterToolsByServer(mcp.tools, client_0.name) : [];
+          const toolsCount = serverTools.length;
           let isAuthenticated = undefined;
           if (isSSE || isHTTP) {
             const authProvider = new ClaudeAuthProvider(client_0.name, client_0.config as McpSSEServerConfig | McpHTTPServerConfig);
             const tokens = await authProvider.tokens();
             const hasSessionAuth = getSessionIngressAuthToken() !== null && client_0.type === "connected";
-            const hasToolsAndConnected = client_0.type === "connected" && filterToolsByServer(mcp.tools, client_0.name).length > 0;
+            const hasToolsAndConnected = toolsCount > 0;
             isAuthenticated = Boolean(tokens) || hasSessionAuth || hasToolsAndConnected;
           }
           const baseInfo = {
             name: client_0.name,
             client: client_0,
-            scope
+            scope,
+            toolsCount
           };
           if (isClaudeAIProxy) {
             return {

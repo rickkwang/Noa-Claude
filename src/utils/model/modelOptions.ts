@@ -146,7 +146,7 @@ function getOpus47Option(fastMode = false): ModelOption {
   return {
     value: is3P ? getModelStrings().opus47 : 'opus',
     label: 'Opus',
-    description: `Opus 4.7 · Most capable for complex work${getOpus46PricingSuffix(fastMode)}`,
+    description: `Opus · Most capable for complex work${getOpus46PricingSuffix(fastMode)}`,
     descriptionForModel: 'Opus 4.7 - most capable for complex work',
   }
 }
@@ -156,7 +156,7 @@ export function getOpus47_1MOption(fastMode = false): ModelOption {
   return {
     value: is3P ? getModelStrings().opus47 + '[1m]' : 'opus[1m]',
     label: 'Opus (1M context)',
-    description: `Opus 4.7 for long sessions${getOpus46PricingSuffix(fastMode)}`,
+    description: `Opus for long sessions${getOpus46PricingSuffix(fastMode)}`,
     descriptionForModel:
       'Opus 4.7 with 1M context window - for long sessions with large codebases',
   }
@@ -234,7 +234,7 @@ function getMaxOpusOption(fastMode = false): ModelOption {
   return {
     value: 'opus',
     label: 'Opus',
-    description: `Opus 4.7 · Most capable for complex work${fastMode ? getOpus46PricingSuffix(true) : ''}`,
+    description: `Opus · Most capable for complex work${fastMode ? getOpus46PricingSuffix(true) : ''}`,
   }
 }
 
@@ -262,7 +262,7 @@ export function getMaxOpus47_1MOption(fastMode = false): ModelOption {
   return {
     value: 'opus[1m]',
     label: 'Opus (1M context)',
-    description: `Opus 4.7 with 1M context${billingInfo}${getOpus46PricingSuffix(fastMode)}`,
+    description: `Opus with 1M context${billingInfo}${getOpus46PricingSuffix(fastMode)}`,
   }
 }
 
@@ -271,7 +271,7 @@ function getMergedOpus1MOption(fastMode = false): ModelOption {
   return {
     value: is3P ? getModelStrings().opus47 + '[1m]' : 'opus[1m]',
     label: 'Opus (1M context)',
-    description: `Opus 4.7 with 1M context · Most capable for complex work${!is3P && fastMode ? getOpus46PricingSuffix(fastMode) : ''}`,
+    description: `Opus with 1M context · Most capable for complex work${!is3P && fastMode ? getOpus46PricingSuffix(fastMode) : ''}`,
     descriptionForModel:
       'Opus 4.7 with 1M context - most capable for complex work',
   }
@@ -292,8 +292,9 @@ const MaxHaiku45Option: ModelOption = {
 function getOpusPlanOption(): ModelOption {
   return {
     value: 'opusplan',
-    label: 'Opus Plan Mode',
-    description: 'Use Opus 4.7 in plan mode, Sonnet 4.6 otherwise',
+    label: 'Opus Plan',
+    description: 'Opus in plan mode, else Sonnet',
+    descriptionForModel: 'Use Opus in plan mode, Sonnet otherwise',
   }
 }
 
@@ -529,11 +530,19 @@ export function getModelOptions(fastMode = false): ModelOption[] {
   } else if (customModel === 'opusplan') {
     return filterModelOptionsByAllowlist([...options, getOpusPlanOption()])
   } else if (customModel === 'opus' && getAPIProvider() === 'firstParty') {
+    // Max/Team Premium default is already Opus — adding an explicit Opus row duplicates the Default entry.
+    if (isMaxSubscriber() || isTeamPremiumSubscriber()) {
+      return filterModelOptionsByAllowlist(options)
+    }
     return filterModelOptionsByAllowlist([
       ...options,
       getMaxOpusOption(fastMode),
     ])
   } else if (customModel === 'opus[1m]' && getAPIProvider() === 'firstParty') {
+    // When Max/Team Premium has 1M-merge enabled, default already represents Opus 1M.
+    if ((isMaxSubscriber() || isTeamPremiumSubscriber()) && isOpus1mMergeEnabled()) {
+      return filterModelOptionsByAllowlist(options)
+    }
     return filterModelOptionsByAllowlist([
       ...options,
       getMergedOpus1MOption(fastMode),

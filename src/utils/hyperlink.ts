@@ -1,12 +1,20 @@
 // @ts-nocheck
 import chalk from 'chalk'
+import crypto from 'node:crypto'
 import { supportsHyperlinks } from '../ink/supports-hyperlinks.js'
 
 // OSC 8 hyperlink escape sequences
-// Format: \e]8;;URL\e\\TEXT\e]8;;\e\\
+// Format: \e]8;<params>;URL\e\\TEXT\e]8;;\e\\
 // Using \x07 (BEL) as terminator which is more widely supported
-export const OSC8_START = '\x1b]8;;'
+export const OSC8_HEADER = '\x1b]8;'
 export const OSC8_END = '\x07'
+
+// Stable short id per URL so terminals group runs of the link across wrapped
+// rows into a single clickable region. Without id=, only the first visible
+// row of a wrapped long URL is clickable.
+function hyperlinkId(url: string): string {
+  return crypto.createHash('sha1').update(url).digest('hex').slice(0, 8)
+}
 
 type HyperlinkOptions = {
   supportsHyperlinks?: boolean
@@ -29,6 +37,9 @@ export function createHyperlink(
 ): string {
   const hasSupport = options?.supportsHyperlinks ?? supportsHyperlinks()
   if (!hasSupport) {
+    if (content && content !== url) {
+      return `${content} (${url})`
+    }
     return url
   }
 
@@ -36,5 +47,8 @@ export function createHyperlink(
   // RGB colors (like theme colors) are NOT preserved by wrap-ansi with OSC 8
   const displayText = content ?? url
   const coloredText = chalk.blue(displayText)
-  return `${OSC8_START}${url}${OSC8_END}${coloredText}${OSC8_START}${OSC8_END}`
+  // Embed id= so wrapped rows of a long URL stay grouped as one clickable link.
+  // Open: \e]8;id=<id>;<url>\a  Close: \e]8;;\a (empty params terminates link)
+  const idParam = `id=${hyperlinkId(url)}`
+  return `${OSC8_HEADER}${idParam};${url}${OSC8_END}${coloredText}${OSC8_HEADER};${OSC8_END}`
 }

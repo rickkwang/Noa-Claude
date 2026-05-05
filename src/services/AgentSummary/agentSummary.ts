@@ -58,6 +58,10 @@ export function startAgentSummarization(
   let timeoutId: ReturnType<typeof setTimeout> | null = null
   let stopped = false
   let previousSummary: string | null = null
+  // Transcript fingerprint of the last successful summary. Lets us skip
+  // re-summarizing an idle sub-agent whose messages haven't changed —
+  // upstream fix for repeated cache_creation on static transcripts.
+  let lastTranscriptKey: string | null = null
 
   async function runSummary(): Promise<void> {
     if (stopped) return
@@ -77,6 +81,17 @@ export function startAgentSummarization(
 
       // Filter to clean message state
       const cleanMessages = filterIncompleteToolCalls(transcript.messages)
+
+      // Transcript is append-only, so (length, last-message-id) is enough to
+      // detect "nothing changed since last summary" without hashing.
+      const last = cleanMessages[cleanMessages.length - 1]
+      const transcriptKey = `${cleanMessages.length}:${last?.uuid ?? last?.message?.id ?? ''}`
+      if (previousSummary !== null && lastTranscriptKey === transcriptKey) {
+        logForDebugging(
+          `[AgentSummary] Skipping summary for ${taskId}: transcript unchanged (${transcriptKey})`,
+        )
+        return
+      }
 
       // Build fork params with current messages
       const forkParams: CacheSafeParams = {
@@ -138,6 +153,7 @@ export function startAgentSummarization(
             `[AgentSummary] Summary result for ${taskId}: ${summaryText}`,
           )
           previousSummary = summaryText
+          lastTranscriptKey = transcriptKey
           updateAgentSummary(taskId, summaryText, setAppState)
           break
         }

@@ -32,15 +32,14 @@ export async function call(
     return null
   }
 
-  if (!args || args.trim() === '') {
-    const colorList = AGENT_COLORS.join(', ')
-    onDone(`Please provide a color. Available colors: ${colorList}, default`, {
-      display: 'system',
-    })
-    return null
-  }
+  let colorArg: string
 
-  const colorArg = args.trim().toLowerCase()
+  if (!args || args.trim() === '') {
+    // No argument: pick a random color
+    colorArg = AGENT_COLORS[Math.floor(Math.random() * AGENT_COLORS.length)]!
+  } else {
+    colorArg = args.trim().toLowerCase()
+  }
 
   // Handle reset to default (gray)
   if (RESET_ALIASES.includes(colorArg as (typeof RESET_ALIASES)[number])) {

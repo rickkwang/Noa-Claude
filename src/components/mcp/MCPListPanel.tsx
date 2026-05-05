@@ -336,7 +336,10 @@ export function MCPListPanel(t0) {
           }
         }
       }
-      return <Box key={`${server_3.name}-${index}`}><Text color={isSelected ? "suggestion" : undefined}>{isSelected ? `${figures.pointer} ` : "  "}</Text><Text color={isSelected ? "suggestion" : undefined}>{server_3.name}</Text><Text dimColor={!isSelected}> · {statusIcon} </Text><Text dimColor={!isSelected}>{statusText}</Text></Box>;
+      const toolsCount = server_3.toolsCount ?? 0;
+      const toolsText = `${toolsCount} tool${toolsCount === 1 ? '' : 's'}`;
+      const showTools = server_3.client.type === 'connected';
+      return <Box key={`${server_3.name}-${index}`}><Text color={isSelected ? "suggestion" : undefined}>{isSelected ? `${figures.pointer} ` : "  "}</Text><Text color={isSelected ? "suggestion" : undefined}>{server_3.name}</Text><Text dimColor={!isSelected}> · {statusIcon} </Text><Text dimColor={!isSelected}>{statusText}</Text>{showTools && <Text dimColor={!isSelected && toolsCount > 0} color={toolsCount === 0 ? "warning" : undefined}>{` · ${toolsText}`}</Text>}</Box>;
     };
     $[37] = getServerIndex;
     $[38] = selectedIndex;

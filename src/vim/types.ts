@@ -149,6 +149,7 @@ export const SIMPLE_MOTIONS = new Set([
   'l',
   'j',
   'k', // Basic movement
+  ' ', // Space moves right (same as l)
   'w',
   'b',
   'e',

@@ -2,6 +2,7 @@ import chalk from 'chalk'
 import { writeSync } from 'fs'
 import memoize from 'lodash-es/memoize.js'
 import { onExit } from 'signal-exit'
+import { env } from './env.js'
 import type { ExitReason } from 'src/entrypoints/agentSdkTypes.js'
 import {
   getIsInteractive,
@@ -116,8 +117,13 @@ function cleanupTerminalModes(): void {
     // Show cursor
     writeSync(1, SHOW_CURSOR)
     // Clear iTerm2 progress bar - prevents lingering progress indicator
-    // that can cause bell sounds when returning to the terminal tab
-    writeSync(1, CLEAR_ITERM2_PROGRESS)
+    // that can cause bell sounds when returning to the terminal tab.
+    // Whitelist: OSC 9;4 is iTerm2/ConEmu-specific; other terminals (Kitty,
+    // Apple Terminal, etc.) may interpret it as a desktop notification.
+    const SUPPORTS_OSC9_PROGRESS = ['iTerm.app', 'WezTerm', 'ghostty', 'conemu']
+    if (env.terminal && SUPPORTS_OSC9_PROGRESS.includes(env.terminal)) {
+      writeSync(1, CLEAR_ITERM2_PROGRESS)
+    }
     // Clear tab status (OSC 21337) so a stale dot doesn't linger
     if (supportsTabStatus()) writeSync(1, wrapForMultiplexer(CLEAR_TAB_STATUS))
     // Clear terminal title so the tab doesn't show stale session info.
