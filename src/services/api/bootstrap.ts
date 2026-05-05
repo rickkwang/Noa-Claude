@@ -140,6 +140,14 @@ export async function fetchBootstrapData(): Promise<void> {
       discoveredOpenAIModels,
     )
 
+    // If provider is no longer openaiCompatible, evict stale discovered models
+    // from cache so they don't bleed into the model picker on next boot.
+    if (getAPIProvider() !== 'openaiCompatible') {
+      additionalModelOptions = additionalModelOptions.filter(
+        opt => opt.description !== 'Discovered from OpenAI-compatible endpoint',
+      )
+    }
+
     if (!response && discoveredOpenAIModels.length === 0) return
 
     // Only persist if data actually changed — avoids a config write on every startup.

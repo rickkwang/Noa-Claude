@@ -349,10 +349,9 @@ export function renderModelSetting(setting: ModelName | ModelAlias): string {
   if (setting === 'opusplan') {
     return 'Opus Plan'
   }
-  if (isModelAlias(setting)) {
-    return capitalize(setting)
-  }
-  return renderModelName(setting)
+  // Resolve aliases (e.g. 'opus' → 'claude-opus-4-7') before rendering so the
+  // logo and other display surfaces show the actual version, not just "Opus".
+  return renderModelName(parseUserSpecifiedModel(setting))
 }
 
 // @[MODEL LAUNCH]: Add display name cases for the new model (base + [1m] variant if applicable).

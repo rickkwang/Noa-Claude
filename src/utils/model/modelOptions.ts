@@ -70,7 +70,7 @@ export function getDefaultOptionForUser(fastMode = false): ModelOption {
   return {
     value: null,
     label: 'Default (recommended)',
-    description: `Use the default model (currently ${renderDefaultModelSetting(getDefaultMainLoopModelSetting())})${is3P ? '' : ` · ${formatModelPricing(COST_TIER_3_15)}`}`,
+    description: `${renderDefaultModelSetting(getDefaultMainLoopModelSetting())} · Best for everyday tasks${is3P ? '' : ` · ${formatModelPricing(COST_TIER_3_15)}`}`,
   }
 }
 
@@ -146,7 +146,7 @@ function getOpus47Option(fastMode = false): ModelOption {
   return {
     value: is3P ? getModelStrings().opus47 : 'opus',
     label: 'Opus',
-    description: `Opus · Most capable for complex work${getOpus46PricingSuffix(fastMode)}`,
+    description: `Opus 4.7 · Most capable for complex work${getOpus46PricingSuffix(fastMode)}`,
     descriptionForModel: 'Opus 4.7 - most capable for complex work',
   }
 }
@@ -156,7 +156,7 @@ export function getOpus47_1MOption(fastMode = false): ModelOption {
   return {
     value: is3P ? getModelStrings().opus47 + '[1m]' : 'opus[1m]',
     label: 'Opus (1M context)',
-    description: `Opus for long sessions${getOpus46PricingSuffix(fastMode)}`,
+    description: `Opus 4.7 with 1M context · Most capable for complex work${getOpus46PricingSuffix(fastMode)}`,
     descriptionForModel:
       'Opus 4.7 with 1M context window - for long sessions with large codebases',
   }
@@ -167,7 +167,7 @@ export function getSonnet46_1MOption(): ModelOption {
   return {
     value: is3P ? getModelStrings().sonnet46 + '[1m]' : 'sonnet[1m]',
     label: 'Sonnet (1M context)',
-    description: `Sonnet 4.6 for long sessions${is3P ? '' : ` · ${formatModelPricing(COST_TIER_3_15)}`}`,
+    description: `Sonnet 4.6 with 1M context · Best for everyday tasks${is3P ? '' : ` · ${formatModelPricing(COST_TIER_3_15)}`}`,
     descriptionForModel:
       'Sonnet 4.6 with 1M context window - for long sessions with large codebases',
   }
@@ -178,7 +178,7 @@ export function getOpus46_1MOption(fastMode = false): ModelOption {
   return {
     value: is3P ? getModelStrings().opus46 + '[1m]' : 'opus[1m]',
     label: 'Opus (1M context)',
-    description: `Opus 4.6 for long sessions${getOpus46PricingSuffix(fastMode)}`,
+    description: `Opus 4.6 with 1M context · Most capable for complex work${getOpus46PricingSuffix(fastMode)}`,
     descriptionForModel:
       'Opus 4.6 with 1M context window - for long sessions with large codebases',
   }
@@ -234,7 +234,7 @@ function getMaxOpusOption(fastMode = false): ModelOption {
   return {
     value: 'opus',
     label: 'Opus',
-    description: `Opus · Most capable for complex work${fastMode ? getOpus46PricingSuffix(true) : ''}`,
+    description: `Opus 4.7 · Most capable for complex work${fastMode ? getOpus46PricingSuffix(true) : ''}`,
   }
 }
 
@@ -262,7 +262,7 @@ export function getMaxOpus47_1MOption(fastMode = false): ModelOption {
   return {
     value: 'opus[1m]',
     label: 'Opus (1M context)',
-    description: `Opus with 1M context${billingInfo}${getOpus46PricingSuffix(fastMode)}`,
+    description: `Opus 4.7 with 1M context${billingInfo}${getOpus46PricingSuffix(fastMode)}`,
   }
 }
 
@@ -271,7 +271,7 @@ function getMergedOpus1MOption(fastMode = false): ModelOption {
   return {
     value: is3P ? getModelStrings().opus47 + '[1m]' : 'opus[1m]',
     label: 'Opus (1M context)',
-    description: `Opus with 1M context · Most capable for complex work${!is3P && fastMode ? getOpus46PricingSuffix(fastMode) : ''}`,
+    description: `Opus 4.7 with 1M context · Most capable for complex work${!is3P && fastMode ? getOpus46PricingSuffix(fastMode) : ''}`,
     descriptionForModel:
       'Opus 4.7 with 1M context - most capable for complex work',
   }
@@ -508,8 +508,18 @@ export function getModelOptions(fastMode = false): ModelOption[] {
     })
   }
 
-  // Append additional model options fetched during bootstrap
+  // Append additional model options fetched during bootstrap.
+  // Skip OpenAI-compatible discoveries when the active provider is no longer
+  // openaiCompatible — otherwise stale cache from a prior provider leaks
+  // (e.g. 100+ OpenAI models showing up in a first-party Claude session).
+  const isOpenAICompatible = getAPIProvider() === 'openaiCompatible'
   for (const opt of getGlobalConfig().additionalModelOptionsCache ?? []) {
+    if (
+      !isOpenAICompatible &&
+      opt.description === 'Discovered from OpenAI-compatible endpoint'
+    ) {
+      continue
+    }
     if (!options.some(existing => existing.value === opt.value)) {
       options.push(opt)
     }
