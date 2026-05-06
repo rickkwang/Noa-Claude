@@ -684,7 +684,7 @@ export async function computeSimpleEnvInfo(
       : `Noa Claude is available as a CLI in the terminal.`,
     process.env.USER_TYPE === 'ant' && isUndercover()
       ? null
-      : `Fast mode for Noa Claude uses the same ${FRONTIER_MODEL_NAME} model with faster output. It does NOT switch to a different model. It can be toggled with /fast.`,
+      : `Fast mode for Noa Claude uses ${FRONTIER_MODEL_NAME} with faster output (it does not downgrade to a smaller model). It can be toggled with /fast and is only available on Opus 4.7.`,
   ].filter(item => item !== null)
 
   return [
