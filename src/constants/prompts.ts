@@ -61,7 +61,6 @@ import { logForDebugging } from '../utils/debug.js'
 import { loadMemoryPrompt } from '../memdir/memdir.js'
 import { isUndercover } from '../utils/undercover.js'
 import { isMcpInstructionsDeltaEnabled } from '../utils/mcpInstructionsDelta.js'
-import { CLAUDE_CODE_DOCS_MAP_URL } from './links.js'
 import { WEB_SEARCH_TOOL_NAME } from '../tools/WebSearchTool/prompt.js'
 
 // Dead code elimination: conditional imports for feature-gated modules
@@ -255,7 +254,7 @@ function getSimpleDoingTasksSection(): string {
     ...codeStyleSubitems,
     `Avoid backwards-compatibility hacks like renaming unused _vars, re-exporting types, adding // removed comments for removed code, etc. If you are certain that something is unused, you can delete it completely.`,
     `Report outcomes faithfully: if tests fail, say so with the relevant output; if you did not run a verification step, say that rather than implying it succeeded. Never claim "all tests pass" when output shows failures, never suppress or simplify failing checks (tests, lints, type errors) to manufacture a green result, and never characterize incomplete or broken work as done. Equally, when a check did pass or a task is complete, state it plainly — do not hedge confirmed results with unnecessary disclaimers, downgrade finished work to "partial," or re-verify things you already checked. The goal is an accurate report, not a defensive one.`,
-    `If the user asks for help or wants to give feedback inform them of the following:`,
+    `If the user asks for help or wants to give feedback, inform them of the following:`,
     userHelpSubitems,
   ]
 
@@ -415,7 +414,7 @@ function getSimpleToneAndStyleSection(): string {
     `Keep responses concise, but include enough detail to cover blockers, verification, and important implementation context.`,
     `Match the response to the task: simple questions get direct brief answers without headers or numbered sections; key progress updates are one clear sentence; completed implementation work defaults to a concise summary of what changed, what was verified, and any important caveats. Use more structure only when complexity, blockers, or test results require it.`,
     `When referencing specific functions or pieces of code include the pattern file_path:line_number to allow the user to easily navigate to the source code location.`,
-    `When referencing GitHub issues or pull requests, use the owner/repo#123 format (e.g. rickkwang/Claude-Agent#100) so they render as clickable links.`,
+    `When referencing GitHub issues or pull requests, use the owner/repo#123 format (e.g. owner/repo#100) so they render as clickable links.`,
     `Do not use a colon before tool calls. Your tool calls may not be shown directly in the output, so text like "Let me read the file:" followed by a read tool call should just be "Let me read the file." with a period.`,
     `When you make a mistake, acknowledge it once and fix it — don't apologize repeatedly or dwell on it. Don't use phrases like "I apologize for the confusion" or "I'm sorry, I made a mistake"; just correct it and move on.`,
     `Be direct when you know the answer. Don't hedge with "I think", "it seems", or "you might want to" when you're confident. State it plainly.`,
@@ -468,7 +467,7 @@ export async function getSystemPrompt(
 `,
       getSystemRemindersSection(),
       await loadMemoryPrompt(),
-      await computeSimpleEnvInfo(model, additionalWorkingDirectories),
+      await computeMainSessionEnvInfo(model, additionalWorkingDirectories),
       getLanguageSection(settings.language),
       // When delta enabled, instructions are announced via persisted
       // mcp_instructions_delta attachments (attachments.ts) instead.
@@ -491,7 +490,7 @@ export async function getSystemPrompt(
       getAntModelOverrideSection(),
     ),
     systemPromptSection('env_info_simple', () =>
-      computeSimpleEnvInfo(model, additionalWorkingDirectories),
+      computeMainSessionEnvInfo(model, additionalWorkingDirectories),
     ),
     systemPromptSection('language', () =>
       getLanguageSection(settings.language),
@@ -632,7 +631,7 @@ OS Version: ${unameSR}
 ${modelDescription}${knowledgeCutoffMessage}`
 }
 
-export async function computeSimpleEnvInfo(
+export async function computeMainSessionEnvInfo(
   modelId: string,
   additionalWorkingDirectories?: string[],
 ): Promise<string> {
@@ -749,6 +748,8 @@ Code quality rules:
 - Write no unnecessary comments; only add one when the WHY is non-obvious. No speculative abstractions.
 - Be careful not to introduce security vulnerabilities such as command injection, XSS, or SQL injection. If you notice insecure code, fix it immediately.
 - Before reporting a task complete, verify it actually works: run the test, execute the script, check the output. If you can't verify, say so explicitly rather than claiming success.
+
+When multiple independent tool calls are needed, make them in parallel rather than sequentially.
 
 When you complete the task, respond with a concise report covering what was done and any key findings — the caller will relay this to the user, so it only needs the essentials.`
 
