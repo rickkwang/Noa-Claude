@@ -1,18 +1,13 @@
 // @ts-nocheck
 import { execFileSync } from 'child_process'
 import { diffLines } from 'diff'
-import { constants as fsConstants } from 'fs'
 import {
-  copyFile,
   mkdir,
-  mkdtemp,
   readdir,
   readFile,
-  rm,
   unlink,
   writeFile,
 } from 'fs/promises'
-import { tmpdir } from 'os'
 import { extname, join } from 'path'
 import type { Command } from '../commands.js'
 import { queryWithModel } from '../services/api/claude.js'
@@ -23,8 +18,12 @@ import {
 import type { LogOption } from '../types/logs.js'
 import { getClaudeConfigHomeDir } from '../utils/envUtils.js'
 import { toError } from '../utils/errors.js'
-import { execFileNoThrow } from '../utils/execFileNoThrow.js'
 import { logError } from '../utils/log.js'
+import {
+  collectAllRemoteHostData,
+  getRunningRemoteHosts,
+  type RemoteHostInfo,
+} from './insights-ant.js'
 import { extractTextContent } from '../utils/messages.js'
 import { getDefaultOpusModel } from '../utils/model/model.js'
 import {
@@ -47,180 +46,6 @@ function getAnalysisModel(): string {
 function getInsightsModel(): string {
   return getDefaultOpusModel()
 }
-
-// ============================================================================
-// Homespace Data Collection
-// ============================================================================
-
-type RemoteHostInfo = {
-  name: string
-  sessionCount: number
-}
-
-/* eslint-disable custom-rules/no-process-env-top-level */
-const getRunningRemoteHosts: () => Promise<string[]> =
-  process.env.USER_TYPE === 'ant'
-    ? async () => {
-        const { stdout, code } = await execFileNoThrow(
-          'coder',
-          ['list', '-o', 'json'],
-          { timeout: 30000 },
-        )
-        if (code !== 0) return []
-        try {
-          const workspaces = jsonParse(stdout) as Array<{
-            name: string
-            latest_build?: { status?: string }
-          }>
-          return workspaces
-            .filter(w => w.latest_build?.status === 'running')
-            .map(w => w.name)
-        } catch {
-          return []
-        }
-      }
-    : async () => []
-
-const getRemoteHostSessionCount: (hs: string) => Promise<number> =
-  process.env.USER_TYPE === 'ant'
-    ? async (homespace: string) => {
-        const { stdout, code } = await execFileNoThrow(
-          'ssh',
-          [
-            `${homespace}.coder`,
-            'find /root/.claude-agent/projects -name "*.jsonl" 2>/dev/null | wc -l',
-          ],
-          { timeout: 30000 },
-        )
-        if (code !== 0) return 0
-        return parseInt(stdout.trim(), 10) || 0
-      }
-    : async () => 0
-
-const collectFromRemoteHost: (
-  hs: string,
-  destDir: string,
-) => Promise<{ copied: number; skipped: number }> =
-  process.env.USER_TYPE === 'ant'
-    ? async (homespace: string, destDir: string) => {
-        const result = { copied: 0, skipped: 0 }
-
-        // Create temp directory
-        const tempDir = await mkdtemp(join(tmpdir(), 'claude-hs-'))
-
-        try {
-          // SCP the projects folder
-          const scpResult = await execFileNoThrow(
-            'scp',
-            ['-rq', `${homespace}.coder:/root/.claude-agent/projects/`, tempDir],
-            { timeout: 300000 },
-          )
-          if (scpResult.code !== 0) {
-            // SCP failed
-            return result
-          }
-
-          const projectsDir = join(tempDir, 'projects')
-          let projectDirents: Awaited<ReturnType<typeof readdir>>
-          try {
-            projectDirents = await readdir(projectsDir, { withFileTypes: true })
-          } catch {
-            return result
-          }
-
-          // Merge into destination (parallel per project directory)
-          await Promise.all(
-            projectDirents.map(async dirent => {
-              const projectName = dirent.name
-              const projectPath = join(projectsDir, projectName)
-
-              // Skip if not a directory
-              if (!dirent.isDirectory()) return
-
-              const destProjectName = `${projectName}__${homespace}`
-              const destProjectPath = join(destDir, destProjectName)
-
-              try {
-                await mkdir(destProjectPath, { recursive: true })
-              } catch {
-                // Directory may already exist
-              }
-
-              // Copy session files (skip existing)
-              let files: Awaited<ReturnType<typeof readdir>>
-              try {
-                files = await readdir(projectPath, { withFileTypes: true })
-              } catch {
-                return
-              }
-              await Promise.all(
-                files.map(async fileDirent => {
-                  const fileName = fileDirent.name
-                  if (!fileName.endsWith('.jsonl')) return
-
-                  const srcFile = join(projectPath, fileName)
-                  const destFile = join(destProjectPath, fileName)
-
-                  try {
-                    await copyFile(srcFile, destFile, fsConstants.COPYFILE_EXCL)
-                    result.copied++
-                  } catch {
-                    // EEXIST from COPYFILE_EXCL means dest already exists
-                    result.skipped++
-                  }
-                }),
-              )
-            }),
-          )
-        } finally {
-          try {
-            await rm(tempDir, { recursive: true, force: true })
-          } catch {
-            // Ignore cleanup errors
-          }
-        }
-
-        return result
-      }
-    : async () => ({ copied: 0, skipped: 0 })
-
-const collectAllRemoteHostData: (destDir: string) => Promise<{
-  hosts: RemoteHostInfo[]
-  totalCopied: number
-  totalSkipped: number
-}> =
-  process.env.USER_TYPE === 'ant'
-    ? async (destDir: string) => {
-        const rHosts = await getRunningRemoteHosts()
-        const result: RemoteHostInfo[] = []
-        let totalCopied = 0
-        let totalSkipped = 0
-
-        // Collect from all hosts in parallel (SCP per host can take seconds)
-        const hostResults = await Promise.all(
-          rHosts.map(async hs => {
-            const sessionCount = await getRemoteHostSessionCount(hs)
-            if (sessionCount > 0) {
-              const { copied, skipped } = await collectFromRemoteHost(
-                hs,
-                destDir,
-              )
-              return { name: hs, sessionCount, copied, skipped }
-            }
-            return { name: hs, sessionCount, copied: 0, skipped: 0 }
-          }),
-        )
-
-        for (const hr of hostResults) {
-          result.push({ name: hr.name, sessionCount: hr.sessionCount })
-          totalCopied += hr.copied
-          totalSkipped += hr.skipped
-        }
-
-        return { hosts: result, totalCopied, totalSkipped }
-      }
-    : async () => ({ hosts: [], totalCopied: 0, totalSkipped: 0 })
-/* eslint-enable custom-rules/no-process-env-top-level */
 
 // ============================================================================
 // Types
@@ -260,6 +85,7 @@ type SessionMeta = {
 
 type SessionFacets = {
   session_id: string
+  schema_version: number
   underlying_goal: string
   goal_categories: Record<string, number>
   outcome: string
@@ -414,6 +240,8 @@ const LABEL_MAP: Record<string, string> = {
   very_helpful: 'Very Helpful',
   essential: 'Essential',
 }
+
+const FACETS_SCHEMA_VERSION = 1
 
 // Lazy getters: getClaudeConfigHomeDir() is memoized and reads process.env.
 // Calling it at module scope would populate the memoize cache before
@@ -884,7 +712,7 @@ async function summarizeTranscriptChunk(chunk: string): Promise<string> {
     const result = await queryWithModel({
       systemPrompt: asSystemPrompt([]),
       userPrompt: SUMMARIZE_CHUNK_PROMPT + chunk,
-      signal: new AbortController().signal,
+      signal: AbortSignal.timeout(30000),
       options: {
         model: getAnalysisModel(),
         querySource: 'insights',
@@ -946,8 +774,13 @@ async function loadCachedFacets(
   try {
     const content = await readFile(facetPath, { encoding: 'utf-8' })
     const parsed: unknown = jsonParse(content)
-    if (!isValidSessionFacets(parsed)) {
-      // Delete corrupted cache file so it gets re-extracted next run
+    const isCurrentSchema =
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      (parsed as Record<string, unknown>).schema_version ===
+        FACETS_SCHEMA_VERSION
+    if (!isCurrentSchema || !isValidSessionFacets(parsed)) {
+      // Delete stale/corrupted cache file so it gets re-extracted next run
       try {
         await unlink(facetPath)
       } catch {
@@ -1027,7 +860,7 @@ RESPOND WITH ONLY A VALID JSON OBJECT matching this schema:
     const result = await queryWithModel({
       systemPrompt: asSystemPrompt([]),
       userPrompt: jsonPrompt,
-      signal: new AbortController().signal,
+      signal: AbortSignal.timeout(30000),
       options: {
         model: getAnalysisModel(),
         querySource: 'insights',
@@ -1047,7 +880,11 @@ RESPOND WITH ONLY A VALID JSON OBJECT matching this schema:
 
     const parsed: unknown = jsonParse(jsonMatch[0])
     if (!isValidSessionFacets(parsed)) return null
-    const facets: SessionFacets = { ...parsed, session_id: sessionId }
+    const facets: SessionFacets = {
+      ...parsed,
+      session_id: sessionId,
+      schema_version: FACETS_SCHEMA_VERSION,
+    }
     return facets
   } catch (err) {
     logError(new Error(`Facet extraction failed: ${toError(err).message}`))
@@ -1578,7 +1415,7 @@ async function generateSectionInsight(
     const result = await queryWithModel({
       systemPrompt: asSystemPrompt([]),
       userPrompt: section.prompt + '\n\nDATA:\n' + dataContext,
-      signal: new AbortController().signal,
+      signal: AbortSignal.timeout(60000),
       options: {
         model: getInsightsModel(),
         querySource: 'insights',
@@ -2948,6 +2785,13 @@ export async function generateUsageReport(options?: {
         toExtract.push({ log, sessionId })
       }
     }
+  }
+
+  if (toExtract.length > 20) {
+    // biome-ignore lint/suspicious/noConsole: intentional
+    console.error(
+      `Extracting facets for ${toExtract.length} new sessions (this may take a moment)...`,
+    )
   }
 
   // Extract facets for sessions that need them (50 concurrent)
