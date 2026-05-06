@@ -1,0 +1,8 @@
+{
+  "name": "@anthropic-ai/mcpb",
+  "version": "0.0.0-stub",
+  "description": "Local stub for @anthropic-ai/mcpb. Returns empty server list — MCPB/DXT plugin parsing is not implemented in noa. See vendor/anthropic-ai-mcpb/README.md.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "private": true
+}

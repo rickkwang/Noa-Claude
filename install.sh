@@ -23,4 +23,22 @@ ln -sf "$ROOT_DIR/bin/noa.js" "$BIN_DIR/noa"
 echo "Installed: Noa Claude"
 echo "  $BIN_DIR/noa"
 echo ""
-echo "Run: noa --version"
+
+case ":$PATH:" in
+  *":$BIN_DIR:"*)
+    echo "Run: noa --version"
+    ;;
+  *)
+    echo "Warning: $BIN_DIR is not in your PATH."
+    echo ""
+    case "${SHELL##*/}" in
+      zsh)  rc="$HOME/.zshrc" ;;
+      bash) rc="$HOME/.bashrc" ;;
+      *)    rc="your shell profile" ;;
+    esac
+    echo "Add this to $rc, then restart your shell:"
+    echo "  export PATH=\"$BIN_DIR:\$PATH\""
+    echo ""
+    echo "Or run noa directly: $BIN_DIR/noa --version"
+    ;;
+esac

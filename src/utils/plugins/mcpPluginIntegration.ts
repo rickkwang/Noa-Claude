@@ -15,6 +15,7 @@ import {
   isMcpbSource,
   loadMcpbFile,
   loadMcpServerUserConfig,
+  MCPB_CONFIG_UNSUPPORTED_ERROR,
   type McpbLoadResult,
   type UserConfigSchema,
   type UserConfigValues,
@@ -79,6 +80,11 @@ async function loadMcpServersFromMcpb(
     return { [serverName]: successResult.mcpConfig }
   } catch (error) {
     const errorMsg = errorMessage(error)
+    if (errorMsg === MCPB_CONFIG_UNSUPPORTED_ERROR) {
+      logForDebugging(`Skipping MCPB ${mcpbPath}: ${errorMsg}`)
+      return null
+    }
+
     logForDebugging(`Failed to load MCPB ${mcpbPath}: ${errorMsg}`, {
       level: 'error',
     })

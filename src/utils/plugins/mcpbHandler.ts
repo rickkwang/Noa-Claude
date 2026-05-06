@@ -45,6 +45,9 @@ export type McpbLoadResult = {
   contentHash: string
 }
 
+export const MCPB_CONFIG_UNSUPPORTED_ERROR =
+  'MCPB manifest-to-MCP config generation is not implemented in this build'
+
 /**
  * Result when MCPB needs user configuration
  */
@@ -428,11 +431,7 @@ async function generateMcpConfig(
   })
 
   if (!mcpConfig) {
-    const error = new Error(
-      `Failed to generate MCP server configuration from manifest "${manifest.name}"`,
-    )
-    logError(error)
-    throw error
+    throw new Error(MCPB_CONFIG_UNSUPPORTED_ERROR)
   }
 
   return mcpConfig as McpServerConfig

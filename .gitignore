@@ -1,6 +1,9 @@
 **/.DS_Store
 node_modules/
 dist/
+!vendor/anthropic-ai-mcpb/dist/
+!vendor/anthropic-ai-mcpb/dist/index.js
+!vendor/anthropic-ai-mcpb/dist/index.d.ts
 .bun/
 package-lock.json
 *.log

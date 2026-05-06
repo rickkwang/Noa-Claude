@@ -7,6 +7,7 @@
       "dependencies": {
         "@anthropic-ai/bedrock-sdk": "^0.27.0",
         "@anthropic-ai/foundry-sdk": "^0.2.3",
+        "@anthropic-ai/mcpb": "file:./vendor/anthropic-ai-mcpb",
         "@anthropic-ai/sdk": "^0.80.0",
         "@aws-sdk/client-bedrock": "^3.700.0",
         "@aws-sdk/client-bedrock-runtime": "^3.700.0",
@@ -93,6 +94,8 @@
     "@anthropic-ai/bedrock-sdk": ["@anthropic-ai/bedrock-sdk@0.27.0", "", { "dependencies": { "@anthropic-ai/sdk": ">=0.50.3 <1", "@aws-crypto/sha256-js": "^4.0.0", "@aws-sdk/client-bedrock-runtime": "^3.797.0", "@aws-sdk/credential-providers": "^3.796.0", "@smithy/eventstream-serde-node": "^2.0.10", "@smithy/fetch-http-handler": "^5.0.4", "@smithy/protocol-http": "^3.0.6", "@smithy/signature-v4": "^3.1.1", "@smithy/smithy-client": "^2.1.9", "@smithy/types": "^2.3.4", "@smithy/util-base64": "^2.0.0" } }, "sha512-YA859YX2qJg8+kNQkEX5RUs4efcsgKTmEwb6AoxxTr3JD8uk/UciDUlOyF6xDR0EDI8vNaFaWle02ecrQZw2sQ=="],
 
     "@anthropic-ai/foundry-sdk": ["@anthropic-ai/foundry-sdk@0.2.3", "", { "dependencies": { "@anthropic-ai/sdk": ">=0.50.3 <1" } }, "sha512-pD5yYnAeem5s8wDLbdf8/N8CejF/edRd9TJV+0PrT9tLKv6ggQimnr7d05pQn6FrIYACPmty9hekCo2JgepP0w=="],
+
+    "@anthropic-ai/mcpb": ["@anthropic-ai/mcpb@file:vendor/anthropic-ai-mcpb", {}],
 
     "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.80.0", "", { "dependencies": { "json-schema-to-ts": "^3.1.1" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-WeXLn7zNVk3yjeshn+xZHvld6AoFUOR3Sep6pSoHho5YbSi6HwcirqgPA5ccFuW8QTVJAAU7N8uQQC6Wa9TG+g=="],
 
