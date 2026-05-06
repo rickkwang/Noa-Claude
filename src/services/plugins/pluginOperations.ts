@@ -924,6 +924,8 @@ async function performPluginUpdate({
     // Remote plugin: download to temp directory first
     const cacheResult = await cachePlugin(entry.source, {
       manifest: { name: entry.name },
+      refreshNpm:
+        entry.source.source === 'npm' && entry.source.version === undefined,
     })
     sourcePath = cacheResult.path
     shouldCleanupSource = true

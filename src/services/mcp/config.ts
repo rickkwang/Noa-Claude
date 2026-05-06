@@ -372,13 +372,13 @@ function urlPatternToRegex(pattern: string): RegExp {
   const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
   // Replace * with regex equivalent (match any characters)
   const regexStr = escaped.replace(/\*/g, '.*')
-  return new RegExp(`^${regexStr}$`)
+  return new RegExp(`^${regexStr}$`, 'i')
 }
 
 /**
  * Check if a URL matches a pattern with wildcard support
  */
-function urlMatchesPattern(url: string, pattern: string): boolean {
+export function urlMatchesPattern(url: string, pattern: string): boolean {
   const regex = urlPatternToRegex(pattern)
   return regex.test(url)
 }

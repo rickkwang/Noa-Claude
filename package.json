@@ -1,6 +1,6 @@
 {
   "name": "noa",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "type": "module",
   "private": true,
   "description": "Noa Claude - isolated AI coding assistant",
@@ -80,6 +80,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "sharp": "^0.33.0",
+    "semver": "^7.7.4",
     "url-handler-napi": "^0.0.1",
     "react-reconciler": "^0.33.0",
     "shell-quote": "^1.8.3",

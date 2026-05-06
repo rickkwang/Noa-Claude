@@ -2766,6 +2766,28 @@ export async function transformMCPResult(
       }
     }
 
+    if ('content' in result && Array.isArray(result.content)) {
+      const transformedContent = (
+        await Promise.all(
+          result.content.map(item => transformResultContent(item, name)),
+        )
+      ).flat()
+      if (
+        'structuredContent' in result &&
+        result.structuredContent !== undefined
+      ) {
+        transformedContent.push({
+          type: 'text',
+          text: `[Structured content from ${name}] ${jsonStringify(result.structuredContent)}`,
+        })
+      }
+      return {
+        content: transformedContent,
+        type: 'contentArray',
+        schema: inferCompactSchema(transformedContent),
+      }
+    }
+
     if (
       'structuredContent' in result &&
       result.structuredContent !== undefined
@@ -2774,19 +2796,6 @@ export async function transformMCPResult(
         content: jsonStringify(result.structuredContent),
         type: 'structuredContent',
         schema: inferCompactSchema(result.structuredContent),
-      }
-    }
-
-    if ('content' in result && Array.isArray(result.content)) {
-      const transformedContent = (
-        await Promise.all(
-          result.content.map(item => transformResultContent(item, name)),
-        )
-      ).flat()
-      return {
-        content: transformedContent,
-        type: 'contentArray',
-        schema: inferCompactSchema(transformedContent),
       }
     }
   }

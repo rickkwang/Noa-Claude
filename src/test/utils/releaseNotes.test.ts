@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 
 const FAKE_CHANGELOG = `# Release Notes
 
-## 1.0.6
+## 1.0.7
 
 ### Bug Fixes
 
@@ -16,8 +16,8 @@ const FAKE_CHANGELOG = `# Release Notes
 `
 
 ;(globalThis as { MACRO?: Record<string, unknown> }).MACRO ??= {
-  VERSION: '1.0.6',
-  DISPLAY_VERSION: '1.0.6',
+  VERSION: '1.0.7',
+  DISPLAY_VERSION: '1.0.7',
   BUILD_TIME: '',
   PACKAGE_URL: '',
   VERSION_CHANGELOG: FAKE_CHANGELOG,
@@ -36,7 +36,7 @@ afterEach(() => {
 describe('getStoredChangelogFromMemory', () => {
   test('falls back to bundled changelog when async cache has not been seeded', () => {
     const result = getStoredChangelogFromMemory()
-    expect(result).toContain('## 1.0.6')
+    expect(result).toContain('## 1.0.7')
     expect(result.length).toBeGreaterThan(0)
   })
 })
@@ -50,7 +50,7 @@ describe('checkForReleaseNotesSync', () => {
   })
 
   test('reports no release notes when the user has already seen the current version', () => {
-    const { hasReleaseNotes } = checkForReleaseNotesSync('1.0.6')
+    const { hasReleaseNotes } = checkForReleaseNotesSync('1.0.7')
 
     expect(hasReleaseNotes).toBe(false)
   })

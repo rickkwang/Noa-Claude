@@ -134,91 +134,104 @@ export function safeJoinLines(
 }
 
 /**
- * A string accumulator that safely handles large outputs by truncating from the end
- * when a size limit is exceeded. This prevents RangeError crashes while preserving
- * the beginning of the output.
+ * A string accumulator that handles large outputs by keeping a fixed-size
+ * prefix (head) and a sliding suffix (tail), discarding the middle when the
+ * total exceeds maxSize. This preserves both the start (setup/context) and
+ * the end (errors/results), which is what users care about for shell output.
+ *
+ * Long-running build/test commands typically print the most important info
+ * (failure summary, exit reason) at the end; keeping only the head loses it.
  */
-export class EndTruncatingAccumulator {
-  private content: string = ''
+export class HeadAndTailAccumulator {
+  private head: string = ''
+  private tail: string = ''
   private isTruncated = false
   private totalBytesReceived = 0
+  private readonly headMax: number
+  private readonly tailMax: number
 
   /**
-   * Creates a new EndTruncatingAccumulator
-   * @param maxSize Maximum size in characters before truncation occurs
+   * @param maxSize Total maximum size in characters before truncation kicks in
+   * @param headRatio Fraction of maxSize reserved for the prefix (default 0.25)
    */
-  constructor(private readonly maxSize: number = MAX_STRING_LENGTH) {}
+  constructor(
+    private readonly maxSize: number = MAX_STRING_LENGTH,
+    headRatio: number = 0.25,
+  ) {
+    this.headMax = Math.floor(maxSize * headRatio)
+    this.tailMax = maxSize - this.headMax
+  }
 
-  /**
-   * Appends data to the accumulator. If the total size exceeds maxSize,
-   * the end is truncated to maintain the size limit.
-   * @param data The string data to append
-   */
   append(data: string | Buffer): void {
     const str = typeof data === 'string' ? data : data.toString()
+    if (str.length === 0) return
     this.totalBytesReceived += str.length
 
-    // If already at capacity and truncated, don't modify content
-    if (this.isTruncated && this.content.length >= this.maxSize) {
+    let remaining = str
+
+    // Fill head until full
+    if (this.head.length < this.headMax) {
+      const room = this.headMax - this.head.length
+      if (remaining.length <= room) {
+        this.head += remaining
+        return
+      }
+      this.head += remaining.slice(0, room)
+      remaining = remaining.slice(room)
+    }
+
+    // Append to tail with sliding window — keep the most recent tailMax chars
+    if (this.tail.length + remaining.length <= this.tailMax) {
+      this.tail += remaining
       return
     }
 
-    // Check if adding the string would exceed the limit
-    if (this.content.length + str.length > this.maxSize) {
-      // Only append what we can fit
-      const remainingSpace = this.maxSize - this.content.length
-      if (remainingSpace > 0) {
-        this.content += str.slice(0, remainingSpace)
-      }
-      this.isTruncated = true
+    if (remaining.length >= this.tailMax) {
+      // Single chunk overflows — keep only its tail
+      this.tail = remaining.slice(remaining.length - this.tailMax)
     } else {
-      this.content += str
+      // Drop oldest part of tail to make room
+      const combined = this.tail + remaining
+      this.tail = combined.slice(combined.length - this.tailMax)
     }
+    this.isTruncated = true
   }
 
-  /**
-   * Returns the accumulated string, with truncation marker if truncated
-   */
   toString(): string {
     if (!this.isTruncated) {
-      return this.content
+      return this.head + this.tail
     }
-
-    const truncatedBytes = this.totalBytesReceived - this.maxSize
-    const truncatedKB = Math.round(truncatedBytes / 1024)
-    return this.content + `\n... [output truncated - ${truncatedKB}KB removed]`
+    const droppedBytes =
+      this.totalBytesReceived - this.head.length - this.tail.length
+    const droppedKB = Math.round(droppedBytes / 1024)
+    return `${this.head}\n... [output truncated - ${droppedKB}KB removed from middle]\n${this.tail}`
   }
 
-  /**
-   * Clears all accumulated data
-   */
   clear(): void {
-    this.content = ''
+    this.head = ''
+    this.tail = ''
     this.isTruncated = false
     this.totalBytesReceived = 0
   }
 
-  /**
-   * Returns the current size of accumulated data
-   */
   get length(): number {
-    return this.content.length
+    return this.head.length + this.tail.length
   }
 
-  /**
-   * Returns whether truncation has occurred
-   */
   get truncated(): boolean {
     return this.isTruncated
   }
 
-  /**
-   * Returns total bytes received (before truncation)
-   */
   get totalBytes(): number {
     return this.totalBytesReceived
   }
 }
+
+/**
+ * @deprecated Use HeadAndTailAccumulator. Old name kept for compat — behavior
+ * has changed: previously kept only the head, now keeps head + tail.
+ */
+export const EndTruncatingAccumulator = HeadAndTailAccumulator
 
 /**
  * Truncates text to a maximum number of lines, adding an ellipsis if truncated.

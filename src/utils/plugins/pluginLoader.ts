@@ -47,6 +47,7 @@ import {
 } from 'fs/promises'
 import memoize from 'lodash-es/memoize.js'
 import { basename, dirname, join, relative, resolve, sep } from 'path'
+import { satisfies as semverSatisfies, validRange } from 'semver'
 import { getInlinePlugins } from '../../bootstrap/state.js'
 import {
   BUILTIN_MARKETPLACE_NAME,
@@ -493,7 +494,7 @@ function validateGitUrl(url: string): string {
 export async function installFromNpm(
   packageName: string,
   targetPath: string,
-  options: { registry?: string; version?: string } = {},
+  options: { registry?: string; version?: string; refresh?: boolean } = {},
 ): Promise<void> {
   const npmCachePath = join(getPluginsDirectory(), 'npm-cache')
 
@@ -501,9 +502,36 @@ export async function installFromNpm(
 
   const packageSpec = options.version
     ? `${packageName}@${options.version}`
-    : packageName
+    : options.refresh
+      ? `${packageName}@latest`
+      : packageName
   const packagePath = join(npmCachePath, 'node_modules', packageName)
-  const needsInstall = !(await pathExists(packagePath))
+  const cacheExists = await pathExists(packagePath)
+  let needsInstall = shouldInstallCachedNpmPackage({
+    cacheExists,
+    refresh: options.refresh,
+  })
+
+  // Without this check, requesting pkg@2.0.0 after pkg@1.0.0 was cached
+  // would silently return 1.0.0 because the cache key was name-only.
+  if (!needsInstall && cacheExists && options.version) {
+    try {
+      const cachedManifest = JSON.parse(
+        await readFile(join(packagePath, 'package.json'), 'utf8'),
+      )
+      needsInstall = shouldInstallCachedNpmPackage({
+        cacheExists,
+        requestedVersion: options.version,
+        cachedVersion: cachedManifest.version,
+      })
+    } catch {
+      needsInstall = shouldInstallCachedNpmPackage({
+        cacheExists,
+        requestedVersion: options.version,
+        manifestReadFailed: true,
+      })
+    }
+  }
 
   if (needsInstall) {
     logForDebugging(`Installing npm package ${packageSpec} to cache`)
@@ -514,13 +542,63 @@ export async function installFromNpm(
     const result = await execFileNoThrow('npm', args, { useCwd: false })
 
     if (result.code !== 0) {
-      throw new Error(`Failed to install npm package: ${result.stderr}`)
+      // npm writes auth/registry/network errors to stdout, not stderr.
+      const errorOutput = [result.stderr, result.stdout]
+        .filter(Boolean)
+        .join('\n')
+        .trim()
+      throw new Error(
+        `Failed to install npm package: ${errorOutput || `npm exited with code ${result.code}`}`,
+      )
     }
   }
 
   await copyDir(packagePath, targetPath)
   logForDebugging(
     `Copied npm package ${packageName} from cache to ${targetPath}`,
+  )
+}
+
+export function isCachedNpmVersionCompatible(
+  cachedVersion: unknown,
+  requestedVersion: string,
+): boolean {
+  if (cachedVersion === requestedVersion) {
+    return true
+  }
+  if (typeof cachedVersion !== 'string') {
+    return false
+  }
+
+  const range = validRange(requestedVersion)
+  if (!range) {
+    return false
+  }
+  return semverSatisfies(cachedVersion, range, { loose: true })
+}
+
+export function shouldInstallCachedNpmPackage(options: {
+  cacheExists: boolean
+  refresh?: boolean
+  requestedVersion?: string
+  cachedVersion?: unknown
+  manifestReadFailed?: boolean
+}): boolean {
+  if (!options.cacheExists) {
+    return true
+  }
+  if (options.refresh) {
+    return true
+  }
+  if (!options.requestedVersion) {
+    return false
+  }
+  if (options.manifestReadFailed) {
+    return true
+  }
+  return !isCachedNpmVersionCompatible(
+    options.cachedVersion,
+    options.requestedVersion,
   )
 }
 
@@ -913,6 +991,7 @@ export async function cachePlugin(
   source: PluginSource,
   options?: {
     manifest?: PluginManifest
+    refreshNpm?: boolean
   },
 ): Promise<{ path: string; manifest: PluginManifest; gitCommitSha?: string }> {
   const cachePath = getPluginCachePath()
@@ -940,6 +1019,7 @@ export async function cachePlugin(
           await installFromNpm(source.package, tempPath, {
             registry: source.registry,
             version: source.version,
+            refresh: options?.refreshNpm,
           })
           break
         case 'github':

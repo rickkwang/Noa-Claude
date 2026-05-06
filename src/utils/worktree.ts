@@ -30,7 +30,6 @@ import {
   findCanonicalGitRoot,
   findGitRoot,
   getBranch,
-  getDefaultBranch,
   gitExe,
 } from './git.js'
 import {
@@ -258,7 +257,7 @@ function worktreePathFor(repoRoot: string, slug: string): string {
  * prevents unconditionally running `git fetch` (which can hang waiting for credentials)
  * on every resume.
  */
-async function getOrCreateWorktree(
+export async function getOrCreateWorktree(
   repoRoot: string,
   slug: string,
   options?: { prNumber?: number },
@@ -280,7 +279,7 @@ async function getOrCreateWorktree(
     }
   }
 
-  // New worktree: fetch base branch then add
+  // New worktree: pick a base commit then add
   await mkdir(worktreesDir(repoRoot), { recursive: true })
 
   const fetchEnv = { ...process.env, ...GIT_NO_PROMPT_ENV }
@@ -301,35 +300,9 @@ async function getOrCreateWorktree(
     }
     baseBranch = 'FETCH_HEAD'
   } else {
-    // If origin/<branch> already exists locally, skip fetch. In large repos
-    // (210k files, 16M objects) fetch burns ~6-8s on a local commit-graph
-    // scan before even hitting the network. A slightly stale base is fine —
-    // the user can pull in the worktree if they want latest.
-    // resolveRef reads the loose/packed ref directly; when it succeeds we
-    // already have the SHA, so the later rev-parse is skipped entirely.
-    const [defaultBranch, gitDir] = await Promise.all([
-      getDefaultBranch(),
-      resolveGitDir(repoRoot),
-    ])
-    const originRef = `origin/${defaultBranch}`
-    const originSha = gitDir
-      ? await resolveRef(gitDir, `refs/remotes/origin/${defaultBranch}`)
-      : null
-    if (originSha) {
-      baseBranch = originRef
-      baseSha = originSha
-    } else {
-      const { code: fetchCode } = await execFileNoThrowWithCwd(
-        gitExe(),
-        ['fetch', 'origin', defaultBranch],
-        { cwd: repoRoot, stdin: 'ignore', env: fetchEnv },
-      )
-      baseBranch = fetchCode === 0 ? originRef : 'HEAD'
-    }
+    baseBranch = 'HEAD'
   }
 
-  // For the fetch/PR-fetch paths we still need the SHA — the fs-only resolveRef
-  // above only covers the "origin/<branch> already exists locally" case.
   if (!baseSha) {
     const { stdout, code: shaCode } = await execFileNoThrowWithCwd(
       gitExe(),

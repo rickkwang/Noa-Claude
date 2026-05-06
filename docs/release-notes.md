@@ -1,5 +1,20 @@
 # Release Notes
 
+## 1.0.7
+
+### Bug Fixes
+
+- Fixed MCP tool results that return both `content` and `structuredContent` so visible blocks are preserved instead of being replaced by JSON.
+- Fixed normal worktree creation to base new worktrees on local `HEAD`, preserving unpushed commits.
+- Fixed npm plugin cache updates so unpinned packages refresh on explicit update and semver ranges are compared against cached versions correctly.
+- Fixed `/context` output so the transcript stays visible without being added to the model-visible message history.
+- Fixed MCP URL policy matching for mixed-case schemes and hosts.
+- Fixed parallel Bash execution so read-only Bash failures no longer cancel unrelated read-only siblings.
+
+### Chores
+
+- Added regression coverage for the MCP, worktree, plugin cache, `/context`, policy matching, and streaming executor fixes.
+
 ## 1.0.6
 
 ### Bug Fixes
