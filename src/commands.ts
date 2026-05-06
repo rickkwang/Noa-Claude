@@ -159,7 +159,7 @@ import wiki from './commands/wiki/index.js'
 const usageReport: Command = {
   type: 'prompt',
   name: 'insights',
-  description: 'Generate a report analyzing your Claude Code sessions',
+  description: 'Generate a report analyzing your Noa Claude sessions',
   contentLength: 0,
   progressMessage: 'analyzing your sessions',
   source: 'builtin',
