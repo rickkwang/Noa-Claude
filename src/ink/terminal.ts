@@ -5,7 +5,7 @@ import { env } from '../utils/env.js'
 import { gte } from '../utils/semver.js'
 import { getClearTerminalSequence } from './clearTerminal.js'
 import type { Diff } from './frame.js'
-import { cursorMove, cursorTo, eraseLines } from './termio/csi.js'
+import { CURSOR_HOME, ERASE_SCREEN, cursorMove, cursorTo, eraseLines } from './termio/csi.js'
 import { BSU, ESU, HIDE_CURSOR, SHOW_CURSOR } from './termio/dec.js'
 import { link } from './termio/osc.js'
 
@@ -217,7 +217,16 @@ export function writeDiffToTerminal(
         }
         break
       case 'clearTerminal':
-        buffer += getClearTerminalSequence()
+        if (patch.preserveScrollback) {
+          // Default mode: clear viewport only, keep scrollback. This lets
+          // the next full-render frame write from (0,0) and the terminal
+          // scrolls naturally to the bottom of the new content — matching
+          // the pre-command viewport position. ERASE_SCROLLBACK would wipe
+          // the transcript history and leave the viewport at the top.
+          buffer += ERASE_SCREEN + CURSOR_HOME
+        } else {
+          buffer += getClearTerminalSequence()
+        }
         break
       case 'cursorHide':
         buffer += HIDE_CURSOR

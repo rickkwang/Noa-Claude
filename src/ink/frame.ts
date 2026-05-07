@@ -77,6 +77,11 @@ export type Patch =
   | {
       type: 'clearTerminal'
       reason: FlickerReason
+      // When true, skip ERASE_SCROLLBACK and only send ERASE_SCREEN + CURSOR_HOME.
+      // Used in default (non-alt-screen) mode where clearing scrollback would
+      // wipe the user's transcript history and leave the viewport at the top
+      // instead of the bottom.
+      preserveScrollback?: boolean
       // Populated by log-update when a scrollback diff triggers the reset.
       // ink.tsx uses triggerY with findOwnerChainAtRow to attribute the
       // flicker to its source React component.

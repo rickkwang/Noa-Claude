@@ -144,7 +144,7 @@ export class LogUpdate {
       next.viewport.height < prev.viewport.height ||
       (prev.viewport.width !== 0 && next.viewport.width !== prev.viewport.width)
     ) {
-      return fullResetSequence_CAUSES_FLICKER(next, 'resize', stylePool)
+      return fullResetSequence_CAUSES_FLICKER(next, 'resize', stylePool, altScreen)
     }
 
     // DECSTBM scroll optimization: when a ScrollBox's scrollTop changed,
@@ -205,18 +205,20 @@ export class LogUpdate {
     const prevHadScrollback =
       cursorAtBottom && prev.screen.height >= prev.viewport.height
     const isShrinking = next.screen.height < prev.screen.height
-    const nextFitsViewport = next.screen.height <= prev.viewport.height
 
-    // When shrinking from above-viewport to at-or-below-viewport, content that
-    // was in scrollback should now be visible. Terminal clear operations can't
-    // bring scrollback content into view, so we need a full reset.
-    // Use <= (not <) because even when next height equals viewport height, the
-    // scrollback depth from the previous render differs from a fresh render.
-    if (prevHadScrollback && nextFitsViewport && isShrinking) {
+    // When shrinking from a scrollback state, terminal clear operations can't
+    // bring scrollback content back into view, so we need a full reset.
+    // In default mode this applies regardless of whether the shrunken content
+    // still exceeds the viewport — eraseLines only clears within the viewport
+    // and leaves blank space where dismissed overlay content was.
+    // In alt-screen prevHadScrollback is always false (height is clamped to
+    // terminalRows and cursor.y is clamped below screen.height), so this is
+    // effectively default-mode only.
+    if (prevHadScrollback && isShrinking) {
       logForDebugging(
         `Full reset (shrink->below): prevHeight=${prev.screen.height}, nextHeight=${next.screen.height}, viewport=${prev.viewport.height}`,
       )
-      return fullResetSequence_CAUSES_FLICKER(next, 'offscreen', stylePool)
+      return fullResetSequence_CAUSES_FLICKER(next, 'offscreen', stylePool, altScreen)
     }
 
     if (
@@ -240,7 +242,7 @@ export class LogUpdate {
       if (scrollbackChangeY >= 0) {
         const prevLine = readLine(prev.screen, scrollbackChangeY)
         const nextLine = readLine(next.screen, scrollbackChangeY)
-        return fullResetSequence_CAUSES_FLICKER(next, 'offscreen', stylePool, {
+        return fullResetSequence_CAUSES_FLICKER(next, 'offscreen', stylePool, altScreen, {
           triggerY: scrollbackChangeY,
           prevLine,
           nextLine,
@@ -268,6 +270,7 @@ export class LogUpdate {
           next,
           'offscreen',
           this.options.stylePool,
+          altScreen,
         )
       }
 
@@ -385,7 +388,7 @@ export class LogUpdate {
       }
     })
     if (needsFullReset) {
-      return fullResetSequence_CAUSES_FLICKER(next, 'offscreen', stylePool, {
+      return fullResetSequence_CAUSES_FLICKER(next, 'offscreen', stylePool, altScreen, {
         triggerY: resetTriggerY,
         prevLine: readLine(prev.screen, resetTriggerY),
         nextLine: readLine(next.screen, resetTriggerY),
@@ -509,12 +512,16 @@ function fullResetSequence_CAUSES_FLICKER(
   frame: Frame,
   reason: FlickerReason,
   stylePool: StylePool,
+  altScreen: boolean,
   debug?: { triggerY: number; prevLine: string; nextLine: string },
 ): Diff {
   // After clearTerminal, cursor is at (0, 0)
   const screen = new VirtualScreen({ x: 0, y: 0 }, frame.viewport.width)
   renderFrame(screen, frame, stylePool)
-  return [{ type: 'clearTerminal', reason, debug }, ...screen.diff]
+  return [
+    { type: 'clearTerminal', reason, preserveScrollback: !altScreen, debug },
+    ...screen.diff,
+  ]
 }
 
 function renderFrame(
