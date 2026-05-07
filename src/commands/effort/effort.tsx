@@ -241,8 +241,10 @@ function EffortSlider({ onDone, model }: { onDone: LocalJSXCommandOnDone; model:
   const exitState = useExitOnCtrlCDWithKeybindings();
 
   const initialIdx = (() => {
-    if (typeof currentEffort === 'string') {
-      const i = SLIDER_LEVELS.indexOf(currentEffort as any);
+    const envOverride = getEffortEnvOverride();
+    const effective = envOverride ?? (typeof currentEffort === 'string' ? currentEffort : undefined);
+    if (effective) {
+      const i = SLIDER_LEVELS.indexOf(effective as any);
       if (i !== -1) return i;
     }
     return 1;
