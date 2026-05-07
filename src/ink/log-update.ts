@@ -517,7 +517,20 @@ function fullResetSequence_CAUSES_FLICKER(
 ): Diff {
   // After clearTerminal, cursor is at (0, 0)
   const screen = new VirtualScreen({ x: 0, y: 0 }, frame.viewport.width)
-  renderFrame(screen, frame, stylePool)
+  if (altScreen) {
+    renderFrame(screen, frame, stylePool)
+  } else {
+    const viewportStart = Math.max(0, frame.screen.height - frame.viewport.height)
+    renderFrameSlice(
+      screen,
+      frame,
+      viewportStart,
+      frame.screen.height,
+      stylePool,
+      true,
+    )
+    restoreViewportCursor(screen, frame, viewportStart)
+  }
   return [
     { type: 'clearTerminal', reason, preserveScrollback: !altScreen, debug },
     ...screen.diff,
@@ -542,6 +555,7 @@ function renderFrameSlice(
   startY: number,
   endY: number,
   stylePool: StylePool,
+  normalizeY = false,
 ): VirtualScreen {
   let currentStyleId = stylePool.none
   let currentHyperlink: Hyperlink = undefined
@@ -553,14 +567,15 @@ function renderFrameSlice(
 
   let index = startY * screenWidth
   for (let y = startY; y < endY; y += 1) {
+    const renderY = normalizeY ? y - startY : y
     // Advance cursor to this row using LF (not CSI CUD / cursor-down).
     // CSI CUD stops at the viewport bottom margin and cannot scroll,
     // but LF scrolls the viewport to create new lines. Without this,
     // when the cursor is at the viewport bottom, moveCursorTo's
     // cursor-down silently fails, creating a permanent off-by-one
     // between the virtual cursor and the real terminal cursor.
-    if (screen.cursor.y < y) {
-      const rowsToAdvance = y - screen.cursor.y
+    if (screen.cursor.y < renderY) {
+      const rowsToAdvance = renderY - screen.cursor.y
       screen.txn(prev => {
         const patches: Diff = new Array<Diff[number]>(1 + rowsToAdvance)
         patches[0] = CARRIAGE_RETURN
@@ -589,7 +604,7 @@ function renderFrameSlice(
         continue
       }
 
-      moveCursorTo(screen, x, y)
+      moveCursorTo(screen, x, renderY)
 
       // Handle hyperlink
       const targetHyperlink = cell.hyperlink
@@ -632,6 +647,40 @@ function renderFrameSlice(
   transitionHyperlink(screen.diff, currentHyperlink, undefined)
 
   return screen
+}
+
+function restoreViewportCursor(
+  screen: VirtualScreen,
+  frame: Frame,
+  viewportStart: number,
+): void {
+  const targetY = Math.max(0, frame.cursor.y - viewportStart)
+  const targetX = frame.cursor.x
+
+  if (targetY >= screen.cursor.y) {
+    screen.txn(prev => {
+      const rowsToCreate = targetY - prev.y
+      if (rowsToCreate > 0) {
+        const patches: Diff = new Array<Diff[number]>(1 + rowsToCreate)
+        patches[0] = CARRIAGE_RETURN
+        for (let i = 0; i < rowsToCreate; i++) {
+          patches[1 + i] = NEWLINE
+        }
+        patches.push({ type: 'cursorMove', x: targetX, y: 0 })
+        return [patches, { dx: targetX - prev.x, dy: rowsToCreate }]
+      }
+      if (prev.x !== targetX) {
+        return [
+          [CARRIAGE_RETURN, { type: 'cursorMove', x: targetX, y: 0 }],
+          { dx: targetX - prev.x, dy: 0 },
+        ]
+      }
+      return [[], { dx: 0, dy: 0 }]
+    })
+    return
+  }
+
+  moveCursorTo(screen, targetX, targetY)
 }
 
 type Delta = { dx: number; dy: number }
