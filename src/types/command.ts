@@ -189,6 +189,7 @@ export type CommandBase = {
   version?: string // Version of the command/skill
   disableModelInvocation?: boolean // Whether to disable this command from being invoked by models
   userInvocable?: boolean // Whether users can invoke this skill by typing /skill-name
+  nameOnly?: boolean // Whether the model-facing skill listing should omit the description
   loadedFrom?:
     | 'commands_DEPRECATED'
     | 'skills'
@@ -201,6 +202,8 @@ export type CommandBase = {
   isSensitive?: boolean // If true, args are redacted from the conversation history
   /** Defaults to `name`. Only override when the displayed name differs (e.g. plugin prefix stripping). */
   userFacingName?: () => string
+  /** Absolute/virtual markdown path for skills/commands loaded from files. */
+  sourceFilePath?: string
 }
 
 export type Command = CommandBase &

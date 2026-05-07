@@ -207,6 +207,7 @@ export function parseSkillFrontmatterFields(
   model: ReturnType<typeof parseUserSpecifiedModel> | undefined
   disableModelInvocation: boolean
   userInvocable: boolean
+  nameOnly: boolean
   hooks: HooksSettings | undefined
   executionContext: 'fork' | undefined
   agent: string | undefined
@@ -264,6 +265,7 @@ export function parseSkillFrontmatterFields(
       frontmatter['disable-model-invocation'],
     ),
     userInvocable,
+    nameOnly: parseBooleanFrontmatter(frontmatter['name-only']),
     hooks: parseHooksFromFrontmatter(frontmatter, resolvedName),
     executionContext: frontmatter.context === 'fork' ? 'fork' : undefined,
     agent: frontmatter.agent as string | undefined,
@@ -289,6 +291,7 @@ export function createSkillCommand({
   model,
   disableModelInvocation,
   userInvocable,
+  nameOnly,
   source,
   baseDir,
   loadedFrom,
@@ -298,6 +301,7 @@ export function createSkillCommand({
   paths,
   effort,
   shell,
+  sourceFilePath,
 }: {
   skillName: string
   displayName: string | undefined
@@ -312,6 +316,7 @@ export function createSkillCommand({
   model: string | undefined
   disableModelInvocation: boolean
   userInvocable: boolean
+  nameOnly: boolean
   source: PromptCommand['source']
   baseDir: string | undefined
   loadedFrom: LoadedFrom
@@ -321,6 +326,7 @@ export function createSkillCommand({
   paths: string[] | undefined
   effort: EffortValue | undefined
   shell: FrontmatterShell | undefined
+  sourceFilePath?: string
 }): Command {
   return {
     type: 'prompt',
@@ -335,6 +341,7 @@ export function createSkillCommand({
     model,
     disableModelInvocation,
     userInvocable,
+    nameOnly,
     context: executionContext,
     agent,
     effort,
@@ -347,6 +354,7 @@ export function createSkillCommand({
     },
     source,
     loadedFrom,
+    sourceFilePath,
     hooks,
     skillRoot: baseDir,
     async getPromptForCommand(args, toolUseContext) {
@@ -474,6 +482,7 @@ async function loadSkillsFromSkillsDir(
             baseDir: skillDirPath,
             loadedFrom: 'skills',
             paths,
+            sourceFilePath: skillFilePath,
           }),
           filePath: skillFilePath,
         }
@@ -615,6 +624,7 @@ async function loadSkillsFromCommandsDir(
             baseDir: skillDirectory,
             loadedFrom: 'commands_DEPRECATED',
             paths: undefined,
+            sourceFilePath: filePath,
           }),
           filePath,
         })

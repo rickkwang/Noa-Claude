@@ -289,6 +289,7 @@ function createPluginCommand(
     const disableModelInvocation = parseBooleanFrontmatter(
       frontmatter['disable-model-invocation'],
     )
+    const nameOnly = parseBooleanFrontmatter(frontmatter['name-only'])
 
     const userInvocableValue = frontmatter['user-invocable']
     const userInvocable =
@@ -312,6 +313,7 @@ function createPluginCommand(
       effort,
       disableModelInvocation,
       userInvocable,
+      nameOnly,
       contentLength: content.length,
       source: 'plugin' as const,
       loadedFrom: isSkill || config.isSkillMode ? 'plugin' : undefined,
@@ -319,6 +321,7 @@ function createPluginCommand(
         pluginManifest,
         repository: sourceName,
       },
+      sourceFilePath: file.filePath,
       isHidden: !userInvocable,
       progressMessage: isSkill || config.isSkillMode ? 'loading' : 'running',
       userFacingName(): string {

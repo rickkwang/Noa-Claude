@@ -31,6 +31,8 @@ export type FrontmatterData = {
   // 'false' = only model can invoke via Skill tool
   // Default depends on source: commands/ defaults to true, skills/ defaults to false
   'user-invocable'?: string | null
+  // If true, list the skill by name only in the model-facing skill index.
+  'name-only'?: string | null
   // Hooks to register when this skill is invoked
   // Keys are hook events (PreToolUse, PostToolUse, Stop, etc.)
   // Values are arrays of matcher configurations with hooks

@@ -63,6 +63,10 @@ function formatCommandDescription(cmd: Command): string {
     )
   }
 
+  if (cmd.nameOnly === true) {
+    return `- ${cmd.name}`
+  }
+
   return `- ${cmd.name}: ${getCommandDescription(cmd)}`
 }
 
@@ -165,6 +169,7 @@ export function formatCommandsWithinBudget(
     .map((cmd, i) => {
       // Bundled skills always get full descriptions
       if (bundledIndices.has(i)) return fullEntries[i]!.full
+      if (cmd.nameOnly === true) return `- ${cmd.name}`
       const description = getCommandDescription(cmd)
       return `- ${cmd.name}: ${truncate(description, maxDescLen)}`
     })
