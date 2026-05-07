@@ -1467,6 +1467,10 @@ export default class Ink {
       return;
     }
     this.suppressAltScreenExitSequence = this.altScreenActive;
+    // Drop any parked input-cursor target before the final render so
+    // main-screen shutdown restores the physical cursor to the frame end
+    // instead of leaving it inside the prompt input.
+    this.cursorDeclaration = null;
     this.onRender();
     this.unsubscribeExit();
     if (typeof this.restoreConsole === 'function') {
@@ -1509,8 +1513,6 @@ export default class Ink {
       writeSync(1, DBP);
       // Show cursor
       writeSync(1, SHOW_CURSOR);
-      // Clear iTerm2 progress bar
-      writeSync(1, CLEAR_ITERM2_PROGRESS);
       // Clear tab status (OSC 21337) so a stale dot doesn't linger
       if (supportsTabStatus()) writeSync(1, wrapForMultiplexer(CLEAR_TAB_STATUS));
     }

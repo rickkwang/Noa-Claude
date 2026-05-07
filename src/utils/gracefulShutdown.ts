@@ -86,7 +86,24 @@ function cleanupTerminalModes(): void {
     // Calling unmount() now does the final render on the alt buffer,
     // unsubscribes from signal-exit, and writes 1049l exactly once.
     const inst = instances.get(process.stdout)
-    if (inst?.isAltScreenActive) {
+    if (inst && !inst.isAltScreenActive) {
+      try {
+        inst.unmount()
+        if (env.terminal && SUPPORTS_OSC9_PROGRESS.includes(env.terminal)) {
+          writeSync(1, CLEAR_ITERM2_PROGRESS)
+        }
+        if (!isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE)) {
+          if (process.platform === 'win32') {
+            process.title = ''
+          } else {
+            writeSync(1, CLEAR_TERMINAL_TITLE)
+          }
+        }
+        return
+      } catch {
+        // Fall through to the raw terminal cleanup below.
+      }
+    } else if (inst?.isAltScreenActive) {
       try {
         inst.unmount()
       } catch {
@@ -120,7 +137,6 @@ function cleanupTerminalModes(): void {
     // that can cause bell sounds when returning to the terminal tab.
     // Whitelist: OSC 9;4 is iTerm2/ConEmu-specific; other terminals (Kitty,
     // Apple Terminal, etc.) may interpret it as a desktop notification.
-    const SUPPORTS_OSC9_PROGRESS = ['iTerm.app', 'WezTerm', 'ghostty', 'conemu']
     if (env.terminal && SUPPORTS_OSC9_PROGRESS.includes(env.terminal)) {
       writeSync(1, CLEAR_ITERM2_PROGRESS)
     }
@@ -143,6 +159,7 @@ function cleanupTerminalModes(): void {
 }
 
 let resumeHintPrinted = false
+const SUPPORTS_OSC9_PROGRESS = ['iTerm.app', 'WezTerm', 'ghostty', 'conemu']
 
 /**
  * Print a hint about how to resume the session.
@@ -181,7 +198,7 @@ function printResumeHint(): void {
       writeSync(
         1,
         chalk.dim(
-          `\nResume this session with:\n${cliCommand} --resume ${resumeArg}\n`,
+          `\r\nResume this session with:\r\n${cliCommand} --resume ${resumeArg}\r\n`,
         ),
       )
       resumeHintPrinted = true
