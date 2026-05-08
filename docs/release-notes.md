@@ -1,5 +1,21 @@
 # Release Notes
 
+## 1.0.8
+
+### New Features
+
+- Increased slash-command overlay visible items from 5 to 12 for a more browsable fullscreen experience.
+
+### Bug Fixes
+
+- Refactored system prompt generation to extract core execution guards into a dedicated section, ensuring these constraints are always present regardless of output style configuration.
+- Removed the automatic scroll repin behavior when typing into an empty prompt, reducing interruption while reading long output.
+- Fixed ink viewport resize behavior to preserve scrollback in default (non-alt-screen) mode.
+
+### Chores
+
+- Added `.claude-agent/settings.local.json` to `.gitignore`.
+
 ## 1.0.7
 
 ### Bug Fixes
