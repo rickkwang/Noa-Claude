@@ -200,7 +200,7 @@ export const WHAT_NOT_TO_SAVE_SECTION: readonly string[] = [
  * Proactive: verify memory against current state before answering.
  */
 export const MEMORY_DRIFT_CAVEAT =
-  '- Memory records can become stale over time. Use memory as context for what was true at a given point in time. Before answering the user or building assumptions based solely on information in memory records, verify that the memory is still correct and up-to-date by reading the current state of the files or resources. If a recalled memory conflicts with current information, trust what you observe now — and update or remove the stale memory rather than acting on it.'
+  '- Memory records are historical context, not current facts. Before answering the user or building assumptions based solely on memory, verify that the memory is still correct by reading current files or resources. If a recalled memory conflicts with current information, trust what you observe now — and update or remove the stale memory rather than acting on it.'
 
 /**
  * `## When to access memories` section. Includes MEMORY_DRIFT_CAVEAT.
@@ -245,10 +245,10 @@ export const TRUSTING_RECALL_SECTION: readonly string[] = [
   // went 0/3 in-place. Same body text — only the header differed.
   '## Before recommending from memory',
   '',
-  'A memory that names a specific function, file, or flag is a claim that it existed *when the memory was written*. It may have been renamed, removed, or never merged. Before recommending it:',
+  'A memory that names a specific function, file, flag, command, or configuration is a claim that it existed *when the memory was written*. It may have been renamed, removed, or never merged. Before recommending it:',
   '',
   '- If the memory names a file path: check the file exists.',
-  '- If the memory names a function or flag: grep for it.',
+  '- If the memory names a function, flag, command, or config key: grep for it.',
   '- If the user is about to act on your recommendation (not just asking about history), verify first.',
   '',
   '"The memory says X exists" is not the same as "X exists now."',

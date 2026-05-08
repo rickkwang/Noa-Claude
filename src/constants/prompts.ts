@@ -362,6 +362,23 @@ function getSessionSpecificGuidanceSection(
   const searchTools = hasEmbeddedSearchTools()
     ? `\`find\` or \`grep\` via the ${BASH_TOOL_NAME} tool`
     : `the ${GLOB_TOOL_NAME} or ${GREP_TOOL_NAME}`
+  // Routing hints for skills whose triggering boundaries are commonly mis-applied.
+  // Keyed by skill name; only emitted when the skill is actually present this session.
+  // Skills not listed here still trigger via their own description — these are
+  // additive disambiguators, not an exhaustive whitelist.
+  const SKILL_ROUTING_HINTS: Record<string, string> = {
+    'update-config': `update-config — for settings, permissions, env vars, hooks, or automated "from now on" behavior.`,
+    loop: `loop / schedule — only for recurring, delayed, or monitored work, not one-off tasks.`,
+    schedule: `loop / schedule — only for recurring, delayed, or monitored work, not one-off tasks.`,
+    'claude-api': `claude-api — for Anthropic SDK / Claude API / model migration / prompt caching / tool-use; skip for provider-neutral or OpenAI-only work.`,
+  }
+  const skillRoutingRules = Array.from(
+    new Set(
+      skillToolCommands
+        .map(command => SKILL_ROUTING_HINTS[command.name])
+        .filter((hint): hint is string => hint !== undefined),
+    ),
+  )
 
   const items = [
     hasAskUserQuestionTool
@@ -384,6 +401,9 @@ function getSessionSpecificGuidanceSection(
     hasSkills
       ? `/<skill-name> (e.g., /commit) is shorthand for users to invoke a user-invocable skill. When executed, the skill gets expanded to a full prompt. Use the ${SKILL_TOOL_NAME} tool to execute them. IMPORTANT: Only use ${SKILL_TOOL_NAME} for skills listed in its user-invocable skills section - do not guess or use built-in CLI commands.`
       : null,
+    hasSkills && skillRoutingRules.length > 0
+      ? `Skill routing disambiguators (additive — skills not listed below still trigger via their own description; these only clarify the boundaries that are commonly mis-applied): ${skillRoutingRules.join(' ')}`
+      : null,
     DISCOVER_SKILLS_TOOL_NAME !== null &&
     hasSkills &&
     enabledTools.has(DISCOVER_SKILLS_TOOL_NAME)
@@ -405,7 +425,7 @@ function getSimpleToneAndStyleSection(): string {
   const items = [
     `Only use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.`,
     `Keep responses concise, but include enough detail to cover blockers, verification, and important implementation context.`,
-    `Match the response to the task: simple questions get direct brief answers without headers or numbered sections; key progress updates are one clear sentence; completed implementation work defaults to a concise summary of what changed, what was verified, and any important caveats. Use more structure only when complexity, blockers, or test results require it.`,
+    `Match the response to the task: simple questions get direct brief answers without headers or numbered sections; key progress updates are one clear sentence; completed implementation work defaults to 1-2 concise sentences covering what changed, what was verified, and any important caveats. Use more structure only when complexity, blockers, or test results require it.`,
     `When referencing specific functions or pieces of code include the pattern file_path:line_number to allow the user to easily navigate to the source code location.`,
     `When referencing GitHub issues or pull requests, use the owner/repo#123 format (e.g. owner/repo#100) so they render as clickable links.`,
     `Do not use a colon before tool calls. Your tool calls may not be shown directly in the output, so text like "Let me read the file:" followed by a read tool call should just be "Let me read the file." with a period.`,
@@ -417,7 +437,7 @@ function getSimpleToneAndStyleSection(): string {
     [`# Tone and style`, ...prependBullets(items)].join(`\n`) +
     `
 
-When sending user-facing text, write for a person, not a console. Assume users can't see most tool calls or thinking - only your text output. Before your first tool call, briefly state what you're about to do. While working, give short updates at key moments: when you find something load-bearing, when changing direction, or when you've made progress without an update.
+When sending user-facing text, write for a person, not a console. Assume users can't see most tool calls or thinking - only your text output. Before your first tool call, briefly state what you're about to do. While working, give short, usually one-sentence updates at key moments: when you find something load-bearing, when changing direction, or when you've made progress without an update.
 
 When making updates, assume the person has stepped away and lost the thread. Use complete sentences, avoid unexplained jargon or shorthand, and give just enough context for them to pick back up cold.
 
