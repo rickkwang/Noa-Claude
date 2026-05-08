@@ -326,12 +326,6 @@ const EMPTY_MCP_CLIENTS: MCPServerConnection[] = [];
 const HISTORY_STUB = {
   maybeLoadOlder: (_: ScrollBoxHandle) => {}
 };
-// Window after a user-initiated scroll during which type-into-empty does NOT
-// repin to bottom. Josh Rosen's workflow: Claude emits long output → scroll
-// up to read the start → start typing → before this fix, snapped to bottom.
-// https://anthropic.slack.com/archives/C07VBSHV7EV/p1773545449871739
-const RECENT_SCROLL_REPIN_WINDOW_MS = 3000;
-
 // Use LRU cache to prevent unbounded memory growth
 // 100 files should be sufficient for most coding sessions while preventing
 // memory issues when working across many files in large projects
@@ -1364,24 +1358,13 @@ export function REPL({
   // the previous useEffect → setState pattern caused.
   const setInputValue = useCallback((value: string) => {
     if (trySuggestBgPRIntercept(inputValueRef.current, value)) return;
-    // In fullscreen mode, typing into an empty prompt re-pins scroll to
-    // bottom. Only fires on empty→non-empty so scrolling up to reference
-    // something while composing a message doesn't yank the view back on
-    // every keystroke. Restores the pre-fullscreen muscle memory of
-    // typing to snap back to the end of the conversation.
-    // Skipped if the user scrolled within the last 3s — they're actively
-    // reading, not lost. lastUserScrollTsRef starts at 0 so the first-
-    // ever keypress (no scroll yet) always repins.
-    if (inputValueRef.current === '' && value !== '' && Date.now() - lastUserScrollTsRef.current >= RECENT_SCROLL_REPIN_WINDOW_MS) {
-      repinScroll();
-    }
     // Sync ref immediately (like setMessages) so callers that read
     // inputValueRef before React commits — e.g. the auto-restore finally
     // block's `=== ''` guard — see the fresh value, not the stale render.
     inputValueRef.current = value;
     setInputValueRaw(value);
     setIsPromptInputActive(value.trim().length > 0);
-  }, [setIsPromptInputActive, repinScroll, trySuggestBgPRIntercept]);
+  }, [setIsPromptInputActive, trySuggestBgPRIntercept]);
 
   // Schedule a timeout to stop suppressing dialogs after the user stops typing.
   // Only manages the timeout — the immediate activation is handled by setInputValue above.
