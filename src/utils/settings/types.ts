@@ -662,6 +662,12 @@ export const SettingsSchema = lazySchema(() =>
         .string()
         .optional()
         .describe('Controls the output style for assistant responses'),
+      skillModes: z
+        .record(z.string(), z.enum(['on', 'name-only', 'user-only', 'off']))
+        .optional()
+        .describe(
+          'Per-skill mode overrides. Keys are skill command names; values control whether users and/or models may invoke the skill and whether model-facing listings show the description.',
+        ),
       language: z
         .string()
         .optional()

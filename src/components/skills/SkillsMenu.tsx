@@ -1,6 +1,5 @@
 // @ts-nocheck
 import capitalize from 'lodash-es/capitalize.js'
-import { readFile, writeFile } from 'node:fs/promises'
 import figures from 'figures'
 import * as React from 'react'
 import { useEffect, useMemo, useState } from 'react'
@@ -19,12 +18,25 @@ import { estimateSkillFrontmatterTokens, getSkillsPath } from '../../skills/load
 import { logForDebugging } from '../../utils/debug.js'
 import { getDisplayPath } from '../../utils/file.js'
 import { formatTokens } from '../../utils/format.js'
+import { settingsChangeDetector } from '../../utils/settings/changeDetector.js'
 import {
-  FRONTMATTER_REGEX,
-  parseBooleanFrontmatter,
-  parseFrontmatter,
-} from '../../utils/frontmatterParser.js'
-import { getSettingSourceName, type SettingSource } from '../../utils/settings/constants.js'
+  getSettingSourceName,
+  getSettingSourceDisplayNameLowercase,
+  type SettingSource,
+} from '../../utils/settings/constants.js'
+import {
+  getSettings_DEPRECATED,
+  getSettingsForSource,
+  updateSettingsForSource,
+} from '../../utils/settings/settings.js'
+import {
+  applySkillMode,
+  getBaseSkillMode,
+  getNextSkillMode,
+  getSkillMode,
+  isSettingsToggleableSkill,
+  type SkillMode,
+} from '../../utils/skills/skillModes.js'
 import { plural } from '../../utils/stringUtils.js'
 import { ConfigurableShortcutHint } from '../ConfigurableShortcutHint.js'
 import { Dialog } from '../design-system/Dialog.js'
@@ -32,10 +44,10 @@ import { SearchBox } from '../SearchBox.js'
 
 type SkillCommand = CommandBase & PromptCommand
 type SkillSource = SettingSource | 'plugin' | 'mcp'
-type SkillMode = 'on' | 'name-only' | 'user-only' | 'off'
 
-const pendingSkillModeWrites = new Map<string, Promise<boolean>>()
+const pendingSkillModeWrites = new Set<Promise<boolean>>()
 const latestSkillModeWriteIds = new Map<string, number>()
+let skillModeWriteQueue: Promise<void> = Promise.resolve()
 
 type Props = {
   onExit: (
@@ -91,178 +103,88 @@ function getSourceSubtitle(
     : skillsPath
 }
 
-function getSkillMode(skill: SkillCommand): SkillMode {
-  const userInvocable = skill.userInvocable !== false
-  const modelInvocable = skill.disableModelInvocation !== true
-  if (userInvocable && modelInvocable && skill.nameOnly === true) {
-    return 'name-only'
-  }
-  if (userInvocable && modelInvocable) return 'on'
-  if (userInvocable && !modelInvocable) return 'user-only'
-  return 'off'
-}
-
-function getNextSkillMode(mode: SkillMode): SkillMode {
-  if (mode === 'on') return 'name-only'
-  if (mode === 'name-only') return 'user-only'
-  if (mode === 'user-only') return 'off'
-  return 'on'
-}
-
-function applySkillMode(skill: SkillCommand, mode: SkillMode): void {
-  if (mode === 'on') {
-    skill.userInvocable = true
-    skill.disableModelInvocation = false
-    skill.nameOnly = false
-    skill.isHidden = false
-    return
-  }
-  if (mode === 'name-only') {
-    skill.userInvocable = true
-    skill.disableModelInvocation = false
-    skill.nameOnly = true
-    skill.isHidden = false
-    return
-  }
-  if (mode === 'user-only') {
-    skill.userInvocable = true
-    skill.disableModelInvocation = true
-    skill.nameOnly = false
-    skill.isHidden = false
-    return
-  }
-  skill.userInvocable = false
-  skill.disableModelInvocation = true
-  skill.nameOnly = false
-  skill.isHidden = true
-}
-
-function getPersistableSkillPath(skill: SkillCommand): string | null {
-  const sourceFilePath = skill.sourceFilePath
-  if (
-    !sourceFilePath ||
-    sourceFilePath.startsWith('<inline:') ||
-    !sourceFilePath.endsWith('.md')
-  ) {
-    return null
-  }
-  return sourceFilePath
-}
-
 function canToggleSkillMode(skill: SkillCommand): boolean {
-  return getPersistableSkillPath(skill) !== null
+  return isSettingsToggleableSkill(skill)
 }
 
-function getNextWriteId(skillPath: string): number {
-  const nextWriteId = (latestSkillModeWriteIds.get(skillPath) ?? 0) + 1
-  latestSkillModeWriteIds.set(skillPath, nextWriteId)
+function getHigherPrecedenceSkillModeSource(
+  skillName: string,
+): SettingSource | null {
+  if (getSettingsForSource('flagSettings')?.skillModes?.[skillName] !== undefined) {
+    return 'flagSettings'
+  }
+  if (getSettingsForSource('policySettings')?.skillModes?.[skillName] !== undefined) {
+    return 'policySettings'
+  }
+  return null
+}
+
+function getNextWriteId(skillName: string): number {
+  const nextWriteId = (latestSkillModeWriteIds.get(skillName) ?? 0) + 1
+  latestSkillModeWriteIds.set(skillName, nextWriteId)
   return nextWriteId
 }
 
-function isLatestWriteId(skillPath: string, writeId: number): boolean {
-  return latestSkillModeWriteIds.get(skillPath) === writeId
-}
-
-function upsertBooleanFrontmatter(
-  markdown: string,
-  key: string,
-  value: boolean,
-): string {
-  const boolText = value ? 'true' : 'false'
-  const match = markdown.match(FRONTMATTER_REGEX)
-
-  if (!match) {
-    return `---\n${key}: ${boolText}\n---\n${markdown}`
-  }
-
-  const currentFrontmatter = match[1] ?? ''
-  const lines = currentFrontmatter.split('\n')
-  let found = false
-  const keyPattern = new RegExp(`^\\s*${key}\\s*:`)
-  const nextLines = lines.map(line => {
-    if (!keyPattern.test(line)) return line
-    found = true
-    return `${key}: ${boolText}`
-  })
-  if (!found) nextLines.push(`${key}: ${boolText}`)
-  const nextFrontmatter = nextLines.join('\n').replace(/\n+$/, '\n')
-
-  return markdown.replace(
-    FRONTMATTER_REGEX,
-    `---\n${nextFrontmatter}---\n`,
-  )
+function isLatestWriteId(skillName: string, writeId: number): boolean {
+  return latestSkillModeWriteIds.get(skillName) === writeId
 }
 
 async function persistSkillMode(
-  skillPath: string,
+  skillName: string,
   mode: SkillMode,
+  baseMode: SkillMode,
   writeId: number,
 ): Promise<boolean> {
-  const userInvocable =
-    mode === 'on' || mode === 'name-only' || mode === 'user-only'
-  const nameOnly = mode === 'name-only'
-  const disableModelInvocation = mode === 'user-only' || mode === 'off'
-  const previousWrite = pendingSkillModeWrites.get(skillPath) ?? Promise.resolve()
-  const nextWrite = previousWrite
-    .catch(() => undefined)
-    .then(async () => {
-      const markdown = await readFile(skillPath, 'utf-8')
-      const withUserInvocable = upsertBooleanFrontmatter(
-        markdown,
-        'user-invocable',
-        userInvocable,
-      )
-      const withNameOnly = upsertBooleanFrontmatter(
-        withUserInvocable,
-        'name-only',
-        nameOnly,
-      )
-      const withDisableModelInvocation = upsertBooleanFrontmatter(
-        withNameOnly,
-        'disable-model-invocation',
-        disableModelInvocation,
-      )
+  const nextWrite = skillModeWriteQueue.catch(() => undefined).then(() => {
+    const currentSkillModes = {
+      ...(getSettingsForSource('localSettings')?.skillModes ?? {}),
+    }
 
-      if (!isLatestWriteId(skillPath, writeId)) {
-        return false
-      }
+    if (mode === baseMode) {
+      delete currentSkillModes[skillName]
+    } else {
+      currentSkillModes[skillName] = mode
+    }
 
-      await writeFile(skillPath, withDisableModelInvocation, 'utf-8')
-      return true
+    if (!isLatestWriteId(skillName, writeId)) {
+      return false
+    }
+
+    const nextSkillModes =
+      Object.keys(currentSkillModes).length > 0 ? currentSkillModes : undefined
+    const { error } = updateSettingsForSource('localSettings', {
+      skillModes: nextSkillModes,
     })
 
-  const trackedWrite = nextWrite.finally(() => {
-    if (pendingSkillModeWrites.get(skillPath) === trackedWrite) {
-      pendingSkillModeWrites.delete(skillPath)
+    if (error) {
+      throw error
     }
+
+    settingsChangeDetector.notifyChange('localSettings')
+    return true
   })
-  pendingSkillModeWrites.set(skillPath, trackedWrite)
-  await trackedWrite
+
+  skillModeWriteQueue = nextWrite.then(() => undefined, () => undefined)
+  pendingSkillModeWrites.add(nextWrite)
+  try {
+    return await nextWrite
+  } finally {
+    pendingSkillModeWrites.delete(nextWrite)
+  }
 }
 
-async function readPersistedSkillMode(skillPath: string): Promise<SkillMode> {
-  const markdown = await readFile(skillPath, 'utf-8')
-  const { frontmatter } = parseFrontmatter(markdown, skillPath)
-  const userInvocable =
-    frontmatter['user-invocable'] === undefined
-      ? true
-      : parseBooleanFrontmatter(frontmatter['user-invocable'])
-  const modelInvocable = !parseBooleanFrontmatter(
-    frontmatter['disable-model-invocation'],
-  )
-  const nameOnly = parseBooleanFrontmatter(frontmatter['name-only'])
-
-  if (userInvocable && modelInvocable && nameOnly) return 'name-only'
-  if (userInvocable && modelInvocable) return 'on'
-  if (userInvocable && !modelInvocable) return 'user-only'
-  return 'off'
+function readPersistedSkillMode(
+  skillName: string,
+  fallbackMode: SkillMode,
+): SkillMode {
+  return getSettings_DEPRECATED().skillModes?.[skillName] ?? fallbackMode
 }
 
 async function waitForPendingSkillWrites(): Promise<boolean> {
   let hasRejectedWrite = false
   while (pendingSkillModeWrites.size > 0) {
     const results = await Promise.allSettled(
-      Array.from(pendingSkillModeWrites.values()),
+      Array.from(pendingSkillModeWrites),
     )
     if (results.some(result => result.status === 'rejected')) {
       hasRejectedWrite = true
@@ -274,8 +196,8 @@ async function waitForPendingSkillWrites(): Promise<boolean> {
 export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
   const isTerminalFocused = useTerminalFocus()
   const initialSkillModesRef = React.useRef(new Map<string, SkillMode>())
-  const changedSkillPathsRef = React.useRef(new Set<string>())
-  const failedSkillPathsRef = React.useRef(new Set<string>())
+  const changedSkillNamesRef = React.useRef(new Set<string>())
+  const failedSkillNamesRef = React.useRef(new Set<string>())
 
   const skills = useMemo(
     () =>
@@ -317,11 +239,26 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
     [skillsBySource],
   )
 
+  const blockingSources = useMemo(
+    () =>
+      new Map(
+        orderedSkills.map(skill => [
+          skill.name,
+          getHigherPrecedenceSkillModeSource(skill.name),
+        ]),
+      ),
+    [orderedSkills],
+  )
+
   useMemo(() => {
     for (const skill of orderedSkills) {
-      const skillPath = getPersistableSkillPath(skill)
-      if (!skillPath || initialSkillModesRef.current.has(skillPath)) continue
-      initialSkillModesRef.current.set(skillPath, getSkillMode(skill))
+      if (
+        !canToggleSkillMode(skill) ||
+        initialSkillModesRef.current.has(skill.name)
+      ) {
+        continue
+      }
+      initialSkillModesRef.current.set(skill.name, getSkillMode(skill))
     }
   }, [orderedSkills])
 
@@ -330,15 +267,15 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
   const [selectedIdx, setSelectedIdx] = useState(0)
   const [isSavingModeChanges, setIsSavingModeChanges] = useState(false)
   const [, forceRefresh] = useState(0)
-  const hasPendingModeChanges = changedSkillPathsRef.current.size > 0
-  const syncChangedSkillPath = React.useCallback(
-    (skillPath: string, mode: SkillMode): void => {
-      const initialMode = initialSkillModesRef.current.get(skillPath)
+  const hasPendingModeChanges = changedSkillNamesRef.current.size > 0
+  const syncChangedSkillName = React.useCallback(
+    (skillName: string, mode: SkillMode): void => {
+      const initialMode = initialSkillModesRef.current.get(skillName)
       if (initialMode === undefined || initialMode === mode) {
-        changedSkillPathsRef.current.delete(skillPath)
+        changedSkillNamesRef.current.delete(skillName)
         return
       }
-      changedSkillPathsRef.current.add(skillPath)
+      changedSkillNamesRef.current.add(skillName)
     },
     [],
   )
@@ -388,7 +325,7 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
       setIsSavingModeChanges(true)
       void waitForPendingSkillWrites()
         .then(allWritesSucceeded => {
-          const hasSaveFailures = failedSkillPathsRef.current.size > 0
+          const hasSaveFailures = failedSkillNamesRef.current.size > 0
           onExit(
             allWritesSucceeded && !hasSaveFailures
               ? 'Skill settings saved'
@@ -419,7 +356,7 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
     hasPendingModeChanges,
     isSavingModeChanges,
     onExit,
-    syncChangedSkillPath,
+    syncChangedSkillName,
   ])
 
   const handleNext = React.useCallback((): void | false => {
@@ -461,32 +398,33 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
         event.stopImmediatePropagation()
         const skill = displaySkills[clampedIdx]
         if (!skill) return
-        const skillPath = getPersistableSkillPath(skill)
-        if (!skillPath) return
+        if (!canToggleSkillMode(skill)) return
+        if (blockingSources.get(skill.name) !== null) return
         const previousMode = getSkillMode(skill)
+        const baseMode = getBaseSkillMode(skill)
         const nextMode = getNextSkillMode(previousMode)
-        const writeId = getNextWriteId(skillPath)
+        const writeId = getNextWriteId(skill.name)
         applySkillMode(skill, nextMode)
-        syncChangedSkillPath(skillPath, nextMode)
-        failedSkillPathsRef.current.delete(skillPath)
+        syncChangedSkillName(skill.name, nextMode)
+        failedSkillNamesRef.current.delete(skill.name)
         clearCommandMemoizationCaches()
         forceRefresh(v => v + 1)
-        void persistSkillMode(skillPath, nextMode, writeId)
+        void persistSkillMode(skill.name, nextMode, baseMode, writeId)
           .then(didPersist => {
-            if (!didPersist || !isLatestWriteId(skillPath, writeId)) return
-            failedSkillPathsRef.current.delete(skillPath)
+            if (!didPersist || !isLatestWriteId(skill.name, writeId)) return
+            failedSkillNamesRef.current.delete(skill.name)
           })
-          .catch(async error => {
+          .catch(error => {
             let revertedMode = previousMode
-            if (!isLatestWriteId(skillPath, writeId)) return
+            if (!isLatestWriteId(skill.name, writeId)) return
             try {
-              revertedMode = await readPersistedSkillMode(skillPath)
+              revertedMode = readPersistedSkillMode(skill.name, baseMode)
               applySkillMode(skill, revertedMode)
             } catch {
               applySkillMode(skill, revertedMode)
             }
-            syncChangedSkillPath(skillPath, revertedMode)
-            failedSkillPathsRef.current.add(skillPath)
+            syncChangedSkillName(skill.name, revertedMode)
+            failedSkillNamesRef.current.add(skill.name)
             clearCommandMemoizationCaches()
             forceRefresh(v => v + 1)
             logForDebugging(
@@ -549,7 +487,15 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
       ? skill.source
       : getSettingSourceName(skill.source as SettingSource)
     const mode = getSkillMode(skill)
-    const isToggleable = canToggleSkillMode(skill)
+    const blockingSource = blockingSources.get(skill.name) ?? null
+    const isToggleable =
+      canToggleSkillMode(skill) && blockingSource === null
+    const readOnlyReason =
+      blockingSource !== null
+        ? ` · overridden by ${getSettingSourceDisplayNameLowercase(blockingSource)}`
+        : !isToggleable
+          ? ' · read-only'
+          : ''
     return (
       <Box key={`${skill.name}-${skill.source}`}>
         <Text color={isSelected ? 'suggestion' : undefined}>
@@ -570,7 +516,7 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
           {getCommandName(skill)}
         </Text>
         <Text dimColor>
-          {pluginName ? ` · ${pluginName}` : ` · ${sourceLabel}`} · {tokenDisplay} tok{!isToggleable ? ' · read-only' : ''}
+          {pluginName ? ` · ${pluginName}` : ` · ${sourceLabel}`} · {tokenDisplay} tok{readOnlyReason}
         </Text>
       </Box>
     )

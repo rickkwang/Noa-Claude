@@ -190,6 +190,7 @@ export type CommandBase = {
   disableModelInvocation?: boolean // Whether to disable this command from being invoked by models
   userInvocable?: boolean // Whether users can invoke this skill by typing /skill-name
   nameOnly?: boolean // Whether the model-facing skill listing should omit the description
+  baseSkillMode?: 'on' | 'name-only' | 'user-only' | 'off' // Base skill mode before settings overrides are applied
   loadedFrom?:
     | 'commands_DEPRECATED'
     | 'skills'

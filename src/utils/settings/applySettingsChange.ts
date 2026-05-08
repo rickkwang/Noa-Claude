@@ -1,5 +1,6 @@
 // @ts-nocheck
 import type { AppState } from '../../state/AppState.js'
+import { clearCommandMemoizationCaches } from '../../commands.js'
 import { logForDebugging } from '../debug.js'
 import { updateHooksConfigSnapshot } from '../hooks/hooksConfigSnapshot.js'
 import {
@@ -35,6 +36,7 @@ export function applySettingsChange(
   source: SettingSource,
   setAppState: (f: (prev: AppState) => AppState) => void,
 ): void {
+  clearCommandMemoizationCaches()
   const newSettings = getInitialSettings()
 
   logForDebugging(`Settings changed from ${source}, updating app state`)

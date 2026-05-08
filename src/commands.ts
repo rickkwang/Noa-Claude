@@ -172,6 +172,8 @@ const usageReport: Command = {
 import oauthRefresh from './commands/oauth-refresh/index.js'
 import debugToolCall from './commands/debug-tool-call/index.js'
 import { getSettingSourceName } from './utils/settings/constants.js'
+import { getSettings_DEPRECATED } from './utils/settings/settings.js'
+import { applySkillModeOverrideToCommand } from './utils/skills/skillModes.js'
 import {
   type Command,
   getCommandName,
@@ -440,14 +442,17 @@ const loadAllCommands = memoize(async (cwd: string): Promise<Command[]> => {
  */
 export async function getCommands(cwd: string): Promise<Command[]> {
   const allCommands = await loadAllCommands(cwd)
+  const skillModeOverrides = getSettings_DEPRECATED().skillModes
 
   // Get dynamic skills discovered during file operations
   const dynamicSkills = getDynamicSkills()
 
   // Build base commands without dynamic skills
-  const baseCommands = allCommands.filter(
-    _ => meetsAvailabilityRequirement(_) && isCommandEnabled(_),
-  )
+  const baseCommands = allCommands
+    .filter(_ => meetsAvailabilityRequirement(_) && isCommandEnabled(_))
+    .map(command =>
+      applySkillModeOverrideToCommand(command, skillModeOverrides?.[command.name]),
+    )
 
   if (dynamicSkills.length === 0) {
     return baseCommands
@@ -466,17 +471,21 @@ export async function getCommands(cwd: string): Promise<Command[]> {
     return baseCommands
   }
 
+  const overriddenDynamicSkills = uniqueDynamicSkills.map(command =>
+    applySkillModeOverrideToCommand(command, skillModeOverrides?.[command.name]),
+  )
+
   // Insert dynamic skills after plugin skills but before built-in commands
   const builtInNames = new Set(COMMANDS().map(c => c.name))
   const insertIndex = baseCommands.findIndex(c => builtInNames.has(c.name))
 
   if (insertIndex === -1) {
-    return [...baseCommands, ...uniqueDynamicSkills]
+    return [...baseCommands, ...overriddenDynamicSkills]
   }
 
   return [
     ...baseCommands.slice(0, insertIndex),
-    ...uniqueDynamicSkills,
+    ...overriddenDynamicSkills,
     ...baseCommands.slice(insertIndex),
   ]
 }
