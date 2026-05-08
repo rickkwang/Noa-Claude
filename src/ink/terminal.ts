@@ -217,16 +217,9 @@ export function writeDiffToTerminal(
         }
         break
       case 'clearTerminal':
-        if (patch.preserveScrollback) {
-          // Default mode: clear viewport only, keep scrollback. This lets
-          // the next full-render frame write from (0,0) and the terminal
-          // scrolls naturally to the bottom of the new content — matching
-          // the pre-command viewport position. ERASE_SCROLLBACK would wipe
-          // the transcript history and leave the viewport at the top.
-          buffer += ERASE_SCREEN + CURSOR_HOME
-        } else {
-          buffer += getClearTerminalSequence()
-        }
+        buffer += patch.preserveScrollback
+          ? ERASE_SCREEN + CURSOR_HOME
+          : getClearTerminalSequence()
         break
       case 'cursorHide':
         buffer += HIDE_CURSOR

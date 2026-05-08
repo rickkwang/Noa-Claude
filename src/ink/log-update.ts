@@ -134,14 +134,11 @@ export class LogUpdate {
     const startTime = performance.now()
     const stylePool = this.options.stylePool
 
-    // Since we assume the cursor is at the bottom on the screen, we only need
-    // to clear when the viewport gets shorter (i.e. the cursor position drifts)
-    // or when it gets thinner (and text wraps). We _could_ figure out how to
-    // not reset here but that would involve predicting the current layout
-    // _after_ the viewport change which means calcuating text wrapping.
-    // Resizing is a rare enough event that it's not practically a big issue.
+    // Resize changes what part of the logical screen is visible. Even when the
+    // terminal gets taller, newly visible rows are not "new output"; rendering
+    // them through the growth path would emit LF and duplicate history.
     if (
-      next.viewport.height < prev.viewport.height ||
+      next.viewport.height !== prev.viewport.height ||
       (prev.viewport.width !== 0 && next.viewport.width !== prev.viewport.width)
     ) {
       return fullResetSequence_CAUSES_FLICKER(next, 'resize', stylePool, altScreen)
@@ -517,22 +514,9 @@ function fullResetSequence_CAUSES_FLICKER(
 ): Diff {
   // After clearTerminal, cursor is at (0, 0)
   const screen = new VirtualScreen({ x: 0, y: 0 }, frame.viewport.width)
-  if (altScreen) {
-    renderFrame(screen, frame, stylePool)
-  } else {
-    const viewportStart = Math.max(0, frame.screen.height - frame.viewport.height)
-    renderFrameSlice(
-      screen,
-      frame,
-      viewportStart,
-      frame.screen.height,
-      stylePool,
-      true,
-    )
-    restoreViewportCursor(screen, frame, viewportStart)
-  }
+  renderFrame(screen, frame, stylePool)
   return [
-    { type: 'clearTerminal', reason, preserveScrollback: !altScreen, debug },
+    { type: 'clearTerminal', reason, preserveScrollback: false, debug },
     ...screen.diff,
   ]
 }
@@ -555,7 +539,6 @@ function renderFrameSlice(
   startY: number,
   endY: number,
   stylePool: StylePool,
-  normalizeY = false,
 ): VirtualScreen {
   let currentStyleId = stylePool.none
   let currentHyperlink: Hyperlink = undefined
@@ -567,7 +550,7 @@ function renderFrameSlice(
 
   let index = startY * screenWidth
   for (let y = startY; y < endY; y += 1) {
-    const renderY = normalizeY ? y - startY : y
+    const renderY = y
     // Advance cursor to this row using LF (not CSI CUD / cursor-down).
     // CSI CUD stops at the viewport bottom margin and cannot scroll,
     // but LF scrolls the viewport to create new lines. Without this,
@@ -647,40 +630,6 @@ function renderFrameSlice(
   transitionHyperlink(screen.diff, currentHyperlink, undefined)
 
   return screen
-}
-
-function restoreViewportCursor(
-  screen: VirtualScreen,
-  frame: Frame,
-  viewportStart: number,
-): void {
-  const targetY = Math.max(0, frame.cursor.y - viewportStart)
-  const targetX = frame.cursor.x
-
-  if (targetY >= screen.cursor.y) {
-    screen.txn(prev => {
-      const rowsToCreate = targetY - prev.y
-      if (rowsToCreate > 0) {
-        const patches: Diff = new Array<Diff[number]>(1 + rowsToCreate)
-        patches[0] = CARRIAGE_RETURN
-        for (let i = 0; i < rowsToCreate; i++) {
-          patches[1 + i] = NEWLINE
-        }
-        patches.push({ type: 'cursorMove', x: targetX, y: 0 })
-        return [patches, { dx: targetX - prev.x, dy: rowsToCreate }]
-      }
-      if (prev.x !== targetX) {
-        return [
-          [CARRIAGE_RETURN, { type: 'cursorMove', x: targetX, y: 0 }],
-          { dx: targetX - prev.x, dy: 0 },
-        ]
-      }
-      return [[], { dx: 0, dy: 0 }]
-    })
-    return
-  }
-
-  moveCursorTo(screen, targetX, targetY)
 }
 
 type Delta = { dx: number; dy: number }
