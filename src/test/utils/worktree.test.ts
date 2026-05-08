@@ -37,19 +37,28 @@ async function createRepoWithRemote(): Promise<{
   repo: string
   remote: string
 }> {
+  return createRepoWithRemoteBranch('main')
+}
+
+async function createRepoWithRemoteBranch(defaultBranch: string): Promise<{
+  root: string
+  repo: string
+  remote: string
+}> {
   const root = await mkdtemp(join(tmpdir(), 'noa-worktree-'))
   const repo = join(root, 'repo')
   const remote = join(root, 'remote.git')
 
   git(root, ['init', '--bare', remote])
-  git(root, ['init', '-b', 'main', repo])
+  git(root, ['init', '-b', defaultBranch, repo])
   git(repo, ['config', 'user.email', 'test@example.com'])
   git(repo, ['config', 'user.name', 'Test User'])
   await writeFile(join(repo, 'file.txt'), 'first\n')
   git(repo, ['add', 'file.txt'])
   git(repo, ['commit', '-m', 'first'])
   git(repo, ['remote', 'add', 'origin', remote])
-  git(repo, ['push', '-u', 'origin', 'main'])
+  git(repo, ['push', '-u', 'origin', defaultBranch])
+  git(remote, ['symbolic-ref', 'HEAD', `refs/heads/${defaultBranch}`])
 
   return { root, repo, remote }
 }
@@ -95,6 +104,28 @@ describe('worktree creation', () => {
       expect(created.existed).toBe(false)
       expect(created.headCommit).toBe(localHead)
       expect(worktreeHead).toBe(localHead)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test('fresh mode resolves non-main remote default branches without origin/HEAD', async () => {
+    const { root, repo } = await createRepoWithRemoteBranch('trunk')
+
+    try {
+      await writeFile(join(repo, 'file.txt'), 'second\n')
+      git(repo, ['commit', '-am', 'second'])
+      const localHead = git(repo, ['rev-parse', 'HEAD'])
+      const remoteHead = git(repo, ['rev-parse', 'origin/trunk'])
+      git(repo, ['update-ref', '-d', 'refs/remotes/origin/HEAD'])
+
+      const created = await getOrCreateWorktree(repo, 'trunk-default-test')
+      const worktreeHead = git(created.worktreePath, ['rev-parse', 'HEAD'])
+
+      expect(created.existed).toBe(false)
+      expect(created.headCommit).toBe(remoteHead)
+      expect(worktreeHead).toBe(remoteHead)
+      expect(worktreeHead).not.toBe(localHead)
     } finally {
       await rm(root, { recursive: true, force: true })
     }

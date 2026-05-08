@@ -451,6 +451,13 @@ export const SettingsSchema = lazySchema(() =>
         .describe('Custom commands to run before/after tool executions'),
       worktree: z
         .object({
+          baseRef: z
+            .enum(['fresh', 'head'])
+            .optional()
+            .describe(
+              'Base ref for new worktrees. "fresh" starts from origin/<default branch> so unpushed local commits are excluded. ' +
+                '"head" preserves the current behavior and starts from local HEAD.',
+            ),
           symlinkDirectories: z
             .array(z.string())
             .optional()

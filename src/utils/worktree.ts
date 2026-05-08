@@ -197,6 +197,8 @@ type WorktreeCreateResult =
       existed: false
     }
 
+type WorktreeBaseRef = 'fresh' | 'head'
+
 // Env vars to prevent git/SSH from prompting for credentials (which hangs the CLI).
 // GIT_TERMINAL_PROMPT=0 prevents git from opening /dev/tty for credential prompts.
 // GIT_ASKPASS='' disables askpass GUI programs.
@@ -204,6 +206,67 @@ type WorktreeCreateResult =
 const GIT_NO_PROMPT_ENV = {
   GIT_TERMINAL_PROMPT: '0',
   GIT_ASKPASS: '',
+}
+
+function getConfiguredWorktreeBaseRef(): WorktreeBaseRef {
+  return getInitialSettings().worktree?.baseRef ?? 'fresh'
+}
+
+async function resolveFreshWorktreeBaseBranch(repoRoot: string): Promise<string> {
+  const fetchEnv = { ...process.env, ...GIT_NO_PROMPT_ENV }
+  const { code: remoteCode } = await execFileNoThrowWithCwd(
+    gitExe(),
+    ['remote', 'get-url', 'origin'],
+    { cwd: repoRoot },
+  )
+  if (remoteCode !== 0) {
+    throw new Error(
+      'Cannot create a fresh worktree: repository has no remote named "origin". ' +
+        'Configure worktree.baseRef to "head" to base new worktrees on local HEAD instead.',
+    )
+  }
+
+  const { stdout: symrefOut, code: symrefCode } = await execFileNoThrowWithCwd(
+    gitExe(),
+    ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'],
+    { cwd: repoRoot },
+  )
+  if (symrefCode === 0) {
+    const symref = symrefOut.trim()
+    if (symref.startsWith('origin/')) {
+      return symref
+    }
+  }
+
+  const { stdout: remoteShowOut, code: remoteShowCode } =
+    await execFileNoThrowWithCwd(gitExe(), ['remote', 'show', 'origin'], {
+      cwd: repoRoot,
+      stdin: 'ignore',
+      env: fetchEnv,
+    })
+  if (remoteShowCode === 0) {
+    const match = remoteShowOut.match(/HEAD branch: (\S+)/)
+    if (match?.[1]) {
+      return `origin/${match[1]}`
+    }
+  }
+
+  for (const candidate of ['main', 'staging', 'master']) {
+    const { code } = await execFileNoThrowWithCwd(
+      gitExe(),
+      ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${candidate}`],
+      { cwd: repoRoot },
+    )
+    if (code === 0) {
+      return `origin/${candidate}`
+    }
+  }
+
+  throw new Error(
+    'Cannot create a fresh worktree: could not determine the default branch for "origin". ' +
+      'Ensure origin/HEAD is configured, that the remote reports a HEAD branch, or that a common default branch like origin/main, origin/staging, or origin/master exists, ' +
+      'or configure worktree.baseRef to "head".',
+  )
 }
 
 function pathExists(path: string): boolean {
@@ -300,7 +363,10 @@ export async function getOrCreateWorktree(
     }
     baseBranch = 'FETCH_HEAD'
   } else {
-    baseBranch = 'HEAD'
+    baseBranch =
+      getConfiguredWorktreeBaseRef() === 'head'
+        ? 'HEAD'
+        : await resolveFreshWorktreeBaseBranch(repoRoot)
   }
 
   if (!baseSha) {
