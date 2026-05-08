@@ -14,6 +14,8 @@ export type OutputStyleConfig = {
   description: string
   prompt: string
   source: SettingSource | 'built-in' | 'plugin'
+  // Optional compatibility flag for custom output styles. When false, only
+  // style/workflow guidance is omitted; core execution guards still apply.
   keepCodingInstructions?: boolean
   /**
    * If true, this output style will be automatically applied when the plugin is enabled.
