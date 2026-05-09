@@ -163,7 +163,7 @@ export const PROVIDER_TYPE_DEFAULTS: Record<ProviderType, { baseUrl?: string; mo
     model: 'deepseek-chat',
   },
   kimi: {
-    baseUrl: 'https://api.kimi.com/coding',
+    baseUrl: 'https://api.kimi.com/coding/v1',
     model: 'kimi-for-coding',
   },
   moonshot: {
