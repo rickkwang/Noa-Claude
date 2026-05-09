@@ -13,6 +13,7 @@ import type { AgentDefinitionsResult } from '../tools/AgentTool/loadAgentsDir.js
 import { getAgentDescriptionsTotalTokens, AGENT_DESCRIPTIONS_THRESHOLD } from './statusNoticeHelpers.js';
 import { isSupportedJetBrainsTerminal, toIDEDisplayName, getTerminalIdeType } from './ide.js';
 import { isJetBrainsPluginInstalledCachedSync } from './jetbrains.js';
+import { getFullscreenNoticeTrigger } from '../commands/tui/tui.js';
 
 // Types
 export type StatusNoticeType = 'warning' | 'info';
@@ -189,8 +190,40 @@ const jetbrainsPluginNotice: StatusNoticeDefinition = {
   }
 };
 
+let lastRenderedFullscreenNoticeTrigger = 0
+let pendingFullscreenNoticeTrigger = 0
+
+const fullscreenRenderingNotice: StatusNoticeDefinition = {
+  id: 'fullscreen-rendering',
+  type: 'info',
+  isActive: () => {
+    const trigger = getFullscreenNoticeTrigger()
+    if (trigger <= lastRenderedFullscreenNoticeTrigger) return false
+    pendingFullscreenNoticeTrigger = trigger
+    return true
+  },
+  render: () => {
+    if (pendingFullscreenNoticeTrigger > lastRenderedFullscreenNoticeTrigger) {
+      lastRenderedFullscreenNoticeTrigger = pendingFullscreenNoticeTrigger
+    }
+    return <Box flexDirection="column" marginLeft={1}>
+        <Box flexDirection="row" gap={1}>
+          <Text color="success">{figures.tick}</Text>
+          <Text color="success">
+            Using flicker-free rendering
+            <Text dimColor> · go back with /tui default</Text>
+          </Text>
+        </Box>
+        <Box flexDirection="column" marginLeft={3}>
+          <Text dimColor>· Click to move your cursor in the text input</Text>
+          <Text dimColor>· Click to expand collapsed tool results</Text>
+          <Text dimColor>· By default, text auto-copies when you select it (/config to change)</Text>
+        </Box>
+      </Box>;
+  }
+}
 // All notice definitions
-export const statusNoticeDefinitions: StatusNoticeDefinition[] = [largeMemoryFilesNotice, largeAgentDescriptionsNotice, claudeAiSubscriberExternalTokenNotice, apiKeyConflictNotice, bothAuthMethodsNotice, jetbrainsPluginNotice];
+export const statusNoticeDefinitions: StatusNoticeDefinition[] = [fullscreenRenderingNotice, largeMemoryFilesNotice, largeAgentDescriptionsNotice, claudeAiSubscriberExternalTokenNotice, apiKeyConflictNotice, bothAuthMethodsNotice, jetbrainsPluginNotice];
 
 // Helper functions for external use
 export function getActiveNotices(context: StatusNoticeContext): StatusNoticeDefinition[] {

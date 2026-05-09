@@ -3,6 +3,14 @@ import { getFullscreenMode, setFullscreenMode } from '../../utils/fullscreen.js'
 
 type LocalCommandResult = { type: 'skip' } | { type: 'compact'; compactionResult: unknown; displayText?: string } | { value: string }
 
+let lastExplicitTuiMode: 'default' | 'fullscreen' | undefined =
+  getFullscreenMode() === 'fullscreen' ? 'fullscreen' : 'default'
+let fullscreenNoticeTrigger = 0
+
+export function getFullscreenNoticeTrigger(): number {
+  return fullscreenNoticeTrigger
+}
+
 export const call = (args: string): LocalCommandResult => {
   const mode = getFullscreenMode()
   const arg = args.trim().toLowerCase()
@@ -15,11 +23,15 @@ export const call = (args: string): LocalCommandResult => {
 
   if (arg === 'default') {
     setFullscreenMode('default')
+    lastExplicitTuiMode = 'default'
     return { value: 'Terminal UI mode set to: default (applied to current session)' }
   }
 
   if (arg === 'fullscreen') {
+    const shouldShowHint = lastExplicitTuiMode !== 'fullscreen'
     setFullscreenMode('fullscreen')
+    lastExplicitTuiMode = 'fullscreen'
+    if (shouldShowHint) fullscreenNoticeTrigger += 1
     return { value: 'Terminal UI mode set to: fullscreen (applied to current session)' }
   }
 
