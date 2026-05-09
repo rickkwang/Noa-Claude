@@ -361,6 +361,8 @@ export function renderModelSetting(setting: ModelName | ModelAlias): string {
  */
 export function getPublicModelDisplayName(model: ModelName): string | null {
   switch (model) {
+    case 'kimi-for-coding':
+      return 'kimi-k2.6'
     case getModelStrings().opus47:
       return 'Opus 4.7'
     case getModelStrings().opus47 + '[1m]':
@@ -586,6 +588,9 @@ export function modelDisplayString(model: ModelSetting): string {
     return `Default (${getDefaultMainLoopModel()})`
   }
   const resolvedModel = parseUserSpecifiedModel(model)
+  if (resolvedModel === 'kimi-for-coding') {
+    return 'kimi-k2.6'
+  }
   return model === resolvedModel ? resolvedModel : `${model} (${resolvedModel})`
 }
 
@@ -637,6 +642,9 @@ export function getMarketingNameForModel(modelId: string | undefined): string | 
   }
   if (canonical.includes('claude-3-5-haiku')) {
     return 'Claude 3.5 Haiku'
+  }
+  if (canonical === 'kimi-for-coding') {
+    return 'kimi-k2.6'
   }
 
   return undefined

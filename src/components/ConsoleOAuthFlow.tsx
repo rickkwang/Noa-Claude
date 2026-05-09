@@ -13,6 +13,7 @@ import { OAuthService } from '../services/oauth/index.js';
 import { getOauthAccountInfo, validateForceLoginOrg } from '../utils/auth.js';
 import { logError } from '../utils/log.js';
 import { discoverProviderModelNames } from '../utils/model/openaiModelDiscovery.js';
+import { renderModelName } from '../utils/model/model.js';
 import {
   addProviderProfile,
   applyActiveProviderProfileEnv,
@@ -480,7 +481,7 @@ function ProviderSetupWizard({
   };
   const modelOptions = [
     ...discoveredModels.map(name => ({
-      label: <Text>{name}</Text>,
+      label: <Text>{renderModelName(name)}</Text>,
       value: name
     })),
     {

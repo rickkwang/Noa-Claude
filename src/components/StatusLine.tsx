@@ -143,6 +143,19 @@ function buildStatusLineCommandInput(permissionMode: PermissionMode, exceeds200k
     })
   };
 }
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function normalizeStatusLineText(text: string, modelId: string, displayName: string): string {
+  if (!modelId || modelId === displayName || !text.includes(modelId)) {
+    return text
+  }
+  const escapedId = escapeRegExp(modelId)
+  const tokenPattern = new RegExp(`(^|[^\\w-])(${escapedId})(?=$|[^\\w-])`, 'g')
+  return text.replace(tokenPattern, (_match, prefix: string) => `${prefix}${displayName}`)
+}
 type Props = {
   // messages stays behind a ref (read only in the debounced callback);
   // lastAssistantMessageId is the actual re-render trigger.
@@ -237,11 +250,17 @@ function StatusLineInner({
       const statusInput = buildStatusLineCommandInput(permissionModeRef.current, exceeds200kTokens, settingsRef.current, msgs, Array.from(addedDirsRef.current.keys()), mainLoopModelRef.current, vimModeRef.current, effortValueRef.current, thinkingEnabledRef.current);
       const text = await executeStatusLineCommand(statusInput, controller.signal, undefined, logResult);
       if (!controller.signal.aborted) {
+        const runtimeModel = statusInput.model.id
+        const displayName = statusInput.model.display_name
+        const normalizedText =
+          text && runtimeModel
+            ? normalizeStatusLineText(text, runtimeModel, displayName)
+            : text
         setAppState(prev => {
-          if (prev.statusLineText === text) return prev;
+          if (prev.statusLineText === normalizedText) return prev;
           return {
             ...prev,
-            statusLineText: text
+            statusLineText: normalizedText
           };
         });
       }

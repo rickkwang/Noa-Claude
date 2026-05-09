@@ -7,6 +7,7 @@ import React from 'react'
 import { Box, Text } from '../../ink.js'
 import { useAppState } from '../../state/AppState.js'
 import type { AppState } from '../../state/AppStateStore.js'
+import { renderModelName } from '../../utils/model/model.js'
 import { getAPIProvider } from '../../utils/model/providers.js'
 
 declare const MACRO: { VERSION: string; DISPLAY_VERSION?: string }
@@ -76,14 +77,14 @@ function detectProvider() {
 
   switch (provider) {
     case 'bedrock':
-      return { name: 'Amazon Bedrock', model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6', baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://bedrock.amazonaws.com', isLocal: false }
+      return { name: 'Amazon Bedrock', model: renderModelName(process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'), baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://bedrock.amazonaws.com', isLocal: false }
     case 'vertex':
-      return { name: 'Google Vertex AI', model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6', baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://vertexai.googleapis.com', isLocal: false }
+      return { name: 'Google Vertex AI', model: renderModelName(process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'), baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://vertexai.googleapis.com', isLocal: false }
     case 'foundry':
-      return { name: 'Microsoft Foundry', model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6', baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://foundry.ai.azure.com', isLocal: false }
+      return { name: 'Microsoft Foundry', model: renderModelName(process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'), baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://foundry.ai.azure.com', isLocal: false }
     case 'openaiCompatible': {
       const baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
-      const rawModel = process.env.OPENAI_MODEL || 'gpt-4o'
+      const rawModel = renderModelName(process.env.OPENAI_MODEL || 'gpt-4o')
       const isLocal = isLocalUrl(baseUrl)
       let name = 'OpenAI Compatible'
       if (/deepseek/i.test(baseUrl)) name = 'DeepSeek'
@@ -96,7 +97,7 @@ function detectProvider() {
     }
     case 'firstParty':
     default: {
-      const modelSetting = process.env.ANTHROPIC_MODEL || process.env.CLAUDE_MODEL || 'claude-sonnet-4-6'
+      const modelSetting = renderModelName(process.env.ANTHROPIC_MODEL || process.env.CLAUDE_MODEL || 'claude-sonnet-4-6')
       return { name: 'Anthropic', model: modelSetting, baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com', isLocal: false }
     }
   }

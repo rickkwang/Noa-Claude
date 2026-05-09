@@ -6,8 +6,10 @@ import { Box } from '../ink.js';
 import type { AgentDefinitionsResult } from '../tools/AgentTool/loadAgentsDir.js';
 import { getMemoryFiles } from '../utils/claudemd.js';
 import { getGlobalConfig } from '../utils/config.js';
+import { getFullscreenNoticeTrigger, subscribeToFullscreenNoticeTrigger } from '../commands/tui/tui.js';
 import { getActiveNotices, type StatusNoticeContext } from '../utils/statusNoticeDefinitions.js';
 import { useSettingsChange } from '../hooks/useSettingsChange.js';
+import { useSyncExternalStore } from 'react';
 type Props = {
   agentDefinitions?: AgentDefinitionsResult;
 };
@@ -26,6 +28,7 @@ export function StatusNotices(t0) {
   useSettingsChange(() => {
     setSettingsVersion(v => v + 1);
   });
+  useSyncExternalStore(subscribeToFullscreenNoticeTrigger, getFullscreenNoticeTrigger);
   const t1 = getGlobalConfig();
   let t2;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
