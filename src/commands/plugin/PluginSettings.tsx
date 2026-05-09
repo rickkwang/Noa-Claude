@@ -8,6 +8,7 @@ import { Byline } from '../../components/design-system/Byline.js';
 import { Pane } from '../../components/design-system/Pane.js';
 import { Tab, Tabs } from '../../components/design-system/Tabs.js';
 import { useExitOnCtrlCDWithKeybindings } from '../../hooks/useExitOnCtrlCDWithKeybindings.js';
+import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { Box, Text } from '../../ink.js';
 import { useKeybinding, useKeybindings } from '../../keybindings/useKeybinding.js';
 import { useAppState, useSetAppState } from '../../state/AppState.js';
@@ -730,7 +731,7 @@ function getInitialTab(viewState: ViewState): TabId {
   return 'discover';
 }
 export function PluginSettings(t0) {
-  const $ = _c(75);
+  const $ = _c(76);
   const {
     onComplete,
     args,
@@ -768,6 +769,8 @@ export function PluginSettings(t0) {
   const pluginErrorCount = useAppState(_temp0);
   const errorsTabTitle = pluginErrorCount > 0 ? `Errors (${pluginErrorCount})` : "Errors";
   const exitState = useExitOnCtrlCDWithKeybindings();
+  const { rows: terminalRows } = useTerminalSize();
+  const tabContentHeight = Math.max(10, terminalRows - 8);
   const cliMode = parsedCommand.type === "marketplace" && parsedCommand.action === "add" && parsedCommand.target !== undefined;
   let t3;
   if ($[5] !== setAppState) {
@@ -1040,8 +1043,8 @@ export function PluginSettings(t0) {
     t26 = $[66];
   }
   let t27;
-  if ($[67] !== activeTab || $[68] !== childSearchActive || $[69] !== t16 || $[70] !== t17 || $[71] !== t21 || $[72] !== t24 || $[73] !== t26) {
-    t27 = <Pane color="suggestion"><Tabs title="Plugins" selectedTab={activeTab} onTabChange={handleTabChange} color="suggestion" disableNavigation={childSearchActive} banner={t16}>{t17}{t21}{t24}{t26}</Tabs></Pane>;
+  if ($[67] !== activeTab || $[68] !== childSearchActive || $[69] !== t16 || $[70] !== t17 || $[71] !== t21 || $[72] !== t24 || $[73] !== t26 || $[75] !== tabContentHeight) {
+    t27 = <Pane color="suggestion"><Tabs title="Plugins" selectedTab={activeTab} onTabChange={handleTabChange} color="suggestion" disableNavigation={childSearchActive} banner={t16} contentHeight={tabContentHeight}>{t17}{t21}{t24}{t26}</Tabs></Pane>;
     $[67] = activeTab;
     $[68] = childSearchActive;
     $[69] = t16;
@@ -1050,6 +1053,7 @@ export function PluginSettings(t0) {
     $[72] = t24;
     $[73] = t26;
     $[74] = t27;
+    $[75] = tabContentHeight;
   } else {
     t27 = $[74];
   }

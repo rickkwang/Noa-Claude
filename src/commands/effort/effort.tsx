@@ -9,6 +9,8 @@ import { useAppState, useSetAppState } from '../../state/AppState.js';
 import type { LocalJSXCommandOnDone } from '../../types/command.js';
 import { type EffortValue, getDisplayedEffortLevel, getEffortEnvOverride, getEffortValueDescription, isEffortLevel, modelSupportsEffort, modelSupportsMaxEffort, modelSupportsXhighEffort, toPersistableEffort } from '../../utils/effort.js';
 import { getMainLoopModel } from '../../utils/model/model.js';
+import { get3PModelCapabilityOverride } from '../../utils/model/modelSupportOverrides.js';
+import { getAPIProvider, isFirstPartyAnthropicBaseUrl } from '../../utils/model/providers.js';
 import { updateSettingsForSource } from '../../utils/settings/settings.js';
 import { Box, Text, useInput } from '../../ink.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
@@ -74,13 +76,21 @@ function setEffortValue(effortValue: EffortValue, model?: string): EffortCommand
   }
   const description = getEffortValueDescription(effortValue);
   const suffix = persistable !== undefined ? '' : ' (this session only)';
+  const providerWarning = model === undefined || isEffortSentToProvider(model) ? '' : '\nNote: current provider may not support the effort parameter';
   return {
-    message: `Set effort level to ${effortValue}${suffix}: ${description}`,
+    message: `Set effort level to ${effortValue}${suffix}: ${description}${providerWarning}`,
     effortUpdate: {
       value: effortValue
     }
   };
 }
+function isEffortSentToProvider(model: string): boolean {
+  const provider = getAPIProvider();
+  if (provider === 'foundry') return true;
+  if (provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()) return true;
+  return get3PModelCapabilityOverride(model, 'effort') === true;
+}
+
 export function showCurrentEffort(appStateEffort: EffortValue | undefined, model: string): EffortCommandResult {
   const envOverride = getEffortEnvOverride();
   const effectiveValue = envOverride === null ? undefined : envOverride ?? appStateEffort;

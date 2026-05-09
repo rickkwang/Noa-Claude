@@ -165,6 +165,7 @@ import { getMaxThinkingTokensForModel } from 'src/utils/context.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { logForDiagnosticsNoPII } from 'src/utils/diagLogs.js'
 import { type EffortValue, modelSupportsEffort } from 'src/utils/effort.js'
+import { get3PModelCapabilityOverride } from 'src/utils/model/modelSupportOverrides.js'
 import {
   isFastModeAvailable,
   isFastModeCooldown,
@@ -516,9 +517,17 @@ function configureEffortParams(
       betas.push(EFFORT_BETA_HEADER)
     }
   } else if (typeof effortValue === 'string') {
-    // Send string effort level as is
-    outputConfig.effort = effortValue
-    betas.push(EFFORT_BETA_HEADER)
+    const provider = getAPIProvider()
+    const directFirstParty =
+      provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()
+    if (
+      directFirstParty ||
+      provider === 'foundry' ||
+      get3PModelCapabilityOverride(model, 'effort') === true
+    ) {
+      outputConfig.effort = effortValue
+      betas.push(EFFORT_BETA_HEADER)
+    }
   } else if (process.env.USER_TYPE === 'ant') {
     // Numeric effort override - ant-only (uses anthropic_internal)
     const existingInternal =
