@@ -163,7 +163,7 @@ export const PROVIDER_TYPE_DEFAULTS: Record<ProviderType, { baseUrl?: string; mo
     model: 'deepseek-chat',
   },
   kimi: {
-    baseUrl: 'https://api.kimi.com/coding/v1',
+    baseUrl: 'https://api.kimi.com/coding',
     model: 'kimi-for-coding',
   },
   moonshot: {
@@ -172,7 +172,7 @@ export const PROVIDER_TYPE_DEFAULTS: Record<ProviderType, { baseUrl?: string; mo
   },
   minimax: {
     baseUrl: 'https://api.minimaxi.com/anthropic',
-    model: 'MiniMax-M2.5',
+    model: 'MiniMax-M2.7',
   },
   glm: {
     baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',

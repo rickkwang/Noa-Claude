@@ -178,7 +178,7 @@ const PLATFORM_PRESETS: PlatformPreset[] = [{
   type: 'minimax',
   profileName: 'MiniMax',
   baseUrl: 'https://api.minimaxi.com/anthropic',
-  model: 'MiniMax-M2.5'
+  model: 'MiniMax-M2.7'
 }, {
   value: 'glm',
   name: 'Z.AI GLM',
