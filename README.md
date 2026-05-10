@@ -100,21 +100,37 @@ Legacy `CLAUDE_CODE_*` names are still accepted for compatibility, but `NOA_CLAU
 | Provider | Environment | Enable |
 |----------|-------------|--------|
 | Anthropic (default) | `ANTHROPIC_API_KEY` | default |
-| OpenAI-compatible | `ANTHROPIC_BASE_URL` + `ANTHROPIC_API_KEY` | `CLAUDE_CODE_USE_OPENAI=1` |
-| AWS Bedrock | `ANTHROPIC_BASE_URL` + Bedrock credentials | `CLAUDE_CODE_USE_BEDROCK=1` |
-| Google Vertex | `ANTHROPIC_BASE_URL` + Vertex credentials | `CLAUDE_CODE_USE_VERTEX=1` |
-| Microsoft Foundry | `ANTHROPIC_BASE_URL` + Foundry credentials | `CLAUDE_CODE_USE_FOUNDRY=1` |
+| OpenAI-compatible | `OPENAI_BASE_URL` + `OPENAI_API_KEY` | `CLAUDE_CODE_USE_OPENAI=1` |
+| AWS Bedrock | `ANTHROPIC_BEDROCK_BASE_URL` + AWS credentials | `CLAUDE_CODE_USE_BEDROCK=1` |
+| Google Vertex | `ANTHROPIC_VERTEX_PROJECT_ID` + region vars | `CLAUDE_CODE_USE_VERTEX=1` |
+| Microsoft Foundry | `ANTHROPIC_FOUNDRY_RESOURCE` + `ANTHROPIC_FOUNDRY_API_KEY` | `CLAUDE_CODE_USE_FOUNDRY=1` |
 
-### OpenAI-Compatible Model Discovery
+### OpenAI-Compatible
 
-Enabled only when `CLAUDE_CODE_USE_OPENAI=1`. Discovery probes `GET /v1/models` and `GET /models` from `OPENAI_BASE_URL`. Azure endpoints include `api-key` and optional `OPENAI_API_VERSION`. If model listing fails on a local/Ollama-compatible endpoint, it falls back to `GET /api/tags`. Discovery failures do not block startup.
+- `OPENAI_BASE_URL` — API endpoint (default: `https://api.openai.com/v1`)
+- `OPENAI_API_KEY` — API key
+- `OPENAI_MODEL` — Model override (default: `gpt-4o`)
 
-### Gemini Auth Modes
+### AWS Bedrock
 
-- `GEMINI_AUTH_MODE=api-key|access-token|adc`
-- `api-key`: `GEMINI_API_KEY` (fallback `GOOGLE_API_KEY`)
-- `access-token`: `GEMINI_ACCESS_TOKEN`
-- `adc`: local ADC via `GOOGLE_APPLICATION_CREDENTIALS` or default gcloud ADC file
+- `ANTHROPIC_BEDROCK_BASE_URL` — Optional custom endpoint
+- `AWS_REGION` or `AWS_DEFAULT_REGION` — Region (default: `us-east-1`)
+- `AWS_BEARER_TOKEN_BEDROCK` — API key auth (bypasses AWS SDK auth)
+- `ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION` — Per-model region override for Haiku
+
+### Google Vertex
+
+- `ANTHROPIC_VERTEX_PROJECT_ID` — GCP project ID
+- `VERTEX_REGION_CLAUDE_*` — Per-model region (e.g., `VERTEX_REGION_CLAUDE_3_5_SONNET`)
+- `CLOUD_ML_REGION` — Default region fallback
+- Auth: GCP credentials via `GOOGLE_APPLICATION_CREDENTIALS` or ADC
+
+### Microsoft Foundry
+
+- `ANTHROPIC_FOUNDRY_RESOURCE` — Azure resource name (e.g., `my-resource`)
+- `ANTHROPIC_FOUNDRY_BASE_URL` — Optional full endpoint override
+- `ANTHROPIC_FOUNDRY_API_KEY` — API key auth
+- Auth without key: Azure AD via `DefaultAzureCredential` (env vars, managed identity, Azure CLI)
 
 ## Capability Highlights
 
