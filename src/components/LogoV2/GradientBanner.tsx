@@ -7,6 +7,7 @@ import React from 'react'
 import { Box, Text } from '../../ink.js'
 import { useAppState } from '../../state/AppState.js'
 import type { AppState } from '../../state/AppStateStore.js'
+import { getOriginalCwd } from '../../bootstrap/state.js'
 import { renderModelName } from '../../utils/model/model.js'
 import { getAPIProvider } from '../../utils/model/providers.js'
 
@@ -128,7 +129,12 @@ export function GradientBanner() {
   const provColor = p.isLocal ? GREEN_HEX : ACCENT_HEX
   const ep = p.baseUrl.length > 38 ? p.baseUrl.slice(0, 35) + '...' : p.baseUrl
   const statusColor = p.isLocal ? GREEN_HEX : ACCENT_HEX
-  const statusType = p.isLocal ? 'local' : 'cloud'
+  const statusType = p.isLocal ? 'local' : 'Directory:'
+  const cwd = getOriginalCwd()
+  const homeDir = process.env.HOME ?? ''
+  const cwdDisplay = homeDir && cwd.startsWith(homeDir)
+    ? '~' + cwd.slice(homeDir.length)
+    : cwd
 
   // Label width constants
   const LABEL_W = 11 // " Provider  " = 11 chars
@@ -141,18 +147,11 @@ export function GradientBanner() {
       <Box height={1} />
       {logoBottom}
 
-      {/* Tagline */}
-      <Text>
-        <Text color={ACCENT_HEX}>  ✦  </Text>
-        <Text color={CREAM_HEX}>Dream bigger. Think faster. Ship instantly.</Text>
-        <Text color={ACCENT_HEX}>  ✦</Text>
-      </Text>
-
       {/* Spacer */}
       <Text> </Text>
 
       {/* Top border */}
-      <Text color={BORDER_HEX}>╔{'═'.repeat(W - 2)}╗</Text>
+      <Text color={BORDER_HEX}>┌{'─'.repeat(W - 2)}┐</Text>
 
       {/* Provider row */}
       <Text>
@@ -182,25 +181,24 @@ export function GradientBanner() {
       </Text>
 
       {/* Divider */}
-      <Text color={BORDER_HEX}>╠{'═'.repeat(W - 2)}╣</Text>
+      <Text color={BORDER_HEX}>├{'─'.repeat(W - 2)}┤</Text>
 
       {/* Status row */}
       <Text>
         <Text color={BORDER_HEX}>│</Text>
-        <Text color={statusColor}> ● </Text>
-        <Text color={DIMCOL_HEX}>{statusType}    Ready — type </Text>
-        <Text color={ACCENT_HEX}>/help</Text>
-        <Text color={DIMCOL_HEX}> to begin</Text>
-        <Text>{' '.repeat(Math.max(0, CONTENT_W - 39))}</Text>
+        <Text color={statusColor}> • </Text>
+        <Text color={DIMCOL_HEX}>{statusType}  </Text>
+        <Text>{cwdDisplay}</Text>
+        <Text>{' '.repeat(Math.max(0, CONTENT_W - 1 - 1 - statusType.length - 2 - cwdDisplay.length - 1))}</Text>
         <Text color={BORDER_HEX}>│</Text>
       </Text>
 
       {/* Bottom border */}
-      <Text color={BORDER_HEX}>╚{'═'.repeat(W - 2)}╝</Text>
+      <Text color={BORDER_HEX}>└{'─'.repeat(W - 2)}┘</Text>
 
       {/* Version */}
       <Text>
-        <Text dimColor>  Noa Claude </Text>
+        <Text dimColor>  >_ Noa Claude </Text>
         <Text color={ACCENT_HEX}>v{MACRO.DISPLAY_VERSION ?? MACRO.VERSION}</Text>
       </Text>
     </Box>
