@@ -12,13 +12,15 @@ type Props = {
   text: string;
   useBriefLayout?: boolean;
   timestamp?: string;
+  showPointer?: boolean;
 };
 export function HighlightedThinkingText(t0) {
-  const $ = _c(31);
+  const $ = _c(32);
   const {
     text,
     useBriefLayout,
-    timestamp
+    timestamp,
+    showPointer = true
   } = t0;
   const isQueued = useQueuedMessage()?.isQueued ?? false;
   const isSelected = useContext(MessageActionsSelectedContext);
@@ -82,11 +84,23 @@ export function HighlightedThinkingText(t0) {
   }
   let parts;
   let t1;
-  if ($[15] !== pointerColor || $[16] !== text) {
+  if ($[15] !== pointerColor || $[16] !== text || $[31] !== showPointer) {
     t1 = Symbol.for("react.early_return_sentinel");
     bb0: {
       const triggers = isUltrathinkEnabled() ? findThinkingTriggerPositions(text) : [];
       if (triggers.length === 0) {
+        if (!showPointer) {
+          let t2;
+          if ($[19] !== text) {
+            t2 = <Text color="text">{text}</Text>;
+            $[19] = text;
+            $[20] = t2;
+          } else {
+            t2 = $[20];
+          }
+          t1 = t2;
+          break bb0;
+        }
         let t2;
         if ($[19] !== pointerColor) {
           t2 = <Text color={pointerColor}>{figures.pointer} </Text>;
@@ -132,6 +146,7 @@ export function HighlightedThinkingText(t0) {
     }
     $[15] = pointerColor;
     $[16] = text;
+    $[31] = showPointer;
     $[17] = parts;
     $[18] = t1;
   } else {
@@ -140,6 +155,9 @@ export function HighlightedThinkingText(t0) {
   }
   if (t1 !== Symbol.for("react.early_return_sentinel")) {
     return t1;
+  }
+  if (!showPointer) {
+    return <Text>{parts}</Text>;
   }
   let t2;
   if ($[26] !== pointerColor) {

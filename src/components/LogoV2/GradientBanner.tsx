@@ -198,7 +198,7 @@ export function GradientBanner() {
 
       {/* Version */}
       <Text>
-        <Text dimColor>  >_ Noa Claude </Text>
+        <Text dimColor>{'  >_ Noa Claude '}</Text>
         <Text color={ACCENT_HEX}>v{MACRO.DISPLAY_VERSION ?? MACRO.VERSION}</Text>
       </Text>
     </Box>
