@@ -91,9 +91,10 @@ export function UserPromptMessage({
     );
   }
   const safeColumns = Math.max(0, columns);
-  // Keep extra slack to avoid right-corner wrapping on some terminals during
-  // live reflow (e.g. requesting/queueing states).
-  const frameColumns = Math.max(0, safeColumns - (queuedMessage?.paddingWidth ?? 0) - 3);
+  // Match the actual drawable width inside the queued-message container.
+  // Over-reserving columns here makes the frame visibly shorter than the
+  // terminal width, especially in wide windows.
+  const frameColumns = Math.max(0, safeColumns - (queuedMessage?.paddingWidth ?? 0));
   const displayName = getGlobalConfig().oauthAccount?.displayName?.trim() || 'You';
   const maxHeaderNameWidth = Math.max(0, frameColumns - stringWidth('╭─ ╮'));
   const headerName = truncateToWidth(displayName, maxHeaderNameWidth);
