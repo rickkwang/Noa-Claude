@@ -4,6 +4,83 @@ A local-first coding agent for real software work: long sessions, resumable fork
 
 Noa Claude is built from publicly exposed Claude Code source and extended into a more productized open-source fork. The focus is not just parity with upstream, but a dependable daily driver for people who want local control, provider flexibility, and a runtime that takes continuity and verification seriously.
 
+## Project Statistics
+
+| Metric | Value |
+|--------|-------|
+| Version | 1.0.9 |
+| TypeScript files | 2,051 |
+| Total lines of code | ~530,164 |
+| Dependencies | 65 |
+| Built-in commands | 114 |
+| Built-in tools | 57 |
+| React components | 147 |
+| React hooks | 86 |
+
+## Architecture
+
+```
+Entry → QueryEngine → Agent Loop → Tools / Services / State
+```
+
+**Core subsystems:**
+
+| Subsystem | Files/Dirs | Purpose |
+|-----------|------------|---------|
+| `commands/` | 114 files | Slash commands (git, GitHub, session, plugin, etc.) |
+| `tools/` | 57 dirs | Tool implementations (file, shell, web, tasks, MCP) |
+| `components/` | 147 files | React TUI components |
+| `hooks/` | 86 files | React state and side-effect hooks |
+| `bridge/` | 31 files | Remote execution and session bridging |
+| `services/` | 25 dirs | Backend services (API, MCP, OAuth, LSP, analytics) |
+| `utils/` | 31 dirs + 320+ files | Shared utilities (git, auth, file, session) |
+| `state/` | 7 files | Application state management |
+| `skills/` | bundled/ | Skill system with built-in skills |
+
+**Largest source files:**
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `src/main.tsx` | 4,820 | Main application entry |
+| `src/query.ts` | 1,822 | Query processing |
+| `src/QueryEngine.ts` | 1,322 | Agent query engine |
+| `src/hooks/useTypeahead.tsx` | ~1,400 | Autocomplete hook |
+| `src/hooks/useReplBridge.tsx` | ~720 | Bridge connection hook |
+
+## Project Directory Structure
+
+```
+Noa-Claude/
+├── bin/                    # CLI entry point
+│   ├── noa.js
+│   └── claude-agent-import.js
+├── scripts/                # Build & maintenance scripts
+│   ├── smoke-engineering.mjs
+│   ├── check-runtime-health.mjs
+│   ├── pr-intent-scan.mjs
+│   └── ...
+├── docs/                   # Documentation
+│   ├── release-notes.md
+│   ├── operating-guide.md
+│   └── product-governance.md
+├── src/                    # Source code (~530k lines)
+│   ├── commands/           # 114 slash commands
+│   ├── tools/              # 57 tool implementations
+│   ├── components/         # 147 React components
+│   ├── hooks/             # 86 React hooks
+│   ├── bridge/            # 31 files (remote execution)
+│   ├── services/          # 25 service modules
+│   ├── utils/             # 320+ utility functions
+│   ├── state/             # Application state (7 files)
+│   ├── skills/bundled/    # Built-in skills
+│   ├── cli/               # CLI transport layer
+│   ├── ink/               # UI theme system
+│   └── [core files]       # main.tsx, query.ts, etc.
+├── dist/                   # Build output
+├── vendor/                 # Third-party libraries
+└── node_modules/           # Dependencies
+```
+
 ## Why Noa Claude
 
 - **Local-first by default** — Runtime guidance, help links, and operational docs resolve to repository-local or project-owned surfaces instead of upstream-owned endpoints.
@@ -64,7 +141,6 @@ Then open a project directory and ask for real work: fix a bug, explain a subsys
 /status    - Inspect current runtime state, MCP, plugins, and agents
 /config    - View and edit settings
 /model     - Switch model or list available models
-/provider  - Manage named provider configurations
 /login     - Authenticate with your provider
 /logout    - Clear stored credentials
 /doctor    - Diagnose installation health and configuration
@@ -143,7 +219,7 @@ Legacy `CLAUDE_CODE_*` names are still accepted for compatibility, but `NOA_CLAU
 - **Auto-fix Hook** — After file edits, automatically run configurable lint/test commands.
 - **Cache-probe** — `/cache-probe` command to diagnose API cache hit rate by comparing `cached_tokens` across identical requests.
 - **Wiki Commands** — `/wiki init`, `/wiki status`, `/wiki ingest` for project documentation management.
-- **Provider Profile Manager** — `/provider` command to create and manage named provider configurations.
+- **Provider Profile Manager** — Provider configurations managed via `settings.json` (`agentModels`, `agentRouting`).
 - **PR Intent Scan** — CI checks PR added lines for suspicious links/download patterns and fails on high-severity findings.
 - **SSRF Protection** — URL resolution validated against IPv4/IPv6 private ranges before outbound requests.
 - **TUI Mode** — `/tui` switches between default and fullscreen (no-flicker) terminal UI.
