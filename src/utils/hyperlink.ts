@@ -43,10 +43,12 @@ export function createHyperlink(
     return url
   }
 
-  // Apply basic ANSI blue color - wrap-ansi preserves this across line breaks
-  // RGB colors (like theme colors) are NOT preserved by wrap-ansi with OSC 8
+  // Apply basic ANSI cyan color - wrap-ansi preserves this across line breaks.
+  // RGB colors (like theme colors) are NOT preserved by wrap-ansi with OSC 8,
+  // so we're stuck with basic ANSI; cyan stays legible on dark backgrounds
+  // where dim blue (index 4) becomes nearly invisible.
   const displayText = content ?? url
-  const coloredText = chalk.blue(displayText)
+  const coloredText = chalk.cyan(displayText)
   // Embed id= so wrapped rows of a long URL stay grouped as one clickable link.
   // Open: \e]8;id=<id>;<url>\a  Close: \e]8;;\a (empty params terminates link)
   const idParam = `id=${hyperlinkId(url)}`

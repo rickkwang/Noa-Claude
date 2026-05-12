@@ -254,9 +254,21 @@ function PromptInput({
   // Track the last input value set via internal handlers so we can detect
   // external input changes (e.g. speech-to-text injection) and move cursor to end.
   const lastInternalInputRef = React.useRef(input);
+  // Mirror of cursorOffset for synchronous reads inside insertTextAtCursor.
+  // Multi-image paste calls onImagePaste in a loop within a single tick; state
+  // updates haven't flushed, so closed-over cursorOffset is stale and each
+  // insert overwrites the previous one.
+  const cursorOffsetRef = React.useRef(cursorOffset);
+  cursorOffsetRef.current = cursorOffset;
+  // Same reason for pastedContents — pushToBuffer snapshots it for undo, and
+  // a multi-paste loop must see the freshly-added entries from earlier
+  // iterations or the undo history collapses to the first image only.
+  const pastedContentsRef = React.useRef(pastedContents);
+  pastedContentsRef.current = pastedContents;
   if (input !== lastInternalInputRef.current) {
     // Input changed externally (not through any internal handler) — move cursor to end
     setCursorOffset(input.length);
+    cursorOffsetRef.current = input.length;
     lastInternalInputRef.current = input;
   }
   // Wrap onInputChange to track internal changes before they trigger re-render
@@ -1166,16 +1178,21 @@ function PromptInput({
     // Store image to disk in background
     void storeImage(newContent);
 
-    // Update UI
-    setPastedContents(prev => ({
-      ...prev,
-      [pasteId]: newContent
-    }));
+    // insertTextAtCursor captures pre-state for undo, so call it BEFORE
+    // committing pastedContents — iteration N's buffer entry then reflects
+    // the state after iteration N−1's commits but before N's. Also: the ref
+    // must be written synchronously here so a multi-image paste loop sees
+    // earlier iterations' entries; setPastedContents won't flush state until
+    // after the synchronous loop finishes.
+    //
     // Multi-image paste calls onImagePaste in a loop. If the ref is already
     // armed, the previous pill's lazy space fires now (before this pill)
     // rather than being lost.
     const prefix = pendingSpaceAfterPillRef.current ? ' ' : '';
     insertTextAtCursor(prefix + formatImageRef(pasteId));
+    const nextPasted = { ...pastedContentsRef.current, [pasteId]: newContent };
+    pastedContentsRef.current = nextPasted;
+    setPastedContents(nextPasted);
     pendingSpaceAfterPillRef.current = true;
   }
 
@@ -1242,11 +1259,19 @@ function PromptInput({
     return input;
   }, []);
   function insertTextAtCursor(text: string) {
+    // Read from refs, not closed-over state, so multiple synchronous calls in
+    // the same tick (e.g. multi-image paste loop) see each other's writes
+    // instead of overwriting the same stale baseline.
+    const curInput = lastInternalInputRef.current;
+    const curCursor = cursorOffsetRef.current;
+    const curPasted = pastedContentsRef.current;
     // Push current state to buffer before inserting
-    pushToBuffer(input, cursorOffset, pastedContents);
-    const newInput = input.slice(0, cursorOffset) + text + input.slice(cursorOffset);
+    pushToBuffer(curInput, curCursor, curPasted);
+    const newInput = curInput.slice(0, curCursor) + text + curInput.slice(curCursor);
+    const newCursor = curCursor + text.length;
+    cursorOffsetRef.current = newCursor;
     trackAndSetInput(newInput);
-    setCursorOffset(cursorOffset + text.length);
+    setCursorOffset(newCursor);
   }
   const doublePressEscFromEmpty = useDoublePress(() => {}, () => onShowMessageSelector());
 

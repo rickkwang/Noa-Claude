@@ -1,5 +1,6 @@
 // @ts-nocheck
 import chokidar, { type FSWatcher } from 'chokidar'
+import { realpathSync } from 'fs'
 import { stat } from 'fs/promises'
 import * as platformPath from 'path'
 import { getIsRemoteMode } from '../../bootstrap/state.js'
@@ -360,18 +361,45 @@ function handleDelete(path: string): void {
   pendingDeletions.set(path, timer)
 }
 
+function safeRealpath(p: string): string {
+  try {
+    return realpathSync(p)
+  } catch {
+    return platformPath.normalize(p)
+  }
+}
+
 function getSourceForPath(path: string): SettingSource | undefined {
   // Normalize path because chokidar uses forward slashes on Windows
   const normalizedPath = platformPath.normalize(path)
 
-  // Check if the path is inside the managed-settings.d/ drop-in directory
+  // Check if the path is inside the managed-settings.d/ drop-in directory.
+  // Also check realpath, so a symlinked drop-in dir still routes correctly.
   const dropInDir = getManagedSettingsDropInDir()
   if (normalizedPath.startsWith(dropInDir + platformPath.sep)) {
     return 'policySettings'
   }
+  const realDropInDir = safeRealpath(dropInDir)
+  const realChanged = safeRealpath(normalizedPath)
+  if (
+    realDropInDir !== dropInDir &&
+    realChanged.startsWith(realDropInDir + platformPath.sep)
+  ) {
+    return 'policySettings'
+  }
 
-  return SETTING_SOURCES.find(
+  // Direct match by normalized path
+  const direct = SETTING_SOURCES.find(
     source => getSettingsFilePathForSource(source) === normalizedPath,
+  )
+  if (direct) return direct
+
+  // Fall back to realpath comparison so symlinked settings files (either the
+  // file itself or any parent directory) still match. chokidar may report the
+  // resolved real path while getSettingsFilePathForSource returns the symlink
+  // path, or vice versa.
+  return SETTING_SOURCES.find(
+    source => safeRealpath(getSettingsFilePathForSource(source)) === realChanged,
   )
 }
 

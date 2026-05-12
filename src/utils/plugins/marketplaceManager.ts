@@ -2214,6 +2214,41 @@ export const getMarketplace = memoize(
  * @param pluginId - The plugin ID in format "name@marketplace"
  * @returns The plugin entry or null if not found/cache missing
  */
+/**
+ * Resolve a user-facing marketplace name to its canonical key in
+ * known_marketplaces.json.
+ *
+ * Config and cache are stored under `marketplace.name` from the manifest, but
+ * users reference marketplaces via the settings key they wrote in
+ * `extraKnownMarketplaces`. When the two differ (custom key, different manifest
+ * name) a direct `config[name]` lookup misses. Fall back to matching the
+ * declared `source` against config entries via deep equality.
+ */
+function resolveCanonicalMarketplaceKey(
+  requestedName: string,
+  config: KnownMarketplacesConfig,
+): string | null {
+  if (config[requestedName]) return requestedName
+  const declared = getDeclaredMarketplaces()[requestedName]
+  if (!declared) return null
+  // addKnownMarketplaceFromSource resolves relative paths to absolute before
+  // storing in config (see the local-source branch around L1820). Mirror that
+  // here so isEqual matches when the user wrote a relative path in settings.
+  let declaredSource = declared.source
+  if (
+    isLocalMarketplaceSource(declaredSource) &&
+    !isAbsolute(declaredSource.path)
+  ) {
+    declaredSource = { ...declaredSource, path: resolve(declaredSource.path) }
+  }
+  for (const [configKey, configEntry] of Object.entries(config)) {
+    if (isEqual(configEntry.source, declaredSource)) {
+      return configKey
+    }
+  }
+  return null
+}
+
 export async function getPluginByIdCacheOnly(pluginId: string): Promise<{
   entry: PluginMarketplaceEntry
   marketplaceInstallLocation: string
@@ -2230,13 +2265,17 @@ export async function getPluginByIdCacheOnly(pluginId: string): Promise<{
   try {
     const content = await fs.readFile(configFile, { encoding: 'utf-8' })
     const config = jsonParse(content) as KnownMarketplacesConfig
-    const marketplaceConfig = config[marketplaceName]
+    const canonicalName = resolveCanonicalMarketplaceKey(marketplaceName, config)
+    if (!canonicalName) {
+      return null
+    }
+    const marketplaceConfig = config[canonicalName]
 
     if (!marketplaceConfig) {
       return null
     }
 
-    const marketplace = await getMarketplaceCacheOnly(marketplaceName)
+    const marketplace = await getMarketplaceCacheOnly(canonicalName)
     if (!marketplace) {
       return null
     }
@@ -2283,12 +2322,16 @@ export async function getPluginById(pluginId: string): Promise<{
 
   try {
     const config = await loadKnownMarketplacesConfig()
-    const marketplaceConfig = config[marketplaceName]
+    const canonicalName = resolveCanonicalMarketplaceKey(marketplaceName, config)
+    if (!canonicalName) {
+      return null
+    }
+    const marketplaceConfig = config[canonicalName]
     if (!marketplaceConfig) {
       return null
     }
 
-    const marketplace = await getMarketplace(marketplaceName)
+    const marketplace = await getMarketplace(canonicalName)
     const plugin = marketplace.plugins.find(p => p.name === pluginName)
 
     if (!plugin) {

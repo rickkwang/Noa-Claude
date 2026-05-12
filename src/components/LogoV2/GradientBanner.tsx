@@ -10,6 +10,7 @@ import type { AppState } from '../../state/AppStateStore.js'
 import { getOriginalCwd } from '../../bootstrap/state.js'
 import { renderModelName } from '../../utils/model/model.js'
 import { getAPIProvider } from '../../utils/model/providers.js'
+import { useMainLoopModel } from '../../hooks/useMainLoopModel.js'
 
 declare const MACRO: { VERSION: string; DISPLAY_VERSION?: string }
 
@@ -73,19 +74,18 @@ function isLocalUrl(url: string): boolean {
   return url.includes('localhost') || url.includes('127.0.0.1') || url.includes('.local')
 }
 
-function detectProvider() {
+function detectProvider(displayModelLabel: string) {
   const provider = getAPIProvider()
 
   switch (provider) {
     case 'bedrock':
-      return { name: 'Amazon Bedrock', model: renderModelName(process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'), baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://bedrock.amazonaws.com', isLocal: false }
+      return { name: 'Amazon Bedrock', model: displayModelLabel, baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://bedrock.amazonaws.com', isLocal: false }
     case 'vertex':
-      return { name: 'Google Vertex AI', model: renderModelName(process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'), baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://vertexai.googleapis.com', isLocal: false }
+      return { name: 'Google Vertex AI', model: displayModelLabel, baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://vertexai.googleapis.com', isLocal: false }
     case 'foundry':
-      return { name: 'Microsoft Foundry', model: renderModelName(process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'), baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://foundry.ai.azure.com', isLocal: false }
+      return { name: 'Microsoft Foundry', model: displayModelLabel, baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://foundry.ai.azure.com', isLocal: false }
     case 'openaiCompatible': {
       const baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
-      const rawModel = renderModelName(process.env.OPENAI_MODEL || 'gpt-4o')
       const isLocal = isLocalUrl(baseUrl)
       let name = 'OpenAI Compatible'
       if (/deepseek/i.test(baseUrl)) name = 'DeepSeek'
@@ -94,12 +94,11 @@ function detectProvider() {
       else if (/groq/i.test(baseUrl)) name = 'Groq'
       else if (/azure/i.test(baseUrl)) name = 'Azure OpenAI'
       else if (/ollama/i.test(baseUrl) || isLocal) name = 'Ollama / Local'
-      return { name, model: rawModel, baseUrl, isLocal }
+      return { name, model: displayModelLabel, baseUrl, isLocal }
     }
     case 'firstParty':
     default: {
-      const modelSetting = renderModelName(process.env.ANTHROPIC_MODEL || process.env.CLAUDE_MODEL || 'claude-sonnet-4-6')
-      return { name: 'Anthropic', model: modelSetting, baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com', isLocal: false }
+      return { name: 'Anthropic', model: displayModelLabel, baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com', isLocal: false }
     }
   }
 }
@@ -108,7 +107,8 @@ export function GradientBanner() {
   // Login/provider switch bumps authVersion; subscribe so provider/model/baseUrl
   // rows re-read process.env immediately after auth changes.
   useAppState((s: AppState) => s.authVersion)
-  const p = detectProvider()
+  const displayModelLabel = renderModelName(useMainLoopModel())
+  const p = detectProvider(displayModelLabel)
   const W = 62
 
   const renderLogoSection = (lines: string[], offset: number, total: number): React.ReactNode[] =>

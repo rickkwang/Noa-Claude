@@ -489,7 +489,13 @@ export function useManageMCPConnections(
                       )
                       reconnectTimersRef.current.delete(client.name)
                       reconnectGenerationRef.current.delete(client.name)
-                      updateServer({ ...client, type: 'failed' })
+                      updateServer({
+                        ...client,
+                        type: 'failed',
+                        tools: [],
+                        commands: [],
+                        resources: [],
+                      })
                       return
                     }
                   }
@@ -514,7 +520,13 @@ export function useManageMCPConnections(
 
               void reconnectWithBackoff()
             } else {
-              updateServer({ ...client, type: 'failed' })
+              updateServer({
+                ...client,
+                type: 'failed',
+                tools: [],
+                commands: [],
+                resources: [],
+              })
             }
           }
 

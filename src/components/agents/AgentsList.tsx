@@ -12,12 +12,17 @@ import {
   resolveAgentModelDisplay,
 } from '../../tools/AgentTool/agentDisplay.js'
 import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
+import type {
+  SessionEntry,
+  SessionGroup,
+} from '../../utils/background/sessionRegistry.js'
 import { count } from '../../utils/array.js'
 import { Dialog } from '../design-system/Dialog.js'
 import { Divider } from '../design-system/Divider.js'
+import { SessionsView } from './SessionsView.js'
 import { getAgentSourceDisplayName } from './utils.js'
 
-type AgentListView = 'running' | 'library'
+export type AgentListView = 'running' | 'library' | 'sessions'
 
 type Props = {
   source: SettingSource | 'all' | 'built-in' | 'plugin'
@@ -30,6 +35,11 @@ type Props = {
   view: AgentListView
   onViewChange?: (view: AgentListView) => void
   totalLibraryCount?: number
+  sessionGroups?: SessionGroup[]
+  sessionCount?: number
+  sessionLoading?: boolean
+  onSelectSession?: (session: SessionEntry) => void
+  onKillSession?: (session: SessionEntry) => void
 }
 
 export function AgentsList({
@@ -43,6 +53,11 @@ export function AgentsList({
   view,
   onViewChange,
   totalLibraryCount,
+  sessionGroups,
+  sessionCount,
+  sessionLoading,
+  onSelectSession,
+  onKillSession,
 }: Props): React.ReactNode {
   const [selectedAgent, setSelectedAgent] = React.useState<ResolvedAgent | null>(
     null,
@@ -50,6 +65,18 @@ export function AgentsList({
   const [isCreateNewSelected, setIsCreateNewSelected] = React.useState(
     view === 'library',
   )
+  const [sessionSelectedIndex, setSessionSelectedIndex] = React.useState(0)
+
+  const allSessions = React.useMemo(
+    () => (sessionGroups ?? []).flatMap(g => g.sessions),
+    [sessionGroups],
+  )
+
+  React.useEffect(() => {
+    if (sessionSelectedIndex >= allSessions.length && allSessions.length > 0) {
+      setSessionSelectedIndex(allSessions.length - 1)
+    }
+  }, [allSessions.length, sessionSelectedIndex])
 
   const sortedAgents = React.useMemo(
     () => [...agents].sort(compareAgentsByName),
@@ -85,18 +112,46 @@ export function AgentsList({
     [onViewChange, view],
   )
 
+  const viewOrder: AgentListView[] = ['sessions', 'running', 'library']
+
   const handleKeyDown = (e: KeyboardEvent): void => {
     if (onViewChange) {
       if (e.key === 'right' || e.key === 'tab') {
         e.preventDefault()
-        switchView(view === 'running' ? 'library' : 'running')
+        const idx = viewOrder.indexOf(view)
+        switchView(viewOrder[(idx + 1) % viewOrder.length]!)
         return
       }
       if (e.key === 'left') {
         e.preventDefault()
-        switchView(view === 'library' ? 'running' : 'library')
+        const idx = viewOrder.indexOf(view)
+        switchView(viewOrder[(idx - 1 + viewOrder.length) % viewOrder.length]!)
         return
       }
+    }
+
+    if (view === 'sessions') {
+      if (allSessions.length === 0) return
+      if (e.key === 'up') {
+        e.preventDefault()
+        setSessionSelectedIndex(prev =>
+          prev <= 0 ? allSessions.length - 1 : prev - 1,
+        )
+      } else if (e.key === 'down') {
+        e.preventDefault()
+        setSessionSelectedIndex(prev =>
+          prev >= allSessions.length - 1 ? 0 : prev + 1,
+        )
+      } else if (e.key === 'return') {
+        e.preventDefault()
+        const session = allSessions[sessionSelectedIndex]
+        if (session) onSelectSession?.(session)
+      } else if (e.ctrl && e.key === 'x') {
+        e.preventDefault()
+        const session = allSessions[sessionSelectedIndex]
+        if (session?.alive) onKillSession?.(session)
+      }
+      return
     }
 
     if (e.key === 'return') {
@@ -212,6 +267,11 @@ export function AgentsList({
 
   const renderTabs = onViewChange ? (
     <Box marginBottom={1}>
+      <Text color={view === 'sessions' ? 'suggestion' : undefined}>
+        {view === 'sessions' ? `${figures.pointer} ` : '  '}
+        Sessions ({sessionCount ?? 0})
+      </Text>
+      <Text dimColor>{'  ·  '}</Text>
       <Text color={view === 'running' ? 'suggestion' : undefined}>
         {view === 'running' ? `${figures.pointer} ` : '  '}
         Running ({runningCount})
@@ -221,9 +281,29 @@ export function AgentsList({
         {view === 'library' ? `${figures.pointer} ` : '  '}
         Library ({totalLibraryCount ?? 0})
       </Text>
-      <Text dimColor>{'  (←/→ or Tab)'}</Text>
+      <Text dimColor>{'  (← / →  or Tab)'}</Text>
     </Box>
   ) : null
+
+  if (view === 'sessions') {
+    return (
+      <Box tabIndex={0} autoFocus onKeyDown={handleKeyDown}>
+        <Dialog
+          title="Sessions"
+          subtitle={`${sessionCount ?? 0} active sessions`}
+          onCancel={onBack}
+          hideInputGuide
+        >
+          {renderTabs}
+          <SessionsView
+            groups={sessionGroups ?? []}
+            loading={sessionLoading ?? false}
+            selectedIndex={sessionSelectedIndex}
+          />
+        </Dialog>
+      </Box>
+    )
+  }
 
   const sourceTitle =
     view === 'running' ? 'Running agents' : getAgentSourceDisplayName(source)
@@ -332,7 +412,7 @@ export function AgentsList({
             )}
             {builtInAgents.length > 0 && (
               <>
-                <Divider />
+                {sortedAgents.some(a => a.source !== 'built-in') && <Divider />}
                 {renderAgentGroup('Built-in (always available):', builtInAgents)}
               </>
             )}

@@ -407,8 +407,9 @@ function syncRemoteEvalToDisk(): void {
  * Check if GrowthBook operations should be enabled
  */
 function isGrowthBookEnabled(): boolean {
-  // Keep local feature evaluation available for runtime gates.
-  return true
+  // Privacy-first default for Noa users: keep GrowthBook fully disabled unless
+  // explicitly enabled for internal/dev validation.
+  return isEnvTruthy(process.env.ENABLE_GROWTHBOOK_DEV)
 }
 
 function isGrowthBookRemoteFetchEnabled(): boolean {

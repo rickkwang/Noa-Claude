@@ -115,8 +115,9 @@ export function substituteArguments(
 
     // Match $name but not $name[...] or $nameXxx (word chars)
     // Also ensure we match word boundaries to avoid partial matches
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     content = content.replace(
-      new RegExp(`\\$${name}(?![\\[\\w])`, 'g'),
+      new RegExp(`\\$${escapedName}(?![\\[\\w])`, 'g'),
       parsedArgs[i] ?? '',
     )
   }

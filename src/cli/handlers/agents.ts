@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * Agents subcommand handler — prints the list of configured agents.
+ * Agents subcommand handler — prints the list of configured agents and active sessions.
  * Dynamically imported only when `claude agents` runs.
  */
 
@@ -16,6 +16,11 @@ import {
   getActiveAgentsFromList,
   getAgentDefinitionsWithOverrides,
 } from '../../tools/AgentTool/loadAgentsDir.js'
+import {
+  formatRelativeTime,
+  readAllSessions,
+  truncateCwd,
+} from '../../utils/background/sessionRegistry.js'
 import { getCwd } from '../../utils/cwd.js'
 
 function formatAgent(agent: ResolvedAgent): string {
@@ -32,6 +37,26 @@ function formatAgent(agent: ResolvedAgent): string {
 
 export async function agentsHandler(): Promise<void> {
   const cwd = getCwd()
+
+  const sessions = await readAllSessions()
+  const liveSessions = sessions.filter(s => s.alive)
+
+  if (liveSessions.length > 0) {
+    // biome-ignore lint/suspicious/noConsole:: intentional console output
+    console.log(`${liveSessions.length} active session${liveSessions.length === 1 ? '' : 's'}\n`)
+    for (const s of liveSessions) {
+      const state = s.derivedState.padEnd(8)
+      const label = (s.name ?? s.kind ?? 'interactive').slice(0, 16).padEnd(16)
+      const kind = (s.kind ?? 'interactive').padEnd(13)
+      const dir = truncateCwd(s.cwd ?? '.', 25).padEnd(25)
+      const time = s.startedAt ? formatRelativeTime(s.startedAt) : ''
+      // biome-ignore lint/suspicious/noConsole:: intentional console output
+      console.log(`  ${state}  ${label}  ${kind}  ${dir}  ${time}`)
+    }
+    // biome-ignore lint/suspicious/noConsole:: intentional console output
+    console.log('')
+  }
+
   const { allAgents } = await getAgentDefinitionsWithOverrides(cwd)
   const activeAgents = getActiveAgentsFromList(allAgents)
   const resolvedAgents = resolveAgentOverrides(allAgents, activeAgents)
@@ -59,10 +84,10 @@ export async function agentsHandler(): Promise<void> {
     lines.push('')
   }
 
-  if (lines.length === 0) {
+  if (lines.length === 0 && liveSessions.length === 0) {
     // biome-ignore lint/suspicious/noConsole:: intentional console output
-    console.log('No agents found.')
-  } else {
+    console.log('No agents or sessions found.')
+  } else if (lines.length > 0) {
     // biome-ignore lint/suspicious/noConsole:: intentional console output
     console.log(`${totalActive} active agents\n`)
     // biome-ignore lint/suspicious/noConsole:: intentional console output

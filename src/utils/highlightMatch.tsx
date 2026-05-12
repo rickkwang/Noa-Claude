@@ -15,12 +15,34 @@ export function highlightMatch(text: string, query: string): React.ReactNode {
   let offset = 0;
   let idx = textLower.indexOf(queryLower, offset);
   if (idx === -1) return text;
+
+  // Grapheme boundaries so we don't split surrogate pairs or ZWJ emoji
+  // sequences (e.g. 👨‍👩‍👧‍👦). UTF-16 indexOf can land mid-cluster.
+  const segmenter =
+    typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function'
+      ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+      : null;
+  const boundaries: Set<number> | null = segmenter ? new Set([0]) : null;
+  if (segmenter && boundaries) {
+    for (const seg of segmenter.segment(text)) {
+      boundaries.add(seg.index + seg.segment.length);
+    }
+  }
+  const snap = (i: number, dir: -1 | 1): number => {
+    if (!boundaries || boundaries.has(i)) return i;
+    let j = i;
+    while (j > 0 && j < text.length && !boundaries.has(j)) j += dir;
+    return j;
+  };
+
   while (idx !== -1) {
-    if (idx > offset) parts.push(text.slice(offset, idx));
-    parts.push(<Text key={idx} inverse>
-        {text.slice(idx, idx + query.length)}
+    const start = snap(idx, -1);
+    const end = snap(idx + query.length, 1);
+    if (start > offset) parts.push(text.slice(offset, start));
+    parts.push(<Text key={start} inverse>
+        {text.slice(start, end)}
       </Text>);
-    offset = idx + query.length;
+    offset = end;
     idx = textLower.indexOf(queryLower, offset);
   }
   if (offset < text.length) parts.push(text.slice(offset));

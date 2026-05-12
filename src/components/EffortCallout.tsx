@@ -105,11 +105,15 @@ export function EffortCallout(t0) {
   let t9;
   if ($[11] !== defaultLevel) {
     const maxText = defaultLevel === "max" ? "Max (recommended)" : "Max";
+    const xhighText = defaultLevel === "xhigh" ? "XHigh (recommended)" : "XHigh";
     const highText = defaultLevel === "high" ? "High (recommended)" : "High";
     const mediumText = defaultLevel === "medium" ? "Medium (recommended)" : "Medium";
     t9 = [{
       label: <EffortOptionLabel level="max" text={maxText} />,
       value: "max"
+    }, {
+      label: <EffortOptionLabel level="xhigh" text={xhighText} />,
+      value: "xhigh"
     }, {
       label: <EffortOptionLabel level="high" text={highText} />,
       value: "high"
@@ -149,7 +153,7 @@ export function EffortCallout(t0) {
   }
   let t13;
   if ($[16] === Symbol.for("react.memo_cache_sentinel")) {
-    t13 = <Box marginBottom={1}><Text dimColor={true}>{t11} low {"\xB7"}{" "}{t12} medium {"\xB7"}{" "}<EffortIndicatorSymbol level="high" /> high {"\xB7"}{" "}<EffortIndicatorSymbol level="max" /> max</Text></Box>;
+    t13 = <Box marginBottom={1}><Text dimColor={true}>{t11} low {"\xB7"}{" "}{t12} medium {"\xB7"}{" "}<EffortIndicatorSymbol level="high" /> high {"\xB7"}{" "}<EffortIndicatorSymbol level="xhigh" /> xhigh {"\xB7"}{" "}<EffortIndicatorSymbol level="max" /> max</Text></Box>;
     $[16] = t13;
   } else {
     t13 = $[16];

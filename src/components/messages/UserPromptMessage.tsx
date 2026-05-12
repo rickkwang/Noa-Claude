@@ -15,6 +15,7 @@ import { truncateToWidth } from '../../utils/truncate.js';
 import { MessageActionsSelectedContext } from '../messageActions.js';
 import { HighlightedThinkingText } from './HighlightedThinkingText.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
+import { useQueuedMessage } from '../../context/QueuedMessageContext.js';
 type Props = {
   addMargin: boolean;
   param: TextBlockParam;
@@ -76,6 +77,7 @@ export function UserPromptMessage({
     return `${head}\n… +${hiddenLines} lines …\n${tail}`;
   }, [text]);
   const isSelected = useContext(MessageActionsSelectedContext);
+  const queuedMessage = useQueuedMessage();
   const { columns } = useTerminalSize();
   if (!text) {
     logError(new Error('No content found in user prompt message'));
@@ -89,12 +91,15 @@ export function UserPromptMessage({
     );
   }
   const safeColumns = Math.max(0, columns);
+  // Keep extra slack to avoid right-corner wrapping on some terminals during
+  // live reflow (e.g. requesting/queueing states).
+  const frameColumns = Math.max(0, safeColumns - (queuedMessage?.paddingWidth ?? 0) - 3);
   const displayName = getGlobalConfig().oauthAccount?.displayName?.trim() || 'You';
-  const maxHeaderNameWidth = Math.max(0, safeColumns - stringWidth('╭─ ╮'));
+  const maxHeaderNameWidth = Math.max(0, frameColumns - stringWidth('╭─ ╮'));
   const headerName = truncateToWidth(displayName, maxHeaderNameWidth);
   const headerLabel = `─ ${headerName} `;
-  const headerFill = Math.max(0, safeColumns - stringWidth(`╭${headerLabel}╮`));
-  const footerFill = Math.max(0, safeColumns - stringWidth('╰╯'));
+  const headerFill = Math.max(0, frameColumns - stringWidth(`╭${headerLabel}╮`));
+  const footerFill = Math.max(0, frameColumns - stringWidth('╰╯'));
   const autoCommandPrefix = !highlightedPrefix && displayText.startsWith('/') ? (displayText.match(/^\/\S+/)?.[0] ?? '') : '';
   const effectivePrefix = highlightedPrefix || autoCommandPrefix;
   const shouldHighlightPrefix = !!effectivePrefix && displayText.startsWith(effectivePrefix);
@@ -102,7 +107,7 @@ export function UserPromptMessage({
   return (
     <Box flexDirection="column" marginTop={addMargin ? 1 : 0}>
       <Text color="claude">{`╭${headerLabel}${'─'.repeat(headerFill)}╮`}</Text>
-      <Box backgroundColor={isSelected ? 'messageActionsBackground' : undefined} paddingLeft={2} paddingRight={useBriefLayout ? 0 : 2}>
+      <Box backgroundColor={isSelected ? 'messageActionsBackground' : undefined} paddingLeft={2} paddingRight={useBriefLayout ? 0 : 2} width={frameColumns}>
         {shouldHighlightPrefix ? (
           <Box flexDirection="row">
             <Box backgroundColor="userMessageBackground" paddingX={1}>
