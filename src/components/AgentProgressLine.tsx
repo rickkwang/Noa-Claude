@@ -115,7 +115,7 @@ export function AgentProgressLine(t0) {
   }
   let t10;
   if ($[25] !== getStatusText || $[26] !== isBackgrounded || $[27] !== isLast) {
-    t10 = !isBackgrounded && <Box paddingLeft={3} flexDirection="row"><Text dimColor={true}>{isLast ? "   \u23BF  " : "\u2502  \u23BF  "}</Text><Text dimColor={true}>{getStatusText()}</Text></Box>;
+    t10 = !isBackgrounded && <Box paddingLeft={3} flexDirection="row"><Text dimColor={true}>{isLast ? "   └─  " : "\u2502  └─  "}</Text><Text dimColor={true}>{getStatusText()}</Text></Box>;
     $[25] = getStatusText;
     $[26] = isBackgrounded;
     $[27] = isLast;
