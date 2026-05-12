@@ -1,5 +1,25 @@
 # Release Notes
 
+## 1.0.9
+
+### New Features
+
+- Added Sessions view — view, select, and kill active agent sessions directly from the agents menu.
+- CLI `agents` command now displays active sessions alongside configured agents.
+
+### Bug Fixes
+
+- Fixed emoji highlighting using incorrect UTF-16 code unit boundaries — now uses Intl.Segmenter grapheme boundaries for proper multi-grapheme emoji handling.
+- Fixed multi-image paste so each image correctly captures its own undo state using synchronous ref writes.
+- Fixed dark theme hyperlink color (blue → cyan) for better accessibility on dark terminals.
+- Fixed symlink path resolution by adding safeRealpath fallback for broken symlinks in settings detection.
+- Fixed marketplace key resolution to match by source when settings key differs from manifest name.
+
+### Chores
+
+- Added `xhigh` effort level option for Opus 4.7+ models.
+- GradientBanner now correctly passes displayModelLabel to provider detection.
+
 ## 1.0.8
 
 ### New Features
