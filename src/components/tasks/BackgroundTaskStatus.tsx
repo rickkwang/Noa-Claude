@@ -7,7 +7,6 @@ import { useTerminalSize } from 'src/hooks/useTerminalSize.js';
 import { stringWidth } from 'src/ink/stringWidth.js';
 import { useAppState, useSetAppState } from 'src/state/AppState.js';
 import { enterTeammateView, exitTeammateView } from 'src/state/teammateViewHelpers.js';
-import { isPanelAgentTask } from 'src/tasks/LocalAgentTask/LocalAgentTask.js';
 import { getPillLabel, pillNeedsCta } from 'src/tasks/pillLabel.js';
 import { type BackgroundTaskState, isBackgroundTask, type TaskState } from 'src/tasks/types.js';
 import { calculateHorizontalScrollWindow } from 'src/utils/horizontalScroll.js';
@@ -15,7 +14,7 @@ import { Box, Text } from '../../ink.js';
 import { AGENT_COLOR_TO_THEME_COLOR, AGENT_COLORS, type AgentColorName } from '../../tools/AgentTool/agentColorManager.js';
 import type { Theme } from '../../utils/theme.js';
 import { KeyboardShortcutHint } from '../design-system/KeyboardShortcutHint.js';
-import { shouldHideTasksFooter } from './taskStatusUtils.js';
+import { getVisibleTasksFooterTasks, shouldHideTasksFooter } from './taskStatusUtils.js';
 type Props = {
   tasksSelected: boolean;
   isViewingTeammate?: boolean;
@@ -42,20 +41,21 @@ export function BackgroundTaskStatus(t0) {
   const viewingAgentTaskId = useAppState(_temp2);
   let t3;
   if ($[0] !== tasks) {
-    t3 = (Object.values(tasks ?? {}) as TaskState[]).filter(_temp3);
+    t3 = getVisibleTasksFooterTasks(tasks ?? {});
     $[0] = tasks;
     $[1] = t3;
   } else {
     t3 = $[1];
   }
-  const runningTasks = t3;
+  const visibleFooterTasks = t3;
+  const activeBackgroundTasks = React.useMemo(() => (Object.values(tasks ?? {}) as TaskState[]).filter(_temp3), [tasks]);
   const expandedView = useAppState(_temp4);
   const showSpinnerTree = expandedView === "teammates";
-  const allTeammates = !showSpinnerTree && runningTasks.length > 0 && runningTasks.every(_temp5);
+  const allTeammates = !showSpinnerTree && activeBackgroundTasks.length > 0 && activeBackgroundTasks.every(_temp5);
   let t4;
-  if ($[2] !== runningTasks) {
-    t4 = runningTasks.filter(_temp6).sort(_temp7);
-    $[2] = runningTasks;
+  if ($[2] !== activeBackgroundTasks) {
+    t4 = activeBackgroundTasks.filter(_temp6).sort(_temp7);
+    $[2] = activeBackgroundTasks;
     $[3] = t4;
   } else {
     t4 = $[3];
@@ -193,13 +193,13 @@ export function BackgroundTaskStatus(t0) {
   if (shouldHideTasksFooter(tasks ?? {}, showSpinnerTree)) {
     return null;
   }
-  if (runningTasks.length === 0) {
+  if (visibleFooterTasks.length === 0) {
     return null;
   }
   let t8;
-  if ($[37] !== runningTasks) {
-    t8 = getPillLabel(runningTasks);
-    $[37] = runningTasks;
+  if ($[37] !== visibleFooterTasks) {
+    t8 = getPillLabel(visibleFooterTasks);
+    $[37] = visibleFooterTasks;
     $[38] = t8;
   } else {
     t8 = $[38];
@@ -215,9 +215,9 @@ export function BackgroundTaskStatus(t0) {
     t9 = $[42];
   }
   let t10;
-  if ($[43] !== runningTasks) {
-    t10 = pillNeedsCta(runningTasks) && <Text dimColor={true}> · {figures.arrowDown} to view</Text>;
-    $[43] = runningTasks;
+  if ($[43] !== visibleFooterTasks) {
+    t10 = pillNeedsCta(visibleFooterTasks) && <Text dimColor={true}> · {figures.arrowDown} to view</Text>;
+    $[43] = visibleFooterTasks;
     $[44] = t10;
   } else {
     t10 = $[44];
@@ -270,7 +270,7 @@ function _temp4(s_1) {
   return s_1.expandedView;
 }
 function _temp3(t) {
-  return isBackgroundTask(t) && !(false && isPanelAgentTask(t));
+  return isBackgroundTask(t);
 }
 function _temp2(s_0) {
   return s_0.viewingAgentTaskId;

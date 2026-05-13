@@ -6,7 +6,7 @@
 import figures from 'figures';
 import type { TaskStatus } from 'src/Task.js';
 import type { InProcessTeammateTaskState } from 'src/tasks/InProcessTeammateTask/types.js';
-import { isPanelAgentTask } from 'src/tasks/LocalAgentTask/LocalAgentTask.js';
+import { isPanelAgentTask, type LocalAgentTaskState } from 'src/tasks/LocalAgentTask/LocalAgentTask.js';
 import { isBackgroundTask, type TaskState } from 'src/tasks/types.js';
 import type { DeepImmutable } from 'src/types/utils.js';
 import { summarizeRecentActivities } from 'src/utils/collapseReadSearch.js';
@@ -83,23 +83,38 @@ export function describeTeammateActivity(t: DeepImmutable<InProcessTeammateTaskS
 }
 
 /**
+ * Returns true for tasks that should be represented by the tasks pill or dialog.
+ * Retained coordinator agents stay visible after completion until they are
+ * dismissed/evicted, so they must be included even when no longer "running".
+ */
+export function isVisibleTasksFooterTask(task: TaskState): boolean {
+  return isBackgroundTask(task) || isVisiblePanelAgentTask(task);
+}
+
+export function isVisiblePanelAgentTask(task: TaskState): task is LocalAgentTaskState {
+  return isPanelAgentTask(task) && task.evictAfter !== 0;
+}
+
+export function getVisibleTasksFooterTasks(tasks: {
+  [taskId: string]: TaskState;
+}): TaskState[] {
+  return Object.values(tasks).filter(isVisibleTasksFooterTask);
+}
+
+/**
  * Returns true when BackgroundTaskStatus would render nothing because the
  * spinner tree is active and every visible background task is an in-process
  * teammate (teammates are shown in the spinner tree instead).
  *
- * Uses the same task filtering as BackgroundTaskStatus: `isBackgroundTask()`
- * plus exclusion of panel-managed agent tasks for ants (those are shown
- * by CoordinatorTaskPanel).
+ * Uses the same visibility filter as BackgroundTaskStatus, including retained
+ * coordinator agents that remain visible after completion.
  */
 export function shouldHideTasksFooter(tasks: {
   [taskId: string]: TaskState;
 }, showSpinnerTree: boolean): boolean {
   if (!showSpinnerTree) return false;
   let hasVisibleTask = false;
-  for (const t of Object.values(tasks) as TaskState[]) {
-    if (!isBackgroundTask(t) || "external" === 'ant' && isPanelAgentTask(t)) {
-      continue;
-    }
+  for (const t of getVisibleTasksFooterTasks(tasks)) {
     hasVisibleTask = true;
     if (t.type !== 'in_process_teammate') return false;
   }

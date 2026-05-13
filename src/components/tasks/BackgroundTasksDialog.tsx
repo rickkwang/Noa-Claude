@@ -19,7 +19,7 @@ import { LocalShellTask } from 'src/tasks/LocalShellTask/LocalShellTask.js';
 import type { LocalWorkflowTaskState } from 'src/tasks/LocalWorkflowTask/LocalWorkflowTask.js';
 import type { MonitorMcpTaskState } from 'src/tasks/MonitorMcpTask/MonitorMcpTask.js';
 import { RemoteAgentTask, type RemoteAgentTaskState } from 'src/tasks/RemoteAgentTask/RemoteAgentTask.js';
-import { type BackgroundTaskState, isBackgroundTask, type TaskState } from 'src/tasks/types.js';
+import { type BackgroundTaskState, type TaskState } from 'src/tasks/types.js';
 import type { DeepImmutable } from 'src/types/utils.js';
 import { intersperse } from 'src/utils/array.js';
 import { type CronTask, listAllCronTasks, removeCronTasks } from 'src/utils/cronTasks.js';
@@ -44,6 +44,7 @@ import { InProcessTeammateDetailDialog } from './InProcessTeammateDetailDialog.j
 import { RemoteSessionDetailDialog } from './RemoteSessionDetailDialog.js';
 import { ScheduledJobDetailDialog } from './ScheduledJobDetailDialog.js';
 import { ShellDetailDialog } from './ShellDetailDialog.js';
+import { getVisibleTasksFooterTasks, isVisibleTasksFooterTask } from './taskStatusUtils.js';
 import {
   canStopOrCancelItem,
   formatDateTime,
@@ -128,10 +129,10 @@ const killMonitorMcp = monitorMcpModule?.killMonitorMcp ?? null;
 const MonitorMcpDetailDialog = feature('MONITOR_TOOL') ? (require('./MonitorMcpDetailDialog.js') as typeof import('./MonitorMcpDetailDialog.js')).MonitorMcpDetailDialog : null;
 /* eslint-enable @typescript-eslint/no-require-imports */
 
-// Helper to get filtered background tasks (excludes foregrounded local_agent)
+// Helper to get task-dialog items, including retained coordinator agents.
 function getSelectableBackgroundTasks(tasks: Record<string, TaskState> | undefined, foregroundedTaskId: string | undefined): TaskState[] {
-  const backgroundTasks = Object.values(tasks ?? {}).filter(isBackgroundTask);
-  return backgroundTasks.filter(task => !(task.type === 'local_agent' && task.id === foregroundedTaskId));
+  const visibleTasks = getVisibleTasksFooterTasks(tasks ?? {});
+  return visibleTasks.filter(task => !(task.type === 'local_agent' && task.id === foregroundedTaskId));
 }
 
 export function BackgroundTasksDialog({
@@ -208,8 +209,9 @@ export function BackgroundTasksDialog({
     scheduledJobs,
     allSelectableItems
   } = useMemo(() => {
-    // Filter to only show running/pending background tasks, matching the status bar count
-    const backgroundTasks = Object.values(typedTasks ?? {}).filter(isBackgroundTask);
+    // Keep the dialog aligned with the tasks pill: active background tasks
+    // plus retained coordinator agents that are still visible in the panel.
+    const backgroundTasks = getSelectableBackgroundTasks(typedTasks, foregroundedTaskId);
     const allItems_0 = backgroundTasks.map(toListItem);
     const sorted = allItems_0.sort((a, b) => {
       const aStatus = a.status;
@@ -398,7 +400,7 @@ export function BackgroundTasksDialog({
       viewState,
       typedTasks,
       scheduledJobs,
-      isTaskValidForDetail: task => task.type === 'local_workflow' || isBackgroundTask(task)
+      isTaskValidForDetail: task => task.type === 'local_workflow' || isVisibleTasksFooterTask(task)
     })) {
       if (skippedListOnMount.current) {
         onDoneEvent('Background tasks dialog dismissed', {

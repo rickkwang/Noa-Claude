@@ -1071,13 +1071,8 @@ export const AgentTool = buildTool({
               const lastToolName = getLastToolUseName(message);
               if (lastToolName) {
                 emitTaskProgress(syncTracker, foregroundTaskId, toolUseContext.toolUseId, description, agentStartTime, lastToolName);
-                // Keep AppState task.progress in sync when SDK summaries are
-                // enabled, so updateAgentSummary reads correct token/tool counts
-                // instead of zeros.
-                if (getSdkAgentProgressSummariesEnabled()) {
-                  updateAsyncAgentProgress(foregroundTaskId, getProgressUpdate(syncTracker), rootSetAppState);
-                }
               }
+              updateAsyncAgentProgress(foregroundTaskId, getProgressUpdate(syncTracker), rootSetAppState);
             }
 
             // Forward bash_progress events from sub-agent to parent so the SDK
