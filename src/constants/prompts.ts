@@ -111,16 +111,6 @@ import type { OutputStyleConfig } from './outputStyles.js'
 export const SYSTEM_PROMPT_DYNAMIC_BOUNDARY =
   '__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__'
 
-// @[MODEL LAUNCH]: Update the latest frontier model.
-const FRONTIER_MODEL_NAME = 'Claude Opus 4.7'
-
-// @[MODEL LAUNCH]: Update the model family IDs below to the latest in each tier.
-const CLAUDE_LATEST_MODEL_IDS = {
-  opus: 'claude-opus-4-7',
-  sonnet: 'claude-sonnet-4-6',
-  haiku: 'claude-haiku-4-5-20251001',
-}
-
 function getHooksSection(): string {
   return `Users may configure 'hooks', shell commands that execute in response to events like tool calls, in settings. Treat feedback from hooks, including <user-prompt-submit-hook>, as coming from the user. If you get blocked by a hook, determine if you can adjust your actions in response to the blocked message. If not, ask the user to check their hooks configuration.`
 }
@@ -674,13 +664,7 @@ export async function computeMainSessionEnvInfo(
     `Current date: ${getSessionStartDate()}`,
     process.env.USER_TYPE === 'ant' && isUndercover()
       ? null
-      : `The most recent Claude model family is Claude 4.X. Model IDs — Opus 4.7: '${CLAUDE_LATEST_MODEL_IDS.opus}', Sonnet 4.6: '${CLAUDE_LATEST_MODEL_IDS.sonnet}', Haiku 4.5: '${CLAUDE_LATEST_MODEL_IDS.haiku}'. When building AI applications, default to the latest and most capable Claude models.`,
-    process.env.USER_TYPE === 'ant' && isUndercover()
-      ? null
       : `Noa Claude is available as a CLI in the terminal.`,
-    process.env.USER_TYPE === 'ant' && isUndercover()
-      ? null
-      : `Fast mode for Noa Claude uses ${FRONTIER_MODEL_NAME} with faster output (it does not downgrade to a smaller model). It can be toggled with /fast and is only available on Opus 4.7.`,
   ].filter(item => item !== null)
 
   return [
