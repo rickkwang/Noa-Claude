@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { APIError } from '@anthropic-ai/sdk'
 import { logForDebugging } from '../../utils/debug.js'
+import { logError } from '../../utils/log.js'
 import {
   classifyOpenAICompatibleError,
   resolveMaxTokensParam,
@@ -432,7 +433,7 @@ async function* openaiStreamToAnthropic(
       JSON.parse(leftover.slice(6))
     } catch {
       // Incomplete JSON — log warning but don't crash
-      console.error('[OpenAI Shim] Incomplete chunk in stream buffer, discarding:', leftover.slice(0, 100))
+      logError(new Error('[OpenAI Shim] Incomplete chunk in stream buffer, discarding'))
     }
   }
 
@@ -572,11 +573,29 @@ class OpenAIShimMessages {
         response.status,
         errorBody,
       )
+      // Don't echo the raw response body to the user — providers sometimes
+      // include sensitive context (request IDs, key fragments, internal
+      // paths) in 5xx/429 bodies. Pull out the structured error.message
+      // when the body is well-formed JSON; otherwise show just the
+      // classification.
+      let structuredMessage: string | undefined
+      try {
+        const parsed = JSON.parse(errorBody)
+        const candidate =
+          (typeof parsed?.error?.message === 'string' && parsed.error.message) ||
+          (typeof parsed?.message === 'string' && parsed.message) ||
+          undefined
+        if (candidate) structuredMessage = candidate
+      } catch {
+        // not JSON — fall through, show classification only
+      }
+      const message = structuredMessage
+        ? `${classification} ${structuredMessage}`
+        : classification
       // Throw an APIError-shaped error so upstream `instanceof APIError`
       // checks (claude.ts retry/logging paths) can read .status, .headers,
       // and .requestID instead of falling through to the plain-Error branch
       // and losing those fields.
-      const message = `${classification} Response: ${errorBody}`
       throw new APIError(
         response.status,
         { message, error: { type: 'api_error', message: classification } },
