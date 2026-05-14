@@ -1,5 +1,32 @@
 # Release Notes
 
+## 1.1.0
+
+### New Features
+
+- **Goal evaluator-driven auto-continue** — goals now automatically continue up to 5 turns when the evaluator determines work remains. Each turn the evaluator scores goal progress and decides whether to keep going.
+- **Richer goal state** — goals now track `autoContinueTurns`, `maxAutoContinueTurns`, `lastEvaluatorReason`, `completedAt`, and `stopReason` for better visibility into goal lifecycle.
+- **Goal evaluator Haiku integration** — `evaluateGoalCompletion()` queries Haiku with a conservative prompt and JSON schema output to score goal progress from conversation context.
+- **Centralized goal notice formatting** — `goalNotices.ts` consolidates all goal lifecycle message templates (`formatGoalCompleteNotice`, `formatGoalBudgetReachedNotice`, `formatGoalPausedNotice`, etc.) for consistent user-facing output.
+- **Goal audit logging** — `goalAudit.ts` emits structured debug logs for all goal state transitions (start, success, failure, auto-continue, paused, budget-limited).
+
+### Refactors
+
+- **Sessions tab removed** — agents UI cleaned up: removed `SessionsView`, `SessionDetail`, `SessionRow`, and `useSessionPolling`. AgentsList and AgentsMenu simplified.
+- **Build system migrated** — build script refactored from `Bun.spawn` CLI to `Bun.build()` API with a stub plugin for optional modules (`@ant/claude-for-chrome-mcp`, `@anthropic-ai/sandbox-runtime`) and feature-flag preprocessing.
+- **Tree connector visual refresh** — replaced `⎿` (U+23BF) with `└─` box-drawing character across all UI prefix gutters for cleaner terminal aesthetics.
+
+### Bug Fixes
+
+- Fixed coordinator task panel visibility filtering.
+- Fixed `decideGoalEvaluatorAction` to return `exhausted` when auto-continue turn limit is reached (instead of incorrectly calling the evaluator).
+- Fixed context truncation in `buildGoalEvaluatorContext` to tail-first (preserving latest evidence) instead of head-last.
+
+### Chores
+
+- Added `node-forge`, `@pondwader/socks5-server` as transitive dependencies via `@anthropic-ai/sandbox-runtime`.
+- Added `@anthropic-ai/vertex-sdk` for Vertex AI integration.
+
 ## 1.0.9
 
 ### New Features
