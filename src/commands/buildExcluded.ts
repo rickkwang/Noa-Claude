@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { E_BUILD_EXCLUDED_COMMAND } from '../constants/errorIds.js'
 import type { Command } from '../types/command.js'
 
