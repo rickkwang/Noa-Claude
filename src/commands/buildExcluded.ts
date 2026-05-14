@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { E_BUILD_EXCLUDED_COMMAND } from '../constants/errorIds.js'
+import type { Command } from '../types/command.js'
 
 export const BUILD_EXCLUDED_ERROR_CONTRACTS = {
   proactive: {
@@ -55,4 +56,25 @@ export function createBuildExcludedError(commandName: string): Error {
 
 export function throwBuildExcludedCommand(commandName: string): never {
   throw createBuildExcludedError(commandName)
+}
+
+/**
+ * Factory for the identical "command not available in this build" stub.
+ * Replaces 7 hand-written stub files that each only differ by name/description.
+ */
+export function createBuildExcludedCommand(
+  name: keyof typeof BUILD_EXCLUDED_ERROR_CONTRACTS,
+  description: string,
+): Command {
+  return {
+    name,
+    description,
+    type: 'local-jsx' as const,
+    isHidden: true,
+    load: async () => ({
+      call: async () => {
+        throwBuildExcludedCommand(name)
+      },
+    }),
+  } satisfies Command
 }

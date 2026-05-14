@@ -45,12 +45,11 @@ import skills from './commands/skills/index.js'
 import status from './commands/status/index.js'
 import tasks from './commands/tasks/index.js'
 import teleport from './commands/teleport/index.js'
-/* eslint-disable @typescript-eslint/no-require-imports */
+import { createBuildExcludedCommand } from './commands/buildExcluded.js'
 const agentsPlatform =
   process.env.USER_TYPE === 'ant'
-    ? require('./commands/agents-platform/index.js').default
+    ? createBuildExcludedCommand('agents-platform', 'Manage agents platform')
     : null
-/* eslint-enable @typescript-eslint/no-require-imports */
 import securityReview from './commands/security-review.js'
 import bughunter from './commands/bughunter/index.js'
 import terminalSetup from './commands/terminalSetup/index.js'
@@ -61,16 +60,17 @@ import vim from './commands/vim/index.js'
 import { feature } from 'bun:bundle'
 // Dead code elimination: conditional imports
 /* eslint-disable @typescript-eslint/no-require-imports */
-const proactive =
-  require('./commands/proactive/index.js').default
+const proactive = createBuildExcludedCommand('proactive', 'Enable proactive mode')
 const briefCommand =
   require('./commands/brief.js').default
 const assistantCommand = require('./commands/assistant/index.js').default
 const bridge = require('./commands/bridge/index.js').default
-const remoteControlServerCommand =
-  require('./commands/remoteControlServer/index.js').default
+const remoteControlServerCommand = createBuildExcludedCommand(
+  'remote-control',
+  'Remote control server',
+)
 const voiceCommand = require('./commands/voice/index.js').default
-const forceSnip = require('./commands/force-snip.js').default
+const forceSnip = createBuildExcludedCommand('force-snip', 'Force session snipping')
 const workflowsCmd = (
     require('./commands/workflows/index.js') as typeof import('./commands/workflows/index.js')
   ).default
@@ -80,12 +80,10 @@ const webCmd = (
 const clearSkillIndexCache = (
     require('./services/skillSearch/localSearch.js') as typeof import('./services/skillSearch/localSearch.js')
   ).clearSkillIndexCache
-const subscribePr = require('./commands/subscribe-pr.js').default
+const subscribePr = createBuildExcludedCommand('subscribe-pr', 'Subscribe to PR notifications')
 const ultraplan = require('./commands/ultraplan.js').default
-const torch = require('./commands/torch.js').default
-const peersCmd = (
-    require('./commands/peers/index.js') as typeof import('./commands/peers/index.js')
-  ).default
+const torch = createBuildExcludedCommand('torch', 'Torch command')
+const peersCmd = createBuildExcludedCommand('peers', 'Manage peer connections')
 const forkCmd = (
     require('./commands/fork/index.js') as typeof import('./commands/fork/index.js')
   ).default
