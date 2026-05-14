@@ -4,6 +4,7 @@ import * as React from 'react'
 import type { SettingSource } from 'src/utils/settings/constants.js'
 import type { KeyboardEvent } from '../../ink/events/keyboard-event.js'
 import { Box, Text } from '../../ink.js'
+import { useKeybinding } from '../../keybindings/useKeybinding.js'
 import type { ResolvedAgent } from '../../tools/AgentTool/agentDisplay.js'
 import {
   AGENT_SOURCE_GROUPS,
@@ -12,17 +13,12 @@ import {
   resolveAgentModelDisplay,
 } from '../../tools/AgentTool/agentDisplay.js'
 import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
-import type {
-  SessionEntry,
-  SessionGroup,
-} from '../../utils/background/sessionRegistry.js'
-import { count } from '../../utils/array.js'
-import { Dialog } from '../design-system/Dialog.js'
 import { Divider } from '../design-system/Divider.js'
-import { SessionsView } from './SessionsView.js'
-import { getAgentSourceDisplayName } from './utils.js'
+import { Pane } from '../design-system/Pane.js'
 
-export type AgentListView = 'running' | 'library' | 'sessions'
+export type AgentListView = 'running' | 'library'
+
+const VIEW_ORDER: AgentListView[] = ['running', 'library']
 
 type Props = {
   source: SettingSource | 'all' | 'built-in' | 'plugin'
@@ -31,15 +27,8 @@ type Props = {
   onSelect: (agent: AgentDefinition) => void
   onCreateNew?: () => void
   changes?: string[]
-  runningAgentCount?: number
   view: AgentListView
-  onViewChange?: (view: AgentListView) => void
-  totalLibraryCount?: number
-  sessionGroups?: SessionGroup[]
-  sessionCount?: number
-  sessionLoading?: boolean
-  onSelectSession?: (session: SessionEntry) => void
-  onKillSession?: (session: SessionEntry) => void
+  onViewChange: (view: AgentListView) => void
 }
 
 export function AgentsList({
@@ -49,15 +38,8 @@ export function AgentsList({
   onSelect,
   onCreateNew,
   changes,
-  runningAgentCount,
   view,
   onViewChange,
-  totalLibraryCount,
-  sessionGroups,
-  sessionCount,
-  sessionLoading,
-  onSelectSession,
-  onKillSession,
 }: Props): React.ReactNode {
   const [selectedAgent, setSelectedAgent] = React.useState<ResolvedAgent | null>(
     null,
@@ -65,18 +47,6 @@ export function AgentsList({
   const [isCreateNewSelected, setIsCreateNewSelected] = React.useState(
     view === 'library',
   )
-  const [sessionSelectedIndex, setSessionSelectedIndex] = React.useState(0)
-
-  const allSessions = React.useMemo(
-    () => (sessionGroups ?? []).flatMap(g => g.sessions),
-    [sessionGroups],
-  )
-
-  React.useEffect(() => {
-    if (sessionSelectedIndex >= allSessions.length && allSessions.length > 0) {
-      setSessionSelectedIndex(allSessions.length - 1)
-    }
-  }, [allSessions.length, sessionSelectedIndex])
 
   const sortedAgents = React.useMemo(
     () => [...agents].sort(compareAgentsByName),
@@ -98,59 +68,32 @@ export function AgentsList({
   }, [sortedAgents, source, view])
 
   const createEnabled = view === 'library' && !!onCreateNew
-  const runningCount = runningAgentCount ?? sortedAgents.length
 
   React.useEffect(() => {
     setSelectedAgent(selectableAgentsInOrder[0] ?? null)
     setIsCreateNewSelected(createEnabled)
   }, [createEnabled, selectableAgentsInOrder, view])
 
+  useKeybinding('confirm:no', onBack, { context: 'Confirmation', isActive: true })
+
   const switchView = React.useCallback(
     (next: AgentListView) => {
-      if (next !== view) onViewChange?.(next)
+      if (next !== view) onViewChange(next)
     },
     [onViewChange, view],
   )
 
-  const viewOrder: AgentListView[] = ['sessions', 'running', 'library']
-
   const handleKeyDown = (e: KeyboardEvent): void => {
-    if (onViewChange) {
-      if (e.key === 'right' || e.key === 'tab') {
-        e.preventDefault()
-        const idx = viewOrder.indexOf(view)
-        switchView(viewOrder[(idx + 1) % viewOrder.length]!)
-        return
-      }
-      if (e.key === 'left') {
-        e.preventDefault()
-        const idx = viewOrder.indexOf(view)
-        switchView(viewOrder[(idx - 1 + viewOrder.length) % viewOrder.length]!)
-        return
-      }
+    if (e.key === 'right' || e.key === 'tab') {
+      e.preventDefault()
+      const idx = VIEW_ORDER.indexOf(view)
+      switchView(VIEW_ORDER[(idx + 1) % VIEW_ORDER.length]!)
+      return
     }
-
-    if (view === 'sessions') {
-      if (allSessions.length === 0) return
-      if (e.key === 'up') {
-        e.preventDefault()
-        setSessionSelectedIndex(prev =>
-          prev <= 0 ? allSessions.length - 1 : prev - 1,
-        )
-      } else if (e.key === 'down') {
-        e.preventDefault()
-        setSessionSelectedIndex(prev =>
-          prev >= allSessions.length - 1 ? 0 : prev + 1,
-        )
-      } else if (e.key === 'return') {
-        e.preventDefault()
-        const session = allSessions[sessionSelectedIndex]
-        if (session) onSelectSession?.(session)
-      } else if (e.ctrl && e.key === 'x') {
-        e.preventDefault()
-        const session = allSessions[sessionSelectedIndex]
-        if (session?.alive) onKillSession?.(session)
-      }
+    if (e.key === 'left') {
+      e.preventDefault()
+      const idx = VIEW_ORDER.indexOf(view)
+      switchView(VIEW_ORDER[(idx - 1 + VIEW_ORDER.length) % VIEW_ORDER.length]!)
       return
     }
 
@@ -220,7 +163,7 @@ export function AgentsList({
     return (
       <Box key={`${agent.agentType}-${agent.source}`}>
         <Text dimColor={dimmed && !isSelected} color={textColor}>
-          {isBuiltIn ? '' : isSelected ? `${figures.pointer} ` : '  '}
+          {isBuiltIn ? '  ' : isSelected ? `${figures.pointer} ` : '  '}
         </Text>
         <Text dimColor={dimmed && !isSelected} color={textColor}>
           {agent.agentType}
@@ -251,6 +194,7 @@ export function AgentsList({
   const renderAgentGroup = (title: string, groupAgents: ResolvedAgent[]) => {
     if (!groupAgents.length) return null
     const folderPath = groupAgents[0]?.baseDir
+    const showPath = folderPath && folderPath !== 'built-in'
 
     return (
       <Box flexDirection="column" marginBottom={1}>
@@ -258,62 +202,32 @@ export function AgentsList({
           <Text bold dimColor>
             {title}
           </Text>
-          {folderPath && <Text dimColor> ({folderPath})</Text>}
+          {showPath && <Text dimColor> ({folderPath})</Text>}
         </Box>
         {groupAgents.map(renderAgent)}
       </Box>
     )
   }
 
-  const renderTabs = onViewChange ? (
-    <Box marginBottom={1}>
-      <Text color={view === 'sessions' ? 'suggestion' : undefined}>
-        {view === 'sessions' ? `${figures.pointer} ` : '  '}
-        Sessions ({sessionCount ?? 0})
+  const tabHeader = (
+    <Box gap={1}>
+      <Text bold color="suggestion">Agents</Text>
+      <Text
+        backgroundColor={view === 'running' ? 'suggestion' : undefined}
+        color={view === 'running' ? 'inverseText' : undefined}
+        bold={view === 'running'}
+      >
+        {' Running '}
       </Text>
-      <Text dimColor>{'  ·  '}</Text>
-      <Text color={view === 'running' ? 'suggestion' : undefined}>
-        {view === 'running' ? `${figures.pointer} ` : '  '}
-        Running ({runningCount})
+      <Text
+        backgroundColor={view === 'library' ? 'suggestion' : undefined}
+        color={view === 'library' ? 'inverseText' : undefined}
+        bold={view === 'library'}
+      >
+        {' Library '}
       </Text>
-      <Text dimColor>{'  ·  '}</Text>
-      <Text color={view === 'library' ? 'suggestion' : undefined}>
-        {view === 'library' ? `${figures.pointer} ` : '  '}
-        Library ({totalLibraryCount ?? 0})
-      </Text>
-      <Text dimColor>{'  (← / →  or Tab)'}</Text>
     </Box>
-  ) : null
-
-  if (view === 'sessions') {
-    return (
-      <Box tabIndex={0} autoFocus onKeyDown={handleKeyDown}>
-        <Dialog
-          title="Sessions"
-          subtitle={`${sessionCount ?? 0} active sessions`}
-          onCancel={onBack}
-          hideInputGuide
-        >
-          {renderTabs}
-          <SessionsView
-            groups={sessionGroups ?? []}
-            loading={sessionLoading ?? false}
-            selectedIndex={sessionSelectedIndex}
-          />
-        </Dialog>
-      </Box>
-    )
-  }
-
-  const sourceTitle =
-    view === 'running' ? 'Running agents' : getAgentSourceDisplayName(source)
-
-  const subtitle =
-    view === 'running'
-      ? `${runningCount} running or pending`
-      : `${count(sortedAgents, a => !a.overriddenBy)} agents${
-          runningCount > 0 ? ` · ${runningCount} running` : ''
-        }`
+  )
 
   const hasNoAgents =
     !sortedAgents.length ||
@@ -321,146 +235,133 @@ export function AgentsList({
       source !== 'built-in' &&
       !sortedAgents.some(a => a.source !== 'built-in'))
 
-  if (hasNoAgents) {
-    return (
-      <Dialog
-        title={sourceTitle}
-        subtitle="No agents found"
-        onCancel={onBack}
-        hideInputGuide
-      >
-        <Box
-          flexDirection="column"
-          gap={1}
-          tabIndex={0}
-          autoFocus
-          onKeyDown={handleKeyDown}
-        >
-          {renderTabs}
-          {createEnabled && (
-            <Box>
-              <Text color={isCreateNewSelected ? 'suggestion' : undefined}>
-                {isCreateNewSelected ? `${figures.pointer} ` : '  '}
-              </Text>
-              <Text color={isCreateNewSelected ? 'suggestion' : undefined}>
-                Create new agent
-              </Text>
-            </Box>
-          )}
-          {view === 'running' ? (
-            <Text dimColor>
-              No running agents. Switch to Library to run one.
-            </Text>
-          ) : (
-            <>
-              <Text dimColor>
-                No agents found. Create specialized subagents that Claude can
-                delegate to.
-              </Text>
-              <Text dimColor>
-                Each subagent has its own context window, custom system prompt, and
-                specific tools.
-              </Text>
-              <Text dimColor>
-                Try creating: Code Reviewer, Code Simplifier, Security Reviewer,
-                Tech Lead, or UX Reviewer.
-              </Text>
-            </>
-          )}
-        </Box>
-      </Dialog>
-    )
-  }
-
   const builtInAgents = sortedAgents.filter(a => a.source === 'built-in')
 
-  return (
-    <Dialog title={sourceTitle} subtitle={subtitle} onCancel={onBack} hideInputGuide>
+  const agentContent = hasNoAgents ? (
+    <Box flexDirection="column" gap={1}>
+      {createEnabled && (
+        <Box>
+          <Text color={isCreateNewSelected ? 'suggestion' : undefined}>
+            {isCreateNewSelected ? `${figures.pointer} ` : '  '}
+          </Text>
+          <Text color={isCreateNewSelected ? 'suggestion' : undefined}>
+            Create new agent
+          </Text>
+        </Box>
+      )}
+      {view === 'running' ? (
+        <Text dimColor>No subagents are currently running.</Text>
+      ) : (
+        <>
+          <Text dimColor>
+            No agents found. Create specialized subagents that Claude can
+            delegate to.
+          </Text>
+          <Text dimColor>
+            Each subagent has its own context window, custom system prompt, and
+            specific tools.
+          </Text>
+          <Text dimColor>
+            Try creating: Code Reviewer, Code Simplifier, Security Reviewer,
+            Tech Lead, or UX Reviewer.
+          </Text>
+          {builtInAgents.length > 0 && (
+            <>
+              <Divider />
+              {renderAgentGroup('Built-in (always available):', builtInAgents)}
+            </>
+          )}
+        </>
+      )}
+    </Box>
+  ) : (
+    <Box flexDirection="column">
       {changes && changes.length > 0 && (
-        <Box marginTop={1}>
+        <Box marginBottom={1}>
           <Text dimColor>{changes[changes.length - 1]}</Text>
         </Box>
       )}
-      <Box
-        flexDirection="column"
-        tabIndex={0}
-        autoFocus
-        onKeyDown={handleKeyDown}
-      >
-        {renderTabs}
-        {createEnabled && (
-          <Box marginBottom={1}>
-            <Text color={isCreateNewSelected ? 'suggestion' : undefined}>
-              {isCreateNewSelected ? `${figures.pointer} ` : '  '}
-            </Text>
-            <Text color={isCreateNewSelected ? 'suggestion' : undefined}>
-              Create new agent
-            </Text>
+      {createEnabled && (
+        <Box marginBottom={1}>
+          <Text color={isCreateNewSelected ? 'suggestion' : undefined}>
+            {isCreateNewSelected ? `${figures.pointer} ` : '  '}
+          </Text>
+          <Text color={isCreateNewSelected ? 'suggestion' : undefined}>
+            Create new agent
+          </Text>
+        </Box>
+      )}
+      {view === 'running' ? (
+        <>
+          {AGENT_SOURCE_GROUPS.filter(g => g.source !== 'built-in').map(
+            ({ label, source: groupSource }) => (
+              <React.Fragment key={groupSource}>
+                {renderAgentGroup(
+                  label,
+                  sortedAgents.filter(a => a.source === groupSource),
+                )}
+              </React.Fragment>
+            ),
+          )}
+          {builtInAgents.length > 0 && (
+            <>
+              {sortedAgents.some(a => a.source !== 'built-in') && <Divider />}
+              {renderAgentGroup('Built-in (always available):', builtInAgents)}
+            </>
+          )}
+        </>
+      ) : source === 'all' ? (
+        <>
+          {AGENT_SOURCE_GROUPS.filter(g => g.source !== 'built-in').map(
+            ({ label, source: groupSource }) => (
+              <React.Fragment key={groupSource}>
+                {renderAgentGroup(
+                  label,
+                  sortedAgents.filter(a => a.source === groupSource),
+                )}
+              </React.Fragment>
+            ),
+          )}
+          {builtInAgents.length > 0 && (
+            <>
+              {sortedAgents.some(a => a.source !== 'built-in') && <Divider />}
+              {renderAgentGroup('Built-in (always available):', builtInAgents)}
+            </>
+          )}
+        </>
+      ) : source === 'built-in' ? (
+        <>
+          <Text dimColor italic>
+            Built-in agents are provided by default and cannot be modified.
+          </Text>
+          <Box marginTop={1} flexDirection="column">
+            {sortedAgents.map(renderAgent)}
           </Box>
-        )}
-        {view === 'running' ? (
-          <>
-            {AGENT_SOURCE_GROUPS.filter(g => g.source !== 'built-in').map(
-              ({ label, source: groupSource }) => (
-                <React.Fragment key={groupSource}>
-                  {renderAgentGroup(
-                    label,
-                    sortedAgents.filter(a => a.source === groupSource),
-                  )}
-                </React.Fragment>
-              ),
-            )}
-            {builtInAgents.length > 0 && (
-              <>
-                {sortedAgents.some(a => a.source !== 'built-in') && <Divider />}
-                {renderAgentGroup('Built-in (always available):', builtInAgents)}
-              </>
-            )}
-          </>
-        ) : source === 'all' ? (
-          <>
-            {AGENT_SOURCE_GROUPS.filter(g => g.source !== 'built-in').map(
-              ({ label, source: groupSource }) => (
-                <React.Fragment key={groupSource}>
-                  {renderAgentGroup(
-                    label,
-                    sortedAgents.filter(a => a.source === groupSource),
-                  )}
-                </React.Fragment>
-              ),
-            )}
-            {builtInAgents.length > 0 && (
-              <Box flexDirection="column" marginBottom={1} paddingLeft={2}>
-                <Text dimColor>
-                  <Text bold>Built-in agents</Text> (always available)
-                </Text>
-                {builtInAgents.map(renderAgent)}
-              </Box>
-            )}
-          </>
-        ) : source === 'built-in' ? (
-          <>
-            <Text dimColor italic>
-              Built-in agents are provided by default and cannot be modified.
-            </Text>
-            <Box marginTop={1} flexDirection="column">
-              {sortedAgents.map(renderAgent)}
-            </Box>
-          </>
-        ) : (
-          <>
-            {sortedAgents
-              .filter(a => a.source !== 'built-in')
-              .map(agent => renderAgent(agent))}
-            {sortedAgents.some(a => a.source === 'built-in') && (
-              <>
-                <Divider />
-                {renderAgentGroup('Built-in (always available):', builtInAgents)}
-              </>
-            )}
-          </>
-        )}
-      </Box>
-    </Dialog>
+        </>
+      ) : (
+        <>
+          {sortedAgents
+            .filter(a => a.source !== 'built-in')
+            .map(agent => renderAgent(agent))}
+          {sortedAgents.some(a => a.source === 'built-in') && (
+            <>
+              <Divider />
+              {renderAgentGroup('Built-in (always available):', builtInAgents)}
+            </>
+          )}
+        </>
+      )}
+    </Box>
+  )
+
+  return (
+    <Box tabIndex={0} autoFocus onKeyDown={handleKeyDown}>
+      <Pane color="permission">
+        <Box flexDirection="column" gap={1}>
+          {tabHeader}
+          {agentContent}
+        </Box>
+      </Pane>
+    </Box>
   )
 }

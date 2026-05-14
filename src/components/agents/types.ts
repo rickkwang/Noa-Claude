@@ -1,7 +1,6 @@
 // @ts-nocheck
 import type { SettingSource } from 'src/utils/settings/constants.js'
 import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
-import type { SessionEntry } from '../../utils/background/sessionRegistry.js'
 
 export const AGENT_PATHS = {
   FOLDER_NAME: '.claude-agent',
@@ -11,7 +10,6 @@ export const AGENT_PATHS = {
 // Base types for common patterns
 type WithPreviousMode = { previousMode: ModeState }
 type WithAgent = { agent: AgentDefinition }
-type WithSession = { session: SessionEntry }
 
 // Simplified state type using intersection types
 export type ModeState =
@@ -22,8 +20,6 @@ export type ModeState =
   | { mode: 'create-agent' }
   | ({ mode: 'edit-agent' } & WithAgent & WithPreviousMode)
   | ({ mode: 'delete-confirm' } & WithAgent & WithPreviousMode)
-  | ({ mode: 'view-session' } & WithSession & WithPreviousMode)
-  | ({ mode: 'confirm-kill-session' } & WithSession & WithPreviousMode)
 
 export type AgentValidationResult = {
   isValid: boolean

@@ -1,12 +1,11 @@
 // @ts-nocheck
 import chalk from 'chalk'
 import * as React from 'react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { SettingSource } from 'src/utils/settings/constants.js'
 import type { CommandResultDisplay } from '../../commands.js'
 import { useExitOnCtrlCDWithKeybindings } from '../../hooks/useExitOnCtrlCDWithKeybindings.js'
 import { useMergedTools } from '../../hooks/useMergedTools.js'
-import { useSessionPolling } from '../../hooks/useSessionPolling.js'
 import { Box, Text } from '../../ink.js'
 import { useAppState, useSetAppState } from '../../state/AppState.js'
 import type { Tools } from '../../Tool.js'
@@ -26,8 +25,6 @@ import { AgentDetail } from './AgentDetail.js'
 import { AgentEditor } from './AgentEditor.js'
 import { AgentNavigationFooter } from './AgentNavigationFooter.js'
 import { type AgentListView, AgentsList } from './AgentsList.js'
-import { SessionDetail } from './SessionDetail.js'
-import { isTrustedLiveSession } from '../../utils/background/sessionRegistry.js'
 import { deleteAgentFromFile } from './agentFileUtils.js'
 import { CreateAgentWizard } from './new-agent-creation/CreateAgentWizard.js'
 import type { ModeState } from './types.js'
@@ -107,7 +104,7 @@ export function AgentsMenu({ tools, onExit }: Props): React.ReactNode {
     mode: 'list-agents',
     source: 'all',
   })
-  const [listView, setListView] = useState<AgentListView>('sessions')
+  const [listView, setListView] = useState<AgentListView>('library')
   const [changes, setChanges] = useState<string[]>([])
 
   const agentDefinitions = useAppState(s => s.agentDefinitions)
@@ -119,14 +116,6 @@ export function AgentsMenu({ tools, onExit }: Props): React.ReactNode {
 
   const mergedTools = useMergedTools(tools, mcpTools, toolPermissionContext)
   useExitOnCtrlCDWithKeybindings()
-
-  const { sessions, groups: sessionGroups, loading: sessionLoading } = useSessionPolling()
-
-  const runningAgentCount = useMemo(
-    () =>
-      Object.values(tasks ?? {}).filter(task => !!getTaskAgentType(task)).length,
-    [tasks],
-  )
 
   const handleAgentCreated = useCallback((message: string) => {
     setChanges(prev => [...prev, message])
@@ -188,25 +177,6 @@ export function AgentsMenu({ tools, onExit }: Props): React.ReactNode {
             agents={agentsToShow}
             view={listView}
             onViewChange={setListView}
-            runningAgentCount={runningAgentCount}
-            totalLibraryCount={resolvedLibraryAgents.length}
-            sessionGroups={sessionGroups}
-            sessionCount={sessions.length}
-            sessionLoading={sessionLoading}
-            onSelectSession={session =>
-              setModeState({
-                mode: 'view-session',
-                session,
-                previousMode: modeState,
-              })
-            }
-            onKillSession={session =>
-              setModeState({
-                mode: 'confirm-kill-session',
-                session,
-                previousMode: modeState,
-              })
-            }
             onBack={() => {
               const exitMessage =
                 changes.length > 0
@@ -314,7 +284,7 @@ export function AgentsMenu({ tools, onExit }: Props): React.ReactNode {
               )}
             </Box>
           </Dialog>
-          <AgentNavigationFooter />
+          <AgentNavigationFooter instructions="↑/↓ to navigate · Enter to select · Esc to go back" />
         </>
       )
     }
@@ -426,79 +396,7 @@ export function AgentsMenu({ tools, onExit }: Props): React.ReactNode {
               onBack={() => setModeState(modeState.previousMode)}
             />
           </Dialog>
-          <AgentNavigationFooter />
-        </>
-      )
-    }
-
-    case 'view-session': {
-      return (
-        <>
-          <Dialog
-            title={modeState.session.name ?? `Session ${modeState.session.pid}`}
-            onCancel={() => setModeState(modeState.previousMode)}
-            hideInputGuide
-          >
-            <SessionDetail
-              session={modeState.session}
-              onBack={() => setModeState(modeState.previousMode)}
-            />
-          </Dialog>
-          <AgentNavigationFooter instructions="Press Enter or Esc to go back" />
-        </>
-      )
-    }
-
-    case 'confirm-kill-session': {
-      const back = () => setModeState(modeState.previousMode)
-      const killOptions = [
-        { label: 'Yes, kill it', value: 'yes' },
-        { label: 'No, cancel', value: 'no' },
-      ]
-
-      return (
-        <>
-          <Dialog title="Kill session" onCancel={back} color="error">
-            <Text>
-              Are you sure you want to kill session{' '}
-              <Text bold>{modeState.session.name ?? modeState.session.pid}</Text>
-              {' '}(PID {modeState.session.pid})?
-            </Text>
-            <Box marginTop={1}>
-              <Select
-                options={killOptions}
-                onChange={async value => {
-                  if (value === 'yes') {
-                    try {
-                      const isTrusted = await isTrustedLiveSession(modeState.session)
-                      if (!isTrusted) {
-                        setChanges(prev => [
-                          ...prev,
-                          `Skipped stale or untrusted session: PID ${modeState.session.pid}`,
-                        ])
-                        back()
-                        return
-                      }
-                      process.kill(modeState.session.pid, 'SIGTERM')
-                      setChanges(prev => [
-                        ...prev,
-                        `Killed session: PID ${modeState.session.pid}`,
-                      ])
-                    } catch {
-                      // process may have already exited
-                    }
-                    back()
-                  } else {
-                    back()
-                  }
-                }}
-                onCancel={back}
-              />
-            </Box>
-          </Dialog>
-          <AgentNavigationFooter
-            instructions="Press ↑ / ↓ to navigate, Enter to select, Esc to cancel"
-          />
+          <AgentNavigationFooter instructions="Esc to cancel" />
         </>
       )
     }
