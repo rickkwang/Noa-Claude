@@ -64,9 +64,10 @@ import {
 import { accountGoalUsage } from './utils/goalAccounting.js'
 import { evaluateGoalCompletion } from './utils/goalEvaluator.js'
 import {
+  applyGoalAutoContinueExhausted,
   applyGoalRuntimeEvaluation,
   applyGoalRuntimeEvaluationFailure,
-  shouldRunGoalEvaluator,
+  decideGoalEvaluatorAction,
 } from './utils/goalRuntime.js'
 import { normalizeGoal } from './utils/goalState.js'
 import {
@@ -1441,12 +1442,19 @@ async function* queryLoop(
       }
 
       const goal = toolUseContext.getAppState().goal
-      const shouldEvaluateGoal = shouldRunGoalEvaluator({
+      const goalEvaluatorAction = decideGoalEvaluatorAction({
         goal,
         agentId: toolUseContext.agentId,
         permissionMode,
       })
-      if (shouldEvaluateGoal) {
+      if (goalEvaluatorAction === 'exhausted') {
+        const exhaustedDecision = applyGoalAutoContinueExhausted({
+          setAppState: toolUseContext.setAppState,
+        })
+        if (exhaustedDecision.userNotice) {
+          yield exhaustedDecision.userNotice
+        }
+      } else if (goalEvaluatorAction === 'run') {
         if (toolUseContext.abortController.signal.aborted) {
           if (toolUseContext.abortController.signal.reason !== 'interrupt') {
             yield createUserInterruptionMessage({
@@ -1456,7 +1464,7 @@ async function* queryLoop(
           return { reason: 'aborted_streaming' }
         }
         const currentGoal = normalizeGoal(goal)
-        const evaluation = await evaluateGoalCompletion({
+        const { evaluation, evaluatorMessage } = await evaluateGoalCompletion({
           goal: currentGoal,
           messages: [...messagesForQuery, ...assistantMessages],
           signal: toolUseContext.abortController.signal,
@@ -1471,19 +1479,47 @@ async function* queryLoop(
           }
           return { reason: 'aborted_streaming' }
         }
+        const accountEvaluatorUsage = () =>
+          evaluatorMessage
+            ? accountGoalUsage({
+                assistantMessages: [evaluatorMessage],
+                getAppState: toolUseContext.getAppState,
+                setAppState: toolUseContext.setAppState,
+                includeModelNotice: false,
+                goalAtTurnStart: currentGoal,
+              })
+            : null
+        if (evaluation?.achieved) {
+          const goalRuntimeDecision = applyGoalRuntimeEvaluation({
+            evaluation,
+            setAppState: toolUseContext.setAppState,
+          })
+          let yieldedFinalUsageNotice = false
+          const evaluatorAccounting = accountEvaluatorUsage()
+          if (evaluatorAccounting?.userNotice) {
+            yieldedFinalUsageNotice = true
+            yield evaluatorAccounting.userNotice
+          }
+          if (!yieldedFinalUsageNotice && goalRuntimeDecision.userNotice) {
+            yield goalRuntimeDecision.userNotice
+          }
+        } else {
+          const evaluatorAccounting = accountEvaluatorUsage()
+          if (evaluatorAccounting?.userNotice) {
+            yield evaluatorAccounting.userNotice
+          }
+        }
         if (!evaluation) {
           const goalRuntimeDecision = applyGoalRuntimeEvaluationFailure({
-            getAppState: toolUseContext.getAppState,
             setAppState: toolUseContext.setAppState,
           })
           if (goalRuntimeDecision.userNotice) {
             yield goalRuntimeDecision.userNotice
           }
         }
-        if (evaluation) {
+        if (evaluation && !evaluation.achieved) {
           const goalRuntimeDecision = applyGoalRuntimeEvaluation({
             evaluation,
-            getAppState: toolUseContext.getAppState,
             setAppState: toolUseContext.setAppState,
           })
           if (goalRuntimeDecision.userNotice) {
@@ -1498,6 +1534,12 @@ async function* queryLoop(
                 turnCount: nextTurnCount,
               })
               return { reason: 'max_turns', turnCount: nextTurnCount }
+            }
+            if (toolUseContext.abortController.signal.aborted) {
+              if (toolUseContext.abortController.signal.reason !== 'interrupt') {
+                yield createUserInterruptionMessage({ toolUse: false })
+              }
+              return { reason: 'aborted_streaming' }
             }
             state = {
               messages: [

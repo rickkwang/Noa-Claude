@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { getDefaultAppState, type AppState } from '../../state/AppStateStore.js'
 import {
+  applyGoalAutoContinueExhausted,
   applyGoalRuntimeEvaluation,
   applyGoalRuntimeEvaluationFailure,
-  shouldRunGoalEvaluator,
+  decideGoalEvaluatorAction,
 } from '../../utils/goalRuntime.js'
 import { createThreadGoal } from '../../utils/goalState.js'
 
@@ -28,7 +29,6 @@ describe('goal runtime', () => {
 
     const decision = applyGoalRuntimeEvaluation({
       evaluation: { achieved: true, reason: 'All checks passed.' },
-      getAppState: state.getAppState,
       setAppState: state.setAppState,
     })
 
@@ -44,7 +44,6 @@ describe('goal runtime', () => {
 
     const decision = applyGoalRuntimeEvaluation({
       evaluation: { achieved: false, reason: 'Tests are still missing.' },
-      getAppState: state.getAppState,
       setAppState: state.setAppState,
     })
 
@@ -65,7 +64,6 @@ describe('goal runtime', () => {
 
     const decision = applyGoalRuntimeEvaluation({
       evaluation: { achieved: false, reason: 'Still incomplete.' },
-      getAppState: state.getAppState,
       setAppState: state.setAppState,
     })
 
@@ -82,7 +80,6 @@ describe('goal runtime', () => {
 
     const decision = applyGoalRuntimeEvaluation({
       evaluation: { achieved: false, reason: 'Still incomplete.' },
-      getAppState: state.getAppState,
       setAppState: state.setAppState,
     })
 
@@ -97,7 +94,6 @@ describe('goal runtime', () => {
     )
 
     const decision = applyGoalRuntimeEvaluationFailure({
-      getAppState: state.getAppState,
       setAppState: state.setAppState,
     })
 
@@ -114,7 +110,6 @@ describe('goal runtime', () => {
     })
 
     const decision = applyGoalRuntimeEvaluationFailure({
-      getAppState: state.getAppState,
       setAppState: state.setAppState,
     })
 
@@ -128,29 +123,59 @@ describe('goal runtime', () => {
     const goal = createThreadGoal({ objective: 'Ship', tokenBudget: null, now: 1 })
 
     expect(
-      shouldRunGoalEvaluator({
+      decideGoalEvaluatorAction({
         goal,
         permissionMode: 'default',
       }),
-    ).toBe(true)
+    ).toBe('run')
     expect(
-      shouldRunGoalEvaluator({
+      decideGoalEvaluatorAction({
         goal,
         agentId: 'agent-1',
         permissionMode: 'default',
       }),
-    ).toBe(false)
+    ).toBe('skip')
     expect(
-      shouldRunGoalEvaluator({
+      decideGoalEvaluatorAction({
         goal,
         permissionMode: 'plan',
       }),
-    ).toBe(false)
+    ).toBe('skip')
     expect(
-      shouldRunGoalEvaluator({
+      decideGoalEvaluatorAction({
         goal: { ...goal, status: 'budget_limited' },
         permissionMode: 'default',
       }),
-    ).toBe(false)
+    ).toBe('skip')
+  })
+
+  test('decideGoalEvaluatorAction returns exhausted at auto-continue limit', () => {
+    const goal = {
+      ...createThreadGoal({ objective: 'Ship', tokenBudget: null, now: 1 }),
+      autoContinueTurns: 5,
+      maxAutoContinueTurns: 5,
+    }
+    expect(decideGoalEvaluatorAction({ goal, permissionMode: 'default' })).toBe(
+      'exhausted',
+    )
+  })
+
+  test('applyGoalAutoContinueExhausted pauses without invoking evaluator', () => {
+    const state = harness({
+      ...createThreadGoal({ objective: 'Ship', tokenBudget: null, now: 1 }),
+      autoContinueTurns: 5,
+      maxAutoContinueTurns: 5,
+      lastEvaluatorReason: 'Not yet.',
+    })
+
+    const decision = applyGoalAutoContinueExhausted({
+      setAppState: state.setAppState,
+    })
+
+    expect(decision.action).toBe('stop')
+    expect(decision.userNotice?.type).toBe('system')
+    expect(decision.userNotice?.content).toContain('Goal paused after 5')
+    expect(state.state.goal?.status).toBe('paused')
+    expect(state.state.goal?.stopReason).toBe('max_auto_continue_turns')
   })
 })

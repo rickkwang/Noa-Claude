@@ -5,6 +5,10 @@ import { createSystemMessage, createUserMessage } from './messages.js'
 import { getGoalPromptForStatus } from './goalPrompts.js'
 import { markGoalBudgetLimited, normalizeGoal } from './goalState.js'
 import { logGoalAudit } from './goalAudit.js'
+import {
+  formatGoalBudgetReachedNotice,
+  formatGoalCompleteNotice,
+} from './goalNotices.js'
 
 type GoalAccountingParams = {
   assistantMessages: AssistantMessage[]
@@ -17,13 +21,6 @@ type GoalAccountingParams = {
 type GoalAccountingResult = {
   modelNotice: UserMessage | null
   userNotice: Message | null
-}
-
-function formatGoalUsage(goal: ThreadGoal): string {
-  const tokenPart = goal.tokenBudget
-    ? `${goal.tokensUsed} of ${goal.tokenBudget} tokens`
-    : `${goal.tokensUsed} tokens`
-  return `${tokenPart}, ${goal.timeUsedSeconds} seconds`
 }
 
 function sumAssistantUsage(assistantMessages: AssistantMessage[]): number {
@@ -99,7 +96,7 @@ export function accountGoalUsage({
         })
       }
       userNotice = createSystemMessage(
-        `Goal budget reached: ${formatGoalUsage(finalGoal)}. Wrapping up.`,
+        formatGoalBudgetReachedNotice(finalGoal),
         'info',
       )
       logGoalAudit({
@@ -119,7 +116,7 @@ Time used: ${finalGoal.timeUsedSeconds} seconds`,
         })
       }
       userNotice = createSystemMessage(
-        `Goal complete. Final usage: ${formatGoalUsage(finalGoal)}.`,
+        formatGoalCompleteNotice(finalGoal),
         'info',
       )
       logGoalAudit({

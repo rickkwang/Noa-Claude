@@ -9,7 +9,16 @@ import {
   createUserMessage,
 } from '../../utils/messages.js'
 import { restoreSessionStateFromLog } from '../../utils/sessionRestore.js'
-import { createThreadGoal } from '../../utils/goalState.js'
+import {
+  createThreadGoal,
+  DEFAULT_MAX_GOAL_AUTO_CONTINUE_TURNS,
+} from '../../utils/goalState.js'
+import {
+  formatGoalBudgetReachedNotice,
+  formatGoalCompleteNotice,
+  formatGoalPausedNotice,
+  GOAL_EVALUATOR_FAILED_NOTICE,
+} from '../../utils/goalNotices.js'
 
 function restore(messages: Message[]): AppState {
   let state = getDefaultAppState()
@@ -96,14 +105,11 @@ describe('goal session restore', () => {
   test('clears stale goal when resumed transcript has no goal', () => {
     const initialState: AppState = {
       ...getDefaultAppState(),
-      goal: {
-        ...createThreadGoal({
-          objective: 'Old session goal',
-          tokenBudget: null,
-          now: 1,
-        }),
+      goal: createThreadGoal({
         objective: 'Old session goal',
-      },
+        tokenBudget: null,
+        now: 1,
+      }),
     }
 
     const state = restoreInto(initialState, [
@@ -118,14 +124,11 @@ describe('goal session restore', () => {
   test('clears stale goal when resumed transcript ended with goal clear', () => {
     const initialState: AppState = {
       ...getDefaultAppState(),
-      goal: {
-        ...createThreadGoal({
-          objective: 'Old session goal',
-          tokenBudget: null,
-          now: 1,
-        }),
+      goal: createThreadGoal({
         objective: 'Old session goal',
-      },
+        tokenBudget: null,
+        now: 1,
+      }),
     }
 
     const state = restoreInto(initialState, [
@@ -202,6 +205,82 @@ Continue working toward the active thread goal.`,
       lastEvaluatorReason: 'Goal evaluator failed to return a valid decision.',
       stopReason: 'evaluator_failed',
     })
+  })
+
+  test('paused-after-N restore preserves default maxAutoContinueTurns', () => {
+    const command = createCommandInputMessage(`<command-name>/goal</command-name>
+      <command-message>goal</command-message>
+      <command-args>Finish verification</command-args>`)
+    command.timestamp = '2026-05-13T10:00:00.000Z'
+
+    const pausedNotice = createSystemMessage(formatGoalPausedNotice(3), 'info')
+    pausedNotice.timestamp = '2026-05-13T10:00:30.000Z'
+
+    const state = restore([command, pausedNotice])
+
+    expect(state.goal?.status).toBe('paused')
+    expect(state.goal?.autoContinueTurns).toBe(3)
+    expect(state.goal?.maxAutoContinueTurns).toBe(
+      DEFAULT_MAX_GOAL_AUTO_CONTINUE_TURNS,
+    )
+    expect(state.goal?.stopReason).toBe('max_auto_continue_turns')
+  })
+
+  test('notices round-trip through restore for all goal lifecycle states', () => {
+    const baseGoal = createThreadGoal({
+      objective: 'Round trip',
+      tokenBudget: 100,
+      now: 1,
+    })
+
+    const cases = [
+      {
+        notice: formatGoalBudgetReachedNotice({
+          ...baseGoal,
+          tokensUsed: 110,
+          timeUsedSeconds: 5,
+        }),
+        kind: 'warning' as const,
+        expectStatus: 'budget_limited' as const,
+        expectStopReason: 'budget_limited' as const,
+      },
+      {
+        notice: formatGoalCompleteNotice({
+          ...baseGoal,
+          tokensUsed: 30,
+          timeUsedSeconds: 3,
+        }),
+        kind: 'info' as const,
+        expectStatus: 'complete' as const,
+        expectStopReason: 'complete' as const,
+      },
+      {
+        notice: GOAL_EVALUATOR_FAILED_NOTICE,
+        kind: 'warning' as const,
+        expectStatus: 'paused' as const,
+        expectStopReason: 'evaluator_failed' as const,
+      },
+      {
+        notice: formatGoalPausedNotice(5),
+        kind: 'info' as const,
+        expectStatus: 'paused' as const,
+        expectStopReason: 'max_auto_continue_turns' as const,
+      },
+    ]
+
+    for (const c of cases) {
+      const command = createCommandInputMessage(`<command-name>/goal</command-name>
+        <command-message>goal</command-message>
+        <command-args>Round trip --budget 100</command-args>`)
+      command.timestamp = '2026-05-13T10:00:00.000Z'
+      const notice = createSystemMessage(c.notice, c.kind)
+      notice.timestamp = '2026-05-13T10:00:01.000Z'
+
+      const state = restore([command, notice])
+
+      expect(state.goal?.status).toBe(c.expectStatus)
+      expect(state.goal?.stopReason).toBe(c.expectStopReason)
+    }
   })
 
   test('restores evaluator-completed goal from runtime system notice', () => {

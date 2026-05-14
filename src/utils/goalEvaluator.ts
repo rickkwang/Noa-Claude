@@ -1,7 +1,7 @@
 import { z } from 'zod/v4'
 import { queryHaiku } from '../services/api/claude.js'
 import type { ThreadGoal } from '../types/goal.js'
-import type { Message } from '../types/message.js'
+import type { AssistantMessage, Message } from '../types/message.js'
 import { getContentText } from './messages.js'
 import { safeParseJSON } from './json.js'
 import { lazySchema } from './lazySchema.js'
@@ -26,6 +26,31 @@ const goalEvaluationSchema = lazySchema(() =>
 )
 
 export type GoalEvaluation = z.infer<ReturnType<typeof goalEvaluationSchema>>
+
+export type GoalEvaluationOutcome = {
+  evaluation: GoalEvaluation | null
+  evaluatorMessage: AssistantMessage | null
+}
+
+function fitSegmentToEvaluatorContext(segment: string, maxLength: number): string {
+  if (maxLength <= 0) return ''
+  if (segment.length <= maxLength) return segment
+
+  const headerEnd = segment.indexOf('\n')
+  const rawHeader =
+    headerEnd === -1 ? segment.slice(0, 80) : segment.slice(0, headerEnd)
+  const header =
+    rawHeader.length > 80 ? `${rawHeader.slice(0, 77)}...` : rawHeader
+  const marker = '\n[truncated]\n'
+  const availableTailLength = Math.max(
+    0,
+    maxLength - header.length - marker.length,
+  )
+  if (availableTailLength === 0) {
+    return header.slice(0, maxLength)
+  }
+  return `${header}${marker}${segment.slice(-availableTailLength)}`
+}
 
 function toolResultText(result: unknown): string {
   if (!result || typeof result !== 'object') {
@@ -57,31 +82,57 @@ function toolResultText(result: unknown): string {
   return parts.join('\n')
 }
 
-export function buildGoalEvaluatorContext(messages: Message[]): string {
-  const parts: string[] = []
-  for (const message of messages) {
-    if ('isMeta' in message && message.isMeta) continue
-    if (message.type !== 'user' && message.type !== 'assistant') continue
-    const messageParts: string[] = []
-    if (message.message) {
-      const text =
-        typeof message.message.content === 'string'
-          ? message.message.content
-          : getContentText(message.message.content)
-      if (text) messageParts.push(text)
-    }
-    if (message.type === 'user' && message.toolUseResult !== undefined) {
-      const toolText = toolResultText(message.toolUseResult).trim()
-      if (toolText) messageParts.push(`tool result:\n${toolText}`)
-    }
-    if (messageParts.length > 0) {
-      parts.push(`${message.type}: ${messageParts.join('\n')}`)
-    }
+function formatMessageForEvaluator(message: Message): string | null {
+  if ('isMeta' in message && message.isMeta) return null
+  if (message.type !== 'user' && message.type !== 'assistant') return null
+  const messageParts: string[] = []
+  if (message.message) {
+    const text =
+      typeof message.message.content === 'string'
+        ? message.message.content
+        : getContentText(message.message.content)
+    if (text) messageParts.push(text)
   }
-  const text = parts.join('\n\n')
-  return text.length > MAX_GOAL_EVALUATOR_CONTEXT
-    ? text.slice(-MAX_GOAL_EVALUATOR_CONTEXT)
-    : text
+  if (message.type === 'user' && message.toolUseResult !== undefined) {
+    const toolText = toolResultText(message.toolUseResult).trim()
+    if (toolText) messageParts.push(`tool result:\n${toolText}`)
+  }
+  if (messageParts.length === 0) return null
+  return `${message.type}: ${messageParts.join('\n')}`
+}
+
+export function buildGoalEvaluatorContext(messages: Message[]): string {
+  const segmentsReversed: string[] = []
+  let totalLength = 0
+  const separator = '\n\n'
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const segment = formatMessageForEvaluator(messages[i]!)
+    if (!segment) continue
+    const addedLength =
+      segment.length + (segmentsReversed.length > 0 ? separator.length : 0)
+    if (totalLength + addedLength > MAX_GOAL_EVALUATOR_CONTEXT) {
+      const shouldFitPartialSegment =
+        segment.length > MAX_GOAL_EVALUATOR_CONTEXT ||
+        segment.includes('tool result:\n')
+      if (!shouldFitPartialSegment) break
+
+      const separatorLength =
+        segmentsReversed.length > 0 ? separator.length : 0
+      const remainingLength =
+        MAX_GOAL_EVALUATOR_CONTEXT - totalLength - separatorLength
+      const fittedSegment = fitSegmentToEvaluatorContext(
+        segment,
+        remainingLength,
+      )
+      if (fittedSegment) {
+        segmentsReversed.push(fittedSegment)
+      }
+      break
+    }
+    segmentsReversed.push(segment)
+    totalLength += addedLength
+  }
+  return segmentsReversed.reverse().join(separator)
 }
 
 export async function evaluateGoalCompletion({
@@ -94,7 +145,7 @@ export async function evaluateGoalCompletion({
   messages: Message[]
   signal: AbortSignal
   isNonInteractiveSession: boolean
-}): Promise<GoalEvaluation | null> {
+}): Promise<GoalEvaluationOutcome> {
   logGoalAudit({ goal, action: 'evaluator_start', reason: null })
   try {
     const response = await queryHaiku({
@@ -142,7 +193,7 @@ Decision:`,
         action: 'evaluator_failure',
         reason: 'Goal evaluator returned invalid JSON.',
       })
-      return null
+      return { evaluation: null, evaluatorMessage: response }
     }
     logGoalAudit({
       goal,
@@ -150,8 +201,11 @@ Decision:`,
       reason: parsed.data.reason,
     })
     return {
-      achieved: parsed.data.achieved,
-      reason: parsed.data.reason.trim() || 'No evaluator reason provided.',
+      evaluation: {
+        achieved: parsed.data.achieved,
+        reason: parsed.data.reason.trim() || 'No evaluator reason provided.',
+      },
+      evaluatorMessage: response,
     }
   } catch {
     logGoalAudit({
@@ -159,6 +213,6 @@ Decision:`,
       action: 'evaluator_failure',
       reason: 'Goal evaluator request failed.',
     })
-    return null
+    return { evaluation: null, evaluatorMessage: null }
   }
 }

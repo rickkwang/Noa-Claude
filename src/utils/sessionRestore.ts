@@ -75,6 +75,17 @@ import {
   replaceGoal,
   resumeGoal,
 } from './goalState.js'
+import {
+  GOAL_BUDGET_REACHED_PREFIX,
+  GOAL_COMPLETE_PREFIX,
+  GOAL_CONTINUATION_MARKER,
+  GOAL_CONTINUATION_REASON_PREFIX,
+  GOAL_EVALUATOR_FAILED_NOTICE,
+  GOAL_EVALUATOR_FAILED_REASON,
+} from './goalNotices.js'
+
+const GOAL_PAUSED_AFTER_REGEX =
+  /^Goal paused after (\d+) auto-continue turns\./
 
 type ResumeResult = {
   messages?: Message[]
@@ -342,9 +353,19 @@ function extractGoalContinuationReason(message: Message): string | null {
     typeof message.message.content === 'string'
       ? message.message.content
       : getContentText(message.message.content)
-  if (!text || !text.startsWith('Evaluator reason: ')) return null
-  const [firstParagraph = ''] = text.split('\n\n')
-  const reason = firstParagraph.replace(/^Evaluator reason:\s*/, '').trim()
+  if (!text) return null
+  const hasMarker = text.startsWith(GOAL_CONTINUATION_MARKER)
+  const hasLegacyPrefix = text.startsWith(GOAL_CONTINUATION_REASON_PREFIX)
+  if (!hasMarker && !hasLegacyPrefix) return null
+  const body = hasMarker
+    ? text.slice(GOAL_CONTINUATION_MARKER.length).replace(/^\n+/, '')
+    : text
+  const reasonLine = body
+    .split('\n\n')
+    .find(part => part.startsWith(GOAL_CONTINUATION_REASON_PREFIX))
+  const reason = reasonLine
+    ? reasonLine.slice(GOAL_CONTINUATION_REASON_PREFIX.length).trim()
+    : ''
   return reason || null
 }
 
@@ -371,25 +392,20 @@ function applyGoalMetaMessage(
     return current
   }
 
-  if (message.content.startsWith('Goal budget reached: ')) {
+  if (message.content.startsWith(GOAL_BUDGET_REACHED_PREFIX)) {
     return markGoalBudgetLimited(current, now)
   }
-  if (message.content.startsWith('Goal complete. Final usage: ')) {
+  if (message.content.startsWith(GOAL_COMPLETE_PREFIX)) {
     return markGoalComplete(current, now) ?? current
   }
-  if (
-    message.content ===
-    'Goal evaluator failed. Auto-continue has been paused; use /goal resume to try again.'
-  ) {
+  if (message.content === GOAL_EVALUATOR_FAILED_NOTICE) {
     return markGoalEvaluatorFailed({
       goal: current,
-      reason: 'Goal evaluator failed to return a valid decision.',
+      reason: GOAL_EVALUATOR_FAILED_REASON,
       now,
     })
   }
-  const pausedMatch = message.content.match(
-    /^Goal paused after (\d+) auto-continue turns\./,
-  )
+  const pausedMatch = message.content.match(GOAL_PAUSED_AFTER_REGEX)
   if (pausedMatch) {
     const turns = parseInt(pausedMatch[1]!, 10)
     return {
@@ -398,9 +414,6 @@ function applyGoalMetaMessage(
       autoContinueTurns: Number.isFinite(turns)
         ? turns
         : current.autoContinueTurns,
-      maxAutoContinueTurns: Number.isFinite(turns)
-        ? turns
-        : current.maxAutoContinueTurns,
       stopReason: 'max_auto_continue_turns',
       updatedAt: now,
     }
