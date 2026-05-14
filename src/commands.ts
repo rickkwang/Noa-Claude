@@ -62,7 +62,7 @@ import { feature } from 'bun:bundle'
 // Dead code elimination: conditional imports
 /* eslint-disable @typescript-eslint/no-require-imports */
 const proactive =
-  require('./commands/proactive.js').default
+  require('./commands/proactive/index.js').default
 const briefCommand =
   require('./commands/brief.js').default
 const assistantCommand = require('./commands/assistant/index.js').default

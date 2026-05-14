@@ -98,11 +98,8 @@ async function main(): Promise<void> {
   // workers are lean. If a worker kind needs configs/auth (assistant will),
   // it calls them inside its run() fn.
   if (feature('DAEMON') && args[0] === '--daemon-worker') {
-    const {
-      runDaemonWorker
-    } = await import('../daemon/workerRegistry.js');
-    await runDaemonWorker(args[1]);
-    return;
+    const { cliError } = await import('../cli/exit.js');
+    cliError('Daemon worker is not available in this build.');
   }
 
   // Fast-path for `claude remote-control` (also accepts legacy `claude remote` / `claude sync` / `claude bridge`):
@@ -163,20 +160,8 @@ async function main(): Promise<void> {
 
   // Fast-path for `claude daemon [subcommand]`: long-running supervisor.
   if (feature('DAEMON') && args[0] === 'daemon') {
-    profileCheckpoint('cli_daemon_path');
-    const {
-      enableConfigs
-    } = await import('../utils/config.js');
-    enableConfigs();
-    const {
-      initSinks
-    } = await import('../utils/sinks.js');
-    initSinks();
-    const {
-      daemonMain
-    } = await import('../daemon/main.js');
-    await daemonMain(args.slice(1));
-    return;
+    const { cliError } = await import('../cli/exit.js');
+    cliError('Daemon mode is not available in this build.');
   }
 
   // Fast-path for `claude ps|logs|attach|kill` and `--bg`/`--background`.
@@ -224,24 +209,16 @@ async function main(): Promise<void> {
   // Fast-path for `claude environment-runner`: headless BYOC runner.
   // feature() must stay inline for build-time dead code elimination.
   if (feature('BYOC_ENVIRONMENT_RUNNER') && args[0] === 'environment-runner') {
-    profileCheckpoint('cli_environment_runner_path');
-    const {
-      environmentRunnerMain
-    } = await import('../environment-runner/main.js');
-    await environmentRunnerMain(args.slice(1));
-    return;
+    const { cliError } = await import('../cli/exit.js');
+    cliError('Environment runner is not available in this build.');
   }
 
   // Fast-path for `claude self-hosted-runner`: headless self-hosted-runner
-  // targeting the SelfHostedRunnerWorkerService API (register + poll; poll IS
-  // heartbeat). feature() must stay inline for build-time dead code elimination.
+  // targeting the SelfHostedRunnerWorkerService API. feature() must stay
+  // inline for build-time dead code elimination.
   if (feature('SELF_HOSTED_RUNNER') && args[0] === 'self-hosted-runner') {
-    profileCheckpoint('cli_self_hosted_runner_path');
-    const {
-      selfHostedRunnerMain
-    } = await import('../self-hosted-runner/main.js');
-    await selfHostedRunnerMain(args.slice(1));
-    return;
+    const { cliError } = await import('../cli/exit.js');
+    cliError('Self-hosted runner is not available in this build.');
   }
 
   // Fast-path for --worktree --tmux: exec into tmux before loading full CLI
