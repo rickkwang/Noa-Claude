@@ -10,7 +10,7 @@ import { getWorkload } from '../utils/workloadContext.js'
 
 const DEFAULT_PREFIX = `You are Noa Claude, an AI coding agent for software engineering tasks.`
 const AGENT_SDK_CLAUDE_CODE_PRESET_PREFIX = `You are Noa Claude running within the Noa Claude Agent SDK.`
-const AGENT_SDK_PREFIX = `You are a Noa Claude agent.`
+const AGENT_SDK_PREFIX = `You are a Noa Claude agent for software engineering tasks.`
 
 const CLI_SYSPROMPT_PREFIX_VALUES = [
   DEFAULT_PREFIX,
