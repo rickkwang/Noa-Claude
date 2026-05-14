@@ -1,6 +1,13 @@
-import { chmodSync, existsSync, mkdirSync } from 'fs'
-import { dirname, resolve } from 'path'
-import { readFileSync, writeFileSync } from 'fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'fs'
+import { dirname, join, resolve } from 'path'
 import { getLauncherBootstrapCode } from './launcher-config.js'
 
 const args = process.argv.slice(2)
@@ -146,6 +153,10 @@ for (let i = 0; i < args.length; i++) {
 }
 
 const features = [...featureSet]
+const featureFlags: Record<string, boolean> = {}
+for (const f of features) {
+  featureFlags[f] = true
+}
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8')) as {
   name: string
@@ -164,6 +175,58 @@ if (outDir !== '.') {
   mkdirSync(outDir, { recursive: true })
 }
 
+// ── Pre-process: replace feature() calls with boolean literals ──────────────
+// Bun.build() API does not support --feature CLI flags. We pre-process source
+// files to strip the bun:bundle import and replace feature('FLAG') with true/false.
+// Files are modified in-place before Bun.build() and restored in a finally block.
+
+const featureCallRe = /\bfeature\(\s*['"](\w+)['"][,\s]*\)/gs
+const featureImportRe = /import\s*\{[^}]*\bfeature\b[^}]*\}\s*from\s*['"]bun:bundle['"];?\s*\n?/g
+const modifiedFiles = new Map<string, string>()
+
+function preProcessFeatureFlags(dir: string) {
+  for (const ent of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, ent.name)
+    if (ent.isDirectory()) {
+      preProcessFeatureFlags(full)
+      continue
+    }
+    if (!/\.(ts|tsx)$/.test(ent.name)) continue
+
+    const raw = readFileSync(full, 'utf-8')
+    if (!raw.includes('feature(')) continue
+
+    let contents = raw
+    contents = contents.replace(featureImportRe, '')
+    contents = contents.replace(featureCallRe, (_match, name) =>
+      String(featureFlags[name] ?? false),
+    )
+
+    if (contents !== raw) {
+      modifiedFiles.set(full, raw)
+      writeFileSync(full, contents)
+    }
+  }
+}
+
+function restoreModifiedFiles() {
+  for (const [path, original] of modifiedFiles) {
+    writeFileSync(path, original)
+  }
+  modifiedFiles.clear()
+}
+
+preProcessFeatureFlags(join(import.meta.dirname ?? '.', 'src'))
+const numModified = modifiedFiles.size
+
+// Restore source files on abrupt termination
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(signal, () => {
+    restoreModifiedFiles()
+    process.exit(signal === 'SIGINT' ? 130 : 143)
+  })
+}
+
 const externals = [
   'audio-capture-napi',
   'image-processor-napi',
@@ -171,8 +234,6 @@ const externals = [
   'url-handler-napi',
   'sharp',
 ]
-
-const versionChangelog = getBundledReleaseNotes()
 
 const defines: Record<string, string> = {
   'process.env.USER_TYPE': JSON.stringify('external'),
@@ -190,7 +251,7 @@ const defines: Record<string, string> = {
   'MACRO.ISSUES_EXPLAINER': JSON.stringify(
     'https://github.com/rickkwang/Claude-Agent/issues',
   ),
-  'MACRO.VERSION_CHANGELOG': JSON.stringify(versionChangelog),
+  'MACRO.VERSION_CHANGELOG': JSON.stringify(getBundledReleaseNotes()),
 }
 
 console.log('Building Claude Agent...')
@@ -206,92 +267,158 @@ if (features.length > 0) {
   console.log(`Features: ${features.join(', ')}`)
 }
 
-const bundleCmd = [
-  'bun',
-  'build',
-  './src/main.tsx',
-  '--target',
-  'bun',
-  '--format',
-  'esm',
-  '--outfile',
-  outfile,
-]
+// ── Bun plugin: stub missing optional modules ───────────────────────────────
+const stubPlugin: BunPlugin = {
+  name: 'stub-optional-modules',
+  setup(build) {
+    // Modules that may not be installed at build time
+    const stubModules = [
+      '@ant/claude-for-chrome-mcp',
+      '@anthropic-ai/sandbox-runtime',
+    ]
 
-for (const external of externals) {
-  bundleCmd.push('--external', external)
+    for (const mod of stubModules) {
+      build.onResolve({ filter: new RegExp(`^${mod}$`) }, () => ({
+        path: mod,
+        namespace: 'optional-stub',
+      }))
+    }
+
+    build.onLoad({ filter: /.*/, namespace: 'optional-stub' }, () => ({
+      contents: `
+const noop = () => null;
+const handler = {
+  get(_, prop) {
+    if (prop === '__esModule') return true;
+    if (prop === 'default') return new Proxy({}, handler);
+    if (prop === 'SandboxRuntimeConfigSchema') return { parse: () => ({}) };
+    return noop;
+  }
+};
+const stub = new Proxy(noop, handler);
+export default stub;
+export const __stub = true;
+export const BROWSER_TOOLS = [];
+export const createClaudeForChromeMcpServer = noop;
+export const SandboxViolationStore = null;
+// Return undefined for SandboxManager properties so that
+// sandbox-adapter.ts callBaseSandboxMethod() falls back correctly.
+export const SandboxManager = new Proxy({}, { get: () => undefined });
+export const SandboxRuntimeConfigSchema = { parse: () => ({}) };
+`,
+      loader: 'js',
+    }))
+  },
 }
 
-for (const feature of features) {
-  bundleCmd.push(`--feature=${feature}`)
-}
-
+// Convert --define flags for Bun.build API
+const defineEntries: Record<string, string> = {}
 for (const [key, value] of Object.entries(defines)) {
-  bundleCmd.push('--define', `${key}=${value}`)
+  defineEntries[key] = value
 }
 
-const proc = Bun.spawn(bundleCmd, {
-  stdio: ['inherit', 'inherit', 'inherit'],
-})
-
-const code = await proc.exited
-if (code === 0 && existsSync(outfile)) {
-  chmodSync(outfile, 0o755)
-  console.log(`Built ${outfile}`)
-} else if (code !== 0) {
-  process.exit(code ?? 1)
-}
-
-// Patch the bundled output before optional binary compilation.
-if (code === 0) {
-  const content = readFileSync(outfile, 'utf-8')
-  let patched = content
-  patched = patched
-    .replace(/"external"\s*===\s*'ant'/g, 'true')
-    .replace(/'external'\s*===\s*"ant"/g, 'true')
-    .replace(/"external"\s*!==\s*'ant'/g, 'false')
-    .replace(/'external'\s*!==\s*"ant"/g, 'false')
-
-  if (patched === content) {
-    console.warn(
-      'Build patch: no USER_TYPE ant/external replacements found (may already be inlined by bundler)',
-    )
-  }
-
-  writeFileSync(outfile, patched + '\n' + getLauncherBootstrapCode())
-  console.log(`Build complete: ${outfile}`)
-}
-
-if (compile && code === 0) {
-  const compileCmd = [
-    'bun',
-    'build',
-    bundleOutfile,
-    '--target',
-    'bun',
-    '--format',
-    'esm',
-    '--compile',
-    '--bytecode',
-    '--outfile',
-    cliOutfile,
-  ]
-
-  for (const external of externals) {
-    compileCmd.push('--external', external)
-  }
-
-  const compileProc = Bun.spawn(compileCmd, {
-    stdio: ['inherit', 'inherit', 'inherit'],
+try {
+  const result = await Bun.build({
+    entrypoints: ['./src/main.tsx'],
+    target: 'bun',
+    format: 'esm',
+    outdir: dirname(resolve(outfile)),
+    external: externals,
+    define: defineEntries,
+    plugins: [stubPlugin],
   })
-  const compileCode = await compileProc.exited
-  if (compileCode !== 0) {
-    process.exit(compileCode ?? 1)
-  }
-  if (!existsSync(cliOutfile)) {
-    console.error(`Compiled binary missing: ${cliOutfile}`)
+
+  if (!result.success) {
+    console.error('Build failed:')
+    for (const log of result.logs) {
+      console.error(log)
+    }
     process.exit(1)
   }
-  chmodSync(cliOutfile, 0o755)
-  console.log(`Built standalone binary: ${cliOutfile}`)
+
+  // Bun.build writes to outdir, but we need a single outfile name.
+  // Find the output file and rename if needed.
+  const outputFile = result.outputs.find(o => o.kind === 'entry-point')
+  if (!outputFile) {
+    console.error('No entry-point output found')
+    process.exit(1)
+  }
+
+  // If the output path doesn't match our expected outfile, copy it
+  const actualPath = outputFile.path
+  const expectedPath = resolve(outfile)
+  if (actualPath !== expectedPath) {
+    const content = readFileSync(actualPath, 'utf-8')
+    writeFileSync(expectedPath, content)
+  }
+
+  chmodSync(expectedPath, 0o755)
+  console.log(`Built ${outfile}`)
+
+  // Patch the bundled output before optional binary compilation.
+  {
+    const content = readFileSync(expectedPath, 'utf-8')
+    let patched = content
+    patched = patched
+      .replace(/"external"\s*===\s*'ant'/g, 'true')
+      .replace(/'external'\s*===\s*"ant"/g, 'true')
+      .replace(/"external"\s*!==\s*'ant'/g, 'false')
+      .replace(/'external'\s*!==\s*"ant"/g, 'false')
+
+    if (patched === content) {
+      console.warn(
+        'Build patch: no USER_TYPE ant/external replacements found (may already be inlined by bundler)',
+      )
+    }
+
+    writeFileSync(expectedPath, patched + '\n' + getLauncherBootstrapCode())
+    console.log(`Build complete: ${outfile}`)
+  }
+
+  if (compile) {
+    const compileResult = await Bun.build({
+      entrypoints: [bundleOutfile],
+      target: 'bun',
+      format: 'esm',
+      outdir: dirname(resolve(cliOutfile)),
+      external: externals,
+      plugins: [stubPlugin],
+      compile: true,
+    })
+
+    if (!compileResult.success) {
+      console.error('Compile failed:')
+      for (const log of compileResult.logs) {
+        console.error(log)
+      }
+      process.exit(1)
+    }
+
+    const compileOutput = compileResult.outputs.find(o => o.kind === 'entry-point')
+    if (!compileOutput) {
+      console.error('No compile output found')
+      process.exit(1)
+    }
+
+    // Bun.build with compile:true emits a native binary. Use fs.rename
+    // (not readFileSync/writeFileSync) to avoid corrupting the Mach-O/ELF format.
+    const compileActualPath = compileOutput.path
+    const compileExpectedPath = resolve(cliOutfile)
+    if (compileActualPath !== compileExpectedPath) {
+      renameSync(compileActualPath, compileExpectedPath)
+    }
+
+    if (!existsSync(cliOutfile)) {
+      console.error(`Compiled binary missing: ${cliOutfile}`)
+      process.exit(1)
+    }
+    chmodSync(cliOutfile, 0o755)
+    console.log(`Built standalone binary: ${cliOutfile}`)
+  }
+} finally {
+  // Always restore source files, even if Bun.build() throws
+  restoreModifiedFiles()
+  if (numModified > 0) {
+    console.log(`  🔄 feature-flags: pre-processed ${numModified} files (restored)`)
+  }
 }
