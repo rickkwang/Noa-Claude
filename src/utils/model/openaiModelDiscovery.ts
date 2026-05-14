@@ -305,7 +305,8 @@ export async function discoverProviderModelNames({
     case 'groq':
     case 'azure-openai':
     case 'openrouter':
-    case 'lmstudio': {
+    case 'lmstudio':
+    case 'mimo': {
       const headers =
         type === 'gemini' && apiKey
           ? { 'x-goog-api-key': apiKey }

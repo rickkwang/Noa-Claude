@@ -24,6 +24,7 @@ export type ProviderType =
   | 'azure-openai'
   | 'openrouter'
   | 'lmstudio'
+  | 'mimo'
 
 export interface ProviderProfile {
   id: string
@@ -127,6 +128,7 @@ export const PROVIDER_TYPE_LABELS: Record<ProviderType, string> = {
   'azure-openai': 'Azure OpenAI',
   openrouter: 'OpenRouter',
   lmstudio: 'LM Studio',
+  mimo: 'Xiaomi MiMo',
 }
 
 export const PROVIDER_TYPE_DEFAULTS: Record<ProviderType, { baseUrl?: string; model?: string }> = {
@@ -198,6 +200,10 @@ export const PROVIDER_TYPE_DEFAULTS: Record<ProviderType, { baseUrl?: string; mo
     baseUrl: 'http://localhost:1234/v1',
     model: 'local-model',
   },
+  mimo: {
+    baseUrl: 'https://api.xiaomimimo.com/v1',
+    model: 'mimo-v2.5-pro',
+  },
 }
 
 function setEnvKey(target: Record<string, string>, key: string, value?: string): void {
@@ -250,6 +256,7 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
     case 'azure-openai':
     case 'openrouter':
     case 'lmstudio':
+    case 'mimo':
       env.CLAUDE_CODE_USE_OPENAI = '1'
       setEnvKey(env, 'OPENAI_BASE_URL', normalizedBaseUrl)
       setEnvKey(env, 'OPENAI_API_KEY', profile.apiKey)

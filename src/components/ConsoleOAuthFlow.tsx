@@ -212,6 +212,14 @@ const PLATFORM_PRESETS: PlatformPreset[] = [{
   profileName: 'LM Studio',
   baseUrl: 'http://localhost:1234/v1',
   model: 'local-model'
+}, {
+  value: 'mimo',
+  name: 'Xiaomi MiMo',
+  description: 'Xiaomi MiMo OpenAI-compatible endpoint',
+  type: 'mimo',
+  profileName: 'Xiaomi MiMo',
+  baseUrl: 'https://api.xiaomimimo.com/v1',
+  model: 'mimo-v2.5-pro'
 }];
 async function activateProviderPreset(value: string, overrides?: {
   profileName?: string;
