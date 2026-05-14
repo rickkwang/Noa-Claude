@@ -2,6 +2,11 @@ import { z } from 'zod/v4'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import type { ThreadGoal } from '../../types/goal.js'
+import {
+  createThreadGoal,
+  markGoalComplete,
+  normalizeGoal,
+} from '../../utils/goalState.js'
 
 const GOAL_TOOL_NAME = 'goal'
 
@@ -38,6 +43,11 @@ const outputSchema = lazySchema(() =>
         token_budget: z.number().nullable(),
         tokens_used: z.number(),
         time_used_seconds: z.number(),
+        auto_continue_turns: z.number(),
+        max_auto_continue_turns: z.number(),
+        last_evaluator_reason: z.string().nullable(),
+        completed_at: z.number().nullable(),
+        stop_reason: z.string().nullable(),
       })
       .nullable(),
     remaining_tokens: z.number().nullable(),
@@ -50,12 +60,18 @@ export type GoalToolOutput = z.infer<OutputSchema>
 
 function formatGoalForResponse(goal: ThreadGoal | null) {
   if (!goal) return null
+  const current = normalizeGoal(goal)
   return {
-    objective: goal.objective,
-    status: goal.status,
-    token_budget: goal.tokenBudget,
-    tokens_used: goal.tokensUsed,
-    time_used_seconds: goal.timeUsedSeconds,
+    objective: current.objective,
+    status: current.status,
+    token_budget: current.tokenBudget,
+    tokens_used: current.tokensUsed,
+    time_used_seconds: current.timeUsedSeconds,
+    auto_continue_turns: current.autoContinueTurns,
+    max_auto_continue_turns: current.maxAutoContinueTurns,
+    last_evaluator_reason: current.lastEvaluatorReason,
+    completed_at: current.completedAt,
+    stop_reason: current.stopReason,
   }
 }
 
@@ -176,15 +192,7 @@ The model cannot pause, resume, or clear goals — those are user-controlled via
             conflict = existing
             return prev
           }
-          created = {
-            objective,
-            status: 'active',
-            tokenBudget,
-            tokensUsed: 0,
-            timeUsedSeconds: 0,
-            createdAt: now,
-            updatedAt: now,
-          }
+          created = createThreadGoal({ objective, tokenBudget, now })
           return { ...prev, goal: created }
         })
 
@@ -222,7 +230,7 @@ The model cannot pause, resume, or clear goals — those are user-controlled via
             alreadyComplete = existing
             return prev
           }
-          updated = { ...existing, status: 'complete', updatedAt: Date.now() }
+          updated = markGoalComplete(existing, Date.now())
           return { ...prev, goal: updated }
         })
 

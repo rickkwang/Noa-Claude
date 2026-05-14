@@ -68,6 +68,32 @@ The project-local progress artifact lives at:
 
 - `.claude-agent/progress.md`
 
+### `/goal`
+
+Use `/goal` for one long-running objective that should survive normal turns and resume from session transcripts.
+
+Supported commands:
+
+- `/goal <objective> [--budget N]` creates a goal when none is active
+- `/goal` shows status, token usage, auto-continue count, and the last evaluator reason
+- `/goal pause` pauses an active goal
+- `/goal resume` resumes a paused goal and resets the auto-continue counter
+- `/goal clear` removes the current goal
+- `/goal replace <objective> [--budget N]` explicitly replaces the current goal and resets usage
+
+Runtime behavior:
+
+- only one goal can be active in a thread
+- an existing active or paused goal is not replaced unless the user runs `/goal replace`
+- after each eligible main-thread turn, a lightweight evaluator checks whether the goal is complete
+- if the evaluator says the goal is incomplete, Noa Claude auto-continues up to 5 turns
+- after 5 auto-continue turns, the goal is paused and can be resumed with `/goal resume`
+- if a token budget is reached, the goal becomes `budget_limited` and will not auto-continue
+- budget-limited goals resume only when the same objective is set with a larger `--budget`
+- session restore replays transcript evidence to recover goal status, usage, auto-continue count, and stop reason
+
+The model can inspect, create, and mark a goal complete through the goal tool. Pause, resume, clear, and replace remain user-controlled slash commands.
+
 ### Progress Artifacts
 
 Use a project-local path inside the product namespace:
@@ -170,4 +196,3 @@ Track these as release-gating regressions, not just ad hoc metrics:
 - time to first tool availability
 - resume latency from existing transcript
 - non-interactive `--print` completion time
-

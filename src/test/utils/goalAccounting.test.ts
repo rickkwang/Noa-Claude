@@ -4,6 +4,7 @@ import type { AssistantMessage } from '../../types/message.js'
 import type { ThreadGoal } from '../../types/goal.js'
 import { createAssistantMessage } from '../../utils/messages.js'
 import { accountGoalUsage } from '../../utils/goalAccounting.js'
+import { createThreadGoal } from '../../utils/goalState.js'
 
 function assistantWithUsage(inputTokens: number, outputTokens: number): AssistantMessage {
   return createAssistantMessage({
@@ -17,13 +18,11 @@ function assistantWithUsage(inputTokens: number, outputTokens: number): Assistan
 
 function activeGoal(overrides: Partial<ThreadGoal> = {}): ThreadGoal {
   return {
-    objective: 'Finish the goal',
-    status: 'active',
-    tokenBudget: 100,
-    tokensUsed: 0,
-    timeUsedSeconds: 0,
-    createdAt: Date.now() - 1000,
-    updatedAt: Date.now() - 1000,
+    ...createThreadGoal({
+      objective: 'Finish the goal',
+      tokenBudget: 100,
+      now: Date.now() - 1000,
+    }),
     ...overrides,
   }
 }
@@ -61,6 +60,7 @@ describe('goal accounting', () => {
 
     expect(harness.state.goal?.tokensUsed).toBe(103)
     expect(harness.state.goal?.status).toBe('budget_limited')
+    expect(harness.state.goal?.stopReason).toBe('budget_limited')
     expect(result.userNotice?.type).toBe('system')
     expect(result.userNotice?.content).toContain('Goal budget reached')
     expect(result.modelNotice).toBeNull()

@@ -62,6 +62,19 @@ import {
   getCurrentWorktreeSession,
   restoreWorktreeSession,
 } from './worktree.js'
+import {
+  createThreadGoal,
+  markGoalBudgetLimited,
+  markGoalComplete,
+  markGoalEvaluatorFailed,
+  maybeResumeBudgetLimitedGoal,
+  normalizeGoal,
+  parseGoalCommandArgs,
+  pauseGoal,
+  recordGoalEvaluatorResult,
+  replaceGoal,
+  resumeGoal,
+} from './goalState.js'
 
 type ResumeResult = {
   messages?: Message[]
@@ -84,6 +97,11 @@ type GoalToolResult = {
     token_budget?: unknown
     tokens_used?: unknown
     time_used_seconds?: unknown
+    auto_continue_turns?: unknown
+    max_auto_continue_turns?: unknown
+    last_evaluator_reason?: unknown
+    completed_at?: unknown
+    stop_reason?: unknown
   } | null
 }
 
@@ -147,59 +165,37 @@ function timestampMs(message: Message): number {
   return Number.isFinite(parsed) ? parsed : Date.now()
 }
 
-function parseGoalBudget(args: string): {
-  objective: string
-  tokenBudget: number | null
-} | null {
-  const budgetMatch = args.match(/--budget\s+(\d+)/)
-  let tokenBudget: number | null = null
-  let objective = args.trim()
-  if (budgetMatch) {
-    const parsed = parseInt(budgetMatch[1]!, 10)
-    if (!Number.isFinite(parsed) || parsed <= 0) return null
-    tokenBudget = parsed
-    objective = args.replace(/--budget\s+\d+/, '').trim()
-  }
-  if (!objective) return null
-  return { objective, tokenBudget }
-}
-
 function applyGoalCommand(
   goal: ThreadGoal | undefined,
   args: string,
   now: number,
 ): ThreadGoal | undefined {
-  const trimmed = args.trim()
-  if (!trimmed) return goal
-  const [sub] = trimmed.split(/\s+/)
-  if (sub === 'pause') {
-    return goal ? { ...goal, status: 'paused', updatedAt: now } : goal
+  const action = parseGoalCommandArgs(args)
+  if (action.kind === 'show' || action.kind === 'invalid') return goal
+  if (action.kind === 'clear') return undefined
+  if (action.kind === 'replace') return replaceGoal({ ...action.args, now })
+  if (!goal) {
+    return action.kind === 'set'
+      ? createThreadGoal({ ...action.args, now })
+      : goal
   }
-  if (sub === 'resume') {
-    return goal ? { ...goal, status: 'active', updatedAt: now } : goal
-  }
-  if (sub === 'clear') return undefined
 
-  const parsed = parseGoalBudget(trimmed)
-  if (!parsed) return goal
-  const { objective, tokenBudget } = parsed
-  if (goal && goal.objective === objective && goal.status !== 'complete') {
-    return {
-      ...goal,
-      status: 'active',
-      tokenBudget: tokenBudget ?? goal.tokenBudget,
-      updatedAt: now,
+  const current = normalizeGoal(goal)
+  if (action.kind === 'pause') return pauseGoal(current, now) ?? current
+  if (action.kind === 'resume') return resumeGoal(current, now) ?? current
+  if (action.kind === 'set') {
+    if (current.status === 'budget_limited') {
+      return (
+        maybeResumeBudgetLimitedGoal({
+          goal: current,
+          ...action.args,
+          now,
+        }) ?? current
+      )
     }
+    return current
   }
-  return {
-    objective,
-    status: 'active',
-    tokenBudget,
-    tokensUsed: 0,
-    timeUsedSeconds: 0,
-    createdAt: now,
-    updatedAt: now,
-  }
+  return current
 }
 
 function applyGoalToolUse(
@@ -220,18 +216,10 @@ function applyGoalToolUse(
       record.token_budget > 0
         ? record.token_budget
         : null
-    return {
-      objective,
-      status: 'active',
-      tokenBudget,
-      tokensUsed: 0,
-      timeUsedSeconds: 0,
-      createdAt: now,
-      updatedAt: now,
-    }
+    return createThreadGoal({ objective, tokenBudget, now })
   }
   if (record.operation === 'update_goal' && record.status === 'complete') {
-    return goal ? { ...goal, status: 'complete', updatedAt: now } : goal
+    return goal ? markGoalComplete(goal, now) ?? normalizeGoal(goal) : goal
   }
   return goal
 }
@@ -250,7 +238,7 @@ function applyGoalToolResult(
   ) {
     return goal
   }
-  return {
+  const restored: ThreadGoal = {
     objective: outputGoal.objective,
     status:
       outputGoal.status === 'active' ||
@@ -269,9 +257,156 @@ function applyGoalToolResult(
       typeof outputGoal.time_used_seconds === 'number'
         ? outputGoal.time_used_seconds
         : 0,
+    autoContinueTurns:
+      typeof outputGoal.auto_continue_turns === 'number'
+        ? outputGoal.auto_continue_turns
+        : (goal?.autoContinueTurns ?? 0),
+    maxAutoContinueTurns:
+      typeof outputGoal.max_auto_continue_turns === 'number'
+        ? outputGoal.max_auto_continue_turns
+        : (goal?.maxAutoContinueTurns ?? 5),
+    lastEvaluatorReason:
+      typeof outputGoal.last_evaluator_reason === 'string'
+        ? outputGoal.last_evaluator_reason
+        : null,
+    completedAt:
+      typeof outputGoal.completed_at === 'number' ? outputGoal.completed_at : null,
+    stopReason:
+      outputGoal.stop_reason === 'max_auto_continue_turns' ||
+      outputGoal.stop_reason === 'budget_limited' ||
+      outputGoal.stop_reason === 'evaluator_failed' ||
+      outputGoal.stop_reason === 'complete'
+        ? outputGoal.stop_reason
+        : null,
     createdAt: goal?.createdAt ?? now,
     updatedAt: now,
   }
+  return normalizeGoal(restored)
+}
+
+function addGoalUsage(
+  goal: ThreadGoal | undefined,
+  goalAtTurnStart: ThreadGoal | undefined,
+  message: Message,
+  now: number,
+): ThreadGoal | undefined {
+  if (!goal || message.type !== 'assistant') return goal
+  const startGoal = goalAtTurnStart ? normalizeGoal(goalAtTurnStart) : undefined
+  if (
+    !startGoal ||
+    (startGoal.status !== 'active' && startGoal.status !== 'budget_limited')
+  ) {
+    return normalizeGoal(goal)
+  }
+
+  const current = normalizeGoal(goal)
+  const isSameGoal =
+    current.createdAt === startGoal.createdAt &&
+    current.objective === startGoal.objective
+  if (!isSameGoal) return current
+
+  if (
+    current.status !== 'active' &&
+    current.status !== 'budget_limited' &&
+    current.status !== 'complete'
+  ) {
+    return current
+  }
+
+  const usage = message.message?.usage
+  const tokenDelta = (usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0)
+  if (tokenDelta <= 0) return current
+
+  const updated: ThreadGoal = {
+    ...current,
+    tokensUsed: current.tokensUsed + tokenDelta,
+    timeUsedSeconds: Math.floor((now - current.createdAt) / 1000),
+  }
+
+  if (
+    updated.status !== 'complete' &&
+    updated.tokenBudget &&
+    updated.tokensUsed >= updated.tokenBudget
+  ) {
+    return markGoalBudgetLimited(updated, now)
+  }
+
+  return updated
+}
+
+function extractGoalContinuationReason(message: Message): string | null {
+  if (message.type !== 'user' || !message.isMeta || !message.message?.content) {
+    return null
+  }
+  const text =
+    typeof message.message.content === 'string'
+      ? message.message.content
+      : getContentText(message.message.content)
+  if (!text || !text.startsWith('Evaluator reason: ')) return null
+  const [firstParagraph = ''] = text.split('\n\n')
+  const reason = firstParagraph.replace(/^Evaluator reason:\s*/, '').trim()
+  return reason || null
+}
+
+function applyGoalMetaMessage(
+  goal: ThreadGoal | undefined,
+  message: Message,
+  now: number,
+): ThreadGoal | undefined {
+  if (!goal) return goal
+  const current = normalizeGoal(goal)
+  const continuationReason = extractGoalContinuationReason(message)
+  if (continuationReason) {
+    return {
+      ...recordGoalEvaluatorResult({
+        goal: current,
+        reason: continuationReason,
+        now,
+      }),
+      autoContinueTurns: current.autoContinueTurns + 1,
+    }
+  }
+
+  if (message.type !== 'system' || typeof message.content !== 'string') {
+    return current
+  }
+
+  if (message.content.startsWith('Goal budget reached: ')) {
+    return markGoalBudgetLimited(current, now)
+  }
+  if (message.content.startsWith('Goal complete. Final usage: ')) {
+    return markGoalComplete(current, now) ?? current
+  }
+  if (
+    message.content ===
+    'Goal evaluator failed. Auto-continue has been paused; use /goal resume to try again.'
+  ) {
+    return markGoalEvaluatorFailed({
+      goal: current,
+      reason: 'Goal evaluator failed to return a valid decision.',
+      now,
+    })
+  }
+  const pausedMatch = message.content.match(
+    /^Goal paused after (\d+) auto-continue turns\./,
+  )
+  if (pausedMatch) {
+    const turns = parseInt(pausedMatch[1]!, 10)
+    return {
+      ...current,
+      status: 'paused',
+      autoContinueTurns: Number.isFinite(turns)
+        ? turns
+        : current.autoContinueTurns,
+      maxAutoContinueTurns: Number.isFinite(turns)
+        ? turns
+        : current.maxAutoContinueTurns,
+      stopReason: 'max_auto_continue_turns',
+      updatedAt: now,
+    }
+  }
+
+  return current
 }
 
 function extractGoalFromTranscript(messages: Message[]): ThreadGoal | undefined {
@@ -291,27 +426,40 @@ function extractGoalFromTranscript(messages: Message[]): ThreadGoal | undefined 
       continue
     }
 
-    if (message.type === 'assistant' && Array.isArray(message.message?.content)) {
-      for (const block of message.message.content) {
-        if (isToolUseBlock(block) && block.name === 'goal') {
-          goal = applyGoalToolUse(goal, block.input, now)
+    if (message.type === 'assistant') {
+      const goalAtTurnStart = goal
+      if (Array.isArray(message.message?.content)) {
+        for (const block of message.message.content) {
+          if (isToolUseBlock(block) && block.name === 'goal') {
+            goal = applyGoalToolUse(goal, block.input, now)
+          }
         }
       }
+      goal = addGoalUsage(goal, goalAtTurnStart, message, now)
       continue
     }
 
     if (message.type === 'user') {
       goal = applyGoalToolResult(goal, message.toolUseResult, now)
-      if (!Array.isArray(message.message?.content)) continue
-      const text = getContentText(message.message.content)
-      if (!text) continue
-      try {
-        goal = applyGoalToolResult(goal, JSON.parse(text), now)
-      } catch {
-        // Older goal tool results were plain text; the tool_use replay above
-        // still restores the objective/status for those sessions.
+      if (message.message?.content) {
+        const text =
+          typeof message.message.content === 'string'
+            ? message.message.content
+            : getContentText(message.message.content)
+        if (text) {
+          try {
+            goal = applyGoalToolResult(goal, JSON.parse(text), now)
+          } catch {
+            // Older goal tool results were plain text; the tool_use replay above
+            // still restores the objective/status for those sessions.
+          }
+        }
       }
+      goal = applyGoalMetaMessage(goal, message, now)
+      continue
     }
+
+    goal = applyGoalMetaMessage(goal, message, now)
   }
   return goal
 }

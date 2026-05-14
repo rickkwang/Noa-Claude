@@ -62,6 +62,13 @@ import {
   getGoalPromptForStatus,
 } from './utils/goalPrompts.js'
 import { accountGoalUsage } from './utils/goalAccounting.js'
+import { evaluateGoalCompletion } from './utils/goalEvaluator.js'
+import {
+  applyGoalRuntimeEvaluation,
+  applyGoalRuntimeEvaluationFailure,
+  shouldRunGoalEvaluator,
+} from './utils/goalRuntime.js'
+import { normalizeGoal } from './utils/goalState.js'
 import {
   createAttachmentMessage,
   filterDuplicateMemoryAttachments,
@@ -1430,6 +1437,86 @@ async function* queryLoop(
             queryChainId: queryChainIdForAnalytics,
             queryDepth: queryTracking.depth,
           })
+        }
+      }
+
+      const goal = toolUseContext.getAppState().goal
+      const shouldEvaluateGoal = shouldRunGoalEvaluator({
+        goal,
+        agentId: toolUseContext.agentId,
+        permissionMode,
+      })
+      if (shouldEvaluateGoal) {
+        if (toolUseContext.abortController.signal.aborted) {
+          if (toolUseContext.abortController.signal.reason !== 'interrupt') {
+            yield createUserInterruptionMessage({
+              toolUse: false,
+            })
+          }
+          return { reason: 'aborted_streaming' }
+        }
+        const currentGoal = normalizeGoal(goal)
+        const evaluation = await evaluateGoalCompletion({
+          goal: currentGoal,
+          messages: [...messagesForQuery, ...assistantMessages],
+          signal: toolUseContext.abortController.signal,
+          isNonInteractiveSession:
+            toolUseContext.options.isNonInteractiveSession,
+        })
+        if (toolUseContext.abortController.signal.aborted) {
+          if (toolUseContext.abortController.signal.reason !== 'interrupt') {
+            yield createUserInterruptionMessage({
+              toolUse: false,
+            })
+          }
+          return { reason: 'aborted_streaming' }
+        }
+        if (!evaluation) {
+          const goalRuntimeDecision = applyGoalRuntimeEvaluationFailure({
+            getAppState: toolUseContext.getAppState,
+            setAppState: toolUseContext.setAppState,
+          })
+          if (goalRuntimeDecision.userNotice) {
+            yield goalRuntimeDecision.userNotice
+          }
+        }
+        if (evaluation) {
+          const goalRuntimeDecision = applyGoalRuntimeEvaluation({
+            evaluation,
+            getAppState: toolUseContext.getAppState,
+            setAppState: toolUseContext.setAppState,
+          })
+          if (goalRuntimeDecision.userNotice) {
+            yield goalRuntimeDecision.userNotice
+          }
+          if (goalRuntimeDecision.action === 'continue') {
+            const nextTurnCount = turnCount + 1
+            if (maxTurns && nextTurnCount > maxTurns) {
+              yield createAttachmentMessage({
+                type: 'max_turns_reached',
+                maxTurns,
+                turnCount: nextTurnCount,
+              })
+              return { reason: 'max_turns', turnCount: nextTurnCount }
+            }
+            state = {
+              messages: [
+                ...messagesForQuery,
+                ...assistantMessages,
+                goalRuntimeDecision.modelNotice,
+              ],
+              toolUseContext,
+              autoCompactTracking: tracking,
+              maxOutputTokensRecoveryCount: 0,
+              hasAttemptedReactiveCompact: false,
+              maxOutputTokensOverride: undefined,
+              pendingToolUseSummary: undefined,
+              stopHookActive: undefined,
+              turnCount: nextTurnCount,
+              transition: { reason: 'goal_auto_continue' },
+            }
+            continue
+          }
         }
       }
 

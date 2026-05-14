@@ -3,6 +3,8 @@ import type { AssistantMessage, Message, UserMessage } from '../types/message.js
 import type { ThreadGoal } from '../types/goal.js'
 import { createSystemMessage, createUserMessage } from './messages.js'
 import { getGoalPromptForStatus } from './goalPrompts.js'
+import { markGoalBudgetLimited, normalizeGoal } from './goalState.js'
+import { logGoalAudit } from './goalAudit.js'
 
 type GoalAccountingParams = {
   assistantMessages: AssistantMessage[]
@@ -55,64 +57,81 @@ export function accountGoalUsage({
 
   setAppState(prev => {
     if (!prev.goal) return prev
+    const currentPrevGoal = normalizeGoal(prev.goal)
     const isSameGoal =
-      prev.goal.createdAt === currentGoal.createdAt &&
-      prev.goal.objective === currentGoal.objective
+      currentPrevGoal.createdAt === currentGoal.createdAt &&
+      currentPrevGoal.objective === currentGoal.objective
     const canChargeGoal =
-      prev.goal.status === 'active' ||
-      prev.goal.status === 'budget_limited' ||
-      prev.goal.status === 'complete'
+      currentPrevGoal.status === 'active' ||
+      currentPrevGoal.status === 'budget_limited' ||
+      currentPrevGoal.status === 'complete'
     if (!isSameGoal || !canChargeGoal) {
       return prev
     }
 
-    const newTokensUsed = prev.goal.tokensUsed + tokenDelta
+    const newTokensUsed = currentPrevGoal.tokensUsed + tokenDelta
     const newStatus =
-      prev.goal.status === 'complete'
+      currentPrevGoal.status === 'complete'
         ? 'complete'
-        : prev.goal.tokenBudget && newTokensUsed >= prev.goal.tokenBudget
+        : currentPrevGoal.tokenBudget &&
+            newTokensUsed >= currentPrevGoal.tokenBudget
           ? 'budget_limited'
-          : prev.goal.status
-    const statusChanged = newStatus !== prev.goal.status
+          : currentPrevGoal.status
+    const statusChanged = newStatus !== currentPrevGoal.status
+    const now = Date.now()
     const updatedGoal: ThreadGoal = {
-      ...prev.goal,
+      ...currentPrevGoal,
       tokensUsed: newTokensUsed,
-      timeUsedSeconds: Math.floor((Date.now() - prev.goal.createdAt) / 1000),
+      timeUsedSeconds: Math.floor((now - currentPrevGoal.createdAt) / 1000),
       status: newStatus,
-      ...(statusChanged ? { updatedAt: Date.now() } : {}),
+      ...(statusChanged ? { updatedAt: now } : {}),
     }
+    const finalGoal =
+      statusChanged && newStatus === 'budget_limited'
+        ? markGoalBudgetLimited(updatedGoal, now)
+        : updatedGoal
 
     if (statusChanged && newStatus === 'budget_limited') {
       if (includeModelNotice) {
         modelNotice = createUserMessage({
-          content: getGoalPromptForStatus(updatedGoal),
+          content: getGoalPromptForStatus(finalGoal),
           isMeta: true,
         })
       }
       userNotice = createSystemMessage(
-        `Goal budget reached: ${formatGoalUsage(updatedGoal)}. Wrapping up.`,
+        `Goal budget reached: ${formatGoalUsage(finalGoal)}. Wrapping up.`,
         'info',
       )
-    } else if (prev.goal.status === 'complete') {
+      logGoalAudit({
+        goal: finalGoal,
+        action: 'budget_limited',
+        reason: 'Goal token budget reached.',
+      })
+    } else if (currentPrevGoal.status === 'complete') {
       if (includeModelNotice) {
         modelNotice = createUserMessage({
           content: `The active thread goal is complete and final usage has been updated after the last assistant turn.
 
-Goal: ${updatedGoal.objective}
-Tokens used: ${updatedGoal.tokensUsed}${updatedGoal.tokenBudget ? ` of ${updatedGoal.tokenBudget}` : ''}
-Time used: ${updatedGoal.timeUsedSeconds} seconds`,
+Goal: ${finalGoal.objective}
+Tokens used: ${finalGoal.tokensUsed}${finalGoal.tokenBudget ? ` of ${finalGoal.tokenBudget}` : ''}
+Time used: ${finalGoal.timeUsedSeconds} seconds`,
           isMeta: true,
         })
       }
       userNotice = createSystemMessage(
-        `Goal complete. Final usage: ${formatGoalUsage(updatedGoal)}.`,
+        `Goal complete. Final usage: ${formatGoalUsage(finalGoal)}.`,
         'info',
       )
+      logGoalAudit({
+        goal: finalGoal,
+        action: 'complete',
+        reason: 'Goal completion usage finalized.',
+      })
     }
 
     return {
       ...prev,
-      goal: updatedGoal,
+      goal: finalGoal,
     }
   })
 

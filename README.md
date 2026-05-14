@@ -131,6 +131,7 @@ Then open a project directory and ask for real work: fix a bug, explain a subsys
 ```
 /help      - Inspect built-in command surface and skill registry
 /resume    - Resume a previous conversation
+/goal      - Set or inspect a long-running thread goal
 /compact   - Summarize and compact conversation history
 /export    - Export conversation to a file
 /rename    - Rename the current session
