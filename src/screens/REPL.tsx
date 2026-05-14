@@ -69,6 +69,7 @@ import { SkillImprovementSurvey } from '../components/SkillImprovementSurvey.js'
 import { useSkillImprovementSurvey } from '../hooks/useSkillImprovementSurvey.js';
 import { useMoreRight } from '../moreright/useMoreRight.js';
 import { SpinnerWithVerb, BriefIdleStatus, type SpinnerMode } from '../components/Spinner.js';
+import { CompactProgressBar } from '../components/CompactProgressBar.js';
 import { getSystemPrompt } from '../constants/prompts.js';
 import { buildEffectiveSystemPrompt } from '../utils/systemPrompt.js';
 import { getSystemContext, getUserContext } from '../context.js';
@@ -1479,6 +1480,7 @@ export function REPL({
   const [spinnerMessage, setSpinnerMessage] = useState<string | null>(null);
   const [spinnerColor, setSpinnerColor] = useState<keyof Theme | null>(null);
   const [spinnerShimmerColor, setSpinnerShimmerColor] = useState<keyof Theme | null>(null);
+  const [compactProgressStartedAt, setCompactProgressStartedAt] = useState<number | null>(null);
   const [isAutoModeClassifierStalled, setIsAutoModeClassifierStalled] = useState(false);
   const hasAnyClassifierChecking = useHasAnyClassifierChecking();
   const classifierCheckingVersion = useClassifierCheckingVersion();
@@ -1585,6 +1587,7 @@ export function REPL({
     setSpinnerMessage(null);
     setSpinnerColor(null);
     setSpinnerShimmerColor(null);
+    setCompactProgressStartedAt(null);
     pickNewSpinnerTip();
     endInteractionSpan();
     // Speculative bash classifier checks are only valid for the current
@@ -2562,14 +2565,17 @@ export function REPL({
             setSpinnerColor('claudeBlue_FOR_SYSTEM_SPINNER');
             setSpinnerShimmerColor('claudeBlueShimmer_FOR_SYSTEM_SPINNER');
             setSpinnerMessage(event.hookType === 'pre_compact' ? 'Running PreCompact hooks\u2026' : event.hookType === 'post_compact' ? 'Running PostCompact hooks\u2026' : 'Running SessionStart hooks\u2026');
+            setCompactProgressStartedAt(null);
             break;
           case 'compact_start':
             setSpinnerMessage('Compacting conversation');
+            setCompactProgressStartedAt(Date.now());
             break;
           case 'compact_end':
             setSpinnerMessage(null);
             setSpinnerColor(null);
             setSpinnerShimmerColor(null);
+            setCompactProgressStartedAt(null);
             break;
         }
       },
@@ -4595,6 +4601,7 @@ export function REPL({
               {WebBrowserPanel ? <WebBrowserPanel /> : null}
               <Box flexGrow={1} />
               {showSpinner && <SpinnerWithVerb mode={streamMode} spinnerTip={spinnerTip} responseLengthRef={responseLengthRef} apiMetricsRef={apiMetricsRef} overrideMessage={spinnerMessage} spinnerSuffix={stopHookSpinnerSuffix} verbose={verbose} loadingStartTimeRef={loadingStartTimeRef} totalPausedMsRef={totalPausedMsRef} pauseStartTimeRef={pauseStartTimeRef} overrideColor={effectiveSpinnerColor} overrideShimmerColor={effectiveSpinnerShimmerColor} hasActiveTools={inProgressToolUseIDs.size > 0} leaderIsIdle={!isLoading} />}
+              {showSpinner && compactProgressStartedAt !== null && <CompactProgressBar startedAt={compactProgressStartedAt} />}
               {!showSpinner && !isLoading && !userInputOnProcessing && !hasRunningTeammates && isBriefOnly && !viewedAgentTask && <BriefIdleStatus />}
               {isFullscreenEnvEnabled() && <PromptInputQueuedCommands />}
             </>} bottom={<Box flexDirection={companionNarrow ? 'column' : 'row'} width="100%" alignItems={companionNarrow ? undefined : 'flex-end'}>

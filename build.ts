@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from 'fs'
 import { dirname, join, resolve } from 'path'
+import type { BunPlugin } from 'bun'
 import { getLauncherBootstrapCode } from './launcher-config.js'
 
 const args = process.argv.slice(2)

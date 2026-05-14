@@ -5,6 +5,7 @@ import {
 } from '../../constants/prompts.js'
 import { getCLISyspromptPrefix } from '../../constants/system.js'
 import { splitSysPromptPrefix } from '../../utils/api.js'
+import { asSystemPrompt } from '../../utils/systemPromptType.js'
 
 describe('system prompt provider neutrality', () => {
   test('environment info does not inject Claude model marketing', async () => {
@@ -39,11 +40,9 @@ describe('CLI sysprompt prefix splitting', () => {
     ]
 
     for (const prefix of variants) {
-      const blocks = splitSysPromptPrefix([
-        prefix,
-        SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
-        promptBody,
-      ])
+      const blocks = splitSysPromptPrefix(
+        asSystemPrompt([prefix, SYSTEM_PROMPT_DYNAMIC_BOUNDARY, promptBody]),
+      )
 
       expect(blocks.some(block => block.text === prefix)).toBe(true)
       expect(blocks.some(block => block.text === promptBody)).toBe(true)

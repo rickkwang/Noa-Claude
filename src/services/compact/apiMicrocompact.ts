@@ -32,6 +32,34 @@ const TOOLS_CLEARABLE_USES = [
   NOTEBOOK_EDIT_TOOL_NAME,
 ]
 
+function parsePositiveIntegerEnv(
+  value: string | undefined,
+  fallback: number,
+): number {
+  if (!value) return fallback
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function getToolClearThresholds(): {
+  triggerThreshold: number
+  clearAtLeast: number
+} {
+  const triggerThreshold = parsePositiveIntegerEnv(
+    process.env.API_MAX_INPUT_TOKENS,
+    DEFAULT_MAX_INPUT_TOKENS,
+  )
+  const keepTarget = parsePositiveIntegerEnv(
+    process.env.API_TARGET_INPUT_TOKENS,
+    DEFAULT_TARGET_INPUT_TOKENS,
+  )
+
+  return {
+    triggerThreshold,
+    clearAtLeast: Math.max(1, triggerThreshold - keepTarget),
+  }
+}
+
 // Context management strategy types matching API documentation
 export type ContextEditStrategy =
   | {
@@ -102,12 +130,7 @@ export function getAPIContextManagement(options?: {
   }
 
   if (useClearToolResults) {
-    const triggerThreshold = process.env.API_MAX_INPUT_TOKENS
-      ? parseInt(process.env.API_MAX_INPUT_TOKENS)
-      : DEFAULT_MAX_INPUT_TOKENS
-    const keepTarget = process.env.API_TARGET_INPUT_TOKENS
-      ? parseInt(process.env.API_TARGET_INPUT_TOKENS)
-      : DEFAULT_TARGET_INPUT_TOKENS
+    const { triggerThreshold, clearAtLeast } = getToolClearThresholds()
 
     const strategy: ContextEditStrategy = {
       type: 'clear_tool_uses_20250919',
@@ -117,7 +140,7 @@ export function getAPIContextManagement(options?: {
       },
       clear_at_least: {
         type: 'input_tokens',
-        value: triggerThreshold - keepTarget,
+        value: clearAtLeast,
       },
       clear_tool_inputs: TOOLS_CLEARABLE_RESULTS,
     }
@@ -126,12 +149,7 @@ export function getAPIContextManagement(options?: {
   }
 
   if (useClearToolUses) {
-    const triggerThreshold = process.env.API_MAX_INPUT_TOKENS
-      ? parseInt(process.env.API_MAX_INPUT_TOKENS)
-      : DEFAULT_MAX_INPUT_TOKENS
-    const keepTarget = process.env.API_TARGET_INPUT_TOKENS
-      ? parseInt(process.env.API_TARGET_INPUT_TOKENS)
-      : DEFAULT_TARGET_INPUT_TOKENS
+    const { triggerThreshold, clearAtLeast } = getToolClearThresholds()
 
     const strategy: ContextEditStrategy = {
       type: 'clear_tool_uses_20250919',
@@ -141,7 +159,7 @@ export function getAPIContextManagement(options?: {
       },
       clear_at_least: {
         type: 'input_tokens',
-        value: triggerThreshold - keepTarget,
+        value: clearAtLeast,
       },
       exclude_tools: TOOLS_CLEARABLE_USES,
     }

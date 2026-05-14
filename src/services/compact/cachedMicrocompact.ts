@@ -1,4 +1,11 @@
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../analytics/growthbook.js'
+import {
+  getCachedMCConfig,
+  type CacheEditsBlock,
+  type PinnedCacheEdits,
+} from './cachedMCConfig.js'
+
+export type { CacheEditsBlock, PinnedCacheEdits } from './cachedMCConfig.js'
 
 export type CachedMCState = {
   registeredTools: Set<string>
@@ -10,32 +17,10 @@ export type CachedMCState = {
   sentToAPI: Set<string>
 }
 
-export type CacheEditsBlock = {
-  type: 'text'
-  text: string
-}
-
-export type PinnedCacheEdits = {
-  userMessageIndex: number
-  block: CacheEditsBlock
-}
-
-type CachedMCConfig = {
-  supportedModels: string[]
-  triggerThreshold: number
-  keepRecent: number
-}
-
-const DEFAULT_CONFIG: CachedMCConfig = {
-  supportedModels: [],
-  triggerThreshold: Number.MAX_SAFE_INTEGER,
-  keepRecent: 0,
-}
-
 export function isCachedMicrocompactEnabled(): boolean {
-  return getFeatureValue_CACHED_MAY_BE_STALE(
-    'tengu_cached_microcompact',
-    false,
+  return (
+    getCachedMCConfig().enabled &&
+    getFeatureValue_CACHED_MAY_BE_STALE('tengu_cached_microcompact', false)
   )
 }
 
@@ -44,10 +29,6 @@ export function isModelSupportedForCacheEditing(model: string): boolean {
   return getCachedMCConfig().supportedModels.some(supported =>
     normalized.includes(supported.toLowerCase()),
   )
-}
-
-export function getCachedMCConfig(): CachedMCConfig {
-  return DEFAULT_CONFIG
 }
 
 export function createCachedMCState(): CachedMCState {
