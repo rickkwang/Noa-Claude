@@ -35,7 +35,7 @@ export function CompactProgressBar({ startedAt }: Props) {
   const elapsedSeconds = Math.floor(elapsedMs / 1000)
 
   return (
-    <Box ref={ref} flexDirection="row" marginLeft={2} marginTop={1}>
+    <Box ref={ref} flexDirection="row" marginLeft={2}>
       <Text color="claudeBlue_FOR_SYSTEM_SPINNER">{segments}</Text>
       <Text dimColor> {elapsedSeconds}s</Text>
     </Box>

@@ -13,6 +13,7 @@ import {
 } from '../../commands.js'
 import { Box, Text, useInput, useTerminalFocus } from '../../ink.js'
 import { useSearchInput } from '../../hooks/useSearchInput.js'
+import { useTerminalSize } from '../../hooks/useTerminalSize.js'
 import { useKeybindings } from '../../keybindings/useKeybinding.js'
 import { estimateSkillFrontmatterTokens, getSkillsPath } from '../../skills/loadSkillsDir.js'
 import { logForDebugging } from '../../utils/debug.js'
@@ -40,6 +41,7 @@ import {
 import { plural } from '../../utils/stringUtils.js'
 import { ConfigurableShortcutHint } from '../ConfigurableShortcutHint.js'
 import { Dialog } from '../design-system/Dialog.js'
+import { Tab, Tabs } from '../design-system/Tabs.js'
 import { SearchBox } from '../SearchBox.js'
 
 type SkillCommand = CommandBase & PromptCommand
@@ -71,10 +73,10 @@ const GROUP_ORDER: SkillSource[] = [
   'mcp',
 ]
 
-function getSourceTitle(source: SkillSource): string {
-  if (source === 'plugin') return 'Plugin skills'
-  if (source === 'mcp') return 'MCP skills'
-  return `${capitalize(getSettingSourceName(source))} skills`
+function getTabTitle(source: SkillSource): string {
+  if (source === 'plugin') return 'Plugin'
+  if (source === 'mcp') return 'MCP'
+  return capitalize(getSettingSourceName(source))
 }
 
 function getSourceSubtitle(
@@ -262,9 +264,34 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
     }
   }, [orderedSkills])
 
+  const { rows: terminalRows } = useTerminalSize()
+  // Reserve rows for: title(1) + subtitle(1) + searchbox(3) + tabs(2) + path(1) + hints(2) + padding(4)
+  const visibleRows = Math.max(5, terminalRows - 14)
+
+  // Sources with at least one skill — drives which tabs render.
+  const visibleSources = useMemo<SkillSource[]>(
+    () => GROUP_ORDER.filter(s => (skillsBySource[s]?.length ?? 0) > 0),
+    [skillsBySource],
+  )
+
   const [isSearchMode, setIsSearchMode] = useState(false)
   const [sortAlpha, setSortAlpha] = useState(false)
   const [selectedIdx, setSelectedIdx] = useState(0)
+  const [activeTab, setActiveTabState] = useState<SkillSource>(
+    () => visibleSources[0] ?? 'userSettings',
+  )
+  // If the active tab loses all its skills (e.g. mode persistence churn),
+  // fall back to the first remaining tab.
+  useEffect(() => {
+    if (visibleSources.length > 0 && !visibleSources.includes(activeTab)) {
+      setActiveTabState(visibleSources[0]!)
+      setSelectedIdx(0)
+    }
+  }, [visibleSources, activeTab])
+  const handleTabChange = React.useCallback((tab: string) => {
+    setActiveTabState(tab as SkillSource)
+    setSelectedIdx(0)
+  }, [])
   const [isSavingModeChanges, setIsSavingModeChanges] = useState(false)
   const [, forceRefresh] = useState(0)
   const hasPendingModeChanges = changedSkillNamesRef.current.size > 0
@@ -295,9 +322,13 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
     setSelectedIdx(0)
   }, [query])
 
+  // Tabs are shown only in default browse mode. Sort and search are global
+  // (cross-tab) for discoverability.
+  const showTabs = visibleSources.length >= 2 && !sortAlpha && !query
+
   // Apply sort and filter
   const displaySkills = useMemo<SkillCommand[]>(() => {
-    let list = orderedSkills
+    let list = showTabs ? (skillsBySource[activeTab] ?? []) : orderedSkills
     if (sortAlpha) {
       list = [...list].sort((a, b) =>
         getCommandName(a).localeCompare(getCommandName(b)),
@@ -308,7 +339,7 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
       list = list.filter(s => getCommandName(s).toLowerCase().includes(lower))
     }
     return list
-  }, [orderedSkills, sortAlpha, query])
+  }, [orderedSkills, sortAlpha, query, showTabs, skillsBySource, activeTab])
 
   const clampedIdx =
     displaySkills.length === 0
@@ -445,6 +476,14 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
         setSortAlpha(s => !s)
         return
       }
+      // Any printable character (except space, reserved for toggle) starts type-to-filter search
+      if (input.length === 1 && input !== ' ' && !key.ctrl && !key.meta) {
+        event.stopImmediatePropagation()
+        setQuery(input)
+        setIsSearchMode(true)
+        setSelectedIdx(0)
+        return
+      }
     },
     { isActive: !isSearchMode },
   )
@@ -522,44 +561,53 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
     )
   }
 
-  // Render skill list — flat when searching/sorting, grouped otherwise
+  // Sliding window of visible items centered on the selection.
+  const windowStart = useMemo(() => {
+    if (displaySkills.length <= visibleRows) return 0
+    const ideal = clampedIdx - Math.floor(visibleRows / 2)
+    return Math.max(0, Math.min(ideal, displaySkills.length - visibleRows))
+  }, [displaySkills.length, clampedIdx, visibleRows])
+  const windowEnd = Math.min(displaySkills.length, windowStart + visibleRows)
+  const aboveCount = windowStart
+  const belowCount = displaySkills.length - windowEnd
+
+  // Optional path/source subtitle shown above the list for the active tab.
+  const pathSubtitle = showTabs
+    ? getSourceSubtitle(activeTab, skillsBySource[activeTab] ?? [])
+    : undefined
+
   let listElement: React.ReactNode
-  if (isSearchMode || sortAlpha || query) {
+  if (displaySkills.length === 0 && query) {
+    listElement = <Text dimColor>No skills match "{query}"</Text>
+  } else {
     listElement = (
       <Box flexDirection="column">
-        {displaySkills.length === 0
-          ? <Text dimColor>No skills match "{query}"</Text>
-          : displaySkills.map((skill, i) => renderSkill(skill, i))}
+        {!showTabs && pathSubtitle && <Text dimColor>{pathSubtitle}</Text>}
+        {aboveCount > 0 && <Text dimColor>↑ {aboveCount} more above</Text>}
+        {displaySkills.slice(windowStart, windowEnd).map((skill, i) =>
+          renderSkill(skill, windowStart + i),
+        )}
+        {belowCount > 0 && <Text dimColor>↓ {belowCount} more below</Text>}
       </Box>
     )
-  } else {
-    // Walk groups in the same order as orderedSkills, advancing a shared cursor
-    // so globalIdx matches the flat list used by nav keybindings.
-    let cursor = 0
-    const groupElements: React.ReactNode[] = []
-    for (const source of GROUP_ORDER) {
-      const groupSkills = skillsBySource[source]
-      if (groupSkills.length === 0) continue
-      const title = getSourceTitle(source)
-      const subtitle = getSourceSubtitle(source, groupSkills)
-      const startIdx = cursor
-      const rendered = groupSkills.map((skill, i) =>
-        renderSkill(skill, startIdx + i),
-      )
-      cursor += groupSkills.length
-      groupElements.push(
-        <Box flexDirection="column" key={source}>
-          <Box>
-            <Text bold dimColor>
-              {title}
-            </Text>
-            {subtitle && <Text dimColor> ({subtitle})</Text>}
-          </Box>
-          {rendered}
-        </Box>,
-      )
-    }
-    listElement = <Box flexDirection="column" gap={1}>{groupElements}</Box>
+  }
+
+  if (showTabs) {
+    listElement = (
+      <Tabs
+        color="suggestion"
+        selectedTab={activeTab}
+        onTabChange={handleTabChange}
+        banner={pathSubtitle ? <Box marginLeft={1}><Text dimColor>{pathSubtitle}</Text></Box> : undefined}
+        contentHeight={visibleRows + 2}
+      >
+        {visibleSources.map(src => (
+          <Tab key={src} id={src} title={getTabTitle(src)}>
+            {src === activeTab ? listElement : null}
+          </Tab>
+        ))}
+      </Tabs>
+    )
   }
 
   const subtitleCount = query
@@ -569,7 +617,7 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
   return (
     <Dialog
       title="Skills"
-      subtitle={`${subtitleCount} · ${isSavingModeChanges ? 'Saving…' : hasPendingModeChanges ? 'Enter to save' : 'Enter to use'}, Space to toggle, / to search, t to sort, Esc to close`}
+      subtitle={`${subtitleCount} · ${isSavingModeChanges ? 'Saving…' : hasPendingModeChanges ? 'Enter to save' : 'Enter to use'}, Space to toggle, type to search, t to sort, Esc to close`}
       onCancel={handleCancel}
       hideInputGuide
       isCancelActive={!isSearchMode}

@@ -3199,8 +3199,18 @@ export function REPL({
     fromKeybinding?: boolean;
   }) => {
     // Re-pin scroll to bottom on submit so the user always sees the new
-    // exchange (matches OpenCode's auto-scroll behavior).
-    repinScroll();
+    // exchange, unless this is a fullscreen local-jsx command (those open as
+    // centered modals overlaying content, not appending below it).
+    const isFullscreenModal = isFullscreenEnvEnabled() &&
+      input.trim().startsWith('/') &&
+      (() => {
+        const cmdName = input.trim().slice(1).split(/\s/)[0]!
+        return commands.find(c =>
+          isCommandEnabled(c) &&
+          (c.name === cmdName || (c as any).aliases?.includes(cmdName) || getCommandName(c) === cmdName)
+        )?.type === 'local-jsx'
+      })()
+    if (!isFullscreenModal) repinScroll();
 
     proactiveModule?.resumeProactive();
 
