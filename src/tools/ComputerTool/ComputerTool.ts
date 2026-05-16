@@ -120,6 +120,9 @@ let selectionState:
     }
   | undefined
 
+const ROUTINE_SCREENSHOT_BLOCK_TTL_MS = 30_000
+let recentRoutineScreenshotBlockAt: number | undefined
+
 let targetAppState:
   | {
       requestedName: string
@@ -187,6 +190,9 @@ export const ComputerTool = buildTool({
 
     const selectionValidation = await validateSelectionState(input)
     if (selectionValidation !== null) return selectionValidation
+
+    const screenshotPolicyValidation = validateScreenshotPolicy(input, context)
+    if (screenshotPolicyValidation !== null) return screenshotPolicyValidation
 
     const clickPolicyValidation = validateClickPolicy(input)
     if (clickPolicyValidation !== null) return clickPolicyValidation
@@ -302,6 +308,7 @@ export const ComputerTool = buildTool({
         const guardNote = await assertExpectedAppForExecution(input)
         await type(typed, { viaClipboard: input.via_clipboard })
         const selectionNote = await updateSelectionStateAfterAction(input)
+        rememberRoutineScreenshotBlock(input)
         return text(`typed ${typed.length} chars${selectionNote}${guardNote}`)
       }
       case 'key': {
@@ -309,6 +316,7 @@ export const ComputerTool = buildTool({
         const guardNote = await assertExpectedAppForExecution(input)
         await key(keys, input.repeat ?? 1)
         const selectionNote = await updateSelectionStateAfterAction(input)
+        rememberRoutineScreenshotBlock(input)
         return text(
           `pressed ${keys}${input.repeat && input.repeat > 1 ? ` x${input.repeat}` : ''}${selectionNote}${guardNote}`,
         )
@@ -341,6 +349,7 @@ export const ComputerTool = buildTool({
         await openApp(name)
         resetSelectionState()
         await rememberTargetApp(name)
+        rememberRoutineScreenshotBlock(input)
         return text(`opened ${name}`)
       }
       case 'activate_app': {
@@ -348,6 +357,7 @@ export const ComputerTool = buildTool({
         await activateApp(name)
         resetSelectionState()
         await rememberTargetApp(name)
+        rememberRoutineScreenshotBlock(input)
         return text(`activated ${name}`)
       }
       case 'frontmost_app': {
@@ -383,6 +393,7 @@ export const ComputerTool = buildTool({
       }
       case 'wait': {
         await sleep(input.ms!)
+        rememberRoutineScreenshotBlock(input)
         return text(`waited ${input.ms!}ms`)
       }
     }
@@ -437,6 +448,108 @@ function readinessOptionsForInput(input: ComputerInput): ReadinessOptions {
     text: input.text,
     viaClipboard: input.via_clipboard,
   }
+}
+
+function validateScreenshotPolicy(
+  input: ComputerInput,
+  context?: ToolUseContext,
+): null | {
+  result: false
+  message: string
+  errorCode: number
+} {
+  if (input.action !== 'screenshot') return null
+  if (userExplicitlyRequestedScreenshot(context)) return null
+  if (latestToolErrorAllowsDiagnosticScreenshot(context)) return null
+  if (!routineScreenshotBlockIsActive()) return null
+
+  return {
+    result: false,
+    message:
+      'Do not take a routine screenshot just to confirm a simple keyboard/chat workflow. The previous open_app/activate_app/key/type/wait step already succeeded and app guards keep focus anchored. Continue with the next deterministic keyboard action (Return, type via_clipboard, or finish) unless the user explicitly asked for a screenshot or you are diagnosing an actual error.',
+    errorCode: 7,
+  }
+}
+
+function routineScreenshotBlockIsActive(): boolean {
+  if (recentRoutineScreenshotBlockAt === undefined) return false
+  if (
+    Date.now() - recentRoutineScreenshotBlockAt >
+    ROUTINE_SCREENSHOT_BLOCK_TTL_MS
+  ) {
+    recentRoutineScreenshotBlockAt = undefined
+    return false
+  }
+  return true
+}
+
+function rememberRoutineScreenshotBlock(input: ComputerInput): void {
+  if (
+    input.action !== 'open_app' &&
+    input.action !== 'activate_app' &&
+    input.action !== 'key' &&
+    input.action !== 'type' &&
+    input.action !== 'wait'
+  ) {
+    return
+  }
+
+  if (!targetAppIsStrictSearchSelectionApp()) {
+    recentRoutineScreenshotBlockAt = undefined
+    return
+  }
+
+  recentRoutineScreenshotBlockAt = Date.now()
+}
+
+function userExplicitlyRequestedScreenshot(context?: ToolUseContext): boolean {
+  const content = latestRealUserMessageContent(context)
+  if (!content) return false
+  return /\b(screen\s*shot|screenshot|capture\s+the\s+screen)\b|截图|截屏|屏幕截图/.test(
+    content.toLowerCase(),
+  )
+}
+
+function latestToolErrorAllowsDiagnosticScreenshot(
+  context?: ToolUseContext,
+): boolean {
+  const messages = context?.messages
+  if (!Array.isArray(messages)) return false
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (message?.type !== 'user') continue
+
+    if (typeof message.content === 'string') return false
+    if (!Array.isArray(message.content)) continue
+
+    for (const block of message.content) {
+      if (!isErrorToolResultBlock(block)) continue
+      const content = typeof block.content === 'string' ? block.content : ''
+      if (isRoutineComputerUsePolicyError(content)) return false
+      return true
+    }
+  }
+
+  return false
+}
+
+function isErrorToolResultBlock(
+  value: unknown,
+): value is { type: string; is_error?: boolean; content?: unknown } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { type?: unknown }).type === 'tool_result' &&
+    (value as { is_error?: unknown }).is_error === true
+  )
+}
+
+function isRoutineComputerUsePolicyError(content: string): boolean {
+  return (
+    content.includes('Do not take a routine screenshot') ||
+    content.includes('Click is disabled for chat/contact apps')
+  )
 }
 
 function validateClickPolicy(
@@ -641,6 +754,7 @@ function expireTargetAppState(): void {
 
 function resetTargetAppState(): void {
   targetAppState = undefined
+  recentRoutineScreenshotBlockAt = undefined
 }
 
 function syncWorkflowStateToUserTurn(context?: ToolUseContext): void {
@@ -657,6 +771,31 @@ function syncWorkflowStateToUserTurn(context?: ToolUseContext): void {
 function latestRealUserMessageKey(
   context?: ToolUseContext,
 ): string | undefined {
+  const message = latestRealUserMessage(context)
+  if (!message) return undefined
+  const stableId = message.uuid ?? message.id
+  if (typeof stableId === 'string' && stableId.length > 0) {
+    return stableId
+  }
+  return message.fallbackKey
+}
+
+function latestRealUserMessageContent(
+  context?: ToolUseContext,
+): string | undefined {
+  return latestRealUserMessage(context)?.content
+}
+
+function latestRealUserMessage(
+  context?: ToolUseContext,
+):
+  | {
+      content: string
+      id?: string
+      uuid?: string
+      fallbackKey: string
+    }
+  | undefined {
   const messages = context?.messages
   if (!Array.isArray(messages)) return undefined
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -664,11 +803,12 @@ function latestRealUserMessageKey(
     if (message?.type !== 'user' || typeof message.content !== 'string') {
       continue
     }
-    const stableId = message.uuid ?? message.id
-    if (typeof stableId === 'string' && stableId.length > 0) {
-      return stableId
+    return {
+      content: message.content,
+      id: message.id,
+      uuid: message.uuid,
+      fallbackKey: `${i}:${message.content.slice(0, 200)}`,
     }
-    return `${i}:${message.content.slice(0, 200)}`
   }
   return undefined
 }

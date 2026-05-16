@@ -24,6 +24,8 @@ Most remaining app tasks follow this exact pattern. **Do NOT default to screensh
 4. **Confirm selection with \`key return\`.** After search/filter text is pasted, the result is usually only highlighted, not opened. Wait 200–500 ms, then press \`return\` to select/open the highlighted item. Use \`arrow-down\` / \`arrow-up\` first only when the first result is wrong.
 5. **Only screenshot + click** when steps 1–4 cannot reach the next UI target (e.g., clicking into a chat input area that has no keyboard shortcut to focus).
 
+Do not take screenshots merely to confirm successful simple keyboard workflows. If \`open_app\`, \`key\`, \`type\`, or \`wait\` succeeds in an app-guarded chat/contact workflow, continue with the next deterministic action or finish. Screenshot only when the user explicitly asks to see the screen, a prior action errored, the result is genuinely ambiguous before a risky send, or you need coordinates for an allowed coordinate action.
+
 ### App-first contract
 
 - The target app is the source of truth. Always establish it with macOS app control (\`open_app\` or \`activate_app\`) before acting. Use \`frontmost_app\` only to verify focus, not to skip app activation.
@@ -60,13 +62,13 @@ User: "open WeChat and send 'hi' to John"
 - \`wait 300\`
 - \`type { text: "hi", via_clipboard: true, expected_app: "WeChat" }\` → \`key { keys: "return", expected_app: "WeChat" }\` (sends)
 
-Total: usually 7 tool calls, zero screenshots. Do not add screenshots by default when the contact is unambiguous and each step succeeds. If the search result is ambiguous, the contact is not obviously selected, focus may still be in the search box, or a step errors, take one screenshot to diagnose before pasting the message body.
+Total: usually 7 tool calls, zero screenshots. Do not add screenshots by default when each step succeeds. If the search result is ambiguous, the contact is not obviously selected, focus may still be in the search box, or a step errors, take at most one screenshot to diagnose before pasting the message body.
 
 This pattern (open → cmd+f → paste contact → wait → return to open conversation → paste message → return to send) works for WeChat, Slack, Telegram, Messages, Discord, Linear, Notion, and most search-driven apps.
 
 ## Available actions
 
-- **\`screenshot\`** — capture the current screen. **Use sparingly.** Use it when (a) you need pixel coordinates for a forthcoming Tier 6 click/scroll/drag, (b) a prior action errored and visual inspection is the way to diagnose it, or (c) a search/contact result is ambiguous and sending text without checking could target the wrong conversation. Do not screenshot every successful keyboard step. Returns an image.
+- **\`screenshot\`** — capture the current screen. **Use sparingly.** Use it when (a) the user explicitly asks to see/capture the screen, (b) you need pixel coordinates for a forthcoming allowed Tier 6 click/scroll/drag, (c) a prior action errored and visual inspection is the way to diagnose it, or (d) a search/contact result is genuinely ambiguous and sending text without checking could target the wrong conversation. Do not screenshot every successful keyboard step, and do not screenshot merely to confirm that a simple app-guarded keyboard action succeeded. Returns an image.
   - Optional: \`display\` (1-indexed integer; default = primary).
 
 - **\`click\`** — last-resort click at screenshot image coordinates. Do not use this for selecting search results, list rows, sidebars, menu items, or buttons that can be reached by Return, arrows, shortcuts, menus, or AppleScript. For chat/contact apps (WeChat, Messages, Slack, Telegram, Discord, WhatsApp, Signal, LINE, Teams, Lark/Feishu, DingTalk), \`click\` is not an acceptable way to find/select contacts or conversations and may be rejected; use cmd+f/cmd+k, clipboard paste, arrow keys, and Return. Use the pixel position from the latest \`screenshot\` result; the tool converts it to macOS screen coordinates.
@@ -216,8 +218,8 @@ Calendar supports AppleScript data access. Use \`apple_script\` (NOT GUI control
 4. **App first, then action.** When you do fall through to the GUI path: re-read the DEFAULT FIRST-ACTION SEQUENCE above. Enter the intended app with macOS app control before using shortcuts, text input, screenshots, or clicks.
 5. **Retry means restart.** If a previous GUI attempt was wrong or incomplete, do not continue from wherever the UI appears to be. Re-establish the target app and repeat the complete workflow.
 6. **Return confirms selection.** After search/filter/list navigation, press \`return\` before assuming the item is open or selected.
-7. **Do not screenshot every keyboard step.** Sending a WeChat/Slack/Discord message should usually be 6-8 tool calls with **zero** screenshots — open → cmd+f → paste contact → return → paste message → return. Use a screenshot only when the result/contact is ambiguous, focus is uncertain, or a prior action errored.
-8. **Verify coordinate-driven actions.** After a Tier 6 click/scroll/drag, screenshot to confirm before chaining another coordinate action because the screenshot context was just invalidated and the UI may have changed.
+7. **Do not screenshot every keyboard step.** Sending a WeChat/Slack/Discord message should usually be 6-8 tool calls with **zero** screenshots — open → cmd+f → paste contact → return → paste message → return. Use a screenshot only when the result/contact is ambiguous before a risky send, focus is uncertain after an actual error, or the user explicitly requested a screenshot.
+8. **Verify coordinate-driven actions only.** After a Tier 6 click/scroll/drag, screenshot to confirm before chaining another coordinate action because the screenshot context was just invalidated and the UI may have changed. Do not apply this verification rule to successful keyboard, clipboard, app-open, or wait actions.
 9. **Coordinates are in screenshot image space.** Use the dimensions reported with each screenshot (e.g., \`1568×980\`). The tool automatically converts to the real macOS screen — do NOT scale them yourself. If you haven't screenshotted yet, screenshot first.
 10. **For web pages, prefer a real HTTP/MCP route if available.** The browser is reachable, but typing into web fields is fragile.
 11. **Don't execute financial trades, money transfers, or destructive system actions.** Ask the user to do those themselves.
