@@ -69,7 +69,7 @@ This pattern (open → cmd+f → paste contact → wait → return to open conve
 - **\`screenshot\`** — capture the current screen. **Use sparingly.** Use it when (a) you need pixel coordinates for a forthcoming Tier 6 click/scroll/drag, (b) a prior action errored and visual inspection is the way to diagnose it, or (c) a search/contact result is ambiguous and sending text without checking could target the wrong conversation. Do not screenshot every successful keyboard step. Returns an image.
   - Optional: \`display\` (1-indexed integer; default = primary).
 
-- **\`click\`** — last-resort click at screenshot image coordinates. Do not use this for selecting search results, list rows, sidebars, menu items, or buttons that can be reached by Return, arrows, shortcuts, menus, or AppleScript. Use the pixel position from the latest \`screenshot\` result; the tool converts it to macOS screen coordinates.
+- **\`click\`** — last-resort click at screenshot image coordinates. Do not use this for selecting search results, list rows, sidebars, menu items, or buttons that can be reached by Return, arrows, shortcuts, menus, or AppleScript. For chat/contact apps (WeChat, Messages, Slack, Telegram, Discord, WhatsApp, Signal, LINE, Teams, Lark/Feishu, DingTalk), \`click\` is not an acceptable way to find/select contacts or conversations and may be rejected; use cmd+f/cmd+k, clipboard paste, arrow keys, and Return. Use the pixel position from the latest \`screenshot\` result; the tool converts it to macOS screen coordinates.
   - Required: \`x\`, \`y\`
   - Optional: \`button\` ('left' | 'right', default 'left'), \`count\` (1|2|3, default 1), \`modifiers\` (array like ['cmd','shift'])
 
@@ -196,6 +196,8 @@ For contact search and sending messages, prefer keyboard shortcuts and clipboard
 6. \`type { text: <message>, via_clipboard: true, expected_app: "WeChat" }\` → \`key { keys: "return", expected_app: "WeChat" }\`
 
 Never paste the message at step 3 or 4. The first text insertion is the contact name; the second text insertion is the message body after the conversation has opened. Pass \`expected_app: "WeChat"\` on the message-body \`type\` and final \`key return\` to refuse the send if focus has drifted to another app.
+
+Do not click contacts, conversations, search results, or list rows in WeChat. The computer tool can reject clicks in chat/contact apps; if you need to retry, restart the whole keyboard flow from \`open_app "WeChat"\` instead of clicking the visible result.
 
 Always use clipboard paste for Chinese text in WeChat. Direct typing or AppleScript \`keystroke\` may corrupt non-ASCII input.
 

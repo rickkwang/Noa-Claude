@@ -125,7 +125,6 @@ let targetAppState:
       requestedName: string
       appBundleId?: string
       appDisplayName?: string
-      source: 'app_control'
       at: number
     }
   | undefined
@@ -188,6 +187,9 @@ export const ComputerTool = buildTool({
 
     const selectionValidation = await validateSelectionState(input)
     if (selectionValidation !== null) return selectionValidation
+
+    const clickPolicyValidation = validateClickPolicy(input)
+    if (clickPolicyValidation !== null) return clickPolicyValidation
 
     if (requiresScreenshotContext(input.action) && !hasRecentScreenshotContext()) {
       return {
@@ -437,6 +439,43 @@ function readinessOptionsForInput(input: ComputerInput): ReadinessOptions {
   }
 }
 
+function validateClickPolicy(
+  input: ComputerInput,
+): null | {
+  result: false
+  message: string
+  errorCode: number
+} {
+  if (input.action !== 'click') return null
+
+  expireTargetAppState()
+  if (!targetAppIsStrictSearchSelectionApp()) return null
+
+  return {
+    result: false,
+    message:
+      'Click is disabled for chat/contact apps because contact selection and message sending must use the keyboard flow: open_app/activate_app, key cmd+f, type the contact via_clipboard, wait, key return to open the highlighted conversation, wait, type the message via_clipboard, then key return to send. Do not use screenshot coordinates to select contacts, conversations, search results, or list rows.',
+    errorCode: 6,
+  }
+}
+
+function targetAppIsStrictSearchSelectionApp(): boolean {
+  if (!targetAppState) return false
+
+  const candidates = [
+    targetAppState.appBundleId,
+    targetAppState.appDisplayName,
+    targetAppState.requestedName,
+  ].filter((value): value is string => Boolean(value))
+
+  return candidates.some(candidate =>
+    isStrictSearchSelectionApp({
+      bundleId: candidate,
+      displayName: candidate,
+    }),
+  )
+}
+
 async function assertComputerUseReadiness(input: ComputerInput): Promise<void> {
   const readiness = await checkComputerUseReadiness(
     input.action,
@@ -587,7 +626,6 @@ function rememberTargetAppFromFrontmost(
     requestedName,
     appBundleId: matchedFront?.bundleId,
     appDisplayName: matchedFront?.displayName,
-    source: 'app_control',
     at: Date.now(),
   }
 }
