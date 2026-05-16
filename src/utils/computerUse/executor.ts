@@ -1109,6 +1109,30 @@ export async function clickMenu(
   const succeeded = await serialize(async () => {
     try {
       for (const candidate of tried) {
+        const existsScript = `tell application "System Events" to exists process "${escape(candidate)}"`
+        const {
+          stdout: existsStdout,
+          code: existsCode,
+          error: existsError,
+          stderr: existsStderr,
+        } = await execFileNoThrow(
+          'osascript',
+          ['-e', existsScript],
+          { useCwd: false, timeout: OSASCRIPT_TIMEOUT_MS },
+        )
+        if (existsCode !== 0) {
+          lastError = (
+            existsError ||
+            existsStderr ||
+            'unknown error'
+          ).trim()
+          return false
+        }
+        if (existsStdout.trim().toLowerCase() !== 'true') {
+          lastError = `process "${candidate}" is not running`
+          continue
+        }
+
         const script = `tell application "System Events" to tell process "${escape(candidate)}" to ${command}`
         const { code, error, stderr } = await execFileNoThrow(
           'osascript',
@@ -1116,20 +1140,15 @@ export async function clickMenu(
           { useCwd: false, timeout: OSASCRIPT_TIMEOUT_MS },
         )
         if (code === 0) return true
-        lastError = (error || stderr || 'unknown error').trim()
-        // Only fall through on "process not found" / "app isn't running"; any
-        // other failure (menu item missing, accessibility denied, etc.) is real
-        // and should not be masked by retrying against another alias that won't
-        // fix it. Match by AppleScript error *number* (locale-stable) rather
-        // than message text — the textual form is localized and varies across
-        // macOS versions, so an English-only regex would silently break on a
-        // Chinese or Japanese system.
-        //   -1728: "Can't get <process>" (process name unknown to System Events)
-        //   -600:  "Application isn't running"
-        //   -1719: index/specifier resolution failure
-        if (!/\(-(?:1728|600|1719)\)/.test(lastError)) {
-          return false
-        }
+        lastError = `process "${candidate}" exists but menu command failed: ${(
+          error ||
+          stderr ||
+          'unknown error'
+        ).trim()}`
+        // Once System Events confirms the process exists, a click failure is a
+        // real menu-path/accessibility/state failure. Do not mask it by trying
+        // another alias and reporting a later "process not running" error.
+        return false
       }
       return false
     } finally {
