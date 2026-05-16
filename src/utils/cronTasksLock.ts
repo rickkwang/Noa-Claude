@@ -6,8 +6,8 @@
 // becomes the scheduler; others stay passive and periodically probe the lock.
 // If the owner dies (PID no longer running), a passive session takes over.
 //
-// Pattern mirrors computerUseLock.ts: O_EXCL atomic create, PID liveness
-// probe, stale-lock recovery, cleanup-on-exit.
+// Pattern: O_EXCL atomic create, PID liveness probe, stale-lock recovery,
+// cleanup-on-exit.
 
 import { statSync } from 'fs'
 import { mkdir, readFile, unlink, writeFile } from 'fs/promises'

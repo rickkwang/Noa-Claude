@@ -1,6 +1,6 @@
 # Features Audit
 
-Last updated: 2026-04-11
+Last updated: 2026-05-15
 
 This file is the build/runtime audit for experimental feature flags in this repository.
 
@@ -25,7 +25,6 @@ This file is the build/runtime audit for experimental feature flags in this repo
 - `AWAY_SUMMARY`
 - `BASH_CLASSIFIER`
 - `CACHED_MICROCOMPACT`
-- `CHICAGO_MCP`
 - `COMMIT_ATTRIBUTION`
 - `CONNECTOR_TEXT`
 - `CONTEXT_COLLAPSE`

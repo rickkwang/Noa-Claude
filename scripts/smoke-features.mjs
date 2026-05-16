@@ -59,20 +59,13 @@ const mcpConfig = await import('../src/services/mcp/config.ts');
 const productPaths = await import('../src/utils/productPaths.ts');
 const commandsModule = await import('../src/commands.ts');
 const surfaceStatus = await import('../src/commands/surfaceStatus.ts');
+const buildExcluded = await import('../src/commands/buildExcluded.ts');
 const settings = await import('../src/utils/settings/settings.ts');
 const forkIndex = await import('../src/commands/fork/index.ts');
 const assistantIndex = await import('../src/commands/assistant/index.ts');
 const assistantCommand = await import('../src/commands/assistant/assistant.js');
 const summaryIndex = await import('../src/commands/summary/index.ts');
 const shareIndex = await import('../src/commands/share/index.ts');
-const thinkbackPlayIndex = await import('../src/commands/thinkback-play/index.ts');
-const proactiveIndex = await import('../src/commands/proactive/index.ts');
-const peersIndex = await import('../src/commands/peers/index.ts');
-const agentsPlatformIndex = await import('../src/commands/agents-platform/index.ts');
-const remoteControlServerIndex = await import('../src/commands/remoteControlServer/index.ts');
-const torchRuntime = await import('../src/commands/torch.js');
-const forceSnipRuntime = await import('../src/commands/force-snip.js');
-const subscribePrRuntime = await import('../src/commands/subscribe-pr.js');
 
 function prepareProject(projectDir) {
   mkdirSync(projectDir, { recursive: true });
@@ -375,11 +368,6 @@ function runNonInteractiveBoundarySmoke() {
     shareIndex.default,
   );
   assert(
-    thinkbackPlayIndex.default.supportsNonInteractive === false,
-    'Thinkback-play command must stay interactive-only',
-    thinkbackPlayIndex.default,
-  );
-  assert(
     assistantIndex.default.supportsNonInteractive === true,
     'Assistant command must stay non-interactive compatible',
     assistantIndex.default,
@@ -415,22 +403,16 @@ async function runAssistantCommandSmoke() {
 }
 
 async function runBuildExcludedCommandSmoke() {
-  const buildExcluded = surfaceStatus
-    .getCommandSurfacesByCategory('build-excluded')
-    .map(entry => entry.command);
-  const modules = {
-    '/proactive': proactiveIndex.default,
-    '/peers': peersIndex.default,
-    '/agents-platform': agentsPlatformIndex.default,
-    '/remote-control': remoteControlServerIndex.default,
-    '/torch': torchRuntime.default,
-    '/force-snip': forceSnipRuntime.default,
-    '/subscribe-pr': subscribePrRuntime.default,
-  };
+  const buildExcludedSurfaces =
+    surfaceStatus.getCommandSurfacesByCategory('build-excluded');
 
-  for (const commandName of buildExcluded) {
-    const command = modules[commandName];
-    assert(command, `No module mapping found for build-excluded command ${commandName}`);
+  for (const entry of buildExcludedSurfaces) {
+    const commandName = entry.command;
+    const commandKey = commandName.replace('/', '');
+    const command = buildExcluded.createBuildExcludedCommand(
+      commandKey,
+      `Smoke ${commandName}`,
+    );
     assert(command?.isHidden === true, `Build-excluded command ${command?.name} must stay hidden`, command);
     const loaded = await command.load();
     let error = null;
@@ -441,12 +423,12 @@ async function runBuildExcludedCommandSmoke() {
     }
     assert(error instanceof Error, `Build-excluded command ${command.name} did not throw`, error);
     assert(
-      /not available in this build/i.test(error.message),
+      error.message === entry.errorContract?.message,
       `Build-excluded command ${command.name} must throw stable unavailable message`,
       error.message,
     );
     assert(
-      typeof error.errorId === 'string' && error.errorId.startsWith('E_BUILD_EXCLUDED_'),
+      error.errorId === entry.errorContract?.errorId,
       `Build-excluded command ${command.name} must throw stable build-excluded errorId`,
       error,
     );

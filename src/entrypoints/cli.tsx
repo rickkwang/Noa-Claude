@@ -83,14 +83,8 @@ async function main(): Promise<void> {
     } = await import('../utils/claudeInChrome/chromeNativeHost.js');
     await runChromeNativeHost();
     return;
-  } else if (feature('CHICAGO_MCP') && process.argv[2] === '--computer-use-mcp') {
-    profileCheckpoint('cli_computer_use_mcp_path');
-    const {
-      runComputerUseMcpServer
-    } = await import('../utils/computerUse/mcpServer.js');
-    await runComputerUseMcpServer();
-    return;
   }
+  // Legacy desktop-control MCP subcommand removed; noa uses ComputerTool directly.
 
   // Fast-path for `--daemon-worker=<kind>` (internal — supervisor spawns this).
   // Must come before the daemon subcommand check: spawned per-worker, so

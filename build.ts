@@ -28,7 +28,8 @@ const fullExperimentalFeatures = [
   'CACHED_MICROCOMPACT',
   'CCR_AUTO_CONNECT',
   'CCR_MIRROR',
-  'CHICAGO_MCP',
+  // Former desktop-control MCP flag intentionally omitted: noa now uses its
+  // own native ComputerTool (src/tools/ComputerTool).
   'COMMIT_ATTRIBUTION',
   'CONNECTOR_TEXT',
   'CONTEXT_COLLAPSE',
@@ -276,6 +277,8 @@ const stubPlugin: BunPlugin = {
     const stubModules = [
       '@ant/claude-for-chrome-mcp',
       '@anthropic-ai/sandbox-runtime',
+      // ink pulls react-devtools-core in dev mode; not needed for prod bundle.
+      'react-devtools-core',
     ]
 
     for (const mod of stubModules) {

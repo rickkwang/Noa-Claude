@@ -122,21 +122,11 @@ export function isAnalyticsToolDetailsLoggingEnabled(
  * isAnalyticsToolDetailsLoggingEnabled's transport/URL gates, which a stdio
  * built-in would otherwise fail.
  *
- * Feature-gated so the set is empty when the feature is off: the name
- * reservation (main.tsx, config.ts addMcpServer) is itself feature-gated, so
- * a user-configured 'computer-use' is possible in builds without the feature.
+ * Noa's desktop control is exposed as a native tool, not the removed
+ * computer-use MCP server, so there are currently no reserved built-in MCP
+ * server names from that path.
  */
-/* eslint-disable @typescript-eslint/no-require-imports */
-const BUILTIN_MCP_SERVER_NAMES: ReadonlySet<string> = new Set(
-  feature('CHICAGO_MCP')
-    ? [
-        (
-          require('../../utils/computerUse/common.js') as typeof import('../../utils/computerUse/common.js')
-        ).COMPUTER_USE_MCP_SERVER_NAME,
-      ]
-    : [],
-)
-/* eslint-enable @typescript-eslint/no-require-imports */
+const BUILTIN_MCP_SERVER_NAMES: ReadonlySet<string> = new Set()
 
 /**
  * Spreadable helper for logEvent payloads — returns {mcpServerName, mcpToolName}
