@@ -5,6 +5,7 @@ import { Select } from '../../components/CustomSelect/select.js';
 import { Dialog } from '../../components/design-system/Dialog.js';
 import { Text } from '../../ink.js';
 import type { LocalJSXCommandCall, LocalJSXCommandContext } from '../../types/command.js';
+import { isUsing3PServices } from '../../utils/auth.js';
 import {
   applyActiveProviderProfileEnv,
   loadProviderProfiles,
@@ -56,16 +57,22 @@ function ProviderPicker({
   let t1;
   if ($[1] !== profiles || $[2] !== onDone || $[3] !== context) {
     t1 = (profileId: string) => {
-      const profile = profiles?.find((p) => p.id === profileId);
-      if (!profile) return;
+      if (!profiles) return;
+      const profile = profiles.find((p) => p.id === profileId);
+      if (!profile) {
+        onDone('Selected provider profile not found.', { display: 'system' });
+        return;
+      }
 
-      // Async provider switch — fire and forget; onDone closes the UI.
-      void setActiveProviderProfile(profileId).then(() =>
-        applyActiveProviderProfileEnv()
-      ).then(() => {
-        onProviderSwitch(context);
-        onDone(`Switched to provider ${profile.name}`, { display: 'system' });
-      });
+      setActiveProviderProfile(profileId)
+        .then(() => applyActiveProviderProfileEnv())
+        .then(() => {
+          onProviderSwitch(context);
+          onDone(`Switched to provider ${profile.name}`, { display: 'system' });
+        })
+        .catch((err) => {
+          onDone(`Failed to switch provider: ${err.message}`, { display: 'system' });
+        });
     };
     $[1] = profiles;
     $[2] = onDone;
@@ -90,6 +97,17 @@ function ProviderPicker({
       t2 = $[6];
     }
     return t2;
+  }
+
+  if (isUsing3PServices()) {
+    return (
+      <Dialog title="Provider" onCancel={handleCancel} color="permission">
+        <Text>Provider profiles are unavailable while using third-party services.</Text>
+        <Text dimColor>
+          Unset CLAUDE_CODE_USE_BEDROCK, CLAUDE_CODE_USE_VERTEX, or CLAUDE_CODE_USE_FOUNDRY to enable profile switching.
+        </Text>
+      </Dialog>
+    );
   }
 
   const activeProfile = profiles?.find((p) => p.active);
