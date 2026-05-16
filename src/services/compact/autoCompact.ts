@@ -238,6 +238,21 @@ export async function shouldAutoCompact(
   const threshold = getAutoCompactThreshold(model)
   const effectiveWindow = getEffectiveContextWindowSize(model)
 
+  // Threshold collapses to ~0 when effective window hits its floor (small
+  // CLAUDE_CODE_AUTO_COMPACT_WINDOW or an unusually small context model).
+  // Any post-compact context (~10-30K of boundary+summary+attachments)
+  // would then exceed threshold and re-trigger compact immediately; the
+  // consecutiveFailures circuit breaker only catches failures, so a
+  // successful re-compact loop runs forever. Refuse here — manual /compact
+  // still works, and PTL-driven reactive compact handles genuine overflow.
+  if (threshold <= 0) {
+    logForDebugging(
+      `autocompact: refused (threshold=${threshold} effective=${effectiveWindow} — window too small)`,
+      { level: 'warn' },
+    )
+    return false
+  }
+
   logForDebugging(
     `autocompact: tokens=${tokenCount} threshold=${threshold} effectiveWindow=${effectiveWindow}${snipTokensFreed > 0 ? ` snipFreed=${snipTokensFreed}` : ''}`,
   )
