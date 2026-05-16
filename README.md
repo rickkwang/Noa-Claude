@@ -37,23 +37,49 @@ Then open a project and ask for real work: fix a bug, explain a subsystem, revie
 - `/resume` — Resume a previous conversation
 - `/compact` — Summarize long conversations to preserve context
 - `/tree` — Navigate session history and branches
+- `/clear` — Clear the current conversation and start fresh
+- `/export` — Export conversation to a file
+- `/rename` — Rename the current session
+- `/tag` — Tag the current session for quick lookup
 - `/summary` — Generate structured session summaries
 - `/share` — Export share snapshots under `.claude-agent/shares`
 
 **Provider routing**
 - `/provider` — Switch between saved provider profiles (JSON-based, stored in `~/.claude-agent/provider-profiles.json`)
 - `/model` — Switch model or list available models
-- `/login` — Authenticate with your provider
+- `/login` / `/logout` — Authenticate with your provider
+
+**Agent execution**
+- `/agent` — Spawn sub-agents for parallel task execution
+- `/computer` — Control macOS desktop (screenshots, clicks, keyboard) for automation workflows
 
 **Verification and diagnostics**
 - `/doctor` — Diagnose installation health and configuration
 - `/status` — Inspect runtime state, MCP, plugins, and agents
-- `/cache-probe` — Diagnose API cache hit rate
+- `/cache-probe` — Diagnose API cache hit rate by comparing `cached_tokens` across identical requests
+- `/usage` — View token usage for current session
+- `/cost` — Estimate cost of the current conversation
 
 **Configuration**
 - `/config` — View and edit settings
 - `/workflows` — Manage reusable workflows
+- `/wiki init` / `/wiki status` / `/wiki ingest` — Project documentation management
 - `AGENTS.md` / `CLAUDE.md` — Project-level context files
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `ctrl+t` | Toggle todo list |
+| `ctrl+o` | Toggle transcript mode |
+| `ctrl+shift+b` | Toggle brief-only view |
+| `ctrl+l` | Clear screen and force full redraw (recovery path) |
+| `ctrl+e` | Open external editor |
+| `ctrl+g` | Go to line |
+| `ctrl+s` | Stash chat input |
+| `escape` | Abort current operation |
+| `ctrl+c` | Cancel speulation when idle |
+| `shift+enter` | Multi-line input |
 
 ## Multi-Provider Support
 
@@ -90,6 +116,20 @@ Provider profiles enable saved configurations for providers like Kimi, MiniMax, 
 - `ANTHROPIC_FOUNDRY_API_KEY` — API key auth
 - Auth without key: Azure AD via `DefaultAzureCredential`
 
+## Capability Highlights
+
+- **Multi-Provider Support** — OpenAI-compatible, AWS Bedrock, Google Vertex, Microsoft Foundry, and Anthropic's first-party API.
+- **Sub-Agent Orchestration** — Assign different models to different agents via `settings.json` (`agentModels`, `agentRouting`).
+- **macOS Desktop Control** — ComputerTool for screenshot-based GUI automation, keyboard-driven workflows preferred.
+- **MCP Tool Compaction** — MCP tool results are included in context compaction, reducing token usage 20–40% for MCP-heavy sessions.
+- **128k Fallback** — Unknown OpenAI-compatible models use a conservative 128k context window to prevent compact threshold underestimation.
+- **Auto-fix Hook** — After file edits, automatically run configurable lint/test commands (configured in `settings.json` under `autoFix`).
+- **Cache-probe** — `/cache-probe` command to diagnose API cache hit rate.
+- **SSRF Protection** — URL resolution validated against IPv4/IPv6 private ranges before outbound HTTP requests.
+- **TUI Mode** — `/tui` switches between default and fullscreen (no-flicker) terminal layout.
+- **PR Intent Scan** — CI checks PR added lines for suspicious links/download patterns and fails on high-severity findings.
+- **Privacy** — Third-party API requests include `store: false` to prevent training data use.
+
 ## Architecture
 
 ```
@@ -99,12 +139,12 @@ Entry → QueryEngine → Agent Loop → Tools / Services / State
 | Subsystem | Path | Purpose |
 |-----------|------|---------|
 | Commands | `src/commands/` | 114 slash commands |
-| Tools | `src/tools/` | 57 tool implementations (file, shell, web, tasks, MCP) |
+| Tools | `src/tools/` | 57 tool implementations (file, shell, web, tasks, MCP, computer) |
 | Components | `src/components/` | React TUI components |
 | Hooks | `src/hooks/` | React state and side-effect hooks |
 | Bridge | `src/bridge/` | Remote execution and session bridging |
-| Services | `src/services/` | Backend services (API, MCP, OAuth, LSP, analytics) |
-| Utils | `src/utils/` | Shared utilities (git, auth, file, session) |
+| Services | `src/services/` | Backend services (API, MCP, OAuth, LSP, analytics, autoFix) |
+| Utils | `src/utils/` | Shared utilities (git, auth, file, session, ssrf) |
 
 ## Build Commands
 
@@ -162,6 +202,7 @@ Core stability signals treated as non-negotiable:
 - MCP startup degrades gracefully instead of blocking
 - Tool orchestration preserves permission boundaries and retry safety
 - Remote/session plumbing keeps trust, auth, and reconnect explicit
+- SSRF protection validates all outbound URLs against private address ranges
 
 See [docs/operating-guide.md](docs/operating-guide.md) for runtime, session, worktree, and agent documentation. See [docs/product-governance.md](docs/product-governance.md) for command surface governance.
 
