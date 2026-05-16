@@ -48,6 +48,10 @@ export function decideGoalEvaluatorAction({
   return 'run'
 }
 
+// Auto-continue nudge injected mid-loop after the evaluator votes "not yet".
+// Intentionally short — the heavyweight per-turn priming (objective wrapping,
+// completion audit checklist) is in buildContinuationPrompt() at goalPrompts.ts
+// and runs at the start of every fresh user turn, so we don't repeat it here.
 export function buildGoalContinuationMessage(goal: ThreadGoal): string {
   const reasonLine = goal.lastEvaluatorReason
     ? `${GOAL_CONTINUATION_REASON_PREFIX}${goal.lastEvaluatorReason}`
