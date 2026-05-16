@@ -31,6 +31,8 @@ const MAX_VISIBLE_NOTES = 8;
 const MIN_VISIBLE_ENTRIES = 3;
 const MAX_VISIBLE_ENTRIES = 10;
 const CHROME_ROWS = 11;
+const LIST_BREATHING_ROWS = 2;
+const DETAIL_RESERVED_ROWS = 4;
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -46,32 +48,8 @@ function windowAround<T>(items: T[], focusedIndex: number, visibleCount: number)
 }
 
 function renderNotes(notes: string[], visibleCount: number, offset = 0): React.ReactNode {
-  if (notes.length === 0) {
-    return <Text dimColor={true}>No notes available.</Text>;
-  }
-  const safeOffset = clampNumber(offset, 0, Math.max(0, notes.length - visibleCount));
-  const visibleNotes = notes.slice(safeOffset, safeOffset + visibleCount);
-  const remainingAbove = safeOffset;
-  const remainingBelow = notes.length - safeOffset - visibleNotes.length;
-  return (
-    <Box flexDirection="column" gap={1}>
-      {remainingAbove > 0 && (
-        <Text dimColor={true}>
-          {remainingAbove} more {plural(remainingAbove, 'item')} above
-        </Text>
-      )}
-      {visibleNotes.map((note, index) => (
-        <Text key={`${safeOffset + index}-${note}`}>
-          <Text color="claude">•</Text> {note}
-        </Text>
-      ))}
-      {remainingBelow > 0 && (
-        <Text dimColor={true}>
-          + {remainingBelow} more {plural(remainingBelow, 'item')} below
-        </Text>
-      )}
-    </Box>
-  );
+  const lines: RenderedNoteLine[] = notes.map(note => ({ kind: 'note', text: note }));
+  return renderDetailLines(lines, visibleCount, offset);
 }
 
 function buildAllNoteLines(entries: Array<[string, string[]]>): RenderedNoteLine[] {
@@ -82,28 +60,45 @@ function buildAllNoteLines(entries: Array<[string, string[]]>): RenderedNoteLine
 }
 
 function renderAllNotes(entries: Array<[string, string[]]>, visibleCount: number, offset = 0): React.ReactNode {
-  const lines = buildAllNoteLines(entries);
+  return renderDetailLines(buildAllNoteLines(entries), visibleCount, offset);
+}
+
+function renderDetailLines(
+  lines: RenderedNoteLine[],
+  visibleCount: number,
+  offset = 0,
+): React.ReactNode {
   if (lines.length === 0) {
     return <Text dimColor={true}>No notes available.</Text>;
   }
-  const safeOffset = clampNumber(offset, 0, Math.max(0, lines.length - visibleCount));
-  const visibleLines = lines.slice(safeOffset, safeOffset + visibleCount);
+  const contentRows = Math.max(1, visibleCount - DETAIL_RESERVED_ROWS);
+  const safeOffset = clampNumber(offset, 0, Math.max(0, lines.length - contentRows));
+  const visibleLines = lines.slice(safeOffset, safeOffset + contentRows);
   const remainingAbove = safeOffset;
   const remainingBelow = lines.length - safeOffset - visibleLines.length;
+  const hasAbove = remainingAbove > 0;
+  const hasBelow = remainingBelow > 0;
+  const paddedLines = [...visibleLines, ...Array(Math.max(0, contentRows - visibleLines.length)).fill(null)];
 
   return (
-    <Box flexDirection="column" gap={1}>
-      {remainingAbove > 0 && (
-        <Text dimColor={true}>{remainingAbove} more lines above</Text>
-      )}
-      {visibleLines.map((line, index) => (
+    <Box flexDirection="column">
+      <Text dimColor={true} wrap="truncate-end">
+        {hasAbove ? `${remainingAbove} more lines above` : ' '}
+      </Text>
+      <Text> </Text>
+      {paddedLines.map((line, index) => (
+        line === null
+          ? <Text key={`${safeOffset + index}-pad`}> </Text>
+          : (
         line.kind === 'version'
-          ? <Text key={`${safeOffset + index}-${line.text}`} bold={true} color="claude">{line.text}</Text>
-          : <Text key={`${safeOffset + index}-${line.text}`}><Text color="claude">•</Text> {line.text}</Text>
+          ? <Text key={`${safeOffset + index}-${line.text}`} bold={true} color="claude" wrap="truncate-end">{line.text}</Text>
+          : <Text key={`${safeOffset + index}-${line.text}`} wrap="truncate-end"><Text color="claude">•</Text> {line.text}</Text>
+          )
       ))}
-      {remainingBelow > 0 && (
-        <Text dimColor={true}>+ {remainingBelow} more lines below</Text>
-      )}
+      <Text> </Text>
+      <Text dimColor={true} wrap="truncate-end">
+        {hasBelow ? `+ ${remainingBelow} more lines below` : ' '}
+      </Text>
     </Box>
   );
 }
@@ -112,7 +107,11 @@ export function ReleaseNotes({ notes, onClose }: Props): React.ReactNode {
   const { columns, rows } = useTerminalSize();
   const useSideBySide = columns >= 100;
   const visibleNoteCount = clampNumber(rows - CHROME_ROWS, MIN_VISIBLE_NOTES, MAX_VISIBLE_NOTES);
-  const visibleEntryCount = clampNumber(rows - CHROME_ROWS, MIN_VISIBLE_ENTRIES, MAX_VISIBLE_ENTRIES);
+  const visibleEntryCount = clampNumber(
+    rows - CHROME_ROWS - LIST_BREATHING_ROWS,
+    MIN_VISIBLE_ENTRIES,
+    MAX_VISIBLE_ENTRIES,
+  );
   const [isExpanded, setIsExpanded] = useState(false);
   const [detailOffset, setDetailOffset] = useState(0);
 
@@ -154,8 +153,9 @@ export function ReleaseNotes({ notes, onClose }: Props): React.ReactNode {
   const hiddenEntryCount = entries.length - visibleEntries.length;
   const focusedDetailLineCount = focusedEntry?.kind === 'all'
     ? buildAllNoteLines(notes).length
-    : focusedEntry?.notes?.length ?? 0;
-  const maxDetailOffset = Math.max(0, focusedDetailLineCount - visibleNoteCount);
+    : (focusedEntry?.notes?.length ?? 0) + 1;
+  const detailContentRows = Math.max(1, visibleNoteCount - DETAIL_RESERVED_ROWS);
+  const maxDetailOffset = Math.max(0, focusedDetailLineCount - detailContentRows);
 
   useInput((input, key) => {
     if (key.upArrow || (key.ctrl && input === 'p')) {
@@ -194,14 +194,19 @@ export function ReleaseNotes({ notes, onClose }: Props): React.ReactNode {
     ? Math.min(50, Math.max(34, Math.floor(columns * 0.35)))
     : undefined;
   const countColumnWidth = 11;
+  const separatorRows = visibleEntryCount;
 
   const detail = !focusedEntry ? null : focusedEntry.kind === 'all' ? (
     renderAllNotes(notes, visibleNoteCount, isExpanded ? detailOffset : 0)
   ) : (
-    <Box flexDirection="column" gap={1}>
-      <Text bold={true} color="claude">{focusedEntry.title}</Text>
-      {renderNotes(focusedEntry.notes ?? [], visibleNoteCount, isExpanded ? detailOffset : 0)}
-    </Box>
+    renderDetailLines(
+      [
+        { kind: 'version', text: focusedEntry.title },
+        ...(focusedEntry.notes ?? []).map(note => ({ kind: 'note' as const, text: note })),
+      ],
+      visibleNoteCount,
+      isExpanded ? detailOffset : 0,
+    )
   );
 
   return (
@@ -211,9 +216,10 @@ export function ReleaseNotes({ notes, onClose }: Props): React.ReactNode {
         <Box flexDirection={useSideBySide ? 'row' : 'column'} gap={useSideBySide ? 0 : 1} marginTop={1}>
           {/* List */}
           <Box flexDirection="column" flexShrink={0} width={listWidth}>
-            {visibleEntryStart > 0 && (
-              <Text dimColor={true}>  {visibleEntryStart} more above</Text>
-            )}
+            <Text dimColor={true} wrap="truncate-end">
+              {visibleEntryStart > 0 ? `  ${visibleEntryStart} more above` : ' '}
+            </Text>
+            <Text> </Text>
             {visibleEntries.map((entry, visibleIndex) => {
               const index = visibleEntryStart + visibleIndex;
               const isFocused = index === focusedIndex;
@@ -236,15 +242,26 @@ export function ReleaseNotes({ notes, onClose }: Props): React.ReactNode {
                 </Box>
               );
             })}
-            {hiddenEntryCount > visibleEntryStart && (
-              <Text dimColor={true}>  {hiddenEntryCount - visibleEntryStart} more below</Text>
-            )}
+            <Text> </Text>
+            <Text dimColor={true} wrap="truncate-end">
+              {hiddenEntryCount > visibleEntryStart
+                ? `  ${hiddenEntryCount - visibleEntryStart} more below`
+                : ' '}
+            </Text>
           </Box>
 
           {/* Separator */}
           {useSideBySide && (
-            <Box flexShrink={0} marginLeft={2} marginRight={2}>
-              <Text dimColor={true}>│</Text>
+            <Box flexShrink={0} marginLeft={3} marginRight={3}>
+              <Box flexDirection="column">
+                <Text> </Text>
+                <Text> </Text>
+                {Array.from({ length: separatorRows }).map((_, i) => (
+                  <Text key={`sep-${i}`} dimColor={true}>│</Text>
+                ))}
+                <Text> </Text>
+                <Text> </Text>
+              </Box>
             </Box>
           )}
 
