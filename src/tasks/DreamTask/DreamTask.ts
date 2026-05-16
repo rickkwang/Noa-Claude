@@ -28,10 +28,12 @@ export type DreamTaskState = TaskStateBase & {
   phase: DreamPhase
   sessionsReviewing: number
   /**
-   * Paths observed in Edit/Write tool_use blocks via onMessage. This is an
-   * INCOMPLETE reflection of what the dream agent actually changed — it misses
-   * any bash-mediated writes and only captures the tool calls we pattern-match.
-   * Treat as "at least these were touched", not "only these were touched".
+   * Paths observed in Edit/Write tool_use blocks via onMessage. In productized
+   * noa (REPL off, USER_TYPE !== 'ant') this captures every persisted change:
+   * createAutoMemCanUseTool denies non-readonly bash and restricts Edit/Write
+   * to the memory directory, so disk writes can only flow through pattern-
+   * matched Edit/Write tool calls. Only under REPL/ant mode — where the dream
+   * agent retains unrestricted bash — could this undercount.
    */
   filesTouched: string[]
   /** Assistant text responses, tool uses collapsed. Prompt is NOT included. */

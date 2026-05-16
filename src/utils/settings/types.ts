@@ -987,6 +987,12 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           'Enable background memory consolidation (auto-dream). When set, overrides the server-side default.',
         ),
+      autoDreamModel: z
+        .string()
+        .optional()
+        .describe(
+          'Model used for background memory consolidation. Defaults to inheriting the parent session model. Set to a cheaper alias (e.g. "haiku") to reduce cost — requires that alias to resolve on your provider.',
+        ),
       showThinkingSummaries: z
         .boolean()
         .optional()

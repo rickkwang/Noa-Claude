@@ -26,7 +26,7 @@ import type { ToolUseContext } from '../../Tool.js'
 import { logEvent } from '../analytics/index.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../analytics/growthbook.js'
 import { isAutoMemoryEnabled, getAutoMemPath } from '../../memdir/paths.js'
-import { isAutoDreamEnabled } from './config.js'
+import { isAutoDreamEnabled, getAutoDreamModel } from './config.js'
 import { getProjectDir } from '../../utils/sessionStorage.js'
 import {
   getOriginalCwd,
@@ -51,19 +51,25 @@ import {
 } from '../../tasks/DreamTask/DreamTask.js'
 import { FILE_EDIT_TOOL_NAME } from '../../tools/FileEditTool/constants.js'
 import { FILE_WRITE_TOOL_NAME } from '../../tools/FileWriteTool/prompt.js'
+import { isEnvTruthy } from '../../utils/envUtils.js'
 
-// Scan throttle: when time-gate passes but session-gate doesn't, the lock
-// mtime doesn't advance, so the time-gate keeps passing every turn.
-const SESSION_SCAN_INTERVAL_MS = 10 * 60 * 1000
+// Cap on session ids embedded in the prompt. Header still shows the true
+// count; this only bounds the inline bullet list to keep prompt size sane
+// under heavy use.
+const MAX_SESSION_IDS_IN_PROMPT = 30
 
 type AutoDreamConfig = {
   minHours: number
   minSessions: number
+  // Scan throttle: when time-gate passes but session-gate doesn't, the lock
+  // mtime doesn't advance, so the time-gate keeps passing every turn.
+  scanIntervalMs: number
 }
 
 const DEFAULTS: AutoDreamConfig = {
   minHours: 24,
   minSessions: 5,
+  scanIntervalMs: 10 * 60 * 1000,
 }
 
 /**
@@ -90,6 +96,12 @@ function getConfig(): AutoDreamConfig {
       raw.minSessions > 0
         ? raw.minSessions
         : DEFAULTS.minSessions,
+    scanIntervalMs:
+      typeof raw?.scanIntervalMs === 'number' &&
+      Number.isFinite(raw.scanIntervalMs) &&
+      raw.scanIntervalMs > 0
+        ? raw.scanIntervalMs
+        : DEFAULTS.scanIntervalMs,
   }
 }
 
@@ -100,11 +112,12 @@ function isGateOpen(): boolean {
   return isAutoDreamEnabled()
 }
 
-// Ant-build-only test override. Bypasses enabled/time/session gates but NOT
-// the lock (so repeated turns don't pile up dreams) or the memory-dir
-// precondition. Still scans sessions so the prompt's session-hint is populated.
+// Dev override gated on NOA_AUTODREAM_FORCE. Bypasses enabled/time/session
+// gates but NOT the lock (so repeated turns don't pile up dreams) or the
+// memory-dir precondition. Still scans sessions so the prompt's
+// session-hint is populated.
 function isForced(): boolean {
-  return false
+  return isEnvTruthy(process.env.NOA_AUTODREAM_FORCE)
 }
 
 type AppendSystemMessageFn = NonNullable<ToolUseContext['appendSystemMessage']>
@@ -158,7 +171,7 @@ export function initAutoDream(): void {
 
     // --- Scan throttle ---
     const sinceScanMs = Date.now() - lastSessionScanAt
-    if (!force && sinceScanMs < SESSION_SCAN_INTERVAL_MS) {
+    if (!force && sinceScanMs < cfg.scanIntervalMs) {
       logForDebugging(
         `[autoDream] scan throttle — time-gate passed but last scan was ${Math.round(sinceScanMs / 1000)}s ago`,
       )
@@ -229,12 +242,16 @@ export function initAutoDream(): void {
       // Tool constraints note goes in `extra`, not the shared prompt body —
       // manual /dream runs in the main loop with normal permissions and this
       // would be misleading there.
+      // sessionIds is already sorted mtime-desc by listSessionsTouchedSince,
+      // so slicing the head keeps the most-recently-touched sessions.
+      const shown = sessionIds.slice(0, MAX_SESSION_IDS_IN_PROMPT)
+      const overflow = sessionIds.length - shown.length
       const extra = `
 
 **Tool constraints for this run:** Bash is restricted to read-only commands (\`ls\`, \`find\`, \`grep\`, \`cat\`, \`stat\`, \`wc\`, \`head\`, \`tail\`, and similar). Anything that writes, redirects to a file, or modifies state will be denied. Plan your exploration with this in mind — no need to probe.
 
 Sessions since last consolidation (${sessionIds.length}):
-${sessionIds.map(id => `- ${id}`).join('\n')}`
+${shown.map(id => `- ${id}`).join('\n')}${overflow > 0 ? `\n- ...and ${overflow} more` : ''}`
       const prompt = buildConsolidationPrompt(memoryRoot, transcriptDir, extra)
 
       const result = await runForkedAgent({
@@ -244,6 +261,17 @@ ${sessionIds.map(id => `- ${id}`).join('\n')}`
         querySource: 'auto_dream',
         forkLabel: 'auto_dream',
         skipTranscript: true,
+        // Fire-and-forget: dream's prompt prefix is one-shot, no future
+        // request reads from it. Also sidesteps the cache-miss penalty
+        // when modelOverride differs from the parent's mainLoopModel
+        // (model is part of the cache key, so a different model invalidates
+        // the parent's lineage anyway).
+        skipCacheWrite: true,
+        // Opt-in model downshift. undefined → inherit parent's mainLoopModel
+        // (the historical behavior). Users set settings.autoDreamModel to e.g.
+        // 'haiku' on Anthropic-direct, or a provider-specific small-model id
+        // on non-Anthropic backends.
+        modelOverride: getAutoDreamModel(),
         overrides: { abortController },
         onMessage: makeDreamProgressWatcher(taskId, setAppState),
       })

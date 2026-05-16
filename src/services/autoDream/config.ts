@@ -20,3 +20,24 @@ export function isAutoDreamEnabled(): boolean {
   )
   return gb?.enabled === true
 }
+
+/**
+ * Optional model override for the auto-dream forked agent. Returns undefined
+ * to mean "inherit parent's mainLoopModel" (the historical default).
+ *
+ * Resolution order: settings.autoDreamModel → tengu_onyx_plover.model → undefined.
+ * Default is undefined rather than 'haiku' because noa supports multiple
+ * provider backends (MiniMax / Bedrock / Vertex / Foundry) where Anthropic
+ * aliases may not resolve. Users opt in via settings.json when they know
+ * their provider accepts the alias.
+ */
+export function getAutoDreamModel(): string | undefined {
+  const setting = getInitialSettings().autoDreamModel
+  if (typeof setting === 'string' && setting.length > 0) return setting
+  const gb = getFeatureValue_CACHED_MAY_BE_STALE<{ model?: unknown } | null>(
+    'tengu_onyx_plover',
+    null,
+  )
+  if (typeof gb?.model === 'string' && gb.model.length > 0) return gb.model
+  return undefined
+}

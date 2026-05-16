@@ -12,6 +12,7 @@ import { COMMAND_MESSAGE_TAG, COMMAND_NAME_TAG } from '../../constants/xml.js';
 import type { CanUseToolFn } from '../../hooks/useCanUseTool.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, type AnalyticsMetadata_I_VERIFIED_THIS_IS_PII_TAGGED, logEvent } from '../../services/analytics/index.js';
 import { getDumpPromptsPath } from '../../services/api/dumpPrompts.js';
+import { recordConsolidation } from '../../services/autoDream/consolidationLock.js';
 import { buildPostCompactMessages } from '../../services/compact/compact.js';
 import { resetMicrocompactState } from '../../services/compact/microCompact.js';
 import type { Progress as AgentProgress } from '../../tools/AgentTool/AgentTool.js';
@@ -269,6 +270,16 @@ async function executeForkedSlashCommand(command: CommandBase & PromptCommand, a
   } finally {
     // Clear the progress display
     setToolJSX(null);
+  }
+  // Post-success hook for the bundled /dream skill: stamp the consolidation
+  // lock mtime only AFTER the forked agent completes successfully. ESC/abort
+  // throws AbortError inside the for-await loop and propagates past this
+  // line (handled by the outer try/catch), so an interrupted /dream leaves
+  // the mtime untouched and auto-dream remains free to fire as scheduled.
+  if (command.loadedFrom === 'bundled' && command.name === 'dream') {
+    await recordConsolidation().catch((e: unknown) =>
+      logForDebugging(`[dream] post-skill stamp failed: ${(e as Error).message}`),
+    );
   }
   let resultText = extractResultText(agentMessages, 'Command completed');
   logForDebugging(`Forked slash command /${command.name} completed with agent ${agentId}`);

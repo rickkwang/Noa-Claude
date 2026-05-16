@@ -67,6 +67,12 @@ export const SUPPORTED_SETTINGS: Record<string, SettingConfig> = {
     type: 'boolean',
     description: 'Enable background memory consolidation',
   },
+  autoDreamModel: {
+    source: 'settings',
+    type: 'string',
+    description:
+      'Override the model used for background memory consolidation (defaults to inheriting the parent session model)',
+  },
   fileCheckpointingEnabled: {
     source: 'global',
     type: 'boolean',

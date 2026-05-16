@@ -112,6 +112,15 @@ export type ForkedAgentParams = {
   /** Skip writing new prompt cache entries on the last message. For
    *  fire-and-forget forks where no future request will read from this prefix. */
   skipCacheWrite?: boolean
+  /**
+   * Optional model alias / id to use for the forked agent instead of inheriting
+   * the parent's mainLoopModel. Useful for cheap fire-and-forget background
+   * work (e.g., memory consolidation) that doesn't need the parent's model.
+   * Note: model is part of the prompt cache key, so switching models will
+   * miss the parent's cache lineage — pair with `skipCacheWrite` when the
+   * fork is one-shot.
+   */
+  modelOverride?: string
 }
 
 export type ForkedAgentResult = {
@@ -500,6 +509,7 @@ export async function runForkedAgent({
   onMessage,
   skipTranscript,
   skipCacheWrite,
+  modelOverride,
 }: ForkedAgentParams): Promise<ForkedAgentResult> {
   const startTime = Date.now()
   const outputMessages: Message[] = []
@@ -513,10 +523,23 @@ export async function runForkedAgent({
     forkContextMessages,
   } = cacheSafeParams
 
+  // Apply modelOverride by composing it into overrides.options. The override
+  // takes precedence over an explicit overrides.options.mainLoopModel — but
+  // callers that set both are pathological; just document the precedence.
+  const effectiveOverrides: SubagentContextOverrides | undefined = modelOverride
+    ? {
+        ...overrides,
+        options: {
+          ...(overrides?.options ?? toolUseContext.options),
+          mainLoopModel: modelOverride,
+        },
+      }
+    : overrides
+
   // Create isolated context to prevent mutation of parent state
   const isolatedToolUseContext = createSubagentContext(
     toolUseContext,
-    overrides,
+    effectiveOverrides,
   )
 
   // Do NOT filterIncompleteToolCalls here — it drops the whole assistant on

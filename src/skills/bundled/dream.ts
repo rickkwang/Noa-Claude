@@ -1,7 +1,6 @@
 // @ts-nocheck
 import { isAutoMemoryEnabled } from '../../memdir/paths.js'
 import { buildConsolidationPrompt } from '../../services/autoDream/consolidationPrompt.js'
-import { recordConsolidation } from '../../services/autoDream/consolidationLock.js'
 import { registerBundledSkill } from '../bundledSkills.js'
 
 export function registerDreamSkill(): void {
@@ -25,7 +24,7 @@ Look for new information worth persisting. Sources in rough priority order:
 1. **Daily logs** (\`logs/YYYY/MM/YYYY-MM-DD.md\`) if present — these are the append-only stream
 2. **Existing memories that drifted** — facts that contradict something you see in the codebase now
 3. **Transcript search** — if you need specific context, grep narrowly:
-   \`grep -rn "<narrow term>" . --include="*.jsonl" | tail-50\`
+   \`grep -rn "<narrow term>" . --include="*.jsonl" | tail -50\`
 
 Don't exhaustively read transcripts. Look only for things you already suspect matter.
 
@@ -60,7 +59,9 @@ Return a brief summary of what you consolidated, updated, or pruned.`
     isEnabled: () => isAutoMemoryEnabled(),
     context: 'fork',
     async getPromptForCommand(args) {
-      await recordConsolidation()
+      // Mtime stamping happens in executeForkedSlashCommand after the agent
+      // completes successfully, not here. Stamping at prompt-build time
+      // mis-locks auto-dream for 24h when the user ESCs immediately.
       let prompt = SKILL_PROMPT
       if (args) {
         prompt += `\n\n## Additional context\n\n${args}`

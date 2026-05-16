@@ -109,19 +109,25 @@ export async function rollbackConsolidationLock(
 }
 
 /**
- * Session IDs with mtime after sinceMs. listCandidates handles UUID
- * validation (excludes agent-*.jsonl) and parallel stat.
+ * Session IDs with mtime after sinceMs, sorted mtime-desc (most-recently
+ * touched first). `listCandidates` returns unsorted readdir order, so the
+ * sort here is load-bearing for any caller that wants to slice "top N
+ * most recent" without re-sorting.
  *
- * Uses mtime (sessions TOUCHED since), not birthtime (0 on ext4).
- * Caller excludes the current session. Scans per-cwd transcripts — it's
- * a skip-gate, so undercounting worktree sessions is safe.
+ * Handles UUID validation (excludes agent-*.jsonl) and parallel stat via
+ * listCandidates. Uses mtime (sessions TOUCHED since), not birthtime (0
+ * on ext4). Caller excludes the current session. Scans per-cwd transcripts
+ * — it's a skip-gate, so undercounting worktree sessions is safe.
  */
 export async function listSessionsTouchedSince(
   sinceMs: number,
 ): Promise<string[]> {
   const dir = getProjectDir(getOriginalCwd())
   const candidates = await listCandidates(dir, true)
-  return candidates.filter(c => c.mtime > sinceMs).map(c => c.sessionId)
+  return candidates
+    .filter(c => c.mtime > sinceMs)
+    .sort((a, b) => b.mtime - a.mtime)
+    .map(c => c.sessionId)
 }
 
 /**
