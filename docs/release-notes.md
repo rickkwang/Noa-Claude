@@ -1,5 +1,32 @@
 # Release Notes
 
+## 1.2.0
+
+### New Features
+
+- **Native macOS Computer Use** — replaced the Anthropic MCP-based desktop control path with a self-contained macOS implementation built on `open`, AppleScript, `cliclick`, `screencapture`, `pbcopy`, and `pbpaste`.
+- **App-first workflow** — GUI actions now require the intended app to be opened or activated first, with frontmost-app guards to keep follow-up actions anchored to the right window.
+- **Search confirmation flow** — search-driven interactions now treat contact/item selection and message entry as separate phases, requiring `Return` after search results before typing the next payload.
+- **App identity aliases** — common app names, localized names, and bundle ids are normalized so WeChat, Weixin, 微信, and similar variants resolve consistently.
+
+### Refactors
+
+- **Desktop control hardening** — coordinate actions now require a fresh screenshot context and invalidate cached coordinates after mouse actions, reducing stale-click failures.
+- **Clipboard-backed typing** — non-ASCII and long text are routed through clipboard paste with clipboard restoration to avoid corruption from key synthesis.
+- **AppleScript gating** — low-risk `open location` calls pass through while destructive AppleScript verbs still trigger approval.
+
+### Bug Fixes
+
+- Fixed focus drift after app switching by reactivating the target app before foreground actions when needed.
+- Fixed `menu_click` so real menu-path failures are no longer hidden by alias retries.
+- Fixed retry behavior so a failed GUI flow restarts from app activation instead of assuming the previous app state is still valid.
+- Fixed log path matching for normalized project paths, including Windows drive letters.
+
+### Chores
+
+- Removed legacy computer-use MCP wrappers, cleanup helpers, and dead stub commands.
+- Updated prompt guidance and regression coverage for the new computer-use flow.
+
 ## 1.1.0
 
 ### New Features
