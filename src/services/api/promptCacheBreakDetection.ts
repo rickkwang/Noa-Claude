@@ -168,6 +168,16 @@ function stripCacheControl(
   })
 }
 
+function stripAttributionHeader(
+  items: ReadonlyArray<Record<string, unknown>>,
+): unknown[] {
+  return items.filter(item => {
+    const text = item.text
+    if (typeof text !== 'string') return true
+    return !text.startsWith('x-anthropic-billing-header')
+  })
+}
+
 function computeHash(data: unknown): number {
   const str = jsonStringify(data)
   if (typeof Bun !== 'undefined') {
@@ -271,8 +281,9 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
     const strippedTools = stripCacheControl(
       toolSchemas as unknown as ReadonlyArray<Record<string, unknown>>,
     )
+    const systemForHash = stripAttributionHeader(strippedSystem)
 
-    const systemHash = computeHash(strippedSystem)
+    const systemHash = computeHash(systemForHash)
     const toolsHash = computeHash(strippedTools)
     // Hash the full system array INCLUDING cache_control — this catches
     // scope flips (global↔org/none) and TTL flips (1h↔5m) that the stripped
