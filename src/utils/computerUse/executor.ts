@@ -928,6 +928,10 @@ export async function openApp(bundleIdOrName: string): Promise<void> {
   let lastError: string | undefined
 
   for (const candidate of candidates) {
+    // `open -b` only accepts bundle identifiers; trying it on name-shaped
+    // candidates always fails. Mirror activateApp's pattern and skip them so
+    // the failure path doesn't burn an extra subprocess per alias.
+    if (!looksLikeBundleId(candidate)) continue
     const byBundle = await execFileNoThrow('open', ['-b', candidate], {
       useCwd: false,
     })
@@ -1076,18 +1080,17 @@ export async function clickMenu(
       'clickMenu: path needs the menu bar item plus at least one menu item (e.g. ["Edit", "Find"])',
     )
   }
-  const escape = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
   const bar = path[0]!
   const item = path[path.length - 1]!
   const intermediates = path.slice(1, -1)
 
   // Build from innermost out:
   //   click menu item "item" of menu 1 of menu item "sub2" of menu 1 of menu item "sub1" of menu 1 of menu bar item "bar" of menu bar 1
-  let chain = `menu bar item "${escape(bar)}" of menu bar 1`
+  let chain = `menu bar item "${escapeAppleScriptString(bar)}" of menu bar 1`
   for (const sub of intermediates) {
-    chain = `menu item "${escape(sub)}" of menu 1 of ${chain}`
+    chain = `menu item "${escapeAppleScriptString(sub)}" of menu 1 of ${chain}`
   }
-  const command = `click menu item "${escape(item)}" of menu 1 of ${chain}`
+  const command = `click menu item "${escapeAppleScriptString(item)}" of menu 1 of ${chain}`
 
   // The macOS process name often differs from the user-visible display name
   // and from bundle ids (e.g. WeChat ↔ "Weixin", NetEase ↔ "NeteaseMusic").
@@ -1109,7 +1112,7 @@ export async function clickMenu(
   const succeeded = await serialize(async () => {
     try {
       for (const candidate of tried) {
-        const existsScript = `tell application "System Events" to exists process "${escape(candidate)}"`
+        const existsScript = `tell application "System Events" to exists process "${escapeAppleScriptString(candidate)}"`
         const {
           stdout: existsStdout,
           code: existsCode,
@@ -1133,7 +1136,7 @@ export async function clickMenu(
           continue
         }
 
-        const script = `tell application "System Events" to tell process "${escape(candidate)}" to ${command}`
+        const script = `tell application "System Events" to tell process "${escapeAppleScriptString(candidate)}" to ${command}`
         const { code, error, stderr } = await execFileNoThrow(
           'osascript',
           ['-e', script],

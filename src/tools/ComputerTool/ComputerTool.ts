@@ -844,6 +844,30 @@ function isArrowNavigationKey(keys: string | undefined): boolean {
   )
 }
 
+// Mutating-verb patterns scanned by appleScriptLooksRisky. Precompiled at
+// module load so the hot path (one check per apple_script tool call) doesn't
+// rebuild them. Each pattern is wrapped in word boundaries so substrings like
+// "deleted" don't accidentally trip 'delete'.
+const RISKY_VERB_PATTERNS: readonly RegExp[] = [
+  'delete',
+  'duplicate',
+  'move',
+  'quit',
+  'restart',
+  'shut down',
+  'log out',
+  'send',                  // Mail / Messages send
+  'empty\\s+the\\s+trash',
+  // Both forms are valid AppleScript: `set the clipboard to X` and
+  // `set clipboard to X` (the article is optional).
+  'set\\s+(?:the\\s+)?clipboard',
+  'set\\s+volume',
+  'set\\s+desktop\\s+picture',
+  'eject',
+  'erase',
+  'reveal',
+].map(verb => new RegExp(`\\b${verb}\\b`))
+
 // Heuristic gate for apple_script approval. We accept some false positives
 // (a benign script with the word "send" in a comment will prompt) over false
 // negatives (a destructive script silently executing). Tokens are matched as
@@ -863,28 +887,8 @@ export function appleScriptLooksRisky(script: string): boolean {
   // System Events keystroke / key code synthesizes user input outside our
   // selection-state machine; route through the tool's `key` action instead.
   if (/\b(keystroke|key\s+code)\b/.test(stripped)) return true
-  // Mutating verbs.
-  const RISKY_VERBS = [
-    'delete',
-    'duplicate',
-    'move',
-    'quit',
-    'restart',
-    'shut down',
-    'log out',
-    'send',                  // Mail / Messages send
-    'empty\\s+the\\s+trash',
-    // Both forms are valid AppleScript: `set the clipboard to X` and
-    // `set clipboard to X` (the article is optional).
-    'set\\s+(?:the\\s+)?clipboard',
-    'set\\s+volume',
-    'set\\s+desktop\\s+picture',
-    'eject',
-    'erase',
-    'reveal',
-  ]
-  for (const verb of RISKY_VERBS) {
-    if (new RegExp(`\\b${verb}\\b`).test(stripped)) return true
+  for (const pattern of RISKY_VERB_PATTERNS) {
+    if (pattern.test(stripped)) return true
   }
   // `open location` is the "open this URL" verb. http(s) URLs match the risk
   // profile of the model typing the same URL into the address bar (which is

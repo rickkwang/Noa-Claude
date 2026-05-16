@@ -172,15 +172,15 @@ export function appIdentityMatches(
 }
 
 function appIdentityMatchesRaw(front: AppIdentity, expectedApp: string): boolean {
+  // The normalized comparison (strip whitespace/dots/underscores/dashes after
+  // lowercasing) is strictly more permissive than a plain lowercased equality
+  // on displayName, so a separate `displayName === expected` check would be a
+  // dead subset. Bundle id keeps its own exact-match check because it's a
+  // different identifier space.
   const expected = expectedApp.trim().toLowerCase()
-  const bundleId = front.bundleId.toLowerCase()
-  const displayName = front.displayName.toLowerCase()
-  const normalizedExpected = normalizeAppIdentity(expectedApp)
-  const normalizedDisplayName = normalizeAppIdentity(front.displayName)
   return (
-    bundleId === expected ||
-    displayName === expected ||
-    normalizedDisplayName === normalizedExpected
+    front.bundleId.toLowerCase() === expected ||
+    normalizeAppIdentity(front.displayName) === normalizeAppIdentity(expectedApp)
   )
 }
 
