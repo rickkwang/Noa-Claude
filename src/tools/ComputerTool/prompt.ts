@@ -162,6 +162,9 @@ For these apps and tasks, a single \`apple_script\` call replaces the entire ope
   \`apple_script { script: 'tell application "Music" to playpause' }\`
 - **Open a Finder location**:
   \`apple_script { script: 'tell application "Finder" to open (POSIX file "<POSIX path>")' }\`
+- **Open a URL in the default browser** (do NOT open the browser then type into the address bar):
+  \`apple_script { script: 'open location "<url>"' }\`
+  For a specific browser: \`apple_script { script: 'tell application "Safari" to open location "<url>"' }\` or \`tell application "Google Chrome" to open location "<url>"\`.
 - **Get Safari front tab URL**:
   \`apple_script { script: 'tell application "Safari" to URL of front document' }\`
 - **Show a system notification** (any user-visible toast):
@@ -205,7 +208,7 @@ Calendar supports AppleScript data access. Use \`apple_script\` (NOT GUI control
 
 ## Operating principles
 
-1. **AppleScript before GUI, every time.** If \`apple_script\` can do the task in one call (see "AppleScript one-liners"), use it and stop. Messages, Calendar, Reminders, Notes, Mail, Music, Finder, Safari, Contacts, Pages/Numbers/Keynote are all scriptable — driving them with open_app + cmd+f + clipboard paste is 7× the latency and strictly worse. Reserve the GUI sequence for apps without AppleScript dictionaries (WeChat and most Electron chat apps).
+1. **AppleScript before GUI, every time.** If \`apple_script\` can do the task in one call (see "AppleScript one-liners"), use it and stop. Messages, Calendar, Reminders, Notes, Mail, Music, Finder, Safari, Contacts, Pages/Numbers/Keynote are all scriptable — driving them with open_app + cmd+f + clipboard paste is 7× the latency and strictly worse. Reserve the GUI sequence for apps without AppleScript dictionaries (WeChat and most Electron chat apps). Specifically: **never** open a browser then \`type\` a URL into the address bar — use \`open location "<url>"\` (one call, no app activation needed).
 2. **App first, then action.** When you do fall through to the GUI path: re-read the DEFAULT FIRST-ACTION SEQUENCE above. Enter the intended app with macOS app control before using shortcuts, text input, screenshots, or clicks.
 3. **Retry means restart.** If a previous GUI attempt was wrong or incomplete, do not continue from wherever the UI appears to be. Re-establish the target app and repeat the complete workflow.
 4. **Return confirms selection.** After search/filter/list navigation, press \`return\` before assuming the item is open or selected.

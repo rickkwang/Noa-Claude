@@ -871,7 +871,8 @@ function isArrowNavigationKey(keys: string | undefined): boolean {
 // negatives (a destructive script silently executing). Tokens are matched as
 // whole-words so substrings like "deleted" don't accidentally trip; comments
 // (-- ...) are stripped first so they don't trigger.
-function appleScriptLooksRisky(script: string): boolean {
+/** @internal exported for tests. */
+export function appleScriptLooksRisky(script: string): boolean {
   const stripped = script
     .replace(/--[^\n]*/g, '')
     .replace(/\(\*[\s\S]*?\*\)/g, '')
@@ -903,16 +904,42 @@ function appleScriptLooksRisky(script: string): boolean {
     'eject',
     'erase',
     'reveal',
-    'open\\s+location',     // arbitrary URL open
   ]
   for (const verb of RISKY_VERBS) {
     if (new RegExp(`\\b${verb}\\b`).test(stripped)) return true
+  }
+  // `open location` is the "open this URL" verb. http(s) URLs match the risk
+  // profile of the model typing the same URL into the address bar (which is
+  // already passthrough), so let those through. Anything else — file://, custom
+  // schemes (slack://, x-apple-systempreferences://), mailto:, javascript: —
+  // can touch local files, deep-link into apps, or open system panes; keep
+  // those behind the ask gate. A non-literal URL (variable / concatenation) we
+  // can't statically inspect also stays risky. Pass `stripped` so comments
+  // can't false-positive (e.g. `-- file:// support TBD`).
+  if (/\bopen\s+location\b/.test(stripped) && !openLocationIsAllHttp(stripped)) {
+    return true
   }
   // `make new <something>` is mostly fine for Notes/Reminders/Events, but
   // `make new outgoing message` (Mail) and `make new document` in some apps
   // create real artifacts the user may not expect.
   if (/\bmake\s+new\s+outgoing\s+message\b/.test(stripped)) return true
   return false
+}
+
+// True iff every `open location "..."` in the script targets http(s). Returns
+// false if any URL is non-literal (variable, concatenation) or uses any other
+// scheme — caller treats that as risky. Caller passes the comment-stripped,
+// lowercased script (matches stripped scheme like "https://" already).
+function openLocationIsAllHttp(stripped: string): boolean {
+  const literal = /\bopen\s+location\s+"([^"]*)"/g
+  let sawAny = false
+  for (const m of stripped.matchAll(literal)) {
+    sawAny = true
+    if (!/^https?:\/\//.test(m[1] ?? '')) return false
+  }
+  // `open location` mentioned but no quoted literal URL — be conservative.
+  if (!sawAny) return false
+  return true
 }
 
 function validateActionFields(
