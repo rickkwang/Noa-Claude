@@ -5,6 +5,7 @@ import type { LogOption } from '../types/logs.js'
 import { quote } from './bash/shellQuote.js'
 import { getPreferredCliCommandName } from './commandName.js'
 import { getSessionIdFromLog } from './sessionStorage.js'
+import { normalizeDriveLetter } from './pathCase.js'
 
 export type CrossProjectResumeResult =
   | {
@@ -34,15 +35,23 @@ export function checkCrossProjectResume(
   showAllProjects: boolean,
   worktreePaths: string[],
 ): CrossProjectResumeResult {
-  const currentCwd = getOriginalCwd()
+  const currentCwd = normalizeDriveLetter(getOriginalCwd())
 
-  if (!showAllProjects || !log.projectPath || log.projectPath === currentCwd) {
+  if (!showAllProjects || !log.projectPath) {
     return { isCrossProject: false }
   }
 
-  // Check if log.projectPath is under a worktree of the same repo
+  const normalizedProjectPath = normalizeDriveLetter(log.projectPath)
+  if (normalizedProjectPath === currentCwd) {
+    return { isCrossProject: false }
+  }
+
+  // Check if log.projectPath is under a worktree of the same repo.
+  // worktreePaths are already drive-letter-normalized by getWorktreePaths.
   const isSameRepo = worktreePaths.some(
-    wt => log.projectPath === wt || log.projectPath!.startsWith(wt + sep),
+    wt =>
+      normalizedProjectPath === wt ||
+      normalizedProjectPath.startsWith(wt + sep),
   )
 
   if (isSameRepo) {

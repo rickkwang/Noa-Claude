@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { execFile as execFileCb } from 'child_process'
 import { promisify } from 'util'
+import { normalizeDriveLetter } from './pathCase.js'
 
 const execFileAsync = promisify(execFileCb)
 
@@ -21,7 +22,9 @@ export async function getWorktreePathsPortable(cwd: string): Promise<string[]> {
     return stdout
       .split('\n')
       .filter(line => line.startsWith('worktree '))
-      .map(line => line.slice('worktree '.length).normalize('NFC'))
+      .map(line =>
+        normalizeDriveLetter(line.slice('worktree '.length).normalize('NFC')),
+      )
   } catch {
     return []
   }

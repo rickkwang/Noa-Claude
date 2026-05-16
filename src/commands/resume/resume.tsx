@@ -24,7 +24,7 @@ import { getErrnoCode } from '../../utils/errors.js';
 import { getWorktreePaths } from '../../utils/getWorktreePaths.js';
 import { logError } from '../../utils/log.js';
 import { shouldUseResumeSummaryGate } from '../../utils/resumeSummaryGate.js';
-import { getLastSessionLog, getSessionIdFromLog, isCustomTitleEnabled, isLiteLog, loadAllProjectsMessageLogs, loadFullLog, loadSameRepoMessageLogs, searchSessionsByCustomTitle } from '../../utils/sessionStorage.js';
+import { getLastSessionLog, getSessionIdFromLog, isCustomTitleEnabled, isLiteLog, loadAllProjectsMessageLogs, loadFullLog, loadSameRepoMessageLogs, RESUME_PICKER_MAX_SESSIONS, searchSessionsByCustomTitle } from '../../utils/sessionStorage.js';
 import { validateUuid } from '../../utils/uuid.js';
 type ResumeResult = {
   resultType: 'sessionNotFound';
@@ -263,7 +263,9 @@ function ResumeCommand({
     const gen = ++loadGenRef.current;
     setLoading(true);
     try {
-      const allLogs = allProjects ? await loadAllProjectsMessageLogs() : await loadSameRepoMessageLogs(paths);
+      const allLogs = allProjects
+        ? await loadAllProjectsMessageLogs(undefined, { initialEnrichCount: RESUME_PICKER_MAX_SESSIONS })
+        : await loadSameRepoMessageLogs(paths, undefined, RESUME_PICKER_MAX_SESSIONS);
       if (gen !== loadGenRef.current) return;
       const resumable = filterResumableSessions(allLogs, getSessionId());
       if (resumable.length === 0) {
@@ -393,7 +395,7 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
   const worktreePaths = await getWorktreePaths(getOriginalCwd());
   let logs: LogOption[]
   try {
-    logs = await loadSameRepoMessageLogs(worktreePaths);
+    logs = await loadSameRepoMessageLogs(worktreePaths, undefined, RESUME_PICKER_MAX_SESSIONS);
   } catch (error) {
     logError(error as Error)
     _logResumeListLoadFailureForTesting(error)
@@ -417,7 +419,7 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
     }
 
     // Enriched logs didn't find it — try direct file lookup. This handles
-    // sessions filtered out by enrichLogs (e.g., first message >16KB makes
+    // sessions filtered out by enrichLogs (e.g., first message >64KB makes
     // firstPrompt extraction fail, causing the session to be dropped).
     const directLog = await getLastSessionLog(maybeSessionId);
     if (directLog) {

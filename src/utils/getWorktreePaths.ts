@@ -3,6 +3,7 @@ import { sep } from 'path'
 import { logEvent } from '../services/analytics/index.js'
 import { execFileNoThrowWithCwd } from './execFileNoThrow.js'
 import { gitExe } from './git.js'
+import { normalizeDriveLetter } from './pathCase.js'
 
 /**
  * Returns the paths of all worktrees for the current git repository.
@@ -51,7 +52,9 @@ export async function getWorktreePaths(cwd: string): Promise<string[]> {
   const worktreePaths = stdout
     .split('\n')
     .filter(line => line.startsWith('worktree '))
-    .map(line => line.slice('worktree '.length).normalize('NFC'))
+    .map(line =>
+      normalizeDriveLetter(line.slice('worktree '.length).normalize('NFC')),
+    )
 
   logEvent('tengu_worktree_detection', {
     duration_ms: durationMs,
@@ -60,8 +63,9 @@ export async function getWorktreePaths(cwd: string): Promise<string[]> {
   })
 
   // Sort worktrees: current worktree first, then alphabetically
+  const normalizedCwd = normalizeDriveLetter(cwd)
   const currentWorktree = worktreePaths.find(
-    path => cwd === path || cwd.startsWith(path + sep),
+    path => normalizedCwd === path || normalizedCwd.startsWith(path + sep),
   )
   const otherWorktrees = worktreePaths
     .filter(path => path !== currentWorktree)

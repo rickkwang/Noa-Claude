@@ -87,6 +87,7 @@ import {
   LITE_READ_BUF_SIZE,
   readHeadAndTail,
   readTranscriptForLoad,
+  resolveSessionFilePath,
   SKIP_PRECOMPACT_THRESHOLD,
 } from './sessionStoragePortable.js'
 import { getSettings_DEPRECATED } from './settings/settings.js'
@@ -2835,7 +2836,7 @@ export function clearSessionMetadata(): void {
 /**
  * Re-append cached session metadata (custom title, tag) to the end of the
  * transcript file. Call this after compaction so the metadata stays within
- * the 16KB tail window that readLiteMetadata reads during progressive loading.
+ * the 64KB tail window that readLiteMetadata reads during progressive loading.
  * Without this, enough post-compaction messages can push the metadata entry
  * out of the window, causing `--resume` to show the auto-generated firstPrompt
  * instead of the user-set session name.
@@ -3905,7 +3906,23 @@ async function loadSessionFile(sessionId: UUID): Promise<{
     getSessionProjectDir() ?? getProjectDir(getOriginalCwd()),
     `${sessionId}.jsonl`,
   )
-  return loadTranscriptFile(sessionFile)
+  try {
+    return await loadTranscriptFile(sessionFile)
+  } catch (error) {
+    // Only fall back to global scan for ENOENT — rethrow parse errors,
+    // permission errors, etc. so callers see the real failure.
+    if (
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'ENOENT'
+    ) {
+      const resolved = await resolveSessionFilePath(sessionId)
+      if (resolved) {
+        return loadTranscriptFile(resolved.filePath)
+      }
+    }
+    throw error
+  }
 }
 
 /**
@@ -4670,6 +4687,13 @@ export async function getSessionFilesWithMtime(
  */
 const INITIAL_ENRICH_COUNT = 50
 
+/**
+ * Upper bound for the resume picker's "load all visible sessions" path.
+ * Prevents extreme I/O (128 KB × N) when a user has 1000+ sessions while
+ * still showing far more than the default 50.
+ */
+export const RESUME_PICKER_MAX_SESSIONS = 500
+
 type LiteMetadata = {
   firstPrompt: string
   gitBranch?: string
@@ -5140,7 +5164,7 @@ async function enrichLog(
   }
 
   // Provide a fallback title for sessions where we couldn't extract the first
-  // prompt (e.g., large first messages that exceed the 16KB read buffer).
+  // prompt (e.g., large first messages that exceed the 64KB read buffer).
   // Previously these sessions were silently dropped, making them inaccessible
   // via /resume after crashes or large-context sessions.
   if (!enriched.firstPrompt && !enriched.customTitle) {
