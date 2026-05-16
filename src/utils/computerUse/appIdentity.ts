@@ -6,20 +6,30 @@ export type AppIdentity = {
 type AppAliasGroup = {
   names: readonly string[]
   bundleIds: readonly string[]
+  // Chat/IM-style apps where pasting message body into a still-active
+  // search/contact picker is a common destructive mistake. ComputerTool
+  // activates a search-selection state machine that demands explicit Return
+  // before another type/paste. Earlier substring matching incorrectly
+  // tripped this on unrelated apps whose name happened to contain 'line'
+  // (Outline/Mainline) or 'teams' (TeamSpeak), so flagging is now exact.
+  strictSearchSelection?: boolean
 }
 
 const APP_ALIAS_GROUPS: readonly AppAliasGroup[] = [
   {
     names: ['WeChat', 'Weixin', '微信'],
     bundleIds: ['com.tencent.xinWeChat'],
+    strictSearchSelection: true,
   },
   {
     names: ['WeCom', '企业微信', 'WeWork'],
     bundleIds: ['com.tencent.WeWorkMac'],
+    strictSearchSelection: true,
   },
   {
     names: ['Messages', 'iMessage', '信息'],
     bundleIds: ['com.apple.MobileSMS'],
+    strictSearchSelection: true,
   },
   {
     names: ['Mail', '邮件'],
@@ -68,22 +78,47 @@ const APP_ALIAS_GROUPS: readonly AppAliasGroup[] = [
   {
     names: ['Slack'],
     bundleIds: ['com.tinyspeck.slackmacgap'],
+    strictSearchSelection: true,
   },
   {
     names: ['Discord'],
     bundleIds: ['com.hnc.Discord'],
+    strictSearchSelection: true,
   },
   {
     names: ['Telegram'],
     bundleIds: ['ru.keepcoder.Telegram'],
+    strictSearchSelection: true,
   },
   {
     names: ['WhatsApp'],
     bundleIds: ['net.whatsapp.WhatsApp'],
+    strictSearchSelection: true,
   },
   {
     names: ['Signal'],
     bundleIds: ['org.whispersystems.signal-desktop'],
+    strictSearchSelection: true,
+  },
+  {
+    names: ['LINE'],
+    bundleIds: ['jp.naver.line.mac'],
+    strictSearchSelection: true,
+  },
+  {
+    names: ['Microsoft Teams', 'Teams'],
+    bundleIds: ['com.microsoft.teams', 'com.microsoft.teams2'],
+    strictSearchSelection: true,
+  },
+  {
+    names: ['Lark', 'Feishu', '飞书'],
+    bundleIds: ['com.electron.lark', 'com.bytedance.macos.lark'],
+    strictSearchSelection: true,
+  },
+  {
+    names: ['DingTalk', '钉钉'],
+    bundleIds: ['com.alibaba.DingTalkMac'],
+    strictSearchSelection: true,
   },
   {
     names: ['NeteaseMusic', 'NetEase Cloud Music', '网易云音乐'],
@@ -97,6 +132,25 @@ for (const group of APP_ALIAS_GROUPS) {
   for (const candidate of candidates) {
     ALIAS_INDEX.set(normalizeAppIdentity(candidate), candidates)
   }
+}
+
+// Pre-computed set of identifiers (lowercased bundle ids + normalized names)
+// that belong to a strictSearchSelection group. Lookup is O(1) per app.
+const STRICT_SEARCH_SELECTION_KEYS = (() => {
+  const set = new Set<string>()
+  for (const group of APP_ALIAS_GROUPS) {
+    if (!group.strictSearchSelection) continue
+    for (const bundleId of group.bundleIds) set.add(bundleId.toLowerCase())
+    for (const name of group.names) set.add(normalizeAppIdentity(name))
+  }
+  return set
+})()
+
+export function isStrictSearchSelectionApp(app: AppIdentity): boolean {
+  return (
+    STRICT_SEARCH_SELECTION_KEYS.has(app.bundleId.toLowerCase()) ||
+    STRICT_SEARCH_SELECTION_KEYS.has(normalizeAppIdentity(app.displayName))
+  )
 }
 
 export function expandAppIdentityCandidates(value: string): string[] {

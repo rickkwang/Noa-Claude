@@ -2,7 +2,10 @@ import { z } from 'zod/v4'
 import { buildTool, type ToolDef, type ToolUseContext } from '../../Tool.js'
 import { sleep } from '../../utils/sleep.js'
 import { lazySchema } from '../../utils/lazySchema.js'
-import { appIdentityMatches } from '../../utils/computerUse/appIdentity.js'
+import {
+  appIdentityMatches,
+  isStrictSearchSelectionApp,
+} from '../../utils/computerUse/appIdentity.js'
 import {
   activateApp,
   checkComputerUseReadiness,
@@ -780,31 +783,6 @@ async function updateSelectionStateAfterAction(
   }
 
   return ''
-}
-
-function isStrictSearchSelectionApp(app: {
-  bundleId: string
-  displayName: string
-}): boolean {
-  const haystack = `${app.bundleId} ${app.displayName}`.toLowerCase()
-  return [
-    'wechat',
-    'xinwechat',
-    'weixin',
-    'tencent.xin',
-    'messages',
-    'imessage',
-    'slack',
-    'telegram',
-    'discord',
-    'whatsapp',
-    'signal',
-    'line',
-    'teams',
-    'lark',
-    'feishu',
-    'dingtalk',
-  ].some(token => haystack.includes(token))
 }
 
 function resetSelectionState(): void {
