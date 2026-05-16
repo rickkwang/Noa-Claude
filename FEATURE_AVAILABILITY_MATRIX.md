@@ -71,19 +71,12 @@ Bridge/remote runtime modules can exist in source, but this build keeps the comm
 | `/onboarding` | Stub |
 | `/autofix-pr` | Stub |
 | `/bughunter` | Stub |
-| `/break-cache` | Stub |
-| `/ctx_viz` | Stub |
-| `/oauth-refresh` | Stub |
-| `/debug-tool-call` | Stub |
-| `/perf-issue` | Stub |
 | `/teleport` | Stub |
 | `/good-claude` | Stub |
 | `/mock-limits` | Stub |
-| `/backfill-sessions` | Stub |
 | `/reset-limits` | Stub |
 | `/env` | Stub |
 | `/issue` | Stub |
-| `/ant-trace` | Stub |
 
 ## Runtime Modes Outside Slash Commands
 | Capability | Status | Source |

@@ -98,19 +98,12 @@ Tracked surfaces:
 - `/onboarding`
 - `/autofix-pr`
 - `/bughunter`
-- `/break-cache`
-- `/ctx_viz`
-- `/oauth-refresh`
-- `/debug-tool-call`
-- `/perf-issue`
 - `/teleport`
 - `/good-claude`
 - `/mock-limits`
-- `/backfill-sessions`
 - `/reset-limits`
 - `/env`
 - `/issue`
-- `/ant-trace`
 
 ## Feature Gaps
 

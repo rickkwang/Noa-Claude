@@ -2,7 +2,6 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import addDir from './commands/add-dir/index.js'
 import autofixPr from './commands/autofix-pr/index.js'
-import backfillSessions from './commands/backfill-sessions/index.js'
 import btw from './commands/btw/index.js'
 import goodClaude from './commands/good-claude/index.js'
 import issue from './commands/issue/index.js'
@@ -19,7 +18,6 @@ import config from './commands/config/index.js'
 import { context, contextNonInteractive } from './commands/context/index.js'
 import cost from './commands/cost/index.js'
 import diff from './commands/diff/index.js'
-import ctx_viz from './commands/ctx_viz/index.js'
 import doctor from './commands/doctor/index.js'
 import memory from './commands/memory/index.js'
 import help from './commands/help/index.js'
@@ -30,7 +28,6 @@ import keybindings from './commands/keybindings/index.js'
 import login from './commands/login/index.js'
 import logout from './commands/logout/index.js'
 import installGitHubApp from './commands/install-github-app/index.js'
-import breakCache from './commands/break-cache/index.js'
 import cacheProbe from './commands/cache-probe/index.js'
 import mcp from './commands/mcp/index.js'
 import onboarding from './commands/onboarding/index.js'
@@ -112,8 +109,6 @@ import {
   resetLimits,
   resetLimitsNonInteractive,
 } from './commands/reset-limits/index.js'
-import antTrace from './commands/ant-trace/index.js'
-import perfIssue from './commands/perf-issue/index.js'
 import sandboxToggle from './commands/sandbox-toggle/index.js'
 import chrome from './commands/chrome/index.js'
 import advisor from './commands/advisor.js'
@@ -168,8 +163,6 @@ const usageReport: Command = {
     return real.getPromptForCommand(args, context)
   },
 }
-import oauthRefresh from './commands/oauth-refresh/index.js'
-import debugToolCall from './commands/debug-tool-call/index.js'
 import { getSettingSourceName } from './utils/settings/constants.js'
 import { getSettings_DEPRECATED } from './utils/settings/settings.js'
 import { applySkillModeOverrideToCommand } from './utils/skills/skillModes.js'
@@ -193,12 +186,9 @@ export { getCommandName, isCommandEnabled } from './types/command.js'
 
 // Commands that get eliminated from the external build
 export const INTERNAL_ONLY_COMMANDS = [
-  backfillSessions,
-  breakCache,
   bughunter,
   commit,
   commitPushPr,
-  ctx_viz,
   goodClaude,
   issue,
   initVerifiers,
@@ -212,11 +202,7 @@ export const INTERNAL_ONLY_COMMANDS = [
   resetLimitsNonInteractive,
   onboarding,
   teleport,
-  antTrace,
-  perfIssue,
   env,
-  oauthRefresh,
-  debugToolCall,
   agentsPlatform,
   autofixPr,
 ].filter(Boolean)
