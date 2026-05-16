@@ -18,6 +18,7 @@ import { formatLogMetadata, truncateToWidth } from '../utils/format.js';
 import { getWorktreePaths } from '../utils/getWorktreePaths.js';
 import { getBranch } from '../utils/git.js';
 import { getLogDisplayTitle } from '../utils/log.js';
+import { normalizeDriveLetter } from '../utils/pathCase.js';
 import { getFirstMeaningfulUserMessageTextContent, getSessionIdFromLog, isCustomTitleEnabled, saveCustomTitle } from '../utils/sessionStorage.js';
 import { getTheme } from '../utils/theme.js';
 import { ConfigurableShortcutHint } from './ConfigurableShortcutHint.js';
@@ -141,7 +142,7 @@ function buildLogMetadata(log: LogOption, options?: {
   const baseMetadata = formatLogMetadata(log);
   const activeCwd = getOriginalCwd();
   const projectSuffix = showProjectPath && log.projectPath ? ` · ${log.projectPath}` : '';
-  const cwdSuffix = !showProjectPath && log.projectPath && activeCwd && log.projectPath !== activeCwd ? ` · cwd:${log.projectPath}` : '';
+  const cwdSuffix = !showProjectPath && log.projectPath && activeCwd && normalizeDriveLetter(log.projectPath) !== normalizeDriveLetter(activeCwd) ? ` · cwd:${log.projectPath}` : '';
   return childPadding + baseMetadata + projectSuffix + cwdSuffix;
 }
 export function LogSelector(t0) {
@@ -202,7 +203,7 @@ export function LogSelector(t0) {
   const [hasMultipleWorktrees, setHasMultipleWorktrees] = React.useState(false);
   let t6;
   if ($[5] === Symbol.for("react.memo_cache_sentinel")) {
-    t6 = getOriginalCwd();
+    t6 = normalizeDriveLetter(getOriginalCwd());
     $[5] = t6;
   } else {
     t6 = $[5];
@@ -408,7 +409,7 @@ export function LogSelector(t0) {
     if ($[36] !== filtered) {
       let t23;
       if ($[38] === Symbol.for("react.memo_cache_sentinel")) {
-        t23 = log_4 => log_4.projectPath === currentCwd;
+        t23 = log_4 => log_4.projectPath != null && normalizeDriveLetter(log_4.projectPath) === currentCwd;
         $[38] = t23;
       } else {
         t23 = $[38];
