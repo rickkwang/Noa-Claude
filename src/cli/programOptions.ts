@@ -3,6 +3,7 @@ import { InvalidArgumentError, Option } from '@commander-js/extra-typings';
 import { feature } from 'bun:bundle';
 import type { Command as CommanderCommand } from '@commander-js/extra-typings';
 import { canUserConfigureAdvisor } from '../utils/advisor.js';
+import { EFFORT_LEVELS } from '../utils/effort.js';
 import { PERMISSION_MODES } from '../utils/permissions/PermissionMode.js';
 
 export function configureProgramOptions(program: CommanderCommand): void {
@@ -177,11 +178,10 @@ export function configureProgramOptions(program: CommanderCommand): void {
       `Model for the current session. Provide an alias for the latest model (e.g. 'sonnet' or 'opus') or a model's full name (e.g. 'claude-sonnet-4-6').`
     )
     .addOption(
-      new Option('--effort <level>', `Effort level for the current session (low, medium, high, max)`).argParser((rawValue: string) => {
+      new Option('--effort <level>', `Effort level for the current session (${EFFORT_LEVELS.join(', ')})`).argParser((rawValue: string) => {
         const value = rawValue.toLowerCase();
-        const allowed = ['low', 'medium', 'high', 'max'];
-        if (!allowed.includes(value)) {
-          throw new InvalidArgumentError(`It must be one of: ${allowed.join(', ')}`);
+        if (!(EFFORT_LEVELS as readonly string[]).includes(value)) {
+          throw new InvalidArgumentError(`It must be one of: ${EFFORT_LEVELS.join(', ')}`);
         }
         return value;
       })

@@ -132,7 +132,6 @@ import {
   AFK_MODE_BETA_HEADER,
   CONTEXT_1M_BETA_HEADER,
   CONTEXT_MANAGEMENT_BETA_HEADER,
-  EFFORT_BETA_HEADER,
   FAST_MODE_BETA_HEADER,
   PROMPT_CACHING_SCOPE_BETA_HEADER,
   REDACT_THINKING_BETA_HEADER,
@@ -165,7 +164,6 @@ import { getMaxThinkingTokensForModel } from 'src/utils/context.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { logForDiagnosticsNoPII } from 'src/utils/diagLogs.js'
 import { type EffortValue, modelSupportsEffort } from 'src/utils/effort.js'
-import { get3PModelCapabilityOverride } from 'src/utils/model/modelSupportOverrides.js'
 import {
   isFastModeAvailable,
   isFastModeCooldown,
@@ -508,26 +506,9 @@ function configureEffortParams(
   }
 
   if (effortValue === undefined) {
-    // Only opt into the effort beta for first-party / foundry. 3P proxies don't
-    // understand this header and should not receive it when effort is unset.
-    const provider = getAPIProvider()
-    const directFirstParty =
-      provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()
-    if (directFirstParty || provider === 'foundry') {
-      betas.push(EFFORT_BETA_HEADER)
-    }
+    return
   } else if (typeof effortValue === 'string') {
-    const provider = getAPIProvider()
-    const directFirstParty =
-      provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()
-    if (
-      directFirstParty ||
-      provider === 'foundry' ||
-      get3PModelCapabilityOverride(model, 'effort') === true
-    ) {
-      outputConfig.effort = effortValue
-      betas.push(EFFORT_BETA_HEADER)
-    }
+    outputConfig.effort = effortValue
   } else if (process.env.USER_TYPE === 'ant') {
     // Numeric effort override - ant-only (uses anthropic_internal)
     const existingInternal =

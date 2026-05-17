@@ -26,8 +26,8 @@ import {
 } from '../utils/argumentSubstitution.js'
 import { logForDebugging } from '../utils/debug.js'
 import {
-  EFFORT_LEVELS,
   type EffortValue,
+  getEffortValueOptionsDescription,
   parseEffortValue,
 } from '../utils/effort.js'
 import {
@@ -239,7 +239,7 @@ export function parseSkillFrontmatterFields(
     effortRaw !== undefined ? parseEffortValue(effortRaw) : undefined
   if (effortRaw !== undefined && effort === undefined) {
     logForDebugging(
-      `Skill ${resolvedName} has invalid effort '${effortRaw}'. Valid options: ${EFFORT_LEVELS.join(', ')} or an integer`,
+      `Skill ${resolvedName} has invalid effort '${effortRaw}'. Valid options: ${getEffortValueOptionsDescription()}`,
     )
   }
 

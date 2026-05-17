@@ -4,6 +4,11 @@ import { getInitialSettings } from './settings/settings.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from 'src/services/analytics/growthbook.js'
 import { getAPIProvider, isFirstPartyAnthropicBaseUrl } from './model/providers.js'
 import { get3PModelCapabilityOverride } from './model/modelSupportOverrides.js'
+import { getCanonicalName } from './model/model.js'
+import {
+  getAntModelOverrideConfig,
+  resolveAntModel,
+} from './model/antModels.js'
 import { isEnvTruthy } from './envUtils.js'
 import type { EffortLevel } from 'src/entrypoints/sdk/runtimeTypes.js'
 
@@ -19,57 +24,111 @@ export const EFFORT_LEVELS = [
 
 export type EffortValue = EffortLevel | number
 
+const BASE_EFFORT_LEVELS = ['low', 'medium', 'high'] as const
+const EFFORT_LEVEL_RANK: Record<EffortLevel, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  xhigh: 3,
+  max: 4,
+}
+
 // @[MODEL LAUNCH]: Add the new model to the allowlist if it supports the effort parameter.
 export function modelSupportsEffort(model: string): boolean {
-  if (isEnvTruthy(process.env.CLAUDE_CODE_ALWAYS_ENABLE_EFFORT)) {
-    return true
-  }
-  return true
+  return getSupportedEffortLevelsForModel(model).length > 0
 }
 
 // @[MODEL LAUNCH]: Add the new model to the allowlist if it supports 'max' effort.
 // Per API docs, 'max' is Opus 4.6+ for public models — other models return an error.
 export function modelSupportsMaxEffort(model: string): boolean {
-  const supported3P = get3PModelCapabilityOverride(model, 'max_effort')
-  if (supported3P !== undefined) {
-    return supported3P
-  }
-  const provider = getAPIProvider()
-  const directFirstParty =
-    provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()
-  if (
-    (directFirstParty || provider === 'foundry') &&
-    (model.toLowerCase().includes('opus-4-6') ||
-      model.toLowerCase().includes('opus-4-7'))
-  ) {
-    return true
-  }
-  if (process.env.USER_TYPE === 'ant' && resolveAntModel(model)) {
-    return true
-  }
-  return false
+  return getSupportedEffortLevelsForModel(model).includes('max')
 }
 
 // @[MODEL LAUNCH]: Add the new model to the allowlist if it supports 'xhigh' effort.
 // Per API docs, 'xhigh' is Opus 4.7+ only — earlier models return an error.
 export function modelSupportsXhighEffort(model: string): boolean {
-  const supported3P = get3PModelCapabilityOverride(model, 'xhigh_effort')
-  if (supported3P !== undefined) {
-    return supported3P
+  return getSupportedEffortLevelsForModel(model).includes('xhigh')
+}
+
+export function getSupportedEffortLevelsForModel(
+  model: string,
+): EffortLevel[] {
+  if (isEnvTruthy(process.env.CLAUDE_CODE_ALWAYS_ENABLE_EFFORT)) {
+    return [...EFFORT_LEVELS]
   }
+
+  if (process.env.USER_TYPE === 'ant' && resolveAntModel(model)) {
+    return [...EFFORT_LEVELS]
+  }
+
+  const thirdPartyLevels = getThirdPartyEffortLevels(model)
+  if (thirdPartyLevels !== undefined) {
+    return thirdPartyLevels
+  }
+
   const provider = getAPIProvider()
   const directFirstParty =
     provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()
+  if (!directFirstParty && provider !== 'foundry') {
+    return []
+  }
+
+  const canonical = getCanonicalName(model).toLowerCase()
+  const raw = model.toLowerCase()
+  const modelKey = `${canonical} ${raw}`
+
+  if (modelKey.includes('mythos')) {
+    return ['low', 'medium', 'high', 'max']
+  }
+  if (modelKey.includes('opus-4-7')) {
+    return ['low', 'medium', 'high', 'xhigh', 'max']
+  }
   if (
-    (directFirstParty || provider === 'foundry') &&
-    model.toLowerCase().includes('opus-4-7')
+    modelKey.includes('opus-4-6') ||
+    modelKey.includes('sonnet-4-6')
   ) {
-    return true
+    return ['low', 'medium', 'high', 'max']
   }
-  if (process.env.USER_TYPE === 'ant' && resolveAntModel(model)) {
-    return true
+  if (modelKey.includes('opus-4-5')) {
+    return ['low', 'medium', 'high']
   }
-  return false
+  return []
+}
+
+function getThirdPartyEffortLevels(model: string): EffortLevel[] | undefined {
+  const supportsEffort = get3PModelCapabilityOverride(model, 'effort')
+  const supportsMax = get3PModelCapabilityOverride(model, 'max_effort')
+  const supportsXhigh = get3PModelCapabilityOverride(model, 'xhigh_effort')
+
+  if (
+    supportsEffort === undefined &&
+    supportsMax === undefined &&
+    supportsXhigh === undefined
+  ) {
+    return undefined
+  }
+
+  if (!supportsEffort && !supportsMax && !supportsXhigh) {
+    return []
+  }
+
+  const levels: EffortLevel[] = [...BASE_EFFORT_LEVELS]
+  if (supportsXhigh) levels.push('xhigh')
+  if (supportsMax) levels.push('max')
+  return levels
+}
+
+function clampEffortToSupportedLevels(
+  requested: EffortLevel,
+  supportedLevels: EffortLevel[],
+): EffortLevel | undefined {
+  if (supportedLevels.includes(requested)) {
+    return requested
+  }
+  const requestedRank = EFFORT_LEVEL_RANK[requested]
+  return [...supportedLevels]
+    .sort((a, b) => EFFORT_LEVEL_RANK[b] - EFFORT_LEVEL_RANK[a])
+    .find(level => EFFORT_LEVEL_RANK[level] <= requestedRank)
 }
 
 export function isEffortLevel(value: string): value is EffortLevel {
@@ -80,18 +139,31 @@ export function parseEffortValue(value: unknown): EffortValue | undefined {
   if (value === undefined || value === null || value === '') {
     return undefined
   }
-  if (typeof value === 'number' && isValidNumericEffort(value)) {
+  if (
+    process.env.USER_TYPE === 'ant' &&
+    typeof value === 'number' &&
+    isValidNumericEffort(value)
+  ) {
     return value
   }
   const str = String(value).toLowerCase()
   if (isEffortLevel(str)) {
     return str
   }
-  const numericValue = parseInt(str, 10)
-  if (!isNaN(numericValue) && isValidNumericEffort(numericValue)) {
+  const numericValue = Number(str)
+  if (
+    process.env.USER_TYPE === 'ant' &&
+    !isNaN(numericValue) &&
+    isValidNumericEffort(numericValue)
+  ) {
     return numericValue
   }
   return undefined
+}
+
+export function getEffortValueOptionsDescription(): string {
+  const levels = EFFORT_LEVELS.join(', ')
+  return process.env.USER_TYPE === 'ant' ? `${levels} or an integer` : levels
 }
 
 /**
@@ -172,15 +244,14 @@ export function resolveAppliedEffort(
   }
   const resolved =
     envOverride ?? appStateEffortValue ?? getDefaultEffortForModel(model)
-  // API rejects 'max' on non-Opus-4.6 models — downgrade to 'high'.
-  if (resolved === 'max' && !modelSupportsMaxEffort(model)) {
-    return 'high'
+  const supportedLevels = getSupportedEffortLevelsForModel(model)
+  if (supportedLevels.length === 0) {
+    return undefined
   }
-  // API rejects 'xhigh' on non-Opus-4.7 models — downgrade to 'high'.
-  if (resolved === 'xhigh' && !modelSupportsXhighEffort(model)) {
-    return 'high'
+  if (typeof resolved === 'string') {
+    return clampEffortToSupportedLevels(resolved, supportedLevels)
   }
-  return resolved
+  return process.env.USER_TYPE === 'ant' ? resolved : undefined
 }
 
 /**
@@ -280,7 +351,7 @@ const OPUS_DEFAULT_EFFORT_CONFIG_DEFAULT: OpusDefaultEffortConfig = {
   enabled: true,
   dialogTitle: 'Choose the default effort for Opus',
   dialogDescription:
-    'Effort determines how long Claude thinks for when completing your task. Opus 4.7 defaults to high effort. You can raise it when you want stronger reasoning or lower it when you want faster responses or lower usage.',
+    'Effort determines how long Claude thinks for when completing your task. Opus 4.7 defaults to xhigh effort. You can raise it when you want stronger reasoning or lower it when you want faster responses or lower usage.',
 }
 
 export function getOpusDefaultEffortConfig(): OpusDefaultEffortConfig {
@@ -323,17 +394,11 @@ export function getDefaultEffortForModel(
   // the model launch DRI and research. Default effort is a sensitive setting
   // that can greatly affect model quality and bashing.
 
-  // External Opus 4.7 defaults to high. We still gate on providers known to
+  // External Opus 4.7 defaults to xhigh. We still gate on providers known to
   // support effort so unknown 3P proxies keep the legacy "unset/high" path.
-  const provider = getAPIProvider()
-  if (
-    model.toLowerCase().includes('opus-4-7') &&
-    ((provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()) ||
-      provider === 'foundry' ||
-      get3PModelCapabilityOverride(model, 'effort') === true ||
-      get3PModelCapabilityOverride(model, 'max_effort') === true)
-  ) {
-    return 'high'
+  const modelKey = `${getCanonicalName(model)} ${model}`.toLowerCase()
+  if (modelKey.includes('opus-4-7') && getSupportedEffortLevelsForModel(model).includes('xhigh')) {
+    return 'xhigh'
   }
 
   // Fallback to undefined, which means we don't set an effort level. This

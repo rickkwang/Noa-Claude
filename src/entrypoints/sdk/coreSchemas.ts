@@ -1059,7 +1059,7 @@ export const ModelInfoSchema = lazySchema(() =>
         .optional()
         .describe('Whether this model supports effort levels'),
       supportedEffortLevels: z
-        .array(z.enum(['low', 'medium', 'high', 'max']))
+        .array(z.enum(['low', 'medium', 'high', 'xhigh', 'max']))
         .optional()
         .describe('Available effort levels for this model'),
       supportsAdaptiveThinking: z
@@ -1168,10 +1168,10 @@ export const AgentDefinitionSchema = lazySchema(() =>
           "Scope for auto-loading agent memory files. 'user' - ~/.claude-agent/agent-memory/<agentType>/, 'project' - .claude-agent/agent-memory/<agentType>/, 'local' - .claude-agent/agent-memory-local/<agentType>/",
         ),
       effort: z
-        .union([z.enum(['low', 'medium', 'high', 'max']), z.number().int()])
+        .union([z.enum(['low', 'medium', 'high', 'xhigh', 'max']), z.number().int()])
         .optional()
         .describe(
-          'Reasoning effort level for this agent. Either a named level or an integer',
+          'Reasoning effort level for this agent. Either a named level or an ant-only integer',
         ),
       permissionMode: PermissionModeSchema()
         .optional()

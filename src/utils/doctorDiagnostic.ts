@@ -636,15 +636,6 @@ export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
       issue: `sandbox runtime${sandboxRuntimeCompatibility.version ? ` v${sandboxRuntimeCompatibility.version}` : ''} is missing ${sandboxRuntimeCompatibility.missingMethods.length} expected methods`,
       fix: `Compatibility fallbacks are active. Align @anthropic-ai/sandbox-runtime with this build, or keep the adapter fallback layer in place. Missing: ${sandboxRuntimeCompatibility.missingMethods.join(', ')}`,
     })
-  } else if (
-    !sandboxRuntimeCompatibility.compatible &&
-    !sandboxEnabled &&
-    !sandboxRuntimeCompatibility.isStubRuntime
-  ) {
-    warnings.push({
-      issue: `sandbox runtime${sandboxRuntimeCompatibility.version ? ` v${sandboxRuntimeCompatibility.version}` : ''} is partially incompatible`,
-      fix: `Sandbox is currently disabled, so this is non-blocking. If you enable sandbox later, align @anthropic-ai/sandbox-runtime with this build.`,
-    })
   }
 
   // Get package manager info if running from package manager

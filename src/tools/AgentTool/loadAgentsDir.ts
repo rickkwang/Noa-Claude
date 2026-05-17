@@ -18,6 +18,7 @@ import { logForDebugging } from '../../utils/debug.js'
 import {
   EFFORT_LEVELS,
   type EffortValue,
+  getEffortValueOptionsDescription,
   parseEffortValue,
 } from '../../utils/effort.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
@@ -621,14 +622,14 @@ export function parseAgentFromMarkdown(
       }
     }
 
-    // Parse effort from frontmatter (supports string levels and integers)
+    // Parse effort from frontmatter. Integer values are ant-only.
     const effortRaw = frontmatter['effort']
     const parsedEffort =
       effortRaw !== undefined ? parseEffortValue(effortRaw) : undefined
 
     if (effortRaw !== undefined && parsedEffort === undefined) {
       logForDebugging(
-        `Agent file ${filePath} has invalid effort '${effortRaw}'. Valid options: ${EFFORT_LEVELS.join(', ')} or an integer`,
+        `Agent file ${filePath} has invalid effort '${effortRaw}'. Valid options: ${getEffortValueOptionsDescription()}`,
       )
     }
 

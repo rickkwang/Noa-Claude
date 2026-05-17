@@ -7,7 +7,7 @@ import { useMainLoopModel } from '../../hooks/useMainLoopModel.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from '../../services/analytics/index.js';
 import { useAppState, useSetAppState } from '../../state/AppState.js';
 import type { LocalJSXCommandOnDone } from '../../types/command.js';
-import { type EffortValue, getDisplayedEffortLevel, getEffortEnvOverride, getEffortValueDescription, isEffortLevel, modelSupportsEffort, modelSupportsMaxEffort, modelSupportsXhighEffort, toPersistableEffort } from '../../utils/effort.js';
+import { type EffortValue, getDisplayedEffortLevel, getEffortEnvOverride, getEffortValueDescription, isEffortLevel, modelSupportsEffort, resolveAppliedEffort, toPersistableEffort } from '../../utils/effort.js';
 import { getMainLoopModel } from '../../utils/model/model.js';
 import { get3PModelCapabilityOverride } from '../../utils/model/modelSupportOverrides.js';
 import { getAPIProvider, isFirstPartyAnthropicBaseUrl } from '../../utils/model/providers.js';
@@ -26,16 +26,6 @@ function setEffortValue(effortValue: EffortValue, model?: string): EffortCommand
   if (model !== undefined && !modelSupportsEffort(model)) {
     return {
       message: `Effort is not supported for current model/provider (${model}); no change made`
-    };
-  }
-  if (model !== undefined && effortValue === 'max' && !modelSupportsMaxEffort(model)) {
-    return {
-      message: `Max effort is not supported for current model/provider (${model}); use high instead`
-    };
-  }
-  if (model !== undefined && effortValue === 'xhigh' && !modelSupportsXhighEffort(model)) {
-    return {
-      message: `xhigh effort is not supported for current model/provider (${model}); use high or max instead`
     };
   }
   const persistable = toPersistableEffort(effortValue);
@@ -77,8 +67,13 @@ function setEffortValue(effortValue: EffortValue, model?: string): EffortCommand
   const description = getEffortValueDescription(effortValue);
   const suffix = persistable !== undefined ? '' : ' (this session only)';
   const providerWarning = model === undefined || isEffortSentToProvider(model) ? '' : '\nNote: current provider may not support the effort parameter';
+  const effectiveSuffix = (() => {
+    if (model === undefined || typeof effortValue !== 'string') return '';
+    const effective = resolveAppliedEffort(model, effortValue);
+    return effective !== undefined && effective !== effortValue ? `; current model will use ${effective}` : '';
+  })();
   return {
-    message: `Set effort level to ${effortValue}${suffix}: ${description}${providerWarning}`,
+    message: `Set effort level to ${effortValue}${suffix}${effectiveSuffix}: ${description}${providerWarning}`,
     effortUpdate: {
       value: effortValue
     }
@@ -88,21 +83,36 @@ function isEffortSentToProvider(model: string): boolean {
   const provider = getAPIProvider();
   if (provider === 'foundry') return true;
   if (provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()) return true;
-  return get3PModelCapabilityOverride(model, 'effort') === true;
+  return get3PModelCapabilityOverride(model, 'effort') === true || get3PModelCapabilityOverride(model, 'max_effort') === true || get3PModelCapabilityOverride(model, 'xhigh_effort') === true;
 }
 
 export function showCurrentEffort(appStateEffort: EffortValue | undefined, model: string): EffortCommandResult {
   const envOverride = getEffortEnvOverride();
-  const effectiveValue = envOverride === null ? undefined : envOverride ?? appStateEffort;
-  if (effectiveValue === undefined) {
+  const requestedValue = envOverride === null ? undefined : envOverride ?? appStateEffort;
+  if (!modelSupportsEffort(model)) {
+    return {
+      message:
+        requestedValue === undefined
+          ? `Effort is not supported for current model/provider (${model})`
+          : `Current effort level: ${requestedValue} (not supported by current model/provider)`
+    };
+  }
+  if (requestedValue === undefined) {
     const level = getDisplayedEffortLevel(model, appStateEffort);
     return {
       message: `Effort level: auto (currently ${level})`
     };
   }
-  const description = getEffortValueDescription(effectiveValue);
+  const appliedValue = resolveAppliedEffort(model, appStateEffort);
+  if (appliedValue === undefined) {
+    return {
+      message: `Current effort level: ${requestedValue} (not supported by current model/provider)`
+    };
+  }
+  const description = getEffortValueDescription(appliedValue);
+  const configuredSuffix = appliedValue !== requestedValue ? ` (configured ${requestedValue})` : '';
   return {
-    message: `Current effort level: ${effectiveValue} (${description})`
+    message: `Current effort level: ${appliedValue}${configuredSuffix} (${description})`
   };
 }
 function unsetEffortLevel(): EffortCommandResult {
@@ -329,8 +339,16 @@ export async function call(onDone: LocalJSXCommandOnDone, _context: unknown, arg
     onDone('Usage: /effort [low|medium|high|xhigh|max|auto]\n\nEffort levels:\n- low: Quick, straightforward implementation\n- medium: Balanced approach with standard testing\n- high: Comprehensive implementation with extensive testing\n- xhigh: Extended capability for long-horizon agentic work (Opus 4.7+)\n- max: Maximum capability with deepest reasoning (Opus 4.6+)\n- auto: Use the default effort level for your model');
     return;
   }
-  if (!args || args === 'current' || args === 'status') {
-    return <EffortSlider onDone={onDone} model={getMainLoopModel()} />;
+  if (!args) {
+    const model = getMainLoopModel();
+    if (!modelSupportsEffort(model)) {
+      onDone(`Effort is not supported for current model/provider (${model})`);
+      return;
+    }
+    return <EffortSlider onDone={onDone} model={model} />;
+  }
+  if (args === 'current' || args === 'status') {
+    return <ShowCurrentEffort onDone={onDone} />;
   }
   const result = executeEffort(args, getMainLoopModel());
   return <ApplyEffortAndClose result={result} onDone={onDone} />;

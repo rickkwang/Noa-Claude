@@ -93,7 +93,7 @@ How to use the statusLine command:
        "original_branch": "string" // Optional: Branch that was checked out before entering the worktree
      },
      "effort": {                   // Optional, only present on models that support effort parameter
-       "level": "string"           // Current effort level (e.g., "low", "medium", "high", "max")
+       "level": "string"           // Current effort level (e.g., "low", "medium", "high", "xhigh", "max")
      },
      "thinking": {                 // Optional, only present on models that support thinking
        "enabled": boolean          // Whether extended thinking is currently enabled

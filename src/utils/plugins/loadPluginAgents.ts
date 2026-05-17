@@ -13,7 +13,10 @@ import { FILE_READ_TOOL_NAME } from '../../tools/FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from '../../tools/FileWriteTool/prompt.js'
 import { getPluginErrorMessage } from '../../types/plugin.js'
 import { logForDebugging } from '../debug.js'
-import { EFFORT_LEVELS, parseEffortValue } from '../effort.js'
+import {
+  getEffortValueOptionsDescription,
+  parseEffortValue,
+} from '../effort.js'
 import {
   coerceDescriptionToString,
   parseFrontmatter,
@@ -141,13 +144,13 @@ async function loadAgentFromFile(
     const isolation =
       isolationRaw === 'worktree' ? ('worktree' as const) : undefined
 
-    // Parse effort (string level or integer)
+    // Parse effort. Integer values are ant-only.
     const effortRaw = frontmatter.effort
     const effort =
       effortRaw !== undefined ? parseEffortValue(effortRaw) : undefined
     if (effortRaw !== undefined && effort === undefined) {
       logForDebugging(
-        `Plugin agent file ${filePath} has invalid effort '${effortRaw}'. Valid options: ${EFFORT_LEVELS.join(', ')} or an integer`,
+        `Plugin agent file ${filePath} has invalid effort '${effortRaw}'. Valid options: ${getEffortValueOptionsDescription()}`,
       )
     }
 

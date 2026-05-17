@@ -9,7 +9,10 @@ import {
   substituteArguments,
 } from '../argumentSubstitution.js'
 import { logForDebugging } from '../debug.js'
-import { EFFORT_LEVELS, parseEffortValue } from '../effort.js'
+import {
+  getEffortValueOptionsDescription,
+  parseEffortValue,
+} from '../effort.js'
 import { isBareMode } from '../envUtils.js'
 import { isENOENT } from '../errors.js'
 import {
@@ -282,7 +285,7 @@ function createPluginCommand(
       effortRaw !== undefined ? parseEffortValue(effortRaw) : undefined
     if (effortRaw !== undefined && effort === undefined) {
       logForDebugging(
-        `Plugin command ${commandName} has invalid effort '${effortRaw}'. Valid options: ${EFFORT_LEVELS.join(', ')} or an integer`,
+        `Plugin command ${commandName} has invalid effort '${effortRaw}'. Valid options: ${getEffortValueOptionsDescription()}`,
       )
     }
 

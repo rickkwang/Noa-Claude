@@ -554,6 +554,12 @@ function _temp7(error) {
   return error.mcpErrorMetadata === undefined;
 }
 function _temp6(diag) {
+  if (diag.autoUpdates.includes("development build")) {
+    return {
+      latest: "n/a (development build)",
+      stable: null
+    };
+  }
   const fetchDistTags = diag.installationType === "native" ? getGcsDistTags : getNpmDistTags;
   return fetchDistTags().catch(_temp5);
 }
