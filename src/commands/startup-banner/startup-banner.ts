@@ -74,8 +74,8 @@ export const call = async (args: string, context?: { setAppState?: (updater: (pr
     let message: string
     message =
       newMode === 'claude'
-        ? 'Startup banner: Claude gradient logo'
-        : 'Startup banner: Clawd official logo'
+        ? 'Startup banner: Noa gradient logo'
+        : 'Startup banner: Noa logo'
 
     const legacyPath = join(getOriginalCwd(), '.claude-agent', STARTUP_BANNER_SETTINGS_FILENAME)
     const globalPath = getSettingsPath()
