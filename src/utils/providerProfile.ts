@@ -329,7 +329,6 @@ export async function applyActiveProviderProfileEnv(): Promise<ProviderProfile |
     'ANTHROPIC_DEFAULT_SONNET_MODEL',
     'ANTHROPIC_DEFAULT_HAIKU_MODEL',
     'CLAUDE_CODE_SUBAGENT_MODEL',
-    'ENABLE_TOOL_SEARCH',
   ] as const
 
   for (const key of providerEnvKeys) {
@@ -377,7 +376,6 @@ function persistProviderEnvToUserSettings(env: Record<string, string>): void {
     ANTHROPIC_DEFAULT_SONNET_MODEL: undefined,
     ANTHROPIC_DEFAULT_HAIKU_MODEL: undefined,
     CLAUDE_CODE_SUBAGENT_MODEL: undefined,
-    ENABLE_TOOL_SEARCH: undefined,
     ...env,
   }
 
