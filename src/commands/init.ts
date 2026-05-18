@@ -1,7 +1,6 @@
 // @ts-nocheck
 import { feature } from 'bun:bundle'
 import type { Command } from '../commands.js'
-import { maybeMarkProjectOnboardingComplete } from '../projectOnboardingState.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
 import {
   PRIMARY_PROJECT_INSTRUCTION_FILE,
@@ -241,8 +240,6 @@ const command = {
   progressMessage: 'analyzing your codebase',
   source: 'builtin',
   async getPromptForCommand() {
-    maybeMarkProjectOnboardingComplete()
-
     return [
       {
         type: 'text',

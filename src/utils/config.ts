@@ -113,7 +113,6 @@ export type ProjectConfig = {
   // Trust dialog settings
   hasTrustDialogAccepted?: boolean
 
-  hasCompletedProjectOnboarding?: boolean
   hasClaudeMdExternalIncludesApproved?: boolean
   hasClaudeMdExternalIncludesWarningShown?: boolean
   // MCP server approval fields - migrated to settings but kept for backward compatibility
@@ -680,7 +679,6 @@ export function isGlobalConfigKey(key: string): key is GlobalConfigKey {
 export const PROJECT_CONFIG_KEYS = [
   'allowedTools',
   'hasTrustDialogAccepted',
-  'hasCompletedProjectOnboarding',
 ] as const
 
 export type ProjectConfigKey = (typeof PROJECT_CONFIG_KEYS)[number]

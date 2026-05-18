@@ -179,7 +179,6 @@ import { Messages } from '../components/Messages.js';
 import { TaskListV2 } from '../components/TaskListV2.js';
 import { TeammateViewHeader } from '../components/TeammateViewHeader.js';
 import { useTasksV2WithCollapseEffect } from '../hooks/useTasksV2.js';
-import { maybeMarkProjectOnboardingComplete } from '../projectOnboardingState.js';
 import type { MCPServerConnection } from '../services/mcp/types.js';
 import type { ScopedMcpServerConfig } from '../services/mcp/types.js';
 import { randomUUID, type UUID } from 'crypto';
@@ -2730,9 +2729,6 @@ export function REPL({
         void closeOpenDiffs(ideClient);
       }
     }
-
-    // Mark onboarding as complete when any user message is sent to Claude
-    void maybeMarkProjectOnboardingComplete();
 
     // Extract a session title from the first real user message. One-shot
     // via ref (was tengu_birch_mist experiment: first-message-only to save

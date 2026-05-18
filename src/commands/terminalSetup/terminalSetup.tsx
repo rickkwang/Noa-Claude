@@ -8,7 +8,6 @@ import type { ThemeName } from 'src/utils/theme.js';
 import { pathToFileURL } from 'url';
 import { supportsHyperlinks } from '../../ink/supports-hyperlinks.js';
 import { color } from '../../ink.js';
-import { maybeMarkProjectOnboardingComplete } from '../../projectOnboardingState.js';
 import type { ToolUseContext } from '../../Tool.js';
 import type { LocalJSXCommandContext, LocalJSXCommandOnDone } from '../../types/command.js';
 import { backupTerminalPreferences, checkAndRestoreTerminalBackup, getTerminalPlistPath, markTerminalSetupComplete } from '../../utils/appleTerminalBackup.js';
@@ -117,7 +116,6 @@ export async function setupTerminal(theme: ThemeName): Promise<string> {
     }
     return current;
   });
-  maybeMarkProjectOnboardingComplete();
 
   // Install shell completions (ant-only, since the completion command is ant-only)
   if ("external" === 'ant') {

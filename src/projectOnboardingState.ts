@@ -2,10 +2,6 @@
 import memoize from 'lodash-es/memoize.js'
 import { existsSync } from 'fs'
 import { join } from 'path'
-import {
-  getCurrentProjectConfig,
-  saveCurrentProjectConfig,
-} from './utils/config.js'
 import { getCwd } from './utils/cwd.js'
 import { isDirEmpty } from './utils/file.js'
 
@@ -50,30 +46,7 @@ export function isProjectOnboardingComplete(): boolean {
     .every(({ isComplete }) => isComplete)
 }
 
-export function maybeMarkProjectOnboardingComplete(): void {
-  // Short-circuit on cached config — isProjectOnboardingComplete() hits
-  // the filesystem, and REPL.tsx calls this on every prompt submit.
-  if (getCurrentProjectConfig().hasCompletedProjectOnboarding) {
-    return
-  }
-  if (isProjectOnboardingComplete()) {
-    saveCurrentProjectConfig(current => ({
-      ...current,
-      hasCompletedProjectOnboarding: true,
-    }))
-  }
-}
-
 export const shouldShowProjectOnboarding = memoize((): boolean => {
-  const projectConfig = getCurrentProjectConfig()
-  // Short-circuit on cached config before isProjectOnboardingComplete()
-  // hits the filesystem — this runs during first render.
-  if (
-    projectConfig.hasCompletedProjectOnboarding ||
-    process.env.IS_DEMO
-  ) {
-    return false
-  }
-
+  if (process.env.IS_DEMO) return false
   return !isProjectOnboardingComplete()
 })
