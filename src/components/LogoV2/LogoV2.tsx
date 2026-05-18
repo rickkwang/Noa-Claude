@@ -16,7 +16,7 @@ import { resolveThemeSetting } from 'src/utils/systemTheme.js';
 import { getInitialSettings } from 'src/utils/settings/settings.js';
 import { isDebugMode, isDebugToStdErr, getDebugLogPath } from 'src/utils/debug.js';
 import { useEffect, useState } from 'react';
-import { getSteps, shouldShowProjectOnboarding, incrementProjectOnboardingSeenCount } from '../../projectOnboardingState.js';
+import { getSteps, shouldShowProjectOnboarding } from '../../projectOnboardingState.js';
 import { CondensedLogo } from './CondensedLogo.js';
 import { OffscreenFreeze } from '../OffscreenFreeze.js';
 import { checkForReleaseNotesSync } from '../../utils/releaseNotes.js';
@@ -106,11 +106,6 @@ export function LogoV2() {
     return config.numStartups === 1 ? announcements[0] : announcements[Math.floor(Math.random() * announcements.length)];
   });
   const [hasReleaseNotes] = useState(() => checkForReleaseNotesSync(config.lastReleaseNotesSeen).hasReleaseNotes);
-  useEffect(() => {
-    if (showOnboarding) {
-      incrementProjectOnboardingSeenCount();
-    }
-  }, [showOnboarding]);
   useEffect(() => {
     if (!hasReleaseNotes) {
       return;

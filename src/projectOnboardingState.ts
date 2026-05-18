@@ -1,11 +1,13 @@
 // @ts-nocheck
+import memoize from 'lodash-es/memoize.js'
+import { existsSync } from 'fs'
+import { join } from 'path'
 import {
   getCurrentProjectConfig,
   saveCurrentProjectConfig,
 } from './utils/config.js'
 import { getCwd } from './utils/cwd.js'
 import { isDirEmpty } from './utils/file.js'
-import { hasProjectInstructionFile } from './utils/projectInstructions.js'
 
 export type Step = {
   key: string
@@ -16,8 +18,13 @@ export type Step = {
 }
 
 export function getSteps(): Step[] {
-  const hasProjectInstructions = hasProjectInstructionFile(getCwd())
-  const isWorkspaceDirEmpty = isDirEmpty(getCwd())
+  const cwd = getCwd()
+  // Only check current dir — onboarding is per-project, and /init creates
+  // the instruction file in cwd, not in a parent. Recursing upward causes
+  // false positives when a parent has CLAUDE.md/AGENTS.md.
+  const hasProjectInstructions =
+    existsSync(join(cwd, 'AGENTS.md')) || existsSync(join(cwd, 'CLAUDE.md'))
+  const isWorkspaceDirEmpty = isDirEmpty(cwd)
 
   return [
     {
@@ -57,24 +64,16 @@ export function maybeMarkProjectOnboardingComplete(): void {
   }
 }
 
-export function shouldShowProjectOnboarding(): boolean {
+export const shouldShowProjectOnboarding = memoize((): boolean => {
   const projectConfig = getCurrentProjectConfig()
   // Short-circuit on cached config before isProjectOnboardingComplete()
   // hits the filesystem — this runs during first render.
   if (
     projectConfig.hasCompletedProjectOnboarding ||
-    projectConfig.projectOnboardingSeenCount >= 4 ||
     process.env.IS_DEMO
   ) {
     return false
   }
 
   return !isProjectOnboardingComplete()
-}
-
-export function incrementProjectOnboardingSeenCount(): void {
-  saveCurrentProjectConfig(current => ({
-    ...current,
-    projectOnboardingSeenCount: current.projectOnboardingSeenCount + 1,
-  }))
-}
+})

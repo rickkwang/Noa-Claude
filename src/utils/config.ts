@@ -114,7 +114,6 @@ export type ProjectConfig = {
   hasTrustDialogAccepted?: boolean
 
   hasCompletedProjectOnboarding?: boolean
-  projectOnboardingSeenCount: number
   hasClaudeMdExternalIncludesApproved?: boolean
   hasClaudeMdExternalIncludesWarningShown?: boolean
   // MCP server approval fields - migrated to settings but kept for backward compatibility
@@ -145,7 +144,6 @@ const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
   enabledMcpjsonServers: [],
   disabledMcpjsonServers: [],
   hasTrustDialogAccepted: false,
-  projectOnboardingSeenCount: 0,
   hasClaudeMdExternalIncludesApproved: false,
   hasClaudeMdExternalIncludesWarningShown: false,
 }

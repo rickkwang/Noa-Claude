@@ -56,16 +56,6 @@ export function hasClaudeMdOnly(dir: string): boolean {
 export const hasClaueMdOnly = hasClaudeMdOnly
 
 /**
- * Check if a directory has either AGENTS.md or CLAUDE.md.
- *
- * @param dir - The directory to check
- * @returns True if either project instruction file exists
- */
-export function hasProjectInstructionFile(dir: string): boolean {
-  return getNearestProjectInstructionFilePath(dir) !== null
-}
-
-/**
  * Find the nearest project instruction file in the current directory or any
  * ancestor directory, preferring AGENTS.md over CLAUDE.md at each level.
  *
