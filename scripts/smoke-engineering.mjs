@@ -69,7 +69,7 @@ function assertConfig() {
   }
 
   const parsedSettings = JSON.parse(readFileSync(PRODUCT_SETTINGS_PATH, 'utf8'));
-  const { apiBaseUrl, apiKey, model } = getResolvedLauncherConfig();
+  const { apiBaseUrl, apiKey, authToken, model } = getResolvedLauncherConfig();
 
   const configuredBaseUrl = parsedSettings?.env?.ANTHROPIC_BASE_URL;
   // Only enforce MiniMax CN defaults when that specific provider is configured.
@@ -81,8 +81,10 @@ function assertConfig() {
     console.log('Using first-party Anthropic API — skipping MiniMax CN defaults check.');
   } else {
     // MiniMax CN is configured — validate the full config is consistent.
-    if (!apiKey) {
-      fail(`Missing ANTHROPIC_API_KEY in ${PRODUCT_SETTINGS_PATH}`);
+    // launcher-config.js accepts either ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN;
+    // mirror that here instead of demanding _API_KEY specifically.
+    if (!apiKey && !authToken) {
+      fail(`Missing ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN in ${PRODUCT_SETTINGS_PATH}`);
     }
     if (apiBaseUrl !== DEFAULT_MINIMAX_CN_BASE_URL) {
       fail(`Resolved base URL mismatch: ${apiBaseUrl}`);

@@ -1601,14 +1601,15 @@ function checkOpus47UserPaths() {
   assert(modelSupportsMaxEffort('opus-4-7') === true, 'opus-4-7 should support max effort');
   assert(modelSupportsMaxEffort('claude-opus-4-7') === true, 'claude-opus-4-7 should support max effort');
 
-  // External default effort for Opus 4.7 is high (not max, to avoid overthinking).
+  // External default effort for Opus 4.7 is xhigh (per c9bd1d7 "feat(effort):
+  // add xhigh level for Opus 4.7"). Source: src/utils/effort.ts:400-402.
   assert(
-    getDefaultEffortForModel('claude-opus-4-7') === 'high',
-    'claude-opus-4-7 should default to high effort for first-party external users',
+    getDefaultEffortForModel('claude-opus-4-7') === 'xhigh',
+    'claude-opus-4-7 should default to xhigh effort for first-party external users',
   );
   assert(
-    resolveAppliedEffort('claude-opus-4-7', undefined) === 'high',
-    'claude-opus-4-7 should resolve to high effort by default for first-party external users',
+    resolveAppliedEffort('claude-opus-4-7', undefined) === 'xhigh',
+    'claude-opus-4-7 should resolve to xhigh effort by default for first-party external users',
   );
   assert(
     getDefaultEffortForModel('claude-opus-4-6') === undefined,
@@ -1660,9 +1661,12 @@ function checkOpus47ThirdPartyEffortDefaults() {
     delete process.env.USER_TYPE;
     process.env.ANTHROPIC_BASE_URL =
       'https://proxy.example.test/anthropic';
+    // Effort is gated by provider (see effort.ts:69-74 / commit 92c29ad).
+    // Without an explicit capability override the proxy is treated as
+    // "unknown" — neither support nor default effort.
     assert(
-      modelSupportsEffort('claude-opus-4-7') === true,
-      'ANTHROPIC_BASE_URL proxy should allow effort on all models',
+      modelSupportsEffort('claude-opus-4-7') === false,
+      'ANTHROPIC_BASE_URL proxy should NOT support effort without an explicit effort capability override',
     );
     assert(
       getDefaultEffortForModel('claude-opus-4-7') === undefined,
@@ -1677,15 +1681,19 @@ function checkOpus47ThirdPartyEffortDefaults() {
       'effort,max_effort,adaptive_thinking';
     assert(
       modelSupportsEffort('claude-opus-4-7') === true,
-      'ANTHROPIC_BASE_URL proxy should allow effort regardless of capability override',
+      'ANTHROPIC_BASE_URL proxy with effort capability should support effort',
+    );
+    // No xhigh capability advertised, so the xhigh-only first-party default
+    // path in effort.ts:400-402 is skipped — proxy falls through to
+    // undefined (API-side default). Don't inject xhigh on a proxy that
+    // didn't advertise it.
+    assert(
+      getDefaultEffortForModel('claude-opus-4-7') === undefined,
+      'ANTHROPIC_BASE_URL proxy without xhigh capability should not inject a default effort',
     );
     assert(
-      getDefaultEffortForModel('claude-opus-4-7') === 'high',
-      'ANTHROPIC_BASE_URL proxy should default opus-4-7 to high when effort is explicitly advertised',
-    );
-    assert(
-      resolveAppliedEffort('claude-opus-4-7', undefined) === 'high',
-      'ANTHROPIC_BASE_URL proxy should inject high effort when effort is explicitly advertised',
+      resolveAppliedEffort('claude-opus-4-7', undefined) === undefined,
+      'ANTHROPIC_BASE_URL proxy without xhigh capability should not inject a default effort at resolve time',
     );
     const supportedProxyEffort = executeEffort('max', 'claude-opus-4-7');
     assert(
@@ -1743,9 +1751,12 @@ function checkOpus47ThirdPartyEffortDefaults() {
       modelSupportsEffort(supported3PModel) === true,
       '3P max_effort capability should still allow base effort support',
     );
+    // 3P opus-4-7 with max_effort but no xhigh capability keeps the legacy
+    // "unset/high" path (effort.ts:397-402 — only xhigh-capable providers get
+    // an explicit default). API still resolves missing effort to high.
     assert(
-      getDefaultEffortForModel(supported3PModel) === 'high',
-      '3P opus-4-7 should default to high when effort is explicitly advertised',
+      getDefaultEffortForModel(supported3PModel) === undefined,
+      '3P opus-4-7 should not inject an explicit default unless xhigh is advertised',
     );
   } finally {
     if (prevUseBedrock === undefined) delete process.env.CLAUDE_CODE_USE_BEDROCK;

@@ -166,7 +166,7 @@ All builds require [Bun](https://bun.sh).
 - `CLAUDE_CODE_HIDE_CWD=1` — Hide cwd from status bar
 - `DISABLE_UPDATES=1` — Disable automatic update checks
 
-Legacy `CLAUDE_CODE_*` env vars are accepted for compatibility; `NOA_CLAUDE_*` is preferred.
+Legacy `CLAUDE_CODE_*` names are still accepted for compatibility; `NOA_CLAUDE_*` is preferred.
 
 ## Privacy
 
@@ -185,11 +185,21 @@ bun run compile && ./dist/cli --version  # Compile and verify binary
 bun run typecheck                        # Type check
 bun test                                # Run all tests
 bun test <path>                          # Run a single test file
+```
+
+Default local maintenance checks:
+
+```bash
 bun run check:runtime                    # Runtime health check
-bun run smoke:features                  # Feature surface smoke
-bun run smoke:engine                    # Engine smoke
-bun run scan:pr-intent                  # Block suspicious PR links
-bun run smoke:engine:live               # Live provider smoke (needs ANTHROPIC_API_KEY)
+bun run smoke:features                   # Feature surface smoke
+bun run smoke:engine                     # Engine smoke (no live API)
+bun run scan:pr-intent                   # Block suspicious PR links
+```
+
+Release candidate provider check:
+
+```bash
+bun run smoke:engine:live                # Live provider smoke (needs ANTHROPIC_API_KEY)
 ```
 
 ## Engineering Bar
