@@ -507,6 +507,11 @@ export function setSessionFileForTesting(path: string): void {
   getProject().sessionFile = path
 }
 
+/** Enqueue an entry through the async write queue (test-only). */
+export function enqueueEntryForTesting(entry: Entry): Promise<void> {
+  return getProject().appendEntry(entry)
+}
+
 type InternalEventWriter = (
   eventType: string,
   payload: Record<string, unknown>,
@@ -651,6 +656,92 @@ class Project {
     }, this.FLUSH_INTERVAL_MS)
   }
 
+  /**
+   * Synchronously drain queued writes for `targetFile`. Prevents the
+   * sync/async race where reAppendSessionMetadata + appendEntryToFile
+   * callers (saveCustomTitle, saveTag, …) write metadata before
+   * still-queued appendEntry data, breaking JSONL insertion order and
+   * the "metadata at EOF" invariant that readLiteMetadata's 64KB tail
+   * scan depends on.
+   *
+   * Pass `undefined` to drain every file (used by the reAppend path
+   * where the metadata write hits the current session file but it's
+   * cheap to also flush any cross-session queues). Pass a specific
+   * filePath to drain just that file's queue.
+   *
+   * Not `private` so module-level `appendEntryToFile` can call it.
+   * Doesn't wait for an in-flight activeDrain (microsecond window after
+   * splice but before appendFile resolves) — the race this closes is
+   * the 100ms FLUSH_INTERVAL_MS window between enqueue and drain start.
+   *
+   * Resolvers fire in a finally so an appendFileSync exception doesn't
+   * leave awaiting callers hanging forever.
+   *
+   * @internal
+   */
+  syncFlushQueuedWrites(targetFile?: string): void {
+    if (this.writeQueues.size === 0) return
+    const fs = getFsImplementation()
+    const drained: string[] = []
+    for (const [filePath, queue] of this.writeQueues) {
+      if (targetFile !== undefined && filePath !== targetFile) continue
+      if (queue.length === 0) {
+        drained.push(filePath)
+        continue
+      }
+      const batch = queue.splice(0)
+      const resolvers: Array<() => void> = []
+      let content = ''
+      for (const { entry, resolve } of batch) {
+        const line = jsonStringify(entry) + '\n'
+        // Mirror drainWriteQueue's 100MB chunk boundary so a giant queued
+        // batch doesn't materialize as a single multi-hundred-MB string.
+        if (content.length + line.length >= this.MAX_CHUNK_BYTES) {
+          this.syncAppendChunk(fs, filePath, content, resolvers)
+          resolvers.length = 0
+          content = ''
+        }
+        content += line
+        resolvers.push(resolve)
+      }
+      if (content.length > 0) {
+        this.syncAppendChunk(fs, filePath, content, resolvers)
+      }
+      drained.push(filePath)
+    }
+    // Drop the (now empty) queue entries we processed. Drop the timer
+    // only if no work remains; otherwise let the scheduler keep firing
+    // for queues we didn't touch.
+    for (const filePath of drained) {
+      const queue = this.writeQueues.get(filePath)
+      if (queue && queue.length === 0) this.writeQueues.delete(filePath)
+    }
+    if (this.writeQueues.size === 0 && this.flushTimer) {
+      clearTimeout(this.flushTimer)
+      this.flushTimer = null
+    }
+  }
+
+  private syncAppendChunk(
+    fs: ReturnType<typeof getFsImplementation>,
+    filePath: string,
+    content: string,
+    resolvers: Array<() => void>,
+  ): void {
+    try {
+      try {
+        fs.appendFileSync(filePath, content, { mode: 0o600 })
+      } catch {
+        fs.mkdirSync(dirname(filePath), { mode: 0o700 })
+        fs.appendFileSync(filePath, content, { mode: 0o600 })
+      }
+    } finally {
+      // Always resolve so awaiting callers don't hang on write failure;
+      // the exception propagates to the sync caller of this method.
+      for (const r of resolvers) r()
+    }
+  }
+
   private async appendToFile(filePath: string, data: string): Promise<void> {
     try {
       await fsAppendFile(filePath, data, { mode: 0o600 })
@@ -742,6 +833,11 @@ class Project {
     if (!this.sessionFile) return
     const sessionId = getSessionId() as UUID
     if (!sessionId) return
+
+    // Drain pending queued writes targeting THIS session file BEFORE the
+    // sync metadata writes below — otherwise queued appendEntry data lands
+    // after this metadata and the tail-scan invariant breaks.
+    this.syncFlushQueuedWrites(this.sessionFile)
 
     // One sync tail read to refresh SDK-mutable fields. Same
     // LITE_READ_BUF_SIZE window readLiteMetadata uses. Empty string on
@@ -2602,6 +2698,11 @@ function appendEntryToFile(
   fullPath: string,
   entry: Record<string, unknown>,
 ): void {
+  // Drain any pending async-queued writes targeting THIS file first.
+  // Without this, sync writers (saveCustomTitle/saveTag/…) race the 100ms
+  // async queue: queued appendEntry data flushes after the sync write,
+  // breaking JSONL insertion order.
+  project?.syncFlushQueuedWrites(fullPath)
   const fs = getFsImplementation()
   const line = jsonStringify(entry) + '\n'
   try {
