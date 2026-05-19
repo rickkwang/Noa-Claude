@@ -47,7 +47,11 @@ import {
 } from '../../utils/contextAnalysis.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { hasExactErrorMessage } from '../../utils/errors.js'
-import { cacheToObject } from '../../utils/fileStateCache.js'
+import {
+  cacheToObject,
+  restoreCacheFromObject,
+  type FileState,
+} from '../../utils/fileStateCache.js'
 import {
   type CacheSafeParams,
   runForkedAgent,
@@ -398,6 +402,15 @@ export async function compactConversation(
   isAutoCompact: boolean = false,
   recompactionInfo?: RecompactionInfo,
 ): Promise<CompactionResult> {
+  // Hoisted so the outer catch can roll back the readFileState clear on
+  // post-clear failure (attachment generation, hooks). Without rollback,
+  // a failed compact leaves the cache empty and Edit/Write tools demand
+  // a fresh Read on every file the user had touched this session.
+  //
+  // We intentionally do NOT snapshot/restore loadedNestedMemoryPaths —
+  // losing it just causes one extra CLAUDE.md re-injection next turn,
+  // a token cost rather than a correctness issue.
+  let preCompactReadFileStateForRestore: Record<string, FileState> | undefined
   try {
     if (messages.length === 0) {
       throw new Error(ERROR_MESSAGE_NOT_ENOUGH_MESSAGES)
@@ -521,6 +534,7 @@ export async function compactConversation(
 
     // Store the current file state before clearing
     const preCompactReadFileState = cacheToObject(context.readFileState)
+    preCompactReadFileStateForRestore = preCompactReadFileState
 
     // Clear the cache
     context.readFileState.clear()
@@ -752,6 +766,14 @@ export async function compactConversation(
       compactionUsage,
     }
   } catch (error) {
+    // Roll back the readFileState clear so a failed compact doesn't wipe
+    // the user's file cache. No-op when failure happened before the clear.
+    if (preCompactReadFileStateForRestore) {
+      restoreCacheFromObject(
+        context.readFileState,
+        preCompactReadFileStateForRestore,
+      )
+    }
     // Only show the error notification for manual /compact.
     // Auto-compact failures are retried on the next turn and the
     // notification is confusing when compaction eventually succeeds.
@@ -782,6 +804,9 @@ export async function partialCompactConversation(
   userFeedback?: string,
   direction: PartialCompactDirection = 'from',
 ): Promise<CompactionResult> {
+  // See compactConversation: hoisted to allow catch-path rollback of the
+  // readFileState clear.
+  let preCompactReadFileStateForRestore: Record<string, FileState> | undefined
   try {
     const messagesToSummarize =
       direction === 'up_to'
@@ -922,6 +947,7 @@ export async function partialCompactConversation(
 
     // Store the current file state before clearing
     const preCompactReadFileState = cacheToObject(context.readFileState)
+    preCompactReadFileStateForRestore = preCompactReadFileState
     context.readFileState.clear()
     context.loadedNestedMemoryPaths?.clear()
     // Intentionally NOT resetting sentSkillNames — see compactConversation()
@@ -1100,6 +1126,13 @@ export async function partialCompactConversation(
       compactionUsage,
     }
   } catch (error) {
+    // See compactConversation: roll back readFileState clear on failure.
+    if (preCompactReadFileStateForRestore) {
+      restoreCacheFromObject(
+        context.readFileState,
+        preCompactReadFileStateForRestore,
+      )
+    }
     addErrorNotificationIfNeeded(error, context)
     throw error
   } finally {

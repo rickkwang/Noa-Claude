@@ -35,6 +35,37 @@ import type { AgentDefinition } from './loadAgentsDir.js'
 import { isBuiltInAgent } from './loadAgentsDir.js'
 import { runAgent } from './runAgent.js'
 
+/**
+ * Resolve the worktree path recorded for a subagent at creation time.
+ * Returns undefined when no worktreePath was recorded. Throws when the
+ * path was recorded but is missing / not a directory — silently falling
+ * back to parent cwd lets the resumed agent write files in the wrong tree.
+ *
+ * Exported for testing.
+ */
+export async function resolveResumedWorktreePath(
+  worktreePath: string | undefined,
+): Promise<string | undefined> {
+  if (!worktreePath) return undefined
+  let isDir: boolean
+  try {
+    const stat = await fsp.stat(worktreePath)
+    isDir = stat.isDirectory()
+  } catch {
+    isDir = false
+  }
+  if (!isDir) {
+    logForDebugging(
+      `Resumed worktree ${worktreePath} no longer exists; refusing to resume in wrong cwd`,
+    )
+    throw new Error(
+      `Cannot resume subagent: worktree "${worktreePath}" no longer exists. ` +
+        `Delete the agent metadata to abandon this resume, or re-create the worktree.`,
+    )
+  }
+  return worktreePath
+}
+
 export type ResumeAgentResult = {
   agentId: string
   description: string
@@ -78,19 +109,11 @@ export async function resumeAgentBackground({
     resumedMessages,
     transcript.contentReplacements,
   )
-  // Best-effort: if the original worktree was removed externally, fall back
-  // to parent cwd rather than crashing on chdir later.
-  const resumedWorktreePath = meta?.worktreePath
-    ? await fsp.stat(meta.worktreePath).then(
-        s => (s.isDirectory() ? meta.worktreePath : undefined),
-        () => {
-          logForDebugging(
-            `Resumed worktree ${meta.worktreePath} no longer exists; falling back to parent cwd`,
-          )
-          return undefined
-        },
-      )
-    : undefined
+  // If meta recorded a worktreePath, the agent expects to run there.
+  // Silent fallback to parent cwd lets file writes land in the wrong tree —
+  // worse than failing the resume. Fail loudly with an actionable message;
+  // user can delete the agent metadata file to abandon the resume.
+  const resumedWorktreePath = await resolveResumedWorktreePath(meta?.worktreePath)
   if (resumedWorktreePath) {
     // Bump mtime so stale-worktree cleanup doesn't delete a just-resumed worktree (#22355)
     const now = new Date()

@@ -113,6 +113,21 @@ export function cacheToObject(
   return Object.fromEntries(cache.entries())
 }
 
+/**
+ * Repopulate a cache from a snapshot produced by cacheToObject. Used by
+ * compact.ts to roll back the post-clear state when compaction fails
+ * after the clear() call, so the user doesn't lose their file cache.
+ */
+export function restoreCacheFromObject(
+  cache: FileStateCache,
+  snapshot: Record<string, FileState>,
+): void {
+  cache.clear()
+  for (const [key, value] of Object.entries(snapshot)) {
+    cache.set(key, value)
+  }
+}
+
 // Helper function to get all keys from cache (used by several components)
 export function cacheKeys(cache: FileStateCache): string[] {
   return Array.from(cache.keys())
