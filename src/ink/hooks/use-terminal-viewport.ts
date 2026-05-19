@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useCallback, useContext, useLayoutEffect, useRef } from 'react'
+import { useCallback, useContext, useLayoutEffect, useRef, useState } from 'react'
 import { TerminalSizeContext } from '../components/TerminalSizeContext.js'
 import type { DOMElement } from '../dom.js'
 
@@ -16,12 +16,19 @@ type ViewportEntry = {
  * Returns a callback ref and a viewport entry object.
  * Attach the ref to the component you want to track.
  *
- * The entry is updated during the layout phase (useLayoutEffect) so callers
- * always read fresh values during render. Visibility changes do NOT trigger
- * re-renders on their own — callers that re-render for other reasons (e.g.
- * animation ticks, state changes) will pick up the latest value naturally.
- * This avoids infinite update loops when combined with other layout effects
- * that also call setState.
+ * Visibility transitions trigger a re-render via setState, so consumers that
+ * gate work on `isVisible` (e.g. useAnimationFrame's subscription) reliably
+ * pick up the new value. The setState only fires on true → false / false →
+ * true transitions, so steady-state renders cost nothing.
+ *
+ * Why this matters: a ref-only notification (the previous design) left a
+ * blind window after a SIGWINCH resize. If the resize made the spinner
+ * briefly offscreen, useAnimationFrame would unsubscribe on the next tick,
+ * the clock would pause, and a subsequent resize that restored visibility
+ * would never reach the consumer — its `active` dep never flipped because
+ * nothing scheduled the re-render that would have read the updated ref. The
+ * spinner and elapsed-time counter would stay frozen until an unrelated
+ * state change (keypress, etc.) re-rendered the component.
  *
  * @example
  * const [ref, entry] = useTerminalViewport()
@@ -33,15 +40,14 @@ export function useTerminalViewport(): [
 ] {
   const terminalSize = useContext(TerminalSizeContext)
   const elementRef = useRef<DOMElement | null>(null)
-  const entryRef = useRef<ViewportEntry>({ isVisible: true })
+  const [entry, setEntry] = useState<ViewportEntry>({ isVisible: true })
 
   const setElement = useCallback((el: DOMElement | null) => {
     elementRef.current = el
   }, [])
 
   // Runs on every render because yoga layout values can change
-  // without React being aware. Only updates the ref — no setState
-  // to avoid cascading re-renders during the commit phase.
+  // without React being aware.
   // Walks the DOM ancestor chain fresh each time to avoid holding stale
   // references after yoga tree rebuilds.
   useLayoutEffect(() => {
@@ -88,10 +94,11 @@ export function useTerminalViewport(): [
     const viewportBottom = viewportY + rows
     const visible = bottom > viewportY && absoluteTop < viewportBottom
 
-    if (visible !== entryRef.current.isVisible) {
-      entryRef.current = { isVisible: visible }
-    }
+    // Functional updater + identity bail-out: when visibility is unchanged,
+    // returning `prev` lets React skip the re-render entirely. Only true
+    // transitions cost an extra render.
+    setEntry(prev => (prev.isVisible === visible ? prev : { isVisible: visible }))
   })
 
-  return [setElement, entryRef.current]
+  return [setElement, entry]
 }
