@@ -7,7 +7,7 @@ import { useMainLoopModel } from '../../hooks/useMainLoopModel.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from '../../services/analytics/index.js';
 import { useAppState, useSetAppState } from '../../state/AppState.js';
 import type { LocalJSXCommandOnDone } from '../../types/command.js';
-import { type EffortValue, getDisplayedEffortLevel, getEffortEnvOverride, getEffortValueDescription, isEffortLevel, modelSupportsEffort, modelSupportsMaxEffort, modelSupportsXhighEffort, resolveAppliedEffort, toPersistableEffort } from '../../utils/effort.js';
+import { type EffortValue, getDisplayedEffortLevel, getEffortEnvOverride, getEffortValueDescription, isEffortLevel, modelSupportsEffort, resolveAppliedEffort, toPersistableEffort } from '../../utils/effort.js';
 import { getMainLoopModel } from '../../utils/model/model.js';
 import { get3PModelCapabilityOverride } from '../../utils/model/modelSupportOverrides.js';
 import { getAPIProvider, isFirstPartyAnthropicBaseUrl } from '../../utils/model/providers.js';
@@ -26,21 +26,6 @@ function setEffortValue(effortValue: EffortValue, model?: string): EffortCommand
   if (model !== undefined && !modelSupportsEffort(model)) {
     return {
       message: `Effort is not supported for current model/provider (${model}); no change made`
-    };
-  }
-  // Per-level capability gate: the Anthropic API rejects unsupported effort
-  // values with a 400 (see platform.claude.com/docs/build-with-claude/effort
-  // — max is Opus 4.6+/Sonnet 4.6 only, xhigh is Opus 4.7 only). Surface the
-  // rejection client-side instead of writing the setting and letting the
-  // next API call fail.
-  if (model !== undefined && effortValue === 'max' && !modelSupportsMaxEffort(model)) {
-    return {
-      message: `Max effort is not supported for current model/provider (${model}); no change made`
-    };
-  }
-  if (model !== undefined && effortValue === 'xhigh' && !modelSupportsXhighEffort(model)) {
-    return {
-      message: `Xhigh effort is not supported for current model/provider (${model}); no change made`
     };
   }
   const persistable = toPersistableEffort(effortValue);

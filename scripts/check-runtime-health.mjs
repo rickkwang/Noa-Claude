@@ -109,6 +109,7 @@ import {
   getDefaultEffortForModel,
   modelSupportsEffort,
   modelSupportsMaxEffort,
+  modelSupportsXhighEffort,
   resolveAppliedEffort,
 } from '../src/utils/effort.ts';
 import { modelSupportsAdaptiveThinking } from '../src/utils/thinking.ts';
@@ -1601,6 +1602,12 @@ function checkOpus47UserPaths() {
   assert(modelSupportsMaxEffort('opus-4-7') === true, 'opus-4-7 should support max effort');
   assert(modelSupportsMaxEffort('claude-opus-4-7') === true, 'claude-opus-4-7 should support max effort');
 
+  // modelSupportsXhighEffort for opus-4-7 (xhigh is 4.7-exclusive per docs)
+  assert(modelSupportsXhighEffort('opus-4-7') === true, 'opus-4-7 should support xhigh effort');
+  assert(modelSupportsXhighEffort('claude-opus-4-7') === true, 'claude-opus-4-7 should support xhigh effort');
+  assert(modelSupportsXhighEffort('claude-opus-4-6') === false, 'opus-4-6 should not support xhigh effort');
+  assert(modelSupportsXhighEffort('claude-sonnet-4-6') === false, 'sonnet-4-6 should not support xhigh effort');
+
   // External default effort for Opus 4.7 is xhigh (per c9bd1d7 "feat(effort):
   // add xhigh level for Opus 4.7"). Source: src/utils/effort.ts:400-402.
   assert(
@@ -1737,9 +1744,9 @@ function checkOpus47ThirdPartyEffortDefaults() {
     );
     const effortOnlyMaxCommand = executeEffort('max', effortOnly3PModel);
     assert(
-      effortOnlyMaxCommand.effortUpdate === undefined &&
-        effortOnlyMaxCommand.message.includes('Max effort is not supported'),
-      '/effort max should not report success when 3P only advertises base effort',
+      effortOnlyMaxCommand.effortUpdate?.value === 'max' &&
+        effortOnlyMaxCommand.message.includes('current model will use high'),
+      '/effort max should save the cross-model preference and surface the clamp on a 3P effort-only model',
     );
 
     const supported3PModel =
