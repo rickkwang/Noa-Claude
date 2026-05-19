@@ -1,5 +1,4 @@
 // @ts-nocheck
-import memoize from 'lodash-es/memoize.js'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { getCwd } from './utils/cwd.js'
@@ -46,7 +45,7 @@ export function isProjectOnboardingComplete(): boolean {
     .every(({ isComplete }) => isComplete)
 }
 
-export const shouldShowProjectOnboarding = memoize((): boolean => {
+export function shouldShowProjectOnboarding(): boolean {
   if (process.env.IS_DEMO) return false
   return !isProjectOnboardingComplete()
-})
+}
