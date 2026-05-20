@@ -64,7 +64,16 @@ export function checkCrossProjectResume(
 
   // Different repo - generate cd command
   const sessionId = getSessionIdFromLog(log)
-  const command = `cd ${quote([log.projectPath])} && ${getPreferredCliCommandName()} --resume ${sessionId}`
+  const cli = getPreferredCliCommandName()
+  // Windows: PowerShell 5.1 (default on Win10/11) doesn't support `&&`, and
+  // cmd.exe doesn't treat POSIX single-quoted paths as quoted. Emit two lines
+  // with double-quoted path — works in PS 5.1/7+ and cmd.exe. Windows file
+  // names disallow `"` and `\n`, so direct interpolation is safe and the
+  // embedded newline can't be swallowed into the path argument.
+  const command =
+    process.platform === 'win32'
+      ? `cd "${log.projectPath}"\n${cli} --resume ${sessionId}`
+      : `cd ${quote([log.projectPath])} && ${cli} --resume ${sessionId}`
   return {
     isCrossProject: true,
     isSameRepoWorktree: false,
