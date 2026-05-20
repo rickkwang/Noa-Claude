@@ -513,9 +513,9 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
 
   const renderSkill = (
     skill: SkillCommand,
-    globalIdx: number,
+    displayIdx: number,
   ): React.ReactNode => {
-    const isSelected = globalIdx === clampedIdx
+    const isSelected = displayIdx === clampedIdx
     const estimatedTokens = estimateSkillFrontmatterTokens(skill)
     const tokenDisplay = `~${formatTokens(estimatedTokens)}`
     const pluginName =
@@ -581,7 +581,11 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
     listElement = <Text dimColor>No skills match "{query}"</Text>
   } else {
     listElement = (
-      <Box flexDirection="column">
+      <Box
+        flexDirection="column"
+        height={showTabs ? visibleRows + 2 : undefined}
+        overflow="hidden"
+      >
         {!showTabs && pathSubtitle && <Text dimColor>{pathSubtitle}</Text>}
         {aboveCount > 0 && <Text dimColor>↑ {aboveCount} more above</Text>}
         {displaySkills.slice(windowStart, windowEnd).map((skill, i) =>
@@ -594,19 +598,20 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
 
   if (showTabs) {
     listElement = (
-      <Tabs
-        color="suggestion"
-        selectedTab={activeTab}
-        onTabChange={handleTabChange}
-        banner={pathSubtitle ? <Box marginLeft={1}><Text dimColor>{pathSubtitle}</Text></Box> : undefined}
-        contentHeight={visibleRows + 2}
-      >
-        {visibleSources.map(src => (
-          <Tab key={src} id={src} title={getTabTitle(src)}>
-            {src === activeTab ? listElement : null}
-          </Tab>
-        ))}
-      </Tabs>
+      <Box marginLeft={1} flexDirection="column">
+        <Tabs
+          color="suggestion"
+          selectedTab={activeTab}
+          onTabChange={handleTabChange}
+          banner={pathSubtitle ? <Box marginLeft={1}><Text dimColor>{pathSubtitle}</Text></Box> : undefined}
+        >
+          {visibleSources.map(src => (
+            <Tab key={src} id={src} title={getTabTitle(src)}>
+              {src === activeTab ? listElement : null}
+            </Tab>
+          ))}
+        </Tabs>
+      </Box>
     )
   }
 
