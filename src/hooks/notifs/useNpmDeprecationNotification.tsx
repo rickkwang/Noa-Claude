@@ -1,9 +1,11 @@
 // @ts-nocheck
 import { isInBundledMode } from 'src/utils/bundledMode.js';
 import { getCurrentInstallationType } from 'src/utils/doctorDiagnostic.js';
+import { NOA_CURL_INSTALL_COMMAND } from 'src/utils/distribution.js';
 import { isEnvTruthy } from 'src/utils/envUtils.js';
 import { useStartupNotification } from './useStartupNotification.js';
-const NPM_DEPRECATION_MESSAGE = 'Noa Claude has switched from npm to native installer. Run `noa install` or see https://docs.anthropic.com/en/docs/claude-code/getting-started for more options.';
+const NPM_DEPRECATION_MESSAGE =
+  `Noa Claude no longer supports npm-based installs or updates. Reinstall with \`${NOA_CURL_INSTALL_COMMAND}\`.`;
 export function useNpmDeprecationNotification() {
   useStartupNotification(_temp);
 }
@@ -13,6 +15,9 @@ async function _temp() {
   }
   const installationType = await getCurrentInstallationType();
   if (installationType === "development") {
+    return null;
+  }
+  if (installationType !== "npm-local" && installationType !== "npm-global") {
     return null;
   }
   return {

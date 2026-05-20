@@ -46,6 +46,7 @@ import {
   getShellConfigPaths,
 } from './shellConfig.js'
 import { jsonParse } from './slowOperations.js'
+import { NOA_CURL_INSTALL_COMMAND } from './distribution.js'
 import { which } from './which.js'
 import { getPromptCache1hDiagnostic } from './promptCache1h.js'
 
@@ -57,7 +58,11 @@ export type InstallationType =
   | 'development'
   | 'unknown'
 
-const PREFERRED_BINARIES = ['claude-agent', 'claude'] as const
+const PREFERRED_BINARIES = ['noa', 'claude-agent', 'claude'] as const
+
+function getManagedInstallDir(): string {
+  return getClaudeConfigHomeDir().replace(/\\/g, '/') + '/install'
+}
 
 export type DiagnosticInfo = {
   installationType: InstallationType
@@ -96,6 +101,7 @@ export async function getCurrentInstallationType(): Promise<InstallationType> {
   }
 
   const [invokedPath] = getNormalizedPaths()
+  const managedInstallDir = getManagedInstallDir()
 
   // Check if running in bundled mode first
   if (isInBundledMode()) {
@@ -118,6 +124,10 @@ export async function getCurrentInstallationType(): Promise<InstallationType> {
   // Check if running from local npm installation
   if (isRunningFromLocalInstallation()) {
     return 'npm-local'
+  }
+
+  if (invokedPath.includes(`${managedInstallDir}/`)) {
+    return 'native'
   }
 
   // Check if we're in a typical npm global location
@@ -157,6 +167,21 @@ export async function getCurrentInstallationType(): Promise<InstallationType> {
 async function getInstallationPath(): Promise<string> {
   if (process.env.NODE_ENV === 'development') {
     return getCwd()
+  }
+
+  const [invokedPath] = getNormalizedPaths()
+  if (invokedPath.includes(`${getManagedInstallDir()}/`)) {
+    for (const binary of PREFERRED_BINARIES) {
+      try {
+        const path = await which(binary)
+        if (path) {
+          return path
+        }
+      } catch {
+        // This function doesn't expect errors
+      }
+    }
+    return invokedPath
   }
 
   // For bundled/native builds, show the binary location
@@ -452,14 +477,14 @@ async function detectConfigurationIssues(
     if (type === 'npm-local' && config.installMethod !== 'local') {
       warnings.push({
         issue: `Running from local installation but config install method is '${config.installMethod}'`,
-        fix: 'Consider using native installation: noa install',
+        fix: `Reinstall with: ${NOA_CURL_INSTALL_COMMAND}`,
       })
     }
 
     if (type === 'native' && config.installMethod !== 'native') {
       warnings.push({
         issue: `Running native installation but config install method is '${config.installMethod}'`,
-        fix: 'Run noa install to update configuration',
+        fix: `Reinstall with: ${NOA_CURL_INSTALL_COMMAND}`,
       })
     }
   }
@@ -467,7 +492,7 @@ async function detectConfigurationIssues(
   if (type === 'npm-global' && (await localInstallationExists())) {
     warnings.push({
       issue: 'Local installation exists but not being used',
-      fix: 'Consider using native installation: noa install',
+      fix: `Reinstall with: ${NOA_CURL_INSTALL_COMMAND}`,
     })
   }
 
@@ -476,10 +501,11 @@ async function detectConfigurationIssues(
 
   // Check if running local installation but it's not in PATH
   if (type === 'npm-local') {
-    // Check if claude is already accessible via PATH
+    // Check if the managed command is already accessible via PATH
+    const whichResultNoa = await which('noa')
     const whichResultAgent = await which('claude-agent')
     const whichResultLegacy = await which('claude')
-    const claudeInPath = !!whichResultAgent || !!whichResultLegacy
+    const claudeInPath = !!whichResultNoa || !!whichResultAgent || !!whichResultLegacy
 
     // Only show warning if claude is NOT in PATH AND no valid alias exists
     if (!claudeInPath && !validAlias) {
@@ -487,13 +513,13 @@ async function detectConfigurationIssues(
         // Alias exists but points to invalid target
         warnings.push({
           issue: 'Local installation not accessible',
-          fix: `Alias exists but points to invalid target: ${existingAlias}. Update alias: alias claude-agent="${getClaudeConfigHomeDir()}/local/claude"`,
+          fix: `Alias exists but points to invalid target: ${existingAlias}. Update alias: alias noa="${getClaudeConfigHomeDir()}/local/noa"`,
         })
       } else {
         // No alias exists and not in PATH
         warnings.push({
           issue: 'Local installation not accessible',
-          fix: `Create alias: alias claude-agent="${getClaudeConfigHomeDir()}/local/claude"`,
+          fix: `Create alias: alias noa="${getClaudeConfigHomeDir()}/local/noa"`,
         })
       }
     }
@@ -613,7 +639,7 @@ export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
     if (!hasUpdatePermissions && !getAutoUpdaterDisabledReason()) {
       warnings.push({
         issue: 'Insufficient permissions for auto-updates',
-        fix: 'Do one of: (1) Re-install node without sudo, or (2) Use `noa install` for native installation',
+        fix: `Reinstall with: ${NOA_CURL_INSTALL_COMMAND}`,
       })
     }
   }

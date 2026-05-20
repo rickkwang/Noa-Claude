@@ -17,7 +17,7 @@ export const OFFICIAL_MARKETPLACE_SOURCE = {
   source: 'github',
   repo:
     process.env.CLAUDE_AGENT_OFFICIAL_MARKETPLACE_REPO ||
-    'rickkwang/Claude-Agent',
+    'rickkwang/Noa-Claude',
 } as const satisfies MarketplaceSource
 
 /**

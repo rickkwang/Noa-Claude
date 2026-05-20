@@ -7,6 +7,7 @@ import { Text } from '../ink.js';
 import { type AutoUpdaterResult, getLatestVersionFromGcs, getMaxVersion, shouldSkipVersion } from '../utils/autoUpdater.js';
 import { isAutoUpdaterDisabled } from '../utils/config.js';
 import { logForDebugging } from '../utils/debug.js';
+import { usesCurlInstallerBuild } from '../utils/distribution.js';
 import { getPackageManager, type PackageManager } from '../utils/nativeInstaller/packageManagers.js';
 import { gt, gte } from '../utils/semver.js';
 import { getInitialSettings } from '../utils/settings/settings.js';
@@ -18,7 +19,13 @@ type Props = {
   showSuccessMessage: boolean;
   verbose: boolean;
 };
-export function PackageManagerAutoUpdater(t0) {
+export function PackageManagerAutoUpdater(props: Props): React.ReactNode {
+  if (usesCurlInstallerBuild()) {
+    return null;
+  }
+  return <PackageManagerAutoUpdaterImpl {...props} />;
+}
+function PackageManagerAutoUpdaterImpl(t0) {
   const $ = _c(10);
   const {
     verbose

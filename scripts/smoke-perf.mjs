@@ -6,7 +6,7 @@ import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 
 const repoRoot = resolve(import.meta.dir, '..');
-const agentBin = resolve(repoRoot, 'bin/claude-agent.js');
+const agentBin = resolve(repoRoot, 'bin/noa.js');
 
 const EXPECTED_TIMEOUTS = {
   auto: 1000,

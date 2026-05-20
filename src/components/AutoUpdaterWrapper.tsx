@@ -5,6 +5,7 @@ import * as React from 'react';
 import type { AutoUpdaterResult } from '../utils/autoUpdater.js';
 import { isAutoUpdaterDisabled } from '../utils/config.js';
 import { logForDebugging } from '../utils/debug.js';
+import { usesCurlInstallerBuild } from '../utils/distribution.js';
 import { getCurrentInstallationType } from '../utils/doctorDiagnostic.js';
 import { AutoUpdater } from './AutoUpdater.js';
 import { NativeAutoUpdater } from './NativeAutoUpdater.js';
@@ -17,7 +18,13 @@ type Props = {
   showSuccessMessage: boolean;
   verbose: boolean;
 };
-export function AutoUpdaterWrapper(t0) {
+export function AutoUpdaterWrapper(props: Props): React.ReactNode {
+  if (usesCurlInstallerBuild()) {
+    return null;
+  }
+  return <AutoUpdaterWrapperImpl {...props} />;
+}
+function AutoUpdaterWrapperImpl(t0) {
   const $ = _c(17);
   const {
     isUpdating,

@@ -1,4 +1,4 @@
-export const PROJECT_REPO_BASE_URL = 'https://github.com/rickkwang/Claude-Agent'
+export const PROJECT_REPO_BASE_URL = 'https://github.com/rickkwang/Noa-Claude'
 
 export const PROJECT_DOCS_BASE_URL = `${PROJECT_REPO_BASE_URL}/blob/master/docs`
 

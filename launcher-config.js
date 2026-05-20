@@ -23,7 +23,7 @@ export const PRODUCT_NAMESPACE =
   process.env.CLAUDE_CODE_PRODUCT_NAMESPACE ?? 'claude-agent';
 
 export const PRODUCT_NAME =
-  process.env.CLAUDE_CODE_PRODUCT_NAME ?? 'Claude Agent';
+  process.env.CLAUDE_CODE_PRODUCT_NAME ?? 'Noa Claude';
 
 export const DEFAULT_PRODUCT_DIR =
   process.env.CLAUDE_CODE_PRODUCT_DIR ?? join(homedir(), '.claude-agent');
@@ -44,9 +44,10 @@ export const LAUNCHER_MACRO = {
   VERSION: pkg.version,
   BUILD_TIME: '2026-04-28T00:00:00.000Z',
   FEEDBACK_CHANNEL: `#${PRODUCT_NAMESPACE}`,
-  ISSUES_EXPLAINER: 'https://github.com/rickkwang/Claude-Agent/issues',
-  PACKAGE_URL: 'claude-agent',
-  NATIVE_PACKAGE_URL: 'claude-agent',
+  ISSUES_EXPLAINER: 'https://github.com/rickkwang/Noa-Claude/issues',
+  PACKAGE_URL: '@rickkwang/noa-claude',
+  NATIVE_PACKAGE_URL: '@rickkwang/noa-claude',
+  DISTRIBUTION: 'curl',
 };
 
 function ensureDirectory(path) {

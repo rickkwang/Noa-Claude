@@ -3,6 +3,7 @@ import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { logEvent } from 'src/services/analytics/index.js';
 import { logForDebugging } from 'src/utils/debug.js';
+import { usesCurlInstallerBuild } from 'src/utils/distribution.js';
 import { logError } from 'src/utils/log.js';
 import { useInterval } from 'usehooks-ts';
 import { useUpdateNotification } from '../hooks/useUpdateNotification.js';
@@ -49,7 +50,13 @@ type Props = {
   showSuccessMessage: boolean;
   verbose: boolean;
 };
-export function NativeAutoUpdater({
+export function NativeAutoUpdater(props: Props): React.ReactNode {
+  if (usesCurlInstallerBuild()) {
+    return null;
+  }
+  return <NativeAutoUpdaterImpl {...props} />;
+}
+function NativeAutoUpdaterImpl({
   isUpdating,
   onChangeIsUpdating,
   onAutoUpdaterResult,
@@ -187,7 +194,7 @@ export function NativeAutoUpdater({
         </Text>}
       {maxVersionIssue && "external" === 'ant' && <Text color="warning">
           ⚠ Known issue: {maxVersionIssue} &middot; Run{' '}
-          <Text bold>claude rollback --safe</Text> to downgrade
+          <Text bold>noa rollback --safe</Text> to downgrade
         </Text>}
     </Box>;
 }

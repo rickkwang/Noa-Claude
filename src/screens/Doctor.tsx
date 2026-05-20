@@ -25,6 +25,7 @@ import { getPluginErrorMessage } from '../types/plugin.js';
 import { getGcsDistTags, getNpmDistTags, type NpmDistTags } from '../utils/autoUpdater.js';
 import { type ContextWarnings, checkContextWarnings } from '../utils/doctorContextWarnings.js';
 import { type DiagnosticInfo, getDoctorDiagnostic } from '../utils/doctorDiagnostic.js';
+import { usesCurlInstallerBuild } from '../utils/distribution.js';
 import { validateBoundedIntEnvVar } from '../utils/envValidation.js';
 import { pathExists } from '../utils/file.js';
 import { cleanupStaleLocks, getAllLockInfo, isPidBasedLockingEnabled, type LockInfo } from '../utils/nativeInstaller/pidLock.js';
@@ -557,6 +558,12 @@ function _temp6(diag) {
   if (diag.autoUpdates.includes("development build")) {
     return {
       latest: "n/a (development build)",
+      stable: null
+    };
+  }
+  if (usesCurlInstallerBuild()) {
+    return {
+      latest: "n/a (curl installer)",
       stable: null
     };
   }

@@ -4452,11 +4452,23 @@ async function run(): Promise<CommanderCommand> {
   // - We perform exact string comparison (including SHA) to detect any change
   // - This ensures users always get the latest build, even when only the SHA changes
   // - UI shows both versions including build metadata for clarity
-  program.command('update').alias('upgrade').description('Check for updates and install if available').action(async () => {
+  program.command('update').alias('upgrade').description('Check for updates and install if available').option('-y, --yes', 'Skip confirmation prompt').action(async (options: {
+    yes?: boolean;
+  }) => {
     const {
       update
     } = await import('src/cli/update.js');
-    await update();
+    await update(options);
+  });
+
+  program.command('uninstall').description('Uninstall Noa Claude (curl-installer build)').option('--purge', 'Also remove ~/.claude-agent config directory').option('-y, --yes', 'Skip confirmation prompt').action(async (options: {
+    purge?: boolean;
+    yes?: boolean;
+  }) => {
+    const {
+      uninstall
+    } = await import('src/cli/uninstall.js');
+    await uninstall(options);
   });
 
   // claude up — run the project's CLAUDE.md "# claude up" setup instructions.
@@ -4472,7 +4484,7 @@ async function run(): Promise<CommanderCommand> {
   // claude rollback (ant-only)
   // Rolls back to previous releases
   if ("external" === 'ant') {
-    program.command('rollback [target]').description('[ANT-ONLY] Roll back to a previous release\n\nExamples:\n  claude rollback                                    Go 1 version back from current\n  claude rollback 3                                  Go 3 versions back from current\n  claude rollback 2.0.73-dev.20251217.t190658        Roll back to a specific version').option('-l, --list', 'List recent published versions with ages').option('--dry-run', 'Show what would be installed without installing').option('--safe', 'Roll back to the server-pinned safe version (set by oncall during incidents)').action(async (target?: string, options?: {
+    program.command('rollback [target]').description('[ANT-ONLY] Roll back to a previous release\n\nExamples:\n  noa rollback                                       Go 1 version back from current\n  noa rollback 3                                     Go 3 versions back from current\n  noa rollback 2.0.73-dev.20251217.t190658           Roll back to a specific version').option('-l, --list', 'List recent published versions with ages').option('--dry-run', 'Show what would be installed without installing').option('--safe', 'Roll back to the server-pinned safe version (set by oncall during incidents)').action(async (target?: string, options?: {
       list?: boolean;
       dryRun?: boolean;
       safe?: boolean;
@@ -4485,7 +4497,7 @@ async function run(): Promise<CommanderCommand> {
   }
 
   // claude install
-  program.command('install [target]').description('Install Noa Claude native build. Use [target] to specify version (stable, latest, or specific version)').option('--force', 'Force installation even if already installed').action(async (target: string | undefined, options: {
+  program.command('install [target]').description('Show Noa Claude reinstall instructions. Use [target] and --force only for native/internal builds.').option('--force', 'Force installation even if already installed').action(async (target: string | undefined, options: {
     force?: boolean;
   }) => {
     const {

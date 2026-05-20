@@ -9,6 +9,9 @@ import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
   logEvent,
 } from 'src/services/analytics/index.js'
+import {
+  usesCurlInstallerBuild,
+} from './distribution.js'
 import { type ReleaseChannel, saveGlobalConfig } from './config.js'
 import { logForDebugging } from './debug.js'
 import { env } from './env.js'
@@ -37,6 +40,7 @@ export type InstallStatus =
   | 'success'
   | 'no_permissions'
   | 'install_failed'
+  | 'not_applicable'
   | 'in_progress'
 
 export type AutoUpdaterResult = {
@@ -88,7 +92,7 @@ It looks like your version of Noa Claude (${MACRO.VERSION}) needs an update.
 A newer version (${versionConfig.minVersion} or higher) is required to continue.
 
 To update, please run:
-    claude update
+    noa update
 
 This will ensure you have access to the latest features and improvements.
 `)
@@ -320,6 +324,12 @@ export async function checkGlobalInstallPermissions(): Promise<{
 export async function getLatestVersion(
   channel: ReleaseChannel,
 ): Promise<string | null> {
+  if (usesCurlInstallerBuild()) {
+    logForDebugging(
+      'Skipping npm version lookup: updates are delivered by the curl installer for Noa Claude',
+    )
+    return null
+  }
   const npmTag = channel === 'stable' ? 'stable' : 'latest'
 
   // Run from home directory to avoid reading project-level .npmrc
@@ -385,6 +395,12 @@ export async function getNpmDistTags(): Promise<NpmDistTags> {
 export async function getLatestVersionFromGcs(
   channel: ReleaseChannel,
 ): Promise<string | null> {
+  if (usesCurlInstallerBuild()) {
+    logForDebugging(
+      'Skipping GCS version lookup: native/package-manager release channel is not configured for Noa Claude',
+    )
+    return null
+  }
   try {
     const response = await axios.get(`${GCS_BUCKET_URL}/${channel}`, {
       timeout: 5000,
@@ -457,6 +473,9 @@ export async function getVersionHistory(limit: number): Promise<string[]> {
 export async function installGlobalPackage(
   specificVersion?: string | null,
 ): Promise<InstallStatus> {
+  if (usesCurlInstallerBuild()) {
+    return 'not_applicable'
+  }
   if (!(await acquireLock())) {
     logError(
       new AutoUpdaterError('Another process is currently installing an update'),
@@ -489,7 +508,7 @@ This configuration is not supported for updates.
 To fix this issue:
   1. Install Node.js within your Linux distribution: e.g. sudo apt install nodejs npm
   2. Make sure Linux NPM is in your PATH before the Windows version
-  3. Try updating again with 'claude update'
+  3. Try updating again with 'noa update'
 `)
       return 'install_failed'
     }
@@ -514,7 +533,7 @@ To fix this issue:
     )
     if (installResult.code !== 0) {
       const error = new AutoUpdaterError(
-        `Failed to install new version of claude: ${installResult.stdout} ${installResult.stderr}`,
+        `Failed to install new version of noa: ${installResult.stdout} ${installResult.stderr}`,
       )
       logError(error)
       return 'install_failed'

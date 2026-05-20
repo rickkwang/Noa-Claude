@@ -8,6 +8,10 @@ import { Box, Text } from '../ink.js';
 import { type AutoUpdaterResult, getLatestVersion, getMaxVersion, type InstallStatus, installGlobalPackage, shouldSkipVersion } from '../utils/autoUpdater.js';
 import { getGlobalConfig, isAutoUpdaterDisabled } from '../utils/config.js';
 import { logForDebugging } from '../utils/debug.js';
+import {
+  NOA_CURL_INSTALL_COMMAND,
+  usesCurlInstallerBuild,
+} from '../utils/distribution.js';
 import { getCurrentInstallationType } from '../utils/doctorDiagnostic.js';
 import { installOrUpdateClaudePackage, localInstallationExists } from '../utils/localInstaller.js';
 import { removeInstalledSymlink } from '../utils/nativeInstaller/index.js';
@@ -21,7 +25,13 @@ type Props = {
   showSuccessMessage: boolean;
   verbose: boolean;
 };
-export function AutoUpdater({
+export function AutoUpdater(props: Props): React.ReactNode {
+  if (usesCurlInstallerBuild()) {
+    return null;
+  }
+  return <AutoUpdaterImpl {...props} />;
+}
+function AutoUpdaterImpl({
   isUpdating,
   onChangeIsUpdating,
   onAutoUpdaterResult,
@@ -191,7 +201,7 @@ export function AutoUpdater({
       {(autoUpdaterResult?.status === 'install_failed' || autoUpdaterResult?.status === 'no_permissions') && <Text color="error" wrap="truncate">
           ✗ Auto-update failed &middot; Try <Text bold>noa doctor</Text> or{' '}
           <Text bold>
-            {hasLocalInstall ? `cd ~/.claude-agent/local && npm update ${MACRO.PACKAGE_URL}` : `npm i -g ${MACRO.PACKAGE_URL}`}
+            {NOA_CURL_INSTALL_COMMAND}
           </Text>
         </Text>}
     </Box>;

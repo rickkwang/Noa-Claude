@@ -1,16 +1,16 @@
 // @ts-nocheck
 /**
- * Utilities for managing shell configuration files (like .bashrc, .zshrc)
- * Used for managing claude aliases and PATH entries
+ * Utilities for managing shell configuration files (like .bashrc, .zshrc).
+ * Used for managing Noa aliases and PATH entries.
  */
 
 import { open, readFile, stat } from 'fs/promises'
 import { homedir as osHomedir } from 'os'
 import { join } from 'path'
 import { isFsInaccessible } from './errors.js'
-import { getLocalClaudePath } from './localInstaller.js'
+import { getLocalClaudePath, getLocalNoaPath } from './localInstaller.js'
 
-export const CLAUDE_ALIAS_REGEX = /^\s*alias\s+claude\s*=/
+export const CLAUDE_ALIAS_REGEX = /^\s*alias\s+(noa|claude)\s*=/
 
 type EnvLike = Record<string, string | undefined>
 
@@ -38,8 +38,8 @@ export function getShellConfigPaths(
 }
 
 /**
- * Filter out installer-created claude aliases from an array of lines
- * Only removes aliases pointing to $HOME/.claude-agent/local/claude
+ * Filter out installer-created command aliases from an array of lines.
+ * Only removes aliases pointing to the managed local install wrappers.
  * Preserves custom user aliases that point to other locations
  * Returns the filtered lines and whether our default installer alias was found
  */
@@ -49,21 +49,21 @@ export function filterClaudeAliases(lines: string[]): {
 } {
   let hadAlias = false
   const filtered = lines.filter(line => {
-    // Check if this is a claude alias
+    // Check if this is a managed command alias.
     if (CLAUDE_ALIAS_REGEX.test(line)) {
       // Extract the alias target - handle spaces, quotes, and various formats
       // First try with quotes
-      let match = line.match(/alias\s+claude\s*=\s*["']([^"']+)["']/)
+      let match = line.match(/alias\s+(?:noa|claude)\s*=\s*["']([^"']+)["']/)
       if (!match) {
         // Try without quotes (capturing until end of line or comment)
-        match = line.match(/alias\s+claude\s*=\s*([^#\n]+)/)
+        match = line.match(/alias\s+(?:noa|claude)\s*=\s*([^#\n]+)/)
       }
 
       if (match && match[1]) {
         const target = match[1].trim()
         // Only remove if it points to the installer location
         // The installer always creates aliases with the full expanded path
-        if (target === getLocalClaudePath()) {
+        if (target === getLocalNoaPath() || target === getLocalClaudePath()) {
           hadAlias = true
           return false // Remove this line
         }
@@ -108,7 +108,7 @@ export async function writeFileLines(
 }
 
 /**
- * Check if a claude alias exists in any shell config file
+ * Check if a managed command alias exists in any shell config file.
  * Returns the alias target if found, null otherwise
  * @param options Optional overrides for testing (env, homedir)
  */
@@ -124,7 +124,7 @@ export async function findClaudeAlias(
     for (const line of lines) {
       if (CLAUDE_ALIAS_REGEX.test(line)) {
         // Extract the alias target
-        const match = line.match(/alias\s+claude=["']?([^"'\s]+)/)
+        const match = line.match(/alias\s+(?:noa|claude)=["']?([^"'\s]+)/)
         if (match && match[1]) {
           return match[1]
         }

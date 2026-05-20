@@ -11,6 +11,7 @@ import { getErrnoCode } from './errors.js'
 import { execFileNoThrowWithCwd } from './execFileNoThrow.js'
 import { getFsImplementation } from './fsOperations.js'
 import { logError } from './log.js'
+import { usesCurlInstallerBuild } from './distribution.js'
 import { jsonStringify } from './slowOperations.js'
 
 // Lazy getters: getClaudeConfigHomeDir() is memoized and reads process.env.
@@ -19,6 +20,9 @@ import { jsonStringify } from './slowOperations.js'
 // populate the memoize cache with that stale value for all 150+ other callers.
 function getLocalInstallDir(): string {
   return join(getClaudeConfigHomeDir(), 'local')
+}
+export function getLocalNoaPath(): string {
+  return join(getLocalInstallDir(), 'noa')
 }
 export function getLocalClaudePath(): string {
   return join(getLocalInstallDir(), 'claude')
@@ -52,8 +56,8 @@ async function writeIfMissing(
 }
 
 /**
- * Ensure the local package environment is set up
- * Creates the directory, package.json, and wrapper script
+ * Ensure the local package environment is set up.
+ * Creates the directory, package.json, and command wrappers.
  */
 export async function ensureLocalPackageEnvironment(): Promise<boolean> {
   try {
@@ -66,22 +70,24 @@ export async function ensureLocalPackageEnvironment(): Promise<boolean> {
     await writeIfMissing(
       join(localInstallDir, 'package.json'),
       jsonStringify(
-        { name: 'claude-local', version: '0.0.1', private: true },
+        { name: 'noa-local', version: '0.0.1', private: true },
         null,
         2,
       ),
     )
 
-    // Create the wrapper script if it doesn't exist
-    const wrapperPath = join(localInstallDir, 'claude')
-    const created = await writeIfMissing(
-      wrapperPath,
-      `#!/bin/sh\nexec "${localInstallDir}/node_modules/.bin/claude" "$@"`,
-      0o755,
-    )
-    if (created) {
-      // Mode in writeFile is masked by umask; chmod to ensure executable bit.
-      await chmod(wrapperPath, 0o755)
+    // Create command wrappers. `claude` stays as a compatibility alias for
+    // users who still have old shell aliases pointing at the local install.
+    for (const wrapperPath of [getLocalNoaPath(), getLocalClaudePath()]) {
+      const created = await writeIfMissing(
+        wrapperPath,
+        `#!/bin/sh\nexec "${localInstallDir}/node_modules/.bin/noa" "$@"`,
+        0o755,
+      )
+      if (created) {
+        // Mode in writeFile is masked by umask; chmod to ensure executable bit.
+        await chmod(wrapperPath, 0o755)
+      }
     }
 
     return true
@@ -92,14 +98,17 @@ export async function ensureLocalPackageEnvironment(): Promise<boolean> {
 }
 
 /**
- * Install or update Claude CLI package in the local directory
+ * Install or update the Noa CLI package in the local directory.
  * @param channel - Release channel to use (latest or stable)
  * @param specificVersion - Optional specific version to install (overrides channel)
  */
 export async function installOrUpdateClaudePackage(
   channel: ReleaseChannel,
   specificVersion?: string | null,
-): Promise<'in_progress' | 'success' | 'install_failed'> {
+): Promise<'in_progress' | 'success' | 'install_failed' | 'not_applicable'> {
+  if (usesCurlInstallerBuild()) {
+    return 'not_applicable'
+  }
   try {
     // First ensure the environment is set up
     if (!(await ensureLocalPackageEnvironment())) {
@@ -145,10 +154,15 @@ export async function installOrUpdateClaudePackage(
  */
 export async function localInstallationExists(): Promise<boolean> {
   try {
-    await access(join(getLocalInstallDir(), 'node_modules', '.bin', 'claude'))
+    await access(join(getLocalInstallDir(), 'node_modules', '.bin', 'noa'))
     return true
   } catch {
-    return false
+    try {
+      await access(join(getLocalInstallDir(), 'node_modules', '.bin', 'claude'))
+      return true
+    } catch {
+      return false
+    }
   }
 }
 

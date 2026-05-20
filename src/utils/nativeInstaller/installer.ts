@@ -110,7 +110,7 @@ export function getPlatform(): string {
 }
 
 export function getBinaryName(platform: string): string {
-  return platform.startsWith('win32') ? 'claude.exe' : 'claude'
+  return platform.startsWith('win32') ? 'noa.exe' : 'noa'
 }
 
 function getBaseDirectories() {
@@ -1487,7 +1487,7 @@ export async function removeInstalledSymlink(): Promise<void> {
 }
 
 /**
- * Clean up old claude aliases from shell configuration files
+ * Clean up old managed command aliases from shell configuration files
  * Only handles alias removal, not PATH setup
  */
 export async function cleanupShellAliases(): Promise<SetupMessage[]> {
@@ -1504,11 +1504,11 @@ export async function cleanupShellAliases(): Promise<SetupMessage[]> {
       if (hadAlias) {
         await writeFileLines(configFile, filtered)
         messages.push({
-          message: `Removed claude alias from ${configFile}. Run: unalias claude`,
+          message: `Removed managed command alias from ${configFile}. Run: unalias noa && unalias claude`,
           userActionRequired: true,
           type: 'alias',
         })
-        logForDebugging(`Cleaned up claude alias from ${shellType} config`)
+        logForDebugging(`Cleaned up managed command alias from ${shellType} config`)
       }
     } catch (error) {
       logError(error)

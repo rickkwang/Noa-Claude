@@ -6,16 +6,22 @@ Noa is a productized fork of publicly exposed Claude Code source, rebuilt for de
 
 ## Quick Start
 
-Install:
+Install with `curl`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rickkwang/Noa-Claude/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/rickkwang/Noa-Claude/master/install.sh | bash
 ```
 
-Or build from source:
+Install from a repository checkout:
 
 ```bash
 git clone https://github.com/rickkwang/Noa-Claude.git && cd Noa-Claude
+./install.sh
+```
+
+Run from source without installing:
+
+```bash
 bun run dev
 ```
 
@@ -29,6 +35,25 @@ noa
 ```
 
 Then open a project and ask for real work: fix a bug, explain a subsystem, review a diff, or fork a branch of investigation with `/fork`.
+
+## Update & Uninstall
+
+Update (re-runs the curl installer, builds, and atomically swaps in the new install with a backup-rollback safety net):
+
+```bash
+noa update          # prompts before re-running the installer
+noa update --yes    # non-interactive
+```
+
+Uninstall (removes `~/.local/bin/noa` symlink and `~/.claude-agent/install/`, scrubs installer-created shell aliases; config is preserved):
+
+```bash
+noa uninstall
+noa uninstall --purge   # ALSO removes ~/.claude-agent (settings, plugins, history)
+noa uninstall --yes     # non-interactive
+```
+
+If `~/.local/bin` is not on your `PATH`, the installer prints the line to add — `noa uninstall` will not remove it automatically.
 
 ## Core Features
 

@@ -1,9 +1,20 @@
 {
-  "name": "noa",
+  "name": "@rickkwang/noa-claude",
   "version": "1.2.0",
   "type": "module",
-  "private": true,
+  "private": false,
   "description": "Noa Claude - isolated AI coding assistant",
+  "homepage": "https://github.com/rickkwang/Noa-Claude",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rickkwang/Noa-Claude.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rickkwang/Noa-Claude/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "claude-agent-import": "./bin/claude-agent-import.js",
     "noa": "./bin/noa.js"

@@ -8,6 +8,10 @@ import { logEvent } from 'src/services/analytics/index.js';
 import { StatusIcon } from '../components/design-system/StatusIcon.js';
 import { Box, render, Text } from '../ink.js';
 import { logForDebugging } from '../utils/debug.js';
+import {
+  NOA_CURL_INSTALL_COMMAND,
+  usesCurlInstallerBuild,
+} from '../utils/distribution.js';
 import { env } from '../utils/env.js';
 import { errorMessage } from '../utils/errors.js';
 import { checkInstall, cleanupNpmInstallations, cleanupShellAliases, installLatest } from '../utils/nativeInstaller/index.js';
@@ -19,6 +23,7 @@ interface InstallProps {
   force?: boolean;
   target?: string; // 'latest', 'stable', or version like '1.0.34'
 }
+
 type InstallState = {
   type: 'checking';
 } | {
@@ -39,17 +44,20 @@ type InstallState = {
   type: 'error';
   message: string;
   warnings?: string[];
+} | {
+  type: 'redirect';
+  message: string;
 };
 function getInstallationPath(): string {
   const isWindows = env.platform === 'win32';
   const homeDir = homedir();
   if (isWindows) {
     // Convert to Windows-style path
-    const windowsPath = join(homeDir, '.local', 'bin', 'claude-agent.exe');
+    const windowsPath = join(homeDir, '.local', 'bin', 'noa.exe');
     // Replace forward slashes with backslashes for Windows display
     return windowsPath.replace(/\//g, '\\');
   }
-  return '~/.local/bin/claude-agent';
+  return '~/.local/bin/noa';
 }
 function SetupNotes(t0) {
   const $ = _c(5);
@@ -98,6 +106,15 @@ function Install({
   useEffect(() => {
     async function run() {
       try {
+        if (usesCurlInstallerBuild()) {
+          setState({
+            type: 'redirect',
+            message:
+              `Reinstall Noa Claude with:\n${NOA_CURL_INSTALL_COMMAND}`,
+          });
+          return;
+        }
+
         logForDebugging(`Install: Starting installation process (force=${force}, target=${target})`);
 
         // Install native build first
@@ -114,7 +131,7 @@ function Install({
 
         // Check specifically for lock failure
         if (result.lockFailed) {
-          throw new Error('Could not install - another process is currently installing Claude. Please try again in a moment.');
+          throw new Error('Could not install - another process is currently installing Noa Claude. Please try again in a moment.');
         }
 
         // If we couldn't get the version, there might be an issue
@@ -214,6 +231,10 @@ function Install({
       setTimeout(onDone, 2000, 'Noa Claude installation completed successfully', {
         display: 'system' as const
       });
+    } else if (state.type === 'redirect') {
+      setTimeout(onDone, 3000, 'Noa Claude reinstall instructions shown', {
+        display: 'system' as const
+      });
     } else if (state.type === 'error') {
       // Give error message time to render before exiting
       setTimeout(onDone, 3000, 'Noa Claude installation failed', {
@@ -227,7 +248,7 @@ function Install({
       {state.type === 'cleaning-npm' && <Text color="warning">Cleaning up old npm installations...</Text>}
 
       {state.type === 'installing' && <Text color="claude">
-          Installing Noa Claude native build {state.version}...
+          Installing Noa Claude internal build {state.version}...
         </Text>}
 
       {state.type === 'setting-up' && <Text color="claude">Setting up launcher and shell integration...</Text>}
@@ -273,6 +294,14 @@ function Install({
             <Text dimColor>Try running with --force to override checks</Text>
           </Box>
         </Box>}
+
+      {state.type === 'redirect' && <Box flexDirection="column" gap={1}>
+          <Box>
+            <StatusIcon status="warning" withSpace />
+            <Text color="warning">Use the curl installer</Text>
+          </Box>
+          <Text>{state.message}</Text>
+        </Box>}
     </Box>;
 }
 
@@ -280,7 +309,7 @@ function Install({
 export const install = {
   type: 'local-jsx' as const,
   name: 'install',
-  description: 'Install Noa Claude native build',
+  description: 'Show Noa Claude reinstall instructions',
   argumentHint: '[options]',
   async call(onDone: (result: string, options?: {
     display?: CommandResultDisplay;

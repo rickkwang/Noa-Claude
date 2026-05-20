@@ -14,6 +14,10 @@ import {
 } from 'src/utils/config.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { getDoctorDiagnostic } from 'src/utils/doctorDiagnostic.js'
+import {
+  NOA_CURL_INSTALL_COMMAND,
+  usesCurlInstallerBuild,
+} from 'src/utils/distribution.js'
 import { getClaudeConfigHomeDir } from 'src/utils/envUtils.js'
 import { gracefulShutdown } from 'src/utils/gracefulShutdown.js'
 import {
@@ -29,7 +33,50 @@ import { writeToStdout } from 'src/utils/process.js'
 import { gte } from 'src/utils/semver.js'
 import { getInitialSettings } from 'src/utils/settings/settings.js'
 
-export async function update() {
+async function confirmYesNo(prompt: string): Promise<boolean> {
+  if (!process.stdin.isTTY) return false
+  const { createInterface } = await import('node:readline')
+  return await new Promise<boolean>(resolve => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout })
+    rl.question(prompt, answer => {
+      rl.close()
+      resolve(/^y(es)?$/i.test(answer.trim()))
+    })
+  })
+}
+
+async function runCurlReinstall(autoConfirm: boolean): Promise<void> {
+  writeToStdout('\n')
+  writeToStdout(
+    'Noa Claude updates by re-running the curl installer.\n',
+  )
+  writeToStdout('Command:\n')
+  writeToStdout(chalk.bold(`  ${NOA_CURL_INSTALL_COMMAND}\n`))
+  writeToStdout('\n')
+
+  const proceed =
+    autoConfirm || (await confirmYesNo('Run this now? [y/N] '))
+  if (!proceed) {
+    writeToStdout('Aborted. Run the command above to update manually.\n')
+    await gracefulShutdown(0)
+    return
+  }
+
+  const { spawn } = await import('node:child_process')
+  const code: number = await new Promise(resolve => {
+    const child = spawn('bash', ['-c', NOA_CURL_INSTALL_COMMAND], {
+      stdio: 'inherit',
+    })
+    child.on('exit', c => resolve(c ?? 1))
+    child.on('error', err => {
+      process.stderr.write(`Failed to spawn installer: ${err.message}\n`)
+      resolve(1)
+    })
+  })
+  await gracefulShutdown(code)
+}
+
+export async function update(options: { yes?: boolean } = {}) {
   logEvent('tengu_update_check', {})
   writeToStdout(`Current version: ${MACRO.VERSION}\n`)
 
@@ -37,6 +84,11 @@ export async function update() {
   writeToStdout(`Checking for updates to ${channel} version...\n`)
 
   logForDebugging('update: Starting update check')
+
+  if (usesCurlInstallerBuild()) {
+    await runCurlReinstall(options.yes === true)
+    return
+  }
 
   // Run diagnostic to detect potential issues
   logForDebugging('update: Running diagnostic')
@@ -122,7 +174,7 @@ export async function update() {
     writeToStdout('\n')
 
     if (packageManager === 'homebrew') {
-      writeToStdout('Claude is managed by Homebrew.\n')
+      writeToStdout('Noa Claude is managed by Homebrew.\n')
       const latest = await getLatestVersion(channel)
       if (latest && !gte(MACRO.VERSION, latest)) {
         writeToStdout(`Update available: ${MACRO.VERSION} → ${latest}\n`)
@@ -130,10 +182,10 @@ export async function update() {
         writeToStdout('To update, run:\n')
         writeToStdout(chalk.bold('  brew upgrade noa') + '\n')
       } else {
-        writeToStdout('Claude is up to date!\n')
+        writeToStdout('Noa Claude is up to date!\n')
       }
     } else if (packageManager === 'winget') {
-      writeToStdout('Claude is managed by winget.\n')
+      writeToStdout('Noa Claude is managed by winget.\n')
       const latest = await getLatestVersion(channel)
       if (latest && !gte(MACRO.VERSION, latest)) {
         writeToStdout(`Update available: ${MACRO.VERSION} → ${latest}\n`)
@@ -143,10 +195,10 @@ export async function update() {
           chalk.bold('  winget upgrade Noa.Claude') + '\n',
         )
       } else {
-        writeToStdout('Claude is up to date!\n')
+        writeToStdout('Noa Claude is up to date!\n')
       }
     } else if (packageManager === 'apk') {
-      writeToStdout('Claude is managed by apk.\n')
+      writeToStdout('Noa Claude is managed by apk.\n')
       const latest = await getLatestVersion(channel)
       if (latest && !gte(MACRO.VERSION, latest)) {
         writeToStdout(`Update available: ${MACRO.VERSION} → ${latest}\n`)
@@ -154,13 +206,13 @@ export async function update() {
         writeToStdout('To update, run:\n')
         writeToStdout(chalk.bold('  apk upgrade noa') + '\n')
       } else {
-        writeToStdout('Claude is up to date!\n')
+        writeToStdout('Noa Claude is up to date!\n')
       }
     } else {
       // pacman, deb, and rpm don't get specific commands because they each have
       // multiple frontends (pacman: yay/paru/makepkg, deb: apt/apt-get/aptitude/nala,
       // rpm: dnf/yum/zypper)
-      writeToStdout('Claude is managed by a package manager.\n')
+      writeToStdout('Noa Claude is managed by a package manager.\n')
       writeToStdout('Please use your package manager to update.\n')
     }
 
@@ -227,7 +279,7 @@ export async function update() {
           : ''
         writeToStdout(
           chalk.yellow(
-            `Another Claude process${pidInfo} is currently running. Please try again in a moment.`,
+            `Another Noa Claude process${pidInfo} is currently running. Please try again in a moment.`,
           ) + '\n',
         )
         await gracefulShutdown(0)
@@ -385,31 +437,16 @@ export async function update() {
       process.stderr.write(
         'Error: Insufficient permissions to install update\n',
       )
-      if (useLocalUpdate) {
-        process.stderr.write('Try manually updating with:\n')
-        process.stderr.write(
-          `  cd ${getClaudeConfigHomeDir()}/local && npm update ${MACRO.PACKAGE_URL}\n`,
-        )
-      } else {
-        process.stderr.write('Try running with sudo or fix npm permissions\n')
-        process.stderr.write(
-        'Or consider using native installation with: noa install\n',
-        )
-      }
+      process.stderr.write('Reinstall with:\n')
+      process.stderr.write(
+        `  ${NOA_CURL_INSTALL_COMMAND}\n`,
+      )
       await gracefulShutdown(1)
       break
     case 'install_failed':
       process.stderr.write('Error: Failed to install update\n')
-      if (useLocalUpdate) {
-        process.stderr.write('Try manually updating with:\n')
-        process.stderr.write(
-          `  cd ${getClaudeConfigHomeDir()}/local && npm update ${MACRO.PACKAGE_URL}\n`,
-        )
-      } else {
-        process.stderr.write(
-          'Or consider using native installation with: noa install\n',
-        )
-      }
+      process.stderr.write('Reinstall with:\n')
+      process.stderr.write(`  ${NOA_CURL_INSTALL_COMMAND}\n`)
       await gracefulShutdown(1)
       break
     case 'in_progress':
