@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
-import { memo, type ReactNode } from 'react';
+import { memo, type ReactNode, useEffect, useState } from 'react';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { stringWidth } from '../../ink/stringWidth.js';
 import { Box, Text } from '../../ink.js';
@@ -203,84 +203,65 @@ type Props = {
    * renderer doesn't push fewer items down into the prompt area.
    */
   overlay?: boolean;
+  /**
+   * Mouse click on a row — fullscreen overlay only. Ink gates mouse
+   * dispatch on altScreenActive, so passing these in non-fullscreen would
+   * be dead code (App.tsx:54-60). The fullscreen overlay caller wires them.
+   * Index is absolute within `suggestions`.
+   */
+  onSelect?: (index: number) => void;
+  enableMouseHover?: boolean;
 };
-export function PromptInputFooterSuggestions(t0) {
-  const $ = _c(22);
-  const {
-    suggestions,
-    selectedSuggestion,
-    maxColumnWidth: maxColumnWidthProp,
-    overlay
-  } = t0;
-  const {
-    rows
-  } = useTerminalSize();
+export function PromptInputFooterSuggestions({
+  suggestions,
+  selectedSuggestion,
+  maxColumnWidth: maxColumnWidthProp,
+  overlay,
+  onSelect,
+  enableMouseHover,
+}: Props): ReactNode {
+  useTerminalSize();
+  const [hoveredSuggestion, setHoveredSuggestion] = useState<number | null>(null);
+  useEffect(() => {
+    setHoveredSuggestion(null);
+  }, [suggestions]);
+  useEffect(() => {
+    setHoveredSuggestion(null);
+  }, [selectedSuggestion]);
+  if (suggestions.length === 0) return null;
   const maxVisibleItems = overlay
     ? Math.min(suggestions.length, OVERLAY_VISIBLE_ITEMS)
     : Math.min(suggestions.length, INLINE_VISIBLE_ITEMS);
-  if (suggestions.length === 0) {
-    return null;
-  }
-  let t1;
-  if ($[0] !== maxColumnWidthProp || $[1] !== suggestions) {
-    t1 = maxColumnWidthProp ?? Math.max(...suggestions.map(_temp)) + 5;
-    $[0] = maxColumnWidthProp;
-    $[1] = suggestions;
-    $[2] = t1;
-  } else {
-    t1 = $[2];
-  }
-  const maxColumnWidth = t1;
+  const maxColumnWidth = maxColumnWidthProp ?? Math.max(...suggestions.map(_temp)) + 5;
   const startIndex = Math.max(0, Math.min(selectedSuggestion - Math.floor(maxVisibleItems / 2), suggestions.length - maxVisibleItems));
   const endIndex = Math.min(startIndex + maxVisibleItems, suggestions.length);
-  let T0;
-  let t2;
-  let t3;
-  let t4;
-  if ($[3] !== endIndex || $[4] !== maxColumnWidth || $[5] !== overlay || $[6] !== selectedSuggestion || $[7] !== startIndex || $[8] !== suggestions) {
-    const visibleItems = suggestions.slice(startIndex, endIndex);
-    T0 = Box;
-    t2 = "column";
-    t3 = overlay ? undefined : "flex-end";
-    let t5;
-    if ($[13] !== maxColumnWidth || $[14] !== selectedSuggestion || $[15] !== suggestions) {
-      t5 = item_0 => <SuggestionItemRow key={item_0.id} item={item_0} maxColumnWidth={maxColumnWidth} isSelected={item_0.id === suggestions[selectedSuggestion]?.id} />;
-      $[13] = maxColumnWidth;
-      $[14] = selectedSuggestion;
-      $[15] = suggestions;
-      $[16] = t5;
-    } else {
-      t5 = $[16];
-    }
-    t4 = visibleItems.map(t5);
-    $[3] = endIndex;
-    $[4] = maxColumnWidth;
-    $[5] = overlay;
-    $[6] = selectedSuggestion;
-    $[7] = startIndex;
-    $[8] = suggestions;
-    $[9] = T0;
-    $[10] = t2;
-    $[11] = t3;
-    $[12] = t4;
-  } else {
-    T0 = $[9];
-    t2 = $[10];
-    t3 = $[11];
-    t4 = $[12];
-  }
-  let t5;
-  if ($[17] !== T0 || $[18] !== t2 || $[19] !== t3 || $[20] !== t4) {
-    t5 = <T0 flexDirection={t2} justifyContent={t3}>{t4}</T0>;
-    $[17] = T0;
-    $[18] = t2;
-    $[19] = t3;
-    $[20] = t4;
-    $[21] = t5;
-  } else {
-    t5 = $[21];
-  }
-  return t5;
+  const visibleItems = suggestions.slice(startIndex, endIndex);
+  const highlightedSuggestion = overlay && hoveredSuggestion !== null ? hoveredSuggestion : selectedSuggestion;
+  // SuggestionItemRow returns a <Text>. Hit-test skips text nodes, so we
+  // wrap each in a Box that owns the click/hover handlers. Wrapping is
+  // unconditional (keeps layout consistent regardless of mouse wiring);
+  // handlers attach only when callers provide them (fullscreen overlay).
+  return (
+    <Box flexDirection="column" justifyContent={overlay ? undefined : 'flex-end'}>
+      {visibleItems.map((item, i) => {
+        const absoluteIndex = startIndex + i;
+        return (
+          <Box
+            key={item.id}
+            height={1}
+            onClick={onSelect ? () => onSelect(absoluteIndex) : undefined}
+            onMouseEnter={enableMouseHover ? () => setHoveredSuggestion(absoluteIndex) : undefined}
+          >
+            <SuggestionItemRow
+              item={item}
+              maxColumnWidth={maxColumnWidth}
+              isSelected={item.id === suggestions[highlightedSuggestion]?.id}
+            />
+          </Box>
+        );
+      })}
+    </Box>
+  );
 }
 function _temp(item) {
   return stringWidth(item.displayText);

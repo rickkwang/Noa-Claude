@@ -23,13 +23,27 @@ export function hitTest(
 ): DOMElement | null {
   const rect = nodeCache.get(node)
   if (!rect) return null
+  // Absolute-positioned children may intentionally paint outside the parent
+  // rect (for example prompt suggestions rendered with bottom="100%"). Let
+  // those children participate in hit-testing even when the pointer is outside
+  // the parent; otherwise visible floating UI becomes impossible to click.
+  const hitAbsoluteChild = (): DOMElement | null => {
+    for (let i = node.childNodes.length - 1; i >= 0; i--) {
+      const child = node.childNodes[i]!
+      if (child.nodeName === '#text' || child.style?.position !== 'absolute') continue
+      const hit = hitTest(child, col, row)
+      if (hit) return hit
+    }
+    return null
+  }
+
   if (
     col < rect.x ||
     col >= rect.x + rect.width ||
     row < rect.y ||
     row >= rect.y + rect.height
   ) {
-    return null
+    return hitAbsoluteChild()
   }
   // Later siblings paint on top; reversed traversal returns topmost hit.
   for (let i = node.childNodes.length - 1; i >= 0; i--) {

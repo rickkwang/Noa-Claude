@@ -26,6 +26,9 @@ export type PromptOverlayData = {
   suggestions: SuggestionItem[];
   selectedSuggestion: number;
   maxColumnWidth?: number;
+  /** Mouse click on a row (fullscreen overlay only — non-fullscreen ink does
+   * not report mouse events). Called with the absolute index in `suggestions`. */
+  onSelect?: (index: number) => void;
 };
 type Setter<T> = (d: T | null) => void;
 const DataContext = createContext<PromptOverlayData | null>(null);

@@ -41,6 +41,9 @@ type Props = {
   suggestions: SuggestionItem[];
   selectedSuggestion: number;
   maxColumnWidth?: number;
+  /** Mouse click on a suggestion row (fullscreen overlay only — non-fullscreen
+   * ink doesn't dispatch mouse events; see App.tsx:54-60). */
+  onSuggestionSelect?: (index: number) => void;
   toolPermissionContext: ToolPermissionContext;
   helpOpen: boolean;
   suppressHint: boolean;
@@ -76,6 +79,7 @@ function PromptInputFooter({
   suggestions,
   selectedSuggestion,
   maxColumnWidth,
+  onSuggestionSelect,
   toolPermissionContext,
   helpOpen,
   suppressHint: suppressHintFromProps,
@@ -127,8 +131,9 @@ function PromptInputFooter({
   const overlayData = useMemo(() => isFullscreen && suggestions.length ? {
     suggestions,
     selectedSuggestion,
-    maxColumnWidth
-  } : null, [isFullscreen, suggestions, selectedSuggestion, maxColumnWidth]);
+    maxColumnWidth,
+    onSelect: onSuggestionSelect
+  } : null, [isFullscreen, suggestions, selectedSuggestion, maxColumnWidth, onSuggestionSelect]);
   useSetPromptOverlay(overlayData);
   if (suggestions.length && !isFullscreen) {
     return <Box paddingX={2} paddingY={0}>
