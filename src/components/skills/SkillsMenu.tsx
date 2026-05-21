@@ -96,6 +96,7 @@ function getSourceSubtitle(
     ]
     return servers.length > 0 ? servers.join(', ') : undefined
   }
+  if (source === 'plugin') return 'Plugin-provided skills'
   const skillsPath = getDisplayPath(getSkillsPath(source, 'skills'))
   const hasCommandsSkills = skills.some(
     s => s.loadedFrom === 'commands_DEPRECATED',
@@ -200,6 +201,7 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
   const initialSkillModesRef = React.useRef(new Map<string, SkillMode>())
   const changedSkillNamesRef = React.useRef(new Set<string>())
   const failedSkillNamesRef = React.useRef(new Set<string>())
+  const isSavingModeChangesRef = React.useRef(false)
 
   const skills = useMemo(
     () =>
@@ -350,9 +352,71 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
     onExit('Skills dialog dismissed', { display: 'system' })
   }, [onExit])
 
+  const handleUseSkill = React.useCallback((): void | false => {
+    const skill = displaySkills[clampedIdx]
+    if (!skill) return false
+
+    // Fill the prompt with `/<name> ` so the user can add args or press
+    // Enter again to execute. `submitNextInput: false` is deliberate —
+    // many skills take arguments, and direct execution would surprise.
+    onExit(undefined, {
+      display: 'skip',
+      nextInput: `/${getCommandName(skill)} `,
+      submitNextInput: false,
+    })
+  }, [clampedIdx, displaySkills, onExit])
+
+  const handleToggleSkillMode = React.useCallback((): void | false => {
+    if (isSavingModeChangesRef.current) return false
+    const skill = displaySkills[clampedIdx]
+    if (!skill) return false
+    if (!canToggleSkillMode(skill)) return false
+    if (blockingSources.get(skill.name) !== null) return false
+
+    const previousMode = getSkillMode(skill)
+    const baseMode = getBaseSkillMode(skill)
+    const nextMode = getNextSkillMode(previousMode)
+    const writeId = getNextWriteId(skill.name)
+    applySkillMode(skill, nextMode)
+    syncChangedSkillName(skill.name, nextMode)
+    failedSkillNamesRef.current.delete(skill.name)
+    clearCommandMemoizationCaches()
+    forceRefresh(v => v + 1)
+    void persistSkillMode(skill.name, nextMode, baseMode, writeId)
+      .then(didPersist => {
+        if (!didPersist || !isLatestWriteId(skill.name, writeId)) return
+        failedSkillNamesRef.current.delete(skill.name)
+      })
+      .catch(error => {
+        let revertedMode = previousMode
+        if (!isLatestWriteId(skill.name, writeId)) return
+        try {
+          revertedMode = readPersistedSkillMode(skill.name, baseMode)
+          applySkillMode(skill, revertedMode)
+        } catch {
+          applySkillMode(skill, revertedMode)
+        }
+        syncChangedSkillName(skill.name, revertedMode)
+        failedSkillNamesRef.current.add(skill.name)
+        clearCommandMemoizationCaches()
+        forceRefresh(v => v + 1)
+        logForDebugging(
+          `[skills] failed to persist ${skill.name} mode ${nextMode}: ${error}`,
+          { level: 'warn' },
+        )
+      })
+  }, [
+    blockingSources,
+    clampedIdx,
+    displaySkills,
+    forceRefresh,
+    syncChangedSkillName,
+  ])
+
   const handleConfirm = React.useCallback((): void | false => {
-    if (hasPendingModeChanges) {
-      if (isSavingModeChanges) return false
+    if (changedSkillNamesRef.current.size > 0) {
+      if (isSavingModeChangesRef.current) return false
+      isSavingModeChangesRef.current = true
       setIsSavingModeChanges(true)
       void waitForPendingSkillWrites()
         .then(allWritesSucceeded => {
@@ -365,30 +429,14 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
           )
         })
         .finally(() => {
+          isSavingModeChangesRef.current = false
           setIsSavingModeChanges(false)
         })
       return
     }
 
-    const skill = displaySkills[clampedIdx]
-    if (!skill) return false
-
-    // Fill the prompt with `/<name> ` so the user can add args or press
-    // Enter again to execute. `submitNextInput: false` is deliberate —
-    // many skills take arguments, and direct execution would surprise.
-    onExit(undefined, {
-      display: 'skip',
-      nextInput: `/${getCommandName(skill)} `,
-      submitNextInput: false,
-    })
-  }, [
-    clampedIdx,
-    displaySkills,
-    hasPendingModeChanges,
-    isSavingModeChanges,
-    onExit,
-    syncChangedSkillName,
-  ])
+    return handleToggleSkillMode()
+  }, [handleToggleSkillMode, onExit])
 
   const handleNext = React.useCallback((): void | false => {
     if (displaySkills.length === 0) return false
@@ -427,42 +475,12 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
       }
       if (input === ' ') {
         event.stopImmediatePropagation()
-        const skill = displaySkills[clampedIdx]
-        if (!skill) return
-        if (!canToggleSkillMode(skill)) return
-        if (blockingSources.get(skill.name) !== null) return
-        const previousMode = getSkillMode(skill)
-        const baseMode = getBaseSkillMode(skill)
-        const nextMode = getNextSkillMode(previousMode)
-        const writeId = getNextWriteId(skill.name)
-        applySkillMode(skill, nextMode)
-        syncChangedSkillName(skill.name, nextMode)
-        failedSkillNamesRef.current.delete(skill.name)
-        clearCommandMemoizationCaches()
-        forceRefresh(v => v + 1)
-        void persistSkillMode(skill.name, nextMode, baseMode, writeId)
-          .then(didPersist => {
-            if (!didPersist || !isLatestWriteId(skill.name, writeId)) return
-            failedSkillNamesRef.current.delete(skill.name)
-          })
-          .catch(error => {
-            let revertedMode = previousMode
-            if (!isLatestWriteId(skill.name, writeId)) return
-            try {
-              revertedMode = readPersistedSkillMode(skill.name, baseMode)
-              applySkillMode(skill, revertedMode)
-            } catch {
-              applySkillMode(skill, revertedMode)
-            }
-            syncChangedSkillName(skill.name, revertedMode)
-            failedSkillNamesRef.current.add(skill.name)
-            clearCommandMemoizationCaches()
-            forceRefresh(v => v + 1)
-            logForDebugging(
-              `[skills] failed to persist ${skill.name} mode ${nextMode}: ${error}`,
-              { level: 'warn' },
-            )
-          })
+        void handleToggleSkillMode()
+        return
+      }
+      if (input === 'i') {
+        event.stopImmediatePropagation()
+        void handleUseSkill()
         return
       }
       if (input === '/') {
@@ -476,7 +494,7 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
         setSortAlpha(s => !s)
         return
       }
-      // Any printable character (except space, reserved for toggle) starts type-to-filter search
+      // Any printable character (except space, reserved for toggle) starts type-to-filter search.
       if (input.length === 1 && input !== ' ' && !key.ctrl && !key.meta) {
         event.stopImmediatePropagation()
         setQuery(input)
@@ -622,7 +640,7 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
   return (
     <Dialog
       title="Skills"
-      subtitle={`${subtitleCount} · ${isSavingModeChanges ? 'Saving…' : hasPendingModeChanges ? 'Enter to save' : 'Enter to use'}, Space to toggle, type to search, t to sort, Esc to close`}
+      subtitle={`${subtitleCount} · ${isSavingModeChanges ? 'Saving…' : hasPendingModeChanges ? 'Enter to save' : 'Enter/Space to toggle'}, i to insert, type to search, t to sort, Esc to close`}
       onCancel={handleCancel}
       hideInputGuide
       isCancelActive={!isSearchMode}

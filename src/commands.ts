@@ -537,23 +537,29 @@ export const getSkillToolCommands = memoize(
   },
 )
 
-// Filters commands to include only skills. Skills are commands that provide
-// specialized capabilities for the model to use. They are identified by
-// loadedFrom being 'skills', 'plugin', or 'bundled', or having disableModelInvocation set.
+// User/SDK-visible slash skills. These are prompt-based skills that a user can
+// type directly (or that remote clients should expose in command pickers).
+// This is intentionally different from getSkillToolCommands(), which returns
+// the subset of skills visible to the model for invocation.
+export function isSlashCommandToolSkill(cmd: Command): boolean {
+  return (
+    cmd.type === 'prompt' &&
+    cmd.source !== 'builtin' &&
+    cmd.userInvocable !== false &&
+    (cmd.hasUserSpecifiedDescription || cmd.whenToUse) &&
+    (cmd.loadedFrom === 'skills' ||
+      cmd.loadedFrom === 'commands_DEPRECATED' ||
+      cmd.loadedFrom === 'plugin' ||
+      cmd.loadedFrom === 'bundled')
+  )
+}
+
+// Filters commands to include only user-visible slash skills.
 export const getSlashCommandToolSkills = memoize(
   async (cwd: string): Promise<Command[]> => {
     try {
       const allCommands = await getCommands(cwd)
-      return allCommands.filter(
-        cmd =>
-          cmd.type === 'prompt' &&
-          cmd.source !== 'builtin' &&
-          (cmd.hasUserSpecifiedDescription || cmd.whenToUse) &&
-          (cmd.loadedFrom === 'skills' ||
-            cmd.loadedFrom === 'plugin' ||
-            cmd.loadedFrom === 'bundled' ||
-            cmd.disableModelInvocation),
-      )
+      return allCommands.filter(isSlashCommandToolSkill)
     } catch (error) {
       logError(toError(error))
       // Return empty array rather than throwing - skills are non-critical
