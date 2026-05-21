@@ -1,5 +1,37 @@
 # Release Notes
 
+## 1.3.0
+
+### New Features
+
+- **Complete curl-installer distribution pipeline** — native install/uninstall/update chain via `curl -fsSL https://noa.ai/install.sh | bash` with atomic swap and rollback, compatible with Homebrew, WinGet, and apt/dnf.
+- **Opus 4.7 xhigh effort level** — new xhigh speed/intelligence tier for Opus 4.7, removing the per-level capability gate and delegating clamping to runtime.
+- **Auto-dream hardening** — lock stamp moved to post-success; adds model downshift and session cap for resource-bound environments.
+
+### Refactors
+
+- **Global rebrand** — all `.claude-agent` config paths, startup banners, and mode aliases renamed to `.noa` / `Noa` / `noa` / `Noa Claude` across the entire codebase.
+- **Onboarding simplification** — drop redundant lodash memoize wrapper; drop sticky completion flag (derive from cwd state instead).
+- **Provider profile cleanup** — `ENABLE_TOOL_SEARCH` removed from managed env keys.
+
+### Bug Fixes
+
+- Fixed Windows cross-project resume producing a PowerShell-incompatible `cd` command.
+- Fixed spinner and elapsed-time disappearing after terminal resize or window refocus.
+- Fixed skill list overflowing tab bounds inside margin box (constrained height + wrap).
+- Fixed prompt suggestions not responding to mouse hover/click.
+- Fixed provider command race condition and error message missing for third-party users.
+- Fixed computer-use chat workflows taking routine screenshots; now prefers keyboard-driven search-selection in WeChat and similar apps.
+- Fixed auto-compact entering infinite loop when collapse threshold reaches zero.
+- Fixed prompt-cache attaching dynamic attribution header to `systemHash` (stripped).
+- Fixed subagent resume losing cwd context and compact rollback leaving orphaned state.
+- Fixed sync/async write race in sessionStorage transcript writes.
+- Fixed release-notes sidebar layout rebalancing.
+
+### Chores
+
+- README rewritten to 172 lines with feature-first structure, keyboard shortcuts, agent execution guidance, and complete session commands.
+
 ## 1.2.0
 
 ### New Features
