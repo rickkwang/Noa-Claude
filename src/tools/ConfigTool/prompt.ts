@@ -60,7 +60,7 @@ export function generatePrompt(): string {
 ## Configurable settings list
 The following settings are available for you to change:
 
-### Global Settings (stored in ~/.claude-agent/settings.json)
+### Global Settings (stored in ~/.noa/settings.json)
 ${globalSettings.join('\n')}
 
 ### Project Settings (stored in settings.json)

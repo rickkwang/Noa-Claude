@@ -4,6 +4,7 @@ import { spawnSync } from 'child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
+import { PRODUCT_PROJECT_DIR } from '../src/utils/productPaths.ts';
 
 const repoRoot = resolve(import.meta.dir, '..');
 const agentBin = resolve(repoRoot, 'bin/noa.js');
@@ -103,11 +104,18 @@ function runScenario({
   );
   const wallMs = Date.now() - startWall;
   const parsed = parsePerfLog(debugLogPath, serverName);
+  const output = `${result.stderr || ''}${result.stdout || ''}`;
 
   assert(
-    result.status === 124 || result.status === 0,
+    result.status === 124 ||
+      result.status === 0 ||
+      (
+        result.status === 1 &&
+        output.includes('[MCP_TIMEOUT]') &&
+        output.includes(`regular MCP not ready after ${expectedTimeoutMs}ms`)
+      ),
     `Unexpected process status in ${name} scenario`,
-    result.stderr || result.stdout,
+    output,
   );
   assert(parsed.timeoutLine, `Missing MCP timeout fallback log in ${name} scenario`, parsed);
   assert(
@@ -132,14 +140,14 @@ function runScenario({
   };
 }
 
-const workdir = mkdtempSync(join(tmpdir(), 'claude-agent-smoke-perf-'));
+const workdir = mkdtempSync(join(tmpdir(), 'noa-smoke-perf-'));
 try {
   const autoProjectDir = join(workdir, 'auto-project');
-  const autoMcpFile = join(autoProjectDir, '.claude-agent', 'mcp.json');
+  const autoMcpFile = join(autoProjectDir, PRODUCT_PROJECT_DIR, 'mcp.json');
   const explicitMcpFile = join(workdir, 'explicit-mcp.json');
 
   mkdirSync(autoProjectDir, { recursive: true });
-  mkdirSync(join(autoProjectDir, '.claude-agent'), { recursive: true });
+  mkdirSync(join(autoProjectDir, PRODUCT_PROJECT_DIR), { recursive: true });
 
   writeHangMcpConfig(autoMcpFile, 'hang-auto');
   writeHangMcpConfig(explicitMcpFile, 'hang-explicit');

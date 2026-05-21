@@ -67,7 +67,6 @@ import {
   getPrimaryProjectSubdir,
   getProjectSubdirCandidates,
   getUserScopedSubdir,
-  LEGACY_PROJECT_DIR,
   PRODUCT_PROJECT_DIR,
 } from '../utils/productPaths.js'
 import { registerMCPSkillBuilders } from './mcpSkillBuilders.js'
@@ -656,10 +655,7 @@ async function loadSkillsFromCommandsDir(
 export const getSkillDirCommands = memoize(
   async (cwd: string): Promise<Command[]> => {
     const userSkillsDir = getUserScopedSubdir('skills')
-    const managedSkillsDirs = [
-      join(getManagedFilePath(), PRODUCT_PROJECT_DIR, 'skills'),
-      join(getManagedFilePath(), LEGACY_PROJECT_DIR, 'skills'),
-    ]
+    const managedSkillsDirs = [join(getManagedFilePath(), PRODUCT_PROJECT_DIR, 'skills')]
     const projectSkillsDirs = getProjectDirsUpToHome('skills', cwd)
 
     logForDebugging(
@@ -906,7 +902,7 @@ export async function discoverSkillDirsForPaths(
           try {
             await fs.stat(skillDir)
             // Skills dir exists. Before loading, check if the containing dir
-            // is gitignored — blocks e.g. node_modules/pkg/.claude-agent/skills from
+            // is gitignored — blocks e.g. node_modules/pkg/.noa/skills from
             // loading silently. `git check-ignore` handles nested .gitignore,
             // .git/info/exclude, and global gitignore. Fails open outside a
             // git repo (exit 128 → false); the invocation-time trust dialog

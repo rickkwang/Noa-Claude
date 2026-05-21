@@ -7,8 +7,6 @@ import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 import { formatFileSize } from '../../utils/format.js'
 import { getAutoMemPath } from '../../memdir/paths.js'
 import {
-  getLegacyProjectFile,
-  getLegacyProjectSubdir,
   getPrimaryProjectFile,
   getPrimaryProjectSubdir,
 } from '../../utils/productPaths.js'
@@ -96,16 +94,8 @@ function buildTargets(scope: CleanupScope): CleanupTarget[] {
       reason: 'Project share snapshots',
     },
     {
-      path: getLegacyProjectSubdir(projectRoot, 'shares'),
-      reason: 'Legacy project share snapshots',
-    },
-    {
       path: getPrimaryProjectFile(projectRoot, 'progress.md'),
       reason: 'Project progress artifact',
-    },
-    {
-      path: getLegacyProjectFile(projectRoot, 'progress.md'),
-      reason: 'Legacy project progress artifact',
     },
     {
       path: autoMemPath,

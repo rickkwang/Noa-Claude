@@ -23,7 +23,7 @@ export function usageText(): string {
     '  /workflows delete <name>',
     '',
     'Notes:',
-    '  - Project path priority: .claude-agent/workflows > .claude/workflows',
+    '  - Project path: .noa/workflows',
     '  - Use {{var}} placeholders in steps and pass values via k=v',
   ].join('\n')
 }

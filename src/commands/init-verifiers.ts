@@ -52,7 +52,7 @@ Analyze the project to detect what's in different subdirectories. The project ma
 
 3. **Installed verification packages** (for web apps)
    - Check if Playwright is installed (look in package.json dependencies/devDependencies)
-   - Check MCP configuration (.claude-agent/mcp.json) for browser automation tools:
+   - Check MCP configuration (.noa/mcp.json) for browser automation tools:
      - Playwright MCP server
      - Chrome DevTools MCP server
      - Claude Chrome Extension MCP (browser-use via Claude's Chrome extension)
@@ -84,11 +84,11 @@ Based on what was detected in Phase 1, help the user set up appropriate verifica
 
 4. **If user chooses Chrome DevTools MCP or Claude Chrome Extension**:
    - These require MCP server configuration rather than package installation
-   - Ask if they want you to add the MCP server configuration to .claude-agent/mcp.json
+   - Ask if they want you to add the MCP server configuration to .noa/mcp.json
    - For Claude Chrome Extension, inform them they need the extension installed from the Chrome Web Store
 
 5. **MCP Server Setup** (if applicable):
-   - If user selected an MCP-based option, configure the appropriate entry in .claude-agent/mcp.json
+   - If user selected an MCP-based option, configure the appropriate entry in .noa/mcp.json
    - Update the verifier skill's allowed-tools to use the appropriate mcp__* tools
 
 ### For CLI Tools
@@ -163,9 +163,9 @@ Based on the areas detected in Phase 1, you may need to create multiple verifier
 
 ## Phase 4: Generate Verifier Skill
 
-**All verifier skills are created in the project root's \`.claude-agent/skills/\` directory.** This is the preferred product path and ensures they are automatically loaded when the agent runs in the project.
+**All verifier skills are created in the project root's \`.noa/skills/\` directory.** This is the preferred product path and ensures they are automatically loaded when the agent runs in the project.
 
-Write the skill file to \`.claude-agent/skills/<verifier-name>/SKILL.md\`.
+Write the skill file to \`.noa/skills/<verifier-name>/SKILL.md\`.
 
 ### Skill Template Structure
 
@@ -249,7 +249,7 @@ allowed-tools:
 ## Phase 5: Confirm Creation
 
 After writing the skill file(s), inform the user:
-1. Where each skill was created (always in \`.claude-agent/skills/\` by default)
+1. Where each skill was created (always in \`.noa/skills/\` by default)
 2. How the Verify agent will discover them — the folder name must contain "verifier" (case-insensitive) for automatic discovery
 3. That they can edit the skills to customize them
 4. That they can run /init-verifiers again to add more verifiers for other areas

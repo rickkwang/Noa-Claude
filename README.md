@@ -45,11 +45,11 @@ noa update          # prompts before re-running the installer
 noa update --yes    # non-interactive
 ```
 
-Uninstall (removes `~/.local/bin/noa` symlink and `~/.claude-agent/install/`, scrubs installer-created shell aliases; config is preserved):
+Uninstall (removes `~/.local/bin/noa` symlink and `~/.noa/install/`, scrubs installer-created shell aliases; config is preserved):
 
 ```bash
 noa uninstall
-noa uninstall --purge   # ALSO removes ~/.claude-agent (settings, plugins, history)
+noa uninstall --purge   # ALSO removes ~/.noa (settings, plugins, history)
 noa uninstall --yes     # non-interactive
 ```
 
@@ -67,10 +67,10 @@ If `~/.local/bin` is not on your `PATH`, the installer prints the line to add �
 - `/rename` — Rename the current session
 - `/tag` — Tag the current session for quick lookup
 - `/summary` — Generate structured session summaries
-- `/share` — Export share snapshots under `.claude-agent/shares`
+- `/share` — Export share snapshots under `.noa/shares`
 
 **Provider routing**
-- `/provider` — Switch between saved provider profiles (JSON-based, stored in `~/.claude-agent/provider-profiles.json`)
+- `/provider` — Switch between saved provider profiles (JSON-based, stored in `~/.noa/provider-profiles.json`)
 - `/model` — Switch model or list available models
 - `/login` / `/logout` — Authenticate with your provider
 

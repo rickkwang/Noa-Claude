@@ -245,7 +245,7 @@ export function getAllBaseTools(): Tools {
     ListMcpResourcesTool,
     ReadMcpResourceTool,
     // Self-contained macOS desktop control. Enabled by default on darwin;
-    // set NOA_COMPUTER_USE=0 in ~/.claude-agent/settings.json env to disable.
+    // set NOA_COMPUTER_USE=0 in ~/.noa/settings.json env to disable.
     ...(process.platform === 'darwin' &&
     !['0', 'false', 'no'].includes(
       (process.env.NOA_COMPUTER_USE ?? '').toLowerCase(),

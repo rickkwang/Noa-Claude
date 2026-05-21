@@ -8,10 +8,8 @@ import { join, normalize, posix, sep } from 'path'
 import { hasAutoMemPathOverride, isAutoMemPath } from 'src/memdir/paths.js'
 import { isAgentMemoryPath } from 'src/tools/AgentTool/agentMemory.js'
 import {
-  CLAUDE_FOLDER_PERMISSION_PATTERN,
   FILE_EDIT_TOOL_NAME,
   GLOBAL_PRODUCT_CONFIG_FOLDER_PERMISSION_PATTERN,
-  GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN,
   PRODUCT_CONFIG_FOLDER_PERMISSION_PATTERN,
 } from 'src/tools/FileEditTool/constants.js'
 import type { z } from 'zod/v4'
@@ -47,9 +45,9 @@ import {
   getProjectMcpPathCandidates,
   getProjectSettingsRelativePathCandidates,
   getProjectSubdirCandidates,
-  LEGACY_PROJECT_DIR,
   PRODUCT_PROJECT_DIR,
 } from '../productPaths.js'
+import { PRODUCT_HOME_DIR } from '../productPathConstants.js'
 import type {
   PermissionDecision,
   PermissionResult,
@@ -75,8 +73,7 @@ export const DANGEROUS_FILES = [
   '.profile',
   '.ripgreprc',
   '.mcp.json',
-  '.claude-agent/mcp.json',
-  '.claude.json',
+  '.noa/mcp.json',
 ] as const
 
 /**
@@ -87,8 +84,7 @@ export const DANGEROUS_DIRECTORIES = [
   '.git',
   '.vscode',
   '.idea',
-  '.claude',
-  '.claude-agent',
+  '.noa',
 ] as const
 
 /**
@@ -109,7 +105,7 @@ export function normalizeCaseForComparison(path: string): string {
  * return the skill name and a session-allow pattern scoped to just that skill.
  * Used to offer a narrower "allow edits to this skill only" option in the
  * permission dialog and SDK suggestions, so iterating on one skill doesn't
- * require granting session access to all of .claude/ (settings.json, hooks/, etc.).
+ * require granting session access to all of .noa/ (settings.json, hooks/, etc.).
  */
 export function getClaudeSkillScope(
   filePath: string,
@@ -123,12 +119,8 @@ export function getClaudeSkillScope(
       prefix: `/${PRODUCT_PROJECT_DIR}/skills/`,
     },
     {
-      dir: expandPath(join(getOriginalCwd(), LEGACY_PROJECT_DIR, 'skills')),
-      prefix: `/${LEGACY_PROJECT_DIR}/skills/`,
-    },
-    {
       dir: expandPath(join(getClaudeConfigHomeDir(), 'skills')),
-      prefix: '~/.claude-agent/skills/',
+      prefix: `~/${PRODUCT_HOME_DIR}/skills/`,
     },
   ]
 
@@ -162,7 +154,7 @@ export function getClaudeSkillScope(
         // Reject glob metacharacters. skillName is interpolated into a
         // gitignore pattern consumed by ignore().add() in matchingRuleForInput
         // at step 1.6. A directory literally named '*' (valid on POSIX) would
-        // produce '/.claude/skills/*/**' which matches ALL skills. Return null
+        // produce '/.noa/skills/*/**' which matches ALL skills. Return null
         // to fall through to generateSuggestions() instead.
         if (/[*?[\]]/.test(skillName)) return null
         return { skillName, pattern: prefix + skillName + '/**' }
@@ -216,11 +208,11 @@ function getSettingsPaths(): string[] {
 
 export function isClaudeSettingsPath(filePath: string): boolean {
   // SECURITY: Normalize path structure first to prevent bypass via redundant ./
-  // sequences like `./.claude/./settings.json` which would evade the endsWith() check
+  // sequences like `./.noa/./settings.json` which would evade the endsWith() check
   const expandedPath = expandPath(filePath)
 
   // Normalize for case-insensitive comparison to prevent bypassing security
-  // with paths like .cLauDe/Settings.locaL.json
+  // with paths like .nOa/Settings.locaL.json
   const normalizedPath = normalizeCaseForComparison(expandedPath)
 
   // Use platform separator so endsWith checks work on both Unix (/) and Windows (\)
@@ -306,7 +298,7 @@ function isSessionMemoryPath(absolutePath: string): boolean {
 
 /**
  * Check if file is within the current project's directory.
- * Path format: ~/.claude/projects/{sanitized-cwd}/...
+ * Path format: ~/.noa/projects/{sanitized-cwd}/...
  */
 function isProjectDirPath(absolutePath: string): boolean {
   const projectDir = getProjectDir(getCwd())
@@ -484,7 +476,7 @@ function isDangerousFilePathToAutoEdit(path: string): boolean {
       // user-created dangerous directories. Skip the product/legacy config
       // root segment when it's followed by 'worktrees'. Any nested config
       // directories within the worktree remain blocked.
-      if (dir === '.claude' || dir === '.claude-agent') {
+      if (dir === '.noa') {
         const nextSegment = pathSegments[i + 1]
         if (
           nextSegment &&
@@ -634,7 +626,7 @@ function hasSuspiciousWindowsPathPattern(path: string): boolean {
  *
  * This function performs comprehensive safety checks including:
  * - Suspicious Windows path patterns (NTFS streams, 8.3 names, long path prefixes, etc.)
- * - Claude config files (.claude/settings.json, .claude/commands/, .claude/agents/)
+ * - Noa config files (.noa/settings.json, .noa/commands/, .noa/agents/)
  * - MCP CLI state files (managed internally by Claude Code)
  * - Dangerous files (.bashrc, .gitconfig, .git/, .vscode/, .idea/, etc.)
  *
@@ -924,7 +916,7 @@ function patternWithRoot(
       root: homedir().normalize('NFC'),
     }
   } else if (pattern.startsWith(DIR_SEP)) {
-    // Patterns starting with / resolve relative to the directory where settings are stored (without .claude/)
+    // Patterns starting with / resolve relative to the directory where settings are stored (without .noa/)
     return {
       relativePattern: pattern,
       root: rootPathForSource(source),
@@ -1276,16 +1268,16 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
     return internalEditResult
   }
 
-  // 1.6. Check for .claude/** allow rules BEFORE safety checks
-  // This allows session-level permissions to bypass the safety blocks for .claude/
+  // 1.6. Check for .noa/** allow rules BEFORE safety checks
+  // This allows session-level permissions to bypass the safety blocks for .noa/
   // We only allow this for session-level rules to prevent users from accidentally
-  // permanently granting broad access to their .claude/ folder.
+  // permanently granting broad access to their .noa/ folder.
   //
   // matchingRuleForInput returns the first match across all sources. If the user
-  // also has a broader Edit(.claude) rule in userSettings (e.g. from sandbox
+  // also has a broader Edit(.noa) rule in userSettings (e.g. from sandbox
   // write-allow conversion), that rule would be found first and its source check
   // below would fail. Scope the search to session-only rules so the dialog's
-  // "allow Claude to edit its own settings for this session" option actually works.
+  // "allow Noa to edit its own settings for this session" option actually works.
   const claudeFolderAllowRule = matchingRuleForInput(
     path,
     {
@@ -1298,25 +1290,21 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
     'allow',
   )
   if (claudeFolderAllowRule) {
-    // Check if this rule is scoped under .claude/ (project or global).
-    // Accepts both the broad patterns ('/.claude/**', '~/.claude/**') and
-    // narrowed ones like '/.claude/skills/my-skill/**' so users can grant
+    // Check if this rule is scoped under .noa/ (project or global).
+    // Accepts both the broad patterns ('/.noa/**', '~/.noa/**') and
+    // narrowed ones like '/.noa/skills/my-skill/**' so users can grant
     // session access to a single skill without also exposing settings.json
     // or hooks/. The rule already matched the path via matchingRuleForInput;
     // this is an additional scope check. Reject '..' to prevent a rule like
-    // '/.claude/../**' from leaking this bypass outside .claude/.
+    // '/.noa/../**' from leaking this bypass outside .noa/.
     const ruleContent = claudeFolderAllowRule.ruleValue.ruleContent
     if (
       ruleContent &&
       (ruleContent.startsWith(
         PRODUCT_CONFIG_FOLDER_PERMISSION_PATTERN.slice(0, -2),
       ) ||
-        ruleContent.startsWith(CLAUDE_FOLDER_PERMISSION_PATTERN.slice(0, -2)) ||
         ruleContent.startsWith(
           GLOBAL_PRODUCT_CONFIG_FOLDER_PERMISSION_PATTERN.slice(0, -2),
-        ) ||
-        ruleContent.startsWith(
-          GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN.slice(0, -2),
         )) &&
       !ruleContent.includes('..') &&
       ruleContent.endsWith('/**')
@@ -1337,9 +1325,9 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
   // permission to edit protected files
   const safetyCheck = checkPathSafetyForAutoEdit(path, pathsToCheck)
   if (!safetyCheck.safe) {
-    // SDK suggestion: if under .claude/skills/{name}/, emit the narrowed
+    // SDK suggestion: if under .noa/skills/{name}/, emit the narrowed
     // session-scoped addRules that step 1.6 will honor on the next call.
-    // Everything else (.claude/settings.json, .git/, .vscode/, .idea/) falls
+    // Everything else (.noa/settings.json, .git/, .vscode/, .idea/) falls
     // back to generateSuggestions — its setMode suggestion doesn't bypass
     // this check, but preserving it avoids a surprising empty array.
     const skillScope = getClaudeSkillScope(path)
@@ -1544,7 +1532,7 @@ export function checkEditableInternalPath(
   // Template job's own directory. Env key hardcoded (vs importing JOB_ENV_KEY
   // from jobs/state) so tree-shaking eliminates the string from external
   // builds — spawn.test.ts asserts the string matches. Hijack guard: the env
-  // var value must itself resolve under ~/.claude/jobs/. Symlink guard: every
+  // var value must itself resolve under ~/.noa/jobs/. Symlink guard: every
   // resolved form of the target (lexical + symlink chain) must fall under some
   // resolved form of the job dir, so a symlink inside the job dir pointing at
   // e.g. ~/.ssh/authorized_keys does not get a free write. Resolving both
@@ -1558,7 +1546,7 @@ export function checkEditableInternalPath(
       const jobsRootForms = getPathsForPermissionCheck(jobsRoot).map(normalize)
       // Hijack guard: every resolved form of the job dir must sit under
       // some resolved form of the jobs root. Resolving both sides handles
-      // the case where ~/.claude is a symlink (e.g. to /data/claude-config).
+      // the case where ~/.noa is a symlink (e.g. to /data/noa-config).
       const isUnderJobsRoot = jobDirForms.every(jd =>
         jobsRootForms.some(jr => jd.startsWith(jr + sep)),
       )
@@ -1597,7 +1585,7 @@ export function checkEditableInternalPath(
 
   // Memdir directory (persistent memory for cross-session learning)
   // This pre-safety-check carve-out exists because the default path is under
-  // ~/.claude/, which is in DANGEROUS_DIRECTORIES. The CLAUDE_COWORK_MEMORY_PATH_OVERRIDE
+  // ~/.noa/, which is in DANGEROUS_DIRECTORIES. The CLAUDE_COWORK_MEMORY_PATH_OVERRIDE
   // override is an arbitrary caller-designated directory with no such conflict,
   // so it gets NO special permission treatment here — writes go through normal
   // permission flow (step 5 → ask). SDK callers who want silent memory should
@@ -1619,7 +1607,7 @@ export function checkEditableInternalPath(
   // project config DANGEROUS_DIRECTORIES check prompts for it, which in SDK mode
   // cascades: user clicks "Always allow" → setMode:acceptEdits suggestion
   // applied → silent downgrade from auto mode. Matches the project-level
-  // config directories only (not ~/.claude-agent/) since launch.json is
+  // config directories only (not ~/.noa/) since launch.json is
   // per-project.
   if (
     getProjectLaunchConfigCandidates(getOriginalCwd()).some(
@@ -1666,7 +1654,7 @@ export function checkReadableInternalPath(
   }
 
   // Project directory (for reading past session memories)
-  // Path format: ~/.claude/projects/{sanitized-cwd}/...
+  // Path format: ~/.noa/projects/{sanitized-cwd}/...
   if (isProjectDirPath(normalizedPath)) {
     return {
       behavior: 'allow',
@@ -1761,7 +1749,7 @@ export function checkReadableInternalPath(
     }
   }
 
-  // Tasks directory (~/.claude-agent/tasks/) for swarm task coordination
+  // Tasks directory (~/.noa/tasks/) for swarm task coordination
   const tasksDir = join(getClaudeConfigHomeDir(), 'tasks') + sep
   if (
     normalizedPath === tasksDir.slice(0, -1) ||
@@ -1777,7 +1765,7 @@ export function checkReadableInternalPath(
     }
   }
 
-  // Teams directory (~/.claude-agent/teams/) for swarm coordination
+  // Teams directory (~/.noa/teams/) for swarm coordination
   const teamsReadDir = join(getClaudeConfigHomeDir(), 'teams') + sep
   if (
     normalizedPath === teamsReadDir.slice(0, -1) ||

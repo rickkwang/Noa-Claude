@@ -3,7 +3,7 @@
  * Files are loaded in the following order:
  *
  * 1. Managed memory (eg. /etc/claude-code/CLAUDE.md) - Global instructions for all users
- * 2. User memory (~/.claude-agent/CLAUDE.md) - Private global instructions for all projects
+ * 2. User memory (~/.noa/CLAUDE.md) - Private global instructions for all projects
  * 3. Project memory (AGENTS.md and CLAUDE.md, plus rules/*.md in project roots) - Instructions checked into the codebase
  * 4. Local memory (CLAUDE.local.md in project roots) - Private project-specific instructions
  *
@@ -704,7 +704,7 @@ export async function processMemoryFile(
 }
 
 /**
- * Processes all .md files in the .claude-agent/rules/ directory and its subdirectories
+ * Processes all .md files in the .noa/rules/ directory and its subdirectories
  * @param rulesDir The path to the rules directory
  * @param type Type of memory file (User, Project, Local)
  * @param processedPaths Set of already processed file paths
@@ -829,7 +829,7 @@ export const getMemoryFiles = memoize(
         includeExternal,
       )),
     )
-    // Process Managed .claude-agent/rules/*.md files
+    // Process Managed .noa/rules/*.md files
     const managedClaudeRulesDir = getManagedClaudeRulesDir()
     result.push(
       ...(await processMdRules({
@@ -852,7 +852,7 @@ export const getMemoryFiles = memoize(
           true, // User memory can always include external files
         )),
       )
-      // Process User ~/.claude-agent/rules/*.md files
+      // Process User ~/.noa/rules/*.md files
       const userClaudeRulesDir = getUserClaudeRulesDir()
       result.push(
         ...(await processMdRules({
@@ -876,9 +876,9 @@ export const getMemoryFiles = memoize(
     }
 
     // When running from a git worktree nested inside its main repo (e.g.,
-    // .claude-agent/worktrees/<name>/ from `claude -w`), the upward walk passes
+    // .noa/worktrees/<name>/ from `claude -w`), the upward walk passes
     // through both the worktree root and the main repo root. Both contain
-    // checked-in files like AGENTS.md / CLAUDE.md and .claude-agent/rules/*.md, so
+    // checked-in files like AGENTS.md / CLAUDE.md and .noa/rules/*.md, so
     // the same content gets loaded twice. Skip Project-type (checked-in)
     // files from directories above the worktree but within the main repo —
     // the worktree already has its own checkout. CLAUDE.local.md is
@@ -1207,7 +1207,7 @@ export async function getManagedAndUserConditionalRules(
 ): Promise<MemoryFileInfo[]> {
   const result: MemoryFileInfo[] = []
 
-  // Process Managed conditional .claude-agent/rules/*.md files
+  // Process Managed conditional .noa/rules/*.md files
   const managedClaudeRulesDir = getManagedClaudeRulesDir()
   result.push(
     ...(await processConditionedMdRules(
@@ -1220,7 +1220,7 @@ export async function getManagedAndUserConditionalRules(
   )
 
   if (isSettingSourceEnabled('userSettings')) {
-    // Process User conditional ~/.claude-agent/rules/*.md files
+    // Process User conditional ~/.noa/rules/*.md files
     const userClaudeRulesDir = getUserClaudeRulesDir()
     result.push(
       ...(await processConditionedMdRules(
@@ -1336,7 +1336,7 @@ export async function getConditionalRulesForCwdLevelDirectory(
 }
 
 /**
- * Processes all .md files in the .claude-agent/rules/ directory and its subdirectories,
+ * Processes all .md files in the .noa/rules/ directory and its subdirectories,
  * filtering to only include files with frontmatter paths that match the target path
  * @param targetPath The file path to match against frontmatter glob patterns
  * @param rulesDir The path to the rules directory
@@ -1424,7 +1424,7 @@ export async function shouldShowClaudeMdExternalIncludesWarning(): Promise<boole
 }
 
 /**
- * Check if a file path is a memory file (CLAUDE.md, CLAUDE.local.md, or .claude-agent/rules/*.md)
+ * Check if a file path is a memory file (CLAUDE.md, CLAUDE.local.md, or .noa/rules/*.md)
  */
 export function isMemoryFilePath(filePath: string): boolean {
   const name = basename(filePath)
@@ -1434,7 +1434,7 @@ export function isMemoryFilePath(filePath: string): boolean {
     return true
   }
 
-  // .md files in .claude-agent/rules/ directories
+  // .md files in .noa/rules/ directories
   if (
     name.endsWith('.md') &&
     filePath.includes(`${sep}.claude${sep}rules${sep}`)

@@ -8,6 +8,7 @@ import { McpParsingWarnings } from 'src/components/mcp/McpParsingWarnings.js';
 import { getModelMaxOutputTokens } from 'src/utils/context.js';
 import { getMainLoopModel } from '../utils/model/model.js';
 import { getClaudeConfigHomeDir } from 'src/utils/envUtils.js';
+import { PRODUCT_PROJECT_DIR } from 'src/utils/productPathConstants.js';
 import type { SettingSource } from 'src/utils/settings/constants.js';
 import { getOriginalCwd } from '../bootstrap/state.js';
 import type { CommandResultDisplay } from '../commands.js';
@@ -170,7 +171,7 @@ export function Doctor(t0) {
       getDoctorDiagnostic().then(setDiagnostic);
       (async () => {
         const userAgentsDir = join(getClaudeConfigHomeDir(), "agents");
-        const projectAgentsDir = join(getOriginalCwd(), ".claude", "agents");
+        const projectAgentsDir = join(getOriginalCwd(), PRODUCT_PROJECT_DIR, "agents");
         const {
           activeAgents,
           allAgents,

@@ -28,7 +28,7 @@ type SyncedMeta = z.infer<ReturnType<typeof syncedMetaSchema>>
 
 /**
  * Returns the path to the snapshot directory for an agent in the current project.
- * e.g., <cwd>/.claude-agent/agent-memory-snapshots/<agentType>/
+ * e.g., <cwd>/.noa/agent-memory-snapshots/<agentType>/
  */
 export function getSnapshotDirForAgent(agentType: string): string {
   return join(getPrimaryProjectSubdir(getCwd(), SNAPSHOT_BASE), agentType)

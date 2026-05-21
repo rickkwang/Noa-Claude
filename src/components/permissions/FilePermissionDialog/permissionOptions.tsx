@@ -39,7 +39,7 @@ export type PermissionOption = {
   type: 'accept-once';
 } | {
   type: 'accept-session';
-  scope?: 'claude-folder' | 'global-claude-folder';
+  scope?: 'config-folder' | 'global-config-folder';
 } | {
   type: 'reject';
 };
@@ -102,10 +102,10 @@ export function getFilePermissionOptions({
   if ((inClaudeFolder || inGlobalClaudeFolder) && operationType !== 'read') {
     options.push({
       label: 'Yes, and allow the agent to edit its own settings for this session',
-      value: 'yes-claude-folder',
+      value: 'yes-config-folder',
       option: {
         type: 'accept-session',
-        scope: inGlobalClaudeFolder ? 'global-claude-folder' : 'claude-folder'
+        scope: inGlobalClaudeFolder ? 'global-config-folder' : 'config-folder'
       }
     });
   } else {

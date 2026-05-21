@@ -174,7 +174,7 @@ async function getWatchablePaths(): Promise<string[]> {
   const fs = getFsImplementation()
   const paths: string[] = []
 
-  // User skills directory (~/.claude-agent/skills)
+  // User skills directory (~/.noa/skills)
   const userSkillsPath = getSkillsPath('userSettings', 'skills')
   if (userSkillsPath) {
     try {
@@ -185,7 +185,7 @@ async function getWatchablePaths(): Promise<string[]> {
     }
   }
 
-  // User commands directory (~/.claude-agent/commands)
+  // User commands directory (~/.noa/commands)
   const userCommandsPath = getSkillsPath('userSettings', 'commands')
   if (userCommandsPath) {
     try {
@@ -196,7 +196,7 @@ async function getWatchablePaths(): Promise<string[]> {
     }
   }
 
-  // Project skills directory (.claude-agent/skills)
+  // Project skills directory (.noa/skills)
   const projectSkillsPath = getSkillsPath('projectSettings', 'skills')
   if (projectSkillsPath) {
     try {
@@ -209,7 +209,7 @@ async function getWatchablePaths(): Promise<string[]> {
     }
   }
 
-  // Project commands directory (.claude-agent/commands)
+  // Project commands directory (.noa/commands)
   const projectCommandsPath = getSkillsPath('projectSettings', 'commands')
   if (projectCommandsPath) {
     try {

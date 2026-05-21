@@ -43,7 +43,7 @@ function createRecorder() {
 }
 
 const repoRoot = resolve(import.meta.dir, '..');
-const tempRoot = mkdtempSync(join(tmpdir(), 'claude-agent-smoke-features-'));
+const tempRoot = mkdtempSync(join(tmpdir(), 'noa-smoke-features-'));
 process.env.NODE_ENV = 'test';
 process.env.CLAUDE_CONFIG_DIR = join(tempRoot, 'config');
 process.env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || 'test-smoke-key';
@@ -157,28 +157,12 @@ async function runWorkflowSmoke() {
     recorder.getLastCall(),
   );
 
-  const legacyDir = productPaths.getLegacyProjectSubdir(projectDir, 'workflows');
-  mkdirSync(legacyDir, { recursive: true });
-  writeFileSync(
-    join(legacyDir, 'deploy.json'),
-    `${JSON.stringify(
-      {
-        name: 'deploy',
-        steps: ['legacy step should lose'],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      null,
-      2,
-    )}\n`,
-    'utf8',
-  );
   const loaded = await workflowShared.loadAllWorkflows(projectDir);
   const deploy = loaded.find(item => item.name === 'deploy');
   assert(deploy, 'Workflow loader did not return deploy workflow', loaded);
   assert(
     deploy.steps[0] === 'run tests',
-    'Product workflow did not win over legacy duplicate',
+    'Workflow loader did not read the .noa workflow payload',
     deploy,
   );
 

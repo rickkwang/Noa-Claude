@@ -1,7 +1,7 @@
 // @ts-nocheck
 /**
  * Keybindings template generator.
- * Generates a well-documented template file for ~/.claude-agent/keybindings.json
+ * Generates a well-documented template file for ~/.noa/keybindings.json
  */
 
 import { jsonStringify } from '../utils/slowOperations.js'

@@ -66,7 +66,7 @@ export type MaxVersionConfig = {
  *
  * Versioning approach:
  * 1. For version requirements/compatibility (assertMinVersion), we use semver comparison that ignores build metadata
- * 2. For updates ('claude update'), we use exact string comparison to detect any change, including SHA
+ * 2. For updates ('noa update'), we use exact string comparison to detect any change, including SHA
  *    - This ensures users always get the latest build, even when only the SHA changes
  *    - The UI clearly shows both versions including build metadata
  *

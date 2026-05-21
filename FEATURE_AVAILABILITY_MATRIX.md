@@ -24,7 +24,7 @@ Last updated: 2026-04-13
 ## Core Product Chains
 | Chain | Status | Notes |
 |---|---|---|
-| CLI startup (`claude-agent`, `claude-code`) | Available | Stable, isolated product directory defaults. |
+| CLI startup (`noa`) | Available | Stable, isolated product directory defaults. |
 | Non-interactive (`--print`) | Available | Regular MCP now uses bounded wait + background continue. |
 | Interactive REPL | Available | Mainline usable; some historical complexity remains. |
 | MiniMax Anthropic-compatible backend | Available | Default product path and launcher checks in place. |
@@ -49,7 +49,7 @@ Last updated: 2026-04-13
 | `/fork` | Available | Creates a resumable fork of the current conversation. |
 | `/workflows` | Available | Supports local `list/create/run/delete` and project workflow discovery. |
 | `/summary` | Available | Produces structured short or detailed session summaries. |
-| `/share` | Available | Exports local session share snapshots under `.claude-agent/shares`. |
+| `/share` | Available | Exports local session share snapshots under `.noa/shares`. |
 
 ## Slash Commands: Build-Excluded
 | Command | Status |

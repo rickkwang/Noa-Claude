@@ -1165,7 +1165,7 @@ export const AgentDefinitionSchema = lazySchema(() =>
         .enum(['user', 'project', 'local'])
         .optional()
         .describe(
-          "Scope for auto-loading agent memory files. 'user' - ~/.claude-agent/agent-memory/<agentType>/, 'project' - .claude-agent/agent-memory/<agentType>/, 'local' - .claude-agent/agent-memory-local/<agentType>/",
+          "Scope for auto-loading agent memory files. 'user' - ~/.noa/agent-memory/<agentType>/, 'project' - .noa/agent-memory/<agentType>/, 'local' - .noa/agent-memory-local/<agentType>/",
         ),
       effort: z
         .union([z.enum(['low', 'medium', 'high', 'xhigh', 'max']), z.number().int()])
@@ -1193,9 +1193,9 @@ export const SettingSourceSchema = lazySchema(() =>
     .enum(['user', 'project', 'local'])
     .describe(
       'Source for loading filesystem-based settings. ' +
-        "'user' - Global user settings (~/.claude-agent/settings.json). " +
-        "'project' - Project settings (.claude-agent/settings.json). " +
-        "'local' - Local settings (.claude-agent/settings.local.json).",
+        "'user' - Global user settings (~/.noa/settings.json). " +
+        "'project' - Project settings (.noa/settings.json). " +
+        "'local' - Local settings (.noa/settings.local.json).",
     ),
 )
 

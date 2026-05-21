@@ -124,7 +124,7 @@ export const DIRS_EXIST_GUIDANCE =
  * (once per session via systemPromptSection cache) so the model can always
  * write without checking existence first. FsOperations.mkdir is recursive
  * by default and already swallows EEXIST, so the full parent chain
- * (~/.claude-agent/projects/<slug>/memory/) is created in one call with no
+ * (~/.noa/projects/<slug>/memory/) is created in one call with no
  * try/catch needed for the happy path.
  */
 export async function ensureMemoryDirExists(memoryDir: string): Promise<void> {

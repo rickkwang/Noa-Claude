@@ -22,9 +22,9 @@ Choose the appropriate file based on scope:
 
 | File | Scope | Git | Use For |
 |------|-------|-----|---------|
-| \`~/.claude-agent/settings.json\` | Global | N/A | Personal preferences for all projects |
-| \`.claude-agent/settings.json\` | Project | Commit | Team-wide hooks, permissions, plugins |
-| \`.claude-agent/settings.local.json\` | Project | Gitignore | Personal overrides for this project |
+| \`~/.noa/settings.json\` | Global | N/A | Personal preferences for all projects |
+| \`.noa/settings.json\` | Project | Commit | Team-wide hooks, permissions, plugins |
+| \`.noa/settings.local.json\` | Project | Gitignore | Personal overrides for this project |
 
 Settings load in order: user → project → local (later overrides earlier).
 
@@ -34,7 +34,7 @@ Settings load in order: user → project → local (later overrides earlier).
 \`\`\`json
 {
   "permissions": {
-    "allow": ["Bash(npm:*)", "Edit(.claude-agent)", "Read"],
+    "allow": ["Bash(npm:*)", "Edit(.noa)", "Read"],
     "deny": ["Bash(rm -rf:*)"],
     "ask": ["Write(/etc/*)"],
     "defaultMode": "default" | "plan" | "acceptEdits" | "dontAsk",
@@ -239,7 +239,7 @@ Hooks can return JSON to control behavior:
       "matcher": "Bash",
       "hooks": [{
         "type": "command",
-        "command": "jq -r '.tool_input.command' >> ~/.claude-agent/bash-log.txt"
+        "command": "jq -r '.tool_input.command' >> ~/.noa/bash-log.txt"
       }]
     }]
   }
@@ -289,7 +289,7 @@ Given an event, matcher, target file, and desired behavior, follow this flow. Ea
 
    Check exit code AND side effect (file actually formatted, test actually ran). If it fails you get a real error — fix (wrong package manager? tool not installed? jq path wrong?) and retest. Once it works, wrap with \`2>/dev/null || true\` (unless the user wants a blocking check).
 
-4. **Write the JSON.** Merge into the target file (schema shape in the "Hook Structure" section above). If this creates \`.claude-agent/settings.local.json\` for the first time, add it to .gitignore — the Write tool doesn't auto-gitignore it.
+4. **Write the JSON.** Merge into the target file (schema shape in the "Hook Structure" section above). If this creates \`.noa/settings.local.json\` for the first time, add it to .gitignore — the Write tool doesn't auto-gitignore it.
 
 5. **Validate syntax + schema in one shot:**
 
@@ -303,7 +303,7 @@ Given an event, matcher, target file, and desired behavior, follow this flow. Ea
 
    **Always clean up** — revert the violation, strip the sentinel prefix — whether the proof passed or failed.
 
-   **If proof fails but pipe-test passed and \`jq -e\` passed**: the settings watcher isn't watching \`.claude-agent/\` — it only watches directories that had a settings file when this session started. The hook is written correctly. Tell the user to open \`/hooks\` once (reloads config) or restart — you can't do this yourself; \`/hooks\` is a user UI menu and opening it ends this turn.
+   **If proof fails but pipe-test passed and \`jq -e\` passed**: the settings watcher isn't watching \`.noa/\` — it only watches directories that had a settings file when this session started. The hook is written correctly. Tell the user to open \`/hooks\` once (reloads config) or restart — you can't do this yourself; \`/hooks\` is a user UI menu and opening it ends this turn.
 
 7. **Handoff.** Tell the user the hook is live (or needs \`/hooks\`/restart per the watcher caveat). Point them at \`/hooks\` to review, edit, or disable it later. The UI only shows "Ran N hooks" if a hook errors or is slow — silent success is invisible by design.
 `
@@ -392,7 +392,7 @@ ${HOOK_VERIFICATION_FLOW}
 User: "Format my code after Claude writes it"
 
 1. **Clarify**: Which formatter? (prettier, gofmt, etc.)
-2. **Read**: \`.claude-agent/settings.json\` (or create if missing)
+2. **Read**: \`.noa/settings.json\` (or create if missing)
 3. **Merge**: Add to existing hooks, don't replace
 4. **Result**:
 \`\`\`json
@@ -438,7 +438,7 @@ User: "Set DEBUG=true"
 ## Troubleshooting Hooks
 
 If a hook isn't running:
-1. **Check the settings file** - Read ~/.claude-agent/settings.json or .claude-agent/settings.json
+1. **Check the settings file** - Read ~/.noa/settings.json or .noa/settings.json
 2. **Verify JSON syntax** - Invalid JSON silently fails
 3. **Check the matcher** - Does it match the tool name? (e.g., "Bash", "Write", "Edit")
 4. **Check hook type** - Is it "command", "prompt", or "agent"?

@@ -61,7 +61,7 @@ REMEMBER: Only update if there is substantial new information. The Magic Doc hea
 
 /**
  * Load custom Magic Docs prompt from file if it exists
- * Custom prompts can be placed at ~/.claude-agent/magic-docs/prompt.md
+ * Custom prompts can be placed at ~/.noa/magic-docs/prompt.md
  * Use {{variableName}} syntax for variable substitution (e.g., {{docContents}}, {{docPath}}, {{docTitle}})
  */
 async function loadMagicDocsPrompt(): Promise<string> {

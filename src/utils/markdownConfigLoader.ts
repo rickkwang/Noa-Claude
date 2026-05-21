@@ -19,11 +19,11 @@ import { parseFrontmatter } from './frontmatterParser.js'
 import { findCanonicalGitRoot, findGitRoot } from './git.js'
 import { parseToolListFromCLI } from './permissions/permissionSetup.js'
 import {
-  getLegacyProjectSubdir,
   getPrimaryProjectSubdir,
   getProjectSubdirCandidates,
   getUserScopedSubdir,
 } from './productPaths.js'
+import { PRODUCT_PROJECT_DIR } from './productPathConstants.js'
 import { ripGrep } from './ripgrep.js'
 import {
   isSettingSourceEnabled,
@@ -184,14 +184,14 @@ async function getFileIdentity(filePath: string): Promise<string | null> {
  * Normally the walk stops at the nearest `.git` above `cwd`. But if the Bash
  * tool has cd'd into a nested git repo inside the session's project (submodule,
  * vendored dep with its own `.git`), that nested root isn't the right boundary —
- * stopping there makes the parent project's `.claude-agent/` unreachable (#31905).
+ * stopping there makes the parent project's `.noa/` unreachable (#31905).
  *
  * The boundary is widened to the session's git root only when BOTH:
  *   - the nearest `.git` from cwd belongs to a *different* canonical repo
  *     (submodule/vendored clone — not a worktree, which resolves back to main)
  *   - that nearest `.git` sits *inside* the session's project tree
  *
- * Worktrees (under `.claude-agent/worktrees/`) stay on the old behavior: their `.git`
+ * Worktrees (under `.noa/worktrees/`) stay on the old behavior: their `.git`
  * file is the stop, and loadMarkdownFilesForSubdir's fallback adds the main-repo
  * copy only when the worktree lacks one.
  */
@@ -228,15 +228,15 @@ function resolveStopBoundary(cwd: string): string | null {
 
 /**
  * Traverses from the current directory up to the git root (or home directory if not in a git repo),
- * collecting all .claude directories along the way.
+ * collecting all .noa directories along the way.
  *
  * Stopping at git root prevents commands/skills from parent directories outside the repository
- * from leaking into projects. For example, if ~/projects/.claude/commands/ exists, it won't
+ * from leaking into projects. For example, if ~/projects/.noa/commands/ exists, it won't
  * appear in ~/projects/my-repo/ if my-repo is a git repository.
  *
  * @param subdir Subdirectory (eg. "commands", "agents")
  * @param cwd Current working directory to start from
- * @returns Array of directory paths containing .claude/subdir, from most specific (cwd) to least specific
+ * @returns Array of directory paths containing .noa/subdir, from most specific (cwd) to least specific
  */
 export function getProjectDirsUpToHome(
   subdir: ClaudeConfigDirectory,
@@ -309,17 +309,17 @@ export const loadMarkdownFilesForSubdir = memoize(
   ): Promise<MarkdownFile[]> {
     const searchStartTime = Date.now()
     const userDir = getUserScopedSubdir(subdir)
-    const managedDir = join(getManagedFilePath(), '.claude', subdir)
+    const managedDir = join(getManagedFilePath(), PRODUCT_PROJECT_DIR, subdir)
     const projectDirs = getProjectDirsUpToHome(subdir, cwd)
 
-    // For git worktrees where the worktree does NOT have .claude/<subdir> checked
+    // For git worktrees where the worktree does NOT have .noa/<subdir> checked
     // out (e.g. sparse-checkout), fall back to the main repository's copy.
     // getProjectDirsUpToHome stops at the worktree root (where the .git file is),
     // so it never sees the main repo on its own.
     //
-    // Only add the main repo's copy when the worktree root's .claude/<subdir>
+    // Only add the main repo's copy when the worktree root's .noa/<subdir>
     // is absent. A standard `git worktree add` checks out the full tree, so the
-    // worktree already has identical .claude/<subdir> content — loading the main
+    // worktree already has identical .noa/<subdir> content — loading the main
     // repo's copy too would duplicate every command/agent/skill
     // (anthropics/claude-code#29599, #28182, #26992).
     //
@@ -339,10 +339,7 @@ export const loadMarkdownFilesForSubdir = memoize(
         ),
       )
       if (!worktreeHasAnySubdir) {
-        for (const mainSubdir of [
-          getPrimaryProjectSubdir(canonicalRoot, subdir),
-          getLegacyProjectSubdir(canonicalRoot, subdir),
-        ]) {
+        for (const mainSubdir of [getPrimaryProjectSubdir(canonicalRoot, subdir)]) {
           if (!projectDirs.includes(mainSubdir)) {
             projectDirs.push(mainSubdir)
           }
@@ -394,7 +391,7 @@ export const loadMarkdownFilesForSubdir = memoize(
     const allFiles = [...managedFiles, ...userFiles, ...projectFiles]
 
     // Deduplicate files that resolve to the same physical file (same inode).
-    // This prevents the same file from appearing multiple times when ~/.claude is
+    // This prevents the same file from appearing multiple times when ~/.noa is
     // symlinked to a directory within the project hierarchy, causing the same
     // physical file to be discovered through different paths.
     const fileIdentities = await Promise.all(
@@ -556,7 +553,7 @@ async function findMarkdownFilesNative(
 
 /**
  * Generic function to load markdown files from specified directories
- * @param dir Directory (eg. "~/.claude-agent/commands")
+ * @param dir Directory (eg. "~/.noa/commands")
  * @returns Array of parsed markdown files with metadata
  */
 async function loadMarkdownFiles(dir: string): Promise<

@@ -667,7 +667,7 @@ type XaaFailureStage =
  * 3. Save tokens to the same keychain slot as normal OAuth
  *
  * IdP connection details come from settings.xaaIdp (configured once via
- * `claude mcp xaa setup`). Per-server config is just `oauth.xaa: true`
+ * `noa mcp xaa setup`). Per-server config is just `oauth.xaa: true`
  * plus the AS clientId/clientSecret.
  *
  * No silent fallback: if `oauth.xaa` is set, XAA is the only path.

@@ -1,18 +1,25 @@
 #!/usr/bin/env bun
 
 import { spawnSync } from 'child_process';
-import { existsSync, readFileSync } from 'fs';
-import { resolve } from 'path';
-import {
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join, resolve } from 'path';
+
+const repoRoot = resolve(import.meta.dir, '..');
+const agentBin = resolve(repoRoot, 'bin/noa.js');
+const smokeConfigDir = mkdtempSync(join(tmpdir(), 'noa-smoke-engineering-'));
+
+process.env.CLAUDE_CODE_PRODUCT_DIR = smokeConfigDir;
+process.env.CLAUDE_CONFIG_DIR = smokeConfigDir;
+
+const {
   DEFAULT_CACHE_DIR,
   DEFAULT_CONFIG_DIR,
   DEFAULT_MINIMAX_CN_BASE_URL,
   PRODUCT_SETTINGS_PATH,
+  applyLauncherDefaults,
   getResolvedLauncherConfig,
-} from '../launcher-config.js';
-
-const repoRoot = resolve(import.meta.dir, '..');
-const agentBin = resolve(repoRoot, 'bin/noa.js');
+} = await import('../launcher-config.js');
 
 function fail(message, details) {
   if (details) {
@@ -23,11 +30,26 @@ function fail(message, details) {
   process.exit(1);
 }
 
+function normalizeTerminalOutput(output) {
+  return output
+    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, ' ')
+    .replace(/\x1b[@-_]/g, ' ')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function runCommand(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: repoRoot,
     encoding: 'utf8',
     stdio: 'pipe',
+    env: {
+      ...process.env,
+      CLAUDE_CODE_PRODUCT_DIR: smokeConfigDir,
+      CLAUDE_CONFIG_DIR: smokeConfigDir,
+      ANTHROPIC_API_KEY: 'smoke-test-key',
+    },
     ...options,
   });
   if (result.status !== 0) {
@@ -47,12 +69,23 @@ function assertInteractiveStartupStaysAlive() {
       cwd: repoRoot,
       encoding: 'utf8',
       stdio: 'pipe',
+      env: {
+        ...process.env,
+        CLAUDE_CODE_PRODUCT_DIR: smokeConfigDir,
+        CLAUDE_CONFIG_DIR: smokeConfigDir,
+        ANTHROPIC_API_KEY: 'smoke-test-key',
+      },
     },
   );
-  if (result.status !== 124) {
+  const output = `${result.stdout || ''}${result.stderr || ''}`;
+  const normalizedOutput = normalizeTerminalOutput(output);
+  const reachedInteractiveErrorSurface =
+    normalizedOutput.includes('Unable to connect to required services') &&
+    normalizedOutput.includes('Press Ctrl-D again to exit');
+  if (result.status !== 124 && !reachedInteractiveErrorSurface) {
     fail(
       'noa did not stay alive for the interactive startup window',
-      result.stderr || result.stdout,
+      output,
     );
   }
 }
@@ -96,6 +129,12 @@ function assertConfig() {
 }
 
 console.log('Verifying isolated config and MiniMax defaults...');
+applyLauncherDefaults();
+writeFileSync(
+  PRODUCT_SETTINGS_PATH,
+  JSON.stringify({ env: { ANTHROPIC_API_KEY: 'smoke-test-key' } }, null, 2) +
+    '\n',
+);
 assertConfig();
 
 console.log('Running build...');

@@ -293,7 +293,7 @@ export function getTerminalIdeType(): IdeType | null {
 }
 
 /**
- * Gets sorted IDE lockfiles from ~/.claude-agent/ide directory
+ * Gets sorted IDE lockfiles from ~/.noa/ide directory
  * @returns Array of full lockfile paths sorted by modification time (newest first)
  */
 export async function getSortedIdeLockfiles(): Promise<string[]> {

@@ -17,7 +17,7 @@ This document is the default local help hub for Noa Claude.
 
 ## Release Notes
 
-Release notes are bundled locally and cached in `~/.claude-agent/cache/changelog.md`.
+Release notes are bundled locally and cached in `~/.noa/cache/changelog.md`.
 
 ## Support
 

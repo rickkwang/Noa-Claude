@@ -151,11 +151,11 @@ const CHORD_EXAMPLE: KeybindingsSchemaType['bindings'][number] = {
 const SECTION_INTRO = [
   '# Keybindings Skill',
   '',
-  'Create or modify `~/.claude-agent/keybindings.json` to customize keyboard shortcuts.',
+  'Create or modify `~/.noa/keybindings.json` to customize keyboard shortcuts.',
   '',
   '## CRITICAL: Read Before Write',
   '',
-  '**Always read `~/.claude-agent/keybindings.json` first** (it may not exist yet). Merge changes with existing bindings — never replace the entire file.',
+  '**Always read `~/.noa/keybindings.json` first** (it may not exist yet). Merge changes with existing bindings — never replace the entire file.',
   '',
   '- Use **Edit** tool for modifications to existing files',
   '- Use **Write** tool only if the file does not exist yet',
@@ -233,7 +233,7 @@ const SECTION_BEHAVIORAL_RULES = [
 const SECTION_DOCTOR = [
   '## Validation with /doctor',
   '',
-  'The `/doctor` command includes a "Keybinding Configuration Issues" section that validates `~/.claude-agent/keybindings.json`.',
+  'The `/doctor` command includes a "Keybinding Configuration Issues" section that validates `~/.noa/keybindings.json`.',
   '',
   '### Common Issues and Fixes',
   '',
@@ -282,7 +282,7 @@ const SECTION_DOCTOR = [
   '',
   '```',
   'Keybinding Configuration Issues',
-  'Location: ~/.claude-agent/keybindings.json',
+  'Location: ~/.noa/keybindings.json',
   '  └ [Error] Unknown context "chat"',
   '    → Valid contexts: Global, Chat, Autocomplete, ...',
   '  └ [Warning] "ctrl+c" may not work: Terminal interrupt (SIGINT)',
@@ -295,7 +295,7 @@ export function registerKeybindingsSkill(): void {
   registerBundledSkill({
     name: 'keybindings-help',
     description:
-      'Use when the user wants to customize keyboard shortcuts, rebind keys, add chord bindings, or modify ~/.claude-agent/keybindings.json. Examples: "rebind ctrl+s", "add a chord shortcut", "change the submit key", "customize keybindings".',
+      'Use when the user wants to customize keyboard shortcuts, rebind keys, add chord bindings, or modify ~/.noa/keybindings.json. Examples: "rebind ctrl+s", "add a chord shortcut", "change the submit key", "customize keybindings".',
     allowedTools: ['Read'],
     userInvocable: false,
     isEnabled: isKeybindingCustomizationEnabled,

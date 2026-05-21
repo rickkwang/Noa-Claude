@@ -12,17 +12,17 @@ import {
 import { clearPluginOutputStyleCache } from '../utils/plugins/loadPluginOutputStyles.js'
 
 /**
- * Loads markdown files from .claude-agent/output-styles directories throughout the
- * project and from ~/.claude-agent/output-styles directory and converts them to
+ * Loads markdown files from .noa/output-styles directories throughout the
+ * project and from ~/.noa/output-styles directory and converts them to
  * output styles.
  *
  * Each filename becomes a style name, and the file content becomes the style prompt.
  * The frontmatter provides name and description.
  *
  * Structure:
- * - Project .claude-agent/output-styles/*.md -> project styles
- * - User ~/.claude-agent/output-styles/*.md -> user styles
- * - Legacy .claude-agent/output-styles/*.md is read for compatibility
+ * - Project .noa/output-styles/*.md -> project styles
+ * - User ~/.noa/output-styles/*.md -> user styles
+ * - Legacy .noa/output-styles/*.md is read for compatibility
  *
  * @param cwd Current working directory for project directory traversal
  */

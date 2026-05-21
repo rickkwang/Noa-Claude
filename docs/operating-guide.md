@@ -66,7 +66,7 @@ Long-running work depends on these paths staying aligned:
 
 The project-local progress artifact lives at:
 
-- `.claude-agent/progress.md`
+- `.noa/progress.md`
 
 ### `/goal`
 
@@ -98,7 +98,7 @@ The model can inspect, create, and mark a goal complete through the goal tool. P
 
 Use a project-local path inside the product namespace:
 
-- `.claude-agent/progress.md`
+- `.noa/progress.md`
 
 Recommended structure:
 

@@ -266,7 +266,7 @@ async function detectMultipleInstallations(): Promise<
     const npmPrefix = npmResult.stdout.trim()
     const isWindows = getPlatform() === 'windows'
 
-    // Check active installations via bin/claude-agent (preferred), then legacy claude
+    // Check active installations via bin/noa (preferred), then legacy compatibility binaries
     // Linux / macOS have prefix/bin/<binary>, Windows has prefix/<binary>
     const globalBinPaths = PREFERRED_BINARIES.map(binary =>
       isWindows ? join(npmPrefix, binary) : join(npmPrefix, 'bin', binary),

@@ -766,7 +766,7 @@ export async function main() {
       }
       // Forward session-resume + model flags to the remote CLI's initial spawn.
       // --continue/-c and --resume <uuid> operate on the REMOTE session history
-      // (which persists under the remote's ~/.claude-agent/projects/<cwd>/).
+      // (which persists under the remote's ~/.noa/projects/<cwd>/).
       // --model controls which model the remote uses.
       const extractFlag = (flag: string, opts: {
         hasValue?: boolean;
@@ -1080,7 +1080,7 @@ async function run(): Promise<CommanderCommand> {
       });
     }
 
-    // Assistant mode: when .claude-agent/settings.json has assistant: true AND
+    // Assistant mode: when .noa/settings.json has assistant: true AND
     // the tengu_kairos GrowthBook gate is on, force brief on. Permission
     // mode is left to the user — settings defaultMode or --permission-mode
     // apply as normal. REPL-typed messages already default to 'next'
@@ -1090,10 +1090,10 @@ async function run(): Promise<CommanderCommand> {
     // kairosEnabled is computed once here and reused at the
     // getAssistantSystemPromptAddendum() call site further down.
     //
-    // Trust gate: .claude-agent/settings.json is attacker-controllable in an
+    // Trust gate: .noa/settings.json is attacker-controllable in an
     // untrusted clone. We run ~1000 lines before showSetupScreens() shows
     // the trust dialog, and by then we've already appended
-    // .claude-agent/agents/assistant.md to the system prompt. Refuse to activate
+    // .noa/agents/assistant.md to the system prompt. Refuse to activate
     // until the directory has been explicitly trusted.
     let kairosEnabled = false;
     let assistantTeamContext: Awaited<ReturnType<NonNullable<typeof assistantModule>['initializeAssistantTeam']>> | undefined;
@@ -1983,7 +1983,7 @@ async function run(): Promise<CommanderCommand> {
     }
     if (getIsNonInteractiveSession()) {
       // Apply full merged settings env now (including project-scoped
-      // .claude-agent/settings.json PATH/GIT_DIR/GIT_WORK_TREE) so gitExe() and
+      // .noa/settings.json PATH/GIT_DIR/GIT_WORK_TREE) so gitExe() and
       // the git spawn below see it. Trust is implicit in -p mode; the
       // docstring at managedEnv.ts:96-97 says this applies "potentially
       // dangerous environment variables such as LD_PRELOAD, PATH" from all
@@ -2559,9 +2559,9 @@ async function run(): Promise<CommanderCommand> {
       logManagedSettings();
     }
 
-    // Register PID file for concurrent-session detection (~/.claude-agent/sessions/)
+    // Register PID file for concurrent-session detection (~/.noa/sessions/)
     // and fire multi-clauding telemetry. Lives here (not init.ts) so only the
-    // REPL path registers — not subcommands like `claude doctor`. Chained:
+    // REPL path registers — not subcommands like `noa doctor`. Chained:
     // count must run after register's write completes or it misses our own file.
     if (!bareMode) {
       void registerSession().then(registered => {
@@ -3982,7 +3982,7 @@ async function run(): Promise<CommanderCommand> {
     return program;
   }
 
-  // claude mcp
+  // noa mcp
 
   const mcp = program.command('mcp').description('Configure and manage MCP servers').configureHelp(createSortedHelpConfig()).enablePositionalOptions();
   mcp.command('serve').description(`Start the Noa Claude MCP server`).option('-d, --debug', 'Enable debug mode', () => true).option('--verbose', 'Override verbose mode setting from config', () => true).action(async ({
@@ -4310,7 +4310,7 @@ async function run(): Promise<CommanderCommand> {
   });
 
   // Plugin uninstall command
-  pluginCmd.command('uninstall <plugin>').alias('remove').alias('rm').description('Uninstall an installed plugin').option('-s, --scope <scope>', 'Uninstall from scope: user, project, or local', 'user').option('--keep-data', "Preserve the plugin's persistent data directory (~/.claude-agent/plugins/data/{id}/)").addOption(coworkOption()).action(async (plugin: string, options: {
+  pluginCmd.command('uninstall <plugin>').alias('remove').alias('rm').description('Uninstall an installed plugin').option('-s, --scope <scope>', 'Uninstall from scope: user, project, or local', 'user').option('--keep-data', "Preserve the plugin's persistent data directory (~/.noa/plugins/data/{id}/)").addOption(coworkOption()).action(async (plugin: string, options: {
     scope?: string;
     cowork?: boolean;
     keepData?: boolean;
@@ -4446,7 +4446,7 @@ async function run(): Promise<CommanderCommand> {
     await doctorHandler(root);
   });
 
-  // claude update
+  // noa update
   //
   // For SemVer-compliant versioning with build metadata (X.X.X+SHA):
   // - We perform exact string comparison (including SHA) to detect any change
@@ -4461,7 +4461,7 @@ async function run(): Promise<CommanderCommand> {
     await update(options);
   });
 
-  program.command('uninstall').description('Uninstall Noa Claude (curl-installer build)').option('--purge', 'Also remove ~/.claude-agent config directory').option('-y, --yes', 'Skip confirmation prompt').action(async (options: {
+  program.command('uninstall').description('Uninstall Noa Claude (curl-installer build)').option('--purge', 'Also remove ~/.noa config directory').option('-y, --yes', 'Skip confirmation prompt').action(async (options: {
     purge?: boolean;
     yes?: boolean;
   }) => {
@@ -4496,7 +4496,7 @@ async function run(): Promise<CommanderCommand> {
     });
   }
 
-  // claude install
+  // noa install
   program.command('install [target]').description('Show Noa Claude reinstall instructions. Use [target] and --force only for native/internal builds.').option('--force', 'Force installation even if already installed').action(async (target: string | undefined, options: {
     force?: boolean;
   }) => {

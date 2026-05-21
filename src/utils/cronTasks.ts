@@ -1,5 +1,5 @@
 // @ts-nocheck
-// Scheduled prompts, stored in <project>/.claude-agent/scheduled_tasks.json.
+// Scheduled prompts, stored in <project>/.noa/scheduled_tasks.json.
 //
 // Tasks come in two flavors:
 //   - One-shot (recurring: false/undefined) — fire once, then auto-delete.
@@ -90,7 +90,7 @@ export function getCronFilePathCandidates(dir?: string): string[] {
 }
 
 /**
- * Read and parse .claude-agent/scheduled_tasks.json. Returns an empty task list if the file
+ * Read and parse .noa/scheduled_tasks.json. Returns an empty task list if the file
  * is missing, empty, or malformed. Tasks with invalid cron strings are
  * silently dropped (logged at debug level) so a single bad entry never
  * blocks the whole file.
@@ -173,7 +173,7 @@ export function hasCronTasksSync(dir?: string): boolean {
 }
 
 /**
- * Overwrite .claude-agent/scheduled_tasks.json with the given tasks. Creates .claude-agent/ if
+ * Overwrite .noa/scheduled_tasks.json with the given tasks. Creates .noa/ if
  * missing. Empty task list writes an empty file (rather than deleting) so
  * the file watcher sees a change event on last-task-removed.
  */
@@ -203,7 +203,7 @@ export async function writeCronTasks(
  *
  * When `durable` is false the task is held in process memory only
  * (bootstrap/state.ts) — it fires on schedule this session but is never
- * written to .claude-agent/scheduled_tasks.json and dies with the process. The
+ * written to .noa/scheduled_tasks.json and dies with the process. The
  * scheduler merges session tasks into its tick loop directly, so no file
  * change event is needed.
  */

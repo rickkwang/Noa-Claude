@@ -4,7 +4,7 @@
  *
  * Three-layer model (see reconciler.ts for Layer-2):
  * - Layer 1: intent (settings)
- * - Layer 2: materialization (~/.claude-agent/plugins/) — reconcileMarketplaces()
+ * - Layer 2: materialization (~/.noa/plugins/) — reconcileMarketplaces()
  * - Layer 3: active components (AppState) — this file
  *
  * Called from:

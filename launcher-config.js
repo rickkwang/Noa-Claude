@@ -1,6 +1,6 @@
 import { homedir } from 'os';
 import { join } from 'path';
-import { mkdirSync, readFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 
 const pkg = JSON.parse(
   readFileSync(join(import.meta.dirname, 'package.json'), 'utf-8'),
@@ -20,20 +20,19 @@ export function formatDiagnosticError(code, message) {
 }
 
 export const PRODUCT_NAMESPACE =
-  process.env.CLAUDE_CODE_PRODUCT_NAMESPACE ?? 'claude-agent';
+  process.env.CLAUDE_CODE_PRODUCT_NAMESPACE ?? 'noa';
 
 export const PRODUCT_NAME =
   process.env.CLAUDE_CODE_PRODUCT_NAME ?? 'Noa Claude';
 
 export const DEFAULT_PRODUCT_DIR =
-  process.env.CLAUDE_CODE_PRODUCT_DIR ?? join(homedir(), '.claude-agent');
+  process.env.CLAUDE_CODE_PRODUCT_DIR ?? join(homedir(), '.noa');
 
 export const DEFAULT_CONFIG_DIR = DEFAULT_PRODUCT_DIR;
 
 export const DEFAULT_CACHE_DIR =
   join(DEFAULT_PRODUCT_DIR, 'cache');
 
-export const LEGACY_CONFIG_DIR = join(homedir(), '.claude');
 export const PRODUCT_SETTINGS_PATH = join(DEFAULT_CONFIG_DIR, 'settings.json');
 export const DEFAULT_MINIMAX_CN_BASE_URL =
   'https://api.minimaxi.com/anthropic';
@@ -52,6 +51,12 @@ export const LAUNCHER_MACRO = {
 
 function ensureDirectory(path) {
   mkdirSync(path, { recursive: true });
+}
+
+function ensureSettingsFile() {
+  if (!existsSync(PRODUCT_SETTINGS_PATH)) {
+    writeFileSync(PRODUCT_SETTINGS_PATH, '{}\n');
+  }
 }
 
 function safeReadSettingsFile() {
@@ -170,6 +175,7 @@ export function validateLauncherConfiguration(argv = process.argv) {
 export function applyLauncherDefaults() {
   ensureDirectory(DEFAULT_CONFIG_DIR);
   ensureDirectory(DEFAULT_CACHE_DIR);
+  ensureSettingsFile();
 
   process.env.CLAUDE_CODE_PRODUCT_NAMESPACE = PRODUCT_NAMESPACE;
   process.env.CLAUDE_CODE_PRODUCT_NAME = PRODUCT_NAME;

@@ -3,8 +3,8 @@ import type { BuiltInAgentDefinition } from '../loadAgentsDir.js'
 
 const STATUSLINE_SYSTEM_PROMPT = `You are a status line setup agent for Noa Claude. Your job is to create or update the statusLine command in the user's Noa Claude settings.
 
-IMPORTANT: Noa Claude stores all settings in ~/.claude-agent/ — never ~/.claude/.
-To read the user's current statusLine config, always read ~/.claude-agent/settings.json.
+IMPORTANT: Noa Claude stores all settings in ~/.noa/ — never ~/.claude/.
+To read the user's current statusLine config, always read ~/.noa/settings.json.
 
 When asked to convert the user's shell PS1 configuration, follow these steps:
 1. Read the user's shell configuration files in this order of preference:
@@ -120,10 +120,10 @@ How to use the statusLine command:
    To display both 5-hour and 7-day limits when available:
    - input=$(cat); five=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty'); week=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty'); out=""; [ -n "$five" ] && out="5h:$(printf '%.0f' "$five")%"; [ -n "$week" ] && out="$out 7d:$(printf '%.0f' "$week")%"; echo "$out"
 
-2. For longer commands, you can save a new file in the user's ~/.claude-agent directory, e.g.:
-   - ~/.claude-agent/statusline-command.sh and reference that file in the settings.
+2. For longer commands, you can save a new file in the user's ~/.noa directory, e.g.:
+   - ~/.noa/statusline-command.sh and reference that file in the settings.
 
-3. Update the user's ~/.claude-agent/settings.json with:
+3. Update the user's ~/.noa/settings.json with:
    {
      "statusLine": {
        "type": "command", 
@@ -131,7 +131,7 @@ How to use the statusLine command:
      }
    }
 
-4. If ~/.claude-agent/settings.json is a symlink, update the target file instead.
+4. If ~/.noa/settings.json is a symlink, update the target file instead.
 
 Guidelines:
 - Preserve existing settings when updating

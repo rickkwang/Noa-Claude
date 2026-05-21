@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { getOriginalCwd } from '../../bootstrap/state.js'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
+import { PRODUCT_PROJECT_DIR } from '../../utils/productPaths.js'
 import { logDebugDiagnosticWarn } from '../../utils/debugDiagnostics.js'
 import {
   normalizeStartupBannerMode,
@@ -77,10 +78,10 @@ export const call = async (args: string, context?: { setAppState?: (updater: (pr
         ? 'Startup banner: Noa gradient logo'
         : 'Startup banner: Noa logo'
 
-    const legacyPath = join(getOriginalCwd(), '.claude-agent', STARTUP_BANNER_SETTINGS_FILENAME)
+    const projectPath = join(getOriginalCwd(), PRODUCT_PROJECT_DIR, STARTUP_BANNER_SETTINGS_FILENAME)
     const globalPath = getSettingsPath()
-    if (existsSync(legacyPath) && legacyPath !== globalPath) {
-      message += `\nNote: legacy project override detected at ${legacyPath}. It is ignored; startup banner now uses global config at ${globalPath}.`
+    if (existsSync(projectPath) && projectPath !== globalPath) {
+      message += `\nNote: project override detected at ${projectPath}. It is ignored; startup banner now uses global config at ${globalPath}.`
     }
 
     return { type: 'text', value: message }

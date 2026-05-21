@@ -9,7 +9,7 @@
  * - Track and update marketplace configurations
  *
  * File structure managed by this module:
- * ~/.claude-agent/
+ * ~/.noa/
  *   └── plugins/
  *       ├── known_marketplaces.json    # Configuration of all known marketplaces
  *       └── marketplaces/              # Cache directory for marketplace data
@@ -268,7 +268,7 @@ export function saveMarketplaceToSettings(
 /**
  * Load known marketplaces configuration from disk
  *
- * Reads the configuration file at ~/.claude-agent/plugins/known_marketplaces.json
+ * Reads the configuration file at ~/.noa/plugins/known_marketplaces.json
  * which contains a mapping of marketplace names to their sources and metadata.
  *
  * Example configuration file content:
@@ -276,12 +276,12 @@ export function saveMarketplaceToSettings(
  * {
  *   "official-marketplace": {
  *     "source": { "source": "url", "url": "https://example.com/marketplace.json" },
- *     "installLocation": "/Users/me/.claude-agent/plugins/marketplaces/official-marketplace.json",
+ *     "installLocation": "/Users/me/.noa/plugins/marketplaces/official-marketplace.json",
  *     "lastUpdated": "2024-01-15T10:30:00.000Z"
  *   },
  *   "company-plugins": {
  *     "source": { "source": "github", "repo": "mycompany/plugins" },
- *     "installLocation": "/Users/me/.claude-agent/plugins/marketplaces/company-plugins",
+ *     "installLocation": "/Users/me/.noa/plugins/marketplaces/company-plugins",
  *     "lastUpdated": "2024-01-14T15:45:00.000Z"
  *   }
  * }
@@ -347,7 +347,7 @@ export async function loadKnownMarketplacesConfigSafe(): Promise<KnownMarketplac
 /**
  * Save known marketplaces configuration to disk
  *
- * Writes the configuration to ~/.claude-agent/plugins/known_marketplaces.json,
+ * Writes the configuration to ~/.noa/plugins/known_marketplaces.json,
  * creating the directory structure if it doesn't exist.
  *
  * @param config - The marketplace configuration to save
@@ -1447,7 +1447,7 @@ async function parseFileWithSchema<T>(
  * to match the marketplace's actual name from the manifest.
  *
  * Cache structure:
- * ~/.claude-agent/plugins/marketplaces/
+ * ~/.noa/plugins/marketplaces/
  *   ├── official-marketplace.json     # From URL source
  *   ├── github-marketplace/          # From GitHub/Git source
  *   │   └── .claude-plugin/
@@ -1800,7 +1800,7 @@ async function loadAndCacheMarketplace(
  * Add a marketplace source to the known marketplaces
  *
  * The marketplace is fetched, validated, and cached locally.
- * The configuration is saved to ~/.claude-agent/plugins/known_marketplaces.json.
+ * The configuration is saved to ~/.noa/plugins/known_marketplaces.json.
  *
  * @param source - MarketplaceSource object representing the marketplace source.
  *                 Callers should parse user input into MarketplaceSource format
@@ -1979,7 +1979,7 @@ export async function removeMarketplaceSource(name: string): Promise<void> {
     throw new Error(
       `Marketplace '${name}' is registered from the read-only seed directory ` +
         `(${seedDir}) and will be re-registered on next startup. ` +
-        `To stop using its plugins: claude plugin disable <plugin>@${name}`,
+        `To stop using its plugins: noa plugin disable <plugin>@${name}`,
     )
   }
 
@@ -2382,7 +2382,7 @@ export async function refreshAllMarketplaces(): Promise<void> {
       continue
     }
     // inc-5046: same GCS intercept as refreshMarketplace() — bulk update
-    // hits this path on `claude plugin marketplace update` (no name arg).
+    // hits this path on `noa plugin marketplace update` (no name arg).
     if (name === OFFICIAL_MARKETPLACE_NAME) {
       if (!isOfficialMarketplaceExternalRefreshEnabled()) {
         logForDebugging(
@@ -2498,7 +2498,7 @@ export async function refreshMarketplace(
             `(${installLocation}) — expected a path inside ${cacheDir}. ` +
             `This can happen after cross-platform path writes or manual edits ` +
             `to known_marketplaces.json. ` +
-            `Run: claude plugin marketplace remove "${name}" and re-add it.`,
+            `Run: noa plugin marketplace remove "${name}" and re-add it.`,
         )
       }
     }
@@ -2623,7 +2623,7 @@ export async function refreshMarketplace(
           `The marketplace.json file is no longer present in this repository.\n\n` +
             `${reason}\n` +
             `Source: ${sourceDisplay}\n\n` +
-            `You can remove this marketplace with: claude plugin marketplace remove "${name}"`,
+            `You can remove this marketplace with: noa plugin marketplace remove "${name}"`,
         )
       }
     } else if (source.source === 'url') {

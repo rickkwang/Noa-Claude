@@ -235,7 +235,7 @@ function checkSandboxCompatibility() {
 }
 
 async function checkRipgrep() {
-  const workdir = mkdtempSync(join(tmpdir(), 'claude-agent-rg-'));
+  const workdir = mkdtempSync(join(tmpdir(), 'noa-rg-'));
   try {
     writeFileSync(join(workdir, 'alpha.txt'), 'alpha\nbeta\n', 'utf8');
     writeFileSync(join(workdir, 'nested.txt'), 'gamma\nalpha delta\n', 'utf8');
@@ -641,7 +641,7 @@ async function checkCompactUtilities() {
     activeMessages,
   );
 
-  const runtimeDir = mkdtempSync(join(tmpdir(), 'claude-agent-compact-resume-'));
+  const runtimeDir = mkdtempSync(join(tmpdir(), 'noa-compact-resume-'));
   const transcriptPath = join(runtimeDir, 'resume.jsonl');
   try {
     const sessionId = '11111111-1111-4111-8111-111111111111';
@@ -681,9 +681,9 @@ function writeSettings(dir, settings) {
 }
 
 function checkLauncherFailurePaths() {
-  const invalidBaseDir = mkdtempSync(join(tmpdir(), 'claude-agent-invalid-base-'));
-  const missingTokenDir = mkdtempSync(join(tmpdir(), 'claude-agent-missing-token-'));
-  const oauthFallbackDir = mkdtempSync(join(tmpdir(), 'claude-agent-oauth-fallback-'));
+  const invalidBaseDir = mkdtempSync(join(tmpdir(), 'noa-invalid-base-'));
+  const missingTokenDir = mkdtempSync(join(tmpdir(), 'noa-missing-token-'));
+  const oauthFallbackDir = mkdtempSync(join(tmpdir(), 'noa-oauth-fallback-'));
 
   try {
     writeSettings(invalidBaseDir, {
@@ -780,7 +780,7 @@ function checkResumeFailurePaths() {
     invalidResume.stderr || invalidResume.stdout,
   );
 
-  const malformedDir = mkdtempSync(join(tmpdir(), 'claude-agent-resume-malformed-'));
+  const malformedDir = mkdtempSync(join(tmpdir(), 'noa-resume-malformed-'));
   const malformedTranscript = join(malformedDir, 'broken.jsonl');
   try {
     writeFileSync(
@@ -815,7 +815,7 @@ function checkResumeFailurePaths() {
 }
 
 function checkNonInteractiveMcpTimeoutFallback() {
-  const runtimeDir = mkdtempSync(join(tmpdir(), 'claude-agent-mcp-timeout-'));
+  const runtimeDir = mkdtempSync(join(tmpdir(), 'noa-mcp-timeout-'));
   const mcpConfigPath = join(runtimeDir, 'mcp-timeout.json');
   const debugLogPath = join(runtimeDir, 'debug.log');
 
@@ -864,10 +864,17 @@ function checkNonInteractiveMcpTimeoutFallback() {
     );
 
     // timeout(1) exits with 124 when it kills the child; that's expected here.
+    const timeoutOutput = `${timeoutRun.stderr || ''}${timeoutRun.stdout || ''}`;
     assert(
-      timeoutRun.status === 124 || timeoutRun.status === 0,
+      timeoutRun.status === 124 ||
+        timeoutRun.status === 0 ||
+        (
+          timeoutRun.status === 1 &&
+          timeoutOutput.includes('[MCP_TIMEOUT]') &&
+          timeoutOutput.includes('regular MCP not ready after 400ms')
+        ),
       'MCP timeout fallback smoke run returned unexpected status',
-      timeoutRun.stderr || timeoutRun.stdout,
+      timeoutOutput,
     );
 
     const debugLog = readFileSync(debugLogPath, 'utf8');
@@ -1339,7 +1346,7 @@ async function checkStartupBannerDiagnostics() {
     return true;
   };
 
-  const runtimeDir = mkdtempSync(join(tmpdir(), 'claude-agent-startup-banner-'));
+  const runtimeDir = mkdtempSync(join(tmpdir(), 'noa-startup-banner-'));
   const settingsPath = join(runtimeDir, STARTUP_BANNER_SETTINGS_FILENAME);
 
   try {

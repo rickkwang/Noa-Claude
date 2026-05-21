@@ -3,7 +3,6 @@ export const PRODUCT_NAME: string
 export const DEFAULT_PRODUCT_DIR: string
 export const DEFAULT_CONFIG_DIR: string
 export const DEFAULT_CACHE_DIR: string
-export const LEGACY_CONFIG_DIR: string
 export const PRODUCT_SETTINGS_PATH: string
 export const DEFAULT_MINIMAX_CN_BASE_URL: string
 export const DEFAULT_PRODUCT_MODEL: string

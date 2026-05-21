@@ -228,7 +228,7 @@ export function getDebugLogPath(): string {
 
 /**
  * Updates the latest debug log symlink to point to the current debug log file.
- * Creates or updates a symlink at ~/.claude-agent/debug/latest
+ * Creates or updates a symlink at ~/.noa/debug/latest
  */
 const updateLatestDebugLogSymlink = memoize(async (): Promise<void> => {
   try {

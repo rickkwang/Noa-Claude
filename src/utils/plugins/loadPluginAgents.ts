@@ -157,7 +157,7 @@ async function loadAgentFromFile(
     // permissionMode, hooks, and mcpServers are intentionally NOT parsed for
     // plugin agents. Plugins are third-party marketplace code; these fields
     // escalate what the agent can do beyond what the user approved at install
-    // time. For this level of control, define the agent in .claude-agent/agents/
+    // time. For this level of control, define the agent in .noa/agents/
     // where the user explicitly wrote the frontmatter. (Note: plugins can
     // still ship hooks and MCP servers at the manifest level — that's the
     // install-time trust boundary. Per-agent declarations would let a single
@@ -165,7 +165,7 @@ async function loadAgentFromFile(
     for (const field of ['permissionMode', 'hooks', 'mcpServers'] as const) {
       if (frontmatter[field] !== undefined) {
         logForDebugging(
-          `Plugin agent file ${filePath} sets ${field}, which is ignored for plugin agents. Use .claude-agent/agents/ for this level of control.`,
+          `Plugin agent file ${filePath} sets ${field}, which is ignored for plugin agents. Use .noa/agents/ for this level of control.`,
           { level: 'warn' },
         )
       }

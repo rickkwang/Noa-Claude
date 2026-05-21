@@ -16,7 +16,6 @@
     "access": "public"
   },
   "bin": {
-    "claude-agent-import": "./bin/claude-agent-import.js",
     "noa": "./bin/noa.js"
   },
   "scripts": {

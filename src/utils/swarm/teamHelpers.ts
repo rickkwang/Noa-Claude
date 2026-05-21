@@ -658,7 +658,7 @@ export async function cleanupTeamDirectories(teamName: string): Promise<void> {
     await destroyWorktree(worktreePath)
   }
 
-  // Clean up team directory (~/.claude-agent/teams/{team-name}/)
+  // Clean up team directory (~/.noa/teams/{team-name}/)
   const teamDir = getTeamDir(teamName)
   try {
     await rm(teamDir, { recursive: true, force: true })
@@ -669,7 +669,7 @@ export async function cleanupTeamDirectories(teamName: string): Promise<void> {
     )
   }
 
-  // Clean up tasks directory (~/.claude-agent/tasks/{taskListId}/)
+  // Clean up tasks directory (~/.noa/tasks/{taskListId}/)
   // The leader and teammates all store tasks under the sanitized team name.
   const tasksDir = getTasksDir(sanitizedName)
   try {

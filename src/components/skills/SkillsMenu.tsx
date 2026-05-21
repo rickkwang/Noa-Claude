@@ -497,7 +497,7 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
         hideInputGuide
       >
         <Text dimColor>
-          Create skills in .claude-agent/skills/ or ~/.claude-agent/skills/
+          Create skills in .noa/skills/ or ~/.noa/skills/
         </Text>
         <Text dimColor italic>
           <ConfigurableShortcutHint

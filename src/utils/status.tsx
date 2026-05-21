@@ -85,7 +85,7 @@ export function buildLspProperties(): Property[] {
         value: `Failed to initialize: ${status.error.message}`
       }, {
         label: 'LSP action',
-        value: 'Check /doctor for startup errors or run /reload-plugins in ~/.claude-agent if language servers were just installed'
+        value: 'Check /doctor for startup errors or run /reload-plugins in ~/.noa if language servers were just installed'
       }];
     default:
       return [{

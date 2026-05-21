@@ -46,7 +46,7 @@ const getRemoteHostSessionCount: (hs: string) => Promise<number> =
           'ssh',
           [
             `${homespace}.coder`,
-            'find /root/.claude-agent/projects -name "*.jsonl" 2>/dev/null | wc -l',
+            'find /root/.noa/projects -name "*.jsonl" 2>/dev/null | wc -l',
           ],
           { timeout: 30000 },
         )
@@ -66,7 +66,7 @@ const collectFromRemoteHost: (
         try {
           const scpResult = await execFileNoThrow(
             'scp',
-            ['-rq', `${homespace}.coder:/root/.claude-agent/projects/`, tempDir],
+            ['-rq', `${homespace}.coder:/root/.noa/projects/`, tempDir],
             { timeout: 300000 },
           )
           if (scpResult.code !== 0) return result

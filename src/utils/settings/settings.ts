@@ -22,7 +22,9 @@ import { addFileGlobRuleToGitignore } from '../git/gitignore.js'
 import { safeParseJSON } from '../json.js'
 import { logError } from '../log.js'
 import { getPlatform } from '../platform.js'
-import { getProjectSettingsRelativePathCandidates } from '../productPaths.js'
+import {
+  getProjectSettingsRelativePathCandidates,
+} from '../productPaths.js'
 import { clone, jsonStringify } from '../slowOperations.js'
 import { profileCheckpoint } from '../startupProfiler.js'
 import {
@@ -234,7 +236,7 @@ function parseSettingsFileUncached(path: string): {
 
 /**
  * Get the absolute path to the associated file root for a given settings source
- * (e.g. for $PROJ_DIR/.claude-agent/settings.json, returns $PROJ_DIR)
+ * (e.g. for $PROJ_DIR/.noa/settings.json, returns $PROJ_DIR)
  * @param source The source of the settings
  * @returns The root path of the settings file
  */

@@ -2,6 +2,7 @@
 import { readFile, writeFile, copyFile, mkdir } from 'fs/promises'
 import { join, basename, extname } from 'path'
 import { randomUUID } from 'crypto'
+import { getUserScopedSubdir } from '../../utils/productPaths.js'
 import {
   getWikiPagesDir,
   getWikiSourcesDir,
@@ -166,14 +167,14 @@ export async function getWikiStatus(): Promise<{
       .sort((a, b) => new Date(b.ingestedAt).getTime() - new Date(a.ingestedAt).getTime())[0]
 
     return {
-      rootPath: join(require('os').homedir(), '.claude-agent', 'wiki'),
+      rootPath: getUserScopedSubdir('wiki'),
       pageCount: index.pages.length,
       sourceCount: index.sources.length,
       lastUpdated: lastSource?.ingestedAt || null,
     }
   } catch {
     return {
-      rootPath: join(require('os').homedir(), '.claude-agent', 'wiki'),
+      rootPath: getUserScopedSubdir('wiki'),
       pageCount: 0,
       sourceCount: 0,
       lastUpdated: null,

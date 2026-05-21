@@ -33,7 +33,7 @@ export function optionForPermissionSaveDestination(saveDestination: EditableSett
     case 'userSettings':
       return {
         label: 'User settings',
-        description: `Saved in at ~/.claude-agent/settings.json`,
+        description: `Saved in at ~/.noa/settings.json`,
         value: saveDestination
       };
   }

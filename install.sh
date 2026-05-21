@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_TARBALL_URL="${NOA_INSTALL_REPO_TARBALL_URL:-https://codeload.github.com/rickkwang/Noa-Claude/tar.gz/refs/heads/master}"
-PERSISTENT_INSTALL_DIR="${NOA_INSTALL_TARGET_DIR:-${HOME}/.claude-agent/install}"
+PERSISTENT_INSTALL_DIR="${NOA_INSTALL_TARGET_DIR:-${HOME}/.noa/install}"
 ROOT_DIR=""
 TEMP_DIR=""
 BIN_DIR="${HOME}/.local/bin"
