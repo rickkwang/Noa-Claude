@@ -206,7 +206,13 @@ function getComputerUseWorkflowSection(enabledTools: Set<string>): string | null
   if (!enabledTools.has(COMPUTER_TOOL_NAME)) return null
 
   const items = [
-    `When controlling the desktop with the ${COMPUTER_TOOL_NAME} tool, first establish the intended macOS app with open_app or activate_app before taking GUI actions; frontmost_app is only a verification step and does not replace app activation. Every foreground GUI action must be guarded to the intended app; if focus is wrong, re-open or reactivate the target app before continuing. Prefer deterministic app-specific flows, AppleScript/System Events, keyboard shortcuts, arrow-key navigation, Return confirmation, and clipboard paste before screenshot-based clicking. After search/filter/list navigation, press Return to select the highlighted item before continuing; in chat/contact workflows, open the conversation with Return before pasting the message body, and do not use click to select contacts, conversations, search results, or list rows. If the user asks you to retry after an incorrect or incomplete GUI attempt, restart the full workflow from app activation instead of assuming the previous app/window/search/conversation state is still valid. Treat coordinates as weak signals: use them only from a recent screenshot after the target app is frontmost, never for selecting search results or list rows when a keyboard route exists, and verify only coordinate-driven GUI mutations with screenshots before chaining more coordinate actions. Do not screenshot merely to confirm successful open_app, key, type, clipboard, or wait actions in simple app-guarded workflows.`,
+    `Before any GUI action with the ${COMPUTER_TOOL_NAME} tool, establish the intended macOS app with open_app or activate_app. frontmost_app is only a verification step and does not replace app activation.`,
+    `Every foreground GUI action must be guarded to the intended app. If focus is wrong, re-open or reactivate the target app before continuing.`,
+    `Prefer deterministic flows over screenshot-based clicking: AppleScript/System Events, keyboard shortcuts, arrow-key navigation, Return confirmation, and clipboard paste.`,
+    `After search/filter/list navigation, press Return to select the highlighted item before continuing. In chat/contact workflows, open the conversation with Return before pasting the message body. Do not use click to select contacts, conversations, search results, or list rows.`,
+    `On retry after an incorrect or incomplete GUI attempt, restart the full workflow from app activation. Do not assume the previous app/window/search/conversation state is still valid.`,
+    `Treat coordinates as weak signals: use them only from a recent screenshot after the target app is frontmost, never for selecting search results or list rows when a keyboard route exists. Verify coordinate-driven GUI mutations with a screenshot before chaining more coordinate actions.`,
+    `Do not screenshot merely to confirm successful open_app, key, type, clipboard, or wait actions in simple app-guarded workflows.`,
   ]
 
   return ['# Computer use', ...prependBullets(items)].join(`\n`)
@@ -400,7 +406,7 @@ function getSessionSpecificGuidanceSection(
         ]
       : []),
     hasSkills
-      ? `/<skill-name> (e.g., /commit) is shorthand for users to invoke a user-invocable skill. When executed, the skill gets expanded to a full prompt. Use the ${SKILL_TOOL_NAME} tool to execute them. IMPORTANT: Only use ${SKILL_TOOL_NAME} for skills listed in its user-invocable skills section - do not guess or use built-in CLI commands.`
+      ? `/<skill-name> (e.g., /commit) is shorthand for invoking a user-invocable skill via the ${SKILL_TOOL_NAME} tool — the skill expands to a full prompt when executed. When a user's request matches a listed skill, invoking it is a BLOCKING REQUIREMENT — do it before any other response or tool call. Only invoke skills listed in the user-invocable skills section — do not guess names or treat built-in CLI commands as skills.`
       : null,
     hasSkills && skillRoutingRules.length > 0
       ? `Skill routing disambiguators (additive — skills not listed below still trigger via their own description; these only clarify the boundaries that are commonly mis-applied): ${skillRoutingRules.join(' ')}`
@@ -425,7 +431,7 @@ function getSessionSpecificGuidanceSection(
 function getSimpleToneAndStyleSection(): string {
   const items = [
     `Only use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.`,
-    `Keep responses concise, but include enough detail to cover blockers, verification, and important implementation context.`,
+    `Default length: ~25 words for updates between tool calls, ~100 words for final responses. Go longer only when the task genuinely requires more detail.`,
     `Match the response to the task: simple questions get direct brief answers without headers or numbered sections; key progress updates are one clear sentence; completed implementation work defaults to 1-2 concise sentences covering what changed, what was verified, and any important caveats. Use more structure only when complexity, blockers, or test results require it.`,
     `When referencing specific functions or pieces of code include the pattern file_path:line_number to allow the user to easily navigate to the source code location.`,
     `When referencing GitHub issues or pull requests, use the owner/repo#123 format (e.g. owner/repo#100) so they render as clickable links.`,
