@@ -33,11 +33,13 @@ import type {
   UserMessage,
 } from '../../types/message.js'
 import {
+  budgetPlanFileReferenceAttachment,
   createAttachmentMessage,
   generateFileAttachment,
   getAgentListingDeltaAttachment,
   getDeferredToolsDeltaAttachment,
   getMcpInstructionsDeltaAttachment,
+  persistPlanFileReferenceAttachment,
 } from '../../utils/attachments.js'
 import { getMemoryPath } from '../../utils/config.js'
 import { COMPACT_MAX_OUTPUT_TOKENS } from '../../utils/context.js'
@@ -561,7 +563,7 @@ export async function compactConversation(
       ...fileAttachments,
       ...asyncAgentAttachments,
     ]
-    const planAttachment = createPlanAttachmentIfNeeded(context.agentId)
+    const planAttachment = await createPlanAttachmentIfNeeded(context.agentId)
     if (planAttachment) {
       postCompactFileAttachments.push(planAttachment)
     }
@@ -967,7 +969,7 @@ export async function partialCompactConversation(
       ...fileAttachments,
       ...asyncAgentAttachments,
     ]
-    const planAttachment = createPlanAttachmentIfNeeded(context.agentId)
+    const planAttachment = await createPlanAttachmentIfNeeded(context.agentId)
     if (planAttachment) {
       postCompactFileAttachments.push(planAttachment)
     }
@@ -1505,9 +1507,9 @@ export async function createPostCompactFileAttachments(
  * Creates a plan file attachment if a plan file exists for the current session.
  * This ensures the plan is preserved after compaction.
  */
-export function createPlanAttachmentIfNeeded(
+export async function createPlanAttachmentIfNeeded(
   agentId?: AgentId,
-): AttachmentMessage | null {
+): Promise<AttachmentMessage | null> {
   const planContent = getPlan(agentId)
 
   if (!planContent) {
@@ -1516,11 +1518,15 @@ export function createPlanAttachmentIfNeeded(
 
   const planFilePath = getPlanFilePath(agentId)
 
-  return createAttachmentMessage({
-    type: 'plan_file_reference',
-    planFilePath,
-    planContent,
-  })
+  return createAttachmentMessage(
+    await persistPlanFileReferenceAttachment(
+      budgetPlanFileReferenceAttachment({
+        type: 'plan_file_reference',
+        planFilePath,
+        planContent,
+      }),
+    ),
+  )
 }
 
 /**

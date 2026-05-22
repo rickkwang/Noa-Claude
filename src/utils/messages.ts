@@ -3635,6 +3635,21 @@ Read the team config to discover your teammates' names. Check the task list peri
       ])
     }
     case 'plan_file_reference': {
+      if (attachment.planPreview) {
+        const size = attachment.planOriginalSize ?? attachment.planContent.length
+        const ellipsis = attachment.planHasMore ? '\n...' : ''
+        return wrapMessagesInSystemReminder([
+          createUserMessage({
+            content:
+              `A plan file exists from plan mode at: ${attachment.planFilePath}. ` +
+              `The full plan was too large to inline (${formatFileSize(size)}).\n\n` +
+              `Preview:\n${attachment.planPreview}${ellipsis}\n\n` +
+              `If this plan is relevant to the current work, read the plan file directly instead of relying on this preview.`,
+            isMeta: true,
+          }),
+        ])
+      }
+
       return wrapMessagesInSystemReminder([
         createUserMessage({
           content: `A plan file exists from plan mode at: ${attachment.planFilePath}\n\nPlan contents:\n\n${attachment.planContent}\n\nIf this plan is relevant to the current work and not already complete, continue working on it.`,
@@ -3876,6 +3891,22 @@ You have exited auto mode. The user may now want to interact more directly. You 
       ])
     }
     case 'mcp_resource': {
+      if (attachment.persistedTextPath) {
+        const size = attachment.persistedTextOriginalSize ?? 0
+        const preview = attachment.persistedTextPreview ?? ''
+        const ellipsis = attachment.persistedTextHasMore ? '\n...' : ''
+        return wrapMessagesInSystemReminder([
+          createUserMessage({
+            content:
+              `MCP resource ${attachment.name} from ${attachment.server} was too large to inline (${formatFileSize(size)}). ` +
+              `Full contents were saved to ${attachment.persistedTextPath}.\n\n` +
+              `Preview:\n${preview}${ellipsis}\n\n` +
+              `Do NOT read the MCP resource again unless you think it changed. Read the saved file instead if you need more context.`,
+            isMeta: true,
+          }),
+        ])
+      }
+
       // Format the resource content similar to how file attachments work
       const content = attachment.content
       if (!content || !content.contents || content.contents.length === 0) {

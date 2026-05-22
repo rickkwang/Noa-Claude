@@ -1,5 +1,6 @@
 import { feature } from 'bun:bundle'
 import type { UUID } from 'crypto'
+import { readFile, writeFile } from 'fs/promises'
 import { dirname } from 'path'
 import {
   getMainLoopModelOverride,
@@ -27,10 +28,12 @@ import type {
   AttributionSnapshotMessage,
   ContextCollapseCommitEntry,
   ContextCollapseSnapshotEntry,
+  Entry,
   PersistedWorktreeSession,
 } from '../types/logs.js'
 import type { Message } from '../types/message.js'
 import { renameRecordingForSession } from './asciicast.js'
+import { sanitizeLargeContextAttachments } from './attachments.js'
 import { clearMemoryFileCaches } from './claudemd.js'
 import {
   type AttributionState,
@@ -48,12 +51,15 @@ import { getPlansDirectory } from './plans.js'
 import { setCwd } from './Shell.js'
 import {
   adoptResumedSessionFile,
+  getTranscriptPath,
+  isTranscriptMessage,
   recordContentReplacement,
   resetSessionFilePointer,
   restoreSessionMetadata,
   saveMode,
   saveWorktreeState,
 } from './sessionStorage.js'
+import { jsonStringify } from './slowOperations.js'
 import { isTodoV2Enabled } from './tasks.js'
 import type { TodoList } from './todo/types.js'
 import { TodoListSchema } from './todo/types.js'
@@ -718,6 +724,87 @@ type ResumeLoadResult = {
   prNumber?: number
   prUrl?: string
   prRepository?: string
+  fullPath?: string
+}
+
+async function persistSanitizedAttachmentEntriesForResume(
+  transcriptPath: string,
+  originalMessages: readonly Message[],
+  sanitizedMessages: readonly Message[],
+): Promise<void> {
+  const { changed, content } = rewriteSanitizedAttachmentEntriesForResume(
+    await readFile(transcriptPath, 'utf-8'),
+    originalMessages,
+    sanitizedMessages,
+  )
+
+  if (!changed) {
+    return
+  }
+
+  await writeFile(transcriptPath, content, {
+    encoding: 'utf-8',
+    mode: 0o600,
+  })
+}
+
+export function rewriteSanitizedAttachmentEntriesForResume(
+  content: string,
+  originalMessages: readonly Message[],
+  sanitizedMessages: readonly Message[],
+): { changed: boolean; content: string } {
+  const rewrittenAttachments = new Map<string, Message['attachment']>()
+
+  for (let i = 0; i < originalMessages.length; i++) {
+    const original = originalMessages[i]
+    const sanitized = sanitizedMessages[i]
+    if (
+      !original ||
+      !sanitized ||
+      original === sanitized ||
+      original.type !== 'attachment' ||
+      sanitized.type !== 'attachment'
+    ) {
+      continue
+    }
+    if (!original.uuid) {
+      continue
+    }
+    rewrittenAttachments.set(original.uuid, sanitized.attachment)
+  }
+
+  if (rewrittenAttachments.size === 0) {
+    return { changed: false, content }
+  }
+
+  let changed = false
+  const lines = content.split('\n')
+  const rewrittenLines = lines.map(line => {
+    if (line.trim() === '') {
+      return line
+    }
+
+    try {
+      const entry = JSON.parse(line) as Entry
+      if (
+        !isTranscriptMessage(entry) ||
+        entry.type !== 'attachment' ||
+        !rewrittenAttachments.has(entry.uuid)
+      ) {
+        return line
+      }
+
+      changed = true
+      return jsonStringify({
+        ...entry,
+        attachment: rewrittenAttachments.get(entry.uuid)!,
+      })
+    } catch {
+      return line
+    }
+  })
+
+  return { changed, content: rewrittenLines.join('\n') }
 }
 
 /**
@@ -866,6 +953,18 @@ export async function processResumedConversation(
     // overage). insertContentReplacement stamps sessionId = getSessionId() =
     // the fresh ID, so loadTranscriptFile's keyed lookup will match.
     await recordContentReplacement(result.contentReplacements)
+  }
+
+  const originalMessages = result.messages
+  result.messages = await sanitizeLargeContextAttachments(result.messages)
+  if (!opts.forkSession) {
+    const transcriptPathForRewrite =
+      opts.transcriptPath ?? result.fullPath ?? getTranscriptPath()
+    await persistSanitizedAttachmentEntriesForResume(
+      transcriptPathForRewrite,
+      originalMessages,
+      result.messages,
+    )
   }
 
   // Restore session metadata so /status shows the saved name and metadata

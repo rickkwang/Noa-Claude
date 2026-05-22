@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { randomUUID } from 'crypto'
-import { copyFile, writeFile } from 'fs/promises'
+import { copyFile, readFile, writeFile } from 'fs/promises'
 import memoize from 'lodash-es/memoize.js'
 import { join, resolve, sep } from 'path'
 import type { AgentId, SessionId } from 'src/types/ids.js'
@@ -186,11 +186,6 @@ export async function copyPlanForResume(
       logError(e)
       return false
     }
-    // Only attempt recovery in remote sessions (CCR) where files don't persist
-    if (getEnvironmentKind() === null) {
-      return false
-    }
-
     logForDebugging(
       `Plan file missing during resume: ${planPath}. Attempting recovery.`,
     )
@@ -206,7 +201,7 @@ export async function copyPlanForResume(
       )
     } else {
       // Fall back to searching message history
-      recovered = recoverPlanFromMessages(log)
+      recovered = await recoverPlanFromMessages(log)
       if (recovered) {
         logForDebugging(
           `Plan recovered from message history, ${recovered.length} chars`,
@@ -277,7 +272,7 @@ export async function copyPlanForFork(
  * 3. plan_file_reference attachment — created by auto-compact to preserve the
  *    plan across compaction boundaries.
  */
-function recoverPlanFromMessages(log: LogOption): string | null {
+async function recoverPlanFromMessages(log: LogOption): Promise<string | null> {
   for (let i = log.messages.length - 1; i >= 0; i--) {
     const msg = log.messages[i]
     if (!msg) {
@@ -315,10 +310,37 @@ function recoverPlanFromMessages(log: LogOption): string | null {
     if (msg.type === 'attachment') {
       const attachmentMsg = msg as AttachmentMessage
       if (attachmentMsg.attachment?.type === 'plan_file_reference') {
-        const plan = (attachmentMsg.attachment as { planContent?: string })
-          .planContent
+        const planAttachment = attachmentMsg.attachment as {
+          planContent?: string
+          persistedPlanPath?: string
+          planFilePath?: string
+        }
+        const plan = planAttachment.planContent
         if (typeof plan === 'string' && plan.length > 0) {
           return plan
+        }
+        if (typeof planAttachment.persistedPlanPath === 'string') {
+          try {
+            const persistedPlan = await readFile(
+              planAttachment.persistedPlanPath,
+              'utf-8',
+            )
+            if (persistedPlan.length > 0) {
+              return persistedPlan
+            }
+          } catch {
+            // Fall through to live plan path recovery below.
+          }
+        }
+        if (typeof planAttachment.planFilePath === 'string') {
+          try {
+            const filePlan = await readFile(planAttachment.planFilePath, 'utf-8')
+            if (filePlan.length > 0) {
+              return filePlan
+            }
+          } catch {
+            // Fall through to older recovery sources below.
+          }
         }
       }
     }

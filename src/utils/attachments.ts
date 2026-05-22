@@ -21,7 +21,7 @@ import { expandPath } from './path.js'
 import { countCharInString } from './stringUtils.js'
 import { count, uniq } from './array.js'
 import { getFsImplementation } from './fsOperations.js'
-import { readdir, stat } from 'fs/promises'
+import { mkdir, readFile, readdir, stat, writeFile } from 'fs/promises'
 import type { IDESelection } from '../hooks/useIdeSelection.js'
 import { TODO_WRITE_TOOL_NAME } from '../tools/TodoWriteTool/constants.js'
 import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
@@ -45,7 +45,7 @@ import {
   getConditionalRulesForCwdLevelDirectory,
   type MemoryFileInfo,
 } from './claudemd.js'
-import { dirname, parse, relative, resolve } from 'path'
+import { dirname, parse, relative, resolve, sep } from 'path'
 import { getCwd } from 'src/utils/cwd.js'
 import { getViewedTeammateTask } from '../state/selectors.js'
 import { logError } from './log.js'
@@ -63,7 +63,7 @@ import {
   getImagePasteIds,
   isValidImagePaste,
 } from 'src/types/textInputTypes.js'
-import { randomUUID, type UUID } from 'crypto'
+import { createHash, randomUUID, type UUID } from 'crypto'
 import { getSettings_DEPRECATED } from './settings/settings.js'
 import { getSnippetForTwoFileDiff } from 'src/tools/FileEditTool/utils.js'
 import type {
@@ -86,6 +86,11 @@ import uniqBy from 'lodash-es/uniqBy.js'
 import { getProjectRoot } from '../bootstrap/state.js'
 import { formatCommandsWithinBudget } from '../tools/SkillTool/prompt.js'
 import { getContextWindowForModel } from './context.js'
+import {
+  generatePreview,
+  getToolResultsDir,
+  PREVIEW_SIZE_BYTES,
+} from './toolResultStorage.js'
 import type { DiscoverySignal } from '../services/skillSearch/signals.js'
 // Conditional require for DCE. All skill-search string literals that would
 // otherwise leak into external builds live inside these modules. The only
@@ -584,6 +589,10 @@ export type Attachment =
       type: 'plan_file_reference'
       planFilePath: string
       planContent: string
+      persistedPlanPath?: string
+      planPreview?: string
+      planOriginalSize?: number
+      planHasMore?: boolean
     }
   | {
       type: 'mcp_resource'
@@ -592,6 +601,10 @@ export type Attachment =
       name: string
       description?: string
       content: ReadResourceResult
+      persistedTextPath?: string
+      persistedTextPreview?: string
+      persistedTextOriginalSize?: number
+      persistedTextHasMore?: boolean
     }
   | {
       type: 'command_permissions'
@@ -726,6 +739,400 @@ export type TeamContextAttachment = {
   teamName: string
   teamConfigPath: string
   taskListPath: string
+}
+
+const MCP_RESOURCE_INLINE_CHAR_BUDGET = 12_000
+const PLAN_FILE_INLINE_CHAR_BUDGET = 12_000
+const MCP_INSTRUCTIONS_MAX_BLOCK_CHARS = 4_000
+const MCP_INSTRUCTIONS_MAX_TOTAL_CHARS = 12_000
+
+function truncateWithNotice(
+  text: string,
+  maxChars: number,
+  label: string,
+): string {
+  if (text.length <= maxChars) {
+    return text
+  }
+
+  const notice = `\n\n[${label} truncated; ${(
+    text.length - maxChars
+  ).toLocaleString()} chars omitted from context]`
+  const sliceLength = Math.max(0, maxChars - notice.length)
+  return text.slice(0, sliceLength) + notice
+}
+
+function boundMcpInstructionBlocks(blocks: string[]): string[] {
+  if (blocks.length === 0) return blocks
+
+  const bounded: string[] = []
+  let remaining = MCP_INSTRUCTIONS_MAX_TOTAL_CHARS
+  let omitted = 0
+
+  for (const block of blocks) {
+    if (remaining <= 0) {
+      omitted++
+      continue
+    }
+
+    const separatorCost = bounded.length > 0 ? 1 : 0
+    if (remaining <= separatorCost) {
+      omitted++
+      continue
+    }
+
+    const truncatedBlock = truncateWithNotice(
+      block,
+      Math.min(
+        MCP_INSTRUCTIONS_MAX_BLOCK_CHARS,
+        remaining - separatorCost,
+      ),
+      'MCP server instructions',
+    )
+
+    if (truncatedBlock.length + separatorCost > remaining) {
+      omitted++
+      continue
+    }
+
+    bounded.push(truncatedBlock)
+    remaining -= truncatedBlock.length + separatorCost
+  }
+
+  if (omitted > 0) {
+    const summary =
+      `## Additional MCP servers\n` +
+      `[Instructions for ${omitted} server(s) were omitted from model context due to size. Server names were still recorded in session history.]`
+    const separatorCost = bounded.length > 0 ? 1 : 0
+    if (remaining > separatorCost) {
+      const truncatedSummary = truncateWithNotice(
+        summary,
+        remaining - separatorCost,
+        'MCP server instructions',
+      )
+      if (truncatedSummary.length + separatorCost <= remaining) {
+        bounded.push(truncatedSummary)
+      }
+    }
+  }
+
+  return bounded
+}
+
+function renderMcpResourceForBudgeting(content: ReadResourceResult): string {
+  const lines: string[] = []
+
+  for (const item of content.contents) {
+    if (!item || typeof item !== 'object') continue
+
+    if ('text' in item && typeof item.text === 'string') {
+      lines.push('Full contents of resource:')
+      lines.push(item.text)
+      continue
+    }
+
+    if ('blob' in item) {
+      const mimeType =
+        'mimeType' in item
+          ? String(item.mimeType)
+          : 'application/octet-stream'
+      lines.push(`[Binary content: ${mimeType}]`)
+    }
+  }
+
+  return lines.join('\n\n')
+}
+
+function isCurrentSessionToolResultPath(path: string): boolean {
+  const toolResultsDir = getToolResultsDir()
+  const toolResultsDirWithSep = toolResultsDir.endsWith(sep)
+    ? toolResultsDir
+    : toolResultsDir + sep
+  return path === toolResultsDir || path.startsWith(toolResultsDirWithSep)
+}
+
+type PersistedAttachmentText =
+  | {
+      filepath: string
+      preview: string
+      originalSize: number
+      hasMore: boolean
+    }
+  | { error: string }
+
+async function persistAttachmentText(
+  content: string,
+  persistId: string,
+  persistDirOverride?: string,
+): Promise<PersistedAttachmentText> {
+  const toolResultsDir = persistDirOverride ?? getToolResultsDir()
+  const filepath = resolve(toolResultsDir, `${persistId}.txt`)
+
+  try {
+    await mkdir(toolResultsDir, { recursive: true })
+    await writeFile(filepath, content, { encoding: 'utf-8' })
+  } catch (error) {
+    logError(toError(error))
+    return { error: toError(error).message }
+  }
+
+  const { preview, hasMore } = generatePreview(content, PREVIEW_SIZE_BYTES)
+  return {
+    filepath,
+    preview,
+    originalSize: content.length,
+    hasMore,
+  }
+}
+
+export function budgetPlanFileReferenceAttachment(
+  attachment: Extract<Attachment, { type: 'plan_file_reference' }>,
+): Extract<Attachment, { type: 'plan_file_reference' }> {
+  if (attachment.planContent.length <= PLAN_FILE_INLINE_CHAR_BUDGET) {
+    return attachment
+  }
+
+  const { preview, hasMore } = generatePreview(
+    attachment.planContent,
+    PREVIEW_SIZE_BYTES,
+  )
+
+  return {
+    ...attachment,
+    planContent: '',
+    planPreview: preview,
+    planOriginalSize: attachment.planContent.length,
+    planHasMore: hasMore,
+  }
+}
+
+async function maybePersistPlanFileReferenceAttachment(
+  attachment: Extract<Attachment, { type: 'plan_file_reference' }>,
+  persistDirOverride?: string,
+): Promise<Extract<Attachment, { type: 'plan_file_reference' }>> {
+  if (attachment.persistedPlanPath) {
+    if (isCurrentSessionToolResultPath(attachment.persistedPlanPath)) {
+      return attachment
+    }
+    try {
+      const persistedContent = await readFile(attachment.persistedPlanPath, 'utf-8')
+      const persistId = `plan-reference-${createHash('sha256')
+        .update(attachment.planFilePath)
+        .update('\0')
+        .update(persistedContent)
+        .digest('hex')
+        .slice(0, 16)}`
+      const persisted = await persistAttachmentText(
+        persistedContent,
+        persistId,
+        persistDirOverride,
+      )
+      if ('error' in persisted) {
+        return attachment
+      }
+      return {
+        ...attachment,
+        persistedPlanPath: persisted.filepath,
+        planPreview: persisted.preview,
+        planOriginalSize: persisted.originalSize,
+        planHasMore: persisted.hasMore,
+      }
+    } catch {
+      return attachment
+    }
+  }
+
+  const budgeted = budgetPlanFileReferenceAttachment(attachment)
+  if (
+    budgeted === attachment ||
+    attachment.planContent.length <= PLAN_FILE_INLINE_CHAR_BUDGET
+  ) {
+    return budgeted
+  }
+
+  const persistId = `plan-reference-${createHash('sha256')
+    .update(attachment.planFilePath)
+    .update('\0')
+    .update(attachment.planContent)
+    .digest('hex')
+    .slice(0, 16)}`
+  const persisted = await persistAttachmentText(
+    attachment.planContent,
+    persistId,
+    persistDirOverride,
+  )
+
+  if ('error' in persisted) {
+    logError(
+      new Error(
+        `Failed to persist plan file reference ${attachment.planFilePath}: ${persisted.error}`,
+      ),
+    )
+    return budgeted
+  }
+
+  return {
+    ...budgeted,
+    persistedPlanPath: persisted.filepath,
+    planPreview: persisted.preview,
+    planOriginalSize: persisted.originalSize,
+    planHasMore: persisted.hasMore,
+  }
+}
+
+async function maybePersistMcpResourceText(
+  attachment: Extract<Attachment, { type: 'mcp_resource' }>,
+  persistDirOverride?: string,
+): Promise<Extract<Attachment, { type: 'mcp_resource' }>> {
+  if (attachment.persistedTextPath) {
+    if (isCurrentSessionToolResultPath(attachment.persistedTextPath)) {
+      return attachment
+    }
+    try {
+      const persistedContent = await readFile(attachment.persistedTextPath, 'utf-8')
+      const persistId = `mcp-resource-${createHash('sha256')
+        .update(attachment.server)
+        .update('\0')
+        .update(attachment.uri)
+        .update('\0')
+        .update(persistedContent)
+        .digest('hex')
+        .slice(0, 16)}`
+      const persisted = await persistAttachmentText(
+        persistedContent,
+        persistId,
+        persistDirOverride,
+      )
+      if ('error' in persisted) {
+        return attachment
+      }
+      return applyPersistedMcpResourceReference(attachment, persisted)
+    } catch {
+      return attachment
+    }
+  }
+
+  const rendered = renderMcpResourceForBudgeting(attachment.content)
+  if (rendered.length <= MCP_RESOURCE_INLINE_CHAR_BUDGET) {
+    return attachment
+  }
+
+  const persistId = `mcp-resource-${createHash('sha256')
+    .update(attachment.server)
+    .update('\0')
+    .update(attachment.uri)
+    .update('\0')
+    .update(rendered)
+    .digest('hex')
+    .slice(0, 16)}`
+  const persisted = await persistAttachmentText(
+    rendered,
+    persistId,
+    persistDirOverride,
+  )
+
+  if ('error' in persisted) {
+    logError(new Error(`Failed to persist MCP resource ${attachment.uri}: ${persisted.error}`))
+    return attachment
+  }
+
+  return applyPersistedMcpResourceReference(attachment, persisted)
+}
+
+function applyPersistedMcpResourceReference(
+  attachment: Extract<Attachment, { type: 'mcp_resource' }>,
+  persisted: PersistedAttachmentText & {
+    filepath: string
+    preview: string
+    originalSize: number
+    hasMore: boolean
+  },
+): Extract<Attachment, { type: 'mcp_resource' }> {
+  return {
+    ...attachment,
+    // Drop the raw resource body once we have a persisted reference so
+    // session history and transcript storage do not retain the large payload.
+    content: { contents: [] },
+    persistedTextPath: persisted.filepath,
+    persistedTextPreview: persisted.preview,
+    persistedTextOriginalSize: persisted.originalSize,
+    persistedTextHasMore: persisted.hasMore,
+  }
+}
+
+/** Exported for testing — regression guard for persisted MCP resource slimming. */
+export function applyPersistedMcpResourceReferenceForTesting(
+  attachment: Extract<Attachment, { type: 'mcp_resource' }>,
+  persisted: {
+    filepath: string
+    preview: string
+    originalSize: number
+    hasMore: boolean
+  },
+): Extract<Attachment, { type: 'mcp_resource' }> {
+  return applyPersistedMcpResourceReference(attachment, persisted)
+}
+
+/** Exported for testing — regression guard for plan attachment budgeting. */
+export function applyPlanFileReferenceBudgetForTesting(
+  attachment: Extract<Attachment, { type: 'plan_file_reference' }>,
+): Extract<Attachment, { type: 'plan_file_reference' }> {
+  return budgetPlanFileReferenceAttachment(attachment)
+}
+
+/** Exported for testing — regression guard for persisted plan attachment slimming. */
+export async function persistPlanFileReferenceAttachment(
+  attachment: Extract<Attachment, { type: 'plan_file_reference' }>,
+  options?: { persistDirOverride?: string },
+): Promise<Extract<Attachment, { type: 'plan_file_reference' }>> {
+  return await maybePersistPlanFileReferenceAttachment(
+    attachment,
+    options?.persistDirOverride,
+  )
+}
+
+/** Exported for testing — regression guard for persisted MCP rehoming. */
+export async function persistMcpResourceAttachmentForTesting(
+  attachment: Extract<Attachment, { type: 'mcp_resource' }>,
+  options?: { persistDirOverride?: string },
+): Promise<Extract<Attachment, { type: 'mcp_resource' }>> {
+  return await maybePersistMcpResourceText(
+    attachment,
+    options?.persistDirOverride,
+  )
+}
+
+export async function sanitizeLargeContextAttachments(
+  messages: readonly Message[],
+): Promise<Message[]> {
+  return await Promise.all(
+    messages.map(async message => {
+      if (message.type !== 'attachment') {
+        return message
+      }
+
+      const attachment = message.attachment
+      switch (attachment.type) {
+        case 'mcp_resource': {
+          const sanitizedAttachment = await maybePersistMcpResourceText(
+            attachment,
+          )
+          return sanitizedAttachment === attachment
+            ? message
+            : { ...message, attachment: sanitizedAttachment }
+        }
+        case 'plan_file_reference': {
+          const sanitizedAttachment =
+            await maybePersistPlanFileReferenceAttachment(attachment)
+          return sanitizedAttachment === attachment
+            ? message
+            : { ...message, attachment: sanitizedAttachment }
+        }
+        default:
+          return message
+      }
+    }),
+  )
 }
 
 /**
@@ -1557,7 +1964,13 @@ export function getMcpInstructionsDeltaAttachment(
 
   const delta = getMcpInstructionsDelta(mcpClients, messages ?? [], clientSide)
   if (!delta) return []
-  return [{ type: 'mcp_instructions_delta', ...delta }]
+  return [
+    {
+      type: 'mcp_instructions_delta',
+      ...delta,
+      addedBlocks: boundMcpInstructionBlocks(delta.addedBlocks),
+    },
+  ]
 }
 
 function getCriticalSystemReminderAttachment(
@@ -2011,14 +2424,14 @@ async function processMcpResourceAttachments(
 
           logEvent('tengu_at_mention_mcp_resource_success', {})
 
-          return {
+          return await maybePersistMcpResourceText({
             type: 'mcp_resource' as const,
             server: serverName,
             uri,
             name: resourceInfo.name || uri,
             description: resourceInfo.description,
             content: result,
-          }
+          })
         } catch (error) {
           logEvent('tengu_at_mention_mcp_resource_error', {})
           logError(error)

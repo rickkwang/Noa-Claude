@@ -474,14 +474,14 @@ export function shouldUseSessionMemoryCompaction(): boolean {
 /**
  * Create a CompactionResult from session memory
  */
-function createCompactionResultFromSessionMemory(
+async function createCompactionResultFromSessionMemory(
   messages: Message[],
   sessionMemory: string,
   messagesToKeep: Message[],
   hookResults: HookResultMessage[],
   transcriptPath: string,
   agentId?: AgentId,
-): CompactionResult {
+): Promise<CompactionResult> {
   const preCompactTokenCount = tokenCountFromLastAPIResponse(messages)
 
   const boundaryMarker = createCompactBoundaryMessage(
@@ -521,7 +521,7 @@ function createCompactionResultFromSessionMemory(
     }),
   ]
 
-  const planAttachment = createPlanAttachmentIfNeeded(agentId)
+  const planAttachment = await createPlanAttachmentIfNeeded(agentId)
   const attachments = planAttachment ? [planAttachment] : []
 
   const initialPostCompactMessages = [
@@ -638,7 +638,7 @@ export async function trySessionMemoryCompaction(
     // Get transcript path for the summary message
     const transcriptPath = getTranscriptPath()
 
-    const compactionResult = createCompactionResultFromSessionMemory(
+    const compactionResult = await createCompactionResultFromSessionMemory(
       messages,
       sessionMemory,
       messagesToKeep,
