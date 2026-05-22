@@ -201,17 +201,19 @@ function StatsContent(t0) {
   }
   const handleClose = t4;
   let t5;
-  if ($[7] === Symbol.for("react.memo_cache_sentinel")) {
+  if ($[7] !== embedded) {
     t5 = {
-      context: "Settings"
+      context: "Settings",
+      isActive: !embedded
     };
-    $[7] = t5;
+    $[7] = embedded;
+    $[8] = t5;
   } else {
-    t5 = $[7];
+    t5 = $[8];
   }
   useKeybinding("confirm:no", handleClose, t5);
   useInput((input, key) => {
-    if (key.ctrl && (input === "c" || input === "d")) {
+    if (!embedded && key.ctrl && (input === "c" || input === "d")) {
       onClose("Stats dialog dismissed", {
         display: "system"
       });

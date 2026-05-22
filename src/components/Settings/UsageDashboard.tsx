@@ -1,11 +1,10 @@
 import * as React from 'react';
 import { Suspense, useState } from 'react';
 import { useIsInsideModal, useModalOrTerminalSize } from '../../context/modalContext.js';
-import { useExitOnCtrlCDWithKeybindings } from '../../hooks/useExitOnCtrlCDWithKeybindings.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
-import { useKeybinding } from '../../keybindings/useKeybinding.js';
+import type { ExitState } from '../../hooks/useExitOnCtrlCDWithKeybindings.js';
 import type { CommandResultDisplay, LocalJSXCommandContext } from '../../commands.js';
-import { Pane } from '../design-system/Pane.js';
+import { Dialog } from '../design-system/Dialog.js';
 import { Tab, Tabs } from '../design-system/Tabs.js';
 import { Status, buildDiagnostics } from './Status.js';
 import { Config } from './Config.js';
@@ -32,8 +31,7 @@ export function UsageDashboard({
   const { rows } = useModalOrTerminalSize(useTerminalSize());
   const contentHeight = insideModal ? rows + 1 : Math.max(15, Math.min(Math.floor(rows * 0.8), 30));
   const [diagnosticsPromise] = useState(() => buildDiagnostics().catch(() => []));
-
-  useExitOnCtrlCDWithKeybindings();
+  const isStatsTab = selectedTab === 'Stats';
 
   const handleEscape = React.useCallback(() => {
     if (tabsHidden) {
@@ -42,14 +40,21 @@ export function UsageDashboard({
     onClose('Usage dialog dismissed', { display: 'system' });
   }, [onClose, tabsHidden]);
 
-  useKeybinding('confirm:no', handleEscape, {
-    context: 'Settings',
-    isActive: !tabsHidden && !(selectedTab === 'Config' && configOwnsEsc),
-  });
-
   return (
-    <Pane color="permission">
+    <Dialog
+      title={isStatsTab ? 'Stats' : 'Settings'}
+      subtitle={isStatsTab ? 'Usage, configuration, diagnostics, and model activity' : 'Status, configuration, usage, and model activity'}
+      color="permission"
+      onCancel={handleEscape}
+      isCancelActive={!tabsHidden && !(selectedTab === 'Config' && configOwnsEsc)}
+      inputGuide={(exitState: ExitState) =>
+        exitState.pending
+          ? `Press ${exitState.keyName} again to exit`
+          : '←/→ to switch tabs, Esc to close'
+      }
+    >
       <Tabs
+        title=""
         color="permission"
         selectedTab={selectedTab}
         onTabChange={setSelectedTab}
@@ -78,6 +83,6 @@ export function UsageDashboard({
           <Stats onClose={onClose} embedded={true} />
         </Tab>
       </Tabs>
-    </Pane>
+    </Dialog>
   );
 }
