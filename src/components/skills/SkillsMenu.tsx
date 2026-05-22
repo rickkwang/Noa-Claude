@@ -435,8 +435,8 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
       return
     }
 
-    return handleToggleSkillMode()
-  }, [handleToggleSkillMode, onExit])
+    return handleUseSkill()
+  }, [handleUseSkill, onExit])
 
   const handleNext = React.useCallback((): void | false => {
     if (displaySkills.length === 0) return false
@@ -476,11 +476,6 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
       if (input === ' ') {
         event.stopImmediatePropagation()
         void handleToggleSkillMode()
-        return
-      }
-      if (input === 'i') {
-        event.stopImmediatePropagation()
-        void handleUseSkill()
         return
       }
       if (input === '/') {
@@ -640,7 +635,7 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
   return (
     <Dialog
       title="Skills"
-      subtitle={`${subtitleCount} · ${isSavingModeChanges ? 'Saving…' : hasPendingModeChanges ? 'Enter to save' : 'Enter/Space to toggle'}, i to insert, type to search, t to sort, Esc to close`}
+      subtitle={`${subtitleCount} · ${isSavingModeChanges ? 'Saving…' : hasPendingModeChanges ? 'Enter to save' : 'Enter to use'}, Space to toggle, type to search, t to sort, Esc to close`}
       onCancel={handleCancel}
       hideInputGuide
       isCancelActive={!isSearchMode}

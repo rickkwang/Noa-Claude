@@ -421,10 +421,12 @@ export function LogoV2() {
   } else {
     t24 = $[61];
   }
-  // Priority: What's new (one-shot after version bump) > onboarding > upsells > default.
-  // hasReleaseNotes is true only until the post-render useEffect saves
-  // lastReleaseNotesSeen, so this surfaces release notes exactly once.
-  const t25 = layoutMode === "horizontal" && <FeedColumn feeds={hasReleaseNotes ? [createWhatsNewFeed(changelog), createRecentActivityFeed(activities)] : showOnboarding ? [createProjectOnboardingFeed(getSteps()), createRecentActivityFeed(activities)] : showGuestPassesUpsell ? [createRecentActivityFeed(activities), createGuestPassesFeed()] : showOverageCreditUpsell ? [createRecentActivityFeed(activities), createOverageCreditFeed()] : [createRecentActivityFeed(activities), createWhatsNewFeed(changelog)]} maxWidth={rightWidth} />;
+  // Priority: onboarding > what's new > upsells > default. hasReleaseNotes is
+  // captured once via useState and stays true for the whole session; the effect
+  // only updates lastReleaseNotesSeen so the next launch suppresses it. We must
+  // therefore keep onboarding ahead of release notes, otherwise a brand-new
+  // install that lands on a version bump would never see onboarding.
+  const t25 = layoutMode === "horizontal" && <FeedColumn feeds={showOnboarding ? [createProjectOnboardingFeed(getSteps()), createRecentActivityFeed(activities)] : hasReleaseNotes ? [createWhatsNewFeed(changelog), createRecentActivityFeed(activities)] : showGuestPassesUpsell ? [createRecentActivityFeed(activities), createGuestPassesFeed()] : showOverageCreditUpsell ? [createRecentActivityFeed(activities), createOverageCreditFeed()] : [createRecentActivityFeed(activities), createWhatsNewFeed(changelog)]} maxWidth={rightWidth} />;
   let t26;
   if ($[62] !== T2 || $[63] !== t15 || $[64] !== t23 || $[65] !== t24 || $[66] !== t25) {
     t26 = <T2 flexDirection={t15} paddingX={t16} gap={t17}>{t23}{t24}{t25}</T2>;
