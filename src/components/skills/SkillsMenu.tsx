@@ -138,34 +138,39 @@ async function persistSkillMode(
   baseMode: SkillMode,
   writeId: number,
 ): Promise<boolean> {
-  const nextWrite = skillModeWriteQueue.catch(() => undefined).then(() => {
-    const currentSkillModes = {
-      ...(getSettingsForSource('localSettings')?.skillModes ?? {}),
-    }
+  // Keep the actual file write synchronous so a toggle survives immediate
+  // process exit / resume right after Enter. Chain through skillModeWriteQueue
+  // to serialize concurrent toggles and avoid read-before-write races.
+  const nextWrite = skillModeWriteQueue
+    .catch(() => undefined)
+    .then(() => {
+      const currentSkillModes = {
+        ...(getSettingsForSource('localSettings')?.skillModes ?? {}),
+      }
 
-    if (mode === baseMode) {
-      delete currentSkillModes[skillName]
-    } else {
-      currentSkillModes[skillName] = mode
-    }
+      if (mode === baseMode) {
+        currentSkillModes[skillName] = undefined
+      } else {
+        currentSkillModes[skillName] = mode
+      }
 
-    if (!isLatestWriteId(skillName, writeId)) {
-      return false
-    }
+      if (!isLatestWriteId(skillName, writeId)) {
+        return false
+      }
 
-    const nextSkillModes =
-      Object.keys(currentSkillModes).length > 0 ? currentSkillModes : undefined
-    const { error } = updateSettingsForSource('localSettings', {
-      skillModes: nextSkillModes,
+      const nextSkillModes =
+        Object.keys(currentSkillModes).length > 0 ? currentSkillModes : undefined
+      const { error } = updateSettingsForSource('localSettings', {
+        skillModes: nextSkillModes,
+      })
+
+      if (error) {
+        throw error
+      }
+
+      settingsChangeDetector.notifyChange('localSettings')
+      return true
     })
-
-    if (error) {
-      throw error
-    }
-
-    settingsChangeDetector.notifyChange('localSettings')
-    return true
-  })
 
   skillModeWriteQueue = nextWrite.then(() => undefined, () => undefined)
   pendingSkillModeWrites.add(nextWrite)
@@ -478,6 +483,11 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
         void handleToggleSkillMode()
         return
       }
+      if (input === 'i') {
+        event.stopImmediatePropagation()
+        void handleUseSkill()
+        return
+      }
       if (input === '/') {
         event.stopImmediatePropagation()
         setIsSearchMode(true)
@@ -635,7 +645,7 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
   return (
     <Dialog
       title="Skills"
-      subtitle={`${subtitleCount} · ${isSavingModeChanges ? 'Saving…' : hasPendingModeChanges ? 'Enter to save' : 'Enter to use'}, Space to toggle, type to search, t to sort, Esc to close`}
+      subtitle={`${subtitleCount} · ${isSavingModeChanges ? 'Saving…' : hasPendingModeChanges ? 'Enter to save' : 'Enter to use'}, Space to toggle, i to insert, type to search, t to sort, Esc to close`}
       onCancel={handleCancel}
       hideInputGuide
       isCancelActive={!isSearchMode}
