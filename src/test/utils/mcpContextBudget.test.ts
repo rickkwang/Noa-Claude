@@ -337,4 +337,26 @@ describe('MCP context budgeting', () => {
     expect(rewritten.content).toContain(metadataLine)
     expect(rewritten.content).not.toContain('"planContent":"# Legacy Plan')
   })
+
+  test('persisted attachment originalSize reports UTF-8 bytes, not char count', async () => {
+    const targetDir = join('/private/tmp', `bytes-${randomUUID()}`)
+    // Multi-byte chars (3 bytes each in UTF-8) above the 12k char budget so
+    // the persist path runs AND we can verify size is reported in bytes.
+    const planBody = '中'.repeat(12_001)
+    const charCount = planBody.length
+    const byteCount = Buffer.byteLength(planBody, 'utf8')
+    expect(byteCount).toBeGreaterThan(charCount)
+
+    const persisted = await persistPlanFileReferenceAttachment(
+      {
+        type: 'plan_file_reference',
+        planFilePath: '/tmp/multibyte-plan.md',
+        planContent: planBody,
+      },
+      { persistDirOverride: targetDir },
+    )
+
+    expect(persisted.planOriginalSize).toBe(byteCount)
+    expect(persisted.planOriginalSize).not.toBe(charCount)
+  })
 })

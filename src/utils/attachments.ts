@@ -21,7 +21,8 @@ import { expandPath } from './path.js'
 import { countCharInString } from './stringUtils.js'
 import { count, uniq } from './array.js'
 import { getFsImplementation } from './fsOperations.js'
-import { mkdir, readFile, readdir, stat, writeFile } from 'fs/promises'
+import { mkdir, readFile, readdir, rename, stat, writeFile } from 'fs/promises'
+import { realpathSync } from 'fs'
 import type { IDESelection } from '../hooks/useIdeSelection.js'
 import { TODO_WRITE_TOOL_NAME } from '../tools/TodoWriteTool/constants.js'
 import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
@@ -591,6 +592,7 @@ export type Attachment =
       planContent: string
       persistedPlanPath?: string
       planPreview?: string
+      /** UTF-8 byte length of the original plan, for rendering via formatFileSize. */
       planOriginalSize?: number
       planHasMore?: boolean
     }
@@ -603,6 +605,7 @@ export type Attachment =
       content: ReadResourceResult
       persistedTextPath?: string
       persistedTextPreview?: string
+      /** UTF-8 byte length of the original text payload, for rendering via formatFileSize. */
       persistedTextOriginalSize?: number
       persistedTextHasMore?: boolean
     }
@@ -843,12 +846,23 @@ function renderMcpResourceForBudgeting(content: ReadResourceResult): string {
   return lines.join('\n\n')
 }
 
+function normalizeFsPath(path: string): string {
+  try {
+    // realpathSync.native resolves /var -> /private/var on macOS so we don't
+    // false-negative when comparing paths the kernel sees as identical.
+    return realpathSync.native(path)
+  } catch {
+    return resolve(path)
+  }
+}
+
 function isCurrentSessionToolResultPath(path: string): boolean {
-  const toolResultsDir = getToolResultsDir()
-  const toolResultsDirWithSep = toolResultsDir.endsWith(sep)
+  const toolResultsDir = normalizeFsPath(getToolResultsDir())
+  const target = normalizeFsPath(path)
+  const dirWithSep = toolResultsDir.endsWith(sep)
     ? toolResultsDir
     : toolResultsDir + sep
-  return path === toolResultsDir || path.startsWith(toolResultsDirWithSep)
+  return target === toolResultsDir || target.startsWith(dirWithSep)
 }
 
 type PersistedAttachmentText =
@@ -867,10 +881,14 @@ async function persistAttachmentText(
 ): Promise<PersistedAttachmentText> {
   const toolResultsDir = persistDirOverride ?? getToolResultsDir()
   const filepath = resolve(toolResultsDir, `${persistId}.txt`)
+  // Atomic write: tmp file then rename, so a crash mid-write can't leave a
+  // truncated persisted attachment that later loads as garbage.
+  const tmpPath = `${filepath}.tmp.${process.pid}.${Date.now()}`
 
   try {
     await mkdir(toolResultsDir, { recursive: true })
-    await writeFile(filepath, content, { encoding: 'utf-8' })
+    await writeFile(tmpPath, content, { encoding: 'utf-8' })
+    await rename(tmpPath, filepath)
   } catch (error) {
     logError(toError(error))
     return { error: toError(error).message }
@@ -880,7 +898,9 @@ async function persistAttachmentText(
   return {
     filepath,
     preview,
-    originalSize: content.length,
+    // UTF-8 byte length, NOT char count — `formatFileSize` expects bytes and
+    // a multi-byte payload would otherwise be reported as ~3x smaller.
+    originalSize: Buffer.byteLength(content, 'utf8'),
     hasMore,
   }
 }

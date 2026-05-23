@@ -1,6 +1,6 @@
 import { feature } from 'bun:bundle'
 import type { UUID } from 'crypto'
-import { readFile, writeFile } from 'fs/promises'
+import { readFile, rename, writeFile } from 'fs/promises'
 import { dirname } from 'path'
 import {
   getMainLoopModelOverride,
@@ -727,32 +727,10 @@ type ResumeLoadResult = {
   fullPath?: string
 }
 
-async function persistSanitizedAttachmentEntriesForResume(
-  transcriptPath: string,
+function collectRewrittenAttachments(
   originalMessages: readonly Message[],
   sanitizedMessages: readonly Message[],
-): Promise<void> {
-  const { changed, content } = rewriteSanitizedAttachmentEntriesForResume(
-    await readFile(transcriptPath, 'utf-8'),
-    originalMessages,
-    sanitizedMessages,
-  )
-
-  if (!changed) {
-    return
-  }
-
-  await writeFile(transcriptPath, content, {
-    encoding: 'utf-8',
-    mode: 0o600,
-  })
-}
-
-export function rewriteSanitizedAttachmentEntriesForResume(
-  content: string,
-  originalMessages: readonly Message[],
-  sanitizedMessages: readonly Message[],
-): { changed: boolean; content: string } {
+): Map<string, Message['attachment']> {
   const rewrittenAttachments = new Map<string, Message['attachment']>()
 
   for (let i = 0; i < originalMessages.length; i++) {
@@ -773,10 +751,66 @@ export function rewriteSanitizedAttachmentEntriesForResume(
     rewrittenAttachments.set(original.uuid, sanitized.attachment)
   }
 
+  return rewrittenAttachments
+}
+
+async function persistSanitizedAttachmentEntriesForResume(
+  transcriptPath: string,
+  originalMessages: readonly Message[],
+  sanitizedMessages: readonly Message[],
+): Promise<void> {
+  // Build the rewrite map first so we can skip the (potentially large)
+  // transcript read entirely when nothing was sanitized.
+  const rewrittenAttachments = collectRewrittenAttachments(
+    originalMessages,
+    sanitizedMessages,
+  )
+  if (rewrittenAttachments.size === 0) {
+    return
+  }
+
+  const { changed, content } = applyRewrittenAttachmentsToTranscriptContent(
+    await readFile(transcriptPath, 'utf-8'),
+    rewrittenAttachments,
+  )
+
+  if (!changed) {
+    return
+  }
+
+  // Atomic write so a crash mid-rewrite can't leave a truncated transcript.
+  const tmpPath = `${transcriptPath}.tmp.${process.pid}.${Date.now()}`
+  await writeFile(tmpPath, content, { encoding: 'utf-8', mode: 0o600 })
+  await rename(tmpPath, transcriptPath)
+}
+
+export function rewriteSanitizedAttachmentEntriesForResume(
+  content: string,
+  originalMessages: readonly Message[],
+  sanitizedMessages: readonly Message[],
+): { changed: boolean; content: string } {
+  const rewrittenAttachments = collectRewrittenAttachments(
+    originalMessages,
+    sanitizedMessages,
+  )
+
   if (rewrittenAttachments.size === 0) {
     return { changed: false, content }
   }
 
+  return applyRewrittenAttachmentsToTranscriptContent(
+    content,
+    rewrittenAttachments,
+  )
+}
+
+function applyRewrittenAttachmentsToTranscriptContent(
+  content: string,
+  rewrittenAttachments: Map<
+    string,
+    Message['attachment']
+  >,
+): { changed: boolean; content: string } {
   let changed = false
   const lines = content.split('\n')
   const rewrittenLines = lines.map(line => {
