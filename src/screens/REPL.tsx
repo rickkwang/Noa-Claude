@@ -1336,11 +1336,6 @@ export function REPL({
     logForDebugging(`[useDeferredValue] Messages deferred by ${deferredBehind} (${deferredMessages.length}→${messages.length})`);
   }
 
-  // Frozen state for transcript mode - stores lengths instead of cloning arrays for memory efficiency
-  const [frozenTranscriptState, setFrozenTranscriptState] = useState<{
-    messagesLength: number;
-    streamingToolUsesLength: number;
-  } | null>(null);
   // Initialize input with any early input that was captured before REPL was ready.
   // Using lazy initialization ensures cursor offset is set correctly in PromptInput.
   const [inputValue, setInputValueRaw] = useState(() => consumeEarlyInput());
@@ -4202,19 +4197,6 @@ export function REPL({
     return total === 1 ? `running ${hookType} hook` : `running stop hooks… ${completedCount}/${total}`;
   }, [messages, isLoading]);
 
-  // Callback to capture frozen state when entering transcript mode
-  const handleEnterTranscript = useCallback(() => {
-    setFrozenTranscriptState({
-      messagesLength: messages.length,
-      streamingToolUsesLength: streamingToolUses.length
-    });
-  }, [messages.length, streamingToolUses.length]);
-
-  // Callback to clear frozen state when exiting transcript mode
-  const handleExitTranscript = useCallback(() => {
-    setFrozenTranscriptState(null);
-  }, []);
-
   // Props for GlobalKeybindingHandlers component (rendered inside KeybindingSetup)
   const virtualScrollActive = isFullscreenEnvEnabled() && !disableVirtualScroll;
 
@@ -4291,12 +4273,6 @@ export function REPL({
   // competing for input) — same class as g/G/j/k in ScrollKeybindingHandler.
   useInput((input, key, event) => {
     if (key.ctrl || key.meta) return;
-    if (input === 'q') {
-      // less: q quits the pager. ctrl+o toggles; q is the lineage exit.
-      handleExitTranscript();
-      event.stopImmediatePropagation();
-      return;
-    }
     if (input === '[' && !dumpMode) {
       // Force dump-to-scrollback. Also expand + uncap — no point dumping
       // a subset. Terminal/tmux cmd-F can now find anything. Guard here
@@ -4387,8 +4363,6 @@ export function REPL({
     showAllInTranscript,
     setShowAllInTranscript,
     messageCount: messages.length,
-    onEnterTranscript: handleEnterTranscript,
-    onExitTranscript: handleExitTranscript,
     virtualScrollActive,
     // Bar-open is a mode (owns keystrokes — j/k type, Esc cancels).
     // Navigating (query set, bar closed) is NOT — Esc exits transcript,
@@ -4399,9 +4373,11 @@ export function REPL({
     searchBarOpen: searchOpen
   };
 
-  // Use frozen lengths to slice arrays, avoiding memory overhead of cloning
-  const transcriptMessages = frozenTranscriptState ? deferredMessages.slice(0, frozenTranscriptState.messagesLength) : deferredMessages;
-  const transcriptStreamingToolUses = frozenTranscriptState ? streamingToolUses.slice(0, frozenTranscriptState.streamingToolUsesLength) : streamingToolUses;
+  // Transcript tails live data — new messages appended during transcript mode
+  // remain visible. Messages are append-only so existing search indices and
+  // scroll anchors stay valid as the array grows.
+  const transcriptMessages = deferredMessages;
+  const transcriptStreamingToolUses = streamingToolUses;
 
   // Handle shift+down for teammate navigation and background task management.
   // Guard onOpenBackgroundTasks when a local-jsx dialog (e.g. /mcp) is open —
