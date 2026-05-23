@@ -1805,7 +1805,7 @@ function checkQualityRegressionGuards() {
   );
   assert(
     promptsSource.includes(
-      'include enough detail to cover blockers, verification, and important implementation context.',
+      'include the details that matter for blockers, verification, or important implementation context.',
     ),
     'external prompt should preserve concise-but-complete communication guidance',
   );

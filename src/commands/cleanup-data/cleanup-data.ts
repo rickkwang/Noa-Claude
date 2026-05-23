@@ -24,7 +24,8 @@ type ResolvedTarget = CleanupTarget & {
 }
 
 function parseArgs(args: string): {
-  scope: CleanupScope
+  error?: string
+  scope?: CleanupScope
   confirm: boolean
 } {
   const parts = args
@@ -32,8 +33,32 @@ function parseArgs(args: string): {
     .map(v => v.trim().toLowerCase())
     .filter(Boolean)
 
+  const allowed = new Set(['project', 'all', '--confirm', 'confirm'])
+  const unknown = parts.filter(part => !allowed.has(part))
+  if (unknown.length > 0) {
+    return {
+      error: `Unknown argument(s): ${unknown.join(', ')}\nUsage: /cleanup-data [project|all] [--confirm]`,
+      confirm: false,
+    }
+  }
+
+  if (parts.includes('project') && parts.includes('all')) {
+    return {
+      error:
+        'Choose one cleanup scope: project or all.\nUsage: /cleanup-data [project|all] [--confirm]',
+      confirm: false,
+    }
+  }
+
   const scope: CleanupScope = parts.includes('all') ? 'all' : 'project'
   const confirm = parts.includes('--confirm') || parts.includes('confirm')
+  if (confirm && !parts.includes('project') && !parts.includes('all')) {
+    return {
+      error:
+        'Confirm requires an explicit scope.\nUsage: /cleanup-data [project|all] [--confirm]',
+      confirm: false,
+    }
+  }
   return { scope, confirm }
 }
 
@@ -87,6 +112,8 @@ function buildTargets(scope: CleanupScope): CleanupTarget[] {
   const projectRoot = getProjectRoot()
   const autoMemPath = getAutoMemPath().replace(/[\\/]+$/, '')
   const historyPath = join(getClaudeConfigHomeDir(), 'history.jsonl')
+  const defaultMemoryRoot = join(getClaudeConfigHomeDir(), 'projects')
+  const isCustomAutoMemPath = !autoMemPath.startsWith(defaultMemoryRoot)
 
   const targets: CleanupTarget[] = [
     {
@@ -99,7 +126,9 @@ function buildTargets(scope: CleanupScope): CleanupTarget[] {
     },
     {
       path: autoMemPath,
-      reason: 'Auto-memory directory for this project',
+      reason: isCustomAutoMemPath
+        ? 'Project auto-memory (custom location)'
+        : 'Project auto-memory',
     },
   ]
 
@@ -163,7 +192,10 @@ function formatTargetSize(size: number): string {
 }
 
 export const call: LocalCommandCall = async args => {
-  const { scope, confirm } = parseArgs(args || '')
+  const { error, scope = 'project', confirm } = parseArgs(args || '')
+  if (error) {
+    return { type: 'text', value: error }
+  }
   const targets = buildTargets(scope)
   const resolved = await resolveTargets(targets)
 
@@ -172,9 +204,14 @@ export const call: LocalCommandCall = async args => {
   const totalBytes = present.reduce((sum, t) => sum + t.size, 0)
 
   if (!confirm) {
+    const previewSummary =
+      scope === 'all'
+        ? 'This removes project-scoped memory, share snapshots, progress artifacts, and global prompt history; settings/config files are kept.'
+        : 'This removes project-scoped memory, share snapshots, and progress artifacts; settings/config files are kept.'
     const header = [
       `Scope: ${describeScope(scope)}`,
-      'This removes local tracking data; settings/config files are kept.',
+      `Project: ${getProjectRoot()}`,
+      previewSummary,
       'Session transcripts are not touched here — use /clean-sessions for those.',
       '',
     ]
