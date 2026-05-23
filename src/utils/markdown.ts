@@ -174,13 +174,23 @@ export function formatToken(
         )
         .join('')
     }
-    case 'list_item':
-      return (token.tokens ?? [])
-        .map(
-          _ =>
-            `${'  '.repeat(listDepth)}${formatToken(_, theme, listDepth + 1, orderedListNumber, token, highlight)}`,
+    case 'list_item': {
+      const indent = '  '.repeat(listDepth)
+      const bullet =
+        orderedListNumber === null
+          ? '-'
+          : getListNumber(listDepth + 1, orderedListNumber) + '.'
+      const marker = token.task
+        ? `${bullet} ${token.checked ? color('success', theme)('[x]') : '[ ]'}`
+        : bullet
+      const rendered = (token.tokens ?? [])
+        .map(_ =>
+          formatToken(_, theme, listDepth + 1, orderedListNumber, token, highlight),
         )
         .join('')
+      const out = `${indent}${marker} ${rendered}`
+      return out.endsWith(EOL) ? out : out + EOL
+    }
     case 'paragraph':
       return (
         (token.tokens ?? [])
@@ -199,10 +209,18 @@ export function formatToken(
         // link's actual href.
         return token.text
       }
-      if (parent?.type === 'list_item') {
-        return `${orderedListNumber === null ? '-' : getListNumber(listDepth, orderedListNumber) + '.'} ${token.tokens ? token.tokens.map(_ => formatToken(_, theme, listDepth, orderedListNumber, token, highlight)).join('') : linkifyIssueReferences(token.text)}${EOL}`
+      {
+        const rendered = token.tokens
+          ? token.tokens
+              .map(_ =>
+                formatToken(_, theme, listDepth, orderedListNumber, token, highlight),
+              )
+              .join('')
+          : linkifyIssueReferences(token.text)
+        // Under list_item, append EOL so a following nested list (or sibling
+        // text) starts on its own line. list_item itself owns the bullet now.
+        return parent?.type === 'list_item' ? rendered + EOL : rendered
       }
-      return linkifyIssueReferences(token.text)
     case 'table': {
       const tableToken = token as Tokens.Table
 
