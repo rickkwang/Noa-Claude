@@ -53,10 +53,11 @@ export function parseGoalCommandArgs(args: string): GoalCommandAction {
   const trimmed = args.trim()
   if (!trimmed) return { kind: 'show' }
 
+  if (trimmed === 'pause') return { kind: 'pause' }
+  if (trimmed === 'resume') return { kind: 'resume' }
+  if (trimmed === 'clear') return { kind: 'clear' }
+
   const [sub] = trimmed.split(/\s+/)
-  if (sub === 'pause') return { kind: 'pause' }
-  if (sub === 'resume') return { kind: 'resume' }
-  if (sub === 'clear') return { kind: 'clear' }
 
   if (sub === 'replace') {
     const parsed = parseGoalObjectiveAndBudget(

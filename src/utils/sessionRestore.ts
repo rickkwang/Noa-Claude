@@ -201,6 +201,9 @@ function applyGoalCommand(
   if (action.kind === 'pause') return pauseGoal(current, now) ?? current
   if (action.kind === 'resume') return resumeGoal(current, now) ?? current
   if (action.kind === 'set') {
+    if (current.status === 'complete') {
+      return createThreadGoal({ ...action.args, now })
+    }
     if (current.status === 'budget_limited') {
       return (
         maybeResumeBudgetLimitedGoal({

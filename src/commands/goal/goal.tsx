@@ -191,7 +191,6 @@ export async function call(
       | 'budget_resumed'
       | 'conflict'
       | 'budget_too_small'
-      | 'complete_conflict'
     existing?: ThreadGoal
   } = {
     outcome: 'set',
@@ -218,12 +217,12 @@ export async function call(
         }
       }
 
-      if (current.status !== 'complete') {
-        box.outcome = 'conflict'
-        box.existing = current
-        return prev
+      if (current.status === 'complete') {
+        box.outcome = 'set'
+        return { ...prev, goal: createThreadGoal({ objective, tokenBudget, now }) }
       }
-      box.outcome = 'complete_conflict'
+
+      box.outcome = 'conflict'
       box.existing = current
       return prev
     }
@@ -243,10 +242,6 @@ export async function call(
   } else if (box.outcome === 'budget_too_small') {
     onDone(
       `Goal is budget_limited. Provide a larger budget than current usage (${formatTokens(box.existing?.tokensUsed ?? 0)} tokens).`,
-    )
-  } else if (box.outcome === 'complete_conflict') {
-    onDone(
-      `The previous goal is complete. Use /goal clear or /goal replace <objective> before setting a new goal.`,
     )
   } else {
     onDone(`Goal set: ${objective}${budgetStr}`)

@@ -51,6 +51,32 @@ describe('/goal command', () => {
     expect(harness.state.goal?.tokensUsed).toBe(0)
   })
 
+  test('sets a new goal after the previous goal is complete', async () => {
+    const harness = makeContext({
+      ...createThreadGoal({ objective: 'Old goal', tokenBudget: null, now: 1 }),
+      status: 'complete',
+      stopReason: 'complete',
+      completedAt: 2,
+    })
+
+    await goalCommand(harness.onDone, harness.context, 'New goal --budget 200')
+
+    expect(harness.state.goal?.objective).toBe('New goal')
+    expect(harness.state.goal?.status).toBe('active')
+    expect(harness.state.goal?.tokenBudget).toBe(200)
+    expect(harness.state.goal?.tokensUsed).toBe(0)
+    expect(harness.outputs.at(-1)).toContain('Goal set: New goal')
+  })
+
+  test('does not treat control words with extra text as subcommands', async () => {
+    const harness = makeContext()
+
+    await goalCommand(harness.onDone, harness.context, 'clear cache issue')
+
+    expect(harness.state.goal?.objective).toBe('clear cache issue')
+    expect(harness.outputs.at(-1)).toContain('Goal set: clear cache issue')
+  })
+
   test('rejects malformed budget values', async () => {
     const harness = makeContext()
 

@@ -145,4 +145,28 @@ describe('goal state machine', () => {
       },
     })
   })
+
+  test('treats control words with extra text as objectives', () => {
+    expect(parseGoalCommandArgs('clear cache issue')).toMatchObject({
+      kind: 'set',
+      args: {
+        objective: 'clear cache issue',
+        tokenBudget: null,
+      },
+    })
+    expect(parseGoalCommandArgs('pause release work')).toMatchObject({
+      kind: 'set',
+      args: {
+        objective: 'pause release work',
+        tokenBudget: null,
+      },
+    })
+    expect(parseGoalCommandArgs('resume migration')).toMatchObject({
+      kind: 'set',
+      args: {
+        objective: 'resume migration',
+        tokenBudget: null,
+      },
+    })
+  })
 })

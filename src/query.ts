@@ -69,7 +69,7 @@ import {
   applyGoalRuntimeEvaluationFailure,
   decideGoalEvaluatorAction,
 } from './utils/goalRuntime.js'
-import { normalizeGoal } from './utils/goalState.js'
+import { normalizeGoal, recordGoalEvaluatorResult } from './utils/goalState.js'
 import {
   createAttachmentMessage,
   filterDuplicateMemoryAttachments,
@@ -1504,6 +1504,35 @@ async function* queryLoop(
           }
         }
         if (evaluation && !evaluation.achieved) {
+          const nextTurnCount = turnCount + 1
+          const latestGoal = toolUseContext.getAppState().goal
+          if (
+            maxTurns &&
+            nextTurnCount > maxTurns &&
+            latestGoal &&
+            normalizeGoal(latestGoal).status === 'active'
+          ) {
+            const now = Date.now()
+            toolUseContext.setAppState(prev => {
+              if (!prev.goal) return prev
+              const current = normalizeGoal(prev.goal)
+              if (current.status !== 'active') return prev
+              return {
+                ...prev,
+                goal: recordGoalEvaluatorResult({
+                  goal: current,
+                  reason: evaluation.reason,
+                  now,
+                }),
+              }
+            })
+            yield createAttachmentMessage({
+              type: 'max_turns_reached',
+              maxTurns,
+              turnCount: nextTurnCount,
+            })
+            return { reason: 'max_turns', turnCount: nextTurnCount }
+          }
           const goalRuntimeDecision = applyGoalRuntimeEvaluation({
             evaluation,
             setAppState: toolUseContext.setAppState,
@@ -1512,15 +1541,6 @@ async function* queryLoop(
             yield goalRuntimeDecision.userNotice
           }
           if (goalRuntimeDecision.action === 'continue') {
-            const nextTurnCount = turnCount + 1
-            if (maxTurns && nextTurnCount > maxTurns) {
-              yield createAttachmentMessage({
-                type: 'max_turns_reached',
-                maxTurns,
-                turnCount: nextTurnCount,
-              })
-              return { reason: 'max_turns', turnCount: nextTurnCount }
-            }
             if (toolUseContext.abortController.signal.aborted) {
               if (toolUseContext.abortController.signal.reason !== 'interrupt') {
                 yield createUserInterruptionMessage({ toolUse: false })

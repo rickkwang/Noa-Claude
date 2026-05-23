@@ -314,6 +314,33 @@ Continue working toward the active thread goal.`,
       stopReason: 'complete',
     })
   })
+
+  test('restores a new slash command goal after the previous goal completed', () => {
+    const first = createCommandInputMessage(`<command-name>/goal</command-name>
+      <command-message>goal</command-message>
+      <command-args>First goal</command-args>`)
+    first.timestamp = '2026-05-13T10:00:00.000Z'
+
+    const completeNotice = createSystemMessage(
+      'Goal complete. Final usage: 0 tokens, 1 seconds.',
+      'info',
+    )
+    completeNotice.timestamp = '2026-05-13T10:00:01.000Z'
+
+    const second = createCommandInputMessage(`<command-name>/goal</command-name>
+      <command-message>goal</command-message>
+      <command-args>Second goal --budget 200</command-args>`)
+    second.timestamp = '2026-05-13T10:00:02.000Z'
+
+    const state = restore([first, completeNotice, second])
+
+    expect(state.goal).toMatchObject({
+      objective: 'Second goal',
+      status: 'active',
+      tokenBudget: 200,
+      tokensUsed: 0,
+    })
+  })
 })
 
 describe('goal tool result mapping', () => {
