@@ -1,13 +1,7 @@
 // @ts-nocheck
 import { execFileSync } from 'child_process'
 import { diffLines } from 'diff'
-import {
-  mkdir,
-  readdir,
-  readFile,
-  unlink,
-  writeFile,
-} from 'fs/promises'
+import { mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises'
 import { extname, join } from 'path'
 import type { Command } from '../commands.js'
 import { queryWithModel } from '../services/api/claude.js'
@@ -24,6 +18,14 @@ import {
   getRunningRemoteHosts,
   type RemoteHostInfo,
 } from './insights-ant.js'
+import {
+  loadCachedSessionMeta,
+  META_SCHEMA_VERSION,
+  planSessionMetaLoads,
+  saveSessionMeta,
+  type LiteSessionInfo,
+  type SessionMeta,
+} from './insightsCache.js'
 import { extractTextContent } from '../utils/messages.js'
 import { getDefaultOpusModel } from '../utils/model/model.js'
 import {
@@ -50,38 +52,6 @@ function getInsightsModel(): string {
 // ============================================================================
 // Types
 // ============================================================================
-
-type SessionMeta = {
-  session_id: string
-  project_path: string
-  start_time: string
-  duration_minutes: number
-  user_message_count: number
-  assistant_message_count: number
-  tool_counts: Record<string, number>
-  languages: Record<string, number>
-  git_commits: number
-  git_pushes: number
-  input_tokens: number
-  output_tokens: number
-  first_prompt: string
-  summary?: string
-  // New stats
-  user_interruptions: number
-  user_response_times: number[]
-  tool_errors: number
-  tool_error_categories: Record<string, number>
-  uses_task_agent: boolean
-  uses_mcp: boolean
-  uses_web_search: boolean
-  uses_web_fetch: boolean
-  // Additional stats
-  lines_added: number
-  lines_removed: number
-  files_modified: number
-  message_hours: number[]
-  user_message_timestamps: string[] // ISO timestamps for multi-clauding detection
-}
 
 type SessionFacets = {
   session_id: string
@@ -251,9 +221,6 @@ function getDataDir(): string {
 }
 function getFacetsDir(): string {
   return join(getDataDir(), 'facets')
-}
-function getSessionMetaDir(): string {
-  return join(getDataDir(), 'session-meta')
 }
 
 const FACET_EXTRACTION_PROMPT = `Analyze this Noa Claude session and extract structured facets.
@@ -597,6 +564,7 @@ function logToSessionMeta(log: LogOption): SessionMeta {
   }
 
   return {
+    schema_version: META_SCHEMA_VERSION,
     session_id: sessionId,
     project_path: log.projectPath || '',
     start_time: startTime,
@@ -802,31 +770,6 @@ async function saveFacets(facets: SessionFacets): Promise<void> {
   }
   const facetPath = join(getFacetsDir(), `${facets.session_id}.json`)
   await writeFile(facetPath, jsonStringify(facets, null, 2), {
-    encoding: 'utf-8',
-    mode: 0o600,
-  })
-}
-
-async function loadCachedSessionMeta(
-  sessionId: string,
-): Promise<SessionMeta | null> {
-  const metaPath = join(getSessionMetaDir(), `${sessionId}.json`)
-  try {
-    const content = await readFile(metaPath, { encoding: 'utf-8' })
-    return jsonParse(content)
-  } catch {
-    return null
-  }
-}
-
-async function saveSessionMeta(meta: SessionMeta): Promise<void> {
-  try {
-    await mkdir(getSessionMetaDir(), { recursive: true })
-  } catch {
-    // Directory may already exist
-  }
-  const metaPath = join(getSessionMetaDir(), `${meta.session_id}.json`)
-  await writeFile(metaPath, jsonStringify(meta, null, 2), {
     encoding: 'utf-8',
     mode: 0o600,
   })
@@ -2631,13 +2574,6 @@ export function buildExportData(
 // Lite Session Scanning
 // ============================================================================
 
-type LiteSessionInfo = {
-  sessionId: string
-  path: string
-  mtime: number
-  size: number
-}
-
 /**
  * Scans all project directories using filesystem metadata only (no JSONL parsing).
  * Returns a list of session file info sorted by mtime descending.
@@ -2711,24 +2647,27 @@ export async function generateUsageReport(options?: {
   const META_BATCH_SIZE = 50
   const MAX_SESSIONS_TO_LOAD = 200
   let allMetas: SessionMeta[] = []
-  const uncachedSessions: LiteSessionInfo[] = []
+  const rebuildSessions: LiteSessionInfo[] = []
+  const missingCacheSessions: LiteSessionInfo[] = []
 
   for (let i = 0; i < allScannedSessions.length; i += META_BATCH_SIZE) {
     const batch = allScannedSessions.slice(i, i + META_BATCH_SIZE)
     const results = await Promise.all(
       batch.map(async sessionInfo => ({
         sessionInfo,
-        cached: await loadCachedSessionMeta(sessionInfo.sessionId),
+        cache: await loadCachedSessionMeta(sessionInfo.sessionId),
       })),
     )
-    for (const { sessionInfo, cached } of results) {
-      if (cached) {
-        allMetas.push(cached)
-      } else if (uncachedSessions.length < MAX_SESSIONS_TO_LOAD) {
-        uncachedSessions.push(sessionInfo)
-      }
-    }
+    const planned = planSessionMetaLoads(results)
+    allMetas.push(...planned.cachedMetas)
+    rebuildSessions.push(...planned.rebuildSessions)
+    missingCacheSessions.push(...planned.missingCacheSessions)
   }
+
+  const uncachedSessions = [
+    ...rebuildSessions,
+    ...missingCacheSessions,
+  ].slice(0, MAX_SESSIONS_TO_LOAD)
 
   // Load full message data only for uncached sessions and compute SessionMeta
   const logsForFacets = new Map<string, LogOption>()
@@ -3091,7 +3030,7 @@ function isValidSessionFacets(obj: unknown): obj is SessionFacets {
     o.user_satisfaction_counts !== null &&
     typeof o.user_satisfaction_counts === 'object' &&
     o.friction_counts !== null &&
-    typeof o.friction_counts === 'object'
+      typeof o.friction_counts === 'object'
   )
 }
 
