@@ -33,7 +33,6 @@ import type {
   UserMessage,
 } from '../../types/message.js'
 import {
-  budgetPlanFileReferenceAttachment,
   createAttachmentMessage,
   generateFileAttachment,
   getAgentListingDeltaAttachment,
@@ -1520,11 +1519,11 @@ export async function createPlanAttachmentIfNeeded(
 
   return createAttachmentMessage(
     await persistPlanFileReferenceAttachment(
-      budgetPlanFileReferenceAttachment({
+      {
         type: 'plan_file_reference',
         planFilePath,
         planContent,
-      }),
+      },
     ),
   )
 }

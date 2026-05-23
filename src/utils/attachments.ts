@@ -921,7 +921,7 @@ export function budgetPlanFileReferenceAttachment(
     ...attachment,
     planContent: '',
     planPreview: preview,
-    planOriginalSize: attachment.planContent.length,
+    planOriginalSize: Buffer.byteLength(attachment.planContent, 'utf8'),
     planHasMore: hasMore,
   }
 }

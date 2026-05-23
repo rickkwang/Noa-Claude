@@ -54,6 +54,8 @@ export type SessionMetaLoadPlanResult = {
 
 export const META_SCHEMA_VERSION = 1
 
+const MISSING_CACHE_LOAD_RESERVE_RATIO = 0.25
+
 function getDataDir(): string {
   return join(getClaudeConfigHomeDir(), 'usage-data')
 }
@@ -70,22 +72,58 @@ function getSessionMetaRebuildMarkerPath(sessionId: string): string {
   return join(getSessionMetaDir(), `${sessionId}.rebuild`)
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string')
+}
+
+function isNumberArray(value: unknown): value is number[] {
+  return Array.isArray(value) && value.every(isFiniteNumber)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isNumberRecord(value: unknown): value is Record<string, number> {
+  return isRecord(value) && Object.values(value).every(isFiniteNumber)
+}
+
 export function isValidSessionMeta(obj: unknown): obj is SessionMeta {
-  if (!obj || typeof obj !== 'object') return false
+  if (!isRecord(obj)) return false
   const o = obj as Record<string, unknown>
   return (
+    o.schema_version === META_SCHEMA_VERSION &&
     typeof o.session_id === 'string' &&
+    typeof o.project_path === 'string' &&
     typeof o.start_time === 'string' &&
+    isFiniteNumber(o.duration_minutes) &&
+    isFiniteNumber(o.user_message_count) &&
+    isFiniteNumber(o.assistant_message_count) &&
+    isNumberRecord(o.tool_counts) &&
+    isNumberRecord(o.languages) &&
+    isFiniteNumber(o.git_commits) &&
+    isFiniteNumber(o.git_pushes) &&
+    isFiniteNumber(o.input_tokens) &&
+    isFiniteNumber(o.output_tokens) &&
     typeof o.first_prompt === 'string' &&
-    Array.isArray(o.user_message_timestamps) &&
-    Array.isArray(o.user_response_times) &&
-    Array.isArray(o.message_hours) &&
-    o.tool_counts !== null &&
-    typeof o.tool_counts === 'object' &&
-    o.languages !== null &&
-    typeof o.languages === 'object' &&
-    o.tool_error_categories !== null &&
-    typeof o.tool_error_categories === 'object'
+    (o.summary === undefined || typeof o.summary === 'string') &&
+    isFiniteNumber(o.user_interruptions) &&
+    isNumberArray(o.user_response_times) &&
+    isFiniteNumber(o.tool_errors) &&
+    isNumberRecord(o.tool_error_categories) &&
+    typeof o.uses_task_agent === 'boolean' &&
+    typeof o.uses_mcp === 'boolean' &&
+    typeof o.uses_web_search === 'boolean' &&
+    typeof o.uses_web_fetch === 'boolean' &&
+    isFiniteNumber(o.lines_added) &&
+    isFiniteNumber(o.lines_removed) &&
+    isFiniteNumber(o.files_modified) &&
+    isNumberArray(o.message_hours) &&
+    isStringArray(o.user_message_timestamps)
   )
 }
 
@@ -101,7 +139,11 @@ export async function loadCachedSessionMeta(
       typeof parsed === 'object' &&
       (parsed as Record<string, unknown>).schema_version ===
         META_SCHEMA_VERSION
-    if (!isCurrentSchema || !isValidSessionMeta(parsed)) {
+    if (
+      !isCurrentSchema ||
+      !isValidSessionMeta(parsed) ||
+      parsed.session_id !== sessionId
+    ) {
       await markSessionMetaForRebuild(sessionId)
       return { meta: null, needsRebuild: true }
     }
@@ -162,6 +204,41 @@ export function planSessionMetaLoads(
     rebuildSessions,
     missingCacheSessions,
   }
+}
+
+export function selectSessionMetaLoadCandidates(
+  rebuildSessions: LiteSessionInfo[],
+  missingCacheSessions: LiteSessionInfo[],
+  maxSessionsToLoad: number,
+): LiteSessionInfo[] {
+  if (maxSessionsToLoad <= 0) return []
+  if (rebuildSessions.length === 0) {
+    return missingCacheSessions.slice(0, maxSessionsToLoad)
+  }
+  if (missingCacheSessions.length === 0) {
+    return rebuildSessions.slice(0, maxSessionsToLoad)
+  }
+  if (rebuildSessions.length + missingCacheSessions.length <= maxSessionsToLoad) {
+    return [...rebuildSessions, ...missingCacheSessions]
+  }
+
+  const missingReserve = Math.min(
+    missingCacheSessions.length,
+    maxSessionsToLoad - 1,
+    Math.max(
+      1,
+      Math.floor(maxSessionsToLoad * MISSING_CACHE_LOAD_RESERVE_RATIO),
+    ),
+  )
+  const rebuildLimit = Math.min(
+    rebuildSessions.length,
+    maxSessionsToLoad - missingReserve,
+  )
+  const selected = rebuildSessions.slice(0, rebuildLimit)
+  const remainingSlots = maxSessionsToLoad - selected.length
+
+  selected.push(...missingCacheSessions.slice(0, remainingSlots))
+  return selected
 }
 
 async function hasSessionMetaRebuildMarker(sessionId: string): Promise<boolean> {

@@ -4,15 +4,17 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   loadCachedSessionMeta,
+  META_SCHEMA_VERSION,
   type SessionMeta,
   planSessionMetaLoads,
   saveSessionMeta,
+  selectSessionMetaLoadCandidates,
   isValidSessionMeta,
 } from '../../commands/insightsCache.js'
 
 function makeMeta(overrides: Partial<SessionMeta> = {}): SessionMeta {
   return {
-    schema_version: 1,
+    schema_version: META_SCHEMA_VERSION,
     session_id: 'session-1',
     project_path: '/tmp/project',
     start_time: '2026-05-23T00:00:00.000Z',
@@ -153,7 +155,7 @@ describe('/insights cache planning', () => {
     ])
   })
 
-  test('global load cap can prioritize rebuilds before ordinary cache misses', () => {
+  test('global load cap prioritizes rebuilds without starving ordinary cache misses', () => {
     const firstBatch = planSessionMetaLoads([
       {
         sessionInfo: {
@@ -232,17 +234,69 @@ describe('/insights cache planning', () => {
       },
     ])
 
-    const globallyCapped = [
-      ...firstBatch.rebuildSessions,
-      ...secondBatch.rebuildSessions,
-      ...firstBatch.missingCacheSessions,
-      ...secondBatch.missingCacheSessions,
-    ].slice(0, 2)
+    const globallyCapped = selectSessionMetaLoadCandidates(
+      [...firstBatch.rebuildSessions, ...secondBatch.rebuildSessions],
+      [...firstBatch.missingCacheSessions, ...secondBatch.missingCacheSessions],
+      2,
+    )
 
     expect(globallyCapped.map(s => s.sessionId)).toEqual([
       'rebuild-0',
-      'rebuild-1',
+      'missing-0',
     ])
+  })
+
+  test('does not let stale rebuilds consume every load slot when misses exist', () => {
+    const rebuildSessions = Array.from({ length: 205 }, (_, index) => ({
+      sessionId: `rebuild-${index}`,
+      path: `/tmp/rebuild-${index}.jsonl`,
+      mtime: 1000 - index,
+      size: 1,
+    }))
+    const missingCacheSessions = Array.from({ length: 10 }, (_, index) => ({
+      sessionId: `missing-${index}`,
+      path: `/tmp/missing-${index}.jsonl`,
+      mtime: 2000 - index,
+      size: 1,
+    }))
+
+    const selected = selectSessionMetaLoadCandidates(
+      rebuildSessions,
+      missingCacheSessions,
+      200,
+    )
+
+    expect(selected).toHaveLength(200)
+    expect(selected.filter(s => s.sessionId.startsWith('missing-'))).toHaveLength(
+      10,
+    )
+    expect(selected.filter(s => s.sessionId.startsWith('rebuild-'))).toHaveLength(
+      190,
+    )
+  })
+
+  test('keeps rebuild priority when only one load slot is available', () => {
+    const selected = selectSessionMetaLoadCandidates(
+      [
+        {
+          sessionId: 'rebuild-0',
+          path: '/tmp/rebuild-0.jsonl',
+          mtime: 10,
+          size: 1,
+        },
+      ],
+      [
+        {
+          sessionId: 'missing-0',
+          path: '/tmp/missing-0.jsonl',
+          mtime: 20,
+          size: 1,
+        },
+      ],
+      1,
+    )
+
+    expect(selected.map(s => s.sessionId)).toEqual(['rebuild-0'])
   })
 })
 
@@ -257,6 +311,52 @@ describe('/insights cache validation', () => {
 
     expect(isValidSessionMeta(makeMeta())).toBe(true)
     expect(isValidSessionMeta(invalidShape)).toBe(false)
+  })
+
+  test('rejects cache entries missing numeric fields used during aggregation', () => {
+    const invalidShape = {
+      ...makeMeta({
+        session_id: 'broken-session',
+      }),
+      duration_minutes: undefined,
+    }
+
+    expect(isValidSessionMeta(invalidShape)).toBe(false)
+  })
+
+  test('rejects cache entries with non-numeric record counts', () => {
+    const invalidShape = {
+      ...makeMeta({
+        session_id: 'broken-session',
+      }),
+      tool_counts: {
+        Bash: '1',
+      },
+    }
+
+    expect(isValidSessionMeta(invalidShape)).toBe(false)
+  })
+
+  test('rejects valid cache entries stored under the wrong session id', async () => {
+    const configDir = await makeTempClaudeConfigDir()
+    const metaDir = join(configDir, 'usage-data', 'session-meta')
+    await mkdir(metaDir, { recursive: true })
+    const metaPath = join(metaDir, 'expected-session.json')
+    const markerPath = join(metaDir, 'expected-session.rebuild')
+    await writeFile(
+      metaPath,
+      JSON.stringify(makeMeta({ session_id: 'wrong-session' })),
+      'utf8',
+    )
+
+    await expect(loadCachedSessionMeta('expected-session')).resolves.toEqual({
+      meta: null,
+      needsRebuild: true,
+    })
+    await expect(readFile(metaPath, 'utf8')).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
+    await expect(readFile(markerPath, 'utf8')).resolves.toContain('rebuild')
   })
 
   test('deletes invalid cache files before marking them for rebuild', async () => {

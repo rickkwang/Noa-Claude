@@ -769,10 +769,20 @@ async function persistSanitizedAttachmentEntriesForResume(
     return
   }
 
-  const { changed, content } = applyRewrittenAttachmentsToTranscriptContent(
-    await readFile(transcriptPath, 'utf-8'),
-    rewrittenAttachments,
-  )
+  let changed: boolean
+  let content: string
+  try {
+    ;({ changed, content } = applyRewrittenAttachmentsToTranscriptContent(
+      await readFile(transcriptPath, 'utf-8'),
+      rewrittenAttachments,
+    ))
+  } catch (error) {
+    logForDebugging(
+      `Skipping sanitized attachment transcript rewrite: ${String(error)}`,
+      { level: 'warn' },
+    )
+    return
+  }
 
   if (!changed) {
     return
@@ -780,8 +790,27 @@ async function persistSanitizedAttachmentEntriesForResume(
 
   // Atomic write so a crash mid-rewrite can't leave a truncated transcript.
   const tmpPath = `${transcriptPath}.tmp.${process.pid}.${Date.now()}`
-  await writeFile(tmpPath, content, { encoding: 'utf-8', mode: 0o600 })
-  await rename(tmpPath, transcriptPath)
+  try {
+    await writeFile(tmpPath, content, { encoding: 'utf-8', mode: 0o600 })
+    await rename(tmpPath, transcriptPath)
+  } catch (error) {
+    logForDebugging(
+      `Failed to persist sanitized attachment transcript rewrite: ${String(error)}`,
+      { level: 'warn' },
+    )
+  }
+}
+
+export async function persistSanitizedAttachmentEntriesForResumeForTesting(
+  transcriptPath: string,
+  originalMessages: readonly Message[],
+  sanitizedMessages: readonly Message[],
+): Promise<void> {
+  await persistSanitizedAttachmentEntriesForResume(
+    transcriptPath,
+    originalMessages,
+    sanitizedMessages,
+  )
 }
 
 export function rewriteSanitizedAttachmentEntriesForResume(

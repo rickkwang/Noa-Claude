@@ -23,6 +23,7 @@ import {
   META_SCHEMA_VERSION,
   planSessionMetaLoads,
   saveSessionMeta,
+  selectSessionMetaLoadCandidates,
   type LiteSessionInfo,
   type SessionMeta,
 } from './insightsCache.js'
@@ -2664,10 +2665,11 @@ export async function generateUsageReport(options?: {
     missingCacheSessions.push(...planned.missingCacheSessions)
   }
 
-  const uncachedSessions = [
-    ...rebuildSessions,
-    ...missingCacheSessions,
-  ].slice(0, MAX_SESSIONS_TO_LOAD)
+  const uncachedSessions = selectSessionMetaLoadCandidates(
+    rebuildSessions,
+    missingCacheSessions,
+    MAX_SESSIONS_TO_LOAD,
+  )
 
   // Load full message data only for uncached sessions and compute SessionMeta
   const logsForFacets = new Map<string, LogOption>()
