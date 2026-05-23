@@ -149,6 +149,9 @@ async function persistSkillMode(
       }
 
       if (mode === baseMode) {
+        // Set to undefined (NOT delete) so updateSettingsForSource's mergeWith
+        // customizer (see src/utils/settings/settings.ts:514) treats this key
+        // as a deletion against the existing on-disk settings.
         currentSkillModes[skillName] = undefined
       } else {
         currentSkillModes[skillName] = mode
@@ -158,8 +161,13 @@ async function persistSkillMode(
         return false
       }
 
-      const nextSkillModes =
-        Object.keys(currentSkillModes).length > 0 ? currentSkillModes : undefined
+      // Only count keys with a real value — undefined entries are delete
+      // markers, so an all-reverted state should drop the whole skillModes
+      // field instead of leaving "skillModes": {} on disk.
+      const hasRealEntries = Object.values(currentSkillModes).some(
+        v => v !== undefined,
+      )
+      const nextSkillModes = hasRealEntries ? currentSkillModes : undefined
       const { error } = updateSettingsForSource('localSettings', {
         skillModes: nextSkillModes,
       })
@@ -645,7 +653,7 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
   return (
     <Dialog
       title="Skills"
-      subtitle={`${subtitleCount} · ${isSavingModeChanges ? 'Saving…' : hasPendingModeChanges ? 'Enter to save' : 'Enter to use'}, Space to toggle, i to insert, type to search, t to sort, Esc to close`}
+      subtitle={`${subtitleCount} · ${isSavingModeChanges ? 'Saving…' : hasPendingModeChanges ? 'Enter to save' : 'Enter to use'}, Space to toggle, i to insert name, type to search, t to sort, Esc to close`}
       onCancel={handleCancel}
       hideInputGuide
       isCancelActive={!isSearchMode}

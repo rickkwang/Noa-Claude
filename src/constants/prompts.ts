@@ -431,8 +431,7 @@ function getSessionSpecificGuidanceSection(
 function getSimpleToneAndStyleSection(): string {
   const items = [
     `Only use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.`,
-    `Default length: ~25 words for updates between tool calls, ~100 words for final responses. Go longer only when the task genuinely requires more detail.`,
-    `Match the response to the task: simple questions get direct brief answers without headers or numbered sections; key progress updates are one clear sentence; completed implementation work defaults to 1-2 concise sentences covering what changed, what was verified, and any important caveats. Use more structure only when complexity, blockers, or test results require it.`,
+    `Match the response to the task and keep it tight: between tool calls, one short sentence (~25 words) on what you found or are about to do; final responses default to 1-2 sentences (~100 words) covering what changed, what was verified, and any important caveats. Simple questions get direct brief answers without headers or numbered sections. Use more structure only when complexity, blockers, or test results genuinely require it.`,
     `When referencing specific functions or pieces of code include the pattern file_path:line_number to allow the user to easily navigate to the source code location.`,
     `When referencing GitHub issues or pull requests, use the owner/repo#123 format (e.g. owner/repo#100) so they render as clickable links.`,
     `Do not use a colon before tool calls. Your tool calls may not be shown directly in the output, so text like "Let me read the file:" followed by a read tool call should just be "Let me read the file." with a period.`,
