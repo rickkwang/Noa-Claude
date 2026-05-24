@@ -15,6 +15,7 @@ import {
   type TaskType,
 } from '../../Task.js'
 import type { TaskState } from '../../tasks/types.js'
+import { releaseAgentPersonalityName } from '../../tools/AgentTool/constants.js'
 import { enqueuePendingNotification } from '../messageQueueManager.js'
 import { enqueueSdkEvent } from '../sdkEventQueue.js'
 import { getTaskOutputDelta, getTaskOutputPath } from './diskOutput.js'
@@ -139,6 +140,9 @@ export function evictTerminalTask(
     if ('retain' in task && (task.evictAfter ?? Infinity) > Date.now()) {
       return prev
     }
+    if (task.type === 'local_agent') {
+      releaseAgentPersonalityName(taskId)
+    }
     const { [taskId]: _, ...remainingTasks } = prev.tasks
     return { ...prev, tasks: remainingTasks }
   })
@@ -241,6 +245,9 @@ export function applyTaskOffsetsAndEvictions(
       }
       if ('retain' in fresh && (fresh.evictAfter ?? Infinity) > Date.now()) {
         continue
+      }
+      if (fresh.type === 'local_agent') {
+        releaseAgentPersonalityName(id)
       }
       delete newTasks[id]
       changed = true

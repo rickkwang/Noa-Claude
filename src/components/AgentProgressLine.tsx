@@ -13,6 +13,10 @@ type Props = {
   toolUseCount: number;
   tokens: number | null;
   color?: keyof Theme;
+  // When true, `color` paints the agentType as foreground text (no background
+  // block). Used by personality-named agents — the bg-block treatment is
+  // reserved for custom subagent types.
+  agentTypeColorAsFg?: boolean;
   isLast: boolean;
   isResolved: boolean;
   isError: boolean;
@@ -32,6 +36,7 @@ export function AgentProgressLine(t0) {
     toolUseCount,
     tokens,
     color,
+    agentTypeColorAsFg,
     isLast,
     isResolved,
     isAsync: t1,
@@ -72,7 +77,13 @@ export function AgentProgressLine(t0) {
   }
   const t5 = !isResolved;
   let t6;
-  if ($[7] !== agentType || $[8] !== color || $[9] !== description || $[10] !== descriptionColor || $[11] !== hideType || $[12] !== name) {
+  // Personality fg path: bypass the memo cache (recompute is cheap, and adding
+  // agentTypeColorAsFg to the cache deps would shift every subsequent slot
+  // index). Falling back to the cached bg-block path is correct because the
+  // cache only ever stores the bg version.
+  if (agentTypeColorAsFg && !hideType) {
+    t6 = <><Text bold={true} color={color}>{agentType}</Text>{description && <>{" ("}<Text backgroundColor={descriptionColor} color={descriptionColor ? "inverseText" : undefined}>{description}</Text>{")"}</>}</>;
+  } else if ($[7] !== agentType || $[8] !== color || $[9] !== description || $[10] !== descriptionColor || $[11] !== hideType || $[12] !== name) {
     t6 = hideType ? <><Text bold={true}>{name ?? description ?? agentType}</Text>{name && description && <Text dimColor={true}>: {description}</Text>}</> : <><Text bold={true} backgroundColor={color} color={color ? "inverseText" : undefined}>{agentType}</Text>{description && <>{" ("}<Text backgroundColor={descriptionColor} color={descriptionColor ? "inverseText" : undefined}>{description}</Text>{")"}</>}</>;
     $[7] = agentType;
     $[8] = color;

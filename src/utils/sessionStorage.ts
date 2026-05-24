@@ -289,6 +289,9 @@ export type AgentMetadata = {
    * resumed agent's notification can show the original description instead
    * of a placeholder. Optional — older metadata files lack this field. */
   description?: string
+  /** Display-only personality name for generic worker agents. Persisted so
+   * resume and transcript replay can keep the same label across restarts. */
+  personalityName?: string
 }
 
 /**

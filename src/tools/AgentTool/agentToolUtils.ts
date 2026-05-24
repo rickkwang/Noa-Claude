@@ -229,6 +229,7 @@ export function resolveAgentTools(
 export const agentToolResultSchema = lazySchema(() =>
   z.object({
     agentId: z.string(),
+    personalityName: z.string().optional(),
     // Optional: older persisted sessions won't have this (resume replays
     // results verbatim without re-validation). Used to gate the sync
     // result trailer — one-shot built-ins skip the SendMessage hint.
@@ -285,6 +286,7 @@ export function finalizeAgentTool(
     startTime: number
     agentType: string
     isAsync: boolean
+    personalityName?: string
   },
 ): AgentToolResult {
   const {
@@ -294,6 +296,7 @@ export function finalizeAgentTool(
     startTime,
     agentType,
     isAsync,
+    personalityName,
   } = metadata
 
   const lastAssistantMessage = getLastAssistantMessage(agentMessages)
@@ -349,6 +352,7 @@ export function finalizeAgentTool(
 
   return {
     agentId,
+    ...(personalityName && { personalityName }),
     agentType,
     content,
     totalDurationMs: Date.now() - startTime,
@@ -634,6 +638,7 @@ export async function runAsyncAgentLifecycle({
         toolUses: agentResult.totalToolUseCount,
         durationMs: agentResult.totalDurationMs,
       },
+      personalityName: agentResult.personalityName,
       toolUseId: toolUseContext.toolUseId,
       ...worktreeResult,
     })
@@ -663,6 +668,7 @@ export async function runAsyncAgentLifecycle({
         description,
         status: 'killed',
         setAppState: rootSetAppState,
+        personalityName: metadata.personalityName,
         toolUseId: toolUseContext.toolUseId,
         finalMessage: partialResult,
         ...worktreeResult,
@@ -678,6 +684,7 @@ export async function runAsyncAgentLifecycle({
       status: 'failed',
       error: msg,
       setAppState: rootSetAppState,
+      personalityName: metadata.personalityName,
       toolUseId: toolUseContext.toolUseId,
       ...worktreeResult,
     })

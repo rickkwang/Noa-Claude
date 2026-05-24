@@ -266,6 +266,7 @@ export async function* runAgent({
   useExactTools,
   worktreePath,
   description,
+  personalityName,
   transcriptSubdir,
   onQueryProgress,
 }: {
@@ -319,6 +320,9 @@ export async function* runAgent({
   /** Original task description from AgentTool input. Persisted to metadata
    * so a resumed agent's notification can show the original description. */
   description?: string
+  /** Display-only personality name for generic worker agents. Persisted so
+   * resumed sessions keep the same label across restarts. */
+  personalityName?: string
   /** Optional subdirectory under subagents/ to group this agent's transcript
    * with related ones (e.g. workflows/<runId> for workflow subagents). */
   transcriptSubdir?: string
@@ -740,6 +744,7 @@ export async function* runAgent({
     agentType: agentDefinition.agentType,
     ...(worktreePath && { worktreePath }),
     ...(description && { description }),
+    ...(personalityName && { personalityName }),
   }).catch(_err => logForDebugging(`Failed to write agent metadata: ${_err}`))
 
   // Track the last recorded message UUID for parent chain continuity

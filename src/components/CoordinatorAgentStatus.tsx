@@ -15,6 +15,7 @@ import { useTerminalSize } from '../hooks/useTerminalSize.js';
 import { stringWidth } from '../ink/stringWidth.js';
 import { Box, Text, wrapText } from '../ink.js';
 import { type AppState, useAppState, useSetAppState } from '../state/AppState.js';
+import { getAgentPersonalityName, getPersonalityNameColor, shouldUseAgentPersonalityName } from '../tools/AgentTool/constants.js';
 import { enterTeammateView, exitTeammateView } from '../state/teammateViewHelpers.js';
 import { isPanelAgentTask, type LocalAgentTaskState } from '../tasks/LocalAgentTask/LocalAgentTask.js';
 import { formatDuration, formatNumber } from '../utils/format.js';
@@ -72,7 +73,11 @@ export function CoordinatorTaskPanel(): React.ReactNode {
   }
   return <Box flexDirection="column" marginTop={1}>
       <MainLine isSelected={selectedIndex === 0} isViewed={viewingAgentTaskId === undefined} onClick={() => exitTeammateView(setAppState)} />
-      {visibleTasks.map((task, i) => <AgentLine key={task.id} task={task} name={nameByAgentId.get(task.id)} isSelected={selectedIndex === i + 1} isViewed={viewingAgentTaskId === task.id} onClick={() => enterTeammateView(task.id, setAppState)} />)}
+      {visibleTasks.map((task, i) => {
+      const explicitName = nameByAgentId.get(task.id);
+      const personalityName = task.personalityName ?? (shouldUseAgentPersonalityName(task.agentType) ? getAgentPersonalityName(task.id) : undefined);
+      return <AgentLine key={task.id} task={task} name={explicitName ?? personalityName} nameColor={!explicitName && personalityName ? getPersonalityNameColor(personalityName) : undefined} isSelected={selectedIndex === i + 1} isViewed={viewingAgentTaskId === task.id} onClick={() => enterTeammateView(task.id, setAppState)} />;
+    })}
     </Box>;
 }
 
@@ -136,15 +141,17 @@ function MainLine(t0) {
 type AgentLineProps = {
   task: LocalAgentTaskState;
   name?: string;
+  nameColor?: string;
   isSelected?: boolean;
   isViewed?: boolean;
   onClick?: () => void;
 };
 function AgentLine(t0) {
-  const $ = _c(33);
+  const $ = _c(35);
   const {
     task,
     name,
+    nameColor,
     isSelected,
     isViewed,
     onClick
@@ -202,49 +209,50 @@ function AgentLine(t0) {
   }
   const truncated = t4;
   let t5;
-  if ($[8] !== name) {
-    t5 = name && <><Text dimColor={false} bold={true}>{name}</Text>{": "}</>;
+  if ($[8] !== name || $[9] !== nameColor) {
+    t5 = name && <><Text dimColor={false} bold={true} color={nameColor}>{name}</Text>{": "}</>;
     $[8] = name;
-    $[9] = t5;
+    $[9] = nameColor;
+    $[10] = t5;
   } else {
-    t5 = $[9];
+    t5 = $[10];
   }
   let t6;
-  if ($[10] !== queuedCount || $[11] !== queuedText) {
+  if ($[11] !== queuedCount || $[12] !== queuedText) {
     t6 = queuedCount > 0 && <Text color="warning">{queuedText}</Text>;
-    $[10] = queuedCount;
-    $[11] = queuedText;
-    $[12] = t6;
+    $[11] = queuedCount;
+    $[12] = queuedText;
+    $[13] = t6;
   } else {
-    t6 = $[12];
+    t6 = $[13];
   }
   let t7;
-  if ($[13] !== hintPart) {
+  if ($[14] !== hintPart) {
     t7 = hintPart && <Text dimColor={true}>{hintPart}</Text>;
-    $[13] = hintPart;
-    $[14] = t7;
+    $[14] = hintPart;
+    $[15] = t7;
   } else {
-    t7 = $[14];
+    t7 = $[15];
   }
   const padding = ' '.repeat(Math.max(0, t3 - stringWidth(truncated)));
   let t8;
-  if ($[15] !== bullet || $[16] !== dim || $[17] !== elapsed || $[18] !== isViewed || $[19] !== prefix || $[20] !== sep || $[21] !== namePart || $[22] !== queuedText || $[23] !== hintPart || $[24] !== tokenText || $[25] !== truncated || $[26] !== padding) {
-    t8 = <Text dimColor={dim} bold={isViewed}>{prefix}{bullet} {namePart}{truncated}{padding} {sep} {elapsed}{tokenText}{queuedCount > 0 ? queuedText : ''}{hintPart}</Text>;
-    $[15] = bullet;
-    $[16] = dim;
-    $[17] = elapsed;
-    $[18] = isViewed;
-    $[19] = prefix;
-    $[20] = sep;
-    $[21] = namePart;
-    $[22] = queuedText;
-    $[23] = hintPart;
-    $[24] = tokenText;
-    $[25] = truncated;
-    $[26] = padding;
-    $[27] = t8;
+  if ($[16] !== bullet || $[17] !== dim || $[18] !== elapsed || $[19] !== isViewed || $[20] !== prefix || $[21] !== sep || $[22] !== t5 || $[23] !== t6 || $[24] !== t7 || $[25] !== tokenText || $[26] !== truncated || $[27] !== padding) {
+    t8 = <Text dimColor={dim} bold={isViewed}>{prefix}{bullet} {t5}{truncated}{padding} {sep} {elapsed}{tokenText}{t6}{t7}</Text>;
+    $[16] = bullet;
+    $[17] = dim;
+    $[18] = elapsed;
+    $[19] = isViewed;
+    $[20] = prefix;
+    $[21] = sep;
+    $[22] = t5;
+    $[23] = t6;
+    $[24] = t7;
+    $[25] = tokenText;
+    $[26] = truncated;
+    $[27] = padding;
+    $[28] = t8;
   } else {
-    t8 = $[27];
+    t8 = $[28];
   }
   const line = t8;
   if (!onClick) {
@@ -252,23 +260,23 @@ function AgentLine(t0) {
   }
   let t10;
   let t9;
-  if ($[28] === Symbol.for("react.memo_cache_sentinel")) {
+  if ($[29] === Symbol.for("react.memo_cache_sentinel")) {
     t9 = () => setHover(true);
     t10 = () => setHover(false);
-    $[28] = t10;
-    $[29] = t9;
+    $[29] = t10;
+    $[30] = t9;
   } else {
-    t10 = $[28];
-    t9 = $[29];
+    t10 = $[29];
+    t9 = $[30];
   }
   let t11;
-  if ($[30] !== line || $[31] !== onClick) {
+  if ($[31] !== line || $[32] !== onClick) {
     t11 = <Box onClick={onClick} onMouseEnter={t9} onMouseLeave={t10}>{line}</Box>;
-    $[30] = line;
-    $[31] = onClick;
-    $[32] = t11;
+    $[31] = line;
+    $[32] = onClick;
+    $[33] = t11;
   } else {
-    t11 = $[32];
+    t11 = $[33];
   }
   return t11;
 }

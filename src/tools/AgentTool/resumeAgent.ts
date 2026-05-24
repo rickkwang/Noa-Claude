@@ -30,6 +30,11 @@ import { getParentSessionId } from '../../utils/teammate.js'
 import { reconstructForSubagentResume } from '../../utils/toolResultStorage.js'
 import { runAsyncAgentLifecycle } from './agentToolUtils.js'
 import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js'
+import {
+  assignAgentPersonalityName,
+  restoreAgentPersonalityName,
+  shouldUseAgentPersonalityName,
+} from './constants.js'
 import { FORK_AGENT, isForkSubagentEnabled } from './forkSubagent.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
 import { isBuiltInAgent } from './loadAgentsDir.js'
@@ -187,6 +192,14 @@ export async function resumeAgentBackground({
     ? toolUseContext.options.tools
     : assembleToolPool(workerPermissionContext, appState.mcp.tools)
 
+  // Recreate the display-only personality mapping when resuming in a fresh
+  // process, restoring the persisted name when available.
+  const personalityName = shouldUseAgentPersonalityName(selectedAgent.agentType)
+    ? meta?.personalityName
+      ? restoreAgentPersonalityName(agentId, meta.personalityName)
+      : assignAgentPersonalityName(agentId)
+    : undefined
+
   const runAgentParams: Parameters<typeof runAgent>[0] = {
     agentDefinition: selectedAgent,
     promptMessages: [
@@ -215,6 +228,7 @@ export async function resumeAgentBackground({
     // Re-persist so metadata survives runAgent's writeAgentMetadata overwrite
     worktreePath: resumedWorktreePath,
     description: meta?.description,
+    personalityName,
     contentReplacementState: resumedReplacementState,
   }
 
@@ -222,6 +236,7 @@ export async function resumeAgentBackground({
   const agentBackgroundTask = registerAsyncAgent({
     agentId,
     description: uiDescription,
+    personalityName,
     prompt,
     selectedAgent,
     setAppState: rootSetAppState,
@@ -235,6 +250,7 @@ export async function resumeAgentBackground({
     startTime,
     agentType: selectedAgent.agentType,
     isAsync: true,
+    personalityName,
   }
 
   const asyncAgentContext = {

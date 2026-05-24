@@ -48,7 +48,7 @@ import { spawnTeammate } from '../shared/spawnMultiAgent.js';
 import { setAgentColor } from './agentColorManager.js';
 import { agentToolResultSchema, classifyHandoffIfNeeded, emitTaskProgress, extractPartialResult, finalizeAgentTool, getLastToolUseName, runAsyncAgentLifecycle } from './agentToolUtils.js';
 import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js';
-import { AGENT_TOOL_NAME, LEGACY_AGENT_TOOL_NAME, ONE_SHOT_BUILTIN_AGENT_TYPES } from './constants.js';
+import { AGENT_TOOL_NAME, assignAgentPersonalityName, LEGACY_AGENT_TOOL_NAME, ONE_SHOT_BUILTIN_AGENT_TYPES, shouldUseAgentPersonalityName } from './constants.js';
 import { buildForkedMessages, buildWorktreeNotice, FORK_AGENT, isForkSubagentEnabled, isInForkChild } from './forkSubagent.js';
 import type { AgentDefinition } from './loadAgentsDir.js';
 import { filterAgentsByMcpRequirements, hasRequiredMcpServers, isBuiltInAgent } from './loadAgentsDir.js';
@@ -147,6 +147,7 @@ export const outputSchema = lazySchema(() => {
   const asyncOutputSchema = z.object({
     status: z.literal('async_launched'),
     agentId: z.string().describe('The ID of the async agent'),
+    personalityName: z.string().optional().describe('The display-only personality name for the async agent'),
     description: z.string().describe('The description of the task'),
     prompt: z.string().describe('The prompt for the agent'),
     outputFile: z.string().describe('Path to the output file for checking agent progress'),
@@ -540,15 +541,6 @@ export const AgentTool = buildTool({
         content: prompt
       })];
     }
-    const metadata = {
-      prompt,
-      resolvedAgentModel,
-      isBuiltInAgent: isBuiltInAgent(selectedAgent),
-      startTime,
-      agentType: selectedAgent.agentType,
-      isAsync: (run_in_background === true || selectedAgent.background === true) && !isBackgroundTasksDisabled
-    };
-
     // Use inline env check instead of coordinatorModule to avoid circular
     // dependency issues during test module loading.
     const isCoordinator = feature('COORDINATOR_MODE') ? isEnvTruthy(process.env.CLAUDE_CODE_COORDINATOR_MODE) : false;
@@ -579,6 +571,7 @@ export const AgentTool = buildTool({
 
     // Create a stable agent ID early so it can be used for worktree slug
     const earlyAgentId = createAgentId();
+    const personalityName = !name && shouldUseAgentPersonalityName(selectedAgent.agentType) ? assignAgentPersonalityName(earlyAgentId) : undefined;
 
     // Set up worktree isolation if requested
     let worktreeInfo: {
@@ -633,7 +626,17 @@ export const AgentTool = buildTool({
         useExactTools: true
       }),
       worktreePath: worktreeInfo?.worktreePath,
-      description
+      description,
+      personalityName
+    };
+    const metadata = {
+      prompt,
+      resolvedAgentModel,
+      isBuiltInAgent: isBuiltInAgent(selectedAgent),
+      startTime,
+      agentType: selectedAgent.agentType,
+      isAsync: (run_in_background === true || selectedAgent.background === true) && !isBackgroundTasksDisabled,
+      personalityName
     };
 
     // Helper to wrap execution with a cwd override: explicit cwd arg (KAIROS)
@@ -673,7 +676,8 @@ export const AgentTool = buildTool({
           // writeAgentMetadata handling.
           void writeAgentMetadata(asAgentId(earlyAgentId), {
             agentType: selectedAgent.agentType,
-            description
+            description,
+            ...(personalityName && { personalityName })
           }).catch(_err => logForDebugging(`Failed to clear worktree metadata: ${_err}`));
           return {};
         }
@@ -689,6 +693,7 @@ export const AgentTool = buildTool({
       const agentBackgroundTask = registerAsyncAgent({
         agentId: asyncAgentId,
         description,
+        personalityName,
         prompt,
         selectedAgent,
         setAppState: rootSetAppState,
@@ -698,9 +703,9 @@ export const AgentTool = buildTool({
         toolUseId: toolUseContext.toolUseId
       });
 
-      // Register name → agentId for SendMessage routing. Post-registerAsyncAgent
-      // so we don't leave a stale entry if spawn fails. Sync agents skipped —
-      // coordinator is blocked, so SendMessage routing doesn't apply.
+      // Register only explicit user-provided names for SendMessage routing.
+      // Auto-assigned personality names are display-only and must not become
+      // addressable aliases.
       if (name) {
         rootSetAppState(prev => {
           const next = new Map(prev.agentNameRegistry);
@@ -757,6 +762,7 @@ export const AgentTool = buildTool({
           isAsync: true as const,
           status: 'async_launched' as const,
           agentId: agentBackgroundTask.agentId,
+          personalityName,
           description: description,
           prompt: prompt,
           outputFile: getTaskOutputPath(agentBackgroundTask.agentId),
@@ -820,6 +826,7 @@ export const AgentTool = buildTool({
           const registration = registerAgentForeground({
             agentId: syncAgentId,
             description,
+            personalityName,
             prompt,
             selectedAgent,
             setAppState: rootSetAppState,
@@ -979,6 +986,7 @@ export const AgentTool = buildTool({
                     enqueueAgentNotification({
                       taskId: backgroundedTaskId,
                       description,
+                      personalityName: agentResult.personalityName,
                       status: 'completed',
                       setAppState: rootSetAppState,
                       finalMessage,
@@ -1008,6 +1016,7 @@ export const AgentTool = buildTool({
                       enqueueAgentNotification({
                         taskId: backgroundedTaskId,
                         description,
+                        personalityName,
                         status: 'killed',
                         setAppState: rootSetAppState,
                         toolUseId: toolUseContext.toolUseId,
@@ -1022,6 +1031,7 @@ export const AgentTool = buildTool({
                     enqueueAgentNotification({
                       taskId: backgroundedTaskId,
                       description,
+                      personalityName,
                       status: 'failed',
                       error: errMsg,
                       setAppState: rootSetAppState,
@@ -1044,6 +1054,7 @@ export const AgentTool = buildTool({
                     isAsync: true as const,
                     status: 'async_launched' as const,
                     agentId: backgroundedTaskId,
+                    personalityName,
                     description: description,
                     prompt: prompt,
                     outputFile: getTaskOutputPath(backgroundedTaskId),
@@ -1321,7 +1332,8 @@ The agent is now running and will receive instructions via mailbox.`
       };
     }
     if (data.status === 'async_launched') {
-      const prefix = `Async agent launched successfully.\nagentId: ${data.agentId} (internal ID - do not mention to user. Use SendMessage with to: '${data.agentId}' to continue this agent.)\nThe agent is working in the background. You will be notified automatically when it completes.`;
+      const agentNameLine = data.personalityName ? `\nagentName: ${data.personalityName}` : '';
+      const prefix = `Async agent launched successfully.\nagentId: ${data.agentId} (internal ID - do not mention to user. Use SendMessage with to: '${data.agentId}' to continue this agent.)${agentNameLine}\nThe agent is working in the background. You will be notified automatically when it completes.`;
       const instructions = data.canReadOutputFile ? `Do not duplicate this agent's work — avoid working with the same files or topics it is using. Work on non-overlapping tasks, or briefly tell the user what you launched and end your response.\noutput_file: ${data.outputFile}\nIf asked, you can check progress before completion by using ${FILE_READ_TOOL_NAME} or ${BASH_TOOL_NAME} tail on the output file.` : `Briefly tell the user what you launched and end your response. Do not generate any other text — agent results will arrive in a subsequent message.`;
       const text = `${prefix}\n${instructions}`;
       return {
@@ -1356,12 +1368,13 @@ The agent is now running and will receive instructions via mailbox.`
           content: contentOrMarker
         };
       }
+      const agentNameLine = data.personalityName ? `agentName: ${data.personalityName}\n` : '';
       return {
         tool_use_id: toolUseID,
         type: 'tool_result',
         content: [...contentOrMarker, {
           type: 'text',
-          text: `agentId: ${data.agentId} (use SendMessage with to: '${data.agentId}' to continue this agent)${worktreeInfoText}
+          text: `${agentNameLine}agentId: ${data.agentId} (use SendMessage with to: '${data.agentId}' to continue this agent)${worktreeInfoText}
 <usage>total_tokens: ${data.totalTokens}
 tool_uses: ${data.totalToolUseCount}
 duration_ms: ${data.totalDurationMs}</usage>`

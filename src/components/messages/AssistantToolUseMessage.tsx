@@ -10,6 +10,7 @@ import { stringWidth } from '../../ink/stringWidth.js';
 import { Box, Text, useTheme } from '../../ink.js';
 import { useAppStateMaybeOutsideOfProvider } from '../../state/AppState.js';
 import { findToolByName, type Tool, type ToolProgressData, type Tools } from '../../Tool.js';
+import { getAgentPersonalityName, getPersonalityNameColor, shouldUseAgentPersonalityName } from '../../tools/AgentTool/constants.js';
 import type { ProgressMessage } from '../../types/message.js';
 import { useIsClassifierChecking } from '../../utils/classifierApprovalsHook.js';
 import { logError } from '../../utils/log.js';
@@ -33,6 +34,78 @@ type Props = {
   lookups: ReturnType<typeof buildMessageLookups>;
   isTranscriptMode?: boolean;
 };
+function getProgressAgentId(progressMessages: ProgressMessage[]): string | undefined {
+  for (const progressMessage of progressMessages) {
+    const data = progressMessage.data as {
+      agentId?: string;
+      message?: {
+        agentId?: string;
+      };
+    };
+    if (typeof data.agentId === 'string') {
+      return data.agentId;
+    }
+    if (typeof progressMessage.agentId === 'string') {
+      return progressMessage.agentId;
+    }
+    if (typeof data.message?.agentId === 'string') {
+      return data.message.agentId;
+    }
+  }
+  return undefined;
+}
+function getAgentMetadataFromToolResult(toolResultMessage: unknown): {
+  agentId?: string;
+  personalityName?: string;
+} {
+  if (!toolResultMessage || typeof toolResultMessage !== 'object') {
+    return {};
+  }
+  const rawToolUseResult = (toolResultMessage as {
+    toolUseResult?: {
+      agentId?: string;
+      personalityName?: string;
+    };
+  }).toolUseResult;
+  if (rawToolUseResult?.agentId || rawToolUseResult?.personalityName) {
+    return rawToolUseResult;
+  }
+  if (!('message' in toolResultMessage)) {
+    return {};
+  }
+  const content = (toolResultMessage as {
+    message?: {
+      content?: Array<{
+        type?: string;
+        content?: string | Array<{
+          type?: string;
+          text?: string;
+        }>;
+      }>;
+    };
+  }).message?.content;
+  if (!Array.isArray(content)) {
+    return {};
+  }
+  for (const block of content) {
+    if (block?.type !== 'tool_result') {
+      continue;
+    }
+    const text = typeof block.content === 'string' ? block.content : Array.isArray(block.content) ? block.content.filter(part => part?.type === 'text' && typeof part.text === 'string').map(part => part.text).join('\n') : undefined;
+    if (!text) {
+      continue;
+    }
+    const agentId = text.match(/agentId:\s+([^\s]+)/)?.[1];
+    const personalityName = text.match(/agentName:\s+([^\n]+)/)?.[1]?.trim();
+    if (agentId || personalityName) {
+      return {
+        agentId,
+        personalityName
+      };
+    }
+  }
+  return {};
+}
 export function AssistantToolUseMessage(t0) {
   const $ = _c(81);
   const {
@@ -99,6 +172,23 @@ export function AssistantToolUseMessage(t0) {
     userFacingToolNameBackgroundColor,
     isTransparentWrapper
   } = parsed;
+  const progressMessagesForToolUse = lookups.progressMessagesByToolUseID.get(param.id) ?? [];
+  const persistedAgentMetadata = getAgentMetadataFromToolResult(lookups.toolResultByToolUseID.get(param.id));
+  // Replace generic "Agent" with assigned personality name when available.
+  // Personality name uses the assigned color as foreground text only (no
+  // background block) — distinct from custom subagents, which keep the
+  // background-block treatment via userFacingToolNameBackgroundColor.
+  const agentIdFromProgress = getProgressAgentId(progressMessagesForToolUse);
+  const agentId = (userFacingToolName === 'Agent' && (param.name === 'Agent' || param.name === 'Task'))
+    ? agentIdFromProgress ?? persistedAgentMetadata.agentId
+    : undefined;
+  const explicitGenericName = input_0.success && userFacingToolName === 'Agent' && typeof input_0.data.name === 'string' ? input_0.data.name : undefined;
+  const personalityCandidateType = input_0.success ? input_0.data.subagent_type : undefined;
+  const personalityName = explicitGenericName || !shouldUseAgentPersonalityName(personalityCandidateType) ? undefined : persistedAgentMetadata.personalityName ?? (agentId ? getAgentPersonalityName(agentId) : undefined);
+  const displayToolName = explicitGenericName ?? personalityName ?? userFacingToolName;
+  const personalityForegroundColor = personalityName ? getPersonalityNameColor(personalityName) : undefined;
+  // bg only applies when there is no personality fg override.
+  const effectiveBackgroundColor = personalityForegroundColor ? undefined : userFacingToolNameBackgroundColor;
   let t2;
   if ($[4] !== lookups.resolvedToolUseIDs || $[5] !== param.id) {
     t2 = lookups.resolvedToolUseIDs.has(param.id);
@@ -181,7 +271,7 @@ export function AssistantToolUseMessage(t0) {
     return null;
   }
   const t5 = addMargin ? 1 : 0;
-  const t6 = stringWidth(userFacingToolName) + (shouldShowDot ? 2 : 0);
+  const t6 = stringWidth(displayToolName) + (shouldShowDot ? 2 : 0);
   let t7;
   if ($[31] !== isQueued || $[32] !== isResolved || $[33] !== lookups.erroredToolUseIDs || $[34] !== param.id || $[35] !== shouldAnimate || $[36] !== shouldShowDot) {
     t7 = shouldShowDot && (isQueued ? <Box minWidth={2}><Text dimColor={isQueued}>{BLACK_CIRCLE}</Text></Box> : <ToolUseLoader shouldAnimate={shouldAnimate} isUnresolved={!isResolved} isError={lookups.erroredToolUseIDs.has(param.id)} />);
@@ -195,13 +285,14 @@ export function AssistantToolUseMessage(t0) {
   } else {
     t7 = $[37];
   }
-  const t8 = userFacingToolNameBackgroundColor ? "inverseText" : undefined;
+  // Personality fg overrides; otherwise bg-block path uses inverseText for legibility.
+  const t8 = personalityForegroundColor ?? (effectiveBackgroundColor ? "inverseText" : undefined);
   let t9;
-  if ($[38] !== t8 || $[39] !== userFacingToolName || $[40] !== userFacingToolNameBackgroundColor) {
-    t9 = <Box flexShrink={0}><Text bold={true} wrap="truncate-end" backgroundColor={userFacingToolNameBackgroundColor} color={t8}>{userFacingToolName}</Text></Box>;
+  if ($[38] !== t8 || $[39] !== displayToolName || $[40] !== effectiveBackgroundColor) {
+    t9 = <Box flexShrink={0}><Text bold={true} wrap="truncate-end" backgroundColor={effectiveBackgroundColor} color={t8}>{displayToolName}</Text></Box>;
     $[38] = t8;
-    $[39] = userFacingToolName;
-    $[40] = userFacingToolNameBackgroundColor;
+    $[39] = displayToolName;
+    $[40] = effectiveBackgroundColor;
     $[41] = t9;
   } else {
     t9 = $[41];

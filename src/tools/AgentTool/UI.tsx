@@ -28,6 +28,7 @@ import type { ModelAlias } from '../../utils/model/aliases.js';
 import { getMainLoopModel, parseUserSpecifiedModel, renderModelName } from '../../utils/model/model.js';
 import type { Theme, ThemeName } from '../../utils/theme.js';
 import type { outputSchema, Progress, RemoteLaunchedOutput } from './AgentTool.js';
+import { getAgentPersonalityName, getPersonalityNameColor, shouldUseAgentPersonalityName } from './constants.js';
 import { inputSchema } from './AgentTool.js';
 import { getAgentColor } from './agentColorManager.js';
 import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js';
@@ -44,6 +45,26 @@ function hasProgressMessage(data: Progress): data is AgentToolProgress {
   }
   const msg = (data as AgentToolProgress).message;
   return msg != null && typeof msg === 'object' && 'type' in msg;
+}
+function getProgressAgentId(progressMessages: ProgressMessage<Progress>[]): string | undefined {
+  for (const progressMessage of progressMessages) {
+    const data = progressMessage.data as {
+      agentId?: string;
+      message?: {
+        agentId?: string;
+      };
+    };
+    if (typeof data.agentId === 'string') {
+      return data.agentId;
+    }
+    if (typeof progressMessage.agentId === 'string') {
+      return progressMessage.agentId;
+    }
+    if (typeof data.message?.agentId === 'string') {
+      return data.message.agentId;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -688,6 +709,9 @@ export function renderGroupedAgentToolUse(toolUses: Array<{
     let color: keyof Theme | undefined;
     let descriptionColor: keyof Theme | undefined;
     let taskDescription: string | undefined;
+    // True when `color` should paint agentType as foreground text instead of
+    // a background block — used by personality names.
+    let agentTypeColorAsFg = false;
     if (isTeammateSpawn && parsedInput.success && parsedInput.data.name) {
       agentType = `@${parsedInput.data.name}`;
       const subagentType = parsedInput.data.subagent_type;
@@ -696,9 +720,24 @@ export function renderGroupedAgentToolUse(toolUses: Array<{
       // Use the custom agent definition's color on the type, not the name
       descriptionColor = isCustomSubagentType(subagentType) ? getAgentColor(subagentType) as keyof Theme | undefined : undefined;
     } else {
-      agentType = parsedInput.success ? userFacingName(parsedInput.data) : 'Agent';
+      const baseName = parsedInput.success ? userFacingName(parsedInput.data) : 'Agent';
+      // Replace generic "Agent" with a personality name when available
+      const personalityCandidateType = parsedInput.success ? parsedInput.data.subagent_type : undefined;
+      if (baseName === 'Agent' && parsedInput.success && parsedInput.data.name) {
+        agentType = parsedInput.data.name;
+      } else if (baseName === 'Agent' && shouldUseAgentPersonalityName(personalityCandidateType)) {
+        const agentId = result?.output?.agentId ?? getProgressAgentId(progressMessages);
+        const personalityName = result?.output?.personalityName ?? (agentId ? getAgentPersonalityName(agentId) : undefined);
+        agentType = personalityName ?? baseName;
+        if (personalityName) {
+          color = getPersonalityNameColor(personalityName);
+          agentTypeColorAsFg = true;
+        }
+      } else {
+        agentType = baseName;
+        color = parsedInput.success ? userFacingNameBackgroundColor(parsedInput.data) : undefined;
+      }
       description = parsedInput.success ? parsedInput.data.description : undefined;
-      color = parsedInput.success ? userFacingNameBackgroundColor(parsedInput.data) : undefined;
       taskDescription = undefined;
     }
 
@@ -720,6 +759,7 @@ export function renderGroupedAgentToolUse(toolUses: Array<{
       isError,
       isAsync,
       color,
+      agentTypeColorAsFg,
       descriptionColor,
       lastToolInfo,
       taskDescription,
@@ -755,7 +795,7 @@ export function renderGroupedAgentToolUse(toolUses: Array<{
         </Text>
         {!allAsync && <CtrlOToExpand />}
       </Box>
-      {agentStats.map((stat, index) => <AgentProgressLine key={stat.id} agentType={stat.agentType} description={stat.description} descriptionColor={stat.descriptionColor} taskDescription={stat.taskDescription} toolUseCount={stat.toolUseCount} tokens={stat.tokens} color={stat.color} isLast={index === agentStats.length - 1} isResolved={stat.isResolved} isError={stat.isError} isAsync={stat.isAsync} shouldAnimate={shouldAnimate} lastToolInfo={stat.lastToolInfo} hideType={allSameType} name={stat.name} />)}
+      {agentStats.map((stat, index) => <AgentProgressLine key={stat.id} agentType={stat.agentType} description={stat.description} descriptionColor={stat.descriptionColor} taskDescription={stat.taskDescription} toolUseCount={stat.toolUseCount} tokens={stat.tokens} color={stat.color} agentTypeColorAsFg={stat.agentTypeColorAsFg} isLast={index === agentStats.length - 1} isResolved={stat.isResolved} isError={stat.isError} isAsync={stat.isAsync} shouldAnimate={shouldAnimate} lastToolInfo={stat.lastToolInfo} hideType={allSameType} name={stat.name} />)}
     </Box>;
 }
 export function userFacingName(input: Partial<{

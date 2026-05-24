@@ -11,6 +11,10 @@ import {
   type AgentColorName,
   getAgentColor,
 } from '../../tools/AgentTool/agentColorManager.js'
+import {
+  getAgentPersonalityName,
+  shouldUseAgentPersonalityName,
+} from '../../tools/AgentTool/constants.js'
 import { getStandaloneAgentName } from '../../utils/standaloneAgent.js'
 import { isInsideTmux } from '../../utils/swarm/backends/detection.js'
 import {
@@ -116,8 +120,14 @@ export function useSwarmBanner(): SwarmBannerInfo {
         break
       }
     }
+    const displayName =
+      name ??
+      task.personalityName ??
+      (shouldUseAgentPersonalityName(task.agentType)
+        ? getAgentPersonalityName(task.id)
+        : undefined)
     return {
-      text: name ? `@${name}` : task.description,
+      text: displayName ? `@${displayName}` : task.description,
       bgColor: getAgentColor(task.agentType) ?? 'cyan_FOR_SUBAGENTS_ONLY',
     }
   }

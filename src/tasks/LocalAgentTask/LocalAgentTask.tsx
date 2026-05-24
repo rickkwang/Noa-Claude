@@ -117,6 +117,7 @@ export function createActivityDescriptionResolver(tools: Tools): ActivityDescrip
 export type LocalAgentTaskState = TaskStateBase & {
   type: 'local_agent';
   agentId: string;
+  personalityName?: string;
   prompt: string;
   selectedAgent?: AgentDefinition;
   agentType: string;
@@ -198,6 +199,7 @@ export function drainPendingMessages(taskId: string, getAppState: () => AppState
 export function enqueueAgentNotification({
   taskId,
   description,
+  personalityName,
   status,
   error,
   setAppState,
@@ -209,6 +211,7 @@ export function enqueueAgentNotification({
 }: {
   taskId: string;
   description: string;
+  personalityName?: string;
   status: 'completed' | 'failed' | 'killed';
   error?: string;
   setAppState: SetAppState;
@@ -244,7 +247,8 @@ export function enqueueAgentNotification({
   // results may reference stale task output. The prompt suggestion text is
   // preserved; only the pre-computed response is discarded.
   abortSpeculation(setAppState);
-  const summary = status === 'completed' ? `Agent "${description}" completed` : status === 'failed' ? `Agent "${description}" failed: ${error || 'Unknown error'}` : `Agent "${description}" was stopped`;
+  const subject = personalityName ?? 'Agent';
+  const summary = status === 'completed' ? `${subject} "${description}" completed` : status === 'failed' ? `${subject} "${description}" failed: ${error || 'Unknown error'}` : `${subject} "${description}" was stopped`;
   const outputPath = getTaskOutputPath(taskId);
   const toolUseIdLine = toolUseId ? `\n<${TOOL_USE_ID_TAG}>${toolUseId}</${TOOL_USE_ID_TAG}>` : '';
   const resultSection = finalMessage ? `\n<result>${finalMessage}</result>` : '';
@@ -467,6 +471,7 @@ export function failAgentTask(taskId: string, error: string, setAppState: SetApp
 export function registerAsyncAgent({
   agentId,
   description,
+  personalityName,
   prompt,
   selectedAgent,
   setAppState,
@@ -475,6 +480,7 @@ export function registerAsyncAgent({
 }: {
   agentId: string;
   description: string;
+  personalityName?: string;
   prompt: string;
   selectedAgent: AgentDefinition;
   setAppState: SetAppState;
@@ -490,6 +496,7 @@ export function registerAsyncAgent({
     type: 'local_agent',
     status: 'running',
     agentId,
+    personalityName,
     prompt,
     selectedAgent,
     agentType: selectedAgent.agentType ?? 'general-purpose',
@@ -527,6 +534,7 @@ const backgroundSignalResolvers = new Map<string, () => void>();
 export function registerAgentForeground({
   agentId,
   description,
+  personalityName,
   prompt,
   selectedAgent,
   setAppState,
@@ -535,6 +543,7 @@ export function registerAgentForeground({
 }: {
   agentId: string;
   description: string;
+  personalityName?: string;
   prompt: string;
   selectedAgent: AgentDefinition;
   setAppState: SetAppState;
@@ -555,6 +564,7 @@ export function registerAgentForeground({
     type: 'local_agent',
     status: 'running',
     agentId,
+    personalityName,
     prompt,
     selectedAgent,
     agentType: selectedAgent.agentType ?? 'general-purpose',
