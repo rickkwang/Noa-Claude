@@ -5,6 +5,7 @@ import {
 } from '../../constants/prompts.js'
 import { getCLISyspromptPrefix } from '../../constants/system.js'
 import { buildMemoryLines } from '../../memdir/memdir.js'
+import { buildCombinedMemoryPrompt } from '../../memdir/teamMemPrompts.js'
 import { getCompactPrompt } from '../../services/compact/prompt.js'
 import { VERIFICATION_AGENT } from '../../tools/AgentTool/built-in/verificationAgent.js'
 import { getEnterPlanModeToolPrompt } from '../../tools/EnterPlanModeTool/prompt.js'
@@ -108,6 +109,16 @@ describe('prompt behavior contracts', () => {
 
   test('memory prompt defaults away from saving transient or speculative context', () => {
     const prompt = buildMemoryLines('Memory', '/tmp/noa-memory').join('\n')
+
+    expect(prompt).toContain('Default to not saving memory')
+    expect(prompt).toContain('likely to matter in future conversations')
+    expect(prompt).toContain(
+      'Do not save transient tasks, speculative inferences, or details that are likely to change soon',
+    )
+  })
+
+  test('combined team memory prompt uses the same conservative save default', () => {
+    const prompt = buildCombinedMemoryPrompt()
 
     expect(prompt).toContain('Default to not saving memory')
     expect(prompt).toContain('likely to matter in future conversations')
