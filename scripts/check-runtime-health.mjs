@@ -15,6 +15,7 @@ import {
   isSessionPersistenceDisabled,
   setSessionPersistenceDisabled,
 } from '../src/bootstrap/state.ts';
+import { getSystemPrompt } from '../src/constants/prompts.ts';
 import { call as callStartupBannerCommand } from '../src/commands/startup-banner/startup-banner.ts';
 import { getStartupBannerMode } from '../src/components/StartupScreen.ts';
 import { buildDisplayText, formatCompactError } from '../src/commands/compact/compact.ts';
@@ -59,6 +60,7 @@ import {
 } from '../src/utils/sessionStorage.ts';
 import { getOriginalCwd } from '../src/bootstrap/state.ts';
 import { applyLauncherDefaults, DEFAULT_PRODUCT_DIR } from '../launcher-config.js';
+import { enableConfigs } from '../src/utils/config.ts';
 import {
   createCompactBoundaryMessage,
   createAssistantMessage,
@@ -1790,22 +1792,33 @@ function checkOpus47ThirdPartyEffortDefaults() {
   }
 }
 
-function checkQualityRegressionGuards() {
-  const promptsSource = readFileSync(
-    resolve('src/constants/prompts.ts'),
-    'utf8',
-  );
+async function checkQualityRegressionGuards() {
+  const prevUserType = process.env.USER_TYPE;
+  let assembledExternalPrompt = '';
+  try {
+    enableConfigs();
+    delete process.env.USER_TYPE;
+    assembledExternalPrompt = (
+      await getSystemPrompt([], 'claude-sonnet-4-6')
+    ).join('\n');
+  } finally {
+    if (prevUserType === undefined) delete process.env.USER_TYPE;
+    else process.env.USER_TYPE = prevUserType;
+  }
+
   assert(
-    !promptsSource.includes('Be extra concise.'),
+    !assembledExternalPrompt.includes('Be extra concise.'),
     'external prompt should not contain the strongest brevity directive',
   );
   assert(
-    !promptsSource.includes("If you can say it in one sentence, don't use three."),
+    !assembledExternalPrompt.includes(
+      "If you can say it in one sentence, don't use three.",
+    ),
     'external prompt should not contain the one-sentence compression directive',
   );
   assert(
-    promptsSource.includes(
-      'include the details that matter for blockers, verification, or important implementation context.',
+    assembledExternalPrompt.includes(
+      'Clear first, concise second. Never let brevity reduce accuracy or omit information the reader needs to understand, verify, or act.',
     ),
     'external prompt should preserve concise-but-complete communication guidance',
   );
@@ -2160,7 +2173,7 @@ console.log('Checking Opus 4.7 third-party effort defaults...');
 checkOpus47ThirdPartyEffortDefaults();
 
 console.log('Checking quality regression guards...');
-checkQualityRegressionGuards();
+await checkQualityRegressionGuards();
 
 console.log('Checking provider routing and URL guards...');
 checkProviderRoutingAndUrlGuards();

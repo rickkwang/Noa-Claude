@@ -189,7 +189,9 @@ How to invoke:
 
 Important:
 - Available skills are listed in system-reminder messages in the conversation
-- When a skill matches the user's request, this is a BLOCKING REQUIREMENT: invoke the relevant Skill tool BEFORE generating any other response about the task
+- If the user explicitly names a skill or uses /<skill-name>, invoking that skill is required
+- When a listed skill clearly and specifically matches the task and provides the intended workflow, invoke the relevant Skill tool early
+- Do not treat broad or ambiguous skill matches as a blocking requirement when direct tool use is simpler, more reliable, or clearly better for the task
 - NEVER mention a skill without actually calling this tool
 - Do not invoke a skill that is already running
 - Do not use this tool for built-in CLI commands (like /help, /clear, etc.)

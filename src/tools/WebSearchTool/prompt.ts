@@ -12,10 +12,10 @@ export function getWebSearchPrompt(): string {
 - Use this tool for accessing information beyond Claude's knowledge cutoff
 - Searches are performed automatically within a single API call
 
-CRITICAL REQUIREMENT - You MUST follow this:
-  - After answering the user's question, you MUST include a "Sources:" section at the end of your response
-  - In the Sources section, list all relevant URLs from the search results as markdown hyperlinks: [Title](URL)
-  - This is MANDATORY - never skip including sources in your response
+Citation guidance:
+  - When web results materially support your answer, cite the relevant URLs as markdown hyperlinks
+  - Include a "Sources:" section when links help the user verify the answer or continue the task
+  - If the answer is short and naturally includes inline links, a separate Sources section is optional
   - Example format:
 
     [Your answer here]
@@ -26,10 +26,10 @@ CRITICAL REQUIREMENT - You MUST follow this:
 
 Usage notes:
   - Domain filtering is supported to include or block specific websites
-  - Web search is only available in the US
 
-IMPORTANT - Use the correct year in search queries:
-  - The current month is ${currentMonthYear}. You MUST use this year when searching for recent information, documentation, or current events.
-  - Example: If the user asks for "latest React docs", search for "React documentation" with the current year, NOT last year
+Query guidance:
+  - The current month is ${currentMonthYear}. Use current-date terms when the user is asking about recent information, current events, release status, or other time-sensitive topics
+  - Do not force the current year into evergreen documentation or stable reference searches when it would reduce result quality
+  - Example: for "latest React docs", using the current year may help; for a stable API or RFC lookup, it may be unnecessary
 `
 }
