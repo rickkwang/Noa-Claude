@@ -6,6 +6,8 @@ import {
   realpathSync,
   readFileSync,
   renameSync,
+  statSync,
+  utimesSync,
   writeFileSync,
 } from 'fs'
 import { dirname, join, resolve } from 'path'
@@ -169,9 +171,11 @@ const pkg = JSON.parse(readFileSync('./package.json', 'utf-8')) as {
 const cliOutfile = dev ? './dist/cli-dev' : './dist/cli'
 const bundleOutfile = dev ? './dist/main-dev.js' : './dist/main.js'
 const outfile = bundleOutfile
+const metadataOutfile = `${bundleOutfile}.meta.json`
 
 const buildTime = new Date().toISOString()
 const version = dev ? await getDevVersion(pkg.version) : pkg.version
+let wroteBundleMetadata = false
 
 const outDir = dirname(outfile)
 if (outDir !== '.') {
@@ -185,7 +189,10 @@ if (outDir !== '.') {
 
 const featureCallRe = /\bfeature\(\s*['"](\w+)['"][,\s]*\)/gs
 const featureImportRe = /import\s*\{[^}]*\bfeature\b[^}]*\}\s*from\s*['"]bun:bundle['"];?\s*\n?/g
-const modifiedFiles = new Map<string, string>()
+const modifiedFiles = new Map<
+  string,
+  { contents: string; atime: Date; mtime: Date }
+>()
 
 function preProcessFeatureFlags(dir: string) {
   for (const ent of readdirSync(dir, { withFileTypes: true })) {
@@ -206,7 +213,12 @@ function preProcessFeatureFlags(dir: string) {
     )
 
     if (contents !== raw) {
-      modifiedFiles.set(full, raw)
+      const stats = statSync(full)
+      modifiedFiles.set(full, {
+        contents: raw,
+        atime: stats.atime,
+        mtime: stats.mtime,
+      })
       writeFileSync(full, contents)
     }
   }
@@ -214,7 +226,8 @@ function preProcessFeatureFlags(dir: string) {
 
 function restoreModifiedFiles() {
   for (const [path, original] of modifiedFiles) {
-    writeFileSync(path, original)
+    writeFileSync(path, original.contents)
+    utimesSync(path, original.atime, original.mtime)
   }
   modifiedFiles.clear()
 }
@@ -247,6 +260,7 @@ const defines: Record<string, string> = {
   'process.env.CLAUDE_CODE_VERIFY_PLAN': JSON.stringify('false'),
   'process.env.CCR_FORCE_BUNDLE': JSON.stringify('true'),
   'MACRO.VERSION': JSON.stringify(version),
+  'MACRO.DISPLAY_VERSION': JSON.stringify(pkg.version),
   'MACRO.BUILD_TIME': JSON.stringify(buildTime),
   'MACRO.PACKAGE_URL': JSON.stringify(pkg.name),
   'MACRO.NATIVE_PACKAGE_URL': 'undefined',
@@ -416,8 +430,7 @@ try {
   const actualPath = outputFile.path
   const expectedPath = resolve(outfile)
   if (actualPath !== expectedPath) {
-    const content = readFileSync(actualPath, 'utf-8')
-    writeFileSync(expectedPath, content)
+    renameSync(actualPath, expectedPath)
   }
 
   chmodSync(expectedPath, 0o755)
@@ -442,6 +455,21 @@ try {
     writeFileSync(expectedPath, patched + '\n' + getLauncherBootstrapCode())
     console.log(`Build complete: ${outfile}`)
   }
+
+  writeFileSync(
+    resolve(metadataOutfile),
+    JSON.stringify(
+      {
+        version,
+        displayVersion: pkg.version,
+        dev,
+        buildTime,
+      },
+      null,
+      2,
+    ) + '\n',
+  )
+  wroteBundleMetadata = true
 
   if (compile) {
     const compileResult = await Bun.build({
@@ -486,6 +514,14 @@ try {
 } finally {
   // Always restore source files, even if Bun.build() throws
   restoreModifiedFiles()
+  if (wroteBundleMetadata) {
+    const touchedAt = new Date()
+    for (const generatedPath of [outfile, metadataOutfile]) {
+      if (existsSync(generatedPath)) {
+        utimesSync(generatedPath, touchedAt, touchedAt)
+      }
+    }
+  }
   if (numModified > 0) {
     console.log(`  🔄 feature-flags: pre-processed ${numModified} files (restored)`)
   }

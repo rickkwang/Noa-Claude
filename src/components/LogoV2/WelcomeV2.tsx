@@ -3,10 +3,14 @@ import { c as _c } from "react/compiler-runtime";
 import React from 'react';
 import { Box, Text, useTheme } from 'src/ink.js';
 import { env } from '../../utils/env.js';
+
+declare const MACRO: { VERSION: string; DISPLAY_VERSION?: string };
+
 const WELCOME_V2_WIDTH = 58;
 export function WelcomeV2() {
   const $ = _c(35);
   const [theme] = useTheme();
+  const displayVersion = MACRO.DISPLAY_VERSION ?? MACRO.VERSION;
   if (env.terminal === "Apple_Terminal") {
     let t0;
     if ($[0] !== theme) {
@@ -29,7 +33,7 @@ export function WelcomeV2() {
     let t7;
     let t8;
     if ($[2] === Symbol.for("react.memo_cache_sentinel")) {
-      t0 = <Text><Text color="claude">{"Welcome to Noa Claude"} </Text><Text dimColor={true}>v{MACRO.VERSION} </Text></Text>;
+      t0 = <Text><Text color="claude">{"Welcome to Noa Claude"} </Text><Text dimColor={true}>v{displayVersion} </Text></Text>;
       t1 = <Text>{"\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026"}</Text>;
       t2 = <Text>{"                                                          "}</Text>;
       t3 = <Text>{"                                                          "}</Text>;
@@ -114,7 +118,7 @@ export function WelcomeV2() {
   let t5;
   let t6;
   if ($[18] === Symbol.for("react.memo_cache_sentinel")) {
-    t0 = <Text><Text color="claude">{"Welcome to Noa Claude"} </Text><Text dimColor={true}>v{MACRO.VERSION} </Text></Text>;
+    t0 = <Text><Text color="claude">{"Welcome to Noa Claude"} </Text><Text dimColor={true}>v{displayVersion} </Text></Text>;
     t1 = <Text>{"\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026\u2026"}</Text>;
     t2 = <Text>{"                                                          "}</Text>;
     t3 = <Text>{"     *                                       \u2588\u2588\u2588\u2588\u2588\u2593\u2593\u2591     "}</Text>;
@@ -207,6 +211,7 @@ function AppleTerminalWelcomeV2(t0) {
     theme,
     welcomeMessage
   } = t0;
+  const displayVersion = MACRO.DISPLAY_VERSION ?? MACRO.VERSION;
   const isLightTheme = ["light", "light-daltonized", "light-ansi"].includes(theme);
   if (isLightTheme) {
     let t1;
@@ -219,7 +224,7 @@ function AppleTerminalWelcomeV2(t0) {
     }
     let t2;
     if ($[2] === Symbol.for("react.memo_cache_sentinel")) {
-      t2 = <Text dimColor={true}>v{MACRO.VERSION} </Text>;
+      t2 = <Text dimColor={true}>v{displayVersion} </Text>;
       $[2] = t2;
     } else {
       t2 = $[2];
@@ -330,7 +335,7 @@ function AppleTerminalWelcomeV2(t0) {
   }
   let t2;
   if ($[24] === Symbol.for("react.memo_cache_sentinel")) {
-    t2 = <Text dimColor={true}>v{MACRO.VERSION} </Text>;
+    t2 = <Text dimColor={true}>v{displayVersion} </Text>;
     $[24] = t2;
   } else {
     t2 = $[24];
