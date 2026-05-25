@@ -1,5 +1,21 @@
 # Release Notes
 
+## 1.3.1
+
+### New Features
+
+- **Worker personality names** — generic worker subagents now get stable display names from a deterministic historical-figure pool, with color assignment that stays consistent across the UI.
+
+### Refactors
+
+- **React runtime deduplication** — build output now resolves `react`, `react-dom`, and `react-reconciler` through a single physical path so the bundled app does not carry duplicate React runtimes.
+- **Claude in Chrome optional dependency handling** — startup now treats `@ant/claude-for-chrome-mcp` as truly optional and avoids auto-enabling the feature when the package is unavailable.
+
+### Bug Fixes
+
+- Fixed `bun run dev` and bundled startup from trying to resolve a missing `@ant/claude-for-chrome-mcp` package as if it were required.
+- Fixed `Claude in Chrome` auto-enable logic so the feature does not get advertised or wired up when the optional MCP package is absent.
+
 ## 1.3.0
 
 ### New Features
