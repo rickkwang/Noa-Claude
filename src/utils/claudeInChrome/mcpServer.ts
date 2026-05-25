@@ -1,10 +1,7 @@
 // @ts-nocheck
 import {
-  type ClaudeForChromeContext,
   createClaudeForChromeMcpServer,
-  type Logger,
-  type PermissionMode,
-} from '@ant/claude-for-chrome-mcp'
+} from './runtime.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { format } from 'util'
 import { shutdownDatadog } from '../../services/analytics/datadog.js'
@@ -39,6 +36,13 @@ const PERMISSION_MODES: readonly PermissionMode[] = [
   'skip_all_permission_checks',
   'follow_a_plan',
 ]
+
+type ClaudeForChromeContext = any
+type Logger = any
+type PermissionMode =
+  | 'ask'
+  | 'skip_all_permission_checks'
+  | 'follow_a_plan'
 
 function isPermissionMode(raw: string): raw is PermissionMode {
   return PERMISSION_MODES.some(m => m === raw)
