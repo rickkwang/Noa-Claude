@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
+  realpathSync,
   readFileSync,
   renameSync,
   writeFileSync,
@@ -270,6 +271,69 @@ if (features.length > 0) {
 }
 
 // ── Bun plugin: stub missing optional modules ───────────────────────────────
+const reactPackageRoots = {
+  react: realpathSync(resolve('./node_modules/react')),
+  reactDom: realpathSync(resolve('./node_modules/react-dom')),
+  reactReconciler: realpathSync(resolve('./node_modules/react-reconciler')),
+}
+
+function resolveReactAlias(specifier: string): string | null {
+  const resolveExistingFile = (basePath: string): string => {
+    if (existsSync(basePath)) {
+      return basePath
+    }
+    if (existsSync(`${basePath}.js`)) {
+      return `${basePath}.js`
+    }
+    return join(basePath, 'index.js')
+  }
+
+  if (specifier === 'react') {
+    return join(reactPackageRoots.react, 'index.js')
+  }
+  if (specifier.startsWith('react/')) {
+    return resolveExistingFile(
+      join(reactPackageRoots.react, specifier.slice('react/'.length)),
+    )
+  }
+  if (specifier === 'react-dom') {
+    return join(reactPackageRoots.reactDom, 'index.js')
+  }
+  if (specifier.startsWith('react-dom/')) {
+    return resolveExistingFile(
+      join(reactPackageRoots.reactDom, specifier.slice('react-dom/'.length)),
+    )
+  }
+  if (specifier === 'react-reconciler') {
+    return join(reactPackageRoots.reactReconciler, 'index.js')
+  }
+  if (specifier.startsWith('react-reconciler/')) {
+    return resolveExistingFile(
+      join(
+        reactPackageRoots.reactReconciler,
+        specifier.slice('react-reconciler/'.length),
+      ),
+    )
+  }
+  return null
+}
+
+const dedupeReactPlugin: BunPlugin = {
+  name: 'dedupe-react-runtime',
+  setup(build) {
+    build.onResolve(
+      { filter: /^(react|react-dom|react-reconciler)(\/.*)?$/ },
+      args => {
+        const aliasedPath = resolveReactAlias(args.path)
+        if (!aliasedPath) {
+          return
+        }
+        return { path: aliasedPath }
+      },
+    )
+  },
+}
+
 const stubPlugin: BunPlugin = {
   name: 'stub-optional-modules',
   setup(build) {
@@ -329,7 +393,7 @@ try {
     outdir: dirname(resolve(outfile)),
     external: externals,
     define: defineEntries,
-    plugins: [stubPlugin],
+    plugins: [dedupeReactPlugin, stubPlugin],
   })
 
   if (!result.success) {
@@ -386,7 +450,7 @@ try {
       format: 'esm',
       outdir: dirname(resolve(cliOutfile)),
       external: externals,
-      plugins: [stubPlugin],
+      plugins: [dedupeReactPlugin, stubPlugin],
       compile: true,
     })
 
