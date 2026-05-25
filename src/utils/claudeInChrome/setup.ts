@@ -30,7 +30,11 @@ import {
 } from './common.js'
 import { getChromeSystemPrompt } from './prompt.js'
 import { isChromeExtensionInstalledPortable } from './setupPortable.js'
-import { BROWSER_TOOLS } from './runtime.js'
+import {
+  assertClaudeForChromeMcpAvailable,
+  BROWSER_TOOLS,
+  HAS_CLAUDE_FOR_CHROME_MCP,
+} from './runtime.js'
 
 const CHROME_EXTENSION_RECONNECT_URL = 'https://clau.de/chrome/reconnect'
 
@@ -76,6 +80,7 @@ export function shouldAutoEnableClaudeInChrome(): boolean {
   }
 
   shouldAutoEnable =
+    HAS_CLAUDE_FOR_CHROME_MCP &&
     getIsInteractive() &&
     isChromeExtensionInstalled_CACHED_MAY_BE_STALE() &&
     (process.env.USER_TYPE === 'ant' ||
@@ -94,6 +99,7 @@ export function setupClaudeInChrome(): {
   allowedTools: string[]
   systemPrompt: string
 } {
+  assertClaudeForChromeMcpAvailable()
   const isNativeBuild = isInBundledMode()
   const allowedTools = BROWSER_TOOLS.map(
     tool => `mcp__claude-in-chrome__${tool.name}`,
