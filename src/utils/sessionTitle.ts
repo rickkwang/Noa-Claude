@@ -19,6 +19,7 @@ import { logEvent } from '../services/analytics/index.js'
 import { queryHaiku } from '../services/api/claude.js'
 import type { Message } from '../types/message.js'
 import { logForDebugging } from './debug.js'
+import { errorMessage } from './errors.js'
 import { safeParseJSON } from './json.js'
 import { lazySchema } from './lazySchema.js'
 import { extractTextContent } from './messages.js'
@@ -68,7 +69,105 @@ Bad (too vague): {"title": "Code changes"}
 Bad (too long): {"title": "Investigate and fix the issue where the login button does not respond on mobile devices"}
 Bad (wrong case): {"title": "Fix Login Button On Mobile"}`
 
+const SESSION_TITLE_PLAIN_TEXT_PROMPT = `Generate a concise, sentence-case title (3-7 words) that captures the main topic or goal of this coding session. The title should be clear enough that the user recognizes the session in a list. Use sentence case: capitalize only the first word and proper nouns.
+
+Return only the title text. Do not return JSON, quotes, bullets, or any explanation.
+
+Good examples:
+Fix login button on mobile
+Add OAuth authentication
+Debug failing CI tests
+Refactor API client error handling`
+
 const titleSchema = lazySchema(() => z.object({ title: z.string() }))
+
+function normalizeSessionTitle(title: string | null | undefined): string | null {
+  const trimmed = title?.trim()
+  if (!trimmed) return null
+  return trimmed.slice(0, 80).trim() || null
+}
+
+const EXPLANATORY_TITLE_PREFIX_RE =
+  /^(here(?:'s| is)|this (?:is|would be)|suggested title|concise title|proposed title|title suggestion)\b/i
+
+function parseSessionTitleResponse(text: string): string | null {
+  const parsed = titleSchema().safeParse(safeParseJSON(text, false))
+  if (parsed.success) {
+    return normalizeSessionTitle(parsed.data.title)
+  }
+
+  const firstNonEmptyLine = text
+    .split('\n')
+    .map(line => line.trim())
+    .find(Boolean)
+
+  if (!firstNonEmptyLine) return null
+
+  const plainTextTitle = firstNonEmptyLine
+    .replace(/^title\s*:\s*/i, '')
+    .replace(/^["'`]+|["'`]+$/g, '')
+    .trim()
+
+  if (
+    !plainTextTitle ||
+    EXPLANATORY_TITLE_PREFIX_RE.test(firstNonEmptyLine) ||
+    (firstNonEmptyLine.includes(':') && !/^title\s*:/i.test(firstNonEmptyLine)) ||
+    plainTextTitle.startsWith('{') ||
+    /^api error\b/i.test(plainTextTitle) ||
+    /^error\b/i.test(plainTextTitle)
+  ) {
+    return null
+  }
+
+  return normalizeSessionTitle(plainTextTitle)
+}
+
+function shouldRetryWithoutSchema(error: unknown): boolean {
+  const message = errorMessage(error).toLowerCase()
+  return (
+    message.includes('invalid params') ||
+    message.includes('invalid_request_error') ||
+    message.includes('json_schema') ||
+    message.includes('response_format')
+  )
+}
+
+async function requestSessionTitle(
+  description: string,
+  signal: AbortSignal,
+  options?: { plainText?: boolean },
+): Promise<string | null> {
+  const plainText = options?.plainText ?? false
+  const result = await queryHaiku({
+    systemPrompt: asSystemPrompt([
+      plainText ? SESSION_TITLE_PLAIN_TEXT_PROMPT : SESSION_TITLE_PROMPT,
+    ]),
+    userPrompt: description,
+    outputFormat: plainText
+      ? undefined
+      : {
+          type: 'json_schema',
+          schema: {
+            type: 'object',
+            properties: {
+              title: { type: 'string' },
+            },
+            required: ['title'],
+            additionalProperties: false,
+          },
+        },
+    signal,
+    options: {
+      querySource: 'generate_session_title',
+      agents: [],
+      isNonInteractiveSession: getIsNonInteractiveSession(),
+      hasAppendSystemPrompt: false,
+      mcpTools: [],
+    },
+  })
+
+  return parseSessionTitleResponse(extractTextContent(result.message.content))
+}
 
 /**
  * Generate a sentence-case session title from a description or first message.
@@ -84,47 +183,43 @@ export async function generateSessionTitle(
   const trimmed = description.trim()
   if (!trimmed) return null
 
+  let lastError: unknown = null
+
   try {
-    const result = await queryHaiku({
-      systemPrompt: asSystemPrompt([SESSION_TITLE_PROMPT]),
-      userPrompt: trimmed,
-      outputFormat: {
-        type: 'json_schema',
-        schema: {
-          type: 'object',
-          properties: {
-            title: { type: 'string' },
-          },
-          required: ['title'],
-          additionalProperties: false,
-        },
-      },
-      signal,
-      options: {
-        querySource: 'generate_session_title',
-        agents: [],
-        // Reflect the actual session mode — this module is called from
-        // both the SDK print path (non-interactive) and the CCR remote
-        // session path via useRemoteSession (interactive).
-        isNonInteractiveSession: getIsNonInteractiveSession(),
-        hasAppendSystemPrompt: false,
-        mcpTools: [],
-      },
-    })
-
-    const text = extractTextContent(result.message.content)
-
-    const parsed = titleSchema().safeParse(safeParseJSON(text))
-    const title = parsed.success ? parsed.data.title.trim() || null : null
-
-    logEvent('tengu_session_title_generated', { success: title !== null })
-
-    return title
+    const structuredTitle = await requestSessionTitle(trimmed, signal)
+    if (structuredTitle) {
+      logEvent('tengu_session_title_generated', { success: true })
+      return structuredTitle
+    }
   } catch (error) {
-    logForDebugging(`generateSessionTitle failed: ${error}`, {
+    lastError = error
+    if (!shouldRetryWithoutSchema(error)) {
+      logForDebugging(`generateSessionTitle failed: ${errorMessage(error)}`, {
+        level: 'error',
+      })
+      logEvent('tengu_session_title_generated', { success: false })
+      return null
+    }
+  }
+
+  try {
+    const plainTextTitle = await requestSessionTitle(trimmed, signal, {
+      plainText: true,
+    })
+    logEvent('tengu_session_title_generated', {
+      success: plainTextTitle !== null,
+    })
+    return plainTextTitle
+  } catch (error) {
+    lastError = error
+  }
+
+  if (lastError) {
+    logForDebugging(`generateSessionTitle failed: ${errorMessage(lastError)}`, {
       level: 'error',
     })
-    logEvent('tengu_session_title_generated', { success: false })
-    return null
   }
+
+  logEvent('tengu_session_title_generated', { success: false })
+  return null
 }

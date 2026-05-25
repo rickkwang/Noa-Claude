@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { c as _c } from "react/compiler-runtime";
 import type { Base64ImageSource, ImageBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
-import React, { Suspense, use, useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useSettings } from '../../../hooks/useSettings.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 import { stringWidth } from '../../../ink/stringWidth.js';
@@ -11,7 +11,7 @@ import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEve
 import { useAppState } from '../../../state/AppState.js';
 import type { Question } from '../../../tools/AskUserQuestionTool/AskUserQuestionTool.js';
 import { AskUserQuestionTool } from '../../../tools/AskUserQuestionTool/AskUserQuestionTool.js';
-import { type CliHighlight, getCliHighlightPromise } from '../../../utils/cliHighlight.js';
+import { type CliHighlight, useCliHighlight } from '../../../utils/cliHighlight.js';
 import type { PastedContent } from '../../../utils/config.js';
 import type { ImageDimensions } from '../../../utils/imageResizer.js';
 import { maybeResizeAndDownsampleImageBlock } from '../../../utils/imageResizer.js';
@@ -29,49 +29,14 @@ const MIN_CONTENT_WIDTH = 40;
 // Lines used by chrome around the content area (nav bar, title, footer, help text, etc.)
 const CONTENT_CHROME_OVERHEAD = 15;
 export function AskUserQuestionPermissionRequest(props) {
-  const $ = _c(4);
   const settings = useSettings();
-  if (settings.syntaxHighlightingDisabled) {
-    let t0;
-    if ($[0] !== props) {
-      t0 = <AskUserQuestionPermissionRequestBody {...props} highlight={null} />;
-      $[0] = props;
-      $[1] = t0;
-    } else {
-      t0 = $[1];
-    }
-    return t0;
-  }
-  let t0;
-  if ($[2] !== props) {
-    t0 = <Suspense fallback={<AskUserQuestionPermissionRequestBody {...props} highlight={null} />}><AskUserQuestionWithHighlight {...props} /></Suspense>;
-    $[2] = props;
-    $[3] = t0;
-  } else {
-    t0 = $[3];
-  }
-  return t0;
-}
-function AskUserQuestionWithHighlight(props) {
-  const $ = _c(4);
-  let t0;
-  if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
-    t0 = getCliHighlightPromise();
-    $[0] = t0;
-  } else {
-    t0 = $[0];
-  }
-  const highlight = use(t0);
-  let t1;
-  if ($[1] !== highlight || $[2] !== props) {
-    t1 = <AskUserQuestionPermissionRequestBody {...props} highlight={highlight} />;
-    $[1] = highlight;
-    $[2] = props;
-    $[3] = t1;
-  } else {
-    t1 = $[3];
-  }
-  return t1;
+  const highlight = useCliHighlight(!settings.syntaxHighlightingDisabled);
+  return (
+    <AskUserQuestionPermissionRequestBody
+      {...props}
+      highlight={settings.syntaxHighlightingDisabled ? null : highlight}
+    />
+  );
 }
 function AskUserQuestionPermissionRequestBody(t0) {
   const $ = _c(115);

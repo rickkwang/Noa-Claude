@@ -6,6 +6,7 @@
 // deps is a separate sweep; this ref preserves the status quo.
 /// <reference lib="dom" />
 
+import { useEffect, useSyncExternalStore } from 'react'
 import { extname } from 'path'
 
 export type CliHighlight = {
@@ -18,6 +19,8 @@ export type CliHighlight = {
 // the module cache, so the second import() is a cache hit — no extra bytes
 // faulted in.
 let cliHighlightPromise: Promise<CliHighlight | null> | undefined
+let cliHighlightValue: CliHighlight | null | undefined
+const cliHighlightListeners = new Set<() => void>()
 
 let loadedGetLanguage: typeof import('highlight.js').getLanguage | undefined
 
@@ -36,9 +39,53 @@ async function loadCliHighlight(): Promise<CliHighlight | null> {
   }
 }
 
+function emitCliHighlightLoaded(): void {
+  for (const listener of cliHighlightListeners) {
+    listener()
+  }
+}
+
 export function getCliHighlightPromise(): Promise<CliHighlight | null> {
+  if (cliHighlightValue !== undefined) {
+    return Promise.resolve(cliHighlightValue)
+  }
+
   cliHighlightPromise ??= loadCliHighlight()
+    .then(highlight => {
+      cliHighlightValue = highlight
+      return highlight
+    })
+    .finally(() => {
+      emitCliHighlightLoaded()
+    })
+
   return cliHighlightPromise
+}
+
+function subscribeCliHighlight(listener: () => void): () => void {
+  cliHighlightListeners.add(listener)
+  return () => {
+    cliHighlightListeners.delete(listener)
+  }
+}
+
+function getCliHighlightSnapshot(): CliHighlight | null {
+  return cliHighlightValue ?? null
+}
+
+export function useCliHighlight(enabled: boolean = true): CliHighlight | null {
+  const highlight = useSyncExternalStore(
+    subscribeCliHighlight,
+    getCliHighlightSnapshot,
+    getCliHighlightSnapshot,
+  )
+
+  useEffect(() => {
+    if (!enabled || cliHighlightValue !== undefined) return
+    void getCliHighlightPromise()
+  }, [enabled])
+
+  return enabled ? highlight : null
 }
 
 /**

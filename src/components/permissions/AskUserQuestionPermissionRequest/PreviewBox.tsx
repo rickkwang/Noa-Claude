@@ -1,11 +1,11 @@
 // @ts-nocheck
 import { c as _c } from "react/compiler-runtime";
-import React, { Suspense, use, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { useSettings } from '../../../hooks/useSettings.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 import { stringWidth } from '../../../ink/stringWidth.js';
 import { Ansi, Box, Text, useTheme } from '../../../ink.js';
-import { type CliHighlight, getCliHighlightPromise } from '../../../utils/cliHighlight.js';
+import { type CliHighlight, useCliHighlight } from '../../../utils/cliHighlight.js';
 import { applyMarkdown } from '../../../utils/markdown.js';
 import sliceAnsi from '../../../utils/sliceAnsi.js';
 type PreviewBoxProps = {
@@ -38,49 +38,14 @@ const BOX_CHARS = {
  * The parent component should pass maxLines based on its available height budget.
  */
 export function PreviewBox(props) {
-  const $ = _c(4);
   const settings = useSettings();
-  if (settings.syntaxHighlightingDisabled) {
-    let t0;
-    if ($[0] !== props) {
-      t0 = <PreviewBoxBody {...props} highlight={null} />;
-      $[0] = props;
-      $[1] = t0;
-    } else {
-      t0 = $[1];
-    }
-    return t0;
-  }
-  let t0;
-  if ($[2] !== props) {
-    t0 = <Suspense fallback={<PreviewBoxBody {...props} highlight={null} />}><PreviewBoxWithHighlight {...props} /></Suspense>;
-    $[2] = props;
-    $[3] = t0;
-  } else {
-    t0 = $[3];
-  }
-  return t0;
-}
-function PreviewBoxWithHighlight(props) {
-  const $ = _c(4);
-  let t0;
-  if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
-    t0 = getCliHighlightPromise();
-    $[0] = t0;
-  } else {
-    t0 = $[0];
-  }
-  const highlight = use(t0);
-  let t1;
-  if ($[1] !== highlight || $[2] !== props) {
-    t1 = <PreviewBoxBody {...props} highlight={highlight} />;
-    $[1] = highlight;
-    $[2] = props;
-    $[3] = t1;
-  } else {
-    t1 = $[3];
-  }
-  return t1;
+  const highlight = useCliHighlight(!settings.syntaxHighlightingDisabled);
+  return (
+    <PreviewBoxBody
+      {...props}
+      highlight={settings.syntaxHighlightingDisabled ? null : highlight}
+    />
+  );
 }
 function PreviewBoxBody(t0) {
   const $ = _c(34);
