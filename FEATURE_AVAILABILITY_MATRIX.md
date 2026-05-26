@@ -1,14 +1,14 @@
 # Feature Availability Matrix
 
-Last updated: 2026-04-13
+Last updated: 2026-05-27
 
 ## Scope
 - This matrix reflects the current repository build/runtime behavior.
 - Status definitions:
   - `Baseline`: primary user-facing supported workflow.
   - `Implemented but Non-Baseline`: callable, but not part of primary workflow.
-  - `Build-Excluded`: command exists but hard-fails with `not available in this build`.
-  - `Stub`: placeholder only (`isEnabled: () => false`), no functional implementation.
+  - `Build-Excluded`: command exists and surfaces a stable `not available in this build` failure contract.
+  - `Stub`: placeholder tracked in governance only; not registered in runtime and has no functional implementation.
 - Default `bun run build` profile in this repo is conservative; expanded unlock profile is opt-in via `bun run build:dev:full`.
 - Experimental unlockability details are maintained in [FEATURES.md](./FEATURES.md).
 

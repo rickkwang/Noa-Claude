@@ -29,14 +29,20 @@ function assert(condition, message, details) {
 
 function createRecorder() {
   let lastCall = null;
+  let callCount = 0;
   return {
     onDone(message, options = {}) {
+      callCount += 1;
       lastCall = { message, options };
     },
     getLastCall() {
       return lastCall;
     },
+    getCallCount() {
+      return callCount;
+    },
     clear() {
+      callCount = 0;
       lastCall = null;
     },
   };
@@ -333,6 +339,18 @@ async function runCommandSurfaceSmoke() {
       { available: [...names].sort() },
     );
   }
+
+  const stubCommands = surfaceStatus
+    .getCommandSurfacesByCategory('stub')
+    .map(entry => entry.command.replace('/', ''));
+
+  for (const commandName of stubCommands) {
+    assert(
+      !names.has(commandName),
+      `Governance-only stub /${commandName} must not be registered in command loader`,
+      { available: [...names].sort() },
+    );
+  }
 }
 
 function runNonInteractiveBoundarySmoke() {
@@ -399,22 +417,35 @@ async function runBuildExcludedCommandSmoke() {
     );
     assert(command?.isHidden === true, `Build-excluded command ${command?.name} must stay hidden`, command);
     const loaded = await command.load();
-    let error = null;
-    try {
-      await loaded.call(() => {}, {}, '');
-    } catch (err) {
-      error = err;
-    }
-    assert(error instanceof Error, `Build-excluded command ${command.name} did not throw`, error);
+    const recorder = createRecorder();
+    const jsx = await loaded.call(recorder.onDone, {}, '');
+    const completion = recorder.getLastCall();
+    const expectedMessage = buildExcluded.formatBuildExcludedMessage(commandKey);
+    assert(jsx == null, `Build-excluded command ${command.name} must not render JSX`, jsx);
     assert(
-      error.message === entry.errorContract?.message,
-      `Build-excluded command ${command.name} must throw stable unavailable message`,
-      error.message,
+      recorder.getCallCount() === 1,
+      `Build-excluded command ${command.name} must complete exactly once`,
+      recorder.getCallCount(),
     );
     assert(
-      error.errorId === entry.errorContract?.errorId,
-      `Build-excluded command ${command.name} must throw stable build-excluded errorId`,
-      error,
+      completion?.message === expectedMessage,
+      `Build-excluded command ${command.name} must surface stable unavailable message`,
+      completion,
+    );
+    assert(
+      completion?.options?.display === 'system',
+      `Build-excluded command ${command.name} must resolve as a system-visible result`,
+      completion,
+    );
+    assert(
+      completion?.message?.includes(entry.errorContract?.message ?? ''),
+      `Build-excluded command ${command.name} must include stable unavailable message text`,
+      completion,
+    );
+    assert(
+      completion?.message?.includes(entry.errorContract?.errorId ?? ''),
+      `Build-excluded command ${command.name} must include stable build-excluded errorId`,
+      completion,
     );
   }
 }

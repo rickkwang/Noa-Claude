@@ -1,6 +1,6 @@
 # Product Governance
 
-Last updated: 2026-04-13
+Last updated: 2026-05-27
 
 This document replaces the separate command surface, feature gap, and roadmap notes with one product-facing control surface.
 
@@ -71,7 +71,7 @@ These commands are intentionally not available in this build and must remain hid
 Policy:
 
 - `isHidden` must remain `true`
-- runtime call must throw a stable `not available in this build` message with a stable `E_BUILD_EXCLUDED_*` error ID
+- runtime invocation must surface a stable `not available in this build` message with a stable `E_BUILD_EXCLUDED_*` error ID
 - `/remote-control` here refers to the slash command surface; bridge/remote runtime code may exist but must remain unavailable in this build
 
 Tracked surfaces:
@@ -86,11 +86,12 @@ Tracked surfaces:
 
 ### Stub
 
-Commands with `isEnabled: () => false` remain placeholders until implementation.
+These commands remain governance-only placeholders until implementation.
 
 Policy:
 
 - keep out of baseline docs
+- keep them out of runtime command registration until implementation exists
 - track implementation status in `FEATURE_AVAILABILITY_MATRIX.md`
 
 Tracked surfaces:

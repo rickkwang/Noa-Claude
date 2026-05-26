@@ -179,7 +179,7 @@ const stubs: CommandSurfaceEntry[] = [
   category: 'stub' as const,
   discoverability: 'hidden' as const,
   supportsNonInteractive: null,
-  reason: 'Placeholder surface (`isEnabled: () => false`).',
+  reason: 'Placeholder surface tracked in governance only; not registered in runtime.',
   upgradeCondition: 'Requires net-new implementation before exposure.',
 }))
 

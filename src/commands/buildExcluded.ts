@@ -1,5 +1,5 @@
 import { E_BUILD_EXCLUDED_COMMAND } from '../constants/errorIds.js'
-import type { Command } from '../types/command.js'
+import type { Command, LocalJSXCommandOnDone } from '../types/command.js'
 
 export const BUILD_EXCLUDED_ERROR_CONTRACTS = {
   proactive: {
@@ -53,13 +53,19 @@ export function createBuildExcludedError(commandName: string): Error {
   return error
 }
 
-export function throwBuildExcludedCommand(commandName: string): never {
-  throw createBuildExcludedError(commandName)
+export function formatBuildExcludedMessage(commandName: string): string {
+  const error = createBuildExcludedError(commandName)
+  const errorId =
+    (error as Error & { errorId?: string; errorCode?: number }).errorId ??
+    'E_BUILD_EXCLUDED_UNKNOWN'
+  const errorCode =
+    (error as Error & { errorId?: string; errorCode?: number }).errorCode ??
+    E_BUILD_EXCLUDED_COMMAND
+  return `[${errorId}:${errorCode}] ${error.message}`
 }
 
 /**
- * Factory for the identical "command not available in this build" stub.
- * Replaces 7 hand-written stub files that each only differ by name/description.
+ * Factory for the identical "command not available in this build" contract.
  */
 export function createBuildExcludedCommand(
   name: keyof typeof BUILD_EXCLUDED_ERROR_CONTRACTS,
@@ -71,8 +77,9 @@ export function createBuildExcludedCommand(
     type: 'local-jsx' as const,
     isHidden: true,
     load: async () => ({
-      call: async () => {
-        throwBuildExcludedCommand(name)
+      call: async (onDone: LocalJSXCommandOnDone) => {
+        onDone(formatBuildExcludedMessage(name), { display: 'system' })
+        return null
       },
     }),
   } satisfies Command
