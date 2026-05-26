@@ -17,6 +17,7 @@ import type {
 } from '../types/message.js'
 import { logForDebugging } from '../utils/debug.js'
 import { fromSDKCompactMetadata } from '../utils/messages/mappers.js'
+import { fromSDKSummarizeMetadata } from '../utils/messages/summarizeMetadata.js'
 import { createUserMessage } from '../utils/messages.js'
 
 /**
@@ -183,21 +184,12 @@ export function convertSDKMessage(
       // tool results, so it can't distinguish tool results from prompt echoes.
       const isToolResult =
         Array.isArray(content) && content.some(b => b.type === 'tool_result')
-      if (opts?.convertToolResults && isToolResult) {
-        return {
-          type: 'message',
-          message: createUserMessage({
-            content,
-            toolUseResult: msg.tool_use_result,
-            uuid: msg.uuid,
-            timestamp: msg.timestamp,
-          }),
-        }
-      }
-      // When converting historical events, user-typed messages need to be
-      // rendered (they weren't added locally by the REPL). Skip tool_results
-      // here — already handled above.
-      if (opts?.convertUserTextMessages && !isToolResult) {
+      const shouldConvert =
+        msg.is_compact_summary ||
+        (opts?.convertToolResults && isToolResult) ||
+        (opts?.convertUserTextMessages && !isToolResult)
+
+      if (shouldConvert) {
         if (typeof content === 'string' || Array.isArray(content)) {
           return {
             type: 'message',
@@ -206,6 +198,10 @@ export function convertSDKMessage(
               toolUseResult: msg.tool_use_result,
               uuid: msg.uuid,
               timestamp: msg.timestamp,
+              isCompactSummary: msg.is_compact_summary || undefined,
+              isVisibleInTranscriptOnly:
+                msg.is_compact_summary && msg.isSynthetic ? true : undefined,
+              summarizeMetadata: fromSDKSummarizeMetadata(msg.summarize_metadata),
             }),
           }
         }

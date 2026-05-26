@@ -493,9 +493,10 @@ export function createUserMessage({
   // Permission mode when message was sent (for rewind restoration)
   permissionMode?: PermissionMode
   summarizeMetadata?: {
-    messagesSummarized: number
+    messagesSummarized?: number
     userContext?: string
     direction?: PartialCompactDirection
+    rawCompactSummary?: string
   }
   // Provenance of this message. undefined = human (keyboard).
   origin?: MessageOrigin

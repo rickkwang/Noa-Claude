@@ -68,6 +68,7 @@ import {
   createUserMessage,
   getAssistantMessageText,
   getLastAssistantMessage,
+  findLastCompactBoundaryIndex,
   getMessagesAfterCompactBoundary,
   isCompactBoundaryMessage,
   normalizeMessagesForAPI,
@@ -118,8 +119,12 @@ import {
   roughTokenCountEstimation,
   roughTokenCountEstimationForMessages,
 } from '../tokenEstimation.js'
+import { estimateMessageTokens } from './microCompact.js'
+import { adjustIndexToPreserveAPIInvariants } from './preservedTail.js'
 import { groupMessagesByApiRound } from './grouping.js'
 import {
+  extractLegacyCompactSummaryText,
+  formatCompactSummary,
   getCompactPrompt,
   getCompactUserSummaryMessage,
   getPartialCompactPrompt,
@@ -134,6 +139,7 @@ export const POST_COMPACT_MAX_TOKENS_PER_FILE = 5_000
 // part. Budget sized to hold ~5 skills at the per-skill cap.
 export const POST_COMPACT_MAX_TOKENS_PER_SKILL = 5_000
 export const POST_COMPACT_SKILLS_TOKEN_BUDGET = 25_000
+export const FULL_COMPACT_RECENT_TAIL_TOKEN_BUDGET = 12_000
 const MAX_COMPACT_STREAMING_RETRIES = 2
 
 /**
@@ -376,6 +382,214 @@ export function annotateBoundaryWithPreservedSegment(
   }
 }
 
+type PreviousCompactCheckpoint = {
+  previousSummary?: string
+  firstFreshMessageIndex: number
+}
+
+function extractCompactSummaryText(message: Message): string | undefined {
+  if (
+    message.type !== 'user' ||
+    message.isCompactSummary !== true ||
+    typeof message.message.content !== 'string'
+  ) {
+    return undefined
+  }
+
+  // Partial compaction with direction="from" summarizes only the recent suffix
+  // while earlier preserved context follows after the summary. That summary
+  // cannot be reused as an authoritative checkpoint for the earlier history.
+  if (message.summarizeMetadata?.direction === 'from') {
+    return undefined
+  }
+
+  const rawSummary = message.summarizeMetadata?.rawCompactSummary
+  if (typeof rawSummary === 'string' && rawSummary.trim() !== '') {
+    return formatCompactSummary(rawSummary.trim())
+  }
+
+  return extractLegacyCompactSummaryText(message.message.content)
+}
+
+function isCompactionKeepExcludedMessage(message: Message): boolean {
+  if (message.type === 'progress' || isCompactBoundaryMessage(message)) {
+    return true
+  }
+  if (message.type === 'user' && message.isCompactSummary === true) {
+    return message.summarizeMetadata?.direction !== 'from'
+  }
+  return false
+}
+
+function estimateCompactionKeepTokens(message: Message): number {
+  if (message.type === 'user' || message.type === 'assistant') {
+    return estimateMessageTokens([message])
+  }
+  if (message.type === 'system' && typeof message.content === 'string') {
+    return roughTokenCountEstimation(message.content)
+  }
+  if (message.type === 'hook_result') {
+    return roughTokenCountEstimation(
+      typeof message.result === 'string'
+        ? message.result
+        : jsonStringify(message.result ?? {}),
+    )
+  }
+  if (message.type === 'attachment') {
+    return roughTokenCountEstimation(
+      jsonStringify(message.attachments ?? message.attachment ?? {}),
+    )
+  }
+  return 0
+}
+
+export function extractPreviousCompactCheckpoint(
+  messages: Message[],
+): PreviousCompactCheckpoint {
+  const boundaryIndex = findLastCompactBoundaryIndex(messages)
+  if (boundaryIndex === -1) {
+    return {
+      firstFreshMessageIndex: 0,
+    }
+  }
+
+  const previousSummaryParts: string[] = []
+  let firstFreshMessageIndex = boundaryIndex + 1
+  while (firstFreshMessageIndex < messages.length) {
+    const message = messages[firstFreshMessageIndex]
+    const compactSummary = message
+      ? extractCompactSummaryText(message)
+      : undefined
+    if (compactSummary !== undefined) {
+      previousSummaryParts.push(compactSummary)
+      firstFreshMessageIndex++
+      continue
+    }
+    break
+  }
+
+  return {
+    previousSummary:
+      previousSummaryParts.length > 0
+        ? previousSummaryParts.join('\n\n')
+        : undefined,
+    firstFreshMessageIndex,
+  }
+}
+
+export function selectRecentMessagesToKeepForFullCompact(
+  messages: Message[],
+  tokenBudget = FULL_COMPACT_RECENT_TAIL_TOKEN_BUDGET,
+): Message[] {
+  const candidates = messages.filter(m => !isCompactionKeepExcludedMessage(m))
+  if (candidates.length <= 1) {
+    return []
+  }
+
+  let keepStart = candidates.length
+  let accumulatedTokens = 0
+  let keptAny = false
+
+  for (let i = candidates.length - 1; i > 0; i--) {
+    const messageTokens = estimateCompactionKeepTokens(candidates[i]!)
+    if (keptAny && accumulatedTokens + messageTokens > tokenBudget) {
+      break
+    }
+    accumulatedTokens += messageTokens
+    keepStart = i
+    keptAny = true
+    if (accumulatedTokens >= tokenBudget) {
+      break
+    }
+  }
+
+  if (!keptAny) {
+    return []
+  }
+
+  const adjustedKeepStart = adjustIndexToPreserveAPIInvariants(
+    candidates,
+    keepStart,
+  )
+
+  // If preserving the tail would require keeping the entire conversation,
+  // fall back to pure-summary compaction rather than producing an empty
+  // summarized prefix or risking broken tool_use/tool_result chains.
+  if (adjustedKeepStart <= 0) {
+    return []
+  }
+
+  return candidates.slice(adjustedKeepStart)
+}
+
+export function buildFullCompactSegments(messages: Message[]): {
+  previousSummary?: string
+  messagesToSummarize: Message[]
+  messagesToKeep: Message[]
+} {
+  const checkpoint = extractPreviousCompactCheckpoint(messages)
+  const baseMessages =
+    checkpoint.previousSummary !== undefined
+      ? messages
+          .slice(checkpoint.firstFreshMessageIndex)
+          .filter(m => !isCompactionKeepExcludedMessage(m))
+      : messages.filter(m => !isCompactionKeepExcludedMessage(m))
+
+  if (baseMessages.length === 0) {
+    return {
+      previousSummary: checkpoint.previousSummary,
+      messagesToSummarize: [],
+      messagesToKeep: [],
+    }
+  }
+
+  const messagesToKeep = selectRecentMessagesToKeepForFullCompact(baseMessages)
+  const messagesToSummarize =
+    messagesToKeep.length > 0
+      ? baseMessages.slice(0, baseMessages.length - messagesToKeep.length)
+      : baseMessages
+
+  return {
+    previousSummary: checkpoint.previousSummary,
+    messagesToSummarize,
+    messagesToKeep,
+  }
+}
+
+export function resolveFullCompactInputs(messages: Message[]): {
+  previousSummary?: string
+  messagesToSummarize: Message[]
+  messagesToKeep: Message[]
+} {
+  const {
+    previousSummary,
+    messagesToSummarize: baseMessagesToSummarize,
+    messagesToKeep: baseMessagesToKeep,
+  } = buildFullCompactSegments(messages)
+
+  if (baseMessagesToSummarize.length > 0) {
+    return {
+      previousSummary,
+      messagesToSummarize: baseMessagesToSummarize,
+      messagesToKeep: baseMessagesToKeep,
+    }
+  }
+
+  const fallbackMessages = messages.filter(
+    m => !isCompactionKeepExcludedMessage(m),
+  )
+
+  return {
+    // Falling back to a full-history rewrite is incompatible with the
+    // incremental prompt contract. Clear the old checkpoint so the compactor
+    // does not treat the same history as both an authoritative summary and
+    // fresh input to update.
+    previousSummary: fallbackMessages.length > 0 ? undefined : previousSummary,
+    messagesToSummarize: fallbackMessages,
+    messagesToKeep: [],
+  }
+}
+
 /**
  * Merges user-supplied custom instructions with hook-provided instructions.
  * User instructions come first; hook instructions are appended.
@@ -456,12 +670,19 @@ export async function compactConversation(
       true,
     )
 
-    const compactPrompt = getCompactPrompt(customInstructions)
+    const {
+      previousSummary,
+      messagesToSummarize: resolvedMessagesToSummarize,
+      messagesToKeep,
+    } = resolveFullCompactInputs(messages)
+    let messagesToSummarize = resolvedMessagesToSummarize
+    const compactPrompt = getCompactPrompt(customInstructions, {
+      previousSummary,
+    })
     const summaryRequest = createUserMessage({
       content: compactPrompt,
     })
 
-    let messagesToSummarize = messages
     let retryCacheSafeParams = cacheSafeParams
     let summaryResponse: AssistantMessage
     let summary: string | null
@@ -554,6 +775,7 @@ export async function compactConversation(
         preCompactReadFileState,
         context,
         POST_COMPACT_MAX_FILES_TO_RESTORE,
+        messagesToKeep,
       ),
       createAsyncAgentAttachmentsIfNeeded(context),
     ])
@@ -587,19 +809,19 @@ export async function compactConversation(
     for (const att of getDeferredToolsDeltaAttachment(
       context.options.tools,
       context.options.mainLoopModel,
-      [],
+      messagesToKeep,
       { callSite: 'compact_full' },
     )) {
       postCompactFileAttachments.push(createAttachmentMessage(att))
     }
-    for (const att of getAgentListingDeltaAttachment(context, [])) {
+    for (const att of getAgentListingDeltaAttachment(context, messagesToKeep)) {
       postCompactFileAttachments.push(createAttachmentMessage(att))
     }
     for (const att of getMcpInstructionsDeltaAttachment(
       context.options.mcpClients,
       context.options.tools,
       context.options.mainLoopModel,
-      [],
+      messagesToKeep,
     )) {
       postCompactFileAttachments.push(createAttachmentMessage(att))
     }
@@ -618,7 +840,7 @@ export async function compactConversation(
     const boundaryMarker = createCompactBoundaryMessage(
       isAutoCompact ? 'auto' : 'manual',
       preCompactTokenCount ?? 0,
-      messages.at(-1)?.uuid,
+      messagesToSummarize.findLast(m => m.type !== 'progress')?.uuid,
     )
     // Carry loaded-tool state — the summary doesn't preserve tool_reference
     // blocks, so the post-compact schema filter needs this to keep sending
@@ -637,9 +859,14 @@ export async function compactConversation(
           summary,
           suppressFollowUpQuestions,
           transcriptPath,
+          messagesToKeep.length > 0,
         ),
         isCompactSummary: true,
         isVisibleInTranscriptOnly: true,
+        summarizeMetadata: {
+          messagesSummarized: messagesToSummarize.length,
+          rawCompactSummary: formatCompactSummary(summary),
+        },
       }),
     ]
 
@@ -657,6 +884,7 @@ export async function compactConversation(
     const truePostCompactTokenCount = roughTokenCountEstimationForMessages([
       boundaryMarker,
       ...summaryMessages,
+      ...messagesToKeep,
       ...postCompactFileAttachments,
       ...hookMessages,
     ])
@@ -672,6 +900,8 @@ export async function compactConversation(
       // Kept for continuity — semantically the compact API call's total usage
       postCompactTokenCount: compactionCallTotalTokens,
       truePostCompactTokenCount,
+      messagesKept: messagesToKeep.length,
+      usedPreviousCompactSummary: previousSummary !== undefined,
       autoCompactThreshold: recompactionInfo?.autoCompactThreshold ?? -1,
       willRetriggerNextTurn:
         recompactionInfo !== undefined &&
@@ -755,9 +985,16 @@ export async function compactConversation(
       .filter(Boolean)
       .join('\n')
 
+    const anchorUuid = summaryMessages.at(-1)?.uuid ?? boundaryMarker.uuid
+
     return {
-      boundaryMarker,
+      boundaryMarker: annotateBoundaryWithPreservedSegment(
+        boundaryMarker,
+        anchorUuid,
+        messagesToKeep,
+      ),
       summaryMessages,
+      messagesToKeep,
       attachments: postCompactFileAttachments,
       hookResults: hookMessages,
       userDisplayMessage: combinedUserDisplayMessage || undefined,
@@ -1064,14 +1301,14 @@ export async function partialCompactConversation(
       createUserMessage({
         content: getCompactUserSummaryMessage(summary, false, transcriptPath),
         isCompactSummary: true,
+        summarizeMetadata: {
+          messagesSummarized: messagesToSummarize.length,
+          userContext: userFeedback,
+          direction,
+          rawCompactSummary: formatCompactSummary(summary),
+        },
         ...(messagesToKeep.length > 0
-          ? {
-              summarizeMetadata: {
-                messagesSummarized: messagesToSummarize.length,
-                userContext: userFeedback,
-                direction,
-              },
-            }
+          ? {}
           : { isVisibleInTranscriptOnly: true as const }),
       }),
     ]

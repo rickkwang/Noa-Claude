@@ -37,6 +37,12 @@ export type Message = z.infer<typeof MessageSchema> & {
   }
   isMeta?: boolean
   isCompactSummary?: boolean
+  summarizeMetadata?: {
+    messagesSummarized?: number
+    userContext?: string
+    direction?: PartialCompactDirection
+    rawCompactSummary?: string
+  }
   isVisibleInTranscriptOnly?: boolean
   isVirtual?: boolean
   isSidechain?: boolean
@@ -141,10 +147,7 @@ export type SystemStopHookSummaryMessage = SystemMessage & {
 
 export type RenderableMessage = Message
 
-export type PartialCompactDirection = Message & {
-  type: 'partial_compact_direction'
-  direction: 'compact' | 'expand'
-}
+export type PartialCompactDirection = 'from' | 'up_to'
 
 export type NormalizedMessage = Message
 

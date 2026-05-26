@@ -23,6 +23,10 @@ import type { DeepImmutable } from 'src/types/utils.js'
 import stripAnsi from 'strip-ansi'
 import { createAssistantMessage } from '../messages.js'
 import { getPlan } from '../plans.js'
+import {
+  fromSDKSummarizeMetadata,
+  toSDKSummarizeMetadata,
+} from './summarizeMetadata.js'
 
 export function toInternalMessages(
   messages: readonly DeepImmutable<SDKMessage>[],
@@ -46,7 +50,17 @@ export function toInternalMessages(
             message: message.message,
             uuid: message.uuid ?? randomUUID(),
             timestamp: message.timestamp ?? new Date().toISOString(),
-            isMeta: message.isSynthetic,
+            ...(message.is_compact_summary
+              ? {
+                  isCompactSummary: true,
+                  isVisibleInTranscriptOnly: message.isSynthetic || undefined,
+                  summarizeMetadata: fromSDKSummarizeMetadata(
+                    message.summarize_metadata,
+                  ),
+                }
+              : {
+                  isMeta: message.isSynthetic,
+                }),
           } as Message,
         ]
       case 'system':
@@ -137,6 +151,14 @@ export function toSDKMessages(messages: Message[]): SDKMessage[] {
             uuid: message.uuid,
             timestamp: message.timestamp,
             isSynthetic: message.isMeta || message.isVisibleInTranscriptOnly,
+            ...(message.isCompactSummary
+              ? {
+                  is_compact_summary: true,
+                  summarize_metadata: toSDKSummarizeMetadata(
+                    message.summarizeMetadata,
+                  ),
+                }
+              : {}),
             // Structured tool output (not the string content sent to the
             // model — the full Output object). Rides the protobuf catchall
             // so web viewers can read things like BriefTool's file_uuid
