@@ -29,20 +29,14 @@ function assert(condition, message, details) {
 
 function createRecorder() {
   let lastCall = null;
-  let callCount = 0;
   return {
     onDone(message, options = {}) {
-      callCount += 1;
       lastCall = { message, options };
     },
     getLastCall() {
       return lastCall;
     },
-    getCallCount() {
-      return callCount;
-    },
     clear() {
-      callCount = 0;
       lastCall = null;
     },
   };
@@ -66,6 +60,7 @@ const productPaths = await import('../src/utils/productPaths.ts');
 const commandsModule = await import('../src/commands.ts');
 const surfaceStatus = await import('../src/commands/surfaceStatus.ts');
 const buildExcluded = await import('../src/commands/buildExcluded.ts');
+const errorIds = await import('../src/constants/errorIds.ts');
 const settings = await import('../src/utils/settings/settings.ts');
 const forkIndex = await import('../src/commands/fork/index.ts');
 const assistantIndex = await import('../src/commands/assistant/index.ts');
@@ -351,6 +346,61 @@ async function runCommandSurfaceSmoke() {
       { available: [...names].sort() },
     );
   }
+
+  const buildExcludedCommands = surfaceStatus
+    .getCommandSurfacesByCategory('build-excluded')
+    .map(entry => entry.command.replace('/', ''));
+
+  for (const commandName of buildExcludedCommands) {
+    assert(
+      !names.has(commandName),
+      `Build-excluded /${commandName} must not be registered in command loader`,
+      { available: [...names].sort() },
+    );
+  }
+}
+
+function runBuildExcludedContractSmoke() {
+  const buildExcludedSurfaces =
+    surfaceStatus.getCommandSurfacesByCategory('build-excluded');
+  assert(
+    buildExcludedSurfaces.length > 0,
+    'Build-excluded surface list must not be empty',
+    buildExcludedSurfaces,
+  );
+
+  for (const entry of buildExcludedSurfaces) {
+    const commandKey = entry.command.replace('/', '');
+    const contract =
+      buildExcluded.BUILD_EXCLUDED_ERROR_CONTRACTS[commandKey];
+    assert(
+      contract != null,
+      `Build-excluded ${entry.command} must have an entry in BUILD_EXCLUDED_ERROR_CONTRACTS`,
+      { commandKey, contracts: Object.keys(buildExcluded.BUILD_EXCLUDED_ERROR_CONTRACTS) },
+    );
+    assert(
+      entry.errorContract?.errorId === contract.errorId,
+      `Build-excluded ${entry.command} errorId must match contracts table`,
+      { entry: entry.errorContract, contract },
+    );
+    assert(
+      entry.errorContract?.message === contract.message,
+      `Build-excluded ${entry.command} message must match contracts table`,
+      { entry: entry.errorContract, contract },
+    );
+    assert(
+      typeof contract.errorId === 'string' &&
+        contract.errorId.startsWith('E_BUILD_EXCLUDED_'),
+      `Build-excluded ${entry.command} errorId must start with E_BUILD_EXCLUDED_`,
+      contract,
+    );
+  }
+
+  assert(
+    typeof errorIds.E_BUILD_EXCLUDED_COMMAND === 'number',
+    'E_BUILD_EXCLUDED_COMMAND must remain a numeric error code',
+    errorIds.E_BUILD_EXCLUDED_COMMAND,
+  );
 }
 
 function runNonInteractiveBoundarySmoke() {
@@ -404,52 +454,6 @@ async function runAssistantCommandSmoke() {
   );
 }
 
-async function runBuildExcludedCommandSmoke() {
-  const buildExcludedSurfaces =
-    surfaceStatus.getCommandSurfacesByCategory('build-excluded');
-
-  for (const entry of buildExcludedSurfaces) {
-    const commandName = entry.command;
-    const commandKey = commandName.replace('/', '');
-    const command = buildExcluded.createBuildExcludedCommand(
-      commandKey,
-      `Smoke ${commandName}`,
-    );
-    assert(command?.isHidden === true, `Build-excluded command ${command?.name} must stay hidden`, command);
-    const loaded = await command.load();
-    const recorder = createRecorder();
-    const jsx = await loaded.call(recorder.onDone, {}, '');
-    const completion = recorder.getLastCall();
-    const expectedMessage = buildExcluded.formatBuildExcludedMessage(commandKey);
-    assert(jsx == null, `Build-excluded command ${command.name} must not render JSX`, jsx);
-    assert(
-      recorder.getCallCount() === 1,
-      `Build-excluded command ${command.name} must complete exactly once`,
-      recorder.getCallCount(),
-    );
-    assert(
-      completion?.message === expectedMessage,
-      `Build-excluded command ${command.name} must surface stable unavailable message`,
-      completion,
-    );
-    assert(
-      completion?.options?.display === 'system',
-      `Build-excluded command ${command.name} must resolve as a system-visible result`,
-      completion,
-    );
-    assert(
-      completion?.message?.includes(entry.errorContract?.message ?? ''),
-      `Build-excluded command ${command.name} must include stable unavailable message text`,
-      completion,
-    );
-    assert(
-      completion?.message?.includes(entry.errorContract?.errorId ?? ''),
-      `Build-excluded command ${command.name} must include stable build-excluded errorId`,
-      completion,
-    );
-  }
-}
-
 try {
   await runForkSmoke();
   await runWorkflowSmoke();
@@ -459,7 +463,7 @@ try {
   await runCommandSurfaceSmoke();
   runNonInteractiveBoundarySmoke();
   await runAssistantCommandSmoke();
-  await runBuildExcludedCommandSmoke();
+  runBuildExcludedContractSmoke();
   console.log('Feature smoke checks passed.');
 } finally {
   rmSync(tempRoot, { recursive: true, force: true });

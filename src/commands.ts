@@ -37,11 +37,6 @@ import share from './commands/share/index.js'
 import skills from './commands/skills/index.js'
 import status from './commands/status/index.js'
 import tasks from './commands/tasks/index.js'
-import { createBuildExcludedCommand } from './commands/buildExcluded.js'
-const agentsPlatform =
-  process.env.USER_TYPE === 'ant'
-    ? createBuildExcludedCommand('agents-platform', 'Manage agents platform')
-    : null
 import securityReview from './commands/security-review.js'
 import terminalSetup from './commands/terminalSetup/index.js'
 import usage from './commands/usage/index.js'
@@ -51,17 +46,11 @@ import vim from './commands/vim/index.js'
 import { feature } from 'bun:bundle'
 // Dead code elimination: conditional imports
 /* eslint-disable @typescript-eslint/no-require-imports */
-const proactive = createBuildExcludedCommand('proactive', 'Enable proactive mode')
 const briefCommand =
   require('./commands/brief.js').default
 const assistantCommand = require('./commands/assistant/index.js').default
 const bridge = require('./commands/bridge/index.js').default
-const remoteControlServerCommand = createBuildExcludedCommand(
-  'remote-control',
-  'Remote control server',
-)
 const voiceCommand = require('./commands/voice/index.js').default
-const forceSnip = createBuildExcludedCommand('force-snip', 'Force session snipping')
 const workflowsCmd = (
     require('./commands/workflows/index.js') as typeof import('./commands/workflows/index.js')
   ).default
@@ -71,10 +60,7 @@ const webCmd = (
 const clearSkillIndexCache = (
     require('./services/skillSearch/localSearch.js') as typeof import('./services/skillSearch/localSearch.js')
   ).clearSkillIndexCache
-const subscribePr = createBuildExcludedCommand('subscribe-pr', 'Subscribe to PR notifications')
 const ultraplan = require('./commands/ultraplan.js').default
-const torch = createBuildExcludedCommand('torch', 'Torch command')
-const peersCmd = createBuildExcludedCommand('peers', 'Manage peer connections')
 const forkCmd = (
     require('./commands/fork/index.js') as typeof import('./commands/fork/index.js')
   ).default
@@ -177,12 +163,9 @@ export const INTERNAL_ONLY_COMMANDS = [
   commit,
   commitPushPr,
   initVerifiers,
-  ...(forceSnip ? [forceSnip] : []),
   bridgeKick,
   version,
   ...(ultraplan ? [ultraplan] : []),
-  ...(subscribePr ? [subscribePr] : []),
-  agentsPlatform,
 ].filter(Boolean)
 
 // Declared as a function so that we don't run this until getCommands is called,
@@ -255,11 +238,9 @@ const COMMANDS = memoize((): Command[] => [
   ...(webCmd ? [webCmd] : []),
   ...(forkCmd ? [forkCmd] : []),
   ...(buddy ? [buddy] : []),
-  ...(proactive ? [proactive] : []),
   ...(briefCommand ? [briefCommand] : []),
   ...(assistantCommand ? [assistantCommand] : []),
   ...(bridge ? [bridge] : []),
-  ...(remoteControlServerCommand ? [remoteControlServerCommand] : []),
   ...(voiceCommand ? [voiceCommand] : []),
   permissions,
   plan,
@@ -269,10 +250,8 @@ const COMMANDS = memoize((): Command[] => [
   exportCommand,
   sandboxToggle,
   ...(!isUsing3PServices() ? [logout, login()] : []),
-  ...(peersCmd ? [peersCmd] : []),
   tasks,
   ...(workflowsCmd ? [workflowsCmd] : []),
-  ...(torch ? [torch] : []),
   ...(process.env.USER_TYPE === 'ant' && !process.env.IS_DEMO
     ? INTERNAL_ONLY_COMMANDS
     : []),

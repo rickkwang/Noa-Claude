@@ -70,8 +70,8 @@ These commands are intentionally not available in this build and must remain hid
 
 Policy:
 
-- `isHidden` must remain `true`
-- runtime invocation must surface a stable `not available in this build` message with a stable `E_BUILD_EXCLUDED_*` error ID
+- not registered in the runtime command loader; the loader's "unknown command" path is the user-visible failure mode
+- `BUILD_EXCLUDED_ERROR_CONTRACTS` in `src/commands/buildExcluded.ts` retains a stable `E_BUILD_EXCLUDED_*` error ID per surface for governance/CI assertions only
 - `/remote-control` here refers to the slash command surface; bridge/remote runtime code may exist but must remain unavailable in this build
 
 Tracked surfaces:

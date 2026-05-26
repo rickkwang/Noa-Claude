@@ -7,7 +7,7 @@ Last updated: 2026-05-27
 - Status definitions:
   - `Baseline`: primary user-facing supported workflow.
   - `Implemented but Non-Baseline`: callable, but not part of primary workflow.
-  - `Build-Excluded`: command exists and surfaces a stable `not available in this build` failure contract.
+  - `Build-Excluded`: not registered in the runtime command loader; an `E_BUILD_EXCLUDED_*` contract is retained for governance and CI assertions.
   - `Stub`: placeholder tracked in governance only; not registered in runtime and has no functional implementation.
 - Default `bun run build` profile in this repo is conservative; expanded unlock profile is opt-in via `bun run build:dev:full`.
 - Experimental unlockability details are maintained in [FEATURES.md](./FEATURES.md).
@@ -63,7 +63,7 @@ Last updated: 2026-05-27
 | `/subscribe-pr` | Build-Excluded |
 
 `/remote-control` in this section refers to the slash command surface only.
-Bridge/remote runtime modules can exist in source, but this build keeps the command unavailable and guarded by `E_BUILD_EXCLUDED_*` error contracts.
+Bridge/remote runtime modules can exist in source, but this build does not register the command in the loader. `E_BUILD_EXCLUDED_*` contracts are retained in `src/commands/buildExcluded.ts` for governance assertions in `scripts/smoke-features.mjs`.
 
 ## Slash Commands: Stub
 | Command | Status |

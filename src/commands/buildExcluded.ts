@@ -1,6 +1,3 @@
-import { E_BUILD_EXCLUDED_COMMAND } from '../constants/errorIds.js'
-import type { Command, LocalJSXCommandOnDone } from '../types/command.js'
-
 export const BUILD_EXCLUDED_ERROR_CONTRACTS = {
   proactive: {
     errorId: 'E_BUILD_EXCLUDED_PROACTIVE',
@@ -31,56 +28,3 @@ export const BUILD_EXCLUDED_ERROR_CONTRACTS = {
     message: 'Subscribe-PR feature is not available in this build',
   },
 } as const
-
-export function createBuildExcludedError(commandName: string): Error {
-  const contract =
-    BUILD_EXCLUDED_ERROR_CONTRACTS[
-      commandName as keyof typeof BUILD_EXCLUDED_ERROR_CONTRACTS
-    ]
-  if (!contract) {
-    const fallback = new Error('Feature is not available in this build')
-    ;(fallback as Error & { errorId?: string; errorCode?: number }).errorId =
-      'E_BUILD_EXCLUDED_UNKNOWN'
-    ;(fallback as Error & { errorId?: string; errorCode?: number }).errorCode =
-      E_BUILD_EXCLUDED_COMMAND
-    return fallback
-  }
-  const error = new Error(contract.message)
-  ;(error as Error & { errorId?: string; errorCode?: number }).errorId =
-    contract.errorId
-  ;(error as Error & { errorId?: string; errorCode?: number }).errorCode =
-    E_BUILD_EXCLUDED_COMMAND
-  return error
-}
-
-export function formatBuildExcludedMessage(commandName: string): string {
-  const error = createBuildExcludedError(commandName)
-  const errorId =
-    (error as Error & { errorId?: string; errorCode?: number }).errorId ??
-    'E_BUILD_EXCLUDED_UNKNOWN'
-  const errorCode =
-    (error as Error & { errorId?: string; errorCode?: number }).errorCode ??
-    E_BUILD_EXCLUDED_COMMAND
-  return `[${errorId}:${errorCode}] ${error.message}`
-}
-
-/**
- * Factory for the identical "command not available in this build" contract.
- */
-export function createBuildExcludedCommand(
-  name: keyof typeof BUILD_EXCLUDED_ERROR_CONTRACTS,
-  description: string,
-): Command {
-  return {
-    name,
-    description,
-    type: 'local-jsx' as const,
-    isHidden: true,
-    load: async () => ({
-      call: async (onDone: LocalJSXCommandOnDone) => {
-        onDone(formatBuildExcludedMessage(name), { display: 'system' })
-        return null
-      },
-    }),
-  } satisfies Command
-}
