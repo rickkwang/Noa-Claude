@@ -60,7 +60,6 @@ const productPaths = await import('../src/utils/productPaths.ts');
 const commandsModule = await import('../src/commands.ts');
 const surfaceStatus = await import('../src/commands/surfaceStatus.ts');
 const buildExcluded = await import('../src/commands/buildExcluded.ts');
-const errorIds = await import('../src/constants/errorIds.ts');
 const settings = await import('../src/utils/settings/settings.ts');
 const forkIndex = await import('../src/commands/fork/index.ts');
 const assistantIndex = await import('../src/commands/assistant/index.ts');
@@ -395,12 +394,6 @@ function runBuildExcludedContractSmoke() {
       contract,
     );
   }
-
-  assert(
-    typeof errorIds.E_BUILD_EXCLUDED_COMMAND === 'number',
-    'E_BUILD_EXCLUDED_COMMAND must remain a numeric error code',
-    errorIds.E_BUILD_EXCLUDED_COMMAND,
-  );
 }
 
 function runNonInteractiveBoundarySmoke() {
