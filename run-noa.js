@@ -85,11 +85,9 @@ const DIST_ENTRY = join(import.meta.dirname, 'dist', 'main.js');
 const DIST_METADATA = `${DIST_ENTRY}.meta.json`;
 const WATCH_PATHS = [
   join(import.meta.dirname, 'src'),
-  join(import.meta.dirname, 'bin'),
   join(import.meta.dirname, 'build.ts'),
   join(import.meta.dirname, 'launcher-config.js'),
   join(import.meta.dirname, 'package.json'),
-  join(import.meta.dirname, 'run-noa.js'),
 ];
 
 function logLauncherDebug(message) {
