@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import { APIUserAbortError } from '@anthropic-ai/sdk'
 import {
   buildFullCompactSegments,
   extractPreviousCompactCheckpoint,
   FULL_COMPACT_RECENT_TAIL_TOKEN_BUDGET,
+  isCompactionUserAbort,
   resolveFullCompactInputs,
 } from '../../../services/compact/compact.js'
 import { adjustIndexToPreserveAPIInvariants } from '../../../services/compact/preservedTail.js'
@@ -257,5 +259,16 @@ describe('buildFullCompactSegments', () => {
       'assistant-6',
     ])
     expect(result.messagesToKeep).toEqual([])
+  })
+
+  test('treats APIUserAbortError and aborted signals as user cancellation', () => {
+    const abortController = new AbortController()
+    abortController.abort()
+
+    expect(isCompactionUserAbort(new APIUserAbortError())).toBe(true)
+    expect(isCompactionUserAbort(new Error('other'), abortController.signal)).toBe(
+      true,
+    )
+    expect(isCompactionUserAbort(new Error('other'))).toBe(false)
   })
 })

@@ -312,6 +312,17 @@ export const ERROR_MESSAGE_COMPACT_EXHAUSTED =
 export const ERROR_MESSAGE_COMPACT_MEDIA_UNSTRIPPABLE =
   'Compaction skipped: conversation contains media that cannot be summarized.'
 
+export function isCompactionUserAbort(
+  error: unknown,
+  signal?: AbortSignal,
+): boolean {
+  return (
+    signal?.aborted === true ||
+    error instanceof APIUserAbortError ||
+    hasExactErrorMessage(error, ERROR_MESSAGE_USER_ABORT)
+  )
+}
+
 export interface CompactionResult {
   boundaryMarker: SystemMessage
   summaryMessages: UserMessage[]
@@ -1383,10 +1394,10 @@ export async function partialCompactConversation(
 
 function addErrorNotificationIfNeeded(
   error: unknown,
-  context: Pick<ToolUseContext, 'addNotification'>,
+  context: Pick<ToolUseContext, 'addNotification' | 'abortController'>,
 ) {
   if (
-    !hasExactErrorMessage(error, ERROR_MESSAGE_USER_ABORT) &&
+    !isCompactionUserAbort(error, context.abortController.signal) &&
     !hasExactErrorMessage(error, ERROR_MESSAGE_NOT_ENOUGH_MESSAGES)
   ) {
     context.addNotification?.({

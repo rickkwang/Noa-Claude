@@ -7,6 +7,7 @@ import * as React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from 'src/services/analytics/index.js';
 import { useAppState } from 'src/state/AppState.js';
+import { isCompactionUserAbort } from 'src/services/compact/compact.js';
 import { type DiffStats, fileHistoryCanRestore, fileHistoryEnabled, fileHistoryGetDiffStats } from 'src/utils/fileHistory.js';
 import { logError } from 'src/utils/log.js';
 import { useExitOnCtrlCDWithKeybindings } from '../hooks/useExitOnCtrlCDWithKeybindings.js';
@@ -201,10 +202,14 @@ export function MessageSelector({
         setMessageToRestore(undefined);
         onClose();
       } catch (error_1) {
-        logError(error_1 as Error);
         setIsRestoring(false);
         setRestoringOption(null);
         setMessageToRestore(undefined);
+        if (isCompactionUserAbort(error_1)) {
+          onClose();
+          return;
+        }
+        logError(error_1 as Error);
         setError(`Failed to summarize:\n${error_1}`);
       }
       return;

@@ -2562,6 +2562,8 @@ export function REPL({
             setCompactProgressStartedAt(null);
             break;
           case 'compact_start':
+            setSpinnerColor('warning');
+            setSpinnerShimmerColor('warning');
             setSpinnerMessage('Compacting conversation');
             setCompactProgressStartedAt(Date.now());
             break;

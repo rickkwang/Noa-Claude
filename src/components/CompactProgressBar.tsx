@@ -21,22 +21,25 @@ export function CompactProgressBar({ startedAt }: Props) {
   void tick
   const now = Date.now()
   const elapsedMs = Math.max(0, now - startedAt)
-  const width = Math.max(16, Math.min(34, columns - 10))
+  const width = Math.max(18, Math.min(36, columns - 10))
   const pulseWidth = Math.max(4, Math.floor(width / 3))
   const offset = reducedMotion
     ? 0
     : Math.floor(elapsedMs / 250) % (width + pulseWidth)
   const segments = Array.from({ length: width }, (_, index) => {
     const position = index + pulseWidth
-    return position >= offset && position < offset + pulseWidth
-      ? FILLED_SEGMENT
-      : EMPTY_SEGMENT
-  }).join('')
+    const isFilled = position >= offset && position < offset + pulseWidth
+    return (
+      <Text key={index} color={isFilled ? 'white' : undefined}>
+        {isFilled ? FILLED_SEGMENT : EMPTY_SEGMENT}
+      </Text>
+    )
+  })
   const elapsedSeconds = Math.floor(elapsedMs / 1000)
 
   return (
     <Box ref={ref} flexDirection="row" marginLeft={2}>
-      <Text color="claudeBlue_FOR_SYSTEM_SPINNER">{segments}</Text>
+      {segments}
       <Text dimColor> {elapsedSeconds}s</Text>
     </Box>
   )

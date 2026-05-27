@@ -4,7 +4,7 @@ import type { RGBColor as RGBColorType } from './types.js'
 
 export function getDefaultCharacters(): string[] {
   if (process.env.TERM === 'xterm-ghostty') {
-    return ['·', '✢', '✳', '✶', '✻', '*'] // Use * instead of ✽ for Ghostty because the latter renders in a way that's slightly offset
+    return ['·', '✢', '✳', '✶', '✻', '✻'] // Repeat ✻ for Ghostty to avoid the slightly offset ✽ glyph
   }
   return process.platform === 'darwin'
     ? ['·', '✢', '✳', '✶', '✻', '✽']
