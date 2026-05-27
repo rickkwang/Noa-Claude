@@ -1,5 +1,23 @@
 # Release Notes
 
+## 1.3.2
+
+### New Features
+
+- **Incremental compaction checkpoints** — full compaction now preserves a recent original-message tail and incrementally updates the prior checkpoint instead of repeatedly re-summarizing the same history.
+
+### Refactors
+
+- **Launcher and bundle hygiene** — `noa` now auto-rebuilds stale bundles from the bundled metadata path, the dev entrypoint runs from the bundled build, and rebuild watching ignores non-bundle paths.
+- **Command surface cleanup** — removed dead build-excluded command registrations and the stale stub source directories they depended on.
+
+### Bug Fixes
+
+- Fixed compact cancel UX so manual compact, auto-compact, and message-selector summarize flows treat `Esc`/abort as cancellation instead of surfacing generic error states.
+- Fixed highlight loading and session title fallback paths that could trigger hook-order issues or malformed titles.
+- Fixed compact progress UI cues so compaction is visibly distinct from regular request activity.
+- Fixed launcher version display so `noa` shows a stable user-facing version instead of a stale dev bundle suffix.
+
 ## 1.3.1
 
 ### New Features
