@@ -80,7 +80,7 @@ export function getSupportedEffortLevelsForModel(
   if (modelKey.includes('mythos')) {
     return ['low', 'medium', 'high', 'max']
   }
-  if (modelKey.includes('opus-4-7')) {
+  if (modelKey.includes('opus-4-7') || modelKey.includes('opus-4-8')) {
     return ['low', 'medium', 'high', 'xhigh', 'max']
   }
   if (
@@ -351,7 +351,7 @@ const OPUS_DEFAULT_EFFORT_CONFIG_DEFAULT: OpusDefaultEffortConfig = {
   enabled: true,
   dialogTitle: 'Choose the default effort for Opus',
   dialogDescription:
-    'Effort determines how long Claude thinks for when completing your task. Opus 4.7 defaults to xhigh effort. You can raise it when you want stronger reasoning or lower it when you want faster responses or lower usage.',
+    'Effort determines how long Claude thinks for when completing your task. Opus 4.8 defaults to xhigh effort. You can raise it when you want stronger reasoning or lower it when you want faster responses or lower usage.',
 }
 
 export function getOpusDefaultEffortConfig(): OpusDefaultEffortConfig {
@@ -397,7 +397,7 @@ export function getDefaultEffortForModel(
   // External Opus 4.7 defaults to xhigh. We still gate on providers known to
   // support effort so unknown 3P proxies keep the legacy "unset/high" path.
   const modelKey = `${getCanonicalName(model)} ${model}`.toLowerCase()
-  if (modelKey.includes('opus-4-7') && getSupportedEffortLevelsForModel(model).includes('xhigh')) {
+  if ((modelKey.includes('opus-4-7') || modelKey.includes('opus-4-8')) && getSupportedEffortLevelsForModel(model).includes('xhigh')) {
     return 'xhigh'
   }
 

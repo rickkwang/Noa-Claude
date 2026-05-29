@@ -44,7 +44,8 @@ export function isNonCustomOpusModel(model: ModelName): boolean {
     model === getModelStrings().opus41 ||
     model === getModelStrings().opus45 ||
     model === getModelStrings().opus46 ||
-    model === getModelStrings().opus47
+    model === getModelStrings().opus47 ||
+    model === getModelStrings().opus48
   )
 }
 
@@ -112,9 +113,9 @@ export function getDefaultOpusModel(): ModelName {
   // even when values match, since 3P availability lags firstParty and
   // these will diverge again at the next model launch.
   if (getAPIProvider() !== 'firstParty') {
-    return getModelStrings().opus46 || 'claude-opus-4-6'
+    return getModelStrings().opus47 || 'claude-opus-4-7'
   }
-  return getModelStrings().opus47 || 'claude-opus-4-7'
+  return getModelStrings().opus48 || 'claude-opus-4-8'
 }
 
 // @[MODEL LAUNCH]: Update the default Sonnet model (3P providers may lag so keep defaults unchanged).
@@ -223,6 +224,9 @@ export function firstPartyNameToCanonical(name: ModelName | undefined): ModelSho
   name = name.toLowerCase()
   // Special cases for Claude 4+ models to differentiate versions
   // Order matters: check more specific versions first (4-5 before 4)
+  if (name.includes('claude-opus-4-8')) {
+    return 'claude-opus-4-8'
+  }
   if (name.includes('claude-opus-4-7')) {
     return 'claude-opus-4-7'
   }
@@ -363,6 +367,10 @@ export function getPublicModelDisplayName(model: ModelName): string | null {
   switch (model) {
     case 'kimi-for-coding':
       return 'kimi-k2.6'
+    case getModelStrings().opus48:
+      return 'Opus 4.8'
+    case getModelStrings().opus48 + '[1m]':
+      return 'Opus 4.8 (1M context)'
     case getModelStrings().opus47:
       return 'Opus 4.7'
     case getModelStrings().opus47 + '[1m]':
@@ -607,6 +615,9 @@ export function getMarketingNameForModel(modelId: string | undefined): string | 
   const has1m = modelId.toLowerCase().includes('[1m]')
   const canonical = getCanonicalName(modelId)
 
+  if (canonical.includes('claude-opus-4-8')) {
+    return has1m ? 'Opus 4.8 (with 1M context)' : 'Opus 4.8'
+  }
   if (canonical.includes('claude-opus-4-7')) {
     return has1m ? 'Opus 4.7 (with 1M context)' : 'Opus 4.7'
   }

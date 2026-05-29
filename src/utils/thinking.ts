@@ -127,8 +127,10 @@ export function modelSupportsAdaptiveThinking(model: string): boolean {
     ((directFirstParty || provider === 'foundry') &&
       (canonical.includes('opus-4-6') ||
         canonical.includes('opus-4-7') ||
+        canonical.includes('opus-4-8') ||
         canonical.includes('sonnet-4-6'))) ||
-    (provider === 'bedrock' && canonical.includes('opus-4-7'))
+    (provider === 'bedrock' &&
+      (canonical.includes('opus-4-7') || canonical.includes('opus-4-8')))
   ) {
     return true
   }

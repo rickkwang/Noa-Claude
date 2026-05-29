@@ -109,7 +109,9 @@ export async function computeMainSessionEnvInfo(
 
 function getKnowledgeCutoff(modelId: string): string | null {
   const canonical = getCanonicalName(modelId)
-  if (canonical.includes('claude-opus-4-7')) {
+  if (canonical.includes('claude-opus-4-8')) {
+    return 'January 2026'
+  } else if (canonical.includes('claude-opus-4-7')) {
     return 'January 2026'
   } else if (canonical.includes('claude-sonnet-4-6')) {
     return 'August 2025'
