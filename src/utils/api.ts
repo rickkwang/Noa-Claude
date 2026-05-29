@@ -117,6 +117,74 @@ function filterSwarmFieldsFromSchema(
   return filtered
 }
 
+/**
+ * Coerce an MCP/custom tool input schema into the shape the Anthropic tool API
+ * requires: a top-level JSON Schema object. Two non-conformities show up in the
+ * wild and each 400s the *entire* request (not just the offending tool):
+ *   - a missing/non-string top-level `type` → "input_schema.type: Field required"
+ *   - `oneOf` / `allOf` / `anyOf` at the top level → "input_schema does not
+ *     support oneOf, allOf, or anyOf at the top level"
+ * The latter typically comes from MCP servers exposing union/intersection input
+ * types (e.g. a Zod `z.union` → `anyOf`). We flatten a top-level composition
+ * keyword by merging member object schemas' `properties` into the root, then
+ * default the `type`. `required` is preserved only for `allOf` (the
+ * intersection case) — for anyOf/oneOf a field required by one branch isn't
+ * required overall. Composition keywords nested inside `properties` are left
+ * untouched; the API only forbids them at the top level. Built-in tools are
+ * unaffected (zodToJsonSchema always emits a conformant object schema).
+ */
+function normalizeToolInputSchema(
+  schema: Anthropic.Tool.InputSchema,
+): Anthropic.Tool.InputSchema {
+  if (!schema || typeof schema !== 'object') {
+    return { type: 'object' } as Anthropic.Tool.InputSchema
+  }
+
+  let out = schema as Record<string, unknown>
+
+  for (const keyword of ['allOf', 'anyOf', 'oneOf'] as const) {
+    const members = out[keyword]
+    if (!Array.isArray(members)) {
+      continue
+    }
+    const mergedProps: Record<string, unknown> = {
+      ...((out.properties as Record<string, unknown>) ?? {}),
+    }
+    const mergedRequired = new Set<string>(
+      Array.isArray(out.required) ? (out.required as string[]) : [],
+    )
+    for (const member of members) {
+      if (!member || typeof member !== 'object') {
+        continue
+      }
+      const m = member as Record<string, unknown>
+      Object.assign(
+        mergedProps,
+        (m.properties as Record<string, unknown>) ?? {},
+      )
+      if (keyword === 'allOf' && Array.isArray(m.required)) {
+        for (const r of m.required as string[]) {
+          mergedRequired.add(r)
+        }
+      }
+    }
+    out = { ...out }
+    delete out[keyword]
+    out.properties = mergedProps
+    if (mergedRequired.size > 0) {
+      out.required = [...mergedRequired]
+    } else {
+      delete out.required
+    }
+  }
+
+  if (typeof out.type !== 'string') {
+    out = { ...out, type: 'object' }
+  }
+
+  return out as Anthropic.Tool.InputSchema
+}
+
 export async function toolToAPISchema(
   tool: Tool,
   options: {
@@ -166,6 +234,10 @@ export async function toolToAPISchema(
     if (!isAgentSwarmsEnabled()) {
       input_schema = filterSwarmFieldsFromSchema(tool.name, input_schema)
     }
+
+    // MCP servers can ship tool schemas the Anthropic tool API rejects, failing
+    // the entire request rather than just the offending tool. Normalize them.
+    input_schema = normalizeToolInputSchema(input_schema)
 
     base = {
       name: tool.name,
