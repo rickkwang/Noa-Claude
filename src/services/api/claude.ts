@@ -1265,11 +1265,16 @@ async function* queryModel(
   const useGlobalCacheFeature = shouldUseGlobalCacheScope()
   const willDefer = (t: Tool) =>
     useToolSearch && (deferredToolNames.has(t.name) || shouldDeferLspTool(t))
-  // MCP tools are per-user → dynamic tool section → can't globally cache.
-  // Only gate when an MCP tool will actually render (not defer_loading).
+  // `cache_control.scope: "global"` on a system block is only valid when every
+  // preceding block is also globally scoped, and tool definitions render before
+  // `system`. We never emit a global cache marker on tool schemas, so the static
+  // system block can't be globally scoped whenever ANY tool actually renders
+  // (not just per-user MCP tools) — the API rejects it with a 400 ("scope: global
+  // on system[0] is not a true prefix when tools are present"). Gate on any
+  // rendering (non-defer_loading) tool; global system caching then applies only
+  // to genuinely tool-less requests, and everything else falls back to org scope.
   const needsToolBasedCacheMarker =
-    useGlobalCacheFeature &&
-    filteredTools.some(t => t.isMcp === true && !willDefer(t))
+    useGlobalCacheFeature && filteredTools.some(t => !willDefer(t))
 
   // Ensure prompt_caching_scope beta header is present when global cache is enabled.
   if (
