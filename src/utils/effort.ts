@@ -67,15 +67,35 @@ export function getSupportedEffortLevelsForModel(
   }
 
   const provider = getAPIProvider()
+  // OpenAI-compatible providers (OpenAI, Gemini OpenAI-compat, etc.) accept a
+  // top-level `reasoning_effort` field on /chat/completions. The shim only
+  // translates `output_config.effort` → `reasoning_effort` when this env var
+  // is set, since not every OpenAI-compat proxy accepts the field. `max` has
+  // no equivalent (OpenAI/Gemini cap at `xhigh`/`high`) and is clamped in the
+  // shim, so we don't surface it as a supported level here.
+  if (
+    provider === 'openaiCompatible' &&
+    isEnvTruthy(process.env.CLAUDE_CODE_OPENAI_REASONING_EFFORT)
+  ) {
+    return ['low', 'medium', 'high', 'xhigh']
+  }
   const directFirstParty =
     provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()
-  if (!directFirstParty && provider !== 'foundry') {
-    return []
-  }
-
   const canonical = getCanonicalName(model).toLowerCase()
   const raw = model.toLowerCase()
   const modelKey = `${canonical} ${raw}`
+  // Surface effort for Opus 4.7/4.8 on Bedrock. This mirrors the Bedrock
+  // model allowlist used by modelSupportsAdaptiveThinking (thinking.ts), which
+  // is a separate API capability — so this is an allowlist convention, NOT
+  // proof that Bedrock accepts output_config.effort. Verify against a live
+  // Bedrock endpoint before relying on it; if Bedrock rejects the field,
+  // remove this branch.
+  const isBedrockSupported =
+    provider === 'bedrock' &&
+    (modelKey.includes('opus-4-7') || modelKey.includes('opus-4-8'))
+  if (!directFirstParty && provider !== 'foundry' && !isBedrockSupported) {
+    return []
+  }
 
   if (modelKey.includes('mythos')) {
     return ['low', 'medium', 'high', 'max']
@@ -83,11 +103,13 @@ export function getSupportedEffortLevelsForModel(
   if (modelKey.includes('opus-4-7') || modelKey.includes('opus-4-8')) {
     return ['low', 'medium', 'high', 'xhigh', 'max']
   }
-  if (
-    modelKey.includes('opus-4-6') ||
-    modelKey.includes('sonnet-4-6')
-  ) {
+  if (modelKey.includes('opus-4-6')) {
     return ['low', 'medium', 'high', 'max']
+  }
+  // Sonnet 4.6: 'max' is Opus-tier only per the Anthropic API docs, so Sonnet
+  // gets the base low/medium/high levels without 'max'.
+  if (modelKey.includes('sonnet-4-6')) {
+    return ['low', 'medium', 'high']
   }
   if (modelKey.includes('opus-4-5')) {
     return ['low', 'medium', 'high']

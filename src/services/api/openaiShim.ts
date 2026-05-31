@@ -2,6 +2,7 @@
 import { APIError } from '@anthropic-ai/sdk'
 import { logForDebugging } from '../../utils/debug.js'
 import { logError } from '../../utils/log.js'
+import { isEnvTruthy } from '../../utils/envUtils.js'
 import {
   classifyOpenAICompatibleError,
   resolveMaxTokensParam,
@@ -69,6 +70,34 @@ type AnthropicLikeMessage = {
 
 function makeMessageId(): string {
   return `msg_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+}
+
+/**
+ * Map Anthropic effort levels to OpenAI Chat Completions `reasoning_effort`.
+ * OpenAI accepts: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | null
+ * Gemini OpenAI-compat accepts the same field with low/medium/high/minimal/none.
+ *
+ * `max` is Anthropic-only. In the normal flow it never reaches here:
+ * getSupportedEffortLevelsForModel omits 'max' for openaiCompatible providers,
+ * so resolveAppliedEffort clamps a requested 'max' down to 'xhigh' before the
+ * request is built. We still map it to 'xhigh' (the highest portable level,
+ * matching that clamp) to stay consistent if 'max' is ever injected directly
+ * via CLAUDE_CODE_EXTRA_BODY.
+ */
+function mapAnthropicEffortToOpenAI(
+  effort: string,
+): 'low' | 'medium' | 'high' | 'xhigh' | undefined {
+  switch (effort) {
+    case 'low':
+    case 'medium':
+    case 'high':
+    case 'xhigh':
+      return effort
+    case 'max':
+      return 'xhigh'
+    default:
+      return undefined
+  }
 }
 
 function convertSystemPrompt(system: unknown): string {
@@ -540,6 +569,33 @@ class OpenAIShimMessages {
       )
     }
 
+    // Anthropic output_config is {format, effort, task_budget}. We translate
+    // `effort` → top-level `reasoning_effort` (the field name accepted by both
+    // OpenAI Chat Completions and Gemini's OpenAI-compat endpoint) when the
+    // user opts in via CLAUDE_CODE_OPENAI_REASONING_EFFORT (any truthy value
+    // accepted by isEnvTruthy, matching the capability gate in effort.ts).
+    // `format` and `task_budget` have no portable OpenAI equivalent and are
+    // dropped.
+    let reasoningEffort: string | undefined
+    if (params.output_config !== undefined) {
+      const outputConfig = params.output_config as Record<string, unknown>
+      if (
+        isEnvTruthy(process.env.CLAUDE_CODE_OPENAI_REASONING_EFFORT) &&
+        typeof outputConfig.effort === 'string'
+      ) {
+        reasoningEffort = mapAnthropicEffortToOpenAI(outputConfig.effort)
+      }
+      const droppedKeys = Object.keys(outputConfig).filter(
+        k => k !== 'effort' || reasoningEffort === undefined,
+      )
+      if (droppedKeys.length > 0) {
+        logForDebugging(
+          `[openaiShim] output_config keys dropped: ${droppedKeys.join(', ')} (not portable to OpenAI shape at ${this.config.baseURL})`,
+          { level: 'warn' },
+        )
+      }
+    }
+
     const body: Record<string, unknown> = {
       model: params.model,
       messages: convertMessages(params.messages, params.system),
@@ -553,8 +609,8 @@ class OpenAIShimMessages {
       ...(params.stop_sequences ? { stop: params.stop_sequences } : {}),
       ...(params.tools ? { tools: convertTools(params.tools) } : {}),
       ...(params.tool_choice ? { tool_choice: params.tool_choice } : {}),
-      ...(params.output_config ? { response_format: params.output_config } : {}),
       ...(params.metadata ? { metadata: params.metadata } : {}),
+      ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
     }
 
     const baseURL = this.config.baseURL.replace(/\/+$/, '')
