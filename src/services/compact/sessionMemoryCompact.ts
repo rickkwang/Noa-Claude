@@ -1,13 +1,15 @@
 // @ts-nocheck
 /**
- * EXPERIMENT: Session memory compaction
+ * Session memory compaction
  */
 
 import type { AgentId } from '../../types/ids.js'
 import type { HookResultMessage, Message } from '../../types/message.js'
+import type { ToolUseContext } from '../../Tool.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { errorMessage } from '../../utils/errors.js'
+import { executePostCompactHooks } from '../../utils/hooks.js'
 import {
   createCompactBoundaryMessage,
   createUserMessage,
@@ -38,6 +40,8 @@ import {
   buildPostCompactMessages,
   type CompactionResult,
   createPlanAttachmentIfNeeded,
+  isCompactionUserAbort,
+  mergeHookDisplayMessages,
 } from './compact.js'
 import {
   roughTokenCountEstimation,
@@ -309,20 +313,24 @@ export function shouldUseSessionMemoryCompaction(): boolean {
 }
 
 /**
- * Create a CompactionResult from session memory
+ * Create a CompactionResult from session memory.
+ *
+ * @internal Exported only for unit tests (see sessionMemoryCompact.test.ts).
+ *           Production callers should go through `trySessionMemoryCompaction`.
  */
-async function createCompactionResultFromSessionMemory(
+export async function createCompactionResultFromSessionMemory(
   messages: Message[],
   sessionMemory: string,
   messagesToKeep: Message[],
   hookResults: HookResultMessage[],
   transcriptPath: string,
+  trigger: 'manual' | 'auto',
   agentId?: AgentId,
 ): Promise<CompactionResult> {
   const preCompactTokenCount = tokenCountFromLastAPIResponse(messages)
 
   const boundaryMarker = createCompactBoundaryMessage(
-    'auto',
+    trigger,
     preCompactTokenCount ?? 0,
     messages[messages.length - 1]?.uuid,
   )
@@ -404,8 +412,19 @@ async function createCompactionResultFromSessionMemory(
  */
 export async function trySessionMemoryCompaction(
   messages: Message[],
-  agentId?: AgentId,
-  autoCompactThreshold?: number,
+  {
+    agentId,
+    autoCompactThreshold,
+    trigger = 'auto',
+    context,
+    preCompactUserDisplayMessage,
+  }: {
+    agentId?: AgentId
+    autoCompactThreshold?: number
+    trigger?: 'manual' | 'auto'
+    context: Pick<ToolUseContext, 'abortController' | 'onCompactProgress'>
+    preCompactUserDisplayMessage?: string
+  },
 ): Promise<CompactionResult | null> {
   if (!shouldUseSessionMemoryCompaction()) {
     return null
@@ -433,29 +452,31 @@ export async function trySessionMemoryCompaction(
     return null
   }
 
-  try {
-    let lastSummarizedIndex: number
+  let lastSummarizedIndex: number
+  if (lastSummarizedMessageId) {
+    // Normal case: we know exactly which messages have been summarized
+    lastSummarizedIndex = messages.findIndex(
+      msg => msg.uuid === lastSummarizedMessageId,
+    )
 
-    if (lastSummarizedMessageId) {
-      // Normal case: we know exactly which messages have been summarized
-      lastSummarizedIndex = messages.findIndex(
-        msg => msg.uuid === lastSummarizedMessageId,
-      )
-
-      if (lastSummarizedIndex === -1) {
-        // The summarized message ID doesn't exist in current messages
-        // This can happen if messages were modified - fall back to legacy compact
-        // since we can't determine the boundary between summarized and unsummarized messages
-        logEvent('tengu_sm_compact_summarized_id_not_found', {})
-        return null
-      }
-    } else {
-      // Resumed session case: session memory has content but we don't know the boundary
-      // Set lastSummarizedIndex to last message so startIndex becomes messages.length (no messages kept initially)
-      lastSummarizedIndex = messages.length - 1
-      logEvent('tengu_sm_compact_resumed_session', {})
+    if (lastSummarizedIndex === -1) {
+      // The summarized message ID doesn't exist in current messages
+      // This can happen if messages were modified - fall back to legacy compact
+      // since we can't determine the boundary between summarized and unsummarized messages
+      logEvent('tengu_sm_compact_summarized_id_not_found', {})
+      return null
     }
+  } else {
+    // Resumed session case: session memory has content but we don't know the boundary
+    // Set lastSummarizedIndex to last message so startIndex becomes messages.length (no messages kept initially)
+    lastSummarizedIndex = messages.length - 1
+    logEvent('tengu_sm_compact_resumed_session', {})
+  }
 
+  let compactionResult: CompactionResult
+  let postCompactTokenCount: number
+
+  try {
     // Calculate the starting index for messages to keep
     // This starts from lastSummarizedIndex, expands to meet minimums,
     // and adjusts to not split tool_use/tool_result pairs
@@ -471,6 +492,10 @@ export async function trySessionMemoryCompaction(
       .slice(startIndex)
       .filter(m => !isCompactBoundaryMessage(m))
 
+    context.onCompactProgress?.({
+      type: 'hooks_start',
+      hookType: 'session_start',
+    })
     // Run session start hooks to restore CLAUDE.md and other context
     const hookResults = await processSessionStartHooks('compact', {
       model: getMainLoopModel(),
@@ -479,18 +504,19 @@ export async function trySessionMemoryCompaction(
     // Get transcript path for the summary message
     const transcriptPath = getTranscriptPath()
 
-    const compactionResult = await createCompactionResultFromSessionMemory(
+    compactionResult = await createCompactionResultFromSessionMemory(
       messages,
       sessionMemory,
       messagesToKeep,
       hookResults,
       transcriptPath,
+      trigger,
       agentId,
     )
 
     const postCompactMessages = buildPostCompactMessages(compactionResult)
 
-    const postCompactTokenCount = estimatePostCompactTokens(postCompactMessages)
+    postCompactTokenCount = estimatePostCompactTokens(postCompactMessages)
 
     // Only check threshold if one was provided (for autocompact)
     if (
@@ -504,12 +530,10 @@ export async function trySessionMemoryCompaction(
       return null
     }
 
-    return {
-      ...compactionResult,
-      postCompactTokenCount,
-      truePostCompactTokenCount: postCompactTokenCount,
-    }
   } catch (error) {
+    if (isCompactionUserAbort(error, context.abortController.signal)) {
+      throw error
+    }
     // Use logEvent instead of logError since errors here are expected
     // (e.g., file not found, path issues) and shouldn't go to error logs
     logEvent('tengu_sm_compact_error', {})
@@ -517,5 +541,29 @@ export async function trySessionMemoryCompaction(
       logForDebugging(`Session memory compaction error: ${errorMessage(error)}`)
     }
     return null
+  }
+
+  context.onCompactProgress?.({
+    type: 'hooks_start',
+    hookType: 'post_compact',
+  })
+  const postCompactHookResult = await executePostCompactHooks(
+    {
+      trigger,
+      compactSummary:
+        compactionResult.summaryMessages[0]?.summarizeMetadata
+          ?.rawCompactSummary ?? sessionMemory,
+    },
+    context.abortController.signal,
+  )
+
+  return {
+    ...compactionResult,
+    postCompactTokenCount,
+    truePostCompactTokenCount: postCompactTokenCount,
+    userDisplayMessage: mergeHookDisplayMessages(
+      preCompactUserDisplayMessage,
+      postCompactHookResult.userDisplayMessage,
+    ),
   }
 }

@@ -7,14 +7,18 @@ import { getSystemContext, getUserContext } from '../../context.js'
 import { getShortcutDisplay } from '../../keybindings/shortcutFormat.js'
 import { notifyCompaction } from '../../services/api/promptCacheBreakDetection.js'
 import {
+  beginCompactLifecycle,
   type CompactionResult,
   compactConversation,
+  endCompactLifecycle,
   ERROR_MESSAGE_COMPACT_EXHAUSTED,
   ERROR_MESSAGE_COMPACT_MEDIA_UNSTRIPPABLE,
   ERROR_MESSAGE_INCOMPLETE_RESPONSE,
   ERROR_MESSAGE_NOT_ENOUGH_MESSAGES,
   ERROR_MESSAGE_USER_ABORT,
+  mergeHookDisplayMessages,
   mergeHookInstructions,
+  type PreCompactHookResult,
 } from '../../services/compact/compact.js'
 import { suppressCompactWarning } from '../../services/compact/compactWarningState.js'
 import { microcompactMessages } from '../../services/compact/microCompact.js'
@@ -55,14 +59,34 @@ export const call: LocalCommandCall = async (args, context) => {
   const customInstructions = args.trim()
   const displayMode = customInstructions ? 'custom' : 'default'
 
+  // This handler is the single owner of the compact_start / compact_end
+  // lifecycle for SM and full-compact paths. Inner functions (SM,
+  // compactConversation, compactViaReactive) no longer emit these events.
+  beginCompactLifecycle(context)
+
   try {
-    // Try session memory compaction first if no custom instructions
-    // (session memory compaction doesn't support custom instructions)
-    if (!customInstructions) {
-      const sessionMemoryResult = await trySessionMemoryCompaction(
-        messages,
-        context.agentId,
+    const preCompactHookResult: PreCompactHookResult =
+      await executePreCompactHooks(
+        {
+          trigger: 'manual',
+          customInstructions: customInstructions || null,
+        },
+        context.abortController.signal,
       )
+
+    context.onCompactProgress?.({ type: 'compact_start' })
+
+    // Try session memory compaction first if no custom instructions and no
+    // hook-injected ones (session memory compaction doesn't support custom
+    // instructions).
+    if (!customInstructions && !preCompactHookResult.newCustomInstructions) {
+      const sessionMemoryResult = await trySessionMemoryCompaction(messages, {
+        agentId: context.agentId,
+        trigger: 'manual',
+        context,
+        preCompactUserDisplayMessage:
+          preCompactHookResult.userDisplayMessage,
+      })
       if (sessionMemoryResult) {
         getUserContext.cache.clear?.()
         runPostCompactCleanup()
@@ -75,13 +99,20 @@ export const call: LocalCommandCall = async (args, context) => {
           )
         }
         markPostCompaction()
+        // Reset lastSummarizedMessageId since SM compaction prunes messages
+        // and the old UUID will no longer exist in the new messages array.
+        setLastSummarizedMessageId(undefined)
         // Suppress warning immediately after successful compaction
         suppressCompactWarning()
 
         return {
           type: 'compact',
           compactionResult: sessionMemoryResult,
-          displayText: buildDisplayText(context, displayMode),
+          displayText: buildDisplayText(
+            context,
+            displayMode,
+            sessionMemoryResult.userDisplayMessage,
+          ),
         }
       }
     }
@@ -94,6 +125,7 @@ export const call: LocalCommandCall = async (args, context) => {
         context,
         customInstructions,
         reactiveCompact,
+        preCompactHookResult,
       )
     }
 
@@ -109,6 +141,8 @@ export const call: LocalCommandCall = async (args, context) => {
       false,
       customInstructions,
       false,
+      undefined,
+      preCompactHookResult,
     )
 
     // Reset lastSummarizedMessageId since legacy compaction replaces all messages
@@ -145,6 +179,8 @@ export const call: LocalCommandCall = async (args, context) => {
       logError(error)
       throw new Error(formatCompactError('failed', error))
     }
+  } finally {
+    endCompactLifecycle(context)
   }
 }
 
@@ -153,95 +189,69 @@ async function compactViaReactive(
   context: ToolUseContext,
   customInstructions: string,
   reactive: NonNullable<typeof reactiveCompact>,
+  preCompactHookResult: PreCompactHookResult,
 ): Promise<{
   type: 'compact'
   compactionResult: CompactionResult
   displayText: string
 }> {
-  context.onCompactProgress?.({
-    type: 'hooks_start',
-    hookType: 'pre_compact',
-  })
-  context.setSDKStatus?.('compacting')
+  const cacheSafeParams = await getCacheSharingParams(context, messages)
+  const mergedInstructions = mergeHookInstructions(
+    customInstructions,
+    preCompactHookResult.newCustomInstructions,
+  )
 
-  try {
-    // Hooks and cache-param build are independent — run concurrently.
-    // getCacheSharingParams walks all tools to build the system prompt;
-    // pre-compact hooks spawn subprocesses. Neither depends on the other.
-    const [hookResult, cacheSafeParams] = await Promise.all([
-      executePreCompactHooks(
-        { trigger: 'manual', customInstructions: customInstructions || null },
-        context.abortController.signal,
-      ),
-      getCacheSharingParams(context, messages),
-    ])
-    const mergedInstructions = mergeHookInstructions(
-      customInstructions,
-      hookResult.newCustomInstructions,
-    )
+  const outcome = await reactive.reactiveCompactOnPromptTooLong(
+    messages,
+    cacheSafeParams,
+    { customInstructions: mergedInstructions, trigger: 'manual' },
+  )
 
-    context.setStreamMode?.('requesting')
-    context.setResponseLength?.(() => 0)
-    context.onCompactProgress?.({ type: 'compact_start' })
-
-    const outcome = await reactive.reactiveCompactOnPromptTooLong(
-      messages,
-      cacheSafeParams,
-      { customInstructions: mergedInstructions, trigger: 'manual' },
-    )
-
-    if (!outcome.ok) {
-      // The outer catch in `call` translates these: aborted → "Compaction
-      // canceled." (via abortController.signal.aborted check), NOT_ENOUGH →
-      // re-thrown as-is, everything else → "Error during compaction: …".
-      switch (outcome.reason) {
-        case 'too_few_groups':
-          throw new Error(ERROR_MESSAGE_NOT_ENOUGH_MESSAGES)
-        case 'aborted':
-          throw new Error(ERROR_MESSAGE_USER_ABORT)
-        case 'exhausted':
-          throw new Error(ERROR_MESSAGE_COMPACT_EXHAUSTED)
-        case 'media_unstrippable':
-          throw new Error(ERROR_MESSAGE_COMPACT_MEDIA_UNSTRIPPABLE)
-        case 'error':
-          throw new Error(ERROR_MESSAGE_INCOMPLETE_RESPONSE)
-      }
+  if (!outcome.ok) {
+    // The outer catch in `call` translates these: aborted → "Compaction
+    // canceled." (via abortController.signal.aborted check), NOT_ENOUGH →
+    // re-thrown as-is, everything else → "Error during compaction: …".
+    switch (outcome.reason) {
+      case 'too_few_groups':
+        throw new Error(ERROR_MESSAGE_NOT_ENOUGH_MESSAGES)
+      case 'aborted':
+        throw new Error(ERROR_MESSAGE_USER_ABORT)
+      case 'exhausted':
+        throw new Error(ERROR_MESSAGE_COMPACT_EXHAUSTED)
+      case 'media_unstrippable':
+        throw new Error(ERROR_MESSAGE_COMPACT_MEDIA_UNSTRIPPABLE)
+      case 'error':
+        throw new Error(ERROR_MESSAGE_INCOMPLETE_RESPONSE)
     }
+  }
 
-    // Mirrors the post-success cleanup in tryReactiveCompact, minus
-    // resetMicrocompactState — processSlashCommand calls that for all
-    // type:'compact' results.
-    setLastSummarizedMessageId(undefined)
-    runPostCompactCleanup()
-    suppressCompactWarning()
-    getUserContext.cache.clear?.()
+  // Mirrors the post-success cleanup in tryReactiveCompact, minus
+  // resetMicrocompactState — processSlashCommand calls that for all
+  // type:'compact' results.
+  setLastSummarizedMessageId(undefined)
+  runPostCompactCleanup()
+  suppressCompactWarning()
+  getUserContext.cache.clear?.()
 
-    // reactiveCompactOnPromptTooLong runs PostCompact hooks but not PreCompact
-    // — both callers (here and tryReactiveCompact) run PreCompact outside so
-    // they can merge its userDisplayMessage with PostCompact's here. This
-    // caller additionally runs it concurrently with getCacheSharingParams.
-    const combinedMessage =
-      [hookResult.userDisplayMessage, outcome.result.userDisplayMessage]
-        .filter(Boolean)
-        .join('\n') || undefined
+  // reactiveCompactOnPromptTooLong runs PostCompact hooks but not PreCompact
+  // — the outer /compact handler runs PreCompact (already merged above) so
+  // we combine its userDisplayMessage with PostCompact's here.
+  const combinedMessage = mergeHookDisplayMessages(
+    preCompactHookResult.userDisplayMessage,
+    outcome.result.userDisplayMessage,
+  )
 
-    return {
-      type: 'compact',
-      compactionResult: {
-        ...outcome.result,
-        userDisplayMessage: combinedMessage,
-      },
-      displayText: buildDisplayText(
-        context,
-        customInstructions ? 'custom' : 'default',
-        combinedMessage,
-      ),
-    }
-  } finally {
-    context.setStreamMode?.('requesting')
-    context.setResponseLength?.(() => 0)
-    context.onCompactProgress?.({ type: 'compact_end' })
-    context.setSDKStatus?.(null)
+  return {
+    type: 'compact',
+    compactionResult: {
+      ...outcome.result,
+      userDisplayMessage: combinedMessage,
+    },
+    displayText: buildDisplayText(
+      context,
+      customInstructions ? 'custom' : 'default',
+      combinedMessage,
+    ),
   }
 }
 

@@ -689,8 +689,9 @@ async function getMessagesForSlashCommand(commandName: string, args: string, set
 
             // Use discriminated union to handle different result types
             if (result.type === 'compact') {
-              // Append slash command messages to messagesToKeep so that
-              // attachments and hookResults come after user messages
+              // Keep the slash command transcript immediately after the
+              // compact boundary so resumed history reads as:
+              // boundary -> /compact -> compact summary -> preserved tail.
               const slashCommandMessages = [syntheticCaveatMessage, userMessage, ...(result.displayText ? [createUserMessage({
                 content: `<local-command-stdout>${result.displayText}</local-command-stdout>`,
                 // --resume looks at latest timestamp message to determine which message to resume from
@@ -702,7 +703,7 @@ async function getMessagesForSlashCommand(commandName: string, args: string, set
               })] : [])];
               const compactionResultWithSlashMessages = {
                 ...result.compactionResult,
-                messagesToKeep: [...(result.compactionResult.messagesToKeep ?? []), ...slashCommandMessages]
+                postBoundaryMessages: [...(result.compactionResult.postBoundaryMessages ?? []), ...slashCommandMessages]
               };
               // Reset microcompact state since full compact replaces all
               // messages — old tool IDs are no longer relevant. Budget state

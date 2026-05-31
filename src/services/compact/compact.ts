@@ -139,6 +139,8 @@ export const POST_COMPACT_MAX_TOKENS_PER_FILE = 5_000
 // part. Budget sized to hold ~5 skills at the per-skill cap.
 export const POST_COMPACT_MAX_TOKENS_PER_SKILL = 5_000
 export const POST_COMPACT_SKILLS_TOKEN_BUDGET = 25_000
+// Keep a small recent tail verbatim so the next turn retains immediate context
+// without pushing the post-compact window back into auto-compact territory.
 export const FULL_COMPACT_RECENT_TAIL_TOKEN_BUDGET = 12_000
 const MAX_COMPACT_STREAMING_RETRIES = 2
 
@@ -325,6 +327,7 @@ export function isCompactionUserAbort(
 
 export interface CompactionResult {
   boundaryMarker: SystemMessage
+  postBoundaryMessages?: Message[]
   summaryMessages: UserMessage[]
   attachments: AttachmentMessage[]
   hookResults: HookResultMessage[]
@@ -349,14 +352,21 @@ export type RecompactionInfo = {
   querySource?: QuerySource
 }
 
+export type PreCompactHookResult = {
+  newCustomInstructions?: string
+  userDisplayMessage?: string
+}
+
 /**
  * Build the base post-compact messages array from a CompactionResult.
  * This ensures consistent ordering across all compaction paths.
- * Order: boundaryMarker, summaryMessages, messagesToKeep, attachments, hookResults
+ * Order: boundaryMarker, postBoundaryMessages, summaryMessages,
+ * messagesToKeep, attachments, hookResults
  */
 export function buildPostCompactMessages(result: CompactionResult): Message[] {
   return [
     result.boundaryMarker,
+    ...(result.postBoundaryMessages ?? []),
     ...result.summaryMessages,
     ...(result.messagesToKeep ?? []),
     ...result.attachments,
@@ -616,6 +626,39 @@ export function mergeHookInstructions(
 }
 
 /**
+ * Combines the PreCompact and PostCompact hook `userDisplayMessage` values
+ * into a single newline-joined string. Empty/missing values are skipped.
+ * Returns undefined when both are empty so the caller can omit the field.
+ */
+export function mergeHookDisplayMessages(
+  pre: string | undefined,
+  post: string | undefined,
+): string | undefined {
+  return [pre, post].filter(Boolean).join('\n') || undefined
+}
+
+/**
+ * Lifecycle helpers that the outer compact entrypoints (`/compact` command
+ * handler and `autoCompactIfNeeded`) call to enter and leave the compacting
+ * UI state. Inner functions (SM, compactConversation, compactViaReactive)
+ * never invoke these — there is exactly one owner per top-level compact.
+ */
+export function beginCompactLifecycle(context: ToolUseContext): void {
+  context.setSDKStatus?.('compacting')
+  context.setStreamMode?.('requesting')
+  context.setResponseLength?.(() => 0)
+  context.onCompactProgress?.({
+    type: 'hooks_start',
+    hookType: 'pre_compact',
+  })
+}
+
+export function endCompactLifecycle(context: ToolUseContext): void {
+  context.onCompactProgress?.({ type: 'compact_end' })
+  context.setSDKStatus?.(null)
+}
+
+/**
  * Creates a compact version of a conversation by summarizing older messages
  * and preserving recent conversation history.
  */
@@ -627,6 +670,7 @@ export async function compactConversation(
   customInstructions?: string,
   isAutoCompact: boolean = false,
   recompactionInfo?: RecompactionInfo,
+  preCompactHookResult?: PreCompactHookResult,
 ): Promise<CompactionResult> {
   // Hoisted so the outer catch can roll back the readFileState clear on
   // post-clear failure (attachment generation, hooks). Without rollback,
@@ -647,30 +691,30 @@ export async function compactConversation(
     const appState = context.getAppState()
     void logPermissionContextForAnts(appState.toolPermissionContext, 'summary')
 
-    context.onCompactProgress?.({
-      type: 'hooks_start',
-      hookType: 'pre_compact',
-    })
+    let hookResult = preCompactHookResult
+    if (!hookResult) {
+      // Fallback path for callers that don't own the lifecycle (e.g. the
+      // in-process swarm runner). The outer /compact and autoCompact paths
+      // always pass preCompactHookResult, having already emitted the
+      // hooks_start spinner cue.
+      context.onCompactProgress?.({
+        type: 'hooks_start',
+        hookType: 'pre_compact',
+      })
 
-    // Execute PreCompact hooks
-    context.setSDKStatus?.('compacting')
-    const hookResult = await executePreCompactHooks(
-      {
-        trigger: isAutoCompact ? 'auto' : 'manual',
-        customInstructions: customInstructions ?? null,
-      },
-      context.abortController.signal,
-    )
+      hookResult = await executePreCompactHooks(
+        {
+          trigger: isAutoCompact ? 'auto' : 'manual',
+          customInstructions: customInstructions ?? null,
+        },
+        context.abortController.signal,
+      )
+    }
     customInstructions = mergeHookInstructions(
       customInstructions,
       hookResult.newCustomInstructions,
     )
     const userDisplayMessage = hookResult.userDisplayMessage
-
-    // Show requesting mode with up arrow and custom message
-    context.setStreamMode?.('requesting')
-    context.setResponseLength?.(() => 0)
-    context.onCompactProgress?.({ type: 'compact_start' })
 
     // 3P default: true — forked-agent path reuses main conversation's prompt cache.
     // Experiment (Jan 2026) confirmed: false path is 98% cache miss, costs ~0.76% of
@@ -989,13 +1033,6 @@ export async function compactConversation(
       context.abortController.signal,
     )
 
-    const combinedUserDisplayMessage = [
-      userDisplayMessage,
-      postCompactHookResult.userDisplayMessage,
-    ]
-      .filter(Boolean)
-      .join('\n')
-
     const anchorUuid = summaryMessages.at(-1)?.uuid ?? boundaryMarker.uuid
 
     return {
@@ -1008,7 +1045,10 @@ export async function compactConversation(
       messagesToKeep,
       attachments: postCompactFileAttachments,
       hookResults: hookMessages,
-      userDisplayMessage: combinedUserDisplayMessage || undefined,
+      userDisplayMessage: mergeHookDisplayMessages(
+        userDisplayMessage,
+        postCompactHookResult.userDisplayMessage,
+      ),
       preCompactTokenCount,
       postCompactTokenCount: compactionCallTotalTokens,
       truePostCompactTokenCount,
@@ -1030,11 +1070,6 @@ export async function compactConversation(
       addErrorNotificationIfNeeded(error, context)
     }
     throw error
-  } finally {
-    context.setStreamMode?.('requesting')
-    context.setResponseLength?.(() => 0)
-    context.onCompactProgress?.({ type: 'compact_end' })
-    context.setSDKStatus?.(null)
   }
 }
 

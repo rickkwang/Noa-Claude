@@ -137,10 +137,15 @@ export function CancelRequestHandler(props: CancelRequestHandlerProps): null {
   // When viewing a teammate's transcript, let useBackgroundTaskNavigation handle Escape
   const isViewingTeammate = viewSelectionMode === 'viewing-agent'
   // Context guards: other screens/overlays handle their own cancel
+  // MessageSelector normally owns ESC (dismisses itself). But during a
+  // partial compact triggered from the selector, abortSignal is registered
+  // and canCancelRunningTask flips true — in that case global ESC should
+  // abort the compact instead of being intercepted by the selector.
+  const messageSelectorOwnsCancel = isMessageSelectorVisible && !canCancelRunningTask
   const isContextActive =
     screen !== 'transcript' &&
     !isSearchingHistory &&
-    !isMessageSelectorVisible &&
+    !messageSelectorOwnsCancel &&
     !isLocalJSXCommand &&
     !isHelpOpen &&
     !isOverlayActive &&

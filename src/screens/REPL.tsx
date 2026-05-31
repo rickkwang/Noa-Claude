@@ -4920,24 +4920,30 @@ export function REPL({
               return;
             }
             const newAbortController = createAbortController();
+            setAbortController(newAbortController);
             const context = getToolUseContext(compactMessages, [], newAbortController, mainLoopModel);
-            const appState = context.getAppState();
-            const defaultSysPrompt = await getSystemPrompt(context.options.tools, context.options.mainLoopModel, Array.from(appState.toolPermissionContext.additionalWorkingDirectories.keys()), context.options.mcpClients);
-            const systemPrompt = buildEffectiveSystemPrompt({
-              mainThreadAgentDefinition: undefined,
-              toolUseContext: context,
-              customSystemPrompt: context.options.customSystemPrompt,
-              defaultSystemPrompt: defaultSysPrompt,
-              appendSystemPrompt: context.options.appendSystemPrompt
-            });
-            const [userContext, systemContext] = await Promise.all([getUserContext(), getSystemContext()]);
-            const result = await partialCompactConversation(compactMessages, messageIndex, context, {
-              systemPrompt,
-              userContext,
-              systemContext,
-              toolUseContext: context,
-              forkContextMessages: compactMessages
-            }, feedback, direction);
+            let result;
+            try {
+              const appState = context.getAppState();
+              const defaultSysPrompt = await getSystemPrompt(context.options.tools, context.options.mainLoopModel, Array.from(appState.toolPermissionContext.additionalWorkingDirectories.keys()), context.options.mcpClients);
+              const systemPrompt = buildEffectiveSystemPrompt({
+                mainThreadAgentDefinition: undefined,
+                toolUseContext: context,
+                customSystemPrompt: context.options.customSystemPrompt,
+                defaultSystemPrompt: defaultSysPrompt,
+                appendSystemPrompt: context.options.appendSystemPrompt
+              });
+              const [userContext, systemContext] = await Promise.all([getUserContext(), getSystemContext()]);
+              result = await partialCompactConversation(compactMessages, messageIndex, context, {
+                systemPrompt,
+                userContext,
+                systemContext,
+                toolUseContext: context,
+                forkContextMessages: compactMessages
+              }, feedback, direction);
+            } finally {
+              setAbortController(null);
+            }
             const kept = result.messagesToKeep ?? [];
             const ordered = direction === 'up_to' ? [...result.summaryMessages, ...kept] : [...kept, ...result.summaryMessages];
             const postCompact = [result.boundaryMarker, ...ordered, ...result.attachments, ...result.hookResults];

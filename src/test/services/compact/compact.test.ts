@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { APIUserAbortError } from '@anthropic-ai/sdk'
 import {
+  buildPostCompactMessages,
   buildFullCompactSegments,
   extractPreviousCompactCheckpoint,
   FULL_COMPACT_RECENT_TAIL_TOKEN_BUDGET,
   isCompactionUserAbort,
   resolveFullCompactInputs,
+  selectRecentMessagesToKeepForFullCompact,
 } from '../../../services/compact/compact.js'
 import { adjustIndexToPreserveAPIInvariants } from '../../../services/compact/preservedTail.js'
 import {
@@ -34,7 +36,65 @@ function makeAssistantMessage(
   }
 }
 
+describe('selectRecentMessagesToKeepForFullCompact', () => {
+  test('returns empty when there are no eligible messages', () => {
+    expect(selectRecentMessagesToKeepForFullCompact([])).toEqual([])
+  })
+
+  test('returns empty when only one eligible message remains', () => {
+    const onlyMessage = makeAssistantMessage('assistant-single', 'latest only')
+
+    expect(selectRecentMessagesToKeepForFullCompact([onlyMessage])).toEqual([])
+  })
+
+  test('keeps only the newest tail within the token budget', () => {
+    const older = makeAssistantMessage('assistant-old', 'old detail')
+    const newest = makeAssistantMessage(
+      'assistant-new',
+      'x'.repeat(FULL_COMPACT_RECENT_TAIL_TOKEN_BUDGET),
+    )
+
+    const kept = selectRecentMessagesToKeepForFullCompact([older, newest])
+
+    expect(kept.map(message => message.uuid)).toEqual(['assistant-new'])
+  })
+})
+
 describe('buildFullCompactSegments', () => {
+  test('places post-boundary messages before compact summaries', () => {
+    const boundary = createCompactBoundaryMessage('manual', 1000, OLD_TURN_ID)
+    boundary.uuid = 'boundary-order'
+
+    const slashCommand = createUserMessage({
+      content: '<command-name>/compact</command-name>',
+    })
+    slashCommand.uuid = 'slash-order'
+
+    const summary = createUserMessage({
+      content: 'Summary:\n- compacted context',
+      isCompactSummary: true,
+    })
+    summary.uuid = 'summary-order'
+
+    const kept = makeAssistantMessage('kept-order', 'kept tail')
+
+    const ordered = buildPostCompactMessages({
+      boundaryMarker: boundary,
+      postBoundaryMessages: [slashCommand],
+      summaryMessages: [summary],
+      messagesToKeep: [kept],
+      attachments: [],
+      hookResults: [],
+    })
+
+    expect(ordered.map(message => message.uuid)).toEqual([
+      'boundary-order',
+      'slash-order',
+      'summary-order',
+      'kept-order',
+    ])
+  })
+
   test('extracts prior compact summary and preserves only fresh recent tail', () => {
     const boundary = createCompactBoundaryMessage('auto', 1000, OLD_TURN_ID)
     boundary.uuid = 'boundary-1'

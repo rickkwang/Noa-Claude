@@ -17,6 +17,7 @@
 - Fixed highlight loading and session title fallback paths that could trigger hook-order issues or malformed titles.
 - Fixed compact progress UI cues so compaction is visibly distinct from regular request activity.
 - Fixed launcher version display so `noa` shows a stable user-facing version instead of a stale dev bundle suffix.
+- Fixed session-memory compaction to run `PreCompact` and `PostCompact` hooks and to label the boundary marker with the actual trigger (`manual` vs `auto`). Previously the fast path bypassed both hooks and always wrote `auto`. Users with heavy `PreCompact` hooks will see the hook latency on every auto-compact attempt now, including ones that previously skipped it.
 
 ## 1.3.1
 
