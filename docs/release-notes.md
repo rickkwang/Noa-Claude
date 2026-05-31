@@ -8,7 +8,7 @@
 
 ### Refactors
 
-- **Launcher and bundle hygiene** — `noa` now auto-rebuilds stale bundles from the bundled metadata path, the dev entrypoint runs from the bundled build, and rebuild watching ignores non-bundle paths.
+- **Launcher and bundle hygiene** — `noa` now uses bundled metadata for compatibility checks, keeps mtime-based source rebuilds behind `CLAUDE_CODE_LAUNCHER_AUTO_REBUILD=1`, and rebuild watching ignores non-bundle paths.
 - **Command surface cleanup** — removed dead build-excluded command registrations and the stale stub source directories they depended on.
 
 ### Bug Fixes

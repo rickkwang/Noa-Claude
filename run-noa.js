@@ -69,6 +69,10 @@ const launcherDebugEnabled =
   process.env.CLAUDE_CODE_LAUNCHER_DEBUG === '1' ||
   process.env.CLAUDE_CODE_LAUNCHER_DEBUG === 'true';
 
+const launcherAutoRebuildEnabled =
+  process.env.CLAUDE_CODE_LAUNCHER_AUTO_REBUILD === '1' ||
+  process.env.CLAUDE_CODE_LAUNCHER_AUTO_REBUILD === 'true';
+
 process.on('unhandledRejection', (reason, promise) => {
   if (launcherDebugEnabled) {
     console.error('Unhandled rejection:', reason);
@@ -165,6 +169,12 @@ function shouldRebuildDist() {
   const distMtime = getNewestMtimeMs(DIST_ENTRY);
   const sourceMtime = Math.max(...WATCH_PATHS.map(getNewestMtimeMs));
   if (sourceMtime > distMtime) {
+    if (!launcherAutoRebuildEnabled) {
+      logLauncherDebug(
+        'Launcher rebuild: source files are newer than dist/main.js, but mtime-based rebuild is disabled',
+      );
+      return false;
+    }
     logLauncherDebug('Launcher rebuild: source files are newer than dist/main.js');
     return true;
   }
