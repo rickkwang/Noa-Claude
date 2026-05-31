@@ -1595,13 +1595,13 @@ function checkOpus47UserPaths() {
   const opus47_1mDisplayName = getPublicModelDisplayName(getModelStrings().opus47 + '[1m]');
   assert(opus47_1mDisplayName === 'Opus 4.7 (1M context)', `opus47[1m] display name should be 'Opus 4.7 (1M context)', got: ${opus47_1mDisplayName}`);
 
-  // getDefaultOpusModel — first-party path returns opus-4-7
+  // getDefaultOpusModel — first-party path returns the current Opus default
   const defaultOpus = getDefaultOpusModel();
-  assert(defaultOpus === getModelStrings().opus47, `getDefaultOpusModel() should return opus47 for first-party, got: ${defaultOpus}`);
+  assert(defaultOpus === getModelStrings().opus48, `getDefaultOpusModel() should return opus48 for first-party, got: ${defaultOpus}`);
 
   // getBestModel is an alias for getDefaultOpusModel
   const bestModel = getBestModel();
-  assert(bestModel === getModelStrings().opus47, `getBestModel() should equal opus47 for first-party, got: ${bestModel}`);
+  assert(bestModel === getModelStrings().opus48, `getBestModel() should equal opus48 for first-party, got: ${bestModel}`);
 
   // modelSupportsEffort for opus-4-7
   assert(modelSupportsEffort('opus-4-7') === true, 'opus-4-7 should support effort');
@@ -1726,12 +1726,12 @@ function checkOpus47ThirdPartyEffortDefaults() {
     delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
     delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES;
     assert(
-      getDefaultEffortForModel(unsupported3PModel) === undefined,
-      '3P opus-4-7 should not default effort without an explicit effort capability override',
+      getDefaultEffortForModel(unsupported3PModel) === 'xhigh',
+      'Bedrock opus-4-7 should default to xhigh via the provider allowlist',
     );
     assert(
-      resolveAppliedEffort(unsupported3PModel, undefined) === undefined,
-      '3P opus-4-7 should not inject effort without an explicit effort capability override',
+      resolveAppliedEffort(unsupported3PModel, undefined) === 'xhigh',
+      'Bedrock opus-4-7 should resolve to xhigh via the provider allowlist',
     );
 
     const effortOnly3PModel =
@@ -2166,7 +2166,7 @@ checkResumeSummaryGatePredicate();
 console.log('Checking model fallback suggestions...');
 checkModelFallbackSuggestions();
 
-console.log('Checking Opus 4.7 user paths...');
+console.log('Checking Opus user paths...');
 checkOpus47UserPaths();
 
 console.log('Checking Opus 4.7 third-party effort defaults...');

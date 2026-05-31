@@ -311,13 +311,26 @@ export function VirtualMessageList({
   // churn at 27k messages). Append-only delta push when the prefix matches;
   // fall back to full rebuild on compaction, /clear, or itemKey change.
   const keysRef = useRef<string[]>([]);
+  // Dedup: same UUID can appear twice in the partial-compact render state
+  // (boundary message + kept-before pre-compact copy). Without per-base-key
+  // counters, measureRef/hover/click maps collide on the duplicate key.
+  // Counter map carried across renders so the append-only path keeps assigning
+  // the next suffix without re-scanning prior messages.
+  const seenBaseKeysRef = useRef<Map<string, number>>(new Map());
+  const appendDedupedKey = (base: string) => {
+    const count = seenBaseKeysRef.current.get(base) ?? 0;
+    seenBaseKeysRef.current.set(base, count + 1);
+    keysRef.current.push(count === 0 ? base : `${base}-${count}`);
+  };
   const prevMessagesRef = useRef<typeof messages>(messages);
   const prevItemKeyRef = useRef(itemKey);
   if (prevItemKeyRef.current !== itemKey || messages.length < keysRef.current.length || messages[0] !== prevMessagesRef.current[0]) {
-    keysRef.current = messages.map(m => itemKey(m));
+    keysRef.current = [];
+    seenBaseKeysRef.current = new Map();
+    for (const m of messages) appendDedupedKey(itemKey(m));
   } else {
     for (let i = keysRef.current.length; i < messages.length; i++) {
-      keysRef.current.push(itemKey(messages[i]!));
+      appendDedupedKey(itemKey(messages[i]!));
     }
   }
   prevMessagesRef.current = messages;

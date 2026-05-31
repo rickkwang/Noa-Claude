@@ -48,7 +48,7 @@ import { spawnTeammate } from '../shared/spawnMultiAgent.js';
 import { setAgentColor } from './agentColorManager.js';
 import { agentToolResultSchema, classifyHandoffIfNeeded, emitTaskProgress, extractPartialResult, finalizeAgentTool, getLastToolUseName, runAsyncAgentLifecycle } from './agentToolUtils.js';
 import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js';
-import { AGENT_TOOL_NAME, assignAgentPersonalityName, LEGACY_AGENT_TOOL_NAME, ONE_SHOT_BUILTIN_AGENT_TYPES, shouldUseAgentPersonalityName } from './constants.js';
+import { AGENT_TOOL_NAME, assignAgentPersonalityName, LEGACY_AGENT_TOOL_NAME, ONE_SHOT_BUILTIN_AGENT_TYPES, releaseAgentPersonalityName, shouldUseAgentPersonalityName } from './constants.js';
 import { buildForkedMessages, buildWorktreeNotice, FORK_AGENT, isForkSubagentEnabled, isInForkChild } from './forkSubagent.js';
 import type { AgentDefinition } from './loadAgentsDir.js';
 import { filterAgentsByMcpRequirements, hasRequiredMcpServers, isBuiltInAgent } from './loadAgentsDir.js';
@@ -583,7 +583,12 @@ export const AgentTool = buildTool({
     } | null = null;
     if (effectiveIsolation === 'worktree') {
       const slug = `agent-${earlyAgentId.slice(0, 8)}`;
-      worktreeInfo = await createAgentWorktree(slug);
+      try {
+        worktreeInfo = await createAgentWorktree(slug);
+      } catch (e) {
+        if (personalityName) releaseAgentPersonalityName(earlyAgentId);
+        throw e;
+      }
     }
 
     // Fork + worktree: inject a notice telling the child to translate paths

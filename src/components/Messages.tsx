@@ -40,6 +40,7 @@ import { LogoV2 } from './LogoV2/LogoV2.js';
 import { getStartupBannerMode } from './StartupScreen.js';
 import { StreamingMarkdown } from './Markdown.js';
 import { hasContentAfterIndex, MessageRow } from './MessageRow.js';
+import { buildRenderableMessageKeys } from './messageKeys.js';
 import { InVirtualListContext, type MessageActionsNav, MessageActionsSelectedContext, type MessageActionsState } from './messageActions.js';
 import { AssistantThinkingMessage } from './messages/AssistantThinkingMessage.js';
 import { isNullRenderingAttachment } from './messages/nullRenderingAttachments.js';
@@ -652,6 +653,11 @@ const MessagesImpl = ({
       progress(null);
     };
   }, [progress]);
+  const messageKeys = useMemo(() => buildRenderableMessageKeys(renderableMessages, conversationId), [renderableMessages, conversationId]);
+  // Base-key function for VirtualMessageList. Stable across renders (depends
+  // only on conversationId) so VirtualMessageList's append-only keys
+  // optimization survives streaming commits. Dedup of duplicate UUIDs
+  // (fullscreen partial-compact state) happens inside VirtualMessageList.
   const messageKey = useCallback((msg_7: RenderableMessage) => `${msg_7.uuid}-${conversationId}`, [conversationId]);
   const renderMessageRow = (msg_8: RenderableMessage, index: number) => {
     const prevType = index > 0 ? renderableMessages[index - 1]?.type : undefined;
@@ -662,7 +668,7 @@ const MessagesImpl = ({
     // in explicitly so the group flips to past tense as soon as text starts
     // streaming instead of waiting for the block to finalize.
     const hasContentAfter = msg_8.type === 'collapsed_read_search' && (!!streamingText || hasContentAfterIndex(renderableMessages, index, tools, streamingToolUseIDs));
-    const k_0 = messageKey(msg_8);
+    const k_0 = messageKeys[index] ?? `${msg_8.uuid}-${conversationId}`;
     const row = <MessageRow key={k_0} message={msg_8} isUserContinuation={isUserContinuation} hasContentAfter={hasContentAfter} tools={tools} commands={commands} verbose={verbose || isItemExpanded(msg_8) || cursor?.expanded === true && index === selectedIdx} inProgressToolUseIDs={inProgressToolUseIDs} streamingToolUseIDs={streamingToolUseIDs} screen={screen} canAnimate={canAnimate} onOpenRateLimitOptions={onOpenRateLimitOptions} lastThinkingBlockId={lastThinkingBlockId} latestBashOutputUUID={latestBashOutputUUID} columns={columns} isLoading={isLoading} lookups={lookups_0} />;
 
     // Per-row Provider — only 2 rows re-render on selection change.

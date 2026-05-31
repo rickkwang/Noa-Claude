@@ -22,7 +22,7 @@ export const AGENT_PERSONALITY_NAMES: readonly string[] = [
   'Newton', 'Einstein', 'Tesla', 'Curie', 'Hawking', 'Bohr', 'Feynman', 'Maxwell',
   'Dirac', 'Taylor', 'Turing', 'Euler', 'Gauss', 'Archimedes', 'Babbage', 'Lovelace',
   'Socrates', 'Plato', 'Aristotle', 'Confucius', 'Mencius', 'Descartes', 'Kant', 'Nietzsche',
-  'Darwin', 'Mozart', 'Beethoven', 'Shakespeare', 'daVinci', 'Galileo', 'Copernicus', 'Kepler',
+  'Darwin', 'Mozart', 'Beethoven', 'Shakespeare', 'DaVinci', 'Galileo', 'Copernicus', 'Kepler',
 ]
 
 // In-memory map from agentId to assigned personality name.
