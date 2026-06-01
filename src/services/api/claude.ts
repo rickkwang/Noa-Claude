@@ -176,6 +176,7 @@ import { isMcpInstructionsDeltaEnabled } from 'src/utils/mcpInstructionsDelta.js
 import { calculateUSDCost } from 'src/utils/modelCost.js'
 import { endQueryProfile, queryCheckpoint } from 'src/utils/queryProfiler.js'
 import {
+  modelRejectsSamplingParams,
   modelSupportsAdaptiveThinking,
   modelSupportsThinking,
   type ThinkingConfig,
@@ -611,7 +612,7 @@ export async function verifyApiKey(
             model,
             max_tokens: 1,
             messages,
-            temperature: 1,
+            ...(!modelRejectsSamplingParams(model) && { temperature: 1 }),
             ...(betas.length > 0 && { betas }),
             metadata: getAPIMetadata(),
             ...getExtraBodyParams(),
@@ -1744,9 +1745,11 @@ async function* queryModel(
 
     // Only send temperature when thinking is disabled — the API requires
     // temperature: 1 when thinking is enabled, which is already the default.
-    const temperature = !hasThinking
-      ? (options.temperatureOverride ?? 1)
-      : undefined
+    // Opus 4.7+ removed sampling params entirely; sending temperature 400s.
+    const temperature =
+      !hasThinking && !modelRejectsSamplingParams(apiModel)
+        ? (options.temperatureOverride ?? 1)
+        : undefined
 
     lastRequestBetas = betasParams
 

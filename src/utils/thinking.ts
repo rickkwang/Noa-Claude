@@ -156,6 +156,13 @@ export function modelSupportsAdaptiveThinking(model: string): boolean {
   return directFirstParty || provider === 'foundry'
 }
 
+// Opus 4.7+ removed temperature/top_p/top_k — sending any of them returns 400.
+// @[MODEL LAUNCH]: Update when new models also remove sampling params.
+export function modelRejectsSamplingParams(model: string): boolean {
+  const canonical = getCanonicalName(model)
+  return canonical.includes('opus-4-7') || canonical.includes('opus-4-8')
+}
+
 export function shouldEnableThinkingByDefault(): boolean {
   if (process.env.MAX_THINKING_TOKENS) {
     return parseInt(process.env.MAX_THINKING_TOKENS, 10) > 0
