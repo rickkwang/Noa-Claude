@@ -92,37 +92,6 @@ When you are using compact - please focus on test output and code changes. Inclu
 </example>
 `
 
-const INCREMENTAL_COMPACT_PROMPT = `Your task is to update an existing continuation summary using newer conversation messages.
-
-You will be given:
-1. An existing checkpoint summary that already covers the earlier part of the work.
-2. Newer conversation messages that happened after that checkpoint.
-
-Update the checkpoint so the resulting summary can replace the old one as a single authoritative continuation summary.
-
-Rules:
-- Treat the existing checkpoint summary as the authoritative record of earlier history.
-- Integrate only meaningful changes, corrections, new files, new decisions, and newly discovered problems from the newer messages.
-- Do not restate preserved recent messages verbatim unless exact wording is load-bearing.
-- Resolve contradictions in favor of the newer messages if the conversation changed direction.
-- Keep the output optimized for continuation quality, not transcript fidelity.
-
-${DETAILED_ANALYSIS_INSTRUCTION_BASE}
-
-Your summary should include the following sections:
-
-1. Primary Request and Intent: Capture all of the user's explicit requests and intents in detail
-2. Key Technical Concepts: List all important technical concepts, technologies, and frameworks discussed.
-3. Files and Code Sections: Enumerate specific files and code sections examined, modified, or created. Include exact snippets only when the exact text is load-bearing; otherwise summarize the relevant code and why it matters.
-4. Errors and fixes: List all errors that you ran into, and how you fixed them. Pay special attention to specific user feedback that you received, especially if the user told you to do something differently.
-5. Problem Solving: Document problems solved and any ongoing troubleshooting efforts.
-6. User Feedback and Direction Changes: Capture the user messages, constraints, and corrections that materially changed the work. Quote exact wording only when needed to avoid drift.
-7. Pending Tasks: Outline any pending tasks that you have explicitly been asked to work on.
-8. Current Work: Describe in detail what was being worked on immediately before this summary request, paying special attention to the most recent messages from both user and assistant.
-9. Optional Next Step: List the next step only if it is clearly implied by the user's most recent requests and the work in progress. If quoting the recent conversation is necessary to anchor that next step, include only the exact lines that matter.
-
-Do not reproduce all user messages, long file contents, or full code snippets unless the exact text is necessary to preserve meaning.`
-
 const PARTIAL_COMPACT_PROMPT = `Your task is to create a detailed continuation summary of the RECENT portion of the conversation — the messages that follow earlier retained context. The earlier messages are being kept intact and do NOT need to be summarized. Focus your summary on what was discussed, learned, and accomplished in the recent messages only.
 
 ${DETAILED_ANALYSIS_INSTRUCTION_PARTIAL}
@@ -191,19 +160,8 @@ export function getPartialCompactPrompt(
   return prompt
 }
 
-export function getCompactPrompt(
-  customInstructions?: string,
-  options?: {
-    previousSummary?: string
-  },
-): string {
-  let prompt =
-    NO_TOOLS_PREAMBLE +
-    (options?.previousSummary ? INCREMENTAL_COMPACT_PROMPT : BASE_COMPACT_PROMPT)
-
-  if (options?.previousSummary) {
-    prompt += `\n\nExisting checkpoint summary to update:\n${options.previousSummary}`
-  }
+export function getCompactPrompt(customInstructions?: string): string {
+  let prompt = NO_TOOLS_PREAMBLE + BASE_COMPACT_PROMPT
 
   if (customInstructions && customInstructions.trim() !== '') {
     prompt += `\n\nAdditional Instructions:\n${customInstructions}`
@@ -250,55 +208,15 @@ export const COMPACT_SUMMARY_LEGACY_INTRO =
   'This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.'
 export const COMPACT_SUMMARY_TRANSCRIPT_HINT_PREFIX =
   'If you need specific details from before compaction'
-export const COMPACT_SUMMARY_RECENT_MESSAGES_PRESERVED_LINE =
-  'Recent messages are preserved verbatim.'
 export const COMPACT_SUMMARY_CONTINUATION_PREFIX =
   'Continue the conversation from where it left off'
 export const COMPACT_SUMMARY_PROACTIVE_MODE_PREFIX =
   'You are running in autonomous/proactive mode.'
 
-export function extractLegacyCompactSummaryText(summary: string): string {
-  let normalized = summary.trim()
-
-  const introWithSpacing = `${COMPACT_SUMMARY_LEGACY_INTRO}\n\n`
-  if (normalized.startsWith(introWithSpacing)) {
-    normalized = normalized.slice(introWithSpacing.length)
-  }
-
-  const transcriptHintIndex = normalized.indexOf(
-    `\n\n${COMPACT_SUMMARY_TRANSCRIPT_HINT_PREFIX}`,
-  )
-  if (transcriptHintIndex !== -1) {
-    normalized = normalized.slice(0, transcriptHintIndex)
-  }
-
-  normalized = normalized.replace(
-    `\n\n${COMPACT_SUMMARY_RECENT_MESSAGES_PRESERVED_LINE}`,
-    '',
-  )
-
-  const continuationIndex = normalized.indexOf(
-    `\n${COMPACT_SUMMARY_CONTINUATION_PREFIX}`,
-  )
-  if (continuationIndex !== -1) {
-    normalized = normalized.slice(0, continuationIndex)
-  }
-
-  const proactiveIndex = normalized.indexOf(
-    `\n\n${COMPACT_SUMMARY_PROACTIVE_MODE_PREFIX}`,
-  )
-  if (proactiveIndex !== -1) {
-    normalized = normalized.slice(0, proactiveIndex)
-  }
-
-  return normalized.trim()
-}
-
 export function getCompactUserSummaryMessage(
   summary: string,
   suppressFollowUpQuestions?: boolean,
   transcriptPath?: string,
-  recentMessagesPreserved?: boolean,
 ): string {
   const formattedSummary = formatCompactSummary(summary)
 
@@ -308,10 +226,6 @@ ${formattedSummary}`
 
   if (transcriptPath) {
     baseSummary += `\n\n${COMPACT_SUMMARY_TRANSCRIPT_HINT_PREFIX} (like exact code snippets, error messages, or content you generated), read the full transcript at: ${transcriptPath}`
-  }
-
-  if (recentMessagesPreserved) {
-    baseSummary += `\n\n${COMPACT_SUMMARY_RECENT_MESSAGES_PRESERVED_LINE}`
   }
 
   if (suppressFollowUpQuestions) {

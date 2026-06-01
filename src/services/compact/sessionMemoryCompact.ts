@@ -350,7 +350,6 @@ export async function createCompactionResultFromSessionMemory(
     truncatedContent,
     true,
     transcriptPath,
-    true,
   )
 
   if (wasTruncated) {

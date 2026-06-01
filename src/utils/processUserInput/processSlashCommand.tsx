@@ -689,15 +689,8 @@ async function getMessagesForSlashCommand(commandName: string, args: string, set
 
             // Use discriminated union to handle different result types
             if (result.type === 'compact') {
-              // Keep the slash command transcript for ctrl-o/history without
-              // rendering it below the compact notice in the main view.
-              const compactUserMessage = {
-                ...userMessage,
-                isVisibleInTranscriptOnly: true as const
-              };
-              const slashCommandMessages = [syntheticCaveatMessage, compactUserMessage, ...(result.displayText ? [createUserMessage({
+              const slashCommandMessages = [syntheticCaveatMessage, userMessage, ...(result.displayText ? [createUserMessage({
                 content: `<local-command-stdout>${result.displayText}</local-command-stdout>`,
-                isVisibleInTranscriptOnly: true,
                 // --resume looks at latest timestamp message to determine which message to resume from
                 // This is a perf optimization to avoid having to recaculcate the leaf node every time
                 // Since we're creating a bunch of synthetic messages for compact, it's important to set
@@ -707,7 +700,7 @@ async function getMessagesForSlashCommand(commandName: string, args: string, set
               })] : [])];
               const compactionResultWithSlashMessages = {
                 ...result.compactionResult,
-                postBoundaryMessages: [...(result.compactionResult.postBoundaryMessages ?? []), ...slashCommandMessages]
+                messagesToKeep: [...(result.compactionResult.messagesToKeep ?? []), ...slashCommandMessages]
               };
               // Reset microcompact state since full compact replaces all
               // messages — old tool IDs are no longer relevant. Budget state

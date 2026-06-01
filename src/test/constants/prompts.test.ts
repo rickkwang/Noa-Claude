@@ -107,17 +107,6 @@ describe('prompt behavior contracts', () => {
     expect(prompt).not.toContain('List ALL user messages')
   })
 
-  test('incremental compact prompt updates an existing checkpoint summary', () => {
-    const prompt = getCompactPrompt(undefined, {
-      previousSummary: 'Summary:\n- Existing checkpoint',
-    })
-
-    expect(prompt).toContain('update an existing continuation summary')
-    expect(prompt).toContain('Existing checkpoint summary to update')
-    expect(prompt).toContain('Summary:\n- Existing checkpoint')
-    expect(prompt).toContain('Treat the existing checkpoint summary as the authoritative record of earlier history')
-  })
-
   test('memory prompt defaults away from saving transient or speculative context', () => {
     const prompt = buildMemoryLines('Memory', '/tmp/noa-memory').join('\n')
 

@@ -519,6 +519,9 @@ const MessagesImpl = ({
     const compactAwareMessages = verbose || isFullscreenEnvEnabled() ? normalizedMessages : getMessagesAfterCompactBoundary(normalizedMessages, {
       includeSnipped: true
     });
+    // Main view only: hide the partial/SM-compact preserved tail so the
+    // summary doesn't render alongside its verbatim source. Transcript
+    // (ctrl+o) keeps everything for inspection.
     const displayMessages = isTranscriptMode ? compactAwareMessages : projectCompactHistoryForMainDisplay(compactAwareMessages);
     const messagesToShowNotTruncated = reorderMessagesInUI(displayMessages.filter((msg_2): msg_2 is Exclude<NormalizedMessage, ProgressMessageType> => msg_2.type !== 'progress')
     // CC-724: drop attachment messages that AttachmentMessage renders as
