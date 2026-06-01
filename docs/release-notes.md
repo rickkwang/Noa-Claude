@@ -1,5 +1,34 @@
 # Release Notes
 
+## 1.3.3
+
+### New Features
+
+- **Claude Opus 4.8** — added support for the new flagship model.
+- **OpenAI-compatible `reasoning_effort` translation** — opt-in via `CLAUDE_CODE_OPENAI_REASONING_EFFORT`; maps effort level to OpenAI's top-level `reasoning_effort` field. Max is clamped to `xhigh` (no OpenAI equivalent). Bedrock 4.7/4.8 effort allowlist also added.
+- **Hide pre-compact tail from main view** — full-compact preserved tail no longer renders alongside its source summary; transcript (`ctrl+o`) still shows everything for inspection.
+
+### Refactors
+
+- **Drop incremental full-compact path** — the incremental checkpointing added in 1.3.2 is removed in favor of a simpler full-history rewrite. Edge cases (UUID collisions, summary ordering, stale-tail visibility) had accumulated; the cost was not paying off in practice. `compactConversation` now summarizes the whole post-boundary history in one pass.
+- **Shared memory-file detection in compact** — centralized the JSONL memory-file detection helper so both compact paths and the session-memory path agree on the boundary.
+
+### Bug Fixes
+
+- Fixed `Opus 4.7+` 400s on `temperature` / `top_p` / `top_k` — those models removed sampling params; `verifyApiKey` and `queryModel` now skip `temperature` for `opus-4-7` and `opus-4-8`.
+- Fixed `/provider` success string and dismissed-modal transcript entries leaking into the model context — both routes now use `display: 'skip'` plus a transient notification, since `SystemLocalCommandMessage` is wrapped as a user message by `normalizeMessagesForAPI` and shipped to the API.
+- Fixed partial-compact duplicate-UUID collision in fullscreen rendering via per-base-key dedup counters.
+- Fixed MCP tool input schemas that the Anthropic API rejects (top-level `oneOf` / `anyOf` / `allOf` or missing `type`) — `normalizeToolInputSchema` flattens composition keywords and defaults the type to `object`.
+- Fixed `scope: "global"` system-prompt cache gating — broadened from "MCP tools only" to "any non-deferred tool", so built-in-tool-only requests no longer hit the 400.
+- Fixed compact summary ordering — the post-compact message list now places `summaryMessages` after `boundaryMarker` and before any preserved content, matching the documented invariant.
+- Fixed subagent worktree creation leaking the personality name on failure; corrected `daVinci` → `DaVinci` in the worker name pool.
+- Updated default model health check to `Opus 4.8`; Bedrock 3P effort now defaults to `xhigh` via the provider allowlist.
+
+### Chores
+
+- Cleaned up review-flagged doc debt and a stale comment in `processSlashCommand.tsx` that contradicted the unconditional-skip code path.
+- Updated launcher release notes to match the new compact behavior.
+
 ## 1.3.2
 
 ### New Features
