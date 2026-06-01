@@ -68,7 +68,19 @@ function ProviderPicker({
         .then(() => applyActiveProviderProfileEnv())
         .then(() => {
           onProviderSwitch(context);
-          onDone(`Switched to provider ${profile.name}`, { display: 'system' });
+          // display: 'skip' keeps the success string out of the model
+          // context — normalizeMessagesForAPI (utils/messages.ts:2080)
+          // wraps SystemLocalCommandMessage as a user message and ships
+          // it to the API. Surface the success to the user via a
+          // transient notification so the picker dismissal isn't silent.
+          // addNotification is optional on ToolUseContext; ?. guards
+          // non-REPL callers (print/SDK) where no notifier is wired.
+          context.addNotification?.({
+            key: `provider-switch-${profileId}`,
+            text: `Switched to provider ${profile.name}`,
+            priority: 'medium',
+          });
+          onDone(`Switched to provider ${profile.name}`, { display: 'skip' });
         })
         .catch((err) => {
           onDone(`Failed to switch provider: ${err.message}`, { display: 'system' });

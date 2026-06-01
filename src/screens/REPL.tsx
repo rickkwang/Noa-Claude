@@ -3276,16 +3276,11 @@ export function REPL({
                 text: result,
                 priority: 'immediate'
               });
-              // In fullscreen the command just showed as a centered modal
-              // pane — the notification above is enough feedback. Adding
-              // "❯ /config" + "└─ dismissed" to the transcript is clutter
-              // (those messages are type:system subtype:local_command —
-              // user-visible but NOT sent to the model, so skipping them
-              // doesn't change model context). Outside fullscreen the
-              // transcript entry stays so scrollback shows what ran.
-              if (!isFullscreenEnvEnabled()) {
-                newMessages.push(createCommandInputMessage(formatCommandInputTags(getCommandName(matchingCommand), commandArgs)), createCommandInputMessage(`<${LOCAL_COMMAND_STDOUT_TAG}>${escapeXml(result)}</${LOCAL_COMMAND_STDOUT_TAG}>`));
-              }
+              // The notification above is the only user feedback needed.
+              // SystemLocalCommandMessage is wrapped as a user message by
+              // normalizeMessagesForAPI and shipped to the API, so adding
+              // a transcript entry here is a model-context hazard. Skip it
+              // unconditionally (same policy as processSlashCommand.tsx).
             }
             // Inject meta messages (model-visible, user-hidden) into the transcript
             if (doneOptions?.metaMessages?.length) {

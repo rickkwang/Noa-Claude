@@ -592,15 +592,31 @@ async function getMessagesForSlashCommand(commandName: string, args: string, set
 
               // In fullscreen the command just showed as a centered modal
               // pane — the transient notification is enough feedback. The
-              // "❯ /config" + "└─ dismissed" transcript entries are
-              // type:system subtype:local_command (user-visible but NOT sent
-              // to the model), so skipping them doesn't affect model context.
-              // Outside fullscreen keep them so scrollback shows what ran.
+              // "❯ /config" + "└─ dismissed" transcript entries would also
+              // leak into the model context: SystemLocalCommandMessage is
+              // wrapped as a user message by normalizeMessagesForAPI and
+              // shipped to the API, so omitting them is BOTH a UX cleanup
+              // and an accidental context-pollution guard. Outside
+              // fullscreen keep them so scrollback shows what ran (note:
+              // that branch does still ship the dismissal text to the
+              // model — see /provider history for the broader issue).
               // Only skip "<Name> dismissed" modal-close notifications —
               // commands that early-exit before showing a modal (/ultraplan
               // usage, /rename, /proactive) use display:system for actual
               // output that must reach the transcript.
-              const skipTranscript = isFullscreenEnvEnabled() && typeof result === 'string' && result.endsWith(' dismissed');
+              const skipTranscript = typeof result === 'string' && result.endsWith(' dismissed');
+              if (skipTranscript) {
+                // Non-fullscreen no longer gets a transcript entry, so surface
+                // the dismissal via a transient notification. This is the same
+                // UX already used in fullscreen mode (see REPL.tsx
+                // executeImmediateCommand). The notification is UI-only and
+                // never reaches the model.
+                context.addNotification?.({
+                  key: `slash-command-${command.name}`,
+                  text: result,
+                  priority: 'medium',
+                });
+              }
               void resolve({
                 messages: options?.display === 'system' ? skipTranscript ? metaMessages : [createCommandInputMessage(formatCommandInput(command, args)), createCommandInputMessage(`<local-command-stdout>${result}</local-command-stdout>`), ...metaMessages] : [createUserMessage({
                   content: prepareUserContent({
