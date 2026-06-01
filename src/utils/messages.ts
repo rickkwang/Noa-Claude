@@ -4688,6 +4688,69 @@ export function getMessagesAfterCompactBoundary<
   return sliced
 }
 
+/**
+ * Main-screen projection only: keep compact's model/resume payload intact,
+ * but do not re-render the preserved pre-compact tail under the compact notice.
+ */
+export function projectCompactHistoryForMainDisplay<
+  T extends Message | NormalizedMessage,
+>(messages: T[]): T[] {
+  const boundaryIndex = findLastCompactBoundaryIndex(messages)
+  if (boundaryIndex === -1) return messages
+
+  const boundary = messages[boundaryIndex]
+  const summaryIndex = messages.findIndex(
+    (message, index) =>
+      index > boundaryIndex &&
+      message.type === 'user' &&
+      message.isCompactSummary === true,
+  )
+  if (summaryIndex === -1) return messages
+  const summaryMessage = messages[summaryIndex]
+  if (summaryMessage?.isVisibleInTranscriptOnly !== true) return messages
+
+  const preservedSegment = boundary?.compactMetadata?.preservedSegment
+  if (preservedSegment) {
+    const headIndex = messages.findIndex(
+      (message, index) =>
+        index > summaryIndex && message.uuid === preservedSegment.headUuid,
+    )
+    const tailIndex =
+      headIndex === -1
+        ? -1
+        : messages.findIndex(
+            (message, index) =>
+              index >= headIndex && message.uuid === preservedSegment.tailUuid,
+          )
+    if (headIndex !== -1 && tailIndex !== -1) {
+      return messages.filter(
+        (_, index) => index <= summaryIndex || index > tailIndex,
+      )
+    }
+  }
+
+  const boundaryTime = boundary?.timestamp
+    ? Date.parse(boundary.timestamp)
+    : NaN
+  if (Number.isNaN(boundaryTime)) return messages
+
+  return messages.filter((message, index) => {
+    if (index <= summaryIndex) return true
+    if (message.type === 'attachment' || message.type === 'hook_result') {
+      return true
+    }
+    if (message.type === 'user' && message.isVisibleInTranscriptOnly) {
+      return false
+    }
+    const messageTime = message.timestamp ? Date.parse(message.timestamp) : NaN
+    // NaN-greater-than is always false, so messages without a timestamp are
+    // hidden. Safe today because NormalizeMessage always populates timestamp
+    // for post-compact messages; if that invariant ever weakens, revisit
+    // (strict mode, fallback annotation, etc.) instead of silently dropping.
+    return !Number.isNaN(messageTime) && messageTime > boundaryTime
+  })
+}
+
 export function shouldShowUserMessage(
   message: NormalizedMessage,
   isTranscriptMode: boolean,

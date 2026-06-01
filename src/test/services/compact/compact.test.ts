@@ -13,6 +13,7 @@ import { adjustIndexToPreserveAPIInvariants } from '../../../services/compact/pr
 import {
   createCompactBoundaryMessage,
   createUserMessage,
+  projectCompactHistoryForMainDisplay,
 } from '../../../utils/messages.js'
 import type { Message } from '../../../types/message.js'
 
@@ -61,7 +62,7 @@ describe('selectRecentMessagesToKeepForFullCompact', () => {
 })
 
 describe('buildFullCompactSegments', () => {
-  test('places post-boundary messages before compact summaries', () => {
+  test('places compact summary directly after the compact boundary', () => {
     const boundary = createCompactBoundaryMessage('manual', 1000, OLD_TURN_ID)
     boundary.uuid = 'boundary-order'
 
@@ -89,9 +90,146 @@ describe('buildFullCompactSegments', () => {
 
     expect(ordered.map(message => message.uuid)).toEqual([
       'boundary-order',
-      'slash-order',
       'summary-order',
+      'slash-order',
       'kept-order',
+    ])
+  })
+
+  test('hides preserved full-compact tail from main display projection', () => {
+    const summaryUuid = '00000000-0000-0000-0000-000000000101'
+    const keptUuid1 = '00000000-0000-0000-0000-000000000102'
+    const keptUuid2 = '00000000-0000-0000-0000-000000000103'
+    const boundary = createCompactBoundaryMessage('manual', 1000, OLD_TURN_ID)
+    boundary.uuid = 'boundary-display'
+    boundary.compactMetadata.preservedSegment = {
+      headUuid: keptUuid1,
+      anchorUuid: summaryUuid,
+      tailUuid: keptUuid2,
+    }
+
+    const summary = createUserMessage({
+      content: 'Summary:\n- compacted context',
+      isCompactSummary: true,
+      isVisibleInTranscriptOnly: true,
+    })
+    summary.uuid = summaryUuid
+
+    const slashCommand = createUserMessage({
+      content: '<command-name>/compact</command-name>',
+      isVisibleInTranscriptOnly: true,
+    })
+    slashCommand.uuid = 'slash-display'
+
+    const kept1 = makeAssistantMessage(keptUuid1, 'preserved tail 1')
+    const kept2 = makeAssistantMessage(keptUuid2, 'preserved tail 2')
+    const attachment: Message = {
+      type: 'attachment',
+      id: 'attachment-display',
+      uuid: 'attachment-display',
+      attachments: [],
+    }
+
+    const projected = projectCompactHistoryForMainDisplay([
+      boundary,
+      summary,
+      slashCommand,
+      kept1,
+      kept2,
+      attachment,
+    ])
+
+    expect(projected.map(message => message.uuid)).toEqual([
+      'boundary-display',
+      summaryUuid,
+      'attachment-display',
+    ])
+  })
+
+  test('keeps partial-compact preserved tail visible in main display', () => {
+    const summaryUuid = '00000000-0000-0000-0000-000000000111'
+    const keptUuid = '00000000-0000-0000-0000-000000000112'
+    const boundary = createCompactBoundaryMessage('manual', 1000, OLD_TURN_ID)
+    boundary.uuid = 'boundary-partial-display'
+    boundary.compactMetadata.preservedSegment = {
+      headUuid: keptUuid,
+      anchorUuid: summaryUuid,
+      tailUuid: keptUuid,
+    }
+
+    const summary = createUserMessage({
+      content: 'Summary:\n- partial compacted context',
+      isCompactSummary: true,
+      summarizeMetadata: {
+        messagesSummarized: 3,
+        direction: 'up_to',
+      },
+    })
+    summary.uuid = summaryUuid
+
+    const kept = makeAssistantMessage(keptUuid, 'preserved visible context')
+
+    const projected = projectCompactHistoryForMainDisplay([
+      boundary,
+      summary,
+      kept,
+    ])
+
+    expect(projected.map(message => message.uuid)).toEqual([
+      'boundary-partial-display',
+      summaryUuid,
+      keptUuid,
+    ])
+  })
+
+  test('hides pre-boundary tail by timestamp when preserved metadata is absent', () => {
+    const boundary = createCompactBoundaryMessage('manual', 1000, OLD_TURN_ID)
+    boundary.uuid = 'boundary-display-fallback'
+    boundary.timestamp = '2026-06-01T03:00:00.000Z'
+
+    const summary = createUserMessage({
+      content: 'Summary:\n- compacted context',
+      isCompactSummary: true,
+      isVisibleInTranscriptOnly: true,
+      timestamp: '2026-06-01T03:00:00.001Z',
+    })
+    summary.uuid = 'summary-display-fallback'
+
+    const slashCommand = createUserMessage({
+      content: '<command-name>/compact</command-name>',
+      isVisibleInTranscriptOnly: true,
+      timestamp: '2026-06-01T02:59:59.000Z',
+    })
+    slashCommand.uuid = 'slash-display-fallback'
+
+    const oldTail = makeAssistantMessage(
+      'old-tail-display-fallback',
+      'pre-compact tail',
+      { timestamp: '2026-06-01T02:59:58.000Z' },
+    )
+    const oldTailWithoutTimestamp = makeAssistantMessage(
+      'old-tail-without-timestamp-fallback',
+      'pre-compact tail without timestamp',
+    )
+    const newMessage = makeAssistantMessage(
+      'new-display-fallback',
+      'post-compact message',
+      { timestamp: '2026-06-01T03:00:01.000Z' },
+    )
+
+    const projected = projectCompactHistoryForMainDisplay([
+      boundary,
+      summary,
+      slashCommand,
+      oldTail,
+      oldTailWithoutTimestamp,
+      newMessage,
+    ])
+
+    expect(projected.map(message => message.uuid)).toEqual([
+      'boundary-display-fallback',
+      'summary-display-fallback',
+      'new-display-fallback',
     ])
   })
 
