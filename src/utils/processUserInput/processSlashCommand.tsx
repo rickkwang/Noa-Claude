@@ -590,16 +590,13 @@ async function getMessagesForSlashCommand(commandName: string, args: string, set
                 isMeta: true
               }));
 
-              // In fullscreen the command just showed as a centered modal
-              // pane — the transient notification is enough feedback. The
-              // "❯ /config" + "└─ dismissed" transcript entries would also
+              // The "❯ /config" + "└─ dismissed" transcript entries would
               // leak into the model context: SystemLocalCommandMessage is
               // wrapped as a user message by normalizeMessagesForAPI and
-              // shipped to the API, so omitting them is BOTH a UX cleanup
-              // and an accidental context-pollution guard. Outside
-              // fullscreen keep them so scrollback shows what ran (note:
-              // that branch does still ship the dismissal text to the
-              // model — see /provider history for the broader issue).
+              // shipped to the API. Skip them and surface a transient
+              // notification instead — that covers both fullscreen (the
+              // modal already shows) and non-fullscreen (scrollback loses
+              // the entry, but the user gets the same notification).
               // Only skip "<Name> dismissed" modal-close notifications —
               // commands that early-exit before showing a modal (/ultraplan
               // usage, /rename, /proactive) use display:system for actual
