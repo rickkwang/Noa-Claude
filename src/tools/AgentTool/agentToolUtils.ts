@@ -541,6 +541,30 @@ export async function runAsyncAgentLifecycle({
 }): Promise<void> {
   let stopSummarization: (() => void) | undefined
   const agentMessages: MessageType[] = []
+  // Worktree probe must never block notification. If git/cleanup throws, we
+  // still need enqueueAgentNotification to fire so the task flips notified=true
+  // and can be evicted from the panel (framework.ts:evictTerminalTask gate).
+  const safeWorktreeResult = async () => {
+    try {
+      return await getWorktreeResult()
+    } catch (e) {
+      logForDebugging(
+        `Worktree result failed during agent notification: ${errorMessage(e)}`,
+        { level: 'warn' },
+      )
+      return {}
+    }
+  }
+  // Safety net: if any unexpected throw skips enqueueAgentNotification, the
+  // task would stay notified=false and never be evicted from the panel. Track
+  // explicitly and force a terminal notification in finally as a last resort.
+  let notificationFired = false
+  const notify = (
+    args: Parameters<typeof enqueueAgentNotification>[0],
+  ): void => {
+    notificationFired = true
+    enqueueAgentNotification(args)
+  }
   try {
     const tracker = createProgressTracker()
     const resolveActivity = createActivityDescriptionResolver(
@@ -598,8 +622,6 @@ export async function runAsyncAgentLifecycle({
       }
     }
 
-    stopSummarization?.()
-
     const agentResult = finalizeAgentTool(agentMessages, taskId, metadata)
 
     // Mark task completed FIRST so TaskOutput(block=true) unblocks
@@ -610,24 +632,30 @@ export async function runAsyncAgentLifecycle({
 
     let finalMessage = extractTextContent(agentResult.content, '\n')
 
-    if (feature('TRANSCRIPT_CLASSIFIER')) {
-      const handoffWarning = await classifyHandoffIfNeeded({
-        agentMessages,
-        tools: toolUseContext.options.tools,
-        toolPermissionContext:
-          toolUseContext.getAppState().toolPermissionContext,
-        abortSignal: abortController.signal,
-        subagentType: metadata.agentType,
-        totalToolUseCount: agentResult.totalToolUseCount,
-      })
-      if (handoffWarning) {
-        finalMessage = `${handoffWarning}\n\n${finalMessage}`
-      }
+    // Parallelize the two independent post-completion awaits: the handoff
+    // classifier is a remote API call, worktree probe is a git exec. They
+    // don't depend on each other — running them concurrently saves a round-trip
+    // when TRANSCRIPT_CLASSIFIER is enabled.
+    const handoffPromise = feature('TRANSCRIPT_CLASSIFIER')
+      ? classifyHandoffIfNeeded({
+          agentMessages,
+          tools: toolUseContext.options.tools,
+          toolPermissionContext:
+            toolUseContext.getAppState().toolPermissionContext,
+          abortSignal: abortController.signal,
+          subagentType: metadata.agentType,
+          totalToolUseCount: agentResult.totalToolUseCount,
+        })
+      : Promise.resolve(null)
+    const [handoffWarning, worktreeResult] = await Promise.all([
+      handoffPromise,
+      safeWorktreeResult(),
+    ])
+    if (handoffWarning) {
+      finalMessage = `${handoffWarning}\n\n${finalMessage}`
     }
 
-    const worktreeResult = await getWorktreeResult()
-
-    enqueueAgentNotification({
+    notify({
       taskId,
       description,
       status: 'completed',
@@ -643,7 +671,6 @@ export async function runAsyncAgentLifecycle({
       ...worktreeResult,
     })
   } catch (error) {
-    stopSummarization?.()
     if (error instanceof AbortError) {
       // killAsyncAgent is a no-op if TaskStop already set status='killed' —
       // but only this catch handler has agentMessages, so the notification
@@ -661,9 +688,9 @@ export async function runAsyncAgentLifecycle({
         reason:
           'user_kill_async' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       })
-      const worktreeResult = await getWorktreeResult()
+      const worktreeResult = await safeWorktreeResult()
       const partialResult = extractPartialResult(agentMessages)
-      enqueueAgentNotification({
+      notify({
         taskId,
         description,
         status: 'killed',
@@ -677,8 +704,8 @@ export async function runAsyncAgentLifecycle({
     }
     const msg = errorMessage(error)
     failAsyncAgent(taskId, msg, rootSetAppState)
-    const worktreeResult = await getWorktreeResult()
-    enqueueAgentNotification({
+    const worktreeResult = await safeWorktreeResult()
+    notify({
       taskId,
       description,
       status: 'failed',
@@ -689,8 +716,34 @@ export async function runAsyncAgentLifecycle({
       ...worktreeResult,
     })
   } finally {
+    // stopSummarization is idempotent (startAgentSummarization tracks a stopped
+    // flag), so calling it once in finally covers both success and error paths.
+    stopSummarization?.()
     clearInvokedSkillsForAgent(agentIdForCleanup)
     clearDumpState(agentIdForCleanup)
+    // Last-resort notification: if some unexpected throw skipped both the
+    // success and catch enqueue paths, the task stays notified=false and
+    // permanently occupies the coordinator panel. Force a minimal failed
+    // notification so evictTerminalTask can clean up.
+    if (!notificationFired) {
+      try {
+        failAsyncAgent(taskId, 'Agent terminated unexpectedly', rootSetAppState)
+        enqueueAgentNotification({
+          taskId,
+          description,
+          status: 'failed',
+          error: 'Agent terminated unexpectedly',
+          setAppState: rootSetAppState,
+          personalityName: metadata.personalityName,
+          toolUseId: toolUseContext.toolUseId,
+        })
+      } catch (e) {
+        logForDebugging(
+          `Fallback agent notification failed: ${errorMessage(e)}`,
+          { level: 'error' },
+        )
+      }
+    }
   }
 }
 

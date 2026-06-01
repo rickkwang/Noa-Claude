@@ -923,6 +923,22 @@ export const AgentTool = buildTool({
                 // Continue agent in background and return async result
                 void runWithAgentContext(syncAgentContext, async () => {
                   let stopBackgroundedSummarization: (() => void) | undefined;
+                  // Worktree cleanup must never block notification — if git
+                  // throws, the task would stay notified=false forever and
+                  // permanently occupy the coordinator panel.
+                  const safeCleanupWorktree = async () => {
+                    try {
+                      return await cleanupWorktreeIfNeeded();
+                    } catch (e) {
+                      logForDebugging(`Worktree cleanup failed during backgrounded agent notification: ${errorMessage(e)}`, { level: 'warn' });
+                      return {};
+                    }
+                  };
+                  let bgNotificationFired = false;
+                  const bgNotify = (args: Parameters<typeof enqueueAgentNotification>[0]): void => {
+                    bgNotificationFired = true;
+                    enqueueAgentNotification(args);
+                  };
                   try {
                     // Clean up the foreground iterator so its finally block runs
                     // (releases MCP connections, session hooks, prompt cache tracking, etc.)
@@ -971,24 +987,27 @@ export const AgentTool = buildTool({
 
                     // Extract text from agent result content for the notification
                     let finalMessage = extractTextContent(agentResult.content, '\n');
-                    if (feature('TRANSCRIPT_CLASSIFIER')) {
-                      const backgroundedAppState = toolUseContext.getAppState();
-                      const handoffWarning = await classifyHandoffIfNeeded({
-                        agentMessages,
-                        tools: toolUseContext.options.tools,
-                        toolPermissionContext: backgroundedAppState.toolPermissionContext,
-                        abortSignal: task.abortController!.signal,
-                        subagentType: selectedAgent.agentType,
-                        totalToolUseCount: agentResult.totalToolUseCount
-                      });
-                      if (handoffWarning) {
-                        finalMessage = `${handoffWarning}\n\n${finalMessage}`;
-                      }
+                    // Parallelize the two independent post-completion awaits —
+                    // handoff classifier (remote API) and worktree probe (git
+                    // exec) don't depend on each other.
+                    const handoffPromise = feature('TRANSCRIPT_CLASSIFIER')
+                      ? classifyHandoffIfNeeded({
+                          agentMessages,
+                          tools: toolUseContext.options.tools,
+                          toolPermissionContext: toolUseContext.getAppState().toolPermissionContext,
+                          abortSignal: task.abortController!.signal,
+                          subagentType: selectedAgent.agentType,
+                          totalToolUseCount: agentResult.totalToolUseCount
+                        })
+                      : Promise.resolve(null);
+                    const [handoffWarning, worktreeResult] = await Promise.all([
+                      handoffPromise,
+                      safeCleanupWorktree()
+                    ]);
+                    if (handoffWarning) {
+                      finalMessage = `${handoffWarning}\n\n${finalMessage}`;
                     }
-
-                    // Clean up worktree before notification so we can include it
-                    const worktreeResult = await cleanupWorktreeIfNeeded();
-                    enqueueAgentNotification({
+                    bgNotify({
                       taskId: backgroundedTaskId,
                       description,
                       personalityName: agentResult.personalityName,
@@ -1016,9 +1035,9 @@ export const AgentTool = buildTool({
                         is_built_in_agent: metadata.isBuiltInAgent,
                         reason: 'user_cancel_background' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
                       });
-                      const worktreeResult = await cleanupWorktreeIfNeeded();
+                      const worktreeResult = await safeCleanupWorktree();
                       const partialResult = extractPartialResult(agentMessages);
-                      enqueueAgentNotification({
+                      bgNotify({
                         taskId: backgroundedTaskId,
                         description,
                         personalityName,
@@ -1032,8 +1051,8 @@ export const AgentTool = buildTool({
                     }
                     const errMsg = errorMessage(error);
                     failAsyncAgent(backgroundedTaskId, errMsg, rootSetAppState);
-                    const worktreeResult = await cleanupWorktreeIfNeeded();
-                    enqueueAgentNotification({
+                    const worktreeResult = await safeCleanupWorktree();
+                    bgNotify({
                       taskId: backgroundedTaskId,
                       description,
                       personalityName,
@@ -1047,8 +1066,26 @@ export const AgentTool = buildTool({
                     stopBackgroundedSummarization?.();
                     clearInvokedSkillsForAgent(syncAgentId);
                     clearDumpState(syncAgentId);
-                    // Note: worktree cleanup is done before enqueueAgentNotification
-                    // in both try and catch paths so we can include worktree info
+                    // Last-resort notification — see safeWorktreeResult comment in
+                    // agentToolUtils.ts. Without this, an unexpected throw between
+                    // status transition and enqueueAgentNotification leaves the
+                    // task notified=false and pinned to the panel forever.
+                    if (!bgNotificationFired) {
+                      try {
+                        failAsyncAgent(backgroundedTaskId, 'Agent terminated unexpectedly', rootSetAppState);
+                        enqueueAgentNotification({
+                          taskId: backgroundedTaskId,
+                          description,
+                          personalityName,
+                          status: 'failed',
+                          error: 'Agent terminated unexpectedly',
+                          setAppState: rootSetAppState,
+                          toolUseId: toolUseContext.toolUseId,
+                        });
+                      } catch (e) {
+                        logForDebugging(`Fallback backgrounded agent notification failed: ${errorMessage(e)}`, { level: 'error' });
+                      }
+                    }
                   }
                 });
 
