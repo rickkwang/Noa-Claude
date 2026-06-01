@@ -11,7 +11,7 @@ Currently, worker agents display as `Agent (description)` which is visually mono
 ### Name Pool
 32 well-known historical figures across science, philosophy, and arts:
 
-Newton, Einstein, Tesla, Curie, Hawking, Bohr, Feynman, Maxwell, Dirac, Taylor, Turing, Euler, Gauss, Archimedes, Babbage, Lovelace, Socrates, Plato, Aristotle, Confucius, Mencius, Descartes, Kant, Nietzsche, Darwin, Mozart, Beethoven, Shakespeare, daVinci, Galileo, Copernicus, Kepler
+Newton, Einstein, Tesla, Curie, Hawking, Bohr, Feynman, Maxwell, Dirac, Taylor, Turing, Euler, Gauss, Archimedes, Babbage, Lovelace, Socrates, Plato, Aristotle, Confucius, Mencius, Descartes, Kant, Nietzsche, Darwin, Mozart, Beethoven, Shakespeare, DaVinci, Galileo, Copernicus, Kepler
 
 ### Display Format
 `Name (description)` — e.g. `Newton (api-audit)`

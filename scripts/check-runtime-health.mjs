@@ -1568,9 +1568,9 @@ function checkModelFallbackSuggestions() {
 }
 
 // ============================================================================
-// Opus 4.7: user-facing path coverage
+// Opus: user-facing path coverage (currently Opus 4.7 / 4.8 first-party default)
 // ============================================================================
-function checkOpus47UserPaths() {
+function checkOpusUserPaths() {
   const prevUseBedrock = process.env.CLAUDE_CODE_USE_BEDROCK;
   const prevUseVertex = process.env.CLAUDE_CODE_USE_VERTEX;
   const prevUseFoundry = process.env.CLAUDE_CODE_USE_FOUNDRY;
@@ -2167,7 +2167,7 @@ console.log('Checking model fallback suggestions...');
 checkModelFallbackSuggestions();
 
 console.log('Checking Opus user paths...');
-checkOpus47UserPaths();
+checkOpusUserPaths();
 
 console.log('Checking Opus 4.7 third-party effort defaults...');
 checkOpus47ThirdPartyEffortDefaults();
