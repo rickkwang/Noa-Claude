@@ -359,14 +359,14 @@ export type PreCompactHookResult = {
 /**
  * Build the base post-compact messages array from a CompactionResult.
  * This ensures consistent ordering across all compaction paths.
- * Order: boundaryMarker, postBoundaryMessages, summaryMessages,
+ * Order: boundaryMarker, summaryMessages, postBoundaryMessages,
  * messagesToKeep, attachments, hookResults
  */
 export function buildPostCompactMessages(result: CompactionResult): Message[] {
   return [
     result.boundaryMarker,
-    ...(result.postBoundaryMessages ?? []),
     ...result.summaryMessages,
+    ...(result.postBoundaryMessages ?? []),
     ...(result.messagesToKeep ?? []),
     ...result.attachments,
     ...result.hookResults,
