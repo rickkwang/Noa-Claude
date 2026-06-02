@@ -71,27 +71,40 @@ const LOGO_CLAUDE = [
   `  ░░░░░░░░░  ░░░░░░░░░░░░░░░░   ░░░░░  ░░░░░░░░  ░░░░░░░░░░  ░░░░░░░░░░`,
 ]
 
-function resolveEndpoint(): string {
-  switch (getAPIProvider()) {
+function detectProvider(displayModelLabel: string) {
+  const provider = getAPIProvider()
+
+  switch (provider) {
     case 'bedrock':
-      return process.env.ANTHROPIC_BASE_URL || 'https://bedrock.amazonaws.com'
+      return { name: 'Amazon Bedrock', model: displayModelLabel, baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://bedrock.amazonaws.com' }
     case 'vertex':
-      return process.env.ANTHROPIC_BASE_URL || 'https://vertexai.googleapis.com'
+      return { name: 'Google Vertex AI', model: displayModelLabel, baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://vertexai.googleapis.com' }
     case 'foundry':
-      return process.env.ANTHROPIC_BASE_URL || 'https://foundry.ai.azure.com'
-    case 'openaiCompatible':
-      return process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
+      return { name: 'Microsoft Foundry', model: displayModelLabel, baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://foundry.ai.azure.com' }
+    case 'openaiCompatible': {
+      const baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
+      let name = 'OpenAI Compatible'
+      if (/deepseek/i.test(baseUrl)) name = 'DeepSeek'
+      else if (/openrouter/i.test(baseUrl)) name = 'OpenRouter'
+      else if (/together/i.test(baseUrl)) name = 'Together AI'
+      else if (/groq/i.test(baseUrl)) name = 'Groq'
+      else if (/azure/i.test(baseUrl)) name = 'Azure OpenAI'
+      else if (/ollama/i.test(baseUrl) || /localhost|127\.0\.0\.1|\.local/.test(baseUrl)) name = 'Ollama / Local'
+      return { name, model: displayModelLabel, baseUrl }
+    }
     case 'firstParty':
-    default:
-      return process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com'
+    default: {
+      return { name: 'Anthropic', model: displayModelLabel, baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com' }
+    }
   }
 }
 
 export function GradientBanner() {
-  // Login bumps authVersion; subscribe so the model row re-renders on auth changes.
+  // Login/provider switch bumps authVersion; subscribe so provider/model/baseUrl
+  // rows re-read process.env immediately after auth changes.
   useAppState((s: AppState) => s.authVersion)
-  const modelLine = renderModelName(useMainLoopModel())
-  const endpoint = resolveEndpoint()
+  const displayModelLabel = renderModelName(useMainLoopModel())
+  const p = detectProvider(displayModelLabel)
 
   const renderLogoSection = (lines: string[], offset: number, total: number): React.ReactNode[] =>
     lines.map((line, i) => {
@@ -114,25 +127,18 @@ export function GradientBanner() {
     ? '~' + cwd.slice(homeDir.length)
     : cwd
 
+  const modelLine = p.model
+  const modelHint = '/provider to change'
+  const ep = p.baseUrl.length > 40 ? p.baseUrl.slice(0, 37) + '...' : p.baseUrl
   const version = MACRO.DISPLAY_VERSION ?? MACRO.VERSION
 
-  // Each row's segments — defined once, used for both rendering and width calculation.
-  const TITLE_PREFIX = ' >_ '
-  const TITLE_NAME = 'Noa Claude '
-  const TITLE_VER = `(v${version})`
-  const MODEL_LABEL = ' model:     '
-  const MODEL_GAP = ' '.repeat(8)
-  const MODEL_HINT_ACCENT = '/provider'
-  const MODEL_HINT_GRAY = ' to change'
-  const ENDPOINT_LABEL = ' endpoint:  '
-  const DIR_LABEL = ' directory: '
-
-  const titleLen = TITLE_PREFIX.length + TITLE_NAME.length + TITLE_VER.length
-  const modelLen = MODEL_LABEL.length + modelLine.length + MODEL_GAP.length + MODEL_HINT_ACCENT.length + MODEL_HINT_GRAY.length
-  const endpointLen = ENDPOINT_LABEL.length + endpoint.length
-  const dirLen = DIR_LABEL.length + cwdDisplay.length
-  const maxContentLen = Math.max(titleLen, modelLen, endpointLen, dirLen)
-  const CONTENT_W = maxContentLen + 10
+  // Compute dynamic box width based on content length
+  const titleLen = 18 + version.length       // ' >_ Noa Claude ' + '(v' + version + ')'
+  const modelLen = 38 + modelLine.length     // ' model:     ' + model + gap + hint
+  const dirLen = 12 + cwdDisplay.length      // ' directory: ' + cwd
+  const epLen = 12 + ep.length               // ' endpoint:  ' + ep
+  const maxContentLen = Math.max(titleLen, modelLen, dirLen, epLen, 60)
+  const CONTENT_W = maxContentLen + 2        // 2 chars buffer on the right
   const W = CONTENT_W + 2
 
   return (
@@ -150,10 +156,10 @@ export function GradientBanner() {
       {/* Title row */}
       <Text>
         <Text color={BORDER_HEX}>│</Text>
-        <Text color={BORDER_HEX}>{TITLE_PREFIX}</Text>
-        <Text bold>{TITLE_NAME}</Text>
-        <Text color={BORDER_HEX}>{TITLE_VER}</Text>
-        <Text>{' '.repeat(Math.max(0, CONTENT_W - titleLen))}</Text>
+        <Text color={BORDER_HEX}>{' >_ '}</Text>
+        <Text bold>{'Noa Claude '}</Text>
+        <Text color={BORDER_HEX}>(v{version})</Text>
+        <Text>{' '.repeat(Math.max(0, CONTENT_W - 15 - 3 - version.length))}</Text>
         <Text color={BORDER_HEX}>│</Text>
       </Text>
 
@@ -167,29 +173,28 @@ export function GradientBanner() {
       {/* Model row */}
       <Text>
         <Text color={BORDER_HEX}>│</Text>
-        <Text color={BORDER_HEX}>{MODEL_LABEL}</Text>
+        <Text color={BORDER_HEX}>{' model:     '}</Text>
         <Text>{modelLine}</Text>
-        <Text color={ACCENT_HEX}>{MODEL_GAP}{MODEL_HINT_ACCENT}</Text>
-        <Text color={BORDER_HEX}>{MODEL_HINT_GRAY}</Text>
-        <Text>{' '.repeat(Math.max(0, CONTENT_W - modelLen))}</Text>
-        <Text color={BORDER_HEX}>│</Text>
-      </Text>
-
-      {/* Endpoint row */}
-      <Text>
-        <Text color={BORDER_HEX}>│</Text>
-        <Text color={BORDER_HEX}>{ENDPOINT_LABEL}</Text>
-        <Text>{endpoint}</Text>
-        <Text>{' '.repeat(Math.max(0, CONTENT_W - endpointLen))}</Text>
+        <Text color={ACCENT_HEX}>{' '.repeat(8)}/provider</Text><Text color={BORDER_HEX}> to change</Text>
+        <Text>{' '.repeat(Math.max(0, CONTENT_W - 12 - modelLine.length - 8 - modelHint.length))}</Text>
         <Text color={BORDER_HEX}>│</Text>
       </Text>
 
       {/* Directory row */}
       <Text>
         <Text color={BORDER_HEX}>│</Text>
-        <Text color={BORDER_HEX}>{DIR_LABEL}</Text>
+        <Text color={BORDER_HEX}>{' directory: '}</Text>
         <Text>{cwdDisplay}</Text>
-        <Text>{' '.repeat(Math.max(0, CONTENT_W - dirLen))}</Text>
+        <Text>{' '.repeat(Math.max(0, CONTENT_W - 12 - cwdDisplay.length))}</Text>
+        <Text color={BORDER_HEX}>│</Text>
+      </Text>
+
+      {/* Endpoint row */}
+      <Text>
+        <Text color={BORDER_HEX}>│</Text>
+        <Text color={BORDER_HEX}>{' endpoint:  '}</Text>
+        <Text>{ep}</Text>
+        <Text>{' '.repeat(Math.max(0, CONTENT_W - 12 - ep.length))}</Text>
         <Text color={BORDER_HEX}>│</Text>
       </Text>
 

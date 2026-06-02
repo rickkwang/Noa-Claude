@@ -270,7 +270,27 @@ function _temp8(s_0) {
 function _temp7(s) {
   return s.mainLoopModel;
 }
-export const call: LocalJSXCommandCall = async (onDone, _context, args) => {
+export const call: LocalJSXCommandCall = async (rawOnDone, _context, args) => {
+  // Wrap onDone so command output doesn't leak into the model context.
+  // SystemLocalCommandMessage ('system') is wrapped as a user message by
+  // normalizeMessagesForAPI and shipped to the API, and the default
+  // user-message path also injects. Anything except 'skip' (including
+  // 'system' error strings) is rerouted to display:'skip' (drops from
+  // transcript + API) plus a transient notification so the user still
+  // sees the result.
+  const onDone: typeof rawOnDone = (msg, options) => {
+    const display = options?.display;
+    if (msg && display !== 'skip') {
+      _context?.addNotification?.({
+        key: `model-cmd-${Date.now()}`,
+        text: msg,
+        priority: 'medium',
+      });
+      rawOnDone(msg, { ...options, display: 'skip' });
+      return;
+    }
+    rawOnDone(msg, options);
+  };
   args = args?.trim() || '';
   if (COMMON_INFO_ARGS.includes(args)) {
     logEvent('tengu_model_command_inline_help', {

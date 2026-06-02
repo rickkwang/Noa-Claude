@@ -333,7 +333,26 @@ function EffortSlider({ onDone, model }: { onDone: LocalJSXCommandOnDone; model:
   );
 }
 
-export async function call(onDone: LocalJSXCommandOnDone, _context: unknown, args?: string): Promise<React.ReactNode> {
+export async function call(rawOnDone: LocalJSXCommandOnDone, _context: any, args?: string): Promise<React.ReactNode> {
+  // Wrap onDone so command output doesn't leak into the model context.
+  // SystemLocalCommandMessage ('system') is wrapped as a user message by
+  // normalizeMessagesForAPI and shipped to the API; the default user-message
+  // path also injects. Route everything (except already-skip) through a
+  // transient notification + display:'skip' so the transcript and API stay
+  // clean while the user still sees the result.
+  const onDone: LocalJSXCommandOnDone = (msg, options) => {
+    const display = options?.display;
+    if (msg && display !== 'skip') {
+      _context?.addNotification?.({
+        key: `effort-cmd-${Date.now()}`,
+        text: msg,
+        priority: 'medium',
+      });
+      rawOnDone(msg, { ...options, display: 'skip' });
+      return;
+    }
+    rawOnDone(msg, options);
+  };
   args = args?.trim() || '';
   if (COMMON_HELP_ARGS.includes(args)) {
     onDone('Usage: /effort [low|medium|high|xhigh|max|auto]\n\nEffort levels:\n- low: Quick, straightforward implementation\n- medium: Balanced approach with standard testing\n- high: Comprehensive implementation with extensive testing\n- xhigh: Extended capability for long-horizon agentic work (Opus 4.7+)\n- max: Maximum capability with deepest reasoning (Opus 4.6+)\n- auto: Use the default effort level for your model');
