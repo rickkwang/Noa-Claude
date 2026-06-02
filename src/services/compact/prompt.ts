@@ -26,114 +26,94 @@ const NO_TOOLS_PREAMBLE = `CRITICAL: Respond with TEXT ONLY. Do NOT call any too
 
 `
 
-// Two variants: BASE scopes to "the conversation", PARTIAL scopes to "the
-// recent messages". The <analysis> block is a drafting scratchpad that
-// formatCompactSummary() strips before the summary reaches context.
-const DETAILED_ANALYSIS_INSTRUCTION_BASE = `Before providing your final summary, wrap your analysis in <analysis> tags to organize your thoughts and ensure you've covered all necessary points. In your analysis process:
+// The <analysis> block is a drafting scratchpad that formatCompactSummary()
+// strips before the summary reaches context. Parameterized by scope so BASE
+// and PARTIAL share the bullet list without duplicating it.
+function getAnalysisInstruction(scope: 'full' | 'recent'): string {
+  const target =
+    scope === 'full'
+      ? 'each message and section of the conversation'
+      : 'the recent messages chronologically'
+  const fidelityScope =
+    scope === 'full'
+      ? 'what a future turn would need to continue safely without reproducing the entire transcript'
+      : 'what a future turn would need from the recent messages without reproducing the whole transcript'
+  return `Before providing your final summary, wrap your analysis in <analysis> tags. In your analysis:
 
-1. Chronologically analyze each message and section of the conversation. For each section identify:
+1. Analyze ${target}. For each section identify:
    - The user's explicit requests and intents
-   - Your approach to addressing the user's requests
-   - Key decisions, technical concepts, and code patterns
-   - Specific details like:
-     - file names
-     - function signatures
-     - file edits
-     - exact code or text, but only when it is necessary to preserve meaning
-   - Errors that you ran into and how you fixed them
-   - User feedback that changed the direction, constraints, or standards for the work
-2. Double-check for technical accuracy and completeness, making sure the summary preserves what a future turn would need to continue safely without reproducing the entire transcript.`
+   - Your approach and key decisions
+   - Technical concepts, code patterns, file names, function signatures, and file edits
+   - Exact code or text only when necessary to preserve meaning
+   - Errors encountered and how they were fixed
+   - User feedback that changed direction, constraints, or standards
+2. Double-check for technical accuracy and completeness, ensuring the summary preserves ${fidelityScope}.`
+}
 
-const DETAILED_ANALYSIS_INSTRUCTION_PARTIAL = `Before providing your final summary, wrap your analysis in <analysis> tags to organize your thoughts and ensure you've covered all necessary points. In your analysis process:
+// Shared output contract: dedupes the identical fidelity line that all three
+// templates carried, adds the density budget, and makes the <summary> envelope
+// explicit in the body (preamble/trailer already mention it, but weaker
+// adaptive-thinking models comply more reliably when the body restates it).
+const OUTPUT_FIDELITY_INSTRUCTION = `Do not reproduce all user messages, long file contents, or full code snippets unless the exact text is necessary to preserve meaning. Keep the summary dense — a small fraction of the original conversation, not a transcript.
 
-1. Analyze the recent messages chronologically. For each section identify:
-   - The user's explicit requests and intents
-   - Your approach to addressing the user's requests
-   - Key decisions, technical concepts, and code patterns
-   - Specific details like:
-     - file names
-     - function signatures
-     - file edits
-     - exact code or text, but only when it is necessary to preserve meaning
-   - Errors that you ran into and how you fixed them
-   - User feedback that changed the direction, constraints, or standards for the work
-2. Double-check for technical accuracy and completeness, making sure the summary preserves what a future turn would need from the recent messages without reproducing the whole transcript.`
+Wrap your entire summary in <summary> tags.`
 
-const BASE_COMPACT_PROMPT = `Your task is to create a detailed continuation summary of the conversation so far.
-Preserve the technical and task context needed to continue development work safely, but do not turn the summary into a full transcript unless the exact wording is load-bearing.
+// Shared sections 1-6 are identical across all three templates; only the
+// final sections (7-8) differ by compact direction.
+const SHARED_SECTIONS = `1. Primary Request and Intent: The user's explicit requests and intents in detail.
+2. Key Technical Concepts: Technologies, frameworks, and patterns discussed.
+3. Files and Code: Files examined, modified, or created. Summarize the relevant code and why it matters; include exact snippets only when the text is load-bearing.
+4. Errors, Fixes, and Problem Solving: Errors encountered, how they were fixed, and ongoing troubleshooting.
+5. User Feedback and Direction Changes: Constraints and corrections that materially changed the work. Quote exact wording only when needed to avoid drift.
+6. Pending Tasks: Tasks explicitly asked to work on that remain incomplete.`
 
-${DETAILED_ANALYSIS_INSTRUCTION_BASE}
+const BASE_COMPACT_PROMPT = `Your task is to create a detailed continuation summary of the conversation so far. Preserve the technical and task context needed to continue development work safely; do not turn the summary into a transcript.
 
-Your summary should include the following sections:
+${getAnalysisInstruction('full')}
 
-1. Primary Request and Intent: Capture all of the user's explicit requests and intents in detail
-2. Key Technical Concepts: List all important technical concepts, technologies, and frameworks discussed.
-3. Files and Code Sections: Enumerate specific files and code sections examined, modified, or created. Include exact snippets only when the exact text is load-bearing; otherwise summarize the relevant code and why it matters.
-4. Errors and fixes: List all errors that you ran into, and how you fixed them. Pay special attention to specific user feedback that you received, especially if the user told you to do something differently.
-5. Problem Solving: Document problems solved and any ongoing troubleshooting efforts.
-6. User Feedback and Direction Changes: Capture the user messages, constraints, and corrections that materially changed the work. Quote exact wording only when needed to avoid drift.
-7. Pending Tasks: Outline any pending tasks that you have explicitly been asked to work on.
-8. Current Work: Describe in detail what was being worked on immediately before this summary request, paying special attention to the most recent messages from both user and assistant.
-9. Optional Next Step: List the next step only if it is clearly implied by the user's most recent requests and the work in progress. If quoting the recent conversation is necessary to anchor that next step, include only the exact lines that matter.
+Your summary should include:
 
-Do not reproduce all user messages, long file contents, or full code snippets unless the exact text is necessary to preserve meaning.
+${SHARED_SECTIONS}
+7. Current Work: What was being worked on immediately before this summary, with attention to the most recent messages.
+8. Optional Next Step: The implied next step, only if clearly implied by recent requests and work in progress.
 
-Please provide your summary based on the conversation so far, following this structure and optimizing for continuation quality with high fidelity.
+${OUTPUT_FIDELITY_INSTRUCTION}
 
-There may be additional summarization instructions provided in the included context. If so, remember to follow these instructions when creating the above summary. Examples of instructions include:
-<example>
-## Compact Instructions
-When summarizing the conversation focus on typescript code changes and also remember the mistakes you made and how you fixed them.
-</example>
+Please provide your summary based on the conversation so far, optimizing for continuation quality.
 
-<example>
-# Summary instructions
-When you are using compact - please focus on test output and code changes. Include file reads only when exact text is necessary to preserve meaning.
-</example>
+If the included context contains additional summarization instructions (e.g. "Compact Instructions" or "Summary instructions"), follow them when creating the summary.
 `
 
-const PARTIAL_COMPACT_PROMPT = `Your task is to create a detailed continuation summary of the RECENT portion of the conversation — the messages that follow earlier retained context. The earlier messages are being kept intact and do NOT need to be summarized. Focus your summary on what was discussed, learned, and accomplished in the recent messages only.
+const PARTIAL_COMPACT_PROMPT = `Your task is to create a continuation summary of the RECENT portion of the conversation — the messages after earlier retained context. The earlier messages are kept intact and do NOT need summarizing.
 
-${DETAILED_ANALYSIS_INSTRUCTION_PARTIAL}
+${getAnalysisInstruction('recent')}
 
-Your summary should include the following sections:
+Your summary should cover the RECENT messages only. Include:
 
-1. Primary Request and Intent: Capture the user's explicit requests and intents from the recent messages
-2. Key Technical Concepts: List important technical concepts, technologies, and frameworks discussed recently.
-3. Files and Code Sections: Enumerate specific files and code sections examined, modified, or created. Include exact snippets only when the exact text is load-bearing; otherwise summarize the relevant code and why it matters.
-4. Errors and fixes: List errors encountered and how they were fixed.
-5. Problem Solving: Document problems solved and any ongoing troubleshooting efforts.
-6. User Feedback and Direction Changes: Capture the recent user messages, constraints, and corrections that materially changed the work. Quote exact wording only when needed to avoid drift.
-7. Pending Tasks: Outline any pending tasks from the recent messages.
-8. Current Work: Describe precisely what was being worked on immediately before this summary request.
-9. Optional Next Step: List the next step related to the most recent work only if it is clearly implied. If quoting recent lines is necessary to keep the task anchored, include only the exact text that matters.
+${SHARED_SECTIONS}
+7. Current Work: What was being worked on immediately before this summary.
+8. Optional Next Step: The implied next step from the recent work, only if clearly implied.
 
-Do not reproduce all user messages, long file contents, or full code snippets unless the exact text is necessary to preserve meaning.
+${OUTPUT_FIDELITY_INSTRUCTION}
 
-Please provide your summary based on the RECENT messages only (after the retained earlier context), following this structure and optimizing for continuation quality with high fidelity.
+Please provide your summary based on the RECENT messages only, optimizing for continuation quality.
 `
 
 // 'up_to': model sees only the summarized prefix (cache hit). Summary will
 // precede kept recent messages, hence "Context for Continuing Work" section.
-const PARTIAL_COMPACT_UP_TO_PROMPT = `Your task is to create a detailed continuation summary of this conversation. This summary will be placed at the start of a continuing session; newer messages that build on this context will follow after your summary (you do not see them here). Preserve enough detail that someone reading your summary and then the newer messages can safely continue the work without needing the earlier transcript.
+const PARTIAL_COMPACT_UP_TO_PROMPT = `Your task is to create a continuation summary of this conversation. This summary will precede newer messages you do not see here. Preserve enough detail that someone reading your summary and then those messages can continue the work without the earlier transcript.
 
-${DETAILED_ANALYSIS_INSTRUCTION_BASE}
+${getAnalysisInstruction('full')}
 
-Your summary should include the following sections:
+Your summary should include:
 
-1. Primary Request and Intent: Capture the user's explicit requests and intents in detail
-2. Key Technical Concepts: List important technical concepts, technologies, and frameworks discussed.
-3. Files and Code Sections: Enumerate specific files and code sections examined, modified, or created. Include exact snippets only when the exact text is load-bearing; otherwise summarize the relevant code and why it matters.
-4. Errors and fixes: List errors encountered and how they were fixed.
-5. Problem Solving: Document problems solved and any ongoing troubleshooting efforts.
-6. User Feedback and Direction Changes: Capture the user messages, constraints, and corrections that materially changed the work. Quote exact wording only when needed to avoid drift.
-7. Pending Tasks: Outline any pending tasks.
-8. Work Completed: Describe what was accomplished by the end of this portion.
-9. Context for Continuing Work: Summarize any context, decisions, or state that would be needed to understand and continue the work in subsequent messages.
+${SHARED_SECTIONS}
+7. Work Completed: What was accomplished by the end of this portion.
+8. Context for Continuing Work: Decisions, state, or context needed to understand subsequent messages.
 
-Do not reproduce all user messages, long file contents, or full code snippets unless the exact text is necessary to preserve meaning.
+${OUTPUT_FIDELITY_INSTRUCTION}
 
-Please provide your summary following this structure and optimizing for continuation quality with high fidelity.
+Please provide your summary optimizing for continuation quality.
 `
 
 const NO_TOOLS_TRAILER =
@@ -184,7 +164,7 @@ export function formatCompactSummary(summary: string): string {
   // Strip analysis section — it's a drafting scratchpad that improves summary
   // quality but has no informational value once the summary is written.
   formattedSummary = formattedSummary.replace(
-    /<analysis>[\s\S]*?<\/analysis>/,
+    /<analysis>[\s\S]*?<\/analysis>/g,
     '',
   )
 
@@ -205,7 +185,7 @@ export function formatCompactSummary(summary: string): string {
 }
 
 export const COMPACT_SUMMARY_LEGACY_INTRO =
-  'This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.'
+  'This session continues from an earlier conversation. The summary below covers the earlier portion of the conversation.'
 export const COMPACT_SUMMARY_TRANSCRIPT_HINT_PREFIX =
   'If you need specific details from before compaction'
 export const COMPACT_SUMMARY_CONTINUATION_PREFIX =
