@@ -3,8 +3,11 @@
  * Session memory compaction
  */
 
-import type { AgentId } from '../../types/ids.js'
-import type { HookResultMessage, Message } from '../../types/message.js'
+import type {
+  AttachmentMessage,
+  HookResultMessage,
+  Message,
+} from '../../types/message.js'
 import type { ToolUseContext } from '../../Tool.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
@@ -39,9 +42,10 @@ import {
   annotateBoundaryWithPreservedSegment,
   buildPostCompactMessages,
   type CompactionResult,
-  createPlanAttachmentIfNeeded,
+  createPostCompactContextAttachments,
   isCompactionUserAbort,
   mergeHookDisplayMessages,
+  snapshotCompactContextState,
 } from './compact.js'
 import {
   roughTokenCountEstimation,
@@ -322,10 +326,10 @@ export async function createCompactionResultFromSessionMemory(
   messages: Message[],
   sessionMemory: string,
   messagesToKeep: Message[],
+  attachments: AttachmentMessage[],
   hookResults: HookResultMessage[],
   transcriptPath: string,
   trigger: 'manual' | 'auto',
-  agentId?: AgentId,
 ): Promise<CompactionResult> {
   const preCompactTokenCount = tokenCountFromLastAPIResponse(messages)
 
@@ -369,20 +373,7 @@ export async function createCompactionResultFromSessionMemory(
     }),
   ]
 
-  const planAttachment = await createPlanAttachmentIfNeeded(agentId)
-  const attachments = planAttachment ? [planAttachment] : []
-
-  const initialPostCompactMessages = [
-    boundaryMarker,
-    ...summaryMessages,
-    ...messagesToKeep,
-    ...attachments,
-    ...hookResults,
-  ]
-  const initialPostCompactTokens =
-    estimatePostCompactTokens(initialPostCompactMessages)
-
-  return {
+  const result: CompactionResult = {
     boundaryMarker: annotateBoundaryWithPreservedSegment(
       boundaryMarker,
       summaryMessages[summaryMessages.length - 1]!.uuid,
@@ -395,6 +386,14 @@ export async function createCompactionResultFromSessionMemory(
     preCompactTokenCount,
     // SM-compact has no compact-API-call, so postCompactTokenCount (kept for
     // event continuity) and truePostCompactTokenCount converge to the same value.
+  }
+
+  const initialPostCompactTokens = estimatePostCompactTokens(
+    buildPostCompactMessages(result),
+  )
+
+  return {
+    ...result,
     postCompactTokenCount: initialPostCompactTokens,
     truePostCompactTokenCount: initialPostCompactTokens,
   }
@@ -412,20 +411,21 @@ export async function createCompactionResultFromSessionMemory(
 export async function trySessionMemoryCompaction(
   messages: Message[],
   {
-    agentId,
     autoCompactThreshold,
     trigger = 'auto',
     context,
     preCompactUserDisplayMessage,
   }: {
-    agentId?: AgentId
     autoCompactThreshold?: number
     trigger?: 'manual' | 'auto'
-    context: Pick<ToolUseContext, 'abortController' | 'onCompactProgress'>
+    context: ToolUseContext
     preCompactUserDisplayMessage?: string
   },
 ): Promise<CompactionResult | null> {
   if (!shouldUseSessionMemoryCompaction()) {
+    return null
+  }
+  if (!context.readFileState || !context.options || !context.getAppState) {
     return null
   }
 
@@ -474,6 +474,9 @@ export async function trySessionMemoryCompaction(
 
   let compactionResult: CompactionResult
   let postCompactTokenCount: number
+  let preCompactContextState:
+    | ReturnType<typeof snapshotCompactContextState>
+    | undefined
 
   try {
     // Calculate the starting index for messages to keep
@@ -491,6 +494,18 @@ export async function trySessionMemoryCompaction(
       .slice(startIndex)
       .filter(m => !isCompactBoundaryMessage(m))
 
+    preCompactContextState = snapshotCompactContextState(context)
+    context.readFileState.clear()
+    context.loadedNestedMemoryPaths?.clear()
+
+    const postCompactContextAttachments =
+      await createPostCompactContextAttachments({
+        readFileState: preCompactContextState.readFileState,
+        context,
+        preservedMessages: messagesToKeep,
+        callSite: 'compact_session_memory',
+      })
+
     context.onCompactProgress?.({
       type: 'hooks_start',
       hookType: 'session_start',
@@ -507,15 +522,15 @@ export async function trySessionMemoryCompaction(
       messages,
       sessionMemory,
       messagesToKeep,
+      postCompactContextAttachments,
       hookResults,
       transcriptPath,
       trigger,
-      agentId,
     )
 
-    const postCompactMessages = buildPostCompactMessages(compactionResult)
-
-    postCompactTokenCount = estimatePostCompactTokens(postCompactMessages)
+    postCompactTokenCount =
+      compactionResult.truePostCompactTokenCount ??
+      estimatePostCompactTokens(buildPostCompactMessages(compactionResult))
 
     // Only check threshold if one was provided (for autocompact)
     if (
@@ -526,10 +541,12 @@ export async function trySessionMemoryCompaction(
         postCompactTokenCount,
         autoCompactThreshold,
       })
+      preCompactContextState?.restore()
       return null
     }
 
   } catch (error) {
+    preCompactContextState?.restore()
     if (isCompactionUserAbort(error, context.abortController.signal)) {
       throw error
     }
@@ -546,15 +563,21 @@ export async function trySessionMemoryCompaction(
     type: 'hooks_start',
     hookType: 'post_compact',
   })
-  const postCompactHookResult = await executePostCompactHooks(
-    {
-      trigger,
-      compactSummary:
-        compactionResult.summaryMessages[0]?.summarizeMetadata
-          ?.rawCompactSummary ?? sessionMemory,
-    },
-    context.abortController.signal,
-  )
+  let postCompactHookResult
+  try {
+    postCompactHookResult = await executePostCompactHooks(
+      {
+        trigger,
+        compactSummary:
+          compactionResult.summaryMessages[0]?.summarizeMetadata
+            ?.rawCompactSummary ?? sessionMemory,
+      },
+      context.abortController.signal,
+    )
+  } catch (error) {
+    preCompactContextState?.restore()
+    throw error
+  }
 
   return {
     ...compactionResult,

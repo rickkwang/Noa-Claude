@@ -2,14 +2,17 @@ import { describe, expect, test } from 'bun:test'
 import { APIUserAbortError } from '@anthropic-ai/sdk'
 import {
   buildPostCompactMessages,
+  createPostCompactContextAttachments,
   isCompactionUserAbort,
   isStaleFullCompactSummary,
+  snapshotCompactContextState,
 } from '../../../services/compact/compact.js'
 import {
   createCompactBoundaryMessage,
   createUserMessage,
 } from '../../../utils/messages.js'
 import type { Message } from '../../../types/message.js'
+import { createFileStateCacheWithSizeLimit } from '../../../utils/fileStateCache.js'
 
 const OLD_TURN_ID = '00000000-0000-0000-0000-000000000001'
 
@@ -57,6 +60,110 @@ describe('buildPostCompactMessages', () => {
       'summary-order',
       'kept-order',
     ])
+  })
+
+  test('places preserved messages before the compact summary when requested', () => {
+    const boundary = createCompactBoundaryMessage('manual', 1000, OLD_TURN_ID)
+    boundary.uuid = 'boundary-from-order'
+
+    const summary = createUserMessage({
+      content: 'Summary:\n- compacted suffix',
+      isCompactSummary: true,
+    })
+    summary.uuid = 'summary-from-order'
+
+    const kept = makeAssistantMessage('kept-from-order', 'kept prefix')
+
+    const ordered = buildPostCompactMessages({
+      boundaryMarker: boundary,
+      summaryMessages: [summary],
+      messagesToKeep: [kept],
+      messagesToKeepPlacement: 'before_summary',
+      attachments: [],
+      hookResults: [],
+    })
+
+    expect(ordered.map(message => message.uuid)).toEqual([
+      'boundary-from-order',
+      'kept-from-order',
+      'summary-from-order',
+    ])
+  })
+})
+
+describe('createPostCompactContextAttachments', () => {
+  test('preserves plan mode instructions for session memory compaction', async () => {
+    const attachments = await createPostCompactContextAttachments({
+      readFileState: {},
+      context: {
+        options: {
+          tools: [],
+          mainLoopModel: 'test-model',
+          mcpClients: [],
+          agentDefinitions: { activeAgents: [] },
+        },
+        getAppState: () => ({
+          tasks: {},
+          toolPermissionContext: {
+            mode: 'plan',
+          },
+        }),
+      } as never,
+      callSite: 'compact_session_memory',
+    })
+
+    expect(attachments.some(m => m.attachment?.type === 'plan_mode')).toBe(true)
+  })
+})
+
+describe('snapshotCompactContextState', () => {
+  test('restores compact-cleared context state once', () => {
+    const readFileState = createFileStateCacheWithSizeLimit(100)
+    readFileState.set('/a.txt', {
+      content: 'A',
+      timestamp: 1,
+      offset: undefined,
+      limit: undefined,
+    })
+    const loadedNestedMemoryPaths = new Set(['/CLAUDE.md'])
+    const context = {
+      readFileState,
+      loadedNestedMemoryPaths,
+    } as never
+
+    const snapshot = snapshotCompactContextState(context)
+    readFileState.clear()
+    readFileState.set('/b.txt', {
+      content: 'B',
+      timestamp: 2,
+      offset: undefined,
+      limit: undefined,
+    })
+    loadedNestedMemoryPaths.clear()
+    loadedNestedMemoryPaths.add('/OTHER.md')
+
+    snapshot.restore()
+    snapshot.restore()
+
+    expect(readFileState.get('/a.txt')?.content).toBe('A')
+    expect(readFileState.has('/b.txt')).toBe(false)
+    expect([...loadedNestedMemoryPaths]).toEqual(['/CLAUDE.md'])
+  })
+
+  test('clears nested memory paths added after an empty snapshot', () => {
+    const readFileState = createFileStateCacheWithSizeLimit(100)
+    const loadedNestedMemoryPaths = new Set<string>()
+    const context = {
+      readFileState,
+      loadedNestedMemoryPaths,
+    } as never
+
+    const snapshot = snapshotCompactContextState(context)
+    loadedNestedMemoryPaths.add('/LEAKED.md')
+
+    snapshot.restore()
+
+    expect([...loadedNestedMemoryPaths]).toEqual([])
   })
 })
 

@@ -42,10 +42,6 @@ import {
 } from '../../utils/attachments.js'
 import { isMemoryFilePath } from '../../utils/claudemd.js'
 import { COMPACT_MAX_OUTPUT_TOKENS } from '../../utils/context.js'
-import {
-  analyzeContext,
-  tokenStatsToStatsigMetrics,
-} from '../../utils/contextAnalysis.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { hasExactErrorMessage } from '../../utils/errors.js'
 import {
@@ -323,6 +319,7 @@ export interface CompactionResult {
   attachments: AttachmentMessage[]
   hookResults: HookResultMessage[]
   messagesToKeep?: Message[]
+  messagesToKeepPlacement?: 'before_summary' | 'after_summary'
   userDisplayMessage?: string
   preCompactTokenCount?: number
   postCompactTokenCount?: number
@@ -350,15 +347,27 @@ export type PreCompactHookResult = {
 
 /**
  * Build the base post-compact messages array from a CompactionResult.
- * This ensures consistent ordering across all compaction paths.
- * Order: boundaryMarker, summaryMessages, messagesToKeep, attachments,
- * hookResults
+ * This is the single ordering contract across all compaction paths:
+ *   - default: boundary -> summary -> kept -> attachments -> hookResults
+ *   - prefix-preserving partial compact ("from"): boundary -> kept -> summary
+ *     -> attachments -> hookResults
  */
 export function buildPostCompactMessages(result: CompactionResult): Message[] {
+  const messagesToKeep = result.messagesToKeep ?? []
+  if (result.messagesToKeepPlacement === 'before_summary') {
+    return [
+      result.boundaryMarker,
+      ...messagesToKeep,
+      ...result.summaryMessages,
+      ...result.attachments,
+      ...result.hookResults,
+    ]
+  }
+
   return [
     result.boundaryMarker,
     ...result.summaryMessages,
-    ...(result.messagesToKeep ?? []),
+    ...messagesToKeep,
     ...result.attachments,
     ...result.hookResults,
   ]
@@ -440,6 +449,39 @@ export function endCompactLifecycle(context: ToolUseContext): void {
   context.setSDKStatus?.(null)
 }
 
+export function snapshotCompactContextState(context: ToolUseContext): {
+  readFileState: Record<string, FileState>
+  loadedNestedMemoryPaths: Set<string> | null
+  restore: () => void
+} {
+  const snapshot = {
+    readFileState: cacheToObject(context.readFileState),
+    loadedNestedMemoryPaths: context.loadedNestedMemoryPaths
+      ? new Set(context.loadedNestedMemoryPaths)
+      : null,
+  }
+  let restored = false
+
+  return {
+    ...snapshot,
+    restore: () => {
+      if (restored) {
+        return
+      }
+      restored = true
+      restoreCacheFromObject(context.readFileState, snapshot.readFileState)
+      if (context.loadedNestedMemoryPaths) {
+        context.loadedNestedMemoryPaths.clear()
+      }
+      if (context.loadedNestedMemoryPaths && snapshot.loadedNestedMemoryPaths) {
+        for (const path of snapshot.loadedNestedMemoryPaths) {
+          context.loadedNestedMemoryPaths.add(path)
+        }
+      }
+    },
+  }
+}
+
 // Used by partialCompactConversation to avoid re-summarizing prior full-compact
 // or session-memory compact summaries when partial-compacting a conversation
 // that already contains them. 'from' summaries cover the recent suffix only,
@@ -465,15 +507,11 @@ export async function compactConversation(
   recompactionInfo?: RecompactionInfo,
   preCompactHookResult?: PreCompactHookResult,
 ): Promise<CompactionResult> {
-  // Hoisted so the outer catch can roll back the readFileState clear on
-  // post-clear failure (attachment generation, hooks). Without rollback,
-  // a failed compact leaves the cache empty and Edit/Write tools demand
-  // a fresh Read on every file the user had touched this session.
-  //
-  // We intentionally do NOT snapshot/restore loadedNestedMemoryPaths —
-  // losing it just causes one extra CLAUDE.md re-injection next turn,
-  // a token cost rather than a correctness issue.
-  let preCompactReadFileStateForRestore: Record<string, FileState> | undefined
+  // Hoisted so the outer catch can roll back post-clear failures
+  // (attachment generation, hooks) without losing user context.
+  let preCompactContextState:
+    | ReturnType<typeof snapshotCompactContextState>
+    | undefined
   try {
     if (messages.length === 0) {
       throw new Error(ERROR_MESSAGE_NOT_ENOUGH_MESSAGES)
@@ -594,9 +632,7 @@ export async function compactConversation(
       throw new Error(summary)
     }
 
-    // Store the current file state before clearing
-    const preCompactReadFileState = cacheToObject(context.readFileState)
-    preCompactReadFileStateForRestore = preCompactReadFileState
+    preCompactContextState = snapshotCompactContextState(context)
 
     // Clear the cache
     context.readFileState.clear()
@@ -609,61 +645,16 @@ export async function compactConversation(
     // with EXPERIMENTAL_SKILL_SEARCH already skip re-injection via the
     // early-return in getSkillListingAttachments.
 
-    // Run async attachment generation in parallel
-    const [fileAttachments, asyncAgentAttachments] = await Promise.all([
-      createPostCompactFileAttachments(
-        preCompactReadFileState,
-        context,
-        POST_COMPACT_MAX_FILES_TO_RESTORE,
-      ),
-      createAsyncAgentAttachmentsIfNeeded(context),
-    ])
-
-    const postCompactFileAttachments: AttachmentMessage[] = [
-      ...fileAttachments,
-      ...asyncAgentAttachments,
-    ]
-    const planAttachment = await createPlanAttachmentIfNeeded(context.agentId)
-    if (planAttachment) {
-      postCompactFileAttachments.push(planAttachment)
-    }
-
-    // Add plan mode instructions if currently in plan mode, so the model
-    // continues operating in plan mode after compaction
-    const planModeAttachment = await createPlanModeAttachmentIfNeeded(context)
-    if (planModeAttachment) {
-      postCompactFileAttachments.push(planModeAttachment)
-    }
-
-    // Add skill attachment if skills were invoked in this session
-    const skillAttachment = createSkillAttachmentIfNeeded(context.agentId)
-    if (skillAttachment) {
-      postCompactFileAttachments.push(skillAttachment)
-    }
-
     // Compaction ate prior delta attachments. Re-announce from the current
     // state so the model has tool/instruction context on the first
-    // post-compact turn. Empty message history → diff against nothing →
+    // post-compact turn. Empty preserved history → diff against nothing →
     // announces the full set.
-    for (const att of getDeferredToolsDeltaAttachment(
-      context.options.tools,
-      context.options.mainLoopModel,
-      [],
-      { callSite: 'compact_full' },
-    )) {
-      postCompactFileAttachments.push(createAttachmentMessage(att))
-    }
-    for (const att of getAgentListingDeltaAttachment(context, [])) {
-      postCompactFileAttachments.push(createAttachmentMessage(att))
-    }
-    for (const att of getMcpInstructionsDeltaAttachment(
-      context.options.mcpClients,
-      context.options.tools,
-      context.options.mainLoopModel,
-      [],
-    )) {
-      postCompactFileAttachments.push(createAttachmentMessage(att))
-    }
+    const postCompactContextAttachments =
+      await createPostCompactContextAttachments({
+        readFileState: preCompactContextState.readFileState,
+        context,
+        callSite: 'compact_full',
+      })
 
     context.onCompactProgress?.({
       type: 'hooks_start',
@@ -725,7 +716,7 @@ export async function compactConversation(
     const truePostCompactTokenCount = roughTokenCountEstimationForMessages([
       boundaryMarker,
       ...summaryMessages,
-      ...postCompactFileAttachments,
+      ...postCompactContextAttachments,
       ...hookMessages,
     ])
 
@@ -770,19 +761,6 @@ export async function compactConversation(
           compactionUsage.output_tokens
         : 0,
       promptCacheSharingEnabled,
-      // analyzeContext walks every content block (~11ms on a 4.5K-message
-      // session) purely for this telemetry breakdown. Computed here, past
-      // the compaction-API await, so the sync walk doesn't starve the
-      // render loop before compaction even starts. Same deferral pattern
-      // as reactiveCompact.ts.
-      ...(() => {
-        try {
-          return tokenStatsToStatsigMetrics(analyzeContext(messages))
-        } catch (error) {
-          logError(error as Error)
-          return {}
-        }
-      })(),
     })
 
     // Reset cache read baseline so the post-compact drop isn't flagged as a break
@@ -824,7 +802,7 @@ export async function compactConversation(
     return {
       boundaryMarker,
       summaryMessages,
-      attachments: postCompactFileAttachments,
+      attachments: postCompactContextAttachments,
       hookResults: hookMessages,
       userDisplayMessage: mergeHookDisplayMessages(
         userDisplayMessage,
@@ -836,14 +814,7 @@ export async function compactConversation(
       compactionUsage,
     }
   } catch (error) {
-    // Roll back the readFileState clear so a failed compact doesn't wipe
-    // the user's file cache. No-op when failure happened before the clear.
-    if (preCompactReadFileStateForRestore) {
-      restoreCacheFromObject(
-        context.readFileState,
-        preCompactReadFileStateForRestore,
-      )
-    }
+    preCompactContextState?.restore()
     // Only show the error notification for manual /compact.
     // Auto-compact failures are retried on the next turn and the
     // notification is confusing when compaction eventually succeeds.
@@ -871,7 +842,9 @@ export async function partialCompactConversation(
 ): Promise<CompactionResult> {
   // See compactConversation: hoisted to allow catch-path rollback of the
   // readFileState clear.
-  let preCompactReadFileStateForRestore: Record<string, FileState> | undefined
+  let preCompactContextState:
+    | ReturnType<typeof snapshotCompactContextState>
+    | undefined
   try {
     const messagesToSummarize = (
       direction === 'up_to'
@@ -1011,65 +984,21 @@ export async function partialCompactConversation(
       throw new Error(summary)
     }
 
-    // Store the current file state before clearing
-    const preCompactReadFileState = cacheToObject(context.readFileState)
-    preCompactReadFileStateForRestore = preCompactReadFileState
+    preCompactContextState = snapshotCompactContextState(context)
     context.readFileState.clear()
     context.loadedNestedMemoryPaths?.clear()
     // Intentionally NOT resetting sentSkillNames — see compactConversation()
     // for rationale (~4K tokens saved per compact event).
 
-    const [fileAttachments, asyncAgentAttachments] = await Promise.all([
-      createPostCompactFileAttachments(
-        preCompactReadFileState,
-        context,
-        POST_COMPACT_MAX_FILES_TO_RESTORE,
-        messagesToKeep,
-      ),
-      createAsyncAgentAttachmentsIfNeeded(context),
-    ])
-
-    const postCompactFileAttachments: AttachmentMessage[] = [
-      ...fileAttachments,
-      ...asyncAgentAttachments,
-    ]
-    const planAttachment = await createPlanAttachmentIfNeeded(context.agentId)
-    if (planAttachment) {
-      postCompactFileAttachments.push(planAttachment)
-    }
-
-    // Add plan mode instructions if currently in plan mode
-    const planModeAttachment = await createPlanModeAttachmentIfNeeded(context)
-    if (planModeAttachment) {
-      postCompactFileAttachments.push(planModeAttachment)
-    }
-
-    const skillAttachment = createSkillAttachmentIfNeeded(context.agentId)
-    if (skillAttachment) {
-      postCompactFileAttachments.push(skillAttachment)
-    }
-
     // Re-announce only what was in the summarized portion — messagesToKeep
     // is scanned, so anything already announced there is skipped.
-    for (const att of getDeferredToolsDeltaAttachment(
-      context.options.tools,
-      context.options.mainLoopModel,
-      messagesToKeep,
-      { callSite: 'compact_partial' },
-    )) {
-      postCompactFileAttachments.push(createAttachmentMessage(att))
-    }
-    for (const att of getAgentListingDeltaAttachment(context, messagesToKeep)) {
-      postCompactFileAttachments.push(createAttachmentMessage(att))
-    }
-    for (const att of getMcpInstructionsDeltaAttachment(
-      context.options.mcpClients,
-      context.options.tools,
-      context.options.mainLoopModel,
-      messagesToKeep,
-    )) {
-      postCompactFileAttachments.push(createAttachmentMessage(att))
-    }
+    const postCompactContextAttachments =
+      await createPostCompactContextAttachments({
+        readFileState: preCompactContextState.readFileState,
+        context,
+        preservedMessages: messagesToKeep,
+        callSite: 'compact_partial',
+      })
 
     context.onCompactProgress?.({
       type: 'hooks_start',
@@ -1185,7 +1114,9 @@ export async function partialCompactConversation(
       ),
       summaryMessages,
       messagesToKeep,
-      attachments: postCompactFileAttachments,
+      messagesToKeepPlacement:
+        direction === 'from' ? 'before_summary' : 'after_summary',
+      attachments: postCompactContextAttachments,
       hookResults: hookMessages,
       userDisplayMessage: postCompactHookResult.userDisplayMessage,
       preCompactTokenCount,
@@ -1193,13 +1124,7 @@ export async function partialCompactConversation(
       compactionUsage,
     }
   } catch (error) {
-    // See compactConversation: roll back readFileState clear on failure.
-    if (preCompactReadFileStateForRestore) {
-      restoreCacheFromObject(
-        context.readFileState,
-        preCompactReadFileStateForRestore,
-      )
-    }
+    preCompactContextState?.restore()
     addErrorNotificationIfNeeded(error, context)
     throw error
   } finally {
@@ -1416,7 +1341,7 @@ async function streamCompactSummary({
             return appState.toolPermissionContext
           },
           model: context.options.mainLoopModel,
-          toolChoice: undefined,
+          toolChoice: { type: 'none' },
           isNonInteractiveSession: context.options.isNonInteractiveSession,
           hasAppendSystemPrompt: !!context.options.appendSystemPrompt,
           maxOutputTokensOverride: Math.min(
@@ -1566,6 +1491,76 @@ export async function createPostCompactFileAttachments(
     }
     return false
   })
+}
+
+export async function createPostCompactContextAttachments({
+  readFileState,
+  context,
+  maxFiles = POST_COMPACT_MAX_FILES_TO_RESTORE,
+  preservedMessages = [],
+  callSite,
+}: {
+  readFileState: Record<string, { content: string; timestamp: number }>
+  context: ToolUseContext
+  maxFiles?: number
+  preservedMessages?: Message[]
+  callSite: 'compact_full' | 'compact_partial' | 'compact_session_memory'
+}): Promise<AttachmentMessage[]> {
+  const [
+    fileAttachments,
+    asyncAgentAttachments,
+    planAttachment,
+    planModeAttachment,
+  ] = await Promise.all([
+    createPostCompactFileAttachments(
+      readFileState,
+      context,
+      maxFiles,
+      preservedMessages,
+    ),
+    createAsyncAgentAttachmentsIfNeeded(context),
+    createPlanAttachmentIfNeeded(context.agentId),
+    createPlanModeAttachmentIfNeeded(context),
+  ])
+
+  const attachments: AttachmentMessage[] = [
+    ...fileAttachments,
+    ...asyncAgentAttachments,
+  ]
+  if (planAttachment) {
+    attachments.push(planAttachment)
+  }
+
+  if (planModeAttachment) {
+    attachments.push(planModeAttachment)
+  }
+
+  const skillAttachment = createSkillAttachmentIfNeeded(context.agentId)
+  if (skillAttachment) {
+    attachments.push(skillAttachment)
+  }
+
+  for (const att of getDeferredToolsDeltaAttachment(
+    context.options.tools,
+    context.options.mainLoopModel,
+    preservedMessages,
+    { callSite },
+  )) {
+    attachments.push(createAttachmentMessage(att))
+  }
+  for (const att of getAgentListingDeltaAttachment(context, preservedMessages)) {
+    attachments.push(createAttachmentMessage(att))
+  }
+  for (const att of getMcpInstructionsDeltaAttachment(
+    context.options.mcpClients,
+    context.options.tools,
+    context.options.mainLoopModel,
+    preservedMessages,
+  )) {
+    attachments.push(createAttachmentMessage(att))
+  }
+
+  return attachments
 }
 
 /**

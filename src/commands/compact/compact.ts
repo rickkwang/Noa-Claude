@@ -81,7 +81,6 @@ export const call: LocalCommandCall = async (args, context) => {
     // instructions).
     if (!customInstructions && !preCompactHookResult.newCustomInstructions) {
       const sessionMemoryResult = await trySessionMemoryCompaction(messages, {
-        agentId: context.agentId,
         trigger: 'manual',
         context,
         preCompactUserDisplayMessage:

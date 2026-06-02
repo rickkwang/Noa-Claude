@@ -12,6 +12,7 @@ import type {
   BetaRequestDocumentBlock,
   BetaStopReason,
   BetaToolChoiceAuto,
+  BetaToolChoiceNone,
   BetaToolChoiceTool,
   BetaToolResultBlockParam,
   BetaToolUnion,
@@ -734,7 +735,11 @@ export function assistantMessageToMessageParam(
 export type Options = {
   getToolPermissionContext: () => Promise<ToolPermissionContext>
   model: string
-  toolChoice?: BetaToolChoiceTool | BetaToolChoiceAuto | undefined
+  toolChoice?:
+    | BetaToolChoiceTool
+    | BetaToolChoiceAuto
+    | BetaToolChoiceNone
+    | undefined
   isNonInteractiveSession: boolean
   extraToolSchemas?: BetaToolUnion[]
   maxOutputTokensOverride?: number

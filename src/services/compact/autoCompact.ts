@@ -331,7 +331,6 @@ export async function autoCompactIfNeeded(
     // Try session memory compaction first
     if (!preCompactHookResult.newCustomInstructions) {
       const sessionMemoryResult = await trySessionMemoryCompaction(messages, {
-        agentId: toolUseContext.agentId,
         autoCompactThreshold: recompactionInfo.autoCompactThreshold,
         trigger: 'auto',
         context: toolUseContext,

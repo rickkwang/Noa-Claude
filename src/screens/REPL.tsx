@@ -201,7 +201,7 @@ import { extractReadFilesFromMessages, extractBashToolsFromMessages } from '../u
 import { resetMicrocompactState } from '../services/compact/microCompact.js';
 import { runPostCompactCleanup } from '../services/compact/postCompactCleanup.js';
 import { provisionContentReplacementState, reconstructContentReplacementState, type ContentReplacementRecord } from '../utils/toolResultStorage.js';
-import { partialCompactConversation } from '../services/compact/compact.js';
+import { buildPostCompactMessages, partialCompactConversation } from '../services/compact/compact.js';
 import type { LogOption } from '../types/logs.js';
 import type { AgentColorName } from '../tools/AgentTool/agentColorManager.js';
 import { fileHistoryMakeSnapshot, type FileHistoryState, fileHistoryRewind, type FileHistorySnapshot, copyFileHistoryForResume, fileHistoryEnabled, fileHistoryHasAnyChanges } from '../utils/fileHistory.js';
@@ -4939,9 +4939,7 @@ export function REPL({
             } finally {
               setAbortController(null);
             }
-            const kept = result.messagesToKeep ?? [];
-            const ordered = direction === 'up_to' ? [...result.summaryMessages, ...kept] : [...kept, ...result.summaryMessages];
-            const postCompact = [result.boundaryMarker, ...ordered, ...result.attachments, ...result.hookResults];
+            const postCompact = buildPostCompactMessages(result);
             // Fullscreen 'from' keeps scrollback; 'up_to' must not
             // (old[0] unchanged + grown array means incremental
             // useLogMessages path, so boundary never persisted).
