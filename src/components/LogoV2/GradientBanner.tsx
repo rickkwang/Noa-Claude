@@ -46,70 +46,52 @@ function gradAt(stops: RGB[], t: number): RGB {
 }
 
 const ACCENT_HEX = rgbToHex(240, 148, 100)
-const CREAM_HEX = rgbToHex(220, 195, 170)
-const DIMCOL_HEX = rgbToHex(120, 100, 82)
-const BORDER_HEX = rgbToHex(100, 80, 65)
-const GREEN_HEX = rgbToHex(130, 175, 130)
+const BORDER_HEX = rgbToHex(136, 136, 136)
 
 const LOGO_OPEN = [
-  `  ███╗   ██╗ ████████╗ ████████╗`,
-  `  ████╗  ██║ ██╔═══██║ ██╔═══██║`,
-  `  ██╔██╗ ██║ ██║   ██║ ████████║`,
-  `  ██║╚██╗██║ ██║   ██║ ██╔═══██║`,
-  `  ██║ ╚████║ ████████║ ██║   ██║`,
-  `  ╚═╝  ╚═══╝ ╚═══════╝ ╚═╝   ╚═╝`,
+  ` ██████   █████   ███████     █████████ `,
+  `░░██████ ░░███  ███░░░░░███  ███░░░░░███`,
+  ` ░███░███ ░███ ███     ░░███░███    ░███`,
+  ` ░███░░███░███░███      ░███░███████████`,
+  ` ░███ ░░██████░███      ░███░███░░░░░███`,
+  ` ░███  ░░█████░░███     ███ ░███    ░███`,
+  ` █████  ░░█████░░░███████░  █████   █████`,
+  `░░░░░    ░░░░░   ░░░░░░░   ░░░░░   ░░░░░`,
 ]
 
 
 const LOGO_CLAUDE = [
-  `  ████████╗ ██╗      ████████╗ ██╗   ██╗ ████████╗ ████████╗`,
-  `  ██╔═════╝ ██║      ██╔═══██║ ██║   ██║ ██╔═══██║ ██╔═════╝`,
-  `  ██║       ██║      ████████║ ██║   ██║ ██║   ██║ ██████╗  `,
-  `  ██║       ██║      ██╔═══██║ ██║   ██║ ██║   ██║ ██╔═══╝  `,
-  `  ████████╗ ████████╗██║   ██║ ╚██████╔╝ ████████║ ████████╗`,
-  `  ╚═══════╝ ╚═══════╝╚═╝   ╚═╝  ╚═════╝  ╚═══════╝ ╚═══════╝`,
+  `   █████████  █████        █████████  █████  ███████████████  ██████████`,
+  `  ███░░░░░███░░███        ███░░░░░███░░███  ░░███░░███░░░░███░░███░░░░░█`,
+  ` ███     ░░░  ░███       ░███    ░███ ░███   ░███ ░███   ░░███░███  █ ░`,
+  `░███          ░███       ░███████████ ░███   ░███ ░███    ░███░██████`,
+  `░███          ░███       ░███░░░░░███ ░███   ░███ ░███    ░███░███░░█`,
+  `░░███     ███ ░███      █░███    ░███ ░███   ░███ ░███    ███ ░███ ░   █`,
+  ` ░░█████████  ████████████████   █████░░████████  ██████████  ██████████`,
+  `  ░░░░░░░░░  ░░░░░░░░░░░░░░░░   ░░░░░  ░░░░░░░░  ░░░░░░░░░░  ░░░░░░░░░░`,
 ]
 
-function isLocalUrl(url: string): boolean {
-  return url.includes('localhost') || url.includes('127.0.0.1') || url.includes('.local')
-}
-
-function detectProvider(displayModelLabel: string) {
-  const provider = getAPIProvider()
-
-  switch (provider) {
+function resolveEndpoint(): string {
+  switch (getAPIProvider()) {
     case 'bedrock':
-      return { name: 'Amazon Bedrock', model: displayModelLabel, baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://bedrock.amazonaws.com', isLocal: false }
+      return process.env.ANTHROPIC_BASE_URL || 'https://bedrock.amazonaws.com'
     case 'vertex':
-      return { name: 'Google Vertex AI', model: displayModelLabel, baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://vertexai.googleapis.com', isLocal: false }
+      return process.env.ANTHROPIC_BASE_URL || 'https://vertexai.googleapis.com'
     case 'foundry':
-      return { name: 'Microsoft Foundry', model: displayModelLabel, baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://foundry.ai.azure.com', isLocal: false }
-    case 'openaiCompatible': {
-      const baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
-      const isLocal = isLocalUrl(baseUrl)
-      let name = 'OpenAI Compatible'
-      if (/deepseek/i.test(baseUrl)) name = 'DeepSeek'
-      else if (/openrouter/i.test(baseUrl)) name = 'OpenRouter'
-      else if (/together/i.test(baseUrl)) name = 'Together AI'
-      else if (/groq/i.test(baseUrl)) name = 'Groq'
-      else if (/azure/i.test(baseUrl)) name = 'Azure OpenAI'
-      else if (/ollama/i.test(baseUrl) || isLocal) name = 'Ollama / Local'
-      return { name, model: displayModelLabel, baseUrl, isLocal }
-    }
+      return process.env.ANTHROPIC_BASE_URL || 'https://foundry.ai.azure.com'
+    case 'openaiCompatible':
+      return process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
     case 'firstParty':
-    default: {
-      return { name: 'Anthropic', model: displayModelLabel, baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com', isLocal: false }
-    }
+    default:
+      return process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com'
   }
 }
 
 export function GradientBanner() {
-  // Login/provider switch bumps authVersion; subscribe so provider/model/baseUrl
-  // rows re-read process.env immediately after auth changes.
+  // Login bumps authVersion; subscribe so the model row re-renders on auth changes.
   useAppState((s: AppState) => s.authVersion)
-  const displayModelLabel = renderModelName(useMainLoopModel())
-  const p = detectProvider(displayModelLabel)
-  const W = 62
+  const modelLine = renderModelName(useMainLoopModel())
+  const endpoint = resolveEndpoint()
 
   const renderLogoSection = (lines: string[], offset: number, total: number): React.ReactNode[] =>
     lines.map((line, i) => {
@@ -126,19 +108,32 @@ export function GradientBanner() {
   const logoTop = renderLogoSection(LOGO_OPEN, 0, LOGO_OPEN.length + LOGO_CLAUDE.length)
   const logoBottom = renderLogoSection(LOGO_CLAUDE, LOGO_OPEN.length, LOGO_OPEN.length + LOGO_CLAUDE.length)
 
-  const provColor = p.isLocal ? GREEN_HEX : ACCENT_HEX
-  const ep = p.baseUrl.length > 38 ? p.baseUrl.slice(0, 35) + '...' : p.baseUrl
-  const statusColor = p.isLocal ? GREEN_HEX : ACCENT_HEX
-  const statusType = p.isLocal ? 'local' : 'Directory:'
   const cwd = getOriginalCwd()
   const homeDir = process.env.HOME ?? ''
   const cwdDisplay = homeDir && cwd.startsWith(homeDir)
     ? '~' + cwd.slice(homeDir.length)
     : cwd
 
-  // Label width constants
-  const LABEL_W = 11 // " Provider  " = 11 chars
-  const CONTENT_W = W - 2 // content area between borders
+  const version = MACRO.DISPLAY_VERSION ?? MACRO.VERSION
+
+  // Each row's segments — defined once, used for both rendering and width calculation.
+  const TITLE_PREFIX = ' >_ '
+  const TITLE_NAME = 'Noa Claude '
+  const TITLE_VER = `(v${version})`
+  const MODEL_LABEL = ' model:     '
+  const MODEL_GAP = ' '.repeat(8)
+  const MODEL_HINT_ACCENT = '/provider'
+  const MODEL_HINT_GRAY = ' to change'
+  const ENDPOINT_LABEL = ' endpoint:  '
+  const DIR_LABEL = ' directory: '
+
+  const titleLen = TITLE_PREFIX.length + TITLE_NAME.length + TITLE_VER.length
+  const modelLen = MODEL_LABEL.length + modelLine.length + MODEL_GAP.length + MODEL_HINT_ACCENT.length + MODEL_HINT_GRAY.length
+  const endpointLen = ENDPOINT_LABEL.length + endpoint.length
+  const dirLen = DIR_LABEL.length + cwdDisplay.length
+  const maxContentLen = Math.max(titleLen, modelLen, endpointLen, dirLen)
+  const CONTENT_W = maxContentLen + 10
+  const W = CONTENT_W + 2
 
   return (
     <Box flexDirection="column">
@@ -147,60 +142,59 @@ export function GradientBanner() {
       <Box height={1} />
       {logoBottom}
 
-      {/* Spacer */}
       <Text> </Text>
 
       {/* Top border */}
-      <Text color={BORDER_HEX}>┌{'─'.repeat(W - 2)}┐</Text>
+      <Text color={BORDER_HEX}>╭{'─'.repeat(W - 2)}╮</Text>
 
-      {/* Provider row */}
+      {/* Title row */}
       <Text>
         <Text color={BORDER_HEX}>│</Text>
-        <Text> Provider  </Text>
-        <Text color={provColor}>{p.name}</Text>
-        <Text>{' '.repeat(Math.max(0, CONTENT_W - LABEL_W - p.name.length))}</Text>
+        <Text color={BORDER_HEX}>{TITLE_PREFIX}</Text>
+        <Text bold>{TITLE_NAME}</Text>
+        <Text color={BORDER_HEX}>{TITLE_VER}</Text>
+        <Text>{' '.repeat(Math.max(0, CONTENT_W - titleLen))}</Text>
+        <Text color={BORDER_HEX}>│</Text>
+      </Text>
+
+      {/* Empty row */}
+      <Text>
+        <Text color={BORDER_HEX}>│</Text>
+        <Text>{' '.repeat(CONTENT_W)}</Text>
         <Text color={BORDER_HEX}>│</Text>
       </Text>
 
       {/* Model row */}
       <Text>
         <Text color={BORDER_HEX}>│</Text>
-        <Text> Model     </Text>
-        <Text>{p.model}</Text>
-        <Text>{' '.repeat(Math.max(0, CONTENT_W - LABEL_W - p.model.length))}</Text>
+        <Text color={BORDER_HEX}>{MODEL_LABEL}</Text>
+        <Text>{modelLine}</Text>
+        <Text color={ACCENT_HEX}>{MODEL_GAP}{MODEL_HINT_ACCENT}</Text>
+        <Text color={BORDER_HEX}>{MODEL_HINT_GRAY}</Text>
+        <Text>{' '.repeat(Math.max(0, CONTENT_W - modelLen))}</Text>
         <Text color={BORDER_HEX}>│</Text>
       </Text>
 
       {/* Endpoint row */}
       <Text>
         <Text color={BORDER_HEX}>│</Text>
-        <Text> Endpoint  </Text>
-        <Text>{ep}</Text>
-        <Text>{' '.repeat(Math.max(0, CONTENT_W - LABEL_W - ep.length))}</Text>
+        <Text color={BORDER_HEX}>{ENDPOINT_LABEL}</Text>
+        <Text>{endpoint}</Text>
+        <Text>{' '.repeat(Math.max(0, CONTENT_W - endpointLen))}</Text>
         <Text color={BORDER_HEX}>│</Text>
       </Text>
 
-      {/* Divider */}
-      <Text color={BORDER_HEX}>├{'─'.repeat(W - 2)}┤</Text>
-
-      {/* Status row */}
+      {/* Directory row */}
       <Text>
         <Text color={BORDER_HEX}>│</Text>
-        <Text color={statusColor}> • </Text>
-        <Text color={DIMCOL_HEX}>{statusType}  </Text>
+        <Text color={BORDER_HEX}>{DIR_LABEL}</Text>
         <Text>{cwdDisplay}</Text>
-        <Text>{' '.repeat(Math.max(0, CONTENT_W - 1 - 1 - statusType.length - 2 - cwdDisplay.length - 1))}</Text>
+        <Text>{' '.repeat(Math.max(0, CONTENT_W - dirLen))}</Text>
         <Text color={BORDER_HEX}>│</Text>
       </Text>
 
       {/* Bottom border */}
-      <Text color={BORDER_HEX}>└{'─'.repeat(W - 2)}┘</Text>
-
-      {/* Version */}
-      <Text>
-        <Text dimColor>{'  >_ Noa Claude '}</Text>
-        <Text color={ACCENT_HEX}>v{MACRO.DISPLAY_VERSION ?? MACRO.VERSION}</Text>
-      </Text>
+      <Text color={BORDER_HEX}>╰{'─'.repeat(W - 2)}╯</Text>
     </Box>
   )
 }
