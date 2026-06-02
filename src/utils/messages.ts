@@ -2312,6 +2312,16 @@ export function normalizeMessagesForAPI(
   // mismatched thinking block signatures cause API 400 errors.
   const withFilteredOrphans = filterOrphanedThinkingOnlyMessages(relocated)
 
+  // Strip mid-conversation thinking blocks whose signature never streamed in
+  // (signature: ''). The API 400s on replay ("Invalid signature in thinking
+  // block"); the trailing/orphan filters above only cover the last assistant
+  // turn and thinking-only messages, not an empty-signature block sitting at
+  // content[0] of an earlier turn. Surfaces during compaction, which re-sends
+  // the full history. Runs before the trailing/whitespace passes so emptied
+  // messages flow into ensureNonEmptyAssistantContent.
+  const withValidSignatures =
+    filterInvalidSignatureThinkingBlocks(withFilteredOrphans)
+
   // Order matters: strip trailing thinking first, THEN filter whitespace-only
   // messages. The reverse order has a bug: a message like [text("\n\n"), thinking("...")]
   // survives the whitespace filter (has a non-text block), then thinking stripping
@@ -2321,7 +2331,7 @@ export function normalizeMessagesForAPI(
   // conditions a prior pass was meant to handle. Consider unifying into a single
   // pass that cleans content, then validates in one shot.
   const withFilteredThinking =
-    filterTrailingThinkingFromLastAssistant(withFilteredOrphans)
+    filterTrailingThinkingFromLastAssistant(withValidSignatures)
   const withFilteredWhitespace =
     filterWhitespaceOnlyAssistantMessages(withFilteredThinking)
   const withNonEmpty = ensureNonEmptyAssistantContent(withFilteredWhitespace)
@@ -4893,6 +4903,60 @@ function filterTrailingThinkingFromLastAssistant(
     },
   }
   return result
+}
+
+/**
+ * Strip `thinking` blocks whose signature never arrived from all assistant
+ * messages, at any position in the turn.
+ *
+ * Streaming initializes a thinking block's signature to '' and fills it from
+ * signature_delta (see claude.ts). If the stream ends before signature_delta
+ * arrives (interrupted turn, certain provider behaviors), the block persists to
+ * history with an empty signature. On replay the API rejects it with a 400:
+ * "Invalid signature in thinking block". This surfaces most often during
+ * compaction, which re-sends the full conversation including mid-conversation
+ * assistant turns — positions that filterTrailingThinkingFromLastAssistant and
+ * filterOrphanedThinkingOnlyMessages deliberately don't touch.
+ *
+ * Only empty/whitespace-signature `thinking` blocks are removed: valid-signature
+ * thinking (reasoning continuity for interleaved thinking) and `redacted_thinking`
+ * (carries `data`, not a signature) are preserved. Cross-provider stale
+ * signatures are handled separately by stripSignatureBlocks on provider switch.
+ * Emptied assistant messages are backfilled downstream by
+ * ensureNonEmptyAssistantContent.
+ */
+export function filterInvalidSignatureThinkingBlocks(
+  messages: (UserMessage | AssistantMessage)[],
+): (UserMessage | AssistantMessage)[] {
+  let changed = false
+  const result = messages.map(msg => {
+    if (msg.type !== 'assistant') return msg
+
+    const content = msg.message.content
+    if (!Array.isArray(content)) return msg
+
+    const filtered = content.filter(
+      block =>
+        !(
+          block.type === 'thinking' &&
+          (block.signature ?? '').trim() === ''
+        ),
+    )
+    if (filtered.length === content.length) return msg
+
+    logEvent('tengu_filtered_invalid_signature_thinking', {
+      messageUUID:
+        msg.uuid as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+      blocksRemoved: content.length - filtered.length,
+    })
+    changed = true
+    return {
+      ...msg,
+      message: { ...msg.message, content: filtered },
+    } as typeof msg
+  })
+
+  return changed ? result : messages
 }
 
 /**

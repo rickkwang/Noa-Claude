@@ -66,6 +66,7 @@ import {
   getMessagesAfterCompactBoundary,
   isCompactBoundaryMessage,
   normalizeMessagesForAPI,
+  stripSignatureBlocks,
 } from '../../utils/messages.js'
 import { expandPath } from '../../utils/path.js'
 import { getPlan, getPlanFilePath } from '../../utils/plans.js'
@@ -222,6 +223,39 @@ export function stripReinjectedAttachments(messages: Message[]): Message[] {
     )
   }
   return messages
+}
+
+/**
+ * Build the message array sent to the model for compaction summarization.
+ *
+ * Strips all thinking blocks before sending. A thinking block's signature is
+ * bound to the API key/context that generated it; after a mid-session
+ * model/provider switch (or an interrupted stream that never delivered
+ * signature_delta) a replayed thinking block fails signature validation with a
+ * 400 ("Invalid signature in thinking block"). Compaction runs with thinking
+ * disabled and the summary needs no prior reasoning chain, so dropping them is
+ * lossless and covers both the empty-signature and stale-signature cases at
+ * once.
+ *
+ * Extracted so the strip is regression-tested directly — /compact replaying a
+ * stale signature is the exact failure this guards.
+ */
+export function buildCompactSummaryMessages(
+  messages: Message[],
+  summaryRequest: UserMessage,
+  tools: Parameters<typeof normalizeMessagesForAPI>[1],
+): (UserMessage | AssistantMessage)[] {
+  return normalizeMessagesForAPI(
+    stripSignatureBlocks(
+      stripImagesFromMessages(
+        stripReinjectedAttachments([
+          ...getMessagesAfterCompactBoundary(messages),
+          summaryRequest,
+        ]),
+      ),
+    ),
+    tools,
+  )
 }
 
 export const ERROR_MESSAGE_NOT_ENOUGH_MESSAGES =
@@ -1320,13 +1354,11 @@ async function streamCompactSummary({
         : [FileReadTool]
 
       const streamingGen = queryModelWithStreaming({
-        messages: normalizeMessagesForAPI(
-          stripImagesFromMessages(
-            stripReinjectedAttachments([
-              ...getMessagesAfterCompactBoundary(messages),
-              summaryRequest,
-            ]),
-          ),
+        // Thinking blocks are stripped here (signatures would 400 on replay) —
+        // see buildCompactSummaryMessages for the full rationale.
+        messages: buildCompactSummaryMessages(
+          messages,
+          summaryRequest,
           context.options.tools,
         ),
         systemPrompt: asSystemPrompt([

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { APIUserAbortError } from '@anthropic-ai/sdk'
 import {
+  buildCompactSummaryMessages,
   buildPostCompactMessages,
   createPostCompactContextAttachments,
   isCompactionUserAbort,
@@ -11,6 +12,7 @@ import {
   createCompactBoundaryMessage,
   createUserMessage,
 } from '../../../utils/messages.js'
+import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages'
 import type { Message } from '../../../types/message.js'
 import { createFileStateCacheWithSizeLimit } from '../../../utils/fileStateCache.js'
 
@@ -88,6 +90,71 @@ describe('buildPostCompactMessages', () => {
       'kept-from-order',
       'summary-from-order',
     ])
+  })
+})
+
+describe('buildCompactSummaryMessages', () => {
+  function thinking(signature: string): BetaContentBlock {
+    return {
+      type: 'thinking',
+      thinking: 'reasoning',
+      signature,
+    } as BetaContentBlock
+  }
+
+  function thinkingBlocksIn(messages: Message[]): BetaContentBlock[] {
+    const blocks: BetaContentBlock[] = []
+    for (const m of messages) {
+      if (m.type !== 'assistant' || !m.message) continue
+      const content = m.message.content
+      if (!Array.isArray(content)) continue
+      for (const block of content as BetaContentBlock[]) {
+        if (block.type === 'thinking') blocks.push(block)
+      }
+    }
+    return blocks
+  }
+
+  // The /compact 400 ("Invalid signature in thinking block") is the exact
+  // failure this guards: a stale/empty signature replayed when compaction
+  // re-sends the full history. The strip must survive refactors of the call
+  // site, so assert it at the boundary the model request is built from.
+  test('strips thinking blocks (stale and empty signatures) from the request', () => {
+    const messages: Message[] = [
+      createUserMessage({ content: 'q1' }),
+      makeAssistantMessage('a-stale', 'answer one', {
+        message: {
+          id: 'a-stale',
+          role: 'assistant',
+          content: [thinking('stale-cross-provider-sig'), { type: 'text', text: 'answer one' }],
+        },
+      } as Partial<Message>),
+      createUserMessage({ content: 'q2' }),
+      makeAssistantMessage('a-empty', 'answer two', {
+        message: {
+          id: 'a-empty',
+          role: 'assistant',
+          content: [thinking(''), { type: 'text', text: 'answer two' }],
+        },
+      } as Partial<Message>),
+    ]
+    const summaryRequest = createUserMessage({ content: 'Summarize.' })
+
+    const out = buildCompactSummaryMessages(messages, summaryRequest, [])
+
+    expect(thinkingBlocksIn(out)).toHaveLength(0)
+    // The accompanying text content must survive the strip.
+    const texts: string[] = []
+    for (const m of out) {
+      if (m.type !== 'assistant' || !m.message) continue
+      const content = m.message.content
+      if (!Array.isArray(content)) continue
+      for (const block of content as BetaContentBlock[]) {
+        if (block.type === 'text') texts.push(block.text)
+      }
+    }
+    expect(texts).toContain('answer one')
+    expect(texts).toContain('answer two')
   })
 })
 

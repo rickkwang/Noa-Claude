@@ -34,6 +34,7 @@ import {
   isToolUseResultMessage,
   NO_RESPONSE_REQUESTED,
   normalizeMessages,
+  stripSignatureBlocks,
 } from './messages.js'
 import { copyPlanForResume } from './plans.js'
 import { processSessionStartHooks } from './sessionStart.js'
@@ -196,10 +197,26 @@ export function deserializeMessagesWithInterruptDetection(
       filteredToolUses,
     ) as NormalizedMessage[]
 
+    // Strip every thinking block from the resumed history. A thinking block's
+    // signature is bound to the API key/context that produced it; the transcript
+    // is append-only, so a session that switched model/provider (or whose token
+    // changed between runs) has signatures on disk that the current key can't
+    // validate, yielding a 400 ("Invalid signature in thinking block") on the
+    // next request — most visibly during /compact, which replays full history.
+    // In-session switches strip signatures from memory (onProviderSwitch), but
+    // never rewrite the transcript, so resume is the gap. We drop all thinking
+    // unconditionally (valid signatures too) because blocks carry no provider
+    // fingerprint to distinguish stale from current; the cost is losing
+    // interleaved-thinking continuity across a resume, which is acceptable since
+    // resume already starts a fresh context.
+    const filteredSignatures = stripSignatureBlocks(
+      filteredThinking,
+    ) as NormalizedMessage[]
+
     // Filter out assistant messages with only whitespace text content.
     // This can happen when model outputs "\n\n" before thinking, user cancels mid-stream.
     const filteredMessages = filterWhitespaceOnlyAssistantMessages(
-      filteredThinking,
+      filteredSignatures,
     ) as NormalizedMessage[]
 
     const internalState = detectTurnInterruption(filteredMessages)
