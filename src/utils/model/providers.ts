@@ -47,3 +47,13 @@ export function isThirdPartyAnthropicCompatibleProvider(): boolean {
     getAPIProvider() === 'firstParty' && !isFirstPartyAnthropicBaseUrl()
   )
 }
+
+/**
+ * Direct Anthropic first-party API (api.anthropic.com or unset base URL) — i.e.
+ * provider 'firstParty' AND not a custom base URL. A proxy / third-party
+ * Anthropic-compatible endpoint also reports provider 'firstParty', so any gate
+ * meant for the real first-party API must use this, not getAPIProvider() alone.
+ */
+export function isDirectFirstParty(): boolean {
+  return getAPIProvider() === 'firstParty' && isFirstPartyAnthropicBaseUrl()
+}

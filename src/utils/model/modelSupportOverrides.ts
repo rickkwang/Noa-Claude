@@ -12,6 +12,9 @@ export type ModelCapabilityOverride =
   | 'thinking'
   | 'adaptive_thinking'
   | 'interleaved_thinking'
+  | 'context_management'
+  | 'claude_code_beta'
+  | 'structured_outputs'
 
 const TIERS = [
   {

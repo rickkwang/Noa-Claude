@@ -6,7 +6,11 @@ import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growt
 import { resolveAntModel } from './model/antModels.js'
 import { getCanonicalName } from './model/model.js'
 import { get3PModelCapabilityOverride } from './model/modelSupportOverrides.js'
-import { getAPIProvider, isFirstPartyAnthropicBaseUrl } from './model/providers.js'
+import {
+  getAPIProvider,
+  isDirectFirstParty,
+  isThirdPartyAnthropicCompatibleProvider,
+} from './model/providers.js'
 import { getSettingsWithErrors } from './settings/settings.js'
 
 export type ThinkingConfig =
@@ -102,12 +106,17 @@ export function modelSupportsThinking(model: string): boolean {
   // IMPORTANT: Do not change thinking support without notifying the model
   // launch DRI and research. This can greatly affect model quality and bashing.
   const canonical = getCanonicalName(model)
-  const provider = getAPIProvider()
-  // 1P and Foundry: all Claude 4+ models (including Haiku 4.5)
-  if (provider === 'foundry' || provider === 'firstParty') {
+  // Direct 1P and Foundry: all Claude 4+ models (including Haiku 4.5).
+  if (getAPIProvider() === 'foundry' || isDirectFirstParty()) {
     return !canonical.includes('claude-3-')
   }
-  // 3P (Bedrock/Vertex): only Opus 4+ and Sonnet 4+
+  // Third-party Anthropic-compatible (custom ANTHROPIC_BASE_URL): mirror effort
+  // handling. Do not trust model names behind a proxy; require the explicit
+  // SUPPORTED_CAPABILITIES override above.
+  if (isThirdPartyAnthropicCompatibleProvider()) {
+    return false
+  }
+  // Bedrock/Vertex: only Opus 4+ and Sonnet 4+.
   return canonical.includes('sonnet-4') || canonical.includes('opus-4')
 }
 
@@ -119,8 +128,7 @@ export function modelSupportsAdaptiveThinking(model: string): boolean {
   }
   const canonical = getCanonicalName(model)
   const provider = getAPIProvider()
-  const directFirstParty =
-    provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()
+  const directFirstParty = isDirectFirstParty()
 
   // First-party, Foundry, and Bedrock Opus 4.7 use adaptive thinking.
   if (

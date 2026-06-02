@@ -3,7 +3,10 @@ import type {
   BetaContentBlock,
   BetaWebSearchTool20250305,
 } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
-import { getAPIProvider } from 'src/utils/model/providers.js'
+import {
+  getAPIProvider,
+  isDirectFirstParty,
+} from 'src/utils/model/providers.js'
 import type { PermissionResult } from 'src/utils/permissions/PermissionResult.js'
 import { z } from 'zod/v4'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
@@ -168,15 +171,17 @@ export const WebSearchTool = buildTool({
   },
   isEnabled() {
     const provider = getAPIProvider()
-    const model = getMainLoopModel()
 
-    // Enable for firstParty
-    if (provider === 'firstParty') {
+    // Enable for direct firstParty only. A custom ANTHROPIC_BASE_URL also reports
+    // firstParty, but Anthropic-compatible 3P endpoints may not support the
+    // server-side web_search tool.
+    if (isDirectFirstParty()) {
       return true
     }
 
     // Enable for Vertex AI with supported models (Claude 4.0+)
     if (provider === 'vertex') {
+      const model = getMainLoopModel()
       const supportsWebSearch =
         model.includes('claude-opus-4') ||
         model.includes('claude-sonnet-4') ||

@@ -24,6 +24,7 @@ import type { Stream } from '@anthropic-ai/sdk/streaming.mjs'
 import { randomUUID } from 'crypto'
 import {
   getAPIProvider,
+  isDirectFirstParty,
   isFirstPartyAnthropicBaseUrl,
 } from 'src/utils/model/providers.js'
 import {
@@ -1446,7 +1447,6 @@ async function* queryModel(
     skipGlobalCacheForSystemPrompt: needsToolBasedCacheMarker,
     querySource: options.querySource,
   })
-  const useBetas = betas.length > 0
 
   // Build minimal context for detailed tracing (when beta tracing is enabled)
   // Note: The actual new_context message extraction is done in sessionTracing.ts using
@@ -1502,7 +1502,7 @@ async function* queryModel(
     if (
       !cacheEditingHeaderLatched &&
       cachedMCEnabled &&
-      getAPIProvider() === 'firstParty' &&
+      isDirectFirstParty() &&
       options.querySource === 'repl_main_thread'
     ) {
       cacheEditingHeaderLatched = true
@@ -1734,11 +1734,11 @@ async function* queryModel(
     // the feature disables but the header doesn't flip.
     const useCachedMC =
       cachedMCEnabled &&
-      getAPIProvider() === 'firstParty' &&
+      isDirectFirstParty() &&
       options.querySource === 'repl_main_thread'
     if (
       cacheEditingHeaderLatched &&
-      getAPIProvider() === 'firstParty' &&
+      isDirectFirstParty() &&
       options.querySource === 'repl_main_thread' &&
       !betasParams.includes(cacheEditingBetaHeader)
     ) {
@@ -1772,13 +1772,12 @@ async function* queryModel(
       system,
       tools: allTools,
       tool_choice: options.toolChoice,
-      ...(useBetas && { betas: betasParams }),
+      ...(betasParams.length > 0 && { betas: betasParams }),
       metadata: getAPIMetadata(),
       max_tokens: maxOutputTokens,
       thinking,
       ...(temperature !== undefined && { temperature }),
       ...(contextManagement &&
-        useBetas &&
         betasParams.includes(CONTEXT_MANAGEMENT_BETA_HEADER) && {
           context_management: contextManagement,
         }),
@@ -1800,7 +1799,7 @@ async function* queryModel(
       thinkingConfig,
     })
     const logMessagesLength = queryParams.messages.length
-    const logBetas = useBetas ? (queryParams.betas ?? []) : []
+    const logBetas = queryParams.betas ?? []
     const logThinkingType = queryParams.thinking?.type ?? 'disabled'
     const logEffortValue = queryParams.output_config?.effort
     void options.getToolPermissionContext().then(permissionContext => {

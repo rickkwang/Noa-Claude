@@ -28,7 +28,11 @@ import { has1mContext } from './context.js'
 import { isEnvDefinedFalsy, isEnvTruthy } from './envUtils.js'
 import { getCanonicalName } from './model/model.js'
 import { get3PModelCapabilityOverride } from './model/modelSupportOverrides.js'
-import { getAPIProvider } from './model/providers.js'
+import {
+  getAPIProvider,
+  isDirectFirstParty,
+  isThirdPartyAnthropicCompatibleProvider,
+} from './model/providers.js'
 import { getInitialSettings } from './settings/settings.js'
 
 /**
@@ -99,13 +103,17 @@ export function modelSupportsISP(model: string): boolean {
     return supported3P
   }
   const canonical = getCanonicalName(model)
-  const provider = getAPIProvider()
   // Foundry supports interleaved thinking for all models
-  if (provider === 'foundry') {
+  if (getAPIProvider() === 'foundry') {
     return true
   }
-  if (provider === 'firstParty') {
+  if (isDirectFirstParty()) {
     return !canonical.includes('claude-3-')
+  }
+  // Custom ANTHROPIC_BASE_URL follows effort handling: default off, explicit
+  // SUPPORTED_CAPABILITIES override above to opt in.
+  if (isThirdPartyAnthropicCompatibleProvider()) {
+    return false
   }
   return (
     canonical.includes('claude-opus-4') || canonical.includes('claude-sonnet-4')
@@ -124,13 +132,21 @@ function vertexModelSupportsWebSearch(model: string): boolean {
 
 // Context management is supported on Claude 4+ models
 export function modelSupportsContextManagement(model: string): boolean {
+  const supported3P = get3PModelCapabilityOverride(model, 'context_management')
+  if (supported3P !== undefined) {
+    return supported3P
+  }
   const canonical = getCanonicalName(model)
-  const provider = getAPIProvider()
-  if (provider === 'foundry') {
+  if (getAPIProvider() === 'foundry') {
     return true
   }
-  if (provider === 'firstParty') {
+  if (isDirectFirstParty()) {
     return !canonical.includes('claude-3-')
+  }
+  // Custom ANTHROPIC_BASE_URL follows effort handling: default off, explicit
+  // SUPPORTED_CAPABILITIES override above to opt in.
+  if (isThirdPartyAnthropicCompatibleProvider()) {
+    return false
   }
   return (
     canonical.includes('claude-opus-4') ||
@@ -141,10 +157,15 @@ export function modelSupportsContextManagement(model: string): boolean {
 
 // @[MODEL LAUNCH]: Add the new model ID to this list if it supports structured outputs.
 export function modelSupportsStructuredOutputs(model: string): boolean {
+  const supported3P = get3PModelCapabilityOverride(model, 'structured_outputs')
+  if (supported3P !== undefined) {
+    return supported3P
+  }
   const canonical = getCanonicalName(model)
   const provider = getAPIProvider()
-  // Structured outputs only supported on firstParty and Foundry (not Bedrock/Vertex yet)
-  if (provider !== 'firstParty' && provider !== 'foundry') {
+  // Structured outputs are only assumed on direct firstParty and Foundry. Custom
+  // ANTHROPIC_BASE_URL follows effort handling and must opt in explicitly.
+  if (!isDirectFirstParty() && provider !== 'foundry') {
     return false
   }
   return (
@@ -164,7 +185,7 @@ export function modelSupportsAutoMode(model: string): boolean {
     // External: firstParty-only at launch (PI probes not wired for
     // Bedrock/Vertex/Foundry yet). Checked before allowModels so the GB
     // override can't enable auto mode on unsupported providers.
-    if (process.env.USER_TYPE !== 'ant' && getAPIProvider() !== 'firstParty') {
+    if (process.env.USER_TYPE !== 'ant' && !isDirectFirstParty()) {
       return false
     }
     // GrowthBook override: tengu_auto_mode_config.allowModels force-enables
@@ -189,7 +210,7 @@ export function modelSupportsAutoMode(model: string): boolean {
       if (/claude-(opus|sonnet|haiku)-4(?!-[6-9])/.test(m)) return false
       return true
     }
-    // External allowlist (firstParty already checked above).
+    // External allowlist (direct firstParty already checked above).
     return /^claude-(opus|sonnet)-4-6/.test(m)
   }
   return false
@@ -214,8 +235,11 @@ export function getToolSearchBetaHeader(): string {
  * and may not be supported by proxies or other providers.
  */
 export function shouldIncludeFirstPartyOnlyBetas(): boolean {
+  // isDirectFirstParty (not getAPIProvider alone): a custom ANTHROPIC_BASE_URL
+  // also reports 'firstParty' but is a proxy/third-party endpoint that may reject
+  // these experimental headers — the very case the docstring warns about.
   return (
-    (getAPIProvider() === 'firstParty' || getAPIProvider() === 'foundry') &&
+    (isDirectFirstParty() || getAPIProvider() === 'foundry') &&
     !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS)
   )
 }
@@ -226,19 +250,34 @@ export function shouldIncludeFirstPartyOnlyBetas(): boolean {
  * treatment data is firstParty-only.
  */
 export function shouldUseGlobalCacheScope(): boolean {
+  // Direct first-party only — a custom ANTHROPIC_BASE_URL (proxy/kimi/minimax)
+  // reports 'firstParty' but isn't in the rollout and may not accept the global
+  // cache scope field.
   return (
-    getAPIProvider() === 'firstParty' &&
+    isDirectFirstParty() &&
     !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS)
   )
 }
 
+export function modelSupportsClaudeCodeBeta(model: string): boolean {
+  const supported3P = get3PModelCapabilityOverride(model, 'claude_code_beta')
+  if (supported3P !== undefined) {
+    return supported3P
+  }
+  // Same 3P posture as effort: a custom ANTHROPIC_BASE_URL may be an Anthropic
+  // proxy or a non-Claude model shim, so do not send Claude Code protocol betas
+  // unless the pinned model explicitly opts in via SUPPORTED_CAPABILITIES.
+  return !isThirdPartyAnthropicCompatibleProvider()
+}
+
 export const getAllModelBetas = memoize((model: string): string[] => {
   const betaHeaders = []
-  const isHaiku = getCanonicalName(model).includes('haiku')
+  const canonical = getCanonicalName(model)
+  const isHaiku = canonical.includes('haiku')
   const provider = getAPIProvider()
   const includeFirstPartyOnlyBetas = shouldIncludeFirstPartyOnlyBetas()
 
-  if (!isHaiku) {
+  if (!isHaiku && modelSupportsClaudeCodeBeta(model)) {
     betaHeaders.push(CLAUDE_CODE_20250219_BETA_HEADER)
     if (
       process.env.USER_TYPE === 'ant' &&
@@ -303,11 +342,16 @@ export const getAllModelBetas = memoize((model: string): string[] => {
     isEnvTruthy(process.env.USE_API_CONTEXT_MANAGEMENT) &&
     process.env.USER_TYPE === 'ant'
 
+  const contextManagementOverride = get3PModelCapabilityOverride(
+    model,
+    'context_management',
+  )
   const thinkingPreservationEnabled = modelSupportsContextManagement(model)
 
   if (
-    shouldIncludeFirstPartyOnlyBetas() &&
-    (antOptedIntoToolClearing || thinkingPreservationEnabled)
+    (shouldIncludeFirstPartyOnlyBetas() &&
+      (antOptedIntoToolClearing || thinkingPreservationEnabled)) ||
+    contextManagementOverride === true
   ) {
     betaHeaders.push(CONTEXT_MANAGEMENT_BETA_HEADER)
   }
@@ -401,10 +445,11 @@ export function getMergedBetas(
 ): string[] {
   const baseBetas = [...getModelBetas(model)]
 
-  // Agentic queries always need claude-code and cli-internal beta headers.
-  // For non-Haiku models these are already in baseBetas; for Haiku they're
-  // excluded by getAllModelBetas() since non-agentic Haiku calls don't need them.
-  if (options?.isAgenticQuery) {
+  // Agentic queries need claude-code and cli-internal beta headers only when the
+  // provider/model supports Claude Code's protocol. For non-Haiku supported
+  // models these are already in baseBetas; for Haiku they're excluded by
+  // getAllModelBetas() since non-agentic Haiku calls don't need them.
+  if (options?.isAgenticQuery && modelSupportsClaudeCodeBeta(model)) {
     if (!baseBetas.includes(CLAUDE_CODE_20250219_BETA_HEADER)) {
       baseBetas.push(CLAUDE_CODE_20250219_BETA_HEADER)
     }

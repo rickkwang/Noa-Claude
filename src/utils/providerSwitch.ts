@@ -5,6 +5,7 @@ import type { LocalJSXCommandContext } from '../commands.js'
 import { refreshGrowthBookAfterAuthChange } from '../services/analytics/growthbook.js'
 import { refreshPolicyLimits } from '../services/policyLimits/index.js'
 import { refreshRemoteManagedSettings } from '../services/remoteManagedSettings/index.js'
+import { clearBetasCaches } from './betas.js'
 import { stripSignatureBlocks } from './messages.js'
 import {
   checkAndDisableAutoModeIfNeeded,
@@ -13,6 +14,15 @@ import {
   resetBypassPermissionsCheck,
 } from './permissions/bypassPermissionsKillswitch.js'
 import { resetUserCache } from './user.js'
+import { clearToolSchemaCache } from './toolSchemaCache.js'
+
+/**
+ * Clear memoized values whose contents depend on the active provider/base URL.
+ */
+export function clearProviderSwitchCaches(): void {
+  clearBetasCaches()
+  clearToolSchemaCache()
+}
 
 /**
  * Shared post-provider-switch logic.
@@ -37,6 +47,11 @@ export function onProviderSwitch(context: LocalJSXCommandContext): void {
 
   // Reset cost state when switching accounts/providers
   resetCostState()
+
+  // Beta headers and rendered tool schemas depend on provider/base URL/model
+  // capability gates. Clear them so switching 1P <-> 3P cannot reuse stale
+  // first-party headers or strict/eager tool fields for the same model id.
+  clearProviderSwitchCaches()
 
   // Refresh remotely managed settings after provider switch (non-blocking)
   void refreshRemoteManagedSettings()
