@@ -55,7 +55,7 @@ export function CompactSummary(t0) {
     }
     let t5;
     if ($[7] !== isTranscriptMode || $[8] !== textContent) {
-      t5 = isTranscriptMode && <MessageResponse><Text>{textContent}</Text></MessageResponse>;
+      t5 = isTranscriptMode && textContent && <MessageResponse><Text>{textContent}</Text></MessageResponse>;
       $[7] = isTranscriptMode;
       $[8] = textContent;
       $[9] = t5;
@@ -98,7 +98,7 @@ export function CompactSummary(t0) {
   }
   let t5;
   if ($[18] !== isTranscriptMode || $[19] !== textContent) {
-    t5 = isTranscriptMode && <MessageResponse><Text>{textContent}</Text></MessageResponse>;
+    t5 = isTranscriptMode && textContent && <MessageResponse><Text>{textContent}</Text></MessageResponse>;
     $[18] = isTranscriptMode;
     $[19] = textContent;
     $[20] = t5;
