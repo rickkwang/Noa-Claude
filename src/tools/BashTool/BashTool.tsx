@@ -45,6 +45,7 @@ import { bashToolHasPermission, commandHasAnyCd, matchWildcardPattern, permissio
 import { interpretCommandResult } from './commandSemantics.js';
 import { getDefaultTimeoutMs, getMaxTimeoutMs, getSimplePrompt } from './prompt.js';
 import { checkReadOnlyConstraints } from './readOnlyValidation.js';
+import { maybeRegisterGrepRead } from './grepReadRegistration.js';
 import { parseSedEditCommand } from './sedEditParser.js';
 import { shouldUseSandbox } from './shouldUseSandbox.js';
 import { BASH_TOOL_NAME } from './toolName.js';
@@ -801,6 +802,20 @@ export const BashTool = buildTool({
         // fallthrough will send text, not an image block.
         isImage = false;
       }
+    }
+    const canRegisterGrepRead =
+      result.code === 0 &&
+      !wasInterrupted &&
+      result.backgroundTaskId === undefined &&
+      result.outputFilePath === undefined &&
+      !isImage;
+    // Single-file grep satisfies the read-before-edit check.
+    if (canRegisterGrepRead) {
+      await maybeRegisterGrepRead(
+        input.command,
+        compressedStdout,
+        toolUseContext.readFileState,
+      );
     }
     const data: Out = {
       stdout: compressedStdout,
