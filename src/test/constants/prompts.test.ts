@@ -96,12 +96,12 @@ describe('prompt behavior contracts', () => {
     const prompt = getCompactPrompt()
 
     expect(prompt).toContain('detailed continuation summary')
-    expect(prompt).toContain('do not turn the summary into a full transcript')
+    expect(prompt).toContain('do not turn the summary into a transcript')
     expect(prompt).toContain(
       'Do not reproduce all user messages, long file contents, or full code snippets',
     )
     expect(prompt).toContain(
-      'Include file reads only when exact text is necessary to preserve meaning',
+      'include exact snippets only when the text is load-bearing',
     )
     expect(prompt).not.toContain('Include file reads verbatim')
     expect(prompt).not.toContain('List ALL user messages')
