@@ -179,8 +179,12 @@ export function getModelMaxOutputTokens(model: string): {
     defaultTokens = 64_000
     upperLimit = 128_000
   } else if (m.includes('sonnet-4-6')) {
+    // Sonnet 4.6 caps at 64k on the synchronous Messages API (only Opus 4.6+
+    // reaches 128k). 128k/300k for Sonnet 4.6 is Batches-only via the
+    // output-300k-2026-03-24 beta, which this streaming client doesn't use.
+    // Per https://platform.claude.com/docs/en/about-claude/models/overview.md
     defaultTokens = 32_000
-    upperLimit = 128_000
+    upperLimit = 64_000
   } else if (
     m.includes('opus-4-5') ||
     m.includes('sonnet-4') ||

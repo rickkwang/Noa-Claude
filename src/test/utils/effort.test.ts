@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
+  getDisplayedEffortLevel,
   getSupportedEffortLevelsForModel,
   parseEffortValue,
   resolveAppliedEffort,
@@ -52,6 +53,23 @@ describe('effort model support', () => {
       'max',
     ])
     expect(resolveAppliedEffort('claude-opus-4-7', undefined)).toBe('xhigh')
+  })
+
+  test('Opus 4.8 supports xhigh as a level but defaults to high (no effort sent)', () => {
+    // 4.8 supports xhigh/max as opt-in levels...
+    expect(getSupportedEffortLevelsForModel('claude-opus-4-8')).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ])
+    // ...but unlike 4.7 it does NOT default to xhigh — it sends no effort param,
+    // which the API resolves to high (per the official 4.8 docs).
+    expect(resolveAppliedEffort('claude-opus-4-8', undefined)).toBeUndefined()
+    expect(getDisplayedEffortLevel('claude-opus-4-8', undefined)).toBe('high')
+    // Opting in to xhigh still works.
+    expect(resolveAppliedEffort('claude-opus-4-8', 'xhigh')).toBe('xhigh')
   })
 
   test('Opus 4.6 supports max but clamps xhigh to high', () => {

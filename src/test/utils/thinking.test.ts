@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import {
+  modelOmitsThinkingByDefault,
   modelSupportsAdaptiveThinking,
   modelSupportsThinking,
 } from '../../utils/thinking.js'
@@ -32,6 +33,19 @@ describe('modelSupportsAdaptiveThinking', () => {
     expect(modelSupportsAdaptiveThinking('anthropic.claude-opus-4-7')).toBe(
       true,
     )
+  })
+})
+
+describe('modelOmitsThinkingByDefault', () => {
+  test('Opus 4.7/4.8 omit thinking by default (need display: summarized)', () => {
+    expect(modelOmitsThinkingByDefault('claude-opus-4-7')).toBe(true)
+    expect(modelOmitsThinkingByDefault('claude-opus-4-8')).toBe(true)
+    expect(modelOmitsThinkingByDefault('anthropic.claude-opus-4-8')).toBe(true)
+  })
+
+  test('Opus 4.6 / Sonnet 4.6 already default to summarized — no opt-in', () => {
+    expect(modelOmitsThinkingByDefault('claude-opus-4-6')).toBe(false)
+    expect(modelOmitsThinkingByDefault('claude-sonnet-4-6')).toBe(false)
   })
 })
 

@@ -373,7 +373,7 @@ const OPUS_DEFAULT_EFFORT_CONFIG_DEFAULT: OpusDefaultEffortConfig = {
   enabled: true,
   dialogTitle: 'Choose the default effort for Opus',
   dialogDescription:
-    'Effort determines how long Claude thinks for when completing your task. Opus 4.8 defaults to xhigh effort. You can raise it when you want stronger reasoning or lower it when you want faster responses or lower usage.',
+    'Effort determines how long Claude thinks for when completing your task. Opus 4.8 defaults to high effort. You can raise it (xhigh, max) when you want stronger reasoning or lower it when you want faster responses or lower usage.',
 }
 
 export function getOpusDefaultEffortConfig(): OpusDefaultEffortConfig {
@@ -416,10 +416,19 @@ export function getDefaultEffortForModel(
   // the model launch DRI and research. Default effort is a sensitive setting
   // that can greatly affect model quality and bashing.
 
-  // External Opus 4.7 defaults to xhigh. We still gate on providers known to
-  // support effort so unknown 3P proxies keep the legacy "unset/high" path.
+  // External Opus 4.7 defaults to xhigh (the Claude Code default for 4.7). We
+  // still gate on providers known to support effort so unknown 3P proxies keep
+  // the legacy "unset/high" path.
+  //
+  // Opus 4.8 intentionally does NOT default to xhigh: per the official models
+  // overview ("On Claude Opus 4.8, the effort parameter defaults to high on all
+  // surfaces, including the Claude API and Claude Code") and the 4.8 migration
+  // guide ("start at high as the default rather than defaulting to xhigh" — its
+  // higher intelligence ceiling makes xhigh prone to overthinking), 4.8 falls
+  // through to undefined → the API resolves that to high. xhigh remains an
+  // available level (see getSupportedEffortLevelsForModel) for users who opt in.
   const modelKey = `${getCanonicalName(model)} ${model}`.toLowerCase()
-  if ((modelKey.includes('opus-4-7') || modelKey.includes('opus-4-8')) && getSupportedEffortLevelsForModel(model).includes('xhigh')) {
+  if (modelKey.includes('opus-4-7') && getSupportedEffortLevelsForModel(model).includes('xhigh')) {
     return 'xhigh'
   }
 

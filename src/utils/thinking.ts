@@ -171,6 +171,17 @@ export function modelRejectsSamplingParams(model: string): boolean {
   return canonical.includes('opus-4-7') || canonical.includes('opus-4-8')
 }
 
+// Opus 4.7+ omit thinking content by default — adaptive `thinking` blocks
+// stream with empty text unless display is set to 'summarized'. On Opus 4.6 /
+// Sonnet 4.6 summarized is already the default and `display` is a no-op/newer
+// field, so we only opt in for models that omit by default. Since we stream
+// reasoning to the user (the "Thinking…" UI), restore visible progress.
+// @[MODEL LAUNCH]: Add new models that omit thinking content by default.
+export function modelOmitsThinkingByDefault(model: string): boolean {
+  const canonical = getCanonicalName(model)
+  return canonical.includes('opus-4-7') || canonical.includes('opus-4-8')
+}
+
 export function shouldEnableThinkingByDefault(): boolean {
   if (process.env.MAX_THINKING_TOKENS) {
     return parseInt(process.env.MAX_THINKING_TOKENS, 10) > 0

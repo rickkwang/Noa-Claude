@@ -178,6 +178,7 @@ import { isMcpInstructionsDeltaEnabled } from 'src/utils/mcpInstructionsDelta.js
 import { calculateUSDCost } from 'src/utils/modelCost.js'
 import { endQueryProfile, queryCheckpoint } from 'src/utils/queryProfiler.js'
 import {
+  modelOmitsThinkingByDefault,
   modelRejectsSamplingParams,
   modelSupportsAdaptiveThinking,
   modelSupportsThinking,
@@ -1667,9 +1668,14 @@ async function* queryModel(
         modelSupportsAdaptiveThinking(apiModel)
       ) {
         // For models that support adaptive thinking, always use adaptive
-        // thinking without a budget.
+        // thinking without a budget. On models that omit thinking content by
+        // default (Opus 4.7+), opt into summarized display so the user-facing
+        // "Thinking…" UI shows progress instead of streaming empty blocks.
         thinking = {
           type: 'adaptive',
+          ...(modelOmitsThinkingByDefault(apiModel) && {
+            display: 'summarized',
+          }),
         } satisfies BetaMessageStreamParams['thinking']
       } else {
         // For models that do not support adaptive thinking, use the default
