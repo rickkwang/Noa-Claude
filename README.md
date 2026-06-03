@@ -57,11 +57,13 @@ If `~/.local/bin` is not on your `PATH`, the installer prints the line to add �
 
 ## Core Features
 
+The product baseline is `/fork`, `/workflows`, `/summary`, and `/share` (smoke-checked). Other listed commands are non-baseline — see [docs/product-governance.md](docs/product-governance.md).
+
 **Sessions**
 - `/fork` — Create a resumable fork of the current conversation
 - `/resume` — Resume a previous conversation
 - `/compact` — Summarize long conversations to preserve context
-- `/tree` — Navigate session history and branches
+- `/session` — Show remote session URL and QR code (remote mode only)
 - `/clear` — Clear the current conversation and start fresh
 - `/export` — Export conversation to a file
 - `/rename` — Rename the current session
@@ -72,11 +74,11 @@ If `~/.local/bin` is not on your `PATH`, the installer prints the line to add �
 **Provider routing**
 - `/provider` — Switch between saved provider profiles (JSON-based, stored in `~/.noa/provider-profiles.json`)
 - `/model` — Switch model or list available models
-- `/login` / `/logout` — Authenticate with your provider
+- `/login` / `/logout` — Authenticate with your Anthropic account via OAuth (Anthropic-specific)
 
 **Agent execution**
 - `/agent` — Spawn sub-agents for parallel task execution
-- `/computer` — Control macOS desktop (screenshots, clicks, keyboard) for automation workflows
+- `ComputerTool` — macOS desktop automation (screenshots, clicks, keyboard), invoked through sub-agents. Not a slash command.
 
 **Verification and diagnostics**
 - `/doctor` — Diagnose installation health and configuration
@@ -93,18 +95,21 @@ If `~/.local/bin` is not on your `PATH`, the installer prints the line to add �
 
 ## Keyboard Shortcuts
 
+Default bindings from `src/keybindings/defaultBindings.ts`. Some bindings (e.g. `ctrl+shift+b`) are feature-gated and absent from the default build.
+
 | Shortcut | Action |
 |----------|--------|
 | `ctrl+t` | Toggle todo list |
 | `ctrl+o` | Toggle transcript mode |
-| `ctrl+shift+b` | Toggle brief-only view |
+| `ctrl+shift+b` | Toggle brief-only view (feature-gated) |
 | `ctrl+l` | Clear screen and force full redraw (recovery path) |
-| `ctrl+e` | Open external editor |
-| `ctrl+g` | Go to line |
+| `ctrl+x ctrl+e` / `ctrl+g` | Open external editor |
 | `ctrl+s` | Stash chat input |
+| `ctrl+r` | History search |
 | `escape` | Abort current operation |
-| `ctrl+c` | Cancel speulation when idle |
+| `ctrl+c` | Cancel speculation when idle |
 | `shift+enter` | Multi-line input |
+| `shift+tab` | Cycle through chat modes (default / auto-accept / plan) |
 
 ## Multi-Provider Support
 
@@ -146,14 +151,14 @@ Provider profiles enable saved configurations for providers like Kimi, MiniMax, 
 - **Multi-Provider Support** — OpenAI-compatible, AWS Bedrock, Google Vertex, Microsoft Foundry, and Anthropic's first-party API.
 - **Sub-Agent Orchestration** — Assign different models to different agents via `settings.json` (`agentModels`, `agentRouting`).
 - **macOS Desktop Control** — ComputerTool for screenshot-based GUI automation, keyboard-driven workflows preferred.
-- **MCP Tool Compaction** — MCP tool results are included in context compaction, reducing token usage 20–40% for MCP-heavy sessions.
+- **MCP Tool Compaction** — MCP tool results (`mcp__<server>__<tool>`) are always compactable, often cutting token use on MCP-heavy sessions.
 - **128k Fallback** — Unknown OpenAI-compatible models use a conservative 128k context window to prevent compact threshold underestimation.
 - **Auto-fix Hook** — After file edits, automatically run configurable lint/test commands (configured in `settings.json` under `autoFix`).
 - **Cache-probe** — `/cache-probe` command to diagnose API cache hit rate.
 - **SSRF Protection** — URL resolution validated against IPv4/IPv6 private ranges before outbound HTTP requests.
 - **TUI Mode** — `/tui` switches between default and fullscreen (no-flicker) terminal layout.
 - **PR Intent Scan** — CI checks PR added lines for suspicious links/download patterns and fails on high-severity findings.
-- **Privacy** — Third-party API requests include `store: false` to prevent training data use.
+- **Privacy** — see the [Privacy](#privacy) section below.
 
 ## Architecture
 
@@ -163,8 +168,8 @@ Entry → QueryEngine → Agent Loop → Tools / Services / State
 
 | Subsystem | Path | Purpose |
 |-----------|------|---------|
-| Commands | `src/commands/` | 114 slash commands |
-| Tools | `src/tools/` | 57 tool implementations (file, shell, web, tasks, MCP, computer) |
+| Commands | `src/commands/` | Slash commands (see `docs/product-governance.md` for baseline / non-baseline split) |
+| Tools | `src/tools/` | Tool implementations (file, shell, web, tasks, MCP, computer) |
 | Components | `src/components/` | React TUI components |
 | Hooks | `src/hooks/` | React state and side-effect hooks |
 | Bridge | `src/bridge/` | Remote execution and session bridging |
@@ -200,8 +205,9 @@ Hardcoded privacy defaults — no configuration needed:
 - All telemetry paths hard-disabled
 - GrowthBook remote fetch hard-disabled
 - Remote policy overlays hard-disabled
+- Remote managed-settings overlay hard-disabled
 - Third-party API requests include `store: false` to prevent training data use
-- Runtime help links resolve locally
+- In-product help / docs links point to the project's own docs repo (e.g. `PRODUCT_MCP_URL`); not fetched by telemetry.
 
 ## Verification
 
