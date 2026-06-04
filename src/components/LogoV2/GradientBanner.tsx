@@ -49,26 +49,25 @@ const ACCENT_HEX = rgbToHex(240, 148, 100)
 const BORDER_HEX = rgbToHex(136, 136, 136)
 
 const LOGO_OPEN = [
-  ` ██████   █████   ███████     █████████ `,
-  `░░██████ ░░███  ███░░░░░███  ███░░░░░███`,
-  ` ░███░███ ░███ ███     ░░███░███    ░███`,
-  ` ░███░░███░███░███      ░███░███████████`,
-  ` ░███ ░░██████░███      ░███░███░░░░░███`,
-  ` ░███  ░░█████░░███     ███ ░███    ░███`,
-  ` █████  ░░█████░░░███████░  █████   █████`,
-  `░░░░░    ░░░░░   ░░░░░░░   ░░░░░   ░░░░░`,
+  "  ██████   █████                                          ",
+  " ░░██████ ░░███                                           ",
+  "  ░███░███ ░███   ██████   ██████                         ",
+  "  ░███░░███░███  ███░░███ ░░░░░███                        ",
+  "  ░███ ░░██████ ░███ ░███  ███████                        ",
+  "  ░███  ░░█████ ░███ ░███ ███░░███                        ",
+  "  █████  ░░█████░░██████ ░░████████                       ",
+  " ░░░░░    ░░░░░  ░░░░░░   ░░░░░░░░                        ",
 ]
 
-
 const LOGO_CLAUDE = [
-  `   █████████  █████        █████████  █████  ███████████████  ██████████`,
-  `  ███░░░░░███░░███        ███░░░░░███░░███  ░░███░░███░░░░███░░███░░░░░█`,
-  ` ███     ░░░  ░███       ░███    ░███ ░███   ░███ ░███   ░░███░███  █ ░`,
-  `░███          ░███       ░███████████ ░███   ░███ ░███    ░███░██████`,
-  `░███          ░███       ░███░░░░░███ ░███   ░███ ░███    ░███░███░░█`,
-  `░░███     ███ ░███      █░███    ░███ ░███   ░███ ░███    ███ ░███ ░   █`,
-  ` ░░█████████  ████████████████   █████░░████████  ██████████  ██████████`,
-  `  ░░░░░░░░░  ░░░░░░░░░░░░░░░░   ░░░░░  ░░░░░░░░  ░░░░░░░░░░  ░░░░░░░░░░`,
+  "   █████████  ████                           █████         ",
+  "  ███░░░░░███░░███                          ░░███          ",
+  " ███     ░░░  ░███   ██████   █████ ████  ███████   ██████ ",
+  "░███          ░███  ░░░░░███ ░░███ ░███  ███░░███  ███░░███",
+  "░███          ░███   ███████  ░███ ░███ ░███ ░███ ░███████ ",
+  "░░███     ███ ░███  ███░░███  ░███ ░███ ░███ ░███ ░███░░░  ",
+  " ░░█████████  █████░░████████ ░░████████░░████████░░██████ ",
+  "  ░░░░░░░░░  ░░░░░  ░░░░░░░░   ░░░░░░░░  ░░░░░░░░  ░░░░░░ ",
 ]
 
 function detectProvider(displayModelLabel: string) {
@@ -137,7 +136,11 @@ export function GradientBanner() {
   const modelLen = 38 + modelLine.length     // ' model:     ' + model + gap + hint
   const dirLen = 12 + cwdDisplay.length      // ' directory: ' + cwd
   const epLen = 12 + ep.length               // ' endpoint:  ' + ep
-  const maxContentLen = Math.max(titleLen, modelLen, dirLen, epLen, 60)
+  const logoMaxWidth = Math.max(
+    ...LOGO_OPEN.map(l => l.length),
+    ...LOGO_CLAUDE.map(l => l.length)
+  )
+  const maxContentLen = Math.max(titleLen, modelLen, dirLen, epLen, logoMaxWidth - 4)
   const CONTENT_W = maxContentLen + 2        // 2 chars buffer on the right
   const W = CONTENT_W + 2
 
@@ -180,21 +183,21 @@ export function GradientBanner() {
         <Text color={BORDER_HEX}>│</Text>
       </Text>
 
-      {/* Directory row */}
-      <Text>
-        <Text color={BORDER_HEX}>│</Text>
-        <Text color={BORDER_HEX}>{' directory: '}</Text>
-        <Text>{cwdDisplay}</Text>
-        <Text>{' '.repeat(Math.max(0, CONTENT_W - 12 - cwdDisplay.length))}</Text>
-        <Text color={BORDER_HEX}>│</Text>
-      </Text>
-
       {/* Endpoint row */}
       <Text>
         <Text color={BORDER_HEX}>│</Text>
         <Text color={BORDER_HEX}>{' endpoint:  '}</Text>
         <Text>{ep}</Text>
         <Text>{' '.repeat(Math.max(0, CONTENT_W - 12 - ep.length))}</Text>
+        <Text color={BORDER_HEX}>│</Text>
+      </Text>
+
+      {/* Directory row */}
+      <Text>
+        <Text color={BORDER_HEX}>│</Text>
+        <Text color={BORDER_HEX}>{' directory: '}</Text>
+        <Text>{cwdDisplay}</Text>
+        <Text>{' '.repeat(Math.max(0, CONTENT_W - 12 - cwdDisplay.length))}</Text>
         <Text color={BORDER_HEX}>│</Text>
       </Text>
 
