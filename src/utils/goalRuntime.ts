@@ -29,7 +29,7 @@ export type GoalRuntimeDecision =
   | { action: 'stop'; userNotice: Message | null }
   | { action: 'continue'; modelNotice: UserMessage; userNotice: Message | null }
 
-export type GoalEvaluatorAction = 'run' | 'exhausted' | 'skip'
+export type GoalEvaluatorAction = 'run' | 'skip'
 
 export function decideGoalEvaluatorAction({
   goal,
@@ -43,8 +43,6 @@ export function decideGoalEvaluatorAction({
   if (!goal || agentId || permissionMode === 'plan') return 'skip'
   const current = normalizeGoal(goal)
   if (current.status !== 'active') return 'skip'
-  if (current.autoContinueTurns >= current.maxAutoContinueTurns)
-    return 'exhausted'
   return 'run'
 }
 
@@ -138,42 +136,6 @@ export function applyGoalRuntimeEvaluation({
       goal: advanced.goal,
       action: 'paused',
       reason: evaluation.reason,
-    })
-    return { ...prev, goal: advanced.goal }
-  })
-
-  return decision
-}
-
-export function applyGoalAutoContinueExhausted({
-  setAppState,
-}: {
-  setAppState: (updater: (prev: AppState) => AppState) => void
-}): GoalRuntimeDecision {
-  let decision: GoalRuntimeDecision = { action: 'stop', userNotice: null }
-  const now = Date.now()
-
-  setAppState(prev => {
-    if (!prev.goal) return prev
-    const current = normalizeGoal(prev.goal)
-    if (current.status !== 'active') return prev
-    const advanced = advanceGoalAutoContinue({
-      goal: current,
-      reason:
-        current.lastEvaluatorReason ?? 'Auto-continue turn limit reached.',
-      now,
-    })
-    decision = {
-      action: 'stop',
-      userNotice: createSystemMessage(
-        formatGoalPausedNotice(advanced.goal.maxAutoContinueTurns),
-        'info',
-      ),
-    }
-    logGoalAudit({
-      goal: advanced.goal,
-      action: 'paused',
-      reason: 'Auto-continue turn limit reached.',
     })
     return { ...prev, goal: advanced.goal }
   })

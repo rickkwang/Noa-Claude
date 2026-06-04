@@ -74,23 +74,25 @@ Use `/goal` for one long-running objective that should survive normal turns and 
 
 Supported commands:
 
-- `/goal <objective> [--budget N]` creates a goal when none is active
-- `/goal` shows status, token usage, auto-continue count, and the last evaluator reason
+- `/goal <objective> [--budget N] [--max-turns N] [--verify "<cmd>"]` creates a goal when none is active
+- `/goal` shows status, token usage, auto-continue count, verify command, and the last evaluator reason
 - `/goal pause` pauses an active goal
 - `/goal resume` resumes a paused goal and resets the auto-continue counter
 - `/goal clear` removes the current goal
-- `/goal replace <objective> [--budget N]` explicitly replaces the current goal and resets usage
+- `/goal replace <objective> [--budget N] [--max-turns N] [--verify "<cmd>"]` explicitly replaces the current goal and resets usage
 
 Runtime behavior:
 
 - only one goal can be active in a thread
 - an existing active or paused goal is not replaced unless the user runs `/goal replace`
 - after each eligible main-thread turn, a lightweight evaluator checks whether the goal is complete
-- if the evaluator says the goal is incomplete, Noa Claude auto-continues up to 5 turns
-- after 5 auto-continue turns, the goal is paused and can be resumed with `/goal resume`
+- if the evaluator says the goal is incomplete, Noa Claude auto-continues up to 5 turns by default, or the limit supplied with `--max-turns`
+- after the configured number of auto-continue turns, the goal is paused and can be resumed with `/goal resume`
+- a `--verify` command runs automatically after each eligible goal turn; a non-zero exit code always prevents completion
+- when `--verify` is configured, model-requested completion remains pending until the verify command passes and the evaluator approves completion
 - if a token budget is reached, the goal becomes `budget_limited` and will not auto-continue
 - budget-limited goals resume only when the same objective is set with a larger `--budget`
-- session restore replays transcript evidence to recover goal status, usage, auto-continue count, and stop reason
+- session restore replays transcript evidence to recover goal status, usage, verify command, auto-continue count, and stop reason
 
 The model can inspect, create, and mark a goal complete through the goal tool. Pause, resume, clear, and replace remain user-controlled slash commands.
 

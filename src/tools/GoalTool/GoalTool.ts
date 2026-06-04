@@ -27,7 +27,9 @@ const inputSchema = lazySchema(() =>
     }),
     z.strictObject({
       operation: z.literal('update_goal'),
-      status: z.literal('complete').describe('Set to complete only when the objective is achieved'),
+      status: z
+        .literal('complete')
+        .describe('Request completion only when the objective is achieved'),
     }),
   ]),
 )
@@ -41,6 +43,7 @@ const outputSchema = lazySchema(() =>
         objective: z.string(),
         status: z.string(),
         token_budget: z.number().nullable(),
+        verify_command: z.string().nullable(),
         tokens_used: z.number(),
         time_used_seconds: z.number(),
         auto_continue_turns: z.number(),
@@ -65,6 +68,7 @@ function formatGoalForResponse(goal: ThreadGoal | null) {
     objective: current.objective,
     status: current.status,
     token_budget: current.tokenBudget,
+    verify_command: current.verifyCommand,
     tokens_used: current.tokensUsed,
     time_used_seconds: current.timeUsedSeconds,
     auto_continue_turns: current.autoContinueTurns,
@@ -78,6 +82,21 @@ function formatGoalForResponse(goal: ThreadGoal | null) {
 function computeRemainingTokens(goal: ThreadGoal | null): number | null {
   if (!goal || !goal.tokenBudget) return null
   return Math.max(0, goal.tokenBudget - goal.tokensUsed)
+}
+
+function goalToolResult(
+  success: boolean,
+  goal: ThreadGoal | null,
+  message: string,
+): { data: GoalToolOutput } {
+  return {
+    data: {
+      success,
+      goal: formatGoalForResponse(goal),
+      remaining_tokens: computeRemainingTokens(goal),
+      message,
+    },
+  }
 }
 
 function buildCompletionReport(goal: ThreadGoal): string | null {
@@ -98,7 +117,7 @@ export const GoalTool = buildTool({
   maxResultSizeChars: 10_000,
   strict: true,
   async description() {
-    return 'Manage the active thread goal. Three operations: get_goal (read current), create_goal (set new, fails if exists), update_goal (mark complete only).'
+    return 'Manage the active thread goal. Three operations: get_goal (read current), create_goal (set new, fails if exists), update_goal (request completion only).'
   },
   async prompt() {
     return `Use this tool to manage the thread's active goal.
@@ -106,7 +125,7 @@ export const GoalTool = buildTool({
 Operations:
 - get_goal: Read the current goal state including tokens used and budget.
 - create_goal: Create a new goal. Fails if a goal already exists (status != complete). Provide a clear, concrete objective.
-- update_goal: Mark the existing goal as complete. ONLY use this when the objective has actually been achieved and no required work remains. Do not mark complete merely because the budget is nearly exhausted or because you are stopping work.
+- update_goal: Request completion for the existing goal. ONLY use this when the objective has actually been achieved and no required work remains. When a verify command is configured, the goal remains active until verification passes and the evaluator approves completion. Do not request completion merely because the budget is nearly exhausted or because you are stopping work.
 
 The model cannot pause, resume, or clear goals — those are user-controlled via slash commands.`
   },
@@ -133,52 +152,30 @@ The model cannot pause, resume, or clear goals — those are user-controlled via
   },
   async call(input, context) {
     if (context.agentId) {
-      return {
-        data: {
-          success: false,
-          goal: null,
-          remaining_tokens: null,
-          message:
-            'Goal management is only available on the main thread, not inside subagents.',
-        },
-      }
+      return goalToolResult(
+        false,
+        null,
+        'Goal management is only available on the main thread, not inside subagents.',
+      )
     }
     const { getAppState, setAppState } = context
 
     switch (input.operation) {
       case 'get_goal': {
         const current = getAppState().goal ?? null
-        if (!current) {
-          return {
-            data: {
-              success: true,
-              goal: null,
-              remaining_tokens: null,
-              message: 'No goal is currently set for this thread.',
-            },
-          }
-        }
-        return {
-          data: {
-            success: true,
-            goal: formatGoalForResponse(current),
-            remaining_tokens: computeRemainingTokens(current),
-            message: `Current goal: ${current.objective} (status: ${current.status})`,
-          },
-        }
+        return goalToolResult(
+          true,
+          current,
+          current
+            ? `Current goal: ${current.objective} (status: ${current.status})`
+            : 'No goal is currently set for this thread.',
+        )
       }
 
       case 'create_goal': {
         const objective = input.objective.trim()
         if (!objective) {
-          return {
-            data: {
-              success: false,
-              goal: null,
-              remaining_tokens: null,
-              message: 'Objective cannot be empty.',
-            },
-          }
+          return goalToolResult(false, null, 'Objective cannot be empty.')
         }
 
         const tokenBudget = input.token_budget ?? null
@@ -198,29 +195,24 @@ The model cannot pause, resume, or clear goals — those are user-controlled via
 
         if (conflict) {
           const c = conflict as ThreadGoal
-          return {
-            data: {
-              success: false,
-              goal: formatGoalForResponse(c),
-              remaining_tokens: computeRemainingTokens(c),
-              message: `Cannot create a new goal because this thread already has an active goal: "${c.objective}". Use update_goal only when the existing goal is complete.`,
-            },
-          }
+          return goalToolResult(
+            false,
+            c,
+            `Cannot create a new goal because this thread already has an active goal: "${c.objective}". Use update_goal only when the existing goal is complete.`,
+          )
         }
 
         const g = created as ThreadGoal | null
-        return {
-          data: {
-            success: true,
-            goal: formatGoalForResponse(g),
-            remaining_tokens: computeRemainingTokens(g),
-            message: `Goal created: ${objective}${tokenBudget ? ` (budget: ${tokenBudget} tokens)` : ''}`,
-          },
-        }
+        return goalToolResult(
+          true,
+          g,
+          `Goal created: ${objective}${tokenBudget ? ` (budget: ${tokenBudget} tokens)` : ''}`,
+        )
       }
 
       case 'update_goal': {
         let alreadyComplete: ThreadGoal | null = null
+        let pendingVerification: ThreadGoal | null = null
         let updated: ThreadGoal | null = null
 
         setAppState(prev => {
@@ -230,43 +222,41 @@ The model cannot pause, resume, or clear goals — those are user-controlled via
             alreadyComplete = existing
             return prev
           }
+          const current = normalizeGoal(existing)
+          if (current.verifyCommand) {
+            pendingVerification = current
+            return prev
+          }
           updated = markGoalComplete(existing, Date.now())
           return { ...prev, goal: updated }
         })
 
         if (alreadyComplete) {
-          const a = alreadyComplete as ThreadGoal
-          return {
-            data: {
-              success: false,
-              goal: formatGoalForResponse(a),
-              remaining_tokens: computeRemainingTokens(a),
-              message: 'Goal is already complete.',
-            },
-          }
+          return goalToolResult(
+            false,
+            alreadyComplete as ThreadGoal,
+            'Goal is already complete.',
+          )
+        }
+
+        if (pendingVerification) {
+          return goalToolResult(
+            true,
+            pendingVerification as ThreadGoal,
+            'Goal completion is pending verify command and evaluator approval.',
+          )
         }
 
         if (!updated) {
-          return {
-            data: {
-              success: false,
-              goal: null,
-              remaining_tokens: null,
-              message: 'No goal exists to update.',
-            },
-          }
+          return goalToolResult(false, null, 'No goal exists to update.')
         }
 
         const u = updated as ThreadGoal
-        const report = buildCompletionReport(u)
-        return {
-          data: {
-            success: true,
-            goal: formatGoalForResponse(u),
-            remaining_tokens: computeRemainingTokens(u),
-            message: report ?? 'Goal marked as complete.',
-          },
-        }
+        return goalToolResult(
+          true,
+          u,
+          buildCompletionReport(u) ?? 'Goal marked as complete.',
+        )
       }
     }
   },

@@ -39,6 +39,42 @@ describe('/goal command', () => {
     expect(harness.outputs.at(-1)).toContain('/goal replace')
   })
 
+  test('setting a goal carries --verify and --max-turns', async () => {
+    const harness = makeContext()
+
+    await goalCommand(
+      harness.onDone,
+      harness.context,
+      'Fix types --max-turns 9 --verify "bun run typecheck"',
+    )
+
+    expect(harness.state.goal?.objective).toBe('Fix types')
+    expect(harness.state.goal?.maxAutoContinueTurns).toBe(9)
+    expect(harness.state.goal?.verifyCommand).toBe('bun run typecheck')
+    expect(harness.outputs.at(-1)).toContain('run automatically each turn')
+  })
+
+  test('setting a goal after a complete one preserves --verify', async () => {
+    const harness = makeContext({
+      ...createThreadGoal({
+        objective: 'Old goal',
+        tokenBudget: null,
+        verifyCommand: 'old check',
+        now: 1,
+      }),
+      status: 'complete',
+    })
+
+    await goalCommand(
+      harness.onDone,
+      harness.context,
+      'New goal --verify "bun test"',
+    )
+
+    expect(harness.state.goal?.objective).toBe('New goal')
+    expect(harness.state.goal?.verifyCommand).toBe('bun test')
+  })
+
   test('replace explicitly overwrites the current goal', async () => {
     const harness = makeContext(
       createThreadGoal({ objective: 'Old goal', tokenBudget: null, now: 1 }),
@@ -88,7 +124,13 @@ describe('/goal command', () => {
 
   test('budget-limited goal resumes only with a larger budget', async () => {
     const goal = {
-      ...createThreadGoal({ objective: 'Ship', tokenBudget: 100, now: 1 }),
+      ...createThreadGoal({
+        objective: 'Ship',
+        tokenBudget: 100,
+        maxAutoContinueTurns: 5,
+        verifyCommand: 'old-check',
+        now: 1,
+      }),
       status: 'budget_limited' as const,
       tokensUsed: 120,
       stopReason: 'budget_limited' as const,
@@ -98,9 +140,16 @@ describe('/goal command', () => {
     await goalCommand(harness.onDone, harness.context, 'Ship --budget 120')
     expect(harness.state.goal?.status).toBe('budget_limited')
 
-    await goalCommand(harness.onDone, harness.context, 'Ship --budget 150')
+    await goalCommand(
+      harness.onDone,
+      harness.context,
+      'Ship --budget 150 --max-turns 9 --verify "new-check"',
+    )
     expect(harness.state.goal?.status).toBe('active')
     expect(harness.state.goal?.tokenBudget).toBe(150)
+    expect(harness.state.goal?.maxAutoContinueTurns).toBe(9)
+    expect(harness.state.goal?.verifyCommand).toBe('new-check')
+    expect(harness.outputs.at(-1)).toContain('run automatically each turn')
   })
 
   test('shows human-readable stop reasons', async () => {

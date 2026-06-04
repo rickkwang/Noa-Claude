@@ -3,7 +3,7 @@
 // These wrappers ease error handling and cross-platform compatbility
 // By using execa, Windows automatically gets shell escaping + BAT / CMD handling
 
-import { type ExecaError, execa } from 'execa'
+import { execa } from 'execa'
 import { getCwd } from '../utils/cwd.js'
 import { logError } from './log.js'
 
@@ -87,7 +87,7 @@ function getErrorMessage(
 /**
  * execFile, but always resolves (never throws)
  */
-export function execFileNoThrowWithCwd(
+export async function execFileNoThrowWithCwd(
   file: string,
   args: string[],
   {
@@ -106,46 +106,33 @@ export function execFileNoThrowWithCwd(
     maxBuffer: 1_000_000,
   },
 ): Promise<{ stdout: string; stderr: string; code: number; error?: string }> {
-  return new Promise(resolve => {
-    // Use execa for cross-platform .bat/.cmd compatibility on Windows
-    execa(file, args, {
+  try {
+    // Execa preserves cross-platform .bat/.cmd compatibility on Windows.
+    const result = await execa(file, args, {
       maxBuffer,
-      signal: abortSignal,
+      cancelSignal: abortSignal,
       timeout: finalTimeout,
       cwd: finalCwd,
       env: finalEnv,
       shell,
       stdin: finalStdin,
       input: finalInput,
-      reject: false, // Don't throw on non-zero exit codes
+      reject: false,
     })
-      .then(result => {
-        if (result.failed) {
-          if (finalPreserveOutput) {
-            const errorCode = result.exitCode ?? 1
-            void resolve({
-              stdout: result.stdout || '',
-              stderr: result.stderr || '',
-              code: errorCode,
-              error: getErrorMessage(
-                result as unknown as ExecaResultWithError,
-                errorCode,
-              ),
-            })
-          } else {
-            void resolve({ stdout: '', stderr: '', code: result.exitCode ?? 1 })
-          }
-        } else {
-          void resolve({
-            stdout: result.stdout,
-            stderr: result.stderr,
-            code: 0,
-          })
-        }
-      })
-      .catch((error: ExecaError) => {
-        logError(error)
-        void resolve({ stdout: '', stderr: '', code: 1 })
-      })
-  })
+    if (!result.failed) {
+      return { stdout: result.stdout, stderr: result.stderr, code: 0 }
+    }
+
+    const code = result.exitCode ?? 1
+    if (!finalPreserveOutput) return { stdout: '', stderr: '', code }
+    return {
+      stdout: result.stdout || '',
+      stderr: result.stderr || '',
+      code,
+      error: getErrorMessage(result as unknown as ExecaResultWithError, code),
+    }
+  } catch (error) {
+    logError(error)
+    return { stdout: '', stderr: '', code: 1 }
+  }
 }

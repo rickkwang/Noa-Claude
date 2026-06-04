@@ -105,6 +105,13 @@ type ToolUseBlock = {
   type: 'tool_use'
   name: string
   input: unknown
+  id?: string
+}
+
+type ToolResultBlock = {
+  type: 'tool_result'
+  tool_use_id: string
+  content?: unknown
 }
 
 type GoalToolResult = {
@@ -112,6 +119,7 @@ type GoalToolResult = {
     objective?: unknown
     status?: unknown
     token_budget?: unknown
+    verify_command?: unknown
     tokens_used?: unknown
     time_used_seconds?: unknown
     auto_continue_turns?: unknown
@@ -131,6 +139,23 @@ function isToolUseBlock(block: unknown): block is ToolUseBlock {
     'name' in block &&
     typeof block.name === 'string' &&
     'input' in block
+  )
+}
+
+function goalToolResultBlocks(
+  message: Message,
+  goalToolUseIDs: Set<string>,
+): ToolResultBlock[] {
+  if (!Array.isArray(message.message?.content)) return []
+  return message.message.content.filter(
+    (block): block is ToolResultBlock =>
+      typeof block === 'object' &&
+      block !== null &&
+      'type' in block &&
+      block.type === 'tool_result' &&
+      'tool_use_id' in block &&
+      typeof block.tool_use_id === 'string' &&
+      goalToolUseIDs.has(block.tool_use_id),
   )
 }
 
@@ -239,7 +264,11 @@ function applyGoalToolUse(
     return createThreadGoal({ objective, tokenBudget, now })
   }
   if (record.operation === 'update_goal' && record.status === 'complete') {
-    return goal ? markGoalComplete(goal, now) ?? normalizeGoal(goal) : goal
+    if (!goal) return goal
+    const current = normalizeGoal(goal)
+    return current.verifyCommand
+      ? current
+      : (markGoalComplete(current, now) ?? current)
   }
   return goal
 }
@@ -271,6 +300,11 @@ function applyGoalToolResult(
       typeof outputGoal.token_budget === 'number'
         ? outputGoal.token_budget
         : null,
+    verifyCommand:
+      typeof outputGoal.verify_command === 'string' &&
+      outputGoal.verify_command.trim()
+        ? outputGoal.verify_command
+        : (goal?.verifyCommand ?? null),
     tokensUsed:
       typeof outputGoal.tokens_used === 'number' ? outputGoal.tokens_used : 0,
     timeUsedSeconds:
@@ -433,6 +467,7 @@ function applyGoalMetaMessage(
 
 function extractGoalFromTranscript(messages: Message[]): ThreadGoal | undefined {
   let goal: ThreadGoal | undefined
+  const goalToolUseIDs = new Set<string>()
   for (const message of messages) {
     const now = timestampMs(message)
     if (message.type === 'system' && message.subtype === 'local_command') {
@@ -453,6 +488,7 @@ function extractGoalFromTranscript(messages: Message[]): ThreadGoal | undefined 
       if (Array.isArray(message.message?.content)) {
         for (const block of message.message.content) {
           if (isToolUseBlock(block) && block.name === 'goal') {
+            if (typeof block.id === 'string') goalToolUseIDs.add(block.id)
             goal = applyGoalToolUse(goal, block.input, now)
           }
         }
@@ -462,20 +498,22 @@ function extractGoalFromTranscript(messages: Message[]): ThreadGoal | undefined 
     }
 
     if (message.type === 'user') {
-      goal = applyGoalToolResult(goal, message.toolUseResult, now)
-      if (message.message?.content) {
-        const text =
-          typeof message.message.content === 'string'
-            ? message.message.content
-            : getContentText(message.message.content)
-        if (text) {
-          try {
-            goal = applyGoalToolResult(goal, JSON.parse(text), now)
-          } catch {
-            // Older goal tool results were plain text; the tool_use replay above
-            // still restores the objective/status for those sessions.
+      const resultBlocks = goalToolResultBlocks(message, goalToolUseIDs)
+      if (resultBlocks.length > 0) {
+        if (message.toolUseResult !== undefined) {
+          goal = applyGoalToolResult(goal, message.toolUseResult, now)
+        } else {
+          for (const block of resultBlocks) {
+            if (typeof block.content !== 'string') continue
+            try {
+              goal = applyGoalToolResult(goal, JSON.parse(block.content), now)
+            } catch {
+              // Older goal tool results were plain text; the tool_use replay above
+              // still restores the objective/status for those sessions.
+            }
           }
         }
+        for (const block of resultBlocks) goalToolUseIDs.delete(block.tool_use_id)
       }
       goal = applyGoalMetaMessage(goal, message, now)
       continue

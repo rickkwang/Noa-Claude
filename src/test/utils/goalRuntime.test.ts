@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { getDefaultAppState, type AppState } from '../../state/AppStateStore.js'
 import {
-  applyGoalAutoContinueExhausted,
   applyGoalRuntimeEvaluation,
   applyGoalRuntimeEvaluationFailure,
   decideGoalEvaluatorAction,
@@ -149,33 +148,26 @@ describe('goal runtime', () => {
     ).toBe('skip')
   })
 
-  test('decideGoalEvaluatorAction returns exhausted at auto-continue limit', () => {
+  test('still evaluates the final allowed auto-continue turn', () => {
     const goal = {
       ...createThreadGoal({ objective: 'Ship', tokenBudget: null, now: 1 }),
       autoContinueTurns: 5,
       maxAutoContinueTurns: 5,
     }
     expect(decideGoalEvaluatorAction({ goal, permissionMode: 'default' })).toBe(
-      'exhausted',
+      'run',
     )
-  })
 
-  test('applyGoalAutoContinueExhausted pauses without invoking evaluator', () => {
-    const state = harness({
-      ...createThreadGoal({ objective: 'Ship', tokenBudget: null, now: 1 }),
-      autoContinueTurns: 5,
-      maxAutoContinueTurns: 5,
-      lastEvaluatorReason: 'Not yet.',
-    })
-
-    const decision = applyGoalAutoContinueExhausted({
+    const state = harness(goal)
+    const decision = applyGoalRuntimeEvaluation({
+      evaluation: { achieved: true, reason: 'Final verification passed.' },
       setAppState: state.setAppState,
     })
 
     expect(decision.action).toBe('stop')
-    expect(decision.userNotice?.type).toBe('system')
-    expect(decision.userNotice?.content).toContain('Goal paused after 5')
-    expect(state.state.goal?.status).toBe('paused')
-    expect(state.state.goal?.stopReason).toBe('max_auto_continue_turns')
+    expect(state.state.goal?.status).toBe('complete')
+    expect(state.state.goal?.lastEvaluatorReason).toBe(
+      'Final verification passed.',
+    )
   })
 })

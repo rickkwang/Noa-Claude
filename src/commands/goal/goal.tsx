@@ -3,6 +3,7 @@ import type { LocalJSXCommandOnDone } from '../../types/command.js'
 import type { ThreadGoal } from '../../types/goal.js'
 import {
   createThreadGoal,
+  GOAL_OPTIONS_USAGE,
   maybeResumeBudgetLimitedGoal,
   normalizeGoal,
   parseGoalCommandArgs,
@@ -29,6 +30,20 @@ function formatTokens(n: number): string {
   if (n < 1000) return `${n}`
   if (n < 1_000_000) return `${(n / 1000).toFixed(1)}K`
   return `${(n / 1_000_000).toFixed(1)}M`
+}
+
+// Keep auto-execution explicit when a verify command is set.
+function goalDetailsSuffix(
+  tokenBudget: number | null,
+  verifyCommand?: string | null,
+): string {
+  const budget = tokenBudget
+    ? ` (budget: ${formatTokens(tokenBudget)} tokens)`
+    : ''
+  const verify = verifyCommand
+    ? `\nVerify command will run automatically each turn: ${verifyCommand}`
+    : ''
+  return budget + verify
 }
 
 function formatStopReason(goal: ThreadGoal): string | null {
@@ -63,6 +78,9 @@ function buildGoalSummary(goal: ThreadGoal): string {
   parts.push(
     `Auto-continue: ${current.autoContinueTurns} / ${current.maxAutoContinueTurns}`,
   )
+  if (current.verifyCommand) {
+    parts.push(`Verify: ${current.verifyCommand} (runs each turn)`)
+  }
   if (current.lastEvaluatorReason) {
     parts.push(`Last evaluator: ${current.lastEvaluatorReason}`)
   }
@@ -95,7 +113,7 @@ export async function call(
     const goal = getAppState().goal
     if (!goal) {
       onDone(
-        'No goal is currently set.\n\nUsage: /goal <objective> [--budget N]',
+        `No goal is currently set.\n\nUsage: /goal <objective> ${GOAL_OPTIONS_USAGE}`,
       )
       return null
     }
@@ -177,10 +195,9 @@ export async function call(
       ...prev,
       goal: replaceGoal({ ...action.args, now }),
     }))
-    const budgetStr = action.args.tokenBudget
-      ? ` (budget: ${formatTokens(action.args.tokenBudget)} tokens)`
-      : ''
-    onDone(`Goal replaced: ${action.args.objective}${budgetStr}`)
+    onDone(
+      `Goal replaced: ${action.args.objective}${goalDetailsSuffix(action.args.tokenBudget, action.args.verifyCommand)}`,
+    )
     return null
   }
 
@@ -202,8 +219,7 @@ export async function call(
       if (current.status === 'budget_limited') {
         const resumed = maybeResumeBudgetLimitedGoal({
           goal: current,
-          objective,
-          tokenBudget,
+          ...action.args,
           now,
         })
         if (resumed) {
@@ -219,7 +235,7 @@ export async function call(
 
       if (current.status === 'complete') {
         box.outcome = 'set'
-        return { ...prev, goal: createThreadGoal({ objective, tokenBudget, now }) }
+        return { ...prev, goal: createThreadGoal({ ...action.args, now }) }
       }
 
       box.outcome = 'conflict'
@@ -227,14 +243,12 @@ export async function call(
       return prev
     }
     box.outcome = 'set'
-    return { ...prev, goal: createThreadGoal({ objective, tokenBudget, now }) }
+    return { ...prev, goal: createThreadGoal({ ...action.args, now }) }
   })
 
-  const budgetStr = tokenBudget
-    ? ` (budget: ${formatTokens(tokenBudget)} tokens)`
-    : ''
+  const details = goalDetailsSuffix(tokenBudget, action.args.verifyCommand)
   if (box.outcome === 'budget_resumed') {
-    onDone(`Goal resumed with new budget: ${objective}${budgetStr}`)
+    onDone(`Goal resumed with new budget: ${objective}${details}`)
   } else if (box.outcome === 'conflict') {
     onDone(
       `A goal is already ${box.existing?.status}: ${box.existing?.objective}\n\nUse /goal replace <objective> to replace it, or /goal clear first.`,
@@ -244,7 +258,7 @@ export async function call(
       `Goal is budget_limited. Provide a larger budget than current usage (${formatTokens(box.existing?.tokensUsed ?? 0)} tokens).`,
     )
   } else {
-    onDone(`Goal set: ${objective}${budgetStr}`)
+    onDone(`Goal set: ${objective}${details}`)
   }
   return null
 }

@@ -62,9 +62,11 @@ import {
   getGoalPromptForStatus,
 } from './utils/goalPrompts.js'
 import { accountGoalUsage } from './utils/goalAccounting.js'
-import { evaluateGoalCompletion } from './utils/goalEvaluator.js'
 import {
-  applyGoalAutoContinueExhausted,
+  evaluateGoalCompletion,
+  runGoalVerifyCommand,
+} from './utils/goalEvaluator.js'
+import {
   applyGoalRuntimeEvaluation,
   applyGoalRuntimeEvaluationFailure,
   decideGoalEvaluatorAction,
@@ -1434,14 +1436,7 @@ async function* queryLoop(
         agentId: toolUseContext.agentId,
         permissionMode,
       })
-      if (goalEvaluatorAction === 'exhausted') {
-        const exhaustedDecision = applyGoalAutoContinueExhausted({
-          setAppState: toolUseContext.setAppState,
-        })
-        if (exhaustedDecision.userNotice) {
-          yield exhaustedDecision.userNotice
-        }
-      } else if (goalEvaluatorAction === 'run') {
+      if (goalEvaluatorAction === 'run') {
         if (toolUseContext.abortController.signal.aborted) {
           if (toolUseContext.abortController.signal.reason !== 'interrupt') {
             yield createUserInterruptionMessage({
@@ -1451,12 +1446,25 @@ async function* queryLoop(
           return { reason: 'aborted_streaming' }
         }
         const currentGoal = normalizeGoal(goal)
+        const verifyResult = currentGoal.verifyCommand
+          ? await runGoalVerifyCommand({
+              goal: currentGoal,
+              signal: toolUseContext.abortController.signal,
+            })
+          : null
+        if (toolUseContext.abortController.signal.aborted) {
+          if (toolUseContext.abortController.signal.reason !== 'interrupt') {
+            yield createUserInterruptionMessage({ toolUse: false })
+          }
+          return { reason: 'aborted_streaming' }
+        }
         const { evaluation, evaluatorMessage } = await evaluateGoalCompletion({
           goal: currentGoal,
           messages: [...messagesForQuery, ...assistantMessages],
           signal: toolUseContext.abortController.signal,
           isNonInteractiveSession:
             toolUseContext.options.isNonInteractiveSession,
+          verifyResult,
         })
         if (toolUseContext.abortController.signal.aborted) {
           if (toolUseContext.abortController.signal.reason !== 'interrupt') {

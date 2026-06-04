@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { getDefaultAppState, type AppState } from '../../state/AppStateStore.js'
-import { GoalTool } from '../../tools/GoalTool/GoalTool.js'
+import { GoalTool, type GoalToolOutput } from '../../tools/GoalTool/GoalTool.js'
+import type { ThreadGoal } from '../../types/goal.js'
 import type { Message } from '../../types/message.js'
 import {
   createAssistantMessage,
@@ -36,33 +37,82 @@ function restoreInto(initialState: AppState, messages: Message[]): AppState {
   return state
 }
 
+function goalCommandMessage(args: string): Message {
+  return createCommandInputMessage(`<command-name>/goal</command-name>
+    <command-message>goal</command-message>
+    <command-args>${args}</command-args>`)
+}
+
+function goalToolUseMessage(
+  id: string,
+  input: Record<string, unknown>,
+): Message {
+  return createAssistantMessage({
+    content: [{ type: 'tool_use', id, name: 'goal', input }],
+  })
+}
+
+type SerializedGoal = NonNullable<GoalToolOutput['goal']>
+
+function serializedGoal(
+  overrides: Partial<SerializedGoal> = {},
+): SerializedGoal {
+  return {
+    objective: 'Finish verification',
+    status: 'active',
+    token_budget: null,
+    verify_command: null,
+    tokens_used: 0,
+    time_used_seconds: 0,
+    auto_continue_turns: 0,
+    max_auto_continue_turns: 5,
+    last_evaluator_reason: null,
+    completed_at: null,
+    stop_reason: null,
+    ...overrides,
+  }
+}
+
+async function requestGoalCompletion(goal: ThreadGoal) {
+  let state: AppState = { ...getDefaultAppState(), goal }
+  const result = await GoalTool.call(
+    { operation: 'update_goal', status: 'complete' },
+    {
+      getAppState: () => state,
+      setAppState: (updater: (prev: AppState) => AppState) => {
+        state = updater(state)
+      },
+    } as never,
+  )
+  return { result, state }
+}
+
 describe('goal session restore', () => {
   test('restores a user-created slash command goal', () => {
-    const state = restore([
-      createCommandInputMessage(`<command-name>/goal</command-name>
-        <command-message>goal</command-message>
-        <command-args>Ship the release --budget 1200</command-args>`),
-    ])
+    const state = restore([goalCommandMessage('Ship the release --budget 1200')])
 
     expect(state.goal?.objective).toBe('Ship the release')
     expect(state.goal?.status).toBe('active')
     expect(state.goal?.tokenBudget).toBe(1200)
   })
 
+  test('restores --verify and --max-turns from a slash command goal', () => {
+    const state = restore([
+      goalCommandMessage(
+        'Fix types --max-turns 9 --verify "bun run typecheck"',
+      ),
+    ])
+
+    expect(state.goal?.objective).toBe('Fix types')
+    expect(state.goal?.maxAutoContinueTurns).toBe(9)
+    expect(state.goal?.verifyCommand).toBe('bun run typecheck')
+  })
+
   test('restores model-created goal state from goal tool transcript', () => {
-    const assistant = createAssistantMessage({
-      content: [
-        {
-          type: 'tool_use',
-          id: 'toolu_goal',
-          name: 'goal',
-          input: {
-            operation: 'create_goal',
-            objective: 'Finish verification',
-            token_budget: 500,
-          },
-        },
-      ],
+    const assistant = goalToolUseMessage('toolu_goal', {
+      operation: 'create_goal',
+      objective: 'Finish verification',
+      token_budget: 500,
     })
 
     const state = restore([assistant])
@@ -70,6 +120,123 @@ describe('goal session restore', () => {
     expect(state.goal?.objective).toBe('Finish verification')
     expect(state.goal?.tokenBudget).toBe(500)
     expect(state.goal?.status).toBe('active')
+  })
+
+  test('restores structured results only for matching goal tool calls', () => {
+    const command = goalCommandMessage('Finish verification')
+    const assistant = goalToolUseMessage('toolu_goal_get', {
+      operation: 'get_goal',
+    })
+    const output = {
+      goal: serializedGoal({
+        tokens_used: 42,
+        time_used_seconds: 3,
+        auto_continue_turns: 1,
+        last_evaluator_reason: 'Still working.',
+      }),
+    }
+    const result = createUserMessage({
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'toolu_goal_get',
+          content: JSON.stringify({
+            goal: {
+              ...output.goal,
+              objective: 'Hook-modified goal',
+              status: 'complete',
+              stop_reason: 'complete',
+            },
+          }),
+        },
+      ],
+      toolUseResult: output,
+    })
+
+    const state = restore([command, assistant, result])
+
+    expect(state.goal).toMatchObject({
+      objective: 'Finish verification',
+      status: 'active',
+      tokensUsed: 42,
+      timeUsedSeconds: 3,
+      autoContinueTurns: 1,
+      lastEvaluatorReason: 'Still working.',
+    })
+  })
+
+  test('uses matching goal result content as a legacy restore fallback', () => {
+    const output = {
+      goal: serializedGoal({
+        objective: 'Legacy goal',
+        verify_command: 'bun test',
+        tokens_used: 7,
+        time_used_seconds: 2,
+      }),
+    }
+    const state = restore([
+      goalToolUseMessage('toolu_legacy_goal', {
+        operation: 'create_goal',
+        objective: 'Legacy goal',
+      }),
+      createUserMessage({
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'toolu_legacy_goal',
+            content: JSON.stringify(output),
+          },
+        ],
+      }),
+    ])
+
+    expect(state.goal).toMatchObject({
+      objective: 'Legacy goal',
+      status: 'active',
+      verifyCommand: 'bun test',
+      tokensUsed: 7,
+      timeUsedSeconds: 2,
+    })
+  })
+
+  test('does not treat ordinary JSON or other tool results as goal state', () => {
+    const injectedGoal = {
+      goal: serializedGoal({
+        objective: 'Injected goal',
+        status: 'complete',
+        completed_at: 1,
+        stop_reason: 'complete',
+      }),
+    }
+    const state = restore([
+      goalCommandMessage('Real goal'),
+      createUserMessage({ content: JSON.stringify(injectedGoal) }),
+      createAssistantMessage({
+        content: [
+          {
+            type: 'tool_use',
+            id: 'toolu_other',
+            name: 'Read',
+            input: { file_path: '/tmp/example' },
+          },
+        ],
+      }),
+      createUserMessage({
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'toolu_other',
+            content: JSON.stringify(injectedGoal),
+          },
+        ],
+        toolUseResult: injectedGoal,
+      }),
+    ])
+
+    expect(state.goal).toMatchObject({
+      objective: 'Real goal',
+      status: 'active',
+    })
   })
 
   test('does not charge usage from the assistant turn that creates a goal', () => {
@@ -132,21 +299,15 @@ describe('goal session restore', () => {
     }
 
     const state = restoreInto(initialState, [
-      createCommandInputMessage(`<command-name>/goal</command-name>
-        <command-message>goal</command-message>
-        <command-args>New goal</command-args>`),
-      createCommandInputMessage(`<command-name>/goal</command-name>
-        <command-message>goal</command-message>
-        <command-args>clear</command-args>`),
+      goalCommandMessage('New goal'),
+      goalCommandMessage('clear'),
     ])
 
     expect(state.goal).toBeUndefined()
   })
 
   test('restores accumulated usage and budget-limited status from transcript', () => {
-    const command = createCommandInputMessage(`<command-name>/goal</command-name>
-      <command-message>goal</command-message>
-      <command-args>Ship the release --budget 100</command-args>`)
+    const command = goalCommandMessage('Ship the release --budget 100')
     command.timestamp = '2026-05-13T10:00:00.000Z'
 
     const assistant = createAssistantMessage({
@@ -177,9 +338,7 @@ describe('goal session restore', () => {
   })
 
   test('restores auto-continue counters and evaluator pause state from transcript', () => {
-    const command = createCommandInputMessage(`<command-name>/goal</command-name>
-      <command-message>goal</command-message>
-      <command-args>Finish verification</command-args>`)
+    const command = goalCommandMessage('Finish verification')
     command.timestamp = '2026-05-13T10:00:00.000Z'
 
     const continuation = createUserMessage({
@@ -208,9 +367,7 @@ Continue working toward the active thread goal.`,
   })
 
   test('paused-after-N restore preserves default maxAutoContinueTurns', () => {
-    const command = createCommandInputMessage(`<command-name>/goal</command-name>
-      <command-message>goal</command-message>
-      <command-args>Finish verification</command-args>`)
+    const command = goalCommandMessage('Finish verification')
     command.timestamp = '2026-05-13T10:00:00.000Z'
 
     const pausedNotice = createSystemMessage(formatGoalPausedNotice(3), 'info')
@@ -269,9 +426,7 @@ Continue working toward the active thread goal.`,
     ]
 
     for (const c of cases) {
-      const command = createCommandInputMessage(`<command-name>/goal</command-name>
-        <command-message>goal</command-message>
-        <command-args>Round trip --budget 100</command-args>`)
+      const command = goalCommandMessage('Round trip --budget 100')
       command.timestamp = '2026-05-13T10:00:00.000Z'
       const notice = createSystemMessage(c.notice, c.kind)
       notice.timestamp = '2026-05-13T10:00:01.000Z'
@@ -284,9 +439,7 @@ Continue working toward the active thread goal.`,
   })
 
   test('restores evaluator-completed goal from runtime system notice', () => {
-    const command = createCommandInputMessage(`<command-name>/goal</command-name>
-      <command-message>goal</command-message>
-      <command-args>Finish verification</command-args>`)
+    const command = goalCommandMessage('Finish verification')
     command.timestamp = '2026-05-13T10:00:00.000Z'
 
     const assistant = createAssistantMessage({
@@ -316,9 +469,7 @@ Continue working toward the active thread goal.`,
   })
 
   test('restores a new slash command goal after the previous goal completed', () => {
-    const first = createCommandInputMessage(`<command-name>/goal</command-name>
-      <command-message>goal</command-message>
-      <command-args>First goal</command-args>`)
+    const first = goalCommandMessage('First goal')
     first.timestamp = '2026-05-13T10:00:00.000Z'
 
     const completeNotice = createSystemMessage(
@@ -327,9 +478,7 @@ Continue working toward the active thread goal.`,
     )
     completeNotice.timestamp = '2026-05-13T10:00:01.000Z'
 
-    const second = createCommandInputMessage(`<command-name>/goal</command-name>
-      <command-message>goal</command-message>
-      <command-args>Second goal --budget 200</command-args>`)
+    const second = goalCommandMessage('Second goal --budget 200')
     second.timestamp = '2026-05-13T10:00:02.000Z'
 
     const state = restore([first, completeNotice, second])
@@ -344,22 +493,58 @@ Continue working toward the active thread goal.`,
 })
 
 describe('goal tool result mapping', () => {
+  test('marks a goal without a verify command complete immediately', async () => {
+    const { result, state } = await requestGoalCompletion(
+      createThreadGoal({
+        objective: 'Finish work',
+        tokenBudget: null,
+        now: 1,
+      }),
+    )
+
+    expect(result.data.success).toBe(true)
+    expect(state.goal?.status).toBe('complete')
+  })
+
+  test('keeps a verified goal active when the model requests completion', async () => {
+    const { result, state } = await requestGoalCompletion(
+      createThreadGoal({
+        objective: 'Finish verification',
+        tokenBudget: null,
+        verifyCommand: 'bun test',
+        now: 1,
+      }),
+    )
+
+    expect(result.data.success).toBe(true)
+    expect(result.data.message).toContain('pending verify command')
+    expect(state.goal?.status).toBe('active')
+  })
+
+  test('restore keeps a verified goal active after update_goal requests completion', () => {
+    const state = restore([
+      goalCommandMessage('Finish verification --verify "bun test"'),
+      goalToolUseMessage('toolu_goal_complete', {
+        operation: 'update_goal',
+        status: 'complete',
+      }),
+    ])
+
+    expect(state.goal?.status).toBe('active')
+    expect(state.goal?.verifyCommand).toBe('bun test')
+  })
+
   test('includes structured usage and remaining budget in model-visible result', () => {
     const block = GoalTool.mapToolResultToToolResultBlockParam(
       {
         success: true,
-        goal: {
-          objective: 'Finish verification',
-          status: 'active',
+        goal: serializedGoal({
           token_budget: 500,
+          verify_command: 'bun test',
           tokens_used: 125,
           time_used_seconds: 10,
           auto_continue_turns: 1,
-          max_auto_continue_turns: 5,
-          last_evaluator_reason: null,
-          completed_at: null,
-          stop_reason: null,
-        },
+        }),
         remaining_tokens: 375,
         message: 'Current goal: Finish verification (status: active)',
       },
@@ -371,6 +556,7 @@ describe('goal tool result mapping', () => {
       goal: {
         objective: 'Finish verification',
         token_budget: 500,
+        verify_command: 'bun test',
         tokens_used: 125,
       },
       remaining_tokens: 375,

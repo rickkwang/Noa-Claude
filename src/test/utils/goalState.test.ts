@@ -50,7 +50,13 @@ describe('goal state machine', () => {
 
   test('budget-limited goals require a larger budget to resume', () => {
     const goal = {
-      ...createThreadGoal({ objective: 'Ship', tokenBudget: 100, now: 1 }),
+      ...createThreadGoal({
+        objective: 'Ship',
+        tokenBudget: 100,
+        maxAutoContinueTurns: 5,
+        verifyCommand: 'old-check',
+        now: 1,
+      }),
       status: 'budget_limited' as const,
       tokensUsed: 120,
       stopReason: 'budget_limited' as const,
@@ -69,11 +75,15 @@ describe('goal state machine', () => {
         goal,
         objective: 'Ship',
         tokenBudget: 150,
+        maxAutoContinueTurns: 9,
+        verifyCommand: 'new-check',
         now: 2,
       }),
     ).toMatchObject({
       status: 'active',
       tokenBudget: 150,
+      maxAutoContinueTurns: 9,
+      verifyCommand: 'new-check',
       stopReason: null,
     })
   })
@@ -144,6 +154,131 @@ describe('goal state machine', () => {
         tokenBudget: null,
       },
     })
+  })
+
+  test('parses --max-turns into maxAutoContinueTurns', () => {
+    expect(parseGoalCommandArgs('Ship it --max-turns 12')).toMatchObject({
+      kind: 'set',
+      args: {
+        objective: 'Ship it',
+        tokenBudget: null,
+        maxAutoContinueTurns: 12,
+      },
+    })
+  })
+
+  test('rejects non-positive --max-turns', () => {
+    expect(parseGoalCommandArgs('Ship --max-turns 0')).toMatchObject({
+      kind: 'invalid',
+      message: '--max-turns must be a positive integer.',
+    })
+    expect(parseGoalCommandArgs('Ship --max-turns')).toMatchObject({
+      kind: 'invalid',
+      message: '--max-turns must be a positive integer.',
+    })
+  })
+
+  test('parses --verify into verifyCommand and strips it from objective', () => {
+    expect(
+      parseGoalCommandArgs('Fix types --verify "bun run typecheck"'),
+    ).toMatchObject({
+      kind: 'set',
+      args: {
+        objective: 'Fix types',
+        verifyCommand: 'bun run typecheck',
+      },
+    })
+  })
+
+  test('rejects empty --verify command', () => {
+    expect(parseGoalCommandArgs('Fix types --verify ""')).toMatchObject({
+      kind: 'invalid',
+      message: '--verify must be a non-empty command.',
+    })
+  })
+
+  test('rejects a trailing --verify with no value', () => {
+    expect(parseGoalCommandArgs('Fix types --verify')).toMatchObject({
+      kind: 'invalid',
+      message: '--verify must be a non-empty command.',
+    })
+  })
+
+  test('rejects an unterminated quoted --verify command', () => {
+    expect(
+      parseGoalCommandArgs('Fix types --verify "bun run typecheck'),
+    ).toMatchObject({
+      kind: 'invalid',
+      message: '--verify must be a non-empty, valid quoted command.',
+    })
+  })
+
+  test('parses escaped quotes inside a quoted --verify command', () => {
+    expect(
+      parseGoalCommandArgs(
+        'Fix types --verify "node -e \\"process.exit(0)\\""',
+      ),
+    ).toMatchObject({
+      kind: 'set',
+      args: {
+        objective: 'Fix types',
+        verifyCommand: 'node -e "process.exit(0)"',
+      },
+    })
+  })
+
+  test('accepts an unquoted single-token --verify command', () => {
+    expect(parseGoalCommandArgs('Fix types --verify make')).toMatchObject({
+      kind: 'set',
+      args: { objective: 'Fix types', verifyCommand: 'make' },
+    })
+  })
+
+  test('combines --budget, --max-turns and --verify', () => {
+    expect(
+      parseGoalCommandArgs(
+        'Ship --budget 5000 --max-turns 8 --verify "make test"',
+      ),
+    ).toMatchObject({
+      kind: 'set',
+      args: {
+        objective: 'Ship',
+        tokenBudget: 5000,
+        maxAutoContinueTurns: 8,
+        verifyCommand: 'make test',
+      },
+    })
+  })
+
+  test('rejects duplicate goal flags instead of adding them to the objective', () => {
+    expect(parseGoalCommandArgs('Ship --budget 5 --budget 6')).toMatchObject({
+      kind: 'invalid',
+      message: '--budget may only be specified once.',
+    })
+    expect(
+      parseGoalCommandArgs('Ship --max-turns 2 --max-turns 3'),
+    ).toMatchObject({
+      kind: 'invalid',
+      message: '--max-turns may only be specified once.',
+    })
+    expect(
+      parseGoalCommandArgs('Ship --verify "check-a" --verify "check-b"'),
+    ).toMatchObject({
+      kind: 'invalid',
+      message: '--verify may only be specified once.',
+    })
+  })
+
+  test('createThreadGoal honors verifyCommand and maxAutoContinueTurns', () => {
+    const goal = createThreadGoal({
+      objective: 'Ship',
+      tokenBudget: null,
+      maxAutoContinueTurns: 9,
+      verifyCommand: 'bun test',
+      now: 1,
+    })
+    expect(goal.maxAutoContinueTurns).toBe(9)
+    expect(goal.verifyCommand).toBe('bun test')
   })
 
   test('treats control words with extra text as objectives', () => {

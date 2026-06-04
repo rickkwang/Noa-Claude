@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { buildGoalEvaluatorContext } from '../../utils/goalEvaluator.js'
+import {
+  buildGoalEvaluatorContext,
+  enforceGoalVerifyResult,
+  formatVerifyResultForEvaluator,
+  runGoalVerifyCommand,
+} from '../../utils/goalEvaluator.js'
+import { createThreadGoal } from '../../utils/goalState.js'
 import {
   createAssistantMessage,
   createUserMessage,
@@ -78,6 +84,107 @@ describe('goal evaluator context', () => {
     expect(context.length).toBeLessThanOrEqual(4000)
     expect(context).toContain('[truncated]')
     expect(context).toContain('DONE')
+  })
+
+  test('formats a passing verify result with exit code and output tail', () => {
+    const text = formatVerifyResultForEvaluator('bun run typecheck', {
+      code: 0,
+      stdout: 'all good',
+      stderr: '',
+    })
+    expect(text).toContain('bun run typecheck')
+    expect(text).toContain('exit code: 0')
+    expect(text).toContain('all good')
+  })
+
+  test('formats a failing verify result and keeps the output tail bounded', () => {
+    const text = formatVerifyResultForEvaluator('bun test', {
+      code: 1,
+      stdout: `${'x'.repeat(5000)}\n\u001b[31m3 fail\u001b[0m`,
+      stderr: 'boom\u0000detail',
+    })
+    expect(text).toContain('exit code: 1')
+    expect(text).toContain('3 fail')
+    expect(text).toContain('boom detail')
+    expect(text).not.toContain('boomdetail')
+    expect(text).not.toContain('\u001b')
+    expect(text).not.toContain('\u0000')
+    expect(text.length).toBeLessThanOrEqual(2500)
+  })
+
+  test('forces a failing verify result to keep the goal incomplete', () => {
+    expect(
+      enforceGoalVerifyResult(
+        { achieved: false, reason: 'Typecheck still fails in goalState.ts.' },
+        { code: 1, stdout: '', stderr: 'tests failed' },
+      ),
+    ).toEqual({
+      achieved: false,
+      reason:
+        'Verify command failed with exit code 1. Typecheck still fails in goalState.ts.',
+    })
+  })
+
+  test('does not forward raw verify output when overriding an incorrect pass', () => {
+    const result = enforceGoalVerifyResult(
+      { achieved: true, reason: 'Conversation appears complete.' },
+      {
+        code: 2,
+        stdout: 'raw diagnostic',
+        stderr: 'secret detail',
+      },
+    )
+
+    expect(result).toEqual({
+      achieved: false,
+      reason: 'Verify command failed with exit code 2.',
+    })
+  })
+
+  test('preserves evaluator decisions after a passing verify result', () => {
+    expect(
+      enforceGoalVerifyResult(
+        { achieved: true, reason: 'All requirements are complete.' },
+        { code: 0, stdout: 'ok', stderr: '' },
+      ),
+    ).toEqual({
+      achieved: true,
+      reason: 'All requirements are complete.',
+    })
+  })
+
+  test('runs a verify command with an abort signal', async () => {
+    const executable = JSON.stringify(process.execPath)
+    const goal = createThreadGoal({
+      objective: 'Run verification',
+      tokenBudget: null,
+      verifyCommand: `${executable} -e "process.stdout.write('verify-ok')"`,
+      now: 1,
+    })
+
+    const result = await runGoalVerifyCommand({
+      goal,
+      signal: new AbortController().signal,
+    })
+
+    expect(result).toMatchObject({ code: 0, stdout: 'verify-ok' })
+  })
+
+  test('preserves the execution error when a verify command fails silently', async () => {
+    const goal = createThreadGoal({
+      objective: 'Run verification',
+      tokenBudget: null,
+      verifyCommand: 'exit 9',
+      now: 1,
+    })
+
+    const result = await runGoalVerifyCommand({
+      goal,
+      signal: new AbortController().signal,
+    })
+
+    expect(result).toMatchObject({ code: 9, stdout: '' })
+    expect(result?.stderr).toContain('exit code 9')
   })
 
   test('keeps tail evidence from an oversized segment before a short latest message', () => {

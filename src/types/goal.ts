@@ -11,6 +11,7 @@ export type ThreadGoal = {
   objective: string
   status: ThreadGoalStatus
   tokenBudget: number | null
+  verifyCommand: string | null
   tokensUsed: number
   timeUsedSeconds: number
   autoContinueTurns: number
