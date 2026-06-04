@@ -24,6 +24,7 @@ This file is the build/runtime audit for experimental feature flags in this repo
 - `AUTO_THEME`
 - `AWAY_SUMMARY`
 - `BASH_CLASSIFIER`
+- `BUILTIN_EXPLORE_PLAN_AGENTS` (default-on; enables the built-in Explore + Plan subagents. Its GrowthBook A/B gate `tengu_amber_stoat` is inert here — GrowthBook is hard-disabled — so the default `true` applies.)
 - `CACHED_MICROCOMPACT`
 - `COMMIT_ATTRIBUTION`
 - `CONNECTOR_TEXT`
@@ -98,6 +99,8 @@ This file is the build/runtime audit for experimental feature flags in this repo
 - `MEMORY_SHAPE_TELEMETRY` (telemetry hard-disabled in this build)
 - `PERFETTO_TRACING` (telemetry/tracing disabled in this build)
 - `PROACTIVE` (product scope intentionally excluded)
+- `DUMP_SYSTEM_PROMPT` (ant-only `--dump-system-prompt` eval entrypoint; eliminated from external builds by design)
+- `SKIP_DETECTION_WHEN_AUTOUPDATES_DISABLED` (orphan optimization gate; referenced in `AutoUpdaterWrapper` but not part of any named build profile)
 
 ## Command Surfaces Outside Flag Unlock
 

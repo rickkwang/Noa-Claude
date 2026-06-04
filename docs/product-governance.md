@@ -62,9 +62,7 @@ These commands are intentionally not available in this build and must remain hid
 
 - `/proactive`
 - `/peers`
-- `/agents-platform`
 - `/remote-control`
-- `/torch`
 - `/force-snip`
 - `/subscribe-pr`
 
@@ -78,9 +76,7 @@ Tracked surfaces:
 
 - `/proactive`
 - `/peers`
-- `/agents-platform`
 - `/remote-control`
-- `/torch`
 - `/force-snip`
 - `/subscribe-pr`
 
@@ -96,14 +92,12 @@ Policy:
 
 Tracked surfaces:
 
-- `/onboarding`
 - `/autofix-pr`
 - `/bughunter`
 - `/teleport`
 - `/good-claude`
 - `/mock-limits`
 - `/reset-limits`
-- `/env`
 - `/issue`
 
 ## Feature Gaps

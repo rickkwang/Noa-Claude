@@ -28,6 +28,7 @@ const fullExperimentalFeatures = [
   'BASH_CLASSIFIER',
   'BG_SESSIONS',
   'BRIDGE_MODE',
+  'BUILTIN_EXPLORE_PLAN_AGENTS',
   'CACHED_MICROCOMPACT',
   'CCR_AUTO_CONNECT',
   'CCR_MIRROR',
@@ -127,7 +128,7 @@ function getBundledReleaseNotes(): string {
   }
 }
 
-const defaultFeatures = ['VOICE_MODE', 'AUTO_THEME']
+const defaultFeatures = ['VOICE_MODE', 'AUTO_THEME', 'BUILTIN_EXPLORE_PLAN_AGENTS']
 const featureSet = new Set<string>(defaultFeatures)
 
 for (let i = 0; i < args.length; i++) {

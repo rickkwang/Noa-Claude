@@ -118,15 +118,6 @@ const buildExcluded: CommandSurfaceEntry[] = [
     errorContract: BUILD_EXCLUDED_ERROR_CONTRACTS.peers,
   },
   {
-    command: '/agents-platform',
-    category: 'build-excluded',
-    discoverability: 'hidden',
-    supportsNonInteractive: null,
-    reason: 'Feature intentionally excluded from this build.',
-    upgradeCondition: 'Requires full feature delivery, not visibility toggle.',
-    errorContract: BUILD_EXCLUDED_ERROR_CONTRACTS['agents-platform'],
-  },
-  {
     command: '/remote-control',
     category: 'build-excluded',
     discoverability: 'hidden',
@@ -134,15 +125,6 @@ const buildExcluded: CommandSurfaceEntry[] = [
     reason: 'Feature intentionally excluded from this build.',
     upgradeCondition: 'Requires full feature delivery, not visibility toggle.',
     errorContract: BUILD_EXCLUDED_ERROR_CONTRACTS['remote-control'],
-  },
-  {
-    command: '/torch',
-    category: 'build-excluded',
-    discoverability: 'hidden',
-    supportsNonInteractive: null,
-    reason: 'Feature intentionally excluded from this build.',
-    upgradeCondition: 'Requires full feature delivery, not visibility toggle.',
-    errorContract: BUILD_EXCLUDED_ERROR_CONTRACTS.torch,
   },
   {
     command: '/force-snip',
@@ -165,14 +147,12 @@ const buildExcluded: CommandSurfaceEntry[] = [
 ]
 
 const stubs: CommandSurfaceEntry[] = [
-  '/onboarding',
   '/autofix-pr',
   '/bughunter',
   '/teleport',
   '/good-claude',
   '/mock-limits',
   '/reset-limits',
-  '/env',
   '/issue',
 ].map(command => ({
   command: command as `/${string}`,

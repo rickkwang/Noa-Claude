@@ -56,9 +56,7 @@ Last updated: 2026-05-27
 |---|---|
 | `/proactive` | Build-Excluded |
 | `/peers` | Build-Excluded |
-| `/agents-platform` | Build-Excluded |
 | `/remote-control` | Build-Excluded |
-| `/torch` | Build-Excluded |
 | `/force-snip` | Build-Excluded |
 | `/subscribe-pr` | Build-Excluded |
 
@@ -68,14 +66,12 @@ Bridge/remote runtime modules can exist in source, but this build does not regis
 ## Slash Commands: Stub
 | Command | Status |
 |---|---|
-| `/onboarding` | Stub |
 | `/autofix-pr` | Stub |
 | `/bughunter` | Stub |
 | `/teleport` | Stub |
 | `/good-claude` | Stub |
 | `/mock-limits` | Stub |
 | `/reset-limits` | Stub |
-| `/env` | Stub |
 | `/issue` | Stub |
 
 ## Runtime Modes Outside Slash Commands

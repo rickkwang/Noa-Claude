@@ -7,17 +7,9 @@ export const BUILD_EXCLUDED_ERROR_CONTRACTS = {
     errorId: 'E_BUILD_EXCLUDED_PEERS',
     message: 'Peers feature is not available in this build',
   },
-  'agents-platform': {
-    errorId: 'E_BUILD_EXCLUDED_AGENTS_PLATFORM',
-    message: 'Agents platform is not available in this build',
-  },
   'remote-control': {
     errorId: 'E_BUILD_EXCLUDED_REMOTE_CONTROL',
     message: 'Remote control server is not available in this build',
-  },
-  torch: {
-    errorId: 'E_BUILD_EXCLUDED_TORCH',
-    message: 'Torch feature is not available in this build',
   },
   'force-snip': {
     errorId: 'E_BUILD_EXCLUDED_FORCE_SNIP',
