@@ -22,7 +22,6 @@ This file is the build/runtime audit for experimental feature flags in this repo
 - `AGENT_TRIGGERS_REMOTE`
 - `ALLOW_TEST_VERSIONS`
 - `AUTO_THEME`
-- `AWAY_SUMMARY`
 - `BASH_CLASSIFIER`
 - `BUILTIN_EXPLORE_PLAN_AGENTS` (default-on; enables the built-in Explore + Plan subagents. Its GrowthBook A/B gate `tengu_amber_stoat` is inert here — GrowthBook is hard-disabled — so the default `true` applies.)
 - `CACHED_MICROCOMPACT`

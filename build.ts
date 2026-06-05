@@ -24,7 +24,6 @@ const fullExperimentalFeatures = [
   'AGENT_TRIGGERS_REMOTE',
   'ALLOW_TEST_VERSIONS',
   'AUTO_THEME',
-  'AWAY_SUMMARY',
   'BASH_CLASSIFIER',
   'BG_SESSIONS',
   'BRIDGE_MODE',
