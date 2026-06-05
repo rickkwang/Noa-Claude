@@ -2,7 +2,7 @@
 
 A local-first coding agent for software work — long sessions, resumable forks, multi-provider routing, and privacy defaults that don't require configuration.
 
-Noa is a productized fork of publicly exposed Claude Code source, rebuilt for developers who want local control, provider flexibility, and continuity features that hold up under real daily use.
+Noa is a productized reconstruction based on publicly exposed Claude Code source, independently maintained for developers who want local control, provider flexibility, and continuity features that hold up under real daily use.
 
 ## Quick Start
 
@@ -252,4 +252,5 @@ See [docs/operating-guide.md](docs/operating-guide.md) for runtime, session, wor
 This repository is a reconstruction based on publicly exposed source code. The original Claude Code source is the property of Anthropic.
 
 - Not an official Anthropic release or supported product
+- Independently maintained — this project does not actively track or sync upstream Claude Code source changes
 - Anthropic, Claude, and Claude Code are trademarks of their respective owners
