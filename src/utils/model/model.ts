@@ -104,33 +104,23 @@ export function getBestModel(): ModelName {
   return getDefaultOpusModel()
 }
 
-// @[MODEL LAUNCH]: Update the default Opus model (3P providers may lag so keep defaults unchanged).
+// @[MODEL LAUNCH]: Update the default Opus model.
 export function getDefaultOpusModel(): ModelName {
   if (process.env.ANTHROPIC_DEFAULT_OPUS_MODEL) {
     return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL
   }
-  // 3P providers (Bedrock, Vertex, Foundry) — kept as a separate branch
-  // even when values match, since 3P availability lags firstParty and
-  // these will diverge again at the next model launch.
-  if (getAPIProvider() !== 'firstParty') {
-    return getModelStrings().opus47 || 'claude-opus-4-7'
-  }
   return getModelStrings().opus48 || 'claude-opus-4-8'
 }
 
-// @[MODEL LAUNCH]: Update the default Sonnet model (3P providers may lag so keep defaults unchanged).
+// @[MODEL LAUNCH]: Update the default Sonnet model.
 export function getDefaultSonnetModel(): ModelName {
   if (process.env.ANTHROPIC_DEFAULT_SONNET_MODEL) {
     return process.env.ANTHROPIC_DEFAULT_SONNET_MODEL
   }
-  // Default to Sonnet 4.5 for 3P since they may not have 4.6 yet
-  if (getAPIProvider() !== 'firstParty') {
-    return getModelStrings().sonnet45 || 'claude-sonnet-4-5'
-  }
   return getModelStrings().sonnet46 || 'claude-sonnet-4-6'
 }
 
-// @[MODEL LAUNCH]: Update the default Haiku model (3P providers may lag so keep defaults unchanged).
+// @[MODEL LAUNCH]: Update the default Haiku model.
 export function getDefaultHaikuModel(): ModelName {
   if (process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL) {
     return process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL
