@@ -3232,6 +3232,12 @@ export async function loadFullLog(log: LogOption): Promise<LogOption> {
   }
 }
 
+type CustomTitleSearchOptions = {
+  limit?: number
+  exact?: boolean
+  stopAfterDistinctMatches?: number
+}
+
 /**
  * Searches for sessions by custom title match.
  * Returns matches sorted by recency (newest first).
@@ -3241,46 +3247,85 @@ export async function loadFullLog(log: LogOption): Promise<LogOption> {
  */
 export async function searchSessionsByCustomTitle(
   query: string,
-  options?: { limit?: number; exact?: boolean },
+  options?: CustomTitleSearchOptions,
 ): Promise<LogOption[]> {
-  const { limit, exact } = options || {}
-  // Use worktree-aware loading to search across same-repo sessions
+  const { limit, exact, stopAfterDistinctMatches } = options || {}
   const worktreePaths = await getWorktreePaths(getOriginalCwd())
   const allStatLogs = await getStatOnlyLogsForWorktrees(worktreePaths)
-  // Enrich all logs to access customTitle metadata
-  const { logs } = await enrichLogs(allStatLogs, 0, allStatLogs.length)
-  const normalizedQuery = query.toLowerCase().trim()
-
-  const matchingLogs = logs.filter(log => {
-    const title = log.customTitle?.toLowerCase().trim()
-    if (!title) return false
-    return exact ? title === normalizedQuery : title.includes(normalizedQuery)
-  })
-
-  // Deduplicate by sessionId - multiple logs can have the same sessionId
-  // if they're different branches of the same conversation. Keep most recent.
-  const sessionIdToLog = new Map<UUID, LogOption>()
-  for (const log of matchingLogs) {
-    const sessionId = getSessionIdFromLog(log)
-    if (sessionId) {
-      const existing = sessionIdToLog.get(sessionId)
-      if (!existing || log.modified > existing.modified) {
-        sessionIdToLog.set(sessionId, log)
+  if (stopAfterDistinctMatches && stopAfterDistinctMatches > 0) {
+    const readBuf = Buffer.alloc(LITE_READ_BUF_SIZE)
+    const normalizedQuery = normalizeCustomTitle(query)
+    const state = new Map<UUID, LogOption>()
+    for (const log of allStatLogs) {
+      const enriched = await enrichLog(log, readBuf)
+      if (enriched) {
+        addCustomTitleMatch(state, enriched, normalizedQuery, exact)
+        if (state.size >= stopAfterDistinctMatches) {
+          break
+        }
       }
     }
-  }
-  const deduplicated = Array.from(sessionIdToLog.values())
-
-  // Sort by recency
-  deduplicated.sort((a, b) => b.modified.getTime() - a.modified.getTime())
-
-  // Apply limit if specified
-  if (limit) {
-    return deduplicated.slice(0, limit)
+    return finalizeCustomTitleMatches(state, limit)
   }
 
-  return deduplicated
+  const { logs } = await enrichLogs(allStatLogs, 0, allStatLogs.length)
+  return filterCustomTitleMatches(logs, query, { exact, limit })
 }
+
+function filterCustomTitleMatches(
+  logs: LogOption[],
+  query: string,
+  options?: CustomTitleSearchOptions,
+): LogOption[] {
+  const { limit, exact, stopAfterDistinctMatches } = options || {}
+  const normalizedQuery = normalizeCustomTitle(query)
+  const state = new Map<UUID, LogOption>()
+
+  for (const log of logs) {
+    addCustomTitleMatch(state, log, normalizedQuery, exact)
+    if (stopAfterDistinctMatches && state.size >= stopAfterDistinctMatches) {
+      break
+    }
+  }
+
+  return finalizeCustomTitleMatches(state, limit)
+}
+
+function normalizeCustomTitle(value: string): string {
+  return value.toLowerCase().trim()
+}
+
+function addCustomTitleMatch(
+  state: Map<UUID, LogOption>,
+  log: LogOption,
+  normalizedQuery: string,
+  exact?: boolean,
+): void {
+  const title = log.customTitle ? normalizeCustomTitle(log.customTitle) : undefined
+  if (!title) return
+  if (!(exact ? title === normalizedQuery : title.includes(normalizedQuery))) {
+    return
+  }
+
+  const sessionId = getSessionIdFromLog(log)
+  if (!sessionId) return
+
+  const existing = state.get(sessionId)
+  if (!existing || log.modified > existing.modified) {
+    state.set(sessionId, log)
+  }
+}
+
+function finalizeCustomTitleMatches(
+  state: Map<UUID, LogOption>,
+  limit: number | undefined,
+): LogOption[] {
+  const deduplicated = Array.from(state.values())
+  deduplicated.sort((a, b) => b.modified.getTime() - a.modified.getTime())
+  return limit ? deduplicated.slice(0, limit) : deduplicated
+}
+
+export const _filterCustomTitleMatchesForTesting = filterCustomTitleMatches
 
 /**
  * Metadata entry types that can appear before a compact boundary but must
@@ -4101,6 +4146,7 @@ export async function getLastSessionLog(
   const customTitle = customTitles.get(lastMessage.sessionId as UUID)
   const tag = tags.get(lastMessage.sessionId as UUID)
   const agentSetting = agentSettings.get(sessionId)
+  const logFileInfo = await getSessionLogFileInfo(sessionId)
   return {
     ...convertToLogOption(
       transcript,
@@ -4109,11 +4155,12 @@ export async function getLastSessionLog(
       customTitle,
       buildFileHistorySnapshotChain(fileHistorySnapshots, transcript),
       tag,
-      getTranscriptPathForSession(sessionId),
+      logFileInfo.fullPath,
       buildAttributionSnapshotChain(attributionSnapshots, transcript),
       agentSetting,
       contentReplacements.get(sessionId) ?? [],
     ),
+    fileSize: logFileInfo.fileSize,
     worktreeSession: worktreeStates.get(sessionId),
     contextCollapseCommits: contextCollapseCommits.filter(
       e => e.sessionId === sessionId,
@@ -4122,6 +4169,22 @@ export async function getLastSessionLog(
       contextCollapseSnapshot?.sessionId === sessionId
         ? contextCollapseSnapshot
         : undefined,
+  }
+}
+
+async function getSessionLogFileInfo(
+  sessionId: UUID,
+): Promise<{ fullPath: string; fileSize?: number }> {
+  const fullPath = getTranscriptPathForSession(sessionId)
+  try {
+    const stats = await stat(fullPath)
+    return { fullPath, fileSize: stats.size }
+  } catch {
+    const resolved = await resolveSessionFilePath(sessionId)
+    if (resolved) {
+      return { fullPath: resolved.filePath, fileSize: resolved.fileSize }
+    }
+    return { fullPath }
   }
 }
 

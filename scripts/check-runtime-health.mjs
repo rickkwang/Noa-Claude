@@ -54,6 +54,7 @@ import {
   getCurrentSessionTag,
   getProjectsDir,
   getTranscriptPathForSession,
+  _filterCustomTitleMatchesForTesting,
   isChainParticipant,
   isTranscriptMessage,
   restoreSessionMetadata,
@@ -92,6 +93,7 @@ import {
   _classifyResumeListLoadErrorForTesting,
   _formatResumeListLoadFailureForTesting,
   _logResumeListLoadFailureForTesting,
+  _shouldShowResumeSummaryGateForTesting,
 } from '../src/commands/resume/resume.tsx';
 import { executeEffort } from '../src/commands/effort/effort.tsx';
 import { _isForkSubagentEnabledForTesting } from '../src/tools/AgentTool/forkSubagent.ts';
@@ -1476,14 +1478,20 @@ function checkResumeSummaryGatePredicate() {
   const now = Date.now();
   const staleModified = new Date(now - RESUME_SUMMARY_GATE_STALE_MS - 1_000);
   const freshModified = new Date(now - 1_000);
+  const staleLargeWithSummary = {
+    modified: staleModified,
+    fileSize: RESUME_SUMMARY_GATE_LARGE_BYTES,
+    summary: 'stale session summary',
+  };
 
   assert(
-    shouldUseResumeSummaryGate({
-      modified: staleModified,
-      fileSize: RESUME_SUMMARY_GATE_LARGE_BYTES,
-      summary: 'stale session summary',
-    }, now),
+    shouldUseResumeSummaryGate(staleLargeWithSummary, now),
     'stale+large sessions with summary should trigger resume summary gate',
+  );
+
+  assert(
+    _shouldShowResumeSummaryGateForTesting(staleLargeWithSummary),
+    'resume command paths should use the shared summary gate predicate',
   );
 
   assert(
@@ -1511,6 +1519,55 @@ function checkResumeSummaryGatePredicate() {
       summary: '',
     }, now),
     'sessions without summary should not trigger resume summary gate',
+  );
+}
+
+function checkCustomTitleMatchHelpers() {
+  const makeLog = (sessionId, customTitle, modified) => ({
+    date: new Date(modified).toISOString(),
+    messages: [],
+    value: 0,
+    created: new Date(modified),
+    modified: new Date(modified),
+    firstPrompt: '',
+    messageCount: 0,
+    isSidechain: false,
+    sessionId,
+    customTitle,
+  });
+  const logs = [
+    makeLog('11111111-1111-1111-1111-111111111111', 'Target', 1_000),
+    makeLog('11111111-1111-1111-1111-111111111111', 'Target', 2_000),
+    makeLog('22222222-2222-2222-2222-222222222222', 'Target', 1_500),
+    makeLog('33333333-3333-3333-3333-333333333333', 'Target', 3_000),
+  ];
+
+  const allMatches = _filterCustomTitleMatchesForTesting(logs, 'target', {
+    exact: true,
+  });
+  assert(
+    allMatches.map(log => log.sessionId).join(',') ===
+      [
+        '33333333-3333-3333-3333-333333333333',
+        '11111111-1111-1111-1111-111111111111',
+        '22222222-2222-2222-2222-222222222222',
+      ].join(','),
+    'custom title matching should dedupe by session and sort by recency by default',
+  );
+
+  const earlyMatches = _filterCustomTitleMatchesForTesting(logs, 'target', {
+    exact: true,
+    stopAfterDistinctMatches: 2,
+  });
+  assert(
+    earlyMatches.length === 2 &&
+      earlyMatches.some(
+        log => log.sessionId === '11111111-1111-1111-1111-111111111111',
+      ) &&
+      earlyMatches.some(
+        log => log.sessionId === '22222222-2222-2222-2222-222222222222',
+      ),
+    'custom title early-stop matching should stop after two distinct sessions',
   );
 }
 
@@ -2162,6 +2219,9 @@ await checkCleanupTimeoutDiagnostics();
 
 console.log('Checking resume summary gate predicate...');
 checkResumeSummaryGatePredicate();
+
+console.log('Checking custom title match helpers...');
+checkCustomTitleMatchHelpers();
 
 console.log('Checking model fallback suggestions...');
 checkModelFallbackSuggestions();

@@ -10,6 +10,7 @@ type Props = {
   onBack: () => void;
   /** Wrap summary text in MessageResponse for richer display. Default false. */
   useMessageResponse?: boolean;
+  backLabel?: string;
 };
 
 export function ResumeSummaryGate({
@@ -17,6 +18,7 @@ export function ResumeSummaryGate({
   onContinue,
   onBack,
   useMessageResponse = false,
+  backLabel = 'Back to list',
 }: Props): React.ReactNode {
   const summary = log.summary?.trim() ?? '';
   const summaryContent = useMessageResponse
@@ -30,7 +32,7 @@ export function ResumeSummaryGate({
       <Select
         options={[
           { label: 'Continue resume', value: 'continue' },
-          { label: 'Back to list', value: 'back' },
+          { label: backLabel, value: 'back' },
         ]}
         onChange={value => {
           if (value === 'continue') {

@@ -32,7 +32,6 @@ type ResumeResult = {
 } | {
   resultType: 'multipleMatches';
   arg: string;
-  count: number;
 };
 
 type ResumeErrorCode =
@@ -177,7 +176,7 @@ function resumeHelpMessage(result: ResumeResult): string {
     case 'sessionNotFound':
       return `Session ${chalk.bold(result.arg)} was not found.`;
     case 'multipleMatches':
-      return `Found ${result.count} sessions matching ${chalk.bold(result.arg)}. Please use /resume to pick a specific session.`;
+      return `Found multiple sessions matching ${chalk.bold(result.arg)}. Please use /resume to pick a specific session.`;
   }
 }
 function ResumeError(t0) {
@@ -328,16 +327,12 @@ function ResumeCommand({
     }
 
     // Same directory - proceed with resume
-    try {
-      if (shouldUseResumeSummaryGate(fullLog)) {
-        setSummaryGateTarget({
-          sessionId,
-          log: fullLog
-        });
-        return;
-      }
-    } catch (error) {
-      logError(error as Error);
+    if (shouldShowResumeSummaryGate(fullLog)) {
+      setSummaryGateTarget({
+        sessionId,
+        log: fullLog
+      });
+      return;
     }
     setResuming(true);
     void onResume(sessionId, fullLog, 'slash_command_picker').finally(() => setResuming(false));
@@ -371,6 +366,15 @@ function ResumeCommand({
 export function filterResumableSessions(logs: LogOption[], currentSessionId: string): LogOption[] {
   return logs.filter(l => !l.isSidechain && getSessionIdFromLog(l) !== currentSessionId);
 }
+function shouldShowResumeSummaryGate(log: LogOption): boolean {
+  try {
+    return shouldUseResumeSummaryGate(log);
+  } catch (error) {
+    logError(error as Error);
+    return false;
+  }
+}
+export const _shouldShowResumeSummaryGateForTesting = shouldShowResumeSummaryGate;
 export const call: LocalJSXCommandCall = async (onDone, context, args) => {
   const onResume = async (sessionId: UUID, log: LogOption, entrypoint: ResumeEntrypoint) => {
     try {
@@ -385,17 +389,76 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
     }
   };
   const arg = args?.trim();
+  const maybeSessionId = validateUuid(arg);
 
   // No argument provided - show picker
   if (!arg) {
     return <ResumeCommand onDone={onDone} onResume={onResume} />;
   }
 
-  // Load logs to search (includes same-repo worktrees)
+  const resumeOrGate = (sessionId: UUID, log: LogOption, entrypoint: ResumeEntrypoint): React.ReactNode => {
+    if (shouldShowResumeSummaryGate(log)) {
+      return <ResumeSummaryGate log={log} useMessageResponse onContinue={() => {
+        void onResume(sessionId, log, entrypoint);
+      }} onBack={() => onDone('Resume cancelled', {
+        display: 'system'
+      })} backLabel="Cancel" />;
+    }
+    void onResume(sessionId, log, entrypoint);
+    return null;
+  };
+
+  if (maybeSessionId) {
+    let directLog: LogOption | null = null
+    try {
+      directLog = await getLastSessionLog(maybeSessionId);
+    } catch (error) {
+      logError(error as Error);
+      const classified = classifyResumeError(error)
+      const message = `${classified.message} (${classified.code})`
+      return <ResumeError message={message} args={arg} onDone={() => onDone(message)} />
+    }
+    if (directLog) {
+      return resumeOrGate(maybeSessionId, directLog, 'slash_command_session_id');
+    }
+
+    const message = resumeHelpMessage({
+      resultType: 'sessionNotFound',
+      arg
+    });
+    return <ResumeError message={message} args={arg} onDone={() => onDone(message)} />;
+  }
+
+  // Try exact custom title match (only if feature is enabled)
+  if (isCustomTitleEnabled()) {
+    const titleMatches = await searchSessionsByCustomTitle(arg, {
+      exact: true,
+      stopAfterDistinctMatches: 2
+    });
+    if (titleMatches.length === 1) {
+      const log = titleMatches[0]!;
+      const sessionId = getSessionIdFromLog(log);
+      if (sessionId) {
+        const fullLog = isLiteLog(log) ? await loadFullLog(log) : log;
+        return resumeOrGate(sessionId, fullLog, 'slash_command_title');
+      }
+    }
+
+    if (titleMatches.length > 1) {
+      const message = resumeHelpMessage({
+        resultType: 'multipleMatches',
+        arg
+      });
+      return <ResumeError message={message} args={arg} onDone={() => onDone(message)} />;
+    }
+  }
+
+  // Direct arg paths only need to know whether any resumable same-repo
+  // sessions exist before returning "not found", so keep this probe cheap.
   const worktreePaths = await getWorktreePaths(getOriginalCwd());
   let logs: LogOption[]
   try {
-    logs = await loadSameRepoMessageLogs(worktreePaths, undefined, RESUME_PICKER_MAX_SESSIONS);
+    logs = await loadSameRepoMessageLogs(worktreePaths, 1, 1);
   } catch (error) {
     logError(error as Error)
     _logResumeListLoadFailureForTesting(error)
@@ -405,53 +468,6 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
   if (logs.length === 0) {
     const message = 'No conversations found to resume.';
     return <ResumeError message={message} args={arg} onDone={() => onDone(message)} />;
-  }
-
-  // First, check if arg is a valid UUID
-  const maybeSessionId = validateUuid(arg);
-  if (maybeSessionId) {
-    const matchingLogs = logs.filter(l => getSessionIdFromLog(l) === maybeSessionId).sort((a, b) => b.modified.getTime() - a.modified.getTime());
-    if (matchingLogs.length > 0) {
-      const log = matchingLogs[0]!;
-      const fullLog = isLiteLog(log) ? await loadFullLog(log) : log;
-      void onResume(maybeSessionId, fullLog, 'slash_command_session_id');
-      return null;
-    }
-
-    // Enriched logs didn't find it — try direct file lookup. This handles
-    // sessions filtered out by enrichLogs (e.g., first message >64KB makes
-    // firstPrompt extraction fail, causing the session to be dropped).
-    const directLog = await getLastSessionLog(maybeSessionId);
-    if (directLog) {
-      void onResume(maybeSessionId, directLog, 'slash_command_session_id');
-      return null;
-    }
-  }
-
-  // Next, try exact custom title match (only if feature is enabled)
-  if (isCustomTitleEnabled()) {
-    const titleMatches = await searchSessionsByCustomTitle(arg, {
-      exact: true
-    });
-    if (titleMatches.length === 1) {
-      const log = titleMatches[0]!;
-      const sessionId = getSessionIdFromLog(log);
-      if (sessionId) {
-        const fullLog = isLiteLog(log) ? await loadFullLog(log) : log;
-        void onResume(sessionId, fullLog, 'slash_command_title');
-        return null;
-      }
-    }
-
-    // Multiple matches - show error
-    if (titleMatches.length > 1) {
-      const message = resumeHelpMessage({
-        resultType: 'multipleMatches',
-        arg,
-        count: titleMatches.length
-      });
-      return <ResumeError message={message} args={arg} onDone={() => onDone(message)} />;
-    }
   }
 
   // No match found - show error
