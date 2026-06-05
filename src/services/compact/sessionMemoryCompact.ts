@@ -369,6 +369,7 @@ export async function createCompactionResultFromSessionMemory(
       summarizeMetadata: {
         messagesSummarized: messages.length - messagesToKeep.length,
         rawCompactSummary: truncatedContent,
+        direction: 'up_to',
       },
     }),
   ]

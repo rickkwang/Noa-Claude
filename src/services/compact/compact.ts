@@ -732,6 +732,7 @@ export async function compactConversation(
         summarizeMetadata: {
           messagesSummarized: messagesToSummarize.length,
           rawCompactSummary: formatCompactSummary(summary),
+          direction: 'up_to',
         },
       }),
     ]
