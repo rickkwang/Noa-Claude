@@ -6,7 +6,11 @@ import {
 import { getCLISyspromptPrefix } from '../../constants/system.js'
 import { buildMemoryLines } from '../../memdir/memdir.js'
 import { buildCombinedMemoryPrompt } from '../../memdir/teamMemPrompts.js'
-import { getCompactPrompt } from '../../services/compact/prompt.js'
+import {
+  formatCompactSummary,
+  getCompactPrompt,
+  getPartialCompactPrompt,
+} from '../../services/compact/prompt.js'
 import { VERIFICATION_AGENT } from '../../tools/AgentTool/built-in/verificationAgent.js'
 import { getEnterPlanModeToolPrompt } from '../../tools/EnterPlanModeTool/prompt.js'
 import { getPrompt as getSkillToolPrompt } from '../../tools/SkillTool/prompt.js'
@@ -105,6 +109,48 @@ describe('prompt behavior contracts', () => {
     )
     expect(prompt).not.toContain('Include file reads verbatim')
     expect(prompt).not.toContain('List ALL user messages')
+  })
+
+  test('partial compact from prompt scopes summarization to the recent tail', () => {
+    const prompt = getPartialCompactPrompt(undefined, 'from', 12)
+
+    expect(prompt).toContain('RECENT portion of the conversation')
+    expect(prompt).toContain('summarize only the recent tail')
+    expect(prompt).toContain('at most the final 12 messages visible')
+    expect(prompt).toContain('Treat all earlier messages as retained context only')
+    expect(prompt).toContain('do not summarize or restate them')
+  })
+
+  test('partial compact from boundary follows additional instructions', () => {
+    const prompt = getPartialCompactPrompt('Prefer terse output.', 'from', 12)
+
+    expect(prompt.indexOf('Additional Instructions')).toBeLessThan(
+      prompt.indexOf('Recent-message boundary'),
+    )
+  })
+
+  test('partial compact up_to prompt does not add recent-tail boundary text', () => {
+    const prompt = getPartialCompactPrompt(undefined, 'up_to', 12)
+
+    expect(prompt).toContain('This summary will precede newer messages')
+    expect(prompt).not.toContain('at most the final 12 messages visible')
+  })
+
+  test('compact summary formatting extracts summary tags before analysis text', () => {
+    const formatted = formatCompactSummary(
+      '<ANALYSIS>draft that must not persist<SUMMARY>\n- keep this\n</SUMMARY>',
+    )
+
+    expect(formatted).toBe('Summary:\n- keep this')
+    expect(formatted).not.toContain('draft that must not persist')
+  })
+
+  test('compact summary formatting strips closed analysis tags case-insensitively', () => {
+    const formatted = formatCompactSummary(
+      '<Analysis>draft</Analysis>\n\nFinal summary',
+    )
+
+    expect(formatted).toBe('Final summary')
   })
 
   test('memory prompt defaults away from saving transient or speculative context', () => {

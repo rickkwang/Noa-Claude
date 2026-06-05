@@ -941,7 +941,11 @@ export async function partialCompactConversation(
     context.setResponseLength?.(() => 0)
     context.onCompactProgress?.({ type: 'compact_start' })
 
-    const compactPrompt = getPartialCompactPrompt(customInstructions, direction)
+    const compactPrompt = getPartialCompactPrompt(
+      customInstructions,
+      direction,
+      messagesToSummarize.length,
+    )
     const summaryRequest = createUserMessage({
       content: compactPrompt,
     })

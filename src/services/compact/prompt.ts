@@ -124,17 +124,25 @@ const NO_TOOLS_TRAILER =
 export function getPartialCompactPrompt(
   customInstructions?: string,
   direction: PartialCompactDirection = 'from',
+  targetMessageCount?: number,
 ): string {
   const template =
     direction === 'up_to'
       ? PARTIAL_COMPACT_UP_TO_PROMPT
       : PARTIAL_COMPACT_PROMPT
   let prompt = NO_TOOLS_PREAMBLE + template
+  const boundaryInstruction =
+    direction === 'from' &&
+    typeof targetMessageCount === 'number' &&
+    targetMessageCount > 0
+      ? `\n\nRecent-message boundary: summarize only the recent tail selected for partial compaction: at most the final ${targetMessageCount} messages visible in this compact request. Treat all earlier messages as retained context only; do not summarize or restate them except where a brief reference is necessary to explain the recent messages.`
+      : ''
 
   if (customInstructions && customInstructions.trim() !== '') {
     prompt += `\n\nAdditional Instructions:\n${customInstructions}`
   }
 
+  prompt += boundaryInstruction
   prompt += NO_TOOLS_TRAILER
 
   return prompt
@@ -161,22 +169,20 @@ export function getCompactPrompt(customInstructions?: string): string {
 export function formatCompactSummary(summary: string): string {
   let formattedSummary = summary
 
+  const summaryMatch = formattedSummary.match(
+    /<summary\b[^>]*>([\s\S]*?)<\/summary>/i,
+  )
+  if (summaryMatch) {
+    const content = summaryMatch[1] || ''
+    return `Summary:\n${content.trim()}`.trim()
+  }
+
   // Strip analysis section — it's a drafting scratchpad that improves summary
   // quality but has no informational value once the summary is written.
   formattedSummary = formattedSummary.replace(
-    /<analysis>[\s\S]*?<\/analysis>/g,
+    /<analysis\b[^>]*>[\s\S]*?<\/analysis>/gi,
     '',
   )
-
-  // Extract and format summary section
-  const summaryMatch = formattedSummary.match(/<summary>([\s\S]*?)<\/summary>/)
-  if (summaryMatch) {
-    const content = summaryMatch[1] || ''
-    formattedSummary = formattedSummary.replace(
-      /<summary>[\s\S]*?<\/summary>/,
-      `Summary:\n${content.trim()}`,
-    )
-  }
 
   // Clean up extra whitespace between sections
   formattedSummary = formattedSummary.replace(/\n\n+/g, '\n\n')
