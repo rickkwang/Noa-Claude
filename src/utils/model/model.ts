@@ -104,10 +104,15 @@ export function getBestModel(): ModelName {
   return getDefaultOpusModel()
 }
 
-// @[MODEL LAUNCH]: Update the default Opus model.
+// @[MODEL LAUNCH]: Update the default Opus model (3P providers may lag so keep defaults unchanged).
 export function getDefaultOpusModel(): ModelName {
   if (process.env.ANTHROPIC_DEFAULT_OPUS_MODEL) {
     return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL
+  }
+  // 3P providers (Bedrock, Vertex, Foundry) lag firstParty on new Opus
+  // releases, so keep them on the previous generation until GA everywhere.
+  if (getAPIProvider() !== 'firstParty') {
+    return getModelStrings().opus47 || 'claude-opus-4-7'
   }
   return getModelStrings().opus48 || 'claude-opus-4-8'
 }

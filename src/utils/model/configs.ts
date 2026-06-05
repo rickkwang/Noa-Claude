@@ -79,14 +79,14 @@ export const CLAUDE_OPUS_4_6_CONFIG = {
 
 export const CLAUDE_OPUS_4_7_CONFIG = {
   firstParty: 'claude-opus-4-7',
-  bedrock: 'anthropic.claude-opus-4-7',
+  bedrock: 'us.anthropic.claude-opus-4-7',
   vertex: 'claude-opus-4-7',
   foundry: 'claude-opus-4-7',
 } as const satisfies ModelConfig
 
 export const CLAUDE_OPUS_4_8_CONFIG = {
   firstParty: 'claude-opus-4-8',
-  bedrock: 'anthropic.claude-opus-4-8',
+  bedrock: 'us.anthropic.claude-opus-4-8',
   vertex: 'claude-opus-4-8',
   foundry: 'claude-opus-4-8',
 } as const satisfies ModelConfig
