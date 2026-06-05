@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.6] - 2026-06-05
+
+### Fixes
+
+- **Bundled release notes for v1.3.4 and v1.3.5** — `docs/release-notes.md` (the file the in-app `/release-notes` panel reads from the bundle) was last updated at v1.3.3. The v1.3.4 and v1.3.5 release notes were only added to `CHANGELOG.md`, so users upgrading through either of those versions never saw the corresponding entries in the bundled panel. Both versions are now populated:
+  - **v1.3.4**: `/goal --verify/--max-turns`, built-in Explore/Plan subagents enabled by default, startup banner redesign, single-file grep read registration, agent worktree notification guarantee, compact context recovery hardening, empty summary block fix, invalid thinking signature stripping, provider gating tightening, Opus 4.8 adaptation, compact cache cleanup, compact prompt streamlining (~35% fewer tokens), command-surface cleanup.
+  - **v1.3.5**: 3P Opus default realigned with upstream, bundled `/claude-api` skill populated (41 docs), compact summary direction labeling, partial compact scoped to recent tail, direct resume handling tightened, custom title match helpers.
+
 ## [1.3.5] - 2026-06-05
 
 ### Fixes
@@ -62,5 +70,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Operating guide** (`f37f1c1f`) — Documented the new `--max-turns` and `--verify` flags, auto-run verify behavior, and updated status output.
 - **Feature documentation** (`6c036d69`) — Added `BUILTIN_EXPLORE_PLAN_AGENTS` to `FEATURES.md` (default-on). Added audit entries for `DUMP_SYSTEM_PROMPT` and `SKIP_DETECTION_WHEN_AUTOUPDATES_DISABLED`.
 
+[1.3.6]: https://github.com/rickkwang/Noa-Claude/compare/v1.3.5...v1.3.6
 [1.3.5]: https://github.com/rickkwang/Noa-Claude/compare/v1.3.4...v1.3.5
 [1.3.4]: https://github.com/rickkwang/Noa-Claude/compare/v1.3.3...v1.3.4

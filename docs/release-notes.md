@@ -1,5 +1,51 @@
 # Release Notes
 
+## 1.3.5
+
+### Bug Fixes
+
+- **3P Opus default realigned with upstream** — 1.3.4 dropped the Bedrock/Vertex/Foundry → previous-gen Opus fallback so all providers defaulted to Opus 4.8. Upstream Claude Code still ships that fallback (`if provider !== firstParty return opus47`), so this release restores it. Sonnet/Haiku already match upstream and are unchanged. Bedrock Opus 4.7/4.8 IDs also picked up the missing `us.` CRIS prefix. Users who want Opus 4.8 on 3P can still set `ANTHROPIC_DEFAULT_OPUS_MODEL`.
+- **`/claude-api` bundled skill populated** — the `claude-api` skill shipped with empty doc files, so `/claude-api` produced no usable content. All 41 reference docs are now populated to match upstream; the `migrate` and `managed-agents-onboard` flows resolve their references. Lazy file delivery keeps the runtime footprint at ~140KB per invocation instead of ~360KB. Fixed the underlying Bun `.md` loader bug in `build.ts` and `bunfig.toml` so skill imports receive raw markdown text instead of HTML.
+- **Compact summary direction labeling** — full-compact paths were not stamping the `direction` field, so `isStaleFullCompactSummary` and the display ternary both relied on the undefined default. The display label was also inverted, so legacy summaries rendered as "from this point" even though full-compact is semantically "up to this point". Both full-compact paths now stamp `direction: 'up_to'`; the display ternary only special-cases `'from'`.
+- **Partial compact scoped to the recent tail** — partial compaction now passes a `targetMessageCount` parameter so only the recent original-message tail is summarized, and the prompt carries a "Recent-message boundary" instruction. `formatCompactSummary` is hardened to extract the `<summary>` block before stripping `<analysis>`, so the latter can tolerate attributes without breaking the former.
+- **Direct resume handling tightened** — no more fall-through to a custom title search after a UUID lookup misses; the `multipleMatches` error no longer reports a count; custom-title searches use `stopAfterDistinctMatches` to short-circuit; `shouldShowResumeSummaryGate` is wrapped in `try/catch` so a malformed stored goal never blocks resume; `getSessionLogFileInfo` populates `fileSize` for the picker; `ResumeSummaryGate` accepts a `backLabel` prop. `searchSessionsByCustomTitle` is split into focused helpers.
+
+### Refactors
+
+- **Custom title match helpers** — `searchSessionsByCustomTitle` is split into `filterCustomTitleMatches`, `addCustomTitleMatch`, `finalizeCustomTitleMatches`, and `normalizeCustomTitle` so each step is independently testable and the main path reads as a small composition.
+
+## 1.3.4
+
+### New Features
+
+- **`/goal` auto-verification** — `/goal` and `/goal replace` now accept `--max-turns N` and `--verify "<cmd>"` flags. When a verify command is set, it runs automatically after each eligible turn; a non-zero exit blocks goal completion regardless of the evaluator's verdict. Model-requested completion stays pending until both verify passes and the evaluator approves. Verify state is preserved across session restore.
+- **Built-in Explore/Plan subagents enabled by default** — `BUILTIN_EXPLORE_PLAN_AGENTS` now ships on for all build profiles. The GrowthBook A/B gate is hard-disabled in this build, so the feature is unconditional.
+- **Startup banner redesigned** — new 8-line block-font ASCII logo, rounded box corners, content-driven width, inline `/provider` hint, and refined info row ordering. The endpoint row is back; the minimum width is now 64.
+- **Single-file grep read registration** — `grep` / `egrep` / `fgrep` commands targeting a single file now register that file as "read", so a follow-up `Edit`/`Write` no longer needs an explicit `Read` first. Aligns with upstream Claude Code.
+
+### Refactors
+
+- **Compact prompts streamlined** — near-duplicate analysis instructions were merged into a parameterized helper, shared sections extracted into a constant, the summary section count was reduced from 9 to 8, an explicit `<summary>` tag instruction was added, and a density budget anchor was added. Net result: ~35% fewer prompt tokens per compact call with the same information fidelity.
+- **`execFileNoThrow` converted to async/await** — prerequisite for the new awaitable goal-verify path; uses execa's `cancelSignal` API.
+- **Goal state flag parsing** — ad-hoc parsing replaced with a typed `GoalFlagError` union, centralized error messages, and shared `GOAL_OPTIONS_USAGE` help text.
+- **Command-surface cleanup** — removed stale build-excluded entries (`/agents-platform`, `/torch`) and stub entries (`/onboarding`, `/env`) that no longer have a backing file. Verified zero string-literal references remain.
+
+### Bug Fixes
+
+- **Agent worktree notification guarantee** — background agent tasks could permanently occupy the coordinator panel when the worktree probe threw, because the throw skipped `enqueueAgentNotification` and `evictTerminalTask` is gated on `notified: true`. Added `safeWorktreeResult` / `safeCleanupWorktree` helpers and a finally-block safety net that emits a minimal `failed` notification if all normal dispatch paths were skipped. The handoff classifier and the worktree probe now run in parallel.
+- **Compact context recovery hardened** — `/compact` session recovery strengthened against malformed snapshots and interrupted streams, covering both interactive and auto-compact paths.
+- **Empty compact summary blocks** — prevented empty transcript blocks from appearing in compact summary output.
+- **Invalid thinking signature stripping** — thinking block signatures are bound to the API key/context that produced them; mid-session model/provider switches and interrupted streams could persist stale signatures that failed with a 400 on replay. Three replay paths are now closed: `/compact` strips all thinking before summarization (lossless since thinking is disabled there), `/resume` strips all thinking in `deserializeMessagesWithInterruptDetection`, and `filterInvalidSignatureThinkingBlocks` drops empty-signature blocks at any position in API normalization.
+- **Provider gating tightened** — first-party and third-party provider switching hardened across beta flag handling, model remapping, and WebSearch tool provider checks.
+- **Model adaptation for Opus 4.8** — Opus 4.7+ thinking defaults to `display: 'summarized'` in adaptive mode to avoid streaming empty thinking blocks; Opus 4.8 defaults to `high` effort (per the official models overview), with `xhigh` remaining opt-in; Sonnet 4.6 max output corrected from 128k to 64k (128k/300k is Batches-only).
+- **Compact cache cleanup** — removed redundant `getUserContext.cache.clear` calls from three sites; `postCompactCleanup()` already handles this internally.
+
+### Docs
+
+- **README** — fixed commands, shortcuts, and governance info.
+- **Operating guide** — documented the new `--max-turns` and `--verify` flags and auto-run verify behavior.
+- **FEATURES.md** — added `BUILTIN_EXPLORE_PLAN_AGENTS` (default-on) and audit entries for `DUMP_SYSTEM_PROMPT` and `SKIP_DETECTION_WHEN_AUTOUPDATES_DISABLED`.
+
 ## 1.3.3
 
 ### New Features
