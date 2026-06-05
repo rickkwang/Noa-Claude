@@ -116,10 +116,6 @@ async function getDevVersion(baseVersion: string): Promise<string> {
   return `${baseVersion}-dev.${date}.t${time}.sha${sha}`
 }
 
-async function getVersionChangelog(): Promise<string> {
-  return (await runCommand(['git', 'log', '--format=%h %s', '-20'])) ?? 'Local development build'
-}
-
 function getBundledReleaseNotes(): string {
   try {
     return readFileSync('./docs/release-notes.md', 'utf-8').trim()
