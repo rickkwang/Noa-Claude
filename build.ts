@@ -408,6 +408,10 @@ try {
     outdir: dirname(resolve(outfile)),
     external: externals,
     define: defineEntries,
+    // Bun's default loader for .md is 'html' (markdown→HTML). The bundled
+    // skills (e.g. claude-api) import .md files expecting raw markdown text,
+    // so force the text loader.
+    loader: { '.md': 'text' },
     plugins: [dedupeReactPlugin, stubPlugin],
   })
 

@@ -33,8 +33,13 @@ export type BundledSkillDefinition = {
    * When set, the skill prompt is prefixed with a "Base directory for this
    * skill: <dir>" line so the model can Read/Grep these files on demand —
    * same contract as disk-based skills.
+   *
+   * Pass a thunk instead of a literal record to defer loading large content
+   * bundles until first invocation (e.g. claude-api inlines ~250KB of .md).
    */
-  files?: Record<string, string>
+  files?:
+    | Record<string, string>
+    | (() => Promise<Record<string, string>>)
   getPromptForCommand: (
     args: string,
     context: ToolUseContext,
@@ -57,7 +62,9 @@ export function registerBundledSkill(definition: BundledSkillDefinition): void {
   let skillRoot: string | undefined
   let getPromptForCommand = definition.getPromptForCommand
 
-  if (files && Object.keys(files).length > 0) {
+  const hasFiles =
+    typeof files === 'function' || (!!files && Object.keys(files).length > 0)
+  if (hasFiles) {
     skillRoot = getBundledSkillExtractDir(definition.name)
     // Closure-local memoization: extract once per process.
     // Memoize the promise (not the result) so concurrent callers await
@@ -65,7 +72,10 @@ export function registerBundledSkill(definition: BundledSkillDefinition): void {
     let extractionPromise: Promise<string | null> | undefined
     const inner = definition.getPromptForCommand
     getPromptForCommand = async (args, ctx) => {
-      extractionPromise ??= extractBundledSkillFiles(definition.name, files)
+      extractionPromise ??= (async () => {
+        const resolved = typeof files === 'function' ? await files() : files!
+        return extractBundledSkillFiles(definition.name, resolved)
+      })()
       const extractedDir = await extractionPromise
       const blocks = await inner(args, ctx)
       if (extractedDir === null) return blocks

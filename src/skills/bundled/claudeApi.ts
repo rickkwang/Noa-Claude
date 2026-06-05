@@ -3,8 +3,8 @@ import { readdir } from 'fs/promises'
 import { getCwd } from '../../utils/cwd.js'
 import { registerBundledSkill } from '../bundledSkills.js'
 
-// claudeApiContent.js bundles 247KB of .md strings. Lazy-load inside
-// getPromptForCommand so they only enter memory when /claude-api is invoked.
+// claudeApiContent.js bundles ~250KB of .md strings. Lazy-load inside
+// getPromptForCommand / files so they only enter memory when /claude-api is invoked.
 type SkillContent = typeof import('./claudeApiContent.js')
 
 type DetectedLanguage =
@@ -53,12 +53,27 @@ async function detectLanguage(): Promise<DetectedLanguage | null> {
   return null
 }
 
-function getFilesForLanguage(
+// Core shared docs that are small and high-frequency enough to inline on every
+// invocation. Larger/lower-frequency docs (managed-agents*, model-migration,
+// agent-design, anthropic-cli, claude-platform-on-aws) are NOT inlined — they
+// are extracted to the skill's base directory and Read on demand.
+const INLINE_SHARED: ReadonlySet<string> = new Set([
+  'shared/models.md',
+  'shared/error-codes.md',
+  'shared/prompt-caching.md',
+  'shared/tool-use-concepts.md',
+  'shared/live-sources.md',
+])
+
+// Files inlined for a detected language: that language's core claude-api docs
+// plus the core shared docs above. Everything else is reachable via Read from
+// the base directory.
+function getInlineFilesForLanguage(
   lang: DetectedLanguage,
   content: SkillContent,
 ): string[] {
   return Object.keys(content.SKILL_FILES).filter(
-    path => path.startsWith(`${lang}/`) || path.startsWith('shared/'),
+    path => path.startsWith(`${lang}/claude-api/`) || INLINE_SHARED.has(path),
   )
 }
 
@@ -96,39 +111,51 @@ function buildInlineReference(
 
 const INLINE_READING_GUIDE = `## Reference Documentation
 
-The relevant documentation for your detected language is included below in \`<doc>\` tags. Each tag has a \`path\` attribute showing its original file path. Use this to find the right section:
+Core docs for your detected language are inlined below in \`<doc>\` tags (each tag's \`path\` attribute shows its original file path). The **full documentation library** lives under the skill's base directory (shown at the very top of this prompt) — use the Read tool to open any path below on demand. Inlined docs are also on disk, so you can Read them too if you need the untrimmed file.
 
 ### Quick Task Reference
 
 **Single text classification/summarization/extraction/Q&A:**
-→ Refer to \`{lang}/claude-api/README.md\`
+→ \`{lang}/claude-api/README.md\` (inlined)
 
 **Chat UI or real-time response display:**
-→ Refer to \`{lang}/claude-api/README.md\` + \`{lang}/claude-api/streaming.md\`
+→ \`{lang}/claude-api/README.md\` + \`{lang}/claude-api/streaming.md\` (inlined)
 
 **Long-running conversations (may exceed context window):**
-→ Refer to \`{lang}/claude-api/README.md\` — see Compaction section
+→ \`{lang}/claude-api/README.md\` — see Compaction section (inlined)
 
 **Prompt caching / optimize caching / "why is my cache hit rate low":**
-→ Refer to \`shared/prompt-caching.md\` + \`{lang}/claude-api/README.md\` (Prompt Caching section)
+→ \`shared/prompt-caching.md\` + \`{lang}/claude-api/README.md\` (Prompt Caching section) (inlined)
 
-**Function calling / tool use / agents:**
-→ Refer to \`{lang}/claude-api/README.md\` + \`shared/tool-use-concepts.md\` + \`{lang}/claude-api/tool-use.md\`
+**Function calling / tool use / custom agents:**
+→ \`{lang}/claude-api/README.md\` + \`shared/tool-use-concepts.md\` + \`{lang}/claude-api/tool-use.md\` (inlined)
 
 **Batch processing (non-latency-sensitive):**
-→ Refer to \`{lang}/claude-api/README.md\` + \`{lang}/claude-api/batches.md\`
+→ \`{lang}/claude-api/README.md\` + \`{lang}/claude-api/batches.md\` (inlined)
 
 **File uploads across multiple requests:**
-→ Refer to \`{lang}/claude-api/README.md\` + \`{lang}/claude-api/files-api.md\`
+→ \`{lang}/claude-api/README.md\` + \`{lang}/claude-api/files-api.md\` (inlined)
 
-**Agent with built-in tools (file/web/terminal) (Python & TypeScript only):**
-→ Refer to \`{lang}/agent-sdk/README.md\` + \`{lang}/agent-sdk/patterns.md\`
+**Server-managed stateful agents with a hosted workspace (Managed Agents):**
+→ Read \`shared/managed-agents-overview.md\` and \`shared/managed-agents-core.md\` first, then the relevant \`shared/managed-agents-*.md\` concept files (events, environments, tools, memory, multiagent, webhooks, outcomes, self-hosted-sandboxes, api-reference, client-patterns). Language-specific code: \`python/managed-agents/README.md\`, \`typescript/managed-agents/README.md\`, or \`curl/managed-agents.md\` for the wire-level reference. Onboarding flow: \`shared/managed-agents-onboarding.md\`.
+
+**Designing an agent (whether/when to build one):**
+→ Read \`shared/agent-design.md\`
+
+**Migrating existing code to a newer Claude model:**
+→ Read \`shared/model-migration.md\`
+
+**Provisioning agents/environments from YAML (Anthropic CLI):**
+→ Read \`shared/anthropic-cli.md\`
+
+**Cloud-provider availability (AWS / Bedrock / Vertex / Foundry):**
+→ Read \`shared/claude-platform-on-aws.md\`
 
 **Error handling:**
-→ Refer to \`shared/error-codes.md\`
+→ \`shared/error-codes.md\` (inlined)
 
 **Latest docs via WebFetch:**
-→ Refer to \`shared/live-sources.md\` for URLs`
+→ \`shared/live-sources.md\` (inlined)`
 
 function buildPrompt(
   lang: DetectedLanguage | null,
@@ -146,22 +173,25 @@ function buildPrompt(
   const parts: string[] = [basePrompt]
 
   if (lang) {
-    const filePaths = getFilesForLanguage(lang, content)
-    const readingGuide = INLINE_READING_GUIDE.replace(/\{lang\}/g, lang)
-    parts.push(readingGuide)
+    const filePaths = getInlineFilesForLanguage(lang, content)
+    parts.push(INLINE_READING_GUIDE.replace(/\{lang\}/g, lang))
     parts.push(
       '---\n\n## Included Documentation\n\n' +
         buildInlineReference(filePaths, content),
     )
   } else {
-    // No language detected — include all docs and let the model ask
+    // No language detected — inline only core shared docs and let the model
+    // ask, then Read the language-specific docs from the base directory.
     parts.push(INLINE_READING_GUIDE.replace(/\{lang\}/g, 'unknown'))
     parts.push(
-      'No project language was auto-detected. Ask the user which language they are using, then refer to the matching docs below.',
+      'No project language was auto-detected. Ask the user which language they are using, then Read the matching docs (e.g. `python/claude-api/README.md`) from the base directory.',
+    )
+    const sharedOnly = Object.keys(content.SKILL_FILES).filter(p =>
+      INLINE_SHARED.has(p),
     )
     parts.push(
       '---\n\n## Included Documentation\n\n' +
-        buildInlineReference(Object.keys(content.SKILL_FILES), content),
+        buildInlineReference(sharedOnly, content),
     )
   }
 
@@ -187,6 +217,18 @@ export function registerClaudeApiSkill(): void {
       'DO NOT TRIGGER when: code imports `openai`/other AI SDK, general programming, or ML/data-science tasks.',
     allowedTools: ['Read', 'Grep', 'Glob', 'WebFetch'],
     userInvocable: true,
+    // Extract the full doc library to disk (with {{VAR}} substituted) so the
+    // model can Read any file on demand. Lazy thunk keeps the ~250KB bundle out
+    // of memory until first invocation. registerBundledSkill prepends a
+    // "Base directory for this skill: <dir>" line to the prompt.
+    files: async () => {
+      const content = await import('./claudeApiContent.js')
+      const out: Record<string, string> = {}
+      for (const [path, md] of Object.entries(content.SKILL_FILES)) {
+        out[path] = processContent(md, content)
+      }
+      return out
+    },
     async getPromptForCommand(args) {
       const content = await import('./claudeApiContent.js')
       const lang = await detectLanguage()
