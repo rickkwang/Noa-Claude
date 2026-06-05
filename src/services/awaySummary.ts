@@ -20,7 +20,7 @@ function buildAwaySummaryPrompt(memory: string | null): string {
   const memoryBlock = memory
     ? `Session memory (broader context):\n${memory}\n\n`
     : ''
-  return `${memoryBlock}The user stepped away and is coming back. Write exactly 1-3 short sentences. Start by stating the high-level task — what they are building or debugging, not implementation details. Next: the concrete next step. Skip status reports and commit recaps.`
+  return `${memoryBlock}The user stepped away and is coming back. Recap in under 40 words, 1-2 plain sentences, no markdown. Lead with the overall goal and current task, then the one next action. Skip root-cause narrative, fix internals, secondary to-dos, and em-dash tangents.`
 }
 
 /**
