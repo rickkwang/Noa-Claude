@@ -475,6 +475,8 @@ export async function getIdeLockfilesPaths(): Promise<string[]> {
   if (windowsHome) {
     const converter = new WindowsToWSLConverter(process.env.WSL_DISTRO_NAME)
     const wslPath = converter.toLocalPath(windowsHome)
+    paths.push(resolve(wslPath, '.noa', 'ide'))
+    // Keep legacy compatibility while Windows-side IDE integrations migrate.
     paths.push(resolve(wslPath, '.claude', 'ide'))
   }
 
@@ -500,6 +502,7 @@ export async function getIdeLockfilesPaths(): Promise<string[]> {
       ) {
         continue // Skip system directories
       }
+      paths.push(join(usersDir, user.name, '.noa', 'ide'))
       paths.push(join(usersDir, user.name, '.claude', 'ide'))
     }
   } catch (error: unknown) {
@@ -512,7 +515,7 @@ export async function getIdeLockfilesPaths(): Promise<string[]> {
       logError(error)
     }
   }
-  return paths
+  return Array.from(new Set(paths))
 }
 
 /**

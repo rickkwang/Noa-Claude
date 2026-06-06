@@ -372,7 +372,7 @@ When adding to permission arrays or hook arrays, **merge with existing**, don't 
   "permissions": {
     "allow": [
       "Bash(git:*)",      // existing
-      "Edit(.claude)",    // existing
+      "Edit(.noa)",       // existing
       "Bash(npm:*)"       // new
     ]
   }

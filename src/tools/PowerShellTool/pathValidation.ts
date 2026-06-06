@@ -884,7 +884,7 @@ function isPathAllowed(
   }
 
   // 2. For write/create operations, check internal editable paths (plan files, scratchpad, agent memory, job dirs)
-  // This MUST come before checkPathSafetyForAutoEdit since .claude is a dangerous directory
+  // This MUST come before checkPathSafetyForAutoEdit since .noa is a dangerous directory
   // and internal editable paths live under ~/.noa/ — matching the ordering in
   // checkWritePermissionForTool (filesystem.ts step 1.5)
   if (operationType !== 'read') {
@@ -1588,7 +1588,7 @@ function checkPathConstraintsForStatement(
   //
   // ALTERNATIVE APPROACH (rejected): simulate cwd through the statement chain
   // — after `Set-Location ./.noa`, validate subsequent statements with
-  // cwd='./.claude'. This would be more permissive but requires careful
+  // cwd='./.noa'. This would be more permissive but requires careful
   // handling of:
   //   - Push-Location/Pop-Location stack semantics
   //   - Set-Location with no args (→ home on some platforms)
