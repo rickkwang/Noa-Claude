@@ -20,8 +20,16 @@ export type SizeBasedMCConfig = {
   enabled: boolean
   /**
    * Trigger when estimated tokens exceed this fraction of the effective
-   * context window. Kept below the auto-compact threshold (~93% of effective)
-   * so this fires first and defers — or avoids — the blocking full compact.
+   * context window, measured with estimateMessageTokens.
+   *
+   * Note the two compaction paths use different yardsticks: we trigger on
+   * estimateMessageTokens (whole-array rough sum, padded x4/3 -> roughly
+   * chars/3), while auto-compact triggers on tokenCountWithEstimation (real
+   * server usage). Since our estimate runs ~1.33x the real token count, an
+   * 0.85 fraction here fires at only ~64% of real context — comfortably ahead
+   * of auto-compact's ~93%-of-real threshold. The conservative padding biases
+   * us toward firing early (incremental relief), never toward missing the
+   * window, so size-based clearing reliably precedes the blocking full compact.
    */
   triggerFraction: number
   /** Keep this many most-recent compactable tool results; older ones are cleared. */

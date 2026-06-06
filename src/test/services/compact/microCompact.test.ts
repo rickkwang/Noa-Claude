@@ -145,6 +145,25 @@ describe('clearOldToolResults', () => {
       TIME_BASED_MC_CLEARED_MESSAGE,
     )
   })
+
+  test('cleared count reflects only results cleared on this pass', () => {
+    const messages: Message[] = [
+      toolUse('Read', 'r-1'),
+      // r-1 was already cleared on a prior turn
+      toolResult('r-1', TIME_BASED_MC_CLEARED_MESSAGE),
+      toolUse('Read', 'r-2'),
+      toolResult('r-2', 'still has real content '.repeat(20)),
+      toolUse('Read', 'r-3'),
+      toolResult('r-3', 'also real content '.repeat(20)),
+      toolUse('Read', 'r-4'),
+      toolResult('r-4', 'most recent, kept '.repeat(20)),
+    ]
+    // keepRecent 1 → keep r-4; clearSet = {r-1, r-2, r-3} but r-1 is already
+    // cleared, so only r-2 and r-3 are newly cleared.
+    const out = clearOldToolResults(messages, 1)
+    expect(out).not.toBeNull()
+    expect(out!.cleared).toBe(2)
+  })
 })
 
 describe('getSizeBasedMCConfig', () => {

@@ -487,13 +487,16 @@ export function evaluateTimeBasedTrigger(
 export function clearOldToolResults(
   messages: Message[],
   keepRecent: number,
+  precomputedIds?: string[],
 ): {
   messages: Message[]
   tokensSaved: number
   cleared: number
   kept: number
 } | null {
-  const compactableIds = collectCompactableToolIds(messages)
+  // Callers that already collected the ids (e.g. the size-based pre-gate) pass
+  // them in to avoid a second traversal; everyone else computes them here.
+  const compactableIds = precomputedIds ?? collectCompactableToolIds(messages)
 
   // Floor at 1: slice(-0) returns the full array (paradoxically keeps
   // everything), and clearing ALL results leaves the model with zero working
@@ -507,6 +510,10 @@ export function clearOldToolResults(
   }
 
   let tokensSaved = 0
+  // Count only results cleared on THIS pass. clearSet may include ids already
+  // cleared on a prior turn (the conversation keeps growing, so older ids stay
+  // outside keepSet); reporting clearSet.size would over-count on repeat fires.
+  let clearedNow = 0
   const result: Message[] = messages.map(message => {
     if (message.type !== 'user' || !Array.isArray(message.message.content)) {
       return message
@@ -519,6 +526,7 @@ export function clearOldToolResults(
         block.content !== TIME_BASED_MC_CLEARED_MESSAGE
       ) {
         tokensSaved += calculateToolResultTokens(block)
+        clearedNow++
         touched = true
         return { ...block, content: TIME_BASED_MC_CLEARED_MESSAGE }
       }
@@ -538,7 +546,7 @@ export function clearOldToolResults(
   return {
     messages: result,
     tokensSaved,
-    cleared: clearSet.size,
+    cleared: clearedNow,
     kept: keepSet.size,
   }
 }
@@ -621,6 +629,16 @@ function maybeSizeBasedMicrocompact(
     return null
   }
 
+  // Cheap short-circuit: if there aren't more compactable results than we'd
+  // keep, clearOldToolResults would return null anyway. Skip the O(n) per-block
+  // estimateMessageTokens traversal on the many turns that can't clear anything
+  // (plain Q&A, tool-light sessions). Outcome-preserving — only avoids work.
+  // The ids are reused below so clearOldToolResults doesn't re-collect them.
+  const compactableIds = collectCompactableToolIds(messages)
+  if (compactableIds.length <= Math.max(1, config.keepRecent)) {
+    return null
+  }
+
   // Lazy require to avoid the init-time circular dependency this file is
   // sensitive to (see the toolResultStorage inline note above) — autoCompact
   // pulls in a chain that loops back here at module-load time.
@@ -635,7 +653,11 @@ function maybeSizeBasedMicrocompact(
     return null
   }
 
-  const cleared = clearOldToolResults(messages, config.keepRecent)
+  const cleared = clearOldToolResults(
+    messages,
+    config.keepRecent,
+    compactableIds,
+  )
   if (!cleared) {
     return null
   }
