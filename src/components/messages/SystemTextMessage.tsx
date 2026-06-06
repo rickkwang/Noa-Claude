@@ -71,7 +71,7 @@ export function SystemTextMessage(t0) {
     const t1 = addMargin ? 1 : 0;
     let t2;
     if ($[6] === Symbol.for("react.memo_cache_sentinel")) {
-      t2 = <Box minWidth={2}><Text dimColor={true}>{REFERENCE_MARK}</Text></Box>;
+      t2 = <Box minWidth={2} marginRight={1}><Text dimColor={true}>{REFERENCE_MARK}</Text></Box>;
       $[6] = t2;
     } else {
       t2 = $[6];

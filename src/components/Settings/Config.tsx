@@ -301,6 +301,31 @@ export function Config({
       });
     }
   }, {
+    id: 'awaySummaryEnabled',
+    label: 'Recap when you return',
+    value: settingsData?.awaySummaryEnabled ?? true,
+    type: 'boolean' as const,
+    onChange(awaySummaryEnabled: boolean) {
+      updateSettingsForSource('userSettings', {
+        awaySummaryEnabled
+      });
+      setSettingsData(prev_4 => ({
+        ...prev_4,
+        awaySummaryEnabled
+      }));
+      // Sync to AppState so components react immediately
+      setAppState(prev_4b => ({
+        ...prev_4b,
+        settings: {
+          ...prev_4b.settings,
+          awaySummaryEnabled
+        }
+      }));
+      logEvent('tengu_away_summary_setting_changed', {
+        enabled: awaySummaryEnabled
+      });
+    }
+  }, {
     id: 'prefersReducedMotion',
     label: 'Reduce motion',
     value: settingsData?.prefersReducedMotion ?? false,
@@ -1205,6 +1230,7 @@ export function Config({
       autoUpdatesChannel: iu?.autoUpdatesChannel,
       minimumVersion: iu?.minimumVersion,
       language: iu?.language,
+      awaySummaryEnabled: iu?.awaySummaryEnabled,
       ...(feature('TRANSCRIPT_CLASSIFIER') ? {
         useAutoModeDuringPlan: (iu as {
           useAutoModeDuringPlan?: boolean;

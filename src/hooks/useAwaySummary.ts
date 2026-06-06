@@ -6,8 +6,8 @@ import {
 } from '../ink/terminal-focus-state.js'
 import { generateAwaySummary } from '../services/awaySummary.js'
 import type { Message } from '../types/message.js'
+import { useAppState } from '../state/AppState.js'
 import { createAwaySummaryMessage } from '../utils/messages.js'
-import { getInitialSettings } from '../utils/settings/settings.js'
 
 // Official Claude Code default (Cwq): recap fires after 3 minutes of blur.
 const BLUR_DELAY_MS = 3 * 60_000
@@ -33,7 +33,7 @@ export function hasSummarySinceLastUserTurn(
 }
 
 export function isAwaySummaryEnabled(
-  settings: Pick<ReturnType<typeof getInitialSettings>, 'awaySummaryEnabled'>,
+  settings: { awaySummaryEnabled?: boolean },
 ): boolean {
   return settings.awaySummaryEnabled !== false
 }
@@ -65,6 +65,7 @@ export function useAwaySummary(
   const lastTurnEndRef = useRef<number | null>(null)
   const recapCountRef = useRef(0)
   const generateRef = useRef<(() => Promise<void>) | null>(null)
+  const awaySummaryEnabled = useAppState(s => s.settings.awaySummaryEnabled ?? true)
 
   messagesRef.current = messages
   isLoadingRef.current = isLoading
@@ -77,7 +78,7 @@ export function useAwaySummary(
   // Generation + focus subscription. The blur path fires immediately when the
   // user is already idle past the threshold.
   useEffect(() => {
-    if (!isAwaySummaryEnabled(getInitialSettings())) return
+    if (!awaySummaryEnabled) return
 
     function abortInFlight(): void {
       abortRef.current?.abort()
@@ -134,12 +135,12 @@ export function useAwaySummary(
       abortInFlight()
       generateRef.current = null
     }
-  }, [setMessages])
+  }, [setMessages, awaySummaryEnabled])
 
   // Timer anchored to turn-end: fires at turn-end + 3min if still blurred. Re-runs
   // (and reschedules from the new anchor) whenever a turn starts or ends.
   useEffect(() => {
-    if (!isAwaySummaryEnabled(getInitialSettings())) return
+    if (!awaySummaryEnabled) return
     if (isLoading) return
     const anchor = lastTurnEndRef.current
     if (anchor === null) return
