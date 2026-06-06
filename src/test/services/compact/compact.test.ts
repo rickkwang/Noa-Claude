@@ -4,6 +4,7 @@ import {
   buildCompactSummaryMessages,
   buildPostCompactMessages,
   createPostCompactContextAttachments,
+  estimatePayloadTokensSaved,
   isCompactionUserAbort,
   isStaleFullCompactSummary,
   snapshotCompactContextState,
@@ -90,6 +91,23 @@ describe('buildPostCompactMessages', () => {
       'kept-from-order',
       'summary-from-order',
     ])
+  })
+})
+
+describe('estimatePayloadTokensSaved', () => {
+  test('subtracts a precomputed post compact token count', () => {
+    const before = [
+      makeAssistantMessage('before-1', 'large tool context '.repeat(200)),
+      createUserMessage({ content: 'follow-up question '.repeat(50) }),
+    ]
+
+    expect(estimatePayloadTokensSaved(before, 1)).toBeGreaterThan(0)
+  })
+
+  test('never reports negative savings', () => {
+    const before = [createUserMessage({ content: 'short' })]
+
+    expect(estimatePayloadTokensSaved(before, 10_000)).toBe(0)
   })
 })
 

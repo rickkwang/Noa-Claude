@@ -151,5 +151,5 @@ export function useAwaySummary(
       void generateRef.current?.()
     }, remaining)
     return () => clearTimeout(id)
-  }, [isLoading])
+  }, [isLoading, awaySummaryEnabled])
 }

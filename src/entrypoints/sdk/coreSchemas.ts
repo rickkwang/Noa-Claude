@@ -1285,6 +1285,7 @@ const SDKUserMessageContentSchema = lazySchema(() =>
         user_context: z.string().optional(),
         direction: z.enum(['from', 'up_to']).optional(),
         raw_compact_summary: z.string().optional(),
+        tokens_saved: z.number().optional(),
       })
       .optional(),
     tool_use_result: z.unknown().optional(),

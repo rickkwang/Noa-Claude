@@ -133,6 +133,17 @@ export const POST_COMPACT_MAX_TOKENS_PER_SKILL = 5_000
 export const POST_COMPACT_SKILLS_TOKEN_BUDGET = 25_000
 const MAX_COMPACT_STREAMING_RETRIES = 2
 
+export function estimatePayloadTokensSaved(
+  preCompactMessages: Message[],
+  postCompactTokenCount: number,
+): number {
+  return Math.max(
+    0,
+    roughTokenCountEstimationForMessages(preCompactMessages) -
+      postCompactTokenCount,
+  )
+}
+
 /**
  * Strip image blocks from user messages before sending for compaction.
  * Images are not needed for generating a conversation summary and can
@@ -748,20 +759,22 @@ export async function compactConversation(
     // shouldAutoCompact will see this PLUS ~20-40K for system prompt + tools +
     // userContext (via API usage.input_tokens). So `willRetriggerNextTurn: true`
     // is a strong signal; `false` may still retrigger when this is close to threshold.
-    const truePostCompactTokenCount = roughTokenCountEstimationForMessages([
+    const estimatedPostCompactMessages = [
       boundaryMarker,
       ...summaryMessages,
       ...postCompactContextAttachments,
       ...hookMessages,
-    ])
+    ]
+    const truePostCompactTokenCount = roughTokenCountEstimationForMessages(
+      estimatedPostCompactMessages,
+    )
 
-    // Surface the real headroom reclaimed (before − after) in the summary UI.
-    // Both inputs are already computed here, so this is free.
+    // Surface payload tokens reclaimed with a same-units estimate. Do not use
+    // preCompactTokenCount here: it comes from API usage and includes system
+    // prompt/tools/userContext, while truePostCompactTokenCount is message-only.
     if (summaryMessages[0]?.summarizeMetadata) {
-      summaryMessages[0].summarizeMetadata.tokensSaved = Math.max(
-        0,
-        (preCompactTokenCount ?? 0) - truePostCompactTokenCount,
-      )
+      summaryMessages[0].summarizeMetadata.tokensSaved =
+        estimatePayloadTokensSaved(messages, truePostCompactTokenCount)
     }
 
     // Extract compaction API usage metrics
@@ -1149,22 +1162,25 @@ export async function partialCompactConversation(
       context.abortController.signal,
     )
 
-    // Surface reclaimed headroom (before − after) in the summary UI. Partial
+    // Surface payload tokens reclaimed with a same-units estimate. Partial
     // compact keeps a tail, so the resulting context includes messagesToKeep.
-    const truePartialPostCompactTokenCount = roughTokenCountEstimationForMessages(
-      [
-        boundaryMarker,
-        ...summaryMessages,
-        ...messagesToKeep,
-        ...postCompactContextAttachments,
-        ...hookMessages,
-      ],
-    )
-    if (summaryMessages[0]?.summarizeMetadata) {
-      summaryMessages[0].summarizeMetadata.tokensSaved = Math.max(
-        0,
-        (preCompactTokenCount ?? 0) - truePartialPostCompactTokenCount,
+    const estimatedPartialPostCompactMessages = [
+      boundaryMarker,
+      ...summaryMessages,
+      ...messagesToKeep,
+      ...postCompactContextAttachments,
+      ...hookMessages,
+    ]
+    const truePartialPostCompactTokenCount =
+      roughTokenCountEstimationForMessages(
+        estimatedPartialPostCompactMessages,
       )
+    if (summaryMessages[0]?.summarizeMetadata) {
+      summaryMessages[0].summarizeMetadata.tokensSaved =
+        estimatePayloadTokensSaved(
+          allMessages,
+          truePartialPostCompactTokenCount,
+        )
     }
 
     // 'from': prefix-preserving → boundary; 'up_to': suffix → last summary
