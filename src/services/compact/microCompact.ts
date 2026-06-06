@@ -29,6 +29,10 @@ import {
   getTimeBasedMCConfig,
   type TimeBasedMCConfig,
 } from './timeBasedMCConfig.js'
+import {
+  getSizeBasedMCConfig,
+  shouldSizeTrigger,
+} from './sizeBasedMCConfig.js'
 
 // Inline from utils/toolResultStorage.ts — importing that file pulls in
 // sessionStorage → utils/messages → services/api/errors, completing a
@@ -303,10 +307,21 @@ export async function microcompactMessages(
     }
   }
 
-  // Legacy microcompact path removed — tengu_cache_plum_violet is always true.
-  // For contexts where cached microcompact is not available (external builds,
-  // non-ant users, unsupported models, sub-agents), no compaction happens here;
-  // autocompact handles context pressure instead.
+  // Size-based fallback (provider-neutral, client-side). Cached microcompact
+  // above is Anthropic-internal and a no-op in external builds, so without this
+  // an active session that never pauses gets no incremental relief and grows
+  // straight into the blocking full compact. Clear old tool results once the
+  // context crosses a fraction of the window, below the autocompact threshold.
+  const sizeBasedResult = maybeSizeBasedMicrocompact(
+    messages,
+    querySource,
+    toolUseContext,
+  )
+  if (sizeBasedResult) {
+    return sizeBasedResult
+  }
+
+  // Otherwise no compaction happens here; autocompact handles context pressure.
   return { messages }
 }
 
@@ -461,23 +476,30 @@ export function evaluateTimeBasedTrigger(
   return { gapMinutes, config }
 }
 
-function maybeTimeBasedMicrocompact(
+/**
+ * Pure transform shared by both microcompact triggers: content-clear every
+ * compactable tool result except the last `keepRecent`. Returns null when
+ * nothing is actually cleared (no clearable results, or all already cleared).
+ *
+ * Provider-neutral — it only rewrites local message content, so it works on
+ * any model/provider without API betas or cache-editing support.
+ */
+export function clearOldToolResults(
   messages: Message[],
-  querySource: QuerySource | undefined,
-): MicrocompactResult | null {
-  const trigger = evaluateTimeBasedTrigger(messages, querySource)
-  if (!trigger) {
-    return null
-  }
-  const { gapMinutes, config } = trigger
-
+  keepRecent: number,
+): {
+  messages: Message[]
+  tokensSaved: number
+  cleared: number
+  kept: number
+} | null {
   const compactableIds = collectCompactableToolIds(messages)
 
   // Floor at 1: slice(-0) returns the full array (paradoxically keeps
   // everything), and clearing ALL results leaves the model with zero working
   // context. Neither degenerate is sensible — always keep at least the last.
-  const keepRecent = Math.max(1, config.keepRecent)
-  const keepSet = new Set(compactableIds.slice(-keepRecent))
+  const keep = Math.max(1, keepRecent)
+  const keepSet = new Set(compactableIds.slice(-keep))
   const clearSet = new Set(compactableIds.filter(id => !keepSet.has(id)))
 
   if (clearSet.size === 0) {
@@ -513,19 +535,20 @@ function maybeTimeBasedMicrocompact(
     return null
   }
 
-  logEvent('tengu_time_based_microcompact', {
-    gapMinutes: Math.round(gapMinutes),
-    gapThresholdMinutes: config.gapThresholdMinutes,
-    toolsCleared: clearSet.size,
-    toolsKept: keepSet.size,
-    keepRecent: config.keepRecent,
+  return {
+    messages: result,
     tokensSaved,
-  })
+    cleared: clearSet.size,
+    kept: keepSet.size,
+  }
+}
 
-  logForDebugging(
-    `[TIME-BASED MC] gap ${Math.round(gapMinutes)}min > ${config.gapThresholdMinutes}min, cleared ${clearSet.size} tool results (~${tokensSaved} tokens), kept last ${keepSet.size}`,
-  )
-
+/**
+ * Shared side-effects after a content-clear, identical for both triggers:
+ * suppress the imminent compact warning, reset stale cached-MC state, and tell
+ * the cache-break detector to expect a low cache read next turn.
+ */
+function finalizeContentClear(querySource: QuerySource | undefined): void {
   suppressCompactWarning()
   // Cached-MC state (module-level) holds tool IDs registered on prior turns.
   // We just content-cleared some of those tools AND invalidated the server
@@ -543,6 +566,95 @@ function maybeTimeBasedMicrocompact(
   if (feature('PROMPT_CACHE_BREAK_DETECTION') && querySource) {
     notifyCacheDeletion(querySource)
   }
+}
 
-  return { messages: result }
+function maybeTimeBasedMicrocompact(
+  messages: Message[],
+  querySource: QuerySource | undefined,
+): MicrocompactResult | null {
+  const trigger = evaluateTimeBasedTrigger(messages, querySource)
+  if (!trigger) {
+    return null
+  }
+  const { gapMinutes, config } = trigger
+
+  const cleared = clearOldToolResults(messages, config.keepRecent)
+  if (!cleared) {
+    return null
+  }
+
+  logEvent('tengu_time_based_microcompact', {
+    gapMinutes: Math.round(gapMinutes),
+    gapThresholdMinutes: config.gapThresholdMinutes,
+    toolsCleared: cleared.cleared,
+    toolsKept: cleared.kept,
+    keepRecent: config.keepRecent,
+    tokensSaved: cleared.tokensSaved,
+  })
+
+  logForDebugging(
+    `[TIME-BASED MC] gap ${Math.round(gapMinutes)}min > ${config.gapThresholdMinutes}min, cleared ${cleared.cleared} tool results (~${cleared.tokensSaved} tokens), kept last ${cleared.kept}`,
+  )
+
+  finalizeContentClear(querySource)
+
+  return { messages: cleared.messages }
+}
+
+/**
+ * Size-based microcompact: the provider-neutral fallback for users who don't
+ * get cached microcompact (external builds, non-ant users, unsupported models).
+ *
+ * The time-based trigger only fires after a wall-clock pause; an active session
+ * never pauses, so without this it grows unchecked until the blocking full
+ * compact. Once estimated tokens cross a fraction of the effective context
+ * window (below the auto-compact threshold), clear old tool results to buy
+ * headroom and defer — or skip — the full compact.
+ */
+function maybeSizeBasedMicrocompact(
+  messages: Message[],
+  querySource: QuerySource | undefined,
+  toolUseContext?: ToolUseContext,
+): MicrocompactResult | null {
+  const config = getSizeBasedMCConfig()
+  if (!config.enabled || !querySource || !isMainThreadSource(querySource)) {
+    return null
+  }
+
+  // Lazy require to avoid the init-time circular dependency this file is
+  // sensitive to (see the toolResultStorage inline note above) — autoCompact
+  // pulls in a chain that loops back here at module-load time.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { getEffectiveContextWindowSize } =
+    require('./autoCompact.js') as typeof import('./autoCompact.js')
+  const model = toolUseContext?.options.mainLoopModel ?? getMainLoopModel()
+  const effectiveWindow = getEffectiveContextWindowSize(model)
+  const estimatedTokens = estimateMessageTokens(messages)
+
+  if (!shouldSizeTrigger(estimatedTokens, effectiveWindow, config)) {
+    return null
+  }
+
+  const cleared = clearOldToolResults(messages, config.keepRecent)
+  if (!cleared) {
+    return null
+  }
+
+  logEvent('tengu_size_based_microcompact', {
+    estimatedTokens,
+    effectiveWindow,
+    triggerFraction: config.triggerFraction,
+    toolsCleared: cleared.cleared,
+    toolsKept: cleared.kept,
+    keepRecent: config.keepRecent,
+    tokensSaved: cleared.tokensSaved,
+  })
+
+  logForDebugging(
+    `[SIZE-BASED MC] est ${estimatedTokens} >= ${Math.floor(effectiveWindow * config.triggerFraction)} (${Math.round(config.triggerFraction * 100)}% of ${effectiveWindow}), cleared ${cleared.cleared} tool results (~${cleared.tokensSaved} tokens), kept last ${cleared.kept}`,
+  )
+
+  finalizeContentClear(querySource)
+
+  return { messages: cleared.messages }
 }

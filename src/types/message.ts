@@ -42,6 +42,9 @@ export type Message = z.infer<typeof MessageSchema> & {
     userContext?: string
     direction?: PartialCompactDirection
     rawCompactSummary?: string
+    /** Estimated tokens freed by this compaction (pre-compact context minus the
+     *  resulting post-compact context). Surfaced in the compact summary UI. */
+    tokensSaved?: number
   }
   isVisibleInTranscriptOnly?: boolean
   isVirtual?: boolean

@@ -7,6 +7,7 @@ export type SDKSummarizeMetadata = {
   user_context?: string
   direction?: PartialCompactDirection
   raw_compact_summary?: string
+  tokens_saved?: number
 }
 
 export function toSDKSummarizeMetadata(
@@ -18,6 +19,7 @@ export function toSDKSummarizeMetadata(
     user_context: meta.userContext,
     direction: meta.direction,
     raw_compact_summary: meta.rawCompactSummary,
+    tokens_saved: meta.tokensSaved,
   }
 }
 
@@ -30,5 +32,6 @@ export function fromSDKSummarizeMetadata(
     userContext: meta.user_context,
     direction: meta.direction as InternalSummarizeMetadata['direction'],
     rawCompactSummary: meta.raw_compact_summary,
+    tokensSaved: meta.tokens_saved,
   }
 }

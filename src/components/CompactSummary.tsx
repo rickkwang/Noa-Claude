@@ -6,6 +6,7 @@ import { Box, Text } from '../ink.js';
 import type { Screen } from '../screens/REPL.js';
 import type { NormalizedUserMessage } from '../types/message.js';
 import { getUserMessageText } from '../utils/messages.js';
+import { formatTokens } from '../utils/format.js';
 import { ConfigurableShortcutHint } from './ConfigurableShortcutHint.js';
 import { MessageResponse } from './MessageResponse.js';
 type Props = {
@@ -46,7 +47,7 @@ export function CompactSummary(t0) {
     }
     let t4;
     if ($[4] !== isTranscriptMode || $[5] !== metadata) {
-      t4 = !isTranscriptMode && <MessageResponse><Box flexDirection="column"><Text dimColor={true}>Summarized {metadata.messagesSummarized} messages{" "}{metadata.direction === "from" ? "from this point" : "up to this point"}</Text>{metadata.userContext && <Text dimColor={true}>Context: {"\u201C"}{metadata.userContext}{"\u201D"}</Text>}<Text dimColor={true}><ConfigurableShortcutHint action="app:toggleTranscript" context="Global" fallback="ctrl+o" description="expand history" parens={true} /></Text></Box></MessageResponse>;
+      t4 = !isTranscriptMode && <MessageResponse><Box flexDirection="column"><Text dimColor={true}>Summarized {metadata.messagesSummarized} messages{" "}{metadata.direction === "from" ? "from this point" : "up to this point"}{metadata.tokensSaved ? ` · freed ~${formatTokens(metadata.tokensSaved)} tokens` : ""}</Text>{metadata.userContext && <Text dimColor={true}>Context: {"\u201C"}{metadata.userContext}{"\u201D"}</Text>}<Text dimColor={true}><ConfigurableShortcutHint action="app:toggleTranscript" context="Global" fallback="ctrl+o" description="expand history" parens={true} /></Text></Box></MessageResponse>;
       $[4] = isTranscriptMode;
       $[5] = metadata;
       $[6] = t4;

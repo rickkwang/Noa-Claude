@@ -755,6 +755,15 @@ export async function compactConversation(
       ...hookMessages,
     ])
 
+    // Surface the real headroom reclaimed (before − after) in the summary UI.
+    // Both inputs are already computed here, so this is free.
+    if (summaryMessages[0]?.summarizeMetadata) {
+      summaryMessages[0].summarizeMetadata.tokensSaved = Math.max(
+        0,
+        (preCompactTokenCount ?? 0) - truePostCompactTokenCount,
+      )
+    }
+
     // Extract compaction API usage metrics
     const compactionUsage = getTokenUsage(summaryResponse)
 
@@ -1139,6 +1148,24 @@ export async function partialCompactConversation(
       },
       context.abortController.signal,
     )
+
+    // Surface reclaimed headroom (before − after) in the summary UI. Partial
+    // compact keeps a tail, so the resulting context includes messagesToKeep.
+    const truePartialPostCompactTokenCount = roughTokenCountEstimationForMessages(
+      [
+        boundaryMarker,
+        ...summaryMessages,
+        ...messagesToKeep,
+        ...postCompactContextAttachments,
+        ...hookMessages,
+      ],
+    )
+    if (summaryMessages[0]?.summarizeMetadata) {
+      summaryMessages[0].summarizeMetadata.tokensSaved = Math.max(
+        0,
+        (preCompactTokenCount ?? 0) - truePartialPostCompactTokenCount,
+      )
+    }
 
     // 'from': prefix-preserving → boundary; 'up_to': suffix → last summary
     const anchorUuid =
