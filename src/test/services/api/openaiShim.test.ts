@@ -40,6 +40,43 @@ function captureClient() {
   return { client, captured }
 }
 
+// Capture client whose fetch returns an SSE stream built from the given chunks.
+function streamingCaptureClient(chunks: Array<Record<string, unknown>>) {
+  const captured: CapturedRequest[] = []
+  const fetchOverride = (async (url: string, init: RequestInit) => {
+    captured.push({
+      url: typeof url === 'string' ? url : String(url),
+      body: JSON.parse(String(init.body ?? '{}')),
+    })
+    const body =
+      chunks.map(c => `data: ${JSON.stringify(c)}\n\n`).join('') +
+      'data: [DONE]\n\n'
+    return new Response(body, {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    })
+  }) as unknown as typeof fetch
+
+  const client = createOpenAIShimClient({
+    apiKey: 'test-key',
+    baseURL: 'https://api.example.test/v1',
+    defaultHeaders: {},
+    timeoutMs: 1000,
+    fetchOverride,
+  })
+  return { client, captured }
+}
+
+async function collectStream(
+  stream: AsyncIterable<Record<string, unknown>>,
+): Promise<Array<Record<string, unknown>>> {
+  const events: Array<Record<string, unknown>> = []
+  for await (const event of stream) {
+    events.push(event)
+  }
+  return events
+}
+
 const PREV_ENV = process.env.CLAUDE_CODE_OPENAI_REASONING_EFFORT
 
 describe('openaiShim reasoning_effort translation', () => {
@@ -141,5 +178,311 @@ describe('openaiShim reasoning_effort translation', () => {
     // so we never pass it through.
     expect(captured[0]!.body.response_format).toBeUndefined()
     expect(captured[0]!.body.reasoning_effort).toBe('high')
+  })
+})
+
+describe('openaiShim stream usage', () => {
+  test('streaming request asks for usage via stream_options.include_usage', async () => {
+    const { client, captured } = streamingCaptureClient([
+      { id: 'c', choices: [{ delta: { content: 'hi' } }] },
+      { id: 'c', choices: [{ delta: {}, finish_reason: 'stop' }] },
+    ])
+    const stream = (await client.messages.create({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: 'hi' }],
+      max_tokens: 16,
+      stream: true,
+    })) as AsyncIterable<Record<string, unknown>>
+    await collectStream(stream)
+    expect(captured).toHaveLength(1)
+    expect(captured[0]!.body.stream).toBe(true)
+    expect(captured[0]!.body.stream_options).toEqual({ include_usage: true })
+  })
+
+  test('non-streaming request does not send stream_options', async () => {
+    const { client, captured } = captureClient()
+    await client.messages.create({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: 'hi' }],
+      max_tokens: 16,
+    })
+    expect(captured[0]!.body.stream).toBe(false)
+    expect(captured[0]!.body.stream_options).toBeUndefined()
+  })
+
+  test('CLAUDE_CODE_OPENAI_DISABLE_STREAM_USAGE opts out of stream_options', async () => {
+    const prev = process.env.CLAUDE_CODE_OPENAI_DISABLE_STREAM_USAGE
+    process.env.CLAUDE_CODE_OPENAI_DISABLE_STREAM_USAGE = '1'
+    try {
+      const { client, captured } = streamingCaptureClient([
+        { id: 'c', choices: [{ delta: {}, finish_reason: 'stop' }] },
+      ])
+      const stream = (await client.messages.create({
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: 'hi' }],
+        max_tokens: 16,
+        stream: true,
+      })) as AsyncIterable<Record<string, unknown>>
+      await collectStream(stream)
+      expect(captured[0]!.body.stream).toBe(true)
+      expect(captured[0]!.body.stream_options).toBeUndefined()
+    } finally {
+      if (prev === undefined) {
+        delete process.env.CLAUDE_CODE_OPENAI_DISABLE_STREAM_USAGE
+      } else {
+        process.env.CLAUDE_CODE_OPENAI_DISABLE_STREAM_USAGE = prev
+      }
+    }
+  })
+
+  test('usage from a trailing usage-only chunk reaches a message_delta', async () => {
+    // OpenAI with include_usage emits the usage in a final chunk that carries
+    // an empty choices array, separate from the finish_reason chunk.
+    const { client } = streamingCaptureClient([
+      { id: 'c', choices: [{ delta: { content: 'hello' } }] },
+      { id: 'c', choices: [{ delta: {}, finish_reason: 'stop' }] },
+      {
+        id: 'c',
+        choices: [],
+        usage: { prompt_tokens: 42, completion_tokens: 7 },
+      },
+    ])
+    const stream = (await client.messages.create({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: 'hi' }],
+      max_tokens: 16,
+      stream: true,
+    })) as AsyncIterable<Record<string, unknown>>
+    const events = await collectStream(stream)
+
+    const usageDelta = events.find(
+      e =>
+        e.type === 'message_delta' &&
+        (e.usage as { input_tokens?: number } | undefined)?.input_tokens === 42,
+    )
+    expect(usageDelta).toBeDefined()
+    expect((usageDelta!.usage as { output_tokens: number }).output_tokens).toBe(7)
+  })
+})
+
+describe('openaiShim tool strict mode', () => {
+  // A schema shaped like zod v4 output: additionalProperties:false everywhere,
+  // partial `required` on nested objects (optional fields excluded), and a
+  // top-level $schema meta key.
+  const nestedOptionalSchema = {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    type: 'object',
+    properties: {
+      a: { type: 'string' },
+      opts: {
+        type: 'object',
+        properties: { x: { type: 'string' }, y: { type: 'number' } },
+        required: ['x'],
+        additionalProperties: false,
+      },
+      items: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { p: { type: 'string' }, q: { type: 'boolean' } },
+          required: ['p'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['a'],
+    additionalProperties: false,
+  }
+
+  const PREV_STRICT = process.env.CLAUDE_CODE_OPENAI_STRICT_TOOLS
+  afterEach(() => {
+    if (PREV_STRICT === undefined) {
+      delete process.env.CLAUDE_CODE_OPENAI_STRICT_TOOLS
+    } else {
+      process.env.CLAUDE_CODE_OPENAI_STRICT_TOOLS = PREV_STRICT
+    }
+  })
+
+  async function captureToolBody() {
+    const { client, captured } = captureClient()
+    await client.messages.create({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: 'hi' }],
+      max_tokens: 16,
+      tools: [
+        { name: 'demo', description: 'd', input_schema: nestedOptionalSchema },
+      ],
+    })
+    const tool = (captured[0]!.body.tools as Array<Record<string, any>>)[0]!
+    return tool
+  }
+
+  test('default: not strict, optional fields preserved at every level', async () => {
+    delete process.env.CLAUDE_CODE_OPENAI_STRICT_TOOLS
+    const tool = await captureToolBody()
+    expect(tool.function.strict).toBeUndefined()
+    const params = tool.function.parameters
+    // Top-level optional `opts`/`items` are NOT forced into required.
+    expect(params.required).toEqual(['a'])
+    // Nested object's optional `y` stays optional.
+    expect(params.properties.opts.required).toEqual(['x'])
+    expect(params.properties.items.items.required).toEqual(['p'])
+  })
+
+  test('strict mode: every object lists all keys required + additionalProperties:false', async () => {
+    process.env.CLAUDE_CODE_OPENAI_STRICT_TOOLS = '1'
+    const tool = await captureToolBody()
+    expect(tool.function.strict).toBe(true)
+    const params = tool.function.parameters
+    expect(new Set(params.required)).toEqual(new Set(['a', 'opts', 'items']))
+    expect(params.additionalProperties).toBe(false)
+    // Nested object inside properties.
+    expect(new Set(params.properties.opts.required)).toEqual(new Set(['x', 'y']))
+    expect(params.properties.opts.additionalProperties).toBe(false)
+    // Object inside array items.
+    expect(new Set(params.properties.items.items.required)).toEqual(
+      new Set(['p', 'q']),
+    )
+    expect(params.properties.items.items.additionalProperties).toBe(false)
+    // strict mode rejects the $schema meta keyword — it must be stripped.
+    expect(params.$schema).toBeUndefined()
+  })
+
+  test('strict mode: anyOf branches are each normalized', async () => {
+    process.env.CLAUDE_CODE_OPENAI_STRICT_TOOLS = '1'
+    const { client, captured } = captureClient()
+    await client.messages.create({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: 'hi' }],
+      max_tokens: 16,
+      tools: [
+        {
+          name: 'u',
+          description: 'd',
+          input_schema: {
+            type: 'object',
+            properties: {
+              choice: {
+                anyOf: [
+                  {
+                    type: 'object',
+                    properties: { kind: { type: 'string' }, note: { type: 'string' } },
+                    required: ['kind'],
+                    additionalProperties: false,
+                  },
+                ],
+              },
+            },
+            required: ['choice'],
+            additionalProperties: false,
+          },
+        },
+      ],
+    })
+    const tool = (captured[0]!.body.tools as Array<Record<string, any>>)[0]!
+    const branch = tool.function.parameters.properties.choice.anyOf[0]
+    expect(new Set(branch.required)).toEqual(new Set(['kind', 'note']))
+    expect(branch.additionalProperties).toBe(false)
+  })
+
+  test('strict mode: dictionary-typed object is closed to additionalProperties:false', async () => {
+    process.env.CLAUDE_CODE_OPENAI_STRICT_TOOLS = '1'
+    const { client, captured } = captureClient()
+    await client.messages.create({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: 'hi' }],
+      max_tokens: 16,
+      tools: [
+        {
+          name: 'd',
+          description: 'd',
+          input_schema: {
+            type: 'object',
+            properties: {
+              // z.record() shape: object with no `properties`, additionalProperties is a schema.
+              map: {
+                type: 'object',
+                propertyNames: { type: 'string' },
+                additionalProperties: { type: 'number' },
+              },
+            },
+            required: ['map'],
+            additionalProperties: false,
+          },
+        },
+      ],
+    })
+    const params = (captured[0]!.body.tools as Array<Record<string, any>>)[0]!
+      .function.parameters
+    expect(params.properties.map.additionalProperties).toBe(false)
+  })
+
+  test('strict mode: array-form object type (["object","null"]) is normalized', async () => {
+    process.env.CLAUDE_CODE_OPENAI_STRICT_TOOLS = '1'
+    const { client, captured } = captureClient()
+    await client.messages.create({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: 'hi' }],
+      max_tokens: 16,
+      tools: [
+        {
+          name: 'a',
+          description: 'd',
+          input_schema: {
+            type: 'object',
+            properties: {
+              node: {
+                type: ['object', 'null'],
+                properties: { k: { type: 'string' }, opt: { type: 'number' } },
+                required: ['k'],
+              },
+            },
+            required: ['node'],
+            additionalProperties: false,
+          },
+        },
+      ],
+    })
+    const node = (captured[0]!.body.tools as Array<Record<string, any>>)[0]!
+      .function.parameters.properties.node
+    expect(new Set(node.required)).toEqual(new Set(['k', 'opt']))
+    expect(node.additionalProperties).toBe(false)
+  })
+
+  test('strict mode: strips root $schema but keeps properties literally named $id/$schema', async () => {
+    process.env.CLAUDE_CODE_OPENAI_STRICT_TOOLS = '1'
+    const { client, captured } = captureClient()
+    await client.messages.create({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: 'hi' }],
+      max_tokens: 16,
+      tools: [
+        {
+          name: 'p',
+          description: 'd',
+          input_schema: {
+            $schema: 'https://json-schema.org/draft/2020-12/schema',
+            type: 'object',
+            properties: {
+              $id: { type: 'string' },
+              $schema: { type: 'string' },
+              normal: { type: 'string' },
+            },
+            required: ['$id'],
+            additionalProperties: false,
+          },
+        },
+      ],
+    })
+    const params = (captured[0]!.body.tools as Array<Record<string, any>>)[0]!
+      .function.parameters
+    // Root meta keyword stripped...
+    expect(params.$schema).toBeUndefined()
+    // ...but property names that merely look like meta keys survive.
+    expect(params.properties.$id).toBeDefined()
+    expect(params.properties.$schema).toBeDefined()
+    expect(new Set(params.required)).toEqual(
+      new Set(['$id', '$schema', 'normal']),
+    )
   })
 })

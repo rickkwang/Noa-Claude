@@ -232,24 +232,58 @@ function convertMessages(
   return result
 }
 
-function normalizeSchemaForOpenAI(
-  schema: Record<string, unknown>,
-  strict = true,
-): Record<string, unknown> {
-  if (schema.type !== 'object' || !schema.properties) return schema
-  const properties = schema.properties as Record<string, unknown>
-  const existingRequired = Array.isArray(schema.required) ? (schema.required as string[]) : []
-  if (strict) {
-    const allKeys = Object.keys(properties)
-    const required = Array.from(new Set([...existingRequired, ...allKeys]))
-    return { ...schema, required }
+// JSON Schema meta keywords OpenAI rejects inside a strict-mode function schema.
+const STRICT_UNSUPPORTED_KEYS = new Set(['$schema', '$id'])
+
+/**
+ * Recursively rewrite a JSON Schema into the subset OpenAI accepts in strict
+ * function-calling mode: every object must list ALL of its properties in
+ * `required` and set `additionalProperties: false`, at every level (nested
+ * objects, array items, and anyOf/oneOf/allOf branches). The previous
+ * implementation only touched the top-level `required`, so any tool with a
+ * nested optional field (SendMessageTool, and most MCP tools) produced a schema
+ * OpenAI/Azure reject with a 400 under strict mode.
+ *
+ * Optional fields are forced required rather than widened to nullable: tools are
+ * written against the Anthropic API where "optional" means "absent", so making
+ * the model emit a typed value is safer than letting it send explicit `null`.
+ * The cost is that optional params become mandatory under strict mode — which is
+ * why strict is opt-in (CLAUDE_CODE_OPENAI_STRICT_TOOLS) rather than the default.
+ */
+function normalizeSchemaForStrict(node: unknown, isRoot = true): unknown {
+  if (Array.isArray(node)) {
+    return node.map(item => normalizeSchemaForStrict(item, false))
   }
-  const required = existingRequired.filter(k => k in properties)
-  return { ...schema, required }
+  if (!node || typeof node !== 'object') {
+    return node
+  }
+  const schema = node as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(schema)) {
+    // Only strip meta keywords at the schema root — zod emits `$schema` there.
+    // Deeper down these names can be real property names inside a `properties`
+    // map, which must be preserved.
+    if (isRoot && STRICT_UNSUPPORTED_KEYS.has(key)) continue
+    out[key] = normalizeSchemaForStrict(value, false)
+  }
+  // Any object node (including array-form `type: ['object', 'null']` and
+  // dictionary objects that carry no `properties`) must be closed under strict
+  // mode: list every declared property as required and forbid extras. Open
+  // dictionaries have no strict-valid form, so they collapse to a closed empty
+  // object — degenerate but accepted, where leaving the schema untouched 400s.
+  const type = out.type
+  if (type === 'object' || (Array.isArray(type) && type.includes('object'))) {
+    const props = out.properties
+    out.required =
+      props && typeof props === 'object' ? Object.keys(props) : []
+    out.additionalProperties = false
+  }
+  return out
 }
 
 function convertTools(
   tools: Array<{ name: string; description?: string; input_schema?: Record<string, unknown> }>,
+  strictMode: boolean,
 ): OpenAITool[] {
   return tools
     .filter(t => t.name !== 'ToolSearchTool')
@@ -263,8 +297,15 @@ function convertTools(
         function: {
           name: t.name,
           description: t.description ?? '',
-          parameters: normalizeSchemaForOpenAI(schema, true),
-          strict: true,
+          // Default (non-strict): pass the schema through unchanged. zod already
+          // emits valid `required`/`additionalProperties`, and every
+          // OpenAI-compatible provider accepts non-strict function schemas, so
+          // honest optionality is preserved across all providers. Strict mode is
+          // an opt-in reliability tweak for OpenAI/Azure.
+          parameters: strictMode
+            ? (normalizeSchemaForStrict(schema) as Record<string, unknown>)
+            : schema,
+          ...(strictMode ? { strict: true } : {}),
         },
       }
     })
@@ -600,6 +641,16 @@ class OpenAIShimMessages {
       model: params.model,
       messages: convertMessages(params.messages, params.system),
       stream: !!params.stream,
+      // OpenAI (and OpenAI-compatible endpoints) omit token usage from the
+      // streamed response unless usage reporting is explicitly requested. Without
+      // this the final usage-only chunk never arrives, so cost/token tracking
+      // reports zero for every streamed turn. The field is part of the OpenAI
+      // spec; the rare endpoint that rejects it can opt out via
+      // CLAUDE_CODE_OPENAI_DISABLE_STREAM_USAGE.
+      ...(params.stream &&
+      !isEnvTruthy(process.env.CLAUDE_CODE_OPENAI_DISABLE_STREAM_USAGE)
+        ? { stream_options: { include_usage: true } }
+        : {}),
       ...(params.max_tokens !== undefined
         ? {
             [resolveMaxTokensParam(this.config.baseURL)]: params.max_tokens,
@@ -607,7 +658,14 @@ class OpenAIShimMessages {
         : {}),
       ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
       ...(params.stop_sequences ? { stop: params.stop_sequences } : {}),
-      ...(params.tools ? { tools: convertTools(params.tools) } : {}),
+      ...(params.tools
+        ? {
+            tools: convertTools(
+              params.tools,
+              isEnvTruthy(process.env.CLAUDE_CODE_OPENAI_STRICT_TOOLS),
+            ),
+          }
+        : {}),
       ...(params.tool_choice ? { tool_choice: params.tool_choice } : {}),
       ...(params.metadata ? { metadata: params.metadata } : {}),
       ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),

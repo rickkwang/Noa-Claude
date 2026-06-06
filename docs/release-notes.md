@@ -1,5 +1,12 @@
 # Release Notes
 
+## 1.3.6
+
+### Bug Fixes
+
+- **OpenAI-compatible streaming usage recovered** — the OpenAI shim never asked for token usage on streamed turns, so OpenAI (and every OpenAI-compatible provider) omitted the trailing usage chunk and cost/token tracking reported zero for streamed responses. Streaming requests now send `stream_options: { include_usage: true }`; the existing usage-only-chunk handling picks the numbers up unchanged. The rare endpoint that rejects the field can opt out with `CLAUDE_CODE_OPENAI_DISABLE_STREAM_USAGE`.
+- **OpenAI-compatible tool schemas no longer 400 under strict mode** — the shim hardcoded `strict: true` on every tool but only normalized the top-level `required`, so any tool with a nested optional field (`SendMessage`, and most MCP-server tools) produced a schema OpenAI/Azure reject with a 400. Tools are now sent non-strict by default, which preserves honest optionality across all providers and removes the side-effect of forcing top-level optional params to be required. Strict mode is available as an opt-in OpenAI/Azure reliability tweak via `CLAUDE_CODE_OPENAI_STRICT_TOOLS`, and its normalization is now fully recursive (every nested object, array item, and `anyOf`/`oneOf`/`allOf` branch gets `required` = all keys + `additionalProperties: false`, with strict-unsupported `$schema`/`$id` keys stripped).
+
 ## 1.3.5
 
 ### Bug Fixes
