@@ -373,7 +373,7 @@ const OPUS_DEFAULT_EFFORT_CONFIG_DEFAULT: OpusDefaultEffortConfig = {
   enabled: true,
   dialogTitle: 'Choose the default effort for Opus',
   dialogDescription:
-    'Effort determines how long Claude thinks for when completing your task. Opus 4.8 defaults to high effort. You can raise it (xhigh, max) when you want stronger reasoning or lower it when you want faster responses or lower usage.',
+    'Effort determines how long Noa Claude thinks for when completing your task. Opus 4.8 defaults to high effort. You can raise it (xhigh, max) when you want stronger reasoning or lower it when you want faster responses or lower usage.',
 }
 
 export function getOpusDefaultEffortConfig(): OpusDefaultEffortConfig {

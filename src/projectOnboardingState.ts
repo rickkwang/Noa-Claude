@@ -1,8 +1,8 @@
 // @ts-nocheck
 import { existsSync } from 'fs'
-import { join } from 'path'
 import { getCwd } from './utils/cwd.js'
 import { isDirEmpty } from './utils/file.js'
+import { getProjectMemoryFileCandidates } from './utils/productPaths.js'
 
 export type Step = {
   key: string
@@ -14,24 +14,24 @@ export type Step = {
 
 export function getSteps(): Step[] {
   const cwd = getCwd()
-  // Only check current dir — onboarding is per-project, and /init creates
-  // the instruction file in cwd, not in a parent. Recursing upward causes
-  // false positives when a parent has CLAUDE.md/AGENTS.md.
-  const hasProjectInstructions =
-    existsSync(join(cwd, 'AGENTS.md')) || existsSync(join(cwd, 'CLAUDE.md'))
+  // Only check current dir — onboarding is per-project. Recursing upward causes
+  // false positives when a parent has project instructions.
+  const hasProjectInstructions = getProjectMemoryFileCandidates(cwd).some(path =>
+    existsSync(path),
+  )
   const isWorkspaceDirEmpty = isDirEmpty(cwd)
 
   return [
     {
       key: 'workspace',
-      text: 'Ask Claude to create a new app or clone a repository',
+      text: 'Ask Noa Claude to create a new app or clone a repository',
       isComplete: false,
       isCompletable: true,
       isEnabled: isWorkspaceDirEmpty,
     },
     {
       key: 'claudemd',
-      text: 'Run /init to create AGENTS.md or CLAUDE.md instructions for Claude',
+      text: 'Run /init to create AGENTS.md or fallback CLAUDE.md instructions for Noa Claude',
       isComplete: hasProjectInstructions,
       isCompletable: true,
       isEnabled: !isWorkspaceDirEmpty,

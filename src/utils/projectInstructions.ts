@@ -1,23 +1,30 @@
 // @ts-nocheck
 /**
- * Project instruction file handling with AGENTS.md priority.
+ * Project instruction file handling with Noa project path priority.
  *
- * Noa Claude prioritizes AGENTS.md over CLAUDE.md as the primary project instruction file.
+ * Noa Claude prioritizes AGENTS.md over CLAUDE.md as the primary project
+ * instruction file, with .noa-scoped files preferred within each filename tier.
  * This module provides utilities for finding and loading project instruction files.
  */
 
 import { existsSync } from 'fs'
-import { homedir } from 'os'
-import { dirname, join, parse } from 'path'
-import { findGitRoot } from './git.js'
-import { normalizePathForComparison } from './file.js'
+import { basename } from 'path'
+import {
+  FALLBACK_PROJECT_INSTRUCTION_FILE,
+  getPreferredProjectMemoryFilePath,
+  getProjectMemoryFileCandidates,
+  PRIMARY_PROJECT_INSTRUCTION_FILE,
+} from './productPaths.js'
 
-export const PRIMARY_PROJECT_INSTRUCTION_FILE = 'AGENTS.md'
-export const FALLBACK_PROJECT_INSTRUCTION_FILE = 'CLAUDE.md'
+export {
+  FALLBACK_PROJECT_INSTRUCTION_FILE,
+  PRIMARY_PROJECT_INSTRUCTION_FILE,
+} from './productPaths.js'
 
 /**
  * Get the path to the project instruction file.
- * Prefers AGENTS.md if it exists, otherwise falls back to CLAUDE.md.
+ * Uses the same priority as the memory loader: .noa/AGENTS.md, AGENTS.md,
+ * .noa/CLAUDE.md, then CLAUDE.md.
  *
  * @param dir - The directory to check for the project instruction file
  * @returns The absolute path to the project instruction file
@@ -27,26 +34,25 @@ export function getProjectInstructionFilePath(dir: string): string | null {
 }
 
 /**
- * Check if a directory has an AGENTS.md file.
+ * Check if a directory's selected project instruction file is AGENTS.md.
  *
  * @param dir - The directory to check
- * @returns True if AGENTS.md exists in the directory
+ * @returns True if the selected directory-level instruction is AGENTS.md
  */
 export function hasAgentsMd(dir: string): boolean {
-  return existsSync(join(dir, PRIMARY_PROJECT_INSTRUCTION_FILE))
+  const path = getDirectoryProjectInstructionFilePath(dir)
+  return path !== null && basename(path) === PRIMARY_PROJECT_INSTRUCTION_FILE
 }
 
 /**
- * Check if a directory has a CLAUDE.md file (but no AGENTS.md).
+ * Check if a directory's selected project instruction file is CLAUDE.md.
  *
  * @param dir - The directory to check
- * @returns True if CLAUDE.md exists but AGENTS.md does not
+ * @returns True if the selected directory-level instruction falls back to CLAUDE.md
  */
 export function hasClaudeMdOnly(dir: string): boolean {
-  return (
-    existsSync(join(dir, FALLBACK_PROJECT_INSTRUCTION_FILE)) &&
-    !hasAgentsMd(dir)
-  )
+  const path = getDirectoryProjectInstructionFilePath(dir)
+  return path !== null && basename(path) === FALLBACK_PROJECT_INSTRUCTION_FILE
 }
 
 /**
@@ -57,7 +63,7 @@ export const hasClaueMdOnly = hasClaudeMdOnly
 
 /**
  * Find the nearest project instruction file in the current directory or any
- * ancestor directory, preferring AGENTS.md over CLAUDE.md at each level.
+ * ancestor directory using the same priority as the memory loader.
  *
  * @param dir - The directory to start searching from
  * @returns The nearest instruction file path, or null if none exists
@@ -65,40 +71,11 @@ export const hasClaueMdOnly = hasClaudeMdOnly
 export function getNearestProjectInstructionFilePath(
   dir: string,
 ): string | null {
-  const home = homedir()
-  const stopBoundary = findGitRoot(dir)
-  const root = parse(dir).root
-  let current = dir
-  while (true) {
-    if (
-      normalizePathForComparison(current) ===
-      normalizePathForComparison(home)
-    ) {
-      return null
-    }
+  const path = getPreferredProjectMemoryFilePath(dir)
+  return existsSync(path) ? path : null
+}
 
-    const agentsPath = join(current, PRIMARY_PROJECT_INSTRUCTION_FILE)
-    if (existsSync(agentsPath)) {
-      return agentsPath
-    }
-
-    const claudePath = join(current, FALLBACK_PROJECT_INSTRUCTION_FILE)
-    if (existsSync(claudePath)) {
-      return claudePath
-    }
-
-    if (
-      stopBoundary !== null &&
-      normalizePathForComparison(current) ===
-        normalizePathForComparison(stopBoundary)
-    ) {
-      return null
-    }
-
-    const parent = dirname(current)
-    if (parent === current || current === root) {
-      return null
-    }
-    current = parent
-  }
+function getDirectoryProjectInstructionFilePath(dir: string): string | null {
+  const path = getProjectMemoryFileCandidates(dir)[0]
+  return path && existsSync(path) ? path : null
 }

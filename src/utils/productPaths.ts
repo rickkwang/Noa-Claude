@@ -1,7 +1,10 @@
-import { join } from 'path'
+import { existsSync } from 'fs'
+import { homedir } from 'os'
+import { dirname, join, parse } from 'path'
 import { getClaudeConfigHomeDir } from './envUtils.js'
-import { getNearestProjectInstructionFilePath } from './projectInstructions.js'
 import { PRODUCT_PROJECT_DIR as PRODUCT_PROJECT_DIR_NAME } from './productPathConstants.js'
+import { findGitRoot } from './git.js'
+import { normalizePathForComparison } from './file.js'
 
 export const PRODUCT_PROJECT_DIR = PRODUCT_PROJECT_DIR_NAME
 
@@ -57,24 +60,64 @@ export function getProjectSettingsRelativePathCandidates(
 }
 
 export function getProjectMemoryFileCandidates(cwd: string): string[] {
-  return Array.from(
-    new Set([
-      ...getProjectConfigRoots(cwd).flatMap(root => [
-        join(root, PRIMARY_PROJECT_INSTRUCTION_FILE),
-        join(root, FALLBACK_PROJECT_INSTRUCTION_FILE),
-      ]),
-      join(cwd, PRIMARY_PROJECT_INSTRUCTION_FILE),
-      join(cwd, FALLBACK_PROJECT_INSTRUCTION_FILE),
-    ]),
-  )
+  const paths = getProjectMemoryFilePriority(cwd)
+  const existingPath = paths.find(path => existsSync(path))
+  return existingPath
+    ? [existingPath]
+    : [join(cwd, PRIMARY_PROJECT_INSTRUCTION_FILE)]
 }
 
 export function getPreferredProjectMemoryFilePath(cwd: string): string {
-  const nearestInstruction = getNearestProjectInstructionFilePath(cwd)
-  if (nearestInstruction !== null) {
-    return nearestInstruction
+  const stopBoundary = findGitRoot(cwd)
+  const home = homedir()
+  const root = parse(cwd).root
+  let current = cwd
+
+  while (true) {
+    if (
+      normalizePathForComparison(current) === normalizePathForComparison(home)
+    ) {
+      break
+    }
+
+    const existingPath = getProjectMemoryFilePriority(current).find(path =>
+      existsSync(path),
+    )
+    if (existingPath) {
+      return existingPath
+    }
+
+    if (
+      stopBoundary !== null &&
+      normalizePathForComparison(current) ===
+        normalizePathForComparison(stopBoundary)
+    ) {
+      break
+    }
+
+    const parent = dirname(current)
+    if (parent === current || current === root) {
+      break
+    }
+    current = parent
   }
+
   return join(cwd, PRIMARY_PROJECT_INSTRUCTION_FILE)
+}
+
+function getProjectMemoryFilePriority(cwd: string): string[] {
+  return Array.from(
+    new Set([
+      ...getProjectConfigRoots(cwd).map(root =>
+        join(root, PRIMARY_PROJECT_INSTRUCTION_FILE),
+      ),
+      join(cwd, PRIMARY_PROJECT_INSTRUCTION_FILE),
+      ...getProjectConfigRoots(cwd).map(root =>
+        join(root, FALLBACK_PROJECT_INSTRUCTION_FILE),
+      ),
+      join(cwd, FALLBACK_PROJECT_INSTRUCTION_FILE),
+    ]),
+  )
 }
 
 export function getProjectRulesDirCandidates(cwd: string): string[] {

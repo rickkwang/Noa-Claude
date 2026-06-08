@@ -28,7 +28,9 @@ Usage notes:
 This file provides guidance to Noa Claude when working with code in this repository. Noa Claude is developed by Zenhao.
 \`\`\``
 
-const NEW_INIT_PROMPT = `Set up a minimal ${PRIMARY_PROJECT_INSTRUCTION_FILE} (and optionally skills and hooks) for this repo. ${PRIMARY_PROJECT_INSTRUCTION_FILE} is loaded into every Noa Claude session, so it must be concise — only include what Noa Claude would get wrong without it.
+const NEW_INIT_PROMPT = `Set up minimal project instructions (and optionally skills and hooks) for this repo.
+
+**File-priority rule:** Noa Claude loads one project instruction file per directory, picking the first that exists: .noa/${PRIMARY_PROJECT_INSTRUCTION_FILE} → ${PRIMARY_PROJECT_INSTRUCTION_FILE} → .noa/CLAUDE.md → CLAUDE.md. All phases below refer to the winner as "the selected instruction file". Keep it concise — only include what Noa Claude would get wrong without it.
 
 ## Phase 1: Ask what to set up
 
@@ -36,7 +38,7 @@ Use AskUserQuestion to find out what the user wants:
 
 - "Which project instruction files should /init set up?"
   Options: "Project ${PRIMARY_PROJECT_INSTRUCTION_FILE}" | "Personal CLAUDE.local.md" | "Both project + personal"
-  Description for project: "Team-shared instructions checked into source control — architecture, coding standards, common workflows. Uses ${PRIMARY_PROJECT_INSTRUCTION_FILE} as the project entry point."
+  Description for project: "Team-shared instructions checked into source control — architecture, coding standards, common workflows. Written to the selected instruction file per the file-priority rule."
   Description for personal: "Your private preferences for this project (gitignored, not shared) — your role, sandbox URLs, preferred test data, workflow quirks."
 
 - "Also set up skills and hooks?"
@@ -46,7 +48,7 @@ Use AskUserQuestion to find out what the user wants:
 
 ## Phase 2: Explore the codebase
 
-Launch a subagent to survey the codebase, and ask it to read key files to understand the project: manifest files (package.json, Cargo.toml, pyproject.toml, go.mod, pom.xml, etc.), README, Makefile/build configs, CI config, existing ${PRIMARY_PROJECT_INSTRUCTION_FILE}, CLAUDE.md, .noa/rules/, .cursor/rules or .cursorrules, .github/copilot-instructions.md, .windsurfrules, .clinerules, .noa/mcp.json.
+Launch a subagent to survey the codebase, and ask it to read key files to understand the project: manifest files (package.json, Cargo.toml, pyproject.toml, go.mod, pom.xml, etc.), README, Makefile/build configs, CI config, project instruction files at all priority levels, .noa/rules/, other AI coding tool configs (.cursor/rules or .cursorrules, .github/copilot-instructions.md, .windsurfrules, .clinerules), .noa/mcp.json.
 
 Detect:
 - Build, test, and lint commands (especially non-standard ones)
@@ -54,7 +56,7 @@ Detect:
 - Project structure (monorepo with workspaces, multi-module, or single project)
 - Code style rules that differ from language defaults
 - Non-obvious gotchas, required env vars, or workflow quirks
-- Existing .noa/skills/ and .noa/rules/ directories, plus any repo-root CLAUDE.md already in use
+- Existing .noa/skills/ and .noa/rules/ directories, plus any lower-priority instruction file whose content should be folded into the selected one
 - Formatter configuration (prettier, biome, ruff, black, gofmt, rustfmt, or a unified format script like \`npm run format\` / \`make fmt\`)
 - Git worktree usage: run \`git worktree list\` to check if this repo has multiple worktrees (only relevant if the user wants a personal CLAUDE.local.md)
 
@@ -97,7 +99,7 @@ If the user chose personal CLAUDE.local.md or both: ask about them, not the code
 
 ## Phase 4: Write ${PRIMARY_PROJECT_INSTRUCTION_FILE} (if user chose project or both)
 
-Write a minimal ${PRIMARY_PROJECT_INSTRUCTION_FILE} at the project root. Every line must pass this test: "Would removing this cause Noa Claude to make mistakes?" If no, cut it.
+Write the selected instruction file (per the file-priority rule; default to ${PRIMARY_PROJECT_INSTRUCTION_FILE} at the project root when none exist yet). Every line must pass this test: "Would removing this cause Noa Claude to make mistakes?" If no, cut it.
 
 **Consume \`note\` entries from the Phase 3 preference queue whose target is ${PRIMARY_PROJECT_INSTRUCTION_FILE}** (team-level notes) — add each as a concise line in the most relevant section. These are the behaviors the user wants Noa Claude to follow but didn't need guaranteed (e.g., "propose a plan before implementing", "explain the tradeoffs when refactoring"). Leave personal-targeted notes for Phase 5.
 
@@ -131,11 +133,11 @@ Prefix the file with:
 This file provides guidance to Noa Claude when working with code in this repository. Noa Claude is developed by Zenhao.
 \`\`\`
 
-If ${PRIMARY_PROJECT_INSTRUCTION_FILE} already exists: read it, propose specific changes as diffs, and explain why each change improves it. If CLAUDE.md also exists, read it too and resolve conflicts in favor of ${PRIMARY_PROJECT_INSTRUCTION_FILE}. Do not silently overwrite.
+If the selected instruction file already exists: read it, propose specific changes as diffs, and explain why each change improves it. Fold any lower-priority fallback content into the selected file, resolving conflicts in its favor. Do not silently overwrite.
 
 For projects with multiple concerns, suggest organizing instructions into \`.noa/rules/\` as separate focused files (e.g., \`code-style.md\`, \`testing.md\`, \`security.md\`). These are loaded automatically alongside ${PRIMARY_PROJECT_INSTRUCTION_FILE} and can be scoped to specific file paths using \`paths\` frontmatter.
 
-For projects with distinct subdirectories (monorepos, multi-module projects, etc.): mention that subdirectory ${PRIMARY_PROJECT_INSTRUCTION_FILE} files can be added for module-specific instructions (they're loaded automatically when Noa Claude works in those directories). Offer to create them if the user wants.
+For projects with distinct subdirectories (monorepos, multi-module projects, etc.): mention that subdirectory instruction files (same priority rule) can be added for module-specific instructions. They're loaded automatically when Noa Claude works in those directories. Offer to create them if the user wants.
 
 ## Phase 5: Write CLAUDE.local.md (if user chose personal or both)
 

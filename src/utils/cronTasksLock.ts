@@ -1,7 +1,7 @@
 // @ts-nocheck
 // Scheduler lease lock for .noa/scheduled_tasks.json.
 //
-// When multiple Claude sessions run in the same project directory, only one
+// When multiple Noa Claude sessions run in the same project directory, only one
 // should drive the cron scheduler. The first session to acquire this lock
 // becomes the scheduler; others stay passive and periodically probe the lock.
 // If the owner dies (PID no longer running), a passive session takes over.

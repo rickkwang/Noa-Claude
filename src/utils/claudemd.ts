@@ -4,7 +4,7 @@
  *
  * 1. Managed memory (eg. /etc/claude-code/CLAUDE.md) - Global instructions for all users
  * 2. User memory (~/.noa/CLAUDE.md) - Private global instructions for all projects
- * 3. Project memory (AGENTS.md and CLAUDE.md, plus rules/*.md in project roots) - Instructions checked into the codebase
+ * 3. Project memory (AGENTS.md, falling back to CLAUDE.md, plus rules/*.md in project roots) - Instructions checked into the codebase
  * 4. Local memory (CLAUDE.local.md in project roots) - Private project-specific instructions
  *
  * Files are loaded in reverse order of priority, i.e. the latest files are highest priority
@@ -14,7 +14,7 @@
  * - User memory is loaded from the user's home directory
  * - Project and Local files are discovered by traversing from the current directory up to root
  * - Files closer to the current directory have higher priority (loaded later)
- * - AGENTS.md and CLAUDE.md are checked in each directory for Project memory, along with all .md files in project rules dirs
+ * - AGENTS.md is checked in each directory for Project memory, with CLAUDE.md as a fallback, along with all .md files in project rules dirs
  *
  * Memory @include directive:
  * - Memory files can include other files using @ notation
@@ -77,8 +77,10 @@ import type { MemoryType } from './memory/types.js'
 import { expandPath } from './path.js'
 import { pathInWorkingPath } from './permissions/filesystem.js'
 import {
+  FALLBACK_PROJECT_INSTRUCTION_FILE,
   getProjectMemoryFileCandidates,
   getProjectRulesDirCandidates,
+  PRIMARY_PROJECT_INSTRUCTION_FILE,
 } from './productPaths.js'
 import { isSettingSourceEnabled } from './settings/constants.js'
 import { getInitialSettings } from './settings/settings.js'
@@ -878,7 +880,7 @@ export const getMemoryFiles = memoize(
     // When running from a git worktree nested inside its main repo (e.g.,
     // .noa/worktrees/<name>/ from `claude -w`), the upward walk passes
     // through both the worktree root and the main repo root. Both contain
-    // checked-in files like AGENTS.md / CLAUDE.md and .noa/rules/*.md, so
+    // checked-in files like AGENTS.md or CLAUDE.md and .noa/rules/*.md, so
     // the same content gets loaded twice. Skip Project-type (checked-in)
     // files from directories above the worktree but within the main repo —
     // the worktree already has its own checkout. CLAUDE.local.md is
@@ -941,7 +943,7 @@ export const getMemoryFiles = memoize(
       }
     }
 
-    // Process AGENTS.md / CLAUDE.md from additional directories (--add-dir) if env var is enabled
+    // Process AGENTS.md, falling back to CLAUDE.md, from additional directories (--add-dir) if env var is enabled
     // This is controlled by CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD and defaults to off
     // Note: we don't check isSettingSourceEnabled('projectSettings') here because --add-dir
     // is an explicit user action and the SDK defaults settingSources to [] when not specified
@@ -1238,7 +1240,7 @@ export async function getManagedAndUserConditionalRules(
 
 /**
  * Gets memory files for a single nested directory (between CWD and target).
- * Loads CLAUDE.md, unconditional rules, and conditional rules for that directory.
+ * Loads the preferred project instruction file, unconditional rules, and conditional rules for that directory.
  *
  * @param dir The directory to process
  * @param targetPath The target file path (for conditional rule matching)
@@ -1252,7 +1254,7 @@ export async function getMemoryFilesForNestedDirectory(
 ): Promise<MemoryFileInfo[]> {
   const result: MemoryFileInfo[] = []
 
-  // Process project memory files (AGENTS.md and CLAUDE.md, plus rules/*.md)
+  // Process the preferred project memory file (AGENTS.md, falling back to CLAUDE.md).
   if (isSettingSourceEnabled('projectSettings')) {
     for (const projectPath of getProjectMemoryFileCandidates(dir)) {
       result.push(
@@ -1274,7 +1276,7 @@ export async function getMemoryFilesForNestedDirectory(
     )
   }
 
-  // Process project rules from both product-native and legacy roots.
+  // Process project rules from product-native roots.
   const unconditionalProcessedPaths = new Set(processedPaths)
   for (const rulesDir of getProjectRulesDirCandidates(dir)) {
     result.push(
@@ -1367,8 +1369,7 @@ export async function processConditionedMdRules(
     }
 
     // For Project rules: glob patterns are relative to the directory containing
-    // the project rules root (.noa/rules in current layouts, legacy
-    // .claude/rules in older ones).
+    // the project rules root (.noa/rules in current layouts).
     // For Managed/User rules: glob patterns are relative to the original CWD
     const baseDir =
       type === 'Project'
@@ -1426,18 +1427,32 @@ export async function shouldShowClaudeMdExternalIncludesWarning(): Promise<boole
 }
 
 /**
- * Check if a file path is a memory file (CLAUDE.md, CLAUDE.local.md, or rules/*.md)
+ * Check if a file path is a memory file (selected AGENTS.md, CLAUDE.md,
+ * CLAUDE.local.md, or rules/*.md)
  */
 export function isMemoryFilePath(filePath: string): boolean {
   const name = basename(filePath)
 
-  // CLAUDE.md or CLAUDE.local.md anywhere
-  if (name === 'CLAUDE.md' || name === 'CLAUDE.local.md') {
+  // Keep historical broad matching for CLAUDE.md / CLAUDE.local.md.
+  if (name === FALLBACK_PROJECT_INSTRUCTION_FILE || name === 'CLAUDE.local.md') {
     return true
   }
 
-  // .md files in project rules directories. Keep legacy .claude/rules support
-  // for older paths while recognizing the current .noa/rules layout.
+  // AGENTS.md is common outside Noa. Only treat it as memory when it is the
+  // selected Noa project instruction file inside the current project tree.
+  if (name === PRIMARY_PROJECT_INSTRUCTION_FILE && pathInOriginalCwd(filePath)) {
+    const selectedPath = getProjectMemoryFileCandidates(dirname(filePath))[0]
+    if (
+      selectedPath &&
+      normalizePathForComparison(selectedPath) ===
+        normalizePathForComparison(filePath)
+    ) {
+      return true
+    }
+  }
+
+  // .md files in project rules directories. Recognize legacy .claude/rules
+  // paths only for already-loaded historical entries; discovery uses .noa/rules.
   if (
     name.endsWith('.md') &&
     (filePath.includes(`${sep}.noa${sep}rules${sep}`) ||

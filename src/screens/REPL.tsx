@@ -697,7 +697,7 @@ export function REPL({
 
   // Note: standaloneAgentContext is initialized in main.tsx (via initialState) or
   // ResumeConversation.tsx (via setAppState before rendering REPL) to avoid
-  // useEffect-based state initialization on mount (per CLAUDE.md guidelines)
+  // useEffect-based state initialization on mount (per project instruction guidelines)
 
   // Local state for commands (hot-reloadable when skill files change)
   const [localCommands, setLocalCommands] = useState(initialCommands);
@@ -1061,7 +1061,7 @@ export function REPL({
   } | null>(null);
 
   // Track local JSX commands separately so tools can't overwrite them.
-  // This enables "immediate" commands (like /btw) to persist while Claude is processing.
+  // This enables "immediate" commands (like /btw) to persist while Noa Claude is processing.
   const localJSXCommandRef = useRef<{
     jsx: React.ReactNode | null;
     shouldHidePromptInput: boolean;
@@ -1167,7 +1167,7 @@ export function REPL({
   // here because onQueryImpl reads them (background session description,
   // haiku title extraction gate).
 
-  // Prevent macOS from sleeping while Claude is working
+  // Prevent macOS from sleeping while Noa Claude is working
   useEffect(() => {
     if (isLoading && !isWaitingForApproval && !isShowingLocalJSXCommand) {
       startPreventSleep();
@@ -1992,7 +1992,7 @@ export function REPL({
   const loadedNestedMemoryPathsRef = useRef(new Set<string>());
 
   // Helper to restore read file state from messages (used for resume flows)
-  // This allows Claude to edit files that were read in previous sessions
+  // This allows Noa Claude to edit files that were read in previous sessions
   const restoreReadFileState = useCallback((messages: MessageType[], cwd: string) => {
     const extracted = extractReadFilesFromMessages(messages, cwd, READ_FILE_STATE_CACHE_SIZE);
     readFileState.current = mergeFileStateCaches(readFileState.current, extracted);
@@ -3208,7 +3208,7 @@ export function REPL({
     proactiveModule?.resumeProactive();
 
     // Handle immediate commands - these bypass the queue and execute right away
-    // even while Claude is processing. Commands opt-in via `immediate: true`.
+    // even while Noa Claude is processing. Commands opt-in via `immediate: true`.
     // Commands triggered via keybindings are always treated as immediate.
     if (!speculationAccept && input.trim().startsWith('/')) {
       // Expand [Pasted text #N] refs so immediate commands (e.g. /btw) receive
@@ -3938,9 +3938,9 @@ export function REPL({
     }
   }, [submitCount]);
 
-  // Show notification when Claude is done responding and user is idle
+  // Show notification when Noa Claude is done responding and user is idle
   useEffect(() => {
-    // Don't set up notification if Claude is busy
+    // Don't set up notification if Noa Claude is busy
     if (isLoading) return;
 
     // Only enable notifications after the first new interaction in this session
@@ -3954,7 +3954,7 @@ export function REPL({
       // Check if user has interacted since the response ended
       const lastUserInteraction = getLastInteractionTime();
       if (lastUserInteraction > lastQueryCompletionTime) {
-        // User has interacted since Claude finished - they're not idle, don't notify
+        // User has interacted since Noa Claude finished - they're not idle, don't notify
         return;
       }
 
@@ -3964,7 +3964,7 @@ export function REPL({
       // Use ref to get current dialog state, avoiding stale closure
       focusedInputDialogRef.current === undefined && idleTimeSinceResponse >= getGlobalConfig().messageIdleNotifThresholdMs) {
         void sendNotification({
-          message: 'Claude is waiting for your input',
+          message: 'Noa Claude is waiting for your input',
           notificationType: 'idle_prompt'
         }, terminal);
       }
@@ -4568,7 +4568,7 @@ export function REPL({
                   it would sit at the last visible transcript row right above
                   the ▔ divider, showing "❯ /config" as redundant clutter
                   (the modal IS the /config UI). Outside modals it stays so
-                  the user sees their input echoed while Claude processes. */}
+                  the user sees their input echoed while Noa Claude processes. */}
               {!disabled && placeholderText && !centeredModal && <UserTextMessage param={{
           text: placeholderText,
           type: 'text'
@@ -4880,7 +4880,7 @@ export function REPL({
 
                 {!toolJSX?.shouldHidePromptInput && !focusedInputDialog && !isExiting && !disabled && !cursor && <>
                       {autoRunIssueReason && <AutoRunIssueNotification onRun={handleAutoRunIssue} onCancel={handleCancelAutoRunIssue} reason={getAutoRunIssueReasonText(autoRunIssueReason)} />}
-                      {postCompactSurvey.state !== 'closed' ? <FeedbackSurvey state={postCompactSurvey.state} lastResponse={postCompactSurvey.lastResponse} handleSelect={postCompactSurvey.handleSelect} inputValue={inputValue} setInputValue={setInputValue} onRequestFeedback={handleSurveyRequestFeedback} /> : memorySurvey.state !== 'closed' ? <FeedbackSurvey state={memorySurvey.state} lastResponse={memorySurvey.lastResponse} handleSelect={memorySurvey.handleSelect} handleTranscriptSelect={memorySurvey.handleTranscriptSelect} inputValue={inputValue} setInputValue={setInputValue} onRequestFeedback={handleSurveyRequestFeedback} message="How well did Claude use its memory? (optional)" /> : <FeedbackSurvey state={feedbackSurvey.state} lastResponse={feedbackSurvey.lastResponse} handleSelect={feedbackSurvey.handleSelect} handleTranscriptSelect={feedbackSurvey.handleTranscriptSelect} inputValue={inputValue} setInputValue={setInputValue} onRequestFeedback={didAutoRunIssueRef.current ? undefined : handleSurveyRequestFeedback} />}
+                      {postCompactSurvey.state !== 'closed' ? <FeedbackSurvey state={postCompactSurvey.state} lastResponse={postCompactSurvey.lastResponse} handleSelect={postCompactSurvey.handleSelect} inputValue={inputValue} setInputValue={setInputValue} onRequestFeedback={handleSurveyRequestFeedback} /> : memorySurvey.state !== 'closed' ? <FeedbackSurvey state={memorySurvey.state} lastResponse={memorySurvey.lastResponse} handleSelect={memorySurvey.handleSelect} handleTranscriptSelect={memorySurvey.handleTranscriptSelect} inputValue={inputValue} setInputValue={setInputValue} onRequestFeedback={handleSurveyRequestFeedback} message="How well did Noa Claude use its memory? (optional)" /> : <FeedbackSurvey state={feedbackSurvey.state} lastResponse={feedbackSurvey.lastResponse} handleSelect={feedbackSurvey.handleSelect} handleTranscriptSelect={feedbackSurvey.handleTranscriptSelect} inputValue={inputValue} setInputValue={setInputValue} onRequestFeedback={didAutoRunIssueRef.current ? undefined : handleSurveyRequestFeedback} />}
                       {/* Frustration-triggered transcript sharing prompt */}
                       {frustrationDetection.state !== 'closed' && <FeedbackSurvey state={frustrationDetection.state} lastResponse={null} handleSelect={() => {}} handleTranscriptSelect={frustrationDetection.handleTranscriptSelect} inputValue={inputValue} setInputValue={setInputValue} />}
                       {/* Skill improvement survey - appears when improvements detected (ant-only) */}

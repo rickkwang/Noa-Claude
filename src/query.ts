@@ -1324,7 +1324,7 @@ async function* queryLoop(
         })
         yield createAssistantAPIErrorMessage({
           content:
-            'Claude finished thinking but produced no response. Please retry your request.',
+            'Noa Claude finished thinking but produced no response. Please retry your request.',
           error: 'empty_response',
         })
         return { reason: 'completed' }
@@ -1769,7 +1769,7 @@ async function* queryLoop(
     })
 
     // Get queued commands snapshot before processing attachments.
-    // These will be sent as attachments so Claude can respond to them in the current turn.
+    // These will be sent as attachments so Noa Claude can respond to them in the current turn.
     //
     // Drain pending notifications. LocalShellTask completions are 'next'
     // (when MONITOR_TOOL is on) and drain without Sleep. Other task types

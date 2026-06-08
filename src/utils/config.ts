@@ -380,7 +380,7 @@ export type GlobalConfig = {
   // First start time tracking
   firstStartTime?: string // ISO timestamp when Claude Code was first started on this machine
 
-  messageIdleNotifThresholdMs: number // How long the user has to have been idle to get a notification that Claude is done generating
+  messageIdleNotifThresholdMs: number // How long the user has to have been idle to get a notification that Noa Claude is done generating
 
   githubActionSetupCount?: number // Number of times the user has set up the GitHub Action
   slackAppInstallCount?: number // Number of times the user has clicked to install the Slack app
@@ -1209,7 +1209,7 @@ function saveConfigWithLock<A extends object>(
     const lockTime = Date.now() - startTime
     if (lockTime > 100) {
       logForDebugging(
-        'Lock acquisition took longer than expected - another Claude instance may be running',
+        'Lock acquisition took longer than expected - another Noa Claude instance may be running',
       )
       logEvent('tengu_config_lock_contention', {
         lock_time_ms: lockTime,
