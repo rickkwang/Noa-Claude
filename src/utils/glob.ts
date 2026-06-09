@@ -107,9 +107,12 @@ export async function glob(
     ...(hidden ? ['--hidden'] : []),
   ]
 
-  // Add ignore patterns
+  // Add ignore patterns. Use --iglob (case-insensitive) so Read(deny:…) rules
+  // also hide differently-cased paths on case-insensitive filesystems
+  // (macOS/Windows) — otherwise !secret.txt fails to exclude Secret.txt,
+  // leaking the denied path in search results.
   for (const pattern of ignorePatterns) {
-    args.push('--glob', `!${pattern}`)
+    args.push('--iglob', `!${pattern}`)
   }
 
   // Exclude orphaned plugin version directories

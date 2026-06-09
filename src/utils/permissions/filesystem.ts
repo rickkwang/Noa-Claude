@@ -909,10 +909,20 @@ function patternWithRoot(
       relativePattern: patternWithoutDoubleSlash,
       root: DIR_SEP,
     }
-  } else if (pattern.startsWith(`~${DIR_SEP}`)) {
-    // Patterns starting with ~/ resolve relative to homedir
+  } else if (
+    pattern.startsWith(`~${DIR_SEP}`) ||
+    (getPlatform() === 'windows' && pattern.startsWith('~\\'))
+  ) {
+    // Patterns starting with ~/ (and ~\ on Windows) resolve relative to homedir.
+    // Without the ~\ branch, a Windows-authored Read(deny:~\secrets\*) rule
+    // falls through to the no-root case and silently never matches (fail-open).
+    // On Windows, normalize backslashes to POSIX separators so the pattern
+    // matches downstream (file paths are converted to POSIX too). On other
+    // platforms backslashes are literal filename characters, so leave them.
+    const relative = pattern.slice(1)
     return {
-      relativePattern: pattern.slice(1),
+      relativePattern:
+        getPlatform() === 'windows' ? relative.replace(/\\/g, '/') : relative,
       root: homedir().normalize('NFC'),
     }
   } else if (pattern.startsWith(DIR_SEP)) {
@@ -990,9 +1000,21 @@ export function matchingRuleForInput(
     behavior,
   )
 
+  // For deny/ask rules, match case-insensitively so a rule still applies on
+  // case-insensitive filesystems (macOS/Windows): a Read(deny:secret.txt) rule
+  // must block reading Secret.txt. This mirrors pathInWorkingPath, which
+  // already lowercases. Allow rules stay case-sensitive to avoid loosening
+  // grants on case-sensitive filesystems (Linux), where FOO.txt and foo.txt
+  // are genuinely different files. The deny/ask direction only ever over-blocks
+  // (fail-safe), never leaks.
+  const caseInsensitive = behavior === 'deny' || behavior === 'ask'
+
   // Check each root for a matching pattern
   for (const [root, patternMap] of patternsByRoot.entries()) {
-    // Transform patterns for the ignore library
+    // Transform patterns for the ignore library, tracking a map from the
+    // (possibly lowercased) pattern fed to ignore() back to its original
+    // patternMap key so we can recover the matched rule afterward.
+    const igPatternToKey = new Map<string, string>()
     const patterns = Array.from(patternMap.keys()).map(pattern => {
       let adjustedPattern = pattern
 
@@ -1002,6 +1024,11 @@ export function matchingRuleForInput(
         adjustedPattern = adjustedPattern.slice(0, -3)
       }
 
+      if (caseInsensitive) {
+        adjustedPattern = adjustedPattern.toLowerCase()
+      }
+
+      igPatternToKey.set(adjustedPattern, pattern)
       return adjustedPattern
     })
 
@@ -1023,13 +1050,20 @@ export function matchingRuleForInput(
       continue
     }
 
-    const igResult = ig.test(relativePathStr)
+    const igResult = ig.test(
+      caseInsensitive ? relativePathStr.toLowerCase() : relativePathStr,
+    )
 
     if (igResult.ignored && igResult.rule) {
-      // Map the matched pattern back to the original rule
-      const originalPattern = igResult.rule.pattern
+      // Map the matched (possibly lowercased, /**-stripped) pattern back to the
+      // original patternMap key to recover the rule.
+      const matchedKey = igPatternToKey.get(igResult.rule.pattern)
+      if (matchedKey) {
+        return patternMap.get(matchedKey) ?? null
+      }
 
-      // Check if this was a /** pattern we simplified
+      // Fallback to the original mapping logic for safety
+      const originalPattern = igResult.rule.pattern
       const withWildcard = originalPattern + '/**'
       if (patternMap.has(withWildcard)) {
         return patternMap.get(withWildcard) ?? null

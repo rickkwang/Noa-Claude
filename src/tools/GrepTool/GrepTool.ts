@@ -424,7 +424,10 @@ export const GrepTool = buildTool({
       const rgIgnorePattern = ignorePattern.startsWith('/')
         ? `!${ignorePattern}`
         : `!**/${ignorePattern}`
-      args.push('--glob', rgIgnorePattern)
+      // Use --iglob (case-insensitive) so Read(deny:…) rules also hide
+      // differently-cased paths on case-insensitive filesystems (macOS/Windows);
+      // otherwise denied files leak into grep results under a different case.
+      args.push('--iglob', rgIgnorePattern)
     }
 
     // Exclude orphaned plugin version directories
