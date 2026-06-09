@@ -705,6 +705,10 @@ export function renderGroupedAgentToolUse(toolUses: Array<{
 
     // For teammate spawns, show @name with type in parens and description as status
     let agentType: string;
+    // The underlying agent type for grouping (header "N Explore agents…"),
+    // kept separate from agentType because personality names overwrite the
+    // latter per-agent and would otherwise make same-type agents look distinct.
+    let rawType: string;
     let description: string | undefined;
     let color: keyof Theme | undefined;
     let descriptionColor: keyof Theme | undefined;
@@ -714,6 +718,7 @@ export function renderGroupedAgentToolUse(toolUses: Array<{
     let agentTypeColorAsFg = false;
     if (isTeammateSpawn && parsedInput.success && parsedInput.data.name) {
       agentType = `@${parsedInput.data.name}`;
+      rawType = agentType;
       const subagentType = parsedInput.data.subagent_type;
       description = isCustomSubagentType(subagentType) ? subagentType : undefined;
       taskDescription = parsedInput.data.description;
@@ -721,11 +726,12 @@ export function renderGroupedAgentToolUse(toolUses: Array<{
       descriptionColor = isCustomSubagentType(subagentType) ? getAgentColor(subagentType) as keyof Theme | undefined : undefined;
     } else {
       const baseName = parsedInput.success ? userFacingName(parsedInput.data) : 'Agent';
+      rawType = baseName;
       // Replace generic "Agent" with a personality name when available
       const personalityCandidateType = parsedInput.success ? parsedInput.data.subagent_type : undefined;
       if (baseName === 'Agent' && parsedInput.success && parsedInput.data.name) {
         agentType = parsedInput.data.name;
-      } else if (baseName === 'Agent' && shouldUseAgentPersonalityName(personalityCandidateType)) {
+      } else if (shouldUseAgentPersonalityName(personalityCandidateType)) {
         const agentId = result?.output?.agentId ?? getProgressAgentId(progressMessages);
         const personalityName = result?.output?.personalityName ?? (agentId ? getAgentPersonalityName(agentId) : undefined);
         agentType = personalityName ?? baseName;
@@ -752,6 +758,7 @@ export function renderGroupedAgentToolUse(toolUses: Array<{
     return {
       id: param.id,
       agentType,
+      rawType,
       description,
       toolUseCount: stats.toolUseCount,
       tokens: stats.tokens,
@@ -771,8 +778,8 @@ export function renderGroupedAgentToolUse(toolUses: Array<{
   const allComplete = !anyUnresolved;
 
   // Check if all agents are the same type
-  const allSameType = agentStats.length > 0 && agentStats.every(stat => stat.agentType === agentStats[0]?.agentType);
-  const commonType = allSameType && agentStats[0]?.agentType !== 'Agent' ? agentStats[0]?.agentType : null;
+  const allSameType = agentStats.length > 0 && agentStats.every(stat => stat.rawType === agentStats[0]?.rawType);
+  const commonType = allSameType && agentStats[0]?.rawType !== 'Agent' ? agentStats[0]?.rawType : null;
 
   // Check if all resolved agents are async (background)
   const allAsync = agentStats.every(stat => stat.isAsync);

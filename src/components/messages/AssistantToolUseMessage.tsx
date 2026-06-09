@@ -179,11 +179,14 @@ export function AssistantToolUseMessage(t0) {
   // background block) — distinct from custom subagents, which keep the
   // background-block treatment via userFacingToolNameBackgroundColor.
   const agentIdFromProgress = getProgressAgentId(progressMessagesForToolUse);
-  const agentId = (userFacingToolName === 'Agent' && (param.name === 'Agent' || param.name === 'Task'))
+  const personalityCandidateType = input_0.success ? input_0.data.subagent_type : undefined;
+  // Built-in fan-out agents (Explore, Plan) render with their own
+  // userFacingToolName, so gate the agentId lookup on the personality
+  // eligibility too — otherwise the assigned name can't be resolved for them.
+  const agentId = ((userFacingToolName === 'Agent' || shouldUseAgentPersonalityName(personalityCandidateType)) && (param.name === 'Agent' || param.name === 'Task'))
     ? agentIdFromProgress ?? persistedAgentMetadata.agentId
     : undefined;
   const explicitGenericName = input_0.success && userFacingToolName === 'Agent' && typeof input_0.data.name === 'string' ? input_0.data.name : undefined;
-  const personalityCandidateType = input_0.success ? input_0.data.subagent_type : undefined;
   const personalityName = explicitGenericName || !shouldUseAgentPersonalityName(personalityCandidateType) ? undefined : persistedAgentMetadata.personalityName ?? (agentId ? getAgentPersonalityName(agentId) : undefined);
   const displayToolName = explicitGenericName ?? personalityName ?? userFacingToolName;
   const personalityForegroundColor = personalityName ? getPersonalityNameColor(personalityName) : undefined;

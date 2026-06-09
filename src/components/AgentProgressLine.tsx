@@ -79,9 +79,10 @@ export function AgentProgressLine(t0) {
   let t6;
   // Personality fg path: bypass the memo cache (recompute is cheap, and adding
   // agentTypeColorAsFg to the cache deps would shift every subsequent slot
-  // index). Falling back to the cached bg-block path is correct because the
-  // cache only ever stores the bg version.
-  if (agentTypeColorAsFg && !hideType) {
+  // index). Runs even when hideType is set: the personality name is per-agent
+  // identity, not the redundant type label hideType suppresses — a homogeneous
+  // swarm grouped under "N Explore agents" must still show each agent's name.
+  if (agentTypeColorAsFg) {
     t6 = <><Text bold={true} color={color}>{agentType}</Text>{description && <>{" ("}<Text backgroundColor={descriptionColor} color={descriptionColor ? "inverseText" : undefined}>{description}</Text>{")"}</>}</>;
   } else if ($[7] !== agentType || $[8] !== color || $[9] !== description || $[10] !== descriptionColor || $[11] !== hideType || $[12] !== name) {
     t6 = hideType ? <><Text bold={true}>{name ?? description ?? agentType}</Text>{name && description && <Text dimColor={true}>: {description}</Text>}</> : <><Text bold={true} backgroundColor={color} color={color ? "inverseText" : undefined}>{agentType}</Text>{description && <>{" ("}<Text backgroundColor={descriptionColor} color={descriptionColor ? "inverseText" : undefined}>{description}</Text>{")"}</>}</>;

@@ -193,8 +193,10 @@ export async function resumeAgentBackground({
     : assembleToolPool(workerPermissionContext, appState.mcp.tools)
 
   // Recreate the display-only personality mapping when resuming in a fresh
-  // process, restoring the persisted name when available.
-  const personalityName = shouldUseAgentPersonalityName(selectedAgent.agentType)
+  // process, restoring the persisted name when available. Gate on
+  // isBuiltInAgent so a user-defined agent shadowing "Explore"/"Plan" keeps
+  // its own label (mirrors the dispatch-time gate in AgentTool).
+  const personalityName = isBuiltInAgent(selectedAgent) && shouldUseAgentPersonalityName(selectedAgent.agentType)
     ? meta?.personalityName
       ? restoreAgentPersonalityName(agentId, meta.personalityName)
       : assignAgentPersonalityName(agentId)

@@ -571,7 +571,11 @@ export const AgentTool = buildTool({
 
     // Create a stable agent ID early so it can be used for worktree slug
     const earlyAgentId = createAgentId();
-    const personalityName = !name && shouldUseAgentPersonalityName(selectedAgent.agentType) ? assignAgentPersonalityName(earlyAgentId) : undefined;
+    // Gate on isBuiltInAgent, not just the type string: a user can define a
+    // custom agent named "Explore"/"Plan" that shadows the built-in (later
+    // sources win in getActiveAgentsFromList), and it must keep its own label
+    // rather than being silently renamed to a personality.
+    const personalityName = !name && isBuiltInAgent(selectedAgent) && shouldUseAgentPersonalityName(selectedAgent.agentType) ? assignAgentPersonalityName(earlyAgentId) : undefined;
 
     // Set up worktree isolation if requested
     let worktreeInfo: {
@@ -1402,12 +1406,20 @@ The agent is now running and will receive instructions via mailbox.`
       // — the agentId hint and <usage> block are dead weight (~135 chars ×
       // 34M Explore runs/week ≈ 1-2 Gtok/week). Telemetry doesn't parse this
       // block (it uses logEvent in finalizeAgentTool), so dropping is safe.
+      // Keep the agentName line, though: it's the only signal the parent has
+      // to attribute each result to its displayed name — without it the model
+      // confabulates names when summarizing a multi-agent run.
       // agentType is optional for resume compat — missing means show trailer.
       if (data.agentType && ONE_SHOT_BUILTIN_AGENT_TYPES.has(data.agentType) && !worktreeInfoText) {
         return {
           tool_use_id: toolUseID,
           type: 'tool_result',
-          content: contentOrMarker
+          content: data.personalityName
+            ? [...contentOrMarker, {
+                type: 'text',
+                text: `agentName: ${data.personalityName}`
+              }]
+            : contentOrMarker
         };
       }
       const agentNameLine = data.personalityName ? `agentName: ${data.personalityName}\n` : '';

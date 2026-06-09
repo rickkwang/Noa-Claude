@@ -82,9 +82,17 @@ export function releaseAgentPersonalityName(agentId: string): void {
   agentNameMap.delete(agentId)
 }
 
-/** Personality names only replace the generic agent label, not custom agent types. */
+/** Personality names replace the generic agent label and the built-in fan-out
+ * agents (Explore, Plan), which are anonymous workers too — but never custom
+ * agent types, which keep their own meaningful label. */
 export function shouldUseAgentPersonalityName(agentType: string | undefined): boolean {
-  return agentType === 'worker' || agentType === GENERAL_PURPOSE_AGENT_TYPE || agentType === undefined
+  return (
+    agentType === 'worker' ||
+    agentType === GENERAL_PURPOSE_AGENT_TYPE ||
+    agentType === 'Explore' ||
+    agentType === 'Plan' ||
+    agentType === undefined
+  )
 }
 
 function hashString(str: string): number {
