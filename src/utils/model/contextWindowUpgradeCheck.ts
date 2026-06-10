@@ -13,7 +13,13 @@ function getAvailableUpgrade(): {
   multiplier: number
 } | null {
   const currentModelSetting = getUserSpecifiedModelSetting()
-  if (currentModelSetting === 'opus' && checkOpus1mAccess()) {
+  if (currentModelSetting === 'fable' && checkOpus1mAccess()) {
+    return {
+      alias: 'fable[1m]',
+      name: 'Fable 1M',
+      multiplier: 5,
+    }
+  } else if (currentModelSetting === 'opus' && checkOpus1mAccess()) {
     return {
       alias: 'opus[1m]',
       name: 'Opus 1M',

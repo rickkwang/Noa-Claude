@@ -98,6 +98,17 @@ export const CLAUDE_SONNET_4_6_CONFIG = {
   foundry: 'claude-sonnet-4-6',
 } as const satisfies ModelConfig
 
+// Fable 5 — most powerful tier, above Opus. Same request surface as Opus 4.8
+// (adaptive thinking only; sampling params + budget_tokens removed) with one
+// extra quirk: an explicit thinking:{type:'disabled'} returns 400 — omit the
+// param instead (already handled in claude.ts, which omits when thinking is off).
+export const CLAUDE_FABLE_5_CONFIG = {
+  firstParty: 'claude-fable-5',
+  bedrock: 'us.anthropic.claude-fable-5',
+  vertex: 'claude-fable-5',
+  foundry: 'claude-fable-5',
+} as const satisfies ModelConfig
+
 // @[MODEL LAUNCH]: Register the new config here.
 export const ALL_MODEL_CONFIGS = {
   haiku35: CLAUDE_3_5_HAIKU_CONFIG,
@@ -113,6 +124,7 @@ export const ALL_MODEL_CONFIGS = {
   opus46: CLAUDE_OPUS_4_6_CONFIG,
   opus47: CLAUDE_OPUS_4_7_CONFIG,
   opus48: CLAUDE_OPUS_4_8_CONFIG,
+  fable5: CLAUDE_FABLE_5_CONFIG,
 } as const satisfies Record<string, ModelConfig>
 
 export type ModelKey = keyof typeof ALL_MODEL_CONFIGS

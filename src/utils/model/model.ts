@@ -117,6 +117,16 @@ export function getDefaultOpusModel(): ModelName {
   return getModelStrings().opus48 || 'claude-opus-4-8'
 }
 
+// @[MODEL LAUNCH]: Update the default Fable model.
+// Fable 5 is the top tier (above Opus). It is not anyone's default; this only
+// resolves the explicit `fable` alias. No 3P lag handling — Fable launched 1P.
+export function getDefaultFableModel(): ModelName {
+  if (process.env.ANTHROPIC_DEFAULT_FABLE_MODEL) {
+    return process.env.ANTHROPIC_DEFAULT_FABLE_MODEL
+  }
+  return getModelStrings().fable5 || 'claude-fable-5'
+}
+
 // @[MODEL LAUNCH]: Update the default Sonnet model.
 export function getDefaultSonnetModel(): ModelName {
   if (process.env.ANTHROPIC_DEFAULT_SONNET_MODEL) {
@@ -236,6 +246,9 @@ export function firstPartyNameToCanonical(name: ModelName | undefined): ModelSho
   }
   if (name.includes('claude-opus-4')) {
     return 'claude-opus-4'
+  }
+  if (name.includes('claude-fable-5')) {
+    return 'claude-fable-5'
   }
   if (name.includes('claude-sonnet-4-6')) {
     return 'claude-sonnet-4-6'
@@ -362,6 +375,10 @@ export function getPublicModelDisplayName(model: ModelName): string | null {
   switch (model) {
     case 'kimi-for-coding':
       return 'kimi-k2.6'
+    case getModelStrings().fable5:
+      return 'Fable 5'
+    case getModelStrings().fable5 + '[1m]':
+      return 'Fable 5 (1M context)'
     case getModelStrings().opus48:
       return 'Opus 4.8'
     case getModelStrings().opus48 + '[1m]':
@@ -491,6 +508,8 @@ export function parseUserSpecifiedModel(
         return getDefaultHaikuModel() + (has1mTag ? '[1m]' : '')
       case 'opus':
         return getDefaultOpusModel() + (has1mTag ? '[1m]' : '')
+      case 'fable':
+        return getDefaultFableModel() + (has1mTag ? '[1m]' : '')
       case 'best':
         return getBestModel()
       default:
@@ -610,6 +629,9 @@ export function getMarketingNameForModel(modelId: string | undefined): string | 
   const has1m = modelId.toLowerCase().includes('[1m]')
   const canonical = getCanonicalName(modelId)
 
+  if (canonical.includes('claude-fable-5')) {
+    return has1m ? 'Fable 5 (with 1M context)' : 'Fable 5'
+  }
   if (canonical.includes('claude-opus-4-8')) {
     return has1m ? 'Opus 4.8 (with 1M context)' : 'Opus 4.8'
   }

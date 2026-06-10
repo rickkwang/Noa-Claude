@@ -100,7 +100,11 @@ export function getSupportedEffortLevelsForModel(
   if (modelKey.includes('mythos')) {
     return ['low', 'medium', 'high', 'max']
   }
-  if (modelKey.includes('opus-4-7') || modelKey.includes('opus-4-8')) {
+  if (
+    modelKey.includes('opus-4-7') ||
+    modelKey.includes('opus-4-8') ||
+    modelKey.includes('fable-5')
+  ) {
     return ['low', 'medium', 'high', 'xhigh', 'max']
   }
   if (modelKey.includes('opus-4-6')) {

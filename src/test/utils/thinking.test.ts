@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import {
   modelOmitsThinkingByDefault,
+  modelRejectsSamplingParams,
   modelSupportsAdaptiveThinking,
   modelSupportsThinking,
 } from '../../utils/thinking.js'
@@ -33,6 +34,21 @@ describe('modelSupportsAdaptiveThinking', () => {
     expect(modelSupportsAdaptiveThinking('anthropic.claude-opus-4-7')).toBe(
       true,
     )
+  })
+})
+
+describe('Fable 5 — shares the Opus 4.8 request surface', () => {
+  test('uses adaptive thinking on first-party', () => {
+    delete process.env.ANTHROPIC_BASE_URL
+    expect(modelSupportsAdaptiveThinking('claude-fable-5')).toBe(true)
+  })
+
+  test('omits thinking content by default (needs display: summarized)', () => {
+    expect(modelOmitsThinkingByDefault('claude-fable-5')).toBe(true)
+  })
+
+  test('rejects sampling params (temperature/top_p/top_k)', () => {
+    expect(modelRejectsSamplingParams('claude-fable-5')).toBe(true)
   })
 })
 

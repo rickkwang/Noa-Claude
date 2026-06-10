@@ -136,6 +136,7 @@ export function modelSupportsAdaptiveThinking(model: string): boolean {
       (canonical.includes('opus-4-6') ||
         canonical.includes('opus-4-7') ||
         canonical.includes('opus-4-8') ||
+        canonical.includes('fable-5') ||
         canonical.includes('sonnet-4-6'))) ||
     (provider === 'bedrock' &&
       (canonical.includes('opus-4-7') || canonical.includes('opus-4-8')))
@@ -168,7 +169,11 @@ export function modelSupportsAdaptiveThinking(model: string): boolean {
 // @[MODEL LAUNCH]: Update when new models also remove sampling params.
 export function modelRejectsSamplingParams(model: string): boolean {
   const canonical = getCanonicalName(model)
-  return canonical.includes('opus-4-7') || canonical.includes('opus-4-8')
+  return (
+    canonical.includes('opus-4-7') ||
+    canonical.includes('opus-4-8') ||
+    canonical.includes('fable-5')
+  )
 }
 
 // Opus 4.7+ omit thinking content by default — adaptive `thinking` blocks
@@ -179,7 +184,11 @@ export function modelRejectsSamplingParams(model: string): boolean {
 // @[MODEL LAUNCH]: Add new models that omit thinking content by default.
 export function modelOmitsThinkingByDefault(model: string): boolean {
   const canonical = getCanonicalName(model)
-  return canonical.includes('opus-4-7') || canonical.includes('opus-4-8')
+  return (
+    canonical.includes('opus-4-7') ||
+    canonical.includes('opus-4-8') ||
+    canonical.includes('fable-5')
+  )
 }
 
 export function shouldEnableThinkingByDefault(): boolean {

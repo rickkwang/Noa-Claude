@@ -9,6 +9,7 @@ import {
 import { getModelStrings } from './modelStrings.js'
 import {
   COST_TIER_3_15,
+  COST_TIER_10_50,
   COST_HAIKU_35,
   COST_HAIKU_45,
   formatModelPricing,
@@ -183,6 +184,20 @@ export function getOpus48_1MOption(fastMode = false): ModelOption {
   }
 }
 
+// Fable 5 — top tier, above Opus. Never a default (it's the most expensive
+// model); offered as an explicit opt-in row. The `[1m]` variant is reachable
+// via the `fable[1m]` alias.
+function getFable5Option(): ModelOption {
+  const is3P = getAPIProvider() !== 'firstParty'
+  return {
+    value: is3P ? getModelStrings().fable5 : 'fable',
+    label: 'Fable',
+    description: `Fable 5 · Most powerful${is3P ? '' : ` · ${formatModelPricing(COST_TIER_10_50)}`}`,
+    descriptionForModel:
+      'Fable 5 - most powerful model, above Opus. Highest cost; use for the hardest tasks.',
+  }
+}
+
 export function getSonnet46_1MOption(): ModelOption {
   const is3P = getAPIProvider() !== 'firstParty'
   return {
@@ -343,6 +358,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
       getDefaultOptionForUser(),
       ...antModelOptions,
       getMergedOpus1MOption(fastMode),
+      getFable5Option(),
       getSonnet46Option(),
       getSonnet46_1MOption(),
       getHaiku45Option(),
@@ -356,6 +372,8 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
       if (!isOpus1mMergeEnabled() && checkOpus1mAccess()) {
         premiumOptions.push(getMaxOpus48_1MOption(fastMode))
       }
+
+      premiumOptions.push(getFable5Option())
 
       premiumOptions.push(MaxSonnet46Option)
       if (checkSonnet1mAccess()) {
@@ -381,6 +399,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
       }
     }
 
+    standardOptions.push(getFable5Option())
     standardOptions.push(MaxHaiku45Option)
     return standardOptions
   }
@@ -399,6 +418,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
         payg1POptions.push(getOpus48_1MOption(fastMode))
       }
     }
+    payg1POptions.push(getFable5Option())
     payg1POptions.push(getHaiku45Option())
     return payg1POptions
   }
@@ -427,6 +447,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
     if (checkOpus1mAccess()) {
       payg3pOptions.push(getOpus48_1MOption(fastMode))
     }
+    payg3pOptions.push(getFable5Option())
   }
   const customHaiku = getCustomHaikuOption()
   if (customHaiku !== undefined) {
