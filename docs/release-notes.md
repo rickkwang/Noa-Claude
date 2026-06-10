@@ -1,5 +1,33 @@
 # Release Notes
 
+## 1.3.7
+
+### New Features
+
+- **Fable 5 model support** — added full model registration, cost tracking, thinking configuration, context-window upgrade logic, and beta-flag handling for the new Fable 5 model family.
+- **Size-triggered microcompact** — compaction now triggers automatically when the conversation exceeds a token-size threshold, with configurable thresholds and a visible "tokens freed" notice. `summarizeMetadata` includes a density budget anchor for more consistent summary quality.
+- **Away-summary `/config` toggle** — return recaps can now be enabled or disabled reactively from the settings panel, with state persisted across sessions.
+- **Explore/Plan agent personality names** — worker subagents in Explore and Plan modes now get stable display names from the historical-figure pool, with consistent color assignment across the UI.
+
+### Refactors
+
+- **Compact token savings normalized** — compact and away-summary token accounting unified so both paths report savings consistently. SDK schema updated to expose the normalized field.
+- **Size-based microcompact tightened** — post-review adjustments to the size-triggered microcompact path: threshold calculation hardened, test coverage expanded.
+- **Legacy path cleanup** — removed remaining `.claude-agent` path references from skills, PowerShell validation, IDE detection, secure storage, and error strings. All onboarding and project-instruction loading now uses `.noa` consistently.
+- **Dead code removal** — dropped `getVersionChangelog` from `build.ts`, removed stale `AWAY_SUMMARY` feature-flag entries from `FEATURES.md` and build audit, deleted root `CHANGELOG.md` (release notes live in `docs/release-notes.md`).
+
+### Bug Fixes
+
+- **Streaming tool execution opt-in** — the streaming tool execution gate was unconditionally false (GrowthBook hard-disabled). The default is now explicit and can be enabled with `NOA_CLAUDE_STREAMING_TOOL_EXECUTION=1`.
+- **Streaming tool execution recovery** — `StreamingToolExecutor.discard()` now aborts in-flight tools to prevent double-execution on fallback; the abort listener excludes `'streaming_fallback'` so the turn can retry instead of dying. Context modifiers from concurrency-safe tools are now applied in block order (previously silently dropped), matching `runTools` behavior.
+- **Query loop hardening** — yields a warning when a `max_output_tokens` error is withheld but tool execution continues; consumes `pendingToolUseSummary` before `blocking_limit`/`model_error` early returns; copies `toolUseContext` instead of mutating shared options on model fallback; injects the goal prompt before the `toolUseContext.messages` snapshot so tools see the injected prompt.
+- **WebSearch/WebFetch always loaded** — removed deferred-loading guards so both tools are available unconditionally, eliminating the silent-unavailability race.
+- **WebFetch permissions** — deny/ask rules now take priority over preapproved hosts; matching is case-insensitive; Windows `~\` home paths are resolved correctly before permission checks.
+- **Noa project instruction loading** — `.noa/project.md` and `.noa/CLAUDE.md` now load consistently across all onboarding and query paths; legacy `.claude-agent/project.md` fallback removed.
+- **OpenAI-compatible shim provider-safe** — the shim no longer assumes first-party Anthropic endpoints; provider detection and capability checks are now provider-agnostic.
+- **Away-summary alignment** — recap behavior realigned with official Claude Code 2.1.165 semantics.
+- **README** — clarified that this is an independent project, not an active upstream fork.
+
 ## 1.3.6
 
 ### Bug Fixes
