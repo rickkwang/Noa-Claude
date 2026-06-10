@@ -589,6 +589,29 @@ async function* queryLoop(
       }
     }
 
+    const appState = toolUseContext.getAppState()
+    const permissionMode = appState.toolPermissionContext.mode
+
+    // Inject goal continuation prompt on first turn only. Must run before
+    // toolUseContext.messages is snapshotted below — otherwise tools
+    // executing this turn see a messages view missing the injected prompt.
+    if (
+      turnCount === 1 &&
+      !toolUseContext.agentId &&
+      permissionMode !== 'plan'
+    ) {
+      const goal = appState.goal
+      if (shouldInjectGoalPrompt(goal)) {
+        messagesForQuery = [
+          createUserMessage({
+            content: getGoalPromptForStatus(goal),
+            isMeta: true,
+          }),
+          ...messagesForQuery,
+        ]
+      }
+    }
+
     //TODO: no need to set toolUseContext.messages during set-up since it is updated here
     toolUseContext = {
       ...toolUseContext,
@@ -613,27 +636,7 @@ async function* queryLoop(
           toolUseContext,
         )
       : null
-
-    const appState = toolUseContext.getAppState()
-    const permissionMode = appState.toolPermissionContext.mode
-
-    // Inject goal continuation prompt on first turn only
-    if (
-      turnCount === 1 &&
-      !toolUseContext.agentId &&
-      permissionMode !== 'plan'
-    ) {
-      const goal = appState.goal
-      if (shouldInjectGoalPrompt(goal)) {
-        messagesForQuery = [
-          createUserMessage({
-            content: getGoalPromptForStatus(goal),
-            isMeta: true,
-          }),
-          ...messagesForQuery,
-        ]
-      }
-    }
+    let updatedToolUseContext = toolUseContext
 
     let currentModel = getRuntimeMainLoopModel({
       permissionMode,
@@ -705,6 +708,15 @@ async function* queryLoop(
         toolUseContext.options.mainLoopModel,
       )
       if (isAtBlockingLimit) {
+        // Consume the previous turn's tool-use summary before the early
+        // return — otherwise the already-resolved Haiku result is silently
+        // dropped.
+        if (pendingToolUseSummary) {
+          const summary = await pendingToolUseSummary
+          if (summary) {
+            yield summary
+          }
+        }
         yield createAssistantAPIErrorMessage({
           content: PROMPT_TOO_LONG_ERROR_MESSAGE,
           error: 'invalid_request',
@@ -924,6 +936,12 @@ async function* queryLoop(
                     ).filter(_ => _.type === 'user'),
                   )
                 }
+                if (result.newContext) {
+                  updatedToolUseContext = {
+                    ...result.newContext,
+                    queryTracking,
+                  }
+                }
               }
             }
           }
@@ -972,9 +990,23 @@ async function* queryLoop(
             toolUseBlocks.length = 0
             needsFollowUp = false
 
+            // Update tool use context with new model. Copy instead of
+            // mutating options in place — options is shared by reference with
+            // the caller (REPL state), and an in-place write changes the
+            // caller's model mid-turn.
+            toolUseContext = {
+              ...toolUseContext,
+              options: {
+                ...toolUseContext.options,
+                mainLoopModel: fallbackModel,
+              },
+            }
+            updatedToolUseContext = toolUseContext
+
             // Discard pending results from the failed attempt and create a
-            // fresh executor. This prevents orphan tool_results (with old
-            // tool_use_ids) from leaking into the retry.
+            // fresh executor — after the context update above, so the new
+            // executor captures the fallback model. This prevents orphan
+            // tool_results (with old tool_use_ids) from leaking into the retry.
             if (streamingToolExecutor) {
               streamingToolExecutor.discard()
               streamingToolExecutor = new StreamingToolExecutor(
@@ -983,9 +1015,6 @@ async function* queryLoop(
                 toolUseContext,
               )
             }
-
-            // Update tool use context with new model
-            toolUseContext.options.mainLoopModel = fallbackModel
 
             // Thinking signatures are model-bound: replaying a protected-thinking
             // block (e.g. capybara) to an unprotected fallback (e.g. opus) 400s.
@@ -1031,6 +1060,17 @@ async function* queryLoop(
         queryChainId: queryChainIdForAnalytics,
         queryDepth: queryTracking.depth,
       })
+
+      // Consume the previous turn's tool-use summary before the error
+      // returns below — otherwise the already-resolved Haiku result is
+      // silently dropped. (The promise has .catch(() => null) attached at
+      // creation, so awaiting here cannot throw.)
+      if (pendingToolUseSummary) {
+        const summary = await pendingToolUseSummary
+        if (summary) {
+          yield summary
+        }
+      }
 
       // Handle image size/resize errors with user-friendly messages
       if (
@@ -1580,8 +1620,19 @@ async function* queryLoop(
       return { reason: 'completed' }
     }
 
+    // A max_output_tokens error was withheld during streaming but this
+    // response also contains complete tool_use blocks, so the multi-turn
+    // recovery above (gated on !needsFollowUp) never runs. Continuing into
+    // tool execution is correct — but without this notice the user gets no
+    // signal that the response was truncated.
+    if (assistantMessages.some(isWithheldMaxOutputTokens)) {
+      yield createSystemMessage(
+        'Output token limit hit mid-response; continuing with the completed tool calls.',
+        'warning',
+      )
+    }
+
     let shouldPreventContinuation = false
-    let updatedToolUseContext = toolUseContext
 
     queryCheckpoint('query_tool_execution_start')
 

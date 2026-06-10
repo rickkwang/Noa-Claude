@@ -14,6 +14,7 @@ Runtime behavior switches are driven by environment variables:
 - `NOA_CLAUDE_DISABLE_MOUSE` keeps fullscreen layout but skips mouse tracking
 - `NOA_CLAUDE_DISABLE_MOUSE_CLICKS` keeps mouse tracking but ignores clicks and drags
 - `CLAUDE_CODE_FORK_SUBAGENT=1` enables fork-subagent behavior on external builds (internal builds keep the default behavior)
+- `NOA_CLAUDE_STREAMING_TOOL_EXECUTION=1` opts in to streaming tool execution (tools start while the model response is still streaming). Experimental and off by default — the streaming path is not yet validated in this build.
 
 ### `/status`
 

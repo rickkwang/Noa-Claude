@@ -31,9 +31,19 @@ export function buildQueryConfig(): QueryConfig {
   return {
     sessionId: getSessionId(),
     gates: {
-      streamingToolExecution: checkStatsigFeatureGate_CACHED_MAY_BE_STALE(
-        'tengu_streaming_tool_execution2',
-      ),
+      // Streaming tool execution (StreamingToolExecutor) starts tools while
+      // the model is still streaming instead of after the full response.
+      // GrowthBook is hard-disabled in this build, so the upstream statsig
+      // gate resolves to false unconditionally and neither override channel
+      // (env/config) works without USER_TYPE=ant — leaving the non-streaming
+      // runTools path as the permanent default. That default is an explicit
+      // decision here, not an accident: the streaming path is still
+      // unvalidated in this fork. NOA_CLAUDE_STREAMING_TOOL_EXECUTION=1 opts in.
+      streamingToolExecution:
+        isEnvTruthy(process.env.NOA_CLAUDE_STREAMING_TOOL_EXECUTION) ||
+        checkStatsigFeatureGate_CACHED_MAY_BE_STALE(
+          'tengu_streaming_tool_execution2',
+        ),
       emitToolUseSummaries: isEnvTruthy(
         process.env.CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES,
       ),

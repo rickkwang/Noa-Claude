@@ -195,6 +195,7 @@ All builds require [Bun](https://bun.sh).
 - `NOA_CLAUDE_DISABLE_MOUSE_CLICKS=1` — Mouse tracking on, clicks ignored
 - `CLAUDE_CODE_HIDE_CWD=1` — Hide cwd from status bar
 - `DISABLE_UPDATES=1` — Disable automatic update checks
+- `NOA_CLAUDE_STREAMING_TOOL_EXECUTION=1` — Opt in to streaming tool execution (tools start while the model response is still streaming; experimental, off by default)
 
 Legacy `CLAUDE_CODE_*` names are still accepted for compatibility; `NOA_CLAUDE_*` is preferred.
 

@@ -31,6 +31,7 @@ type TrackedTool = {
   // Progress messages are stored separately and yielded immediately
   pendingProgress: Message[]
   contextModifiers?: Array<(context: ToolUseContext) => ToolUseContext>
+  modifiersApplied?: boolean
 }
 
 /**
@@ -70,6 +71,14 @@ export class StreamingToolExecutor {
    */
   discard(): void {
     this.discarded = true
+    // Kill in-flight tools (Bash subprocesses listen to this signal) so their
+    // side effects stop now — the fallback retry may re-issue the same tool
+    // call, and letting the first run finish in the background risks mutating
+    // commands executing twice. The per-tool child controllers' abort
+    // listeners exclude the 'streaming_fallback' reason (and check
+    // this.discarded, set above), so this abort never bubbles up to the
+    // query controller — the turn itself is not ended.
+    this.siblingAbortController.abort('streaming_fallback')
   }
 
   /**
@@ -263,6 +272,25 @@ export class StreamingToolExecutor {
   }
 
   /**
+   * Apply context modifiers from completed tools, mirroring runTools
+   * semantics: modifiers apply in block order, and a tool's modifiers only
+   * apply once every earlier tool has finished — so the context later tools
+   * see is deterministic regardless of concurrent completion order. Runs
+   * synchronously at tool completion, before processQueue can start the next
+   * non-concurrency-safe tool, which therefore always sees the updated context.
+   */
+  private applyPendingContextModifiers(): void {
+    for (const tool of this.tools) {
+      if (tool.status === 'queued' || tool.status === 'executing') break
+      if (tool.modifiersApplied) continue
+      tool.modifiersApplied = true
+      for (const modifier of tool.contextModifiers ?? []) {
+        this.toolUseContext = modifier(this.toolUseContext)
+      }
+    }
+  }
+
+  /**
    * Execute a tool and collect its results
    */
   private async executeTool(tool: TrackedTool): Promise<void> {
@@ -291,6 +319,7 @@ export class StreamingToolExecutor {
         tool.contextModifiers = contextModifiers
         tool.status = 'completed'
         this.updateInterruptibleState()
+        this.applyPendingContextModifiers()
         return
       }
 
@@ -309,6 +338,7 @@ export class StreamingToolExecutor {
         () => {
           if (
             toolAbortController.signal.reason !== 'sibling_error' &&
+            toolAbortController.signal.reason !== 'streaming_fallback' &&
             !this.toolUseContext.abortController.signal.aborted &&
             !this.discarded
           ) {
@@ -387,15 +417,7 @@ export class StreamingToolExecutor {
       tool.contextModifiers = contextModifiers
       tool.status = 'completed'
       this.updateInterruptibleState()
-
-      // NOTE: we currently don't support context modifiers for concurrent
-      //       tools. None are actively being used, but if we want to use
-      //       them in concurrent tools, we need to support that here.
-      if (!tool.isConcurrencySafe && contextModifiers.length > 0) {
-        for (const modifier of contextModifiers) {
-          this.toolUseContext = modifier(this.toolUseContext)
-        }
-      }
+      this.applyPendingContextModifiers()
     }
 
     const promise = collectResults()
