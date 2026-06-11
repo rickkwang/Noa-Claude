@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { feature } from 'bun:bundle'
 import { getShortcutDisplay } from '../keybindings/shortcutFormat.js'
 import { isExtractModeActive } from '../memdir/paths.js'
@@ -17,7 +16,10 @@ import type {
   TombstoneMessage,
   ToolUseSummaryMessage,
 } from '../types/message.js'
-import { createAttachmentMessage } from '../utils/attachments.js'
+import {
+  createAttachmentMessage,
+  type HookAttachment,
+} from '../utils/attachments.js'
 import { logForDebugging } from '../utils/debug.js'
 import { errorMessage } from '../utils/errors.js'
 import type { REPLHookContext } from '../utils/hooks/postSamplingHooks.js'
@@ -43,8 +45,15 @@ import { getAgentName, getTeamName, isTeammate } from '../utils/teammate.js'
 const extractMemoriesModule = feature('EXTRACT_MEMORIES')
   ? (require('../services/extractMemories/extractMemories.js') as typeof import('../services/extractMemories/extractMemories.js'))
   : null
+// src/jobs is absent from this fork (TEMPLATES is off in every build), so
+// `typeof import` has nothing to resolve — type the surface structurally.
 const jobClassifierModule = feature('TEMPLATES')
-  ? (require('../jobs/classifier.js') as typeof import('../jobs/classifier.js'))
+  ? (require('../jobs/classifier.js') as {
+      classifyAndWriteState: (
+        jobDir: string,
+        messages: AssistantMessage[],
+      ) => Promise<void>
+    })
   : null
 
 /* eslint-enable @typescript-eslint/no-require-imports */
@@ -120,7 +129,7 @@ export async function* handleStopHooks(
     )
     const p = jobClassifierModule!
       .classifyAndWriteState(process.env.CLAUDE_JOB_DIR, turnAssistantMessages)
-      .catch(err => {
+      .catch((err: unknown) => {
         logForDebugging(`[job] classifier error: ${errorMessage(err)}`, {
           level: 'error',
         })
@@ -187,7 +196,7 @@ export async function* handleStopHooks(
         yield result.message
         // Track toolUseID from progress messages and count hooks
         if (result.message.type === 'progress' && result.message.toolUseID) {
-          stopHookToolUseID = result.message.toolUseID
+          stopHookToolUseID = result.message.toolUseID as string
           hookCount++
           // Extract hook command and prompt text from progress data
           const progressData = result.message.data as HookProgress
@@ -200,8 +209,13 @@ export async function* handleStopHooks(
         }
         // Track errors and output from attachments
         if (result.message.type === 'attachment') {
-          const attachment = result.message.attachment
+          // Message.attachment is loosely typed ({type?} & Record); hook
+          // executors only ever attach HookAttachment variants here.
+          const attachment = result.message.attachment as
+            | HookAttachment
+            | undefined
           if (
+            attachment &&
             'hookEvent' in attachment &&
             (attachment.hookEvent === 'Stop' ||
               attachment.hookEvent === 'SubagentStop')
@@ -353,7 +367,7 @@ export async function* handleStopHooks(
               result.message.type === 'progress' &&
               result.message.toolUseID
             ) {
-              teammateHookToolUseID = result.message.toolUseID
+              teammateHookToolUseID = result.message.toolUseID as string
             }
             yield result.message
           }
@@ -395,7 +409,7 @@ export async function* handleStopHooks(
       for await (const result of teammateIdleGenerator) {
         if (result.message) {
           if (result.message.type === 'progress' && result.message.toolUseID) {
-            teammateHookToolUseID = result.message.toolUseID
+            teammateHookToolUseID = result.message.toolUseID as string
           }
           yield result.message
         }

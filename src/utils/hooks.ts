@@ -358,7 +358,10 @@ export interface HookResult {
 }
 
 export type AggregatedHookResult = {
-  message?: HookResultMessage
+  // Progress and attachment messages at runtime (hook executors yield
+  // createAttachmentMessage / progress updates), never 'hook_result' —
+  // consumers discriminate on message.type.
+  message?: Message
   blockingError?: HookBlockingError
   preventContinuation?: boolean
   stopReason?: string

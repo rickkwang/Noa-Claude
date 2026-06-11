@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { z } from 'zod/v4'
+import type { BetaRawMessageStreamEvent } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import type { UUID } from 'crypto'
 
 export const MessageSchema = z.object({
@@ -148,6 +149,15 @@ export type SystemStopHookSummaryMessage = SystemMessage & {
   summary: string
 }
 
+// Per-hook execution record collected by handleStopHooks and rendered in the
+// stop-hook summary line (SystemTextMessage). command is 'prompt' for
+// prompt-type hooks, with the prompt text alongside.
+export type StopHookInfo = {
+  command: string
+  promptText?: string
+  durationMs?: number
+}
+
 // Human-readable progress summary emitted after a tool batch completes.
 // Created by createToolUseSummaryMessage (utils/messages.ts), mapped to the
 // SDK's snake_case shape in QueryEngine. Not part of the model transcript.
@@ -157,6 +167,29 @@ export type ToolUseSummaryMessage = {
   precedingToolUseIds: string[]
   uuid: string
   timestamp: string
+}
+
+// Raw API stream event passthrough, yielded by queryModelWithStreaming
+// (services/api/claude.ts) for partial-message consumers. ttftMs rides on
+// the message_start event only.
+export type StreamEvent = {
+  type: 'stream_event'
+  event: BetaRawMessageStreamEvent
+  ttftMs?: number
+}
+
+// Yielded by the query loop at the top of each iteration, before the API
+// call. UI/SDK layers use it as a spinner signal; never persisted.
+export type RequestStartEvent = {
+  type: 'stream_request_start'
+}
+
+// Retracts an already-yielded assistant message (streaming fallback orphans
+// partial messages whose thinking signatures are invalid). Consumers remove
+// `message` from UI and transcript.
+export type TombstoneMessage = {
+  type: 'tombstone'
+  message: AssistantMessage
 }
 
 export type RenderableMessage = Message
