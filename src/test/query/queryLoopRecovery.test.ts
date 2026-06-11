@@ -67,7 +67,8 @@ function createContext(
 
 function makeDeps(
   callModel: QueryDeps['callModel'],
-): QueryDeps {
+  overrides?: Partial<QueryDeps>,
+): Partial<QueryDeps> {
   let uuidCounter = 0
   return {
     uuid: () =>
@@ -75,13 +76,14 @@ function makeDeps(
     microcompact: async messages => ({ messages }),
     autocompact: async () => ({ wasCompacted: false }),
     callModel,
-  } as QueryDeps
+    ...overrides,
+  } as Partial<QueryDeps>
 }
 
 // Drives the generator manually so the Terminal return value is observable —
 // production callers use for-await and discard it.
 async function drain(params: {
-  deps: QueryDeps
+  deps: Partial<QueryDeps>
   toolUseContext?: ToolUseContext
   maxTurns?: number
   fallbackModel?: string
@@ -206,6 +208,76 @@ describe('query loop recovery', () => {
     expect(errorEvent).toBeDefined()
     expect(errorEvent!.error).toBe('empty_response')
     expect(terminal).toEqual({ reason: 'completed' })
+  }, 5000)
+
+  test('stop hook blocking: feeds the error back to the model with stop_hook_active set', async () => {
+    const callMessages: Message[][] = []
+    const stopHookActiveFlags: Array<boolean | undefined> = []
+    let alreadyBlocked = false
+
+    const stopHooks: QueryDeps['stopHooks'] = async function* (
+      _messages,
+      _assistant,
+      _systemPrompt,
+      _userContext,
+      _systemContext,
+      _toolUseContext,
+      _querySource,
+      stopHookActive,
+    ) {
+      stopHookActiveFlags.push(stopHookActive)
+      if (!alreadyBlocked) {
+        alreadyBlocked = true
+        return {
+          blockingErrors: [
+            createUserMessage({
+              content: 'Stop hook: lint failed, fix it',
+              isMeta: true,
+            }),
+          ],
+          preventContinuation: false,
+        }
+      }
+      return { blockingErrors: [], preventContinuation: false }
+    }
+
+    const deps = makeDeps(
+      async function* ({ messages }) {
+        callMessages.push(messages)
+        yield createAssistantMessage({ content: `attempt ${callMessages.length}` })
+      },
+      { stopHooks },
+    )
+
+    const { terminal } = await drain({ deps })
+
+    // Blocking error triggers one re-query with the error appended …
+    expect(callMessages.length).toBe(2)
+    const feedback = callMessages[1]!.at(-1)!
+    expect(String(feedback.message?.content)).toContain('lint failed')
+    // … and the second stop-hook round sees stop_hook_active so a
+    // misbehaving hook can break the cycle.
+    expect(stopHookActiveFlags).toEqual([undefined, true])
+    expect(terminal).toEqual({ reason: 'completed' })
+  }, 5000)
+
+  test('stop hook preventContinuation: ends the turn with stop_hook_prevented', async () => {
+    let modelCalls = 0
+    const stopHooks: QueryDeps['stopHooks'] = async function* () {
+      return { blockingErrors: [], preventContinuation: true }
+    }
+    const deps = makeDeps(
+      async function* () {
+        modelCalls += 1
+        yield createAssistantMessage({ content: 'done' })
+      },
+      { stopHooks },
+    )
+
+    const { terminal } = await drain({ deps })
+
+    expect(modelCalls).toBe(1)
+    expect(terminal).toEqual({ reason: 'stop_hook_prevented' })
   }, 5000)
 
   test('maxTurns: stops the tool-use loop with a max_turns terminal and attachment', async () => {

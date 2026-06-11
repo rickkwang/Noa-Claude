@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import { queryModelWithStreaming } from '../services/api/claude.js'
 import { autoCompactIfNeeded } from '../services/compact/autoCompact.js'
 import { microcompactMessages } from '../services/compact/microCompact.js'
+import { handleStopHooks } from './stopHooks.js'
 
 // -- deps
 
@@ -26,6 +27,9 @@ export type QueryDeps = {
   microcompact: typeof microcompactMessages
   autocompact: typeof autoCompactIfNeeded
 
+  // -- hooks
+  stopHooks: typeof handleStopHooks
+
   // -- platform
   uuid: () => string
 }
@@ -35,6 +39,7 @@ export function productionDeps(): QueryDeps {
     callModel: queryModelWithStreaming,
     microcompact: microcompactMessages,
     autocompact: autoCompactIfNeeded,
+    stopHooks: handleStopHooks,
     uuid: randomUUID,
   }
 }

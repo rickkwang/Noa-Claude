@@ -151,7 +151,7 @@ describe('query streaming tool execution', () => {
         }
         yield createAssistantMessage({ content: 'done' })
       },
-    } as QueryDeps
+    } as Partial<QueryDeps>
 
     for await (const _ of query({
       messages: [createUserMessage({ content: 'start' })],

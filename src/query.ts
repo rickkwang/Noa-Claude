@@ -113,7 +113,6 @@ import { queryCheckpoint } from './utils/queryProfiler.js'
 import { runTools } from './services/tools/toolOrchestration.js'
 import { applyToolResultBudget } from './utils/toolResultStorage.js'
 import { recordContentReplacement } from './utils/sessionStorage.js'
-import { handleStopHooks } from './query/stopHooks.js'
 import { buildQueryConfig } from './query/config.js'
 import { productionDeps, type QueryDeps } from './query/deps.js'
 import {
@@ -244,7 +243,9 @@ export type QueryParams = {
   // budget for the whole agentic turn; `remaining` is computed per iteration
   // from cumulative API usage. See configureTaskBudgetParams in claude.ts.
   taskBudget?: { total: number }
-  deps?: QueryDeps
+  // Partial: omitted members fall back to productionDeps(), so tests fake
+  // only what a scenario touches.
+  deps?: Partial<QueryDeps>
 }
 
 // -- query loop state: see State/Continue/Terminal in query/transitions.ts
@@ -293,7 +294,7 @@ async function* queryLoop(
     maxTurns,
     skipCacheWrite,
   } = params
-  const deps = params.deps ?? productionDeps()
+  const deps: QueryDeps = { ...productionDeps(), ...params.deps }
 
   // Mutable cross-iteration state. The loop body destructures this at the top
   // of each iteration so reads stay bare-name (`messages`, `toolUseContext`).
@@ -1342,7 +1343,7 @@ async function* queryLoop(
         yield goalAccounting.userNotice
       }
 
-      const stopHookResult = yield* handleStopHooks(
+      const stopHookResult = yield* deps.stopHooks(
         messagesForQuery,
         assistantMessages,
         systemPrompt,
