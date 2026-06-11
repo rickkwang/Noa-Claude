@@ -39,6 +39,20 @@ import {
 // circular-deps loop back through this file via promptCacheBreakDetection.
 // Drift is caught by a test asserting equality with the source-of-truth.
 export const TIME_BASED_MC_CLEARED_MESSAGE = '[Old tool result content cleared]'
+export const MC_CLEARED_INPUT_MESSAGE =
+  '[Old tool input content cleared; re-read the file if needed]'
+
+// Only clear an input string field when it's at least this long. Small
+// fields (paths, short edits) save nothing and are often load-bearing.
+const MIN_CLEARABLE_INPUT_CHARS = 1_000
+
+// Tools whose inputs duplicate file content that lives on disk (recoverable
+// via Read). Other tools' inputs (Bash commands, search patterns) are small
+// and describe intent, so they stay.
+const INPUT_CLEARABLE_TOOLS = new Set<string>([
+  FILE_WRITE_TOOL_NAME,
+  FILE_EDIT_TOOL_NAME,
+])
 
 const IMAGE_MAX_TOKEN_SIZE = 2000
 
@@ -481,6 +495,12 @@ export function evaluateTimeBasedTrigger(
  * compactable tool result except the last `keepRecent`. Returns null when
  * nothing is actually cleared (no clearable results, or all already cleared).
  *
+ * For Write/Edit tool_uses in the cleared set, also clears their large input
+ * strings (Write `content`, Edit `old_string`/`new_string`). Those inputs
+ * duplicate file content that lives on disk, and they routinely dwarf the
+ * tool result ("File written successfully") — clearing only the result would
+ * leave the bulk of a write-heavy session's tokens untouched.
+ *
  * Provider-neutral — it only rewrites local message content, so it works on
  * any model/provider without API betas or cache-editing support.
  */
@@ -514,7 +534,62 @@ export function clearOldToolResults(
   // cleared on a prior turn (the conversation keeps growing, so older ids stay
   // outside keepSet); reporting clearSet.size would over-count on repeat fires.
   let clearedNow = 0
+
+  // Clear large input string fields on a Write/Edit tool_use whose result is
+  // also being cleared. Returns the original block when nothing changes
+  // (small fields, already cleared) so repeat fires stay idempotent.
+  function clearLargeInputFields(block: {
+    type: 'tool_use'
+    id: string
+    name: string
+    input?: unknown
+  }): typeof block {
+    const input = block.input
+    if (!input || typeof input !== 'object') {
+      return block
+    }
+    let touched = false
+    const newInput: Record<string, unknown> = { ...input }
+    for (const [key, value] of Object.entries(newInput)) {
+      if (
+        typeof value === 'string' &&
+        value.length >= MIN_CLEARABLE_INPUT_CHARS &&
+        value !== MC_CLEARED_INPUT_MESSAGE
+      ) {
+        tokensSaved += roughTokenCountEstimation(value)
+        newInput[key] = MC_CLEARED_INPUT_MESSAGE
+        touched = true
+      }
+    }
+    return touched ? { ...block, input: newInput } : block
+  }
+
   const result: Message[] = messages.map(message => {
+    if (
+      message.type === 'assistant' &&
+      Array.isArray(message.message.content)
+    ) {
+      let touched = false
+      const newContent = message.message.content.map(block => {
+        if (
+          block.type !== 'tool_use' ||
+          !clearSet.has(block.id) ||
+          !INPUT_CLEARABLE_TOOLS.has(block.name)
+        ) {
+          return block
+        }
+        const newBlock = clearLargeInputFields(block)
+        if (newBlock !== block) {
+          touched = true
+        }
+        return newBlock
+      })
+      if (!touched) return message
+      return {
+        ...message,
+        message: { ...message.message, content: newContent },
+      }
+    }
     if (message.type !== 'user' || !Array.isArray(message.message.content)) {
       return message
     }

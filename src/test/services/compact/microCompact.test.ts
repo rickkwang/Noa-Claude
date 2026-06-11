@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import type { Message } from '../../../types/message.js'
 import {
   clearOldToolResults,
+  MC_CLEARED_INPUT_MESSAGE,
   microcompactMessages,
   TIME_BASED_MC_CLEARED_MESSAGE,
 } from '../../../services/compact/microCompact.js'
@@ -17,7 +18,11 @@ function id(prefix: string): string {
 }
 
 // assistant message issuing a tool_use of the given tool name
-function toolUse(toolName: string, toolId: string): Message {
+function toolUse(
+  toolName: string,
+  toolId: string,
+  input: Record<string, unknown> = {},
+): Message {
   const uuid = id('a')
   return {
     type: 'assistant',
@@ -26,9 +31,25 @@ function toolUse(toolName: string, toolId: string): Message {
     message: {
       id: uuid,
       role: 'assistant',
-      content: [{ type: 'tool_use', id: toolId, name: toolName, input: {} }],
+      content: [{ type: 'tool_use', id: toolId, name: toolName, input }],
     },
   } as unknown as Message
+}
+
+function toolUseInput(
+  message: Message,
+  toolId: string,
+): Record<string, unknown> | undefined {
+  const content = (message as { message: { content: unknown[] } }).message
+    .content
+  const block = content.find(
+    b =>
+      typeof b === 'object' &&
+      b !== null &&
+      (b as { type?: string }).type === 'tool_use' &&
+      (b as { id?: string }).id === toolId,
+  )
+  return (block as { input?: Record<string, unknown> } | undefined)?.input
 }
 
 // user message carrying the tool_result for a prior tool_use
@@ -144,6 +165,91 @@ describe('clearOldToolResults', () => {
     expect(resultContent(out!.messages[3]!, 'r-2')).not.toBe(
       TIME_BASED_MC_CLEARED_MESSAGE,
     )
+  })
+
+  test('clears large Write inputs alongside their cleared results', () => {
+    const bigContent = 'line of generated file content\n'.repeat(200)
+    const messages: Message[] = [
+      toolUse('Write', 'w-1', { file_path: '/tmp/a.ts', content: bigContent }),
+      toolResult('w-1', 'File written successfully'),
+      toolUse('Read', 'r-1'),
+      toolResult('r-1', 'recent read kept '.repeat(20)),
+    ]
+
+    const out = clearOldToolResults(messages, 1)
+    expect(out).not.toBeNull()
+    const input = toolUseInput(out!.messages[0]!, 'w-1')
+    expect(input?.content).toBe(MC_CLEARED_INPUT_MESSAGE)
+    // file_path stays — the model needs it to re-Read the file if required
+    expect(input?.file_path).toBe('/tmp/a.ts')
+  })
+
+  test('clears large Edit input strings field-by-field', () => {
+    const bigOld = 'old function body\n'.repeat(200)
+    const messages: Message[] = [
+      toolUse('Edit', 'e-1', {
+        file_path: '/tmp/b.ts',
+        old_string: bigOld,
+        new_string: 'tiny replacement',
+      }),
+      toolResult('e-1', 'edited'),
+      toolUse('Read', 'r-1'),
+      toolResult('r-1', 'recent read kept '.repeat(20)),
+    ]
+
+    const out = clearOldToolResults(messages, 1)
+    expect(out).not.toBeNull()
+    const input = toolUseInput(out!.messages[0]!, 'e-1')
+    expect(input?.old_string).toBe(MC_CLEARED_INPUT_MESSAGE)
+    // small fields stay — clearing them saves nothing and loses context
+    expect(input?.new_string).toBe('tiny replacement')
+  })
+
+  test('leaves small Write inputs untouched', () => {
+    const messages: Message[] = [
+      toolUse('Write', 'w-1', { file_path: '/tmp/a.ts', content: 'short' }),
+      toolResult('w-1', 'File written successfully '.repeat(20)),
+      toolUse('Read', 'r-1'),
+      toolResult('r-1', 'recent read kept '.repeat(20)),
+    ]
+
+    const out = clearOldToolResults(messages, 1)
+    expect(out).not.toBeNull()
+    expect(toolUseInput(out!.messages[0]!, 'w-1')?.content).toBe('short')
+  })
+
+  test('keeps inputs of the most recent tool uses intact', () => {
+    const bigContent = 'kept content\n'.repeat(300)
+    const messages: Message[] = [
+      toolUse('Read', 'r-1'),
+      toolResult('r-1', 'old read cleared '.repeat(20)),
+      toolUse('Write', 'w-1', { file_path: '/tmp/a.ts', content: bigContent }),
+      toolResult('w-1', 'File written successfully'),
+    ]
+
+    const out = clearOldToolResults(messages, 1)
+    expect(out).not.toBeNull()
+    expect(toolUseInput(out!.messages[2]!, 'w-1')?.content).toBe(bigContent)
+  })
+
+  test('input clearing counts toward tokensSaved and is idempotent', () => {
+    const bigContent = 'generated file content\n'.repeat(300)
+    const small = 'File written successfully'
+    const make = (content: string): Message[] => [
+      toolUse('Write', 'w-1', { file_path: '/tmp/a.ts', content }),
+      toolResult('w-1', small),
+      toolUse('Read', 'r-1'),
+      toolResult('r-1', 'recent read kept '.repeat(20)),
+    ]
+
+    const first = clearOldToolResults(make(bigContent), 1)
+    expect(first).not.toBeNull()
+    // result text is tiny; the bulk of the savings must come from the input
+    expect(first!.tokensSaved).toBeGreaterThan(1000)
+
+    // Second pass over already-cleared messages: nothing new to clear
+    const second = clearOldToolResults(first!.messages, 1)
+    expect(second).toBeNull()
   })
 
   test('cleared count reflects only results cleared on this pass', () => {
