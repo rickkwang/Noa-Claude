@@ -9,7 +9,6 @@ import { FallbackTriggeredError } from './services/api/withRetry.js'
 import {
   calculateTokenWarningState,
   isAutoCompactEnabled,
-  type AutoCompactTrackingState,
 } from './services/compact/autoCompact.js'
 import { buildPostCompactMessages } from './services/compact/compact.js'
 /* eslint-disable @typescript-eslint/no-require-imports */
@@ -117,7 +116,11 @@ import { recordContentReplacement } from './utils/sessionStorage.js'
 import { handleStopHooks } from './query/stopHooks.js'
 import { buildQueryConfig } from './query/config.js'
 import { productionDeps, type QueryDeps } from './query/deps.js'
-import type { Terminal, Continue } from './query/transitions.js'
+import {
+  nextState,
+  type State,
+  type Terminal,
+} from './query/transitions.js'
 import { feature } from 'bun:bundle'
 import {
   getCurrentTurnTokenBudget,
@@ -244,23 +247,7 @@ export type QueryParams = {
   deps?: QueryDeps
 }
 
-// -- query loop state
-
-// Mutable state carried between loop iterations
-type State = {
-  messages: Message[]
-  toolUseContext: ToolUseContext
-  autoCompactTracking: AutoCompactTrackingState | undefined
-  maxOutputTokensRecoveryCount: number
-  hasAttemptedReactiveCompact: boolean
-  maxOutputTokensOverride: number | undefined
-  pendingToolUseSummary: Promise<ToolUseSummaryMessage | null> | undefined
-  stopHookActive: boolean | undefined
-  turnCount: number
-  // Why the previous iteration continued. Undefined on first iteration.
-  // Lets tests assert recovery paths fired without inspecting message contents.
-  transition: Continue | undefined
-}
+// -- query loop state: see State/Continue/Terminal in query/transitions.ts
 
 export async function* query(
   params: QueryParams,
@@ -1188,22 +1175,15 @@ async function* queryLoop(
             querySource,
           )
           if (drained.committed > 0) {
-            const next: State = {
+            state = nextState(state, {
               messages: drained.messages,
               toolUseContext,
               autoCompactTracking: tracking,
-              maxOutputTokensRecoveryCount,
-              hasAttemptedReactiveCompact,
-              maxOutputTokensOverride: undefined,
-              pendingToolUseSummary: undefined,
-              stopHookActive: undefined,
-              turnCount,
               transition: {
                 reason: 'collapse_drain_retry',
                 committed: drained.committed,
               },
-            }
-            state = next
+            })
             continue
           }
         }
@@ -1241,19 +1221,13 @@ async function* queryLoop(
           for (const msg of postCompactMessages) {
             yield msg
           }
-          const next: State = {
+          state = nextState(state, {
             messages: postCompactMessages,
             toolUseContext,
             autoCompactTracking: undefined,
-            maxOutputTokensRecoveryCount,
             hasAttemptedReactiveCompact: true,
-            maxOutputTokensOverride: undefined,
-            pendingToolUseSummary: undefined,
-            stopHookActive: undefined,
-            turnCount,
             transition: { reason: 'reactive_compact_retry' },
-          }
-          state = next
+          })
           continue
         }
 
@@ -1296,19 +1270,13 @@ async function* queryLoop(
           logEvent('tengu_max_tokens_escalate', {
             escalatedTo: ESCALATED_MAX_TOKENS,
           })
-          const next: State = {
+          state = nextState(state, {
             messages: messagesForQuery,
             toolUseContext,
             autoCompactTracking: tracking,
-            maxOutputTokensRecoveryCount,
-            hasAttemptedReactiveCompact,
             maxOutputTokensOverride: ESCALATED_MAX_TOKENS,
-            pendingToolUseSummary: undefined,
-            stopHookActive: undefined,
-            turnCount,
             transition: { reason: 'max_output_tokens_escalate' },
-          }
-          state = next
+          })
           continue
         }
 
@@ -1320,7 +1288,7 @@ async function* queryLoop(
             isMeta: true,
           })
 
-          const next: State = {
+          state = nextState(state, {
             messages: [
               ...messagesForQuery,
               ...assistantMessages,
@@ -1329,17 +1297,11 @@ async function* queryLoop(
             toolUseContext,
             autoCompactTracking: tracking,
             maxOutputTokensRecoveryCount: maxOutputTokensRecoveryCount + 1,
-            hasAttemptedReactiveCompact,
-            maxOutputTokensOverride: undefined,
-            pendingToolUseSummary: undefined,
-            stopHookActive: undefined,
-            turnCount,
             transition: {
               reason: 'max_output_tokens_recovery',
               attempt: maxOutputTokensRecoveryCount + 1,
             },
-          }
-          state = next
+          })
           continue
         }
 
@@ -1396,7 +1358,13 @@ async function* queryLoop(
       }
 
       if (stopHookResult.blockingErrors.length > 0) {
-        const next: State = {
+        // hasAttemptedReactiveCompact carries forward via nextState — if
+        // compact already ran and couldn't recover from prompt-too-long,
+        // retrying after a stop-hook blocking error will produce the same
+        // result. Resetting to false here caused an infinite loop: compact →
+        // still too long → error → stop hook blocking → compact → … burning
+        // thousands of API calls.
+        state = nextState(state, {
           messages: [
             ...messagesForQuery,
             ...assistantMessages,
@@ -1405,19 +1373,9 @@ async function* queryLoop(
           toolUseContext,
           autoCompactTracking: tracking,
           maxOutputTokensRecoveryCount: 0,
-          // Preserve the reactive compact guard — if compact already ran and
-          // couldn't recover from prompt-too-long, retrying after a stop-hook
-          // blocking error will produce the same result. Resetting to false
-          // here caused an infinite loop: compact → still too long → error →
-          // stop hook blocking → compact → … burning thousands of API calls.
-          hasAttemptedReactiveCompact,
-          maxOutputTokensOverride: undefined,
-          pendingToolUseSummary: undefined,
           stopHookActive: true,
-          turnCount,
           transition: { reason: 'stop_hook_blocking' },
-        }
-        state = next
+        })
         continue
       }
 
@@ -1434,7 +1392,7 @@ async function* queryLoop(
           logForDebugging(
             `Token budget continuation #${decision.continuationCount}: ${decision.pct}% (${decision.turnTokens.toLocaleString()} / ${decision.budget.toLocaleString()})`,
           )
-          state = {
+          state = nextState(state, {
             messages: [
               ...messagesForQuery,
               ...assistantMessages,
@@ -1447,12 +1405,8 @@ async function* queryLoop(
             autoCompactTracking: tracking,
             maxOutputTokensRecoveryCount: 0,
             hasAttemptedReactiveCompact: false,
-            maxOutputTokensOverride: undefined,
-            pendingToolUseSummary: undefined,
-            stopHookActive: undefined,
-            turnCount,
             transition: { reason: 'token_budget_continuation' },
-          }
+          })
           continue
         }
 
@@ -1596,7 +1550,7 @@ async function* queryLoop(
               }
               return { reason: 'aborted_streaming' }
             }
-            state = {
+            state = nextState(state, {
               messages: [
                 ...messagesForQuery,
                 ...assistantMessages,
@@ -1606,12 +1560,9 @@ async function* queryLoop(
               autoCompactTracking: tracking,
               maxOutputTokensRecoveryCount: 0,
               hasAttemptedReactiveCompact: false,
-              maxOutputTokensOverride: undefined,
-              pendingToolUseSummary: undefined,
-              stopHookActive: undefined,
               turnCount: nextTurnCount,
               transition: { reason: 'goal_auto_continue' },
-            }
+            })
             continue
           }
         }
@@ -1987,7 +1938,7 @@ async function* queryLoop(
     }
 
     queryCheckpoint('query_recursive_call')
-    const next: State = {
+    state = nextState(state, {
       messages: [...messagesForQuery, ...assistantMessages, ...toolResults],
       toolUseContext: toolUseContextWithQueryTracking,
       autoCompactTracking: tracking,
@@ -1995,10 +1946,8 @@ async function* queryLoop(
       maxOutputTokensRecoveryCount: 0,
       hasAttemptedReactiveCompact: false,
       pendingToolUseSummary: nextPendingToolUseSummary,
-      maxOutputTokensOverride: undefined,
       stopHookActive,
       transition: { reason: 'next_turn' },
-    }
-    state = next
+    })
   } // while (true)
 }

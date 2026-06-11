@@ -148,6 +148,17 @@ export type SystemStopHookSummaryMessage = SystemMessage & {
   summary: string
 }
 
+// Human-readable progress summary emitted after a tool batch completes.
+// Created by createToolUseSummaryMessage (utils/messages.ts), mapped to the
+// SDK's snake_case shape in QueryEngine. Not part of the model transcript.
+export type ToolUseSummaryMessage = {
+  type: 'tool_use_summary'
+  summary: string
+  precedingToolUseIds: string[]
+  uuid: string
+  timestamp: string
+}
+
 export type RenderableMessage = Message
 
 export type PartialCompactDirection = 'from' | 'up_to'
