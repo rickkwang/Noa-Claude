@@ -164,30 +164,6 @@ export function UserTextMessage(t0) {
     }
     return t1;
   }
-  if (feature("FORK_SUBAGENT")) {
-    if (param.text.includes("<fork-boilerplate>")) {
-      let t1;
-      if ($[32] === Symbol.for("react.memo_cache_sentinel")) {
-        t1 = require("./UserForkBoilerplateMessage.js");
-        $[32] = t1;
-      } else {
-        t1 = $[32];
-      }
-      const {
-        UserForkBoilerplateMessage
-      } = t1 as typeof import('./UserForkBoilerplateMessage.js');
-      let t2;
-      if ($[33] !== addMargin || $[34] !== param) {
-        t2 = <UserForkBoilerplateMessage addMargin={addMargin} param={param} />;
-        $[33] = addMargin;
-        $[34] = param;
-        $[35] = t2;
-      } else {
-        t2 = $[35];
-      }
-      return t2;
-    }
-  }
   if (feature("UDS_INBOX")) {
     if (param.text.includes("<cross-session-message")) {
       let t1;

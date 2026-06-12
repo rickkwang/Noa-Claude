@@ -1,19 +1,15 @@
 // @ts-nocheck
-import { feature } from 'bun:bundle'
 import type { BetaToolUseBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import { randomUUID } from 'crypto'
-import { getIsNonInteractiveSession } from '../../bootstrap/state.js'
 import {
   FORK_BOILERPLATE_TAG,
   FORK_DIRECTIVE_PREFIX,
 } from '../../constants/xml.js'
-import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
 import type {
   AssistantMessage,
   Message as MessageType,
 } from '../../types/message.js'
 import { logForDebugging } from '../../utils/debug.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
 import { createUserMessage } from '../../utils/messages.js'
 import type { BuiltInAgentDefinition } from './loadAgentsDir.js'
 
@@ -32,34 +28,9 @@ import type { BuiltInAgentDefinition } from './loadAgentsDir.js'
  * orchestration role and has its own delegation model.
  */
 export function isForkSubagentEnabled(): boolean {
-  if (feature('FORK_SUBAGENT')) {
-    return _isForkSubagentEnabledForTesting({
-      featureEnabled: true,
-      userType: process.env.USER_TYPE,
-      forkSubagentEnv: process.env.CLAUDE_CODE_FORK_SUBAGENT,
-      isCoordinator: isCoordinatorMode(),
-      isNonInteractive: getIsNonInteractiveSession(),
-    })
-  }
+  // FORK_SUBAGENT gates a module absent from this fork
+  // (UserForkBoilerplateMessage) and cannot be enabled in any build profile.
   return false
-}
-
-export function _isForkSubagentEnabledForTesting(options: {
-  featureEnabled: boolean
-  userType?: string
-  forkSubagentEnv?: string
-  isCoordinator: boolean
-  isNonInteractive: boolean
-}): boolean {
-  if (!options.featureEnabled) return false
-  if (options.isCoordinator) return false
-  if (options.isNonInteractive) return false
-
-  const isInternalBuild = options.userType === 'ant'
-  if (!isInternalBuild && !isEnvTruthy(options.forkSubagentEnv)) {
-    return false
-  }
-  return true
 }
 
 /** Synthetic agent type name used for analytics when the fork path fires. */
