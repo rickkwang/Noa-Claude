@@ -18,6 +18,17 @@ const args = process.argv.slice(2)
 const compile = args.includes('--compile')
 const dev = args.includes('--dev')
 
+// Flags whose gated modules are MISSING from this fork are omitted below —
+// enabling them fails the bundle at resolve time (`bun run build:dev:full`
+// is the canary). Omitted for that reason: BG_SESSIONS (utils/taskSummary,
+// utils/udsClient), COORDINATOR_MODE (coordinator/workerAgent), DIRECT_CONNECT
+// (src/server/* command surface), FORK_SUBAGENT (UserForkBoilerplateMessage),
+// KAIROS_GITHUB_WEBHOOKS (bridge/webhookSanitizer, UserGitHubWebhookMessage),
+// MCP_SKILLS (skills/mcpSkills), MONITOR_TOOL (tasks/MonitorMcpTask + dialogs),
+// REVIEW_ARTIFACT (ReviewArtifactTool + permission UI), SSH_REMOTE
+// (ssh/createSSHSession impl), TEMPLATES (src/jobs), TRANSCRIPT_CLASSIFIER
+// (yolo-classifier-prompts/*.txt), UDS_INBOX (UserCrossSessionMessage),
+// WORKFLOW_SCRIPTS (WorkflowTool + LocalWorkflowTask + dialogs).
 const fullExperimentalFeatures = [
   'AGENT_MEMORY_SNAPSHOT',
   'AGENT_TRIGGERS',
@@ -25,7 +36,6 @@ const fullExperimentalFeatures = [
   'ALLOW_TEST_VERSIONS',
   'AUTO_THEME',
   'BASH_CLASSIFIER',
-  'BG_SESSIONS',
   'BRIDGE_MODE',
   'BUILTIN_EXPLORE_PLAN_AGENTS',
   'CACHED_MICROCOMPACT',
@@ -36,13 +46,10 @@ const fullExperimentalFeatures = [
   'COMMIT_ATTRIBUTION',
   'CONNECTOR_TEXT',
   'CONTEXT_COLLAPSE',
-  'COORDINATOR_MODE',
-  'DIRECT_CONNECT',
   'DOWNLOAD_USER_SETTINGS',
   'EXPERIMENTAL_SKILL_SEARCH',
   'EXTRACT_MEMORIES',
   'FILE_PERSISTENCE',
-  'FORK_SUBAGENT',
   'HARD_FAIL',
   'HISTORY_PICKER',
   'HISTORY_SNIP',
@@ -51,13 +58,10 @@ const fullExperimentalFeatures = [
   'KAIROS',
   'KAIROS_BRIEF',
   'KAIROS_CHANNELS',
-  'KAIROS_GITHUB_WEBHOOKS',
   'KAIROS_PUSH_NOTIFICATION',
   'LODESTONE',
   'MCP_RICH_OUTPUT',
-  'MCP_SKILLS',
   'MESSAGE_ACTIONS',
-  'MONITOR_TOOL',
   'NATIVE_CLIPBOARD_IMAGE',
   'NATIVE_CLIENT_ATTESTATION',
   'NEW_INIT',
@@ -66,26 +70,20 @@ const fullExperimentalFeatures = [
   'PROMPT_CACHE_BREAK_DETECTION',
   'QUICK_SEARCH',
   'REACTIVE_COMPACT',
-  'REVIEW_ARTIFACT',
   'SHOT_STATS',
   'SKILL_IMPROVEMENT',
   'SLOW_OPERATION_LOGGING',
-  'SSH_REMOTE',
   'TEAMMEM',
-  'TEMPLATES',
   'TERMINAL_PANEL',
   'TOKEN_BUDGET',
-  'TRANSCRIPT_CLASSIFIER',
   'TREE_SITTER_BASH',
   'TREE_SITTER_BASH_SHADOW',
-  'UDS_INBOX',
   'ULTRATHINK',
   'UNATTENDED_RETRY',
   'UPLOAD_USER_SETTINGS',
   'VERIFICATION_AGENT',
   'VOICE_MODE',
   'WEB_BROWSER_TOOL',
-  'WORKFLOW_SCRIPTS',
 ] as const
 
 async function runCommand(cmd: string[]): Promise<string | null> {

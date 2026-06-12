@@ -1,6 +1,6 @@
 # Features Audit
 
-Last updated: 2026-05-15
+Last updated: 2026-06-12
 
 This file is the build/runtime audit for experimental feature flags in this repository.
 
@@ -28,44 +28,35 @@ This file is the build/runtime audit for experimental feature flags in this repo
 - `COMMIT_ATTRIBUTION`
 - `CONNECTOR_TEXT`
 - `CONTEXT_COLLAPSE`
-- `COORDINATOR_MODE`
 - `EXPERIMENTAL_SKILL_SEARCH`
 - `EXTRACT_MEMORIES`
 - `FILE_PERSISTENCE`
-- `FORK_SUBAGENT`
 - `HISTORY_PICKER`
 - `HISTORY_SNIP`
 - `KAIROS`
 - `KAIROS_BRIEF`
 - `LODESTONE`
 - `MCP_RICH_OUTPUT`
-- `MCP_SKILLS`
 - `MESSAGE_ACTIONS`
-- `MONITOR_TOOL`
 - `NATIVE_CLIPBOARD_IMAGE`
 - `NEW_INIT`
 - `POWERSHELL_AUTO_MODE`
 - `PROMPT_CACHE_BREAK_DETECTION`
 - `QUICK_SEARCH`
 - `REACTIVE_COMPACT`
-- `REVIEW_ARTIFACT`
 - `SHOT_STATS`
 - `SKILL_IMPROVEMENT`
 - `SLOW_OPERATION_LOGGING`
 - `TEAMMEM`
-- `TEMPLATES`
 - `TERMINAL_PANEL`
 - `TOKEN_BUDGET`
-- `TRANSCRIPT_CLASSIFIER`
 - `TREE_SITTER_BASH`
 - `TREE_SITTER_BASH_SHADOW`
-- `UDS_INBOX`
 - `ULTRATHINK`
 - `UNATTENDED_RETRY`
 - `VERIFICATION_AGENT`
 - `VOICE_MODE`
 - `WEB_BROWSER_TOOL`
-- `WORKFLOW_SCRIPTS`
 
 ## Unlocked but Runtime-Caveated
 
@@ -73,19 +64,36 @@ This file is the build/runtime audit for experimental feature flags in this repo
 - `CCR_AUTO_CONNECT` (depends on bridge + rollout/config state)
 - `CCR_MIRROR` (depends on bridge + env/config)
 - `KAIROS_CHANNELS` (channel-capable MCP + rollout requirements)
-- `KAIROS_GITHUB_WEBHOOKS` (requires channel/bridge context)
 - `KAIROS_PUSH_NOTIFICATION` (requires notification-capable context)
 - `DOWNLOAD_USER_SETTINGS` (depends on first-party auth/settings sync path)
 - `UPLOAD_USER_SETTINGS` (depends on first-party auth/settings sync path)
-- `DIRECT_CONNECT` (depends on remote capabilities)
 - `NATIVE_CLIENT_ATTESTATION` (platform/integration dependent)
-- `SSH_REMOTE` (remote environment dependent)
 - `OVERFLOW_TEST_TOOL` (test/diagnostic pathway)
 - `IS_LIBC_GLIBC` (platform-specific)
 - `IS_LIBC_MUSL` (platform-specific)
 - `HARD_FAIL` (runtime mode behavior gate)
 
 ## Not Unlockable in This Build (by flag-only unlock)
+
+Implementation modules absent from this repository — enabling any of these
+fails `bun run build:dev:full` at bundle resolve time (see the omission note
+above `fullExperimentalFeatures` in build.ts):
+
+- `BG_SESSIONS` (utils/taskSummary, utils/udsClient)
+- `COORDINATOR_MODE` (coordinator/workerAgent)
+- `DIRECT_CONNECT` (src/server/* command surface)
+- `FORK_SUBAGENT` (UserForkBoilerplateMessage)
+- `KAIROS_GITHUB_WEBHOOKS` (bridge/webhookSanitizer, UserGitHubWebhookMessage)
+- `MCP_SKILLS` (skills/mcpSkills)
+- `MONITOR_TOOL` (tasks/MonitorMcpTask + dialogs)
+- `REVIEW_ARTIFACT` (ReviewArtifactTool + permission UI)
+- `SSH_REMOTE` (ssh/createSSHSession implementation)
+- `TEMPLATES` (src/jobs)
+- `TRANSCRIPT_CLASSIFIER` (yolo-classifier-prompts/*.txt)
+- `UDS_INBOX` (UserCrossSessionMessage)
+- `WORKFLOW_SCRIPTS` (WorkflowTool + LocalWorkflowTask + dialogs)
+
+Build-scope exclusions:
 
 - `BYOC_ENVIRONMENT_RUNNER` (build-scope runner surface)
 - `DAEMON` (daemon mode remains build-scoped)

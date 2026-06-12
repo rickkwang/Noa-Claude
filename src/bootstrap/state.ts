@@ -1355,6 +1355,15 @@ export function isSessionPersistenceDisabled(): boolean {
   return STATE.sessionPersistenceDisabled
 }
 
+// Whether the REPL bridge is actively connected. The backing field is only
+// spread into the state object for ant-internal builds (USER_TYPE === 'ant',
+// see getInitialState) and nothing in this fork sets it true — the accessor
+// exists for KAIROS-gated callers (ToolSearchTool/prompt.ts,
+// SendMessageTool.ts) and always reports false here.
+export function isReplBridgeActive(): boolean {
+  return (STATE as { replBridgeActive?: boolean }).replBridgeActive === true
+}
+
 export function hasExitedPlanModeInSession(): boolean {
   return STATE.hasExitedPlanMode
 }
