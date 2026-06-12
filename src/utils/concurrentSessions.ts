@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { chmod, mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import {
@@ -23,26 +22,12 @@ function getSessionsDir(): string {
 }
 
 /**
- * Kind override from env. Set by the spawner (`claude --bg`, daemon
- * supervisor) so the child can register without the parent having to
- * write the file for it — cleanup-on-exit wiring then works for free.
- * Gated so the env-var string is DCE'd from external builds.
- */
-function envSessionKind(): SessionKind | undefined {
-  if (feature('BG_SESSIONS')) {
-    const k = process.env.CLAUDE_CODE_SESSION_KIND
-    if (k === 'bg' || k === 'daemon' || k === 'daemon-worker') return k
-  }
-  return undefined
-}
-
-/**
  * True when this REPL is running inside a `claude --bg` tmux session.
- * Exit paths (/exit, ctrl+c, ctrl+d) should detach the attached client
- * instead of killing the process.
+ * BG_SESSIONS is not buildable in this fork (utils/udsClient is absent),
+ * so no spawner ever sets a session-kind override.
  */
 export function isBgSession(): boolean {
-  return envSessionKind() === 'bg'
+  return false
 }
 
 /**
@@ -59,7 +44,7 @@ export function isBgSession(): boolean {
 export async function registerSession(): Promise<boolean> {
   if (getAgentId() != null) return false
 
-  const kind: SessionKind = envSessionKind() ?? 'interactive'
+  const kind: SessionKind = 'interactive'
   const dir = getSessionsDir()
   const pidFile = join(dir, `${process.pid}.json`)
 
@@ -83,16 +68,6 @@ export async function registerSession(): Promise<boolean> {
         startedAt: Date.now(),
         kind,
         entrypoint: process.env.CLAUDE_CODE_ENTRYPOINT,
-        ...(feature('UDS_INBOX')
-          ? { messagingSocketPath: process.env.CLAUDE_CODE_MESSAGING_SOCKET }
-          : {}),
-        ...(feature('BG_SESSIONS')
-          ? {
-              name: process.env.CLAUDE_CODE_SESSION_NAME,
-              logPath: process.env.CLAUDE_CODE_SESSION_LOG,
-              agent: process.env.CLAUDE_CODE_AGENT,
-            }
-          : {}),
       }),
     )
     // --resume / /resume mutates getSessionId() via switchSession. Without
@@ -152,12 +127,12 @@ export async function updateSessionBridgeId(
  * status-change effect — a dropped write just means ps falls back to
  * transcript-tail derivation for one refresh.
  */
-export async function updateSessionActivity(patch: {
+export async function updateSessionActivity(_patch: {
   status?: SessionStatus
   waitingFor?: string
 }): Promise<void> {
-  if (!feature('BG_SESSIONS')) return
-  await updatePidFile({ ...patch, updatedAt: Date.now() })
+  // BG_SESSIONS is not buildable in this fork — `claude ps` never ships,
+  // so activity tracking is intentionally a no-op.
 }
 
 /**

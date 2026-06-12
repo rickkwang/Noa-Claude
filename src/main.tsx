@@ -1000,9 +1000,6 @@ async function run(): Promise<CommanderCommand> {
     let fileDownloadPromise: Promise<DownloadResult[]> | undefined;
     const agentsJson = options.agents;
     const agentCli = options.agent;
-    if (feature('BG_SESSIONS') && agentCli) {
-      process.env.CLAUDE_CODE_AGENT = agentCli;
-    }
 
     // NOTE: LSP manager initialization is intentionally deferred until after
     // the trust dialog is accepted. This prevents plugin LSP servers from
