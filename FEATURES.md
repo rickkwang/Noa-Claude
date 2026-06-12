@@ -1,6 +1,6 @@
 # Features Audit
 
-Last updated: 2026-06-12
+Last updated: 2026-06-13
 
 This file is the build/runtime audit for experimental feature flags in this repository.
 
@@ -108,6 +108,21 @@ Build-scope exclusions:
 - `PROACTIVE` (product scope intentionally excluded)
 - `DUMP_SYSTEM_PROMPT` (ant-only `--dump-system-prompt` eval entrypoint; eliminated from external builds by design)
 - `SKIP_DETECTION_WHEN_AUTOUPDATES_DISABLED` (orphan optimization gate; referenced in `AutoUpdaterWrapper` but not part of any named build profile)
+
+## Runtime GrowthBook Gates That Always Resolve to Defaults
+
+GrowthBook remote fetch is hard-disabled and both override channels
+(`CLAUDE_INTERNAL_FC_OVERRIDES`, `/config` Gates tab) require `USER_TYPE=ant`,
+so for normal users these gates always return their in-code defaults. The
+guarded branches are kept (reachable via internal/dev channels) but are inert
+in shipped builds:
+
+- `tengu_otk_slot_v1` (default `false`) — max_output_tokens same-request 8k→64k
+  escalate retry in query.ts never fires; multi-turn recovery still applies.
+- `tengu_hive_evidence` (default `false`) — the VERIFICATION_AGENT system-prompt
+  section never injects, even in dev-full builds.
+- `tengu_streaming_tool_execution2` (default `false`) — streaming tool execution
+  stays off; `NOA_CLAUDE_STREAMING_TOOL_EXECUTION=1` is the only working opt-in.
 
 ## Command Surfaces Outside Flag Unlock
 
