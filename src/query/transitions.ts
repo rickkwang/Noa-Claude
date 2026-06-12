@@ -92,9 +92,10 @@ type RequiredNextFields = Pick<
  *   hasAttemptedReactiveCompact reset bug burned thousands of API calls).
  *   A stale carry merely stops recovery one turn early.
  * - Reset to undefined: maxOutputTokensOverride, pendingToolUseSummary,
- *   stopHookActive. These are consumed within a single iteration — carrying
- *   them re-applies an escalated cap, re-yields a spent summary promise, or
- *   misreports stop_hook_active to hooks.
+ *   stopHookActive. These are consumed within a single iteration by default.
+ *   The max-output recovery path may opt back into carrying the internally
+ *   escalated 64k cap so recovery retries do not waste an extra capped call;
+ *   caller-supplied overrides still reset.
  */
 export function nextState(
   prev: State,
