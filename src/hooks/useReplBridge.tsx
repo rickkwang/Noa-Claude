@@ -190,16 +190,7 @@ export function useReplBridge(messages: Message[], setMessages: (action: React.S
               const {
                 resolveAndPrepend
               } = await import('../bridge/inboundAttachments.js');
-              let sanitized = fields.content;
-              if (feature('KAIROS_GITHUB_WEBHOOKS')) {
-                /* eslint-disable @typescript-eslint/no-require-imports */
-                const {
-                  sanitizeInboundWebhookContent
-                } = require('../bridge/webhookSanitizer.js') as typeof import('../bridge/webhookSanitizer.js');
-                /* eslint-enable @typescript-eslint/no-require-imports */
-                sanitized = sanitizeInboundWebhookContent(fields.content);
-              }
-              const content = await resolveAndPrepend(msg, sanitized);
+              const content = await resolveAndPrepend(msg, fields.content);
               const preview = typeof content === 'string' ? content.slice(0, 80) : `[${content.length} content blocks]`;
               logForDebugging(`[bridge:repl] Injecting inbound user message: ${preview}${uuid ? ` uuid=${uuid}` : ''}`);
               enqueue({

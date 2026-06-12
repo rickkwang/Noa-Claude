@@ -91,30 +91,6 @@ export function UserTextMessage(t0) {
     }
     return t1;
   }
-  if (feature("KAIROS_GITHUB_WEBHOOKS")) {
-    if (param.text.startsWith("<github-webhook-activity>")) {
-      let t1;
-      if ($[9] === Symbol.for("react.memo_cache_sentinel")) {
-        t1 = require("./UserGitHubWebhookMessage.js");
-        $[9] = t1;
-      } else {
-        t1 = $[9];
-      }
-      const {
-        UserGitHubWebhookMessage
-      } = t1 as typeof import('./UserGitHubWebhookMessage.js');
-      let t2;
-      if ($[10] !== addMargin || $[11] !== param) {
-        t2 = <UserGitHubWebhookMessage addMargin={addMargin} param={param} />;
-        $[10] = addMargin;
-        $[11] = param;
-        $[12] = t2;
-      } else {
-        t2 = $[12];
-      }
-      return t2;
-    }
-  }
   if (param.text.includes("<bash-input>")) {
     let t1;
     if ($[13] !== addMargin || $[14] !== param) {
