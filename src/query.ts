@@ -81,9 +81,6 @@ import {
 const skillPrefetch = feature('EXPERIMENTAL_SKILL_SEARCH')
   ? (require('./services/skillSearch/prefetch.js') as typeof import('./services/skillSearch/prefetch.js'))
   : null
-const jobClassifier = feature('TEMPLATES')
-  ? (require('./jobs/classifier.js') as typeof import('./jobs/classifier.js'))
-  : null
 /* eslint-enable @typescript-eslint/no-require-imports */
 import {
   remove as removeFromQueue,
@@ -133,9 +130,6 @@ import { count } from './utils/array.js'
 const snipModule = feature('HISTORY_SNIP')
   ? (require('./services/compact/snipCompact.js') as typeof import('./services/compact/snipCompact.js'))
   : null
-const taskSummaryModule = feature('BG_SESSIONS')
-  ? (require('./utils/taskSummary.js') as typeof import('./utils/taskSummary.js'))
-  : null
 /* eslint-enable @typescript-eslint/no-require-imports */
 
 function* yieldMissingToolResultBlocks(
@@ -163,6 +157,20 @@ function* yieldMissingToolResultBlocks(
         sourceToolAssistantUUID: assistantMessage.uuid,
       })
     }
+  }
+}
+
+/**
+ * Emit the user-interruption message after an abort. Skipped for
+ * submit-interrupts — the queued user message that follows provides
+ * sufficient context.
+ */
+function* yieldInterruptionNotice(
+  toolUseContext: ToolUseContext,
+  options: { toolUse: boolean },
+) {
+  if (toolUseContext.abortController.signal.reason !== 'interrupt') {
+    yield createUserInterruptionMessage(options)
   }
 }
 
@@ -1143,13 +1151,7 @@ async function* queryLoop(
           'Interrupted by user',
         )
       }
-      // Skip the interruption message for submit-interrupts — the queued
-      // user message that follows provides sufficient context.
-      if (toolUseContext.abortController.signal.reason !== 'interrupt') {
-        yield createUserInterruptionMessage({
-          toolUse: false,
-        })
-      }
+      yield* yieldInterruptionNotice(toolUseContext, { toolUse: false })
       return { reason: 'aborted_streaming' }
     }
 
@@ -1473,11 +1475,7 @@ async function* queryLoop(
       })
       if (goalEvaluatorAction === 'run') {
         if (toolUseContext.abortController.signal.aborted) {
-          if (toolUseContext.abortController.signal.reason !== 'interrupt') {
-            yield createUserInterruptionMessage({
-              toolUse: false,
-            })
-          }
+          yield* yieldInterruptionNotice(toolUseContext, { toolUse: false })
           return { reason: 'aborted_streaming' }
         }
         const currentGoal = normalizeGoal(goal)
@@ -1488,9 +1486,7 @@ async function* queryLoop(
             })
           : null
         if (toolUseContext.abortController.signal.aborted) {
-          if (toolUseContext.abortController.signal.reason !== 'interrupt') {
-            yield createUserInterruptionMessage({ toolUse: false })
-          }
+          yield* yieldInterruptionNotice(toolUseContext, { toolUse: false })
           return { reason: 'aborted_streaming' }
         }
         const { evaluation, evaluatorMessage } = await evaluateGoalCompletion({
@@ -1502,11 +1498,7 @@ async function* queryLoop(
           verifyResult,
         })
         if (toolUseContext.abortController.signal.aborted) {
-          if (toolUseContext.abortController.signal.reason !== 'interrupt') {
-            yield createUserInterruptionMessage({
-              toolUse: false,
-            })
-          }
+          yield* yieldInterruptionNotice(toolUseContext, { toolUse: false })
           return { reason: 'aborted_streaming' }
         }
         const accountEvaluatorUsage = () =>
@@ -1586,9 +1578,7 @@ async function* queryLoop(
           }
           if (goalRuntimeDecision.action === 'continue') {
             if (toolUseContext.abortController.signal.aborted) {
-              if (toolUseContext.abortController.signal.reason !== 'interrupt') {
-                yield createUserInterruptionMessage({ toolUse: false })
-              }
+              yield* yieldInterruptionNotice(toolUseContext, { toolUse: false })
               return { reason: 'aborted_streaming' }
             }
             state = nextState(state, {
@@ -1763,13 +1753,7 @@ async function* queryLoop(
 
     // We were aborted during tool calls
     if (toolUseContext.abortController.signal.aborted) {
-      // Skip the interruption message for submit-interrupts — the queued
-      // user message that follows provides sufficient context.
-      if (toolUseContext.abortController.signal.reason !== 'interrupt') {
-        yield createUserInterruptionMessage({
-          toolUse: true,
-        })
-      }
+      yield* yieldInterruptionNotice(toolUseContext, { toolUse: true })
       // Check maxTurns before returning when aborted
       const nextTurnCountOnAbort = turnCount + 1
       if (maxTurns && nextTurnCountOnAbort > maxTurns) {
@@ -1944,29 +1928,6 @@ async function* queryLoop(
 
     // Each time we have tool results and are about to recurse, that's a turn
     const nextTurnCount = turnCount + 1
-
-    // Periodic task summary for `claude ps` — fires mid-turn so a
-    // long-running agent still refreshes what it's working on. Gated
-    // only on !agentId so every top-level conversation (REPL, SDK, HFI,
-    // remote) generates summaries; subagents/forks don't.
-    if (feature('BG_SESSIONS')) {
-      if (
-        !toolUseContext.agentId &&
-        taskSummaryModule!.shouldGenerateTaskSummary()
-      ) {
-        taskSummaryModule!.maybeGenerateTaskSummary({
-          systemPrompt,
-          userContext,
-          systemContext,
-          toolUseContext,
-          forkContextMessages: [
-            ...messagesForQuery,
-            ...assistantMessages,
-            ...toolResults,
-          ],
-        })
-      }
-    }
 
     // Check if we've reached the max turns limit
     if (maxTurns && nextTurnCount > maxTurns) {
