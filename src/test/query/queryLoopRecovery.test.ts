@@ -21,6 +21,7 @@ import { asSystemPrompt } from '../../utils/systemPromptType.js'
 
 function createContext(
   tools: ToolUseContext['options']['tools'] = [],
+  goal?: Record<string, unknown>,
 ): ToolUseContext {
   const appState = {
     toolPermissionContext: { mode: 'default' },
@@ -34,7 +35,7 @@ function createContext(
     fastMode: false,
     effortValue: undefined,
     advisorModel: undefined,
-    goal: undefined,
+    goal,
   }
   return {
     options: {
@@ -278,6 +279,81 @@ describe('query loop recovery', () => {
 
     expect(modelCalls).toBe(1)
     expect(terminal).toEqual({ reason: 'stop_hook_prevented' })
+  }, 5000)
+
+  test('goal prompt: injected once even when a stop-hook block re-enters the loop', async () => {
+    // budget_limited passes shouldInjectGoalPrompt but skips the goal
+    // evaluator (which only runs for 'active' and would fork a side-query).
+    const goal = {
+      objective: 'finish the migration',
+      status: 'budget_limited',
+      tokenBudget: 1000,
+      verifyCommand: null,
+      tokensUsed: 0,
+      timeUsedSeconds: 0,
+      autoContinueTurns: 0,
+      maxAutoContinueTurns: 10,
+      lastEvaluatorReason: null,
+      completedAt: null,
+      stopReason: null,
+      createdAt: 0,
+      updatedAt: 0,
+    }
+
+    const callMessages: Message[][] = []
+    let alreadyBlocked = false
+    const stopHooks: QueryDeps['stopHooks'] = async function* () {
+      if (!alreadyBlocked) {
+        alreadyBlocked = true
+        return {
+          blockingErrors: [
+            createUserMessage({ content: 'Stop hook: blocked', isMeta: true }),
+          ],
+          preventContinuation: false,
+        }
+      }
+      return { blockingErrors: [], preventContinuation: false }
+    }
+    const deps = makeDeps(
+      async function* ({ messages }) {
+        callMessages.push(messages)
+        yield createAssistantMessage({ content: 'done' })
+      },
+      { stopHooks },
+    )
+
+    const { terminal } = await drain({
+      deps,
+      toolUseContext: createContext([], goal),
+    })
+
+    expect(callMessages.length).toBe(2)
+    // Regression guard: stop_hook_blocking re-enters the loop without
+    // bumping turnCount; a turnCount===1 injection guard prepended a second
+    // copy of the goal prompt on the retry iteration.
+    for (const call of callMessages) {
+      const goalPromptCount = call.filter(
+        m =>
+          m.type === 'user' &&
+          String(m.message?.content).includes('<untrusted_objective>'),
+      ).length
+      expect(goalPromptCount).toBe(1)
+    }
+    expect(terminal).toEqual({ reason: 'completed' })
+  }, 5000)
+
+  test('deps: explicitly-undefined members fall back to production deps', async () => {
+    const deps = makeDeps(async function* () {
+      yield createAssistantMessage({ content: 'ok' })
+    })
+    // A sparse Partial<QueryDeps> can carry undefined values; they must not
+    // clobber production implementations (uuid here — calling undefined()
+    // would throw at queryTracking setup).
+    deps.uuid = undefined
+
+    const { terminal } = await drain({ deps })
+
+    expect(terminal).toEqual({ reason: 'completed' })
   }, 5000)
 
   test('maxTurns: stops the tool-use loop with a max_turns terminal and attachment', async () => {

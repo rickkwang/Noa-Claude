@@ -294,7 +294,14 @@ async function* queryLoop(
     maxTurns,
     skipCacheWrite,
   } = params
-  const deps: QueryDeps = { ...productionDeps(), ...params.deps }
+  // Drop explicitly-undefined members before merging — spreading a sparse
+  // Partial copies `{ callModel: undefined }` over the production dep.
+  const deps: QueryDeps = {
+    ...productionDeps(),
+    ...Object.fromEntries(
+      Object.entries(params.deps ?? {}).filter(([, v]) => v !== undefined),
+    ),
+  }
 
   // Mutable cross-iteration state. The loop body destructures this at the top
   // of each iteration so reads stay bare-name (`messages`, `toolUseContext`).
@@ -580,11 +587,16 @@ async function* queryLoop(
     const appState = toolUseContext.getAppState()
     const permissionMode = appState.toolPermissionContext.mode
 
-    // Inject goal continuation prompt on first turn only. Must run before
-    // toolUseContext.messages is snapshotted below — otherwise tools
-    // executing this turn see a messages view missing the injected prompt.
+    // Inject goal continuation prompt on the first iteration only. Gated on
+    // state.transition, not turnCount: recovery continues (stop_hook_blocking,
+    // token_budget_continuation, max_output_tokens_recovery, compact retries)
+    // re-enter the loop without bumping turnCount, and messagesForQuery
+    // already carries the injected prompt — a turnCount guard prepended a
+    // duplicate copy per continue. Must run before toolUseContext.messages is
+    // snapshotted below — otherwise tools executing this turn see a messages
+    // view missing the injected prompt.
     if (
-      turnCount === 1 &&
+      state.transition === undefined &&
       !toolUseContext.agentId &&
       permissionMode !== 'plan'
     ) {
@@ -614,6 +626,13 @@ async function* queryLoop(
     // loop-exit signal. If false after streaming, we're done (modulo stop-hook retry).
     const toolUseBlocks: ToolUseBlock[] = []
     let needsFollowUp = false
+    // Whether the LAST assistant message was withheld from the stream. The
+    // prompt-too-long surface paths below re-yield only when this is true.
+    // The withhold predicates are runtime-gated (stub modules, statsig), so
+    // "module compiled in" does not imply "message was withheld" — assuming
+    // it does double-yields the error (e.g. dev-full builds where the
+    // reactiveCompact/contextCollapse stubs never withhold).
+    let lastAssistantWithheld = false
 
     queryCheckpoint('query_setup_start')
     const useStreamingToolExecution = config.gates.streamingToolExecution
@@ -792,6 +811,7 @@ async function* queryLoop(
               toolResults.length = 0
               toolUseBlocks.length = 0
               needsFollowUp = false
+              lastAssistantWithheld = false
 
               // Discard pending results from the failed streaming attempt and create
               // a fresh executor. This prevents orphan tool_results (with old tool_use_ids)
@@ -890,6 +910,7 @@ async function* queryLoop(
               yield yieldMessage
             }
             if (message.type === 'assistant') {
+              lastAssistantWithheld = withheld
               assistantMessages.push(message)
 
               const msgToolUseBlocks = message.message.content.filter(
@@ -977,6 +998,7 @@ async function* queryLoop(
             toolResults.length = 0
             toolUseBlocks.length = 0
             needsFollowUp = false
+            lastAssistantWithheld = false
 
             // Update tool use context with new model. Copy instead of
             // mutating options in place — options is shared by reference with
@@ -1232,19 +1254,27 @@ async function* queryLoop(
           continue
         }
 
-        // No recovery — surface the withheld error and exit. Do NOT fall
-        // through to stop hooks: the model never produced a valid response,
-        // so hooks have nothing meaningful to evaluate. Running stop hooks
-        // on prompt-too-long creates a death spiral: error → hook blocking
-        // → retry → error → … (the hook injects more tokens each cycle).
-        yield lastMessage
+        // No recovery — surface the withheld error and exit. Re-yield only
+        // if the stream loop actually withheld it (runtime-gated predicates
+        // may have let it through already — re-yielding then duplicates the
+        // error). Do NOT fall through to stop hooks: the model never
+        // produced a valid response, so hooks have nothing meaningful to
+        // evaluate. Running stop hooks on prompt-too-long creates a death
+        // spiral: error → hook blocking → retry → error → … (the hook
+        // injects more tokens each cycle).
+        if (lastAssistantWithheld) {
+          yield lastMessage
+        }
         void executeStopFailureHooks(lastMessage, toolUseContext)
         return { reason: isWithheldMedia ? 'image_error' : 'prompt_too_long' }
       } else if (feature('CONTEXT_COLLAPSE') && isWithheld413) {
         // reactiveCompact compiled out but contextCollapse withheld and
-        // couldn't recover (staged queue empty/stale). Surface. Same
-        // early-return rationale — don't fall through to stop hooks.
-        yield lastMessage
+        // couldn't recover (staged queue empty/stale). Surface (same
+        // withheld guard and early-return rationale as above — don't fall
+        // through to stop hooks).
+        if (lastAssistantWithheld) {
+          yield lastMessage
+        }
         void executeStopFailureHooks(lastMessage, toolUseContext)
         return { reason: 'prompt_too_long' }
       }
@@ -1298,6 +1328,16 @@ async function* queryLoop(
             toolUseContext,
             autoCompactTracking: tracking,
             maxOutputTokensRecoveryCount: maxOutputTokensRecoveryCount + 1,
+            // Keep the escalated cap through multi-turn recovery. Letting it
+            // reset re-arms the escalate branch above on the next iteration,
+            // burning a wasted capped-default call per recovery round
+            // (escalate → fail → recovery resets → capped retry → escalate
+            // again …). Caller-supplied overrides still reset (unchanged
+            // pre-escalate behavior).
+            maxOutputTokensOverride:
+              maxOutputTokensOverride === ESCALATED_MAX_TOKENS
+                ? ESCALATED_MAX_TOKENS
+                : undefined,
             transition: {
               reason: 'max_output_tokens_recovery',
               attempt: maxOutputTokensRecoveryCount + 1,
