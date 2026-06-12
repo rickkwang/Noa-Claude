@@ -37,6 +37,7 @@ export interface ProviderProfile {
 }
 
 const PROVIDER_PROFILES_PATH = join(getClaudeConfigHomeDir(), 'provider-profiles.json')
+const INVALID_CREDENTIAL_CHARS = /[\s\u0000-\u001f\u007f\u4e00-\u9fff]/
 
 export function getProviderProfilesPath(): string {
   return PROVIDER_PROFILES_PATH
@@ -63,7 +64,7 @@ export async function addProviderProfile(
 ): Promise<ProviderProfile> {
   const profiles = await loadProviderProfiles()
   const newProfile: ProviderProfile = {
-    ...profile,
+    ...normalizeProviderProfileCredential(profile),
     id: randomUUID(),
   }
   profiles.push(newProfile)
@@ -84,7 +85,7 @@ export async function updateProviderProfile(
   if (!existing) {
     return null
   }
-  const updated: ProviderProfile = { ...existing, ...updates }
+  const updated = normalizeProviderProfileCredential({ ...existing, ...updates })
   profiles[index] = updated
   await saveProviderProfiles(profiles)
   return updated
@@ -211,6 +212,24 @@ function setEnvKey(target: Record<string, string>, key: string, value?: string):
   target[key] = value
 }
 
+export function normalizeProviderProfileCredential<
+  T extends Pick<ProviderProfile, 'name' | 'apiKey'>,
+>(profile: T): T {
+  const apiKey = profile.apiKey?.trim()
+  if (!apiKey) {
+    const { apiKey: _apiKey, ...rest } = profile
+    return rest as T
+  }
+
+  if (INVALID_CREDENTIAL_CHARS.test(apiKey)) {
+    throw new Error(
+      `Provider profile "${profile.name}" has an invalid API key. Paste only the credential token, not notes or instructions.`,
+    )
+  }
+
+  return { ...profile, apiKey }
+}
+
 export function getActiveProviderProfile(
   profiles: ProviderProfile[],
 ): ProviderProfile | null {
@@ -219,13 +238,14 @@ export function getActiveProviderProfile(
 
 export function buildProviderEnv(profile: ProviderProfile): Record<string, string> {
   const env: Record<string, string> = {}
+  const normalizedProfile = normalizeProviderProfileCredential(profile)
   const normalizedBaseUrl = getNormalizedBaseUrl(profile)
 
-  switch (profile.type) {
+  switch (normalizedProfile.type) {
     case 'anthropic':
       setEnvKey(env, 'ANTHROPIC_BASE_URL', normalizedBaseUrl)
-      setEnvKey(env, 'ANTHROPIC_API_KEY', profile.apiKey)
-      setEnvKey(env, 'ANTHROPIC_MODEL', profile.model)
+      setEnvKey(env, 'ANTHROPIC_API_KEY', normalizedProfile.apiKey)
+      setEnvKey(env, 'ANTHROPIC_MODEL', normalizedProfile.model)
       break
     case 'minimax':
     case 'kimi':
@@ -233,13 +253,13 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
       // Only set ANTHROPIC_AUTH_TOKEN to avoid the "both token and API key set"
       // conflict warning from the SDK.
       setEnvKey(env, 'ANTHROPIC_BASE_URL', normalizedBaseUrl)
-      setEnvKey(env, 'ANTHROPIC_AUTH_TOKEN', profile.apiKey)
-      setEnvKey(env, 'ANTHROPIC_MODEL', profile.model)
-      if (profile.type === 'kimi') {
-        setEnvKey(env, 'ANTHROPIC_DEFAULT_OPUS_MODEL', profile.model)
-        setEnvKey(env, 'ANTHROPIC_DEFAULT_SONNET_MODEL', profile.model)
-        setEnvKey(env, 'ANTHROPIC_DEFAULT_HAIKU_MODEL', profile.model)
-        setEnvKey(env, 'CLAUDE_CODE_SUBAGENT_MODEL', profile.model)
+      setEnvKey(env, 'ANTHROPIC_AUTH_TOKEN', normalizedProfile.apiKey)
+      setEnvKey(env, 'ANTHROPIC_MODEL', normalizedProfile.model)
+      if (normalizedProfile.type === 'kimi') {
+        setEnvKey(env, 'ANTHROPIC_DEFAULT_OPUS_MODEL', normalizedProfile.model)
+        setEnvKey(env, 'ANTHROPIC_DEFAULT_SONNET_MODEL', normalizedProfile.model)
+        setEnvKey(env, 'ANTHROPIC_DEFAULT_HAIKU_MODEL', normalizedProfile.model)
+        setEnvKey(env, 'CLAUDE_CODE_SUBAGENT_MODEL', normalizedProfile.model)
       }
       break
     case 'openai':
@@ -259,10 +279,10 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
     case 'mimo':
       env.CLAUDE_CODE_USE_OPENAI = '1'
       setEnvKey(env, 'OPENAI_BASE_URL', normalizedBaseUrl)
-      setEnvKey(env, 'OPENAI_API_KEY', profile.apiKey)
+      setEnvKey(env, 'OPENAI_API_KEY', normalizedProfile.apiKey)
       // Keep the runtime model in sync with the selected provider too.
-      setEnvKey(env, 'ANTHROPIC_MODEL', profile.model)
-      setEnvKey(env, 'OPENAI_MODEL', profile.model)
+      setEnvKey(env, 'ANTHROPIC_MODEL', normalizedProfile.model)
+      setEnvKey(env, 'OPENAI_MODEL', normalizedProfile.model)
       break
   }
 
@@ -289,13 +309,16 @@ export async function setActiveProviderProfile(
   id: string,
 ): Promise<ProviderProfile | null> {
   const profiles = await loadProviderProfiles()
-  let activeProfile: ProviderProfile | null = null
-  const nextProfiles = profiles.map(profile => {
-    const isActive = profile.id === id
-    if (isActive) activeProfile = { ...profile, active: true }
-    return { ...profile, active: isActive }
+  const selected = profiles.find(profile => profile.id === id)
+  if (!selected) return null
+
+  const activeProfile = normalizeProviderProfileCredential({
+    ...selected,
+    active: true,
   })
-  if (!activeProfile) return null
+  const nextProfiles = profiles.map(profile =>
+    profile.id === id ? activeProfile : { ...profile, active: false },
+  )
   await saveProviderProfiles(nextProfiles)
   return activeProfile
 }
