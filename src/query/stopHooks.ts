@@ -21,6 +21,7 @@ import {
   type HookAttachment,
 } from '../utils/attachments.js'
 import { errorMessage } from '../utils/errors.js'
+import { logError } from '../utils/log.js'
 import type { REPLHookContext } from '../utils/hooks/postSamplingHooks.js'
 import {
   executeStopHooks,
@@ -104,7 +105,7 @@ export async function* handleStopHooks(
   if (!isBareMode()) {
     // Inline env check for dead code elimination in external builds
     if (!isEnvDefinedFalsy(process.env.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION)) {
-      void executePromptSuggestion(stopHookContext)
+      void executePromptSuggestion(stopHookContext).catch(logError)
     }
     if (
       feature('EXTRACT_MEMORIES') &&
@@ -117,10 +118,10 @@ export async function* handleStopHooks(
       void extractMemoriesModule!.executeExtractMemories(
         stopHookContext,
         toolUseContext.appendSystemMessage,
-      )
+      ).catch(logError)
     }
     if (!toolUseContext.agentId) {
-      void executeAutoDream(stopHookContext, toolUseContext.appendSystemMessage)
+      void executeAutoDream(stopHookContext, toolUseContext.appendSystemMessage).catch(logError)
     }
   }
 
