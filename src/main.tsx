@@ -1773,9 +1773,6 @@ async function run(): Promise<CommanderCommand> {
     const {
       setup
     } = await import('./setup.js');
-    const messagingSocketPath = feature('UDS_INBOX') ? (options as {
-      messagingSocketPath?: string;
-    }).messagingSocketPath : undefined;
     // Parallelize setup() with commands+agents loading. setup()'s ~28ms is
     // mostly startUdsMessaging (socket bind, ~20ms) — not disk-bound, so it
     // doesn't contend with getCommands' file reads. Gated on !worktreeEnabled
@@ -1790,7 +1787,7 @@ async function run(): Promise<CommanderCommand> {
       initBuiltinPlugins();
       initBundledSkills();
     }
-    const setupPromise = setup(preSetupCwd, permissionMode, allowDangerouslySkipPermissions, worktreeEnabled, worktreeName, tmuxEnabled, sessionId ? validateUuid(sessionId) : undefined, worktreePRNumber, messagingSocketPath);
+    const setupPromise = setup(preSetupCwd, permissionMode, allowDangerouslySkipPermissions, worktreeEnabled, worktreeName, tmuxEnabled, sessionId ? validateUuid(sessionId) : undefined, worktreePRNumber);
     const commandsPromise = worktreeEnabled ? null : getCommands(preSetupCwd);
     const agentDefsPromise = worktreeEnabled ? null : getAgentDefinitionsWithOverrides(preSetupCwd);
     // Suppress transient unhandledRejection if these reject during the
@@ -1807,14 +1804,7 @@ async function run(): Promise<CommanderCommand> {
     // shouldn't reshape stream-json for SDK consumers who never touch it.
     // Callers who inject and also want those injections visible in the
     // stream pass --messaging-socket-path explicitly (or --replay-user-messages).
-    let effectiveReplayUserMessages = !!options.replayUserMessages;
-    if (feature('UDS_INBOX')) {
-      if (!effectiveReplayUserMessages && outputFormat === 'stream-json') {
-        effectiveReplayUserMessages = !!(options as {
-          messagingSocketPath?: string;
-        }).messagingSocketPath;
-      }
-    }
+    const effectiveReplayUserMessages = !!options.replayUserMessages;
     if (getIsNonInteractiveSession()) {
       // Apply full merged settings env now (including project-scoped
       // .noa/settings.json PATH/GIT_DIR/GIT_WORK_TREE) so gitExe() and

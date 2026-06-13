@@ -61,7 +61,6 @@ export async function setup(
   tmuxEnabled: boolean,
   customSessionId?: string | null,
   worktreePRNumber?: number,
-  messagingSocketPath?: string,
 ): Promise<void> {
   logForDiagnosticsNoPII('info', 'setup_started')
 
@@ -84,19 +83,16 @@ export async function setup(
 
   // --bare / SIMPLE: skip UDS messaging server and teammate snapshot.
   // Scripted calls don't receive injected messages and don't use swarm teammates.
-  // Explicit --messaging-socket-path is the escape hatch (per #23222 gate pattern).
-  if (!isBareMode() || messagingSocketPath !== undefined) {
-    // Start UDS messaging server (Mac/Linux only).
-    // Enabled by default for ants — creates a socket in tmpdir if no
-    // --messaging-socket-path is passed. Awaited so the server is bound
-    // and $CLAUDE_CODE_MESSAGING_SOCKET is exported before any hook
-    // (SessionStart in particular) can spawn and snapshot process.env.
+  if (!isBareMode()) {
+    // Start UDS messaging server (Mac/Linux only). Creates a socket in
+    // tmpdir. Awaited so the server is bound and $CLAUDE_CODE_MESSAGING_SOCKET
+    // is exported before any hook (SessionStart in particular) can spawn and
+    // snapshot process.env.
     {
       const m = await import('./utils/udsMessaging.js')
-      await m.startUdsMessaging(
-        messagingSocketPath ?? m.getDefaultUdsSocketPath(),
-        { isExplicit: messagingSocketPath !== undefined },
-      )
+      await m.startUdsMessaging(m.getDefaultUdsSocketPath(), {
+        isExplicit: false,
+      })
     }
   }
 

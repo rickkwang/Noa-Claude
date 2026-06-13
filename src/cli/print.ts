@@ -2735,18 +2735,6 @@ function runHeadlessStreaming(
     }
   }
 
-  // Set up UDS inbox callback so the query loop is kicked off
-  // when a message arrives via the UDS socket in headless mode.
-  if (feature('UDS_INBOX')) {
-    /* eslint-disable @typescript-eslint/no-require-imports */
-    const { setOnEnqueue } = require('../utils/udsMessaging.js')
-    /* eslint-enable @typescript-eslint/no-require-imports */
-    setOnEnqueue(() => {
-      if (!inputClosed) {
-        void run()
-      }
-    })
-  }
 
   // Cron scheduler: runs scheduled_tasks.json tasks in SDK/-p mode.
   // Mirrors REPL's useScheduledTasks hook. Fired prompts enqueue + kick
