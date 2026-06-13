@@ -75,12 +75,24 @@ This file is the build/runtime audit for experimental feature flags in this repo
 
 ## Not Unlockable in This Build (by flag-only unlock)
 
-Implementation modules absent from this repository — enabling any of these
+Implementation modules absent from this repository — enabling either of these
 fails `bun run build:dev:full` at bundle resolve time (see the omission note
 above `fullExperimentalFeatures` in build.ts):
 
+- `COORDINATOR_MODE` (coordinator/workerAgent) — `isCoordinatorMode()` resolves
+  false; its branches are deeply woven into resume/session hot paths and are
+  retained rather than excised.
+- `TRANSCRIPT_CLASSIFIER` (yolo-classifier-prompts/*.txt) — the auto-mode/yolo
+  gates resolve false; their branches are woven through the permission hot path
+  and are retained rather than excised.
+
+### Removed never-buildable surfaces
+
+The following flags previously gated absent modules. Their `feature()` branches
+have been deleted from source entirely (they no longer appear in any build), so
+they are no longer flag-unlockable and no longer carry dead branches:
+
 - `BG_SESSIONS` (utils/taskSummary, utils/udsClient)
-- `COORDINATOR_MODE` (coordinator/workerAgent)
 - `DIRECT_CONNECT` (src/server/* command surface)
 - `FORK_SUBAGENT` (UserForkBoilerplateMessage)
 - `KAIROS_GITHUB_WEBHOOKS` (bridge/webhookSanitizer, UserGitHubWebhookMessage)
@@ -89,7 +101,6 @@ above `fullExperimentalFeatures` in build.ts):
 - `REVIEW_ARTIFACT` (ReviewArtifactTool + permission UI)
 - `SSH_REMOTE` (ssh/createSSHSession implementation)
 - `TEMPLATES` (src/jobs)
-- `TRANSCRIPT_CLASSIFIER` (yolo-classifier-prompts/*.txt)
 - `UDS_INBOX` (UserCrossSessionMessage)
 - `WORKFLOW_SCRIPTS` (WorkflowTool + LocalWorkflowTask + dialogs)
 

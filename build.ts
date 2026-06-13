@@ -20,15 +20,16 @@ const dev = args.includes('--dev')
 
 // Flags whose gated modules are MISSING from this fork are omitted below —
 // enabling them fails the bundle at resolve time (`bun run build:dev:full`
-// is the canary). Omitted for that reason: BG_SESSIONS (utils/taskSummary,
-// utils/udsClient), COORDINATOR_MODE (coordinator/workerAgent), DIRECT_CONNECT
-// (src/server/* command surface), FORK_SUBAGENT (UserForkBoilerplateMessage),
-// KAIROS_GITHUB_WEBHOOKS (bridge/webhookSanitizer, UserGitHubWebhookMessage),
-// MCP_SKILLS (skills/mcpSkills), MONITOR_TOOL (tasks/MonitorMcpTask + dialogs),
-// REVIEW_ARTIFACT (ReviewArtifactTool + permission UI), SSH_REMOTE
-// (ssh/createSSHSession impl), TEMPLATES (src/jobs), TRANSCRIPT_CLASSIFIER
-// (yolo-classifier-prompts/*.txt), UDS_INBOX (UserCrossSessionMessage),
-// WORKFLOW_SCRIPTS (WorkflowTool + LocalWorkflowTask + dialogs).
+// is the canary). Two remain referenced in source and are omitted for that
+// reason: COORDINATOR_MODE (coordinator/workerAgent) and TRANSCRIPT_CLASSIFIER
+// (yolo-classifier-prompts/*.txt). Their gates resolve false at runtime; the
+// branches are woven through hot paths and retained rather than excised.
+//
+// The remaining never-buildable flags (BG_SESSIONS, DIRECT_CONNECT,
+// FORK_SUBAGENT, KAIROS_GITHUB_WEBHOOKS, MCP_SKILLS, MONITOR_TOOL,
+// REVIEW_ARTIFACT, SSH_REMOTE, TEMPLATES, UDS_INBOX, WORKFLOW_SCRIPTS) have had
+// their feature() branches deleted from source entirely — they no longer gate
+// anything and are simply absent below. See FEATURES.md.
 const fullExperimentalFeatures = [
   'AGENT_MEMORY_SNAPSHOT',
   'AGENT_TRIGGERS',
