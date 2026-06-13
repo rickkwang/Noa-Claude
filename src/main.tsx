@@ -1798,12 +1798,9 @@ async function run(): Promise<CommanderCommand> {
     logForDebugging(`[STARTUP] setup() completed in ${Date.now() - setupStart}ms`);
     profileCheckpoint('action_after_setup');
 
-    // Replay user messages into stream-json only when the socket was
-    // explicitly requested. The auto-generated socket is passive — it
-    // lets tools inject if they want to, but turning it on by default
-    // shouldn't reshape stream-json for SDK consumers who never touch it.
-    // Callers who inject and also want those injections visible in the
-    // stream pass --messaging-socket-path explicitly (or --replay-user-messages).
+    // Replay user messages into stream-json only when explicitly requested.
+    // The auto-generated socket is passive; replaying by default would reshape
+    // stream-json for SDK consumers who never touch injected messages.
     const effectiveReplayUserMessages = !!options.replayUserMessages;
     if (getIsNonInteractiveSession()) {
       // Apply full merged settings env now (including project-scoped
@@ -3692,8 +3689,8 @@ async function run(): Promise<CommanderCommand> {
   // default action. The subcommand registration path was measured at ~65ms
   // on baseline — mostly the isBridgeEnabled() call (25ms settings Zod parse
   // + 40ms sync keychain subprocess), both hidden by the try/catch that
-  // always returns false before enableConfigs(). cc:// URLs are rewritten to
-  // `open` at main() line ~851 BEFORE this runs, so argv check is safe here.
+  // always returns false before enableConfigs(). cc:// URLs are excluded from
+  // this fast path so commander can surface the normal unsupported-input error.
   const isPrintMode = process.argv.includes('-p') || process.argv.includes('--print');
   const isCcUrl = process.argv.some(a => a.startsWith('cc://') || a.startsWith('cc+unix://'));
   if (isPrintMode && !isCcUrl) {

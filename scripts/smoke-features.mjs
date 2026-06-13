@@ -334,6 +334,13 @@ async function runCommandSurfaceSmoke() {
     );
   }
 
+  const forkCommandEntry = commandsModule.findCommand('fork', commands);
+  assert(
+    forkCommandEntry?.name === 'fork',
+    '/fork must resolve to the resumable fork command, not an alias on another command',
+    forkCommandEntry,
+  );
+
   const stubCommands = surfaceStatus
     .getCommandSurfacesByCategory('stub')
     .map(entry => entry.command.replace('/', ''));

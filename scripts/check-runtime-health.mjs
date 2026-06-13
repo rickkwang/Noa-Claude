@@ -96,7 +96,7 @@ import {
   _shouldShowResumeSummaryGateForTesting,
 } from '../src/commands/resume/resume.tsx';
 import { executeEffort } from '../src/commands/effort/effort.tsx';
-import { _isForkSubagentEnabledForTesting } from '../src/tools/AgentTool/forkSubagent.ts';
+import { isForkSubagentEnabled } from '../src/tools/AgentTool/forkSubagent.ts';
 import { _checkFindExecDeleteForTesting } from '../src/tools/BashTool/pathValidation.ts';
 import {
   RESUME_SUMMARY_GATE_LARGE_BYTES,
@@ -1175,47 +1175,39 @@ function checkResumeDiagnostics() {
 }
 
 function checkForkSubagentRuntimeGate() {
-  assert(
-    _isForkSubagentEnabledForTesting({
-      featureEnabled: true,
-      userType: 'ant',
-      isCoordinator: false,
-      isNonInteractive: false,
-    }),
-    'fork subagent should be enabled for internal users when feature is on',
-  );
+  const previousForkSubagentEnv = process.env.CLAUDE_CODE_FORK_SUBAGENT;
+  const previousUserType = process.env.USER_TYPE;
+  try {
+    delete process.env.CLAUDE_CODE_FORK_SUBAGENT;
+    delete process.env.USER_TYPE;
+    assert(
+      !isForkSubagentEnabled(),
+      'fork subagent should be disabled in this build',
+    );
 
-  assert(
-    !_isForkSubagentEnabledForTesting({
-      featureEnabled: true,
-      userType: undefined,
-      forkSubagentEnv: undefined,
-      isCoordinator: false,
-      isNonInteractive: false,
-    }),
-    'fork subagent should be disabled for external builds without opt-in env',
-  );
+    process.env.CLAUDE_CODE_FORK_SUBAGENT = '1';
+    assert(
+      !isForkSubagentEnabled(),
+      'CLAUDE_CODE_FORK_SUBAGENT should not unlock fork subagents in this build',
+    );
 
-  assert(
-    _isForkSubagentEnabledForTesting({
-      featureEnabled: true,
-      userType: undefined,
-      forkSubagentEnv: '1',
-      isCoordinator: false,
-      isNonInteractive: false,
-    }),
-    'fork subagent should be enabled for external builds with explicit env opt-in',
-  );
-
-  assert(
-    !_isForkSubagentEnabledForTesting({
-      featureEnabled: true,
-      userType: 'ant',
-      isCoordinator: false,
-      isNonInteractive: true,
-    }),
-    'fork subagent should remain disabled in non-interactive mode',
-  );
+    process.env.USER_TYPE = 'ant';
+    assert(
+      !isForkSubagentEnabled(),
+      'internal user type should not unlock fork subagents in this build',
+    );
+  } finally {
+    if (previousForkSubagentEnv === undefined) {
+      delete process.env.CLAUDE_CODE_FORK_SUBAGENT;
+    } else {
+      process.env.CLAUDE_CODE_FORK_SUBAGENT = previousForkSubagentEnv;
+    }
+    if (previousUserType === undefined) {
+      delete process.env.USER_TYPE;
+    } else {
+      process.env.USER_TYPE = previousUserType;
+    }
+  }
 }
 
 async function checkQueryEnginePermissionDenialsAreTurnScoped() {
