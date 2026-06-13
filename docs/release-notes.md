@@ -1,5 +1,46 @@
 # Release Notes
 
+## 1.4.0
+
+### New Features
+
+- **Keep-tail auto-compact** — auto-compaction now preserves a verbatim recent tail instead of replacing the entire conversation with a summary. A pivot is chosen so that older history is summarized while the most recent messages (including in-flight tool chains) remain intact. Falls back to full compaction when the window is too small, the tail would exceed threshold headroom, or the conversation is already re-compacting in a chain. Controlled via `CLAUDE_CODE_AUTOCOMPACT_KEEP_TAIL` (default on).
+- **Compact safety-constraint preservation** — the compact prompt now explicitly instructs the model to preserve verbatim any safety or destructive-action constraints the user set (sensitive files, forbidden operations, secret handling) so they survive summarization.
+
+### Refactors
+
+- **Query loop harness extracted** — `query.ts` refactored into `query/transitions.ts` (state machine), `query/deps.ts` (dependency injection), `query/config.ts`, `query/tokenBudget.ts`, and `query/stopHooks.ts`. All `@ts-nocheck` annotations removed from the query directory; phantom types (`ToolUseSummaryMessage`, `StreamEvent`, `RequestStartEvent`, `TombstoneMessage`, `StopHookInfo`) now formally defined. Stop hooks are injectable via `QueryDeps` for testability.
+- **Dead-code cleanup (13 upstream-only flags)** — removed never-buildable branches for `BG_SESSIONS`, `COORDINATOR_MODE`, `DIRECT_CONNECT`, `FORK_SUBAGENT`, `KAIROS_GITHUB_WEBHOOKS`, `MCP_SKILLS`, `MONITOR_TOOL`, `REVIEW_ARTIFACT`, `SSH_REMOTE`, `TEMPLATES`, `TRANSCRIPT_CLASSIFIER`, `UDS_INBOX`, `WORKFLOW_SCRIPTS`. Added no-op stubs for `HISTORY_SNIP`, `KAIROS`, `TERMINAL_PANEL`, and `EXPERIMENTAL_SKILL_SEARCH` so the dev-full profile bundles cleanly. `FEATURES.md` updated with removal audit.
+- **Vestigial sourcemap cleanup** — stripped 12MB of stale inline sourcemaps from 531 source files (leftover from prior bundle reconstruction, mapping to obsolete positions). Tracked source size reduced from ~16.8MB to ~4.7MB for these files; no runtime or build effect.
+
+### Bug Fixes
+
+- **Query loop recovery hardened** — five fixes from harness review:
+  1. `stopHooks` snapshot now respects `startsWith` output-style suffixes so `/btw` and styled paths read fresh params.
+  2. Goal continuation prompt deduplicated: gated on `state.transition === undefined` instead of `turnCount === 1`, preventing duplicate injection on recovery re-entries.
+  3. Prompt-too-long re-yield now tracks `lastAssistantWithheld` so dev-full builds no longer emit withheld errors twice.
+  4. `max_output_tokens` recovery carries the escalated 64k cap through retries instead of resetting to the capped default.
+  5. `QueryDeps` merge filters explicit `undefined` before spreading, preventing sparse partials from overwriting production deps.
+- **Microcompact input clearing** — `clearOldToolResults` now also replaces large Write/Edit input strings (≥1000 chars) with a marker, preventing write-heavy sessions from retaining duplicate on-disk content that dwarfed actual tool results.
+- **Reactive compact stub** — added `services/compact/reactiveCompact.ts` no-op stub so `--feature=REACTIVE_COMPACT` builds no longer fail with "Could not resolve".
+- **Provider profile credential validation** — API keys now pass CJK/whitespace denylist normalization before becoming Bearer tokens, preventing malformed credentials from reaching the wire.
+- **Bedrock count_tokens adaptive thinking** — `countTokensWithBedrock` now branches on `modelSupportsAdaptiveThinking` for Opus 4.7/4.8 and Fable 5, fixing silent degradation to rough estimation when `budget_tokens` was rejected on adaptive-only models.
+- **Fire-and-forget promise rejection handling** — `recordTranscript` (3x in `QueryEngine.ts`) and stop-hook executions (`executePromptSuggestion`, `executeExtractMemories`, `executeAutoDream`) now attach `.catch(logError)` instead of relying solely on the global `unhandledRejection` net. Failed transcript writes log with context instead of surfacing as anonymous `tengu_unhandled_rejection`.
+- **Transcript logging rejection handling** — `useLogMessages.ts` enqueueWrite promise now catches rejections, preventing unhandled rejections from the logging pipeline.
+- **Remote skill stub contract** — corrected `remoteSkillState.ts` to match the expected stub contract used by `query/transitions.ts`.
+- **Kimi model display cleanup** — removed dead `kimi-for-coding` display branches from `model.ts`; display now renders the raw id with no marketing name.
+
+### Tests
+
+- **Query loop recovery tests** — 5 loop-level recovery tests via `QueryDeps` injection: `max_output_tokens` withhold+resume, limit exhaustion, model fallback without mutating caller options, empty assistant turn, maxTurns. Regression guard: recovery limit 3→0 turns 2 tests red.
+- **Stop-hook loop tests** — coverage for both stop-hook paths: `stop_hook_blocking` feeds the error back to the model and the second round receives `stop_hook_active=true`; `preventContinuation` ends the turn with the `stop_hook_prevented` terminal.
+- **Microcompact tests** — expanded coverage for large Write/Edit input clearing and tokens-saved accounting.
+- **Reactive compact tests** — stub contract verification.
+- **Auto-compact tests** — 172 lines covering tail pivot selection, tool-chain boundary snap, environment flag disable, small window, threshold headroom, and re-compaction chain fallback.
+- **Compact partial tests** — 72 lines covering `getPartialCompactMessagesToSummarize` direction behavior and auto partial failure notification suppression.
+- **Provider profile tests** — 63 lines covering credential validation and denylist behavior.
+- **Kimi display tests** — repinned to passthrough behavior after display branch removal.
+
 ## 1.3.7
 
 ### New Features
