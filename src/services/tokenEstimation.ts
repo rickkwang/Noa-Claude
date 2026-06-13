@@ -473,10 +473,12 @@ async function countTokensWithBedrock({
       ...(tools.length > 0 && { tools }),
       ...(betas.length > 0 && { anthropic_beta: betas }),
       ...(containsThinking && {
-        thinking: {
-          type: 'enabled',
-          budget_tokens: TOKEN_COUNT_THINKING_BUDGET,
-        },
+        thinking: modelSupportsAdaptiveThinking(model)
+          ? { type: 'adaptive' }
+          : {
+              type: 'enabled',
+              budget_tokens: TOKEN_COUNT_THINKING_BUDGET,
+            },
       }),
     }
 
