@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import { useAppState } from '../state/AppState.js'
 import type { Message } from '../types/message.js'
 import { isAgentSwarmsEnabled } from '../utils/agentSwarmsEnabled.js'
+import { logError } from '../utils/log.js'
 import {
   cleanMessagesForLogging,
   isChainParticipant,
@@ -87,7 +88,7 @@ export function useLogMessages(messages: Message[], ignore: boolean = false) {
       if (lastRecordedUuid && !isIncremental) {
         lastParentUuidRef.current = lastRecordedUuid
       }
-    })
+    }).catch(logError)
 
     // Sync-walk safe for: incremental (pure new-tail slice), first-render
     // (no messagesToKeep interleaving), and same-head shrink. Shrink is the

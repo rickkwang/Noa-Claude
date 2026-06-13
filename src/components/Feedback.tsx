@@ -396,5 +396,3 @@ function createFallbackTitle(description: string): string {
   }
   return truncated.length < 10 ? 'Bug Report' : truncated;
 }
-
-
