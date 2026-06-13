@@ -5,8 +5,10 @@ import {
   buildPostCompactMessages,
   createPostCompactContextAttachments,
   estimatePayloadTokensSaved,
+  getPartialCompactMessagesToSummarize,
   isCompactionUserAbort,
   isStaleFullCompactSummary,
+  partialCompactConversation,
   snapshotCompactContextState,
 } from '../../../services/compact/compact.js'
 import {
@@ -288,6 +290,76 @@ describe('isStaleFullCompactSummary', () => {
     expect(isStaleFullCompactSummary(makeAssistantMessage('a-1', 'hi'))).toBe(
       false,
     )
+  })
+})
+
+describe('getPartialCompactMessagesToSummarize', () => {
+  test('keeps prior full compact summaries when summarizing an up_to prefix', () => {
+    const oldBoundary = createCompactBoundaryMessage(
+      'auto',
+      1000,
+      OLD_TURN_ID,
+    )
+    const oldSummary = createUserMessage({
+      content: 'Summary:\n- older history that no longer exists verbatim',
+      isCompactSummary: true,
+      summarizeMetadata: { direction: 'up_to' },
+    })
+    const middle = makeAssistantMessage('middle', 'continued work')
+    const tail = makeAssistantMessage('tail', 'recent tail')
+    const messages = [oldBoundary, oldSummary, middle, tail]
+
+    const selected = getPartialCompactMessagesToSummarize(messages, 3, 'up_to')
+
+    expect(selected.map(m => m.uuid)).toEqual([
+      oldBoundary.uuid,
+      oldSummary.uuid,
+      middle.uuid,
+    ])
+  })
+
+  test('still skips stale full compact summaries when summarizing a from suffix', () => {
+    const kept = makeAssistantMessage('kept-prefix', 'kept prefix')
+    const oldSummary = createUserMessage({
+      content: 'Summary:\n- stale earlier summary',
+      isCompactSummary: true,
+      summarizeMetadata: { direction: 'up_to' },
+    })
+    const suffix = makeAssistantMessage('suffix', 'suffix to summarize')
+
+    const selected = getPartialCompactMessagesToSummarize(
+      [kept, oldSummary, suffix],
+      1,
+      'from',
+    )
+
+    expect(selected.map(m => m.uuid)).toEqual(['suffix'])
+  })
+})
+
+describe('partialCompactConversation error handling', () => {
+  test('does not surface manual compact notifications for auto partial failures', async () => {
+    const notifications: unknown[] = []
+    const context = {
+      abortController: new AbortController(),
+      addNotification: (notification: unknown) => {
+        notifications.push(notification)
+      },
+    } as never
+
+    await expect(
+      partialCompactConversation(
+        [makeAssistantMessage('tail-only', 'nothing before pivot')],
+        0,
+        context,
+        {} as never,
+        undefined,
+        'up_to',
+        { trigger: 'auto', ownsLifecycle: false },
+      ),
+    ).rejects.toThrow('Nothing to summarize before the selected message.')
+
+    expect(notifications).toEqual([])
   })
 })
 

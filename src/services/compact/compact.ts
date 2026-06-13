@@ -539,6 +539,24 @@ export function isStaleFullCompactSummary(message: Message): boolean {
   )
 }
 
+export function getPartialCompactMessagesToSummarize(
+  allMessages: Message[],
+  pivotIndex: number,
+  direction: PartialCompactDirection,
+): Message[] {
+  const messages =
+    direction === 'up_to'
+      ? allMessages.slice(0, pivotIndex)
+      : allMessages.slice(pivotIndex)
+  // For 'up_to', prior full/session-memory summaries are the only surviving
+  // representation of older history and must be re-summarized into the new
+  // prefix summary. 'from' summaries cover the recent suffix only, so stale
+  // full summaries can still be skipped there.
+  return direction === 'up_to'
+    ? messages
+    : messages.filter(m => !isStaleFullCompactSummary(m))
+}
+
 /**
  * Creates a compact version of a conversation by summarizing older messages.
  */
@@ -896,18 +914,35 @@ export async function partialCompactConversation(
   cacheSafeParams: CacheSafeParams,
   userFeedback?: string,
   direction: PartialCompactDirection = 'from',
+  // Auto-path overrides. Defaults reproduce the manual REPL behavior exactly,
+  // so existing callers are unaffected. When the auto path calls this, it
+  // already owns the compact lifecycle (begin/endCompactLifecycle) and has
+  // already run pre-compact hooks — passing preCompactHookResult +
+  // ownsLifecycle:false prevents double hooks / double compact_start.
+  opts?: {
+    trigger?: 'manual' | 'auto'
+    suppressFollowUpQuestions?: boolean
+    preCompactHookResult?: PreCompactHookResult
+    ownsLifecycle?: boolean
+    // Auto path only: lets the event report whether the post-compact context
+    // will re-cross the threshold (parity with full compact's willRetrigger).
+    autoCompactThreshold?: number
+  },
 ): Promise<CompactionResult> {
+  const trigger = opts?.trigger ?? 'manual'
+  const ownsLifecycle = opts?.ownsLifecycle ?? true
+  const suppressFollowUpQuestions = opts?.suppressFollowUpQuestions ?? false
   // See compactConversation: hoisted to allow catch-path rollback of the
   // readFileState clear.
   let preCompactContextState:
     | ReturnType<typeof snapshotCompactContextState>
     | undefined
   try {
-    const messagesToSummarize = (
-      direction === 'up_to'
-        ? allMessages.slice(0, pivotIndex)
-        : allMessages.slice(pivotIndex)
-    ).filter(m => !isStaleFullCompactSummary(m))
+    const messagesToSummarize = getPartialCompactMessagesToSummarize(
+      allMessages,
+      pivotIndex,
+      direction,
+    )
     // 'up_to' must strip old compact boundaries/summaries: for 'up_to',
     // summary_B sits BEFORE kept, so a stale boundary_A in kept wins
     // findLastCompactBoundaryIndex's backward scan and drops summary_B.
@@ -935,19 +970,21 @@ export async function partialCompactConversation(
 
     const preCompactTokenCount = tokenCountWithEstimation(allMessages)
 
-    context.onCompactProgress?.({
-      type: 'hooks_start',
-      hookType: 'pre_compact',
-    })
-
-    context.setSDKStatus?.('compacting')
-    const hookResult = await executePreCompactHooks(
-      {
-        trigger: 'manual',
-        customInstructions: null,
-      },
-      context.abortController.signal,
-    )
+    let hookResult = opts?.preCompactHookResult
+    if (!hookResult) {
+      context.onCompactProgress?.({
+        type: 'hooks_start',
+        hookType: 'pre_compact',
+      })
+      context.setSDKStatus?.('compacting')
+      hookResult = await executePreCompactHooks(
+        {
+          trigger,
+          customInstructions: null,
+        },
+        context.abortController.signal,
+      )
+    }
 
     // Merge hook instructions with user feedback
     let customInstructions: string | undefined
@@ -961,7 +998,9 @@ export async function partialCompactConversation(
 
     context.setStreamMode?.('requesting')
     context.setResponseLength?.(() => 0)
-    context.onCompactProgress?.({ type: 'compact_start' })
+    if (ownsLifecycle) {
+      context.onCompactProgress?.({ type: 'compact_start' })
+    }
 
     const compactPrompt = getPartialCompactPrompt(
       customInstructions,
@@ -1074,23 +1113,6 @@ export async function partialCompactConversation(
     ])
     const compactionUsage = getTokenUsage(summaryResponse)
 
-    logEvent('tengu_partial_compact', {
-      preCompactTokenCount,
-      postCompactTokenCount,
-      messagesKept: messagesToKeep.length,
-      messagesSummarized: messagesToSummarize.length,
-      direction:
-        direction as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      hasUserFeedback: !!userFeedback,
-      trigger:
-        'message_selector' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      compactionInputTokens: compactionUsage?.input_tokens,
-      compactionOutputTokens: compactionUsage?.output_tokens,
-      compactionCacheReadTokens: compactionUsage?.cache_read_input_tokens ?? 0,
-      compactionCacheCreationTokens:
-        compactionUsage?.cache_creation_input_tokens ?? 0,
-    })
-
     // Progress messages aren't loggable, so forkSessionImpl would null out
     // a logicalParentUuid pointing at one. Both directions skip them.
     const lastPreCompactUuid =
@@ -1099,7 +1121,7 @@ export async function partialCompactConversation(
             ?.uuid
         : messagesToKeep.at(-1)?.uuid
     const boundaryMarker = createCompactBoundaryMessage(
-      'manual',
+      trigger,
       preCompactTokenCount ?? 0,
       lastPreCompactUuid,
       userFeedback,
@@ -1117,7 +1139,11 @@ export async function partialCompactConversation(
     const transcriptPath = getTranscriptPath()
     const summaryMessages: UserMessage[] = [
       createUserMessage({
-        content: getCompactUserSummaryMessage(summary, false, transcriptPath),
+        content: getCompactUserSummaryMessage(
+          summary,
+          suppressFollowUpQuestions,
+          transcriptPath,
+        ),
         isCompactSummary: true,
         summarizeMetadata: {
           messagesSummarized: messagesToSummarize.length,
@@ -1154,7 +1180,7 @@ export async function partialCompactConversation(
     })
     const postCompactHookResult = await executePostCompactHooks(
       {
-        trigger: 'manual',
+        trigger,
         // Hooks expect the formatted summary (no <analysis>/<summary> XML),
         // matching the session-memory path's `rawCompactSummary` choice.
         compactSummary: formatCompactSummary(summary),
@@ -1183,6 +1209,33 @@ export async function partialCompactConversation(
         )
     }
 
+    // Logged here (not earlier) so it reflects the true resulting-context size
+    // and only fires on success. willRetriggerNextTurn gives the auto path
+    // parity with full compact's tengu_compact event — the signal for
+    // monitoring partial-then-full re-compaction.
+    logEvent('tengu_partial_compact', {
+      preCompactTokenCount,
+      postCompactTokenCount,
+      truePostCompactTokenCount: truePartialPostCompactTokenCount,
+      messagesKept: messagesToKeep.length,
+      messagesSummarized: messagesToSummarize.length,
+      direction:
+        direction as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+      hasUserFeedback: !!userFeedback,
+      trigger: (trigger === 'auto'
+        ? 'auto'
+        : 'message_selector') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+      autoCompactThreshold: opts?.autoCompactThreshold ?? -1,
+      willRetriggerNextTurn:
+        opts?.autoCompactThreshold !== undefined &&
+        truePartialPostCompactTokenCount >= opts.autoCompactThreshold,
+      compactionInputTokens: compactionUsage?.input_tokens,
+      compactionOutputTokens: compactionUsage?.output_tokens,
+      compactionCacheReadTokens: compactionUsage?.cache_read_input_tokens ?? 0,
+      compactionCacheCreationTokens:
+        compactionUsage?.cache_creation_input_tokens ?? 0,
+    })
+
     // 'from': prefix-preserving → boundary; 'up_to': suffix → last summary
     const anchorUuid =
       direction === 'up_to'
@@ -1207,13 +1260,19 @@ export async function partialCompactConversation(
     }
   } catch (error) {
     preCompactContextState?.restore()
-    addErrorNotificationIfNeeded(error, context)
+    if (trigger !== 'auto') {
+      addErrorNotificationIfNeeded(error, context)
+    }
     throw error
   } finally {
-    context.setStreamMode?.('requesting')
-    context.setResponseLength?.(() => 0)
-    context.onCompactProgress?.({ type: 'compact_end' })
-    context.setSDKStatus?.(null)
+    // Auto path owns the lifecycle via begin/endCompactLifecycle; only reset
+    // here when we own it (manual REPL path).
+    if (ownsLifecycle) {
+      context.setStreamMode?.('requesting')
+      context.setResponseLength?.(() => 0)
+      context.onCompactProgress?.({ type: 'compact_end' })
+      context.setSDKStatus?.(null)
+    }
   }
 }
 

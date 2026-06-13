@@ -109,6 +109,10 @@ describe('prompt behavior contracts', () => {
     )
     expect(prompt).not.toContain('Include file reads verbatim')
     expect(prompt).not.toContain('List ALL user messages')
+    // Security/destructive-action constraints must survive compaction verbatim.
+    expect(prompt).toContain(
+      'Preserve verbatim any safety or destructive-action constraints',
+    )
   })
 
   test('partial compact from prompt scopes summarization to the recent tail', () => {

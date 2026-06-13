@@ -22,10 +22,13 @@ import {
   compactConversation,
   endCompactLifecycle,
   isCompactionUserAbort,
+  partialCompactConversation,
   type PreCompactHookResult,
   type RecompactionInfo,
 } from './compact.js'
+import { estimateMessageTokens } from './microCompact.js'
 import { runPostCompactCleanup } from './postCompactCleanup.js'
+import { adjustIndexToPreserveAPIInvariants } from './preservedTail.js'
 import { trySessionMemoryCompaction } from './sessionMemoryCompact.js'
 import { executePreCompactHooks } from '../../utils/hooks.js'
 
@@ -100,6 +103,152 @@ export function getAutoCompactThreshold(model: string): number {
   }
 
   return autocompactThreshold
+}
+
+// --- Keep-tail partial auto-compaction ---
+//
+// The full-compact path replaces the whole conversation with a summary
+// (messagesKept: 0). Keeping a verbatim recent tail and summarizing only the
+// older prefix preserves the exact recent context the next turn needs, while
+// still relieving context pressure. The machinery already exists
+// (partialCompactConversation + adjustIndexToPreserveAPIInvariants); these
+// helpers pick the pivot for the *auto* path.
+
+// Below this many verbatim-tail tokens, partial compaction isn't worth it
+// (too little recent context kept, too little prefix relieved) — use full.
+export const AUTOCOMPACT_KEEP_TAIL_MIN_TOKENS = 4_000
+const KEEP_TAIL_FRACTION = 0.12
+const KEEP_TAIL_FLOOR_TOKENS = 10_000
+const KEEP_TAIL_CEIL_TOKENS = 25_000
+// Cap the kept tail at this fraction of the auto-compact threshold so the
+// post-compact context (summary + tail + attachments) lands with headroom and
+// doesn't immediately re-trigger compaction.
+const KEEP_TAIL_THRESHOLD_CAP_FRACTION = 0.3
+// Tokens that survive compaction regardless of the kept tail: system prompt +
+// tool schemas + userContext + the summary + restored attachments. Partial only
+// relieves pressure if the threshold has room for the tail PLUS this. Compared
+// against the threshold in the same window-token units (no rough/real estimator
+// mixing). Approximate and intentionally conservative; refine via the
+// compaction-quality eval.
+const POST_COMPACT_OVERHEAD_RESERVE_TOKENS = 40_000
+// adjustIndexToPreserveAPIInvariants can grow the tail past the budget when a
+// tool chain straddles the boundary. Bail if the snapped tail blew well past the
+// requested budget — both sides measured with estimateMessageTokens (consistent
+// units).
+const KEEP_TAIL_SNAP_TOLERANCE = 3
+
+// Default on; set CLAUDE_CODE_AUTOCOMPACT_KEEP_TAIL=0 to fall back to full
+// summarize-everything compaction.
+export function isKeepTailEnabled(): boolean {
+  const value = process.env.CLAUDE_CODE_AUTOCOMPACT_KEEP_TAIL
+  if (value === undefined || value === '') return true
+  const normalized = value.trim().toLowerCase()
+  return normalized !== '0' && normalized !== 'false' && normalized !== 'off'
+}
+
+/**
+ * Pick the index where the verbatim tail begins: walk from the end accumulating
+ * estimated tokens until reaching `keepTailTokens`, then snap the boundary back
+ * via adjustIndexToPreserveAPIInvariants so a kept tool_result never loses its
+ * tool_use. Returns null when the whole conversation fits within the budget
+ * (nothing to summarize) or the snapped pivot reaches the start.
+ */
+export function selectTailPivot(
+  messages: Message[],
+  keepTailTokens: number,
+): number | null {
+  if (messages.length === 0 || keepTailTokens <= 0) {
+    return null
+  }
+  let accumulated = 0
+  let candidate: number | null = null
+  for (let i = messages.length - 1; i >= 0; i--) {
+    accumulated += estimateMessageTokens([messages[i]!])
+    if (accumulated >= keepTailTokens) {
+      candidate = i
+      break
+    }
+  }
+  // Never reached the budget → the whole conversation is smaller than the tail
+  // we'd keep, so there's no prefix worth summarizing.
+  if (candidate === null) {
+    return null
+  }
+  const pivot = adjustIndexToPreserveAPIInvariants(messages, candidate)
+  if (pivot <= 0) {
+    return null
+  }
+  return pivot
+}
+
+/**
+ * Decide whether the auto-compact path should keep a verbatim tail, and if so
+ * where it starts. Returns the pivot index for partialCompactConversation
+ * (direction 'up_to'), or null to fall back to full compaction.
+ */
+export function computeAutoCompactPivot(
+  messages: Message[],
+  model: string,
+): number | null {
+  if (!isKeepTailEnabled()) {
+    return null
+  }
+  const effectiveWindow = getEffectiveContextWindowSize(model)
+  const threshold = getAutoCompactThreshold(model)
+  const base = Math.min(
+    Math.max(
+      Math.floor(effectiveWindow * KEEP_TAIL_FRACTION),
+      KEEP_TAIL_FLOOR_TOKENS,
+    ),
+    KEEP_TAIL_CEIL_TOKENS,
+  )
+  const keepTailTokens = Math.min(
+    base,
+    Math.floor(threshold * KEEP_TAIL_THRESHOLD_CAP_FRACTION),
+  )
+  if (keepTailTokens < AUTOCOMPACT_KEEP_TAIL_MIN_TOKENS) {
+    return null
+  }
+  // Partial only relieves pressure if the threshold has room for the kept tail
+  // PLUS the non-compactable overhead that survives compaction. Measured in the
+  // same window-token units as `threshold` — avoids mixing rough message-token
+  // estimates with the real-token trigger. (A low-threshold run exposed this: a
+  // messages-only tail never approaches a threshold that includes ~30K of
+  // system/tools/userContext overhead, so the old guard never fired.)
+  if (keepTailTokens + POST_COMPACT_OVERHEAD_RESERVE_TOKENS >= threshold) {
+    return null
+  }
+  const pivot = selectTailPivot(messages, keepTailTokens)
+  if (pivot === null) {
+    return null
+  }
+  // adjustIndexToPreserveAPIInvariants can grow the tail past the budget when a
+  // tool chain straddles the boundary. Both sides use estimateMessageTokens
+  // (consistent units): bail if the snapped tail blew well past the budget.
+  if (
+    estimateMessageTokens(messages.slice(pivot)) >
+    keepTailTokens * KEEP_TAIL_SNAP_TOLERANCE
+  ) {
+    return null
+  }
+  return pivot
+}
+
+/**
+ * Auto-path entry: returns the keep-tail pivot, or null to use full
+ * compaction. Forces full when we're already re-compacting in a chain — a
+ * previous compact (possibly itself partial) failed to relieve enough, so
+ * keeping another tail risks a re-compaction loop; full maximizes relief.
+ */
+export function resolveAutoCompactPivot(
+  messages: Message[],
+  model: string,
+  recompactionInfo?: RecompactionInfo,
+): number | null {
+  if (recompactionInfo?.isRecompactionInChain) {
+    return null
+  }
+  return computeAutoCompactPivot(messages, model)
 }
 
 export function calculateTokenWarningState(
@@ -356,16 +505,48 @@ export async function autoCompactIfNeeded(
       }
     }
 
-    const compactionResult = await compactConversation(
+    // Keep-tail partial compaction: when a verbatim recent tail can be
+    // preserved (and we're not already re-compacting in a chain), summarize
+    // only the older prefix and keep the tail, instead of replacing the whole
+    // conversation with a summary. Falls back to full compaction otherwise.
+    const keepTailPivot = resolveAutoCompactPivot(
       messages,
-      toolUseContext,
-      cacheSafeParams,
-      true, // Suppress user questions for autocompact
-      undefined, // Hook instructions are merged from preCompactHookResult
-      true, // isAutoCompact
+      model,
       recompactionInfo,
-      preCompactHookResult,
     )
+    if (keepTailPivot != null) {
+      logForDebugging(
+        `autocompact: keep-tail partial compaction (pivot=${keepTailPivot}, kept=${messages.length - keepTailPivot})`,
+      )
+    }
+    const compactionResult =
+      keepTailPivot != null
+        ? await partialCompactConversation(
+            messages,
+            keepTailPivot,
+            toolUseContext,
+            cacheSafeParams,
+            undefined, // no user feedback on the auto path
+            'up_to', // keep the recent tail, summarize the older prefix
+            {
+              trigger: 'auto',
+              suppressFollowUpQuestions: true,
+              preCompactHookResult,
+              // autoCompactIfNeeded owns begin/endCompactLifecycle
+              ownsLifecycle: false,
+              autoCompactThreshold: recompactionInfo.autoCompactThreshold,
+            },
+          )
+        : await compactConversation(
+            messages,
+            toolUseContext,
+            cacheSafeParams,
+            true, // Suppress user questions for autocompact
+            undefined, // Hook instructions are merged from preCompactHookResult
+            true, // isAutoCompact
+            recompactionInfo,
+            preCompactHookResult,
+          )
 
     // Reset lastSummarizedMessageId since legacy compaction replaces all messages
     // and the old message UUID will no longer exist in the new messages array

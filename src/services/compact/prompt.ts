@@ -64,7 +64,7 @@ const SHARED_SECTIONS = `1. Primary Request and Intent: The user's explicit requ
 2. Key Technical Concepts: Technologies, frameworks, and patterns discussed.
 3. Files and Code: Files examined, modified, or created. Summarize the relevant code and why it matters; include exact snippets only when the text is load-bearing.
 4. Errors, Fixes, and Problem Solving: Errors encountered, how they were fixed, and ongoing troubleshooting.
-5. User Feedback and Direction Changes: Constraints and corrections that materially changed the work. Quote exact wording only when needed to avoid drift.
+5. User Feedback and Direction Changes: Constraints and corrections that materially changed the work. Quote exact wording only when needed to avoid drift. Preserve verbatim any safety or destructive-action constraints the user set (sensitive files/data to avoid, forbidden operations, secret handling) so they remain in effect after compaction.
 6. Pending Tasks: Tasks explicitly asked to work on that remain incomplete.`
 
 const BASE_COMPACT_PROMPT = `Your task is to create a detailed continuation summary of the conversation so far. Preserve the technical and task context needed to continue development work safely; do not turn the summary into a transcript.
