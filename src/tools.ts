@@ -38,9 +38,6 @@ const cronTools = feature('AGENT_TRIGGERS')
 const RemoteTriggerTool = feature('AGENT_TRIGGERS_REMOTE')
   ? require('./tools/RemoteTriggerTool/RemoteTriggerTool.js').RemoteTriggerTool
   : null
-const MonitorTool = feature('MONITOR_TOOL')
-  ? require('./tools/MonitorTool/MonitorTool.js').MonitorTool
-  : null
 const SendUserFileTool = feature('KAIROS')
   ? require('./tools/SendUserFileTool/SendUserFileTool.js').SendUserFileTool
   : null
@@ -122,12 +119,6 @@ const coordinatorModeModule = feature('COORDINATOR_MODE')
   : null
 const SnipTool = feature('HISTORY_SNIP')
   ? require('./tools/SnipTool/SnipTool.js').SnipTool
-  : null
-const WorkflowTool = feature('WORKFLOW_SCRIPTS')
-  ? (() => {
-      require('./tools/WorkflowTool/bundled/index.js').initBundledWorkflows()
-      return require('./tools/WorkflowTool/WorkflowTool.js').WorkflowTool
-    })()
   : null
 /* eslint-enable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
 import type { ToolPermissionContext } from './Tool.js'
@@ -227,11 +218,9 @@ export function getAllBaseTools(): Tools {
       : []),
     ...(VerifyPlanExecutionTool ? [VerifyPlanExecutionTool] : []),
     ...(process.env.USER_TYPE === 'ant' && REPLTool ? [REPLTool] : []),
-    ...(WorkflowTool ? [WorkflowTool] : []),
     ...(SleepTool ? [SleepTool] : []),
     ...cronTools,
     ...(RemoteTriggerTool ? [RemoteTriggerTool] : []),
-    ...(MonitorTool ? [MonitorTool] : []),
     BriefTool,
     ...(SendUserFileTool ? [SendUserFileTool] : []),
     ...(PushNotificationTool ? [PushNotificationTool] : []),

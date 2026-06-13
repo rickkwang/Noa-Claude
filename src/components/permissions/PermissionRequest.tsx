@@ -34,10 +34,6 @@ import { SkillPermissionRequest } from './SkillPermissionRequest/SkillPermission
 import { WebFetchPermissionRequest } from './WebFetchPermissionRequest/WebFetchPermissionRequest.js';
 
 /* eslint-disable @typescript-eslint/no-require-imports */
-const WorkflowTool = feature('WORKFLOW_SCRIPTS') ? (require('../../tools/WorkflowTool/WorkflowTool.js') as typeof import('../../tools/WorkflowTool/WorkflowTool.js')).WorkflowTool : null;
-const WorkflowPermissionRequest = feature('WORKFLOW_SCRIPTS') ? (require('../../tools/WorkflowTool/WorkflowPermissionRequest.js') as typeof import('../../tools/WorkflowTool/WorkflowPermissionRequest.js')).WorkflowPermissionRequest : null;
-const MonitorTool = feature('MONITOR_TOOL') ? (require('../../tools/MonitorTool/MonitorTool.js') as typeof import('../../tools/MonitorTool/MonitorTool.js')).MonitorTool : null;
-const MonitorPermissionRequest = feature('MONITOR_TOOL') ? (require('./MonitorPermissionRequest/MonitorPermissionRequest.js') as typeof import('./MonitorPermissionRequest/MonitorPermissionRequest.js')).MonitorPermissionRequest : null;
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
 /* eslint-enable @typescript-eslint/no-require-imports */
 import type { z } from 'zod/v4';
@@ -65,10 +61,6 @@ function permissionComponentForTool(tool: Tool): React.ComponentType<PermissionR
       return SkillPermissionRequest;
     case AskUserQuestionTool:
       return AskUserQuestionPermissionRequest;
-    case WorkflowTool:
-      return WorkflowPermissionRequest ?? FallbackPermissionRequest;
-    case MonitorTool:
-      return MonitorPermissionRequest ?? FallbackPermissionRequest;
     case GlobTool:
     case GrepTool:
     case FileReadTool:

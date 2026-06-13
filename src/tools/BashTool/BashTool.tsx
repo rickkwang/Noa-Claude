@@ -317,28 +317,6 @@ function isAutobackgroundingAllowed(command: string): boolean {
 }
 
 /**
- * Detect standalone or leading `sleep N` patterns that should use Monitor
- * instead. Catches `sleep 5`, `sleep 5 && check`, `sleep 5; check` — but
- * not sleep inside pipelines, subshells, or scripts (those are fine).
- */
-export function detectBlockedSleepPattern(command: string): string | null {
-  const parts = splitCommand_DEPRECATED(command);
-  if (parts.length === 0) return null;
-  const first = parts[0]?.trim() ?? '';
-  // Bare `sleep N` or `sleep N.N` as the first subcommand.
-  // Float durations (sleep 0.5) are allowed — those are legit pacing, not polls.
-  const m = /^sleep\s+(\d+)\s*$/.exec(first);
-  if (!m) return null;
-  const secs = parseInt(m[1]!, 10);
-  if (secs < 2) return null; // sub-2s sleeps are fine (rate limiting, pacing)
-
-  // `sleep N` alone → "what are you waiting for?"
-  // `sleep N && check` → "use Monitor { command: check }"
-  const rest = parts.slice(1).join(' ').trim();
-  return rest ? `sleep ${secs} followed by: ${rest}` : `standalone sleep ${secs}`;
-}
-
-/**
  * Checks if a command contains tools that shouldn't run in sandbox
  * This includes:
  * - Dynamic config-based disabled commands and substrings (tengu_sandbox_disabled_commands)
@@ -525,17 +503,7 @@ export const BashTool = buildTool({
     const desc = input.description ?? truncate(input.command, TOOL_SUMMARY_MAX_LENGTH);
     return `Running ${desc}`;
   },
-  async validateInput(input: BashToolInput): Promise<ValidationResult> {
-    if (feature('MONITOR_TOOL') && !isBackgroundTasksDisabled && !input.run_in_background) {
-      const sleepPattern = detectBlockedSleepPattern(input.command);
-      if (sleepPattern !== null) {
-        return {
-          result: false,
-          message: `Blocked: ${sleepPattern}. Run blocking commands in the background with run_in_background: true — you'll get a completion notification when done. For streaming events (watching logs, polling APIs), use the Monitor tool. If you genuinely need a delay (rate limiting, deliberate pacing), keep it under 2 seconds.`,
-          errorCode: 10
-        };
-      }
-    }
+  async validateInput(): Promise<ValidationResult> {
     return {
       result: true
     };
