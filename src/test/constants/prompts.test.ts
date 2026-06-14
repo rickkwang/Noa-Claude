@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import {
   computeMainSessionEnvInfo,
   SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
@@ -18,6 +18,24 @@ import { getWebSearchPrompt } from '../../tools/WebSearchTool/prompt.js'
 import { splitSysPromptPrefix } from '../../utils/api.js'
 import { asSystemPrompt } from '../../utils/systemPromptType.js'
 
+const ENV_KEYS = [
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+  'CLAUDE_CODE_USE_FOUNDRY',
+  'CLAUDE_CODE_USE_OPENAI',
+  'ANTHROPIC_BASE_URL',
+  'CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS',
+] as const
+
+const original = Object.fromEntries(ENV_KEYS.map(k => [k, process.env[k]]))
+
+afterEach(() => {
+  for (const k of ENV_KEYS) {
+    if (original[k] === undefined) delete process.env[k]
+    else process.env[k] = original[k]
+  }
+})
+
 describe('system prompt provider neutrality', () => {
   test('environment info does not inject Claude model marketing', async () => {
     const envInfo = await computeMainSessionEnvInfo('gpt-4o')
@@ -34,6 +52,13 @@ describe('system prompt provider neutrality', () => {
 
 describe('CLI sysprompt prefix splitting', () => {
   test('keeps each prefix variant in a dedicated prompt block', () => {
+    delete process.env.CLAUDE_CODE_USE_BEDROCK
+    delete process.env.CLAUDE_CODE_USE_VERTEX
+    delete process.env.CLAUDE_CODE_USE_FOUNDRY
+    delete process.env.CLAUDE_CODE_USE_OPENAI
+    delete process.env.ANTHROPIC_BASE_URL
+    delete process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS
+
     const promptBody = 'Prompt body'
     const variants = [
       getCLISyspromptPrefix({
