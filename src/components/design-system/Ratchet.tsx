@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { c as _c } from "react/compiler-runtime";
-import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { useTerminalViewport } from '../../ink/hooks/use-terminal-viewport.js';
 import { Box, type DOMElement, measureElement } from '../../ink.js';
@@ -27,7 +27,8 @@ export function Ratchet(t0) {
   const [minHeight, setMinHeight] = useState(0);
   let t3;
   if ($[0] !== viewportRef) {
-    t3 = el => {
+    t3 = (el: DOMElement | null) => {
+      innerRef.current = el;
       viewportRef(el);
     };
     $[0] = viewportRef;
@@ -35,7 +36,7 @@ export function Ratchet(t0) {
   } else {
     t3 = $[1];
   }
-  const outerRef = t3;
+  const contentRef = t3;
   const engaged = lock === "always" || !isVisible;
   let t4;
   if ($[2] !== rows) {
@@ -59,17 +60,17 @@ export function Ratchet(t0) {
   useLayoutEffect(t4);
   const t5 = engaged ? minHeight : undefined;
   let t6;
-  if ($[4] !== children) {
-    t6 = <Box ref={innerRef} flexDirection="column">{children}</Box>;
+  if ($[4] !== children || $[5] !== contentRef) {
+    t6 = <Box ref={contentRef} flexDirection="column">{children}</Box>;
     $[4] = children;
-    $[5] = t6;
+    $[5] = contentRef;
+    $[6] = t6;
   } else {
-    t6 = $[5];
+    t6 = $[6];
   }
   let t7;
-  if ($[6] !== outerRef || $[7] !== t5 || $[8] !== t6) {
-    t7 = <Box minHeight={t5} ref={outerRef}>{t6}</Box>;
-    $[6] = outerRef;
+  if ($[7] !== t5 || $[8] !== t6) {
+    t7 = <Box minHeight={t5}>{t6}</Box>;
     $[7] = t5;
     $[8] = t6;
     $[9] = t7;
