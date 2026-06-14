@@ -56,7 +56,7 @@ function createContext(
     },
     abortController: new AbortController(),
     readFileState: {} as ToolUseContext['readFileState'],
-    getAppState: () => appState as ReturnType<ToolUseContext['getAppState']>,
+    getAppState: () => appState as unknown as ReturnType<ToolUseContext['getAppState']>,
     setAppState: () => {},
     setInProgressToolUseIDs: () => {},
     setResponseLength: () => {},

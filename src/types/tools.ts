@@ -61,3 +61,26 @@ export type SdkWorkflowProgress = {
   index?: number
   [key: string]: unknown
 }
+
+// REPL is a transparent wrapper: its progress emits a native-looking message
+// for each inner tool call (mirrors AgentToolProgress/SkillToolProgress).
+export type REPLToolProgress = {
+  message: Message
+}
+
+/**
+ * Union of every tool's progress payload. Used as the generic bound
+ * `P extends ToolProgressData` across the Tool type and as the `data` carried
+ * by tool ProgressMessages. Distinguished from HookProgress (which carries
+ * `type: 'hook_progress'`) at filter boundaries.
+ */
+export type ToolProgressData =
+  | BashProgress
+  | PowerShellProgress
+  | AgentToolProgress
+  | SkillToolProgress
+  | TaskOutputProgress
+  | MCPProgress
+  | WebSearchProgress
+  | SdkWorkflowProgress
+  | REPLToolProgress

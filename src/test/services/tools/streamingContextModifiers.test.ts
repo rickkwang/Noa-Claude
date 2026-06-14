@@ -27,7 +27,7 @@ function createContext(): ToolUseContext {
         toolPermissionContext: { mode: 'default' },
         agentDefinitions: { activeAgents: [], allAgents: [], allowedAgentTypes: [] },
         sessionHooks: new Map(),
-      }) as ReturnType<ToolUseContext['getAppState']>,
+      }) as unknown as ReturnType<ToolUseContext['getAppState']>,
     setAppState: () => {},
     setInProgressToolUseIDs: () => {},
     setResponseLength: () => {},

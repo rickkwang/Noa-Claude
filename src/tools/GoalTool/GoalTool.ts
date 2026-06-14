@@ -228,7 +228,7 @@ The model cannot pause, resume, or clear goals — those are user-controlled via
             return prev
           }
           updated = markGoalComplete(existing, Date.now())
-          return { ...prev, goal: updated }
+          return { ...prev, goal: updated ?? undefined }
         })
 
         if (alreadyComplete) {

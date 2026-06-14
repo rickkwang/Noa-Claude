@@ -128,6 +128,13 @@ export type SystemBridgeStatusMessage = SystemMessage & {
   connected: boolean
 }
 
+// A system message echoing a local slash-command invocation. Distinguished by
+// subtype (see isSystemLocalCommandMessage). Excluded from appendSystemMessage's
+// accepted input because it must not survive normalizeMessagesForAPI.
+export type SystemLocalCommandMessage = SystemMessage & {
+  subtype: 'local_command'
+}
+
 export type SystemTurnDurationMessage = SystemMessage & {
   subtype: 'turn_duration'
   durationMs: number

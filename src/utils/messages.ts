@@ -2913,7 +2913,11 @@ export function extractTextContent(
 }
 
 export function getContentText(
-  content: string | DeepImmutable<Array<ContentBlockParam>>,
+  // Accepts `unknown` because the body is a total function over any input
+  // (string → itself, array → extracted text, otherwise → null) and several
+  // call sites pass loosely-typed `Message.message.content` (typed `unknown`).
+  // Normal inputs are `string | DeepImmutable<Array<ContentBlockParam>>`.
+  content: unknown,
 ): string | null {
   if (typeof content === 'string') {
     return content
