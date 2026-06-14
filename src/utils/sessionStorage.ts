@@ -11,6 +11,8 @@ import {
   mkdir,
   readdir,
   readFile,
+  rename,
+  rm,
   stat,
   unlink,
   writeFile,
@@ -69,6 +71,7 @@ import { updateSessionName } from './concurrentSessions.js'
 import { getCwd } from './cwd.js'
 import { logForDebugging } from './debug.js'
 import { logForDiagnosticsNoPII } from './diagLogs.js'
+import { getErrnoCode } from './errors.js'
 import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
 import { isFsInaccessible } from './errors.js'
 import type { FileHistorySnapshot } from './fileHistory.js'
@@ -487,6 +490,97 @@ function getProject(): Project {
     }
   }
   return project
+}
+
+/**
+ * Rename `from` to `to`, retrying once after clearing the destination if it is
+ * occupied. Mirrors Claude Code's transcript-relocation rename.
+ */
+async function robustRename(from: string, to: string): Promise<void> {
+  try {
+    await rename(from, to)
+  } catch (e: unknown) {
+    const code = getErrnoCode(e)
+    if (
+      code === 'EEXIST' ||
+      code === 'EPERM' ||
+      code === 'EBUSY' ||
+      code === 'ENOTEMPTY'
+    ) {
+      await rm(to, { recursive: true, force: true }).catch(() => {})
+      await rename(from, to)
+    } else {
+      throw e
+    }
+  }
+}
+
+/**
+ * Move the current session's transcript (its `<sessionId>.jsonl` and the
+ * sibling `<sessionId>/` sidecar directory holding session-memory and subagent
+ * transcripts) to the project directory derived from the current originalCwd,
+ * then repoint the writer at the new path. Used by /cd so the session is filed
+ * under its new working directory and `--resume` from there lists it — the
+ * full-relocation behavior of Claude Code's transcript move.
+ *
+ * The caller MUST have already updated originalCwd (and cleared any
+ * sessionProjectDir pin) so getProjectDir(getOriginalCwd()) names the
+ * destination and getTranscriptPath() agrees with the writer afterwards.
+ *
+ * Throws only BEFORE the transcript file is renamed (flush / mkdir / rename);
+ * once the `.jsonl` moves the function commits (the sidecar move is
+ * best-effort), so a caller can safely roll back working-directory state on a
+ * thrown error knowing the file did not move. No-op when the session has no
+ * materialized file yet — buffered writes will land under the new originalCwd.
+ */
+export async function relocateSessionTranscript(): Promise<void> {
+  const p = getProject()
+  const current = p.sessionFile
+  if (current === null) {
+    return
+  }
+  const sessionId = getSessionId()
+  const destDir = getProjectDir(getOriginalCwd())
+  const dest = join(destDir, `${sessionId}.jsonl`)
+  if (current === dest) {
+    return
+  }
+
+  // Drain queued writes so nothing races with the rename.
+  await p.flush()
+  await mkdir(destDir, { recursive: true, mode: 0o700 })
+  try {
+    await robustRename(current, dest)
+  } catch (e: unknown) {
+    // A missing source (persistence disabled, or the file removed externally)
+    // is not fatal — there is nothing to move. Repoint anyway so future writes
+    // land at the new path. Mirrors Claude Code's transcript move. Any other
+    // error means the file did not move, so it propagates for the caller to
+    // roll back the working-directory state.
+    if (getErrnoCode(e) !== 'ENOENT') {
+      throw e
+    }
+    logForDebugging(
+      `relocateSessionTranscript: source missing, repointing only: ${current}`,
+    )
+  }
+  // Repoint immediately after the file moves and before the best-effort sidecar
+  // move, so any subsequent append targets the new path.
+  p.sessionFile = dest
+
+  const fromSidecar = join(dirname(current), sessionId)
+  const toSidecar = join(destDir, sessionId)
+  if (fromSidecar !== toSidecar) {
+    try {
+      await robustRename(fromSidecar, toSidecar)
+    } catch (e: unknown) {
+      if (getErrnoCode(e) !== 'ENOENT') {
+        logForDebugging(
+          `relocateSessionTranscript: sidecar move failed (${fromSidecar} -> ${toSidecar}): ${e}`,
+        )
+      }
+    }
+  }
 }
 
 /**
