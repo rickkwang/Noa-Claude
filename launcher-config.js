@@ -183,6 +183,8 @@ export function applyLauncherDefaults() {
   process.env.CLAUDE_CODE_PRODUCT_DIR = DEFAULT_PRODUCT_DIR;
   process.env.CLAUDE_CONFIG_DIR = DEFAULT_CONFIG_DIR;
   process.env.CLAUDE_CODE_CACHE_DIR = DEFAULT_CACHE_DIR;
+  process.env.CLAUDE_AGENT_ENABLE_OFFICIAL_MARKETPLACE ??= '1';
+  process.env.CLAUDE_AGENT_ENABLE_OFFICIAL_MARKETPLACE_GCS ??= '1';
 
   const { apiBaseUrl, apiKey, authToken, model } = getResolvedLauncherConfig();
   process.env.ANTHROPIC_BASE_URL = apiBaseUrl;
@@ -203,6 +205,8 @@ if (import.meta.main) {
   process.env.CLAUDE_CODE_PRODUCT_DIR = ${JSON.stringify(DEFAULT_PRODUCT_DIR)};
   process.env.CLAUDE_CONFIG_DIR = ${JSON.stringify(DEFAULT_CONFIG_DIR)};
   process.env.CLAUDE_CODE_CACHE_DIR = ${JSON.stringify(DEFAULT_CACHE_DIR)};
+  process.env.CLAUDE_AGENT_ENABLE_OFFICIAL_MARKETPLACE ??= '1';
+  process.env.CLAUDE_AGENT_ENABLE_OFFICIAL_MARKETPLACE_GCS ??= '1';
   globalThis.MACRO = ${JSON.stringify(LAUNCHER_MACRO, null, 2)};
   main().catch(e => {
     console.error('Fatal error:', e);

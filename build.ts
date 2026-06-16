@@ -261,7 +261,7 @@ const defines: Record<string, string> = {
   'MACRO.NATIVE_PACKAGE_URL': 'undefined',
   'MACRO.FEEDBACK_CHANNEL': JSON.stringify('github'),
   'MACRO.ISSUES_EXPLAINER': JSON.stringify(
-    'https://github.com/rickkwang/Claude-Agent/issues',
+    'https://github.com/rickkwang/Noa-Claude/issues',
   ),
   'MACRO.VERSION_CHANGELOG': JSON.stringify(getBundledReleaseNotes()),
 }
