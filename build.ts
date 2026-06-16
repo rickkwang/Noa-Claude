@@ -42,8 +42,6 @@ const fullExperimentalFeatures = [
   'CACHED_MICROCOMPACT',
   'CCR_AUTO_CONNECT',
   'CCR_MIRROR',
-  // Former desktop-control MCP flag intentionally omitted: noa now uses its
-  // own native ComputerTool (src/tools/ComputerTool).
   'COMMIT_ATTRIBUTION',
   'CONNECTOR_TEXT',
   'CONTEXT_COLLAPSE',

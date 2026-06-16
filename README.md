@@ -78,7 +78,6 @@ The product baseline is `/fork`, `/workflows`, `/summary`, and `/share` (smoke-c
 
 **Agent execution**
 - `/agent` — Spawn sub-agents for parallel task execution
-- `ComputerTool` — macOS desktop automation (screenshots, clicks, keyboard), invoked through sub-agents. Not a slash command.
 
 **Verification and diagnostics**
 - `/doctor` — Diagnose installation health and configuration
@@ -150,7 +149,6 @@ Provider profiles enable saved configurations for providers like Kimi, MiniMax, 
 
 - **Multi-Provider Support** — OpenAI-compatible, AWS Bedrock, Google Vertex, Microsoft Foundry, and Anthropic's first-party API.
 - **Sub-Agent Orchestration** — Assign different models to different agents via `settings.json` (`agentModels`, `agentRouting`).
-- **macOS Desktop Control** — ComputerTool for screenshot-based GUI automation, keyboard-driven workflows preferred.
 - **MCP Tool Compaction** — MCP tool results (`mcp__<server>__<tool>`) are always compactable, often cutting token use on MCP-heavy sessions.
 - **128k Fallback** — Unknown OpenAI-compatible models use a conservative 128k context window to prevent compact threshold underestimation.
 - **Auto-fix Hook** — After file edits, automatically run configurable lint/test commands (configured in `settings.json` under `autoFix`).

@@ -122,9 +122,7 @@ export function isAnalyticsToolDetailsLoggingEnabled(
  * isAnalyticsToolDetailsLoggingEnabled's transport/URL gates, which a stdio
  * built-in would otherwise fail.
  *
- * Noa's desktop control is exposed as a native tool, not the removed
- * computer-use MCP server, so there are currently no reserved built-in MCP
- * server names from that path.
+ * Noa currently ships no built-in MCP servers, so this set is empty.
  */
 const BUILTIN_MCP_SERVER_NAMES: ReadonlySet<string> = new Set()
 

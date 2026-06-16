@@ -4,7 +4,6 @@ import { toolMatchesName, type Tool, type Tools } from './Tool.js'
 import { AgentTool } from './tools/AgentTool/AgentTool.js'
 import { SkillTool } from './tools/SkillTool/SkillTool.js'
 import { BashTool } from './tools/BashTool/BashTool.js'
-import { ComputerTool } from './tools/ComputerTool/ComputerTool.js'
 import { FileEditTool } from './tools/FileEditTool/FileEditTool.js'
 import { FileReadTool } from './tools/FileReadTool/FileReadTool.js'
 import { FileWriteTool } from './tools/FileWriteTool/FileWriteTool.js'
@@ -229,14 +228,6 @@ export function getAllBaseTools(): Tools {
     ...(process.env.NODE_ENV === 'test' ? [TestingPermissionTool] : []),
     ListMcpResourcesTool,
     ReadMcpResourceTool,
-    // Self-contained macOS desktop control. Enabled by default on darwin;
-    // set NOA_COMPUTER_USE=0 in ~/.noa/settings.json env to disable.
-    ...(process.platform === 'darwin' &&
-    !['0', 'false', 'no'].includes(
-      (process.env.NOA_COMPUTER_USE ?? '').toLowerCase(),
-    )
-      ? [ComputerTool]
-      : []),
     // Include ToolSearchTool when tool search might be enabled (optimistic check)
     // The actual decision to defer tools happens at request time in claude.ts
     ...(isToolSearchEnabledOptimistic() ? [ToolSearchTool] : []),

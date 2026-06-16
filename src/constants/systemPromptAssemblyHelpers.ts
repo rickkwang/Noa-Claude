@@ -16,7 +16,6 @@ import {
 import {
   getActionsSection,
   getCodingStyleAndWorkflowSection,
-  getComputerUseWorkflowSection,
   getCoreExecutionGuardsSection,
   getDesignWorkflowSection,
   getResearchAndTruthfulnessSection,
@@ -200,7 +199,6 @@ export function buildStaticSystemPromptSections(params: {
     getSimpleSystemSection(),
     getResearchAndTruthfulnessSection(enabledTools),
     getDesignWorkflowSection(),
-    getComputerUseWorkflowSection(enabledTools),
     getCoreExecutionGuardsSection(),
     includeCodingStyleSection ? getCodingStyleAndWorkflowSection() : null,
     getActionsSection(),

@@ -1,5 +1,4 @@
 // @ts-nocheck
-import { COMPUTER_TOOL_NAME } from '../tools/ComputerTool/prompt.js'
 import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
 import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from '../tools/FileWriteTool/prompt.js'
@@ -73,24 +72,6 @@ export function getDesignWorkflowSection(): string {
   ]
 
   return ['# Design and frontend work', ...prependBullets(items)].join(`\n`)
-}
-
-export function getComputerUseWorkflowSection(
-  enabledTools: Set<string>,
-): string | null {
-  if (!enabledTools.has(COMPUTER_TOOL_NAME)) return null
-
-  const items = [
-    `Before any GUI action with the ${COMPUTER_TOOL_NAME} tool, establish the intended macOS app with open_app or activate_app. frontmost_app is only a verification step and does not replace app activation.`,
-    `Every foreground GUI action must be guarded to the intended app. If focus is wrong, re-open or reactivate the target app before continuing.`,
-    `Prefer deterministic flows over screenshot-based clicking: AppleScript/System Events, keyboard shortcuts, arrow-key navigation, Return confirmation, and clipboard paste.`,
-    `After search/filter/list navigation, press Return to select the highlighted item before continuing. In chat/contact workflows, open the conversation with Return before pasting the message body. Do not use click to select contacts, conversations, search results, or list rows.`,
-    `On retry after an incorrect or incomplete GUI attempt, restart the full workflow from app activation. Do not assume the previous app/window/search/conversation state is still valid.`,
-    `Treat coordinates as weak signals: use them only from a recent screenshot after the target app is frontmost, never for selecting search results or list rows when a keyboard route exists. Verify coordinate-driven GUI mutations with a screenshot before chaining more coordinate actions.`,
-    `Do not screenshot merely to confirm successful open_app, key, type, clipboard, or wait actions in simple app-guarded workflows.`,
-  ]
-
-  return ['# Computer use', ...prependBullets(items)].join(`\n`)
 }
 
 export function getCoreExecutionGuardsSection(): string {
