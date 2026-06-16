@@ -11,7 +11,6 @@ import {
   getSubscriptionType,
   isClaudeAISubscriber,
   isMaxSubscriber,
-  isProSubscriber,
   isTeamPremiumSubscriber,
 } from '../auth.js'
 import {
@@ -338,19 +337,14 @@ export function getOpus46PricingSuffix(fastMode: boolean): string {
 }
 
 export function isOpus1mMergeEnabled(): boolean {
-  if (
-    is1mContextDisabled() ||
-    isProSubscriber() ||
-    getAPIProvider() !== 'firstParty'
-  ) {
+  if (is1mContextDisabled() || getAPIProvider() !== 'firstParty') {
     return false
   }
   // Fail closed when a subscriber's subscription type is unknown. The VS Code
   // config-loading subprocess can have OAuth tokens with valid scopes but no
-  // subscriptionType field (stale or partial refresh). Without this guard,
-  // isProSubscriber() returns false for such users and the merge leaks
-  // opus[1m] into the model dropdown — the API then rejects it with a
-  // misleading "rate limit reached" error.
+  // subscriptionType field (stale or partial refresh). Without this guard we'd
+  // append opus[1m] for a user whose entitlement we can't confirm — the API
+  // then rejects it with a misleading "rate limit reached" error.
   if (isClaudeAISubscriber() && getSubscriptionType() === null) {
     return false
   }
