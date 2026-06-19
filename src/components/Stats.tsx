@@ -20,13 +20,14 @@ import { generateHeatmap } from '../utils/heatmap.js';
 import { renderModelName } from '../utils/model/model.js';
 import { copyAnsiToClipboard } from '../utils/screenshotClipboard.js';
 import { aggregateClaudeCodeStatsForRange, type ClaudeCodeStats, type DailyModelTokens, type StatsDateRange } from '../utils/stats.js';
+import { parseLocalDateString } from '../utils/statsCache.js';
 import { resolveThemeSetting } from '../utils/systemTheme.js';
 import { getTheme, themeColorToAnsi } from '../utils/theme.js';
 import { Pane } from './design-system/Pane.js';
 import { Tab, Tabs, useTabHeaderFocus } from './design-system/Tabs.js';
 import { Spinner } from './Spinner.js';
 function formatPeakDay(dateStr: string): string {
-  const date = new Date(dateStr);
+  const date = parseLocalDateString(dateStr);
   return date.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric'
@@ -1033,7 +1034,7 @@ function generateXAxisLabels(data: DailyModelTokens[], _chartWidth: number, yAxi
   }[] = [];
   for (let i = 0; i < numLabels; i++) {
     const idx = Math.min(i * step, data.length - 1);
-    const date = new Date(data[idx]!.date);
+    const date = parseLocalDateString(data[idx]!.date);
     const label = date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric'

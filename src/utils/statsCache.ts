@@ -424,6 +424,14 @@ export function toDateString(date: Date): string {
 }
 
 /**
+ * Parse a YYYY-MM-DD stats key as a local calendar date.
+ */
+export function parseLocalDateString(dateStr: string): Date {
+  const [year, month, day] = dateStr.split('-').map(Number)
+  return new Date(year!, month! - 1, day!)
+}
+
+/**
  * Get today's date in YYYY-MM-DD format.
  */
 export function getTodayDateString(): string {
