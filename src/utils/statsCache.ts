@@ -12,8 +12,12 @@ import { logError } from './log.js'
 import { jsonParse, jsonStringify } from './slowOperations.js'
 import type { DailyActivity, DailyModelTokens, SessionStats } from './stats.js'
 
-export const STATS_CACHE_VERSION = 3
-const MIN_MIGRATABLE_VERSION = 1
+// v4: daily buckets switched from UTC day (toISOString) to the user's local
+// calendar day. v1-v3 aggregates are keyed by UTC dates and cannot be
+// re-bucketed without the raw timestamps, so they are not migratable — a v4+
+// load with an older cache forces a full recompute from on-disk transcripts.
+export const STATS_CACHE_VERSION = 4
+const MIN_MIGRATABLE_VERSION = 4
 const STATS_CACHE_FILENAME = 'stats-cache.json'
 
 /**
@@ -98,12 +102,17 @@ function getEmptyCache(): PersistedStatsCache {
 
 /**
  * Migrate an older cache to the current schema.
- * Returns null if the version is unknown or too old to migrate.
+ * Returns null if the version is unknown or too old to migrate
+ * (< MIN_MIGRATABLE_VERSION), forcing a full recompute.
  *
- * Preserves historical aggregates that would otherwise be lost when
- * transcript files have already aged out past cleanupPeriodDays.
- * Pre-migration days may undercount (e.g. v2 lacked subagent tokens);
- * we accept that rather than drop the history.
+ * For migratable versions, preserves historical aggregates that would
+ * otherwise be lost once transcript files age out past cleanupPeriodDays;
+ * such days may undercount (e.g. older schemas lacked some token fields) but
+ * keeping them beats dropping the history.
+ *
+ * Note: v1-v3 are below the current floor because their daily buckets are
+ * UTC-keyed and cannot be re-bucketed to local days without the raw
+ * timestamps, so they are intentionally dropped rather than preserved.
  */
 function migrateStatsCache(
   parsed: Partial<PersistedStatsCache> & { version: number },
@@ -399,15 +408,19 @@ export function mergeCacheWithNewStats(
 }
 
 /**
- * Extract the date portion (YYYY-MM-DD) from a Date object.
+ * Extract the date portion (YYYY-MM-DD) from a Date object using the local
+ * timezone. Daily stats are bucketed by the user's local calendar day, so we
+ * must not use toISOString() (which converts to UTC and shifts the day for any
+ * non-UTC offset — e.g. early-morning activity in UTC+ buckets a day early).
  */
 export function toDateString(date: Date): string {
-  const parts = date.toISOString().split('T')
-  const dateStr = parts[0]
-  if (!dateStr) {
-    throw new Error('Invalid ISO date string')
+  if (isNaN(date.getTime())) {
+    throw new Error('Invalid Date')
   }
-  return dateStr
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 /**

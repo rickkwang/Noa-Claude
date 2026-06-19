@@ -846,7 +846,11 @@ function processedStatsToClaudeCodeStats(
  * Get the next day after a given date string (YYYY-MM-DD format).
  */
 function getNextDay(dateStr: string): string {
-  const date = new Date(dateStr)
+  // Parse as a LOCAL date. `new Date('YYYY-MM-DD')` parses as UTC midnight,
+  // which would desync from toDateString()'s local-day formatting and make this
+  // a no-op in negative-UTC timezones (reprocessing the boundary day).
+  const [year, month, day] = dateStr.split('-').map(Number)
+  const date = new Date(year!, month! - 1, day!)
   date.setDate(date.getDate() + 1)
   return toDateString(date)
 }
