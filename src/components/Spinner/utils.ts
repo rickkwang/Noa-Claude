@@ -2,13 +2,19 @@
 import type { RGBColor as RGBColorString } from '../../ink/styles.js'
 import type { RGBColor as RGBColorType } from './types.js'
 
+let _defaultCharactersCache: { term: string | undefined; chars: string[] } | null = null
+
 export function getDefaultCharacters(): string[] {
-  if (process.env.TERM === 'xterm-ghostty') {
-    return ['·', '✢', '✳', '✶', '✻', '✻'] // Repeat ✻ for Ghostty to avoid the slightly offset ✽ glyph
+  const term = process.env.TERM
+  if (_defaultCharactersCache && _defaultCharactersCache.term === term) {
+    return _defaultCharactersCache.chars
   }
-  return process.platform === 'darwin'
-    ? ['·', '✢', '✳', '✶', '✻', '✽']
-    : ['·', '✢', '*', '✶', '✻', '✽']
+  const chars =
+    term === 'xterm-ghostty'
+      ? ['·', '✢', '✳', '✶', '✻', '✻'] // Repeat ✻ for Ghostty to avoid the slightly offset ✽ glyph
+      : ['·', '✢', '✳', '✶', '✻', '✽']
+  _defaultCharactersCache = { term, chars }
+  return chars
 }
 
 // Interpolate between two RGB colors
