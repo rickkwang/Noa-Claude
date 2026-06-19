@@ -44,6 +44,7 @@ function hljs(): HLJSApi {
 }
 
 import { stringWidth } from '../../ink/stringWidth.js'
+import { convertLeadingTabsToSpaces } from '../../utils/file.js'
 import { logError } from '../../utils/log.js'
 
 // ---------------------------------------------------------------------------
@@ -877,7 +878,9 @@ export class ColorDiff {
     type Entry = { lineNumber: number; marker: Marker; code: string }
     const entries: Entry[] = this.hunk.lines.map(rawLine => {
       const marker = parseMarker(rawLine.slice(0, 1))
-      const code = rawLine.slice(1)
+      // Convert leading tabs to spaces so wrap measurement matches terminal
+      // rendering; see the note in ColorFile.render.
+      const code = convertLeadingTabsToSpaces(rawLine.slice(1))
       let lineNumber: number
       switch (marker) {
         case '+':
@@ -945,7 +948,11 @@ export class ColorFile {
   render(themeName: string, width: number, dim: boolean): string[] | null {
     const mode = detectColorMode(themeName)
     const theme = buildTheme(themeName, mode)
-    const lines = this.code.split('\n')
+    // Convert leading tabs to spaces (matching HighlightedCodeFallback) so
+    // wrap-width measurement and terminal rendering agree; otherwise stringWidth
+    // counts tabs as 0 while output expands them at absolute screen columns,
+    // producing jagged indentation and mis-wrapping.
+    const lines = convertLeadingTabsToSpaces(this.code).split('\n')
     // Rust .lines() drops trailing empty line from trailing \n
     if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
     const firstLine = lines[0] ?? null
