@@ -10,7 +10,7 @@ type FeedColumnProps = {
   maxWidth: number;
 };
 export function FeedColumn(t0) {
-  const $ = _c(10);
+  const $ = _c(13);
   const {
     feeds,
     maxWidth
@@ -27,30 +27,33 @@ export function FeedColumn(t0) {
   const maxOfAllFeeds = t1;
   const actualWidth = Math.min(maxOfAllFeeds, maxWidth);
   let t2;
-  if ($[2] !== actualWidth || $[3] !== feeds) {
+  if ($[2] !== actualWidth || $[3] !== feeds || $[4] !== maxWidth) {
     let t3;
-    if ($[5] !== actualWidth || $[6] !== feeds.length) {
-      t3 = (feed_0, index) => <React.Fragment key={index}><Feed config={feed_0} actualWidth={actualWidth} />{index < feeds.length - 1 && <Divider color="claude" width={actualWidth} />}</React.Fragment>;
+    if ($[5] !== actualWidth || $[6] !== feeds.length || $[7] !== maxWidth) {
+      t3 = (feed_0, index) => <React.Fragment key={index}><Feed config={feed_0} actualWidth={actualWidth} />{index < feeds.length - 1 && <Divider color="claude" width={maxWidth} />}</React.Fragment>;
       $[5] = actualWidth;
       $[6] = feeds.length;
-      $[7] = t3;
+      $[7] = maxWidth;
+      $[8] = t3;
     } else {
-      t3 = $[7];
+      t3 = $[8];
     }
     t2 = feeds.map(t3);
     $[2] = actualWidth;
     $[3] = feeds;
-    $[4] = t2;
+    $[4] = maxWidth;
+    $[9] = t2;
   } else {
-    t2 = $[4];
+    t2 = $[9];
   }
   let t3;
-  if ($[8] !== t2) {
-    t3 = <Box flexDirection="column">{t2}</Box>;
-    $[8] = t2;
-    $[9] = t3;
+  if ($[10] !== t2 || $[11] !== maxWidth) {
+    t3 = <Box flexDirection="column" width={maxWidth}>{t2}</Box>;
+    $[10] = t2;
+    $[11] = maxWidth;
+    $[12] = t3;
   } else {
-    t3 = $[9];
+    t3 = $[12];
   }
   return t3;
 }

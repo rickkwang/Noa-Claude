@@ -415,7 +415,7 @@ export function LogoV2() {
   }
   let t24;
   if ($[60] !== layoutMode) {
-    t24 = layoutMode === "horizontal" && <Box height="100%" borderStyle="single" borderColor="claude" borderDimColor={true} borderTop={false} borderBottom={false} borderLeft={false} />;
+    t24 = layoutMode === "horizontal" && <Box height="100%" borderStyle="single" borderColor="claude" borderTop={false} borderBottom={false} borderLeft={false} />;
     $[60] = layoutMode;
     $[61] = t24;
   } else {
@@ -441,7 +441,7 @@ export function LogoV2() {
   }
   let t27;
   if ($[68] !== T1 || $[69] !== t14 || $[70] !== t26) {
-    t27 = <T1 flexDirection={t11} borderStyle={t12} borderColor={t13} borderText={t14}>{t26}</T1>;
+    t27 = <T1 flexDirection={t11} borderStyle={t12} borderColor={t13} borderText={t14} width={columns}>{t26}</T1>;
     $[68] = T1;
     $[69] = t14;
     $[70] = t26;
