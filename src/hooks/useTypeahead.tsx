@@ -465,6 +465,12 @@ export function useTypeahead({
   const prevInputRef = useRef('');
   // Track the latest path token to discard stale results from path completion
   const latestPathTokenRef = useRef('');
+  // Track which source produced the active 'directory' suggestions so apply/
+  // clear logic can branch correctly:
+  //   'at-path'     — @path completion (prompt mode)
+  //   'bash-path'   — live shell path completion (bash mode)
+  //   'command-arg' — /add-dir directory completion
+  const pathCompletionSourceRef = useRef<'at-path' | 'bash-path' | 'command-arg'>('at-path');
   // Track the latest bash input to discard stale results from history completion
   const latestBashInputRef = useRef('');
   // Track the latest slack channel token to discard stale results from MCP
@@ -599,8 +605,41 @@ export function useTypeahead({
       }
     }
 
-    // Bash mode: check for history-based ghost text completion
+    // Bash mode: live file-path autocomplete takes priority over history ghost text
     if (mode === 'bash' && value.trim()) {
+      // Complete the path-like word at the cursor (the word after the last
+      // space) using the same path index that powers @-mentions. This makes
+      // shell mode feel IDE-like: `cat src/fo` shows a live dropdown.
+      const wordStart = value.slice(0, effectiveCursorOffset).lastIndexOf(' ') + 1;
+      const lastWord = value.slice(wordStart, effectiveCursorOffset);
+      if (lastWord && (isPathLikeToken(lastWord) || lastWord.includes('/'))) {
+        latestPathTokenRef.current = lastWord;
+        const pathSuggestions = await getPathCompletions(lastWord, {
+          maxResults: 10
+        });
+        // Discard stale results if a newer query was initiated while waiting
+        if (latestPathTokenRef.current !== lastWord) {
+          return;
+        }
+        if (pathSuggestions.length > 0) {
+          // Live path dropdown supersedes any pending history ghost text
+          setInlineGhostText(undefined);
+          setSuggestionsState(prev => ({
+            suggestions: pathSuggestions,
+            selectedSuggestion: getPreservedSelection(prev.suggestions, prev.selectedSuggestion, pathSuggestions),
+            commandArgumentHint: undefined
+          }));
+          pathCompletionSourceRef.current = 'bash-path';
+          setSuggestionType('directory');
+          return;
+        }
+      }
+      // Word is no longer path-like — drop any stale live-path dropdown
+      if (suggestionType === 'directory' && pathCompletionSourceRef.current === 'bash-path') {
+        clearSuggestions();
+      }
+
+      // Fall back to history-based ghost text completion
       latestBashInputRef.current = value;
       const historyMatch = await getShellHistoryCompletion(value);
       // Discard stale results if input changed while waiting
@@ -717,6 +756,7 @@ export function useTypeahead({
             selectedSuggestion: getPreservedSelection(prev.suggestions, prev.selectedSuggestion, dirSuggestions),
             commandArgumentHint: undefined
           }));
+          pathCompletionSourceRef.current = 'command-arg';
           setSuggestionType('directory');
           return;
         }
@@ -877,6 +917,7 @@ export function useTypeahead({
               selectedSuggestion: getPreservedSelection(prev.suggestions, prev.selectedSuggestion, pathSuggestions),
               commandArgumentHint: undefined
             }));
+            pathCompletionSourceRef.current = 'at-path';
             setSuggestionType('directory');
             return;
           }
@@ -918,6 +959,13 @@ export function useTypeahead({
         debouncedFetchFileSuggestions.cancel();
         clearSuggestions();
       }
+    }
+
+    // Clear stale live-path suggestions left over after leaving bash mode
+    if (suggestionType === 'directory' && pathCompletionSourceRef.current === 'bash-path' && mode !== 'bash') {
+      debouncedFetchFileSuggestions.cancel();
+      debouncedFetchSlackChannels.cancel();
+      clearSuggestions();
     }
   }, [suggestionType, commands, setSuggestionsState, clearSuggestions, debouncedFetchFileSuggestions, debouncedFetchSlackChannels, mode, suppressSuggestions,
   // Note: using suggestionsRef instead of suggestions to avoid recreating
@@ -970,6 +1018,24 @@ export function useTypeahead({
       }
     } else if (suggestionType === 'directory') {
       if (suggestion) {
+        if (pathCompletionSourceRef.current === 'bash-path') {
+          // Shell path completion: replace the word after the last space.
+          // displayText already carries a trailing '/' for directories.
+          const wordStart = input.slice(0, cursorOffset).lastIndexOf(' ') + 1;
+          const isDir = isPathMetadata(suggestion.metadata) && suggestion.metadata.type === 'directory';
+          const replacement = suggestion.displayText + (isDir ? '' : ' ');
+          const updatedInput = input.slice(0, wordStart) + replacement + input.slice(cursorOffset);
+          const newCursor = wordStart + replacement.length;
+          onInputChange(updatedInput);
+          setCursorOffset(newCursor);
+          if (isDir) {
+            // Drill into the directory — re-run completion for its contents
+            void updateSuggestions(updatedInput, newCursor);
+          } else {
+            clearSuggestions();
+          }
+          return;
+        }
         const isInCommandContext = isCommandInput(input);
         let newInput: string;
         if (isInCommandContext) {
@@ -1195,6 +1261,17 @@ export function useTypeahead({
       }
     } else if (suggestionType === 'directory' && selectedSuggestion < suggestions.length) {
       if (suggestion) {
+        // Bash mode: Enter runs the shell command rather than inserting the
+        // highlighted path (Tab/click complete the path instead). Just clear
+        // the live-path dropdown and let the normal submit handler process the
+        // input — the onSubmit guard exempts bash mode. Mirrors the /add-dir
+        // branch below; calling onSubmit here too would double-submit.
+        if (pathCompletionSourceRef.current === 'bash-path') {
+          debouncedFetchFileSuggestions.cancel();
+          debouncedFetchSlackChannels.cancel();
+          clearSuggestions();
+          return;
+        }
         // In command context (e.g., /add-dir), Enter submits the command
         // rather than applying the directory suggestion. Just clear
         // suggestions and let the submit handler process the current input.
