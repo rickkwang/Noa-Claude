@@ -1338,30 +1338,109 @@ async function execCommandHook(
   }
 }
 
+// Hook events whose matcher is an identifier (tool/agent/server name) and so
+// must be compared as an exact string (or pipe/comma-separated list), not a
+// regex. FileChanged is intentionally excluded — its matcher is a path pattern
+// that should stay regex. Mirrors Claude Code v2.1.195.
+const EXACT_MATCH_HOOK_EVENTS: ReadonlySet<string> = new Set([
+  'PreToolUse',
+  'PostToolUse',
+  'PostToolUseFailure',
+  'PermissionRequest',
+  'PermissionDenied',
+  'SessionStart',
+  'SessionEnd',
+  'Setup',
+  'PreCompact',
+  'PostCompact',
+  'Notification',
+  'SubagentStart',
+  'SubagentStop',
+  'Elicitation',
+  'ElicitationResult',
+  'ConfigChange',
+  'InstructionsLoaded',
+])
+
+// Tool-style events where a bare `mcp__<server>` matcher (no `__<tool>` suffix)
+// now matches nothing because matchers are exact-compared. Used to warn users
+// to migrate to the `mcp__<server>__.*` regex form. Mirrors Claude Code v2.1.195.
+const NO_TOOL_WARN_HOOK_EVENTS: ReadonlySet<string> = new Set([
+  'PreToolUse',
+  'PostToolUse',
+  'PostToolUseFailure',
+  'PermissionRequest',
+  'PermissionDenied',
+])
+
+// Warn-once dedup so a misconfigured matcher only logs a single time per process.
+const warnedNoToolMatchers = new Set<string>()
+
+/**
+ * Warn (once per matcher) when a hook matcher is a bare `mcp__<server>` name
+ * that now matches no tool because matchers are exact-compared, suggesting the
+ * `mcp__<server>__.*` regex form. Mirrors Claude Code v2.1.195.
+ */
+function warnIfMatcherMatchesNoTool(
+  hookEvent: string,
+  matcher: string | undefined,
+): void {
+  if (
+    !matcher ||
+    !NO_TOOL_WARN_HOOK_EVENTS.has(hookEvent) ||
+    warnedNoToolMatchers.has(matcher) ||
+    !/^[a-zA-Z0-9_|, -]+$/.test(matcher)
+  ) {
+    return
+  }
+  const serverOnly = matcher
+    .split(/[|,]/)
+    .map(t => t.trim())
+    .find(t => t.startsWith('mcp__') && !t.slice(5).includes('__'))
+  if (!serverOnly) return
+  warnedNoToolMatchers.add(matcher)
+  logForDebugging(
+    `Hook matcher \`${serverOnly}\` matches no tool (matchers are compared as exact strings). ` +
+      `To match all tools from this server, use \`${serverOnly}__.*\`.`,
+    { level: 'warn' },
+  )
+}
+
 /**
  * Check if a match query matches a hook matcher pattern
  * @param matchQuery The query to match (e.g., 'Write', 'Edit', 'Bash')
  * @param matcher The matcher pattern - can be:
  *   - Simple string for exact match (e.g., 'Write')
- *   - Pipe-separated list for multiple exact matches (e.g., 'Write|Edit')
+ *   - Pipe/comma-separated list for multiple exact matches (e.g., 'Write|Edit')
  *   - Regex pattern (e.g., '^Write.*', '.*', '^(Write|Edit)$')
+ * @param useExactMatch When true (identifier-style events), treat `-`, `,` and
+ *   spaces as plain characters so hyphenated names like `code-reviewer` /
+ *   `mcp__brave-search` are compared as exact strings instead of falling
+ *   through to substring regex matching. False keeps the narrower class so
+ *   path-style matchers (e.g. FileChanged) stay regex.
  * @returns true if the query matches the pattern
  */
-function matchesPattern(matchQuery: string, matcher: string): boolean {
+// Exported for unit tests (see src/test/utils/hookMatcher.test.ts).
+export function matchesPattern(
+  matchQuery: string,
+  matcher: string,
+  useExactMatch: boolean,
+): boolean {
   if (!matcher || matcher === '*') {
     return true
   }
-  // Check if it's a simple string or pipe-separated list (no regex special chars except |)
-  if (/^[a-zA-Z0-9_|]+$/.test(matcher)) {
-    // Handle pipe-separated exact matches
-    if (matcher.includes('|')) {
-      const patterns = matcher
-        .split('|')
-        .map(p => normalizeLegacyToolName(p.trim()))
-      return patterns.includes(matchQuery)
-    }
-    // Simple exact match
-    return matchQuery === normalizeLegacyToolName(matcher)
+  // Check if it's a simple string or separator-delimited list of exact names
+  // (no regex special chars). For identifier-style events also allow `-`, `,`
+  // and spaces so hyphenated names and `Write, Edit` lists are exact-matched.
+  const simplePattern = useExactMatch
+    ? /^[a-zA-Z0-9_|, -]+$/
+    : /^[a-zA-Z0-9_|]+$/
+  if (simplePattern.test(matcher)) {
+    const patterns = matcher
+      .split(useExactMatch ? /[|,]/ : '|')
+      .map(p => normalizeLegacyToolName(p.trim()))
+      .filter(Boolean)
+    return patterns.includes(matchQuery)
   }
 
   // Otherwise treat as regex
@@ -1681,11 +1760,21 @@ export async function getMatchingHooks(
       level: 'verbose',
     })
 
+    // Warn (once) about bare `mcp__<server>` matchers that now match no tool.
+    for (const m of hookMatchers) {
+      warnIfMatcherMatchesNoTool(hookEvent, m.matcher)
+    }
+
+    // Identifier-style events compare matchers as exact strings; others (e.g.
+    // FileChanged) keep regex semantics.
+    const useExactMatch = EXACT_MATCH_HOOK_EVENTS.has(hookEvent)
+
     // Extract hooks with their plugin context (if any)
     const filteredMatchers = matchQuery
       ? hookMatchers.filter(
           matcher =>
-            !matcher.matcher || matchesPattern(matchQuery, matcher.matcher),
+            !matcher.matcher ||
+            matchesPattern(matchQuery, matcher.matcher, useExactMatch),
         )
       : hookMatchers
 
