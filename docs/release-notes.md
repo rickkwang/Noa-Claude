@@ -1,5 +1,36 @@
 # Release Notes
 
+## 1.5.0
+
+### New Features
+
+- **Claude Sonnet 5 model support** — full model registration, cost tracking, and thinking/context handling for the new Sonnet 5 family.
+- **Live file-path autocomplete in bash mode** — file paths are now suggested and completed live while typing shell commands.
+- **`/cd` command** — moves the session's working directory without restarting the session.
+- **Logo animation sequences** — programmatic animation sequences and particle effects added to the startup logo.
+
+### Bug Fixes
+
+- **Effort slider theming** — slider labels for low/medium/high now use semantic theme tokens (`warning`/`success`/`permission`) instead of hardcoded ansi colors, so they adapt to the active theme; `xhigh` gets a dedicated shimmer effect; Speed/Intelligence labels renamed to Faster/Smarter.
+- **Hook matcher exact-match** — hyphenated matcher identifiers in hooks now require an exact match instead of a prefix match.
+- **Logo banner width** — banner now matches terminal width; fixed dim-color bleed in feed titles.
+- **Ghostty spinner alignment** — spinner rendering aligned with upstream Claude Code behavior.
+- **Diff/code tab rendering** — leading tabs are now converted to spaces when rendering code and diffs.
+- **Local-day stats bucketing** — daily stats now bucket and display by local day instead of UTC.
+- **Structured-outputs model allowlist** — aligned with Opus 4.7/4.8; Opus now defaults to a 1M context window.
+- **Permission mode fallback** — removed a redundant result fallback in `initialPermissionModeFromCLI`.
+- **TUI ratchet viewport** — fixed a feedback loop that could break the ratchet viewport.
+
+### Removed
+
+- **Computer-use feature** — removed the native `ComputerTool` and associated computer-use feature surface.
+
+### Refactors
+
+- Centralized progress types and tightened `Tool` typechecking.
+- Cleaned up Noa marketplace and launcher naming.
+- Isolated provider environment state in prompt tests to prevent cross-test pollution.
+
 ## 1.4.0
 
 ### New Features
