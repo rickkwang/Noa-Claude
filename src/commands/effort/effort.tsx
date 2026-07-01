@@ -237,15 +237,34 @@ function RainbowText({ text, shimmer, offset, bold = false }: { text: string; sh
   );
 }
 
+function EffortShimmerText({ text, offset }: { text: string; offset: number }): React.ReactNode {
+  const chars = [...text];
+  const sweepLength = chars.length + 4;
+  const peak = offset % sweepLength;
+  return (
+    <Text>
+      {chars.map((ch, i) => {
+        const isPeak = i === peak;
+        const isNeighbor = i === peak - 1 || i === peak + 1;
+        return (
+          <Text key={i} color={(isPeak ? 'autoAcceptShimmer' : 'autoAccept') as any} bold={isPeak || isNeighbor}>
+            {ch}
+          </Text>
+        );
+      })}
+    </Text>
+  );
+}
+
 function LevelLabel({ level, selected, shimmerOffset }: { level: SliderLevel; selected: boolean; shimmerOffset: number }): React.ReactNode {
   if (!selected) return <Text dimColor>{level}</Text>;
-  if (level === 'xhigh') return <RainbowText text={level} shimmer={true} offset={shimmerOffset} bold />;
+  if (level === 'xhigh') return <EffortShimmerText text={level} offset={shimmerOffset} />;
   if (level === 'max') return <RainbowText text={level} shimmer={false} offset={shimmerOffset} bold />;
-  // Color values must use the 'ansi:' prefix in this fork's Color type.
+  // These are Claude Code's semantic theme tokens, resolved by the active Theme.
   const colorMap: Record<string, string> = {
-    low: 'ansi:yellowBright',
-    medium: 'ansi:greenBright',
-    high: 'ansi:magentaBright',
+    low: 'warning',
+    medium: 'success',
+    high: 'permission',
   };
   return (
     <Text color={colorMap[level] as any} bold>
@@ -305,8 +324,8 @@ function EffortSlider({ onDone, model }: { onDone: LocalJSXCommandOnDone; model:
     <Box flexDirection="column" paddingTop={1} paddingBottom={1}>
       <Box flexDirection="column" paddingLeft={leftPad}>
         <Box flexDirection="row" width={sliderWidth} justifyContent="space-between">
-          <Text dimColor>Speed</Text>
-          <Text dimColor>Intelligence</Text>
+          <Text dimColor>Faster</Text>
+          <Text dimColor>Smarter</Text>
         </Box>
         <Text dimColor>{line}</Text>
         <Box flexDirection="row">
