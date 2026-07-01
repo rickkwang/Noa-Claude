@@ -103,7 +103,8 @@ export function getSupportedEffortLevelsForModel(
   if (
     modelKey.includes('opus-4-7') ||
     modelKey.includes('opus-4-8') ||
-    modelKey.includes('fable-5')
+    modelKey.includes('fable-5') ||
+    modelKey.includes('sonnet-5')
   ) {
     return ['low', 'medium', 'high', 'xhigh', 'max']
   }

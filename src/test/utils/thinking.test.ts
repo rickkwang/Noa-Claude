@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import {
   modelOmitsThinkingByDefault,
   modelRejectsSamplingParams,
+  modelRequiresExplicitThinkingDisable,
   modelSupportsAdaptiveThinking,
   modelSupportsThinking,
 } from '../../utils/thinking.js'
@@ -49,6 +50,33 @@ describe('Fable 5 — shares the Opus 4.8 request surface', () => {
 
   test('rejects sampling params (temperature/top_p/top_k)', () => {
     expect(modelRejectsSamplingParams('claude-fable-5')).toBe(true)
+  })
+})
+
+describe('Sonnet 5 — Opus 4.7/4.8 request surface, but adaptive-by-default', () => {
+  test('uses adaptive thinking on first-party', () => {
+    delete process.env.ANTHROPIC_BASE_URL
+    expect(modelSupportsAdaptiveThinking('claude-sonnet-5')).toBe(true)
+  })
+
+  test('omits thinking content by default (needs display: summarized)', () => {
+    expect(modelOmitsThinkingByDefault('claude-sonnet-5')).toBe(true)
+  })
+
+  test('rejects sampling params (temperature/top_p/top_k)', () => {
+    expect(modelRejectsSamplingParams('claude-sonnet-5')).toBe(true)
+  })
+
+  test('requires an explicit {type: "disabled"} to actually turn thinking off', () => {
+    expect(modelRequiresExplicitThinkingDisable('claude-sonnet-5')).toBe(true)
+  })
+
+  test('other models do not require the explicit disable', () => {
+    expect(modelRequiresExplicitThinkingDisable('claude-opus-4-8')).toBe(false)
+    expect(modelRequiresExplicitThinkingDisable('claude-fable-5')).toBe(false)
+    expect(modelRequiresExplicitThinkingDisable('claude-sonnet-4-6')).toBe(
+      false,
+    )
   })
 })
 

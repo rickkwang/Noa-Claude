@@ -184,6 +184,7 @@ export const WebSearchTool = buildTool({
       const supportsWebSearch =
         model.includes('claude-opus-4') ||
         model.includes('claude-sonnet-4') ||
+        model.includes('claude-sonnet-5') ||
         model.includes('claude-haiku-4')
 
       return supportsWebSearch

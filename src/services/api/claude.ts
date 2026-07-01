@@ -180,6 +180,7 @@ import { endQueryProfile, queryCheckpoint } from 'src/utils/queryProfiler.js'
 import {
   modelOmitsThinkingByDefault,
   modelRejectsSamplingParams,
+  modelRequiresExplicitThinkingDisable,
   modelSupportsAdaptiveThinking,
   modelSupportsThinking,
   type ThinkingConfig,
@@ -1693,6 +1694,11 @@ async function* queryModel(
           type: 'enabled',
         } satisfies BetaMessageStreamParams['thinking']
       }
+    } else if (!hasThinking && modelRequiresExplicitThinkingDisable(apiModel)) {
+      // Sonnet 5 runs adaptive thinking by default when `thinking` is omitted
+      // entirely, so turning thinking off requires sending an explicit
+      // {type: 'disabled'} rather than leaving the param unset.
+      thinking = { type: 'disabled' } satisfies BetaMessageStreamParams['thinking']
     }
 
     // Get API context management strategies if enabled

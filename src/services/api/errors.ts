@@ -952,6 +952,10 @@ function get3PModelFallbackSuggestion(model: string): string | undefined {
   if (m.includes('fable-5') || m.includes('fable_5')) {
     return getModelStrings().opus48
   }
+  // If the failing model looks like a Sonnet 5 variant, suggest Sonnet 4.6
+  if (m.includes('sonnet-5') || m.includes('sonnet_5')) {
+    return getModelStrings().sonnet46
+  }
   // If the failing model looks like an Opus 4.8 variant, suggest Opus 4.7
   if (m.includes('opus-4-8') || m.includes('opus_4_8')) {
     return getModelStrings().opus47

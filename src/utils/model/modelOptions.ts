@@ -106,6 +106,17 @@ function getSonnet46Option(): ModelOption {
   }
 }
 
+function getSonnet5Option(): ModelOption {
+  const is3P = getAPIProvider() !== 'firstParty'
+  return {
+    value: is3P ? getModelStrings().sonnet5 : 'sonnet',
+    label: 'Sonnet',
+    description: `Sonnet 5 · Best for everyday tasks${is3P ? '' : ` · ${formatModelPricing(COST_TIER_3_15)}`}`,
+    descriptionForModel:
+      'Sonnet 5 - best for everyday tasks. Generally recommended for most coding tasks',
+  }
+}
+
 function getCustomOpusOption(): ModelOption | undefined {
   const is3P = getAPIProvider() !== 'firstParty'
   const customOpusModel = process.env.ANTHROPIC_DEFAULT_OPUS_MODEL
@@ -209,6 +220,17 @@ export function getSonnet46_1MOption(): ModelOption {
   }
 }
 
+export function getSonnet5_1MOption(): ModelOption {
+  const is3P = getAPIProvider() !== 'firstParty'
+  return {
+    value: is3P ? getModelStrings().sonnet5 + '[1m]' : 'sonnet[1m]',
+    label: 'Sonnet (1M context)',
+    description: `Sonnet 5 with 1M context · Best for everyday tasks${is3P ? '' : ` · ${formatModelPricing(COST_TIER_3_15)}`}`,
+    descriptionForModel:
+      'Sonnet 5 with 1M context window - for long sessions with large codebases',
+  }
+}
+
 export function getOpus46_1MOption(fastMode = false): ModelOption {
   const is3P = getAPIProvider() !== 'firstParty'
   return {
@@ -284,6 +306,16 @@ export function getMaxSonnet46_1MOption(): ModelOption {
   }
 }
 
+export function getMaxSonnet5_1MOption(): ModelOption {
+  const is3P = getAPIProvider() !== 'firstParty'
+  const billingInfo = isClaudeAISubscriber() ? ' · Billed as extra usage' : ''
+  return {
+    value: 'sonnet[1m]',
+    label: 'Sonnet (1M context)',
+    description: `Sonnet 5 with 1M context${billingInfo}${is3P ? '' : ` · ${formatModelPricing(COST_TIER_3_15)}`}`,
+  }
+}
+
 export function getMaxOpus46_1MOption(fastMode = false): ModelOption {
   const billingInfo = isClaudeAISubscriber() ? ' · Billed as extra usage' : ''
   return {
@@ -328,6 +360,12 @@ const MaxSonnet46Option: ModelOption = {
   description: 'Sonnet 4.6 · Best for everyday tasks',
 }
 
+const MaxSonnet5Option: ModelOption = {
+  value: 'sonnet',
+  label: 'Sonnet',
+  description: 'Sonnet 5 · Best for everyday tasks',
+}
+
 const MaxHaiku45Option: ModelOption = {
   value: 'haiku',
   label: 'Haiku',
@@ -359,8 +397,8 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
       ...antModelOptions,
       getMergedOpus1MOption(fastMode),
       getFable5Option(),
-      getSonnet46Option(),
-      getSonnet46_1MOption(),
+      getSonnet5Option(),
+      getSonnet5_1MOption(),
       getHaiku45Option(),
     ]
   }
@@ -375,9 +413,9 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
 
       premiumOptions.push(getFable5Option())
 
-      premiumOptions.push(MaxSonnet46Option)
+      premiumOptions.push(MaxSonnet5Option)
       if (checkSonnet1mAccess()) {
-        premiumOptions.push(getMaxSonnet46_1MOption())
+        premiumOptions.push(getMaxSonnet5_1MOption())
       }
 
       premiumOptions.push(MaxHaiku45Option)
@@ -387,7 +425,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
     // Pro/Team Standard/Enterprise users: Sonnet is default, show Opus as alternative
     const standardOptions = [getDefaultOptionForUser(fastMode)]
     if (checkSonnet1mAccess()) {
-      standardOptions.push(getMaxSonnet46_1MOption())
+      standardOptions.push(getMaxSonnet5_1MOption())
     }
 
     if (isOpus1mMergeEnabled()) {
@@ -408,7 +446,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
   if (getAPIProvider() === 'firstParty') {
     const payg1POptions = [getDefaultOptionForUser(fastMode)]
     if (checkSonnet1mAccess()) {
-      payg1POptions.push(getSonnet46_1MOption())
+      payg1POptions.push(getSonnet5_1MOption())
     }
     if (isOpus1mMergeEnabled()) {
       payg1POptions.push(getMergedOpus1MOption(fastMode))
@@ -430,10 +468,10 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
   if (customSonnet !== undefined) {
     payg3pOptions.push(customSonnet)
   } else {
-    // Add Sonnet 4.6 since Sonnet 4.5 is the default
-    payg3pOptions.push(getSonnet46Option())
+    // Add Sonnet 5 since Sonnet 4.6 is the (3P) default
+    payg3pOptions.push(getSonnet5Option())
     if (checkSonnet1mAccess()) {
-      payg3pOptions.push(getSonnet46_1MOption())
+      payg3pOptions.push(getSonnet5_1MOption())
     }
   }
 

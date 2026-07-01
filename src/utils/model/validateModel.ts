@@ -170,6 +170,9 @@ function get3PFallbackSuggestion(model: string | undefined): string | undefined 
   if (lowerModel.includes('fable-5') || lowerModel.includes('fable_5')) {
     return getModelStrings().opus48
   }
+  if (lowerModel.includes('sonnet-5') || lowerModel.includes('sonnet_5')) {
+    return getModelStrings().sonnet46
+  }
   if (lowerModel.includes('opus-4-8') || lowerModel.includes('opus_4_8')) {
     return getModelStrings().opus47
   }

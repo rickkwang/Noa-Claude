@@ -98,6 +98,18 @@ export const CLAUDE_SONNET_4_6_CONFIG = {
   foundry: 'claude-sonnet-4-6',
 } as const satisfies ModelConfig
 
+// Sonnet 5 — near-Opus quality on coding/agentic work at Sonnet cost. Same
+// request surface as Opus 4.7/4.8 (adaptive thinking only; sampling params
+// removed) with one difference: omitting `thinking` runs adaptive by default
+// (Opus 4.7/4.8 omit = no thinking), so disabling thinking needs an explicit
+// {type:'disabled'} — handled in claude.ts.
+export const CLAUDE_SONNET_5_CONFIG = {
+  firstParty: 'claude-sonnet-5',
+  bedrock: 'us.anthropic.claude-sonnet-5',
+  vertex: 'claude-sonnet-5',
+  foundry: 'claude-sonnet-5',
+} as const satisfies ModelConfig
+
 // Fable 5 — most powerful tier, above Opus. Same request surface as Opus 4.8
 // (adaptive thinking only; sampling params + budget_tokens removed) with one
 // extra quirk: an explicit thinking:{type:'disabled'} returns 400 — omit the
@@ -118,6 +130,7 @@ export const ALL_MODEL_CONFIGS = {
   sonnet40: CLAUDE_SONNET_4_CONFIG,
   sonnet45: CLAUDE_SONNET_4_5_CONFIG,
   sonnet46: CLAUDE_SONNET_4_6_CONFIG,
+  sonnet5: CLAUDE_SONNET_5_CONFIG,
   opus40: CLAUDE_OPUS_4_CONFIG,
   opus41: CLAUDE_OPUS_4_1_CONFIG,
   opus45: CLAUDE_OPUS_4_5_CONFIG,

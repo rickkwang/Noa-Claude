@@ -117,7 +117,11 @@ export function modelSupportsThinking(model: string): boolean {
     return false
   }
   // Bedrock/Vertex: only Opus 4+ and Sonnet 4+.
-  return canonical.includes('sonnet-4') || canonical.includes('opus-4')
+  return (
+    canonical.includes('sonnet-4') ||
+    canonical.includes('sonnet-5') ||
+    canonical.includes('opus-4')
+  )
 }
 
 // @[MODEL LAUNCH]: Add the new model to the allowlist if it supports adaptive thinking.
@@ -137,6 +141,7 @@ export function modelSupportsAdaptiveThinking(model: string): boolean {
         canonical.includes('opus-4-7') ||
         canonical.includes('opus-4-8') ||
         canonical.includes('fable-5') ||
+        canonical.includes('sonnet-5') ||
         canonical.includes('sonnet-4-6'))) ||
     (provider === 'bedrock' &&
       (canonical.includes('opus-4-7') || canonical.includes('opus-4-8')))
@@ -172,7 +177,8 @@ export function modelRejectsSamplingParams(model: string): boolean {
   return (
     canonical.includes('opus-4-7') ||
     canonical.includes('opus-4-8') ||
-    canonical.includes('fable-5')
+    canonical.includes('fable-5') ||
+    canonical.includes('sonnet-5')
   )
 }
 
@@ -187,8 +193,20 @@ export function modelOmitsThinkingByDefault(model: string): boolean {
   return (
     canonical.includes('opus-4-7') ||
     canonical.includes('opus-4-8') ||
-    canonical.includes('fable-5')
+    canonical.includes('fable-5') ||
+    canonical.includes('sonnet-5')
   )
+}
+
+// Sonnet 5 is adaptive-by-default: omitting `thinking` entirely still runs
+// adaptive thinking (unlike Opus 4.7/4.8, where omitting means no thinking).
+// To actually disable thinking on Sonnet 5 the request must send an explicit
+// {type: 'disabled'} — see claude.ts, which otherwise just omits the param
+// when thinking is turned off.
+// @[MODEL LAUNCH]: Add new models that require an explicit thinking:{type:'disabled'}
+// to turn thinking off (i.e. omitting the param still runs adaptive thinking).
+export function modelRequiresExplicitThinkingDisable(model: string): boolean {
+  return getCanonicalName(model).includes('sonnet-5')
 }
 
 export function shouldEnableThinkingByDefault(): boolean {

@@ -113,6 +113,8 @@ function getKnowledgeCutoff(modelId: string): string | null {
     return 'January 2026'
   } else if (canonical.includes('claude-opus-4-7')) {
     return 'January 2026'
+  } else if (canonical.includes('claude-sonnet-5')) {
+    return 'January 2026'
   } else if (canonical.includes('claude-sonnet-4-6')) {
     return 'August 2025'
   } else if (canonical.includes('claude-opus-4-6')) {

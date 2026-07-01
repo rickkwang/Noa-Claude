@@ -126,12 +126,17 @@ export function getDefaultFableModel(): ModelName {
   return getModelStrings().fable5 || 'claude-fable-5'
 }
 
-// @[MODEL LAUNCH]: Update the default Sonnet model.
+// @[MODEL LAUNCH]: Update the default Sonnet model (3P providers may lag so keep defaults unchanged).
 export function getDefaultSonnetModel(): ModelName {
   if (process.env.ANTHROPIC_DEFAULT_SONNET_MODEL) {
     return process.env.ANTHROPIC_DEFAULT_SONNET_MODEL
   }
-  return getModelStrings().sonnet46 || 'claude-sonnet-4-6'
+  // 3P providers (Bedrock, Vertex, Foundry) lag firstParty on new Sonnet
+  // releases, so keep them on the previous generation until GA everywhere.
+  if (getAPIProvider() !== 'firstParty') {
+    return getModelStrings().sonnet46 || 'claude-sonnet-4-6'
+  }
+  return getModelStrings().sonnet5 || 'claude-sonnet-5'
 }
 
 // @[MODEL LAUNCH]: Update the default Haiku model.
@@ -249,6 +254,9 @@ export function firstPartyNameToCanonical(name: ModelName | undefined): ModelSho
   if (name.includes('claude-fable-5')) {
     return 'claude-fable-5'
   }
+  if (name.includes('claude-sonnet-5')) {
+    return 'claude-sonnet-5'
+  }
   if (name.includes('claude-sonnet-4-6')) {
     return 'claude-sonnet-4-6'
   }
@@ -314,7 +322,7 @@ export function getClaudeAiUserDefaultModelDescription(
     }
     return `Opus · Most capable for complex work${fastMode ? getOpus46PricingSuffix(true) : ''}`
   }
-  return 'Sonnet 4.6 · Best for everyday tasks'
+  return 'Sonnet 5 · Best for everyday tasks'
 }
 
 export function renderDefaultModelSetting(
@@ -389,6 +397,10 @@ export function getPublicModelDisplayName(model: ModelName): string | null {
       return 'Opus 4.1'
     case getModelStrings().opus40:
       return 'Opus 4'
+    case getModelStrings().sonnet5 + '[1m]':
+      return 'Sonnet 5 (1M context)'
+    case getModelStrings().sonnet5:
+      return 'Sonnet 5'
     case getModelStrings().sonnet46 + '[1m]':
       return 'Sonnet 4.6 (1M context)'
     case getModelStrings().sonnet46:
@@ -638,6 +650,9 @@ export function getMarketingNameForModel(modelId: string | undefined): string | 
   }
   if (canonical.includes('claude-opus-4')) {
     return 'Opus 4'
+  }
+  if (canonical.includes('claude-sonnet-5')) {
+    return has1m ? 'Sonnet 5 (with 1M context)' : 'Sonnet 5'
   }
   if (canonical.includes('claude-sonnet-4-6')) {
     return has1m ? 'Sonnet 4.6 (with 1M context)' : 'Sonnet 4.6'
