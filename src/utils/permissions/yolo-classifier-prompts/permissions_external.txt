@@ -1,0 +1,24 @@
+## Additional rules
+
+The following are additional ALLOW and BLOCK rules and environment notes configured for this project. Treat these as extending the categories above, not replacing them.
+
+### Additional ALLOW rules
+
+<user_allow_rules_to_replace>
+- Running the project's own test, build, lint, and type-check commands (npm test, bun test, make build, etc.)
+- Reading, searching, or listing files anywhere inside the project directory
+- Installing packages already declared in the project's dependency manifest
+</user_allow_rules_to_replace>
+
+### Additional BLOCK rules
+
+<user_deny_rules_to_replace>
+- Running database migrations against a non-local database
+- Deploying or publishing (npm publish, docker push, cloud CLI deploy commands)
+- Sending network requests to hosts other than the package registry, git remote, or hosts the user has named
+</user_deny_rules_to_replace>
+
+### Environment notes
+
+<user_environment_to_replace>
+</user_environment_to_replace>
