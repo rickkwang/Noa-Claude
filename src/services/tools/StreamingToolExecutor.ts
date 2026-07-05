@@ -11,6 +11,7 @@ import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
 import type { AssistantMessage, Message } from '../../types/message.js'
 import { createChildAbortController } from '../../utils/abortController.js'
 import { formatToolNameForError } from '../../utils/toolName.js'
+import { getMaxToolUseConcurrency } from './toolOrchestration.js'
 import { runToolUse } from './toolExecution.js'
 
 type MessageUpdate = {
@@ -136,13 +137,21 @@ export class StreamingToolExecutor {
   }
 
   /**
-   * Check if a tool can execute based on current concurrency state
+   * Check if a tool can execute based on current concurrency state.
+   * Mirrors runToolsConcurrently's cap (toolOrchestration.ts) so both
+   * execution paths bound how many concurrency-safe tools run at once —
+   * without this, a model emitting dozens of concurrent-safe tool_use
+   * blocks in one turn would start them all simultaneously.
    */
   private canExecuteTool(isConcurrencySafe: boolean): boolean {
     const executingTools = this.tools.filter(t => t.status === 'executing')
+    if (executingTools.length === 0) {
+      return true
+    }
     return (
-      executingTools.length === 0 ||
-      (isConcurrencySafe && executingTools.every(t => t.isConcurrencySafe))
+      isConcurrencySafe &&
+      executingTools.every(t => t.isConcurrencySafe) &&
+      executingTools.length < getMaxToolUseConcurrency()
     )
   }
 
