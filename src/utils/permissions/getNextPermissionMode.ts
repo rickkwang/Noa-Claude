@@ -44,18 +44,24 @@ export function getNextPermissionMode(
       return 'plan'
 
     case 'plan':
+      // Local customization: auto comes BEFORE bypass in the cycle (upstream
+      // orders it plan -> bypass -> auto). Cycle is now
+      // default -> acceptEdits -> plan -> [auto] -> [bypass] -> default.
+      if (canCycleToAuto(toolPermissionContext)) {
+        return 'auto'
+      }
       if (toolPermissionContext.isBypassPermissionsModeAvailable) {
         return 'bypassPermissions'
       }
-      if (canCycleToAuto(toolPermissionContext)) {
-        return 'auto'
+      return 'default'
+
+    case 'auto':
+      if (toolPermissionContext.isBypassPermissionsModeAvailable) {
+        return 'bypassPermissions'
       }
       return 'default'
 
     case 'bypassPermissions':
-      if (canCycleToAuto(toolPermissionContext)) {
-        return 'auto'
-      }
       return 'default'
 
     case 'dontAsk':
@@ -64,7 +70,7 @@ export function getNextPermissionMode(
 
 
     default:
-      // Covers auto (when AUTO_MODE is enabled) and any future modes — always fall back to default
+      // Any future modes — always fall back to default
       return 'default'
   }
 }
