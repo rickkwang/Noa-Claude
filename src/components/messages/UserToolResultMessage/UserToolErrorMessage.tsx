@@ -71,7 +71,7 @@ export function UserToolErrorMessage(t0) {
     }
     return t1;
   }
-  if (feature("TRANSCRIPT_CLASSIFIER") && typeof param.content === "string" && isClassifierDenial(param.content)) {
+  if (feature("AUTO_MODE") && typeof param.content === "string" && isClassifierDenial(param.content)) {
     let t1;
     if ($[6] === Symbol.for("react.memo_cache_sentinel")) {
       t1 = <MessageResponse height={1}><Text dimColor={true}>Denied by auto mode classifier {BULLET_OPERATOR} /feedback if incorrect</Text></MessageResponse>;

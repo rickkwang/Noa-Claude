@@ -641,7 +641,7 @@ export function getAssistantMessageFromError(
   }
 
   // Server rejected the afk-mode beta header (plan does not include auto
-  // mode). AFK_MODE_BETA_HEADER is '' in non-TRANSCRIPT_CLASSIFIER builds,
+  // mode). AFK_MODE_BETA_HEADER is '' in non-AUTO_MODE builds,
   // so the truthy guard keeps this inert there.
   if (
     AFK_MODE_BETA_HEADER &&

@@ -114,7 +114,7 @@ export const NotebookEditTool = buildTool({
     return outputSchema()
   },
   toAutoClassifierInput(input) {
-    if (feature('TRANSCRIPT_CLASSIFIER')) {
+    if (feature('AUTO_MODE')) {
       const mode = input.edit_mode ?? 'replace'
       return `${input.notebook_path} ${mode}: ${input.new_source}`
     }

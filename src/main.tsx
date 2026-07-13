@@ -182,7 +182,7 @@ import { parseSettingSourcesFlag } from 'src/utils/settings/constants.js';
 import { plural } from 'src/utils/stringUtils.js';
 import { type ChannelEntry, getInitialMainLoopModel, getIsNonInteractiveSession, getSdkBetas, getSessionId, getUserMsgOptIn, setAllowedChannels, setAllowedSettingSources, setChromeFlagOverride, setClientType, setCwdState, setFlagSettingsPath, setInitialMainLoopModel, setInlinePlugins, setIsInteractive, setKairosActive, setOriginalCwd, setQuestionPreviewFormat, setSdkBetas, setSessionBypassPermissionsMode, setSessionPersistenceDisabled, setSessionSource, setUserMsgOptIn, switchSession } from './bootstrap/state.js';
 
-const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
+const autoModeStateModule = feature('AUTO_MODE')
   ? await import('./utils/permissions/autoModeState.js')
   : null;
 
@@ -358,7 +358,7 @@ function runMigrations(): void {
     migrateSonnet45ToSonnet46();
     migrateOpusToOpus1m();
     migrateReplBridgeEnabledToRemoteControlAtStartup();
-    if (feature('TRANSCRIPT_CLASSIFIER')) {
+    if (feature('AUTO_MODE')) {
       resetAutoModeOptInForDefaultOffer();
     }
     if ("external" === 'ant') {
@@ -1280,7 +1280,7 @@ async function run(): Promise<CommanderCommand> {
 
     // Store session bypass permissions mode for trust dialog check
     setSessionBypassPermissionsMode(permissionMode === 'bypassPermissions');
-    if (feature('TRANSCRIPT_CLASSIFIER')) {
+    if (feature('AUTO_MODE')) {
       // autoModeFlagCli is the "did the user intend auto this session" signal.
       // Set when: --enable-auto-mode, --permission-mode auto, resolved mode
       // is auto, OR settings defaultMode is auto but the gate denied it
@@ -1607,7 +1607,7 @@ async function run(): Promise<CommanderCommand> {
       }
       toolPermissionContext = removeDangerousPermissions(toolPermissionContext, overlyBroadBashPermissions);
     }
-    if (feature('TRANSCRIPT_CLASSIFIER') && dangerousPermissions.length > 0) {
+    if (feature('AUTO_MODE') && dangerousPermissions.length > 0) {
       toolPermissionContext = stripDangerousPermissionsForAutoMode(toolPermissionContext);
     }
 
@@ -2532,8 +2532,8 @@ async function run(): Promise<CommanderCommand> {
       }
 
       // Async check of auto mode gate — corrects state and disables auto if needed.
-      // Gated on TRANSCRIPT_CLASSIFIER (not USER_TYPE) so GrowthBook kill switch runs for external builds too.
-      if (feature('TRANSCRIPT_CLASSIFIER')) {
+      // Gated on AUTO_MODE (not USER_TYPE) so GrowthBook kill switch runs for external builds too.
+      if (feature('AUTO_MODE')) {
         void verifyAutoModeGateAccess(toolPermissionContext, headlessStore.getState().fastMode).then(({
           updateContext
         }) => {
@@ -3955,7 +3955,7 @@ async function run(): Promise<CommanderCommand> {
     await agentsHandler();
     process.exit(0);
   });
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
+  if (feature('AUTO_MODE')) {
     // Skip when tengu_auto_mode_config.enabled === 'disabled' (circuit breaker).
     // Reads from disk cache — GrowthBook isn't initialized at registration time.
     if (getAutoModeEnabledStateIfCached() !== 'disabled') {

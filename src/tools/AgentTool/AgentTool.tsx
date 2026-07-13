@@ -994,7 +994,7 @@ export const AgentTool = buildTool({
                     // Parallelize the two independent post-completion awaits —
                     // handoff classifier (remote API) and worktree probe (git
                     // exec) don't depend on each other.
-                    const handoffPromise = feature('TRANSCRIPT_CLASSIFIER')
+                    const handoffPromise = feature('AUTO_MODE')
                       ? classifyHandoffIfNeeded({
                           agentMessages,
                           tools: toolUseContext.options.tools,
@@ -1286,7 +1286,7 @@ export const AgentTool = buildTool({
           logForDebugging(`Sync agent recovering from error with ${agentMessages.length} messages`);
         }
         const agentResult = finalizeAgentTool(agentMessages, syncAgentId, metadata);
-        if (feature('TRANSCRIPT_CLASSIFIER')) {
+        if (feature('AUTO_MODE')) {
           const currentAppState = toolUseContext.getAppState();
           const handoffWarning = await classifyHandoffIfNeeded({
             agentMessages,

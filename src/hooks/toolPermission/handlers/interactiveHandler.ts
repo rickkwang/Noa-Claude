@@ -468,7 +468,7 @@ function handleInteractivePermission(
               : undefined
 
           // Show auto-approved transition with dimmed options
-          if (feature('TRANSCRIPT_CLASSIFIER')) {
+          if (feature('AUTO_MODE')) {
             ctx.updateQueueItem({
               classifierCheckInProgress: false,
               classifierAutoApproved: true,
@@ -477,7 +477,7 @@ function handleInteractivePermission(
           }
 
           if (
-            feature('TRANSCRIPT_CLASSIFIER') &&
+            feature('AUTO_MODE') &&
             decisionReason.type === 'classifier'
           ) {
             if (decisionReason.classifier === 'auto-mode') {

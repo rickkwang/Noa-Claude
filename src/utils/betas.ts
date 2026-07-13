@@ -188,7 +188,7 @@ export function modelSupportsStructuredOutputs(model: string): boolean {
 
 // @[MODEL LAUNCH]: Add the new model if it supports auto mode (specifically PI probes) — ask in #proj-claude-code-safety-research.
 export function modelSupportsAutoMode(model: string): boolean {
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
+  if (feature('AUTO_MODE')) {
     const m = getCanonicalName(model)
     // External: firstParty-only at launch (PI probes not wired for
     // Bedrock/Vertex/Foundry yet). Checked before allowModels so the GB
@@ -219,7 +219,14 @@ export function modelSupportsAutoMode(model: string): boolean {
       return true
     }
     // External allowlist (direct firstParty already checked above).
-    return /^claude-(opus|sonnet)-4-6/.test(m)
+    // Upstream launched auto mode on opus/sonnet-4-6 only; this fork's default
+    // models are newer (Opus 4.8, Sonnet 5), so widen the allowlist to the
+    // opus/sonnet 4.6+ and 5+ families. Still first-party-gated above, which
+    // also keeps the afk-mode beta header off third-party providers.
+    return (
+      /^claude-(opus|sonnet)-4-(6|7|8|9)/.test(m) ||
+      /^claude-(opus|sonnet)-5/.test(m)
+    )
   }
   return false
 }

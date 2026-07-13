@@ -41,7 +41,7 @@ import type { PermissionRequestProps } from '../PermissionRequest.js';
 import { PermissionRuleExplanation } from '../PermissionRuleExplanation.js';
 
 /* eslint-disable @typescript-eslint/no-require-imports */
-const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER') ? require('../../../utils/permissions/autoModeState.js') as typeof import('../../../utils/permissions/autoModeState.js') : null;
+const autoModeStateModule = feature('AUTO_MODE') ? require('../../../utils/permissions/autoModeState.js') as typeof import('../../../utils/permissions/autoModeState.js') : null;
 import type { Base64ImageSource, ImageBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
 /* eslint-enable @typescript-eslint/no-require-imports */
 import type { PastedContent } from '../../../utils/config.js';
@@ -311,7 +311,7 @@ export function ExitPlanModePermissionRequest({
 
     // If auto was active during plan (from auto mode or opt-in) and NOT going
     // to auto, deactivate auto + restore permissions + fire exit attachment.
-    if (feature('TRANSCRIPT_CLASSIFIER')) {
+    if (feature('AUTO_MODE')) {
       const goingToAuto = (value === 'yes-resume-auto-mode' || value === 'yes-auto-clear-context') && isAutoModeGateEnabled();
       // isAutoModeActive() is the authoritative signal — prePlanMode/
       // strippedDangerousRules are stale after transitionPlanAutoMode
@@ -333,7 +333,7 @@ export function ExitPlanModePermissionRequest({
     // Clear-context options: set pending plan implementation and reject the dialog
     // The REPL will handle context clear and trigger a fresh query
     // Keep-context options skip this block and go through the normal flow below
-    const isResumeAutoOption = feature('TRANSCRIPT_CLASSIFIER') ? value === 'yes-resume-auto-mode' : false;
+    const isResumeAutoOption = feature('AUTO_MODE') ? value === 'yes-resume-auto-mode' : false;
     const isKeepContextOption = value === 'yes-bypass-permissions-keep-context' || value === 'yes-accept-edits-keep-context' || value === 'yes-default-keep-context' || isResumeAutoOption;
     if (value !== 'no') {
       autoNameSessionFromPlan(currentPlan, setAppState, !isKeepContextOption);
@@ -345,7 +345,7 @@ export function ExitPlanModePermissionRequest({
         mode = 'bypassPermissions';
       } else if (value === 'yes-accept-edits') {
         mode = 'acceptEdits';
-      } else if (feature('TRANSCRIPT_CLASSIFIER') && value === 'yes-auto-clear-context' && isAutoModeGateEnabled()) {
+      } else if (feature('AUTO_MODE') && value === 'yes-auto-clear-context' && isAutoModeGateEnabled()) {
         // REPL's processInitialMessage handles stripDangerousPermissions + mode,
         // but does NOT set autoModeActive. Gate-off falls through to 'default'.
         mode = 'auto';
@@ -398,7 +398,7 @@ export function ExitPlanModePermissionRequest({
     // Handle auto keep-context option — needs special handling because
     // buildPermissionUpdates maps auto to 'default' via toExternalPermissionMode.
     // We set the mode directly via setAppState and sync the bootstrap state.
-    if (feature('TRANSCRIPT_CLASSIFIER') && value === 'yes-resume-auto-mode' && isAutoModeGateEnabled()) {
+    if (feature('AUTO_MODE') && value === 'yes-resume-auto-mode' && isAutoModeGateEnabled()) {
       logEvent('tengu_plan_exit', {
         planLengthChars: currentPlan.length,
         outcome: value as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -432,7 +432,7 @@ export function ExitPlanModePermissionRequest({
       'yes-bypass-permissions-keep-context': 'bypassPermissions',
       'yes-accept-edits-keep-context': 'acceptEdits',
       'yes-default-keep-context': 'default',
-      ...(feature('TRANSCRIPT_CLASSIFIER') ? {
+      ...(feature('AUTO_MODE') ? {
         'yes-resume-auto-mode': 'default' as const
       } : {})
     };
@@ -566,7 +566,7 @@ export function ExitPlanModePermissionRequest({
           interviewPhaseEnabled: isPlanModeInterviewPhaseEnabled(),
           planStructureVariant
         });
-        if (feature('TRANSCRIPT_CLASSIFIER')) {
+        if (feature('AUTO_MODE')) {
           const autoWasUsedDuringPlan = autoModeStateModule?.isAutoModeActive() ?? false;
           if (autoWasUsedDuringPlan) {
             autoModeStateModule?.setAutoModeActive(false);
@@ -691,7 +691,7 @@ export function buildPlanApprovalOptions({
   const options: OptionWithDescription<ResponseValue>[] = [];
   const usedLabel = usedPercent !== null ? ` (${usedPercent}% used)` : '';
   if (showClearContext) {
-    if (feature('TRANSCRIPT_CLASSIFIER') && isAutoModeAvailable) {
+    if (feature('AUTO_MODE') && isAutoModeAvailable) {
       options.push({
         label: `Yes, clear context${usedLabel} and use auto mode`,
         value: 'yes-auto-clear-context'
@@ -710,7 +710,7 @@ export function buildPlanApprovalOptions({
   }
 
   // Slot 2: keep-context with elevated mode (same priority: auto > bypass > edits).
-  if (feature('TRANSCRIPT_CLASSIFIER') && isAutoModeAvailable) {
+  if (feature('AUTO_MODE') && isAutoModeAvailable) {
     options.push({
       label: 'Yes, and use auto mode',
       value: 'yes-resume-auto-mode'

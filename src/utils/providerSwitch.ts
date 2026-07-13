@@ -73,7 +73,7 @@ export function onProviderSwitch(context: LocalJSXCommandContext): void {
     context.setAppState,
   )
 
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
+  if (feature('AUTO_MODE')) {
     resetAutoModeGateCheck()
     void checkAndDisableAutoModeIfNeeded(
       appState.toolPermissionContext,

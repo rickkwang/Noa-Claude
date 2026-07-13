@@ -407,7 +407,7 @@ export async function classifyHandoffIfNeeded({
   subagentType: string
   totalToolUseCount: number
 }): Promise<string | null> {
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
+  if (feature('AUTO_MODE')) {
     if (toolPermissionContext.mode !== 'auto') return null
 
     const agentTranscript = buildTranscriptForClassifier(agentMessages, tools)
@@ -635,8 +635,8 @@ export async function runAsyncAgentLifecycle({
     // Parallelize the two independent post-completion awaits: the handoff
     // classifier is a remote API call, worktree probe is a git exec. They
     // don't depend on each other — running them concurrently saves a round-trip
-    // when TRANSCRIPT_CLASSIFIER is enabled.
-    const handoffPromise = feature('TRANSCRIPT_CLASSIFIER')
+    // when AUTO_MODE is enabled.
+    const handoffPromise = feature('AUTO_MODE')
       ? classifyHandoffIfNeeded({
           agentMessages,
           tools: toolUseContext.options.tools,

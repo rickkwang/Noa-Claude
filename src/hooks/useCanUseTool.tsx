@@ -41,7 +41,7 @@ function useCanUseTool(setToolUseConfirmQueue, setToolPermissionContext) {
           if (ctx.resolveIfAborted(resolve)) {
             return;
           }
-          if (feature("TRANSCRIPT_CLASSIFIER") && result.decisionReason?.type === "classifier" && result.decisionReason.classifier === "auto-mode") {
+          if (feature("AUTO_MODE") && result.decisionReason?.type === "classifier" && result.decisionReason.classifier === "auto-mode") {
             setYoloClassifierApproval(toolUseID, result.decisionReason.reason);
           }
           ctx.logDecision({
@@ -75,7 +75,7 @@ function useCanUseTool(setToolUseConfirmQueue, setToolPermissionContext) {
                 decision: "reject",
                 source: "config"
               });
-              if (feature("TRANSCRIPT_CLASSIFIER") && result.decisionReason?.type === "classifier" && result.decisionReason.classifier === "auto-mode") {
+              if (feature("AUTO_MODE") && result.decisionReason?.type === "classifier" && result.decisionReason.classifier === "auto-mode") {
                 recordAutoModeDenial({
                   toolName: tool.name,
                   display: description,

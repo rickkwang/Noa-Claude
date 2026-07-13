@@ -52,21 +52,23 @@ function txtRequire(mod: string | { default: string }): string {
   return typeof mod === 'string' ? mod : mod.default
 }
 
-const BASE_PROMPT: string = feature('TRANSCRIPT_CLASSIFIER')
+const BASE_PROMPT: string = feature('AUTO_MODE')
   ? txtRequire(require('./yolo-classifier-prompts/auto_mode_system_prompt.txt'))
   : ''
 
 // External template is loaded separately so it's available for
 // `claude auto-mode defaults` even in ant builds. Ant builds use
 // permissions_anthropic.txt at runtime but should dump external defaults.
-const EXTERNAL_PERMISSIONS_TEMPLATE: string = feature('TRANSCRIPT_CLASSIFIER')
+const EXTERNAL_PERMISSIONS_TEMPLATE: string = feature('AUTO_MODE')
   ? txtRequire(require('./yolo-classifier-prompts/permissions_external.txt'))
   : ''
 
-const ANTHROPIC_PERMISSIONS_TEMPLATE: string =
-  feature('TRANSCRIPT_CLASSIFIER') && process.env.USER_TYPE === 'ant'
-    ? txtRequire(require('./yolo-classifier-prompts/permissions_anthropic.txt'))
-    : ''
+// External-only fork: the ant-internal permissions template is never used
+// (isUsingExternalPermissions() is always true for non-ant users). Kept as a
+// named const for the classifier call site below, but resolved to '' so the
+// bundler never tries to inline the absent permissions_anthropic.txt (its
+// require can't be DCE'd — USER_TYPE is a runtime check).
+const ANTHROPIC_PERMISSIONS_TEMPLATE: string = ''
 /* eslint-enable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
 
 function isUsingExternalPermissions(): boolean {

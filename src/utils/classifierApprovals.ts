@@ -44,7 +44,7 @@ export function setYoloClassifierApproval(
   toolUseID: string,
   reason: string,
 ): void {
-  if (!feature('TRANSCRIPT_CLASSIFIER')) {
+  if (!feature('AUTO_MODE')) {
     return
   }
   CLASSIFIER_APPROVALS.set(toolUseID, { classifier: 'auto-mode', reason })
@@ -53,7 +53,7 @@ export function setYoloClassifierApproval(
 export function getYoloClassifierApproval(
   toolUseID: string,
 ): string | undefined {
-  if (!feature('TRANSCRIPT_CLASSIFIER')) {
+  if (!feature('AUTO_MODE')) {
     return undefined
   }
   const approval = CLASSIFIER_APPROVALS.get(toolUseID)
@@ -62,7 +62,7 @@ export function getYoloClassifierApproval(
 }
 
 export function setClassifierChecking(toolUseID: string): void {
-  if (!feature('BASH_CLASSIFIER') && !feature('TRANSCRIPT_CLASSIFIER')) return
+  if (!feature('BASH_CLASSIFIER') && !feature('AUTO_MODE')) return
   if (CLASSIFIER_CHECKING.has(toolUseID)) return
   CLASSIFIER_CHECKING.add(toolUseID)
   classifierCheckingVersion += 1
@@ -70,7 +70,7 @@ export function setClassifierChecking(toolUseID: string): void {
 }
 
 export function clearClassifierChecking(toolUseID: string): void {
-  if (!feature('BASH_CLASSIFIER') && !feature('TRANSCRIPT_CLASSIFIER')) return
+  if (!feature('BASH_CLASSIFIER') && !feature('AUTO_MODE')) return
   if (!CLASSIFIER_CHECKING.delete(toolUseID)) return
   classifierCheckingVersion += 1
   classifierChecking.emit()

@@ -190,7 +190,7 @@ function createPermissionContext(
               return null
             }
             if (
-              feature('TRANSCRIPT_CLASSIFIER') &&
+              feature('AUTO_MODE') &&
               classifierDecision.type === 'classifier'
             ) {
               const matchedRule = classifierDecision.reason.match(

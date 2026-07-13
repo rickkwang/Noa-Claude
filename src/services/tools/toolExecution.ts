@@ -1095,7 +1095,7 @@ async function checkPermissionsAndCallTool(
     // Run PermissionDenied hooks for auto mode classifier denials.
     // If a hook returns {retry: true}, tell the model it may retry.
     if (
-      feature('TRANSCRIPT_CLASSIFIER') &&
+      feature('AUTO_MODE') &&
       permissionDecision.decisionReason?.type === 'classifier' &&
       permissionDecision.decisionReason.classifier === 'auto-mode'
     ) {

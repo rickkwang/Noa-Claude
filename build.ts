@@ -20,10 +20,14 @@ const dev = args.includes('--dev')
 
 // Flags whose gated modules are MISSING from this fork are omitted below —
 // enabling them fails the bundle at resolve time (`bun run build:dev:full`
-// is the canary). Two remain referenced in source and are omitted for that
-// reason: COORDINATOR_MODE (coordinator/workerAgent) and TRANSCRIPT_CLASSIFIER
-// (yolo-classifier-prompts/*.txt). Their gates resolve false at runtime; the
-// branches are woven through hot paths and retained rather than excised.
+// is the canary). COORDINATOR_MODE (coordinator/workerAgent) remains referenced
+// in source and is omitted for that reason; its gates resolve false at runtime
+// and the branches are woven through hot paths and retained rather than excised.
+//
+// TRANSCRIPT_CLASSIFIER was the upstream flag for the auto-mode transcript
+// classifier. In this fork that whole subsystem is re-gated under the dedicated
+// AUTO_MODE flag (below), which ships enabled in the baseline build so shift+tab
+// reaches auto mode. TRANSCRIPT_CLASSIFIER no longer gates anything.
 //
 // The remaining never-buildable flags (BG_SESSIONS, DIRECT_CONNECT,
 // FORK_SUBAGENT, KAIROS_GITHUB_WEBHOOKS, MCP_SKILLS, MONITOR_TOOL,
@@ -32,6 +36,7 @@ const dev = args.includes('--dev')
 // anything and are simply absent below. See FEATURES.md.
 const fullExperimentalFeatures = [
   'AGENT_MEMORY_SNAPSHOT',
+  'AUTO_MODE',
   'AGENT_TRIGGERS',
   'AGENT_TRIGGERS_REMOTE',
   'ALLOW_TEST_VERSIONS',
@@ -120,7 +125,12 @@ function getBundledReleaseNotes(): string {
   }
 }
 
-const defaultFeatures = ['VOICE_MODE', 'AUTO_THEME', 'BUILTIN_EXPLORE_PLAN_AGENTS']
+const defaultFeatures = [
+  'VOICE_MODE',
+  'AUTO_THEME',
+  'BUILTIN_EXPLORE_PLAN_AGENTS',
+  'AUTO_MODE',
+]
 const featureSet = new Set<string>(defaultFeatures)
 
 for (let i = 0; i < args.length; i++) {

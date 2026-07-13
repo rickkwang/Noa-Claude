@@ -23,7 +23,7 @@ function stringsForDecisionReason(reason: PermissionDecisionReason | undefined, 
   if (!reason) {
     return null;
   }
-  if ((feature('BASH_CLASSIFIER') || feature('TRANSCRIPT_CLASSIFIER')) && reason.type === 'classifier') {
+  if ((feature('BASH_CLASSIFIER') || feature('AUTO_MODE')) && reason.type === 'classifier') {
     if (reason.classifier === 'auto-mode') {
       return {
         reasonString: `Auto mode classifier requires confirmation for this ${toolType}.\n${reason.reason}`,

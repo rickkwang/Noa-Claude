@@ -59,7 +59,7 @@ export const PermissionsSchema = lazySchema(() =>
         ),
       defaultMode: z
         .enum(
-          feature('TRANSCRIPT_CLASSIFIER')
+          feature('AUTO_MODE')
             ? PERMISSION_MODES
             : EXTERNAL_PERMISSION_MODES,
         )
@@ -69,7 +69,7 @@ export const PermissionsSchema = lazySchema(() =>
         .enum(['disable'])
         .optional()
         .describe('Disable the ability to bypass permission prompts'),
-      ...(feature('TRANSCRIPT_CLASSIFIER')
+      ...(feature('AUTO_MODE')
         ? {
             disableAutoMode: z
               .enum(['disable'])
@@ -1005,7 +1005,7 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           'Whether the user has accepted the bypass permissions mode dialog',
         ),
-      ...(feature('TRANSCRIPT_CLASSIFIER')
+      ...(feature('AUTO_MODE')
         ? {
             skipAutoPermissionPrompt: z
               .boolean()

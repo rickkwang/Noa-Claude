@@ -77,7 +77,7 @@ export async function checkAndDisableAutoModeIfNeeded(
   setAppState: (f: (prev: AppState) => AppState) => void,
   fastMode?: boolean,
 ): Promise<void> {
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
+  if (feature('AUTO_MODE')) {
     if (autoModeCheckRan) {
       return
     }

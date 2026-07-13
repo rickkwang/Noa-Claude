@@ -24,7 +24,7 @@ import {
  * 'enabled'), but the guard makes it safe regardless.
  */
 export function resetAutoModeOptInForDefaultOffer(): void {
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
+  if (feature('AUTO_MODE')) {
     const config = getGlobalConfig()
     if (config.hasResetAutoModeOptInForDefaultOffer) return
     if (getAutoModeEnabledState() !== 'enabled') return

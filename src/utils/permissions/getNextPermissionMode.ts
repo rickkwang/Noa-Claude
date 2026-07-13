@@ -16,7 +16,7 @@ import {
 // (permissionSetup.ts:~559), which would silently crash the shift+tab handler
 // and leave the user stuck at the current mode.
 function canCycleToAuto(ctx: ToolPermissionContext): boolean {
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
+  if (feature('AUTO_MODE')) {
     const gateEnabled = isAutoModeGateEnabled()
     const can = !!ctx.isAutoModeAvailable && gateEnabled
     if (!can) {
@@ -38,16 +38,6 @@ export function getNextPermissionMode(
 ): PermissionMode {
   switch (toolPermissionContext.mode) {
     case 'default':
-      // Ants skip acceptEdits and plan — auto mode replaces them
-      if (process.env.USER_TYPE === 'ant') {
-        if (toolPermissionContext.isBypassPermissionsModeAvailable) {
-          return 'bypassPermissions'
-        }
-        if (canCycleToAuto(toolPermissionContext)) {
-          return 'auto'
-        }
-        return 'default'
-      }
       return 'acceptEdits'
 
     case 'acceptEdits':
@@ -74,7 +64,7 @@ export function getNextPermissionMode(
 
 
     default:
-      // Covers auto (when TRANSCRIPT_CLASSIFIER is enabled) and any future modes — always fall back to default
+      // Covers auto (when AUTO_MODE is enabled) and any future modes — always fall back to default
       return 'default'
   }
 }

@@ -1,6 +1,6 @@
 # Features Audit
 
-Last updated: 2026-06-13
+Last updated: 2026-07-13
 
 This file is the build/runtime audit for experimental feature flags in this repository.
 
@@ -21,6 +21,7 @@ This file is the build/runtime audit for experimental feature flags in this repo
 - `AGENT_TRIGGERS`
 - `AGENT_TRIGGERS_REMOTE`
 - `ALLOW_TEST_VERSIONS`
+- `AUTO_MODE` (default-on; gates the auto permission mode — the shift+tab carousel stop that delegates per-action approvals to the yolo/transcript safety classifier. Ships enabled in the baseline build. Runtime availability is still gated by model support (first-party Claude opus/sonnet 4.6+ / 5+ only), the `disableAutoMode` setting, and a first-entry opt-in consent dialog. Its GrowthBook rollout gate `tengu_auto_mode_config` is inert here — GrowthBook is hard-disabled — so the in-code default (`enabled`) applies.)
 - `AUTO_THEME`
 - `BASH_CLASSIFIER`
 - `BUILTIN_EXPLORE_PLAN_AGENTS` (default-on; enables the built-in Explore + Plan subagents. Its GrowthBook A/B gate `tengu_amber_stoat` is inert here — GrowthBook is hard-disabled — so the default `true` applies.)
@@ -82,9 +83,12 @@ above `fullExperimentalFeatures` in build.ts):
 - `COORDINATOR_MODE` (coordinator/workerAgent) — `isCoordinatorMode()` resolves
   false; its branches are deeply woven into resume/session hot paths and are
   retained rather than excised.
-- `TRANSCRIPT_CLASSIFIER` (yolo-classifier-prompts/*.txt) — the auto-mode/yolo
-  gates resolve false; their branches are woven through the permission hot path
-  and are retained rather than excised.
+
+`TRANSCRIPT_CLASSIFIER` used to appear here (the upstream flag for the auto-mode
+yolo classifier). The classifier prompts (`yolo-classifier-prompts/*.txt`) are
+now present in this fork and the whole subsystem was re-gated under the dedicated
+`AUTO_MODE` flag above, which ships enabled in the baseline build.
+`TRANSCRIPT_CLASSIFIER` no longer gates anything.
 
 ### Removed never-buildable surfaces
 

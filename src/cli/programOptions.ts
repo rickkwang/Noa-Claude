@@ -268,7 +268,7 @@ export function configureProgramOptions(program: CommanderCommand): void {
     );
     program.option('--agent-teams', '[ANT-ONLY] Force Claude to use multi-agent mode for solving problems', () => true);
   }
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
+  if (feature('AUTO_MODE')) {
     program.addOption(new Option('--enable-auto-mode', 'Opt in to auto mode').hideHelp());
   }
   if (feature('PROACTIVE') || feature('KAIROS')) {
