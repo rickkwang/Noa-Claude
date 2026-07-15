@@ -71,7 +71,6 @@ import {
   getTotalInputTokens,
   getTotalOutputTokens,
 } from '../../bootstrap/state.js'
-import { getFeatureValue_CACHED_WITH_REFRESH } from '../../services/analytics/growthbook.js'
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
   logEvent,
@@ -104,8 +103,6 @@ import {
   classifyYoloAction,
   formatActionForClassifier,
 } from './yoloClassifier.js'
-
-const CLASSIFIER_FAIL_CLOSED_REFRESH_MS = 30 * 60 * 1000 // 30 minutes
 
 const PERMISSION_RULE_SOURCES = [
   ...SETTING_SOURCES,
@@ -841,39 +838,26 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
             },
           }
         }
-        // When classifier is unavailable (API error), behavior depends on
-        // the tengu_iron_gate_closed gate.
+        // Classifier unavailable (API error) — deny unconditionally (fail
+        // closed). Matches upstream 2.1.210, which removed the
+        // tengu_iron_gate_closed gate and hardcoded this deny-with-retry path.
         if (classifierResult.unavailable) {
-          if (
-            getFeatureValue_CACHED_WITH_REFRESH(
-              'tengu_iron_gate_closed',
-              true,
-              CLASSIFIER_FAIL_CLOSED_REFRESH_MS,
-            )
-          ) {
-            logForDebugging(
-              'Auto mode classifier unavailable, denying with retry guidance (fail closed)',
-              { level: 'warn' },
-            )
-            return {
-              behavior: 'deny',
-              decisionReason: {
-                type: 'classifier',
-                classifier: 'auto-mode',
-                reason: 'Classifier unavailable',
-              },
-              message: buildClassifierUnavailableMessage(
-                tool.name,
-                classifierResult.model,
-              ),
-            }
-          }
-          // Fail open: fall back to normal permission handling
           logForDebugging(
-            'Auto mode classifier unavailable, falling back to normal permission handling (fail open)',
+            'Auto mode classifier unavailable, denying with retry guidance (fail closed)',
             { level: 'warn' },
           )
-          return result
+          return {
+            behavior: 'deny',
+            decisionReason: {
+              type: 'classifier',
+              classifier: 'auto-mode',
+              reason: 'Classifier unavailable',
+            },
+            message: buildClassifierUnavailableMessage(
+              tool.name,
+              classifierResult.model,
+            ),
+          }
         }
 
         // Update denial tracking and check limits
