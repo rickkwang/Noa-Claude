@@ -16,7 +16,6 @@ import { logEvent } from '../../services/analytics/index.js'
 import type { AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from '../../services/analytics/metadata.js'
 import { getCacheControl } from '../../services/api/claude.js'
 import { parsePromptTooLongTokenCounts } from '../../services/api/errors.js'
-import { getDefaultMaxRetries } from '../../services/api/withRetry.js'
 import type { Tool, ToolPermissionContext, Tools } from '../../Tool.js'
 import type { Message } from '../../types/message.js'
 import type {
@@ -683,6 +682,34 @@ function replaceOutputFormatWithXml(systemPrompt: string): string {
  * Returns [disableThinking, headroom] — tuple instead of named object so
  * property-name strings don't survive minification into external builds.
  */
+/**
+ * Classifier sampling temperature. Upstream (2.1.210) defaults to 1 with a
+ * CLAUDE_CODE_AUTO_MODE_TEMPERATURE env override.
+ */
+function getClassifierTemperature(): number {
+  const t = Number(process.env.CLAUDE_CODE_AUTO_MODE_TEMPERATURE)
+  return Number.isFinite(t) ? t : 1
+}
+
+/**
+ * Max retries for classifier API calls. Upstream (2.1.210) reads
+ * tengu_auto_mode_config.maxRetries with an in-code default of 4 — NOT the
+ * generic sideQuery default of 10, which would stall the permission check
+ * through six extra backoff rounds when the classifier endpoint is
+ * persistently failing.
+ */
+const CLASSIFIER_DEFAULT_MAX_RETRIES = 4
+function getClassifierMaxRetries(): number {
+  const config = getFeatureValue_CACHED_MAY_BE_STALE(
+    'tengu_auto_mode_config',
+    {} as AutoModeConfig,
+  )
+  const t = config?.maxRetries
+  return typeof t === 'number' && Number.isInteger(t) && t >= 0
+    ? t
+    : CLASSIFIER_DEFAULT_MAX_RETRIES
+}
+
 function getClassifierThinkingConfig(
   model: string,
 ): [false | undefined, number] {
@@ -784,13 +811,13 @@ async function classifyYoloActionXml(
         max_tokens: (mode === 'fast' ? 256 : 64) + thinkingPadding,
         system: systemBlocks,
         skipSystemPromptPrefix: true,
-        temperature: 0,
+        temperature: getClassifierTemperature(),
         thinking: disableThinking,
         messages: [
           ...prefixMessages,
           { role: 'user' as const, content: stage1Content },
         ],
-        maxRetries: getDefaultMaxRetries(),
+        maxRetries: getClassifierMaxRetries(),
         signal,
         ...(mode !== 'fast' && { stop_sequences: ['</block>'] }),
         querySource: 'auto_mode',
@@ -871,13 +898,13 @@ async function classifyYoloActionXml(
       max_tokens: 4096 + thinkingPadding,
       system: systemBlocks,
       skipSystemPromptPrefix: true,
-      temperature: 0,
+      temperature: getClassifierTemperature(),
       thinking: disableThinking,
       messages: [
         ...prefixMessages,
         { role: 'user' as const, content: stage2Content },
       ],
-      maxRetries: getDefaultMaxRetries(),
+      maxRetries: getClassifierMaxRetries(),
       signal,
       querySource: 'auto_mode' as const,
     }
@@ -1004,7 +1031,7 @@ async function classifyYoloActionXml(
  *
  * On API errors, returns shouldBlock: true with unavailable: true so callers
  * can distinguish "classifier actively blocked" from "classifier couldn't respond".
- * Transient errors (429, 500) are retried by sideQuery internally (see getDefaultMaxRetries).
+ * Transient errors (429, 500) are retried by sideQuery internally (see getClassifierMaxRetries).
  *
  * @param messages - The conversation history
  * @param action - The action being evaluated (tool name + input)
@@ -1145,7 +1172,7 @@ export async function classifyYoloAction(
         },
       ],
       skipSystemPromptPrefix: true,
-      temperature: 0,
+      temperature: getClassifierTemperature(),
       thinking: disableThinking,
       messages: [
         ...prefixMessages,
@@ -1156,7 +1183,7 @@ export async function classifyYoloAction(
         type: 'tool' as const,
         name: YOLO_CLASSIFIER_TOOL_NAME,
       },
-      maxRetries: getDefaultMaxRetries(),
+      maxRetries: getClassifierMaxRetries(),
       signal,
       querySource: 'auto_mode' as const,
     }
@@ -1368,7 +1395,15 @@ function resolveTwoStageClassifier():
     'tengu_auto_mode_config',
     {} as AutoModeConfig,
   )
-  return config?.twoStageClassifier
+  // Upstream ships this via the tengu_auto_mode_config GrowthBook gate, whose
+  // production value selects the two-stage XML classifier. GrowthBook is
+  // hard-disabled in this fork, so the config resolves to {} and we would
+  // otherwise fall back to the heavier single-stage tool_use classifier
+  // (forced tool_choice, max_tokens 4096). Default to the two-stage path
+  // (mode 'both': a fast <block>yes/no</block> first stage that escalates to a
+  // thinking stage only on a block) to match upstream's runtime and avoid the
+  // forced-tool-call request shape.
+  return config?.twoStageClassifier ?? true
 }
 
 /**
