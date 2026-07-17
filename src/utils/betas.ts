@@ -186,47 +186,45 @@ export function modelSupportsStructuredOutputs(model: string): boolean {
   )
 }
 
-// @[MODEL LAUNCH]: Add the new model if it supports auto mode (specifically PI probes) — ask in #proj-claude-code-safety-research.
+// @[MODEL LAUNCH]: auto mode is allow-by-default — only add a model here if it
+// does NOT support auto mode (specifically PI probes).
+/**
+ * Mirrors upstream 2.1.210's model gate: a denylist of known-unsupported models
+ * rather than an allowlist, so newer families (fable, opus/sonnet 4.7+, …) are
+ * supported by default without a code change on every launch.
+ *
+ * Upstream additionally short-circuits on a provider predicate, but that
+ * predicate returns true for every provider in 2.1.210, so it is omitted here.
+ * The narrower provider rule below (non-first-party can't run 4-6 or haiku) is
+ * the only provider gating that actually fires. Auto mode's separate
+ * provider/plan/settings gates still apply upstream of this check.
+ */
 export function modelSupportsAutoMode(model: string): boolean {
   if (feature('AUTO_MODE')) {
     const m = getCanonicalName(model)
-    // External: firstParty-only at launch (PI probes not wired for
-    // Bedrock/Vertex/Foundry yet). Checked before allowModels so the GB
-    // override can't enable auto mode on unsupported providers.
-    if (process.env.USER_TYPE !== 'ant' && !isDirectFirstParty()) {
+    // Denylist: models known not to support auto mode. Everything else passes.
+    if (
+      m.includes('claude-3-') ||
+      m === 'claude-opus-4-0' ||
+      m === 'claude-opus-4-1' ||
+      m === 'claude-opus-4-5' ||
+      m === 'claude-sonnet-4-0' ||
+      m === 'claude-sonnet-4-5' ||
+      m === 'claude-haiku-4-5'
+    ) {
       return false
     }
-    // GrowthBook override: tengu_auto_mode_config.allowModels force-enables
-    // auto mode for listed models, bypassing the denylist/allowlist below.
-    // Exact model IDs (e.g. "claude-strudel-v6-p") match only that model;
-    // canonical names (e.g. "claude-strudel") match the whole family.
-    const config = getFeatureValue_CACHED_MAY_BE_STALE<{
-      allowModels?: string[]
-    }>('tengu_auto_mode_config', {})
-    const rawLower = model.toLowerCase()
+    // Upstream gates this on `firstParty || anthropicAws`; this fork has no
+    // anthropicAws provider, so first-party is the equivalent set.
     if (
-      config?.allowModels?.some(
-        am => am.toLowerCase() === rawLower || am.toLowerCase() === m,
-      )
+      getAPIProvider() !== 'firstParty' &&
+      (m === 'claude-opus-4-6' ||
+        m === 'claude-sonnet-4-6' ||
+        m.includes('haiku'))
     ) {
-      return true
+      return false
     }
-    if (process.env.USER_TYPE === 'ant') {
-      // Denylist: block known-unsupported claude models, allow everything else (ant-internal models etc.)
-      if (m.includes('claude-3-')) return false
-      // claude-*-4 not followed by -[6-9]: blocks bare -4, -4-YYYYMMDD, -4@, -4-0 thru -4-5
-      if (/claude-(opus|sonnet|haiku)-4(?!-[6-9])/.test(m)) return false
-      return true
-    }
-    // External allowlist (direct firstParty already checked above).
-    // Upstream launched auto mode on opus/sonnet-4-6 only; this fork's default
-    // models are newer (Opus 4.8, Sonnet 5), so widen the allowlist to the
-    // opus/sonnet 4.6+ and 5+ families. Still first-party-gated above, which
-    // also keeps the afk-mode beta header off third-party providers.
-    return (
-      /^claude-(opus|sonnet)-4-(6|7|8|9)/.test(m) ||
-      /^claude-(opus|sonnet)-5/.test(m)
-    )
+    return true
   }
   return false
 }
