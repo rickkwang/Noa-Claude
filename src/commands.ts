@@ -1,6 +1,7 @@
 // @ts-nocheck
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import addDir from './commands/add-dir/index.js'
+import autocompact from './commands/autocompact/index.js'
 import cd from './commands/cd/index.js'
 import btw from './commands/btw/index.js'
 import feedback from './commands/feedback/index.js'
@@ -236,6 +237,7 @@ const COMMANDS = memoize((): Command[] => [
   usage,
   usageReport,
   vim,
+  autocompact,
   wiki,
   ...(webCmd ? [webCmd] : []),
   ...(forkCmd ? [forkCmd] : []),

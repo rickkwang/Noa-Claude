@@ -48,7 +48,13 @@ export function getEffectiveContextWindowSize(model: string): number {
   )
   let contextWindow = getContextWindowForModel(model, getSdkBetas())
 
-  const autoCompactWindow = process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+  // Env override wins; otherwise fall back to the persisted /autocompact
+  // setting. Either way the value is capped to the model's real context
+  // window below (Math.min), so a too-large setting can never exceed the model.
+  const envWindow = process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+  const configWindow = getGlobalConfig().autoCompactWindow
+  const autoCompactWindow =
+    envWindow || (configWindow != null ? String(configWindow) : undefined)
   if (autoCompactWindow) {
     const parsed = parseInt(autoCompactWindow, 10)
     if (!isNaN(parsed) && parsed > 0) {

@@ -235,6 +235,7 @@ export type GlobalConfig = {
   bypassPermissionsModeAccepted?: boolean
   hasUsedBackslashReturn?: boolean
   autoCompactEnabled: boolean // Controls whether auto-compact is enabled
+  autoCompactWindow?: number // Optional auto-compact context-window override, in tokens; undefined = auto (model-tuned). Capped to the model's real context limit. Env CLAUDE_CODE_AUTO_COMPACT_WINDOW takes precedence.
   showTurnDuration: boolean // Controls whether to show turn duration message (e.g., "Cooked for 1m 6s")
   /**
    * @deprecated Use settings.env instead.
@@ -644,6 +645,7 @@ export const GLOBAL_CONFIG_KEYS = [
   'editorMode',
   'hasUsedBackslashReturn',
   'autoCompactEnabled',
+  'autoCompactWindow',
   'showTurnDuration',
   'diffTool',
   'env',
