@@ -27,6 +27,7 @@ import {
   getDefaultMainLoopModelSetting,
   type ModelShortName,
 } from './model/model.js'
+import { isDirectFirstParty } from './model/providers.js'
 
 // @see https://platform.claude.com/docs/en/about-claude/pricing
 export type ModelCosts = {
@@ -45,6 +46,23 @@ export const COST_TIER_3_15 = {
   promptCacheReadTokens: 0.3,
   webSearchRequests: 0.01,
 } as const satisfies ModelCosts
+
+// Introductory Sonnet 5 pricing through August 31, 2026.
+export const COST_SONNET_5_INTRO_2_10 = {
+  inputTokens: 2,
+  outputTokens: 10,
+  promptCacheWriteTokens: 2.5,
+  promptCacheReadTokens: 0.2,
+  webSearchRequests: 0.01,
+} as const satisfies ModelCosts
+
+const SONNET_5_INTRO_PRICING_END_MS = Date.parse('2026-09-01T00:00:00.000Z')
+
+export function getSonnet5CostTier(nowMs = Date.now()): ModelCosts {
+  return nowMs < SONNET_5_INTRO_PRICING_END_MS
+    ? COST_SONNET_5_INTRO_2_10
+    : COST_TIER_3_15
+}
 
 // Pricing tier for Opus 4/4.1: $15 input / $75 output per Mtok
 export const COST_TIER_15_75 = {
@@ -162,8 +180,19 @@ function tokensToUSDCost(modelCosts: ModelCosts, usage: Usage): number {
   )
 }
 
-export function getModelCosts(model: string, usage: Usage): ModelCosts {
+export function getModelCosts(
+  model: string,
+  usage: Usage,
+  nowMs = Date.now(),
+): ModelCosts {
   const shortName = getCanonicalName(model)
+
+  if (
+    shortName === firstPartyNameToCanonical(CLAUDE_SONNET_5_CONFIG.firstParty) &&
+    isDirectFirstParty()
+  ) {
+    return getSonnet5CostTier(nowMs)
+  }
 
   // Check if this is an Opus 4.6/4.7 model with fast mode active.
   if (
@@ -245,8 +274,16 @@ export function formatModelPricing(costs: ModelCosts): string {
  * Accepts either a short name or full model name
  * Returns undefined if model is not found
  */
-export function getModelPricingString(model: string): string | undefined {
+export function getModelPricingString(
+  model: string,
+  nowMs = Date.now(),
+): string | undefined {
   const shortName = getCanonicalName(model)
+  if (
+    shortName === firstPartyNameToCanonical(CLAUDE_SONNET_5_CONFIG.firstParty)
+  ) {
+    return formatModelPricing(getSonnet5CostTier(nowMs))
+  }
   const costs = MODEL_COSTS[shortName]
   if (!costs) return undefined
   return formatModelPricing(costs)

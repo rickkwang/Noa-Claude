@@ -964,9 +964,9 @@ export function setModelStrings(modelStrings: ModelStrings): void {
   STATE.modelStrings = modelStrings
 }
 
-// Test utility function to reset model strings for re-initialization.
-// Separate from setModelStrings because we only want to accept 'null' in tests.
-export function resetModelStringsForTestingOnly() {
+// Clear provider-specific model strings so the next lookup re-initializes them.
+// Kept separate from setModelStrings so normal callers cannot pass null.
+export function clearModelStrings(): void {
   STATE.modelStrings = null
 }
 

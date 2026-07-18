@@ -8,15 +8,17 @@ import {
 } from '../auth.js'
 import { getModelStrings } from './modelStrings.js'
 import {
+  type ModelCosts,
   COST_TIER_3_15,
   COST_TIER_10_50,
   COST_HAIKU_35,
   COST_HAIKU_45,
   formatModelPricing,
+  getSonnet5CostTier,
 } from '../modelCost.js'
 import { getSettings_DEPRECATED } from '../settings/settings.js'
 import { checkOpus1mAccess, checkSonnet1mAccess } from './check1mAccess.js'
-import { getAPIProvider } from './providers.js'
+import { getAPIProvider, isDirectFirstParty } from './providers.js'
 import { isModelAllowed } from './modelAllowlist.js'
 import {
   getCanonicalName,
@@ -44,6 +46,10 @@ export type ModelOption = {
   descriptionForModel?: string
 }
 
+function getFirstPartyPricingSuffix(costs: ModelCosts): string {
+  return isDirectFirstParty() ? ` · ${formatModelPricing(costs)}` : ''
+}
+
 export function getDefaultOptionForUser(fastMode = false): ModelOption {
   if (process.env.USER_TYPE === 'ant') {
     const currentModel = renderDefaultModelSetting(
@@ -67,11 +73,10 @@ export function getDefaultOptionForUser(fastMode = false): ModelOption {
   }
 
   // PAYG
-  const is3P = getAPIProvider() !== 'firstParty'
   return {
     value: null,
     label: 'Default (recommended)',
-    description: `${renderDefaultModelSetting(getDefaultMainLoopModelSetting())} · Best for everyday tasks${is3P ? '' : ` · ${formatModelPricing(COST_TIER_3_15)}`}`,
+    description: `${renderDefaultModelSetting(getDefaultMainLoopModelSetting())} · Best for everyday tasks${getFirstPartyPricingSuffix(getSonnet5CostTier())}`,
   }
 }
 
@@ -100,7 +105,7 @@ function getSonnet46Option(): ModelOption {
   return {
     value: is3P ? getModelStrings().sonnet46 : 'sonnet',
     label: 'Sonnet',
-    description: `Sonnet 4.6 · Best for everyday tasks${is3P ? '' : ` · ${formatModelPricing(COST_TIER_3_15)}`}`,
+    description: `Sonnet 4.6 · Best for everyday tasks${getFirstPartyPricingSuffix(COST_TIER_3_15)}`,
     descriptionForModel:
       'Sonnet 4.6 - best for everyday tasks. Generally recommended for most coding tasks',
   }
@@ -111,7 +116,7 @@ function getSonnet5Option(): ModelOption {
   return {
     value: is3P ? getModelStrings().sonnet5 : 'sonnet',
     label: 'Sonnet',
-    description: `Sonnet 5 · Best for everyday tasks${is3P ? '' : ` · ${formatModelPricing(COST_TIER_3_15)}`}`,
+    description: `Sonnet 5 · Best for everyday tasks${getFirstPartyPricingSuffix(getSonnet5CostTier())}`,
     descriptionForModel:
       'Sonnet 5 - best for everyday tasks. Generally recommended for most coding tasks',
   }
@@ -203,7 +208,7 @@ function getFable5Option(): ModelOption {
   return {
     value: is3P ? getModelStrings().fable5 : 'fable',
     label: 'Fable',
-    description: `Fable 5 · Most powerful${is3P ? '' : ` · ${formatModelPricing(COST_TIER_10_50)}`}`,
+    description: `Fable 5 · Most powerful${getFirstPartyPricingSuffix(COST_TIER_10_50)}`,
     descriptionForModel:
       'Fable 5 - most powerful model, above Opus. Highest cost; use for the hardest tasks.',
   }
@@ -214,7 +219,7 @@ export function getSonnet46_1MOption(): ModelOption {
   return {
     value: is3P ? getModelStrings().sonnet46 + '[1m]' : 'sonnet[1m]',
     label: 'Sonnet (1M context)',
-    description: `Sonnet 4.6 with 1M context · Best for everyday tasks${is3P ? '' : ` · ${formatModelPricing(COST_TIER_3_15)}`}`,
+    description: `Sonnet 4.6 with 1M context · Best for everyday tasks${getFirstPartyPricingSuffix(COST_TIER_3_15)}`,
     descriptionForModel:
       'Sonnet 4.6 with 1M context window - for long sessions with large codebases',
   }
@@ -225,7 +230,7 @@ export function getSonnet5_1MOption(): ModelOption {
   return {
     value: is3P ? getModelStrings().sonnet5 + '[1m]' : 'sonnet[1m]',
     label: 'Sonnet (1M context)',
-    description: `Sonnet 5 with 1M context · Best for everyday tasks${is3P ? '' : ` · ${formatModelPricing(COST_TIER_3_15)}`}`,
+    description: `Sonnet 5 with 1M context · Best for everyday tasks${getFirstPartyPricingSuffix(getSonnet5CostTier())}`,
     descriptionForModel:
       'Sonnet 5 with 1M context window - for long sessions with large codebases',
   }
@@ -263,18 +268,17 @@ function getHaiku45Option(): ModelOption {
   return {
     value: 'haiku',
     label: 'Haiku',
-    description: `Haiku 4.5 · Fastest for quick answers${is3P ? '' : ` · ${formatModelPricing(COST_HAIKU_45)}`}`,
+    description: `Haiku 4.5 · Fastest for quick answers${getFirstPartyPricingSuffix(COST_HAIKU_45)}`,
     descriptionForModel:
       'Haiku 4.5 - fastest for quick answers. Lower cost but less capable than Sonnet 4.6.',
   }
 }
 
 function getHaiku35Option(): ModelOption {
-  const is3P = getAPIProvider() !== 'firstParty'
   return {
     value: 'haiku',
     label: 'Haiku',
-    description: `Haiku 3.5 for simple tasks${is3P ? '' : ` · ${formatModelPricing(COST_HAIKU_35)}`}`,
+    description: `Haiku 3.5 for simple tasks${getFirstPartyPricingSuffix(COST_HAIKU_35)}`,
     descriptionForModel:
       'Haiku 3.5 - faster and lower cost, but less capable than Sonnet. Use for simple tasks.',
   }
@@ -297,22 +301,20 @@ function getMaxOpusOption(fastMode = false): ModelOption {
 }
 
 export function getMaxSonnet46_1MOption(): ModelOption {
-  const is3P = getAPIProvider() !== 'firstParty'
   const billingInfo = isClaudeAISubscriber() ? ' · Billed as extra usage' : ''
   return {
     value: 'sonnet[1m]',
     label: 'Sonnet (1M context)',
-    description: `Sonnet 4.6 with 1M context${billingInfo}${is3P ? '' : ` · ${formatModelPricing(COST_TIER_3_15)}`}`,
+    description: `Sonnet 4.6 with 1M context${billingInfo}${getFirstPartyPricingSuffix(COST_TIER_3_15)}`,
   }
 }
 
 export function getMaxSonnet5_1MOption(): ModelOption {
-  const is3P = getAPIProvider() !== 'firstParty'
   const billingInfo = isClaudeAISubscriber() ? ' · Billed as extra usage' : ''
   return {
     value: 'sonnet[1m]',
     label: 'Sonnet (1M context)',
-    description: `Sonnet 5 with 1M context${billingInfo}${is3P ? '' : ` · ${formatModelPricing(COST_TIER_3_15)}`}`,
+    description: `Sonnet 5 with 1M context${billingInfo}${getFirstPartyPricingSuffix(getSonnet5CostTier())}`,
   }
 }
 

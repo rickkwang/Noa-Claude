@@ -27,10 +27,14 @@ import {
 } from 'src/utils/messages.js'
 import {
   getDefaultMainLoopModelSetting,
+  getDefaultSonnetModel,
   isNonCustomOpusModel,
 } from 'src/utils/model/model.js'
 import { getModelStrings } from 'src/utils/model/modelStrings.js'
-import { getAPIProvider } from 'src/utils/model/providers.js'
+import {
+  getAPIProvider,
+  isDirectFirstParty,
+} from 'src/utils/model/providers.js'
 import { getIsNonInteractiveSession } from '../../bootstrap/state.js'
 import {
   API_PDF_MAX_PAGES,
@@ -1218,9 +1222,18 @@ export function getErrorMessageIfRefusal(
     ? `${API_ERROR_MESSAGE_PREFIX}: Noa Claude is unable to respond to this request, which appears to violate our Usage Policy (https://www.anthropic.com/legal/aup). Try rephrasing the request or attempting a different approach.`
     : `${API_ERROR_MESSAGE_PREFIX}: Noa Claude is unable to respond to this request, which appears to violate our Usage Policy (https://www.anthropic.com/legal/aup). Please double press esc to edit your last message or start a new session for Noa Claude to assist with a different task.`
 
+  const provider = getAPIProvider()
+  const canRecommendClaudeModel =
+    provider !== 'openaiCompatible' &&
+    (provider !== 'firstParty' ||
+      isDirectFirstParty() ||
+      process.env.ANTHROPIC_DEFAULT_SONNET_MODEL !== undefined)
+  const suggestedModel = canRecommendClaudeModel
+    ? getDefaultSonnetModel()
+    : undefined
   const modelSuggestion =
-    model !== 'claude-sonnet-4-20250514'
-      ? ' If you are seeing this refusal repeatedly, try running /model claude-sonnet-4-20250514 to switch models.'
+    suggestedModel && model !== suggestedModel
+      ? ` If you are seeing this refusal repeatedly, try running /model ${suggestedModel} to switch models.`
       : ''
 
   return createAssistantAPIErrorMessage({

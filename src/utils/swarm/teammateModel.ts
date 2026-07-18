@@ -1,11 +1,20 @@
 // @ts-nocheck
-import { CLAUDE_OPUS_4_6_CONFIG } from '../model/configs.js'
-import { getAPIProvider } from '../model/providers.js'
+import { getDefaultOpusModel, getMainLoopModel } from '../model/model.js'
+import { getAPIProvider, isDirectFirstParty } from '../model/providers.js'
 
-// @[MODEL LAUNCH]: Update the fallback model below.
 // When the user has never set teammateDefaultModel in /config, new teammates
-// use Opus 4.6. Must be provider-aware so Bedrock/Vertex/Foundry customers get
-// the correct model ID.
-export function getHardcodedTeammateModelFallback(): string {
-  return CLAUDE_OPUS_4_6_CONFIG[getAPIProvider()]
+// follow the same provider-aware Opus default as the main loop. This keeps
+// Bedrock/Vertex/Foundry on the repository's deliberate 3P lag policy.
+export function getDefaultTeammateModelFallback(): string {
+  if (process.env.ANTHROPIC_DEFAULT_OPUS_MODEL) {
+    return getDefaultOpusModel()
+  }
+  const provider = getAPIProvider()
+  if (
+    provider === 'openaiCompatible' ||
+    (provider === 'firstParty' && !isDirectFirstParty())
+  ) {
+    return getMainLoopModel()
+  }
+  return getDefaultOpusModel()
 }

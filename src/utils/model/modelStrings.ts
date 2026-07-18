@@ -1,5 +1,6 @@
 // @ts-nocheck
 import {
+  clearModelStrings as clearModelStringsState,
   getModelStrings as getModelStringsState,
   setModelStrings as setModelStringsState,
 } from 'src/bootstrap/state.js'
@@ -22,6 +23,41 @@ import { type APIProvider, getAPIProvider } from './providers.js'
 export type ModelStrings = Record<ModelKey, string>
 
 const MODEL_KEYS = Object.keys(ALL_MODEL_CONFIGS) as ModelKey[]
+let modelStringsProvider: APIProvider | undefined
+let modelStringsGeneration = 0
+type BedrockInferenceProfileLoader = () => Promise<string[]>
+let loadBedrockInferenceProfiles: BedrockInferenceProfileLoader =
+  getBedrockInferenceProfiles
+
+function setCachedModelStrings(
+  provider: APIProvider,
+  modelStrings: ModelStrings,
+): void {
+  modelStringsProvider = provider
+  setModelStringsState(modelStrings)
+}
+
+export function clearModelStringsCache(): void {
+  modelStringsGeneration += 1
+  modelStringsProvider = undefined
+  clearModelStringsState()
+}
+
+export function _setBedrockInferenceProfileLoaderForTesting(
+  loader?: BedrockInferenceProfileLoader,
+): void {
+  loadBedrockInferenceProfiles = loader ?? getBedrockInferenceProfiles
+}
+
+function clearCacheForChangedProvider(provider: APIProvider): void {
+  if (
+    getModelStringsState() !== null &&
+    modelStringsProvider !== undefined &&
+    modelStringsProvider !== provider
+  ) {
+    clearModelStringsCache()
+  }
+}
 
 function getBuiltinModelStrings(provider: APIProvider): ModelStrings {
   const out = {} as ModelStrings
@@ -35,7 +71,7 @@ async function getBedrockModelStrings(): Promise<ModelStrings> {
   const fallback = getBuiltinModelStrings('bedrock')
   let profiles: string[] | undefined
   try {
-    profiles = await getBedrockInferenceProfiles()
+    profiles = await loadBedrockInferenceProfiles()
   } catch (error) {
     logError(error as Error)
     return fallback
@@ -101,30 +137,40 @@ export function resolveOverriddenModel(modelId: string): string {
 }
 
 const updateBedrockModelStrings = sequential(async () => {
-  if (getModelStringsState() !== null) {
+  const provider = getAPIProvider()
+  clearCacheForChangedProvider(provider)
+  if (provider !== 'bedrock' || getModelStringsState() !== null) {
     // Already initialized. Doing the check here, combined with
     // `sequential`, allows the test suite to reset the state
     // between tests while still preventing multiple API calls
     // in production.
     return
   }
+  const generation = modelStringsGeneration
   try {
     const ms = await getBedrockModelStrings()
-    setModelStringsState(ms)
+    if (
+      generation === modelStringsGeneration &&
+      getAPIProvider() === provider
+    ) {
+      setCachedModelStrings(provider, ms)
+    }
   } catch (error) {
     logError(error as Error)
   }
 })
 
 function initModelStrings(): void {
+  const provider = getAPIProvider()
+  clearCacheForChangedProvider(provider)
   const ms = getModelStringsState()
   if (ms !== null) {
     // Already initialized
     return
   }
-  // Initial with default values for non-Bedrock providers
-  if (getAPIProvider() !== 'bedrock') {
-    setModelStringsState(getBuiltinModelStrings(getAPIProvider()))
+  // Initialize with default values for non-Bedrock providers.
+  if (provider !== 'bedrock') {
+    setCachedModelStrings(provider, getBuiltinModelStrings(provider))
     return
   }
   // On Bedrock, update model strings in the background without blocking.
@@ -135,12 +181,14 @@ function initModelStrings(): void {
 }
 
 export function getModelStrings(): ModelStrings {
+  const provider = getAPIProvider()
+  clearCacheForChangedProvider(provider)
   const ms = getModelStringsState()
   if (ms === null) {
     initModelStrings()
     // Bedrock path falls through here while the profile fetch runs in the
     // background — still honor overrides on the interim defaults.
-    return applyModelOverrides(getBuiltinModelStrings(getAPIProvider()))
+    return applyModelOverrides(getBuiltinModelStrings(provider))
   }
   return applyModelOverrides(ms)
 }
@@ -151,14 +199,16 @@ export function getModelStrings(): ModelStrings {
  * Call this before generating model options to ensure correct region strings.
  */
 export async function ensureModelStringsInitialized(): Promise<void> {
+  const provider = getAPIProvider()
+  clearCacheForChangedProvider(provider)
   const ms = getModelStringsState()
   if (ms !== null) {
     return
   }
 
   // For non-Bedrock, initialize synchronously
-  if (getAPIProvider() !== 'bedrock') {
-    setModelStringsState(getBuiltinModelStrings(getAPIProvider()))
+  if (provider !== 'bedrock') {
+    setCachedModelStrings(provider, getBuiltinModelStrings(provider))
     return
   }
 

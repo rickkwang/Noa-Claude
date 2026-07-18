@@ -83,14 +83,15 @@ describe('effort model support', () => {
     expect(resolveAppliedEffort('claude-opus-4-6', 'max')).toBe('max')
   })
 
-  test('Sonnet 4.6 supports base effort levels only; max clamps to high (Opus-tier only)', () => {
+  test('Sonnet 4.6 supports max but not xhigh', () => {
     expect(getSupportedEffortLevelsForModel('claude-sonnet-4-6')).toEqual([
       'low',
       'medium',
       'high',
+      'max',
     ])
     expect(resolveAppliedEffort('claude-sonnet-4-6', 'xhigh')).toBe('high')
-    expect(resolveAppliedEffort('claude-sonnet-4-6', 'max')).toBe('high')
+    expect(resolveAppliedEffort('claude-sonnet-4-6', 'max')).toBe('max')
   })
 
   test('Opus 4.5 supports base effort levels and clamps higher levels to high', () => {

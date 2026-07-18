@@ -64,7 +64,7 @@ import {
   isInsideTmux,
   sendCommandToPane,
 } from '../../utils/swarm/teammateLayoutManager.js'
-import { getHardcodedTeammateModelFallback } from '../../utils/swarm/teammateModel.js'
+import { getDefaultTeammateModelFallback } from '../../utils/swarm/teammateModel.js'
 import { registerTask } from '../../utils/task/framework.js'
 import { writeToMailbox } from '../../utils/teammateMailbox.js'
 import type { CustomAgentDefinition } from '../AgentTool/loadAgentsDir.js'
@@ -74,12 +74,12 @@ function getDefaultTeammateModel(leaderModel: string | null): string {
   const configured = getGlobalConfig().teammateDefaultModel
   if (configured === null) {
     // User picked "Default" in the /config picker — follow the leader.
-    return leaderModel ?? getHardcodedTeammateModelFallback()
+    return leaderModel ?? getDefaultTeammateModelFallback()
   }
   if (configured !== undefined) {
     return parseUserSpecifiedModel(configured)
   }
-  return getHardcodedTeammateModelFallback()
+  return getDefaultTeammateModelFallback()
 }
 
 /**
