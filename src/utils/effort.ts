@@ -97,13 +97,11 @@ export function getSupportedEffortLevelsForModel(
     return []
   }
 
-  if (modelKey.includes('mythos')) {
-    return ['low', 'medium', 'high', 'max']
-  }
   if (
     modelKey.includes('opus-4-7') ||
     modelKey.includes('opus-4-8') ||
     modelKey.includes('fable-5') ||
+    modelKey.includes('mythos') ||
     modelKey.includes('sonnet-5')
   ) {
     return ['low', 'medium', 'high', 'xhigh', 'max']
@@ -111,10 +109,8 @@ export function getSupportedEffortLevelsForModel(
   if (modelKey.includes('opus-4-6')) {
     return ['low', 'medium', 'high', 'max']
   }
-  // Sonnet 4.6: 'max' is Opus-tier only per the Anthropic API docs, so Sonnet
-  // gets the base low/medium/high levels without 'max'.
   if (modelKey.includes('sonnet-4-6')) {
-    return ['low', 'medium', 'high']
+    return ['low', 'medium', 'high', 'max']
   }
   if (modelKey.includes('opus-4-5')) {
     return ['low', 'medium', 'high']

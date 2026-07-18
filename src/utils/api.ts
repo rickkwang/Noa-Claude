@@ -44,7 +44,7 @@ import {
 import { getCwd } from './cwd.js'
 import { logForDebugging } from './debug.js'
 import { isEnvTruthy } from './envUtils.js'
-import { createUserMessage } from './messages.js'
+import { createUserMessage, wrapInSystemReminder } from './messages.js'
 import {
   getAPIProvider,
   isFirstPartyAnthropicBaseUrl,
@@ -533,13 +533,19 @@ export function prependUserContext(
 
   return [
     createUserMessage({
-      content: `<system-reminder>\nAs you answer the user's questions, you can use the following context:\n${Object.entries(
-        context,
-      )
-        .map(([key, value]) => `# ${key}\n${value}`)
-        .join('\n')}
+      // wrapInSystemReminder neutralizes literal </system-reminder> tags in
+      // the context values — CLAUDE.md and other memory files land here via
+      // getUserContext(), and a cloned repo's CLAUDE.md could otherwise forge
+      // a block boundary at the top of every turn.
+      content: `${wrapInSystemReminder(
+        `As you answer the user's questions, you can use the following context:\n${Object.entries(
+          context,
+        )
+          .map(([key, value]) => `# ${key}\n${value}`)
+          .join('\n')}
 
-      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n`,
+      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.`,
+      )}\n`,
       isMeta: true,
     }),
     ...messages,

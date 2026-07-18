@@ -3110,8 +3110,33 @@ export function handleMessageFromStream(
   }
 }
 
+/**
+ * Neutralize literal system-reminder tags so wrapped content cannot forge a
+ * block boundary. Escaped rather than stripped: the text stays readable and is
+ * visibly quoted content.
+ */
+function neutralizeSystemReminderTags(content: string): string {
+  // Capture the tag body so the original casing survives — neutralizing the
+  // boundary shouldn't otherwise rewrite the content.
+  return content.replace(/<(\/?system-reminder)>/gi, '&lt;$1&gt;')
+}
+
+/**
+ * Wrap injected context in a <system-reminder> block.
+ *
+ * Content is neutralized first: a literal `</system-reminder>` inside it would
+ * close the block early, so everything after would read as a real reminder
+ * rather than as quoted content. Memory-file attachments are the exposed path
+ * — they inject up to 5 files per turn (see attachments.ts) with no line-number
+ * prefix marking the text as file content, unlike FileReadTool's output. Hook
+ * stdout (hooks.ts) is likewise arbitrary command output.
+ *
+ * The boundary is load-bearing beyond the model: message merging keys off
+ * `startsWith('<system-reminder>')`, and queryHelpers' block-stripping regex
+ * is non-greedy, so it would stop at a forged closing tag.
+ */
 export function wrapInSystemReminder(content: string): string {
-  return `<system-reminder>\n${content}\n</system-reminder>`
+  return `<system-reminder>\n${neutralizeSystemReminderTags(content)}\n</system-reminder>`
 }
 
 export function wrapMessagesInSystemReminder(
