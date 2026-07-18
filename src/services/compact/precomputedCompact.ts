@@ -99,6 +99,21 @@ function discardPrecompute(reason: string): void {
 }
 
 /**
+ * A compaction cycle just completed (auto, reactive, manual /compact or
+ * /clear): whatever is armed refers to pre-compact history that no longer
+ * exists, so drop it — this also cancels a still-running background call
+ * instead of letting it burn tokens on a summary that can never match — and
+ * refresh the per-cycle re-arm budget. Called from runPostCompactCleanup,
+ * which every compaction path already funnels through; keeping it there
+ * (rather than in compact.ts) avoids a compact ↔ precompute import cycle.
+ * Cheap no-op when nothing is armed.
+ */
+export function resetPrecomputeCycle(): void {
+  discardPrecompute('post_compact_cycle_reset')
+  armAttempts = 0
+}
+
+/**
  * Fire-and-forget: kick off a background summary for the current message set
  * if one isn't already validly armed. Cheap no-op when disabled.
  *

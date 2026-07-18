@@ -9,6 +9,7 @@ import {
   armPrecompute,
   consumePrecompute,
   isPrecomputeEnabled,
+  resetPrecomputeCycle,
 } from '../../../services/compact/precomputedCompact.js'
 import type { Message } from '../../../types/message.js'
 
@@ -186,6 +187,23 @@ describe('re-arm cap (cost guard)', () => {
   test('does not count arms while disabled', () => {
     delete process.env[ENV_KEY]
     armOnce([asst(10), asst(10)])
+    expect(__getArmAttemptsForTest()).toBe(0)
+  })
+
+  test('resetPrecomputeCycle drops the slot and refreshes the budget', () => {
+    const messages = [asst(10), asst(10)]
+    __setReadyForTest({
+      pivotCount: 2,
+      tailUuid: uid(messages[1]),
+      summaryText: 'S',
+    })
+    for (let i = 0; i < __MAX_ARM_ATTEMPTS_PER_CYCLE; i++) {
+      armOnce([asst(10), asst(10)])
+    }
+
+    resetPrecomputeCycle()
+
+    expect(__getArmedForTest()).toBeNull()
     expect(__getArmAttemptsForTest()).toBe(0)
   })
 })

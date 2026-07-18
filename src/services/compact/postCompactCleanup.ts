@@ -9,6 +9,7 @@ import { resetGetMemoryFilesCache } from '../../utils/claudemd.js'
 import { clearSessionMessagesCache } from '../../utils/sessionStorage.js'
 import { clearBetaTracingState } from '../../utils/telemetry/betaSessionTracing.js'
 import { resetMicrocompactState } from './microCompact.js'
+import { resetPrecomputeCycle } from './precomputedCompact.js'
 
 /**
  * Run cleanup of caches and tracking state after compaction.
@@ -50,6 +51,12 @@ export function runPostCompactCleanup(querySource?: QuerySource): void {
     }
   }
   if (isMainThreadCompact) {
+    // The precompute slot describes the main thread's PRE-compact history —
+    // after any main-thread compaction it can never match again, so drop it
+    // (cancelling a still-running background summary) and refresh the
+    // per-cycle re-arm budget. Subagent compacts must not touch the main
+    // thread's slot, hence inside the isMainThreadCompact gate.
+    resetPrecomputeCycle()
     // getUserContext is a memoized outer layer wrapping getClaudeMds() →
     // getMemoryFiles(). If only the inner getMemoryFiles cache is cleared,
     // the next turn hits the getUserContext cache and never reaches

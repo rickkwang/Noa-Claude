@@ -29,12 +29,14 @@ import { isEnvTruthy } from '../../utils/envUtils.js'
 import type { CacheSafeParams } from '../../utils/forkedAgent.js'
 import { logError } from '../../utils/log.js'
 import {
+  isMediaSizeError,
   isMediaSizeErrorMessage,
   isPromptTooLongMessage,
 } from '../api/errors.js'
 import {
   type CompactionResult,
   compactConversation,
+  ERROR_MESSAGE_PROMPT_TOO_LONG,
   isCompactionUserAbort,
 } from './compact.js'
 import { suppressCompactWarning } from './compactWarningState.js'
@@ -184,6 +186,18 @@ export async function reactiveCompactOnPromptTooLong(
       return { ok: false, reason: 'aborted' }
     }
     logError(error)
+    const message = error instanceof Error ? error.message : String(error)
+    // compactConversation throws this exact message once its own PTL-retry
+    // head-truncation is out of road — the caller maps it to a distinct
+    // "even summarizing failed" user message rather than a generic error.
+    if (message === ERROR_MESSAGE_PROMPT_TOO_LONG) {
+      return { ok: false, reason: 'exhausted' }
+    }
+    // Media survived compactConversation's image/document stripping (e.g. an
+    // oversized document type the stripper doesn't cover).
+    if (isMediaSizeError(message)) {
+      return { ok: false, reason: 'media_unstrippable' }
+    }
     return { ok: false, reason: 'error' }
   }
 }

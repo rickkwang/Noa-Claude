@@ -184,4 +184,30 @@ describe('reactiveCompactOnPromptTooLong end-to-end (manual path)', () => {
 
     expect(outcome).toEqual({ ok: false, reason: 'error' })
   })
+
+  test('maps PTL-retry exhaustion to the distinct exhausted outcome', async () => {
+    // compactConversation throws exactly this once truncateHeadForPTLRetry is
+    // out of road; /compact maps 'exhausted' to its own user message.
+    compactShouldThrow = new Error(actualCompact.ERROR_MESSAGE_PROMPT_TOO_LONG)
+    const outcome = await reactiveCompactOnPromptTooLong(
+      compactableMessages(),
+      ctx(),
+      { customInstructions: undefined, trigger: 'manual' },
+    )
+
+    expect(outcome).toEqual({ ok: false, reason: 'exhausted' })
+  })
+
+  test('maps a surviving media-size error to media_unstrippable', async () => {
+    compactShouldThrow = new Error(
+      'API Error: image exceeds 5 MB maximum: 6291456 bytes > 5242880 bytes',
+    )
+    const outcome = await reactiveCompactOnPromptTooLong(
+      compactableMessages(),
+      ctx(),
+      { customInstructions: undefined, trigger: 'manual' },
+    )
+
+    expect(outcome).toEqual({ ok: false, reason: 'media_unstrippable' })
+  })
 })
