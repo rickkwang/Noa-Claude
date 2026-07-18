@@ -7,12 +7,14 @@ import { refreshPolicyLimits } from '../services/policyLimits/index.js'
 import { refreshRemoteManagedSettings } from '../services/remoteManagedSettings/index.js'
 import { clearBetasCaches } from './betas.js'
 import { stripSignatureBlocks } from './messages.js'
+import { clearModelStringsCache } from './model/modelStrings.js'
 import {
   checkAndDisableAutoModeIfNeeded,
   checkAndDisableBypassPermissionsIfNeeded,
   resetAutoModeGateCheck,
   resetBypassPermissionsCheck,
 } from './permissions/bypassPermissionsKillswitch.js'
+import { resetClassifierProbeState } from './permissions/autoModeState.js'
 import { resetUserCache } from './user.js'
 import { clearToolSchemaCache } from './toolSchemaCache.js'
 
@@ -21,7 +23,9 @@ import { clearToolSchemaCache } from './toolSchemaCache.js'
  */
 export function clearProviderSwitchCaches(): void {
   clearBetasCaches()
+  clearModelStringsCache()
   clearToolSchemaCache()
+  resetClassifierProbeState()
 }
 
 /**
