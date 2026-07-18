@@ -442,10 +442,27 @@ function precomputeTailBudget(model: string): number {
 }
 
 /**
+ * True only for the main conversation's own query loop.
+ *
+ * Precompute keeps a SINGLE module-level slot, but query() is shared: subagents
+ * ('agent:*' from AgentTool/SkillTool/swarm), the forked summarizers ('compact',
+ * 'session_memory') and every other side-query drive the same loop with their
+ * own message arrays. Letting them arm can't corrupt anything — consume matches
+ * the armed pivot by uuid, so a foreign slot is discarded rather than used — but
+ * they would thrash the slot, throwing away in-flight background summaries the
+ * main thread paid for, and burn the shared per-cycle re-arm budget on summaries
+ * that can never be consumed. So this is an allowlist, not a denylist.
+ */
+function isPrecomputeOwner(querySource?: QuerySource): boolean {
+  if (!querySource) return false
+  // Output-style variants suffix the value, hence startsWith (see QuerySource).
+  return querySource.startsWith('repl_main_thread') || querySource === 'sdk'
+}
+
+/**
  * Arm a background precompute when the context has entered the warning band
  * (compaction is imminent) but hasn't yet crossed the auto-compact threshold.
- * Fire-and-forget and cheap-no-op when precompute is disabled. Main-thread
- * only — forked summarizer agents must never register a precompute.
+ * Fire-and-forget and cheap-no-op when precompute is disabled.
  */
 function maybeArmPrecompute(
   messages: Message[],
@@ -455,7 +472,7 @@ function maybeArmPrecompute(
   querySource?: QuerySource,
 ): void {
   if (!isPrecomputeEnabled()) return
-  if (querySource === 'session_memory' || querySource === 'compact') return
+  if (!isPrecomputeOwner(querySource)) return
   if (!isAutoCompactEnabled()) return
   const tokenCount = tokenCountWithEstimation(messages)
   const { isAboveWarningThreshold, isAboveAutoCompactThreshold } =
@@ -542,7 +559,13 @@ export async function autoCompactIfNeeded(
     // full for max relief instead of consuming a tail-preserving partial). On
     // any mismatch, consumePrecompute returns null and we fall through to the
     // normal SM / keep-tail / full paths.
+    //
+    // Gated on isPrecomputeOwner for the same reason arming is: a subagent
+    // compacting its own context would find the main thread's slot, fail the
+    // uuid match, and DISCARD a summary it never had a claim to (also resetting
+    // the shared re-arm budget). Only the owner touches the slot.
     if (
+      isPrecomputeOwner(querySource) &&
       !preCompactHookResult.newCustomInstructions &&
       !recompactionInfo.isRecompactionInChain &&
       isPrecomputeEnabled()

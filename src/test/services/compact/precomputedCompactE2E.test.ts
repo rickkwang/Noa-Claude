@@ -213,6 +213,28 @@ describe('precompute end-to-end (arm -> compute -> ready -> consume)', () => {
     ).toBeNull()
   })
 
+  test('a foreign message set can never consume the owner’s summary', async () => {
+    // Stands in for a subagent compacting its own context while the main
+    // thread has a summary armed: uuids differ, so the slot must not be used.
+    const owner = [asst(10), asst(10)]
+    armPrecompute({
+      messages: owner,
+      context: liveContext(),
+      cacheSafeParams: {} as never,
+      maxTailTokens: BIG_TAIL_BUDGET,
+    })
+    await settle()
+    expect(__getArmedForTest()?.status).toBe('ready')
+
+    const foreign = [asst(10), asst(10)]
+    expect(
+      consumePrecompute({
+        messages: foreign,
+        maxTailTokens: BIG_TAIL_BUDGET,
+      }),
+    ).toBeNull()
+  })
+
   test('re-arming on an unchanged prefix does not spend a second API call', async () => {
     const messages = [asst(10), asst(10)]
     const context = liveContext()
