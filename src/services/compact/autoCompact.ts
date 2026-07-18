@@ -27,6 +27,11 @@ import {
   type RecompactionInfo,
 } from './compact.js'
 import { estimateMessageTokens } from './microCompact.js'
+import {
+  armPrecompute,
+  consumePrecompute,
+  isPrecomputeEnabled,
+} from './precomputedCompact.js'
 import { runPostCompactCleanup } from './postCompactCleanup.js'
 import { adjustIndexToPreserveAPIInvariants } from './preservedTail.js'
 import { trySessionMemoryCompaction } from './sessionMemoryCompact.js'
@@ -423,6 +428,48 @@ export async function shouldAutoCompact(
   return isAboveAutoCompactThreshold
 }
 
+// Precompute keeps the recent tail verbatim after the summary. Bound the tail
+// to this fraction of the auto-compact threshold so the post-compact context
+// (summary + tail + overhead) lands with headroom and doesn't immediately
+// re-trigger compaction. Beyond this, the armed summary is too stale to help
+// and we fall back to a fresh synchronous compact.
+const PRECOMPUTE_TAIL_BUDGET_FRACTION = 0.4
+
+function precomputeTailBudget(model: string): number {
+  return Math.floor(
+    getAutoCompactThreshold(model) * PRECOMPUTE_TAIL_BUDGET_FRACTION,
+  )
+}
+
+/**
+ * Arm a background precompute when the context has entered the warning band
+ * (compaction is imminent) but hasn't yet crossed the auto-compact threshold.
+ * Fire-and-forget and cheap-no-op when precompute is disabled. Main-thread
+ * only — forked summarizer agents must never register a precompute.
+ */
+function maybeArmPrecompute(
+  messages: Message[],
+  context: ToolUseContext,
+  cacheSafeParams: CacheSafeParams,
+  model: string,
+  querySource?: QuerySource,
+): void {
+  if (!isPrecomputeEnabled()) return
+  if (querySource === 'session_memory' || querySource === 'compact') return
+  if (!isAutoCompactEnabled()) return
+  const tokenCount = tokenCountWithEstimation(messages)
+  const { isAboveWarningThreshold, isAboveAutoCompactThreshold } =
+    calculateTokenWarningState(tokenCount, model)
+  // Only in the warning band: at/over threshold is the consume path, not arm.
+  if (!isAboveWarningThreshold || isAboveAutoCompactThreshold) return
+  armPrecompute({
+    messages,
+    context,
+    cacheSafeParams,
+    maxTailTokens: precomputeTailBudget(model),
+  })
+}
+
 export async function autoCompactIfNeeded(
   messages: Message[],
   toolUseContext: ToolUseContext,
@@ -458,6 +505,9 @@ export async function autoCompactIfNeeded(
   )
 
   if (!shouldCompact) {
+    // Below threshold: arm a background precompute if we're in the warning band
+    // so the eventual compaction can consume a ready summary instead of blocking.
+    maybeArmPrecompute(messages, toolUseContext, cacheSafeParams, model, querySource)
     return { wasCompacted: false }
   }
 
@@ -482,6 +532,55 @@ export async function autoCompactIfNeeded(
       )
 
     toolUseContext.onCompactProgress?.({ type: 'compact_start' })
+
+    // Precomputed compaction: if a background summary is ready for the current
+    // (append-only) message set, consume it — rebuilds the result via partial
+    // 'up_to' keeping the current tail verbatim, skipping the summary API call.
+    // Skipped when a pre-compact hook injected custom instructions the armed
+    // summary didn't honor, or when we're already re-compacting in a chain
+    // (mirrors resolveAutoCompactPivot: a prior compact under-relieved, so force
+    // full for max relief instead of consuming a tail-preserving partial). On
+    // any mismatch, consumePrecompute returns null and we fall through to the
+    // normal SM / keep-tail / full paths.
+    if (
+      !preCompactHookResult.newCustomInstructions &&
+      !recompactionInfo.isRecompactionInChain &&
+      isPrecomputeEnabled()
+    ) {
+      const pre = consumePrecompute({
+        messages,
+        maxTailTokens: precomputeTailBudget(model),
+      })
+      if (pre) {
+        const compactionResult = await partialCompactConversation(
+          messages,
+          pre.pivotIndex,
+          toolUseContext,
+          cacheSafeParams,
+          undefined, // no user feedback on the auto path
+          'up_to', // keep the recent tail, summary covers the older prefix
+          {
+            trigger: 'auto',
+            suppressFollowUpQuestions: true,
+            preCompactHookResult,
+            ownsLifecycle: false, // autoCompactIfNeeded owns begin/endCompactLifecycle
+            autoCompactThreshold: recompactionInfo.autoCompactThreshold,
+            precomputedSummary: pre.summaryText,
+          },
+        )
+        setLastSummarizedMessageId(undefined)
+        runPostCompactCleanup(querySource)
+        if (feature('PROMPT_CACHE_BREAK_DETECTION')) {
+          notifyCompaction(querySource ?? 'compact', toolUseContext.agentId)
+        }
+        markPostCompaction()
+        return {
+          wasCompacted: true,
+          compactionResult,
+          consecutiveFailures: 0,
+        }
+      }
+    }
 
     // Try session memory compaction first
     if (!preCompactHookResult.newCustomInstructions) {

@@ -927,6 +927,11 @@ export async function partialCompactConversation(
     // Auto path only: lets the event report whether the post-compact context
     // will re-cross the threshold (parity with full compact's willRetrigger).
     autoCompactThreshold?: number
+    // Precomputed compaction: when set, use this summary text directly and skip
+    // the streamCompactSummary API call entirely (the expensive part was already
+    // computed in the background). Only valid for direction 'up_to', where the
+    // summarized prefix === the armed message set. See precomputedCompact.ts.
+    precomputedSummary?: string
   },
 ): Promise<CompactionResult> {
   const trigger = opts?.trigger ?? 'manual'
@@ -1025,45 +1030,53 @@ export async function partialCompactConversation(
       direction === 'up_to'
         ? { ...cacheSafeParams, forkContextMessages: messagesToSummarize }
         : cacheSafeParams
-    let summaryResponse: AssistantMessage
+    let summaryResponse: AssistantMessage | undefined
     let summary: string | null
     let ptlAttempts = 0
-    for (;;) {
-      summaryResponse = await streamCompactSummary({
-        messages: apiMessages,
-        summaryRequest,
-        appState: context.getAppState(),
-        context,
-        preCompactTokenCount,
-        cacheSafeParams: retryCacheSafeParams,
-      })
-      summary = getAssistantMessageText(summaryResponse)
-      if (!summary?.startsWith(PROMPT_TOO_LONG_ERROR_MESSAGE)) break
-
-      ptlAttempts++
-      const truncated =
-        ptlAttempts <= MAX_PTL_RETRIES
-          ? truncateHeadForPTLRetry(apiMessages, summaryResponse)
-          : null
-      if (!truncated) {
-        logEvent('tengu_partial_compact_failed', {
-          reason:
-            'prompt_too_long' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-          ...failureMetadata,
-          ptlAttempts,
+    if (opts?.precomputedSummary) {
+      // Precomputed path: the summary was already produced in the background
+      // (precomputedCompact.ts) over this exact 'up_to' prefix. Use it directly
+      // and skip the API round-trip. summaryResponse stays undefined; the usage
+      // reads below tolerate that (no fresh API call = no usage to report).
+      summary = opts.precomputedSummary
+    } else {
+      for (;;) {
+        summaryResponse = await streamCompactSummary({
+          messages: apiMessages,
+          summaryRequest,
+          appState: context.getAppState(),
+          context,
+          preCompactTokenCount,
+          cacheSafeParams: retryCacheSafeParams,
         })
-        throw new Error(ERROR_MESSAGE_PROMPT_TOO_LONG)
-      }
-      logEvent('tengu_compact_ptl_retry', {
-        attempt: ptlAttempts,
-        droppedMessages: apiMessages.length - truncated.length,
-        remainingMessages: truncated.length,
-        path: 'partial' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      })
-      apiMessages = truncated
-      retryCacheSafeParams = {
-        ...retryCacheSafeParams,
-        forkContextMessages: truncated,
+        summary = getAssistantMessageText(summaryResponse)
+        if (!summary?.startsWith(PROMPT_TOO_LONG_ERROR_MESSAGE)) break
+
+        ptlAttempts++
+        const truncated =
+          ptlAttempts <= MAX_PTL_RETRIES
+            ? truncateHeadForPTLRetry(apiMessages, summaryResponse)
+            : null
+        if (!truncated) {
+          logEvent('tengu_partial_compact_failed', {
+            reason:
+              'prompt_too_long' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+            ...failureMetadata,
+            ptlAttempts,
+          })
+          throw new Error(ERROR_MESSAGE_PROMPT_TOO_LONG)
+        }
+        logEvent('tengu_compact_ptl_retry', {
+          attempt: ptlAttempts,
+          droppedMessages: apiMessages.length - truncated.length,
+          remainingMessages: truncated.length,
+          path: 'partial' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        })
+        apiMessages = truncated
+        retryCacheSafeParams = {
+          ...retryCacheSafeParams,
+          forkContextMessages: truncated,
+        }
       }
     }
     if (!summary) {
@@ -1108,10 +1121,14 @@ export async function partialCompactConversation(
       model: context.options.mainLoopModel,
     })
 
-    const postCompactTokenCount = tokenCountFromLastAPIResponse([
-      summaryResponse,
-    ])
-    const compactionUsage = getTokenUsage(summaryResponse)
+    // Precomputed path has no fresh API response — report zero usage rather
+    // than reading from an undefined message.
+    const postCompactTokenCount = summaryResponse
+      ? tokenCountFromLastAPIResponse([summaryResponse])
+      : 0
+    const compactionUsage = summaryResponse
+      ? getTokenUsage(summaryResponse)
+      : undefined
 
     // Progress messages aren't loggable, so forkSessionImpl would null out
     // a logicalParentUuid pointing at one. Both directions skip them.
@@ -1304,7 +1321,7 @@ export function createCompactCanUseTool(): CanUseToolFn {
   })
 }
 
-async function streamCompactSummary({
+export async function streamCompactSummary({
   messages,
   summaryRequest,
   appState,
