@@ -1,5 +1,35 @@
 # Release Notes
 
+## 1.6.0
+
+### New Features
+
+- **Auto permission mode (shift+tab)** — the previously-mirrored YOLO/transcript classifier subsystem is now live behind a dedicated `AUTO_MODE` flag (shipped enabled in baseline builds), replacing the always-false `TRANSCRIPT_CLASSIFIER` gate. Includes an original (non-Anthropic) classifier system prompt and permissions template, upstream 2.1.210 model gate alignment (denylist instead of allowlist), and classifier request-shape alignment (two-stage XML classifier, temperature, retry count), plus a local customization swapping `auto`/`bypass` order in the shift+tab cycle.
+- **Probe-once classifier fallback** — when the main loop model can't self-classify (outside the trusted Sonnet/Haiku families), the first classifier call determines whether the default-Sonnet route works and remembers the verdict for the rest of the session instead of re-probing on every call.
+- **Sonnet 5 default** — now the recommended default model across pickers and refusal-message suggestions, with time-boxed introductory pricing ($2/$10 per Mtok through 2026-08-31, then $3/$15) and refactored provider-aware fallbacks (teammate model, refusal suggestions).
+- **`/doctor` agentic health-check** — converted from a static screen dispatch into a prompt-driven command that runs read-only diagnostics (install health, unused extensions, memory bloat, slow hooks, context cost, permission-mode tuning) and proposes gated fixes.
+- **`/autocompact` command** — persisted `autoCompactWindow` setting (`auto | 500k | 1m | 200000 | 200`), previously only configurable via env var.
+- **Precomputed & reactive compaction** (opt-in, default-off) — background summary arming to skip the compact API round-trip, and a real reactive-compact implementation that compacts in place and retries when a turn comes back prompt-too-long.
+- **Session-wide safety caps** — subagent spawns and WebSearch calls now cap at 200/session, resetting on `/clear`.
+
+### Bug Fixes
+
+- **Forged system-reminder tag injection** — untrusted content (memory files, hook stdout, a cloned repo's CLAUDE.md) could previously forge `<system-reminder>` block boundaries; now escaped.
+- **Mythos 5 capability gaps** — completed thinking/context/structured-output allowlists to match Fable 5 (was silently degrading: rejected sampling params sent, empty thinking-UI blocks, context caps incorrectly capped).
+- **StreamingToolExecutor concurrency cap** — now matches `runTools`' concurrency limit, instead of starting all concurrent-safe tool calls at once.
+- **Request-too-large message** — corrected to reference the actual 32MB API request ceiling (was reporting the 20MB per-PDF encoding target), and now suggests `/compact`.
+- **Provider-switch cache invalidation** — clears the model-string cache and classifier probe state on provider switch, preventing stale verdicts from a prior route.
+- **Compact chain hardening** — precompute slot restricted to the main conversation (was leaking across subagents), lifecycle/cleanup gaps closed, and reactive-compact outcome messages now map to their distinct user-facing reasons.
+
+### Removed
+
+- **Bundled `claude-api` skill** — deregistered and deleted (~250KB of per-language reference docs).
+
+### Refactors
+
+- `docs/release-notes.md` restored as the single source of truth for release notes (a stray root `CHANGELOG.md` reintroduced in error is removed).
+- `precomputedCompact.ts` de-suppressed from `@ts-nocheck`.
+
 ## 1.5.0
 
 ### New Features
