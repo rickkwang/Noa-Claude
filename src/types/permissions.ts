@@ -344,22 +344,65 @@ export type ClassifierUsage = {
   cacheCreationInputTokens: number
 }
 
+export type ClassifierAttemptTelemetry = {
+  model: string
+  usage?: ClassifierUsage
+  durationMs?: number
+  stage?: 'fast' | 'thinking'
+  stage1Usage?: ClassifierUsage
+  stage1DurationMs?: number
+  stage1RequestId?: string
+  stage1MsgId?: string
+  stage2Usage?: ClassifierUsage
+  stage2DurationMs?: number
+  stage2RequestId?: string
+  stage2MsgId?: string
+}
+
 export type YoloClassifierResult = {
   thinking?: string
   shouldBlock: boolean
   reason: string
   unavailable?: boolean
   /**
+   * The classifier answered, but its structured response could not be parsed.
+   * Probe calls treat this as a model-contract failure and demote to the main
+   * loop model instead of confirming an incompatible classifier for the session.
+   */
+  parseFailure?: boolean
+  /**
+   * Stage 1 produced a decision, but the required Stage 2 request failed.
+   * The decision can still fail closed from Stage 1, while probe selection
+   * treats the model as failed or inconclusive instead of confirming it.
+   */
+  stage2Failed?: boolean
+  /**
    * API returned "prompt is too long" — the classifier transcript exceeded
    * the context window. Deterministic (same transcript → same error), so
    * callers should fall back to normal prompting rather than retry/fail-closed.
    */
   transcriptTooLong?: boolean
+  /**
+   * Categorized API failure reason — 'http_NNN' for API
+   * status errors, or 'wall_clock_timeout' / 'connection_timeout' /
+   * 'connection_error' for network-level failures. Drives probe-demotion and
+   * fallback-model retry decisions; 'unknown_error' covers unexpected thrown
+   * values, and undefined is reserved for aborts and non-error paths.
+   */
+  errorKind?: string
   /** The model used for this classifier call */
   model: string
+  /**
+   * Set when this result came from a fallback-model retry after the primary
+   * probe model failed — names the model that failed (mirrors upstream's
+   * fallbackFrom on the classifier result).
+   */
+  fallbackFrom?: string
+  /** Telemetry from the failed primary attempt before a fallback retry. */
+  fallbackFromTelemetry?: ClassifierAttemptTelemetry
   /** Token usage from the classifier API call (for overhead telemetry) */
   usage?: ClassifierUsage
-  /** Duration of the classifier API call in ms */
+  /** Total classifier duration in ms, including a primary + fallback attempt. */
   durationMs?: number
   /** Character lengths of the prompt components sent to the classifier */
   promptLengths?: {

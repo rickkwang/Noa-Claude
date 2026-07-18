@@ -1,6 +1,11 @@
 // @ts-nocheck
 import { feature } from 'bun:bundle'
 import type Anthropic from '@anthropic-ai/sdk'
+import {
+  APIConnectionError,
+  APIConnectionTimeoutError,
+  APIError,
+} from '@anthropic-ai/sdk'
 import type { BetaToolUnion } from '@anthropic-ai/sdk/resources/beta/messages.js'
 import { mkdir, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
@@ -19,6 +24,7 @@ import { parsePromptTooLongTokenCounts } from '../../services/api/errors.js'
 import type { Tool, ToolPermissionContext, Tools } from '../../Tool.js'
 import type { Message } from '../../types/message.js'
 import type {
+  ClassifierAttemptTelemetry,
   ClassifierUsage,
   YoloClassifierResult,
 } from '../../types/permissions.js'
@@ -28,11 +34,26 @@ import { errorMessage } from '../errors.js'
 import { lazySchema } from '../lazySchema.js'
 import { extractTextContent } from '../messages.js'
 import { resolveAntModel } from '../model/antModels.js'
-import { getMainLoopModel } from '../model/model.js'
+import {
+  getCanonicalName,
+  getDefaultSonnetModel,
+  getMainLoopModel,
+} from '../model/model.js'
+import {
+  getAPIProvider,
+  isDirectFirstParty,
+} from '../model/providers.js'
 import { getAutoModeConfig } from '../settings/settings.js'
 import { sideQuery } from '../sideQuery.js'
 import { jsonStringify } from '../slowOperations.js'
 import { tokenCountWithEstimation } from '../tokens.js'
+import {
+  type ClassifierProbeLease,
+  completeClassifierProbe,
+  getClassifierProbeState,
+  tryBeginClassifierProbe,
+  waitForClassifierProbe,
+} from './autoModeState.js'
 import {
   getBashPromptAllowDescriptions,
   getBashPromptDenyDescriptions,
@@ -761,6 +782,7 @@ async function classifyYoloActionXml(
     action: string
   },
   mode: TwoStageMode,
+  runSideQuery: typeof sideQuery = sideQuery,
 ): Promise<YoloClassifierResult> {
   const classifierType =
     mode === 'both'
@@ -781,6 +803,7 @@ async function classifyYoloActionXml(
   let stage1RequestId: string | undefined
   let stage1MsgId: string | undefined
   let stage1Opts: Parameters<typeof sideQuery>[0] | undefined
+  let stage1ParseFailure = false
   const overallStart = Date.now()
   const [disableThinking, thinkingPadding] = getClassifierThinkingConfig(model)
 
@@ -822,13 +845,14 @@ async function classifyYoloActionXml(
         ...(mode !== 'fast' && { stop_sequences: ['</block>'] }),
         querySource: 'auto_mode',
       }
-      const stage1Raw = await sideQuery(stage1Opts)
+      const stage1Raw = await runSideQuery(stage1Opts)
       stage1DurationMs = Date.now() - stage1Start
       stage1Usage = extractUsage(stage1Raw)
       stage1RequestId = extractRequestId(stage1Raw)
       stage1MsgId = stage1Raw.id
       const stage1Text = extractTextContent(stage1Raw.content)
       const stage1Block = parseXmlBlock(stage1Text)
+      stage1ParseFailure = stage1Block === null
 
       void maybeDumpAutoMode(stage1Opts, stage1Raw, stage1Start, 'stage1')
       setLastClassifierRequests([stage1Opts])
@@ -860,6 +884,7 @@ async function classifyYoloActionXml(
             shouldBlock: true,
             reason: 'Classifier stage 1 unparseable - blocking for safety',
             model,
+            parseFailure: true,
             usage: stage1Usage,
             durationMs: stage1DurationMs,
             promptLengths,
@@ -908,7 +933,7 @@ async function classifyYoloActionXml(
       signal,
       querySource: 'auto_mode' as const,
     }
-    const stage2Raw = await sideQuery(stage2Opts)
+    const stage2Raw = await runSideQuery(stage2Opts)
     const stage2DurationMs = Date.now() - stage2Start
     const stage2Usage = extractUsage(stage2Raw)
     const stage2RequestId = extractRequestId(stage2Raw)
@@ -931,6 +956,7 @@ async function classifyYoloActionXml(
         shouldBlock: true,
         reason: 'Classifier stage 2 unparseable - blocking for safety',
         model,
+        parseFailure: true,
         usage: totalUsage,
         durationMs: totalDurationMs,
         promptLengths,
@@ -1009,6 +1035,9 @@ async function classifyYoloActionXml(
           : 'Classifier unavailable — blocking for safety. Retry, or run with --debug for details.',
       model,
       unavailable: stage1Usage === undefined,
+      parseFailure: stage1ParseFailure || undefined,
+      stage2Failed: stage1Usage !== undefined,
+      errorKind: classifyErrorKind(error),
       transcriptTooLong: Boolean(tooLong),
       stage: stage1Usage ? 'thinking' : undefined,
       durationMs: Date.now() - overallStart,
@@ -1135,29 +1164,43 @@ export async function classifyYoloAction(
     cache_control: cacheControl,
   })
 
-  const model = getClassifierModel()
-
   // Dispatch to 2-stage XML classifier if enabled via GrowthBook
   if (isTwoStageClassifierEnabled()) {
-    return classifyYoloActionXml(
-      prefixMessages,
-      systemPrompt,
-      userPrompt,
-      userContentBlocks,
-      model,
-      promptLengths,
+    const { model: resolvedModel, probeLease } =
+      await resolveClassifierModel(signal)
+    const mode = getTwoStageMode()
+    return runClassifierWithProbeFallback(
+      (callModel, callSignal) =>
+        classifyYoloActionXml(
+          prefixMessages,
+          systemPrompt,
+          userPrompt,
+          userContentBlocks,
+          callModel,
+          promptLengths,
+          callSignal,
+          {
+            mainLoopTokens:
+              mainLoopTokens ?? tokenCountWithEstimation(messages),
+            classifierChars,
+            classifierTokensEst,
+            transcriptEntries: transcriptEntries.length,
+            messages: messages.length,
+            action: actionCompact,
+          },
+          mode,
+      ),
+      resolvedModel,
+      probeLease,
+      mode,
       signal,
-      {
-        mainLoopTokens: mainLoopTokens ?? tokenCountWithEstimation(messages),
-        classifierChars,
-        classifierTokensEst,
-        transcriptEntries: transcriptEntries.length,
-        messages: messages.length,
-        action: actionCompact,
-      },
-      getTwoStageMode(),
     )
   }
+  // Legacy single-stage (tool_use) path. This fork defaults to the two-stage
+  // classifier, but ant users can explicitly disable it through
+  // CLAUDE_CODE_TWO_STAGE_CLASSIFIER. This path uses the configured classifier
+  // model directly, without probe/fallback handling.
+  const model = getClassifierModel()
   const [disableThinking, thinkingPadding] = getClassifierThinkingConfig(model)
   try {
     const start = Date.now()
@@ -1329,6 +1372,7 @@ export async function classifyYoloAction(
         : 'Classifier unavailable - blocking for safety',
       model,
       unavailable: true,
+      errorKind: classifyErrorKind(error),
       transcriptTooLong: Boolean(tooLong),
       errorDumpPath,
     }
@@ -1357,6 +1401,67 @@ type AutoModeConfig = {
 }
 
 /**
+ * The main model families upstream trusts to classify themselves without a
+ * probe — everything else tries the external-default (Sonnet) model first.
+ */
+function isSelfClassifyingModel(canonical: string): boolean {
+  return (
+    canonical === 'claude-sonnet-4-6' ||
+    canonical === 'claude-sonnet-4-5' ||
+    canonical.startsWith('claude-haiku-')
+  )
+}
+
+/**
+ * The classifier model to probe when the main loop model isn't already a
+ * known-safe self-classifier (isSelfClassifyingModel). Mirrors upstream's
+ * default: try the org/session's default Sonnet model. Returns undefined for
+ * self-classifying main models — those just use themselves, no probe needed.
+ */
+function getExternalDefaultClassifierModel(
+  mainModel: string,
+): string | undefined {
+  if (isSelfClassifyingModel(getCanonicalName(mainModel))) {
+    return undefined
+  }
+
+  // An explicit override is authoritative even on a custom endpoint. Kimi,
+  // for example, intentionally maps every Claude family alias to its one
+  // supported model. Avoid probing when the override is already the main model.
+  const explicitDefault = process.env.ANTHROPIC_DEFAULT_SONNET_MODEL
+  if (explicitDefault) {
+    return explicitDefault === mainModel ? undefined : explicitDefault
+  }
+
+  // Noa supports OpenAI-compatible and custom Anthropic-compatible endpoints.
+  // They do not have an implicit Claude Sonnet model, so sending a first-party
+  // model ID guarantees an avoidable failed request on most such providers.
+  const provider = getAPIProvider()
+  if (
+    provider === 'openaiCompatible' ||
+    (provider === 'firstParty' && !isDirectFirstParty())
+  ) {
+    return undefined
+  }
+
+  const providerDefault = getDefaultSonnetModel()
+  return providerDefault === mainModel ? undefined : providerDefault
+}
+
+/** Identity of the API route whose probe result is safe to reuse. */
+function getClassifierProbeIdentity(model: string): string {
+  return JSON.stringify([
+    getAPIProvider(),
+    process.env.ANTHROPIC_BASE_URL ?? '',
+    process.env.OPENAI_BASE_URL ?? '',
+    process.env.ANTHROPIC_BEDROCK_BASE_URL ?? '',
+    process.env.ANTHROPIC_VERTEX_BASE_URL ?? '',
+    process.env.ANTHROPIC_FOUNDRY_BASE_URL ?? '',
+    model,
+  ])
+}
+
+/**
  * Get the model for the classifier.
  * Ant-only env var takes precedence, then GrowthBook JSON config override,
  * then the main loop model.
@@ -1370,11 +1475,265 @@ function getClassifierModel(): string {
     'tengu_auto_mode_config',
     {} as AutoModeConfig,
   )
-  if (config?.model) {
-    return config.model
+  if (config?.model) return config.model
+
+  const mainModel = getMainLoopModel()
+  const externalDefault = getExternalDefaultClassifierModel(mainModel)
+  if (!externalDefault) return mainModel
+  if (
+    getClassifierProbeState(getClassifierProbeIdentity(externalDefault)) ===
+    'demoted'
+  ) {
+    return mainModel
   }
-  return getMainLoopModel()
+  return externalDefault
 }
+
+type ResolvedClassifierModel = {
+  model: string
+  probeLease?: ClassifierProbeLease
+}
+
+/**
+ * Resolves the classifier model and, for the first attempt this session to use
+ * the external-default classifier, returns the lease that owns that probe.
+ *
+ * Mirrors upstream: for main models outside the self-classifying families
+ * (sonnet-4-6/4-5, haiku), the classifier defaults to the org's Sonnet model
+ * rather than the main loop model itself, since untested frontier models
+ * (new Opus/Sonnet/Fable releases) may not reliably follow the classifier's
+ * structured-output contract. The first classifier call each session probes
+ * whether that default model actually works; a success confirms it for the
+ * rest of the session, a failure demotes back to the main loop model.
+ */
+async function resolveClassifierModel(
+  signal?: AbortSignal,
+): Promise<ResolvedClassifierModel> {
+  if (process.env.USER_TYPE === 'ant') {
+    const envModel = process.env.CLAUDE_CODE_AUTO_MODE_MODEL
+    if (envModel) return { model: envModel }
+  }
+  const config = getFeatureValue_CACHED_MAY_BE_STALE(
+    'tengu_auto_mode_config',
+    {} as AutoModeConfig,
+  )
+  if (config?.model) {
+    return { model: config.model }
+  }
+
+  const mainModel = getMainLoopModel()
+  const externalDefault = getExternalDefaultClassifierModel(mainModel)
+  if (!externalDefault) {
+    return { model: mainModel }
+  }
+
+  const probeIdentity = getClassifierProbeIdentity(externalDefault)
+  const probeState = getClassifierProbeState(probeIdentity)
+  if (probeState === 'demoted') {
+    return { model: mainModel }
+  }
+  if (probeState === 'confirmed') {
+    return { model: externalDefault }
+  }
+  if (probeState === 'unprobed') {
+    const probeLease = tryBeginClassifierProbe(probeIdentity)
+    if (probeLease) {
+      return { model: externalDefault, probeLease }
+    }
+  }
+
+  // Another call owns the probe. Wait for its result so concurrent tool or
+  // Agent handoff classifiers cannot race confirmed/demoted writes.
+  await waitForClassifierProbe(probeIdentity, signal)
+  if (signal?.aborted) {
+    return { model: mainModel }
+  }
+  return resolveClassifierModel(signal)
+}
+
+/**
+ * Categorizes a classifier API error for probe-demotion decisions. Mirrors
+ * upstream's errorKind taxonomy: 'http_NNN' for API status errors, or a
+ * network-level kind for connection/timeout failures.
+ */
+function classifyErrorKind(error: unknown): string {
+  if (error instanceof APIError && typeof error.status === 'number') {
+    return `http_${error.status}`
+  }
+  if (error instanceof APIConnectionTimeoutError) {
+    return 'wall_clock_timeout'
+  }
+  if (error instanceof APIConnectionError) {
+    return 'connection_error'
+  }
+  return 'unknown_error'
+}
+
+/**
+ * True for any classified error except auth failures (401) — an auth error
+ * means the request itself was misconfigured, not that this particular model
+ * is unreliable as a classifier, so it shouldn't trigger a demotion.
+ */
+function isProbeDemotingErrorKind(errorKind: string | undefined): boolean {
+  return errorKind !== undefined && errorKind !== 'http_401'
+}
+
+// Time budget (ms) for a classifier call, split by stage — mirrors upstream's
+// v8r (stage 1 / fast) and C8r (stage 2 / thinking) constants. A fallback
+// retry only happens if the primary call's duration left budget remaining.
+const CLASSIFIER_STAGE1_BUDGET_MS = 60_000
+const CLASSIFIER_STAGE2_BUDGET_MS = 120_000
+
+function getClassifierAttemptTelemetry(
+  result: YoloClassifierResult,
+): ClassifierAttemptTelemetry {
+  return {
+    model: result.model,
+    usage: result.usage,
+    durationMs: result.durationMs,
+    stage: result.stage,
+    stage1Usage: result.stage1Usage,
+    stage1DurationMs: result.stage1DurationMs,
+    stage1RequestId: result.stage1RequestId,
+    stage1MsgId: result.stage1MsgId,
+    stage2Usage: result.stage2Usage,
+    stage2DurationMs: result.stage2DurationMs,
+    stage2RequestId: result.stage2RequestId,
+    stage2MsgId: result.stage2MsgId,
+  }
+}
+
+function combineClassifierDurations(
+  primaryDurationMs: number | undefined,
+  fallbackDurationMs: number | undefined,
+): number | undefined {
+  if (primaryDurationMs === undefined && fallbackDurationMs === undefined) {
+    return undefined
+  }
+  return (primaryDurationMs ?? 0) + (fallbackDurationMs ?? 0)
+}
+
+/**
+ * Runs the classifier once against the resolved primary model, then applies
+ * upstream's probe/demotion state transition and same-call fallback retry:
+ *
+ * - First call this session against a non-self-classifying model's external
+ *   default (isProbe): a success confirms that model for the rest of the
+ *   session; a failure (other than 401) demotes to the main loop model for
+ *   the rest of the session AND retries this same call against the main loop
+ *   model immediately, if there's time budget left.
+ * - Later calls against an already-confirmed or already-demoted model don't
+ *   probe or retry through the probe fallback path again.
+ */
+async function runClassifierWithProbeFallback(
+  runOnce: (
+    model: string,
+    signal: AbortSignal,
+  ) => Promise<YoloClassifierResult>,
+  primaryModel: string,
+  probeLease: ClassifierProbeLease | undefined,
+  mode: TwoStageMode,
+  outerSignal: AbortSignal,
+): Promise<YoloClassifierResult> {
+  const isProbe = probeLease !== undefined
+  let result: YoloClassifierResult
+  try {
+    result = await runOnce(primaryModel, outerSignal)
+  } catch (error) {
+    if (probeLease) completeClassifierProbe(probeLease, 'unprobed')
+    throw error
+  }
+
+  if (outerSignal.aborted) {
+    if (probeLease) completeClassifierProbe(probeLease, 'unprobed')
+    return result
+  }
+
+  const probeFailed =
+    isProbe &&
+    // A malformed response is independent evidence that the model failed the
+    // classifier contract, even if a later Stage 2 request hits an auth error.
+    (result.parseFailure === true ||
+      (result.transcriptTooLong !== true &&
+        (result.unavailable === true || result.stage2Failed === true) &&
+        isProbeDemotingErrorKind(result.errorKind)))
+
+  const probeInconclusive =
+    isProbe &&
+    !probeFailed &&
+    (result.unavailable === true || result.stage2Failed === true)
+
+  if (probeLease) {
+    completeClassifierProbe(
+      probeLease,
+      probeFailed
+        ? 'demoted'
+        : probeInconclusive
+          ? 'unprobed'
+          : 'confirmed',
+    )
+  }
+
+  if (!result.unavailable && !result.parseFailure && !result.stage2Failed) {
+    return result
+  }
+
+  if (probeFailed) {
+    logForDebugging(
+      `Got error trying ${primaryModel} as auto mode classifier, using ${getMainLoopModel()}`,
+      { level: 'warn' },
+    )
+    logForDebugging(
+      `Auto mode classifier: ${primaryModel} probe demotion errorKind=${result.errorKind ?? 'parse_failure'}`,
+      { level: 'warn' },
+    )
+  }
+
+  const fallbackModel = probeFailed ? getMainLoopModel() : undefined
+  if (!fallbackModel || fallbackModel === primaryModel) {
+    return result
+  }
+
+  const budgetMs =
+    (mode !== 'thinking' ? CLASSIFIER_STAGE1_BUDGET_MS : 0) +
+    (mode !== 'fast' ? CLASSIFIER_STAGE2_BUDGET_MS : 0)
+  const remainingMs = budgetMs - (result.durationMs ?? 0)
+  if (remainingMs <= 0) {
+    return result
+  }
+
+  logForDebugging(
+    `Auto mode classifier: primary ${primaryModel} unavailable (${result.errorKind}); trying fallback ${fallbackModel} with ${remainingMs}ms remaining`,
+    { level: 'warn' },
+  )
+  const fallbackController = new AbortController()
+  const onOuterAbort = () => fallbackController.abort()
+  outerSignal.addEventListener('abort', onOuterAbort)
+  const timer = setTimeout(() => fallbackController.abort(), remainingMs)
+  if (typeof timer === 'object') timer.unref?.()
+  try {
+    const fallbackResult = await runOnce(fallbackModel, fallbackController.signal)
+    return {
+      ...fallbackResult,
+      durationMs: combineClassifierDurations(
+        result.durationMs,
+        fallbackResult.durationMs,
+      ),
+      fallbackFrom: primaryModel,
+      fallbackFromTelemetry: getClassifierAttemptTelemetry(result),
+    }
+  } finally {
+    clearTimeout(timer)
+    outerSignal.removeEventListener('abort', onOuterAbort)
+  }
+}
+
+/** Test-only seams for the probe state machine and fallback policy. */
+export const _resolveClassifierModelForTesting = resolveClassifierModel
+export const _runClassifierWithProbeFallbackForTesting =
+  runClassifierWithProbeFallback
+export const _classifyYoloActionXmlForTesting = classifyYoloActionXml
+export const _getClassifierModelForTesting = getClassifierModel
 
 /**
  * Resolve the XML classifier setting: ant-only env var takes precedence,

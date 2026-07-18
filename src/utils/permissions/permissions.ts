@@ -720,13 +720,29 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
           ? 'blocked'
           : 'allowed'
 
-      // Compute classifier cost in USD for overhead analysis
-      const classifierCostUSD =
+      // Compute total classifier cost across the primary and fallback attempts.
+      const finalAttemptCostUSD =
         classifierResult.usage && classifierResult.model
           ? calculateCostFromTokens(
               classifierResult.model,
               classifierResult.usage,
             )
+          : undefined
+      const fallbackFromCostUSD =
+        classifierResult.fallbackFromTelemetry?.usage &&
+        classifierResult.fallbackFromTelemetry.model
+          ? calculateCostFromTokens(
+              classifierResult.fallbackFromTelemetry.model,
+              classifierResult.fallbackFromTelemetry.usage,
+            )
+          : undefined
+      const classifierAttemptCosts = [
+        finalAttemptCostUSD,
+        fallbackFromCostUSD,
+      ].filter((cost): cost is number => cost !== undefined)
+      const classifierCostUSD =
+        classifierAttemptCosts.length > 0
+          ? classifierAttemptCosts.reduce((sum, cost) => sum + cost, 0)
           : undefined
       logEvent('tengu_auto_mode_decision', {
         decision:
@@ -753,6 +769,47 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
         classifierCacheCreationInputTokens:
           classifierResult.usage?.cacheCreationInputTokens,
         classifierDurationMs: classifierResult.durationMs,
+        classifierFallbackFromModel:
+          classifierResult.fallbackFrom as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        classifierFallbackFromInputTokens:
+          classifierResult.fallbackFromTelemetry?.usage?.inputTokens,
+        classifierFallbackFromOutputTokens:
+          classifierResult.fallbackFromTelemetry?.usage?.outputTokens,
+        classifierFallbackFromCacheReadInputTokens:
+          classifierResult.fallbackFromTelemetry?.usage?.cacheReadInputTokens,
+        classifierFallbackFromCacheCreationInputTokens:
+          classifierResult.fallbackFromTelemetry?.usage
+            ?.cacheCreationInputTokens,
+        classifierFallbackFromDurationMs:
+          classifierResult.fallbackFromTelemetry?.durationMs,
+        classifierFallbackFromCostUSD: fallbackFromCostUSD,
+        classifierFallbackFromStage:
+          classifierResult.fallbackFromTelemetry
+            ?.stage as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        classifierFallbackFromStage1InputTokens:
+          classifierResult.fallbackFromTelemetry?.stage1Usage?.inputTokens,
+        classifierFallbackFromStage1OutputTokens:
+          classifierResult.fallbackFromTelemetry?.stage1Usage?.outputTokens,
+        classifierFallbackFromStage1DurationMs:
+          classifierResult.fallbackFromTelemetry?.stage1DurationMs,
+        classifierFallbackFromStage1RequestId:
+          classifierResult.fallbackFromTelemetry
+            ?.stage1RequestId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        classifierFallbackFromStage1MsgId:
+          classifierResult.fallbackFromTelemetry
+            ?.stage1MsgId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        classifierFallbackFromStage2InputTokens:
+          classifierResult.fallbackFromTelemetry?.stage2Usage?.inputTokens,
+        classifierFallbackFromStage2OutputTokens:
+          classifierResult.fallbackFromTelemetry?.stage2Usage?.outputTokens,
+        classifierFallbackFromStage2DurationMs:
+          classifierResult.fallbackFromTelemetry?.stage2DurationMs,
+        classifierFallbackFromStage2RequestId:
+          classifierResult.fallbackFromTelemetry
+            ?.stage2RequestId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        classifierFallbackFromStage2MsgId:
+          classifierResult.fallbackFromTelemetry
+            ?.stage2MsgId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
         // Character lengths of the prompt components sent to the classifier
         classifierSystemPromptLength:
           classifierResult.promptLengths?.systemPrompt,
