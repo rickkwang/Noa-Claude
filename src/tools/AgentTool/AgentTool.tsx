@@ -30,6 +30,7 @@ import { permissionModeSchema } from '../../utils/permissions/PermissionMode.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js';
 import { filterDeniedAgents, getDenyRuleForAgent } from '../../utils/permissions/permissions.js';
 import { enqueueSdkEvent } from '../../utils/sdkEventQueue.js';
+import { getMaxSubagentsPerSession, getTotalAgentSpawns, incrementTotalAgentSpawns } from '../../utils/task/sessionBudget.js';
 import { writeAgentMetadata } from '../../utils/sessionStorage.js';
 import { sleep } from '../../utils/sleep.js';
 import { buildEffectiveSystemPrompt } from '../../utils/systemPrompt.js';
@@ -280,6 +281,16 @@ export const AgentTool = buildTool({
     if (isInProcessTeammate() && teamName && run_in_background === true) {
       throw new Error('In-process teammates cannot spawn background agents. Use run_in_background=false for synchronous subagents.');
     }
+
+    // Session-wide subagent spawn cap (upstream 2.1.212): hard-fail so a
+    // runaway delegation loop can't spawn indefinitely. Checked after the
+    // validation errors above so rejected requests don't consume budget.
+    const maxSubagents = getMaxSubagentsPerSession();
+    const spawnsSoFar = getTotalAgentSpawns();
+    if (spawnsSoFar >= maxSubagents) {
+      throw new Error(`Subagent spawn limit reached (${spawnsSoFar} of ${maxSubagents} agents spawned). Complete the remaining work directly with your tools instead of spawning more agents. If more agents are genuinely needed, ask the user to raise NOA_CLAUDE_MAX_SUBAGENTS_PER_SESSION.`);
+    }
+    incrementTotalAgentSpawns();
 
     // Check if this is a multi-agent spawn request
     // Spawn is triggered when team_name is set (from param or context) and name is provided

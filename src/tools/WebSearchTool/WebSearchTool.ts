@@ -18,6 +18,11 @@ import { createUserMessage } from '../../utils/messages.js'
 import { getMainLoopModel, getSmallFastModel } from '../../utils/model/model.js'
 import { jsonParse, jsonStringify } from '../../utils/slowOperations.js'
 import { asSystemPrompt } from '../../utils/systemPromptType.js'
+import {
+  getMaxWebSearchesPerSession,
+  getWebSearchCalls,
+  incrementWebSearchCalls,
+} from '../../utils/task/sessionBudget.js'
 import { getWebSearchPrompt, WEB_SEARCH_TOOL_NAME } from './prompt.js'
 import {
   getToolUseSummary,
@@ -260,6 +265,25 @@ export const WebSearchTool = buildTool({
   async call(input, context, _canUseTool, _parentMessage, onProgress) {
     const startTime = performance.now()
     const { query } = input
+
+    // Session-wide WebSearch cap (upstream 2.1.212): soft-fail with a message
+    // to the model instead of throwing, so a runaway search loop winds down
+    // gracefully with the information it already has.
+    const maxSearches = getMaxWebSearchesPerSession()
+    const searchesSoFar = getWebSearchCalls()
+    if (searchesSoFar >= maxSearches) {
+      return {
+        data: {
+          query,
+          results: [
+            `Web search was not performed: this session has used its web search budget (${searchesSoFar} of ${maxSearches} WebSearch calls). Continue with the information already gathered instead of issuing more searches. If more searches are genuinely needed, ask the user to raise NOA_CLAUDE_MAX_WEB_SEARCHES_PER_SESSION.`,
+          ],
+          durationSeconds: 0,
+        },
+      }
+    }
+    incrementWebSearchCalls()
+
     const userMessage = createUserMessage({
       content: 'Perform a web search for the query: ' + query,
     })

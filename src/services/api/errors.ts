@@ -34,6 +34,7 @@ import { getAPIProvider } from 'src/utils/model/providers.js'
 import { getIsNonInteractiveSession } from '../../bootstrap/state.js'
 import {
   API_PDF_MAX_PAGES,
+  API_REQUEST_MAX_SIZE,
   PDF_TARGET_RAW_SIZE,
 } from '../../constants/apiLimits.js'
 import { PRODUCT_USAGE_URL } from '../../constants/links.js'
@@ -191,10 +192,11 @@ export function getImageTooLargeErrorMessage(): string {
     : 'Image was too large. Double press esc to go back and try again with a smaller image.'
 }
 export function getRequestTooLargeErrorMessage(): string {
-  const limits = `max ${formatFileSize(PDF_TARGET_RAW_SIZE)}`
+  // The request-level cap is the API's 32MB total, not the 20MB per-PDF target
+  const limits = `max ${formatFileSize(API_REQUEST_MAX_SIZE)}`
   return getIsNonInteractiveSession()
-    ? `Request too large (${limits}). Try with a smaller file.`
-    : `Request too large (${limits}). Double press esc to go back and try with a smaller file.`
+    ? `Request too large (${limits}). Accumulated images and attachments in the conversation pushed the request over the limit. Remove older images or compact the conversation.`
+    : `Request too large (${limits}). Accumulated images and attachments in the conversation pushed the request over the limit. Run /compact, or double press esc to go back and remove attachments.`
 }
 export const OAUTH_ORG_NOT_ALLOWED_ERROR_MESSAGE =
   'Your account does not have access to Noa Claude. Please run /login.'

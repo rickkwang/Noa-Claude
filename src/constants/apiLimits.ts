@@ -55,6 +55,13 @@ export const IMAGE_MAX_HEIGHT = 2000
 export const PDF_TARGET_RAW_SIZE = 20 * 1024 * 1024 // 20 MB
 
 /**
+ * Total API request size limit (the ceiling PDF_TARGET_RAW_SIZE budgets under).
+ * Used for request-level 413 error messages — the request cap is 32MB, not the
+ * 20MB per-PDF encoding target.
+ */
+export const API_REQUEST_MAX_SIZE = 32 * 1024 * 1024 // 32 MB
+
+/**
  * Maximum number of pages in a PDF accepted by the API.
  */
 export const API_PDF_MAX_PAGES = 100

@@ -44,6 +44,7 @@ import {
   evictTaskOutput,
   initTaskOutputAsSymlink,
 } from '../../utils/task/diskOutput.js'
+import { resetSessionBudgets } from '../../utils/task/sessionBudget.js'
 import { getCurrentWorktreeSession } from '../../utils/worktree.js'
 import { clearSessionCaches } from './caches.js'
 
@@ -202,6 +203,10 @@ export async function clearConversation({
   // Clear cached session metadata (title, tag, agent name/color)
   // so the new session doesn't inherit the previous session's identity
   clearSessionMetadata()
+
+  // Reset session-wide subagent/WebSearch budgets — the new session gets a
+  // fresh runaway-loop allowance (upstream 2.1.212: "/clear resets the budget")
+  resetSessionBudgets()
 
   // Generate new session ID to provide fresh state
   // Set the old session as parent for analytics lineage tracking
