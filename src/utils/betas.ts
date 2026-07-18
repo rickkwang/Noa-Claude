@@ -182,6 +182,7 @@ export function modelSupportsStructuredOutputs(model: string): boolean {
     canonical.includes('claude-opus-4-7') ||
     canonical.includes('claude-opus-4-8') ||
     canonical.includes('claude-fable-5') ||
+    canonical.includes('mythos') ||
     canonical.includes('claude-haiku-4-5')
   )
 }

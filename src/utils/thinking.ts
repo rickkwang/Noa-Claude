@@ -141,6 +141,7 @@ export function modelSupportsAdaptiveThinking(model: string): boolean {
         canonical.includes('opus-4-7') ||
         canonical.includes('opus-4-8') ||
         canonical.includes('fable-5') ||
+        canonical.includes('mythos') ||
         canonical.includes('sonnet-5') ||
         canonical.includes('sonnet-4-6'))) ||
     (provider === 'bedrock' &&
@@ -170,7 +171,8 @@ export function modelSupportsAdaptiveThinking(model: string): boolean {
   return directFirstParty || provider === 'foundry'
 }
 
-// Opus 4.7+ removed temperature/top_p/top_k — sending any of them returns 400.
+// Opus 4.7+ rejects non-default temperature/top_p/top_k values. Omit these
+// fields entirely so callers never depend on model-specific default handling.
 // @[MODEL LAUNCH]: Update when new models also remove sampling params.
 export function modelRejectsSamplingParams(model: string): boolean {
   const canonical = getCanonicalName(model)
@@ -178,6 +180,7 @@ export function modelRejectsSamplingParams(model: string): boolean {
     canonical.includes('opus-4-7') ||
     canonical.includes('opus-4-8') ||
     canonical.includes('fable-5') ||
+    canonical.includes('mythos') ||
     canonical.includes('sonnet-5')
   )
 }
@@ -194,6 +197,7 @@ export function modelOmitsThinkingByDefault(model: string): boolean {
     canonical.includes('opus-4-7') ||
     canonical.includes('opus-4-8') ||
     canonical.includes('fable-5') ||
+    canonical.includes('mythos') ||
     canonical.includes('sonnet-5')
   )
 }

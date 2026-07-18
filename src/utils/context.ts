@@ -51,7 +51,7 @@ export function modelSupports1M(model: string): boolean {
     return false
   }
   const canonical = getCanonicalName(model)
-  return canonical.includes('claude-sonnet-4') || canonical.includes('claude-sonnet-5') || canonical.includes('opus-4-6') || canonical.includes('opus-4-7') || canonical.includes('opus-4-8') || canonical.includes('fable-5')
+  return canonical.includes('claude-sonnet-4') || canonical.includes('claude-sonnet-5') || canonical.includes('opus-4-6') || canonical.includes('opus-4-7') || canonical.includes('opus-4-8') || canonical.includes('fable-5') || canonical.includes('mythos')
 }
 
 export function getContextWindowForModel(
@@ -175,7 +175,7 @@ export function getModelMaxOutputTokens(model: string): {
 
   const m = getCanonicalName(model)
 
-  if (m.includes('opus-4-6') || m.includes('opus-4-7') || m.includes('opus-4-8') || m.includes('fable-5') || m.includes('sonnet-5')) {
+  if (m.includes('opus-4-6') || m.includes('opus-4-7') || m.includes('opus-4-8') || m.includes('fable-5') || m.includes('mythos') || m.includes('sonnet-5')) {
     // Sonnet 5's max output is 128K per the models overview, same ceiling as
     // Opus 4.6+ (unlike Sonnet 4.6, which caps at 64k on the streaming
     // Messages API — see the branch below).
