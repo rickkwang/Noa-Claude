@@ -1,4 +1,3 @@
-// @ts-nocheck
 //
 // Precomputed compaction (in-memory, opt-in).
 //
@@ -55,7 +54,6 @@ type ArmedState = {
   // uuid of the last armed message; guards against history rewrite/rewind.
   tailUuid: UUID
   summaryText?: string
-  startedAt: number
   abort: AbortController
 }
 
@@ -86,9 +84,10 @@ function tailTokens(messages: Message[], pivotCount: number): number {
 
 /**
  * Reset the precompute slot, aborting any in-flight background compute.
- * Safe to call unconditionally.
+ * Safe to call unconditionally. Module-internal: the slot's lifetime is owned
+ * entirely by arm/consume, so nothing outside should be dropping it.
  */
-export function discardPrecompute(reason: string): void {
+function discardPrecompute(reason: string): void {
   if (!armed) return
   logForDebugging(`[PRECOMPUTE] discard (${reason})`, { level: 'debug' })
   try {
@@ -160,7 +159,6 @@ export function armPrecompute(params: {
     status: 'computing',
     pivotCount,
     tailUuid,
-    startedAt: Date.now(),
     abort,
   }
   const slot = armed
@@ -248,9 +246,12 @@ async function computeSummary(
     ...context,
     abortController: abort,
     setStreamMode: undefined,
-    setResponseLength: undefined,
     setSDKStatus: undefined,
     onCompactProgress: undefined,
+    // Required (non-optional) on ToolUseContext, so swallow the updates with a
+    // no-op rather than nulling it out — the background summary must not move
+    // the live session's response-length counter.
+    setResponseLength: () => {},
   }
 
   const summaryRequest = createUserMessage({
@@ -295,7 +296,6 @@ export function __setReadyForTest(state: {
     pivotCount: state.pivotCount,
     tailUuid: state.tailUuid as UUID,
     summaryText: state.summaryText,
-    startedAt: 0,
     abort: new AbortController(),
   }
 }
@@ -307,7 +307,6 @@ export function __setComputingForTest(state: {
     status: 'computing',
     pivotCount: state.pivotCount,
     tailUuid: state.tailUuid as UUID,
-    startedAt: 0,
     abort: new AbortController(),
   }
 }
