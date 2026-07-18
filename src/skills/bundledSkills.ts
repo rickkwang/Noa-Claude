@@ -35,7 +35,7 @@ export type BundledSkillDefinition = {
    * same contract as disk-based skills.
    *
    * Pass a thunk instead of a literal record to defer loading large content
-   * bundles until first invocation (e.g. claude-api inlines ~250KB of .md).
+   * bundles until first invocation.
    */
   files?:
     | Record<string, string>

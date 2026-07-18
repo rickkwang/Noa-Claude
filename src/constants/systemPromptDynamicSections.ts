@@ -130,7 +130,6 @@ export function getSessionSpecificGuidanceSection(
     'update-config': `update-config — for settings, permissions, env vars, hooks, or automated "from now on" behavior.`,
     loop: `loop / schedule — only for recurring, delayed, or monitored work, not one-off tasks.`,
     schedule: `loop / schedule — only for recurring, delayed, or monitored work, not one-off tasks.`,
-    'claude-api': `claude-api — for Anthropic SDK / Claude API / model migration / prompt caching / tool-use; skip for provider-neutral or OpenAI-only work.`,
   }
   const skillRoutingRules = Array.from(
     new Set(
