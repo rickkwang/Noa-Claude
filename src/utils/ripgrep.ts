@@ -1,87 +1,63 @@
 import type { ChildProcess, ExecFileException } from 'child_process'
 import { execFile, spawn } from 'child_process'
-import { existsSync } from 'fs'
 import memoize from 'lodash-es/memoize.js'
 import { homedir } from 'os'
 import * as path from 'path'
 import { logEvent } from 'src/services/analytics/index.js'
-import { fileURLToPath } from 'url'
-import { isInBundledMode } from './bundledMode.js'
 import { logForDebugging } from './debug.js'
-import { isEnvDefinedFalsy } from './envUtils.js'
 import { execFileNoThrow } from './execFileNoThrow.js'
-import { findExecutable } from './findExecutable.js'
 import { logError } from './log.js'
 import { getPlatform } from './platform.js'
 import { countCharInString } from './stringUtils.js'
 
-const __filename = fileURLToPath(import.meta.url)
-// we use node:path.join instead of node:url.resolve because the former doesn't encode spaces
-const __dirname = path.join(
-  __filename,
-  process.env.NODE_ENV === 'test' ? '../../../' : '../',
-)
-
 type RipgrepConfig = {
-  mode: 'system' | 'builtin' | 'embedded'
+  mode: 'system'
   command: string
   args: string[]
-  argv0?: string
 }
 
+// Noa always uses the system ripgrep. Unlike upstream's native binary, our
+// bun-compiled artifact does not embed rg (argv0='rg' would just re-exec Noa),
+// and we don't ship a vendored copy — so system rg is a hard dependency,
+// surfaced via RIPGREP_NOT_FOUND_MESSAGE when missing.
 const getRipgrepConfig = memoize((): RipgrepConfig => {
-  const userWantsSystemRipgrep = isEnvDefinedFalsy(
-    process.env.USE_BUILTIN_RIPGREP,
-  )
-
-  // Try system ripgrep if user wants it
-  if (userWantsSystemRipgrep) {
-    const { cmd: systemPath } = findExecutable('rg', [])
-    if (systemPath !== 'rg') {
-      // SECURITY: Use command name 'rg' instead of systemPath to prevent PATH hijacking
-      // If we used systemPath, a malicious ./rg.exe in current directory could be executed
-      // Using just 'rg' lets the OS resolve it safely with NoDefaultCurrentDirectoryInExePath protection
-      return { mode: 'system', command: 'rg', args: [] }
-    }
-  }
-
-  // In bundled (native) mode, ripgrep is statically compiled into bun-internal
-  // and dispatches based on argv[0]. We spawn ourselves with argv0='rg'.
-  if (isInBundledMode()) {
-    return {
-      mode: 'embedded',
-      command: process.execPath,
-      args: ['--no-config'],
-      argv0: 'rg',
-    }
-  }
-
-  const rgRoot = path.resolve(__dirname, 'vendor', 'ripgrep')
-  const command =
-    process.platform === 'win32'
-      ? path.resolve(rgRoot, `${process.arch}-win32`, 'rg.exe')
-      : path.resolve(rgRoot, `${process.arch}-${process.platform}`, 'rg')
-
-  if (!existsSync(command)) {
-    const { cmd: systemPath } = findExecutable('rg', [])
-    if (systemPath !== 'rg') {
-      return { mode: 'system', command: 'rg', args: [] }
-    }
-  }
-
-  return { mode: 'builtin', command, args: [] }
+  // SECURITY: Use command name 'rg' instead of a resolved path to prevent PATH hijacking
+  // If we resolved the path ourselves, a malicious ./rg.exe in current directory could be executed
+  // Using just 'rg' lets the OS resolve it safely with NoDefaultCurrentDirectoryInExePath protection
+  return { mode: 'system', command: 'rg', args: [] }
 })
+
+const RIPGREP_NOT_FOUND_MESSAGE =
+  'ripgrep not found on PATH. Noa Claude requires ripgrep for file search — install it with `brew install ripgrep` (macOS), `apt install ripgrep` (Debian/Ubuntu), or `winget install BurntSushi.ripgrep.MSVC` (Windows).'
+
+/**
+ * Wrap an ENOENT spawn failure with an actionable install message.
+ * Other errors pass through unchanged.
+ */
+function wrapRipgrepSpawnError(error: NodeJS.ErrnoException): Error {
+  if (error.code === 'ENOENT') {
+    const wrapped: NodeJS.ErrnoException = new Error(
+      RIPGREP_NOT_FOUND_MESSAGE,
+      { cause: error },
+    )
+    wrapped.code = 'ENOENT'
+    return wrapped
+  }
+  return error
+}
 
 export function ripgrepCommand(): {
   rgPath: string
   rgArgs: string[]
+  // Always undefined now that embedded mode is gone; kept in the type so
+  // consumers (ShellSnapshot, sandbox-adapter) with `if (argv0)` guards
+  // stay type-correct without changes.
   argv0?: string
 } {
   const config = getRipgrepConfig()
   return {
     rgPath: config.command,
     rgArgs: config.args,
-    argv0: config.argv0,
   }
 }
 
@@ -128,7 +104,7 @@ function ripGrepRaw(
   // argument, but when run non-interactively, it will hang unless a path or file
   // pattern is provided
 
-  const { rgPath, rgArgs, argv0 } = ripgrepCommand()
+  const { rgPath, rgArgs } = ripgrepCommand()
 
   // Use single-threaded mode only if explicitly requested for this call's retry
   const threadArgs = singleThread ? ['-j', '1'] : []
@@ -140,89 +116,6 @@ function ripGrepRaw(
     parseInt(process.env.CLAUDE_CODE_GLOB_TIMEOUT_SECONDS || '', 10) || 0
   const timeout = parsedSeconds > 0 ? parsedSeconds * 1000 : defaultTimeout
 
-  // For embedded ripgrep, use spawn with argv0 (execFile doesn't support argv0 properly)
-  if (argv0) {
-    const child = spawn(rgPath, fullArgs, {
-      argv0,
-      signal: abortSignal,
-      // Prevent visible console window on Windows (no-op on other platforms)
-      windowsHide: true,
-    })
-
-    let stdout = ''
-    let stderr = ''
-    let stdoutTruncated = false
-    let stderrTruncated = false
-
-    child.stdout?.on('data', (data: Buffer) => {
-      if (!stdoutTruncated) {
-        stdout += data.toString()
-        if (stdout.length > MAX_BUFFER_SIZE) {
-          stdout = stdout.slice(0, MAX_BUFFER_SIZE)
-          stdoutTruncated = true
-        }
-      }
-    })
-
-    child.stderr?.on('data', (data: Buffer) => {
-      if (!stderrTruncated) {
-        stderr += data.toString()
-        if (stderr.length > MAX_BUFFER_SIZE) {
-          stderr = stderr.slice(0, MAX_BUFFER_SIZE)
-          stderrTruncated = true
-        }
-      }
-    })
-
-    // Set up timeout with SIGKILL escalation.
-    // SIGTERM alone may not kill ripgrep if it's blocked in uninterruptible I/O
-    // (e.g., deep filesystem traversal). If SIGTERM doesn't work within 5 seconds,
-    // escalate to SIGKILL which cannot be caught or ignored.
-    // On Windows, child.kill('SIGTERM') throws; use default signal.
-    let killTimeoutId: ReturnType<typeof setTimeout> | undefined
-    const timeoutId = setTimeout(() => {
-      if (process.platform === 'win32') {
-        child.kill()
-      } else {
-        child.kill('SIGTERM')
-        killTimeoutId = setTimeout(c => c.kill('SIGKILL'), 5_000, child)
-      }
-    }, timeout)
-
-    // On Windows, both 'close' and 'error' can fire for the same process
-    // (e.g. when AbortSignal kills the child). Guard against double-callback.
-    let settled = false
-    child.on('close', (code, signal) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timeoutId)
-      clearTimeout(killTimeoutId)
-      if (code === 0 || code === 1) {
-        // 0 = matches found, 1 = no matches (both are success)
-        callback(null, stdout, stderr)
-      } else {
-        const error: ExecFileException = new Error(
-          `ripgrep exited with code ${code}`,
-        )
-        error.code = code ?? undefined
-        error.signal = signal ?? undefined
-        callback(error, stdout, stderr)
-      }
-    })
-
-    child.on('error', (err: NodeJS.ErrnoException) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timeoutId)
-      clearTimeout(killTimeoutId)
-      const error: ExecFileException = err
-      callback(error, stdout, stderr)
-    })
-
-    return child
-  }
-
-  // For non-embedded ripgrep, use execFile
   // Use SIGKILL as killSignal because SIGTERM may not terminate ripgrep
   // when it's blocked in uninterruptible filesystem I/O.
   // On Windows, SIGKILL throws; use default (undefined) which sends SIGTERM.
@@ -256,12 +149,10 @@ async function ripGrepFileCount(
   target: string,
   abortSignal: AbortSignal,
 ): Promise<number> {
-  await codesignRipgrepIfNecessary()
-  const { rgPath, rgArgs, argv0 } = ripgrepCommand()
+  const { rgPath, rgArgs } = ripgrepCommand()
 
   return new Promise<number>((resolve, reject) => {
     const child = spawn(rgPath, [...rgArgs, ...args, target], {
-      argv0,
       signal: abortSignal,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'ignore'],
@@ -306,12 +197,10 @@ export async function ripGrepStream(
   abortSignal: AbortSignal,
   onLines: (lines: string[]) => void,
 ): Promise<void> {
-  await codesignRipgrepIfNecessary()
-  const { rgPath, rgArgs, argv0 } = ripgrepCommand()
+  const { rgPath, rgArgs } = ripgrepCommand()
 
   return new Promise<void>((resolve, reject) => {
     const child = spawn(rgPath, [...rgArgs, ...args, target], {
-      argv0,
       signal: abortSignal,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'ignore'],
@@ -345,7 +234,7 @@ export async function ripGrepStream(
     child.on('error', err => {
       if (settled) return
       settled = true
-      reject(err)
+      reject(wrapRipgrepSpawnError(err))
     })
   })
 }
@@ -355,8 +244,6 @@ export async function ripGrep(
   target: string,
   abortSignal: AbortSignal,
 ): Promise<string[]> {
-  await codesignRipgrepIfNecessary()
-
   // Test ripgrep on first use and cache the result (fire and forget)
   void testRipgrepOnFirstUse().catch(error => {
     logError(error)
@@ -406,7 +293,9 @@ export async function ripGrep(
       // These should be surfaced to the user rather than silently returning empty results
       const CRITICAL_ERROR_CODES = ['ENOENT', 'EACCES', 'EPERM']
       if (CRITICAL_ERROR_CODES.includes(error.code as string)) {
-        reject(error)
+        // ENOENT means rg itself is missing — replace the bare spawn error
+        // with an actionable install message
+        reject(wrapRipgrepSpawnError(error as NodeJS.ErrnoException))
         return
       }
 
@@ -556,7 +445,7 @@ let ripgrepStatus: {
  * Returns current configuration immediately, with working status if available
  */
 export function getRipgrepStatus(): {
-  mode: 'system' | 'builtin' | 'embedded'
+  mode: 'system'
   path: string
   working: boolean | null // null if not yet tested
 } {
@@ -580,36 +469,13 @@ const testRipgrepOnFirstUse = memoize(async (): Promise<void> => {
   const config = getRipgrepConfig()
 
   try {
-    let test: { code: number; stdout: string }
-
-    // For embedded ripgrep, use Bun.spawn with argv0
-    if (config.argv0) {
-      // Only Bun embeds ripgrep.
-      // eslint-disable-next-line custom-rules/require-bun-typeof-guard
-      const proc = Bun.spawn([config.command, '--version'], {
-        argv0: config.argv0,
-        stderr: 'ignore',
-        stdout: 'pipe',
-      })
-
-      // Bun's ReadableStream has .text() at runtime, but TS types don't reflect it
-      const [stdout, code] = await Promise.all([
-        (proc.stdout as unknown as Blob).text(),
-        proc.exited,
-      ])
-      test = {
-        code,
-        stdout,
-      }
-    } else {
-      test = await execFileNoThrow(
-        config.command,
-        [...config.args, '--version'],
-        {
-          timeout: 5000,
-        },
-      )
-    }
+    const test = await execFileNoThrow(
+      config.command,
+      [...config.args, '--version'],
+      {
+        timeout: 5000,
+      },
+    )
 
     const working =
       test.code === 0 && !!test.stdout && test.stdout.startsWith('ripgrep ')
@@ -638,65 +504,3 @@ const testRipgrepOnFirstUse = memoize(async (): Promise<void> => {
     logError(error)
   }
 })
-
-let alreadyDoneSignCheck = false
-async function codesignRipgrepIfNecessary() {
-  if (process.platform !== 'darwin' || alreadyDoneSignCheck) {
-    return
-  }
-
-  alreadyDoneSignCheck = true
-
-  // Only sign the standalone vendored rg binary (npm builds)
-  const config = getRipgrepConfig()
-  if (config.mode !== 'builtin') {
-    return
-  }
-  const builtinPath = config.command
-
-  // First, check to see if ripgrep is already signed
-  const lines = (
-    await execFileNoThrow('codesign', ['-vv', '-d', builtinPath], {
-      preserveOutputOnError: false,
-    })
-  ).stdout.split('\n')
-
-  const needsSigned = lines.find(line => line.includes('linker-signed'))
-  if (!needsSigned) {
-    return
-  }
-
-  try {
-    const signResult = await execFileNoThrow('codesign', [
-      '--sign',
-      '-',
-      '--force',
-      '--preserve-metadata=entitlements,requirements,flags,runtime',
-      builtinPath,
-    ])
-
-    if (signResult.code !== 0) {
-      logError(
-        new Error(
-          `Failed to sign ripgrep: ${signResult.stdout} ${signResult.stderr}`,
-        ),
-      )
-    }
-
-    const quarantineResult = await execFileNoThrow('xattr', [
-      '-d',
-      'com.apple.quarantine',
-      builtinPath,
-    ])
-
-    if (quarantineResult.code !== 0) {
-      logError(
-        new Error(
-          `Failed to remove quarantine: ${quarantineResult.stdout} ${quarantineResult.stderr}`,
-        ),
-      )
-    }
-  } catch (e) {
-    logError(e)
-  }
-}

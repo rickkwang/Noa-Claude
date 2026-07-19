@@ -6,6 +6,8 @@ Noa is a productized reconstruction based on publicly exposed Claude Code source
 
 ## Quick Start
 
+Prerequisites: [Bun](https://bun.sh) and [ripgrep](https://github.com/BurntSushi/ripgrep) (`brew install ripgrep` / `apt install ripgrep`) — file search is built on the system `rg` and fails with an install hint when it is missing.
+
 Install with `curl`:
 
 ```bash

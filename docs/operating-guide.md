@@ -190,6 +190,9 @@ Use these as the first-line regression targets for agent/runtime changes:
 - permission rejection and subsequent retry
 - remote-session reconnect after stale or dropped transport
 - tool execution ordering when concurrent read-only work is allowed
+- search on a machine without system ripgrep — Grep/Glob must fail with the
+  `ripgrep not found on PATH` install hint, not a bare ENOENT or empty results
+  (`/doctor` and `/status` report rg mode and working state)
 
 ## Performance Baselines
 
