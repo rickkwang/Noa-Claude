@@ -194,6 +194,10 @@ type State = {
   }>
   // SDK-provided betas (e.g., context-1m-2025-08-07)
   sdkBetas: string[] | undefined
+  // Set once the API rejects a native-1M request for lack of long-context
+  // credits; clamps the effective context window back to 200k for the rest of
+  // the session (see getContextWindowForModel).
+  longContext1mCreditsBlocked: boolean
   // Main thread agent type (from --agent flag or settings)
   mainThreadAgentType: string | undefined
   // Remote mode (--remote flag)
@@ -380,6 +384,8 @@ function getInitialState(): State {
     slowOperations: [],
     // SDK-provided betas
     sdkBetas: undefined,
+    // 1M long-context credits clamp (set reactively on 429)
+    longContext1mCreditsBlocked: false,
     // Main thread agent type
     mainThreadAgentType: undefined,
     // Remote mode
@@ -877,6 +883,14 @@ export function getSdkBetas(): string[] | undefined {
 
 export function setSdkBetas(betas: string[] | undefined): void {
   STATE.sdkBetas = betas
+}
+
+export function isLongContext1mCreditsBlocked(): boolean {
+  return STATE.longContext1mCreditsBlocked
+}
+
+export function setLongContext1mCreditsBlocked(blocked: boolean): void {
+  STATE.longContext1mCreditsBlocked = blocked
 }
 
 export function resetCostState(): void {

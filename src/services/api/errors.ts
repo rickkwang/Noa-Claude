@@ -35,7 +35,11 @@ import {
   getAPIProvider,
   isDirectFirstParty,
 } from 'src/utils/model/providers.js'
-import { getIsNonInteractiveSession } from '../../bootstrap/state.js'
+import {
+  getIsNonInteractiveSession,
+  isLongContext1mCreditsBlocked,
+  setLongContext1mCreditsBlocked,
+} from '../../bootstrap/state.js'
 import {
   API_PDF_MAX_PAGES,
   API_REQUEST_MAX_SIZE,
@@ -430,6 +434,18 @@ export function extractUnknownErrorFormat(value: unknown): string | undefined {
   return undefined
 }
 
+// The 429 bodies the API returns when an account is not entitled to a 1M
+// context window. Matched on message text because there is no dedicated header.
+function isLongContextCreditsError(message: string | undefined): boolean {
+  if (!message) {
+    return false
+  }
+  return (
+    message.includes('Extra usage is required for long context') ||
+    message.includes('Usage credits are required for long context')
+  )
+}
+
 export function getAssistantMessageFromError(
   error: unknown,
   model: string,
@@ -475,6 +491,18 @@ export function getAssistantMessageFromError(
     error.status === 429 &&
     shouldProcessRateLimits(isClaudeAISubscriber())
   ) {
+    // A 429 specifically about long-context credits means the optimistic 1M
+    // window is not actually available on this account. Latch it so
+    // getContextWindowForModel clamps back to 200k for the rest of the
+    // session, instead of retrying against a window we cannot fill.
+    if (
+      isLongContextCreditsError(error.message) &&
+      !isLongContext1mCreditsBlocked()
+    ) {
+      setLongContext1mCreditsBlocked(true)
+      logEvent('tengu_1m_credits_clamp_activated', {})
+    }
+
     // Check if this is the new API with multiple rate limit headers
     const rateLimitType = error.headers?.get?.(
       'anthropic-ratelimit-unified-representative-claim',

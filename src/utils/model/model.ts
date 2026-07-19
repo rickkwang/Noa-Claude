@@ -339,6 +339,16 @@ export function renderDefaultModelSetting(
 
 export function getOpus46PricingSuffix(fastMode: boolean): string {
   if (getAPIProvider() !== 'firstParty') return ''
+  // Subscribers draw from plan usage, not per-Mtok API pricing. Upstream shows
+  // them a usage multiplier instead (see getProUsageMultiplierSuffix); the
+  // fast-mode indicator still applies since that is a mode, not a price.
+  // isClaudeAISubscriber() throws without credentials — an indeterminate answer
+  // falls through to the PAYG rendering rather than breaking the picker.
+  try {
+    if (isClaudeAISubscriber() && !fastMode) return ''
+  } catch {
+    // treat as non-subscriber
+  }
   const pricing = formatModelPricing(getOpus46CostTier(fastMode))
   const fastModeIndicator = fastMode ? ` (${LIGHTNING_BOLT})` : ''
   return ` ·${fastModeIndicator} ${pricing}`
@@ -348,12 +358,25 @@ export function isOpus1mMergeEnabled(): boolean {
   if (is1mContextDisabled() || getAPIProvider() !== 'firstParty') {
     return false
   }
-  // Fail closed when a subscriber's subscription type is unknown. The VS Code
-  // config-loading subprocess can have OAuth tokens with valid scopes but no
-  // subscriptionType field (stale or partial refresh). Without this guard we'd
-  // append opus[1m] for a user whose entitlement we can't confirm — the API
-  // then rejects it with a misleading "rate limit reached" error.
-  if (isClaudeAISubscriber() && getSubscriptionType() === null) {
+  // These auth lookups throw when no credentials are configured at all. Fail
+  // closed: an account we cannot classify does not get `opus[1m]` pinned.
+  try {
+    // Pro is excluded upstream: the merge exists to fold a paid 1M upgrade into
+    // the default Opus entry for plans that have one. Enabling it for Pro pins
+    // `opus[1m]` into settings, which then renders as "Opus 4.8 (1M context)"
+    // everywhere even though Opus 4.8 is natively 1M and the suffix is a no-op.
+    if (getSubscriptionType() === 'pro') {
+      return false
+    }
+    // Fail closed when a subscriber's subscription type is unknown. The VS Code
+    // config-loading subprocess can have OAuth tokens with valid scopes but no
+    // subscriptionType field (stale or partial refresh). Without this guard we'd
+    // append opus[1m] for a user whose entitlement we can't confirm — the API
+    // then rejects it with a misleading "rate limit reached" error.
+    if (isClaudeAISubscriber() && getSubscriptionType() === null) {
+      return false
+    }
+  } catch {
     return false
   }
   return true
@@ -512,8 +535,15 @@ export function parseUserSpecifiedModel(
         return getDefaultHaikuModel() + (has1mTag ? '[1m]' : '')
       case 'opus':
         return getDefaultOpusModel() + (has1mTag ? '[1m]' : '')
-      case 'fable':
-        return getDefaultFableModel() + (has1mTag ? '[1m]' : '')
+      case 'fable': {
+        // Fable carries no `supports_1m_suffix` upstream, and the suffix is a
+        // no-op on a natively-1M model, so it is normalised away on direct
+        // first-party rather than being echoed back in every display name.
+        return (
+          getDefaultFableModel() +
+          (has1mTag && !isDirectFirstParty() ? '[1m]' : '')
+        )
+      }
       case 'best':
         return getBestModel()
       default:

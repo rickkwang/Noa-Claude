@@ -2,6 +2,7 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { getInitialMainLoopModel } from '../../bootstrap/state.js'
 import {
+  getSubscriptionType,
   isClaudeAISubscriber,
   isMaxSubscriber,
   isTeamPremiumSubscriber,
@@ -30,12 +31,14 @@ import {
   getMarketingNameForModel,
   getUserSpecifiedModelSetting,
   isOpus1mMergeEnabled,
+  parseUserSpecifiedModel,
   getOpus46PricingSuffix,
   renderDefaultModelSetting,
   type ModelSetting,
 } from './model.js'
-import { has1mContext } from '../context.js'
+import { has1mContext, is1mContextDisabled } from '../context.js'
 import { getGlobalConfig } from '../config.js'
+import { hasNative1mContext } from './native1m.js'
 
 // @[MODEL LAUNCH]: Update all the available and default model option strings below.
 
@@ -46,8 +49,39 @@ export type ModelOption = {
   descriptionForModel?: string
 }
 
+/**
+ * isClaudeAISubscriber() throws when no credentials are configured at all.
+ * Picker labels must never be the thing that breaks a session, so treat an
+ * indeterminate answer as "not a subscriber" — that yields the PAYG rendering,
+ * which is the safe default for an account we cannot classify.
+ */
+function isSubscriberSafe(): boolean {
+  try {
+    return isClaudeAISubscriber()
+  } catch {
+    return false
+  }
+}
+
+// Per-Mtok API pricing is only meaningful to PAYG users. Subscribers draw from
+// plan usage, so upstream's subscriber rows omit the price entirely and use
+// usage language instead (see getProUsageMultiplierSuffix / "Draws from usage
+// credits"). Showing them $/Mtok would state a price they do not pay.
 function getFirstPartyPricingSuffix(costs: ModelCosts): string {
+  if (isSubscriberSafe()) {
+    return ''
+  }
   return isDirectFirstParty() ? ` · ${formatModelPricing(costs)}` : ''
+}
+
+/**
+ * Pro accounts spend roughly twice the plan usage on Opus versus Sonnet;
+ * upstream surfaces that on the Opus rows in place of a price.
+ */
+export function getProUsageMultiplierSuffix(): string {
+  return isSubscriberSafe() && getSubscriptionType() === 'pro'
+    ? ' · ~2× usage vs Sonnet'
+    : ''
 }
 
 export function getDefaultOptionForUser(fastMode = false): ModelOption {
@@ -116,9 +150,9 @@ function getSonnet5Option(): ModelOption {
   return {
     value: is3P ? getModelStrings().sonnet5 : 'sonnet',
     label: 'Sonnet',
-    description: `Sonnet 5 · Best for everyday tasks${getFirstPartyPricingSuffix(getSonnet5CostTier())}`,
+    description: `Sonnet 5 · Efficient for routine tasks${getFirstPartyPricingSuffix(getSonnet5CostTier())}`,
     descriptionForModel:
-      'Sonnet 5 - best for everyday tasks. Generally recommended for most coding tasks',
+      'Sonnet 5 - efficient for routine tasks. Generally recommended for most coding tasks',
   }
 }
 
@@ -184,8 +218,8 @@ function getOpus48Option(fastMode = false): ModelOption {
   return {
     value: is3P ? getModelStrings().opus48 : 'opus',
     label: 'Opus',
-    description: `Opus 4.8 · Most capable for complex work${getOpus46PricingSuffix(fastMode)}`,
-    descriptionForModel: 'Opus 4.8 - most capable for complex work',
+    description: `Opus 4.8 · Best for everyday, complex tasks${getProUsageMultiplierSuffix()}${getOpus46PricingSuffix(fastMode)}`,
+    descriptionForModel: 'Opus 4.8 - best for everyday, complex tasks',
   }
 }
 
@@ -194,7 +228,7 @@ export function getOpus48_1MOption(fastMode = false): ModelOption {
   return {
     value: is3P ? getModelStrings().opus48 + '[1m]' : 'opus[1m]',
     label: 'Opus (1M context)',
-    description: `Opus 4.8 with 1M context · Most capable for complex work${getOpus46PricingSuffix(fastMode)}`,
+    description: `Opus 4.8 with 1M context · Best for everyday, complex tasks${getProUsageMultiplierSuffix()}${getOpus46PricingSuffix(fastMode)}`,
     descriptionForModel:
       'Opus 4.8 with 1M context window - for long sessions with large codebases',
   }
@@ -208,9 +242,9 @@ function getFable5Option(): ModelOption {
   return {
     value: is3P ? getModelStrings().fable5 : 'fable',
     label: 'Fable',
-    description: `Fable 5 · Most powerful${getFirstPartyPricingSuffix(COST_TIER_10_50)}`,
+    description: `Fable 5 · Most capable for your hardest and longest-running tasks${getFirstPartyPricingSuffix(COST_TIER_10_50)}`,
     descriptionForModel:
-      'Fable 5 - most powerful model, above Opus. Highest cost; use for the hardest tasks.',
+      'Fable 5 - most capable for your hardest and longest-running tasks',
   }
 }
 
@@ -230,7 +264,7 @@ export function getSonnet5_1MOption(): ModelOption {
   return {
     value: is3P ? getModelStrings().sonnet5 + '[1m]' : 'sonnet[1m]',
     label: 'Sonnet (1M context)',
-    description: `Sonnet 5 with 1M context · Best for everyday tasks${getFirstPartyPricingSuffix(getSonnet5CostTier())}`,
+    description: `Sonnet 5 with 1M context · Efficient for routine tasks${getFirstPartyPricingSuffix(getSonnet5CostTier())}`,
     descriptionForModel:
       'Sonnet 5 with 1M context window - for long sessions with large codebases',
   }
@@ -296,12 +330,12 @@ function getMaxOpusOption(fastMode = false): ModelOption {
   return {
     value: 'opus',
     label: 'Opus',
-    description: `Opus 4.8 · Most capable for complex work${fastMode ? getOpus46PricingSuffix(true) : ''}`,
+    description: `Opus 4.8 · Best for everyday, complex tasks${getProUsageMultiplierSuffix()}${fastMode ? getOpus46PricingSuffix(true) : ''}`,
   }
 }
 
 export function getMaxSonnet46_1MOption(): ModelOption {
-  const billingInfo = isClaudeAISubscriber() ? ' · Billed as extra usage' : ''
+  const billingInfo = isClaudeAISubscriber() ? ' · Draws from usage credits' : ''
   return {
     value: 'sonnet[1m]',
     label: 'Sonnet (1M context)',
@@ -310,7 +344,7 @@ export function getMaxSonnet46_1MOption(): ModelOption {
 }
 
 export function getMaxSonnet5_1MOption(): ModelOption {
-  const billingInfo = isClaudeAISubscriber() ? ' · Billed as extra usage' : ''
+  const billingInfo = isClaudeAISubscriber() ? ' · Draws from usage credits' : ''
   return {
     value: 'sonnet[1m]',
     label: 'Sonnet (1M context)',
@@ -319,7 +353,7 @@ export function getMaxSonnet5_1MOption(): ModelOption {
 }
 
 export function getMaxOpus46_1MOption(fastMode = false): ModelOption {
-  const billingInfo = isClaudeAISubscriber() ? ' · Billed as extra usage' : ''
+  const billingInfo = isClaudeAISubscriber() ? ' · Draws from usage credits' : ''
   return {
     value: 'opus[1m]',
     label: 'Opus (1M context)',
@@ -328,7 +362,7 @@ export function getMaxOpus46_1MOption(fastMode = false): ModelOption {
 }
 
 export function getMaxOpus47_1MOption(fastMode = false): ModelOption {
-  const billingInfo = isClaudeAISubscriber() ? ' · Billed as extra usage' : ''
+  const billingInfo = isClaudeAISubscriber() ? ' · Draws from usage credits' : ''
   return {
     value: 'opus[1m]',
     label: 'Opus (1M context)',
@@ -337,7 +371,7 @@ export function getMaxOpus47_1MOption(fastMode = false): ModelOption {
 }
 
 export function getMaxOpus48_1MOption(fastMode = false): ModelOption {
-  const billingInfo = isClaudeAISubscriber() ? ' · Billed as extra usage' : ''
+  const billingInfo = isClaudeAISubscriber() ? ' · Draws from usage credits' : ''
   return {
     value: 'opus[1m]',
     label: 'Opus (1M context)',
@@ -350,9 +384,9 @@ function getMergedOpus1MOption(fastMode = false): ModelOption {
   return {
     value: is3P ? getModelStrings().opus48 + '[1m]' : 'opus[1m]',
     label: 'Opus (1M context)',
-    description: `Opus 4.8 with 1M context · Most capable for complex work${!is3P && fastMode ? getOpus46PricingSuffix(fastMode) : ''}`,
+    description: `Opus 4.8 with 1M context · Best for everyday, complex tasks${!is3P && fastMode ? getOpus46PricingSuffix(fastMode) : ''}`,
     descriptionForModel:
-      'Opus 4.8 with 1M context - most capable for complex work',
+      'Opus 4.8 with 1M context - best for everyday, complex tasks',
   }
 }
 
@@ -365,7 +399,7 @@ const MaxSonnet46Option: ModelOption = {
 const MaxSonnet5Option: ModelOption = {
   value: 'sonnet',
   label: 'Sonnet',
-  description: 'Sonnet 5 · Best for everyday tasks',
+  description: 'Sonnet 5 · Efficient for routine tasks',
 }
 
 const MaxHaiku45Option: ModelOption = {
@@ -627,27 +661,27 @@ export function getModelOptions(fastMode = false): ModelOption[] {
     customModel = initialMainLoopModel
   }
   if (customModel === null || options.some(opt => opt.value === customModel)) {
-    return filterModelOptionsByAllowlist(options)
+    return filterModelOptionsByAllowlist(mergeNative1mOptions(options))
   } else if (customModel === 'opusplan') {
-    return filterModelOptionsByAllowlist([...options, getOpusPlanOption()])
+    return filterModelOptionsByAllowlist(mergeNative1mOptions([...options, getOpusPlanOption()]))
   } else if (customModel === 'opus' && getAPIProvider() === 'firstParty') {
     // Max/Team Premium default is already Opus — adding an explicit Opus row duplicates the Default entry.
     if (isMaxSubscriber() || isTeamPremiumSubscriber()) {
-      return filterModelOptionsByAllowlist(options)
+      return filterModelOptionsByAllowlist(mergeNative1mOptions(options))
     }
-    return filterModelOptionsByAllowlist([
+    return filterModelOptionsByAllowlist(mergeNative1mOptions([
       ...options,
       getMaxOpusOption(fastMode),
-    ])
+    ]))
   } else if (customModel === 'opus[1m]' && getAPIProvider() === 'firstParty') {
     // When Max/Team Premium has 1M-merge enabled, default already represents Opus 1M.
     if ((isMaxSubscriber() || isTeamPremiumSubscriber()) && isOpus1mMergeEnabled()) {
-      return filterModelOptionsByAllowlist(options)
+      return filterModelOptionsByAllowlist(mergeNative1mOptions(options))
     }
-    return filterModelOptionsByAllowlist([
+    return filterModelOptionsByAllowlist(mergeNative1mOptions([
       ...options,
       getMergedOpus1MOption(fastMode),
-    ])
+    ]))
   } else {
     // Try to show a human-readable label for known Anthropic models, with an
     // upgrade hint if the alias now resolves to a newer version.
@@ -661,8 +695,54 @@ export function getModelOptions(fastMode = false): ModelOption[] {
         description: 'Custom model',
       })
     }
-    return filterModelOptionsByAllowlist(options)
+    return filterModelOptionsByAllowlist(mergeNative1mOptions(options))
   }
+}
+
+/**
+ * Collapse redundant `[1m]` picker rows for models that already serve 1M
+ * natively (see native1m.ts): the base row and the `[1m]` row resolve to the
+ * same window, and the "(1M context)" label falsely implies the base row is
+ * smaller. The base row's description is annotated with "1M context" instead.
+ *
+ * The `[1m]` row is kept when it IS the current selection (so the picker can
+ * still highlight it) or when no matching base row exists (e.g. the merged
+ * Opus 1M entry, which replaces the plain Opus row entirely).
+ *
+ * Exported for tests.
+ */
+export function mergeNative1mOptions(options: ModelOption[]): ModelOption[] {
+  if (is1mContextDisabled()) {
+    return options
+  }
+  const values = new Set(options.map(o => o.value))
+
+  // A base row and its `[1m]` sibling resolve to the same window once the
+  // model is natively 1M, so exactly one of the pair may survive — keeping
+  // both renders duplicate choices. Upstream suppresses the `[1m]` builder in
+  // this case and keeps the base row; do the same here. Historical saved
+  // `[1m]` settings are normalized by migrateOpusToOpus1m.
+  const dropped = new Set<string>()
+  for (const value of values) {
+    if (typeof value !== 'string' || value.endsWith('[1m]')) {
+      continue
+    }
+    const oneM = `${value}[1m]`
+    if (
+      values.has(oneM) &&
+      hasNative1mContext(parseUserSpecifiedModel(value))
+    ) {
+      dropped.add(oneM)
+    }
+  }
+
+  // Surviving `[1m]` rows keep their "(1M context)" label: upstream renders a
+  // `[1m]` model string that way wherever it appears (see the display-name
+  // path), so rewriting it here would put the picker at odds with the banner.
+  // The redundancy is fixed by not offering the row, not by relabelling it.
+  return options.filter(
+    opt => typeof opt.value !== 'string' || !dropped.has(opt.value),
+  )
 }
 
 /**

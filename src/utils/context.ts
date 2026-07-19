@@ -1,10 +1,12 @@
 // @ts-nocheck
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
+import { isLongContext1mCreditsBlocked } from '../bootstrap/state.js'
 import { CONTEXT_1M_BETA_HEADER } from '../constants/betas.js'
 import { getGlobalConfig } from './config.js'
 import { isEnvTruthy } from './envUtils.js'
 import { getCanonicalName } from './model/model.js'
 import { getModelCapability } from './model/modelCapabilities.js'
+import { hasNative1mContext } from './model/native1m.js'
 
 // Model context window size (200k tokens for all models right now)
 export const MODEL_CONTEXT_WINDOW_DEFAULT = 200_000
@@ -72,6 +74,24 @@ export function getContextWindowForModel(
     }
   }
 
+  const resolved = resolveContextWindowForModel(model, betas)
+
+  // A 1M window is resolved optimistically: entitlement is only knowable from
+  // the API, which rejects long-context requests with a 429 when the account
+  // lacks the credits. Once that has happened, fall back to the 200k default
+  // for the rest of the session so auto-compact stops aiming at a window we
+  // cannot actually fill. See notifyLongContext1mCreditsBlocked.
+  if (resolved > MODEL_CONTEXT_WINDOW_DEFAULT && isLongContext1mCreditsBlocked()) {
+    return MODEL_CONTEXT_WINDOW_DEFAULT
+  }
+
+  return resolved
+}
+
+function resolveContextWindowForModel(
+  model: string,
+  betas?: string[],
+): number {
   // [1m] suffix — explicit client-side opt-in, respected over all detection
   if (has1mContext(model)) {
     return 1_000_000
@@ -89,6 +109,10 @@ export function getContextWindowForModel(
   }
 
   if (betas?.includes(CONTEXT_1M_BETA_HEADER) && modelSupports1M(model)) {
+    return 1_000_000
+  }
+  // Native 1M — Sonnet 5 / Opus 4.7+ / Fable 5 serve 1M without any opt-in.
+  if (!is1mContextDisabled() && hasNative1mContext(model)) {
     return 1_000_000
   }
   if (getSonnet1mExpTreatmentEnabled(model)) {

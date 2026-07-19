@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { checkOpus1mAccess, checkSonnet1mAccess } from './check1mAccess.js'
-import { getUserSpecifiedModelSetting } from './model.js'
+import { getUserSpecifiedModelSetting, parseUserSpecifiedModel } from './model.js'
+import { hasNative1mContext } from './native1m.js'
 
 // @[MODEL LAUNCH]: Add a branch for the new model if it supports a 1M context upgrade path.
 /**
@@ -13,6 +14,16 @@ function getAvailableUpgrade(): {
   multiplier: number
 } | null {
   const currentModelSetting = getUserSpecifiedModelSetting()
+
+  // Models that serve 1M natively are already at max context — suggesting a
+  // `[1m]` upgrade would promise a 5x that does not exist.
+  if (
+    currentModelSetting &&
+    hasNative1mContext(parseUserSpecifiedModel(currentModelSetting))
+  ) {
+    return null
+  }
+
   if (currentModelSetting === 'fable' && checkOpus1mAccess()) {
     return {
       alias: 'fable[1m]',
