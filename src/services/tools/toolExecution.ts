@@ -131,6 +131,7 @@ import {
   runPostToolUseHooks,
   runPreToolUseHooks,
 } from './toolHooks.js'
+import { startToolHeartbeat } from './toolHeartbeat.js'
 import { isFileEditTool, runAutoFix } from '../autoFix/autoFixHook.js'
 
 /** Minimum total hook duration (ms) to show inline timing summary */
@@ -541,33 +542,39 @@ function streamedCheckPermissionsAndCallTool(
     mcpServerType,
     mcpServerBaseUrl,
     progress => {
-      logEvent('tengu_tool_use_progress', {
-        messageID:
-          messageId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        toolName: sanitizeToolNameForAnalytics(tool.name),
-        isMcp: tool.isMcp ?? false,
+      // Heartbeat ticks are keep-alive, not real tool activity — don't inflate
+      // the progress metric with them. Matches upstream, which gates this same
+      // analytics event on `data.type !== 'tool_heartbeat'`. The progress
+      // message itself is still enqueued below.
+      if (progress.data?.type !== 'tool_heartbeat') {
+        logEvent('tengu_tool_use_progress', {
+          messageID:
+            messageId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          toolName: sanitizeToolNameForAnalytics(tool.name),
+          isMcp: tool.isMcp ?? false,
 
-        queryChainId: toolUseContext.queryTracking
-          ?.chainId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        queryDepth: toolUseContext.queryTracking?.depth,
-        ...(mcpServerType && {
-          mcpServerType:
-            mcpServerType as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        }),
-        ...(mcpServerBaseUrl && {
-          mcpServerBaseUrl:
-            mcpServerBaseUrl as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        }),
-        ...(requestId && {
-          requestId:
-            requestId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        }),
-        ...mcpToolDetailsForAnalytics(
-          tool.name,
-          mcpServerType,
-          mcpServerBaseUrl,
-        ),
-      })
+          queryChainId: toolUseContext.queryTracking
+            ?.chainId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          queryDepth: toolUseContext.queryTracking?.depth,
+          ...(mcpServerType && {
+            mcpServerType:
+              mcpServerType as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          }),
+          ...(mcpServerBaseUrl && {
+            mcpServerBaseUrl:
+              mcpServerBaseUrl as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          }),
+          ...(requestId && {
+            requestId:
+              requestId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          }),
+          ...mcpToolDetailsForAnalytics(
+            tool.name,
+            mcpServerType,
+            mcpServerBaseUrl,
+          ),
+        })
+      }
       stream.enqueue({
         message: createProgressMessage({
           toolUseID: progress.toolUseID,
@@ -1225,23 +1232,46 @@ async function checkPermissionsAndCallTool(
   } else if (processedInput !== backfilledClone) {
     callInput = processedInput
   }
+  // Forward a tool's own progress ticks to the caller. Reused as the sink for
+  // heartbeat ticks so both share one path and one parentToolUseID.
+  const forwardToolProgress = (progress: ToolProgress<ToolProgressData>) => {
+    onToolProgress({
+      toolUseID: progress.toolUseID,
+      data: progress.data,
+    })
+  }
+  // Heartbeat: emit a periodic "still running" progress event so a slow tool
+  // call doesn't look frozen to headless/remote consumers. Skipped inside
+  // subagent contexts (they surface their own agent_progress) — matching
+  // upstream, which gates on agentId here and skips the Agent tool inside the
+  // helper. Stopped the instant tool.call settles (below), before any
+  // PostToolUse hooks run, so a heartbeat is never attributed to post-tool
+  // work.
+  const stopToolHeartbeat = toolUseContext.agentId
+    ? undefined
+    : startToolHeartbeat({
+        toolName: tool.name,
+        toolUseID,
+        abortSignal: toolUseContext.abortController.signal,
+        onProgress: forwardToolProgress,
+      })
   try {
-    const result = await tool.call(
-      callInput,
-      {
-        ...toolUseContext,
-        toolUseId: toolUseID,
-        userModified: permissionDecision.userModified ?? false,
-      },
-      canUseTool,
-      assistantMessage,
-      progress => {
-        onToolProgress({
-          toolUseID: progress.toolUseID,
-          data: progress.data,
-        })
-      },
-    )
+    let result
+    try {
+      result = await tool.call(
+        callInput,
+        {
+          ...toolUseContext,
+          toolUseId: toolUseID,
+          userModified: permissionDecision.userModified ?? false,
+        },
+        canUseTool,
+        assistantMessage,
+        forwardToolProgress,
+      )
+    } finally {
+      stopToolHeartbeat?.()
+    }
     const durationMs = Date.now() - startTime
     addToToolDuration(durationMs)
 

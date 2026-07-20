@@ -44,6 +44,17 @@ export type MCPProgress = {
   progressMessage?: string
 }
 
+// Periodic keep-alive for a long-running tool call. Carries no tool output —
+// only the elapsed time — so headless/remote consumers get a "still running"
+// signal instead of silence. Emitted by startToolHeartbeat; the interactive
+// REPL drops these frames and no progress is persisted, so they surface only
+// on the headless/SDK output stream.
+export type ToolHeartbeatProgress = {
+  type: 'tool_heartbeat'
+  toolName: string
+  elapsedTimeSeconds: number
+}
+
 export type WebSearchProgress =
   | {
       type: 'query_update'
@@ -81,6 +92,7 @@ export type ToolProgressData =
   | SkillToolProgress
   | TaskOutputProgress
   | MCPProgress
+  | ToolHeartbeatProgress
   | WebSearchProgress
   | SdkWorkflowProgress
   | REPLToolProgress

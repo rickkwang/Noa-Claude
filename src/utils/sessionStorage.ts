@@ -210,6 +210,10 @@ const EPHEMERAL_PROGRESS_TYPES = new Set([
   'bash_progress',
   'powershell_progress',
   'mcp_progress',
+  // Heartbeat ticks are pure keep-alive and must never be persisted or loaded
+  // from a transcript. Classified as ephemeral to match upstream; the live REPL
+  // already drops them before render, so this mainly guards transcript loading.
+  'tool_heartbeat',
   ...(feature('PROACTIVE') || feature('KAIROS')
     ? (['sleep_progress'] as const)
     : []),

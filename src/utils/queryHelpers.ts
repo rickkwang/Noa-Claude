@@ -199,6 +199,21 @@ export function* normalizeMessage(message: Message): Generator<SDKMessage> {
             uuid: message.uuid,
           }
         }
+      } else if (message.data.type === 'tool_heartbeat') {
+        // Keep-alive for a long-running tool call. Unlike bash/powershell
+        // progress this is emitted in every mode and never throttled: the
+        // heartbeat's whole purpose is to break silence for headless/remote
+        // consumers, and the emitter already fires only once per 30s.
+        yield {
+          type: 'tool_progress',
+          tool_use_id: message.toolUseID,
+          tool_name: message.data.toolName,
+          parent_tool_use_id: message.parentToolUseID,
+          elapsed_time_seconds: message.data.elapsedTimeSeconds,
+          heartbeat: true,
+          session_id: getSessionId(),
+          uuid: message.uuid,
+        }
       }
       break
     case 'user':

@@ -1665,6 +1665,9 @@ export const SDKToolProgressMessageSchema = lazySchema(() =>
     parent_tool_use_id: z.string().nullable(),
     elapsed_time_seconds: z.number(),
     task_id: z.string().optional(),
+    // Set on keep-alive heartbeat frames for long-running tool calls. Consumers
+    // that only want real progress (not liveness pings) filter on this.
+    heartbeat: z.boolean().optional(),
     uuid: UUIDPlaceholder(),
     session_id: z.string(),
   }),

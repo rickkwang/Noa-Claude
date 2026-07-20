@@ -1215,6 +1215,12 @@ export function buildMessageLookups(
 
   for (const msg of normalizedMessages) {
     if (msg.type === 'progress') {
+      // Heartbeat ticks are keep-alive only — never part of a tool's rendered
+      // progress trail. Exclude them from the per-tool lookup entirely, matching
+      // upstream.
+      if (msg.data.type === 'tool_heartbeat') {
+        continue
+      }
       // Build progress messages lookup
       const toolUseID = msg.parentToolUseID
       const existing = progressMessagesByToolUseID.get(toolUseID)

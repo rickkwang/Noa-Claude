@@ -245,6 +245,15 @@ export function convertSDKMessage(
       return { type: 'ignored' }
 
     case 'tool_progress':
+      // Heartbeat frames are pure keep-alive with no new information; the
+      // active-tool spinner already conveys "still running" locally. Drop them
+      // rather than emitting a system line per 30s tick. Matches upstream.
+      if (msg.heartbeat) {
+        logForDebugging(
+          '[sdkMessageAdapter] Ignoring heartbeat tool_progress frame',
+        )
+        return { type: 'ignored' }
+      }
       return { type: 'message', message: convertToolProgressMessage(msg) }
 
     case 'auth_status':

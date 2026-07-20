@@ -2647,6 +2647,13 @@ export function REPL({
   });
   const onQueryEvent = useCallback((event: Parameters<typeof handleMessageFromStream>[0]) => {
     handleMessageFromStream(event, newMessage => {
+      // Heartbeat ticks are keep-alive for headless/remote consumers only; the
+      // active-tool spinner already conveys liveness here. Never add them to the
+      // interactive message list. Mirrors upstream. (Headless/SDK output still
+      // receives them via QueryEngine's normalizeMessage, a separate path.)
+      if (newMessage.type === 'progress' && newMessage.data.type === 'tool_heartbeat') {
+        return;
+      }
       if (isCompactBoundaryMessage(newMessage)) {
         // Fullscreen: keep pre-compact messages for scrollback. query.ts
         // slices at the boundary for API calls, Messages.tsx skips the
