@@ -3,6 +3,7 @@ import { c as _c } from "react/compiler-runtime";
 import chalk from 'chalk';
 import figures from 'figures';
 import Fuse from 'fuse.js';
+import path from 'path';
 import React from 'react';
 import { getOriginalCwd, getSessionId } from '../bootstrap/state.js';
 import { useExitOnCtrlCDWithKeybindings } from '../hooks/useExitOnCtrlCDWithKeybindings.js';
@@ -1191,7 +1192,7 @@ export function LogSelector(t0) {
       filterIndicators.push(currentBranch);
     }
     if (hasMultipleWorktrees && !showAllWorktrees) {
-      filterIndicators.push("current worktree");
+      filterIndicators.push(path.basename(currentCwd));
     }
     $[149] = branchFilterEnabled;
     $[150] = currentBranch;
@@ -1299,13 +1300,14 @@ export function LogSelector(t0) {
   } else {
     t63 = $[184];
   }
-  let t64;
-  if ($[184] === Symbol.for("react.memo_cache_sentinel")) {
-    t64 = <Box flexShrink={0}><Text> </Text></Box>;
-    $[184] = t64;
-  } else {
-    t64 = $[184];
-  }
+  // Static spacer line. Reconstruction mislabeled this memo slot as $[184],
+  // the SAME slot t63 (the filter-indicator line) writes to just above — so on
+  // every render t64's sentinel check read t63's value instead of the
+  // sentinel, making t64 a duplicate of the filter-indicator Box and rendering
+  // that line twice (the "two current worktree" / "two <repo>" ghost row).
+  // It has no deps, so a plain const removes the collision without renumbering
+  // any downstream $[N] slots.
+  const t64 = <Box flexShrink={0}><Text> </Text></Box>;
   let t65;
   if ($[185] !== agenticSearchState.status) {
     t65 = agenticSearchState.status === "searching" && <Box paddingLeft={1} flexShrink={0}><Spinner /><Text> Searching…</Text></Box>;
