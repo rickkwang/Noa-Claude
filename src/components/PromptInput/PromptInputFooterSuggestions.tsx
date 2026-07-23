@@ -16,7 +16,7 @@ export type SuggestionItem = {
   color?: keyof Theme;
   matchedPrefix?: string;
 };
-export type SuggestionType = 'command' | 'file' | 'directory' | 'agent' | 'shell' | 'custom-title' | 'slack-channel' | 'none';
+export type SuggestionType = 'command' | 'file' | 'directory' | 'agent' | 'shell' | 'custom-title' | 'slack-channel' | 'emoji' | 'none';
 // Fullscreen slash-command overlay can comfortably fit a few more rows
 // without overwhelming the prompt area.
 export const OVERLAY_VISIBLE_ITEMS = 12;

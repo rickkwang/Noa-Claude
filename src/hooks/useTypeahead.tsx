@@ -25,6 +25,7 @@ import { formatLogMetadata } from '../utils/format.js';
 import { getSessionIdFromLog, searchSessionsByCustomTitle } from '../utils/sessionStorage.js';
 import { applyCommandSuggestion, findMidInputSlashCommand, generateCommandSuggestions, getBestCommandMatch, hasCompletionBoundaryAt, isCommandInput } from '../utils/suggestions/commandSuggestions.js';
 import { getDirectoryCompletions, getPathCompletions, isPathLikeToken } from '../utils/suggestions/directoryCompletion.js';
+import { applyEmojiSuggestion, EMOJI_TRIGGER_RE, getEmojiSuggestions, resolveInlineEmojiReplacement } from '../utils/suggestions/emojiSuggestions.js';
 import { getShellHistoryCompletion } from '../utils/suggestions/shellHistoryCompletion.js';
 import { getSlackChannelSuggestions, hasSlackMcpServer } from '../utils/suggestions/slackChannelSuggestions.js';
 import { TEAM_LEAD_NAME } from '../utils/swarm/constants.js';
@@ -423,6 +424,9 @@ export function useTypeahead({
   }, [commands]);
   const [maxColumnWidth, setMaxColumnWidth] = useState<number | undefined>(undefined);
   const mcpResources = useAppState(s => s.mcp.resources);
+  // Emoji `:shortcode` completion is on unless the user opts out (parity with
+  // upstream's emojiCompletionEnabled, default enabled).
+  const emojiCompletionEnabled = useAppState(s => s.settings?.emojiCompletionEnabled) !== false;
   const store = useAppStateStore();
   const promptSuggestion = useAppState(s => s.promptSuggestion);
   // PromptInput hides suggestion ghost text in teammate view — mirror that
@@ -480,6 +484,9 @@ export function useTypeahead({
   suggestionsRef.current = suggestions;
   // Track the input value when suggestions were manually dismissed to prevent re-triggering
   const dismissedForInputRef = useRef<string | null>(null);
+  // Previous input value, used by the emoji inline-replacement guard to detect
+  // "the user just typed the closing colon" (vs. deletion / navigation).
+  const prevInputForEmojiRef = useRef<string | undefined>(undefined);
 
   // Clear all suggestions
   const clearSuggestions = useCallback(() => {
@@ -577,6 +584,10 @@ export function useTypeahead({
   const updateSuggestions = useCallback(async (value: string, inputCursorOffset?: number): Promise<void> => {
     // Use provided cursor offset or fall back to ref (avoids dependency on cursorOffset)
     const effectiveCursorOffset = inputCursorOffset ?? cursorOffsetRef.current;
+    // Snapshot the prior input for the emoji inline-replacement guard, then
+    // advance it — updateSuggestions is the single reactor to input changes.
+    const prevInputForEmoji = prevInputForEmojiRef.current;
+    prevInputForEmojiRef.current = value;
     if (suppressSuggestions) {
       debouncedFetchFileSuggestions.cancel();
       clearSuggestions();
@@ -723,6 +734,42 @@ export function useTypeahead({
         debouncedFetchSlackChannels.cancel();
         clearSuggestions();
       }
+    }
+
+    // Emoji `:shortcode` completion (prompt mode; opt-out via the
+    // emojiCompletionEnabled setting). The table is a synchronous local lookup,
+    // so no debounce/abort is needed.
+    if (mode === 'prompt' && emojiCompletionEnabled) {
+      // Inline replacement: a just-completed `:name:` auto-swaps for its glyph
+      // (fires only on the keystroke that adds the closing colon).
+      const inline = resolveInlineEmojiReplacement(value, prevInputForEmoji, effectiveCursorOffset);
+      if (inline) {
+        clearSuggestions();
+        onInputChange(inline.newInput);
+        setCursorOffset(inline.newCursor);
+        return;
+      }
+      // Popup: a partial `:query` shows the suggestion list.
+      const emojiMatch = value.substring(0, effectiveCursorOffset).match(EMOJI_TRIGGER_RE);
+      const emojiItems = emojiMatch ? getEmojiSuggestions(emojiMatch[2]) : [];
+      if (emojiItems.length > 0) {
+        debouncedFetchFileSuggestions.cancel();
+        setSuggestionsState(prev => ({
+          commandArgumentHint: undefined,
+          suggestions: emojiItems,
+          selectedSuggestion: getPreservedSelection(prev.suggestions, prev.selectedSuggestion, emojiItems)
+        }));
+        setSuggestionType('emoji');
+        setMaxColumnWidth(undefined);
+        return;
+      }
+      // Trigger no longer matches (or matched nothing) — drop a stale emoji list.
+      if (suggestionType === 'emoji') {
+        clearSuggestions();
+      }
+    } else if (suggestionType === 'emoji') {
+      // Left prompt mode or the setting was turned off — drop a stale list.
+      clearSuggestions();
     }
 
     // Check for @ symbol to trigger file suggestions (including quoted paths)
@@ -967,7 +1014,7 @@ export function useTypeahead({
       debouncedFetchSlackChannels.cancel();
       clearSuggestions();
     }
-  }, [suggestionType, commands, setSuggestionsState, clearSuggestions, debouncedFetchFileSuggestions, debouncedFetchSlackChannels, mode, suppressSuggestions,
+  }, [suggestionType, commands, setSuggestionsState, clearSuggestions, debouncedFetchFileSuggestions, debouncedFetchSlackChannels, mode, suppressSuggestions, emojiCompletionEnabled, onInputChange, setCursorOffset,
   // Note: using suggestionsRef instead of suggestions to avoid recreating
   // this callback when only selectedSuggestion changes (not the suggestions list)
   allCommandsMaxWidth]);
@@ -1083,6 +1130,11 @@ export function useTypeahead({
     } else if (suggestionType === 'slack-channel') {
       if (suggestion) {
         applyTriggerSuggestion(suggestion, input, cursorOffset, HASH_CHANNEL_RE, onInputChange, setCursorOffset);
+        clearSuggestions();
+      }
+    } else if (suggestionType === 'emoji') {
+      if (suggestion) {
+        applyEmojiSuggestion(suggestion, input, cursorOffset, onInputChange, setCursorOffset);
         clearSuggestions();
       }
     } else if (suggestionType === 'file') {
@@ -1237,6 +1289,11 @@ export function useTypeahead({
       if (suggestion) {
         applyTriggerSuggestion(suggestion, input, cursorOffset, HASH_CHANNEL_RE, onInputChange, setCursorOffset);
         debouncedFetchSlackChannels.cancel();
+        clearSuggestions();
+      }
+    } else if (suggestionType === 'emoji' && selectedSuggestion < suggestions.length) {
+      if (suggestion) {
+        applyEmojiSuggestion(suggestion, input, cursorOffset, onInputChange, setCursorOffset);
         clearSuggestions();
       }
     } else if (suggestionType === 'file' && selectedSuggestion < suggestions.length) {

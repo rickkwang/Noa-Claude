@@ -969,6 +969,12 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           'Reduce or disable animations for accessibility (spinner shimmer, flash effects, etc.)',
         ),
+      emojiCompletionEnabled: z
+        .boolean()
+        .optional()
+        .describe(
+          'When false, the :emoji: shortcode typeahead (the suggestion popup and the :name: inline replacement) is disabled. When absent or true, it is enabled.',
+        ),
       autoMemoryEnabled: z
         .boolean()
         .optional()
