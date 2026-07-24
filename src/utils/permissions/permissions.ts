@@ -80,6 +80,11 @@ import {
   clearClassifierChecking,
   setClassifierChecking,
 } from '../classifierApprovals.js'
+import {
+  isClassifierQueueEnabled,
+  runClassifierQueued,
+  type ClassifierQueueDequeueInfo,
+} from './classifierQueue.js'
 import { isInProtectedNamespace } from '../envUtils.js'
 import { executePermissionRequestHooks } from '../hooks.js'
 import {
@@ -687,16 +692,73 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
       const action = formatActionForClassifier(tool.name, input)
       setClassifierChecking(toolUseID)
       let classifierResult
+      let classifierDequeueInfo: ClassifierQueueDequeueInfo | undefined
       try {
-        classifierResult = await classifyYoloAction(
-          context.messages,
-          action,
-          context.options.tools,
-          appState.toolPermissionContext,
-          context.abortController.signal,
-        )
+        const runClassifier = () =>
+          classifyYoloAction(
+            context.messages,
+            action,
+            context.options.tools,
+            appState.toolPermissionContext,
+            context.abortController.signal,
+          )
+        classifierResult = isClassifierQueueEnabled()
+          ? await runClassifierQueued(
+              context.agentId ?? 'main',
+              runClassifier,
+              info => {
+                classifierDequeueInfo = info
+              },
+            )
+          : await runClassifier()
       } finally {
         clearClassifierChecking(toolUseID)
+      }
+
+      // Queueing can add real wait time, so re-check that this call is
+      // still classifier-eligible before trusting a queued verdict — the
+      // user may have switched permission modes while it waited its turn.
+      if (classifierDequeueInfo) {
+        const currentAppState = context.getAppState()
+        const stillClassifierEligible =
+          currentAppState.toolPermissionContext.mode === 'auto' ||
+          (currentAppState.toolPermissionContext.mode === 'plan' &&
+            (autoModeStateModule?.isAutoModeActive() ?? false))
+        if (!stillClassifierEligible) {
+          logEvent('tengu_auto_mode_fallback_to_ask', {
+            reason:
+              'mode_changed_while_queued' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+            toolName: sanitizeToolNameForAnalytics(tool.name),
+          })
+          if (currentAppState.toolPermissionContext.mode === 'dontAsk') {
+            return {
+              behavior: 'deny',
+              decisionReason: {
+                type: 'mode',
+                mode: 'dontAsk',
+              },
+              message: DONT_ASK_REJECT_MESSAGE(tool.name),
+            }
+          }
+          if (currentAppState.toolPermissionContext.shouldAvoidPermissionPrompts) {
+            return {
+              behavior: 'deny',
+              decisionReason: {
+                type: 'asyncAgent',
+                reason:
+                  'Permission mode changed while the auto mode classifier call was queued, and permission prompts are not available in this context',
+              },
+            }
+          }
+          return {
+            ...result,
+            decisionReason: {
+              type: 'other',
+              reason:
+                'Permission mode changed while the auto mode classifier call was queued — falling back to manual approval',
+            },
+          }
+        }
       }
 
       // Notify ants when classifier error dumped prompts (will be in /share)
@@ -749,6 +811,9 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
           yoloDecision as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
         toolName: sanitizeToolNameForAnalytics(tool.name),
         inProtectedNamespace: isInProtectedNamespace(),
+        // Classifier-queue overhead (undefined when the queue is disabled).
+        classifierQueueDepth: classifierDequeueInfo?.queueDepth,
+        classifierQueueWaitMs: classifierDequeueInfo?.queueWaitMs,
         // msg_id of the agent completion that produced this tool_use —
         // the action at the bottom of the classifier transcript.
         agentMsgId: assistantMessage.message
