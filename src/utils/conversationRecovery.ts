@@ -38,6 +38,7 @@ import {
 } from './messages.js'
 import { copyPlanForResume } from './plans.js'
 import { processSessionStartHooks } from './sessionStart.js'
+import { plural } from './stringUtils.js'
 import {
   buildConversationChain,
   checkResumeConsistency,
@@ -72,6 +73,86 @@ const SEND_USER_FILE_TOOL_NAME: string | null = feature('KAIROS')
     ).SEND_USER_FILE_TOOL_NAME
   : null
 /* eslint-enable @typescript-eslint/no-require-imports */
+
+/**
+ * Validates that an attachment payload has the shape its `type` requires.
+ * Only checks the fields that downstream resume code dereferences without a
+ * guard (migration reads new_file.filename / new_directory.path; skill-state
+ * restore iterates invoked_skills.skills); every other type passes through so
+ * this stays a crash-guard, not a schema gate. A partially-written or corrupt
+ * transcript can persist an attachment with a missing/mistyped payload, and
+ * dereferencing it later throws and aborts the whole resume. Mirrors upstream
+ * CC 2.1.218's isWellFormedAttachmentPayload.
+ */
+export function isWellFormedAttachmentPayload(attachment: unknown): boolean {
+  if (
+    typeof attachment !== 'object' ||
+    attachment === null ||
+    !('type' in attachment) ||
+    typeof (attachment as { type: unknown }).type !== 'string'
+  ) {
+    return false
+  }
+  const a = attachment as { type: string; [key: string]: unknown }
+  switch (a.type) {
+    case 'new_file':
+      return 'filename' in a && typeof a.filename === 'string'
+    case 'new_directory':
+      return 'path' in a && typeof a.path === 'string'
+    case 'invoked_skills':
+      return (
+        'skills' in a &&
+        Array.isArray(a.skills) &&
+        a.skills.every(s => typeof s === 'object' && s !== null)
+      )
+    case 'hook_success':
+      return 'content' in a && typeof a.content === 'string'
+    case 'skill_listing':
+      return !('names' in a) || a.names === undefined || Array.isArray(a.names)
+    case 'hook_additional_context':
+      return (
+        'content' in a &&
+        Array.isArray(a.content) &&
+        a.content.every(c => typeof c === 'string')
+      )
+    default:
+      return true
+  }
+}
+
+/**
+ * Drops attachment messages whose payload is missing or malformed, so the
+ * downstream resume pipeline (migration, skill-state restore, API replay)
+ * never dereferences a corrupt payload and crashes. Non-attachment messages
+ * and well-formed attachments pass through untouched. Mirrors upstream CC
+ * 2.1.218's dropMalformedAttachments.
+ */
+export function dropMalformedAttachments(messages: Message[]): Message[] {
+  let dropped = 0
+  const kept = messages.filter(message => {
+    if (
+      message.type === 'attachment' &&
+      !isWellFormedAttachmentPayload(message.attachment)
+    ) {
+      dropped += 1
+      return false
+    }
+    return true
+  })
+  if (dropped === 0) {
+    return messages
+  }
+  logError(
+    new Error(
+      `resume: dropped ${dropped} attachment ${plural(
+        dropped,
+        'entry',
+        'entries',
+      )} with a missing or malformed payload — the session transcript appears partially corrupt`,
+    ),
+  )
+  return kept
+}
 
 /**
  * Transforms legacy attachment types to current types for backward compatibility
@@ -167,10 +248,14 @@ export function deserializeMessagesWithInterruptDetection(
   serializedMessages: Message[],
 ): DeserializeResult {
   try {
+    // Drop malformed attachment payloads BEFORE anything dereferences them.
+    // Must precede migrateLegacyAttachmentTypes, which reads new_file.filename
+    // / new_directory.path without a guard — a corrupt transcript would
+    // otherwise throw here and abort the entire resume.
+    const cleanedMessages = dropMalformedAttachments(serializedMessages)
+
     // Transform legacy attachment types before processing
-    const migratedMessages = serializedMessages.map(
-      migrateLegacyAttachmentTypes,
-    )
+    const migratedMessages = cleanedMessages.map(migrateLegacyAttachmentTypes)
 
     // Strip invalid permissionMode values from deserialized user messages.
     // The field is unvalidated JSON from disk and may contain modes from a different build.
@@ -400,6 +485,12 @@ function isTerminalToolResult(
 export function restoreSkillStateFromMessages(messages: Message[]): void {
   for (const message of messages) {
     if (message.type !== 'attachment') {
+      continue
+    }
+    // Runs on raw transcript messages before dropMalformedAttachments, so
+    // guard here too — a corrupt payload (null attachment, non-array skills)
+    // would otherwise crash the resume before deserialization.
+    if (!isWellFormedAttachmentPayload(message.attachment)) {
       continue
     }
     if (message.attachment.type === 'invoked_skills') {
