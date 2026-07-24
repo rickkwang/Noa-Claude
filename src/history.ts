@@ -149,9 +149,21 @@ function deserializeLogEntry(line: string): LogEntry {
 async function* makeLogEntryReader(): AsyncGenerator<LogEntry> {
   const currentSession = getSessionId()
 
+  // Snapshot the not-yet-persisted entries and their dedup keys up front.
+  // Entries now stay in pendingEntries until their disk write succeeds (see
+  // immediateFlushHistory), so an entry can momentarily live BOTH here and on
+  // disk during the in-flight window. Yield it once from the snapshot and skip
+  // the disk copy via the key set. Snapshotting also insulates the loop from a
+  // concurrent flush reassigning pendingEntries mid-iteration. Mirrors upstream
+  // CC 2.1.218.
+  const pendingSnapshot = pendingEntries.slice()
+  const pendingKeys = new Set(
+    pendingSnapshot.map(e => `${e.timestamp}\x00${e.sessionId ?? ''}`),
+  )
+
   // Start with entries that have yet to be flushed to disk
-  for (let i = pendingEntries.length - 1; i >= 0; i--) {
-    yield pendingEntries[i]!
+  for (let i = pendingSnapshot.length - 1; i >= 0; i--) {
+    yield pendingSnapshot[i]!
   }
 
   // Read from global history file (shared across all projects)
@@ -161,6 +173,11 @@ async function* makeLogEntryReader(): AsyncGenerator<LogEntry> {
     for await (const line of readLinesReverse(historyPath)) {
       try {
         const entry = deserializeLogEntry(line)
+        // Skip the disk copy of an entry already yielded from the pending
+        // snapshot (the in-flight window where it exists in both places).
+        if (pendingKeys.has(`${entry.timestamp}\x00${entry.sessionId ?? ''}`)) {
+          continue
+        }
         // removeLastFromHistory slow path: entry was flushed before removal,
         // so filter here so both getHistory (Up-arrow) and makeHistoryReader
         // (ctrl+r search) skip it consistently.
@@ -341,12 +358,30 @@ let lastAddedEntry: LogEntry | null = null
 // reading. Used by removeLastFromHistory when the entry has raced past the
 // pending buffer. Session-scoped (module state resets on process restart).
 const skippedTimestamps = new Set<number>()
+// Entries currently mid-write (captured by an in-progress immediateFlush).
+// Because entries now stay in pendingEntries until the append succeeds, an
+// entry can be spliced out of pendingEntries by removeLastFromHistory while
+// its bytes are already committed to the append snapshot and headed for disk.
+// This set lets removeLastFromHistory recognize that case and add the entry to
+// skippedTimestamps so the reader skips the disk copy. Mirrors upstream CC
+// 2.1.218's in-flight tracking set.
+let inFlightEntries: Set<LogEntry> | null = null
 
 // Core flush logic - writes pending entries to disk
-async function immediateFlushHistory(): Promise<void> {
+async function immediateFlushHistory(): Promise<boolean> {
   if (pendingEntries.length === 0) {
-    return
+    return true
   }
+
+  // Snapshot the entries we're about to write. Do NOT clear pendingEntries
+  // here — the entries stay queued until the append actually succeeds, so a
+  // failed write (disk full, revoked permissions, read-only mount) does not
+  // silently drop prompt history. Mirrors upstream CC 2.1.218, which snapshots
+  // and only removes written entries on success.
+  const entriesToWrite = pendingEntries.slice()
+  // Mark these as in-flight so removeLastFromHistory knows they will reach disk
+  // even if it splices them out of pendingEntries mid-write.
+  inFlightEntries = new Set(entriesToWrite)
 
   let release
   try {
@@ -367,13 +402,22 @@ async function immediateFlushHistory(): Promise<void> {
       },
     })
 
-    const jsonLines = pendingEntries.map(entry => jsonStringify(entry) + '\n')
-    pendingEntries = []
+    const jsonLines = entriesToWrite.map(entry => jsonStringify(entry) + '\n')
 
     await appendFile(historyPath, jsonLines.join(''), { mode: 0o600 })
+
+    // Only now that the append succeeded, drop exactly the entries we wrote.
+    // Set-difference by reference (not `pendingEntries = []`) preserves any
+    // entries pushed while the awaits above were in flight.
+    const written = new Set(entriesToWrite)
+    pendingEntries = pendingEntries.filter(entry => !written.has(entry))
+    return true
   } catch (error) {
+    // Leave entriesToWrite in pendingEntries so flushPromptHistory retries.
     logForDebugging(`Failed to write prompt history: ${error}`)
+    return false
   } finally {
+    inFlightEntries = null
     if (release) {
       await release()
     }
@@ -392,8 +436,9 @@ async function flushPromptHistory(retries: number): Promise<void> {
 
   isWriting = true
 
+  let succeeded = false
   try {
-    await immediateFlushHistory()
+    succeeded = await immediateFlushHistory()
   } finally {
     isWriting = false
 
@@ -401,7 +446,10 @@ async function flushPromptHistory(retries: number): Promise<void> {
       // Avoid trying again in a hot loop
       await sleep(500)
 
-      void flushPromptHistory(retries + 1)
+      // Reset the retry budget on a successful write (any leftover entries are
+      // newly-arrived, not failures); only count consecutive write failures
+      // toward the > 5 give-up cap. Mirrors upstream CC 2.1.218.
+      void flushPromptHistory(succeeded ? 0 : retries + 1)
     }
   }
 }
@@ -512,7 +560,35 @@ export function removeLastFromHistory(): void {
   const idx = pendingEntries.lastIndexOf(entry)
   if (idx !== -1) {
     pendingEntries.splice(idx, 1)
+    // Splicing removes it from the pending buffer, but if a flush already
+    // captured it into its in-flight snapshot the bytes are still headed for
+    // disk — mark it skipped so the reader drops that disk copy too.
+    if (inFlightEntries?.has(entry)) {
+      skippedTimestamps.add(entry.timestamp)
+    }
   } else {
     skippedTimestamps.add(entry.timestamp)
   }
+}
+
+// --- Test-only hooks (used by src/test/utils/history.flush.test.ts) ---
+
+/** @internal Push a raw pending entry without triggering an async flush. */
+export function _addPendingEntryForTesting(entry: LogEntry): void {
+  pendingEntries.push(entry)
+}
+
+/** @internal Snapshot the current not-yet-persisted entries. */
+export function _getPendingEntriesForTesting(): LogEntry[] {
+  return pendingEntries.slice()
+}
+
+/** @internal Set the entry that removeLastFromHistory will act on. */
+export function _markLastAddedForTesting(entry: LogEntry): void {
+  lastAddedEntry = entry
+}
+
+/** @internal Run one immediate flush and report whether the write succeeded. */
+export function _immediateFlushForTesting(): Promise<boolean> {
+  return immediateFlushHistory()
 }
