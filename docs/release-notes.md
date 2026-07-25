@@ -1,5 +1,20 @@
 # Release Notes
 
+## 1.6.1
+
+### New Features
+
+- **Claude Opus 5** — added as the first-party Opus default: 1M native context (default and maximum), 128K max output, thinking on by default (turning it off requires an explicit disable, and is only accepted at effort `high` or below — higher efforts are lowered rather than failing the request). Pricing is $5/$25 standard and $10/$50 in fast mode, so fast-mode tier selection is now model-aware. Third-party backends still default to Opus 4.8 and reach Opus 5 only by explicit pin.
+- **Auto-mode classifier queue** (opt-in, default-off) — a per-agent FIFO serializer so concurrent tool checks no longer fan out parallel classifier API calls. Enable via `NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE` or the config flag. After dequeue, permission mode is re-validated and falls back to deny/ask if it changed while queued.
+
+### Bug Fixes
+
+- **Resume crash on malformed attachments** — a transcript with a missing or malformed attachment payload crashed resume during attachment migration. Malformed payloads are now validated and dropped (with a warning that the transcript is partially corrupt) instead of throwing.
+- **Prompt history lost on write failure** — `immediateFlushHistory` cleared pending entries before the disk write, so a failed append silently dropped those prompts. Entries are now removed only after a successful write and stay queued for retry, with the Esc-rewind-during-write race guarded so a rewound entry isn't resurrected from disk.
+- **Third-party Opus fallback chain** — skipped Opus 4.5 entirely (4.6 jumped straight to 4.1); now falls through 5 → 4.8 → 4.7 → 4.6 → 4.5 → 4.1.
+- **Model migration notifications** — hardcoded "Opus 4.6"/"Sonnet 4.6" while the migrations write bare family aliases, telling users they'd been moved to a version they hadn't. Now resolved at notification time.
+- **Stale model strings** — `/model` 1M-unavailable messages no longer name a version (matching upstream, which names only the family), and default-model descriptions use the current "Best for everyday, complex tasks" wording.
+
 ## 1.6.0
 
 ### New Features
