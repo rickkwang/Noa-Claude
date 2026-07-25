@@ -179,6 +179,7 @@ import { calculateUSDCost } from 'src/utils/modelCost.js'
 import { endQueryProfile, queryCheckpoint } from 'src/utils/queryProfiler.js'
 import {
   modelOmitsThinkingByDefault,
+  modelRejectsDisabledThinkingAtEffort,
   modelRejectsSamplingParams,
   modelRequiresExplicitThinkingDisable,
   modelSupportsAdaptiveThinking,
@@ -1695,9 +1696,23 @@ async function* queryModel(
         } satisfies BetaMessageStreamParams['thinking']
       }
     } else if (!hasThinking && modelRequiresExplicitThinkingDisable(apiModel)) {
-      // Sonnet 5 runs adaptive thinking by default when `thinking` is omitted
-      // entirely, so turning thinking off requires sending an explicit
+      // Sonnet 5 and Opus 5 run adaptive thinking by default when `thinking` is
+      // omitted entirely, so turning thinking off requires sending an explicit
       // {type: 'disabled'} rather than leaving the param unset.
+      //
+      // Opus 5 additionally rejects {type: 'disabled'} at effort xhigh/max with
+      // a 400. Sending nothing there would leave adaptive thinking on — but a
+      // hard 400 fails the whole request, so drop the effort down to `high`
+      // (the highest level that accepts disabled thinking) and keep honouring
+      // the user's "thinking off" choice.
+      if (
+        modelRejectsDisabledThinkingAtEffort(
+          apiModel,
+          outputConfig.effort as string | undefined,
+        )
+      ) {
+        outputConfig.effort = 'high'
+      }
       thinking = { type: 'disabled' } satisfies BetaMessageStreamParams['thinking']
     }
 

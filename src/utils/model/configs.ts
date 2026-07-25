@@ -91,6 +91,21 @@ export const CLAUDE_OPUS_4_8_CONFIG = {
   foundry: 'claude-opus-4-8',
 } as const satisfies ModelConfig
 
+// Opus 5 — successor to Opus 4.8 at the same $5/$25 pricing. Same request
+// surface as Opus 4.8 (adaptive thinking only; sampling params + budget_tokens
+// removed) with two differences, both handled in thinking.ts/claude.ts:
+//   1. thinking is ON by default — omitting the param runs adaptive, so turning
+//      thinking off needs an explicit {type:'disabled'} (like Sonnet 5).
+//   2. {type:'disabled'} is only accepted at effort `high` or below; pairing it
+//      with `xhigh`/`max` returns a 400.
+// 1M context is both the default and the maximum; 128K max output.
+export const CLAUDE_OPUS_5_CONFIG = {
+  firstParty: 'claude-opus-5',
+  bedrock: 'us.anthropic.claude-opus-5',
+  vertex: 'claude-opus-5',
+  foundry: 'claude-opus-5',
+} as const satisfies ModelConfig
+
 export const CLAUDE_SONNET_4_6_CONFIG = {
   firstParty: 'claude-sonnet-4-6',
   bedrock: 'us.anthropic.claude-sonnet-4-6',
@@ -137,6 +152,7 @@ export const ALL_MODEL_CONFIGS = {
   opus46: CLAUDE_OPUS_4_6_CONFIG,
   opus47: CLAUDE_OPUS_4_7_CONFIG,
   opus48: CLAUDE_OPUS_4_8_CONFIG,
+  opus5: CLAUDE_OPUS_5_CONFIG,
   fable5: CLAUDE_FABLE_5_CONFIG,
 } as const satisfies Record<string, ModelConfig>
 

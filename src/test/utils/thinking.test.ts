@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import {
   modelOmitsThinkingByDefault,
+  modelRejectsDisabledThinkingAtEffort,
   modelRejectsSamplingParams,
   modelRequiresExplicitThinkingDisable,
   modelSupportsAdaptiveThinking,
@@ -77,6 +78,49 @@ describe('Sonnet 5 — Opus 4.7/4.8 request surface, but adaptive-by-default', (
     expect(modelRequiresExplicitThinkingDisable('claude-sonnet-4-6')).toBe(
       false,
     )
+  })
+})
+
+describe('Opus 5 — Sonnet 5 surface plus an effort cap on disabled thinking', () => {
+  test('requires an explicit {type: "disabled"} to actually turn thinking off', () => {
+    expect(modelRequiresExplicitThinkingDisable('claude-opus-5')).toBe(true)
+  })
+
+  test('rejects disabled thinking at xhigh and max', () => {
+    expect(modelRejectsDisabledThinkingAtEffort('claude-opus-5', 'xhigh')).toBe(
+      true,
+    )
+    expect(modelRejectsDisabledThinkingAtEffort('claude-opus-5', 'max')).toBe(
+      true,
+    )
+  })
+
+  test('accepts disabled thinking at high and below, and when effort is unset', () => {
+    expect(modelRejectsDisabledThinkingAtEffort('claude-opus-5', 'high')).toBe(
+      false,
+    )
+    expect(modelRejectsDisabledThinkingAtEffort('claude-opus-5', 'low')).toBe(
+      false,
+    )
+    expect(
+      modelRejectsDisabledThinkingAtEffort('claude-opus-5', undefined),
+    ).toBe(false)
+  })
+
+  test('the cap is Opus 5 only — 4.8 and Sonnet 5 take disabled at any effort', () => {
+    expect(modelRejectsDisabledThinkingAtEffort('claude-opus-4-8', 'max')).toBe(
+      false,
+    )
+    expect(modelRejectsDisabledThinkingAtEffort('claude-sonnet-5', 'max')).toBe(
+      false,
+    )
+  })
+
+  test('resolves through provider-prefixed IDs, not just the bare 1P name', () => {
+    process.env.CLAUDE_CODE_USE_BEDROCK = '1'
+    expect(
+      modelRejectsDisabledThinkingAtEffort('us.anthropic.claude-opus-5', 'max'),
+    ).toBe(true)
   })
 })
 

@@ -14,6 +14,7 @@ import {
   CLAUDE_OPUS_4_6_CONFIG,
   CLAUDE_OPUS_4_7_CONFIG,
   CLAUDE_OPUS_4_8_CONFIG,
+  CLAUDE_OPUS_5_CONFIG,
   CLAUDE_OPUS_4_CONFIG,
   CLAUDE_FABLE_5_CONFIG,
   CLAUDE_SONNET_4_5_CONFIG,
@@ -130,6 +131,31 @@ export function getOpus46CostTier(fastMode: boolean): ModelCosts {
   return COST_TIER_5_25
 }
 
+/**
+ * Get the cost tier for Opus 5 based on fast mode. Opus 5 prices fast mode at
+ * $10/$50 per Mtok — not the $30/$150 that Opus 4.6/4.7 charged.
+ */
+export function getOpus5CostTier(fastMode: boolean): ModelCosts {
+  if (isFastModeEnabled() && fastMode) {
+    return COST_TIER_10_50
+  }
+  return COST_TIER_5_25
+}
+
+/**
+ * Fast-mode-aware cost tier for whichever Opus generation `model` names.
+ * Falls back to the 4.6/4.7 tier for older Opus strings.
+ */
+export function getOpusCostTierForModel(
+  model: string,
+  fastMode: boolean,
+): ModelCosts {
+  return getCanonicalName(model) ===
+    firstPartyNameToCanonical(CLAUDE_OPUS_5_CONFIG.firstParty)
+    ? getOpus5CostTier(fastMode)
+    : getOpus46CostTier(fastMode)
+}
+
 // @[MODEL LAUNCH]: Add a pricing entry for the new model below.
 // Costs from https://platform.claude.com/docs/en/about-claude/pricing
 // Web search cost: $10 per 1000 requests = $0.01 per request
@@ -161,6 +187,7 @@ export const MODEL_COSTS: Record<ModelShortName, ModelCosts> = {
     COST_TIER_5_25,
   [firstPartyNameToCanonical(CLAUDE_OPUS_4_8_CONFIG.firstParty)]:
     COST_TIER_5_25,
+  [firstPartyNameToCanonical(CLAUDE_OPUS_5_CONFIG.firstParty)]: COST_TIER_5_25,
   [firstPartyNameToCanonical(CLAUDE_FABLE_5_CONFIG.firstParty)]: COST_TIER_10_50,
 }
 
@@ -201,6 +228,13 @@ export function getModelCosts(
   ) {
     const isFastMode = usage.speed === 'fast'
     return getOpus46CostTier(isFastMode)
+  }
+
+  // Opus 5 fast mode prices at $10/$50, not the $30/$150 of Opus 4.6/4.7.
+  if (
+    shortName === firstPartyNameToCanonical(CLAUDE_OPUS_5_CONFIG.firstParty)
+  ) {
+    return getOpus5CostTier(usage.speed === 'fast')
   }
 
   const costs = MODEL_COSTS[shortName]

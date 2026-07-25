@@ -141,7 +141,7 @@ export function getFastModeUnavailableReason(): string | null {
 }
 
 // @[MODEL LAUNCH]: Update supported Fast Mode models.
-export const FAST_MODE_MODEL_DISPLAY = 'Opus 4.8'
+export const FAST_MODE_MODEL_DISPLAY = 'Opus 5'
 
 export function getFastModeModel(): string {
   return 'opus' + (isOpus1mMergeEnabled() ? '[1m]' : '')
@@ -174,7 +174,15 @@ export function isFastModeSupportedByModel(
   const model = modelSetting ?? getDefaultMainLoopModelSetting()
   const parsedModel = parseUserSpecifiedModel(model)
   const lower = parsedModel.toLowerCase()
-  return lower.includes('opus-4-7') || lower.includes('opus-4-8')
+  // NOTE: Opus 4.7 fast mode has been removed upstream — `speed: "fast"` on
+  // 4.7 now errors. It is left in this list deliberately: removing it is a
+  // separate behaviour change from adding Opus 5, and 4.7 is no longer any
+  // tier's default here.
+  return (
+    lower.includes('opus-4-7') ||
+    lower.includes('opus-4-8') ||
+    lower.includes('claude-opus-5')
+  )
 }
 
 // --- Fast mode runtime state ---

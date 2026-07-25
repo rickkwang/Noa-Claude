@@ -18,6 +18,12 @@ const NATIVE_1M_MODELS: Record<string, { thirdParty: ReadonlySet<string> }> = {
   },
   'claude-opus-4-7': { thirdParty: new Set() },
   'claude-opus-4-8': { thirdParty: new Set() },
+  // Opus 5 serves 1M as both the default and the maximum. Third-party backends
+  // are left empty like the rest of the Opus family: 3P still defaults to Opus
+  // 4.8 (see getDefaultOpusModel), so a 3P user only reaches Opus 5 by pinning
+  // it, and over-reporting the window there would push auto-compact past the
+  // real limit. `[1m]` remains the explicit opt-in on those backends.
+  'claude-opus-5': { thirdParty: new Set() },
   'claude-fable-5': { thirdParty: new Set() },
 }
 

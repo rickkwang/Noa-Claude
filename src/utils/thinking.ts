@@ -120,7 +120,8 @@ export function modelSupportsThinking(model: string): boolean {
   return (
     canonical.includes('sonnet-4') ||
     canonical.includes('sonnet-5') ||
-    canonical.includes('opus-4')
+    canonical.includes('opus-4') ||
+    canonical.includes('claude-opus-5')
   )
 }
 
@@ -140,12 +141,15 @@ export function modelSupportsAdaptiveThinking(model: string): boolean {
       (canonical.includes('opus-4-6') ||
         canonical.includes('opus-4-7') ||
         canonical.includes('opus-4-8') ||
+        canonical.includes('claude-opus-5') ||
         canonical.includes('fable-5') ||
         canonical.includes('mythos') ||
         canonical.includes('sonnet-5') ||
         canonical.includes('sonnet-4-6'))) ||
     (provider === 'bedrock' &&
-      (canonical.includes('opus-4-7') || canonical.includes('opus-4-8')))
+      (canonical.includes('opus-4-7') ||
+        canonical.includes('opus-4-8') ||
+        canonical.includes('claude-opus-5')))
   ) {
     return true
   }
@@ -179,6 +183,7 @@ export function modelRejectsSamplingParams(model: string): boolean {
   return (
     canonical.includes('opus-4-7') ||
     canonical.includes('opus-4-8') ||
+    canonical.includes('claude-opus-5') ||
     canonical.includes('fable-5') ||
     canonical.includes('mythos') ||
     canonical.includes('sonnet-5')
@@ -196,6 +201,7 @@ export function modelOmitsThinkingByDefault(model: string): boolean {
   return (
     canonical.includes('opus-4-7') ||
     canonical.includes('opus-4-8') ||
+    canonical.includes('claude-opus-5') ||
     canonical.includes('fable-5') ||
     canonical.includes('mythos') ||
     canonical.includes('sonnet-5')
@@ -210,7 +216,26 @@ export function modelOmitsThinkingByDefault(model: string): boolean {
 // @[MODEL LAUNCH]: Add new models that require an explicit thinking:{type:'disabled'}
 // to turn thinking off (i.e. omitting the param still runs adaptive thinking).
 export function modelRequiresExplicitThinkingDisable(model: string): boolean {
-  return getCanonicalName(model).includes('sonnet-5')
+  const canonical = getCanonicalName(model)
+  return canonical.includes('sonnet-5') || canonical.includes('claude-opus-5')
+}
+
+// Opus 5 accepts thinking:{type:'disabled'} only at effort `high` or below —
+// pairing it with `xhigh`/`max` is a 400. The check is per-request (effort and
+// thinking are validated independently on every call), so claude.ts consults
+// this against the effort it is about to send rather than latching a session
+// value. Opus 4.8 accepts the combination at any effort.
+// @[MODEL LAUNCH]: Add new models that cap disabled thinking by effort level.
+const EFFORT_LEVELS_REJECTING_DISABLED_THINKING = new Set(['xhigh', 'max'])
+
+export function modelRejectsDisabledThinkingAtEffort(
+  model: string,
+  effort: string | undefined,
+): boolean {
+  if (!effort || !EFFORT_LEVELS_REJECTING_DISABLED_THINKING.has(effort)) {
+    return false
+  }
+  return getCanonicalName(model).includes('claude-opus-5')
 }
 
 export function shouldEnableThinkingByDefault(): boolean {

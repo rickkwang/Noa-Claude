@@ -150,15 +150,17 @@ function SetModelAndClose({
         return;
       }
 
-      // @[MODEL LAUNCH]: Update check for 1M access.
+      // @[MODEL LAUNCH]: Update check for 1M access. The messages name the
+      // family, not the version — these fire off the `opus[1m]`/`sonnet[1m]`
+      // aliases, so a version here goes stale on the next launch.
       if (model && isOpus1mUnavailable(model)) {
-        onDone(`Opus 4.8 with 1M context is not available for your account. Learn more: ${PRODUCT_MODEL_CONFIG_URL}`, {
+        onDone(`Opus with 1M context is not available for your account. Learn more: ${PRODUCT_MODEL_CONFIG_URL}`, {
           display: 'system'
         });
         return;
       }
       if (model && isSonnet1mUnavailable(model)) {
-        onDone(`Sonnet 4.6 with 1M context is not available for your account. Learn more: ${PRODUCT_MODEL_CONFIG_URL}`, {
+        onDone(`Sonnet with 1M context is not available for your account. Learn more: ${PRODUCT_MODEL_CONFIG_URL}`, {
           display: 'system'
         });
         return;

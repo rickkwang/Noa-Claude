@@ -20,7 +20,7 @@ import {
 } from '../context.js'
 import { isEnvTruthy } from '../envUtils.js'
 import { getModelStrings, resolveOverriddenModel } from './modelStrings.js'
-import { formatModelPricing, getOpus46CostTier } from '../modelCost.js'
+import { formatModelPricing, getOpusCostTierForModel } from '../modelCost.js'
 import { getSettings_DEPRECATED } from '../settings/settings.js'
 import type { PermissionMode } from '../permissions/PermissionMode.js'
 import { getAPIProvider, isDirectFirstParty } from './providers.js'
@@ -44,7 +44,8 @@ export function isNonCustomOpusModel(model: ModelName): boolean {
     model === getModelStrings().opus45 ||
     model === getModelStrings().opus46 ||
     model === getModelStrings().opus47 ||
-    model === getModelStrings().opus48
+    model === getModelStrings().opus48 ||
+    model === getModelStrings().opus5
   )
 }
 
@@ -111,9 +112,9 @@ export function getDefaultOpusModel(): ModelName {
   // 3P providers (Bedrock, Vertex, Foundry) lag firstParty on new Opus
   // releases, so keep them on the previous generation until GA everywhere.
   if (getAPIProvider() !== 'firstParty') {
-    return getModelStrings().opus47 || 'claude-opus-4-7'
+    return getModelStrings().opus48 || 'claude-opus-4-8'
   }
-  return getModelStrings().opus48 || 'claude-opus-4-8'
+  return getModelStrings().opus5 || 'claude-opus-5'
 }
 
 // @[MODEL LAUNCH]: Update the default Fable model.
@@ -233,6 +234,9 @@ export function firstPartyNameToCanonical(name: ModelName | undefined): ModelSho
   name = name.toLowerCase()
   // Special cases for Claude 4+ models to differentiate versions
   // Order matters: check more specific versions first (4-5 before 4)
+  if (name.includes('claude-opus-5')) {
+    return 'claude-opus-5'
+  }
   if (name.includes('claude-opus-4-8')) {
     return 'claude-opus-4-8'
   }
@@ -318,11 +322,12 @@ export function getClaudeAiUserDefaultModelDescription(
 ): string {
   if (isMaxSubscriber() || isTeamPremiumSubscriber()) {
     if (isOpus1mMergeEnabled()) {
-      return `Opus with 1M context · Most capable for complex work${fastMode ? getOpus46PricingSuffix(true) : ''}`
+      return `Opus with 1M context · Best for everyday, complex tasks${fastMode ? getOpus46PricingSuffix(true, getDefaultOpusModel()) : ''}`
     }
-    return `Opus · Most capable for complex work${fastMode ? getOpus46PricingSuffix(true) : ''}`
+    return `Opus · Best for everyday, complex tasks${fastMode ? getOpus46PricingSuffix(true, getDefaultOpusModel()) : ''}`
   }
-  return 'Sonnet 5 · Best for everyday tasks'
+  const sonnetName = getMarketingNameForModel(getDefaultSonnetModel()) ?? 'Sonnet'
+  return `${sonnetName} · Efficient for routine tasks`
 }
 
 export function renderDefaultModelSetting(
@@ -337,7 +342,15 @@ export function renderDefaultModelSetting(
   return renderModelName(parseUserSpecifiedModel(setting))
 }
 
-export function getOpus46PricingSuffix(fastMode: boolean): string {
+/**
+ * Price suffix for an Opus picker row. `model` selects the fast-mode tier —
+ * Opus 5 charges $10/$50 in fast mode where Opus 4.6/4.7 charged $30/$150 —
+ * and defaults to whichever Opus the `opus` alias currently resolves to.
+ */
+export function getOpus46PricingSuffix(
+  fastMode: boolean,
+  model: ModelName = getDefaultOpusModel(),
+): string {
   if (getAPIProvider() !== 'firstParty') return ''
   // Subscribers draw from plan usage, not per-Mtok API pricing. Upstream shows
   // them a usage multiplier instead (see getProUsageMultiplierSuffix); the
@@ -349,7 +362,7 @@ export function getOpus46PricingSuffix(fastMode: boolean): string {
   } catch {
     // treat as non-subscriber
   }
-  const pricing = formatModelPricing(getOpus46CostTier(fastMode))
+  const pricing = formatModelPricing(getOpusCostTierForModel(model, fastMode))
   const fastModeIndicator = fastMode ? ` (${LIGHTNING_BOLT})` : ''
   return ` ·${fastModeIndicator} ${pricing}`
 }
@@ -402,6 +415,10 @@ export function getPublicModelDisplayName(model: ModelName): string | null {
       return 'Fable 5'
     case getModelStrings().fable5 + '[1m]':
       return 'Fable 5 (1M context)'
+    case getModelStrings().opus5:
+      return 'Opus 5'
+    case getModelStrings().opus5 + '[1m]':
+      return 'Opus 5 (1M context)'
     case getModelStrings().opus48:
       return 'Opus 4.8'
     case getModelStrings().opus48 + '[1m]':
@@ -662,6 +679,9 @@ export function getMarketingNameForModel(modelId: string | undefined): string | 
 
   if (canonical.includes('claude-fable-5')) {
     return has1m ? 'Fable 5 (with 1M context)' : 'Fable 5'
+  }
+  if (canonical.includes('claude-opus-5')) {
+    return has1m ? 'Opus 5 (with 1M context)' : 'Opus 5'
   }
   if (canonical.includes('claude-opus-4-8')) {
     return has1m ? 'Opus 4.8 (with 1M context)' : 'Opus 4.8'

@@ -990,6 +990,10 @@ function get3PModelFallbackSuggestion(model: string): string | undefined {
   if (m.includes('sonnet-5') || m.includes('sonnet_5')) {
     return getModelStrings().sonnet46
   }
+  // If the failing model looks like an Opus 5 variant, suggest Opus 4.8
+  if (m.includes('opus-5') || m.includes('opus_5')) {
+    return getModelStrings().opus48
+  }
   // If the failing model looks like an Opus 4.8 variant, suggest Opus 4.7
   if (m.includes('opus-4-8') || m.includes('opus_4_8')) {
     return getModelStrings().opus47
@@ -998,8 +1002,12 @@ function get3PModelFallbackSuggestion(model: string): string | undefined {
   if (m.includes('opus-4-7') || m.includes('opus_4_7')) {
     return getModelStrings().opus46
   }
-  // If the failing model looks like an Opus 4.6 variant, suggest the default Opus (4.1 for 3P)
+  // If the failing model looks like an Opus 4.6 variant, suggest Opus 4.5
   if (m.includes('opus-4-6') || m.includes('opus_4_6')) {
+    return getModelStrings().opus45
+  }
+  // If the failing model looks like an Opus 4.5 variant, suggest Opus 4.1
+  if (m.includes('opus-4-5') || m.includes('opus_4_5')) {
     return getModelStrings().opus41
   }
   // If the failing model looks like a Sonnet 4.6 variant, suggest Sonnet 4.5

@@ -1575,6 +1575,14 @@ function checkModelFallbackSuggestions() {
     // Re-import with 3P provider set — imports are cached, so we call the
     // function directly (it reads getAPIProvider() at call time, not import time).
     assert(
+      _get3PFallbackSuggestionForTesting('opus-5') === 'claude-opus-4-8',
+      'opus-5 should fallback to opus-4-8',
+    );
+    assert(
+      _get3PFallbackSuggestionForTesting('opus-4-8') === 'claude-opus-4-7',
+      'opus-4-8 should fallback to opus-4-7',
+    );
+    assert(
       _get3PFallbackSuggestionForTesting('opus-4-7') === 'claude-opus-4-6',
       'opus-4-7 should fallback to opus-4-6',
     );
@@ -1587,8 +1595,12 @@ function checkModelFallbackSuggestions() {
       'opus_4_7 (underscore) should fallback to opus-4-6',
     );
     assert(
-      _get3PFallbackSuggestionForTesting('opus-4-6') === 'claude-opus-4-1-20250805',
-      'opus-4-6 should fallback to opus-4-1-20250805',
+      _get3PFallbackSuggestionForTesting('opus-4-6') === 'claude-opus-4-5-20251101',
+      'opus-4-6 should fallback to opus-4-5-20251101',
+    );
+    assert(
+      _get3PFallbackSuggestionForTesting('opus-4-5') === 'claude-opus-4-1-20250805',
+      'opus-4-5 should fallback to opus-4-1-20250805',
     );
     assert(
       _get3PFallbackSuggestionForTesting('sonnet-4-6') === 'claude-sonnet-4-5-20250929',
@@ -1644,13 +1656,33 @@ function checkOpusUserPaths() {
   const opus47_1mDisplayName = getPublicModelDisplayName(getModelStrings().opus47 + '[1m]');
   assert(opus47_1mDisplayName === 'Opus 4.7 (1M context)', `opus47[1m] display name should be 'Opus 4.7 (1M context)', got: ${opus47_1mDisplayName}`);
 
+  // getPublicModelDisplayName for opus-5
+  const opus5DisplayName = getPublicModelDisplayName(getModelStrings().opus5);
+  assert(opus5DisplayName === 'Opus 5', `getPublicModelDisplayName(opus5) should return 'Opus 5', got: ${opus5DisplayName}`);
+  const opus5_1mDisplayName = getPublicModelDisplayName(getModelStrings().opus5 + '[1m]');
+  assert(opus5_1mDisplayName === 'Opus 5 (1M context)', `opus5[1m] display name should be 'Opus 5 (1M context)', got: ${opus5_1mDisplayName}`);
+
   // getDefaultOpusModel — first-party path returns the current Opus default
   const defaultOpus = getDefaultOpusModel();
-  assert(defaultOpus === getModelStrings().opus48, `getDefaultOpusModel() should return opus48 for first-party, got: ${defaultOpus}`);
+  assert(defaultOpus === getModelStrings().opus5, `getDefaultOpusModel() should return opus5 for first-party, got: ${defaultOpus}`);
 
   // getBestModel is an alias for getDefaultOpusModel
   const bestModel = getBestModel();
-  assert(bestModel === getModelStrings().opus48, `getBestModel() should equal opus48 for first-party, got: ${bestModel}`);
+  assert(bestModel === getModelStrings().opus5, `getBestModel() should equal opus5 for first-party, got: ${bestModel}`);
+
+  // Opus 5 carries the full effort ladder (low..max, including xhigh).
+  assert(modelSupportsEffort('claude-opus-5') === true, 'claude-opus-5 should support effort');
+  assert(modelSupportsMaxEffort('claude-opus-5') === true, 'claude-opus-5 should support max effort');
+  assert(modelSupportsXhighEffort('claude-opus-5') === true, 'claude-opus-5 should support xhigh effort');
+  // Like Opus 4.8, Opus 5 does not force a default — the API resolves unset to high.
+  assert(
+    getDefaultEffortForModel('claude-opus-5') === undefined,
+    'claude-opus-5 should not force a default effort',
+  );
+  assert(
+    modelSupportsAdaptiveThinking('claude-opus-5') === true,
+    'claude-opus-5 should support adaptive thinking',
+  );
 
   // modelSupportsEffort for opus-4-7
   assert(modelSupportsEffort('opus-4-7') === true, 'opus-4-7 should support effort');

@@ -29,7 +29,7 @@ describe('legacy Opus remap — direct 1P only', () => {
     delete process.env.ANTHROPIC_BASE_URL
     delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL
     delete process.env.CLAUDE_CODE_DISABLE_LEGACY_MODEL_REMAP
-    expect(parseUserSpecifiedModel('claude-opus-4-0')).toBe('claude-opus-4-8')
+    expect(parseUserSpecifiedModel('claude-opus-4-0')).toBe('claude-opus-5')
   })
 
   test('a custom Anthropic-compatible base URL preserves the pinned legacy model', () => {
