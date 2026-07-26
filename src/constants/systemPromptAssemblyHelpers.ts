@@ -19,6 +19,7 @@ import {
 } from './systemPromptCompact.js'
 import {
   ACT_DONT_REDERIVE_SECTION,
+  CONTEXT_MANAGEMENT_SECTION,
   CORRECTIONS_SECTION,
   DELIVERING_WORK_SECTION,
   PRONOUNS_SECTION,
@@ -170,6 +171,10 @@ export function buildDynamicSystemPromptSections(params: {
       'MCP servers connect/disconnect between turns',
     ),
     systemPromptSection('scratchpad', () => getScratchpadInstructions()),
+    systemPromptSection(
+      'context_management',
+      () => CONTEXT_MANAGEMENT_SECTION,
+    ),
     systemPromptSection('frc', () => getFunctionResultClearingSection(model)),
     systemPromptSection(
       'summarize_tool_results',

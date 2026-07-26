@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { buildDynamicSystemPromptSections } from '../../constants/systemPromptAssemblyHelpers.js'
 import {
   ACT_DONT_REDERIVE_SECTION,
+  CONTEXT_MANAGEMENT_SECTION,
   CORRECTIONS_SECTION,
   DELIVERING_WORK_SECTION,
   PRONOUNS_SECTION,
@@ -34,6 +35,15 @@ describe('sections that ship alongside the compact head', () => {
     for (const model of [LEAN_MODEL, VERBOSE_MODEL]) {
       expect(sectionNames(model)).toContain('pronouns')
       expect(resolve(model, 'pronouns')).toBe(PRONOUNS_SECTION)
+    }
+  })
+
+  test('context management is emitted in both prompt modes', () => {
+    for (const model of [LEAN_MODEL, VERBOSE_MODEL]) {
+      expect(sectionNames(model)).toContain('context_management')
+      expect(resolve(model, 'context_management')).toBe(
+        CONTEXT_MANAGEMENT_SECTION,
+      )
     }
   })
 
@@ -71,7 +81,11 @@ describe('sections that ship alongside the compact head', () => {
   })
 
   test('mode-independent sections keep a stable name across a model switch', () => {
-    for (const name of ['pronouns', 'act_dont_rederive']) {
+    for (const name of [
+      'pronouns',
+      'act_dont_rederive',
+      'context_management',
+    ]) {
       expect(sectionNames(LEAN_MODEL)).toContain(name)
       expect(sectionNames(VERBOSE_MODEL)).toContain(name)
     }

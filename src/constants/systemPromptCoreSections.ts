@@ -257,3 +257,11 @@ A follow-up question about your earlier work is not, by itself, a signal that yo
  * a lean/verbose split — so it is not part of the compact head.
  */
 export const ACT_DONT_REDERIVE_SECTION = `When you have enough information to act, act. Do not re-derive facts already established in the conversation, re-litigate a decision the user has already made, or narrate options you will not pursue. If you are weighing a choice, give a recommendation, not an exhaustive survey`
+
+/**
+ * Ported verbatim from upstream's `context_management` section. Emitted in both
+ * prompt modes there, ungated — it describes what the harness does to the
+ * conversation, which is true regardless of how much the model is told.
+ */
+export const CONTEXT_MANAGEMENT_SECTION = `# Context management
+When the conversation grows long, some or all of the current context is summarized; the summary, along with any remaining unsummarized context, is provided in the next context window so work can continue — you don't need to wrap up early or hand off mid-task.`
