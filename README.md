@@ -196,8 +196,26 @@ All builds require [Bun](https://bun.sh).
 - `CLAUDE_CODE_HIDE_CWD=1` — Hide cwd from status bar
 - `DISABLE_UPDATES=1` — Disable automatic update checks
 - `NOA_CLAUDE_STREAMING_TOOL_EXECUTION=1` — Opt in to streaming tool execution (tools start while the model response is still streaming; experimental, off by default)
+- `NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT=1|0` — Force the compact (`1`) or long (`0`) system prompt instead of letting the model decide. See [System prompt length](#system-prompt-length)
 
 Legacy `CLAUDE_CODE_*` names are still accepted for compatibility; `NOA_CLAUDE_*` is preferred.
+
+## System prompt length
+
+Newer Claude models (Opus 5, Fable 5, Mythos 5, and later) are trained on most of what a long system prompt spells out, so they get a compact prompt head and short tool descriptions — roughly 80% less text than older models receive. Older models (Sonnet, Haiku, Opus 4.x, Claude 3.x) keep the long version, which they still need. The choice is automatic; nothing to configure.
+
+**One case needs opting in.** The model id alone decides this, so it only works when that id is trustworthy. On customer-run Bedrock, Vertex or Foundry — and on Anthropic-compatible third-party endpoints — a configured id can be an inference profile, a custom ARN, a cross-region alias, or a proxy serving something else entirely, so those deployments keep the long prompt by default even when the id looks like a current Claude model.
+
+If you know your deployment genuinely serves one, opt in by declaring the capability alongside the pin:
+
+```bash
+export ANTHROPIC_DEFAULT_OPUS_MODEL='us.anthropic.claude-opus-5-v1:0'
+export ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES='lean_prompt'
+```
+
+`ANTHROPIC_DEFAULT_SONNET_MODEL` / `_HAIKU_MODEL` have the same pair. The `[1m]` context-window suffix is ignored when matching, so pinning either form covers both.
+
+To force the choice either way — for example to check whether a regression is prompt-related — set `NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT=1` (compact) or `=0` (long).
 
 ## Privacy
 
