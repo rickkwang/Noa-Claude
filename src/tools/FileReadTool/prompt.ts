@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { isPDFSupported } from '../../utils/pdfUtils.js'
 import { BASH_TOOL_NAME } from '../BashTool/toolName.js'
+import { shouldUseCompactSystemPrompt } from '../../constants/systemPromptCompact.js'
 
 // Use a string constant for tool names to avoid circular dependencies
 export const FILE_READ_TOOL_NAME = 'Read'
@@ -29,7 +30,24 @@ export function renderPromptTemplate(
   lineFormat: string,
   maxSizeInstruction: string,
   offsetInstruction: string,
+  model?: string,
 ): string {
+  if (shouldUseCompactSystemPrompt(model)) {
+    return `Reads a file from the local filesystem.
+
+- \`file_path\` must be an absolute path.
+- Reads up to ${MAX_LINES_TO_READ} lines by default${maxSizeInstruction}.
+${offsetInstruction}
+${lineFormat}
+- Reads images (PNG, JPG, …) and presents them visually.${
+      isPDFSupported()
+        ? ' Reads PDFs via the `pages` parameter (e.g. "1-5", max 20 pages/request; required for PDFs over 10 pages).'
+        : ''
+    } Reads Jupyter notebooks (.ipynb) as cells with outputs.
+- Reading a directory, a missing file, or an empty file returns an error or system reminder rather than content.
+- Do NOT re-read a file you just edited to verify — Edit/Write would have errored if the change failed, and the harness tracks file state for you.`
+  }
+
   return `Reads a file from the local filesystem. You can access any file directly by using this tool.
 Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
 

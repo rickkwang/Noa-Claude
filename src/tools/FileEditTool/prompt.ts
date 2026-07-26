@@ -1,12 +1,23 @@
 // @ts-nocheck
 import { isCompactLinePrefixEnabled } from '../../utils/file.js'
 import { FILE_READ_TOOL_NAME } from '../FileReadTool/prompt.js'
+import { shouldUseCompactSystemPrompt } from '../../constants/systemPromptCompact.js'
 
 function getPreReadInstruction(): string {
   return `\n- You must use your \`${FILE_READ_TOOL_NAME}\` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file. `
 }
 
-export function getEditToolDescription(): string {
+export function getEditToolDescription(model?: string): string {
+  if (shouldUseCompactSystemPrompt(model)) {
+    const prefixFormat = isCompactLinePrefixEnabled()
+      ? 'line number + tab'
+      : 'spaces + line number + arrow'
+    return `Performs exact string replacement in a file.
+
+- You must ${FILE_READ_TOOL_NAME} the file in this conversation before editing, or the call will fail.
+- \`old_string\` must match the file exactly, including indentation, and be unique — the edit fails otherwise. Strip the ${FILE_READ_TOOL_NAME} line prefix (${prefixFormat}) before matching.
+- \`replace_all: true\` replaces every occurrence instead.`
+  }
   return getDefaultEditDescription()
 }
 

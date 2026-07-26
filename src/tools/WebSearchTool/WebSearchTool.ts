@@ -232,8 +232,8 @@ export const WebSearchTool = buildTool({
       ],
     }
   },
-  async prompt() {
-    return getWebSearchPrompt()
+  async prompt({ model }) {
+    return getWebSearchPrompt(model)
   },
   renderToolUseMessage,
   renderToolUseProgressMessage,

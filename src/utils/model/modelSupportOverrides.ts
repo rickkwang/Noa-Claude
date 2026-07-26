@@ -15,6 +15,7 @@ export type ModelCapabilityOverride =
   | 'context_management'
   | 'claude_code_beta'
   | 'structured_outputs'
+  | 'lean_prompt'
 
 const TIERS = [
   {

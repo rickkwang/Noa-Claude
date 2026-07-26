@@ -11,7 +11,7 @@ import { Box, Text } from '../../ink.js';
 import type { Tool } from '../../Tool.js';
 import { buildTool, type ToolDef } from '../../Tool.js';
 import { lazySchema } from '../../utils/lazySchema.js';
-import { ASK_USER_QUESTION_TOOL_CHIP_WIDTH, ASK_USER_QUESTION_TOOL_NAME, ASK_USER_QUESTION_TOOL_PROMPT, DESCRIPTION, PREVIEW_FEATURE_PROMPT } from './prompt.js';
+import { ASK_USER_QUESTION_TOOL_CHIP_WIDTH, ASK_USER_QUESTION_TOOL_NAME, DESCRIPTION, PREVIEW_FEATURE_PROMPT, getAskUserQuestionPrompt } from './prompt.js';
 const questionOptionSchema = lazySchema(() => z.object({
   label: z.string().describe('The display text for this option that the user will see and select. Should be concise (1-5 words) and clearly describe the choice.'),
   description: z.string().describe('Explanation of what this option means or what will happen if chosen. Useful for providing context about trade-offs or implications.'),
@@ -115,14 +115,15 @@ export const AskUserQuestionTool: Tool<InputSchema, Output> = buildTool({
   async description() {
     return DESCRIPTION;
   },
-  async prompt() {
+  async prompt({ model }) {
+    const base = getAskUserQuestionPrompt(model);
     const format = getQuestionPreviewFormat();
     if (format === undefined) {
       // SDK consumer that hasn't opted into a preview format — omit preview
       // guidance (they may not render the field at all).
-      return ASK_USER_QUESTION_TOOL_PROMPT;
+      return base;
     }
-    return ASK_USER_QUESTION_TOOL_PROMPT + PREVIEW_FEATURE_PROMPT[format];
+    return base + PREVIEW_FEATURE_PROMPT[format];
   },
   get inputSchema(): InputSchema {
     return inputSchema();

@@ -239,8 +239,8 @@ export const GrepTool = buildTool({
       appState.toolPermissionContext,
     )
   },
-  async prompt() {
-    return getDescription()
+  async prompt({ model }) {
+    return getDescription(model)
   },
   renderToolUseMessage,
   renderToolUseErrorMessage,

@@ -201,7 +201,8 @@ export const AgentTool = buildTool({
     agents,
     tools,
     getToolPermissionContext,
-    allowedAgentTypes
+    allowedAgentTypes,
+    model
   }) {
     const toolPermissionContext = await getToolPermissionContext();
 
@@ -224,7 +225,7 @@ export const AgentTool = buildTool({
     // Use inline env check instead of coordinatorModule to avoid circular
     // dependency issues during test module loading.
     const isCoordinator = feature('COORDINATOR_MODE') ? isEnvTruthy(process.env.CLAUDE_CODE_COORDINATOR_MODE) : false;
-    return await getPrompt(filteredAgents, isCoordinator, allowedAgentTypes);
+    return await getPrompt(filteredAgents, isCoordinator, allowedAgentTypes, model);
   },
   name: AGENT_TOOL_NAME,
   searchHint: 'delegate work to a subagent',

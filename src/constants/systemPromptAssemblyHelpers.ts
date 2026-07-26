@@ -14,6 +14,14 @@ import {
   systemPromptSection,
 } from './systemPromptSections.js'
 import {
+  getCompactHeadSection,
+  shouldUseCompactSystemPrompt,
+} from './systemPromptCompact.js'
+import {
+  ACT_DONT_REDERIVE_SECTION,
+  CORRECTIONS_SECTION,
+  DELIVERING_WORK_SECTION,
+  PRONOUNS_SECTION,
   getActionsSection,
   getCodingStyleAndWorkflowSection,
   getCoreExecutionGuardsSection,
@@ -121,7 +129,15 @@ export function buildDynamicSystemPromptSections(params: {
     outputStyleConfig,
   } = params
 
+  // Sections whose text depends on the lean/verbose split must vary their cache
+  // key with it: resolveSystemPromptSections() memoizes on the section name
+  // alone, so a mid-session /model switch would otherwise keep serving the
+  // previous tier's text. Same `:L` suffix upstream uses for the same reason.
+  const lean = shouldUseCompactSystemPrompt(model)
+  const leanSuffix = lean ? ':L' : ''
+
   return [
+    systemPromptSection('pronouns', () => PRONOUNS_SECTION),
     systemPromptSection('session_guidance', () =>
       getSessionSpecificGuidanceSection(
         enabledTools,
@@ -176,6 +192,18 @@ export function buildDynamicSystemPromptSections(params: {
     ...(feature('KAIROS') || feature('KAIROS_BRIEF')
       ? [systemPromptSection('brief', () => getBriefSection())]
       : []),
+    systemPromptSection('act_dont_rederive', () => ACT_DONT_REDERIVE_SECTION),
+    // Compact-head companions: upstream gates both on a per-model capability
+    // held by exactly the models that get the lean prompt. They restate, in one
+    // place, the scope and self-correction discipline that the verbose head
+    // spells out across its own sections — so they ship with the compact head
+    // and are omitted with the long one.
+    systemPromptSection(`delivering_work${leanSuffix}`, () =>
+      lean ? DELIVERING_WORK_SECTION : null,
+    ),
+    systemPromptSection(`corrections${leanSuffix}`, () =>
+      lean ? CORRECTIONS_SECTION : null,
+    ),
   ]
 }
 
@@ -185,6 +213,8 @@ export function buildStaticSystemPromptSections(params: {
   boundaryMarker: string | null
   resolvedDynamicSections: Array<string | null>
   proactiveSection: string | null
+  useCompactPrompt?: boolean
+  hasOutputStyle?: boolean
 }): Array<string | null> {
   const {
     enabledTools,
@@ -192,18 +222,28 @@ export function buildStaticSystemPromptSections(params: {
     boundaryMarker,
     resolvedDynamicSections,
     proactiveSection,
+    useCompactPrompt = false,
+    hasOutputStyle = false,
   } = params
 
+  // Only the static head swaps; the boundary marker and everything after it
+  // stay identical so cache splitting and dynamic content are unaffected.
+  const head = useCompactPrompt
+    ? [getCompactHeadSection(hasOutputStyle)]
+    : [
+        getSimpleIntroSection(),
+        getSimpleSystemSection(),
+        getResearchAndTruthfulnessSection(enabledTools),
+        getDesignWorkflowSection(),
+        getCoreExecutionGuardsSection(),
+        includeCodingStyleSection ? getCodingStyleAndWorkflowSection() : null,
+        getActionsSection(),
+        getUsingYourToolsSection(enabledTools),
+        getSimpleToneAndStyleSection(),
+      ]
+
   return [
-    getSimpleIntroSection(),
-    getSimpleSystemSection(),
-    getResearchAndTruthfulnessSection(enabledTools),
-    getDesignWorkflowSection(),
-    getCoreExecutionGuardsSection(),
-    includeCodingStyleSection ? getCodingStyleAndWorkflowSection() : null,
-    getActionsSection(),
-    getUsingYourToolsSection(enabledTools),
-    getSimpleToneAndStyleSection(),
+    ...head,
     ...(boundaryMarker !== null ? [boundaryMarker] : []),
     ...resolvedDynamicSections,
     proactiveSection,

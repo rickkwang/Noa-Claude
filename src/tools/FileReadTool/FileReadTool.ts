@@ -345,7 +345,7 @@ export const FileReadTool = buildTool({
   async description() {
     return DESCRIPTION
   },
-  async prompt() {
+  async prompt({ model }) {
     const limits = getDefaultFileReadingLimits()
     const maxSizeInstruction = limits.includeMaxSizeInPrompt
       ? `. Files larger than ${formatFileSize(limits.maxSizeBytes)} will return an error; use offset and limit for larger files`
@@ -357,6 +357,7 @@ export const FileReadTool = buildTool({
       pickLineFormatInstruction(),
       maxSizeInstruction,
       offsetInstruction,
+      model,
     )
   },
   get inputSchema(): InputSchema {

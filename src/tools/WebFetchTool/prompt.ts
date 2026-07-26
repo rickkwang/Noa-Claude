@@ -1,6 +1,15 @@
 // @ts-nocheck
 export const WEB_FETCH_TOOL_NAME = 'WebFetch'
 
+// Ported verbatim from upstream's lean variant. Upstream also carries a
+// conditional artifact-URL exception here; we have no artifact surface, so that
+// clause has no counterpart.
+export const LEAN_DESCRIPTION = `Fetches a URL, converts the page to markdown, and answers \`prompt\` against it using a small fast model.
+
+- Fails on authenticated/private URLs — use an authenticated MCP tool or \`gh\` for those instead.
+- HTTP is upgraded to HTTPS. Cross-host redirects are returned to you rather than followed; call again with the redirect URL.
+- Responses are cached for 15 minutes per URL.`
+
 export const DESCRIPTION = `
 - Fetches content from a specified URL and processes it using an AI model
 - Takes a URL and a prompt as input

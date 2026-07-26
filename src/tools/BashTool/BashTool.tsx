@@ -410,8 +410,8 @@ export const BashTool = buildTool({
   }) {
     return description || 'Run shell command';
   },
-  async prompt() {
-    return getSimplePrompt();
+  async prompt({ model }) {
+    return getSimplePrompt(model);
   },
   isConcurrencySafe(input) {
     return this.isReadOnly?.(input) ?? false;

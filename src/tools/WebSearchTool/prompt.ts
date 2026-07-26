@@ -1,10 +1,22 @@
 // @ts-nocheck
 import { getLocalMonthYear } from 'src/constants/common.js'
+import { shouldUseCompactSystemPrompt } from '../../constants/systemPromptCompact.js'
 
 export const WEB_SEARCH_TOOL_NAME = 'WebSearch'
 
-export function getWebSearchPrompt(): string {
+export function getWebSearchPrompt(model?: string): string {
   const currentMonthYear = getLocalMonthYear()
+  if (shouldUseCompactSystemPrompt(model)) {
+    // Ported verbatim from upstream's lean variant. "US-only" holds here too:
+    // this tool is Anthropic's server-side `web_search_20250305`, the same
+    // backend upstream describes. The mandatory "Sources:" list is stricter
+    // than our verbose text, which no lean model ever sees.
+    return `Search the web. Returns result blocks with titles and URLs. US-only.
+
+- The current month is ${currentMonthYear} — use this when searching for recent information.
+- \`allowed_domains\` / \`blocked_domains\` filter results.
+- After answering from results, end with a "Sources:" list of the URLs you used as markdown links.`
+  }
   return `
 - Allows Claude to search the web and use the results to inform responses
 - Provides up-to-date information for current events and recent data

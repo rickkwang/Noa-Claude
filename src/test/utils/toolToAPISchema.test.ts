@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { z } from 'zod/v4'
 import { toolToAPISchema } from '../../utils/api.js'
+import { shouldUseCompactSystemPrompt } from '../../constants/systemPromptCompact.js'
 import type { Tool } from '../../Tool.js'
 
 // Minimal MCP-like tool whose schema is supplied as raw JSON Schema via
@@ -117,5 +119,42 @@ describe('toolToAPISchema input_schema normalization', () => {
     expect(schema.properties).toEqual({
       val: { anyOf: [{ type: 'string' }, { type: 'number' }] },
     })
+  })
+})
+
+describe('toolToAPISchema per-session cache and the lean/verbose split', () => {
+  // toolToAPISchema memoizes its result for the rest of the process (see
+  // toolSchemaCache.ts) to keep the tool block byte-stable against
+  // GrowthBook flips. tool.prompt() now also branches on `model` (lean vs
+  // verbose description) — the cache key must include that split, or a
+  // mid-session /model switch between a lean-tier and a verbose-tier model
+  // would keep serving the first model's rendered description forever.
+  function makeModelAwareTool(name: string): Tool {
+    return {
+      name,
+      inputSchema: z.object({}),
+      async prompt({ model }: { model?: string }) {
+        return shouldUseCompactSystemPrompt(model)
+          ? 'lean description'
+          : 'verbose description'
+      },
+    } as unknown as Tool
+  }
+
+  test('switching from a verbose-tier to a lean-tier model re-renders the description', async () => {
+    const tool = makeModelAwareTool('cache_split_verbose_then_lean')
+    const verbose = await toolToAPISchema(tool, { ...options, model: 'claude-sonnet-5' })
+    const lean = await toolToAPISchema(tool, { ...options, model: 'claude-opus-5' })
+    expect((verbose as { description: string }).description).toBe('verbose description')
+    expect((lean as { description: string }).description).toBe('lean description')
+  })
+
+  test('re-rendering with the same lean/verbose tier still hits the cache', async () => {
+    const tool = makeModelAwareTool('cache_split_stable')
+    const first = await toolToAPISchema(tool, { ...options, model: 'claude-opus-5' })
+    const second = await toolToAPISchema(tool, { ...options, model: 'claude-fable-5' })
+    // Both are lean-tier models — same cache entry, same rendered text.
+    expect((first as { description: string }).description).toBe('lean description')
+    expect((second as { description: string }).description).toBe('lean description')
   })
 })

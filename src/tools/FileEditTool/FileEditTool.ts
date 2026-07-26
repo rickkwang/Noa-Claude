@@ -92,8 +92,8 @@ export const FileEditTool = buildTool({
   async description() {
     return 'A tool for editing files'
   },
-  async prompt() {
-    return getEditToolDescription()
+  async prompt({ model }) {
+    return getEditToolDescription(model)
   },
   userFacingName,
   getToolUseSummary,

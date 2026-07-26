@@ -523,6 +523,12 @@ export type Tool<
     tools: Tools
     agents: AgentDefinition[]
     allowedAgentTypes?: string[]
+    /**
+     * Main-loop model, used to pick the lean vs full description. Optional:
+     * call sites that don't know the model fall through to the full text,
+     * which is always correct, just longer.
+     */
+    model?: string
   }): Promise<string>
   userFacingName(input: Partial<z.infer<Input>> | undefined): string
   userFacingNameBackgroundColor?(

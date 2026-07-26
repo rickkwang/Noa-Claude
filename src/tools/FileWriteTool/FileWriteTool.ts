@@ -106,8 +106,8 @@ export const FileWriteTool = buildTool({
     const summary = getToolUseSummary(input)
     return summary ? `Writing ${summary}` : 'Writing file'
   },
-  async prompt() {
-    return getWriteToolDescription()
+  async prompt({ model }) {
+    return getWriteToolDescription(model)
   },
   renderToolUseMessage,
   isResultTruncated,

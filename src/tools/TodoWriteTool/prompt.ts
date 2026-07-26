@@ -1,5 +1,16 @@
 // @ts-nocheck
 import { FILE_EDIT_TOOL_NAME } from '../FileEditTool/constants.js'
+import { shouldUseCompactSystemPrompt } from '../../constants/systemPromptCompact.js'
+
+// Ported verbatim from upstream's lean variant. Deliberately says nothing about
+// when to reach for a task list: the lean-trained models it is gated to already
+// judge that, and the long "When to Use / When NOT to Use" tables below are
+// exactly the noise the lean prompt exists to remove.
+const LEAN_PROMPT = `Create and update a task list for the current session. The list is rendered to the user as your working plan.
+
+- Each todo has \`content\`, \`status\` ("pending" | "in_progress" | "completed"), and \`activeForm\` (present-tense label shown while in progress).
+- Send the full list each call; it replaces the previous one.
+- Keep one item \`in_progress\` at a time and mark it \`completed\` when done.`
 
 export const PROMPT = `Use this tool to create and manage a structured task list for your current coding session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user.
 It also helps the user understand the progress of the task and overall progress of their requests.
@@ -183,3 +194,7 @@ When in doubt, use this tool. Being proactive with task management demonstrates 
 
 export const DESCRIPTION =
   'Update the todo list for the current session. To be used proactively and often to track progress and pending tasks. Make sure that at least one task is in_progress at all times. Always provide both content (imperative) and activeForm (present continuous) for each task.'
+
+export function getTodoWritePrompt(model?: string): string {
+  return shouldUseCompactSystemPrompt(model) ? LEAN_PROMPT : PROMPT
+}

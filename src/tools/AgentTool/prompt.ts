@@ -8,8 +8,10 @@ import { isInProcessTeammate } from '../../utils/teammateContext.js'
 import { FILE_READ_TOOL_NAME } from '../FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from '../FileWriteTool/prompt.js'
 import { GLOB_TOOL_NAME } from '../GlobTool/prompt.js'
+import { GREP_TOOL_NAME } from '../GrepTool/prompt.js'
 import { SEND_MESSAGE_TOOL_NAME } from '../SendMessageTool/constants.js'
 import { AGENT_TOOL_NAME } from './constants.js'
+import { shouldUseCompactSystemPrompt } from '../../constants/systemPromptCompact.js'
 import { isForkSubagentEnabled } from './forkSubagent.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
 
@@ -68,6 +70,7 @@ export async function getPrompt(
   agentDefinitions: AgentDefinition[],
   isCoordinator?: boolean,
   allowedAgentTypes?: string[],
+  model?: string,
 ): Promise<string> {
   // Filter agents by allowed types when Agent(x,y) restricts which agents can be spawned
   const effectiveAgents = allowedAgentTypes
@@ -210,6 +213,54 @@ ${
   // already covers usage notes, examples, and when-not-to-use guidance.
   if (isCoordinator) {
     return shared
+  }
+
+  // Lean variant, ported from upstream's lean branch — same sections, same
+  // bullets, same order. Three facts are ours, not upstream's, and are stated
+  // accordingly: agent definitions live under `.noa/`, forking is opt-out
+  // (omit subagent_type) rather than an explicit "fork" type, and background
+  // runs are opt-in here where upstream defaults to background.
+  if (shouldUseCompactSystemPrompt(model)) {
+    const subagentTypeLine = forkEnabled
+      ? `When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type to use a specialized agent, or omit it to fork yourself — a fork inherits your full conversation context.`
+      : `When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.`
+
+    const forkNote = forkEnabled
+      ? `\n\nA fork runs in the background and keeps its tool output out of your context. If you are the fork, execute directly — don't re-delegate.`
+      : ''
+
+    const backgroundNote =
+      !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS) &&
+      !isInProcessTeammate()
+        ? "\n- Pass `run_in_background: true` to run an agent detached; you'll be notified when it completes. Never fabricate or predict a pending agent's results — the notification is never something you write yourself; if the user asks before it arrives, say it's still running."
+        : ''
+
+    // Ant-native builds drop the dedicated Grep tool, so point at `grep` via
+    // Bash the way the verbose branch below does.
+    const leanContentSearchHint = hasEmbeddedSearchTools()
+      ? '`grep` via the Bash tool'
+      : `the ${GREP_TOOL_NAME} tool`
+
+    const teammateNote = isInProcessTeammate()
+      ? '\n- `run_in_background`, `name` and `team_name` are unavailable here — only synchronous subagents.'
+      : isTeammate()
+        ? '\n- `name` and `team_name` are unavailable here — teammates cannot spawn teammates.'
+        : ''
+
+    return `Launch a new agent to handle complex, multi-step tasks. Each agent type has specific capabilities and tools available to it.
+
+${agentListSection}
+
+${subagentTypeLine}
+
+## When not to use
+
+If the target is already known, use the direct tool: ${FILE_READ_TOOL_NAME} for a known path, ${leanContentSearchHint} for a specific symbol or string. Reserve this tool for open-ended questions that span the codebase, or tasks that match an available agent type.${forkNote}
+
+- The agent's final report is not shown to the user — relay what matters.
+- Use ${SEND_MESSAGE_TOOL_NAME} with the agent's ID or name to continue a previously spawned agent with its context intact; a new ${AGENT_TOOL_NAME} call starts fresh.
+- Each agent type's model, reasoning effort, and tools come from its definition (\`.noa/agents/*.md\` frontmatter or SDK \`agents\`).
+- \`isolation: "worktree"\` gives the agent its own git worktree (auto-cleaned if unchanged).${backgroundNote}${teammateNote}`
   }
 
   // Ant-native builds alias find/grep to embedded bfs/ugrep and remove the

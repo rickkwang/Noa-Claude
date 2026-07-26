@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { prependBullets } from '../../constants/systemPromptCoreSections.js'
 import { getAttributionTexts } from '../../utils/attribution.js'
+import { shouldUseCompactSystemPrompt } from '../../constants/systemPromptCompact.js'
 import { hasEmbeddedSearchTools } from '../../utils/embeddedTools.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { shouldIncludeGitInstructions } from '../../utils/gitSettings.js'
@@ -272,7 +273,85 @@ function getSimpleSandboxSection(): string {
   ].join('\n')
 }
 
-export function getSimplePrompt(): string {
+/**
+ * Lean git section, ported from upstream's `bash_lean` variant.
+ *
+ * Upstream drops the safety protocol here (no force-push, no `--no-verify`, no
+ * committing secrets) rather than compressing it: the lean-trained models this
+ * is gated to already hold those rules, and the compact prompt head states the
+ * general form — "For actions that are hard to reverse or outward-facing,
+ * confirm first". Attribution stays, because it lands in real commits and PRs.
+ *
+ * The undercover block is ours and is kept unconditionally: it is the last
+ * defense against leaking an internal codename, and it is USER_TYPE-gated, so
+ * it costs nothing when off.
+ */
+function getLeanCommitAndPRInstructions(): string {
+  const undercoverSection =
+    process.env.USER_TYPE === 'ant' && isUndercover()
+      ? getUndercoverInstructions() + '\n'
+      : ''
+
+  if (!shouldIncludeGitInstructions()) return undercoverSection
+
+  const { commit: commitAttribution, pr: prAttribution } = getAttributionTexts()
+
+  const attribution = [
+    commitAttribution
+      ? `- End git commit messages with:\n${commitAttribution}`
+      : null,
+    prAttribution ? `- End PR bodies with:\n${prAttribution}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n')
+
+  return `${undercoverSection}# Git
+- Interactive flags (\`-i\`, e.g. \`git rebase -i\`, \`git add -i\`) are not supported in this environment.
+- Use the \`gh\` CLI for GitHub operations (PRs, issues, API).
+- Commit or push only when the user asks. If on the default branch, branch first.${attribution ? `\n${attribution}` : ''}`
+}
+
+/**
+ * Lean variant, ported from upstream's `bash_lean` builder — same bullets, same
+ * order, same wording.
+ *
+ * Two of upstream's optional clauses are omitted because they describe
+ * behaviour we do not have: its "foreground `sleep` is blocked; use Monitor"
+ * note (flag-gated off by default there, and there is no Monitor tool here) and
+ * its Windows Git Bash preamble.
+ *
+ * The sandbox section is shared with the verbose prompt. Upstream does not
+ * split it either: it states the permission boundary rather than giving advice,
+ * so rewording it would change what the agent believes it may do.
+ */
+function getLeanPrompt(): string {
+  const avoidCommands = hasEmbeddedSearchTools()
+    ? '`cat`, `head`, `tail`, `sed`, `awk`, or `echo`'
+    : '`find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo`'
+  const sandboxSection = getSimpleSandboxSection()
+  const gitSection = getLeanCommitAndPRInstructions()
+
+  return [
+    'Executes a bash command and returns its output.',
+    '',
+    "- Working directory persists between calls, but prefer absolute paths — `cd` in a compound command can trigger a permission prompt. Shell state (env vars, functions) does not persist; the shell is initialized from the user's profile.",
+    `- IMPORTANT: Avoid using this tool to run ${avoidCommands} commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user.`,
+    '- Command output is displayed to you, not reliably to the user.',
+    `- \`timeout\` is in milliseconds: default ${getDefaultTimeoutMs()}, max ${getMaxTimeoutMs()}.`,
+    ...(getBackgroundUsageNote() !== null
+      ? [
+          '- `run_in_background` runs the command detached: it keeps running across turns and re-invokes you when it exits. No `&` needed.',
+        ]
+      : []),
+    ...(sandboxSection ? [sandboxSection] : []),
+    ...(gitSection ? ['', gitSection] : []),
+  ].join('\n')
+}
+
+export function getSimplePrompt(model?: string): string {
+  if (shouldUseCompactSystemPrompt(model)) {
+    return getLeanPrompt()
+  }
   // Ant-native builds alias find/grep to embedded bfs/ugrep in Claude's shell,
   // so we don't steer away from them (and Glob/Grep tools are removed).
   const embedded = hasEmbeddedSearchTools()

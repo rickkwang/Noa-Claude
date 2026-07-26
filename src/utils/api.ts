@@ -62,6 +62,7 @@ import { getPlatform } from './platform.js'
 import { countFilesRoundedRg } from './ripgrep.js'
 import { jsonStringify } from './slowOperations.js'
 import type { SystemPrompt } from './systemPromptType.js'
+import { shouldUseCompactSystemPrompt } from '../constants/systemPromptCompact.js'
 import { getToolSchemaCache } from './toolSchemaCache.js'
 import { windowsPathToPosixPath } from './windowsPaths.js'
 import { zodToJsonSchema } from './zodToJsonSchema.js'
@@ -213,10 +214,20 @@ export async function toolToAPISchema(
   // call — name-only keying returned a stale schema (5.4% → 51% err rate, see
   // PR#25424). MCP tools also set inputJSONSchema but each has a stable schema,
   // so including it preserves their GB-flip cache stability.
+  //
+  // tool.prompt() branches on the lean/verbose split (see
+  // systemPromptCompact.ts), so a session that switches from a verbose-tier
+  // model to a lean one (or back) mid-session must not reuse the other
+  // model's rendered description. Suffixing by the boolean, not the raw
+  // model string, keeps the memoization's original goal — freezing bytes
+  // against GB flips / MCP reconnects — while still busting on an actual
+  // lean/verbose flip. Mirrors upstream's own ":L" cache-key suffix for the
+  // same problem on its dynamic prompt sections.
+  const leanSuffix = shouldUseCompactSystemPrompt(options.model) ? ':L' : ''
   const cacheKey =
-    'inputJSONSchema' in tool && tool.inputJSONSchema
+    ('inputJSONSchema' in tool && tool.inputJSONSchema
       ? `${tool.name}:${jsonStringify(tool.inputJSONSchema)}`
-      : tool.name
+      : tool.name) + leanSuffix
   const cache = getToolSchemaCache()
   let base = cache.get(cacheKey)
   if (!base) {
@@ -246,6 +257,7 @@ export async function toolToAPISchema(
         tools: options.tools,
         agents: options.agents,
         allowedAgentTypes: options.allowedAgentTypes,
+        model: options.model,
       }),
       input_schema,
     }

@@ -5,6 +5,7 @@ import type { MCPServerConnection } from '../services/mcp/types.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
 import { shouldUseGlobalCacheScope } from '../utils/betas.js'
 import { resolveSystemPromptSections } from './systemPromptSections.js'
+import { shouldUseCompactSystemPrompt } from './systemPromptCompact.js'
 import { getDefaultAgentPrompt } from './systemPromptCoreSections.js'
 import {
   computeEnvInfo,
@@ -72,6 +73,8 @@ export async function getSystemPrompt(
       : null,
     resolvedDynamicSections,
     proactiveSection: getOptionalProactiveSection(),
+    useCompactPrompt: shouldUseCompactSystemPrompt(model),
+    hasOutputStyle: outputStyleConfig !== null,
   }).filter(s => s !== null)
 }
 

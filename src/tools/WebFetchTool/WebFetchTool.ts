@@ -7,7 +7,8 @@ import { lazySchema } from '../../utils/lazySchema.js'
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
 import { getRuleByContentsForTool } from '../../utils/permissions/permissions.js'
 import { isPreapprovedHost } from './preapproved.js'
-import { DESCRIPTION, WEB_FETCH_TOOL_NAME } from './prompt.js'
+import { DESCRIPTION, LEAN_DESCRIPTION, WEB_FETCH_TOOL_NAME } from './prompt.js'
+import { shouldUseCompactSystemPrompt } from '../../constants/systemPromptCompact.js'
 import {
   getToolUseSummary,
   renderToolResultMessage,
@@ -184,7 +185,10 @@ export const WebFetchTool = buildTool({
       suggestions: buildSuggestions(ruleContent),
     }
   },
-  async prompt(_options) {
+  async prompt({ model }) {
+    if (shouldUseCompactSystemPrompt(model)) {
+      return LEAN_DESCRIPTION
+    }
     // Always include the auth warning regardless of whether ToolSearch is
     // currently in the tools list. Conditionally toggling this prefix based
     // on ToolSearch availability caused the tool description to flicker

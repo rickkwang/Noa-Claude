@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { FILE_READ_TOOL_NAME } from '../FileReadTool/prompt.js'
+import { shouldUseCompactSystemPrompt } from '../../constants/systemPromptCompact.js'
 
 export const FILE_WRITE_TOOL_NAME = 'Write'
 export const DESCRIPTION = 'Write a file to the local filesystem.'
@@ -8,7 +9,13 @@ function getPreReadInstruction(): string {
   return `\n- If this is an existing file, you MUST use the ${FILE_READ_TOOL_NAME} tool first to read the file's contents. This tool will fail if you did not read the file first.`
 }
 
-export function getWriteToolDescription(): string {
+export function getWriteToolDescription(model?: string): string {
+  if (shouldUseCompactSystemPrompt(model)) {
+    return `Writes a file to the local filesystem, overwriting if one exists.
+
+When to use: creating a new file, or fully replacing one you've already ${FILE_READ_TOOL_NAME}. Overwriting an existing file you haven't ${FILE_READ_TOOL_NAME} will fail. For partial changes, use Edit instead.`
+  }
+
   return `Writes a file to the local filesystem.
 
 Usage:
