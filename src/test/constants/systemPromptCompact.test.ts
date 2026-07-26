@@ -109,6 +109,45 @@ describe('compact system prompt gate', () => {
     )
   })
 
+  // `[1m]` picks the 1M-context variant of a model, not a different model. The
+  // capability lookup used to compare raw strings, so pinning the base id left
+  // the 1M variant with no way to opt in at all — and since the Bedrock/Vertex
+  // tightening above, this pin is their only way in.
+  test('a capability override covers the 1M-context variant of the pinned model', () => {
+    process.env.CLAUDE_CODE_USE_BEDROCK = '1'
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = 'us.anthropic.claude-opus-5-v1:0'
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES =
+      'lean_prompt'
+
+    expect(
+      shouldUseCompactSystemPrompt('us.anthropic.claude-opus-5-v1:0[1m]'),
+    ).toBe(true)
+    expect(
+      shouldUseCompactSystemPrompt('us.anthropic.claude-opus-5-v1:0[1M]'),
+    ).toBe(true)
+  })
+
+  test('a capability override on a 1M pin covers the base model too', () => {
+    process.env.CLAUDE_CODE_USE_BEDROCK = '1'
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL =
+      'us.anthropic.claude-opus-5-v1:0[1m]'
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES =
+      'lean_prompt'
+
+    expect(shouldUseCompactSystemPrompt('us.anthropic.claude-opus-5-v1:0')).toBe(
+      true,
+    )
+  })
+
+  test('the 1M suffix does not make an unrelated model match the pin', () => {
+    process.env.CLAUDE_CODE_USE_BEDROCK = '1'
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = 'us.anthropic.claude-opus-5-v1:0'
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES =
+      'lean_prompt'
+
+    expect(shouldUseCompactSystemPrompt('some-other-arn[1m]')).toBe(false)
+  })
+
   test('env override forces the choice in both directions', () => {
     process.env.NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT = '1'
     expect(shouldUseCompactSystemPrompt('claude-sonnet-5')).toBe(true)
