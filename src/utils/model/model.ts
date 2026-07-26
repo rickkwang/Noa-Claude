@@ -253,10 +253,13 @@ export function firstPartyNameToCanonical(name: ModelName | undefined): ModelSho
     return 'claude-opus-4-1'
   }
   if (name.includes('claude-opus-4')) {
-    return 'claude-opus-4'
+    return 'claude-opus-4-0'
   }
   if (name.includes('claude-fable-5')) {
     return 'claude-fable-5'
+  }
+  if (name.includes('claude-mythos-5')) {
+    return 'claude-mythos-5'
   }
   if (name.includes('claude-sonnet-5')) {
     return 'claude-sonnet-5'

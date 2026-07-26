@@ -14,7 +14,11 @@ import {
   systemPromptSection,
 } from './systemPromptSections.js'
 import {
+  getActionCautionSection,
+  getAntiVerbositySection,
   getCompactHeadSection,
+  hasFableMitigations,
+  hasOpus5PromptBundle,
   shouldUseCompactSystemPrompt,
 } from './systemPromptCompact.js'
 import {
@@ -134,11 +138,36 @@ export function buildDynamicSystemPromptSections(params: {
   // key with it: resolveSystemPromptSections() memoizes on the section name
   // alone, so a mid-session /model switch would otherwise keep serving the
   // previous tier's text. Same `:L` suffix upstream uses for the same reason.
+  //
+  // Two independent gates land here, and each section keys off whichever one
+  // actually drives its text — see hasOpus5PromptBundle() for why they are not
+  // the same question.
   const lean = shouldUseCompactSystemPrompt(model)
-  const leanSuffix = lean ? ':L' : ''
+  const bundle = hasOpus5PromptBundle(model)
+  const bundleSuffix = bundle ? ':L' : ''
+  // Emitted only under the lean prompt, but worded by the bundle gate, so the
+  // key has to carry both bits. Upstream keys this one on the lean bit alone,
+  // which lets a switch between two lean models that disagree on the bundle
+  // (Opus 5 -> Fable 5) serve the previous model's wording for the rest of the
+  // session. Carrying both bits is a deliberate departure, not a port gap.
+  const actionCautionName = lean
+    ? `action_caution:L${bundle ? '' : ':nb'}`
+    : 'action_caution'
+
+  // Upstream's first dynamic section, ahead of the pronoun guidance. Three
+  // possible texts (the Fable branch, the lean one-liner, nothing), so the key
+  // names the branch rather than carrying a single lean bit.
+  const antiVerbosity = getAntiVerbositySection(model)
+  const antiVerbosityName = hasFableMitigations(model)
+    ? 'anti_verbosity:fable'
+    : `anti_verbosity${antiVerbosity !== null ? ':L' : ''}`
 
   return [
+    systemPromptSection(antiVerbosityName, () => antiVerbosity),
     systemPromptSection('pronouns', () => PRONOUNS_SECTION),
+    systemPromptSection(actionCautionName, () =>
+      getActionCautionSection(model),
+    ),
     systemPromptSection('session_guidance', () =>
       getSessionSpecificGuidanceSection(
         enabledTools,
@@ -198,16 +227,16 @@ export function buildDynamicSystemPromptSections(params: {
       ? [systemPromptSection('brief', () => getBriefSection())]
       : []),
     systemPromptSection('act_dont_rederive', () => ACT_DONT_REDERIVE_SECTION),
-    // Compact-head companions: upstream gates both on a per-model capability
-    // held by exactly the models that get the lean prompt. They restate, in one
+    // Compact-head companions. Upstream gates these on the prompt bundle, not
+    // on the lean prompt — the two coincide for every first-party model, and
+    // only a pinned third-party model can pull them apart. They restate, in one
     // place, the scope and self-correction discipline that the verbose head
-    // spells out across its own sections — so they ship with the compact head
-    // and are omitted with the long one.
-    systemPromptSection(`delivering_work${leanSuffix}`, () =>
-      lean ? DELIVERING_WORK_SECTION : null,
+    // spells out across its own sections.
+    systemPromptSection(`delivering_work${bundleSuffix}`, () =>
+      bundle ? DELIVERING_WORK_SECTION : null,
     ),
-    systemPromptSection(`corrections${leanSuffix}`, () =>
-      lean ? CORRECTIONS_SECTION : null,
+    systemPromptSection(`corrections${bundleSuffix}`, () =>
+      bundle ? CORRECTIONS_SECTION : null,
     ),
   ]
 }

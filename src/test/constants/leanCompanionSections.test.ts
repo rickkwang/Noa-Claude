@@ -7,9 +7,16 @@ import {
   DELIVERING_WORK_SECTION,
   PRONOUNS_SECTION,
 } from '../../constants/systemPromptCoreSections.js'
+import {
+  hasFableMitigations,
+  MATCH_SURROUNDING_CODE_SECTION,
+} from '../../constants/systemPromptCompact.js'
 
 const LEAN_MODEL = 'claude-opus-5'
 const VERBOSE_MODEL = 'claude-opus-4-5'
+// Lean, but without the prompt bundle — upstream declares that capability for
+// Opus 5 alone, so this model takes the other branch of the companion gates.
+const UNBUNDLED_LEAN_MODEL = 'claude-fable-5'
 
 function sectionNames(model: string): string[] {
   return buildDynamicSystemPromptSections({
@@ -55,6 +62,54 @@ describe('sections that ship alongside the compact head', () => {
     }
   })
 
+  // Under the compact head this sentence is the only style guidance there is —
+  // the verbose "# Tone and style" section goes away with the long head.
+  test('the coding-style line replaces tone-and-style under the compact head', () => {
+    expect(resolve(LEAN_MODEL, 'anti_verbosity:L')).toBe(
+      MATCH_SURROUNDING_CODE_SECTION,
+    )
+    expect(resolve(VERBOSE_MODEL, 'anti_verbosity')).toBeNull()
+  })
+
+  // Fable/Mythos take upstream's long branch instead, which restates the
+  // one-liner as its second-to-last paragraph.
+  test('fable-mitigation models take the long branch', () => {
+    for (const model of ['claude-fable-5', 'claude-mythos-5']) {
+      const section = resolve(model, 'anti_verbosity:fable')
+      expect(section).toStartWith('# Communicating with the user\n')
+      expect(section).toContain(MATCH_SURROUNDING_CODE_SECTION)
+      expect(sectionNames(model)).not.toContain('anti_verbosity:L')
+    }
+  })
+
+  // getCanonicalName() has no Mythos branch, so Mythos 5 canonicalizes to
+  // `claude-mythos`. Matching a versioned id here silently routes it to the
+  // wrong branch — which is how it was written before.
+  test('Mythos routes by family, not by a versioned id', () => {
+    expect(hasFableMitigations('claude-mythos-5')).toBe(true)
+    expect(hasFableMitigations('claude-opus-5')).toBe(false)
+  })
+
+  test('action caution ships only with the compact head', () => {
+    expect(sectionNames(LEAN_MODEL)).toContain('action_caution:L')
+    expect(resolve(LEAN_MODEL, 'action_caution:L')).toContain(
+      'For actions that are hard to reverse or outward-facing, confirm first',
+    )
+
+    expect(sectionNames(VERBOSE_MODEL)).toContain('action_caution')
+    expect(resolve(VERBOSE_MODEL, 'action_caution')).toBeNull()
+  })
+
+  // Upstream emits it as a dynamic section immediately after the pronoun
+  // guidance, not as part of the static head — its wording is model-dependent,
+  // so baking it into the cached prefix would serve one model's text to another.
+  test('action caution sits where upstream puts it', () => {
+    const names = sectionNames(LEAN_MODEL)
+    expect(names.indexOf('action_caution:L')).toBe(
+      names.indexOf('pronouns') + 1,
+    )
+  })
+
   test('delivering-work and corrections ship only with the compact head', () => {
     expect(resolve(LEAN_MODEL, 'delivering_work:L')).toBe(
       DELIVERING_WORK_SECTION,
@@ -63,6 +118,19 @@ describe('sections that ship alongside the compact head', () => {
 
     expect(resolve(VERBOSE_MODEL, 'delivering_work')).toBeNull()
     expect(resolve(VERBOSE_MODEL, 'corrections')).toBeNull()
+  })
+
+  // The companion sections ride on the prompt bundle, not on the compact head.
+  // A lean model without the bundle gets the head and none of them — which is
+  // three of the four lean models upstream ships.
+  test('a lean model without the prompt bundle gets neither companion', () => {
+    expect(resolve(UNBUNDLED_LEAN_MODEL, 'delivering_work')).toBeNull()
+    expect(resolve(UNBUNDLED_LEAN_MODEL, 'corrections')).toBeNull()
+
+    // ...but it does get the longer action-caution wording.
+    expect(resolve(UNBUNDLED_LEAN_MODEL, 'action_caution:L:nb')).toContain(
+      "if what you find contradicts how it was described, or you didn't create it",
+    )
   })
 
   // resolveSystemPromptSections() memoizes on the section name alone, so a

@@ -1,7 +1,10 @@
 // @ts-nocheck
 import { prependBullets } from '../../constants/systemPromptCoreSections.js'
 import { getAttributionTexts } from '../../utils/attribution.js'
-import { shouldUseCompactSystemPrompt } from '../../constants/systemPromptCompact.js'
+import {
+  hasOpus5PromptBundle,
+  shouldUseCompactSystemPrompt,
+} from '../../constants/systemPromptCompact.js'
 import { hasEmbeddedSearchTools } from '../../utils/embeddedTools.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { shouldIncludeGitInstructions } from '../../utils/gitSettings.js'
@@ -323,8 +326,11 @@ function getLeanCommitAndPRInstructions(): string {
  * The sandbox section is shared with the verbose prompt. Upstream does not
  * split it either: it states the permission boundary rather than giving advice,
  * so rewording it would change what the agent believes it may do.
+ *
+ * The output-visibility bullet rides on the prompt bundle rather than on the
+ * lean prompt, the same as the compact head's companion sections.
  */
-function getLeanPrompt(): string {
+function getLeanPrompt(model?: string): string {
   const avoidCommands = hasEmbeddedSearchTools()
     ? '`cat`, `head`, `tail`, `sed`, `awk`, or `echo`'
     : '`find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo`'
@@ -336,7 +342,9 @@ function getLeanPrompt(): string {
     '',
     "- Working directory persists between calls, but prefer absolute paths — `cd` in a compound command can trigger a permission prompt. Shell state (env vars, functions) does not persist; the shell is initialized from the user's profile.",
     `- IMPORTANT: Avoid using this tool to run ${avoidCommands} commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user.`,
-    '- Command output is displayed to you, not reliably to the user.',
+    ...(hasOpus5PromptBundle(model)
+      ? ['- Command output is displayed to you, not reliably to the user.']
+      : []),
     `- \`timeout\` is in milliseconds: default ${getDefaultTimeoutMs()}, max ${getMaxTimeoutMs()}.`,
     ...(getBackgroundUsageNote() !== null
       ? [
@@ -350,7 +358,7 @@ function getLeanPrompt(): string {
 
 export function getSimplePrompt(model?: string): string {
   if (shouldUseCompactSystemPrompt(model)) {
-    return getLeanPrompt()
+    return getLeanPrompt(model)
   }
   // Ant-native builds alias find/grep to embedded bfs/ugrep in Claude's shell,
   // so we don't steer away from them (and Glob/Grep tools are removed).

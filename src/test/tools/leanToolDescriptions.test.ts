@@ -10,6 +10,7 @@ import { getWriteToolDescription } from '../../tools/FileWriteTool/prompt.js'
 import { getEditToolDescription } from '../../tools/FileEditTool/prompt.js'
 import { getWebSearchPrompt } from '../../tools/WebSearchTool/prompt.js'
 import { getTodoWritePrompt } from '../../tools/TodoWriteTool/prompt.js'
+import { getPrompt as agentPrompt } from '../../tools/AgentTool/prompt.js'
 import {
   LINE_FORMAT_INSTRUCTION,
   OFFSET_INSTRUCTION_TARGETED,
@@ -68,5 +69,27 @@ describe('lean tool descriptions', () => {
         LEAN_MODEL,
       ),
     ).toContain('absolute path')
+  })
+})
+
+describe('Agent lean description', () => {
+  // Upstream builds a "## When not to use" block into a local and then never
+  // interpolates it into either return, so no real build emits it. The section
+  // it does emit is "## When to use".
+  test('carries upstream\'s When-to-use section, not the dead one', async () => {
+    const lean = await agentPrompt([], false, undefined, LEAN_MODEL)
+
+    expect(lean).toContain('## When to use\nReach for this when the task matches an available agent type')
+    expect(lean).toContain(
+      "For a single-fact lookup where you already know the file, symbol, or value, search directly. Once you've delegated a search, don't also run it yourself — wait for the result.",
+    )
+    expect(lean).not.toContain('## When not to use')
+  })
+
+  test('falls back to the full description without a model', async () => {
+    const full = await agentPrompt([], false, undefined, FULL_MODEL)
+    expect(await agentPrompt([], false, undefined, undefined)).toBe(full)
+    expect((await agentPrompt([], false, undefined, LEAN_MODEL)).length)
+      .toBeLessThan(full.length)
   })
 })

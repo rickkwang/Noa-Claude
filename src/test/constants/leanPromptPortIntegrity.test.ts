@@ -21,9 +21,21 @@ import { LEAN_DESCRIPTION as WEB_FETCH_LEAN_DESCRIPTION } from '../../tools/WebF
 import { getSimplePrompt as getBashPrompt } from '../../tools/BashTool/prompt.js'
 import { getWebSearchPrompt } from '../../tools/WebSearchTool/prompt.js'
 import { getAskUserQuestionPrompt } from '../../tools/AskUserQuestionTool/prompt.js'
-import { getCompactHeadSection } from '../../constants/systemPromptCompact.js'
+import {
+  getActionCautionSection,
+  getAntiVerbositySection,
+  getCompactHeadSection,
+  MATCH_SURROUNDING_CODE_SECTION,
+} from '../../constants/systemPromptCompact.js'
 
 const LEAN_MODEL = 'claude-opus-5'
+
+/**
+ * Lean-trained, but without the prompt bundle — upstream declares
+ * `opus_5_prompt_bundle` for Opus 5 alone, so Fable 5 takes the other branch of
+ * every gate that reads it.
+ */
+const UNBUNDLED_MODEL = 'claude-fable-5'
 
 /**
  * These strings are verbatim ports from the upstream Claude Code binary
@@ -41,6 +53,8 @@ const PORTED_DIGESTS: Record<string, string> = {
   PRONOUNS_SECTION: '3fcd2b200896a716',
   ACT_DONT_REDERIVE_SECTION: '4e4e48fb23ceb764',
   CONTEXT_MANAGEMENT_SECTION: '9856a95edb9c2bdb',
+  MATCH_SURROUNDING_CODE_SECTION: 'ee43af37398581e9',
+  'anti_verbosity fable branch': '7a9e35eca21ac1c8',
   DELIVERING_WORK_SECTION: '7e908e68a04f6843',
   CORRECTIONS_SECTION: '4593459b100aad5e',
   'WebFetch.LEAN_DESCRIPTION': '7db6b3cae057d3c9',
@@ -60,6 +74,10 @@ describe('ported lean prompt text is not edited by accident', () => {
     PRONOUNS_SECTION,
     ACT_DONT_REDERIVE_SECTION,
     CONTEXT_MANAGEMENT_SECTION,
+    MATCH_SURROUNDING_CODE_SECTION,
+    'anti_verbosity fable branch': getAntiVerbositySection(
+      UNBUNDLED_MODEL,
+    ) as string,
     DELIVERING_WORK_SECTION,
     CORRECTIONS_SECTION,
     'WebFetch.LEAN_DESCRIPTION': WEB_FETCH_LEAN_DESCRIPTION,
@@ -145,16 +163,39 @@ describe('ported lean text inside interpolated descriptions', () => {
     expect(head).toContain(
       '# Harness\n - Text you output outside of tool use is displayed to the user as Github-flavored markdown in a terminal.',
     )
+    // Upstream separates these with blank lines. The Noa identity sentence
+    // ahead of them is this fork's one addition to the block.
+    expect(head).toStartWith('\nYou are Noa Claude,')
+    expect(head).toContain(
+      'You are an interactive agent that helps users with software engineering tasks.\n\nIMPORTANT: Assist with authorized security testing',
+    )
+    expect(head).toContain('defensive use cases.\n\n# Harness')
     expect(head).toContain(
       "- Tools run behind a user-selected permission mode; a denied call means the user declined it — adjust, don't retry verbatim.",
     )
-    // Upstream's lean Harness block ends here. Anything appended below this
-    // line is a local addition and needs the same provenance check as the rest.
-    expect(head).toContain(
+    // Upstream's lean head ends with this bullet. Anything appended past it is
+    // a local addition and needs the same provenance check as the rest.
+    expect(head).toEndWith(
       " - Reference code as `file_path:line_number` — it's clickable.",
     )
-    expect(head).toEndWith(
+  })
+
+  test('action caution keeps its upstream sentences in both bundle states', () => {
+    const withBundle = getActionCautionSection(LEAN_MODEL)
+    expect(withBundle).toStartWith(
+      'For actions that are hard to reverse or outward-facing, confirm first unless durably authorized or explicitly told to proceed without asking; approval in one context doesn\'t extend to the next.',
+    )
+    expect(withBundle).toContain(
+      'Sending content to an external service publishes it; it may be cached or indexed even if later deleted. Before deleting or overwriting, look at the target. Report outcomes faithfully:',
+    )
+    expect(withBundle).toEndWith(
       'when something is done and verified, state it plainly without hedging.',
+    )
+
+    // The clause upstream adds for lean models that lack the prompt bundle.
+    const withoutBundle = getActionCautionSection(UNBUNDLED_MODEL)
+    expect(withoutBundle).toContain(
+      "Before deleting or overwriting, look at the target — if what you find contradicts how it was described, or you didn't create it, surface that instead of proceeding. Report outcomes faithfully:",
     )
   })
 })

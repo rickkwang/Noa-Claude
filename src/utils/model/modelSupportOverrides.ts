@@ -16,8 +16,23 @@ export type ModelCapabilityOverride =
   | 'claude_code_beta'
   | 'structured_outputs'
   | 'lean_prompt'
+  // Upstream keeps these two apart: `lean_prompt` decides which prompt head a
+  // model gets, `opus_5_prompt_bundle` decides which of several companion
+  // sections ship with it (delivering-work, corrections, the action-caution
+  // wording, one Bash bullet). Both are declared per model, and a pinned 3P
+  // model can carry one without the other — so they must stay separate here
+  // too. See hasOpus5PromptBundle() in constants/systemPromptCompact.ts.
+  | 'opus_5_prompt_bundle'
+  // Selects the long "Communicating with the user" section over the one-line
+  // lean variant. Declared for Fable 5 upstream; Mythos 5 gets it by name.
+  // See hasFableMitigations() in constants/systemPromptCompact.ts.
+  | 'fable_5_mitigations'
 
 const TIERS = [
+  {
+    modelEnvVar: 'ANTHROPIC_DEFAULT_FABLE_MODEL',
+    capabilitiesEnvVar: 'ANTHROPIC_DEFAULT_FABLE_MODEL_SUPPORTED_CAPABILITIES',
+  },
   {
     modelEnvVar: 'ANTHROPIC_DEFAULT_OPUS_MODEL',
     capabilitiesEnvVar: 'ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES',
@@ -29,6 +44,10 @@ const TIERS = [
   {
     modelEnvVar: 'ANTHROPIC_DEFAULT_HAIKU_MODEL',
     capabilitiesEnvVar: 'ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES',
+  },
+  {
+    modelEnvVar: 'ANTHROPIC_CUSTOM_MODEL_OPTION',
+    capabilitiesEnvVar: 'ANTHROPIC_CUSTOM_MODEL_OPTION_SUPPORTED_CAPABILITIES',
   },
 ] as const
 
@@ -77,11 +96,15 @@ export const get3PModelCapabilityOverride = memoize(
       capability,
       getAPIProvider(),
       process.env.ANTHROPIC_BASE_URL ?? '',
+      process.env.ANTHROPIC_DEFAULT_FABLE_MODEL ?? '',
+      process.env.ANTHROPIC_DEFAULT_FABLE_MODEL_SUPPORTED_CAPABILITIES ?? '',
       process.env.ANTHROPIC_DEFAULT_OPUS_MODEL ?? '',
       process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES ?? '',
       process.env.ANTHROPIC_DEFAULT_SONNET_MODEL ?? '',
       process.env.ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES ?? '',
       process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL ?? '',
       process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES ?? '',
+      process.env.ANTHROPIC_CUSTOM_MODEL_OPTION ?? '',
+      process.env.ANTHROPIC_CUSTOM_MODEL_OPTION_SUPPORTED_CAPABILITIES ?? '',
     ].join(':'),
 )

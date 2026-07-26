@@ -119,9 +119,22 @@ export function getAutoToolSearchCharThreshold(model: string): number {
 
 /**
  * Get the total token count for all deferred tools using the token counting API.
- * Memoized by deferred tool names — cache is invalidated when MCP servers connect/disconnect.
+ * Memoized by deferred tool names and model — cache is invalidated when MCP
+ * servers connect/disconnect. Tool descriptions differ between compact and
+ * verbose models, so reusing one count after a model switch can select the
+ * wrong auto-deferral threshold.
  * Returns null if the API is unavailable (caller should fall back to char heuristic).
  */
+export function getDeferredToolTokenCacheKey(
+  tools: Tools,
+  model: string,
+): string {
+  return `${model}\u0000${tools
+    .filter(t => isDeferredTool(t))
+    .map(t => t.name)
+    .join(',')}`
+}
+
 const getDeferredToolTokenCount = memoize(
   async (
     tools: Tools,
@@ -145,11 +158,8 @@ const getDeferredToolTokenCount = memoize(
       return null // Fall back to char heuristic
     }
   },
-  (tools: Tools) =>
-    tools
-      .filter(t => isDeferredTool(t))
-      .map(t => t.name)
-      .join(','),
+  (tools: Tools, _getToolPermissionContext, _agents, model: string) =>
+    getDeferredToolTokenCacheKey(tools, model),
 )
 
 /**
@@ -342,6 +352,10 @@ async function calculateDeferredToolDescriptionChars(
   tools: Tools,
   getToolPermissionContext: () => Promise<ToolPermissionContext>,
   agents: AgentDefinition[],
+  // Tool descriptions are shorter under the lean prompt. Measuring without the
+  // model sizes the verbose text against a threshold that decides whether to
+  // defer at all, so a lean session would defer on a budget it never spends.
+  model?: string,
 ): Promise<number> {
   const deferredTools = tools.filter(t => isDeferredTool(t))
   if (deferredTools.length === 0) return 0
@@ -352,6 +366,7 @@ async function calculateDeferredToolDescriptionChars(
         getToolPermissionContext,
         tools,
         agents,
+        model,
       })
       const inputSchema = tool.inputJSONSchema
         ? jsonStringify(tool.inputJSONSchema)
@@ -747,6 +762,7 @@ async function checkAutoThreshold(
       tools,
       getToolPermissionContext,
       agents,
+      model,
     )
   const charThreshold = getAutoToolSearchCharThreshold(model)
   return {
