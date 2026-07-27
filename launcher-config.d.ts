@@ -1,5 +1,6 @@
 export const PRODUCT_NAMESPACE: string
 export const PRODUCT_NAME: string
+export const PRODUCT_DIR_BASENAME: string
 export const DEFAULT_PRODUCT_DIR: string
 export const DEFAULT_CONFIG_DIR: string
 export const DEFAULT_CACHE_DIR: string
@@ -29,5 +30,7 @@ export function validateLauncherConfiguration(
 ): void
 
 export function applyLauncherDefaults(): void
+
+export function getLauncherEnvBootstrapCode(): string
 
 export function getLauncherBootstrapCode(): string

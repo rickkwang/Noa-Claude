@@ -211,29 +211,52 @@ export function applyLauncherDefaults() {
   }
 }
 
-export function getLauncherBootstrapCode() {
-  // Paths are resolved when the bundle RUNS, not when it is built. Baking
-  // ${JSON.stringify(DEFAULT_PRODUCT_DIR)}-style absolutes into dist/main.js
-  // pinned every copy of the artifact to the build machine's home directory.
-  // ??= throughout so an explicit env from the caller wins.
+/**
+ * The env-resolution half of the bundle bootstrap, exported on its own so it
+ * can be executed and asserted on (src/test/launcherConfig.test.ts). Keeping it
+ * inside getLauncherBootstrapCode() left it untestable — the surrounding block
+ * calls main() — and a broken precedence rule here passed the entire suite.
+ *
+ * Self-contained: it resolves the home directory through os.homedir() at run
+ * time. Reading HOME/USERPROFILE directly is not equivalent — os.homedir()
+ * falls back to the passwd entry, so it still answers when HOME is unset,
+ * where the env-only form produced a relative `.noa` and scattered config into
+ * whatever directory the process happened to start in.
+ */
+export function getLauncherEnvBootstrapCode() {
   return `
-if (import.meta.main) {
-  const productHome = process.env.HOME ?? process.env.USERPROFILE ?? '';
-  const pathSep = process.platform === 'win32' ? '\\\\' : '/';
-  const productDir = productHome
-    ? productHome + pathSep + ${JSON.stringify(PRODUCT_DIR_BASENAME)}
-    : ${JSON.stringify(PRODUCT_DIR_BASENAME)};
+  const { homedir } = await import('node:os');
+  const { join } = await import('node:path');
   const explicitProductDir = process.env.CLAUDE_CODE_PRODUCT_DIR;
+  const explicitConfigDir = process.env.CLAUDE_CONFIG_DIR;
+  const home = homedir();
+  const defaultProductDir = home ? join(home, ${JSON.stringify(PRODUCT_DIR_BASENAME)}) : null;
+  // Same precedence as DEFAULT_CONFIG_DIR in launcher-config.js, so running the
+  // bundle directly and running it through bin/noa.js resolve alike.
+  const configDir = explicitProductDir ?? explicitConfigDir ?? defaultProductDir;
+  if (!configDir) {
+    console.error(
+      '[CONFIG_ERROR] Cannot resolve a home directory. Set CLAUDE_CONFIG_DIR or CLAUDE_CODE_PRODUCT_DIR.',
+    );
+    process.exit(1);
+  }
   process.env.CLAUDE_CODE_PRODUCT_NAMESPACE ??= ${JSON.stringify(PRODUCT_NAMESPACE)};
   process.env.CLAUDE_CODE_PRODUCT_NAME ??= ${JSON.stringify(PRODUCT_NAME)};
-  process.env.CLAUDE_CODE_PRODUCT_DIR ??= productDir;
-  // Same precedence as DEFAULT_CONFIG_DIR in launcher-config.js, so running
-  // the bundle directly and running it through bin/noa.js resolve alike.
-  process.env.CLAUDE_CONFIG_DIR =
-    explicitProductDir ?? process.env.CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CODE_PRODUCT_DIR;
-  process.env.CLAUDE_CODE_CACHE_DIR ??= process.env.CLAUDE_CODE_PRODUCT_DIR + pathSep + 'cache';
+  process.env.CLAUDE_CODE_PRODUCT_DIR ??= defaultProductDir ?? configDir;
+  process.env.CLAUDE_CONFIG_DIR = configDir;
+  process.env.CLAUDE_CODE_CACHE_DIR ??= join(process.env.CLAUDE_CODE_PRODUCT_DIR, 'cache');
   process.env.CLAUDE_AGENT_ENABLE_OFFICIAL_MARKETPLACE ??= '1';
   process.env.CLAUDE_AGENT_ENABLE_OFFICIAL_MARKETPLACE_GCS ??= '1';
+`;
+}
+
+export function getLauncherBootstrapCode() {
+  // Paths are resolved when the bundle RUNS, not when it is built: baking
+  // absolutes into dist/main.js pinned every copy of the artifact to the build
+  // machine's home directory.
+  return `
+if (import.meta.main) {
+${getLauncherEnvBootstrapCode()}
   globalThis.MACRO = ${JSON.stringify(LAUNCHER_MACRO, null, 2)};
   main().catch(e => {
     console.error('Fatal error:', e);
