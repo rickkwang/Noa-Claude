@@ -71,9 +71,12 @@ const OFFICIAL_2_1_220_PROMPT_CAPABILITIES = {
   },
   // Mythos 5's manifest row upstream is `capabilities:[]` — empty. Both
   // `true`s here come from upstream's by-name short-circuits, not a manifest
-  // declaration: `oug(e)` (the lean gate) has `t==="claude-mythos-5"` ORed in
-  // alongside its `LN(t,"lean_prompt")` check, and `W1e(e)` (the fable gate)
-  // has the same `||e==="claude-mythos-5"` alongside `LN(e,"fable_5_mitigations")`.
+  // declaration: `oug(e)` has `t==="claude-mythos-5"` ORed in alongside its
+  // `LN(t,"lean_prompt")` check, and `W1e(e)` (the fable-mitigations gate) has
+  // the same `||e==="claude-mythos-5"` alongside `LN(e,"fable_5_mitigations")`.
+  // Note the polarity of `oug`: it answers "needs the verbose prompt", so it
+  // returns `!1` for both of those, and its caller uses `if(!oug(e))return!0`
+  // to select the compact head. Reading it as a "lean gate" inverts it.
   // Don't "fix" this to `false` by re-checking the manifest row alone.
   'claude-mythos-5': {
     leanPrompt: true,

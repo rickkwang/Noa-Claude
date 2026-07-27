@@ -70,8 +70,9 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
   },
   // Mythos 5's manifest row upstream is `capabilities:[]` — empty. Both
   // `true`s here come from upstream's by-name short-circuits, not a manifest
-  // declaration: the lean gate ORs in `model === "claude-mythos-5"` alongside
-  // its `lean_prompt` capability check, and the fable gate does the same
+  // declaration: the verbose-prompt predicate ORs in
+  // `model === "claude-mythos-5"` alongside its `lean_prompt` capability check
+  // and returns false for both, and the fable-mitigations gate does the same
   // alongside `fable_5_mitigations`. Don't "fix" this to `false` by
   // re-checking the manifest row alone.
   'claude-mythos-5': {
