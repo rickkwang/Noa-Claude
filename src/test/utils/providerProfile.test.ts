@@ -111,7 +111,11 @@ describe('provider profile credentials', () => {
         encoding: 'utf8',
       })
 
-      expect(result.stderr).toBe('')
+      // Surface stderr as the failure message rather than asserting it is
+      // empty: the subprocess signals failure by throwing, which is already a
+      // non-zero status, so an empty-stderr assertion adds no signal and
+      // breaks the moment bun writes an unrelated warning.
+      if (result.status !== 0) throw new Error(result.stderr)
       expect(result.status).toBe(0)
     } finally {
       rmSync(configDir, { recursive: true, force: true })
@@ -190,7 +194,11 @@ describe('provider profile credentials', () => {
         encoding: 'utf8',
       })
 
-      expect(result.stderr).toBe('')
+      // Surface stderr as the failure message rather than asserting it is
+      // empty: the subprocess signals failure by throwing, which is already a
+      // non-zero status, so an empty-stderr assertion adds no signal and
+      // breaks the moment bun writes an unrelated warning.
+      if (result.status !== 0) throw new Error(result.stderr)
       expect(result.status).toBe(0)
     } finally {
       rmSync(configDir, { recursive: true, force: true })

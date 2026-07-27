@@ -31,7 +31,10 @@ function run(script: string): void {
     cwd: process.cwd(),
     encoding: 'utf8',
   })
-  expect(result.stderr).toBe('')
+  // stderr is the failure message, not an assertion: the script signals
+  // failure by throwing (non-zero status), and asserting it is empty breaks on
+  // any unrelated warning bun decides to print.
+  if (result.status !== 0) throw new Error(result.stderr)
   expect(result.status).toBe(0)
 }
 
