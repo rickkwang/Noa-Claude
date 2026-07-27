@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { getAllModelBetas } from '../../utils/betas.js'
 import {
   getClassifierProbeState,
@@ -15,10 +15,18 @@ import { getToolSchemaCache } from '../../utils/toolSchemaCache.js'
 const ENV_KEYS = [
   'ANTHROPIC_API_KEY',
   'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL',
   'CLAUDE_CODE_USE_BEDROCK',
 ] as const
 
 const original = Object.fromEntries(ENV_KEYS.map(k => [k, process.env[k]]))
+
+beforeEach(() => {
+  // getDefaultSonnetModel() prefers ANTHROPIC_DEFAULT_SONNET_MODEL over the
+  // built-in default — an ambient value (e.g. from an active provider
+  // profile) would replace the 'claude-sonnet-5' these tests assert.
+  delete process.env.ANTHROPIC_DEFAULT_SONNET_MODEL
+})
 
 afterEach(() => {
   for (const k of ENV_KEYS) {

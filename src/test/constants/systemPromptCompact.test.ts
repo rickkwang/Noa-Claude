@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
 // Rendering Bash's git block resolves commit attribution, which walks through
 // model defaults into auth. Tests here are self-contained (no preload).
@@ -33,6 +33,26 @@ const ENV_KEYS = [
 ] as const
 
 const original = Object.fromEntries(ENV_KEYS.map(k => [k, process.env[k]]))
+
+// ENV_KEYS is save/restore only — ambient values are still live DURING each
+// test. The gate judges provider identity from env, and an ambient
+// ANTHROPIC_BASE_URL (e.g. from an active provider profile) flips tests that
+// don't set it to the third-party branch. Clear the judging keys up front;
+// tests that drive them set them explicitly.
+const JUDGING_KEYS = [
+  'NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT',
+  'NOA_CLAUDE_THIRD_PARTY_PROMPT_POLICY',
+  'CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT',
+  'CLAUDE_CODE_USE_OPENAI',
+  'CLAUDE_CODE_USE_FOUNDRY',
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+  'ANTHROPIC_BASE_URL',
+] as const
+
+beforeEach(() => {
+  for (const k of JUDGING_KEYS) delete process.env[k]
+})
 
 // Extracted from the local official Claude Code 2.1.220 binary
 // (sha256: 8addc857f3fe64d5a0368af9ee50321b50afb4a6918ba3ef018ab84f5dbbe081).

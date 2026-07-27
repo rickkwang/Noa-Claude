@@ -1,9 +1,37 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
 // Bash's git block resolves commit attribution, which walks through model
 // defaults into auth. Tests here are self-contained (no preload), so seed a
 // key first.
 process.env.ANTHROPIC_API_KEY ??= 'sk-ant-test'
+
+// The lean/verbose gate judges provider identity from env
+// (isUntrustedModelIdentity): an ambient ANTHROPIC_BASE_URL or
+// CLAUDE_CODE_USE_* from the dev shell flips every assertion here to the
+// verbose branch. Scrub before each test, restore after.
+const PROVIDER_ENV_KEYS = [
+  'ANTHROPIC_BASE_URL',
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+  'CLAUDE_CODE_USE_FOUNDRY',
+  'CLAUDE_CODE_USE_OPENAI',
+  'NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT',
+  'CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT',
+  'NOA_CLAUDE_THIRD_PARTY_PROMPT_POLICY',
+] as const
+const originalProviderEnv = Object.fromEntries(
+  PROVIDER_ENV_KEYS.map(k => [k, process.env[k]]),
+)
+beforeEach(() => {
+  for (const k of PROVIDER_ENV_KEYS) delete process.env[k]
+})
+afterEach(() => {
+  for (const k of PROVIDER_ENV_KEYS) {
+    const value = originalProviderEnv[k]
+    if (value === undefined) delete process.env[k]
+    else process.env[k] = value
+  }
+})
 
 import {
   ACT_DONT_REDERIVE_SECTION,
@@ -70,7 +98,10 @@ function digest(text: string): string {
 }
 
 describe('ported lean prompt text is not edited by accident', () => {
-  const subjects: Record<string, string> = {
+  // Built lazily inside each test: the tool descriptions resolve through the
+  // lean/verbose gate, and describe callbacks run before beforeEach, so a
+  // module-scope construction would judge provider identity on ambient env.
+  const buildSubjects = (): Record<string, string> => ({
     PRONOUNS_SECTION,
     ACT_DONT_REDERIVE_SECTION,
     CONTEXT_MANAGEMENT_SECTION,
@@ -86,17 +117,18 @@ describe('ported lean prompt text is not edited by accident', () => {
     'Grep lean': getGrepDescription(LEAN_MODEL),
     'Write lean': getWriteToolDescription(LEAN_MODEL),
     'Edit lean': getEditToolDescription(LEAN_MODEL),
-  }
+  })
 
   for (const [name, expected] of Object.entries(PORTED_DIGESTS)) {
     test(`${name} matches its upstream port`, () => {
+      const subjects = buildSubjects()
       expect(subjects[name]).toBeDefined()
       expect(digest(subjects[name] as string)).toBe(expected)
     })
   }
 
   test('every pinned digest has a subject and vice versa', () => {
-    expect(Object.keys(subjects).sort()).toEqual(
+    expect(Object.keys(buildSubjects()).sort()).toEqual(
       Object.keys(PORTED_DIGESTS).sort(),
     )
   })

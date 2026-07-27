@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
   getMainLoopModelOverride,
   setMainLoopModelOverride,
@@ -9,11 +9,23 @@ import { getDefaultTeammateModelFallback } from '../../utils/swarm/teammateModel
 const ENV_KEYS = [
   'ANTHROPIC_BASE_URL',
   'ANTHROPIC_DEFAULT_OPUS_MODEL',
+  'ANTHROPIC_MODEL',
   'CLAUDE_CODE_USE_BEDROCK',
   'CLAUDE_CODE_USE_OPENAI',
 ] as const
 const original = Object.fromEntries(ENV_KEYS.map(key => [key, process.env[key]]))
 const originalMainLoopModel = getMainLoopModelOverride()
+
+beforeEach(() => {
+  // No test drives ANTHROPIC_MODEL, but getMainLoopModel() prefers it over
+  // the main-loop override — an ambient value (e.g. from an active provider
+  // profile) would silently win instead of the override the tests set.
+  delete process.env.ANTHROPIC_MODEL
+  // Same for ANTHROPIC_DEFAULT_OPUS_MODEL: getDefaultTeammateModelFallback
+  // checks it before any provider branch. Tests that drive it set it
+  // explicitly below.
+  delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL
+})
 
 afterEach(() => {
   setMainLoopModelOverride(originalMainLoopModel)
