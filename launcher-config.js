@@ -25,13 +25,27 @@ export const PRODUCT_NAMESPACE =
 export const PRODUCT_NAME =
   process.env.CLAUDE_CODE_PRODUCT_NAME ?? 'Noa Claude';
 
-export const DEFAULT_PRODUCT_DIR =
-  process.env.CLAUDE_CODE_PRODUCT_DIR ?? join(homedir(), '.noa');
+export const PRODUCT_DIR_BASENAME = '.noa';
 
-export const DEFAULT_CONFIG_DIR = DEFAULT_PRODUCT_DIR;
+export const DEFAULT_PRODUCT_DIR =
+  process.env.CLAUDE_CODE_PRODUCT_DIR ?? join(homedir(), PRODUCT_DIR_BASENAME);
+
+// Precedence: an explicit CLAUDE_CODE_PRODUCT_DIR (this fork's "put the whole
+// product here" knob, used to isolate child processes) beats CLAUDE_CONFIG_DIR,
+// which beats the default. CLAUDE_CONFIG_DIR is honoured at all because
+// getClaudeConfigHomeDir() (src/utils/envUtils.ts) honours it: the launcher
+// used to overwrite the caller's value with the product dir, so
+// `CLAUDE_CONFIG_DIR=/tmp/x noa ...` silently kept reading ~/.noa. It is
+// checked second because applyLauncherDefaults() exports CLAUDE_CONFIG_DIR
+// into the environment, so a child process inherits one it never asked for —
+// only PRODUCT_DIR can be trusted as deliberate isolation there.
+export const DEFAULT_CONFIG_DIR =
+  process.env.CLAUDE_CODE_PRODUCT_DIR ??
+  process.env.CLAUDE_CONFIG_DIR ??
+  DEFAULT_PRODUCT_DIR;
 
 export const DEFAULT_CACHE_DIR =
-  join(DEFAULT_PRODUCT_DIR, 'cache');
+  process.env.CLAUDE_CODE_CACHE_DIR ?? join(DEFAULT_PRODUCT_DIR, 'cache');
 
 export const PRODUCT_SETTINGS_PATH = join(DEFAULT_CONFIG_DIR, 'settings.json');
 export const DEFAULT_MINIMAX_CN_BASE_URL =
@@ -198,13 +212,26 @@ export function applyLauncherDefaults() {
 }
 
 export function getLauncherBootstrapCode() {
+  // Paths are resolved when the bundle RUNS, not when it is built. Baking
+  // ${JSON.stringify(DEFAULT_PRODUCT_DIR)}-style absolutes into dist/main.js
+  // pinned every copy of the artifact to the build machine's home directory.
+  // ??= throughout so an explicit env from the caller wins.
   return `
 if (import.meta.main) {
-  process.env.CLAUDE_CODE_PRODUCT_NAMESPACE = ${JSON.stringify(PRODUCT_NAMESPACE)};
-  process.env.CLAUDE_CODE_PRODUCT_NAME = ${JSON.stringify(PRODUCT_NAME)};
-  process.env.CLAUDE_CODE_PRODUCT_DIR = ${JSON.stringify(DEFAULT_PRODUCT_DIR)};
-  process.env.CLAUDE_CONFIG_DIR = ${JSON.stringify(DEFAULT_CONFIG_DIR)};
-  process.env.CLAUDE_CODE_CACHE_DIR = ${JSON.stringify(DEFAULT_CACHE_DIR)};
+  const productHome = process.env.HOME ?? process.env.USERPROFILE ?? '';
+  const pathSep = process.platform === 'win32' ? '\\\\' : '/';
+  const productDir = productHome
+    ? productHome + pathSep + ${JSON.stringify(PRODUCT_DIR_BASENAME)}
+    : ${JSON.stringify(PRODUCT_DIR_BASENAME)};
+  const explicitProductDir = process.env.CLAUDE_CODE_PRODUCT_DIR;
+  process.env.CLAUDE_CODE_PRODUCT_NAMESPACE ??= ${JSON.stringify(PRODUCT_NAMESPACE)};
+  process.env.CLAUDE_CODE_PRODUCT_NAME ??= ${JSON.stringify(PRODUCT_NAME)};
+  process.env.CLAUDE_CODE_PRODUCT_DIR ??= productDir;
+  // Same precedence as DEFAULT_CONFIG_DIR in launcher-config.js, so running
+  // the bundle directly and running it through bin/noa.js resolve alike.
+  process.env.CLAUDE_CONFIG_DIR =
+    explicitProductDir ?? process.env.CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CODE_PRODUCT_DIR;
+  process.env.CLAUDE_CODE_CACHE_DIR ??= process.env.CLAUDE_CODE_PRODUCT_DIR + pathSep + 'cache';
   process.env.CLAUDE_AGENT_ENABLE_OFFICIAL_MARKETPLACE ??= '1';
   process.env.CLAUDE_AGENT_ENABLE_OFFICIAL_MARKETPLACE_GCS ??= '1';
   globalThis.MACRO = ${JSON.stringify(LAUNCHER_MACRO, null, 2)};
