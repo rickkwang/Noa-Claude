@@ -6,6 +6,7 @@ import { Dialog } from '../../components/design-system/Dialog.js';
 import { Text } from '../../ink.js';
 import type { LocalJSXCommandCall, LocalJSXCommandContext } from '../../types/command.js';
 import { isUsing3PServices } from '../../utils/auth.js';
+import { isBareMode } from '../../utils/envUtils.js';
 import {
   applyActiveProviderProfileEnv,
   loadProviderProfiles,
@@ -65,9 +66,28 @@ function ProviderPicker({
       }
 
       setActiveProviderProfile(profileId)
-        .then(() => applyActiveProviderProfileEnv())
+        .then((activated) => {
+          // setActiveProviderProfile resolves to null (it does not throw) when
+          // the id is gone from disk — the picker list is a snapshot taken at
+          // mount. Falling through would leave the previously active profile
+          // in place, re-apply it, and still report the selected one as
+          // switched. Throw so the .catch below reports the failure.
+          if (!activated) {
+            throw new Error(`provider profile ${profile.name} no longer exists`);
+          }
+          return applyActiveProviderProfileEnv();
+        })
         .then(() => {
-          onProviderSwitch(context);
+          // --bare: the apply above is a no-op by design — credentials didn't
+          // change, so skip the post-switch cascade and say the switch lands
+          // next session. Judge by isBareMode(), not the apply's return
+          // value: null also means "no active profile", which says nothing
+          // about bare.
+          const bare = isBareMode();
+          const text = bare
+            ? `Saved provider ${profile.name}; not applied under --bare (takes effect next session)`
+            : `Switched to provider ${profile.name}`;
+          if (!bare) onProviderSwitch(context);
           // display: 'skip' keeps the success string out of the model
           // context — normalizeMessagesForAPI (utils/messages.ts:2080)
           // wraps SystemLocalCommandMessage as a user message and ships
@@ -77,10 +97,10 @@ function ProviderPicker({
           // non-REPL callers (print/SDK) where no notifier is wired.
           context.addNotification?.({
             key: `provider-switch-${profileId}`,
-            text: `Switched to provider ${profile.name}`,
+            text,
             priority: 'medium',
           });
-          onDone(`Switched to provider ${profile.name}`, { display: 'skip' });
+          onDone(text, { display: 'skip' });
         })
         .catch((err) => {
           onDone(`Failed to switch provider: ${err.message}`, { display: 'system' });

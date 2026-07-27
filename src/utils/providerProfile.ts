@@ -3,7 +3,7 @@ import { join } from 'path'
 import { randomUUID } from 'crypto'
 import { saveGlobalConfig } from './config.js'
 import { normalizeApiKeyForConfig } from './authPortable.js'
-import { getClaudeConfigHomeDir } from './envUtils.js'
+import { getClaudeConfigHomeDir, isBareMode } from './envUtils.js'
 import { updateSettingsForSource } from './settings/settings.js'
 
 export type ProviderType =
@@ -249,6 +249,12 @@ export async function setActiveProviderProfile(
 }
 
 export async function applyActiveProviderProfileEnv(): Promise<ProviderProfile | null> {
+  // --bare is intentionally hermetic: the caller's provider env is the entire
+  // auth/routing contract. Do not read, apply, or persist a saved profile here,
+  // since doing so would erase an explicitly supplied API key before the
+  // request client is created.
+  if (isBareMode()) return null
+
   const profiles = await loadProviderProfiles()
   const active = getActiveProviderProfile(profiles)
   const providerEnvKeys = [

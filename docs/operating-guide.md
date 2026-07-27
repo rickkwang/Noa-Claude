@@ -1,6 +1,6 @@
 # Operating Guide
 
-Last updated: 2026-04-13
+Last updated: 2026-07-27
 
 This document merges the runtime, session, worktree, agent, and progress-artifact notes into one operational guide.
 
@@ -16,6 +16,12 @@ Runtime behavior switches are driven by environment variables:
 - `NOA_CLAUDE_STREAMING_TOOL_EXECUTION=1` opts in to streaming tool execution (tools start while the model response is still streaming). Experimental and off by default — the streaming path is not yet validated in this build.
 
 Fork subagents are intentionally unavailable in this build. `/fork` remains a conversation-branch command, not an implicit subagent launcher.
+
+### `--bare` and Provider Profiles
+
+Provider profiles (`~/.noa/provider-profiles.json`) are a Noa-only feature with no upstream counterpart — do not "align" it away during upstream parity work.
+
+Under `--bare` / `CLAUDE_CODE_SIMPLE=1`, `applyActiveProviderProfileEnv()` is a no-op: the caller's `ANTHROPIC_*` env is the entire auth/routing contract. The gate also covers the no-active-profile case, which would otherwise delete the caller's env keys before the request client is created. `/provider` and the `/login` provider-setup wizard in a bare session still write the selection to disk, but report that it takes effect next session. A caller-supplied `ANTHROPIC_AUTH_TOKEN` counts as auth under `--bare` (3P Bearer providers), so `auth status` reports it rather than "logged out".
 
 ### `/status`
 

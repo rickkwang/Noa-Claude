@@ -28,6 +28,9 @@ export async function call(onDone: LocalJSXCommandOnDone, context: LocalJSXComma
       // Standard OAuth login: deactivate any active 3P provider profile so the
       // new OAuth token takes effect. applyActiveProviderProfileEnv with no
       // active profile clears ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN etc.
+      // Under --bare the apply is a no-op by design: the caller's env stays
+      // authoritative this session and the new token only matters once a
+      // non-bare session picks it up.
       await deactivateAllProviderProfiles()
       await applyActiveProviderProfileEnv()
     }

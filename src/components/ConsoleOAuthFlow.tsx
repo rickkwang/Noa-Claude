@@ -11,6 +11,7 @@ import { getSSLErrorHint } from '../services/api/errorUtils.js';
 import { sendNotification } from '../services/notifier.js';
 import { OAuthService } from '../services/oauth/index.js';
 import { getOauthAccountInfo, validateForceLoginOrg } from '../utils/auth.js';
+import { isBareMode } from '../utils/envUtils.js';
 import { logError } from '../utils/log.js';
 import { discoverProviderModelNames } from '../utils/model/openaiModelDiscovery.js';
 import { renderModelName } from '../utils/model/model.js';
@@ -400,7 +401,11 @@ function ProviderSetupWizard({
       model: nextModel,
       apiKey: (nextApiKey ?? apiKey) || undefined
     }).then(result => {
-      onComplete(`✓ ${result.presetName} preset is active. Active profile: ${result.profileName}.`);
+      // Under --bare the apply above is a no-op by design — the profile is
+      // persisted but the caller's env stays authoritative this session.
+      onComplete(isBareMode()
+        ? `✓ ${result.presetName} preset saved. Not applied under --bare; takes effect next session. Active profile: ${result.profileName}.`
+        : `✓ ${result.presetName} preset is active. Active profile: ${result.profileName}.`);
     }).catch(err => {
       const message = err instanceof Error ? err.message : String(err);
       onError(`Provider setup failed: ${message}`);
