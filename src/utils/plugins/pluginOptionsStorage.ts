@@ -154,12 +154,6 @@ export function savePluginOptions(
   // settings.json AFTER secureStorage — scrub sensitive keys via explicit
   // undefined (mergeWith deletion pattern).
   //
-  // TODO: getSettings_DEPRECATED returns MERGED settings across all scopes.
-  // Mutating that and writing to userSettings can leak project-scope
-  // pluginConfigs into ~/.noa/settings.json. Same pattern exists in
-  // saveMcpServerUserConfig. Safe today since pluginConfigs is only ever
-  // written here (user-scope), but will bite if we add project-scoped
-  // plugin options.
   const settings = getSettings_DEPRECATED()
   const existingInSettings = settings.pluginConfigs?.[pluginId]?.options ?? {}
   const keysToScrubFromSettings = Object.keys(existingInSettings).filter(k =>
@@ -169,20 +163,19 @@ export function savePluginOptions(
     Object.keys(nonSensitive).length > 0 ||
     keysToScrubFromSettings.length > 0
   ) {
-    if (!settings.pluginConfigs) {
-      settings.pluginConfigs = {}
-    }
-    if (!settings.pluginConfigs[pluginId]) {
-      settings.pluginConfigs[pluginId] = {}
-    }
     const scrubbed = Object.fromEntries(
       keysToScrubFromSettings.map(k => [k, undefined]),
     ) as Record<string, undefined>
-    settings.pluginConfigs[pluginId].options = {
-      ...nonSensitive,
-      ...scrubbed,
-    } as PluginOptionValues
-    const result = updateSettingsForSource('userSettings', settings)
+    const result = updateSettingsForSource('userSettings', {
+      pluginConfigs: {
+        [pluginId]: {
+          options: {
+            ...nonSensitive,
+            ...scrubbed,
+          } as PluginOptionValues,
+        },
+      },
+    })
     if (result.error) {
       logError(result.error)
       throw new Error(

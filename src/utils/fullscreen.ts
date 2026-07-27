@@ -129,16 +129,21 @@ export function getFullscreenMode(): FullscreenMode {
   if (isEnvDefinedFalsy(noFlickerEnv)) return 'default'
   if (isEnvTruthy(noFlickerEnv)) return 'fullscreen'
 
-  // Settings tuiMode is persistent user preference — next priority
+  // `tui` is the upstream Claude Code field and the canonical persisted
+  // preference. Fall back to Noa's legacy `tuiMode` for existing installs.
   const settings = getSettingsForSource('userSettings')
-  if (settings?.tuiMode === 'fullscreen') return 'fullscreen'
-  if (settings?.tuiMode === 'default') return 'default'
+  const persistedMode = settings?.tui ?? settings?.tuiMode
+  if (persistedMode === 'fullscreen') return 'fullscreen'
+  if (persistedMode === 'default') return 'default'
 
   return 'auto'
 }
 
 export function setFullscreenMode(mode: 'default' | 'fullscreen'): void {
-  updateSettingsForSource('userSettings', { tuiMode: mode })
+  updateSettingsForSource('userSettings', {
+    tui: mode,
+    tuiMode: undefined,
+  })
   process.env[NO_FLICKER_ENV] = mode === 'fullscreen' ? '1' : '0'
 }
 

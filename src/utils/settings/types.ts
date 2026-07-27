@@ -334,6 +334,18 @@ export const SettingsSchema = lazySchema(() =>
       env: EnvironmentVariablesSchema()
         .optional()
         .describe('Environment variables to set for Claude Code sessions'),
+      tui: z
+        .string()
+        .optional()
+        .describe(
+          'Terminal UI renderer. Known values are "fullscreen" for the flicker-free alt-screen renderer and "default" for the classic main-screen renderer. Unknown strings are preserved for forward compatibility.',
+        ),
+      tuiMode: z
+        .enum(['default', 'fullscreen'])
+        .optional()
+        .describe(
+          'Deprecated terminal UI renderer field. Use "tui" instead.',
+        ),
       // Attribution for commits and PRs
       attribution: z
         .object({
