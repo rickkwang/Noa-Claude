@@ -36,8 +36,8 @@ const original = Object.fromEntries(ENV_KEYS.map(k => [k, process.env[k]]))
 
 // Extracted from the local official Claude Code 2.1.220 binary
 // (sha256: 8addc857f3fe64d5a0368af9ee50321b50afb4a6918ba3ef018ab84f5dbbe081).
-// These are capability facts, not a claim that Noa's product-specific prompt
-// surface is byte-for-byte identical to Claude Code.
+// These are effective capability facts, not a claim that Noa's
+// product-specific prompt surface is byte-for-byte identical to Claude Code.
 const OFFICIAL_2_1_220_PROMPT_CAPABILITIES = {
   'claude-opus-5': {
     leanPrompt: true,
@@ -49,6 +49,12 @@ const OFFICIAL_2_1_220_PROMPT_CAPABILITIES = {
     opus5PromptBundle: false,
     fable5Mitigations: true,
   },
+  // Mythos 5's manifest row upstream is `capabilities:[]` — empty. Both
+  // `true`s here come from upstream's by-name short-circuits, not a manifest
+  // declaration: `oug(e)` (the lean gate) has `t==="claude-mythos-5"` ORed in
+  // alongside its `LN(t,"lean_prompt")` check, and `W1e(e)` (the fable gate)
+  // has the same `||e==="claude-mythos-5"` alongside `LN(e,"fable_5_mitigations")`.
+  // Don't "fix" this to `false` by re-checking the manifest row alone.
   'claude-mythos-5': {
     leanPrompt: true,
     opus5PromptBundle: false,
