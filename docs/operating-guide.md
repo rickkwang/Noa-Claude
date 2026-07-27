@@ -23,6 +23,8 @@ Provider profiles (`~/.noa/provider-profiles.json`) are a Noa-only feature with 
 
 Under `--bare` / `CLAUDE_CODE_SIMPLE=1`, `applyActiveProviderProfileEnv()` is a no-op: the caller's `ANTHROPIC_*` env is the entire auth/routing contract. The gate also covers the no-active-profile case, which would otherwise delete the caller's env keys before the request client is created. `/provider` and the `/login` provider-setup wizard in a bare session still write the selection to disk, but report that it takes effect next session. A caller-supplied `ANTHROPIC_AUTH_TOKEN` counts as auth under `--bare` (3P Bearer providers), so `auth status` reports it rather than "logged out".
 
+The same contract applies to settings-sourced env: under bare, provider/auth/model vars (`ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_MODEL`, …) are stripped from `settings.json` `env`, the global config `env`, and merged settings before they reach `process.env`, so a profile persisted by `persistProviderEnvToUserSettings` cannot reroute a bare session. `--settings` (flagSettings) and managed policy stay deliberate channels and are exempt. Non-provider settings env vars still apply. This filtering is deliberate hardening beyond upstream 2.1.220, which applies settings env under bare unfiltered.
+
 ### `/status`
 
 Use `/status` to inspect current runtime state:

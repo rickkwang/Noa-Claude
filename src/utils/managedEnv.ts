@@ -2,7 +2,7 @@
 import { isRemoteManagedSettingsEligible } from '../services/remoteManagedSettings/syncCache.js'
 import { clearCACertsCache } from './caCerts.js'
 import { getGlobalConfig } from './config.js'
-import { isEnvTruthy } from './envUtils.js'
+import { isEnvTruthy, isBareMode } from './envUtils.js'
 import {
   isProviderManagedEnvVar,
   SAFE_ENV_VARS,
@@ -82,13 +82,59 @@ function withoutCcdSpawnEnvKeys(
 }
 
 /**
+ * Settings-env origins, used to decide whether the --bare strip applies.
+ * 'merged' is the fully-merged settings object (all file sources combined).
+ */
+type SettingsEnvSource =
+  | 'globalConfig'
+  | 'userSettings'
+  | 'flagSettings'
+  | 'policySettings'
+  | 'merged'
+
+/**
+ * --bare is hermetic: the caller's env is the entire auth/routing contract
+ * (see isBareMode). File-persisted config is NOT part of that contract —
+ * provider-profile env persisted to ~/.noa/settings.json
+ * (persistProviderEnvToUserSettings) would otherwise re-inject a stale
+ * ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN on every bare startup and
+ * silently reroute the session. Strip routing/auth/model vars from
+ * file-sourced env. flagSettings (--settings) and policySettings are exempt:
+ * both are deliberate per-invocation channels, the same class as the
+ * caller's own env (the bare contract explicitly allows apiKeyHelper via
+ * --settings).
+ *
+ * Deliberate hardening beyond upstream, not parity: Claude Code 2.1.220's
+ * init applies settings env under --bare with no such filter (verified
+ * against the binary — its apply/filter functions have no CLAUDE_CODE_SIMPLE
+ * gate).
+ */
+function withoutBareProviderVars(
+  env: Record<string, string> | undefined,
+  source: SettingsEnvSource,
+): Record<string, string> {
+  if (!env) return {}
+  if (!isBareMode()) return env
+  if (source === 'flagSettings' || source === 'policySettings') return env
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(env)) {
+    if (!isProviderManagedEnvVar(key)) out[key] = value
+  }
+  return out
+}
+
+/**
  * Compose the strip filters applied to every settings-sourced env object.
  */
 function filterSettingsEnv(
   env: Record<string, string> | undefined,
+  source: SettingsEnvSource,
 ): Record<string, string> {
-  return withoutCcdSpawnEnvKeys(
-    withoutHostManagedProviderVars(withoutSSHTunnelVars(env)),
+  return withoutBareProviderVars(
+    withoutCcdSpawnEnvKeys(
+      withoutHostManagedProviderVars(withoutSSHTunnelVars(env)),
+    ),
+    source,
   )
 }
 
@@ -135,7 +181,7 @@ export function applySafeConfigEnvironmentVariables(): void {
   // Global config (~/.noa/.config.json) is user-controlled. In CCD mode,
   // filterSettingsEnv strips keys that were in the spawn env snapshot so
   // the desktop host's operational vars (OTEL, etc.) are not overridden.
-  Object.assign(process.env, filterSettingsEnv(getGlobalConfig().env))
+  Object.assign(process.env, filterSettingsEnv(getGlobalConfig().env, 'globalConfig'))
 
   // Apply ALL env vars from trusted setting sources, policySettings last.
   // Gate on isSettingSourceEnabled so SDK settingSources: [] (isolation mode)
@@ -146,7 +192,7 @@ export function applySafeConfigEnvironmentVariables(): void {
     if (!isSettingSourceEnabled(source)) continue
     Object.assign(
       process.env,
-      filterSettingsEnv(getSettingsForSource(source)?.env),
+      filterSettingsEnv(getSettingsForSource(source)?.env, source),
     )
   }
 
@@ -160,7 +206,7 @@ export function applySafeConfigEnvironmentVariables(): void {
 
   Object.assign(
     process.env,
-    filterSettingsEnv(getSettingsForSource('policySettings')?.env),
+    filterSettingsEnv(getSettingsForSource('policySettings')?.env, 'policySettings'),
   )
 
   // Apply only safe env vars from the fully-merged settings (which includes
@@ -170,8 +216,9 @@ export function applySafeConfigEnvironmentVariables(): void {
   // in the safe allowlist. Only policySettings values are guaranteed to survive
   // unchanged (it has the highest merge priority in both loops) — except
   // provider-routing vars, which filterSettingsEnv strips from every source
-  // when CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST is set.
-  const settingsEnv = filterSettingsEnv(getSettings_DEPRECATED()?.env)
+  // when CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST is set, and from file-sourced
+  // env under --bare.
+  const settingsEnv = filterSettingsEnv(getSettings_DEPRECATED()?.env, 'merged')
   for (const [key, value] of Object.entries(settingsEnv)) {
     if (SAFE_ENV_VARS.has(key.toUpperCase())) {
       process.env[key] = value
@@ -184,14 +231,15 @@ export function applySafeConfigEnvironmentVariables(): void {
 /**
  * Apply environment variables from settings to process.env.
  * This applies ALL environment variables (except provider-routing vars when
- * CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST is set — see filterSettingsEnv) and
+ * CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST is set, and provider/auth/model vars
+ * from file-sourced settings under --bare — see filterSettingsEnv) and
  * should only be called after trust is established. This applies potentially
  * dangerous environment variables such as LD_PRELOAD, PATH, etc.
  */
 export function applyConfigEnvironmentVariables(): void {
-  Object.assign(process.env, filterSettingsEnv(getGlobalConfig().env))
+  Object.assign(process.env, filterSettingsEnv(getGlobalConfig().env, 'globalConfig'))
 
-  Object.assign(process.env, filterSettingsEnv(getSettings_DEPRECATED()?.env))
+  Object.assign(process.env, filterSettingsEnv(getSettings_DEPRECATED()?.env, 'merged'))
 
   // Clear caches so agents are rebuilt with the new env vars
   clearCACertsCache()
