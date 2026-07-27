@@ -204,4 +204,68 @@ describe('provider profile credentials', () => {
       rmSync(configDir, { recursive: true, force: true })
     }
   })
+
+  test('selecting a profile deleted since mount activates nothing', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'noa-provider-profile-ghost-'))
+    try {
+      writeFileSync(
+        join(configDir, 'provider-profiles.json'),
+        JSON.stringify([
+          profile({ id: 'kept', name: 'Kept', active: true, apiKey: 'kept-key' }),
+          profile({
+            id: 'ghost',
+            name: 'Ghost',
+            active: false,
+            apiKey: 'ghost-key',
+            baseUrl: 'https://ghost.example.test/',
+          }),
+        ]),
+      )
+
+      // This is the contract /provider's guard rests on. The picker's list is a
+      // snapshot taken at mount, so a profile can be deleted before the user
+      // hits enter. setActiveProviderProfile resolves to null instead of
+      // throwing, and applyActiveProviderProfileEnv then applies whichever
+      // profile is still active — the command used to report the selected one
+      // as switched while the session ran on the other.
+      const script = `
+        process.env.CLAUDE_CONFIG_DIR = ${JSON.stringify(configDir)}
+        delete process.env.CLAUDE_CODE_SIMPLE
+        const { writeFileSync } = await import('fs')
+        const {
+          loadProviderProfiles,
+          setActiveProviderProfile,
+          applyActiveProviderProfileEnv,
+        } = await import('./src/utils/providerProfile.ts')
+
+        const snapshot = await loadProviderProfiles()
+        writeFileSync(
+          ${JSON.stringify(join(configDir, 'provider-profiles.json'))},
+          JSON.stringify(snapshot.filter(p => p.id !== 'ghost')),
+        )
+
+        const activated = await setActiveProviderProfile('ghost')
+        if (activated !== null) {
+          throw new Error('expected null for a profile that is gone from disk')
+        }
+
+        const applied = await applyActiveProviderProfileEnv()
+        if (applied?.id !== 'kept') {
+          throw new Error('expected the still-active profile to be applied')
+        }
+        if (process.env.ANTHROPIC_BASE_URL !== 'https://api.kimi.com/coding') {
+          throw new Error('env did not follow the still-active profile')
+        }
+      `
+      const result = spawnSync('bun', ['--eval', script], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      })
+
+      if (result.status !== 0) throw new Error(result.stderr)
+      expect(result.status).toBe(0)
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
 })
