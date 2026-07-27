@@ -155,10 +155,18 @@ export function isAnthropicAuthEnabled(): boolean {
 /** Where the auth token is being sourced from, if any. */
 // this code is closely related to isAnthropicAuthEnabled
 export function getAuthTokenSource() {
-  // --bare: API-key-only. apiKeyHelper (from --settings) is the only
-  // bearer-token-shaped source allowed. OAuth env vars, FD tokens, and
-  // keychain are ignored.
+  // --bare: only the caller's env and the --settings apiKeyHelper. OAuth env
+  // vars, FD tokens, and keychain are ignored.
   if (isBareMode()) {
+    // ANTHROPIC_AUTH_TOKEN is part of that env contract, same as
+    // ANTHROPIC_API_KEY: it is how 3P Bearer providers authenticate, and
+    // getAnthropicClient reads it straight off process.env
+    // (services/api/client.ts). Reporting 'none' here told `auth status` and
+    // the cost display the session was logged out while its requests
+    // authenticated fine.
+    if (process.env.ANTHROPIC_AUTH_TOKEN) {
+      return { source: 'ANTHROPIC_AUTH_TOKEN' as const, hasToken: true }
+    }
     if (getConfiguredApiKeyHelper()) {
       return { source: 'apiKeyHelper' as const, hasToken: true }
     }
