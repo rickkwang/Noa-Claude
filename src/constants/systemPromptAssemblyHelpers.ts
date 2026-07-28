@@ -28,10 +28,8 @@ import {
   DELIVERING_WORK_SECTION,
   PRONOUNS_SECTION,
   getActionsSection,
-  getCodingStyleAndWorkflowSection,
   getCoreExecutionGuardsSection,
-  getDesignWorkflowSection,
-  getResearchAndTruthfulnessSection,
+  getDoingTasksSection,
   getSimpleIntroSection,
   getSimpleSystemSection,
   getSimpleToneAndStyleSection,
@@ -265,12 +263,9 @@ export function buildStaticSystemPromptSections(params: {
   const head = useCompactPrompt
     ? [getCompactHeadSection(hasOutputStyle)]
     : [
-        getSimpleIntroSection(),
+        getSimpleIntroSection(hasOutputStyle),
         getSimpleSystemSection(),
-        getResearchAndTruthfulnessSection(enabledTools),
-        getDesignWorkflowSection(),
-        getCoreExecutionGuardsSection(),
-        includeCodingStyleSection ? getCodingStyleAndWorkflowSection() : null,
+        getDoingTasksSection(enabledTools, includeCodingStyleSection),
         getActionsSection(),
         getUsingYourToolsSection(enabledTools),
         getSimpleToneAndStyleSection(),

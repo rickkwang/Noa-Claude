@@ -347,7 +347,26 @@ export function getActionCautionSection(model: string | undefined): string | nul
   return `For actions that are hard to reverse or outward-facing, confirm first unless durably authorized or explicitly told to proceed without asking; approval in one context doesn't extend to the next. Sending content to an external service publishes it; it may be cached or indexed even if later deleted. Before deleting or overwriting, look at the target${unfamiliarState}. Report outcomes faithfully: if tests fail, say so with the output; if a step was skipped, say that; when something is done and verified, state it plainly without hedging.`
 }
 
-const SECURITY_POLICY = `IMPORTANT: Assist with authorized security testing, defensive security, CTF challenges, and educational contexts. Refuse requests for destructive techniques, DoS attacks, mass targeting, supply chain compromise, or detection evasion for malicious purposes. Dual-use security tools (C2 frameworks, credential testing, exploit development) require clear authorization context: pentesting engagements, CTF competitions, security research, or defensive use cases.`
+/**
+ * The text is upstream's, byte for byte, and so is the placement in both
+ * tiers. Verified against the 2.1.220 binary, where the constant (`c8s`) is
+ * declared once and referenced exactly twice:
+ *
+ * - The verbose intro builder (`hMy`) emits it as identity line, blank line,
+ *   policy, then the URL rule on the very next line (a single newline, not a
+ *   blank one). getSimpleIntroSection() reproduces that shape.
+ * - The lean head builder (`wMy`) emits it as identity line, blank line,
+ *   policy, blank line, `# Harness`. getCompactHeadSection() reproduces that.
+ *
+ * Both builders sit in the same minified scope, so a grep that misses the
+ * `${c8s}` template interpolations will report a false "declared but never
+ * referenced" — don't "correct" either tier against such a reading.
+ *
+ * Lives here rather than beside the other verbose sections for the same reason
+ * MATCH_SURROUNDING_CODE_SECTION does: the tool prompt modules import this file,
+ * and systemPromptCoreSections.ts imports them, so this file has to stay a leaf.
+ */
+export const SECURITY_POLICY = `IMPORTANT: Assist with authorized security testing, defensive security, CTF challenges, and educational contexts. Refuse requests for destructive techniques, DoS attacks, mass targeting, supply chain compromise, or detection evasion for malicious purposes. Dual-use security tools (C2 frameworks, credential testing, exploit development) require clear authorization context: pentesting engagements, CTF competitions, security research, or defensive use cases.`
 
 /**
  * Replaces the nine static head sections used by the verbose prompt. Everything
