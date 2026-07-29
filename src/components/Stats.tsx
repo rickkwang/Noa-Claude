@@ -124,7 +124,7 @@ type StatsContentProps = {
  * Suspends while loading all-time stats, then handles date range changes without suspending.
  */
 function StatsContent(t0) {
-  const $ = _c(34);
+  const $ = _c(36);
   const {
     allTimePromise,
     onClose,
@@ -269,12 +269,14 @@ function StatsContent(t0) {
     return t7;
   }
   let t7;
-  if ($[17] !== allTimeStats || $[18] !== dateRange || $[19] !== displayStats || $[20] !== isLoadingFiltered) {
-    t7 = <Tab title="Overview"><OverviewTab stats={displayStats} allTimeStats={allTimeStats} dateRange={dateRange} isLoading={isLoadingFiltered} copyStatus={copyStatus} /></Tab>;
+  if ($[17] !== allTimeStats || $[18] !== dateRange || $[19] !== displayStats || $[20] !== isLoadingFiltered || $[34] !== copyStatus || $[35] !== outerHeaderFocused) {
+    t7 = <Tab title="Overview"><OverviewTab stats={displayStats} allTimeStats={allTimeStats} dateRange={dateRange} isLoading={isLoadingFiltered} copyStatus={copyStatus} outerHeaderFocused={outerHeaderFocused} /></Tab>;
     $[17] = allTimeStats;
     $[18] = dateRange;
     $[19] = displayStats;
     $[20] = isLoadingFiltered;
+    $[34] = copyStatus;
+    $[35] = outerHeaderFocused;
     $[21] = t7;
   } else {
     t7 = $[21];
@@ -362,13 +364,15 @@ function OverviewTab({
   allTimeStats,
   dateRange,
   isLoading,
-  copyStatus
+  copyStatus,
+  outerHeaderFocused
 }: {
   stats: ClaudeCodeStats;
   allTimeStats: ClaudeCodeStats;
   dateRange: StatsDateRange;
   isLoading: boolean;
   copyStatus: string | null;
+  outerHeaderFocused: boolean;
 }): React.ReactNode {
   const {
     columns: terminalWidth
@@ -581,19 +585,25 @@ function OverviewTab({
           <Text color="suggestion">{factoid}</Text>
         </Box>}
 
-      <StatsFooter copyStatus={copyStatus} />
+      <StatsFooter copyStatus={copyStatus} outerHeaderFocused={outerHeaderFocused} />
     </Box>;
 }
 
 function StatsFooter({
-  copyStatus
+  copyStatus,
+  outerHeaderFocused
 }: {
   copyStatus: string | null;
+  outerHeaderFocused: boolean;
 }): React.ReactNode {
   const statusSuffix = copyStatus ? ` · ${copyStatus}` : '';
+  // The vertical hint tracks which focus level owns the keyboard: with the
+  // outer tabs focused, ↓ returns to the stats body; otherwise ↑ leaves for
+  // the tab row. A fixed hint would name a key that does nothing half the time.
+  const navHint = outerHeaderFocused ? '↓ stats' : '↑ tabs';
   return <Box marginTop={1} paddingLeft={2}>
       <Text dimColor={true}>
-        ↑ usage · ←/→ switch view · r to cycle dates · ctrl+s to copy{statusSuffix}
+        {navHint} · r to cycle dates · ctrl+s to copy{statusSuffix}
       </Text>
     </Box>;
 }
@@ -818,7 +828,7 @@ function ModelsTab(t0) {
   return <Box flexDirection="column" marginTop={1}>{chartOutput && <Box flexDirection="column" marginBottom={1}><Text bold={true}>Tokens per Day</Text><Ansi>{chartOutput.chart}</Ansi><Text color="subtle">{chartOutput.xAxisLabels}</Text><Box>{chartOutput.legend.map(_temp1)}</Box></Box>}{t3}<Box flexDirection="row" gap={4}><Box flexDirection="column" width={36}>{leftModels.map(t4 => {
           const [model_0, usage_0] = t4;
           return <ModelEntry key={model_0} model={model_0} usage={usage_0} totalTokens={totalTokens} />;
-        })}</Box>{t9}</Box>{t10}<StatsFooter copyStatus={copyStatus} /></Box>;
+        })}</Box>{t9}</Box>{t10}<StatsFooter copyStatus={copyStatus} outerHeaderFocused={outerHeaderFocused} /></Box>;
 }
 function _temp1(item, i) {
   return <Text key={item.model}>{i > 0 ? " \xB7 " : ""}<Ansi>{item.coloredBullet}</Ansi> {item.model}</Text>;

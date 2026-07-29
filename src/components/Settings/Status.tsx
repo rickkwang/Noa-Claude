@@ -174,7 +174,7 @@ export function Status(t0) {
   }
   let t8;
   if ($[17] !== grow || $[18] !== t6) {
-    t8 = <Box flexDirection="column" flexGrow={grow}>{t6}{t7}</Box>;
+    t8 = <Box flexDirection="column" gap={1} flexGrow={grow}>{t6}{t7}</Box>;
     $[17] = grow;
     $[18] = t6;
     $[19] = t8;
@@ -215,7 +215,7 @@ function Diagnostics(t0) {
   }
   let t1;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
-    t1 = <Text bold={true}>System Diagnostics</Text>;
+    t1 = <Text bold={true}>System diagnostics</Text>;
     $[0] = t1;
   } else {
     t1 = $[0];

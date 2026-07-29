@@ -2,7 +2,7 @@
 import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { useEffect, useState } from 'react';
-import { extraUsage as extraUsageCommand } from 'src/commands/extra-usage/index.js';
+import { extraUsage as extraUsageCommand } from 'src/commands/usage-credits/index.js';
 import { formatCost, getModelUsage, getTotalCacheCreationInputTokens, getTotalCacheReadInputTokens, getTotalCost, getTotalInputTokens, getTotalOutputTokens } from 'src/cost-tracker.js';
 import { getSubscriptionType } from 'src/utils/auth.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
@@ -21,18 +21,21 @@ type LimitBarProps = {
   limit: RateLimit;
   maxWidth: number;
   showTimeInReset?: boolean;
+  alwaysShowDateInReset?: boolean;
   extraSubtext?: string;
 };
 function LimitBar(t0) {
-  const $ = _c(34);
+  const $ = _c(36);
   const {
     title,
     limit,
     maxWidth,
     showTimeInReset: t1,
+    alwaysShowDateInReset: t1b,
     extraSubtext
   } = t0;
   const showTimeInReset = t1 === undefined ? true : t1;
+  const alwaysShowDateInReset = t1b === undefined ? false : t1b;
   const {
     utilization,
     resets_at
@@ -44,10 +47,11 @@ function LimitBar(t0) {
   let subtext;
   if (resets_at) {
     let t2;
-    if ($[0] !== resets_at || $[1] !== showTimeInReset) {
-      t2 = formatResetText(resets_at, true, showTimeInReset);
+    if ($[0] !== resets_at || $[1] !== showTimeInReset || $[34] !== alwaysShowDateInReset) {
+      t2 = formatResetText(resets_at, true, showTimeInReset, alwaysShowDateInReset);
       $[0] = resets_at;
       $[1] = showTimeInReset;
+      $[34] = alwaysShowDateInReset;
       $[2] = t2;
     } else {
       t2 = $[2];
@@ -106,7 +110,9 @@ function LimitBar(t0) {
     }
     let t8;
     if ($[14] !== t2 || $[15] !== t6 || $[16] !== t7) {
-      t8 = <Box flexDirection="column">{t2}{t6}{t7}</Box>;
+      // flexShrink={0}: the bar is a fixed 50 columns, so letting this column
+      // shrink would squeeze the ProgressBar out of its own width.
+      t8 = <Box flexDirection="column" flexShrink={0}>{t2}{t6}{t7}</Box>;
       $[14] = t2;
       $[15] = t6;
       $[16] = t7;
@@ -235,15 +241,20 @@ export function Usage(): React.ReactNode {
   // which labels it "Sonnet limit" in that case.
   const subscriptionType = getSubscriptionType();
   const showSonnetBar = subscriptionType === 'max' || subscriptionType === 'team' || subscriptionType === null;
+  // alwaysShowDateInReset on the weekly bars only: a 5-hour session always
+  // resets inside the 24h window where a bare time is unambiguous, but a
+  // weekly reset is usually days out and needs the date.
   const limits = [{
     title: 'Current session',
     limit: utilization.five_hour
   }, {
     title: 'Current week (all models)',
-    limit: utilization.seven_day
+    limit: utilization.seven_day,
+    alwaysShowDateInReset: true
   }, ...(showSonnetBar ? [{
     title: 'Current week (Sonnet only)',
-    limit: utilization.seven_day_sonnet
+    limit: utilization.seven_day_sonnet,
+    alwaysShowDateInReset: true
   }] : [])];
   const hasRemoteLimits = limits.some(({
     limit
@@ -253,8 +264,9 @@ export function Usage(): React.ReactNode {
 
       {limits.map(({
       title,
-      limit: limit_0
-    }) => limit_0 && <LimitBar key={title} title={title} limit={limit_0} maxWidth={maxWidth} />)}
+      limit: limit_0,
+      alwaysShowDateInReset
+    }) => limit_0 && <LimitBar key={title} title={title} limit={limit_0} maxWidth={maxWidth} alwaysShowDateInReset={alwaysShowDateInReset} />)}
 
       {utilization.extra_usage && <ExtraUsageSection extraUsage={utilization.extra_usage} maxWidth={maxWidth} />}
 
@@ -269,7 +281,7 @@ type ExtraUsageSectionProps = {
   extraUsage: ExtraUsage;
   maxWidth: number;
 };
-const EXTRA_USAGE_SECTION_TITLE = 'Extra usage';
+const EXTRA_USAGE_SECTION_TITLE = 'Usage credits';
 function LocalUsageSummary(): React.ReactNode {
   const totalInput = getTotalInputTokens();
   const totalOutput = getTotalOutputTokens();
@@ -310,7 +322,7 @@ function ExtraUsageSection(t0) {
     if (extraUsageCommand.isEnabled()) {
       let t1;
       if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
-        t1 = <Box flexDirection="column"><Text bold={true}>{EXTRA_USAGE_SECTION_TITLE}</Text><Text dimColor={true}>Extra usage not enabled · /extra-usage to enable</Text></Box>;
+        t1 = <Box flexDirection="column"><Text bold={true}>{EXTRA_USAGE_SECTION_TITLE}</Text><Text dimColor={true}>Usage credits are off · /usage-credits to turn them on</Text></Box>;
         $[0] = t1;
       } else {
         t1 = $[0];
