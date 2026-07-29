@@ -139,7 +139,7 @@ export function configureProgramOptions(program: CommanderCommand): void {
     .addOption(
       new Option('--append-system-prompt-file <file>', 'Read system prompt from a file and append to the default system prompt').argParser(String).hideHelp()
     )
-    .addOption(new Option('--permission-mode <mode>', 'Permission mode to use for the session').argParser(String).choices(PERMISSION_MODES))
+    .addOption(new Option('--permission-mode <mode>', 'Permission mode to use for the session').argParser(String).choices([...PERMISSION_MODES, 'manual']))
     .option('-c, --continue', 'Continue the most recent conversation in the current directory', () => true)
     .option(
       '-r, --resume [value]',
