@@ -1,6 +1,6 @@
 # Features Audit
 
-Last updated: 2026-07-13
+Last updated: 2026-07-29
 
 This file is the build/runtime audit for experimental feature flags in this repository.
 
@@ -40,7 +40,6 @@ This file is the build/runtime audit for experimental feature flags in this repo
 - `MCP_RICH_OUTPUT`
 - `MESSAGE_ACTIONS`
 - `NATIVE_CLIPBOARD_IMAGE`
-- `NEW_INIT`
 - `POWERSHELL_AUTO_MODE`
 - `PROMPT_CACHE_BREAK_DETECTION`
 - `QUICK_SEARCH`

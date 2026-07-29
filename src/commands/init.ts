@@ -1,5 +1,4 @@
 // @ts-nocheck
-import { feature } from 'bun:bundle'
 import type { Command } from '../commands.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
 import {
@@ -30,25 +29,51 @@ This file provides guidance to Noa Claude when working with code in this reposit
 
 const NEW_INIT_PROMPT = `Set up minimal project instructions (and optionally skills and hooks) for this repo.
 
-**File-priority rule:** Noa Claude loads one project instruction file per directory, picking the first that exists: .noa/${PRIMARY_PROJECT_INSTRUCTION_FILE} → ${PRIMARY_PROJECT_INSTRUCTION_FILE} → .noa/CLAUDE.md → CLAUDE.md. All phases below refer to the winner as "the selected instruction file". Keep it concise — only include what Noa Claude would get wrong without it.
+**File-priority rule:** Noa Claude loads one project instruction file per directory, picking the first that exists: .noa/${PRIMARY_PROJECT_INSTRUCTION_FILE} → ${PRIMARY_PROJECT_INSTRUCTION_FILE} → .noa/CLAUDE.md → CLAUDE.md. All phases below refer to the winner as "the selected instruction file". It is loaded into every Noa Claude session, so it must be concise — only include what Noa Claude would get wrong without it.
+
+## Phase 0: Check for an existing project instruction file
+
+Before asking anything, check whether a project instruction file already exists at the project root, walking the priority chain in order: \`.noa/${PRIMARY_PROJECT_INSTRUCTION_FILE}\`, \`${PRIMARY_PROJECT_INSTRUCTION_FILE}\`, \`.noa/CLAUDE.md\`, \`CLAUDE.md\`. Read the first one that exists — that is the selected instruction file. Only project-root files count; don't explore the tree yet. This branches Phase 1.
 
 ## Phase 1: Ask what to set up
 
-Use AskUserQuestion to find out what the user wants:
+Use AskUserQuestion to find out what the user wants. Which question you ask depends on Phase 0. Call AskUserQuestion with **only Q1** — do NOT include Q2 in the same call. Only ask Q2 after you've seen the Q1 answer, since "Let Noa Claude decide" skips it.
 
-- "Which project instruction files should /init set up?"
-  Options: "Project ${PRIMARY_PROJECT_INSTRUCTION_FILE}" | "Personal CLAUDE.local.md" | "Both project + personal"
+Before the first question, print this primer as normal assistant text so first-time users know the terms:
+
+> Quick context:
+> - **Project instruction files** (${PRIMARY_PROJECT_INSTRUCTION_FILE}, or CLAUDE.md as a fallback) give Noa Claude persistent instructions for a project, your personal workflow, or your organization. Noa Claude reads them at the start of every session.
+> - **Skills** are packaged instructions Noa Claude invokes automatically when a task matches, or that you trigger with a slash command (e.g. \`/frontend-design\`, \`/commit-push-pr\`).
+> - **Hooks** allow you to run shell commands automatically on lifecycle events: get notified when Noa Claude is blocked on your input, auto-format after edits, enforce checks before commits — these are deterministic and Noa Claude can't skip them.
+
+**If a project instruction file already exists**, ask:
+- "I found an existing <name of the selected instruction file>. What would you like to do?"
+  Options: "Review and improve it" | "Leave it, set up other things" | "Start fresh (replace it)"
+  Description for improve: "Explore what's changed in the codebase and propose targeted edits to the existing file."
+  Description for leave it: "Skip project instructions. Go straight to skills and hooks."
+  Description for start fresh: "Discard it and write new file(s)."
+  Routing:
+  - "Review and improve" → skip Q1/Q2; explore (Phase 2), ask the single Phase 3-lite question, then go to Phase 4's diff-proposal, then Phase 8.
+  - "Leave it" → skip Q1, ask Q2 (rename its fourth option to "Neither — skip setup"). If they pick "Neither — skip setup", jump straight to Phase 8 with: "Nothing to set up — your project instructions are unchanged." Otherwise: Phase 2 → Phase 3 proposal (no gap-fill interview) → Phases 6/7 per queue → Phase 8. For Phase 7's hook target-file default, treat this path as "project" (\`.noa/settings.json\`).
+  - "Start fresh" → continue to Q1 below as if no file existed.
+
+**If no project instruction file exists** (or the user picked "Start fresh"), ask:
+- Q1: "Which project instruction files should /init set up?"
+  Options: "Project ${PRIMARY_PROJECT_INSTRUCTION_FILE}" | "Personal CLAUDE.local.md" | "Both project + personal" | "Let Noa Claude decide"
   Description for project: "Team-shared instructions checked into source control — architecture, coding standards, common workflows. Written to the selected instruction file per the file-priority rule."
   Description for personal: "Your private preferences for this project (gitignored, not shared) — your role, sandbox URLs, preferred test data, workflow quirks."
+  Description for Let Noa Claude decide: "Fastest path — project ${PRIMARY_PROJECT_INSTRUCTION_FILE} plus whatever skills or hooks fit this repo. No follow-on questions; you'll approve everything before it's written."
+  If the user picks "Let Noa Claude decide", skip Q2 — treat it as project ${PRIMARY_PROJECT_INSTRUCTION_FILE} with no skills/hooks constraint.
 
-- "Also set up skills and hooks?"
+- Q2: "Also set up skills and hooks?"
   Options: "Skills + hooks" | "Skills only" | "Hooks only" | "Neither, just ${PRIMARY_PROJECT_INSTRUCTION_FILE}"
-  Description for skills: "On-demand capabilities you or Noa Claude invoke with \`/skill-name\` — good for repeatable workflows and reference knowledge."
+  Description for skills: "Packaged instructions Noa Claude invokes automatically when a task matches, or that you trigger with a slash command (e.g. \`/frontend-design\`, \`/commit-push-pr\`)."
   Description for hooks: "Deterministic shell commands that run on tool events (e.g., format after every edit). Noa Claude can't skip them."
+  Q2 is a hint, not a filter — Phase 3 proposes what fits the codebase and notes any deviation.
 
 ## Phase 2: Explore the codebase
 
-Launch a subagent to survey the codebase, and ask it to read key files to understand the project: manifest files (package.json, Cargo.toml, pyproject.toml, go.mod, pom.xml, etc.), README, Makefile/build configs, CI config, project instruction files at all priority levels, .noa/rules/, other AI coding tool configs (.cursor/rules or .cursorrules, .github/copilot-instructions.md, .windsurfrules, .clinerules), .noa/mcp.json.
+Launch a subagent to survey the codebase, and ask it to read key files to understand the project: manifest files (package.json, Cargo.toml, pyproject.toml, go.mod, pom.xml, etc.), README, Makefile/build configs, CI config, project instruction files at all priority levels, .noa/rules/, .cursor/rules or .cursorrules, .github/copilot-instructions.md, .devin/rules/ or .windsurf/rules/ or .windsurfrules, .clinerules, .noa/mcp.json.
 
 Detect:
 - Build, test, and lint commands (especially non-standard ones)
@@ -66,7 +91,7 @@ Note what you could NOT figure out from code alone — these become interview qu
 
 Use AskUserQuestion to gather what you still need to write good ${PRIMARY_PROJECT_INSTRUCTION_FILE} files and skills. Ask only things the code can't answer.
 
-If the user chose project ${PRIMARY_PROJECT_INSTRUCTION_FILE} or both: ask about codebase practices — non-obvious commands, gotchas, branch/PR conventions, required env setup, testing quirks. Skip things already in README or obvious from manifest files. Do not mark any options as "recommended" — this is about how their team works, not best practices.
+If the user chose project ${PRIMARY_PROJECT_INSTRUCTION_FILE}, both, or "Let Noa Claude decide": ask about codebase practices — non-obvious commands, gotchas, branch/PR conventions, required env setup, testing quirks. Skip things already in README or obvious from manifest files. Do not mark any options as "recommended" — this is about how their team works, not best practices.
 
 If the user chose personal CLAUDE.local.md or both: ask about them, not the codebase. Do not mark any options as "recommended" — this is about their personal preferences, not best practices. Examples of questions:
   - What's their role on the team? (e.g., "backend engineer", "data scientist", "new hire onboarding")
@@ -75,31 +100,33 @@ If the user chose personal CLAUDE.local.md or both: ask about them, not the code
   - Only if Phase 2 found multiple git worktrees: ask whether their worktrees are nested inside the main repo (e.g., \`.noa/worktrees/<name>/\`) or siblings/external (e.g., \`../myrepo-feature/\`). If nested, the upward file walk finds the main repo's CLAUDE.local.md automatically — no special handling needed. If sibling/external, the personal content should live in a home-directory file (e.g., \`~/.noa/<project-name>-instructions.md\`) and each worktree gets a one-line CLAUDE.local.md stub that imports it: \`@~/.noa/<project-name>-instructions.md\`. Never put this import in the project ${PRIMARY_PROJECT_INSTRUCTION_FILE} — that would check a personal reference into the team-shared file.
   - Any communication preferences? (e.g., "be terse", "always explain tradeoffs", "don't summarize at the end")
 
-**Synthesize a proposal from Phase 2 findings** — e.g., format-on-edit if a formatter exists, a \`/verify\` skill if tests exist, a ${PRIMARY_PROJECT_INSTRUCTION_FILE} note for anything from the gap-fill answers that's a guideline rather than a workflow. For each, pick the artifact type that fits, **constrained by the Phase 1 skills+hooks choice**:
+If the user picked "Review and improve" in Phase 0: ask just one question — "Has anything changed about how the team works since this ${PRIMARY_PROJECT_INSTRUCTION_FILE} was written (new conventions, commands, gotchas)?" with options "No, nothing's changed" | "Yes — let me describe". If they pick Yes, ask what changed (free text) before continuing. Then skip to Phase 4.
 
-  - **Hook** (stricter) — deterministic shell command on a tool event; Noa Claude can't skip it. Fits mechanical, fast, per-edit steps: formatting, linting, running a quick test on the changed file.
-  - **Skill** (on-demand) — you or Noa Claude invoke \`/skill-name\` when you want it. Fits workflows that don't belong on every edit: deep verification, session reports, deploys.
-  - **${PRIMARY_PROJECT_INSTRUCTION_FILE} note** (looser) — influences Noa Claude's behavior but not enforced. Fits communication/thinking preferences: "plan before coding", "be terse", "explain tradeoffs".
+**Synthesize a proposal from Phase 2 findings and the gap-fill answers.** For each item, pick the artifact type that fits the evidence:
 
-  **Respect Phase 1's skills+hooks choice as a hard filter**: if the user picked "Skills only", downgrade any hook you'd suggest to a skill or a ${PRIMARY_PROJECT_INSTRUCTION_FILE} note. If "Hooks only", downgrade skills to hooks (where mechanically possible) or notes. If "Neither", everything becomes a ${PRIMARY_PROJECT_INSTRUCTION_FILE} note. Never propose an artifact type the user didn't opt into.
+  - **Hook** — deterministic, fast, per-edit shell command (formatting, linting a changed file).
+  - **Skill** — on-demand multi-step workflow (\`/verify\`, \`/deploy-staging\`, session reports).
+  - **${PRIMARY_PROJECT_INSTRUCTION_FILE} note** — guidance that shapes behavior but isn't enforced (conventions, communication style).
 
-**Show the proposal via AskUserQuestion's \`preview\` field, not as a separate text message** — the dialog overlays your output, so preceding text is hidden. The \`preview\` field renders markdown in a side-panel (like plan mode); the \`question\` field is plain-text-only. Structure it as:
+Include the ${PRIMARY_PROJECT_INSTRUCTION_FILE} file(s) implied by Q1 (project, personal, both, or "Let Noa Claude decide" → project) as the first bullet(s) of the proposal, with a one-line summary of what each will cover. Then list skills/hooks/notes. On the "Leave it" path, omit ${PRIMARY_PROJECT_INSTRUCTION_FILE} file bullets and notes (Phase 4 won't run). On the "Start fresh" path with Q1 = personal-only, add a bullet noting the existing project ${PRIMARY_PROJECT_INSTRUCTION_FILE} will be left untouched (they chose not to replace it with a project file).
 
-  - \`question\`: short and plain, e.g. "Does this proposal look right?"
-  - Each option gets a \`preview\` with the full proposal as markdown. The "Looks good — proceed" option's preview shows everything; per-item-drop options' previews show what remains after that drop.
-  - **Keep previews compact — the preview box truncates with no scrolling.** One line per item, no blank lines between items, no header. Example preview content:
+Propose what fits. If the user gave a Q2 hint and your proposal deviates from it (e.g. they said "Hooks only" but nothing hook-shaped exists), say so in one line at the top of the proposal and propose the better-fitting artifacts anyway.
 
-    • **Format-on-edit hook** (automatic) — \`ruff format <file>\` via PostToolUse
-    • **/verify skill** (on-demand) — \`make lint && make typecheck && make test\`
-    • **${PRIMARY_PROJECT_INSTRUCTION_FILE} note** (guideline) — "run lint/typecheck/test before marking done"
+**Print the proposal as normal assistant text**, one bullet per item:
 
-  - Option labels stay short ("Looks good", "Drop the hook", "Drop the skill") — the tool auto-adds an "Other" free-text option, so don't add your own catch-all.
+> Here's what I'd set up:
+> • **[Artifact type: file/hook/skill/note]** — [one-line description]
+> • …
 
-**Build the preference queue** from the accepted proposal. Each entry: {type: hook|skill|note, description, target file, any Phase-2-sourced details like the actual test/format command}. Phases 4-7 consume this queue.
+Then call AskUserQuestion with a simple question ("Does this look right?") and options like "Looks good — proceed" | "Drop the hook" | "Drop the skill". Don't use the \`preview\` field — the proposal is already visible in scrollback. The tool auto-adds an "Other" option for custom tweaks.
 
-## Phase 4: Write ${PRIMARY_PROJECT_INSTRUCTION_FILE} (if user chose project or both)
+**Build the preference queue** from the accepted proposal. Each entry: {type: hook|skill|note, description, target file, any Phase-2-sourced details like the actual test/format command}. Phase 6 and Phase 7's hooks sub-bullet consume this queue; Phases 4/5 gate on the approved proposal's file bullets directly; Phase 7's GitHub-CLI and linting checks run regardless of queue contents.
 
-Write the selected instruction file (per the file-priority rule; default to ${PRIMARY_PROJECT_INSTRUCTION_FILE} at the project root when none exist yet). Every line must pass this test: "Would removing this cause Noa Claude to make mistakes?" If no, cut it.
+## Phase 4: Write the project instruction file (if the approved proposal includes it, or on the "Review and improve" path)
+
+Write the selected instruction file (per the file-priority rule; default to ${PRIMARY_PROJECT_INSTRUCTION_FILE} at the project root when none exist yet). If Phase 2 found a lower-priority fallback file, fold its useful content into the selected file and resolve conflicts in the selected file's favor. Every line must pass this test: "Would removing this cause Noa Claude to make mistakes?" If no, cut it.
+
+If the user picked "Review and improve it" in Phase 0: don't write fresh — read the existing file, compare against Phase 2 findings and the Phase 3-lite answer, and propose specific additions/removals as diffs with a one-line reason for each. Fold any lower-priority fallback content into the selected file, resolving conflicts in its favor. The existing file is the baseline; your job is to catch what's missing, outdated, or bloated. After printing the diffs, call AskUserQuestion ("Apply these edits?" with options like "Apply all" | "Let me pick which" | "Skip — leave it as is") before writing anything.
 
 **Consume \`note\` entries from the Phase 3 preference queue whose target is ${PRIMARY_PROJECT_INSTRUCTION_FILE}** (team-level notes) — add each as a concise line in the most relevant section. These are the behaviors the user wants Noa Claude to follow but didn't need guaranteed (e.g., "propose a plan before implementing", "explain the tradeoffs when refactoring"). Leave personal-targeted notes for Phase 5.
 
@@ -110,7 +137,7 @@ Include:
 - Repo etiquette (branch naming, PR conventions, commit style)
 - Required env vars or setup steps
 - Non-obvious gotchas or architectural decisions
-- Important parts from existing AI coding tool configs if they exist (.cursor/rules, .cursorrules, .github/copilot-instructions.md, .windsurfrules, .clinerules)
+- Important parts from existing AI coding tool configs if they exist (.cursor/rules, .cursorrules, .github/copilot-instructions.md, .devin/rules/, .windsurf/rules/, .windsurfrules, .clinerules)
 
 Exclude:
 - File-by-file structure or component lists (Noa Claude can discover these by reading the codebase)
@@ -133,15 +160,13 @@ Prefix the file with:
 This file provides guidance to Noa Claude when working with code in this repository. Noa Claude is developed by Zenhao.
 \`\`\`
 
-If the selected instruction file already exists: read it, propose specific changes as diffs, and explain why each change improves it. Fold any lower-priority fallback content into the selected file, resolving conflicts in its favor. Do not silently overwrite.
-
-For projects with multiple concerns, suggest organizing instructions into \`.noa/rules/\` as separate focused files (e.g., \`code-style.md\`, \`testing.md\`, \`security.md\`). These are loaded automatically alongside ${PRIMARY_PROJECT_INSTRUCTION_FILE} and can be scoped to specific file paths using \`paths\` frontmatter.
+For projects with multiple concerns, suggest organizing instructions into \`.noa/rules/\` as separate focused files (e.g., \`code-style.md\`, \`testing.md\`, \`security.md\`). These are loaded automatically alongside the selected instruction file and can be scoped to specific file paths using \`paths\` frontmatter.
 
 For projects with distinct subdirectories (monorepos, multi-module projects, etc.): mention that subdirectory instruction files (same priority rule) can be added for module-specific instructions. They're loaded automatically when Noa Claude works in those directories. Offer to create them if the user wants.
 
-## Phase 5: Write CLAUDE.local.md (if user chose personal or both)
+## Phase 5: Write CLAUDE.local.md (if the approved proposal includes it)
 
-Write a minimal CLAUDE.local.md at the project root. This file is automatically loaded alongside ${PRIMARY_PROJECT_INSTRUCTION_FILE}. After creating it, add \`CLAUDE.local.md\` to the project's .gitignore so it stays private.
+Write a minimal CLAUDE.local.md at the project root. This file is automatically loaded alongside the selected instruction file. After creating it, add \`CLAUDE.local.md\` to the project's .gitignore so it stays private.
 
 **Consume \`note\` entries from the Phase 3 preference queue whose target is CLAUDE.local.md** (personal-level notes) — add each as a concise line. If the user chose personal-only in Phase 1, this is the sole consumer of note entries.
 
@@ -156,7 +181,7 @@ If Phase 2 found multiple git worktrees and the user confirmed they use sibling/
 
 If CLAUDE.local.md already exists: read it, propose specific additions, and do not silently overwrite.
 
-## Phase 6: Suggest and create skills (if user chose "Skills + hooks" or "Skills only")
+## Phase 6: Suggest and create skills (if the approved proposal includes any)
 
 Skills add capabilities Noa Claude can use on demand without bloating every session.
 
@@ -188,7 +213,7 @@ Both the user (\`/<skill-name>\`) and Noa Claude can invoke skills by default. F
 
 ## Phase 7: Suggest additional optimizations
 
-Tell the user you're going to suggest a few additional optimizations now that ${PRIMARY_PROJECT_INSTRUCTION_FILE} and skills (if chosen) are in place.
+Tell the user you're going to suggest a few additional optimizations now that project instructions and skills (if chosen) are in place.
 
 Check the environment and ask about each gap you find (use AskUserQuestion):
 
@@ -196,11 +221,11 @@ Check the environment and ask about each gap you find (use AskUserQuestion):
 
 - **Linting**: If Phase 2 found no lint config (no .eslintrc, ruff.toml, .golangci.yml, etc. for the project's language), ask the user if they want Noa Claude to set up linting for this codebase. Explain that linting catches issues early and gives Noa Claude fast feedback on its own edits.
 
-- **Proposal-sourced hooks** (if user chose "Skills + hooks" or "Hooks only"): Consume \`hook\` entries from the Phase 3 preference queue. If Phase 2 found a formatter and the queue has no formatting hook, offer format-on-edit as a fallback. If the user chose "Neither" or "Skills only" in Phase 1, skip this bullet entirely.
+- **Proposal-sourced hooks** (if the approved proposal includes any): Consume \`hook\` entries from the Phase 3 preference queue. If Phase 2 found a formatter and the queue has no formatting hook, offer format-on-edit as a fallback.
 
   For each hook preference (from the queue or the formatter fallback):
 
-  1. Target file: default based on the Phase 1 ${PRIMARY_PROJECT_INSTRUCTION_FILE} choice — project → \`.noa/settings.json\` (team-shared, committed); personal → \`.noa/settings.local.json\`. Only ask if the user chose "both" in Phase 1 or the preference is ambiguous. Ask once for all hooks, not per-hook.
+  1. Target file: default based on the Phase 1 project/personal choice — project → \`.noa/settings.json\` (team-shared, committed); personal → \`.noa/settings.local.json\`. Only ask if the user chose "both" in Phase 1 or the preference is ambiguous. Ask once for all hooks, not per-hook.
 
   2. Pick the event and matcher from the preference:
      - "after every edit" → \`PostToolUse\` with matcher \`Write|Edit\`
@@ -228,13 +253,24 @@ When building the list, work through these checks and include only what applies:
 - To help you create skills and optimize existing skills using evals, Noa Claude has an official skill-creator plugin you can install. Install it with \`/plugin install skill-creator@claude-plugins-official\`, then run \`/skill-creator <skill-name>\` to create new skills or refine any existing skill. (Always include this one.)
 - Browse official plugins with \`/plugin\` — these bundle skills, agents, hooks, and MCP servers that you may find helpful. You can also create your own custom plugins to share them with others. (Always include this one.)`
 
+/**
+ * NOA_CLAUDE_NEW_INIT (legacy: CLAUDE_CODE_NEW_INIT) selects the interview-style
+ * prompt. Upstream gates it on the env var OR a GrowthBook gate; GrowthBook is
+ * hard-disabled here, so the env var is the only switch — deliberately not also
+ * behind a `feature()` flag, which would compile to `false` in the baseline
+ * build and make the env var silently inert.
+ */
+function useNewInitPrompt(): boolean {
+  return isEnvTruthy(
+    process.env.NOA_CLAUDE_NEW_INIT ?? process.env.CLAUDE_CODE_NEW_INIT,
+  )
+}
+
 const command = {
   type: 'prompt',
   name: 'init',
   get description() {
-    return feature('NEW_INIT') &&
-      (process.env.USER_TYPE === 'ant' ||
-        isEnvTruthy(process.env.CLAUDE_CODE_NEW_INIT))
+    return useNewInitPrompt()
       ? `Initialize new ${PRIMARY_PROJECT_INSTRUCTION_FILE} file(s) and optional skills/hooks with codebase documentation`
       : `Initialize a new ${PRIMARY_PROJECT_INSTRUCTION_FILE} file with codebase documentation`
   },
@@ -245,12 +281,7 @@ const command = {
     return [
       {
         type: 'text',
-        text:
-          feature('NEW_INIT') &&
-          (process.env.USER_TYPE === 'ant' ||
-            isEnvTruthy(process.env.CLAUDE_CODE_NEW_INIT))
-            ? NEW_INIT_PROMPT
-            : OLD_INIT_PROMPT,
+        text: useNewInitPrompt() ? NEW_INIT_PROMPT : OLD_INIT_PROMPT,
       },
     ]
   },
