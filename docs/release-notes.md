@@ -1,5 +1,34 @@
 # Release Notes
 
+## 1.7.0
+
+### New Features
+
+- **Custom themes** — ported from upstream Claude Code 2.1.220: user themes from `<config>/themes/*.json`, plugin-provided themes (`<plugin>:<slug>` namespaced), selected via `custom:<slug>` settings refs. Adds the `/theme` picker rows, ctrl+e edit, and a theme editor (name → color tokens → value flow). Palette consumers now render through `useResolvedTheme()` so overrides apply. The upstream safe-mode gate is intentionally omitted (no safe-mode concept in this fork).
+- **Lean system prompt and tool descriptions** — a single gate, `shouldUseCompactSystemPrompt()`, drives a compact prompt head and per-tool lean descriptions for newer lean-trained models; older models keep the verbose text. Prompt text is ported verbatim from the upstream binary and pinned by digest tests. Measured on the default tool set: tool descriptions 33.4k → 6.6k chars, static head 13.9k → 2.1k. Also restores sections the fork was missing in every mode: `context_management`, pronoun guidance, act-don't-rederive, plus lean-gated Delivering work and Corrections. The verbose head is realigned with upstream's six-section shape.
+- **`/init` interview realigned with upstream 2.1.220** — Phase 0 now probes for an existing project instruction file and branches into review-and-improve / leave-it / start-fresh; Q1 gains a "Let Noa Claude decide" fast path; Q2 becomes a hint rather than a hard filter; Phases 4–7 gate on the approved proposal. The gate is now reachable: it moved from a build flag that baseline builds always folded to false to an env-only switch (`NOA_CLAUDE_NEW_INIT`, legacy `CLAUDE_CODE_NEW_INIT`), still default-off.
+
+### Bug Fixes
+
+- **Launcher resolves config dirs at run time, not build time** — the emitted bootstrap no longer bakes the build machine's absolute home path into `dist/main.js` or overwrites a caller-supplied `CLAUDE_CONFIG_DIR`, so distributed builds resolve `~/.noa` for the user running them. Home resolution falls back to `os.homedir()` (fixing a relative `.noa` being created in the cwd when `HOME` is unset) and exits with a config error when nothing can be resolved.
+- **`--bare` mode hardening** — three fixes: it no longer deletes the caller's provider env (an explicitly supplied `ANTHROPIC_API_KEY` was being erased before the client was created); a Bearer `ANTHROPIC_AUTH_TOKEN` (how third-party providers like Kimi authenticate) is now reported as logged in instead of source `none`; and provider-routing keys in the `env` block of user/global settings.json are stripped so an active provider profile can't silently re-enter a bare session. `/provider` under `--bare` now reports the selection takes effect next session.
+- **Concurrent sessions clobbering settings.json** — `updateSettingsForSource` now holds a cross-process lock around a fresh read-modify-write, fixing the intermittent fullscreen-mode loss when two sessions wrote at once. Also adopts the upstream `tui` settings key, migrating off the legacy `tuiMode` on write.
+- **Auto permission mode was unselectable** — selecting Auto in Default permission mode snapped straight back to Manual: a fork-specific divergence mapped `auto` onto `default` during round-trip. Both halves are restored to upstream, and the rest of the panel is aligned (wording, layout, a new Worktree base ref row, removal of a redundant picker gate).
+- **Model identity and capability matching** — customer-run Bedrock, Vertex and Foundry are no longer treated as trusted model identities for the lean prompt (a configured model id proves nothing about the model behind it); they keep the verbose prompt unless a `lean_prompt` capability override opts in. The `[1m]` suffix is now ignored when matching a capability override, so the 1M-context variant of a pinned model can opt in. Session caches for tool schemas and prompt sections now key on the lean/verbose tier, so a mid-session `/model` switch no longer serves the previous tier's text.
+- **`cache-probe` reliability for third-party providers** — a per-run nonce guarantees the cold call misses long-TTL provider caches, read/creation cache tokens are split, and `[1m]`-suffixed model ids are normalized so the suffix no longer leaks to the API. The `/effort` message drops a redundant description and the effort notification folds in place.
+- **Settings panel alignment with upstream** — the Usage weekly-limit bars show a date when the reset is days out ("Resets Aug 3, 5pm" instead of a bare time), the bar column no longer gets squeezed, Status/Stats spacing and the Stats footer key hint now track focus, the Settings dialog drops its oversized title/subtitle header while restoring the small "Settings" tab-bar label, and the Config Model row resolves through `modelDisplayString` instead of rendering raw stored values like `sonnet[1m]`.
+
+### Changed
+
+- **Default permission mode renamed to Manual** — aligning with upstream 2.1.220: the status line and Shift+Tab cycle now show a named Manual mode (⏸, gray) alongside Plan / Accept edits / Auto. `manual` is accepted as an alias for `default` in settings.json's `defaultMode` and `--permission-mode`.
+- **`/extra-usage` renamed to `/usage-credits`** — with copy updated from "extra usage" to "usage credits" across all call sites (rate-limit upsells, API error hints, tips, the `/model` billing suffix). `/extra-usage` stays registered but hidden as an alias, and the `DISABLE_EXTRA_USAGE_COMMAND` env var keeps its name.
+
+### Tests
+
+- The suite is now hermetic against ambient provider env (`ANTHROPIC_BASE_URL`, `ANTHROPIC_DEFAULT_*_MODEL`, …) so a developer shell with an active provider profile can't flip tests to branches they never set up.
+- The ported lean prompt strings are pinned by digest tests against accidental edits; the verbose head's section shape, gates, and tone rules are pinned by a contract test.
+- Coverage added for the launcher env bootstrap (executing the emitted code with controlled env), the `--bare` settings-env strip, the ghost-provider-profile guard, and the settings-write lock.
+
 ## 1.6.1
 
 ### New Features
