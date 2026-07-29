@@ -51,7 +51,7 @@ export function UsageDashboard({
       }
     >
       <Tabs
-        title=""
+        title="Settings"
         color="permission"
         selectedTab={selectedTab}
         onTabChange={setSelectedTab}
