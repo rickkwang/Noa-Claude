@@ -2052,7 +2052,7 @@ function PromptInput({
     const effectiveFastMode = (isFastMode ?? false) && !wasFastModeDisabled;
     let message = `Model set to ${modelDisplayString(model)}`;
     if (isBilledAsExtraUsage(model, effectiveFastMode, isOpus1mMergeEnabled())) {
-      message += ' · Billed as extra usage';
+      message += ' · Billed as usage credits';
     }
     if (wasFastModeDisabled) {
       message += ' · Fast mode OFF';

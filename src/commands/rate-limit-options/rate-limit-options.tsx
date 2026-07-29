@@ -11,8 +11,8 @@ import type { ToolUseContext } from '../../Tool.js';
 import type { LocalJSXCommandOnDone } from '../../types/command.js';
 import { getOauthAccountInfo, getRateLimitTier, getSubscriptionType } from '../../utils/auth.js';
 import { hasClaudeAiBillingAccess } from '../../utils/billing.js';
-import { call as extraUsageCall } from '../extra-usage/extra-usage.js';
-import { extraUsage } from '../extra-usage/index.js';
+import { call as extraUsageCall } from '../usage-credits/usage-credits.js';
+import { extraUsage } from '../usage-credits/index.js';
 type RateLimitOptionsMenuOptionType = 'extra-usage' | 'cancel';
 type RateLimitOptionsMenuProps = {
   onDone: (result?: string, options?: {

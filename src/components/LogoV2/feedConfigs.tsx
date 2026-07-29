@@ -74,7 +74,7 @@ export function createProjectOnboardingFeed(steps: Step[]): FeedConfig {
 }
 export function createGuestPassesFeed(): FeedConfig {
   const reward = getCachedReferrerReward();
-  const subtitle = reward ? `Share Noa Claude and earn ${formatCreditAmount(reward)} of extra usage` : 'Share Noa Claude with friends';
+  const subtitle = reward ? `Share Noa Claude and earn ${formatCreditAmount(reward)} in usage credits` : 'Share Noa Claude with friends';
   return {
     title: '3 guest passes',
     lines: [],

@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { runExtraUsage } from './extra-usage-core.js'
+import { runExtraUsage } from './usage-credits-core.js'
 
 export async function call(): Promise<{ type: 'text'; value: string }> {
   const result = await runExtraUsage()
@@ -11,7 +11,7 @@ export async function call(): Promise<{ type: 'text'; value: string }> {
   return {
     type: 'text',
     value: result.opened
-      ? `Browser opened to manage extra usage. If it didn't open, visit: ${result.url}`
-      : `Please visit ${result.url} to manage extra usage.`,
+      ? `Browser opened to manage usage credits. If it didn't open, visit: ${result.url}`
+      : `Please visit ${result.url} to manage usage credits.`,
   }
 }

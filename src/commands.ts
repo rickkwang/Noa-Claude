@@ -116,7 +116,9 @@ import remoteEnv from './commands/remote-env/index.js'
 import {
   extraUsage,
   extraUsageNonInteractive,
-} from './commands/extra-usage/index.js'
+  usageCredits,
+  usageCreditsNonInteractive,
+} from './commands/usage-credits/index.js'
 import rateLimitOptions from './commands/rate-limit-options/index.js'
 import statusline from './commands/statusline.js'
 import effort from './commands/effort/index.js'
@@ -231,6 +233,8 @@ const COMMANDS = memoize((): Command[] => [
   rewind,
   securityReview,
   terminalSetup,
+  usageCredits,
+  usageCreditsNonInteractive,
   extraUsage,
   extraUsageNonInteractive,
   rateLimitOptions,

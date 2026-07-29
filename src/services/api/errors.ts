@@ -576,7 +576,7 @@ export function getAssistantMessageFromError(
     if (error.message.includes('Extra usage is required for long context')) {
       const hint = getIsNonInteractiveSession()
         ? `enable extra usage at ${PRODUCT_USAGE_URL}, or use --model to switch to standard context`
-        : 'run /extra-usage to enable, or /model to switch to standard context'
+        : 'run /usage-credits to turn them on, or /model to switch to standard context'
       return createAssistantAPIErrorMessage({
         content: `${API_ERROR_MESSAGE_PREFIX}: Extra usage is required for 1M context · ${hint}`,
         error: 'rate_limit',
@@ -778,7 +778,7 @@ export function getAssistantMessageFromError(
   ) {
     const hint = getIsNonInteractiveSession()
       ? `check your plan and extra usage settings at ${PRODUCT_USAGE_URL}, then run --model to switch models if needed`
-      : 'check your plan and /extra-usage settings, or run /model to switch models'
+      : 'check your plan and /usage-credits settings, or run /model to switch models'
     return createAssistantAPIErrorMessage({
       content:
         `Claude Opus is not currently available for this account. ${hint}. If your plan changed recently, run /logout and /login.`,
