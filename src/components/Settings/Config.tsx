@@ -894,7 +894,11 @@ export function Config({
   }, {
     id: 'model',
     label: 'Model',
-    value: mainLoopModel === null ? 'Default (recommended)' : mainLoopModel,
+    // modelDisplayString, not the raw stored value: mainLoopModel can carry a
+    // literal '[1m]' suffix (e.g. 'k3[1m]'), and rendering that unresolved
+    // both loses the human-readable name and risks the value column treating
+    // '[1m]' as terminal escape bytes rather than display text.
+    value: mainLoopModel === null ? 'Default (recommended)' : modelDisplayString(mainLoopModel),
     type: 'managedEnum' as const,
     onChange: onChangeMainModelConfig
   }, ...(isConnectedToIde ? [{
