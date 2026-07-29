@@ -31,7 +31,6 @@ export function UsageDashboard({
   const { rows } = useModalOrTerminalSize(useTerminalSize());
   const contentHeight = insideModal ? rows + 1 : Math.max(15, Math.min(Math.floor(rows * 0.8), 30));
   const [diagnosticsPromise] = useState(() => buildDiagnostics().catch(() => []));
-  const isStatsTab = selectedTab === 'Stats';
 
   const handleEscape = React.useCallback(() => {
     if (tabsHidden) {
@@ -42,8 +41,6 @@ export function UsageDashboard({
 
   return (
     <Dialog
-      title={isStatsTab ? 'Stats' : 'Settings'}
-      subtitle={isStatsTab ? 'Usage, configuration, diagnostics, and model activity' : 'Status, configuration, usage, and model activity'}
       color="permission"
       onCancel={handleEscape}
       isCancelActive={!tabsHidden && !(selectedTab === 'Config' && configOwnsEsc)}

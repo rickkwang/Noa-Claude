@@ -10,7 +10,7 @@ import { Byline } from './Byline.js';
 import { KeyboardShortcutHint } from './KeyboardShortcutHint.js';
 import { Pane } from './Pane.js';
 type DialogProps = {
-  title: React.ReactNode;
+  title?: React.ReactNode;
   subtitle?: React.ReactNode;
   children: React.ReactNode;
   onCancel: () => void;
@@ -68,7 +68,7 @@ export function Dialog(t0) {
   const defaultInputGuide = t4;
   let t5;
   if ($[5] !== color || $[6] !== title) {
-    t5 = <Text bold={true} color={color}>{title}</Text>;
+    t5 = title && <Text bold={true} color={color}>{title}</Text>;
     $[5] = color;
     $[6] = title;
     $[7] = t5;
@@ -85,7 +85,7 @@ export function Dialog(t0) {
   }
   let t7;
   if ($[10] !== t5 || $[11] !== t6) {
-    t7 = <Box flexDirection="column">{t5}{t6}</Box>;
+    t7 = (t5 || t6) && <Box flexDirection="column">{t5}{t6}</Box>;
     $[10] = t5;
     $[11] = t6;
     $[12] = t7;
