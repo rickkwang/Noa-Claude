@@ -191,6 +191,7 @@ export const DEFAULT_BINDINGS: KeybindingBlock[] = [
     context: 'ThemePicker',
     bindings: {
       'ctrl+t': 'theme:toggleSyntaxHighlighting',
+      'ctrl+e': 'theme:editCustom',
     },
   },
   {

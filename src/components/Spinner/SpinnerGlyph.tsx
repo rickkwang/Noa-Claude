@@ -1,8 +1,8 @@
 // @ts-nocheck
 import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
-import { Box, Text, useTheme } from '../../ink.js';
-import { getTheme, type Theme } from '../../utils/theme.js';
+import { Box, Text, useResolvedTheme } from '../../ink.js';
+import type { Theme } from '../../utils/theme.js';
 import { getDefaultCharacters, interpolateColor, parseRGB, toRGBColor } from './utils.js';
 const DEFAULT_CHARACTERS = getDefaultCharacters();
 const SPINNER_FRAMES = [...DEFAULT_CHARACTERS, ...[...DEFAULT_CHARACTERS].reverse()];
@@ -32,8 +32,7 @@ export function SpinnerGlyph(t0) {
   const stalledIntensity = t1 === undefined ? 0 : t1;
   const reducedMotion = t2 === undefined ? false : t2;
   const time = t3 === undefined ? 0 : t3;
-  const [themeName] = useTheme();
-  const theme = getTheme(themeName);
+  const theme = useResolvedTheme();
   if (reducedMotion) {
     const isDim = Math.floor(time / (REDUCED_MOTION_CYCLE_MS / 2)) % 2 === 1;
     let t4;

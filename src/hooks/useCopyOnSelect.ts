@@ -1,9 +1,8 @@
 // @ts-nocheck
 import { useEffect, useRef } from 'react'
-import { useTheme } from '../components/design-system/ThemeProvider.js'
+import { useResolvedTheme } from '../components/design-system/ThemeProvider.js'
 import type { useSelection } from '../ink/hooks/use-selection.js'
 import { getGlobalConfig } from '../utils/config.js'
-import { getTheme } from '../utils/theme.js'
 
 type Selection = ReturnType<typeof useSelection>
 
@@ -92,8 +91,8 @@ export function useCopyOnSelect(
  * so the selection color tracks the theme live.
  */
 export function useSelectionBgColor(selection: Selection): void {
-  const [themeName] = useTheme()
+  const theme = useResolvedTheme()
   useEffect(() => {
-    selection.setSelectionBgColor(getTheme(themeName).selectionBg)
-  }, [selection, themeName])
+    selection.setSelectionBgColor(theme.selectionBg)
+  }, [selection, theme])
 }

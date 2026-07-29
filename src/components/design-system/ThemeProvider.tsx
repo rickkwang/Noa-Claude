@@ -1,20 +1,31 @@
 // @ts-nocheck
 import { c as _c } from "react/compiler-runtime";
 import { feature } from 'bun:bundle';
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import useStdin from '../../ink/hooks/use-stdin.js';
 import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js';
+import { getCachedCustomThemes, loadCustomThemes, mergeThemeOverrides, parseCustomThemeRef, pluginThemesStore, watchCustomThemes, type CustomTheme } from '../../utils/customThemes.js';
+import { loadPluginThemes } from '../../utils/plugins/loadPluginThemes.js';
 import { getSystemThemeName, type SystemTheme } from '../../utils/systemTheme.js';
-import type { ThemeName, ThemeSetting } from '../../utils/theme.js';
+import { getTheme, type Theme, type ThemeName, type ThemeSetting } from '../../utils/theme.js';
 type ThemeContextValue = {
-  /** The saved user preference. May be 'auto'. */
+  /** The saved user preference. May be 'auto' or a `custom:<slug>` ref. */
   themeSetting: ThemeSetting;
   setThemeSetting: (setting: ThemeSetting) => void;
   setPreviewTheme: (setting: ThemeSetting) => void;
   savePreview: () => void;
   cancelPreview: () => void;
-  /** The resolved theme to render with. Never 'auto'. */
+  /** The resolved base theme name. Never 'auto'; custom refs map to their base. */
   currentTheme: ThemeName;
+  /** The palette to render with: base theme plus any active custom overrides. */
+  resolvedTheme: Theme;
+  /** User + plugin custom themes, user first, sorted by name. */
+  customThemes: readonly CustomTheme[];
+  /** The custom theme the current setting refers to, if any. */
+  activeCustomTheme: CustomTheme | undefined;
+  reloadCustomThemes: () => void;
+  /** Live palette overrides while the theme editor is open. null clears. */
+  setPreviewOverrides: (overrides: Partial<Theme> | null) => void;
 };
 
 // Non-'auto' default so useTheme() works without a provider (tests, tooling).
@@ -25,7 +36,12 @@ const ThemeContext = createContext<ThemeContextValue>({
   setPreviewTheme: () => {},
   savePreview: () => {},
   cancelPreview: () => {},
-  currentTheme: DEFAULT_THEME
+  currentTheme: DEFAULT_THEME,
+  resolvedTheme: getTheme(DEFAULT_THEME),
+  customThemes: [],
+  activeCustomTheme: undefined,
+  reloadCustomThemes: () => {},
+  setPreviewOverrides: () => {}
 });
 type Props = {
   children: React.ReactNode;
@@ -48,6 +64,10 @@ export function ThemeProvider({
 }: Props) {
   const [themeSetting, setThemeSetting] = useState(initialState ?? defaultInitialTheme);
   const [previewTheme, setPreviewTheme] = useState<ThemeSetting | null>(null);
+  const [previewOverrides, setPreviewOverrides] = useState<Partial<Theme> | null>(null);
+  const [userCustomThemes, setUserCustomThemes] = useState<readonly CustomTheme[]>(getCachedCustomThemes);
+  const pluginThemes = useSyncExternalStore(pluginThemesStore.subscribe, pluginThemesStore.getState);
+  const customThemes = useMemo(() => [...userCustomThemes, ...pluginThemes], [userCustomThemes, pluginThemes]);
 
   // Track terminal theme for 'auto' resolution. Seeds from $COLORFGBG (or
   // 'dark' if unset); the OSC 11 watcher corrects it on first poll.
@@ -58,6 +78,17 @@ export function ThemeProvider({
   const {
     internal_querier
   } = useStdin();
+  const reloadCustomThemes = useMemo(() => () => {
+    void loadCustomThemes().then(setUserCustomThemes);
+  }, []);
+
+  // Initial load of user + plugin themes, then live-reload user themes on
+  // file changes so edits made outside the picker show up without a restart.
+  useEffect(() => {
+    reloadCustomThemes();
+    void loadPluginThemes();
+    return watchCustomThemes(reloadCustomThemes);
+  }, [reloadCustomThemes]);
 
   // Watch for live terminal theme changes while 'auto' is active.
   // Positive feature() pattern so the watcher import is dead-code-eliminated
@@ -79,7 +110,10 @@ export function ThemeProvider({
       };
     }
   }, [activeSetting, internal_querier]);
-  const currentTheme: ThemeName = activeSetting === 'auto' ? systemTheme : activeSetting;
+  const activeCustomSlug = parseCustomThemeRef(activeSetting);
+  const activeCustomTheme = activeCustomSlug ? customThemes.find(theme => theme.slug === activeCustomSlug) : undefined;
+  const currentTheme: ThemeName = activeCustomTheme ? activeCustomTheme.base : activeSetting === 'auto' ? systemTheme : activeCustomSlug ? 'dark' : activeSetting as ThemeName;
+  const resolvedTheme = mergeThemeOverrides(getTheme(currentTheme), previewOverrides ?? activeCustomTheme?.overrides);
   const value = useMemo<ThemeContextValue>(() => ({
     themeSetting,
     setThemeSetting: (newSetting: ThemeSetting) => {
@@ -111,14 +145,20 @@ export function ThemeProvider({
         setPreviewTheme(null);
       }
     },
-    currentTheme
-  }), [themeSetting, previewTheme, currentTheme, onThemeSave]);
+    currentTheme,
+    resolvedTheme,
+    customThemes,
+    activeCustomTheme,
+    reloadCustomThemes,
+    setPreviewOverrides
+  }), [themeSetting, previewTheme, currentTheme, resolvedTheme, customThemes, activeCustomTheme, reloadCustomThemes, onThemeSave]);
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 /**
- * Returns the resolved theme for rendering (never 'auto') and a setter that
- * accepts any ThemeSetting (including 'auto').
+ * Returns the resolved base theme name (never 'auto'; a custom theme resolves
+ * to its base) and a setter that accepts any ThemeSetting (including 'auto'
+ * and `custom:<slug>` refs). For rendering colors, prefer useResolvedTheme.
  */
 export function useTheme() {
   const $ = _c(3);
@@ -165,6 +205,40 @@ export function usePreviewTheme() {
     $[3] = t0;
   } else {
     t0 = $[3];
+  }
+  return t0;
+}
+
+/**
+ * Returns the palette to render with: the base theme merged with the active
+ * custom theme's (or the theme editor's live preview) overrides.
+ */
+export function useResolvedTheme(): Theme {
+  return useContext(ThemeContext).resolvedTheme;
+}
+export function useCustomThemes() {
+  const $ = _c(5);
+  const {
+    customThemes,
+    activeCustomTheme,
+    reloadCustomThemes,
+    setPreviewOverrides
+  } = useContext(ThemeContext);
+  let t0;
+  if ($[0] !== activeCustomTheme || $[1] !== customThemes || $[2] !== reloadCustomThemes || $[3] !== setPreviewOverrides) {
+    t0 = {
+      customThemes,
+      activeCustomTheme,
+      reloadCustomThemes,
+      setPreviewOverrides
+    };
+    $[0] = activeCustomTheme;
+    $[1] = customThemes;
+    $[2] = reloadCustomThemes;
+    $[3] = setPreviewOverrides;
+    $[4] = t0;
+  } else {
+    t0 = $[4];
   }
   return t0;
 }

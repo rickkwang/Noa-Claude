@@ -11,7 +11,7 @@ import { useSearchInput } from '../hooks/useSearchInput.js';
 import { useTerminalSize } from '../hooks/useTerminalSize.js';
 import { applyColor } from '../ink/colorize.js';
 import type { Color } from '../ink/styles.js';
-import { Box, Text, useInput, useTerminalFocus, useTheme } from '../ink.js';
+import { Box, Text, useInput, useTerminalFocus, useResolvedTheme } from '../ink.js';
 import { useKeybinding } from '../keybindings/useKeybinding.js';
 import { logEvent } from '../services/analytics/index.js';
 import type { LogOption, SerializedMessage } from '../types/logs.js';
@@ -21,7 +21,6 @@ import { getBranch } from '../utils/git.js';
 import { getLogDisplayTitle } from '../utils/log.js';
 import { normalizeDriveLetter } from '../utils/pathCase.js';
 import { getFirstMeaningfulUserMessageTextContent, getSessionIdFromLog, isCustomTitleEnabled, saveCustomTitle } from '../utils/sessionStorage.js';
-import { getTheme } from '../utils/theme.js';
 import { ConfigurableShortcutHint } from './ConfigurableShortcutHint.js';
 import { Select } from './CustomSelect/select.js';
 import { Byline } from './design-system/Byline.js';
@@ -178,16 +177,7 @@ export function LogSelector(t0) {
   }
   const isResumeWithRenameEnabled = t3;
   const isDeepSearchEnabled = false;
-  const [themeName] = useTheme();
-  let t4;
-  if ($[1] !== themeName) {
-    t4 = getTheme(themeName);
-    $[1] = themeName;
-    $[2] = t4;
-  } else {
-    t4 = $[2];
-  }
-  const theme = t4;
+  const theme = useResolvedTheme();
   let t5;
   if ($[3] !== theme.warning) {
     t5 = text => applyColor(text, theme.warning as Color);

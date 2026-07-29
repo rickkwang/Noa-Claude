@@ -2,9 +2,9 @@
 import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { stringWidth } from '../../ink/stringWidth.js';
-import { Text, useTheme } from '../../ink.js';
+import { Text, useResolvedTheme } from '../../ink.js';
 import { getGraphemeSegmenter } from '../../utils/intl.js';
-import { getTheme, type Theme } from '../../utils/theme.js';
+import type { Theme } from '../../utils/theme.js';
 import type { SpinnerMode } from './types.js';
 import { interpolateColor, parseRGB, toRGBColor } from './utils.js';
 type Props = {
@@ -33,14 +33,13 @@ export function GlimmerMessage(t0) {
     stalledIntensity: t1
   } = t0;
   const stalledIntensity = t1 === undefined ? 0 : t1;
-  const [themeName] = useTheme();
+  const theme = useResolvedTheme();
   let messageWidth;
   let segments;
   let t2;
-  if ($[0] !== flashOpacity || $[1] !== message || $[2] !== messageColor || $[3] !== mode || $[4] !== shimmerColor || $[5] !== stalledIntensity || $[6] !== themeName) {
+  if ($[0] !== flashOpacity || $[1] !== message || $[2] !== messageColor || $[3] !== mode || $[4] !== shimmerColor || $[5] !== stalledIntensity || $[6] !== theme) {
     t2 = Symbol.for("react.early_return_sentinel");
     bb0: {
-      const theme = getTheme(themeName);
       let segs;
       if ($[10] !== message) {
         segs = [];
@@ -197,7 +196,7 @@ export function GlimmerMessage(t0) {
     $[3] = mode;
     $[4] = shimmerColor;
     $[5] = stalledIntensity;
-    $[6] = themeName;
+    $[6] = theme;
     $[7] = messageWidth;
     $[8] = segments;
     $[9] = t2;

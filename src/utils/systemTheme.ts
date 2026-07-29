@@ -12,6 +12,11 @@
  * updated by the watcher once the OSC 11 response arrives.
  */
 
+import {
+  getCustomThemeBase,
+  parseCustomThemeRef,
+} from './customThemes.js'
+import { isThemeName } from './customThemes.js'
 import type { ThemeName, ThemeSetting } from './theme.js'
 
 export type SystemTheme = 'dark' | 'light'
@@ -38,13 +43,19 @@ export function setCachedSystemTheme(theme: SystemTheme): void {
 }
 
 /**
- * Resolve a ThemeSetting (which may be 'auto') to a concrete ThemeName.
+ * Resolve a ThemeSetting (which may be 'auto' or a `custom:<slug>` reference)
+ * to a concrete ThemeName. A custom ref resolves to the theme's base; an
+ * unknown slug (theme deleted, themes not yet loaded) falls back to 'dark'.
  */
 export function resolveThemeSetting(setting: ThemeSetting): ThemeName {
   if (setting === 'auto') {
     return getSystemThemeName()
   }
-  return setting
+  if (isThemeName(setting)) {
+    return setting
+  }
+  const slug = parseCustomThemeRef(setting)
+  return (slug && getCustomThemeBase(slug)) || 'dark'
 }
 
 /**

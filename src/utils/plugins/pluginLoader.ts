@@ -1457,12 +1457,16 @@ export async function createPluginFromPath(
     agentsDirExists,
     skillsDirExists,
     outputStylesDirExists,
+    themesDirExists,
   ] = await Promise.all([
     !manifest.commands ? pathExists(join(pluginPath, 'commands')) : false,
     !manifest.agents ? pathExists(join(pluginPath, 'agents')) : false,
     !manifest.skills ? pathExists(join(pluginPath, 'skills')) : false,
     !manifest.outputStyles
       ? pathExists(join(pluginPath, 'output-styles'))
+      : false,
+    !(manifest.experimental?.themes ?? manifest.themes)
+      ? pathExists(join(pluginPath, 'themes'))
       : false,
   ])
 
@@ -1688,6 +1692,35 @@ export async function createPluginFromPath(
 
     if (validPaths.length > 0) {
       plugin.outputStylesPaths = validPaths
+    }
+  }
+
+  // Step 4f: Register themes directory if detected
+  const themesPath = join(pluginPath, 'themes')
+  if (themesDirExists) {
+    plugin.themesPath = themesPath
+  }
+
+  // Step 4g: Process additional theme paths from manifest
+  const manifestThemes = manifest.experimental?.themes ?? manifest.themes
+  if (manifestThemes) {
+    const themePaths = Array.isArray(manifestThemes)
+      ? manifestThemes
+      : [manifestThemes]
+
+    const validPaths = await validatePluginPaths(
+      themePaths,
+      pluginPath,
+      manifest.name,
+      source,
+      'themes',
+      'Theme',
+      'specified in manifest but',
+      errors,
+    )
+
+    if (validPaths.length > 0) {
+      plugin.themesPaths = validPaths
     }
   }
 
@@ -2757,6 +2790,29 @@ async function finishLoadingPluginFromPath(
       }
     }
 
+    // Process themes from marketplace entry
+    const entryThemes = entry.experimental?.themes ?? entry.themes
+    if (entryThemes) {
+      const themePaths = Array.isArray(entryThemes)
+        ? entryThemes
+        : [entryThemes]
+
+      const validPaths = await validatePluginPaths(
+        themePaths,
+        pluginPath,
+        entry.name,
+        pluginId,
+        'themes',
+        'Theme',
+        'from marketplace entry',
+        errors,
+      )
+
+      if (validPaths.length > 0) {
+        plugin.themesPaths = validPaths
+      }
+    }
+
     // Process inline hooks from marketplace entry
     if (entry.hooks) {
       plugin.hooksConfig = entry.hooks as HooksSettings
@@ -2768,14 +2824,16 @@ async function finishLoadingPluginFromPath(
       entry.agents ||
       entry.skills ||
       entry.hooks ||
-      entry.outputStyles)
+      entry.outputStyles ||
+      entry.themes ||
+      entry.experimental?.themes)
   ) {
-    // In non-strict mode with plugin.json, marketplace entries for commands/agents/skills/hooks/outputStyles are conflicts
+    // In non-strict mode with plugin.json, marketplace entries for commands/agents/skills/hooks/outputStyles/themes are conflicts
     const error = new Error(
-      `Plugin ${entry.name} has both plugin.json and marketplace manifest entries for commands/agents/skills/hooks/outputStyles. This is a conflict.`,
+      `Plugin ${entry.name} has both plugin.json and marketplace manifest entries for commands/agents/skills/hooks/outputStyles/themes. This is a conflict.`,
     )
     logForDebugging(
-      `Plugin ${entry.name} has both plugin.json and marketplace manifest entries for commands/agents/skills/hooks/outputStyles. This is a conflict.`,
+      `Plugin ${entry.name} has both plugin.json and marketplace manifest entries for commands/agents/skills/hooks/outputStyles/themes. This is a conflict.`,
       { level: 'error' },
     )
     logError(error)
@@ -2981,6 +3039,29 @@ async function finishLoadingPluginFromPath(
           ...(plugin.outputStylesPaths || []),
           ...validPaths,
         ]
+      }
+    }
+
+    // Supplement themes from marketplace entry
+    const supplementThemes = entry.experimental?.themes ?? entry.themes
+    if (supplementThemes) {
+      const themePaths = Array.isArray(supplementThemes)
+        ? supplementThemes
+        : [supplementThemes]
+
+      const validPaths = await validatePluginPaths(
+        themePaths,
+        pluginPath,
+        entry.name,
+        pluginId,
+        'themes',
+        'Theme',
+        'from marketplace entry',
+        errors,
+      )
+
+      if (validPaths.length > 0) {
+        plugin.themesPaths = [...(plugin.themesPaths || []), ...validPaths]
       }
     }
 

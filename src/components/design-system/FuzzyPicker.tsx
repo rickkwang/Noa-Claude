@@ -59,6 +59,7 @@ type Props<T> = {
    */
   matchLabel?: string;
   selectAction?: string;
+  cancelAction?: string;
   extraHints?: React.ReactNode;
 };
 const DEFAULT_VISIBLE = 8;
@@ -86,6 +87,7 @@ export function FuzzyPicker<T>({
   emptyMessage = 'No results',
   matchLabel,
   selectAction = 'select',
+  cancelAction = 'cancel',
   extraHints
 }: Props<T>): React.ReactNode {
   const isTerminalFocused = useTerminalFocus();
@@ -209,7 +211,7 @@ export function FuzzyPicker<T>({
             <KeyboardShortcutHint shortcut="Enter" action={compact ? firstWord(selectAction) : selectAction} />
             {onTab && <KeyboardShortcutHint shortcut="Tab" action={onTab.action} />}
             {onShiftTab && !compact && <KeyboardShortcutHint shortcut="shift+tab" action={onShiftTab.action} />}
-            <KeyboardShortcutHint shortcut="Esc" action="cancel" />
+            <KeyboardShortcutHint shortcut="Esc" action={cancelAction} />
             {extraHints}
           </Byline>
         </Text>

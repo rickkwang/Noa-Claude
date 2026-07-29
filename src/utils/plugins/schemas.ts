@@ -524,6 +524,40 @@ const PluginManifestOutputStylesSchema = lazySchema(() =>
   }),
 )
 
+/**
+ * Schema for custom theme definitions in plugin manifest
+ *
+ * Allows plugins to ship custom themes (JSON color-override files) from a
+ * themes/ directory or explicit paths. `experimental.themes` is accepted as
+ * an alias, matching upstream.
+ */
+const PluginManifestThemesSchema = lazySchema(() =>
+  z.object({
+    themes: z.union([
+      RelativePath().describe(
+        'Path to a themes directory or file, relative to the plugin root. When set, the themes/ directory is not auto-loaded — list its files here if you want both.',
+      ),
+      z
+        .array(
+          RelativePath().describe(
+            'Path to a themes directory or file, relative to the plugin root. When set, the themes/ directory is not auto-loaded — list its files here if you want both.',
+          ),
+        )
+        .describe(
+          'List of theme directory or file paths. When set, the themes/ directory is not auto-loaded.',
+        ),
+    ]),
+    experimental: z
+      .object({
+        themes: z
+          .union([RelativePath(), z.array(RelativePath())])
+          .optional()
+          .describe('Alias for `themes`'),
+      })
+      .optional(),
+  }),
+)
+
 // Helper validators for LSP config
 const nonEmptyString = lazySchema(() => z.string().min(1))
 const fileExtension = lazySchema(() =>
@@ -890,6 +924,7 @@ export const PluginManifestSchema = lazySchema(() =>
     ...PluginManifestAgentsSchema().partial().shape,
     ...PluginManifestSkillsSchema().partial().shape,
     ...PluginManifestOutputStylesSchema().partial().shape,
+    ...PluginManifestThemesSchema().partial().shape,
     ...PluginManifestChannelsSchema().partial().shape,
     ...PluginManifestMcpServerSchema().partial().shape,
     ...PluginManifestLspServerSchema().partial().shape,

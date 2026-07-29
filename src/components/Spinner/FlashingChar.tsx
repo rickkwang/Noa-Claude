@@ -1,8 +1,8 @@
 // @ts-nocheck
 import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
-import { Text, useTheme } from '../../ink.js';
-import { getTheme, type Theme } from '../../utils/theme.js';
+import { Text, useResolvedTheme } from '../../ink.js';
+import type { Theme } from '../../utils/theme.js';
 import { interpolateColor, parseRGB, toRGBColor } from './utils.js';
 type Props = {
   char: string;
@@ -18,12 +18,11 @@ export function FlashingChar(t0) {
     messageColor,
     shimmerColor
   } = t0;
-  const [themeName] = useTheme();
+  const theme = useResolvedTheme();
   let t1;
-  if ($[0] !== char || $[1] !== flashOpacity || $[2] !== messageColor || $[3] !== shimmerColor || $[4] !== themeName) {
+  if ($[0] !== char || $[1] !== flashOpacity || $[2] !== messageColor || $[3] !== shimmerColor || $[4] !== theme) {
     t1 = Symbol.for("react.early_return_sentinel");
     bb0: {
-      const theme = getTheme(themeName);
       const baseColorStr = theme[messageColor];
       const shimmerColorStr = theme[shimmerColor];
       const baseRGB = baseColorStr ? parseRGB(baseColorStr) : null;
@@ -38,7 +37,7 @@ export function FlashingChar(t0) {
     $[1] = flashOpacity;
     $[2] = messageColor;
     $[3] = shimmerColor;
-    $[4] = themeName;
+    $[4] = theme;
     $[5] = t1;
   } else {
     t1 = $[5];

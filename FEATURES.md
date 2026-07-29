@@ -147,3 +147,15 @@ These are not solved by feature-flag unlock and are tracked in the feature matri
 - Runner/daemon surfaces excluded by product scope
 
 Refer to `FEATURE_AVAILABILITY_MATRIX.md` for command-level availability.
+
+## Upstream Parity Notes
+
+- **Custom themes (`/theme`)** — aligned with upstream Claude Code 2.1.220:
+  user themes from `<config>/themes/*.json`, plugin-provided themes
+  (`themes/` dir or `themes`/`experimental.themes` manifest paths, slugs
+  namespaced `<plugin>:`), `custom:<slug>` values for the `theme` setting,
+  the picker's custom-theme rows + ctrl+e edit, and the theme editor
+  (fork-on-edit for plugin themes). Intentional deviation: upstream gates
+  custom themes behind safe mode (`--safe-mode` / `CLAUDE_CODE_SAFE_MODE=1`)
+  and shows a "disabled in safe mode" notice; this fork has no safe-mode
+  concept, so that gate and its copy are absent.
