@@ -94,7 +94,10 @@ const PERMISSION_MODE_CONFIG: Partial<
           indicator: 'auto mode',
           symbol: '⏵⏵',
           color: 'warning' as ModeColorKey,
-          external: 'default' as ExternalPermissionMode,
+          // 'auto', not 'default': toExternalPermissionMode round-trips this
+          // value, so mapping it to 'default' silently discarded the user's
+          // Auto selection the moment they made it.
+          external: 'auto' as ExternalPermissionMode,
         },
       }
     : {}),
@@ -102,16 +105,12 @@ const PERMISSION_MODE_CONFIG: Partial<
 
 /**
  * Type guard to check if a PermissionMode is an ExternalPermissionMode.
- * auto is ant-only and excluded from external modes.
+ * Only 'bubble' is internal-only, matching upstream.
  */
 export function isExternalPermissionMode(
   mode: PermissionMode,
 ): mode is ExternalPermissionMode {
-  // External users can't have auto, so always true for them
-  if (process.env.USER_TYPE !== 'ant') {
-    return true
-  }
-  return mode !== 'auto' && mode !== 'bubble'
+  return mode !== 'bubble'
 }
 
 function getModeConfig(mode: PermissionMode): PermissionModeConfig {

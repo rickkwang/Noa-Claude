@@ -12,8 +12,8 @@ import { type GlobalConfig, saveGlobalConfig, getCurrentProjectConfig, type Outp
 import { normalizeApiKeyForConfig } from '../../utils/authPortable.js';
 import { getGlobalConfig, getAutoUpdaterDisabledReason, formatAutoUpdaterDisabledReason, getRemoteControlAtStartup } from '../../utils/config.js';
 import chalk from 'chalk';
-import { permissionModeTitle, permissionModeFromString, toExternalPermissionMode, isExternalPermissionMode, EXTERNAL_PERMISSION_MODES, PERMISSION_MODES, type ExternalPermissionMode, type PermissionMode } from '../../utils/permissions/PermissionMode.js';
-import { getAutoModeEnabledState, hasAutoModeOptInAnySource, transitionPlanAutoMode } from '../../utils/permissions/permissionSetup.js';
+import { permissionModeTitle, permissionModeFromString, toExternalPermissionMode, isExternalPermissionMode, PERMISSION_MODES, type ExternalPermissionMode, type PermissionMode } from '../../utils/permissions/PermissionMode.js';
+import { transitionPlanAutoMode } from '../../utils/permissions/permissionSetup.js';
 import { logError } from '../../utils/log.js';
 import { logEvent, type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from 'src/services/analytics/index.js';
 import { isBridgeEnabled } from '../../bridge/bridgeEnabled.js';
@@ -83,6 +83,8 @@ type Setting = (SettingBase & {
   type: 'managedEnum';
 });
 type SubMenu = 'Theme' | 'Model' | 'TeammateModel' | 'ExternalIncludes' | 'OutputStyle' | 'ChannelDowngrade' | 'Language' | 'EnableAutoUpdates';
+// Columns between the label column and the value column (matches upstream).
+const LABEL_GUTTER = 1;
 export function Config({
   onClose,
   context,
@@ -110,7 +112,8 @@ export function Config({
   const [isSearchMode, setIsSearchMode] = useState(true);
   const isTerminalFocused = useTerminalFocus();
   const {
-    rows
+    rows,
+    columns
   } = useTerminalSize();
   // contentHeight is set by UsageDashboard.tsx (same value passed to Tabs to fix
   // pane height across all tabs — prevents layout jank when switching).
@@ -118,15 +121,15 @@ export function Config({
   // Fallback calc for standalone rendering (tests).
   const paneCap = contentHeight ?? Math.min(Math.floor(rows * 0.8), 30);
   const maxVisible = Math.max(5, paneCap - 10);
+  // Label column: 44 wide when there's room, shrinking to a 14-column floor on
+  // narrow terminals so the value column keeps ~16 columns to render into.
+  // Labels truncate rather than wrap, so a row is always exactly one line.
+  const labelColumnWidth = Math.min(44, Math.max(14, columns - 16));
   const mainLoopModel = useAppState(s => s.mainLoopModel);
   const verbose = useAppState(s_0 => s_0.verbose);
   const thinkingEnabled = useAppState(s_1 => s_1.thinkingEnabled);
   const isFastMode = useAppState(s_2 => isFastModeEnabled() ? s_2.fastMode : false);
   const promptSuggestionEnabled = useAppState(s_3 => s_3.promptSuggestionEnabled);
-  // Show auto in the default-mode dropdown when the user has opted in OR the
-  // config is fully 'enabled' — even if currently circuit-broken ('disabled'),
-  // an opted-in user should still see it in settings (it's a temporary state).
-  const showAutoInDefaultModePicker = feature('AUTO_MODE') ? hasAutoModeOptInAnySource() || getAutoModeEnabledState() === 'enabled' : false;
   // Chat/Transcript view picker is visible to entitled users (pass the GB
   // gate) even if they haven't opted in this session — it IS the persistent
   // opt-in. 'chat' written here is read at next startup by main.tsx which
@@ -213,7 +216,7 @@ export function Config({
       mainLoopModelForSession: null
     }));
     setChanges(prev_0 => {
-      const valStr = modelDisplayString(value) + (isBilledAsExtraUsage(value, false, isOpus1mMergeEnabled()) ? ' · Billed as extra usage' : '');
+      const valStr = modelDisplayString(value) + (isBilledAsExtraUsage(value, false, isOpus1mMergeEnabled()) ? ' · Billed as usage credits' : '');
       if ('model' in prev_0) {
         const {
           model,
@@ -302,7 +305,7 @@ export function Config({
     }
   }, {
     id: 'awaySummaryEnabled',
-    label: 'Recap when you return',
+    label: 'Session recap',
     value: settingsData?.awaySummaryEnabled ?? true,
     type: 'boolean' as const,
     onChange(awaySummaryEnabled: boolean) {
@@ -371,7 +374,7 @@ export function Config({
   // Fast mode toggle (ant-only, eliminated from external builds)
   ...(isFastModeEnabled() && isFastModeAvailable() ? [{
     id: 'fastMode',
-    label: `Fast mode (${FAST_MODE_MODEL_DISPLAY} only)`,
+    label: `Fast mode (${FAST_MODE_MODEL_DISPLAY})`,
     value: !!isFastMode,
     type: 'boolean' as const,
     onChange(enabled_0: boolean) {
@@ -523,12 +526,11 @@ export function Config({
     value: settingsData?.permissions?.defaultMode || 'default',
     options: (() => {
       const priorityOrder: PermissionMode[] = ['default', 'plan'];
-      const allModes: readonly PermissionMode[] = feature('AUTO_MODE') ? PERMISSION_MODES : EXTERNAL_PERMISSION_MODES;
-      const excluded: PermissionMode[] = [];
-      if (feature('AUTO_MODE') && !showAutoInDefaultModePicker) {
-        excluded.push('auto');
-      }
-      return [...priorityOrder, ...allModes.filter(m => !priorityOrder.includes(m) && !excluded.includes(m))];
+      // bypassPermissions is excluded unconditionally, as upstream does: it
+      // skips every permission prompt, so it must not be reachable by pressing
+      // space through this row — it's opt-in via --dangerously-skip-permissions.
+      const excluded: PermissionMode[] = ['bypassPermissions'];
+      return [...priorityOrder, ...PERMISSION_MODES.filter(m => !priorityOrder.includes(m) && !excluded.includes(m))];
     })(),
     type: 'enum' as const,
     onChange(mode: string) {
@@ -567,7 +569,9 @@ export function Config({
         value: mode as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
       });
     }
-  }, ...(feature('AUTO_MODE') && showAutoInDefaultModePicker ? [{
+    // Upstream renders this row unconditionally; the feature() guard stays
+    // because this fork compiles auto mode out entirely when it's disabled.
+  }, ...(feature('AUTO_MODE') ? [{
     id: 'useAutoModeDuringPlan',
     label: 'Use auto mode during plan',
     value: (settingsData as {
@@ -599,6 +603,56 @@ export function Config({
       }));
     }
   }] : []), {
+    id: 'worktreeBaseRef',
+    label: 'Worktree base ref',
+    // 'fresh' mirrors getConfiguredWorktreeBaseRef's default (worktree.ts).
+    value: settingsData?.worktree?.baseRef ?? 'fresh',
+    options: ['fresh', 'head'],
+    type: 'enum' as const,
+    onChange(baseRef: string) {
+      const nextRef = baseRef as 'fresh' | 'head';
+      const previousRef = settingsData?.worktree?.baseRef;
+      setSettingsData(prev_wt => ({
+        ...prev_wt,
+        worktree: {
+          ...prev_wt?.worktree,
+          baseRef: nextRef
+        }
+      }));
+      setChanges(prev_wt2 => ({
+        ...prev_wt2,
+        worktreeBaseRef: nextRef
+      }));
+      // Write baseRef alone, NOT spread over settingsData.worktree:
+      // settingsData is merged across sources, so spreading it would copy
+      // project/policy symlinkDirectories and sparsePaths into the user
+      // file. updateSettingsForSource deep-merges nested objects, so the
+      // user file's own sibling keys survive regardless.
+      const result_wt = updateSettingsForSource('userSettings', {
+        worktree: {
+          baseRef: nextRef
+        }
+      });
+      if (result_wt.error) {
+        // Roll the optimistic update back so the row reflects disk state.
+        setSettingsData(prev_wt3 => ({
+          ...prev_wt3,
+          worktree: {
+            ...prev_wt3?.worktree,
+            baseRef: previousRef
+          }
+        }));
+        setChanges(prev_wt4 => {
+          const {
+            worktreeBaseRef,
+            ...rest_wt
+          } = prev_wt4;
+          return rest_wt;
+        });
+        logError(result_wt.error);
+      }
+    }
+  }, {
     id: 'respectGitignore',
     label: 'Respect .gitignore in file picker',
     value: globalConfig.respectGitignore,
@@ -618,7 +672,7 @@ export function Config({
     }
   }, {
     id: 'copyFullResponse',
-    label: 'Always copy full response (skip /copy picker)',
+    label: 'Skip the /copy picker',
     value: globalConfig.copyFullResponse,
     type: 'boolean' as const,
     onChange(copyFullResponse: boolean) {
@@ -681,7 +735,11 @@ export function Config({
     onChange: setTheme
   }, {
     id: 'notifChannel',
-    label: feature('KAIROS') || feature('KAIROS_PUSH_NOTIFICATION') ? 'Local notifications' : 'Notifications',
+    // Upstream pairs the labels with what the row actually controls: plain
+    // "Notifications" when push toggles sit alongside it, "Local notifications"
+    // when this row is the only notification setting. The KAIROS branch adds
+    // the push rows below, so it takes the former.
+    label: feature('KAIROS') || feature('KAIROS_PUSH_NOTIFICATION') ? 'Notifications' : 'Local notifications',
     value: globalConfig.preferredNotifChannel,
     options: ['auto', 'iterm2', 'terminal_bell', 'iterm2_with_bell', 'kitty', 'ghostty', 'notifications_disabled'],
     type: 'enum',
@@ -712,7 +770,7 @@ export function Config({
     }
   }, {
     id: 'inputNeededNotifEnabled',
-    label: 'Push when input needed',
+    label: 'Push when actions required',
     value: globalConfig.inputNeededNotifEnabled ?? false,
     type: 'boolean' as const,
     onChange(inputNeededNotifEnabled: boolean) {
@@ -748,7 +806,7 @@ export function Config({
     onChange: () => {} // handled by OutputStylePicker submenu
   }, ...(showDefaultViewPicker ? [{
     id: 'defaultView',
-    label: 'What you see by default',
+    label: 'Default view',
     // 'default' means the setting is unset — currently resolves to
     // transcript (main.tsx falls through when defaultView !== 'chat').
     // String() narrows the conditional-schema-spread union to string.
@@ -1231,6 +1289,13 @@ export function Config({
       minimumVersion: iu?.minimumVersion,
       language: iu?.language,
       awaySummaryEnabled: iu?.awaySummaryEnabled,
+      // Explicit baseRef (not just iu.worktree) so undefined triggers the
+      // customizer's delete path: worktree deep-merges, so restoring a
+      // snapshot that never had baseRef would otherwise leave ours behind.
+      worktree: iu?.worktree === undefined ? undefined : {
+        ...iu.worktree,
+        baseRef: iu.worktree.baseRef
+      },
       ...(feature('AUTO_MODE') ? {
         useAutoModeDuringPlan: (iu as {
           useAutoModeDuringPlan?: boolean;
@@ -1681,7 +1746,7 @@ export function Config({
     }} /> : <Box flexDirection="column" gap={1} marginY={insideModal ? undefined : 1}>
           <SearchBox query={searchQuery} isFocused={isSearchMode && !headerFocused} isTerminalFocused={isTerminalFocused} cursorOffset={searchCursorOffset} placeholder="Search settings…" />
           <Box flexDirection="column">
-            {filteredSettingsItems.length === 0 ? <Text dimColor italic>
+            {filteredSettingsItems.length === 0 ? <Text dimColor italic wrap="truncate-end">
                 No settings match &quot;{searchQuery}&quot;
               </Text> : <>
                 {scrollOffset > 0 && <Text dimColor>
@@ -1692,15 +1757,15 @@ export function Config({
             const isSelected = actualIndex === selectedIndex && !headerFocused && !isSearchMode;
             return <React.Fragment key={setting_2.id}>
                         <Box>
-                          <Box width={44}>
-                            <Text color={isSelected ? 'suggestion' : undefined}>
+                          <Box width={labelColumnWidth} flexShrink={0} marginRight={LABEL_GUTTER}>
+                            <Text color={isSelected ? 'suggestion' : undefined} wrap="truncate-end">
                               {isSelected ? figures.pointer : ' '}{' '}
                               {setting_2.label}
                             </Text>
                           </Box>
-                          <Box key={isSelected ? 'selected' : 'unselected'}>
+                          <Box flexGrow={1} minWidth={0} key={isSelected ? 'selected' : 'unselected'}>
                             {setting_2.type === 'boolean' ? <>
-                                <Text color={isSelected ? 'suggestion' : undefined}>
+                                <Text color={isSelected ? 'suggestion' : undefined} wrap="truncate-end">
                                   {setting_2.value.toString()}
                                 </Text>
                                 {showThinkingWarning && setting_2.id === 'thinkingEnabled' && <Text color="warning">
@@ -1709,22 +1774,21 @@ export function Config({
                                       will increase latency and may reduce
                                       quality.
                                     </Text>}
-                              </> : setting_2.id === 'theme' ? <Text color={isSelected ? 'suggestion' : undefined}>
+                              </> : setting_2.id === 'theme' ? <Text color={isSelected ? 'suggestion' : undefined} wrap="truncate-end">
                                 {THEME_LABELS[setting_2.value.toString()] ?? setting_2.value.toString()}
-                              </Text> : setting_2.id === 'notifChannel' ? <Text color={isSelected ? 'suggestion' : undefined}>
+                              </Text> : setting_2.id === 'notifChannel' ? <Text color={isSelected ? 'suggestion' : undefined} wrap="truncate-end">
                                 <NotifChannelLabel value={setting_2.value.toString()} />
-                              </Text> : setting_2.id === 'defaultPermissionMode' ? <Text color={isSelected ? 'suggestion' : undefined}>
+                              </Text> : setting_2.id === 'defaultPermissionMode' ? <Text color={isSelected ? 'suggestion' : undefined} wrap="truncate-end">
                                 {permissionModeTitle(setting_2.value as PermissionMode)}
-                              </Text> : setting_2.id === 'autoUpdatesChannel' && autoUpdaterDisabledReason ? <Box flexDirection="column">
-                                <Text color={isSelected ? 'suggestion' : undefined}>
-                                  disabled
-                                </Text>
+                              </Text> : setting_2.id === 'autoUpdatesChannel' && autoUpdaterDisabledReason ?
+                            // Inline, not stacked: a second line would break the
+                            // one-row-per-setting rhythm the rest of the list keeps.
+                            <Text color={isSelected ? 'suggestion' : undefined} wrap="truncate-end">
+                                disabled{' '}
                                 <Text dimColor>
-                                  (
-                                  {formatAutoUpdaterDisabledReason(autoUpdaterDisabledReason)}
-                                  )
+                                  ({formatAutoUpdaterDisabledReason(autoUpdaterDisabledReason)})
                                 </Text>
-                              </Box> : <Text color={isSelected ? 'suggestion' : undefined}>
+                              </Text> : <Text color={isSelected ? 'suggestion' : undefined} wrap="truncate-end">
                                 {setting_2.value.toString()}
                               </Text>}
                           </Box>
