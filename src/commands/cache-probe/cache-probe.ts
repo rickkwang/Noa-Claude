@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { getAnthropicClient } from '../../services/api/client.js'
-import { getMainLoopModel } from '../../utils/model/model.js'
+import { getMainLoopModel, normalizeModelStringForAPI } from '../../utils/model/model.js'
 import type { LocalCommandCall } from '../../types/command.js'
 
 // Large system prompt (~6000 chars) to cross the 1024 token cache threshold
@@ -53,7 +53,8 @@ interface ProbeResult {
   latency: number
   inputTokens: number
   outputTokens: number
-  cachedTokens?: number
+  cacheReadTokens?: number
+  cacheCreationTokens?: number
 }
 
 async function probeCache(): Promise<{ cold: ProbeResult; warm: ProbeResult }> {
@@ -61,8 +62,11 @@ async function probeCache(): Promise<{ cold: ProbeResult; warm: ProbeResult }> {
     maxRetries: 2,
   })
 
-  const systemPrompt = LARGE_SYSTEM_PROMPT
-  const model = getMainLoopModel()
+  // Unique nonce per probe run so the cold call always misses — provider
+  // cache TTLs can be far longer than Anthropic's 5 minutes, so waiting out
+  // a previous run's cache entry is not practical.
+  const systemPrompt = `${LARGE_SYSTEM_PROMPT}\n\nProbe run: ${crypto.randomUUID()}`
+  const model = normalizeModelStringForAPI(getMainLoopModel())
 
   // Cold call
   const coldStart = Date.now()
@@ -79,6 +83,8 @@ async function probeCache(): Promise<{ cold: ProbeResult; warm: ProbeResult }> {
     latency: coldLatency,
     inputTokens: coldResponse.usage.input_tokens,
     outputTokens: coldResponse.usage.output_tokens,
+    cacheReadTokens: coldResponse.usage.cache_read_input_tokens,
+    cacheCreationTokens: coldResponse.usage.cache_creation_input_tokens,
   }
 
   // Wait 3 seconds between calls
@@ -99,9 +105,8 @@ async function probeCache(): Promise<{ cold: ProbeResult; warm: ProbeResult }> {
     latency: warmLatency,
     inputTokens: warmResponse.usage.input_tokens,
     outputTokens: warmResponse.usage.output_tokens,
-    cachedTokens:
-      warmResponse.usage.cache_read_input_tokens ??
-      warmResponse.usage.cache_creation_input_tokens,
+    cacheReadTokens: warmResponse.usage.cache_read_input_tokens,
+    cacheCreationTokens: warmResponse.usage.cache_creation_input_tokens,
   }
 
   return { cold: coldResult, warm: warmResult }
@@ -111,15 +116,19 @@ export const call: LocalCommandCall = async () => {
   try {
     const { cold, warm } = await probeCache()
 
-    // Determine cache verdict
+    // With a per-run nonce the cold call should never read from cache. The
+    // warm call proves caching when it reads back what the cold call wrote.
     let verdict: string
-    if (cold.inputTokens === warm.inputTokens && warm.cachedTokens && warm.cachedTokens > 0) {
+    if (cold.cacheReadTokens && cold.cacheReadTokens > 0) {
+      verdict = 'INCONCLUSIVE (cold call unexpectedly read from cache)'
+    } else if (warm.cacheReadTokens && warm.cacheReadTokens > 0) {
       verdict = 'CACHE HIT'
-    } else if (!warm.cachedTokens || warm.cachedTokens === 0) {
-      verdict = 'NO CACHE DETECTED'
     } else {
-      verdict = 'POSSIBLE SILENT CACHING'
+      verdict = 'NO CACHE DETECTED'
     }
+
+    const fmtCached = (r: ProbeResult) =>
+      `  Cached tokens: read ${r.cacheReadTokens ?? 0} / created ${r.cacheCreationTokens ?? 0}`
 
     const output = [
       'Cache Probe Results',
@@ -130,15 +139,14 @@ export const call: LocalCommandCall = async () => {
       `  Latency: ${cold.latency}ms`,
       `  Input tokens: ${cold.inputTokens}`,
       `  Output tokens: ${cold.outputTokens}`,
+      fmtCached(cold),
       '',
       'Warm call:',
       `  Status: ${warm.status}`,
       `  Latency: ${warm.latency}ms`,
       `  Input tokens: ${warm.inputTokens}`,
       `  Output tokens: ${warm.outputTokens}`,
-      warm.cachedTokens !== undefined
-        ? `  Cached tokens: ${warm.cachedTokens}`
-        : '  Cached tokens: N/A',
+      fmtCached(warm),
       '',
       `Verdict: ${verdict}`,
     ].join('\n')

@@ -1988,7 +1988,11 @@ function PromptInput({
       key: 'effort-level',
       text: effortNotificationText,
       priority: 'high',
-      timeoutMs: 12_000
+      timeoutMs: 12_000,
+      // Without fold, the same-key dedupe drops the new text while the
+      // previous notification is still displayed, leaving the old level
+      // visible until it times out.
+      fold: (_current, incoming) => incoming
     });
   }, [effortNotificationText, addNotification, removeNotification]);
   useBuddyNotification();

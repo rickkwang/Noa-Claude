@@ -64,7 +64,6 @@ function setEffortValue(effortValue: EffortValue, model?: string): EffortCommand
       }
     };
   }
-  const description = getEffortValueDescription(effortValue);
   const suffix = persistable !== undefined ? '' : ' (this session only)';
   const providerWarning = model === undefined || isEffortSentToProvider(model) ? '' : '\nNote: current provider may not support the effort parameter';
   const effectiveSuffix = (() => {
@@ -73,7 +72,7 @@ function setEffortValue(effortValue: EffortValue, model?: string): EffortCommand
     return effective !== undefined && effective !== effortValue ? `; current model will use ${effective}` : '';
   })();
   return {
-    message: `Set effort level to ${effortValue}${suffix}${effectiveSuffix}: ${description}${providerWarning}`,
+    message: `Set effort level to ${effortValue}${suffix}${effectiveSuffix}${providerWarning}`,
     effortUpdate: {
       value: effortValue
     }
