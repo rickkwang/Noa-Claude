@@ -13,6 +13,7 @@ import { getProjectsDir, isTranscriptMessage } from './sessionStorage.js'
 import { SHELL_TOOL_NAMES } from './shell/shellToolUtils.js'
 import { jsonParse } from './slowOperations.js'
 import {
+  DAILY_MODEL_TOKENS_VERSION,
   getTodayDateString,
   getYesterdayDateString,
   isDateBefore,
@@ -330,16 +331,21 @@ async function processSessionFiles(
               }
             }
 
-            modelUsageAgg[model]!.inputTokens += usage.input_tokens || 0
-            modelUsageAgg[model]!.outputTokens += usage.output_tokens || 0
-            modelUsageAgg[model]!.cacheReadInputTokens +=
-              usage.cache_read_input_tokens || 0
-            modelUsageAgg[model]!.cacheCreationInputTokens +=
-              usage.cache_creation_input_tokens || 0
+            const inputTokens = usage.input_tokens || 0
+            const outputTokens = usage.output_tokens || 0
+            const cacheReadTokens = usage.cache_read_input_tokens || 0
+            const cacheCreationTokens = usage.cache_creation_input_tokens || 0
 
-            // Track daily tokens per model
+            modelUsageAgg[model]!.inputTokens += inputTokens
+            modelUsageAgg[model]!.outputTokens += outputTokens
+            modelUsageAgg[model]!.cacheReadInputTokens += cacheReadTokens
+            modelUsageAgg[model]!.cacheCreationInputTokens += cacheCreationTokens
+
+            // Track daily tokens per model. Cache reads and writes are billed
+            // tokens, so the per-day chart counts them alongside input/output —
+            // otherwise the chart and the "Total tokens" figure disagree.
             const totalTokens =
-              (usage.input_tokens || 0) + (usage.output_tokens || 0)
+              inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens
             if (totalTokens > 0) {
               const dayTokens = dailyModelTokensMap.get(dateKey) || {}
               dayTokens[model] = (dayTokens[model] || 0) + totalTokens
@@ -649,8 +655,30 @@ export async function aggregateClaudeCodeStats(): Promise<ClaudeCodeStats> {
   // Use lock to prevent race conditions with background cache updates
   const updatedCache = await withStatsCacheLock(async () => {
     // Load the cache
-    const cache = await loadStatsCache()
+    let cache = await loadStatsCache()
     const yesterday = getYesterdayDateString()
+
+    // Rebuild dailyModelTokens in place when it was computed by an older
+    // formula. Only this field is recomputed; everything else the migration
+    // preserved stays put.
+    if ((cache.dailyModelTokensVersion ?? 0) < DAILY_MODEL_TOKENS_VERSION) {
+      let rebuilt: DailyModelTokens[] = []
+      if (cache.lastComputedDate) {
+        const through = isDateBefore(yesterday, cache.lastComputedDate)
+          ? yesterday
+          : cache.lastComputedDate
+        logForDebugging(`Rebuilding stats dailyModelTokens through ${through}`)
+        rebuilt = (
+          await processSessionFiles(allSessionFiles, { toDate: through })
+        ).dailyModelTokens
+      }
+      cache = {
+        ...cache,
+        dailyModelTokens: rebuilt,
+        dailyModelTokensVersion: DAILY_MODEL_TOKENS_VERSION,
+      }
+      await saveStatsCache(cache)
+    }
 
     // Determine what needs to be processed
     // - If no cache: process everything up to yesterday, then today separately

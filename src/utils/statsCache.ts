@@ -16,9 +16,21 @@ import type { DailyActivity, DailyModelTokens, SessionStats } from './stats.js'
 // calendar day. v1-v3 aggregates are keyed by UTC dates and cannot be
 // re-bucketed without the raw timestamps, so they are not migratable — a v4+
 // load with an older cache forces a full recompute from on-disk transcripts.
-export const STATS_CACHE_VERSION = 4
+// v5: `dailyModelTokens` became cache-inclusive (see DAILY_MODEL_TOKENS_VERSION).
+export const STATS_CACHE_VERSION = 5
 const MIN_MIGRATABLE_VERSION = 4
 const STATS_CACHE_FILENAME = 'stats-cache.json'
+
+/**
+ * Formula version for `dailyModelTokens`. Bumping this rebuilds *only* that
+ * field on next load, leaving the rest of the migrated cache intact — a plain
+ * STATS_CACHE_VERSION bump would keep serving day buckets computed by the old
+ * formula, since migration preserves them verbatim.
+ *
+ * v1: per-day totals include cache read + cache write, matching the panel's
+ * "Total tokens". Previously they were input + output only.
+ */
+export const DAILY_MODEL_TOKENS_VERSION = 1
 
 /**
  * Simple in-memory lock to prevent concurrent cache operations.
@@ -63,6 +75,9 @@ export type PersistedStatsCache = {
   // Daily aggregates needed for heatmap, streaks, trends (bounded by days)
   dailyActivity: DailyActivity[]
   dailyModelTokens: DailyModelTokens[]
+  // Formula version behind `dailyModelTokens`; absent on pre-v5 caches, which
+  // reads as 0 and triggers a one-time rebuild of that field.
+  dailyModelTokensVersion?: number
   // Model usage aggregated (bounded by number of models)
   modelUsage: { [modelName: string]: ModelUsage }
   // Session aggregates (replaces unbounded sessionStats array)
@@ -89,6 +104,7 @@ function getEmptyCache(): PersistedStatsCache {
     lastComputedDate: null,
     dailyActivity: [],
     dailyModelTokens: [],
+    dailyModelTokensVersion: DAILY_MODEL_TOKENS_VERSION,
     modelUsage: {},
     totalSessions: 0,
     totalMessages: 0,
@@ -137,6 +153,7 @@ function migrateStatsCache(
     lastComputedDate: parsed.lastComputedDate ?? null,
     dailyActivity: parsed.dailyActivity,
     dailyModelTokens: parsed.dailyModelTokens,
+    dailyModelTokensVersion: parsed.dailyModelTokensVersion,
     modelUsage: parsed.modelUsage ?? {},
     totalSessions: parsed.totalSessions,
     totalMessages: parsed.totalMessages,
@@ -380,6 +397,11 @@ export function mergeCacheWithNewStats(
     dailyModelTokens: Array.from(dailyModelTokensMap.entries())
       .map(([date, tokensByModel]) => ({ date, tokensByModel }))
       .sort((a, b) => a.date.localeCompare(b.date)),
+    // Carried over, not stamped to current: merging adds days, it does not
+    // recompute the existing ones. Only the rebuild in aggregateClaudeCodeStats
+    // may advance this marker, otherwise a merge on a stale cache would mark it
+    // fresh and the rebuild would never run.
+    dailyModelTokensVersion: existingCache.dailyModelTokensVersion,
     modelUsage,
     totalSessions,
     totalMessages,

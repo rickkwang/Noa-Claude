@@ -379,12 +379,14 @@ function OverviewTab({
   } = useTerminalSize();
 
   // Calculate favorite model and total tokens
-  const modelEntries = Object.entries(stats.modelUsage).sort(([, a], [, b]) => b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens));
+  const {
+    modelEntries,
+    totalTokens
+  } = getModelEntriesWithTotal(stats.modelUsage);
   const favoriteModel = modelEntries[0];
-  const totalTokens = modelEntries.reduce((sum, [, usage]) => sum + usage.inputTokens + usage.outputTokens, 0);
 
   // Memoize the factoid so it doesn't change when switching tabs
-  const factoid = useMemo(() => generateFunFactoid(stats, totalTokens), [stats, totalTokens]);
+  const factoid = useMemo(() => generateFunFactoid(stats), [stats]);
 
   // Calculate range days based on selected date range
   const rangeDays = dateRange === '7d' ? 7 : dateRange === '30d' ? 30 : stats.totalDays;
@@ -520,6 +522,11 @@ function OverviewTab({
           </Text>
         </Box>
       </Box>
+
+      {/* Token breakdown: input / output / cache read / cache write */}
+      {totalTokens > 0 && <Text color="subtle" wrap="truncate">
+          {formatUsageBreakdown(stats.modelUsage)}
+        </Text>}
 
       {/* Speculation time saved (ant-only) */}
       {"external" === 'ant' && stats.totalSpeculationTimeSavedMs > 0 && <Box flexDirection="row" gap={4}>
@@ -716,16 +723,23 @@ const TIME_COMPARISONS = [{
   name: 'a full night of sleep',
   minutes: 480
 }];
-function generateFunFactoid(stats: ClaudeCodeStats, totalTokens: number): string {
+function generateFunFactoid(stats: ClaudeCodeStats): string {
   const factoids: string[] = [];
-  if (totalTokens > 0) {
-    const matchingBooks = BOOK_COMPARISONS.filter(book => totalTokens >= book.tokens);
+  // Book comparisons stay on input + output deliberately: cache reads are the
+  // same context re-sent, so counting them would inflate the "tokens read"
+  // analogy far past what was actually written or generated.
+  let promptTokens = 0;
+  for (const usage of Object.values(stats.modelUsage)) {
+    promptTokens += (usage.inputTokens || 0) + (usage.outputTokens || 0);
+  }
+  if (promptTokens > 0) {
+    const matchingBooks = BOOK_COMPARISONS.filter(book => promptTokens >= book.tokens);
     for (const book of matchingBooks) {
-      const times = totalTokens / book.tokens;
+      const times = promptTokens / book.tokens;
       if (times >= 2) {
-        factoids.push(`You've used ~${Math.floor(times)}x more tokens than ${book.name}`);
+        factoids.push(`Your input and output are ~${Math.floor(times)}x the tokens in ${book.name}`);
       } else {
-        factoids.push(`You've used the same number of tokens as ${book.name}`);
+        factoids.push(`Your input and output are about as many tokens as ${book.name}`);
       }
     }
   }
@@ -837,14 +851,73 @@ function _temp0(t0) {
   const [model] = t0;
   return model;
 }
+type TokenCounts = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+};
+
+/**
+ * Total tokens attributable to a model: input + output + both cache legs.
+ * Cache reads and writes are billed tokens, so leaving them out understated
+ * every "total tokens" figure in this panel.
+ */
+export function getUsageTotalTokens(usage: Partial<TokenCounts>): number {
+  return (usage.inputTokens || 0) + (usage.outputTokens || 0) + (usage.cacheReadInputTokens || 0) + (usage.cacheCreationInputTokens || 0);
+}
+
+/** Model entries sorted by total tokens desc, plus the grand total. */
+export function getModelEntriesWithTotal(modelUsage: {
+  [model: string]: Partial<TokenCounts>;
+}): {
+  modelEntries: [string, Partial<TokenCounts>][];
+  totalTokens: number;
+} {
+  const modelEntries = Object.entries(modelUsage).sort(([, a], [, b]) => getUsageTotalTokens(b) - getUsageTotalTokens(a));
+  return {
+    modelEntries,
+    totalTokens: modelEntries.reduce((sum, [, usage]) => sum + getUsageTotalTokens(usage), 0)
+  };
+}
+
+/** One-line breakdown of the four token classes across all models. */
+export function formatUsageBreakdown(modelUsage: {
+  [model: string]: Partial<TokenCounts>;
+}): string {
+  let input = 0;
+  let output = 0;
+  let cacheRead = 0;
+  let cacheWrite = 0;
+  for (const usage of Object.values(modelUsage)) {
+    input += usage.inputTokens || 0;
+    output += usage.outputTokens || 0;
+    cacheRead += usage.cacheReadInputTokens || 0;
+    cacheWrite += usage.cacheCreationInputTokens || 0;
+  }
+  return `Input ${formatNumber(input)} · Output ${formatNumber(output)} · ` + `Cache read ${formatNumber(cacheRead)} · Cache write ${formatNumber(cacheWrite)}`;
+}
+
+/** A model's share of total tokens, cache included. */
+export function formatModelPercentage(usage: Partial<TokenCounts>, totalTokens: number): string {
+  if (totalTokens <= 0) {
+    return '0.0';
+  }
+  return (getUsageTotalTokens(usage) / totalTokens * 100).toFixed(1);
+}
+
+/** Per-model cache line, shown under the input/output line. */
+export function formatModelCacheUsage(usage: Partial<TokenCounts>): string {
+  return `Cache: ${formatNumber(usage.cacheReadInputTokens || 0)} read · ` + `${formatNumber(usage.cacheCreationInputTokens || 0)} write`;
+}
 function _temp9(sum, t0) {
   const [, usage] = t0;
-  return sum + usage.inputTokens + usage.outputTokens;
+  return sum + getUsageTotalTokens(usage);
 }
 function _temp7(t0, t1) {
   const [, a] = t0;
   const [, b] = t1;
-  return b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens);
+  return getUsageTotalTokens(b) - getUsageTotalTokens(a);
 }
 type ModelEntryProps = {
   model: string;
@@ -852,93 +925,110 @@ type ModelEntryProps = {
     inputTokens: number;
     outputTokens: number;
     cacheReadInputTokens: number;
+    cacheCreationInputTokens: number;
   };
   totalTokens: number;
 };
 function ModelEntry(t0) {
-  const $ = _c(21);
+  const $ = _c(27);
   const {
     model,
     usage,
     totalTokens
   } = t0;
-  const modelTokens = usage.inputTokens + usage.outputTokens;
-  const t1 = modelTokens / totalTokens * 100;
   let t2;
-  if ($[0] !== t1) {
-    t2 = t1.toFixed(1);
-    $[0] = t1;
-    $[1] = t2;
+  if ($[0] !== usage || $[1] !== totalTokens) {
+    t2 = formatModelPercentage(usage, totalTokens);
+    $[0] = usage;
+    $[1] = totalTokens;
+    $[2] = t2;
   } else {
-    t2 = $[1];
+    t2 = $[2];
   }
   const percentage = t2;
   let t3;
-  if ($[2] !== model) {
+  if ($[3] !== model) {
     t3 = renderModelName(model);
-    $[2] = model;
-    $[3] = t3;
+    $[3] = model;
+    $[4] = t3;
   } else {
-    t3 = $[3];
+    t3 = $[4];
   }
   let t4;
-  if ($[4] !== t3) {
+  if ($[5] !== t3) {
     t4 = <Text bold={true}>{t3}</Text>;
-    $[4] = t3;
-    $[5] = t4;
+    $[5] = t3;
+    $[6] = t4;
   } else {
-    t4 = $[5];
+    t4 = $[6];
   }
   let t5;
-  if ($[6] !== percentage) {
+  if ($[7] !== percentage) {
     t5 = <Text color="subtle">({percentage}%)</Text>;
-    $[6] = percentage;
-    $[7] = t5;
+    $[7] = percentage;
+    $[8] = t5;
   } else {
-    t5 = $[7];
+    t5 = $[8];
   }
   let t6;
-  if ($[8] !== t4 || $[9] !== t5) {
+  if ($[9] !== t4 || $[10] !== t5) {
     t6 = <Text>{figures.bullet} {t4}{" "}{t5}</Text>;
-    $[8] = t4;
-    $[9] = t5;
-    $[10] = t6;
+    $[9] = t4;
+    $[10] = t5;
+    $[11] = t6;
   } else {
-    t6 = $[10];
+    t6 = $[11];
   }
   let t7;
-  if ($[11] !== usage.inputTokens) {
+  if ($[12] !== usage.inputTokens) {
     t7 = formatNumber(usage.inputTokens);
-    $[11] = usage.inputTokens;
-    $[12] = t7;
+    $[12] = usage.inputTokens;
+    $[13] = t7;
   } else {
-    t7 = $[12];
+    t7 = $[13];
   }
   let t8;
-  if ($[13] !== usage.outputTokens) {
+  if ($[14] !== usage.outputTokens) {
     t8 = formatNumber(usage.outputTokens);
-    $[13] = usage.outputTokens;
-    $[14] = t8;
+    $[14] = usage.outputTokens;
+    $[15] = t8;
   } else {
-    t8 = $[14];
+    t8 = $[15];
   }
   let t9;
-  if ($[15] !== t7 || $[16] !== t8) {
-    t9 = <Text color="subtle">{"  "}In: {t7} · Out:{" "}{t8}</Text>;
-    $[15] = t7;
-    $[16] = t8;
-    $[17] = t9;
+  if ($[16] !== t7 || $[17] !== t8) {
+    t9 = <Text color="subtle" wrap="truncate">{"  "}In: {t7} · Out:{" "}{t8}</Text>;
+    $[16] = t7;
+    $[17] = t8;
+    $[18] = t9;
   } else {
-    t9 = $[17];
+    t9 = $[18];
+  }
+  let t11;
+  if ($[19] !== usage) {
+    t11 = formatModelCacheUsage(usage);
+    $[19] = usage;
+    $[20] = t11;
+  } else {
+    t11 = $[20];
+  }
+  let t12;
+  if ($[21] !== t11) {
+    t12 = <Text color="subtle" wrap="truncate">{"  "}{t11}</Text>;
+    $[21] = t11;
+    $[22] = t12;
+  } else {
+    t12 = $[22];
   }
   let t10;
-  if ($[18] !== t6 || $[19] !== t9) {
-    t10 = <Box flexDirection="column">{t6}{t9}</Box>;
-    $[18] = t6;
-    $[19] = t9;
-    $[20] = t10;
+  if ($[23] !== t12 || $[24] !== t6 || $[25] !== t9) {
+    t10 = <Box flexDirection="column">{t6}{t9}{t12}</Box>;
+    $[23] = t12;
+    $[24] = t6;
+    $[25] = t9;
+    $[26] = t10;
   } else {
-    t10 = $[20];
+    t10 = $[26];
   }
   return t10;
 }
@@ -1011,7 +1101,11 @@ function generateTokenChart(dailyTokens: DailyModelTokens[], models: string[], t
     colors: colors.slice(0, series.length),
     format: (x: number) => {
       let label: string;
-      if (x >= 1_000_000) {
+      // 999_950_000 is where (x / 1e6).toFixed(1) would round up to "1000.0M"
+      // and blow past the 6-char axis gutter.
+      if (x >= 999_950_000) {
+        label = (x / 1_000_000_000).toFixed(1) + 'B';
+      } else if (x >= 1_000_000) {
         label = (x / 1_000_000).toFixed(1) + 'M';
       } else if (x >= 1_000) {
         label = (x / 1_000).toFixed(0) + 'k';
@@ -1141,9 +1235,11 @@ function renderOverviewToAnsi(stats: ClaudeCodeStats): string[] {
   }
 
   // Calculate values
-  const modelEntries = Object.entries(stats.modelUsage).sort(([, a], [, b]) => b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens));
+  const {
+    modelEntries,
+    totalTokens
+  } = getModelEntriesWithTotal(stats.modelUsage);
   const favoriteModel = modelEntries[0];
-  const totalTokens = modelEntries.reduce((sum, [, usage]) => sum + usage.inputTokens + usage.outputTokens, 0);
 
   // Row 1: Favorite model | Total tokens
   if (favoriteModel) {
@@ -1163,6 +1259,11 @@ function renderOverviewToAnsi(stats: ClaudeCodeStats): string[] {
   const activeDaysVal = `${stats.activeDays}/${stats.totalDays}`;
   const peakHourVal = stats.peakActivityHour !== null ? `${stats.peakActivityHour}:00-${stats.peakActivityHour + 1}:00` : 'N/A';
   lines.push(row('Active days', activeDaysVal, 'Peak hour', peakHourVal));
+
+  // Token breakdown: input / output / cache read / cache write
+  if (totalTokens > 0) {
+    lines.push(chalk.gray(formatUsageBreakdown(stats.modelUsage)));
+  }
 
   // Speculation time saved (ant-only)
   if ("external" === 'ant' && stats.totalSpeculationTimeSavedMs > 0) {
@@ -1197,20 +1298,22 @@ function renderOverviewToAnsi(stats: ClaudeCodeStats): string[] {
   lines.push('');
 
   // Fun factoid
-  const factoid = generateFunFactoid(stats, totalTokens);
+  const factoid = generateFunFactoid(stats);
   lines.push(h(factoid));
   lines.push(chalk.gray(`Stats from the last ${stats.totalDays} days`));
   return lines;
 }
 function renderModelsToAnsi(stats: ClaudeCodeStats): string[] {
   const lines: string[] = [];
-  const modelEntries = Object.entries(stats.modelUsage).sort(([, a], [, b]) => b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens));
+  const {
+    modelEntries,
+    totalTokens
+  } = getModelEntriesWithTotal(stats.modelUsage);
   if (modelEntries.length === 0) {
     lines.push(chalk.gray('No model usage data available'));
     return lines;
   }
   const favoriteModel = modelEntries[0];
-  const totalTokens = modelEntries.reduce((sum, [, usage]) => sum + usage.inputTokens + usage.outputTokens, 0);
 
   // Generate chart if we have data - use fixed width for screenshot
   const chartOutput = generateTokenChart(stats.dailyModelTokens, modelEntries.map(([model]) => model), 80 // Fixed width for screenshot
@@ -1232,10 +1335,10 @@ function renderModelsToAnsi(stats: ClaudeCodeStats): string[] {
   // Model breakdown - only show top 3 for screenshot
   const topModels = modelEntries.slice(0, 3);
   for (const [model, usage] of topModels) {
-    const modelTokens = usage.inputTokens + usage.outputTokens;
-    const percentage = (modelTokens / totalTokens * 100).toFixed(1);
+    const percentage = formatModelPercentage(usage, totalTokens);
     lines.push(`${figures.bullet} ${chalk.bold(renderModelName(model))} ${chalk.gray(`(${percentage}%)`)}`);
     lines.push(chalk.dim(`  In: ${formatNumber(usage.inputTokens)} · Out: ${formatNumber(usage.outputTokens)}`));
+    lines.push(chalk.dim(`  ${formatModelCacheUsage(usage)}`));
   }
   return lines;
 }
