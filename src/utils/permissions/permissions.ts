@@ -526,6 +526,13 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
         (appState.toolPermissionContext.mode === 'plan' &&
           (autoModeStateModule?.isAutoModeActive() ?? false)))
     ) {
+      // Snapshot of what made this call classifier-eligible. Re-checked after
+      // the classifier returns — if neither field moved, the verdict can't
+      // have gone stale and the full eligibility check is skipped.
+      const eligibilitySnapshot = {
+        mode: appState.toolPermissionContext.mode,
+        autoActive: autoModeStateModule?.isAutoModeActive() ?? false,
+      }
       // Non-classifier-approvable safetyCheck decisions stay immune to ALL
       // auto-approve paths: the acceptEdits fast-path, the safe-tool allowlist,
       // and the classifier. Step 1g only guards bypassPermissions; this guards
@@ -689,14 +696,21 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
       }
 
       // Run the auto mode classifier
-      const action = formatActionForClassifier(tool.name, input)
+      const action = formatActionForClassifier(tool.name, input, toolUseID)
       setClassifierChecking(toolUseID)
       let classifierResult
       let classifierDequeueInfo: ClassifierQueueDequeueInfo | undefined
       try {
+        // Sibling tool uses from this turn go after the conversation, so the
+        // prefix each parallel call shares stays byte-identical and cacheable.
+        const sameTurnToolUses = context.sameTurnToolUses ?? []
+        const classifierMessages =
+          sameTurnToolUses.length > 0
+            ? [...context.messages, ...sameTurnToolUses]
+            : context.messages
         const runClassifier = () =>
           classifyYoloAction(
-            context.messages,
+            classifierMessages,
             action,
             context.options.tools,
             appState.toolPermissionContext,
@@ -715,50 +729,58 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
         clearClassifierChecking(toolUseID)
       }
 
-      // Queueing can add real wait time, so re-check that this call is
-      // still classifier-eligible before trusting a queued verdict — the
-      // user may have switched permission modes while it waited its turn.
-      if (classifierDequeueInfo) {
-        const currentAppState = context.getAppState()
-        const stillClassifierEligible =
-          currentAppState.toolPermissionContext.mode === 'auto' ||
-          (currentAppState.toolPermissionContext.mode === 'plan' &&
-            (autoModeStateModule?.isAutoModeActive() ?? false))
-        if (!stillClassifierEligible) {
-          logEvent('tengu_auto_mode_fallback_to_ask', {
-            reason:
-              'mode_changed_while_queued' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-            toolName: sanitizeToolNameForAnalytics(tool.name),
-          })
-          if (currentAppState.toolPermissionContext.mode === 'dontAsk') {
-            return {
-              behavior: 'deny',
-              decisionReason: {
-                type: 'mode',
-                mode: 'dontAsk',
-              },
-              message: DONT_ASK_REJECT_MESSAGE(tool.name),
-            }
-          }
-          if (currentAppState.toolPermissionContext.shouldAvoidPermissionPrompts) {
-            return {
-              behavior: 'deny',
-              decisionReason: {
-                type: 'asyncAgent',
-                reason:
-                  'Permission mode changed while the auto mode classifier call was queued, and permission prompts are not available in this context',
-              },
-            }
-          }
+      // A classifier call takes a live API round-trip, and queueing can add
+      // more on top, so the mode may have moved under us while it ran. Always
+      // re-check before trusting the verdict — not only when the call sat in
+      // the queue. The snapshot short-circuits the common case where nothing
+      // changed; only a real move pays for the full eligibility check.
+      const currentAppState = context.getAppState()
+      const currentMode = currentAppState.toolPermissionContext.mode
+      const currentAutoActive = autoModeStateModule?.isAutoModeActive() ?? false
+      const modeUnchanged =
+        currentMode === eligibilitySnapshot.mode &&
+        currentAutoActive === eligibilitySnapshot.autoActive
+      // Known intentional simplification of upstream 2.1.221's still-eligible
+      // check (xUp): upstream additionally requires a plan-mode tool to be
+      // read-only (or allow-rule matched) before trusting the verdict, and
+      // honors a web domain-consent flag for other modes. This fork has no
+      // isReadOnly / domain-consent surface, so the check stays at the mode
+      // level. Gap scenario: a mid-call switch auto→plan with the auto latch
+      // still active trusts the classifier verdict for a write tool where
+      // upstream re-prompts. Revisit if isReadOnly is ever ported.
+      const stillClassifierEligible = () =>
+        currentMode === 'auto' || (currentMode === 'plan' && currentAutoActive)
+      if (!modeUnchanged && !stillClassifierEligible()) {
+        logEvent('tengu_auto_mode_fallback_to_ask', {
+          reason:
+            'mode_changed_while_queued' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          toolName: sanitizeToolNameForAnalytics(tool.name),
+        })
+        if (currentMode === 'dontAsk') {
           return {
-            ...result,
+            behavior: 'deny',
             decisionReason: {
-              type: 'other',
+              type: 'mode',
+              mode: 'dontAsk',
+            },
+            message: DONT_ASK_REJECT_MESSAGE(tool.name),
+          }
+        }
+        if (currentAppState.toolPermissionContext.shouldAvoidPermissionPrompts) {
+          return {
+            behavior: 'deny',
+            decisionReason: {
+              type: 'asyncAgent',
               reason:
-                'Permission mode changed while the auto mode classifier call was queued — falling back to manual approval',
+                'Permission mode changed while the auto mode classifier call was queued, and permission prompts are not available in this context',
             },
           }
         }
+        // Return the original ask verdict untouched. Rewriting decisionReason
+        // here (as this did before) reclassifies it as type 'other', which
+        // sends the caller down a different path than a normal ask and can
+        // swallow the re-prompt — the whole point is that the user is asked.
+        return result
       }
 
       // Notify ants when classifier error dumped prompts (will be in /share)

@@ -248,6 +248,15 @@ export type ToolUseContext = {
    *  Used by speculation for overlay file path rewriting. */
   requireCanUseTool?: boolean
   messages: Message[]
+  /**
+   * Tool uses issued earlier in this same turn, rebuilt as assistant messages
+   * and ordered as the model emitted them. Set per tool call by the tool
+   * orchestrator; the auto mode classifier appends these after `messages` so
+   * it sees the rest of a parallel batch as context. Appending (rather than
+   * interleaving) is what keeps the shared conversation prefix cacheable
+   * across the batch.
+   */
+  sameTurnToolUses?: AssistantMessage[]
   fileReadingLimits?: {
     maxTokens?: number
     maxSizeBytes?: number

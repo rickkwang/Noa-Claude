@@ -48,6 +48,10 @@ import { sideQuery } from '../sideQuery.js'
 import { jsonStringify } from '../slowOperations.js'
 import { tokenCountWithEstimation } from '../tokens.js'
 import {
+  markToolUseClassified,
+  wasToolUseClassified,
+} from './classifierQueue.js'
+import {
   type ClassifierProbeLease,
   completeClassifierProbe,
   getClassifierProbeState,
@@ -309,7 +313,10 @@ const YOLO_CLASSIFIER_TOOL_SCHEMA: BetaToolUnion = {
 
 type TranscriptBlock =
   | { type: 'text'; text: string }
-  | { type: 'tool_use'; name: string; input: unknown }
+  // `id` is the tool_use id when one is known. It is only read to decide
+  // block boundaries for prompt caching (see wasToolUseClassified) — it is
+  // never serialized into the classifier prompt.
+  | { type: 'tool_use'; name: string; input: unknown; id?: string }
 
 export type TranscriptEntry = {
   role: 'user' | 'assistant'
@@ -371,6 +378,7 @@ export function buildTranscriptEntries(messages: Message[]): TranscriptEntry[] {
             type: 'tool_use',
             name: block.name,
             input: block.input,
+            id: block.id,
           })
         }
       }
@@ -1097,6 +1105,17 @@ export async function classifyYoloAction(
   let toolCallsLength = actionCompact.length
   let userPromptsLength = 0
   const userContentBlocks: Anthropic.TextBlockParam[] = []
+  // Adjacent blocks are coalesced into one text block, except that a tool_use
+  // already classified by an earlier request is forced onto a block of its
+  // own. That pins the block boundaries of this request to the boundaries the
+  // previous one used, so the shared conversation prefix stays cacheable
+  // across a parallel tool batch instead of reshuffling on every action.
+  let pending = ''
+  const flushPending = () => {
+    if (pending === '') return
+    userContentBlocks.push({ type: 'text' as const, text: pending })
+    pending = ''
+  }
   for (const entry of transcriptEntries) {
     for (const block of entry.content) {
       const serialized = toCompactBlock(block, entry.role, lookup)
@@ -1113,9 +1132,19 @@ export async function classifyYoloAction(
           void _exhaustive
         }
       }
-      userContentBlocks.push({ type: 'text' as const, text: serialized })
+      if (
+        block.type === 'tool_use' &&
+        block.id !== undefined &&
+        wasToolUseClassified(block.id)
+      ) {
+        flushPending()
+        userContentBlocks.push({ type: 'text' as const, text: serialized })
+      } else {
+        pending += serialized
+      }
     }
   }
+  flushPending()
 
   const userPrompt = userContentBlocks.map(b => b.text).join('') + actionCompact
   const promptLengths = {
@@ -1153,16 +1182,32 @@ export async function classifyYoloAction(
   // Use getCacheControl for consistency with the main agent loop —
   // respects GrowthBook TTL allowlist and query-source gating.
   const cacheControl = getCacheControl({ querySource: 'auto_mode' })
-  // Place cache_control on the action block. In the two-stage classifier,
-  // stage 2 shares the same transcript+action prefix as stage 1 — the
-  // breakpoint here gives stage 2 a guaranteed cache hit on the full prefix.
-  // Budget: system (1) + CLAUDE.md (0–1) + action (1) = 2–3, under the
-  // API limit of 4 cache_control blocks.
+  // Two breakpoints. The transcript one marks the end of the conversation
+  // prefix that every classifier call in the same turn shares — parallel tool
+  // calls differ only in the action appended after it, so this is what lets
+  // calls 2..N read the prefix call 1 wrote instead of each re-writing it.
+  // The action one covers the full prefix, which in the two-stage classifier
+  // gives stage 2 a guaranteed hit on everything stage 1 sent.
+  // Budget: system (1) + CLAUDE.md (0–1) + transcript (0–1) + action (1)
+  // = 2–4, at or under the API limit of 4 cache_control blocks.
+  const lastTranscriptBlock = userContentBlocks.at(-1)
+  if (lastTranscriptBlock !== undefined) {
+    lastTranscriptBlock.cache_control = cacheControl
+  }
   userContentBlocks.push({
     type: 'text' as const,
     text: actionCompact,
     cache_control: cacheControl,
   })
+  // Registered after the prompt is built, so this request still sees the
+  // action as unclassified while the next one splits it onto its own block.
+  const actionToolUseID = action.content.find(
+    (block): block is Extract<TranscriptBlock, { type: 'tool_use' }> =>
+      block.type === 'tool_use',
+  )?.id
+  if (actionToolUseID !== undefined) {
+    markToolUseClassified(actionToolUseID)
+  }
 
   // Dispatch to 2-stage XML classifier if enabled via GrowthBook
   if (isTwoStageClassifierEnabled()) {
@@ -1884,9 +1929,12 @@ function getTwoStageMode(): TwoStageMode {
 export function formatActionForClassifier(
   toolName: string,
   toolInput: unknown,
+  toolUseID?: string,
 ): TranscriptEntry {
   return {
     role: 'assistant',
-    content: [{ type: 'tool_use', name: toolName, input: toolInput }],
+    content: [
+      { type: 'tool_use', name: toolName, input: toolInput, id: toolUseID },
+    ],
   }
 }

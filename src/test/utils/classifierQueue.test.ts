@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { saveGlobalConfig } from '../../utils/config.js'
 import {
   _resetClassifierQueueForTesting,
   isClassifierQueueEnabled,
+  markToolUseClassified,
   runClassifierQueued,
+  wasToolUseClassified,
 } from '../../utils/permissions/classifierQueue.js'
 
 const originalNoaEnv = process.env.NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE
@@ -26,16 +29,69 @@ describe('classifierQueue', () => {
     }
   })
 
-  test('is disabled by default', () => {
+  // Upstream Claude Code 2.1.221 made the queue unconditional — serializing
+  // is what lets a parallel tool batch share one cached conversation prefix.
+  test('is enabled by default', () => {
     delete process.env.NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE
     delete process.env.CLAUDE_CODE_AUTO_MODE_CLASSIFIER_QUEUE
+    expect(isClassifierQueueEnabled()).toBe(true)
+  })
+
+  test('NOA_CLAUDE_ env var can force it off', () => {
+    delete process.env.CLAUDE_CODE_AUTO_MODE_CLASSIFIER_QUEUE
+    process.env.NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE = '0'
     expect(isClassifierQueueEnabled()).toBe(false)
   })
 
-  test('legacy CLAUDE_CODE_ env var enables it', () => {
+  test('legacy CLAUDE_CODE_ env var can force it off', () => {
+    delete process.env.NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE
+    process.env.CLAUDE_CODE_AUTO_MODE_CLASSIFIER_QUEUE = 'false'
+    expect(isClassifierQueueEnabled()).toBe(false)
+  })
+
+  test('NOA_CLAUDE_ off beats legacy on', () => {
+    process.env.NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE = 'off'
+    process.env.CLAUDE_CODE_AUTO_MODE_CLASSIFIER_QUEUE = 'true'
+    expect(isClassifierQueueEnabled()).toBe(false)
+  })
+
+  test('legacy CLAUDE_CODE_ env var keeps working as an explicit on', () => {
     delete process.env.NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE
     process.env.CLAUDE_CODE_AUTO_MODE_CLASSIFIER_QUEUE = 'true'
     expect(isClassifierQueueEnabled()).toBe(true)
+  })
+
+  test('config false forces it off when no env var is set', () => {
+    delete process.env.NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE
+    delete process.env.CLAUDE_CODE_AUTO_MODE_CLASSIFIER_QUEUE
+    saveGlobalConfig(config => ({
+      ...config,
+      autoModeClassifierQueueEnabled: false,
+    }))
+    try {
+      expect(isClassifierQueueEnabled()).toBe(false)
+    } finally {
+      saveGlobalConfig(config => ({
+        ...config,
+        autoModeClassifierQueueEnabled: undefined,
+      }))
+    }
+  })
+
+  test('an env var overrides config false', () => {
+    saveGlobalConfig(config => ({
+      ...config,
+      autoModeClassifierQueueEnabled: false,
+    }))
+    process.env.NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE = '1'
+    try {
+      expect(isClassifierQueueEnabled()).toBe(true)
+    } finally {
+      saveGlobalConfig(config => ({
+        ...config,
+        autoModeClassifierQueueEnabled: undefined,
+      }))
+    }
   })
 
   test('serializes calls under the same key in enqueue order', async () => {
@@ -130,5 +186,26 @@ describe('classifierQueue', () => {
 
     await expect(p1).rejects.toThrow('boom')
     await expect(p2).resolves.toBe('ok')
+  })
+
+  describe('classified tool_use registry', () => {
+    test('only reports ids that were marked', () => {
+      expect(wasToolUseClassified('toolu_1')).toBe(false)
+      markToolUseClassified('toolu_1')
+      expect(wasToolUseClassified('toolu_1')).toBe(true)
+      expect(wasToolUseClassified('toolu_2')).toBe(false)
+    })
+
+    test('marking is idempotent', () => {
+      markToolUseClassified('toolu_1')
+      markToolUseClassified('toolu_1')
+      expect(wasToolUseClassified('toolu_1')).toBe(true)
+    })
+
+    test('the test reset clears it', () => {
+      markToolUseClassified('toolu_1')
+      _resetClassifierQueueForTesting()
+      expect(wasToolUseClassified('toolu_1')).toBe(false)
+    })
   })
 })

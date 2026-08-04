@@ -238,7 +238,7 @@ export type GlobalConfig = {
   autoCompactWindow?: number // Optional auto-compact context-window override, in tokens; undefined = auto (model-tuned). Capped to the model's real context limit. Env CLAUDE_CODE_AUTO_COMPACT_WINDOW takes precedence.
   precomputeCompactEnabled?: boolean // Opt-in: precompute the auto-compact summary in the background to hide compaction latency. Off by default. Env NOA_CLAUDE_PRECOMPUTE_COMPACT also enables it.
   reactiveCompactEnabled?: boolean // Opt-in: recover from an unexpected context overflow (main-query prompt-too-long / media-size) by compacting in place instead of surfacing the error. Off by default; only active in builds compiled with REACTIVE_COMPACT. Env NOA_CLAUDE_REACTIVE_COMPACT also enables it.
-  autoModeClassifierQueueEnabled?: boolean // Opt-in: serialize auto mode classifier API calls per agent instead of firing them concurrently. Off by default (matches upstream's own gated rollout). Env NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE also enables it.
+  autoModeClassifierQueueEnabled?: boolean // Opt-out: serialize auto mode classifier API calls per agent instead of firing them concurrently. On by default (upstream 2.1.221 made it unconditional — serializing is what lets a parallel tool batch share one cached conversation prefix). Set false, or NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE=0, to force it off.
   showTurnDuration: boolean // Controls whether to show turn duration message (e.g., "Cooked for 1m 6s")
   /**
    * @deprecated Use settings.env instead.

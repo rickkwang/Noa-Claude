@@ -11,7 +11,11 @@ import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
 import type { AssistantMessage, Message } from '../../types/message.js'
 import { createChildAbortController } from '../../utils/abortController.js'
 import { formatToolNameForError } from '../../utils/toolName.js'
-import { getMaxToolUseConcurrency } from './toolOrchestration.js'
+import {
+  buildSameTurnToolUses,
+  getMaxToolUseConcurrency,
+  type PrecedingToolUse,
+} from './toolOrchestration.js'
 import { runToolUse } from './toolExecution.js'
 
 type MessageUpdate = {
@@ -300,6 +304,27 @@ export class StreamingToolExecutor {
   }
 
   /**
+   * Tool uses this turn that were received before `tool`, rebuilt as assistant
+   * messages for the auto mode classifier so it sees the rest of a parallel
+   * batch. Ordering is by arrival, not completion — that is what makes each
+   * call's prompt an extension of the previous one's rather than a reshuffle,
+   * which is what keeps the shared conversation prefix cacheable.
+   *
+   * A TrackedTool already carries its own `block`/`assistantMessage` pairing,
+   * so unlike runTools this doesn't need to resolve it.
+   */
+  private buildSameTurnToolUses(
+    tool: TrackedTool,
+  ): AssistantMessage[] | undefined {
+    const preceding: PrecedingToolUse[] = []
+    for (const other of this.tools) {
+      if (other === tool) break
+      preceding.push(other)
+    }
+    return buildSameTurnToolUses(preceding)
+  }
+
+  /**
    * Execute a tool and collect its results
    */
   private async executeTool(tool: TrackedTool): Promise<void> {
@@ -363,7 +388,11 @@ export class StreamingToolExecutor {
         tool.block,
         tool.assistantMessage,
         this.canUseTool,
-        { ...this.toolUseContext, abortController: toolAbortController },
+        {
+          ...this.toolUseContext,
+          abortController: toolAbortController,
+          sameTurnToolUses: this.buildSameTurnToolUses(tool),
+        },
       )
 
       // Track if this specific tool has produced an error result.
