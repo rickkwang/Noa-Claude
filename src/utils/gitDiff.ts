@@ -12,6 +12,7 @@ import {
   getGitDir,
   getIsGit,
   gitExe,
+  RAW_DIFF_FLAGS,
 } from './git.js'
 
 export type GitDiffStats = {
@@ -124,7 +125,7 @@ export async function fetchGitDiffHunks(): Promise<
 
   const { stdout: diffOut, code: diffCode } = await execFileNoThrow(
     gitExe(),
-    ['--no-optional-locks', 'diff', 'HEAD'],
+    ['--no-optional-locks', 'diff', ...RAW_DIFF_FLAGS, 'HEAD'],
     { timeout: GIT_TIMEOUT_MS, preserveOutputOnError: false },
   )
 
@@ -424,7 +425,7 @@ export async function fetchSingleFileGitDiff(
     const diffRef = await getDiffRef(gitRoot)
     const { stdout, code } = await execFileNoThrowWithCwd(
       gitExe(),
-      ['--no-optional-locks', 'diff', diffRef, '--', gitPath],
+      ['--no-optional-locks', 'diff', ...RAW_DIFF_FLAGS, diffRef, '--', gitPath],
       { cwd: gitRoot, timeout: SINGLE_FILE_DIFF_TIMEOUT_MS },
     )
     if (code !== 0) return null

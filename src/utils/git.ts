@@ -216,6 +216,25 @@ export const gitExe = memoize((): string => {
   return whichSync('git') || 'git'
 })
 
+/**
+ * Flags for every `git diff`/`format-patch` we parse ourselves.
+ *
+ * Diff output we consume must be the raw blob-vs-blob unified diff, not
+ * whatever the workspace configured:
+ * - `--no-ext-diff` ignores `diff.external` / `GIT_EXTERNAL_DIFF`, which would
+ *   otherwise replace the unified diff with an arbitrary program's output
+ *   (unparseable, and spawned on every poll).
+ * - `--no-textconv` ignores `diff.<driver>.textconv`, which would diff a
+ *   converted rendering of the file instead of its actual contents, putting
+ *   hunk line numbers out of sync with the file on disk.
+ *
+ * Applied per call site rather than globally, matching upstream: the local
+ * `--shortstat`/`--numstat` polling in gitDiff.ts deliberately stays without
+ * them (it only feeds the status-line counters), while the remote-review
+ * precondition checks do use them, since their counts gate what gets bundled.
+ */
+export const RAW_DIFF_FLAGS = ['--no-ext-diff', '--no-textconv'] as const
+
 export const getIsGit = memoize(async (): Promise<boolean> => {
   const startTime = Date.now()
   logForDiagnosticsNoPII('info', 'is_git_check_started')
@@ -733,7 +752,7 @@ export async function preserveGitStateForIssue(): Promise<PreservedGitState | nu
     if (await isShallowClone()) {
       logForDebugging('Shallow clone detected, using HEAD-only mode for issue')
       const [{ stdout: patch }, untrackedFiles] = await Promise.all([
-        execFileNoThrow(gitExe(), ['diff', 'HEAD']),
+        execFileNoThrow(gitExe(), ['diff', ...RAW_DIFF_FLAGS, 'HEAD']),
         captureUntrackedFiles(),
       ])
       return {
@@ -754,7 +773,7 @@ export async function preserveGitStateForIssue(): Promise<PreservedGitState | nu
       // No remote found - use HEAD-only mode
       logForDebugging('No remote found, using HEAD-only mode for issue')
       const [{ stdout: patch }, untrackedFiles] = await Promise.all([
-        execFileNoThrow(gitExe(), ['diff', 'HEAD']),
+        execFileNoThrow(gitExe(), ['diff', ...RAW_DIFF_FLAGS, 'HEAD']),
         captureUntrackedFiles(),
       ])
       return {
@@ -779,7 +798,7 @@ export async function preserveGitStateForIssue(): Promise<PreservedGitState | nu
       // Merge-base failed - fall back to HEAD-only
       logForDebugging('Merge-base failed, using HEAD-only mode for issue')
       const [{ stdout: patch }, untrackedFiles] = await Promise.all([
-        execFileNoThrow(gitExe(), ['diff', 'HEAD']),
+        execFileNoThrow(gitExe(), ['diff', ...RAW_DIFF_FLAGS, 'HEAD']),
         captureUntrackedFiles(),
       ])
       return {
@@ -805,7 +824,7 @@ export async function preserveGitStateForIssue(): Promise<PreservedGitState | nu
       { stdout: branchName },
     ] = await Promise.all([
       // Patch from merge-base to current state (including staged changes)
-      execFileNoThrow(gitExe(), ['diff', remoteBaseSha]),
+      execFileNoThrow(gitExe(), ['diff', ...RAW_DIFF_FLAGS, remoteBaseSha]),
       // Untracked files captured separately
       captureUntrackedFiles(),
       // format-patch for committed changes between merge-base and HEAD.
@@ -814,6 +833,7 @@ export async function preserveGitStateForIssue(): Promise<PreservedGitState | nu
       // squashed diff. Uses --stdout to emit all patches as a single text stream.
       execFileNoThrow(gitExe(), [
         'format-patch',
+        ...RAW_DIFF_FLAGS,
         `${remoteBaseSha}..HEAD`,
         '--stdout',
       ]),
