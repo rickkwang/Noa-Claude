@@ -28,7 +28,7 @@ import {
 import { isEnterpriseSubscriber, isTeamSubscriber } from '../../utils/auth.js'
 import { detectCurrentRepositoryWithHost } from '../../utils/detectRepository.js'
 import { execFileNoThrow } from '../../utils/execFileNoThrow.js'
-import { getDefaultBranch, gitExe } from '../../utils/git.js'
+import { getDefaultBranch, gitExe, RAW_DIFF_FLAGS } from '../../utils/git.js'
 import { teleportToRemote } from '../../utils/teleport.js'
 
 // One-time session flag: once the user confirms overage billing via the
@@ -255,7 +255,7 @@ export async function launchRemoteReview(
     // will just echo "no changes".
     const { stdout: diffStat, code: diffCode } = await execFileNoThrow(
       gitExe(),
-      ['diff', '--shortstat', mergeBaseSha],
+      ['diff', ...RAW_DIFF_FLAGS, '--shortstat', mergeBaseSha],
       { preserveOutputOnError: false },
     )
     if (diffCode === 0 && !diffStat.trim()) {
