@@ -25,7 +25,7 @@ import { formatLogMetadata } from '../utils/format.js';
 import { getSessionIdFromLog, searchSessionsByCustomTitle } from '../utils/sessionStorage.js';
 import { applyCommandSuggestion, findMidInputSlashCommand, generateCommandSuggestions, getBestCommandMatch, hasCompletionBoundaryAt, isCommandInput } from '../utils/suggestions/commandSuggestions.js';
 import { getDirectoryCompletions, getPathCompletions, isPathLikeToken } from '../utils/suggestions/directoryCompletion.js';
-import { applyEmojiSuggestion, EMOJI_TRIGGER_RE, getEmojiSuggestions, resolveInlineEmojiReplacement } from '../utils/suggestions/emojiSuggestions.js';
+import { EMOJI_TRIGGER_RE, getEmojiSuggestions, resolveInlineEmojiReplacement } from '../utils/suggestions/emojiSuggestions.js';
 import { getShellHistoryCompletion } from '../utils/suggestions/shellHistoryCompletion.js';
 import { getSlackChannelSuggestions, hasSlackMcpServer } from '../utils/suggestions/slackChannelSuggestions.js';
 import { TEAM_LEAD_NAME } from '../utils/swarm/constants.js';
@@ -202,7 +202,10 @@ export function applyShellSuggestion(suggestion: SuggestionItem, input: string, 
   onInputChange(newInput);
   setCursorOffset(wordStart + replacementText.length);
 }
-function applyTriggerSuggestion(suggestion: SuggestionItem, input: string, cursorOffset: number, triggerRe: RegExp, onInputChange: (value: string) => void, setCursorOffset: (offset: number) => void): void {
+// Verbatim port of upstream `bUr`. Shared by #channel, @agent-dm and :emoji:
+// accepts — emoji rows carry the glyph in `displayText`, so they need no
+// bespoke apply function. Exported for the parity tests.
+export function applyTriggerSuggestion(suggestion: SuggestionItem, input: string, cursorOffset: number, triggerRe: RegExp, onInputChange: (value: string) => void, setCursorOffset: (offset: number) => void): void {
   const m = input.slice(0, cursorOffset).match(triggerRe);
   if (!m || m.index === undefined) return;
   const prefixStart = m.index + (m[1]?.length ?? 0);
@@ -744,15 +747,18 @@ export function useTypeahead({
       // (fires only on the keystroke that adds the closing colon).
       const inline = resolveInlineEmojiReplacement(value, prevInputForEmoji, effectiveCursorOffset);
       if (inline) {
-        clearSuggestions();
+        // Upstream order: input, cursor, then clear.
         onInputChange(inline.newInput);
         setCursorOffset(inline.newCursor);
+        clearSuggestions();
         return;
       }
       // Popup: a partial `:query` shows the suggestion list.
       const emojiMatch = value.substring(0, effectiveCursorOffset).match(EMOJI_TRIGGER_RE);
       const emojiItems = emojiMatch ? getEmojiSuggestions(emojiMatch[2]) : [];
       if (emojiItems.length > 0) {
+        // Deviation from upstream, which does not cancel here: an in-flight
+        // file fetch would otherwise land later and clobber the emoji list.
         debouncedFetchFileSuggestions.cancel();
         setSuggestionsState(prev => ({
           commandArgumentHint: undefined,
@@ -769,6 +775,10 @@ export function useTypeahead({
       }
     } else if (suggestionType === 'emoji') {
       // Left prompt mode or the setting was turned off — drop a stale list.
+      // The setting-off half matches upstream (its stale-clear sits outside the
+      // enabled check); the left-prompt-mode half is a deviation — upstream
+      // scopes its clear to prompt mode and so strands the list on a mode
+      // switch.
       clearSuggestions();
     }
 
@@ -1132,9 +1142,11 @@ export function useTypeahead({
         applyTriggerSuggestion(suggestion, input, cursorOffset, HASH_CHANNEL_RE, onInputChange, setCursorOffset);
         clearSuggestions();
       }
-    } else if (suggestionType === 'emoji') {
+    } else if (emojiCompletionEnabled && suggestionType === 'emoji') {
+      // Re-checked at accept time, as upstream does: the setting can flip via a
+      // settings.json write while a `:shortcode` popup is already open.
       if (suggestion) {
-        applyEmojiSuggestion(suggestion, input, cursorOffset, onInputChange, setCursorOffset);
+        applyTriggerSuggestion(suggestion, input, cursorOffset, EMOJI_TRIGGER_RE, onInputChange, setCursorOffset);
         clearSuggestions();
       }
     } else if (suggestionType === 'file') {
@@ -1170,7 +1182,7 @@ export function useTypeahead({
         clearSuggestions();
       }
     }
-  }, [suggestions, suggestionType, commands, input, cursorOffset, mode, onInputChange, setCursorOffset, onSubmit, clearSuggestions, setSuggestionsState, updateSuggestions, debouncedFetchFileSuggestions, debouncedFetchSlackChannels]);
+  }, [suggestions, suggestionType, commands, input, cursorOffset, mode, onInputChange, setCursorOffset, onSubmit, clearSuggestions, setSuggestionsState, updateSuggestions, debouncedFetchFileSuggestions, debouncedFetchSlackChannels, emojiCompletionEnabled]);
 
   // Handle tab key press - complete suggestions or trigger file suggestions
   const handleTab = useCallback(async () => {
@@ -1291,9 +1303,9 @@ export function useTypeahead({
         debouncedFetchSlackChannels.cancel();
         clearSuggestions();
       }
-    } else if (suggestionType === 'emoji' && selectedSuggestion < suggestions.length) {
+    } else if (emojiCompletionEnabled && suggestionType === 'emoji' && selectedSuggestion < suggestions.length) {
       if (suggestion) {
-        applyEmojiSuggestion(suggestion, input, cursorOffset, onInputChange, setCursorOffset);
+        applyTriggerSuggestion(suggestion, input, cursorOffset, EMOJI_TRIGGER_RE, onInputChange, setCursorOffset);
         clearSuggestions();
       }
     } else if (suggestionType === 'file' && selectedSuggestion < suggestions.length) {
@@ -1354,7 +1366,7 @@ export function useTypeahead({
         clearSuggestions();
       }
     }
-  }, [suggestions, selectedSuggestion, suggestionType, commands, input, cursorOffset, mode, onInputChange, setCursorOffset, onSubmit, clearSuggestions, debouncedFetchFileSuggestions, debouncedFetchSlackChannels]);
+  }, [suggestions, selectedSuggestion, suggestionType, commands, input, cursorOffset, mode, onInputChange, setCursorOffset, onSubmit, clearSuggestions, debouncedFetchFileSuggestions, debouncedFetchSlackChannels, emojiCompletionEnabled]);
 
   // Handler for autocomplete:accept - accepts current suggestion via Tab or Right Arrow
   const handleAutocompleteAccept = useCallback(() => {

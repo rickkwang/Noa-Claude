@@ -1,13 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  applyEmojiSuggestion,
+  EMOJI_ALIASES,
   EMOJI_INLINE_RE,
   EMOJI_SHORTCODES,
+  EMOJI_TABLE,
   EMOJI_TRIGGER_RE,
   getEmoji,
   getEmojiSuggestions,
   resolveInlineEmojiReplacement,
 } from '../../../utils/suggestions/emojiSuggestions.js'
+import { applyTriggerSuggestion } from '../../../hooks/useTypeahead.js'
 
 describe('EMOJI_TRIGGER_RE', () => {
   const matches = (s: string) => {
@@ -55,12 +57,12 @@ describe('getEmojiSuggestions', () => {
     expect(getEmojiSuggestions('')).toEqual([])
   })
 
-  test('finds an exact shortcode and carries the glyph in metadata', () => {
+  test('finds an exact shortcode and puts the glyph in displayText', () => {
     const items = getEmojiSuggestions('fire')
     const fire = items.find(i => i.id === 'emoji-fire')
     expect(fire).toBeDefined()
-    expect((fire!.metadata as { emoji: string }).emoji).toBe('🔥')
-    // Row layout mirrors upstream: glyph in the name column, :shortcode: as desc.
+    // Row layout mirrors upstream: glyph in the name column, :shortcode: as
+    // desc. The glyph living in displayText is also what the accept path reads.
     expect(fire!.displayText).toBe('🔥')
     expect(fire!.description).toBe(':fire:')
   })
@@ -95,70 +97,118 @@ describe('getEmojiSuggestions', () => {
   })
 
   test('every table entry has a non-empty glyph', () => {
-    for (const [name, glyph] of Object.entries(EMOJI_SHORTCODES)) {
+    for (const [name, glyph] of EMOJI_TABLE) {
       expect(glyph.length).toBeGreaterThan(0)
       expect(name).toMatch(/^[a-z0-9_+-]+$/)
     }
   })
+
+  test('surfaces aliases as their own rows, glyph shared with the canonical', () => {
+    const items = getEmojiSuggestions('thumbs')
+    const byId = new Map(items.map(i => [i.id, i]))
+    for (const name of ['thumbsup', 'thumbs_up']) {
+      expect(byId.get(`emoji-${name}`)?.displayText).toBe('👍')
+      expect(byId.get(`emoji-${name}`)?.description).toBe(`:${name}:`)
+    }
+    for (const name of ['thumbsdown', 'thumbs_down']) {
+      expect(byId.get(`emoji-${name}`)?.displayText).toBe('👎')
+    }
+  })
 })
 
-describe('applyEmojiSuggestion', () => {
-  function apply(input: string, cursor: number, name: string) {
+describe('EMOJI_ALIASES (upstream 2.1.221 alias layer)', () => {
+  test('every alias resolves to a glyph the base table defines', () => {
+    for (const [alias, canonical] of Object.entries(EMOJI_ALIASES)) {
+      const glyph = EMOJI_SHORTCODES[canonical]
+      expect(glyph).toBeDefined()
+      expect(getEmoji(alias)).toBe(glyph)
+    }
+  })
+
+  test('an alias never shadows an existing base entry', () => {
+    // thumbsup/thumbsdown are base names here, so their aliases are no-ops.
+    for (const alias of Object.keys(EMOJI_ALIASES)) {
+      if (Object.hasOwn(EMOJI_SHORTCODES, alias)) {
+        expect(EMOJI_TABLE.get(alias)).toBe(EMOJI_SHORTCODES[alias])
+      }
+    }
+  })
+
+  test('the seven aliases missing from the base table are now resolvable', () => {
+    expect(getEmoji('plus_one')).toBe('👍')
+    expect(getEmoji('minus_one')).toBe('👎')
+    expect(getEmoji('thumbs_up')).toBe('👍')
+    expect(getEmoji('thumbs_down')).toBe('👎')
+    expect(getEmoji('love')).toBe('❤️')
+    expect(getEmoji('celebrate')).toBe('🎉')
+    expect(getEmoji('hundred')).toBe('💯')
+  })
+})
+
+describe('accept path (upstream routes emoji through applyTriggerSuggestion)', () => {
+  // Exercises the REAL helper from useTypeahead — the one the two emoji accept
+  // branches call — not a copy of it.
+  function accept(input: string, cursor: number, query: string) {
+    const suggestion = getEmojiSuggestions(query).find(
+      i => i.description === `:${query}:`,
+    )
+    expect(suggestion).toBeDefined()
     let newInput = ''
     let newCursor = -1
-    const suggestion = {
-      id: `emoji-${name}`,
-      displayText: `${EMOJI_SHORTCODES[name]} :${name}:`,
-      metadata: { emoji: EMOJI_SHORTCODES[name] },
-    }
-    applyEmojiSuggestion(
-      suggestion,
+    applyTriggerSuggestion(
+      suggestion!,
       input,
       cursor,
+      EMOJI_TRIGGER_RE,
       v => (newInput = v),
       o => (newCursor = o),
     )
     return { newInput, newCursor }
   }
 
-  test('replaces the :query token with the glyph, no trailing space', () => {
+  test('replaces the :query token with the glyph plus a trailing space', () => {
+    // Upstream `bUr` always appends " " and lands the cursor past it.
     const input = 'ship it :fir'
-    const { newInput, newCursor } = apply(input, input.length, 'fire')
-    expect(newInput).toBe('ship it 🔥')
-    expect(newCursor).toBe('ship it 🔥'.length)
+    const { newInput, newCursor } = accept(input, input.length, 'fire')
+    expect(newInput).toBe('ship it 🔥 ')
+    expect(newCursor).toBe('ship it 🔥 '.length)
   })
 
   test('preserves text after the cursor', () => {
     const input = 'a :smi z'
     const cursor = 'a :smi'.length // cursor right after "smi", before " z"
-    const { newInput } = apply(input, cursor, 'smile')
-    expect(newInput).toBe('a 😄 z')
+    const { newInput } = accept(input, cursor, 'smile')
+    expect(newInput).toBe('a 😄  z')
   })
 
   test('replaces at start of input', () => {
     const input = ':tada'
-    const { newInput, newCursor } = apply(input, input.length, 'tada')
-    expect(newInput).toBe('🎉')
-    expect(newCursor).toBe('🎉'.length)
+    const { newInput, newCursor } = accept(input, input.length, 'tada')
+    expect(newInput).toBe('🎉 ')
+    expect(newCursor).toBe('🎉 '.length)
   })
 
   test('does nothing when there is no trigger before the cursor', () => {
     const input = 'no trigger here'
-    const { newInput, newCursor } = apply(input, input.length, 'fire')
+    const { newInput, newCursor } = accept(input, input.length, 'fire')
     expect(newInput).toBe('')
     expect(newCursor).toBe(-1)
   })
 
-  test('does nothing when metadata has no emoji', () => {
-    let called = false
-    applyEmojiSuggestion(
-      { id: 'emoji-x', displayText: ':x:', metadata: {} },
-      ':fir',
-      4,
-      () => (called = true),
-      () => (called = true),
-    )
-    expect(called).toBe(false)
+  test('suggestion rows carry no metadata (upstream shape)', () => {
+    for (const item of getEmojiSuggestions('fire')) {
+      expect(item).toEqual({
+        id: item.id,
+        displayText: item.displayText,
+        description: item.description,
+      })
+    }
+  })
+
+  test('an accepted alias inserts the canonical glyph', () => {
+    const input = 'nice :plus_on'
+    const { newInput } = accept(input, input.length, 'plus_one')
+    expect(newInput).toBe('nice 👍 ')
   })
 })
 
@@ -169,6 +219,14 @@ describe('getEmoji', () => {
   })
   test('returns undefined for an unknown shortcode', () => {
     expect(getEmoji('definitely_not_a_shortcode')).toBeUndefined()
+  })
+
+  test('does not leak Object.prototype members', () => {
+    // Both spellings satisfy the trigger charset [a-z0-9_+-]+, so an object
+    // lookup would hand back Object / Object.prototype here.
+    expect(getEmoji('constructor')).toBeUndefined()
+    expect(getEmoji('__proto__')).toBeUndefined()
+    expect(getEmoji('valueof')).toBeUndefined()
   })
 })
 
@@ -202,6 +260,24 @@ describe('resolveInlineEmojiReplacement (upstream YtS + KtS)', () => {
     expect(
       resolveInlineEmojiReplacement(':nope_x:', ':nope_x', 8),
     ).toBeNull()
+  })
+
+  test('does NOT convert an Object.prototype member name', () => {
+    // Regression: with an object-literal lookup this spliced the source of
+    // `Object` into the prompt.
+    expect(
+      resolveInlineEmojiReplacement('hi :constructor:', 'hi :constructor', 16),
+    ).toBeNull()
+    expect(
+      resolveInlineEmojiReplacement('hi :__proto__:', 'hi :__proto__', 14),
+    ).toBeNull()
+  })
+
+  test('converts an alias', () => {
+    expect(resolveInlineEmojiReplacement(':plus_one:', ':plus_one', 10)).toEqual({
+      newInput: '👍',
+      newCursor: '👍'.length,
+    })
   })
 
   test('does NOT convert on deletion (only additions ending in colon)', () => {

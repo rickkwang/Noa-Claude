@@ -1,6 +1,6 @@
 # Features Audit
 
-Last updated: 2026-07-29
+Last updated: 2026-08-05
 
 This file is the build/runtime audit for experimental feature flags in this repository.
 
@@ -159,3 +159,11 @@ Refer to `FEATURE_AVAILABILITY_MATRIX.md` for command-level availability.
   custom themes behind safe mode (`--safe-mode` / `CLAUDE_CODE_SAFE_MODE=1`)
   and shows a "disabled in safe mode" notice; this fork has no safe-mode
   concept, so that gate and its copy are absent.
+- **`/status` "Session kind" row** — upstream 2.1.221 added a row after
+  "Session ID" showing `interactive` / `background job · attached` /
+  `background job · unattended`, driven by the `CLAUDE_CODE_SESSION_KIND=bg`
+  env contract plus an `attacherCaps` attach-state signal. Intentional
+  deviation: this fork has no detached background-job session type (and no
+  `CLAUDE_CODE_SESSION_KIND`/`attacherCaps` plumbing anywhere in `src/`), so
+  the row would permanently read "interactive". Not ported; revisit only if a
+  real background-job session type lands here.
