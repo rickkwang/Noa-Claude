@@ -8,7 +8,7 @@
         "@anthropic-ai/bedrock-sdk": "^0.27.0",
         "@anthropic-ai/foundry-sdk": "^0.2.3",
         "@anthropic-ai/mcpb": "file:./vendor/anthropic-ai-mcpb",
-        "@anthropic-ai/sandbox-runtime": "^0.0.51",
+        "@anthropic-ai/sandbox-runtime": "^0.0.70",
         "@anthropic-ai/sdk": "^0.80.0",
         "@anthropic-ai/vertex-sdk": "^0.16.0",
         "@aws-sdk/client-bedrock": "^3.700.0",
@@ -99,7 +99,7 @@
 
     "@anthropic-ai/mcpb": ["@anthropic-ai/mcpb@file:vendor/anthropic-ai-mcpb", {}],
 
-    "@anthropic-ai/sandbox-runtime": ["@anthropic-ai/sandbox-runtime@0.0.51", "", { "dependencies": { "@pondwader/socks5-server": "^1.0.10", "commander": "^12.1.0", "node-forge": "^1.4.0", "shell-quote": "^1.8.3", "zod": "^3.24.1" }, "bin": { "srt": "dist/cli.js" } }, "sha512-CK4diuUBzXxriQL+9A1LCYOcXevwlWvi8r+li2HhcwLNjI97VUq94l7d+2czTkbSrgrPZAaorigLCM1GY6WCSA=="],
+    "@anthropic-ai/sandbox-runtime": ["@anthropic-ai/sandbox-runtime@0.0.70", "", { "dependencies": { "@pondwader/socks5-server": "^1.0.10", "commander": "^12.1.0", "node-forge": "^1.4.0", "zod": "^3.24.1" }, "bin": { "srt": "dist/cli.js" } }, "sha512-Pr0d3J3UyJISxvFxTOldchW3a8P/nAZiIV+nU9wIHoW5Ym1PM0XDPzWX8mMJsXWpnURzI+u3OdULiaucYZ9e2g=="],
 
     "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.80.0", "", { "dependencies": { "json-schema-to-ts": "^3.1.1" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-WeXLn7zNVk3yjeshn+xZHvld6AoFUOR3Sep6pSoHho5YbSi6HwcirqgPA5ccFuW8QTVJAAU7N8uQQC6Wa9TG+g=="],
 
