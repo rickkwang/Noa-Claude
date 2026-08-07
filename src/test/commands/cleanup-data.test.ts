@@ -115,17 +115,21 @@ describe('memory dir deletion', () => {
     await mkdir(join(mem, 'logs', '2026', '08'), { recursive: true })
     await mkdir(join(mem, 'pics'), { recursive: true })
     await writeFile(join(mem, 'MEMORY.md'), '# mem')
-    await writeFile(join(mem, 'user_role.md'), 'topic')
+    await writeFile(
+      join(mem, 'user_role.md'),
+      '---\nname: user_role\ndescription: who the user is\ntype: user\n---\n\ntopic\n',
+    )
+    await writeFile(join(mem, 'notes.md'), 'just my notes, no frontmatter')
     await writeFile(join(mem, 'logs', '2026', '08', '2026-08-07.md'), 'log')
     await writeFile(join(mem, 'keepme.txt'), 'do not delete')
 
     const preview = await run('project')
     expect(preview).toContain('custom location')
-    expect(preview).toContain('Keeping 2 unrecognized item(s)')
+    expect(preview).toContain('Keeping 3 unrecognized item(s)')
 
     const done = await run('project --confirm')
     expect(done).toContain('Cleanup complete')
-    expect(done).toContain('Kept 2 unrecognized item(s)')
+    expect(done).toContain('Kept 3 unrecognized item(s)')
 
     expect(existsSync(mem)).toBe(true)
     expect(existsSync(join(mem, 'MEMORY.md'))).toBe(false)
@@ -133,6 +137,7 @@ describe('memory dir deletion', () => {
     expect(existsSync(join(mem, 'logs'))).toBe(false)
     expect(existsSync(join(mem, 'keepme.txt'))).toBe(true)
     expect(existsSync(join(mem, 'pics'))).toBe(true)
+    expect(existsSync(join(mem, 'notes.md'))).toBe(true)
   })
 
   test('custom-location dir with no memory entries is left untouched', async () => {

@@ -715,6 +715,34 @@ export async function tailFile(
 }
 
 /**
+ * Total size of a directory tree in bytes. Missing/unreadable dirs count as
+ * 0. Symlinks are not followed — a symlinked dir inside the tree is skipped,
+ * so cleanup sizing can't be inflated by links pointing outside it.
+ */
+export async function dirSize(dir: string): Promise<number> {
+  let entries
+  try {
+    entries = await readdirPromise(dir, { withFileTypes: true })
+  } catch {
+    return 0
+  }
+  let total = 0
+  for (const entry of entries) {
+    const full = nodePath.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      total += await dirSize(full)
+    } else if (entry.isFile()) {
+      try {
+        total += (await statPromise(full)).size
+      } catch {
+        // Raced delete — skip.
+      }
+    }
+  }
+  return total
+}
+
+/**
  * Async generator that yields lines from a file in reverse order.
  * Reads the file backwards in chunks to avoid loading the entire file into memory.
  * @param path - The path to the file to read

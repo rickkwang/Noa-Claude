@@ -1,10 +1,11 @@
 import { homedir } from 'os'
-import { lstat, readdir, rm, stat } from 'fs/promises'
+import { lstat, open, readdir, rm, stat } from 'fs/promises'
 import { join, sep } from 'path'
 import { getProjectRoot } from '../../bootstrap/state.js'
 import type { LocalCommandCall } from '../../types/command.js'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 import { formatFileSize } from '../../utils/format.js'
+import { dirSize } from '../../utils/fsOperations.js'
 import { getAutoMemPath, getMemoryBaseDir } from '../../memdir/paths.js'
 import {
   getPrimaryProjectFile,
@@ -37,8 +38,50 @@ const KNOWN_MEMORY_ENTRIES = new Set([
   '.consolidate-lock',
 ])
 
-function isKnownMemoryEntry(name: string): boolean {
-  return KNOWN_MEMORY_ENTRIES.has(name) || name.endsWith('.md')
+const MEMORY_FRONTMATTER_TYPE_RE = /^type:\s*(?:user|feedback|project|reference)\s*$/m
+
+// A top-level .md file counts as a memory topic file only if it carries the
+// memory frontmatter — a user's own notes.md in a custom dir is not ours.
+async function isMemoryMarkdown(path: string): Promise<boolean> {
+  let fh
+  try {
+    fh = await open(path, 'r')
+    const buf = Buffer.alloc(4096)
+    const { bytesRead } = await fh.read(buf, 0, 4096, 0)
+    const head = buf.toString('utf8', 0, bytesRead)
+    if (!head.startsWith('---')) return false
+    const end = head.indexOf('\n---', 3)
+    const block = end >= 0 ? head.slice(3, end) : head
+    return MEMORY_FRONTMATTER_TYPE_RE.test(block)
+  } catch {
+    return false
+  } finally {
+    await fh?.close()
+  }
+}
+
+// Top-level entries of a custom memory dir, split into memory-system-managed
+// (known) and foreign (kept). Shared by sizing and deletion so they agree.
+async function partitionMemoryEntries(
+  dir: string,
+): Promise<{ known: string[]; kept: string[] }> {
+  const entries = await readdir(dir, { withFileTypes: true })
+  const known: string[] = []
+  const kept: string[] = []
+  for (const entry of entries) {
+    if (KNOWN_MEMORY_ENTRIES.has(entry.name)) {
+      known.push(entry.name)
+    } else if (
+      entry.name.endsWith('.md') &&
+      entry.isFile() &&
+      (await isMemoryMarkdown(join(dir, entry.name)))
+    ) {
+      known.push(entry.name)
+    } else {
+      kept.push(entry.name)
+    }
+  }
+  return { known, kept }
 }
 
 function parseArgs(args: string): {
@@ -80,29 +123,6 @@ function parseArgs(args: string): {
   return { scope, confirm }
 }
 
-async function dirSize(dir: string): Promise<number> {
-  let total = 0
-  let entries
-  try {
-    entries = await readdir(dir, { withFileTypes: true })
-  } catch {
-    return 0
-  }
-  for (const entry of entries) {
-    const full = join(dir, entry.name)
-    if (entry.isDirectory()) {
-      total += await dirSize(full)
-    } else if (entry.isFile()) {
-      try {
-        total += (await stat(full)).size
-      } catch {
-        // Broken symlink / raced delete — skip.
-      }
-    }
-  }
-  return total
-}
-
 async function pathSize(
   path: string,
   selective: boolean,
@@ -125,27 +145,24 @@ async function pathSize(
   }
 
   let total = 0
-  const kept: string[] = []
-  let entries
+  let known: string[]
+  let kept: string[]
   try {
-    entries = await readdir(path, { withFileTypes: true })
+    ;({ known, kept } = await partitionMemoryEntries(path))
   } catch {
     return { ...none, exists: true }
   }
-  for (const entry of entries) {
-    if (!isKnownMemoryEntry(entry.name)) {
-      kept.push(entry.name)
-      continue
-    }
-    const full = join(path, entry.name)
-    if (entry.isDirectory()) {
-      total += await dirSize(full)
-    } else {
-      try {
+  for (const name of known) {
+    const full = join(path, name)
+    try {
+      const info = await lstat(full)
+      if (info.isDirectory()) {
+        total += await dirSize(full)
+      } else {
         total += (await stat(full)).size
-      } catch {
-        // Broken symlink / raced delete — skip.
       }
+    } catch {
+      // Broken symlink / raced delete — skip.
     }
   }
   return { exists: true, size: total, symlink: false, kept }
@@ -219,10 +236,8 @@ async function deleteTargets(
     let paths = [target.path]
     if (target.selective && !target.symlink) {
       try {
-        const entries = await readdir(target.path)
-        paths = entries
-          .filter(isKnownMemoryEntry)
-          .map(name => join(target.path, name))
+        const { known } = await partitionMemoryEntries(target.path)
+        paths = known.map(name => join(target.path, name))
       } catch {
         continue
       }
