@@ -62,10 +62,7 @@ import { getPlatform } from './platform.js'
 import { countFilesRoundedRg } from './ripgrep.js'
 import { jsonStringify } from './slowOperations.js'
 import type { SystemPrompt } from './systemPromptType.js'
-import {
-  hasOpus5PromptBundle,
-  shouldUseCompactSystemPrompt,
-} from '../constants/systemPromptCompact.js'
+import { shouldUseCompactSystemPrompt } from '../constants/systemPromptCompact.js'
 import { getToolSchemaCache } from './toolSchemaCache.js'
 import { windowsPathToPosixPath } from './windowsPaths.js'
 import { zodToJsonSchema } from './zodToJsonSchema.js'
@@ -226,15 +223,8 @@ export async function toolToAPISchema(
   // against GB flips / MCP reconnects — while still busting on an actual
   // lean/verbose flip. Mirrors upstream's own ":L" cache-key suffix for the
   // same problem on its dynamic prompt sections.
-  //
-  // Bash's lean description additionally varies with the prompt bundle, which is
-  // a separate capability that only coincides with the lean gate on first-party
-  // models. Both bits go into the key, or two models that agree on lean and
-  // differ on the bundle would share one cached description.
   const lean = shouldUseCompactSystemPrompt(options.model)
-  const leanSuffix = lean
-    ? `:L${hasOpus5PromptBundle(options.model) ? '' : ':nb'}`
-    : ''
+  const leanSuffix = lean ? ':L' : ''
   const supportsStructuredOutputs =
     options.model !== undefined && modelSupportsStructuredOutputs(options.model)
   const cacheKey =

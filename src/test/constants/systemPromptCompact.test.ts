@@ -5,13 +5,13 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 process.env.ANTHROPIC_API_KEY ??= 'sk-ant-test'
 
 import {
+  getActionCautionSection,
   getCompactHeadSection,
   hasFableMitigations,
   hasOpus5PromptBundle,
   shouldUseCompactSystemPrompt,
 } from '../../constants/systemPromptCompact.js'
 import { buildStaticSystemPromptSections } from '../../constants/systemPromptAssemblyHelpers.js'
-import { getSimplePrompt as getBashPrompt } from '../../tools/BashTool/prompt.js'
 import * as compactPrompt from '../../constants/systemPromptCompact.js'
 
 const ENV_KEYS = [
@@ -325,9 +325,12 @@ describe('compact system prompt gate', () => {
     expect(shouldUseCompactSystemPrompt('kimi-k2-turbo')).toBe(true)
     expect(hasOpus5PromptBundle('kimi-k2-turbo')).toBe(false)
 
-    // The bullet upstream gates on the bundle, not on the lean prompt.
-    expect(getBashPrompt('kimi-k2-turbo')).not.toContain(
-      '- Command output is displayed to you, not reliably to the user.',
+    // The trailing "unfamiliar state" clause upstream gates on the bundle, not
+    // on the lean prompt. (Bash's own bundle-gated bullet was retired as a
+    // distinguishing example when upstream 2.1.224 made it unconditional — see
+    // getLeanPrompt() in tools/BashTool/prompt.ts.)
+    expect(getActionCautionSection('kimi-k2-turbo')).toContain(
+      "if what you find contradicts how it was described, or you didn't create it, surface that instead of proceeding",
     )
   })
 
@@ -338,8 +341,8 @@ describe('compact system prompt gate', () => {
       'lean_prompt,opus_5_prompt_bundle'
 
     expect(hasOpus5PromptBundle('kimi-k2-turbo')).toBe(true)
-    expect(getBashPrompt('kimi-k2-turbo')).toContain(
-      '- Command output is displayed to you, not reliably to the user.',
+    expect(getActionCautionSection('kimi-k2-turbo')).not.toContain(
+      "if what you find contradicts how it was described, or you didn't create it, surface that instead of proceeding",
     )
   })
 

@@ -165,6 +165,17 @@ describe('ported lean text inside interpolated descriptions', () => {
     )
   })
 
+  // Upstream promoted this bullet from opus_5_prompt_bundle-gated (2.1.222) to
+  // unconditional on the lean prompt (2.1.224) — assert it survives even for a
+  // lean model that does NOT carry the bundle, so a regression back to the old
+  // gate would fail here.
+  test('Bash output-visibility bullet is unconditional on the lean prompt', () => {
+    const unbundled = getBashPrompt(UNBUNDLED_MODEL)
+    expect(unbundled).toContain(
+      '- Command output is displayed to you, not reliably to the user.',
+    )
+  })
+
   test('WebSearch keeps its upstream sentences', () => {
     const search = getWebSearchPrompt(LEAN_MODEL)
     expect(search).toStartWith(

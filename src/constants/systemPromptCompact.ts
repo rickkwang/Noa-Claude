@@ -200,7 +200,17 @@ export function shouldUseCompactSystemPrompt(model: string | undefined): boolean
 /**
  * Whether the model ships upstream's "Opus 5 prompt bundle" — the companion
  * sections that travel with the compact head (delivering-work, corrections, the
- * shorter action-caution wording, one Bash bullet).
+ * shorter action-caution wording).
+ *
+ * Upstream's Bash tool used to gate its "Command output is displayed to you,
+ * not reliably to the user." bullet on this same capability (true through
+ * 2.1.223); 2.1.224 made that bullet unconditional for every lean-prompt model,
+ * so it no longer belongs to this bundle — see getLeanPrompt() in
+ * tools/BashTool/prompt.ts. Upstream also has a different Bash bullet
+ * ("Commands are cheap to run and their errors are informative...") behind a
+ * separate GrowthBook flag (`tengu_gorse_plover`/`CLAUDE_CODE_GORSE_PLOVER`,
+ * off by default, no bundle fallback — present since at least 2.1.222) that is
+ * not ported here.
  *
  * This is a *different* capability from `lean_prompt`, and the two are not
  * co-extensive. Upstream's model manifest declares `lean_prompt` for Opus 5,

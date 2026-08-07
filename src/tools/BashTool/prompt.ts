@@ -1,10 +1,7 @@
 // @ts-nocheck
 import { prependBullets } from '../../constants/systemPromptCoreSections.js'
 import { getAttributionTexts } from '../../utils/attribution.js'
-import {
-  hasOpus5PromptBundle,
-  shouldUseCompactSystemPrompt,
-} from '../../constants/systemPromptCompact.js'
+import { shouldUseCompactSystemPrompt } from '../../constants/systemPromptCompact.js'
 import { hasEmbeddedSearchTools } from '../../utils/embeddedTools.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { shouldIncludeGitInstructions } from '../../utils/gitSettings.js'
@@ -327,8 +324,14 @@ function getLeanCommitAndPRInstructions(): string {
  * split it either: it states the permission boundary rather than giving advice,
  * so rewording it would change what the agent believes it may do.
  *
- * The output-visibility bullet rides on the prompt bundle rather than on the
- * lean prompt, the same as the compact head's companion sections.
+ * The output-visibility bullet ("Command output is displayed to you, not
+ * reliably to the user.") used to ride on the opus_5_prompt_bundle capability,
+ * gated the same as the compact head's companion sections — that was accurate
+ * through upstream 2.1.223. Upstream 2.1.224 dropped the gate and made the
+ * bullet unconditional for every model on the lean prompt; ported here to
+ * match.
+ * Confirmed by diffing the minified `d4y()`/`ITy()` builders across the
+ * 2.1.222–2.1.224 binaries, not inferred from the changelog.
  */
 function getLeanPrompt(model?: string): string {
   const avoidCommands = hasEmbeddedSearchTools()
@@ -342,9 +345,7 @@ function getLeanPrompt(model?: string): string {
     '',
     "- Working directory persists between calls, but prefer absolute paths — `cd` in a compound command can trigger a permission prompt. Shell state (env vars, functions) does not persist; the shell is initialized from the user's profile.",
     `- IMPORTANT: Avoid using this tool to run ${avoidCommands} commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user.`,
-    ...(hasOpus5PromptBundle(model)
-      ? ['- Command output is displayed to you, not reliably to the user.']
-      : []),
+    '- Command output is displayed to you, not reliably to the user.',
     `- \`timeout\` is in milliseconds: default ${getDefaultTimeoutMs()}, max ${getMaxTimeoutMs()}.`,
     ...(getBackgroundUsageNote() !== null
       ? [
