@@ -34,7 +34,7 @@ Last updated: 2026-05-27
 | Command | Status | Notes |
 |---|---|---|
 | `/assistant` | Available | Assistant preference/status command implemented; full assistant runtime remains gated by build/runtime capabilities. |
-| `/cleanup-data` | Available | Unified cleanup command for local tracking data; requires `--confirm` to execute deletions. |
+| `/cleanup-data` | Available | Unified cleanup command for local tracking data; requires `--confirm` to execute deletions. Custom-location memory dirs (env/settings override) only lose known memory files — unrecognized items are kept and reported. |
 | `/heapdump` | Available | Exposed for engineering diagnostics. |
 | `/output-style` | Available | Deprecated shim only; compatibility prompt to `/config`, not promotable to baseline unless replaced by a supported configuration workflow. |
 | `/thinkback-play` | Available | Thinkback helper; still gated by runtime feature availability. |

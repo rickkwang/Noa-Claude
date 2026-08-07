@@ -1,11 +1,11 @@
 import { homedir } from 'os'
-import { readdir, rm, stat } from 'fs/promises'
-import { join } from 'path'
+import { lstat, readdir, rm, stat } from 'fs/promises'
+import { join, sep } from 'path'
 import { getProjectRoot } from '../../bootstrap/state.js'
 import type { LocalCommandCall } from '../../types/command.js'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 import { formatFileSize } from '../../utils/format.js'
-import { getAutoMemPath } from '../../memdir/paths.js'
+import { getAutoMemPath, getMemoryBaseDir } from '../../memdir/paths.js'
 import {
   getPrimaryProjectFile,
   getPrimaryProjectSubdir,
@@ -16,11 +16,29 @@ type CleanupScope = 'project' | 'all'
 type CleanupTarget = {
   path: string
   reason: string
+  // Custom-location memory dirs may hold user files alongside memory data;
+  // delete only the entries the memory system itself manages, keep the rest.
+  selective?: boolean
 }
 
 type ResolvedTarget = CleanupTarget & {
   exists: boolean
   size: number
+  symlink: boolean
+  kept: string[]
+}
+
+// Entries the memory system writes into the auto-memory dir: the MEMORY.md
+// index, flat per-topic .md files, daily logs/, team memory, autoDream's lock.
+const KNOWN_MEMORY_ENTRIES = new Set([
+  'MEMORY.md',
+  'logs',
+  'team',
+  '.consolidate-lock',
+])
+
+function isKnownMemoryEntry(name: string): boolean {
+  return KNOWN_MEMORY_ENTRIES.has(name) || name.endsWith('.md')
 }
 
 function parseArgs(args: string): {
@@ -62,39 +80,75 @@ function parseArgs(args: string): {
   return { scope, confirm }
 }
 
-async function pathSize(path: string): Promise<{ exists: boolean; size: number }> {
-  let info
-  try {
-    info = await stat(path)
-  } catch {
-    return { exists: false, size: 0 }
-  }
-  if (info.isFile()) return { exists: true, size: info.size }
-  if (!info.isDirectory()) return { exists: true, size: 0 }
-
+async function dirSize(dir: string): Promise<number> {
   let total = 0
-  const walk = async (dir: string): Promise<void> => {
-    let entries
-    try {
-      entries = await readdir(dir, { withFileTypes: true })
-    } catch {
-      return
-    }
-    for (const entry of entries) {
-      const full = join(dir, entry.name)
-      if (entry.isDirectory()) {
-        await walk(full)
-      } else if (entry.isFile()) {
-        try {
-          total += (await stat(full)).size
-        } catch {
-          // Broken symlink / raced delete — skip.
-        }
+  let entries
+  try {
+    entries = await readdir(dir, { withFileTypes: true })
+  } catch {
+    return 0
+  }
+  for (const entry of entries) {
+    const full = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      total += await dirSize(full)
+    } else if (entry.isFile()) {
+      try {
+        total += (await stat(full)).size
+      } catch {
+        // Broken symlink / raced delete — skip.
       }
     }
   }
-  await walk(path)
-  return { exists: true, size: total }
+  return total
+}
+
+async function pathSize(
+  path: string,
+  selective: boolean,
+): Promise<{ exists: boolean; size: number; symlink: boolean; kept: string[] }> {
+  const none = { exists: false, size: 0, symlink: false, kept: [] }
+  let info
+  try {
+    info = await lstat(path)
+  } catch {
+    return none
+  }
+  if (info.isSymbolicLink()) {
+    return { exists: true, size: 0, symlink: true, kept: [] }
+  }
+  if (info.isFile()) return { ...none, exists: true, size: info.size }
+  if (!info.isDirectory()) return { ...none, exists: true }
+
+  if (!selective) {
+    return { ...none, exists: true, size: await dirSize(path) }
+  }
+
+  let total = 0
+  const kept: string[] = []
+  let entries
+  try {
+    entries = await readdir(path, { withFileTypes: true })
+  } catch {
+    return { ...none, exists: true }
+  }
+  for (const entry of entries) {
+    if (!isKnownMemoryEntry(entry.name)) {
+      kept.push(entry.name)
+      continue
+    }
+    const full = join(path, entry.name)
+    if (entry.isDirectory()) {
+      total += await dirSize(full)
+    } else {
+      try {
+        total += (await stat(full)).size
+      } catch {
+        // Broken symlink / raced delete — skip.
+      }
+    }
+  }
+  return { exists: true, size: total, symlink: false, kept }
 }
 
 async function resolveTargets(
@@ -103,7 +157,7 @@ async function resolveTargets(
   return Promise.all(
     targets.map(async target => ({
       ...target,
-      ...(await pathSize(target.path)),
+      ...(await pathSize(target.path, target.selective ?? false)),
     })),
   )
 }
@@ -112,7 +166,7 @@ function buildTargets(scope: CleanupScope): CleanupTarget[] {
   const projectRoot = getProjectRoot()
   const autoMemPath = getAutoMemPath().replace(/[\\/]+$/, '')
   const historyPath = join(getClaudeConfigHomeDir(), 'history.jsonl')
-  const defaultMemoryRoot = join(getClaudeConfigHomeDir(), 'projects')
+  const defaultMemoryRoot = join(getMemoryBaseDir(), 'projects') + sep
   const isCustomAutoMemPath = !autoMemPath.startsWith(defaultMemoryRoot)
 
   const targets: CleanupTarget[] = [
@@ -127,8 +181,9 @@ function buildTargets(scope: CleanupScope): CleanupTarget[] {
     {
       path: autoMemPath,
       reason: isCustomAutoMemPath
-        ? 'Project auto-memory (custom location)'
+        ? 'Project auto-memory (custom location — known memory files only)'
         : 'Project auto-memory',
+      selective: isCustomAutoMemPath,
     },
   ]
 
@@ -161,8 +216,22 @@ async function deleteTargets(
   const failed: { path: string; error: string }[] = []
   for (const target of targets) {
     if (!target.exists) continue
+    let paths = [target.path]
+    if (target.selective && !target.symlink) {
+      try {
+        const entries = await readdir(target.path)
+        paths = entries
+          .filter(isKnownMemoryEntry)
+          .map(name => join(target.path, name))
+      } catch {
+        continue
+      }
+      if (paths.length === 0) continue
+    }
     try {
-      await rm(target.path, { recursive: true, force: true })
+      for (const path of paths) {
+        await rm(path, { recursive: true, force: true })
+      }
       deleted.push(target.path)
     } catch (err) {
       failed.push({
@@ -222,10 +291,20 @@ export const call: LocalCommandCall = async args => {
     header.push(`Will delete ${present.length} target(s), ${formatFileSize(totalBytes)} total:`)
     header.push('```')
     for (const t of present) {
-      header.push(`${formatTargetSize(t.size).padEnd(10)} ${t.reason}`)
+      const reason = t.symlink
+        ? `${t.reason} (symlink — only the link will be removed)`
+        : t.reason
+      header.push(`${formatTargetSize(t.size).padEnd(10)} ${reason}`)
       header.push(`           ${tildify(t.path)}`)
     }
     header.push('```')
+    for (const t of present) {
+      if (t.kept.length > 0) {
+        header.push(
+          `Keeping ${t.kept.length} unrecognized item(s) in ${tildify(t.path)}: ${t.kept.join(', ')}`,
+        )
+      }
+    }
     if (missing.length > 0) {
       header.push('', `Skipping ${missing.length} target(s) that don't exist.`)
     }
@@ -242,6 +321,13 @@ export const call: LocalCommandCall = async args => {
     lines.push('```')
     for (const path of deleted) lines.push(tildify(path))
     lines.push('```')
+  }
+  for (const t of resolved) {
+    if (t.exists && t.kept.length > 0) {
+      lines.push(
+        `Kept ${t.kept.length} unrecognized item(s) in ${tildify(t.path)}: ${t.kept.join(', ')}`,
+      )
+    }
   }
   if (failed.length > 0) {
     lines.push('', `Failed: ${failed.length}`)
