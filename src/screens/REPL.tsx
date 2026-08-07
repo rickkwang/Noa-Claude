@@ -156,7 +156,7 @@ import { getGlobalConfig, saveGlobalConfig, getGlobalConfigWriteCount } from '..
 import { hasConsoleBillingAccess } from '../utils/billing.js';
 import { logEvent, type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from 'src/services/analytics/index.js';
 import { getFeatureValue_CACHED_MAY_BE_STALE } from 'src/services/analytics/growthbook.js';
-import { textForResubmit, handleMessageFromStream, type StreamingToolUse, type StreamingThinking, isCompactBoundaryMessage, getMessagesAfterCompactBoundary, getContentText, createUserMessage, createAssistantMessage, createTurnDurationMessage, createAgentsKilledMessage, createApiMetricsMessage, createSystemMessage, createCommandInputMessage, formatCommandInputTags } from '../utils/messages.js';
+import { textForResubmit, handleMessageFromStream, type StreamingToolUse, type StreamingThinking, isCompactBoundaryMessage, findLastCompactBoundaryIndex, getMessagesAfterCompactBoundary, getContentText, createUserMessage, createAssistantMessage, createTurnDurationMessage, createAgentsKilledMessage, createApiMetricsMessage, createSystemMessage, createCommandInputMessage, formatCommandInputTags } from '../utils/messages.js';
 import { generateSessionTitle } from '../utils/sessionTitle.js';
 import { BASH_INPUT_TAG, COMMAND_MESSAGE_TAG, COMMAND_NAME_TAG, LOCAL_COMMAND_STDOUT_TAG } from '../constants/xml.js';
 import { escapeXml } from '../utils/xml.js';
@@ -2655,17 +2655,36 @@ export function REPL({
         return;
       }
       if (isCompactBoundaryMessage(newMessage)) {
-        // Fullscreen: keep pre-compact messages for scrollback. query.ts
-        // slices at the boundary for API calls, Messages.tsx skips the
-        // boundary filter in fullscreen, and useLogMessages treats this
-        // as an incremental append (first uuid unchanged). Cap at one
-        // compact-interval of scrollback — normalizeMessages/applyGrouping
-        // are O(n) per render, so drop everything before the previous
-        // boundary to keep n bounded across multi-day sessions.
+        // Fullscreen: keep the full pre-compact history in scrollback
+        // across repeated compactions (upstream 2.1.224, reducer action
+        // "remove-uuids-and-append"; previously trimmed to the last
+        // boundary). query.ts slices at the boundary for API calls,
+        // Messages.tsx skips the boundary filter in fullscreen, and
+        // useLogMessages treats this as an incremental append (first uuid
+        // unchanged).
         if (isFullscreenEnvEnabled()) {
-          setMessages(old => [...getMessagesAfterCompactBoundary(old, {
-            includeSnipped: true
-          }), newMessage]);
+          setMessages(old => {
+            // Suffix-preserving compactions (auto keep-tail partial,
+            // session-memory) re-yield the kept tail after the boundary, so
+            // each seg-boundary leaves two copies in the array: the
+            // pre-boundary originals (these stay visible — the projection
+            // hides only the post-boundary re-yield) and the re-yielded
+            // copies. Pre-2.1.224 the next compaction's trim collected the
+            // originals; with full retention, do it explicitly when the NEXT
+            // boundary arrives: cut the previous seg-boundary's originals
+            // (they lie before it). Keeps the single-visible-copy invariant
+            // projectCompactHistoryForMainDisplay relies on.
+            const prevIdx = findLastCompactBoundaryIndex(old);
+            const seg = prevIdx === -1 ? undefined : old[prevIdx]?.compactMetadata?.preservedSegment;
+            if (seg) {
+              const headIdx = old.findIndex((m, i) => i < prevIdx && m.uuid === seg.headUuid);
+              const tailIdx = headIdx === -1 ? -1 : old.findIndex((m, i) => i >= headIdx && i < prevIdx && m.uuid === seg.tailUuid);
+              if (tailIdx !== -1) {
+                return [...old.slice(0, headIdx), ...old.slice(tailIdx + 1), newMessage];
+              }
+            }
+            return [...old, newMessage];
+          });
         } else {
           setMessages(() => [newMessage]);
         }
