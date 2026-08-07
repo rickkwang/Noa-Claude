@@ -211,11 +211,32 @@ export const FileWriteTool = buildTool({
     // block is always reached when the file exists.
     const lastWriteTime = Math.floor(fileMtimeMs)
     if (lastWriteTime > readTimestamp.timestamp) {
-      return {
-        result: false,
-        message:
-          'File has been modified since read, either by the user or by a linter. Read it again before attempting to write it.',
-        errorCode: 3,
+      // Timestamp indicates modification, but on Windows timestamps can
+      // change without content changes (cloud sync, antivirus, etc.), and
+      // some linters rewrite a file byte-for-byte identically. For full
+      // reads, compare current disk content against what was read as a
+      // fallback before rejecting (mirrors FileEditTool's mtime guard).
+      const isFullRead =
+        readTimestamp.offset === undefined && readTimestamp.limit === undefined
+      let unchanged = false
+      if (isFullRead) {
+        try {
+          unchanged =
+            readFileSyncWithMetadata(fullFilePath).content ===
+            readTimestamp.content
+        } catch (e) {
+          if (!isENOENT(e)) {
+            throw e
+          }
+        }
+      }
+      if (!unchanged) {
+        return {
+          result: false,
+          message:
+            'File has been modified since read, either by the user or by a linter. Read it again before attempting to write it.',
+          errorCode: 3,
+        }
       }
     }
 

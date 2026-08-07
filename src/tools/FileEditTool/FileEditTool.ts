@@ -72,6 +72,7 @@ import {
 } from './UI.js'
 import {
   areFileEditsInputsEquivalent,
+  editStillAppliesCleanly,
   findActualString,
   getPatchForEdit,
   preserveQuoteStyle,
@@ -299,6 +300,12 @@ export const FileEditTool = buildTool({
           readTimestamp.limit === undefined
         if (isFullRead && fileContent === readTimestamp.content) {
           // Content unchanged, safe to proceed
+        } else if (
+          editStillAppliesCleanly(fileContent, old_string, replace_all)
+        ) {
+          // Something else in the file changed since the read, but old_string
+          // still identifies a unique, unambiguous edit target in the current
+          // content — safe to proceed without forcing a re-read.
         } else {
           return {
             result: false,
@@ -462,7 +469,10 @@ export const FileEditTool = buildTool({
           lastRead.limit === undefined
         const contentUnchanged =
           isFullRead && originalFileContents === lastRead.content
-        if (!contentUnchanged) {
+        if (
+          !contentUnchanged &&
+          !editStillAppliesCleanly(originalFileContents, old_string, replace_all)
+        ) {
           throw new Error(FILE_UNEXPECTEDLY_MODIFIED_ERROR)
         }
       }

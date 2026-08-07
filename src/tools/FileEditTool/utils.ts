@@ -94,6 +94,30 @@ export function findActualString(
 }
 
 /**
+ * Whether old_string still identifies a clean edit target in the current
+ * on-disk content — i.e. a real match exists, and (with replace_all off)
+ * that match is unique. Used to rescue an edit whose read is stale: if
+ * something else in the file changed since the read but old_string still
+ * applies unambiguously, the edit is safe to make without forcing a re-read.
+ */
+export function editStillAppliesCleanly(
+  fileContent: string,
+  oldString: string,
+  replaceAll: boolean | undefined,
+): boolean {
+  if (oldString === '') return false
+  const actual = findActualString(fileContent, oldString)
+  if (!actual) return false
+  if (!replaceAll) {
+    const firstIndex = fileContent.indexOf(actual)
+    if (fileContent.indexOf(actual, firstIndex + actual.length) !== -1) {
+      return false
+    }
+  }
+  return true
+}
+
+/**
  * When old_string matched via quote normalization (curly quotes in file,
  * straight quotes from model), apply the same curly quote style to new_string
  * so the edit preserves the file's typography.
