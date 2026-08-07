@@ -5,7 +5,7 @@ const cleanSessions = {
   name: 'clean-sessions',
   description:
     'Preview or delete small/noisy Noa Claude resume sessions like ping/test/hello',
-  argumentHint: '[--all] [--trivial-only] [--confirm]',
+  argumentHint: '[delete] [--all] [--trivial-only] [--confirm|--yes]',
   load: () => import('./clean-sessions.js'),
 } satisfies Command
 

@@ -1,7 +1,7 @@
 import React from 'react'
 import { readdir, rm, stat } from 'fs/promises'
 import { basename, dirname, join } from 'path'
-import { getOriginalCwd } from '../../bootstrap/state.js'
+import { getOriginalCwd, getSessionId } from '../../bootstrap/state.js'
 import { Select } from '../../components/CustomSelect/select.js'
 import { SelectMulti } from '../../components/CustomSelect/SelectMulti.js'
 import { Dialog } from '../../components/design-system/Dialog.js'
@@ -11,6 +11,7 @@ import { Box, Text } from '../../ink.js'
 import type { LocalJSXCommandCall } from '../../types/command.js'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 import { formatFileSize } from '../../utils/format.js'
+import { dirSize } from '../../utils/fsOperations.js'
 import {
   extractFirstPromptFromHead,
   extractLastJsonStringField,
@@ -60,12 +61,51 @@ const DEFAULT_MAX_BYTES = 256 * 1024
 const COLLAPSED_VISIBLE_CANDIDATES = 12
 const MODAL_VISIBLE_CANDIDATES = 8
 const TRIVIAL_RE = /^(?:ping|test|hello|hi|ok|clear|\/clear|\/usage|usage)$/i
+// Sessions written to within this window may belong to another running
+// instance — treat them as active and skip them.
+const RECENTLY_MODIFIED_WINDOW_MS = 10 * 60 * 1000
 
-function parseArgs(raw: string): Args {
+const ALLOWED_ARGS = new Set([
+  'delete',
+  'clean',
+  'scan',
+  '--all',
+  'all',
+  '--confirm',
+  '--yes',
+  '--include-large',
+  '--trivial-only',
+])
+
+function argError(error: string): Args & { error: string } {
+  return {
+    error,
+    mode: 'scan',
+    scope: 'current',
+    confirm: false,
+    includeLarge: false,
+    trivialOnly: false,
+    maxBytes: DEFAULT_MAX_BYTES,
+    userPickedSize: false,
+  }
+}
+
+function parseArgs(raw: string): Args & { error?: string } {
   const parts = raw
     .split(/\s+/)
     .map(part => part.trim())
     .filter(Boolean)
+
+  const unknown = parts.filter(
+    part =>
+      !ALLOWED_ARGS.has(part.toLowerCase()) &&
+      !part.toLowerCase().startsWith('--max-bytes='),
+  )
+  if (unknown.length > 0) {
+    return argError(
+      `Unknown argument(s): ${unknown.join(', ')}\nUsage: /clean-sessions [delete] [--all] [--trivial-only] [--include-large] [--max-bytes=N] [--confirm|--yes]`,
+    )
+  }
 
   const lower = parts.map(part => part.toLowerCase())
   const mode: Mode =
@@ -78,12 +118,21 @@ function parseArgs(raw: string): Args {
 
   let maxBytes = DEFAULT_MAX_BYTES
   let userPickedSize = false
-  const maxArg = parts.find(part => part.startsWith('--max-bytes='))
+  const maxArg = parts.find(part =>
+    part.toLowerCase().startsWith('--max-bytes='),
+  )
   if (maxArg) {
-    const parsed = Number(maxArg.split('=')[1])
+    const value = maxArg.split('=')[1]
+    const parsed = Number(value)
     if (Number.isFinite(parsed) && parsed > 0) {
       maxBytes = parsed
       userPickedSize = true
+    } else {
+      // An unreadable size must not silently fall back to the default
+      // bucket — same no-silent-downgrade rule as unknown flags.
+      return argError(
+        `Invalid --max-bytes value: ${value} (expected a positive number of bytes)`,
+      )
     }
   }
   if (includeLarge || trivialOnly) {
@@ -116,8 +165,14 @@ async function listTopLevelSessionFiles(projectDir: string): Promise<string[]> {
 }
 
 async function listSessionFiles(args: Args): Promise<string[]> {
+  // Never touch the running session's own transcript — deleting it would
+  // orphan the live session's resume/continue path.
+  const ownTranscript = `${getSessionId()}.jsonl`
+  const notOwn = (paths: string[]) =>
+    paths.filter(path => basename(path) !== ownTranscript)
+
   if (args.scope === 'current') {
-    return listTopLevelSessionFiles(getProjectDir(getOriginalCwd()))
+    return notOwn(await listTopLevelSessionFiles(getProjectDir(getOriginalCwd())))
   }
 
   const projectsRoot = join(getClaudeConfigHomeDir(), 'projects')
@@ -133,7 +188,7 @@ async function listSessionFiles(args: Args): Promise<string[]> {
       .filter(entry => entry.isDirectory())
       .map(entry => listTopLevelSessionFiles(join(projectsRoot, entry.name))),
   )
-  return perProject.flat()
+  return notOwn(perProject.flat())
 }
 
 function readTextFromUserEntry(line: string): string {
@@ -180,7 +235,11 @@ function classifySession(
   const title = normalizeTitle(customTitle || lastPrompt || firstPrompt)
   if (!title) return null
   if (!args.includeLarge && size > args.maxBytes) return null
-  const isTrivialTitle = TRIVIAL_RE.test(title)
+  // Triviality is judged from the raw prompts only. An explicit title
+  // (user-renamed or AI-generated) is a keep signal, not deletion evidence:
+  // a session renamed "Test" is not a ping session.
+  const promptText = normalizeTitle(lastPrompt || firstPrompt)
+  const isTrivialTitle = !customTitle && TRIVIAL_RE.test(promptText)
   if (args.trivialOnly && !isTrivialTitle) return null
 
   const meaningfulUserTexts: string[] = []
@@ -198,26 +257,36 @@ function classifySession(
   return {
     title,
     reason: isTrivialTitle
-      ? `${customTitle ? 'title' : lastPrompt ? 'last prompt' : 'first prompt'} is trivial`
+      ? `${lastPrompt ? 'last prompt' : 'first prompt'} is trivial`
       : `small session under ${formatFileSize(args.maxBytes)}`,
   }
 }
 
-async function inspectFile(path: string, args: Args): Promise<Candidate | null> {
+async function inspectFile(
+  path: string,
+  args: Args,
+  buf: Buffer,
+): Promise<Candidate | 'recent' | null> {
   let info
   try {
     info = await stat(path)
   } catch {
     return null
   }
+  if (Date.now() - info.mtime.getTime() < RECENTLY_MODIFIED_WINDOW_MS) {
+    return 'recent'
+  }
+  // The sidecar dir only adds bytes, so a jsonl already over the bucket is
+  // out without walking the sidecar tree.
   if (!args.includeLarge && info.size > args.maxBytes) return null
+  // Footprint includes the session's sidecar dir (<uuid>/, tool results
+  // etc.) — the .jsonl alone understates what cleanup reclaims.
+  const sidecarSize = await dirSize(path.slice(0, -'.jsonl'.length))
+  const size = info.size + sidecarSize
+  if (!args.includeLarge && size > args.maxBytes) return null
 
-  const { head, tail } = await readHeadAndTail(
-    path,
-    info.size,
-    Buffer.alloc(64 * 1024),
-  )
-  const classified = classifySession(head, tail, info.size, args)
+  const { head, tail } = await readHeadAndTail(path, info.size, buf)
+  const classified = classifySession(head, tail, size, args)
   if (!classified) return null
 
   return {
@@ -225,47 +294,83 @@ async function inspectFile(path: string, args: Args): Promise<Candidate | null> 
     project: basename(dirname(path)),
     title: classified.title,
     reason: classified.reason,
-    size: info.size,
+    size,
     modified: info.mtime,
   }
 }
 
 const INSPECT_CONCURRENCY = 32
 
-async function findCandidates(args: Args): Promise<Candidate[]> {
+type ScanResult = {
+  candidates: Candidate[]
+  skippedRecent: number
+}
+
+async function findCandidates(args: Args): Promise<ScanResult> {
   const files = await listSessionFiles(args)
   const candidates: Candidate[] = []
+  let skippedRecent = 0
+  // One read buffer per worker slot, reused across chunks.
+  const buffers = Array.from({ length: INSPECT_CONCURRENCY }, () =>
+    Buffer.alloc(64 * 1024),
+  )
 
   for (let i = 0; i < files.length; i += INSPECT_CONCURRENCY) {
     const chunk = files.slice(i, i + INSPECT_CONCURRENCY)
     const results = await Promise.all(
-      chunk.map(file => inspectFile(file, args)),
+      chunk.map((file, j) => inspectFile(file, args, buffers[j]!)),
     )
-    for (const candidate of results) {
-      if (candidate) candidates.push(candidate)
+    for (const result of results) {
+      if (result === 'recent') skippedRecent += 1
+      else if (result) candidates.push(result)
     }
   }
 
-  return candidates.sort(
-    (a, b) =>
-      b.modified.getTime() - a.modified.getTime() || a.path.localeCompare(b.path),
+  candidates.sort(
+    (a, b) => b.size - a.size || a.path.localeCompare(b.path),
   )
+  return { candidates, skippedRecent }
 }
 
-async function deleteCandidates(candidates: Candidate[]): Promise<string[]> {
+type DeleteOutcome = {
+  deleted: string[]
+  failed: { path: string; error: string }[]
+}
+
+async function deleteCandidates(candidates: Candidate[]): Promise<DeleteOutcome> {
   const deleted: string[] = []
+  const failed: { path: string; error: string }[] = []
   for (const candidate of candidates) {
     try {
       await rm(candidate.path, { force: true })
-      deleted.push(candidate.path)
-    } catch {
-      // Continue with the rest and report the final count.
+    } catch (err) {
+      failed.push({
+        path: candidate.path,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      continue
+    }
+    deleted.push(candidate.path)
+    // Sidecar dir (<uuid>/, tool results etc.) goes with its transcript. A
+    // sidecar failure must not misreport the already-deleted transcript.
+    const sidecar = candidate.path.slice(0, -'.jsonl'.length)
+    try {
+      await rm(sidecar, { recursive: true, force: true })
+    } catch (err) {
+      failed.push({
+        path: sidecar,
+        error: err instanceof Error ? err.message : String(err),
+      })
     }
   }
-  return deleted
+  return { deleted, failed }
 }
 
-function formatResult(candidates: Candidate[], args: Args): string {
+function formatResult(
+  candidates: Candidate[],
+  args: Args,
+  maxListed = 200,
+): string {
   const scopeLabel =
     args.scope === 'current'
       ? `current project (${getProjectDir(getOriginalCwd())})`
@@ -284,14 +389,14 @@ function formatResult(candidates: Candidate[], args: Args): string {
   }
 
   lines.push('Candidates:')
-  for (const candidate of candidates.slice(0, 200)) {
+  for (const candidate of candidates.slice(0, maxListed)) {
     lines.push(
       `- ${candidate.title} | ${formatFileSize(candidate.size)} | ${candidate.project} | ${candidate.reason}`,
     )
     lines.push(`  ${candidate.path}`)
   }
-  if (candidates.length > 200) {
-    lines.push(`... ${candidates.length - 200} more not shown`)
+  if (candidates.length > maxListed) {
+    lines.push(`... ${candidates.length - maxListed} more not shown`)
   }
   return lines.join('\n')
 }
@@ -350,21 +455,22 @@ function CleanupPrompt({
     initialArgs.userPickedSize ? 'scanning' : 'bucket',
   )
   const [candidates, setCandidates] = React.useState<Candidate[]>([])
+  const [skippedRecent, setSkippedRecent] = React.useState(0)
   const [selectedCount, setSelectedCount] = React.useState(0)
   const [emptyMessage, setEmptyMessage] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     if (stage !== 'scanning') return
     let cancelled = false
-    findCandidates(args).then(result => {
+    findCandidates(args).then(({ candidates, skippedRecent }) => {
       if (cancelled) return
-      const sorted = [...result].sort((a, b) => b.size - a.size)
-      setCandidates(sorted)
-      if (sorted.length === 0) {
+      setCandidates(candidates)
+      setSkippedRecent(skippedRecent)
+      if (candidates.length === 0) {
         // If user didn't pick a bucket interactively, exit. Otherwise loop
         // back so they can try a different bucket without re-running.
         if (initialArgs.userPickedSize) {
-          onDone(formatResult(sorted, args))
+          onDone(formatResult(candidates, args))
           return
         }
         const sizeLabel = args.includeLarge
@@ -451,8 +557,11 @@ function CleanupPrompt({
       subtitle={
         <>
           {describeScope(args.scope)} · {sizeLabel} · matched{' '}
-          {candidates.length} · selected {selectedCount}. Space to toggle, Enter
-          to delete.
+          {candidates.length}
+          {skippedRecent > 0
+            ? ` · ${skippedRecent} recently-modified skipped`
+            : ''}{' '}
+          · selected {selectedCount}. Space to toggle, Enter to delete.
         </>
       }
       onCancel={handleCancel}
@@ -477,13 +586,16 @@ function CleanupPrompt({
             selectedPaths.includes(c.path),
           )
           setStage('deleting')
-          const deleted = await deleteCandidates(selected)
-          onDone(
-            [
-              `Deleted: ${deleted.length}/${selected.length}`,
-              `Matched in scan: ${candidates.length} (${sizeLabel}, ${describeScope(args.scope)})`,
-            ].join('\n'),
-          )
+          const { deleted, failed } = await deleteCandidates(selected)
+          const lines = [
+            `Deleted: ${deleted.length}/${selected.length}`,
+            `Matched in scan: ${candidates.length} (${sizeLabel}, ${describeScope(args.scope)})`,
+          ]
+          if (failed.length > 0) {
+            lines.push(`Failed: ${failed.length}`)
+            for (const f of failed) lines.push(`  ${f.path}: ${f.error}`)
+          }
+          onDone(lines.join('\n'))
         }}
       />
     </Dialog>
@@ -492,19 +604,50 @@ function CleanupPrompt({
 
 export const call: LocalJSXCommandCall = async (onDone, _context, rawArgs) => {
   const args = parseArgs(rawArgs || '')
+  if (args.error) {
+    onDone(args.error)
+    return null
+  }
 
   if (args.mode === 'delete' && args.confirm) {
+    // Bulk deletion skips the interactive picker, so restrict it to the
+    // strongest signal (trivial prompts). Anything else must go through the
+    // interactive multi-select where a human reviews each candidate.
+    if (!args.trivialOnly) {
+      onDone(
+        'Bulk delete requires --trivial-only so only trivial-prompt sessions are removed.\n' +
+          'Usage: /clean-sessions delete --trivial-only [--all] --confirm (or --yes)\n' +
+          'To delete other sessions, run /clean-sessions and pick them interactively.',
+      )
+      return null
+    }
+    // No size widening in bulk mode: large sessions deserve human review.
+    if (args.includeLarge || args.maxBytes > DEFAULT_MAX_BYTES) {
+      onDone(
+        `Bulk delete is limited to the default size bucket (≤ ${formatFileSize(DEFAULT_MAX_BYTES)}).\n` +
+          'To delete larger sessions, run /clean-sessions and pick them interactively.',
+      )
+      return null
+    }
     const before = await findCandidates(args)
-    const deleted = await deleteCandidates(before)
+    const { deleted, failed } = await deleteCandidates(before.candidates)
     const after = await findCandidates(args)
-    onDone(
-      [
-        formatResult(before, args),
-        '',
-        `Deleted: ${deleted.length}/${before.length}`,
-        `Remaining matches: ${after.length}`,
-      ].join('\n'),
-    )
+    const lines = [
+      formatResult(before.candidates, args),
+      '',
+      `Deleted: ${deleted.length}/${before.candidates.length}`,
+      `Remaining matches: ${after.candidates.length}`,
+    ]
+    if (before.skippedRecent > 0) {
+      lines.push(
+        `Skipped (modified in the last 10m, possibly active): ${before.skippedRecent}`,
+      )
+    }
+    if (failed.length > 0) {
+      lines.push(`Failed: ${failed.length}`)
+      for (const f of failed) lines.push(`  ${f.path}: ${f.error}`)
+    }
+    onDone(lines.join('\n'))
     return null
   }
 

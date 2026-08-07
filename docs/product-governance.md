@@ -1,6 +1,6 @@
 # Product Governance
 
-Last updated: 2026-05-27
+Last updated: 2026-08-07
 
 This document replaces the separate command surface, feature gap, and roadmap notes with one product-facing control surface.
 
@@ -29,6 +29,7 @@ These commands are callable, but they are not core product workflows:
 
 - `/assistant`
 - `/cleanup-data`
+- `/clean-sessions`
 - `/heapdump`
 - `/output-style`
 - `/thinkback-play`
@@ -48,6 +49,7 @@ Tracked surfaces:
 
 - `/assistant`
 - `/cleanup-data`
+- `/clean-sessions`
 - `/heapdump`
 - `/output-style`
 - `/thinkback-play`
