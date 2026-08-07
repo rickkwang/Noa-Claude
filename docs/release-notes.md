@@ -1,5 +1,24 @@
 # Release Notes
 
+## 1.7.1
+
+### New Features
+
+- **Fullscreen scrollback retains the full pre-compaction history** — aligning with upstream 2.1.224: repeated compactions no longer trim scrollback to the most recent compact interval; the entire pre-compaction history stays scrollable across any number of compactions. Because suffix-preserving compactions (auto keep-tail, session-memory) re-yield the kept tail after the boundary, the boundary handler now collects the previous boundary's original copies when the next boundary arrives, so no interval ever shows double.
+
+### Bug Fixes
+
+- **Edits that still apply cleanly no longer force a re-read** — ported from upstream 2.1.224 (`tengu_edit_tool_stale_read`): when a file's mtime moved past the last read but `old_string` still identifies a unique, unambiguous target in the current on-disk content, the edit goes through; ambiguity still rejects. FileWrite's validateInput gains the same content-compare fallback, so mtime false positives (Windows sync/AV, byte-identical linter rewrites) no longer force a re-read either.
+- **Diffs are taken against raw git blobs** — aligning with upstream 2.1.222: the workspace hunks behind `/diff`, the single-file diff for file edits in web sessions, the `/issue` and `/share` state capture, and the ultrareview precondition check now pass `--no-ext-diff --no-textconv`. A configured `diff.external` made git replace the unified diff with the external program's stdout (parsing to zero hunks), and a textconv filter rewrote hunks so line numbers drifted out of sync with disk. The status-line counters deliberately keep polling without the flags, as upstream does.
+- **The Stats panel counts cache tokens** — aligning with upstream 2.1.221: Total tokens summed input + output only, understating cache-heavy sessions severalfold (on a local all-time cache the figure goes from 1.6b to 4.1b, and the model ranking changes). Totals, sort keys, per-model percentages and the per-day chart now run through input + output + cache read + cache write, with a new breakdown line under the stat grid, a per-model "Cache: N read · N write" row, and a B unit on the chart's Y axis. Stale cached day buckets are rebuilt from on-disk transcripts via a `DAILY_MODEL_TOKENS_VERSION` marker. The book-comparison factoid deliberately stays on input + output and is reworded to say why.
+- **Sandbox network violations now reach the model** — `@anthropic-ai/sandbox-runtime` 0.0.51 → 0.0.70: network-outbound denies were never recorded into the violation store, so `<sandbox_violations>` only ever carried macOS filesystem denies. The bump records network denies with a reason string and adds a Linux violation monitor giving filesystem-deny parity with macOS.
+
+### Changed
+
+- **Auto mode permission checks reuse one cached conversation prefix** — aligning with upstream 2.1.221, which made three previously gated mechanisms unconditional. The classifier queue introduced opt-in in 1.6.1 is now **on by default** (`NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE=0` forces it off): concurrent classifier calls can't read each other's cache writes, so serializing is what lets a parallel tool batch share one prefix instead of each paying a cache write. Alongside it, the classifier now sees the turn's earlier tool uses appended after the conversation, and pins its transcript block boundaries by splitting out already-classified tool uses — both keep the shared prefix byte-identical across the batch — plus a second cache breakpoint at the end of the transcript. Permission mode is now re-checked after **every** classifier call rather than only queued ones, short-circuited by a mode/auto-active snapshot, and a mode change now re-prompts with the original verdict instead of a rewritten one that could swallow the prompt. (Documented under 1.7.0 in error; the change landed after that tag.)
+- **Emoji autocomplete aligned with upstream 2.1.221** — the alias layer (`thumbsup`/`thumbs_up`/`love`/`celebrate`/`hundred`/`plus_one`/`minus_one`/`thumbsdown`/`thumbs_down`) merges into a prototype-safe Map lookup, and accepts route through the shared `applyTriggerSuggestion` (glyph from displayText, trailing space, cursor past it) with the enabled-check re-run at accept time, replacing a bespoke apply path. Documented deviations stay: curated base table instead of the full emojilib dump, `emoji-` id prefix, no telemetry.
+- **The lean prompt's output-visibility bullet is ungated** — aligning with upstream 2.1.224, which dropped the `tengu_marl_cormorant` gate so every lean-prompt model gets "- Command output is displayed to you, not reliably to the user." The now-dead `:nb` bit is dropped from the tool-schema cache key (`action_caution` keeps its own; its text still varies).
+
 ## 1.7.0
 
 ### New Features
@@ -22,7 +41,6 @@
 
 - **Default permission mode renamed to Manual** — aligning with upstream 2.1.220: the status line and Shift+Tab cycle now show a named Manual mode (⏸, gray) alongside Plan / Accept edits / Auto. `manual` is accepted as an alias for `default` in settings.json's `defaultMode` and `--permission-mode`.
 - **`/extra-usage` renamed to `/usage-credits`** — with copy updated from "extra usage" to "usage credits" across all call sites (rate-limit upsells, API error hints, tips, the `/model` billing suffix). `/extra-usage` stays registered but hidden as an alias, and the `DISABLE_EXTRA_USAGE_COMMAND` env var keeps its name.
-- **Auto mode permission checks reuse one cached conversation prefix** — aligning with upstream 2.1.221, which made three previously gated mechanisms unconditional. The classifier queue introduced opt-in in 1.6.1 is now **on by default** (`NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE=0` forces it off): concurrent classifier calls can't read each other's cache writes, so serializing is what lets a parallel tool batch share one prefix instead of each paying a cache write. Alongside it, the classifier now sees the turn's earlier tool uses appended after the conversation, and pins its transcript block boundaries by splitting out already-classified tool uses — both keep the shared prefix byte-identical across the batch — plus a second cache breakpoint at the end of the transcript. Permission mode is now re-checked after **every** classifier call rather than only queued ones, short-circuited by a mode/auto-active snapshot, and a mode change now re-prompts with the original verdict instead of a rewritten one that could swallow the prompt.
 
 ### Tests
 
