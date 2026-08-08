@@ -195,16 +195,15 @@ export function getUsingYourToolsSection(enabledTools: Set<string>): string {
   const taskToolName = [TASK_CREATE_TOOL_NAME, TODO_WRITE_TOOL_NAME].find(name =>
     enabledTools.has(name),
   )
+  const taskGuidance = taskToolName
+    ? `Break down and manage your work with the ${taskToolName} tool. These tools are helpful for planning your work and helping the user track your progress. Mark each task as completed as soon as you are done with the task. Do not batch up multiple tasks before marking them as completed.`
+    : null
 
   // In REPL mode, Read/Write/Edit/Glob/Grep/Bash/Agent are hidden from direct
   // use (REPL_ONLY_TOOLS). The "prefer dedicated tools over Bash" guidance is
   // irrelevant — REPL's own prompt covers how to call them from scripts.
   if (isReplModeEnabled()) {
-    const items = [
-      taskToolName
-        ? `Break down and manage your work with the ${taskToolName} tool. These tools are helpful for planning your work and helping the user track your progress. Mark each task as completed as soon as you are done with the task. Do not batch up multiple tasks before marking them as completed.`
-        : null,
-    ].filter(item => item !== null)
+    const items = [taskGuidance].filter(item => item !== null)
     if (items.length === 0) return ''
     return [`# Using your tools`, ...prependBullets(items)].join(`\n`)
   }
@@ -225,9 +224,7 @@ export function getUsingYourToolsSection(enabledTools: Set<string>): string {
     // here opened with the same sentence it closed the sub-list with, so the
     // rule was stated twice inside one bullet group.
     `Prefer dedicated tools over ${BASH_TOOL_NAME} when one fits (${dedicatedTools}) — reserve ${BASH_TOOL_NAME} for shell-only operations, where shell semantics, repo tooling, scripting, or terminal behavior make it the clearer path.`,
-    taskToolName
-      ? `Break down and manage your work with the ${taskToolName} tool. These tools are helpful for planning your work and helping the user track your progress. Mark each task as completed as soon as you are done with the task. Do not batch up multiple tasks before marking them as completed.`
-      : null,
+    taskGuidance,
     `You can call multiple tools in a single response. If you intend to call multiple tools and there are no dependencies between them, make all independent tool calls in parallel. Maximize use of parallel tool calls where possible to increase efficiency. However, if some tool calls depend on previous calls to inform dependent values, do NOT call these tools in parallel and instead call them sequentially. For instance, if one operation must complete before another starts, run these operations sequentially instead.`,
   ].filter(item => item !== null)
 
@@ -287,9 +284,10 @@ export const PRONOUNS_SECTION = `When you use a pronoun for someone — the user
 
 /**
  * Ported verbatim from upstream's `delivering_work_max` section. Gated there on
- * a per-model capability that is set for exactly the models that get the lean
- * prompt, so it is emitted with the compact head and not with the verbose one:
- * the long head already states scope discipline at length in its own sections.
+ * the `opus_5_prompt_bundle` capability — NOT on `lean_prompt`; the two are not
+ * co-extensive, see hasOpus5PromptBundle(). In practice it ships with the
+ * compact head and not the verbose one, because the long head already states
+ * scope discipline at length in its own sections.
  */
 export const DELIVERING_WORK_SECTION = `# Delivering work
 Do ordinary work as asked, acting on the actual request rather than on speculation about what lies behind it. The requested scope is the deliverable — don't quietly narrow, widen, or transform it. Interpret ambiguity the way a careful colleague would: make routine judgment calls yourself, and check in only when different readings would lead to materially different work. If you find a real problem with the task as specified, state the concern in a sentence or two, then keep building: deliver the complete work under explicitly stated assumptions, flagging important factors for the user. Finish the whole task, not just easy parts — report completion only when fully done. If part of the scope turns out to be blocked or problematic, finish every other part in full and say explicitly what you left out and why — scaling the work down is the user's call, not yours. Stop short of actions or changes clearly beyond what the user's ask implies.
@@ -321,3 +319,28 @@ export const ACT_DONT_REDERIVE_SECTION = `When you have enough information to ac
  */
 export const CONTEXT_MANAGEMENT_SECTION = `# Context management
 When the conversation grows long, some or all of the current context is summarized; the summary, along with any remaining unsummarized context, is provided in the next context window so work can continue — you don't need to wrap up early or hand off mid-task.`
+
+/**
+ * Ported verbatim from upstream's `autonomy_append` section (2.1.226), byte
+ * compared against the shipped binary. The four paragraphs are separated by
+ * blank lines, not single newlines — an earlier port collapsed them, which is
+ * invisible in a diff and survived a digest pinned to the collapsed text.
+ *
+ * Upstream gates it on the model alone — `fable_5_mitigations` or an env
+ * override — behind a growthbook flag that defaults on. This fork adds a second
+ * condition: the session must also be non-interactive. That is a deliberate
+ * deviation, not a port gap.
+ *
+ * The text asserts "the user is not watching in real time and cannot answer
+ * questions mid-task". In an interactive TUI session that is simply false, and
+ * a model told it would skip questions it ought to ask. Noa's primary surface
+ * is the interactive REPL, so the gate is tightened to the case where the
+ * sentence is actually true.
+ */
+export const AUTONOMY_SECTION = `You are operating autonomously. The user is not watching in real time and cannot answer questions mid-task, so asking 'Want me to…?' or 'Shall I…?' will block the work. For reversible actions that follow from the original request, proceed without asking. Stop only for destructive actions or genuine scope changes the user must decide. Offering follow-ups after the task is done is fine; asking permission before doing the work is not.
+
+Exception: when the user is describing a problem, asking a question, or thinking out loud rather than requesting a change, the deliverable is your assessment. Report your findings and stop. Don't apply a fix until they ask for one.
+
+Before ending your turn, check your last paragraph. If it is a plan, an analysis, a question, a list of next steps, or a promise about work you have not done ('I'll…', 'let me know when…'), do that work now with tool calls. That includes retrying after errors and gathering missing information yourself. Do not stop because the context or session is long. End your turn only when the task is complete or you are blocked on input only the user can provide.
+
+Before running a command that changes system state — restarts, deletes, config edits — check that the evidence actually supports that specific action. A signal that pattern-matches to a known failure may have a different cause.`

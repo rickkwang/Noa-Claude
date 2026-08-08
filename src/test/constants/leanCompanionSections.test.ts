@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { buildDynamicSystemPromptSections } from '../../constants/systemPromptAssemblyHelpers.js'
 import {
   ACT_DONT_REDERIVE_SECTION,
+  AUTONOMY_SECTION,
   CONTEXT_MANAGEMENT_SECTION,
   CORRECTIONS_SECTION,
   DELIVERING_WORK_SECTION,
@@ -11,6 +12,7 @@ import {
   hasFableMitigations,
   MATCH_SURROUNDING_CODE_SECTION,
 } from '../../constants/systemPromptCompact.js'
+import { getIsInteractive, setIsInteractive } from '../../bootstrap/state.js'
 
 const LEAN_MODEL = 'claude-opus-5'
 
@@ -185,5 +187,52 @@ describe('sections that ship alongside the compact head', () => {
       expect(sectionNames(LEAN_MODEL)).toContain(name)
       expect(sectionNames(VERBOSE_MODEL)).toContain(name)
     }
+  })
+})
+
+// Both halves of the gate are pinned here; the digest test only proves the
+// words weren't edited, not that they reach the right sessions.
+describe('autonomy guidance', () => {
+  const originalInteractive = getIsInteractive()
+  afterEach(() => setIsInteractive(originalInteractive))
+
+  test('ships for a fable model in a non-interactive session', () => {
+    setIsInteractive(false)
+    expect(resolve(UNBUNDLED_LEAN_MODEL, 'autonomy_append:fable')).toBe(
+      AUTONOMY_SECTION,
+    )
+  })
+
+  test('is withheld in an interactive session, where the user can answer', () => {
+    setIsInteractive(true)
+    expect(resolve(UNBUNDLED_LEAN_MODEL, 'autonomy_append:fable')).toBeNull()
+  })
+
+  // Mythos shares the fable branch, so it must reach the same section — the
+  // companion gates route it by family, not by a versioned id.
+  test('ships for Mythos, which shares the fable branch', () => {
+    setIsInteractive(false)
+    expect(resolve('claude-mythos-5', 'autonomy_append:fable')).toBe(
+      AUTONOMY_SECTION,
+    )
+  })
+
+  test('is withheld from lean models outside the fable branch', () => {
+    setIsInteractive(false)
+    expect(hasFableMitigations(LEAN_MODEL)).toBe(false)
+    expect(resolve(LEAN_MODEL, 'autonomy_append')).toBeNull()
+  })
+
+  test('is withheld from verbose models', () => {
+    setIsInteractive(false)
+    expect(resolve(VERBOSE_MODEL, 'autonomy_append')).toBeNull()
+  })
+
+  // Same cache-key hazard as delivering_work/corrections: a /model switch
+  // between a fable and a non-fable model must not reuse the previous name.
+  test('carries a fable suffix so a model switch busts the cache', () => {
+    expect(sectionNames(UNBUNDLED_LEAN_MODEL)).toContain('autonomy_append:fable')
+    expect(sectionNames(LEAN_MODEL)).toContain('autonomy_append')
+    expect(sectionNames(LEAN_MODEL)).not.toContain('autonomy_append:fable')
   })
 })

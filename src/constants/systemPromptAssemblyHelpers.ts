@@ -3,6 +3,7 @@ import { feature } from 'bun:bundle'
 import type { MCPServerConnection } from '../services/mcp/types.js'
 import type { Tools } from '../Tool.js'
 import { getSkillToolCommands } from 'src/commands.js'
+import { getIsNonInteractiveSession } from '../bootstrap/state.js'
 import { getSessionStartDate } from './common.js'
 import { getCwd } from '../utils/cwd.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
@@ -23,6 +24,7 @@ import {
 } from './systemPromptCompact.js'
 import {
   ACT_DONT_REDERIVE_SECTION,
+  AUTONOMY_SECTION,
   CONTEXT_MANAGEMENT_SECTION,
   CORRECTIONS_SECTION,
   DELIVERING_WORK_SECTION,
@@ -137,11 +139,13 @@ export function buildDynamicSystemPromptSections(params: {
   // alone, so a mid-session /model switch would otherwise keep serving the
   // previous tier's text. Same `:L` suffix upstream uses for the same reason.
   //
-  // Two independent gates land here, and each section keys off whichever one
+  // Three independent gates land here, and each section keys off whichever one
   // actually drives its text — see hasOpus5PromptBundle() for why they are not
-  // the same question.
+  // the same question. Of the four lean models, only Opus 5 carries the bundle;
+  // the fable branch covers Fable 5 and Mythos 5.
   const lean = shouldUseCompactSystemPrompt(model)
   const bundle = hasOpus5PromptBundle(model)
+  const fable = hasFableMitigations(model)
   const bundleSuffix = bundle ? ':L' : ''
   // Emitted only under the lean prompt, but worded by the bundle gate, so the
   // key has to carry both bits. Upstream keys this one on the lean bit alone,
@@ -156,7 +160,7 @@ export function buildDynamicSystemPromptSections(params: {
   // possible texts (the Fable branch, the lean one-liner, nothing), so the key
   // names the branch rather than carrying a single lean bit.
   const antiVerbosity = getAntiVerbositySection(model)
-  const antiVerbosityName = hasFableMitigations(model)
+  const antiVerbosityName = fable
     ? 'anti_verbosity:fable'
     : `anti_verbosity${antiVerbosity !== null ? ':L' : ''}`
 
@@ -226,15 +230,23 @@ export function buildDynamicSystemPromptSections(params: {
       : []),
     systemPromptSection('act_dont_rederive', () => ACT_DONT_REDERIVE_SECTION),
     // Compact-head companions. Upstream gates these on the prompt bundle, not
-    // on the lean prompt — the two coincide for every first-party model, and
-    // only a pinned third-party model can pull them apart. They restate, in one
-    // place, the scope and self-correction discipline that the verbose head
-    // spells out across its own sections.
+    // on the lean prompt: three of the four lean models (Fable 5, Mythos 5,
+    // Opus 4.8) do not carry the bundle, so substituting `lean` here would ship
+    // them a prompt no upstream build produces. They restate, in one place, the
+    // scope and self-correction discipline that the verbose head spells out
+    // across its own sections.
     systemPromptSection(`delivering_work${bundleSuffix}`, () =>
       bundle ? DELIVERING_WORK_SECTION : null,
     ),
     systemPromptSection(`corrections${bundleSuffix}`, () =>
       bundle ? CORRECTIONS_SECTION : null,
+    ),
+    // Gated on the Fable branch AND a non-interactive session — see
+    // AUTONOMY_SECTION for why the second condition is ours. Only the model bit
+    // varies mid-session (/model switch); the session kind is fixed at startup,
+    // so it stays out of the key.
+    systemPromptSection(`autonomy_append${fable ? ':fable' : ''}`, () =>
+      fable && getIsNonInteractiveSession() ? AUTONOMY_SECTION : null,
     ),
   ]
 }
