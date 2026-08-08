@@ -257,6 +257,39 @@ export const TRUSTING_RECALL_SECTION: readonly string[] = [
 ]
 
 /**
+ * Compact stand-in for TYPES_SECTION_INDIVIDUAL in the always-on system
+ * prompt. The long version spends ~7k characters on four `<description>`
+ * essays and eight worked dialogues; upstream 2.1.226 states each type in one
+ * line and pushes scope/structure/examples into an on-demand skill. This keeps
+ * upstream's one-line-per-type shape.
+ *
+ * Unlike TRUSTING_RECALL_SECTION and the explicit-save gate above, nothing in
+ * the long types section carries an eval result — the shortening is a size
+ * decision, not a reversal of a measured one. The Why/How-to-apply cue is not
+ * lost: MEMORY_FRONTMATTER_EXAMPLE states it in the body placeholder.
+ *
+ * TYPES_SECTION_INDIVIDUAL stays exported and unchanged for
+ * services/extractMemories, a one-shot classifier with no conversation context
+ * that has to carry its own examples.
+ */
+export const TYPES_SECTION_COMPACT: readonly string[] = [
+  '## Types of memory',
+  '',
+  'Save a memory when you learn one of the following — set `type:` to match:',
+  '',
+  '- **user** — who the user is: role, expertise, working preferences.',
+  '- **feedback** — how the user wants you to work. Save corrections *and* approaches they confirmed ("yes, exactly", accepting an unusual choice without pushback) — confirmations are quieter than corrections but just as load-bearing. Include the why, so you can judge edge cases later.',
+  '- **project** — ongoing work, goals, deadlines, incidents, or decisions not derivable from the code or git history. Convert relative dates to absolute ("Thursday" → "2026-03-05").',
+  '- **reference** — where to find things in external systems (issue trackers, dashboards, channels).',
+  '',
+  // The long version carried a per-type <how_to_use>; this is their shared
+  // point, kept because nothing else in the prompt says what a recalled memory
+  // is *for* — "When to access" covers when to look and "Before recommending"
+  // covers how far to trust it, neither covers what to do with it.
+  'Let what you have saved shape how you work: the user should not have to give the same guidance twice, and your suggestions should reflect what you already know about them and the project.',
+]
+
+/**
  * Frontmatter format example with the `type` field.
  */
 export const MEMORY_FRONTMATTER_EXAMPLE: readonly string[] = [

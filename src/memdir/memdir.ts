@@ -27,7 +27,7 @@ import { getInitialSettings } from '../utils/settings/settings.js'
 import {
   MEMORY_FRONTMATTER_EXAMPLE,
   TRUSTING_RECALL_SECTION,
-  TYPES_SECTION_INDIVIDUAL,
+  TYPES_SECTION_COMPACT,
   WHAT_NOT_TO_SAVE_SECTION,
   WHEN_TO_ACCESS_SECTION,
 } from './memoryTypes.js'
@@ -219,19 +219,14 @@ export function buildMemoryLines(
     : [
         '## How to save memories',
         '',
-        'Saving a memory is a two-step process:',
-        '',
-        '**Step 1** — write the memory to its own file (e.g., `user_role.md`, `feedback_testing.md`) using this frontmatter format:',
+        'Write each memory to its own file (e.g., `user_role.md`, `feedback_testing.md`), one topic per file, using this frontmatter format:',
         '',
         ...MEMORY_FRONTMATTER_EXAMPLE,
         '',
-        `**Step 2** — add a pointer to that file in \`${ENTRYPOINT_NAME}\`. \`${ENTRYPOINT_NAME}\` is an index, not a memory — each entry should be one line, under ~150 characters: \`- [Title](file.md) — one-line hook\`. It has no frontmatter. Never write memory content directly into \`${ENTRYPOINT_NAME}\`.`,
+        `Then add a one-line pointer in \`${ENTRYPOINT_NAME}\` (\`- [Title](file.md) — one-line hook\`, under ~150 characters). \`${ENTRYPOINT_NAME}\` is the index loaded into context each session — no frontmatter, never put memory content there, and lines after ${MAX_ENTRYPOINT_LINES} are truncated, so keep it concise.`,
         '',
-        `- \`${ENTRYPOINT_NAME}\` is always loaded into your conversation context — lines after ${MAX_ENTRYPOINT_LINES} will be truncated, so keep the index concise`,
-        '- Keep the name, description, and type fields in memory files up-to-date with the content',
-        '- Organize memory semantically by topic, not chronologically',
-        '- Update or remove memories that turn out to be wrong or outdated',
-        '- Do not write duplicate memories. First check if there is an existing memory you can update before writing a new one.',
+        '- Before writing a new memory, check whether an existing one covers it and update that instead of duplicating.',
+        '- Keep the name, description, and type fields in step with the content; update or delete memories that turn out to be wrong or outdated.',
       ]
 
   const lines: string[] = [
@@ -239,23 +234,33 @@ export function buildMemoryLines(
     '',
     `You have a persistent, file-based memory system at \`${memoryDir}\`. ${DIR_EXISTS_GUIDANCE}`,
     '',
-    "Default to not saving memory. Add or update memories only when the information is likely to matter in future conversations and is not better preserved in the codebase, the current thread, or a plan/task.",
+    // Wording here is pinned by prompts.test.ts. The trailing clause replaces
+    // the old "## Memory and other forms of persistence" section (~1150
+    // characters) with its routing rule alone: plans hold approaches, tasks
+    // hold in-conversation progress.
+    //
+    // Not everything there survived — "if your approach changes, update the
+    // plan rather than saving a memory" has no counterpart here. That follows
+    // upstream: 2.1.226 still ships the long section for its other memory
+    // surfaces, but its compact variant (the one this section mirrors) drops
+    // the persistence guidance outright. Restoring the sentence would be a
+    // deviation, not a fix.
+    'Default to not saving memory. Add or update memories only when the information is likely to matter in future conversations and is not better preserved in the codebase, the current thread, or a plan/task — a plan is where an approach you are about to implement belongs, and tasks are where in-conversation progress belongs.',
     '',
     'If the user explicitly asks you to remember something, save it immediately as whichever type fits best. If they ask you to forget something, find and remove the relevant entry. Do not save transient tasks, speculative inferences, or details that are likely to change soon.',
     '',
-    ...TYPES_SECTION_INDIVIDUAL,
+    ...TYPES_SECTION_COMPACT,
+    '',
     ...WHAT_NOT_TO_SAVE_SECTION,
     '',
     ...howToSave,
     '',
     ...WHEN_TO_ACCESS_SECTION,
     '',
+    // Stays a section of its own, under this exact header. Both are
+    // eval-validated — see TRUSTING_RECALL_SECTION, where folding this into a
+    // bullet measured 0/3 and an abstract header measured 0/3 on the same body.
     ...TRUSTING_RECALL_SECTION,
-    '',
-    '## Memory and other forms of persistence',
-    'Memory is one of several persistence mechanisms available to you as you assist the user in a given conversation. The distinction is often that memory can be recalled in future conversations and should not be used for persisting information that is only useful within the scope of the current conversation.',
-    '- When to use or update a plan instead of memory: If you are about to start a non-trivial implementation task and would like to reach alignment with the user on your approach you should use a Plan rather than saving this information to memory. Similarly, if you already have a plan within the conversation and you have changed your approach persist that change by updating the plan rather than saving a memory.',
-    '- When to use or update tasks instead of memory: When you need to break your work in current conversation into discrete steps or keep track of your progress use tasks instead of saving to memory. Tasks are great for persisting information about the work that needs to be done in the current conversation, but memory should be reserved for information that will be useful in future conversations.',
     '',
     ...(extraGuidelines ?? []),
     '',
