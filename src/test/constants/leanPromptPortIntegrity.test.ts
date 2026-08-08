@@ -35,6 +35,7 @@ afterEach(() => {
 
 import {
   ACT_DONT_REDERIVE_SECTION,
+  AUTONOMY_SECTION,
   CONTEXT_MANAGEMENT_SECTION,
   CORRECTIONS_SECTION,
   DELIVERING_WORK_SECTION,
@@ -67,24 +68,41 @@ const UNBUNDLED_MODEL = 'claude-fable-5'
 
 /**
  * These strings are verbatim ports from the upstream Claude Code binary
- * (@anthropic-ai/claude-code 2.1.220), not text authored here. Every line was
- * matched byte-for-byte against that binary; the handful of intentional
- * deviations are commented at their definition.
+ * (@anthropic-ai/claude-code 2.1.220 unless noted), not text authored here.
+ * Every line was matched byte-for-byte against that binary; the handful of
+ * intentional deviations are commented at their definition.
+ *
+ * AUTONOMY_SECTION was matched against 2.1.226 instead — it postdates the
+ * 2.1.220 sweep. Its prompt text is identical in 2.1.223: the whole assembly
+ * module was diffed line-by-line between the two builds and every difference
+ * was minifier renaming, not prompt wording.
  *
  * Reword one and the model silently gets prompt text nobody validated. The
  * digests below exist to make that impossible to do by accident: a failure
  * here is not a stale-snapshot annoyance, it means someone edited a ported
  * string. The fix is to re-verify the new wording against upstream and only
  * then update the digest — never the other way around.
+ *
+ * "Byte-for-byte" includes whitespace. AUTONOMY_SECTION and the anti_verbosity
+ * fable branch both shipped once with their blank-line paragraph breaks
+ * collapsed to single newlines, and both digests were computed from the
+ * collapsed text — so the pins certified the deviation instead of catching it.
+ * Diff whitespace against the binary, not just words, and pin the digest to
+ * what upstream ships rather than to what is already in the file.
+ *
+ * `bun run verify:ports` does that diff against a real binary when one is on
+ * the machine. Run it when adding a port or bumping the reference version; a
+ * digest alone cannot tell a faithful transcription from a confident wrong one.
  */
 const PORTED_DIGESTS: Record<string, string> = {
   PRONOUNS_SECTION: '3fcd2b200896a716',
   ACT_DONT_REDERIVE_SECTION: '4e4e48fb23ceb764',
   CONTEXT_MANAGEMENT_SECTION: '9856a95edb9c2bdb',
   MATCH_SURROUNDING_CODE_SECTION: 'ee43af37398581e9',
-  'anti_verbosity fable branch': '7a9e35eca21ac1c8',
+  'anti_verbosity fable branch': '41a8a87303e6f6f8',
   DELIVERING_WORK_SECTION: '7e908e68a04f6843',
   CORRECTIONS_SECTION: '4593459b100aad5e',
+  AUTONOMY_SECTION: 'c16a5646cb28d023',
   'WebFetch.LEAN_DESCRIPTION': '7db6b3cae057d3c9',
   'TodoWrite lean': '863d3a2d90b3c43e',
   'Glob lean': '33fb1e4be95ad7cf',
@@ -111,6 +129,7 @@ describe('ported lean prompt text is not edited by accident', () => {
     ) as string,
     DELIVERING_WORK_SECTION,
     CORRECTIONS_SECTION,
+    AUTONOMY_SECTION,
     'WebFetch.LEAN_DESCRIPTION': WEB_FETCH_LEAN_DESCRIPTION,
     'TodoWrite lean': getTodoWritePrompt(LEAN_MODEL),
     'Glob lean': getGlobDescription(LEAN_MODEL),
