@@ -25,11 +25,23 @@ export function createFallbackStorage(
       }
       return (await secondary.readAsync()) || {}
     },
-    update(data: SecureStorageData): { success: boolean; warning?: string } {
+    update(data: SecureStorageData): {
+      success: boolean
+      warning?: string
+      transient?: boolean
+    } {
       // Capture state before update
       const primaryDataBefore = primary.read()
 
       const result = primary.update(data)
+
+      if (!result.success && result.transient) {
+        // The primary didn't refuse the write, it never got an answer (keychain
+        // timeout). Falling through would write the credentials to plaintext
+        // and delete a keychain entry that may be perfectly fine. Surface the
+        // failure and let the caller retry instead.
+        return result
+      }
 
       if (result.success) {
         // Delete secondary when migrating to primary for the first time

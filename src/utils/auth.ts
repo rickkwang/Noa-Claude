@@ -1,6 +1,6 @@
 import chalk from 'chalk'
 import { exec } from 'child_process'
-import { execa } from 'execa'
+import { execa, execaSync } from 'execa'
 import { mkdir, stat } from 'fs/promises'
 import memoize from 'lodash-es/memoize.js'
 import { join } from 'path'
@@ -71,6 +71,7 @@ import {
   clearKeychainCache,
   getMacOsKeychainStorageServiceName,
   getUsername,
+  KEYCHAIN_BLOCKING_EXEC_TIMEOUT_MS,
 } from './secureStorage/macOsKeychainHelpers.js'
 import {
   getSettings_DEPRECATED,
@@ -1081,11 +1082,41 @@ export const getApiKeyFromConfigOrMacOSKeychain = memoize(
       } else {
         const storageServiceName = getMacOsKeychainStorageServiceName()
         try {
-          const result = execSyncWithDefaults_DEPRECATED(
-            `security find-generic-password -a $USER -w -s "${storageServiceName}"`,
+          // argv + getUsername(), NOT a shell `-a $USER`. saveApiKey() below
+          // writes this entry under getUsername(), which sanitizes the value;
+          // a shell $USER here would expand to the raw environment variable and
+          // look up a *different* account whenever the two disagree, so the key
+          // we just wrote would never be found again. (Unquoted `$USER` also
+          // ate the following `-w` flag whenever USER was unset or contained
+          // whitespace.) The prefetch in keychainPrefetch.ts already spawns
+          // with getUsername(); this path has to match it.
+          //
+          // Bounded, because the prefetch now declines to report an
+          // inconclusive result as "completed with no key" — so this branch
+          // (a blocking spawn) is reached whenever the prefetch was killed or
+          // errored, which is exactly when the keychain may be wedged.
+          const result = execaSync(
+            'security',
+            [
+              'find-generic-password',
+              '-a',
+              getUsername(),
+              '-w',
+              '-s',
+              storageServiceName,
+            ],
+            {
+              stdio: ['ignore', 'pipe', 'pipe'],
+              reject: false,
+              timeout: KEYCHAIN_BLOCKING_EXEC_TIMEOUT_MS,
+            },
           )
-          if (result) {
-            return { key: result, source: '/login managed key' }
+          // Only exit 0 carries a key. Any other code (44 = no entry, or a
+          // timeout/spawn failure with exitCode undefined) falls through to
+          // the config lookup rather than being read as one.
+          const key = result.exitCode === 0 ? result.stdout?.trim() : ''
+          if (key) {
+            return { key, source: '/login managed key' }
           }
         } catch (e) {
           logError(e)
@@ -1131,10 +1162,26 @@ export async function saveApiKey(apiKey: string): Promise<void> {
       // Process monitors only see "security -i", not the password
       const command = `add-generic-password -U -a "${username}" -s "${storageServiceName}" -X "${hexValue}"\n`
 
-      await execa('security', ['-i'], {
+      const result = await execa('security', ['-i'], {
         input: command,
         reject: false,
+        timeout: KEYCHAIN_BLOCKING_EXEC_TIMEOUT_MS,
       })
+
+      // The result used to be discarded and savedToKeychain set unconditionally.
+      // Because the config write below stores the key only when the keychain
+      // write failed (`savedToKeychain ? current.primaryApiKey : apiKey`), a
+      // non-zero exit meant the key landed in neither place and vanished
+      // silently. Throwing routes it into the catch below, which already logs
+      // the keychain error and leaves savedToKeychain false so the config write
+      // picks the key up.
+      if (result.exitCode !== 0) {
+        throw new Error(
+          `security add-generic-password failed (exit ${result.exitCode ?? 'none'}${
+            result.timedOut ? ', timed out' : ''
+          })`,
+        )
+      }
 
       logEvent('tengu_api_key_saved_to_keychain', {})
       savedToKeychain = true

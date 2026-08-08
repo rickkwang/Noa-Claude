@@ -2085,6 +2085,117 @@ async function checkCleanupUtilities() {
 }
 
 // ============================================================================
+// Priority 4: keychain account resolution
+// ============================================================================
+// Every `security` invocation that touches a Claude Code keychain entry must
+// resolve the account through getUsername(), which sanitizes $USER down to
+// [A-Za-z0-9._-] with a fixed fallback. A shell `-a $USER` expands the raw
+// environment variable instead, so the moment the sanitizer substitutes the
+// fallback the reader and the writer disagree and the entry becomes
+// write-only: saveApiKey() stores under `claude-code-user`, the read looks up
+// the raw value and finds nothing, and the delete leaves the real entry behind
+// after /logout. Unquoted, `$USER` also swallows the following flag when USER
+// is empty or contains whitespace.
+//
+// This lives here rather than in a bun test because asserting it would require
+// mock.module('execa'), and that mock leaks into every later test file that
+// spawns a subprocess (worktree, gitDiff, goal-evaluator).
+function checkKeychainAccountResolution() {
+  const files = [
+    'src/utils/auth.ts',
+    'src/utils/authPortable.ts',
+    'src/utils/secureStorage/macOsKeychainStorage.ts',
+    'src/utils/secureStorage/keychainPrefetch.ts',
+  ];
+
+  for (const file of files) {
+    const source = readFileSync(resolve(import.meta.dirname, '..', file), 'utf-8');
+    const offenders = source
+      .split('\n')
+      .map((line, i) => ({ line: line.trim(), n: i + 1 }))
+      // Comments discuss this rule by name; only code counts.
+      .filter(({ line }) => !line.startsWith('//') && !line.startsWith('*'))
+      .filter(({ line }) => /-a\s+"?\$USER"?/.test(line));
+
+    assert(
+      offenders.length === 0,
+      `${file}: \`security -a $USER\` must resolve the account via getUsername()`,
+      offenders.map(({ line, n }) => `  ${file}:${n}: ${line}`).join('\n'),
+    );
+  }
+
+  // Every `security` spawn needs a deadline. A wedged keychain (stuck
+  // securityd, an unanswered Touch ID / unlock prompt) otherwise blocks for the
+  // caller's default, and on the sync calls that means a frozen event loop.
+  // saveApiKey()'s write was the last one missing it, and because that call
+  // also discarded its result the key ended up in neither keychain nor config.
+  //
+  // Callee-agnostic on purpose: these four files reach `security` through
+  // execa, execaSync, execFileNoThrow AND child_process.execFile, so keying off
+  // the function name silently skips whole files (it did — keychainPrefetch.ts
+  // and doReadAsync() both spawn without going near execa).
+  const isComment = (line) =>
+    line.startsWith('//') || line.startsWith('*') || line.startsWith('/*');
+
+  let spawnSites = 0;
+  for (const file of files) {
+    const lines = readFileSync(resolve(import.meta.dirname, '..', file), 'utf-8')
+      .split('\n')
+      .map((line) => line.trim());
+
+    const unbounded = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (isComment(lines[i])) continue;
+      // `security` is always the first argument, either inline — foo('security',
+      // [...], {...}) — or on its own line under a wrapped call. Only the
+      // second form needs the preceding line, so don't go looking for it
+      // otherwise: this loop runs over every line of a ~2000-line file.
+      let isSpawn = /\(\s*'security'\s*,/.test(lines[i]);
+      if (!isSpawn && /^'security',$/.test(lines[i])) {
+        let j = i - 1;
+        while (j >= 0 && (!lines[j] || isComment(lines[j]))) j--;
+        isSpawn = /\($/.test(lines[j] ?? '');
+      }
+      if (!isSpawn) continue;
+      spawnSites++;
+      // The options object is the last argument; 25 lines covers the longest
+      // argv list in these files with room to spare.
+      if (!/\btimeout:/.test(lines.slice(i, i + 25).join('\n'))) {
+        unbounded.push(i + 1);
+      }
+    }
+
+    assert(
+      unbounded.length === 0,
+      `${file}: every \`security\` spawn must pass a timeout`,
+      unbounded.map((n) => `  ${file}:${n}: ${lines[n - 1]}`).join('\n'),
+    );
+  }
+
+  // A detector that matches nothing passes vacuously, which is how the first
+  // version of this check missed two of the ten call sites. Floor it.
+  assert(
+    spawnSites >= 10,
+    `keychain timeout check only found ${spawnSites} \`security\` spawns (expected >= 10) — the detector has drifted`,
+  );
+
+  // getUsername() is the single source of truth, so it has to actually
+  // sanitize. Guard the alphabet and the fallback against a silent widening.
+  const helpers = readFileSync(
+    resolve(import.meta.dirname, '..', 'src/utils/secureStorage/macOsKeychainHelpers.ts'),
+    'utf-8',
+  );
+  assert(
+    /const SAFE_USERNAME = \/\^\[a-zA-Z0-9._-\]\+\$\//.test(helpers),
+    'macOsKeychainHelpers.ts: SAFE_USERNAME must stay the upstream alphabet',
+  );
+  assert(
+    /const FALLBACK_USERNAME = 'claude-code-user'/.test(helpers),
+    'macOsKeychainHelpers.ts: FALLBACK_USERNAME must stay `claude-code-user`',
+  );
+}
+
+// ============================================================================
 // Priority 4: find exec/delete security check
 // ============================================================================
 function checkFindExecDeleteSecurity() {
@@ -2273,6 +2384,9 @@ checkFindExecDeleteSecurity();
 
 console.log('Checking thinking spinner thresholds...');
 checkThinkingSpinnerThresholds();
+
+console.log('Checking keychain account resolution...');
+checkKeychainAccountResolution();
 
 console.log('Runtime health checks passed.');
 process.exit(0);
