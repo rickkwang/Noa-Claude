@@ -6,6 +6,7 @@ import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { stringWidth } from '../../ink/stringWidth.js';
 import { Box, Text } from '../../ink.js';
 import { truncatePathMiddle, truncateToWidth } from '../../utils/format.js';
+import { computeMatchRanges } from '../../utils/suggestions/matchRanges.js';
 import type { Theme } from '../../utils/theme.js';
 export type SuggestionItem = {
   id: string;
@@ -148,7 +149,7 @@ const SuggestionItemRow = memo(function SuggestionItemRow(t0) {
     }
     displayText_0 = t2;
   }
-  const paddedDisplayText = displayText_0 + " ".repeat(Math.max(0, displayTextWidth - stringWidth(displayText_0)));
+  const namePadding = " ".repeat(Math.max(0, displayTextWidth - stringWidth(displayText_0)));
   const tagText = item.tag ? `[${item.tag}] ` : "";
   const tagWidth = stringWidth(tagText);
   const descriptionWidth = Math.max(0, columns - displayTextWidth - tagWidth - 4);
@@ -163,34 +164,40 @@ const SuggestionItemRow = memo(function SuggestionItemRow(t0) {
   }
   const truncatedDescription = t1;
   const highlightQuery = item.matchedPrefix;
-  const renderHighlighted = (text, color, dim) => {
-    if (!highlightQuery || !text) {
-      return <Text color={color} dimColor={dim}>{text}</Text>;
+  /**
+   * Matched runs are bolded and un-dimmed; they keep the row's own `color`.
+   * Blue ("suggestion") therefore means exactly one thing — this is the
+   * selected row — instead of doing double duty as the match marker.
+   *
+   * `contiguousOnly` is for descriptions: a name earned its place in the list
+   * via fuzzy match so a scattered subsequence is worth showing there, but the
+   * same scattering across a sentence is just noise.
+   */
+  const renderHighlighted = (text, color, contiguousOnly) => {
+    const ranges = highlightQuery ? computeMatchRanges(text, highlightQuery, contiguousOnly) : [];
+    if (ranges.length === 0) {
+      return <Text color={color} dimColor={!isSelected}>{text}</Text>;
     }
-    const q = highlightQuery.toLowerCase();
-    const lower = text.toLowerCase();
     const parts = [];
-    let i = 0;
-    let key = 0;
-    while (i < text.length) {
-      const idx = lower.indexOf(q, i);
-      if (idx === -1) {
-        parts.push(<Text key={key++} color={color} dimColor={dim}>{text.slice(i)}</Text>);
-        break;
-      }
-      if (idx > i) {
-        parts.push(<Text key={key++} color={color} dimColor={dim}>{text.slice(i, idx)}</Text>);
-      }
-      parts.push(<Text key={key++} color="suggestion">{text.slice(idx, idx + q.length)}</Text>);
-      i = idx + q.length;
+    const push = (start, end, isMatch) => {
+      if (start >= end) return;
+      parts.push(<Text key={start} color={color} dimColor={!isMatch && !isSelected} bold={isMatch}>{text.slice(start, end)}</Text>);
+    };
+    let cursor = 0;
+    for (const [start, end] of ranges) {
+      push(cursor, start, false);
+      push(start, end, true);
+      cursor = end;
     }
+    push(cursor, text.length, false);
     return <>{parts}</>;
   };
-  const nameNode = <Text wrap="truncate">{renderHighlighted(paddedDisplayText, textColor_0, shouldDim)}</Text>;
+  // Padding is rendered outside the highlighted name so the match ranges stay
+  // aligned with the real display text.
+  const nameNode = <Text wrap="truncate">{renderHighlighted(displayText_0, textColor_0, false)}<Text color={textColor_0} dimColor={shouldDim}>{namePadding}</Text></Text>;
   const tagNode = tagText ? <Text dimColor={true}>{tagText}</Text> : null;
   const descColor = isSelected ? "suggestion" : undefined;
-  const descDim = !isSelected;
-  const descNode = renderHighlighted(truncatedDescription, descColor, descDim);
+  const descNode = renderHighlighted(truncatedDescription, descColor, true);
   return <Text wrap="truncate">{nameNode}{tagNode}{descNode}</Text>;
 });
 type Props = {
