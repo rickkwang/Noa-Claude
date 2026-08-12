@@ -43,6 +43,7 @@ import type { PermissionDecision } from '../../utils/permissions/PermissionResul
 import { matchWildcardPattern } from '../../utils/permissions/shellRuleMatching.js'
 import { FILE_UNEXPECTEDLY_MODIFIED_ERROR } from '../FileEditTool/constants.js'
 import { gitDiffSchema, hunkSchema } from '../FileEditTool/types.js'
+import { canSkipPreRead, isNotebookPath } from '../shared/preReadGuard.js'
 import { FILE_WRITE_TOOL_NAME, getWriteToolDescription } from './prompt.js'
 import {
   getToolUseSummary,
@@ -198,6 +199,15 @@ export const FileWriteTool = buildTool({
 
     const readTimestamp = toolUseContext.readFileState.get(fullFilePath)
     if (!readTimestamp || readTimestamp.isPartialView) {
+      // A partial view still requires a full read: the skip below also skips
+      // the staleness check, which needs the whole file to compare against.
+      if (
+        !readTimestamp &&
+        !isNotebookPath(fullFilePath) &&
+        canSkipPreRead(FILE_WRITE_TOOL_NAME, fullFilePath, toolUseContext)
+      ) {
+        return { result: true }
+      }
       return {
         result: false,
         message:
@@ -242,12 +252,9 @@ export const FileWriteTool = buildTool({
 
     return { result: true }
   },
-  async call(
-    { file_path, content },
-    { readFileState, updateFileHistoryState, dynamicSkillDirTriggers },
-    _,
-    parentMessage,
-  ) {
+  async call({ file_path, content }, toolUseContext, _, parentMessage) {
+    const { readFileState, updateFileHistoryState, dynamicSkillDirTriggers } =
+      toolUseContext
     const fullFilePath = expandPath(file_path)
     const dir = dirname(fullFilePath)
 
@@ -301,14 +308,21 @@ export const FileWriteTool = buildTool({
     if (meta !== null) {
       const lastWriteTime = getFileModificationTime(fullFilePath)
       const lastRead = readFileState.get(fullFilePath)
-      if (!lastRead || lastWriteTime > lastRead.timestamp) {
+      if (!lastRead) {
+        // Must mirror validateInput's skip, or a write it allowed lands here
+        // and is rejected as unexpectedly modified.
+        if (
+          isNotebookPath(fullFilePath) ||
+          !canSkipPreRead(FILE_WRITE_TOOL_NAME, fullFilePath, toolUseContext)
+        ) {
+          throw new Error(FILE_UNEXPECTEDLY_MODIFIED_ERROR)
+        }
+      } else if (lastWriteTime > lastRead.timestamp) {
         // Timestamp indicates modification, but on Windows timestamps can change
         // without content changes (cloud sync, antivirus, etc.). For full reads,
         // compare content as a fallback to avoid false positives.
         const isFullRead =
-          lastRead &&
-          lastRead.offset === undefined &&
-          lastRead.limit === undefined
+          lastRead.offset === undefined && lastRead.limit === undefined
         // meta.content is CRLF-normalized — matches readFileState's normalized form.
         if (!isFullRead || meta.content !== lastRead.content) {
           throw new Error(FILE_UNEXPECTEDLY_MODIFIED_ERROR)

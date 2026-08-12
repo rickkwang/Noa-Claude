@@ -51,6 +51,7 @@ import type { PermissionDecision } from '../../utils/permissions/PermissionResul
 import { matchWildcardPattern } from '../../utils/permissions/shellRuleMatching.js'
 import { validateInputForSettingsFileEdit } from '../../utils/settings/validateEditTool.js'
 import { NOTEBOOK_EDIT_TOOL_NAME } from '../NotebookEditTool/constants.js'
+import { canSkipPreRead } from '../shared/preReadGuard.js'
 import {
   FILE_EDIT_TOOL_NAME,
   FILE_UNEXPECTEDLY_MODIFIED_ERROR,
@@ -276,15 +277,22 @@ export const FileEditTool = buildTool({
 
     const readTimestamp = toolUseContext.readFileState.get(fullFilePath)
     if (!readTimestamp || readTimestamp.isPartialView) {
-      return {
-        result: false,
-        behavior: 'ask',
-        message:
-          'File has not been read yet. Read it first before writing to it.',
-        meta: {
-          isFilePathAbsolute: String(isAbsolute(file_path)),
-        },
-        errorCode: 6,
+      // A partial view still requires a full read: the skip below also skips
+      // the staleness check, which needs the whole file to compare against.
+      if (
+        readTimestamp ||
+        !canSkipPreRead(FILE_EDIT_TOOL_NAME, fullFilePath, toolUseContext)
+      ) {
+        return {
+          result: false,
+          behavior: 'ask',
+          message:
+            'File has not been read yet. Read it first before writing to it.',
+          meta: {
+            isFilePathAbsolute: String(isAbsolute(file_path)),
+          },
+          errorCode: 6,
+        }
       }
     }
 
@@ -392,17 +400,13 @@ export const FileEditTool = buildTool({
       },
     )
   },
-  async call(
-    input: FileEditInput,
-    {
+  async call(input: FileEditInput, toolUseContext, _, parentMessage) {
+    const {
       readFileState,
       userModified,
       updateFileHistoryState,
       dynamicSkillDirTriggers,
-    },
-    _,
-    parentMessage,
-  ) {
+    } = toolUseContext
     const { file_path, old_string, new_string, replace_all = false } = input
 
     // 1. Get current state
@@ -459,14 +463,20 @@ export const FileEditTool = buildTool({
     if (fileExists) {
       const lastWriteTime = getFileModificationTime(absoluteFilePath)
       const lastRead = readFileState.get(absoluteFilePath)
-      if (!lastRead || lastWriteTime > lastRead.timestamp) {
+      if (!lastRead) {
+        // Must mirror validateInput's skip, or an edit it allowed lands here
+        // and is rejected as unexpectedly modified.
+        if (
+          !canSkipPreRead(FILE_EDIT_TOOL_NAME, absoluteFilePath, toolUseContext)
+        ) {
+          throw new Error(FILE_UNEXPECTEDLY_MODIFIED_ERROR)
+        }
+      } else if (lastWriteTime > lastRead.timestamp) {
         // Timestamp indicates modification, but on Windows timestamps can change
         // without content changes (cloud sync, antivirus, etc.). For full reads,
         // compare content as a fallback to avoid false positives.
         const isFullRead =
-          lastRead &&
-          lastRead.offset === undefined &&
-          lastRead.limit === undefined
+          lastRead.offset === undefined && lastRead.limit === undefined
         const contentUnchanged =
           isFullRead && originalFileContents === lastRead.content
         if (

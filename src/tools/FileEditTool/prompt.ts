@@ -1,27 +1,36 @@
 // @ts-nocheck
 import { isCompactLinePrefixEnabled } from '../../utils/file.js'
 import { FILE_READ_TOOL_NAME } from '../FileReadTool/prompt.js'
-import { shouldUseCompactSystemPrompt } from '../../constants/systemPromptCompact.js'
+import {
+  allowsWriteWithoutPriorRead,
+  shouldUseCompactSystemPrompt,
+} from '../../constants/systemPromptCompact.js'
 
 function getPreReadInstruction(): string {
   return `\n- You must use your \`${FILE_READ_TOOL_NAME}\` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file. `
 }
 
 export function getEditToolDescription(model?: string): string {
+  const skipsPreRead = allowsWriteWithoutPriorRead(model)
+
   if (shouldUseCompactSystemPrompt(model)) {
     const prefixFormat = isCompactLinePrefixEnabled()
       ? 'line number + tab'
       : 'spaces + line number + arrow'
     return `Performs exact string replacement in a file.
-
-- You must ${FILE_READ_TOOL_NAME} the file in this conversation before editing, or the call will fail.
+${
+  skipsPreRead
+    ? ''
+    : `
+- You must ${FILE_READ_TOOL_NAME} the file in this conversation before editing, or the call will fail.`
+}
 - \`old_string\` must match the file exactly, including indentation, and be unique — the edit fails otherwise. Strip the ${FILE_READ_TOOL_NAME} line prefix (${prefixFormat}) before matching.
 - \`replace_all: true\` replaces every occurrence instead.`
   }
-  return getDefaultEditDescription()
+  return getDefaultEditDescription(skipsPreRead)
 }
 
-function getDefaultEditDescription(): string {
+function getDefaultEditDescription(skipsPreRead: boolean): string {
   const prefixFormat = isCompactLinePrefixEnabled()
     ? 'line number + tab'
     : 'spaces + line number + arrow'
@@ -31,7 +40,7 @@ function getDefaultEditDescription(): string {
       : ''
   return `Performs exact string replacements in files.
 
-Usage:${getPreReadInstruction()}
+Usage:${skipsPreRead ? '' : getPreReadInstruction()}
 - When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: ${prefixFormat}. Everything after that is the actual file content to match. Never include any part of the line number prefix in the old_string or new_string.
 - ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
 - Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.

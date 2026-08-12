@@ -17,6 +17,7 @@ const PROVIDER_ENV_KEYS = [
   'NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT',
   'CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT',
   'NOA_CLAUDE_THIRD_PARTY_PROMPT_POLICY',
+  'NOA_CLAUDE_WRITE_REQUIRE_READ',
 ] as const
 const originalProviderEnv = Object.fromEntries(
   PROVIDER_ENV_KEYS.map(k => [k, process.env[k]]),
@@ -47,6 +48,8 @@ import {
 
 const LEAN_MODEL = 'claude-opus-5'
 const FULL_MODEL = 'claude-sonnet-5'
+/** Verbose *and* still required to Read before writing — the most complete form. */
+const PRE_READ_MODEL = 'claude-sonnet-4-5'
 
 const RENDERERS: Array<[string, (model?: string) => string]> = [
   ['Glob', globDescription],
@@ -78,7 +81,7 @@ describe('lean tool descriptions', () => {
   test.each(RENDERERS)(
     '%s falls back to the full description without a model',
     (_name, render) => {
-      expect(render(undefined)).toBe(render(FULL_MODEL))
+      expect(render(undefined)).toBe(render(PRE_READ_MODEL))
     },
   )
 
@@ -86,7 +89,9 @@ describe('lean tool descriptions', () => {
     // Each of these changes what the model is allowed or expected to do, so
     // they must survive trimming.
     expect(getEditToolDescription(LEAN_MODEL)).toContain('Read')
+    process.env.NOA_CLAUDE_WRITE_REQUIRE_READ = '1'
     expect(getWriteToolDescription(LEAN_MODEL)).toContain('fail')
+    delete process.env.NOA_CLAUDE_WRITE_REQUIRE_READ
     expect(grepDescription(LEAN_MODEL)).toContain('output_mode')
     expect(getTodoWritePrompt(LEAN_MODEL)).toContain('in_progress')
     expect(

@@ -20,6 +20,7 @@ const PROVIDER_ENV_KEYS = [
   'NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT',
   'CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT',
   'NOA_CLAUDE_THIRD_PARTY_PROMPT_POLICY',
+  'NOA_CLAUDE_WRITE_REQUIRE_READ',
 ] as const
 const originalProviderEnv = Object.fromEntries(
   PROVIDER_ENV_KEYS.map(k => [k, process.env[k]]),

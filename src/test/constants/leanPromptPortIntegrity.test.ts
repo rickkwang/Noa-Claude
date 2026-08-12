@@ -18,6 +18,7 @@ const PROVIDER_ENV_KEYS = [
   'NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT',
   'CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT',
   'NOA_CLAUDE_THIRD_PARTY_PROMPT_POLICY',
+  'NOA_CLAUDE_WRITE_REQUIRE_READ',
 ] as const
 const originalProviderEnv = Object.fromEntries(
   PROVIDER_ENV_KEYS.map(k => [k, process.env[k]]),
@@ -109,6 +110,20 @@ const PORTED_DIGESTS: Record<string, string> = {
   'Grep lean': 'dde2d0b4701de45b',
   'Write lean': 'c5d31bd0010938b8',
   'Edit lean': '2eaaa8e08e0b58bc',
+  // 2.1.228 drops the pre-read line for models allowed to overwrite an unread
+  // file. Both variants are pinned: the skip is a second ported branch, not a
+  // replacement for the one above.
+  'Write lean (pre-read skipped)': 'db96dfd3a76a57ab',
+  'Edit lean (pre-read skipped)': '5f160e3e9fb9ef6e',
+}
+
+function withPreReadRequired<T>(render: () => T): T {
+  process.env.NOA_CLAUDE_WRITE_REQUIRE_READ = '1'
+  try {
+    return render()
+  } finally {
+    delete process.env.NOA_CLAUDE_WRITE_REQUIRE_READ
+  }
 }
 
 function digest(text: string): string {
@@ -134,8 +149,12 @@ describe('ported lean prompt text is not edited by accident', () => {
     'TodoWrite lean': getTodoWritePrompt(LEAN_MODEL),
     'Glob lean': getGlobDescription(LEAN_MODEL),
     'Grep lean': getGrepDescription(LEAN_MODEL),
-    'Write lean': getWriteToolDescription(LEAN_MODEL),
-    'Edit lean': getEditToolDescription(LEAN_MODEL),
+    'Write lean': withPreReadRequired(() =>
+      getWriteToolDescription(LEAN_MODEL),
+    ),
+    'Edit lean': withPreReadRequired(() => getEditToolDescription(LEAN_MODEL)),
+    'Write lean (pre-read skipped)': getWriteToolDescription(LEAN_MODEL),
+    'Edit lean (pre-read skipped)': getEditToolDescription(LEAN_MODEL),
   })
 
   for (const [name, expected] of Object.entries(PORTED_DIGESTS)) {

@@ -113,6 +113,45 @@ export function getBuiltInPromptCapabilities(
 }
 
 /**
+ * Models that still have to Read a file before Write/Edit may overwrite it.
+ *
+ * Upstream 2.1.228 gates this on exactly this denylist, so an unrecognized id
+ * is allowed by default. Noa can't inherit that fail-open: the skipped branch
+ * also skips the mtime staleness check, and upstream backs it with shadow
+ * telemetry plus a remote kill switch that Noa has neither of. Untrusted model
+ * identities therefore keep the guard, the same way they keep the verbose head.
+ */
+const MODELS_REQUIRING_PRE_READ = new Set([
+  'claude-opus-4-6',
+  'claude-haiku-4-5',
+  'claude-opus-4-5',
+  'claude-opus-4-1',
+  'claude-opus-4-0',
+  'claude-sonnet-4-5',
+  // Upstream matches raw ids, so it lists 'claude-sonnet-4-0'. getCanonicalName
+  // folds that to 'claude-sonnet-4'; 4-5 and 4-6 match earlier in its chain.
+  'claude-sonnet-4',
+  'claude-3-7-sonnet',
+  'claude-3-5-sonnet',
+  'claude-3-5-haiku',
+])
+
+/** NOA_CLAUDE_WRITE_REQUIRE_READ forces either mode without a rebuild. */
+export function allowsWriteWithoutPriorRead(model: string | undefined): boolean {
+  if (!model) return false
+
+  const override = process.env.NOA_CLAUDE_WRITE_REQUIRE_READ
+  if (isEnvTruthy(override)) return false
+  if (isEnvDefinedFalsy(override)) return true
+
+  if (isUntrustedModelIdentity() && !trustsThirdPartyModelIdentity()) {
+    return false
+  }
+
+  return !MODELS_REQUIRING_PRE_READ.has(getCanonicalName(model))
+}
+
+/**
  * Backends whose model id doesn't reliably identify the model actually serving
  * the request keep the verbose head.
  *

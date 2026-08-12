@@ -62,7 +62,12 @@ import { getPlatform } from './platform.js'
 import { countFilesRoundedRg } from './ripgrep.js'
 import { jsonStringify } from './slowOperations.js'
 import type { SystemPrompt } from './systemPromptType.js'
-import { shouldUseCompactSystemPrompt } from '../constants/systemPromptCompact.js'
+import {
+  allowsWriteWithoutPriorRead,
+  shouldUseCompactSystemPrompt,
+} from '../constants/systemPromptCompact.js'
+import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
+import { FILE_WRITE_TOOL_NAME } from '../tools/FileWriteTool/prompt.js'
 import { getToolSchemaCache } from './toolSchemaCache.js'
 import { windowsPathToPosixPath } from './windowsPaths.js'
 import { zodToJsonSchema } from './zodToJsonSchema.js'
@@ -225,12 +230,22 @@ export async function toolToAPISchema(
   // same problem on its dynamic prompt sections.
   const lean = shouldUseCompactSystemPrompt(options.model)
   const leanSuffix = lean ? ':L' : ''
+  // Write/Edit also drop their pre-read line for models allowed to overwrite an
+  // unread file, which flips independently of the lean/verbose split.
+  const preReadSuffix =
+    (tool.name === FILE_WRITE_TOOL_NAME || tool.name === FILE_EDIT_TOOL_NAME) &&
+    allowsWriteWithoutPriorRead(options.model)
+      ? ':G'
+      : ''
   const supportsStructuredOutputs =
     options.model !== undefined && modelSupportsStructuredOutputs(options.model)
   const cacheKey =
     ('inputJSONSchema' in tool && tool.inputJSONSchema
       ? `${tool.name}:${jsonStringify(tool.inputJSONSchema)}`
-      : tool.name) + leanSuffix + (supportsStructuredOutputs ? ':X' : '')
+      : tool.name) +
+    leanSuffix +
+    preReadSuffix +
+    (supportsStructuredOutputs ? ':X' : '')
   const cache = getToolSchemaCache()
   let base = cache.get(cacheKey)
   if (!base) {

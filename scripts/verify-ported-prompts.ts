@@ -36,6 +36,7 @@ for (const key of [
   'NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT',
   'CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT',
   'NOA_CLAUDE_THIRD_PARTY_PROMPT_POLICY',
+  'NOA_CLAUDE_WRITE_REQUIRE_READ',
 ]) {
   delete process.env[key]
 }
@@ -72,6 +73,15 @@ const { LEAN_DESCRIPTION: WEB_FETCH_LEAN_DESCRIPTION } = await import(
 const LEAN_MODEL = 'claude-opus-5'
 const UNBUNDLED_MODEL = 'claude-fable-5'
 
+function withPreReadRequired(render: () => string): string {
+  process.env.NOA_CLAUDE_WRITE_REQUIRE_READ = '1'
+  try {
+    return render()
+  } finally {
+    delete process.env.NOA_CLAUDE_WRITE_REQUIRE_READ
+  }
+}
+
 /** Keep in step with PORTED_DIGESTS in leanPromptPortIntegrity.test.ts. */
 const SUBJECTS: Record<string, string> = {
   PRONOUNS_SECTION,
@@ -88,8 +98,10 @@ const SUBJECTS: Record<string, string> = {
   'TodoWrite lean': getTodoWritePrompt(LEAN_MODEL),
   'Glob lean': getGlobDescription(LEAN_MODEL),
   'Grep lean': getGrepDescription(LEAN_MODEL),
-  'Write lean': getWriteToolDescription(LEAN_MODEL),
-  'Edit lean': getEditToolDescription(LEAN_MODEL),
+  'Write lean': withPreReadRequired(() => getWriteToolDescription(LEAN_MODEL)),
+  'Edit lean': withPreReadRequired(() => getEditToolDescription(LEAN_MODEL)),
+  'Write lean (pre-read skipped)': getWriteToolDescription(LEAN_MODEL),
+  'Edit lean (pre-read skipped)': getEditToolDescription(LEAN_MODEL),
 }
 
 function findBinary(): string | null {
