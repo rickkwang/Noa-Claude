@@ -14,11 +14,18 @@ import {
   deactivateAllProviderProfiles,
 } from '../../utils/providerProfile.js';
 import { onProviderSwitch } from '../../utils/providerSwitch.js';
+import { getLoginStartingMessage, getLoginSuccessMessage, isEnvOAuthTokenSet } from './envTokenWarning.js';
 type LoginCompletion = ConsoleOAuthFlowResult | {
   type: 'cancel';
 };
 export async function call(onDone: LocalJSXCommandOnDone, context: LocalJSXCommandContext): Promise<React.ReactNode> {
-  return <Login onDone={async result => {
+  const startingMessage = getLoginStartingMessage();
+  // Snapshot bare presence, not the full predicate: applyActiveProviderProfileEnv()
+  // below drops the provider env vars, so a session that started on a third-party
+  // provider becomes one the env token decides. getLoginSuccessMessage re-checks
+  // the rest at completion time.
+  const envTokenWasSet = isEnvOAuthTokenSet();
+  return <Login startingMessage={startingMessage} onDone={async result => {
     if (result.type === 'cancel') {
       onDone('Login interrupted');
       return;
@@ -41,12 +48,14 @@ export async function call(onDone: LocalJSXCommandOnDone, context: LocalJSXComma
     }
     onProviderSwitch(context);
     if (isProviderSetup) {
+      // A 3P provider profile is now active, so the Anthropic env token is not
+      // what authenticates this session either way — no note.
       onDone(result.message, {
         display: 'system'
       });
       return;
     }
-    onDone('Login successful');
+    onDone(getLoginSuccessMessage(envTokenWasSet));
   }} />;
 }
 export function Login(props) {
