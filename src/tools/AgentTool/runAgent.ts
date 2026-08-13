@@ -269,6 +269,7 @@ export async function* runAgent({
   personalityName,
   transcriptSubdir,
   onQueryProgress,
+  reuseInitializedPromptContext,
 }: {
   agentDefinition: AgentDefinition
   promptMessages: Message[]
@@ -331,6 +332,11 @@ export async function* runAgent({
    * during long single-block streams (e.g. thinking) where no assistant
    * message is yielded for >60s. */
   onQueryProgress?: () => void
+  /** The supplied promptMessages already contain this agent's SubagentStart
+   * context and preloaded skill messages. Used only when a foreground run is
+   * continued in the background, so those dynamic messages are not injected
+   * a second time. Lifecycle hooks and MCP servers are still re-registered. */
+  reuseInitializedPromptContext?: boolean
 }): AsyncGenerator<Message, void> {
   // Track subagent usage for feature discovery
 
@@ -532,31 +538,33 @@ export async function* runAgent({
       ? new AbortController()
       : toolUseContext.abortController
 
-  // Execute SubagentStart hooks and collect additional context
-  const additionalContexts: string[] = []
-  for await (const hookResult of executeSubagentStartHooks(
-    agentId,
-    agentDefinition.agentType,
-    agentAbortController.signal,
-  )) {
-    if (
-      hookResult.additionalContexts &&
-      hookResult.additionalContexts.length > 0
-    ) {
-      additionalContexts.push(...hookResult.additionalContexts)
+  if (!reuseInitializedPromptContext) {
+    // Execute SubagentStart hooks and collect additional context
+    const additionalContexts: string[] = []
+    for await (const hookResult of executeSubagentStartHooks(
+      agentId,
+      agentDefinition.agentType,
+      agentAbortController.signal,
+    )) {
+      if (
+        hookResult.additionalContexts &&
+        hookResult.additionalContexts.length > 0
+      ) {
+        additionalContexts.push(...hookResult.additionalContexts)
+      }
     }
-  }
 
-  // Add SubagentStart hook context as a user message (consistent with SessionStart/UserPromptSubmit)
-  if (additionalContexts.length > 0) {
-    const contextMessage = createAttachmentMessage({
-      type: 'hook_additional_context',
-      content: additionalContexts,
-      hookName: 'SubagentStart',
-      toolUseID: randomUUID(),
-      hookEvent: 'SubagentStart',
-    })
-    initialMessages.push(contextMessage)
+    // Add SubagentStart hook context as a user message (consistent with SessionStart/UserPromptSubmit)
+    if (additionalContexts.length > 0) {
+      const contextMessage = createAttachmentMessage({
+        type: 'hook_additional_context',
+        content: additionalContexts,
+        hookName: 'SubagentStart',
+        toolUseID: randomUUID(),
+        hookEvent: 'SubagentStart',
+      })
+      initialMessages.push(contextMessage)
+    }
   }
 
   // Register agent's frontmatter hooks (scoped to agent lifecycle)
@@ -581,7 +589,7 @@ export async function* runAgent({
 
   // Preload skills from agent frontmatter
   const skillsToPreload = agentDefinition.skills ?? []
-  if (skillsToPreload.length > 0) {
+  if (!reuseInitializedPromptContext && skillsToPreload.length > 0) {
     const allSkills = await getSkillToolCommands(getProjectRoot())
 
     // Filter valid skills and warn about missing ones

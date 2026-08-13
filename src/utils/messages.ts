@@ -2858,6 +2858,58 @@ export function filterUnresolvedToolUses(messages: Message[]): Message[] {
   })
 }
 
+/**
+ * Build the conversation history for continuing a foreground agent that was
+ * backgrounded mid-run. The foreground iterator is closed at backgrounding
+ * time, so the background continuation must re-call runAgent — passing these
+ * messages lets it continue instead of restarting from the initial prompt
+ * (which would re-execute every tool call: doubled side effects and tokens).
+ *
+ * Returns the complete promptMessages for the continuation. Anything before
+ * the last compact boundary is dead history: autocompact
+ * yields the post-compact message set (query.ts buildPostCompactMessages), so
+ * slicing there reconstructs the context the agent was actually using.
+ * Microcompact boundaries do NOT slice — microcompact edits tool results in
+ * place without dropping history. tool_use/tool_result pairing gaps from a
+ * mid-turn background are repaired by ensureToolResultPairing at API request
+ * time (claude.ts); the filters here mirror the resume path (resumeAgent.ts)
+ * and preserve UUID identity so transcript dedup still holds.
+ */
+export function snapshotContinuationInitialMessages(
+  messages: Message[],
+): Message[] {
+  return [...messages]
+}
+
+export function buildContinuationHistory(
+  initialMessages: Message[],
+  messages: Message[],
+): Message[] {
+  const lastCompactBoundary = messages.findLastIndex(
+    m =>
+      m.type === 'system' &&
+      'subtype' in m &&
+      m.subtype === 'compact_boundary',
+  )
+  const slice = lastCompactBoundary === -1
+    ? messages
+    : messages.slice(lastCompactBoundary + 1)
+  const history = filterWhitespaceOnlyAssistantMessages(
+    filterOrphanedThinkingOnlyMessages(
+      filterUnresolvedToolUses(
+        slice.filter(m =>
+          m.type === 'assistant' ||
+          m.type === 'user' ||
+          (lastCompactBoundary !== -1 && m.type === 'attachment'),
+        ),
+      ),
+    ),
+  )
+  return lastCompactBoundary === -1
+    ? [...initialMessages, ...history]
+    : history
+}
+
 export function getAssistantMessageText(message: Message): string | null {
   if (message.type !== 'assistant') {
     return null

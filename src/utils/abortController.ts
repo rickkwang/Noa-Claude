@@ -98,3 +98,33 @@ export function createChildAbortController(
 
   return child
 }
+
+/** Creates a controller that aborts when either parent aborts. */
+export function createCombinedAbortController(
+  first: AbortController,
+  second: AbortController,
+  maxListeners?: number,
+): AbortController {
+  const combined = createAbortController(maxListeners)
+  if (first.signal.aborted) {
+    combined.abort(first.signal.reason)
+    return combined
+  }
+  if (second.signal.aborted) {
+    combined.abort(second.signal.reason)
+    return combined
+  }
+
+  const abortFrom = (source: AbortController) => () => {
+    combined.abort(source.signal.reason)
+  }
+  const abortFromFirst = abortFrom(first)
+  const abortFromSecond = abortFrom(second)
+  first.signal.addEventListener('abort', abortFromFirst, { once: true })
+  second.signal.addEventListener('abort', abortFromSecond, { once: true })
+  combined.signal.addEventListener('abort', () => {
+    first.signal.removeEventListener('abort', abortFromFirst)
+    second.signal.removeEventListener('abort', abortFromSecond)
+  }, { once: true })
+  return combined
+}

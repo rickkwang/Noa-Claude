@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import {
+  getMaxConcurrentAgents,
   getMaxSubagentsPerSession,
   getMaxWebSearchesPerSession,
   getTotalAgentSpawns,
@@ -8,12 +9,15 @@ import {
   incrementWebSearchCalls,
   resetSessionBudgets,
 } from '../../../utils/task/sessionBudget.js'
+import * as sessionBudget from '../../../utils/task/sessionBudget.js'
 
 const ENV_KEYS = [
   'NOA_CLAUDE_MAX_SUBAGENTS_PER_SESSION',
   'CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION',
   'NOA_CLAUDE_MAX_WEB_SEARCHES_PER_SESSION',
   'CLAUDE_CODE_MAX_WEB_SEARCHES_PER_SESSION',
+  'NOA_CLAUDE_MAX_CONCURRENT_AGENTS',
+  'CLAUDE_CODE_MAX_CONCURRENT_AGENTS',
 ] as const
 
 afterEach(() => {
@@ -55,7 +59,41 @@ describe('sessionBudget limits', () => {
   })
 })
 
+describe('getMaxConcurrentAgents', () => {
+  test('defaults to 20', () => {
+    expect(getMaxConcurrentAgents()).toBe(20)
+  })
+
+  test('env override with NOA_CLAUDE_* precedence and invalid fallback', () => {
+    process.env.CLAUDE_CODE_MAX_CONCURRENT_AGENTS = '8'
+    expect(getMaxConcurrentAgents()).toBe(8)
+
+    process.env.NOA_CLAUDE_MAX_CONCURRENT_AGENTS = '4'
+    expect(getMaxConcurrentAgents()).toBe(4)
+
+    process.env.NOA_CLAUDE_MAX_CONCURRENT_AGENTS = 'bogus'
+    expect(getMaxConcurrentAgents()).toBe(8)
+  })
+
+  test('zero disables the cap (caller skips the check)', () => {
+    process.env.NOA_CLAUDE_MAX_CONCURRENT_AGENTS = '0'
+    expect(getMaxConcurrentAgents()).toBe(0)
+  })
+})
+
 describe('sessionBudget counters', () => {
+  test('can roll back a rejected agent spawn reservation', () => {
+    const decrement = (
+      sessionBudget as typeof sessionBudget & {
+        decrementTotalAgentSpawns: () => void
+      }
+    ).decrementTotalAgentSpawns
+    expect(typeof decrement).toBe('function')
+    incrementTotalAgentSpawns()
+    decrement?.()
+    expect(getTotalAgentSpawns()).toBe(0)
+  })
+
   test('counters start at zero, increment independently, and reset together', () => {
     expect(getTotalAgentSpawns()).toBe(0)
     expect(getWebSearchCalls()).toBe(0)

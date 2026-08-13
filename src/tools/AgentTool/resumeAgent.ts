@@ -5,7 +5,10 @@ import { getSystemPrompt } from '../../constants/prompts.js'
 import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
 import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import type { ToolUseContext } from '../../Tool.js'
-import { registerAsyncAgent } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
+import {
+  assertCanStartBackgroundAgent,
+  registerAsyncAgent,
+} from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { assembleToolPool } from '../../tools.js'
 import { asAgentId } from '../../types/ids.js'
 import { runWithAgentContext } from '../../utils/agentContext.js'
@@ -91,6 +94,7 @@ export async function resumeAgentBackground({
 }): Promise<ResumeAgentResult> {
   const startTime = Date.now()
   const appState = toolUseContext.getAppState()
+  assertCanStartBackgroundAgent(appState.tasks)
   // In-process teammates get a no-op setAppState; setAppStateForTasks
   // reaches the root store so task registration/progress/kill stay visible.
   const rootSetAppState =
@@ -192,6 +196,10 @@ export async function resumeAgentBackground({
     ? toolUseContext.options.tools
     : assembleToolPool(workerPermissionContext, appState.mcp.tools)
 
+  // Transcript/system-prompt reconstruction can await; recheck immediately
+  // before allocating personality or a running background task.
+  assertCanStartBackgroundAgent(toolUseContext.getAppState().tasks)
+
   // Recreate the display-only personality mapping when resuming in a fresh
   // process, restoring the persisted name when available. Gate on
   // isBuiltInAgent so a user-defined agent shadowing "Explore"/"Plan" keeps
@@ -241,6 +249,7 @@ export async function resumeAgentBackground({
     personalityName,
     prompt,
     selectedAgent,
+    getAppState: toolUseContext.getAppState,
     setAppState: rootSetAppState,
     toolUseId: toolUseContext.toolUseId,
   })

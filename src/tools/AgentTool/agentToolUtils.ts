@@ -522,6 +522,7 @@ export async function runAsyncAgentLifecycle({
   agentIdForCleanup,
   enableSummarization,
   getWorktreeResult,
+  seedMessages,
 }: {
   taskId: string
   abortController: AbortController
@@ -538,6 +539,10 @@ export async function runAsyncAgentLifecycle({
     worktreePath?: string
     worktreeBranch?: string
   }>
+  /** Messages already produced by a prior foreground run of this agent
+   * (sync→background transition). Seeded into the result/progress tracking so
+   * finalizeAgentTool and partial-result extraction see the full conversation. */
+  seedMessages?: MessageType[]
 }): Promise<void> {
   let stopSummarization: (() => void) | undefined
   const agentMessages: MessageType[] = []
@@ -570,6 +575,17 @@ export async function runAsyncAgentLifecycle({
     const resolveActivity = createActivityDescriptionResolver(
       toolUseContext.options.tools,
     )
+    if (seedMessages?.length) {
+      agentMessages.push(...seedMessages)
+      for (const seed of seedMessages) {
+        updateProgressFromMessage(
+          tracker,
+          seed,
+          resolveActivity,
+          toolUseContext.options.tools,
+        )
+      }
+    }
     const onCacheSafeParams = enableSummarization
       ? (params: CacheSafeParams) => {
           const { stop } = startAgentSummarization(

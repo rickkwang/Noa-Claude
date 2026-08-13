@@ -13,6 +13,7 @@
 
 const DEFAULT_MAX_SUBAGENTS_PER_SESSION = 200
 const DEFAULT_MAX_WEB_SEARCHES_PER_SESSION = 200
+const DEFAULT_MAX_CONCURRENT_AGENTS = 20
 
 let totalAgentSpawns = 0
 let webSearchCalls = 0
@@ -40,12 +41,31 @@ export function getMaxWebSearchesPerSession(): number {
   )
 }
 
+/**
+ * Cap on simultaneously RUNNING background agents (distinct from the
+ * cumulative spawn budget above — that one bounds total spawns, this one
+ * bounds pile-up). Each running agent holds an API stream plus possibly MCP
+ * connections, and there is no API-layer semaphore, so unbounded background
+ * spawns translate directly into rate-limit pressure. Set to 0 to disable.
+ */
+export function getMaxConcurrentAgents(): number {
+  return (
+    parseLimit(process.env.NOA_CLAUDE_MAX_CONCURRENT_AGENTS) ??
+    parseLimit(process.env.CLAUDE_CODE_MAX_CONCURRENT_AGENTS) ??
+    DEFAULT_MAX_CONCURRENT_AGENTS
+  )
+}
+
 export function getTotalAgentSpawns(): number {
   return totalAgentSpawns
 }
 
 export function incrementTotalAgentSpawns(): void {
   totalAgentSpawns++
+}
+
+export function decrementTotalAgentSpawns(): void {
+  totalAgentSpawns = Math.max(0, totalAgentSpawns - 1)
 }
 
 export function getWebSearchCalls(): number {

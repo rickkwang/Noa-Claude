@@ -19,6 +19,7 @@ import { enqueuePendingNotification } from '../../utils/messageQueueManager.js';
 import { getAgentTranscriptPath } from '../../utils/sessionStorage.js';
 import { evictTaskOutput, getTaskOutputPath, initTaskOutputAsSymlink } from '../../utils/task/diskOutput.js';
 import { PANEL_GRACE_MS, registerTask, updateTaskState } from '../../utils/task/framework.js';
+import { getMaxConcurrentAgents } from '../../utils/task/sessionBudget.js';
 import { emitTaskProgress } from '../../utils/task/sdkProgress.js';
 import type { TaskState } from '../types.js';
 export type ToolActivity = {
@@ -161,6 +162,25 @@ export function isLocalAgentTask(task: unknown): task is LocalAgentTaskState {
 export function isPanelAgentTask(t: unknown): t is LocalAgentTaskState {
   return isLocalAgentTask(t) && t.agentType !== 'main-session';
 }
+
+export function assertCanStartBackgroundAgent(tasks: AppState['tasks']): void {
+  const maxConcurrent = getMaxConcurrentAgents();
+  if (maxConcurrent === 0) return;
+  const runningAgents = Object.values(tasks).filter(t => isPanelAgentTask(t) && t.status === 'running' && t.isBackgrounded).length;
+  if (runningAgents >= maxConcurrent) {
+    throw new Error(`Concurrent background agent limit reached (${runningAgents} of ${maxConcurrent} running). Wait for a running agent to complete, use run_in_background=false, or ask the user to raise NOA_CLAUDE_MAX_CONCURRENT_AGENTS.`);
+  }
+}
+
+function hasBackgroundAgentCapacity(tasks: AppState['tasks']): boolean {
+  try {
+    assertCanStartBackgroundAgent(tasks);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function queuePendingMessage(taskId: string, msg: string, setAppState: (f: (prev: AppState) => AppState) => void): void {
   updateTaskState<LocalAgentTaskState>(taskId, setAppState, task => ({
     ...task,
@@ -474,6 +494,7 @@ export function registerAsyncAgent({
   personalityName,
   prompt,
   selectedAgent,
+  getAppState,
   setAppState,
   parentAbortController,
   toolUseId
@@ -483,10 +504,12 @@ export function registerAsyncAgent({
   personalityName?: string;
   prompt: string;
   selectedAgent: AgentDefinition;
+  getAppState: () => AppState;
   setAppState: SetAppState;
   parentAbortController?: AbortController;
   toolUseId?: string;
 }): LocalAgentTaskState {
+  assertCanStartBackgroundAgent(getAppState().tasks);
   void initTaskOutputAsSymlink(agentId, getAgentTranscriptPath(asAgentId(agentId)));
 
   // Create abort controller - if parent provided, create child that auto-aborts with parent
@@ -593,11 +616,13 @@ export function registerAgentForeground({
   if (autoBackgroundMs !== undefined && autoBackgroundMs > 0) {
     const timer = setTimeout((setAppState, agentId) => {
       // Mark task as backgrounded and resolve the signal
+      let didBackground = false;
       setAppState(prev => {
         const prevTask = prev.tasks[agentId];
-        if (!isLocalAgentTask(prevTask) || prevTask.isBackgrounded) {
+        if (!isLocalAgentTask(prevTask) || prevTask.isBackgrounded || !hasBackgroundAgentCapacity(prev.tasks)) {
           return prev;
         }
+        didBackground = true;
         return {
           ...prev,
           tasks: {
@@ -609,6 +634,7 @@ export function registerAgentForeground({
           }
         };
       });
+      if (!didBackground) return;
       const resolver = backgroundSignalResolvers.get(agentId);
       if (resolver) {
         resolver();
@@ -631,7 +657,7 @@ export function registerAgentForeground({
 export function backgroundAgentTask(taskId: string, getAppState: () => AppState, setAppState: SetAppState): boolean {
   const state = getAppState();
   const task = state.tasks[taskId];
-  if (!isLocalAgentTask(task) || task.isBackgrounded) {
+  if (!isLocalAgentTask(task) || task.isBackgrounded || !hasBackgroundAgentCapacity(state.tasks)) {
     return false;
   }
 
