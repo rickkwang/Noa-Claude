@@ -65,8 +65,10 @@ export type IdpLoginOptions = {
   /**
    * Fixed callback port. If omitted, a random port is chosen.
    * Use this when the IdP client is pre-registered with a specific loopback
-   * redirect URI (RFC 8252 §7.3 says IdPs SHOULD accept any port for
-   * http://localhost, but many don't).
+   * redirect URI (RFC 8252 §7.3 says IdPs MUST accept any port for loopback
+   * IP redirect URIs, but many don't — and for `http://localhost` there is no
+   * such obligation at all). If that pre-registered URI uses the IP literal
+   * rather than `localhost`, also set MCP_OAUTH_REDIRECT_HOST=127.0.0.1.
    */
   callbackPort?: number
   /** Called with the authorization URL before (or instead of) opening the browser */

@@ -1064,7 +1064,7 @@ export async function performMCPOAuthFlow(
       }
 
       // Allow manual callback URL paste for remote/browser-based environments
-      // where localhost is not reachable from the user's browser.
+      // where the loopback callback is not reachable from the user's browser.
       if (options?.onWaitingForCallback) {
         options.onWaitingForCallback((callbackUrl: string) => {
           try {
@@ -1429,6 +1429,9 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
   get clientMetadata(): OAuthClientMetadata {
     const metadata: OAuthClientMetadata = {
       client_name: `Noa Claude (${this.serverName})`,
+      // Only the host we actually advertise — a server strict enough to need
+      // MCP_OAUTH_REDIRECT_HOST may well reject a registration that also lists
+      // `localhost`, which would turn an opt-in fix into a worse failure.
       redirect_uris: [this.redirectUri],
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
