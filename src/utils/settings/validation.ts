@@ -264,3 +264,93 @@ export function filterInvalidPermissionRules(
   }
   return warnings
 }
+
+/**
+ * Any unbracketed entry with two or more colons is an ambiguous IPv6
+ * spelling: sandbox-runtime's matcher treats it as a single address and
+ * never splits a port (see splitDomainPatternPort in sandbox-runtime), so
+ * "::1:443" means the address "::1:443", not "::1" port 443 — the entry
+ * silently never matches what the user meant. The runtime's config schema
+ * also rejects such entries outright (see hasValidIpv6Bracketing), which
+ * matters for config validated on the srt CLI path.
+ *
+ * Warn rather than drop — dropping a deny entry would fail open.
+ */
+function hasUnbracketedIpv6Literal(value: string): boolean {
+  if (value.startsWith('[')) return false
+  const firstColon = value.indexOf(':')
+  return firstColon !== -1 && value.indexOf(':', firstColon + 1) !== -1
+}
+
+function ambiguousDomainWarning(
+  domain: string,
+  filePath: string,
+  path: FieldPath,
+): ValidationError {
+  return {
+    file: filePath,
+    path,
+    message: `Unbracketed IPv6 literal "${domain}" is read as a single address with no port split, so it may never match`,
+    invalidValue: domain,
+    suggestion:
+      'Bracket the address to be explicit, e.g. "[::1]" or "[2001:db8::1]:443".',
+  }
+}
+
+/**
+ * Flag ambiguous IPv6 spellings in the sandbox network domain lists, both in
+ * `sandbox.network.allowedDomains` and in `WebFetch(domain:...)` rules.
+ *
+ * Diagnostic only: nothing is removed or rewritten.
+ */
+export function collectAmbiguousDomainWarnings(
+  data: unknown,
+  filePath: string,
+): ValidationError[] {
+  if (!data || typeof data !== 'object') return []
+  const obj = data as Record<string, unknown>
+  const warnings: ValidationError[] = []
+
+  const permissions = obj.permissions
+  if (permissions && typeof permissions === 'object') {
+    const perms = permissions as Record<string, unknown>
+    for (const key of ['allow', 'deny', 'ask']) {
+      const rules = perms[key]
+      if (!Array.isArray(rules)) continue
+      for (const rule of rules) {
+        if (typeof rule !== 'string') continue
+        const domain = rule.match(/^WebFetch\(domain:(.+)\)$/)?.[1]
+        if (domain && hasUnbracketedIpv6Literal(domain)) {
+          warnings.push(
+            ambiguousDomainWarning(domain, filePath, `permissions.${key}`),
+          )
+        }
+      }
+    }
+  }
+
+  const sandbox = obj.sandbox
+  const network =
+    sandbox && typeof sandbox === 'object'
+      ? (sandbox as Record<string, unknown>).network
+      : undefined
+  const allowedDomains =
+    network && typeof network === 'object'
+      ? (network as Record<string, unknown>).allowedDomains
+      : undefined
+  if (Array.isArray(allowedDomains)) {
+    for (const domain of allowedDomains) {
+      if (typeof domain === 'string' && hasUnbracketedIpv6Literal(domain)) {
+        warnings.push(
+          ambiguousDomainWarning(
+            domain,
+            filePath,
+            'sandbox.network.allowedDomains',
+          ),
+        )
+      }
+    }
+  }
+
+  return warnings
+}

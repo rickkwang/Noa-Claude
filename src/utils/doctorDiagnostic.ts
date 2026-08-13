@@ -35,6 +35,7 @@ import { getPlatform } from './platform.js'
 import { getRipgrepStatus } from './ripgrep.js'
 import {
   SandboxManager,
+  getAmbiguousDomainWarnings,
   getSandboxRuntimeCompatibility,
 } from './sandbox/sandbox-adapter.js'
 import { getManagedFilePath } from './settings/managedPath.js'
@@ -555,6 +556,22 @@ export function detectLinuxGlobPatternWarnings(): Array<{
   return warnings
 }
 
+/**
+ * Report unbracketed IPv6 spellings in the sandbox network domain lists. The
+ * sandbox matcher reads such entries as a single address and never splits a
+ * port, so they can silently never match — advisory-but-actionable rather
+ * than an error.
+ */
+export function detectAmbiguousDomainWarnings(): Array<{
+  issue: string
+  fix: string
+}> {
+  return getAmbiguousDomainWarnings().map(warning => ({
+    issue: `Unbracketed IPv6 literal "${String(warning.invalidValue)}" in ${warning.path} (${warning.file})`,
+    fix: `The sandbox reads it as a single address and never splits a port, so it may never match. ${warning.suggestion ?? ''}`.trim(),
+  }))
+}
+
 export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
   const installationType = await getCurrentInstallationType()
   const version =
@@ -581,6 +598,9 @@ export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
 
   // Add glob pattern warnings for Linux sandboxing
   warnings.push(...detectLinuxGlobPatternWarnings())
+
+  // Add ambiguous IPv6 spellings in sandbox network domain lists
+  warnings.push(...detectAmbiguousDomainWarnings())
 
   // Add warnings for leftover npm installations when running native
   if (installationType === 'native') {

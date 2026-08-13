@@ -26,6 +26,7 @@ import { readFile } from 'fs/promises'
 import { memoize } from 'lodash-es'
 import { createRequire } from 'module'
 import { join, resolve, sep } from 'path'
+import { stripVTControlCharacters } from 'util'
 import {
   getAdditionalDirectoriesForClaudeMd,
   getCwdState,
@@ -50,6 +51,8 @@ import {
   updateSettingsForSource,
 } from '../settings/settings.js'
 import type { SettingsJson } from '../settings/types.js'
+import { collectAmbiguousDomainWarnings } from '../settings/validation.js'
+import type { ValidationError } from '../settings/validation.js'
 
 // ============================================================================
 // Settings Converter
@@ -84,6 +87,57 @@ function permissionRuleValueFromString(
 function permissionRuleExtractPrefix(permissionRule: string): string | null {
   const match = permissionRule.match(/^(.+):\*$/)
   return match?.[1] ?? null
+}
+
+/**
+ * Format a host for a `WebFetch(domain:...)` rule, bracketing IPv6 literals.
+ *
+ * Keeps the sandbox approval path consistent with the WebFetch tool path,
+ * which derives rule content from `URL.hostname` and so already brackets
+ * (`[fd00::1]`), and with sandbox-runtime's bracket-aware pattern parser.
+ */
+export function formatDomainRuleHost(host: string | undefined): string {
+  if (!host || !host.includes(':') || host.startsWith('[')) return host ?? ''
+  return `[${host}]`
+}
+
+/**
+ * Ambiguous IPv6 entries across the settings cascade, for the /sandbox panel.
+ *
+ * `/sandbox` is where this fork sends users for sandbox config problems —
+ * the agentic /doctor puts sandbox state out of scope (see Check 0 in
+ * doctorPrompt.ts) — so the same finding surfaces here as well as in the
+ * `noa doctor` screen.
+ */
+export function getAmbiguousDomainEntries(): string[] {
+  const entries = new Set<string>()
+  for (const warning of getAmbiguousDomainWarnings()) {
+    entries.add(String(warning.invalidValue))
+  }
+  return [...entries]
+}
+
+/**
+ * The shared source for both surfaces, so the `noa doctor` screen and the
+ * `/sandbox` panel never disagree.
+ *
+ * invalidValue is settings-file bytes rendered into a terminal — strip VT
+ * control characters here so neither surface has to remember to.
+ */
+export function getAmbiguousDomainWarnings(): ValidationError[] {
+  const warnings: ValidationError[] = []
+  for (const source of SETTING_SOURCES) {
+    const settings = getSettingsForSource(source)
+    if (!settings) continue
+    const filePath = getSettingsFilePathForSource(source) ?? source
+    warnings.push(...collectAmbiguousDomainWarnings(settings, filePath))
+  }
+  for (const warning of warnings) {
+    if (typeof warning.invalidValue === 'string') {
+      warning.invalidValue = stripVTControlCharacters(warning.invalidValue)
+    }
+  }
+  return warnings
 }
 
 /**
