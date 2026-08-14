@@ -9,6 +9,7 @@ import { queryHaiku } from '../../services/api/claude.js'
 import { AbortError } from '../../utils/errors.js'
 import { getWebFetchUserAgent } from '../../utils/http.js'
 import { logError } from '../../utils/log.js'
+import { isLocalOrPrivateUrl } from '../../utils/ssrf.js'
 import {
   isBinaryContentType,
   persistBinaryContent,
@@ -163,6 +164,22 @@ export function validateURL(url: string): boolean {
   const hostname = parsed.hostname
   const parts = hostname.split('.')
   if (parts.length < 2) {
+    return false
+  }
+
+  // The hostname-shape check above passes any literal IP (169.254.169.254,
+  // 10.0.0.1, 127.0.0.1 all split into >= 2 parts), so reject addresses in
+  // local/private ranges here. The domain blocklist preflight in
+  // getURLMarkdownContent would normally catch these, but it costs a network
+  // round-trip and users can disable it via settings.skipWebFetchPreflight —
+  // this check still holds then.
+  //
+  // Scope: literal IPs, localhost variants and .local only. This is a purely
+  // synchronous string/IP check — a hostname that *resolves* into a private
+  // range (internal DNS, DNS rebinding) is NOT caught here, and WebFetch does
+  // not route its lookups through ssrfGuardedLookup. Closing that gap needs a
+  // resolve-then-validate step, not a wider check in this function.
+  if (isLocalOrPrivateUrl(url)) {
     return false
   }
 
@@ -350,6 +367,13 @@ export async function getURLMarkdownContent(
   abortController: AbortController,
 ): Promise<FetchedContent | RedirectInfo> {
   if (!validateURL(url)) {
+    // Distinguish the two rejection reasons: a malformed URL is worth
+    // retrying with a corrected one, a private-range address is not.
+    if (isLocalOrPrivateUrl(url)) {
+      throw new Error(
+        'URL blocked: points to a local or private network address',
+      )
+    }
     throw new Error('Invalid URL')
   }
 
