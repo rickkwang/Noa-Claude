@@ -65,6 +65,7 @@ type Props = {
   tmuxSelected: boolean;
   teammateFooterIndex?: number;
   isPasting?: boolean;
+  isPasteExpandable?: boolean;
   isSearching: boolean;
   historyQuery: string;
   setHistoryQuery: (query: string) => void;
@@ -139,6 +140,7 @@ export function PromptInputFooterLeftSide(t0) {
     tmuxSelected,
     teammateFooterIndex,
     isPasting,
+    isPasteExpandable,
     isSearching,
     historyQuery,
     setHistoryQuery,
@@ -166,6 +168,9 @@ export function PromptInputFooterLeftSide(t0) {
       t1 = $[2];
     }
     return t1;
+  }
+  if (isPasteExpandable && !isSearching) {
+    return <Text dimColor={true} key="expand-paste-hint">paste again to expand</Text>;
   }
   let t1;
   if ($[3] !== isSearching || $[4] !== vimMode) {

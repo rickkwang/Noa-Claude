@@ -29,6 +29,11 @@ type SupportedPlatform = 'darwin' | 'linux' | 'win32'
 
 // Threshold in characters for when to consider text a "large paste"
 export const PASTE_THRESHOLD = 800
+
+// Maximum size of a collapsed paste that can be re-expanded inline via
+// "paste again to expand" (upstream parity: 1e5). Larger pastes stay
+// collapsed so an expansion can't blow up the input layout.
+export const PASTE_EXPAND_MAX_CHARS = 100_000
 function getClipboardCommands() {
   const platform = process.platform as SupportedPlatform
 
@@ -204,8 +209,9 @@ export async function getImageFromClipboard(): Promise<ImageWithDimensions | nul
       return null
     }
 
-    // Read the image and convert to base64
-    let imageBuffer = getFsImplementation().readFileBytesSync(screenshotPath)
+    // Read the image and convert to base64. Async read: a multi-MB clipboard
+    // PNG read synchronously here would stall the TUI event loop.
+    let imageBuffer = await getFsImplementation().readFileBytes(screenshotPath)
 
     // BMP is not supported by the API — convert to PNG via Sharp.
     // This handles WSL2 where Windows copies images as BMP by default.
@@ -364,14 +370,15 @@ export async function tryReadImageFromPath(
 
   try {
     if (isAbsolute(imagePath)) {
-      imageBuffer = getFsImplementation().readFileBytesSync(imagePath)
+      // Async read: large dragged-in images must not block the event loop.
+      imageBuffer = await getFsImplementation().readFileBytes(imagePath)
     } else {
       // VSCode Terminal just grabs the text content which is the filename
       // instead of getting the full path of the file pasted with cmd-v. So
       // we check if it matches the filename of the image in the clipboard.
       const clipboardPath = await getImagePathFromClipboard()
       if (clipboardPath && imagePath === basename(clipboardPath)) {
-        imageBuffer = getFsImplementation().readFileBytesSync(clipboardPath)
+        imageBuffer = await getFsImplementation().readFileBytes(clipboardPath)
       }
     }
   } catch (e) {

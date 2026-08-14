@@ -66,7 +66,7 @@ import { isBilledAsExtraUsage } from '../../utils/extraUsage.js';
 import { getFastModeUnavailableReason, isFastModeAvailable, isFastModeCooldown, isFastModeEnabled, isFastModeSupportedByModel } from '../../utils/fastMode.js';
 import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js';
 import type { PromptInputHelpers } from '../../utils/handlePromptSubmit.js';
-import { getImageFromClipboard, PASTE_THRESHOLD } from '../../utils/imagePaste.js';
+import { getImageFromClipboard, PASTE_EXPAND_MAX_CHARS, PASTE_THRESHOLD } from '../../utils/imagePaste.js';
 import type { ImageDimensions } from '../../utils/imageResizer.js';
 import { cacheImagePath, storeImage } from '../../utils/imageStore.js';
 import { isMacosOptionChar, MACOS_OPTION_SPECIAL_CHARS } from '../../utils/keyboardShortcuts.js';
@@ -411,6 +411,9 @@ function PromptInput({
     }
   }, [coordinatorTaskCount, coordinatorTaskIndex, minCoordinatorIndex]);
   const [isPasting, setIsPasting] = useState(false);
+  // ID of the most recent collapsed paste eligible for "paste again to
+  // expand" (null when none). Mirrors upstream's expand-on-repaste state.
+  const [expandablePasteId, setExpandablePasteId] = useState<number | null>(null);
   const [isExternalEditorActive, setIsExternalEditorActive] = useState(false);
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showQuickOpen, setShowQuickOpen] = useState(false);
@@ -591,6 +594,13 @@ function PromptInput({
     start: r.index,
     end: r.index + r.match.length
   })), [displayedValue]);
+
+  // "paste again to expand" hint: only when the armed placeholder is still
+  // present in the input (upstream also gates on a non-empty input).
+  const showExpandPasteHint = useMemo(() =>
+    expandablePasteId !== null &&
+    parseReferences(input).some(r => r.id === expandablePasteId),
+  [expandablePasteId, input]);
 
   // chip.start is the "selected" state: the inverted chip IS the cursor.
   // chip.end stays a normal position so you can park the cursor right after
@@ -1224,6 +1234,31 @@ function PromptInput({
     // Clean up pasted text - strip ANSI escape codes and normalize line endings and tabs
     let text = stripAnsi(rawText).replace(/\r\n?/g, '\n').replaceAll('\t', '    ');
 
+    // Paste-again-to-expand (upstream parity): when the pasted text exactly
+    // reproduces the most recent collapsed paste, splice its full content
+    // into the placeholder instead of stacking a second placeholder.
+    if (expandablePasteId !== null) {
+      const armed = pastedContentsRef.current[expandablePasteId];
+      if (armed?.type === 'text' && armed.content === text) {
+        const ref = parseReferences(lastInternalInputRef.current).find(r => r.id === expandablePasteId);
+        if (ref) {
+          const curInput = lastInternalInputRef.current;
+          pushToBuffer(curInput, cursorOffsetRef.current, pastedContentsRef.current);
+          const newInput = curInput.slice(0, ref.index) + text + curInput.slice(ref.index + ref.match.length);
+          const newCursor = ref.index + text.length;
+          cursorOffsetRef.current = newCursor;
+          trackAndSetInput(newInput);
+          setCursorOffset(newCursor);
+          const nextPasted = { ...pastedContentsRef.current };
+          delete nextPasted[expandablePasteId];
+          pastedContentsRef.current = nextPasted;
+          setPastedContents(nextPasted);
+          setExpandablePasteId(null);
+          return;
+        }
+      }
+    }
+
     // Match typed/auto-suggest: `!cmd` pasted into empty input enters bash mode.
     if (input.length === 0) {
       const pastedMode = getModeFromInput(text);
@@ -1254,6 +1289,9 @@ function PromptInput({
         [pasteId]: newContent
       }));
       insertTextAtCursor(formatPastedTextRef(pasteId, numLines));
+      // Arm expand-on-repaste, size-capped so an expansion can't blow up
+      // the input layout (upstream cap: 100k chars).
+      setExpandablePasteId(text.length <= PASTE_EXPAND_MAX_CHARS ? pasteId : null);
     } else {
       // For shorter pastes, just insert the text normally
       insertTextAtCursor(text);
@@ -2286,7 +2324,7 @@ function PromptInput({
             {textInputElement}
           </Box>
         </Box>}
-      <PromptInputFooter apiKeyStatus={apiKeyStatus} debug={debug} exitMessage={exitMessage} vimMode={isVimModeEnabled() ? vimMode : undefined} mode={mode} autoUpdaterResult={autoUpdaterResult} isAutoUpdating={isAutoUpdating} verbose={verbose} onAutoUpdaterResult={onAutoUpdaterResult} onChangeIsUpdating={setIsAutoUpdating} suggestions={suggestions} selectedSuggestion={selectedSuggestion} maxColumnWidth={maxColumnWidth} onSuggestionSelect={applySuggestionAtIndex} toolPermissionContext={effectiveToolPermissionContext} helpOpen={helpOpen} suppressHint={input.length > 0} isLoading={isLoading} tasksSelected={tasksSelected} teamsSelected={teamsSelected} bridgeSelected={bridgeSelected} tmuxSelected={tmuxSelected} teammateFooterIndex={teammateFooterIndex} ideSelection={ideSelection} mcpClients={mcpClients} isPasting={isPasting} isInputWrapped={isInputWrapped} messages={messages} isSearching={isSearchingHistory} historyQuery={historyQuery} setHistoryQuery={setHistoryQuery} historyMatchTimestamp={historyMatchTimestamp} historyFailedMatch={historyFailedMatch} onOpenTasksDialog={isFullscreenEnvEnabled() ? handleOpenTasksDialog : undefined} />
+      <PromptInputFooter apiKeyStatus={apiKeyStatus} debug={debug} exitMessage={exitMessage} vimMode={isVimModeEnabled() ? vimMode : undefined} mode={mode} autoUpdaterResult={autoUpdaterResult} isAutoUpdating={isAutoUpdating} verbose={verbose} onAutoUpdaterResult={onAutoUpdaterResult} onChangeIsUpdating={setIsAutoUpdating} suggestions={suggestions} selectedSuggestion={selectedSuggestion} maxColumnWidth={maxColumnWidth} onSuggestionSelect={applySuggestionAtIndex} toolPermissionContext={effectiveToolPermissionContext} helpOpen={helpOpen} suppressHint={input.length > 0} isLoading={isLoading} tasksSelected={tasksSelected} teamsSelected={teamsSelected} bridgeSelected={bridgeSelected} tmuxSelected={tmuxSelected} teammateFooterIndex={teammateFooterIndex} ideSelection={ideSelection} mcpClients={mcpClients} isPasting={isPasting} isPasteExpandable={showExpandPasteHint} isInputWrapped={isInputWrapped} messages={messages} isSearching={isSearchingHistory} historyQuery={historyQuery} setHistoryQuery={setHistoryQuery} historyMatchTimestamp={historyMatchTimestamp} historyFailedMatch={historyFailedMatch} onOpenTasksDialog={isFullscreenEnvEnabled() ? handleOpenTasksDialog : undefined} />
       {isFullscreenEnvEnabled() ? null : autoModeOptInDialog}
       {isFullscreenEnvEnabled() ?
     // position=absolute takes zero layout height so the spinner
