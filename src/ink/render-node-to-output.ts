@@ -58,16 +58,6 @@ let scrollHint: ScrollHint | null = null
 let absoluteRectsPrev: Rectangle[] = []
 let absoluteRectsCur: Rectangle[] = []
 
-// True when ink.tsx will paint a selection/search overlay onto this frame.
-// Only the ScrollBox row blit consults it: that path shifts whole rows of
-// the previous screen, which would drag a highlight along with them. Set
-// per-frame by renderer.ts before the tree walk. (Upstream overlayActive.)
-let overlayActive = false
-
-export function setOverlayActive(active: boolean): void {
-  overlayActive = active
-}
-
 export function resetScrollHint(): void {
   scrollHint = null
   absoluteRectsPrev = absoluteRectsCur
@@ -920,16 +910,12 @@ function renderNodeToOutput(
             !hint ||
             heightDelta === 0 ||
             (hint.delta > 0 && heightDelta === hint.delta)
-          // The blit needs a clean previous screen, a shift the full path
-          // will agree with, and no overlay to smear across the region.
-          const canBlit = !!prevScreen && safeForFastPath && !overlayActive
-          // scrollHint is set above when hint is captured. Whenever the blit
-          // is skipped, the full path renders a next.screen that doesn't
-          // match the DECSTBM shift — emitting DECSTBM would leave stale rows
-          // (seen as content bleeding through during scroll-up + streaming).
-          // Clear it so log-update falls back to writing the shifted rows.
-          if (hint && !canBlit) scrollHint = null
-          if (hint && canBlit) {
+          // scrollHint is set above when hint is captured. If safeForFastPath
+          // is false the full path renders a next.screen that doesn't match
+          // the DECSTBM shift — emitting DECSTBM leaves stale rows (seen as
+          // content bleeding through during scroll-up + streaming). Clear it.
+          if (!safeForFastPath) scrollHint = null
+          if (hint && prevScreen && safeForFastPath) {
             const { top, bottom, delta } = hint
             const w = Math.floor(width)
             output.blit(prevScreen, Math.floor(x), top, w, bottom - top + 1)

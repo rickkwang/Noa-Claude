@@ -162,10 +162,6 @@ export default class Ink {
   // one full-render frame; steady-state frames after clear it and regain
   // the blit + narrow-damage fast path.
   private prevFrameContaminated = false;
-  // Overlay coordinates as of the last render. A changed signature means
-  // the highlight moved, so last frame's buffer is no longer a valid blit
-  // source; an unchanged one means it is. (Upstream prevOverlaySig.)
-  private prevOverlaySig = '';
   // Set by handleResize: prepend ERASE_SCREEN to the next onRender's patches
   // INSIDE the BSU/ESU block so clear+paint is atomic. Writing ERASE_SCREEN
   // synchronously in handleResize would leave the screen blank for the ~80ms
@@ -446,29 +442,6 @@ export default class Ink {
     const renderStart = performance.now();
     const terminalWidth = this.options.stdout.columns || 80;
     const terminalRows = this.options.stdout.rows || 24;
-    // Overlay bookkeeping, split the way upstream splits it — the two
-    // questions are NOT the same and conflating them is a perf trap:
-    //
-    //   overlayDirty  "is last frame's buffer unusable as a blit source?"
-    //                 True only when something poisoned it (forceRedraw,
-    //                 resize, stderr write) OR the overlay MOVED since the
-    //                 last frame. A stationary highlight leaves the buffer
-    //                 blittable — its cells are identical to what we'd
-    //                 paint again.
-    //   overlayActive "is an overlay on screen right now?" Gates only the
-    //                 ScrollBox blit, which shifts rows wholesale and would
-    //                 smear a highlight across the region.
-    //
-    // Deriving overlayDirty from mere overlay PRESENCE (the old
-    // `prevFrameContaminated = selActive || hlActive`) makes renderer.ts
-    // drop prevScreen on every frame a highlight is visible, which disables
-    // every blit/cache fast path in the tree — the whole viewport
-    // re-renders each frame, spinner ticks and stream frames included.
-    const sel = this.selection;
-    const overlaySig = `${sel.anchor?.row},${sel.anchor?.col},${sel.focus?.row},${sel.focus?.col}|${this.searchHighlightQuery}|${this.searchPositions?.currentIdx},${this.searchPositions?.rowOffset},${this.searchPositions?.positions.length}`;
-    const overlayDirty = this.prevFrameContaminated || overlaySig !== this.prevOverlaySig;
-    this.prevOverlaySig = overlaySig;
-    const overlayActive = hasSelection(sel) || !!this.searchHighlightQuery || !!this.searchPositions;
     const frame = this.renderer({
       frontFrame: this.frontFrame,
       backFrame: this.backFrame,
@@ -476,8 +449,7 @@ export default class Ink {
       terminalWidth,
       terminalRows,
       altScreen: this.altScreenActive,
-      prevFrameContaminated: overlayDirty,
-      overlayActive
+      prevFrameContaminated: this.prevFrameContaminated
     });
     const rendererMs = performance.now() - renderStart;
 
@@ -588,8 +560,8 @@ export default class Ink {
     // Layout shifts (spinner appears, status line resizes) can leave stale
     // cells at sibling boundaries that per-node damage tracking misses.
     // Selection/highlight overlays write via setCellStyleId which doesn't
-    // track damage. overlayDirty covers the cleanup frame.
-    if (didLayoutShift() || selActive || hlActive || overlayDirty) {
+    // track damage. prevFrameContaminated covers the cleanup frame.
+    if (didLayoutShift() || selActive || hlActive || this.prevFrameContaminated) {
       frame.screen.damage = {
         x: 0,
         y: 0,
@@ -769,15 +741,11 @@ export default class Ink {
     writeDiffToTerminal(this.terminal, optimized, this.altScreenActive && !SYNC_OUTPUT_SUPPORTED);
     const writeMs = performance.now() - tWrite;
 
-    // The poison flag is one-shot: it means "something outside the normal
-    // render path invalidated the buffer" (forceRedraw, resize, SIGCONT,
-    // stderr write), and this frame has now repainted past it. An overlay
-    // being present is NOT poison — a stationary highlight paints the same
-    // cells next frame, so the buffer stays a valid blit source. Movement
-    // is caught by the overlaySig comparison above, and the one place that
-    // genuinely cannot cope with a highlight (the ScrollBox row blit) is
-    // gated on overlayActive instead. (Upstream sets this false here too.)
-    this.prevFrameContaminated = false;
+    // Update blit safety for the NEXT frame. The frame just rendered
+    // becomes frontFrame (= next frame's prevScreen). If we applied the
+    // selection overlay, that buffer has inverted cells. selActive/hlActive
+    // are only ever true in alt-screen; in main-screen this is false→false.
+    this.prevFrameContaminated = selActive || hlActive;
 
     // A ScrollBox has pendingScrollDelta left to drain — schedule the next
     // frame. MUST NOT call this.scheduleRender() here: we're inside a
