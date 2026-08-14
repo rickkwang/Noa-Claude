@@ -10,6 +10,7 @@ import renderNodeToOutput, {
   resetLayoutShifted,
   resetScrollDrainNode,
   resetScrollHint,
+  setOverlayActive,
 } from './render-node-to-output.js'
 import { createScreen, type StylePool } from './screen.js'
 
@@ -25,6 +26,11 @@ export type RenderOptions = {
   // or reset to 0×0 (forceRedraw). Blitting from such a prevScreen would
   // copy stale inverted cells, blanks, or nothing. When false, blit is safe.
   prevFrameContaminated: boolean
+  // True when a selection/search overlay is on screen this frame. Unlike
+  // prevFrameContaminated this does NOT drop prevScreen — it only disables
+  // the ScrollBox row blit, which shifts whole rows and would smear the
+  // highlight. Every other blit/cache fast path stays available.
+  overlayActive: boolean
 }
 
 export type Renderer = (options: RenderOptions) => Frame
@@ -128,6 +134,7 @@ export default function createRenderer(
     // node's pixels. hasRemovedChild only shields direct siblings.
     // Normal-flow removals don't paint cross-subtree and are fine.
     const absoluteRemoved = consumeAbsoluteRemovedFlag()
+    setOverlayActive(options.overlayActive)
     renderNodeToOutput(node, output, {
       prevScreen:
         absoluteRemoved || options.prevFrameContaminated
