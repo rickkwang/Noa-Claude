@@ -2,7 +2,7 @@
 import { coerce } from 'semver'
 import type { Writable } from 'stream'
 import { env } from '../utils/env.js'
-import { gte } from '../utils/semver.js'
+import { gte, lt } from '../utils/semver.js'
 import { getClearTerminalSequence } from './clearTerminal.js'
 import type { Diff } from './frame.js'
 import { CURSOR_HOME, ERASE_SCREEN, cursorMove, cursorTo, eraseLines } from './termio/csi.js'
@@ -167,6 +167,20 @@ const EXTENDED_KEYS_TERMINALS = [
  *  (Kitty keyboard protocol + xterm modifyOtherKeys). */
 export function supportsExtendedKeys(): boolean {
   return EXTENDED_KEYS_TERMINALS.includes(env.terminal ?? '')
+}
+
+/**
+ * VS Code 1.123 and 1.124 corrupt non-ASCII text written through OSC 52
+ * (fixed in 1.125). Callers warn the user that the paste will come back as
+ * mojibake. Reads process.env directly, as the rest of this file does —
+ * TERM_PROGRAM is the identity that matters here, not env.terminal, which
+ * normalizes VS Code forks to their own ids. Upstream
+ * hasOsc52ClipboardUtf8Bug.
+ */
+export function hasOsc52ClipboardUtf8Bug(): boolean {
+  if (process.env.TERM_PROGRAM !== 'vscode') return false
+  const v = coerce(process.env.TERM_PROGRAM_VERSION)
+  return v !== null && gte(v.version, '1.123.0') && lt(v.version, '1.125.0')
 }
 
 /** True if the terminal scrolls the viewport when it receives cursor-up

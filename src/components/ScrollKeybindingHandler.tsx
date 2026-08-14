@@ -5,8 +5,9 @@ import { useCopyOnSelect, useSelectionBgColor } from '../hooks/useCopyOnSelect.j
 import type { ScrollBoxHandle } from '../ink/components/ScrollBox.js';
 import { tryDeleteSelection, useSelection } from '../ink/hooks/use-selection.js';
 import type { FocusMove, SelectionState } from '../ink/selection.js';
-import { isXtermJs } from '../ink/terminal.js';
+import { hasOsc52ClipboardUtf8Bug, isXtermJs } from '../ink/terminal.js';
 import { getClipboardPath } from '../ink/termio/osc.js';
+import { getGraphemeSegmenter } from '../utils/intl.js';
 // eslint-disable-next-line custom-rules/prefer-use-keybindings -- Esc needs conditional propagation based on selection state
 import { type Key, useInput } from '../ink.js';
 import { useKeybindings } from '../keybindings/useKeybinding.js';
@@ -376,25 +377,40 @@ export function ScrollKeybindingHandler({
     // did (native pbcopy / tmux load-buffer / raw OSC 52) so we can tell
     // the user whether paste will Just Work or needs prefix+].
     const path = getClipboardPath();
-    const n = text.length;
+    // Grapheme count, not UTF-16 units (upstream VTe). BMP text — CJK
+    // included — counts the same either way; what this fixes is emoji and
+    // combining sequences, where text.length reports the code-unit count
+    // (👨‍👩‍👧‍👦 is 11) instead of the one character the user selected.
+    let n = 0;
+    for (const _seg of getGraphemeSegmenter().segment(text)) n++;
+    const chars = n === 1 ? 'char' : 'chars';
     let msg: string;
     switch (path) {
       case 'native':
-        msg = `copied ${n} chars to clipboard`;
+        msg = `copied ${n} ${chars} to clipboard`;
         break;
       case 'tmux-buffer':
-        msg = `copied ${n} chars to tmux buffer · paste with prefix + ]`;
+        msg = `copied ${n} ${chars} to tmux buffer · paste with prefix + ]`;
         break;
       case 'osc52':
-        msg = `sent ${n} chars via OSC 52 · check terminal clipboard settings if paste fails`;
+        msg = `sent ${n} ${chars} via OSC 52 · check terminal clipboard settings if paste fails`;
         break;
     }
+    // VS Code 1.123/1.124 corrupt non-ASCII written via OSC 52 (upstream
+    // wVo). Gated to non-native paths: under VS Code on macOS the clipboard
+    // goes through pbcopy and never touches xterm.js's OSC 52 decoder, so
+    // warning there would be a false positive. Upstream has no such gate.
+    const warn = path !== 'native' && hasOsc52ClipboardUtf8Bug() && /[^\x00-\x7F]/.test(text)
+      ? 'VS Code 1.123/1.124 will mojibake this paste — update to ≥1.125'
+      : null;
+    if (warn) msg = `⚠ ${warn} · ${msg}`;
     addNotification({
       key: 'selection-copied',
       text: msg,
       color: 'suggestion',
       priority: 'immediate',
-      timeoutMs: path === 'native' ? 2000 : 4000
+      // Longer when warning — the version callout needs time to land.
+      timeoutMs: warn ? 6000 : path === 'native' ? 2000 : 4000
     });
   }
   function copyAndToast(): void {
