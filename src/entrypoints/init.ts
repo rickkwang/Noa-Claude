@@ -1,11 +1,8 @@
 import { profileCheckpoint } from '../utils/startupProfiler.js'
 import '../bootstrap/state.js'
 import '../utils/config.js'
-import type { Attributes, MetricOptions } from '@opentelemetry/api'
 import memoize from 'lodash-es/memoize.js'
 import { getIsNonInteractiveSession } from 'src/bootstrap/state.js'
-import type { AttributedCounter } from '../bootstrap/state.js'
-import { getSessionCounter, setMeter } from '../bootstrap/state.js'
 import { shutdownLspServerManager } from '../services/lsp/manager.js'
 import { populateOAuthAccountInfoIfNeeded } from '../services/oauth/client.js'
 import {
@@ -15,7 +12,6 @@ import {
 import {
   initializeRemoteManagedSettingsLoadingPromise,
   isEligibleForRemoteManagedSettings,
-  waitForRemoteManagedSettingsToLoad,
 } from '../services/remoteManagedSettings/index.js'
 import { preconnectAnthropicApi } from '../utils/apiPreconnect.js'
 import { applyExtraCACertsFromConfig } from '../utils/caCertsConfig.js'
@@ -26,33 +22,22 @@ import { detectCurrentRepository } from '../utils/detectRepository.js'
 import { logForDiagnosticsNoPII } from '../utils/diagLogs.js'
 import { initJetBrainsDetection } from '../utils/envDynamic.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
-import { ConfigParseError, errorMessage } from '../utils/errors.js'
+import { ConfigParseError } from '../utils/errors.js'
 // showInvalidConfigDialog is dynamically imported in the error path to avoid loading React at init
 import {
   gracefulShutdownSync,
   setupGracefulShutdown,
 } from '../utils/gracefulShutdown.js'
-import {
-  applyConfigEnvironmentVariables,
-  applySafeConfigEnvironmentVariables,
-} from '../utils/managedEnv.js'
+import { applySafeConfigEnvironmentVariables } from '../utils/managedEnv.js'
 import { configureGlobalMTLS } from '../utils/mtls.js'
 import {
   ensureScratchpadDir,
   isScratchpadEnabled,
 } from '../utils/permissions/filesystem.js'
-// initializeTelemetry is loaded lazily via import() in setMeterState() to defer
-// ~400KB of OpenTelemetry + protobuf modules until telemetry is actually initialized.
-// gRPC exporters (~700KB via @grpc/grpc-js) are further lazy-loaded within instrumentation.ts.
 import { configureGlobalAgents } from '../utils/proxy.js'
-import { isBetaTracingEnabled } from '../utils/telemetry/betaSessionTracing.js'
-import { getTelemetryAttributes } from '../utils/telemetryAttributes.js'
 import { setShellIfWindows } from '../utils/windowsPaths.js'
 
 // initialize1PEventLogging is dynamically imported to defer OpenTelemetry sdk-logs/resources
-
-// Track if telemetry has been initialized to prevent double initialization
-let telemetryInitialized = false
 
 export const init = memoize(async (): Promise<void> => {
   const initStartTime = Date.now()
@@ -254,26 +239,6 @@ export const init = memoize(async (): Promise<void> => {
  * This should only be called once, after the trust dialog has been accepted.
  */
 export function initializeTelemetryAfterTrust(): void {
-  // Telemetry is hard-disabled in this build.
-}
-
-async function doInitializeTelemetry(): Promise<void> {
-  if (telemetryInitialized) {
-    // Already initialized, nothing to do
-    return
-  }
-
-  // Set flag before init to prevent double initialization
-  telemetryInitialized = true
-  try {
-    await setMeterState()
-  } catch (error) {
-    // Reset flag on failure so subsequent calls can retry
-    telemetryInitialized = false
-    throw error
-  }
-}
-
-async function setMeterState(): Promise<void> {
-  // Telemetry is hard-disabled in this build.
+  // Telemetry is hard-disabled in this build. Kept as a no-op because
+  // main.tsx and interactiveHelpers.tsx still call it after the trust dialog.
 }
