@@ -91,6 +91,26 @@ const NO_SUBSCRIBE = () => () => {}
 const ALWAYS_FALSE = () => false
 
 /**
+ * Delete-handler registry bridging the fullscreen scroll layer and the
+ * prompt input (upstream parity: Backspace/Delete on an active selection
+ * deletes the selected span when it lies fully inside the input box). The
+ * input registers a handler; the scroll key handler offers the key to it
+ * before the key falls through to normal input editing.
+ */
+type SelectionDeleteHandler = (selection: SelectionState) => boolean
+let selectionDeleteHandler: SelectionDeleteHandler | null = null
+
+export function setSelectionDeleteHandler(
+  handler: SelectionDeleteHandler | null,
+): void {
+  selectionDeleteHandler = handler
+}
+
+export function tryDeleteSelection(selection: SelectionState): boolean {
+  return selectionDeleteHandler?.(selection) ?? false
+}
+
+/**
  * Reactive selection-exists state. Re-renders the caller when a text
  * selection is created or cleared. Always returns false outside
  * fullscreen mode (selection is only available in alt-screen).

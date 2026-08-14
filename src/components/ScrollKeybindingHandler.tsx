@@ -3,7 +3,7 @@ import React, { type RefObject, useEffect, useRef } from 'react';
 import { useNotifications } from '../context/notifications.js';
 import { useCopyOnSelect, useSelectionBgColor } from '../hooks/useCopyOnSelect.js';
 import type { ScrollBoxHandle } from '../ink/components/ScrollBox.js';
-import { useSelection } from '../ink/hooks/use-selection.js';
+import { tryDeleteSelection, useSelection } from '../ink/hooks/use-selection.js';
 import type { FocusMove, SelectionState } from '../ink/selection.js';
 import { isXtermJs } from '../ink/terminal.js';
 import { getClipboardPath } from '../ink/termio/osc.js';
@@ -666,6 +666,19 @@ export function ScrollKeybindingHandler({
       copyAndToast();
       event_0.stopImmediatePropagation();
       return;
+    }
+    // Backspace/Delete with a selection that lies fully inside the prompt
+    // input deletes the selected span (upstream parity). Only outside
+    // modal pagers, where Backspace is a paging key. Selections the input
+    // doesn't claim fall through to the clear-on-key behavior below, and
+    // the key continues to the input as normal editing.
+    if (!isModal && (key_0.backspace || key_0.delete) && !key_0.ctrl && !key_0.meta && !key_0.shift && !key_0.super) {
+      const selState = selection.getState();
+      if (selState && tryDeleteSelection(selState)) {
+        selection.clearSelection();
+        event_0.stopImmediatePropagation();
+        return;
+      }
     }
     const move = selectionFocusMoveForKey(key_0);
     if (move) {

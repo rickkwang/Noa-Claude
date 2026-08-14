@@ -34,6 +34,10 @@ import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { useTypeahead } from '../../hooks/useTypeahead.js';
 import type { BorderTextOptions } from '../../ink/render-border.js';
 import { stringWidth } from '../../ink/stringWidth.js';
+import type { DOMElement } from '../../ink/dom.js';
+import { setSelectionDeleteHandler } from '../../ink/hooks/use-selection.js';
+import { nodeCache } from '../../ink/node-cache.js';
+import { selectionBounds, type SelectionState } from '../../ink/selection.js';
 import { Box, type ClickEvent, type Key, Text, useInput } from '../../ink.js';
 import { useOptionalKeybindingContext } from '../../keybindings/KeybindingContext.js';
 import { getShortcutDisplay } from '../../keybindings/shortcutFormat.js';
@@ -2063,6 +2067,42 @@ function PromptInput({
     });
     setCursorOffset(offset);
   }, [input, textInputColumns, isSearchingHistory, cursorOffset, maxVisibleLines]);
+  // Backspace/Delete on a fullscreen text selection that lies fully inside
+  // the input box deletes the selected span in one keystroke (upstream
+  // parity). Selection coords are screen-absolute; nodeCache holds the
+  // onClick Box's rendered rect — the same source hit-test derives click
+  // localRow/localCol from. Selections spanning beyond the input (e.g.
+  // transcript text) are declined and fall through to normal editing.
+  const inputBoxRef = useRef<DOMElement | null>(null);
+  const deleteSelectionRef = useRef<((sel: SelectionState) => boolean) | null>(null);
+  deleteSelectionRef.current = (sel: SelectionState): boolean => {
+    // isModalOverlayActive: a centered modal (/model, /mcp, …) leaves the
+    // input visible and selectable, but editing it behind the modal — and
+    // swallowing the modal's Backspace — would be wrong (upstream's le).
+    if (!input || isSearchingHistory || isModalOverlayActive) return false;
+    const bounds = selectionBounds(sel);
+    const rect = inputBoxRef.current ? nodeCache.get(inputBoxRef.current) : undefined;
+    if (!bounds || !rect) return false;
+    const { start, end } = bounds;
+    if (start.row < rect.y || end.row < rect.y || start.row >= rect.y + rect.height || end.row >= rect.y + rect.height) return false;
+    const c = Cursor.fromText(input, textInputColumns, cursorOffset);
+    const viewportStart = c.getViewportStartLine(maxVisibleLines);
+    const offsetAt = (row: number, col: number) => c.measuredText.getOffsetFromPosition({
+      line: row - rect.y + viewportStart,
+      column: Math.max(0, col - rect.x)
+    });
+    const from = Math.max(0, offsetAt(start.row, start.col));
+    const to = Math.min(input.length, offsetAt(end.row, end.col + 1));
+    if (to <= from) return false;
+    pushToBuffer(input, cursorOffset, pastedContents);
+    trackAndSetInput(input.slice(0, from) + input.slice(to));
+    setCursorOffset(from);
+    return true;
+  };
+  useEffect(() => {
+    setSelectionDeleteHandler(sel => deleteSelectionRef.current?.(sel) ?? false);
+    return () => setSelectionDeleteHandler(null);
+  }, []);
   const handleOpenTasksDialog = useCallback((taskId?: string) => setShowBashesDialog(taskId ?? true), [setShowBashesDialog]);
   const placeholder = showPromptSuggestion && promptSuggestion ? promptSuggestion : defaultPlaceholder;
 
@@ -2313,14 +2353,14 @@ function PromptInput({
           </Text>
           <Box flexDirection="row" width="100%">
             <PromptInputModeIndicator mode={mode} isLoading={isLoading} viewingAgentName={viewingAgentName} viewingAgentColor={viewingAgentColor} />
-            <Box flexGrow={1} flexShrink={1} onClick={handleInputClick}>
+            <Box ref={inputBoxRef} flexGrow={1} flexShrink={1} onClick={handleInputClick}>
               {textInputElement}
             </Box>
           </Box>
           <Text color={swarmBanner.bgColor}>{'─'.repeat(columns)}</Text>
         </> : <Box flexDirection="row" alignItems="flex-start" justifyContent="flex-start" borderColor={getBorderColor()} borderStyle="round" borderLeft={false} borderRight={false} borderBottom width="100%" borderText={buildBorderText(showFastIcon ?? false, showFastIconHint, fastModeCooldown)}>
           <PromptInputModeIndicator mode={mode} isLoading={isLoading} viewingAgentName={viewingAgentName} viewingAgentColor={viewingAgentColor} />
-          <Box flexGrow={1} flexShrink={1} onClick={handleInputClick}>
+          <Box flexGrow={1} flexShrink={1} onClick={handleInputClick} ref={inputBoxRef}>
             {textInputElement}
           </Box>
         </Box>}
