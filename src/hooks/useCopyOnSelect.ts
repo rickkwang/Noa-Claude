@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useEffect, useRef } from 'react'
+import { type MutableRefObject, useEffect, useRef } from 'react'
 import { useResolvedTheme } from '../components/design-system/ThemeProvider.js'
 import type { useSelection } from '../ink/hooks/use-selection.js'
 import { getGlobalConfig } from '../utils/config.js'
@@ -22,11 +22,22 @@ type Selection = ReturnType<typeof useSelection>
  * onCopied is optional — when omitted, copy is silent (clipboard is written
  * but no toast/notification fires). FleetView uses this silent mode; the
  * fullscreen REPL passes showCopiedToast for user feedback.
+ *
+ * lastCopiedRef (upstream s4i's 4th param) tracks whether the clipboard is
+ * still in sync with the CURRENT selection: it holds the text on the
+ * notification that actually copied, and is nulled on every branch that
+ * leaves the two out of step — including the copiedRef branch, which is
+ * exactly the keyboard-extend case (shift+arrow fires a fresh notification
+ * for a selection that's already been copied once, and copiedRef suppresses
+ * the re-copy). Ctrl+C reads it to decide between "just clear the highlight"
+ * and "copy first" — without it, extending a copied selection and pressing
+ * ctrl+c would clear it while the clipboard still held the pre-extension text.
  */
 export function useCopyOnSelect(
   selection: Selection,
   isActive: boolean,
   onCopied?: (text: string) => void,
+  lastCopiedRef?: MutableRefObject<string | null>,
 ): void {
   // Tracks whether the *previous* notification had a visible selection with
   // isDragging=false (i.e., we already auto-copied it). Without this, the
@@ -48,17 +59,23 @@ export function useCopyOnSelect(
       // that ends on the same range still triggers a fresh copy.
       if (sel?.isDragging) {
         copiedRef.current = false
+        if (lastCopiedRef) lastCopiedRef.current = null
         return
       }
       // No selection (cleared, or click-without-drag) — reset.
       if (!has) {
         copiedRef.current = false
+        if (lastCopiedRef) lastCopiedRef.current = null
         return
       }
       // Selection settled (drag finished OR multi-click). Already copied
-      // this one — the only way to get here again without going through
-      // isDragging or !has is a spurious notify (shouldn't happen, but safe).
-      if (copiedRef.current) return
+      // this one — either a spurious notify, or (the real case) a keyboard
+      // extension of an already-copied selection. Either way the clipboard
+      // no longer matches what's highlighted, so drop the sync marker.
+      if (copiedRef.current) {
+        if (lastCopiedRef) lastCopiedRef.current = null
+        return
+      }
 
       // Default true: macOS users expect cmd+c to work. It can't — the
       // terminal's Edit > Copy intercepts it before the pty sees it, and
@@ -76,10 +93,11 @@ export function useCopyOnSelect(
         return
       }
       copiedRef.current = true
+      if (lastCopiedRef) lastCopiedRef.current = text
       onCopiedRef.current?.(text)
     })
     return unsubscribe
-  }, [isActive, selection])
+  }, [isActive, selection, lastCopiedRef])
 }
 
 /**
