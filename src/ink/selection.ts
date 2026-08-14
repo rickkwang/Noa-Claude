@@ -47,7 +47,7 @@ export type SelectionState = {
   scrolledOffAboveSW: boolean[]
   /** Parallel to scrolledOffBelow. */
   scrolledOffBelowSW: boolean[]
-  /** Pre-clamp anchor row. Set when a follow-shift clamps anchor so a
+  /** Pre-clamp anchor row. Set when shiftSelection clamps anchor so a
    *  reverse scroll can restore the true position and pop accumulators.
    *  Without this, PgDn (clamps anchor) → PgUp leaves anchor at the wrong
    *  row AND scrolledOffAbove stale — highlight ≠ copy. Undefined when
@@ -55,12 +55,6 @@ export type SelectionState = {
   virtualAnchorRow?: number
   /** Same for focus. */
   virtualFocusRow?: number
-  /** Pre-clamp anchor col. Set alongside virtualAnchorRow when a follow/scroll
-   *  shift clamps the endpoint AND resets its col to the row edge — scrolling
-   *  back restores the true col. Undefined when in-bounds. */
-  virtualAnchorCol?: number
-  /** Same for focus. */
-  virtualFocusCol?: number
   /** True if the mouse-down that started this selection had the alt
    *  modifier set (SGR button bit 0x08). On macOS xterm.js this is a
    *  signal that VS Code's macOptionClickForcesSelection is OFF — if it
@@ -101,8 +95,6 @@ export function startSelection(
   s.scrolledOffBelowSW = []
   s.virtualAnchorRow = undefined
   s.virtualFocusRow = undefined
-  s.virtualAnchorCol = undefined
-  s.virtualFocusCol = undefined
   s.lastPressHadAlt = false
 }
 
@@ -139,8 +131,6 @@ export function clearSelection(s: SelectionState): void {
   s.scrolledOffBelowSW = []
   s.virtualAnchorRow = undefined
   s.virtualFocusRow = undefined
-  s.virtualAnchorCol = undefined
-  s.virtualFocusCol = undefined
   s.lastPressHadAlt = false
 }
 
@@ -455,10 +445,124 @@ export function moveFocus(s: SelectionState, col: number, row: number): void {
   s.anchorSpan = null
   s.focus = { col, row }
   // Explicit user repositioning — any stale virtual focus (from a prior
-  // follow-shift clamp) no longer reflects intent. Anchor stays put so
+  // shiftSelection clamp) no longer reflects intent. Anchor stays put so
   // virtualAnchorRow is still valid for its own round-trip.
   s.virtualFocusRow = undefined
-  s.virtualFocusCol = undefined
+}
+
+/**
+ * Shift anchor AND focus by dRow, clamped to [minRow, maxRow]. Used for
+ * keyboard scroll (PgUp/PgDn/ctrl+u/d/b/f): the whole selection must track
+ * the content, unlike drag-to-scroll where focus stays at the mouse. Any
+ * point that hits a clamp bound gets its col reset to the full-width edge —
+ * its original content scrolled off-screen and was captured by
+ * captureScrolledRows, so the col constraint was already consumed. Keeping
+ * it would truncate the NEW content now at that screen row. Clamp col is 0
+ * for dRow<0 (scrolling down, top leaves, 'above' semantics) or width-1 for
+ * dRow>0 (scrolling up, bottom leaves, 'below' semantics).
+ *
+ * If both ends overshoot the SAME viewport edge (select text → Home/End/g/G
+ * jumps far enough that both are out of view), clear — otherwise both clamp
+ * to the same corner cell and a ghost 1-cell highlight lingers, and
+ * getSelectedText returns one unrelated char from that corner. Symmetric
+ * with shiftSelectionForFollow's top-edge check, but bidirectional: keyboard
+ * scroll can jump either way.
+ */
+export function shiftSelection(
+  s: SelectionState,
+  dRow: number,
+  minRow: number,
+  maxRow: number,
+  width: number,
+): void {
+  if (!s.anchor || !s.focus) return
+  // Virtual rows track pre-clamp positions so reverse scrolls restore
+  // correctly. Without this, clamp(5→0) + shift(+10) = 10, not the true 5,
+  // and scrolledOffAbove stays stale (highlight ≠ copy).
+  const vAnchor = (s.virtualAnchorRow ?? s.anchor.row) + dRow
+  const vFocus = (s.virtualFocusRow ?? s.focus.row) + dRow
+  if (
+    (vAnchor < minRow && vFocus < minRow) ||
+    (vAnchor > maxRow && vFocus > maxRow)
+  ) {
+    clearSelection(s)
+    return
+  }
+  // Debt = how far the nearer endpoint overshoots each edge. When debt
+  // shrinks (reverse scroll), those rows are back on-screen — pop from
+  // the accumulator so getSelectedText doesn't double-count them.
+  const oldMin = Math.min(
+    s.virtualAnchorRow ?? s.anchor.row,
+    s.virtualFocusRow ?? s.focus.row,
+  )
+  const oldMax = Math.max(
+    s.virtualAnchorRow ?? s.anchor.row,
+    s.virtualFocusRow ?? s.focus.row,
+  )
+  const oldAboveDebt = Math.max(0, minRow - oldMin)
+  const oldBelowDebt = Math.max(0, oldMax - maxRow)
+  const newAboveDebt = Math.max(0, minRow - Math.min(vAnchor, vFocus))
+  const newBelowDebt = Math.max(0, Math.max(vAnchor, vFocus) - maxRow)
+  if (newAboveDebt < oldAboveDebt) {
+    // scrolledOffAbove pushes newest at the end (closest to on-screen).
+    const drop = oldAboveDebt - newAboveDebt
+    s.scrolledOffAbove.length -= drop
+    s.scrolledOffAboveSW.length = s.scrolledOffAbove.length
+  }
+  if (newBelowDebt < oldBelowDebt) {
+    // scrolledOffBelow unshifts newest at the front (closest to on-screen).
+    const drop = oldBelowDebt - newBelowDebt
+    s.scrolledOffBelow.splice(0, drop)
+    s.scrolledOffBelowSW.splice(0, drop)
+  }
+  // Invariant: accumulator length ≤ debt. If the accumulator exceeds debt,
+  // the excess is stale — e.g., moveFocus cleared virtualFocusRow without
+  // trimming the accumulator, orphaning entries the pop above can never
+  // reach because oldDebt was ALREADY 0. Truncate to debt (keeping the
+  // newest = closest-to-on-screen entries). Check newDebt (not oldDebt):
+  // captureScrolledRows runs BEFORE this shift in the real flow (ink.tsx),
+  // so at entry the accumulator is populated but oldDebt is still 0 —
+  // that's the normal establish-debt path, not stale.
+  if (s.scrolledOffAbove.length > newAboveDebt) {
+    // Above pushes newest at END → keep END.
+    s.scrolledOffAbove =
+      newAboveDebt > 0 ? s.scrolledOffAbove.slice(-newAboveDebt) : []
+    s.scrolledOffAboveSW =
+      newAboveDebt > 0 ? s.scrolledOffAboveSW.slice(-newAboveDebt) : []
+  }
+  if (s.scrolledOffBelow.length > newBelowDebt) {
+    // Below unshifts newest at FRONT → keep FRONT.
+    s.scrolledOffBelow = s.scrolledOffBelow.slice(0, newBelowDebt)
+    s.scrolledOffBelowSW = s.scrolledOffBelowSW.slice(0, newBelowDebt)
+  }
+  // Clamp col depends on which EDGE (not dRow direction): virtual tracking
+  // means a top-clamped point can stay top-clamped during a dRow>0 reverse
+  // shift — dRow-based clampCol would give it the bottom col.
+  const shift = (p: Point, vRow: number): Point => {
+    if (vRow < minRow) return { col: 0, row: minRow }
+    if (vRow > maxRow) return { col: width - 1, row: maxRow }
+    return { col: p.col, row: vRow }
+  }
+  s.anchor = shift(s.anchor, vAnchor)
+  s.focus = shift(s.focus, vFocus)
+  s.virtualAnchorRow =
+    vAnchor < minRow || vAnchor > maxRow ? vAnchor : undefined
+  s.virtualFocusRow = vFocus < minRow || vFocus > maxRow ? vFocus : undefined
+  // anchorSpan not virtual-tracked: it's for word/line extend-on-drag,
+  // irrelevant to the keyboard-scroll round-trip case.
+  if (s.anchorSpan) {
+    const sp = (p: Point): Point => {
+      const r = p.row + dRow
+      if (r < minRow) return { col: 0, row: minRow }
+      if (r > maxRow) return { col: width - 1, row: maxRow }
+      return { col: p.col, row: r }
+    }
+    s.anchorSpan = {
+      lo: sp(s.anchorSpan.lo),
+      hi: sp(s.anchorSpan.hi),
+      kind: s.anchorSpan.kind,
+    }
+  }
 }
 
 /**
@@ -474,19 +578,15 @@ export function shiftAnchor(
   maxRow: number,
 ): void {
   if (!s.anchor) return
-  // Same virtual-row tracking as shiftSelectionForFollow: the
+  // Same virtual-row tracking as shiftSelection/shiftSelectionForFollow: the
   // drag→follow transition hands off to shiftSelectionForFollow, which reads
   // (virtualAnchorRow ?? anchor.row). Without this, drag-phase clamping
   // leaves virtual undefined → follow initializes from the already-clamped
-  // row, under-counting total drift and desyncing the accumulators.
+  // row, under-counting total drift → shiftSelection's invariant-restore
+  // prematurely clears valid drag-phase accumulator entries.
   const raw = (s.virtualAnchorRow ?? s.anchor.row) + dRow
-  const outOfBounds = raw < minRow || raw > maxRow
-  // Virtual col mirrors the row: while clamped, remember the pre-clamp col
-  // so a reverse shift restores the true position (upstream itp).
-  const col = s.virtualAnchorCol ?? s.anchor.col
-  s.anchor = { col: outOfBounds ? s.anchor.col : col, row: clamp(raw, minRow, maxRow) }
-  s.virtualAnchorRow = outOfBounds ? raw : undefined
-  s.virtualAnchorCol = outOfBounds ? col : undefined
+  s.anchor = { col: s.anchor.col, row: clamp(raw, minRow, maxRow) }
+  s.virtualAnchorRow = raw < minRow || raw > maxRow ? raw : undefined
   // anchorSpan not virtual-tracked (word/line extend, irrelevant to
   // keyboard-scroll round-trip) — plain clamp from current row.
   if (s.anchorSpan) {
@@ -504,155 +604,74 @@ export function shiftAnchor(
 
 /**
  * Shift the whole selection (anchor + focus + anchorSpan) by dRow, clamped
- * to [minRow, maxRow]. Used when sticky/auto-follow OR wheel-drain scrolls
- * the ScrollBox while a selection is active — native terminal behavior is
- * for the highlight to walk with the text (not stay at the same screen
- * position). Port of upstream otp.
+ * to [minRow, maxRow]. Used when sticky/auto-follow scrolls the ScrollBox
+ * while a selection is active — native terminal behavior is for the
+ * highlight to walk up the screen with the text (not stay at the same
+ * screen position).
  *
  * Differs from shiftAnchor: during drag-to-scroll, focus tracks the live
- * mouse position and only anchor follows the text. Once settled, the
- * selection is text-anchored at both ends — both must move. The isDragging
- * check in ink.tsx picks which shift to apply.
+ * mouse position and only anchor follows the text. During streaming-follow,
+ * the selection is text-anchored at both ends — both must move. The
+ * isDragging check in ink.tsx picks which shift to apply.
  *
- * Unlike Noa's original version this never CLEARS the selection: endpoints
- * that scroll off an edge keep their pre-clamp position in virtualRow/Col
- * (cols reset to the full-width edge since the edge row's content was
- * captured), and isSelectionFullyOvershot hides the overlay while the whole
- * span is off-screen. Scrolling back restores the highlight; copy works
- * throughout from the accumulators. The accumulator bookkeeping (pop
- * re-entering rows, cap to the actual off-screen count, swap arrays on a
- * full pass-through) is load-bearing: without it getSelectedText would
- * double-count rows that leave and re-enter the viewport.
+ * If both ends would shift strictly BELOW minRow (unclamped), the selected
+ * text has scrolled entirely off the top. Clear it — otherwise a single
+ * inverted cell lingers at the viewport top as a ghost (native terminals
+ * drop the selection when it leaves scrollback). Landing AT minRow is
+ * still valid: that cell holds the correct text. Returns true if the
+ * selection was cleared so the caller can notify React-land subscribers
+ * (useHasSelection) — the caller is inside onRender so it can't use
+ * notifySelectionChange (recursion), must fire listeners directly.
  */
 export function shiftSelectionForFollow(
   s: SelectionState,
   dRow: number,
   minRow: number,
   maxRow: number,
-  screenWidth: number,
-): void {
-  if (!s.anchor || !s.focus) return
-  // Compute raw (unclamped) positions from virtual if set, else current.
-  // This handles BOTH the update path (virtual already set from a prior
-  // shift) AND the initialize path (first clamp happens HERE, no prior
-  // keyboard scroll).
+): boolean {
+  if (!s.anchor) return false
+  // Mirror shiftSelection: compute raw (unclamped) positions from virtual
+  // if set, else current. This handles BOTH the update path (virtual already
+  // set from a prior keyboard scroll) AND the initialize path (first clamp
+  // happens HERE via follow-scroll, no prior keyboard scroll). Without the
+  // initialize path, follow-scroll-first leaves virtual undefined even
+  // though the clamp below occurred → a later PgUp computes debt from the
+  // clamped row instead of the true pre-clamp row and never pops the
+  // accumulator — getSelectedText double-counts the off-screen rows.
   const rawAnchor = (s.virtualAnchorRow ?? s.anchor.row) + dRow
-  const rawFocus = (s.virtualFocusRow ?? s.focus.row) + dRow
-
-  // Off-screen row counts before/after the shift, capped at the span length.
-  const spanTop = Math.min(
-    s.virtualAnchorRow ?? s.anchor.row,
-    s.virtualFocusRow ?? s.focus.row,
-  )
-  const spanBottom = Math.max(
-    s.virtualAnchorRow ?? s.anchor.row,
-    s.virtualFocusRow ?? s.focus.row,
-  )
-  const spanLen = spanBottom - spanTop + 1
-  const aboveBefore = Math.min(spanLen, Math.max(0, minRow - spanTop))
-  const belowBefore = Math.min(spanLen, Math.max(0, spanBottom - maxRow))
-  const aboveAfter = Math.min(
-    spanLen,
-    Math.max(0, minRow - Math.min(rawAnchor, rawFocus)),
-  )
-  const belowAfter = Math.min(
-    spanLen,
-    Math.max(0, Math.max(rawAnchor, rawFocus) - maxRow),
-  )
-
-  // Full pass-through in one shift: the span jumped from entirely-below to
-  // entirely-above (or vice versa) — the accumulators swap sides.
-  if (belowBefore === spanLen && aboveAfter === spanLen) {
-    s.scrolledOffAbove = s.scrolledOffBelow
-    s.scrolledOffAboveSW = s.scrolledOffBelowSW
-    s.scrolledOffBelow = []
-    s.scrolledOffBelowSW = []
-  } else if (aboveBefore === spanLen && belowAfter === spanLen) {
-    s.scrolledOffBelow = s.scrolledOffAbove
-    s.scrolledOffBelowSW = s.scrolledOffAboveSW
-    s.scrolledOffAbove = []
-    s.scrolledOffAboveSW = []
+  const rawFocus = s.focus
+    ? (s.virtualFocusRow ?? s.focus.row) + dRow
+    : undefined
+  if (rawAnchor < minRow && rawFocus !== undefined && rawFocus < minRow) {
+    clearSelection(s)
+    return true
   }
-  // Rows re-entering the viewport: pop them off the accumulators (above
-  // accumulates newest-last, below newest-first).
-  if (aboveAfter < aboveBefore) {
-    const n = Math.min(aboveBefore - aboveAfter, s.scrolledOffAbove.length)
-    s.scrolledOffAbove.length -= n
-    s.scrolledOffAboveSW.length = s.scrolledOffAbove.length
+  // Clamp from raw, not p.row+dRow — so a virtual position coming back
+  // in-bounds lands at the TRUE position, not the stale clamped one.
+  s.anchor = { col: s.anchor.col, row: clamp(rawAnchor, minRow, maxRow) }
+  if (s.focus && rawFocus !== undefined) {
+    s.focus = { col: s.focus.col, row: clamp(rawFocus, minRow, maxRow) }
   }
-  if (belowAfter < belowBefore) {
-    const n = belowBefore - belowAfter
-    s.scrolledOffBelow.splice(0, n)
-    s.scrolledOffBelowSW.splice(0, n)
-  }
-  // Cap accumulators to the actual off-screen counts — bounds the growth
-  // when a clamped endpoint keeps intersecting the outgoing capture band.
-  if (s.scrolledOffAbove.length > aboveAfter) {
-    s.scrolledOffAbove =
-      aboveAfter > 0 ? s.scrolledOffAbove.slice(-aboveAfter) : []
-    s.scrolledOffAboveSW =
-      aboveAfter > 0 ? s.scrolledOffAboveSW.slice(-aboveAfter) : []
-  }
-  if (s.scrolledOffBelow.length > belowAfter) {
-    s.scrolledOffBelow = s.scrolledOffBelow.slice(0, belowAfter)
-    s.scrolledOffBelowSW = s.scrolledOffBelowSW.slice(0, belowAfter)
-  }
-
-  // Upstream clamps cols to the selectionScope bounds; Noa has no scopes —
-  // full width. Clamped endpoints reset to the edge because their content
-  // was captured; virtual cols preserve the true position for the return.
-  const lo = 0
-  const hi = screenWidth - 1
-  const place = (raw: number, col: number): Point =>
-    raw < minRow
-      ? { col: lo, row: minRow }
-      : raw > maxRow
-        ? { col: hi, row: maxRow }
-        : { col, row: raw }
-  const anchorCol = s.virtualAnchorCol ?? s.anchor.col
-  const focusCol = s.virtualFocusCol ?? s.focus.col
-  s.anchor = place(rawAnchor, anchorCol)
-  s.focus = place(rawFocus, focusCol)
-  const anchorOut = rawAnchor < minRow || rawAnchor > maxRow
-  const focusOut = rawFocus < minRow || rawFocus > maxRow
-  s.virtualAnchorRow = anchorOut ? rawAnchor : undefined
-  s.virtualAnchorCol = anchorOut ? anchorCol : undefined
-  s.virtualFocusRow = focusOut ? rawFocus : undefined
-  s.virtualFocusCol = focusOut ? focusCol : undefined
+  s.virtualAnchorRow =
+    rawAnchor < minRow || rawAnchor > maxRow ? rawAnchor : undefined
+  s.virtualFocusRow =
+    rawFocus !== undefined && (rawFocus < minRow || rawFocus > maxRow)
+      ? rawFocus
+      : undefined
+  // anchorSpan not virtual-tracked (word/line extend, irrelevant to
+  // keyboard-scroll round-trip) — plain clamp from current row.
   if (s.anchorSpan) {
-    const shiftSpan = (p: Point): Point => {
-      const row = p.row + dRow
-      return row < minRow
-        ? { col: lo, row: minRow }
-        : row > maxRow
-          ? { col: hi, row: maxRow }
-          : { col: p.col, row }
-    }
+    const shift = (p: Point): Point => ({
+      col: p.col,
+      row: clamp(p.row + dRow, minRow, maxRow),
+    })
     s.anchorSpan = {
-      lo: shiftSpan(s.anchorSpan.lo),
-      hi: shiftSpan(s.anchorSpan.hi),
+      lo: shift(s.anchorSpan.lo),
+      hi: shift(s.anchorSpan.hi),
       kind: s.anchorSpan.kind,
     }
   }
-}
-
-/**
- * True when both endpoints' pre-clamp (virtual) rows overshoot the SAME
- * viewport edge — the selection is entirely off-screen. The overlay is
- * skipped (nothing visible to highlight) but the state is kept: scrolling
- * back restores the highlight and getSelectedText reads the accumulators.
- * Port of upstream Wxt.
- */
-export function isSelectionFullyOvershot(s: SelectionState): boolean {
-  if (!s.anchor || !s.focus) return false
-  if (s.virtualAnchorRow === undefined || s.virtualFocusRow === undefined) {
-    return false
-  }
-  return (
-    (s.virtualAnchorRow < s.anchor.row &&
-      s.virtualFocusRow < s.focus.row) ||
-    (s.virtualAnchorRow > s.anchor.row && s.virtualFocusRow > s.focus.row)
-  )
+  return false
 }
 
 export function hasSelection(s: SelectionState): boolean {
@@ -763,16 +782,10 @@ export function getSelectedText(s: SelectionState, screen: Screen): string {
     joinRows(lines, s.scrolledOffAbove[i]!, s.scrolledOffAboveSW[i])
   }
 
-  // When the whole selection is off-screen, both endpoints sit clamped at
-  // the same edge row — reading it would splice a row of UNRELATED current
-  // content into the middle of the copied text. The accumulators already
-  // hold everything (upstream atp gates the visible read the same way).
-  if (!isSelectionFullyOvershot(s)) {
-    for (let row = start.row; row <= end.row; row++) {
-      const rowStart = row === start.row ? start.col : 0
-      const rowEnd = row === end.row ? end.col : screen.width - 1
-      joinRows(lines, extractRowText(screen, row, rowStart, rowEnd), sw[row]! > 0)
-    }
+  for (let row = start.row; row <= end.row; row++) {
+    const rowStart = row === start.row ? start.col : 0
+    const rowEnd = row === end.row ? end.col : screen.width - 1
+    joinRows(lines, extractRowText(screen, row, rowStart, rowEnd), sw[row]! > 0)
   }
 
   for (let i = 0; i < s.scrolledOffBelow.length; i++) {
@@ -806,14 +819,7 @@ export function captureScrolledRows(
   side: 'above' | 'below',
 ): void {
   const b = selectionBounds(s)
-  // Fully-overshot gate (upstream zca's third entry condition). Once the
-  // whole span is off-screen both endpoints sit CLAMPED at the same edge
-  // row, so selectionBounds still reports a span there — and the outgoing
-  // capture band IS that row. Without this the band would intersect the
-  // clamped span every frame and push unrelated current screen content
-  // into the accumulator, where shiftSelectionForFollow's cap (keep the
-  // newest N) then evicts the genuinely captured rows in its favour.
-  if (!b || firstRow > lastRow || isSelectionFullyOvershot(s)) return
+  if (!b || firstRow > lastRow) return
   const { start, end } = b
   // Intersect [firstRow, lastRow] with [start.row, end.row]. Rows outside
   // the selection aren't captured — they weren't selected.
@@ -842,12 +848,6 @@ export function captureScrolledRows(
     // col constraint was applied to the captured row. Reset to col 0 so
     // the NEXT tick and the final getSelectedText read the full row.
     if (s.anchor && s.anchor.row === start.row && lo === start.row) {
-      // Record the pre-reset col first (upstream zca's ??=). shiftAnchor
-      // and shiftSelectionForFollow both read (virtualAnchorCol ?? col),
-      // so without this the reset edge col becomes the "true" position and
-      // scrolling back can never restore it — and ink.tsx's col-bounds
-      // follow guard reads 0 instead of where the anchor really is.
-      s.virtualAnchorCol ??= s.anchor.col
       s.anchor = { col: 0, row: s.anchor.row }
       if (s.anchorSpan) {
         s.anchorSpan = {
@@ -863,7 +863,6 @@ export function captureScrolledRows(
     s.scrolledOffBelow.unshift(...captured)
     s.scrolledOffBelowSW.unshift(...capturedSW)
     if (s.anchor && s.anchor.row === end.row && hi === end.row) {
-      s.virtualAnchorCol ??= s.anchor.col
       s.anchor = { col: width - 1, row: s.anchor.row }
       if (s.anchorSpan) {
         s.anchorSpan = {

@@ -83,19 +83,16 @@ export function getScrollDrainNode(): DOMElement | null {
   return scrollDrainNode
 }
 
-// Visual scroll event this frame. When the ScrollBox's rendered (post-clamp)
-// scroll position changes — streaming follow, wheel drain, scrollAnchor
-// snap, in either direction — the ScrollBox records the delta + viewport
-// bounds here. ink.tsx consumes it post-render to translate any active
+// At-bottom follow scroll event this frame. When streaming content
+// triggers scrollTop = maxScroll, the ScrollBox records the delta +
+// viewport bounds here. ink.tsx consumes it post-render to translate any active
 // text selection by -delta so the highlight stays anchored to the TEXT
-// (native terminal behavior — the selection walks with the content). The
-// frontFrame screen buffer still holds the old content at that point —
-// captureScrolledRows reads from it before the front/back swap to preserve
-// the text for copy.
+// (native terminal behavior — the selection walks up the screen as content
+// scrolls, eventually clipping at the top). The frontFrame screen buffer
+// still holds the old content at that point — captureScrolledRows reads
+// from it before the front/back swap to preserve the text for copy.
 export type FollowScroll = {
   delta: number
-  viewportLeft: number
-  viewportRight: number
   viewportTop: number
   viewportBottom: number
 }
@@ -754,6 +751,9 @@ function renderNodeToOutput(
         // — the imperative field takes precedence over the attribute so
         // scrollTo/scrollBy can break stickiness. pendingDelta<0 guard:
         // don't cancel an in-flight scroll-up when content races in.
+        // Capture scrollTop before follow so ink.tsx can translate any
+        // active text selection by the same delta (native terminal behavior:
+        // view keeps scrolling, highlight walks up with the text).
         const scrollTopBeforeFollow = node.scrollTop ?? 0
         const sticky =
           node.stickyScroll ?? Boolean(node.attributes['stickyScroll'])
@@ -783,6 +783,15 @@ function renderNodeToOutput(
             scrollTopBeforeFollow >= prevMaxScroll
           ) {
             node.stickyScroll = true
+          }
+        }
+        const followDelta = (node.scrollTop ?? 0) - scrollTopBeforeFollow
+        if (followDelta > 0) {
+          const vpTop = node.scrollViewportTop ?? 0
+          followScroll = {
+            delta: followDelta,
+            viewportTop: vpTop,
+            viewportBottom: vpTop + innerHeight - 1,
           }
         }
         // Drain pendingScrollDelta. Native terminals (proportional burst
@@ -840,37 +849,6 @@ function renderNodeToOutput(
         if (scrollTop !== cur) node.pendingScrollDelta = undefined
         if (node.pendingScrollDelta !== undefined) scrollDrainNode = node
         scrollTop = clamped
-
-        // Record the visual scroll for selection translation: the RENDERED
-        // (post-clamp) position diffed against last frame's rendered
-        // position — covers sticky follow, wheel drain, keyboard scrollTo
-        // jumps, and scrollAnchor snaps, in both directions (upstream's
-        // unified model: no scroll source translates the selection itself).
-        // scrollTopRendered (not node.scrollTop) is the base because
-        // scrollTop can race past the virtual-scroll clamp while the paint
-        // holds at the mounted edge.
-        const renderedDelta =
-          scrollTop - (node.scrollTopRendered ?? scrollTop)
-        node.scrollTopRendered = scrollTop
-        if (renderedDelta !== 0) {
-          const vpTop = node.scrollViewportTop ?? 0
-          const padLeft = yogaNode.getComputedPadding(LayoutEdge.Left)
-          const vpLeft = (x1 ?? x) + padLeft
-          const innerWidth = Math.max(
-            0,
-            (x2 ?? x + yogaNode.getComputedWidth()) -
-              (x1 ?? x) -
-              padLeft -
-              yogaNode.getComputedPadding(LayoutEdge.Right),
-          )
-          followScroll = {
-            delta: renderedDelta,
-            viewportLeft: vpLeft,
-            viewportRight: vpLeft + innerWidth - 1,
-            viewportTop: vpTop,
-            viewportBottom: vpTop + innerHeight - 1,
-          }
-        }
 
         if (content && contentYoga) {
           // Compute content wrapper's absolute render position with scroll

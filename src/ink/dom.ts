@@ -73,12 +73,6 @@ export type DOMElement = {
   scrollHeight?: number
   scrollViewportHeight?: number
   scrollViewportTop?: number
-  // The scroll position actually painted last frame (post-clamp). The
-  // renderer diffs the current clamped position against this to derive the
-  // per-frame visual scroll delta for selection translation — node.scrollTop
-  // can race ahead of the painted position (virtual-scroll clamp), so it's
-  // not a valid base. (Upstream scrollTopRendered.)
-  scrollTopRendered?: number
   stickyScroll?: boolean
   // Set by ScrollBox.scrollToElement; render-node-to-output reads
   // el.yogaNode.getComputedTop() (FRESH — same Yoga pass as scrollHeight)

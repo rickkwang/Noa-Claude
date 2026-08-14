@@ -1,8 +1,8 @@
 // @ts-nocheck
 import { coerce } from 'semver'
 import type { Writable } from 'stream'
-import { env, JETBRAINS_IDES } from '../utils/env.js'
-import { gte, lt } from '../utils/semver.js'
+import { env } from '../utils/env.js'
+import { gte } from '../utils/semver.js'
 import { getClearTerminalSequence } from './clearTerminal.js'
 import type { Diff } from './frame.js'
 import { CURSOR_HOME, ERASE_SCREEN, cursorMove, cursorTo, eraseLines } from './termio/csi.js'
@@ -161,78 +161,12 @@ const EXTENDED_KEYS_TERMINALS = [
   'ghostty',
   'tmux',
   'windows-terminal',
-  'WarpTerminal',
 ]
 
 /** True if this terminal correctly handles extended key reporting
  *  (Kitty keyboard protocol + xterm modifyOtherKeys). */
 export function supportsExtendedKeys(): boolean {
   return EXTENDED_KEYS_TERMINALS.includes(env.terminal ?? '')
-}
-
-// xterm.js embedders by terminal id — same family as isXtermJs() but matched
-// statically so the answer doesn't depend on the XTVERSION probe having
-// resolved. (Upstream Ixb set.)
-const XTERM_JS_HOST_TERMINALS = new Set([
-  'vscode',
-  'cursor',
-  'windsurf',
-  'antigravity',
-  'codium',
-])
-
-// Terminals where Shift+drag forces native selection. (Upstream xxb set,
-// which spreads the JetBrains ids in the same way — detectTerminal() returns
-// them verbatim for JediTerm hosts.)
-const SHIFT_NATIVE_SELECT_TERMINALS = new Set([
-  'ghostty',
-  'kitty',
-  'WezTerm',
-  'alacritty',
-  'xterm',
-  'gnome-terminal',
-  'vte-based',
-  'konsole',
-  'windows-terminal',
-  'mintty',
-  ...JETBRAINS_IDES,
-])
-
-/**
- * The modifier key that forces the terminal's own selection while dragging,
- * bypassing our mouse capture — used in the OSC 52 fallback hint ("hold X
- * while selecting for native copy"). Mirrors upstream kIn(): Fn on
- * Terminal.app, Option on iTerm2 and macOS xterm.js hosts, Shift elsewhere;
- * when the outer terminal is unknowable (SSH/mux) the answer names all three.
- */
-export function nativeSelectModifierKey(): string {
-  const t = env.terminal
-  if (t === 'Apple_Terminal') return 'Fn'
-  if (t === 'iTerm.app') return 'Option'
-  if (isXtermJs() || XTERM_JS_HOST_TERMINALS.has(t ?? '')) {
-    return process.platform === 'darwin' ? 'Option' : 'Shift'
-  }
-  if (t && SHIFT_NATIVE_SELECT_TERMINALS.has(t)) return 'Shift'
-  if (process.env.LC_TERMINAL === 'iTerm2') return 'Option'
-  if (
-    process.env.SSH_CONNECTION ||
-    process.env.TMUX ||
-    process.env.STY ||
-    process.platform === 'darwin'
-  ) {
-    return 'Shift (Option in iTerm2, Fn in Terminal.app)'
-  }
-  return 'Shift'
-}
-
-/**
- * VS Code 1.123/1.124 corrupt non-ASCII text written via OSC 52 (fixed in
- * 1.125). Upstream hasOsc52ClipboardUtf8Bug.
- */
-export function hasOsc52ClipboardUtf8Bug(): boolean {
-  if (process.env.TERM_PROGRAM !== 'vscode') return false
-  const v = coerce(process.env.TERM_PROGRAM_VERSION)
-  return v !== null && gte(v.version, '1.123.0') && lt(v.version, '1.125.0')
 }
 
 /** True if the terminal scrolls the viewport when it receives cursor-up
