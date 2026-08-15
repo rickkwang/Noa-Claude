@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { buildPromptForMode, parseLoopArgs } from '../../skills/bundled/loopHelpers.js'
+import { buildPromptForMode, parseAndConsumeLoopArgs } from '../../skills/bundled/loopHelpers.js'
 import { CronCreateTool } from '../../tools/ScheduleCronTool/CronCreateTool.js'
 import {
   releaseDynamicLoopScheduledPrompt,
@@ -37,7 +37,7 @@ test('CronCreate rejects a forged but well-shaped dynamic marker', async () => {
 })
 
 test('validation is repeatable until execution reserves the continuation', async () => {
-  const built = buildPromptForMode(parseLoopArgs('check CI'), { createToken: () => 'issued-token' })
+  const built = buildPromptForMode(parseAndConsumeLoopArgs('check CI'), { createToken: () => 'issued-token' })
   const scheduledPrompt = built.match(/--- BEGIN SCHEDULED PROMPT ---\n([^\n]+)/)?.[1]
   expect(scheduledPrompt).toBe('/loop --noa-loop-state=issued-token check CI')
 
@@ -51,7 +51,7 @@ test('validation is repeatable until execution reserves the continuation', async
 })
 
 test('an unrelated cron error does not consume an issued continuation', async () => {
-  const built = buildPromptForMode(parseLoopArgs('check CI'), {
+  const built = buildPromptForMode(parseAndConsumeLoopArgs('check CI'), {
     createToken: () => 'retry-after-invalid-cron',
   })
   const prompt = built.match(/--- BEGIN SCHEDULED PROMPT ---\n([^\n]+)/)?.[1]
@@ -71,7 +71,7 @@ test('an unrelated cron error does not consume an issued continuation', async ()
 })
 
 test('durability is judged the way call() resolves it, not as the model asked', async () => {
-  const built = buildPromptForMode(parseLoopArgs('check CI'), {
+  const built = buildPromptForMode(parseAndConsumeLoopArgs('check CI'), {
     createToken: () => 'durable-gate-probe',
   })
   const prompt = built.match(/--- BEGIN SCHEDULED PROMPT ---\n([^\n]+)/)?.[1]!

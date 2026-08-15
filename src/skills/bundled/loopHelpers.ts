@@ -96,61 +96,55 @@ function isFixedMode(mode: LoopMode): boolean {
   return mode === 'fixed-prompt' || mode === 'fixed-maintenance';
 }
 
-export function parseLoopArgs(args: string): ParsedLoopArgs {
+/**
+ * Consumes the chain state carried by the leading marker, so calling this twice
+ * on the same args kills the chain: the second call finds the token already
+ * spent and reports `invalidLoopState`. Exactly one call per /loop dispatch.
+ */
+export function parseAndConsumeLoopArgs(args: string): ParsedLoopArgs {
   let trimmed = args.trim();
-  let loopState: DynamicLoopState | undefined;
-  let invalidLoopState = false;
-  const hasDynamicLoopStateMarker = trimmed.startsWith(
-    DYNAMIC_LOOP_STATE_PREFIX,
-  );
-  if (hasDynamicLoopStateMarker) {
+
+  // Chain state can only ride in on the leading marker, so it is resolved and
+  // attached here. Every path below this block is marker-free by construction.
+  if (trimmed.startsWith(DYNAMIC_LOOP_STATE_PREFIX)) {
     const tokenEnd = trimmed.search(/\s/);
     const markerToken = tokenEnd === -1 ? trimmed : trimmed.slice(0, tokenEnd);
     const encodedState = markerToken.slice(DYNAMIC_LOOP_STATE_PREFIX.length);
-    loopState = /^[A-Za-z0-9_-]+$/.test(encodedState)
+    const loopState = /^[A-Za-z0-9_-]+$/.test(encodedState)
       ? consumeDynamicLoopState(encodedState)
       : undefined;
-    invalidLoopState = loopState === undefined;
     trimmed = tokenEnd === -1 ? '' : trimmed.slice(tokenEnd).trim();
+    const parsed: ParsedLoopArgs = trimmed
+      ? { mode: 'dynamic-prompt', prompt: trimmed }
+      : { mode: 'dynamic-maintenance' };
+    return loopState
+      ? { ...parsed, loopState }
+      : { ...parsed, invalidLoopState: true };
   }
 
-  const withLoopState = (parsed: ParsedLoopArgs): ParsedLoopArgs => ({
-    ...parsed,
-    ...(loopState ? { loopState } : {}),
-    ...(invalidLoopState ? { invalidLoopState: true } : {}),
-  });
-
-  if (hasDynamicLoopStateMarker) {
-    return withLoopState(
-      trimmed
-        ? { mode: 'dynamic-prompt', prompt: trimmed }
-        : { mode: 'dynamic-maintenance' },
-    );
-  }
-
-  if (!trimmed) return withLoopState({ mode: 'dynamic-maintenance' });
+  if (!trimmed) return { mode: 'dynamic-maintenance' };
 
   const bareInterval = parseIntervalToken(trimmed);
   if (bareInterval) {
-    return withLoopState(toFixedMode(bareInterval));
+    return toFixedMode(bareInterval);
   }
 
   const [firstToken, ...restTokens] = trimmed.split(/\s+/);
   const leadingInterval = parseIntervalToken(firstToken ?? '');
   if (leadingInterval) {
     const prompt = restTokens.join(' ').trim();
-    return withLoopState(toFixedMode(leadingInterval, prompt));
+    return toFixedMode(leadingInterval, prompt);
   }
 
   const trailingEvery = parseTrailingEveryClause(trimmed);
   if (trailingEvery) {
-    return withLoopState(toFixedMode(trailingEvery.interval, trailingEvery.prompt));
+    return toFixedMode(trailingEvery.interval, trailingEvery.prompt);
   }
 
-  return withLoopState({
+  return {
     mode: 'dynamic-prompt',
     prompt: trimmed,
-  });
+  };
 }
 
 export function buildPromptForMode(

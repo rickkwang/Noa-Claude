@@ -126,4 +126,12 @@ test('base system prompt and built-in tool matrix stays within model-aware budge
   // digest, which is the more expensive of the two.
   expect(lean.system).toBeLessThanOrEqual(13_100)
   expect(lean.total).toBeLessThan(verbose.total * 0.7)
+  // Floors, because every gate above is an upper bound: a head that collapsed
+  // to a fraction of itself passes all of them, so a section silently dropping
+  // out of the assembly would read as a compression win. Set well below the
+  // current sizes — these catch a missing section, not a further compression
+  // pass.
+  expect(verbose.system).toBeGreaterThan(14_000)
+  expect(thirdParty.system).toBeGreaterThan(14_000)
+  expect(lean.system).toBeGreaterThan(11_000)
 })

@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { isKairosCronEnabled } from '../../tools/ScheduleCronTool/prompt.js';
 import { registerBundledSkill } from '../bundledSkills.js';
-import { buildPromptForMode, parseLoopArgs } from './loopHelpers.js';
+import { buildPromptForMode, parseAndConsumeLoopArgs } from './loopHelpers.js';
 
 export function registerLoopSkill(): void {
   registerBundledSkill({
@@ -14,7 +14,7 @@ export function registerLoopSkill(): void {
     userInvocable: true,
     isEnabled: isKairosCronEnabled,
     async getPromptForCommand(args) {
-      const parsed = parseLoopArgs(args);
+      const parsed = parseAndConsumeLoopArgs(args);
       const text = buildPromptForMode(parsed);
       return [{ type: 'text', text }];
     },
