@@ -49,6 +49,12 @@ export type Terminal =
   | { reason: 'model_error'; error: unknown }
   | { reason: 'aborted_streaming' }
   | { reason: 'aborted_tools' }
+  // Autocompact rapid-refill breaker tripped: context refilled past the
+  // threshold within RAPID_REFILL_TURN_WINDOW turns of the previous compact,
+  // RAPID_REFILL_MAX_CONSECUTIVE times in a row. Compaction can't win
+  // against whatever is re-inflating context — stop instead of paying a
+  // summary call every few turns forever.
+  | { reason: 'rapid_refill_breaker' }
   // A Stop hook set preventContinuation.
   | { reason: 'stop_hook_prevented' }
   // A tool-phase hook emitted hook_stopped_continuation.
@@ -67,6 +73,11 @@ export type State = {
   maxOutputTokensOverride: number | undefined
   pendingToolUseSummary: Promise<ToolUseSummaryMessage | null> | undefined
   stopHookActive: boolean | undefined
+  // Consecutive stop-hook blocking continues. Loop-safety counter — carried
+  // by nextState like maxOutputTokensRecoveryCount, explicitly reset on real
+  // progress (next_turn / token_budget / goal continuations). Capped at
+  // CLAUDE_CODE_STOP_HOOK_BLOCK_CAP (default 8) in query.ts.
+  stopHookBlockingCount: number
   turnCount: number
   // Why the previous iteration continued. Undefined on first iteration.
   // Lets tests assert recovery paths fired without inspecting message contents.
@@ -87,7 +98,7 @@ type RequiredNextFields = Pick<
  * an override fails benign, never as an infinite loop:
  *
  * - Carry forward: maxOutputTokensRecoveryCount, hasAttemptedReactiveCompact,
- *   turnCount. These are loop-safety counters/guards — resetting one by
+ *   stopHookBlockingCount, turnCount. These are loop-safety counters/guards — resetting one by
  *   accident re-arms a retry path (the stop_hook_blocking +
  *   hasAttemptedReactiveCompact reset bug burned thousands of API calls).
  *   A stale carry merely stops recovery one turn early.
@@ -104,6 +115,7 @@ export function nextState(
   return {
     maxOutputTokensRecoveryCount: prev.maxOutputTokensRecoveryCount,
     hasAttemptedReactiveCompact: prev.hasAttemptedReactiveCompact,
+    stopHookBlockingCount: prev.stopHookBlockingCount,
     turnCount: prev.turnCount,
     maxOutputTokensOverride: undefined,
     pendingToolUseSummary: undefined,

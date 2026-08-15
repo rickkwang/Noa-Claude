@@ -7,6 +7,7 @@ import type {
 import type { CanUseToolFn } from './hooks/useCanUseTool.js'
 import { FallbackTriggeredError } from './services/api/withRetry.js'
 import {
+  AUTOCOMPACT_THRASHING_MESSAGE,
   calculateTokenWarningState,
   isAutoCompactEnabled,
 } from './services/compact/autoCompact.js'
@@ -99,6 +100,7 @@ import {
   tokenCountWithEstimation,
 } from './utils/tokens.js'
 import { ESCALATED_MAX_TOKENS } from './utils/context.js'
+import { getStopHookBlockCap } from './utils/envUtils.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from './services/analytics/growthbook.js'
 import { SLEEP_TOOL_NAME } from './tools/SleepTool/prompt.js'
 import { executePostSamplingHooks } from './utils/hooks/postSamplingHooks.js'
@@ -135,6 +137,10 @@ const snipModule = feature('HISTORY_SNIP')
 function* yieldMissingToolResultBlocks(
   assistantMessages: AssistantMessage[],
   errorMessage: string,
+  // tool_use ids that already produced a tool_result this turn (e.g. via
+  // the streaming executor before a mid-stream error). Skipped — emitting a
+  // second tool_result for the same id breaks the API's pairing invariant.
+  answeredToolUseIds?: Set<string>,
 ) {
   for (const assistantMessage of assistantMessages) {
     // Extract all tool use blocks from this assistant message
@@ -144,6 +150,9 @@ function* yieldMissingToolResultBlocks(
 
     // Emit an interruption message for each tool use
     for (const toolUse of toolUseBlocks) {
+      if (answeredToolUseIds?.has(toolUse.id)) {
+        continue
+      }
       yield createUserMessage({
         content: [
           {
@@ -322,6 +331,7 @@ async function* queryLoop(
     stopHookActive: undefined,
     maxOutputTokensRecoveryCount: 0,
     hasAttemptedReactiveCompact: false,
+    stopHookBlockingCount: 0,
     turnCount: 1,
     pendingToolUseSummary: undefined,
     transition: undefined,
@@ -366,6 +376,7 @@ async function* queryLoop(
       maxOutputTokensOverride,
       pendingToolUseSummary,
       stopHookActive,
+      stopHookBlockingCount,
       turnCount,
     } = state
 
@@ -500,7 +511,7 @@ async function* queryLoop(
     )
 
     queryCheckpoint('query_autocompact_start')
-    const { compactionResult, consecutiveFailures } = await deps.autocompact(
+    const { compactionResult, consecutiveFailures, rapidRefillTripped, consecutiveRapidRefills } = await deps.autocompact(
       messagesForQuery,
       toolUseContext,
       {
@@ -515,6 +526,23 @@ async function* queryLoop(
       snipTokensFreed,
     )
     queryCheckpoint('query_autocompact_end')
+
+    // Rapid-refill breaker: autocompact refused to run because the context
+    // refilled past the threshold within a few turns of the previous
+    // compact, 3 times in a row. Compaction can't win — end the turn.
+    if (rapidRefillTripped !== undefined) {
+      logEvent('tengu_auto_compact_rapid_refill_breaker', {
+        consecutiveRapidRefills: rapidRefillTripped,
+        turnsSincePreviousCompact: autoCompactTracking?.turnCounter ?? -1,
+        queryChainId: queryChainIdForAnalytics,
+        queryDepth: queryTracking.depth,
+      })
+      yield createAssistantAPIErrorMessage({
+        content: AUTOCOMPACT_THRASHING_MESSAGE,
+        error: 'invalid_request',
+      })
+      return { reason: 'rapid_refill_breaker' }
+    }
 
     if (compactionResult) {
       const {
@@ -573,6 +601,7 @@ async function* queryLoop(
         turnId: deps.uuid(),
         turnCounter: 0,
         consecutiveFailures: 0,
+        consecutiveRapidRefills: consecutiveRapidRefills ?? 0,
       }
 
       const postCompactMessages = buildPostCompactMessages(compactionResult)
@@ -1105,7 +1134,23 @@ async function* queryLoop(
       // yield them as synthetic assistant messages. However if it does throw
       // due to a bug, we may end up in a state where we have already emitted
       // a tool_use block but will stop before emitting the tool_result.
-      yield* yieldMissingToolResultBlocks(assistantMessages, errorMessage)
+      // Tool results already yielded by the streaming executor this turn are
+      // excluded — a second tool_result for the same id would 400 next turn.
+      const answeredToolUseIds = new Set<string>()
+      for (const result of toolResults) {
+        if (result.type === 'user' && Array.isArray(result.message.content)) {
+          for (const block of result.message.content) {
+            if (block.type === 'tool_result') {
+              answeredToolUseIds.add(block.tool_use_id)
+            }
+          }
+        }
+      }
+      yield* yieldMissingToolResultBlocks(
+        assistantMessages,
+        errorMessage,
+        answeredToolUseIds,
+      )
 
       // Surface the real error instead of a misleading "[Request interrupted
       // by user]" — this path is a model/runtime failure, not a user action.
@@ -1407,6 +1452,47 @@ async function* queryLoop(
         // result. Resetting to false here caused an infinite loop: compact →
         // still too long → error → stop hook blocking → compact → … burning
         // thousands of API calls.
+        const nextTurnCountOnBlock = turnCount + 1
+        const blockCount = stopHookBlockingCount + 1
+        // maxTurns still wins over the block cap (upstream order).
+        if (maxTurns && nextTurnCountOnBlock > maxTurns) {
+          logEvent('tengu_stop_hook_block_count', {
+            count: blockCount,
+            is_subagent: !!toolUseContext.agentId,
+            hit_max_turns: true,
+            hit_cap: false,
+            queryChainId: queryChainIdForAnalytics,
+            queryDepth: queryTracking.depth,
+          })
+          yield createAttachmentMessage({
+            type: 'max_turns_reached',
+            maxTurns,
+            turnCount: nextTurnCountOnBlock,
+          })
+          return { reason: 'max_turns', turnCount: nextTurnCountOnBlock }
+        }
+        // stop_hook_active is only advisory input to the hook process — a
+        // hook that keeps blocking would otherwise loop the turn forever.
+        // Cap consecutive blocking continues (ported from upstream 2.1.x,
+        // default 8, CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0 disables).
+        const blockCap = getStopHookBlockCap()
+        if (blockCap > 0 && blockCount > blockCap) {
+          logEvent('tengu_stop_hook_block_count', {
+            count: blockCount,
+            is_subagent: !!toolUseContext.agentId,
+            hit_max_turns: false,
+            hit_cap: true,
+            queryChainId: queryChainIdForAnalytics,
+            queryDepth: queryTracking.depth,
+          })
+          yield createSystemMessage(
+            `A hook blocked the turn from ending ${blockCount} consecutive times — overriding and ending turn. ` +
+              `For Stop/SubagentStop hooks, check stop_hook_active in the input and return success while it's true. ` +
+              `Set CLAUDE_CODE_STOP_HOOK_BLOCK_CAP to raise this limit.`,
+            'warning',
+          )
+          return { reason: 'completed' }
+        }
         state = nextState(state, {
           messages: [
             ...messagesForQuery,
@@ -1417,6 +1503,12 @@ async function* queryLoop(
           autoCompactTracking: tracking,
           maxOutputTokensRecoveryCount: 0,
           stopHookActive: true,
+          stopHookBlockingCount: blockCount,
+          // Bump turnCount (upstream parity): a blocking continue IS a turn
+          // boundary, and maxTurns must be able to win over the block cap.
+          // The goal-prompt injection guard keys off state.transition, not
+          // turnCount, so this doesn't re-inject.
+          turnCount: nextTurnCountOnBlock,
           transition: { reason: 'stop_hook_blocking' },
         })
         continue
@@ -1448,6 +1540,7 @@ async function* queryLoop(
             autoCompactTracking: tracking,
             maxOutputTokensRecoveryCount: 0,
             hasAttemptedReactiveCompact: false,
+            stopHookBlockingCount: 0,
             transition: { reason: 'token_budget_continuation' },
           })
           continue
@@ -1591,6 +1684,7 @@ async function* queryLoop(
               autoCompactTracking: tracking,
               maxOutputTokensRecoveryCount: 0,
               hasAttemptedReactiveCompact: false,
+              stopHookBlockingCount: 0,
               turnCount: nextTurnCount,
               transition: { reason: 'goal_auto_continue' },
             })
@@ -1947,6 +2041,7 @@ async function* queryLoop(
       turnCount: nextTurnCount,
       maxOutputTokensRecoveryCount: 0,
       hasAttemptedReactiveCompact: false,
+      stopHookBlockingCount: 0,
       pendingToolUseSummary: nextPendingToolUseSummary,
       stopHookActive,
       transition: { reason: 'next_turn' },

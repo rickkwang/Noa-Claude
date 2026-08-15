@@ -83,6 +83,36 @@ export type AutoCompactTrackingState = {
   // Used as a circuit breaker to stop retrying when the context is
   // irrecoverably over the limit (e.g., prompt_too_long).
   consecutiveFailures?: number
+  // Consecutive compacts that each happened within RAPID_REFILL_TURN_WINDOW
+  // turns of the previous one. Feeds the rapid-refill breaker.
+  consecutiveRapidRefills?: number
+}
+
+// Rapid-refill breaker (ported from upstream 2.1.x). If compaction fires, the
+// context refills past the threshold within a few turns, and compaction fires
+// again — repeatedly — something in the loop is re-inflating context faster
+// than summarization can shrink it (e.g. a huge file read or tool result in
+// the preserved tail). Compacting forever burns a summary call every few
+// turns; trip instead and surface an error.
+export const RAPID_REFILL_TURN_WINDOW = 3
+export const RAPID_REFILL_MAX_CONSECUTIVE = 3
+export const AUTOCOMPACT_THRASHING_MESSAGE =
+  'Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row. ' +
+  'A file being read or a tool output is likely too large for the context window. ' +
+  'Try reading in smaller chunks, or use /clear to start fresh.'
+
+/**
+ * Consecutive compacts that each happened within RAPID_REFILL_TURN_WINDOW
+ * turns of the previous one. Any gap >= the window (or no prior compact)
+ * resets the streak to 0.
+ */
+export function countConsecutiveRapidRefills(
+  tracking: AutoCompactTrackingState | undefined,
+): number {
+  return tracking?.compacted === true &&
+    tracking.turnCounter < RAPID_REFILL_TURN_WINDOW
+    ? (tracking.consecutiveRapidRefills ?? 0) + 1
+    : 0
 }
 
 export const AUTOCOMPACT_BUFFER_TOKENS = 13_000
@@ -498,6 +528,11 @@ export async function autoCompactIfNeeded(
   wasCompacted: boolean
   compactionResult?: CompactionResult
   consecutiveFailures?: number
+  // Set when the rapid-refill breaker tripped (value = streak length). No
+  // compaction was attempted — the caller should end the turn.
+  rapidRefillTripped?: number
+  // Streak length to persist into the next tracking state on success.
+  consecutiveRapidRefills?: number
 }> {
   if (isEnvTruthy(process.env.DISABLE_COMPACT)) {
     return { wasCompacted: false }
@@ -526,6 +561,17 @@ export async function autoCompactIfNeeded(
     // so the eventual compaction can consume a ready summary instead of blocking.
     maybeArmPrecompute(messages, toolUseContext, cacheSafeParams, model, querySource)
     return { wasCompacted: false }
+  }
+
+  // Rapid-refill breaker. Checked before spending a summary call: when the
+  // streak trips, the summary would be wasted — the turn is dying either way.
+  const consecutiveRapidRefills = countConsecutiveRapidRefills(tracking)
+  if (consecutiveRapidRefills >= RAPID_REFILL_MAX_CONSECUTIVE) {
+    logForDebugging(
+      `autocompact: rapid-refill breaker tripped — ${consecutiveRapidRefills} consecutive refills within <${RAPID_REFILL_TURN_WINDOW} turns each (last was ${tracking?.turnCounter} turns)`,
+      { level: 'warn' },
+    )
+    return { wasCompacted: false, rapidRefillTripped: consecutiveRapidRefills }
   }
 
   const recompactionInfo: RecompactionInfo = {
@@ -601,6 +647,7 @@ export async function autoCompactIfNeeded(
           wasCompacted: true,
           compactionResult,
           consecutiveFailures: 0,
+          consecutiveRapidRefills,
         }
       }
     }
@@ -629,6 +676,7 @@ export async function autoCompactIfNeeded(
         return {
           wasCompacted: true,
           compactionResult: sessionMemoryResult,
+          consecutiveRapidRefills,
         }
       }
     }
@@ -686,6 +734,7 @@ export async function autoCompactIfNeeded(
       compactionResult,
       // Reset failure count on success
       consecutiveFailures: 0,
+      consecutiveRapidRefills,
     }
   } catch (error) {
     if (isCompactionUserAbort(error, toolUseContext.abortController.signal)) {

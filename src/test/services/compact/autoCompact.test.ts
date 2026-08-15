@@ -2,8 +2,11 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import {
   calculateTokenWarningState,
   computeAutoCompactPivot,
+  countConsecutiveRapidRefills,
   ERROR_THRESHOLD_BUFFER_TOKENS,
   getEffectiveContextWindowSize,
+  RAPID_REFILL_MAX_CONSECUTIVE,
+  RAPID_REFILL_TURN_WINDOW,
   resolveAutoCompactPivot,
   selectTailPivot,
   WARNING_THRESHOLD_BUFFER_TOKENS,
@@ -217,5 +220,50 @@ describe('resolveAutoCompactPivot', () => {
       isRecompactionInChain: false,
     } as never)
     expect(pivot).not.toBeNull()
+  })
+})
+
+describe('countConsecutiveRapidRefills (rapid-refill breaker)', () => {
+  test('no prior compact → streak 0', () => {
+    expect(countConsecutiveRapidRefills(undefined)).toBe(0)
+    expect(
+      countConsecutiveRapidRefills({
+        compacted: false,
+        turnCounter: 0,
+        turnId: 'x',
+      }),
+    ).toBe(0)
+  })
+
+  test('compact within the turn window increments the streak', () => {
+    expect(
+      countConsecutiveRapidRefills({
+        compacted: true,
+        turnCounter: 2,
+        turnId: 'x',
+        consecutiveRapidRefills: 1,
+      }),
+    ).toBe(2)
+  })
+
+  test('a gap at or beyond the window resets the streak', () => {
+    expect(
+      countConsecutiveRapidRefills({
+        compacted: true,
+        turnCounter: RAPID_REFILL_TURN_WINDOW,
+        turnId: 'x',
+        consecutiveRapidRefills: 2,
+      }),
+    ).toBe(0)
+  })
+
+  test('streak reaching the max trips the breaker threshold', () => {
+    const streak = countConsecutiveRapidRefills({
+      compacted: true,
+      turnCounter: 1,
+      turnId: 'x',
+      consecutiveRapidRefills: RAPID_REFILL_MAX_CONSECUTIVE - 1,
+    })
+    expect(streak).toBe(RAPID_REFILL_MAX_CONSECUTIVE)
   })
 })

@@ -46,7 +46,7 @@ import { createAbortController, createChildAbortController } from './utils/abort
 import type { AttributionState } from './utils/commitAttribution.js'
 import { getGlobalConfig } from './utils/config.js'
 import { getCwd } from './utils/cwd.js'
-import { isBareMode, isEnvTruthy } from './utils/envUtils.js'
+import { isBareMode, isEnvTruthy, resolveMaxTurns } from './utils/envUtils.js'
 import { getFastModeState } from './utils/fastMode.js'
 import {
   type FileHistoryState,
@@ -689,7 +689,9 @@ export class QueryEngine {
       toolUseContext: processUserInputContext,
       fallbackModel,
       querySource: 'sdk',
-      maxTurns,
+      // CLI --max-turns / SDK option wins; CLAUDE_CODE_MAX_TURNS env is the
+      // backstop (ported from upstream 2.1.x).
+      maxTurns: resolveMaxTurns(maxTurns),
       taskBudget,
     })) {
       // Record assistant, user, and compact boundary messages

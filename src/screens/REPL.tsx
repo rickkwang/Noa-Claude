@@ -34,7 +34,7 @@ import { updateLastInteractionTime, getLastInteractionTime, getOriginalCwd, getP
 import { asSessionId, asAgentId } from '../types/ids.js';
 import { logForDebugging } from '../utils/debug.js';
 import { QueryGuard } from '../utils/QueryGuard.js';
-import { isEnvTruthy } from '../utils/envUtils.js';
+import { isEnvTruthy, resolveMaxTurns } from '../utils/envUtils.js';
 import { formatTokens, truncateToWidth } from '../utils/format.js';
 import { consumeEarlyInput } from '../utils/earlyInput.js';
 import { setMemberActive } from '../utils/swarm/teamHelpers.js';
@@ -2874,6 +2874,9 @@ export function REPL({
       systemContext,
       canUseTool,
       toolUseContext,
+      // Interactive sessions have no CLI --max-turns; CLAUDE_CODE_MAX_TURNS
+      // is the process-wide backstop (ported from upstream 2.1.x).
+      maxTurns: resolveMaxTurns(),
       querySource: getQuerySourceForREPL()
     })) {
       onQueryEvent(event);

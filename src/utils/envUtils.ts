@@ -38,6 +38,47 @@ export function isEnvTruthy(envVar: string | boolean | undefined): boolean {
   return ['1', 'true', 'yes', 'on'].includes(normalizedValue)
 }
 
+/**
+ * Max-turns resolution (ported from upstream 2.1.x). An explicit value (CLI
+ * --max-turns, SDK option) always wins; otherwise CLAUDE_CODE_MAX_TURNS acts
+ * as a process-wide backstop — including interactive REPL sessions, which
+ * otherwise have no turn cap at all. Invalid values throw loudly (a config
+ * error should not silently disable the backstop).
+ */
+export function resolveMaxTurns(explicit?: number): number | undefined {
+  if (explicit !== undefined) return explicit
+  const raw = (
+    process.env.NOA_CLAUDE_MAX_TURNS ?? process.env.CLAUDE_CODE_MAX_TURNS
+  )?.trim()
+  if (!raw) return undefined
+  const parsed = Number(raw)
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(
+      `CLAUDE_CODE_MAX_TURNS must be a positive integer; got "${raw}"`,
+    )
+  }
+  return parsed
+}
+
+export const DEFAULT_STOP_HOOK_BLOCK_CAP = 8
+
+/**
+ * Cap on consecutive stop-hook blocking continuations (ported from upstream
+ * 2.1.x, default 8). stop_hook_active is only advisory input to the hook
+ * process — a hook that keeps blocking would otherwise loop the turn
+ * forever, burning API calls. Set to 0 to disable the cap (not recommended).
+ */
+export function getStopHookBlockCap(): number {
+  const raw =
+    process.env.NOA_CLAUDE_STOP_HOOK_BLOCK_CAP ??
+    process.env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP
+  if (raw === undefined || raw.trim() === '') return DEFAULT_STOP_HOOK_BLOCK_CAP
+  const parsed = Number(raw)
+  return Number.isInteger(parsed) && parsed >= 0
+    ? parsed
+    : DEFAULT_STOP_HOOK_BLOCK_CAP
+}
+
 export function isEnvDefinedFalsy(
   envVar: string | boolean | undefined,
 ): boolean {

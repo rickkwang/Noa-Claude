@@ -262,6 +262,102 @@ describe('query loop recovery', () => {
     expect(terminal).toEqual({ reason: 'completed' })
   }, 5000)
 
+  test('stop hook block cap: a hook that always blocks is overridden after the cap', async () => {
+    const prevCap = process.env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP
+    process.env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP = '2'
+    try {
+      let modelCalls = 0
+      const stopHooks: QueryDeps['stopHooks'] = async function* () {
+        // A misbehaving hook that blocks every time, ignoring
+        // stop_hook_active. Without the cap this loops forever.
+        return {
+          blockingErrors: [
+            createUserMessage({ content: 'Stop hook: still bad', isMeta: true }),
+          ],
+          preventContinuation: false,
+        }
+      }
+      const deps = makeDeps(
+        async function* () {
+          modelCalls += 1
+          yield createAssistantMessage({ content: 'done' })
+        },
+        { stopHooks },
+      )
+
+      const { events, terminal } = await drain({ deps })
+
+      // Initial attempt + 2 allowed blocking continues; the 3rd block
+      // (count 3 > cap 2) ends the turn.
+      expect(modelCalls).toBe(3)
+      const warning = events.find(
+        e =>
+          e.type === 'system' &&
+          String(e.content).includes('A hook blocked the turn from ending'),
+      )
+      expect(warning).toBeDefined()
+      expect(terminal).toEqual({ reason: 'completed' })
+    } finally {
+      if (prevCap === undefined) {
+        delete process.env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP
+      } else {
+        process.env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP = prevCap
+      }
+    }
+  }, 5000)
+
+  test('stop hook blocking: maxTurns still wins over the block cap', async () => {
+    const stopHooks: QueryDeps['stopHooks'] = async function* () {
+      return {
+        blockingErrors: [
+          createUserMessage({ content: 'Stop hook: blocked', isMeta: true }),
+        ],
+        preventContinuation: false,
+      }
+    }
+    const deps = makeDeps(
+      async function* () {
+        yield createAssistantMessage({ content: 'done' })
+      },
+      { stopHooks },
+    )
+
+    const { events, terminal } = await drain({ deps, maxTurns: 2 })
+
+    expect(terminal).toEqual({ reason: 'max_turns', turnCount: 3 })
+    const attachment = events.find(
+      e =>
+        e.type === 'attachment' && e.attachment?.type === 'max_turns_reached',
+    )
+    expect(attachment).toBeDefined()
+  }, 5000)
+
+  test('rapid refill breaker: autocompact trip ends the turn before any model call', async () => {
+    let modelCalls = 0
+    const deps = makeDeps(
+      async function* () {
+        modelCalls += 1
+        yield createAssistantMessage({ content: 'unreachable' })
+      },
+      {
+        autocompact: async () => ({
+          wasCompacted: false,
+          rapidRefillTripped: 3,
+        }),
+      },
+    )
+
+    const { events, terminal } = await drain({ deps })
+
+    expect(modelCalls).toBe(0)
+    const errorEvent = events.find(
+      e => e.type === 'assistant' && e.isApiErrorMessage,
+    )
+    expect(errorEvent).toBeDefined()
+    expect(JSON.stringify(errorEvent)).toContain('Autocompact is thrashing')
+    expect(terminal).toEqual({ reason: 'rapid_refill_breaker' })
+  }, 5000)
+
   test('stop hook preventContinuation: ends the turn with stop_hook_prevented', async () => {
     let modelCalls = 0
     const stopHooks: QueryDeps['stopHooks'] = async function* () {

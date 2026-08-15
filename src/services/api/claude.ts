@@ -2662,6 +2662,46 @@ async function* queryModel(
           false,
         )
 
+      // Partial-tool-use guard (port of upstream 2.1.x's partial-finalize
+      // priority, simplified for this fork's architecture). If this attempt
+      // already yielded assistant messages containing tool_use blocks,
+      // streaming tool execution may have dispatched them — a non-streaming
+      // retry makes the model re-emit the same tool calls and runs them
+      // twice (inc-4258). Upstream finalizes the partial response in-band
+      // (synthesize stop_reason, keep the yielded tool_use blocks); this
+      // fork lacks that machinery, so the safe equivalent is to skip the
+      // fallback and let the error propagate — query.ts pairs any dangling
+      // tool_use blocks with synthetic tool_results and ends the turn.
+      const partialToolUseYielded = newMessages.some(msg =>
+        msg.message.content.some(block => block.type === 'tool_use'),
+      )
+      if (!disableFallback && partialToolUseYielded) {
+        logForDebugging(
+          'Error streaming after tool_use blocks were yielded — skipping non-streaming fallback to avoid double tool execution',
+          { level: 'warn' },
+        )
+        logEvent('tengu_streaming_fallback_to_non_streaming', {
+          model:
+            options.model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          error:
+            streamingError instanceof Error
+              ? (streamingError.name as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS)
+              : (String(
+                  streamingError,
+                ) as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS),
+          attemptNumber,
+          maxOutputTokens,
+          thinkingType:
+            thinkingConfig.type as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          fallback_disabled: true,
+          fallback_cause:
+            'partial_tool_use_yielded' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          request_id: (streamRequestId ??
+            'unknown') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        })
+        throw streamingError
+      }
+
       if (disableFallback) {
         logForDebugging(
           `Error streaming (non-streaming fallback disabled): ${errorMessage(streamingError)}`,
