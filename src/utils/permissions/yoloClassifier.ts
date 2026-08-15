@@ -901,6 +901,136 @@ function getClassifierThinkingConfig(
 }
 
 /**
+ * Derive a signal that aborts when `outer` aborts or after `timeoutMs`,
+ * whichever comes first. Ports upstream zB. The timer is unref'd so a pending
+ * deadline never holds the process open.
+ */
+function withDeadline(
+  outer: AbortSignal,
+  timeoutMs: number,
+): { signal: AbortSignal; cleanup: () => void } {
+  const controller = new AbortController()
+  if (outer.aborted) controller.abort()
+  const onOuterAbort = () => controller.abort()
+  outer.addEventListener('abort', onOuterAbort)
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  if (typeof timer === 'object') timer.unref?.()
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timer)
+      outer.removeEventListener('abort', onOuterAbort)
+    },
+  }
+}
+
+/**
+ * Why a response carried no usable verdict. Ports upstream fDa/SDa.
+ *
+ * The distinction decides whether retrying can help. 'unparseable' is a
+ * malformed or truncated answer — a fresh sample may well parse. A
+ * 'policy_refusal' is the API's own safeguard declining the request because of
+ * earlier conversation content; it is deterministic for the same transcript,
+ * so re-asking only burns the deadline. Note that an empty response whose
+ * stop_reason is max_tokens is truncation, not refusal, and is retried.
+ */
+function classifyFailureKind(
+  response: Anthropic.Beta.Messages.BetaMessage,
+): 'unparseable' | 'policy_refusal' {
+  const text = extractTextContent(response.content)
+  const truncated =
+    response.stop_reason === 'max_tokens' ||
+    response.stop_reason === 'model_context_window_exceeded'
+  return response.stop_reason === 'refusal' || (text === '' && !truncated)
+    ? 'policy_refusal'
+    : 'unparseable'
+}
+
+/** Per-request wall-clock cap. Ports upstream b8p. */
+const CLASSIFIER_REQUEST_TIMEOUT_MS = 60_000
+
+/**
+ * User-facing reason for a stage that produced no verdict. Ports upstream
+ * wci/b0o. A safeguard refusal gets an extra clause because otherwise it reads
+ * as "auto mode judged your command dangerous", when in fact auto mode never
+ * got an answer and the block came from a different check reacting to earlier
+ * conversation content.
+ */
+function buildNoVerdictReason(
+  failureMode: 'unparseable' | 'policy_refusal',
+): string {
+  const refusalNote =
+    failureMode === 'policy_refusal'
+      ? ' — a safety check separate from auto mode blocked this request because ' +
+        "of earlier conversation content — it isn't about the action itself"
+      : ''
+  return (
+    'Auto mode could not evaluate this action and is blocking it for safety' +
+    `${refusalNote} — run with --debug for details`
+  )
+}
+
+/**
+ * Run one classifier stage, re-sampling while the response is unparseable.
+ * Ports upstream tVp.
+ *
+ * The retry exists because the parser fails closed: an unparseable response
+ * becomes a block. Without it, one malformed sample denies a legitimate
+ * action. Bounded three ways — the attempt count (maxRetries), the stage
+ * deadline, and the per-request timeout — so a model that never produces a
+ * verdict costs a bounded stall rather than an unbounded one.
+ *
+ * Usage is summed across attempts so cost reporting counts what was spent,
+ * not just the last sample.
+ */
+async function runClassifierStageRequest(
+  runSideQuery: typeof sideQuery,
+  opts: Parameters<typeof sideQuery>[0],
+  outerSignal: AbortSignal,
+  deadlineMs: number,
+  isParsed: (response: Anthropic.Beta.Messages.BetaMessage) => boolean,
+): Promise<{
+  raw: Anthropic.Beta.Messages.BetaMessage
+  usage: ClassifierUsage
+  attempts: number
+}> {
+  const start = Date.now()
+  const request = async (remainingMs: number) => {
+    const { signal, cleanup } = withDeadline(outerSignal, remainingMs)
+    try {
+      return await runSideQuery({
+        ...opts,
+        signal,
+        timeoutMs: CLASSIFIER_REQUEST_TIMEOUT_MS,
+      })
+    } finally {
+      cleanup()
+    }
+  }
+
+  let attempts = 1
+  let raw = await request(deadlineMs)
+  let usage = extractUsage(raw)
+  const maxRetries = getClassifierMaxRetries()
+  while (
+    attempts <= maxRetries &&
+    !isParsed(raw) &&
+    classifyFailureKind(raw) === 'unparseable'
+  ) {
+    const remainingMs = deadlineMs - (Date.now() - start)
+    if (remainingMs <= 0) break
+    attempts += 1
+    logForDebugging(
+      `Auto mode classifier: unparseable response, re-sampling (attempt ${attempts}/${maxRetries + 1}, ${remainingMs}ms left)`,
+      { level: 'warn' },
+    )
+    raw = await request(remainingMs)
+    usage = combineUsage(usage, extractUsage(raw))
+  }
+  return { raw, usage, attempts }
+}
+
+/**
  * XML classifier for auto mode security decisions. Supports three modes:
  *
  * 'both' (default): Stage 1 ("fast") runs first with max_tokens=64 and
@@ -961,6 +1091,14 @@ async function classifyYoloActionXml(
   let stage1MsgId: string | undefined
   let stage1Opts: Parameters<typeof sideQuery>[0] | undefined
   let stage1ParseFailure = false
+  // Stage 1 produced no verdict because the API safeguard refused it, not
+  // because the answer was malformed. Read again after stage 2 to decide
+  // which stage the refusal actually came from.
+  let stage1Refused = false
+  let stage1Attempts = 0
+  // Stage 1's verdict, kept so it can stand if stage 2 never returns one.
+  let stage1Blocked = false
+  let stage1BlockReason: string | undefined
   const overallStart = Date.now()
   const [disableThinking, thinkingPadding] = getClassifierThinkingConfig(model)
 
@@ -1002,14 +1140,30 @@ async function classifyYoloActionXml(
         ...(mode !== 'fast' && { stop_sequences: ['</block>'] }),
         querySource: 'auto_mode',
       }
-      const stage1Raw = await runSideQuery(stage1Opts)
+      const { raw: stage1Raw, usage: stage1RunUsage, attempts } =
+        await runClassifierStageRequest(
+          runSideQuery,
+          stage1Opts,
+          signal,
+          CLASSIFIER_STAGE1_BUDGET_MS,
+          r => parseXmlBlock(extractTextContent(r.content)) !== null,
+        )
+      stage1Attempts = attempts
       stage1DurationMs = Date.now() - stage1Start
-      stage1Usage = extractUsage(stage1Raw)
+      stage1Usage = stage1RunUsage
       stage1RequestId = extractRequestId(stage1Raw)
       stage1MsgId = stage1Raw.id
       const stage1Text = extractTextContent(stage1Raw.content)
       const stage1Block = parseXmlBlock(stage1Text)
       stage1ParseFailure = stage1Block === null
+      stage1Refused =
+        stage1Block === null &&
+        classifyFailureKind(stage1Raw) === 'policy_refusal'
+      stage1Blocked = stage1Block === true
+      if (stage1Blocked) {
+        stage1BlockReason =
+          parseXmlReason(stage1Text) ?? 'Blocked by fast classifier'
+      }
 
       void maybeDumpAutoMode(stage1Opts, stage1Raw, stage1Start, 'stage1')
       setLastClassifierRequests([stage1Opts])
@@ -1019,6 +1173,7 @@ async function classifyYoloActionXml(
         logAutoModeOutcome('success', model, {
           classifierType,
           durationMs: stage1DurationMs,
+          stage1Attempts,
         })
         return {
           shouldBlock: false,
@@ -1036,12 +1191,23 @@ async function classifyYoloActionXml(
       // In fast-only mode, stage 1 is final — handle block + unparseable here.
       if (mode === 'fast') {
         if (stage1Block === null) {
-          logAutoModeOutcome('parse_failure', model, { classifierType })
+          const failureMode = classifyFailureKind(stage1Raw)
+          logAutoModeOutcome('parse_failure', model, {
+            classifierType,
+            failureKind: failureMode,
+            stage1Attempts,
+          })
           return {
             shouldBlock: true,
-            reason: 'Classifier stage 1 unparseable - blocking for safety',
+            reason: buildNoVerdictReason(failureMode),
             model,
-            parseFailure: true,
+            // A safeguard refusal is not a model-contract failure, so it must
+            // not demote the probe model — only a malformed answer does.
+            ...(failureMode === 'unparseable' && { parseFailure: true }),
+            failureMode,
+            ...(failureMode === 'policy_refusal' && {
+              refusedBySafeguard: true,
+            }),
             usage: stage1Usage,
             durationMs: stage1DurationMs,
             promptLengths,
@@ -1054,6 +1220,7 @@ async function classifyYoloActionXml(
         logAutoModeOutcome('success', model, {
           classifierType,
           durationMs: stage1DurationMs,
+          stage1Attempts,
         })
         return {
           shouldBlock: true,
@@ -1094,9 +1261,18 @@ async function classifyYoloActionXml(
       signal,
       querySource: 'auto_mode' as const,
     }
-    const stage2Raw = await runSideQuery(stage2Opts)
+    const {
+      raw: stage2Raw,
+      usage: stage2Usage,
+      attempts: stage2Attempts,
+    } = await runClassifierStageRequest(
+      runSideQuery,
+      stage2Opts,
+      signal,
+      CLASSIFIER_STAGE2_BUDGET_MS,
+      r => parseXmlBlock(extractTextContent(r.content)) !== null,
+    )
     const stage2DurationMs = Date.now() - stage2Start
-    const stage2Usage = extractUsage(stage2Raw)
     const stage2RequestId = extractRequestId(stage2Raw)
     const stage2MsgId = stage2Raw.id
     const stage2Text = extractTextContent(stage2Raw.content)
@@ -1112,12 +1288,39 @@ async function classifyYoloActionXml(
     )
 
     if (stage2Block === null) {
-      logAutoModeOutcome('parse_failure', model, { classifierType })
+      const stage2FailureMode = classifyFailureKind(stage2Raw)
+      // Stage 1 already produced a block; stage 2 was only going to check it
+      // for a false positive and never answered. The verdict we have is a real
+      // one, so it stands rather than degrading into a no-verdict block.
+      const stage1VerdictStands =
+        stage1Blocked && stage2FailureMode === 'policy_refusal'
+      // The safeguard refusal happened back at stage 1 — report it there,
+      // since that is the diagnosis that explains the block.
+      const refusalFromStage1 =
+        stage1Refused && stage2FailureMode !== 'policy_refusal'
+      const failureMode = refusalFromStage1
+        ? ('policy_refusal' as const)
+        : stage2FailureMode
+      logAutoModeOutcome('parse_failure', model, {
+        classifierType,
+        failureKind: stage1VerdictStands ? 'stage1_verdict_stands' : failureMode,
+        durationMs: totalDurationMs,
+        stage1Attempts,
+        stage2Attempts,
+      })
       return {
         shouldBlock: true,
-        reason: 'Classifier stage 2 unparseable - blocking for safety',
+        ...(stage1VerdictStands
+          ? { reason: stage1BlockReason ?? 'Blocked by fast classifier' }
+          : {
+              reason: buildNoVerdictReason(failureMode),
+              ...(failureMode === 'unparseable' && { parseFailure: true }),
+              failureMode,
+              ...(failureMode === 'policy_refusal' && {
+                refusedBySafeguard: true,
+              }),
+            }),
         model,
-        parseFailure: true,
         usage: totalUsage,
         durationMs: totalDurationMs,
         promptLengths,
@@ -1136,6 +1339,8 @@ async function classifyYoloActionXml(
     logAutoModeOutcome('success', model, {
       classifierType,
       durationMs: totalDurationMs,
+      stage1Attempts,
+      stage2Attempts,
     })
     return {
       thinking: parseXmlThinking(stage2Text) ?? undefined,
@@ -1426,6 +1631,7 @@ export async function classifyYoloAction(
       },
       maxRetries: getClassifierMaxRetries(),
       signal,
+      timeoutMs: CLASSIFIER_REQUEST_TIMEOUT_MS,
       querySource: 'auto_mode' as const,
     }
     const result = await sideQuery(sideQueryOpts)
@@ -1904,13 +2110,12 @@ async function runClassifierWithProbeFallback(
     `Auto mode classifier: primary ${primaryModel} unavailable (${result.errorKind}); trying fallback ${fallbackModel} with ${remainingMs}ms remaining`,
     { level: 'warn' },
   )
-  const fallbackController = new AbortController()
-  const onOuterAbort = () => fallbackController.abort()
-  outerSignal.addEventListener('abort', onOuterAbort)
-  const timer = setTimeout(() => fallbackController.abort(), remainingMs)
-  if (typeof timer === 'object') timer.unref?.()
+  const { signal: fallbackSignal, cleanup } = withDeadline(
+    outerSignal,
+    remainingMs,
+  )
   try {
-    const fallbackResult = await runOnce(fallbackModel, fallbackController.signal)
+    const fallbackResult = await runOnce(fallbackModel, fallbackSignal)
     return {
       ...fallbackResult,
       durationMs: combineClassifierDurations(
@@ -1921,8 +2126,7 @@ async function runClassifierWithProbeFallback(
       fallbackFromTelemetry: getClassifierAttemptTelemetry(result),
     }
   } finally {
-    clearTimeout(timer)
-    outerSignal.removeEventListener('abort', onOuterAbort)
+    cleanup()
   }
 }
 
@@ -2024,6 +2228,9 @@ function logAutoModeOutcome(
     classifierType?: string
     failureKind?: string
     durationMs?: number
+    /** Requests actually sent for a stage, including unparseable re-samples. */
+    stage1Attempts?: number
+    stage2Attempts?: number
     mainLoopTokens?: number
     classifierInputTokens?: number
     classifierTokensEst?: number

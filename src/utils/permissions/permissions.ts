@@ -800,9 +800,20 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
       // Log classifier decision for metrics (including overhead telemetry)
       const yoloDecision = classifierResult.unavailable
         ? 'unavailable'
-        : classifierResult.shouldBlock
-          ? 'blocked'
-          : 'allowed'
+        : classifierResult.refusedBySafeguard
+          ? 'refused'
+          : classifierResult.shouldBlock
+            ? 'blocked'
+            : 'allowed'
+      // Only a real verdict counts against the denial budget. The paths below
+      // that return before recordDenial() — unavailable, transcript too long,
+      // safeguard refusal — must not be counted here either, or the reported
+      // totals drift ahead of the state the limit is actually checked against.
+      const countsAsDenial =
+        classifierResult.shouldBlock &&
+        !classifierResult.unavailable &&
+        !classifierResult.transcriptTooLong &&
+        !classifierResult.refusedBySafeguard
 
       // Compute total classifier cost across the primary and fallback attempts.
       const finalAttemptCostUSD =
@@ -842,12 +853,12 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
           .id as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
         classifierModel:
           classifierResult.model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        consecutiveDenials: classifierResult.shouldBlock
+        consecutiveDenials: countsAsDenial
           ? denialState.consecutiveDenials + 1
-          : 0,
-        totalDenials: classifierResult.shouldBlock
-          ? denialState.totalDenials + 1
-          : denialState.totalDenials,
+          : classifierResult.shouldBlock
+            ? denialState.consecutiveDenials
+            : 0,
+        totalDenials: denialState.totalDenials + (countsAsDenial ? 1 : 0),
         // Overhead telemetry: token usage and latency for the classifier API call
         classifierInputTokens: classifierResult.usage?.inputTokens,
         classifierOutputTokens: classifierResult.usage?.outputTokens,
@@ -1001,6 +1012,35 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
               tool.name,
               classifierResult.model,
             ),
+          }
+        }
+
+        // The API safeguard refused the classifier request itself — a check
+        // separate from auto mode, reacting to earlier conversation content
+        // rather than to this action. Still fails closed, but it is not a
+        // verdict on the action, so it is exempt from the denial counter:
+        // counting it would burn through the denial budget and drop the
+        // session out of auto mode over something the agent never did.
+        if (classifierResult.refusedBySafeguard) {
+          if (appState.toolPermissionContext.shouldAvoidPermissionPrompts) {
+            // Refusals key off conversation content, so retrying the same
+            // transcript refuses again — deny-retry-deny with no way out.
+            throw new AbortError(
+              'Agent aborted: auto mode classifier request refused by the safety safeguard in headless mode',
+            )
+          }
+          logForDebugging(
+            'Auto mode classifier request refused by the safety safeguard, denying (exempt from the denial counter)',
+            { level: 'warn' },
+          )
+          return {
+            behavior: 'deny',
+            decisionReason: {
+              type: 'classifier',
+              classifier: 'auto-mode',
+              reason: classifierResult.reason,
+            },
+            message: classifierResult.reason,
           }
         }
 

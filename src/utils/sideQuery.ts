@@ -53,6 +53,12 @@ export type SideQueryOptions = {
   maxRetries?: number
   /** Abort signal */
   signal?: AbortSignal
+  /**
+   * Per-request timeout in ms. Omitted, the client's own timeout applies
+   * (API_TIMEOUT_MS, default 10 minutes) — fine for a background side query,
+   * far too loose for one a user is blocked on, like the auto mode classifier.
+   */
+  timeoutMs?: number
   /** Skip CLI system prompt prefix (keeps attribution header for OAuth). For internal classifiers that provide their own prompt. */
   skipSystemPromptPrefix?: boolean
   /** Temperature override */
@@ -117,6 +123,7 @@ export async function sideQuery(opts: SideQueryOptions): Promise<BetaMessage> {
     max_tokens = 1024,
     maxRetries = 2,
     signal,
+    timeoutMs,
     skipSystemPromptPrefix,
     temperature,
     thinking,
@@ -198,7 +205,7 @@ export async function sideQuery(opts: SideQueryOptions): Promise<BetaMessage> {
       ...(betas.length > 0 && { betas }),
       metadata: getAPIMetadata(),
     },
-    { signal },
+    { signal, ...(timeoutMs !== undefined && { timeout: timeoutMs }) },
   )
 
   const requestId =

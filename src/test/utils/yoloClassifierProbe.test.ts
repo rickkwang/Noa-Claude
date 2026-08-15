@@ -64,7 +64,11 @@ afterEach(() => {
 
 describe('auto mode classifier probe', () => {
   test('preserves a malformed stage 1 result when stage 2 throws', async () => {
-    let callCount = 0
+    // Stage 1 re-samples an unparseable response, so the stages are told apart
+    // by request shape rather than call order: stage 1 caps max_tokens at 64,
+    // stage 2 asks for reasoning headroom.
+    let stage1Calls = 0
+    let stage2Calls = 0
     const result = await _classifyYoloActionXmlForTesting(
       [],
       'system prompt',
@@ -82,9 +86,12 @@ describe('auto mode classifier probe', () => {
         action: 'action',
       },
       'both',
-      async () => {
-        callCount += 1
-        if (callCount === 2) throw new Error('stage 2 failed')
+      async opts => {
+        if ((opts.max_tokens ?? 0) > 1024) {
+          stage2Calls += 1
+          throw new Error('stage 2 failed')
+        }
+        stage1Calls += 1
         return {
           id: 'msg_stage1',
           type: 'message',
@@ -98,7 +105,9 @@ describe('auto mode classifier probe', () => {
       },
     )
 
-    expect(callCount).toBe(2)
+    // 1 initial attempt + maxRetries (4) re-samples, then stage 2 once.
+    expect(stage1Calls).toBe(5)
+    expect(stage2Calls).toBe(1)
     expect(result).toMatchObject({
       shouldBlock: true,
       unavailable: false,

@@ -377,6 +377,19 @@ export type YoloClassifierResult = {
    */
   stage2Failed?: boolean
   /**
+   * How a non-verdict response failed. 'unparseable' is a malformed answer and
+   * is retried within the stage deadline; 'policy_refusal' is the API's own
+   * safety safeguard declining to answer at all, which no retry fixes.
+   */
+  failureMode?: 'unparseable' | 'policy_refusal'
+  /**
+   * The API safeguard refused the classifier request itself — a check separate
+   * from auto mode, triggered by earlier conversation content rather than by
+   * the action under review. Still fails closed, but it is not a verdict, so
+   * callers exempt it from the consecutive-denial counter.
+   */
+  refusedBySafeguard?: boolean
+  /**
    * API returned "prompt is too long" — the classifier transcript exceeded
    * the context window. Deterministic (same transcript → same error), so
    * callers should fall back to normal prompting rather than retry/fail-closed.
