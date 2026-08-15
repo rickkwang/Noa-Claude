@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { feature } from 'bun:bundle'
 import axios from 'axios'
 import { z } from 'zod/v4'
 import { getOauthConfig } from '../../constants/oauth.js'
@@ -69,6 +70,19 @@ export const RemoteTriggerTool = buildTool({
   },
   toAutoClassifierInput(input: Input) {
     return `RemoteTrigger ${input.action}${input.trigger_id ? ` ${input.trigger_id}` : ''}`
+  },
+  // Auto mode must not silently create/update/run remote triggers — require
+  // classifier review there. Other modes keep prior behavior (allow), since
+  // this tool is gated behind isEnabled() (tengu_surreal_dali + policy).
+  async checkPermissions(input: Input, context: ToolUseContext) {
+    const { mode } = context.getAppState().toolPermissionContext
+    if (feature('AUTO_MODE') && mode === 'auto') {
+      return {
+        behavior: 'passthrough' as const,
+        message: 'Remote trigger management requires classifier review.',
+      }
+    }
+    return { behavior: 'allow' as const, updatedInput: input }
   },
   async description() {
     return DESCRIPTION
