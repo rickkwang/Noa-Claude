@@ -89,6 +89,7 @@ import { isInProtectedNamespace } from '../envUtils.js'
 import { executePermissionRequestHooks } from '../hooks.js'
 import {
   AUTO_REJECT_MESSAGE,
+  buildClassifierRefusalMessage,
   buildClassifierUnavailableMessage,
   buildYoloRejectionMessage,
   DONT_ASK_REJECT_MESSAGE,
@@ -1040,7 +1041,7 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
               classifier: 'auto-mode',
               reason: classifierResult.reason,
             },
-            message: classifierResult.reason,
+            message: buildClassifierRefusalMessage(classifierResult.reason),
           }
         }
 

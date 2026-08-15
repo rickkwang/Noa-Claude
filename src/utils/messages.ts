@@ -283,6 +283,26 @@ export function buildYoloRejectionMessage(reason: string): string {
 }
 
 /**
+ * Build a rejection message for the case where the API safeguard refused the
+ * classifier request itself, rather than the classifier returning a verdict.
+ *
+ * Differs from buildYoloRejectionMessage in the two ways that matter to the
+ * agent reading it: a permission rule cannot clear a safeguard refusal, so
+ * suggesting one sends the user down a dead end; and because the refusal keys
+ * off conversation content rather than this action, re-running the same
+ * request refuses again. Retrying is the one thing the agent must not do here,
+ * which makes the "move on or ask" guidance more important than usual.
+ */
+export function buildClassifierRefusalMessage(reason: string): string {
+  return (
+    `${AUTO_MODE_REJECTION_PREFIX}${reason}. ` +
+    `Retrying this action will be refused again for the same reason, so do not repeat it. ` +
+    `Continue with other tasks that don't depend on it. ` +
+    DENIAL_WORKAROUND_GUIDANCE
+  )
+}
+
+/**
  * Build a message for when the auto mode classifier is temporarily unavailable.
  * Tells the agent to wait and retry, and suggests working on other tasks.
  */
