@@ -52,6 +52,7 @@ import {
 import type { PermissionMode } from '../../utils/permissions/PermissionMode.js'
 import { permissionRuleValueFromString } from '../../utils/permissions/permissionRuleParser.js'
 import {
+  buildSubagentHandBackAction,
   buildTranscriptForClassifier,
   classifyYoloAction,
 } from '../../utils/permissions/yoloClassifier.js'
@@ -399,6 +400,7 @@ export async function classifyHandoffIfNeeded({
   abortSignal,
   subagentType,
   totalToolUseCount,
+  handBackText,
 }: {
   agentMessages: MessageType[]
   tools: Tools
@@ -406,6 +408,8 @@ export async function classifyHandoffIfNeeded({
   abortSignal: AbortSignal
   subagentType: string
   totalToolUseCount: number
+  /** The subagent's final message to its parent — the text the parent acts on. */
+  handBackText?: string | null
 }): Promise<string | null> {
   if (feature('AUTO_MODE')) {
     if (toolPermissionContext.mode !== 'auto') return null
@@ -415,15 +419,7 @@ export async function classifyHandoffIfNeeded({
 
     const classifierResult = await classifyYoloAction(
       agentMessages,
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: "Sub-agent has finished and is handing back control to the main agent. Review the sub-agent's work based on the block rules and let the main agent know if any file is dangerous (the main agent will see the reason).",
-          },
-        ],
-      },
+      buildSubagentHandBackAction(handBackText),
       tools,
       toolPermissionContext as ToolPermissionContext,
       abortSignal,

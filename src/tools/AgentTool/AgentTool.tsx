@@ -1241,7 +1241,11 @@ export const AgentTool = buildTool({
             toolPermissionContext: currentAppState.toolPermissionContext,
             abortSignal: toolUseContext.abortController.signal,
             subagentType: selectedAgent.agentType,
-            totalToolUseCount: agentResult.totalToolUseCount
+            totalToolUseCount: agentResult.totalToolUseCount,
+            // The hand-back message the parent will read. Only tool_use blocks
+            // survive the transcript projection, so this is the classifier's
+            // only view of what the subagent actually reported back.
+            handBackText: agentResult.content.filter(_ => _.type === 'text').map(_ => _.text).join('\n')
           });
           if (handoffWarning) {
             agentResult.content = [{
