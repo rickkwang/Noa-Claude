@@ -363,6 +363,13 @@ export type YoloClassifierResult = {
   thinking?: string
   shouldBlock: boolean
   reason: string
+  /**
+   * Canonical BLOCK-rule id (e.g. 'data_exfiltration') parsed from the
+   * verdict's <category> tag, validated against the rule taxonomy in the
+   * classifier prompt. Undefined for allows and for blocks whose category
+   * the model named outside the taxonomy.
+   */
+  category?: string
   unavailable?: boolean
   /**
    * The classifier answered, but its structured response could not be parsed.
@@ -433,8 +440,7 @@ export type YoloClassifierResult = {
   stage1DurationMs?: number
   /**
    * API request_id (req_xxx) for stage 1. Enables joining to server-side
-   * api_usage logs for cache-miss / routing attribution. Also used for the
-   * legacy 1-stage (tool_use) classifier — the single request goes here.
+   * api_usage logs for cache-miss / routing attribution.
    */
   stage1RequestId?: string
   /**

@@ -230,7 +230,7 @@ async function runXml(
 ) {
   return _classifyYoloActionXmlForTesting(
     [],
-    'system prompt\nUse the classify_result tool to report your classification.',
+    'system prompt',
     'user prompt',
     [{ type: 'text', text: 'action' }],
     'test-model',

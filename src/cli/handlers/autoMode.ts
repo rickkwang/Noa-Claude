@@ -28,10 +28,9 @@ export function autoModeDefaultsHandler(): void {
 
 /**
  * Dump the effective auto mode config: user settings where provided, external
- * defaults otherwise. Per-section REPLACE semantics — matches how
- * buildYoloSystemPrompt resolves the external template (a non-empty user
- * section replaces that section's defaults entirely; an empty/absent section
- * falls through to defaults).
+ * defaults otherwise. User sections are shown verbatim — at runtime a literal
+ * "$defaults" entry splices the built-in rules back in at that position (see
+ * mergeWithDefaults in yoloClassifier); this dump does not expand it.
  */
 export function autoModeConfigHandler(): void {
   const config = getAutoModeConfig()
@@ -41,6 +40,9 @@ export function autoModeConfigHandler(): void {
     soft_deny: config?.soft_deny?.length
       ? config.soft_deny
       : defaults.soft_deny,
+    hard_deny: config?.hard_deny?.length
+      ? config.hard_deny
+      : defaults.hard_deny,
     environment: config?.environment?.length
       ? config.environment
       : defaults.environment,
@@ -52,10 +54,11 @@ const CRITIQUE_SYSTEM_PROMPT =
   '\n' +
   'Noa Claude has an "auto mode" that uses an AI classifier to decide whether ' +
   'tool calls should be auto-approved or require user confirmation. Users can ' +
-  'write custom rules in three categories:\n' +
+  'write custom rules in four categories:\n' +
   '\n' +
   '- **allow**: Actions the classifier should auto-approve\n' +
-  '- **soft_deny**: Actions the classifier should block (require user confirmation)\n' +
+  '- **soft_deny**: Actions the classifier should block unless the user clears them\n' +
+  '- **hard_deny**: Actions the classifier should block unconditionally\n' +
   "- **environment**: Context about the user's setup that helps the classifier make decisions\n" +
   '\n' +
   "Your job is to critique the user's custom rules for clarity, completeness, " +
@@ -78,12 +81,13 @@ export async function autoModeCritiqueHandler(options: {
   const hasCustomRules =
     (config?.allow?.length ?? 0) > 0 ||
     (config?.soft_deny?.length ?? 0) > 0 ||
+    (config?.hard_deny?.length ?? 0) > 0 ||
     (config?.environment?.length ?? 0) > 0
 
   if (!hasCustomRules) {
     process.stdout.write(
       'No custom auto mode rules found.\n\n' +
-        'Add rules to your settings file under autoMode.{allow, soft_deny, environment}.\n' +
+        'Add rules to your settings file under autoMode.{allow, soft_deny, hard_deny, environment}.\n' +
         'Run `claude auto-mode defaults` to see the default rules for reference.\n',
     )
     return
@@ -102,6 +106,11 @@ export async function autoModeCritiqueHandler(options: {
       'soft_deny',
       config?.soft_deny ?? [],
       defaults.soft_deny,
+    ) +
+    formatRulesForCritique(
+      'hard_deny',
+      config?.hard_deny ?? [],
+      defaults.hard_deny,
     ) +
     formatRulesForCritique(
       'environment',
@@ -127,7 +136,7 @@ export async function autoModeCritiqueHandler(options: {
             '<classifier_system_prompt>\n' +
             classifierPrompt +
             '\n</classifier_system_prompt>\n\n' +
-            "Here are the user's custom rules that REPLACE the corresponding default sections:\n\n" +
+            "Here are the user's custom rules (a literal \"$defaults\" entry splices the built-in defaults back in at that position):\n\n" +
             userRulesSummary +
             '\nPlease critique these custom rules.',
         },
@@ -160,11 +169,11 @@ function formatRulesForCritique(
   return (
     '## ' +
     section +
-    ' (custom rules replacing defaults)\n' +
+    ' (custom rules — a literal "$defaults" entry splices the defaults back in at that position)\n' +
     'Custom:\n' +
     customLines +
     '\n\n' +
-    'Defaults being replaced:\n' +
+    'Built-in defaults:\n' +
     defaultLines +
     '\n\n'
   )
