@@ -14,6 +14,7 @@ import {
   getCachedClaudeMdContent,
   getLastClassifierRequests,
   getSessionId,
+  recordAutoModeClassifierCall,
   setLastClassifierRequests,
 } from '../../bootstrap/state.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
@@ -1020,6 +1021,7 @@ async function runClassifierStageRequest(
     const remainingMs = deadlineMs - (Date.now() - start)
     if (remainingMs <= 0) break
     attempts += 1
+    recordAutoModeClassifierCall({ resamples: 1 })
     logForDebugging(
       `Auto mode classifier: unparseable response, re-sampling (attempt ${attempts}/${maxRetries + 1}, ${remainingMs}ms left)`,
       { level: 'warn' },
@@ -1441,16 +1443,73 @@ export async function classifyYoloAction(
   context: ToolPermissionContext,
   signal: AbortSignal,
 ): Promise<YoloClassifierResult> {
-  const lookup = buildToolLookup(tools)
-  const actionCompact = toCompact(action, lookup)
-  // '' = "no security relevance" (Tool.toAutoClassifierInput contract). Without
-  // this guard the empty action block + cache_control below hits an API 400.
-  if (actionCompact === '') {
+  const result = await runYoloClassifier(
+    messages,
+    action,
+    tools,
+    context,
+    signal,
+  )
+  // null = the action never reached the API, so there is nothing to account
+  // for. Keeping that case out here means the session counters below describe
+  // real classifier traffic rather than tool calls that skipped it.
+  if (result === null) {
     return {
       shouldBlock: false,
       reason: 'Tool declares no classifier-relevant input',
       model: getClassifierModel(),
     }
+  }
+  recordClassifierOutcome(result)
+  return result
+}
+
+/**
+ * Fold one completed classifier call into the session counters that /cost
+ * reports. The categories are mutually exclusive in the same order the
+ * permission layer applies them, so `blocked` means "the classifier returned a
+ * verdict of block" rather than "the action was denied for any reason".
+ */
+function recordClassifierOutcome(result: YoloClassifierResult): void {
+  const { usage } = result
+  const isRealVerdict =
+    !result.unavailable &&
+    !result.transcriptTooLong &&
+    !result.refusedBySafeguard
+  recordAutoModeClassifierCall({
+    calls: 1,
+    resolvedAtStage1: result.stage === 'fast' ? 1 : 0,
+    escalatedToStage2: result.stage === 'thinking' ? 1 : 0,
+    unavailable: result.unavailable ? 1 : 0,
+    refused: result.refusedBySafeguard ? 1 : 0,
+    transcriptTooLong: result.transcriptTooLong ? 1 : 0,
+    parseFailures: result.parseFailure ? 1 : 0,
+    blocked: isRealVerdict && result.shouldBlock ? 1 : 0,
+    allowed: isRealVerdict && !result.shouldBlock ? 1 : 0,
+    inputTokens: usage
+      ? usage.inputTokens +
+        usage.cacheReadInputTokens +
+        usage.cacheCreationInputTokens
+      : 0,
+    outputTokens: usage?.outputTokens ?? 0,
+    durationMs: result.durationMs ?? 0,
+  })
+}
+
+/** Returns null when the action carries nothing the classifier should judge. */
+async function runYoloClassifier(
+  messages: Message[],
+  action: TranscriptEntry,
+  tools: Tools,
+  context: ToolPermissionContext,
+  signal: AbortSignal,
+): Promise<YoloClassifierResult | null> {
+  const lookup = buildToolLookup(tools)
+  const actionCompact = toCompact(action, lookup)
+  // '' = "no security relevance" (Tool.toAutoClassifierInput contract). Without
+  // this guard the empty action block + cache_control below hits an API 400.
+  if (actionCompact === '') {
+    return null
   }
 
   const systemPrompt = await buildYoloSystemPrompt(context)

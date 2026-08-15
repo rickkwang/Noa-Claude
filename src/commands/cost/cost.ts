@@ -1,5 +1,8 @@
 // @ts-nocheck
-import { formatTotalCost } from '../../cost-tracker.js'
+import {
+  formatAutoModeClassifierUsage,
+  formatTotalCost,
+} from '../../cost-tracker.js'
 import { currentLimits } from '../../services/claudeAiLimits.js'
 import type { LocalCommandCall } from '../../types/command.js'
 import { isClaudeAISubscriber } from '../../utils/auth.js'
@@ -19,6 +22,10 @@ export const call: LocalCommandCall = async () => {
     if (process.env.USER_TYPE === 'ant') {
       value += `\n\n[ANT-ONLY] Showing cost anyway:\n ${formatTotalCost()}`
     }
+    // Counts and latencies, not spend — safe to show a subscriber, and this
+    // is the only surface that reports them.
+    const autoMode = formatAutoModeClassifierUsage()
+    if (autoMode) value += `\n${autoMode}`
     return { type: 'text', value }
   }
   return { type: 'text', value: formatTotalCost() }

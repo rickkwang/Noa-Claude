@@ -43,6 +43,58 @@ export type AttributedCounter = {
   add(value: number, additionalAttributes?: Attributes): void
 }
 
+/**
+ * Session-scoped auto mode classifier counters, surfaced by /cost.
+ *
+ * Telemetry is hard-disabled in this fork and the per-turn API metrics
+ * message is ant-only, so without these the classifier is unobservable: there
+ * is no way to see how often stage 1 escalates, how often a stage is
+ * re-sampled, or how often the deadline expires. In-memory only — this is
+ * "what happened in this session", not a metrics pipeline.
+ */
+export type AutoModeClassifierStats = {
+  /** Classifier invocations that actually reached the API. */
+  calls: number
+  /** Verdict came from stage 1 (allow on the fast path, or fast-only mode). */
+  resolvedAtStage1: number
+  /** Stage 1 did not settle it, so stage 2 ran. */
+  escalatedToStage2: number
+  allowed: number
+  blocked: number
+  /** API error or deadline — fails closed to a deny. */
+  unavailable: number
+  /** The API safeguard declined to answer; exempt from the denial counter. */
+  refused: number
+  /** Malformed answers that survived re-sampling. */
+  parseFailures: number
+  /** Transcript outgrew the context window; falls back to manual approval. */
+  transcriptTooLong: number
+  /** Extra requests beyond the first, across all stages. */
+  resamples: number
+  /** Total input tokens billed, uncached + cache read + cache creation. */
+  inputTokens: number
+  outputTokens: number
+  durationMs: number
+}
+
+export function createAutoModeClassifierStats(): AutoModeClassifierStats {
+  return {
+    calls: 0,
+    resolvedAtStage1: 0,
+    escalatedToStage2: 0,
+    allowed: 0,
+    blocked: 0,
+    unavailable: 0,
+    refused: 0,
+    parseFailures: 0,
+    transcriptTooLong: 0,
+    resamples: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    durationMs: 0,
+  }
+}
+
 type State = {
   originalCwd: string
   // Stable project root - set once at startup (including by --worktree flag),
@@ -59,6 +111,7 @@ type State = {
   turnToolCount: number
   turnHookCount: number
   turnClassifierCount: number
+  autoModeClassifierStats: AutoModeClassifierStats
   startTime: number
   lastInteractionTime: number
   totalLinesAdded: number
@@ -284,6 +337,7 @@ function getInitialState(): State {
     turnHookDurationMs: 0,
     turnToolDurationMs: 0,
     turnClassifierDurationMs: 0,
+    autoModeClassifierStats: createAutoModeClassifierStats(),
     turnToolCount: 0,
     turnHookCount: 0,
     turnClassifierCount: 0,
@@ -639,6 +693,25 @@ export function getTurnClassifierCount(): number {
   return STATE.turnClassifierCount
 }
 
+export function getAutoModeClassifierStats(): Readonly<AutoModeClassifierStats> {
+  return STATE.autoModeClassifierStats
+}
+
+/** Fold one classifier outcome into the session totals. */
+export function recordAutoModeClassifierCall(
+  update: Partial<AutoModeClassifierStats>,
+): void {
+  const stats = STATE.autoModeClassifierStats
+  for (const [key, value] of Object.entries(update)) {
+    if (typeof value !== 'number') continue
+    stats[key as keyof AutoModeClassifierStats] += value
+  }
+}
+
+export function resetAutoModeClassifierStats(): void {
+  STATE.autoModeClassifierStats = createAutoModeClassifierStats()
+}
+
 export function getStatsStore(): {
   observe(name: string, value: number): void
 } | null {
@@ -903,6 +976,8 @@ export function resetCostState(): void {
   STATE.totalLinesRemoved = 0
   STATE.hasUnknownModelCost = false
   STATE.modelUsage = {}
+  // Reported alongside the cost totals by /cost, so it shares their lifetime.
+  STATE.autoModeClassifierStats = createAutoModeClassifierStats()
   STATE.promptId = null
   outputTokensAtTurnStart = 0
   currentTurnTokenBudget = null

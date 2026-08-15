@@ -4,6 +4,7 @@ import chalk from 'chalk'
 import {
   addToTotalCostState,
   addToTotalLinesChanged,
+  getAutoModeClassifierStats,
   getCostCounter,
   getModelUsage,
   getSdkBetas,
@@ -235,13 +236,52 @@ export function formatTotalCost(): string {
       : '')
 
   const modelUsageDisplay = formatModelUsage()
+  const autoModeDisplay = formatAutoModeClassifierUsage()
 
   return chalk.dim(
     `Total cost:            ${costDisplay}\n` +
       `Total duration (API):  ${formatDuration(getTotalAPIDuration())}
 Total duration (wall): ${formatDuration(getTotalDuration())}
 Total code changes:    ${getTotalLinesAdded()} ${getTotalLinesAdded() === 1 ? 'line' : 'lines'} added, ${getTotalLinesRemoved()} ${getTotalLinesRemoved() === 1 ? 'line' : 'lines'} removed
-${modelUsageDisplay}`,
+${modelUsageDisplay}${autoModeDisplay}`,
+  )
+}
+
+/**
+ * Auto mode classifier accounting for this session. Empty when auto mode never
+ * ran, so /cost is unchanged for everyone else.
+ *
+ * These are the only numbers that say what auto mode is doing: telemetry is
+ * hard-disabled in this fork and the per-turn API metrics message is ant-only.
+ * The escalation share is the one to watch — stage 1 allowing is the cheap
+ * path, and every escalation is a second, much larger request.
+ */
+export function formatAutoModeClassifierUsage(): string {
+  const stats = getAutoModeClassifierStats()
+  if (stats.calls === 0) return ''
+
+  const staged = stats.resolvedAtStage1 + stats.escalatedToStage2
+  const escalationPct =
+    staged > 0 ? Math.round((stats.escalatedToStage2 / staged) * 100) : 0
+  const outcomes = [
+    `${stats.allowed} allowed`,
+    `${stats.blocked} blocked`,
+    stats.refused > 0 ? `${stats.refused} refused` : null,
+    stats.unavailable > 0 ? `${stats.unavailable} unavailable` : null,
+    stats.transcriptTooLong > 0
+      ? `${stats.transcriptTooLong} transcript too long`
+      : null,
+    stats.parseFailures > 0 ? `${stats.parseFailures} unparseable` : null,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(', ')
+
+  return (
+    `\nAuto mode classifier:  ${stats.calls} ${stats.calls === 1 ? 'call' : 'calls'}, ${formatDuration(stats.durationMs)}\n` +
+    `  outcomes:            ${outcomes}\n` +
+    `  stage 2 escalation:  ${stats.escalatedToStage2}/${staged} (${escalationPct}%)\n` +
+    `  re-samples:          ${stats.resamples}\n` +
+    `  tokens:              ${stats.inputTokens} in, ${stats.outputTokens} out`
   )
 }
 
