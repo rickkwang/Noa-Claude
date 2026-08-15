@@ -118,6 +118,7 @@ export function getSessionSpecificGuidanceSection(
   enabledTools: Set<string>,
   skillToolCommands: Command[],
   discoverSkillsToolName: string | null,
+  autoCompactEnabled: boolean,
 ): string | null {
   const hasAskUserQuestionTool = enabledTools.has(ASK_USER_QUESTION_TOOL_NAME)
   const hasSkills =
@@ -140,6 +141,10 @@ export function getSessionSpecificGuidanceSection(
   )
 
   const items = [
+    // Override the shared compaction guidance when this session disables it.
+    !autoCompactEnabled
+      ? `Automatic compaction is disabled for this session, so the summarization described under # Context management will not run and the context window is a hard limit. Keep tool output bounded and avoid loading context you do not need.`
+      : null,
     hasAskUserQuestionTool
       ? `If you do not understand why the user has denied a tool call, use the ${ASK_USER_QUESTION_TOOL_NAME} to ask them.`
       : null,

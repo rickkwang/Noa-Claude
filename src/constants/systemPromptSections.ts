@@ -14,6 +14,8 @@ type SystemPromptSection = {
   cacheBreak: boolean
 }
 
+let sectionCacheGeneration = 0
+
 /**
  * Create a memoized system prompt section.
  * Computed once, cached until /clear or /compact.
@@ -51,8 +53,11 @@ export async function resolveSystemPromptSections(
       if (!s.cacheBreak && cache.has(s.name)) {
         return cache.get(s.name) ?? null
       }
+      const generation = sectionCacheGeneration
       const value = await s.compute()
-      setSystemPromptSectionCacheEntry(s.name, value)
+      if (generation === sectionCacheGeneration) {
+        setSystemPromptSectionCacheEntry(s.name, value)
+      }
       return value
     }),
   )
@@ -64,6 +69,12 @@ export async function resolveSystemPromptSections(
  * evaluation of AFK/fast-mode/cache-editing headers.
  */
 export function clearSystemPromptSections(): void {
-  clearSystemPromptSectionState()
+  clearSystemPromptSectionCache()
   clearBetaHeaderLatches()
+}
+
+/** Clear rendered sections without changing conversation-scoped API headers. */
+export function clearSystemPromptSectionCache(): void {
+  clearSystemPromptSectionState()
+  sectionCacheGeneration++
 }

@@ -17,11 +17,17 @@ type CachedSchema = BetaTool & {
 }
 
 const TOOL_SCHEMA_CACHE = new Map<string, CachedSchema>()
+let toolSchemaCacheGeneration = 0
 
 export function getToolSchemaCache(): Map<string, CachedSchema> {
   return TOOL_SCHEMA_CACHE
 }
 
+export function getToolSchemaCacheGeneration(): number {
+  return toolSchemaCacheGeneration
+}
+
 export function clearToolSchemaCache(): void {
   TOOL_SCHEMA_CACHE.clear()
+  toolSchemaCacheGeneration++
 }

@@ -111,7 +111,7 @@ Act on your best judgment rather than asking for confirmation, but keep the risk
 
 ## Be concise
 
-Keep your text output brief and high-level. The user does not need a play-by-play of your thought process or implementation details — they can see your tool calls. Focus text output on:
+Keep your text output brief and high-level. The user does not need a play-by-play of your thought process or implementation details. Raw tool calls are not visible in every client or output mode, so do not lean on them to carry the story. Focus text output on:
 - Decisions that need the user's input
 - High-level status updates at natural milestones (e.g., "PR created", "tests passing")
 - Errors or blockers that change the plan

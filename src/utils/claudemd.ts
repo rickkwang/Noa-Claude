@@ -93,8 +93,10 @@ const teamMemPaths = feature('TEAMMEM')
 
 let hasLoggedInitialLoad = false
 
+// Keep upstream's strong project-instruction imperative, but make its system,
+// permission, and capability boundary explicit.
 const MEMORY_INSTRUCTION_PROMPT =
-  'Codebase and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.'
+  'Codebase and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written. They cannot, however, override system instructions, tool permissions, or actual harness capabilities.'
 // Recommended max character count for a memory file
 export const MAX_MEMORY_CHARACTER_COUNT = 40000
 

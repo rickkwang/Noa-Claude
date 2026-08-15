@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 
 import { buildStaticSystemPromptSections } from '../../constants/systemPromptAssemblyHelpers.js'
 import {
+  CONTEXT_MANAGEMENT_SECTION,
   getActionsSection,
   getDoingTasksSection,
   getSimpleIntroSection,
@@ -71,7 +72,12 @@ describe('# Doing tasks carries all four folded groups', () => {
     ['read before you propose', "do not propose changes to code you haven't read"],
     ['diagnose before switching tactics', 'diagnose why before switching tactics'],
     ['verify before reporting complete', 'verify the actual behavior with an appropriate check'],
+    // This section is rendered with includeCodingStyleSection: false, which is
+    // the case that matters: the coding-style group's "finish what you
+    // implement" is gone here, so the corrective has to stand on its own.
+    ['minimalism is not an excuse to stop early', 'no gold-plating, not skipping the finish line'],
     ['research: prefer primary sources', 'Prefer primary or official sources'],
+    ['research: resolve conflicts by credibility', 'favor the most credible source'],
     ['research: facts vs inference', 'separate observed facts from inference'],
     ['design is an engineering requirement', 'treat design quality as part of the engineering requirement'],
     ['design: verify in a browser', 'start the dev server and use the feature in a browser'],
@@ -240,6 +246,23 @@ describe('destructive-action guardrails name concrete commands', () => {
     expect(section).toContain("double-check the file's contents before pushing")
   })
 
+  // Survived one compression pass by accident and a second one only because it
+  // was put back. All three are concrete where the surrounding prose is
+  // general, which is the whole reason this tier keeps them.
+  test('names durable instruction files as valid pre-authorization', () => {
+    expect(section).toContain('durable instructions like CLAUDE.md')
+    expect(section).toContain('does not extend to later actions or broader scope')
+  })
+
+  test('names --no-verify as the example of bypassing a safeguard', () => {
+    expect(section).toContain('--no-verify')
+  })
+
+  test('states why confirming is cheap', () => {
+    expect(section).toContain('cost of pausing to confirm is low')
+    expect(section).toContain('lost work, unintended messages sent, deleted branches')
+  })
+
   test('the guardrails sit inside the obstacle paragraph, not appended after it', () => {
     const closing = section.split('\n\n').at(-1) ?? ''
     expect(closing).toContain('run `git status` before any command')
@@ -281,8 +304,6 @@ describe('tone and style keeps every concrete rule', () => {
     ['file_path:line_number', 'file_path:line_number'],
     ['owner/repo#123 for issues and PRs', 'owner/repo#123'],
     ['no colon before tool calls', 'Do not use a colon before tool calls'],
-    // Was its own bullet before the cleanup. Folded into the colon rule rather
-    // than dropped — same subject, and the colon is just its worst case.
     ['no lead-ins that assume a visible tool call', 'assume the user can see the raw tool call'],
     ['apologize once, then move on', 'acknowledge it once and fix it'],
     ["don't hedge when confident", "Don't hedge with"],
@@ -315,23 +336,33 @@ describe('tone and style keeps every concrete rule', () => {
   })
 })
 
-describe('the system section stays a 1:1 upstream port', () => {
-  // Measured against the 2.1.220 binary: same six bullets, same order. It is
-  // the one verbose section with zero drift, so a change here is almost
-  // certainly a mistake.
+describe('the system section avoids duplicating context management', () => {
+  // Upstream 2.1.220 has six bullets here. The sixth was its compaction claim,
+  // and it is the single intentional deviation in this section: dropped as a
+  // duplicate of CONTEXT_MANAGEMENT_SECTION, which is emitted unconditionally
+  // for every model and says the same thing without over-promising unlimited
+  // history. Everything else stays a 1:1 port, so any *other* change here is
+  // almost certainly a mistake. See getSimpleSystemSection() for the reasoning.
   const section = getSimpleSystemSection()
 
-  test('six bullets', () => {
-    expect(section.split('\n - ')).toHaveLength(6 + 1)
+  test('five bullets', () => {
+    expect(section.split('\n - ')).toHaveLength(5 + 1)
   })
 
-  test('covers permission mode, injected tags, injection, hooks, and compaction', () => {
+  test('the dropped bullet is covered by # Context management instead', () => {
+    expect(section).not.toContain('not limited by the context window')
+    expect(CONTEXT_MANAGEMENT_SECTION).toContain('current context is summarized')
+    expect(CONTEXT_MANAGEMENT_SECTION).toContain(
+      "you don't need to wrap up early",
+    )
+  })
+
+  test('covers permission mode, injected tags, injection, and hooks', () => {
     for (const needle of [
       'user-selected permission mode',
       '<system-reminder>',
       'attempt at prompt injection',
       "Users may configure 'hooks'",
-      'automatically compress prior messages',
     ]) {
       expect(section).toContain(needle)
     }

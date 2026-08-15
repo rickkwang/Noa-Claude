@@ -3,6 +3,15 @@ import {
   CRON_DELETE_TOOL_NAME,
   DEFAULT_MAX_AGE_DAYS,
 } from '../../tools/ScheduleCronTool/prompt.js';
+import {
+  consumeDynamicLoopState,
+  DYNAMIC_LOOP_MAX_ITERATIONS,
+  DYNAMIC_LOOP_MAX_WALL_CLOCK_MS,
+  DYNAMIC_LOOP_STATE_PREFIX,
+  issueDynamicLoopState,
+  newDynamicLoopChainId,
+  type DynamicLoopState,
+} from '../../utils/dynamicLoopState.js';
 
 export type LoopMode =
   | 'dynamic-prompt'
@@ -14,6 +23,16 @@ export type ParsedLoopArgs = {
   mode: LoopMode;
   interval?: string;
   prompt?: string;
+  loopState?: DynamicLoopState;
+  invalidLoopState?: boolean;
+};
+
+type DynamicLoopBuildOptions = {
+  nowMs?: number;
+  /** Stable label reported to the user. Distinct from the scheduling token. */
+  createChainId?: () => string;
+  /** Single-use capability minted for the next iteration. Test seam only. */
+  createToken?: () => string;
 };
 
 const DYNAMIC_MIN_DELAY = '1 minute';
@@ -78,36 +97,77 @@ function isFixedMode(mode: LoopMode): boolean {
 }
 
 export function parseLoopArgs(args: string): ParsedLoopArgs {
-  const trimmed = args.trim();
-  if (!trimmed) return { mode: 'dynamic-maintenance' };
+  let trimmed = args.trim();
+  let loopState: DynamicLoopState | undefined;
+  let invalidLoopState = false;
+  const hasDynamicLoopStateMarker = trimmed.startsWith(
+    DYNAMIC_LOOP_STATE_PREFIX,
+  );
+  if (hasDynamicLoopStateMarker) {
+    const tokenEnd = trimmed.search(/\s/);
+    const markerToken = tokenEnd === -1 ? trimmed : trimmed.slice(0, tokenEnd);
+    const encodedState = markerToken.slice(DYNAMIC_LOOP_STATE_PREFIX.length);
+    loopState = /^[A-Za-z0-9_-]+$/.test(encodedState)
+      ? consumeDynamicLoopState(encodedState)
+      : undefined;
+    invalidLoopState = loopState === undefined;
+    trimmed = tokenEnd === -1 ? '' : trimmed.slice(tokenEnd).trim();
+  }
+
+  const withLoopState = (parsed: ParsedLoopArgs): ParsedLoopArgs => ({
+    ...parsed,
+    ...(loopState ? { loopState } : {}),
+    ...(invalidLoopState ? { invalidLoopState: true } : {}),
+  });
+
+  if (hasDynamicLoopStateMarker) {
+    return withLoopState(
+      trimmed
+        ? { mode: 'dynamic-prompt', prompt: trimmed }
+        : { mode: 'dynamic-maintenance' },
+    );
+  }
+
+  if (!trimmed) return withLoopState({ mode: 'dynamic-maintenance' });
 
   const bareInterval = parseIntervalToken(trimmed);
   if (bareInterval) {
-    return toFixedMode(bareInterval);
+    return withLoopState(toFixedMode(bareInterval));
   }
 
   const [firstToken, ...restTokens] = trimmed.split(/\s+/);
   const leadingInterval = parseIntervalToken(firstToken ?? '');
   if (leadingInterval) {
     const prompt = restTokens.join(' ').trim();
-    return toFixedMode(leadingInterval, prompt);
+    return withLoopState(toFixedMode(leadingInterval, prompt));
   }
 
   const trailingEvery = parseTrailingEveryClause(trimmed);
   if (trailingEvery) {
-    return toFixedMode(trailingEvery.interval, trailingEvery.prompt);
+    return withLoopState(toFixedMode(trailingEvery.interval, trailingEvery.prompt));
   }
 
-  return {
+  return withLoopState({
     mode: 'dynamic-prompt',
     prompt: trimmed,
-  };
+  });
 }
 
-export function buildPromptForMode(parsed: ParsedLoopArgs): string {
+export function buildPromptForMode(
+  parsed: ParsedLoopArgs,
+  options: DynamicLoopBuildOptions = {},
+): string {
+  if (parsed.prompt?.trim().match(/^\/loop(?:\s|$)/)) {
+    return `# /loop - nested loop rejected
+
+Loop stopped because nested /loop prompts are not allowed.
+
+Do not execute the nested loop and do not schedule another run. Tell the user to run one loop at a time.
+`;
+  }
   return isFixedMode(parsed.mode)
     ? buildFixedPrompt(parsed)
-    : buildDynamicPrompt(parsed);
+    : buildDynamicPrompt(parsed, options);
 }
 
 function buildFixedPrompt(parsed: ParsedLoopArgs): string {
@@ -152,7 +212,53 @@ ${targetInstructions}
 `;
 }
 
-function buildDynamicPrompt(parsed: ParsedLoopArgs): string {
+function buildDynamicPrompt(
+  parsed: ParsedLoopArgs,
+  options: DynamicLoopBuildOptions,
+): string {
+  if (parsed.invalidLoopState) {
+    return `# /loop - invalid chain state
+
+Dynamic loop stopped because its chain state is invalid.
+
+Do not execute the effective prompt and do not schedule another run. Tell the user the scheduled loop state was malformed and that they can invoke /loop again to start a new chain.
+`;
+  }
+
+  const nowMs = options.nowMs ?? Date.now();
+  // Iteration 1 mints the chain's own id here. It is a label the model prints
+  // back to the user, so it must never be the scheduling token that grants
+  // re-entry into the chain.
+  const state = parsed.loopState ?? ({
+    chainId: (options.createChainId ?? newDynamicLoopChainId)(),
+    iteration: 1,
+    startedAtMs: nowMs,
+  } satisfies DynamicLoopState);
+
+  if (state.startedAtMs > nowMs) {
+    return `# /loop - invalid chain state
+
+Dynamic loop stopped because its chain state is invalid.
+
+Do not execute the effective prompt and do not schedule another run. The carried start time is in the future; tell the user that the session clock may have moved backwards and that they can invoke /loop again to start a new chain.
+`;
+  }
+  if (nowMs - state.startedAtMs >= DYNAMIC_LOOP_MAX_WALL_CLOCK_MS) {
+    return `# /loop - run budget exhausted
+
+Dynamic loop stopped before iteration ${state.iteration}. The chain reached its 24-hour wall-clock budget.
+
+Do not execute the effective prompt and do not schedule another run. Tell the user the loop stopped because its run budget was exhausted. The user can invoke /loop again to start a new chain.
+`;
+  }
+  if (state.iteration > DYNAMIC_LOOP_MAX_ITERATIONS) {
+    return `# /loop - run budget exhausted
+
+Dynamic loop stopped before iteration ${state.iteration}. The chain exceeded its ${DYNAMIC_LOOP_MAX_ITERATIONS}-iteration budget.
+
+Do not execute the effective prompt and do not schedule another run. Tell the user the loop stopped because its run budget was exhausted. The user can invoke /loop again to start a new chain.
+`;
+  }
   const effectivePromptInstructions = parsed.prompt
     ? `Use this prompt verbatim as the effective prompt for this iteration:
 
@@ -172,11 +278,35 @@ ${MAINTENANCE_PROMPT}
 --- END MAINTENANCE PROMPT ---
 `;
 
-  const reschedulePrompt = parsed.prompt ? `/loop ${parsed.prompt}` : '/loop';
+  if (state.iteration === DYNAMIC_LOOP_MAX_ITERATIONS) {
+    return `# /loop - final dynamic iteration
+
+This is the final allowed iteration ${state.iteration} of ${DYNAMIC_LOOP_MAX_ITERATIONS} for dynamic loop chain ${state.chainId}.
+
+${effectivePromptInstructions}## Instructions
+
+1. Execute the effective prompt now.
+   - If it starts with a slash command, invoke it via the Skill tool.
+   - Otherwise, act on it directly.
+2. Tell the user that the dynamic loop reached its iteration budget.
+3. Do not schedule another run.
+`;
+  }
+
+  // The token is single-use and always freshly generated; the chain id carries
+  // forward unchanged so every iteration reports the same chain to the user.
+  const nextToken = issueDynamicLoopState({
+    chainId: state.chainId,
+    iteration: state.iteration + 1,
+    startedAtMs: state.startedAtMs,
+  }, options.createToken, nowMs);
+  const reschedulePrompt = `/loop ${DYNAMIC_LOOP_STATE_PREFIX}${nextToken}${parsed.prompt ? ` ${parsed.prompt}` : ''}`;
 
   return `# /loop - dynamic rescheduling
 
 The user invoked /loop without a fixed interval.
+
+Run budget: iteration ${state.iteration} of ${DYNAMIC_LOOP_MAX_ITERATIONS}; chain ${state.chainId}; maximum wall-clock lifetime 24 hours.
 
 ${effectivePromptInstructions}
 ## Instructions

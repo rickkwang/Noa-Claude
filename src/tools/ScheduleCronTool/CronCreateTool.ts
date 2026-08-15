@@ -14,6 +14,11 @@ import { lazySchema } from '../../utils/lazySchema.js'
 import { semanticBoolean } from '../../utils/semanticBoolean.js'
 import { getTeammateContext } from '../../utils/teammateContext.js'
 import {
+  releaseDynamicLoopScheduledPrompt,
+  reserveDynamicLoopScheduledPrompt,
+  validateDynamicLoopScheduledPrompt,
+} from '../../utils/dynamicLoopState.js'
+import {
   buildCronCreateDescription,
   buildCronCreatePrompt,
   CRON_CREATE_TOOL_NAME,
@@ -113,19 +118,44 @@ export const CronCreateTool = buildTool({
         errorCode: 4,
       }
     }
+    // Judge durability the way call() will, not the way the model asked for it.
+    // The kill switch downgrades durable to session-only there, so validating
+    // the raw flag would reject a request that would have executed fine — and
+    // would put a validation error in front of the model on a gate flip, which
+    // is exactly what the stable-schema note in call() promises not to do.
+    const dynamicLoopError = validateDynamicLoopScheduledPrompt(
+      input.prompt,
+      input.recurring ?? true,
+      (input.durable ?? false) && isDurableCronEnabled(),
+    )
+    if (dynamicLoopError) {
+      return { result: false, message: dynamicLoopError, errorCode: 5 }
+    }
     return { result: true }
   },
   async call({ cron, prompt, recurring = true, durable = false }) {
     // Kill switch forces session-only; schema stays stable so the model sees
     // no validation errors when the gate flips mid-session.
     const effectiveDurable = durable && isDurableCronEnabled()
-    const id = await addCronTask(
-      cron,
+    const dynamicLoopError = reserveDynamicLoopScheduledPrompt(
       prompt,
       recurring,
       effectiveDurable,
-      getTeammateContext()?.agentId,
     )
+    if (dynamicLoopError) throw new Error(dynamicLoopError)
+    let id: string
+    try {
+      id = await addCronTask(
+        cron,
+        prompt,
+        recurring,
+        effectiveDurable,
+        getTeammateContext()?.agentId,
+      )
+    } catch (error) {
+      releaseDynamicLoopScheduledPrompt(prompt)
+      throw error
+    }
     // Enable the scheduler so the task fires in this session. The
     // useScheduledTasks hook polls this flag and will start watching
     // on the next tick. For durable: false tasks the file never changes

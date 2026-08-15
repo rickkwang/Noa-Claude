@@ -3,12 +3,14 @@ import { readdir, rm, stat, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { clearCommandsCache } from '../../commands.js'
 import { clearAllOutputStylesCache } from '../../constants/outputStyles.js'
+import { clearSystemPromptSectionCache } from '../../constants/systemPromptSections.js'
 import { clearAgentDefinitionsCache } from '../../tools/AgentTool/loadAgentsDir.js'
 import { clearPromptCache } from '../../tools/SkillTool/prompt.js'
 import { resetSentSkillNames } from '../attachments.js'
 import { logForDebugging } from '../debug.js'
 import { getErrnoCode } from '../errors.js'
 import { logError } from '../log.js'
+import { clearToolSchemaCache } from '../toolSchemaCache.js'
 import { loadInstalledPluginsFromDisk } from './installedPluginsManager.js'
 import { clearPluginAgentCache } from './loadPluginAgents.js'
 import { clearPluginCommandCache } from './loadPluginCommands.js'
@@ -47,6 +49,8 @@ export function clearAllCaches(): void {
   clearCommandsCache()
   clearAgentDefinitionsCache()
   clearPromptCache()
+  clearSystemPromptSectionCache()
+  clearToolSchemaCache()
   resetSentSkillNames()
 }
 

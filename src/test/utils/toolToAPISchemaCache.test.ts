@@ -64,3 +64,34 @@ test('tool schema cache separates lean models with different structured-output s
 
   expect(getToolSchemaCache()).toHaveLength(2)
 })
+
+test('a render started before cache invalidation cannot restore stale schema', async () => {
+  clearToolSchemaCache()
+
+  let signalStarted!: () => void
+  let releasePrompt!: () => void
+  const started = new Promise<void>(resolve => { signalStarted = resolve })
+  const promptGate = new Promise<void>(resolve => { releasePrompt = resolve })
+  const tool = {
+    name: 'async_cache_generation',
+    inputSchema: z.object({ value: z.string() }),
+    async prompt() {
+      signalStarted()
+      await promptGate
+      return 'stale schema'
+    },
+  } as never
+
+  const pending = toolToAPISchema(tool, {
+    getToolPermissionContext: async () => ({}) as never,
+    tools: [] as never,
+    agents: [] as never,
+    model: 'claude-sonnet-4-6',
+  })
+  await started
+  clearToolSchemaCache()
+  releasePrompt()
+  await pending
+
+  expect(getToolSchemaCache()).toHaveLength(0)
+})

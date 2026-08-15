@@ -68,7 +68,10 @@ import {
 } from '../constants/systemPromptCompact.js'
 import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
 import { FILE_WRITE_TOOL_NAME } from '../tools/FileWriteTool/prompt.js'
-import { getToolSchemaCache } from './toolSchemaCache.js'
+import {
+  getToolSchemaCache,
+  getToolSchemaCacheGeneration,
+} from './toolSchemaCache.js'
 import { windowsPathToPosixPath } from './windowsPaths.js'
 import { zodToJsonSchema } from './zodToJsonSchema.js'
 
@@ -247,6 +250,7 @@ export async function toolToAPISchema(
     preReadSuffix +
     (supportsStructuredOutputs ? ':X' : '')
   const cache = getToolSchemaCache()
+  const cacheGeneration = getToolSchemaCacheGeneration()
   let base = cache.get(cacheKey)
   if (!base) {
     const strictToolsEnabled =
@@ -307,7 +311,9 @@ export async function toolToAPISchema(
       base.eager_input_streaming = true
     }
 
-    cache.set(cacheKey, base)
+    if (cacheGeneration === getToolSchemaCacheGeneration()) {
+      cache.set(cacheKey, base)
+    }
   }
 
   // Per-request overlay: defer_loading and cache_control vary by call

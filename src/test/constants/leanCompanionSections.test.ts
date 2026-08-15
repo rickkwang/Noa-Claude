@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { buildDynamicSystemPromptSections } from '../../constants/systemPromptAssemblyHelpers.js'
 import {
+  clearSystemPromptSections,
+  resolveSystemPromptSections,
+} from '../../constants/systemPromptSections.js'
+import {
   ACT_DONT_REDERIVE_SECTION,
   AUTONOMY_SECTION,
   CONTEXT_MANAGEMENT_SECTION,
@@ -68,6 +72,32 @@ function resolve(model: string, name: string): string | null {
 }
 
 describe('sections that ship alongside the compact head', () => {
+  test('environment facts follow a mid-session model switch', async () => {
+    clearSystemPromptSections()
+    const first = buildDynamicSystemPromptSections({
+      enabledTools: new Set(['Bash', 'Read']),
+      skillToolCommands: [],
+      model: VERBOSE_MODEL,
+      outputStyleConfig: null,
+    })
+    const firstValues = await resolveSystemPromptSections(first)
+    expect(firstValues[first.findIndex(s => s.name.startsWith('env_info_simple'))])
+      .toContain(VERBOSE_MODEL)
+
+    const second = buildDynamicSystemPromptSections({
+      enabledTools: new Set(['Bash', 'Read']),
+      skillToolCommands: [],
+      model: LEAN_MODEL,
+      outputStyleConfig: null,
+    })
+    const secondValues = await resolveSystemPromptSections(second)
+    const environment = secondValues[
+      second.findIndex(s => s.name.startsWith('env_info_simple'))
+    ]
+    expect(environment).toContain(LEAN_MODEL)
+    expect(environment).not.toContain(VERBOSE_MODEL)
+  })
+
   test('pronoun guidance is emitted in both prompt modes', () => {
     for (const model of [LEAN_MODEL, VERBOSE_MODEL]) {
       expect(sectionNames(model)).toContain('pronouns')
@@ -176,6 +206,11 @@ describe('sections that ship alongside the compact head', () => {
     expect(verbose).toContain('corrections')
     expect(verbose).not.toContain('delivering_work:L')
     expect(verbose).not.toContain('corrections:L')
+  })
+
+  test('function-result-clearing guidance carries the model in its cache key', () => {
+    expect(sectionNames(LEAN_MODEL)).toContain(`frc:${LEAN_MODEL}`)
+    expect(sectionNames(VERBOSE_MODEL)).toContain(`frc:${VERBOSE_MODEL}`)
   })
 
   test('mode-independent sections keep a stable name across a model switch', () => {

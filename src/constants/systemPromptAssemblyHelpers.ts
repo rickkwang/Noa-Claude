@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { feature } from 'bun:bundle'
 import type { MCPServerConnection } from '../services/mcp/types.js'
+import { isAutoCompactEnabled } from '../services/compact/autoCompact.js'
 import type { Tools } from '../Tool.js'
 import { getSkillToolCommands } from 'src/commands.js'
 import { getIsNonInteractiveSession } from '../bootstrap/state.js'
@@ -146,6 +147,7 @@ export function buildDynamicSystemPromptSections(params: {
   const lean = shouldUseCompactSystemPrompt(model)
   const bundle = hasOpus5PromptBundle(model)
   const fable = hasFableMitigations(model)
+  const autoCompactEnabled = isAutoCompactEnabled()
   const bundleSuffix = bundle ? ':L' : ''
   // Emitted only under the lean prompt, but worded by the bundle gate, so the
   // key has to carry both bits. Upstream keys this one on the lean bit alone,
@@ -170,18 +172,20 @@ export function buildDynamicSystemPromptSections(params: {
     systemPromptSection(actionCautionName, () =>
       getActionCautionSection(model),
     ),
-    systemPromptSection('session_guidance', () =>
-      getSessionSpecificGuidanceSection(
+    systemPromptSection(
+      `session_guidance:${autoCompactEnabled ? 'ac' : 'noac'}`,
+      () => getSessionSpecificGuidanceSection(
         enabledTools,
         skillToolCommands,
         DISCOVER_SKILLS_TOOL_NAME,
+        autoCompactEnabled,
       ),
     ),
     systemPromptSection('memory', () => loadMemoryPrompt()),
     systemPromptSection('ant_model_override', () =>
       getAntModelOverrideSection(),
     ),
-    systemPromptSection('env_info_simple', () =>
+    systemPromptSection(`env_info_simple:${model}`, () =>
       computeMainSessionEnvInfo(model, additionalWorkingDirectories),
     ),
     systemPromptSection('language', () => getLanguageSection(language)),
@@ -206,7 +210,9 @@ export function buildDynamicSystemPromptSections(params: {
       'context_management',
       () => CONTEXT_MANAGEMENT_SECTION,
     ),
-    systemPromptSection('frc', () => getFunctionResultClearingSection(model)),
+    systemPromptSection(`frc:${model}`, () =>
+      getFunctionResultClearingSection(model),
+    ),
     systemPromptSection(
       'summarize_tool_results',
       () => SUMMARIZE_TOOL_RESULTS_SECTION,
