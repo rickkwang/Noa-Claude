@@ -134,6 +134,11 @@ describe('prompt behavior contracts', () => {
     )
     expect(prompt).not.toContain('Include file reads verbatim')
     expect(prompt).not.toContain('List ALL user messages')
+    // Upstream transcribes every user message to avoid losing intent; this
+    // fork keeps the density budget instead, so standing instructions have to
+    // be carried explicitly or a once-stated preference dies at compaction.
+    expect(prompt).toContain('every standing instruction the user gave that is still in force')
+    expect(prompt).toContain('even when stated once early and never repeated')
     // Security/destructive-action constraints must survive compaction verbatim.
     expect(prompt).toContain(
       'Preserve verbatim any safety or destructive-action constraints',

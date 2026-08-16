@@ -1,8 +1,12 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, describe, expect, test } from 'bun:test'
+import { mkdtempSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, relative, sep as pathSep } from 'node:path'
 import type { Message } from '../../../types/message.js'
 import {
   clearOldToolResults,
   MC_CLEARED_INPUT_MESSAGE,
+  MC_PERSISTED_OUTPUT_TAG,
   microcompactMessages,
   TIME_BASED_MC_CLEARED_MESSAGE,
 } from '../../../services/compact/microCompact.js'
@@ -10,6 +14,38 @@ import {
   getSizeBasedMCConfig,
   shouldSizeTrigger,
 } from '../../../services/compact/sizeBasedMCConfig.js'
+import {
+  PERSISTED_OUTPUT_TAG,
+  TOOL_RESULT_CLEARED_MESSAGE,
+  getToolResultPath,
+  getToolResultsDir,
+} from '../../../utils/toolResultStorage.js'
+import { getProjectDir } from '../../../utils/sessionStorage.js'
+
+// Cleared tool results are persisted under the config home. Point it at a temp
+// dir so the suite never writes into the real ~/.noa. compact.test may have
+// populated getProjectDir's cwd-keyed memo before this file runs, so clear it
+// after changing the env and again after restoring the process environment.
+const originalClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR
+process.env.CLAUDE_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'noa-mc-test-'))
+getProjectDir.cache.clear?.()
+afterAll(() => {
+  if (originalClaudeConfigDir === undefined) {
+    delete process.env.CLAUDE_CONFIG_DIR
+  } else {
+    process.env.CLAUDE_CONFIG_DIR = originalClaudeConfigDir
+  }
+  getProjectDir.cache.clear?.()
+})
+
+// A tool result counts as cleared in either form: the bare marker (persistence
+// unavailable or refused) or a persisted pointer.
+function isCleared(content: unknown): boolean {
+  return (
+    content === TIME_BASED_MC_CLEARED_MESSAGE ||
+    (typeof content === 'string' && content.startsWith(MC_PERSISTED_OUTPUT_TAG))
+  )
+}
 
 let counter = 0
 function id(prefix: string): string {
@@ -252,6 +288,34 @@ describe('clearOldToolResults', () => {
     expect(second).toBeNull()
   })
 
+  test('ignores a pointer that costs more than the content it replaces', () => {
+    const messages: Message[] = [
+      toolUse('Read', 'r-1'),
+      toolResult('r-1', 'tiny'),
+      toolUse('Read', 'r-2'),
+      toolResult('r-2', 'recent read kept '.repeat(20)),
+    ]
+    const pointers = {
+      results: new Map([
+        [
+          'r-1',
+          `${MC_PERSISTED_OUTPUT_TAG}Tool result saved to: ${'/very/long/path'.repeat(20)}\n\nUse Read to view</persisted-output>`,
+        ],
+      ]),
+      inputs: new Map<string, string>(),
+    }
+
+    const out = clearOldToolResults(messages, 1, undefined, pointers)
+
+    // The clear still happens — returning null here would throw away a rewrite
+    // whose content is already on disk — but with the cheap marker.
+    expect(out).not.toBeNull()
+    expect(resultContent(out!.messages[1]!, 'r-1')).toBe(
+      TIME_BASED_MC_CLEARED_MESSAGE,
+    )
+    expect(out!.cleared).toBe(1)
+  })
+
   test('cleared count reflects only results cleared on this pass', () => {
     const messages: Message[] = [
       toolUse('Read', 'r-1'),
@@ -269,6 +333,151 @@ describe('clearOldToolResults', () => {
     const out = clearOldToolResults(messages, 1)
     expect(out).not.toBeNull()
     expect(out!.cleared).toBe(2)
+  })
+})
+
+describe('inlined constants track toolResultStorage', () => {
+  // microCompact.ts inlines these to avoid a circular import; this is the
+  // drift check its comment promises.
+  test('cleared-result marker matches the source of truth', () => {
+    expect(TIME_BASED_MC_CLEARED_MESSAGE).toBe(TOOL_RESULT_CLEARED_MESSAGE)
+  })
+
+  test('persisted-output tag matches the source of truth', () => {
+    expect(MC_PERSISTED_OUTPUT_TAG).toBe(PERSISTED_OUTPUT_TAG)
+  })
+})
+
+describe('tool result persistence paths', () => {
+  test('keeps provider-controlled tool ids inside the session directory', () => {
+    const base = getToolResultsDir()
+    const target = getToolResultPath('../../outside', false)
+    const relativeTarget = relative(base, target)
+
+    expect(relativeTarget).not.toBe('..')
+    expect(relativeTarget.startsWith(`..${pathSep}`)).toBe(false)
+  })
+})
+
+describe('cleared tool results are persisted', () => {
+  afterEach(restoreEnv)
+
+  const ctx = {
+    options: { mainLoopModel: 'claude-sonnet-4-5' },
+  } as unknown as Parameters<typeof microcompactMessages>[1]
+
+  function conversation(): Message[] {
+    const messages: Message[] = []
+    for (let i = 0; i < 4; i++) {
+      const t = `persist-${i}`
+      messages.push(toolUse('Read', t))
+      messages.push(toolResult(t, `payload ${i} `.repeat(400)))
+    }
+    return messages
+  }
+
+  function contents(messages: Message[]): unknown[] {
+    return messages.flatMap(m =>
+      ((m as { message: { content: unknown[] } }).message.content ?? []).map(
+        (b: unknown) => (b as { content?: unknown })?.content,
+      ),
+    )
+  }
+
+  async function runMicrocompact(input: Message[]): Promise<Message[]> {
+    process.env.CLAUDE_CODE_SIZE_MICROCOMPACT = '1'
+    process.env.CLAUDE_CODE_SIZE_MICROCOMPACT_PCT = '1'
+    process.env.CLAUDE_CODE_SIZE_MICROCOMPACT_KEEP = '1'
+    const out = await microcompactMessages(input, ctx, 'repl_main_thread')
+    return out.messages
+  }
+
+  test('replaces content with a pointer to the persisted file', async () => {
+    const pointers = contents(await runMicrocompact(conversation())).filter(
+      (c): c is string =>
+        typeof c === 'string' && c.startsWith(MC_PERSISTED_OUTPUT_TAG),
+    )
+    expect(pointers.length).toBe(3) // 4 results minus the 1 most recent kept
+
+    const [first] = pointers
+    expect(first).toContain('Tool result saved to: ')
+    expect(first).toContain('Use Read to view')
+
+    // The pointer has to actually resolve, or it is worse than the bare marker.
+    const filepath = first!.match(/Tool result saved to: (.+)\n/)![1]!
+    expect(readFileSync(filepath, 'utf-8')).toContain('payload 0')
+  })
+
+  test('a persisted pointer is not re-cleared on the next fire', async () => {
+    const once = await runMicrocompact(conversation())
+    const twice = await runMicrocompact(once)
+    expect(contents(twice)).toEqual(contents(once))
+  })
+
+  // Clearing a Write/Edit input is the one microcompact loss with no upstream
+  // analogue — upstream never touches tool_use inputs. Persisting them keeps
+  // the token saving without making the content unrecoverable.
+  function writeConversation(): Message[] {
+    const messages: Message[] = []
+    for (let i = 0; i < 4; i++) {
+      const t = `wpersist-${i}`
+      messages.push(
+        toolUse('Write', t, {
+          file_path: `/tmp/gen-${i}.ts`,
+          content: `export const v${i} = ${i}\n`.repeat(400),
+        }),
+      )
+      messages.push(toolResult(t, 'File written successfully'))
+    }
+    return messages
+  }
+
+  test('replaces a cleared Write input with a pointer to the persisted file', async () => {
+    const out = await runMicrocompact(writeConversation())
+    const input = toolUseInput(out[0]!, 'wpersist-0')
+
+    expect(typeof input?.content).toBe('string')
+    const pointer = input!.content as string
+    expect(pointer.startsWith(MC_PERSISTED_OUTPUT_TAG)).toBe(true)
+    expect(pointer).toContain('Tool input saved to: ')
+
+    const filepath = pointer.match(/Tool input saved to: (.+)\n/)![1]!
+    expect(readFileSync(filepath, 'utf-8')).toContain('export const v0 = 0')
+
+    // file_path is small and load-bearing — it must survive unchanged
+    expect(input?.file_path).toBe('/tmp/gen-0.ts')
+  })
+
+  test('a persisted input pointer is not overwritten on the next fire', async () => {
+    const once = await runMicrocompact(writeConversation())
+    const twice = await runMicrocompact(once)
+    expect(toolUseInput(twice[0]!, 'wpersist-0')).toEqual(
+      toolUseInput(once[0]!, 'wpersist-0'),
+    )
+  })
+
+  test('each clearable input field gets its own file', async () => {
+    const messages: Message[] = [
+      toolUse('Edit', 'epersist-1', {
+        file_path: '/tmp/e.ts',
+        old_string: 'const before = 1\n'.repeat(400),
+        new_string: 'const after = 2\n'.repeat(400),
+      }),
+      toolResult('epersist-1', 'edited'),
+      toolUse('Read', 'epersist-keep'),
+      toolResult('epersist-keep', 'recent read kept '.repeat(400)),
+    ]
+    const input = toolUseInput(
+      (await runMicrocompact(messages))[0]!,
+      'epersist-1',
+    )
+
+    const paths = ['old_string', 'new_string'].map(
+      key => (input![key] as string).match(/Tool input saved to: (.+)\n/)![1]!,
+    )
+    expect(paths[0]).not.toBe(paths[1])
+    expect(readFileSync(paths[0]!, 'utf-8')).toContain('const before = 1')
+    expect(readFileSync(paths[1]!, 'utf-8')).toContain('const after = 2')
   })
 })
 
@@ -337,8 +546,7 @@ describe('microcompactMessages — size-based wiring', () => {
     )
     const cleared = out.messages.filter(m =>
       ((m as { message: { content: unknown[] } }).message.content ?? []).some(
-        (b: unknown) =>
-          (b as { content?: unknown })?.content === TIME_BASED_MC_CLEARED_MESSAGE,
+        (b: unknown) => isCleared((b as { content?: unknown })?.content),
       ),
     )
     expect(cleared.length).toBe(4) // 6 results minus the 2 most recent kept

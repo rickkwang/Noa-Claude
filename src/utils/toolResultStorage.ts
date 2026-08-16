@@ -4,6 +4,7 @@
  */
 
 import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import { createHash } from 'crypto'
 import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { getOriginalCwd, getSessionId } from '../bootstrap/state.js'
@@ -114,7 +115,10 @@ export const PREVIEW_SIZE_BYTES = 2000
  */
 export function getToolResultPath(id: string, isJson: boolean): string {
   const ext = isJson ? 'json' : 'txt'
-  return join(getToolResultsDir(), `${id}.${ext}`)
+  const filenameId = /^[A-Za-z0-9_-]{1,128}$/.test(id)
+    ? id
+    : `external-${createHash('sha256').update(id).digest('hex')}`
+  return join(getToolResultsDir(), `${filenameId}.${ext}`)
 }
 
 /**

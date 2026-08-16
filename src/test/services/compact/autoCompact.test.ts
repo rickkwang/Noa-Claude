@@ -5,6 +5,7 @@ import {
   countConsecutiveRapidRefills,
   ERROR_THRESHOLD_BUFFER_TOKENS,
   getEffectiveContextWindowSize,
+  isFixedPrefixOverThreshold,
   RAPID_REFILL_MAX_CONSECUTIVE,
   RAPID_REFILL_TURN_WINDOW,
   resolveAutoCompactPivot,
@@ -194,6 +195,27 @@ describe('computeAutoCompactPivot', () => {
     process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = '25'
     const messages = Array.from({ length: 80 }, () => asstText(3000))
     expect(computeAutoCompactPivot(messages, 'test-model')).toBeNull()
+  })
+})
+
+describe('isFixedPrefixOverThreshold', () => {
+  test('flags a prefix that clears the threshold on its own', () => {
+    const messages = [asstText(400)] // ~100 rough tokens
+    // 60k total with ~100 tokens of messages → the prefix is the overflow.
+    expect(isFixedPrefixOverThreshold(60_000, messages, 50_000)).toBe(true)
+  })
+
+  test('stays quiet when the messages are what is large', () => {
+    const messages = Array.from({ length: 80 }, () => asstText(3000))
+    const messageTokens = estimateMessageTokens(messages)
+    expect(
+      isFixedPrefixOverThreshold(messageTokens + 5_000, messages, 50_000),
+    ).toBe(false)
+  })
+
+  test('never reports a negative prefix when the estimate overshoots', () => {
+    const messages = Array.from({ length: 80 }, () => asstText(3000))
+    expect(isFixedPrefixOverThreshold(1_000, messages, 1)).toBe(false)
   })
 })
 

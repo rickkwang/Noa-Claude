@@ -5,18 +5,23 @@ import {
   buildPostCompactMessages,
   createPostCompactContextAttachments,
   estimatePayloadTokensSaved,
+  getPartialCompactMessagesToKeep,
   getPartialCompactMessagesToSummarize,
   isCompactionUserAbort,
   isStaleFullCompactSummary,
   partialCompactConversation,
+  PTL_RETRY_MARKER,
+  selectPTLPartialPivot,
   snapshotCompactContextState,
+  truncateHeadForPTLRetry,
 } from '../../../services/compact/compact.js'
+import { PROMPT_TOO_LONG_ERROR_MESSAGE } from '../../../services/api/errors.js'
 import {
   createCompactBoundaryMessage,
   createUserMessage,
 } from '../../../utils/messages.js'
 import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages'
-import type { Message } from '../../../types/message.js'
+import type { AssistantMessage, Message } from '../../../types/message.js'
 import { createFileStateCacheWithSizeLimit } from '../../../utils/fileStateCache.js'
 
 const OLD_TURN_ID = '00000000-0000-0000-0000-000000000001'
@@ -360,6 +365,240 @@ describe('partialCompactConversation error handling', () => {
     ).rejects.toThrow('Nothing to summarize before the selected message.')
 
     expect(notifications).toEqual([])
+  })
+})
+
+// A PTL response as the compaction loop sees it. errorDetails carries the
+// numbers getPromptTooLongTokenGap parses; omit it for the unparseable case.
+function makePTLResponse(errorDetails?: string): AssistantMessage {
+  return {
+    type: 'assistant',
+    id: 'ptl',
+    uuid: 'ptl',
+    isApiErrorMessage: true,
+    message: {
+      id: 'ptl',
+      role: 'assistant',
+      content: [{ type: 'text', text: PROMPT_TOO_LONG_ERROR_MESSAGE }],
+    },
+    ...(errorDetails ? { errorDetails } : {}),
+  } as unknown as AssistantMessage
+}
+
+// ~1 token per 4 chars under the rough estimator, so each turn is ~250 tokens.
+function makeTurns(count: number): Message[] {
+  const messages: Message[] = []
+  for (let i = 0; i < count; i++) {
+    messages.push(makeAssistantMessage(`turn-${i}`, 'x'.repeat(1000)))
+  }
+  return messages
+}
+
+describe('selectPTLPartialPivot', () => {
+  test('keeps back enough of the tail to cover the reported overflow', () => {
+    const messages = makeTurns(20)
+    const pivot = selectPTLPartialPivot(
+      messages,
+      // 500 tokens over → roughly the last two turns must be held back.
+      makePTLResponse('prompt is too long: 200500 tokens > 200000'),
+    )
+    expect(pivot).not.toBeNull()
+    expect(pivot).toBeGreaterThan(0)
+    expect(pivot).toBeLessThan(messages.length)
+    // Everything from the pivot on stays verbatim — that is the whole point:
+    // no round leaves the context, unlike head truncation.
+    expect(messages.length - pivot!).toBeGreaterThanOrEqual(2)
+  })
+
+  test('halves by token weight when the gap is unparseable', () => {
+    const messages = makeTurns(20)
+    const pivot = selectPTLPartialPivot(messages, makePTLResponse())
+    expect(pivot).toBe(10)
+  })
+
+  test('halves when the overflow exceeds the whole conversation', () => {
+    // Holding everything back still wouldn't cover the gap. Halving may not
+    // fit either, but the caller's alternative is deleting rounds outright,
+    // and a retry can slide again.
+    expect(
+      selectPTLPartialPivot(
+        makeTurns(4),
+        makePTLResponse('prompt is too long: 900000 tokens > 200000'),
+      ),
+    ).toBe(2)
+  })
+
+  test('returns null when nothing would be left to summarize', () => {
+    // Two turns, overflow large enough that the pivot lands at 0.
+    expect(
+      selectPTLPartialPivot(
+        makeTurns(2),
+        makePTLResponse('prompt is too long: 200490 tokens > 200000'),
+      ),
+    ).toBeNull()
+  })
+
+  test('never splits a tool_use from its tool_result', () => {
+    const messages: Message[] = [
+      makeAssistantMessage('pad', 'y'.repeat(4000)),
+      {
+        type: 'assistant',
+        id: 'call',
+        uuid: 'call',
+        message: {
+          id: 'call',
+          role: 'assistant',
+          content: [
+            { type: 'tool_use', id: 'tu-1', name: 'Read', input: {} },
+          ],
+        },
+      } as unknown as Message,
+      {
+        type: 'user',
+        uuid: 'res',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'tool_result', tool_use_id: 'tu-1', content: 'z'.repeat(400) },
+          ],
+        },
+      } as unknown as Message,
+    ]
+    const pivot = selectPTLPartialPivot(
+      messages,
+      makePTLResponse('prompt is too long: 200100 tokens > 200000'),
+    )
+    // The naive backward walk would land on the tool_result (index 2); the
+    // invariant snap has to pull it back to the tool_use.
+    expect(pivot).toBe(1)
+  })
+
+  test('keeps an existing compact summary inside the summarized prefix', () => {
+    const boundary = createCompactBoundaryMessage('auto', 10_000, undefined)
+    const priorSummary = createUserMessage({
+      content: 'prior compacted history '.repeat(200),
+      isCompactSummary: true,
+      summarizeMetadata: {
+        messagesSummarized: 20,
+        direction: 'up_to',
+      },
+    })
+    const messages = [
+      boundary,
+      priorSummary,
+      makeAssistantMessage('recent-1', 'x'.repeat(1000)),
+      makeAssistantMessage('recent-2', 'y'.repeat(1000)),
+    ]
+
+    const pivot = selectPTLPartialPivot(
+      messages,
+      makePTLResponse('prompt is too long: 200600 tokens > 200000'),
+    )
+
+    expect(pivot).toBe(2)
+    expect(
+      getPartialCompactMessagesToSummarize(messages, pivot!, 'up_to'),
+    ).toContain(priorSummary)
+    expect(getPartialCompactMessagesToKeep(messages, pivot!, 'up_to')).not.toContain(
+      priorSummary,
+    )
+  })
+
+  test('keeps at least one API-visible message in the summarized prefix', () => {
+    const boundary = createCompactBoundaryMessage('auto', 10_000, undefined)
+    const messages = [
+      boundary,
+      makeAssistantMessage('recent-1', 'x'.repeat(1000)),
+      makeAssistantMessage('recent-2', 'y'.repeat(1000)),
+    ]
+
+    const pivot = selectPTLPartialPivot(
+      messages,
+      makePTLResponse('prompt is too long: 200300 tokens > 200000'),
+    )
+
+    expect(pivot).toBe(2)
+  })
+
+  test('returns null when the summarized prefix has no API-visible message', () => {
+    const messages = [
+      createCompactBoundaryMessage('auto', 10_000, undefined),
+      createCompactBoundaryMessage('auto', 9_000, undefined),
+      createCompactBoundaryMessage('auto', 8_000, undefined),
+    ]
+
+    expect(
+      selectPTLPartialPivot(
+        messages,
+        makePTLResponse('prompt is too long: 200001 tokens > 200000'),
+      ),
+    ).toBeNull()
+  })
+})
+
+describe('truncateHeadForPTLRetry', () => {
+  function makeUserMessage(uuid: string, text: string): Message {
+    return {
+      type: 'user',
+      uuid,
+      message: { role: 'user', content: text },
+    } as unknown as Message
+  }
+
+  // Groups start at each assistant message, with the preamble as group 0.
+  function makeGroupedConversation(): Message[] {
+    return [
+      makeUserMessage('u-0', 'first ask'),
+      makeAssistantMessage('a-0', 'x'.repeat(2000)),
+      makeUserMessage('u-1', 'second ask'),
+      makeAssistantMessage('a-1', 'y'.repeat(2000)),
+      makeUserMessage('u-2', 'third ask'),
+      makeAssistantMessage('a-2', 'z'.repeat(2000)),
+    ]
+  }
+
+  test('drops the oldest rounds and names the transcript in the marker', () => {
+    const messages = makeGroupedConversation()
+    const out = truncateHeadForPTLRetry(
+      messages,
+      makePTLResponse('prompt is too long: 200400 tokens > 200000'),
+    )
+    expect(out).not.toBeNull()
+    expect(out!.length).toBeLessThan(messages.length)
+
+    // Dropping group 0 leaves an assistant-first sequence, which the API
+    // rejects — so the synthetic marker is always prepended here.
+    const head = out![0] as { isMeta?: boolean; message: { content: unknown } }
+    expect(head.isMeta).toBe(true)
+    const marker = head.message.content as string
+    expect(marker.startsWith(PTL_RETRY_MARKER)).toBe(true)
+    // The one loss no summary covers, so the model must be told where to read
+    // it back from.
+    expect(marker).toContain('transcript')
+  })
+
+  test('strips a previous marker instead of stalling on retry 2+', () => {
+    const first = truncateHeadForPTLRetry(
+      makeGroupedConversation(),
+      makePTLResponse('prompt is too long: 200400 tokens > 200000'),
+    )
+    expect(first).not.toBeNull()
+    const second = truncateHeadForPTLRetry(
+      first!,
+      makePTLResponse('prompt is too long: 200400 tokens > 200000'),
+    )
+    // Progress, not a marker-only no-op.
+    expect(second).not.toBeNull()
+    expect(second!.length).toBeLessThan(first!.length)
+  })
+
+  test('returns null when there is only one round to summarize', () => {
+    expect(
+      truncateHeadForPTLRetry(
+        [makeAssistantMessage('only', 'sole round')],
+        makePTLResponse('prompt is too long: 200400 tokens > 200000'),
+      ),
+    ).toBeNull()
   })
 })
 

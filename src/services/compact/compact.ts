@@ -115,6 +115,7 @@ import {
   roughTokenCountEstimationForMessages,
 } from '../tokenEstimation.js'
 import { groupMessagesByApiRound } from './grouping.js'
+import { adjustIndexToPreserveAPIInvariants } from './preservedTail.js'
 import {
   formatCompactSummary,
   getCompactPrompt,
@@ -272,7 +273,78 @@ export function buildCompactSummaryMessages(
 export const ERROR_MESSAGE_NOT_ENOUGH_MESSAGES =
   'Not enough messages to compact.'
 const MAX_PTL_RETRIES = 3
-const PTL_RETRY_MARKER = '[earlier conversation truncated for compaction retry]'
+export const PTL_RETRY_MARKER =
+  '[earlier conversation truncated for compaction retry]'
+
+/**
+ * Pick the pivot for retrying an overflowing full compaction as a partial
+ * ('up_to') one: summarize `messages[0..pivot)`, keep the rest verbatim.
+ *
+ * Sized to shed at least the reported overflow from the tail of the summarize
+ * request, halving by token weight when the gap is unparseable (some
+ * Vertex/Bedrock error formats). Snapped by adjustIndexToPreserveAPIInvariants
+ * so a kept tool_result never loses its tool_use.
+ *
+ * Returns null when the pivot leaves nothing to summarize or nothing to keep —
+ * partial can't help there, and the caller falls through to head truncation.
+ */
+export function selectPTLPartialPivot(
+  messages: Message[],
+  ptlResponse: AssistantMessage,
+): number | null {
+  const tokenGap = getPromptTooLongTokenGap(ptlResponse)
+  const target =
+    tokenGap ??
+    Math.floor(roughTokenCountEstimationForMessages(messages) / 2)
+  if (target <= 0) return null
+
+  let accumulated = 0
+  let candidate: number | null = null
+  for (let i = messages.length - 1; i >= 0; i--) {
+    accumulated += roughTokenCountEstimationForMessages([messages[i]!])
+    if (accumulated >= target) {
+      candidate = i
+      break
+    }
+  }
+  // Never reached the target: the overflow is bigger than everything we could
+  // hold back. Halve instead of giving up — a smaller request may still fit,
+  // and the alternative (head truncation) deletes rounds outright.
+  let pivot = adjustIndexToPreserveAPIInvariants(
+    messages,
+    candidate ?? Math.floor(messages.length / 2),
+  )
+  if (pivot <= 0) return null
+
+  // The summarized prefix must retain every prior compact summary: it is the
+  // only representation of the history that summary covered, while the kept
+  // half intentionally strips stale boundaries/summaries. It must also contain
+  // at least one API-visible message (system boundaries are filtered before the
+  // request). If pulling a tool_use back crosses that floor, advance to the
+  // first safe boundary instead of silently dropping summarized history.
+  const lastCompactSummaryIndex = messages.findLastIndex(
+    m => m.type === 'user' && m.isCompactSummary,
+  )
+  const firstAPIMessageIndex = messages.findIndex(
+    m => m.type === 'user' || m.type === 'assistant',
+  )
+  if (firstAPIMessageIndex === -1) return null
+  const minimumPivot =
+    Math.max(lastCompactSummaryIndex, firstAPIMessageIndex) + 1
+  if (pivot < minimumPivot) {
+    let safePivot: number | null = null
+    for (let next = minimumPivot; next < messages.length; next++) {
+      if (adjustIndexToPreserveAPIInvariants(messages, next) === next) {
+        safePivot = next
+        break
+      }
+    }
+    if (safePivot === null) return null
+    pivot = safePivot
+  }
+  if (pivot >= messages.length) return null
+  return pivot
+}
 
 /**
  * Drops the oldest API-round groups from messages until tokenGap is covered.
@@ -280,12 +352,14 @@ const PTL_RETRY_MARKER = '[earlier conversation truncated for compaction retry]'
  * Vertex/Bedrock error formats). Returns null when nothing can be dropped
  * without leaving an empty summarize set.
  *
- * This is the last-resort escape hatch for CC-1180 — when the compact request
- * itself hits prompt-too-long, the user is otherwise stuck. Dropping the
- * oldest context is lossy but unblocks them. The reactive-compact path
- * (compactMessages.ts) has the proper retry loop that peels from the tail;
- * this helper is the dumb-but-safe fallback for the proactive/manual path
- * that wasn't migrated in bfdb472f's unification.
+ * TRUE last resort for CC-1180: unlike every other compaction path, the
+ * dropped rounds are covered by no summary at all — they leave the context
+ * entirely. Callers must try selectPTLPartialPivot first, which sheds the same
+ * overflow by preserving the tail verbatim instead of deleting the head. This
+ * runs only when even that can't produce a fitting request.
+ *
+ * The dropped content still exists in the session transcript, so the marker
+ * this leaves behind names the file the model can read it back from.
  */
 export function truncateHeadForPTLRetry(
   messages: Message[],
@@ -297,7 +371,8 @@ export function truncateHeadForPTLRetry(
   const input =
     messages[0]?.type === 'user' &&
     messages[0].isMeta &&
-    messages[0].message.content === PTL_RETRY_MARKER
+    typeof messages[0].message.content === 'string' &&
+    messages[0].message.content.startsWith(PTL_RETRY_MARKER)
       ? messages.slice(1)
       : messages
 
@@ -330,11 +405,26 @@ export function truncateHeadForPTLRetry(
   // already handles any orphaned tool_results this creates.
   if (sliced[0]?.type === 'assistant') {
     return [
-      createUserMessage({ content: PTL_RETRY_MARKER, isMeta: true }),
+      createUserMessage({ content: buildPTLRetryMarker(), isMeta: true }),
       ...sliced,
     ]
   }
   return sliced
+}
+
+/**
+ * The marker standing in for head-truncated rounds. Names the transcript so
+ * the model can read back what this path deleted — the only compaction loss
+ * no summary covers.
+ */
+function buildPTLRetryMarker(): string {
+  try {
+    return `${PTL_RETRY_MARKER} They remain in the full transcript at: ${getTranscriptPath()}`
+  } catch {
+    // This runs only while already recovering from an overflow; a session/path
+    // lookup failure must not take the retry down with it.
+    return PTL_RETRY_MARKER
+  }
 }
 
 export const ERROR_MESSAGE_PROMPT_TOO_LONG =
@@ -558,6 +648,32 @@ export function getPartialCompactMessagesToSummarize(
 }
 
 /**
+ * The other half: what a partial compaction keeps verbatim.
+ *
+ * 'up_to' must strip old compact boundaries/summaries: for 'up_to',
+ * summary_B sits BEFORE kept, so a stale boundary_A in kept wins
+ * findLastCompactBoundaryIndex's backward scan and drops summary_B.
+ * 'from' keeps them: summary_B sits AFTER kept (backward scan still
+ * works), and removing an old summary would lose its covered history.
+ */
+export function getPartialCompactMessagesToKeep(
+  allMessages: Message[],
+  pivotIndex: number,
+  direction: PartialCompactDirection,
+): Message[] {
+  return direction === 'up_to'
+    ? allMessages
+        .slice(pivotIndex)
+        .filter(
+          m =>
+            m.type !== 'progress' &&
+            !isCompactBoundaryMessage(m) &&
+            !(m.type === 'user' && m.isCompactSummary),
+        )
+    : allMessages.slice(0, pivotIndex).filter(m => m.type !== 'progress')
+}
+
+/**
  * Creates a compact version of a conversation by summarizing older messages.
  */
 export async function compactConversation(
@@ -628,6 +744,7 @@ export async function compactConversation(
     let summaryResponse: AssistantMessage
     let summary: string | null
     let ptlAttempts = 0
+    let triedPartialPTLFallback = false
     for (;;) {
       summaryResponse = await streamCompactSummary({
         messages: messagesToSummarize,
@@ -640,8 +757,54 @@ export async function compactConversation(
       summary = getAssistantMessageText(summaryResponse)
       if (!summary?.startsWith(PROMPT_TOO_LONG_ERROR_MESSAGE)) break
 
-      // CC-1180: compact request itself hit prompt-too-long. Truncate the
-      // oldest API-round groups and retry rather than leaving the user stuck.
+      // CC-1180: the compact request itself hit prompt-too-long.
+      //
+      // Retry as a partial ('up_to') compaction before dropping anything: the
+      // prefix gets summarized and the tail stays verbatim, so the request
+      // shrinks by the same amount without any round leaving the context.
+      // Only when no such pivot exists do we fall through to head truncation,
+      // which deletes rounds outright. One attempt — messagesToSummarize is
+      // still untruncated here, so this is the largest pivot we will ever get.
+      if (!triedPartialPTLFallback) {
+        triedPartialPTLFallback = true
+        const pivot = selectPTLPartialPivot(
+          messagesToSummarize,
+          summaryResponse,
+        )
+        if (pivot !== null) {
+          logEvent('tengu_compact_ptl_partial_fallback', {
+            pivot,
+            messagesPreserved: messagesToSummarize.length - pivot,
+            preCompactTokenCount,
+          })
+          return await partialCompactConversation(
+            messagesToSummarize,
+            pivot,
+            context,
+            cacheSafeParams,
+            // Not userFeedback: customInstructions is already the merged
+            // user+hook text, and the userFeedback slot would re-wrap it as
+            // "User context: ...". Handing it over as the hook's instructions
+            // reproduces the prompt this call was already going to send.
+            undefined,
+            'up_to',
+            {
+              trigger: isAutoCompact ? 'auto' : 'manual',
+              suppressFollowUpQuestions,
+              // Passing the hook result is what stops partial from re-running
+              // pre-compact hooks; it carries the display message so the
+              // fallback surfaces the same text the direct path would.
+              preCompactHookResult: {
+                userDisplayMessage,
+                newCustomInstructions: customInstructions,
+              },
+              ownsLifecycle: false,
+              autoCompactThreshold: recompactionInfo?.autoCompactThreshold,
+            },
+          )
+        }
+      }
+
       ptlAttempts++
       const truncated =
         ptlAttempts <= MAX_PTL_RETRIES
@@ -943,27 +1106,21 @@ export async function partialCompactConversation(
     | ReturnType<typeof snapshotCompactContextState>
     | undefined
   try {
-    const messagesToSummarize = getPartialCompactMessagesToSummarize(
+    // Mutable: a PTL retry can slide the boundary (see the loop below), which
+    // moves messages from the summarized half into the kept half. Everything
+    // downstream — the boundary marker, transcript segment, analytics counts —
+    // must see the final split, so they all read these.
+    let pivot = pivotIndex
+    let messagesToSummarize = getPartialCompactMessagesToSummarize(
       allMessages,
-      pivotIndex,
+      pivot,
       direction,
     )
-    // 'up_to' must strip old compact boundaries/summaries: for 'up_to',
-    // summary_B sits BEFORE kept, so a stale boundary_A in kept wins
-    // findLastCompactBoundaryIndex's backward scan and drops summary_B.
-    // 'from' keeps them: summary_B sits AFTER kept (backward scan still
-    // works), and removing an old summary would lose its covered history.
-    const messagesToKeep =
-      direction === 'up_to'
-        ? allMessages
-            .slice(pivotIndex)
-            .filter(
-              m =>
-                m.type !== 'progress' &&
-                !isCompactBoundaryMessage(m) &&
-                !(m.type === 'user' && m.isCompactSummary),
-            )
-        : allMessages.slice(0, pivotIndex).filter(m => m.type !== 'progress')
+    let messagesToKeep = getPartialCompactMessagesToKeep(
+      allMessages,
+      pivot,
+      direction,
+    )
 
     if (messagesToSummarize.length === 0) {
       throw new Error(
@@ -1007,21 +1164,22 @@ export async function partialCompactConversation(
       context.onCompactProgress?.({ type: 'compact_start' })
     }
 
-    const compactPrompt = getPartialCompactPrompt(
-      customInstructions,
-      direction,
-      messagesToSummarize.length,
-    )
-    const summaryRequest = createUserMessage({
-      content: compactPrompt,
-    })
+    const buildSummaryRequest = (): UserMessage =>
+      createUserMessage({
+        content: getPartialCompactPrompt(
+          customInstructions,
+          direction,
+          messagesToSummarize.length,
+        ),
+      })
+    let summaryRequest = buildSummaryRequest()
 
-    const failureMetadata = {
+    const failureMetadata = () => ({
       preCompactTokenCount,
       direction:
         direction as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       messagesSummarized: messagesToSummarize.length,
-    }
+    })
 
     // 'up_to' prefix hits cache directly; 'from' sends all (tail wouldn't cache).
     // PTL retry breaks the cache prefix but unblocks the user (CC-1180).
@@ -1033,6 +1191,12 @@ export async function partialCompactConversation(
     let summaryResponse: AssistantMessage | undefined
     let summary: string | null
     let ptlAttempts = 0
+    // Boundary sliding only shrinks the request for 'up_to', where the request
+    // IS the summarized prefix. 'from' sends allMessages (the kept prefix
+    // wouldn't cache otherwise), so moving the boundary leaves it the same size.
+    // Latched off once a slide can't shed enough, so we never ping-pong between
+    // sliding and truncating within one budget.
+    let canSlideBoundary = direction === 'up_to'
     if (opts?.precomputedSummary) {
       // Precomputed path: the summary was already produced in the background
       // (precomputedCompact.ts) over this exact 'up_to' prefix. Use it directly
@@ -1053,18 +1217,58 @@ export async function partialCompactConversation(
         if (!summary?.startsWith(PROMPT_TOO_LONG_ERROR_MESSAGE)) break
 
         ptlAttempts++
-        const truncated =
-          ptlAttempts <= MAX_PTL_RETRIES
-            ? truncateHeadForPTLRetry(apiMessages, summaryResponse)
-            : null
-        if (!truncated) {
+        const failPTL = (): never => {
           logEvent('tengu_partial_compact_failed', {
             reason:
               'prompt_too_long' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-            ...failureMetadata,
+            ...failureMetadata(),
             ptlAttempts,
           })
           throw new Error(ERROR_MESSAGE_PROMPT_TOO_LONG)
+        }
+        if (ptlAttempts > MAX_PTL_RETRIES) {
+          failPTL()
+        }
+
+        // Slide the boundary toward the head before dropping anything: fewer
+        // messages get summarized and the rest stay verbatim, so the request
+        // sheds the overflow while the conversation loses nothing. Head
+        // truncation is only for when no smaller boundary exists.
+        const slidPivot = canSlideBoundary
+          ? selectPTLPartialPivot(messagesToSummarize, summaryResponse)
+          : null
+        if (slidPivot !== null) {
+          logEvent('tengu_compact_ptl_slide', {
+            attempt: ptlAttempts,
+            pivot: slidPivot,
+            previousPivot: pivot,
+            messagesSummarized: messagesToSummarize.length,
+          })
+          pivot = slidPivot
+          messagesToSummarize = getPartialCompactMessagesToSummarize(
+            allMessages,
+            pivot,
+            direction,
+          )
+          messagesToKeep = getPartialCompactMessagesToKeep(
+            allMessages,
+            pivot,
+            direction,
+          )
+          // Rebuilt because the prompt embeds the summarized-message count.
+          summaryRequest = buildSummaryRequest()
+          apiMessages = messagesToSummarize
+          retryCacheSafeParams = {
+            ...retryCacheSafeParams,
+            forkContextMessages: messagesToSummarize,
+          }
+          continue
+        }
+        canSlideBoundary = false
+
+        const truncated = truncateHeadForPTLRetry(apiMessages, summaryResponse)
+        if (!truncated) {
+          failPTL()
         }
         logEvent('tengu_compact_ptl_retry', {
           attempt: ptlAttempts,
@@ -1083,7 +1287,7 @@ export async function partialCompactConversation(
       logEvent('tengu_partial_compact_failed', {
         reason:
           'no_summary' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        ...failureMetadata,
+        ...failureMetadata(),
       })
       throw new Error(
         'Failed to generate conversation summary - response did not contain valid text content',
@@ -1092,7 +1296,7 @@ export async function partialCompactConversation(
       logEvent('tengu_partial_compact_failed', {
         reason:
           'api_error' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        ...failureMetadata,
+        ...failureMetadata(),
       })
       throw new Error(summary)
     }
@@ -1134,7 +1338,7 @@ export async function partialCompactConversation(
     // a logicalParentUuid pointing at one. Both directions skip them.
     const lastPreCompactUuid =
       direction === 'up_to'
-        ? allMessages.slice(0, pivotIndex).findLast(m => m.type !== 'progress')
+        ? allMessages.slice(0, pivot).findLast(m => m.type !== 'progress')
             ?.uuid
         : messagesToKeep.at(-1)?.uuid
     const boundaryMarker = createCompactBoundaryMessage(
@@ -1270,7 +1474,13 @@ export async function partialCompactConversation(
         direction === 'from' ? 'before_summary' : 'after_summary',
       attachments: postCompactContextAttachments,
       hookResults: hookMessages,
-      userDisplayMessage: postCompactHookResult.userDisplayMessage,
+      // Merged, matching compactConversation: a caller that supplied the
+      // PreCompact result (the auto/PTL-fallback paths) would otherwise lose
+      // its display message here.
+      userDisplayMessage: mergeHookDisplayMessages(
+        hookResult.userDisplayMessage,
+        postCompactHookResult.userDisplayMessage,
+      ),
       preCompactTokenCount,
       postCompactTokenCount,
       compactionUsage,

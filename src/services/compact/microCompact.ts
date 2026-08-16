@@ -41,6 +41,18 @@ import {
 export const TIME_BASED_MC_CLEARED_MESSAGE = '[Old tool result content cleared]'
 export const MC_CLEARED_INPUT_MESSAGE =
   '[Old tool input content cleared; re-read the file if needed]'
+// Same inline-for-circular-deps reason, same drift test.
+export const MC_PERSISTED_OUTPUT_TAG = '<persisted-output>'
+
+/**
+ * Pointers to content microcompact wrote to disk, ready to substitute for the
+ * content itself. `results` is keyed by tool_use_id, `inputs` by
+ * `${tool_use_id}:${field}`. Produced async, consumed by the sync rewrite.
+ */
+export type MCPersistedPointers = {
+  results: ReadonlyMap<string, string>
+  inputs: ReadonlyMap<string, string>
+}
 
 // Only clear an input string field when it's at least this long. Small
 // fields (paths, short edits) save nothing and are often load-bearing.
@@ -97,6 +109,21 @@ async function getCachedMCModule(): Promise<
     cachedMCModule = await import('./cachedMicrocompact.js')
   }
   return cachedMCModule
+}
+
+let toolResultStorageModule:
+  | typeof import('../../utils/toolResultStorage.js')
+  | null = null
+
+// Dynamic import for the circular-deps reason noted on the inlined constants
+// above: a static import of toolResultStorage loops back into this file.
+async function getToolResultStorageModule(): Promise<
+  typeof import('../../utils/toolResultStorage.js')
+> {
+  if (!toolResultStorageModule) {
+    toolResultStorageModule = await import('../../utils/toolResultStorage.js')
+  }
+  return toolResultStorageModule
 }
 
 function ensureCachedMCState(): import('./cachedMicrocompact.js').CachedMCState {
@@ -300,7 +327,10 @@ export async function microcompactMessages(
   // tool results now, before the request, to shrink what gets rewritten.
   // Cached MC (cache-editing) is skipped when this fires: editing assumes a
   // warm cache, and we just established it's cold.
-  const timeBasedResult = maybeTimeBasedMicrocompact(messages, querySource)
+  const timeBasedResult = await maybeTimeBasedMicrocompact(
+    messages,
+    querySource,
+  )
   if (timeBasedResult) {
     return timeBasedResult
   }
@@ -326,7 +356,7 @@ export async function microcompactMessages(
   // an active session that never pauses gets no incremental relief and grows
   // straight into the blocking full compact. Clear old tool results once the
   // context crosses a fraction of the window, below the autocompact threshold.
-  const sizeBasedResult = maybeSizeBasedMicrocompact(
+  const sizeBasedResult = await maybeSizeBasedMicrocompact(
     messages,
     querySource,
     toolUseContext,
@@ -491,6 +521,156 @@ export function evaluateTimeBasedTrigger(
 }
 
 /**
+ * Split compactable ids into the tail we keep and the prefix we clear.
+ * Shared so the persistence pass and the rewrite agree on the same set.
+ */
+function computeClearSet(
+  compactableIds: string[],
+  keepRecent: number,
+): { clearSet: Set<string>; keepSet: Set<string> } {
+  // Floor at 1: slice(-0) returns the full array (paradoxically keeps
+  // everything), and clearing ALL results leaves the model with zero working
+  // context. Neither degenerate is sensible — always keep at least the last.
+  const keep = Math.max(1, keepRecent)
+  const keepSet = new Set(compactableIds.slice(-keep))
+  return {
+    keepSet,
+    clearSet: new Set(compactableIds.filter(id => !keepSet.has(id))),
+  }
+}
+
+/**
+ * Already-cleared content, in either form: the bare marker or a persisted
+ * pointer. Both must count as cleared so a repeat fire is idempotent — it must
+ * not re-persist, re-count tokens, or replace a pointer with the bare marker.
+ */
+function isAlreadyClearedValue(value: unknown, bareMarker: string): boolean {
+  return (
+    value === bareMarker ||
+    (typeof value === 'string' && value.startsWith(MC_PERSISTED_OUTPUT_TAG))
+  )
+}
+
+/** The pointer that stands in for content now living at `filepath`. */
+function buildPersistedPointer(
+  storage: typeof import('../../utils/toolResultStorage.js'),
+  label: string,
+  filepath: string,
+): string {
+  return `${storage.PERSISTED_OUTPUT_TAG}${label} saved to: ${filepath}\n\nUse ${FILE_READ_TOOL_NAME} to view${storage.PERSISTED_OUTPUT_CLOSING_TAG}`
+}
+
+/**
+ * Write to-be-cleared content to disk and return the pointers that replace it.
+ *
+ * `results` is keyed by tool_use_id; `inputs` by `${tool_use_id}:${field}`,
+ * since one tool_use can have several clearable fields (Edit's old_string and
+ * new_string). Keys absent from a map fall back to the bare marker, which is
+ * why every failure path here is a silent skip: losing the file is a smaller
+ * regression than skipping the clear entirely.
+ *
+ * Deliberately no preview — a preview would defeat the point of clearing. The
+ * path plus a Read hint is enough for the model to recover the content.
+ */
+async function persistClearedContent(
+  messages: Message[],
+  clearSet: Set<string>,
+): Promise<MCPersistedPointers> {
+  const results = new Map<string, string>()
+  const inputs = new Map<string, string>()
+  if (clearSet.size === 0) return { results, inputs }
+
+  let storage: typeof import('../../utils/toolResultStorage.js')
+  try {
+    storage = await getToolResultStorageModule()
+  } catch {
+    return { results, inputs }
+  }
+
+  for (const message of messages) {
+    if (message.type === 'assistant' && Array.isArray(message.message.content)) {
+      for (const block of message.message.content) {
+        if (
+          block.type !== 'tool_use' ||
+          !clearSet.has(block.id) ||
+          !INPUT_CLEARABLE_TOOLS.has(block.name) ||
+          !block.input ||
+          typeof block.input !== 'object'
+        ) {
+          continue
+        }
+        for (const [key, value] of Object.entries(block.input)) {
+          if (
+            typeof value !== 'string' ||
+            value.length < MIN_CLEARABLE_INPUT_CHARS ||
+            isAlreadyClearedValue(value, MC_CLEARED_INPUT_MESSAGE) ||
+            // The field name becomes part of the filename; anything but a
+            // plain identifier could escape the tool-results directory.
+            !/^\w+$/.test(key)
+          ) {
+            continue
+          }
+          const result = await storage
+            .persistToolResult(value, `${block.id}.input.${key}`)
+            .catch(() => null)
+          if (!result || storage.isPersistError(result)) {
+            continue
+          }
+          inputs.set(
+            `${block.id}:${key}`,
+            buildPersistedPointer(storage, 'Tool input', result.filepath),
+          )
+        }
+      }
+      continue
+    }
+    if (message.type !== 'user' || !Array.isArray(message.message.content)) {
+      continue
+    }
+    for (const block of message.message.content) {
+      if (
+        block.type !== 'tool_result' ||
+        !clearSet.has(block.tool_use_id) ||
+        results.has(block.tool_use_id) ||
+        !block.content ||
+        isAlreadyClearedValue(block.content, TIME_BASED_MC_CLEARED_MESSAGE)
+      ) {
+        continue
+      }
+      // persistToolResult rejects non-text blocks (images, documents) on its
+      // own, so those land in the catch-all skip below.
+      const result = await storage
+        .persistToolResult(block.content, block.tool_use_id)
+        .catch(() => null)
+      if (!result || storage.isPersistError(result)) {
+        continue
+      }
+      results.set(
+        block.tool_use_id,
+        buildPersistedPointer(storage, 'Tool result', result.filepath),
+      )
+    }
+  }
+
+  return { results, inputs }
+}
+
+/**
+ * clearOldToolResults with the cleared content persisted to disk first, so the
+ * model can Read back what it lost instead of only seeing a "cleared" marker.
+ */
+async function clearOldToolResultsWithPersistence(
+  messages: Message[],
+  keepRecent: number,
+  precomputedIds?: string[],
+): Promise<ReturnType<typeof clearOldToolResults>> {
+  const compactableIds = precomputedIds ?? collectCompactableToolIds(messages)
+  const { clearSet } = computeClearSet(compactableIds, keepRecent)
+  const pointers = await persistClearedContent(messages, clearSet)
+  return clearOldToolResults(messages, keepRecent, compactableIds, pointers)
+}
+
+/**
  * Pure transform shared by both microcompact triggers: content-clear every
  * compactable tool result except the last `keepRecent`. Returns null when
  * nothing is actually cleared (no clearable results, or all already cleared).
@@ -501,6 +681,9 @@ export function evaluateTimeBasedTrigger(
  * tool result ("File written successfully") — clearing only the result would
  * leave the bulk of a write-heavy session's tokens untouched.
  *
+ * Both results and inputs are replaced by `pointers` when the caller persisted
+ * them, and by the bare marker otherwise.
+ *
  * Provider-neutral — it only rewrites local message content, so it works on
  * any model/provider without API betas or cache-editing support.
  */
@@ -508,6 +691,7 @@ export function clearOldToolResults(
   messages: Message[],
   keepRecent: number,
   precomputedIds?: string[],
+  pointers?: MCPersistedPointers,
 ): {
   messages: Message[]
   tokensSaved: number
@@ -517,13 +701,7 @@ export function clearOldToolResults(
   // Callers that already collected the ids (e.g. the size-based pre-gate) pass
   // them in to avoid a second traversal; everyone else computes them here.
   const compactableIds = precomputedIds ?? collectCompactableToolIds(messages)
-
-  // Floor at 1: slice(-0) returns the full array (paradoxically keeps
-  // everything), and clearing ALL results leaves the model with zero working
-  // context. Neither degenerate is sensible — always keep at least the last.
-  const keep = Math.max(1, keepRecent)
-  const keepSet = new Set(compactableIds.slice(-keep))
-  const clearSet = new Set(compactableIds.filter(id => !keepSet.has(id)))
+  const { clearSet, keepSet } = computeClearSet(compactableIds, keepRecent)
 
   if (clearSet.size === 0) {
     return null
@@ -534,6 +712,20 @@ export function clearOldToolResults(
   // cleared on a prior turn (the conversation keeps growing, so older ids stay
   // outside keepSet); reporting clearSet.size would over-count on repeat fires.
   let clearedNow = 0
+  let inputsCleared = 0
+
+  // A persisted pointer carries a real path, so for small content it costs
+  // more than the content it replaces. Fall back to the bare marker whenever
+  // it isn't actually cheaper — otherwise clearing would grow the context.
+  function cheaperReplacement(
+    pointer: string | undefined,
+    grossTokens: number,
+    bareMarker: string,
+  ): string {
+    return pointer && roughTokenCountEstimation(pointer) < grossTokens
+      ? pointer
+      : bareMarker
+  }
 
   // Clear large input string fields on a Write/Edit tool_use whose result is
   // also being cleared. Returns the original block when nothing changes
@@ -554,10 +746,17 @@ export function clearOldToolResults(
       if (
         typeof value === 'string' &&
         value.length >= MIN_CLEARABLE_INPUT_CHARS &&
-        value !== MC_CLEARED_INPUT_MESSAGE
+        !isAlreadyClearedValue(value, MC_CLEARED_INPUT_MESSAGE)
       ) {
-        tokensSaved += roughTokenCountEstimation(value)
-        newInput[key] = MC_CLEARED_INPUT_MESSAGE
+        const gross = roughTokenCountEstimation(value)
+        const replacement = cheaperReplacement(
+          pointers?.inputs.get(`${block.id}:${key}`),
+          gross,
+          MC_CLEARED_INPUT_MESSAGE,
+        )
+        tokensSaved += gross - roughTokenCountEstimation(replacement)
+        newInput[key] = replacement
+        inputsCleared++
         touched = true
       }
     }
@@ -598,12 +797,20 @@ export function clearOldToolResults(
       if (
         block.type === 'tool_result' &&
         clearSet.has(block.tool_use_id) &&
-        block.content !== TIME_BASED_MC_CLEARED_MESSAGE
+        !isAlreadyClearedValue(block.content, TIME_BASED_MC_CLEARED_MESSAGE)
       ) {
-        tokensSaved += calculateToolResultTokens(block)
+        const gross = calculateToolResultTokens(block)
+        const content = cheaperReplacement(
+          pointers?.results.get(block.tool_use_id),
+          gross,
+          TIME_BASED_MC_CLEARED_MESSAGE,
+        )
+        // Net saving: the replacement is charged against the result it
+        // replaced, so a pointer's real cost shows up instead of the gross size.
+        tokensSaved += gross - roughTokenCountEstimation(content)
         clearedNow++
         touched = true
-        return { ...block, content: TIME_BASED_MC_CLEARED_MESSAGE }
+        return { ...block, content }
       }
       return block
     })
@@ -614,7 +821,11 @@ export function clearOldToolResults(
     }
   })
 
-  if (tokensSaved === 0) {
+  // Nothing rewritten — everything in clearSet was already cleared on an
+  // earlier pass. Keyed off the rewrite count rather than tokensSaved: with
+  // net accounting a real clear can net out to zero, and returning null then
+  // would throw away a rewrite whose content is already persisted to disk.
+  if (clearedNow === 0 && inputsCleared === 0) {
     return null
   }
 
@@ -651,17 +862,20 @@ function finalizeContentClear(querySource: QuerySource | undefined): void {
   }
 }
 
-function maybeTimeBasedMicrocompact(
+async function maybeTimeBasedMicrocompact(
   messages: Message[],
   querySource: QuerySource | undefined,
-): MicrocompactResult | null {
+): Promise<MicrocompactResult | null> {
   const trigger = evaluateTimeBasedTrigger(messages, querySource)
   if (!trigger) {
     return null
   }
   const { gapMinutes, config } = trigger
 
-  const cleared = clearOldToolResults(messages, config.keepRecent)
+  const cleared = await clearOldToolResultsWithPersistence(
+    messages,
+    config.keepRecent,
+  )
   if (!cleared) {
     return null
   }
@@ -694,11 +908,11 @@ function maybeTimeBasedMicrocompact(
  * window (below the auto-compact threshold), clear old tool results to buy
  * headroom and defer — or skip — the full compact.
  */
-function maybeSizeBasedMicrocompact(
+async function maybeSizeBasedMicrocompact(
   messages: Message[],
   querySource: QuerySource | undefined,
   toolUseContext?: ToolUseContext,
-): MicrocompactResult | null {
+): Promise<MicrocompactResult | null> {
   const config = getSizeBasedMCConfig()
   if (!config.enabled || !querySource || !isMainThreadSource(querySource)) {
     return null
@@ -728,7 +942,7 @@ function maybeSizeBasedMicrocompact(
     return null
   }
 
-  const cleared = clearOldToolResults(
+  const cleared = await clearOldToolResultsWithPersistence(
     messages,
     config.keepRecent,
     compactableIds,

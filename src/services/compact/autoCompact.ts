@@ -12,6 +12,7 @@ import { isEnvTruthy } from '../../utils/envUtils.js'
 import type { CacheSafeParams } from '../../utils/forkedAgent.js'
 import { logError } from '../../utils/log.js'
 import { tokenCountWithEstimation } from '../../utils/tokens.js'
+import { roughTokenCountEstimationForMessages } from '../tokenEstimation.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../analytics/growthbook.js'
 import { getMaxOutputTokensForModel } from '../api/claude.js'
 import { notifyCompaction } from '../api/promptCacheBreakDetection.js'
@@ -455,7 +456,49 @@ export async function shouldAutoCompact(
     model,
   )
 
+  if (
+    isAboveAutoCompactThreshold &&
+    isFixedPrefixOverThreshold(tokenCount, messages, threshold)
+  ) {
+    const prefixTokens =
+      tokenCount - roughTokenCountEstimationForMessages(messages)
+    logForDebugging(
+      `autocompact: fixed prefix ~${prefixTokens} > threshold ${threshold} — compaction cannot help`,
+      { level: 'warn' },
+    )
+  }
+
   return isAboveAutoCompactThreshold
+}
+
+/**
+ * Does the part of the request compaction cannot shrink — system prompt, tool
+ * schemas, userContext — already clear the threshold on its own?
+ *
+ * When it does, every compaction succeeds and the very next turn re-triggers,
+ * because summarizing messages can't touch the thing that's actually too big
+ * (usually a large MCP tool set). The rapid-refill breaker catches that
+ * symptom; this names the cause so the log says what to go turn off.
+ *
+ * Subtracts with roughTokenCountEstimationForMessages, not
+ * estimateMessageTokens: tokenCount comes from tokenCountWithEstimation, which
+ * is real usage plus roughTokenCountEstimationForMessages of the tail, so this
+ * is the one estimator that cancels. estimateMessageTokens skips messages
+ * whose content is a plain string, which would charge every such user turn to
+ * the prefix and fire on conversations that have no prefix problem.
+ *
+ * Still a diagnostic, not a number to act on: the remainder is the prefix plus
+ * whatever the estimator got wrong.
+ */
+export function isFixedPrefixOverThreshold(
+  tokenCount: number,
+  messages: Message[],
+  threshold: number,
+): boolean {
+  return (
+    Math.max(0, tokenCount - roughTokenCountEstimationForMessages(messages)) >
+    threshold
+  )
 }
 
 // Precompute keeps the recent tail verbatim after the summary. Bound the tail
