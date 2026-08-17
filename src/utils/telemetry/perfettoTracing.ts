@@ -1101,21 +1101,4 @@ export function resetPerfettoTracer(): void {
   traceWritten = false
 }
 
-/**
- * Trigger a periodic write immediately (for testing)
- */
-export async function triggerPeriodicWriteForTesting(): Promise<void> {
-  await periodicWrite()
-}
-
-/**
- * Evict stale spans immediately (for testing)
- */
-export function evictStaleSpansForTesting(): void {
-  evictStaleSpans()
-}
-
 export const MAX_EVENTS_FOR_TESTING = MAX_EVENTS
-export function evictOldestEventsForTesting(): void {
-  evictOldestEvents()
-}

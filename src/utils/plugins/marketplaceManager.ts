@@ -2720,7 +2720,3 @@ export async function setMarketplaceAutoUpdate(
 
   logForDebugging(`Set autoUpdate=${autoUpdate} for marketplace: ${name}`)
 }
-
-export const _test = {
-  redactUrlCredentials,
-}

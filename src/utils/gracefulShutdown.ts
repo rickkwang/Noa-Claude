@@ -408,14 +408,6 @@ export function resetShutdownState(): void {
   pendingShutdown = undefined
 }
 
-/**
- * Returns the in-flight shutdown promise, if any. Only for use in tests
- * to await completion before restoring mocks.
- */
-export function getPendingShutdownForTesting(): Promise<void> | undefined {
-  return pendingShutdown
-}
-
 export function _setOrphanCheckIntervalForTesting(
   interval: ReturnType<typeof setInterval> | undefined,
 ): void {

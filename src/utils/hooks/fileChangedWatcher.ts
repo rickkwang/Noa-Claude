@@ -186,7 +186,3 @@ function dispose(): void {
   hasEnvHooks = false
   notifyCallback = null
 }
-
-export function resetFileChangedWatcherForTesting(): void {
-  dispose()
-}

@@ -31,10 +31,6 @@ export function disableKeepAlive(): void {
   keepAliveDisabled = true
 }
 
-export function _resetKeepAliveForTesting(): void {
-  keepAliveDisabled = false
-}
-
 /**
  * Convert dns.LookupOptions.family to a numeric address family value
  * Handles: 0 | 4 | 6 | 'IPv4' | 'IPv6' | undefined

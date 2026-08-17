@@ -351,13 +351,3 @@ export function captureAPIRequest(
   // not a new retention class.
   setLastAPIRequestMessages(process.env.USER_TYPE === 'ant' ? messages : null)
 }
-
-/**
- * Reset error log state for testing purposes only.
- * @internal
- */
-export function _resetErrorLogForTesting(): void {
-  errorLogSink = null
-  errorQueue.length = 0
-  inMemoryErrorLog = []
-}

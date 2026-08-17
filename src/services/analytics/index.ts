@@ -25,5 +25,3 @@ export function attachAnalyticsSink(_newSink: AnalyticsSink): void {}
 export function logEvent(_eventName: string, _metadata: LogEventMetadata): void {}
 
 export async function logEventAsync(_eventName: string, _metadata: LogEventMetadata): Promise<void> {}
-
-export function _resetForTesting(): void {}

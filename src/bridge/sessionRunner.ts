@@ -547,5 +547,3 @@ export function createSessionSpawner(deps: SessionSpawnerDeps): SessionSpawner {
     },
   }
 }
-
-export { extractActivities as _extractActivitiesForTesting }

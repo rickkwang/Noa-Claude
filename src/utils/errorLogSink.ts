@@ -67,27 +67,6 @@ const NOOP_WRITER: JsonlWriter = {
 }
 const disabledLogWriters = new Set<string>()
 
-/**
- * Flush all buffered log writers. Used for testing.
- * @internal
- */
-export function _flushLogWritersForTesting(): void {
-  for (const writer of logWriters.values()) {
-    writer.flush()
-  }
-}
-
-/**
- * Clear all buffered log writers. Used for testing.
- * @internal
- */
-export function _clearLogWritersForTesting(): void {
-  for (const writer of logWriters.values()) {
-    writer.dispose()
-  }
-  logWriters.clear()
-}
-
 function getLogWriter(path: string): JsonlWriter {
   if (disabledLogWriters.has(path)) {
     return NOOP_WRITER

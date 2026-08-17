@@ -55,11 +55,6 @@ export function getTaskOutputDir(): string {
   return _taskOutputDir
 }
 
-/** Test helper — clears the memoized dir. */
-export function _resetTaskOutputDirForTest(): void {
-  _taskOutputDir = undefined
-}
-
 /**
  * Ensure the task output directory exists
  */

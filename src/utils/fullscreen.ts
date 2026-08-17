@@ -242,9 +242,3 @@ export async function maybeGetTmuxMouseHint(): Promise<string | null> {
   if (code !== 0 || stdout.trim() === 'on') return null
   return "tmux detected · scroll with PgUp/PgDn · or add 'set -g mouse on' to ~/.tmux.conf for wheel scroll"
 }
-
-/** Test-only: reset module-level once-per-session flags. */
-export function _resetForTesting(): void {
-  loggedTmuxCcDisable = false
-  checkedTmuxMouseHint = false
-}
