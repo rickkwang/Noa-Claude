@@ -37,14 +37,6 @@ export function isEssentialTrafficOnly(): boolean {
 }
 
 /**
- * True when telemetry/analytics should be suppressed.
- * True at both `no-telemetry` and `essential-traffic` levels.
- */
-export function isTelemetryDisabled(): boolean {
-  return getPrivacyLevel() !== 'default'
-}
-
-/**
  * Returns the env var name responsible for the current essential-traffic restriction,
  * or null if unrestricted. Used for user-facing "unset X to re-enable" messages.
  */

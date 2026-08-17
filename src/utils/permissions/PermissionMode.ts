@@ -135,14 +135,6 @@ export function permissionModeTitle(mode: PermissionMode): string {
   return getModeConfig(mode).title
 }
 
-export function isDefaultMode(mode: PermissionMode | undefined): boolean {
-  return mode === 'default' || mode === undefined
-}
-
-export function permissionModeShortTitle(mode: PermissionMode): string {
-  return getModeConfig(mode).shortTitle
-}
-
 export function permissionModeIndicator(mode: PermissionMode): string {
   return getModeConfig(mode).indicator
 }

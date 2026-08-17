@@ -877,7 +877,7 @@ export async function pullTeamMemory(
  * and retries. No merge, no disk writes — server-only new keys from
  * a teammate's concurrent push propagate on the next pull.
  *
- * Local-wins-on-conflict is the opposite of syncTeamMemory's pull-first
+ * Local-wins-on-conflict is the opposite of pullTeamMemory's pull-first
  * semantics. This is intentional: pushTeamMemory is triggered by a local edit,
  * and that edit must not be silently discarded just because a teammate pushed
  * in the meantime. Content-level merge (same key, both changed) is not
@@ -1143,51 +1143,6 @@ export async function pushTeamMemory(
     success: false,
     filesUploaded: 0,
     error: 'Unexpected end of conflict resolution loop',
-  }
-}
-
-/**
- * Bidirectional sync: pull from server, merge with local, push back.
- * Server entries take precedence on conflict (last-write-wins by the server).
- * Push uses conflict resolution (retries on 412) via pushTeamMemory.
- */
-export async function syncTeamMemory(state: SyncState): Promise<{
-  success: boolean
-  filesPulled: number
-  filesPushed: number
-  error?: string
-}> {
-  // 1. Pull remote → local (skip ETag cache for full sync)
-  const pullResult = await pullTeamMemory(state, { skipEtagCache: true })
-  if (!pullResult.success) {
-    return {
-      success: false,
-      filesPulled: 0,
-      filesPushed: 0,
-      error: pullResult.error,
-    }
-  }
-
-  // 2. Push local → remote (with conflict resolution)
-  const pushResult = await pushTeamMemory(state)
-  if (!pushResult.success) {
-    return {
-      success: false,
-      filesPulled: pullResult.filesWritten,
-      filesPushed: 0,
-      error: pushResult.error,
-    }
-  }
-
-  logForDebugging(
-    `team-memory-sync: synced (pulled ${pullResult.filesWritten}, pushed ${pushResult.filesUploaded})`,
-    { level: 'info' },
-  )
-
-  return {
-    success: true,
-    filesPulled: pullResult.filesWritten,
-    filesPushed: pushResult.filesUploaded,
   }
 }
 

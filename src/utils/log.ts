@@ -212,18 +212,6 @@ export function loadErrorLogs(): Promise<LogOption[]> {
 }
 
 /**
- * Gets an error log by its index
- * @param index Index in the sorted list of logs (0-based)
- * @returns Log data or null if not found
- */
-export async function getErrorLogByIndex(
-  index: number,
-): Promise<LogOption | null> {
-  const logs = await loadErrorLogs()
-  return logs[index] || null
-}
-
-/**
  * Internal function to load and process logs from a specified path
  * @param path Directory containing logs
  * @returns Array of logs sorted by date

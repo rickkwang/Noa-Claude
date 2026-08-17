@@ -498,14 +498,6 @@ function findLastUuid(logs: Entry[] | null): UUID | undefined {
 }
 
 /**
- * Clear cached state for a session
- */
-export function clearSession(sessionId: string): void {
-  lastUuidMap.delete(sessionId)
-  sequentialAppendBySession.delete(sessionId)
-}
-
-/**
  * Clear all cached session state (all sessions).
  * Use this on /clear to free sub-agent session entries.
  */

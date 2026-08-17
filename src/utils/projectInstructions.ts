@@ -56,12 +56,6 @@ export function hasClaudeMdOnly(dir: string): boolean {
 }
 
 /**
- * @deprecated Use hasClaudeMdOnly instead.
- * Kept only for transitional compatibility with older imports.
- */
-export const hasClaueMdOnly = hasClaudeMdOnly
-
-/**
  * Find the nearest project instruction file in the current directory or any
  * ancestor directory using the same priority as the memory loader.
  *

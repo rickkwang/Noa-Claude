@@ -139,15 +139,6 @@ export function getHkcuSettings(): MdmResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Clear the MDM and HKCU settings caches, forcing a fresh read on next load.
- */
-export function clearMdmSettingsCache(): void {
-  mdmCache = null
-  hkcuCache = null
-  mdmLoadPromise = null
-}
-
-/**
  * Update the session caches directly. Used by the change detector poll.
  */
 export function setMdmSettingsCache(mdm: MdmResult, hkcu: MdmResult): void {

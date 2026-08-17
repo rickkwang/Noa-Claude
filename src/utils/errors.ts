@@ -154,24 +154,6 @@ export function getErrnoPath(e: unknown): string | undefined {
 }
 
 /**
- * Extract error message + top N stack frames from an unknown error.
- * Use when the error flows to the model as a tool_result — full stack
- * traces are ~500-2000 chars of mostly-irrelevant internal frames and
- * waste context tokens. Keep the full stack in debug logs instead.
- */
-export function shortErrorStack(e: unknown, maxFrames = 5): string {
-  if (!(e instanceof Error)) return String(e)
-  if (!e.stack) return e.message
-  // V8/Bun stack format: "Name: message\n    at frame1\n    at frame2..."
-  // First line is the message; subsequent "    at " lines are frames.
-  const lines = e.stack.split('\n')
-  const header = lines[0] ?? e.message
-  const frames = lines.slice(1).filter(l => l.trim().startsWith('at '))
-  if (frames.length <= maxFrames) return e.stack
-  return [header, ...frames.slice(0, maxFrames)].join('\n')
-}
-
-/**
  * True if the error means the path is missing, inaccessible, or
  * structurally unreachable — use in catch blocks after fs operations to
  * distinguish expected "nothing there / no access" from unexpected errors.

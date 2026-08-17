@@ -992,5 +992,3 @@ export function getNativeModule(): NativeModule | null {
   cachedModule = { ColorDiff, ColorFile, getSyntaxTheme }
   return cachedModule
 }
-
-export type { ColorDiff as ColorDiffClass, ColorFile as ColorFileClass }

@@ -86,7 +86,3 @@ export const loadPluginThemes = memoize(async () => {
   logForDebugging(`Total plugin themes loaded: ${allThemes.length}`)
   return allThemes
 })
-
-export function clearPluginThemeCache() {
-  loadPluginThemes.cache?.clear?.()
-}

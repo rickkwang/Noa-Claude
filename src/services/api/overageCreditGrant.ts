@@ -134,5 +134,3 @@ export function formatGrantAmount(info: OverageCreditGrantInfo): string | null {
   }
   return null
 }
-
-export type { CachedGrantEntry as OverageCreditGrantCacheEntry }

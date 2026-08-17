@@ -10,7 +10,6 @@ import {
 } from '../../auth.js'
 import { getCwd } from '../../cwd.js'
 import { logForDebugging } from '../../debug.js'
-import { detectCurrentRepository } from '../../detectRepository.js'
 import { errorMessage } from '../../errors.js'
 import { findGitRoot, getIsClean } from '../../git.js'
 import { getOAuthHeaders } from '../../teleport/api.js'
@@ -55,19 +54,11 @@ export async function checkHasRemoteEnvironment(): Promise<boolean> {
 
 /**
  * Checks if current directory is inside a git repository (has .git/).
- * Distinct from checkHasGitRemote — a local-only repo passes this but not that.
+ * Only checks for a .git directory — a local-only repo with no configured
+ * remote still passes.
  */
 export function checkIsInGitRepo(): boolean {
   return findGitRoot(getCwd()) !== null
-}
-
-/**
- * Checks if current repository has a GitHub remote configured.
- * Returns false for local-only repos (git init with no `origin`).
- */
-export async function checkHasGitRemote(): Promise<boolean> {
-  const repository = await detectCurrentRepository()
-  return repository !== null
 }
 
 /**

@@ -2,8 +2,6 @@ export const PROJECT_REPO_BASE_URL = 'https://github.com/rickkwang/Noa-Claude'
 
 export const PROJECT_DOCS_BASE_URL = `${PROJECT_REPO_BASE_URL}/blob/master/docs`
 
-export const PROJECT_ISSUES_URL = `${PROJECT_REPO_BASE_URL}/issues`
-
 export const PRODUCT_HELP_URL = `${PROJECT_DOCS_BASE_URL}/product-help.md`
 
 export const PRODUCT_RELEASE_NOTES_URL = `${PROJECT_DOCS_BASE_URL}/release-notes.md`

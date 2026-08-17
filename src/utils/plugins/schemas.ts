@@ -1427,43 +1427,6 @@ export const DependencyRefSchema = lazySchema(() =>
 )
 
 /**
- * Schema for plugin reference in settings (repo or user level)
- *
- * Can be either:
- * - Simple string: "plugin-name@marketplace-name"
- * - Object with additional configuration
- *
- * The plugin source (npm, git, local) is defined in the marketplace entry itself,
- * not in the plugin reference.
- *
- * Examples:
- * - "code-formatter@anthropic-tools"
- * - "db-assistant@company-internal"
- * - { id: "formatter@tools", version: "^2.0.0", required: true }
- */
-export const SettingsPluginEntrySchema = lazySchema(() =>
-  z.union([
-    // Simple format: "plugin@marketplace"
-    PluginIdSchema(),
-    // Extended format with configuration
-    z.object({
-      id: PluginIdSchema().describe(
-        'Plugin identifier (e.g., "formatter@tools")',
-      ),
-      version: z
-        .string()
-        .optional()
-        .describe('Version constraint (e.g., "^2.0.0")'),
-      required: z.boolean().optional().describe('If true, cannot be disabled'),
-      config: z
-        .record(z.string(), z.unknown())
-        .optional()
-        .describe('Plugin-specific configuration'),
-    }),
-  ]),
-)
-
-/**
  * Schema for installed plugin metadata (V1 format)
  *
  * Tracks the actual installation state of a plugin. All plugins are
@@ -1602,14 +1565,6 @@ export const InstalledPluginsFileSchemaV2 = lazySchema(() =>
       .record(PluginIdSchema(), z.array(PluginInstallationEntrySchema()))
       .describe('Map of plugin IDs to arrays of installation entries'),
   }),
-)
-
-/**
- * Combined schema that accepts both V1 and V2 formats
- * Used for reading existing files before migration
- */
-export const InstalledPluginsFileSchema = lazySchema(() =>
-  z.union([InstalledPluginsFileSchemaV1(), InstalledPluginsFileSchemaV2()]),
 )
 
 /**

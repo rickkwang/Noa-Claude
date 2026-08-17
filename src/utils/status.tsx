@@ -1,8 +1,7 @@
 // @ts-nocheck
 import chalk from 'chalk';
-import figures from 'figures';
 import * as React from 'react';
-import { color, Text } from '../ink.js';
+import { color } from '../ink.js';
 import type { MCPServerConnection } from '../services/mcp/types.js';
 import { getAccountInformation, isClaudeAISubscriber } from './auth.js';
 import { getLargeMemoryFiles, getMemoryFiles, MAX_MEMORY_CHARACTER_COUNT } from './claudemd.js';
@@ -10,163 +9,21 @@ import { getDoctorDiagnostic } from './doctorDiagnostic.js';
 import { getAWSRegion, getDefaultVertexRegion, isEnvTruthy } from './envUtils.js';
 import { getDisplayPath } from './file.js';
 import { formatNumber } from './format.js';
-import { getIdeClientName, type IDEExtensionInstallationStatus, isJetBrainsIde, toIDEDisplayName } from './ide.js';
-import { getInitializationStatus, getLspServerManager, isLspConnected } from '../services/lsp/manager.js';
 import { getClaudeAiUserDefaultModelDescription, modelDisplayString } from './model/model.js';
 import { getAPIProvider } from './model/providers.js';
 import { getMTLSConfig } from './mtls.js';
 import { checkInstall } from './nativeInstaller/index.js';
 import { getProxyUrl } from './proxy.js';
-import { getRipgrepStatus } from './ripgrep.js';
-import { SandboxManager, getSandboxRuntimeCompatibility } from './sandbox/sandbox-adapter.js';
 import { getSettingsWithAllErrors } from './settings/allErrors.js';
 import { getEnabledSettingSources, getSettingSourceDisplayNameCapitalized } from './settings/constants.js';
 import { getManagedFileSettingsPresence, getPolicySettingsOrigin, getSettingsForSource } from './settings/settings.js';
 import type { ThemeName } from './theme.js';
 import { getCurrentWorktreeSession } from './worktree.js';
-import { getQuerySourceForREPL } from './promptCategory.js';
-import { getPromptCache1hDiagnostic } from './promptCache1h.js';
 export type Property = {
   label?: string;
   value: React.ReactNode | Array<string>;
 };
 export type Diagnostic = React.ReactNode;
-export function buildSandboxProperties(): Property[] {
-  if ("external" !== 'ant') {
-    return [];
-  }
-  const isSandboxed = SandboxManager.isSandboxingEnabled();
-  const compatibility = getSandboxRuntimeCompatibility();
-  const properties: Property[] = [{
-    label: 'Bash Sandbox',
-    value: isSandboxed ? 'Enabled' : 'Disabled'
-  }];
-  if (compatibility.compatible) {
-    properties.push({
-      label: 'Sandbox runtime',
-      value: compatibility.version ? `Compatible (v${compatibility.version})` : 'Compatible'
-    });
-  } else if (compatibility.isStubRuntime) {
-    properties.push({
-      label: 'Sandbox runtime',
-      value: 'Stub runtime loaded; compatibility fallbacks active'
-    });
-  } else {
-    properties.push({
-      label: 'Sandbox runtime',
-      value: compatibility.version ? `Partial compatibility (v${compatibility.version})` : 'Partial compatibility'
-    });
-  }
-  return properties;
-}
-export function buildLspProperties(): Property[] {
-  const status = getInitializationStatus();
-  const manager = getLspServerManager();
-  const servers = manager ? Array.from(manager.getAllServers().values()) : [];
-  const healthyCount = servers.filter(server => server.state !== 'error').length;
-  const failedCount = servers.filter(server => server.state === 'error').length;
-  switch (status.status) {
-    case 'success':
-      return [{
-        label: 'LSP',
-        value: isLspConnected() ? `Connected (${healthyCount} server${healthyCount === 1 ? '' : 's'} ready${failedCount > 0 ? `, ${failedCount} failed` : ''})` : 'Initialized with no active servers'
-      }, {
-        label: 'LSP features',
-        value: 'Diagnostics, hover, go-to-definition, references'
-      }];
-    case 'pending':
-      return [{
-        label: 'LSP',
-        value: 'Initializing'
-      }];
-    case 'failed':
-      return [{
-        label: 'LSP',
-        value: `Failed to initialize: ${status.error.message}`
-      }, {
-        label: 'LSP action',
-        value: 'Check /doctor for startup errors or run /reload-plugins in ~/.noa if language servers were just installed'
-      }];
-    default:
-      return [{
-        label: 'LSP',
-        value: 'Not started'
-      }, {
-        label: 'LSP action',
-        value: 'LSP starts in normal interactive mode; bare/print mode does not initialize it'
-      }];
-  }
-}
-export function buildPluginProperties(enabledPlugins: unknown[] = [], pluginErrors: unknown[] = [], needsRefresh: boolean = false): Property[] {
-  if (enabledPlugins.length === 0 && pluginErrors.length === 0 && !needsRefresh) {
-    return [];
-  }
-  const parts: string[] = [];
-  if (enabledPlugins.length > 0) {
-    parts.push(`${enabledPlugins.length} enabled`);
-  }
-  if (pluginErrors.length > 0) {
-    parts.push(`${pluginErrors.length} failed`);
-  }
-  if (needsRefresh) {
-    parts.push('reload needed');
-  }
-  return [{
-    label: 'Plugins',
-    value: parts.join(', ')
-  }];
-}
-export function buildIDEProperties(mcpClients: MCPServerConnection[], ideInstallationStatus: IDEExtensionInstallationStatus | null = null, theme: ThemeName): Property[] {
-  const ideClient = mcpClients?.find(client => client.name === 'ide');
-  if (ideInstallationStatus) {
-    const ideName = toIDEDisplayName(ideInstallationStatus.ideType);
-    const pluginOrExtension = isJetBrainsIde(ideInstallationStatus.ideType) ? 'plugin' : 'extension';
-    if (ideInstallationStatus.error) {
-      return [{
-        label: 'IDE',
-        value: <Text>
-              {color('error', theme)(figures.cross)} Error installing {ideName}{' '}
-              {pluginOrExtension}: {ideInstallationStatus.error}
-              {'\n'}Please restart your IDE and try again.
-            </Text>
-      }];
-    }
-    if (ideInstallationStatus.installed) {
-      if (ideClient && ideClient.type === 'connected') {
-        if (ideInstallationStatus.installedVersion !== ideClient.serverInfo?.version) {
-          return [{
-            label: 'IDE',
-            value: `Connected to ${ideName} ${pluginOrExtension} version ${ideInstallationStatus.installedVersion} (server version: ${ideClient.serverInfo?.version})`
-          }];
-        } else {
-          return [{
-            label: 'IDE',
-            value: `Connected to ${ideName} ${pluginOrExtension} version ${ideInstallationStatus.installedVersion}`
-          }];
-        }
-      } else {
-        return [{
-          label: 'IDE',
-          value: `Installed ${ideName} ${pluginOrExtension}`
-        }];
-      }
-    }
-  } else if (ideClient) {
-    const ideName = getIdeClientName(ideClient) ?? 'IDE';
-    if (ideClient.type === 'connected') {
-      return [{
-        label: 'IDE',
-        value: `Connected to ${ideName} extension`
-      }];
-    } else {
-      return [{
-        label: 'IDE',
-        value: `${color('error', theme)(figures.cross)} Not connected to ${ideName}`
-      }];
-    }
-  }
-  return [];
-}
 export function buildMcpProperties(clients: MCPServerConnection[] = [], theme: ThemeName): Property[] {
   const servers = clients.filter(client => client.name !== 'ide');
   if (!servers.length) {
@@ -254,41 +111,6 @@ export function buildSettingSourcesProperties(): Property[] {
   }];
 }
 
-function promptCacheReasonLabel(reason: string): string {
-  switch (reason) {
-    case 'enabled':
-      return 'enabled'
-    case 'enabled_bedrock_env':
-      return 'enabled (Bedrock env override)'
-    case 'prompt_caching_disabled':
-      return 'disabled (prompt caching disabled by environment/model switch)'
-    case 'not_eligible':
-      return 'disabled (not eligible: requires ant or subscriber without overage)'
-    case 'allowlist_miss':
-      return 'disabled (querySource not in allowlist)'
-    case 'missing_query_source':
-      return 'disabled (missing querySource)'
-    default:
-      return `disabled (${reason})`
-  }
-}
-
-export function buildPromptCacheProperties(
-  mainLoopModel?: string | null,
-): Property[] {
-  const querySource = getQuerySourceForREPL()
-  const diag = getPromptCache1hDiagnostic(querySource, mainLoopModel ?? undefined)
-  return [{
-    label: 'Prompt cache 1h',
-    value: promptCacheReasonLabel(diag.reason),
-  }, {
-    label: 'Prompt cache querySource',
-    value: diag.querySource ?? 'n/a',
-  }, {
-    label: 'Prompt cache allowlist',
-    value: diag.allowlist.length > 0 ? diag.allowlist : ['(empty)'],
-  }]
-}
 export async function buildInstallationDiagnostics(): Promise<Diagnostic[]> {
   const installWarnings = await checkInstall();
   return installWarnings.map(warning => warning.message);
@@ -521,20 +343,6 @@ export function buildWorktreeProperties(): Property[] {
     });
   }
   return properties;
-}
-export function buildSearchToolProperties(): Property[] {
-  const ripgrepStatus = getRipgrepStatus();
-  if (!ripgrepStatus.mode) {
-    return [];
-  }
-  const value =
-    ripgrepStatus.mode === 'system'
-      ? `ripgrep (${ripgrepStatus.working === false ? 'unhealthy' : 'ready'})`
-      : `${ripgrepStatus.mode} ripgrep fallback`;
-  return [{
-    label: 'Search tool',
-    value,
-  }];
 }
 export function getModelDisplayLabel(mainLoopModel: string | null): string {
   let modelLabel = modelDisplayString(mainLoopModel);

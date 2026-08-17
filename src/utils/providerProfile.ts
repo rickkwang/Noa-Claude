@@ -39,10 +39,6 @@ export interface ProviderProfile {
 const PROVIDER_PROFILES_PATH = join(getClaudeConfigHomeDir(), 'provider-profiles.json')
 const INVALID_CREDENTIAL_CHARS = /[\s\u0000-\u001f\u007f\u4e00-\u9fff]/
 
-export function getProviderProfilesPath(): string {
-  return PROVIDER_PROFILES_PATH
-}
-
 export async function loadProviderProfiles(): Promise<ProviderProfile[]> {
   try {
     const content = await readFile(PROVIDER_PROFILES_PATH, 'utf-8')
@@ -89,26 +85,6 @@ export async function updateProviderProfile(
   profiles[index] = updated
   await saveProviderProfiles(profiles)
   return updated
-}
-
-export async function deleteProviderProfile(
-  id: string,
-): Promise<boolean> {
-  const profiles = await loadProviderProfiles()
-  const index = profiles.findIndex(p => p.id === id)
-  if (index === -1) {
-    return false
-  }
-  profiles.splice(index, 1)
-  await saveProviderProfiles(profiles)
-  return true
-}
-
-export async function getProviderProfileById(
-  id: string,
-): Promise<ProviderProfile | null> {
-  const profiles = await loadProviderProfiles()
-  return profiles.find(p => p.id === id) || null
 }
 
 export const PROVIDER_TYPE_LABELS: Record<ProviderType, string> = {

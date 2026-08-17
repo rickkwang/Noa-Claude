@@ -1,5 +1,4 @@
 // @ts-nocheck
-import { resetSdkInitState } from '../../bootstrap/state.js'
 import { isRestrictedToPluginOnly } from '../settings/pluginOnlyPolicy.js'
 // Import as module object so spyOn works in tests (direct imports bypass spies)
 import * as settingsModule from '../settings/settings.js'
@@ -122,13 +121,4 @@ export function getHooksConfigFromSnapshot(): HooksSettings | null {
     captureHooksConfigSnapshot()
   }
   return initialHooksConfig
-}
-
-/**
- * Reset the hooks configuration snapshot (useful for testing)
- * Also resets SDK init state to prevent test pollution
- */
-export function resetHooksConfigSnapshot(): void {
-  initialHooksConfig = null
-  resetSdkInitState()
 }

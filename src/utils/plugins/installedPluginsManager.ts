@@ -14,7 +14,7 @@
  * plugins active).
  */
 
-import { dirname, join } from 'path'
+import { join } from 'path'
 import { logForDebugging } from '../debug.js'
 import { errorMessage, isENOENT, toError } from '../errors.js'
 import { getFsImplementation } from '../fsOperations.js'
@@ -61,7 +61,7 @@ let migrationCompleted = false
 
 /**
  * Memoized cache of installed plugins data (V2 format)
- * Cleared by clearInstalledPluginsCache() when file is modified.
+ * Cleared inline by the write paths that change the file on disk.
  * Prevents repeated filesystem reads within a single CLI session.
  */
 let installedPluginsCacheV2: InstalledPluginsFileV2 | null = null
@@ -86,21 +86,6 @@ export function getInstalledPluginsFilePath(): string {
  */
 export function getInstalledPluginsV2FilePath(): string {
   return join(getPluginsDirectory(), 'installed_plugins_v2.json')
-}
-
-/**
- * Clear the installed plugins cache
- * Call this when the file is modified to force a reload
- *
- * Note: This also clears the in-memory session state (inMemoryInstalledPlugins).
- * In most cases, this is only called during initialization or testing.
- * For background updates, use updateInstallationPathOnDisk() which preserves
- * the in-memory state.
- */
-export function clearInstalledPluginsCache(): void {
-  installedPluginsCacheV2 = null
-  inMemoryInstalledPlugins = null
-  logForDebugging('Cleared installed plugins cache')
 }
 
 /**
@@ -246,13 +231,6 @@ function cleanupLegacyCache(v2Data: InstalledPluginsFileV2): void {
 }
 
 /**
- * Reset migration state (for testing)
- */
-export function resetMigrationState(): void {
-  migrationCompleted = false
-}
-
-/**
  * Read raw file data from installed_plugins.json
  * Returns null if file doesn't exist.
  * Throws error if file exists but can't be parsed.
@@ -392,55 +370,6 @@ function saveInstalledPluginsV2(data: InstalledPluginsFileV2): void {
     logError(toError(error))
     throw error
   }
-}
-
-/**
- * Add or update a plugin installation entry at a specific scope.
- * Used for V2 format where each plugin has an array of installations.
- *
- * @param pluginId - Plugin ID in "plugin@marketplace" format
- * @param scope - Installation scope (managed/user/project/local)
- * @param installPath - Path to versioned plugin directory
- * @param metadata - Additional installation metadata
- * @param projectPath - Project path (required for project/local scopes)
- */
-export function addPluginInstallation(
-  pluginId: string,
-  scope: PersistableScope,
-  installPath: string,
-  metadata: Partial<PluginInstallationEntry>,
-  projectPath?: string,
-): void {
-  const data = loadInstalledPluginsFromDisk()
-
-  // Get or create array for this plugin
-  const installations = data.plugins[pluginId] || []
-
-  // Find existing entry for this scope+projectPath
-  const existingIndex = installations.findIndex(
-    entry => entry.scope === scope && entry.projectPath === projectPath,
-  )
-
-  const newEntry: PluginInstallationEntry = {
-    scope,
-    installPath,
-    version: metadata.version,
-    installedAt: metadata.installedAt || new Date().toISOString(),
-    lastUpdated: new Date().toISOString(),
-    gitCommitSha: metadata.gitCommitSha,
-    ...(projectPath && { projectPath }),
-  }
-
-  if (existingIndex >= 0) {
-    installations[existingIndex] = newEntry
-    logForDebugging(`Updated installation for ${pluginId} at scope ${scope}`)
-  } else {
-    installations.push(newEntry)
-    logForDebugging(`Added installation for ${pluginId} at scope ${scope}`)
-  }
-
-  data.plugins[pluginId] = installations
-  saveInstalledPluginsV2(data)
 }
 
 /**
@@ -619,37 +548,6 @@ export function hasPendingUpdates(): boolean {
 }
 
 /**
- * Get the count of pending updates (installations where disk differs from memory).
- *
- * @returns Number of installations with pending updates
- */
-export function getPendingUpdateCount(): number {
-  let count = 0
-  const memoryState = getInMemoryInstalledPlugins()
-  const diskState = loadInstalledPluginsFromDisk()
-
-  for (const [pluginId, diskInstallations] of Object.entries(
-    diskState.plugins,
-  )) {
-    const memoryInstallations = memoryState.plugins[pluginId]
-    if (!memoryInstallations) continue
-
-    for (const diskEntry of diskInstallations) {
-      const memoryEntry = memoryInstallations.find(
-        m =>
-          m.scope === diskEntry.scope &&
-          m.projectPath === diskEntry.projectPath,
-      )
-      if (memoryEntry && memoryEntry.installPath !== diskEntry.installPath) {
-        count++
-      }
-    }
-  }
-
-  return count
-}
-
-/**
  * Get details about pending updates for display.
  *
  * @returns Array of objects with pluginId, scope, oldVersion, newVersion
@@ -694,14 +592,6 @@ export function getPendingUpdatesDetails(): Array<{
   }
 
   return updates
-}
-
-/**
- * Reset the in-memory session state.
- * This should only be called at startup or for testing.
- */
-export function resetInMemoryState(): void {
-  inMemoryInstalledPlugins = null
 }
 
 /**
@@ -913,88 +803,9 @@ export function addInstalledPlugin(
 }
 
 /**
- * Remove a plugin from the installed plugins registry
- * This should be called when a plugin is uninstalled.
- *
- * Note: This function only updates the registry file. To fully uninstall,
- * call deletePluginCache() afterward to remove the physical files.
- *
- * @param pluginId - Plugin ID in "plugin@marketplace" format
- * @returns The removed plugin metadata, or undefined if it wasn't installed
- */
-export function removeInstalledPlugin(
-  pluginId: string,
-): InstalledPlugin | undefined {
-  const v2Data = loadInstalledPluginsFromDisk()
-  const installations = v2Data.plugins[pluginId]
-
-  if (!installations || installations.length === 0) {
-    return undefined
-  }
-
-  // Extract V1-compatible metadata from first installation for return value
-  const firstInstall = installations[0]
-  const metadata: InstalledPlugin | undefined = firstInstall
-    ? {
-        version: firstInstall.version || 'unknown',
-        installedAt: firstInstall.installedAt || new Date().toISOString(),
-        lastUpdated: firstInstall.lastUpdated,
-        installPath: firstInstall.installPath,
-        gitCommitSha: firstInstall.gitCommitSha,
-      }
-    : undefined
-
-  delete v2Data.plugins[pluginId]
-  saveInstalledPluginsV2(v2Data)
-
-  logForDebugging(`Removed installed plugin: ${pluginId}`)
-
-  return metadata
-}
-
-/**
- * Delete a plugin's cache directory
- * This physically removes the plugin files from disk
- *
- * @param installPath - Absolute path to the plugin's cache directory
- */
-/**
  * Export getGitCommitSha for use by pluginInstallationHelpers
  */
 export { getGitCommitSha }
-
-export function deletePluginCache(installPath: string): void {
-  const fs = getFsImplementation()
-
-  try {
-    fs.rmSync(installPath, { recursive: true, force: true })
-    logForDebugging(`Deleted plugin cache at ${installPath}`)
-
-    // Clean up empty parent plugin directory (cache/{marketplace}/{plugin})
-    // Versioned paths have structure: cache/{marketplace}/{plugin}/{version}
-    const cachePath = getPluginCachePath()
-    if (installPath.includes('/cache/') && installPath.startsWith(cachePath)) {
-      const pluginDir = dirname(installPath) // e.g., cache/{marketplace}/{plugin}
-      if (pluginDir !== cachePath && pluginDir.startsWith(cachePath)) {
-        try {
-          const contents = fs.readdirSync(pluginDir)
-          if (contents.length === 0) {
-            fs.rmdirSync(pluginDir)
-            logForDebugging(`Deleted empty plugin directory at ${pluginDir}`)
-          }
-        } catch {
-          // Parent dir doesn't exist or isn't readable — skip cleanup
-        }
-      }
-    }
-  } catch (error) {
-    const errorMsg = errorMessage(error)
-    logError(toError(error))
-    throw new Error(
-      `Failed to delete plugin cache at ${installPath}: ${errorMsg}`,
-    )
-  }
-}
 
 /**
  * Get the git commit SHA from a git repository directory

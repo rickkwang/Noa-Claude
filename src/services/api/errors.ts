@@ -4,10 +4,7 @@ import {
   APIConnectionTimeoutError,
   APIError,
 } from '@anthropic-ai/sdk'
-import type {
-  BetaMessage,
-  BetaStopReason,
-} from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
+import type { BetaStopReason } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import { AFK_MODE_BETA_HEADER } from 'src/constants/betas.js'
 import type { SDKAssistantMessageError } from 'src/entrypoints/agentSdkTypes.js'
 import type {
@@ -391,47 +388,6 @@ function logToolUseToolResultMismatch(
   } catch (_) {
     // Ignore errors in debug logging
   }
-}
-
-/**
- * Type guard to check if a value is a valid Message response from the API
- */
-export function isValidAPIMessage(value: unknown): value is BetaMessage {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'content' in value &&
-    'model' in value &&
-    'usage' in value &&
-    Array.isArray((value as BetaMessage).content) &&
-    typeof (value as BetaMessage).model === 'string' &&
-    typeof (value as BetaMessage).usage === 'object'
-  )
-}
-
-/** Lower-level error that AWS can return. */
-type AmazonError = {
-  Output?: {
-    __type?: string
-  }
-  Version?: string
-}
-
-/**
- * Given a response that doesn't look quite right, see if it contains any known error types we can extract.
- */
-export function extractUnknownErrorFormat(value: unknown): string | undefined {
-  // Check if value is a valid object first
-  if (!value || typeof value !== 'object') {
-    return undefined
-  }
-
-  // Amazon Bedrock routing errors
-  if ((value as AmazonError).Output?.__type) {
-    return (value as AmazonError).Output!.__type
-  }
-
-  return undefined
 }
 
 // The 429 bodies the API returns when an account is not entitled to a 1M

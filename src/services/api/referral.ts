@@ -15,7 +15,6 @@ import { getOAuthHeaders, prepareApiRequest } from '../../utils/teleport/api.js'
 import type {
   ReferralCampaign,
   ReferralEligibilityResponse,
-  ReferralRedemptionsResponse,
   ReferrerRewardInfo,
 } from '../oauth/types.js'
 
@@ -41,27 +40,6 @@ export async function fetchReferralEligibility(
     headers,
     params: { campaign },
     timeout: 5000, // 5 second timeout for background fetch
-  })
-
-  return response.data
-}
-
-export async function fetchReferralRedemptions(
-  campaign: string = 'claude_code_guest_pass',
-): Promise<ReferralRedemptionsResponse> {
-  const { accessToken, orgUUID } = await prepareApiRequest()
-
-  const headers = {
-    ...getOAuthHeaders(accessToken),
-    'x-organization-uuid': orgUUID,
-  }
-
-  const url = `${getOauthConfig().BASE_API_URL}/api/oauth/organizations/${orgUUID}/referral/redemptions`
-
-  const response = await axios.get<ReferralRedemptionsResponse>(url, {
-    headers,
-    params: { campaign },
-    timeout: 10000, // 10 second timeout
   })
 
   return response.data

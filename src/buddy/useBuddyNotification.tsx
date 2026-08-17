@@ -15,11 +15,6 @@ export function isBuddyTeaserWindow(): boolean {
   const d = new Date();
   return d.getFullYear() === 2026 && d.getMonth() === 3 && d.getDate() <= 7;
 }
-export function isBuddyLive(): boolean {
-  if ("external" === 'ant') return true;
-  const d = new Date();
-  return d.getFullYear() > 2026 || d.getFullYear() === 2026 && d.getMonth() >= 3;
-}
 function RainbowText(t0) {
   const $ = _c(2);
   const {

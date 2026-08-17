@@ -1,6 +1,6 @@
 // @ts-nocheck
 import type { Key } from '../ink.js'
-import { getKeyName, matchesBinding } from './match.js'
+import { getKeyName } from './match.js'
 import { chordToString } from './parser.js'
 import type {
   KeybindingContextName,
@@ -19,47 +19,6 @@ export type ChordResolveResult =
   | { type: 'unbound' }
   | { type: 'chord_started'; pending: ParsedKeystroke[] }
   | { type: 'chord_cancelled' }
-
-/**
- * Resolve a key input to an action.
- * Pure function - no state, no side effects, just matching logic.
- *
- * @param input - The character input from Ink
- * @param key - The Key object from Ink with modifier flags
- * @param activeContexts - Array of currently active contexts (e.g., ['Chat', 'Global'])
- * @param bindings - All parsed bindings to search through
- * @returns The resolution result
- */
-export function resolveKey(
-  input: string,
-  key: Key,
-  activeContexts: KeybindingContextName[],
-  bindings: ParsedBinding[],
-): ResolveResult {
-  // Find matching bindings (last one wins for user overrides)
-  let match: ParsedBinding | undefined
-  const ctxSet = new Set(activeContexts)
-
-  for (const binding of bindings) {
-    // Phase 1: Only single-keystroke bindings
-    if (binding.chord.length !== 1) continue
-    if (!ctxSet.has(binding.context)) continue
-
-    if (matchesBinding(input, key, binding)) {
-      match = binding
-    }
-  }
-
-  if (!match) {
-    return { type: 'none' }
-  }
-
-  if (match.action === null) {
-    return { type: 'unbound' }
-  }
-
-  return { type: 'match', action: match.action }
-}
 
 /**
  * Get display text for an action from bindings (e.g., "ctrl+t" for "app:toggleTodos").

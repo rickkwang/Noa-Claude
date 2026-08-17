@@ -830,8 +830,6 @@ export function clearSkillCaches() {
 }
 
 // Backwards-compatible aliases for tests
-export { getSkillDirCommands as getCommandDirCommands }
-export { clearSkillCaches as clearCommandCaches }
 export { transformSkillFiles }
 
 // --- Dynamic skill discovery ---
@@ -1074,13 +1072,6 @@ export function activateConditionalSkillsForPaths(
   }
 
   return activated
-}
-
-/**
- * Gets the number of pending conditional skills (for testing/debugging).
- */
-export function getConditionalSkillCount(): number {
-  return conditionalSkills.size
 }
 
 /**

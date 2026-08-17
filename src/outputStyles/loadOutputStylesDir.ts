@@ -9,7 +9,6 @@ import {
   extractDescriptionFromMarkdown,
   loadMarkdownFilesForSubdir,
 } from '../utils/markdownConfigLoader.js'
-import { clearPluginOutputStyleCache } from '../utils/plugins/loadPluginOutputStyles.js'
 
 /**
  * Loads markdown files from .noa/output-styles directories throughout the
@@ -94,8 +93,3 @@ export const getOutputStyleDirStyles = memoize(
   },
 )
 
-export function clearOutputStyleCaches(): void {
-  getOutputStyleDirStyles.cache?.clear?.()
-  loadMarkdownFilesForSubdir.cache?.clear?.()
-  clearPluginOutputStyleCache()
-}

@@ -141,13 +141,6 @@ export async function getDirectoryCompletions(
 }
 
 /**
- * Clears the directory cache
- */
-export function clearDirectoryCache(): void {
-  directoryCache.clear()
-}
-
-/**
  * Checks if a string looks like a path (starts with path-like prefixes)
  */
 export function isPathLikeToken(token: string): boolean {

@@ -87,14 +87,3 @@ export async function buildIndex(): Promise<{ success: boolean; message: string 
     }
   }
 }
-
-export async function getIndex(): Promise<WikiIndex> {
-  const indexPath = getWikiIndexPath()
-
-  try {
-    const indexContent = await readFile(indexPath, 'utf-8')
-    return JSON.parse(indexContent)
-  } catch {
-    return { pages: [], sources: [] }
-  }
-}

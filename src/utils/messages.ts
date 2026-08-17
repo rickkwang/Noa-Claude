@@ -74,7 +74,6 @@ import type {
 } from '../types/message.js'
 import { isAdvisorBlock } from './advisor.js'
 import { isAgentSwarmsEnabled } from './agentSwarmsEnabled.js'
-import { count } from './array.js'
 import {
   type Attachment,
   type HookAttachment,
@@ -1063,108 +1062,6 @@ function isHookAttachmentMessage(
   )
 }
 
-function getInProgressHookCount(
-  messages: NormalizedMessage[],
-  toolUseID: string,
-  hookEvent: HookEvent,
-): number {
-  return count(
-    messages,
-    _ =>
-      _.type === 'progress' &&
-      _.data.type === 'hook_progress' &&
-      _.data.hookEvent === hookEvent &&
-      _.parentToolUseID === toolUseID,
-  )
-}
-
-function getResolvedHookCount(
-  messages: NormalizedMessage[],
-  toolUseID: string,
-  hookEvent: HookEvent,
-): number {
-  // Count unique hook names, since a single hook can produce multiple
-  // attachment messages (e.g., hook_success + hook_additional_context)
-  const uniqueHookNames = new Set(
-    messages
-      .filter(
-        (_): _ is AttachmentMessage<HookAttachmentWithName> =>
-          isHookAttachmentMessage(_) &&
-          _.attachment.toolUseID === toolUseID &&
-          _.attachment.hookEvent === hookEvent,
-      )
-      .map(_ => _.attachment.hookName),
-  )
-  return uniqueHookNames.size
-}
-
-export function hasUnresolvedHooks(
-  messages: NormalizedMessage[],
-  toolUseID: string,
-  hookEvent: HookEvent,
-) {
-  const inProgressHookCount = getInProgressHookCount(
-    messages,
-    toolUseID,
-    hookEvent,
-  )
-  const resolvedHookCount = getResolvedHookCount(messages, toolUseID, hookEvent)
-
-  if (inProgressHookCount > resolvedHookCount) {
-    return true
-  }
-
-  return false
-}
-
-export function getToolResultIDs(normalizedMessages: NormalizedMessage[]): {
-  [toolUseID: string]: boolean
-} {
-  return Object.fromEntries(
-    normalizedMessages.flatMap(_ =>
-      _.type === 'user' && _.message.content[0]?.type === 'tool_result'
-        ? [
-            [
-              _.message.content[0].tool_use_id,
-              _.message.content[0].is_error ?? false,
-            ],
-          ]
-        : ([] as [string, boolean][]),
-    ),
-  )
-}
-
-export function getSiblingToolUseIDs(
-  message: NormalizedMessage,
-  messages: Message[],
-): Set<string> {
-  const toolUseID = getToolUseID(message)
-  if (!toolUseID) {
-    return new Set()
-  }
-
-  const unnormalizedMessage = messages.find(
-    (_): _ is AssistantMessage =>
-      _.type === 'assistant' &&
-      _.message.content.some(_ => _.type === 'tool_use' && _.id === toolUseID),
-  )
-  if (!unnormalizedMessage) {
-    return new Set()
-  }
-
-  const messageID = unnormalizedMessage.message.id
-  const siblingMessages = messages.filter(
-    (_): _ is AssistantMessage =>
-      _.type === 'assistant' && _.message.id === messageID,
-  )
-
-  return new Set(
-    siblingMessages.flatMap(_ =>
-      _.message.content.filter(_ => _.type === 'tool_use').map(_ => _.id),
-    ),
-  )
-}
-
 export type MessageLookups = {
   siblingToolUseIDs: Map<string, Set<string>>
   progressMessagesByToolUseID: Map<string, ProgressMessage[]>
@@ -1186,8 +1083,8 @@ export type MessageLookups = {
  * Build pre-computed lookups for efficient O(1) access to message relationships.
  * Call once per render, then use the lookups for all messages.
  *
- * This avoids O(n²) behavior from calling getProgressMessagesForMessage,
- * getSiblingToolUseIDs, and hasUnresolvedHooks for each message.
+ * This avoids O(n²) behavior from resolving progress messages, sibling tool
+ * use IDs, and unresolved hooks separately for each message.
  */
 export function buildMessageLookups(
   normalizedMessages: NormalizedMessage[],
@@ -1224,7 +1121,7 @@ export function buildMessageLookups(
   // Single pass over normalizedMessages to build progress, hook, and tool result lookups
   const progressMessagesByToolUseID = new Map<string, ProgressMessage[]>()
   const inProgressHookCounts = new Map<string, Map<HookEvent, number>>()
-  // Track unique hook names per (toolUseID, hookEvent) to match getResolvedHookCount behavior.
+  // Track unique hook names per (toolUseID, hookEvent).
   // A single hook can produce multiple attachment messages (e.g., hook_success + hook_additional_context),
   // so we deduplicate by hookName.
   const resolvedHookNames = new Map<string, Map<HookEvent, Set<string>>>()

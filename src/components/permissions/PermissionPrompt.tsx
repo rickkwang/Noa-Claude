@@ -21,13 +21,6 @@ export type ToolAnalyticsContext = {
   toolName: string;
   isMcp: boolean;
 };
-export type PermissionPromptProps<T extends string> = {
-  options: PermissionPromptOption<T>[];
-  onSelect: (value: T, feedback?: string) => void;
-  onCancel?: () => void;
-  question?: string | ReactNode;
-  toolAnalyticsContext?: ToolAnalyticsContext;
-};
 const DEFAULT_PLACEHOLDERS: Record<FeedbackType, string> = {
   accept: 'tell Noa Claude what to do next',
   reject: 'tell Noa Claude what to do differently'

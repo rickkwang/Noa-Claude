@@ -2,7 +2,7 @@ import { readFile, readdir, unlink } from 'fs/promises'
 import { join } from 'path'
 import type { SessionKind, SessionStatus } from '../concurrentSessions.js'
 import { getClaudeConfigHomeDir } from '../envUtils.js'
-import { getProcessCommand, isProcessRunning } from '../genericProcessUtils.js'
+import { isProcessRunning } from '../genericProcessUtils.js'
 import { getPlatform } from '../platform.js'
 
 export type SessionState = 'working' | 'waiting' | 'idle' | 'completed' | 'stopped'
@@ -96,24 +96,6 @@ export async function readAllSessions(): Promise<SessionEntry[]> {
   return entries.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))
 }
 
-const GROUP_ORDER: { state: SessionState; label: string }[] = [
-  { state: 'waiting', label: 'Needs input' },
-  { state: 'working', label: 'Working' },
-  { state: 'idle', label: 'Idle' },
-  { state: 'stopped', label: 'Stopped' },
-]
-
-export function groupSessionsByState(entries: SessionEntry[]): SessionGroup[] {
-  const groups: SessionGroup[] = []
-  for (const { state, label } of GROUP_ORDER) {
-    const sessions = entries.filter(e => e.derivedState === state)
-    if (sessions.length > 0) {
-      groups.push({ label, state, sessions })
-    }
-  }
-  return groups
-}
-
 export function formatRelativeTime(ms: number): string {
   const seconds = Math.floor((Date.now() - ms) / 1000)
   if (seconds < 60) return `${seconds}s`
@@ -133,18 +115,4 @@ export function truncateCwd(cwd: string, maxLen: number = 30): string {
   }
   if (cwd.length <= maxLen) return cwd
   return '...' + cwd.slice(cwd.length - maxLen + 3)
-}
-
-export async function isTrustedLiveSession(
-  session: Pick<SessionEntry, 'pid' | 'sessionId' | 'startedAt'>,
-): Promise<boolean> {
-  const current = (await readAllSessions()).find(entry => entry.pid === session.pid)
-  if (!current?.alive) return false
-  if (session.sessionId && current.sessionId !== session.sessionId) return false
-  if (session.startedAt && current.startedAt !== session.startedAt) return false
-
-  const command = getProcessCommand(session.pid)
-  if (!command) return false
-
-  return /\b(noa|claude)\b/i.test(command)
 }

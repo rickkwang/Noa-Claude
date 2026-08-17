@@ -10,7 +10,6 @@ import { mkdir, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import {
   getCachedClaudeMdContent,
-  getLastClassifierRequests,
   getSessionId,
   recordAutoModeClassifierCall,
   setLastClassifierRequests,
@@ -374,18 +373,6 @@ export function getAutoModeClassifierErrorDumpPath(): string {
     'auto-mode-classifier-errors',
     `${getSessionId()}.txt`,
   )
-}
-
-/**
- * Snapshot of the most recent classifier API request(s), stringified lazily
- * only when /share reads it. Array because the XML path may send two requests
- * (stage1 + stage2). Stored in bootstrap/state.ts to avoid module-scope
- * mutable state.
- */
-export function getAutoModeClassifierTranscript(): string | null {
-  const requests = getLastClassifierRequests()
-  if (requests === null) return null
-  return jsonStringify(requests, null, 2)
 }
 
 /**

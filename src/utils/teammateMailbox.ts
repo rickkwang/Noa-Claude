@@ -343,32 +343,6 @@ export async function markMessagesAsRead(
 }
 
 /**
- * Clear a teammate's inbox (delete all messages)
- * @param agentName - The agent name to clear inbox for
- * @param teamName - Optional team name
- */
-export async function clearMailbox(
-  agentName: string,
-  teamName?: string,
-): Promise<void> {
-  const inboxPath = getInboxPath(agentName, teamName)
-
-  try {
-    // flag 'r+' throws ENOENT if the file doesn't exist, so we don't
-    // accidentally create an inbox file that wasn't there.
-    await writeFile(inboxPath, '[]', { encoding: 'utf-8', flag: 'r+' })
-    logForDebugging(`[TeammateMailbox] Cleared inbox for ${agentName}`)
-  } catch (error) {
-    const code = getErrnoCode(error)
-    if (code === 'ENOENT') {
-      return
-    }
-    logForDebugging(`Failed to clear inbox for ${agentName}: ${error}`)
-    logError(error)
-  }
-}
-
-/**
  * Format teammate messages as XML for attachment display
  */
 export function formatTeammateMessages(

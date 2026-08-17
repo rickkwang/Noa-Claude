@@ -7,7 +7,6 @@
  * - Find task ID by agent name
  * - Handle plan approval responses
  * - Update awaitingPlanApproval state
- * - Detect permission-related messages
  */
 
 import type { AppState } from '../state/AppState.js'
@@ -16,11 +15,7 @@ import {
   isInProcessTeammateTask,
 } from '../tasks/InProcessTeammateTask/types.js'
 import { updateTaskState } from './task/framework.js'
-import {
-  isPermissionResponse,
-  isSandboxPermissionResponse,
-  type PlanApprovalResponseMessage,
-} from './teammateMailbox.js'
+import { type PlanApprovalResponseMessage } from './teammateMailbox.js'
 
 type SetAppState = (updater: (prev: AppState) => AppState) => void
 
@@ -84,20 +79,3 @@ export function handlePlanApprovalResponse(
 }
 
 // ============ Permission Delegation Helpers ============
-
-/**
- * Check if a message is a permission-related response.
- * Used by in-process teammate message handlers to detect and process
- * permission responses from the team leader.
- *
- * Handles both tool permissions and sandbox (network host) permissions.
- *
- * @param messageText - The raw message text to check
- * @returns true if the message is a permission response
- */
-export function isPermissionRelatedResponse(messageText: string): boolean {
-  return (
-    !!isPermissionResponse(messageText) ||
-    !!isSandboxPermissionResponse(messageText)
-  )
-}

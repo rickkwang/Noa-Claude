@@ -17,7 +17,6 @@ const DESCRIPTION =
 // Upstream renamed /extra-usage to /usage-credits and kept the old name as a
 // hidden alias so existing muscle memory still resolves. Both load the same
 // implementation; only the listing name and description differ.
-export const RENAME_NOTICE = '/extra-usage is now /usage-credits'
 const RENAMED_DESCRIPTION = 'Renamed to /usage-credits'
 
 export const usageCredits = {
