@@ -1234,19 +1234,3 @@ export function isMcpServerUrlEntry(
   return 'serverUrl' in entry && entry.serverUrl !== undefined
 }
 
-/**
- * User configuration values for MCPB MCP servers
- */
-export type UserConfigValues = Record<
-  string,
-  string | number | boolean | string[]
->
-
-/**
- * Plugin configuration stored in settings.json
- */
-export type PluginConfig = {
-  mcpServers?: {
-    [serverName: string]: UserConfigValues
-  }
-}

@@ -1,10 +1,8 @@
 // @ts-nocheck
-import type { SDKMessage } from 'src/entrypoints/agentSdkTypes.js'
 import { checkGate_CACHED_OR_BLOCKING } from '../../../services/analytics/growthbook.js'
 import { isPolicyAllowed } from '../../../services/policyLimits/index.js'
 import { detectCurrentRepositoryWithHost } from '../../detectRepository.js'
 import { isEnvTruthy } from '../../envUtils.js'
-import type { TodoList } from '../../todo/types.js'
 import {
   checkGithubAppInstalled,
   checkHasRemoteEnvironment,
@@ -12,19 +10,6 @@ import {
   checkNeedsClaudeAiLogin,
 } from './preconditions.js'
 
-/**
- * Background remote session type for managing teleport sessions
- */
-export type BackgroundRemoteSession = {
-  id: string
-  command: string
-  startTime: number
-  status: 'starting' | 'running' | 'completed' | 'failed' | 'killed'
-  todoList: TodoList
-  title: string
-  type: 'remote_session'
-  log: SDKMessage[]
-}
 
 /**
  * Precondition failures for background remote sessions

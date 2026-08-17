@@ -26,8 +26,6 @@ export const inputSchema = lazySchema(() =>
   }),
 )
 
-export type Input = z.infer<ReturnType<typeof inputSchema>>
-
 // Zod schema for permission results
 // This schema is used to validate the MCP permission prompt tool
 // so we maintain it as a subset of the real PermissionDecision type

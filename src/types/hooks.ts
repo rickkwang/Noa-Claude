@@ -14,7 +14,6 @@ import type {
   SyncHookJSONOutput,
 } from 'src/entrypoints/agentSdkTypes.js'
 import type { Message } from 'src/types/message.js'
-import type { PermissionResult } from 'src/utils/permissions/PermissionResult.js'
 import { permissionBehaviorSchema } from 'src/utils/permissions/PermissionRule.js'
 import { permissionUpdateSchema } from 'src/utils/permissions/PermissionUpdateSchema.js'
 import type { AppState } from '../state/AppState.js'
@@ -241,11 +240,6 @@ export type HookProgress = {
   statusMessage?: string
 }
 
-export type HookBlockingError = {
-  blockingError: string
-  command: string
-}
-
 export type PermissionRequestResult =
   | {
       behavior: 'allow'
@@ -257,35 +251,3 @@ export type PermissionRequestResult =
       message?: string
       interrupt?: boolean
     }
-
-export type HookResult = {
-  message?: Message
-  systemMessage?: Message
-  blockingError?: HookBlockingError
-  outcome: 'success' | 'blocking' | 'non_blocking_error' | 'cancelled'
-  preventContinuation?: boolean
-  stopReason?: string
-  permissionBehavior?: 'ask' | 'deny' | 'allow' | 'passthrough'
-  hookPermissionDecisionReason?: string
-  additionalContext?: string
-  initialUserMessage?: string
-  updatedInput?: Record<string, unknown>
-  updatedMCPToolOutput?: unknown
-  permissionRequestResult?: PermissionRequestResult
-  retry?: boolean
-}
-
-export type AggregatedHookResult = {
-  message?: Message
-  blockingErrors?: HookBlockingError[]
-  preventContinuation?: boolean
-  stopReason?: string
-  hookPermissionDecisionReason?: string
-  permissionBehavior?: PermissionResult['behavior']
-  additionalContexts?: string[]
-  initialUserMessage?: string
-  updatedInput?: Record<string, unknown>
-  updatedMCPToolOutput?: unknown
-  permissionRequestResult?: PermissionRequestResult
-  retry?: boolean
-}

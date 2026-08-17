@@ -1687,10 +1687,6 @@ export type MarketplaceSource = z.infer<
 export type PluginAuthor = z.infer<ReturnType<typeof PluginAuthorSchema>>
 export type PluginSource = z.infer<ReturnType<typeof PluginSourceSchema>>
 export type PluginManifest = z.infer<ReturnType<typeof PluginManifestSchema>>
-export type PluginManifestChannel = NonNullable<
-  PluginManifest['channels']
->[number]
-
 export type PluginMarketplace = z.infer<
   ReturnType<typeof PluginMarketplaceSchema>
 >

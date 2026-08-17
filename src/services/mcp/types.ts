@@ -21,11 +21,6 @@ export const ConfigScopeSchema = lazySchema(() =>
 )
 export type ConfigScope = z.infer<ReturnType<typeof ConfigScopeSchema>>
 
-export const TransportSchema = lazySchema(() =>
-  z.enum(['stdio', 'sse', 'sse-ide', 'http', 'ws', 'sdk']),
-)
-export type Transport = z.infer<ReturnType<typeof TransportSchema>>
-
 export const McpStdioServerConfigSchema = lazySchema(() =>
   z.object({
     type: z.literal('stdio').optional(), // Optional for backwards compatibility
@@ -228,32 +223,3 @@ export type MCPServerConnection =
 
 // Resource types
 export type ServerResource = Resource & { server: string }
-
-// MCP CLI State types
-export interface SerializedTool {
-  name: string
-  description: string
-  inputJSONSchema?: {
-    [x: string]: unknown
-    type: 'object'
-    properties?: {
-      [x: string]: unknown
-    }
-  }
-  isMcp?: boolean
-  originalToolName?: string // Original unnormalized tool name from MCP server
-}
-
-export interface SerializedClient {
-  name: string
-  type: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled'
-  capabilities?: ServerCapabilities
-}
-
-export interface MCPCliState {
-  clients: SerializedClient[]
-  configs: Record<string, ScopedMcpServerConfig>
-  tools: SerializedTool[]
-  resources: Record<string, ServerResource[]>
-  normalizedNames?: Record<string, string> // Maps normalized names to original names
-}

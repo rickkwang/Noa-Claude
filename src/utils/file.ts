@@ -29,11 +29,6 @@ import { logError } from './log.js'
 import { expandPath } from './path.js'
 import { getPlatform } from './platform.js'
 
-export type File = {
-  filename: string
-  content: string
-}
-
 /**
  * Check if a path exists asynchronously.
  */

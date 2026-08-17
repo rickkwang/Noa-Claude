@@ -91,7 +91,6 @@ const outputSchema = lazySchema(() =>
 type OutputSchema = ReturnType<typeof outputSchema>
 
 export type Output = z.infer<OutputSchema>
-export type FileWriteToolInput = InputSchema
 
 export const FileWriteTool = buildTool({
   name: FILE_WRITE_TOOL_NAME,
