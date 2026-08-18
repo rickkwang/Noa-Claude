@@ -21,6 +21,9 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Install runtime tools
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 

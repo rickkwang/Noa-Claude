@@ -70,10 +70,27 @@ describe('GitHub Actions workflow contracts', () => {
       })
       const output = `${result.stdout}${result.stderr}`
 
-      expect(output).not.toContain('Missing ANTHROPIC_API_KEY for live smoke')
+      expect(output).not.toContain('Missing ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN for live smoke')
       expect(output).toContain('Running engineering smoke baseline before live checks')
     } finally {
       rmSync(fakeBinDir, { recursive: true, force: true })
+    }
+  })
+
+  test('CI workflows install ripgrep before running health checks', () => {
+    for (const workflowFile of [
+      'pr-quality-gate.yml',
+      'smoke-engineering-live.yml',
+    ]) {
+      const workflow = parse(
+        readFileSync(resolve(repoRoot, '.github/workflows', workflowFile), 'utf8'),
+      )
+      const job = workflow.jobs.quality ?? workflow.jobs['live-smoke']
+      const commands = job.steps
+        .map((step: { run?: string }) => step.run)
+        .filter((command: unknown): command is string => typeof command === 'string')
+
+      expect(commands.some((command: string) => command.includes('install -y ripgrep'))).toBe(true)
     }
   })
 })
