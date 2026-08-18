@@ -169,8 +169,8 @@ if (!/Release candidate provider check:[\s\S]*bun run smoke:engine:live/.test(re
   failures.push('README is missing release candidate provider check')
 }
 
-if (!/smoke:engine:live[\s\S]*ANTHROPIC_API_KEY/.test(readme)) {
-  failures.push('README must document ANTHROPIC_API_KEY for smoke:engine:live')
+if (!/smoke:engine:live[\s\S]*ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN/.test(readme)) {
+  failures.push('README must document both supported credentials for smoke:engine:live')
 }
 
 if (!/This document merges the runtime, session, worktree, agent, and progress-artifact notes/.test(
@@ -273,8 +273,8 @@ if (!/New baseline commands/.test(maintenanceFreezePlan)) {
   failures.push('Maintenance freeze plan is missing new baseline command restriction')
 }
 
-if (!/smoke:engine:live[\s\S]*ANTHROPIC_API_KEY/.test(maintenanceFreezePlan)) {
-  failures.push('Maintenance freeze plan must document ANTHROPIC_API_KEY for live smoke')
+if (!/smoke:engine:live[\s\S]*ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN/.test(maintenanceFreezePlan)) {
+  failures.push('Maintenance freeze plan must document both supported credentials for live smoke')
 }
 
 if (!/## Runtime Health/.test(operatingGuide)) {

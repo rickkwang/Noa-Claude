@@ -766,27 +766,35 @@ function checkLauncherFailurePaths() {
 }
 
 function checkResumeFailurePaths() {
-  const invalidResume = runAgent([
-    '--print',
-    '--tools',
-    '',
-    '--resume',
-    'invalid-session-id',
-    'ping',
-  ]);
-  assert(
-    invalidResume.status !== 0 &&
-      `${invalidResume.stderr}${invalidResume.stdout}`.includes('[CONFIG_ERROR]') &&
-      `${invalidResume.stderr}${invalidResume.stdout}`.includes(
-        '--resume requires a valid session ID when used with --print',
-      ),
-    'Invalid --resume identifier should fail with CONFIG_ERROR',
-    invalidResume.stderr || invalidResume.stdout,
-  );
-
+  const resumeConfigDir = mkdtempSync(join(tmpdir(), 'noa-resume-config-'));
   const malformedDir = mkdtempSync(join(tmpdir(), 'noa-resume-malformed-'));
   const malformedTranscript = join(malformedDir, 'broken.jsonl');
   try {
+    const resumeEnv = {
+      ...process.env,
+      CLAUDE_CODE_PRODUCT_DIR: resumeConfigDir,
+      ANTHROPIC_AUTH_TOKEN: '',
+      ANTHROPIC_API_KEY: 'sk-test-valid-shape',
+    };
+
+    const invalidResume = runAgent([
+      '--print',
+      '--tools',
+      '',
+      '--resume',
+      'invalid-session-id',
+      'ping',
+    ], { env: resumeEnv });
+    assert(
+      invalidResume.status !== 0 &&
+        `${invalidResume.stderr}${invalidResume.stdout}`.includes('[CONFIG_ERROR]') &&
+        `${invalidResume.stderr}${invalidResume.stdout}`.includes(
+          '--resume requires a valid session ID when used with --print',
+        ),
+      'Invalid --resume identifier should fail with CONFIG_ERROR',
+      invalidResume.stderr || invalidResume.stdout,
+    );
+
     writeFileSync(
       malformedTranscript,
       '{"type":"user","message":{"content":"ok"}}\n{not-json}\n',
@@ -800,7 +808,7 @@ function checkResumeFailurePaths() {
       '--resume',
       malformedTranscript,
       'ping',
-    ]);
+    ], { env: resumeEnv });
     const malformedOutput = `${malformedResume.stderr}${malformedResume.stdout}`;
     assert(
       malformedResume.status !== 0 &&
@@ -814,6 +822,7 @@ function checkResumeFailurePaths() {
       malformedResume.stderr || malformedResume.stdout,
     );
   } finally {
+    rmSync(resumeConfigDir, { recursive: true, force: true });
     rmSync(malformedDir, { recursive: true, force: true });
   }
 }

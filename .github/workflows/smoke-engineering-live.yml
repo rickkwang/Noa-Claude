@@ -10,6 +10,7 @@ jobs:
       contents: read
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
       CLAUDE_AGENT_SMOKE_LIVE_TIMEOUT_MS: '30000'
     steps:
       - name: Checkout
@@ -25,8 +26,8 @@ jobs:
 
       - name: Validate live smoke secrets
         run: |
-          if [ -z "$ANTHROPIC_API_KEY" ]; then
-            echo "ANTHROPIC_API_KEY is required for live smoke."
+          if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$ANTHROPIC_AUTH_TOKEN" ]; then
+            echo "ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN is required for live smoke."
             exit 1
           fi
 

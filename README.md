@@ -261,7 +261,7 @@ bun run scan:pr-intent                   # Block suspicious PR links
 Release candidate provider check:
 
 ```bash
-bun run smoke:engine:live                # Live provider smoke (needs ANTHROPIC_API_KEY)
+bun run smoke:engine:live                # Live provider smoke (needs ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN)
 ```
 
 ## Engineering Bar

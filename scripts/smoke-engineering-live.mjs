@@ -32,9 +32,9 @@ function runCommand(command, args, options = {}) {
 }
 
 function assertLiveProviderConfig() {
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
     fail(
-      'Missing ANTHROPIC_API_KEY for live smoke. Configure provider credentials before running smoke:engine:live.',
+      'Missing ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN for live smoke. Configure provider credentials before running smoke:engine:live.',
     );
   }
 }

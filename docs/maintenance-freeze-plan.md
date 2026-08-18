@@ -66,7 +66,7 @@ Run this before a release candidate when provider credentials are available:
 bun run smoke:engine:live
 ```
 
-`smoke:engine:live` requires `ANTHROPIC_API_KEY` and may use `ANTHROPIC_BASE_URL`
+`smoke:engine:live` requires `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` and may use `ANTHROPIC_BASE_URL`
 for non-default provider endpoints.
 
 ## Triage Rules
