@@ -84,6 +84,20 @@ export class StreamingToolExecutor {
     // this.discarded, set above), so this abort never bubbles up to the
     // query controller — the turn itself is not ended.
     this.siblingAbortController.abort('streaming_fallback')
+
+    // Release the in-progress marks this executor took. Normally ids are
+    // cleared in getCompletedResults, but that returns early once discarded,
+    // and the fallback retry re-requests the turn — the model comes back with
+    // NEW tool_use_ids (query.ts clears assistantMessages/toolUseBlocks), so
+    // these ids are never seen again and would pin the REPL's "tools running"
+    // state for the rest of the session. executeTool's own discarded check
+    // keeps queued tools from re-adding after this runs.
+    for (const tool of this.tools) {
+      if (tool.status === 'executing' || tool.status === 'completed') {
+        markToolUseAsComplete(this.toolUseContext, tool.id)
+      }
+    }
+    this.toolUseContext.setHasInterruptibleToolInProgress?.(false)
   }
 
   /**
@@ -328,6 +342,14 @@ export class StreamingToolExecutor {
    * Execute a tool and collect its results
    */
   private async executeTool(tool: TrackedTool): Promise<void> {
+    // processQueue runs from each tool's promise.finally, which can fire after
+    // discard(). Starting here would re-add the in-progress mark discard()
+    // just released, and the result is unreachable anyway — both result
+    // getters return early once discarded. Makes good on discard()'s own
+    // contract that queued tools won't start.
+    if (this.discarded) {
+      return
+    }
     tool.status = 'executing'
     this.toolUseContext.setInProgressToolUseIDs(prev =>
       new Set(prev).add(tool.id),

@@ -209,25 +209,34 @@ async function* runToolsSerially(
         assistantMessages,
       ),
     )
-    for await (const update of runToolUse(
-      toolUse,
-      assistantMessages.find(_ =>
-        _.message.content.some(
-          _ => _.type === 'tool_use' && _.id === toolUse.id,
-        ),
-      )!,
-      canUseTool,
-      { ...currentContext, sameTurnToolUses },
-    )) {
-      if (update.contextModifier) {
-        currentContext = update.contextModifier.modifyContext(currentContext)
+    // finally, not a trailing call: if the consumer of this generator stops
+    // pulling (an exception in its loop body terminates us via .return()),
+    // the id would otherwise stay in inProgressToolUseIDs forever and the
+    // REPL would keep rendering the tool as running. runToolUse itself never
+    // throws — it catches and yields a tool_use_error — so this only covers
+    // early termination from above.
+    try {
+      for await (const update of runToolUse(
+        toolUse,
+        assistantMessages.find(_ =>
+          _.message.content.some(
+            _ => _.type === 'tool_use' && _.id === toolUse.id,
+          ),
+        )!,
+        canUseTool,
+        { ...currentContext, sameTurnToolUses },
+      )) {
+        if (update.contextModifier) {
+          currentContext = update.contextModifier.modifyContext(currentContext)
+        }
+        yield {
+          message: update.message,
+          newContext: currentContext,
+        }
       }
-      yield {
-        message: update.message,
-        newContext: currentContext,
-      }
+    } finally {
+      markToolUseAsComplete(toolUseContext, toolUse.id)
     }
-    markToolUseAsComplete(toolUseContext, toolUse.id)
   }
 }
 
@@ -252,17 +261,22 @@ async function* runToolsConcurrently(
           assistantMessages,
         ),
       )
-      yield* runToolUse(
-        toolUse,
-        assistantMessages.find(_ =>
-          _.message.content.some(
-            _ => _.type === 'tool_use' && _.id === toolUse.id,
-          ),
-        )!,
-        canUseTool,
-        { ...toolUseContext, sameTurnToolUses },
-      )
-      markToolUseAsComplete(toolUseContext, toolUse.id)
+      // See runToolsSerially: finally so early termination from the consumer
+      // can't leak the id in inProgressToolUseIDs.
+      try {
+        yield* runToolUse(
+          toolUse,
+          assistantMessages.find(_ =>
+            _.message.content.some(
+              _ => _.type === 'tool_use' && _.id === toolUse.id,
+            ),
+          )!,
+          canUseTool,
+          { ...toolUseContext, sameTurnToolUses },
+        )
+      } finally {
+        markToolUseAsComplete(toolUseContext, toolUse.id)
+      }
     }),
     getMaxToolUseConcurrency(),
   )
