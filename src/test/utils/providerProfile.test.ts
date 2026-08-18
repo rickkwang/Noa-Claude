@@ -122,6 +122,51 @@ describe('provider profile credentials', () => {
     }
   })
 
+  test('preserves caller provider env when no profile is active', () => {
+    // No provider-profiles.json at all: loadProviderProfiles returns []. This
+    // is the clean-machine CI shape — applyActiveProviderProfileEnv used to
+    // delete ANTHROPIC_API_KEY unconditionally, which made `--print` fail
+    // under CI=true before request handling ever ran.
+    const configDir = mkdtempSync(join(tmpdir(), 'noa-no-profile-preserve-'))
+    try {
+      const script = `
+        process.env.CLAUDE_CONFIG_DIR = ${JSON.stringify(configDir)}
+        delete process.env.CLAUDE_CODE_SIMPLE
+        process.env.ANTHROPIC_API_KEY = 'caller-api-key'
+        process.env.ANTHROPIC_AUTH_TOKEN = 'caller-bearer-token'
+        process.env.ANTHROPIC_BASE_URL = 'https://caller.example.test'
+        process.env.ANTHROPIC_MODEL = 'caller-model'
+
+        const { applyActiveProviderProfileEnv } =
+          await import('./src/utils/providerProfile.ts')
+        const applied = await applyActiveProviderProfileEnv()
+
+        if (applied !== null) throw new Error('unexpected active profile')
+        if (process.env.ANTHROPIC_API_KEY !== 'caller-api-key') {
+          throw new Error('caller API key was deleted with no profile active')
+        }
+        if (process.env.ANTHROPIC_AUTH_TOKEN !== 'caller-bearer-token') {
+          throw new Error('caller auth token was deleted with no profile active')
+        }
+        if (process.env.ANTHROPIC_BASE_URL !== 'https://caller.example.test') {
+          throw new Error('caller base URL was deleted with no profile active')
+        }
+        if (process.env.ANTHROPIC_MODEL !== 'caller-model') {
+          throw new Error('caller model was deleted with no profile active')
+        }
+      `
+      const result = spawnSync('bun', ['--eval', script], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      })
+
+      if (result.status !== 0) throw new Error(result.stderr)
+      expect(result.status).toBe(0)
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
   test('applies the active provider profile env outside bare mode', () => {
     const configDir = mkdtempSync(join(tmpdir(), 'noa-provider-profile-apply-'))
     try {

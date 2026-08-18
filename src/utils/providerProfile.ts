@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto'
 import { saveGlobalConfig } from './config.js'
 import { normalizeApiKeyForConfig } from './authPortable.js'
 import { getClaudeConfigHomeDir, isBareMode } from './envUtils.js'
-import { updateSettingsForSource } from './settings/settings.js'
+import { updateSettingsForSource, getSettingsForSource } from './settings/settings.js'
 
 export type ProviderType =
   | 'anthropic'
@@ -261,13 +261,26 @@ export async function applyActiveProviderProfileEnv(): Promise<ProviderProfile |
     'CLAUDE_CODE_SUBAGENT_MODEL',
   ] as const
 
-  for (const key of providerEnvKeys) {
-    delete process.env[key]
-  }
-
   if (!active) {
+    // Strip only vars a previous profile application persisted into user
+    // settings (matched by value). Caller-supplied env — e.g. CI's
+    // ANTHROPIC_API_KEY — must survive: deleting it unconditionally made
+    // `--print` fail under CI=true on machines with no profiles configured.
+    const persistedEnv = getSettingsForSource('userSettings')?.env ?? {}
+    for (const key of providerEnvKeys) {
+      if (
+        persistedEnv[key] !== undefined &&
+        process.env[key] === persistedEnv[key]
+      ) {
+        delete process.env[key]
+      }
+    }
     persistProviderEnvToUserSettings({})
     return null
+  }
+
+  for (const key of providerEnvKeys) {
+    delete process.env[key]
   }
 
   const env = buildProviderEnv(active)
