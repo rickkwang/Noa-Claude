@@ -1,6 +1,5 @@
 import { feature } from 'bun:bundle';
 import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
-import { copyFile, stat as fsStat, truncate as fsTruncate, link } from 'fs/promises';
 import * as React from 'react';
 import type { CanUseToolFn } from 'src/hooks/useCanUseTool.js';
 import type { AppState } from 'src/state/AppState.js';
@@ -22,7 +21,7 @@ import { isEnvTruthy } from '../../utils/envUtils.js';
 import { isENOENT, ShellError } from '../../utils/errors.js';
 import { detectFileEncoding, detectLineEndings, getFileModificationTime, writeTextContent } from '../../utils/file.js';
 import { fileHistoryEnabled, fileHistoryTrackEdit } from '../../utils/fileHistory.js';
-import { truncate } from '../../utils/format.js';
+import { formatFileSize, truncate } from '../../utils/format.js';
 import { getFsImplementation } from '../../utils/fsOperations.js';
 import { lazySchema } from '../../utils/lazySchema.js';
 import { expandPath } from '../../utils/path.js';
@@ -37,10 +36,11 @@ import { EndTruncatingAccumulator } from '../../utils/stringUtils.js';
 import { getTaskOutputPath } from '../../utils/task/diskOutput.js';
 import { TaskOutput } from '../../utils/task/TaskOutput.js';
 import { isOutputLineTruncated } from '../../utils/terminal.js';
-import { buildLargeToolResultMessage, ensureToolResultsDir, generatePreview, getToolResultPath, PREVIEW_SIZE_BYTES } from '../../utils/toolResultStorage.js';
+import { buildLargeToolResultMessage, generatePreview, PREVIEW_SIZE_BYTES } from '../../utils/toolResultStorage.js';
 import { validateUuid } from '../../utils/uuid.js';
 import { userFacingName as fileEditUserFacingName } from '../FileEditTool/UI.js';
 import { trackGitOperations } from '../shared/gitOperationTracking.js';
+import { persistLargeOutput } from '../shared/persistLargeOutput.js';
 import { bashToolHasPermission, commandHasAnyCd, matchWildcardPattern, permissionRuleExtractPrefix } from './bashPermissions.js';
 import { interpretCommandResult } from './commandSemantics.js';
 import { getDefaultTimeoutMs, getMaxTimeoutMs, getSimplePrompt } from './prompt.js';
@@ -306,12 +306,16 @@ import type { BashProgress } from '../../types/tools.js';
  * @param command The command to check
  * @returns false for commands that should not be auto-backgrounded (like sleep)
  */
-function isAutobackgroundingAllowed(command: string): boolean {
+export function isAutobackgroundingAllowed(command: string): boolean {
   const parts = splitCommand_DEPRECATED(command);
   if (parts.length === 0) return true;
 
-  // Get the first part which should be the base command
-  const baseCommand = parts[0]?.trim();
+  // splitCommand returns whole SUBCOMMANDS ("sleep 300"), not tokens — take the
+  // first word of the first one. Comparing the raw subcommand against the list
+  // only ever matched a bare `sleep`, so `sleep 300` was auto-backgrounded on
+  // timeout, which is exactly what this guard exists to prevent. Matches
+  // getCommandTypeForLogging, which already splits the same way.
+  const baseCommand = parts[0]?.trim().split(/\s+/)[0];
   if (!baseCommand) return true;
   return !DISALLOWED_AUTO_BACKGROUND_COMMANDS.includes(baseCommand);
 }
@@ -398,6 +402,19 @@ async function applySedEdit(simulatedEdit: {
       interrupted: false
     }
   };
+}
+/**
+ * Resolve the effective command timeout.
+ *
+ * The input schema only *describes* the ceiling in prose ("max 600000") and
+ * models routinely exceed it, so clamp here — nothing downstream bounds it,
+ * and an unclamped value silently becomes the foreground budget before
+ * auto-backgrounding. Non-positive/NaN falls back to the default: a negative
+ * delay makes setTimeout fire immediately, killing the command on startup.
+ */
+export function resolveTimeoutMs(timeout?: number): number {
+  const requested = typeof timeout === 'number' && timeout > 0 ? timeout : getDefaultTimeoutMs();
+  return Math.min(requested, getMaxTimeoutMs());
 }
 export const BashTool = buildTool({
   name: BASH_TOOL_NAME,
@@ -611,6 +628,8 @@ export const BashTool = buildTool({
     let progressCounter = 0;
     let wasInterrupted = false;
     let result: ExecResult;
+    let persistedOutputPath: string | undefined;
+    let persistedOutputSize: number | undefined;
     const isMainThread = !toolUseContext.agentId;
     const preventCwdChanges = !isMainThread;
     try {
@@ -679,6 +698,12 @@ export const BashTool = buildTool({
 
       // Annotate output with sandbox violations if any (stderr is in stdout)
       const outputWithSbFailures = SandboxManager.annotateStderrWithSandboxFailures(input.command, result.stdout || '');
+
+      // Persist large output before either throw below, so a failed command
+      // still hands the model a path to the full log (see persistLargeOutput).
+      const persisted = await persistLargeOutput(result);
+      persistedOutputPath = persisted.path;
+      persistedOutputSize = persisted.size;
       if (result.preSpawnError) {
         throw new Error(result.preSpawnError);
       }
@@ -686,7 +711,16 @@ export const BashTool = buildTool({
         // stderr is merged into stdout (merged fd); outputWithSbFailures
         // already has the full output. Pass '' for stdout to avoid
         // duplication in getErrorParts() and processBashCommand.
-        throw new ShellError('', outputWithSbFailures, result.code, result.interrupted);
+        //
+        // result.stderr is NOT the command's stderr here — in file mode that
+        // is interleaved into stdout. It only ever carries ShellCommand's
+        // synthetic diagnostics: "Command timed out after ...", the size-cap
+        // kill, and pre-spawn failures (EMFILE/EAGAIN/ENOENT via code 126).
+        // Dropping it left the model with a bare "Exit code 143"/"126".
+        // The persisted-output pointer goes last: formatError keeps head+tail
+        // when it truncates, so a trailing line survives.
+        const persistedNote = persistedOutputPath ? `Full output (${formatFileSize(persistedOutputSize ?? 0)}) saved to: ${persistedOutputPath}` : '';
+        throw new ShellError('', [result.stderr, outputWithSbFailures, persistedNote].filter(Boolean).join('\n'), result.code, result.interrupted);
       }
       wasInterrupted = result.interrupted;
     } finally {
@@ -696,37 +730,14 @@ export const BashTool = buildTool({
     // Get final string from accumulator
     const stdout = stdoutAccumulator.toString();
 
-    // Large output: the file on disk has more than getMaxOutputLength() bytes.
-    // stdout already contains the first chunk (from getStdout()). Copy the
-    // output file to the tool-results dir so the model can read it via
-    // FileRead. If > 64 MB, truncate after copying.
-    const MAX_PERSISTED_SIZE = 64 * 1024 * 1024;
-    let persistedOutputPath: string | undefined;
-    let persistedOutputSize: number | undefined;
-    if (result.outputFilePath && result.outputTaskId) {
-      try {
-        const fileStat = await fsStat(result.outputFilePath);
-        persistedOutputSize = fileStat.size;
-        await ensureToolResultsDir();
-        const dest = getToolResultPath(result.outputTaskId, false);
-        if (fileStat.size > MAX_PERSISTED_SIZE) {
-          await fsTruncate(result.outputFilePath, MAX_PERSISTED_SIZE);
-        }
-        try {
-          await link(result.outputFilePath, dest);
-        } catch {
-          await copyFile(result.outputFilePath, dest);
-        }
-        persistedOutputPath = dest;
-      } catch {
-        // File may already be gone — stdout preview is sufficient
-      }
-    }
+    // Synthetic diagnostics from ShellCommand (size-cap kill on a command that
+    // still exited 0, pre-spawn notices) plus the cwd-reset notice.
+    const finalStderr = [result.stderr, stderrForShellReset].filter(Boolean).join('\n');
     const commandType = input.command.split(' ')[0];
     logEvent('tengu_bash_tool_command_executed', {
       command_type: commandType as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       stdout_length: stdout.length,
-      stderr_length: 0,
+      stderr_length: finalStderr.length,
       exit_code: result.code,
       interrupted: wasInterrupted
     });
@@ -787,7 +798,7 @@ export const BashTool = buildTool({
     }
     const data: Out = {
       stdout: compressedStdout,
-      stderr: stderrForShellReset,
+      stderr: finalStderr,
       interrupted: wasInterrupted,
       isImage,
       returnCodeInterpretation: interpretationResult?.message,
@@ -842,7 +853,7 @@ async function* runShellCommand({
     timeout,
     run_in_background
   } = input;
-  const timeoutMs = timeout || getDefaultTimeoutMs();
+  const timeoutMs = resolveTimeoutMs(timeout);
   let fullOutput = '';
   let lastProgressOutput = '';
   let lastTotalLines = 0;

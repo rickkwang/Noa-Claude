@@ -4,11 +4,8 @@ import { stat } from 'fs/promises'
 import type { Readable } from 'stream'
 import treeKill from 'tree-kill'
 import { generateTaskId } from '../Task.js'
-import { formatDuration } from './format.js'
-import {
-  MAX_TASK_OUTPUT_BYTES,
-  MAX_TASK_OUTPUT_BYTES_DISPLAY,
-} from './task/diskOutput.js'
+import { formatDuration, formatFileSize } from './format.js'
+import { MAX_TASK_OUTPUT_BYTES } from './task/diskOutput.js'
 import { TaskOutput } from './task/TaskOutput.js'
 
 export type ExecResult = {
@@ -50,9 +47,16 @@ export type ShellCommand = {
 const SIGKILL = 137
 const SIGTERM = 143
 
-// Background tasks write stdout/stderr directly to a file fd (no JS involvement),
-// so a stuck append loop can fill the disk. Poll file size and kill when exceeded.
-const SIZE_WATCHDOG_INTERVAL_MS = 5_000
+// In file mode, stdout/stderr go straight to a file fd with no JS in the loop,
+// so nothing counts bytes and a stuck append loop can fill the disk. Poll file
+// size and kill when exceeded. This runs for the whole lifetime of the command,
+// foreground included: the foreground window is bounded only by the timeout
+// (2 min default), and a runaway writer sustains >1 GB/s, so an unwatched
+// foreground command fills the disk long before the timeout fires.
+//
+// The interval is the dominant overshoot term — nothing is checked before the
+// first tick — so keep it short. One stat() per tick per running command.
+const SIZE_WATCHDOG_INTERVAL_MS = 2_000
 
 function prependStderr(prefix: string, stderr: string): string {
   return stderr ? `${prefix} ${stderr}` : prefix
@@ -171,6 +175,13 @@ class ShellCommandImpl implements ShellCommand {
       ? new StreamWrapper(childProcess.stdout, taskOutput, false)
       : null
 
+    // Arm the size watchdog immediately in file mode. background() re-arms it
+    // (its #cleanupListeners() clears it first). Pipe mode needs no watchdog —
+    // DiskTaskOutput drops chunks past the same cap.
+    if (taskOutput.stdoutToFile) {
+      this.#startSizeWatchdog()
+    }
+
     if (shouldAutoBackground) {
       this.onTimeout = (callback): void => {
         this.#onTimeoutCallback = callback
@@ -245,7 +256,7 @@ class ShellCommandImpl implements ShellCommand {
           // (process exited on its own) — otherwise we'd mislabel stderr.
           if (
             s.size > this.#maxOutputBytes &&
-            this.#status === 'backgrounded' &&
+            (this.#status === 'running' || this.#status === 'backgrounded') &&
             this.#sizeWatchdog !== null
           ) {
             this.#killedForSize = true
@@ -318,7 +329,7 @@ class ShellCommandImpl implements ShellCommand {
 
     if (this.#killedForSize) {
       result.stderr = prependStderr(
-        `Background command killed: output file exceeded ${MAX_TASK_OUTPUT_BYTES_DISPLAY}`,
+        `Command killed: output file exceeded ${formatFileSize(this.#maxOutputBytes)}`,
         result.stderr,
       )
     } else if (code === SIGTERM) {

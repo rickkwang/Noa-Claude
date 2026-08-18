@@ -1,7 +1,6 @@
 // @ts-nocheck
 import { feature } from 'bun:bundle';
 import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
-import { copyFile, stat as fsStat, truncate as fsTruncate, link } from 'fs/promises';
 import * as React from 'react';
 import type { CanUseToolFn } from 'src/hooks/useCanUseTool.js';
 import type { AppState } from 'src/state/AppState.js';
@@ -17,7 +16,7 @@ import type { AssistantMessage } from '../../types/message.js';
 import { extractClaudeCodeHints } from '../../utils/claudeCodeHints.js';
 import { isEnvTruthy } from '../../utils/envUtils.js';
 import { errorMessage as getErrorMessage, ShellError } from '../../utils/errors.js';
-import { truncate } from '../../utils/format.js';
+import { formatFileSize, truncate } from '../../utils/format.js';
 import { lazySchema } from '../../utils/lazySchema.js';
 import { logError } from '../../utils/log.js';
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js';
@@ -33,11 +32,12 @@ import { EndTruncatingAccumulator } from '../../utils/stringUtils.js';
 import { getTaskOutputPath } from '../../utils/task/diskOutput.js';
 import { TaskOutput } from '../../utils/task/TaskOutput.js';
 import { isOutputLineTruncated } from '../../utils/terminal.js';
-import { buildLargeToolResultMessage, ensureToolResultsDir, generatePreview, getToolResultPath, PREVIEW_SIZE_BYTES } from '../../utils/toolResultStorage.js';
+import { buildLargeToolResultMessage, generatePreview, PREVIEW_SIZE_BYTES } from '../../utils/toolResultStorage.js';
 import { shouldUseSandbox } from '../BashTool/shouldUseSandbox.js';
 import { BackgroundHint } from '../BashTool/UI.js';
 import { buildImageToolResult, isImageOutput, resetCwdIfOutsideProject, resizeShellImageOutput, stdErrAppendShellResetMessage, stripEmptyLines } from '../BashTool/utils.js';
 import { trackGitOperations } from '../shared/gitOperationTracking.js';
+import { persistLargeOutput } from '../shared/persistLargeOutput.js';
 import { interpretCommandResult } from './commandSemantics.js';
 import { powershellToolHasPermission } from './powershellPermissions.js';
 import { getDefaultTimeoutMs, getMaxTimeoutMs, getPrompt } from './prompt.js';
@@ -540,47 +540,32 @@ export const PowerShellTool = buildTool({
         for (const hint of extracted.hints) maybeRecordPluginHint(hint);
       }
 
+      // Large output: the file on disk has more than getMaxOutputLength()
+      // bytes and stdout only carries the head. Hardlink it into the
+      // tool-results dir so the model can read the rest via FileRead.
+      //
+      // Runs BEFORE the throws below (matches BashTool): a non-zero exit is
+      // exactly when the tail matters, and the inline result can only carry
+      // the head. The extra syscalls orphan nothing — the hardlink shares the
+      // task output file's inode and session cleanup owns tool-results.
+      const {
+        path: persistedOutputPath,
+        size: persistedOutputSize
+      } = await persistLargeOutput(result);
+
       // preSpawnError means exec() succeeded but the inner shell failed before
       // the command ran (e.g. CWD deleted). createFailedCommand sets code=1,
       // which interpretCommandResult can mistake for grep-no-match / findstr
-      // string-not-found. Throw it directly. Matches BashTool.tsx:957.
+      // string-not-found. Throw it directly. Matches BashTool.tsx.
       if (result.preSpawnError) {
         throw new Error(result.preSpawnError);
       }
       if (interpretation.isError && !isInterrupt) {
-        throw new ShellError(stdout, result.stderr || '', result.code, result.interrupted);
-      }
-
-      // Large output: file on disk has more than getMaxOutputLength() bytes.
-      // stdout already contains the first chunk. Copy the output file to the
-      // tool-results dir so the model can read it via FileRead. If > 64 MB,
-      // truncate after copying. Matches BashTool.tsx:983-1005.
-      //
-      // Placed AFTER the preSpawnError/ShellError throws (matches BashTool's
-      // ordering, where persistence is post-try/finally): a failing command
-      // that also produced >maxOutputLength bytes would otherwise do 3-4 disk
-      // syscalls, store to tool-results/, then throw — orphaning the file.
-      const MAX_PERSISTED_SIZE = 64 * 1024 * 1024;
-      let persistedOutputPath: string | undefined;
-      let persistedOutputSize: number | undefined;
-      if (result.outputFilePath && result.outputTaskId) {
-        try {
-          const fileStat = await fsStat(result.outputFilePath);
-          persistedOutputSize = fileStat.size;
-          await ensureToolResultsDir();
-          const dest = getToolResultPath(result.outputTaskId, false);
-          if (fileStat.size > MAX_PERSISTED_SIZE) {
-            await fsTruncate(result.outputFilePath, MAX_PERSISTED_SIZE);
-          }
-          try {
-            await link(result.outputFilePath, dest);
-          } catch {
-            await copyFile(result.outputFilePath, dest);
-          }
-          persistedOutputPath = dest;
-        } catch {
-          // File may already be gone — stdout preview is sufficient
-        }
+        // getErrorParts renders [exit code, interrupt, stderr, stdout], so the
+        // pointer goes at the end of stdout — formatError keeps head+tail when
+        // it truncates, and a trailing line survives.
+        const persistedNote = persistedOutputPath ? `Full output (${formatFileSize(persistedOutputSize ?? 0)}) saved to: ${persistedOutputPath}` : '';
+        throw new ShellError([stdout, persistedNote].filter(Boolean).join('\n'), result.stderr || '', result.code, result.interrupted);
       }
 
       // Cap image dimensions + size if present (CC-304 — see
