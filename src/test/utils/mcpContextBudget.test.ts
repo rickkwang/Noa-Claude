@@ -292,8 +292,8 @@ describe('MCP context budgeting', () => {
   })
 
   test('plan attachments rehome persisted files into the current session tool-results dir', async () => {
-    const foreignPath = join('/private/tmp', `foreign-plan-${randomUUID()}.txt`)
-    const targetDir = join('/private/tmp', `rehomed-plan-${randomUUID()}`)
+    const foreignPath = join(tmpdir(), `foreign-plan-${randomUUID()}.txt`)
+    const targetDir = join(tmpdir(), `rehomed-plan-${randomUUID()}`)
     await writeFile(foreignPath, '# Foreign Plan\n\nBody', 'utf-8')
 
     const persisted = await persistPlanFileReferenceAttachment({
@@ -311,8 +311,8 @@ describe('MCP context budgeting', () => {
   })
 
   test('MCP attachments rehome persisted files into the current session tool-results dir', async () => {
-    const foreignPath = join('/private/tmp', `foreign-mcp-${randomUUID()}.txt`)
-    const targetDir = join('/private/tmp', `rehomed-mcp-${randomUUID()}`)
+    const foreignPath = join(tmpdir(), `foreign-mcp-${randomUUID()}.txt`)
+    const targetDir = join(tmpdir(), `rehomed-mcp-${randomUUID()}`)
     await writeFile(foreignPath, 'Full contents of resource:\n\nMCP body', 'utf-8')
 
     const attachment = await persistMcpResourceAttachmentForTesting(
@@ -424,7 +424,7 @@ describe('MCP context budgeting', () => {
   })
 
   test('persisted attachment originalSize reports UTF-8 bytes, not char count', async () => {
-    const targetDir = join('/private/tmp', `bytes-${randomUUID()}`)
+    const targetDir = join(tmpdir(), `bytes-${randomUUID()}`)
     // Multi-byte chars (3 bytes each in UTF-8) above the 12k char budget so
     // the persist path runs AND we can verify size is reported in bytes.
     const planBody = '中'.repeat(12_001)
