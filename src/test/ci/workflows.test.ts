@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { describe, expect, test } from 'bun:test'
 import { parse } from 'yaml'
+import { getInteractiveSmokeCommand } from '../../../scripts/interactive-smoke-command.ts'
 
 const repoRoot = resolve(import.meta.dir, '../../..')
 
@@ -17,6 +18,35 @@ describe('GitHub Actions workflow contracts', () => {
       .filter((command: unknown): command is string => typeof command === 'string')
 
     expect(commands).toContain('bun run check:quality')
+  })
+
+  test('engineering smoke uses the util-linux script command contract', () => {
+    expect(getInteractiveSmokeCommand('linux', "/tmp/Noa Claude's/bin/noa.js")).toEqual({
+      command: 'timeout',
+      args: [
+        '3',
+        '/usr/bin/script',
+        '-q',
+        '-c',
+        `/bin/bash -lc '/tmp/Noa Claude'"'"'s/bin/noa.js'`,
+        '/dev/null',
+      ],
+    })
+  })
+
+  test('engineering smoke preserves the BSD script contract on macOS', () => {
+    expect(getInteractiveSmokeCommand('darwin', '/tmp/noa.js')).toEqual({
+      command: 'timeout',
+      args: [
+        '3',
+        '/usr/bin/script',
+        '-q',
+        '/dev/null',
+        '/bin/zsh',
+        '-lc',
+        '/tmp/noa.js',
+      ],
+    })
   })
 
   test('Engineering Live Smoke accepts an auth token', () => {

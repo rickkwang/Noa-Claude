@@ -784,7 +784,7 @@ function checkResumeFailurePaths() {
       '--resume',
       'invalid-session-id',
       'ping',
-    ], { env: resumeEnv });
+    ], { env: resumeEnv, timeout: 60_000 });
     assert(
       invalidResume.status !== 0 &&
         `${invalidResume.stderr}${invalidResume.stdout}`.includes('[CONFIG_ERROR]') &&
@@ -808,7 +808,7 @@ function checkResumeFailurePaths() {
       '--resume',
       malformedTranscript,
       'ping',
-    ], { env: resumeEnv });
+    ], { env: resumeEnv, timeout: 60_000 });
     const malformedOutput = `${malformedResume.stderr}${malformedResume.stdout}`;
     assert(
       malformedResume.status !== 0 &&

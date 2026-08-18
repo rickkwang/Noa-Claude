@@ -4,6 +4,7 @@ import { spawnSync } from 'child_process';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
+import { getInteractiveSmokeCommand } from './interactive-smoke-command.ts';
 
 const repoRoot = resolve(import.meta.dir, '..');
 const agentBin = resolve(repoRoot, 'bin/noa.js');
@@ -62,9 +63,10 @@ function runCommand(command, args, options = {}) {
 }
 
 function assertInteractiveStartupStaysAlive() {
+  const invocation = getInteractiveSmokeCommand(process.platform, agentBin);
   const result = spawnSync(
-    'timeout',
-    ['3', '/usr/bin/script', '-q', '/dev/null', '/bin/zsh', '-lc', agentBin],
+    invocation.command,
+    invocation.args,
     {
       cwd: repoRoot,
       encoding: 'utf8',
