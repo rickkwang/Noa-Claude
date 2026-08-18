@@ -1884,16 +1884,22 @@ function checkOpus47ThirdPartyEffortDefaults() {
 
 async function checkQualityRegressionGuards() {
   const prevUserType = process.env.USER_TYPE;
+  const prevApiKey = process.env.ANTHROPIC_API_KEY;
   let assembledExternalPrompt = '';
   try {
     enableConfigs();
     delete process.env.USER_TYPE;
+    // getSystemPrompt → getCommands → command availability calls into auth;
+    // under CI=true a missing key throws before the prompt is ever assembled.
+    process.env.ANTHROPIC_API_KEY = prevApiKey || 'sk-test-runtime-check';
     assembledExternalPrompt = (
       await getSystemPrompt([], 'claude-sonnet-4-6')
     ).join('\n');
   } finally {
     if (prevUserType === undefined) delete process.env.USER_TYPE;
     else process.env.USER_TYPE = prevUserType;
+    if (prevApiKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = prevApiKey;
   }
 
   assert(
