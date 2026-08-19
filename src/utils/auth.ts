@@ -292,10 +292,17 @@ export function getAnthropicApiKeyWithSource(
     if (
       !apiKeyEnv &&
       !process.env.CLAUDE_CODE_OAUTH_TOKEN &&
-      !process.env.CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR
+      !process.env.CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR &&
+      // ANTHROPIC_AUTH_TOKEN is a first-class credential in this fork: it is
+      // how Anthropic-compatible third-party providers authenticate (Bearer,
+      // read straight off process.env by getAnthropicClient in
+      // services/api/client.ts). Throwing here made every CI run that
+      // authenticates that way — including our own live smoke — fail before
+      // the first request.
+      !process.env.ANTHROPIC_AUTH_TOKEN
     ) {
       throw new Error(
-        'ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN env var is required',
+        'ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or CLAUDE_CODE_OAUTH_TOKEN env var is required',
       )
     }
 
@@ -306,7 +313,8 @@ export function getAnthropicApiKeyWithSource(
       }
     }
 
-    // OAuth token is present but this function returns API keys only
+    // An OAuth token or a Bearer auth token is present, but this function
+    // returns API keys only
     return {
       key: null,
       source: 'none',
