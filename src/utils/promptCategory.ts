@@ -42,8 +42,11 @@ export function getQuerySourceForREPL(): QuerySource {
     return 'repl_main_thread'
   }
 
-  // All styles in OUTPUT_STYLE_CONFIG are built-in
-  const isBuiltIn = style in OUTPUT_STYLE_CONFIG
+  // All styles in OUTPUT_STYLE_CONFIG are built-in. hasOwn, not `in`: a custom
+  // style named after an Object.prototype key ('toString', 'constructor') would
+  // otherwise be classified built-in and emit a querySource for a style that
+  // does not exist. Upstream uses Object.hasOwn here for the same reason.
+  const isBuiltIn = Object.hasOwn(OUTPUT_STYLE_CONFIG, style)
   return isBuiltIn
     ? (`repl_main_thread:outputStyle:${style}` as QuerySource)
     : 'repl_main_thread:outputStyle:custom'

@@ -10,7 +10,10 @@ import { getCwd } from '../utils/cwd.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
 import { isMcpInstructionsDeltaEnabled } from '../utils/mcpInstructionsDelta.js'
 import { loadMemoryPrompt } from '../memdir/memdir.js'
-import { getOutputStyleConfig } from './outputStyles.js'
+import {
+  DEFAULT_OUTPUT_STYLE_NAME,
+  getOutputStyleConfig,
+} from './outputStyles.js'
 import {
   DANGEROUS_uncachedSystemPromptSection,
   systemPromptSection,
@@ -189,8 +192,16 @@ export function buildDynamicSystemPromptSections(params: {
       computeMainSessionEnvInfo(model, additionalWorkingDirectories),
     ),
     systemPromptSection('language', () => getLanguageSection(language)),
-    systemPromptSection('output_style', () =>
-      getOutputStyleSection(outputStyleConfig),
+    // Keyed by style name, not the bare section name: the cache lives until
+    // /clear or /compact, so a mid-session switch (via /config) would otherwise
+    // keep serving whatever the style was on the first turn — and when that was
+    // `default` the section is null, leaving the model with a per-turn reminder
+    // ("X output style is active…") pointing at guidelines never sent. Upstream
+    // keys this one on the bare name and has that gap; this is the same
+    // cache-key rule the lean/verbose sections above follow.
+    systemPromptSection(
+      `output_style:${outputStyleConfig?.name ?? DEFAULT_OUTPUT_STYLE_NAME}`,
+      () => getOutputStyleSection(outputStyleConfig),
     ),
     // When delta enabled, instructions are announced via persisted
     // mcp_instructions_delta attachments (attachments.ts) instead of this

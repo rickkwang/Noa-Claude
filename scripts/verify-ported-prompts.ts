@@ -69,6 +69,9 @@ const { getTodoWritePrompt } = await import(
 const { LEAN_DESCRIPTION: WEB_FETCH_LEAN_DESCRIPTION } = await import(
   '../src/tools/WebFetchTool/prompt.js'
 )
+const { OUTPUT_STYLE_CONFIG } = await import(
+  '../src/constants/outputStyles.js'
+)
 
 const LEAN_MODEL = 'claude-opus-5'
 const UNBUNDLED_MODEL = 'claude-fable-5'
@@ -95,6 +98,12 @@ const SUBJECTS: Record<string, string> = {
   CORRECTIONS_SECTION,
   AUTONOMY_SECTION,
   'WebFetch.LEAN_DESCRIPTION': WEB_FETCH_LEAN_DESCRIPTION,
+  // Built-in output styles. Upstream interpolates the rules body into the head
+  // (`${NAT}` / `${$AT}`), so these land as "assembled" rather than one literal.
+  'Proactive output style': OUTPUT_STYLE_CONFIG.Proactive!.prompt,
+  'Proactive turnReminder': OUTPUT_STYLE_CONFIG.Proactive!.turnReminder!,
+  'Concise output style': OUTPUT_STYLE_CONFIG.Concise!.prompt,
+  'Concise turnReminder': OUTPUT_STYLE_CONFIG.Concise!.turnReminder!,
   'TodoWrite lean': getTodoWritePrompt(LEAN_MODEL),
   'Glob lean': getGlobDescription(LEAN_MODEL),
   'Grep lean': getGrepDescription(LEAN_MODEL),

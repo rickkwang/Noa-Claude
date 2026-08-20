@@ -223,6 +223,7 @@ import {
 } from './hooks.js'
 import { jsonStringify } from './slowOperations.js'
 import { isPDFExtension } from './pdfUtils.js'
+import { getOutputStyleConfig } from '../constants/outputStyles.js'
 import { getLocalISODate } from '../constants/common.js'
 import { getPDFPageCount } from './pdf.js'
 import { PDF_AT_MENTION_INLINE_THRESHOLD } from '../constants/apiLimits.js'
@@ -553,6 +554,8 @@ export type Attachment =
   | {
       type: 'output_style'
       style: string
+      /** Per-turn one-liner from the style config; falls back to a generic nudge */
+      turnReminder?: string
     }
   | {
       type: 'diagnostics'
@@ -1354,9 +1357,7 @@ export async function getAttachments(
         maybe('ide_opened_file', async () =>
           getOpenedFileFromIDE(ideSelection, toolUseContext),
         ),
-        maybe('output_style', async () =>
-          Promise.resolve(getOutputStyleAttachment()),
-        ),
+        maybe('output_style', () => getOutputStyleAttachment()),
         maybe('diagnostics', async () =>
           getDiagnosticAttachments(toolUseContext),
         ),
@@ -2003,7 +2004,7 @@ function getCriticalSystemReminderAttachment(
   return [{ type: 'critical_system_reminder', content: reminder }]
 }
 
-function getOutputStyleAttachment(): Attachment[] {
+async function getOutputStyleAttachment(): Promise<Attachment[]> {
   const settings = getSettings_DEPRECATED()
   const outputStyle = settings?.outputStyle || 'default'
 
@@ -2012,10 +2013,14 @@ function getOutputStyleAttachment(): Attachment[] {
     return []
   }
 
+  // Resolved (not raw-config) so plugin-forced styles get their reminder too.
+  const config = await getOutputStyleConfig()
+
   return [
     {
       type: 'output_style',
       style: outputStyle,
+      turnReminder: config?.turnReminder,
     },
   ]
 }

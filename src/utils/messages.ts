@@ -3833,9 +3833,17 @@ Read the team config to discover your teammates' names. Check the task list peri
       if (!outputStyle) {
         return []
       }
+      // Read off the attachment, not off outputStyle: the name lookup above
+      // only ever resolves built-ins, so a custom style file shadowing a
+      // built-in name (~/.noa/output-styles/Concise.md) would otherwise get the
+      // built-in one-liner injected under its own prompt. The attachment
+      // carries the *resolved* style's reminder, which is undefined there.
+      const turnReminder =
+        attachment.turnReminder ??
+        'Remember to follow the specific guidelines for this style.'
       return wrapMessagesInSystemReminder([
         createUserMessage({
-          content: `${outputStyle.name} output style is active. Remember to follow the specific guidelines for this style.`,
+          content: `${outputStyle.name} output style is active. ${turnReminder}`,
           isMeta: true,
         }),
       ])

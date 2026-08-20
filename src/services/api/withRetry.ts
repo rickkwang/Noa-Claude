@@ -63,6 +63,8 @@ export const BASE_DELAY_MS = 500
 const FOREGROUND_529_RETRY_SOURCES = new Set<QuerySource>([
   'repl_main_thread',
   'repl_main_thread:outputStyle:custom',
+  'repl_main_thread:outputStyle:Proactive',
+  'repl_main_thread:outputStyle:Concise',
   'repl_main_thread:outputStyle:Explanatory',
   'repl_main_thread:outputStyle:Learning',
   'sdk',
