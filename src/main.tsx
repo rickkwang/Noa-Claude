@@ -182,9 +182,14 @@ import { parseSettingSourcesFlag } from 'src/utils/settings/constants.js';
 import { plural } from 'src/utils/stringUtils.js';
 import { type ChannelEntry, getInitialMainLoopModel, getIsNonInteractiveSession, getSdkBetas, getSessionId, getUserMsgOptIn, setAllowedChannels, setAllowedSettingSources, setChromeFlagOverride, setClientType, setCwdState, setFlagSettingsPath, setInitialMainLoopModel, setInlinePlugins, setIsInteractive, setKairosActive, setOriginalCwd, setQuestionPreviewFormat, setSdkBetas, setSessionBypassPermissionsMode, setSessionPersistenceDisabled, setSessionSource, setUserMsgOptIn, switchSession } from './bootstrap/state.js';
 
-const autoModeStateModule = feature('AUTO_MODE')
-  ? await import('./utils/permissions/autoModeState.js')
-  : null;
+// Statically imported rather than `await import(...)`: this was the bundle's
+// only top-level await, and one of them keeps dist/main.js pinned to ESM, which
+// rules out a bytecode-cached build (Bun's --bytecode is CommonJS-only).
+// autoModeState.js has no imports of its own, so the gated-off build carries a
+// standalone 170-line module it never calls.
+import * as autoModeState from './utils/permissions/autoModeState.js';
+
+const autoModeStateModule = feature('AUTO_MODE') ? autoModeState : null;
 
 // TeleportRepoMismatchDialog, TeleportResumeWrapper dynamically imported at call sites
 import { migrateAutoUpdatesToSettings } from './migrations/migrateAutoUpdatesToSettings.js';

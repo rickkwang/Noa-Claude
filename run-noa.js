@@ -172,15 +172,19 @@ function shouldRebuildDist() {
     return true;
   }
 
+  // Walking src/ costs a recursive stat of every source file (~13ms on macOS)
+  // and the answer is discarded unless auto-rebuild is on, so don't pay for it
+  // on every launch.
+  if (!launcherAutoRebuildEnabled) {
+    logLauncherDebug(
+      'Launcher rebuild: mtime-based rebuild is disabled, skipping the source scan',
+    );
+    return false;
+  }
+
   const distMtime = getNewestMtimeMs(DIST_ENTRY);
   const sourceMtime = Math.max(...WATCH_PATHS.map(getNewestMtimeMs));
   if (sourceMtime > distMtime) {
-    if (!launcherAutoRebuildEnabled) {
-      logLauncherDebug(
-        'Launcher rebuild: source files are newer than dist/main.js, but mtime-based rebuild is disabled',
-      );
-      return false;
-    }
     logLauncherDebug('Launcher rebuild: source files are newer than dist/main.js');
     return true;
   }

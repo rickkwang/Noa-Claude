@@ -2,10 +2,12 @@ import {
   chmodSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   realpathSync,
   readFileSync,
   renameSync,
+  rmSync,
   statSync,
   utimesSync,
   writeFileSync,
@@ -460,6 +462,56 @@ try {
 
     writeFileSync(expectedPath, patched + '\n' + getLauncherBootstrapCode())
     console.log(`Build complete: ${outfile}`)
+  }
+
+  // Startup cost is dominated by JSC pre-parsing the bundle, and that scales
+  // with bytes: shrinking identifiers takes dist/main.js from ~25MB to ~13MB
+  // and ~55ms off every launch. Whitespace/syntax minification alone buys
+  // nothing measurable — the win is in the identifier table.
+  //
+  // It runs as a second pass rather than `minify: true` on the build above
+  // because the minifier would constant-fold `"external" === 'ant'` to false
+  // before the USER_TYPE patch could rewrite those comparisons to true.
+  //
+  // Dev builds stay unminified so stack traces keep their real names.
+  if (!dev) {
+    // Staged inside dist/ rather than os.tmpdir(): the rename below has to stay
+    // on one filesystem, and /tmp is a separate tmpfs mount on most Linux
+    // distributions (EXDEV).
+    const minifyTmpDir = mkdtempSync(join(dirname(expectedPath), '.minify-'))
+    try {
+      const minifyResult = await Bun.build({
+        entrypoints: [expectedPath],
+        target: 'bun',
+        format: 'esm',
+        outdir: minifyTmpDir,
+        external: externals,
+        minify: true,
+      })
+
+      // Thrown rather than process.exit()'d: exiting here would skip the outer
+      // finally block that restores the in-place feature('X') rewrites, leaving
+      // the source tree modified.
+      if (!minifyResult.success) {
+        for (const log of minifyResult.logs) {
+          console.error(log)
+        }
+        throw new Error('Minify pass failed')
+      }
+
+      const minifyOutput = minifyResult.outputs.find(o => o.kind === 'entry-point')
+      if (!minifyOutput) {
+        throw new Error('No minify output found')
+      }
+
+      renameSync(minifyOutput.path, expectedPath)
+      chmodSync(expectedPath, 0o755)
+      console.log(
+        `Minified ${outfile}: ${(statSync(expectedPath).size / 1e6).toFixed(1)}MB`,
+      )
+    } finally {
+      rmSync(minifyTmpDir, { recursive: true, force: true })
+    }
   }
 
   writeFileSync(
