@@ -25,8 +25,14 @@ function printAndExit(code, message) {
 }
 
 try {
-  applyLauncherDefaults();
-  validateLauncherConfiguration(process.argv);
+  const launcherArgs = process.argv.slice(2);
+  const infoOnly = launcherArgs.some(arg =>
+    ['-h', '--help', '-v', '--version'].includes(arg),
+  );
+  const resolvedLauncherConfig = applyLauncherDefaults({
+    skipGlobalConfig: infoOnly,
+  });
+  validateLauncherConfiguration(process.argv, resolvedLauncherConfig);
 } catch (error) {
   printAndExit(
     DIAGNOSTIC_ERROR_CODES.CONFIG_ERROR,

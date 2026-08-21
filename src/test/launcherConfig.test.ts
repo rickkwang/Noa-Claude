@@ -1,9 +1,13 @@
-import { afterAll, describe, expect, test } from 'bun:test'
+import { afterAll, describe, expect, expectTypeOf, test } from 'bun:test'
 import { spawnSync } from 'child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { homedir, tmpdir } from 'os'
 import { join } from 'path'
-import { getLauncherEnvBootstrapCode } from '../../launcher-config.js'
+import {
+  getLauncherEnvBootstrapCode,
+  getResolvedLauncherConfig,
+} from '../../launcher-config.js'
+import { getOauthConfigFileSuffix } from '../constants/oauthConfigPath.js'
 
 // launcher-config.js resolves its paths at module load, so each case needs a
 // fresh process. Run from the repo root, like the other source-level tests.
@@ -54,6 +58,203 @@ describe('launcher config dir precedence', () => {
   test('falls back to the product dir under the current home', () => {
     const resolved = resolveConfigDir({})
     expect(resolved).toBe(`${process.env.HOME}/.noa`)
+  })
+})
+
+describe('OAuth config filename suffix', () => {
+  const cases = [
+    [{ CLAUDE_CODE_CUSTOM_OAUTH_URL: 'https://claude.fedstart.com' }, '-custom-oauth'],
+    [{ USER_TYPE: 'ant', USE_LOCAL_OAUTH: 'yes' }, '-local-oauth'],
+    [{ USER_TYPE: 'ant', USE_STAGING_OAUTH: '1' }, '-staging-oauth'],
+    [{ USER_TYPE: 'external', USE_STAGING_OAUTH: '1' }, ''],
+  ] as const
+  test.each(cases)('resolves %o to %s', (env, expected) => {
+    const allowInternalOauth = 'USER_TYPE' in env && env.USER_TYPE === 'ant'
+    expect(getOauthConfigFileSuffix(env, allowInternalOauth)).toBe(expected)
+  })
+})
+
+function runLauncherFixture({
+  name,
+  globalConfig,
+  globalConfigRaw,
+  globalConfigFile = '.config.json',
+  script,
+  env = {},
+}: {
+  name: string
+  globalConfig?: object
+  globalConfigRaw?: string
+  globalConfigFile?: string
+  script: string
+  env?: Record<string, string | undefined>
+}) {
+  const productDir = mkdtempSync(join(tmpdir(), `noa-launcher-${name}-`))
+  try {
+    writeFileSync(join(productDir, 'settings.json'), '{}\n')
+    if (globalConfig || globalConfigRaw !== undefined) {
+      writeFileSync(
+        join(productDir, globalConfigFile),
+        globalConfigRaw ?? JSON.stringify(globalConfig),
+      )
+    }
+    return spawnSync('bun', ['--eval', script], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CLAUDE_CODE_PRODUCT_DIR: productDir,
+        CLAUDE_CONFIG_DIR: undefined,
+        CLAUDE_CODE_CUSTOM_OAUTH_URL: undefined,
+        ANTHROPIC_BASE_URL: undefined,
+        ANTHROPIC_MODEL: undefined,
+        ANTHROPIC_API_KEY: undefined,
+        ANTHROPIC_AUTH_TOKEN: undefined,
+        CLAUDE_AGENT_DEFAULT_MODEL: undefined,
+        ...env,
+      } as NodeJS.ProcessEnv,
+    })
+  } finally {
+    rmSync(productDir, { recursive: true, force: true })
+  }
+}
+
+const RESOLVE_PROVIDER_SCRIPT = `
+  const { getResolvedLauncherConfig } = await import('./launcher-config.js')
+  const value = getResolvedLauncherConfig()
+  console.log(JSON.stringify({
+    baseUrl: value.apiBaseUrl ?? null,
+    model: value.model ?? null,
+    provider: value.launcherProvider,
+  }))
+`
+
+describe('launcher provider defaults', () => {
+  test('does not re-inject MiniMax after Anthropic routing is persisted', () => {
+    const result = runLauncherFixture({
+      name: 'oauth',
+      globalConfig: { launcherProvider: 'anthropic' },
+      script: `
+        const { applyLauncherDefaults } = await import('./launcher-config.js')
+        const resolved = applyLauncherDefaults()
+        console.log(JSON.stringify({
+          baseUrl: process.env.ANTHROPIC_BASE_URL ?? null,
+          model: process.env.ANTHROPIC_MODEL ?? null,
+          hasSettings: resolved.settings !== undefined,
+          hasSettingsEnv: resolved.settingsEnv !== undefined,
+        }))
+      `,
+    })
+    if (result.status !== 0) throw new Error(result.stderr)
+    expect(JSON.parse(result.stdout)).toEqual({
+      baseUrl: null,
+      model: null,
+      hasSettings: true,
+      hasSettingsEnv: true,
+    })
+  })
+
+  test('keeps existing OAuth users on Anthropic before the routing marker exists', () => {
+    const result = runLauncherFixture({
+      name: 'legacy-oauth',
+      globalConfig: { oauthAccount: { accountUuid: 'legacy-account' } },
+      script: RESOLVE_PROVIDER_SCRIPT,
+    })
+    if (result.status !== 0) throw new Error(result.stderr)
+    expect(JSON.parse(result.stdout)).toEqual({
+      baseUrl: null,
+      model: null,
+      provider: 'anthropic',
+    })
+  })
+
+  test('allows keychain-backed subscription auth in print mode', () => {
+    const result = runLauncherFixture({
+      name: 'oauth-print',
+      globalConfig: { launcherProvider: 'anthropic' },
+      script: `const { validateLauncherConfiguration } = await import('./launcher-config.js'); validateLauncherConfiguration(['bun', 'noa', '-p']);`,
+    })
+    expect(result.status).toBe(0)
+  })
+
+  test('reads the same custom OAuth config file as the runtime', () => {
+    const result = runLauncherFixture({
+      name: 'custom-oauth',
+      globalConfig: { launcherProvider: 'anthropic' },
+      globalConfigFile: '.config-custom-oauth.json',
+      script: RESOLVE_PROVIDER_SCRIPT,
+      env: { CLAUDE_CODE_CUSTOM_OAUTH_URL: 'https://claude.fedstart.com' },
+    })
+    if (result.status !== 0) throw new Error(result.stderr)
+    expect(JSON.parse(result.stdout)).toEqual({
+      baseUrl: null,
+      model: null,
+      provider: 'anthropic',
+    })
+  })
+
+  test('keeps MiniMax defaults for a fresh unauthenticated install', () => {
+    const result = runLauncherFixture({
+      name: 'fresh',
+      script: RESOLVE_PROVIDER_SCRIPT,
+    })
+    if (result.status !== 0) throw new Error(result.stderr)
+    expect(JSON.parse(result.stdout)).toEqual({
+      baseUrl: 'https://api.minimaxi.com/anthropic',
+      model: 'MiniMax-M2.7',
+      provider: 'product-default',
+    })
+    expectTypeOf<ReturnType<typeof getResolvedLauncherConfig>['model']>()
+      .toEqualTypeOf<string | undefined>()
+  })
+
+  test('rejects a third-party bearer token without an explicit base URL', () => {
+    const result = runLauncherFixture({
+      name: 'oauth-with-bearer',
+      globalConfig: { launcherProvider: 'anthropic' },
+      script: `
+        const {
+          applyLauncherDefaults,
+          validateLauncherConfiguration,
+        } = await import('./launcher-config.js')
+        const resolved = applyLauncherDefaults()
+        validateLauncherConfiguration(['bun', 'noa', '-p'], resolved)
+      `,
+      env: { ANTHROPIC_AUTH_TOKEN: 'third-party-bearer' },
+    })
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain(
+      'ANTHROPIC_AUTH_TOKEN requires ANTHROPIC_BASE_URL',
+    )
+  })
+
+  test('rejects an unknown persisted launcher provider', () => {
+    const result = runLauncherFixture({
+      name: 'invalid-provider-marker',
+      globalConfig: {
+        launcherProvider: 'anthorpic',
+        oauthAccount: { accountUuid: 'legacy-account' },
+      },
+      script: RESOLVE_PROVIDER_SCRIPT,
+    })
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('Invalid launcherProvider')
+  })
+
+  test('keeps version recovery available with malformed global config', () => {
+    const result = runLauncherFixture({
+      name: 'malformed-config-version',
+      globalConfigRaw: '{invalid-json',
+      script: `
+        const {
+          applyLauncherDefaults,
+          validateLauncherConfiguration,
+        } = await import('./launcher-config.js')
+        const resolved = applyLauncherDefaults({ skipGlobalConfig: true })
+        validateLauncherConfiguration(['bun', 'noa', '--version'], resolved)
+      `,
+    })
+    expect(result.status).toBe(0)
   })
 })
 

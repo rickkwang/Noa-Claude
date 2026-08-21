@@ -9,14 +9,22 @@ import { clearPolicyLimitsCache } from '../../services/policyLimits/index.js';
 import { clearRemoteManagedSettingsCache } from '../../services/remoteManagedSettings/index.js';
 import { getClaudeAIOAuthTokens, removeApiKey } from '../../utils/auth.js';
 import { clearBetasCaches } from '../../utils/betas.js';
-import { saveGlobalConfig } from '../../utils/config.js';
+import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js';
 import { gracefulShutdownSync } from '../../utils/gracefulShutdown.js';
 import { getSecureStorage } from '../../utils/secureStorage/index.js';
 import { clearToolSchemaCache } from '../../utils/toolSchemaCache.js';
 import { resetUserCache } from '../../utils/user.js';
+import { withAuthTransitionLock } from '../../utils/authTransitionLock.js';
 export async function performLogout({
-  clearOnboarding = false
+  clearOnboarding = false,
+  authTransitionLocked = false
 }): Promise<void> {
+  if (!authTransitionLocked) {
+    return withAuthTransitionLock(() => performLogout({
+      clearOnboarding,
+      authTransitionLocked: true
+    }));
+  }
   // Flush telemetry BEFORE clearing credentials to prevent org data leakage
   const {
     flushTelemetry
@@ -44,8 +52,12 @@ export async function performLogout({
       }
     }
     updated.oauthAccount = undefined;
+    updated.launcherProvider = 'product-default';
     return updated;
   });
+  if (getGlobalConfig().launcherProvider !== 'product-default') {
+    throw new Error('Failed to persist product-default launcher routing');
+  }
 }
 
 // clearing anything memoized that must be invalidated when user/session/auth changes

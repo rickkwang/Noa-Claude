@@ -16,20 +16,26 @@ export const LAUNCHER_MACRO: {
   NATIVE_PACKAGE_URL: string
 }
 
-export function getResolvedLauncherConfig(): {
-  apiBaseUrl: string
+export function getResolvedLauncherConfig(options?: {
+  skipGlobalConfig?: boolean
+}): {
+  apiBaseUrl: string | undefined
   apiKey: string | undefined
   authToken: string | undefined
-  model: string
+  model: string | undefined
   settings: unknown
   settingsEnv: Record<string, unknown>
+  launcherProvider: 'anthropic' | 'product-default'
 }
 
 export function validateLauncherConfiguration(
   argv?: string[],
+  resolved?: ReturnType<typeof getResolvedLauncherConfig>,
 ): void
 
-export function applyLauncherDefaults(): void
+export function applyLauncherDefaults(options?: {
+  skipGlobalConfig?: boolean
+}): ReturnType<typeof getResolvedLauncherConfig>
 
 export function getLauncherEnvBootstrapCode(): string
 

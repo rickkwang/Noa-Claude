@@ -31,14 +31,25 @@ import {
   saveOAuthTokensIfNeeded,
   validateForceLoginOrg,
 } from '../../utils/auth.js'
-import { saveGlobalConfig } from '../../utils/config.js'
+import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { isRunningOnHomespace } from '../../utils/envUtils.js'
 import { errorMessage } from '../../utils/errors.js'
 import { logError } from '../../utils/log.js'
 import { getAPIProvider } from '../../utils/model/providers.js'
-import { getInitialSettings } from '../../utils/settings/settings.js'
+import { isModelAlias } from '../../utils/model/aliases.js'
+import {
+  getInitialSettings,
+  getSettingsForSource,
+  updateSettingsForSource,
+} from '../../utils/settings/settings.js'
+import {
+  applyActiveProviderProfileEnv,
+  restoreActiveProviderProfileAfterFailedTransition,
+  withDeactivatedProviderProfiles,
+} from '../../utils/providerProfile.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
+import { withAuthTransitionLock } from '../../utils/authTransitionLock.js'
 import {
   buildAccountProperties,
   buildAPIProviderProperties,
@@ -49,8 +60,15 @@ import {
  * and sets up the local auth state.
  */
 export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
+  return withAuthTransitionLock(() => installOAuthTokensUnlocked(tokens))
+}
+
+async function installOAuthTokensUnlocked(tokens: OAuthTokens): Promise<void> {
   // Clear old state before saving new credentials
-  await performLogout({ clearOnboarding: false })
+  await performLogout({
+    clearOnboarding: false,
+    authTransitionLocked: true,
+  })
 
   // Reuse pre-fetched profile if available, otherwise fetch fresh
   const profile =
@@ -80,6 +98,10 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
 
   const storageResult = saveOAuthTokensIfNeeded(tokens)
   clearOAuthTokenCache()
+  const isClaudeAiAuth = shouldUseClaudeAIAuth(tokens.scopes)
+  let credentialsPersisted =
+    isClaudeAiAuth &&
+    Boolean(tokens.refreshToken && tokens.expiresAt && storageResult.success)
 
   if (storageResult.warning) {
     logEvent('tengu_oauth_storage_warning', {
@@ -94,7 +116,7 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
     logForDebugging(String(err), { level: 'error' }),
   )
 
-  if (shouldUseClaudeAIAuth(tokens.scopes)) {
+  if (isClaudeAiAuth) {
     await fetchAndStoreClaudeCodeFirstTokenDate().catch(err =>
       logForDebugging(String(err), { level: 'error' }),
     )
@@ -106,6 +128,48 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
         'Unable to create API key. The server accepted the request but did not return a key.',
       )
     }
+    credentialsPersisted = true
+  }
+
+  if (credentialsPersisted) {
+    const persistedModel = getSettingsForSource('userSettings')?.model
+    await withDeactivatedProviderProfiles(
+      async deactivatedProfile => {
+        const normalizedPersistedModel = persistedModel?.replace(/\[1m\]$/i, '')
+        const modelBelongsToThirdParty =
+          deactivatedProfile !== null &&
+          persistedModel !== undefined &&
+          !isModelAlias(persistedModel) &&
+          !normalizedPersistedModel?.startsWith('claude-')
+        await applyActiveProviderProfileEnv({
+          clearProviderStateWhenInactive: true,
+          modelToClearWhenInactive: modelBelongsToThirdParty
+            ? persistedModel
+            : undefined,
+        })
+        saveGlobalConfig(current => ({
+          ...current,
+          launcherProvider: 'anthropic',
+        }))
+        if (getGlobalConfig().launcherProvider !== 'anthropic') {
+          throw new Error('Failed to persist Anthropic launcher routing')
+        }
+      },
+      async deactivatedProfile => {
+        if (deactivatedProfile) {
+          await restoreActiveProviderProfileAfterFailedTransition()
+        }
+        if (
+          persistedModel !== undefined &&
+          getSettingsForSource('userSettings')?.model === undefined
+        ) {
+          const { error } = updateSettingsForSource('userSettings', {
+            model: persistedModel,
+          })
+          if (error) throw error
+        }
+      },
+    )
   }
 
   await clearAuthRelatedCaches()

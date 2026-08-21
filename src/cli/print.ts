@@ -259,7 +259,10 @@ import {
   toInternalMessages,
   toSDKRateLimitInfo,
 } from 'src/utils/messages/mappers.js'
-import { createModelSwitchBreadcrumbs } from 'src/utils/messages.js'
+import {
+  createModelSwitchBreadcrumbs,
+  stripSignatureBlocks,
+} from 'src/utils/messages.js'
 import { collectContextData } from 'src/commands/context/context-noninteractive.js'
 import { LOCAL_COMMAND_STDOUT_TAG } from 'src/constants/xml.js'
 import {
@@ -3604,6 +3607,14 @@ function runHeadlessStreaming(
               // getClaudeAIOAuthTokens in this process is invalidated; the
               // next API call re-reads keychain/file and works. No respawn.
               await installOAuthTokens(tokens)
+              activeUserSpecifiedModel = undefined
+              setMainLoopModelOverride(undefined)
+              const unsignedMessages = stripSignatureBlocks(mutableMessages)
+              mutableMessages.splice(
+                0,
+                mutableMessages.length,
+                ...unsignedMessages,
+              )
               logEvent('tengu_oauth_success', {
                 loginWithClaudeAi: loginWithClaudeAi ?? true,
               })

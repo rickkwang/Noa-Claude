@@ -167,6 +167,168 @@ describe('provider profile credentials', () => {
     }
   })
 
+  test('can explicitly clear stale provider env when returning to Claude login', () => {
+    // Anthropic credential installation intentionally replaces a third-party
+    // provider. This must stay distinct from a clean CI invocation with
+    // caller-owned env: the latter stays intact, whereas the former must not
+    // retain MiniMax routing or its model into the next session.
+    const configDir = mkdtempSync(join(tmpdir(), 'noa-login-clear-provider-'))
+    try {
+      const script = `
+        process.env.CLAUDE_CONFIG_DIR = ${JSON.stringify(configDir)}
+        delete process.env.CLAUDE_CODE_SIMPLE
+        process.env.ANTHROPIC_AUTH_TOKEN = 'minimax-bearer-token'
+        process.env.ANTHROPIC_BASE_URL = 'https://api.minimax.test'
+        process.env.ANTHROPIC_MODEL = 'MiniMax-M3'
+
+        const { applyActiveProviderProfileEnv } =
+          await import('./src/utils/providerProfile.ts')
+        await applyActiveProviderProfileEnv({ clearProviderStateWhenInactive: true })
+
+        for (const key of [
+          'ANTHROPIC_AUTH_TOKEN',
+          'ANTHROPIC_BASE_URL',
+          'ANTHROPIC_MODEL',
+        ]) {
+          if (process.env[key] !== undefined) {
+            throw new Error('stale provider env survived Claude login: ' + key)
+          }
+        }
+      `
+      const result = spawnSync('bun', ['--eval', script], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      })
+
+      if (result.status !== 0) throw new Error(result.stderr)
+      expect(result.status).toBe(0)
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  test('surfaces settings persistence failure during explicit provider cleanup', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'noa-login-clear-failure-'))
+    try {
+      writeFileSync(join(configDir, 'settings.json'), '{invalid-json')
+      const script = `
+        process.env.CLAUDE_CONFIG_DIR = ${JSON.stringify(configDir)}
+        delete process.env.CLAUDE_CODE_SIMPLE
+        process.env.ANTHROPIC_MODEL = 'MiniMax-M3'
+
+        const { applyActiveProviderProfileEnv } =
+          await import('./src/utils/providerProfile.ts')
+        let error
+        try {
+          await applyActiveProviderProfileEnv({ clearProviderStateWhenInactive: true })
+        } catch (caught) {
+          error = caught
+        }
+        if (!error) throw new Error('expected provider settings cleanup to fail')
+      `
+      const result = spawnSync('bun', ['--eval', script], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      })
+
+      if (result.status !== 0) throw new Error(result.stderr)
+      expect(result.status).toBe(0)
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  test('--bare explicit cleanup clears disk state but preserves caller env', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'noa-bare-login-cleanup-'))
+    try {
+      writeFileSync(
+        join(configDir, 'settings.json'),
+        JSON.stringify({
+          model: 'claude-opus-4-1',
+          env: {
+            ANTHROPIC_BASE_URL: 'https://api.minimax.test',
+            ANTHROPIC_AUTH_TOKEN: 'minimax-token',
+            ANTHROPIC_MODEL: 'MiniMax-M3',
+          },
+        }),
+      )
+      const script = `
+        process.argv.push('--bare')
+        process.env.CLAUDE_CONFIG_DIR = ${JSON.stringify(configDir)}
+        process.env.ANTHROPIC_BASE_URL = 'https://caller.example.test'
+        process.env.ANTHROPIC_AUTH_TOKEN = 'caller-token'
+        process.env.ANTHROPIC_MODEL = 'caller-model'
+
+        const { readFileSync } = await import('fs')
+        const { applyActiveProviderProfileEnv } =
+          await import('./src/utils/providerProfile.ts')
+        await applyActiveProviderProfileEnv({ clearProviderStateWhenInactive: true })
+
+        const settings = JSON.parse(
+          readFileSync(${JSON.stringify(join(configDir, 'settings.json'))}, 'utf8'),
+        )
+        if (Object.keys(settings.env ?? {}).some(key => key.startsWith('ANTHROPIC_'))) {
+          throw new Error('persisted provider env survived bare cleanup')
+        }
+        if (settings.model !== 'claude-opus-4-1') {
+          throw new Error('explicit first-party model was removed')
+        }
+        if (process.env.ANTHROPIC_BASE_URL !== 'https://caller.example.test') {
+          throw new Error('bare cleanup changed caller base URL')
+        }
+        if (process.env.ANTHROPIC_AUTH_TOKEN !== 'caller-token') {
+          throw new Error('bare cleanup changed caller auth token')
+        }
+        if (process.env.ANTHROPIC_MODEL !== 'caller-model') {
+          throw new Error('bare cleanup changed caller model')
+        }
+      `
+      const result = spawnSync('bun', ['--eval', script], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      })
+
+      if (result.status !== 0) throw new Error(result.stderr)
+      expect(result.status).toBe(0)
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  test('explicit OAuth cleanup fails if a provider becomes active concurrently', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'noa-provider-reactivated-'))
+    try {
+      writeFileSync(
+        join(configDir, 'provider-profiles.json'),
+        JSON.stringify([
+          profile({ active: true, apiKey: 'profile-api-key' }),
+        ]),
+      )
+      const script = `
+        process.env.CLAUDE_CONFIG_DIR = ${JSON.stringify(configDir)}
+        delete process.env.CLAUDE_CODE_SIMPLE
+        const { applyActiveProviderProfileEnv } =
+          await import('./src/utils/providerProfile.ts')
+        let error
+        try {
+          await applyActiveProviderProfileEnv({ clearProviderStateWhenInactive: true })
+        } catch (caught) {
+          error = caught
+        }
+        if (!error) throw new Error('expected concurrent activation to block OAuth cleanup')
+      `
+      const result = spawnSync('bun', ['--eval', script], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      })
+
+      if (result.status !== 0) throw new Error(result.stderr)
+      expect(result.status).toBe(0)
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
   test('applies the active provider profile env outside bare mode', () => {
     const configDir = mkdtempSync(join(tmpdir(), 'noa-provider-profile-apply-'))
     try {
@@ -300,6 +462,40 @@ describe('provider profile credentials', () => {
         }
         if (process.env.ANTHROPIC_BASE_URL !== 'https://api.kimi.com/coding') {
           throw new Error('env did not follow the still-active profile')
+        }
+      `
+      const result = spawnSync('bun', ['--eval', script], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      })
+
+      if (result.status !== 0) throw new Error(result.stderr)
+      expect(result.status).toBe(0)
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  test('concurrent profile mutations do not overwrite each other', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'noa-provider-concurrent-'))
+    try {
+      const script = `
+        process.env.CLAUDE_CONFIG_DIR = ${JSON.stringify(configDir)}
+        const { addProviderProfile, loadProviderProfiles } =
+          await import('./src/utils/providerProfile.ts')
+
+        await Promise.all(
+          Array.from({ length: 12 }, (_, index) =>
+            addProviderProfile({
+              name: 'Provider ' + index,
+              type: 'minimax',
+              model: 'model-' + index,
+            }),
+          ),
+        )
+        const profiles = await loadProviderProfiles()
+        if (profiles.length !== 12) {
+          throw new Error('concurrent writes lost profiles: ' + profiles.length)
         }
       `
       const result = spawnSync('bun', ['--eval', script], {

@@ -3,7 +3,9 @@ import { join } from 'path'
 import { randomUUID } from 'crypto'
 import { saveGlobalConfig } from './config.js'
 import { normalizeApiKeyForConfig } from './authPortable.js'
+import { logForDebugging } from './debug.js'
 import { getClaudeConfigHomeDir, isBareMode } from './envUtils.js'
+import * as lockfile from './lockfile.js'
 import { updateSettingsForSource, getSettingsForSource } from './settings/settings.js'
 
 export type ProviderType =
@@ -51,40 +53,115 @@ export async function loadProviderProfiles(): Promise<ProviderProfile[]> {
 export async function saveProviderProfiles(
   profiles: ProviderProfile[],
 ): Promise<void> {
+  await mutateProviderProfiles(() => ({ next: profiles, result: undefined }))
+}
+
+async function ensureProviderProfilesFile(): Promise<void> {
   await mkdir(getClaudeConfigHomeDir(), { recursive: true })
-  await writeFile(PROVIDER_PROFILES_PATH, JSON.stringify(profiles, null, 2), 'utf-8')
+  try {
+    await writeFile(PROVIDER_PROFILES_PATH, '[]', {
+      encoding: 'utf8',
+      flag: 'wx',
+    })
+  } catch (error) {
+    if ((error as { code?: string }).code !== 'EEXIST') throw error
+  }
+}
+
+async function mutateProviderProfiles<T>(
+  mutate: (
+    profiles: ProviderProfile[],
+  ) => { next?: ProviderProfile[]; result: T },
+): Promise<T> {
+  await ensureProviderProfilesFile()
+  const release = await lockfile.lock(PROVIDER_PROFILES_PATH, {
+    realpath: false,
+    retries: { retries: 20, minTimeout: 5, maxTimeout: 50 },
+  })
+  try {
+    const profiles = await loadProviderProfiles()
+    const { next, result } = mutate(profiles)
+    if (next) {
+      await writeProviderProfilesUnlocked(next)
+    }
+    return result
+  } finally {
+    await release()
+  }
+}
+
+async function writeProviderProfilesUnlocked(
+  profiles: ProviderProfile[],
+): Promise<void> {
+  await writeFile(
+    PROVIDER_PROFILES_PATH,
+    JSON.stringify(profiles, null, 2),
+    'utf8',
+  )
+}
+
+export async function withDeactivatedProviderProfiles<T>(
+  operation: (deactivated: ProviderProfile | null) => Promise<T>,
+  rollback?: (deactivated: ProviderProfile | null) => Promise<void>,
+): Promise<T> {
+  await ensureProviderProfilesFile()
+  const release = await lockfile.lock(PROVIDER_PROFILES_PATH, {
+    realpath: false,
+    retries: { retries: 20, minTimeout: 5, maxTimeout: 50 },
+  })
+  try {
+    const profiles = await loadProviderProfiles()
+    const active = getActiveProviderProfile(profiles)
+    try {
+      if (active) {
+        await writeProviderProfilesUnlocked(
+          profiles.map(profile => ({ ...profile, active: false })),
+        )
+      }
+      return await operation(active)
+    } catch (error) {
+      try {
+        if (active) await writeProviderProfilesUnlocked(profiles)
+        await rollback?.(active)
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [error, rollbackError],
+          'OAuth provider transition and rollback both failed',
+        )
+      }
+      throw error
+    }
+  } finally {
+    await release()
+  }
 }
 
 export async function addProviderProfile(
   profile: Omit<ProviderProfile, 'id'>,
 ): Promise<ProviderProfile> {
-  const profiles = await loadProviderProfiles()
   const newProfile: ProviderProfile = {
     ...normalizeProviderProfileCredential(profile),
     id: randomUUID(),
   }
-  profiles.push(newProfile)
-  await saveProviderProfiles(profiles)
-  return newProfile
+  return mutateProviderProfiles(profiles => ({
+    next: [...profiles, newProfile],
+    result: newProfile,
+  }))
 }
 
 export async function updateProviderProfile(
   id: string,
   updates: Partial<Omit<ProviderProfile, 'id'>>,
 ): Promise<ProviderProfile | null> {
-  const profiles = await loadProviderProfiles()
-  const index = profiles.findIndex(p => p.id === id)
-  if (index === -1) {
-    return null
-  }
-  const existing = profiles[index]
-  if (!existing) {
-    return null
-  }
-  const updated = normalizeProviderProfileCredential({ ...existing, ...updates })
-  profiles[index] = updated
-  await saveProviderProfiles(profiles)
-  return updated
+  return mutateProviderProfiles(profiles => {
+    const index = profiles.findIndex(p => p.id === id)
+    const existing = profiles[index]
+    if (index === -1 || !existing) return { result: null }
+    const updated = normalizeProviderProfileCredential({ ...existing, ...updates })
+    const next = [...profiles]
+    next[index] = updated
+    return { next, result: updated }
+  })
 }
 
 export const PROVIDER_TYPE_LABELS: Record<ProviderType, string> = {
@@ -199,40 +276,45 @@ function getNormalizedBaseUrl(profile: ProviderProfile): string | undefined {
   return baseUrl.replace(/\/+$/, '')
 }
 
-export async function deactivateAllProviderProfiles(): Promise<void> {
-  const profiles = await loadProviderProfiles()
-  if (profiles.some(p => p.active)) {
-    await saveProviderProfiles(profiles.map(p => ({ ...p, active: false })))
-  }
-}
-
 export async function setActiveProviderProfile(
   id: string,
 ): Promise<ProviderProfile | null> {
-  const profiles = await loadProviderProfiles()
-  const selected = profiles.find(profile => profile.id === id)
-  if (!selected) return null
+  return mutateProviderProfiles(profiles => {
+    const selected = profiles.find(profile => profile.id === id)
+    if (!selected) return { result: null }
 
-  const activeProfile = normalizeProviderProfileCredential({
-    ...selected,
-    active: true,
+    const activeProfile = normalizeProviderProfileCredential({
+      ...selected,
+      active: true,
+    })
+    return {
+      next: profiles.map(profile =>
+        profile.id === id ? activeProfile : { ...profile, active: false },
+      ),
+      result: activeProfile,
+    }
   })
-  const nextProfiles = profiles.map(profile =>
-    profile.id === id ? activeProfile : { ...profile, active: false },
-  )
-  await saveProviderProfiles(nextProfiles)
-  return activeProfile
 }
 
-export async function applyActiveProviderProfileEnv(): Promise<ProviderProfile | null> {
-  // --bare is intentionally hermetic: the caller's provider env is the entire
-  // auth/routing contract. Do not read, apply, or persist a saved profile here,
-  // since doing so would erase an explicitly supplied API key before the
-  // request client is created.
-  if (isBareMode()) return null
+export async function applyActiveProviderProfileEnv(
+  options: {
+    clearProviderStateWhenInactive?: boolean
+    modelToClearWhenInactive?: string
+  } = {},
+): Promise<ProviderProfile | null> {
+  // --bare is intentionally hermetic: normal application leaves caller env and
+  // saved profiles untouched. Explicit OAuth cleanup is the exception: it
+  // clears stale disk routing while preserving the current process environment.
+  const bare = isBareMode()
+  if (bare && !options.clearProviderStateWhenInactive) return null
 
   const profiles = await loadProviderProfiles()
   const active = getActiveProviderProfile(profiles)
+  if (active && options.clearProviderStateWhenInactive) {
+    throw new Error(
+      `Provider profile "${active.name}" became active during OAuth cleanup`,
+    )
+  }
   const providerEnvKeys = [
     'CLAUDE_CODE_USE_BEDROCK',
     'CLAUDE_CODE_USE_VERTEX',
@@ -262,6 +344,24 @@ export async function applyActiveProviderProfileEnv(): Promise<ProviderProfile |
   ] as const
 
   if (!active) {
+    if (options.clearProviderStateWhenInactive) {
+      // Successful Anthropic credential installation replaces a selected
+      // third-party provider. Its inherited routing/model values must not keep
+      // winning after the profile has been deactivated. This remains opt-in so a
+      // clean CI invocation can retain caller-owned credentials.
+      if (!bare) {
+        for (const key of providerEnvKeys) {
+          delete process.env[key]
+        }
+      }
+      const persistenceError = persistProviderEnvToUserSettings(
+        {},
+        options.modelToClearWhenInactive,
+      )
+      if (persistenceError) throw persistenceError
+      return null
+    }
+
     // Strip only vars a previous profile application persisted into user
     // settings (matched by value). Caller-supplied env — e.g. CI's
     // ANTHROPIC_API_KEY — must survive: deleting it unconditionally made
@@ -275,7 +375,7 @@ export async function applyActiveProviderProfileEnv(): Promise<ProviderProfile |
         delete process.env[key]
       }
     }
-    persistProviderEnvToUserSettings({})
+    logProviderSettingsPersistenceFailure(persistProviderEnvToUserSettings({}))
     return null
   }
 
@@ -287,12 +387,41 @@ export async function applyActiveProviderProfileEnv(): Promise<ProviderProfile |
   for (const [key, value] of Object.entries(env)) {
     process.env[key] = value
   }
-  persistProviderEnvToUserSettings(env)
+  logProviderSettingsPersistenceFailure(persistProviderEnvToUserSettings(env))
   persistProviderApiKeyApprovalToGlobalConfig(env)
   return active
 }
 
-function persistProviderEnvToUserSettings(env: Record<string, string>): void {
+// The OAuth transition paths throw on a failed write because they need the
+// switch to be all-or-nothing. Routine application must not take the CLI down
+// over a malformed settings.json, but a silent drop here means the profile
+// quietly stops surviving managed-env refreshes — log instead of swallowing.
+function logProviderSettingsPersistenceFailure(error: Error | null): void {
+  if (error) {
+    logForDebugging(
+      `Failed to persist provider env to user settings: ${error.message}`,
+      { level: 'error' },
+    )
+  }
+}
+
+export async function restoreActiveProviderProfileAfterFailedTransition(): Promise<void> {
+  const active = getActiveProviderProfile(await loadProviderProfiles())
+  if (!active) return
+  if (!isBareMode()) {
+    await applyActiveProviderProfileEnv()
+    return
+  }
+  const persistenceError = persistProviderEnvToUserSettings(
+    buildProviderEnv(active),
+  )
+  if (persistenceError) throw persistenceError
+}
+
+function persistProviderEnvToUserSettings(
+  env: Record<string, string>,
+  modelToClear?: string,
+): Error | null {
   const nextEnv: Record<string, string | undefined> = {
     CLAUDE_CODE_USE_BEDROCK: undefined,
     CLAUDE_CODE_USE_VERTEX: undefined,
@@ -324,9 +453,12 @@ function persistProviderEnvToUserSettings(env: Record<string, string>): void {
 
   // Keep provider activation stable across managed env refreshes by writing
   // the active provider env into user settings.
-  updateSettingsForSource('userSettings', {
+  return updateSettingsForSource('userSettings', current => ({
     env: nextEnv as any,
-  })
+    ...(modelToClear !== undefined && current.model === modelToClear
+      ? { model: undefined }
+      : {}),
+  })).error
 }
 
 function persistProviderApiKeyApprovalToGlobalConfig(env: Record<string, string>): void {

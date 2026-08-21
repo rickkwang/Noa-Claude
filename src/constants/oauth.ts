@@ -1,34 +1,21 @@
 // @ts-nocheck
-import { isEnvTruthy } from 'src/utils/envUtils.js'
+import { getOauthConfigFileSuffix } from './oauthConfigPath.js'
 
-// Default to prod config, override with test/staging if enabled
 type OauthConfigType = 'prod' | 'staging' | 'local'
 
 function getOauthConfigType(): OauthConfigType {
-  if (process.env.USER_TYPE === 'ant') {
-    if (isEnvTruthy(process.env.USE_LOCAL_OAUTH)) {
+  switch (getOauthConfigFileSuffix(process.env, process.env.USER_TYPE === 'ant')) {
+    case '-local-oauth':
       return 'local'
-    }
-    if (isEnvTruthy(process.env.USE_STAGING_OAUTH)) {
+    case '-staging-oauth':
       return 'staging'
-    }
+    default:
+      return 'prod'
   }
-  return 'prod'
 }
 
 export function fileSuffixForOauthConfig(): string {
-  if (process.env.CLAUDE_CODE_CUSTOM_OAUTH_URL) {
-    return '-custom-oauth'
-  }
-  switch (getOauthConfigType()) {
-    case 'local':
-      return '-local-oauth'
-    case 'staging':
-      return '-staging-oauth'
-    case 'prod':
-      // No suffix for production config
-      return ''
-  }
+  return getOauthConfigFileSuffix(process.env, process.env.USER_TYPE === 'ant')
 }
 
 export const CLAUDE_AI_INFERENCE_SCOPE = 'user:inference' as const

@@ -1,6 +1,7 @@
 import { homedir } from 'os';
 import { join } from 'path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { getOauthGlobalConfigFilename } from './src/constants/oauthConfigPath.js';
 
 const pkg = JSON.parse(
   readFileSync(join(import.meta.dirname, 'package.json'), 'utf-8'),
@@ -48,6 +49,10 @@ export const DEFAULT_CACHE_DIR =
   process.env.CLAUDE_CODE_CACHE_DIR ?? join(DEFAULT_PRODUCT_DIR, 'cache');
 
 export const PRODUCT_SETTINGS_PATH = join(DEFAULT_CONFIG_DIR, 'settings.json');
+const PRODUCT_GLOBAL_CONFIG_PATH = join(
+  DEFAULT_CONFIG_DIR,
+  getOauthGlobalConfigFilename(process.env, process.env.USER_TYPE === 'ant'),
+);
 export const DEFAULT_MINIMAX_CN_BASE_URL =
   'https://api.minimaxi.com/anthropic';
 export const DEFAULT_PRODUCT_MODEL =
@@ -74,28 +79,16 @@ function ensureSettingsFile() {
   }
 }
 
-function safeReadSettingsFile() {
+function safeReadJsonFile(path, label) {
   try {
-    const raw = readFileSync(PRODUCT_SETTINGS_PATH, 'utf8').trim();
-    if (!raw) {
-      return {};
-    }
-    return JSON.parse(raw);
+    const raw = readFileSync(path, 'utf8').trim();
+    return raw ? JSON.parse(raw) : {};
   } catch (error) {
-    if (
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      error.code === 'ENOENT'
-    ) {
-      return {};
-    }
+    if (error?.code === 'ENOENT') return {};
     throw new Error(
       formatDiagnosticError(
         DIAGNOSTIC_ERROR_CODES.CONFIG_ERROR,
-        `Invalid product settings at ${PRODUCT_SETTINGS_PATH}: ${
-          typeof error?.message === 'string' ? error.message : String(error)
-        }`,
+        `Invalid ${label} at ${path}: ${error?.message ?? error}`,
       ),
     );
   }
@@ -105,27 +98,54 @@ function getSettingString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
-export function getResolvedLauncherConfig() {
-  const settings = safeReadSettingsFile();
+export function getResolvedLauncherConfig({ skipGlobalConfig = false } = {}) {
+  const settings = safeReadJsonFile(PRODUCT_SETTINGS_PATH, 'product settings');
+  const globalConfig = skipGlobalConfig
+    ? {}
+    : safeReadJsonFile(PRODUCT_GLOBAL_CONFIG_PATH, 'product config');
+  // Older installs predate launcherProvider. Preserve their authenticated
+  // first-party route until the next successful login/logout writes an
+  // explicit marker; thereafter oauthAccount is no longer consulted.
+  const persistedLauncherProvider = globalConfig?.launcherProvider;
+  if (
+    persistedLauncherProvider !== undefined &&
+    persistedLauncherProvider !== 'anthropic' &&
+    persistedLauncherProvider !== 'product-default'
+  ) {
+    throw new Error(
+      formatDiagnosticError(
+        DIAGNOSTIC_ERROR_CODES.CONFIG_ERROR,
+        `Invalid launcherProvider in ${PRODUCT_GLOBAL_CONFIG_PATH}`,
+      ),
+    );
+  }
+  const launcherProvider =
+    persistedLauncherProvider === 'anthropic' ||
+    (persistedLauncherProvider === undefined && globalConfig?.oauthAccount)
+      ? 'anthropic'
+      : 'product-default';
   const settingsEnv =
     settings && typeof settings === 'object' && settings.env && typeof settings.env === 'object'
       ? settings.env
       : {};
 
-  const apiBaseUrl =
+  const configuredBaseUrl =
     getSettingString(settingsEnv.ANTHROPIC_BASE_URL) ??
-    process.env.ANTHROPIC_BASE_URL ??
-    DEFAULT_MINIMAX_CN_BASE_URL;
+    getSettingString(process.env.ANTHROPIC_BASE_URL);
   const apiKey =
     getSettingString(settingsEnv.ANTHROPIC_API_KEY) ??
-    process.env.ANTHROPIC_API_KEY;
+    getSettingString(process.env.ANTHROPIC_API_KEY);
   const authToken =
     getSettingString(settingsEnv.ANTHROPIC_AUTH_TOKEN) ??
-    process.env.ANTHROPIC_AUTH_TOKEN;
+    getSettingString(process.env.ANTHROPIC_AUTH_TOKEN);
+  const useProductDefaults = launcherProvider !== 'anthropic';
+  const apiBaseUrl =
+    configuredBaseUrl ??
+    (useProductDefaults ? DEFAULT_MINIMAX_CN_BASE_URL : undefined);
   const model =
     getSettingString(settings.model) ??
-    process.env.ANTHROPIC_MODEL ??
-    DEFAULT_PRODUCT_MODEL;
+    getSettingString(process.env.ANTHROPIC_MODEL) ??
+    (useProductDefaults ? DEFAULT_PRODUCT_MODEL : undefined);
 
   return {
     apiBaseUrl,
@@ -134,11 +154,15 @@ export function getResolvedLauncherConfig() {
     model,
     settings,
     settingsEnv,
+    launcherProvider,
   };
 }
 
-export function validateLauncherConfiguration(argv = process.argv) {
-  const { apiBaseUrl, apiKey, authToken } = getResolvedLauncherConfig();
+export function validateLauncherConfiguration(
+  argv = process.argv,
+  resolved = getResolvedLauncherConfig(),
+) {
+  const { apiBaseUrl, apiKey, authToken, launcherProvider } = resolved;
   const commandLine = argv.slice(2);
   const isNonInteractive =
     commandLine.includes('-p') || commandLine.includes('--print');
@@ -148,15 +172,17 @@ export function validateLauncherConfiguration(argv = process.argv) {
     commandLine.includes('-v') ||
     commandLine.includes('--version');
 
-  try {
-    new URL(apiBaseUrl);
-  } catch (error) {
-    throw new Error(
-      formatDiagnosticError(
-        DIAGNOSTIC_ERROR_CODES.CONFIG_ERROR,
-        `Invalid ANTHROPIC_BASE_URL in ${PRODUCT_SETTINGS_PATH}: ${error?.message ?? error}`,
-      ),
-    );
+  if (apiBaseUrl) {
+    try {
+      new URL(apiBaseUrl);
+    } catch (error) {
+      throw new Error(
+        formatDiagnosticError(
+          DIAGNOSTIC_ERROR_CODES.CONFIG_ERROR,
+          `Invalid ANTHROPIC_BASE_URL in ${PRODUCT_SETTINGS_PATH}: ${error?.message ?? error}`,
+        ),
+      );
+    }
   }
 
   if (apiKey?.includes('<SECRET_TOKEN_PLACEHOLDER>')) {
@@ -177,7 +203,22 @@ export function validateLauncherConfiguration(argv = process.argv) {
     );
   }
 
-  if (!isInfoOnly && isNonInteractive && !apiKey && !authToken) {
+  if (authToken && !apiBaseUrl) {
+    throw new Error(
+      formatDiagnosticError(
+        DIAGNOSTIC_ERROR_CODES.AUTH_ERROR,
+        'ANTHROPIC_AUTH_TOKEN requires ANTHROPIC_BASE_URL; refusing to guess a destination for a Bearer credential.',
+      ),
+    );
+  }
+
+  if (
+    !isInfoOnly &&
+    isNonInteractive &&
+    !apiKey &&
+    !authToken &&
+    launcherProvider !== 'anthropic'
+  ) {
     throw new Error(
       formatDiagnosticError(
         DIAGNOSTIC_ERROR_CODES.AUTH_ERROR,
@@ -187,7 +228,7 @@ export function validateLauncherConfiguration(argv = process.argv) {
   }
 }
 
-export function applyLauncherDefaults() {
+export function applyLauncherDefaults(options = {}) {
   ensureDirectory(DEFAULT_CONFIG_DIR);
   ensureDirectory(DEFAULT_CACHE_DIR);
   ensureSettingsFile();
@@ -200,15 +241,21 @@ export function applyLauncherDefaults() {
   process.env.CLAUDE_AGENT_ENABLE_OFFICIAL_MARKETPLACE ??= '1';
   process.env.CLAUDE_AGENT_ENABLE_OFFICIAL_MARKETPLACE_GCS ??= '1';
 
-  const { apiBaseUrl, apiKey, authToken, model } = getResolvedLauncherConfig();
-  process.env.ANTHROPIC_BASE_URL = apiBaseUrl;
-  process.env.ANTHROPIC_MODEL = model;
+  const resolved = getResolvedLauncherConfig(options);
+  const { apiBaseUrl, apiKey, authToken, model } = resolved;
+  if (apiBaseUrl) {
+    process.env.ANTHROPIC_BASE_URL = apiBaseUrl;
+  }
+  if (model) {
+    process.env.ANTHROPIC_MODEL = model;
+  }
   if (apiKey) {
     process.env.ANTHROPIC_API_KEY = apiKey;
   }
   if (authToken) {
     process.env.ANTHROPIC_AUTH_TOKEN = authToken;
   }
+  return resolved;
 }
 
 /**

@@ -9,10 +9,6 @@ import { Dialog } from '../../components/design-system/Dialog.js';
 import { useMainLoopModel } from '../../hooks/useMainLoopModel.js';
 import { Text } from '../../ink.js';
 import type { LocalJSXCommandOnDone } from '../../types/command.js';
-import {
-  applyActiveProviderProfileEnv,
-  deactivateAllProviderProfiles,
-} from '../../utils/providerProfile.js';
 import { onProviderSwitch } from '../../utils/providerSwitch.js';
 import { getLoginStartingMessage, getLoginSuccessMessage, isEnvOAuthTokenSet } from './envTokenWarning.js';
 type LoginCompletion = ConsoleOAuthFlowResult | {
@@ -20,10 +16,9 @@ type LoginCompletion = ConsoleOAuthFlowResult | {
 };
 export async function call(onDone: LocalJSXCommandOnDone, context: LocalJSXCommandContext): Promise<React.ReactNode> {
   const startingMessage = getLoginStartingMessage();
-  // Snapshot bare presence, not the full predicate: applyActiveProviderProfileEnv()
-  // below drops the provider env vars, so a session that started on a third-party
-  // provider becomes one the env token decides. getLoginSuccessMessage re-checks
-  // the rest at completion time.
+  // Snapshot bare presence, not the full predicate: the shared OAuth installer
+  // drops provider env vars before completion, so getLoginSuccessMessage must
+  // re-check whether the env token becomes authoritative afterward.
   const envTokenWasSet = isEnvOAuthTokenSet();
   return <Login startingMessage={startingMessage} onDone={async result => {
     if (result.type === 'cancel') {
@@ -31,16 +26,6 @@ export async function call(onDone: LocalJSXCommandOnDone, context: LocalJSXComma
       return;
     }
     const isProviderSetup = result.type === 'provider-setup'
-    if (!isProviderSetup) {
-      // Standard OAuth login: deactivate any active 3P provider profile so the
-      // new OAuth token takes effect. applyActiveProviderProfileEnv with no
-      // active profile clears ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN etc.
-      // Under --bare the apply is a no-op by design: the caller's env stays
-      // authoritative this session and the new token only matters once a
-      // non-bare session picks it up.
-      await deactivateAllProviderProfiles()
-      await applyActiveProviderProfileEnv()
-    }
     if (!isProviderSetup) {
       // Trusted device enrollment is Anthropic-specific; skip for 3P providers.
       clearTrustedDeviceToken();
