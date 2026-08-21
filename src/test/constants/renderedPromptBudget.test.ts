@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, expect, test } from 'bun:test'
+import { afterAll, expect, test } from 'bun:test'
+import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,100 +14,94 @@ const ENV_KEYS = [
   'NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT',
   'CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT',
   'NOA_CLAUDE_THIRD_PARTY_PROMPT_POLICY',
-  'CLAUDE_CONFIG_DIR',
+  'CLAUDE_CODE_SIMPLE',
 ] as const
-const originalEnv = Object.fromEntries(
-  ENV_KEYS.map(key => [key, process.env[key]]),
-)
-const originalApiKey = process.env.ANTHROPIC_API_KEY
-const isolatedConfigDir = mkdtempSync(join(tmpdir(), 'noa-prompt-budget-'))
-type MacroGlobals = typeof globalThis & {
-  MACRO?: {
-    VERSION: string
-    DISPLAY_VERSION: string
-    BUILD_TIME: string
-    PACKAGE_URL: string
-  }
-}
-const globals = globalThis as MacroGlobals
-const originalMacro = globals.MACRO
 
-beforeAll(() => {
-  for (const key of ENV_KEYS) delete process.env[key]
-  process.env.ANTHROPIC_API_KEY = 'sk-ant-test'
-  process.env.CLAUDE_CONFIG_DIR = isolatedConfigDir
-})
+const isolatedConfigDir = mkdtempSync(join(tmpdir(), 'noa-prompt-budget-'))
+// Two halves have to be isolated, not one. CLAUDE_CONFIG_DIR covers the user
+// settings cascade; the project half (settings, skills, agents, output style)
+// is keyed off cwd, so rendering from the repo root would count whatever
+// .noa/settings*.json the developer happens to have as prompt growth.
+//
+// Out-of-process because the cwd seam is global mutable state: setCwdState /
+// setOriginalCwd for the duration of this file poisons memoized git-root
+// lookups for every test file that runs after it in the same bun process.
+const isolatedProjectDir = mkdtempSync(join(tmpdir(), 'noa-prompt-budget-cwd-'))
 
 afterAll(() => {
-  for (const key of ENV_KEYS) {
-    const value = originalEnv[key]
-    if (value === undefined) delete process.env[key]
-    else process.env[key] = value
-  }
-  if (originalApiKey === undefined) delete process.env.ANTHROPIC_API_KEY
-  else process.env.ANTHROPIC_API_KEY = originalApiKey
-  if (originalMacro === undefined) delete globals.MACRO
-  else globals.MACRO = originalMacro
   rmSync(isolatedConfigDir, { recursive: true, force: true })
+  rmSync(isolatedProjectDir, { recursive: true, force: true })
 })
 
-async function render(model: string, baseUrl?: string) {
-  if (baseUrl) process.env.ANTHROPIC_BASE_URL = baseUrl
-  else delete process.env.ANTHROPIC_BASE_URL
-  globals.MACRO ??= {
-    VERSION: '0',
-    DISPLAY_VERSION: '0',
-    BUILD_TIME: '',
-    PACKAGE_URL: '',
-  }
-  const [
-    { enableConfigs },
-    { getAllBaseTools },
-    { getDefaultAppState },
-    { getSystemPrompt },
-    { clearSystemPromptSections },
-    { toolToAPISchema },
-    { clearToolSchemaCache },
-  ] = await Promise.all([
-    import('../../utils/config.js'),
-    import('../../tools.js'),
-    import('../../state/AppStateStore.js'),
-    import('../../constants/prompts.js'),
-    import('../../constants/systemPromptSections.js'),
-    import('../../utils/api.js'),
-    import('../../utils/toolSchemaCache.js'),
-  ])
-  enableConfigs()
-  clearSystemPromptSections()
-  clearToolSchemaCache()
-  const tools = getAllBaseTools().filter(tool => tool.name !== 'TestingPermission')
-  const permissionContext = getDefaultAppState().toolPermissionContext
-  const system = (await getSystemPrompt(tools, model)).join('\n')
-  const schemas = await Promise.all(
-    tools.map(tool =>
-      toolToAPISchema(tool, {
-        getToolPermissionContext: async () => permissionContext,
-        tools,
-        agents: [],
-        model,
-      }),
-    ),
-  )
-  const toolJson = JSON.stringify(schemas)
-  const budget = {
-    system: system.length,
-    tools: toolJson.length,
-    total: system.length + toolJson.length,
-  }
-  clearSystemPromptSections()
-  clearToolSchemaCache()
-  return budget
+const RENDER_SCRIPT = `
+const repo = process.env.NOA_PROMPT_BUDGET_REPO
+globalThis.MACRO = {
+  VERSION: '0',
+  DISPLAY_VERSION: '0',
+  BUILD_TIME: '',
+  PACKAGE_URL: '',
+}
+const [
+  { enableConfigs },
+  { getAllBaseTools },
+  { getDefaultAppState },
+  { getSystemPrompt },
+  { toolToAPISchema },
+] = await Promise.all([
+  import(repo + '/src/utils/config.js'),
+  import(repo + '/src/tools.js'),
+  import(repo + '/src/state/AppStateStore.js'),
+  import(repo + '/src/constants/prompts.js'),
+  import(repo + '/src/utils/api.js'),
+])
+enableConfigs()
+const model = process.env.NOA_PROMPT_BUDGET_MODEL
+const tools = getAllBaseTools().filter(tool => tool.name !== 'TestingPermission')
+const permissionContext = getDefaultAppState().toolPermissionContext
+const system = (await getSystemPrompt(tools, model)).join('\\n')
+const schemas = await Promise.all(
+  tools.map(tool =>
+    toolToAPISchema(tool, {
+      getToolPermissionContext: async () => permissionContext,
+      tools,
+      agents: [],
+      model,
+    }),
+  ),
+)
+const toolJson = JSON.stringify(schemas)
+console.log(JSON.stringify({
+  system: system.length,
+  tools: toolJson.length,
+  total: system.length + toolJson.length,
+}))
+`
+
+function render(
+  model: string,
+  baseUrl?: string,
+): { system: number; tools: number; total: number } {
+  const result = spawnSync('bun', ['--eval', RENDER_SCRIPT], {
+    cwd: isolatedProjectDir,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      ...Object.fromEntries(ENV_KEYS.map(key => [key, undefined])),
+      CLAUDE_CONFIG_DIR: isolatedConfigDir,
+      ANTHROPIC_API_KEY: 'sk-ant-test',
+      ANTHROPIC_BASE_URL: baseUrl,
+      NOA_PROMPT_BUDGET_REPO: process.cwd(),
+      NOA_PROMPT_BUDGET_MODEL: model,
+    } as NodeJS.ProcessEnv,
+  })
+  if (result.status !== 0) throw new Error(result.stderr)
+  return JSON.parse(result.stdout)
 }
 
-test('base system prompt and built-in tool matrix stays within model-aware budgets', async () => {
-  const verbose = await render('claude-sonnet-4-6')
-  const lean = await render('claude-opus-5')
-  const thirdParty = await render('claude-opus-5', 'https://third-party.invalid')
+test('base system prompt and built-in tool matrix stays within model-aware budgets', () => {
+  const verbose = render('claude-sonnet-4-6')
+  const lean = render('claude-opus-5')
+  const thirdParty = render('claude-opus-5', 'https://third-party.invalid')
   expect(verbose.total).toBeLessThanOrEqual(130_000)
   expect(lean.total).toBeLessThanOrEqual(85_000)
   expect(thirdParty.total).toBeLessThanOrEqual(130_000)
