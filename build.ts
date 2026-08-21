@@ -418,20 +418,24 @@ try {
     plugins: [dedupeReactPlugin, stubPlugin],
   })
 
+  // Bun.build throws an AggregateError on build errors instead of returning
+  // success: false, so this guard and its siblings below are defensive. They
+  // still throw rather than process.exit(), which would skip the finally block
+  // that undoes the in-place feature('X') rewrites and leave the source tree
+  // modified for the next build to read.
   if (!result.success) {
     console.error('Build failed:')
     for (const log of result.logs) {
       console.error(log)
     }
-    process.exit(1)
+    throw new Error('Bundle build failed')
   }
 
   // Bun.build writes to outdir, but we need a single outfile name.
   // Find the output file and rename if needed.
   const outputFile = result.outputs.find(o => o.kind === 'entry-point')
   if (!outputFile) {
-    console.error('No entry-point output found')
-    process.exit(1)
+    throw new Error('No entry-point output found')
   }
 
   // If the output path doesn't match our expected outfile, copy it
@@ -489,9 +493,6 @@ try {
         minify: true,
       })
 
-      // Thrown rather than process.exit()'d: exiting here would skip the outer
-      // finally block that restores the in-place feature('X') rewrites, leaving
-      // the source tree modified.
       if (!minifyResult.success) {
         for (const log of minifyResult.logs) {
           console.error(log)
@@ -545,13 +546,12 @@ try {
       for (const log of compileResult.logs) {
         console.error(log)
       }
-      process.exit(1)
+      throw new Error('Binary compile failed')
     }
 
     const compileOutput = compileResult.outputs.find(o => o.kind === 'entry-point')
     if (!compileOutput) {
-      console.error('No compile output found')
-      process.exit(1)
+      throw new Error('No compile output found')
     }
 
     // Bun.build with compile:true emits a native binary. Use fs.rename
@@ -563,8 +563,7 @@ try {
     }
 
     if (!existsSync(cliOutfile)) {
-      console.error(`Compiled binary missing: ${cliOutfile}`)
-      process.exit(1)
+      throw new Error(`Compiled binary missing: ${cliOutfile}`)
     }
     chmodSync(cliOutfile, 0o755)
     console.log(`Built standalone binary: ${cliOutfile}`)
