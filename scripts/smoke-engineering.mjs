@@ -131,13 +131,54 @@ function assertConfig() {
 }
 
 console.log('Verifying isolated config and MiniMax defaults...');
-applyLauncherDefaults();
-writeFileSync(
-  PRODUCT_SETTINGS_PATH,
-  JSON.stringify({ env: { ANTHROPIC_API_KEY: 'smoke-test-key' } }, null, 2) +
-    '\n',
+// Two reasons this step verified nothing before.
+//
+// It wrote settings with no ANTHROPIC_BASE_URL, and assertConfig only reaches
+// its MiniMax assertions when one is configured — so the branch the step is
+// named for was unreachable, and "MiniMax defaults" meant three existsSync
+// calls. Write the base URL as well.
+//
+// And product defaults are the lowest-precedence source, so an inherited
+// ANTHROPIC_MODEL or ANTHROPIC_BASE_URL outranks them — which this script hits
+// routinely, since it is usually run from inside a Noa session that exports
+// both. Drop the routing env for the duration of the check so it measures the
+// launcher's resolution instead of the developer's shell, then put it back:
+// the later steps spawn children that need the real environment.
+const ROUTING_ENV_KEYS = [
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_MODEL',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+];
+const savedRoutingEnv = Object.fromEntries(
+  ROUTING_ENV_KEYS.map(key => [key, process.env[key]]),
 );
-assertConfig();
+for (const key of ROUTING_ENV_KEYS) {
+  delete process.env[key];
+}
+try {
+  applyLauncherDefaults();
+  writeFileSync(
+    PRODUCT_SETTINGS_PATH,
+    JSON.stringify(
+      {
+        env: {
+          ANTHROPIC_API_KEY: 'smoke-test-key',
+          ANTHROPIC_BASE_URL: DEFAULT_MINIMAX_CN_BASE_URL,
+        },
+      },
+      null,
+      2,
+    ) + '\n',
+  );
+  assertConfig();
+} finally {
+  for (const key of ROUTING_ENV_KEYS) {
+    const value = savedRoutingEnv[key];
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+}
 
 console.log('Running build...');
 runCommand('bun', ['run', 'build']);
