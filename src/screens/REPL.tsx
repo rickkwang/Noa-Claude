@@ -2562,8 +2562,11 @@ export function REPL({
             setCompactProgressStartedAt(null);
             break;
           case 'compact_start':
-            setSpinnerColor('warning');
-            setSpinnerShimmerColor('warning');
+            // No color override — upstream recolors at hooks_start (blue,
+            // emitted unconditionally at the start of every compact) and
+            // compact_start intentionally leaves it in place until compact_end
+            // resets. The previous 'warning' amber also set body and shimmer
+            // to the SAME key, flattening the shimmer sweep to a no-op.
             setSpinnerMessage('Compacting conversation');
             setCompactProgressStartedAt(Date.now());
             break;
