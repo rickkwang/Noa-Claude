@@ -15,19 +15,23 @@ type Props = {
 
 // Standard-terminal pose fragments. Each row is split into segments so we can
 // vary only the parts that change (eyes, arms) while keeping the body/bg spans
-// stable. All poses end up 9 cols wide.
+// stable. Glyphs match upstream Claude Code 2.1.241: row 1 is r1L(2) + r1E(6)
+// + r1R, row 2 is r2L(2) + █████(5) + r2R(2).
 //
-// arms-up: the row-2 arm shapes (▝▜ / ▛▘) move to row 1 as their
-// bottom-heavy mirrors (▗▟ / ▙▖) — same silhouette, one row higher.
+// arms-up: the row-2 arm shapes move to row 1 — left as ▗▟, right as a lone ▄
+// (upstream is asymmetric).
 //
-// look-* use top-quadrant eye chars (▙/▟) so both eyes change from the
-// default (▛/▜, bottom pupils) — otherwise only one eye would appear to move.
+// look-* shift the eyes inside the 6-wide eye field (▛/▟ + edge █) rather
+// than swapping character types.
+//
+// wave-left/wave-right are noa-only (upstream has no wave), expressed in the
+// same segment scheme: one arm up, the other side identical to default.
 type Segments = {
   /** row 1 left (no bg): optional raised arm + side */
   r1L: string;
-  /** row 1 eyes (with bg): left-eye, forehead, right-eye */
+  /** row 1 eyes (with bg): 6-wide eye field */
   r1E: string;
-  /** row 1 right (no bg): side + optional raised arm */
+  /** row 1 right (no bg): optional raised arm */
   r1R: string;
   /** row 2 left (no bg): arm + body curve */
   r2L: string;
@@ -37,45 +41,45 @@ type Segments = {
 const POSES: Record<ClawdPose, Segments> = {
   default: {
     r1L: ' ▐',
-    r1E: '▛███▜',
-    r1R: '▌',
+    r1E: '▛███▛█',
+    r1R: '',
     r2L: '▝▜',
-    r2R: '▛▘'
+    r2R: '█▀'
   },
   'look-left': {
     r1L: ' ▐',
-    r1E: '▟███▟',
-    r1R: '▌',
+    r1E: '▟███▟█',
+    r1R: '',
     r2L: '▝▜',
-    r2R: '▛▘'
+    r2R: '█▀'
   },
   'look-right': {
     r1L: ' ▐',
-    r1E: '▙███▙',
-    r1R: '▌',
+    r1E: '█▟███▟',
+    r1R: '',
     r2L: '▝▜',
-    r2R: '▛▘'
+    r2R: '█▀'
   },
   'arms-up': {
     r1L: '▗▟',
-    r1E: '▛███▜',
-    r1R: '▙▖',
+    r1E: '▛███▛█',
+    r1R: '▄',
     r2L: ' ▜',
-    r2R: '▛ '
+    r2R: '█▘'
   },
   'wave-left': {
     r1L: '▗▟',
-    r1E: '▛███▜',
-    r1R: '▌',
+    r1E: '▛███▛█',
+    r1R: '',
     r2L: ' ▜',
-    r2R: '▛▘'
+    r2R: '█▀'
   },
   'wave-right': {
     r1L: ' ▐',
-    r1E: '▛███▜',
-    r1R: '▙▖',
+    r1E: '▛███▛█',
+    r1R: '▄',
     r2L: '▝▜',
-    r2R: '▛ '
+    r2R: '█▘'
   }
 };
 
@@ -183,7 +187,7 @@ export function Clawd(t0) {
   }
   let t11;
   if ($[22] === Symbol.for("react.memo_cache_sentinel")) {
-    t11 = <Text color="clawd_body">{"  "}▘▘ ▝▝{"  "}</Text>;
+    t11 = <Text color="clawd_body">{"  "}▝▝ ▝▝{"  "}</Text>;
     $[22] = t11;
   } else {
     t11 = $[22];
