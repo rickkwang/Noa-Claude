@@ -1,5 +1,6 @@
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -403,6 +404,10 @@ for (const [key, value] of Object.entries(defines)) {
   defineEntries[key] = value
 }
 
+// Staged copy of the pre-minify bundle, consumed by the compile pass below.
+// Hoisted so the finally block can clean it up when a build throws in between.
+let compileSource: string | null = null
+
 try {
   const result = await Bun.build({
     entrypoints: ['./src/main.tsx'],
@@ -468,6 +473,19 @@ try {
     console.log(`Build complete: ${outfile}`)
   }
 
+  // The compile pass below needs the bundle as it is *right now*, before the
+  // minify pass rewrites it in place: feeding Bun's minified output back
+  // through `compile: true` mis-hoists a binding, and the binary dies on the
+  // first real command with "Cannot access 'X' before initialization" while
+  // `-h`/`--version` still work. The same corruption reproduces on a plain
+  // non-bytecode ESM compile, so it predates the bytecode work — `bun run
+  // compile` has been emitting broken binaries. Minifying inside the compile
+  // pass instead produces a working binary of the same size.
+  if (compile) {
+    compileSource = join(outDir, `.compile-src-${process.pid}.js`)
+    copyFileSync(resolve(expectedPath), compileSource)
+  }
+
   // Startup cost is dominated by JSC pre-parsing the bundle, and that scales
   // with bytes: shrinking identifiers takes dist/main.js from ~25MB to ~13MB
   // and ~55ms off every launch. Whitespace/syntax minification alone buys
@@ -530,16 +548,33 @@ try {
   )
   wroteBundleMetadata = true
 
-  if (compile) {
+  if (compileSource) {
+    // A plain compiled binary starts no faster than the bundle (measured: both
+    // ~0.28s for `-h`) — the win is `bytecode: true`, which moves JSC's parse
+    // of the bundle off the launch path: ~0.28s -> ~0.12s, matching upstream.
     const compileResult = await Bun.build({
-      entrypoints: [bundleOutfile],
+      entrypoints: [compileSource],
       target: 'bun',
       format: 'esm',
       outdir: dirname(resolve(cliOutfile)),
       external: externals,
       plugins: [dedupeReactPlugin, stubPlugin],
       compile: true,
+      bytecode: true,
+      // Same reason dist/main.js stays unminified in dev builds: real names in
+      // stack traces.
+      minify: !dev,
     })
+
+    // Bun reports success even when the .jsc step fails (oven-sh/bun#15528),
+    // which would silently ship a binary without the startup win.
+    const bytecodeFailure = compileResult.logs.find(log =>
+      String(log?.message ?? log).includes('bytecode'),
+    )
+    if (bytecodeFailure) {
+      console.error(bytecodeFailure)
+      throw new Error('Bytecode generation failed')
+    }
 
     if (!compileResult.success) {
       console.error('Compile failed:')
@@ -571,6 +606,9 @@ try {
 } finally {
   // Always restore source files, even if Bun.build() throws
   restoreModifiedFiles()
+  if (compileSource) {
+    rmSync(compileSource, { force: true })
+  }
   if (wroteBundleMetadata) {
     const touchedAt = new Date()
     for (const generatedPath of [outfile, metadataOutfile]) {
@@ -581,5 +619,18 @@ try {
   }
   if (numModified > 0) {
     console.log(`  🔄 feature-flags: pre-processed ${numModified} files (restored)`)
+  }
+  // A build without --compile leaves dist/cli behind at its old revision, and
+  // nothing at run time detects that — anyone whose `noa` points at the binary
+  // silently keeps running the previous build.
+  if (
+    !compile &&
+    existsSync(cliOutfile) &&
+    existsSync(outfile) &&
+    statSync(cliOutfile).mtimeMs < statSync(outfile).mtimeMs
+  ) {
+    console.warn(
+      `  ⚠️  ${cliOutfile} is now older than ${outfile}; run \`bun run compile${dev ? ':dev' : ''}\` to refresh the binary`,
+    )
   }
 }
