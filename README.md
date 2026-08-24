@@ -72,6 +72,8 @@ The product baseline is `/fork`, `/workflows`, `/summary`, and `/share` (smoke-c
 - `/tag` — Tag the current session for quick lookup
 - `/summary` — Generate structured session summaries
 - `/share` — Export share snapshots under `.noa/shares`
+- `/rewind` (alias `/checkpoint`) — Restore the code and/or conversation to a previous point
+- `/goal` — Set a long-running objective that survives turns: auto-continues with turn/token limits and an optional verify command (details in [docs/operating-guide.md](docs/operating-guide.md))
 
 **Provider routing**
 - `/provider` — Switch between saved provider profiles (JSON-based, stored in `~/.noa/provider-profiles.json`)
@@ -151,6 +153,8 @@ Provider profiles enable saved configurations for providers like Kimi, MiniMax, 
 
 - **Multi-Provider Support** — OpenAI-compatible, AWS Bedrock, Google Vertex, Microsoft Foundry, and Anthropic's first-party API.
 - **Sub-Agent Orchestration** — Assign different models to different agents via `settings.json` (`agentModels`, `agentRouting`).
+- **Checkpoints** — `/rewind` restores both code and conversation state to a previous point, not just the chat transcript.
+- **Long-running Goals** — `/goal` keeps an objective alive across turns with an evaluator loop, auto-continue limits, token budgets, and an optional shell verify command.
 - **MCP Tool Compaction** — MCP tool results (`mcp__<server>__<tool>`) are always compactable, often cutting token use on MCP-heavy sessions.
 - **128k Fallback** — Unknown OpenAI-compatible models use a conservative 128k context window to prevent compact threshold underestimation.
 - **Auto-fix Hook** — After file edits, automatically run configurable lint/test commands (configured in `settings.json` under `autoFix`).

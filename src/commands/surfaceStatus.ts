@@ -96,6 +96,26 @@ const implementedNonBaseline: CommandSurfaceEntry[] = [
     upgradeCondition:
       'Promote after de-gating and stable UX semantics across auth types.',
   },
+  {
+    command: '/rewind',
+    category: 'implemented-non-baseline',
+    discoverability: 'visible',
+    supportsNonInteractive: false,
+    reason:
+      'Restores code and conversation to a previous checkpoint; differentiates from transcript-only resume.',
+    upgradeCondition:
+      'Promote only with end-to-end restore tests across dirty worktree states and a baseline-value justification.',
+  },
+  {
+    command: '/goal',
+    category: 'implemented-non-baseline',
+    discoverability: 'visible',
+    supportsNonInteractive: null,
+    reason:
+      'Long-running objective tracking with evaluator loop, auto-continue limits, and verify command.',
+    upgradeCondition:
+      'Promote after goal-state recovery smoke covers resume/compact interplay and budget edge cases.',
+  },
 ]
 
 const buildExcluded: CommandSurfaceEntry[] = [

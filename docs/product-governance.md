@@ -37,6 +37,8 @@ These commands are callable, but they are not core product workflows:
 - `/cache-probe`
 - `/wiki`
 - `/provider`
+- `/rewind`
+- `/goal`
 
 Policy:
 
@@ -57,6 +59,8 @@ Tracked surfaces:
 - `/cache-probe`
 - `/wiki`
 - `/provider`
+- `/rewind`
+- `/goal`
 
 ### Build-Excluded
 

@@ -364,6 +364,24 @@ async function runCommandSurfaceSmoke() {
       { available: [...names].sort() },
     );
   }
+
+  // Implemented non-baseline commands must stay discoverable — they are
+  // callable surfaces, and losing registration silently would drift the
+  // governance docs. /rate-limit-options is exempt: it is subscriber/runtime
+  // gated and absent without a subscriber auth context in this harness.
+  const runtimeGatedNonBaseline = new Set(['rate-limit-options']);
+  const nonBaselineCommands = surfaceStatus
+    .getCommandSurfacesByCategory('implemented-non-baseline')
+    .map(entry => entry.command.replace('/', ''))
+    .filter(commandName => !runtimeGatedNonBaseline.has(commandName));
+
+  for (const commandName of nonBaselineCommands) {
+    assert(
+      names.has(commandName),
+      `Implemented non-baseline /${commandName} must be discoverable from command loader`,
+      { available: [...names].sort() },
+    );
+  }
 }
 
 function runBuildExcludedContractSmoke() {

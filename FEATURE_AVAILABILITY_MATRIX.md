@@ -43,6 +43,8 @@ Last updated: 2026-08-07
 | `/cache-probe` | Available | Probe API cache hit rate by sending identical requests and comparing `cached_tokens` values. |
 | `/wiki` | Available | Project documentation management via `init`, `status`, `ingest` subcommands. |
 | `/provider` | Available | Manage named provider configurations (create, list, switch, delete profiles). |
+| `/rewind` | Available | Restore code and conversation to a previous checkpoint (alias `/checkpoint`); interactive only. |
+| `/goal` | Available | Long-running objective with evaluator loop, auto-continue limits, token budget, and optional verify command. |
 
 ## Slash Commands: Product-Available
 | Command | Status | Notes |

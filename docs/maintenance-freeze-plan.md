@@ -85,6 +85,16 @@ Only unfreeze for a specific scoped change when all of these are true:
 - `README.md`, `FEATURE_AVAILABILITY_MATRIX.md`, and `docs/product-governance.md` are updated in the same change.
 - Dedicated smoke coverage exists for the promoted surface.
 
+## Scoped Unfreeze Log
+
+### 2026-08-24 — Register `/rewind` and `/goal` as implemented non-baseline
+
+- **Scope**: governance registration and smoke coverage only. No new runtime surface; both commands already shipped and are unchanged by this decision.
+- **Written reason**: `/rewind` (code + conversation checkpoint restore) and `/goal` (long-running objective loop with evaluator/verify) are shipped, user-visible capabilities that were untracked by governance — a documentation-drift risk (freeze priority 5). Registration is documentation alignment, not surface expansion.
+- **Owner**: repo maintainer.
+- **Validation path**: `smoke:features` asserts both commands stay discoverable in the command loader; `check:docs` keeps matrix/governance/README consistent with `src/commands/surfaceStatus.ts`.
+- **Baseline boundary**: unchanged. Both register as `implemented-non-baseline`; promotion to baseline requires a separate unfreeze decision per the criteria above.
+
 ## Review Checklist
 
 - Does this change preserve the current baseline boundary?
