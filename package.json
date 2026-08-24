@@ -37,6 +37,7 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "check:quality": "bun run typecheck && bun run check:docs",
+    "check:nocheck": "node ./scripts/check-nocheck-ratchet.mjs",
     "lint": "echo \"lint alias: running quality checks (typecheck + docs consistency)\" && bun run check:quality"
   },
   "dependencies": {

@@ -40,6 +40,9 @@ jobs:
       - name: Quality checks
         run: bun run check:quality
 
+      - name: @ts-nocheck ratchet (debt may only shrink)
+        run: bun run check:nocheck
+
       - name: Runtime health
         run: bun run check:runtime
 
