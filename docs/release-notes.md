@@ -1,5 +1,35 @@
 # Release Notes
 
+## 1.10.0
+
+### New Features
+
+- **Proactive and Concise output styles ported from upstream 2.1.237** — both style prompts and their one-line reminders are verbatim transcriptions diffed byte-for-byte against the installed upstream binary, digest-pinned in tests and registered in `verify:ports`. With them comes `turnReminder`, new machinery: a non-default style's one-liner now rides on the per-turn `output_style` attachment ("<Name> output style is active. <reminder>"), read off the attachment only — never off the built-in config, so a custom style file shadowing a built-in name can't get the built-in one-liner injected under its own prompt. Styles without a reminder (Explanatory, Learning) keep the previous generic sentence.
+- **The launcher routes by an explicit provider marker** — this fork ships MiniMax as its product default and previously applied that default unconditionally, overwriting `ANTHROPIC_BASE_URL`/`ANTHROPIC_MODEL` on every start, so an Anthropic login held only for the current process. The routing decision is now persisted as `launcherProvider` in the global config (written after credentials actually persist, reset on logout; unknown values are a hard config error), and the launcher applies product defaults only when the marker is not `'anthropic'`. Installs predating the marker keep their authenticated route via `oauthAccount` presence until the next login/logout. Consequences: `ANTHROPIC_AUTH_TOKEN` without an explicit `ANTHROPIC_BASE_URL` is now an error (a Bearer credential intended for another host was previously sent to MiniMax by default); login/logout run under a config-dir lock and provider-profiles.json mutations under a file lock; third-party profile deactivation is transactional and moves into the shared installer so the headless SDK login path gets it too.
+
+### Bug Fixes
+
+- **`bun run compile` emits working binaries again** — feeding the minified bundle back through `compile: true` mis-hoisted a binding and the binary died on the first real command with "Cannot access 'X' before initialization". The compile pass now stages a pre-minify copy and minifies inside it, which also enables Bun bytecode caching (0.28s → 0.12s launch). The build fails loudly when the `.jsc` step errors (bun#15528 reports success anyway) and warns when a plain build leaves `dist/cli` stale; it also throws instead of `process.exit` so the feature-flag rewrite always restores the source tree.
+- **`ANTHROPIC_AUTH_TOKEN` accepted as a CI credential** — under CI, the API-key guard threw unless `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` was set, ignoring the Bearer token third-party providers authenticate with, so any CI run using one died before its first request (including our own live smoke). It now satisfies the requirement the same way the OAuth token does.
+- **Caller env preserved when no provider profile is active** — `applyActiveProviderProfileEnv` deleted `ANTHROPIC_API_KEY` and friends unconditionally, even with no profiles configured; under `CI=true` the auth guard then threw before `--print` request handling. Only keys whose value matches what a previous profile application persisted are stripped now.
+- **Mid-session output-style switches actually take effect** — the `output_style` system-prompt section was memoized under a bare name living until `/clear` or `/compact`, so switching styles via `/config` kept serving the first turn's section — and when the first turn ran on `default` that section is null, so the model got a per-turn reminder announcing a style whose guidelines were never sent. The section is now keyed by style name (a deliberate departure; upstream keys it bare and carries the same gap). Also: built-in style classification used `in`, which walks the prototype chain, so a custom style named `toString.md` was treated as built-in; now `Object.hasOwn`, as upstream does.
+- **Compact spinner no longer recolored amber** — upstream never recolors at `compact_start` (the blue pair set at `hooks_start` stays until `compact_end`), and the amber override pointed body and shimmer at the same `warning` key, flattening the shimmer sweep to a no-op.
+- **Clawd glyphs aligned with upstream 2.1.241** — 6-wide eye field with an empty r1R, look-right shifts eyes inside the field instead of swapping chars, arms-up uses the asymmetric ▄ right arm, and the standard-terminal feet row is ▝▝ ▝▝ (Noa had copied the Apple Terminal variant). The noa-only wave poses are re-expressed in the same segment scheme; animation sequences unchanged.
+
+### Changed
+
+- **~100ms faster startup** — profiling `noa -h` (0.39s vs upstream's 0.11s) put ~110ms in JSC pre-parsing the 25MB bundle, with top-level evaluation spread flat across 2055 modules (largest single module 5.4ms — no hotspot to lazy-load). The production bundle now gets a second, identifier-minifying pass (25MB → 12.7MB, ~55ms; whitespace-only minification buys nothing measurable — the win is in the identifier table). It runs after the USER_TYPE patch rather than as `minify: true` on the first build, because the minifier would constant-fold `"external" === 'ant'` before the patch could rewrite it. Dev builds stay unminified; the runtime already expects mangled names. The launcher also stopped recursively stat'ing the whole `src/` tree on every start (~13ms), and `main.tsx`'s only top-level await became a static import — a precondition for a bytecode-cached build later. Result: 0.39s → 0.28s.
+- **`/rewind` and `/goal` registered as implemented non-baseline commands** — both shipped but were untracked by governance, a documentation-drift risk. Registration only: entries in `surfaceStatus.ts`, matrix/governance rows, README listing, and a smoke-features check that non-baseline commands stay discoverable. Baseline boundary unchanged.
+
+### Chores
+
+- **CI `@ts-nocheck` ratchet** — 1818/2029 non-test source files carry `@ts-nocheck`, so `tsc --noEmit` covers ~10% of the tree. Any PR that introduces a new unchecked file now fails with the offending paths listed; the baseline stores the full file list so swap-one-out-add-one-in is still caught. Tighten with `--update` as cleanup lands.
+- **CI hardening** — quality gates are hermetic and complete: clean Linux smoke runners supported, ripgrep installed on the live smoke runner, fail-fast with retry on the apt install step, and a dummy API key for the quality-guard check.
+
+### Tests
+
+- MiniMax defaults smoke check now actually runs (it previously didn't); the prompt budget render is isolated from project config; `mcpContextBudget` tests no longer hardcode `/private/tmp`; the new output-style fixes are covered by tests verified to fail against the pre-fix code, plus a roster tripwire that fails if a future style is added without updating the retry allowlist.
+
 ## 1.9.1
 
 ### Bug Fixes
