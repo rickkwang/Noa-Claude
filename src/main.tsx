@@ -4021,14 +4021,21 @@ async function run(): Promise<CommanderCommand> {
   }
 
   // Doctor command - check installation health
-  program.command('doctor').description('Check the health of your Noa Claude installation and settings. Note: the workspace trust dialog is skipped and stdio servers from project MCP config are spawned for health checks. Only use this command in directories you trust.').action(async () => {
-    const [{
-      doctorHandler
-    }, {
-      createRoot
-    }] = await Promise.all([import('./cli/handlers/util.js'), import('./ink.js')]);
-    const root = await createRoot(getBaseRenderOptions(false));
-    await doctorHandler(root);
+  program.command('doctor').description('Check the health of your Noa Claude installation and settings. Reads local config only: no MCP servers are started and no network requests are made.').action(async () => {
+    // One renderer for both TTY and pipe. The Ink screen this replaced could not
+    // run without a TTY at all (Ink needs raw mode: it threw and printed a stack
+    // trace instead of the diagnostics, while still exiting 0), and keeping two
+    // renderers meant the same command reported different fields depending on
+    // where its output went. Every source the screen read turned out to load
+    // without React, so the text path is not a reduced version of it.
+    const {
+      renderDoctorTextReport
+    } = await import('./utils/doctorTextReport.js');
+    const {
+      text
+    } = await renderDoctorTextReport();
+    process.stdout.write(text);
+    process.exit(0);
   });
 
   // noa update

@@ -84,7 +84,12 @@ The product baseline is `/fork`, `/workflows`, `/summary`, and `/share` (smoke-c
 - `/agent` — Spawn sub-agents for parallel task execution
 
 **Verification and diagnostics**
-- `/doctor` — Diagnose installation health and configuration
+- `/doctor` (alias `/checkup`) — Agentic health check: runs read-only diagnostics
+  (install health, unused skills/MCP servers/plugins, bloated or duplicated memory
+  files, slow hooks, permission tuning) and proposes fixes behind a confirmation
+  gate. Costs tokens and needs a working model. For the static install-diagnostics
+  screen — zero tokens, no model, no network, plain text in a terminal or a pipe —
+  run `noa doctor` in a terminal.
 - `/status` — Inspect runtime state, MCP, plugins, and agents
 - `/cache-probe` — Diagnose API cache hit rate by comparing `cached_tokens` across identical requests
 - `/usage` — View token usage for current session

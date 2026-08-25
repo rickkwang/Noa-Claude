@@ -6,7 +6,7 @@ This document merges the runtime, session, worktree, agent, and progress-artifac
 
 ## Runtime Health
 
-The primary runtime inspection surfaces are `/status` and `/doctor`.
+The primary runtime inspection surfaces are `/status`, `/doctor`, and the terminal `noa doctor` subcommand (see below — `/doctor` and `noa doctor` are not the same thing).
 
 Runtime behavior switches are driven by environment variables:
 
@@ -40,17 +40,45 @@ Use `/status` to inspect current runtime state:
 - sandbox runtime compatibility
 - running/pending agent visibility from `/agents`
 
-### `/doctor`
+### `/doctor` vs `noa doctor`
 
-Use `/doctor` when something is wrong or unclear.
+Same name, two different surfaces. Pick by whether the model still works.
 
-It is intended to answer:
+`noa doctor` (terminal subcommand) prints a plain-text report and exits
+(`src/utils/doctorTextReport.ts`): installation type/path/version, platform,
+invoked binary vs `installMethod`, ripgrep state, invalid settings files, update
+permissions and channel, env-var validation, version locks, MCP config parse
+errors, agent-definition parse errors, plugin load errors, keybinding warnings,
+sandbox dependencies, CLAUDE.md and agent-description context cost, unreachable
+permission rules — then a summary line stating the issue count. No model, no
+tokens, no network (the dist-tag version lookup is short-circuited because
+`MACRO.DISTRIBUTION` is pinned to `curl`), and no MCP servers started.
 
-- is this installation healthy
-- which layer is failing
-- what action should the user take next
+It is one renderer for every context — terminal, pipe, `noa doctor > issue.txt`.
+It replaced an Ink screen that could not run without a TTY at all (Ink needs raw
+mode: in a pipe it threw and printed a stack trace instead of the diagnostics,
+while still exiting 0) and that blocked on a keypress. Every source the screen
+read has a plain module entry point, including the tool-permission context, so
+the text path is not a reduced version of it. The single thing given up is MCP
+tool-schema context cost, which needs live MCP connections: connecting them meant
+spawning every stdio server in project MCP config just to be looked at, which
+forced the command to skip the workspace-trust dialog. `/context` reports that
+cost inside a session. Exit code is 0 regardless; the issue count is in the
+summary line. Unlike the old screen it does not prune stale update locks — a
+piped invocation reports state rather than mutating it.
 
-It is part of the Noa Claude runtime inspection surface and should be read as a local installation health check.
+`/doctor` (alias `/checkup`, in-session) is an agentic prompt command: it drives
+the model through ten read-only checks — install health, unused skills/MCP
+servers/plugins, LOCAL memory dedup, derivable content in checked-in memory
+files, lazy-loading migration, slow hooks, context-heavy extensions, version,
+auto-mode default, frequently denied read-only commands — then proposes fixes
+behind a confirmation gate. It costs tokens and requires a working model, and
+Check 7 is local-only by design (no remote version comparison).
+
+Rule of thumb: reach for `noa doctor` when auth, provider routing, or startup is
+broken — it is the only diagnostic path that does not depend on the thing being
+diagnosed. Reach for `/doctor` when the install is fine but the session feels
+bloated, slow, or over-permissive.
 
 ### MCP Healthcheck Degradation
 
