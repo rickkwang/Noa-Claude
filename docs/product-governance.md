@@ -152,3 +152,11 @@ Before moving any command to baseline:
 2. Add smoke checks for discoverability and execution boundaries.
 3. Update `README.md`, `FEATURE_AVAILABILITY_MATRIX.md`, and this document in the same change.
 4. Ensure `bun run check:docs` and `bun run smoke:features` pass.
+
+## Release Checklist
+
+Before tagging a release:
+
+1. Bump `version` in `package.json` and add the `docs/release-notes.md` entry.
+2. Update the install URL in `README.md` to the new tag — it is pinned (e.g. `.../Noa-Claude/v1.10.0/install.sh`), not a moving `master` ref. `NOA_CURL_INSTALL_COMMAND` in `src/utils/distribution.ts` intentionally stays on `master` so `noa update` fetches the latest installer.
+3. Tag the release, then verify `git show <tag>:install.sh` resolves before announcing the curl install command.

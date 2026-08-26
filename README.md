@@ -11,7 +11,7 @@ Prerequisites: [Bun](https://bun.sh) and [ripgrep](https://github.com/BurntSushi
 Install with `curl`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rickkwang/Noa-Claude/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/rickkwang/Noa-Claude/v1.10.0/install.sh | bash
 ```
 
 Install from a repository checkout:
