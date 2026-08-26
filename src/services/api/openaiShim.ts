@@ -641,6 +641,13 @@ class OpenAIShimMessages {
       model: params.model,
       messages: convertMessages(params.messages, params.system),
       stream: !!params.stream,
+      // Opt out of provider-side retention/training. This is the only transport
+      // where the field exists — the Anthropic Messages API has no `store`.
+      // Same escape hatch as stream_options below: an endpoint that rejects
+      // unknown fields can drop it rather than being unusable.
+      ...(isEnvTruthy(process.env.CLAUDE_CODE_OPENAI_DISABLE_STORE)
+        ? {}
+        : { store: false }),
       // OpenAI (and OpenAI-compatible endpoints) omit token usage from the
       // streamed response unless usage reporting is explicitly requested. Without
       // this the final usage-only chunk never arrives, so cost/token tracking

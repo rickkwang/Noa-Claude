@@ -32,9 +32,8 @@ describe('/provider command', () => {
     // is the entire auth/routing contract), so the selection is only written
     // to disk. Reporting "Switched" there would claim a change that this
     // session never made.
-    expect(source).toContain('const bare = isBareMode();')
     expect(source).toMatch(
-      /bare\s*\?\s*`Saved provider \$\{profile\.name\}; not applied under --bare/,
+      /isBareMode\(\)\s*\?\s*`Saved provider \$\{profile\.name\}; not applied under --bare/,
     )
   })
 
@@ -53,6 +52,22 @@ describe('/provider command', () => {
     const source = await readSource()
     // Credentials did not change under --bare, so onProviderSwitch would
     // clear the provider caches and drop the session model for nothing.
-    expect(source).toContain('if (!bare) onProviderSwitch(context);')
+    expect(source).toContain(
+      'if (applyNow && !isBareMode()) onProviderSwitch(context);',
+    )
+  })
+
+  test('offers a way back to the Anthropic login', async () => {
+    const source = await readSource()
+    // Without this row the picker only moves between third-party profiles and
+    // /login is the sole way to deactivate one.
+    expect(source).toMatch(
+      /activeProfile\s*\?\s*\[\{ label: 'None \(clear the active provider\)', value: NO_PROVIDER_VALUE \}\]/,
+    )
+    // Deactivating clears persisted routing for the next launch.
+    expect(source).toMatch(
+      /deactivateProviderProfilesForNextLaunch\(\)/,
+    )
+    expect(source).toContain('takes effect next session')
   })
 })

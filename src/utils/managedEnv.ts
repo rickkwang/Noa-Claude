@@ -7,6 +7,7 @@ import {
   isProviderManagedEnvVar,
   SAFE_ENV_VARS,
 } from './managedEnvConstants.js'
+import { logForDebugging } from './debug.js'
 import { applyActiveProviderProfileEnv } from './providerProfile.js'
 import { clearMTLSCache } from './mtls.js'
 import { clearProxyCache, configureGlobalAgents } from './proxy.js'
@@ -15,6 +16,19 @@ import {
   getSettings_DEPRECATED,
   getSettingsForSource,
 } from './settings/settings.js'
+
+/**
+ * Provider routing is applied off the startup path. A malformed profile makes
+ * buildProviderEnv throw, which as a bare `void` became an unhandled rejection.
+ */
+function applyProviderProfileEnvInBackground(): void {
+  void applyActiveProviderProfileEnv().catch(error => {
+    logForDebugging(
+      `Failed to apply active provider profile env: ${error instanceof Error ? error.message : String(error)}`,
+      { level: 'error' },
+    )
+  })
+}
 
 /**
  * `claude ssh` remote: ANTHROPIC_UNIX_SOCKET routes auth through a -R forwarded
@@ -225,7 +239,7 @@ export function applySafeConfigEnvironmentVariables(): void {
     }
   }
 
-  void applyActiveProviderProfileEnv()
+  applyProviderProfileEnvInBackground()
 }
 
 /**
@@ -249,5 +263,5 @@ export function applyConfigEnvironmentVariables(): void {
   // Reconfigure proxy/mTLS agents to pick up any proxy env vars from settings
   configureGlobalAgents()
 
-  void applyActiveProviderProfileEnv()
+  applyProviderProfileEnvInBackground()
 }

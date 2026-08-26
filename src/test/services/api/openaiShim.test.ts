@@ -180,7 +180,6 @@ describe('openaiShim reasoning_effort translation', () => {
     expect(captured[0]!.body.reasoning_effort).toBe('high')
   })
 })
-
 describe('openaiShim stream usage', () => {
   test('streaming request asks for usage via stream_options.include_usage', async () => {
     const { client, captured } = streamingCaptureClient([
@@ -484,5 +483,42 @@ describe('openaiShim tool strict mode', () => {
     expect(new Set(params.required)).toEqual(
       new Set(['$id', '$schema', 'normal']),
     )
+  })
+})
+
+describe('retention opt-out', () => {
+  test('sends store:false on the chat/completions body', async () => {
+    const { client, captured } = captureClient()
+
+    await client.messages.create({
+      model: 'test-model',
+      max_tokens: 16,
+      messages: [{ role: 'user', content: 'hi' }],
+    })
+
+    // `store` is an OpenAI field with no Anthropic equivalent, so this
+    // transport is the only one where the privacy opt-out can be expressed.
+    expect(captured[0]?.body.store).toBe(false)
+  })
+
+  test('CLAUDE_CODE_OPENAI_DISABLE_STORE drops the field entirely', async () => {
+    const previous = process.env.CLAUDE_CODE_OPENAI_DISABLE_STORE
+    process.env.CLAUDE_CODE_OPENAI_DISABLE_STORE = '1'
+    try {
+      const { client, captured } = captureClient()
+      await client.messages.create({
+        model: 'test-model',
+        max_tokens: 16,
+        messages: [{ role: 'user', content: 'hi' }],
+      })
+      // An endpoint that 400s on unknown fields has to be able to opt out.
+      expect(captured[0]?.body).not.toHaveProperty('store')
+    } finally {
+      if (previous === undefined) {
+        delete process.env.CLAUDE_CODE_OPENAI_DISABLE_STORE
+      } else {
+        process.env.CLAUDE_CODE_OPENAI_DISABLE_STORE = previous
+      }
+    }
   })
 })

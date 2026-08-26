@@ -75,7 +75,9 @@ function ensureDirectory(path) {
 
 function ensureSettingsFile() {
   if (!existsSync(PRODUCT_SETTINGS_PATH)) {
-    writeFileSync(PRODUCT_SETTINGS_PATH, '{}\n');
+    // env.ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN land here; later writes
+    // preserve whatever mode the file is created with.
+    writeFileSync(PRODUCT_SETTINGS_PATH, '{}\n', { mode: 0o600 });
   }
 }
 

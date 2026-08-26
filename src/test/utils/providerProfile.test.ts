@@ -509,4 +509,175 @@ describe('provider profile credentials', () => {
       rmSync(configDir, { recursive: true, force: true })
     }
   })
+
+  test('keeps provider-profiles.json owner-only, repairing legacy modes', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'noa-provider-mode-'))
+    try {
+      const script = `
+        process.env.CLAUDE_CONFIG_DIR = ${JSON.stringify(configDir)}
+        const { statSync, writeFileSync, chmodSync } = await import('fs')
+        const { join } = await import('path')
+        const { addProviderProfile } = await import('./src/utils/providerProfile.ts')
+        const path = join(${JSON.stringify(configDir)}, 'provider-profiles.json')
+
+        await addProviderProfile({ name: 'Fresh', type: 'kimi', apiKey: 'sk-fresh-key' })
+        const created = statSync(path).mode & 0o777
+        if (created !== 0o600) {
+          throw new Error('new profiles file is ' + created.toString(8) + ', want 600')
+        }
+
+        // A file written by a build that predates the mode above.
+        chmodSync(path, 0o644)
+        await addProviderProfile({ name: 'Second', type: 'minimax', apiKey: 'sk-second-key' })
+        const repaired = statSync(path).mode & 0o777
+        if (repaired !== 0o600) {
+          throw new Error('legacy profiles file left at ' + repaired.toString(8))
+        }
+      `
+      const result = spawnSync('bun', ['--eval', script], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      })
+
+      if (result.status !== 0) throw new Error(result.stderr)
+      expect(result.status).toBe(0)
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  test('pins the Claude tier aliases for MiniMax as well as Kimi', () => {
+    for (const type of ['kimi', 'minimax'] as const) {
+      const env = buildProviderEnv(
+        profile({ type, model: 'single-served-model', apiKey: 'sk-token' }),
+      )
+      // Both endpoints serve exactly one model; an unpinned alias resolves to a
+      // claude-* id they do not have.
+      expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('single-served-model')
+      expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('single-served-model')
+      expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('single-served-model')
+      expect(env.CLAUDE_CODE_SUBAGENT_MODEL).toBe('single-served-model')
+    }
+  })
+
+  test('rejects any non-printable-ASCII credential, not just CJK', () => {
+    for (const bad of ['sk-\u6d4b\u8bd5key', 'sk-\u30c6\u30b9\u30c8key', 'sk-\u043a\u043b\u044e\u0447', 'sk key', 'sk-\u0007key']) {
+      expect(() =>
+        normalizeProviderProfileCredential(profile({ apiKey: bad })),
+      ).toThrow(/invalid API key/)
+    }
+    expect(
+      normalizeProviderProfileCredential(profile({ apiKey: 'sk-ABC_123-x.y+z=' }))
+        .apiKey,
+    ).toBe('sk-ABC_123-x.y+z=')
+  })
+
+  test('a partial update leaves fields it does not mention alone', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'noa-provider-partial-'))
+    try {
+      const script = `
+        process.env.CLAUDE_CONFIG_DIR = ${JSON.stringify(configDir)}
+        const { addProviderProfile, updateProviderProfile } =
+          await import('./src/utils/providerProfile.ts')
+
+        const created = await addProviderProfile({
+          name: 'Kimi', type: 'kimi', model: 'm1', apiKey: 'sk-keep-me',
+        })
+        // The setup wizard sends apiKey: undefined whenever its field is blank.
+        const updated = await updateProviderProfile(created.id, {
+          name: 'Kimi', type: 'kimi', model: 'm2', apiKey: undefined,
+        })
+        if (updated.apiKey !== 'sk-keep-me') {
+          throw new Error('partial update erased the stored key: ' + updated.apiKey)
+        }
+        if (updated.model !== 'm2') {
+          throw new Error('partial update did not apply model')
+        }
+      `
+      const result = spawnSync('bun', ['--eval', script], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      })
+
+      if (result.status !== 0) throw new Error(result.stderr)
+      expect(result.status).toBe(0)
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  test('does not carry a secret across a provider endpoint change', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'noa-provider-endpoint-key-'))
+    try {
+      const script = `
+        process.env.CLAUDE_CONFIG_DIR = ${JSON.stringify(configDir)}
+        const { addProviderProfile, updateProviderProfile } =
+          await import('./src/utils/providerProfile.ts')
+
+        const created = await addProviderProfile({
+          name: 'Shared', type: 'openai', baseUrl: 'https://old.example/v1',
+          model: 'old-model', apiKey: 'sk-old-secret',
+        })
+        const updated = await updateProviderProfile(created.id, {
+          type: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1',
+          model: 'local-model', apiKey: undefined,
+        })
+        if (updated.apiKey !== undefined) {
+          throw new Error('old key survived endpoint change')
+        }
+      `
+      const result = spawnSync('bun', ['--eval', script], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      })
+      if (result.status !== 0) throw new Error(result.stderr)
+      expect(result.status).toBe(0)
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  test('deactivates a provider for next launch without breaking the current route', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'noa-provider-next-launch-'))
+    try {
+      const script = `
+        process.env.CLAUDE_CONFIG_DIR = ${JSON.stringify(configDir)}
+        const { writeFileSync, readFileSync } = await import('fs')
+        const { join } = await import('path')
+        const m = await import('./src/utils/providerProfile.ts')
+        const created = await m.addProviderProfile({
+          name: 'MiniMax', type: 'minimax', baseUrl: 'https://api.minimax.test',
+          model: 'm', apiKey: 'sk-current',
+        })
+        await m.setActiveProviderProfile(created.id)
+        await m.applyActiveProviderProfileEnv()
+
+        await m.deactivateProviderProfilesForNextLaunch()
+
+        if (process.env.ANTHROPIC_BASE_URL !== 'https://api.minimax.test') {
+          throw new Error('current route was removed')
+        }
+        if (process.env.ANTHROPIC_AUTH_TOKEN !== 'sk-current') {
+          throw new Error('current credential was removed')
+        }
+        const profiles = JSON.parse(readFileSync(join(${JSON.stringify(configDir)}, 'provider-profiles.json'), 'utf8'))
+        if (profiles.some(profile => profile.active)) {
+          throw new Error('profile remained active on disk')
+        }
+        const settings = JSON.parse(readFileSync(join(${JSON.stringify(configDir)}, 'settings.json'), 'utf8'))
+        if (Object.keys(settings.env ?? {}).some(key => key.startsWith('ANTHROPIC_') || key.startsWith('OPENAI_'))) {
+          throw new Error('provider route remained persisted for next launch')
+        }
+      `
+      const result = spawnSync('bun', ['--eval', script], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      })
+      if (result.status !== 0) throw new Error(result.stderr)
+      expect(result.status).toBe(0)
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
 })

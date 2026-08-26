@@ -203,7 +203,8 @@ export function buildAPIProviderProperties(): Property[] {
     const providerLabel = {
       bedrock: 'AWS Bedrock',
       vertex: 'Google Vertex AI',
-      foundry: 'Microsoft Foundry'
+      foundry: 'Microsoft Foundry',
+      openaiCompatible: 'OpenAI-compatible'
     }[apiProvider];
     properties.push({
       label: 'API provider',

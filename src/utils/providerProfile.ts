@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir } from 'fs/promises'
+import { chmod, readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 import { saveGlobalConfig } from './config.js'
@@ -38,12 +38,18 @@ export interface ProviderProfile {
   model?: string
 }
 
-const PROVIDER_PROFILES_PATH = join(getClaudeConfigHomeDir(), 'provider-profiles.json')
-const INVALID_CREDENTIAL_CHARS = /[\s\u0000-\u001f\u007f\u4e00-\u9fff]/
+// Resolved per call, not at module load: CLAUDE_CONFIG_DIR is set by the
+// launcher and can be reassigned before this module is first used.
+function providerProfilesPath(): string {
+  return join(getClaudeConfigHomeDir(), 'provider-profiles.json')
+}
+// API keys are printable ASCII. Rejecting only whitespace, controls and CJK
+// let other scripts through while blocking pasted prose in one language.
+const INVALID_CREDENTIAL_CHARS = /[^\x21-\x7e]/
 
 export async function loadProviderProfiles(): Promise<ProviderProfile[]> {
   try {
-    const content = await readFile(PROVIDER_PROFILES_PATH, 'utf-8')
+    const content = await readFile(providerProfilesPath(), 'utf-8')
     return JSON.parse(content)
   } catch {
     return []
@@ -59,12 +65,16 @@ export async function saveProviderProfiles(
 async function ensureProviderProfilesFile(): Promise<void> {
   await mkdir(getClaudeConfigHomeDir(), { recursive: true })
   try {
-    await writeFile(PROVIDER_PROFILES_PATH, '[]', {
+    await writeFile(providerProfilesPath(), '[]', {
       encoding: 'utf8',
       flag: 'wx',
+      mode: 0o600,
     })
   } catch (error) {
     if ((error as { code?: string }).code !== 'EEXIST') throw error
+    // Profiles hold third-party API keys. Files created before the mode above
+    // was set are world-readable; narrow them on the next mutation.
+    await chmod(providerProfilesPath(), 0o600).catch(() => {})
   }
 }
 
@@ -74,7 +84,7 @@ async function mutateProviderProfiles<T>(
   ) => { next?: ProviderProfile[]; result: T },
 ): Promise<T> {
   await ensureProviderProfilesFile()
-  const release = await lockfile.lock(PROVIDER_PROFILES_PATH, {
+  const release = await lockfile.lock(providerProfilesPath(), {
     realpath: false,
     retries: { retries: 20, minTimeout: 5, maxTimeout: 50 },
   })
@@ -94,7 +104,7 @@ async function writeProviderProfilesUnlocked(
   profiles: ProviderProfile[],
 ): Promise<void> {
   await writeFile(
-    PROVIDER_PROFILES_PATH,
+    providerProfilesPath(),
     JSON.stringify(profiles, null, 2),
     'utf8',
   )
@@ -105,7 +115,7 @@ export async function withDeactivatedProviderProfiles<T>(
   rollback?: (deactivated: ProviderProfile | null) => Promise<void>,
 ): Promise<T> {
   await ensureProviderProfilesFile()
-  const release = await lockfile.lock(PROVIDER_PROFILES_PATH, {
+  const release = await lockfile.lock(providerProfilesPath(), {
     realpath: false,
     retries: { retries: 20, minTimeout: 5, maxTimeout: 50 },
   })
@@ -157,7 +167,21 @@ export async function updateProviderProfile(
     const index = profiles.findIndex(p => p.id === id)
     const existing = profiles[index]
     if (index === -1 || !existing) return { result: null }
-    const updated = normalizeProviderProfileCredential({ ...existing, ...updates })
+    // A key absent from `updates` and a key explicitly set to undefined must
+    // both mean "leave it alone"; spreading undefined erased stored apiKeys.
+    const provided = Object.fromEntries(
+      Object.entries(updates).filter(([, value]) => value !== undefined),
+    )
+    const endpointChanged =
+      (updates.type !== undefined && updates.type !== existing.type) ||
+      (updates.baseUrl !== undefined &&
+        getNormalizedBaseUrl({ ...existing, baseUrl: updates.baseUrl }) !==
+          getNormalizedBaseUrl(existing))
+    const merged = { ...existing, ...provided }
+    if (endpointChanged && updates.apiKey === undefined) {
+      delete merged.apiKey
+    }
+    const updated = normalizeProviderProfileCredential(merged)
     const next = [...profiles]
     next[index] = updated
     return { next, result: updated }
@@ -233,12 +257,13 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
       setEnvKey(env, 'ANTHROPIC_BASE_URL', normalizedBaseUrl)
       setEnvKey(env, 'ANTHROPIC_AUTH_TOKEN', normalizedProfile.apiKey)
       setEnvKey(env, 'ANTHROPIC_MODEL', normalizedProfile.model)
-      if (normalizedProfile.type === 'kimi') {
-        setEnvKey(env, 'ANTHROPIC_DEFAULT_OPUS_MODEL', normalizedProfile.model)
-        setEnvKey(env, 'ANTHROPIC_DEFAULT_SONNET_MODEL', normalizedProfile.model)
-        setEnvKey(env, 'ANTHROPIC_DEFAULT_HAIKU_MODEL', normalizedProfile.model)
-        setEnvKey(env, 'CLAUDE_CODE_SUBAGENT_MODEL', normalizedProfile.model)
-      }
+      // Both serve a single model, so the Claude tier aliases and the subagent
+      // model have to be pinned to it or those lookups fall back to a
+      // claude-* id the endpoint does not serve.
+      setEnvKey(env, 'ANTHROPIC_DEFAULT_OPUS_MODEL', normalizedProfile.model)
+      setEnvKey(env, 'ANTHROPIC_DEFAULT_SONNET_MODEL', normalizedProfile.model)
+      setEnvKey(env, 'ANTHROPIC_DEFAULT_HAIKU_MODEL', normalizedProfile.model)
+      setEnvKey(env, 'CLAUDE_CODE_SUBAGENT_MODEL', normalizedProfile.model)
       break
     case 'openai':
     case 'gemini':
@@ -294,6 +319,23 @@ export async function setActiveProviderProfile(
       result: activeProfile,
     }
   })
+}
+
+/**
+ * Stop loading the active profile on the next launch without tearing the
+ * current process out from under an in-flight request. The launcher baseline
+ * was overwritten when the profile was applied, so it cannot be reconstructed
+ * reliably in-process; keep this session stable and clear only persisted state.
+ */
+export async function deactivateProviderProfilesForNextLaunch(): Promise<boolean> {
+  let changed = false
+  await withDeactivatedProviderProfiles(async active => {
+    if (!active) return
+    changed = true
+    const persistenceError = persistProviderEnvToUserSettings({})
+    if (persistenceError) throw persistenceError
+  })
+  return changed
 }
 
 export async function applyActiveProviderProfileEnv(

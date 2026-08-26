@@ -1,7 +1,7 @@
 import chalk from 'chalk'
 import { exec } from 'child_process'
 import { execa, execaSync } from 'execa'
-import { mkdir, stat } from 'fs/promises'
+import { stat } from 'fs/promises'
 import memoize from 'lodash-es/memoize.js'
 import { join } from 'path'
 import { CLAUDE_AI_PROFILE_SCOPE } from 'src/constants/oauth.js'
@@ -12,6 +12,7 @@ import {
 import { getModelStrings } from 'src/utils/model/modelStrings.js'
 import {
   getAPIProvider,
+  isDirectFirstParty,
   isThirdPartyAnthropicCompatibleProvider,
 } from 'src/utils/model/providers.js'
 import {
@@ -59,7 +60,7 @@ import {
 } from './envUtils.js'
 import { errorMessage } from './errors.js'
 import { execSyncWithDefaults_DEPRECATED } from './execFileNoThrow.js'
-import * as lockfile from './lockfile.js'
+import { acquireAuthTransitionLock } from './authTransitionLock.js'
 import { logError } from './log.js'
 import { memoizeWithTTLAsync } from './memoize.js'
 import { getSecureStorage } from './secureStorage/index.js'
@@ -116,11 +117,15 @@ export function isAnthropicAuthEnabled(): boolean {
     return !!process.env.CLAUDE_CODE_OAUTH_TOKEN
   }
 
-  const is3P =
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_BEDROCK) ||
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_VERTEX) ||
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_FOUNDRY) ||
-    isThirdPartyAnthropicCompatibleProvider()
+  // Anything that is not the real first-party API: Bedrock/Vertex/Foundry, an
+  // OpenAI-compatible route, or a custom ANTHROPIC_BASE_URL. Enumerating the
+  // env flags instead used to miss CLAUDE_CODE_USE_OPENAI, leaving an
+  // OpenAI-profile session reporting itself as a claude.ai subscriber.
+  //
+  // Returning here also keeps getAnthropicApiKeyWithSource below off this path:
+  // it throws when no Anthropic credential exists anywhere, which is the normal
+  // state of a machine that only ever talks to a third-party provider.
+  if (!isDirectFirstParty()) return false
 
   // Check if user has configured an external API key source
   // This allows externally-provided API keys to work (without requiring proxy configuration)
@@ -138,15 +143,12 @@ export function isAnthropicAuthEnabled(): boolean {
   const hasExternalApiKey =
     apiKeySource === 'ANTHROPIC_API_KEY' || apiKeySource === 'apiKeyHelper'
 
-  // Disable Anthropic auth if:
-  // 1. Using 3rd party services (Bedrock/Vertex/Foundry)
-  // 2. User has an external API key (regardless of proxy configuration)
-  // 3. User has an external auth token (regardless of proxy configuration)
+  // Disable Anthropic auth if the user has an external API key or auth token,
+  // regardless of proxy configuration.
   // this may cause issues if users have complex proxy / gateway "client-side creds" auth scenarios,
   // e.g. if they want to set X-Api-Key to a gateway key but use Anthropic OAuth for the Authorization
   // if we get reports of that, we should probably add an env var to force OAuth enablement
   const shouldDisableAuth =
-    is3P ||
     (hasExternalAuthToken && !isManagedOAuthContext()) ||
     (hasExternalApiKey && !isManagedOAuthContext())
 
@@ -178,7 +180,13 @@ export function getAuthTokenSource() {
     return { source: 'ANTHROPIC_AUTH_TOKEN' as const, hasToken: true }
   }
 
-  if (isThirdPartyAnthropicCompatibleProvider()) {
+  // No Anthropic token is in play on a third-party route, Anthropic-compatible
+  // or OpenAI-compatible. Falling through reported the leftover claude.ai
+  // token as this session's auth source.
+  if (
+    isThirdPartyAnthropicCompatibleProvider() ||
+    getAPIProvider() === 'openaiCompatible'
+  ) {
     return { source: 'none' as const, hasToken: false }
   }
 
@@ -1553,13 +1561,10 @@ async function checkAndRefreshOAuthTokenIfNeededImpl(
   }
 
   // Tokens are still expired, try to acquire lock and refresh
-  const claudeDir = getClaudeConfigHomeDir()
-  await mkdir(claudeDir, { recursive: true })
-
   let release
   try {
     logEvent('tengu_oauth_token_refresh_lock_acquiring', {})
-    release = await lockfile.lock(claudeDir)
+    release = await acquireAuthTransitionLock({ retries: 0 })
     logEvent('tengu_oauth_token_refresh_lock_acquired', {})
   } catch (err) {
     if ((err as { code?: string }).code === 'ELOCKED') {

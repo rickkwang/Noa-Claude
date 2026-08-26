@@ -44,3 +44,26 @@ describe('getExtraBodyParams', () => {
     })
   })
 })
+describe('store is not sent on the Anthropic transport', () => {
+  test('omits store for every provider that speaks the Messages API', () => {
+    for (const flag of [
+      undefined,
+      'CLAUDE_CODE_USE_BEDROCK',
+      'CLAUDE_CODE_USE_VERTEX',
+      'CLAUDE_CODE_USE_FOUNDRY',
+    ] as const) {
+      const previousBaseUrl = process.env.ANTHROPIC_BASE_URL
+      if (flag) process.env[flag] = '1'
+      process.env.ANTHROPIC_BASE_URL = 'https://api.minimaxi.com/anthropic'
+      try {
+        // POST /v1/messages defines no `store` parameter; sending one buys no
+        // privacy and risks rejection by a strict endpoint.
+        expect(getExtraBodyParams()).not.toHaveProperty('store')
+      } finally {
+        if (flag) delete process.env[flag]
+        if (previousBaseUrl === undefined) delete process.env.ANTHROPIC_BASE_URL
+        else process.env.ANTHROPIC_BASE_URL = previousBaseUrl
+      }
+    }
+  })
+})

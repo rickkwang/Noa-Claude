@@ -9,12 +9,20 @@ import { isUsing3PServices } from '../../utils/auth.js';
 import { isBareMode } from '../../utils/envUtils.js';
 import {
   applyActiveProviderProfileEnv,
+  deactivateProviderProfilesForNextLaunch,
   loadProviderProfiles,
   PROVIDER_TYPE_LABELS,
   setActiveProviderProfile,
   type ProviderProfile,
 } from '../../utils/providerProfile.js';
 import { onProviderSwitch } from '../../utils/providerSwitch.js';
+
+// Sentinel row for "stop routing through a profile". Without it the picker only
+// ever moved between third-party profiles and /login was the sole way back.
+// Deliberately not labelled "use your Anthropic login": what a session falls
+// back to is whatever env/settings/launcher supply, which for an account that
+// never logged in is the launcher's product default, not Anthropic.
+const NO_PROVIDER_VALUE = '__none__';
 
 type ProviderOption = {
   id: string;
@@ -59,6 +67,40 @@ function ProviderPicker({
   if ($[1] !== profiles || $[2] !== onDone || $[3] !== context) {
     t1 = (profileId: string) => {
       if (!profiles) return;
+
+      const announce = (text: string, applyNow = true) => {
+        // display: 'skip' keeps the success string out of the model
+        // context — normalizeMessagesForAPI (utils/messages.ts:2080)
+        // wraps SystemLocalCommandMessage as a user message and ships
+        // it to the API. Surface the success to the user via a
+        // transient notification so the picker dismissal isn't silent.
+        // addNotification is optional on ToolUseContext; ?. guards
+        // non-REPL callers (print/SDK) where no notifier is wired.
+        if (applyNow && !isBareMode()) onProviderSwitch(context);
+        context.addNotification?.({
+          key: `provider-switch-${profileId}`,
+          text,
+          priority: 'medium',
+        });
+        onDone(text, { display: 'skip' });
+      };
+      const fail = (err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        onDone(`Failed to switch provider: ${message}`, { display: 'system' });
+      };
+
+      if (profileId === NO_PROVIDER_VALUE) {
+        deactivateProviderProfilesForNextLaunch()
+          .then(() =>
+            announce(
+              'Cleared the active provider; takes effect next session',
+              false,
+            ),
+          )
+          .catch(fail);
+        return;
+      }
+
       const profile = profiles.find((p) => p.id === profileId);
       if (!profile) {
         onDone('Selected provider profile not found.', { display: 'system' });
@@ -77,34 +119,19 @@ function ProviderPicker({
           }
           return applyActiveProviderProfileEnv();
         })
-        .then(() => {
+        .then(() =>
           // --bare: the apply above is a no-op by design — credentials didn't
           // change, so skip the post-switch cascade and say the switch lands
           // next session. Judge by isBareMode(), not the apply's return
           // value: null also means "no active profile", which says nothing
           // about bare.
-          const bare = isBareMode();
-          const text = bare
-            ? `Saved provider ${profile.name}; not applied under --bare (takes effect next session)`
-            : `Switched to provider ${profile.name}`;
-          if (!bare) onProviderSwitch(context);
-          // display: 'skip' keeps the success string out of the model
-          // context — normalizeMessagesForAPI (utils/messages.ts:2080)
-          // wraps SystemLocalCommandMessage as a user message and ships
-          // it to the API. Surface the success to the user via a
-          // transient notification so the picker dismissal isn't silent.
-          // addNotification is optional on ToolUseContext; ?. guards
-          // non-REPL callers (print/SDK) where no notifier is wired.
-          context.addNotification?.({
-            key: `provider-switch-${profileId}`,
-            text,
-            priority: 'medium',
-          });
-          onDone(text, { display: 'skip' });
-        })
-        .catch((err) => {
-          onDone(`Failed to switch provider: ${err.message}`, { display: 'system' });
-        });
+          announce(
+            isBareMode()
+              ? `Saved provider ${profile.name}; not applied under --bare (takes effect next session)`
+              : `Switched to provider ${profile.name}`,
+          ),
+        )
+        .catch(fail);
     };
     $[1] = profiles;
     $[2] = onDone;
@@ -155,12 +182,17 @@ function ProviderPicker({
     );
   }
 
-  const options = profiles.map((profile) => ({
-    label: `${profile.name} (${PROVIDER_TYPE_LABELS[profile.type]})${
-      profile.id === activeProfile?.id ? ' [active]' : ''
-    }`,
-    value: profile.id,
-  }));
+  const options = [
+    ...profiles.map((profile) => ({
+      label: `${profile.name} (${PROVIDER_TYPE_LABELS[profile.type]})${
+        profile.id === activeProfile?.id ? ' [active]' : ''
+      }`,
+      value: profile.id,
+    })),
+    ...(activeProfile
+      ? [{ label: 'None (clear the active provider)', value: NO_PROVIDER_VALUE }]
+      : []),
+  ];
 
   return (
     <Dialog title="Provider" onCancel={handleCancel} color="permission">

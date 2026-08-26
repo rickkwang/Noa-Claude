@@ -173,14 +173,19 @@ export async function getAnthropicClient({
 
   const thirdPartyAnthropicCompatible =
     isThirdPartyAnthropicCompatibleProvider()
+  // The shim below resolves its own credential and never sends the Anthropic
+  // OAuth token. Running either step here would refresh a token this request
+  // cannot use and copy an Anthropic Bearer into defaultHeadersForShim, which
+  // the shim keeps whenever it has no key of its own (local endpoints).
+  const openAICompatible = getAPIProvider() === 'openaiCompatible'
 
-  if (!thirdPartyAnthropicCompatible) {
+  if (!thirdPartyAnthropicCompatible && !openAICompatible) {
     logForDebugging('[API:auth] OAuth token check starting')
     await checkAndRefreshOAuthTokenIfNeeded()
     logForDebugging('[API:auth] OAuth token check complete')
   }
 
-  if (!isClaudeAISubscriber()) {
+  if (!openAICompatible && !isClaudeAISubscriber()) {
     await configureApiKeyHeaders(defaultHeaders, getIsNonInteractiveSession())
   }
 

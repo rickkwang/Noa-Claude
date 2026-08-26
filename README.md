@@ -246,7 +246,7 @@ Hardcoded privacy defaults — no configuration needed:
 - GrowthBook remote fetch hard-disabled
 - Remote policy overlays hard-disabled
 - Remote managed-settings overlay hard-disabled
-- Third-party API requests include `store: false` to prevent training data use
+- OpenAI-compatible requests send `store: false` to opt out of provider-side retention; Bedrock/Vertex/Foundry and Anthropic-compatible endpoints have no such field (the Anthropic Messages API does not define `store`)
 - In-product help / docs links point to the project's own docs repo (e.g. `PRODUCT_MCP_URL`); not fetched by telemetry.
 
 ## Verification

@@ -36,7 +36,10 @@ import { logForDebugging } from '../../utils/debug.js'
 import { isRunningOnHomespace } from '../../utils/envUtils.js'
 import { errorMessage } from '../../utils/errors.js'
 import { logError } from '../../utils/log.js'
-import { getAPIProvider } from '../../utils/model/providers.js'
+import {
+  getAPIProvider,
+  isDirectFirstParty,
+} from '../../utils/model/providers.js'
 import { isModelAlias } from '../../utils/model/aliases.js'
 import {
   getInitialSettings,
@@ -254,22 +257,65 @@ export async function authLogin({
   const resolvedLoginMethod = sso ? 'sso' : undefined
 
   const oauthService = new OAuthService()
+  let pasteReader: { close: () => void } | null = null
 
   try {
     logEvent('tengu_oauth_flow_start', { loginWithClaudeAi })
 
-    const result = await oauthService.startOAuthFlow(
-      async url => {
-        process.stdout.write('Opening browser to sign in…\n')
-        process.stdout.write(`If the browser didn't open, visit: ${url}\n`)
-      },
-      {
-        loginWithClaudeAi,
-        loginHint: email,
-        loginMethod: resolvedLoginMethod,
-        orgUUID,
-      },
-    )
+    let result
+    try {
+      result = await oauthService.startOAuthFlow(
+        async (manualUrl, automaticUrl) => {
+          process.stdout.write('Opening browser to sign in…\n')
+          process.stdout.write(
+            `If the browser didn't open, visit:\n  ${automaticUrl ?? manualUrl}\n`,
+          )
+          // The localhost callback only closes the loop when the browser runs on
+          // this host. Over SSH or from a container the user needs the manual URL
+          // and somewhere to paste the code back, which the TUI has and this
+          // path did not — leaving the flow to time out after 15 minutes.
+          if (!process.stdin.isTTY) return
+          process.stdout.write(
+            `\nOn a remote host? Open this instead and paste the code back here:\n  ${manualUrl}\n`,
+          )
+          const { createInterface } = await import('readline')
+          const rl = createInterface({
+            input: process.stdin,
+            output: process.stdout,
+          })
+          pasteReader = rl
+          rl.setPrompt('> ')
+          rl.prompt()
+          rl.on('line', line => {
+            // The callback page renders the code as `code#state`.
+            const [authorizationCode, state] = line.trim().split('#')
+            if (!authorizationCode || !state) {
+              process.stdout.write(
+                'Paste the whole code, including the part after "#".\n',
+              )
+              rl.prompt()
+              return
+            }
+            oauthService.handleManualAuthCodeInput({ authorizationCode, state })
+          })
+        },
+        {
+          loginWithClaudeAi,
+          loginHint: email,
+          loginMethod: resolvedLoginMethod,
+          orgUUID,
+        },
+      )
+    } finally {
+      // Before installOAuthTokens, whose network calls would otherwise run
+      // with the prompt still redrawing over their output. The newline closes
+      // the line the unanswered `> ` prompt left open.
+      if (pasteReader) {
+        pasteReader.close()
+        pasteReader = null
+        process.stdout.write('\n')
+      }
+    }
 
     await installOAuthTokens(result)
 
@@ -305,13 +351,24 @@ export async function authStatus(opts: {
     !!process.env.ANTHROPIC_API_KEY && !isRunningOnHomespace()
   const oauthAccount = getOauthAccountInfo()
   const subscriptionType = getSubscriptionType()
-  const using3P = isUsing3PServices()
+  // isUsing3PServices() covers only the env-flag cloud gateways. A provider
+  // profile routes either through the OpenAI shim or through a custom
+  // ANTHROPIC_BASE_URL, and neither registers there — the Bearer token of an
+  // Anthropic-compatible endpoint was being reported as 'oauth_token'.
+  const using3P = isUsing3PServices() || !isDirectFirstParty()
+  const openAICompatibleReady =
+    getAPIProvider() === 'openaiCompatible' &&
+    Boolean(process.env.OPENAI_API_KEY || process.env.OPENAI_BASE_URL)
   const loggedIn =
-    hasToken || apiKeySource !== 'none' || hasApiKeyEnvVar || using3P
+    hasToken ||
+    apiKeySource !== 'none' ||
+    hasApiKeyEnvVar ||
+    isUsing3PServices() ||
+    openAICompatibleReady
 
   // Determine auth method
   let authMethod: string = 'none'
-  if (using3P) {
+  if (using3P && loggedIn) {
     authMethod = 'third_party'
   } else if (authTokenSource === 'claude.ai') {
     authMethod = 'claude.ai'

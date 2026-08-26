@@ -27,6 +27,8 @@ export class OAuthService {
   private port: number | null = null
   private manualAuthCodeResolver: ((authorizationCode: string) => void) | null =
     null
+  private manualAuthCodeRejecter: ((error: Error) => void) | null = null
+  private expectedState: string | null = null
 
   constructor() {
     this.codeVerifier = crypto.generateCodeVerifier()
@@ -97,7 +99,9 @@ export class OAuthService {
           // localhost callbacks are unavailable.
           await authURLHandler(manualFlowUrl, automaticFlowUrl ?? manualFlowUrl)
         } else {
-          await authURLHandler(manualFlowUrl) // Show manual option to user
+          // Hand over both so a non-TUI caller can print the localhost URL for
+          // a same-host browser and still offer the paste-back URL.
+          await authURLHandler(manualFlowUrl, automaticFlowUrl)
           // Prefer automatic localhost callback when available; otherwise open
           // the manual URL so remote/container users can still copy the code.
           await openBrowser(automaticFlowUrl ?? manualFlowUrl)
@@ -165,6 +169,7 @@ export class OAuthService {
       }
       const timeout = setTimeout(() => {
         this.manualAuthCodeResolver = null
+        this.manualAuthCodeRejecter = null
         this.authCodeListener?.close()
         settle(() =>
           reject(
@@ -176,13 +181,16 @@ export class OAuthService {
       }, OAUTH_AUTHORIZATION_TIMEOUT_MS)
 
       // Set up manual auth code resolver
+      this.expectedState = state
       this.manualAuthCodeResolver = authorizationCode =>
         settle(() => resolve(authorizationCode))
+      this.manualAuthCodeRejecter = error => settle(() => reject(error))
 
       // Start automatic flow
       if (!this.authCodeListener) {
         void onReady().catch(error => {
           this.manualAuthCodeResolver = null
+          this.manualAuthCodeRejecter = null
           settle(() => reject(error))
         })
         return
@@ -192,10 +200,12 @@ export class OAuthService {
         .waitForAuthorization(state, onReady)
         .then(authorizationCode => {
           this.manualAuthCodeResolver = null
+          this.manualAuthCodeRejecter = null
           settle(() => resolve(authorizationCode))
         })
         .catch(error => {
           this.manualAuthCodeResolver = null
+          this.manualAuthCodeRejecter = null
           settle(() => reject(error))
         })
     })
@@ -206,12 +216,23 @@ export class OAuthService {
     authorizationCode: string
     state: string
   }): void {
-    if (this.manualAuthCodeResolver) {
-      this.manualAuthCodeResolver(params.authorizationCode)
+    if (!this.manualAuthCodeResolver) return
+    // The automatic flow checks this in AuthCodeListener; the manual flow used
+    // to accept the pasted state and discard it, so a mismatch surfaced as an
+    // opaque token-exchange failure instead of naming the cause. Compared
+    // unconditionally so a paste arriving outside a flow cannot pass either.
+    if (params.state !== this.expectedState) {
+      this.manualAuthCodeRejecter?.(new Error('Invalid state parameter'))
       this.manualAuthCodeResolver = null
-      // Close the auth code listener since manual input was used
+      this.manualAuthCodeRejecter = null
       this.authCodeListener?.close()
+      return
     }
+    this.manualAuthCodeResolver(params.authorizationCode)
+    this.manualAuthCodeResolver = null
+    this.manualAuthCodeRejecter = null
+    // Close the auth code listener since manual input was used
+    this.authCodeListener?.close()
   }
 
   private formatTokens(
@@ -242,5 +263,6 @@ export class OAuthService {
   cleanup(): void {
     this.authCodeListener?.close()
     this.manualAuthCodeResolver = null
+    this.manualAuthCodeRejecter = null
   }
 }
