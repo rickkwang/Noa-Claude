@@ -119,6 +119,11 @@ describe('isAnthropicAuthEnabled routes away from 1P auth', () => {
 describe('getAuthTokenSource on a provider-profile route', () => {
   test('claims no Anthropic token when routed through the OpenAI shim', () => {
     process.env.CLAUDE_CODE_USE_OPENAI = '1'
+    // Isolate from the developer's real env: a leftover ANTHROPIC_AUTH_TOKEN
+    // is reported before the OpenAI-route check runs, and a third-party
+    // ANTHROPIC_BASE_URL would make this pass through the wrong branch.
+    delete process.env.ANTHROPIC_AUTH_TOKEN
+    delete process.env.ANTHROPIC_BASE_URL
 
     // A leftover claude.ai token in the keychain is not this session's auth
     // source; reporting it made `auth status` print authMethod=claude.ai
