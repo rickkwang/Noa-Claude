@@ -40,7 +40,7 @@ Then open a project and ask for real work: fix a bug, explain a subsystem, revie
 
 ## Update & Uninstall
 
-Update (re-runs the curl installer, builds, and atomically swaps in the new install with a backup-rollback safety net):
+Update (checks the latest release tag first, then re-runs the curl installer; the new build is smoke-tested and the previous install is restored if it fails):
 
 ```bash
 noa update          # prompts before re-running the installer

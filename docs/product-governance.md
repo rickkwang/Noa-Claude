@@ -158,5 +158,7 @@ Before moving any command to baseline:
 Before tagging a release:
 
 1. Bump `version` in `package.json` and add the `docs/release-notes.md` entry.
-2. Update the install URL in `README.md` to the new tag — it is pinned (e.g. `.../Noa-Claude/v1.10.0/install.sh`), not a moving `master` ref. `NOA_CURL_INSTALL_COMMAND` in `src/utils/distribution.ts` intentionally stays on `master` so `noa update` fetches the latest installer.
-3. Tag the release, then verify `git show <tag>:install.sh` resolves before announcing the curl install command.
+2. Update the install URL in `README.md` to the new tag — it is pinned (e.g. `.../Noa-Claude/v1.10.0/install.sh`), not a moving `master` ref. The installer itself resolves the newest **published GitHub Release** at runtime (semver max over strict release tags — not the tags list, which also carries imported upstream Claude Code refs like `v2.1.x` that were never Noa releases; overridable via `NOA_INSTALL_REF` / `NOA_INSTALL_REPO_TARBALL_URL`), so both fresh installs and `noa update` land on released snapshots rather than arbitrary `master` commits.
+3. Bump `FALLBACK_REF` in `install.sh` to the new tag — it is the offline/rate-limited default when the GitHub API is unreachable.
+4. Commit the release changes, create the tag, and verify `git show <tag>:install.sh` resolves.
+5. Publish the GitHub Release for that existing tag — an unpublished tag is invisible to the installer, which reads `/releases`, not `/tags`.

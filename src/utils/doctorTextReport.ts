@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Rendering for the `noa doctor` terminal subcommand.
 // Plain text for every context: a terminal, a pipe, `noa doctor > issue.txt`.
 //
@@ -272,7 +271,7 @@ function collectEnvVarIssues(): Array<{ name: string; message: string }> {
     const raw = process.env[v.name]
     if (raw === undefined) continue
     const result = validateBoundedIntEnvVar(v.name, raw, v.default, v.upperLimit)
-    if (result.status === 'valid') continue
+    if (result.status === 'valid' || result.message === undefined) continue
     issues.push({ name: v.name, message: result.message })
   }
   return issues
@@ -298,7 +297,8 @@ export async function renderDoctorTextReport(): Promise<DoctorTextReport> {
     new Set(
       settingsErrors
         .filter(error => error.mcpErrorMetadata === undefined)
-        .map(error => error.file),
+        .map(error => error.file)
+        .filter((file): file is string => file !== undefined),
     ),
   )
 
@@ -418,7 +418,7 @@ async function collectContextWarnings(
       warnings.agentWarning,
       warnings.unreachableRulesWarning,
     ]
-      .filter(Boolean)
+      .filter(warning => warning !== null)
       .map(warning => ({
         message: warning.message,
         details: warning.details ?? [],

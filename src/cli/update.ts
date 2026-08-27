@@ -21,6 +21,12 @@ import {
 import { getClaudeConfigHomeDir } from 'src/utils/envUtils.js'
 import { gracefulShutdown } from 'src/utils/gracefulShutdown.js'
 import {
+  fetchLatestReleaseTag,
+  hasExplicitInstallSource,
+  isCurrentVersionAtLeast,
+  stripTagPrefix,
+} from 'src/utils/latestRelease.js'
+import {
   installOrUpdateClaudePackage,
   localInstallationExists,
 } from 'src/utils/localInstaller.js'
@@ -50,6 +56,40 @@ async function runCurlReinstall(autoConfirm: boolean): Promise<void> {
   writeToStdout(
     'Noa Claude updates by re-running the curl installer.\n',
   )
+
+  if (!hasExplicitInstallSource()) {
+    const latestTag = await fetchLatestReleaseTag()
+    let currentIsSemver = true
+    if (latestTag) {
+      const latestVersion = stripTagPrefix(latestTag)
+      const upToDate = isCurrentVersionAtLeast(MACRO.VERSION, latestTag)
+      currentIsSemver = upToDate !== null
+      if (upToDate) {
+        writeToStdout(
+          chalk.green(`Noa Claude is up to date (${MACRO.VERSION})`) + '\n',
+        )
+        writeToStdout('To repair a corrupted install, re-run the installer:\n')
+        writeToStdout(chalk.bold(`  ${NOA_CURL_INSTALL_COMMAND}\n`))
+        await gracefulShutdown(0)
+        return
+      }
+      if (currentIsSemver) {
+        writeToStdout(
+          `New version available: ${latestVersion} (current: ${MACRO.VERSION})\n`,
+        )
+      }
+    }
+    if (!latestTag || !currentIsSemver) {
+      writeToStdout(
+        chalk.yellow(
+          currentIsSemver
+            ? 'Could not check the latest release (GitHub unreachable); proceeding without a version check.'
+            : `Current version (${MACRO.VERSION}) is not a release version; proceeding without a version check.`,
+        ) + '\n',
+      )
+    }
+  }
+
   writeToStdout('Command:\n')
   writeToStdout(chalk.bold(`  ${NOA_CURL_INSTALL_COMMAND}\n`))
   writeToStdout('\n')

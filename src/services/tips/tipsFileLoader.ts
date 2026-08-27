@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Loads the raw tip entries out of a spinnerTipsOverride.tipsFile — the
 // governance question of *which settings source may even name a tipsFile*
 // lives in tipRegistry.ts; this module only handles turning a path string
