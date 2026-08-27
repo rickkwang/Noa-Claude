@@ -2,6 +2,7 @@
 import chalk from 'chalk'
 import { logForDebugging } from 'src/utils/debug.js'
 import { fileHistoryEnabled } from 'src/utils/fileHistory.js'
+import { getRemoteManagedSettingsSyncFromCache } from 'src/services/remoteManagedSettings/syncCacheState.js'
 import {
   getInitialSettings,
   getSettings_DEPRECATED,
@@ -50,6 +51,7 @@ import {
   getCachedOverageCreditGrant,
 } from '../api/overageCreditGrant.js'
 import { getSessionsSinceLastShown } from './tipHistory.js'
+import { loadTipsFile } from './tipsFileLoader.js'
 import type { Tip, TipContext } from './types.js'
 
 let _isOfficialMarketplaceInstalledCache: boolean | undefined
@@ -591,26 +593,322 @@ const internalOnlyTips: Tip[] = [
   },
 ]
 
-function getCustomTips(): Tip[] {
-  const settings = getInitialSettings()
-  const override = settings.spinnerTipsOverride
-  if (!override?.tips?.length) return []
+// Settings sources, in merge precedence order (mirrors SETTING_SOURCES in
+// utils/settings/constants.ts). Project-level sources are checked into (or
+// live alongside) a shared repo, so — matching upstream Claude Code's
+// spinnerTipsOverride behavior — they're trusted with plain-string tips only.
+// Object tip entries (id/cooldownSessions/priority) and the tipsFile/label
+// fields require a source only the local user or an admin controls.
+const PROJECT_TIP_SOURCES = ['projectSettings', 'localSettings']
+const CUSTOM_TIP_SOURCE_ORDER = [
+  'userSettings',
+  'projectSettings',
+  'localSettings',
+  'flagSettings',
+  'policySettings',
+]
+const TIP_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/
+const TIP_TEXT_MAX_LENGTH = 500
+// A label is prepended to the tip on the same spinner line, so it's the same
+// injection surface as the tip text and gets the same treatment. Kept short:
+// it's a prefix like "Acme: ", not a second tip.
+const TIP_LABEL_MAX_LENGTH = 64
 
-  return override.tips.map((content, i) => ({
-    id: `custom-tip-${i}`,
-    content: async () => content,
-    cooldownSessions: 0,
+// A custom tip's text is rendered straight into the terminal next to the
+// spinner, so it gets the same Unicode net upstream Claude Code applies:
+// fold line breaks/runs of spaces down to a single line first, then strip
+// control chars, format chars (bidi overrides, zero-width joiners...),
+// variation selectors, and the supplementary-plane "tag" chars — the classes
+// an attacker would reach for to hide text or fake cursor movement in a tip
+// that ships via a shared settings file.
+const TIP_TEXT_LINE_BREAKS = /[\t\n\r\u2028\u2029]+/g
+const TIP_TEXT_EXTRA_SPACES = / {2,}/g
+const TIP_TEXT_INVISIBLE_CHARS =
+  /[\p{Cc}\p{Cf}\u2028\u2029\u180e\ufe00-\ufe0f\u{e0100}-\u{e01ef}]/gu
+
+function sanitizeTipText(raw: string): string {
+  return raw
+    .replace(TIP_TEXT_LINE_BREAKS, ' ')
+    .replace(TIP_TEXT_INVISIBLE_CHARS, '')
+    .replace(TIP_TEXT_EXTRA_SPACES, ' ')
+    .trim()
+}
+
+// Same Unicode net as the tip text — a label sharing the spinner line can
+// carry an erase-line escape or a newline just as easily. Two differences from
+// sanitizeTipText: one trailing space survives, because "Acme: " is how you
+// write a prefix and a full trim would render "Acme:tip"; and an over-long
+// label is truncated rather than dropped, so the tips it prefixes still show.
+function sanitizeTipLabel(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined
+  const folded = raw
+    .replace(TIP_TEXT_LINE_BREAKS, ' ')
+    .replace(TIP_TEXT_INVISIBLE_CHARS, '')
+    .replace(TIP_TEXT_EXTRA_SPACES, ' ')
+  const body = folded.trim()
+  if (!body) return undefined
+  const capped =
+    body.length > TIP_LABEL_MAX_LENGTH
+      ? body.slice(0, TIP_LABEL_MAX_LENGTH)
+      : body
+  return /\s$/.test(folded) ? `${capped} ` : capped
+}
+
+function isTrustedTipSource(source: string): boolean {
+  return !PROJECT_TIP_SOURCES.includes(source)
+}
+
+// Guards the cooldown/priority comparisons against a NaN or non-numeric value
+// from a hand-edited settings file: `sessions >= NaN` is false for every
+// session count, which would silently retire a tip forever.
+function toFiniteNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+// policySettings is a first-wins merge of remote-managed / MDM / managed-
+// settings.json / HKCU (see getSettingsForSourceUncached in settings.ts) —
+// when remote-managed settings are present at all, they *are* the whole
+// policySettings result. This mirrors that same check to tell "policy
+// settings came from the remote/server channel" apart from "came from a
+// local managed-settings.json (or MDM/HKCU)".
+function isPolicySettingsFromRemoteManaged(): boolean {
+  const remoteSettings = getRemoteManagedSettingsSyncFromCache()
+  return Boolean(remoteSettings && Object.keys(remoteSettings).length > 0)
+}
+
+type TipNamespace = 'inline' | 'file'
+
+type NormalizedCustomTip = {
+  id: string
+  namespace: TipNamespace
+  text: string
+  label: string | undefined
+  cooldownSessions: number
+  priority: number
+}
+
+// tipsFile entries only ever come from a trusted source (see
+// getEffectiveSpinnerTipsOverride) and support the same string-or-object
+// shapes as inline tips, so this reuses the inline validation path — just
+// tagged with namespace: 'file' so its ids land in a separate cooldown-
+// history bucket (org-tip:file:<id>) from inline tips (org-tip:<id>) even
+// when an id happens to collide.
+function normalizeCustomTipEntries(
+  entries: unknown[] | undefined,
+  source: string,
+  seenIds: Set<string>,
+  namespace: TipNamespace = 'inline',
+  label: string | undefined = undefined,
+): NormalizedCustomTip[] {
+  // Array.isArray, not a truthiness/length check: policySettings can reach us
+  // unvalidated (getRemoteManagedSettingsSyncFromCache casts the parsed JSON
+  // straight to SettingsJson), so `tips` may be a string — which has .length
+  // but no .forEach — or any other shape the zod schema never saw.
+  if (!Array.isArray(entries) || entries.length === 0) return []
+  const trusted = isTrustedTipSource(source)
+  const normalized: NormalizedCustomTip[] = []
+
+  entries.forEach((entry, index) => {
+    if (typeof entry === 'string') {
+      const text = sanitizeTipText(entry)
+      if (!text) return
+      // No explicit id on a plain-string tip: derive a stable one scoped to
+      // this source + position so tips at the same index in different
+      // sources don't share cooldown history.
+      const id = `custom-tip-${source}-${namespace}-${index}`
+      const dedupeKey = `${namespace}:${id}`
+      if (seenIds.has(dedupeKey)) return
+      seenIds.add(dedupeKey)
+      normalized.push({
+        id,
+        namespace,
+        text,
+        label,
+        cooldownSessions: 0,
+        priority: 0,
+      })
+      return
+    }
+
+    if (!trusted) {
+      logForDebugging(
+        `spinnerTipsOverride: object tip entries in ${source} are ignored; only plain strings are read from project settings`,
+        { level: 'warn' },
+      )
+      return
+    }
+
+    const id = entry?.id
+    if (typeof id !== 'string' || !TIP_ID_PATTERN.test(id)) {
+      logForDebugging(
+        `spinnerTipsOverride: tip object needs an "id" of 1-64 letters, digits, ".", "_" or "-"; dropped`,
+        { level: 'warn' },
+      )
+      return
+    }
+    if (typeof entry.text !== 'string' || !entry.text) {
+      logForDebugging(
+        `spinnerTipsOverride: tip object without a "text" string; dropped`,
+        { level: 'warn' },
+      )
+      return
+    }
+    // Length is checked on the raw text (matching the schema's documented
+    // limit) before sanitizing, so a long tip stuffed with invisible
+    // characters is rejected for being too long rather than slipping through
+    // as short-after-cleanup.
+    if (entry.text.length > TIP_TEXT_MAX_LENGTH) {
+      logForDebugging(
+        `spinnerTipsOverride: tip "${id}" text is longer than ${TIP_TEXT_MAX_LENGTH} characters; dropped`,
+        { level: 'warn' },
+      )
+      return
+    }
+    const text = sanitizeTipText(entry.text)
+    if (!text) {
+      logForDebugging(
+        `spinnerTipsOverride: tip "${id}" is empty after sanitizing; dropped`,
+        { level: 'warn' },
+      )
+      return
+    }
+    const dedupeKey = `${namespace}:${id}`
+    if (seenIds.has(dedupeKey)) {
+      logForDebugging(
+        `spinnerTipsOverride: duplicate tip id "${id}"; keeping the first`,
+        { level: 'warn' },
+      )
+      return
+    }
+    seenIds.add(dedupeKey)
+    normalized.push({
+      id,
+      namespace,
+      text,
+      label,
+      // A non-numeric cooldownSessions/priority reaches here only from a
+      // hand-edited settings file (the schema keeps tip objects loose on
+      // purpose), so coerce rather than trust the annotation.
+      cooldownSessions: toFiniteNumber(entry.cooldownSessions, 0),
+      priority: toFiniteNumber(entry.priority, 0),
+    })
+  })
+
+  return normalized
+}
+
+type EffectiveSpinnerTipsOverride = {
+  excludeDefault: boolean
+  entries: NormalizedCustomTip[]
+}
+
+function getEffectiveSpinnerTipsOverride(): EffectiveSpinnerTipsOverride {
+  try {
+    return readSpinnerTipsOverride()
+  } catch (error) {
+    // The spinner tip is decoration; the caller (REPL's pickNewSpinnerTip)
+    // fires this without a .catch(), so anything thrown here would surface as
+    // an unhandled rejection once per turn. Degrade to "no custom tips".
+    logForDebugging(
+      `Failed to read spinnerTipsOverride; falling back to built-in tips: ${error}`,
+      { level: 'warn' },
+    )
+    return { excludeDefault: false, entries: [] }
+  }
+}
+
+function readSpinnerTipsOverride(): EffectiveSpinnerTipsOverride {
+  const seenIds = new Set<string>()
+  const entries: NormalizedCustomTip[] = []
+  let excludeDefault = false
+
+  for (const source of CUSTOM_TIP_SOURCE_ORDER) {
+    const override = getSettingsForSource(source)?.spinnerTipsOverride
+    if (!override || typeof override !== 'object' || Array.isArray(override)) {
+      continue
+    }
+
+    const trusted = isTrustedTipSource(source)
+    if (override.excludeDefault) excludeDefault = true
+
+    // One warning per source, however many of the two fields it sets.
+    if ((override.label || override.tipsFile) && !trusted) {
+      logForDebugging(
+        `spinnerTipsOverride.tipsFile/label in ${source} are ignored; set them in user or managed settings`,
+        { level: 'warn' },
+      )
+    }
+
+    // A label prefixes the tips declared alongside it, not every tip in the
+    // rotation — otherwise the last source to set one would silently re-brand
+    // tips that came from a different config.
+    const label = trusted ? sanitizeTipLabel(override.label) : undefined
+
+    entries.push(
+      ...normalizeCustomTipEntries(
+        override.tips,
+        source,
+        seenIds,
+        'inline',
+        label,
+      ),
+    )
+
+    if (override.tipsFile && trusted) {
+      if (source === 'policySettings' && isPolicySettingsFromRemoteManaged()) {
+        logForDebugging(
+          'spinnerTipsOverride.tipsFile from remote managed settings is ignored; ship inline tips or install the file path via managed-settings.json',
+          { level: 'warn' },
+        )
+      } else {
+        const fileEntries = loadTipsFile(override.tipsFile)
+        if (fileEntries) {
+          entries.push(
+            ...normalizeCustomTipEntries(
+              fileEntries,
+              source,
+              seenIds,
+              'file',
+              label,
+            ),
+          )
+        }
+      }
+    }
+  }
+
+  return { excludeDefault, entries }
+}
+
+function buildCustomTips({ entries }: EffectiveSpinnerTipsOverride): Tip[] {
+  return entries.map(entry => ({
+    id: `org-tip:${entry.namespace === 'file' ? 'file:' : ''}${entry.id}`,
+    content: async () =>
+      entry.label ? `${entry.label}${entry.text}` : entry.text,
+    cooldownSessions: entry.cooldownSessions,
+    priority: entry.priority,
     isRelevant: async () => true,
   }))
 }
 
-export async function getRelevantTips(context?: TipContext): Promise<Tip[]> {
-  const settings = getInitialSettings()
-  const override = settings.spinnerTipsOverride
-  const customTips = getCustomTips()
+function isOffCooldown(tip: Tip): boolean {
+  return getSessionsSinceLastShown(tip.id) >= tip.cooldownSessions
+}
 
-  // If excludeDefault is true and there are custom tips, skip built-in tips entirely
-  if (override?.excludeDefault && customTips.length > 0) {
+export async function getRelevantTips(context?: TipContext): Promise<Tip[]> {
+  const override = getEffectiveSpinnerTipsOverride()
+  const configuredCustomTips = buildCustomTips(override)
+  // Custom tips are cooldown-filtered on the same footing as built-ins —
+  // a per-tip cooldownSessions is only meaningful if it's actually enforced.
+  // (Entries that don't set one normalize to 0, i.e. always eligible, which
+  // is how every custom tip behaved before cooldowns were configurable.)
+  const customTips = configuredCustomTips.filter(isOffCooldown)
+
+  // excludeDefault means "only ever show my tips", so it's gated on whether
+  // any were *configured*, not on how many are eligible right now: with all
+  // of them cooling down the answer is "no tip", not "fall back to built-ins".
+  // Only a config with no custom tips at all falls through.
+  if (override.excludeDefault && configuredCustomTips.length > 0) {
     return customTips
   }
 
@@ -619,7 +917,7 @@ export async function getRelevantTips(context?: TipContext): Promise<Tip[]> {
   const isRelevant = await Promise.all(tips.map(_ => _.isRelevant(context)))
   const filtered = tips
     .filter((_, index) => isRelevant[index])
-    .filter(_ => getSessionsSinceLastShown(_.id) >= _.cooldownSessions)
+    .filter(isOffCooldown)
 
   return [...filtered, ...customTips]
 }

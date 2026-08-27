@@ -722,11 +722,23 @@ export const SettingsSchema = lazySchema(() =>
       spinnerTipsOverride: z
         .object({
           excludeDefault: z.boolean().optional(),
-          tips: z.array(z.string()),
+          // Deliberately coarse — string-or-object and nothing more. This
+          // schema feeds a single safeParse() over the *entire* settings file
+          // (see settings.ts's parseSettingsFile), which returns null for the
+          // whole file on any failure, so requiring `id`/`text` here would let
+          // one mistyped tip take permissions and hooks down with it. Per-entry
+          // validation (id format, text presence/length, dedupe) and
+          // source-based trust (project settings may only contribute plain
+          // strings) happen at consumption time in
+          // services/tips/tipRegistry.ts, which drops a bad entry individually
+          // and logs why. Keep this loose; tighten there.
+          tips: z.array(z.union([z.string(), z.looseObject({})])).optional(),
+          tipsFile: z.string().optional(),
+          label: z.string().optional(),
         })
         .optional()
         .describe(
-          'Override spinner tips. tips: array of tip strings. excludeDefault: if true, only show custom tips (default: false).',
+          'Add your own tips to the spinner tip rotation. tips: strings, or {id, text, cooldownSessions?, priority?} objects (id: 1-64 letters/digits/./_/-, text: max 500 chars, cooldownSessions/priority default 0). tipsFile: absolute or ~/ path to a JSON file of the same (array, or {"tips": [...]}); must be a local regular file under 256KB. label: prefix shown before your tips. excludeDefault: if true, only show your tips (default: false). Object tips, tipsFile, and label are only honored from user or managed settings — project settings may only contribute plain string tips.',
         ),
       syntaxHighlightingDisabled: z
         .boolean()

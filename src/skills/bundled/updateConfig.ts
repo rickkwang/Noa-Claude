@@ -103,7 +103,7 @@ Plugin syntax: \`plugin-name@source\` where source is \`claude-code-marketplace\
 - \`respectGitignore\`: Whether to respect .gitignore (default: true)
 - \`spinnerTipsEnabled\`: Show tips in spinner
 - \`spinnerVerbs\`: Customize spinner verbs (\`{ "mode": "append" | "replace", "verbs": [...] }\`)
-- \`spinnerTipsOverride\`: Override spinner tips (\`{ "excludeDefault": true, "tips": ["Custom tip"] }\`)
+- \`spinnerTipsOverride\`: Add your own spinner tips (\`{ "excludeDefault": true, "tips": ["Custom tip", { "id": "my-tip", "text": "...", "cooldownSessions": 5, "priority": 1 }], "tipsFile": "~/tips.json", "label": "Org: " }\`). Object tips, \`tipsFile\`, and \`label\` are only honored from user or managed settings — project settings may only contribute plain strings.
 - \`syntaxHighlightingDisabled\`: Disable diff highlighting
 `
 

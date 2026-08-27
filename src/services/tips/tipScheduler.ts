@@ -26,7 +26,16 @@ export function selectTipWithLongestTimeSinceShown(
     sessions: getSessionsSinceLastShown(tip.id),
   }))
 
-  tipsWithSessions.sort((a, b) => b.sessions - a.sessions)
+  tipsWithSessions.sort((a, b) => {
+    if (a.sessions !== b.sessions) return b.sessions - a.sessions
+    // Tie-break only among tips that have never been shown (Infinity === Infinity).
+    // A tip that's merely due-again-at-the-same-session-count as another isn't
+    // a "never shown" tie, so priority stays out of that comparison.
+    if (a.sessions === Infinity) {
+      return (b.tip.priority ?? 0) - (a.tip.priority ?? 0)
+    }
+    return 0
+  })
   return tipsWithSessions[0]?.tip
 }
 
