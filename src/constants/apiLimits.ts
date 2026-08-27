@@ -100,3 +100,14 @@ export const PDF_AT_MENTION_INLINE_THRESHOLD = 10
  * We validate client-side to provide a clear error message.
  */
 export const API_MAX_MEDIA_PER_REQUEST = 100
+
+// =============================================================================
+// TASK BUDGET LIMITS
+// =============================================================================
+
+/**
+ * Minimum `output_config.task_budget.total` the API accepts. A smaller total
+ * is rejected with a 400, so it is validated client-side to turn a remote
+ * failure into a clear local error.
+ */
+export const API_TASK_BUDGET_MIN_TOTAL = 20_000

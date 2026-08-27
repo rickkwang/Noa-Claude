@@ -2,6 +2,7 @@
 import { InvalidArgumentError, Option } from '@commander-js/extra-typings';
 import { feature } from 'bun:bundle';
 import type { Command as CommanderCommand } from '@commander-js/extra-typings';
+import { API_TASK_BUDGET_MIN_TOTAL } from '../constants/apiLimits.js';
 import { canUserConfigureAdvisor } from '../utils/advisor.js';
 import { EFFORT_LEVELS } from '../utils/effort.js';
 import { PERMISSION_MODES } from '../utils/permissions/PermissionMode.js';
@@ -110,8 +111,17 @@ export function configureProgramOptions(program: CommanderCommand): void {
       new Option('--task-budget <tokens>', 'API-side task budget in tokens (output_config.task_budget)')
         .argParser(value => {
           const tokens = Number(value);
+          // InvalidArgumentError, not Error: commander only renders the former
+          // as a clean "option ... is invalid" message. A plain Error escapes
+          // as an unhandled fatal with a minified stack.
           if (isNaN(tokens) || tokens <= 0 || !Number.isInteger(tokens)) {
-            throw new Error('--task-budget must be a positive integer');
+            throw new InvalidArgumentError('It must be a positive integer.');
+          }
+          // The API rejects a smaller total with a 400; fail here instead.
+          if (tokens < API_TASK_BUDGET_MIN_TOTAL) {
+            throw new InvalidArgumentError(
+              `It must be at least ${API_TASK_BUDGET_MIN_TOTAL} — the API rejects smaller budgets.`,
+            );
           }
           return tokens;
         })
