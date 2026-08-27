@@ -4,7 +4,7 @@ set -euo pipefail
 REPO="rickkwang/Noa-Claude"
 # Used when the GitHub API is unreachable (rate limit, offline). Bump per
 # release — see the Release Checklist in docs/product-governance.md.
-FALLBACK_REF="v1.10.0"
+FALLBACK_REF="v1.11.0"
 PERSISTENT_INSTALL_DIR="${NOA_INSTALL_TARGET_DIR:-${HOME}/.noa/install}"
 ROOT_DIR=""
 TEMP_DIR=""

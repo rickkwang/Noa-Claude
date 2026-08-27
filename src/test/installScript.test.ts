@@ -155,7 +155,7 @@ describe('install.sh latest release resolution', () => {
     const result = runResolver(firstPage, [], true)
 
     expect(result.status).toBe(42)
-    expect(result.stdout).toContain('Installing release: v1.10.0')
+    expect(result.stdout).toContain('Installing release: v1.11.0')
     expect(result.stdout).not.toContain('Installing release: v9.9.9')
   })
 })
