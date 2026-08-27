@@ -174,15 +174,12 @@ export function isFastModeSupportedByModel(
   const model = modelSetting ?? getDefaultMainLoopModelSetting()
   const parsedModel = parseUserSpecifiedModel(model)
   const lower = parsedModel.toLowerCase()
-  // NOTE: Opus 4.7 fast mode has been removed upstream — `speed: "fast"` on
-  // 4.7 now errors. It is left in this list deliberately: removing it is a
-  // separate behaviour change from adding Opus 5, and 4.7 is no longer any
-  // tier's default here.
-  return (
-    lower.includes('opus-4-7') ||
-    lower.includes('opus-4-8') ||
-    lower.includes('claude-opus-5')
-  )
+  // Opus 4.7 is absent on purpose: its fast mode was removed upstream and
+  // `speed: "fast"` on 4.7 now errors. 4.7 is no longer any tier's default,
+  // but it is still a selectable model (CLAUDE_OPUS_4_7_CONFIG), so leaving it
+  // here would send `speed: "fast"` and fail the request for anyone who picks
+  // it with fast mode on.
+  return lower.includes('opus-4-8') || lower.includes('claude-opus-5')
 }
 
 // --- Fast mode runtime state ---
