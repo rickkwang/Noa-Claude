@@ -2,7 +2,9 @@
 import type {
   BetaContentBlock,
   BetaWebSearchTool20250305,
+  BetaWebSearchTool20260209,
 } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
+import { modelSupportsWebSearchDynamicFiltering } from 'src/utils/betas.js'
 import {
   getAPIProvider,
   isDirectFirstParty,
@@ -82,9 +84,16 @@ export type { WebSearchProgress } from '../../types/tools.js'
 
 import type { WebSearchProgress } from '../../types/tools.js'
 
-function makeToolSchema(input: Input): BetaWebSearchTool20250305 {
+function makeToolSchema(
+  input: Input,
+  model: string,
+): BetaWebSearchTool20250305 | BetaWebSearchTool20260209 {
   return {
-    type: 'web_search_20250305',
+    // The two variants carry identical fields and both return
+    // `web_search_tool_result`; only the newer one applies dynamic filtering.
+    type: modelSupportsWebSearchDynamicFiltering(model)
+      ? 'web_search_20260209'
+      : 'web_search_20250305',
     name: 'web_search',
     allowed_domains: input.allowed_domains,
     blocked_domains: input.blocked_domains,
@@ -288,12 +297,18 @@ export const WebSearchTool = buildTool({
     const userMessage = createUserMessage({
       content: 'Perform a web search for the query: ' + query,
     })
-    const toolSchema = makeToolSchema(input)
-
     const useHaiku = getFeatureValue_CACHED_MAY_BE_STALE(
       'tengu_plum_vx3',
       false,
     )
+
+    // The tool type is model-gated, so it has to be built for the model that
+    // actually receives it — the small fast model under the Haiku experiment,
+    // not the main loop model.
+    const searchModel = useHaiku
+      ? getSmallFastModel()
+      : context.options.mainLoopModel
+    const toolSchema = makeToolSchema(input, searchModel)
 
     const appState = context.getAppState()
     const queryStream = queryModelWithStreaming({
@@ -308,7 +323,7 @@ export const WebSearchTool = buildTool({
       signal: context.abortController.signal,
       options: {
         getToolPermissionContext: async () => appState.toolPermissionContext,
-        model: useHaiku ? getSmallFastModel() : context.options.mainLoopModel,
+        model: searchModel,
         toolChoice: useHaiku ? { type: 'tool', name: 'web_search' } : undefined,
         isNonInteractiveSession: context.options.isNonInteractiveSession,
         hasAppendSystemPrompt: !!context.options.appendSystemPrompt,

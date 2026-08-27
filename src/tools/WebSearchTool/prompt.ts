@@ -8,9 +8,12 @@ export function getWebSearchPrompt(model?: string): string {
   const currentMonthYear = getLocalMonthYear()
   if (shouldUseCompactSystemPrompt(model)) {
     // Ported verbatim from upstream's lean variant. "US-only" holds here too:
-    // this tool is Anthropic's server-side `web_search_20250305`, the same
-    // backend upstream describes. The mandatory "Sources:" list is stricter
-    // than our verbose text, which no lean model ever sees.
+    // this tool is Anthropic's server-side web search — `web_search_20250305`,
+    // or `web_search_20260209` on models that take it (see
+    // modelSupportsWebSearchDynamicFiltering) — the same backend upstream
+    // describes, and the two variants differ only in dynamic filtering. The
+    // mandatory "Sources:" list is stricter than our verbose text, which no
+    // lean model ever sees.
     return `Search the web. Returns result blocks with titles and URLs. US-only.
 
 - The current month is ${currentMonthYear} — use this when searching for recent information.
