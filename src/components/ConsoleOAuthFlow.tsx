@@ -226,6 +226,7 @@ async function activateProviderPreset(value: string, overrides?: {
   profileName?: string;
   baseUrl?: string;
   model?: string;
+  models?: string[];
   apiKey?: string;
 }): Promise<{
   presetName: string;
@@ -238,6 +239,9 @@ async function activateProviderPreset(value: string, overrides?: {
   const nextProfileName = overrides?.profileName?.trim() || preset.profileName;
   const nextBaseUrl = overrides?.baseUrl?.trim() || preset.baseUrl;
   const nextModel = overrides?.model?.trim() || preset.model;
+  // Everything discovery returned, not just the one picked: /model has no other
+  // source for this endpoint's catalogue.
+  const nextModels = overrides?.models?.length ? overrides.models : undefined;
   const nextApiKey = overrides?.apiKey?.trim();
   const profiles = await loadProviderProfiles();
   const existing = profiles.find(profile => profile.name === nextProfileName);
@@ -248,6 +252,7 @@ async function activateProviderPreset(value: string, overrides?: {
       type: preset.type,
       baseUrl: nextBaseUrl,
       model: nextModel,
+      models: nextModels,
       apiKey: nextApiKey || undefined
     });
     profileId = existing.id;
@@ -257,6 +262,7 @@ async function activateProviderPreset(value: string, overrides?: {
       type: preset.type,
       baseUrl: nextBaseUrl,
       model: nextModel,
+      models: nextModels,
       apiKey: nextApiKey || undefined
     });
     profileId = created.id;
@@ -399,6 +405,7 @@ function ProviderSetupWizard({
       profileName: name,
       baseUrl,
       model: nextModel,
+      models: discoveredModels,
       apiKey: (nextApiKey ?? apiKey) || undefined
     }).then(result => {
       // Under --bare the apply above is a no-op by design — the profile is

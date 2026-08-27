@@ -21,7 +21,10 @@ import {
 import { isEnvTruthy } from '../envUtils.js'
 import { getModelStrings, resolveOverriddenModel } from './modelStrings.js'
 import { formatModelPricing, getOpusCostTierForModel } from '../modelCost.js'
-import { getSettings_DEPRECATED } from '../settings/settings.js'
+import {
+  getSettings_DEPRECATED,
+  getSettingsForSource,
+} from '../settings/settings.js'
 import type { PermissionMode } from '../permissions/PermissionMode.js'
 import { getAPIProvider, isDirectFirstParty } from './providers.js'
 import { LIGHTNING_BOLT } from '../../constants/figures.js'
@@ -50,6 +53,17 @@ export function isNonCustomOpusModel(model: ModelName): boolean {
 }
 
 /**
+ * Whether ANTHROPIC_MODEL is the value an active provider profile persisted,
+ * rather than one the caller exported. applyActiveProviderProfileEnv writes
+ * both process.env and userSettings.env from the same profile, so a match on
+ * that persisted copy identifies it.
+ */
+function isProviderProfileEnvModel(envModel: string | undefined): boolean {
+  if (!envModel) return false
+  return getSettingsForSource('userSettings')?.env?.ANTHROPIC_MODEL === envModel
+}
+
+/**
  * Helper to get the model from /model (including via /config), the --model flag, environment variable,
  * or the saved settings. The returned value can be a model alias if that's what the user specified.
  * Undefined if the user didn't configure anything, in which case we fall back to
@@ -69,7 +83,15 @@ export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
     specifiedModel = modelOverride
   } else {
     const settings = getSettings_DEPRECATED() || {}
-    specifiedModel = process.env.ANTHROPIC_MODEL || settings.model || undefined
+    const envModel = process.env.ANTHROPIC_MODEL
+    // A provider profile writes its default model into ANTHROPIC_MODEL, which
+    // would then outrank the model the user actually picked in /model on every
+    // subsequent launch. That value is ours, not the operator's, so let the
+    // saved choice win over it — an ANTHROPIC_MODEL the caller set themselves
+    // still takes precedence.
+    specifiedModel = isProviderProfileEnvModel(envModel)
+      ? settings.model || envModel
+      : envModel || settings.model || undefined
   }
 
   // Ignore the user-specified model if it's not in the availableModels allowlist.

@@ -12,6 +12,7 @@ import {
   deactivateProviderProfilesForNextLaunch,
   loadProviderProfiles,
   PROVIDER_TYPE_LABELS,
+  refreshActiveProviderModels,
   setActiveProviderProfile,
   type ProviderProfile,
 } from '../../utils/providerProfile.js';
@@ -118,6 +119,11 @@ function ProviderPicker({
             throw new Error(`provider profile ${profile.name} no longer exists`);
           }
           return applyActiveProviderProfileEnv();
+        })
+        .then(() => {
+          // Out of band: the switch is already complete, and /model reads the
+          // refreshed list from process.env whenever it lands.
+          void refreshActiveProviderModels().catch(() => {});
         })
         .then(() =>
           // --bare: the apply above is a no-op by design — credentials didn't

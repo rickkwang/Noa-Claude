@@ -147,22 +147,16 @@ export function ModelPicker(t0) {
   }
   const focusedModelName = t7;
   let focusedSupportsEffort;
-  let t8;
   if ($[20] !== focusedValue) {
     const focusedModel = resolveOptionModel(focusedValue);
     focusedSupportsEffort = focusedModel ? modelSupportsEffort(focusedModel) : false;
-    t8 = focusedModel ? getSupportedEffortLevelsForModel(focusedModel).includes("max") : false;
     $[20] = focusedValue;
     $[21] = focusedSupportsEffort;
-    $[22] = t8;
   } else {
     focusedSupportsEffort = $[21];
-    t8 = $[22];
   }
-  const focusedSupportsMax = t8;
   const focusedModelForEffort = resolveOptionModel(focusedValue);
   const focusedSupportedEffortLevels = focusedModelForEffort ? getSupportedEffortLevelsForModel(focusedModelForEffort) : [];
-  const focusedSupportsXhigh = focusedSupportedEffortLevels.includes("xhigh");
   let t9;
   if ($[23] !== focusedValue) {
     t9 = getDefaultEffortLevelForOption(focusedValue);
@@ -192,7 +186,10 @@ export function ModelPicker(t0) {
     if (!focusedSupportsEffort) {
       return;
     }
-    setEffort(prev => cycleEffortLevel(prev ?? focusedDefaultEffort, direction, focusedSupportsXhigh, focusedSupportsMax));
+    // The model's own ladder, not a fixed low/medium/high prefix: a third-party
+    // endpoint may omit a rung (Kimi K3 has no `medium`), and offering one it
+    // never defined means the picker shows a level the request can't carry.
+    setEffort(prev => cycleEffortLevel(prev ?? focusedDefaultEffort, direction, focusedSupportedEffortLevels));
     setHasToggledEffort(true);
   };
   let t12;
@@ -423,14 +420,14 @@ function EffortLevelIndicator(t0) {
   }
   return t4;
 }
-function cycleEffortLevel(current: EffortLevel, direction: 'left' | 'right', includeXhigh: boolean, includeMax: boolean): EffortLevel {
-  const levels: EffortLevel[] = ['low', 'medium', 'high'];
-  if (includeXhigh) levels.push('xhigh');
-  if (includeMax) levels.push('max');
+function cycleEffortLevel(current: EffortLevel, direction: 'left' | 'right', levels: EffortLevel[]): EffortLevel {
+  if (levels.length === 0) return current;
   // If the current level isn't in the cycle (e.g. 'max' after switching to a
-  // non-Opus model), clamp to 'high'.
+  // non-Opus model), clamp to 'high' — or, on an endpoint whose ladder omits
+  // it, to whatever it offers first.
   const idx = levels.indexOf(current);
-  const currentIndex = idx !== -1 ? idx : levels.indexOf('high');
+  const highIdx = levels.indexOf('high');
+  const currentIndex = idx !== -1 ? idx : highIdx !== -1 ? highIdx : 0;
   if (direction === 'right') {
     return levels[(currentIndex + 1) % levels.length]!;
   } else {

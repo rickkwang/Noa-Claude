@@ -4,6 +4,7 @@ import { getInitialSettings } from './settings/settings.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from 'src/services/analytics/growthbook.js'
 import { getAPIProvider, isFirstPartyAnthropicBaseUrl } from './model/providers.js'
 import { get3PModelCapabilityOverride } from './model/modelSupportOverrides.js'
+import { getActiveProviderEffortLevels } from './model/providerModels.js'
 import { getCanonicalName } from './model/model.js'
 import {
   getAntModelOverrideConfig,
@@ -59,6 +60,14 @@ export function getSupportedEffortLevelsForModel(
 
   if (process.env.USER_TYPE === 'ant' && resolveAntModel(model)) {
     return [...EFFORT_LEVELS]
+  }
+
+  // Ahead of the capability flags below: those can only express a prefix of the
+  // ladder plus extras, so an endpoint that skips a rung needs to name its
+  // levels outright.
+  const providerLevels = getActiveProviderEffortLevels(model)
+  if (providerLevels !== undefined) {
+    return providerLevels.filter(isEffortLevel)
   }
 
   const thirdPartyLevels = getThirdPartyEffortLevels(model)

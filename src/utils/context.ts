@@ -7,6 +7,10 @@ import { isEnvTruthy } from './envUtils.js'
 import { getCanonicalName } from './model/model.js'
 import { getModelCapability } from './model/modelCapabilities.js'
 import { hasNative1mContext } from './model/native1m.js'
+import {
+  getActiveProviderContextWindow,
+  getActiveProviderMaxOutputTokens,
+} from './model/providerModels.js'
 
 // Model context window size (200k tokens for all models right now)
 export const MODEL_CONTEXT_WINDOW_DEFAULT = 200_000
@@ -95,6 +99,19 @@ function resolveContextWindowForModel(
   // [1m] suffix — explicit client-side opt-in, respected over all detection
   if (has1mContext(model)) {
     return 1_000_000
+  }
+
+  // What the active provider profile declares for its own endpoint's model.
+  // Ahead of the capability table and the defaults below because none of them
+  // can see a third-party id: it matches no capability entry and carries no
+  // [1m], so it would otherwise resolve to the conservative default however
+  // much the endpoint really serves.
+  const providerWindow = getActiveProviderContextWindow(model)
+  if (providerWindow !== undefined) {
+    if (providerWindow > MODEL_CONTEXT_WINDOW_DEFAULT && is1mContextDisabled()) {
+      return MODEL_CONTEXT_WINDOW_DEFAULT
+    }
+    return providerWindow
   }
 
   const cap = getModelCapability(model)
@@ -195,6 +212,14 @@ export function getModelMaxOutputTokens(model: string): {
       upperLimit = antModel.upperMaxTokensLimit ?? MAX_OUTPUT_TOKENS_UPPER_LIMIT
       return { default: defaultTokens, upperLimit }
     }
+  }
+
+  // What the active provider profile declares for its own endpoint's model.
+  // Ahead of the canonical-name ladder below, which only recognises Claude ids
+  // and would drop a third-party model to the 32k/64k fallback.
+  const providerLimits = getActiveProviderMaxOutputTokens(model)
+  if (providerLimits !== undefined) {
+    return providerLimits
   }
 
   const m = getCanonicalName(model)

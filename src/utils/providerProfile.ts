@@ -5,6 +5,18 @@ import { saveGlobalConfig } from './config.js'
 import { normalizeApiKeyForConfig } from './authPortable.js'
 import { logForDebugging } from './debug.js'
 import { getClaudeConfigHomeDir, isBareMode } from './envUtils.js'
+import {
+  PROVIDER_CATALOGUE_ENV_KEYS,
+  PROVIDER_CONTEXT_WINDOWS_ENV_KEY,
+  PROVIDER_EFFORT_LEVELS_ENV_KEY,
+  PROVIDER_MAX_OUTPUT_TOKENS_ENV_KEY,
+  PROVIDER_MODELS_ENV_KEY,
+  serializeProviderContextWindows,
+  serializeProviderEffortLevels,
+  serializeProviderList,
+  serializeProviderMaxOutputTokens,
+  type MaxOutputTokens,
+} from './model/providerModels.js'
 import * as lockfile from './lockfile.js'
 import { updateSettingsForSource, getSettingsForSource } from './settings/settings.js'
 
@@ -36,6 +48,95 @@ export interface ProviderProfile {
   baseUrl?: string
   apiKey?: string
   model?: string
+  // Everything the endpoint's own model list returned at setup time. `model` is
+  // just the one picked as the default; without this the picker has nothing but
+  // that single id to offer (see buildProviderEnv).
+  models?: string[]
+  // Real context window per model id, e.g. { "k3": 1048576 }. Merged over
+  // PROVIDER_TYPE_CONTEXT_WINDOWS so adding one model doesn't mean restating
+  // the rest. Anything not listed keeps the built-in resolution.
+  contextWindows?: Record<string, number>
+  // Exact effort levels the endpoint accepts per model id, e.g.
+  // { "k3": ['low', 'high', 'max'] }. Merged over PROVIDER_TYPE_EFFORT_LEVELS;
+  // an explicit [] declares none, which is how a user turns off a default
+  // their endpoint rejects.
+  effortLevels?: Record<string, string[]>
+  // Output-token limits per model id. Merged over
+  // PROVIDER_TYPE_MAX_OUTPUT_TOKENS, like contextWindows.
+  maxOutputTokens?: Record<string, MaxOutputTokens>
+}
+
+/**
+ * The exact effort levels a provider type's endpoint accepts, per model.
+ *
+ * Only for models whose behaviour is documented — declaring a level that isn't
+ * there means the endpoint rejects every request carrying it. Keyed by type
+ * rather than written into the setup presets so profiles saved before a type
+ * was added here pick it up without being re-created.
+ */
+export const PROVIDER_TYPE_EFFORT_LEVELS: Partial<
+  Record<ProviderType, Record<string, string[]>>
+> = {
+  // Kimi's platform docs for K3: "支持通过请求顶层 reasoning_effort 配置推理强
+  // 度", values low / high / max. No `medium` and no `xhigh` — a requested one
+  // of those is clamped down to the next level this list does contain (see
+  // clampEffortToSupportedLevels), rather than sent through as a value the
+  // endpoint never documented.
+  //
+  // The K2.7 Code models are listed empty rather than omitted: their docs give
+  // them `Thinking:ON` with no reasoning_effort at all, so declaring "none"
+  // states that outright instead of falling through to a resolution that knows
+  // only Claude ids.
+  kimi: {
+    k3: ['low', 'high', 'max'],
+    'k3-256k': ['low', 'high', 'max'],
+    'kimi-for-coding': [],
+    'kimi-for-coding-highspeed': [],
+  },
+}
+
+/**
+ * Context windows a provider type's endpoint is documented to serve, per model.
+ *
+ * Only documented values belong here. Over-reporting is the dangerous
+ * direction: auto-compact aims at the declared window, so a window larger than
+ * the endpoint's real one means the session overflows instead of compacting.
+ * Under-reporting only costs an early compact, which is why anything unlisted
+ * is left at the conservative built-in default rather than guessed at.
+ */
+export const PROVIDER_TYPE_CONTEXT_WINDOWS: Partial<
+  Record<ProviderType, Record<string, number>>
+> = {
+  // Per Kimi Code's model table: K3 up to 1M, the 256k K3 variant and both
+  // K2.7 Code models at 256k. Kimi's own Claude Code guide configures 1048576
+  // for K3 on this endpoint, and its CLI pins max_context_size to the same
+  // value.
+  //
+  // Caveat on `k3`: the 1M window is a membership tier unlock ("最高 1M"), and
+  // what a lower tier actually gets is not documented. This follows Kimi's own
+  // Claude Code instructions; a lower-tier user who sees the session overflow
+  // rather than compact should point the profile at `k3-256k`.
+  kimi: {
+    k3: 1_048_576,
+    'k3-256k': 262_144,
+    'kimi-for-coding': 262_144,
+    'kimi-for-coding-highspeed': 262_144,
+  },
+}
+
+/**
+ * Output-token limits a provider type's endpoint documents, per model.
+ *
+ * `default` is sent as max_tokens on every request, so it has to be a value the
+ * endpoint accepts; `upperLimit` only bounds CLAUDE_CODE_MAX_OUTPUT_TOKENS and
+ * the legacy thinking budget, which claude.ts clamps to max_tokens - 1 anyway.
+ */
+export const PROVIDER_TYPE_MAX_OUTPUT_TOKENS: Partial<
+  Record<ProviderType, Record<string, MaxOutputTokens>>
+> = {
+  // Kimi's K3 docs: max_completion_tokens defaults to 131072 and can be set as
+  // high as 1048576. Only K3 is documented, so nothing else is declared.
+  kimi: { k3: { default: 131_072, upperLimit: 1_048_576 } },
 }
 
 // Resolved per call, not at module load: CLAUDE_CONFIG_DIR is set by the
@@ -159,6 +260,14 @@ export async function addProviderProfile(
   }))
 }
 
+const ENDPOINT_SCOPED_KEYS = [
+  'apiKey',
+  'models',
+  'effortLevels',
+  'contextWindows',
+  'maxOutputTokens',
+] as const satisfies readonly (keyof ProviderProfile)[]
+
 export async function updateProviderProfile(
   id: string,
   updates: Partial<Omit<ProviderProfile, 'id'>>,
@@ -178,8 +287,14 @@ export async function updateProviderProfile(
         getNormalizedBaseUrl({ ...existing, baseUrl: updates.baseUrl }) !==
           getNormalizedBaseUrl(existing))
     const merged = { ...existing, ...provided }
-    if (endpointChanged && updates.apiKey === undefined) {
-      delete merged.apiKey
+    if (endpointChanged) {
+      // These all describe the endpoint that supplied them — its credential,
+      // the models it served and what it accepts for them. Pointing the profile
+      // elsewhere invalidates every one, so drop any the caller didn't respecify
+      // rather than let them describe an endpoint they were never read from.
+      for (const key of ENDPOINT_SCOPED_KEYS) {
+        if (updates[key] === undefined) delete merged[key]
+      }
     }
     const updated = normalizeProviderProfileCredential(merged)
     const next = [...profiles]
@@ -289,6 +404,40 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
       break
   }
 
+  // Independent of protocol: every profile type declares what its endpoint
+  // serves the same way. The three records merge type defaults with the
+  // profile's own entries — keyed by model, so overriding one entry doesn't
+  // drop the others.
+  setEnvKey(
+    env,
+    PROVIDER_MODELS_ENV_KEY,
+    serializeProviderList(normalizedProfile.models),
+  )
+  setEnvKey(
+    env,
+    PROVIDER_EFFORT_LEVELS_ENV_KEY,
+    serializeProviderEffortLevels({
+      ...PROVIDER_TYPE_EFFORT_LEVELS[normalizedProfile.type],
+      ...normalizedProfile.effortLevels,
+    }),
+  )
+  setEnvKey(
+    env,
+    PROVIDER_CONTEXT_WINDOWS_ENV_KEY,
+    serializeProviderContextWindows({
+      ...PROVIDER_TYPE_CONTEXT_WINDOWS[normalizedProfile.type],
+      ...normalizedProfile.contextWindows,
+    }),
+  )
+  setEnvKey(
+    env,
+    PROVIDER_MAX_OUTPUT_TOKENS_ENV_KEY,
+    serializeProviderMaxOutputTokens({
+      ...PROVIDER_TYPE_MAX_OUTPUT_TOKENS[normalizedProfile.type],
+      ...normalizedProfile.maxOutputTokens,
+    }),
+  )
+
   return env
 }
 
@@ -383,6 +532,7 @@ export async function applyActiveProviderProfileEnv(
     'ANTHROPIC_DEFAULT_SONNET_MODEL',
     'ANTHROPIC_DEFAULT_HAIKU_MODEL',
     'CLAUDE_CODE_SUBAGENT_MODEL',
+    ...PROVIDER_CATALOGUE_ENV_KEYS,
   ] as const
 
   if (!active) {
@@ -432,6 +582,52 @@ export async function applyActiveProviderProfileEnv(
   logProviderSettingsPersistenceFailure(persistProviderEnvToUserSettings(env))
   persistProviderApiKeyApprovalToGlobalConfig(env)
   return active
+}
+
+/**
+ * Re-read the active profile's model catalogue from its endpoint and persist
+ * it, so /model offers the whole list instead of the one id chosen at setup.
+ *
+ * Call this only from user-initiated activation. It is a network round trip:
+ * startup paths — `--print` above all, which must not be held open by an
+ * in-flight request — apply whatever the profile already stored.
+ */
+export async function refreshActiveProviderModels(): Promise<void> {
+  const active = getActiveProviderProfile(await loadProviderProfiles())
+  if (!active?.baseUrl) return
+
+  // Imported lazily: the fast-path entrypoints reach this module for routing
+  // and shouldn't pull the discovery client (and axios) into their startup.
+  const { discoverProviderModelNames } = await import(
+    './model/openaiModelDiscovery.js'
+  )
+  const models = await discoverProviderModelNames({
+    type: active.type,
+    baseUrl: active.baseUrl,
+    apiKey: active.apiKey,
+  })
+  // An endpoint that answers with nothing tells us nothing — keep the list we
+  // already had rather than erasing it.
+  if (models.length === 0) return
+
+  // Nothing new: skip the profile write and the settings rewrite below.
+  const stored = active.models ?? []
+  if (
+    models.length === stored.length &&
+    models.every(model => stored.includes(model))
+  ) {
+    return
+  }
+
+  // Writing by id is safe whoever is active now: it updates this profile's own
+  // record.
+  await updateProviderProfile(active.id, { models })
+
+  // Re-reading rather than applying `active` closes the window opened by the
+  // request above: the user may have switched profiles while it was in flight,
+  // and this profile's base URL, credentials and model would otherwise be
+  // written over the one now routing the session.
+  await applyActiveProviderProfileEnv()
 }
 
 // The OAuth transition paths throw on a failed write because they need the
@@ -490,6 +686,9 @@ function persistProviderEnvToUserSettings(
     ANTHROPIC_DEFAULT_SONNET_MODEL: undefined,
     ANTHROPIC_DEFAULT_HAIKU_MODEL: undefined,
     CLAUDE_CODE_SUBAGENT_MODEL: undefined,
+    ...Object.fromEntries(
+      PROVIDER_CATALOGUE_ENV_KEYS.map(key => [key, undefined]),
+    ),
     ...env,
   }
 

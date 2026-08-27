@@ -38,6 +38,7 @@ import {
 import { has1mContext, is1mContextDisabled } from '../context.js'
 import { getGlobalConfig } from '../config.js'
 import { hasNative1mContext } from './native1m.js'
+import { getActiveProviderModelNames } from './providerModels.js'
 
 // @[MODEL LAUNCH]: Update all the available and default model option strings below.
 
@@ -47,6 +48,8 @@ export type ModelOption = {
   description: string
   descriptionForModel?: string
 }
+
+const PROVIDER_PROFILE_MODEL_DESCRIPTION = 'Served by the active provider'
 
 /**
  * isClaudeAISubscriber() throws when no credentials are configured at all.
@@ -346,9 +349,50 @@ function getOpusPlanOption(): ModelOption {
   }
 }
 
+/**
+ * The active provider profile's own catalogue, replacing the Claude-tier rows
+ * entirely.
+ *
+ * An Anthropic-compatible third party (Kimi, MiniMax, …) reports provider
+ * 'firstParty' — no CLAUDE_CODE_USE_* flag is set — so without this the picker
+ * builds the PAYG 1P list: Sonnet/Opus/Haiku rows that buildProviderEnv has
+ * pinned to the profile's single model, i.e. four labels for one model and no
+ * way to reach anything else the endpoint serves.
+ */
+function getProviderProfileOptions(): ModelOption[] {
+  const models = getActiveProviderModelNames()
+  if (models.length === 0) return []
+
+  // The profile's own default model id, not renderDefaultModelSetting(): that
+  // resolves through the Claude tier aliases and would name a Claude model the
+  // endpoint doesn't serve.
+  const profileDefault = process.env.ANTHROPIC_MODEL
+  return [
+    {
+      value: null,
+      label: 'Default',
+      description: profileDefault
+        ? `${profileDefault} · Provider default`
+        : 'Provider default',
+    },
+    ...models.map(model => ({
+      value: model,
+      label: model,
+      description: PROVIDER_PROFILE_MODEL_DESCRIPTION,
+    })),
+  ]
+}
+
 // @[MODEL LAUNCH]: Update the model picker lists below to include/reorder options for the new model.
 // Each user tier (ant, Max/Team Premium, Pro/Team Standard/Enterprise, PAYG 1P, PAYG 3P) has its own list.
 function getModelOptionsBase(fastMode = false): ModelOption[] {
+  // Checked before every tier: an active profile routes the session to that
+  // endpoint, so its models are the only ones any of these rows could reach.
+  const providerProfileOptions = getProviderProfileOptions()
+  if (providerProfileOptions.length > 0) {
+    return providerProfileOptions
+  }
+
   if (process.env.USER_TYPE === 'ant') {
     // Build options from antModels config
     const antModelOptions: ModelOption[] = getAntModels().map(m => ({
