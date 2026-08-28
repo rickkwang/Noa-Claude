@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import {
   modelOmitsThinkingByDefault,
-  modelRejectsDisabledThinkingAtEffort,
+  effortRejectedWithDisabledThinking,
+  MAX_EFFORT_WITH_DISABLED_THINKING,
   modelRejectsSamplingParams,
   modelRequiresExplicitThinkingDisable,
   modelSupportsAdaptiveThinking,
@@ -81,46 +82,31 @@ describe('Sonnet 5 — Opus 4.7/4.8 request surface, but adaptive-by-default', (
   })
 })
 
-describe('Opus 5 — Sonnet 5 surface plus an effort cap on disabled thinking', () => {
-  test('requires an explicit {type: "disabled"} to actually turn thinking off', () => {
+describe('effort cap alongside explicitly disabled thinking', () => {
+  test('Opus 5 and Sonnet 5 require an explicit {type: "disabled"}', () => {
     expect(modelRequiresExplicitThinkingDisable('claude-opus-5')).toBe(true)
+    expect(modelRequiresExplicitThinkingDisable('claude-sonnet-5')).toBe(true)
   })
 
-  test('rejects disabled thinking at xhigh and max', () => {
-    expect(modelRejectsDisabledThinkingAtEffort('claude-opus-5', 'xhigh')).toBe(
-      true,
-    )
-    expect(modelRejectsDisabledThinkingAtEffort('claude-opus-5', 'max')).toBe(
-      true,
-    )
+  test('xhigh and max are rejected alongside disabled thinking', () => {
+    expect(effortRejectedWithDisabledThinking('xhigh')).toBe(true)
+    expect(effortRejectedWithDisabledThinking('max')).toBe(true)
   })
 
-  test('accepts disabled thinking at high and below, and when effort is unset', () => {
-    expect(modelRejectsDisabledThinkingAtEffort('claude-opus-5', 'high')).toBe(
-      false,
-    )
-    expect(modelRejectsDisabledThinkingAtEffort('claude-opus-5', 'low')).toBe(
-      false,
-    )
-    expect(
-      modelRejectsDisabledThinkingAtEffort('claude-opus-5', undefined),
-    ).toBe(false)
+  test('high and below are accepted, and an unset effort is a no-op', () => {
+    expect(effortRejectedWithDisabledThinking('high')).toBe(false)
+    expect(effortRejectedWithDisabledThinking('medium')).toBe(false)
+    expect(effortRejectedWithDisabledThinking('low')).toBe(false)
+    expect(effortRejectedWithDisabledThinking(undefined)).toBe(false)
   })
 
-  test('the cap is Opus 5 only — 4.8 and Sonnet 5 take disabled at any effort', () => {
-    expect(modelRejectsDisabledThinkingAtEffort('claude-opus-4-8', 'max')).toBe(
-      false,
-    )
-    expect(modelRejectsDisabledThinkingAtEffort('claude-sonnet-5', 'max')).toBe(
-      false,
-    )
-  })
-
-  test('resolves through provider-prefixed IDs, not just the bare 1P name', () => {
-    process.env.CLAUDE_CODE_USE_BEDROCK = '1'
-    expect(
-      modelRejectsDisabledThinkingAtEffort('us.anthropic.claude-opus-5', 'max'),
-    ).toBe(true)
+  // The rule is a property of the disabled-thinking request shape, not of one
+  // model: upstream guards its clamp on the resolved thinking type and the
+  // effort rank only. Scoping this to Opus 5 previously left Sonnet 5 — the
+  // other model that gets an explicit {type:'disabled'} — sending xhigh with
+  // thinking off and taking the 400.
+  test('is not scoped to a single model', () => {
+    expect(MAX_EFFORT_WITH_DISABLED_THINKING).toBe('high')
   })
 })
 

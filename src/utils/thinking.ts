@@ -220,23 +220,27 @@ export function modelRequiresExplicitThinkingDisable(model: string): boolean {
   return canonical.includes('sonnet-5') || canonical.includes('claude-opus-5')
 }
 
-// Opus 5 accepts thinking:{type:'disabled'} only at effort `high` or below —
-// pairing it with `xhigh`/`max` is a 400. The check is per-request (effort and
-// thinking are validated independently on every call), so claude.ts consults
-// this against the effort it is about to send rather than latching a session
-// value. Opus 4.8 accepts the combination at any effort.
-// @[MODEL LAUNCH]: Add new models that cap disabled thinking by effort level.
+// The API rejects effort above `high` when thinking is explicitly disabled
+// (upstream gh-79798). This is a property of the disabled-thinking request
+// shape, not of any one model: upstream's clamp is guarded only on "thinking
+// resolved to {type:'disabled'} AND effort ranks above high", with no model
+// check, and it logs the downgrade rather than applying it silently.
+//
+// An earlier version of this scoped the rule to Opus 5, which left Sonnet 5 —
+// the other model that needs an explicit {type:'disabled'} (see
+// modelRequiresExplicitThinkingDisable) — sending effort:'xhigh' alongside
+// disabled thinking and taking the 400. The check stays per-request because
+// effort and thinking are validated independently on every call.
 const EFFORT_LEVELS_REJECTING_DISABLED_THINKING = new Set(['xhigh', 'max'])
 
-export function modelRejectsDisabledThinkingAtEffort(
-  model: string,
+export function effortRejectedWithDisabledThinking(
   effort: string | undefined,
 ): boolean {
-  if (!effort || !EFFORT_LEVELS_REJECTING_DISABLED_THINKING.has(effort)) {
-    return false
-  }
-  return getCanonicalName(model).includes('claude-opus-5')
+  return !!effort && EFFORT_LEVELS_REJECTING_DISABLED_THINKING.has(effort)
 }
+
+/** The highest effort level that is accepted alongside disabled thinking. */
+export const MAX_EFFORT_WITH_DISABLED_THINKING = 'high' as const
 
 export function shouldEnableThinkingByDefault(): boolean {
   if (process.env.MAX_THINKING_TOKENS) {

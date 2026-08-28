@@ -178,8 +178,9 @@ import { isMcpInstructionsDeltaEnabled } from 'src/utils/mcpInstructionsDelta.js
 import { calculateUSDCost } from 'src/utils/modelCost.js'
 import { endQueryProfile, queryCheckpoint } from 'src/utils/queryProfiler.js'
 import {
+  effortRejectedWithDisabledThinking,
+  MAX_EFFORT_WITH_DISABLED_THINKING,
   modelOmitsThinkingByDefault,
-  modelRejectsDisabledThinkingAtEffort,
   modelRejectsSamplingParams,
   modelRequiresExplicitThinkingDisable,
   modelSupportsAdaptiveThinking,
@@ -1710,18 +1711,18 @@ async function* queryModel(
       // omitted entirely, so turning thinking off requires sending an explicit
       // {type: 'disabled'} rather than leaving the param unset.
       //
-      // Opus 5 additionally rejects {type: 'disabled'} at effort xhigh/max with
-      // a 400. Sending nothing there would leave adaptive thinking on — but a
-      // hard 400 fails the whole request, so drop the effort down to `high`
-      // (the highest level that accepts disabled thinking) and keep honouring
-      // the user's "thinking off" choice.
-      if (
-        modelRejectsDisabledThinkingAtEffort(
-          apiModel,
-          outputConfig.effort as string | undefined,
+      // The API then rejects effort above `high` alongside disabled thinking
+      // (gh-79798). Sending nothing would leave adaptive thinking on, but a
+      // hard 400 fails the whole request — so drop the effort to the highest
+      // level that accepts disabled thinking and keep honouring the user's
+      // "thinking off" choice. Log it: this silently overrides an effort the
+      // user chose, and upstream reports the same downgrade.
+      const requestedEffort = outputConfig.effort as string | undefined
+      if (effortRejectedWithDisabledThinking(requestedEffort)) {
+        outputConfig.effort = MAX_EFFORT_WITH_DISABLED_THINKING
+        logForDebugging(
+          `output_config.effort '${requestedEffort}' clamped to '${MAX_EFFORT_WITH_DISABLED_THINKING}': the API rejects higher effort when thinking is disabled`,
         )
-      ) {
-        outputConfig.effort = 'high'
       }
       thinking = { type: 'disabled' } satisfies BetaMessageStreamParams['thinking']
     }
