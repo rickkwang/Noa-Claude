@@ -126,13 +126,42 @@ export function getBestModel(): ModelName {
   return getDefaultOpusModel()
 }
 
-// @[MODEL LAUNCH]: Update the default Opus model (3P providers may lag so keep defaults unchanged).
+/**
+ * Why Bedrock/Vertex/Foundry get a generation-behind default.
+ *
+ * Not because those backends necessarily lag on availability — for Bedrock and
+ * Vertex they no longer do, and upstream's alias table defaults both to the
+ * current Opus generation. The reason is that Noa cannot recover when a default
+ * turns out not to be enabled on the caller's account:
+ *
+ *   - no 400 classifier that strips an unsupported field and retries
+ *   - no per-model third-party fallback chain; `fallbackModel` is whatever the
+ *     user passed to --fallback-model and nothing else
+ *   - releases far less often than upstream, which rebuilds against each
+ *     backend's current GA state
+ *
+ * Per-provider availability is the fastest-moving fact in the model tables, so
+ * a snapshot of it goes stale in one direction or the other. Stale-conservative
+ * costs a generation of quality silently; stale-aggressive fails the first
+ * request of every session. Without the recovery machinery above, the second is
+ * the worse trade, so this branch deliberately trails.
+ *
+ * Both directions are one env var away from being overridden —
+ * ANTHROPIC_DEFAULT_OPUS_MODEL / _SONNET_MODEL are checked first — and that is
+ * the intended escape hatch for anyone whose account is ahead of this default.
+ *
+ * Known open question: Foundry is the one backend where this branch is *ahead*
+ * of upstream, which defaults Foundry's opus alias to Opus 4.6. If that
+ * reflects a real availability ceiling, Foundry sessions fail on the first
+ * request rather than merely running a generation behind. Unverified — needs a
+ * live Foundry endpoint to settle.
+ */
+// @[MODEL LAUNCH]: Update the default Opus model. Read the block above before
+// touching the third-party branch.
 export function getDefaultOpusModel(): ModelName {
   if (process.env.ANTHROPIC_DEFAULT_OPUS_MODEL) {
     return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL
   }
-  // 3P providers (Bedrock, Vertex, Foundry) lag firstParty on new Opus
-  // releases, so keep them on the previous generation until GA everywhere.
   if (getAPIProvider() !== 'firstParty') {
     return getModelStrings().opus48 || 'claude-opus-4-8'
   }
@@ -141,7 +170,8 @@ export function getDefaultOpusModel(): ModelName {
 
 // @[MODEL LAUNCH]: Update the default Fable model.
 // Fable 5 is the top tier (above Opus). It is not anyone's default; this only
-// resolves the explicit `fable` alias. No 3P lag handling — Fable launched 1P.
+// resolves the explicit `fable` alias, so there is no third-party branch to
+// trail: asking for `fable` by name is already an explicit choice.
 export function getDefaultFableModel(): ModelName {
   if (process.env.ANTHROPIC_DEFAULT_FABLE_MODEL) {
     return process.env.ANTHROPIC_DEFAULT_FABLE_MODEL
@@ -149,13 +179,12 @@ export function getDefaultFableModel(): ModelName {
   return getModelStrings().fable5 || 'claude-fable-5'
 }
 
-// @[MODEL LAUNCH]: Update the default Sonnet model (3P providers may lag so keep defaults unchanged).
+// @[MODEL LAUNCH]: Update the default Sonnet model. The third-party branch
+// trails for the reasons given above getDefaultOpusModel.
 export function getDefaultSonnetModel(): ModelName {
   if (process.env.ANTHROPIC_DEFAULT_SONNET_MODEL) {
     return process.env.ANTHROPIC_DEFAULT_SONNET_MODEL
   }
-  // 3P providers (Bedrock, Vertex, Foundry) lag firstParty on new Sonnet
-  // releases, so keep them on the previous generation until GA everywhere.
   if (getAPIProvider() !== 'firstParty') {
     return getModelStrings().sonnet46 || 'claude-sonnet-4-6'
   }
