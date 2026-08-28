@@ -150,6 +150,7 @@ import {
   getExperimentAdvisorModels,
   isAdvisorEnabled,
   isValidAdvisorModel,
+  isValidAdvisorPairing,
   modelSupportsAdvisor,
 } from 'src/utils/advisor.js'
 import { getAgentContext } from 'src/utils/agentContext.js'
@@ -1176,6 +1177,15 @@ async function* queryModel(
       } else if (!isValidAdvisorModel(normalizedAdvisorModel)) {
         logForDebugging(
           `[AdvisorTool] Skipping advisor - ${normalizedAdvisorModel} is not a valid advisor model`,
+        )
+      } else if (
+        !isValidAdvisorPairing(options.model, normalizedAdvisorModel)
+      ) {
+        // Load-bearing even though main.tsx validates --advisor at launch: that
+        // check runs against the startup model only, so a mid-session /model
+        // switch to something stronger than the advisor lands here instead.
+        logForDebugging(
+          `[AdvisorTool] Skipping advisor - ${normalizedAdvisorModel} cannot advise ${options.model} (advisor must be at least as capable as the base model)`,
         )
       } else {
         advisorModel = normalizedAdvisorModel

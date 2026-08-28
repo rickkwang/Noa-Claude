@@ -3,6 +3,7 @@ import type { BetaUsage } from '@anthropic-ai/sdk/resources/beta/messages/messag
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growthbook.js'
 import { shouldIncludeFirstPartyOnlyBetas } from './betas.js'
 import { isEnvTruthy } from './envUtils.js'
+import { getCanonicalName } from './model/model.js'
 import { getInitialSettings } from './settings/settings.js'
 
 // The SDK does not yet have types for advisor blocks.
@@ -85,25 +86,88 @@ export function getExperimentAdvisorModels():
     : undefined
 }
 
-// @[MODEL LAUNCH]: Add the new model if it supports the advisor tool.
-// Checks whether the main loop model supports calling the advisor tool.
-export function modelSupportsAdvisor(model: string): boolean {
-  const m = model.toLowerCase()
-  return (
-    m.includes('opus-4-6') ||
-    m.includes('sonnet-4-6') ||
-    process.env.USER_TYPE === 'ant'
-  )
+/**
+ * Advisor capability ranking, mirroring the `advisor_rank` field in upstream's
+ * model-capability table. The rank orders models by capability so the pairing
+ * rule below can be expressed once instead of as an N×N allowlist:
+ *
+ *   - a model can *use* an advisor at all only if it has a rank
+ *   - a model can *serve* as an advisor only at rank >= MIN_ADVISOR_RANK
+ *   - a pair is valid only when rank(advisor) >= rank(base)
+ *
+ * Models absent from this table have no rank: they cannot use an advisor and
+ * cannot be one. That is the same fail-closed shape upstream uses, and it is
+ * why older Opus/Sonnet generations are simply omitted rather than listed at 0.
+ *
+ * @[MODEL LAUNCH]: Give the new model a rank if it participates in advisor.
+ */
+const ADVISOR_RANKS: Record<string, number> = {
+  'claude-haiku-4-5': 1,
+  'claude-sonnet-4-6': 2,
+  'claude-sonnet-5': 3,
+  'claude-opus-4-6': 3,
+  'claude-opus-4-7': 4,
+  'claude-opus-4-8': 4,
+  'claude-opus-5': 4,
+  'claude-fable-5': 5,
+  'claude-mythos-5': 5,
 }
 
-// @[MODEL LAUNCH]: Add the new model if it can serve as an advisor model.
+/** Minimum rank a model needs to serve as somebody's advisor. */
+const MIN_ADVISOR_RANK = 2
+
+/**
+ * Ant builds skip the rank checks entirely, so unreleased models can be driven
+ * from either side of the pair. Upstream has the same escape hatch behind
+ * CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL, as an early `true` out of each
+ * predicate — not as a synthetic rank, which would still reject a low-ranked
+ * model like Haiku 4.5 as an advisor.
+ */
+function advisorRankChecksBypassed(): boolean {
+  return process.env.USER_TYPE === 'ant'
+}
+
+function getAdvisorRank(model: string): number | undefined {
+  return ADVISOR_RANKS[getCanonicalName(model)]
+}
+
+/** Whether `model` can have an advisor attached to its requests. */
+export function modelSupportsAdvisor(model: string): boolean {
+  if (advisorRankChecksBypassed()) {
+    return true
+  }
+  return getAdvisorRank(model) !== undefined
+}
+
+/** Whether `model` is capable enough to serve as an advisor. */
 export function isValidAdvisorModel(model: string): boolean {
-  const m = model.toLowerCase()
-  return (
-    m.includes('opus-4-6') ||
-    m.includes('sonnet-4-6') ||
-    process.env.USER_TYPE === 'ant'
-  )
+  if (advisorRankChecksBypassed()) {
+    return true
+  }
+  const rank = getAdvisorRank(model)
+  return rank !== undefined && rank >= MIN_ADVISOR_RANK
+}
+
+/**
+ * Whether `advisorModel` may advise `baseModel`. An advisor must be at least as
+ * capable as the model it advises — a weaker advisor is rejected by the API.
+ * Unranked models on either side fall through as valid so an unrecognised id
+ * is not blocked here; the enablement and allowlist checks above already gate
+ * those paths.
+ */
+export function isValidAdvisorPairing(
+  baseModel: string,
+  advisorModel: string,
+): boolean {
+  if (advisorRankChecksBypassed()) {
+    return true
+  }
+  const baseRank = getAdvisorRank(baseModel)
+  const advisorRank = getAdvisorRank(advisorModel)
+  if (baseRank === undefined || advisorRank === undefined) {
+    return true
+  }
+  return advisorRank >= baseRank
 }
 
 export function getInitialAdvisorSetting(): string | undefined {

@@ -59,7 +59,7 @@ import { loadRemoteManagedSettings, refreshRemoteManagedSettings } from './servi
 import type { ToolInputJSONSchema } from './Tool.js';
 import { createSyntheticOutputTool, isSyntheticOutputToolEnabled } from './tools/SyntheticOutputTool/SyntheticOutputTool.js';
 import { getTools } from './tools.js';
-import { canUserConfigureAdvisor, getInitialAdvisorSetting, isAdvisorEnabled, isValidAdvisorModel, modelSupportsAdvisor } from './utils/advisor.js';
+import { canUserConfigureAdvisor, getInitialAdvisorSetting, isAdvisorEnabled, isValidAdvisorModel, isValidAdvisorPairing, modelSupportsAdvisor } from './utils/advisor.js';
 import { isAgentSwarmsEnabled } from './utils/agentSwarmsEnabled.js';
 import { count, uniq } from './utils/array.js';
 import { installAsciicastRecorder } from './utils/asciicast.js';
@@ -1986,6 +1986,12 @@ async function run(): Promise<CommanderCommand> {
         const normalizedAdvisorModel = normalizeModelStringForAPI(parseUserSpecifiedModel(advisorOption));
         if (!isValidAdvisorModel(normalizedAdvisorModel)) {
           process.stderr.write(chalk.red(`Error: The model "${advisorOption}" cannot be used as an advisor.\n`));
+          process.exit(1);
+        }
+        // An advisor weaker than the model it advises is rejected by the API,
+        // so catch the pair here rather than at the first request.
+        if (!isValidAdvisorPairing(resolvedInitialModel, normalizedAdvisorModel)) {
+          process.stderr.write(chalk.red(`Error: "${advisorOption}" cannot advise "${resolvedInitialModel}" — the advisor must be at least as capable as the base model.\n`));
           process.exit(1);
         }
       }
