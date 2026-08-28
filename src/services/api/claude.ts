@@ -492,15 +492,24 @@ function should1hCacheTTL(querySource?: QuerySource): boolean {
 /**
  * Configure effort parameters for API request.
  *
+ * `outputConfig` is seeded from CLAUDE_CODE_EXTRA_BODY's `output_config`, so it
+ * can already carry an `effort` the user set for a different model. When the
+ * current model has no effort parameter that value is a hard 400, so it is
+ * deleted rather than left in place — upstream's equivalent opens with the same
+ * `delete` before its early return.
  */
-function configureEffortParams(
+export function configureEffortParams(
   effortValue: EffortValue | undefined,
   outputConfig: BetaOutputConfig,
   extraBodyParams: Record<string, unknown>,
   betas: string[],
   model: string,
 ): void {
-  if (!modelSupportsEffort(model) || 'effort' in outputConfig) {
+  if (!modelSupportsEffort(model)) {
+    delete outputConfig.effort
+    return
+  }
+  if ('effort' in outputConfig) {
     return
   }
 
@@ -1612,9 +1621,17 @@ async function* queryModel(
       stripEffort: shouldStripExtraBodyEffort,
     })
 
+    // Seed the merged output_config from CLAUDE_CODE_EXTRA_BODY, then drop the
+    // original: `...extraBodyParams` is spread into the request body *before*
+    // `output_config: outputConfig`, and the latter is conditional on the merged
+    // object being non-empty. Left in place, an extra-body output_config whose
+    // every key the configure* helpers strip (an `effort` for a model that has
+    // no effort parameter, say) would empty the merged copy, skip the
+    // conditional spread, and ship the unstripped original anyway.
     const outputConfig: BetaOutputConfig = {
       ...((extraBodyParams.output_config as BetaOutputConfig) ?? {}),
     }
+    delete extraBodyParams.output_config
 
     configureEffortParams(
       effort,
@@ -1630,7 +1647,7 @@ async function* queryModel(
       betasParams,
     )
 
-    // Merge outputFormat into extraBodyParams.output_config alongside effort
+    // Merge outputFormat into the merged output_config alongside effort
     // Requires structured-outputs beta header per SDK (see parse() in messages.mjs)
     if (options.outputFormat && !('format' in outputConfig)) {
       outputConfig.format = options.outputFormat as BetaJSONOutputFormat
