@@ -231,12 +231,14 @@ export function getModelMaxOutputTokens(model: string): {
     defaultTokens = 64_000
     upperLimit = 128_000
   } else if (m.includes('sonnet-4-6')) {
-    // Sonnet 4.6 caps at 64k on the synchronous Messages API (only Opus 4.6+
-    // reaches 128k). 128k/300k for Sonnet 4.6 is Batches-only via the
-    // output-300k-2026-03-24 beta, which this streaming client doesn't use.
-    // Per https://platform.claude.com/docs/en/about-claude/models/overview.md
+    // Sonnet 4.6 keeps the lower 32k *default* of the Sonnet 4 line but its
+    // ceiling is 128k, same as Opus 4.6+. Upstream's baked model catalog has
+    // `max_output_tokens:{default:32000,upper:128000}` for claude-sonnet-4-6,
+    // and getMaxOutputTokensForModel reads exactly those two fields. An earlier
+    // reading of the models overview put the ceiling at 64k, which silently
+    // halved what --max-output-tokens would accept here.
     defaultTokens = 32_000
-    upperLimit = 64_000
+    upperLimit = 128_000
   } else if (
     m.includes('opus-4-5') ||
     m.includes('sonnet-4') ||
