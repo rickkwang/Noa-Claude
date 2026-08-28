@@ -48,8 +48,15 @@ export const COST_TIER_3_15 = {
   webSearchRequests: 0.01,
 } as const satisfies ModelCosts
 
-// Introductory Sonnet 5 pricing through August 31, 2026.
-export const COST_SONNET_5_INTRO_2_10 = {
+// Pricing tier for Sonnet 5: $2 input / $10 output per Mtok.
+//
+// This is Sonnet 5's standing rate, NOT a promotion. Upstream's baked model
+// catalog maps `claude-sonnet-5` to a plain `tier_2_10` entry with no expiry
+// field, and the upstream bundle contains no date-gated pricing path at all.
+// An earlier reading of these numbers as introductory added a 2026-09-01 cliff
+// back to $3/$15, which would have started over-reporting Sonnet 5 spend by 50%
+// in /cost, the stats cache and the model picker. Don't reintroduce it.
+export const COST_TIER_2_10 = {
   inputTokens: 2,
   outputTokens: 10,
   promptCacheWriteTokens: 2.5,
@@ -57,12 +64,13 @@ export const COST_SONNET_5_INTRO_2_10 = {
   webSearchRequests: 0.01,
 } as const satisfies ModelCosts
 
-const SONNET_5_INTRO_PRICING_END_MS = Date.parse('2026-09-01T00:00:00.000Z')
-
-export function getSonnet5CostTier(nowMs = Date.now()): ModelCosts {
-  return nowMs < SONNET_5_INTRO_PRICING_END_MS
-    ? COST_SONNET_5_INTRO_2_10
-    : COST_TIER_3_15
+/**
+ * Sonnet 5's first-party tier. Callers still gate on isDirectFirstParty(): a
+ * proxy or partner endpoint on ANTHROPIC_BASE_URL bills at its own rates, so
+ * those fall through to MODEL_COSTS' conservative Sonnet entry.
+ */
+export function getSonnet5CostTier(): ModelCosts {
+  return COST_TIER_2_10
 }
 
 // Pricing tier for Opus 4/4.1: $15 input / $75 output per Mtok
@@ -207,18 +215,14 @@ function tokensToUSDCost(modelCosts: ModelCosts, usage: Usage): number {
   )
 }
 
-export function getModelCosts(
-  model: string,
-  usage: Usage,
-  nowMs = Date.now(),
-): ModelCosts {
+export function getModelCosts(model: string, usage: Usage): ModelCosts {
   const shortName = getCanonicalName(model)
 
   if (
     shortName === firstPartyNameToCanonical(CLAUDE_SONNET_5_CONFIG.firstParty) &&
     isDirectFirstParty()
   ) {
-    return getSonnet5CostTier(nowMs)
+    return getSonnet5CostTier()
   }
 
   // Check if this is an Opus 4.6/4.7 model with fast mode active.
@@ -308,15 +312,12 @@ export function formatModelPricing(costs: ModelCosts): string {
  * Accepts either a short name or full model name
  * Returns undefined if model is not found
  */
-export function getModelPricingString(
-  model: string,
-  nowMs = Date.now(),
-): string | undefined {
+export function getModelPricingString(model: string): string | undefined {
   const shortName = getCanonicalName(model)
   if (
     shortName === firstPartyNameToCanonical(CLAUDE_SONNET_5_CONFIG.firstParty)
   ) {
-    return formatModelPricing(getSonnet5CostTier(nowMs))
+    return formatModelPricing(getSonnet5CostTier())
   }
   const costs = MODEL_COSTS[shortName]
   if (!costs) return undefined
