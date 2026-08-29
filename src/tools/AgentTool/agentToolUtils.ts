@@ -288,6 +288,7 @@ export function finalizeAgentTool(
     agentType: string
     isAsync: boolean
     personalityName?: string
+    promptFallback?: boolean
   },
 ): AgentToolResult {
   const {
@@ -298,6 +299,7 @@ export function finalizeAgentTool(
     agentType,
     isAsync,
     personalityName,
+    promptFallback,
   } = metadata
 
   const lastAssistantMessage = getLastAssistantMessage(agentMessages)
@@ -349,6 +351,10 @@ export function finalizeAgentTool(
       last_request_id:
         lastRequestId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
     })
+  }
+
+  if (promptFallback) {
+    content = [{ type: 'text', text: '[WARN] This agent\'s custom system prompt failed to build; it ran with a generic fallback prompt and may not have followed its specialization.' }, ...content]
   }
 
   return {
