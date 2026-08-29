@@ -192,6 +192,15 @@ export type AgentDefinitionsResult = {
   allowedAgentTypes?: string[]
 }
 
+let cachedActiveAgents: AgentDefinition[] | undefined
+
+/** Last resolved active agent list, for sync checks (e.g. isConcurrencySafe).
+ * Every state-update path funnels through getActiveAgentsFromList, so this
+ * always mirrors the list the app is actually dispatching against. */
+export function getCachedActiveAgents(): AgentDefinition[] | undefined {
+  return cachedActiveAgents
+}
+
 export function getActiveAgentsFromList(
   allAgents: AgentDefinition[],
 ): AgentDefinition[] {
@@ -219,7 +228,8 @@ export function getActiveAgentsFromList(
     }
   }
 
-  return Array.from(agentMap.values())
+  cachedActiveAgents = Array.from(agentMap.values())
+  return cachedActiveAgents
 }
 
 /**
@@ -396,6 +406,7 @@ export const getAgentDefinitionsWithOverrides = memoize(
 
 export function clearAgentDefinitionsCache(): void {
   getAgentDefinitionsWithOverrides.cache.clear?.()
+  cachedActiveAgents = undefined
   clearPluginAgentCache()
 }
 

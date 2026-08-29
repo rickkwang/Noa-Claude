@@ -56,7 +56,7 @@ import { PLAN_AGENT } from './built-in/planAgent.js';
 import { AGENT_TOOL_NAME, assignAgentPersonalityName, LEGACY_AGENT_TOOL_NAME, ONE_SHOT_BUILTIN_AGENT_TYPES, releaseAgentPersonalityName, shouldUseAgentPersonalityName } from './constants.js';
 import { buildForkedMessages, buildWorktreeNotice, FORK_AGENT, isForkSubagentEnabled, isInForkChild } from './forkSubagent.js';
 import type { AgentDefinition } from './loadAgentsDir.js';
-import { filterAgentsByMcpRequirements, hasRequiredMcpServers, isBuiltInAgent } from './loadAgentsDir.js';
+import { filterAgentsByMcpRequirements, getCachedActiveAgents, hasRequiredMcpServers, isBuiltInAgent } from './loadAgentsDir.js';
 import { getPrompt } from './prompt.js';
 import { runAgent } from './runAgent.js';
 import { renderGroupedAgentToolUse, renderToolResultMessage, renderToolUseErrorMessage, renderToolUseMessage, renderToolUseProgressMessage, renderToolUseRejectedMessage, renderToolUseTag, userFacingName, userFacingNameBackgroundColor } from './UI.js';
@@ -507,7 +507,6 @@ export const AgentTool = buildTool({
     // Normal path: build the selected agent's own system prompt with env
     // details, and use a simple user message for the prompt.
     let enhancedSystemPrompt: string[] | undefined;
-    let promptFallback = false;
     let forkParentSystemPrompt: ReturnType<typeof buildEffectiveSystemPrompt> | undefined;
     let promptMessages: MessageType[];
     if (isForkPath) {
@@ -551,8 +550,9 @@ export const AgentTool = buildTool({
         // Apply environment details enhancement
         enhancedSystemPrompt = await enhanceSystemPromptWithEnvDetails([agentPrompt], resolvedAgentModel, additionalWorkingDirectories);
       } catch (error) {
+        // Not flagged as fallback here: runAgent retries the build internally
+        // and only reports via onPromptFallback if the retry also fails.
         logForDebugging(`Failed to get system prompt for agent ${selectedAgent.agentType}: ${errorMessage(error)}`);
-        promptFallback = true;
       }
       promptMessages = [createUserMessage({
         content: prompt
@@ -663,7 +663,10 @@ export const AgentTool = buildTool({
       }),
       worktreePath: worktreeInfo?.worktreePath,
       description,
-      personalityName
+      personalityName,
+      onPromptFallback: () => {
+        metadata.promptFallback = true;
+      }
     };
     const metadata = {
       prompt,
@@ -673,7 +676,7 @@ export const AgentTool = buildTool({
       agentType: selectedAgent.agentType,
       isAsync: (run_in_background === true || selectedAgent.background === true) && !isBackgroundTasksDisabled,
       personalityName,
-      promptFallback
+      promptFallback: false
     };
 
     // Helper to wrap execution with a cwd override: explicit cwd arg (KAIROS)
@@ -1296,8 +1299,13 @@ export const AgentTool = buildTool({
     // Everything else shares the parent's cwd. Only read-only built-ins may
     // run concurrently — write-capable agents (general-purpose, custom,
     // unknown) serialize so two agents can't silently overwrite each other.
-    // Note: a custom agent shadowing a built-in name still passes here;
-    // closing that needs toolUseContext, which isConcurrencySafe doesn't get.
+    // A custom agent can shadow the built-in "Explore"/"Plan" name (later
+    // sources win in getActiveAgentsFromList), so verify the resolved agent
+    // when the active list has loaded; fall back to the name check when not.
+    const resolved = getCachedActiveAgents()?.find(a => a.agentType === i.subagent_type);
+    if (resolved && resolved.source !== 'built-in') {
+      return false;
+    }
     return i.subagent_type === EXPLORE_AGENT.agentType || i.subagent_type === PLAN_AGENT.agentType;
   },
   userFacingName,

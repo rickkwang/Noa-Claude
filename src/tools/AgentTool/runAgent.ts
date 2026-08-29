@@ -270,6 +270,7 @@ export async function* runAgent({
   transcriptSubdir,
   onQueryProgress,
   reuseInitializedPromptContext,
+  onPromptFallback,
 }: {
   agentDefinition: AgentDefinition
   promptMessages: Message[]
@@ -305,6 +306,9 @@ export async function* runAgent({
    * system prompt, context, and tools. Used by background summarization to fork
    * the agent's conversation for periodic progress summaries. */
   onCacheSafeParams?: (params: CacheSafeParams) => void
+  /** Called if the agent's system prompt fell back to DEFAULT_AGENT_PROMPT
+   * after a build failure, so the caller can flag the result as degraded. */
+  onPromptFallback?: () => void
   /** Replacement state reconstructed from a resumed sidechain transcript so
    * the same tool results are re-replaced (prompt cache stability). When
    * omitted, createSubagentContext clones the parent's state. */
@@ -525,6 +529,7 @@ export async function* runAgent({
           resolvedAgentModel,
           additionalWorkingDirectories,
           resolvedTools,
+          onPromptFallback,
         ),
       )
 
@@ -906,12 +911,14 @@ export function filterIncompleteToolCalls(messages: Message[]): Message[] {
   })
 }
 
-async function getAgentSystemPrompt(
+// Exported for tests; production callers go through runAgent.
+export async function getAgentSystemPrompt(
   agentDefinition: AgentDefinition,
   toolUseContext: Pick<ToolUseContext, 'options'>,
   resolvedAgentModel: string,
   additionalWorkingDirectories: string[],
   resolvedTools: readonly Tool[],
+  onFallback?: () => void,
 ): Promise<string[]> {
   const enabledToolNames = new Set(resolvedTools.map(t => t.name))
   try {
@@ -925,6 +932,7 @@ async function getAgentSystemPrompt(
       enabledToolNames,
     )
   } catch (_error) {
+    onFallback?.()
     return enhanceSystemPromptWithEnvDetails(
       [DEFAULT_AGENT_PROMPT],
       resolvedAgentModel,
