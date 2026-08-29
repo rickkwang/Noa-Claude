@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { configureEffortParams } from '../../../services/api/claude.js'
 
 const ENV_KEYS = [
@@ -11,6 +11,13 @@ const ENV_KEYS = [
 ] as const
 
 const original = Object.fromEntries(ENV_KEYS.map(k => [k, process.env[k]]))
+
+// Provider detection reads ambient env (e.g. a developer's ANTHROPIC_BASE_URL
+// pointing at a third-party endpoint), which flips effort support off and
+// breaks these tests. Pin a clean first-party environment per test.
+beforeEach(() => {
+  for (const k of ENV_KEYS) delete process.env[k]
+})
 
 afterEach(() => {
   for (const k of ENV_KEYS) {
