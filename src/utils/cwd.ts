@@ -15,6 +15,16 @@ export function runWithCwdOverride<T>(cwd: string, fn: () => T): T {
 }
 
 /**
+ * The cwd override in effect for this async context, or undefined when there
+ * is none. Distinct from getCwd(): that also reports a plain `cd` in the
+ * shell, which is not an isolation boundary. Only use this to reason about
+ * the boundary itself — see checkWorktreeEscape.
+ */
+export function getCwdOverride(): string | undefined {
+  return cwdOverrideStorage.getStore()
+}
+
+/**
  * Get the current working directory
  */
 export function pwd(): string {

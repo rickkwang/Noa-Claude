@@ -35,6 +35,7 @@ import {
 import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
 import { expandPath } from '../../utils/path.js'
+import { checkWorktreeEscape } from '../../utils/worktreeEscape.js'
 import {
   checkWritePermissionForTool,
   matchingRuleForInput,
@@ -175,6 +176,11 @@ export const FileWriteTool = buildTool({
           'File is in a directory that is denied by your permission settings.',
         errorCode: 1,
       }
+    }
+
+    const escapeError = checkWorktreeEscape(fullFilePath)
+    if (escapeError) {
+      return { result: false, message: escapeError, errorCode: 4 }
     }
 
     // SECURITY: Skip filesystem operations for UNC paths to prevent NTLM credential leaks.

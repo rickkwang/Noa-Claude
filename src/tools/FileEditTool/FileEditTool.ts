@@ -43,6 +43,7 @@ import {
 } from '../../utils/gitDiff.js'
 import { logError } from '../../utils/log.js'
 import { expandPath } from '../../utils/path.js'
+import { checkWorktreeEscape } from '../../utils/worktreeEscape.js'
 import {
   checkWritePermissionForTool,
   matchingRuleForInput,
@@ -174,6 +175,11 @@ export const FileEditTool = buildTool({
           'File is in a directory that is denied by your permission settings.',
         errorCode: 2,
       }
+    }
+
+    const escapeError = checkWorktreeEscape(fullFilePath)
+    if (escapeError) {
+      return { result: false, message: escapeError, errorCode: 11 }
     }
 
     // SECURITY: Skip filesystem operations for UNC paths to prevent NTLM credential leaks.
