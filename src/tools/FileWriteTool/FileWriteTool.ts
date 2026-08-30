@@ -35,13 +35,13 @@ import {
 import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
 import { expandPath } from '../../utils/path.js'
-import { checkWorktreeEscape } from '../../utils/worktreeEscape.js'
 import {
   checkWritePermissionForTool,
   matchingRuleForInput,
 } from '../../utils/permissions/filesystem.js'
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
 import { matchWildcardPattern } from '../../utils/permissions/shellRuleMatching.js'
+import { checkWorktreeEscape } from '../../utils/worktreeEscape.js'
 import { FILE_UNEXPECTEDLY_MODIFIED_ERROR } from '../FileEditTool/constants.js'
 import { gitDiffSchema, hunkSchema } from '../FileEditTool/types.js'
 import { canSkipPreRead, isNotebookPath } from '../shared/preReadGuard.js'
@@ -178,16 +178,16 @@ export const FileWriteTool = buildTool({
       }
     }
 
-    const escapeError = checkWorktreeEscape(fullFilePath)
-    if (escapeError) {
-      return { result: false, message: escapeError, errorCode: 4 }
-    }
-
     // SECURITY: Skip filesystem operations for UNC paths to prevent NTLM credential leaks.
     // On Windows, fs.existsSync() on UNC paths triggers SMB authentication which could
     // leak credentials to malicious servers. Let the permission check handle UNC paths.
     if (fullFilePath.startsWith('\\\\') || fullFilePath.startsWith('//')) {
       return { result: true }
+    }
+
+    const escapeError = checkWorktreeEscape(fullFilePath)
+    if (escapeError) {
+      return { result: false, message: escapeError, errorCode: 4 }
     }
 
     const fs = getFsImplementation()

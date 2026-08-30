@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { type CwdOverride, getCwdOverride } from './cwd.js'
 import { getPathsForPermissionCheck } from './fsOperations.js'
 import { pathInWorkingPath } from './permissions/filesystem.js'
