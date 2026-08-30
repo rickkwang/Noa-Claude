@@ -1,7 +1,43 @@
 // @ts-nocheck
 import { useCallback, useContext, useLayoutEffect, useRef, useState } from 'react'
-import { TerminalSizeContext } from '../components/TerminalSizeContext.js'
+import { TerminalSizeContext, type TerminalSize } from '../components/TerminalSizeContext.js'
 import type { DOMElement } from '../dom.js'
+
+/**
+ * How many visibility flips to allow before assuming the layout and this
+ * hook's own state are feeding each other. React's own nested-update limit
+ * is 50; staying well under it keeps the app alive instead of crashing.
+ */
+const MAX_VISIBILITY_FLIPS = 4
+
+/**
+ * The latch decision, split out from the effect so it can be tested without a
+ * renderer: given what was published, what the layout just said, and how many
+ * consecutive flips came before, decide what to publish now.
+ *
+ * `flips` is the running count of disagreements; it resets whenever the layout
+ * agrees with the published state, and the caller resets it on a terminal
+ * resize (the only external input the calculation has).
+ */
+export function nextViewportVisibility(
+  published: boolean,
+  measured: boolean,
+  flips: number,
+): { visible: boolean; flips: number } {
+  if (measured === published) {
+    // Settled: the layout agrees with the state we already published.
+    return { visible: published, flips: 0 }
+  }
+
+  const nextFlips = flips + 1
+  if (nextFlips > MAX_VISIBILITY_FLIPS) {
+    // Oscillating. Latch on "visible": consumers then keep live content and
+    // running animations, which costs redraws, not a wrong frame.
+    return { visible: true, flips: nextFlips }
+  }
+
+  return { visible: measured, flips: nextFlips }
+}
 
 type ViewportEntry = {
   /**
@@ -41,6 +77,25 @@ export function useTerminalViewport(): [
   const terminalSize = useContext(TerminalSizeContext)
   const elementRef = useRef<DOMElement | null>(null)
   const [entry, setEntry] = useState<ViewportEntry>({ isVisible: true })
+  // Consumers (OffscreenFreeze, Ratchet) change their own layout based on
+  // `isVisible`, so this hook's input is downstream of its own output: a
+  // subtree that grows when visible can push itself back into scrollback,
+  // flip to invisible, shrink, become visible again, and never settle. The
+  // effect below runs on every commit, so an unbounded flip sequence is a
+  // layout-effect setState loop — React aborts the whole app with "Maximum
+  // update depth exceeded". Count consecutive flips and latch once they
+  // exceed the budget; the latch releases when the terminal size changes,
+  // which is the only external input the calculation has.
+  const flipsRef = useRef(0)
+  // Compared by value, not identity: App.tsx rebuilds the context object on
+  // every render(), so identity would release the latch on any unrelated
+  // root re-render, not just a real resize.
+  const latchedSizeRef = useRef<TerminalSize | null>(null)
+  // Mirrors the published `entry.isVisible` so the effect can decide whether
+  // this commit is a flip without doing the bookkeeping inside the state
+  // updater — React may call an updater more than once, and a side effect
+  // there would double-count.
+  const visibleRef = useRef(true)
 
   const setElement = useCallback((el: DOMElement | null) => {
     elementRef.current = el
@@ -53,6 +108,22 @@ export function useTerminalViewport(): [
   useLayoutEffect(() => {
     const element = elementRef.current
     if (!element?.yogaNode || !terminalSize) {
+      return
+    }
+
+    // A new terminal size is a genuine external change: forget the previous
+    // oscillation and let the calculation drive visibility again.
+    const latched = latchedSizeRef.current
+    if (
+      !latched ||
+      latched.rows !== terminalSize.rows ||
+      latched.columns !== terminalSize.columns
+    ) {
+      latchedSizeRef.current = terminalSize
+      flipsRef.current = 0
+    }
+
+    if (flipsRef.current > MAX_VISIBILITY_FLIPS) {
       return
     }
 
@@ -94,10 +165,12 @@ export function useTerminalViewport(): [
     const viewportBottom = viewportY + rows
     const visible = bottom > viewportY && absoluteTop < viewportBottom
 
-    // Functional updater + identity bail-out: when visibility is unchanged,
-    // returning `prev` lets React skip the re-render entirely. Only true
-    // transitions cost an extra render.
-    setEntry(prev => (prev.isVisible === visible ? prev : { isVisible: visible }))
+    const next = nextViewportVisibility(visibleRef.current, visible, flipsRef.current)
+    flipsRef.current = next.flips
+    if (next.visible !== visibleRef.current) {
+      visibleRef.current = next.visible
+      setEntry({ isVisible: next.visible })
+    }
   })
 
   return [setElement, entry]
