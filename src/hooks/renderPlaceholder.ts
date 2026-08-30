@@ -1,5 +1,6 @@
 // @ts-nocheck
 import chalk from 'chalk'
+import { isNativeCursorEnabled } from '../utils/nativeCursor.js'
 
 type PlaceholderRendererProps = {
   placeholder?: string
@@ -25,16 +26,23 @@ export function renderPlaceholder({
 } {
   let renderedPlaceholder: string | undefined = undefined
 
+  // The hardware cursor already marks the caret on an empty input; a
+  // software caret on the placeholder's first char would double it.
+  const drawSoftwareCaret = showCursor && focus && terminalFocus &&
+    !isNativeCursorEnabled()
+
   if (placeholder) {
     if (hidePlaceholderText) {
-      // Voice recording: show only the cursor, no placeholder text
+      // Voice recording: show only the cursor, no placeholder text. The
+      // waveform bar is the recording indicator, not a caret, so it stays
+      // even when the hardware cursor is doing the caret duty.
       renderedPlaceholder =
         showCursor && focus && terminalFocus ? invert(' ') : ''
     } else {
       renderedPlaceholder = chalk.dim(placeholder)
 
       // Show inverse cursor only when both input and terminal are focused
-      if (showCursor && focus && terminalFocus) {
+      if (drawSoftwareCaret) {
         renderedPlaceholder =
           placeholder.length > 0
             ? invert(placeholder[0]!) + chalk.dim(placeholder.slice(1))

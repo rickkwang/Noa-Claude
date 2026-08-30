@@ -6,6 +6,7 @@ import { useClipboardImageHint } from '../hooks/useClipboardImageHint.js';
 import { useVimInput } from '../hooks/useVimInput.js';
 import { Box, color, useTerminalFocus, useTheme } from '../ink.js';
 import type { VimTextInputProps } from '../types/textInputTypes.js';
+import { isNativeCursorEnabled } from '../utils/nativeCursor.js';
 import type { TextHighlight } from '../utils/textHighlighting.js';
 import { BaseTextInput } from './BaseTextInput.js';
 export type Props = VimTextInputProps & {
@@ -30,7 +31,11 @@ export default function VimTextInput(props) {
   const t11 = props.multiline;
   const t12 = props.showCursor ? " " : "";
   const t13 = props.highlightPastedText;
-  const t14 = isTerminalFocused ? chalk.inverse : _temp;
+  // _temp is identity — also used when the hardware cursor draws the caret,
+  // so vim mode doesn't paint a second one over it. The mode indicator in
+  // the prompt footer carries the NORMAL/INSERT signal that the block-vs-bar
+  // caret shape used to; the emulator's own cursor shape applies instead.
+  const t14 = isTerminalFocused && !isNativeCursorEnabled() ? chalk.inverse : _temp;
   let t15;
   if ($[0] !== theme) {
     t15 = color("text", theme);

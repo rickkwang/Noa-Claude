@@ -10,7 +10,9 @@ import { onExit } from 'signal-exit';
 import { flushInteractionTime } from 'src/bootstrap/state.js';
 import { getYogaCounters } from 'src/native-ts/yoga-layout/index.js';
 import { logForDebugging } from 'src/utils/debug.js';
+import { isEnvTruthy } from 'src/utils/envUtils.js';
 import { logError } from 'src/utils/log.js';
+import { isNativeCursorEnabled } from 'src/utils/nativeCursor.js';
 import { format } from 'util';
 import { colorize } from './colorize.js';
 import App from './components/App.js';
@@ -55,6 +57,14 @@ const CURSOR_HOME_PATCH = Object.freeze({
 const ERASE_THEN_HOME_PATCH = Object.freeze({
   type: 'stdout' as const,
   content: ERASE_SCREEN + CURSOR_HOME
+});
+// DECTCEM toggles for the real terminal cursor. Frozen singletons: these are
+// emitted on most frames while an input is focused, so avoid re-allocating.
+const CURSOR_HIDE_PATCH = Object.freeze({
+  type: 'cursorHide' as const
+});
+const CURSOR_SHOW_PATCH = Object.freeze({
+  type: 'cursorShow' as const
 });
 
 // Cached per-Ink-instance, invalidated on resize. frame.cursor.y for
@@ -182,6 +192,21 @@ export default class Ink {
     x: number;
     y: number;
   } | null = null;
+  // Whether DECTCEM (the real terminal cursor) is currently shown. App.tsx
+  // hides it at mount, so this starts false and flips only while a focused
+  // input declares a caret — otherwise the cursor would sit visible at
+  // wherever the last write landed during non-input states (tool runs,
+  // dialogs). Reset alongside displayCursor wherever terminal state is
+  // rebuilt, since those paths re-hide the cursor out of band.
+  private nativeCursorShown = false;
+  // isTTY is checked at the use site, not here: `this.options` is a
+  // constructor parameter property, which is not yet assigned when class
+  // field initializers run.
+  private readonly nativeCursorEnabled = isNativeCursorEnabled();
+  // Accessibility mode keeps the cursor visible unconditionally (App.tsx
+  // never hides it at mount) so magnifiers always have something to track —
+  // so this mode must never emit a hide, even with no input focused.
+  private readonly accessibilityMode = isEnvTruthy(process.env.CLAUDE_CODE_ACCESSIBILITY);
   constructor(private readonly options: Options) {
     autoBind(this);
     if (this.options.patchConsole) {
@@ -303,6 +328,9 @@ export default class Ink {
     // suspend. Clear displayCursor so the next frame's cursor preamble
     // doesn't emit a relative move from a stale park position.
     this.displayCursor = null;
+    // App.tsx's SIGCONT handler re-hides the cursor, so drop our belief that
+    // it is shown — otherwise the next frame skips the show it now needs.
+    this.nativeCursorShown = false;
   };
 
   // NOT debounced. A debounce opens a window where stdout.columns is NEW
@@ -662,79 +690,126 @@ export default class Ink {
     // translation) — if the declared node didn't render (stale declaration
     // after remount, or scrolled out of view), it won't be in the cache
     // and no move is emitted.
-    const decl = this.cursorDeclaration;
+    //
+    // Mutually exclusive with DECSTBM this frame: a scroll-region shift
+    // (setScrollRegion + SU/SD + RESET_SCROLL_REGION + CURSOR_HOME, see
+    // log-update.ts) moves the physical cursor by a path our x/y delta
+    // math above doesn't model, so parking or restoring against a stale
+    // `displayCursor` here would compute the wrong relative move. Skip
+    // entirely and drop the park state — frame.cursor already reflects
+    // wherever the scroll+diff sequence left the real cursor, so the next
+    // frame's `parked === null` fallback (`from = frame.cursor`) recovers
+    // cleanly without an explicit restore write.
+    const decstbmActive = this.altScreenActive && Boolean(frame.scrollHint);
+    const decl = decstbmActive ? null : this.cursorDeclaration;
     const rect = decl !== null ? nodeCache.get(decl.node) : undefined;
     const target = decl !== null && rect !== undefined ? {
       x: rect.x + decl.relativeX,
       y: rect.y + decl.relativeY
     } : null;
     const parked = this.displayCursor;
+    // The real cursor is only ever driven on a TTY: App.tsx skips its mount
+    // HIDE_CURSOR off-TTY, so emitting a show here would leave DECTCEM
+    // unbalanced — and would inject escape bytes into piped output.
+    const nativeCursor = this.nativeCursorEnabled && Boolean(this.options.stdout.isTTY);
 
-    // Preserve the empty-diff zero-write fast path: skip all cursor writes
-    // when nothing rendered AND the park target is unchanged.
-    const targetMoved = target !== null && (parked === null || parked.x !== target.x || parked.y !== target.y);
-    if (hasDiff || targetMoved || target === null && parked !== null) {
-      // Main-screen preamble: log-update's relative moves assume the
-      // physical cursor is at prevFrame.cursor. If last frame parked it
-      // elsewhere, move back before the diff runs. Alt-screen's CSI H
-      // already resets to (0,0) so no preamble needed.
-      if (parked !== null && !this.altScreenActive && hasDiff) {
-        const pdx = prevFrame.cursor.x - parked.x;
-        const pdy = prevFrame.cursor.y - parked.y;
-        if (pdx !== 0 || pdy !== 0) {
-          optimized.unshift({
-            type: 'stdout',
-            content: cursorMove(pdx, pdy)
-          });
-        }
+    if (decstbmActive) {
+      this.displayCursor = null;
+      // A scroll-region shift drags the physical cursor through the region;
+      // hide it for the duration rather than let it streak. Reshown by the
+      // first frame after scrolling settles.
+      if (nativeCursor && this.nativeCursorShown && !this.accessibilityMode) {
+        optimized.unshift(CURSOR_HIDE_PATCH);
+        this.nativeCursorShown = false;
       }
-      if (target !== null) {
-        if (this.altScreenActive) {
-          // Absolute CUP (1-indexed); next frame's CSI H resets regardless.
-          // Emitted after altScreenParkPatch so the declared position wins.
-          const row = Math.min(Math.max(target.y + 1, 1), terminalRows);
-          const col = Math.min(Math.max(target.x + 1, 1), terminalWidth);
-          optimized.push({
-            type: 'stdout',
-            content: cursorPosition(row, col)
-          });
+    } else {
+      // Preserve the empty-diff zero-write fast path: skip all cursor writes
+      // when nothing rendered AND the park target is unchanged.
+      const targetMoved = target !== null && (parked === null || parked.x !== target.x || parked.y !== target.y);
+      // A frame that only needs to reveal the cursor (target unchanged, no
+      // diff) still has to run — otherwise the show never lands.
+      const visibilityStale = nativeCursor && target !== null && !this.nativeCursorShown;
+      if (hasDiff || targetMoved || visibilityStale || target === null && parked !== null) {
+        // Main-screen preamble: log-update's relative moves assume the
+        // physical cursor is at prevFrame.cursor. If last frame parked it
+        // elsewhere, move back before the diff runs. Alt-screen's CSI H
+        // already resets to (0,0) so no preamble needed.
+        if (parked !== null && !this.altScreenActive && hasDiff) {
+          const pdx = prevFrame.cursor.x - parked.x;
+          const pdy = prevFrame.cursor.y - parked.y;
+          if (pdx !== 0 || pdy !== 0) {
+            optimized.unshift({
+              type: 'stdout',
+              content: cursorMove(pdx, pdy)
+            });
+          }
+        }
+        if (target !== null) {
+          if (this.altScreenActive) {
+            // Absolute CUP (1-indexed); next frame's CSI H resets regardless.
+            // Emitted after altScreenParkPatch so the declared position wins.
+            const row = Math.min(Math.max(target.y + 1, 1), terminalRows);
+            const col = Math.min(Math.max(target.x + 1, 1), terminalWidth);
+            optimized.push({
+              type: 'stdout',
+              content: cursorPosition(row, col)
+            });
+          } else {
+            // After the diff (or preamble), cursor is at frame.cursor. If no
+            // diff AND previously parked, it's still at the old park position
+            // (log-update wrote nothing). Otherwise it's at frame.cursor.
+            const from = !hasDiff && parked !== null ? parked : {
+              x: frame.cursor.x,
+              y: frame.cursor.y
+            };
+            const dx = target.x - from.x;
+            const dy = target.y - from.y;
+            if (dx !== 0 || dy !== 0) {
+              optimized.push({
+                type: 'stdout',
+                content: cursorMove(dx, dy)
+              });
+            }
+          }
+          this.displayCursor = target;
+          // Hide BEFORE the frame's writes and re-show after the move above:
+          // streaming a diff physically walks the terminal cursor across the
+          // screen, so a cursor left visible smears through the frame on any
+          // terminal that doesn't honour synchronized output (tmux, and any
+          // emulator without DEC 2026). unshift/push straddles the writes.
+          if (nativeCursor) {
+            if (this.nativeCursorShown) optimized.unshift(CURSOR_HIDE_PATCH);
+            optimized.push(CURSOR_SHOW_PATCH);
+            this.nativeCursorShown = true;
+          }
         } else {
-          // After the diff (or preamble), cursor is at frame.cursor. If no
-          // diff AND previously parked, it's still at the old park position
-          // (log-update wrote nothing). Otherwise it's at frame.cursor.
-          const from = !hasDiff && parked !== null ? parked : {
-            x: frame.cursor.x,
-            y: frame.cursor.y
-          };
-          const dx = target.x - from.x;
-          const dy = target.y - from.y;
-          if (dx !== 0 || dy !== 0) {
-            optimized.push({
-              type: 'stdout',
-              content: cursorMove(dx, dy)
-            });
+          // Declaration cleared (input blur, unmount). Restore physical cursor
+          // to frame.cursor before forgetting the park position — otherwise
+          // displayCursor=null lies about where the cursor is, and the NEXT
+          // frame's preamble (or log-update's relative moves) computes from a
+          // wrong spot. The preamble above handles hasDiff; this handles
+          // !hasDiff (e.g. accessibility mode where blur doesn't change
+          // renderedValue since invert is identity).
+          if (parked !== null && !this.altScreenActive && !hasDiff) {
+            const rdx = frame.cursor.x - parked.x;
+            const rdy = frame.cursor.y - parked.y;
+            if (rdx !== 0 || rdy !== 0) {
+              optimized.push({
+                type: 'stdout',
+                content: cursorMove(rdx, rdy)
+              });
+            }
+          }
+          this.displayCursor = null;
+          // No focused input wants a caret: hide before the writes, and stay
+          // hidden. Accessibility mode is exempt — a magnifier needs a cursor
+          // to track even between inputs, which is why App.tsx never hides it
+          // at mount in that mode.
+          if (nativeCursor && this.nativeCursorShown && !this.accessibilityMode) {
+            optimized.unshift(CURSOR_HIDE_PATCH);
+            this.nativeCursorShown = false;
           }
         }
-        this.displayCursor = target;
-      } else {
-        // Declaration cleared (input blur, unmount). Restore physical cursor
-        // to frame.cursor before forgetting the park position — otherwise
-        // displayCursor=null lies about where the cursor is, and the NEXT
-        // frame's preamble (or log-update's relative moves) computes from a
-        // wrong spot. The preamble above handles hasDiff; this handles
-        // !hasDiff (e.g. accessibility mode where blur doesn't change
-        // renderedValue since invert is identity).
-        if (parked !== null && !this.altScreenActive && !hasDiff) {
-          const rdx = frame.cursor.x - parked.x;
-          const rdy = frame.cursor.y - parked.y;
-          if (rdx !== 0 || rdy !== 0) {
-            optimized.push({
-              type: 'stdout',
-              content: cursorMove(rdx, rdy)
-            });
-          }
-        }
-        this.displayCursor = null;
       }
     }
     const tWrite = performance.now();
@@ -817,6 +892,9 @@ export default class Ink {
     // Clear displayCursor so the cursor preamble doesn't emit a stale
     // relative move from where we last parked it.
     this.displayCursor = null;
+    // Cursor visibility is equally unknown — assume hidden so the next frame
+    // re-asserts it (a redundant show is cheap; a missing one is not).
+    this.nativeCursorShown = false;
   }
 
   /**
@@ -1013,6 +1091,9 @@ export default class Ink {
     // resets), but a stale displayCursor would be misleading if we later
     // exit to main-screen without an intervening render.
     this.displayCursor = null;
+    // ?1049h/l can carry cursor state across the screen swap on some
+    // emulators; re-assert visibility next frame rather than assume.
+    this.nativeCursorShown = false;
     // Fresh frontFrame is blank rows×cols — blitting from it would copy
     // blanks over content. Next alt-screen frame must full-render.
     this.prevFrameContaminated = true;

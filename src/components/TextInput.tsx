@@ -9,6 +9,7 @@ import { useTextInput } from '../hooks/useTextInput.js';
 import { Box, color, useAnimationFrame, useTerminalFocus, useTheme } from '../ink.js';
 import type { BaseTextInputProps } from '../types/textInputTypes.js';
 import { isEnvTruthy } from '../utils/envUtils.js';
+import { isNativeCursorEnabled } from '../utils/nativeCursor.js';
 import type { TextHighlight } from '../utils/textHighlighting.js';
 import { BaseTextInput } from './BaseTextInput.js';
 import { hueToRgb } from './Spinner/utils.js';
@@ -40,6 +41,8 @@ export default function TextInput(props: Props): React.ReactNode {
   const isTerminalFocused = useTerminalFocus();
   // Hoisted to mount-time — this component re-renders on every keystroke.
   const accessibilityEnabled = useMemo(() => isEnvTruthy(process.env.CLAUDE_CODE_ACCESSIBILITY), []);
+  // With the hardware cursor visible, a software caret would double it.
+  const nativeCursorEnabled = useMemo(() => isNativeCursorEnabled(), []);
   const settings = useSettings();
   const reducedMotion = settings.prefersReducedMotion ?? false;
   const voiceState = feature('VOICE_MODE') ?
@@ -87,6 +90,13 @@ export default function TextInput(props: Props): React.ReactNode {
       b: 128
     } : hueToRgb(hue);
     invert = () => chalk.rgb(r, g, b)(BARS[barIndex]!);
+  } else if (nativeCursorEnabled) {
+    // The terminal's own cursor is parked at the caret and visible, so it
+    // draws the caret (in the emulator's cursor color/shape). Painting an
+    // SGR 7 cell here too would show two carets. Note this branch sits
+    // AFTER the voice one: that waveform bar is a recording indicator
+    // rather than a caret, so it stays regardless.
+    invert = (text: string) => text;
   } else {
     invert = chalk.inverse;
   }
