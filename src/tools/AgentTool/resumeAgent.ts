@@ -240,6 +240,9 @@ export async function resumeAgentBackground({
     description: meta?.description,
     personalityName,
     contentReplacementState: resumedReplacementState,
+    onPromptFallback: () => {
+      metadata.promptFallback = true
+    },
   }
 
   // Skip name-registry write — original entry persists from the initial spawn
@@ -262,6 +265,7 @@ export async function resumeAgentBackground({
     agentType: selectedAgent.agentType,
     isAsync: true,
     personalityName,
+    promptFallback: false,
   }
 
   const asyncAgentContext = {

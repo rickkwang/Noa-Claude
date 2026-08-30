@@ -1,10 +1,16 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { AgentTool } from '../../tools/AgentTool/AgentTool.js'
 import {
   getActiveAgentsFromList,
 } from '../../tools/AgentTool/loadAgentsDir.js'
+import { getBuiltInAgents } from '../../tools/AgentTool/builtInAgents.js'
 
 describe('AgentTool.isConcurrencySafe', () => {
+  // The shadowing test mutates the module-level active-agent cache; restore
+  // it so later tests in the same process see the default list.
+  afterEach(() => {
+    getActiveAgentsFromList(getBuiltInAgents())
+  })
   const base = { description: 'test agent', prompt: 'do a thing' }
   const isSafe = (extra: Record<string, unknown>) =>
     AgentTool.isConcurrencySafe({ ...base, ...extra } as never)
