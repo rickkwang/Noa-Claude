@@ -202,7 +202,7 @@ export function getUsingYourToolsSection(enabledTools: Set<string>): string {
     enabledTools.has(name),
   )
   const taskGuidance = taskToolName
-    ? `Use ${taskToolName} to break down and track substantial work. Mark each task complete when done; do not batch status updates.`
+    ? `Use ${taskToolName} to plan and track work. Mark each task completed as soon as it's done; don't batch.`
     : null
 
   // In REPL mode, Read/Write/Edit/Glob/Grep/Bash/Agent are hidden from direct
