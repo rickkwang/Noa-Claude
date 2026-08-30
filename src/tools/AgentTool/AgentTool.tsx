@@ -285,15 +285,16 @@ export const AgentTool = buildTool({
       throw new Error('In-process teammates cannot spawn background agents. Use run_in_background=false for synchronous subagents.');
     }
 
-    // Session-wide subagent spawn cap (upstream 2.1.212): hard-fail so a
-    // runaway delegation loop can't spawn indefinitely. Checked after the
-    // validation errors above so rejected requests don't consume budget.
+    // Reserve before asynchronous validation so concurrent calls cannot exceed
+    // the session cap. The catch below rolls back until a launch is committed.
     const maxSubagents = getMaxSubagentsPerSession();
     const spawnsSoFar = getTotalAgentSpawns();
     if (spawnsSoFar >= maxSubagents) {
       throw new Error(`Subagent spawn limit reached (${spawnsSoFar} of ${maxSubagents} agents spawned). Complete the remaining work directly with your tools instead of spawning more agents. If more agents are genuinely needed, ask the user to raise NOA_CLAUDE_MAX_SUBAGENTS_PER_SESSION.`);
     }
     incrementTotalAgentSpawns();
+    let spawnReservationCommitted = false;
+    try {
     // Check if this is a multi-agent spawn request
     // Spawn is triggered when team_name is set (from param or context) and name is provided
     if (teamName && name) {
@@ -313,6 +314,7 @@ export const AgentTool = buildTool({
         agent_type: subagent_type,
         invokingRequestId: assistantMessage?.requestId
       }, toolUseContext);
+      spawnReservationCommitted = true;
 
       // Type assertion uses TeammateSpawnedOutput (defined above) instead of any.
       // This type is excluded from the exported outputSchema for dead code elimination.
@@ -478,6 +480,7 @@ export const AgentTool = buildTool({
         context: toolUseContext,
         toolUseId: toolUseContext.toolUseId
       });
+      spawnReservationCommitted = true;
       logEvent('tengu_agent_tool_remote_launched', {
         agent_type: selectedAgent.agentType as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
       });
@@ -576,12 +579,7 @@ export const AgentTool = buildTool({
     if (shouldRunAsync) {
       // Preflight before personality/worktree allocation. Registration checks
       // again after any asynchronous worktree setup.
-      try {
-        assertCanStartBackgroundAgent(toolUseContext.getAppState().tasks);
-      } catch (error) {
-        decrementTotalAgentSpawns();
-        throw error;
-      }
+      assertCanStartBackgroundAgent(toolUseContext.getAppState().tasks);
     }
     // Assemble the worker's tool pool independently of the parent's.
     // Workers always get their tools from assembleToolPool with their own
@@ -742,7 +740,6 @@ export const AgentTool = buildTool({
           worktreeInfo = null;
         }
         if (personalityName) releaseAgentPersonalityName(earlyAgentId);
-        decrementTotalAgentSpawns();
         if (retainedWorktreePath) {
           throw new Error(`${errorMessage(error)} Worktree cleanup failed; retained at ${retainedWorktreePath}.`);
         }
@@ -762,6 +759,7 @@ export const AgentTool = buildTool({
         // They are killed explicitly via chat:killAgents.
         toolUseId: toolUseContext.toolUseId
       });
+      spawnReservationCommitted = true;
 
       // Register only explicit user-provided names for SendMessage routing.
       // Auto-assigned personality names are display-only and must not become
@@ -850,6 +848,7 @@ export const AgentTool = buildTool({
       // Wrap entire sync agent execution in context for analytics attribution
       // and optionally in a worktree cwd override for filesystem isolation
       return runWithAgentContext(syncAgentContext, () => wrapWithCwd(async () => {
+        spawnReservationCommitted = true;
         const agentMessages: MessageType[] = [];
         const agentStartTime = Date.now();
         const syncTracker = createProgressTracker();
@@ -1275,6 +1274,10 @@ export const AgentTool = buildTool({
           }
         };
       }));
+    }
+    } catch (error) {
+      if (!spawnReservationCommitted) decrementTotalAgentSpawns();
+      throw error;
     }
   },
   isReadOnly() {
