@@ -2,7 +2,13 @@
 import { AsyncLocalStorage } from 'async_hooks'
 import { getCwdState, getOriginalCwd } from '../bootstrap/state.js'
 
-const cwdOverrideStorage = new AsyncLocalStorage<string>()
+/** An isolated agent's working directory, paired with the checkout it was
+ * isolated *from*. The two must travel together: the boundary is the gap
+ * between them, and reading either half from live global state at check time
+ * lets the boundary move after the fact. */
+export type CwdOverride = { cwd: string; sharedCheckout: string }
+
+const cwdOverrideStorage = new AsyncLocalStorage<CwdOverride>()
 
 /**
  * Run a function with an overridden working directory for the current async context.
@@ -11,7 +17,11 @@ const cwdOverrideStorage = new AsyncLocalStorage<string>()
  * agents to each see their own working directory without affecting each other.
  */
 export function runWithCwdOverride<T>(cwd: string, fn: () => T): T {
-  return cwdOverrideStorage.run(cwd, fn)
+  // Snapshot the shared checkout on entry rather than reading it at check
+  // time. getOriginalCwd() is mutated mid-session by /cd and EnterWorktree,
+  // and a concurrent agent's isolation boundary must not shift under it —
+  // that direction fails open.
+  return cwdOverrideStorage.run({ cwd, sharedCheckout: getOriginalCwd() }, fn)
 }
 
 /**
@@ -20,7 +30,7 @@ export function runWithCwdOverride<T>(cwd: string, fn: () => T): T {
  * shell, which is not an isolation boundary. Only use this to reason about
  * the boundary itself — see checkWorktreeEscape.
  */
-export function getCwdOverride(): string | undefined {
+export function getCwdOverride(): CwdOverride | undefined {
   return cwdOverrideStorage.getStore()
 }
 
@@ -28,7 +38,7 @@ export function getCwdOverride(): string | undefined {
  * Get the current working directory
  */
 export function pwd(): string {
-  return cwdOverrideStorage.getStore() ?? getCwdState()
+  return cwdOverrideStorage.getStore()?.cwd ?? getCwdState()
 }
 
 /**

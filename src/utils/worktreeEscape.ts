@@ -1,6 +1,6 @@
 // @ts-nocheck
-import { getOriginalCwd } from '../bootstrap/state.js'
-import { getCwdOverride } from './cwd.js'
+import { type CwdOverride, getCwdOverride } from './cwd.js'
+import { getPathsForPermissionCheck } from './fsOperations.js'
 import { pathInWorkingPath } from './permissions/filesystem.js'
 
 /**
@@ -27,23 +27,31 @@ import { pathInWorkingPath } from './permissions/filesystem.js'
  */
 export function checkWorktreeEscape(
   targetPath: string,
-  cwdOverride: string | undefined = getCwdOverride(),
-  sharedCheckout: string = getOriginalCwd(),
+  override: CwdOverride | undefined = getCwdOverride(),
 ): string | null {
   // Not an isolated agent: nothing here applies.
-  if (cwdOverride === undefined || cwdOverride === sharedCheckout) return null
+  if (override === undefined) return null
+  const { cwd, sharedCheckout } = override
+  if (cwd === sharedCheckout) return null
 
-  // Order matters. Worktrees live at `.noa/worktrees/<slug>`, inside the
-  // checkout, so the worktree test has to come first — otherwise every path
-  // in the worktree also reads as a path in the shared checkout.
-  if (pathInWorkingPath(targetPath, cwdOverride)) return null
-
-  if (!pathInWorkingPath(targetPath, sharedCheckout)) return null
+  // Every link in the chain, not just the spelling we were handed: a symlink
+  // *inside* the worktree pointing at the checkout passes a textual
+  // containment test, and writing through it lands in the checkout anyway.
+  // One `ln -s` would otherwise retire this whole guard. Mirrors what
+  // pathInAllowedWorkingPath does for permission checks.
+  const escapes = getPathsForPermissionCheck(targetPath).some(
+    path =>
+      // Order matters. Worktrees live at `.noa/worktrees/<slug>`, inside the
+      // checkout, so the worktree test has to come first — otherwise every
+      // path in the worktree also reads as a path in the shared checkout.
+      !pathInWorkingPath(path, cwd) && pathInWorkingPath(path, sharedCheckout),
+  )
+  if (!escapes) return null
 
   return (
-    `This agent is isolated in ${cwdOverride}, but this path resolves into the shared ` +
+    `This agent is isolated in ${cwd}, but this path resolves into the shared ` +
     `checkout (${sharedCheckout}). Writing there would defeat the isolation and can ` +
     `overwrite work from the main session or a parallel agent. Use the copy of this file ` +
-    `inside ${cwdOverride} instead.`
+    `inside ${cwd} instead.`
   )
 }

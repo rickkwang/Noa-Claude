@@ -15,6 +15,7 @@ import { readFileSyncWithMetadata } from '../../utils/fileRead.js'
 import { safeParseJSON } from '../../utils/json.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { parseCellId } from '../../utils/notebook.js'
+import { checkWorktreeEscape } from '../../utils/worktreeEscape.js'
 import { checkWritePermissionForTool } from '../../utils/permissions/filesystem.js'
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
 import { jsonParse, jsonStringify } from '../../utils/slowOperations.js'
@@ -185,6 +186,11 @@ export const NotebookEditTool = buildTool({
     // SECURITY: Skip filesystem operations for UNC paths to prevent NTLM credential leaks.
     if (fullPath.startsWith('\\\\') || fullPath.startsWith('//')) {
       return { result: true }
+    }
+
+    const escapeError = checkWorktreeEscape(fullPath)
+    if (escapeError) {
+      return { result: false, message: escapeError, errorCode: 11 }
     }
 
     if (extname(fullPath) !== '.ipynb') {
