@@ -17,6 +17,11 @@ import { describe, expect, test } from 'bun:test'
 const repoRoot = resolve(import.meta.dir, '../..')
 const installScript = readFileSync(resolve(repoRoot, 'install.sh'), 'utf8')
 
+// Derived, not hardcoded: the release process bumps FALLBACK_REF in install.sh,
+// and a literal here silently drifts out of sync with it.
+const fallbackRef = installScript.match(/^FALLBACK_REF="([^"]+)"$/m)?.[1]
+if (!fallbackRef) throw new Error('install.sh is missing FALLBACK_REF')
+
 function runResolver(
   firstPage: unknown[],
   secondPage: unknown[] = [],
@@ -155,7 +160,7 @@ describe('install.sh latest release resolution', () => {
     const result = runResolver(firstPage, [], true)
 
     expect(result.status).toBe(42)
-    expect(result.stdout).toContain('Installing release: v1.12.0')
+    expect(result.stdout).toContain(`Installing release: ${fallbackRef}`)
     expect(result.stdout).not.toContain('Installing release: v9.9.9')
   })
 })
