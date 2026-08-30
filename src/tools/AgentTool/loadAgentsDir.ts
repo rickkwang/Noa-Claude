@@ -192,18 +192,6 @@ export type AgentDefinitionsResult = {
   allowedAgentTypes?: string[]
 }
 
-let cachedActiveAgents: AgentDefinition[] | undefined
-
-/** Last resolved active agent list, for sync checks (e.g. isConcurrencySafe).
- * Every state-update path funnels through getActiveAgentsFromList, so this
- * always mirrors the list the app is actually dispatching against.
- * clearAgentDefinitionsCache deliberately does NOT reset it: /clear does not
- * rebuild appState.agentDefinitions either, so the dispatch list stays the
- * old one and this snapshot must stay matched to it. */
-export function getCachedActiveAgents(): AgentDefinition[] | undefined {
-  return cachedActiveAgents
-}
-
 export function getActiveAgentsFromList(
   allAgents: AgentDefinition[],
 ): AgentDefinition[] {
@@ -231,8 +219,7 @@ export function getActiveAgentsFromList(
     }
   }
 
-  cachedActiveAgents = Array.from(agentMap.values())
-  return cachedActiveAgents
+  return Array.from(agentMap.values())
 }
 
 /**

@@ -50,13 +50,11 @@ import { FILE_READ_TOOL_NAME } from '../FileReadTool/prompt.js';
 import { spawnTeammate } from '../shared/spawnMultiAgent.js';
 import { setAgentColor } from './agentColorManager.js';
 import { agentToolResultSchema, classifyHandoffIfNeeded, emitTaskProgress, finalizeAgentTool, getLastToolUseName, runAsyncAgentLifecycle } from './agentToolUtils.js';
-import { EXPLORE_AGENT } from './built-in/exploreAgent.js';
 import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js';
-import { PLAN_AGENT } from './built-in/planAgent.js';
 import { AGENT_TOOL_NAME, assignAgentPersonalityName, LEGACY_AGENT_TOOL_NAME, ONE_SHOT_BUILTIN_AGENT_TYPES, releaseAgentPersonalityName, shouldUseAgentPersonalityName } from './constants.js';
 import { buildForkedMessages, buildWorktreeNotice, FORK_AGENT, isForkSubagentEnabled, isInForkChild } from './forkSubagent.js';
 import type { AgentDefinition } from './loadAgentsDir.js';
-import { filterAgentsByMcpRequirements, getCachedActiveAgents, hasRequiredMcpServers, isBuiltInAgent } from './loadAgentsDir.js';
+import { filterAgentsByMcpRequirements, hasRequiredMcpServers, isBuiltInAgent } from './loadAgentsDir.js';
 import { getPrompt } from './prompt.js';
 import { runAgent } from './runAgent.js';
 import { renderGroupedAgentToolUse, renderToolResultMessage, renderToolUseErrorMessage, renderToolUseMessage, renderToolUseProgressMessage, renderToolUseRejectedMessage, renderToolUseTag, userFacingName, userFacingNameBackgroundColor } from './UI.js';
@@ -1288,25 +1286,16 @@ export const AgentTool = buildTool({
     const prefix = tags.length > 0 ? `(${tags.join(', ')}): ` : ': ';
     return `${prefix}${i.prompt}`;
   },
-  isConcurrencySafe(input) {
-    const i = input as AgentToolInput;
-    // Worktree-isolated agents write to a private copy; background spawns
-    // return immediately (their overlap with the main thread is inherent to
-    // backgrounding, not batching). Both are safe to overlap with siblings.
-    if (i.isolation === 'worktree' || i.run_in_background === true) {
-      return true;
-    }
-    // Everything else shares the parent's cwd. Only read-only built-ins may
-    // run concurrently — write-capable agents (general-purpose, custom,
-    // unknown) serialize so two agents can't silently overwrite each other.
-    // A custom agent can shadow the built-in "Explore"/"Plan" name (later
-    // sources win in getActiveAgentsFromList), so verify the resolved agent
-    // when the active list has loaded; fall back to the name check when not.
-    const resolved = getCachedActiveAgents()?.find(a => a.agentType === i.subagent_type);
-    if (resolved && resolved.source !== 'built-in') {
-      return false;
-    }
-    return i.subagent_type === EXPLORE_AGENT.agentType || i.subagent_type === PLAN_AGENT.agentType;
+  // Always safe to batch. Parallel dispatch is the point of subagents, and the
+  // scheduler is the wrong layer to enforce write safety: it only sees
+  // foreground siblings within one turn, so background, worktree and forked
+  // agents overlap regardless — gating here buys partial protection at the
+  // cost of the feature. Colliding file edits are caught where they happen
+  // (read-before-write plus the mtime check in FileEdit/FileWrite). Shell
+  // writes from parallel agents in a shared cwd are NOT covered by that and
+  // remain an accepted boundary; serializing every agent is not the fix.
+  isConcurrencySafe() {
+    return true;
   },
   userFacingName,
   userFacingNameBackgroundColor,

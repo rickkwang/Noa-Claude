@@ -1,5 +1,16 @@
 # Release Notes
 
+## Unreleased
+
+### Bug Fixes
+
+- **Parallel subagents run in parallel again (reverts a 1.12.0 change)** — 1.12.0 made the Agent tool's `isConcurrencySafe` conditional so that write-capable subagents serialized. The intent was sound but the layer was wrong, and the cost landed on the common case: a batch of `general-purpose` or custom agents in one message was split into single-tool batches, so the second agent was not initialized until the first had finished — indistinguishable from asking one question at a time, which is the entire point of subagents. The scheduler also cannot deliver what the gate promised: it only sees foreground siblings within one turn, so background, worktree-isolated, and forked agents overlapped regardless. Colliding file edits are already caught where they happen (read-before-write plus the mtime check in FileEdit/FileWrite), which is both narrower and more accurate than serializing every agent. `isConcurrencySafe` is unconditionally `true` again, and the tool-agnostic `(input, context)` plumbing added for the resolved-agent lookup is withdrawn with it — no implementation needs the context. Shell writes from parallel agents sharing a cwd remain an accepted boundary, now stated as such at the definition. Note this also restores agreement with the Agent tool's own prompt, which instructs the model to emit parallel agents in a single message — during 1.12.0 the prompt and the scheduler contradicted each other. Verified against an upstream 2.1.251 binary: its Agent tool is likewise `isConcurrencySafe(){return!0}` with no agent-type, isolation, or shadowing branch, and its batch partitioner and concurrency cap match ours line for line — the 1.12.0 gate was a local invention, not a port. Upstream does guard writes, but at the write site rather than the scheduler — a path-based check in Write/Edit/NotebookEdit `validateInput`, plus a separate one on the Bash working directory. Both are about *worktree isolation* (refusing to let an isolated agent reach back into the shared checkout, or an unisolated background session write it at all), not about two unisolated agents racing in a shared cwd — that case is unguarded upstream as well. Porting the isolation guard is worthwhile and orthogonal to this revert; it is not attempted here.
+- **Dropped the module-level active-agent snapshot** — the cache in `loadAgentsDir` existed only to let `isConcurrencySafe` resolve agents synchronously, and needed a carve-out to survive `/clear` without going stale. With its one consumer gone, the global mutable state goes too; `getActiveAgentsFromList` is a pure function again.
+
+### Tests
+
+- The subagent concurrency-matrix unit test is replaced by end-to-end coverage asserting the property that actually matters: two foreground agents emitted in one message both start before either completes. Both dispatch paths are pinned (`runTools` and `StreamingToolExecutor`), since only one runs per turn and a single test would leave half the surface unguarded. The fixtures delegate to the real `AgentTool.isConcurrencySafe` rather than restating `true`, so a regression in the production predicate fails the tests.
+
 ## 1.12.0
 
 ### New Features

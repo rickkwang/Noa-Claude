@@ -9,6 +9,7 @@ import {
   resolvePrecedingToolUses,
   runTools,
 } from '../../../services/tools/toolOrchestration.js'
+import { AgentTool } from '../../../tools/AgentTool/AgentTool.js'
 import type { AssistantMessage } from '../../../types/message.js'
 import { createAssistantMessage } from '../../../utils/messages.js'
 
@@ -247,11 +248,9 @@ describe('StreamingToolExecutor.buildSameTurnToolUses', () => {
   })
 })
 
-// Regression coverage for runToolsSerially: non-concurrency-safe tools (e.g.
-// two writing Bash calls in one turn) go through the serial path, which is
-// the one code path that must call resolvePrecedingToolUses before
-// buildSameTurnToolUses instead of passing raw blocks straight through.
-describe('runTools (serial path) wires sameTurnToolUses end to end', () => {
+// End-to-end coverage for both runTools dispatch paths: serial tools must
+// receive prior sibling context, while concurrency-safe tools must overlap.
+describe('runTools wires sibling context and concurrency end to end', () => {
   const writeInputSchema = z.object({ command: z.string() })
 
   function createContext(tools: unknown[]): ToolUseContext {
@@ -362,4 +361,124 @@ describe('runTools (serial path) wires sameTurnToolUses end to end', () => {
     expect(seenSameTurnToolUses[1]).toHaveLength(1)
     expect(seenSameTurnToolUses[1]?.[0]?.message?.content).toEqual([first])
   })
+
+  // The regression these guard: a batch of plain foreground Agent calls must
+  // all start before any of them finishes. Serializing them at the scheduler
+  // makes parallel subagents indistinguishable from asking one question at a
+  // time. Both dispatch paths are covered because only one is used per turn.
+  function createAgentFixture() {
+    let active = 0
+    let started = 0
+    let resolveBothStarted!: () => void
+    let releaseAgents!: () => void
+    const bothStarted = new Promise<void>(resolve => {
+      resolveBothStarted = resolve
+    })
+    const released = new Promise<void>(resolve => {
+      releaseAgents = resolve
+    })
+
+    const tool = {
+      ...(createWriteTool() as unknown as object),
+      name: AgentTool.name,
+      inputSchema: AgentTool.inputSchema,
+      async call() {
+        active += 1
+        started += 1
+        if (started === 2) resolveBothStarted()
+        await released
+        active -= 1
+        return { data: { output: 'ok' } }
+      },
+      isConcurrencySafe: AgentTool.isConcurrencySafe,
+    } as never
+
+    const block = (id: string, description: string): ToolUseBlock =>
+      ({
+        type: 'tool_use',
+        id,
+        name: AgentTool.name,
+        input: {
+          description,
+          prompt: `${description} task`,
+          subagent_type: 'general-purpose',
+          run_in_background: false,
+        },
+      }) as ToolUseBlock
+
+    return {
+      tool,
+      block,
+      releaseAgents,
+      startedTogether: () =>
+        Promise.race([
+          bothStarted.then(() => true),
+          new Promise<false>(resolve => setTimeout(() => resolve(false), 1000)),
+        ]),
+      counts: () => ({ active, started }),
+    }
+  }
+
+  test('runTools starts two foreground agents before either completes', async () => {
+    const fixture = createAgentFixture()
+    const first = fixture.block('toolu_agent_1', 'first')
+    const second = fixture.block('toolu_agent_2', 'second')
+    const assistant = createAssistantMessage({
+      content: [first, second],
+    }) as AssistantMessage
+
+    const drain = (async () => {
+      for await (const _update of runTools(
+        [first, second],
+        [assistant],
+        async (_tool, input) => ({ behavior: 'allow', updatedInput: input }),
+        createContext([fixture.tool]),
+      )) {
+        // Draining drives both tool generators.
+      }
+    })()
+
+    try {
+      expect(await fixture.startedTogether()).toBe(true)
+      expect(fixture.counts().active).toBe(2)
+    } finally {
+      fixture.releaseAgents()
+      await drain
+    }
+
+    expect(fixture.counts()).toEqual({ active: 0, started: 2 })
+  }, 5000)
+
+  test('StreamingToolExecutor starts two foreground agents before either completes', async () => {
+    const fixture = createAgentFixture()
+    const first = fixture.block('toolu_streaming_agent_1', 'first')
+    const second = fixture.block('toolu_streaming_agent_2', 'second')
+    const assistant = createAssistantMessage({
+      content: [first, second],
+    }) as AssistantMessage
+    const executor = new StreamingToolExecutor(
+      [fixture.tool],
+      async (_tool, input) => ({ behavior: 'allow', updatedInput: input }),
+      createContext([fixture.tool]),
+    )
+
+    executor.addTool(first, assistant)
+    executor.addTool(second, assistant)
+
+    const drain = (async () => {
+      for await (const _update of executor.getRemainingResults()) {
+        // Draining drives both tool generators.
+      }
+    })()
+
+    try {
+      expect(await fixture.startedTogether()).toBe(true)
+      expect(fixture.counts().active).toBe(2)
+    } finally {
+      fixture.releaseAgents()
+      await drain
+    }
+
+    expect(fixture.counts()).toEqual({ active: 0, started: 2 })
+  }, 5000)
 })
