@@ -59,17 +59,6 @@ const LOGO_OPEN = [
   " ░░░░░    ░░░░░  ░░░░░░   ░░░░░░░░                        ",
 ]
 
-const LOGO_CLAUDE = [
-  "   █████████  ████                           █████         ",
-  "  ███░░░░░███░░███                          ░░███          ",
-  " ███     ░░░  ░███   ██████   █████ ████  ███████   ██████ ",
-  "░███          ░███  ░░░░░███ ░░███ ░███  ███░░███  ███░░███",
-  "░███          ░███   ███████  ░███ ░███ ░███ ░███ ░███████ ",
-  "░░███     ███ ░███  ███░░███  ░███ ░███ ░███ ░███ ░███░░░  ",
-  " ░░█████████  █████░░████████ ░░████████░░████████░░██████ ",
-  "  ░░░░░░░░░  ░░░░░  ░░░░░░░░   ░░░░░░░░  ░░░░░░░░  ░░░░░░ ",
-]
-
 function detectProvider(displayModelLabel: string) {
   const provider = getAPIProvider()
 
@@ -117,8 +106,7 @@ export function GradientBanner() {
       return <Box key={`logo-${offset + i}`}>{tokens}</Box>
     })
 
-  const logoTop = renderLogoSection(LOGO_OPEN, 0, LOGO_OPEN.length + LOGO_CLAUDE.length)
-  const logoBottom = renderLogoSection(LOGO_CLAUDE, LOGO_OPEN.length, LOGO_OPEN.length + LOGO_CLAUDE.length)
+  const logoTop = renderLogoSection(LOGO_OPEN, 0, LOGO_OPEN.length)
 
   const cwd = getOriginalCwd()
   const homeDir = process.env.HOME ?? ''
@@ -132,38 +120,29 @@ export function GradientBanner() {
   const version = MACRO.DISPLAY_VERSION ?? MACRO.VERSION
 
   // Compute dynamic box width based on content length
-  const titleLen = 18 + version.length       // ' >_ Noa Claude ' + '(v' + version + ')'
-  const modelLen = 38 + modelLine.length     // ' model:     ' + model + gap + hint
-  const dirLen = 12 + cwdDisplay.length      // ' directory: ' + cwd
-  const epLen = 12 + ep.length               // ' endpoint:  ' + ep
-  const logoMaxWidth = Math.max(
-    ...LOGO_OPEN.map(l => l.length),
-    ...LOGO_CLAUDE.map(l => l.length)
-  )
+  const titleLen = 14 + version.length       // ' Noa Claude v' + version + ' '
+  const modelLen = 38 + modelLine.length     // '  model:     ' + model + gap + hint
+  const dirLen = 13 + cwdDisplay.length      // '  directory: ' + cwd
+  const epLen = 13 + ep.length               // '  endpoint:  ' + ep
+  const logoMaxWidth = Math.max(...LOGO_OPEN.map(l => l.length))
   const maxContentLen = Math.max(titleLen, modelLen, dirLen, epLen, logoMaxWidth - 4)
   const CONTENT_W = maxContentLen + 2        // 2 chars buffer on the right
   const W = CONTENT_W + 2
+
+  const titleText = ` Noa Claude v${version} `
+  const dashFill = Math.max(0, W - 2 - 2 - titleText.length)
 
   return (
     <Box flexDirection="column">
       {/* Logo */}
       {logoTop}
       <Box height={1} />
-      {logoBottom}
 
-      <Text> </Text>
-
-      {/* Top border */}
-      <Text color={BORDER_HEX}>╭{'─'.repeat(W - 2)}╮</Text>
-
-      {/* Title row */}
+      {/* Top border with title */}
       <Text>
-        <Text color={BORDER_HEX}>│</Text>
-        <Text color={BORDER_HEX}>{' >_ '}</Text>
-        <Text bold>{'Noa Claude '}</Text>
-        <Text color={BORDER_HEX}>(v{version})</Text>
-        <Text>{' '.repeat(Math.max(0, CONTENT_W - 15 - 3 - version.length))}</Text>
-        <Text color={BORDER_HEX}>│</Text>
+        <Text color={BORDER_HEX}>{'╭─ '}</Text>
+        <Text bold>Noa Claude</Text>
+        <Text color={BORDER_HEX}>{` v${version} ─${'─'.repeat(dashFill)}╮`}</Text>
       </Text>
 
       {/* Empty row */}
@@ -176,28 +155,28 @@ export function GradientBanner() {
       {/* Model row */}
       <Text>
         <Text color={BORDER_HEX}>│</Text>
-        <Text color={BORDER_HEX}>{' model:     '}</Text>
+        <Text color={BORDER_HEX}>{'  model:     '}</Text>
         <Text>{modelLine}</Text>
         <Text color={ACCENT_HEX}>{' '.repeat(8)}/provider</Text><Text color={BORDER_HEX}> to change</Text>
-        <Text>{' '.repeat(Math.max(0, CONTENT_W - 12 - modelLine.length - 8 - modelHint.length))}</Text>
+        <Text>{' '.repeat(Math.max(0, CONTENT_W - 13 - modelLine.length - 8 - modelHint.length))}</Text>
         <Text color={BORDER_HEX}>│</Text>
       </Text>
 
       {/* Endpoint row */}
       <Text>
         <Text color={BORDER_HEX}>│</Text>
-        <Text color={BORDER_HEX}>{' endpoint:  '}</Text>
+        <Text color={BORDER_HEX}>{'  endpoint:  '}</Text>
         <Text>{ep}</Text>
-        <Text>{' '.repeat(Math.max(0, CONTENT_W - 12 - ep.length))}</Text>
+        <Text>{' '.repeat(Math.max(0, CONTENT_W - 13 - ep.length))}</Text>
         <Text color={BORDER_HEX}>│</Text>
       </Text>
 
       {/* Directory row */}
       <Text>
         <Text color={BORDER_HEX}>│</Text>
-        <Text color={BORDER_HEX}>{' directory: '}</Text>
+        <Text color={BORDER_HEX}>{'  directory: '}</Text>
         <Text>{cwdDisplay}</Text>
-        <Text>{' '.repeat(Math.max(0, CONTENT_W - 12 - cwdDisplay.length))}</Text>
+        <Text>{' '.repeat(Math.max(0, CONTENT_W - 13 - cwdDisplay.length))}</Text>
         <Text color={BORDER_HEX}>│</Text>
       </Text>
 
