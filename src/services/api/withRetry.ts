@@ -12,7 +12,7 @@ import { isAwsCredentialsProviderError } from 'src/utils/aws.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { logError } from 'src/utils/log.js'
 import { createSystemAPIErrorMessage } from 'src/utils/messages.js'
-import { getAPIProviderForStatsig } from 'src/utils/model/providers.js'
+import { getAPIProviderForStatsig, isDirectFirstParty } from 'src/utils/model/providers.js'
 import {
   clearApiKeyHelperCache,
   clearAwsCredentialsCache,
@@ -100,6 +100,9 @@ const PERSISTENT_MAX_BACKOFF_MS = 5 * 60 * 1000
 const PERSISTENT_RESET_CAP_MS = 6 * 60 * 60 * 1000
 const PERSISTENT_TOTAL_TIMEOUT_MS = 24 * 60 * 60 * 1000
 const HEARTBEAT_INTERVAL_MS = 30_000
+// Interactive sessions still honor Retry-After, but a pathological gateway
+// header (e.g. 86400) must not park the session for a day.
+const NORMAL_RETRY_AFTER_CAP_MS = 10 * 60 * 1000
 
 function isPersistentRetryEnabled(): boolean {
   return feature('UNATTENDED_RETRY')
@@ -242,10 +245,14 @@ export async function* withRetry<T>(
         isVertexAuthError(lastError) ||
         isStaleConnection
       ) {
-        // On 401 "token expired" or 403 "token revoked", force a token refresh
+        // On 401 "token expired" or 403 "token revoked", force a token refresh.
+        // First-party only: a third-party key's 401 has nothing to do with the
+        // Anthropic OAuth machine — running it clears the OAuth cache, reads
+        // the keychain, and may send a real refresh request on every retry.
         if (
-          (lastError instanceof APIError && lastError.status === 401) ||
-          isOAuthTokenRevokedError(lastError)
+          isDirectFirstParty() &&
+          ((lastError instanceof APIError && lastError.status === 401) ||
+            isOAuthTokenRevokedError(lastError))
         ) {
           const failedAccessToken = getClaudeAIOAuthTokens()?.accessToken
           if (failedAccessToken) {
@@ -470,7 +477,10 @@ export async function* withRetry<T>(
           PERSISTENT_RESET_CAP_MS,
         )
       } else {
-        delayMs = getRetryDelay(attempt, retryAfter)
+        delayMs = Math.min(
+          getRetryDelay(attempt, retryAfter),
+          NORMAL_RETRY_AFTER_CAP_MS,
+        )
       }
 
       // In persistent mode the for-loop `attempt` is clamped at maxRetries+1;

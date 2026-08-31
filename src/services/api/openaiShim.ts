@@ -37,6 +37,8 @@ type OpenAIStreamChunk = {
     delta: {
       role?: string
       content?: string | null
+      // DeepSeek-R1 / GLM / OpenRouter reasoning streams.
+      reasoning_content?: string | null
       tool_calls?: Array<{
         index: number
         id?: string
@@ -70,6 +72,13 @@ type AnthropicLikeMessage = {
 
 function makeMessageId(): string {
   return `msg_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+}
+
+// Non-canonical providers (llama.cpp derivatives, old Azure) omit tool_call
+// ids — synthesize one or the whole call is dropped while stop_reason still
+// reports tool_use.
+function makeToolUseId(): string {
+  return `toolu_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
 }
 
 /**
@@ -353,7 +362,13 @@ async function* openaiStreamToAnthropic(
   const messageId = makeMessageId()
   let contentBlockIndex = 0
   const activeToolCalls = new Map<number, { id: string; name: string; index: number }>()
-  let hasEmittedContentStart = false
+  // Providers that split id and name across deltas: buffer until the name
+  // arrives — a tool_use block opened with an empty name is unusable
+  // downstream. Arguments accumulate meanwhile.
+  const pendingToolCalls = new Map<number, { id?: string; name?: string; args: string }>()
+  // Which non-tool block is currently open, if any. Thinking (reasoning_content)
+  // and text are mutually exclusive segments; tool_use blocks close either.
+  let openBlock: 'thinking' | 'text' | null = null
   let lastStopReason: 'tool_use' | 'max_tokens' | 'end_turn' | null = null
   let hasEmittedFinalUsage = false
   let hasProcessedFinishReason = false
@@ -408,14 +423,42 @@ async function* openaiStreamToAnthropic(
       for (const choice of chunk.choices ?? []) {
         const delta = choice.delta
 
+        // Map provider reasoning streams to Anthropic thinking blocks so
+        // reasoning-heavy models (DeepSeek-R1, GLM, OpenRouter/Groq) don't
+        // render a blank UI or a silently empty reply. No signature is forged
+        // — the block is display-only.
+        if (delta.reasoning_content) {
+          if (openBlock !== 'thinking') {
+            if (openBlock) {
+              yield { type: 'content_block_stop', index: contentBlockIndex }
+              contentBlockIndex++
+            }
+            yield {
+              type: 'content_block_start',
+              index: contentBlockIndex,
+              content_block: { type: 'thinking', thinking: '' },
+            }
+            openBlock = 'thinking'
+          }
+          yield {
+            type: 'content_block_delta',
+            index: contentBlockIndex,
+            delta: { type: 'thinking_delta', thinking: delta.reasoning_content },
+          }
+        }
+
         if (delta.content != null) {
-          if (!hasEmittedContentStart) {
+          if (openBlock !== 'text') {
+            if (openBlock) {
+              yield { type: 'content_block_stop', index: contentBlockIndex }
+              contentBlockIndex++
+            }
             yield {
               type: 'content_block_start',
               index: contentBlockIndex,
               content_block: { type: 'text', text: '' },
             }
-            hasEmittedContentStart = true
+            openBlock = 'text'
           }
           yield {
             type: 'content_block_delta',
@@ -426,53 +469,66 @@ async function* openaiStreamToAnthropic(
 
         if (delta.tool_calls) {
           for (const tc of delta.tool_calls) {
-            if (tc.id && tc.function?.name) {
-              if (hasEmittedContentStart) {
+            // Idempotent on id+name: non-canonical providers re-echo them on
+            // every delta (one call would otherwise split into N blocks, all
+            // but the last never closed). Providers that omit the id get a
+            // synthesized one instead of losing the call.
+            let active = activeToolCalls.get(tc.index)
+            if (!active) {
+              const pending = pendingToolCalls.get(tc.index) ?? { args: '' }
+              if (tc.id) pending.id = tc.id
+              if (tc.function?.name) pending.name = tc.function.name
+              if (tc.function?.arguments) pending.args += tc.function.arguments
+              if (!pending.name) {
+                pendingToolCalls.set(tc.index, pending)
+                continue
+              }
+              pendingToolCalls.delete(tc.index)
+
+              if (openBlock) {
                 yield { type: 'content_block_stop', index: contentBlockIndex }
                 contentBlockIndex++
-                hasEmittedContentStart = false
+                openBlock = null
               }
 
               const toolBlockIndex = contentBlockIndex
-              activeToolCalls.set(tc.index, {
-                id: tc.id,
-                name: tc.function.name,
+              active = {
+                id: pending.id ?? makeToolUseId(),
+                name: pending.name,
                 index: toolBlockIndex,
-              })
+              }
+              activeToolCalls.set(tc.index, active)
 
               yield {
                 type: 'content_block_start',
                 index: toolBlockIndex,
                 content_block: {
                   type: 'tool_use',
-                  id: tc.id,
-                  name: tc.function.name,
+                  id: active.id,
+                  name: active.name,
                   input: {},
                 },
               }
               contentBlockIndex++
 
-              if (tc.function.arguments) {
+              if (pending.args) {
                 yield {
                   type: 'content_block_delta',
                   index: toolBlockIndex,
                   delta: {
                     type: 'input_json_delta',
-                    partial_json: tc.function.arguments,
+                    partial_json: pending.args,
                   },
                 }
               }
             } else if (tc.function?.arguments) {
-              const active = activeToolCalls.get(tc.index)
-              if (active) {
-                yield {
-                  type: 'content_block_delta',
-                  index: active.index,
-                  delta: {
-                    type: 'input_json_delta',
-                    partial_json: tc.function.arguments,
-                  },
-                }
+              yield {
+                type: 'content_block_delta',
+                index: active.index,
+                delta: {
+                  type: 'input_json_delta',
+                  partial_json: tc.function.arguments,
+                },
               }
             }
           }
@@ -480,8 +536,9 @@ async function* openaiStreamToAnthropic(
 
         if (choice.finish_reason && !hasProcessedFinishReason) {
           hasProcessedFinishReason = true
-          if (hasEmittedContentStart) {
+          if (openBlock) {
             yield { type: 'content_block_stop', index: contentBlockIndex }
+            openBlock = null
           }
           for (const [, tc] of activeToolCalls) {
             yield { type: 'content_block_stop', index: tc.index }
@@ -785,8 +842,9 @@ class OpenAIShimMessages {
         message?: {
           role?: string
           content?: string | null
+          reasoning_content?: string | null
           tool_calls?: Array<{
-            id: string
+            id?: string
             function: { name: string; arguments: string }
           }>
         }
@@ -802,6 +860,11 @@ class OpenAIShimMessages {
     const choice = data.choices?.[0]
     const content: Array<Record<string, unknown>> = []
 
+    // Display-only thinking block; no signature is forged.
+    if (choice?.message?.reasoning_content) {
+      content.push({ type: 'thinking', thinking: choice.message.reasoning_content })
+    }
+
     if (choice?.message?.content) {
       content.push({ type: 'text', text: choice.message.content })
     }
@@ -816,7 +879,7 @@ class OpenAIShimMessages {
         }
         content.push({
           type: 'tool_use',
-          id: tc.id,
+          id: tc.id ?? makeToolUseId(),
           name: tc.function.name,
           input,
         })

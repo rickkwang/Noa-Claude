@@ -1,4 +1,5 @@
 import { chmod, readFile, writeFile, mkdir } from 'fs/promises'
+import { readFileSync, writeFileSync, rmSync, existsSync } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 import { saveGlobalConfig } from './config.js'
@@ -489,11 +490,46 @@ export async function deactivateProviderProfilesForNextLaunch(): Promise<boolean
   await withDeactivatedProviderProfiles(async active => {
     if (!active) return
     changed = true
-    const persistenceError = persistProviderEnvToUserSettings({})
+    const persistenceError = persistProviderEnvToUserSettings(
+      {},
+      undefined,
+      PROVIDER_ENV_KEYS,
+    )
     if (persistenceError) throw persistenceError
   })
   return changed
 }
+
+// Env keys a provider profile application may own. Used for process-env
+// cleanup and as the legacy fallback list when no ownership marker exists.
+const PROVIDER_ENV_KEYS = [
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+  'CLAUDE_CODE_USE_FOUNDRY',
+  'CLAUDE_CODE_USE_OPENAI',
+  'ANTHROPIC_BEDROCK_BASE_URL',
+  'ANTHROPIC_VERTEX_BASE_URL',
+  'ANTHROPIC_FOUNDRY_BASE_URL',
+  'ANTHROPIC_FOUNDRY_RESOURCE',
+  'ANTHROPIC_VERTEX_PROJECT_ID',
+  'OPENAI_BASE_URL',
+  'OPENAI_API_KEY',
+  'OPENAI_MODEL',
+  'AWS_BEARER_TOKEN_BEDROCK',
+  'ANTHROPIC_FOUNDRY_API_KEY',
+  'CLAUDE_CODE_SKIP_BEDROCK_AUTH',
+  'CLAUDE_CODE_SKIP_VERTEX_AUTH',
+  'CLAUDE_CODE_SKIP_FOUNDRY_AUTH',
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_MODEL',
+  'ANTHROPIC_DEFAULT_OPUS_MODEL',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL',
+  'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+  'CLAUDE_CODE_SUBAGENT_MODEL',
+  ...PROVIDER_CATALOGUE_ENV_KEYS,
+] as const
 
 export async function applyActiveProviderProfileEnv(
   options: {
@@ -514,34 +550,7 @@ export async function applyActiveProviderProfileEnv(
       `Provider profile "${active.name}" became active during OAuth cleanup`,
     )
   }
-  const providerEnvKeys = [
-    'CLAUDE_CODE_USE_BEDROCK',
-    'CLAUDE_CODE_USE_VERTEX',
-    'CLAUDE_CODE_USE_FOUNDRY',
-    'CLAUDE_CODE_USE_OPENAI',
-    'ANTHROPIC_BEDROCK_BASE_URL',
-    'ANTHROPIC_VERTEX_BASE_URL',
-    'ANTHROPIC_FOUNDRY_BASE_URL',
-    'ANTHROPIC_FOUNDRY_RESOURCE',
-    'ANTHROPIC_VERTEX_PROJECT_ID',
-    'OPENAI_BASE_URL',
-    'OPENAI_API_KEY',
-    'OPENAI_MODEL',
-    'AWS_BEARER_TOKEN_BEDROCK',
-    'ANTHROPIC_FOUNDRY_API_KEY',
-    'CLAUDE_CODE_SKIP_BEDROCK_AUTH',
-    'CLAUDE_CODE_SKIP_VERTEX_AUTH',
-    'CLAUDE_CODE_SKIP_FOUNDRY_AUTH',
-    'ANTHROPIC_BASE_URL',
-    'ANTHROPIC_API_KEY',
-    'ANTHROPIC_AUTH_TOKEN',
-    'ANTHROPIC_MODEL',
-    'ANTHROPIC_DEFAULT_OPUS_MODEL',
-    'ANTHROPIC_DEFAULT_SONNET_MODEL',
-    'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-    'CLAUDE_CODE_SUBAGENT_MODEL',
-    ...PROVIDER_CATALOGUE_ENV_KEYS,
-  ] as const
+  const providerEnvKeys = PROVIDER_ENV_KEYS
 
   if (!active) {
     if (options.clearProviderStateWhenInactive) {
@@ -557,6 +566,7 @@ export async function applyActiveProviderProfileEnv(
       const persistenceError = persistProviderEnvToUserSettings(
         {},
         options.modelToClearWhenInactive,
+        providerEnvKeys,
       )
       if (persistenceError) throw persistenceError
       return null
@@ -664,50 +674,92 @@ export async function restoreActiveProviderProfileAfterFailedTransition(): Promi
   if (persistenceError) throw persistenceError
 }
 
+// Ownership marker for env keys a profile application wrote into user
+// settings. For each key it records the value settings.json held BEFORE the
+// profile first overwrote it (null = the key didn't exist). Clearing restores
+// that value instead of deleting, so handwritten env.* entries (e.g. a
+// corporate proxy's ANTHROPIC_BASE_URL) survive an activate → deactivate
+// cycle. Tradeoff: edits made to a profile-owned key while the profile is
+// active are replaced by the pre-activation value on deactivate.
+type ProviderEnvOwnership = Record<string, string | null>
+
+function providerEnvOwnershipPath(): string {
+  return join(getClaudeConfigHomeDir(), 'provider-env-ownership.json')
+}
+
+function readProviderEnvOwnership(): ProviderEnvOwnership {
+  try {
+    const parsed = JSON.parse(readFileSync(providerEnvOwnershipPath(), 'utf8'))
+    if (Array.isArray(parsed)) {
+      // Legacy marker (key names only) — previous values unrecoverable.
+      return Object.fromEntries(
+        parsed
+          .filter((k): k is string => typeof k === 'string')
+          .map(k => [k, null]),
+      )
+    }
+    if (parsed && typeof parsed === 'object') return parsed
+    return {}
+  } catch {
+    return {}
+  }
+}
+
+function writeProviderEnvOwnership(marker: ProviderEnvOwnership): void {
+  try {
+    if (Object.keys(marker).length === 0) {
+      rmSync(providerEnvOwnershipPath(), { force: true })
+    } else {
+      writeFileSync(providerEnvOwnershipPath(), JSON.stringify(marker), {
+        mode: 0o600,
+      })
+    }
+  } catch (error) {
+    logForDebugging(`Failed to persist provider env ownership: ${error}`, {
+      level: 'warn',
+    })
+  }
+}
+
 function persistProviderEnvToUserSettings(
   env: Record<string, string>,
   modelToClear?: string,
+  // Explicit cleanups (OAuth replacement, profile deactivation) pass the full
+  // known provider-key list as a legacy fallback: installs from before the
+  // ownership marker existed have no marker, and their stale routing must
+  // still be cleared. The silent startup path omits it, so handwritten env.*
+  // entries are never touched there.
+  legacyClearKeys?: readonly string[],
 ): Error | null {
-  const nextEnv: Record<string, string | undefined> = {
-    CLAUDE_CODE_USE_BEDROCK: undefined,
-    CLAUDE_CODE_USE_VERTEX: undefined,
-    CLAUDE_CODE_USE_FOUNDRY: undefined,
-    CLAUDE_CODE_USE_OPENAI: undefined,
-    ANTHROPIC_BEDROCK_BASE_URL: undefined,
-    ANTHROPIC_VERTEX_BASE_URL: undefined,
-    ANTHROPIC_FOUNDRY_BASE_URL: undefined,
-    ANTHROPIC_FOUNDRY_RESOURCE: undefined,
-    ANTHROPIC_VERTEX_PROJECT_ID: undefined,
-    OPENAI_BASE_URL: undefined,
-    OPENAI_API_KEY: undefined,
-    OPENAI_MODEL: undefined,
-    AWS_BEARER_TOKEN_BEDROCK: undefined,
-    ANTHROPIC_FOUNDRY_API_KEY: undefined,
-    CLAUDE_CODE_SKIP_BEDROCK_AUTH: undefined,
-    CLAUDE_CODE_SKIP_VERTEX_AUTH: undefined,
-    CLAUDE_CODE_SKIP_FOUNDRY_AUTH: undefined,
-    ANTHROPIC_BASE_URL: undefined,
-    ANTHROPIC_API_KEY: undefined,
-    ANTHROPIC_AUTH_TOKEN: undefined,
-    ANTHROPIC_MODEL: undefined,
-    ANTHROPIC_DEFAULT_OPUS_MODEL: undefined,
-    ANTHROPIC_DEFAULT_SONNET_MODEL: undefined,
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: undefined,
-    CLAUDE_CODE_SUBAGENT_MODEL: undefined,
-    ...Object.fromEntries(
-      PROVIDER_CATALOGUE_ENV_KEYS.map(key => [key, undefined]),
-    ),
-    ...env,
+  const marker = readProviderEnvOwnership()
+  const restored: Record<string, string | undefined> =
+    legacyClearKeys && !existsSync(providerEnvOwnershipPath())
+      ? Object.fromEntries(legacyClearKeys.map(key => [key, undefined]))
+      : Object.fromEntries(
+          Object.entries(marker).map(([key, prev]) => [key, prev ?? undefined]),
+        )
+  const nextEnv: Record<string, string | undefined> = { ...restored, ...env }
+
+  // Capture pre-overwrite values for newly owned keys BEFORE the settings
+  // write; keys already in the marker keep their original previous value
+  // (a second profile's value must not become the "handwritten" one).
+  const priorEnv = getSettingsForSource('userSettings')?.env ?? {}
+  const nextMarker: ProviderEnvOwnership = {}
+  for (const key of Object.keys(env)) {
+    nextMarker[key] =
+      key in marker ? marker[key]! : ((priorEnv as Record<string, string>)[key] ?? null)
   }
 
   // Keep provider activation stable across managed env refreshes by writing
   // the active provider env into user settings.
-  return updateSettingsForSource('userSettings', current => ({
+  const error = updateSettingsForSource('userSettings', current => ({
     env: nextEnv as any,
     ...(modelToClear !== undefined && current.model === modelToClear
       ? { model: undefined }
       : {}),
   })).error
+  if (!error) writeProviderEnvOwnership(nextMarker)
+  return error
 }
 
 function persistProviderApiKeyApprovalToGlobalConfig(env: Record<string, string>): void {

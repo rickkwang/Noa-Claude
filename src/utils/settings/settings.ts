@@ -3,6 +3,7 @@ import { feature } from 'bun:bundle'
 import mergeWith from 'lodash-es/mergeWith.js'
 import { randomUUID } from 'node:crypto'
 import {
+  chmodSync,
   mkdirSync as mkdirLockSync,
   readFileSync as readLockFileSync,
   rmSync as rmLockSync,
@@ -412,6 +413,15 @@ function getSettingsForSourceUncached(
 }
 
 const settingsLockWaitArray = new Int32Array(new SharedArrayBuffer(4))
+
+// env.* keys that hold secrets; their presence in settings.json requires 0600.
+const CREDENTIAL_ENV_KEYS = new Set([
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'OPENAI_API_KEY',
+  'ANTHROPIC_FOUNDRY_API_KEY',
+  'AWS_BEARER_TOKEN_BEDROCK',
+])
 const SETTINGS_LOCK_TIMEOUT_MS = 6_000
 const LEGACY_SETTINGS_LOCK_STALE_MS = 10_000
 const SETTINGS_LOCK_RECOVERY_GUARD_STALE_MS = 2_000
@@ -728,7 +738,27 @@ export function updateSettingsForSource(
     writeFileSyncAndFlush_DEPRECATED(
       filePath,
       jsonStringify(updatedSettings, null, 2) + '\n',
+      // Provider profiles persist API keys into env.* — a fresh settings.json
+      // must not be world-readable (lock files already use 0o600 above).
+      { encoding: 'utf-8', mode: 0o600 },
     )
+
+    // The mode above only applies at creation (file.ts:393-399). If the file
+    // predates it and now holds credential env keys, narrow it — same
+    // retro-chmod pattern as ensureProviderProfilesFile.
+    const envRecord = (updatedSettings as { env?: Record<string, unknown> }).env
+    if (
+      envRecord &&
+      Object.keys(envRecord).some(key => CREDENTIAL_ENV_KEYS.has(key))
+    ) {
+      try {
+        if ((statLockSync(filePath).mode & 0o777) & 0o077) {
+          chmodSync(filePath, 0o600)
+        }
+      } catch {
+        // best-effort narrowing; a failed chmod must not fail the write
+      }
+    }
 
     // Invalidate the session cache since settings have been updated
     resetSettingsCache()

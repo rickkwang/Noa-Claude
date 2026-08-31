@@ -97,10 +97,36 @@ export function parsePromptTooLongTokenCounts(rawMessage: string): {
   const match = rawMessage.match(
     /prompt is too long[^0-9]*(\d+)\s*tokens?\s*>\s*(\d+)/i,
   )
-  return {
-    actualTokens: match ? parseInt(match[1]!, 10) : undefined,
-    limitTokens: match ? parseInt(match[2]!, 10) : undefined,
+  if (match) {
+    return {
+      actualTokens: parseInt(match[1]!, 10),
+      limitTokens: parseInt(match[2]!, 10),
+    }
   }
+  // OpenAI shape: "This model's maximum context length is 8192 tokens.
+  // However, your messages resulted in 9000 tokens..."
+  const openaiMatch = rawMessage.match(
+    /maximum context length is (\d+)\s*tokens?[^0-9]+(\d+)\s*tokens?/i,
+  )
+  return {
+    actualTokens: openaiMatch ? parseInt(openaiMatch[2]!, 10) : undefined,
+    limitTokens: openaiMatch ? parseInt(openaiMatch[1]!, 10) : undefined,
+  }
+}
+
+/**
+ * Matches both the Anthropic literal ("prompt is too long") and the OpenAI
+ * Chat Completions context-overflow shapes ("maximum context length is …",
+ * error code context_length_exceeded) so reactive compact can fire on
+ * OpenAI-compatible providers too.
+ */
+function isContextOverflowErrorMessage(message: string): boolean {
+  const lower = message.toLowerCase()
+  return (
+    lower.includes('prompt is too long') ||
+    lower.includes('maximum context length') ||
+    lower.includes('context_length_exceeded')
+  )
 }
 
 /**
@@ -549,12 +575,9 @@ export function getAssistantMessageFromError(
     })
   }
 
-  // Handle prompt too long errors (Vertex returns 413, direct API returns 400)
-  // Use case-insensitive check since Vertex returns "Prompt is too long" (capitalized)
-  if (
-    error instanceof Error &&
-    error.message.toLowerCase().includes('prompt is too long')
-  ) {
+  // Handle prompt too long errors (Vertex returns 413, direct API returns 400,
+  // OpenAI-compatible endpoints say "maximum context length is …")
+  if (error instanceof Error && isContextOverflowErrorMessage(error.message)) {
     // Content stays generic (UI matches on exact string). The raw error with
     // token counts goes into errorDetails — reactive compact's retry loop
     // parses the gap from there via getPromptTooLongTokenGap.
@@ -817,6 +840,17 @@ export function getAssistantMessageFromError(
       })
     }
 
+    // Third-party: a provider 401 mentioning "x-api-key" means the provider's
+    // key failed — /login can't fix it, and 'authentication_failed' would
+    // trigger the VS Code showLogin() prompt. Same gate as the generic
+    // 401/403 branch below.
+    if (!isDirectFirstParty()) {
+      return createAssistantAPIErrorMessage({
+        error: 'invalid_request',
+        content: `Failed to authenticate. ${API_ERROR_MESSAGE_PREFIX}: ${error.message}`,
+      })
+    }
+
     // Check if the API key is from an external source
     const { source } = getAnthropicApiKeyWithSource()
     const isExternalSource =
@@ -869,11 +903,17 @@ export function getAssistantMessageFromError(
       })
     }
 
+    // /login only fixes first-party OAuth — on third-party providers the key
+    // itself failed. 'authentication_failed' triggers the VS Code extension's
+    // Anthropic showLogin() prompt, which cannot fix a third-party key, so
+    // those failures report as 'invalid_request' instead.
+    const thirdParty = !isDirectFirstParty()
     return createAssistantAPIErrorMessage({
-      error: 'authentication_failed',
-      content: getIsNonInteractiveSession()
-        ? `Failed to authenticate. ${API_ERROR_MESSAGE_PREFIX}: ${error.message}`
-        : `Please run /login · ${API_ERROR_MESSAGE_PREFIX}: ${error.message}`,
+      error: thirdParty ? 'invalid_request' : 'authentication_failed',
+      content:
+        getIsNonInteractiveSession() || thirdParty
+          ? `Failed to authenticate. ${API_ERROR_MESSAGE_PREFIX}: ${error.message}`
+          : `Please run /login · ${API_ERROR_MESSAGE_PREFIX}: ${error.message}`,
     })
   }
 
