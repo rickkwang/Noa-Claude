@@ -401,6 +401,14 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
       // Keep the runtime model in sync with the selected provider too.
       setEnvKey(env, 'ANTHROPIC_MODEL', normalizedProfile.model)
       setEnvKey(env, 'OPENAI_MODEL', normalizedProfile.model)
+      // Same reason as the kimi/minimax pins above: without these, tier-alias
+      // and subagent lookups fall back to claude-* ids the endpoint does not
+      // serve, and every small-model call (permission precheck, titles,
+      // summaries) fails closed.
+      setEnvKey(env, 'ANTHROPIC_DEFAULT_OPUS_MODEL', normalizedProfile.model)
+      setEnvKey(env, 'ANTHROPIC_DEFAULT_SONNET_MODEL', normalizedProfile.model)
+      setEnvKey(env, 'ANTHROPIC_DEFAULT_HAIKU_MODEL', normalizedProfile.model)
+      setEnvKey(env, 'CLAUDE_CODE_SUBAGENT_MODEL', normalizedProfile.model)
       break
   }
 

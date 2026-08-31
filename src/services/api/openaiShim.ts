@@ -311,6 +311,29 @@ function convertTools(
     })
 }
 
+// OpenAI wire format accepts only "none"|"auto"|"required" or
+// {type:"function",function:{name}} — Anthropic's object shapes must be mapped
+// or strict endpoints 400 (compact sends {type:'none'} unconditionally).
+function convertToolChoice(toolChoice: unknown): unknown {
+  if (typeof toolChoice !== 'object' || toolChoice === null) return toolChoice
+  const { type, name } = toolChoice as { type?: string; name?: string }
+  switch (type) {
+    case 'auto':
+      return 'auto'
+    case 'none':
+      return 'none'
+    case 'any':
+      return 'required'
+    case 'tool':
+      return name ? { type: 'function', function: { name } } : 'auto'
+    default:
+      logForDebugging(`[openaiShim] tool_choice type "${type}" not portable, dropping`, {
+        level: 'warn',
+      })
+      return undefined
+  }
+}
+
 function convertChunkUsage(
   usage: OpenAIStreamChunk['usage'] | undefined,
 ): AnthropicLikeMessage['usage'] | undefined {
@@ -544,7 +567,7 @@ class OpenAIShimMessages {
       metadata?: Record<string, unknown>
       thinking?: unknown
     },
-    options?: { signal?: AbortSignal; headers?: Record<string, string> },
+    options?: { signal?: AbortSignal; headers?: Record<string, string>; timeout?: number },
   ) {
     const promise = (async () => {
       const response = await this._doRequest(params, options)
@@ -587,7 +610,7 @@ class OpenAIShimMessages {
       metadata?: Record<string, unknown>
       thinking?: unknown
     },
-    options?: { signal?: AbortSignal; headers?: Record<string, string> },
+    options?: { signal?: AbortSignal; headers?: Record<string, string>; timeout?: number },
   ): Promise<Response> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -673,7 +696,9 @@ class OpenAIShimMessages {
             ),
           }
         : {}),
-      ...(params.tool_choice ? { tool_choice: params.tool_choice } : {}),
+      ...(params.tool_choice !== undefined
+        ? { tool_choice: convertToolChoice(params.tool_choice) }
+        : {}),
       ...(params.metadata ? { metadata: params.metadata } : {}),
       ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
     }
@@ -681,12 +706,35 @@ class OpenAIShimMessages {
     const baseURL = this.config.baseURL.replace(/\/+$/, '')
     const chatCompletionsUrl = `${baseURL}/chat/completions`
     const fetchImpl = this.config.fetchOverride ?? globalThis.fetch
-    const response = await fetchImpl(chatCompletionsUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: options?.signal,
-    })
+    // Honor the timeout client.ts passes in — the Anthropic SDK client applies
+    // its `timeout` option itself, but this shim must. Match SDK semantics
+    // exactly: the timeout covers only time-to-headers and is disarmed the
+    // moment fetch settles (node_modules/@anthropic-ai/sdk/client.js:336,350),
+    // so a healthy streaming body longer than timeoutMs is NOT killed. Abort
+    // with a TimeoutError reason — isAbortError only matches 'AbortError', so
+    // this never masquerades as a user Esc.
+    const timeoutController = new AbortController()
+    const timeoutId = setTimeout(
+      () =>
+        timeoutController.abort(
+          new DOMException('The operation timed out.', 'TimeoutError'),
+        ),
+      options?.timeout ?? this.config.timeoutMs,
+    )
+    const signal = options?.signal
+      ? AbortSignal.any([options.signal, timeoutController.signal])
+      : timeoutController.signal
+    let response: Response
+    try {
+      response = await fetchImpl(chatCompletionsUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal,
+      })
+    } finally {
+      clearTimeout(timeoutId)
+    }
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => 'unknown error')
