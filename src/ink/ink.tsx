@@ -18,6 +18,7 @@ import { colorize } from './colorize.js';
 import App from './components/App.js';
 import type { CursorDeclaration, CursorDeclarationSetter } from './components/CursorDeclarationContext.js';
 import { FRAME_INTERVAL_MS } from './constants.js';
+import { reportFrameCost } from './frame-cost.js';
 import * as dom from './dom.js';
 import { KeyboardEvent } from './events/keyboard-event.js';
 import { FocusManager } from './focus.js';
@@ -849,8 +850,13 @@ export default class Ink {
       cacheHits: 0,
       live: 0
     };
+    const frameDurationMs = performance.now() - renderStart;
+    // Feed the animation clock's backpressure: sustained expensive frames
+    // slow shared-clock subscribers (spinner, shimmer) to 30fps until the
+    // pipeline recovers. See frame-cost.ts.
+    reportFrameCost(frameDurationMs);
     this.options.onFrame?.({
-      durationMs: performance.now() - renderStart,
+      durationMs: frameDurationMs,
       phases: {
         renderer: rendererMs,
         diff: diffMs,

@@ -2,6 +2,7 @@
 import { c as _c } from "react/compiler-runtime";
 import React, { createContext, useEffect, useState } from 'react';
 import { FRAME_INTERVAL_MS } from '../constants.js';
+import { setFramePressureListener } from '../frame-cost.js';
 import { useTerminalFocus } from '../hooks/use-terminal-focus.js';
 export type Clock = {
   subscribe: (onChange: () => void, keepAlive: boolean) => () => void;
@@ -80,22 +81,14 @@ export function ClockProvider(t0) {
   } = t0;
   const [clock] = useState(_temp);
   const focused = useTerminalFocus();
-  let t1;
-  let t2;
-  if ($[0] !== clock || $[1] !== focused) {
-    t1 = () => {
-      clock.setTickInterval(focused ? FRAME_INTERVAL_MS : BLURRED_TICK_INTERVAL_MS);
-    };
-    t2 = [clock, focused];
-    $[0] = clock;
-    $[1] = focused;
-    $[2] = t1;
-    $[3] = t2;
-  } else {
-    t1 = $[2];
-    t2 = $[3];
-  }
-  useEffect(t1, t2);
+  // Frame-cost backpressure (omp Loader-style): sustained expensive frames
+  // raise the tick interval so animations stop competing with the render
+  // pipeline for CPU. Independent of focus; either one slows the clock.
+  const [pressured, setPressured] = useState(false);
+  useEffect(() => setFramePressureListener(setPressured), []);
+  useEffect(() => {
+    clock.setTickInterval(focused && !pressured ? FRAME_INTERVAL_MS : BLURRED_TICK_INTERVAL_MS);
+  }, [clock, focused, pressured]);
   let t3;
   if ($[4] !== children || $[5] !== clock) {
     t3 = <ClockContext.Provider value={clock}>{children}</ClockContext.Provider>;
