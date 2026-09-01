@@ -12,9 +12,9 @@ import { TerminalFocusEvent } from '../events/terminal-focus-event.js';
 import { INITIAL_STATE, type ParsedInput, type ParsedKey, type ParsedMouse, parseMultipleKeypresses } from '../parse-keypress.js';
 import reconciler from '../reconciler.js';
 import { finishSelection, hasSelection, type SelectionState, startSelection } from '../selection.js';
-import { isXtermJs, setXtversionName, supportsExtendedKeys } from '../terminal.js';
+import { isXtermJs, reconcileSyncOutputSupported, SYNC_OUTPUT_SUPPORTED, setXtversionName, supportsExtendedKeys } from '../terminal.js';
 import { getTerminalFocused, setTerminalFocused } from '../terminal-focus-state.js';
-import { TerminalQuerier, xtversion } from '../terminal-querier.js';
+import { TerminalQuerier, decrqm, xtversion } from '../terminal-querier.js';
 import { DISABLE_KITTY_KEYBOARD, DISABLE_MODIFY_OTHER_KEYS, ENABLE_KITTY_KEYBOARD, ENABLE_MODIFY_OTHER_KEYS, FOCUS_IN, FOCUS_OUT } from '../termio/csi.js';
 import { DBP, DFE, DISABLE_MOUSE_TRACKING, EBP, EFE, HIDE_CURSOR, SHOW_CURSOR } from '../termio/dec.js';
 import AppContext from './AppContext.js';
@@ -252,12 +252,25 @@ export default class App extends PureComponent<Props, State> {
         // init sequence completes — avoids interleaving with alt-screen/mouse
         // tracking enable writes that may happen in the same render cycle.
         setImmediate(() => {
-          void Promise.all([this.querier.send(xtversion()), this.querier.flush()]).then(([r]) => {
+          void Promise.all([
+            this.querier.send(xtversion()),
+            this.querier.send(decrqm(2026)),
+            this.querier.flush(),
+          ]).then(([r, sync]) => {
             if (r) {
               setXtversionName(r.name);
               logForDebugging(`XTVERSION: terminal identified as "${r.name}"`);
             } else {
               logForDebugging('XTVERSION: no reply (terminal ignored query)');
+            }
+            // DECRQM mode 2026 (synchronized output): the terminal's report is
+            // authoritative over the env-based default — catches terminals the
+            // static allowlist misses (SSH without TERM_PROGRAM, new emulators)
+            // and allowlisted ones that report not-recognized. No reply
+            // (undefined) is inconclusive: keep the env-based default.
+            if (sync) {
+              reconcileSyncOutputSupported(sync.status);
+              logForDebugging(`DECRQM mode 2026: status=${sync.status} → synchronized output ${SYNC_OUTPUT_SUPPORTED ? 'supported' : 'unsupported'}`);
             }
           });
         });

@@ -69,9 +69,10 @@ export function isProgressReportingAvailable(): boolean {
  * When supported, BSU/ESU sequences prevent visible flicker during redraws.
  */
 export function isSynchronizedOutputSupported(): boolean {
-  // tmux parses and proxies every byte but doesn't implement DEC 2026.
-  // BSU/ESU pass through to the outer terminal but tmux has already
-  // broken atomicity by chunking. Skip to save 16 bytes/frame + parser work.
+  // tmux only implements DEC 2026 from 3.7 on (BSU holds back the flush to
+  // the outer terminal until ESU), and TMUX carries no version. Assume the
+  // older behavior — no sync — and let the DECRQM probe correct it: 3.8+
+  // answers 2026 with status 2, older tmux answers 0 (input.c `default`).
   if (process.env.TMUX) return false
 
   const termProgram = process.env.TERM_PROGRAM
@@ -193,9 +194,21 @@ export function hasCursorUpViewportYankBug(): boolean {
   return process.platform === 'win32' || !!process.env.WT_SESSION
 }
 
-// Computed once at module load — terminal capabilities don't change mid-session.
-// Exported so callers can pass a sync-skip hint gated to specific modes.
-export const SYNC_OUTPUT_SUPPORTED = isSynchronizedOutputSupported()
+// Static env-based default, reconciled once at startup against the terminal's
+// DECRPM mode-2026 report (see the decrqm probe in App.tsx). A confirmed report
+// is authoritative both ways: it enables sync on terminals the static allowlist
+// misses (SSH without TERM_PROGRAM, unlisted emulators) and disables it on
+// allowlisted terminals reporting not-recognized. No reply is inconclusive —
+// the static default stays. Read at render/write time, so the reconciled value
+// takes effect on the next frame.
+export let SYNC_OUTPUT_SUPPORTED = isSynchronizedOutputSupported()
+
+/** Reconcile SYNC_OUTPUT_SUPPORTED with a DECRPM mode-2026 report.
+ *  Status: 1=set, 2=reset, 3=permanently set → supported;
+ *  0=not recognized, 4=permanently reset → unsupported. */
+export function reconcileSyncOutputSupported(status: number): void {
+  SYNC_OUTPUT_SUPPORTED = status >= 1 && status <= 3
+}
 
 export type Terminal = {
   stdout: Writable

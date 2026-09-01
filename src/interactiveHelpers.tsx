@@ -10,7 +10,7 @@ import { createStatsStore, type StatsStore } from './context/stats.js';
 import { getSystemContext } from './context.js';
 import { initializeTelemetryAfterTrust } from './entrypoints/init.js';
 import { AlternateScreen } from './ink/components/AlternateScreen.js';
-import { isSynchronizedOutputSupported } from './ink/terminal.js';
+import { SYNC_OUTPUT_SUPPORTED } from './ink/terminal.js';
 import type { RenderOptions, Root, TextProps } from './ink.js';
 import { KeybindingSetup } from './keybindings/KeybindingProviderSetup.js';
 import { startDeferredPrefetches } from './main.js';
@@ -351,7 +351,7 @@ export function getRenderContext(exitOnCtrlC: boolean): {
         }
         // Skip flicker reporting for terminals with synchronized output —
         // DEC 2026 buffers between BSU/ESU so clear+redraw is atomic.
-        if (isSynchronizedOutputSupported()) {
+        if (SYNC_OUTPUT_SUPPORTED) {
           return;
         }
         for (const flicker of event.flickers) {

@@ -619,8 +619,8 @@ export default class Ink {
     const diff = this.log.render(prevFrame, frame, this.altScreenActive,
     // DECSTBM needs BSU/ESU atomicity — without it the outer terminal
     // renders the scrolled-but-not-yet-repainted intermediate state.
-    // tmux is the main case (re-emits DECSTBM with its own timing and
-    // doesn't implement DEC 2026, so SYNC_OUTPUT_SUPPORTED is false).
+    // tmux is the main case: it re-emits DECSTBM with its own timing, and
+    // only implements DEC 2026 from 3.7 on, so pre-3.7 this is false.
     SYNC_OUTPUT_SUPPORTED);
     const diffMs = performance.now() - tDiff;
     // Swap buffers
