@@ -52,6 +52,8 @@ type OpenAIStreamChunk = {
     prompt_tokens?: number
     completion_tokens?: number
   }
+  // Providers that signal failure inside a 200 SSE stream.
+  error?: { message?: string }
 }
 
 type AnthropicLikeMessage = {
@@ -186,8 +188,19 @@ function convertMessages(
         const otherContent = content.filter((b: { type?: string }) => b.type !== 'tool_result')
 
         for (const tr of toolResults) {
+          // Non-text blocks (images, PDFs) can't cross the Chat Completions
+          // tool role — name what was dropped instead of sending "" so the
+          // model knows content existed.
           const trContent = Array.isArray(tr.content)
-            ? tr.content.map((c: { text?: string }) => c.text ?? '').join('\n')
+            ? tr.content
+                .map(
+                  (c: { type?: string; text?: string }) =>
+                    c.text ??
+                    (c.type && c.type !== 'text'
+                      ? `[${c.type} omitted: not supported by this provider]`
+                      : ''),
+                )
+                .join('\n')
             : typeof tr.content === 'string'
               ? tr.content
               : JSON.stringify(tr.content ?? '')
@@ -408,14 +421,28 @@ async function* openaiStreamToAnthropic(
 
     for (const line of lines) {
       const trimmed = line.trim()
-      if (!trimmed || trimmed === 'data: [DONE]') continue
-      if (!trimmed.startsWith('data: ')) continue
+      // The space after `data:` is optional per the SSE spec; some providers
+      // (llama.cpp, vLLM builds) emit `data:{...}` with none.
+      if (!trimmed.startsWith('data:')) continue
+      const payload = trimmed.startsWith('data: ')
+        ? trimmed.slice(6)
+        : trimmed.slice(5)
+      if (!payload || payload === '[DONE]') continue
 
       let chunk: OpenAIStreamChunk
       try {
-        chunk = JSON.parse(trimmed.slice(6))
+        chunk = JSON.parse(payload)
       } catch {
         continue
+      }
+
+      // Some providers report failures as a 200 stream with an error object
+      // mid-stream. Surface it so the caller's non-streaming fallback can
+      // retry instead of silently ending the turn empty.
+      if (!chunk.choices && chunk.error) {
+        throw new Error(
+          `OpenAI-compatible stream error: ${chunk.error.message ?? JSON.stringify(chunk.error)}`,
+        )
       }
 
       const chunkUsage = convertChunkUsage(chunk.usage)
@@ -578,9 +605,14 @@ async function* openaiStreamToAnthropic(
 
   // Handle any leftover data in buffer (incomplete JSON from early disconnect)
   const leftover = buffer.trim()
-  if (leftover && leftover !== 'data: [DONE]' && leftover.startsWith('data: ')) {
+  const leftoverPayload = leftover.startsWith('data: ')
+    ? leftover.slice(6)
+    : leftover.startsWith('data:')
+      ? leftover.slice(5)
+      : ''
+  if (leftoverPayload && leftoverPayload !== '[DONE]') {
     try {
-      JSON.parse(leftover.slice(6))
+      JSON.parse(leftoverPayload)
     } catch {
       // Incomplete JSON — log warning but don't crash
       logError(new Error('[OpenAI Shim] Incomplete chunk in stream buffer, discarding'))

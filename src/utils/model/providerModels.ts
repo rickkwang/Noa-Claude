@@ -112,7 +112,18 @@ function readRecordValue(envKey: string, model: string): string | undefined {
   for (const pair of raw.split(',')) {
     const separator = pair.indexOf('=')
     if (separator === -1) continue
-    if (normalizeModelId(pair.slice(0, separator)) !== wanted) continue
+    // Keys are percent-encoded at write time so ids carrying the `,`/`=`/`:`
+    // separators (Ollama-style `qwen2.5:7b`) survive. Decoding an unencoded
+    // hand-written key is a no-op, so both forms read back; a lone `%` in a
+    // hand-written key makes decodeURIComponent throw — fall back to raw.
+    const rawKey = pair.slice(0, separator)
+    let key = rawKey
+    try {
+      key = decodeURIComponent(rawKey)
+    } catch {
+      // hand-written key with a literal `%` — compare undecoded
+    }
+    if (normalizeModelId(key) !== wanted) continue
     return pair.slice(separator + 1).trim()
   }
   return undefined
@@ -141,12 +152,12 @@ function serializeProviderRecord<T>(
   const pairs: string[] = []
   for (const [model, value] of Object.entries(record)) {
     const id = model.trim()
-    // `=` is the pair separator, `,` the record separator and `:` the value
-    // separator, so an id carrying any of them is unrepresentable.
-    if (!id || id.includes(',') || id.includes('=') || id.includes(':')) continue
+    if (!id) continue
     const encoded = encodeValue(value)
     if (encoded === undefined) continue
-    pairs.push(`${id}=${encoded}`)
+    // Percent-encode the key: `=`/`,`/`:` are pair/record/value separators,
+    // and ids like `qwen2.5:7b` would otherwise be unrepresentable.
+    pairs.push(`${encodeURIComponent(id)}=${encoded}`)
   }
   return pairs.length > 0 ? pairs.join(',') : undefined
 }

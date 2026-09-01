@@ -9,7 +9,9 @@ import {
   PROVIDER_EFFORT_LEVELS_ENV_KEY,
   PROVIDER_MAX_OUTPUT_TOKENS_ENV_KEY,
   PROVIDER_MODELS_ENV_KEY,
+  getActiveProviderContextWindow,
   getActiveProviderModelNames,
+  serializeProviderContextWindows,
   serializeProviderList,
 } from '../../utils/model/providerModels.js'
 import { getModelOptions } from '../../utils/model/modelOptions.js'
@@ -325,7 +327,7 @@ describe('context window for provider profile models', () => {
     expect(getContextWindowForModel('k3')).toBe(200_000)
   })
 
-  test('drops entries that would be unparseable or nonsensical', () => {
+  test('encodes separator-carrying ids, drops entries that are unparseable or nonsensical', () => {
     // A type with no defaults of its own, so this sees the serializer alone.
     const env = buildProviderEnv(
       profile({
@@ -342,7 +344,11 @@ describe('context window for provider profile models', () => {
       }),
     )
 
-    expect(env[PROVIDER_CONTEXT_WINDOWS_ENV_KEY]).toBe('good=300000')
+    // Ids carrying the `,`/`=` separators are percent-encoded, not dropped;
+    // blank/negative/fractional entries are still dropped.
+    expect(env[PROVIDER_CONTEXT_WINDOWS_ENV_KEY]).toBe(
+      'a%3Db=100,c%2Cd=100,good=300000',
+    )
   })
 })
 
@@ -402,7 +408,10 @@ describe('max output tokens for provider profile models', () => {
       }),
     )
 
-    expect(env[PROVIDER_MAX_OUTPUT_TOKENS_ENV_KEY]).toBe('good=100:200')
+    // The colon-bearing id is percent-encoded, not dropped.
+    expect(env[PROVIDER_MAX_OUTPUT_TOKENS_ENV_KEY]).toBe(
+      'a%3Ab=100:100,good=100:200',
+    )
   })
 })
 
@@ -465,5 +474,33 @@ describe('endpoint-scoped fields', () => {
     } finally {
       rmSync(configDir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('provider catalogue record encoding', () => {
+  afterEach(() => {
+    process.env = { ...SAVED }
+  })
+
+  test('model ids with separators (Ollama-style colons) round-trip through records', () => {
+    process.env[PROVIDER_CONTEXT_WINDOWS_ENV_KEY] =
+      serializeProviderContextWindows({ 'qwen2.5:7b': 131072 }) ?? ''
+
+    // Previously the serializer silently dropped these ids, falling the model
+    // back to the default 200k window and skewing compaction thresholds.
+    expect(getActiveProviderContextWindow('qwen2.5:7b')).toBe(131072)
+  })
+
+  test('hand-written unencoded keys still read back', () => {
+    process.env[PROVIDER_CONTEXT_WINDOWS_ENV_KEY] = 'qwen2.5:7b=131072'
+
+    expect(getActiveProviderContextWindow('qwen2.5:7b')).toBe(131072)
+  })
+
+  test('a hand-written key with a literal % does not crash the reader', () => {
+    process.env[PROVIDER_CONTEXT_WINDOWS_ENV_KEY] = 'weird%model=100,good=200'
+
+    expect(getActiveProviderContextWindow('weird%model')).toBe(100)
+    expect(getActiveProviderContextWindow('good')).toBe(200)
   })
 })

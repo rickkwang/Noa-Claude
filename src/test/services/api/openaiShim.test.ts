@@ -522,3 +522,264 @@ describe('retention opt-out', () => {
     }
   })
 })
+
+describe('openaiShim streaming tool_call translation', () => {
+  function streamEvents(events: Array<Record<string, unknown>>) {
+    return {
+      starts: events.filter(e => e.type === 'content_block_start'),
+      stops: events.filter(e => e.type === 'content_block_stop'),
+      deltas: events.filter(e => e.type === 'content_block_delta'),
+      messageDelta: events.find(e => e.type === 'message_delta') as
+        | { delta?: { stop_reason?: string } }
+        | undefined,
+    }
+  }
+
+  test('id+name re-echoed on every delta stays one block, fully closed', async () => {
+    const { client } = streamingCaptureClient([
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'call_1',
+                  type: 'function',
+                  function: { name: 'Read', arguments: '{"a":' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'call_1',
+                  type: 'function',
+                  function: { name: 'Read', arguments: '1}' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+    ])
+    const stream = await client.messages.create({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true,
+    })
+    const { starts, stops, deltas, messageDelta } = streamEvents(
+      await collectStream(stream as AsyncIterable<Record<string, unknown>>),
+    )
+
+    expect(starts).toHaveLength(1)
+    expect(starts[0]).toMatchObject({
+      content_block: { type: 'tool_use', id: 'call_1', name: 'Read' },
+    })
+    // The re-echoed arguments must accumulate on the same block, not fork it.
+    expect(deltas).toHaveLength(2)
+    expect(stops).toHaveLength(1)
+    expect(messageDelta?.delta?.stop_reason).toBe('tool_use')
+  })
+
+  test('tool_call without an id gets a synthesized one instead of being dropped', async () => {
+    const { client } = streamingCaptureClient([
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  type: 'function',
+                  function: { name: 'Grep', arguments: '{}' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+    ])
+    const stream = await client.messages.create({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true,
+    })
+    const { starts, stops } = streamEvents(
+      await collectStream(stream as AsyncIterable<Record<string, unknown>>),
+    )
+
+    expect(starts).toHaveLength(1)
+    const block = starts[0]?.content_block as { id: string; name: string }
+    expect(block.id).toMatch(/^toolu_/)
+    expect(block.name).toBe('Grep')
+    expect(stops).toHaveLength(1)
+  })
+
+  test('split id/name deltas buffer until the name arrives', async () => {
+    const { client } = streamingCaptureClient([
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_9' }] } }] },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 0, function: { name: 'Read', arguments: '{"x":1}' } },
+              ],
+            },
+          },
+        ],
+      },
+      { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+    ])
+    const stream = await client.messages.create({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true,
+    })
+    const events = await collectStream(
+      stream as AsyncIterable<Record<string, unknown>>,
+    )
+    const { starts, deltas } = streamEvents(events)
+
+    // The block must open with the name — a nameless tool_use errors at
+    // execution time when the model's call is looked up.
+    expect(starts).toHaveLength(1)
+    expect(starts[0]).toMatchObject({
+      content_block: { type: 'tool_use', id: 'call_9', name: 'Read' },
+    })
+    // Arguments buffered before the name arrived are flushed after the start.
+    expect(deltas[0]).toMatchObject({
+      delta: { type: 'input_json_delta', partial_json: '{"x":1}' },
+    })
+  })
+})
+
+describe('openaiShim reasoning_content translation', () => {
+  test('reasoning_content maps to thinking blocks, then text opens a new block', async () => {
+    const { client } = streamingCaptureClient([
+      { choices: [{ delta: { reasoning_content: 'thinking hard' } }] },
+      { choices: [{ delta: { content: 'the answer' } }] },
+      { choices: [{ delta: {}, finish_reason: 'stop' }] },
+    ])
+    const stream = await client.messages.create({
+      model: 'deepseek-r1',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true,
+    })
+    const events = await collectStream(
+      stream as AsyncIterable<Record<string, unknown>>,
+    )
+    const starts = events.filter(e => e.type === 'content_block_start')
+
+    expect(starts[0]).toMatchObject({
+      index: 0,
+      content_block: { type: 'thinking' },
+    })
+    // No signature is forged — a forged one would be replayed and rejected
+    // if the conversation ever went back to a first-party endpoint.
+    expect((starts[0]?.content_block as { signature?: string }).signature).toBeUndefined()
+    expect(starts[1]).toMatchObject({ index: 1, content_block: { type: 'text' } })
+  })
+})
+
+describe('openaiShim SSE frame handling', () => {
+  test('spaceless data: frames are parsed (SSE spec makes the space optional)', async () => {
+    const fetchOverride = (async () => {
+      const body =
+        `data:${JSON.stringify({ choices: [{ delta: { content: 'hi' } }] })}\n\n` +
+        `data:${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n` +
+        'data:[DONE]\n\n'
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    }) as unknown as typeof fetch
+    const client = createOpenAIShimClient({
+      apiKey: 'test-key',
+      baseURL: 'https://api.example.test/v1',
+      defaultHeaders: {},
+      timeoutMs: 1000,
+      fetchOverride,
+    })
+    const stream = await client.messages.create({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true,
+    })
+    const events = await collectStream(
+      stream as AsyncIterable<Record<string, unknown>>,
+    )
+
+    expect(
+      events.some(
+        e =>
+          e.type === 'content_block_delta' &&
+          (e.delta as { text?: string }).text === 'hi',
+      ),
+    ).toBe(true)
+    expect(events.some(e => e.type === 'message_stop')).toBe(true)
+  })
+
+  test('mid-stream error object throws so the caller falls back to retry', async () => {
+    const { client } = streamingCaptureClient([
+      { choices: [{ delta: { content: 'hi' } }] },
+      { error: { message: 'upstream model unloaded' } },
+    ])
+    const stream = await client.messages.create({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true,
+    })
+
+    await expect(
+      collectStream(stream as AsyncIterable<Record<string, unknown>>),
+    ).rejects.toThrow('upstream model unloaded')
+  })
+})
+
+describe('openaiShim tool_result translation', () => {
+  test('non-text tool_result blocks become placeholders instead of empty strings', async () => {
+    const { client, captured } = captureClient()
+    await client.messages.create({
+      model: 'test-model',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_1',
+              content: [
+                { type: 'text', text: 'see this' },
+                {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: 'image/png',
+                    data: 'aGVsbG8=',
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+
+    const toolMessage = (
+      captured[0]?.body.messages as Array<{ role: string; content: string }>
+    ).find(m => m.role === 'tool')
+    expect(toolMessage?.content).toContain('see this')
+    expect(toolMessage?.content).toContain('[image omitted')
+  })
+})

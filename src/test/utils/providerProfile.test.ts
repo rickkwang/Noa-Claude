@@ -681,3 +681,191 @@ describe('provider profile credentials', () => {
   })
 
 })
+
+describe('provider env ownership', () => {
+  function runInConfigDir(configDir: string, body: string) {
+    const script = `
+      process.env.CLAUDE_CONFIG_DIR = ${JSON.stringify(configDir)}
+      // spawnSync inherits the parent env; scrub provider keys so the
+      // assertions below test the code, not the caller's shell.
+      delete process.env.ANTHROPIC_BASE_URL
+      delete process.env.ANTHROPIC_AUTH_TOKEN
+      delete process.env.ANTHROPIC_API_KEY
+      delete process.env.ANTHROPIC_MODEL
+      ${body}
+    `
+    const result = spawnSync('bun', ['--eval', script], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    })
+    if (result.status !== 0) throw new Error(result.stderr)
+    expect(result.status).toBe(0)
+  }
+
+  test('activate then deactivate restores the handwritten value instead of deleting it', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'noa-ownership-restore-'))
+    try {
+      writeFileSync(
+        join(configDir, 'settings.json'),
+        JSON.stringify({
+          env: {
+            ANTHROPIC_BASE_URL: 'https://corp-proxy.example.test',
+            UNRELATED: 'keep-me',
+          },
+        }),
+      )
+
+      runInConfigDir(
+        configDir,
+        `
+        const { readFileSync } = await import('fs')
+        const { join } = await import('path')
+        const {
+          addProviderProfile,
+          setActiveProviderProfile,
+          applyActiveProviderProfileEnv,
+          deactivateProviderProfilesForNextLaunch,
+        } = await import('./src/utils/providerProfile.ts')
+        const settingsPath = join(process.env.CLAUDE_CONFIG_DIR, 'settings.json')
+        const env = () =>
+          JSON.parse(readFileSync(settingsPath, 'utf8')).env ?? {}
+
+        const p = await addProviderProfile({
+          name: 'K',
+          type: 'kimi',
+          baseUrl: 'https://k.example.test/anthropic',
+          apiKey: 'sk-k',
+          model: 'm',
+        })
+        await setActiveProviderProfile(p.id)
+        await applyActiveProviderProfileEnv()
+
+        // While active, the profile's value shadows the handwritten one.
+        if (env().ANTHROPIC_BASE_URL !== 'https://k.example.test/anthropic') {
+          throw new Error('profile base URL was not applied')
+        }
+
+        await deactivateProviderProfilesForNextLaunch()
+
+        if (env().ANTHROPIC_BASE_URL !== 'https://corp-proxy.example.test') {
+          throw new Error('handwritten value was not restored on deactivate')
+        }
+        if (env().ANTHROPIC_AUTH_TOKEN !== undefined) {
+          throw new Error('provider-only key survived deactivation')
+        }
+        if (env().UNRELATED !== 'keep-me') {
+          throw new Error('unrelated env key was touched')
+        }
+        `,
+      )
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  test('switching profiles then deactivating restores the ORIGINAL handwritten value', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'noa-ownership-switch-'))
+    try {
+      writeFileSync(
+        join(configDir, 'settings.json'),
+        JSON.stringify({
+          env: { ANTHROPIC_BASE_URL: 'https://corp-proxy.example.test' },
+        }),
+      )
+
+      runInConfigDir(
+        configDir,
+        `
+        const { readFileSync } = await import('fs')
+        const { join } = await import('path')
+        const {
+          addProviderProfile,
+          setActiveProviderProfile,
+          applyActiveProviderProfileEnv,
+          deactivateProviderProfilesForNextLaunch,
+        } = await import('./src/utils/providerProfile.ts')
+        const settingsPath = join(process.env.CLAUDE_CONFIG_DIR, 'settings.json')
+        const env = () =>
+          JSON.parse(readFileSync(settingsPath, 'utf8')).env ?? {}
+
+        const a = await addProviderProfile({
+          name: 'A',
+          type: 'kimi',
+          baseUrl: 'https://a.example.test/anthropic',
+          apiKey: 'sk-a',
+          model: 'm',
+        })
+        await setActiveProviderProfile(a.id)
+        await applyActiveProviderProfileEnv()
+
+        const b = await addProviderProfile({
+          name: 'B',
+          type: 'anthropic',
+          baseUrl: 'https://b.example.test',
+          apiKey: 'sk-b',
+          model: 'claude-x',
+        })
+        await setActiveProviderProfile(b.id)
+        await applyActiveProviderProfileEnv()
+
+        if (env().ANTHROPIC_BASE_URL !== 'https://b.example.test') {
+          throw new Error('profile B was not applied')
+        }
+
+        await deactivateProviderProfilesForNextLaunch()
+
+        // Profile A's value must not become the "handwritten" one.
+        if (env().ANTHROPIC_BASE_URL !== 'https://corp-proxy.example.test') {
+          throw new Error(
+            'deactivate restored ' + env().ANTHROPIC_BASE_URL + ' instead of the original handwritten value',
+          )
+        }
+        `,
+      )
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  test('legacy array-form ownership marker degrades to delete-not-restore', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'noa-ownership-legacy-'))
+    try {
+      writeFileSync(
+        join(configDir, 'settings.json'),
+        JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: 'sk-stale' } }),
+      )
+      // The intermediate fix iteration wrote a bare string[] of key names.
+      writeFileSync(
+        join(configDir, 'provider-env-ownership.json'),
+        JSON.stringify(['ANTHROPIC_AUTH_TOKEN']),
+      )
+
+      runInConfigDir(
+        configDir,
+        `
+        const { readFileSync, existsSync } = await import('fs')
+        const { join } = await import('path')
+        const { applyActiveProviderProfileEnv } =
+          await import('./src/utils/providerProfile.ts')
+
+        await applyActiveProviderProfileEnv()
+
+        const env =
+          JSON.parse(
+            readFileSync(join(process.env.CLAUDE_CONFIG_DIR, 'settings.json'), 'utf8'),
+          ).env ?? {}
+        // Previous values are unrecoverable from the array form; the key must
+        // still be cleared so stale routing does not linger.
+        if (env.ANTHROPIC_AUTH_TOKEN !== undefined) {
+          throw new Error('legacy-marked key was not cleared')
+        }
+        if (existsSync(join(process.env.CLAUDE_CONFIG_DIR, 'provider-env-ownership.json'))) {
+          throw new Error('legacy marker was not consumed')
+        }
+        `,
+      )
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+})

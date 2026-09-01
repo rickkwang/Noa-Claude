@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { getErrorMessageIfRefusal } from '../../../services/api/errors.js'
+import { APIError } from '@anthropic-ai/sdk'
+import {
+  getAssistantMessageFromError,
+  getErrorMessageIfRefusal,
+} from '../../../services/api/errors.js'
 
 const ENV_KEYS = [
+  'ANTHROPIC_API_KEY',
   'ANTHROPIC_BASE_URL',
   'ANTHROPIC_DEFAULT_SONNET_MODEL',
   'CLAUDE_CODE_USE_OPENAI',
@@ -69,5 +74,47 @@ describe('refusal model suggestion', () => {
     const content = getTextContent('custom-opus')
 
     expect(content).toContain('/model custom-sonnet')
+  })
+})
+
+describe('third-party 401 handling', () => {
+  const make401 = (message: string) =>
+    new APIError(401, { error: { message } }, message, new Headers())
+
+  function getErrorKind(error: APIError): {
+    kind: string | undefined
+    text: string
+  } {
+    const result = getAssistantMessageFromError(error, 'test-model') as {
+      error?: string
+      message?: { content?: unknown }
+    }
+    const content = result.message?.content
+    const text = Array.isArray(content)
+      ? (content as Array<{ type: string; text?: string }>)
+          .filter(block => block.type === 'text')
+          .map(block => block.text ?? '')
+          .join('')
+      : ''
+    return { kind: result.error, text }
+  }
+
+  test('x-api-key 401 on a third-party provider is invalid_request, not authentication_failed', () => {
+    // 'authentication_failed' triggers the VS Code extension's showLogin(),
+    // which cannot fix a third-party key. Several gateways echo the header
+    // name in their 401 body, which routes into the x-api-key branch.
+    process.env.CLAUDE_CODE_USE_OPENAI = '1'
+    const { kind, text } = getErrorKind(make401('Invalid x-api-key'))
+
+    expect(kind).toBe('invalid_request')
+    expect(text).toContain('Failed to authenticate')
+    expect(text).not.toContain('/login')
+  })
+
+  test('x-api-key 401 on first-party keeps authentication_failed', () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-test-dummy'
+    const { kind } = getErrorKind(make401('Invalid x-api-key'))
+
+    expect(kind).toBe('authentication_failed')
   })
 })
