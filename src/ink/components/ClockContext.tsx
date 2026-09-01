@@ -69,13 +69,20 @@ export function createClock(tickIntervalMs: number): Clock {
   };
 }
 export const ClockContext = createContext<Clock | null>(null);
-const BLURRED_TICK_INTERVAL_MS = FRAME_INTERVAL_MS * 2;
+// Halved tick rate. Two independent reasons to use it: the terminal is
+// unfocused, or frame-cost backpressure is active.
+const SLOW_TICK_INTERVAL_MS = FRAME_INTERVAL_MS * 2;
 
 // Own component so App.tsx doesn't re-render when the clock is created.
 // The clock value is stable (created once via useState), so the provider
 // never causes consumer re-renders on its own.
+//
+// NOTE: checked-in React Compiler output (the compiler is not part of this
+// build), hand-edited since — the effects below are written by hand. So the
+// $ memo slots are maintained manually: keep them contiguous and _c(n) sized
+// to match.
 export function ClockProvider(t0) {
-  const $ = _c(7);
+  const $ = _c(3);
   const {
     children
   } = t0;
@@ -87,16 +94,16 @@ export function ClockProvider(t0) {
   const [pressured, setPressured] = useState(false);
   useEffect(() => setFramePressureListener(setPressured), []);
   useEffect(() => {
-    clock.setTickInterval(focused && !pressured ? FRAME_INTERVAL_MS : BLURRED_TICK_INTERVAL_MS);
+    clock.setTickInterval(focused && !pressured ? FRAME_INTERVAL_MS : SLOW_TICK_INTERVAL_MS);
   }, [clock, focused, pressured]);
   let t3;
-  if ($[4] !== children || $[5] !== clock) {
+  if ($[0] !== children || $[1] !== clock) {
     t3 = <ClockContext.Provider value={clock}>{children}</ClockContext.Provider>;
-    $[4] = children;
-    $[5] = clock;
-    $[6] = t3;
+    $[0] = children;
+    $[1] = clock;
+    $[2] = t3;
   } else {
-    t3 = $[6];
+    t3 = $[2];
   }
   return t3;
 }

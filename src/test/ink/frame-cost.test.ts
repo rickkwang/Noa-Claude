@@ -39,6 +39,14 @@ test('sustained expensive frames raise pressure, cheap frames recover', () => {
   expect(events).toEqual([true, false])
 })
 
+test('the very first frame cannot trip pressure (seed clamp)', () => {
+  listen()
+  reportFrameCost(80) // initial full-screen paint
+  expect(events).toEqual([])
+  steadyFrames(2, 5)
+  expect(events).toEqual([])
+})
+
 test('a single expensive frame does not trip (EMA smoothing)', () => {
   listen()
   steadyFrames(2, 30)

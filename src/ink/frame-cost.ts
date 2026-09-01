@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Frame-cost backpressure for the shared animation clock.
  *
@@ -11,6 +10,12 @@
  * ink.tsx reports every frame's duration; ClockContext listens and raises the
  * tick interval while the smoothed cost stays over budget. Hysteresis keeps
  * the interval from oscillating frame to frame.
+ *
+ * State is render-driven and module-global, which has two consequences worth
+ * knowing before "fixing" either: pressure decays only as new frames arrive,
+ * so it stays latched while rendering is idle (harmless — nothing is animating
+ * then, and the animation that would resume is itself what feeds recovery);
+ * and all Ink instances sharing this process share one EMA.
  */
 
 // EMA smoothing — one expensive frame (startup, resize) must not trip
