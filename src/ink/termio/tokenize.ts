@@ -10,6 +10,18 @@
 import { C0, ESC_TYPE, isEscFinal } from './ansi.js'
 import { isCSIFinal, isCSIIntermediate, isCSIParam } from './csi.js'
 
+// Sequence length caps (omp StdinBuffer): a malformed CSI with no final byte
+// or a terminator-less OSC/DCS/APC otherwise stays buffered forever, and each
+// feed() re-scans the whole stale prefix — O(n²) on a stream of garbage.
+// CSI is bounded tight; string sequences get a generous cap because legit
+// OSC payloads (e.g. clipboard) can be large.
+const MAX_CSI_LENGTH = 4096
+const MAX_STRING_SEQ_LENGTH = 16 * 1024 * 1024
+// Escape-intermediate sequences (charset selects etc.) are a handful of
+// bytes; 64 is generous. Uncapped intermediates would grow the buffer
+// unboundedly like the CSI/string cases above.
+const MAX_INTERMEDIATE_LENGTH = 64
+
 export type Token =
   | { type: 'text'; value: string }
   | { type: 'sequence'; value: string }
@@ -189,8 +201,14 @@ function tokenize(
       case 'escapeIntermediate':
         // After intermediate byte(s), wait for final byte
         if (isCSIIntermediate(code)) {
-          // More intermediate bytes
-          i++
+          if (i - seqStart >= MAX_INTERMEDIATE_LENGTH) {
+            // Runaway intermediates with no final byte — abort as text.
+            result.state = 'ground'
+            textStart = seqStart
+          } else {
+            // More intermediate bytes
+            i++
+          }
         } else if (isEscFinal(code)) {
           // Final byte - complete the sequence
           i++
@@ -248,7 +266,13 @@ function tokenize(
           i++
           emitSequence(data.slice(seqStart, i))
         } else if (isCSIParam(code) || isCSIIntermediate(code)) {
-          i++
+          if (i - seqStart >= MAX_CSI_LENGTH) {
+            // Runaway CSI with no final byte — abort as text, bounded work.
+            result.state = 'ground'
+            textStart = seqStart
+          } else {
+            i++
+          }
         } else {
           // Invalid CSI - abort, treat as text
           result.state = 'ground'
@@ -269,21 +293,6 @@ function tokenize(
         break
 
       case 'osc':
-        if (code === C0.BEL) {
-          i++
-          emitSequence(data.slice(seqStart, i))
-        } else if (
-          code === C0.ESC &&
-          i + 1 < data.length &&
-          data.charCodeAt(i + 1) === ESC_TYPE.ST
-        ) {
-          i += 2
-          emitSequence(data.slice(seqStart, i))
-        } else {
-          i++
-        }
-        break
-
       case 'dcs':
       case 'apc':
         if (code === C0.BEL) {
@@ -296,6 +305,14 @@ function tokenize(
         ) {
           i += 2
           emitSequence(data.slice(seqStart, i))
+        } else if (i - seqStart >= MAX_STRING_SEQ_LENGTH) {
+          // Terminator-less string sequence over the cap — discard the
+          // prefix. Keeping it would re-scan the whole prefix on every feed.
+          // The payload tail past this point re-emerges as ground text —
+          // unavoidable in streaming (future bytes can't be known to be
+          // payload), but the buffer stays bounded.
+          result.state = 'ground'
+          textStart = i
         } else {
           i++
         }

@@ -194,6 +194,20 @@ export const INITIAL_STATE: KeyParseState = {
   pasteBuffer: '',
 }
 
+// Paste recovery bound (omp StdinBuffer PASTE_MAX_BYTES): a lost or corrupted
+// PASTE_END (ssh/tmux truncation) must not hang paste mode forever or grow
+// memory unboundedly. Force-emit the accumulated paste and leave paste mode.
+// length counts UTF-16 code units — a proxy for bytes, close enough for a cap.
+// Tradeoff: content after the cap is parsed as live keystrokes (a lost
+// PASTE_END never comes, so remaining bytes are interactive input by then).
+const PASTE_MAX_LENGTH = 64 * 1024 * 1024
+
+/** Matches an unambiguous in-progress SGR mouse report: ESC [ < then only
+ *  digits and semicolons so far (no final M/m yet). No keyboard sequence
+ *  starts with `ESC [<`, so a buffer matching this is always the head of a
+ *  split mouse report. */
+export const SGR_MOUSE_PARTIAL_RE = /^\x1b\[<[\d;]*$/
+
 function inputToString(input: Buffer | string): string {
   if (Buffer.isBuffer(input)) {
     if (input[0]! > 127 && input[1] === undefined) {
@@ -244,6 +258,11 @@ export function parseMultipleKeypresses(
       } else if (inPaste) {
         // Sequences inside paste are treated as literal text
         pasteBuffer += token.value
+        if (pasteBuffer.length >= PASTE_MAX_LENGTH) {
+          keys.push(createPasteKey(pasteBuffer))
+          inPaste = false
+          pasteBuffer = ''
+        }
       } else {
         const response = parseTerminalResponse(token.value)
         if (response) {
@@ -260,6 +279,11 @@ export function parseMultipleKeypresses(
     } else if (token.type === 'text') {
       if (inPaste) {
         pasteBuffer += token.value
+        if (pasteBuffer.length >= PASTE_MAX_LENGTH) {
+          keys.push(createPasteKey(pasteBuffer))
+          inPaste = false
+          pasteBuffer = ''
+        }
       } else if (
         /^\[<\d+;\d+;\d+[Mm]$/.test(token.value) ||
         /^\[M[\x60-\x7f][\x20-\uffff]{2}$/.test(token.value)

@@ -9,7 +9,7 @@ import { logError } from '../../utils/log.js';
 import { EventEmitter } from '../events/emitter.js';
 import { InputEvent } from '../events/input-event.js';
 import { TerminalFocusEvent } from '../events/terminal-focus-event.js';
-import { INITIAL_STATE, type ParsedInput, type ParsedKey, type ParsedMouse, parseMultipleKeypresses } from '../parse-keypress.js';
+import { INITIAL_STATE, type ParsedInput, type ParsedKey, type ParsedMouse, parseMultipleKeypresses, SGR_MOUSE_PARTIAL_RE } from '../parse-keypress.js';
 import reconciler from '../reconciler.js';
 import { finishSelection, hasSelection, type SelectionState, startSelection } from '../selection.js';
 import { isXtermJs, reconcileSyncOutputSupported, SYNC_OUTPUT_SUPPORTED, setXtversionName, supportsExtendedKeys } from '../terminal.js';
@@ -34,6 +34,7 @@ const SUPPORTS_SUSPEND = process.platform !== 'win32';
 // but no signal reaches us. 5s is well above normal inter-keystroke gaps
 // but short enough that the first scroll after reattach works.
 const STDIN_RESUME_GAP_MS = 5000;
+
 type Props = {
   readonly children: ReactNode;
   readonly stdin: NodeJS.ReadStream;
@@ -120,6 +121,13 @@ export default class App extends PureComponent<Props, State> {
   // Timeout durations for incomplete sequences (ms)
   readonly NORMAL_TIMEOUT = 50; // Short timeout for regular esc sequences
   readonly PASTE_TIMEOUT = 500; // Longer timeout for paste operations
+  // An incomplete SGR mouse report prefix (ESC [< + digits/semicolons) is
+  // unambiguous — no keyboard sequence starts with it. Hold it longer than a
+  // generic partial so slow links (ssh/tmux) don't split the report into a
+  // spurious Escape plus a leaked text tail. Bounded so a partial that never
+  // completes (terminal died mid-report) is delivered raw within 150ms.
+  // (omp StdinBuffer SGR_MOUSE_PARTIAL / PARTIAL_HOLD_MAX_MS.)
+  readonly MOUSE_PARTIAL_TIMEOUT = 150;
 
   // Terminal query/response dispatch. Responses arrive on stdin (parsed
   // out by parse-keypress) and are routed to pending promise resolvers.
@@ -340,7 +348,15 @@ export default class App extends PureComponent<Props, State> {
       if (this.incompleteEscapeTimer) {
         clearTimeout(this.incompleteEscapeTimer);
       }
-      this.incompleteEscapeTimer = setTimeout(this.flushIncomplete, this.keyParseState.mode === 'IN_PASTE' ? this.PASTE_TIMEOUT : this.NORMAL_TIMEOUT);
+      const incomplete = this.keyParseState.incomplete;
+      this.incompleteEscapeTimer = setTimeout(
+        this.flushIncomplete,
+        this.keyParseState.mode === 'IN_PASTE'
+          ? this.PASTE_TIMEOUT
+          : SGR_MOUSE_PARTIAL_RE.test(incomplete)
+            ? this.MOUSE_PARTIAL_TIMEOUT
+            : this.NORMAL_TIMEOUT,
+      );
     }
   };
   handleReadable = (): void => {
