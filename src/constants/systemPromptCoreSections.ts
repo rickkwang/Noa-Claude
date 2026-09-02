@@ -326,9 +326,15 @@ When the conversation grows long, some or all of the current context is summariz
 
 /**
  * Ported verbatim from upstream's `autonomy_append` section (2.1.226), byte
- * compared against the shipped binary. The four paragraphs are separated by
- * blank lines, not single newlines — an earlier port collapsed them, which is
- * invisible in a diff and survived a digest pinned to the collapsed text.
+ * compared against the shipped binary; re-verified against 2.1.258, where the
+ * text is unchanged. The four paragraphs are separated by blank lines, not
+ * single newlines — an earlier port collapsed them, which is invisible in a
+ * diff and survived a digest pinned to the collapsed text.
+ *
+ * The last paragraph's parenthetical is upstream's: "(such as restarts,
+ * deletes, or config edits)". It shipped once as an em-dash aside, which the
+ * digest then certified — the same failure mode as the collapsed newlines, and
+ * the reason verify:ports exists. Don't re-style it.
  *
  * Upstream gates it on the model alone — `fable_5_mitigations` or an env
  * override — behind a growthbook flag that defaults on. This fork adds a second
@@ -347,4 +353,4 @@ Exception: when the user is describing a problem, asking a question, or thinking
 
 Before ending your turn, check your last paragraph. If it is a plan, an analysis, a question, a list of next steps, or a promise about work you have not done ('I'll…', 'let me know when…'), do that work now with tool calls. That includes retrying after errors and gathering missing information yourself. Do not stop because the context or session is long. End your turn only when the task is complete or you are blocked on input only the user can provide.
 
-Before running a command that changes system state — restarts, deletes, config edits — check that the evidence actually supports that specific action. A signal that pattern-matches to a known failure may have a different cause.`
+Before running a command that changes system state (such as restarts, deletes, or config edits), check that the evidence actually supports that specific action. A signal that pattern-matches to a known failure may have a different cause.`

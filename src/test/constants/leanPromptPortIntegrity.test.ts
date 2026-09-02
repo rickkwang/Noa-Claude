@@ -107,13 +107,13 @@ const PORTED_DIGESTS: Record<string, string> = {
   ACT_DONT_REDERIVE_SECTION: '4e4e48fb23ceb764',
   CONTEXT_MANAGEMENT_SECTION: '9856a95edb9c2bdb',
   MATCH_SURROUNDING_CODE_SECTION: 'ee43af37398581e9',
-  'anti_verbosity fable branch': '41a8a87303e6f6f8',
+  'anti_verbosity fable branch': '1ffd574f62004f0b',
   // The branch checked ahead of the fable one; Fable 5.1 / Mythos 5.1 get this
   // instead of the long section.
   TURN_UPDATES_SECTION: 'f73794d3e72b5616',
   DELIVERING_WORK_SECTION: '7e908e68a04f6843',
   CORRECTIONS_SECTION: '4593459b100aad5e',
-  AUTONOMY_SECTION: 'c16a5646cb28d023',
+  AUTONOMY_SECTION: '07f554da420e0445',
   'WebFetch.LEAN_DESCRIPTION': '7db6b3cae057d3c9',
   'TodoWrite lean': '863d3a2d90b3c43e',
   'Glob lean': '33fb1e4be95ad7cf',
