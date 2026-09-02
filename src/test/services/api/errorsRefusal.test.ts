@@ -46,11 +46,11 @@ describe('refusal model suggestion', () => {
     expect(content).toContain('/model claude-sonnet-5')
   })
 
-  test('uses the provider-aware lagging Sonnet default on Bedrock', () => {
+  test('uses the provider-aware Sonnet default on Bedrock', () => {
     process.env.CLAUDE_CODE_USE_BEDROCK = '1'
     const content = getTextContent('us.anthropic.claude-opus-4-7-v1:0')
 
-    expect(content).toContain('claude-sonnet-4-6')
+    expect(content).toContain('claude-sonnet-4-5')
     expect(content).not.toContain('claude-sonnet-5')
   })
 

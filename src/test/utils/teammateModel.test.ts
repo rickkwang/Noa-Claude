@@ -42,7 +42,8 @@ describe('teammate model fallback', () => {
     delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL
 
     expect(getDefaultTeammateModelFallback()).toBe(getDefaultOpusModel())
-    expect(getDefaultTeammateModelFallback()).toContain('opus-4-8')
+    // Upstream's alias table gives Bedrock the current Opus generation.
+    expect(getDefaultTeammateModelFallback()).toContain('opus-5')
   })
 
   test('honors an explicit provider model override', () => {

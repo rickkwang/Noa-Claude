@@ -477,7 +477,7 @@ describe('auto mode classifier probe', () => {
       new AbortController().signal,
     )
 
-    expect(resolved.model).toContain('claude-sonnet-4-6')
+    expect(resolved.model).toContain('claude-sonnet-4-5')
     expect(resolved.model).not.toContain('claude-sonnet-5')
     expect(resolved.probeLease).toBeDefined()
     expect(completeClassifierProbe(resolved.probeLease!, 'unprobed')).toBe(true)

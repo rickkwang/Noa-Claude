@@ -80,7 +80,8 @@ describe('provider switch cache clearing', () => {
 
     process.env.CLAUDE_CODE_USE_BEDROCK = '1'
     clearProviderSwitchCaches()
-    expect(getDefaultSonnetModel()).toContain('claude-sonnet-4-6')
+    // Upstream pins every cloud provider's sonnet alias to 4.5, not 4.6.
+    expect(getDefaultSonnetModel()).toContain('claude-sonnet-4-5')
 
     delete process.env.CLAUDE_CODE_USE_BEDROCK
     clearProviderSwitchCaches()

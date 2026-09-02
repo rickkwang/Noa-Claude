@@ -26,7 +26,8 @@ import {
   getSettingsForSource,
 } from '../settings/settings.js'
 import type { PermissionMode } from '../permissions/PermissionMode.js'
-import { getAPIProvider, isDirectFirstParty } from './providers.js'
+import { ALL_MODEL_CONFIGS, type ModelKey } from './configs.js'
+import { type APIProvider, getAPIProvider, isDirectFirstParty } from './providers.js'
 import { LIGHTNING_BOLT } from '../../constants/figures.js'
 import { isModelAllowed } from './modelAllowlist.js'
 import { type ModelAlias, isModelAlias } from './aliases.js'
@@ -127,68 +128,97 @@ export function getBestModel(): ModelName {
 }
 
 /**
- * Why Bedrock/Vertex/Foundry get a generation-behind default.
+ * Per-provider alias defaults, mirroring the `aliases` table in upstream's
+ * baked model catalog (read out of the 2.1.258 binary). A family resolves to
+ * its `per_provider` entry when the current provider has one, and to `default`
+ * otherwise — the same lookup upstream performs.
  *
- * Not because those backends necessarily lag on availability — for Bedrock and
- * Vertex they no longer do, and upstream's alias table defaults both to the
- * current Opus generation. The reason is that Noa cannot recover when a default
- * turns out not to be enabled on the caller's account:
+ * This replaces an earlier local guess (`provider !== 'firstParty'` → trail one
+ * generation), which was wrong in both directions. Two rows look like typos and
+ * are not:
  *
- *   - no 400 classifier that strips an unsupported field and retries
- *   - no per-model third-party fallback chain; `fallbackModel` is whatever the
- *     user passed to --fallback-model and nothing else
- *   - releases far less often than upstream, which rebuilds against each
- *     backend's current GA state
+ *   - **Foundry's opus trails two generations, to 4.6.** Not a transcription
+ *     slip: upstream really pins it there, and the previous code's `opus48` for
+ *     Foundry was *ahead* of upstream. A comment here used to flag that as
+ *     unverified pending a live Foundry endpoint; the catalog settles it.
+ *   - **Every cloud provider's sonnet trails to 4.5, not 4.6.** Also upstream's
+ *     value. Noa previously sent `sonnet-4-6` to all three.
  *
- * Per-provider availability is the fastest-moving fact in the model tables, so
- * a snapshot of it goes stale in one direction or the other. Stale-conservative
- * costs a generation of quality silently; stale-aggressive fails the first
- * request of every session. Without the recovery machinery above, the second is
- * the worse trade, so this branch deliberately trails.
+ * Providers absent from a row take `default`, which is upstream's behaviour for
+ * any provider key it does not list — `fable` has no cloud-provider entry at
+ * all, so Bedrock/Vertex/Foundry all get Fable 5.1. `openaiCompatible` is not
+ * one of upstream's provider kinds and takes `default` here; those deployments
+ * resolve their model from the provider profile, where a Claude id would be
+ * wrong whichever generation it named.
  *
- * Both directions are one env var away from being overridden —
- * ANTHROPIC_DEFAULT_OPUS_MODEL / _SONNET_MODEL are checked first — and that is
- * the intended escape hatch for anyone whose account is ahead of this default.
+ * The values are `ModelKey`s rather than literal ids so they still flow through
+ * getModelStrings() — Bedrock inference-profile discovery and user
+ * `modelOverrides` continue to apply on top.
  *
- * Known open question: Foundry is the one backend where this branch is *ahead*
- * of upstream, which defaults Foundry's opus alias to Opus 4.6. If that
- * reflects a real availability ceiling, Foundry sessions fail on the first
- * request rather than merely running a generation behind. Unverified — needs a
- * live Foundry endpoint to settle.
+ * @[MODEL LAUNCH]: update these against the upstream catalog's `aliases` table,
+ * not by reasoning about which generation "should" be available.
  */
-// @[MODEL LAUNCH]: Update the default Opus model. Read the block above before
-// touching the third-party branch.
+const ALIAS_DEFAULTS = {
+  opus: {
+    default: 'opus5',
+    perProvider: { bedrock: 'opus5', vertex: 'opus5', foundry: 'opus46' },
+  },
+  sonnet: {
+    default: 'sonnet5',
+    perProvider: {
+      bedrock: 'sonnet45',
+      vertex: 'sonnet45',
+      foundry: 'sonnet45',
+    },
+  },
+  haiku: { default: 'haiku45', perProvider: {} },
+  fable: { default: 'fable51', perProvider: {} },
+} as const satisfies Record<
+  string,
+  { default: ModelKey; perProvider: Partial<Record<APIProvider, ModelKey>> }
+>
+
+/** Literal fallbacks for the (unreachable) case where model strings are empty. */
+const ALIAS_FALLBACK_IDS: Record<ModelKey, string> = Object.fromEntries(
+  (Object.keys(ALL_MODEL_CONFIGS) as ModelKey[]).map(key => [
+    key,
+    ALL_MODEL_CONFIGS[key].firstParty,
+  ]),
+) as Record<ModelKey, string>
+
+function resolveAliasDefault(family: keyof typeof ALIAS_DEFAULTS): ModelName {
+  const entry = ALIAS_DEFAULTS[family]
+  const key: ModelKey =
+    (entry.perProvider as Partial<Record<APIProvider, ModelKey>>)[
+      getAPIProvider()
+    ] ?? entry.default
+  return getModelStrings()[key] || ALIAS_FALLBACK_IDS[key]
+}
+
+// @[MODEL LAUNCH]: Update the default Opus model in ALIAS_DEFAULTS above.
 export function getDefaultOpusModel(): ModelName {
   if (process.env.ANTHROPIC_DEFAULT_OPUS_MODEL) {
     return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL
   }
-  if (getAPIProvider() !== 'firstParty') {
-    return getModelStrings().opus48 || 'claude-opus-4-8'
-  }
-  return getModelStrings().opus5 || 'claude-opus-5'
+  return resolveAliasDefault('opus')
 }
 
-// @[MODEL LAUNCH]: Update the default Fable model.
-// Fable 5.1 is the top tier (above Opus). It is not anyone's default; this only
-// resolves the explicit `fable` alias, so there is no third-party branch to
-// trail: asking for `fable` by name is already an explicit choice.
+// @[MODEL LAUNCH]: Update the default Fable model in ALIAS_DEFAULTS above.
+// Fable is the top tier (above Opus) and is not anyone's default; this only
+// resolves the explicit `fable` alias.
 export function getDefaultFableModel(): ModelName {
   if (process.env.ANTHROPIC_DEFAULT_FABLE_MODEL) {
     return process.env.ANTHROPIC_DEFAULT_FABLE_MODEL
   }
-  return getModelStrings().fable51 || 'claude-fable-5-1'
+  return resolveAliasDefault('fable')
 }
 
-// @[MODEL LAUNCH]: Update the default Sonnet model. The third-party branch
-// trails for the reasons given above getDefaultOpusModel.
+// @[MODEL LAUNCH]: Update the default Sonnet model in ALIAS_DEFAULTS above.
 export function getDefaultSonnetModel(): ModelName {
   if (process.env.ANTHROPIC_DEFAULT_SONNET_MODEL) {
     return process.env.ANTHROPIC_DEFAULT_SONNET_MODEL
   }
-  if (getAPIProvider() !== 'firstParty') {
-    return getModelStrings().sonnet46 || 'claude-sonnet-4-6'
-  }
-  return getModelStrings().sonnet5 || 'claude-sonnet-5'
+  return resolveAliasDefault('sonnet')
 }
 
 // @[MODEL LAUNCH]: Update the default Haiku model.
