@@ -159,6 +159,13 @@ function handleValidationError(
 /**
  * Suggest a fallback model for 3P users when the selected model is unavailable.
  */
+/** Test seam: the suggestion chain is pure, but not otherwise exported. */
+export function getModelFallbackSuggestionForTesting(
+  model: string | undefined,
+): string | undefined {
+  return get3PFallbackSuggestion(model)
+}
+
 function get3PFallbackSuggestion(model: string | undefined): string | undefined {
   if (!model) {
     return undefined
@@ -171,7 +178,10 @@ function get3PFallbackSuggestion(model: string | undefined): string | undefined 
     return getModelStrings().fable5
   }
   if (lowerModel.includes('fable-5') || lowerModel.includes('fable_5')) {
-    return getModelStrings().opus48
+    // Upstream's fallback_3p for Fable 5 is Opus 5, and when a fable model
+    // falls back onto the opus family it prefers an explicitly pinned
+    // ANTHROPIC_DEFAULT_OPUS_MODEL over the catalog value.
+    return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL || getModelStrings().opus5
   }
   if (lowerModel.includes('sonnet-5') || lowerModel.includes('sonnet_5')) {
     return getModelStrings().sonnet46

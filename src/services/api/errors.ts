@@ -984,7 +984,10 @@ function get3PModelFallbackSuggestion(model: string): string | undefined {
   }
   // If the failing model looks like a Fable 5 variant, suggest Opus 4.8
   if (m.includes('fable-5') || m.includes('fable_5')) {
-    return getModelStrings().opus48
+    // Upstream's fallback_3p for Fable 5 is Opus 5, and when a fable model
+    // falls back onto the opus family it prefers an explicitly pinned
+    // ANTHROPIC_DEFAULT_OPUS_MODEL over the catalog value.
+    return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL || getModelStrings().opus5
   }
   // If the failing model looks like a Sonnet 5 variant, suggest Sonnet 4.6
   if (m.includes('sonnet-5') || m.includes('sonnet_5')) {
