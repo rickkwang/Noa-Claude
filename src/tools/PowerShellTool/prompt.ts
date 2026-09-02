@@ -24,14 +24,14 @@ export function getMaxTimeoutMs(): number {
   return getMaxBashTimeoutMs()
 }
 
-function getBackgroundUsageNote(): string | null {
+export function getBackgroundUsageNote(): string | null {
   if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)) {
     return null
   }
   return `  - You can use the \`run_in_background\` parameter to run the command in the background. Only use this if you don't need the result immediately and are OK being notified when the command completes later. You do not need to check the output right away - you'll be notified when it finishes.`
 }
 
-function getSleepGuidance(): string | null {
+export function getSleepGuidance(): string | null {
   if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)) {
     return null
   }
@@ -41,21 +41,26 @@ function getSleepGuidance(): string | null {
     - Do not retry failing commands in a sleep loop — diagnose the root cause or consider an alternative approach.
     - If waiting for a background task you started with \`run_in_background\`, you will be notified when it completes — do not poll.
     - If you must poll an external process, use a check command rather than sleeping first.
-    - If you must sleep, keep the duration short (1-5 seconds) to avoid blocking the user.`
+    - If you must sleep, keep the duration short to avoid blocking the user.`
 }
 
 /**
  * Version-specific syntax guidance. The model's training data covers both
  * editions but it can't tell which one it's targeting, so it either emits
  * pwsh-7 syntax on 5.1 (parser error → exit 1) or needlessly avoids && on 7.
+ *
+ * Ported verbatim from upstream 2.1.258. Exported so verify:ports can byte-diff
+ * each branch: the whole description is assembled behind an async edition probe
+ * that returns null off Windows, so the branches are unreachable from a
+ * rendered prompt on the machines this is verified from.
  */
-function getEditionSection(edition: PowerShellEdition | null): string {
+export function getEditionSection(edition: PowerShellEdition | null): string {
   if (edition === 'desktop') {
     return `PowerShell edition: Windows PowerShell 5.1 (powershell.exe)
    - Pipeline chain operators \`&&\` and \`||\` are NOT available — they cause a parser error. To run B only if A succeeds: \`A; if ($?) { B }\`. To chain unconditionally: \`A; B\`.
    - Ternary (\`?:\`), null-coalescing (\`??\`), and null-conditional (\`?.\`) operators are NOT available. Use \`if/else\` and explicit \`$null -eq\` checks instead.
    - Avoid \`2>&1\` on native executables. In 5.1, redirecting a native command's stderr inside PowerShell wraps each line in an ErrorRecord (NativeCommandError) and sets \`$?\` to \`$false\` even when the exe returned exit code 0. stderr is already captured for you — don't redirect it.
-   - Default file encoding is UTF-16 LE (with BOM). When writing files other tools will read, pass \`-Encoding utf8\` to \`Out-File\`/\`Set-Content\`.
+   - \`>\`, \`>>\`, and \`Out-File\` usually default to UTF-8 (with BOM) in this environment, but \`Set-Content\`/\`Add-Content\` still default to the system ANSI codepage — when writing a file other tools will read, pass \`-Encoding utf8\` explicitly to \`Out-File\`/\`Set-Content\`.
    - \`ConvertFrom-Json\` returns a PSCustomObject, not a hashtable. \`-AsHashtable\` is not available.`
   }
   if (edition === 'core') {
@@ -71,11 +76,23 @@ function getEditionSection(edition: PowerShellEdition | null): string {
    - To chain commands conditionally: \`A; if ($?) { B }\`. Unconditionally: \`A; B\`.`
 }
 
-export async function getPrompt(): Promise<string> {
-  const backgroundNote = getBackgroundUsageNote()
-  const sleepGuidance = getSleepGuidance()
-  const edition = await getPowerShellEdition()
-
+/**
+ * Ported verbatim from upstream 2.1.258, which ships one tier here — there is no
+ * lean/verbose split for this description upstream, so this fork has none either.
+ *
+ * One upstream interpolation is deliberately absent: the "Developer tools
+ * verified on this machine's PATH" block and its MSVC/vcvarsall exception sit
+ * behind upstream's `tengu_brass_sled` GrowthBook gate, which defaults off.
+ * Noa resolves GB gates to their in-code defaults, so it renders empty.
+ *
+ * Split from getPrompt() so verify:ports and the digest test can render a
+ * chosen edition without the async system probe.
+ */
+export function renderPrompt(
+  edition: PowerShellEdition | null,
+  backgroundNote: string | null,
+  sleepGuidance: string | null,
+): string {
   return `Executes a given PowerShell command with optional timeout. Working directory persists between commands; shell state (variables, functions) does not.
 
 IMPORTANT: This tool is for terminal operations via PowerShell: git, npm, docker, and PS cmdlets. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.
@@ -103,7 +120,22 @@ PowerShell Syntax Notes:
    - Environment variables: read with \`$env:NAME\`, set with \`$env:NAME = "value"\` (NOT \`Set-Variable\` or bash \`export\`)
    - Call native exe with spaces in path via call operator: \`& "C:\\Program Files\\App\\app.exe" arg1 arg2\`
 
-Interactive and blocking commands (will hang — this tool runs with -NonInteractive):
+Unix commands that DO NOT exist in PowerShell — use the equivalent instead:
+   - head / tail → \`Get-Content file -TotalCount N\` / \`-Tail N\`; piped: \`| Select-Object -First N\` / \`-Last N\`
+   - which → \`(Get-Command name).Source\`
+   - touch → \`if (-not (Test-Path path)) { New-Item -ItemType File path }\` (NEVER use \`New-Item -Force\` on a file — it truncates existing content)
+   - wc -l → \`(Get-Content file | Measure-Object -Line).Lines\`
+   - mkdir -p → \`New-Item -ItemType Directory -Force path\` (\`-p\` is not a PowerShell flag)
+   - rm -rf → \`Remove-Item -Recurse -Force path\`
+   - ln -s → \`New-Item -ItemType SymbolicLink -Path link -Target target\`
+   - chmod / chown → not applicable on Windows; use \`icacls\` only if ACL changes are required
+   - 2>/dev/null → \`2>$null\` (but stderr is captured for you — usually unnecessary)
+   - VAR=x cmd → \`$env:VAR = 'x'; cmd\` (PowerShell has no inline env-var prefix)
+   - Bash control flow (\`if [ -f x ]\`, \`for x in *\`, backtick \`\`cmd\`\` substitution) is a parser error — use \`if (Test-Path x)\`, \`foreach ($x in ...)\`, \`$(cmd)\`
+
+Exit-code note: \`-ErrorAction SilentlyContinue\` suppresses error OUTPUT but the cmdlet failure still causes this tool to report exit 1. To make a cmdlet failure truly non-fatal, promote it to terminating and swallow it: \`try { Cmdlet ... -ErrorAction Stop } catch {}\` (without \`-ErrorAction Stop\`, non-terminating errors skip the \`catch\` and still exit 1).
+
+Interactive and blocking commands (this tool runs with -NonInteractive and stdin attached to the null device — console prompts read EOF or error immediately; GUI prompts can still block until timeout):
    - NEVER use \`Read-Host\`, \`Get-Credential\`, \`Out-GridView\`, \`$Host.UI.PromptForChoice\`, or \`pause\`
    - Destructive cmdlets (\`Remove-Item\`, \`Stop-Process\`, \`Clear-Content\`, etc.) may prompt for confirmation. Add \`-Confirm:$false\` when you intend the action to proceed. Use \`-Force\` for read-only/hidden items.
    - Never use \`git rebase -i\`, \`git add -i\`, or other commands that open an interactive editor
@@ -143,4 +175,12 @@ ${sleepGuidance ? sleepGuidance + '\n' : ''}\
     - Prefer to create a new commit rather than amending an existing commit.
     - Before running destructive operations (e.g., git reset --hard, git push --force, git checkout --), consider whether there is a safer alternative that achieves the same goal. Only use destructive operations when they are truly the best approach.
     - Never skip hooks (--no-verify) or bypass signing (--no-gpg-sign, -c commit.gpgsign=false) unless the user has explicitly asked for it. If a hook fails, investigate and fix the underlying issue.`
+}
+
+export async function getPrompt(): Promise<string> {
+  return renderPrompt(
+    await getPowerShellEdition(),
+    getBackgroundUsageNote(),
+    getSleepGuidance(),
+  )
 }

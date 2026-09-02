@@ -72,9 +72,16 @@ const { LEAN_DESCRIPTION: WEB_FETCH_LEAN_DESCRIPTION } = await import(
 const { OUTPUT_STYLE_CONFIG } = await import(
   '../src/constants/outputStyles.js'
 )
+const {
+  getBackgroundUsageNote: getPowerShellBackgroundNote,
+  getEditionSection: getPowerShellEditionSection,
+  getSleepGuidance: getPowerShellSleepGuidance,
+  renderPrompt: renderPowerShellPrompt,
+} = await import('../src/tools/PowerShellTool/prompt.js')
 
 const LEAN_MODEL = 'claude-opus-5'
 const UNBUNDLED_MODEL = 'claude-fable-5'
+
 
 function withPreReadRequired(render: () => string): string {
   process.env.NOA_CLAUDE_WRITE_REQUIRE_READ = '1'
@@ -111,6 +118,18 @@ const SUBJECTS: Record<string, string> = {
   'Edit lean': withPreReadRequired(() => getEditToolDescription(LEAN_MODEL)),
   'Write lean (pre-read skipped)': getWriteToolDescription(LEAN_MODEL),
   'Edit lean (pre-read skipped)': getEditToolDescription(LEAN_MODEL),
+  // Upstream ships one tier for PowerShell — no lean/verbose split — so the
+  // single description is the port. The three edition branches sit behind an
+  // async probe that returns null off Windows, so each is rendered directly
+  // rather than through getPrompt(). The body is checked at the `null` edition;
+  // the edition text itself is the only part that varies.
+  'PowerShell edition (desktop)': getPowerShellEditionSection('desktop'),
+  'PowerShell edition (core)': getPowerShellEditionSection('core'),
+  'PowerShell description': renderPowerShellPrompt(
+    null,
+    getPowerShellBackgroundNote(),
+    getPowerShellSleepGuidance(),
+  ),
 }
 
 function findBinary(): string | null {
@@ -207,6 +226,7 @@ function findWhitespaceTolerant(
  * further at these tokens when the whole line does not appear.
  */
 const INTERPOLATED = [
+  'PowerShell',
   'NotebookEdit',
   'TodoWrite',
   'WebSearch',
@@ -224,6 +244,11 @@ const INTERPOLATED = [
   // as `(${i})`, where i is "line number + tab" or a longer variant when the
   // separator is configurable. This fork resolves the default.
   'line number \\+ tab',
+  // Timeout and truncation limits are `${fn()}` calls upstream, so the resolved
+  // numbers are never in the binary. Split at the number, verify the prose.
+  '\\d+ms',
+  '\\d+ minutes',
+  '\\d+ characters',
 ]
 
 /** Below this, a run is punctuation glue whose presence proves nothing. */

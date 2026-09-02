@@ -50,6 +50,12 @@ import { getTodoWritePrompt } from '../../tools/TodoWriteTool/prompt.js'
 import { LEAN_DESCRIPTION as WEB_FETCH_LEAN_DESCRIPTION } from '../../tools/WebFetchTool/prompt.js'
 import { getSimplePrompt as getBashPrompt } from '../../tools/BashTool/prompt.js'
 import { getWebSearchPrompt } from '../../tools/WebSearchTool/prompt.js'
+import {
+  getBackgroundUsageNote as getPowerShellBackgroundNote,
+  getEditionSection as getPowerShellEditionSection,
+  getSleepGuidance as getPowerShellSleepGuidance,
+  renderPrompt as renderPowerShellPrompt,
+} from '../../tools/PowerShellTool/prompt.js'
 import { getAskUserQuestionPrompt } from '../../tools/AskUserQuestionTool/prompt.js'
 import {
   getActionCautionSection,
@@ -119,6 +125,14 @@ const PORTED_DIGESTS: Record<string, string> = {
   // replacement for the one above.
   'Write lean (pre-read skipped)': 'db96dfd3a76a57ab',
   'Edit lean (pre-read skipped)': '5f160e3e9fb9ef6e',
+  // Upstream ships one tier for PowerShell — there is no lean branch to pin, so
+  // the single description is the port. Refreshed against 2.1.258; the earlier
+  // transcription predated it and had drifted (a wrong 5.1 encoding default, a
+  // missing Unix-equivalents section, a locally added sleep duration).
+  'PowerShell edition (desktop)': 'b84252846b69ab41',
+  'PowerShell edition (core)': 'b911baef6ada701e',
+  'PowerShell edition (unknown)': '029e116530be9302',
+  'PowerShell description': '770183cff1c206af',
 }
 
 function withPreReadRequired<T>(render: () => T): T {
@@ -160,6 +174,16 @@ describe('ported lean prompt text is not edited by accident', () => {
     'Edit lean': withPreReadRequired(() => getEditToolDescription(LEAN_MODEL)),
     'Write lean (pre-read skipped)': getWriteToolDescription(LEAN_MODEL),
     'Edit lean (pre-read skipped)': getEditToolDescription(LEAN_MODEL),
+    'PowerShell edition (desktop)': getPowerShellEditionSection('desktop'),
+    'PowerShell edition (core)': getPowerShellEditionSection('core'),
+    'PowerShell edition (unknown)': getPowerShellEditionSection(null),
+    // Rendered at the unknown edition: getPrompt()'s probe returns null off
+    // Windows, and the edition text is pinned separately above.
+    'PowerShell description': renderPowerShellPrompt(
+      null,
+      getPowerShellBackgroundNote(),
+      getPowerShellSleepGuidance(),
+    ),
   })
 
   for (const [name, expected] of Object.entries(PORTED_DIGESTS)) {
