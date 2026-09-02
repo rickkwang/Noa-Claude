@@ -5,12 +5,11 @@ export function getPrompt(): string {
 
 ## When to Use
 
-Use this tool proactively whenever:
-- The user explicitly asks to use a team, swarm, or group of agents
-- The user mentions wanting agents to work together, coordinate, or collaborate
-- A task is complex enough that it would benefit from parallel work by multiple agents (e.g., building a full-stack feature with frontend and backend work, refactoring a codebase while keeping tests passing, implementing a multi-step project with research, planning, and coding phases)
+Use this tool when:
+- The user asks for a team, swarm, or group of agents, or asks for agents to work together
+- A task decomposes into parts that can genuinely run in parallel, each substantial enough to justify its own agent (e.g., the frontend and backend halves of one feature, or a refactor with a separate agent keeping tests green)
 
-When in doubt about whether a task warrants a team, prefer spawning a team.
+A team spawns several agents, each with its own context window and cost. When the parts are small or sequential, do the work yourself or use a single Agent call.
 
 ## Choosing Agent Types for Teammates
 
@@ -42,7 +41,7 @@ This creates:
 3. **Spawn teammates** using the Agent tool with \`team_name\` and \`name\` parameters to create teammates that join the team
 4. **Assign tasks** using TaskUpdate with \`owner\` to give tasks to idle teammates
 5. **Teammates work on assigned tasks** and mark them completed via TaskUpdate
-6. **Teammates go idle between turns** - after each turn, teammates automatically go idle and send a notification. IMPORTANT: Be patient with idle teammates! Don't comment on their idleness until it actually impacts your work.
+6. **Teammates go idle between turns** - after each turn, teammates automatically go idle and send a notification (see "Teammate Idle State" below).
 7. **Shutdown your team** - when the task is completed, gracefully shut down your teammates via SendMessage with \`message: {type: "shutdown_request"}\`.
 
 ## Task Ownership
@@ -51,15 +50,13 @@ Tasks are assigned using TaskUpdate with the \`owner\` parameter. Any agent can 
 
 ## Automatic Message Delivery
 
-**IMPORTANT**: Messages from teammates are automatically delivered to you. You do NOT need to manually check your inbox.
+Messages from teammates are delivered to you automatically — there is no inbox to check.
 
 When you spawn teammates:
 - They will send you messages when they complete tasks or need help
 - These messages appear automatically as new conversation turns (like user messages)
 - If you're busy (mid-turn), messages are queued and delivered when your turn ends
 - The UI shows a brief notification with the sender's name when messages are waiting
-
-Messages will be delivered automatically.
 
 When reporting on teammate messages, you do NOT need to quote the original message—it's already rendered to the user.
 

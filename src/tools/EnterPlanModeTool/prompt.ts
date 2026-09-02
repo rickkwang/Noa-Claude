@@ -5,7 +5,7 @@ import { ASK_USER_QUESTION_TOOL_NAME } from '../AskUserQuestionTool/prompt.js'
 const WHAT_HAPPENS_SECTION = `## What Happens in Plan Mode
 
 In plan mode, you'll:
-1. Thoroughly explore the codebase using Glob, Grep, and Read tools
+1. Explore the codebase using Glob, Grep, and Read tools
 2. Understand existing patterns and architecture
 3. Design an implementation approach
 4. Present your plan to the user for approval
@@ -54,29 +54,7 @@ Skip plan mode when you can reasonably infer the right approach:
 
 When in doubt, prefer starting work and using ${ASK_USER_QUESTION_TOOL_NAME} for specific questions over entering a full planning phase.
 
-${whatHappens}## Examples
-
-### GOOD - Use EnterPlanMode:
-User: "Add user authentication to the app"
-- Genuinely ambiguous: session vs JWT, where to store tokens, middleware structure
-
-User: "Redesign the data pipeline"
-- Major restructuring where the wrong approach wastes significant effort
-
-### BAD - Don't use EnterPlanMode:
-User: "Add a delete button to the user profile"
-- Implementation path is clear; just do it
-
-User: "Can we work on the search feature?"
-- User wants to get started, not plan
-
-User: "Update the error handling in the API"
-- Start working; ask specific questions if needed
-
-User: "Fix the typo in the README"
-- Straightforward, no planning needed
-
-## Important Notes
+${whatHappens}## Important Notes
 
 - This tool REQUIRES user approval - they must consent to entering plan mode
 `
