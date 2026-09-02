@@ -163,6 +163,25 @@ export function buildForkedMessages(
   return [fullAssistantMessage, toolResultMessage]
 }
 
+/**
+ * PROMPT DEBT — unreachable today, audit before making it reachable.
+ *
+ * `isForkSubagentEnabled()` is hardcoded false, so none of this text has ever
+ * reached a model and it costs nothing to leave standing. It does not survive
+ * a prompt audit, though: the block below carries five separately documented
+ * dated patterns — an all-caps pressure preamble ("STOP. READ THIS FIRST.",
+ * "RULES (non-negotiable)"), narration suppressors (rules 3, 6 and 9), a
+ * numeric output ceiling (rule 8), a no-provenance prohibition cluster, and
+ * migration-relative phrasing that tells the model to ignore its own system
+ * prompt (rule 1).
+ *
+ * Rule 6 ("Do NOT emit text between tool calls") is the sharpest of these:
+ * current models already under-narrate with a suppressor present, so on the
+ * models this fork now defaults to it would buy silence nobody asked for —
+ * and the harness has `thinking.display: "updates"` for progress notes.
+ *
+ * If the gate ever opens, rewrite this first and re-test; do not ship it as-is.
+ */
 export function buildChildMessage(directive: string): string {
   return `<${FORK_BOILERPLATE_TAG}>
 STOP. READ THIS FIRST.
