@@ -20,6 +20,7 @@ import { getApiClientVersion } from '../constants/apiClientVersion.js'
 import { computeFingerprint } from './fingerprint.js'
 import { normalizeModelStringForAPI } from './model/model.js'
 import {
+  modelRejectsSamplingParams,
   modelRequiresExplicitThinkingDisable,
   modelSupportsAdaptiveThinking,
 } from './thinking.js'
@@ -214,7 +215,14 @@ export async function sideQuery(opts: SideQueryOptions): Promise<BetaMessage> {
       ...(tools && { tools }),
       ...(tool_choice && { tool_choice }),
       ...(output_format && { output_config: { format: output_format } }),
-      ...(temperature !== undefined && { temperature }),
+      // Opus 4.7+ / Opus 5 / Fable / Mythos / Sonnet 5 removed sampling params;
+      // sending temperature 400s. claude.ts strips it on both of its request
+      // paths (see the modelRejectsSamplingParams branches there), sideQuery
+      // passed it straight through. Reachable from the auto-mode classifier,
+      // which always sends a temperature and whose model is either the org's
+      // Sonnet or — once its probe is demoted — the main loop model.
+      ...(temperature !== undefined &&
+        !modelRejectsSamplingParams(model) && { temperature }),
       ...(stop_sequences && { stop_sequences }),
       ...(thinkingConfig && { thinking: thinkingConfig }),
       ...(betas.length > 0 && { betas }),
