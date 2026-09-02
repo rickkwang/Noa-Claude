@@ -11,11 +11,19 @@ import {
   handleOAuth401Error,
   isClaudeAISubscriber,
 } from './auth.js'
+import { getApiClientVersion } from '../constants/apiClientVersion.js'
 import { getClaudeCodeUserAgent } from './userAgent.js'
 import { getWorkload } from './workloadContext.js'
 
 // WARNING: We rely on `claude-cli` in the user agent for log filtering.
 // Please do NOT change this without making sure that logging also gets updated!
+//
+// The version here is the Claude Code compatibility baseline, NOT Noa's own
+// version — the API reads this field to decide which models a client is allowed
+// to be served, and Noa's fork version means nothing to that check. See
+// constants/apiClientVersion.ts. Everything else that reports a version (the
+// `--version` flag, the updater, the bridge handshake, release notes) still
+// uses MACRO.VERSION, because those questions really are about the fork build.
 export function getUserAgent(): string {
   const agentSdkVersion = process.env.CLAUDE_AGENT_SDK_VERSION
     ? `, agent-sdk/${process.env.CLAUDE_AGENT_SDK_VERSION}`
@@ -32,7 +40,7 @@ export function getUserAgent(): string {
   // so the read picks up the same setWorkload() value as getAttributionHeader.
   const workload = getWorkload()
   const workloadSuffix = workload ? `, workload/${workload}` : ''
-  return `claude-cli/${MACRO.VERSION} (${process.env.USER_TYPE}, ${process.env.CLAUDE_CODE_ENTRYPOINT ?? 'cli'}${agentSdkVersion}${clientApp}${workloadSuffix})`
+  return `claude-cli/${getApiClientVersion()} (${process.env.USER_TYPE}, ${process.env.CLAUDE_CODE_ENTRYPOINT ?? 'cli'}${agentSdkVersion}${clientApp}${workloadSuffix})`
 }
 
 export function getMCPUserAgent(): string {

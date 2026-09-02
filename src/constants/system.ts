@@ -1,6 +1,7 @@
 // @ts-nocheck
 // Critical system constants extracted to break circular dependencies
 
+import { getApiClientVersion } from './apiClientVersion.js'
 import { feature } from 'bun:bundle'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growthbook.js'
 import { logForDebugging } from '../utils/debug.js'
@@ -76,7 +77,11 @@ export function getAttributionHeader(fingerprint: string): string {
     return ''
   }
 
-  const version = `${MACRO.VERSION}.${fingerprint}`
+  // Same compatibility baseline the User-Agent reports, not MACRO.VERSION: the
+  // two travel together (the server reads one as the client's Claude Code
+  // version and recomputes `fingerprint` from the other), so they must not
+  // disagree. See constants/apiClientVersion.ts.
+  const version = `${getApiClientVersion()}.${fingerprint}`
   const entrypoint = process.env.CLAUDE_CODE_ENTRYPOINT ?? 'unknown'
 
   // cch=00000 placeholder is overwritten by Bun's HTTP stack with attestation token

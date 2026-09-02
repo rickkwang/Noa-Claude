@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { getApiClientVersion } from '../constants/apiClientVersion.js'
 import { createHash } from 'crypto'
 import type { AssistantMessage, UserMessage } from '../types/message.js'
 
@@ -73,5 +74,5 @@ export function computeFingerprintFromMessages(
   messages: (UserMessage | AssistantMessage)[],
 ): string {
   const firstMessageText = extractFirstMessageText(messages)
-  return computeFingerprint(firstMessageText, MACRO.VERSION)
+  return computeFingerprint(firstMessageText, getApiClientVersion())
 }
