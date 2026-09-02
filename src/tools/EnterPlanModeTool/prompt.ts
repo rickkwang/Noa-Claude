@@ -5,7 +5,7 @@ import { ASK_USER_QUESTION_TOOL_NAME } from '../AskUserQuestionTool/prompt.js'
 const WHAT_HAPPENS_SECTION = `## What Happens in Plan Mode
 
 In plan mode, you'll:
-1. Explore the codebase using Glob, Grep, and Read tools
+1. Thoroughly explore the codebase using Glob, Grep, and Read tools
 2. Understand existing patterns and architecture
 3. Design an implementation approach
 4. Present your plan to the user for approval
@@ -14,6 +14,19 @@ In plan mode, you'll:
 
 `
 
+/**
+ * Deliberately not upstream's text. Upstream opens with "Use this tool
+ * proactively when you're about to start a non-trivial implementation task"
+ * and "**Prefer using EnterPlanMode** for implementation tasks unless they're
+ * simple"; this fork inverts that to ambiguity-gated wording, and
+ * src/test/constants/prompts.test.ts pins the inversion (it asserts the
+ * upstream phrase is absent).
+ *
+ * The GOOD/BAD example block upstream carries after the two lists is dropped
+ * for the same reason: it re-illustrated the same judgment those lists already
+ * state, and under the inverted framing its four cases pulled back toward
+ * upstream's more eager default. Don't restore it from a binary diff.
+ */
 export function getEnterPlanModeToolPrompt(): string {
   // When interview phase is enabled, omit the "What Happens" section —
   // detailed workflow instructions arrive via the plan_mode attachment (messages.ts).

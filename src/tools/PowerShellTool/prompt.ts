@@ -78,13 +78,18 @@ export async function getPrompt(): Promise<string> {
 
   return `Executes a given PowerShell command with optional timeout. Working directory persists between commands; shell state (variables, functions) does not.
 
-This tool is for terminal operations via PowerShell: git, npm, docker, and PS cmdlets. For file operations, use the dedicated tools listed in the usage notes below.
+IMPORTANT: This tool is for terminal operations via PowerShell: git, npm, docker, and PS cmdlets. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.
 
 ${getEditionSection(edition)}
 
-Before running a command:
-   - If it will create new directories or files, verify the parent directory exists and is the correct location with \`Get-ChildItem\` (or \`ls\`).
-   - Quote file paths containing spaces with double quotes.
+Before executing the command, please follow these steps:
+
+1. Directory Verification:
+   - If the command will create new directories or files, first use \`Get-ChildItem\` (or \`ls\`) to verify the parent directory exists and is the correct location
+
+2. Command Execution:
+   - Always quote file paths that contain spaces with double quotes
+   - Capture the output of the command.
 
 PowerShell Syntax Notes:
    - Variables use $ prefix: $myVar = "value"

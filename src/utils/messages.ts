@@ -3838,15 +3838,12 @@ Read the team config to discover your teammates' names. Check the task list peri
       // built-in name (~/.noa/output-styles/Concise.md) would otherwise get the
       // built-in one-liner injected under its own prompt. The attachment
       // carries the *resolved* style's reminder, which is undefined there.
-      // A style with no reminder gets the name alone. The fallback that used to
-      // stand here restated no actual rule, and it rode along every turn —
-      // diluting the reminders that do carry content.
-      const turnReminder = attachment.turnReminder
+      const turnReminder =
+        attachment.turnReminder ??
+        'Remember to follow the specific guidelines for this style.'
       return wrapMessagesInSystemReminder([
         createUserMessage({
-          content: turnReminder
-            ? `${outputStyle.name} output style is active. ${turnReminder}`
-            : `${outputStyle.name} output style is active.`,
+          content: `${outputStyle.name} output style is active. ${turnReminder}`,
           isMeta: true,
         }),
       ])
