@@ -18,11 +18,14 @@ const NATIVE_1M_MODELS: Record<string, { thirdParty: ReadonlySet<string> }> = {
   },
   'claude-opus-4-7': { thirdParty: new Set() },
   'claude-opus-4-8': { thirdParty: new Set() },
-  // Opus 5 serves 1M as both the default and the maximum. Third-party backends
-  // are left empty like the rest of the Opus family: 3P still defaults to Opus
-  // 4.8 (see getDefaultOpusModel), so a 3P user only reaches Opus 5 by pinning
-  // it, and over-reporting the window there would push auto-compact past the
-  // real limit. `[1m]` remains the explicit opt-in on those backends.
+  // Opus 5 serves 1M natively on first party only. The empty third-party set
+  // is upstream's own value, not caution on our part: its catalog entry for
+  // Opus 5 carries `native_1m` and `supports_1m_beta`/`supports_1m_suffix` but
+  // no `native_1m_3p` map, so on Bedrock/Vertex/Foundry the 1M window is the
+  // `[1m]` opt-in rather than the default. (Sonnet 5 is the model that *does*
+  // carry `native_1m_3p:{bedrock,vertex,foundry}` — hence the difference below.)
+  // Do not "fix" this by reasoning from the 3P default: Bedrock and Vertex now
+  // default to Opus 5, and it is still 200k there until `[1m]` is asked for.
   'claude-opus-5': { thirdParty: new Set() },
   'claude-fable-5': { thirdParty: new Set() },
   'claude-fable-5-1': { thirdParty: new Set() },

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
   getDefaultFableModel,
@@ -87,5 +88,18 @@ describe('per-provider alias defaults match the upstream catalog', () => {
     useProvider('CLAUDE_CODE_USE_FOUNDRY')
     process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = 'my-deployment'
     expect(getDefaultOpusModel()).toBe('my-deployment')
+  })
+})
+
+describe('the picker can reach every provider default', () => {
+  test('the third-party Opus rows include the model that is now the default', () => {
+    // Regression guard: the 3P branch offered only 4.1 / 4.8 while the default
+    // moved to Opus 5, leaving no way back to the default from the picker.
+    const src = readFileSync(
+      new URL('../../utils/model/modelOptions.ts', import.meta.url),
+      'utf8',
+    )
+    const payg3p = src.slice(src.indexOf('payg3pOptions'))
+    expect(payg3p).toContain('payg3pOptions.push(getOpus5Option(fastMode))')
   })
 })

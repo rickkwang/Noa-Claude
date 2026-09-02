@@ -470,14 +470,16 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
     return payg1POptions
   }
 
-  // PAYG 3P: Default (Sonnet 4.5) + Sonnet (3P custom) or Sonnet 4.6/1M + Opus (3P custom) or Opus 4.1/Opus 4.6/Opus1M + Haiku + Opus 4.1
+  // PAYG 3P: Sonnet rows + Opus rows (5, 4.1, 4.8, 4.8-1M) + Fable + Haiku.
+  // Provider defaults come from ALIAS_DEFAULTS in model.ts, not from this list.
   const payg3pOptions = [getDefaultOptionForUser(fastMode)]
 
   const customSonnet = getCustomSonnetOption()
   if (customSonnet !== undefined) {
     payg3pOptions.push(customSonnet)
   } else {
-    // Add Sonnet 5 since Sonnet 4.6 is the (3P) default
+    // Sonnet 5 is not the third-party default (upstream's alias table pins
+    // every cloud provider to Sonnet 4.5), so it needs its own row.
     payg3pOptions.push(getSonnet5Option())
     if (checkSonnet1mAccess()) {
       payg3pOptions.push(getSonnet5_1MOption())
@@ -488,8 +490,13 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
   if (customOpus !== undefined) {
     payg3pOptions.push(customOpus)
   } else {
-    // Add Opus 4.1, Opus 4.8 and Opus 4.8 1M
-    payg3pOptions.push(getOpus41Option()) // This is the default opus
+    // Opus 5 is the Bedrock/Vertex default (Foundry gets 4.6), so it must be
+    // reachable from the picker — without this row a third-party user who
+    // switches away from the default cannot switch back without typing the
+    // full model id. The older rows stay: they are explicit downgrades, and
+    // on Foundry Opus 5 is a deliberate opt-in rather than the default.
+    payg3pOptions.push(getOpus5Option(fastMode))
+    payg3pOptions.push(getOpus41Option())
     payg3pOptions.push(getOpus48Option(fastMode))
     if (checkOpus1mAccess()) {
       payg3pOptions.push(getOpus48_1MOption(fastMode))
