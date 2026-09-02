@@ -7,6 +7,10 @@ import { currentLimits } from '../services/claudeAiLimits.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growthbook.js'
 import { isClaudeAISubscriber } from './auth.js'
 import { isEnvTruthy } from './envUtils.js'
+import {
+  getPromptCache1hEnvAllowlist,
+  matchAllowlist,
+} from './promptCache1hEnv.js'
 import { getAPIProvider } from './model/providers.js'
 import {
   getDefaultOpusModel,
@@ -14,10 +18,18 @@ import {
   getSmallFastModel,
 } from './model/model.js'
 
+export {
+  getPromptCache1hEnvAllowlist,
+  matchAllowlist,
+  PROMPT_CACHE_1H_DEFAULT_SOURCES,
+} from './promptCache1hEnv.js'
+
 export type PromptCache1hReason =
   | 'enabled'
+  | 'enabled_env'
   | 'enabled_bedrock_env'
   | 'prompt_caching_disabled'
+  | 'disabled_env'
   | 'not_eligible'
   | 'allowlist_miss'
   | 'missing_query_source'
@@ -28,14 +40,6 @@ export type PromptCache1hDiagnostic = {
   querySource?: string
   userEligible: boolean
   allowlist: string[]
-}
-
-function matchAllowlist(querySource: string, allowlist: string[]): boolean {
-  return allowlist.some(pattern =>
-    pattern.endsWith('*')
-      ? querySource.startsWith(pattern.slice(0, -1))
-      : querySource === pattern,
-  )
 }
 
 export function getPromptCache1hDiagnostic(
@@ -86,6 +90,34 @@ export function getPromptCache1hDiagnostic(
       querySource,
       userEligible: false,
       allowlist: [],
+    }
+  }
+
+  // Local opt-in, ahead of the Bedrock env var: it is the more direct
+  // statement, so an explicit `off` can turn the Bedrock one back off.
+  const envAllowlist = getPromptCache1hEnvAllowlist()
+  if (envAllowlist !== undefined) {
+    if (envAllowlist.length === 0) {
+      return {
+        enabled: false,
+        reason: 'disabled_env',
+        querySource,
+        userEligible: true,
+        allowlist: envAllowlist,
+      }
+    }
+    const matched =
+      querySource !== undefined && matchAllowlist(querySource, envAllowlist)
+    return {
+      enabled: matched,
+      reason: matched
+        ? 'enabled_env'
+        : querySource === undefined
+          ? 'missing_query_source'
+          : 'allowlist_miss',
+      querySource,
+      userEligible: true,
+      allowlist: envAllowlist,
     }
   }
 

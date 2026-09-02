@@ -74,6 +74,10 @@ import { resolveAppliedEffort } from '../../utils/effort.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { errorMessage } from '../../utils/errors.js'
 import { computeFingerprintFromMessages } from '../../utils/fingerprint.js'
+import {
+  getPromptCache1hEnvAllowlist,
+  matchAllowlist,
+} from '../../utils/promptCache1hEnv.js'
 import { captureAPIRequest, logError } from '../../utils/log.js'
 import {
   createAssistantAPIErrorMessage,
@@ -434,8 +438,12 @@ export function getCacheControl({
 /**
  * Determines if 1h TTL should be used for prompt caching.
  *
- * Only applied when:
- * 1. User is eligible (ant or subscriber within rate limits)
+ * Applied when either:
+ * 0. NOA_CLAUDE_PROMPT_CACHE_1H opts in locally (see
+ *    getPromptCache1hEnvAllowlist — this is the only path that can fire off
+ *    Bedrock in this fork, and it is off by default because a 1h write bills
+ *    at 2x against the 5-minute entry's 1.25x), or
+ * 1. User is eligible (ant or subscriber within rate limits), AND
  * 2. The query source matches a pattern in the GrowthBook allowlist
  *
  * GrowthBook config shape: { allowlist: string[] }
@@ -449,6 +457,17 @@ export function getCacheControl({
  * TTLs when GrowthBook's disk cache updates mid-request.
  */
 function should1hCacheTTL(querySource?: QuerySource): boolean {
+  // Local opt-in first: it is the more direct statement, so an explicit `off`
+  // can turn the Bedrock env var back off. The GrowthBook allowlist consulted
+  // below is unreachable in this fork (GrowthBook hard-disabled, both override
+  // paths ant-only), so without this branch the 1h TTL never fires off Bedrock.
+  const envAllowlist = getPromptCache1hEnvAllowlist()
+  if (envAllowlist !== undefined) {
+    return (
+      querySource !== undefined && matchAllowlist(querySource, envAllowlist)
+    )
+  }
+
   // 3P Bedrock users get 1h TTL when opted in via env var — they manage their own billing
   // No GrowthBook gating needed since 3P users don't have GrowthBook configured
   if (
@@ -481,14 +500,7 @@ function should1hCacheTTL(querySource?: QuerySource): boolean {
     setPromptCache1hAllowlist(allowlist)
   }
 
-  return (
-    querySource !== undefined &&
-    allowlist.some(pattern =>
-      pattern.endsWith('*')
-        ? querySource.startsWith(pattern.slice(0, -1))
-        : querySource === pattern,
-    )
-  )
+  return querySource !== undefined && matchAllowlist(querySource, allowlist)
 }
 
 /**
