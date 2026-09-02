@@ -18,7 +18,10 @@ import { getAnthropicClient } from '../services/api/client.js'
 import { getModelBetas, modelSupportsStructuredOutputs } from './betas.js'
 import { computeFingerprint } from './fingerprint.js'
 import { normalizeModelStringForAPI } from './model/model.js'
-import { modelSupportsAdaptiveThinking } from './thinking.js'
+import {
+  modelRequiresExplicitThinkingDisable,
+  modelSupportsAdaptiveThinking,
+} from './thinking.js'
 
 type MessageParam = Anthropic.MessageParam
 type TextBlockParam = Anthropic.TextBlockParam
@@ -177,7 +180,18 @@ export async function sideQuery(opts: SideQueryOptions): Promise<BetaMessage> {
 
   let thinkingConfig: BetaThinkingConfigParam | undefined
   if (thinking === false) {
-    thinkingConfig = { type: 'disabled' }
+    // Turning thinking off is two different requests depending on the model.
+    // Sonnet 5 / Opus 5 run adaptive thinking when `thinking` is omitted, so
+    // they need an explicit {type:'disabled'}. Fable 5 / Fable 5.1 / Mythos
+    // have thinking always on and reject that same block with a 400 — for them
+    // the off-switch is to omit the parameter. claude.ts makes this
+    // distinction on the main path (see the modelRequiresExplicitThinkingDisable
+    // branch there); sideQuery built the block unconditionally and so 400'd on
+    // the Fable family. Reachable through the auto-mode classifier, which falls
+    // back to the main loop model when its Sonnet probe is demoted.
+    thinkingConfig = modelRequiresExplicitThinkingDisable(model)
+      ? { type: 'disabled' }
+      : undefined
   } else if (thinking !== undefined) {
     thinkingConfig = modelSupportsAdaptiveThinking(model)
       ? { type: 'adaptive' }

@@ -220,6 +220,28 @@ export function modelRequiresExplicitThinkingDisable(model: string): boolean {
   return canonical.includes('sonnet-5') || canonical.includes('claude-opus-5')
 }
 
+/**
+ * Models whose thinking cannot be turned off at all: the Fable / Mythos family
+ * runs adaptive thinking always, and an explicit {type:'disabled'} is a 400.
+ *
+ * Distinct from modelRequiresExplicitThinkingDisable, which marks the opposite
+ * problem — models (Sonnet 5, Opus 5) where omitting the parameter still runs
+ * adaptive thinking, so turning it off means stating `disabled` outright. A
+ * caller that wants thinking off has to branch on both:
+ *
+ *   requires explicit disable -> send {type:'disabled'}
+ *   cannot be disabled        -> omit, and budget for thinking anyway
+ *   neither (4.8 and older)   -> omit; omitting means no thinking
+ *
+ * The third case is why this is not simply `!modelRequiresExplicitThinkingDisable`.
+ *
+ * @[MODEL LAUNCH]: add models whose thinking is always on.
+ */
+export function modelThinkingCannotBeDisabled(model: string): boolean {
+  const canonical = getCanonicalName(model)
+  return canonical.includes('fable-5') || canonical.includes('mythos')
+}
+
 // The API rejects effort above `high` when thinking is explicitly disabled
 // (upstream gh-79798). This is a property of the disabled-thinking request
 // shape, not of any one model: upstream's clamp is guarded only on "thinking

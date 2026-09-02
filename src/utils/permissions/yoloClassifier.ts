@@ -45,6 +45,7 @@ import { getAutoModeConfig } from '../settings/settings.js'
 import { sideQuery } from '../sideQuery.js'
 import { jsonStringify } from '../slowOperations.js'
 import { escapeRegExp } from '../stringUtils.js'
+import { modelThinkingCannotBeDisabled } from '../thinking.js'
 import { tokenCountWithEstimation } from '../tokens.js'
 import { getGitEmail } from '../user.js'
 import {
@@ -1071,6 +1072,16 @@ function getClassifierThinkingConfig(
     process.env.USER_TYPE === 'ant' &&
     resolveAntModel(model)?.alwaysOnThinking
   ) {
+    return [undefined, 2048]
+  }
+  // Same rule, for models whose always-on thinking is a published fact rather
+  // than an ant manifest entry: the Fable / Mythos family. resolveAntModel is
+  // ant-only, so before this branch a released always-on model took the
+  // [false, 0] path — sending {type:'disabled'} (a 400) and, once that was
+  // fixed in sideQuery, budgeting 0 tokens for thinking that runs anyway,
+  // which exhausts max_tokens before <block> is emitted and reads as
+  // "unparseable" — i.e. safe commands blocked.
+  if (modelThinkingCannotBeDisabled(model)) {
     return [undefined, 2048]
   }
   return [false, 0]
