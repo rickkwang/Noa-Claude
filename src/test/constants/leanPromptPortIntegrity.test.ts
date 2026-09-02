@@ -56,6 +56,7 @@ import {
   getAntiVerbositySection,
   getCompactHeadSection,
   MATCH_SURROUNDING_CODE_SECTION,
+  TURN_UPDATES_SECTION,
 } from '../../constants/systemPromptCompact.js'
 
 const LEAN_MODEL = 'claude-opus-5'
@@ -101,6 +102,9 @@ const PORTED_DIGESTS: Record<string, string> = {
   CONTEXT_MANAGEMENT_SECTION: '9856a95edb9c2bdb',
   MATCH_SURROUNDING_CODE_SECTION: 'ee43af37398581e9',
   'anti_verbosity fable branch': '41a8a87303e6f6f8',
+  // The branch checked ahead of the fable one; Fable 5.1 / Mythos 5.1 get this
+  // instead of the long section.
+  TURN_UPDATES_SECTION: 'f73794d3e72b5616',
   DELIVERING_WORK_SECTION: '7e908e68a04f6843',
   CORRECTIONS_SECTION: '4593459b100aad5e',
   AUTONOMY_SECTION: 'c16a5646cb28d023',
@@ -142,6 +146,7 @@ describe('ported lean prompt text is not edited by accident', () => {
     'anti_verbosity fable branch': getAntiVerbositySection(
       UNBUNDLED_MODEL,
     ) as string,
+    TURN_UPDATES_SECTION,
     DELIVERING_WORK_SECTION,
     CORRECTIONS_SECTION,
     AUTONOMY_SECTION,

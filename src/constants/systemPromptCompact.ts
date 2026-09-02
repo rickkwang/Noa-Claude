@@ -31,27 +31,34 @@ function isEarlyAccessModel(model: string): boolean {
 }
 
 /**
- * The three prompt capabilities are independent in Claude Code's model
- * manifest. Keep the verified 2.1.220 facts together so a model launch cannot
+ * The four prompt capabilities are independent in Claude Code's model
+ * manifest. Keep the verified facts together so a model launch cannot
  * accidentally update the compact-head gate but leave a companion section or
  * cache key on an older rule.
+ *
+ * `leanPrompt`, `opus5PromptBundle` and `fable5Mitigations` were read off the
+ * 2.1.220 manifest; `fable51PromptBundle` off 2.1.258, where Fable 5.1 and
+ * Mythos 5.1 are the only rows carrying it.
  */
 export type BuiltInPromptCapabilities = {
   leanPrompt: boolean
   opus5PromptBundle: boolean
   fable5Mitigations: boolean
+  fable51PromptBundle: boolean
 }
 
 const LEGACY_PROMPT_CAPABILITIES: BuiltInPromptCapabilities = {
   leanPrompt: false,
   opus5PromptBundle: false,
   fable5Mitigations: false,
+  fable51PromptBundle: false,
 }
 
 const DEFAULT_PROMPT_CAPABILITIES: BuiltInPromptCapabilities = {
   leanPrompt: true,
   opus5PromptBundle: false,
   fable5Mitigations: false,
+  fable51PromptBundle: false,
 }
 
 const BUILT_IN_PROMPT_CAPABILITIES: Record<
@@ -62,18 +69,23 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     leanPrompt: true,
     opus5PromptBundle: true,
     fable5Mitigations: false,
+    fable51PromptBundle: false,
   },
   'claude-fable-5': {
     leanPrompt: true,
     opus5PromptBundle: false,
     fable5Mitigations: true,
+    fable51PromptBundle: false,
   },
-  // Fable 5.1 / Mythos 5.1 inherit their predecessors' prompt gates: same
-  // lean head, same fable mitigations branch. Neither takes the Opus 5 bundle.
+  // Fable 5.1 / Mythos 5.1 keep their predecessors' lean head and still declare
+  // `fable_5_mitigations`, but they add `fable_5_1_prompt_bundle` on top — the
+  // two overlap, and where they disagree the newer bundle wins. Neither takes
+  // the Opus 5 bundle.
   'claude-fable-5-1': {
     leanPrompt: true,
     opus5PromptBundle: false,
     fable5Mitigations: true,
+    fable51PromptBundle: true,
   },
   // Mythos 5's manifest row upstream is `capabilities:[]` — empty. Both
   // `true`s here come from upstream's by-name short-circuits, not a manifest
@@ -86,11 +98,13 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     leanPrompt: true,
     opus5PromptBundle: false,
     fable5Mitigations: true,
+    fable51PromptBundle: false,
   },
   'claude-mythos-5-1': {
     leanPrompt: true,
     opus5PromptBundle: false,
     fable5Mitigations: true,
+    fable51PromptBundle: true,
   },
   'claude-opus-4-8': DEFAULT_PROMPT_CAPABILITIES,
 }
@@ -331,6 +345,49 @@ export function hasFableMitigations(model: string | undefined): boolean {
 }
 
 /**
+ * Whether the model carries upstream's `fable_5_1_prompt_bundle` capability.
+ *
+ * Upstream's gate is `!WAt() && hasCapability(model, 'fable_5_1_prompt_bundle')`
+ * — a kill switch ANDed with the manifest bit. The kill switch is a rollout
+ * control rather than a property of the model, and Noa resolves those in-code,
+ * so only the manifest bit is ported.
+ *
+ * It overlaps `fable_5_mitigations`: Fable 5.1 and Mythos 5.1 declare both.
+ * Where a section reads both gates the bundle wins, because upstream checks it
+ * first — see getAntiVerbositySection(). It does *not* subsume the Opus 5
+ * bundle: upstream's `overcorrection` and the `action_caution` trailing clause
+ * stay on `opus_5_prompt_bundle` alone, so Fable 5.1 keeps the unbundled
+ * wording there.
+ */
+export function hasFable51PromptBundle(model: string | undefined): boolean {
+  if (!model) return false
+  const untrustedIdentity = isUntrustedModelIdentity()
+  if (untrustedIdentity && trustsThirdPartyModelIdentity()) {
+    return getBuiltInPromptCapabilities(model).fable51PromptBundle
+  }
+  const declared = get3PModelCapabilityOverride(
+    model,
+    'fable_5_1_prompt_bundle',
+  )
+  if (declared !== undefined) {
+    return declared && shouldUseCompactSystemPrompt(model)
+  }
+  if (untrustedIdentity) return false
+  return getBuiltInPromptCapabilities(model).fable51PromptBundle
+}
+
+/**
+ * Ported verbatim from upstream's `turn_updates` branch of the `communication`
+ * section — the branch checked *before* the `fable_5_mitigations` one, so on
+ * Fable 5.1 and Mythos 5.1 this short form replaces the long "# Communicating
+ * with the user" text rather than adding to it.
+ *
+ * Upstream also reaches this branch via CLAUDE_CODE_TURN_UPDATES and a served
+ * `turn_updates` capability; both are rollout controls with no counterpart here.
+ */
+export const TURN_UPDATES_SECTION = `Before you start, say in a line what you're about to do; brief updates while you work help the user follow along. Close with a short recap that stands on its own — what you found, what you did, and what's next — so a reader who only sees the last message has the full picture.`
+
+/**
  * Upstream drops the "text between tool calls may not be shown" warning, and
  * softens the opening sentence, once a dedicated channel exists for reaching the
  * user mid-turn. Its condition ORs brief mode with a second flag guarding its
@@ -392,6 +449,9 @@ Only write a code comment to state a constraint the code itself can't show — n
  * resolves the equivalents in-code, so it has no counterpart here.
  */
 export function getAntiVerbositySection(model: string | undefined): string | null {
+  // Upstream checks the turn-updates branch first, so on models carrying both
+  // capabilities (Fable 5.1, Mythos 5.1) the short form supersedes the long one.
+  if (hasFable51PromptBundle(model)) return TURN_UPDATES_SECTION
   if (hasFableMitigations(model)) return getCommunicatingWithUserSection()
   if (shouldUseCompactSystemPrompt(model)) return MATCH_SURROUNDING_CODE_SECTION
   return null

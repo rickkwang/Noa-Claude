@@ -22,6 +22,7 @@ import {
   getActionCautionSection,
   getAntiVerbositySection,
   getCompactHeadSection,
+  hasFable51PromptBundle,
   hasFableMitigations,
   hasOpus5PromptBundle,
   shouldUseCompactSystemPrompt,
@@ -150,6 +151,7 @@ export function buildDynamicSystemPromptSections(params: {
   const lean = shouldUseCompactSystemPrompt(model)
   const bundle = hasOpus5PromptBundle(model)
   const fable = hasFableMitigations(model)
+  const fable51 = hasFable51PromptBundle(model)
   const autoCompactEnabled = isAutoCompactEnabled()
   const bundleSuffix = bundle ? ':L' : ''
   // Emitted only under the lean prompt, but worded by the bundle gate, so the
@@ -165,9 +167,11 @@ export function buildDynamicSystemPromptSections(params: {
   // possible texts (the Fable branch, the lean one-liner, nothing), so the key
   // names the branch rather than carrying a single lean bit.
   const antiVerbosity = getAntiVerbositySection(model)
-  const antiVerbosityName = fable
-    ? 'anti_verbosity:fable'
-    : `anti_verbosity${antiVerbosity !== null ? ':L' : ''}`
+  const antiVerbosityName = fable51
+    ? 'anti_verbosity:turn_updates'
+    : fable
+      ? 'anti_verbosity:fable'
+      : `anti_verbosity${antiVerbosity !== null ? ':L' : ''}`
 
   return [
     systemPromptSection(antiVerbosityName, () => antiVerbosity),
@@ -252,8 +256,12 @@ export function buildDynamicSystemPromptSections(params: {
     // them a prompt no upstream build produces. They restate, in one place, the
     // scope and self-correction discipline that the verbose head spells out
     // across its own sections.
-    systemPromptSection(`delivering_work${bundleSuffix}`, () =>
-      bundle ? DELIVERING_WORK_SECTION : null,
+    // `delivering_work` is the one companion the Fable 5.1 bundle also turns on
+    // (upstream: `tU(model) || tnr(model)`); `corrections` below stays on the
+    // Opus 5 bundle alone, so the two keys are no longer the same suffix.
+    systemPromptSection(
+      `delivering_work${bundle || fable51 ? ':L' : ''}`,
+      () => (bundle || fable51 ? DELIVERING_WORK_SECTION : null),
     ),
     systemPromptSection(`corrections${bundleSuffix}`, () =>
       bundle ? CORRECTIONS_SECTION : null,

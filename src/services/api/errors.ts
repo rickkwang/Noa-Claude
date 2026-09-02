@@ -23,6 +23,7 @@ import {
   NO_RESPONSE_REQUESTED,
 } from 'src/utils/messages.js'
 import {
+  getCanonicalName,
   getDefaultMainLoopModelSetting,
   getDefaultSonnetModel,
   isNonCustomOpusModel,
@@ -1247,6 +1248,41 @@ export function categorizeRetryableAPIError(
   return 'unknown'
 }
 
+/**
+ * Upstream's armed refusal-fallback target: the model a safeguard refusal is
+ * re-served on. Verified against 2.1.258, where it is the constant
+ * `claude-opus-4-8`, resolved through ANTHROPIC_DEFAULT_OPUS_MODEL when the
+ * catalog is unavailable — the same pinned-opus preference the other fallback
+ * suggestions in this file use.
+ *
+ * Upstream additionally routes by refusal category (`bio` to Opus 5, `cyber` to
+ * Opus 4.8, anything else to the constant). That refinement is deliberately not
+ * ported: the category lives in `stop_details`, which is informational, may be
+ * null on a genuine refusal, and is untyped in the SDK Noa pins — and the
+ * category-independent target is Opus 4.8 either way, so reading it would only
+ * change the `bio` case.
+ */
+function getRefusalFallbackModel(): string {
+  return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL || getModelStrings().opus48
+}
+
+/**
+ * Whether upstream arms a refusal fallback for the refusing model.
+ *
+ * Ported from 2.1.258's guard, in its order: Mythos models return early with no
+ * fallback at all, then the model must carry the `refusal_fallback` capability
+ * or be a `claude-fable-*`. Everything else — every Sonnet, Haiku, and Opus
+ * through 4.8 — keeps the plain refusal error with no model suggestion, because
+ * upstream has no better model to send those to.
+ */
+function hasArmedRefusalFallback(model: string): boolean {
+  const canonical = getCanonicalName(model)
+  if (canonical.startsWith('claude-mythos-')) return false
+  return (
+    canonical.startsWith('claude-fable-') || canonical === 'claude-opus-5'
+  )
+}
+
 export function getErrorMessageIfRefusal(
   stopReason: BetaStopReason | null,
   model: string,
@@ -1267,9 +1303,16 @@ export function getErrorMessageIfRefusal(
     (provider !== 'firstParty' ||
       isDirectFirstParty() ||
       process.env.ANTHROPIC_DEFAULT_SONNET_MODEL !== undefined)
-  const suggestedModel = canRecommendClaudeModel
-    ? getDefaultSonnetModel()
-    : undefined
+  // Models with an armed fallback upstream get that fallback suggested; the
+  // rest keep the Sonnet suggestion, which is what Noa sent for every refusal
+  // before the Fable/Opus 5 safeguards existed. Sending a Fable 5.1 refusal to
+  // Sonnet drops two model tiers to escape a classifier that Opus 4.8 does not
+  // run, which is not the trade upstream makes.
+  const suggestedModel = !canRecommendClaudeModel
+    ? undefined
+    : hasArmedRefusalFallback(model)
+      ? getRefusalFallbackModel()
+      : getDefaultSonnetModel()
   const modelSuggestion =
     suggestedModel && model !== suggestedModel
       ? ` If you are seeing this refusal repeatedly, try running /model ${suggestedModel} to switch models.`

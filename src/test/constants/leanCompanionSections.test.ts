@@ -15,6 +15,7 @@ import {
 import {
   hasFableMitigations,
   MATCH_SURROUNDING_CODE_SECTION,
+  TURN_UPDATES_SECTION,
 } from '../../constants/systemPromptCompact.js'
 import { getIsInteractive, setIsInteractive } from '../../bootstrap/state.js'
 
@@ -269,5 +270,52 @@ describe('autonomy guidance', () => {
     expect(sectionNames(UNBUNDLED_LEAN_MODEL)).toContain('autonomy_append:fable')
     expect(sectionNames(LEAN_MODEL)).toContain('autonomy_append')
     expect(sectionNames(LEAN_MODEL)).not.toContain('autonomy_append:fable')
+  })
+})
+
+// Fable 5.1 and Mythos 5.1 are the only rows in upstream 2.1.258's manifest
+// carrying `fable_5_1_prompt_bundle`. It overlaps `fable_5_mitigations`, which
+// they also carry, and wins where the two disagree — so these tests pin the
+// precedence, not just the presence.
+const FABLE_51_MODEL = 'claude-fable-5-1'
+const MYTHOS_51_MODEL = 'claude-mythos-5-1'
+
+describe('the Fable 5.1 prompt bundle', () => {
+  test('supersedes the fable-mitigations communication section', () => {
+    for (const model of [FABLE_51_MODEL, MYTHOS_51_MODEL]) {
+      expect(sectionNames(model)).toContain('anti_verbosity:turn_updates')
+      expect(resolve(model, 'anti_verbosity:turn_updates')).toBe(
+        TURN_UPDATES_SECTION,
+      )
+    }
+  })
+
+  test('Fable 5 keeps the long communication section', () => {
+    expect(sectionNames(UNBUNDLED_LEAN_MODEL)).toContain('anti_verbosity:fable')
+    expect(resolve(UNBUNDLED_LEAN_MODEL, 'anti_verbosity:fable')).toContain(
+      '# Communicating with the user',
+    )
+  })
+
+  test('turns on delivering-work, which Fable 5 does not get', () => {
+    for (const model of [FABLE_51_MODEL, MYTHOS_51_MODEL]) {
+      expect(resolve(model, 'delivering_work:L')).toBe(DELIVERING_WORK_SECTION)
+    }
+    expect(resolve(UNBUNDLED_LEAN_MODEL, 'delivering_work')).toBeNull()
+  })
+
+  test('does not turn on corrections — that stays on the Opus 5 bundle', () => {
+    for (const model of [FABLE_51_MODEL, MYTHOS_51_MODEL]) {
+      expect(resolve(model, 'corrections')).toBeNull()
+    }
+    expect(resolve(LEAN_MODEL, 'corrections:L')).toBe(CORRECTIONS_SECTION)
+  })
+
+  test('does not turn on the bundled action-caution wording', () => {
+    // Upstream gates the trailing "if what you find contradicts…" clause on
+    // `opus_5_prompt_bundle` alone, so a 5.1 model keeps the longer wording.
+    expect(resolve(FABLE_51_MODEL, 'action_caution:L:nb')).toContain(
+      'surface that instead of proceeding',
+    )
   })
 })

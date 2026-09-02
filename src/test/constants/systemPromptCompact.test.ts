@@ -54,20 +54,26 @@ beforeEach(() => {
   for (const k of JUDGING_KEYS) delete process.env[k]
 })
 
-// Extracted from the local official Claude Code 2.1.220 binary
-// (sha256: 8addc857f3fe64d5a0368af9ee50321b50afb4a6918ba3ef018ab84f5dbbe081).
+// Extracted from the local official Claude Code binaries: the first three
+// capabilities from 2.1.220
+// (sha256: 8addc857f3fe64d5a0368af9ee50321b50afb4a6918ba3ef018ab84f5dbbe081),
+// `fable51PromptBundle` and the two `-5-1` rows from 2.1.258
+// (sha256: b63136194160791c27cfa7b0403060d85eb0752991625fde8c09f9acacb17c78),
+// where `fable_5_1_prompt_bundle` appears on exactly two manifest rows.
 // These are effective capability facts, not a claim that Noa's
 // product-specific prompt surface is byte-for-byte identical to Claude Code.
-const OFFICIAL_2_1_220_PROMPT_CAPABILITIES = {
+const OFFICIAL_PROMPT_CAPABILITIES = {
   'claude-opus-5': {
     leanPrompt: true,
     opus5PromptBundle: true,
     fable5Mitigations: false,
+  fable51PromptBundle: false,
   },
   'claude-fable-5': {
     leanPrompt: true,
     opus5PromptBundle: false,
     fable5Mitigations: true,
+  fable51PromptBundle: false,
   },
   // Mythos 5's manifest row upstream is `capabilities:[]` — empty. Both
   // `true`s here come from upstream's by-name short-circuits, not a manifest
@@ -82,16 +88,19 @@ const OFFICIAL_2_1_220_PROMPT_CAPABILITIES = {
     leanPrompt: true,
     opus5PromptBundle: false,
     fable5Mitigations: true,
+  fable51PromptBundle: false,
   },
   'claude-opus-4-8': {
     leanPrompt: true,
     opus5PromptBundle: false,
     fable5Mitigations: false,
+  fable51PromptBundle: false,
   },
   'claude-opus-4-7': {
     leanPrompt: false,
     opus5PromptBundle: false,
     fable5Mitigations: false,
+  fable51PromptBundle: false,
   },
 } as const
 
@@ -103,7 +112,7 @@ afterEach(() => {
 })
 
 describe('compact system prompt gate', () => {
-  test('exposes the official 2.1.220 prompt capability matrix', () => {
+  test('exposes the official prompt capability matrix', () => {
     expect('getBuiltInPromptCapabilities' in compactPrompt).toBe(true)
 
     const getCapabilities = (
@@ -111,7 +120,7 @@ describe('compact system prompt gate', () => {
     ).getBuiltInPromptCapabilities as (model: string) => unknown
 
     for (const [model, expected] of Object.entries(
-      OFFICIAL_2_1_220_PROMPT_CAPABILITIES,
+      OFFICIAL_PROMPT_CAPABILITIES,
     )) {
       expect(getCapabilities(model)).toEqual(expected)
     }

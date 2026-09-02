@@ -27,6 +27,11 @@ export type ModelCapabilityOverride =
   // lean variant. Declared for Fable 5 upstream; Mythos 5 gets it by name.
   // See hasFableMitigations() in constants/systemPromptCompact.ts.
   | 'fable_5_mitigations'
+  // The third, newest prompt bundle. Declared for Fable 5.1 and Mythos 5.1,
+  // which also declare `fable_5_mitigations` — this one wins where the two
+  // disagree, so it is a separate capability rather than a refinement of it.
+  // See hasFable51PromptBundle() in constants/systemPromptCompact.ts.
+  | 'fable_5_1_prompt_bundle'
 
 const TIERS = [
   {

@@ -9,6 +9,7 @@ const ENV_KEYS = [
   'ANTHROPIC_API_KEY',
   'ANTHROPIC_BASE_URL',
   'ANTHROPIC_DEFAULT_SONNET_MODEL',
+  'ANTHROPIC_DEFAULT_OPUS_MODEL',
   'CLAUDE_CODE_USE_OPENAI',
   'CLAUDE_CODE_USE_BEDROCK',
   'CLAUDE_CODE_USE_VERTEX',
@@ -116,5 +117,41 @@ describe('third-party 401 handling', () => {
     const { kind } = getErrorKind(make401('Invalid x-api-key'))
 
     expect(kind).toBe('authentication_failed')
+  })
+})
+
+// Upstream 2.1.258 arms a refusal fallback only for models whose safety
+// classifiers can decline a request: `claude-fable-*` and Opus 5. Its target is
+// the constant `claude-opus-4-8`, resolved through ANTHROPIC_DEFAULT_OPUS_MODEL
+// when set. Mythos models are guarded out ahead of the capability check and get
+// no fallback at all.
+describe('armed refusal fallback target', () => {
+  test('Fable 5.1 is sent to Opus 4.8, not down to Sonnet', () => {
+    const content = getTextContent('claude-fable-5-1')
+
+    expect(content).toContain('/model claude-opus-4-8')
+    expect(content).not.toContain('claude-sonnet')
+  })
+
+  test('Fable 5 and Opus 5 take the same target', () => {
+    for (const model of ['claude-fable-5', 'claude-opus-5']) {
+      expect(getTextContent(model)).toContain('/model claude-opus-4-8')
+    }
+  })
+
+  test('a pinned opus model wins over the constant', () => {
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = 'my-opus-alias'
+    expect(getTextContent('claude-fable-5-1')).toContain('/model my-opus-alias')
+  })
+
+  test('Mythos gets no armed fallback, so it keeps the Sonnet suggestion', () => {
+    expect(getTextContent('claude-mythos-5-1')).toContain('/model claude-sonnet-5')
+  })
+
+  test('models without the capability keep the Sonnet suggestion', () => {
+    for (const model of ['claude-opus-4-8', 'claude-sonnet-5']) {
+      expect(getTextContent(model)).not.toContain('claude-opus-4-8 ')
+    }
+    expect(getTextContent('claude-opus-4-8')).toContain('/model claude-sonnet-5')
   })
 })
