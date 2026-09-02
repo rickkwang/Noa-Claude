@@ -41,11 +41,27 @@ export const getBedrockInferenceProfiles = memoize(async function (): Promise<
   }
 })
 
+/**
+ * A needle is a prefix of a later generation's ID ('claude-fable-5' is a prefix
+ * of 'claude-fable-5-1'), so a plain `includes` can pin the wrong model when
+ * both profiles are enabled. Prefer a match where the needle is not followed by
+ * another `-<digit>` version segment; fall back to any substring match so an
+ * unexpected profile shape still resolves rather than falling back to the
+ * hardcoded ID.
+ */
 export function findFirstMatch(
   profiles: string[],
   substring: string,
 ): string | null {
-  return profiles.find(p => p.includes(substring)) ?? null
+  const isVersionExtension = (profile: string): boolean => {
+    const idx = profile.indexOf(substring)
+    return idx !== -1 && /^-\d/.test(profile.slice(idx + substring.length))
+  }
+  return (
+    profiles.find(p => p.includes(substring) && !isVersionExtension(p)) ??
+    profiles.find(p => p.includes(substring)) ??
+    null
+  )
 }
 
 async function createBedrockClient() {

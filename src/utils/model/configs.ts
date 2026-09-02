@@ -136,6 +136,26 @@ export const CLAUDE_FABLE_5_CONFIG = {
   foundry: 'claude-fable-5',
 } as const satisfies ModelConfig
 
+// Fable 5.1 — successor to Fable 5 in the same tier at the same per-token
+// price ($10/$50), with cheaper cache reads ($0.25/Mtok). Same request surface
+// as Fable 5 (thinking always on, sampling params + budget_tokens removed,
+// explicit thinking:{type:'disabled'} 400s) plus three breaking changes:
+//   1. forced tool use — tool_choice {type:'any'|'tool'} returns a 400. See
+//      modelRejectsForcedToolChoice() in utils/betas.ts.
+//   2. thinking blocks are bound to the producing model; other models drop
+//      them (unbilled), so nothing has to be stripped when switching models.
+//   3. "preserved thinking": editing earlier turns invalidates thinking
+//      blocks. Accounts created on/after 2026-08-31 get a 400 on edited
+//      history. Noa's compaction rewrites history — see docs/operating-guide.
+// 1M context is both default and maximum; 128K max output. ZDR orgs are
+// rejected (400) unless expressly authorized; no Priority Tier; no fast mode.
+export const CLAUDE_FABLE_5_1_CONFIG = {
+  firstParty: 'claude-fable-5-1',
+  bedrock: 'us.anthropic.claude-fable-5-1',
+  vertex: 'claude-fable-5-1',
+  foundry: 'claude-fable-5-1',
+} as const satisfies ModelConfig
+
 // @[MODEL LAUNCH]: Register the new config here.
 export const ALL_MODEL_CONFIGS = {
   haiku35: CLAUDE_3_5_HAIKU_CONFIG,
@@ -154,6 +174,7 @@ export const ALL_MODEL_CONFIGS = {
   opus48: CLAUDE_OPUS_4_8_CONFIG,
   opus5: CLAUDE_OPUS_5_CONFIG,
   fable5: CLAUDE_FABLE_5_CONFIG,
+  fable51: CLAUDE_FABLE_5_1_CONFIG,
 } as const satisfies Record<string, ModelConfig>
 
 export type ModelKey = keyof typeof ALL_MODEL_CONFIGS

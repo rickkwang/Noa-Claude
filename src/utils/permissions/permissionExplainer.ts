@@ -8,6 +8,7 @@ import { logForDebugging } from '../debug.js'
 import { errorMessage } from '../errors.js'
 import { lazySchema } from '../lazySchema.js'
 import { logError } from '../log.js'
+import { modelRejectsForcedToolChoice } from '../betas.js'
 import { getMainLoopModel } from '../model/model.js'
 import { sideQuery } from '../sideQuery.js'
 import { jsonStringify } from '../slowOperations.js'
@@ -175,13 +176,21 @@ Explain this command in context.`
 
     const model = getMainLoopModel()
 
-    // Use sideQuery with forced tool choice for guaranteed structured output
+    // Use sideQuery with forced tool choice for guaranteed structured output.
+    // Fable 5.1 / Mythos 5.1 reject forced tool_choice with a 400, so there we
+    // fall back to `auto` plus an instruction naming the tool; the tool_use
+    // block is optional either way (the miss path below already handles it).
+    const rejectsForcedToolChoice = modelRejectsForcedToolChoice(model)
     const response = await sideQuery({
       model,
-      system: SYSTEM_PROMPT,
+      system: rejectsForcedToolChoice
+        ? `${SYSTEM_PROMPT}\n\nAlways answer by calling the explain_command tool. Do not reply with plain text.`
+        : SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userPrompt }],
       tools: [EXPLAIN_COMMAND_TOOL],
-      tool_choice: { type: 'tool', name: 'explain_command' },
+      ...(rejectsForcedToolChoice
+        ? {}
+        : { tool_choice: { type: 'tool', name: 'explain_command' } }),
       signal,
       querySource: 'permission_explainer',
     })

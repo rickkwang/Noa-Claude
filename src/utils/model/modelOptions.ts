@@ -10,7 +10,7 @@ import {
 import { getModelStrings } from './modelStrings.js'
 import {
   type ModelCosts,
-  COST_TIER_10_50,
+  COST_TIER_10_50_CHEAP_CACHE,
   COST_HAIKU_35,
   COST_HAIKU_45,
   formatModelPricing,
@@ -226,17 +226,17 @@ export function getMaxOpus5_1MOption(fastMode = false): ModelOption {
   }
 }
 
-// Fable 5 — top tier, above Opus. Never a default (it's the most expensive
+// Fable 5.1 — top tier, above Opus. Never a default (it's the most expensive
 // model); offered as an explicit opt-in row. The `[1m]` variant is reachable
 // via the `fable[1m]` alias.
 function getFable5Option(): ModelOption {
   const is3P = getAPIProvider() !== 'firstParty'
   return {
-    value: is3P ? getModelStrings().fable5 : 'fable',
+    value: is3P ? getModelStrings().fable51 : 'fable',
     label: 'Fable',
-    description: `Fable 5 · Most capable for your hardest and longest-running tasks${getFirstPartyPricingSuffix(COST_TIER_10_50)}`,
+    description: `Fable 5.1 · Most capable for your hardest and longest-running tasks${getFirstPartyPricingSuffix(COST_TIER_10_50_CHEAP_CACHE)}`,
     descriptionForModel:
-      'Fable 5 - most capable for your hardest and longest-running tasks',
+      'Fable 5.1 - most capable for your hardest and longest-running tasks',
   }
 }
 

@@ -68,6 +68,13 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     opus5PromptBundle: false,
     fable5Mitigations: true,
   },
+  // Fable 5.1 / Mythos 5.1 inherit their predecessors' prompt gates: same
+  // lean head, same fable mitigations branch. Neither takes the Opus 5 bundle.
+  'claude-fable-5-1': {
+    leanPrompt: true,
+    opus5PromptBundle: false,
+    fable5Mitigations: true,
+  },
   // Mythos 5's manifest row upstream is `capabilities:[]` — empty. Both
   // `true`s here come from upstream's by-name short-circuits, not a manifest
   // declaration: the verbose-prompt predicate ORs in
@@ -76,6 +83,11 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
   // alongside `fable_5_mitigations`. Don't "fix" this to `false` by
   // re-checking the manifest row alone.
   'claude-mythos-5': {
+    leanPrompt: true,
+    opus5PromptBundle: false,
+    fable5Mitigations: true,
+  },
+  'claude-mythos-5-1': {
     leanPrompt: true,
     opus5PromptBundle: false,
     fable5Mitigations: true,

@@ -16,6 +16,7 @@ import {
   CLAUDE_OPUS_4_8_CONFIG,
   CLAUDE_OPUS_5_CONFIG,
   CLAUDE_OPUS_4_CONFIG,
+  CLAUDE_FABLE_5_1_CONFIG,
   CLAUDE_FABLE_5_CONFIG,
   CLAUDE_SONNET_4_5_CONFIG,
   CLAUDE_SONNET_4_6_CONFIG,
@@ -109,6 +110,16 @@ export const COST_TIER_10_50 = {
   webSearchRequests: 0.01,
 } as const satisfies ModelCosts
 
+// Pricing tier for Fable 5.1: same $10/$50 per Mtok as Fable 5, but cache
+// reads are $0.25/Mtok instead of $1.
+export const COST_TIER_10_50_CHEAP_CACHE = {
+  inputTokens: 10,
+  outputTokens: 50,
+  promptCacheWriteTokens: 12.5,
+  promptCacheReadTokens: 0.25,
+  webSearchRequests: 0.01,
+} as const satisfies ModelCosts
+
 // Pricing for Haiku 3.5: $0.80 input / $4 output per Mtok
 export const COST_HAIKU_35 = {
   inputTokens: 0.8,
@@ -197,6 +208,8 @@ export const MODEL_COSTS: Record<ModelShortName, ModelCosts> = {
     COST_TIER_5_25,
   [firstPartyNameToCanonical(CLAUDE_OPUS_5_CONFIG.firstParty)]: COST_TIER_5_25,
   [firstPartyNameToCanonical(CLAUDE_FABLE_5_CONFIG.firstParty)]: COST_TIER_10_50,
+  [firstPartyNameToCanonical(CLAUDE_FABLE_5_1_CONFIG.firstParty)]:
+    COST_TIER_10_50_CHEAP_CACHE,
 }
 
 /**

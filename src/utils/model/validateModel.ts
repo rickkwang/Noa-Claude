@@ -167,6 +167,9 @@ function get3PFallbackSuggestion(model: string | undefined): string | undefined 
     return undefined
   }
   const lowerModel = model.toLowerCase()
+  if (lowerModel.includes('fable-5-1') || lowerModel.includes('fable_5_1')) {
+    return getModelStrings().fable5
+  }
   if (lowerModel.includes('fable-5') || lowerModel.includes('fable_5')) {
     return getModelStrings().opus48
   }

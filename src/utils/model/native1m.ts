@@ -25,6 +25,7 @@ const NATIVE_1M_MODELS: Record<string, { thirdParty: ReadonlySet<string> }> = {
   // real limit. `[1m]` remains the explicit opt-in on those backends.
   'claude-opus-5': { thirdParty: new Set() },
   'claude-fable-5': { thirdParty: new Set() },
+  'claude-fable-5-1': { thirdParty: new Set() },
 }
 
 /**

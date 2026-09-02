@@ -169,14 +169,14 @@ export function getDefaultOpusModel(): ModelName {
 }
 
 // @[MODEL LAUNCH]: Update the default Fable model.
-// Fable 5 is the top tier (above Opus). It is not anyone's default; this only
+// Fable 5.1 is the top tier (above Opus). It is not anyone's default; this only
 // resolves the explicit `fable` alias, so there is no third-party branch to
 // trail: asking for `fable` by name is already an explicit choice.
 export function getDefaultFableModel(): ModelName {
   if (process.env.ANTHROPIC_DEFAULT_FABLE_MODEL) {
     return process.env.ANTHROPIC_DEFAULT_FABLE_MODEL
   }
-  return getModelStrings().fable5 || 'claude-fable-5'
+  return getModelStrings().fable51 || 'claude-fable-5-1'
 }
 
 // @[MODEL LAUNCH]: Update the default Sonnet model. The third-party branch
@@ -306,8 +306,15 @@ export function firstPartyNameToCanonical(name: ModelName | undefined): ModelSho
   if (name.includes('claude-opus-4')) {
     return 'claude-opus-4-0'
   }
+  // Order matters: 'claude-fable-5' is a prefix of 'claude-fable-5-1'.
+  if (name.includes('claude-fable-5-1')) {
+    return 'claude-fable-5-1'
+  }
   if (name.includes('claude-fable-5')) {
     return 'claude-fable-5'
+  }
+  if (name.includes('claude-mythos-5-1')) {
+    return 'claude-mythos-5-1'
   }
   if (name.includes('claude-mythos-5')) {
     return 'claude-mythos-5'
@@ -465,6 +472,10 @@ export function renderModelSetting(setting: ModelName | ModelAlias): string {
  */
 export function getPublicModelDisplayName(model: ModelName): string | null {
   switch (model) {
+    case getModelStrings().fable51:
+      return 'Fable 5.1'
+    case getModelStrings().fable51 + '[1m]':
+      return 'Fable 5.1 (1M context)'
     case getModelStrings().fable5:
       return 'Fable 5'
     case getModelStrings().fable5 + '[1m]':
@@ -731,6 +742,9 @@ export function getMarketingNameForModel(modelId: string | undefined): string | 
   const has1m = modelId.toLowerCase().includes('[1m]')
   const canonical = getCanonicalName(modelId)
 
+  if (canonical.includes('claude-fable-5-1')) {
+    return has1m ? 'Fable 5.1 (with 1M context)' : 'Fable 5.1'
+  }
   if (canonical.includes('claude-fable-5')) {
     return has1m ? 'Fable 5 (with 1M context)' : 'Fable 5'
   }

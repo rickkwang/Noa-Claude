@@ -195,6 +195,26 @@ export function modelSupportsContextManagement(model: string): boolean {
   )
 }
 
+/**
+ * Fable 5.1 / Mythos 5.1 removed forced tool use: `tool_choice` of type `any`
+ * or `tool` returns a 400 ("tool_choice: type \"tool\" and \"any\" are not
+ * supported for this model."), on count_tokens and Batches too. `auto` and
+ * `none` are unaffected.
+ *
+ * Callers that forced a tool purely to get structured output must fall back to
+ * `auto` plus an instruction naming the tool (see permissionExplainer), or to
+ * structured outputs.
+ *
+ * @[MODEL LAUNCH]: add models that reject forced tool use here.
+ */
+export function modelRejectsForcedToolChoice(model: string): boolean {
+  const canonical = getCanonicalName(model)
+  return (
+    canonical.includes('claude-fable-5-1') ||
+    canonical.includes('claude-mythos-5-1')
+  )
+}
+
 // @[MODEL LAUNCH]: Add the new model ID to this list if it supports structured outputs.
 export function modelSupportsStructuredOutputs(model: string): boolean {
   const supported3P = get3PModelCapabilityOverride(model, 'structured_outputs')

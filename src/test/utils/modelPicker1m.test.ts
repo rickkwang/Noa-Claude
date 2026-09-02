@@ -143,8 +143,8 @@ describe('native-1M model-setting normalization', () => {
 
   test('normalizes fable[1m] away on direct first-party', () => {
     const resolved = parseUserSpecifiedModel('fable[1m]')
-    expect(resolved).toBe('claude-fable-5')
-    expect(renderModelName(resolved)).toBe('Fable 5')
+    expect(resolved).toBe('claude-fable-5-1')
+    expect(renderModelName(resolved)).toBe('Fable 5.1')
   })
 
   test('keeps opus[1m] visible, matching upstream display semantics', () => {
