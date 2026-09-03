@@ -292,6 +292,13 @@ Release candidate provider check:
 bun run smoke:engine:live                # Live provider smoke (needs ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN)
 ```
 
+Cost and cache review (reads local transcripts only, no API calls):
+
+```bash
+bun run profile:usage                    # Token/cost profile of past sessions
+bun run profile:usage -- --days 14       # Restrict to a window; --project <substr>, --json
+```
+
 ## Engineering Bar
 
 Core stability signals treated as non-negotiable:

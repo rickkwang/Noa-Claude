@@ -302,6 +302,15 @@ function round(number: number, precision: number): number {
  * again via `cache_read_input_tokens` at the cache-read rate — producing
  * a cost that is higher than the actual charge (often ~2× when roughly
  * half the prompt is served from cache).
+ *
+ * This corrects the *runtime* accounting only. The session transcript keeps
+ * both shapes — the raw pre-normalization snapshot (whole prompt in
+ * `input_tokens`, `cache_read_input_tokens: 0`) and the normalized one — under
+ * the same `message.id`, alongside per-content-block and streaming-progress
+ * duplicates. Anything reading usage back off disk must therefore de-dupe by
+ * `message.id` and keep the variant with the largest `cache_read_input_tokens`;
+ * summing records instead inflates uncached input by more than 20×. See
+ * scripts/usage-profile.mjs, which does both.
  */
 function normalizeUsageForCostAccounting(usage: Usage): Usage {
   if (getAPIProvider() !== 'openaiCompatible') return usage

@@ -34,6 +34,7 @@
     "smoke:engine": "bun ./scripts/smoke-engineering.mjs",
     "smoke:engine:live": "bun ./scripts/smoke-engineering-live.mjs",
     "scan:pr-intent": "node ./scripts/pr-intent-scan.mjs --fail-on high",
+    "profile:usage": "node ./scripts/usage-profile.mjs",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "check:quality": "bun run typecheck && bun run check:docs",
