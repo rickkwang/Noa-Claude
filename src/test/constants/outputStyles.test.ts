@@ -9,6 +9,7 @@ import {
   DEFAULT_OUTPUT_STYLE_NAME,
   OUTPUT_STYLE_CONFIG,
 } from '../../constants/outputStyles.js'
+import { getOutputStyleSection } from '../../constants/systemPromptDynamicSections.js'
 
 function sha256(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex')
@@ -144,6 +145,19 @@ describe('the built-in style roster', () => {
       'Explanatory',
       'Learning',
     ])
+  })
+})
+
+describe('the output style precedence clause', () => {
+  test('is appended to styles that do not carry their own', () => {
+    const section = getOutputStyleSection(OUTPUT_STYLE_CONFIG.Explanatory!)
+    expect(section).toContain('# Output Style: Explanatory')
+    expect(section).toContain('these rules win')
+  })
+
+  test('is not duplicated for styles that already carry it', () => {
+    const section = getOutputStyleSection(OUTPUT_STYLE_CONFIG.Concise!)!
+    expect(section.split('these rules win').length - 1).toBe(1)
   })
 })
 
