@@ -33,6 +33,7 @@ import {
 import {
   getAntiVerbositySection,
   MATCH_SURROUNDING_CODE_SECTION,
+  SECURITY_POLICY,
   TURN_UPDATES_SECTION,
 } from '../../constants/systemPromptCompact.js'
 import { getDescription as getGlobDescription } from '../../tools/GlobTool/prompt.js'
@@ -103,6 +104,7 @@ export function buildPortedSubjects(): Record<string, string> {
     DELIVERING_WORK_SECTION,
     CORRECTIONS_SECTION,
     AUTONOMY_SECTION,
+    SECURITY_POLICY,
     'WebFetch.LEAN_DESCRIPTION': WEB_FETCH_LEAN_DESCRIPTION,
     'TodoWrite lean': getTodoWritePrompt(LEAN_MODEL),
     'Glob lean': getGlobDescription(LEAN_MODEL),
@@ -167,6 +169,12 @@ export const PORTED_DIGESTS: Record<string, string> = {
   DELIVERING_WORK_SECTION: '7e908e68a04f6843',
   CORRECTIONS_SECTION: '4593459b100aad5e',
   AUTONOMY_SECTION: '07f554da420e0445',
+  // Registered late: this port shipped pinned by neither the digests here nor
+  // the substring assertions in leanPromptPortIntegrity, which is the exact
+  // "never registered at all" gap described at the top of this file. The digest
+  // certifies what currently ships — run `verify:ports` against a binary to
+  // confirm the transcription itself.
+  SECURITY_POLICY: '10591efdcea75a16',
   'WebFetch.LEAN_DESCRIPTION': '7db6b3cae057d3c9',
   'TodoWrite lean': '863d3a2d90b3c43e',
   'Glob lean': '33fb1e4be95ad7cf',
