@@ -645,11 +645,13 @@ export async function* runPreToolUseHooks(
             }),
           },
         }
+        yield { type: 'stopReason', stopReason: formatError(error) }
         yield { type: 'stop' }
       }
     }
   } catch (error) {
     logError(error)
+    yield { type: 'stopReason', stopReason: formatError(error) }
     yield { type: 'stop' }
     return
   }
