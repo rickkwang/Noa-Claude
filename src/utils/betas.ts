@@ -17,6 +17,7 @@ import {
   REDACT_THINKING_BETA_HEADER,
   STRUCTURED_OUTPUTS_BETA_HEADER,
   SUMMARIZE_CONNECTOR_TEXT_BETA_HEADER,
+  THINKING_BINDING_CONTROLS_BETA_HEADER,
   TOKEN_EFFICIENT_TOOLS_BETA_HEADER,
   TOOL_SEARCH_BETA_HEADER_1P,
   TOOL_SEARCH_BETA_HEADER_3P,
@@ -215,6 +216,45 @@ export function modelRejectsForcedToolChoice(model: string): boolean {
   )
 }
 
+/**
+ * Fable 5.1 / Mythos 5.1 enforce "preserved thinking": a thinking block's
+ * signature records the conversation prefix that produced it (top-level
+ * `system`, the `tools` set, and every earlier message), so editing an earlier
+ * turn invalidates every later block. Noa edits history routinely — compaction
+ * rewrites the transcript, snipping drops turns from the middle, and the
+ * system prompt is rebuilt per request — so an enforced account would take a
+ * 400 on the first request after any of those.
+ *
+ * We degrade instead of failing: send the controls beta and ask the API to
+ * drop the mismatched blocks (see claude.ts). Enforcement is on by default
+ * only for accounts created on/after 2026-08-31, but setting the field opts
+ * every request in, which is what makes the behaviour uniform.
+ *
+ * @[MODEL LAUNCH]: add models that bind thinking blocks to the prefix here.
+ */
+export function modelEnforcesThinkingPrefixBinding(model: string): boolean {
+  const canonical = getCanonicalName(model)
+  return (
+    canonical.includes('claude-fable-5-1') ||
+    canonical.includes('claude-mythos-5-1')
+  )
+}
+
+/**
+ * Whether this request may send `thinking.block_binding`. The controls ship on
+ * the Claude API (and Claude Platform on AWS) at launch; Bedrock and Vertex
+ * reject the header until the per-model rollout reaches them, and Foundry does
+ * not offer it at all — so this is narrower than
+ * shouldIncludeFirstPartyOnlyBetas(), which includes Foundry.
+ */
+export function shouldSendThinkingBindingControls(model: string): boolean {
+  return (
+    modelEnforcesThinkingPrefixBinding(model) &&
+    isDirectFirstParty() &&
+    !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS)
+  )
+}
+
 // @[MODEL LAUNCH]: Add the new model ID to this list if it supports structured outputs.
 export function modelSupportsStructuredOutputs(model: string): boolean {
   const supported3P = get3PModelCapabilityOverride(model, 'structured_outputs')
@@ -370,6 +410,13 @@ export const getAllModelBetas = memoize((model: string): string[] => {
     modelSupportsISP(model)
   ) {
     betaHeaders.push(INTERLEAVED_THINKING_BETA_HEADER)
+  }
+
+  // Preserved thinking: lets claude.ts set prefix_mismatch_behavior so an
+  // edited transcript (compaction, snipping) degrades to dropped thinking
+  // blocks instead of a 400. Also turns on `input_transformations` reporting.
+  if (shouldSendThinkingBindingControls(model)) {
+    betaHeaders.push(THINKING_BINDING_CONTROLS_BETA_HEADER)
   }
 
   // Skip the API-side Haiku thinking summarizer — the summary is only used

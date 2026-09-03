@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
   clearBetasCaches,
   getAllModelBetas,
@@ -9,7 +9,10 @@ import {
   shouldIncludeFirstPartyOnlyBetas,
   shouldUseGlobalCacheScope,
 } from '../../utils/betas.js'
-import { CONTEXT_MANAGEMENT_BETA_HEADER } from '../../constants/betas.js'
+import {
+  CONTEXT_MANAGEMENT_BETA_HEADER,
+  THINKING_BINDING_CONTROLS_BETA_HEADER,
+} from '../../constants/betas.js'
 
 const ENV_KEYS = [
   'CLAUDE_CODE_USE_BEDROCK',
@@ -174,6 +177,45 @@ describe('Claude Code beta header — effort-style 3P gating', () => {
     delete process.env.ANTHROPIC_BASE_URL
     expect(getAllModelBetas('claude-opus-4-8-leakcheck-c')).toContain(
       'claude-code-20250219',
+    )
+  })
+})
+
+describe('thinking binding controls beta', () => {
+  // getAllModelBetas() consults the subscriber check, which requires a credential.
+  beforeEach(() => {
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-test'
+  })
+
+  test('only Fable/Mythos 5.1 carry the header on direct first-party', () => {
+    delete process.env.ANTHROPIC_BASE_URL
+    expect(getAllModelBetas('claude-fable-5-1')).toContain(
+      THINKING_BINDING_CONTROLS_BETA_HEADER,
+    )
+    clearBetasCaches()
+    expect(getAllModelBetas('claude-fable-5')).not.toContain(
+      THINKING_BINDING_CONTROLS_BETA_HEADER,
+    )
+    clearBetasCaches()
+    expect(getAllModelBetas('claude-opus-5')).not.toContain(
+      THINKING_BINDING_CONTROLS_BETA_HEADER,
+    )
+  })
+
+  test('Foundry is excluded even though it takes other experimental betas', () => {
+    delete process.env.ANTHROPIC_BASE_URL
+    process.env.CLAUDE_CODE_USE_FOUNDRY = '1'
+    expect(shouldIncludeFirstPartyOnlyBetas()).toBe(true)
+    expect(getAllModelBetas('claude-fable-5-1')).not.toContain(
+      THINKING_BINDING_CONTROLS_BETA_HEADER,
+    )
+  })
+
+  test('the opt-out env var suppresses it', () => {
+    delete process.env.ANTHROPIC_BASE_URL
+    process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = '1'
+    expect(getAllModelBetas('claude-fable-5-1')).not.toContain(
+      THINKING_BINDING_CONTROLS_BETA_HEADER,
     )
   })
 })

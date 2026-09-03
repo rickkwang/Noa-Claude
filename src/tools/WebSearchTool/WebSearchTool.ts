@@ -4,7 +4,10 @@ import type {
   BetaWebSearchTool20250305,
   BetaWebSearchTool20260209,
 } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
-import { modelSupportsWebSearchDynamicFiltering } from 'src/utils/betas.js'
+import {
+  modelRejectsForcedToolChoice,
+  modelSupportsWebSearchDynamicFiltering,
+} from 'src/utils/betas.js'
 import {
   getAPIProvider,
   isDirectFirstParty,
@@ -324,7 +327,15 @@ export const WebSearchTool = buildTool({
       options: {
         getToolPermissionContext: async () => appState.toolPermissionContext,
         model: searchModel,
-        toolChoice: useHaiku ? { type: 'tool', name: 'web_search' } : undefined,
+        // Fable 5.1 / Mythos 5.1 reject forced tool_choice with a 400. The
+        // Haiku experiment normally points searchModel at the small fast
+        // model, but ANTHROPIC_SMALL_FAST_MODEL can pin it to anything — so
+        // gate on the model that actually receives the request. Dropping to
+        // `auto` is safe here: the search tool is the only one in the schema.
+        toolChoice:
+          useHaiku && !modelRejectsForcedToolChoice(searchModel)
+            ? { type: 'tool', name: 'web_search' }
+            : undefined,
         isNonInteractiveSession: context.options.isNonInteractiveSession,
         hasAppendSystemPrompt: !!context.options.appendSystemPrompt,
         extraToolSchemas: [toolSchema],

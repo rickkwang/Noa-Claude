@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { modelRejectsForcedToolChoice } from '../../utils/betas.js'
+import {
+  clearBetasCaches,
+  modelEnforcesThinkingPrefixBinding,
+  modelRejectsForcedToolChoice,
+  shouldSendThinkingBindingControls,
+} from '../../utils/betas.js'
 import { findFirstMatch } from '../../utils/model/bedrock.js'
 import { hasNative1mContext } from '../../utils/model/native1m.js'
 import {
@@ -28,6 +33,7 @@ beforeEach(() => {
 
 afterEach(() => {
   process.env = { ...SAVED }
+  clearBetasCaches()
 })
 
 describe('Fable 5.1 identity', () => {
@@ -121,5 +127,44 @@ describe('Bedrock inference profile matching', () => {
     expect(
       findFirstMatch(['us.anthropic.claude-fable-5-1'], 'claude-fable-5'),
     ).toBe('us.anthropic.claude-fable-5-1')
+  })
+})
+
+describe('preserved thinking (prefix binding)', () => {
+  test('only the 5.1 pair binds thinking blocks to the prefix', () => {
+    expect(modelEnforcesThinkingPrefixBinding('claude-fable-5-1')).toBe(true)
+    expect(modelEnforcesThinkingPrefixBinding('claude-mythos-5-1')).toBe(true)
+    expect(modelEnforcesThinkingPrefixBinding('claude-fable-5')).toBe(false)
+    expect(modelEnforcesThinkingPrefixBinding('claude-opus-5')).toBe(false)
+    expect(modelEnforcesThinkingPrefixBinding('claude-opus-4-8')).toBe(false)
+  })
+
+  test('canonicalizes provider-prefixed ids', () => {
+    expect(
+      modelEnforcesThinkingPrefixBinding('us.anthropic.claude-fable-5-1'),
+    ).toBe(true)
+  })
+
+  test('the controls beta is direct-firstParty only', () => {
+    expect(shouldSendThinkingBindingControls('claude-fable-5-1')).toBe(true)
+
+    // Foundry offers no binding controls, unlike other experimental betas.
+    process.env.CLAUDE_CODE_USE_FOUNDRY = '1'
+    expect(shouldSendThinkingBindingControls('claude-fable-5-1')).toBe(false)
+    delete process.env.CLAUDE_CODE_USE_FOUNDRY
+
+    // Bedrock/Vertex reject the header until the per-model rollout lands.
+    process.env.CLAUDE_CODE_USE_BEDROCK = '1'
+    expect(shouldSendThinkingBindingControls('claude-fable-5-1')).toBe(false)
+    delete process.env.CLAUDE_CODE_USE_BEDROCK
+
+    // A custom base URL reports firstParty but is a proxy.
+    process.env.ANTHROPIC_BASE_URL = 'https://proxy.example.com'
+    expect(shouldSendThinkingBindingControls('claude-fable-5-1')).toBe(false)
+  })
+
+  test('models that do not enforce the check never send the beta', () => {
+    expect(shouldSendThinkingBindingControls('claude-opus-5')).toBe(false)
+    expect(shouldSendThinkingBindingControls('claude-fable-5')).toBe(false)
   })
 })

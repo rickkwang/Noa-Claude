@@ -29,6 +29,17 @@ export const AFK_MODE_BETA_HEADER = feature('AUTO_MODE')
 export const CLI_INTERNAL_BETA_HEADER =
   process.env.USER_TYPE === 'ant' ? 'cli-internal-2026-02-09' : ''
 export const ADVISOR_BETA_HEADER = 'advisor-tool-2026-03-01'
+/**
+ * "Preserved thinking" controls. Fable 5.1 / Mythos 5.1 bind every thinking
+ * block to the conversation prefix that produced it (system prompt + tools +
+ * every earlier message); editing an earlier turn invalidates every later
+ * block. Accounts created on/after 2026-08-31 are enforced by default and get
+ * a 400. Sending this header lets the request set
+ * `thinking.block_binding.prefix_mismatch_behavior` — without it the field is
+ * rejected as an extra input.
+ */
+export const THINKING_BINDING_CONTROLS_BETA_HEADER =
+  'thinking-binding-controls-2026-08-01'
 
 /**
  * Bedrock only supports a limited number of beta headers and only through
