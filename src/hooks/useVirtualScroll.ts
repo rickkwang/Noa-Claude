@@ -195,7 +195,13 @@ export function useVirtualScroll(
     const ratio = prevColumns.current / columns
     prevColumns.current = columns
     for (const [k, h] of heightCache.current) {
-      heightCache.current.set(k, Math.max(1, Math.round(h * ratio)))
+      // Skip measured-zero items. A cached 0 means "renders nothing" — a
+      // permanent property of the message, not a width-dependent height.
+      // Math.max(1, ...) would promote it to 1, inventing a row that Yoga
+      // never produces and desyncing offsets[] from real layout until the
+      // next measurement. It also hides the item from the rendered-item
+      // budget below, which is what this cache value exists to signal.
+      if (h !== 0) heightCache.current.set(k, Math.max(1, Math.round(h * ratio)))
     }
     offsetVersionRef.current++
     skipMeasurementRef.current = true
@@ -429,30 +435,47 @@ export function useVirtualScroll(
       }
 
       const needed = viewportH + 2 * OVERSCAN_ROWS
-      const maxEnd = Math.min(n, start + MAX_MOUNTED_ITEMS)
       let coverage = 0
+      // Rendered-item count, NOT index span. Items measured at height 0
+      // render nothing, so they cost no fibers worth bounding and contribute
+      // no rows toward `needed`. Capping by index let a run of them consume
+      // the whole budget, stopping the walk with a mounted range that spans
+      // MAX_MOUNTED_ITEMS entries and paints zero rows — the viewport then
+      // shows bare spacer (blank transcript after a tool-heavy turn).
+      let rendered = 0
       end = start
       while (
-        end < maxEnd &&
+        end < n &&
+        rendered < MAX_MOUNTED_ITEMS &&
         (coverage < needed || offsets[end]! < effHi + viewportH + OVERSCAN_ROWS)
       ) {
-        coverage +=
-          heightCache.current.get(itemKeys[end]!) ?? PESSIMISTIC_HEIGHT
+        const h = heightCache.current.get(itemKeys[end]!)
+        coverage += h ?? PESSIMISTIC_HEIGHT
+        // undefined (unmeasured) counts — it may well render something.
+        if (h !== 0) rendered++
         end++
       }
     }
     // Same coverage guarantee for the atBottom path (it walked start back
     // by estimated offsets, which can undershoot if items are small).
     const needed = viewportH + 2 * OVERSCAN_ROWS
-    const minStart = Math.max(0, end - MAX_MOUNTED_ITEMS)
     let coverage = 0
+    // Same rendered-item budget as the end-extension walk above. This loop
+    // only ever moves start BACKWARD, so an index-based minStart could not
+    // undo the sticky branch's walk — what it did was end this back-walk
+    // early, giving up before `coverage` reached `needed` whenever the items
+    // in between rendered nothing and so added no rows to spend the budget on.
+    let rendered = 0
     for (let i = start; i < end; i++) {
-      coverage += heightCache.current.get(itemKeys[i]!) ?? PESSIMISTIC_HEIGHT
+      const h = heightCache.current.get(itemKeys[i]!)
+      coverage += h ?? PESSIMISTIC_HEIGHT
+      if (h !== 0) rendered++
     }
-    while (start > minStart && coverage < needed) {
+    while (start > 0 && rendered < MAX_MOUNTED_ITEMS && coverage < needed) {
       start--
-      coverage +=
-        heightCache.current.get(itemKeys[start]!) ?? PESSIMISTIC_HEIGHT
+      const h = heightCache.current.get(itemKeys[start]!)
+      coverage += h ?? PESSIMISTIC_HEIGHT
+      if (h !== 0) rendered++
     }
     // Slide cap: limit how many NEW items mount this commit. Scrolling into
     // a fresh range would otherwise mount 194 items at PESSIMISTIC_HEIGHT=1
@@ -527,8 +550,8 @@ export function useVirtualScroll(
   if (pendingDelta > 0) {
     effEnd = end
   }
-  // Final O(viewport) enforcement. The intermediate caps (maxEnd=start+
-  // MAX_MOUNTED_ITEMS, slide cap, deferred-intersection) bound [start,end]
+  // Final O(viewport) enforcement. The intermediate caps (the rendered-item
+  // budget, slide cap, deferred-intersection) bound [start,end]
   // but the deferred+bypass combinations above can let [effStart,effEnd]
   // slip: e.g. during sustained PageUp when concurrent mode interleaves
   // dStart updates with effEnd=end bypasses across commits, the effective
@@ -537,18 +560,40 @@ export function useVirtualScroll(
   // (yoga Node constructor + createWorkInProgress fiber alloc proportional
   // to scroll distance). Trim the far edge — by viewport position — to keep
   // fiber count O(viewport) regardless of deferred-value scheduling.
+  // Index span > cap is a necessary (cheap) precondition for rendered count >
+  // cap, so it stays as the gate — the O(span) count below only runs when the
+  // span could actually be over budget.
   if (effEnd - effStart > MAX_MOUNTED_ITEMS) {
-    // Trim side is decided by viewport POSITION, not pendingDelta direction.
-    // pendingDelta drains to 0 between frames while dStart/dEnd lag under
-    // concurrent scheduling; a direction-based trim then flips from "trim
-    // tail" to "trim head" mid-settle, bumping effStart → effTopSpacer →
-    // clampMin → setClampBounds yanks scrollTop down → scrollback vanishes.
-    // Position-based: keep whichever end the viewport is closer to.
-    const mid = (offsets[effStart]! + offsets[effEnd]!) / 2
-    if (scrollTop - listOriginRef.current < mid) {
-      effEnd = effStart + MAX_MOUNTED_ITEMS
-    } else {
-      effStart = effEnd - MAX_MOUNTED_ITEMS
+    // How many RENDERED items are over budget. Trimming by index instead
+    // discarded real content to make room for zero-height items that occupy
+    // no rows: at the end of a long tool-heavy turn the sticky tail is dense
+    // with them, so `effStart = effEnd - MAX_MOUNTED_ITEMS` kept 300 entries
+    // worth far less than a viewport of rows and the transcript went blank.
+    let excess = -MAX_MOUNTED_ITEMS
+    for (let i = effStart; i < effEnd; i++) {
+      if (heightCache.current.get(itemKeys[i]!) !== 0) excess++
+    }
+    if (excess > 0) {
+      // Trim side is decided by viewport POSITION, not pendingDelta direction.
+      // pendingDelta drains to 0 between frames while dStart/dEnd lag under
+      // concurrent scheduling; a direction-based trim then flips from "trim
+      // tail" to "trim head" mid-settle, bumping effStart → effTopSpacer →
+      // clampMin → setClampBounds yanks scrollTop down → scrollback vanishes.
+      // Position-based: keep whichever end the viewport is closer to.
+      const mid = (offsets[effStart]! + offsets[effEnd]!) / 2
+      if (scrollTop - listOriginRef.current < mid) {
+        // Walk the far edge inward, decrementing only on rendered items —
+        // zero-height neighbours ride along for free.
+        while (excess > 0) {
+          effEnd--
+          if (heightCache.current.get(itemKeys[effEnd]!) !== 0) excess--
+        }
+      } else {
+        while (excess > 0) {
+          if (heightCache.current.get(itemKeys[effStart]!) !== 0) excess--
+          effStart++
+        }
+      }
     }
   }
 
