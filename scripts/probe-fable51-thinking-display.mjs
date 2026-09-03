@@ -103,7 +103,8 @@ async function probe(label, { display, extraBetas }) {
   let turns = 0
   const samples = []
 
-  for (let i = 0; i < 12; i++) {
+  // One call per turn now, so 6 tool calls + a final answer needs ~8 turns.
+  for (let i = 0; i < 16; i++) {
     turns++
     const response = await client.beta.messages.create({
       model: MODEL,
@@ -115,6 +116,13 @@ async function probe(label, { display, extraBetas }) {
         block_binding: { prefix_mismatch_behavior: 'drop_block' },
       },
       tools: TOOLS,
+      // Force one call per turn. Without this the model may batch the three
+      // reads into a single turn despite the prompt, collapsing the inter-tool
+      // gaps that progress updates are emitted into — which would look exactly
+      // like "redact-thinking suppressed them" and produce a false conclusion.
+      // On Fable 5.1 this still works with the default `auto` (it now means
+      // "at most one call"); forced tool_choice would 400 here.
+      tool_choice: { type: 'auto', disable_parallel_tool_use: true },
       messages,
     })
 
