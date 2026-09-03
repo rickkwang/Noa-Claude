@@ -230,6 +230,27 @@ export function getRequestTooLargeErrorMessage(): string {
     ? `Request too large (${limits}). Accumulated images and attachments in the conversation pushed the request over the limit. Remove older images or compact the conversation.`
     : `Request too large (${limits}). Accumulated images and attachments in the conversation pushed the request over the limit. Run /compact, or double press esc to go back and remove attachments.`
 }
+/**
+ * Fable / Mythos are Covered Models: they require 30-day data retention and are
+ * unavailable under zero data retention unless Anthropic expressly authorized
+ * it. A ZDR org gets a 400 on *every* request to them, which reads like a
+ * malformed payload unless you know to look at the org's retention setting.
+ *
+ * Kept as a substring match on the server's wording rather than a model check:
+ * the requirement is a property of the org, and any model can become Covered.
+ */
+export function isDataRetentionRequiredError(message: string): boolean {
+  const lower = message.toLowerCase()
+  return (
+    lower.includes('data retention') &&
+    (lower.includes('must have') || lower.includes('enabled'))
+  )
+}
+
+export function getDataRetentionErrorMessage(model: string): string {
+  return `${model} requires 30-day data retention · Your organization or workspace has it disabled. Enable retention for a workspace, ask your Anthropic account team to authorize this model under zero data retention, or run /model to pick a different one.`
+}
+
 export const OAUTH_ORG_NOT_ALLOWED_ERROR_MESSAGE =
   'Your account does not have access to Noa Claude. Please run /login.'
 
@@ -666,6 +687,20 @@ export function getAssistantMessageFromError(
   ) {
     return createAssistantAPIErrorMessage({
       content: 'Auto mode is unavailable for your plan',
+      error: 'invalid_request',
+    })
+  }
+
+  // Covered Model on a zero-data-retention org — every request 400s, and the
+  // raw message says nothing about which knob to turn. Checked before the
+  // generic 400 handlers so it doesn't fall through to "report this to us".
+  if (
+    error instanceof APIError &&
+    error.status === 400 &&
+    isDataRetentionRequiredError(error.message)
+  ) {
+    return createAssistantAPIErrorMessage({
+      content: getDataRetentionErrorMessage(model),
       error: 'invalid_request',
     })
   }
@@ -1153,6 +1188,15 @@ export function classifyAPIError(error: unknown): string {
     error.message.toLowerCase().includes('invalid model name')
   ) {
     return 'invalid_model'
+  }
+
+  // Covered Model requested from a zero-data-retention org (400)
+  if (
+    error instanceof APIError &&
+    error.status === 400 &&
+    isDataRetentionRequiredError(error.message)
+  ) {
+    return 'data_retention_required'
   }
 
   // Credit/billing errors
