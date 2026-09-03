@@ -99,11 +99,12 @@ export function formatAutoFixFeedback(
   testResult: CommandResult | null,
   lintCommand: string,
   testCommand: string | null,
+  timeoutMs: number,
 ): string {
   const lines: string[] = ['<auto_fix_feedback>']
 
   if (lintResult.timedOut) {
-    lines.push(`Lint timed out after ${lintResult.timedOut}ms: ${lintCommand}`)
+    lines.push(`Lint timed out after ${timeoutMs}ms: ${lintCommand}`)
   } else if (!lintResult.success) {
     lines.push(`Lint failed (exit ${lintResult.exitCode}): ${lintCommand}`)
     if (lintResult.stdout) {
@@ -123,7 +124,7 @@ export function formatAutoFixFeedback(
 
   if (testCommand && testResult) {
     if (testResult.timedOut) {
-      lines.push(`Test timed out after ${testResult.timedOut}ms: ${testCommand}`)
+      lines.push(`Test timed out after ${timeoutMs}ms: ${testCommand}`)
     } else if (!testResult.success) {
       lines.push(`Test failed (exit ${testResult.exitCode}): ${testCommand}`)
       if (testResult.stdout) {

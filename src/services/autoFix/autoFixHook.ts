@@ -40,17 +40,17 @@ export async function runAutoFix(): Promise<string | null> {
 
     // If lint fails, return feedback immediately
     if (!lintResult.success) {
-      return formatAutoFixFeedback(lintResult, null, config.lint, null)
+      return formatAutoFixFeedback(lintResult, null, config.lint, null, config.timeout)
     }
 
     // If lint passes and test is configured, run test
     if (config.test) {
       const testResult = await runCommand(config.test, config.timeout)
-      return formatAutoFixFeedback(lintResult, testResult, config.lint, config.test)
+      return formatAutoFixFeedback(lintResult, testResult, config.lint, config.test, config.timeout)
     }
 
     // Lint passed with no test command
-    return formatAutoFixFeedback(lintResult, null, config.lint, null)
+    return formatAutoFixFeedback(lintResult, null, config.lint, null, config.timeout)
   }
 
   // Only test is configured (no lint)
@@ -61,6 +61,7 @@ export async function runAutoFix(): Promise<string | null> {
       testResult,
       '',
       config.test,
+      config.timeout,
     )
   }
 
