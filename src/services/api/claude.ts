@@ -1301,16 +1301,6 @@ async function* queryModel(
   const useGlobalCacheFeature = shouldUseGlobalCacheScope()
   const willDefer = (t: Tool) =>
     useToolSearch && (deferredToolNames.has(t.name) || shouldDeferLspTool(t))
-  // `cache_control.scope: "global"` on a system block is only valid when every
-  // preceding block is also globally scoped, and tool definitions render before
-  // `system`. We never emit a global cache marker on tool schemas, so the static
-  // system block can't be globally scoped whenever ANY tool actually renders
-  // (not just per-user MCP tools) — the API rejects it with a 400 ("scope: global
-  // on system[0] is not a true prefix when tools are present"). Gate on any
-  // rendering (non-defer_loading) tool; global system caching then applies only
-  // to genuinely tool-less requests, and everything else falls back to org scope.
-  const needsToolBasedCacheMarker =
-    useGlobalCacheFeature && filteredTools.some(t => !willDefer(t))
 
   // Ensure prompt_caching_scope beta header is present when global cache is enabled.
   if (
@@ -1319,13 +1309,6 @@ async function* queryModel(
   ) {
     betas.push(PROMPT_CACHING_SCOPE_BETA_HEADER)
   }
-
-  // Determine global cache strategy for logging
-  const globalCacheStrategy: GlobalCacheStrategy = useGlobalCacheFeature
-    ? needsToolBasedCacheMarker
-      ? 'none'
-      : 'system_prompt'
-    : 'none'
 
   // Build tool schemas, adding defer_loading for MCP tools when tool search is enabled
   // Note: We pass the full `tools` list (not filteredTools) to toolToAPISchema so that
@@ -1470,13 +1453,6 @@ async function* queryModel(
   // Prepend system prompt block for easy API identification
   logAPIPrefix(systemPrompt)
 
-  const enablePromptCaching =
-    options.enablePromptCaching ?? getPromptCachingEnabled(options.model)
-  const system = buildSystemPromptBlocks(systemPrompt, enablePromptCaching, {
-    skipGlobalCacheForSystemPrompt: needsToolBasedCacheMarker,
-    querySource: options.querySource,
-  })
-
   // Build minimal context for detailed tracing (when beta tracing is enabled)
   // Note: The actual new_context message extraction is done in sessionTracing.ts using
   // hash-based tracking per querySource (agent) from the messagesForAPI array
@@ -1492,6 +1468,22 @@ async function* queryModel(
     } as unknown as BetaToolUnion)
   }
   const allTools = [...toolSchemas, ...extraToolSchemas]
+  // `cache_control.scope: "global"` on a system block is only valid when every
+  // preceding rendered tool is also globally scoped. Decide from the final API
+  // schemas so server tools added above cannot bypass the guard.
+  const needsToolBasedCacheMarker =
+    useGlobalCacheFeature && hasRenderingToolSchemas(allTools)
+  const globalCacheStrategy: GlobalCacheStrategy = useGlobalCacheFeature
+    ? needsToolBasedCacheMarker
+      ? 'none'
+      : 'system_prompt'
+    : 'none'
+  const enablePromptCaching =
+    options.enablePromptCaching ?? getPromptCachingEnabled(options.model)
+  const system = buildSystemPromptBlocks(systemPrompt, enablePromptCaching, {
+    skipGlobalCacheForSystemPrompt: needsToolBasedCacheMarker,
+    querySource: options.querySource,
+  })
 
   const isFastMode =
     isFastModeEnabled() &&
@@ -3577,6 +3569,12 @@ export function buildSystemPromptBlocks(
         }),
     }
   })
+}
+
+export function hasRenderingToolSchemas(toolSchemas: BetaToolUnion[]): boolean {
+  return toolSchemas.some(
+    tool => !('defer_loading' in tool) || tool.defer_loading !== true,
+  )
 }
 
 type HaikuOptions = Omit<Options, 'model' | 'getToolPermissionContext'>
