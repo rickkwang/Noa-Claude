@@ -2,10 +2,12 @@ import { chmod, readFile, writeFile, mkdir } from 'fs/promises'
 import { readFileSync, writeFileSync, rmSync, existsSync } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
-import { saveGlobalConfig } from './config.js'
+import { getGlobalConfig, saveGlobalConfig } from './config.js'
 import { normalizeApiKeyForConfig } from './authPortable.js'
+import { withAuthTransitionLock } from './authTransitionLock.js'
 import { logForDebugging } from './debug.js'
 import { getClaudeConfigHomeDir, isBareMode } from './envUtils.js'
+import { isModelAlias } from './model/aliases.js'
 import {
   PROVIDER_CATALOGUE_ENV_KEYS,
   PROVIDER_CONTEXT_WINDOWS_ENV_KEY,
@@ -659,6 +661,73 @@ function logProviderSettingsPersistenceFailure(error: Error | null): void {
       { level: 'error' },
     )
   }
+}
+
+/**
+ * Point this session — and the next launch — back at the Anthropic account,
+ * deactivating whatever provider profile was routing it.
+ *
+ * All-or-nothing: on failure the profile, its env and the persisted model are
+ * put back, because a half-applied transition leaves the session pointed at an
+ * endpoint whose credential has already been cleared.
+ *
+ * The caller must hold the auth transition lock — this runs inside the one
+ * installOAuthTokens holds, so taking it here would deadlock on the
+ * non-reentrant lockfile. Use switchToAnthropicAccount() from anywhere else.
+ */
+export async function activateAnthropicRouting(): Promise<ProviderProfile | null> {
+  const persistedModel = getSettingsForSource('userSettings')?.model
+  let deactivatedProfile: ProviderProfile | null = null
+  await withDeactivatedProviderProfiles(
+    async deactivated => {
+      deactivatedProfile = deactivated
+      const normalizedPersistedModel = persistedModel?.replace(/\[1m\]$/i, '')
+      const modelBelongsToThirdParty =
+        deactivated !== null &&
+        persistedModel !== undefined &&
+        !isModelAlias(persistedModel) &&
+        !normalizedPersistedModel?.startsWith('claude-')
+      await applyActiveProviderProfileEnv({
+        clearProviderStateWhenInactive: true,
+        modelToClearWhenInactive: modelBelongsToThirdParty
+          ? persistedModel
+          : undefined,
+      })
+      // Without this the launcher re-applies the product-default base URL and
+      // model on the next launch (launcher-config.js), so a switch that looked
+      // like it worked would silently route to the product default again.
+      saveGlobalConfig(current => ({
+        ...current,
+        launcherProvider: 'anthropic',
+      }))
+      if (getGlobalConfig().launcherProvider !== 'anthropic') {
+        throw new Error('Failed to persist Anthropic launcher routing')
+      }
+    },
+    async deactivated => {
+      if (deactivated) {
+        await restoreActiveProviderProfileAfterFailedTransition()
+      }
+      if (
+        persistedModel !== undefined &&
+        getSettingsForSource('userSettings')?.model === undefined
+      ) {
+        const { error } = updateSettingsForSource('userSettings', {
+          model: persistedModel,
+        })
+        if (error) throw error
+      }
+    },
+  )
+  return deactivatedProfile
+}
+
+/**
+ * activateAnthropicRouting() for callers that don't already hold the auth
+ * transition lock — i.e. everyone but installOAuthTokens.
+ */
+export async function switchToAnthropicAccount(): Promise<ProviderProfile | null> {
+  return withAuthTransitionLock(activateAnthropicRouting)
 }
 
 export async function restoreActiveProviderProfileAfterFailedTransition(): Promise<void> {

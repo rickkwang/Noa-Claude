@@ -57,17 +57,29 @@ describe('/provider command', () => {
     )
   })
 
-  test('offers a way back to the Anthropic login', async () => {
+  test('offers the stored Anthropic account as a first-class row', async () => {
     const source = await readSource()
-    // Without this row the picker only moves between third-party profiles and
-    // /login is the sole way to deactivate one.
+    // A stored account is the common case, and it is what makes an immediate
+    // switch safe: without this row /login was the only way back to it.
     expect(source).toMatch(
-      /activeProfile\s*\?\s*\[\{ label: 'None \(clear the active provider\)', value: NO_PROVIDER_VALUE \}\]/,
+      /oauthAccount\s*\?\s*\[\s*\{\s*label: `Anthropic \(\$\{oauthAccount\.emailAddress\}\)/,
     )
-    // Deactivating clears persisted routing for the next launch.
+    // Immediate, not deferred: switchToAnthropicAccount clears the profile env
+    // from this process too, and announce() runs the post-switch cascade.
     expect(source).toMatch(
-      /deactivateProviderProfilesForNextLaunch\(\)/,
+      /switchToAnthropicAccount\(\)\s*\.then\(\(\) => \{[\s\S]*?announce\(/,
     )
+  })
+
+  test('keeps the deferred row for sessions with no account to fall back to', async () => {
+    const source = await readSource()
+    // --bare and never-logged-in installs have no stored credential, so
+    // clearing the profile's env in-process would strand the session. Those
+    // keep the next-launch-only path.
+    expect(source).toMatch(
+      /!oauthAccount && activeProfile\s*\?\s*\[\{ label: 'None \(clear the active provider\)', value: NO_PROVIDER_VALUE \}\]/,
+    )
+    expect(source).toMatch(/deactivateProviderProfilesForNextLaunch\(\)/)
     expect(source).toContain('takes effect next session')
   })
 })

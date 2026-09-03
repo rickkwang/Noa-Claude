@@ -31,7 +31,7 @@ import {
   saveOAuthTokensIfNeeded,
   validateForceLoginOrg,
 } from '../../utils/auth.js'
-import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
+import { saveGlobalConfig } from '../../utils/config.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { isRunningOnHomespace } from '../../utils/envUtils.js'
 import { errorMessage } from '../../utils/errors.js'
@@ -40,17 +40,8 @@ import {
   getAPIProvider,
   isDirectFirstParty,
 } from '../../utils/model/providers.js'
-import { isModelAlias } from '../../utils/model/aliases.js'
-import {
-  getInitialSettings,
-  getSettingsForSource,
-  updateSettingsForSource,
-} from '../../utils/settings/settings.js'
-import {
-  applyActiveProviderProfileEnv,
-  restoreActiveProviderProfileAfterFailedTransition,
-  withDeactivatedProviderProfiles,
-} from '../../utils/providerProfile.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
+import { activateAnthropicRouting } from '../../utils/providerProfile.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import { withAuthTransitionLock } from '../../utils/authTransitionLock.js'
 import {
@@ -135,44 +126,8 @@ async function installOAuthTokensUnlocked(tokens: OAuthTokens): Promise<void> {
   }
 
   if (credentialsPersisted) {
-    const persistedModel = getSettingsForSource('userSettings')?.model
-    await withDeactivatedProviderProfiles(
-      async deactivatedProfile => {
-        const normalizedPersistedModel = persistedModel?.replace(/\[1m\]$/i, '')
-        const modelBelongsToThirdParty =
-          deactivatedProfile !== null &&
-          persistedModel !== undefined &&
-          !isModelAlias(persistedModel) &&
-          !normalizedPersistedModel?.startsWith('claude-')
-        await applyActiveProviderProfileEnv({
-          clearProviderStateWhenInactive: true,
-          modelToClearWhenInactive: modelBelongsToThirdParty
-            ? persistedModel
-            : undefined,
-        })
-        saveGlobalConfig(current => ({
-          ...current,
-          launcherProvider: 'anthropic',
-        }))
-        if (getGlobalConfig().launcherProvider !== 'anthropic') {
-          throw new Error('Failed to persist Anthropic launcher routing')
-        }
-      },
-      async deactivatedProfile => {
-        if (deactivatedProfile) {
-          await restoreActiveProviderProfileAfterFailedTransition()
-        }
-        if (
-          persistedModel !== undefined &&
-          getSettingsForSource('userSettings')?.model === undefined
-        ) {
-          const { error } = updateSettingsForSource('userSettings', {
-            model: persistedModel,
-          })
-          if (error) throw error
-        }
-      },
-    )
+    // Unlocked variant: withAuthTransitionLock is already held above.
+    await activateAnthropicRouting()
   }
 
   await clearAuthRelatedCaches()

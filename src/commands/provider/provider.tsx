@@ -5,7 +5,7 @@ import { Select } from '../../components/CustomSelect/select.js';
 import { Dialog } from '../../components/design-system/Dialog.js';
 import { Text } from '../../ink.js';
 import type { LocalJSXCommandCall, LocalJSXCommandContext } from '../../types/command.js';
-import { isUsing3PServices } from '../../utils/auth.js';
+import { getOauthAccountInfo, isUsing3PServices } from '../../utils/auth.js';
 import { isBareMode } from '../../utils/envUtils.js';
 import {
   applyActiveProviderProfileEnv,
@@ -14,6 +14,7 @@ import {
   PROVIDER_TYPE_LABELS,
   refreshActiveProviderModels,
   setActiveProviderProfile,
+  switchToAnthropicAccount,
   type ProviderProfile,
 } from '../../utils/providerProfile.js';
 import { onProviderSwitch } from '../../utils/providerSwitch.js';
@@ -24,6 +25,13 @@ import { onProviderSwitch } from '../../utils/providerSwitch.js';
 // back to is whatever env/settings/launcher supply, which for an account that
 // never logged in is the launcher's product default, not Anthropic.
 const NO_PROVIDER_VALUE = '__none__';
+
+// Sentinel row for the stored Anthropic account, offered instead of the one
+// above once there is an account to go back to. It clears the profile the same
+// way, but takes effect immediately and repoints the launcher at Anthropic —
+// the credentials are already in secure storage, so unlike NO_PROVIDER_VALUE
+// this cannot leave the running session without a route.
+const ANTHROPIC_ACCOUNT_VALUE = '__anthropic__';
 
 type ProviderOption = {
   id: string;
@@ -89,6 +97,16 @@ function ProviderPicker({
         const message = err instanceof Error ? err.message : String(err);
         onDone(`Failed to switch provider: ${message}`, { display: 'system' });
       };
+
+      if (profileId === ANTHROPIC_ACCOUNT_VALUE) {
+        switchToAnthropicAccount()
+          .then(() => {
+            const email = getOauthAccountInfo()?.emailAddress;
+            announce(`Switched to Anthropic${email ? ` (${email})` : ''}`);
+          })
+          .catch(fail);
+        return;
+      }
 
       if (profileId === NO_PROVIDER_VALUE) {
         deactivateProviderProfilesForNextLaunch()
@@ -188,14 +206,30 @@ function ProviderPicker({
     );
   }
 
+  // undefined under --bare and for anyone who never logged in; those sessions
+  // keep the deferred NO_PROVIDER_VALUE row, because clearing a profile's env
+  // in-process with no stored Anthropic credential to fall back on would strand
+  // the session mid-conversation.
+  const oauthAccount = getOauthAccountInfo();
+
   const options = [
+    ...(oauthAccount
+      ? [
+          {
+            label: `Anthropic (${oauthAccount.emailAddress})${
+              activeProfile ? '' : ' [active]'
+            }`,
+            value: ANTHROPIC_ACCOUNT_VALUE,
+          },
+        ]
+      : []),
     ...profiles.map((profile) => ({
       label: `${profile.name} (${PROVIDER_TYPE_LABELS[profile.type]})${
         profile.id === activeProfile?.id ? ' [active]' : ''
       }`,
       value: profile.id,
     })),
-    ...(activeProfile
+    ...(!oauthAccount && activeProfile
       ? [{ label: 'None (clear the active provider)', value: NO_PROVIDER_VALUE }]
       : []),
   ];
@@ -205,7 +239,7 @@ function ProviderPicker({
       <Text>Select a provider to activate:</Text>
       <Select
         options={options}
-        defaultValue={activeProfile?.id}
+        defaultValue={activeProfile?.id ?? (oauthAccount ? ANTHROPIC_ACCOUNT_VALUE : undefined)}
         onChange={handleSelect}
         onCancel={handleCancel}
       />
