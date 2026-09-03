@@ -1,25 +1,21 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import {
+  buildPortedSubjects,
+  PORTED_DIGESTS,
+  PROVIDER_ENV_KEYS,
+} from './portedPromptRegistry.js'
+import { getActionCautionSection, getCompactHeadSection } from '../../constants/systemPromptCompact.js'
+import { getSimplePrompt as getBashPrompt } from '../../tools/BashTool/prompt.js'
+import { getWebSearchPrompt } from '../../tools/WebSearchTool/prompt.js'
+import { getAskUserQuestionPrompt } from '../../tools/AskUserQuestionTool/prompt.js'
 
 // Bash's git block resolves commit attribution, which walks through model
 // defaults into auth. Tests here are self-contained (no preload), so seed a
 // key first.
 process.env.ANTHROPIC_API_KEY ??= 'sk-ant-test'
 
-// The lean/verbose gate judges provider identity from env
-// (isUntrustedModelIdentity): an ambient ANTHROPIC_BASE_URL or
-// CLAUDE_CODE_USE_* from the dev shell flips every assertion here to the
-// verbose branch. Scrub before each test, restore after.
-const PROVIDER_ENV_KEYS = [
-  'ANTHROPIC_BASE_URL',
-  'CLAUDE_CODE_USE_BEDROCK',
-  'CLAUDE_CODE_USE_VERTEX',
-  'CLAUDE_CODE_USE_FOUNDRY',
-  'CLAUDE_CODE_USE_OPENAI',
-  'NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT',
-  'CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT',
-  'NOA_CLAUDE_THIRD_PARTY_PROMPT_POLICY',
-  'NOA_CLAUDE_WRITE_REQUIRE_READ',
-] as const
+// PROVIDER_ENV_KEYS and the subject/digest tables live in the registry so that
+// `verify:ports` checks exactly what this file pins — see the note there.
 const originalProviderEnv = Object.fromEntries(
   PROVIDER_ENV_KEYS.map(k => [k, process.env[k]]),
 )
@@ -34,37 +30,6 @@ afterEach(() => {
   }
 })
 
-import {
-  ACT_DONT_REDERIVE_SECTION,
-  AUTONOMY_SECTION,
-  CONTEXT_MANAGEMENT_SECTION,
-  CORRECTIONS_SECTION,
-  DELIVERING_WORK_SECTION,
-  PRONOUNS_SECTION,
-} from '../../constants/systemPromptCoreSections.js'
-import { getDescription as getGlobDescription } from '../../tools/GlobTool/prompt.js'
-import { getDescription as getGrepDescription } from '../../tools/GrepTool/prompt.js'
-import { getEditToolDescription } from '../../tools/FileEditTool/prompt.js'
-import { getWriteToolDescription } from '../../tools/FileWriteTool/prompt.js'
-import { getTodoWritePrompt } from '../../tools/TodoWriteTool/prompt.js'
-import { LEAN_DESCRIPTION as WEB_FETCH_LEAN_DESCRIPTION } from '../../tools/WebFetchTool/prompt.js'
-import { getSimplePrompt as getBashPrompt } from '../../tools/BashTool/prompt.js'
-import { getWebSearchPrompt } from '../../tools/WebSearchTool/prompt.js'
-import {
-  getBackgroundUsageNote as getPowerShellBackgroundNote,
-  getEditionSection as getPowerShellEditionSection,
-  getSleepGuidance as getPowerShellSleepGuidance,
-  renderPrompt as renderPowerShellPrompt,
-} from '../../tools/PowerShellTool/prompt.js'
-import { getAskUserQuestionPrompt } from '../../tools/AskUserQuestionTool/prompt.js'
-import {
-  getActionCautionSection,
-  getAntiVerbositySection,
-  getCompactHeadSection,
-  MATCH_SURROUNDING_CODE_SECTION,
-  TURN_UPDATES_SECTION,
-} from '../../constants/systemPromptCompact.js'
-
 const LEAN_MODEL = 'claude-opus-5'
 
 /**
@@ -74,128 +39,21 @@ const LEAN_MODEL = 'claude-opus-5'
  */
 const UNBUNDLED_MODEL = 'claude-fable-5'
 
-/**
- * These strings are verbatim ports from the upstream Claude Code binary
- * (@anthropic-ai/claude-code 2.1.220 unless noted), not text authored here.
- * Every line was matched byte-for-byte against that binary; the handful of
- * intentional deviations are commented at their definition.
- *
- * AUTONOMY_SECTION was matched against 2.1.226 instead — it postdates the
- * 2.1.220 sweep. Its prompt text is identical in 2.1.223: the whole assembly
- * module was diffed line-by-line between the two builds and every difference
- * was minifier renaming, not prompt wording.
- *
- * Reword one and the model silently gets prompt text nobody validated. The
- * digests below exist to make that impossible to do by accident: a failure
- * here is not a stale-snapshot annoyance, it means someone edited a ported
- * string. The fix is to re-verify the new wording against upstream and only
- * then update the digest — never the other way around.
- *
- * "Byte-for-byte" includes whitespace. AUTONOMY_SECTION and the anti_verbosity
- * fable branch both shipped once with their blank-line paragraph breaks
- * collapsed to single newlines, and both digests were computed from the
- * collapsed text — so the pins certified the deviation instead of catching it.
- * Diff whitespace against the binary, not just words, and pin the digest to
- * what upstream ships rather than to what is already in the file.
- *
- * `bun run verify:ports` does that diff against a real binary when one is on
- * the machine. Run it when adding a port or bumping the reference version; a
- * digest alone cannot tell a faithful transcription from a confident wrong one.
- */
-const PORTED_DIGESTS: Record<string, string> = {
-  PRONOUNS_SECTION: '3fcd2b200896a716',
-  ACT_DONT_REDERIVE_SECTION: '4e4e48fb23ceb764',
-  CONTEXT_MANAGEMENT_SECTION: '9856a95edb9c2bdb',
-  MATCH_SURROUNDING_CODE_SECTION: 'ee43af37398581e9',
-  'anti_verbosity fable branch': '1ffd574f62004f0b',
-  // The branch checked ahead of the fable one; Fable 5.1 / Mythos 5.1 get this
-  // instead of the long section.
-  TURN_UPDATES_SECTION: 'f73794d3e72b5616',
-  DELIVERING_WORK_SECTION: '7e908e68a04f6843',
-  CORRECTIONS_SECTION: '4593459b100aad5e',
-  AUTONOMY_SECTION: '07f554da420e0445',
-  'WebFetch.LEAN_DESCRIPTION': '7db6b3cae057d3c9',
-  'TodoWrite lean': '863d3a2d90b3c43e',
-  'Glob lean': '33fb1e4be95ad7cf',
-  'Grep lean': 'dde2d0b4701de45b',
-  'Write lean': 'c5d31bd0010938b8',
-  'Edit lean': '2eaaa8e08e0b58bc',
-  // 2.1.228 drops the pre-read line for models allowed to overwrite an unread
-  // file. Both variants are pinned: the skip is a second ported branch, not a
-  // replacement for the one above.
-  'Write lean (pre-read skipped)': 'db96dfd3a76a57ab',
-  'Edit lean (pre-read skipped)': '5f160e3e9fb9ef6e',
-  // Upstream ships one tier for PowerShell — there is no lean branch to pin, so
-  // the single description is the port. Refreshed against 2.1.258; the earlier
-  // transcription predated it and had drifted (a wrong 5.1 encoding default, a
-  // missing Unix-equivalents section, a locally added sleep duration).
-  'PowerShell edition (desktop)': 'b84252846b69ab41',
-  'PowerShell edition (core)': 'b911baef6ada701e',
-  'PowerShell edition (unknown)': '029e116530be9302',
-  'PowerShell description': '770183cff1c206af',
-}
-
-function withPreReadRequired<T>(render: () => T): T {
-  process.env.NOA_CLAUDE_WRITE_REQUIRE_READ = '1'
-  try {
-    return render()
-  } finally {
-    delete process.env.NOA_CLAUDE_WRITE_REQUIRE_READ
-  }
-}
-
 function digest(text: string): string {
   return new Bun.CryptoHasher('sha256').update(text).digest('hex').slice(0, 16)
 }
 
 describe('ported lean prompt text is not edited by accident', () => {
-  // Built lazily inside each test: the tool descriptions resolve through the
-  // lean/verbose gate, and describe callbacks run before beforeEach, so a
-  // module-scope construction would judge provider identity on ambient env.
-  const buildSubjects = (): Record<string, string> => ({
-    PRONOUNS_SECTION,
-    ACT_DONT_REDERIVE_SECTION,
-    CONTEXT_MANAGEMENT_SECTION,
-    MATCH_SURROUNDING_CODE_SECTION,
-    'anti_verbosity fable branch': getAntiVerbositySection(
-      UNBUNDLED_MODEL,
-    ) as string,
-    TURN_UPDATES_SECTION,
-    DELIVERING_WORK_SECTION,
-    CORRECTIONS_SECTION,
-    AUTONOMY_SECTION,
-    'WebFetch.LEAN_DESCRIPTION': WEB_FETCH_LEAN_DESCRIPTION,
-    'TodoWrite lean': getTodoWritePrompt(LEAN_MODEL),
-    'Glob lean': getGlobDescription(LEAN_MODEL),
-    'Grep lean': getGrepDescription(LEAN_MODEL),
-    'Write lean': withPreReadRequired(() =>
-      getWriteToolDescription(LEAN_MODEL),
-    ),
-    'Edit lean': withPreReadRequired(() => getEditToolDescription(LEAN_MODEL)),
-    'Write lean (pre-read skipped)': getWriteToolDescription(LEAN_MODEL),
-    'Edit lean (pre-read skipped)': getEditToolDescription(LEAN_MODEL),
-    'PowerShell edition (desktop)': getPowerShellEditionSection('desktop'),
-    'PowerShell edition (core)': getPowerShellEditionSection('core'),
-    'PowerShell edition (unknown)': getPowerShellEditionSection(null),
-    // Rendered at the unknown edition: getPrompt()'s probe returns null off
-    // Windows, and the edition text is pinned separately above.
-    'PowerShell description': renderPowerShellPrompt(
-      null,
-      getPowerShellBackgroundNote(),
-      getPowerShellSleepGuidance(),
-    ),
-  })
-
   for (const [name, expected] of Object.entries(PORTED_DIGESTS)) {
     test(`${name} matches its upstream port`, () => {
-      const subjects = buildSubjects()
+      const subjects = buildPortedSubjects()
       expect(subjects[name]).toBeDefined()
       expect(digest(subjects[name] as string)).toBe(expected)
     })
   }
 
   test('every pinned digest has a subject and vice versa', () => {
-    expect(Object.keys(buildSubjects()).sort()).toEqual(
+    expect(Object.keys(buildPortedSubjects()).sort()).toEqual(
       Object.keys(PORTED_DIGESTS).sort(),
     )
   })

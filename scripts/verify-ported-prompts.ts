@@ -24,112 +24,52 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 process.env.ANTHROPIC_API_KEY ??= 'sk-ant-test'
-// Same scrub the integrity test does: an ambient ANTHROPIC_BASE_URL or
-// CLAUDE_CODE_USE_* makes isUntrustedModelIdentity() true, which routes every
-// gate below to the verbose branch and would compare the wrong strings.
-for (const key of [
-  'ANTHROPIC_BASE_URL',
-  'CLAUDE_CODE_USE_BEDROCK',
-  'CLAUDE_CODE_USE_VERTEX',
-  'CLAUDE_CODE_USE_FOUNDRY',
-  'CLAUDE_CODE_USE_OPENAI',
-  'NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT',
-  'CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT',
-  'NOA_CLAUDE_THIRD_PARTY_PROMPT_POLICY',
-  'NOA_CLAUDE_WRITE_REQUIRE_READ',
-]) {
-  delete process.env[key]
-}
 
-const {
-  ACT_DONT_REDERIVE_SECTION,
-  AUTONOMY_SECTION,
-  CONTEXT_MANAGEMENT_SECTION,
-  CORRECTIONS_SECTION,
-  DELIVERING_WORK_SECTION,
-  PRONOUNS_SECTION,
-} = await import('../src/constants/systemPromptCoreSections.js')
-const { getAntiVerbositySection, MATCH_SURROUNDING_CODE_SECTION } =
-  await import('../src/constants/systemPromptCompact.js')
-const { getDescription: getGlobDescription } = await import(
-  '../src/tools/GlobTool/prompt.js'
+// Same scrub the integrity test does, from the same list: an ambient
+// ANTHROPIC_BASE_URL or CLAUDE_CODE_USE_* makes isUntrustedModelIdentity()
+// true, which routes every gate to the verbose branch and would compare the
+// wrong strings. Imported before anything that reads a gate.
+const { PROVIDER_ENV_KEYS } = await import(
+  '../src/test/constants/portedPromptRegistry.js'
 )
-const { getDescription: getGrepDescription } = await import(
-  '../src/tools/GrepTool/prompt.js'
-)
-const { getEditToolDescription } = await import(
-  '../src/tools/FileEditTool/prompt.js'
-)
-const { getWriteToolDescription } = await import(
-  '../src/tools/FileWriteTool/prompt.js'
-)
-const { getTodoWritePrompt } = await import(
-  '../src/tools/TodoWriteTool/prompt.js'
-)
-const { LEAN_DESCRIPTION: WEB_FETCH_LEAN_DESCRIPTION } = await import(
-  '../src/tools/WebFetchTool/prompt.js'
-)
+for (const key of PROVIDER_ENV_KEYS) delete process.env[key]
+
 const { OUTPUT_STYLE_CONFIG } = await import(
   '../src/constants/outputStyles.js'
 )
-const {
-  getBackgroundUsageNote: getPowerShellBackgroundNote,
-  getEditionSection: getPowerShellEditionSection,
-  getSleepGuidance: getPowerShellSleepGuidance,
-  renderPrompt: renderPowerShellPrompt,
-} = await import('../src/tools/PowerShellTool/prompt.js')
+const { buildPortedSubjects, PORTED_DIGESTS } = await import(
+  '../src/test/constants/portedPromptRegistry.js'
+)
 
-const LEAN_MODEL = 'claude-opus-5'
-const UNBUNDLED_MODEL = 'claude-fable-5'
-
-
-function withPreReadRequired(render: () => string): string {
-  process.env.NOA_CLAUDE_WRITE_REQUIRE_READ = '1'
-  try {
-    return render()
-  } finally {
-    delete process.env.NOA_CLAUDE_WRITE_REQUIRE_READ
-  }
-}
-
-/** Keep in step with PORTED_DIGESTS in leanPromptPortIntegrity.test.ts. */
+/**
+ * Everything the integrity test pins, plus the two built-in output styles.
+ *
+ * The first group comes from the shared registry rather than a second copy of
+ * the list: the two used to be maintained in parallel and drifted, so a port
+ * could be digest-pinned here and never byte-verified — see the note in
+ * portedPromptRegistry.ts. The output styles are pinned in outputStyles.test.ts
+ * instead (whole sha256, its own describe blocks), so they are named here.
+ */
 const SUBJECTS: Record<string, string> = {
-  PRONOUNS_SECTION,
-  ACT_DONT_REDERIVE_SECTION,
-  CONTEXT_MANAGEMENT_SECTION,
-  MATCH_SURROUNDING_CODE_SECTION,
-  'anti_verbosity fable branch': getAntiVerbositySection(
-    UNBUNDLED_MODEL,
-  ) as string,
-  DELIVERING_WORK_SECTION,
-  CORRECTIONS_SECTION,
-  AUTONOMY_SECTION,
-  'WebFetch.LEAN_DESCRIPTION': WEB_FETCH_LEAN_DESCRIPTION,
-  // Built-in output styles. Upstream interpolates the rules body into the head
-  // (`${NAT}` / `${$AT}`), so these land as "assembled" rather than one literal.
+  ...buildPortedSubjects(),
+  // Upstream interpolates the rules body into the head (`${NAT}` / `${$AT}`),
+  // so these land as "assembled" rather than one literal.
   'Proactive output style': OUTPUT_STYLE_CONFIG.Proactive!.prompt,
   'Proactive turnReminder': OUTPUT_STYLE_CONFIG.Proactive!.turnReminder!,
   'Concise output style': OUTPUT_STYLE_CONFIG.Concise!.prompt,
   'Concise turnReminder': OUTPUT_STYLE_CONFIG.Concise!.turnReminder!,
-  'TodoWrite lean': getTodoWritePrompt(LEAN_MODEL),
-  'Glob lean': getGlobDescription(LEAN_MODEL),
-  'Grep lean': getGrepDescription(LEAN_MODEL),
-  'Write lean': withPreReadRequired(() => getWriteToolDescription(LEAN_MODEL)),
-  'Edit lean': withPreReadRequired(() => getEditToolDescription(LEAN_MODEL)),
-  'Write lean (pre-read skipped)': getWriteToolDescription(LEAN_MODEL),
-  'Edit lean (pre-read skipped)': getEditToolDescription(LEAN_MODEL),
-  // Upstream ships one tier for PowerShell — no lean/verbose split — so the
-  // single description is the port. The three edition branches sit behind an
-  // async probe that returns null off Windows, so each is rendered directly
-  // rather than through getPrompt(). The body is checked at the `null` edition;
-  // the edition text itself is the only part that varies.
-  'PowerShell edition (desktop)': getPowerShellEditionSection('desktop'),
-  'PowerShell edition (core)': getPowerShellEditionSection('core'),
-  'PowerShell description': renderPowerShellPrompt(
-    null,
-    getPowerShellBackgroundNote(),
-    getPowerShellSleepGuidance(),
-  ),
+}
+
+// A port that is digest-pinned but not verified here is the exact gap that let
+// six transcription errors through. The shared registry makes it structurally
+// impossible; this asserts it rather than trusting the refactor to stay done.
+const unverified = Object.keys(PORTED_DIGESTS).filter(name => !(name in SUBJECTS))
+if (unverified.length > 0) {
+  console.error(
+    `Pinned but not verified here: ${unverified.join(', ')}\n` +
+      'Every entry in PORTED_DIGESTS must render through SUBJECTS.',
+  )
+  process.exit(1)
 }
 
 function findBinary(): string | null {
