@@ -87,9 +87,11 @@ function getDesignWorkflowItems(): Array<string | string[]> {
   ]
 }
 
+export const BOUNDED_TARGET_DISCOVERY_SECTION =
+  `Treat concise instructions with an identifiable target as software-engineering work in the current directory. For example, "change methodName to snake case" means find and edit it, not merely reply "method_name". A target is identifiable only when the user names or uniquely describes it; do not infer one from the current directory. Otherwise ask one concise question in your response and end the turn without calling tools. Defer to the user on whether a task is too large.`
+
 function getExecutionGuardItems(): Array<string | string[]> {
   return [
-    `Treat unclear instructions as software-engineering work in the current directory. For example, "change methodName to snake case" means find and edit it, not merely reply "method_name". Defer to the user on whether a task is too large.`,
     `Call out misconceptions and relevant adjacent bugs; apply judgment, not blind compliance.`,
     `In general, do not propose changes to code you haven't read. Read and understand the relevant files first.`,
     `If an approach fails, diagnose why before switching tactics: read the error, check assumptions, and try a focused fix. Never retry blindly. Use ${ASK_USER_QUESTION_TOOL_NAME} only when investigation cannot unblock you.`,

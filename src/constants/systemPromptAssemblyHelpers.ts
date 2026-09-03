@@ -30,6 +30,7 @@ import {
 import {
   ACT_DONT_REDERIVE_SECTION,
   AUTONOMY_SECTION,
+  BOUNDED_TARGET_DISCOVERY_SECTION,
   CONTEXT_MANAGEMENT_SECTION,
   CORRECTIONS_SECTION,
   DELIVERING_WORK_SECTION,
@@ -117,6 +118,9 @@ export function buildSimpleModeSystemPrompt(): string[] {
   return [
     `${SIMPLE_MODE_IDENTITY}\n\nCWD: ${getCwd()}\nDate: ${getSessionStartDate()}`,
     getCoreExecutionGuardsSection(),
+    // Simple mode never assembles the dynamic sections, so the target-discovery
+    // rule (which lives there now) has to be repeated here explicitly.
+    BOUNDED_TARGET_DISCOVERY_SECTION,
   ]
 }
 
@@ -206,6 +210,9 @@ export function buildDynamicSystemPromptSections(params: {
     systemPromptSection(
       `output_style:${outputStyleConfig?.name ?? DEFAULT_OUTPUT_STYLE_NAME}`,
       () => getOutputStyleSection(outputStyleConfig),
+    ),
+    systemPromptSection('target_discovery', () =>
+      BOUNDED_TARGET_DISCOVERY_SECTION,
     ),
     // When delta enabled, instructions are announced via persisted
     // mcp_instructions_delta attachments (attachments.ts) instead of this

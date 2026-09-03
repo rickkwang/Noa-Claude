@@ -3,6 +3,15 @@ import {
   computeMainSessionEnvInfo,
   SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
 } from '../../constants/prompts.js'
+import {
+  buildDynamicSystemPromptSections,
+  buildSimpleModeSystemPrompt,
+} from '../../constants/systemPromptAssemblyHelpers.js'
+import { BOUNDED_TARGET_DISCOVERY_SECTION } from '../../constants/systemPromptCoreSections.js'
+import {
+  clearSystemPromptSectionCache,
+  resolveSystemPromptSections,
+} from '../../constants/systemPromptSections.js'
 import { getCLISyspromptPrefix } from '../../constants/system.js'
 import { buildMemoryLines } from '../../memdir/memdir.js'
 import { buildCombinedMemoryPrompt } from '../../memdir/teamMemPrompts.js'
@@ -87,6 +96,45 @@ describe('CLI sysprompt prefix splitting', () => {
 })
 
 describe('prompt behavior contracts', () => {
+  test('target clarification follows output style guidance', async () => {
+    clearSystemPromptSectionCache()
+    const sections = await resolveSystemPromptSections(
+      buildDynamicSystemPromptSections({
+        enabledTools: new Set(),
+        skillToolCommands: [],
+        model: 'claude-opus-5',
+        outputStyleConfig: {
+          name: 'Test Proactive',
+          prompt: 'When in doubt, start coding.',
+        },
+      }),
+    )
+    const outputStyleIndex = sections.findIndex(section =>
+      section?.startsWith('# Output Style:'),
+    )
+    const targetDiscoveryIndex = sections.indexOf(
+      BOUNDED_TARGET_DISCOVERY_SECTION,
+    )
+
+    expect(outputStyleIndex).toBeGreaterThanOrEqual(0)
+    expect(targetDiscoveryIndex).toBeGreaterThan(outputStyleIndex)
+    expect(BOUNDED_TARGET_DISCOVERY_SECTION).toContain(
+      'do not infer one from the current directory',
+    )
+    expect(BOUNDED_TARGET_DISCOVERY_SECTION).toContain(
+      'end the turn without calling tools',
+    )
+  })
+
+  test('simple mode prompt keeps the target-discovery rule', () => {
+    // CLAUDE_CODE_SIMPLE / --bare returns early with only the simple-mode
+    // sections, so the rule must appear there too, not just in the dynamic
+    // sections of the main head.
+    expect(buildSimpleModeSystemPrompt()).toContain(
+      BOUNDED_TARGET_DISCOVERY_SECTION,
+    )
+  })
+
   test('plan mode is reserved for material ambiguity instead of routine implementation', () => {
     const prompt = getEnterPlanModeToolPrompt()
 
