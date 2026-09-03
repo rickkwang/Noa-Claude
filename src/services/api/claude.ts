@@ -1762,6 +1762,15 @@ async function* queryModel(
     // Set it explicitly rather than relying on a default — the defaults differ
     // by surface (unset + no header records the mismatch server-side only;
     // the header alone silently switches to drop_block).
+    //
+    // One path deliberately does rely on that header-alone default: turning
+    // thinking off on a Fable model leaves `thinking` unset entirely (the
+    // family's thinking cannot be disabled, so modelThinkingCannotBeDisabled
+    // says omit rather than send {type:'disabled'}), and block_binding is a
+    // field *inside* thinking with nowhere to live. The header still ships, so
+    // the request still gets drop_block. Reconstructing a thinking param just
+    // to carry the field would mean editing the adaptive-vs-budget selection
+    // above, which is change-controlled, for no behavioural difference.
     if (
       thinking &&
       thinking.type !== 'disabled' &&
