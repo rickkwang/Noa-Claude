@@ -1961,7 +1961,11 @@ export async function getMatchingHooks(
       { level: 'verbose' },
     )
     return filteredHooks
-  } catch {
+  } catch (error) {
+    // Returning [] disables every hook for this event, so it must not be
+    // silent: a bad matcher pattern would otherwise look like "no hooks
+    // configured".
+    logError(error)
     return []
   }
 }
