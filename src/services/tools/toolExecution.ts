@@ -1054,6 +1054,16 @@ async function checkPermissionsAndCallTool(
     if (shouldPreventContinuation && !errorMessage) {
       errorMessage = `Execution stopped by PreToolUse hook${stopReason ? `: ${stopReason}` : ''}`
     }
+    // An 'ask' reaching this point means nobody could answer the prompt
+    // (non-interactive/headless session) — interactive prompts resolve to
+    // allow/deny upstream. Say so explicitly, or the model burns turns
+    // retrying variations of a command that can never be approved.
+    if (permissionDecision.behavior === 'ask') {
+      errorMessage =
+        `${errorMessage ?? `Permission to use ${tool.name} requires approval`}. ` +
+        `This session is non-interactive, so approval cannot be granted — do not retry variations of this command. ` +
+        `Proceed without it, or report to the user what you were trying to do and why it needs approval.`
+    }
 
     // Build top-level content: tool_result (text-only for is_error compatibility) + images alongside
     const messageContent: ContentBlockParam[] = [
