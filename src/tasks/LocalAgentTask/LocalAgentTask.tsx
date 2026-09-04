@@ -322,6 +322,7 @@ export function killAsyncAgent(taskId: string, setAppState: SetAppState): void {
       selectedAgent: undefined
     };
   });
+  clearProgressThrottle(taskId);
   if (killed) {
     void evictTaskOutput(taskId);
   }
@@ -356,12 +357,37 @@ export function markAgentsNotified(taskId: string, setAppState: SetAppState): vo
   });
 }
 
+// Leading-edge throttle for updateAgentProgress, keyed by taskId.
+// setAppState notifies every store subscriber unconditionally (state/store.ts),
+// so an unthrottled per-message progress tick costs a full selector sweep. With
+// up to 20 background agents streaming at once that sweep runs hundreds of
+// times a second for cosmetic counters.
+//
+// Dropping ticks is safe because getProgressUpdate returns a full cumulative
+// snapshot, not a delta — the next surviving tick carries the complete state.
+// The one thing that would leak through is the final tick before completion,
+// so every panel that renders a terminal task reads task.result before
+// task.progress (CoordinatorAgentStatus, AsyncAgentDetailDialog). Keep that
+// ordering if you add another consumer.
+const PROGRESS_THROTTLE_MS = 100;
+const lastProgressUpdateAt = new Map<string, number>();
+
+function clearProgressThrottle(taskId: string): void {
+  lastProgressUpdateAt.delete(taskId);
+}
+
 /**
  * Update progress for an agent task.
  * Preserves the existing summary field so that background summarization
  * results are not clobbered by progress updates from assistant messages.
  */
 export function updateAgentProgress(taskId: string, progress: AgentProgress, setAppState: SetAppState): void {
+  const now = Date.now();
+  const last = lastProgressUpdateAt.get(taskId);
+  if (last !== undefined && now - last < PROGRESS_THROTTLE_MS) {
+    return;
+  }
+  lastProgressUpdateAt.set(taskId, now);
   updateTaskState<LocalAgentTaskState>(taskId, setAppState, task => {
     if (task.status !== 'running') {
       return task;
@@ -452,6 +478,7 @@ export function completeAgentTask(result: AgentToolResult, setAppState: SetAppSt
       selectedAgent: undefined
     };
   });
+  clearProgressThrottle(taskId);
   void evictTaskOutput(taskId);
   // Note: Notification is sent by AgentTool via enqueueAgentNotification
 }
@@ -476,6 +503,7 @@ export function failAgentTask(taskId: string, error: string, setAppState: SetApp
       selectedAgent: undefined
     };
   });
+  clearProgressThrottle(taskId);
   void evictTaskOutput(taskId);
   // Note: Notification is sent by AgentTool via enqueueAgentNotification
 }
@@ -694,6 +722,7 @@ export function backgroundAgentTask(taskId: string, getAppState: () => AppState,
 export function unregisterAgentForeground(taskId: string, setAppState: SetAppState): void {
   // Clean up the background signal resolver
   backgroundSignalResolvers.delete(taskId);
+  clearProgressThrottle(taskId);
   let cleanupFn: (() => void) | undefined;
   setAppState(prev => {
     const task = prev.tasks[taskId];

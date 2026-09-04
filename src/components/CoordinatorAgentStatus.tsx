@@ -172,7 +172,11 @@ function AgentLine(t0) {
     t1 = $[1];
   }
   const elapsed = t1;
-  const tokenCount = task.progress?.tokenCount;
+  // result first, progress second — same order as AsyncAgentDetailDialog. The
+  // panel keeps rendering a task after it finishes (getVisibleAgentTasks only
+  // drops evictAfter === 0), and progress ticks are throttled, so the last tick
+  // before completion can be dropped. task.result carries the final totals.
+  const tokenCount = task.result?.totalTokens ?? task.progress?.tokenCount;
   const lastActivity = task.progress?.lastActivity;
   const arrow = lastActivity ? figures.arrowDown : figures.arrowUp;
   let t2;
