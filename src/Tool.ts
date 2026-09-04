@@ -180,6 +180,8 @@ export type ToolUseContext = {
   abortController: AbortController
   readFileState: FileStateCache
   getAppState(): AppState
+  /** Refresh copied contexts at model/tool boundaries after a runtime transition. */
+  refreshRuntimeContext?: (context: ToolUseContext) => ToolUseContext
   setAppState(f: (prev: AppState) => AppState): void
   /**
    * Always-shared setAppState for session-scoped infrastructure (background

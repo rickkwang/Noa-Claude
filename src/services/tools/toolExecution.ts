@@ -356,6 +356,7 @@ export async function* runToolUse(
   canUseTool: CanUseToolFn,
   toolUseContext: ToolUseContext,
 ): AsyncGenerator<MessageUpdateLazy, void> {
+  toolUseContext = toolUseContext.refreshRuntimeContext?.(toolUseContext) ?? toolUseContext
   const toolName = toolUse.name
   // First try to find in the available tools (what the model sees)
   let tool = findToolByName(toolUseContext.options.tools, toolName)

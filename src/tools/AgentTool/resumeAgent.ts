@@ -15,10 +15,8 @@ import { runWithAgentContext } from '../../utils/agentContext.js'
 import { runWithCwdOverride } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
 import {
+  buildContinuationHistory,
   createUserMessage,
-  filterOrphanedThinkingOnlyMessages,
-  filterUnresolvedToolUses,
-  filterWhitespaceOnlyAssistantMessages,
 } from '../../utils/messages.js'
 import { getAgentModel } from '../../utils/model/agent.js'
 import { getQuerySourceForAgent } from '../../utils/promptCategory.js'
@@ -108,11 +106,13 @@ export async function resumeAgentBackground({
   if (!transcript) {
     throw new Error(`No transcript found for agent ID: ${agentId}`)
   }
-  const resumedMessages = filterWhitespaceOnlyAssistantMessages(
-    filterOrphanedThinkingOnlyMessages(
-      filterUnresolvedToolUses(transcript.messages),
-    ),
-  )
+  // getAgentTranscript returns the whole chain, including history the agent
+  // already compacted away. buildPostCompactMessages emits the boundary marker
+  // ahead of the summary and kept messages, so slicing at the last boundary
+  // reproduces the working set the agent actually had. Without the slice, a
+  // resumed agent replays its entire pre-compact transcript on top of the
+  // summary that replaced it.
+  const resumedMessages = buildContinuationHistory(transcript.messages)
   const resumedReplacementState = reconstructForSubagentResume(
     toolUseContext.contentReplacementState,
     resumedMessages,

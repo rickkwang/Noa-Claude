@@ -325,6 +325,14 @@ export function killAsyncAgent(taskId: string, setAppState: SetAppState): void {
   clearProgressThrottle(taskId);
   if (killed) {
     void evictTaskOutput(taskId);
+    // Abort is cooperative: the run normally releases its own slot when its
+    // finally reaches finishAgentRun, and this delete is idempotent. But if it
+    // is wedged in an await that ignores the abort signal, nothing else frees
+    // the id — not eviction, not unregisterAgentForeground — and every resume
+    // is rejected with "retry after it finishes", which never becomes true.
+    // A kill is the user's explicit "drop this run", so bound the wait.
+    const release = setTimeout(finishAgentRun, KILLED_RUN_RELEASE_MS, taskId);
+    if (typeof release === 'object') release.unref?.();
   }
 }
 
@@ -508,13 +516,23 @@ export function failAgentTask(taskId: string, error: string, setAppState: SetApp
   // Note: Notification is sent by AgentTool via enqueueAgentNotification
 }
 
+// Terminal results are readable before cleanup finishes. Keep run ownership
+// outside AppState so eviction cannot allow a same-ID resume during cleanup.
+const activeAgentRuns = new Set<string>();
+
+/** Grace period before a killed run's id is force-released. Every cleanup step
+ * a killed run still has to walk is individually bounded (MCP cleanup 1s in
+ * runAgent, worktree cleanup 30s in AgentTool), so a run that is going to
+ * release its own slot always does so well inside this window. */
+const KILLED_RUN_RELEASE_MS = 60_000;
+
+export function finishAgentRun(agentId: string): void {
+  activeAgentRuns.delete(agentId);
+}
+
 /**
- * Register an agent task.
- * Called by AgentTool to create a new background agent.
- *
- * @param parentAbortController - Optional parent abort controller. If provided,
- *   the agent's abort controller will be a child that auto-aborts when parent aborts.
- *   This ensures subagents are aborted when their parent (e.g., in-process teammate) aborts.
+ * Register an agent task. An optional parent controller ties its lifetime to
+ * the caller; otherwise the background agent survives parent cancellation.
  */
 export function registerAsyncAgent({
   agentId,
@@ -537,6 +555,9 @@ export function registerAsyncAgent({
   parentAbortController?: AbortController;
   toolUseId?: string;
 }): LocalAgentTaskState {
+  if (activeAgentRuns.has(agentId)) {
+    throw new Error(`Agent '${agentId}' is still active or finishing cleanup. Retry after it finishes.`);
+  }
   assertCanStartBackgroundAgent(getAppState().tasks);
   void initTaskOutputAsSymlink(agentId, getAgentTranscriptPath(asAgentId(agentId)));
 
@@ -570,6 +591,7 @@ export function registerAsyncAgent({
 
   // Register task in AppState
   registerTask(taskState, setAppState);
+  activeAgentRuns.add(agentId);
   return taskState;
 }
 
@@ -638,6 +660,7 @@ export function registerAgentForeground({
   });
   backgroundSignalResolvers.set(agentId, resolveBackgroundSignal!);
   registerTask(taskState, setAppState);
+  activeAgentRuns.add(agentId);
 
   // Auto-background after timeout if configured
   let cancelAutoBackground: (() => void) | undefined;

@@ -69,6 +69,7 @@ import {
   isRestrictedToPluginOnly,
   isSourceAdminTrusted,
 } from '../../utils/settings/pluginOnlyPolicy.js'
+import { withTimeout } from '../../utils/sleep.js'
 import {
   asSystemPrompt,
   type SystemPrompt,
@@ -80,7 +81,8 @@ import {
 } from '../../utils/telemetry/perfettoTracing.js'
 import type { ContentReplacementState } from '../../utils/toolResultStorage.js'
 import { createAgentId } from '../../utils/uuid.js'
-import { resolveAgentTools } from './agentToolUtils.js'
+import { filterToolsForAgent, resolveAgentTools } from './agentToolUtils.js'
+import { createDenialTrackingState } from '../../utils/permissions/denialTracking.js'
 import { type AgentDefinition, isBuiltInAgent } from './loadAgentsDir.js'
 
 /**
@@ -133,68 +135,6 @@ async function initializeAgentMcpServers(
   const newlyCreatedClients: MCPServerConnection[] = []
   const agentTools: Tool[] = []
 
-  for (const spec of agentDefinition.mcpServers) {
-    let config: ScopedMcpServerConfig | null = null
-    let name: string
-    let isNewlyCreated = false
-
-    if (typeof spec === 'string') {
-      // Reference by name - look up in existing MCP configs
-      // This uses the memoized connectToServer, so we may get a shared client
-      name = spec
-      config = getMcpConfigByName(spec)
-      if (!config) {
-        logForDebugging(
-          `[Agent: ${agentDefinition.agentType}] MCP server not found: ${spec}`,
-          { level: 'warn' },
-        )
-        continue
-      }
-    } else {
-      // Inline definition as { [name]: config }
-      // These are agent-specific servers that should be cleaned up
-      const entries = Object.entries(spec)
-      if (entries.length !== 1) {
-        logForDebugging(
-          `[Agent: ${agentDefinition.agentType}] Invalid MCP server spec: expected exactly one key`,
-          { level: 'warn' },
-        )
-        continue
-      }
-      const [serverName, serverConfig] = entries[0]!
-      name = serverName
-      config = {
-        ...serverConfig,
-        scope: 'dynamic' as const,
-      } as ScopedMcpServerConfig
-      isNewlyCreated = true
-    }
-
-    // Connect to the server
-    const client = await connectToServer(name, config)
-    agentClients.push(client)
-    if (isNewlyCreated) {
-      newlyCreatedClients.push(client)
-    }
-
-    // Fetch tools if connected
-    if (client.type === 'connected') {
-      const tools = await fetchToolsForClient(client)
-      agentTools.push(...tools)
-      logForDebugging(
-        `[Agent: ${agentDefinition.agentType}] Connected to MCP server '${name}' with ${tools.length} tools`,
-      )
-    } else {
-      logForDebugging(
-        `[Agent: ${agentDefinition.agentType}] Failed to connect to MCP server '${name}': ${client.type}`,
-        { level: 'warn' },
-      )
-    }
-  }
-
-  // Create cleanup function for agent-specific servers
-  // Only clean up newly created clients (inline definitions), not shared/referenced ones
-  // Shared clients (referenced by string name) are memoized and used by the parent context
   const cleanup = async () => {
     for (const client of newlyCreatedClients) {
       if (client.type === 'connected') {
@@ -208,6 +148,71 @@ async function initializeAgentMcpServers(
         }
       }
     }
+  }
+
+  try {
+    for (const spec of agentDefinition.mcpServers) {
+      let config: ScopedMcpServerConfig | null = null
+      let name: string
+      let isNewlyCreated = false
+
+      if (typeof spec === 'string') {
+        // Reference by name - look up in existing MCP configs
+        // This uses the memoized connectToServer, so we may get a shared client
+        name = spec
+        config = getMcpConfigByName(spec)
+        if (!config) {
+          logForDebugging(
+            `[Agent: ${agentDefinition.agentType}] MCP server not found: ${spec}`,
+            { level: 'warn' },
+          )
+          continue
+        }
+      } else {
+        // Inline definition as { [name]: config }
+        // These are agent-specific servers that should be cleaned up
+        const entries = Object.entries(spec)
+        if (entries.length !== 1) {
+          logForDebugging(
+            `[Agent: ${agentDefinition.agentType}] Invalid MCP server spec: expected exactly one key`,
+            { level: 'warn' },
+          )
+          continue
+        }
+        const [serverName, serverConfig] = entries[0]!
+        name = serverName
+        config = {
+          ...serverConfig,
+          scope: 'dynamic' as const,
+        } as ScopedMcpServerConfig
+        isNewlyCreated = true
+      }
+
+      // Connect to the server
+      const client = await connectToServer(name, config)
+      agentClients.push(client)
+      if (isNewlyCreated) {
+        newlyCreatedClients.push(client)
+      }
+
+      // Fetch tools if connected
+      if (client.type === 'connected') {
+        const tools = await fetchToolsForClient(client)
+        agentTools.push(...tools)
+        logForDebugging(
+          `[Agent: ${agentDefinition.agentType}] Connected to MCP server '${name}' with ${tools.length} tools`,
+        )
+      } else {
+        logForDebugging(
+          `[Agent: ${agentDefinition.agentType}] Failed to connect to MCP server '${name}': ${client.type}`,
+          { level: 'warn' },
+        )
+      }
+    }
+
+  } catch (error) {
+    await cleanup()
+    throw error
   }
 
   // Return merged clients (parent + agent-specific) and agent tools
@@ -269,7 +274,6 @@ export async function* runAgent({
   personalityName,
   transcriptSubdir,
   onQueryProgress,
-  reuseInitializedPromptContext,
   onPromptFallback,
 }: {
   agentDefinition: AgentDefinition
@@ -336,11 +340,6 @@ export async function* runAgent({
    * during long single-block streams (e.g. thinking) where no assistant
    * message is yielded for >60s. */
   onQueryProgress?: () => void
-  /** The supplied promptMessages already contain this agent's SubagentStart
-   * context and preloaded skill messages. Used only when a foreground run is
-   * continued in the background, so those dynamic messages are not injected
-   * a second time. Lifecycle hooks and MCP servers are still re-registered. */
-  reuseInitializedPromptContext?: boolean
 }): AsyncGenerator<Message, void> {
   // Track subagent usage for feature discovery
 
@@ -360,190 +359,200 @@ export async function* runAgent({
   )
 
   const agentId = override?.agentId ? override.agentId : createAgentId()
+  let initialMessages: Message[] = []
+  let agentToolUseContext: ToolUseContext | undefined
+  let mcpCleanup = async () => {}
 
-  // Route this agent's transcript into a grouping subdirectory if requested
-  // (e.g. workflow subagents write to subagents/workflows/<runId>/).
-  if (transcriptSubdir) {
-    setAgentTranscriptSubdir(agentId, transcriptSubdir)
-  }
+  try {
+    // Route this agent's transcript into a grouping subdirectory if requested
+    // (e.g. workflow subagents write to subagents/workflows/<runId>/).
+    if (transcriptSubdir) {
+      setAgentTranscriptSubdir(agentId, transcriptSubdir)
+    }
 
-  // Register agent in Perfetto trace for hierarchy visualization
-  if (isPerfettoTracingEnabled()) {
-    const parentId = toolUseContext.agentId ?? getSessionId()
-    registerPerfettoAgent(agentId, agentDefinition.agentType, parentId)
-  }
+    // Register agent in Perfetto trace for hierarchy visualization
+    if (isPerfettoTracingEnabled()) {
+      const parentId = toolUseContext.agentId ?? getSessionId()
+      registerPerfettoAgent(agentId, agentDefinition.agentType, parentId)
+    }
 
-  // Log API calls path for subagents (ant-only)
-  if (process.env.USER_TYPE === 'ant') {
-    logForDebugging(
-      `[Subagent ${agentDefinition.agentType}] API calls: ${getDisplayPath(getDumpPromptsPath(agentId))}`,
+    // Log API calls path for subagents (ant-only)
+    if (process.env.USER_TYPE === 'ant') {
+      logForDebugging(
+        `[Subagent ${agentDefinition.agentType}] API calls: ${getDisplayPath(getDumpPromptsPath(agentId))}`,
+      )
+    }
+
+    // Handle message forking for context sharing
+    // Filter out incomplete tool calls from parent messages to avoid API errors
+    const contextMessages: Message[] = forkContextMessages
+      ? filterIncompleteToolCalls(forkContextMessages)
+      : []
+    initialMessages = [...contextMessages, ...promptMessages]
+
+    const agentReadFileState =
+      forkContextMessages !== undefined
+        ? cloneFileStateCache(toolUseContext.readFileState)
+        : createFileStateCacheWithSizeLimit(READ_FILE_STATE_CACHE_SIZE)
+
+    const [baseUserContext, baseSystemContext] = await Promise.all([
+      override?.userContext ?? getUserContext(),
+      override?.systemContext ?? getSystemContext(),
+    ])
+
+    // Read-only agents (Explore, Plan) don't act on commit/PR/lint rules from
+    // CLAUDE.md — the main agent has full context and interprets their output.
+    // Dropping claudeMd here saves ~5-15 Gtok/week across 34M+ Explore spawns.
+    // Explicit override.userContext from callers is preserved untouched.
+    // Kill-switch defaults true; flip tengu_slim_subagent_claudemd=false to revert.
+    const shouldOmitClaudeMd =
+      agentDefinition.omitClaudeMd &&
+      !override?.userContext &&
+      getFeatureValue_CACHED_MAY_BE_STALE('tengu_slim_subagent_claudemd', true)
+    const { claudeMd: _omittedClaudeMd, ...userContextNoClaudeMd } =
+      baseUserContext
+    const resolvedUserContext = shouldOmitClaudeMd
+      ? userContextNoClaudeMd
+      : baseUserContext
+
+    // Explore/Plan are read-only search agents — the parent-session-start
+    // gitStatus (up to 40KB, explicitly labeled stale) is dead weight. If they
+    // need git info they run `git status` themselves and get fresh data.
+    // Saves ~1-3 Gtok/week fleet-wide.
+    const { gitStatus: _omittedGitStatus, ...systemContextNoGit } =
+      baseSystemContext
+    const resolvedSystemContext =
+      agentDefinition.agentType === 'Explore' ||
+      agentDefinition.agentType === 'Plan'
+        ? systemContextNoGit
+        : baseSystemContext
+
+    // Override permission mode if agent defines one
+    // However, don't override if parent is in bypassPermissions or acceptEdits mode - those should always take precedence
+    // For async agents, also set shouldAvoidPermissionPrompts since they can't show UI
+    const agentPermissionMode = agentDefinition.permissionMode
+    let isBackgrounded = isAsync
+    // Doubles as the latch for isBackgrounded. Besides its normal use as the
+    // context's getAppState, the setAppState wrapper and refreshRuntimeContext
+    // below call it for that side effect alone — those two calls look dead but
+    // are not; dropping them freezes isBackgrounded and disables the handoff.
+    const agentGetAppState = () => {
+      const state = toolUseContext.getAppState()
+      const task = state.tasks[agentId]
+      isBackgrounded ||= task?.type === 'local_agent' && task.isBackgrounded
+      let toolPermissionContext = state.toolPermissionContext
+
+      // Override permission mode if agent defines one (unless parent is bypassPermissions, acceptEdits, or auto)
+      if (
+        agentPermissionMode &&
+        state.toolPermissionContext.mode !== 'bypassPermissions' &&
+        state.toolPermissionContext.mode !== 'acceptEdits' &&
+        !(
+          feature('AUTO_MODE') &&
+          state.toolPermissionContext.mode === 'auto'
+        )
+      ) {
+        toolPermissionContext = {
+          ...toolPermissionContext,
+          mode: agentPermissionMode,
+        }
+      }
+
+      // Set flag to auto-deny prompts for agents that can't show UI
+      // Use explicit canShowPermissionPrompts if provided, otherwise:
+      //   - bubble mode: always show prompts (bubbles to parent terminal)
+      //   - default: foreground prompts stop when the task is backgrounded
+      const shouldAvoidPrompts =
+        canShowPermissionPrompts !== undefined
+          ? !canShowPermissionPrompts
+          : agentPermissionMode === 'bubble'
+            ? false
+            : isBackgrounded
+      if (shouldAvoidPrompts) {
+        toolPermissionContext = {
+          ...toolPermissionContext,
+          shouldAvoidPermissionPrompts: true,
+        }
+      }
+
+      // For background agents that can show prompts, await automated checks
+      // (classifier, permission hooks) before showing the permission dialog.
+      // Since these are background agents, waiting is fine — the user should
+      // only be interrupted when automated checks can't resolve the permission.
+      // This applies to bubble mode (always) and explicit canShowPermissionPrompts.
+      if (isBackgrounded && !shouldAvoidPrompts) {
+        toolPermissionContext = {
+          ...toolPermissionContext,
+          awaitAutomatedChecksBeforeDialog: true,
+        }
+      }
+
+      // Scope tool permissions: when allowedTools is provided, use them as session rules.
+      // IMPORTANT: Preserve cliArg rules (from SDK's --allowedTools) since those are
+      // explicit permissions from the SDK consumer that should apply to all agents.
+      // Only clear session-level rules from the parent to prevent unintended leakage.
+      if (allowedTools !== undefined) {
+        toolPermissionContext = {
+          ...toolPermissionContext,
+          alwaysAllowRules: {
+            // Preserve SDK-level permissions from --allowedTools
+            cliArg: state.toolPermissionContext.alwaysAllowRules.cliArg,
+            // Use the provided allowedTools as session-level permissions
+            session: [...allowedTools],
+          },
+        }
+      }
+
+      // Override effort level if agent defines one
+      const effortValue =
+        agentDefinition.effort !== undefined
+          ? agentDefinition.effort
+          : state.effortValue
+
+      if (
+        toolPermissionContext === state.toolPermissionContext &&
+        effortValue === state.effortValue
+      ) {
+        return state
+      }
+      return {
+        ...state,
+        toolPermissionContext,
+        effortValue,
+      }
+    }
+
+    const resolvedTools = useExactTools
+      ? availableTools
+      : resolveAgentTools(agentDefinition, availableTools, isAsync).resolvedTools
+
+    const additionalWorkingDirectories = Array.from(
+      appState.toolPermissionContext.additionalWorkingDirectories.keys(),
     )
-  }
 
-  // Handle message forking for context sharing
-  // Filter out incomplete tool calls from parent messages to avoid API errors
-  const contextMessages: Message[] = forkContextMessages
-    ? filterIncompleteToolCalls(forkContextMessages)
-    : []
-  const initialMessages: Message[] = [...contextMessages, ...promptMessages]
+    const agentSystemPrompt = override?.systemPrompt
+      ? override.systemPrompt
+      : asSystemPrompt(
+          await getAgentSystemPrompt(
+            agentDefinition,
+            toolUseContext,
+            resolvedAgentModel,
+            additionalWorkingDirectories,
+            resolvedTools,
+            onPromptFallback,
+          ),
+        )
 
-  const agentReadFileState =
-    forkContextMessages !== undefined
-      ? cloneFileStateCache(toolUseContext.readFileState)
-      : createFileStateCacheWithSizeLimit(READ_FILE_STATE_CACHE_SIZE)
+    // Determine abortController:
+    // - Override takes precedence
+    // - Async agents get a new unlinked controller (runs independently)
+    // - Sync agents share parent's controller
+    const agentAbortController = override?.abortController
+      ? override.abortController
+      : isAsync
+        ? new AbortController()
+        : toolUseContext.abortController
 
-  const [baseUserContext, baseSystemContext] = await Promise.all([
-    override?.userContext ?? getUserContext(),
-    override?.systemContext ?? getSystemContext(),
-  ])
-
-  // Read-only agents (Explore, Plan) don't act on commit/PR/lint rules from
-  // CLAUDE.md — the main agent has full context and interprets their output.
-  // Dropping claudeMd here saves ~5-15 Gtok/week across 34M+ Explore spawns.
-  // Explicit override.userContext from callers is preserved untouched.
-  // Kill-switch defaults true; flip tengu_slim_subagent_claudemd=false to revert.
-  const shouldOmitClaudeMd =
-    agentDefinition.omitClaudeMd &&
-    !override?.userContext &&
-    getFeatureValue_CACHED_MAY_BE_STALE('tengu_slim_subagent_claudemd', true)
-  const { claudeMd: _omittedClaudeMd, ...userContextNoClaudeMd } =
-    baseUserContext
-  const resolvedUserContext = shouldOmitClaudeMd
-    ? userContextNoClaudeMd
-    : baseUserContext
-
-  // Explore/Plan are read-only search agents — the parent-session-start
-  // gitStatus (up to 40KB, explicitly labeled stale) is dead weight. If they
-  // need git info they run `git status` themselves and get fresh data.
-  // Saves ~1-3 Gtok/week fleet-wide.
-  const { gitStatus: _omittedGitStatus, ...systemContextNoGit } =
-    baseSystemContext
-  const resolvedSystemContext =
-    agentDefinition.agentType === 'Explore' ||
-    agentDefinition.agentType === 'Plan'
-      ? systemContextNoGit
-      : baseSystemContext
-
-  // Override permission mode if agent defines one
-  // However, don't override if parent is in bypassPermissions or acceptEdits mode - those should always take precedence
-  // For async agents, also set shouldAvoidPermissionPrompts since they can't show UI
-  const agentPermissionMode = agentDefinition.permissionMode
-  const agentGetAppState = () => {
-    const state = toolUseContext.getAppState()
-    let toolPermissionContext = state.toolPermissionContext
-
-    // Override permission mode if agent defines one (unless parent is bypassPermissions, acceptEdits, or auto)
-    if (
-      agentPermissionMode &&
-      state.toolPermissionContext.mode !== 'bypassPermissions' &&
-      state.toolPermissionContext.mode !== 'acceptEdits' &&
-      !(
-        feature('AUTO_MODE') &&
-        state.toolPermissionContext.mode === 'auto'
-      )
-    ) {
-      toolPermissionContext = {
-        ...toolPermissionContext,
-        mode: agentPermissionMode,
-      }
-    }
-
-    // Set flag to auto-deny prompts for agents that can't show UI
-    // Use explicit canShowPermissionPrompts if provided, otherwise:
-    //   - bubble mode: always show prompts (bubbles to parent terminal)
-    //   - default: !isAsync (sync agents show prompts, async agents don't)
-    const shouldAvoidPrompts =
-      canShowPermissionPrompts !== undefined
-        ? !canShowPermissionPrompts
-        : agentPermissionMode === 'bubble'
-          ? false
-          : isAsync
-    if (shouldAvoidPrompts) {
-      toolPermissionContext = {
-        ...toolPermissionContext,
-        shouldAvoidPermissionPrompts: true,
-      }
-    }
-
-    // For background agents that can show prompts, await automated checks
-    // (classifier, permission hooks) before showing the permission dialog.
-    // Since these are background agents, waiting is fine — the user should
-    // only be interrupted when automated checks can't resolve the permission.
-    // This applies to bubble mode (always) and explicit canShowPermissionPrompts.
-    if (isAsync && !shouldAvoidPrompts) {
-      toolPermissionContext = {
-        ...toolPermissionContext,
-        awaitAutomatedChecksBeforeDialog: true,
-      }
-    }
-
-    // Scope tool permissions: when allowedTools is provided, use them as session rules.
-    // IMPORTANT: Preserve cliArg rules (from SDK's --allowedTools) since those are
-    // explicit permissions from the SDK consumer that should apply to all agents.
-    // Only clear session-level rules from the parent to prevent unintended leakage.
-    if (allowedTools !== undefined) {
-      toolPermissionContext = {
-        ...toolPermissionContext,
-        alwaysAllowRules: {
-          // Preserve SDK-level permissions from --allowedTools
-          cliArg: state.toolPermissionContext.alwaysAllowRules.cliArg,
-          // Use the provided allowedTools as session-level permissions
-          session: [...allowedTools],
-        },
-      }
-    }
-
-    // Override effort level if agent defines one
-    const effortValue =
-      agentDefinition.effort !== undefined
-        ? agentDefinition.effort
-        : state.effortValue
-
-    if (
-      toolPermissionContext === state.toolPermissionContext &&
-      effortValue === state.effortValue
-    ) {
-      return state
-    }
-    return {
-      ...state,
-      toolPermissionContext,
-      effortValue,
-    }
-  }
-
-  const resolvedTools = useExactTools
-    ? availableTools
-    : resolveAgentTools(agentDefinition, availableTools, isAsync).resolvedTools
-
-  const additionalWorkingDirectories = Array.from(
-    appState.toolPermissionContext.additionalWorkingDirectories.keys(),
-  )
-
-  const agentSystemPrompt = override?.systemPrompt
-    ? override.systemPrompt
-    : asSystemPrompt(
-        await getAgentSystemPrompt(
-          agentDefinition,
-          toolUseContext,
-          resolvedAgentModel,
-          additionalWorkingDirectories,
-          resolvedTools,
-          onPromptFallback,
-        ),
-      )
-
-  // Determine abortController:
-  // - Override takes precedence
-  // - Async agents get a new unlinked controller (runs independently)
-  // - Sync agents share parent's controller
-  const agentAbortController = override?.abortController
-    ? override.abortController
-    : isAsync
-      ? new AbortController()
-      : toolUseContext.abortController
-
-  if (!reuseInitializedPromptContext) {
     // Execute SubagentStart hooks and collect additional context
     const additionalContexts: string[] = []
     for await (const hookResult of executeSubagentStartHooks(
@@ -570,200 +579,231 @@ export async function* runAgent({
       })
       initialMessages.push(contextMessage)
     }
-  }
+    // Register agent's frontmatter hooks (scoped to agent lifecycle)
+    // Pass isAgent=true to convert Stop hooks to SubagentStop (since subagents trigger SubagentStop)
+    // Same admin-trusted gate for frontmatter hooks: under ["hooks"] alone
+    // (skills/agents not locked), user agents still load — block their
+    // frontmatter-hook REGISTRATION here where source is known, rather than
+    // blanket-blocking all session hooks at execution time (which would
+    // also kill plugin agents' hooks).
+    const hooksAllowedForThisAgent =
+      !isRestrictedToPluginOnly('hooks') ||
+      isSourceAdminTrusted(agentDefinition.source)
+    if (agentDefinition.hooks && hooksAllowedForThisAgent) {
+      registerFrontmatterHooks(
+        rootSetAppState,
+        agentId,
+        agentDefinition.hooks,
+        `agent '${agentDefinition.agentType}'`,
+        true, // isAgent - converts Stop to SubagentStop
+      )
+    }
 
-  // Register agent's frontmatter hooks (scoped to agent lifecycle)
-  // Pass isAgent=true to convert Stop hooks to SubagentStop (since subagents trigger SubagentStop)
-  // Same admin-trusted gate for frontmatter hooks: under ["hooks"] alone
-  // (skills/agents not locked), user agents still load — block their
-  // frontmatter-hook REGISTRATION here where source is known, rather than
-  // blanket-blocking all session hooks at execution time (which would
-  // also kill plugin agents' hooks).
-  const hooksAllowedForThisAgent =
-    !isRestrictedToPluginOnly('hooks') ||
-    isSourceAdminTrusted(agentDefinition.source)
-  if (agentDefinition.hooks && hooksAllowedForThisAgent) {
-    registerFrontmatterHooks(
-      rootSetAppState,
+    // Preload skills from agent frontmatter
+    const skillsToPreload = agentDefinition.skills ?? []
+    if (skillsToPreload.length > 0) {
+      const allSkills = await getSkillToolCommands(getProjectRoot())
+
+      // Filter valid skills and warn about missing ones
+      const validSkills: Array<{
+        skillName: string
+        skill: (typeof allSkills)[0] & { type: 'prompt' }
+      }> = []
+
+      for (const skillName of skillsToPreload) {
+        // Resolve the skill name, trying multiple strategies:
+        // 1. Exact match (hasCommand checks name, userFacingName, aliases)
+        // 2. Fully-qualified with agent's plugin prefix (e.g., "my-skill" → "plugin:my-skill")
+        // 3. Suffix match on ":skillName" for plugin-namespaced skills
+        const resolvedName = resolveSkillName(
+          skillName,
+          allSkills,
+          agentDefinition,
+        )
+        if (!resolvedName) {
+          logForDebugging(
+            `[Agent: ${agentDefinition.agentType}] Warning: Skill '${skillName}' specified in frontmatter was not found`,
+            { level: 'warn' },
+          )
+          continue
+        }
+
+        const skill = getCommand(resolvedName, allSkills)
+        if (skill.type !== 'prompt') {
+          logForDebugging(
+            `[Agent: ${agentDefinition.agentType}] Warning: Skill '${skillName}' is not a prompt-based skill`,
+            { level: 'warn' },
+          )
+          continue
+        }
+        validSkills.push({ skillName, skill })
+      }
+
+      // Load all skill contents concurrently and add to initial messages
+      const { formatSkillLoadingMetadata } = await import(
+        '../../utils/processUserInput/processSlashCommand.js'
+      )
+      const loaded = await Promise.all(
+        validSkills.map(async ({ skillName, skill }) => ({
+          skillName,
+          skill,
+          content: await skill.getPromptForCommand('', toolUseContext),
+        })),
+      )
+      for (const { skillName, skill, content } of loaded) {
+        logForDebugging(
+          `[Agent: ${agentDefinition.agentType}] Preloaded skill '${skillName}'`,
+        )
+
+        // Add command-message metadata so the UI shows which skill is loading
+        const metadata = formatSkillLoadingMetadata(
+          skillName,
+          skill.progressMessage,
+        )
+
+        initialMessages.push(
+          createUserMessage({
+            content: [{ type: 'text', text: metadata }, ...content],
+            isMeta: true,
+          }),
+        )
+      }
+    }
+
+    // Initialize agent-specific MCP servers (additive to parent's servers)
+    const {
+      clients: mergedMcpClients,
+      tools: agentMcpTools,
+      cleanup: cleanupAgentMcp,
+    } = await initializeAgentMcpServers(
+      agentDefinition,
+      toolUseContext.options.mcpClients,
+    )
+    mcpCleanup = cleanupAgentMcp
+
+    // Merge agent MCP tools with resolved agent tools, deduplicating by name.
+    // resolvedTools is already deduplicated (see resolveAgentTools), so skip
+    // the spread + uniqBy overhead when there are no agent-specific MCP tools.
+    const allTools =
+      agentMcpTools.length > 0
+        ? uniqBy([...resolvedTools, ...agentMcpTools], 'name')
+        : resolvedTools
+
+    // Build agent-specific options
+    const agentOptions: ToolUseContext['options'] = {
+      isNonInteractiveSession: useExactTools
+        ? toolUseContext.options.isNonInteractiveSession
+        : isAsync
+          ? true
+          : (toolUseContext.options.isNonInteractiveSession ?? false),
+      appendSystemPrompt: toolUseContext.options.appendSystemPrompt,
+      tools: allTools,
+      commands: [],
+      debug: toolUseContext.options.debug,
+      verbose: toolUseContext.options.verbose,
+      mainLoopModel: resolvedAgentModel,
+      // For fork children (useExactTools), inherit thinking config to match the
+      // parent's API request prefix for prompt cache hits. For regular
+      // sub-agents, disable thinking to control output token costs.
+      thinkingConfig: useExactTools
+        ? toolUseContext.options.thinkingConfig
+        : { type: 'disabled' as const },
+      mcpClients: mergedMcpClients,
+      mcpResources: toolUseContext.options.mcpResources,
+      agentDefinitions: toolUseContext.options.agentDefinitions,
+      // Fork children (useExactTools path) need querySource on context.options
+      // for the recursive-fork guard at AgentTool.tsx call() — it checks
+      // options.querySource === 'agent:builtin:fork'. This survives autocompact
+      // (which rewrites messages, not context.options). Without this, the guard
+      // reads undefined and only the message-scan fallback fires — which
+      // autocompact defeats by replacing the fork-boilerplate message.
+      ...(useExactTools && { querySource }),
+    }
+
+    // Create subagent context using shared helper
+    // - Sync agents share setAppState, setResponseLength, abortController with parent
+    // - Async agents are fully isolated (but with explicit unlinked abortController)
+    agentToolUseContext = createSubagentContext(toolUseContext, {
+      options: agentOptions,
       agentId,
-      agentDefinition.hooks,
-      `agent '${agentDefinition.agentType}'`,
-      true, // isAgent - converts Stop to SubagentStop
-    )
-  }
-
-  // Preload skills from agent frontmatter
-  const skillsToPreload = agentDefinition.skills ?? []
-  if (!reuseInitializedPromptContext && skillsToPreload.length > 0) {
-    const allSkills = await getSkillToolCommands(getProjectRoot())
-
-    // Filter valid skills and warn about missing ones
-    const validSkills: Array<{
-      skillName: string
-      skill: (typeof allSkills)[0] & { type: 'prompt' }
-    }> = []
-
-    for (const skillName of skillsToPreload) {
-      // Resolve the skill name, trying multiple strategies:
-      // 1. Exact match (hasCommand checks name, userFacingName, aliases)
-      // 2. Fully-qualified with agent's plugin prefix (e.g., "my-skill" → "plugin:my-skill")
-      // 3. Suffix match on ":skillName" for plugin-namespaced skills
-      const resolvedName = resolveSkillName(
-        skillName,
-        allSkills,
-        agentDefinition,
-      )
-      if (!resolvedName) {
-        logForDebugging(
-          `[Agent: ${agentDefinition.agentType}] Warning: Skill '${skillName}' specified in frontmatter was not found`,
-          { level: 'warn' },
-        )
-        continue
-      }
-
-      const skill = getCommand(resolvedName, allSkills)
-      if (skill.type !== 'prompt') {
-        logForDebugging(
-          `[Agent: ${agentDefinition.agentType}] Warning: Skill '${skillName}' is not a prompt-based skill`,
-          { level: 'warn' },
-        )
-        continue
-      }
-      validSkills.push({ skillName, skill })
-    }
-
-    // Load all skill contents concurrently and add to initial messages
-    const { formatSkillLoadingMetadata } = await import(
-      '../../utils/processUserInput/processSlashCommand.js'
-    )
-    const loaded = await Promise.all(
-      validSkills.map(async ({ skillName, skill }) => ({
-        skillName,
-        skill,
-        content: await skill.getPromptForCommand('', toolUseContext),
-      })),
-    )
-    for (const { skillName, skill, content } of loaded) {
-      logForDebugging(
-        `[Agent: ${agentDefinition.agentType}] Preloaded skill '${skillName}'`,
-      )
-
-      // Add command-message metadata so the UI shows which skill is loading
-      const metadata = formatSkillLoadingMetadata(
-        skillName,
-        skill.progressMessage,
-      )
-
-      initialMessages.push(
-        createUserMessage({
-          content: [{ type: 'text', text: metadata }, ...content],
-          isMeta: true,
-        }),
-      )
-    }
-  }
-
-  // Initialize agent-specific MCP servers (additive to parent's servers)
-  const {
-    clients: mergedMcpClients,
-    tools: agentMcpTools,
-    cleanup: mcpCleanup,
-  } = await initializeAgentMcpServers(
-    agentDefinition,
-    toolUseContext.options.mcpClients,
-  )
-
-  // Merge agent MCP tools with resolved agent tools, deduplicating by name.
-  // resolvedTools is already deduplicated (see resolveAgentTools), so skip
-  // the spread + uniqBy overhead when there are no agent-specific MCP tools.
-  const allTools =
-    agentMcpTools.length > 0
-      ? uniqBy([...resolvedTools, ...agentMcpTools], 'name')
-      : resolvedTools
-
-  // Build agent-specific options
-  const agentOptions: ToolUseContext['options'] = {
-    isNonInteractiveSession: useExactTools
-      ? toolUseContext.options.isNonInteractiveSession
-      : isAsync
-        ? true
-        : (toolUseContext.options.isNonInteractiveSession ?? false),
-    appendSystemPrompt: toolUseContext.options.appendSystemPrompt,
-    tools: allTools,
-    commands: [],
-    debug: toolUseContext.options.debug,
-    verbose: toolUseContext.options.verbose,
-    mainLoopModel: resolvedAgentModel,
-    // For fork children (useExactTools), inherit thinking config to match the
-    // parent's API request prefix for prompt cache hits. For regular
-    // sub-agents, disable thinking to control output token costs.
-    thinkingConfig: useExactTools
-      ? toolUseContext.options.thinkingConfig
-      : { type: 'disabled' as const },
-    mcpClients: mergedMcpClients,
-    mcpResources: toolUseContext.options.mcpResources,
-    agentDefinitions: toolUseContext.options.agentDefinitions,
-    // Fork children (useExactTools path) need querySource on context.options
-    // for the recursive-fork guard at AgentTool.tsx call() — it checks
-    // options.querySource === 'agent:builtin:fork'. This survives autocompact
-    // (which rewrites messages, not context.options). Without this, the guard
-    // reads undefined and only the message-scan fallback fires — which
-    // autocompact defeats by replacing the fork-boilerplate message.
-    ...(useExactTools && { querySource }),
-  }
-
-  // Create subagent context using shared helper
-  // - Sync agents share setAppState, setResponseLength, abortController with parent
-  // - Async agents are fully isolated (but with explicit unlinked abortController)
-  const agentToolUseContext = createSubagentContext(toolUseContext, {
-    options: agentOptions,
-    agentId,
-    agentType: agentDefinition.agentType,
-    messages: initialMessages,
-    readFileState: agentReadFileState,
-    abortController: agentAbortController,
-    getAppState: agentGetAppState,
-    // Sync agents share these callbacks with parent
-    shareSetAppState: !isAsync,
-    shareSetResponseLength: true, // Both sync and async contribute to response metrics
-    criticalSystemReminder_EXPERIMENTAL:
-      agentDefinition.criticalSystemReminder_EXPERIMENTAL,
-    contentReplacementState,
-  })
-
-  // Preserve tool use results for subagents with viewable transcripts (in-process teammates)
-  if (preserveToolUseResults) {
-    agentToolUseContext.preserveToolUseResults = true
-  }
-
-  // Expose cache-safe params for background summarization (prompt cache sharing)
-  if (onCacheSafeParams) {
-    onCacheSafeParams({
-      systemPrompt: agentSystemPrompt,
-      userContext: resolvedUserContext,
-      systemContext: resolvedSystemContext,
-      toolUseContext: agentToolUseContext,
-      forkContextMessages: initialMessages,
+      agentType: agentDefinition.agentType,
+      messages: initialMessages,
+      readFileState: agentReadFileState,
+      abortController: agentAbortController,
+      getAppState: agentGetAppState,
+      // Sync agents share these callbacks with parent
+      shareSetAppState: !isAsync,
+      shareSetResponseLength: true, // Both sync and async contribute to response metrics
+      criticalSystemReminder_EXPERIMENTAL:
+        agentDefinition.criticalSystemReminder_EXPERIMENTAL,
+      contentReplacementState,
     })
-  }
 
-  // Record initial messages before the query loop starts, plus the agentType
-  // so resume can route correctly when subagent_type is omitted. Both writes
-  // are fire-and-forget — persistence failure shouldn't block the agent.
-  void recordSidechainTranscript(initialMessages, agentId).catch(_err =>
-    logForDebugging(`Failed to record sidechain transcript: ${_err}`),
-  )
-  void writeAgentMetadata(agentId, {
-    agentType: agentDefinition.agentType,
-    ...(worktreePath && { worktreePath }),
-    ...(description && { description }),
-    ...(personalityName && { personalityName }),
-  }).catch(_err => logForDebugging(`Failed to write agent metadata: ${_err}`))
+    if (!isAsync) {
+      // Foreground shares the parent's denial counter (createSubagentContext,
+      // shareSetAppState). Once backgrounded the agent must stop charging
+      // denials to the parent, so it gets its own — matching an agent that was
+      // async from the start. Denials from the foreground phase are dropped;
+      // the 3-consecutive/20-total escalation restarts from zero.
+      const localDenialTracking = createDenialTrackingState()
+      const setAppState = () => {}
+      const foregroundSetAppState = agentToolUseContext.setAppState
+      agentToolUseContext.setAppState = updater => {
+        agentGetAppState()
+        if (!isBackgrounded) foregroundSetAppState(updater)
+      }
+      agentToolUseContext.refreshRuntimeContext = context => {
+        agentGetAppState()
+        if (!isBackgrounded) return context
+        const tools = useExactTools ? context.options.tools : filterToolsForAgent({
+          tools: context.options.tools,
+          isBuiltIn: isBuiltInAgent(agentDefinition),
+          isAsync: true,
+          permissionMode: agentPermissionMode,
+        })
+        if (context.localDenialTracking === localDenialTracking &&
+            context.setAppState === setAppState && tools.length === context.options.tools.length) return context
+        return {
+          ...context,
+          options: { ...context.options, tools, isNonInteractiveSession: true },
+          setAppState,
+          localDenialTracking,
+        }
+      }
+    }
 
-  // Track the last recorded message UUID for parent chain continuity
-  let lastRecordedUuid: UUID | null = initialMessages.at(-1)?.uuid ?? null
+    // Preserve tool use results for subagents with viewable transcripts (in-process teammates)
+    if (preserveToolUseResults) {
+      agentToolUseContext.preserveToolUseResults = true
+    }
 
-  try {
+    // Expose cache-safe params for background summarization (prompt cache sharing)
+    if (onCacheSafeParams) {
+      onCacheSafeParams({
+        systemPrompt: agentSystemPrompt,
+        userContext: resolvedUserContext,
+        systemContext: resolvedSystemContext,
+        toolUseContext: agentToolUseContext,
+        forkContextMessages: initialMessages,
+      })
+    }
+
+    // Record initial messages before the query loop starts, plus the agentType
+    // so resume can route correctly when subagent_type is omitted. Both writes
+    // are fire-and-forget — persistence failure shouldn't block the agent.
+    void recordSidechainTranscript(initialMessages, agentId).catch(_err =>
+      logForDebugging(`Failed to record sidechain transcript: ${_err}`),
+    )
+    void writeAgentMetadata(agentId, {
+      agentType: agentDefinition.agentType,
+      ...(worktreePath && { worktreePath }),
+      ...(description && { description }),
+      ...(personalityName && { personalityName }),
+    }).catch(_err => logForDebugging(`Failed to write agent metadata: ${_err}`))
+
+    // Track the last recorded message UUID for parent chain continuity
+    let lastRecordedUuid: UUID | null = initialMessages.at(-1)?.uuid ?? null
+
     for await (const message of query({
       messages: initialMessages,
       systemPrompt: agentSystemPrompt,
@@ -833,8 +873,15 @@ export async function* runAgent({
       agentDefinition.callback()
     }
   } finally {
-    // Clean up agent-specific MCP servers (runs on normal completion, abort, or error)
-    await mcpCleanup()
+    // Clean up agent-specific MCP servers (runs on normal completion, abort, or error).
+    // Bounded: per-client errors are already caught inside cleanup(), so the only
+    // failure mode is a hang — client.close() has no deadline for network
+    // transports. This finally is awaited by the caller's `for await`, so a hang
+    // stalls the rest of this cleanup, leaves the task at 'running', and keeps the
+    // agent id locked in activeAgentRuns (never resumable). withTimeout (not a
+    // raw sleep race) clears and unrefs its timer, so the common case where
+    // cleanup wins leaves nothing holding the event loop open at process exit.
+    await withTimeout(mcpCleanup(), 1000, 'MCP cleanup timed out').catch(() => {})
     // Clean up agent's session hooks
     if (agentDefinition.hooks) {
       clearSessionHooks(rootSetAppState, agentId)
@@ -844,7 +891,7 @@ export async function* runAgent({
       cleanupAgentTracking(agentId)
     }
     // Release cloned file state cache memory
-    agentToolUseContext.readFileState.clear()
+    agentToolUseContext?.readFileState.clear()
     // Release the cloned fork context messages
     initialMessages.length = 0
     // Release perfetto agent registry entry

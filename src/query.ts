@@ -368,6 +368,7 @@ async function* queryLoop(
     // is reassigned within an iteration (queryTracking, messages updates);
     // the rest are read-only between continue sites.
     let { toolUseContext } = state
+    toolUseContext = toolUseContext.refreshRuntimeContext?.(toolUseContext) ?? toolUseContext
     const {
       messages,
       autoCompactTracking,
@@ -778,6 +779,7 @@ async function* queryLoop(
         try {
           let streamingFallbackOccured = false
           queryCheckpoint('query_api_streaming_start')
+          toolUseContext = toolUseContext.refreshRuntimeContext?.(toolUseContext) ?? toolUseContext
           for await (const message of deps.callModel({
             messages: prependUserContext(messagesForQuery, userContext),
             systemPrompt: fullSystemPrompt,

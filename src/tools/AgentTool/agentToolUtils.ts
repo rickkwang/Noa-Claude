@@ -28,6 +28,7 @@ import {
   createProgressTracker,
   enqueueAgentNotification,
   failAgentTask as failAsyncAgent,
+  finishAgentRun,
   getProgressUpdate,
   getTokenCountFromTracker,
   isLocalAgentTask,
@@ -734,33 +735,37 @@ export async function runAsyncAgentLifecycle({
       ...worktreeResult,
     })
   } finally {
-    // stopSummarization is idempotent (startAgentSummarization tracks a stopped
-    // flag), so calling it once in finally covers both success and error paths.
-    stopSummarization?.()
-    clearInvokedSkillsForAgent(agentIdForCleanup)
-    clearDumpState(agentIdForCleanup)
-    // Last-resort notification: if some unexpected throw skipped both the
-    // success and catch enqueue paths, the task stays notified=false and
-    // permanently occupies the coordinator panel. Force a minimal failed
-    // notification so evictTerminalTask can clean up.
-    if (!notificationFired) {
-      try {
-        failAsyncAgent(taskId, 'Agent terminated unexpectedly', rootSetAppState)
-        enqueueAgentNotification({
-          taskId,
-          description,
-          status: 'failed',
-          error: 'Agent terminated unexpectedly',
-          setAppState: rootSetAppState,
-          personalityName: metadata.personalityName,
-          toolUseId: toolUseContext.toolUseId,
-        })
-      } catch (e) {
-        logForDebugging(
-          `Fallback agent notification failed: ${errorMessage(e)}`,
-          { level: 'error' },
-        )
+    try {
+      // stopSummarization is idempotent (startAgentSummarization tracks a stopped
+      // flag), so calling it once in finally covers both success and error paths.
+      stopSummarization?.()
+      clearInvokedSkillsForAgent(agentIdForCleanup)
+      clearDumpState(agentIdForCleanup)
+      // Last-resort notification: if some unexpected throw skipped both the
+      // success and catch enqueue paths, the task stays notified=false and
+      // permanently occupies the coordinator panel. Force a minimal failed
+      // notification so evictTerminalTask can clean up.
+      if (!notificationFired) {
+        try {
+          failAsyncAgent(taskId, 'Agent terminated unexpectedly', rootSetAppState)
+          enqueueAgentNotification({
+            taskId,
+            description,
+            status: 'failed',
+            error: 'Agent terminated unexpectedly',
+            setAppState: rootSetAppState,
+            personalityName: metadata.personalityName,
+            toolUseId: toolUseContext.toolUseId,
+          })
+        } catch (e) {
+          logForDebugging(
+            `Fallback agent notification failed: ${errorMessage(e)}`,
+            { level: 'error' },
+          )
+        }
       }
+    } finally {
+      finishAgentRun(taskId)
     }
   }
 }

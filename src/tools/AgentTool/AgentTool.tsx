@@ -6,14 +6,14 @@ import type { Message as MessageType, NormalizedUserMessage } from 'src/types/me
 import { getQuerySourceForAgent } from 'src/utils/promptCategory.js';
 import { z } from 'zod/v4';
 import { clearInvokedSkillsForAgent, getSdkAgentProgressSummariesEnabled } from '../../bootstrap/state.js';
-import { createCombinedAbortController } from '../../utils/abortController.js';
+import { createChildAbortController } from '../../utils/abortController.js';
 import { enhanceSystemPromptWithEnvDetails, getSystemPrompt } from '../../constants/prompts.js';
 import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js';
 import { startAgentSummarization } from '../../services/AgentSummary/agentSummary.js';
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from '../../services/analytics/index.js';
 import { clearDumpState } from '../../services/api/dumpPrompts.js';
-import { assertCanStartBackgroundAgent, createActivityDescriptionResolver, createProgressTracker, getProgressUpdate, isLocalAgentTask, registerAgentForeground, registerAsyncAgent, unregisterAgentForeground, updateAgentProgress as updateAsyncAgentProgress, updateProgressFromMessage } from '../../tasks/LocalAgentTask/LocalAgentTask.js';
+import { assertCanStartBackgroundAgent, createActivityDescriptionResolver, createProgressTracker, finishAgentRun, getProgressUpdate, isLocalAgentTask, registerAgentForeground, registerAsyncAgent, unregisterAgentForeground, updateAgentProgress as updateAsyncAgentProgress, updateProgressFromMessage } from '../../tasks/LocalAgentTask/LocalAgentTask.js';
 import { checkRemoteAgentEligibility, formatPreconditionError, getRemoteTaskSessionUrl, registerRemoteAgentTask } from '../../tasks/RemoteAgentTask/RemoteAgentTask.js';
 import { assembleToolPool } from '../../tools.js';
 import { asAgentId } from '../../types/ids.js';
@@ -25,7 +25,7 @@ import { isEnvTruthy } from '../../utils/envUtils.js';
 import { AbortError, errorMessage, toError } from '../../utils/errors.js';
 import type { CacheSafeParams } from '../../utils/forkedAgent.js';
 import { lazySchema } from '../../utils/lazySchema.js';
-import { createUserMessage, buildContinuationHistory, isSyntheticMessage, normalizeMessages, snapshotContinuationInitialMessages } from '../../utils/messages.js';
+import { createUserMessage, isSyntheticMessage, normalizeMessages } from '../../utils/messages.js';
 import { getAgentModel } from '../../utils/model/agent.js';
 import { permissionModeSchema } from '../../utils/permissions/PermissionMode.js';
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js';
@@ -33,11 +33,10 @@ import { filterDeniedAgents, getDenyRuleForAgent } from '../../utils/permissions
 import { enqueueSdkEvent } from '../../utils/sdkEventQueue.js';
 import { decrementTotalAgentSpawns, getMaxSubagentsPerSession, getTotalAgentSpawns, incrementTotalAgentSpawns } from '../../utils/task/sessionBudget.js';
 import { writeAgentMetadata } from '../../utils/sessionStorage.js';
-import { sleep } from '../../utils/sleep.js';
+import { sleep, withTimeout } from '../../utils/sleep.js';
 import { buildEffectiveSystemPrompt } from '../../utils/systemPrompt.js';
 import { asSystemPrompt } from '../../utils/systemPromptType.js';
 import { getTaskOutputPath } from '../../utils/task/diskOutput.js';
-import type { ContentReplacementState } from '../../utils/toolResultStorage.js';
 import { getParentSessionId, isTeammate } from '../../utils/teammate.js';
 import { isInProcessTeammate } from '../../utils/teammateContext.js';
 import { teleportToRemote } from '../../utils/teleport.js';
@@ -847,6 +846,8 @@ export const AgentTool = buildTool({
 
       // Wrap entire sync agent execution in context for analytics attribution
       // and optionally in a worktree cwd override for filesystem isolation
+      let wasBackgrounded = false;
+      let detachParentAbort: (() => void) | undefined;
       return runWithAgentContext(syncAgentContext, () => wrapWithCwd(async () => {
         spawnReservationCommitted = true;
         const agentMessages: MessageType[] = [];
@@ -901,8 +902,6 @@ export const AgentTool = buildTool({
 
         // Track if we've shown the background hint UI
         let backgroundHintShown = false;
-        // Track if the agent was backgrounded (cleanup handled by backgrounded finally)
-        let wasBackgrounded = false;
         // Wire the foreground task's abortController INTO the run. Without
         // this, TaskStop/killAsyncAgent during the foreground phase aborts a
         // dangling controller — the task flips to 'killed' while the agent
@@ -914,17 +913,19 @@ export const AgentTool = buildTool({
         if (foregroundTaskId) {
           const taskState = toolUseContext.getAppState().tasks[foregroundTaskId];
           if (isLocalAgentTask(taskState) && taskState.abortController) {
-            foregroundAbortController = createCombinedAbortController(toolUseContext.abortController, taskState.abortController);
+            foregroundAbortController = createChildAbortController(taskState.abortController);
+            const controller = foregroundAbortController;
+            const parentSignal = toolUseContext.abortController.signal;
+            const abortFromParent = () => controller.abort(parentSignal.reason);
+            if (parentSignal.aborted) abortFromParent();
+            else parentSignal.addEventListener('abort', abortFromParent, { once: true });
+            detachParentAbort = () => parentSignal.removeEventListener('abort', abortFromParent);
           }
         }
         // Per-scope stop function — NOT shared with the backgrounded closure.
         // idempotent: startAgentSummarization's stop() checks `stopped` flag.
         let stopForegroundSummarization: (() => void) | undefined;
-        // Captured from the foreground run's context so the backgrounded
-        // continuation reuses run 1's content-replacement decisions (prompt
-        // cache stability; without it large tool results re-expand).
-        let foregroundReplacementState: ContentReplacementState | undefined;
-        let foregroundInitialMessages: MessageType[] | undefined;
+        let foregroundCacheSafeParams: CacheSafeParams | undefined;
         // const capture for sound type narrowing inside the callback below
         const summaryTaskId = foregroundTaskId;
 
@@ -937,8 +938,7 @@ export const AgentTool = buildTool({
             ...(foregroundAbortController && { abortController: foregroundAbortController })
           },
           onCacheSafeParams: (params: CacheSafeParams) => {
-            foregroundReplacementState = params.toolUseContext.contentReplacementState;
-            foregroundInitialMessages = snapshotContinuationInitialMessages(params.forkContextMessages);
+            foregroundCacheSafeParams = params;
             if (summaryTaskId && getSdkAgentProgressSummariesEnabled()) {
               const {
                 stop
@@ -992,6 +992,7 @@ export const AgentTool = buildTool({
                 // Capture the taskId for use in the async callback
                 const backgroundedTaskId = foregroundTaskId;
                 wasBackgrounded = true;
+                detachParentAbort?.();
                 // Stop foreground summarization; the lifecycle below owns
                 // its own independent stop function.
                 stopForegroundSummarization?.();
@@ -999,42 +1000,28 @@ export const AgentTool = buildTool({
                 // Workload: inherited via ALS at `void` invocation time,
                 // same as the async-from-start path above.
                 // Continue agent in background and return async result
-                void runWithAgentContext(syncAgentContext, async () => {
-                  // Clean up the foreground iterator so its finally block runs
-                  // (releases MCP connections, session hooks, prompt cache tracking, etc.)
-                  // Timeout prevents blocking if MCP server cleanup hangs.
-                  // .catch() prevents unhandled rejection if timeout wins the race.
-                  await Promise.race([agentIterator.return(undefined).catch(() => {}), sleep(1000)]);
-                  // Continue the foreground run's conversation instead of
-                  // restarting from the initial prompt — the iterator was just
-                  // closed, so re-running from initialMessages alone would
-                  // re-execute every tool call (doubled side effects + tokens).
-                  // seedMessages keeps result/progress tracking on the full
-                  // conversation; contentReplacementState carries run 1's
-                  // replacement decisions so wire prefixes stay cache-identical.
-                  const hasInitializedPromptContext = foregroundInitialMessages !== undefined;
-                  const continuedHistory = buildContinuationHistory(foregroundInitialMessages ?? [
-                    ...(runAgentParams.forkContextMessages ?? []),
-                    ...runAgentParams.promptMessages
-                  ], agentMessages);
-                  await runAsyncAgentLifecycle({
+                void runWithAgentContext(syncAgentContext, () => runAsyncAgentLifecycle({
                     taskId: backgroundedTaskId,
                     abortController: task.abortController!,
                     seedMessages: agentMessages,
-                    makeStream: onCacheSafeParams => runAgent({
-                      ...runAgentParams,
-                      promptMessages: continuedHistory,
-                      forkContextMessages: undefined,
-                      isAsync: true,
-                      override: {
-                        ...runAgentParams.override,
-                        agentId: asAgentId(backgroundedTaskId),
-                        abortController: task.abortController
-                      },
-                      contentReplacementState: foregroundReplacementState,
-                      reuseInitializedPromptContext: hasInitializedPromptContext,
-                      onCacheSafeParams
-                    }),
+                    makeStream: async function* (onCacheSafeParams) {
+                      // Transfer the existing iterator, including its in-flight
+                      // next(), rather than restart a partially executed turn.
+                      try {
+                        let result = await nextMessagePromise;
+                        if (!result.done && foregroundCacheSafeParams) onCacheSafeParams?.(foregroundCacheSafeParams);
+                        while (!result.done) {
+                          yield result.value;
+                          result = await agentIterator.next();
+                        }
+                        if (task.abortController!.signal.aborted) throw new AbortError();
+                      } finally {
+                        // Swallow cleanup failures: an unhandled rejection here
+                        // would replace an in-flight AbortError, reporting a
+                        // user-cancelled agent as a cleanup error.
+                        await agentIterator.return(undefined).catch(() => {});
+                      }
+                    },
                     metadata,
                     description,
                     toolUseContext,
@@ -1042,8 +1029,7 @@ export const AgentTool = buildTool({
                     agentIdForCleanup: syncAgentId,
                     enableSummarization: getSdkAgentProgressSummariesEnabled(),
                     getWorktreeResult: cleanupWorktreeIfNeeded
-                  });
-                });
+                  }));
 
                 // Return async_launched result immediately
                 const canReadOutputFile = toolUseContext.options.tools.some(t => toolMatchesName(t, FILE_READ_TOOL_NAME) || toolMatchesName(t, BASH_TOOL_NAME));
@@ -1188,12 +1174,9 @@ export const AgentTool = buildTool({
             }
           }
 
-          // Clean up scoped skills so they don't accumulate in the global map
-          clearInvokedSkillsForAgent(syncAgentId);
-
-          // Clean up dumpState entry for this agent to prevent unbounded growth
-          // Skip if backgrounded — the backgrounded agent's finally handles cleanup
+          // A background handoff still owns the in-flight run's scoped state.
           if (!wasBackgrounded) {
+            clearInvokedSkillsForAgent(syncAgentId);
             clearDumpState(syncAgentId);
             // Release the personality slot. unregisterAgentForeground deletes
             // the task straight out of AppState without going through
@@ -1210,7 +1193,14 @@ export const AgentTool = buildTool({
           // Clean up worktree if applicable (in finally to handle abort/error paths)
           // Skip if backgrounded — the background continuation is still running in it
           if (!wasBackgrounded) {
-            worktreeResult = await cleanupWorktreeIfNeeded();
+            // Bounded: each git exec inside defaults to a 10-minute timeout
+            // (execFileNoThrow), and this await gates finishAgentRun in the
+            // .finally() below — a wedged git would keep the agent id
+            // unresumable for far longer than the error text implies.
+            worktreeResult = await withTimeout(cleanupWorktreeIfNeeded(), 30_000, 'Worktree cleanup timed out').catch(error => {
+              logForDebugging(`Worktree cleanup did not finish: ${errorMessage(error)}`, { level: 'warn' });
+              return {};
+            });
           }
         }
 
@@ -1280,7 +1270,10 @@ export const AgentTool = buildTool({
             ...worktreeResult
           }
         };
-      }));
+      })).finally(() => {
+        detachParentAbort?.();
+        if (!wasBackgrounded) finishAgentRun(syncAgentId);
+      });
     }
     } catch (error) {
       if (!spawnReservationCommitted) decrementTotalAgentSpawns();

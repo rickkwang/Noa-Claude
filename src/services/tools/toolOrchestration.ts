@@ -9,9 +9,8 @@ import { logEvent } from '../analytics/index.js'
 import { type MessageUpdateLazy, runToolUse } from './toolExecution.js'
 
 export function getMaxToolUseConcurrency(): number {
-  return (
-    parseInt(process.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY || '', 10) || 10
-  )
+  const limit = Number(process.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY)
+  return Number.isSafeInteger(limit) && limit > 0 ? limit : 10
 }
 
 export type MessageUpdate = {

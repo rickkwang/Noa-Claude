@@ -9,7 +9,6 @@ import {
   buildContinuationHistory,
   createAssistantMessage,
   createUserMessage,
-  snapshotContinuationInitialMessages,
 } from '../../utils/messages.js'
 
 function toolUseAssistant(id: string): AssistantMessage {
@@ -48,25 +47,27 @@ function microcompactBoundary(): SystemMicrocompactBoundaryMessage {
   } as unknown as SystemMicrocompactBoundaryMessage
 }
 
+function contextAttachment() {
+  return {
+    type: 'attachment',
+    attachment: {
+      type: 'hook_additional_context',
+      content: ['restored instructions'],
+    },
+    uuid: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+  }
+}
+
 describe('buildContinuationHistory', () => {
-  test('snapshots initial messages before run cleanup clears the source array', () => {
-    const initial = createUserMessage({ content: 'original task' })
-    const source = [initial]
-    const snapshot = snapshotContinuationInitialMessages(source)
-
-    source.length = 0
-
-    expect(buildContinuationHistory(snapshot, [])).toEqual([initial])
-  })
-
   test('returns empty for no messages', () => {
-    expect(buildContinuationHistory([], [])).toEqual([])
+    expect(buildContinuationHistory([])).toEqual([])
   })
 
-  test('prepends the initial prompt when no compact boundary exists', () => {
+  test('keeps the whole conversation when no compact boundary exists', () => {
     const initial = createUserMessage({ content: 'original task' })
     const response = createAssistantMessage({ content: 'working on it' })
-    expect(buildContinuationHistory([initial], [response])).toEqual([
+    expect(buildContinuationHistory([initial, response])).toEqual([
       initial,
       response,
     ])
@@ -82,7 +83,7 @@ describe('buildContinuationHistory', () => {
       uuid: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
     }
-    const result = buildContinuationHistory([], [
+    const result = buildContinuationHistory([
       assistant,
       progress as never,
       user,
@@ -95,22 +96,25 @@ describe('buildContinuationHistory', () => {
       content: 'summary of prior work',
       isCompactSummary: true,
     })
-    const attachment = {
-      type: 'attachment',
-      attachment: {
-        type: 'hook_additional_context',
-        content: ['restored instructions'],
-      },
-      uuid: crypto.randomUUID(),
-      timestamp: new Date().toISOString(),
-    }
+    const attachment = contextAttachment()
     expect(
-      buildContinuationHistory([], [
+      buildContinuationHistory([
         compactBoundary(),
         summary,
         attachment as never,
       ]),
     ).toEqual([summary, attachment as never])
+  })
+
+  test('preserves context attachments when nothing was ever compacted', () => {
+    // runAgent records SubagentStart hook context as an attachment message.
+    // Resuming an agent that never compacted must not strip it.
+    const attachment = contextAttachment()
+    const task = createUserMessage({ content: 'original task' })
+    expect(buildContinuationHistory([attachment as never, task])).toEqual([
+      attachment as never,
+      task,
+    ])
   })
 
   test('slices at the last compact boundary, dropping pre-compact history', () => {
@@ -119,9 +123,9 @@ describe('buildContinuationHistory', () => {
       content: 'summary of prior work',
       isCompactSummary: true,
     })
-    const initial = createUserMessage({ content: 'original task' })
     const after = createAssistantMessage({ content: 'new work' })
-    const result = buildContinuationHistory([initial], [
+    const result = buildContinuationHistory([
+      createUserMessage({ content: 'original task' }),
       before,
       compactBoundary(),
       summary,
@@ -134,7 +138,7 @@ describe('buildContinuationHistory', () => {
     const first = createAssistantMessage({ content: 'first era' })
     const second = createAssistantMessage({ content: 'second era' })
     const third = createAssistantMessage({ content: 'third era' })
-    const result = buildContinuationHistory([], [
+    const result = buildContinuationHistory([
       first,
       compactBoundary(),
       second,
@@ -145,10 +149,11 @@ describe('buildContinuationHistory', () => {
   })
 
   test('microcompact boundary does not slice history', () => {
+    const initial = createUserMessage({ content: 'original task' })
     const before = createAssistantMessage({ content: 'still relevant' })
     const after = createAssistantMessage({ content: 'continuing' })
-    const initial = createUserMessage({ content: 'original task' })
-    const result = buildContinuationHistory([initial], [
+    const result = buildContinuationHistory([
+      initial,
       before,
       microcompactBoundary(),
       after,
@@ -160,7 +165,7 @@ describe('buildContinuationHistory', () => {
     const resolved = toolUseAssistant('tu_1')
     const resolvedResult = toolResultUser('tu_1')
     const dangling = toolUseAssistant('tu_2')
-    const result = buildContinuationHistory([], [
+    const result = buildContinuationHistory([
       resolved,
       resolvedResult,
       dangling,
@@ -172,7 +177,7 @@ describe('buildContinuationHistory', () => {
     const assistant = toolUseAssistant('tu_1')
     const result = toolResultUser('tu_1')
     const tail = createAssistantMessage({ content: 'all done' })
-    expect(buildContinuationHistory([], [assistant, result, tail])).toEqual([
+    expect(buildContinuationHistory([assistant, result, tail])).toEqual([
       assistant,
       result,
       tail,
