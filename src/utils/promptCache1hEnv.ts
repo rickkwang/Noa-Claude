@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Leaf module: imports only envUtils so both the request path
 // (services/api/claude.ts) and the doctor diagnostic (utils/promptCache1h.ts)
 // can read the 1h-TTL opt-in without pulling in the
