@@ -64,25 +64,24 @@ import { FILE_READ_TOOL_NAME } from 'src/tools/FileReadTool/prompt.js'
 import { WEB_FETCH_TOOL_NAME } from 'src/tools/WebFetchTool/prompt.js'
 import { errorMessage } from '../errors.js'
 import { getClaudeTempDir } from '../permissions/filesystem.js'
-import type { PermissionRuleValue } from '../permissions/PermissionRule.js'
+import { permissionRuleValueFromString } from '../permissions/permissionRuleParser.js'
 import { ripgrepCommand } from '../ripgrep.js'
 
-// Local copies to avoid circular dependency
-// (permissions.ts imports SandboxManager, bashPermissions.ts imports permissions.ts)
-function permissionRuleValueFromString(
-  ruleString: string,
-): PermissionRuleValue {
-  const matches = ruleString.match(/^([^(]+)\(([^)]+)\)$/)
-  if (!matches) {
-    return { toolName: ruleString }
-  }
-  const toolName = matches[1]
-  const ruleContent = matches[2]
-  if (!toolName || !ruleContent) {
-    return { toolName: ruleString }
-  }
-  return { toolName, ruleContent }
-}
+// The rule parser is imported, not copied. An earlier local copy existed to
+// "avoid a circular dependency" (permissions.ts imports SandboxManager), but
+// that cycle already exists via getClaudeTempDir below
+// (sandbox-adapter -> permissions/filesystem.ts -> permissions.ts ->
+// sandbox-adapter), and permissionRuleParser.ts reaches nothing in this file,
+// so the import adds no module to this file's closure.
+//
+// SECURITY: the copy had drifted to a naive /^([^(]+)\(([^)]+)\)$/, which
+// silently drops every rule whose content contains a parenthesis — literal
+// (a directory named "Docs (v2)") or escaped (`Edit(//x/Docs \(v2\)/**)`, the
+// form permissionRuleValueToString writes). A dropped rule has no ruleContent,
+// so the Edit/Read loops below skipped it: a deny rule never reached
+// denyWrite/denyRead and the sandbox left a folder the user marked read-only
+// writable from Bash. Parse with the same code the permission layer uses so the
+// two can never disagree about what a rule means.
 
 function permissionRuleExtractPrefix(permissionRule: string): string | null {
   const match = permissionRule.match(/^(.+):\*$/)

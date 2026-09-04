@@ -322,20 +322,24 @@ export function findDangerousClassifierPermissions(
 
   // Check CLI --allowed-tools arguments
   for (const toolSpec of cliAllowedTools) {
-    // Parse tool spec: "Bash" or "Bash(pattern)" or "Agent" or "Agent(subagent_type)"
-    const match = toolSpec.match(/^([^(]+)(?:\(([^)]*)\))?$/)
-    if (match) {
-      const toolName = match[1]!.trim()
-      const ruleContent = match[2]?.trim()
+    // Parse tool spec: "Bash" or "Bash(pattern)" or "Agent" or "Agent(subagent_type)".
+    // Use the canonical escape-aware parser: a naive /^([^(]+)(\(([^)]*)\))?$/
+    // fails to match any spec whose content contains a parenthesis (a path like
+    // "//x/Docs (v2)/**", or an escaped `\(`), and an unmatched spec is skipped
+    // entirely — so a dangerous grant would silently not be flagged.
+    const { toolName, ruleContent } = permissionRuleValueFromString(
+      toolSpec.trim(),
+    )
+    const trimmedToolName = toolName.trim()
+    const trimmedContent = ruleContent?.trim()
 
-      if (isDangerousClassifierPermission(toolName, ruleContent)) {
-        dangerous.push({
-          ruleValue: { toolName, ruleContent },
-          source: 'cliArg',
-          ruleDisplay: ruleContent ? toolSpec : `${toolName}(*)`,
-          sourceDisplay: '--allowed-tools',
-        })
-      }
+    if (isDangerousClassifierPermission(trimmedToolName, trimmedContent)) {
+      dangerous.push({
+        ruleValue: { toolName: trimmedToolName, ruleContent: trimmedContent },
+        source: 'cliArg',
+        ruleDisplay: trimmedContent ? toolSpec : `${trimmedToolName}(*)`,
+        sourceDisplay: '--allowed-tools',
+      })
     }
   }
 
