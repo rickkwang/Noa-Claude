@@ -1195,6 +1195,13 @@ export const AgentTool = buildTool({
           // Skip if backgrounded — the backgrounded agent's finally handles cleanup
           if (!wasBackgrounded) {
             clearDumpState(syncAgentId);
+            // Release the personality slot. unregisterAgentForeground deletes
+            // the task straight out of AppState without going through
+            // evictTerminalTask, so the eviction-path release never fires for
+            // a foreground agent — the name would stay in the module-global
+            // map forever and the 32-name pool degrade to Newton-2/Einstein-3.
+            // Backgrounded agents keep theirs; eviction releases them later.
+            releaseAgentPersonalityName(syncAgentId);
           }
 
           // Cancel auto-background timer if agent completed before it fired
