@@ -20,6 +20,7 @@ import { cleanupAgentTracking } from '../../services/api/promptCacheBreakDetecti
 import {
   connectToServer,
   fetchToolsForClient,
+  getServerCacheKey,
 } from '../../services/mcp/client.js'
 import { getMcpConfigByName } from '../../services/mcp/config.js'
 import type {
@@ -85,6 +86,10 @@ import { filterToolsForAgent, resolveAgentTools } from './agentToolUtils.js'
 import { createDenialTrackingState } from '../../utils/permissions/denialTracking.js'
 import { type AgentDefinition, isBuiltInAgent } from './loadAgentsDir.js'
 
+// Inline definitions use the shared connection cache. Only the last agent
+// using a connection may close it.
+const inlineMcpUsers = new Map<Promise<MCPServerConnection>, number>()
+
 /**
  * Initialize agent-specific MCP servers
  * Agents can define their own MCP servers in their frontmatter that are additive
@@ -130,15 +135,22 @@ async function initializeAgentMcpServers(
   }
 
   const agentClients: MCPServerConnection[] = []
-  // Track which clients were newly created (inline definitions) vs. shared from parent
-  // Only newly created clients should be cleaned up when the agent finishes
-  const newlyCreatedClients: MCPServerConnection[] = []
+  const inlineConnections: { connection: Promise<MCPServerConnection>; client?: MCPServerConnection }[] = []
   const agentTools: Tool[] = []
 
   const cleanup = async () => {
-    for (const client of newlyCreatedClients) {
-      if (client.type === 'connected') {
+    for (const { connection, client } of inlineConnections) {
+      const remaining = inlineMcpUsers.get(connection)! - 1
+      if (remaining > 0) {
+        inlineMcpUsers.set(connection, remaining)
+        continue
+      }
+      inlineMcpUsers.delete(connection)
+      if (client?.type === 'connected') {
         try {
+          // New users must not acquire a connection while it is closing.
+          const key = getServerCacheKey(client.name, client.config)
+          if (connectToServer.cache.get(key) === connection) connectToServer.cache.delete(key)
           await client.cleanup()
         } catch (error) {
           logForDebugging(
@@ -188,12 +200,17 @@ async function initializeAgentMcpServers(
         isNewlyCreated = true
       }
 
-      // Connect to the server
-      const client = await connectToServer(name, config)
-      agentClients.push(client)
-      if (isNewlyCreated) {
-        newlyCreatedClients.push(client)
+      // Reserve before await so a closing sibling also sees pending users.
+      const connection = connectToServer(name, config)
+      const owned: { connection: Promise<MCPServerConnection>; client?: MCPServerConnection } | undefined =
+        isNewlyCreated ? { connection } : undefined
+      if (owned) {
+        inlineConnections.push(owned)
+        inlineMcpUsers.set(connection, (inlineMcpUsers.get(connection) ?? 0) + 1)
       }
+      const client = await connection
+      agentClients.push(client)
+      if (owned) owned.client = client
 
       // Fetch tools if connected
       if (client.type === 'connected') {

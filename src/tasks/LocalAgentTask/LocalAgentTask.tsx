@@ -325,14 +325,8 @@ export function killAsyncAgent(taskId: string, setAppState: SetAppState): void {
   clearProgressThrottle(taskId);
   if (killed) {
     void evictTaskOutput(taskId);
-    // Abort is cooperative: the run normally releases its own slot when its
-    // finally reaches finishAgentRun, and this delete is idempotent. But if it
-    // is wedged in an await that ignores the abort signal, nothing else frees
-    // the id — not eviction, not unregisterAgentForeground — and every resume
-    // is rejected with "retry after it finishes", which never becomes true.
-    // A kill is the user's explicit "drop this run", so bound the wait.
-    const release = setTimeout(finishAgentRun, KILLED_RUN_RELEASE_MS, taskId);
-    if (typeof release === 'object') release.unref?.();
+    // Abort is cooperative. Keep the id owned until the run exits: a late
+    // catch or cleanup still addresses state by id and could affect a resume.
   }
 }
 
@@ -518,15 +512,15 @@ export function failAgentTask(taskId: string, error: string, setAppState: SetApp
 
 // Terminal results are readable before cleanup finishes. Keep run ownership
 // outside AppState so eviction cannot allow a same-ID resume during cleanup.
-const activeAgentRuns = new Set<string>();
+// Tokens prevent a duplicate release from freeing a subsequent run's slot.
+const activeAgentRuns = new Map<string, symbol>();
 
-/** Grace period before a killed run's id is force-released. Every cleanup step
- * a killed run still has to walk is individually bounded (MCP cleanup 1s in
- * runAgent, worktree cleanup 30s in AgentTool), so a run that is going to
- * release its own slot always does so well inside this window. */
-const KILLED_RUN_RELEASE_MS = 60_000;
+export function getAgentRunToken(agentId: string): symbol | undefined {
+  return activeAgentRuns.get(agentId);
+}
 
-export function finishAgentRun(agentId: string): void {
+export function finishAgentRun(agentId: string, runToken: symbol | undefined): void {
+  if (activeAgentRuns.get(agentId) !== runToken) return;
   activeAgentRuns.delete(agentId);
 }
 
@@ -556,7 +550,7 @@ export function registerAsyncAgent({
   toolUseId?: string;
 }): LocalAgentTaskState {
   if (activeAgentRuns.has(agentId)) {
-    throw new Error(`Agent '${agentId}' is still active or finishing cleanup. Retry after it finishes.`);
+    throw new Error(`Agent '${agentId}' is still active or finishing cleanup. Retry once it finishes; if its cleanup is wedged, this id stays unavailable for the rest of the session.`);
   }
   assertCanStartBackgroundAgent(getAppState().tasks);
   void initTaskOutputAsSymlink(agentId, getAgentTranscriptPath(asAgentId(agentId)));
@@ -591,7 +585,7 @@ export function registerAsyncAgent({
 
   // Register task in AppState
   registerTask(taskState, setAppState);
-  activeAgentRuns.add(agentId);
+  activeAgentRuns.set(agentId, Symbol(agentId));
   return taskState;
 }
 
@@ -660,7 +654,7 @@ export function registerAgentForeground({
   });
   backgroundSignalResolvers.set(agentId, resolveBackgroundSignal!);
   registerTask(taskState, setAppState);
-  activeAgentRuns.add(agentId);
+  activeAgentRuns.set(agentId, Symbol(agentId));
 
   // Auto-background after timeout if configured
   let cancelAutoBackground: (() => void) | undefined;

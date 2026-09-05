@@ -7,6 +7,8 @@ import * as commands from '../../commands.js'
 import * as mcp from '../../services/mcp/client.js'
 import * as mcpConfig from '../../services/mcp/config.js'
 import * as prompts from '../../constants/prompts.js'
+import * as worktrees from '../../utils/worktree.js'
+import * as sessionStorage from '../../utils/sessionStorage.js'
 import { getDefaultAppState } from '../../state/AppStateStore.js'
 import { createStore } from '../../state/store.js'
 import { createFileStateCacheWithSizeLimit } from '../../utils/fileStateCache.js'
@@ -198,7 +200,8 @@ describe('agent setup rollback', () => {
     const { agent, context } = fixture()
     const cleanupInline = mock(async () => {}), cleanupShared = mock(async () => {})
     spyOn(mcpConfig, 'getMcpConfigByName').mockReturnValue({ type: 'stdio', command: 'unused' } as any)
-    spyOn(mcp, 'connectToServer').mockImplementation((async (name: string) => ({ type: 'connected', name, cleanup: name === 'shared' ? cleanupShared : cleanupInline })) as any)
+    const connect = spyOn(mcp, 'connectToServer').mockImplementation((async (name: string, config: any) => ({ type: 'connected', name, config, cleanup: name === 'shared' ? cleanupShared : cleanupInline })) as any)
+    Object.assign(connect, { cache: new Map() })
     spyOn(mcp, 'fetchToolsForClient').mockImplementation((async (client: any) => {
       if (client.name === 'inline') throw new Error('MCP tools failed')
       return []
@@ -208,38 +211,162 @@ describe('agent setup rollback', () => {
     expect(cleanupShared).not.toHaveBeenCalled()
   })
 
-  test('killing a wedged run releases its id after the grace period', () => {
+  test('killing a wedged run keeps its id until the run exits', () => {
     const { store, agent } = fixture()
     const id = 'agent-lifecycle-kill-release'
     const registration: any = { agentId: id, description: 'test', prompt: 'test', selectedAgent: agent, getAppState: store.getState, setAppState: store.setState }
     tasks.registerAsyncAgent(registration)
 
-    // No run ever calls finishAgentRun here — that is the wedged case. Capture
-    // the grace timer instead of waiting a real minute for it.
-    let fireGrace: (() => void) | undefined
-    const realSetTimeout = globalThis.setTimeout
-    const timer = spyOn(globalThis, 'setTimeout').mockImplementation(((fn: any, ms: any, ...args: any[]) => {
-      if (ms === 60_000) {
-        fireGrace = () => fn(...args)
-        return { unref() {} } as any
-      }
-      return (realSetTimeout as any)(fn, ms, ...args)
-    }) as any)
-    try {
-      tasks.killAsyncAgent(id, store.setState)
-    } finally {
-      timer.mockRestore()
-    }
+    // No run ever calls finishAgentRun here — that is the wedged case.
+    tasks.killAsyncAgent(id, store.setState)
 
     expect(store.getState().tasks[id]?.status).toBe('killed')
     // Still owned: the run may legitimately still be unwinding its cleanup.
     expect(() => tasks.registerAsyncAgent(registration)).toThrow(/finishing|active|cleanup/)
-    expect(fireGrace).toBeDefined()
-
-    fireGrace!()
-
-    // Grace elapsed — the id is reusable even though the run never released it.
+    tasks.finishAgentRun(id, tasks.getAgentRunToken(id))
     expect(tasks.registerAsyncAgent(registration).agentId).toBe(id)
-    tasks.finishAgentRun(id)
+    tasks.finishAgentRun(id, tasks.getAgentRunToken(id))
+  })
+
+  test('a duplicate release does not release a re-registered run', () => {
+    const { store, agent } = fixture()
+    const id = 'agent-lifecycle-stale-release'
+    const registration: any = { agentId: id, description: 'test', prompt: 'test', selectedAgent: agent, getAppState: store.getState, setAppState: store.setState }
+    tasks.registerAsyncAgent(registration)
+    const oldToken = tasks.getAgentRunToken(id)
+
+    tasks.killAsyncAgent(id, store.setState)
+    tasks.finishAgentRun(id, oldToken)
+    expect(tasks.registerAsyncAgent(registration).agentId).toBe(id)
+    tasks.finishAgentRun(id, oldToken)
+    expect(() => tasks.registerAsyncAgent(registration)).toThrow(/finishing|active|cleanup/)
+    tasks.finishAgentRun(id, tasks.getAgentRunToken(id))
+  })
+
+  test('background lifecycle bounds a wedged worktree cleanup', async () => {
+    const { store, agent, context } = fixture()
+    const id = 'agent-lifecycle-worktree-cap'
+    const registration: any = { agentId: id, description: 'test', prompt: 'test', selectedAgent: agent, getAppState: store.getState, setAppState: store.setState }
+    const task = tasks.registerAsyncAgent(registration)
+    const cleanup = gate()
+
+    // Fire the 30s cleanup cap immediately instead of waiting real time.
+    const realSetTimeout = globalThis.setTimeout
+    const timer = spyOn(globalThis, 'setTimeout').mockImplementation(((fn: any, ms: any, ...args: any[]) => {
+      if (ms === 30_000) return (realSetTimeout as any)(fn, 0, ...args)
+      return (realSetTimeout as any)(fn, ms, ...args)
+    }) as any)
+    try {
+      await runAsyncAgentLifecycle({
+        taskId: id, abortController: task.abortController!,
+        makeStream: async function* () { yield createAssistantMessage({ content: 'done' }) },
+        metadata: { prompt: 'test', resolvedAgentModel: 'test-model', isBuiltInAgent: false, startTime: Date.now(), agentType: 'test-worker', isAsync: true },
+        description: 'test', toolUseContext: context, rootSetAppState: store.setState,
+        agentIdForCleanup: id, enableSummarization: false,
+        getWorktreeResult: async () => { await cleanup.promise; return {} },
+      })
+    } finally {
+      timer.mockRestore()
+    }
+
+    expect(store.getState().tasks[id]?.status).toBe('completed')
+    expect(() => tasks.registerAsyncAgent(registration)).toThrow(/finishing|active|cleanup/)
+    cleanup.resolve()
+    await Bun.sleep(0)
+    expect(tasks.registerAsyncAgent(registration).agentId).toBe(id)
+    tasks.finishAgentRun(id, tasks.getAgentRunToken(id))
+  })
+
+  test('one inline MCP user exiting does not close another user connection', async () => {
+    const { agent, context } = fixture()
+    const cleanup = mock(async () => {})
+    const config = { type: 'stdio', command: 'unused', scope: 'dynamic' }
+    const client = { type: 'connected', name: 'inline', config, cleanup }
+    const bothConnected = gate(), releaseFirst = gate(), releaseSecond = gate()
+    let calls = 0
+    const cacheKey = mcp.getServerCacheKey(client.name, config as any)
+    const connection = Promise.resolve(client)
+    const cache = new Map([[cacheKey, connection]])
+    const connect = spyOn(mcp, 'connectToServer').mockReturnValue(connection as any)
+    Object.assign(connect, { cache })
+    spyOn(mcp, 'fetchToolsForClient').mockImplementation((async () => {
+      const index = ++calls
+      if (index === 2) bothConnected.resolve()
+      await (index === 1 ? releaseFirst : releaseSecond).promise
+      throw new Error('setup ended')
+    }) as any)
+    const definition = { ...agent, mcpServers: [{ inline: { type: 'stdio', command: 'unused' } }] }
+    const start = (id: string) => {
+      const options = params(definition, context)
+      options.override.agentId = id
+      return agentRunner.runAgent(options).next().catch(error => error)
+    }
+    const first = start('mcp-owner-first'), second = start('mcp-owner-second')
+    try {
+      await bothConnected.promise
+      releaseFirst.resolve()
+      expect(await first).toBeInstanceOf(Error)
+      expect(cleanup).not.toHaveBeenCalled()
+      expect(cache.has(cacheKey)).toBe(true)
+    } finally {
+      releaseFirst.resolve()
+      releaseSecond.resolve()
+      await Promise.all([first, second])
+    }
+    expect(cleanup).toHaveBeenCalledTimes(1)
+    expect(cache.has(cacheKey)).toBe(false)
+  })
+
+  test.each([false, true])('AgentTool keeps ownership during late worktree cleanup (background=%s)', async background => {
+    const { store, agent, context } = fixture()
+    const cleanup = gate(), entered = gate(), notified = gate()
+    const metadataStarted = gate(), metadataDone = gate()
+    spyOn(sessionStorage, 'writeAgentMetadata').mockImplementation(async () => {
+      metadataStarted.resolve()
+      await metadataDone.promise
+    })
+    const remove = spyOn(worktrees, 'removeAgentWorktree').mockResolvedValue(true)
+    spyOn(worktrees, 'createAgentWorktree').mockResolvedValue({ worktreePath: '/tmp/test-agent-worktree', headCommit: 'test-head', gitRoot: '/tmp' } as any)
+    spyOn(worktrees, 'hasWorktreeChanges').mockImplementation(async () => {
+      entered.resolve()
+      await cleanup.promise
+      return false
+    })
+    spyOn(prompts, 'enhanceSystemPromptWithEnvDetails').mockResolvedValue(['test'])
+    let id!: string
+    spyOn(agentRunner, 'runAgent').mockImplementation((async function* (params: any) {
+      id = params.override.agentId
+      yield createAssistantMessage({ content: 'done' })
+    }) as any)
+    const unsubscribe = store.subscribe(() => {
+      if (Object.values(store.getState().tasks).some(t => t.notified)) notified.resolve()
+    })
+    const realSetTimeout = globalThis.setTimeout
+    const timer = spyOn(globalThis, 'setTimeout').mockImplementation(((fn: any, ms: any, ...args: any[]) =>
+      (realSetTimeout as any)(fn, ms === 30_000 ? 0 : ms, ...args)) as any)
+    const call = AgentTool.call({ prompt: 'test', description: 'test', subagent_type: 'test-worker', isolation: 'worktree', run_in_background: background }, context, undefined as never, createAssistantMessage({ content: 'spawn' }))
+    try {
+      await entered.promise
+      const result = await call
+      if (background) await notified.promise
+      const registration: any = { agentId: id, description: 'resume', prompt: 'resume', selectedAgent: agent, getAppState: store.getState, setAppState: store.setState }
+      expect(result.data.status).toBe(background ? 'async_launched' : 'completed')
+      expect(() => tasks.registerAsyncAgent(registration)).toThrow(/finishing|active|cleanup/)
+      expect(remove).not.toHaveBeenCalled()
+      cleanup.resolve()
+      await metadataStarted.promise
+      expect(remove).toHaveBeenCalledTimes(1)
+      expect(() => tasks.registerAsyncAgent(registration)).toThrow(/finishing|active|cleanup/)
+      metadataDone.resolve()
+      await Bun.sleep(0)
+      expect(tasks.registerAsyncAgent(registration).agentId).toBe(id)
+      tasks.finishAgentRun(id, tasks.getAgentRunToken(id))
+    } finally {
+      cleanup.resolve()
+      metadataDone.resolve()
+      timer.mockRestore()
+      unsubscribe()
+      await call
+    }
   })
 })

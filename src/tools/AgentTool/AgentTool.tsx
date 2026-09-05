@@ -13,7 +13,7 @@ import { startAgentSummarization } from '../../services/AgentSummary/agentSummar
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from '../../services/analytics/index.js';
 import { clearDumpState } from '../../services/api/dumpPrompts.js';
-import { assertCanStartBackgroundAgent, createActivityDescriptionResolver, createProgressTracker, finishAgentRun, getProgressUpdate, isLocalAgentTask, registerAgentForeground, registerAsyncAgent, unregisterAgentForeground, updateAgentProgress as updateAsyncAgentProgress, updateProgressFromMessage } from '../../tasks/LocalAgentTask/LocalAgentTask.js';
+import { assertCanStartBackgroundAgent, createActivityDescriptionResolver, createProgressTracker, finishAgentRun, getAgentRunToken, getProgressUpdate, isLocalAgentTask, registerAgentForeground, registerAsyncAgent, unregisterAgentForeground, updateAgentProgress as updateAsyncAgentProgress, updateProgressFromMessage } from '../../tasks/LocalAgentTask/LocalAgentTask.js';
 import { checkRemoteAgentEligibility, formatPreconditionError, getRemoteTaskSessionUrl, registerRemoteAgentTask } from '../../tasks/RemoteAgentTask/RemoteAgentTask.js';
 import { assembleToolPool } from '../../tools.js';
 import { asAgentId } from '../../types/ids.js';
@@ -706,10 +706,8 @@ export const AgentTool = buildTool({
         const changed = await hasWorktreeChanges(worktreePath, headCommit);
         if (!changed) {
           await removeAgentWorktree(worktreePath, worktreeBranch, gitRoot);
-          // Clear worktreePath from metadata so resume doesn't try to use
-          // a deleted directory. Fire-and-forget to match runAgent's
-          // writeAgentMetadata handling.
-          void writeAgentMetadata(asAgentId(earlyAgentId), {
+          // Finish metadata cleanup before allowing a same-id resume.
+          await writeAgentMetadata(asAgentId(earlyAgentId), {
             agentType: selectedAgent.agentType,
             description,
             ...(personalityName && { personalityName })
@@ -848,6 +846,10 @@ export const AgentTool = buildTool({
       // and optionally in a worktree cwd override for filesystem isolation
       let wasBackgrounded = false;
       let detachParentAbort: (() => void) | undefined;
+      // Ownership token of this foreground run's registration, captured so the
+      // finally below releases only our own slot, never a same-id successor's.
+      let syncRunToken: symbol | undefined;
+      let syncWorktreeCleanup: ReturnType<typeof cleanupWorktreeIfNeeded> | undefined;
       return runWithAgentContext(syncAgentContext, () => wrapWithCwd(async () => {
         spawnReservationCommitted = true;
         const agentMessages: MessageType[] = [];
@@ -894,6 +896,7 @@ export const AgentTool = buildTool({
             autoBackgroundMs: getAutoBackgroundMs() || undefined
           });
           foregroundTaskId = registration.taskId;
+          syncRunToken = getAgentRunToken(syncAgentId);
           backgroundPromise = registration.backgroundSignal.then(() => ({
             type: 'background' as const
           }));
@@ -1193,11 +1196,9 @@ export const AgentTool = buildTool({
           // Clean up worktree if applicable (in finally to handle abort/error paths)
           // Skip if backgrounded — the background continuation is still running in it
           if (!wasBackgrounded) {
-            // Bounded: each git exec inside defaults to a 10-minute timeout
-            // (execFileNoThrow), and this await gates finishAgentRun in the
-            // .finally() below — a wedged git would keep the agent id
-            // unresumable for far longer than the error text implies.
-            worktreeResult = await withTimeout(cleanupWorktreeIfNeeded(), 30_000, 'Worktree cleanup timed out').catch(error => {
+            // Return promptly on timeout, but keep the id until cleanup settles.
+            syncWorktreeCleanup = cleanupWorktreeIfNeeded();
+            worktreeResult = await withTimeout(syncWorktreeCleanup, 30_000, 'Worktree cleanup timed out').catch(error => {
               logForDebugging(`Worktree cleanup did not finish: ${errorMessage(error)}`, { level: 'warn' });
               return {};
             });
@@ -1272,7 +1273,11 @@ export const AgentTool = buildTool({
         };
       })).finally(() => {
         detachParentAbort?.();
-        if (!wasBackgrounded) finishAgentRun(syncAgentId);
+        if (!wasBackgrounded) {
+          const release = () => finishAgentRun(syncAgentId, syncRunToken);
+          if (syncWorktreeCleanup) void syncWorktreeCleanup.then(release, release);
+          else release();
+        }
       });
     }
     } catch (error) {

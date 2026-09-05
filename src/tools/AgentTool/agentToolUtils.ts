@@ -29,6 +29,7 @@ import {
   enqueueAgentNotification,
   failAgentTask as failAsyncAgent,
   finishAgentRun,
+  getAgentRunToken,
   getProgressUpdate,
   getTokenCountFromTracker,
   isLocalAgentTask,
@@ -52,6 +53,7 @@ import {
 } from '../../utils/messages.js'
 import type { PermissionMode } from '../../utils/permissions/PermissionMode.js'
 import { permissionRuleValueFromString } from '../../utils/permissions/permissionRuleParser.js'
+import { withTimeout } from '../../utils/sleep.js'
 import {
   buildSubagentHandBackAction,
   buildTranscriptForClassifier,
@@ -547,14 +549,19 @@ export async function runAsyncAgentLifecycle({
    * finalizeAgentTool and partial-result extraction see the full conversation. */
   seedMessages?: MessageType[]
 }): Promise<void> {
+  const runToken = getAgentRunToken(taskId)
+  let worktreeCleanup: ReturnType<typeof getWorktreeResult> | undefined
   let stopSummarization: (() => void) | undefined
   const agentMessages: MessageType[] = []
   // Worktree probe must never block notification. If git/cleanup throws, we
   // still need enqueueAgentNotification to fire so the task flips notified=true
   // and can be evicted from the panel (framework.ts:evictTerminalTask gate).
+  // Bound notification latency, but retain run ownership until the actual
+  // cleanup settles so a resume cannot race a late worktree deletion.
   const safeWorktreeResult = async () => {
     try {
-      return await getWorktreeResult()
+      worktreeCleanup ??= getWorktreeResult()
+      return await withTimeout(worktreeCleanup, 30_000, 'Worktree cleanup timed out')
     } catch (e) {
       logForDebugging(
         `Worktree result failed during agent notification: ${errorMessage(e)}`,
@@ -765,7 +772,12 @@ export async function runAsyncAgentLifecycle({
         }
       }
     } finally {
-      finishAgentRun(taskId)
+      if (worktreeCleanup) {
+        const release = () => finishAgentRun(taskId, runToken)
+        void worktreeCleanup.then(release, release)
+      } else {
+        finishAgentRun(taskId, runToken)
+      }
     }
   }
 }
