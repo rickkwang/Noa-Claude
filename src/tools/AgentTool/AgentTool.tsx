@@ -140,7 +140,6 @@ type AgentToolInput = z.infer<ReturnType<typeof baseInputSchema>> & {
   cwd?: string;
 };
 
-// Output schema - multi-agent spawned schema added dynamically at runtime when enabled
 export const outputSchema = lazySchema(() => {
   const syncOutputSchema = agentToolResultSchema().extend({
     status: z.literal('completed'),
@@ -161,7 +160,7 @@ type OutputSchema = ReturnType<typeof outputSchema>;
 type Output = z.input<OutputSchema>;
 
 // Private type for teammate spawn results - excluded from exported schema for dead code elimination
-// The 'teammate_spawned' status string is only included when ENABLE_AGENT_SWARMS is true
+// The 'teammate_spawned' status string is only included when isAgentSwarmsEnabled() is true
 type TeammateSpawnedOutput = {
   status: 'teammate_spawned';
   prompt: string;
@@ -651,7 +650,7 @@ export const AgentTool = buildTool({
       } : undefined,
       availableTools: isForkPath ? toolUseContext.options.tools : workerTools,
       // Pass parent conversation when the fork-subagent path needs full
-      // context. useExactTools inherits thinkingConfig (runAgent.ts:624).
+      // context. useExactTools inherits thinkingConfig (runAgent.ts:729).
       forkContextMessages: isForkPath ? toolUseContext.messages : undefined,
       ...(isForkPath && {
         useExactTools: true
@@ -1051,14 +1050,15 @@ export const AgentTool = buildTool({
               }
             }
 
-            // Process the message from the race result
+            // The signal fired but the task could not be handed off (killed, or
+            // gone from AppState). backgroundPromise is already settled, so
+            // racing it again would win every pass — spinning the loop and
+            // orphaning an in-flight next() each time. Drop the signal and
+            // consume the next() we already started.
             if (raceResult.type !== 'message') {
-              // This shouldn't happen - background case handled above
-              continue;
+              backgroundPromise = undefined;
             }
-            const {
-              result
-            } = raceResult;
+            const result = raceResult.type === 'message' ? raceResult.result : await nextMessagePromise;
             if (result.done) break;
             const message = result.value;
             agentMessages.push(message);
@@ -1108,7 +1108,7 @@ export const AgentTool = buildTool({
                     data: {
                       message: m,
                       type: 'agent_progress',
-                      // prompt only needed on first progress message (UI.tsx:624
+                      // prompt only needed on first progress message (UI.tsx:549
                       // reads progressMessages[0]). Omit here to avoid duplication.
                       prompt: '',
                       agentId: syncAgentId

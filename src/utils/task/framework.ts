@@ -1,13 +1,4 @@
 // @ts-nocheck
-import {
-  OUTPUT_FILE_TAG,
-  STATUS_TAG,
-  SUMMARY_TAG,
-  TASK_ID_TAG,
-  TASK_NOTIFICATION_TAG,
-  TASK_TYPE_TAG,
-  TOOL_USE_ID_TAG,
-} from '../../constants/xml.js'
 import type { AppState } from '../../state/AppState.js'
 import {
   isTerminalTaskStatus,
@@ -16,12 +7,8 @@ import {
 } from '../../Task.js'
 import type { TaskState } from '../../tasks/types.js'
 import { releaseAgentPersonalityName } from '../../tools/AgentTool/constants.js'
-import { enqueuePendingNotification } from '../messageQueueManager.js'
 import { enqueueSdkEvent } from '../sdkEventQueue.js'
-import { getTaskOutputDelta, getTaskOutputPath } from './diskOutput.js'
-
-// Standard polling interval for all tasks
-export const POLL_INTERVAL_MS = 1000
+import { getTaskOutputDelta } from './diskOutput.js'
 
 // Duration to display killed tasks before eviction
 export const STOPPED_DISPLAY_MS = 3_000
@@ -254,43 +241,4 @@ export function applyTaskOffsetsAndEvictions(
     }
     return changed ? { ...prev, tasks: newTasks } : prev
   })
-}
-
-/**
- * Enqueue a task notification to the message queue.
- */
-function enqueueTaskNotification(attachment: TaskAttachment): void {
-  const statusText = getStatusText(attachment.status)
-
-  const outputPath = getTaskOutputPath(attachment.taskId)
-  const toolUseIdLine = attachment.toolUseId
-    ? `\n<${TOOL_USE_ID_TAG}>${attachment.toolUseId}</${TOOL_USE_ID_TAG}>`
-    : ''
-  const message = `<${TASK_NOTIFICATION_TAG}>
-<${TASK_ID_TAG}>${attachment.taskId}</${TASK_ID_TAG}>${toolUseIdLine}
-<${TASK_TYPE_TAG}>${attachment.taskType}</${TASK_TYPE_TAG}>
-<${OUTPUT_FILE_TAG}>${outputPath}</${OUTPUT_FILE_TAG}>
-<${STATUS_TAG}>${attachment.status}</${STATUS_TAG}>
-<${SUMMARY_TAG}>Task "${attachment.description}" ${statusText}</${SUMMARY_TAG}>
-</${TASK_NOTIFICATION_TAG}>`
-
-  enqueuePendingNotification({ value: message, mode: 'task-notification' })
-}
-
-/**
- * Get human-readable status text.
- */
-function getStatusText(status: TaskStatus): string {
-  switch (status) {
-    case 'completed':
-      return 'completed successfully'
-    case 'failed':
-      return 'failed'
-    case 'killed':
-      return 'was stopped'
-    case 'running':
-      return 'is running'
-    case 'pending':
-      return 'is pending'
-  }
 }

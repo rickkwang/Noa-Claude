@@ -9,6 +9,7 @@ import * as mcpConfig from '../../services/mcp/config.js'
 import * as prompts from '../../constants/prompts.js'
 import * as worktrees from '../../utils/worktree.js'
 import * as sessionStorage from '../../utils/sessionStorage.js'
+import * as queryModule from '../../query.js'
 import { getDefaultAppState } from '../../state/AppStateStore.js'
 import { createStore } from '../../state/store.js'
 import { createFileStateCacheWithSizeLimit } from '../../utils/fileStateCache.js'
@@ -202,10 +203,12 @@ describe('agent setup rollback', () => {
     spyOn(mcpConfig, 'getMcpConfigByName').mockReturnValue({ type: 'stdio', command: 'unused' } as any)
     const connect = spyOn(mcp, 'connectToServer').mockImplementation((async (name: string, config: any) => ({ type: 'connected', name, config, cleanup: name === 'shared' ? cleanupShared : cleanupInline })) as any)
     Object.assign(connect, { cache: new Map() })
-    spyOn(mcp, 'fetchToolsForClient').mockImplementation((async (client: any) => {
+    const toolCache = mcp.fetchToolsForClient.cache
+    const fetch = spyOn(mcp, 'fetchToolsForClient').mockImplementation((async (client: any) => {
       if (client.name === 'inline') throw new Error('MCP tools failed')
       return []
     }) as any)
+    Object.assign(fetch, { cache: toolCache })
     await expect(agentRunner.runAgent(params({ ...agent, mcpServers: ['shared', { inline: { type: 'stdio', command: 'unused' } }] }, context)).next()).rejects.toThrow('MCP tools failed')
     expect(cleanupInline).toHaveBeenCalledTimes(1)
     expect(cleanupShared).not.toHaveBeenCalled()
@@ -236,8 +239,10 @@ describe('agent setup rollback', () => {
     const oldToken = tasks.getAgentRunToken(id)
 
     tasks.killAsyncAgent(id, store.setState)
+    // The run's own release: oldToken still owns the slot here.
     tasks.finishAgentRun(id, oldToken)
     expect(tasks.registerAsyncAgent(registration).agentId).toBe(id)
+    // Same token again, now stale — it must not free the successor's slot.
     tasks.finishAgentRun(id, oldToken)
     expect(() => tasks.registerAsyncAgent(registration)).toThrow(/finishing|active|cleanup/)
     tasks.finishAgentRun(id, tasks.getAgentRunToken(id))
@@ -289,12 +294,17 @@ describe('agent setup rollback', () => {
     const cache = new Map([[cacheKey, connection]])
     const connect = spyOn(mcp, 'connectToServer').mockReturnValue(connection as any)
     Object.assign(connect, { cache })
-    spyOn(mcp, 'fetchToolsForClient').mockImplementation((async () => {
+    const toolCache = mcp.fetchToolsForClient.cache
+    const clearTools = spyOn(toolCache, 'delete')
+    const clearResources = spyOn(mcp.fetchResourcesForClient.cache, 'delete')
+    const clearCommands = spyOn(mcp.fetchCommandsForClient.cache, 'delete')
+    const fetch = spyOn(mcp, 'fetchToolsForClient').mockImplementation((async () => {
       const index = ++calls
       if (index === 2) bothConnected.resolve()
       await (index === 1 ? releaseFirst : releaseSecond).promise
       throw new Error('setup ended')
     }) as any)
+    Object.assign(fetch, { cache: toolCache })
     const definition = { ...agent, mcpServers: [{ inline: { type: 'stdio', command: 'unused' } }] }
     const start = (id: string) => {
       const options = params(definition, context)
@@ -315,6 +325,139 @@ describe('agent setup rollback', () => {
     }
     expect(cleanup).toHaveBeenCalledTimes(1)
     expect(cache.has(cacheKey)).toBe(false)
+    expect(clearTools).toHaveBeenCalledWith('inline')
+    expect(clearResources).toHaveBeenCalledWith('inline')
+    expect(clearCommands).toHaveBeenCalledWith('inline')
+  })
+
+  test('run completion waits for initial metadata persistence', async () => {
+    const { agent, context } = fixture()
+    const delayed = gate(), started = gate()
+    let finished = false
+    spyOn(sessionStorage, 'recordSidechainTranscript').mockResolvedValue(undefined as any)
+    spyOn(sessionStorage, 'writeAgentMetadata').mockImplementation(async () => {
+      started.resolve()
+      await delayed.promise
+    })
+    spyOn(queryModule, 'query').mockImplementation((async function* () {
+      yield createAssistantMessage({ content: 'done' })
+    }) as any)
+    const run = (async () => {
+      for await (const _ of agentRunner.runAgent(params(agent, context))) {}
+      finished = true
+    })()
+    try {
+      await started.promise
+      await Bun.sleep(0)
+      expect(finished).toBe(false)
+    } finally {
+      delayed.resolve()
+      await run
+    }
+    expect(finished).toBe(true)
+  })
+
+  test('a reconnected user keeps the replacement alive until all users exit', async () => {
+    const { agent, context } = fixture()
+    const config = { type: 'stdio', command: 'unused', scope: 'dynamic' }
+    const old = { type: 'connected', name: 'reconnected', config, cleanup: mock(async () => {}) }
+    const replacement = { ...old, cleanup: mock(async () => {}) }
+    const key = mcp.getServerCacheKey(old.name, config as any)
+    const cache = new Map([[key, Promise.resolve(old)]])
+    const connect = spyOn(mcp, 'connectToServer').mockImplementation((() => cache.get(key)!) as any)
+    Object.assign(connect, { cache })
+    const enteredA = gate(), enteredB = gate(), releaseA = gate(), releaseB = gate()
+    const toolCache = mcp.fetchToolsForClient.cache
+    const fetch = spyOn(mcp, 'fetchToolsForClient').mockImplementation((async (client: any) => {
+      if (client === old) { enteredA.resolve(); await releaseA.promise }
+      else { enteredB.resolve(); await releaseB.promise }
+      throw new Error('setup ended')
+    }) as any)
+    Object.assign(fetch, { cache: toolCache })
+    const definition = { ...agent, mcpServers: [{ reconnected: { type: 'stdio', command: 'unused' } }] }
+    const start = (id: string) => {
+      const options = params(definition, context)
+      options.override.agentId = id
+      return agentRunner.runAgent(options).next().catch(error => error)
+    }
+    const a = start('reconnected-a')
+    let b: Promise<any> | undefined
+    try {
+      await enteredA.promise
+      cache.set(key, Promise.resolve(replacement))
+      expect(await mcp.ensureConnectedClient(old as any)).toBe(replacement as any)
+      b = start('reconnected-b')
+      await enteredB.promise
+      releaseB.resolve()
+      await b
+      expect(replacement.cleanup).not.toHaveBeenCalled()
+    } finally {
+      releaseA.resolve()
+      releaseB.resolve()
+      await a
+      await b
+    }
+    expect(replacement.cleanup).toHaveBeenCalledTimes(1)
+    expect(cache.has(key)).toBe(false)
+  })
+
+  test('a hanging MCP close still frees the next server in the same cleanup', async () => {
+    const { agent, context } = fixture()
+    const hang = gate(), bothConnected = gate()
+    const make = (name: string, hangs: boolean) => {
+      const config = { type: 'stdio', command: 'unused', scope: 'dynamic' }
+      const client = { type: 'connected', name, config, cleanup: mock(async () => { if (hangs) await hang.promise }) }
+      return { client, connection: Promise.resolve(client), key: mcp.getServerCacheKey(name, config as any) }
+    }
+    const slow = make('slow', true), fast = make('fast', false)
+    const cache = new Map([[slow.key, slow.connection], [fast.key, fast.connection]])
+    const connect = spyOn(mcp, 'connectToServer').mockImplementation(((name: string) =>
+      name === 'slow' ? slow.connection : fast.connection) as any)
+    Object.assign(connect, { cache })
+    const toolCache = mcp.fetchToolsForClient.cache
+    const fetch = spyOn(mcp, 'fetchToolsForClient').mockImplementation((async (client: any) => {
+      if (client.name !== 'fast') return []
+      bothConnected.resolve()
+      throw new Error('setup ended')
+    }) as any)
+
+    Object.assign(fetch, { cache: toolCache })
+    const definition = { ...agent, mcpServers: [{ slow: { type: 'stdio', command: 'unused' } }, { fast: { type: 'stdio', command: 'unused' } }] }
+    const options = params(definition, context)
+    options.override.agentId = 'mcp-hanging-close'
+    const run = agentRunner.runAgent(options).next().catch(error => error)
+
+    await bothConnected.promise
+    await Bun.sleep(1)
+    // The slow close is still pending. Its refcount bookkeeping ran anyway, so
+    // 'fast' is released now rather than stranded at a non-zero count — which
+    // would leak its connection for the rest of the session.
+    expect(slow.client.cleanup).toHaveBeenCalledTimes(1)
+    expect(fast.client.cleanup).toHaveBeenCalledTimes(1)
+    expect(cache.has(fast.key)).toBe(false)
+
+    hang.resolve()
+    expect(await run).toBeInstanceOf(Error)
+  })
+
+  test('a killed foreground agent cannot be backgrounded', () => {
+    const { store, agent } = fixture()
+    const id = 'agent-lifecycle-kill-then-background'
+    const registration = tasks.registerAgentForeground({
+      agentId: id, description: 'test', prompt: 'test', selectedAgent: agent as any, setAppState: store.setState,
+    })
+    let signalled = false
+    void registration.backgroundSignal.then(() => { signalled = true })
+
+    // Abort is cooperative, so the run is still unwinding here.
+    tasks.killAsyncAgent(id, store.setState)
+    expect(tasks.backgroundAgentTask(id, store.getState, store.setState)).toBe(false)
+
+    // Handing off now would give the background lifecycle a task whose
+    // abortController killAsyncAgent already cleared.
+    expect(store.getState().tasks[id]?.isBackgrounded).toBe(false)
+    expect(signalled).toBe(false)
+    tasks.finishAgentRun(id, tasks.getAgentRunToken(id))
   })
 
   test.each([false, true])('AgentTool keeps ownership during late worktree cleanup (background=%s)', async background => {

@@ -7,6 +7,9 @@ import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import type { ToolUseContext } from '../../Tool.js'
 import {
   assertCanStartBackgroundAgent,
+  finishAgentRun,
+  getAgentRunToken,
+  killAsyncAgent,
   registerAsyncAgent,
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { assembleToolPool } from '../../tools.js'
@@ -118,17 +121,6 @@ export async function resumeAgentBackground({
     resumedMessages,
     transcript.contentReplacements,
   )
-  // If meta recorded a worktreePath, the agent expects to run there.
-  // Silent fallback to parent cwd lets file writes land in the wrong tree —
-  // worse than failing the resume. Fail loudly with an actionable message;
-  // user can delete the agent metadata file to abandon the resume.
-  const resumedWorktreePath = await resolveResumedWorktreePath(meta?.worktreePath)
-  if (resumedWorktreePath) {
-    // Bump mtime so stale-worktree cleanup doesn't delete a just-resumed worktree (#22355)
-    const now = new Date()
-    await fsp.utimes(resumedWorktreePath, now, now)
-  }
-
   // Skip filterDeniedAgents re-gating — original spawn already passed permission checks
   let selectedAgent: AgentDefinition
   let isResumedFork = false
@@ -210,6 +202,57 @@ export async function resumeAgentBackground({
       : assignAgentPersonalityName(agentId)
     : undefined
 
+  // Skip name-registry write — original entry persists from the initial spawn
+  const agentBackgroundTask = registerAsyncAgent({
+    agentId,
+    description: uiDescription,
+    personalityName,
+    prompt,
+    selectedAgent,
+    getAppState: toolUseContext.getAppState,
+    setAppState: rootSetAppState,
+    toolUseId: toolUseContext.toolUseId,
+  })
+
+  // registerAsyncAgent is the ownership gate. Before it returns, a previous run
+  // of this id may still be unwinding, and the worktreePath `meta` was read from
+  // can name a directory that run is about to delete. Re-read behind the gate:
+  // the exiting run clears worktreePath before it releases the id.
+  //
+  // If meta recorded a worktreePath, the agent expects to run there. Silent
+  // fallback to parent cwd lets file writes land in the wrong tree — worse than
+  // failing the resume. Fail loudly with an actionable message; the user can
+  // delete the agent metadata file to abandon the resume.
+  let resumedWorktreePath: string | undefined
+  try {
+    const settledMeta = await readAgentMetadata(asAgentId(agentId))
+    resumedWorktreePath = await resolveResumedWorktreePath(
+      settledMeta?.worktreePath,
+    )
+    if (resumedWorktreePath) {
+      // Bump mtime so stale-worktree cleanup doesn't delete a just-resumed worktree (#22355)
+      const now = new Date()
+      await fsp.utimes(resumedWorktreePath, now, now)
+    }
+  } catch (error) {
+    // The id is registered but no run will consume it; release it here or it
+    // stays unresumable for the session.
+    killAsyncAgent(agentId, rootSetAppState)
+    finishAgentRun(agentId, getAgentRunToken(agentId))
+    throw error
+  }
+
+  const metadata = {
+    prompt,
+    resolvedAgentModel,
+    isBuiltInAgent: isBuiltInAgent(selectedAgent),
+    startTime,
+    agentType: selectedAgent.agentType,
+    isAsync: true,
+    personalityName,
+    promptFallback: false,
+  }
+
   const runAgentParams: Parameters<typeof runAgent>[0] = {
     agentDefinition: selectedAgent,
     promptMessages: [
@@ -243,29 +286,6 @@ export async function resumeAgentBackground({
     onPromptFallback: () => {
       metadata.promptFallback = true
     },
-  }
-
-  // Skip name-registry write — original entry persists from the initial spawn
-  const agentBackgroundTask = registerAsyncAgent({
-    agentId,
-    description: uiDescription,
-    personalityName,
-    prompt,
-    selectedAgent,
-    getAppState: toolUseContext.getAppState,
-    setAppState: rootSetAppState,
-    toolUseId: toolUseContext.toolUseId,
-  })
-
-  const metadata = {
-    prompt,
-    resolvedAgentModel,
-    isBuiltInAgent: isBuiltInAgent(selectedAgent),
-    startTime,
-    agentType: selectedAgent.agentType,
-    isAsync: true,
-    personalityName,
-    promptFallback: false,
   }
 
   const asyncAgentContext = {

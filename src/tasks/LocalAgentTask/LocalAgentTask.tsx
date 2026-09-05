@@ -288,9 +288,6 @@ export function enqueueAgentNotification({
 
 /**
  * LocalAgentTask - Handles background agent execution.
- *
- * Replaces the AsyncAgent implementation from src/tools/AgentTool/asyncAgentUtils.ts
- * with a unified Task interface.
  */
 export const LocalAgentTask: Task = {
   name: 'LocalAgentTask',
@@ -359,23 +356,28 @@ export function markAgentsNotified(taskId: string, setAppState: SetAppState): vo
   });
 }
 
-// Leading-edge throttle for updateAgentProgress, keyed by taskId.
+// Throttle for updateAgentProgress, keyed by taskId.
 // setAppState notifies every store subscriber unconditionally (state/store.ts),
 // so an unthrottled per-message progress tick costs a full selector sweep. With
 // up to 20 background agents streaming at once that sweep runs hundreds of
 // times a second for cosmetic counters.
 //
-// Dropping ticks is safe because getProgressUpdate returns a full cumulative
-// snapshot, not a delta — the next surviving tick carries the complete state.
-// The one thing that would leak through is the final tick before completion,
-// so every panel that renders a terminal task reads task.result before
-// task.progress (CoordinatorAgentStatus, AsyncAgentDetailDialog). Keep that
-// ordering if you add another consumer.
+// Dropping intermediate ticks is safe because getProgressUpdate returns a full
+// cumulative snapshot, not a delta. The last tick of a burst is not safe to
+// drop: ticks only arrive per streamed message, so a burst followed by one long
+// silent tool call would leave the panel on the burst's first value until the
+// agent speaks again. Hence the trailing flush.
 const PROGRESS_THROTTLE_MS = 100;
 const lastProgressUpdateAt = new Map<string, number>();
+const pendingProgressFlush = new Map<string, ReturnType<typeof setTimeout>>();
 
 function clearProgressThrottle(taskId: string): void {
   lastProgressUpdateAt.delete(taskId);
+  const pending = pendingProgressFlush.get(taskId);
+  if (pending !== undefined) {
+    clearTimeout(pending);
+    pendingProgressFlush.delete(taskId);
+  }
 }
 
 /**
@@ -387,8 +389,18 @@ export function updateAgentProgress(taskId: string, progress: AgentProgress, set
   const now = Date.now();
   const last = lastProgressUpdateAt.get(taskId);
   if (last !== undefined && now - last < PROGRESS_THROTTLE_MS) {
+    const pending = pendingProgressFlush.get(taskId);
+    if (pending !== undefined) clearTimeout(pending);
+    const flush = setTimeout(() => {
+      pendingProgressFlush.delete(taskId);
+      updateAgentProgress(taskId, progress, setAppState);
+    }, PROGRESS_THROTTLE_MS - (now - last));
+    // Cosmetic counters must never hold the process open in --print mode.
+    if (typeof flush === 'object') flush.unref?.();
+    pendingProgressFlush.set(taskId, flush);
     return;
   }
+  clearProgressThrottle(taskId);
   lastProgressUpdateAt.set(taskId, now);
   updateTaskState<LocalAgentTaskState>(taskId, setAppState, task => {
     if (task.status !== 'running') {
@@ -571,7 +583,6 @@ export function registerAsyncAgent({
     lastReportedToolCount: 0,
     lastReportedTokenCount: 0,
     isBackgrounded: true,
-    // registerAsyncAgent immediately backgrounds
     pendingMessages: [],
     retain: false,
     diskLoaded: false
@@ -641,7 +652,6 @@ export function registerAgentForeground({
     lastReportedToolCount: 0,
     lastReportedTokenCount: 0,
     isBackgrounded: false,
-    // Not yet backgrounded - running in foreground
     pendingMessages: [],
     retain: false,
     diskLoaded: false
@@ -664,7 +674,9 @@ export function registerAgentForeground({
       let didBackground = false;
       setAppState(prev => {
         const prevTask = prev.tasks[agentId];
-        if (!isLocalAgentTask(prevTask) || prevTask.isBackgrounded || !hasBackgroundAgentCapacity(prev.tasks)) {
+        // status: a killed agent is still unwinding in the foreground; see
+        // backgroundAgentTask for why handing it off is unsafe.
+        if (!isLocalAgentTask(prevTask) || prevTask.status !== 'running' || prevTask.isBackgrounded || !hasBackgroundAgentCapacity(prev.tasks)) {
           return prev;
         }
         didBackground = true;
@@ -702,16 +714,21 @@ export function registerAgentForeground({
 export function backgroundAgentTask(taskId: string, getAppState: () => AppState, setAppState: SetAppState): boolean {
   const state = getAppState();
   const task = state.tasks[taskId];
-  if (!isLocalAgentTask(task) || task.isBackgrounded || !hasBackgroundAgentCapacity(state.tasks)) {
+  // Abort is cooperative, so a killed agent keeps looping in the foreground for
+  // a while. Backgrounding it would resolve the signal and hand the lifecycle a
+  // task whose abortController killAsyncAgent has already cleared.
+  if (!isLocalAgentTask(task) || task.status !== 'running' || task.isBackgrounded || !hasBackgroundAgentCapacity(state.tasks)) {
     return false;
   }
 
   // Update state to mark as backgrounded
+  let didBackground = false;
   setAppState(prev => {
     const prevTask = prev.tasks[taskId];
-    if (!isLocalAgentTask(prevTask)) {
+    if (!isLocalAgentTask(prevTask) || prevTask.status !== 'running') {
       return prev;
     }
+    didBackground = true;
     return {
       ...prev,
       tasks: {
@@ -723,6 +740,7 @@ export function backgroundAgentTask(taskId: string, getAppState: () => AppState,
       }
     };
   });
+  if (!didBackground) return false;
 
   // Resolve the background signal to interrupt the agent loop
   const resolver = backgroundSignalResolvers.get(taskId);

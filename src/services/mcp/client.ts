@@ -1435,18 +1435,27 @@ export const connectToServer = memoize(
           `${transportType.toUpperCase()} connection closed after ${Math.floor(uptime / 1000)}s (${hasErrorOccurred ? 'with errors' : 'cleanly'})`,
         )
 
-        // Clear the memoization cache so next operation reconnects
+        // Clear the memoization cache so next operation reconnects — but only
+        // while this connection still owns the entry. A replacement can already
+        // be installed by the time a close lands (the last user of a shared
+        // inline server closes it, a sibling agent immediately reconnects);
+        // deleting then would evict the live connection and force yet another
+        // reconnect. The cached entry is a promise, so the check defers a
+        // microtask. The fetch caches are keyed by bare server name and have
+        // the same problem, so they move behind the check too.
         const key = getServerCacheKey(name, serverRef)
-
-        // Also clear fetch caches (keyed by server name). Reconnection
-        // creates a new connection object; without clearing, the next
-        // fetch would return stale tools/resources from the old connection.
-        fetchToolsForClient.cache.delete(name)
-        fetchResourcesForClient.cache.delete(name)
-        fetchCommandsForClient.cache.delete(name)
-
-        connectToServer.cache.delete(key)
-        logMCPDebug(name, `Cleared connection cache for reconnection`)
+        const cached = connectToServer.cache.get(key)
+        void Promise.resolve(cached).then(connection => {
+          if (connection?.type !== 'connected' || connection.client !== client) {
+            return
+          }
+          if (connectToServer.cache.get(key) !== cached) return
+          connectToServer.cache.delete(key)
+          fetchToolsForClient.cache.delete(name)
+          fetchResourcesForClient.cache.delete(name)
+          fetchCommandsForClient.cache.delete(name)
+          logMCPDebug(name, `Cleared connection cache for reconnection`)
+        }, () => {})
 
         if (originalOnclose) {
           originalOnclose()

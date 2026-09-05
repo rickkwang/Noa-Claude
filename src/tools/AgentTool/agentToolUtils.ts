@@ -43,7 +43,6 @@ import type { Message as MessageType } from '../../types/message.js'
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { isInProtectedNamespace } from '../../utils/envUtils.js'
-import { getInitialSettings } from '../../utils/settings/settings.js'
 import { AbortError, errorMessage } from '../../utils/errors.js'
 import type { CacheSafeParams } from '../../utils/forkedAgent.js'
 import { lazySchema } from '../../utils/lazySchema.js'
@@ -780,21 +779,4 @@ export async function runAsyncAgentLifecycle({
       }
     }
   }
-}
-
-/**
- * Returns the base URL for a given agent based on routing configuration.
- * Priority: agentName > subagentType > 'default'
- */
-export function getAgentModel(
-  agentName: string,
-  subagentType?: string,
-): string | undefined {
-  const settings = getInitialSettings()
-  const routing = settings.agentRouting
-  const models = settings.agentModels
-
-  const modelKey =
-    routing?.[agentName] || routing?.[subagentType || ''] || routing?.default
-  return modelKey ? models?.[modelKey] : undefined
 }

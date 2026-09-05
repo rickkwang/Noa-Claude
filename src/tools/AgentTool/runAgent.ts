@@ -19,6 +19,8 @@ import { getDumpPromptsPath } from '../../services/api/dumpPrompts.js'
 import { cleanupAgentTracking } from '../../services/api/promptCacheBreakDetection.js'
 import {
   connectToServer,
+  fetchCommandsForClient,
+  fetchResourcesForClient,
   fetchToolsForClient,
   getServerCacheKey,
 } from '../../services/mcp/client.js'
@@ -86,9 +88,8 @@ import { filterToolsForAgent, resolveAgentTools } from './agentToolUtils.js'
 import { createDenialTrackingState } from '../../utils/permissions/denialTracking.js'
 import { type AgentDefinition, isBuiltInAgent } from './loadAgentsDir.js'
 
-// Inline definitions use the shared connection cache. Only the last agent
-// using a connection may close it.
-const inlineMcpUsers = new Map<Promise<MCPServerConnection>, number>()
+// Count server users across reconnects, not just the initial connection.
+const inlineMcpUsers = new Map<string, number>()
 
 /**
  * Initialize agent-specific MCP servers
@@ -135,31 +136,35 @@ async function initializeAgentMcpServers(
   }
 
   const agentClients: MCPServerConnection[] = []
-  const inlineConnections: { connection: Promise<MCPServerConnection>; client?: MCPServerConnection }[] = []
+  const inlineConnections: { name: string; key: string; connection: Promise<MCPServerConnection> }[] = []
   const agentTools: Tool[] = []
 
   const cleanup = async () => {
-    for (const { connection, client } of inlineConnections) {
-      const remaining = inlineMcpUsers.get(connection)! - 1
-      if (remaining > 0) {
-        inlineMcpUsers.set(connection, remaining)
+    // Release all counts before awaiting any close.
+    const closing: Promise<void>[] = []
+    for (const { name, key, connection } of inlineConnections) {
+      const users = inlineMcpUsers.get(key)
+      if (users === undefined) continue
+      if (users > 1) {
+        inlineMcpUsers.set(key, users - 1)
         continue
       }
-      inlineMcpUsers.delete(connection)
-      if (client?.type === 'connected') {
-        try {
-          // New users must not acquire a connection while it is closing.
-          const key = getServerCacheKey(client.name, client.config)
-          if (connectToServer.cache.get(key) === connection) connectToServer.cache.delete(key)
-          await client.cleanup()
-        } catch (error) {
+      inlineMcpUsers.delete(key)
+      const current = connectToServer.cache.get(key) ?? connection
+      connectToServer.cache.delete(key)
+      fetchToolsForClient.cache.delete(name)
+      fetchResourcesForClient.cache.delete(name)
+      fetchCommandsForClient.cache.delete(name)
+      closing.push(
+        current.then(client => client.type === 'connected' ? client.cleanup() : undefined).catch(error => {
           logForDebugging(
-            `[Agent: ${agentDefinition.agentType}] Error cleaning up MCP server '${client.name}': ${error}`,
+            `[Agent: ${agentDefinition.agentType}] Error cleaning up MCP server '${name}': ${error}`,
             { level: 'warn' },
           )
-        }
-      }
+        }),
+      )
     }
+    await Promise.all(closing)
   }
 
   try {
@@ -202,15 +207,13 @@ async function initializeAgentMcpServers(
 
       // Reserve before await so a closing sibling also sees pending users.
       const connection = connectToServer(name, config)
-      const owned: { connection: Promise<MCPServerConnection>; client?: MCPServerConnection } | undefined =
-        isNewlyCreated ? { connection } : undefined
-      if (owned) {
-        inlineConnections.push(owned)
-        inlineMcpUsers.set(connection, (inlineMcpUsers.get(connection) ?? 0) + 1)
+      if (isNewlyCreated) {
+        const key = getServerCacheKey(name, config)
+        inlineConnections.push({ name, key, connection })
+        inlineMcpUsers.set(key, (inlineMcpUsers.get(key) ?? 0) + 1)
       }
       const client = await connection
       agentClients.push(client)
-      if (owned) owned.client = client
 
       // Fetch tools if connected
       if (client.type === 'connected') {
@@ -358,8 +361,6 @@ export async function* runAgent({
    * message is yielded for >60s. */
   onQueryProgress?: () => void
 }): AsyncGenerator<Message, void> {
-  // Track subagent usage for feature discovery
-
   const appState = toolUseContext.getAppState()
   const permissionMode = appState.toolPermissionContext.mode
   // Always-shared channel to the root AppState store. toolUseContext.setAppState
@@ -806,12 +807,12 @@ export async function* runAgent({
     }
 
     // Record initial messages before the query loop starts, plus the agentType
-    // so resume can route correctly when subagent_type is omitted. Both writes
-    // are fire-and-forget — persistence failure shouldn't block the agent.
+    // so resume can route correctly when subagent_type is omitted.
     void recordSidechainTranscript(initialMessages, agentId).catch(_err =>
       logForDebugging(`Failed to record sidechain transcript: ${_err}`),
     )
-    void writeAgentMetadata(agentId, {
+    // Finish the initial metadata write before this run can clear it on exit.
+    await writeAgentMetadata(agentId, {
       agentType: agentDefinition.agentType,
       ...(worktreePath && { worktreePath }),
       ...(description && { description }),
@@ -848,16 +849,7 @@ export async function* runAgent({
         // Handle max turns reached signal from query.ts
         if (message.attachment.type === 'max_turns_reached') {
           logForDebugging(
-            `[Agent
-: $
-{
-  agentDefinition.agentType
-}
-] Reached max turns limit ($
-{
-  message.attachment.maxTurns
-}
-)`,
+            `[Agent: ${agentDefinition.agentType}] Reached max turns limit (${message.attachment.maxTurns})`,
           )
           break
         }
@@ -895,9 +887,11 @@ export async function* runAgent({
     // failure mode is a hang — client.close() has no deadline for network
     // transports. This finally is awaited by the caller's `for await`, so a hang
     // stalls the rest of this cleanup, leaves the task at 'running', and keeps the
-    // agent id locked in activeAgentRuns (never resumable). withTimeout (not a
-    // raw sleep race) clears and unrefs its timer, so the common case where
-    // cleanup wins leaves nothing holding the event loop open at process exit.
+    // agent id locked in activeAgentRuns (never resumable). withTimeout does not
+    // cancel the loser, so cleanup() finishes its refcount bookkeeping before its
+    // first await — a timeout abandons only the pending closes. It clears and
+    // unrefs its timer, so the common case where cleanup wins leaves nothing
+    // holding the event loop open at process exit.
     await withTimeout(mcpCleanup(), 1000, 'MCP cleanup timed out').catch(() => {})
     // Clean up agent's session hooks
     if (agentDefinition.hooks) {
