@@ -62,7 +62,7 @@ export function getBriefSection(): string | null {
   if (!(feature('KAIROS') || feature('KAIROS_BRIEF'))) return null
   if (!BRIEF_PROACTIVE_SECTION) return null
   // Whenever the tool is available, the model is told to use it. The
-  // /brief toggle and --brief flag now only control the isBriefOnly
+  // ctrl+shift+b toggle and --brief flag now only control the isBriefOnly
   // display filter — they no longer gate model-facing behavior.
   if (!briefToolModule?.isBriefEnabled()) return null
   if (isProactivePromptActive()) return null

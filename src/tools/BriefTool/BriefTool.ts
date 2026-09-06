@@ -108,7 +108,6 @@ export function isBriefEntitled(): boolean {
  * Activation requires explicit opt-in (userMsgOptIn) set by one of:
  *   - `--brief` CLI flag (maybeActivateBrief in main.tsx)
  *   - `defaultView: 'chat'` in settings (main.tsx init)
- *   - `/brief` slash command (brief.ts)
  *   - `/config` defaultView picker (Config.tsx)
  *   - SendUserMessage in `--tools` / SDK `tools` option (main.tsx)
  *   - CLAUDE_CODE_BRIEF env var (maybeActivateBrief — dev/testing bypass)

@@ -1459,8 +1459,8 @@ async function* queryModel(
   const extraToolSchemas = [...(options.extraToolSchemas ?? [])]
   if (advisorModel) {
     // Server tools must be in the tools array by API contract. Appended after
-    // toolSchemas (which carries the cache_control marker) so toggling /advisor
-    // only churns the small suffix, not the cached prefix.
+    // toolSchemas (which carries the cache_control marker) so toggling the
+    // advisor only churns the small suffix, not the cached prefix.
     extraToolSchemas.push({
       type: 'advisor_20260301',
       name: 'advisor',

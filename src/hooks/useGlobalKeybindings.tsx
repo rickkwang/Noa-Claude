@@ -155,9 +155,9 @@ export function GlobalKeybindingHandlers({
   }, [setScreen, showAllInTranscript, setShowAllInTranscript, messageCount, onExitTranscript]);
 
   // Toggle brief-only view (ctrl+shift+b). Pure display filter toggle —
-  // does not touch opt-in state. Asymmetric gate (mirrors /brief): OFF
-  // transition always allowed so the same key that got you in gets you
-  // out even if the GB kill-switch fires mid-session.
+  // does not touch opt-in state. Asymmetric gate: OFF transition always
+  // allowed so the same key that got you in gets you out even if the GB
+  // kill-switch fires mid-session.
   const handleToggleBrief = useCallback(() => {
     if (feature('KAIROS') || feature('KAIROS_BRIEF')) {
       /* eslint-disable @typescript-eslint/no-require-imports */

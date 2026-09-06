@@ -57,8 +57,6 @@ import { feature } from 'bun:bundle'
 // The other requires below have no flag, or gate behaviour inside the module
 // while keeping the command visible, so they must stay unconditional.
 /* eslint-disable @typescript-eslint/no-require-imports */
-const briefCommand =
-  require('./commands/brief.js').default
 const assistantCommand = require('./commands/assistant/index.js').default
 const bridge = feature('BRIDGE_MODE')
   ? require('./commands/bridge/index.js').default
@@ -66,9 +64,6 @@ const bridge = feature('BRIDGE_MODE')
 const voiceCommand = require('./commands/voice/index.js').default
 const workflowsCmd = (
     require('./commands/workflows/index.js') as typeof import('./commands/workflows/index.js')
-  ).default
-const webCmd = (
-    require('./commands/remote-setup/index.js') as typeof import('./commands/remote-setup/index.js')
   ).default
 const clearSkillIndexCache = (
     require('./services/skillSearch/localSearch.js') as typeof import('./services/skillSearch/localSearch.js')
@@ -99,7 +94,6 @@ import version from './commands/version.js'
 import summary from './commands/summary/index.js'
 import sandboxToggle from './commands/sandbox-toggle/index.js'
 import chrome from './commands/chrome/index.js'
-import advisor from './commands/advisor.js'
 import { logError } from './utils/log.js'
 import { toError } from './utils/errors.js'
 import { logForDebugging } from './utils/debug.js'
@@ -134,7 +128,6 @@ import rateLimitOptions from './commands/rate-limit-options/index.js'
 import statusline from './commands/statusline.js'
 import effort from './commands/effort/index.js'
 import goal from './commands/goal/index.js'
-import stats from './commands/stats/index.js'
 import startupBanner from './commands/startup-banner/index.js'
 import wiki from './commands/wiki/index.js'
 // insights.ts is 113KB (3200 lines, includes diffLines/html rendering). Lazy
@@ -188,7 +181,6 @@ export const INTERNAL_ONLY_COMMANDS = [
 const COMMANDS = memoize((): Command[] => [
   addDir,
   cd,
-  advisor,
   agents,
   branch,
   btw,
@@ -230,7 +222,6 @@ const COMMANDS = memoize((): Command[] => [
   session,
   share,
   skills,
-  stats,
   status,
   statusline,
   startupBanner,
@@ -254,10 +245,8 @@ const COMMANDS = memoize((): Command[] => [
   vim,
   autocompact,
   wiki,
-  ...(webCmd ? [webCmd] : []),
   ...(forkCmd ? [forkCmd] : []),
   ...(buddy ? [buddy] : []),
-  ...(briefCommand ? [briefCommand] : []),
   ...(assistantCommand ? [assistantCommand] : []),
   ...(bridge ? [bridge] : []),
   ...(voiceCommand ? [voiceCommand] : []),
