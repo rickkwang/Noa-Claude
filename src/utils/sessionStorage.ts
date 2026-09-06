@@ -3296,6 +3296,7 @@ export async function loadFullLog(log: LogOption): Promise<LogOption> {
       prUrls,
       prRepositories,
       goalStates,
+      goalStateTimestamps,
       modes,
       worktreeStates,
       fileHistorySnapshots,
@@ -3353,6 +3354,11 @@ export async function loadFullLog(log: LogOption): Promise<LogOption> {
       // message, so it is found by the full-file scan even when the compact
       // boundary has cut every pre-boundary message out of `messages`.
       goalState: sessionId ? goalStates.get(sessionId) : log.goalState,
+      // When the snapshot was taken. Restore replays only messages newer than
+      // this — see restoreSessionStateFromLog.
+      goalStateAt: sessionId
+        ? goalStateTimestamps.get(sessionId)
+        : log.goalStateAt,
       gitBranch: mostRecentLeaf?.gitBranch ?? log.gitBranch,
       isSidechain: transcript[0]?.isSidechain ?? log.isSidechain,
       teamName: transcript[0]?.teamName ?? log.teamName,
@@ -3860,6 +3866,7 @@ export async function loadTranscriptFile(
   prUrls: Map<UUID, string>
   prRepositories: Map<UUID, string>
   goalStates: Map<UUID, ThreadGoal | null>
+  goalStateTimestamps: Map<UUID, string>
   modes: Map<UUID, string>
   worktreeStates: Map<UUID, PersistedWorktreeSession | null>
   fileHistorySnapshots: Map<UUID, FileHistorySnapshotMessage>
@@ -3881,6 +3888,7 @@ export async function loadTranscriptFile(
   const prUrls = new Map<UUID, string>()
   const prRepositories = new Map<UUID, string>()
   const goalStates = new Map<UUID, ThreadGoal | null>()
+  const goalStateTimestamps = new Map<UUID, string>()
   const modes = new Map<UUID, string>()
   const worktreeStates = new Map<UUID, PersistedWorktreeSession | null>()
   const fileHistorySnapshots = new Map<UUID, FileHistorySnapshotMessage>()
@@ -3987,6 +3995,7 @@ export async function loadTranscriptFile(
           prRepositories.set(entry.sessionId, entry.prRepository)
         } else if (entry.type === 'goal-state' && entry.sessionId) {
           goalStates.set(entry.sessionId, entry.goal)
+          goalStateTimestamps.set(entry.sessionId, entry.timestamp)
         }
       }
     }
@@ -4058,6 +4067,7 @@ export async function loadTranscriptFile(
         prRepositories.set(entry.sessionId, entry.prRepository)
       } else if (entry.type === 'goal-state' && entry.sessionId) {
         goalStates.set(entry.sessionId, entry.goal)
+        goalStateTimestamps.set(entry.sessionId, entry.timestamp)
       } else if (entry.type === 'file-history-snapshot') {
         fileHistorySnapshots.set(entry.messageId, entry)
       } else if (entry.type === 'attribution-snapshot') {
@@ -4184,6 +4194,7 @@ export async function loadTranscriptFile(
     prUrls,
     prRepositories,
     goalStates,
+    goalStateTimestamps,
     modes,
     worktreeStates,
     fileHistorySnapshots,

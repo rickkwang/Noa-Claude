@@ -32,9 +32,10 @@ function restore(messages: Message[]): AppState {
 function restoreWithGoalState(
   messages: Message[],
   goalState: ThreadGoal | null | undefined,
+  goalStateAt?: string,
 ): AppState {
   let state = getDefaultAppState()
-  restoreSessionStateFromLog({ messages, goalState }, updater => {
+  restoreSessionStateFromLog({ messages, goalState, goalStateAt }, updater => {
     state = updater(state)
   })
   return state
@@ -52,6 +53,11 @@ function goalCommandMessage(args: string): Message {
   return createCommandInputMessage(`<command-name>/goal</command-name>
     <command-message>goal</command-message>
     <command-args>${args}</command-args>`)
+}
+
+function at(message: Message, timestamp: string): Message {
+  message.timestamp = timestamp
+  return message
 }
 
 function goalToolUseMessage(
@@ -667,6 +673,95 @@ describe('goal restore across a compact boundary', () => {
 
   test('an explicit clear is not resurrected by the replay', () => {
     expect(restoreWithGoalState([], null).goal).toBeUndefined()
+  })
+})
+
+// The snapshot postdates the event that produced it, so replaying messages
+// older than it re-applies settled history. That only stayed hidden while
+// `messages` was a post-compaction fragment; an ordinary resume of a session
+// that was never compacted hands the replay the full history.
+describe('goal replay is bounded by the snapshot timestamp', () => {
+  test('/clear is not resurrected by the pre-clear /goal command', () => {
+    // /clear writes a null snapshot but leaves no message in the chain, so the
+    // original command is the only goal evidence the replay can see.
+    const state = restoreWithGoalState(
+      [at(goalCommandMessage('Ship the release'), '2026-05-13T10:00:00.000Z')],
+      null,
+      '2026-05-13T10:05:00.000Z',
+    )
+
+    expect(state.goal).toBeUndefined()
+  })
+
+  test('an in-session /goal clear still lets a later goal win', () => {
+    // Same null snapshot, but the clear and the objective after it both
+    // postdate it — the filter must not swallow goal activity it never saw.
+    const state = restoreWithGoalState(
+      [
+        at(goalCommandMessage('First objective'), '2026-05-13T10:00:00.000Z'),
+        at(goalCommandMessage('clear'), '2026-05-13T10:01:00.000Z'),
+        at(goalCommandMessage('Second objective'), '2026-05-13T10:03:00.000Z'),
+      ],
+      null,
+      '2026-05-13T10:00:30.000Z',
+    )
+
+    expect(state.goal?.objective).toBe('Second objective')
+  })
+
+  test('replaying a snapshotted /goal replace does not reset its counters', () => {
+    const persisted: ThreadGoal = {
+      ...createThreadGoal({
+        objective: 'Write the changelog',
+        tokenBudget: null,
+        now: 1,
+      }),
+      tokensUsed: 5000,
+      timeUsedSeconds: 300,
+    }
+
+    // replaceGoal() is unconditional, so reaching this command a second time
+    // used to rebuild the goal from scratch and drop the 5000 tokens.
+    const state = restoreWithGoalState(
+      [
+        at(goalCommandMessage('First objective'), '2026-05-13T10:00:00.000Z'),
+        at(
+          goalCommandMessage('replace Write the changelog'),
+          '2026-05-13T10:01:00.000Z',
+        ),
+      ],
+      persisted,
+      '2026-05-13T10:02:00.000Z',
+    )
+
+    expect(state.goal).toMatchObject({
+      objective: 'Write the changelog',
+      tokensUsed: 5000,
+      timeUsedSeconds: 300,
+    })
+  })
+
+  test('usage from turns after the snapshot still accrues on top of it', () => {
+    const persisted: ThreadGoal = {
+      ...createThreadGoal({
+        objective: 'Ship the release',
+        tokenBudget: 100_000,
+        now: 1,
+      }),
+      tokensUsed: 5000,
+    }
+
+    const state = restoreWithGoalState(
+      [
+        at(assistantWithUsage(400, 100), '2026-05-13T10:00:00.000Z'), // pre-snapshot
+        at(assistantWithUsage(800, 200), '2026-05-13T10:02:00.000Z'), // post-snapshot
+      ],
+      persisted,
+      '2026-05-13T10:01:00.000Z',
+    )
+
+    // 5000 already covers the pre-snapshot turn; only the 1000 after it is new.
+    expect(state.goal?.tokensUsed).toBe(6000)
   })
 })
 

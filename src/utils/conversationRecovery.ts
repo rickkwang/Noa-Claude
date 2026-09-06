@@ -587,6 +587,7 @@ export async function loadConversationForResume(
   prUrl?: string
   prRepository?: string
   goalState?: ThreadGoal | null
+  goalStateAt?: string
   // Full path to the session file (for cross-directory resume)
   fullPath?: string
 } | null> {
@@ -676,6 +677,7 @@ export async function loadConversationForResume(
       prUrl: log?.prUrl,
       prRepository: log?.prRepository,
       goalState: log?.goalState,
+      goalStateAt: log?.goalStateAt,
       // Include full path for cross-directory resume
       fullPath: log?.fullPath,
     }

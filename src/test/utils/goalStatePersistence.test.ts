@@ -14,7 +14,11 @@ import { getSessionId } from '../../bootstrap/state.js'
 import { createThreadGoal } from '../../utils/goalState.js'
 import type { ThreadGoal } from '../../types/goal.js'
 
-type GoalStateLine = { type: string; goal: ThreadGoal | null }
+type GoalStateLine = {
+  type: string
+  goal: ThreadGoal | null
+  timestamp: string
+}
 
 function goalStateLines(file: string): GoalStateLine[] {
   return readFileSync(file, 'utf-8')
@@ -62,6 +66,21 @@ describe('goal-state transcript persistence', () => {
       tokenBudget: 100_000,
       verifyCommand: 'bun test',
     })
+  })
+
+  // restoreSessionStateFromLog replays only messages newer than this stamp, so
+  // a snapshot without one falls back to replaying the whole chain.
+  test('every goal-state line carries a parseable timestamp', async () => {
+    const sessionId = getSessionId() as `${string}-${string}-${string}-${string}-${string}`
+
+    saveGoalState(
+      sessionId,
+      createThreadGoal({ objective: 'Ship', tokenBudget: null, now: 1 }),
+    )
+    await flushSessionStorage()
+
+    const timestamp = goalStateLines(tmpFile).at(-1)!.timestamp
+    expect(Number.isFinite(Date.parse(timestamp))).toBe(true)
   })
 
   test('an explicit clear is written as a null goal', async () => {

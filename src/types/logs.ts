@@ -62,6 +62,7 @@ export type LogOption = {
   prUrl?: string // Full URL to the linked PR
   prRepository?: string // Repository in "owner/repo" format
   goalState?: ThreadGoal | null // Last persisted thread goal (null = explicitly cleared)
+  goalStateAt?: string // ISO timestamp of that snapshot; restore replays only newer messages
   mode?: 'coordinator' | 'normal' // Session mode for coordinator/normal detection
   worktreeSession?: PersistedWorktreeSession | null // Worktree state at session end (null = exited, undefined = never entered)
   contentReplacements?: ContentReplacementRecord[] // Replacement decisions for resume reconstruction

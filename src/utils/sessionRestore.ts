@@ -96,6 +96,7 @@ const GOAL_PAUSED_AFTER_REGEX =
 type ResumeResult = {
   messages?: Message[]
   goalState?: ThreadGoal | null
+  goalStateAt?: string
   fileHistorySnapshots?: FileHistorySnapshot[]
   attributionSnapshots?: AttributionSnapshotMessage[]
   contextCollapseCommits?: ContextCollapseCommitEntry[]
@@ -480,13 +481,46 @@ function applyGoalMetaMessage(
   return current
 }
 
+// Messages the goal replay is still allowed to apply on top of a snapshot.
+//
+// The snapshot is a complete ThreadGoal written after the event that produced
+// it, so every message older than it is already accounted for. Replaying those
+// anyway re-applies settled history: a `/goal replace` reached a second time
+// calls replaceGoal() again and resets the accumulated counters to zero, and a
+// `/goal` command that a later out-of-band clear (e.g. /clear, which writes a
+// null snapshot but leaves no message in the chain) invalidated gets recreated
+// from scratch.
+//
+// It only looked correct while `messages` was a post-compaction fragment —
+// there the boundary happens to cut away exactly the settled part. On an
+// ordinary resume of a session that was never compacted, `messages` is the
+// full history and both bugs are reachable.
+//
+// Without a timestamp (legacy sessions predating goal-state entries, or a
+// caller that didn't plumb one) nothing is filtered: full replay is the only
+// source of truth there.
+//
+// One turn of slack remains: accountGoalUsage runs after tool execution, so a
+// snapshot the goal tool wrote mid-turn predates the charge for that same
+// turn's assistant message, and an unclean exit loses those tokens. Bounded to
+// the last goal-tool turn, and far narrower than the unbounded double-count it
+// replaces — a clean exit re-writes the snapshot from cache with the charge in.
+function replayableSince(messages: Message[], snapshotAt?: string): Message[] {
+  if (!snapshotAt) return messages
+  const cutoff = Date.parse(snapshotAt)
+  if (!Number.isFinite(cutoff)) return messages
+  return messages.filter(message => timestampMs(message) > cutoff)
+}
+
 function extractGoalFromTranscript(
   messages: Message[],
-  seed?: ThreadGoal | undefined,
+  seed?: ThreadGoal | null,
 ): ThreadGoal | undefined {
-  // `seed` is the persisted goal-state metadata entry. Replay still runs on top
-  // of it so any /goal command or goal tool call recorded after that entry
-  // wins; when the session was never compacted the replay simply reproduces it.
+  // `seed` is the persisted goal-state snapshot (null = explicitly cleared).
+  // Replay runs on top of it so any /goal command or goal tool call recorded
+  // after the snapshot still wins — but the caller must hand us only messages
+  // newer than the snapshot, or replay re-applies the very events the snapshot
+  // already accounts for. See replayableSince.
   let goal: ThreadGoal | undefined = seed ? normalizeGoal(seed) : undefined
   const goalToolUseIDs = new Set<string>()
   for (const message of messages) {
@@ -622,8 +656,8 @@ export function restoreSessionStateFromLog(
   // does not).
   if (result.goalState !== undefined || result.messages?.length) {
     const goal = extractGoalFromTranscript(
-      result.messages ?? [],
-      result.goalState ?? undefined,
+      replayableSince(result.messages ?? [], result.goalStateAt),
+      result.goalState,
     )
     setAppState(prev => ({ ...prev, goal }))
   }
