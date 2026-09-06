@@ -174,6 +174,13 @@ export async function clearConversation({
       return {
         ...prev,
         tasks: nextTasks,
+        // Drop the thread goal: /clear starts a new session, and carrying the
+        // goal over silently brought its accumulated tokensUsed (and possibly
+        // a budget_limited status) into a conversation holding none of the
+        // evidence the evaluator judges against. The goal also would not be
+        // recorded in the new session's transcript, so resume would disagree
+        // with the live state. Users who want to keep it re-run /goal.
+        goal: undefined,
         attribution: createEmptyAttributionState(),
         // Clear standalone agent context (name/color set by /rename, /color)
         // so the new session doesn't display the old session's identity badge

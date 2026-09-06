@@ -1,6 +1,7 @@
 // @ts-nocheck
 import {
   getMainLoopModelOverride,
+  getSessionId,
   setMainLoopModelOverride,
 } from '../bootstrap/state.js'
 import {
@@ -22,6 +23,8 @@ import {
   type SessionExternalMetadata,
 } from '../utils/sessionState.js'
 import { updateSettingsForSource } from '../utils/settings/settings.js'
+import { isDurableGoalChange } from '../utils/goalState.js'
+import { cacheGoalState, saveGoalState } from '../utils/sessionStorage.js'
 import type { AppState } from './AppStateStore.js'
 
 // Inverse of the push below — restore on worker restart.
@@ -93,6 +96,25 @@ export function onChangeAppState({
       })
     }
     notifyPermissionModeChanged(newMode)
+  }
+
+  // Thread goal — same choke-point rationale as permission mode above. The
+  // goal is mutated from the /goal command, the goal tool, the evaluator and
+  // token accounting; diffing here persists all of them from one place.
+  //
+  // This exists because the goal was otherwise reconstructed purely by
+  // replaying the transcript, and a compact boundary sets parentUuid to null —
+  // so resume never saw any pre-compact /goal command and silently dropped the
+  // goal on exactly the long-running sessions the feature is for.
+  if (newState.goal !== oldState.goal) {
+    const sessionId = getSessionId()
+    if (sessionId) {
+      if (isDurableGoalChange(oldState.goal, newState.goal)) {
+        saveGoalState(sessionId as UUID, newState.goal ?? null)
+      } else {
+        cacheGoalState(newState.goal ?? null)
+      }
+    }
   }
 
   // mainLoopModel: remove it from settings / clear runtime override?

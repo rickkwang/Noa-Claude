@@ -60,6 +60,27 @@ ${reasonLine}
 Continue working toward the active thread goal. Choose the next concrete action that moves the objective closer to completion, avoid repeating completed work, and call the goal tool with operation "update_goal" and status "complete" only when the objective is actually complete.`
 }
 
+// maxAutoContinueTurns caps auto-continues WITHIN one user turn, mirroring the
+// stop-hook block cap (query.ts) which also resets per turn. Without this reset
+// the counter accumulated for the lifetime of the goal, so a goal with the
+// default cap of 5 stopped auto-continuing forever after its 5th continuation
+// and needed a manual /goal resume. Only 'active' goals reset: a goal already
+// paused at the cap must stay paused until the user resumes it.
+export function resetGoalAutoContinueForNewTurn({
+  setAppState,
+}: {
+  setAppState: (updater: (prev: AppState) => AppState) => void
+}): void {
+  setAppState(prev => {
+    if (!prev.goal) return prev
+    const current = normalizeGoal(prev.goal)
+    if (current.status !== 'active' || current.autoContinueTurns === 0) {
+      return prev
+    }
+    return { ...prev, goal: { ...current, autoContinueTurns: 0 } }
+  })
+}
+
 export function applyGoalRuntimeEvaluation({
   evaluation,
   setAppState,

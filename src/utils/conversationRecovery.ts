@@ -18,6 +18,7 @@ import type {
   NormalizedMessage,
   NormalizedUserMessage,
 } from '../types/message.js'
+import type { ThreadGoal } from '../types/goal.js'
 import { PERMISSION_MODES } from '../types/permissions.js'
 import { suppressNextSkillListing } from './attachments.js'
 import {
@@ -585,6 +586,7 @@ export async function loadConversationForResume(
   prNumber?: number
   prUrl?: string
   prRepository?: string
+  goalState?: ThreadGoal | null
   // Full path to the session file (for cross-directory resume)
   fullPath?: string
 } | null> {
@@ -673,6 +675,7 @@ export async function loadConversationForResume(
       prNumber: log?.prNumber,
       prUrl: log?.prUrl,
       prRepository: log?.prRepository,
+      goalState: log?.goalState,
       // Include full path for cross-directory resume
       fullPath: log?.fullPath,
     }

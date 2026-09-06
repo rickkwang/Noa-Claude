@@ -29,6 +29,17 @@ function restore(messages: Message[]): AppState {
   return state
 }
 
+function restoreWithGoalState(
+  messages: Message[],
+  goalState: ThreadGoal | null | undefined,
+): AppState {
+  let state = getDefaultAppState()
+  restoreSessionStateFromLog({ messages, goalState }, updater => {
+    state = updater(state)
+  })
+  return state
+}
+
 function restoreInto(initialState: AppState, messages: Message[]): AppState {
   let state = initialState
   restoreSessionStateFromLog({ messages }, updater => {
@@ -49,6 +60,30 @@ function goalToolUseMessage(
 ): Message {
   return createAssistantMessage({
     content: [{ type: 'tool_use', id, name: 'goal', input }],
+  })
+}
+
+function assistantWithUsage(input: number, output: number): Message {
+  const message = createAssistantMessage({ content: 'working' })
+  ;(message as { message: { usage: unknown } }).message.usage = {
+    input_tokens: input,
+    output_tokens: output,
+  }
+  return message
+}
+
+function goalToolResultMessage(
+  toolUseId: string,
+  goal: Partial<SerializedGoal>,
+): Message {
+  return createUserMessage({
+    content: [
+      {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: JSON.stringify({ goal: serializedGoal(goal) }),
+      },
+    ],
   })
 }
 
@@ -516,8 +551,10 @@ describe('goal tool result mapping', () => {
       }),
     )
 
-    expect(result.data.success).toBe(true)
-    expect(result.data.message).toContain('pending verify command')
+    // success:false — the goal is untouched. Reporting success made the model
+    // announce completion before the verify command had run.
+    expect(result.data.success).toBe(false)
+    expect(result.data.message).toContain('NOT marked complete')
     expect(state.goal?.status).toBe('active')
   })
 
@@ -561,5 +598,126 @@ describe('goal tool result mapping', () => {
       },
       remaining_tokens: 375,
     })
+  })
+})
+
+// A compact boundary sets parentUuid to null, so buildConversationChain stops
+// there and resume never sees the pre-boundary /goal command. The persisted
+// goal-state metadata entry is not part of that chain, so it survives.
+describe('goal restore across a compact boundary', () => {
+  test('restores the goal when the transcript no longer contains it', () => {
+    const persisted: ThreadGoal = {
+      ...createThreadGoal({
+        objective: 'Ship the release',
+        tokenBudget: 100_000,
+        verifyCommand: 'bun test',
+        now: 1,
+      }),
+      tokensUsed: 42_000,
+      timeUsedSeconds: 900,
+      autoContinueTurns: 2,
+      lastEvaluatorReason: 'Tests still failing.',
+    }
+
+    // Post-boundary transcript: no /goal command, no goal tool calls.
+    const state = restoreWithGoalState(
+      [createAssistantMessage({ content: 'ok' })],
+      persisted,
+    )
+
+    expect(state.goal).toMatchObject({
+      objective: 'Ship the release',
+      status: 'active',
+      tokenBudget: 100_000,
+      verifyCommand: 'bun test',
+      tokensUsed: 42_000,
+      autoContinueTurns: 2,
+      lastEvaluatorReason: 'Tests still failing.',
+    })
+  })
+
+  test('restores a persisted goal even with an empty resumed chain', () => {
+    const persisted = createThreadGoal({
+      objective: 'Ship the release',
+      tokenBudget: null,
+      now: 1,
+    })
+
+    expect(restoreWithGoalState([], persisted).goal).toMatchObject({
+      objective: 'Ship the release',
+      status: 'active',
+    })
+  })
+
+  test('post-boundary transcript activity wins over the persisted snapshot', () => {
+    const persisted = createThreadGoal({
+      objective: 'Ship the release',
+      tokenBudget: null,
+      now: 1,
+    })
+
+    // The user replaced the goal after the snapshot was written.
+    const state = restoreWithGoalState(
+      [goalCommandMessage('replace Write the changelog')],
+      persisted,
+    )
+
+    expect(state.goal?.objective).toBe('Write the changelog')
+  })
+
+  test('an explicit clear is not resurrected by the replay', () => {
+    expect(restoreWithGoalState([], null).goal).toBeUndefined()
+  })
+})
+
+describe('goal usage counters are monotonic across replay', () => {
+  test('a goal tool_result does not roll back accumulated usage', () => {
+    // The model calls get_goal on the second turn. Its result snapshots usage
+    // as of BEFORE that turn is charged, so replaying it as an overwrite used
+    // to drop that turn's tokens.
+    const command = goalCommandMessage('Ship the release --budget 100000')
+    command.timestamp = '2026-05-13T10:00:00.000Z'
+
+    const firstTurn = assistantWithUsage(800, 200) // 1000
+    firstTurn.timestamp = '2026-05-13T10:00:01.000Z'
+
+    const toolTurn = goalToolUseMessage('toolu_get', { operation: 'get_goal' })
+    ;(toolTurn as { message: { usage: unknown } }).message.usage = {
+      input_tokens: 400,
+      output_tokens: 100,
+    } // 500
+    toolTurn.timestamp = '2026-05-13T10:00:02.000Z'
+
+    const toolResult = goalToolResultMessage('toolu_get', {
+      objective: 'Ship the release',
+      tokens_used: 1000, // pre-turn snapshot
+      time_used_seconds: 1,
+      token_budget: 100_000,
+    })
+    toolResult.timestamp = '2026-05-13T10:00:03.000Z'
+
+    const state = restore([command, firstTurn, toolTurn, toolResult])
+
+    expect(state.goal?.tokensUsed).toBe(1500)
+  })
+
+  test('a replaced goal still resets its counters', () => {
+    const state = restore([
+      goalCommandMessage('First objective'),
+      goalToolUseMessage('toolu_a', { operation: 'get_goal' }),
+      goalToolResultMessage('toolu_a', {
+        objective: 'First objective',
+        tokens_used: 9000,
+      }),
+      goalCommandMessage('replace Second objective'),
+      goalToolUseMessage('toolu_b', { operation: 'get_goal' }),
+      goalToolResultMessage('toolu_b', {
+        objective: 'Second objective',
+        tokens_used: 0,
+      }),
+    ])
+
+    expect(state.goal?.objective).toBe('Second objective')
+    expect(state.goal?.tokensUsed).toBe(0)
   })
 })

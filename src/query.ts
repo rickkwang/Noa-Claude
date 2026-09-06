@@ -70,6 +70,7 @@ import {
   applyGoalRuntimeEvaluation,
   applyGoalRuntimeEvaluationFailure,
   decideGoalEvaluatorAction,
+  resetGoalAutoContinueForNewTurn,
 } from './utils/goalRuntime.js'
 import { normalizeGoal, recordGoalEvaluatorResult } from './utils/goalState.js'
 import {
@@ -638,7 +639,12 @@ async function* queryLoop(
       !toolUseContext.agentId &&
       permissionMode !== 'plan'
     ) {
-      const goal = appState.goal
+      // Fresh user turn: refill the auto-continue allowance before the
+      // evaluator can spend it (see resetGoalAutoContinueForNewTurn).
+      resetGoalAutoContinueForNewTurn({
+        setAppState: toolUseContext.setAppState,
+      })
+      const goal = toolUseContext.getAppState().goal
       if (shouldInjectGoalPrompt(goal)) {
         messagesForQuery = [
           createUserMessage({

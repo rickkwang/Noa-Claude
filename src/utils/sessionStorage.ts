@@ -44,6 +44,7 @@ import {
   type SessionId,
 } from '../types/ids.js'
 import type { AttributionSnapshotMessage } from '../types/logs.js'
+import type { ThreadGoal } from '../types/goal.js'
 import {
   type ContentReplacementEntry,
   type ContextCollapseCommitEntry,
@@ -671,6 +672,8 @@ class Project {
   currentSessionPrNumber: number | undefined
   currentSessionPrUrl: string | undefined
   currentSessionPrRepository: string | undefined
+  // undefined = never set this session (nothing to re-append); null = cleared.
+  currentSessionGoalState: ThreadGoal | null | undefined
 
   sessionFile: string | null = null
   // Entries buffered while sessionFile is null. Flushed by materializeSessionFile
@@ -1053,6 +1056,14 @@ class Project {
         timestamp: new Date().toISOString(),
       })
     }
+    if (this.currentSessionGoalState !== undefined) {
+      appendEntryToFile(this.sessionFile, {
+        type: 'goal-state',
+        sessionId,
+        goal: this.currentSessionGoalState,
+        timestamp: new Date().toISOString(),
+      })
+    }
   }
 
   async flush(): Promise<void> {
@@ -1405,6 +1416,9 @@ class Project {
       void this.enqueueWrite(sessionFile, entry)
     } else if (entry.type === 'pr-link') {
       // PR links can always be appended
+      void this.enqueueWrite(sessionFile, entry)
+    } else if (entry.type === 'goal-state') {
+      // Goal snapshots can always be appended — last-wins on restore
       void this.enqueueWrite(sessionFile, entry)
     } else if (entry.type === 'file-history-snapshot') {
       // File history snapshots can always be appended
@@ -2959,6 +2973,38 @@ export async function linkSessionToPR(
   logEvent('tengu_session_linked_to_pr', { prNumber })
 }
 
+/**
+ * Persist the active thread goal as a session metadata entry.
+ *
+ * Called from onChangeAppState so every goal mutation path (slash command,
+ * goal tool, evaluator, token accounting) is covered by one write site.
+ * Passing null records an explicit clear so resume doesn't resurrect the goal
+ * by replaying the transcript.
+ */
+export function saveGoalState(sessionId: UUID, goal: ThreadGoal | null): void {
+  cacheGoalState(goal)
+  // Queued (appendEntry), not the sync appendEntryToFile used by saveTag /
+  // linkSessionToPR: those are rare user actions, whereas goal transitions
+  // fire mid-turn alongside queued message writes. A sync write there would
+  // land ahead of already-queued messages and break the "metadata at EOF"
+  // invariant that readLiteMetadata's tail scan depends on.
+  void getProject()
+    .appendEntry(
+      { type: 'goal-state', sessionId, goal, timestamp: new Date().toISOString() },
+      sessionId,
+    )
+    .catch(logError)
+}
+
+/**
+ * Refresh the cached goal without writing. reAppendSessionMetadata flushes the
+ * cache after compaction (the >5MB load path only reads post-boundary bytes)
+ * and on session exit, so usage counters stay current without a write per turn.
+ */
+export function cacheGoalState(goal: ThreadGoal | null): void {
+  getProject().currentSessionGoalState = goal
+}
+
 export function getCurrentSessionTag(sessionId: UUID): string | undefined {
   // Only returns tag for current session (the only one we cache)
   if (sessionId === getSessionId()) {
@@ -2997,6 +3043,7 @@ export function restoreSessionMetadata(meta: {
   prNumber?: number
   prUrl?: string
   prRepository?: string
+  goalState?: ThreadGoal | null
 }): void {
   const project = getProject()
   // ??= so --name (cacheSessionTitle) wins over the resumed
@@ -3013,6 +3060,8 @@ export function restoreSessionMetadata(meta: {
     project.currentSessionPrNumber = meta.prNumber
   if (meta.prUrl) project.currentSessionPrUrl = meta.prUrl
   if (meta.prRepository) project.currentSessionPrRepository = meta.prRepository
+  if (meta.goalState !== undefined)
+    project.currentSessionGoalState = meta.goalState
 }
 
 /**
@@ -3033,6 +3082,7 @@ export function clearSessionMetadata(): void {
   project.currentSessionPrNumber = undefined
   project.currentSessionPrUrl = undefined
   project.currentSessionPrRepository = undefined
+  project.currentSessionGoalState = undefined
 }
 
 /**
@@ -3245,6 +3295,7 @@ export async function loadFullLog(log: LogOption): Promise<LogOption> {
       prNumbers,
       prUrls,
       prRepositories,
+      goalStates,
       modes,
       worktreeStates,
       fileHistorySnapshots,
@@ -3298,6 +3349,10 @@ export async function loadFullLog(log: LogOption): Promise<LogOption> {
       prRepository: sessionId
         ? prRepositories.get(sessionId)
         : log.prRepository,
+      // Survives compaction: goal-state is a metadata line, not a chained
+      // message, so it is found by the full-file scan even when the compact
+      // boundary has cut every pre-boundary message out of `messages`.
+      goalState: sessionId ? goalStates.get(sessionId) : log.goalState,
       gitBranch: mostRecentLeaf?.gitBranch ?? log.gitBranch,
       isSidechain: transcript[0]?.isSidechain ?? log.isSidechain,
       teamName: transcript[0]?.teamName ?? log.teamName,
@@ -3440,6 +3495,7 @@ const METADATA_TYPE_MARKERS = [
   '"type":"mode"',
   '"type":"worktree-state"',
   '"type":"pr-link"',
+  '"type":"goal-state"',
 ]
 const METADATA_MARKER_BUFS = METADATA_TYPE_MARKERS.map(m => Buffer.from(m))
 // Longest marker is 22 bytes; +1 for leading `{` = 23.
@@ -3803,6 +3859,7 @@ export async function loadTranscriptFile(
   prNumbers: Map<UUID, number>
   prUrls: Map<UUID, string>
   prRepositories: Map<UUID, string>
+  goalStates: Map<UUID, ThreadGoal | null>
   modes: Map<UUID, string>
   worktreeStates: Map<UUID, PersistedWorktreeSession | null>
   fileHistorySnapshots: Map<UUID, FileHistorySnapshotMessage>
@@ -3823,6 +3880,7 @@ export async function loadTranscriptFile(
   const prNumbers = new Map<UUID, number>()
   const prUrls = new Map<UUID, string>()
   const prRepositories = new Map<UUID, string>()
+  const goalStates = new Map<UUID, ThreadGoal | null>()
   const modes = new Map<UUID, string>()
   const worktreeStates = new Map<UUID, PersistedWorktreeSession | null>()
   const fileHistorySnapshots = new Map<UUID, FileHistorySnapshotMessage>()
@@ -3927,6 +3985,8 @@ export async function loadTranscriptFile(
           prNumbers.set(entry.sessionId, entry.prNumber)
           prUrls.set(entry.sessionId, entry.prUrl)
           prRepositories.set(entry.sessionId, entry.prRepository)
+        } else if (entry.type === 'goal-state' && entry.sessionId) {
+          goalStates.set(entry.sessionId, entry.goal)
         }
       }
     }
@@ -3996,6 +4056,8 @@ export async function loadTranscriptFile(
         prNumbers.set(entry.sessionId, entry.prNumber)
         prUrls.set(entry.sessionId, entry.prUrl)
         prRepositories.set(entry.sessionId, entry.prRepository)
+      } else if (entry.type === 'goal-state' && entry.sessionId) {
+        goalStates.set(entry.sessionId, entry.goal)
       } else if (entry.type === 'file-history-snapshot') {
         fileHistorySnapshots.set(entry.messageId, entry)
       } else if (entry.type === 'attribution-snapshot') {
@@ -4121,6 +4183,7 @@ export async function loadTranscriptFile(
     prNumbers,
     prUrls,
     prRepositories,
+    goalStates,
     modes,
     worktreeStates,
     fileHistorySnapshots,

@@ -95,6 +95,7 @@ const GOAL_PAUSED_AFTER_REGEX =
 
 type ResumeResult = {
   messages?: Message[]
+  goalState?: ThreadGoal | null
   fileHistorySnapshots?: FileHistorySnapshot[]
   attributionSnapshots?: AttributionSnapshotMessage[]
   contextCollapseCommits?: ContextCollapseCommitEntry[]
@@ -287,6 +288,20 @@ function applyGoalToolResult(
   ) {
     return goal
   }
+  // Usage counters only ever grow within one objective. The tool result is a
+  // snapshot taken mid-turn, BEFORE that turn's usage is charged
+  // (accountGoalUsage runs after tool execution), so replaying it as a plain
+  // overwrite dropped the tokens of every turn in which the model called the
+  // goal tool. Keep whichever value is further along — but only for the same
+  // objective, since create_goal/replace legitimately resets to zero.
+  const sameObjective = goal?.objective === outputGoal.objective
+  const snapshotTokens =
+    typeof outputGoal.tokens_used === 'number' ? outputGoal.tokens_used : 0
+  const snapshotSeconds =
+    typeof outputGoal.time_used_seconds === 'number'
+      ? outputGoal.time_used_seconds
+      : 0
+
   const restored: ThreadGoal = {
     objective: outputGoal.objective,
     status:
@@ -305,12 +320,12 @@ function applyGoalToolResult(
       outputGoal.verify_command.trim()
         ? outputGoal.verify_command
         : (goal?.verifyCommand ?? null),
-    tokensUsed:
-      typeof outputGoal.tokens_used === 'number' ? outputGoal.tokens_used : 0,
-    timeUsedSeconds:
-      typeof outputGoal.time_used_seconds === 'number'
-        ? outputGoal.time_used_seconds
-        : 0,
+    tokensUsed: sameObjective
+      ? Math.max(goal?.tokensUsed ?? 0, snapshotTokens)
+      : snapshotTokens,
+    timeUsedSeconds: sameObjective
+      ? Math.max(goal?.timeUsedSeconds ?? 0, snapshotSeconds)
+      : snapshotSeconds,
     autoContinueTurns:
       typeof outputGoal.auto_continue_turns === 'number'
         ? outputGoal.auto_continue_turns
@@ -465,8 +480,14 @@ function applyGoalMetaMessage(
   return current
 }
 
-function extractGoalFromTranscript(messages: Message[]): ThreadGoal | undefined {
-  let goal: ThreadGoal | undefined
+function extractGoalFromTranscript(
+  messages: Message[],
+  seed?: ThreadGoal | undefined,
+): ThreadGoal | undefined {
+  // `seed` is the persisted goal-state metadata entry. Replay still runs on top
+  // of it so any /goal command or goal tool call recorded after that entry
+  // wins; when the session was never compacted the replay simply reproduces it.
+  let goal: ThreadGoal | undefined = seed ? normalizeGoal(seed) : undefined
   const goalToolUseIDs = new Set<string>()
   for (const message of messages) {
     const now = timestampMs(message)
@@ -596,8 +617,14 @@ export function restoreSessionStateFromLog(
     }
   }
 
-  if (result.messages && result.messages.length > 0) {
-    const goal = extractGoalFromTranscript(result.messages)
+  // Not gated on messages.length: a persisted goal must be restored even when
+  // the resumed chain is empty (goalState survives boundaries that the chain
+  // does not).
+  if (result.goalState !== undefined || result.messages?.length) {
+    const goal = extractGoalFromTranscript(
+      result.messages ?? [],
+      result.goalState ?? undefined,
+    )
     setAppState(prev => ({ ...prev, goal }))
   }
 }

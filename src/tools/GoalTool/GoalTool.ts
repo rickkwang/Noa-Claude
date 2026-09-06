@@ -239,11 +239,15 @@ The model cannot pause, resume, or clear goals — those are user-controlled via
           )
         }
 
+        // success:false on purpose — the goal is untouched and still active.
+        // Reporting success here made the model announce completion (the
+        // continuation prompt tells it to report final usage once the tool
+        // succeeds) before the verify command had run even once.
         if (pendingVerification) {
           return goalToolResult(
-            true,
+            false,
             pendingVerification as ThreadGoal,
-            'Goal completion is pending verify command and evaluator approval.',
+            'Goal NOT marked complete: a verify command is configured, so completion is decided by the verify command and the evaluator at the end of this turn. The goal is still active. Do not tell the user the goal is complete — keep working or end the turn normally.',
           )
         }
 

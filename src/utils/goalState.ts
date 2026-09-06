@@ -211,6 +211,29 @@ export function parseGoalObjectiveAndBudget(
   }
 }
 
+// Usage counters move on every assistant turn. Persisting the goal on those
+// alone would append a metadata line per turn for no recovery benefit — the
+// in-memory cache is still refreshed, and reAppendSessionMetadata flushes the
+// latest counters at compaction and session exit. Stated as an ignore-list so
+// any field added to ThreadGoal later defaults to "worth persisting".
+const TRANSIENT_GOAL_FIELDS = new Set<keyof ThreadGoal>([
+  'tokensUsed',
+  'timeUsedSeconds',
+  'updatedAt',
+])
+
+export function isDurableGoalChange(
+  previous: ThreadGoal | undefined,
+  next: ThreadGoal | undefined,
+): boolean {
+  if (!previous || !next) return previous !== next
+  const a = normalizeGoal(previous)
+  const b = normalizeGoal(next)
+  return (Object.keys(b) as Array<keyof ThreadGoal>).some(
+    key => !TRANSIENT_GOAL_FIELDS.has(key) && a[key] !== b[key],
+  )
+}
+
 export function pauseGoal(goal: ThreadGoal, now: number): ThreadGoal | null {
   const current = normalizeGoal(goal)
   if (current.status !== 'active') return null

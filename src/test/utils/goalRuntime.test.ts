@@ -4,6 +4,7 @@ import {
   applyGoalRuntimeEvaluation,
   applyGoalRuntimeEvaluationFailure,
   decideGoalEvaluatorAction,
+  resetGoalAutoContinueForNewTurn,
 } from '../../utils/goalRuntime.js'
 import { createThreadGoal } from '../../utils/goalState.js'
 
@@ -169,5 +170,63 @@ describe('goal runtime', () => {
     expect(state.state.goal?.lastEvaluatorReason).toBe(
       'Final verification passed.',
     )
+  })
+})
+
+describe('goal auto-continue allowance', () => {
+  test('a fresh user turn refills the allowance of an active goal', () => {
+    const state = harness({
+      ...createThreadGoal({ objective: 'Ship', tokenBudget: null, now: 1 }),
+      autoContinueTurns: 5,
+      maxAutoContinueTurns: 5,
+    })
+
+    resetGoalAutoContinueForNewTurn({ setAppState: state.setAppState })
+
+    expect(state.state.goal?.autoContinueTurns).toBe(0)
+    // Was capped before the reset; must be able to continue again after it.
+    expect(
+      applyGoalRuntimeEvaluation({
+        evaluation: { achieved: false, reason: 'Still building.' },
+        setAppState: state.setAppState,
+      }).action,
+    ).toBe('continue')
+  })
+
+  test('a goal paused at the cap stays paused until the user resumes', () => {
+    const state = harness({
+      ...createThreadGoal({ objective: 'Ship', tokenBudget: null, now: 1 }),
+      status: 'paused',
+      autoContinueTurns: 5,
+      maxAutoContinueTurns: 5,
+      stopReason: 'max_auto_continue_turns',
+    })
+
+    resetGoalAutoContinueForNewTurn({ setAppState: state.setAppState })
+
+    expect(state.state.goal?.status).toBe('paused')
+    expect(state.state.goal?.autoContinueTurns).toBe(5)
+  })
+
+  test('the cap still stops runaway continues within a single turn', () => {
+    const state = harness({
+      ...createThreadGoal({ objective: 'Ship', tokenBudget: null, now: 1 }),
+      maxAutoContinueTurns: 2,
+    })
+    const evaluation = { achieved: false, reason: 'Not yet.' }
+
+    expect(
+      applyGoalRuntimeEvaluation({ evaluation, setAppState: state.setAppState })
+        .action,
+    ).toBe('continue')
+    expect(
+      applyGoalRuntimeEvaluation({ evaluation, setAppState: state.setAppState })
+        .action,
+    ).toBe('continue')
+    expect(
+      applyGoalRuntimeEvaluation({ evaluation, setAppState: state.setAppState })
+        .action,
+    ).toBe('stop')
+    expect(state.state.goal?.status).toBe('paused')
   })
 })

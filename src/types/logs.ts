@@ -10,6 +10,7 @@ import type {
   UserMessage,
 } from './message.js'
 import type { QueueOperationMessage } from './messageQueueTypes.js'
+import type { ThreadGoal } from './goal.js'
 
 type TranscriptBaseMessage =
   | UserMessage
@@ -60,6 +61,7 @@ export type LogOption = {
   prNumber?: number // GitHub PR number linked to this session
   prUrl?: string // Full URL to the linked PR
   prRepository?: string // Repository in "owner/repo" format
+  goalState?: ThreadGoal | null // Last persisted thread goal (null = explicitly cleared)
   mode?: 'coordinator' | 'normal' // Session mode for coordinator/normal detection
   worktreeSession?: PersistedWorktreeSession | null // Worktree state at session end (null = exited, undefined = never entered)
   contentReplacements?: ContentReplacementRecord[] // Replacement decisions for resume reconstruction
@@ -145,6 +147,22 @@ export type PRLinkMessage = {
   prUrl: string
   prRepository: string // e.g., "owner/repo"
   timestamp: string // ISO timestamp when linked
+}
+
+/**
+ * Thread-goal snapshot stored in the session transcript.
+ *
+ * The goal is otherwise reconstructed by replaying `/goal` commands, goal tool
+ * calls and notices out of the transcript — but a compact boundary sets
+ * parentUuid to null, so buildConversationChain stops there and resume never
+ * sees any of those pre-boundary messages. This entry is a metadata line, not
+ * a chained message, so the full-file scan finds it regardless of boundaries.
+ */
+export type GoalStateEntry = {
+  type: 'goal-state'
+  sessionId: UUID
+  goal: ThreadGoal | null // null = goal was cleared
+  timestamp: string
 }
 
 export type ModeEntry = {
@@ -324,6 +342,7 @@ export type Entry =
   | QueueOperationMessage
   | SpeculationAcceptMessage
   | ModeEntry
+  | GoalStateEntry
   | WorktreeStateEntry
   | ContentReplacementEntry
   | ContextCollapseCommitEntry

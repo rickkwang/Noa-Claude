@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   advanceGoalAutoContinue,
   createThreadGoal,
+  isDurableGoalChange,
   markGoalComplete,
   markGoalEvaluatorFailed,
   maybeResumeBudgetLimitedGoal,
@@ -303,5 +304,41 @@ describe('goal state machine', () => {
         tokenBudget: null,
       },
     })
+  })
+})
+
+describe('isDurableGoalChange', () => {
+  const base = createThreadGoal({
+    objective: 'Ship',
+    tokenBudget: 1000,
+    now: 1,
+  })
+
+  test('usage-only updates are not worth a transcript write', () => {
+    expect(
+      isDurableGoalChange(base, {
+        ...base,
+        tokensUsed: 500,
+        timeUsedSeconds: 30,
+        updatedAt: 2,
+      }),
+    ).toBe(false)
+  })
+
+  test('status, objective and stop-reason changes are durable', () => {
+    expect(isDurableGoalChange(base, { ...base, status: 'paused' })).toBe(true)
+    expect(isDurableGoalChange(base, { ...base, objective: 'Other' })).toBe(true)
+    expect(
+      isDurableGoalChange(base, { ...base, stopReason: 'budget_limited' }),
+    ).toBe(true)
+    expect(
+      isDurableGoalChange(base, { ...base, autoContinueTurns: 1 }),
+    ).toBe(true)
+  })
+
+  test('appearing or disappearing is durable', () => {
+    expect(isDurableGoalChange(undefined, base)).toBe(true)
+    expect(isDurableGoalChange(base, undefined)).toBe(true)
+    expect(isDurableGoalChange(undefined, undefined)).toBe(false)
   })
 })
