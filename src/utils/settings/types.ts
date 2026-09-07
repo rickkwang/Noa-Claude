@@ -932,22 +932,6 @@ export const SettingsSchema = lazySchema(() =>
               .describe('Enable voice mode (hold-to-talk dictation)'),
           }
         : {}),
-      ...(feature('KAIROS')
-        ? {
-            assistant: z
-              .boolean()
-              .optional()
-              .describe(
-                'Start Claude in assistant mode (custom system prompt, brief view, scheduled check-in skills)',
-              ),
-            assistantName: z
-              .string()
-              .optional()
-              .describe(
-                'Display name for the assistant, shown in the claude.ai session list',
-              ),
-          }
-        : {}),
       // Teams/Enterprise opt-IN for channel notifications. Default OFF.
       // MCP servers that declare the claude/channel capability can push
       // inbound messages into the conversation; for managed orgs this only

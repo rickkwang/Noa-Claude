@@ -57,7 +57,6 @@ import { feature } from 'bun:bundle'
 // The other requires below have no flag, or gate behaviour inside the module
 // while keeping the command visible, so they must stay unconditional.
 /* eslint-disable @typescript-eslint/no-require-imports */
-const assistantCommand = require('./commands/assistant/index.js').default
 const bridge = feature('BRIDGE_MODE')
   ? require('./commands/bridge/index.js').default
   : null
@@ -247,7 +246,6 @@ const COMMANDS = memoize((): Command[] => [
   wiki,
   ...(forkCmd ? [forkCmd] : []),
   ...(buddy ? [buddy] : []),
-  ...(assistantCommand ? [assistantCommand] : []),
   ...(bridge ? [bridge] : []),
   ...(voiceCommand ? [voiceCommand] : []),
   permissions,

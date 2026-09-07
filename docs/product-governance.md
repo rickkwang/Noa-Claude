@@ -27,7 +27,6 @@ These are the baseline workflows that must remain discoverable and meaningful:
 
 These commands are callable, but they are not core product workflows:
 
-- `/assistant`
 - `/cleanup-data`
 - `/clean-sessions`
 - `/heapdump`
@@ -49,7 +48,6 @@ Policy:
 
 Tracked surfaces:
 
-- `/assistant`
 - `/cleanup-data`
 - `/clean-sessions`
 - `/heapdump`

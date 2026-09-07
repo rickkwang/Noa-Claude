@@ -66,26 +66,6 @@ export async function launchAssistantSessionChooser(root: Root, props: {
 }
 
 /**
- * `claude assistant` found zero sessions — show the same install wizard
- * as `/assistant` when daemon.json is empty. Resolves to the installed dir on
- * success, null on cancel. Rejects on install failure so the caller can
- * distinguish errors from user cancellation.
- */
-export async function launchAssistantInstallWizard(root: Root): Promise<string | null> {
-  const {
-    NewInstallWizard,
-    computeDefaultInstallDir
-  } = await import('./commands/assistant/assistant.js');
-  const defaultDir = await computeDefaultInstallDir();
-  let rejectWithError: (reason: Error) => void;
-  const errorPromise = new Promise<never>((_, reject) => {
-    rejectWithError = reject;
-  });
-  const resultPromise = showSetupDialog<string | null>(root, done => <NewInstallWizard defaultDir={defaultDir} onInstalled={dir => done(dir)} onCancel={() => done(null)} onError={message => rejectWithError(new Error(`Installation failed: ${message}`))} />);
-  return Promise.race([resultPromise, errorPromise]);
-}
-
-/**
  * Site ~4549: TeleportResumeWrapper (interactive teleport session picker).
  * Original callback wiring: onComplete={done}, onCancel={() => done(null)}, source="cliArg".
  */

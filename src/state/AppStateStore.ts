@@ -112,9 +112,9 @@ export type AppState = DeepImmutable<{
   spinnerTip?: string
   // Agent name from --agent CLI flag or settings (for logo display)
   agent: string | undefined
-  // Assistant mode fully enabled (settings + GrowthBook gate + trust).
-  // Single source of truth - computed once in main.tsx before option
-  // mutation, consumers read this instead of re-calling isAssistantMode().
+  // Assistant mode fully enabled. Single source of truth - computed once in
+  // main.tsx before option mutation. This build ships no activation path, so
+  // it is always false.
   kairosEnabled: boolean
   // Remote session URL for --remote mode (shown in footer indicator)
   remoteSessionUrl: string | undefined

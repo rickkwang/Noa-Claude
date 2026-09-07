@@ -287,9 +287,6 @@ export function configureProgramOptions(program: CommanderCommand): void {
   if (feature('KAIROS') || feature('KAIROS_BRIEF')) {
     program.addOption(new Option('--brief', 'Enable SendUserMessage tool for agent-to-user communication'));
   }
-  if (feature('KAIROS')) {
-    program.addOption(new Option('--assistant', 'Force assistant mode (Agent SDK daemon use)').hideHelp());
-  }
   if (feature('KAIROS') || feature('KAIROS_CHANNELS')) {
     program.addOption(
       new Option(

@@ -60,10 +60,7 @@ const productPaths = await import('../src/utils/productPaths.ts');
 const commandsModule = await import('../src/commands.ts');
 const surfaceStatus = await import('../src/commands/surfaceStatus.ts');
 const buildExcluded = await import('../src/commands/buildExcluded.ts');
-const settings = await import('../src/utils/settings/settings.ts');
 const forkIndex = await import('../src/commands/fork/index.ts');
-const assistantIndex = await import('../src/commands/assistant/index.ts');
-const assistantCommand = await import('../src/commands/assistant/assistant.js');
 const summaryIndex = await import('../src/commands/summary/index.ts');
 const shareIndex = await import('../src/commands/share/index.ts');
 
@@ -437,39 +434,6 @@ function runNonInteractiveBoundarySmoke() {
     'Share command must remain non-interactive compatible',
     shareIndex.default,
   );
-  assert(
-    assistantIndex.default.supportsNonInteractive === true,
-    'Assistant command must stay non-interactive compatible',
-    assistantIndex.default,
-  );
-}
-
-async function runAssistantCommandSmoke() {
-  const projectDir = join(tempRoot, 'assistant-project');
-  prepareProject(projectDir);
-
-  const status = await assistantCommand.call('status');
-  assert(
-    status.value.includes('Assistant status:'),
-    'Assistant status output is not stable',
-    status.value,
-  );
-
-  const enabled = await assistantCommand.call('enable');
-  assert(
-    enabled.value.includes('Assistant enabled.'),
-    'Assistant enable did not report success',
-    enabled.value,
-  );
-
-  const userSettingsPath = settings.getSettingsFilePathForSource('userSettings');
-  writeFileSync(userSettingsPath, '{invalid-json', 'utf8');
-  const failedDisable = await assistantCommand.call('disable');
-  assert(
-    failedDisable.value.includes('E_ASSISTANT_SETTINGS_WRITE_FAILED'),
-    'Assistant disable did not return stable settings write failure ID',
-    failedDisable.value,
-  );
 }
 
 try {
@@ -480,7 +444,6 @@ try {
   await runMcpPathSmoke();
   await runCommandSurfaceSmoke();
   runNonInteractiveBoundarySmoke();
-  await runAssistantCommandSmoke();
   runBuildExcludedContractSmoke();
   console.log('Feature smoke checks passed.');
 } finally {

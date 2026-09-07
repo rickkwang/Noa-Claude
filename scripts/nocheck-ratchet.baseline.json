@@ -2,8 +2,6 @@
   "files": [
     "src/QueryEngine.ts",
     "src/Task.ts",
-    "src/assistant/gate.ts",
-    "src/assistant/index.ts",
     "src/assistant/sessionHistory.ts",
     "src/bootstrap/state.ts",
     "src/bridge/bridgeApi.ts",
@@ -63,7 +61,6 @@
     "src/commands/add-dir/validation.ts",
     "src/commands/agents/agents.tsx",
     "src/commands/agents/index.ts",
-    "src/commands/assistant/assistant.ts",
     "src/commands/autocompact/autocompact.ts",
     "src/commands/branch/branch.ts",
     "src/commands/branch/index.ts",

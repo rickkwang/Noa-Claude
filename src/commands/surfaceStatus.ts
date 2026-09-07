@@ -61,15 +61,6 @@ const baseline: CommandSurfaceEntry[] = [
 
 const implementedNonBaseline: CommandSurfaceEntry[] = [
   {
-    command: '/assistant',
-    category: 'implemented-non-baseline',
-    discoverability: 'visible',
-    supportsNonInteractive: true,
-    reason: 'Implements assistant preference/status management only.',
-    upgradeCondition:
-      'Promote after runtime activation flow and full assistant execution semantics are delivered.',
-  },
-  {
     command: '/heapdump',
     category: 'implemented-non-baseline',
     discoverability: 'visible',

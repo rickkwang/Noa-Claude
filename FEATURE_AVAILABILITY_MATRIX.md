@@ -33,7 +33,6 @@ Last updated: 2026-08-07
 ## Slash Commands: Implemented but Non-Baseline
 | Command | Status | Notes |
 |---|---|---|
-| `/assistant` | Available | Assistant preference/status command implemented; full assistant runtime remains gated by build/runtime capabilities. |
 | `/cleanup-data` | Available | Unified cleanup command for local tracking data; requires `--confirm` to execute deletions. Custom-location memory dirs (env/settings override) only lose known memory files — unrecognized items are kept and reported. |
 | `/clean-sessions` | Available | Interactive picker for deleting small/trivial session transcripts (sidecar dirs go with them); bulk `delete --confirm` requires `--trivial-only` and the default size bucket. The running session and recently-modified (<10m) sessions are always excluded. |
 | `/heapdump` | Available | Exposed for engineering diagnostics. |

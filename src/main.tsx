@@ -89,10 +89,6 @@ const getTeammateModeSnapshot = () => require('./utils/swarm/backends/teammateMo
 /* eslint-disable @typescript-eslint/no-require-imports */
 const coordinatorModeModule = require('./coordinator/coordinatorMode.js') as typeof import('./coordinator/coordinatorMode.js');
 /* eslint-enable @typescript-eslint/no-require-imports */
-// Dead code elimination: conditional import for KAIROS (assistant mode)
-/* eslint-disable @typescript-eslint/no-require-imports */
-const assistantModule = feature('KAIROS') ? require('./assistant/index.js') as typeof import('./assistant/index.js') : null;
-const kairosGate = feature('KAIROS') ? require('./assistant/gate.js') as typeof import('./assistant/gate.js') : null;
 import { relative, resolve } from 'path';
 import { isAnalyticsDisabled } from 'src/services/analytics/config.js';
 import { getFeatureValue_CACHED_MAY_BE_STALE } from 'src/services/analytics/growthbook.js';
@@ -101,11 +97,10 @@ import { initializeAnalyticsGates } from 'src/services/analytics/sink.js';
 import { getOriginalCwd, setAdditionalDirectoriesForClaudeMd, setIsRemoteMode, setMainLoopModelOverride, setMainThreadAgentType, setTeleportedSessionInfo } from './bootstrap/state.js';
 import { filterCommandsForRemoteMode, getCommands } from './commands.js';
 import type { StatsStore } from './context/stats.js';
-import { launchAssistantInstallWizard, launchAssistantSessionChooser, launchInvalidSettingsDialog, launchResumeChooser, launchSnapshotUpdateDialog, launchTeleportRepoMismatchDialog, launchTeleportResumeWrapper } from './dialogLaunchers.js';
+import { launchAssistantSessionChooser, launchInvalidSettingsDialog, launchResumeChooser, launchSnapshotUpdateDialog, launchTeleportRepoMismatchDialog, launchTeleportResumeWrapper } from './dialogLaunchers.js';
 import { SHOW_CURSOR } from './ink/termio/dec.js';
-import { exitWithError, exitWithMessage, getRenderContext, renderAndRun, showSetupScreens } from './interactiveHelpers.js';
+import { exitWithError, getRenderContext, renderAndRun, showSetupScreens } from './interactiveHelpers.js';
 import { initBuiltinPlugins } from './plugins/bundled/index.js';
-/* eslint-enable @typescript-eslint/no-require-imports */
 import { checkQuotaStatus } from './services/claudeAiLimits.js';
 import { getMcpToolsCommandsAndResources, prefetchAllMcpResources } from './services/mcp/client.js';
 import { VALID_INSTALLABLE_SCOPES, VALID_UPDATE_SCOPES } from './services/plugins/pluginCliCommands.js';
@@ -922,63 +917,11 @@ async function run(): Promise<CommanderCommand> {
       });
     }
 
-    // Assistant mode: when .noa/settings.json has assistant: true AND
-    // the tengu_kairos GrowthBook gate is on, force brief on. Permission
-    // mode is left to the user — settings defaultMode or --permission-mode
-    // apply as normal. REPL-typed messages already default to 'next'
-    // priority (messageQueueManager.enqueue) so they drain mid-turn between
-    // tool calls. SendUserMessage (BriefTool) is enabled via the brief env
-    // var. SleepTool stays disabled (its isEnabled() gates on proactive).
-    // kairosEnabled is computed once here and reused at the
-    // getAssistantSystemPromptAddendum() call site further down.
-    //
-    // Trust gate: .noa/settings.json is attacker-controllable in an
-    // untrusted clone. We run ~1000 lines before showSetupScreens() shows
-    // the trust dialog, and by then we've already appended
-    // .noa/agents/assistant.md to the system prompt. Refuse to activate
-    // until the directory has been explicitly trusted.
-    let kairosEnabled = false;
-    let assistantTeamContext: Awaited<ReturnType<NonNullable<typeof assistantModule>['initializeAssistantTeam']>> | undefined;
-    if (feature('KAIROS') && (options as {
-      assistant?: boolean;
-    }).assistant && assistantModule) {
-      // --assistant (Agent SDK daemon mode): force the latch before
-      // isAssistantMode() runs below. The daemon has already checked
-      // entitlement — don't make the child re-check tengu_kairos.
-      assistantModule.markAssistantForced();
-    }
-    if (feature('KAIROS') && assistantModule?.isAssistantMode() &&
-    // Spawned teammates share the leader's cwd + settings.json, so
-    // isAssistantMode() is true for them too. --agent-id being set
-    // means we ARE a spawned teammate (extractTeammateOptions runs
-    // ~170 lines later so check the raw commander option) — don't
-    // re-init the team or override teammateMode/proactive/brief.
-    !(options as {
-      agentId?: unknown;
-    }).agentId && kairosGate) {
-      if (!checkHasTrustDialogAccepted()) {
-        // biome-ignore lint/suspicious/noConsole:: intentional console output
-        console.warn(chalk.yellow('Assistant mode disabled: directory is not trusted. Accept the trust dialog and restart.'));
-      } else {
-        // Blocking gate check — returns cached `true` instantly; if disk
-        // cache is false/missing, lazily inits GrowthBook and fetches fresh
-        // (max ~5s). --assistant skips the gate entirely (daemon is
-        // pre-entitled).
-        kairosEnabled = assistantModule.isAssistantForced() || (await kairosGate.isKairosEnabled());
-        if (kairosEnabled) {
-          const opts = options as {
-            brief?: boolean;
-          };
-          opts.brief = true;
-          setKairosActive(true);
-          // Pre-seed an in-process team so Agent(name: "foo") spawns
-          // teammates without TeamCreate. Must run BEFORE setup() captures
-          // the teammateMode snapshot (initializeAssistantTeam calls
-          // setCliTeammateModeOverride internally).
-          assistantTeamContext = await assistantModule.initializeAssistantTeam();
-        }
-      }
-    }
+    // Assistant mode (KAIROS) was removed — its gate module and settings
+    // fields are gone from every build, so this startup latch is permanently
+    // off and no --feature-set brings it back. Distinct from kairosActive,
+    // which `claude assistant` still sets when attaching to a remote session.
+    const kairosEnabled = false;
     const {
       debug = false,
       debugToStderr = false,
@@ -1481,7 +1424,7 @@ async function run(): Promise<CommanderCommand> {
     // Channel server allowlist from --channels flag — servers whose
     // inbound push notifications should register this session. The option
     // is added inside a feature() block so TS doesn't know about it
-    // on the options type — same pattern as --assistant at main.tsx:1824.
+    // on the options type, hence the cast at the read site.
     // devChannels is deferred: showSetupScreens shows a confirmation dialog
     // and only appends to allowedChannels on accept.
     let devChannels: ChannelEntry[] | undefined;
@@ -2067,10 +2010,6 @@ async function run(): Promise<CommanderCommand> {
       const proactivePrompt = `\n# Proactive Mode\n\nYou are in proactive mode. Take initiative — explore, act, and make progress without waiting for instructions.\n\nStart by briefly greeting the user.\n\nYou will receive periodic <tick> prompts. These are check-ins. Do whatever seems most useful, or call Sleep if there's nothing to do. ${briefVisibility}`;
       appendSystemPrompt = appendSystemPrompt ? `${appendSystemPrompt}\n\n${proactivePrompt}` : proactivePrompt;
     }
-    if (feature('KAIROS') && kairosEnabled && assistantModule) {
-      const assistantAddendum = assistantModule.getAssistantSystemPromptAddendum();
-      appendSystemPrompt = appendSystemPrompt ? `${appendSystemPrompt}\n\n${assistantAddendum}` : assistantAddendum;
-    }
 
     // Ink root is only needed for interactive sessions — patchConsole in the
     // Ink constructor would swallow console output in headless mode.
@@ -2379,8 +2318,7 @@ async function run(): Promise<CommanderCommand> {
         allowDangerouslySkipPermissionsPassed: allowDangerouslySkipPermissions,
         systemPromptFlag: systemPrompt ? options.systemPromptFile ? 'file' : 'flag' : undefined,
         appendSystemPromptFlag: appendSystemPrompt ? options.appendSystemPromptFile ? 'file' : 'flag' : undefined,
-        thinkingConfig,
-        assistantActivationPath: feature('KAIROS') && kairosEnabled ? assistantModule?.getAssistantActivationPath() : undefined
+        thinkingConfig
       });
     }
 
@@ -2521,13 +2459,11 @@ async function run(): Promise<CommanderCommand> {
         ...(isAdvisorEnabled() && advisorModel && {
           advisorModel
         }),
-        // kairosEnabled gates the async fire-and-forget path in
-        // executeForkedSlashCommand (processSlashCommand.tsx:132) and
-        // AgentTool's shouldRunAsync. The REPL initialState sets this at
-        // ~3459; headless was defaulting to false, so the daemon child's
-        // scheduled tasks and Agent-tool calls ran synchronously — N
-        // overdue cron tasks on spawn = N serial subagent turns blocking
-        // user input. Computed at :1620, well before this branch.
+        // kairosEnabled gated the async fire-and-forget path in
+        // executeForkedSlashCommand and AgentTool's shouldRunAsync, keeping
+        // headless in step with the REPL initialState. Assistant mode is
+        // gone, so this is now always false — same as the AppStateStore
+        // default it overlays. Kept so the gate can be re-armed in one place.
         ...(feature('KAIROS') ? {
           kairosEnabled
         } : {})
@@ -2984,11 +2920,9 @@ async function run(): Promise<CommanderCommand> {
         advisorModel
       }),
       // Compute teamContext synchronously to avoid useEffect setState during render.
-      // KAIROS: assistantTeamContext takes precedence — set earlier in the
-      // KAIROS block so Agent(name: "foo") can spawn in-process teammates
-      // without TeamCreate. computeInitialTeamContext() is for tmux-spawned
-      // teammates reading their own identity, not the assistant-mode leader.
-      teamContext: feature('KAIROS') ? assistantTeamContext ?? computeInitialTeamContext?.() : computeInitialTeamContext?.()
+      // computeInitialTeamContext() is for tmux-spawned teammates reading
+      // their own identity.
+      teamContext: computeInitialTeamContext?.()
     };
 
     // Add CLI initial prompt to history
@@ -3130,22 +3064,9 @@ async function run(): Promise<CommanderCommand> {
           return await exitWithError(root, `Failed to discover sessions: ${e instanceof Error ? e.message : e}`, () => gracefulShutdown(1));
         }
         if (sessions.length === 0) {
-          let installedDir: string | null;
-          try {
-            installedDir = await launchAssistantInstallWizard(root);
-          } catch (e) {
-            return await exitWithError(root, `Assistant installation failed: ${e instanceof Error ? e.message : e}`, () => gracefulShutdown(1));
-          }
-          if (installedDir === null) {
-            await gracefulShutdown(0);
-            process.exit(0);
-          }
-          // The daemon needs a few seconds to spin up its worker and
-          // establish a bridge session before discovery will find it.
-          return await exitWithMessage(root, `Assistant installed in ${installedDir}. The daemon is starting up — run \`claude assistant\` again in a few seconds to connect.`, {
-            exitCode: 0,
-            beforeExit: () => gracefulShutdown(0)
-          });
+          // This build ships no assistant installer, so there is nothing to
+          // bootstrap from here — the daemon has to be provisioned elsewhere.
+          return await exitWithError(root, 'No assistant sessions found, and this build does not ship an assistant installer.', () => gracefulShutdown(1));
         }
         if (sessions.length === 1) {
           targetSessionId = sessions[0]!.id;
@@ -4235,8 +4156,7 @@ async function logTenguInit({
   allowDangerouslySkipPermissionsPassed,
   systemPromptFlag,
   appendSystemPromptFlag,
-  thinkingConfig,
-  assistantActivationPath
+  thinkingConfig
 }: {
   hasInitialPrompt: boolean;
   hasStdin: boolean;
@@ -4259,7 +4179,6 @@ async function logTenguInit({
   systemPromptFlag: 'file' | 'flag' | undefined;
   appendSystemPromptFlag: 'file' | 'flag' | undefined;
   thinkingConfig: ThinkingConfig;
-  assistantActivationPath: string | undefined;
 }): Promise<void> {
   try {
     logEvent('tengu_init', {
@@ -4294,9 +4213,6 @@ async function logTenguInit({
       }),
       is_simple: isBareMode() || undefined,
       is_coordinator: feature('COORDINATOR_MODE') && coordinatorModeModule?.isCoordinatorMode() ? true : undefined,
-      ...(assistantActivationPath && {
-        assistantActivationPath: assistantActivationPath as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
-      }),
       autoUpdatesChannel: (getInitialSettings().autoUpdatesChannel ?? 'latest') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       ...("external" === 'ant' ? (() => {
         const cwd = getCwd();
