@@ -19,6 +19,8 @@ export type DiffFile = {
   isTruncated: boolean
   isNewFile?: boolean
   isUntracked?: boolean
+  /** The file's last write predates this session — see `markPreSessionFiles`. */
+  preSession?: boolean
 }
 
 export type DiffData = {

@@ -3,7 +3,7 @@ import { c as _c } from "react/compiler-runtime";
 import { feature } from 'bun:bundle';
 import * as React from 'react';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { type Notification, useNotifications } from 'src/context/notifications.js';
+import { isNotificationVisible, type Notification, useNotifications } from 'src/context/notifications.js';
 import { logEvent } from 'src/services/analytics/index.js';
 import { useAppState } from 'src/state/AppState.js';
 import { useVoiceState } from '../../context/voice.js';
@@ -96,6 +96,7 @@ export function Notifications(t0) {
     status: ideStatus
   } = useIdeConnectionStatus(mcpClients);
   const notifications = useAppState(_temp);
+  const diffPanelVisible = useAppState(_tempDiffPanelVisible);
   const {
     addNotification,
     removeNotification
@@ -214,6 +215,9 @@ function _temp2() {
 function _temp(s) {
   return s.notifications;
 }
+function _tempDiffPanelVisible(s) {
+  return s.diffPanelVisible;
+}
 function NotificationContent({
   ideSelection,
   mcpClients,
@@ -286,7 +290,7 @@ function NotificationContent({
   }
   return <>
       <IdeStatusIndicator ideSelection={ideSelection} mcpClients={mcpClients} />
-      {notifications.current && ('jsx' in notifications.current ? <Text wrap="truncate" key={notifications.current.key}>
+      {isNotificationVisible(notifications.current, diffPanelVisible) && notifications.current && ('jsx' in notifications.current ? <Text wrap="truncate" key={notifications.current.key}>
             {notifications.current.jsx}
           </Text> : <Text color={notifications.current.color} dimColor={!notifications.current.color} wrap="truncate">
             {notifications.current.text}

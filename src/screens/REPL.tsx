@@ -308,6 +308,7 @@ import type { RemoteSessionConfig } from '../remote/RemoteSessionManager.js';
 import { REMOTE_SAFE_COMMANDS } from '../commands.js';
 import type { RemoteMessageContent } from '../utils/teleport/api.js';
 import { FullscreenLayout, useUnseenDivider, computeUnseenDivider } from '../components/FullscreenLayout.js';
+import { DiffPanelHost, useDiffPanelWidth } from '../components/diff/DiffPanel.js';
 import { isFullscreenEnvEnabled, maybeGetTmuxMouseHint, isMouseTrackingEnabled } from '../utils/fullscreen.js';
 import { AlternateScreen } from '../ink/components/AlternateScreen.js';
 import { ScrollKeybindingHandler } from '../components/ScrollKeybindingHandler.js';
@@ -666,6 +667,12 @@ export function REPL({
   // Stream appends immediately on retain (no defer); bootstrap fills the
   // prefix. Disk-write-before-yield means live is always a suffix of disk.
   const viewedLocalAgent = viewingAgentTaskId ? tasks[viewingAgentTaskId] : undefined;
+  // Diff sidebar width. Must be computed here, above the transcript-screen
+  // early return, so the hook runs on every render. Resolves to 0 whenever the
+  // panel can't mount (not fullscreen, terminal too narrow, no git repo, or an
+  // agent transcript is in view), leaving the single-column layout untouched.
+  const diffPanelIsMain = !viewingAgentTaskId;
+  const diffPanelWidthCols = useDiffPanelWidth(isRemoteSession, diffPanelIsMain);
   const needsBootstrap = isLocalAgentTask(viewedLocalAgent) && viewedLocalAgent.retain && !viewedLocalAgent.diskLoaded;
   useEffect(() => {
     if (!viewingAgentTaskId || !needsBootstrap) return;
@@ -4589,7 +4596,7 @@ export function REPL({
       {isFullscreenEnvEnabled() && !disableMessageActions ? <MessageActionsKeybindings handlers={messageActionHandlers} isActive={cursor !== null} /> : null}
       <CancelRequestHandler {...cancelRequestProps} />
       <MCPConnectionManager key={remountKey} dynamicMcpConfig={dynamicMcpConfig} isStrictMcpConfig={strictMcpConfig}>
-        <FullscreenLayout scrollRef={scrollRef} overlay={toolPermissionOverlay} bottomFloat={companionVisible && !companionNarrow ? <CompanionFloatingBubble /> : undefined} modal={centeredModal} modalScrollRef={modalScrollRef} dividerYRef={dividerYRef} hidePill={!!viewedAgentTask} hideSticky={!!viewedTeammateTask} newMessageCount={unseenDivider?.count ?? 0} onPillClick={() => {
+        <FullscreenLayout scrollRef={scrollRef} overlay={toolPermissionOverlay} bottomFloat={companionVisible && !companionNarrow ? <CompanionFloatingBubble /> : undefined} modal={centeredModal} modalScrollRef={modalScrollRef} sidebarWidth={diffPanelWidthCols} sidebar={<DiffPanelHost width={diffPanelWidthCols} isThinClient={isRemoteSession} />} dividerYRef={dividerYRef} hidePill={!!viewedAgentTask} hideSticky={!!viewedTeammateTask} newMessageCount={unseenDivider?.count ?? 0} onPillClick={() => {
         setCursor(null);
         jumpToNew(scrollRef.current);
       }} scrollable={<>

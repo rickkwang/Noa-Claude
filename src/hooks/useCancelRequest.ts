@@ -268,6 +268,9 @@ export function CancelRequestHandler(props: CancelRequestHandlerProps): null {
       text: `Press ${shortcut} again to stop background agents`,
       priority: 'immediate',
       timeoutMs: KILL_AGENTS_CONFIRM_WINDOW_MS,
+      // Not a toast — it's the visible half of a two-press gesture. Holding it
+      // behind the diff panel would leave the second press unexplained.
+      exemptFromDiffPanelHold: true,
     })
   }, [store, addNotification, removeNotification, killAllAgentsAndNotify])
 

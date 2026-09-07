@@ -26,6 +26,12 @@ export type PerFileStats = {
   removed: number
   isBinary: boolean
   isUntracked?: boolean
+  /**
+   * True when the file's last write predates this session's start — the edit
+   * came from before Claude was launched (or from another tool). The diff
+   * panel groups these separately so "changed this session" stays meaningful.
+   */
+  preSession?: boolean
 }
 
 export type GitDiffResult = {
@@ -34,11 +40,11 @@ export type GitDiffResult = {
   hunks: Map<string, StructuredPatchHunk[]>
 }
 
-const GIT_TIMEOUT_MS = 5000
-const MAX_FILES = 50
+export const GIT_TIMEOUT_MS = 5000
+export const MAX_FILES = 50
 const MAX_DIFF_SIZE_BYTES = 1_000_000 // 1 MB - skip files larger than this
 const MAX_LINES_PER_FILE = 400 // GitHub's auto-load limit
-const MAX_FILES_FOR_DETAILS = 500 // Skip per-file details if more files than this
+export const MAX_FILES_FOR_DETAILS = 500 // Skip per-file details if more files than this
 
 /**
  * Fetch git diff stats and hunks comparing working tree to HEAD.
@@ -147,7 +153,10 @@ export type NumstatResult = {
  * Binary files show '-' for counts.
  * Only stores first MAX_FILES entries in perFileStats.
  */
-export function parseGitNumstat(stdout: string): NumstatResult {
+export function parseGitNumstat(
+  stdout: string,
+  maxFiles: number = MAX_FILES,
+): NumstatResult {
   const lines = stdout.trim().split('\n').filter(Boolean)
   let added = 0
   let removed = 0
@@ -170,8 +179,8 @@ export function parseGitNumstat(stdout: string): NumstatResult {
     added += fileAdded
     removed += fileRemoved
 
-    // Only store first MAX_FILES entries
-    if (perFileStats.size < MAX_FILES) {
+    // Only store the first `maxFiles` entries
+    if (perFileStats.size < maxFiles) {
       perFileStats.set(filePath, {
         added: fileAdded,
         removed: fileRemoved,
@@ -190,6 +199,16 @@ export function parseGitNumstat(stdout: string): NumstatResult {
   }
 }
 
+export type ParsedDiff = {
+  hunks: Map<string, StructuredPatchHunk[]>
+  /**
+   * Files skipped because their raw diff exceeded {@link MAX_DIFF_SIZE_BYTES}.
+   * They still count toward the MAX_FILES budget, and callers surface them as
+   * "large file" placeholders rather than silently dropping them.
+   */
+  skippedLarge: Set<string>
+}
+
 /**
  * Parse unified diff output into per-file hunks.
  * Splits by "diff --git" and parses each file's hunks.
@@ -202,20 +221,24 @@ export function parseGitNumstat(stdout: string): NumstatResult {
 export function parseGitDiff(
   stdout: string,
 ): Map<string, StructuredPatchHunk[]> {
+  return parseGitDiffDetailed(stdout).hunks
+}
+
+/**
+ * Like {@link parseGitDiff}, but also reports which files were skipped for
+ * being too large so the caller can render a placeholder for them.
+ */
+export function parseGitDiffDetailed(stdout: string): ParsedDiff {
   const result = new Map<string, StructuredPatchHunk[]>()
-  if (!stdout.trim()) return result
+  const skippedLarge = new Set<string>()
+  if (!stdout.trim()) return { hunks: result, skippedLarge }
 
   // Split by file diffs
   const fileDiffs = stdout.split(/^diff --git /m).filter(Boolean)
 
   for (const fileDiff of fileDiffs) {
     // Stop after MAX_FILES
-    if (result.size >= MAX_FILES) break
-
-    // Skip files larger than 1MB
-    if (fileDiff.length > MAX_DIFF_SIZE_BYTES) {
-      continue
-    }
+    if (result.size + skippedLarge.size >= MAX_FILES) break
 
     const lines = fileDiff.split('\n')
 
@@ -223,6 +246,12 @@ export function parseGitDiff(
     const headerMatch = lines[0]?.match(/^a\/(.+?) b\/(.+)$/)
     if (!headerMatch) continue
     const filePath = headerMatch[2] ?? headerMatch[1] ?? ''
+
+    // Skip files larger than 1MB
+    if (fileDiff.length > MAX_DIFF_SIZE_BYTES) {
+      skippedLarge.add(filePath)
+      continue
+    }
 
     // Find and parse hunks
     const fileHunks: StructuredPatchHunk[] = []
@@ -296,7 +325,7 @@ export function parseGitDiff(
     }
   }
 
-  return result
+  return { hunks: result, skippedLarge }
 }
 
 /**
@@ -306,7 +335,7 @@ export function parseGitDiff(
  *
  * Uses fs.access to check for transient ref files, avoiding process spawns.
  */
-async function isInTransientGitState(): Promise<boolean> {
+export async function isInTransientGitState(): Promise<boolean> {
   const gitDir = await getGitDir(getCwd())
   if (!gitDir) return false
 
@@ -330,6 +359,10 @@ async function isInTransientGitState(): Promise<boolean> {
 /**
  * Fetch untracked file names (no content reading).
  * Returns file paths only - they'll be displayed with a note to stage them.
+ *
+ * Paths come back relative to the session cwd, matching this file's numstat
+ * output (which runs without diff.relative). The diff panel has its own
+ * root-relative fetcher — see diffPanelData.ts.
  *
  * @param maxFiles Maximum number of untracked files to include
  */

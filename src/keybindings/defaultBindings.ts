@@ -59,6 +59,14 @@ export const DEFAULT_BINDINGS: KeybindingBlock[] = [
           }
         : {}),
       ...(feature('TERMINAL_PANEL') ? { 'meta+j': 'app:toggleTerminal' } : {}),
+      // Diff sidebar file-list scrolling. Global rather than DiffPanel-scoped
+      // so it works while the prompt still has focus — the panel is a sidebar,
+      // not a mode. MessageSelector/MessageActions bind the same chords and
+      // win by context precedence while they are open.
+      'ctrl+up': 'app:diffFileListUp',
+      'ctrl+down': 'app:diffFileListDown',
+      'meta+up': 'app:diffFileListUp',
+      'meta+down': 'app:diffFileListDown',
     },
   },
   {
@@ -306,6 +314,15 @@ export const DEFAULT_BINDINGS: KeybindingBlock[] = [
       down: 'diff:nextFile',
       enter: 'diff:viewDetails',
       // Note: diff:back is handled by left arrow in detail mode
+    },
+  },
+  // Diff sidebar panel. Only `app:cycleDiffBase` gets a default chord;
+  // toggling the panel is `/diff`, and the noise/pre-session filters are
+  // clickable links in the panel itself. All three stay rebindable.
+  {
+    context: 'DiffPanel',
+    bindings: {
+      'ctrl+x b': 'app:cycleDiffBase',
     },
   },
   // Model picker effort cycling (ant-only)

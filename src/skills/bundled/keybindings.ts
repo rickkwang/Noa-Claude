@@ -82,7 +82,13 @@ function inferContextFromAction(action: string): string {
     select: 'Select',
     permission: 'Confirmation',
   }
-  return prefixToContext[prefix ?? ''] ?? 'Unknown'
+  // Actions whose context doesn't follow from their prefix. `app:` is Global by
+  // convention, but the diff sidebar's base cycling only resolves while the
+  // panel is open — putting it in Global would silently never fire.
+  const actionOverrides: Record<string, string> = {
+    'app:cycleDiffBase': 'DiffPanel',
+  }
+  return actionOverrides[action] ?? prefixToContext[prefix ?? ''] ?? 'Unknown'
 }
 
 /**

@@ -95,8 +95,6 @@
     "src/commands/cost/cost.ts",
     "src/commands/cost/index.ts",
     "src/commands/createMovedToPluginCommand.ts",
-    "src/commands/diff/diff.tsx",
-    "src/commands/diff/index.ts",
     "src/commands/doctor/doctorPrompt.ts",
     "src/commands/doctor/index.ts",
     "src/commands/effort/effort.tsx",

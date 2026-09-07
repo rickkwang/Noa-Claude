@@ -2877,6 +2877,8 @@ async function run(): Promise<CommanderCommand> {
       },
       todos: {},
       remoteAgentTaskSuggestions: [],
+      replTab: 'convo',
+      diffPanelVisible: false,
       fileHistory: {
         snapshots: [],
         trackedFiles: new Set(),

@@ -7,6 +7,13 @@ type Priority = 'low' | 'medium' | 'high' | 'immediate';
 type BaseNotification = {
   key: string;
   /**
+   * Show this even while the diff panel is open. The panel is a reading
+   * surface, so transient toasts are held back while it's up — except for the
+   * ones that report a state the user needs to act on regardless (e.g. the
+   * context-window warning).
+   */
+  exemptFromDiffPanelHold?: boolean;
+  /**
    * Keys of notifications that this notification invalidates.
    * If a notification is invalidated, it will be removed from the queue
    * and, if currently displayed, cleared immediately.
@@ -39,6 +46,7 @@ let currentTimeoutId: NodeJS.Timeout | null = null;
 export function useNotifications(): {
   addNotification: AddNotificationFn;
   removeNotification: RemoveNotificationFn;
+  processQueue: () => void;
 } {
   const store = useAppStateStore();
   const setAppState = useSetAppState();
@@ -46,7 +54,7 @@ export function useNotifications(): {
   // Process queue when current notification finishes or queue changes
   const processQueue = useCallback(() => {
     setAppState(prev => {
-      const next = getNext(prev.notifications.queue);
+      const next = getNext(prev.diffPanelVisible ? prev.notifications.queue.filter(_ => _.exemptFromDiffPanelHold) : prev.notifications.queue);
       if (prev.notifications.current !== null || !next) {
         return prev;
       }
@@ -77,8 +85,11 @@ export function useNotifications(): {
     });
   }, [setAppState]);
   const addNotification = useCallback<AddNotificationFn>((notif: Notification) => {
-    // Handle immediate priority notifications
-    if (notif.priority === 'immediate') {
+    // Handle immediate priority notifications. While the diff panel is up an
+    // immediate notification loses its cut-the-line privilege and falls through
+    // to the queue instead of painting over what the user is reading; it shows
+    // when the panel closes and drains the queue.
+    if (notif.priority === 'immediate' && !store.getState().diffPanelVisible) {
       // Clear any existing timeout since we're showing a new immediate notification
       if (currentTimeoutId) {
         clearTimeout(currentTimeoutId);
@@ -190,7 +201,7 @@ export function useNotifications(): {
 
     // Process queue after adding the notification
     processQueue();
-  }, [setAppState, processQueue]);
+  }, [setAppState, processQueue, store]);
   const removeNotification = useCallback<RemoveNotificationFn>((key: string) => {
     setAppState(prev => {
       const isCurrent = prev.notifications.current?.key === key;
@@ -225,7 +236,10 @@ export function useNotifications(): {
   }, []);
   return {
     addNotification,
-    removeNotification
+    removeNotification,
+    // Exposed so the diff panel can drain anything held while it was open the
+    // moment it closes, instead of leaving it stuck until the next event.
+    processQueue
   };
 }
 const PRIORITIES: Record<Priority, number> = {
@@ -234,6 +248,18 @@ const PRIORITIES: Record<Priority, number> = {
   medium: 2,
   low: 3
 };
+/**
+ * Whether the current notification should actually be painted. The diff panel
+ * is a reading surface: while it is up, only notifications that opted out of
+ * the hold are shown. Held ones stay in `current` and reappear when it closes.
+ */
+export function isNotificationVisible(
+  current: Notification | null,
+  diffPanelVisible: boolean,
+): boolean {
+  return current !== null && (!diffPanelVisible || current.exemptFromDiffPanelHold === true);
+}
+
 export function getNext(queue: Notification[]): Notification | undefined {
   if (queue.length === 0) return undefined;
   return queue.reduce((min, n) => PRIORITIES[n.priority] < PRIORITIES[min.priority] ? n : min);

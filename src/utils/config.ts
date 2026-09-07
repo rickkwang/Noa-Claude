@@ -137,6 +137,13 @@ export type ProjectConfig = {
   }
   /** Spawn mode for `claude remote-control` multi-session. Set by first-run dialog or `w` toggle. */
   remoteControlSpawnMode?: 'same-dir' | 'worktree'
+  /**
+   * Whether the REPL diff panel was left open in this project. Per-project
+   * because "am I reviewing changes here" is a property of the repo, not of
+   * the user. `true` also lowers the auto-open width bar — an explicit open is
+   * a stronger signal than the first-run heuristic.
+   */
+  diffSidebarOpen?: boolean
 }
 
 const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
@@ -198,6 +205,11 @@ export type GlobalConfig = {
   doctorShownAtSession?: number
   userID?: string
   theme: ThemeSetting
+  /**
+   * Which base the REPL diff panel compares against (`ctrl+x b` cycles it).
+   * Global, not per-project: it reflects how the user likes to read diffs.
+   */
+  diffSidebarBaseMode?: 'session' | 'uncommitted' | 'branch'
   hasCompletedOnboarding?: boolean
   // Tracks the last version that reset onboarding, used with MIN_VERSION_REQUIRING_ONBOARDING_RESET
   lastOnboardingVersion?: string

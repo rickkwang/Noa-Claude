@@ -630,6 +630,15 @@ export function getTotalDuration(): number {
   return Date.now() - STATE.startTime
 }
 
+/**
+ * Wall-clock ms at which this session's clock started. Note that resuming a
+ * session rewinds this to keep the accumulated duration correct, so it is a
+ * "session began" marker, not "this process launched".
+ */
+export function getSessionStartTime(): number {
+  return STATE.startTime
+}
+
 export function getTotalAPIDurationWithoutRetries(): number {
   return STATE.totalAPIDurationWithoutRetries
 }

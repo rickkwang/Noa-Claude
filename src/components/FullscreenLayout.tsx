@@ -13,6 +13,7 @@ import type { Message } from '../types/message.js';
 import { openBrowser, openPath } from '../utils/browser.js';
 import { logDebugDiagnosticWarn } from '../utils/debugDiagnostics.js';
 import { isFullscreenEnvEnabled } from '../utils/fullscreen.js';
+import { TerminalSizeContext } from '../ink/components/TerminalSizeContext.js';
 import { plural } from '../utils/stringUtils.js';
 import { isNullRenderingAttachment } from './messages/nullRenderingAttachments.js';
 import PromptInputFooterSuggestions from './PromptInput/PromptInputFooterSuggestions.js';
@@ -51,6 +52,14 @@ type Props = {
   /** Ref passed via ModalContext so Tabs (or any scroll-owning descendant)
    *  can attach it to their own ScrollBox for tall content. */
   modalScrollRef?: React.RefObject<ScrollBoxHandle | null>;
+  /** Sidebar column rendered to the right of the whole layout (diff panel).
+   *  Everything else — scrollback, pill, bottom slot, modal — is confined to
+   *  the remaining columns, so the sidebar is never painted over. Fullscreen
+   *  only; ignored outside it, where there is no fixed-height root to split. */
+  sidebar?: ReactNode;
+  /** Columns `sidebar` occupies. 0 (or no sidebar) keeps the single-column
+   *  layout untouched. */
+  sidebarWidth?: number;
   /** Ref to the scroll box for keyboard scrolling. RefObject (not Ref) so
    *  pillVisible's useSyncExternalStore can subscribe to scroll changes. */
   scrollRef?: RefObject<ScrollBoxHandle | null>;
@@ -278,6 +287,8 @@ export function FullscreenLayout(t0) {
     bottomFloat,
     modal,
     modalScrollRef,
+    sidebar,
+    sidebarWidth,
     scrollRef,
     dividerYRef,
     hidePill: t1,
@@ -293,6 +304,27 @@ export function FullscreenLayout(t0) {
     columns
   } = useTerminalSize();
   const [stickyPrompt, setStickyPrompt] = useState(null);
+  // Hoisted above the `isFullscreenEnvEnabled()` branch below: `/tui` flips
+  // that predicate mid-session, so a hook called inside the branch would change
+  // the hook count between renders and crash React.
+  const hasSidebar = sidebar != null && (sidebarWidth ?? 0) > 0;
+  const mainColumns = hasSidebar ? columns - (sidebarWidth ?? 0) : columns;
+  // Memoized: a fresh value object every render would re-render every
+  // useTerminalSize consumer in the main column on each REPL render.
+  const narrowedSize = useMemo(() => ({
+    columns: mainColumns,
+    rows: terminalRows
+  }), [mainColumns, terminalRows]);
+  // Opening or closing the sidebar re-flows every row, but Ink's diff engine
+  // only repaints cells whose *content* changed — the columns the panel used to
+  // occupy keep their old glyphs. Force one full repaint on each width change.
+  const previousSidebarWidth = useRef(sidebarWidth ?? 0);
+  useLayoutEffect(() => {
+    const width = sidebarWidth ?? 0;
+    if (previousSidebarWidth.current === width) return;
+    previousSidebarWidth.current = width;
+    instances.get(process.stdout)?.forceRedraw();
+  }, [sidebarWidth]);
   let t4;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     t4 = {
@@ -449,7 +481,31 @@ export function FullscreenLayout(t0) {
     } else {
       t19 = $[41];
     }
-    return t19;
+    // Always wrapped, even with no sidebar. Making the wrapper conditional
+    // reparents the entire REPL the moment the panel opens, which unmounts and
+    // remounts everything below it — including whatever `/diff` itself is
+    // rendering, whose remount toggles the panel again. Constant shape, and
+    // React only ever reconciles the sidebar slot.
+    //
+    // Deliberately outside the memo cache: `_c(47)` is compiler-allocated and
+    // hand-adding slots would corrupt it. Two Boxes per render is noise next to
+    // what they contain.
+    // The sidebar slot renders unconditionally. DiffPanelHost owns the toggle
+    // and the first-edit auto-open, both of which must stay live while the
+    // panel is closed — gating the element on hasSidebar unmounts it exactly
+    // then, silently killing both. The host self-hides (returns null), so a
+    // closed panel renders nothing here; hasSidebar gates width only.
+    //
+    // Most of the REPL sizes itself from useTerminalSize() rather than from its
+    // layout box, so a sidebar has to narrow the reported terminal for the main
+    // column — otherwise the prompt frame, dividers and status line all draw at
+    // full width and wrap under the panel.
+    return <Box flexDirection="row" width="100%" flexGrow={1} overflow="hidden">
+        <Box flexDirection="column" width={mainColumns} flexShrink={0} overflow="hidden">
+          <TerminalSizeContext value={narrowedSize}>{t19}</TerminalSizeContext>
+        </Box>
+        {sidebar}
+      </Box>;
   }
   let t8;
   if ($[42] !== bottom || $[43] !== modal || $[44] !== overlay || $[45] !== scrollable) {

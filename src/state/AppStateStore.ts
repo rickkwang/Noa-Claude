@@ -1,5 +1,6 @@
 // @ts-nocheck
 import type { Notification } from 'src/context/notifications.js'
+import type { ReplTab } from 'src/utils/diffPanelState.js'
 import type { TodoList } from 'src/utils/todo/types.js'
 import type { BridgePermissionCallbacks } from '../bridge/bridgePermissionCallbacks.js'
 import type { Command } from '../commands.js'
@@ -95,6 +96,19 @@ export type AppState = DeepImmutable<{
   mainLoopModelForSession: ModelSetting
   statusLineText: string | undefined
   expandedView: 'none' | 'tasks' | 'teammates'
+  /**
+   * Which column of the REPL is showing: the transcript, or the diff sidebar.
+   * Lives in AppState because the panel, the layout that sizes it, and the
+   * `/diff` command all need to agree on it without prop-drilling.
+   */
+  replTab: ReplTab
+  /**
+   * Whether the diff sidebar is actually on screen. Distinct from `replTab`,
+   * which is the user's choice: the panel also needs fullscreen, a git repo and
+   * enough columns, so the tab can be 'diff' with nothing rendered. Consumers
+   * that care about what the user can *see* (notification hold) read this one.
+   */
+  diffPanelVisible: boolean
   isBriefOnly: boolean
   // Optional - only present when ENABLE_AGENT_SWARMS is true (for dead code elimination)
   showTeammateMessagePreview?: boolean
@@ -455,6 +469,8 @@ export function getDefaultAppState(): AppState {
     replBridgeError: undefined,
     replBridgeInitialName: undefined,
     showRemoteCallout: false,
+    replTab: 'convo',
+    diffPanelVisible: false,
     toolPermissionContext: {
       ...getEmptyToolPermissionContext(),
       mode: initialMode,

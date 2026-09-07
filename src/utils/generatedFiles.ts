@@ -125,3 +125,53 @@ export function isGeneratedFile(filePath: string): boolean {
 
   return false
 }
+
+// Directory and filename patterns that mark a file as test-suite noise.
+// Kept separate from the generated-file rules above: a test file is
+// hand-written and belongs in attribution, it just doesn't belong at the top
+// of a review-oriented diff panel.
+const TEST_DIRECTORIES = [
+  '/test/',
+  '/tests/',
+  '/spec/',
+  '/specs/',
+  '/__tests__/',
+  '/__mocks__/',
+  '/__snapshots__/',
+  '/__fixtures__/',
+  '/fixtures/',
+  '/testdata/',
+]
+
+const TEST_FILENAME_PATTERNS = [
+  /\.test\.[a-z]+$/i,
+  /\.spec\.[a-z]+$/i,
+  /_test\.[a-z]+$/i,
+  /_spec\.[a-z]+$/i,
+  /\.snap$/i,
+]
+
+/**
+ * Check whether a path looks like a test file or test fixture.
+ *
+ * @param filePath - Relative file path from repository root
+ */
+export function isTestFile(filePath: string): boolean {
+  const normalizedPath =
+    posix.sep + filePath.split(sep).join(posix.sep).replace(/^\/+/, '')
+  const fileName = basename(filePath)
+
+  for (const dir of TEST_DIRECTORIES) {
+    if (normalizedPath.includes(dir)) {
+      return true
+    }
+  }
+
+  for (const pattern of TEST_FILENAME_PATTERNS) {
+    if (pattern.test(fileName)) {
+      return true
+    }
+  }
+
+  return false
+}
