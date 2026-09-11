@@ -2851,6 +2851,7 @@ async function run(): Promise<CommanderCommand> {
         needsRefresh: false
       },
       statusLineText: undefined,
+      prStatus: null,
       kairosEnabled,
       remoteSessionUrl: undefined,
       remoteConnectionStatus: 'connecting',

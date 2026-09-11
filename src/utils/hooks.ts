@@ -4678,14 +4678,12 @@ export async function executeElicitationResultHooks({
 /**
  * Execute status line command if configured
  * @param statusLineInput The structured status input that will be converted to JSON
- * @param signal Optional AbortSignal to cancel hook execution
- * @param timeoutMs Optional timeout in milliseconds for hook execution
+ * @param signal AbortSignal the caller aborts when a newer update supersedes this run
  * @returns The status line text to display, or undefined if no command configured
  */
 export async function executeStatusLineCommand(
   statusLineInput: StatusLineCommandInput,
-  signal?: AbortSignal,
-  timeoutMs: number = 5000, // Short timeout for status line
+  signal: AbortSignal,
   logResult: boolean = false,
 ): Promise<string | undefined> {
   // Check if all hooks (including statusLine) are disabled by managed settings
@@ -4715,9 +4713,6 @@ export async function executeStatusLineCommand(
     return undefined
   }
 
-  // Use provided signal or create a default one
-  const abortSignal = signal || AbortSignal.timeout(timeoutMs)
-
   try {
     // Convert status input to JSON
     const jsonInput = jsonStringify(statusLineInput)
@@ -4727,12 +4722,17 @@ export async function executeStatusLineCommand(
       'StatusLine',
       'statusLine',
       jsonInput,
-      abortSignal,
+      signal,
       randomUUID(),
     )
 
     if (result.aborted) {
       return undefined
+    }
+
+    const stderr = result.stderr.trim()
+    if (stderr) {
+      logForDebugging(`StatusLine [${statusLine.command}] stderr: ${stderr}`)
     }
 
     // For successful hooks (exit code 0), use stdout

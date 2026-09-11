@@ -37,6 +37,7 @@ import type { ModelSetting } from '../utils/model/model.js'
 import type { DenialTrackingState } from '../utils/permissions/denialTracking.js'
 import type { PermissionMode } from '../utils/permissions/PermissionMode.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
+import type { PrStatus } from '../utils/ghPrStatus.js'
 import type { SettingsJson } from '../utils/settings/types.js'
 import { shouldEnableThinkingByDefault } from '../utils/thinking.js'
 import type { Store } from './store.js'
@@ -95,6 +96,8 @@ export type AppState = DeepImmutable<{
   mainLoopModel: ModelSetting
   mainLoopModelForSession: ModelSetting
   statusLineText: string | undefined
+  /** Open PR for the current branch (footer badge poller), mirrored for the status line command */
+  prStatus: PrStatus | null
   expandedView: 'none' | 'tasks' | 'teammates'
   /**
    * Which column of the REPL is showing: the transcript, or the diff sidebar.
@@ -445,6 +448,7 @@ export function getDefaultAppState(): AppState {
     mainLoopModel: null, // alias, full name (as with --model or env var), or null (default)
     mainLoopModelForSession: null,
     statusLineText: undefined,
+    prStatus: null,
     expandedView: 'none',
     isBriefOnly: false,
     showTeammateMessagePreview: false,

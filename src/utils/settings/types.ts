@@ -590,7 +590,30 @@ export const SettingsSchema = lazySchema(() =>
           type: z.literal('command'),
           command: z.string(),
           padding: z.number().optional(),
-          refreshIntervalMs: z.number().int().positive().optional(),
+          refreshInterval: z
+            .number()
+            .min(1)
+            .optional()
+            .catch(undefined)
+            .describe(
+              'Re-run the status line command every N seconds in addition to event-driven updates',
+            ),
+          // Legacy Noa spelling (milliseconds). refreshInterval wins when both are set.
+          refreshIntervalMs: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .catch(undefined)
+            .describe(
+              'Deprecated: use refreshInterval (seconds). Re-run interval in milliseconds',
+            ),
+          hideVimModeIndicator: z
+            .boolean()
+            .optional()
+            .describe(
+              'Hide the built-in `-- INSERT --` / `-- VISUAL --` indicator below the prompt. Use this when your status line script renders `vim.mode` itself.',
+            ),
         })
         .optional()
         .describe('Custom status line display configuration'),

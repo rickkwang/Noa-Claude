@@ -13,6 +13,8 @@ const statusline = {
   allowedTools: [AGENT_TOOL_NAME, 'Read(~/**)', 'Edit(~/.noa/settings.json)'],
   source: 'builtin',
   disableNonInteractive: true,
+  // Setup rewrites user settings; only an explicit /statusline should start it.
+  disableModelInvocation: true,
   async getPromptForCommand(args): Promise<ContentBlockParam[]> {
     const prompt = args.trim() || 'Configure my statusLine from my shell PS1 configuration';
     return [{

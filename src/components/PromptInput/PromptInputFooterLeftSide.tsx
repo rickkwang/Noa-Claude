@@ -23,7 +23,7 @@ import { shouldHideTasksFooter } from '../tasks/taskStatusUtils.js';
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js';
 import { TeamStatus } from '../teams/TeamStatus.js';
 import { isInProcessEnabled } from '../../utils/swarm/backends/registry.js';
-import { useAppState, useAppStateStore } from 'src/state/AppState.js';
+import { useAppState, useAppStateStore, useSetAppState } from 'src/state/AppState.js';
 import { getIsRemoteMode } from '../../bootstrap/state.js';
 import HistorySearchInput from './HistorySearchInput.js';
 import { usePrStatus } from '../../hooks/usePrStatus.js';
@@ -55,6 +55,7 @@ type Props = {
     key?: string;
   };
   vimMode: VimMode | undefined;
+  hideVimModeIndicator?: boolean;
   mode: PromptInputMode;
   toolPermissionContext: ToolPermissionContext;
   suppressHint: boolean;
@@ -131,6 +132,7 @@ export function PromptInputFooterLeftSide(t0) {
   const {
     exitMessage,
     vimMode,
+    hideVimModeIndicator,
     mode,
     toolPermissionContext,
     suppressHint,
@@ -182,7 +184,8 @@ export function PromptInputFooterLeftSide(t0) {
   } else {
     t1 = $[5];
   }
-  const showVim = t1;
+  // Status line scripts that render vim.mode themselves can opt out of the built-in indicator.
+  const showVim = t1 && hideVimModeIndicator !== true;
   let t2;
   if ($[6] !== historyFailedMatch || $[7] !== historyMatchTimestamp || $[8] !== historyQuery || $[9] !== isSearching || $[10] !== setHistoryQuery) {
     t2 = isSearching && <HistorySearchInput value={historyQuery} onChange={setHistoryQuery} historyFailedMatch={historyFailedMatch} historyMatchTimestamp={historyMatchTimestamp} />;
@@ -273,6 +276,24 @@ function ModeIndicator({
   const expandedView = useAppState(s_3 => s_3.expandedView);
   const showSpinnerTree = expandedView === 'teammates';
   const prStatus = usePrStatus(isLoading, isPrStatusEnabled());
+  // Mirror the polled PR into AppState so the status line command sees the
+  // same PR as the footer badge without spawning its own `gh` poller.
+  const setAppState = useSetAppState();
+  useEffect(() => {
+    const next = prStatus.number !== null && prStatus.url !== null ? {
+      number: prStatus.number,
+      url: prStatus.url,
+      reviewState: prStatus.reviewState
+    } : null;
+    setAppState(prev => {
+      const cur = prev.prStatus ?? null;
+      if (cur === next || cur && next && cur.number === next.number && cur.url === next.url && cur.reviewState === next.reviewState) return prev;
+      return {
+        ...prev,
+        prStatus: next
+      };
+    });
+  }, [prStatus.number, prStatus.url, prStatus.reviewState, setAppState]);
   const hasTmuxSession = useAppState(s_4 => "external" === 'ant' && s_4.tungstenActiveSession !== undefined);
   const nextTickAt = useSyncExternalStore(proactiveModule?.subscribeToProactiveChanges ?? NO_OP_SUBSCRIBE, proactiveModule?.getNextTickAt ?? NULL, NULL);
   // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
