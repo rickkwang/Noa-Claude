@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { getMainThreadAgentType } from '../bootstrap/state.js'
-import type { HookResultMessage } from '../types/message.js'
+import type { HookResultMessage, Message } from '../types/message.js'
 import { createAttachmentMessage } from './attachments.js'
 import { logForDebugging } from './debug.js'
 import { withDiagnosticsTiming } from './diagLogs.js'
@@ -9,6 +9,7 @@ import { updateWatchPaths } from './hooks/fileChangedWatcher.js'
 import { shouldAllowManagedHooksOnly } from './hooks/hooksConfigSnapshot.js'
 import { executeSessionStartHooks, executeSetupHooks } from './hooks.js'
 import { logError } from './log.js'
+import { getMessagesAfterCompactBoundary } from './messages.js'
 import { loadPluginHooks } from './plugins/loadPluginHooks.js'
 
 type SessionStartHooksOptions = {
@@ -30,6 +31,43 @@ export function takeInitialUserMessage(): string | undefined {
   const v = pendingInitialUserMessage
   pendingInitialUserMessage = undefined
   return v
+}
+
+// The model-facing text a SessionStart hook message carries.
+function sessionStartContext(message: Message): string[] {
+  if (message.type !== 'attachment') return []
+  const attachment = message.attachment
+  if (attachment?.hookEvent !== 'SessionStart') return []
+  if (attachment.type === 'hook_additional_context') return attachment.content
+  if (attachment.type === 'hook_success' && attachment.content !== '') {
+    return [attachment.content]
+  }
+  return []
+}
+
+/**
+ * The resume hook messages minus context the model already has. Hook output
+ * is persisted with the transcript, so a SessionStart hook that prints the
+ * same context on every resume would otherwise stack another copy per resume.
+ * Only the conversation after the last compact boundary counts — context
+ * that survives only before it is out of the model's view and is added again.
+ */
+export function dropRepeatedSessionStartContext(
+  conversation: Message[],
+  hookMessages: HookResultMessage[],
+): HookResultMessage[] {
+  const seen = new Set(
+    getMessagesAfterCompactBoundary(conversation).flatMap(sessionStartContext),
+  )
+  if (seen.size === 0) return hookMessages
+  return hookMessages.flatMap(message => {
+    const context = sessionStartContext(message)
+    if (context.length === 0) return [message]
+    const fresh = context.filter(text => !seen.has(text))
+    if (fresh.length === 0) return []
+    if (fresh.length === context.length) return [message]
+    return [{ ...message, attachment: { ...message.attachment, content: fresh } }]
+  })
 }
 
 // Note to CLAUDE: do not add ANY "warmup" logic. It is **CRITICAL** that you do not add extra work on startup.

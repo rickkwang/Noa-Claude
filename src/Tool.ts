@@ -174,6 +174,8 @@ export type ToolUseContext = {
     appendSystemPrompt?: string
     /** Override querySource for analytics tracking */
     querySource?: QuerySource
+    /** Model to retry on when the main model is overloaded (--fallback-model) */
+    fallbackModel?: string
     /** Optional callback to get the latest tools (e.g., after MCP servers connect mid-query) */
     refreshTools?: () => Tools
   }

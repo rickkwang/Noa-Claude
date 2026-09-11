@@ -960,7 +960,6 @@
     "src/services/compact/microCompact.ts",
     "src/services/compact/postCompactCleanup.ts",
     "src/services/compact/prompt.ts",
-    "src/services/compact/sessionMemoryCompact.ts",
     "src/services/compact/timeBasedMCConfig.ts",
     "src/services/diagnosticTracking.ts",
     "src/services/extractMemories/extractMemories.ts",

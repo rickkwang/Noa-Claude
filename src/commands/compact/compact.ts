@@ -1,30 +1,19 @@
 // @ts-nocheck
-import { feature } from 'bun:bundle'
 import chalk from 'chalk'
-import { markPostCompaction } from 'src/bootstrap/state.js'
 import { getSystemPrompt } from '../../constants/prompts.js'
 import { getSystemContext, getUserContext } from '../../context.js'
 import { getShortcutDisplay } from '../../keybindings/shortcutFormat.js'
-import { notifyCompaction } from '../../services/api/promptCacheBreakDetection.js'
 import {
   beginCompactLifecycle,
-  type CompactionResult,
   compactConversation,
   endCompactLifecycle,
-  ERROR_MESSAGE_COMPACT_EXHAUSTED,
-  ERROR_MESSAGE_COMPACT_MEDIA_UNSTRIPPABLE,
   ERROR_MESSAGE_INCOMPLETE_RESPONSE,
   ERROR_MESSAGE_NOT_ENOUGH_MESSAGES,
-  ERROR_MESSAGE_USER_ABORT,
-  mergeHookDisplayMessages,
-  mergeHookInstructions,
   type PreCompactHookResult,
 } from '../../services/compact/compact.js'
 import { suppressCompactWarning } from '../../services/compact/compactWarningState.js'
 import { microcompactMessages } from '../../services/compact/microCompact.js'
 import { runPostCompactCleanup } from '../../services/compact/postCompactCleanup.js'
-import { trySessionMemoryCompaction } from '../../services/compact/sessionMemoryCompact.js'
-import { setLastSummarizedMessageId } from '../../services/SessionMemory/sessionMemoryUtils.js'
 import type { ToolUseContext } from '../../Tool.js'
 import type { LocalCommandCall } from '../../types/command.js'
 import type { Message } from '../../types/message.js'
@@ -37,12 +26,6 @@ import {
   buildEffectiveSystemPrompt,
   type SystemPrompt,
 } from '../../utils/systemPrompt.js'
-
-/* eslint-disable @typescript-eslint/no-require-imports */
-const reactiveCompact = feature('REACTIVE_COMPACT')
-  ? (require('../../services/compact/reactiveCompact.js') as typeof import('../../services/compact/reactiveCompact.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
 
 export const call: LocalCommandCall = async (args, context) => {
   const { abortController } = context
@@ -59,9 +42,8 @@ export const call: LocalCommandCall = async (args, context) => {
   const customInstructions = args.trim()
   const displayMode = customInstructions ? 'custom' : 'default'
 
-  // This handler is the single owner of the compact_start / compact_end
-  // lifecycle for SM and full-compact paths. Inner functions (SM,
-  // compactConversation, compactViaReactive) no longer emit these events.
+  // This handler owns the compact_start / compact_end lifecycle;
+  // compactConversation does not emit those events itself.
   beginCompactLifecycle(context)
 
   try {
@@ -76,59 +58,7 @@ export const call: LocalCommandCall = async (args, context) => {
 
     context.onCompactProgress?.({ type: 'compact_start' })
 
-    // Try session memory compaction first if no custom instructions and no
-    // hook-injected ones (session memory compaction doesn't support custom
-    // instructions).
-    if (!customInstructions && !preCompactHookResult.newCustomInstructions) {
-      const sessionMemoryResult = await trySessionMemoryCompaction(messages, {
-        trigger: 'manual',
-        context,
-        preCompactUserDisplayMessage:
-          preCompactHookResult.userDisplayMessage,
-      })
-      if (sessionMemoryResult) {
-        runPostCompactCleanup()
-        // Reset cache read baseline so the post-compact drop isn't flagged
-        // as a break. compactConversation does this internally; SM-compact doesn't.
-        if (feature('PROMPT_CACHE_BREAK_DETECTION')) {
-          notifyCompaction(
-            context.options.querySource ?? 'compact',
-            context.agentId,
-          )
-        }
-        markPostCompaction()
-        // Reset lastSummarizedMessageId since SM compaction prunes messages
-        // and the old UUID will no longer exist in the new messages array.
-        setLastSummarizedMessageId(undefined)
-        // Suppress warning immediately after successful compaction
-        suppressCompactWarning()
-
-        return {
-          type: 'compact',
-          compactionResult: sessionMemoryResult,
-          displayText: buildDisplayText(
-            context,
-            displayMode,
-            sessionMemoryResult.userDisplayMessage,
-          ),
-        }
-      }
-    }
-
-    // Reactive-only mode: route /compact through the reactive path.
-    // Checked after session-memory (that path is cheap and orthogonal).
-    if (reactiveCompact?.isReactiveOnlyMode()) {
-      return await compactViaReactive(
-        messages,
-        context,
-        customInstructions,
-        reactiveCompact,
-        preCompactHookResult,
-      )
-    }
-
-    // Fall back to traditional compaction
-    // Run microcompact first to reduce tokens before summarization
+    // Microcompact first so the summary request carries fewer tokens
     const microcompactResult = await microcompactMessages(messages, context)
     const messagesForCompact = microcompactResult.messages
 
@@ -143,11 +73,6 @@ export const call: LocalCommandCall = async (args, context) => {
       preCompactHookResult,
     )
 
-    // Reset lastSummarizedMessageId since legacy compaction replaces all messages
-    // and the old message UUID will no longer exist in the new messages array
-    setLastSummarizedMessageId(undefined)
-
-    // Suppress the "Context left until auto-compact" warning after successful compaction
     suppressCompactWarning()
 
     runPostCompactCleanup()
@@ -166,10 +91,6 @@ export const call: LocalCommandCall = async (args, context) => {
       throw new Error(formatCompactError('aborted'))
     } else if (hasExactErrorMessage(error, ERROR_MESSAGE_NOT_ENOUGH_MESSAGES)) {
       throw new Error(formatCompactError('not_enough_messages'))
-    } else if (hasExactErrorMessage(error, ERROR_MESSAGE_COMPACT_EXHAUSTED)) {
-      throw new Error(formatCompactError('exhausted'))
-    } else if (hasExactErrorMessage(error, ERROR_MESSAGE_COMPACT_MEDIA_UNSTRIPPABLE)) {
-      throw new Error(formatCompactError('media'))
     } else if (hasExactErrorMessage(error, ERROR_MESSAGE_INCOMPLETE_RESPONSE)) {
       throw new Error(formatCompactError('incomplete'))
     } else {
@@ -181,78 +102,8 @@ export const call: LocalCommandCall = async (args, context) => {
   }
 }
 
-async function compactViaReactive(
-  messages: Message[],
-  context: ToolUseContext,
-  customInstructions: string,
-  reactive: NonNullable<typeof reactiveCompact>,
-  preCompactHookResult: PreCompactHookResult,
-): Promise<{
-  type: 'compact'
-  compactionResult: CompactionResult
-  displayText: string
-}> {
-  const cacheSafeParams = await getCacheSharingParams(context, messages)
-  const mergedInstructions = mergeHookInstructions(
-    customInstructions,
-    preCompactHookResult.newCustomInstructions,
-  )
-
-  const outcome = await reactive.reactiveCompactOnPromptTooLong(
-    messages,
-    cacheSafeParams,
-    { customInstructions: mergedInstructions, trigger: 'manual' },
-  )
-
-  if (!outcome.ok) {
-    // The outer catch in `call` translates these: aborted → "Compaction
-    // canceled." (via abortController.signal.aborted check), NOT_ENOUGH →
-    // re-thrown as-is, everything else → "Error during compaction: …".
-    switch (outcome.reason) {
-      case 'too_few_groups':
-        throw new Error(ERROR_MESSAGE_NOT_ENOUGH_MESSAGES)
-      case 'aborted':
-        throw new Error(ERROR_MESSAGE_USER_ABORT)
-      case 'exhausted':
-        throw new Error(ERROR_MESSAGE_COMPACT_EXHAUSTED)
-      case 'media_unstrippable':
-        throw new Error(ERROR_MESSAGE_COMPACT_MEDIA_UNSTRIPPABLE)
-      case 'error':
-        throw new Error(ERROR_MESSAGE_INCOMPLETE_RESPONSE)
-    }
-  }
-
-  // Mirrors the post-success cleanup in tryReactiveCompact, minus
-  // resetMicrocompactState — processSlashCommand calls that for all
-  // type:'compact' results.
-  setLastSummarizedMessageId(undefined)
-  runPostCompactCleanup()
-  suppressCompactWarning()
-
-  // reactiveCompactOnPromptTooLong runs PostCompact hooks but not PreCompact
-  // — the outer /compact handler runs PreCompact (already merged above) so
-  // we combine its userDisplayMessage with PostCompact's here.
-  const combinedMessage = mergeHookDisplayMessages(
-    preCompactHookResult.userDisplayMessage,
-    outcome.result.userDisplayMessage,
-  )
-
-  return {
-    type: 'compact',
-    compactionResult: {
-      ...outcome.result,
-      userDisplayMessage: combinedMessage,
-    },
-    displayText: buildDisplayText(
-      context,
-      customInstructions ? 'custom' : 'default',
-      combinedMessage,
-    ),
-  }
-}
-
 export function formatCompactError(
-  reason: 'aborted' | 'not_enough_messages' | 'incomplete' | 'exhausted' | 'media' | 'failed',
+  reason: 'aborted' | 'not_enough_messages' | 'incomplete' | 'failed',
   cause?: unknown,
 ): string {
   switch (reason) {
@@ -260,10 +111,6 @@ export function formatCompactError(
       return 'Compaction canceled.'
     case 'not_enough_messages':
       return 'Nothing to compact yet.'
-    case 'exhausted':
-      return 'Compaction stopped: not enough context remaining to summarize.'
-    case 'media':
-      return 'Compaction skipped: conversation contains media that cannot be summarized.'
     case 'incomplete':
       return 'Compaction did not complete cleanly. Try again.'
     case 'failed':

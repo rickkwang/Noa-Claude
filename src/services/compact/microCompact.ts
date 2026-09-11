@@ -92,7 +92,7 @@ function isCompactableTool(toolName: string): boolean {
   return false
 }
 
-// --- Cached microcompact state (ant-only, gated by feature('CACHED_MICROCOMPACT')) ---
+// --- Cached microcompact state (gated by feature('CACHED_MICROCOMPACT')) ---
 
 // Lazy-initialized cached MC module and state to avoid importing in external builds.
 // The imports and state live inside feature() checks for dead code elimination.
@@ -300,10 +300,8 @@ function collectCompactableToolIds(messages: Message[]): string[] {
 
 // Prefix-match because promptCategory.ts sets the querySource to
 // 'repl_main_thread:outputStyle:<style>' when a non-default output style
-// is active. The bare 'repl_main_thread' is only used for the default style.
-// query.ts:350/1451 use the same startsWith pattern; the pre-existing
-// cached-MC `=== 'repl_main_thread'` check was a latent bug — users with a
-// non-default output style were silently excluded from cached MC.
+// is active. The bare 'repl_main_thread' is only used for the default style,
+// so an equality check would silently exclude non-default output styles.
 function isMainThreadSource(querySource: QuerySource | undefined): boolean {
   return !querySource || querySource.startsWith('repl_main_thread')
 }

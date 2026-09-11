@@ -9,13 +9,13 @@ import { FallbackTriggeredError } from './services/api/withRetry.js'
 import {
   AUTOCOMPACT_THRASHING_MESSAGE,
   calculateTokenWarningState,
+  countConsecutiveRapidRefills,
   isAutoCompactEnabled,
+  RAPID_REFILL_MAX_CONSECUTIVE,
 } from './services/compact/autoCompact.js'
 import { buildPostCompactMessages } from './services/compact/compact.js'
+import * as reactiveCompact from './services/compact/reactiveCompact.js'
 /* eslint-disable @typescript-eslint/no-require-imports */
-const reactiveCompact = feature('REACTIVE_COMPACT')
-  ? (require('./services/compact/reactiveCompact.js') as typeof import('./services/compact/reactiveCompact.js'))
-  : null
 const contextCollapse = feature('CONTEXT_COLLAPSE')
   ? (require('./services/contextCollapse/index.js') as typeof import('./services/contextCollapse/index.js'))
   : null
@@ -672,10 +672,8 @@ async function* queryLoop(
     let needsFollowUp = false
     // Whether the LAST assistant message was withheld from the stream. The
     // prompt-too-long surface paths below re-yield only when this is true.
-    // The withhold predicates are runtime-gated (stub modules, statsig), so
-    // "module compiled in" does not imply "message was withheld" — assuming
-    // it does double-yields the error (e.g. dev-full builds where the
-    // reactiveCompact/contextCollapse stubs never withhold).
+    // The withhold predicates are runtime-gated, so assuming a withhold
+    // happened would double-yield the error when recovery is turned off.
     let lastAssistantWithheld = false
 
     queryCheckpoint('query_setup_start')
@@ -721,10 +719,9 @@ async function* queryLoop(
     // Also skip for compact/session_memory queries — these are forked agents that
     // inherit the full conversation and would deadlock if blocked here (the compact
     // agent needs to run to REDUCE the token count).
-    // Also skip when reactive compact is enabled and automatic compaction is
-    // allowed — the preempt's synthetic error returns before the API call,
-    // so reactive compact would never see a prompt-too-long to react to.
-    // Widened to walrus so RC can act as fallback when proactive fails.
+    // Also skip when reactive compact is enabled — the preempt's synthetic
+    // error returns before the API call, so reactive compact would never see
+    // a prompt-too-long to react to.
     //
     // Same skip for context-collapse: its recoverFromOverflow drains
     // staged collapses on a REAL API 413, then falls through to
@@ -738,20 +735,17 @@ async function* queryLoop(
         (contextCollapse?.isContextCollapseEnabled() ?? false) &&
         isAutoCompactEnabled()
     }
-    // Hoist media-recovery gate once per turn. Withholding (inside the
-    // stream loop) and recovery (after) must agree; CACHED_MAY_BE_STALE can
-    // flip during the 5-30s stream, and withhold-without-recover would eat
-    // the message. PTL doesn't hoist because its withholding is ungated —
-    // it predates the experiment and is already the control-arm baseline.
-    const mediaRecoveryEnabled =
-      reactiveCompact?.isReactiveCompactEnabled() ?? false
+    // Resolve the recovery gate once per turn: withholding (inside the
+    // stream loop) and recovery (after it) must agree, or a config change
+    // mid-stream would withhold an error that nothing then surfaces. Sources
+    // that never compact keep the synthetic preempt below.
+    const reactiveRecoveryEnabled =
+      reactiveCompact.canReactivelyCompact(querySource)
     if (
       !compactionResult &&
       querySource !== 'compact' &&
       querySource !== 'session_memory' &&
-      !(
-        reactiveCompact?.isReactiveCompactEnabled() && isAutoCompactEnabled()
-      ) &&
+      !reactiveRecoveryEnabled &&
       !collapseOwnsIt
     ) {
       const { isAtBlockingLimit } = calculateTokenWarningState(
@@ -939,12 +933,10 @@ async function* queryLoop(
                 withheld = true
               }
             }
-            if (reactiveCompact?.isWithheldPromptTooLong(message)) {
-              withheld = true
-            }
             if (
-              mediaRecoveryEnabled &&
-              reactiveCompact?.isWithheldMediaSizeError(message)
+              reactiveRecoveryEnabled &&
+              (reactiveCompact.isWithheldPromptTooLong(message) ||
+                reactiveCompact.isWithheldMediaSizeError(message))
             ) {
               withheld = true
             }
@@ -1219,26 +1211,22 @@ async function* queryLoop(
     if (!needsFollowUp) {
       const lastMessage = assistantMessages.at(-1)
 
-      // Prompt-too-long recovery: the streaming loop withheld the error
-      // (see withheldByCollapse / withheldByReactive above). Try collapse
-      // drain first (cheap, keeps granular context), then reactive compact
-      // (full summary). Single-shot on each — if a retry still 413's,
-      // the next stage handles it or the error surfaces.
+      // Prompt-too-long recovery: the streaming loop withheld the error.
+      // Try collapse drain first (cheap, keeps granular context), then
+      // reactive compact (full summary). Single-shot on each — if a retry
+      // still 413's, the next stage handles it or the error surfaces.
       const isWithheld413 =
         lastMessage?.type === 'assistant' &&
         lastMessage.isApiErrorMessage &&
         isPromptTooLongMessage(lastMessage)
       // Media-size rejections (image/PDF/many-image) are recoverable via
       // reactive compact's strip-retry. Unlike PTL, media errors skip the
-      // collapse drain — collapse doesn't strip images. mediaRecoveryEnabled
-      // is the hoisted gate from before the stream loop (same value as the
-      // withholding check — these two must agree or a withheld message is
-      // lost). If the oversized media is in the preserved tail, the
-      // post-compact turn will media-error again; hasAttemptedReactiveCompact
-      // prevents a spiral and the error surfaces.
+      // collapse drain — collapse doesn't strip images. If the oversized
+      // media survives compaction, hasAttemptedReactiveCompact stops a
+      // spiral and the error surfaces.
       const isWithheldMedia =
-        mediaRecoveryEnabled &&
-        reactiveCompact?.isWithheldMediaSizeError(lastMessage)
+        reactiveRecoveryEnabled &&
+        reactiveCompact.isWithheldMediaSizeError(lastMessage)
       if (isWithheld413) {
         // First: drain all staged context-collapses. Gated on the PREVIOUS
         // transition not being collapse_drain_retry — if we already drained
@@ -1266,7 +1254,31 @@ async function* queryLoop(
           }
         }
       }
-      if ((isWithheld413 || isWithheldMedia) && reactiveCompact) {
+      if (isWithheld413 || isWithheldMedia) {
+        // Reactive compaction counts toward the rapid-refill breaker like the
+        // proactive path: a context that overflows again within a few turns of
+        // every compact can't be saved by one more summary.
+        const consecutiveRapidRefills = countConsecutiveRapidRefills(tracking)
+        if (
+          reactiveRecoveryEnabled &&
+          !hasAttemptedReactiveCompact &&
+          consecutiveRapidRefills >= RAPID_REFILL_MAX_CONSECUTIVE
+        ) {
+          logEvent('tengu_auto_compact_rapid_refill_breaker', {
+            consecutiveRapidRefills,
+            turnsSincePreviousCompact: tracking?.turnCounter ?? -1,
+            queryChainId: queryChainIdForAnalytics,
+            queryDepth: queryTracking.depth,
+          })
+          const thrashing = createAssistantAPIErrorMessage({
+            content: AUTOCOMPACT_THRASHING_MESSAGE,
+            error: 'invalid_request',
+          })
+          yield thrashing
+          void executeStopFailureHooks(thrashing, toolUseContext)
+          return { reason: 'rapid_refill_breaker' }
+        }
+
         const compacted = await reactiveCompact.tryReactiveCompact({
           hasAttempted: hasAttemptedReactiveCompact,
           querySource,
@@ -1279,6 +1291,7 @@ async function* queryLoop(
             toolUseContext,
             forkContextMessages: messagesForQuery,
           },
+          error: lastMessage,
         })
 
         if (compacted) {
@@ -1302,11 +1315,25 @@ async function* queryLoop(
           state = nextState(state, {
             messages: postCompactMessages,
             toolUseContext,
-            autoCompactTracking: undefined,
+            autoCompactTracking: {
+              compacted: true,
+              turnId: deps.uuid(),
+              turnCounter: 0,
+              consecutiveFailures: 0,
+              consecutiveRapidRefills,
+            },
             hasAttemptedReactiveCompact: true,
             transition: { reason: 'reactive_compact_retry' },
           })
           continue
+        }
+
+        // Interrupted during recovery: the overflow is moot. End the turn like
+        // every other interrupt rather than surfacing an error that tells the
+        // user to compact.
+        if (toolUseContext.abortController.signal.aborted) {
+          yield* yieldInterruptionNotice(toolUseContext, { toolUse: false })
+          return { reason: 'aborted_streaming' }
         }
 
         // No recovery — surface the withheld error and exit. Re-yield only
@@ -1322,16 +1349,6 @@ async function* queryLoop(
         }
         void executeStopFailureHooks(lastMessage, toolUseContext)
         return { reason: isWithheldMedia ? 'image_error' : 'prompt_too_long' }
-      } else if (feature('CONTEXT_COLLAPSE') && isWithheld413) {
-        // reactiveCompact compiled out but contextCollapse withheld and
-        // couldn't recover (staged queue empty/stale). Surface (same
-        // withheld guard and early-return rationale as above — don't fall
-        // through to stop hooks).
-        if (lastAssistantWithheld) {
-          yield lastMessage
-        }
-        void executeStopFailureHooks(lastMessage, toolUseContext)
-        return { reason: 'prompt_too_long' }
       }
 
       // Check for max_output_tokens and inject recovery message. The error

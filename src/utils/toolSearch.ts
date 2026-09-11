@@ -615,18 +615,13 @@ export type DeferredToolsDelta = {
 }
 
 /**
- * Call-site discriminator for the tengu_deferred_tools_pool_change event.
- * The scan runs from several sites with different expected-prior semantics
- * (inc-4747):
+ * Call-site discriminator for the deferred-tools delta scan. Each site has a
+ * different expected prior:
  *   - attachments_main: main-thread getAttachments → prior=0 is a BUG on fire-2+
  *   - attachments_subagent: subagent getAttachments → prior=0 is EXPECTED
  *     (fresh conversation, initialMessages has no DTD)
  *   - compact_full: compact.ts passes [] → prior=0 is EXPECTED
  *   - compact_partial: compact.ts passes messagesToKeep → depends on what survived
- *   - compact_session_memory: sessionMemoryCompact.ts passes messagesToKeep → same
- *   - reactive_compact: reactiveCompact.ts passes preservedMessages → same
- * Without this the 96%-prior=0 stat is dominated by EXPECTED buckets and
- * the real main-thread cross-turn bug (if any) is invisible in BQ.
  */
 export type DeferredToolsDeltaScanContext = {
   callSite:
@@ -634,8 +629,6 @@ export type DeferredToolsDeltaScanContext = {
     | 'attachments_subagent'
     | 'compact_full'
     | 'compact_partial'
-    | 'compact_session_memory'
-    | 'reactive_compact'
   querySource?: string
 }
 

@@ -4,7 +4,6 @@ import { feature } from 'bun:bundle';
 import * as React from 'react';
 import { useSyncExternalStore } from 'react';
 import { Box, Text } from '../ink.js';
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growthbook.js';
 import { calculateTokenWarningState, getEffectiveContextWindowSize, isAutoCompactEnabled } from '../services/compact/autoCompact.js';
 import { useCompactWarningSuppression } from '../services/compact/compactWarningHook.js';
 import { getUpgradeMessage } from '../utils/model/contextWindowUpgradeCheck.js';
@@ -126,13 +125,7 @@ export function TokenWarning(t0) {
   }
   const upgradeMessage = t3;
   let displayPercentLeft = percentLeft;
-  let reactiveOnlyMode = false;
   let collapseMode = false;
-  if (feature("REACTIVE_COMPACT")) {
-    if (getFeatureValue_CACHED_MAY_BE_STALE("tengu_cobalt_raccoon", false)) {
-      reactiveOnlyMode = true;
-    }
-  }
   if (feature("CONTEXT_COLLAPSE")) {
     const {
       isContextCollapseEnabled
@@ -141,7 +134,7 @@ export function TokenWarning(t0) {
       collapseMode = true;
     }
   }
-  if (reactiveOnlyMode || collapseMode) {
+  if (collapseMode) {
     const effectiveWindow = getEffectiveContextWindowSize(model);
     let t4;
     if ($[5] !== effectiveWindow || $[6] !== tokenUsage) {
@@ -164,11 +157,8 @@ export function TokenWarning(t0) {
     }
     return t4;
   }
-  // Discoverability parity with upstream's " /autocompact to configure":
-  // the moment the user is watching this countdown is exactly when they'd
-  // want to know the window is adjustable. Value-only change, so the
-  // memo-cache slot keyed on autocompactLabel below stays correct.
-  const autocompactLabel = reactiveOnlyMode ? `${100 - displayPercentLeft}% context used` : `${displayPercentLeft}% until auto-compact · /autocompact to configure`;
+  // The countdown is when the user wants to know the window is adjustable.
+  const autocompactLabel = `${displayPercentLeft}% until auto-compact · /autocompact to configure`;
   let t4;
   if ($[9] !== autocompactLabel || $[10] !== isAboveErrorThreshold || $[11] !== percentLeft) {
     t4 = <Box flexDirection="row">{showAutoCompactWarning ? <Text dimColor={true} wrap="truncate">{upgradeMessage ? `${autocompactLabel} \u00b7 ${upgradeMessage}` : autocompactLabel}</Text> : <Text color={isAboveErrorThreshold ? "error" : "warning"} wrap="truncate">{upgradeMessage ? `Context low (${percentLeft}% remaining) \u00b7 ${upgradeMessage}` : `Context low (${percentLeft}% remaining) \u00b7 Run /compact to compact & continue`}</Text>}</Box>;

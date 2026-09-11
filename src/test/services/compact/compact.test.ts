@@ -201,7 +201,7 @@ describe('createPostCompactContextAttachments', () => {
           },
         }),
       } as never,
-      callSite: 'compact_session_memory',
+      callSite: 'compact_partial',
     })
 
     expect(attachments.some(m => m.attachment?.type === 'plan_mode')).toBe(true)

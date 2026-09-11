@@ -1,28 +1,34 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
-import type { Message } from '../../../types/message.js'
+import type { AssistantMessage, Message } from '../../../types/message.js'
 
-// End-to-end coverage for the reactive-compact HAPPY PATH.
-//
-// The sibling reactiveCompact.test.ts only reaches the guard early-returns, so
-// the recovery itself — delegating to compactConversation and returning a
-// result for the loop to retry with — never ran. These tests stub only
-// compactConversation and drive the real path through.
+// End-to-end coverage for the reactive-compact recovery itself: choosing
+// between keep-tail and full compaction, stripping media, and owning the
+// compact lifecycle. compactConversation / partialCompactConversation and the
+// pre-compact hooks are stubbed; everything in reactiveCompact.ts runs for real.
 
-type CompactCall = {
-  messages: Message[]
-  suppressFollowUps: unknown
-  customInstructions: unknown
-  isAutoCompact: unknown
-}
+type CompactCall =
+  | {
+      kind: 'full'
+      messages: Message[]
+      suppressFollowUps: unknown
+      customInstructions: unknown
+      isAutoCompact: unknown
+      forkContextMessages: Message[] | undefined
+    }
+  | {
+      kind: 'partial'
+      messages: Message[]
+      pivot: number
+      direction: unknown
+      opts: Record<string, unknown>
+      forkContextMessages: Message[] | undefined
+    }
 
 let compactCalls: CompactCall[] = []
 let compactShouldThrow: Error | null = null
+let lifecycle: string[] = []
 
-// A stand-in for compactConversation's return value. These tests assert on
-// identity (the exact object is handed back to the caller), not on its
-// contents, so a minimal shape cast to the real type is enough.
 const FAKE_RESULT = {
-  messagesAfterCompacting: [],
   summaryMessages: [],
   boundaryMarker: undefined,
   attachments: [],
@@ -30,184 +36,275 @@ const FAKE_RESULT = {
 } as unknown as import('../../../services/compact/compact.js').CompactionResult
 
 const actualCompact = await import('../../../services/compact/compact.js')
-
 mock.module('../../../services/compact/compact.js', () => ({
   ...actualCompact,
+  beginCompactLifecycle: () => {
+    lifecycle.push('begin')
+  },
+  endCompactLifecycle: () => {
+    lifecycle.push('end')
+  },
   compactConversation: async (
     messages: Message[],
     _context: unknown,
-    _cacheSafeParams: unknown,
+    cacheSafeParams: { forkContextMessages?: Message[] },
     suppressFollowUps: unknown,
     customInstructions: unknown,
     isAutoCompact: unknown,
   ) => {
     compactCalls.push({
+      kind: 'full',
       messages,
       suppressFollowUps,
       customInstructions,
       isAutoCompact,
+      forkContextMessages: cacheSafeParams.forkContextMessages,
+    })
+    if (compactShouldThrow) throw compactShouldThrow
+    return FAKE_RESULT
+  },
+  partialCompactConversation: async (
+    messages: Message[],
+    pivot: number,
+    _context: unknown,
+    cacheSafeParams: { forkContextMessages?: Message[] },
+    _feedback: unknown,
+    direction: unknown,
+    opts: Record<string, unknown>,
+  ) => {
+    compactCalls.push({
+      kind: 'partial',
+      messages,
+      pivot,
+      direction,
+      opts,
+      forkContextMessages: cacheSafeParams.forkContextMessages,
     })
     if (compactShouldThrow) throw compactShouldThrow
     return FAKE_RESULT
   },
 }))
 
-const { reactiveCompactOnPromptTooLong, tryReactiveCompact } = await import(
-  '../../../services/compact/reactiveCompact.js'
-)
+const hooks = await import('../../../utils/hooks.js')
+mock.module('../../../utils/hooks.js', () => ({
+  ...hooks,
+  executePreCompactHooks: async () => ({ userDisplayMessage: 'hook ran' }),
+}))
 
-const ENV_KEY = 'NOA_CLAUDE_REACTIVE_COMPACT'
-const originalEnv = process.env[ENV_KEY]
+// Suffixed so this is a fresh instance of the real module that resolves the
+// mocks above, even if another suite already loaded or replaced
+// reactiveCompact.js in the shared registry.
+const REAL_REACTIVE_MODULE =
+  '../../../services/compact/reactiveCompact.js?reactive-e2e-real'
+const { tryReactiveCompact } = (await import(
+  REAL_REACTIVE_MODULE
+)) as typeof import('../../../services/compact/reactiveCompact.js')
+
+const ENV_KEYS = [
+  'NOA_CLAUDE_REACTIVE_COMPACT',
+  'DISABLE_AUTO_COMPACT',
+  'DISABLE_COMPACT',
+] as const
+const originalEnv = Object.fromEntries(ENV_KEYS.map(k => [k, process.env[k]]))
 
 let counter = 0
-/** Distinct message.id per call → each becomes its own API-round group. */
 function asst(text: string): Message {
   counter += 1
   const id = `msg-${counter}`
   return {
     type: 'assistant',
-    id,
     uuid: id,
-    message: {
-      id,
-      role: 'assistant',
-      content: [{ type: 'text', text }],
-    },
+    message: { id, role: 'assistant', content: [{ type: 'text', text }] },
+  } as unknown as Message
+}
+function user(content: unknown): Message {
+  counter += 1
+  return {
+    type: 'user',
+    uuid: `user-${counter}`,
+    message: { role: 'user', content },
   } as unknown as Message
 }
 
-/** Two distinct assistant ids → 2 groups, clearing MIN_GROUPS_TO_COMPACT. */
-function compactableMessages(): Message[] {
-  return [asst('first round'), asst('second round')]
+/** Three small API rounds ending in the user's latest request. */
+function smallConversation(): Message[] {
+  return [
+    user('first request'),
+    asst('first round'),
+    user('second request'),
+    asst('second round'),
+    user('latest request'),
+  ]
 }
 
 function ctx() {
   return {
     toolUseContext: {
       abortController: new AbortController(),
-      options: {},
+      options: { mainLoopModel: 'test-model' },
+      onCompactProgress: () => {},
     },
   } as never
 }
 
+function ptlError(details?: string): AssistantMessage {
+  return {
+    type: 'assistant',
+    uuid: 'ptl',
+    isApiErrorMessage: true,
+    errorDetails: details,
+    message: {
+      role: 'assistant',
+      content: [{ type: 'text', text: 'Prompt is too long' }],
+    },
+  } as unknown as AssistantMessage
+}
+
+function run(
+  messages: Message[],
+  error?: AssistantMessage,
+  hasAttempted = false,
+) {
+  return tryReactiveCompact({
+    hasAttempted,
+    querySource: 'repl_main_thread',
+    aborted: false,
+    messages,
+    cacheSafeParams: ctx(),
+    error,
+  })
+}
+
 beforeEach(() => {
-  process.env[ENV_KEY] = '1'
+  for (const k of ENV_KEYS) delete process.env[k]
   compactCalls = []
   compactShouldThrow = null
+  lifecycle = []
 })
 
 afterEach(() => {
-  if (originalEnv === undefined) delete process.env[ENV_KEY]
-  else process.env[ENV_KEY] = originalEnv
+  for (const k of ENV_KEYS) {
+    if (originalEnv[k] === undefined) delete process.env[k]
+    else process.env[k] = originalEnv[k]
+  }
 })
 
-describe('tryReactiveCompact end-to-end (auto path)', () => {
-  test('recovers by compacting and returns a result to retry with', async () => {
-    const messages = compactableMessages()
-    const result = await tryReactiveCompact({
-      hasAttempted: false,
-      querySource: 'repl_main_thread',
-      aborted: false,
-      messages,
-      cacheSafeParams: ctx(),
-    })
+describe('tryReactiveCompact end-to-end', () => {
+  test('keeps the recent rounds verbatim and summarizes the older prefix', async () => {
+    const messages = smallConversation()
+    const result = await run(messages, ptlError())
 
     expect(result).toBe(FAKE_RESULT)
     expect(compactCalls).toHaveLength(1)
-    // The auto path suppresses follow-up questions and flags itself as auto.
-    expect(compactCalls[0]!.suppressFollowUps).toBe(true)
-    expect(compactCalls[0]!.isAutoCompact).toBe(true)
-    // No custom instructions are invented on the auto path.
-    expect(compactCalls[0]!.customInstructions).toBeUndefined()
+    const call = compactCalls[0]!
+    expect(call.kind).toBe('partial')
+    if (call.kind !== 'partial') return
+    expect(call.direction).toBe('up_to')
+    expect(call.pivot).toBeGreaterThan(0)
+    // The latest request is in the kept tail, not paraphrased by the summary.
+    expect(messages.slice(call.pivot).at(-1)).toBe(messages.at(-1))
+    expect(call.opts.trigger).toBe('auto')
+    expect(call.opts.suppressFollowUpQuestions).toBe(true)
+    expect(call.opts.ownsLifecycle).toBe(false)
+    expect(call.opts.preCompactHookResult).toEqual({
+      userDisplayMessage: 'hook ran',
+    })
+    expect(lifecycle).toEqual(['begin', 'end'])
   })
 
-  test('a failing compaction surfaces the original error instead of throwing', async () => {
-    compactShouldThrow = new Error('compaction blew up')
-    const result = await tryReactiveCompact({
-      hasAttempted: false,
-      querySource: 'repl_main_thread',
-      aborted: false,
-      messages: compactableMessages(),
-      cacheSafeParams: ctx(),
-    })
+  test('summarizes everything when the latest round is too big to keep', async () => {
+    const messages = [
+      ...smallConversation(),
+      asst('reads a huge file'),
+      user([
+        { type: 'tool_result', tool_use_id: 't1', content: 'x'.repeat(400_000) },
+      ]),
+    ]
+    await run(messages, ptlError())
 
-    // null = "I could not help, show the user the real error" — never a throw,
-    // which would escape into the query loop.
+    expect(compactCalls.map(c => c.kind)).toEqual(['full'])
+    const call = compactCalls[0]!
+    if (call.kind !== 'full') return
+    expect(call.suppressFollowUps).toBe(true)
+    expect(call.isAutoCompact).toBe(true)
+    expect(call.customInstructions).toBeUndefined()
+  })
+
+  test('a known overflow no tail can shed goes straight to a full summary', async () => {
+    await run(
+      smallConversation(),
+      ptlError('prompt is too long: 350000 tokens > 200000 maximum'),
+    )
+
+    expect(compactCalls.map(c => c.kind)).toEqual(['full'])
+  })
+
+  test('media errors strip media from both the summary request and the kept tail', async () => {
+    const image = {
+      type: 'image',
+      source: { type: 'base64', media_type: 'image/png', data: 'AAAA' },
+    }
+    const messages = [
+      ...smallConversation(),
+      asst('looks at a screenshot'),
+      user([{ type: 'text', text: 'see this' }, image]),
+    ]
+    const mediaError = {
+      type: 'assistant',
+      uuid: 'media',
+      isApiErrorMessage: true,
+      errorDetails: 'image exceeds 5 MB maximum: 6291456 bytes > 5242880 bytes',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'API Error' }],
+      },
+    } as unknown as AssistantMessage
+
+    await run(messages, mediaError)
+
+    const call = compactCalls[0]!
+    expect(JSON.stringify(call.messages)).not.toContain('"type":"image"')
+    expect(JSON.stringify(call.messages)).toContain('[image]')
+    expect(call.forkContextMessages).toBe(call.messages)
+  })
+
+  test('a failing compaction surfaces the original error and still ends the lifecycle', async () => {
+    compactShouldThrow = new Error('compaction blew up')
+    const result = await run(smallConversation(), ptlError())
+
     expect(result).toBeNull()
     expect(compactCalls).toHaveLength(1)
+    expect(lifecycle).toEqual(['begin', 'end'])
   })
 
   test('the single-shot guard prevents a second attempt in the same turn', async () => {
-    const messages = compactableMessages()
-    await tryReactiveCompact({
-      hasAttempted: false,
-      querySource: 'repl_main_thread',
-      aborted: false,
-      messages,
-      cacheSafeParams: ctx(),
-    })
-    await tryReactiveCompact({
-      hasAttempted: true, // query.ts flips this after the first attempt
-      querySource: 'repl_main_thread',
-      aborted: false,
-      messages,
-      cacheSafeParams: ctx(),
-    })
+    const messages = smallConversation()
+    await run(messages, ptlError())
+    await run(messages, ptlError(), true)
 
     expect(compactCalls).toHaveLength(1)
   })
-})
 
-describe('reactiveCompactOnPromptTooLong end-to-end (manual path)', () => {
-  test('returns ok with the compaction result', async () => {
-    const outcome = await reactiveCompactOnPromptTooLong(
-      compactableMessages(),
-      ctx(),
-      { customInstructions: 'focus on the bug', trigger: 'manual' },
-    )
-
-    expect(outcome).toEqual({ ok: true, result: FAKE_RESULT })
-    expect(compactCalls).toHaveLength(1)
-    // The manual trigger forwards the user's instructions and keeps follow-ups.
-    expect(compactCalls[0]!.customInstructions).toBe('focus on the bug')
-    expect(compactCalls[0]!.suppressFollowUps).toBe(false)
-    expect(compactCalls[0]!.isAutoCompact).toBe(false)
-  })
-
-  test('reports a failure reason rather than throwing', async () => {
-    compactShouldThrow = new Error('compaction blew up')
-    const outcome = await reactiveCompactOnPromptTooLong(
-      compactableMessages(),
-      ctx(),
-      { customInstructions: undefined, trigger: 'manual' },
-    )
-
-    expect(outcome).toEqual({ ok: false, reason: 'error' })
-  })
-
-  test('maps PTL-retry exhaustion to the distinct exhausted outcome', async () => {
-    // compactConversation throws exactly this once truncateHeadForPTLRetry is
-    // out of road; /compact maps 'exhausted' to its own user message.
-    compactShouldThrow = new Error(actualCompact.ERROR_MESSAGE_PROMPT_TOO_LONG)
-    const outcome = await reactiveCompactOnPromptTooLong(
-      compactableMessages(),
-      ctx(),
-      { customInstructions: undefined, trigger: 'manual' },
-    )
-
-    expect(outcome).toEqual({ ok: false, reason: 'exhausted' })
-  })
-
-  test('maps a surviving media-size error to media_unstrippable', async () => {
-    compactShouldThrow = new Error(
-      'API Error: image exceeds 5 MB maximum: 6291456 bytes > 5242880 bytes',
-    )
-    const outcome = await reactiveCompactOnPromptTooLong(
-      compactableMessages(),
-      ctx(),
-      { customInstructions: undefined, trigger: 'manual' },
-    )
-
-    expect(outcome).toEqual({ ok: false, reason: 'media_unstrippable' })
+  test('forked summarizers and background side-task forks never compact', async () => {
+    for (const querySource of [
+      'compact',
+      'session_memory',
+      'agent_summary',
+      'away_summary',
+      'prompt_suggestion',
+      'speculation',
+    ] as const) {
+      const result = await tryReactiveCompact({
+        hasAttempted: false,
+        querySource,
+        aborted: false,
+        messages: smallConversation(),
+        cacheSafeParams: ctx(),
+        error: ptlError(),
+      })
+      expect(result).toBeNull()
+    }
+    expect(compactCalls).toHaveLength(0)
+    expect(lifecycle).toEqual([])
   })
 })

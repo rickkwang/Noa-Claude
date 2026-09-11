@@ -38,7 +38,10 @@ import {
   stripSignatureBlocks,
 } from './messages.js'
 import { copyPlanForResume } from './plans.js'
-import { processSessionStartHooks } from './sessionStart.js'
+import {
+  dropRepeatedSessionStartContext,
+  processSessionStartHooks,
+} from './sessionStart.js'
 import { plural } from './stringUtils.js'
 import {
   buildConversationChain,
@@ -156,6 +159,32 @@ export function dropMalformedAttachments(messages: Message[]): Message[] {
 }
 
 /**
+ * One-shot reminders that describe the moment they were injected, not the
+ * conversation. Replayed on resume they go stale — a verify_plan_reminder
+ * would ask the model to re-verify a plan it already verified — so resume
+ * drops them; the live session re-injects whichever still apply.
+ */
+const RESUME_DROPPED_ATTACHMENT_TYPES = new Set([
+  'compaction_reminder',
+  'companion_intro',
+  'context_tip',
+  'echo_activities',
+  'fold_nudge',
+  'pen_mode_enter',
+  'pen_mode_exit',
+  'verify_plan_reminder',
+])
+
+export function dropEphemeralAttachments(messages: Message[]): Message[] {
+  const kept = messages.filter(
+    message =>
+      message.type !== 'attachment' ||
+      !RESUME_DROPPED_ATTACHMENT_TYPES.has(String(message.attachment?.type)),
+  )
+  return kept.length === messages.length ? messages : kept
+}
+
+/**
  * Transforms legacy attachment types to current types for backward compatibility
  */
 function migrateLegacyAttachmentTypes(message: Message): Message {
@@ -253,7 +282,9 @@ export function deserializeMessagesWithInterruptDetection(
     // Must precede migrateLegacyAttachmentTypes, which reads new_file.filename
     // / new_directory.path without a guard — a corrupt transcript would
     // otherwise throw here and abort the entire resume.
-    const cleanedMessages = dropMalformedAttachments(serializedMessages)
+    const cleanedMessages = dropEphemeralAttachments(
+      dropMalformedAttachments(serializedMessages),
+    )
 
     // Transform legacy attachment types before processing
     const migratedMessages = cleanedMessages.map(migrateLegacyAttachmentTypes)
@@ -371,7 +402,7 @@ type InternalInterruptionState =
  *
  * System and progress messages are skipped when finding the last turn-relevant
  * message — they are bookkeeping artifacts that should not mask a genuine
- * interruption. Attachments are kept as part of the turn.
+ * interruption. Trailing attachments are classified by what they follow.
  */
 function detectTurnInterruption(
   messages: NormalizedMessage[],
@@ -428,12 +459,49 @@ function detectTurnInterruption(
   }
 
   if (lastMessage.type === 'attachment') {
-    // Attachments are part of the user turn — the user provided context but
-    // the assistant never responded.
-    return { kind: 'interrupted_turn' }
+    return classifyTrailingAttachments(messages, lastMessageIdx)
   }
 
   return { kind: 'none' }
+}
+
+/**
+ * Attachments are persisted, so a transcript can end on them either side of
+ * a response: ones injected with the user's turn (the assistant never got to
+ * answer) or ones emitted after the turn completed, like Stop hook output.
+ * Walk back past them to the message they follow. A completed assistant turn,
+ * a compact summary, or a turn-ending tool result means nothing was cut off;
+ * anything else is a turn the assistant never answered.
+ */
+function classifyTrailingAttachments(
+  messages: NormalizedMessage[],
+  lastAttachmentIdx: number,
+): InternalInterruptionState {
+  for (let i = lastAttachmentIdx - 1; i >= 0; i--) {
+    const message = messages[i]!
+    if (
+      message.type === 'system' ||
+      message.type === 'progress' ||
+      message.type === 'attachment'
+    ) {
+      continue
+    }
+    if (message.type === 'assistant') {
+      if (message.isApiErrorMessage) continue
+      return { kind: 'none' }
+    }
+    if (message.type === 'user') {
+      if (message.isCompactSummary) return { kind: 'none' }
+      if (
+        isToolUseResultMessage(message) &&
+        isTerminalToolResult(message, messages, i)
+      ) {
+        return { kind: 'none' }
+      }
+      return { kind: 'interrupted_turn' }
+    }
+  }
+  return { kind: 'interrupted_turn' }
 }
 
 /**
@@ -654,7 +722,7 @@ export async function loadConversationForResume(
     const hookMessages = await processSessionStartHooks('resume', { sessionId })
 
     // Append hook messages to the conversation
-    messages.push(...hookMessages)
+    messages.push(...dropRepeatedSessionStartContext(messages, hookMessages))
 
     return {
       messages,

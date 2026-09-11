@@ -41,9 +41,6 @@ let sessionMemoryConfig: SessionMemoryConfig = {
   ...DEFAULT_SESSION_MEMORY_CONFIG,
 }
 
-// Track the last summarized message ID (shared state)
-let lastSummarizedMessageId: string | undefined
-
 // Track extraction state with timestamp (set by sessionMemory.ts)
 let extractionStartedAt: number | undefined
 
@@ -52,22 +49,6 @@ let tokensAtLastExtraction = 0
 
 // Track whether session memory has been initialized (met minimumMessageTokensToInit)
 let sessionMemoryInitialized = false
-
-/**
- * Get the message ID up to which the session memory is current
- */
-export function getLastSummarizedMessageId(): string | undefined {
-  return lastSummarizedMessageId
-}
-
-/**
- * Set the last summarized message ID (called from sessionMemory.ts)
- */
-export function setLastSummarizedMessageId(
-  messageId: string | undefined,
-): void {
-  lastSummarizedMessageId = messageId
-}
 
 /**
  * Mark extraction as started (called from sessionMemory.ts)
@@ -203,6 +184,5 @@ export function resetSessionMemoryState(): void {
   sessionMemoryConfig = { ...DEFAULT_SESSION_MEMORY_CONFIG }
   tokensAtLastExtraction = 0
   sessionMemoryInitialized = false
-  lastSummarizedMessageId = undefined
   extractionStartedAt = undefined
 }

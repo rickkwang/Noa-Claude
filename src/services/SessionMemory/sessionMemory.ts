@@ -55,7 +55,6 @@ import {
   markSessionMemoryInitialized,
   recordExtractionTokenCount,
   type SessionMemoryConfig,
-  setLastSummarizedMessageId,
   setSessionMemoryConfig,
 } from './sessionMemoryUtils.js'
 
@@ -345,9 +344,6 @@ const extractSessionMemory = sequential(async function (
   // Record the context size at extraction for tracking minimumTokensBetweenUpdate
   recordExtractionTokenCount(tokenCountWithEstimation(messages))
 
-  // Update lastSummarizedMessageId after successful completion
-  updateLastSummarizedMessageIdIfSafe(messages)
-
   markExtractionCompleted()
 })
 
@@ -415,15 +411,3 @@ export function createMemoryFileCanUseTool(memoryPath: string): CanUseToolFn {
   }
 }
 
-/**
- * Updates lastSummarizedMessageId after successful extraction.
- * Only sets it if the last message doesn't have tool calls (to avoid orphaned tool_results).
- */
-function updateLastSummarizedMessageIdIfSafe(messages: Message[]): void {
-  if (!hasToolCallsInLastAssistantTurn(messages)) {
-    const lastMessage = messages[messages.length - 1]
-    if (lastMessage?.uuid) {
-      setLastSummarizedMessageId(lastMessage.uuid)
-    }
-  }
-}

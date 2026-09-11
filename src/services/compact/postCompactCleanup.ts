@@ -34,7 +34,6 @@ export function runPostCompactCleanup(querySource?: QuerySource): void {
   // Subagents (agent:*) run in the same process and share module-level
   // state with the main thread. Only reset main-thread module-level state
   // (context-collapse, memory file cache) for main-thread compacts.
-  // Same startsWith pattern as isMainThread (index.ts:188).
   const isMainThreadCompact =
     querySource === undefined ||
     querySource.startsWith('repl_main_thread') ||

@@ -1,66 +1,105 @@
-// Reactive compaction: the safety net for an UNEXPECTED context overflow.
+// Reactive compaction: recovery for a context overflow that proactive
+// auto-compact did not prevent. A single huge tool result can push one turn
+// past the limit, so the main query itself comes back prompt-too-long (or
+// media-too-large). The query loop withholds that error, compacts in place,
+// and retries once with the compacted context.
 //
-// Proactive auto-compact (autoCompact.ts) relieves pressure BEFORE the model
-// query is sent. But a single huge tool result can push one turn straight past
-// the limit, so the main query itself comes back prompt-too-long (or a media
-// too-large rejection). Without recovery the user just sees "Conversation too
-// long". Reactive compaction catches that withheld error and summarizes in
-// place, then the loop retries with the compacted context.
-//
-// This module is loaded by query.ts / commands/compact only under
-// feature('REACTIVE_COMPACT') (dev-full), so it is compiled out of the baseline
-// build entirely — baseline behaviour is unchanged. When compiled in, it is
-// additionally gated at RUNTIME by isReactiveCompactEnabled() (env
-// NOA_CLAUDE_REACTIVE_COMPACT / config reactiveCompactEnabled, default false),
-// so the withhold predicates return false and nothing changes until enabled.
-//
-// The heavy lifting reuses compactConversation(), which already carries the
-// robust PTL-retry (truncateHeadForPTLRetry) and image/document stripping —
-// reactive adds only the reactive-specific guards: single-shot dedup, an
-// abort check, and a "too few groups → compaction can't help" bail.
+// The recent rounds are kept verbatim when they fit a tail budget, so the
+// retry continues from the user's actual latest request instead of a
+// paraphrase of it. A round too big for the budget — typically the very tool
+// result that caused the overflow — is summarized rather than kept, since
+// keeping it would overflow the retry again. compactConversation and
+// partialCompactConversation carry the prompt-too-long retries (boundary
+// slide, then head truncation) for the summary request itself.
 
-import { markPostCompaction } from '../../bootstrap/state.js'
+import { feature } from 'bun:bundle'
 import type { QuerySource } from '../../constants/querySource.js'
-import type { ToolUseContext } from '../../Tool.js'
 import type { AssistantMessage, Message } from '../../types/message.js'
 import { getGlobalConfig } from '../../utils/config.js'
 import { logForDebugging } from '../../utils/debug.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
+import { isEnvDefinedFalsy } from '../../utils/envUtils.js'
 import type { CacheSafeParams } from '../../utils/forkedAgent.js'
+import { executePreCompactHooks } from '../../utils/hooks.js'
 import { logError } from '../../utils/log.js'
 import {
-  isMediaSizeError,
+  getPromptTooLongTokenGap,
   isMediaSizeErrorMessage,
   isPromptTooLongMessage,
 } from '../api/errors.js'
+import { roughTokenCountEstimationForMessages } from '../tokenEstimation.js'
 import {
+  getModelEffectiveContextWindowSize,
+  isAutoCompactEnabled,
+  isBackgroundForkQuerySource,
+} from './autoCompact.js'
+import {
+  beginCompactLifecycle,
   type CompactionResult,
   compactConversation,
-  ERROR_MESSAGE_PROMPT_TOO_LONG,
+  endCompactLifecycle,
   isCompactionUserAbort,
+  partialCompactConversation,
+  POST_COMPACT_SKILLS_TOKEN_BUDGET,
+  POST_COMPACT_TOKEN_BUDGET,
+  stripImagesFromMessages,
 } from './compact.js'
 import { suppressCompactWarning } from './compactWarningState.js'
 import { groupMessagesByApiRound } from './grouping.js'
-import { resetMicrocompactState } from './microCompact.js'
 import { runPostCompactCleanup } from './postCompactCleanup.js'
-import { setLastSummarizedMessageId } from '../SessionMemory/sessionMemoryUtils.js'
+import { adjustIndexToPreserveAPIInvariants } from './preservedTail.js'
 
-// Fewer API-round groups than this means there is nothing meaningful to
-// summarize away — the fixed prefix (system prompt + tools + userContext) is
-// the overflow, and compaction can't help. Bail rather than loop.
+// Fewer API rounds than this means the fixed prefix (system prompt, tools,
+// userContext) is the overflow, and summarizing messages cannot help.
 const MIN_GROUPS_TO_COMPACT = 2
 
-export function isReactiveCompactEnabled(): boolean {
-  if (isEnvTruthy(process.env.NOA_CLAUDE_REACTIVE_COMPACT)) return true
-  if (isEnvTruthy(process.env.CLAUDE_CODE_REACTIVE_COMPACT)) return true
-  return getGlobalConfig().reactiveCompactEnabled === true
+// Verbatim tail budget: enough recent rounds to continue from, small enough
+// that the retry has room to fit.
+const REACTIVE_TAIL_FRACTION = 0.1
+const REACTIVE_TAIL_FLOOR_TOKENS = 8_000
+const REACTIVE_TAIL_CEIL_TOKENS = 20_000
+// What the summary request adds on top of the summarized prefix (prompt and
+// framing), so a tail sized from the overflow leaves that much headroom too.
+const SUMMARY_REQUEST_OVERHEAD_TOKENS = 3_000
+// What the retry carries besides the kept tail: system prompt, tools and
+// userContext, the summary, and the context re-injected after compaction
+// (restored files and invoked skills, each up to its own budget).
+// Read at call time: compact.js and this module sit in an import cycle, so its
+// constants are not yet initialized while this module evaluates.
+const RETRY_FIXED_RESERVE_TOKENS = 40_000
+function getRetryOverheadTokens(): number {
+  return (
+    RETRY_FIXED_RESERVE_TOKENS +
+    POST_COMPACT_TOKEN_BUDGET +
+    POST_COMPACT_SKILLS_TOKEN_BUDGET
+  )
 }
 
-// Reactive-only mode (routing proactive/manual compaction entirely through the
-// reactive path) is a larger behaviour change; keep it off. Reactive stays the
-// safety net while proactive auto-compact remains primary.
-export function isReactiveOnlyMode(): boolean {
-  return false
+// Message's loose attachment typing doesn't narrow to the estimator's Attachment.
+function estimateTokens(messages: Message[]): number {
+  return roughTokenCountEstimationForMessages(
+    messages as Parameters<typeof roughTokenCountEstimationForMessages>[0],
+  )
+}
+
+/**
+ * On whenever auto-compact is — DISABLE_COMPACT, DISABLE_AUTO_COMPACT and
+ * autoCompactEnabled=false turn off both. `reactiveCompactEnabled: false` or
+ * NOA_CLAUDE_REACTIVE_COMPACT=0 turns off only this recovery layer.
+ */
+export function isReactiveCompactEnabled(): boolean {
+  if (
+    isEnvDefinedFalsy(process.env.NOA_CLAUDE_REACTIVE_COMPACT) ||
+    isEnvDefinedFalsy(process.env.CLAUDE_CODE_REACTIVE_COMPACT) ||
+    getGlobalConfig().reactiveCompactEnabled === false
+  ) {
+    return false
+  }
+  return isAutoCompactEnabled()
+}
+
+/** Whether a query from this source recovers from an overflow by compacting. */
+export function canReactivelyCompact(querySource: QuerySource): boolean {
+  return isReactiveCompactEnabled() && !isExcludedSource(querySource)
 }
 
 export function isWithheldPromptTooLong(message: unknown): boolean {
@@ -80,22 +119,104 @@ export function isWithheldMediaSizeError(message: unknown): boolean {
 }
 
 /**
- * Shared post-success cleanup. compactConversation already calls
- * markPostCompaction + notifyCompaction internally; reactive adds the pieces
- * the proactive query-loop path would otherwise run.
+ * Where the verbatim tail starts, or null to summarize everything.
+ *
+ * Keeps whole API rounds from the end while they fit the tail budget. When the
+ * overflow is known, the tail must also hold at least that much plus the
+ * summary request's own overhead, so the summary request — the conversation
+ * minus the tail — fits on its first attempt. Past the budget the tail grows
+ * only until that minimum is covered, never further: everything kept verbatim
+ * also has to fit in the retry, next to the summary and the re-injected
+ * context, which caps the tail at the window minus that overhead (and at half
+ * the window). The summarized prefix must keep an assistant turn and every
+ * earlier compact summary, the only record of the history before it.
  */
-function afterReactiveSuccess(querySource?: QuerySource): void {
-  setLastSummarizedMessageId(undefined)
-  runPostCompactCleanup(querySource)
-  suppressCompactWarning()
-  resetMicrocompactState()
-  markPostCompaction()
+export function selectReactiveTailPivot(
+  messages: Message[],
+  model: string,
+  tokenGap?: number,
+): number | null {
+  const groups = groupMessagesByApiRound(messages)
+  if (groups.length < MIN_GROUPS_TO_COMPACT) return null
+
+  const window = getModelEffectiveContextWindowSize(model)
+  const budget = Math.min(
+    Math.max(Math.floor(window * REACTIVE_TAIL_FRACTION), REACTIVE_TAIL_FLOOR_TOKENS),
+    REACTIVE_TAIL_CEIL_TOKENS,
+  )
+  const hardCap = Math.max(
+    budget,
+    Math.min(Math.floor(window / 2), window - getRetryOverheadTokens()),
+  )
+  const minTail =
+    tokenGap !== undefined ? tokenGap + SUMMARY_REQUEST_OVERHEAD_TOKENS : 0
+  if (minTail > hardCap) return null
+
+  // The summarized prefix must keep at least one assistant turn — otherwise
+  // there is nothing substantive to summarize.
+  const firstAssistantGroup = groups.findIndex(group =>
+    group.some(m => m.type === 'assistant'),
+  )
+  if (firstAssistantGroup === -1) return null
+  let tailTokens = 0
+  let keptGroups = 0
+  for (let g = groups.length - 1; g > firstAssistantGroup; g--) {
+    const groupTokens = estimateTokens(groups[g]!)
+    // Once the overflow is covered, the budget decides; the cap always does.
+    if (tailTokens >= minTail && tailTokens + groupTokens > budget) break
+    if (tailTokens + groupTokens > hardCap) break
+    tailTokens += groupTokens
+    keptGroups++
+  }
+  if (keptGroups === 0 || tailTokens < minTail) return null
+
+  const groupPivot = groups
+    .slice(0, groups.length - keptGroups)
+    .reduce((count, group) => count + group.length, 0)
+  const pivot = adjustIndexToPreserveAPIInvariants(messages, groupPivot)
+  if (pivot <= 0 || pivot >= messages.length) return null
+
+  // Snapping back to keep a tool_use with its result may grow the tail; it may
+  // not grow past what the loop itself would have accepted.
+  const tail = messages.slice(pivot)
+  const snappedTailTokens =
+    pivot === groupPivot ? tailTokens : estimateTokens(tail)
+  if (
+    snappedTailTokens > Math.min(Math.max(budget, tailTokens), hardCap) ||
+    snappedTailTokens < minTail
+  ) {
+    return null
+  }
+
+  const prefix = messages.slice(0, pivot)
+  if (!prefix.some(m => m.type === 'assistant')) return null
+  if (tail.some(m => m.type === 'user' && m.isCompactSummary)) return null
+  return pivot
+}
+
+// Sources that must never compact their own context, matching
+// shouldAutoCompact: forked summarizers (the summary request would recurse
+// into another summary), background side-task forks, and the context-collapse
+// agent (runPostCompactCleanup would reset the main thread's collapse log).
+function isExcludedSource(querySource: QuerySource): boolean {
+  if (querySource === 'compact' || querySource === 'session_memory') {
+    return true
+  }
+  if (isBackgroundForkQuerySource(querySource)) {
+    return true
+  }
+  if (feature('CONTEXT_COLLAPSE')) {
+    if (querySource === 'marble_origami') {
+      return true
+    }
+  }
+  return false
 }
 
 /**
- * Auto path (query loop). Returns a CompactionResult to retry with, or null to
- * surface the original error. Single-shot per turn (hasAttempted) so a repeated
- * failure can't spiral.
+ * Returns a CompactionResult to retry with, or null to surface the original
+ * error. Single-shot per turn (hasAttempted) so a repeated overflow cannot
+ * spiral.
  */
 export async function tryReactiveCompact(params: {
   hasAttempted: boolean
@@ -103,110 +224,87 @@ export async function tryReactiveCompact(params: {
   aborted: boolean
   messages: Message[]
   cacheSafeParams: CacheSafeParams
+  /** The withheld API error that triggered recovery. */
+  error?: AssistantMessage
 }): Promise<CompactionResult | null> {
-  if (!isReactiveCompactEnabled()) return null
-  const { hasAttempted, querySource, aborted, messages, cacheSafeParams } =
-    params
-  if (aborted || hasAttempted) return null
+  const { hasAttempted, querySource, aborted, cacheSafeParams, error } = params
+  if (!canReactivelyCompact(querySource) || aborted || hasAttempted) return null
 
-  // Fixed-prefix bail: nothing summarizable → compaction cannot help.
-  if (groupMessagesByApiRound(messages).length < MIN_GROUPS_TO_COMPACT) {
+  if (groupMessagesByApiRound(params.messages).length < MIN_GROUPS_TO_COMPACT) {
     logForDebugging(
-      '[REACTIVE] too few groups — compaction cannot help; surfacing error',
+      '[REACTIVE] too few rounds — compaction cannot help; surfacing error',
     )
     return null
   }
 
   const context = cacheSafeParams.toolUseContext
+  // A media rejection repeats on every request that still carries the media —
+  // the summary request and the retry alike — so strip it before either. The
+  // kept tail is stripped in memory only: its transcript entries are shared by
+  // uuid and keep the original media, so a resumed session can hit the same
+  // rejection once more and recover the same way.
+  const isMediaError = error !== undefined && isMediaSizeErrorMessage(error)
+  const messages = isMediaError
+    ? stripImagesFromMessages(params.messages)
+    : params.messages
+  const compactParams = isMediaError
+    ? { ...cacheSafeParams, forkContextMessages: messages }
+    : cacheSafeParams
+  const tokenGap =
+    error !== undefined && !isMediaError
+      ? getPromptTooLongTokenGap(error)
+      : undefined
+  const pivot = selectReactiveTailPivot(
+    messages,
+    context.options.mainLoopModel,
+    tokenGap,
+  )
+
+  beginCompactLifecycle(context)
   try {
-    logForDebugging('[REACTIVE] recovering from withheld overflow via compact')
-    const result = await compactConversation(
-      messages,
-      context,
-      cacheSafeParams,
-      true, // suppress follow-up questions
-      undefined, // no custom instructions on the auto path
-      true, // isAutoCompact
+    logForDebugging(
+      `[REACTIVE] recovering from withheld ${isMediaError ? 'media error' : 'overflow'} via ${pivot === null ? 'full' : `keep-tail (pivot=${pivot}/${messages.length})`} compact`,
     )
-    afterReactiveSuccess(querySource)
+    const preCompactHookResult = await executePreCompactHooks(
+      { trigger: 'auto', customInstructions: null },
+      context.abortController.signal,
+    )
+    context.onCompactProgress?.({ type: 'compact_start' })
+    const result =
+      pivot === null
+        ? await compactConversation(
+            messages,
+            context,
+            compactParams,
+            true, // suppress follow-up questions
+            undefined, // no custom instructions on the auto path
+            true, // isAutoCompact
+            undefined,
+            preCompactHookResult,
+          )
+        : await partialCompactConversation(
+            messages,
+            pivot,
+            context,
+            compactParams,
+            undefined,
+            'up_to', // summarize the older prefix, keep the recent rounds
+            {
+              trigger: 'auto',
+              suppressFollowUpQuestions: true,
+              preCompactHookResult,
+              ownsLifecycle: false,
+            },
+          )
+    runPostCompactCleanup(querySource)
+    suppressCompactWarning()
     return result
-  } catch (error) {
-    // Abort is not a failure to report — the loop handles it.
-    if (!isCompactionUserAbort(error, context.abortController.signal)) {
-      logError(error)
+  } catch (compactError) {
+    if (!isCompactionUserAbort(compactError, context.abortController.signal)) {
+      logError(compactError)
     }
     return null
+  } finally {
+    endCompactLifecycle(context)
   }
-}
-
-export type ReactiveCompactOutcome =
-  | { ok: true; result: CompactionResult }
-  | {
-      ok: false
-      reason:
-        | 'too_few_groups'
-        | 'aborted'
-        | 'exhausted'
-        | 'media_unstrippable'
-        | 'error'
-    }
-
-/**
- * Manual path (/compact under reactive-only mode). Not reached while
- * isReactiveOnlyMode() is false, but implemented for contract completeness.
- */
-export async function reactiveCompactOnPromptTooLong(
-  messages: Message[],
-  cacheSafeParams: CacheSafeParams,
-  options: {
-    customInstructions: string | undefined
-    trigger: 'manual' | 'auto'
-  },
-): Promise<ReactiveCompactOutcome> {
-  const context = cacheSafeParams.toolUseContext
-  if (context.abortController.signal.aborted) {
-    return { ok: false, reason: 'aborted' }
-  }
-  if (groupMessagesByApiRound(messages).length < MIN_GROUPS_TO_COMPACT) {
-    return { ok: false, reason: 'too_few_groups' }
-  }
-  try {
-    const result = await compactConversation(
-      messages,
-      context,
-      cacheSafeParams,
-      options.trigger === 'auto', // suppress follow-ups on the auto trigger only
-      options.customInstructions,
-      options.trigger === 'auto',
-    )
-    afterReactiveSuccess(context.options.querySource)
-    return { ok: true, result }
-  } catch (error) {
-    if (isCompactionUserAbort(error, context.abortController.signal)) {
-      return { ok: false, reason: 'aborted' }
-    }
-    logError(error)
-    const message = error instanceof Error ? error.message : String(error)
-    // compactConversation throws this exact message once its own PTL-retry
-    // head-truncation is out of road — the caller maps it to a distinct
-    // "even summarizing failed" user message rather than a generic error.
-    if (message === ERROR_MESSAGE_PROMPT_TOO_LONG) {
-      return { ok: false, reason: 'exhausted' }
-    }
-    // Media survived compactConversation's image/document stripping (e.g. an
-    // oversized document type the stripper doesn't cover).
-    if (isMediaSizeError(message)) {
-      return { ok: false, reason: 'media_unstrippable' }
-    }
-    return { ok: false, reason: 'error' }
-  }
-}
-
-export default {
-  isReactiveCompactEnabled,
-  isReactiveOnlyMode,
-  isWithheldPromptTooLong,
-  isWithheldMediaSizeError,
-  tryReactiveCompact,
-  reactiveCompactOnPromptTooLong,
 }

@@ -79,7 +79,6 @@ import {
   getTranscriptPath,
   reAppendSessionMetadata,
 } from '../../utils/sessionStorage.js'
-import { sleep } from '../../utils/sleep.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 /* eslint-enable @typescript-eslint/no-require-imports */
 import { asSystemPrompt } from '../../utils/systemPromptType.js'
@@ -93,7 +92,6 @@ import {
   extractDiscoveredToolNames,
   isToolSearchEnabled,
 } from '../../utils/toolSearch.js'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../analytics/growthbook.js'
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
   logEvent,
@@ -108,7 +106,7 @@ import {
   startsWithApiErrorPrefix,
 } from '../api/errors.js'
 import { notifyCompaction } from '../api/promptCacheBreakDetection.js'
-import { getRetryDelay } from '../api/withRetry.js'
+import { FallbackTriggeredError } from '../api/withRetry.js'
 import { logPermissionContextForAnts } from '../internalLogging.js'
 import {
   roughTokenCountEstimation,
@@ -132,7 +130,6 @@ export const POST_COMPACT_MAX_TOKENS_PER_FILE = 5_000
 // part. Budget sized to hold ~5 skills at the per-skill cap.
 export const POST_COMPACT_MAX_TOKENS_PER_SKILL = 5_000
 export const POST_COMPACT_SKILLS_TOKEN_BUDGET = 25_000
-const MAX_COMPACT_STREAMING_RETRIES = 2
 
 export function estimatePayloadTokensSaved(
   preCompactMessages: Message[],
@@ -352,8 +349,8 @@ export function selectPTLPartialPivot(
  * Vertex/Bedrock error formats). Returns null when nothing can be dropped
  * without leaving an empty summarize set.
  *
- * TRUE last resort for CC-1180: unlike every other compaction path, the
- * dropped rounds are covered by no summary at all — they leave the context
+ * The last resort for an oversized summary request: unlike every other
+ * compaction path, the dropped rounds are covered by no summary at all — they leave the context
  * entirely. Callers must try selectPTLPartialPivot first, which sheds the same
  * overflow by preserving the tail verbatim instead of deleting the head. This
  * runs only when even that can't produce a fitting request.
@@ -432,10 +429,6 @@ export const ERROR_MESSAGE_PROMPT_TOO_LONG =
 export const ERROR_MESSAGE_USER_ABORT = 'API Error: Request was aborted.'
 export const ERROR_MESSAGE_INCOMPLETE_RESPONSE =
   'Compaction interrupted · This may be due to network issues — please try again.'
-export const ERROR_MESSAGE_COMPACT_EXHAUSTED =
-  'Compaction stopped: not enough context remaining to summarize.'
-export const ERROR_MESSAGE_COMPACT_MEDIA_UNSTRIPPABLE =
-  'Compaction skipped: conversation contains media that cannot be summarized.'
 
 export function isCompactionUserAbort(
   error: unknown,
@@ -566,8 +559,8 @@ export function mergeHookDisplayMessages(
 /**
  * Lifecycle helpers that the outer compact entrypoints (`/compact` command
  * handler and `autoCompactIfNeeded`) call to enter and leave the compacting
- * UI state. Inner functions (SM, compactConversation, compactViaReactive)
- * never invoke these — there is exactly one owner per top-level compact.
+ * UI state. compactConversation never invokes these — there is exactly one
+ * owner per top-level compact.
  */
 export function beginCompactLifecycle(context: ToolUseContext): void {
   context.setSDKStatus?.('compacting')
@@ -726,15 +719,6 @@ export async function compactConversation(
     )
     const userDisplayMessage = hookResult.userDisplayMessage
 
-    // 3P default: true — forked-agent path reuses main conversation's prompt cache.
-    // Experiment (Jan 2026) confirmed: false path is 98% cache miss, costs ~0.76% of
-    // fleet cache_creation (~38B tok/day), concentrated in ephemeral envs (CCR/GHA/SDK)
-    // with cold GB cache and 3P providers where GB is disabled. GB gate kept as kill-switch.
-    const promptCacheSharingEnabled = getFeatureValue_CACHED_MAY_BE_STALE(
-      'tengu_compact_cache_prefix',
-      true,
-    )
-
     let messagesToSummarize = messages
     const compactPrompt = getCompactPrompt(customInstructions)
     const summaryRequest = createUserMessage({
@@ -757,7 +741,7 @@ export async function compactConversation(
       summary = getAssistantMessageText(summaryResponse)
       if (!summary?.startsWith(PROMPT_TOO_LONG_ERROR_MESSAGE)) break
 
-      // CC-1180: the compact request itself hit prompt-too-long.
+      // The compact request itself hit prompt-too-long.
       //
       // Retry as a partial ('up_to') compaction before dropping anything: the
       // prefix gets summarized and the tail stays verbatim, so the request
@@ -815,7 +799,6 @@ export async function compactConversation(
           reason:
             'prompt_too_long' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
           preCompactTokenCount,
-          promptCacheSharingEnabled,
           ptlAttempts,
         })
         throw new Error(ERROR_MESSAGE_PROMPT_TOO_LONG)
@@ -843,7 +826,6 @@ export async function compactConversation(
         reason:
           'no_summary' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
         preCompactTokenCount,
-        promptCacheSharingEnabled,
       })
       throw new Error(
         `Failed to generate conversation summary - response did not contain valid text content`,
@@ -853,7 +835,6 @@ export async function compactConversation(
         reason:
           'api_error' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
         preCompactTokenCount,
-        promptCacheSharingEnabled,
       })
       throw new Error(summary)
     }
@@ -998,7 +979,6 @@ export async function compactConversation(
           (compactionUsage.cache_read_input_tokens ?? 0) +
           compactionUsage.output_tokens
         : 0,
-      promptCacheSharingEnabled,
     })
 
     // Reset cache read baseline so the post-compact drop isn't flagged as a break
@@ -1182,7 +1162,7 @@ export async function partialCompactConversation(
     })
 
     // 'up_to' prefix hits cache directly; 'from' sends all (tail wouldn't cache).
-    // PTL retry breaks the cache prefix but unblocks the user (CC-1180).
+    // PTL retry breaks the cache prefix but unblocks the user.
     let apiMessages = direction === 'up_to' ? messagesToSummarize : allMessages
     let retryCacheSafeParams =
       direction === 'up_to'
@@ -1531,6 +1511,17 @@ export function createCompactCanUseTool(): CanUseToolFn {
   })
 }
 
+/**
+ * The session's --fallback-model, unless it is the model already in use —
+ * falling back to the same model would only repeat the overloaded request.
+ */
+function getCompactFallbackModel(context: ToolUseContext): string | undefined {
+  const { fallbackModel, mainLoopModel } = context.options
+  return fallbackModel && fallbackModel !== mainLoopModel
+    ? fallbackModel
+    : undefined
+}
+
 export async function streamCompactSummary({
   messages,
   summaryRequest,
@@ -1546,14 +1537,6 @@ export async function streamCompactSummary({
   preCompactTokenCount: number
   cacheSafeParams: CacheSafeParams
 }): Promise<AssistantMessage> {
-  // When prompt cache sharing is enabled, use forked agent to reuse the
-  // main conversation's cached prefix (system prompt, tools, context messages).
-  // Falls back to regular streaming path on failure.
-  // 3P default: true — see comment at the other tengu_compact_cache_prefix read above.
-  const promptCacheSharingEnabled = getFeatureValue_CACHED_MAY_BE_STALE(
-    'tengu_compact_cache_prefix',
-    true,
-  )
   // Send keep-alive signals during compaction to prevent remote session
   // WebSocket idle timeouts from dropping bridge connections. Compaction
   // API calls can take 5-10+ seconds, during which no other messages
@@ -1574,86 +1557,83 @@ export async function streamCompactSummary({
     : undefined
 
   try {
-    if (promptCacheSharingEnabled) {
-      try {
-        // DO NOT set maxOutputTokens here. The fork piggybacks on the main thread's
-        // prompt cache by sending identical cache-key params (system, tools, model,
-        // messages prefix, thinking config). Setting maxOutputTokens would clamp
-        // budget_tokens via Math.min(budget, maxOutputTokens-1) in claude.ts,
-        // creating a thinking config mismatch that invalidates the cache.
-        // The streaming fallback path (below) can safely set maxOutputTokensOverride
-        // since it doesn't share cache with the main thread.
-        const result = await runForkedAgent({
-          promptMessages: [summaryRequest],
-          cacheSafeParams,
-          canUseTool: createCompactCanUseTool(),
-          querySource: 'compact',
-          forkLabel: 'compact',
-          maxTurns: 1,
-          skipCacheWrite: true,
-          // Pass the compact context's abortController so user Esc aborts the
-          // fork — same signal the streaming fallback uses at
-          // `signal: context.abortController.signal` below.
-          overrides: { abortController: context.abortController },
-        })
-        const assistantMsg = getLastAssistantMessage(result.messages)
-        const assistantText = assistantMsg
-          ? getAssistantMessageText(assistantMsg)
-          : null
-        // Guard isApiErrorMessage: query() catches API errors (including
-        // APIUserAbortError on ESC) and yields them as synthetic assistant
-        // messages. Without this check, an aborted compact "succeeds" with
-        // "Request was aborted." as the summary — the text doesn't start with
-        // "API Error" so the caller's startsWithApiErrorPrefix guard misses it.
-        if (assistantMsg && assistantText && !assistantMsg.isApiErrorMessage) {
-          // Skip success logging for PTL error text — it's returned so the
-          // caller's retry loop catches it, but it's not a successful summary.
-          if (!assistantText.startsWith(PROMPT_TOO_LONG_ERROR_MESSAGE)) {
-            logEvent('tengu_compact_cache_sharing_success', {
-              preCompactTokenCount,
-              outputTokens: result.totalUsage.output_tokens,
-              cacheReadInputTokens: result.totalUsage.cache_read_input_tokens,
-              cacheCreationInputTokens:
-                result.totalUsage.cache_creation_input_tokens,
-              cacheHitRate:
-                result.totalUsage.cache_read_input_tokens > 0
-                  ? result.totalUsage.cache_read_input_tokens /
-                    (result.totalUsage.cache_read_input_tokens +
-                      result.totalUsage.cache_creation_input_tokens +
-                      result.totalUsage.input_tokens)
-                  : 0,
-            })
-          }
-          return assistantMsg
+    // First try a forked agent that reuses the main conversation's cached
+    // prefix (system prompt, tools, context messages); the direct streaming
+    // path below is the fallback when the fork fails or returns no text.
+    try {
+      // DO NOT set maxOutputTokens here. The fork piggybacks on the main thread's
+      // prompt cache by sending identical cache-key params (system, tools, model,
+      // messages prefix, thinking config). Setting maxOutputTokens would clamp
+      // budget_tokens via Math.min(budget, maxOutputTokens-1) in claude.ts,
+      // creating a thinking config mismatch that invalidates the cache.
+      // The streaming fallback path (below) can safely set maxOutputTokensOverride
+      // since it doesn't share cache with the main thread.
+      const result = await runForkedAgent({
+        promptMessages: [summaryRequest],
+        cacheSafeParams,
+        canUseTool: createCompactCanUseTool(),
+        querySource: 'compact',
+        forkLabel: 'compact',
+        maxTurns: 1,
+        skipCacheWrite: true,
+        fallbackModel: getCompactFallbackModel(context),
+        // Pass the compact context's abortController so user Esc aborts the
+        // fork — same signal the streaming fallback uses at
+        // `signal: context.abortController.signal` below.
+        overrides: { abortController: context.abortController },
+      })
+      const assistantMsg = getLastAssistantMessage(result.messages)
+      const assistantText = assistantMsg
+        ? getAssistantMessageText(assistantMsg)
+        : null
+      // Guard isApiErrorMessage: query() catches API errors (including
+      // APIUserAbortError on ESC) and yields them as synthetic assistant
+      // messages. Without this check, an aborted compact "succeeds" with
+      // "Request was aborted." as the summary — the text doesn't start with
+      // "API Error" so the caller's startsWithApiErrorPrefix guard misses it.
+      if (assistantMsg && assistantText && !assistantMsg.isApiErrorMessage) {
+        // Skip success logging for PTL error text — it's returned so the
+        // caller's retry loop catches it, but it's not a successful summary.
+        if (!assistantText.startsWith(PROMPT_TOO_LONG_ERROR_MESSAGE)) {
+          logEvent('tengu_compact_cache_sharing_success', {
+            preCompactTokenCount,
+            outputTokens: result.totalUsage.output_tokens,
+            cacheReadInputTokens: result.totalUsage.cache_read_input_tokens,
+            cacheCreationInputTokens:
+              result.totalUsage.cache_creation_input_tokens,
+            cacheHitRate:
+              result.totalUsage.cache_read_input_tokens > 0
+                ? result.totalUsage.cache_read_input_tokens /
+                  (result.totalUsage.cache_read_input_tokens +
+                    result.totalUsage.cache_creation_input_tokens +
+                    result.totalUsage.input_tokens)
+                : 0,
+          })
         }
-        logForDebugging(
-          `Compact cache sharing: no text in response, falling back. Response: ${jsonStringify(assistantMsg)}`,
-          { level: 'warn' },
-        )
-        logEvent('tengu_compact_cache_sharing_fallback', {
-          reason:
-            'no_text_response' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-          preCompactTokenCount,
-        })
-      } catch (error) {
-        logError(error)
-        logEvent('tengu_compact_cache_sharing_fallback', {
-          reason:
-            'error' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-          preCompactTokenCount,
-        })
+        return assistantMsg
       }
+      logForDebugging(
+        `Compact cache sharing: no text in response, falling back. Response: ${jsonStringify(assistantMsg)}`,
+        { level: 'warn' },
+      )
+      logEvent('tengu_compact_cache_sharing_fallback', {
+        reason:
+          'no_text_response' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        preCompactTokenCount,
+      })
+    } catch (error) {
+      logError(error)
+      logEvent('tengu_compact_cache_sharing_fallback', {
+        reason:
+          'error' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        preCompactTokenCount,
+      })
     }
 
-    // Regular streaming path (fallback when cache sharing fails or is disabled)
-    const retryEnabled = getFeatureValue_CACHED_MAY_BE_STALE(
-      'tengu_compact_streaming_retry',
-      false,
-    )
-    const maxAttempts = retryEnabled ? MAX_COMPACT_STREAMING_RETRIES : 1
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      // Reset state for retry
+    // Direct streaming path (fallback when the cache-sharing fork fails)
+    let model = context.options.mainLoopModel
+    let fallbackModel = getCompactFallbackModel(context)
+    for (;;) {
       let hasStartedStreaming = false
       let response: AssistantMessage | undefined
       context.setResponseLength?.(() => 0)
@@ -1661,21 +1641,18 @@ export async function streamCompactSummary({
       // Check if tool search is enabled using the main loop's tools list.
       // context.options.tools includes MCP tools merged via useMergedTools.
       const useToolSearch = await isToolSearchEnabled(
-        context.options.mainLoopModel,
+        model,
         context.options.tools,
         async () => appState.toolPermissionContext,
         context.options.agentDefinitions.activeAgents,
         'compact',
       )
 
-      // When tool search is enabled, include ToolSearchTool and MCP tools. They get
-      // defer_loading: true and don't count against context - the API filters them out
-      // of system_prompt_tools before token counting (see api/token_count_api/counting.py:188
-      // and api/public_api/messages/handler.py:324).
-      // Filter MCP tools from context.options.tools (not appState.mcp.tools) so we
-      // get the permission-filtered set from useMergedTools — same source used for
-      // isToolSearchEnabled above and normalizeMessagesForAPI below.
-      // Deduplicate by name to avoid API errors when MCP tools share names with built-in tools.
+      // With tool search on, include ToolSearchTool and MCP tools: they are
+      // sent with defer_loading and don't count against context. Filter MCP
+      // tools from context.options.tools (the permission-filtered set also used
+      // by isToolSearchEnabled above and normalizeMessagesForAPI below), and
+      // dedupe by name so an MCP tool shadowing a built-in can't 400.
       const tools: Tool[] = useToolSearch
         ? uniqBy(
             [
@@ -1687,89 +1664,87 @@ export async function streamCompactSummary({
           )
         : [FileReadTool]
 
-      const streamingGen = queryModelWithStreaming({
-        // Thinking blocks are stripped here (signatures would 400 on replay) —
-        // see buildCompactSummaryMessages for the full rationale.
-        messages: buildCompactSummaryMessages(
-          messages,
-          summaryRequest,
-          context.options.tools,
-        ),
-        systemPrompt: asSystemPrompt([
-          'You are a helpful AI assistant tasked with summarizing conversations.',
-        ]),
-        thinkingConfig: { type: 'disabled' as const },
-        tools,
-        signal: context.abortController.signal,
-        options: {
-          async getToolPermissionContext() {
-            const appState = context.getAppState()
-            return appState.toolPermissionContext
-          },
-          model: context.options.mainLoopModel,
-          toolChoice: { type: 'none' },
-          isNonInteractiveSession: context.options.isNonInteractiveSession,
-          hasAppendSystemPrompt: !!context.options.appendSystemPrompt,
-          maxOutputTokensOverride: Math.min(
-            COMPACT_MAX_OUTPUT_TOKENS,
-            getMaxOutputTokensForModel(context.options.mainLoopModel),
+      try {
+        const streamingGen = queryModelWithStreaming({
+          // Thinking blocks are stripped here (signatures would 400 on replay) —
+          // see buildCompactSummaryMessages for the full rationale.
+          messages: buildCompactSummaryMessages(
+            messages,
+            summaryRequest,
+            context.options.tools,
           ),
-          querySource: 'compact',
-          agents: context.options.agentDefinitions.activeAgents,
-          mcpTools: [],
-          effortValue: appState.effortValue,
-        },
-      })
-      const streamIter = streamingGen[Symbol.asyncIterator]()
-      let next = await streamIter.next()
+          systemPrompt: asSystemPrompt([
+            'You are a helpful AI assistant tasked with summarizing conversations.',
+          ]),
+          thinkingConfig: { type: 'disabled' as const },
+          tools,
+          signal: context.abortController.signal,
+          options: {
+            async getToolPermissionContext() {
+              const appState = context.getAppState()
+              return appState.toolPermissionContext
+            },
+            model,
+            fallbackModel,
+            toolChoice: { type: 'none' },
+            isNonInteractiveSession: context.options.isNonInteractiveSession,
+            hasAppendSystemPrompt: !!context.options.appendSystemPrompt,
+            maxOutputTokensOverride: Math.min(
+              COMPACT_MAX_OUTPUT_TOKENS,
+              getMaxOutputTokensForModel(model),
+            ),
+            querySource: 'compact',
+            agents: context.options.agentDefinitions.activeAgents,
+            mcpTools: [],
+            effortValue: appState.effortValue,
+          },
+        })
+        for await (const event of streamingGen) {
+          if (
+            !hasStartedStreaming &&
+            event.type === 'stream_event' &&
+            event.event.type === 'content_block_start' &&
+            event.event.content_block.type === 'text'
+          ) {
+            hasStartedStreaming = true
+            context.setStreamMode?.('responding')
+          }
 
-      while (!next.done) {
-        const event = next.value
+          if (
+            event.type === 'stream_event' &&
+            event.event.type === 'content_block_delta' &&
+            event.event.delta.type === 'text_delta'
+          ) {
+            const charactersStreamed = event.event.delta.text.length
+            context.setResponseLength?.(length => length + charactersStreamed)
+          }
 
-        if (
-          !hasStartedStreaming &&
-          event.type === 'stream_event' &&
-          event.event.type === 'content_block_start' &&
-          event.event.content_block.type === 'text'
-        ) {
-          hasStartedStreaming = true
-          context.setStreamMode?.('responding')
+          if (event.type === 'assistant') {
+            response = event
+          }
         }
-
-        if (
-          event.type === 'stream_event' &&
-          event.event.type === 'content_block_delta' &&
-          event.event.delta.type === 'text_delta'
-        ) {
-          const charactersStreamed = event.event.delta.text.length
-          context.setResponseLength?.(length => length + charactersStreamed)
+      } catch (error) {
+        // The model stayed overloaded through its retries: summarize on the
+        // configured fallback model instead of failing the compaction.
+        if (error instanceof FallbackTriggeredError && fallbackModel) {
+          logForDebugging(
+            `Compact: ${error.originalModel} overloaded, retrying summarization on ${error.fallbackModel}`,
+            { level: 'warn' },
+          )
+          model = error.fallbackModel
+          fallbackModel = undefined
+          context.setStreamMode?.('requesting')
+          continue
         }
-
-        if (event.type === 'assistant') {
-          response = event
-        }
-
-        next = await streamIter.next()
+        throw error
       }
 
       if (response) {
         return response
       }
 
-      if (attempt < maxAttempts) {
-        logEvent('tengu_compact_streaming_retry', {
-          attempt,
-          preCompactTokenCount,
-          hasStartedStreaming,
-        })
-        await sleep(getRetryDelay(attempt), context.abortController.signal, {
-          abortError: () => new APIUserAbortError(),
-        })
-        continue
-      }
-
       logForDebugging(
-        `Compact streaming failed after ${attempt} attempts. hasStartedStreaming=${hasStartedStreaming}`,
+        `Compact streaming failed. hasStartedStreaming=${hasStartedStreaming}`,
         { level: 'error' },
       )
       logEvent('tengu_compact_failed', {
@@ -1777,15 +1752,9 @@ export async function streamCompactSummary({
           'no_streaming_response' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
         preCompactTokenCount,
         hasStartedStreaming,
-        retryEnabled,
-        attempts: attempt,
-        promptCacheSharingEnabled,
       })
       throw new Error(ERROR_MESSAGE_INCOMPLETE_RESPONSE)
     }
-
-    // This should never be reached due to the throw above, but TypeScript needs it
-    throw new Error(ERROR_MESSAGE_INCOMPLETE_RESPONSE)
   } finally {
     clearInterval(activityInterval)
   }
@@ -1827,23 +1796,27 @@ export async function createPostCompactFileAttachments(
     .sort((a, b) => b.timestamp - a.timestamp)
     .slice(0, maxFiles)
 
-  const results = await Promise.all(
-    recentFiles.map(async file => {
-      const attachment = await generateFileAttachment(
-        file.filename,
-        {
-          ...toolUseContext,
-          fileReadingLimits: {
-            maxTokens: POST_COMPACT_MAX_TOKENS_PER_FILE,
+  // Reads run concurrently, but messages are created only once all settle:
+  // creating each in its own callback would stamp timestamps in I/O completion
+  // order, disagreeing with the recency order persisted to the transcript.
+  const results = (
+    await Promise.all(
+      recentFiles.map(file =>
+        generateFileAttachment(
+          file.filename,
+          {
+            ...toolUseContext,
+            fileReadingLimits: {
+              maxTokens: POST_COMPACT_MAX_TOKENS_PER_FILE,
+            },
           },
-        },
-        'tengu_post_compact_file_restore_success',
-        'tengu_post_compact_file_restore_error',
-        'compact',
-      )
-      return attachment ? createAttachmentMessage(attachment) : null
-    }),
-  )
+          'tengu_post_compact_file_restore_success',
+          'tengu_post_compact_file_restore_error',
+          'compact',
+        ),
+      ),
+    )
+  ).map(attachment => (attachment ? createAttachmentMessage(attachment) : null))
 
   let usedTokens = 0
   return results.filter((result): result is AttachmentMessage => {
@@ -1870,24 +1843,20 @@ export async function createPostCompactContextAttachments({
   context: ToolUseContext
   maxFiles?: number
   preservedMessages?: Message[]
-  callSite: 'compact_full' | 'compact_partial' | 'compact_session_memory'
+  callSite: 'compact_full' | 'compact_partial'
 }): Promise<AttachmentMessage[]> {
-  const [
-    fileAttachments,
-    asyncAgentAttachments,
-    planAttachment,
-    planModeAttachment,
-  ] = await Promise.all([
-    createPostCompactFileAttachments(
-      readFileState,
-      context,
-      maxFiles,
-      preservedMessages,
-    ),
-    createAsyncAgentAttachmentsIfNeeded(context),
-    createPlanAttachmentIfNeeded(context.agentId),
-    createPlanModeAttachmentIfNeeded(context),
-  ])
+  // Sequential so each group's timestamps follow the persisted order (see
+  // createPostCompactFileAttachments); only the file reads are slow, and they
+  // stay concurrent among themselves.
+  const fileAttachments = await createPostCompactFileAttachments(
+    readFileState,
+    context,
+    maxFiles,
+    preservedMessages,
+  )
+  const asyncAgentAttachments = await createAsyncAgentAttachmentsIfNeeded(context)
+  const planAttachment = await createPlanAttachmentIfNeeded(context.agentId)
+  const planModeAttachment = await createPlanModeAttachmentIfNeeded(context)
 
   const attachments: AttachmentMessage[] = [
     ...fileAttachments,

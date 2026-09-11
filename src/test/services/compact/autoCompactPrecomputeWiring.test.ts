@@ -13,7 +13,6 @@ let partialCalls: Array<{
   opts: { precomputedSummary?: string } & Record<string, unknown>
 }> = []
 let fullCalls = 0
-let smCalls = 0
 
 const FAKE_RESULT = {
   messagesAfterCompacting: [],
@@ -53,17 +52,6 @@ mock.module('../../../utils/hooks.js', () => ({
     newCustomInstructions: undefined,
     userDisplayMessage: undefined,
   }),
-}))
-
-const actualSM = await import(
-  '../../../services/compact/sessionMemoryCompact.js'
-)
-mock.module('../../../services/compact/sessionMemoryCompact.js', () => ({
-  ...actualSM,
-  trySessionMemoryCompaction: async () => {
-    smCalls++
-    return null
-  },
 }))
 
 const { autoCompactIfNeeded } = await import(
@@ -137,7 +125,6 @@ beforeEach(() => {
   delete process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
   partialCalls = []
   fullCalls = 0
-  smCalls = 0
   __resetForTest()
 })
 
@@ -150,7 +137,7 @@ afterEach(() => {
 })
 
 describe('autoCompactIfNeeded consume branch', () => {
-  test('a ready summary is consumed via partial up_to and skips SM + full', async () => {
+  test('a ready summary is consumed via partial up_to and skips full', async () => {
     const messages = overThresholdMessages()
     armReadyAt2(messages)
 
@@ -174,7 +161,6 @@ describe('autoCompactIfNeeded consume branch', () => {
     expect(partialCalls[0]!.opts.ownsLifecycle).toBe(false)
 
     // Consume short-circuits the slower paths entirely.
-    expect(smCalls).toBe(0)
     expect(fullCalls).toBe(0)
 
     // The slot is spent.

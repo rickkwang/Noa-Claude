@@ -13,10 +13,8 @@ import type { CacheSafeParams } from '../../utils/forkedAgent.js'
 import { logError } from '../../utils/log.js'
 import { tokenCountWithEstimation } from '../../utils/tokens.js'
 import { roughTokenCountEstimationForMessages } from '../tokenEstimation.js'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../analytics/growthbook.js'
 import { getMaxOutputTokensForModel } from '../api/claude.js'
 import { notifyCompaction } from '../api/promptCacheBreakDetection.js'
-import { setLastSummarizedMessageId } from '../SessionMemory/sessionMemoryUtils.js'
 import {
   beginCompactLifecycle,
   type CompactionResult,
@@ -35,7 +33,6 @@ import {
 } from './precomputedCompact.js'
 import { runPostCompactCleanup } from './postCompactCleanup.js'
 import { adjustIndexToPreserveAPIInvariants } from './preservedTail.js'
-import { trySessionMemoryCompaction } from './sessionMemoryCompact.js'
 import { executePreCompactHooks } from '../../utils/hooks.js'
 
 // Reserve this many tokens for output during compaction
@@ -46,12 +43,26 @@ const MAX_OUTPUT_TOKENS_FOR_SUMMARY = 20_000
 // This prevents compact threshold from becoming negative and triggering infinite loops
 const MIN_EFFECTIVE_CONTEXT_FLOOR = 13_000
 
-// Returns the context window size minus the max output tokens for the model
-export function getEffectiveContextWindowSize(model: string): number {
-  const reservedTokensForSummary = Math.min(
-    getMaxOutputTokensForModel(model),
-    MAX_OUTPUT_TOKENS_FOR_SUMMARY,
+function getSummaryOutputReserve(model: string): number {
+  return Math.min(getMaxOutputTokensForModel(model), MAX_OUTPUT_TOKENS_FOR_SUMMARY)
+}
+
+/**
+ * The model's real context window minus the summary output reserve, ignoring
+ * any /autocompact window. That setting says when to compact, not how much
+ * the API accepts — so the hard blocking limit is measured against this.
+ */
+export function getModelEffectiveContextWindowSize(model: string): number {
+  return Math.max(
+    getContextWindowForModel(model, getSdkBetas()) -
+      getSummaryOutputReserve(model),
+    MIN_EFFECTIVE_CONTEXT_FLOOR,
   )
+}
+
+// Returns the auto-compact window minus the summary output reserve
+export function getEffectiveContextWindowSize(model: string): number {
+  const reservedTokensForSummary = getSummaryOutputReserve(model)
   let contextWindow = getContextWindowForModel(model, getSdkBetas())
 
   // Env override wins; otherwise fall back to the persisted /autocompact
@@ -89,7 +100,7 @@ export type AutoCompactTrackingState = {
   consecutiveRapidRefills?: number
 }
 
-// Rapid-refill breaker (ported from upstream 2.1.x). If compaction fires, the
+// Rapid-refill breaker. If compaction fires, the
 // context refills past the threshold within a few turns, and compaction fires
 // again — repeatedly — something in the loop is re-inflating context faster
 // than summarization can shrink it (e.g. a huge file read or tool result in
@@ -121,9 +132,9 @@ export const WARNING_THRESHOLD_BUFFER_TOKENS = 20_000
 export const ERROR_THRESHOLD_BUFFER_TOKENS = 10_000
 export const MANUAL_COMPACT_BUFFER_TOKENS = 3_000
 
-// Stop trying autocompact after this many consecutive failures.
-// BQ 2026-03-10: 1,279 sessions had 50+ consecutive failures (up to 3,272)
-// in a single session, wasting ~250K API calls/day globally.
+// Stop trying autocompact after this many consecutive failures. A context
+// that is irrecoverably over the limit otherwise spends a doomed summary call
+// on every turn.
 const MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3
 
 export function getAutoCompactThreshold(model: string): number {
@@ -325,9 +336,8 @@ export function calculateTokenWarningState(
   const isAboveAutoCompactThreshold =
     isAutoCompactEnabled() && tokenUsage >= autoCompactThreshold
 
-  const actualContextWindow = getEffectiveContextWindowSize(model)
   const defaultBlockingLimit =
-    actualContextWindow - MANUAL_COMPACT_BUFFER_TOKENS
+    getModelEffectiveContextWindowSize(model) - MANUAL_COMPACT_BUFFER_TOKENS
 
   // Allow override for testing
   const blockingLimitOverride = process.env.CLAUDE_CODE_BLOCKING_LIMIT_OVERRIDE
@@ -363,6 +373,26 @@ export function isAutoCompactEnabled(): boolean {
   return userConfig.autoCompactEnabled
 }
 
+/**
+ * Background forks that carry the parent conversation for a one-shot side
+ * task (next-prompt suggestion, away/agent progress summaries, speculative
+ * execution). When one overflows, the side task is simply skipped: compacting
+ * it would spend a full summary call on throwaway context, and the post-compact
+ * cleanup resets process-wide state the main thread still relies on.
+ */
+const BACKGROUND_FORK_QUERY_SOURCES: ReadonlySet<string> = new Set([
+  'agent_summary',
+  'away_summary',
+  'prompt_suggestion',
+  'speculation',
+])
+
+export function isBackgroundForkQuerySource(
+  querySource: QuerySource | undefined,
+): boolean {
+  return querySource !== undefined && BACKGROUND_FORK_QUERY_SOURCES.has(querySource)
+}
+
 export async function shouldAutoCompact(
   messages: Message[],
   model: string,
@@ -372,16 +402,18 @@ export async function shouldAutoCompact(
   // Subtract the rough-delta that snip already computed.
   snipTokensFreed = 0,
 ): Promise<boolean> {
-  // Recursion guards. session_memory and compact are forked agents that
+  // Recursion guards: session_memory and compact are forked agents that
   // would deadlock.
   if (querySource === 'session_memory' || querySource === 'compact') {
+    return false
+  }
+  if (isBackgroundForkQuerySource(querySource)) {
     return false
   }
   // marble_origami is the ctx-agent — if ITS context blows up and
   // autocompact fires, runPostCompactCleanup calls resetContextCollapse()
   // which destroys the MAIN thread's committed log (module-level state
-  // shared across forks). Inside feature() so the string DCEs from
-  // external builds (it's in excluded-strings.txt).
+  // shared across forks).
   if (feature('CONTEXT_COLLAPSE')) {
     if (querySource === 'marble_origami') {
       return false
@@ -392,18 +424,6 @@ export async function shouldAutoCompact(
     return false
   }
 
-  // Reactive-only mode: suppress proactive autocompact, let reactive compact
-  // catch the API's prompt-too-long. feature() wrapper keeps the flag string
-  // out of external builds (REACTIVE_COMPACT is ant-only).
-  // Note: returning false here also means autoCompactIfNeeded never reaches
-  // trySessionMemoryCompaction in the query loop — the /compact call site
-  // still tries session memory first. Revisit if reactive-only graduates.
-  if (feature('REACTIVE_COMPACT')) {
-    if (getFeatureValue_CACHED_MAY_BE_STALE('tengu_cobalt_raccoon', false)) {
-      return false
-    }
-  }
-
   // Context-collapse mode: same suppression. Collapse IS the context
   // management system when it's on — the 90% commit / 95% blocking-spawn
   // flow owns the headroom problem. Autocompact firing at effective-13k
@@ -411,8 +431,8 @@ export async function shouldAutoCompact(
   // and blocking (95%), so it would race collapse and usually win, nuking
   // granular context that collapse was about to save. Gating here rather
   // than in isAutoCompactEnabled() keeps reactiveCompact alive as the 413
-  // fallback (it consults isAutoCompactEnabled directly) and leaves
-  // sessionMemory + manual /compact working.
+  // fallback (it consults isAutoCompactEnabled directly) and leaves manual
+  // /compact working.
   //
   // Consult isContextCollapseEnabled (not the raw gate) so the
   // CLAUDE_CONTEXT_COLLAPSE env override is honored here too. require()
@@ -625,9 +645,8 @@ export async function autoCompactIfNeeded(
     querySource,
   }
 
-  // autoCompactIfNeeded is the single owner of the compact_start / compact_end
-  // lifecycle for the auto path. Inner functions (SM, compactConversation)
-  // no longer emit these events.
+  // autoCompactIfNeeded owns the compact_start / compact_end lifecycle for the
+  // auto path; compactConversation does not emit those events itself.
   beginCompactLifecycle(toolUseContext)
 
   try {
@@ -647,7 +666,7 @@ export async function autoCompactIfNeeded(
     // (mirrors resolveAutoCompactPivot: a prior compact under-relieved, so force
     // full for max relief instead of consuming a tail-preserving partial). On
     // any mismatch, consumePrecompute returns null and we fall through to the
-    // normal SM / keep-tail / full paths.
+    // keep-tail / full paths.
     //
     // Gated on isPrecomputeOwner for the same reason arming is: a subagent
     // compacting its own context would find the main thread's slot, fail the
@@ -680,7 +699,6 @@ export async function autoCompactIfNeeded(
             precomputedSummary: pre.summaryText,
           },
         )
-        setLastSummarizedMessageId(undefined)
         runPostCompactCleanup(querySource)
         if (feature('PROMPT_CACHE_BREAK_DETECTION')) {
           notifyCompaction(querySource ?? 'compact', toolUseContext.agentId)
@@ -690,35 +708,6 @@ export async function autoCompactIfNeeded(
           wasCompacted: true,
           compactionResult,
           consecutiveFailures: 0,
-          consecutiveRapidRefills,
-        }
-      }
-    }
-
-    // Try session memory compaction first
-    if (!preCompactHookResult.newCustomInstructions) {
-      const sessionMemoryResult = await trySessionMemoryCompaction(messages, {
-        autoCompactThreshold: recompactionInfo.autoCompactThreshold,
-        trigger: 'auto',
-        context: toolUseContext,
-        preCompactUserDisplayMessage: preCompactHookResult.userDisplayMessage,
-      })
-      if (sessionMemoryResult) {
-        // Reset lastSummarizedMessageId since session memory compaction prunes messages
-        // and the old message UUID will no longer exist after the REPL replaces messages
-        setLastSummarizedMessageId(undefined)
-        runPostCompactCleanup(querySource)
-        // Reset cache read baseline so the post-compact drop isn't flagged as a
-        // break. compactConversation does this internally; SM-compact doesn't.
-        // BQ 2026-03-01: missing this made 20% of tengu_prompt_cache_break events
-        // false positives (systemPromptChanged=true, timeSinceLastAssistantMsg=-1).
-        if (feature('PROMPT_CACHE_BREAK_DETECTION')) {
-          notifyCompaction(querySource ?? 'compact', toolUseContext.agentId)
-        }
-        markPostCompaction()
-        return {
-          wasCompacted: true,
-          compactionResult: sessionMemoryResult,
           consecutiveRapidRefills,
         }
       }
@@ -767,9 +756,6 @@ export async function autoCompactIfNeeded(
             preCompactHookResult,
           )
 
-    // Reset lastSummarizedMessageId since legacy compaction replaces all messages
-    // and the old message UUID will no longer exist in the new messages array
-    setLastSummarizedMessageId(undefined)
     runPostCompactCleanup(querySource)
 
     return {

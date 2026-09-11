@@ -2302,11 +2302,15 @@ function findLatestMessage<T extends { timestamp: string }>(
  * Builds a conversation chain from a leaf message to root
  * @param messages Map of all messages
  * @param leafMessage The leaf message to start from
- * @returns Array of messages from root to leaf
+ * @param trailingChildren Precomputed buildTrailingChildrenIndex(messages),
+ *   for callers building chains for many leaves of the same map
+ * @returns Array of messages from root to leaf, followed by the leaf's
+ *   trailing attachment/system descendants
  */
 export function buildConversationChain(
   messages: Map<UUID, TranscriptMessage>,
   leafMessage: TranscriptMessage,
+  trailingChildren?: Map<UUID, TranscriptMessage[]>,
 ): TranscriptMessage[] {
   const transcript: TranscriptMessage[] = []
   const seen = new Set<UUID>()
@@ -2328,7 +2332,67 @@ export function buildConversationChain(
       : undefined
   }
   transcript.reverse()
-  return recoverOrphanedParallelToolResults(messages, transcript, seen)
+  const chain = recoverOrphanedParallelToolResults(messages, transcript, seen)
+  appendTrailingDescendants(
+    leafMessage,
+    chain,
+    seen,
+    trailingChildren ?? buildTrailingChildrenIndex(messages),
+  )
+  return chain
+}
+
+/**
+ * parentUuid → children index over non-conversational entries (attachments,
+ * system). Leaves are always user/assistant, so anything that ran after the
+ * last turn — e.g. the attachments ending a compaction — hangs below the leaf
+ * and is only reachable through this index.
+ */
+export function buildTrailingChildrenIndex(
+  messages: Map<UUID, TranscriptMessage>,
+): Map<UUID, TranscriptMessage[]> {
+  const index = new Map<UUID, TranscriptMessage[]>()
+  for (const msg of messages.values()) {
+    if (!msg.parentUuid || msg.type === 'user' || msg.type === 'assistant') {
+      continue
+    }
+    const siblings = index.get(msg.parentUuid)
+    if (siblings) siblings.push(msg)
+    else index.set(msg.parentUuid, [msg])
+  }
+  return index
+}
+
+/**
+ * Depth-first, so the written parent→child order survives; timestamps only
+ * order true siblings. A flat timestamp sort would reorder a linear tail
+ * whenever its entries were stamped out of write order or share a
+ * millisecond — e.g. post-compact file restores whose reads finished in
+ * arbitrary order.
+ */
+function appendTrailingDescendants(
+  leafMessage: TranscriptMessage,
+  chain: TranscriptMessage[],
+  seen: Set<UUID>,
+  trailingChildren: Map<UUID, TranscriptMessage[]>,
+): void {
+  const byTimestamp = (a: TranscriptMessage, b: TranscriptMessage) =>
+    a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : 0
+  const stack: TranscriptMessage[] = [leafMessage]
+  while (stack.length > 0) {
+    const current = stack.pop()!
+    if (current !== leafMessage) {
+      if (seen.has(current.uuid)) continue
+      seen.add(current.uuid)
+      chain.push(current)
+    }
+    const children = trailingChildren.get(current.uuid) ?? []
+    const ordered =
+      children.length > 1 ? [...children].sort(byTimestamp) : children
+    for (let i = ordered.length - 1; i >= 0; i--) {
+      if (!seen.has(ordered[i]!.uuid)) stack.push(ordered[i]!)
+    }
+  }
 }
 
 /**
@@ -4222,6 +4286,7 @@ async function loadSessionFile(sessionId: UUID): Promise<{
   contentReplacements: Map<UUID, ContentReplacementRecord[]>
   contextCollapseCommits: ContextCollapseCommitEntry[]
   contextCollapseSnapshot: ContextCollapseSnapshotEntry | undefined
+  leafUuids: Set<UUID>
 }> {
   const sessionFile = join(
     getSessionProjectDir() ?? getProjectDir(getOriginalCwd()),
@@ -4293,6 +4358,7 @@ export async function getLastSessionLog(
     contentReplacements,
     contextCollapseCommits,
     contextCollapseSnapshot,
+    leafUuids,
   } = await loadSessionFile(sessionId)
   if (messages.size === 0) return null
   // Prime getSessionMessages cache so recordTranscript (called after REPL
@@ -4307,8 +4373,21 @@ export async function getLastSessionLog(
     )
   }
 
-  // Find the most recent non-sidechain message
-  const lastMessage = findLatestMessage(messages.values(), m => !m.isSidechain)
+  // Anchor on the newest user/assistant leaf, not the newest entry of any
+  // type: attachments and system entries trailing the last turn can be
+  // stamped out of write order, and anchoring on one mid-tail would cut the
+  // entries after it. buildConversationChain re-appends the whole tail.
+  const lastMessage =
+    findLatestMessage(
+      messages.values(),
+      m =>
+        leafUuids.has(m.uuid) &&
+        !m.isSidechain &&
+        (m.type === 'user' || m.type === 'assistant'),
+    ) ??
+    (leafUuids.size === 0
+      ? findLatestMessage(messages.values(), m => !m.isSidechain)
+      : undefined)
   if (!lastMessage) return null
 
   // Build the transcript chain from the last message
@@ -4779,19 +4858,14 @@ export async function loadAllSubagentTranscriptsFromDisk(): Promise<{
 // without awaiting recordTranscript's return value (race-free hint tracking).
 export function isLoggableMessage(m: Message): boolean {
   if (m.type === 'progress') return false
-  // IMPORTANT: We deliberately filter out most attachments for non-ants because
-  // they have sensitive info for training that we don't want exposed to the public.
-  // When enabled, we allow hook_additional_context through since it contains
-  // user-configured hook output that is useful for session context on resume.
-  if (m.type === 'attachment' && getUserType() !== 'ant') {
-    const attachment = m.attachment
-    if (
-      attachment?.type === 'hook_additional_context' &&
-      isEnvTruthy(process.env.CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT)
-    ) {
-      return true
-    }
-    return false
+  // Attachments persist so resume replays the context the model actually saw:
+  // post-compact file restores and notes, plan, invoked skills (read back by
+  // restoreSkillStateFromMessages), and delta announcements that later turns
+  // diff against. A hook_success with no output has nothing to replay.
+  if (m.type === 'attachment' && m.attachment?.type === 'hook_success') {
+    const { content, stdout, stderr } = m.attachment
+    const blank = (v: unknown) => typeof v !== 'string' || v.trim() === ''
+    if (!content && blank(stdout) && blank(stderr)) return false
   }
   return true
 }
@@ -5077,36 +5151,17 @@ export async function loadAllLogsFromSessionFile(
   if (messages.size === 0) return []
 
   const leafMessages: TranscriptMessage[] = []
-  // Build parentUuid → children index once (O(n)), so trailing-message lookup is O(1) per leaf
-  const childrenByParent = new Map<UUID, TranscriptMessage[]>()
   for (const msg of messages.values()) {
-    if (leafUuids.has(msg.uuid)) {
-      leafMessages.push(msg)
-    } else if (msg.parentUuid) {
-      const siblings = childrenByParent.get(msg.parentUuid)
-      if (siblings) {
-        siblings.push(msg)
-      } else {
-        childrenByParent.set(msg.parentUuid, [msg])
-      }
-    }
+    if (leafUuids.has(msg.uuid)) leafMessages.push(msg)
   }
+  // Built once (O(n)) and shared, so each leaf's trailing lookup stays O(1)
+  const trailingChildren = buildTrailingChildrenIndex(messages)
 
   const logs: LogOption[] = []
 
   for (const leafMessage of leafMessages) {
-    const chain = buildConversationChain(messages, leafMessage)
+    const chain = buildConversationChain(messages, leafMessage, trailingChildren)
     if (chain.length === 0) continue
-
-    // Append trailing messages that are children of the leaf
-    const trailingMessages = childrenByParent.get(leafMessage.uuid)
-    if (trailingMessages) {
-      // ISO-8601 UTC timestamps are lexically sortable
-      trailingMessages.sort((a, b) =>
-        a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : 0,
-      )
-      chain.push(...trailingMessages)
-    }
 
     const firstMessage = chain[0]!
     const sessionId = leafMessage.sessionId as UUID

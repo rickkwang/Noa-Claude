@@ -1,6 +1,6 @@
 # Features Audit
 
-Last updated: 2026-08-05
+Last updated: 2026-09-12
 
 This file is the build/runtime audit for experimental feature flags in this repository.
 
@@ -43,7 +43,6 @@ This file is the build/runtime audit for experimental feature flags in this repo
 - `POWERSHELL_AUTO_MODE`
 - `PROMPT_CACHE_BREAK_DETECTION`
 - `QUICK_SEARCH`
-- `REACTIVE_COMPACT`
 - `SHOT_STATS`
 - `SKILL_IMPROVEMENT`
 - `SLOW_OPERATION_LOGGING`

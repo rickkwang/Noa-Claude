@@ -11,14 +11,10 @@ import type { Message } from '../../types/message.js'
  * (dangling tool_use after resume/truncation) the fork's
  * ensureToolResultPairing repairs the split at API time.
  *
- * Replaces the prior human-turn grouping (boundaries only at real user
- * prompts) with finer-grained API-round grouping, allowing reactive
- * compact to operate on single-prompt agentic sessions (SDK/CCR/eval
- * callers) where the entire workload is one human turn.
- *
- * Extracted to its own file to break the compact.ts ↔ compactMessages.ts
- * cycle (CC-1180) — the cycle shifted module-init order enough to surface
- * a latent ws CJS/ESM resolution race in CI shard-2.
+ * Grouping by API round rather than by human turn lets compaction work on
+ * single-prompt agentic sessions (SDK/eval callers) where the entire
+ * workload is one human turn. Kept in its own module so compact.ts and its
+ * callers can share it without an import cycle.
  */
 export function groupMessagesByApiRound(messages: Message[]): Message[][] {
   const groups: Message[][] = []
@@ -28,7 +24,7 @@ export function groupMessagesByApiRound(messages: Message[]): Message[][] {
   // id, so boundaries only fire at the start of a genuinely new round.
   // normalizeMessages yields one AssistantMessage per content block, and
   // StreamingToolExecutor interleaves tool_results between chunks live
-  // (yield order, not concat order — see query.ts:613). The id check
+  // (yield order, not concat order). The id check
   // correctly keeps `[tu_A(id=X), result_A, tu_B(id=X)]` in one group.
   let lastAssistantId: string | undefined
 
@@ -39,7 +35,7 @@ export function groupMessagesByApiRound(messages: Message[]): Message[][] {
   // after resume-from-partial-batch or max_tokens truncation) — and in that
   // case it pins the gate shut forever, merging all subsequent rounds into
   // one group. We let those boundaries fire; the summarizer fork's own
-  // ensureToolResultPairing at claude.ts:1136 repairs the dangling tu at
+  // ensureToolResultPairing (claude.ts) repairs the dangling tool_use at
   // API time.
   for (const msg of messages) {
     if (

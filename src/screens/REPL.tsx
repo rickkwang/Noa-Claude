@@ -182,7 +182,7 @@ import { useTasksV2WithCollapseEffect } from '../hooks/useTasksV2.js';
 import type { MCPServerConnection } from '../services/mcp/types.js';
 import type { ScopedMcpServerConfig } from '../services/mcp/types.js';
 import { randomUUID, type UUID } from 'crypto';
-import { processSessionStartHooks } from '../utils/sessionStart.js';
+import { dropRepeatedSessionStartContext, processSessionStartHooks } from '../utils/sessionStart.js';
 import { executeSessionEndHooks, getSessionEndHookTimeoutMs } from '../utils/hooks.js';
 import { type IDESelection, useIdeSelection } from '../hooks/useIdeSelection.js';
 import { getTools, assembleToolPool } from '../tools.js';
@@ -1616,7 +1616,7 @@ export function REPL({
       swarmBudgetInfoRef.current = undefined;
       setMessages(prev => [...prev, createTurnDurationMessage(totalMs, deferredBudget,
       // Count only what recordTranscript will persist — ephemeral
-      // progress ticks and non-ant attachments are filtered by
+      // progress ticks and empty hook_success attachments are filtered by
       // isLoggableMessage and never reach disk. Using raw prev.length
       // would make checkResumeConsistency report false delta<0 for
       // every turn that ran a progress-emitting tool.
@@ -1825,7 +1825,7 @@ export function REPL({
       });
 
       // Append hook messages to the conversation
-      messages.push(...hookMessages);
+      messages.push(...dropRepeatedSessionStartContext(messages, hookMessages));
       // For forks, generate a new plan slug and copy the plan content so the
       // original and forked sessions don't clobber each other's plan files.
       // For regular resumes, reuse the original session's plan slug.

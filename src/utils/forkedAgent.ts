@@ -121,6 +121,8 @@ export type ForkedAgentParams = {
    * fork is one-shot.
    */
   modelOverride?: string
+  /** Model the query loop switches to if the fork's model is overloaded. */
+  fallbackModel?: string
 }
 
 export type ForkedAgentResult = {
@@ -510,6 +512,7 @@ export async function runForkedAgent({
   skipTranscript,
   skipCacheWrite,
   modelOverride,
+  fallbackModel,
 }: ForkedAgentParams): Promise<ForkedAgentResult> {
   const startTime = Date.now()
   const outputMessages: Message[] = []
@@ -578,6 +581,7 @@ export async function runForkedAgent({
       maxOutputTokensOverride: maxOutputTokens,
       maxTurns,
       skipCacheWrite,
+      fallbackModel,
     })) {
       // Extract real usage from message_delta stream events (final usage per API call)
       if (message.type === 'stream_event') {

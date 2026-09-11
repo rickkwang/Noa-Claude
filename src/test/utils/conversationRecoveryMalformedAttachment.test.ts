@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
   deserializeMessages,
+  deserializeMessagesWithInterruptDetection,
+  dropEphemeralAttachments,
   dropMalformedAttachments,
   isWellFormedAttachmentPayload,
   restoreSkillStateFromMessages,
@@ -120,5 +122,91 @@ describe('resume no longer crashes on malformed attachments', () => {
     expect(() => {
       deserializeMessages([attachment({ type: 'new_file', filename: 'x.ts' })])
     }).not.toThrow()
+  })
+})
+
+describe('dropEphemeralAttachments', () => {
+  test('drops one-shot reminders and keeps context attachments', () => {
+    const reminder = attachment({ type: 'verify_plan_reminder' })
+    const kept = [
+      createUserMessage({ content: 'hello' }),
+      attachment({ type: 'compact_file_reference', filename: '/repo/a.ts' }),
+      attachment({ type: 'invoked_skills', skills: [] }),
+    ]
+    const out = dropEphemeralAttachments([
+      kept[0],
+      attachment({ type: 'compaction_reminder' }),
+      kept[1],
+      reminder,
+      attachment({ type: 'companion_intro', name: 'x', species: 'y' }),
+      kept[2],
+    ])
+    expect(out).toEqual(kept)
+  })
+
+  test('returns the same array when nothing is dropped', () => {
+    const messages = [createUserMessage({ content: 'hello' })]
+    expect(dropEphemeralAttachments(messages)).toBe(messages)
+  })
+
+  test('resume never replays a stale reminder', () => {
+    const out = deserializeMessages([
+      createUserMessage({ content: 'implement the plan' }),
+      attachment({ type: 'verify_plan_reminder' }),
+    ])
+    expect(JSON.stringify(out)).not.toContain('verify_plan_reminder')
+  })
+})
+
+describe('turn interruption with trailing attachments', () => {
+  const assistantReply = (text: string): any => ({
+    type: 'assistant',
+    uuid: `a-${text}`,
+    message: {
+      id: `a-${text}`,
+      role: 'assistant',
+      content: [{ type: 'text', text }],
+    },
+  })
+  const stopHookOutput = () =>
+    attachment({
+      type: 'hook_success',
+      hookName: 'Stop',
+      hookEvent: 'Stop',
+      toolUseID: 't',
+      content: 'Stop hook completed',
+    })
+
+  test('Stop hook output after a completed turn is not an interruption', () => {
+    const result = deserializeMessagesWithInterruptDetection([
+      createUserMessage({ content: 'do the thing' }),
+      assistantReply('done'),
+      stopHookOutput(),
+    ])
+    expect(result.turnInterruptionState.kind).toBe('none')
+    expect(JSON.stringify(result.messages)).not.toContain(
+      'Continue from where you left off.',
+    )
+  })
+
+  test('attachments trailing a compact summary are not an interruption', () => {
+    const result = deserializeMessagesWithInterruptDetection([
+      createUserMessage({ content: 'Summary: earlier work', isCompactSummary: true }),
+      attachment({ type: 'compact_file_reference', filename: '/repo/a.ts' }),
+    ])
+    expect(result.turnInterruptionState.kind).toBe('none')
+  })
+
+  test('attachments trailing an unanswered prompt still resume the turn', () => {
+    const result = deserializeMessagesWithInterruptDetection([
+      createUserMessage({ content: 'first' }),
+      assistantReply('reply'),
+      createUserMessage({ content: 'second, never answered' }),
+      attachment({ type: 'compact_file_reference', filename: '/repo/a.ts' }),
+    ])
+    expect(result.turnInterruptionState.kind).toBe('interrupted_prompt')
+    expect(JSON.stringify(result.messages)).toContain(
+      'Continue from where you left off.',
+    )
   })
 })
