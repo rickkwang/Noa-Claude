@@ -463,6 +463,10 @@ export class Node {
   _mOutW = NaN
   _mOutH = NaN
   _hasM = false
+  // Generation of the last measure pass. A layout pass in the same
+  // generation recomputes: the measure pass left its own (possibly
+  // unconstrained) dimensions and child positions behind.
+  _mGen = -1
   // Cached computeFlexBasis result. For clean children, basis only depends
   // on the container's inner dimensions — if those haven't changed, skip the
   // layoutNode(performLayout=false) recursion entirely. This is the hot path
@@ -976,11 +980,8 @@ function cacheWrite(
   fW: boolean,
   fH: boolean,
   wasDirty: boolean,
+  performLayout: boolean,
 ): void {
-  if (!node._cIn) {
-    node._cIn = new Float64Array(CACHE_SLOTS * 8)
-    node._cOut = new Float64Array(CACHE_SLOTS * 2)
-  }
   // First write after a dirty clears stale entries from before the dirty.
   // _cGen < _generation means entries are from a previous calculateLayout;
   // if wasDirty, the subtree changed since then → old dimensions invalid.
@@ -990,6 +991,12 @@ function cacheWrite(
   if (wasDirty && node._cGen !== _generation) {
     node._cN = 0
     node._cWr = 0
+  }
+  // Only measure results are cached here; see the read side.
+  if (performLayout) return
+  if (!node._cIn) {
+    node._cIn = new Float64Array(CACHE_SLOTS * 8)
+    node._cOut = new Float64Array(CACHE_SLOTS * 2)
   }
   // LRU write index wraps; _cN stays at CACHE_SLOTS so the read scan always
   // checks all populated slots (not just those since last wrap).
@@ -1083,7 +1090,8 @@ function layoutNode(
   // skip the child-positioning recursion (STEP 5), leaving children at
   // stale positions. Measure calls only need w/h which the cache stores.
   const sameGen = node._cGen === _generation && !performLayout
-  if (!node.isDirty_ || sameGen) {
+  const measuredThisGen = performLayout && node._mGen === _generation
+  if ((!node.isDirty_ || sameGen) && !measuredThisGen) {
     if (
       !node.isDirty_ &&
       node._hasL &&
@@ -1110,7 +1118,11 @@ function layoutNode(
     // Same-generation check covers fresh-mounted (dirty) nodes during
     // virtual scroll — the dirty chain invokes them ≥2^depth times, first
     // call writes cache, rest hit: 105k visits → ~10k for 1593-node tree.
-    if (node._cN > 0 && (sameGen || !node.isDirty_)) {
+    // Measure passes only: entries hold w/h without child positions, and a
+    // layout pass restoring one would keep a flex child at its measured
+    // (content) size instead of the size its container gave it — a scroll
+    // box would report its whole content height as its viewport.
+    if (node._cN > 0 && !performLayout && (sameGen || !node.isDirty_)) {
       const cIn = node._cIn!
       for (let i = 0; i < node._cN; i++) {
         const o = i * 8
@@ -1183,6 +1195,7 @@ function layoutNode(
     node._mOW = ownerWidth
     node._mOH = ownerHeight
     node._hasM = true
+    node._mGen = _generation
     // Don't clear isDirty_. For DIRTY nodes, invalidate _hasL so the upcoming
     // performLayout=true call recomputes with the new child set (otherwise
     // sticky-scroll never follows new content — the bug from 4557bc9f9c).
@@ -1283,6 +1296,7 @@ function layoutNode(
       forceWidth,
       forceHeight,
       wasDirty,
+      performLayout,
     )
     return
   }
@@ -1314,6 +1328,7 @@ function layoutNode(
       forceWidth,
       forceHeight,
       wasDirty,
+      performLayout,
     )
     return
   }
@@ -1593,6 +1608,7 @@ function layoutNode(
     forceWidth,
     forceHeight,
     wasDirty,
+    performLayout,
   )
 
   if (!performLayout) return
