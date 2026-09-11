@@ -20,7 +20,7 @@ import { detectCodeIndexingFromCommand } from '../../utils/codeIndexing.js';
 import { isEnvTruthy } from '../../utils/envUtils.js';
 import { isENOENT, ShellError } from '../../utils/errors.js';
 import { detectFileEncoding, detectLineEndings, getFileModificationTime, writeTextContent } from '../../utils/file.js';
-import { fileHistoryEnabled, fileHistoryTrackEdit } from '../../utils/fileHistory.js';
+import { fileHistoryTouch, fileHistoryTrackEdit } from '../../utils/fileHistory.js';
 import { formatFileSize, truncate } from '../../utils/format.js';
 import { getFsImplementation } from '../../utils/fsOperations.js';
 import { lazySchema } from '../../utils/lazySchema.js';
@@ -375,7 +375,7 @@ async function applySedEdit(simulatedEdit: {
   // Track file history before making changes (for undo support)
   const parentMessageUuid = parentMessage?.uuid;
   const validatedParentMessageUuid = validateUuid(parentMessageUuid);
-  if (fileHistoryEnabled() && validatedParentMessageUuid) {
+  if (validatedParentMessageUuid) {
     await fileHistoryTrackEdit(toolUseContext.updateFileHistoryState, absoluteFilePath, validatedParentMessageUuid);
   }
 
@@ -385,6 +385,7 @@ async function applySedEdit(simulatedEdit: {
 
   // Notify VS Code about the file change
   notifyVscodeFileUpdated(absoluteFilePath, originalContent, newContent);
+  fileHistoryTouch(toolUseContext.updateFileHistoryState);
 
   // Update read timestamp to invalidate stale writes
   toolUseContext.readFileState.set(absoluteFilePath, {
@@ -725,6 +726,7 @@ export const BashTool = buildTool({
       wasInterrupted = result.interrupted;
     } finally {
       if (setToolJSX) setToolJSX(null);
+      if (!this.isReadOnly?.(input)) fileHistoryTouch(toolUseContext.updateFileHistoryState);
     }
 
     // Get final string from accumulator

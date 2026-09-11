@@ -13,6 +13,7 @@ import type { Message } from '../../types/message.js';
 import { plural } from '../../utils/stringUtils.js';
 import { Byline } from '../design-system/Byline.js';
 import { Dialog } from '../design-system/Dialog.js';
+import { LoadingState } from '../design-system/LoadingState.js';
 import { DiffDetailView } from './DiffDetailView.js';
 import { DiffFileList } from './DiffFileList.js';
 type Props = {
@@ -50,11 +51,15 @@ function turnDiffToDiffData(turn: TurnDiff): DiffData {
     },
     files,
     hunks,
-    loading: false
+    loading: false,
+    source: {
+      kind: 'working-tree'
+    },
+    baseMode: 'auto'
   };
 }
 export function DiffDialog(t0) {
-  const $ = _c(73);
+  const $ = _c(74);
   const {
     messages,
     onDone
@@ -257,8 +262,10 @@ export function DiffDialog(t0) {
     t17 = $[39];
   }
   const subtitle = t17;
-  const headerTitle = currentTurn ? `Turn ${currentTurn.turnIndex}` : "Uncommitted changes";
-  const headerSubtitle = currentTurn ? currentTurn.userPromptPreview ? `"${currentTurn.userPromptPreview}"` : "" : "(git diff HEAD)";
+  const noCommits = !currentTurn && diffData.noCommits === true;
+  const branchSource = !currentTurn && diffData.source.kind === "branch" ? diffData.source : null;
+  const headerTitle = currentTurn ? `Turn ${currentTurn.turnIndex}` : noCommits ? "Staged and new files" : branchSource ? "Branch changes" : "Uncommitted changes";
+  const headerSubtitle = currentTurn ? currentTurn.userPromptPreview ? `"${currentTurn.userPromptPreview}"` : "" : noCommits ? "(no commits yet)" : branchSource ? `(vs ${branchSource.baseBranch})` : "(git diff HEAD)";
   let t18;
   if ($[40] !== sourceIndex || $[41] !== sources) {
     t18 = sources.length > 1 ? <Box>{sourceIndex > 0 && <Text dimColor={true}>◀ </Text>}{sources.map((source, i) => {
@@ -276,10 +283,6 @@ export function DiffDialog(t0) {
   const dismissShortcut = useShortcutDisplay("diff:dismiss", "DiffDialog", "esc");
   let t19;
   bb0: {
-    if (diffData.loading) {
-      t19 = "Loading diff\u2026";
-      break bb0;
-    }
     if (currentTurn) {
       t19 = "No file changes in this turn";
       break bb0;
@@ -288,7 +291,7 @@ export function DiffDialog(t0) {
       t19 = "Too many files to display details";
       break bb0;
     }
-    t19 = "Working tree is clean";
+    t19 = "No changes yet";
   }
   const emptyMessage = t19;
   let t20;
@@ -338,10 +341,11 @@ export function DiffDialog(t0) {
     t23 = $[54];
   }
   let t24;
-  if ($[55] !== diffData.files || $[56] !== emptyMessage || $[57] !== selectedFile?.isBinary || $[58] !== selectedFile?.isLargeFile || $[59] !== selectedFile?.isTruncated || $[60] !== selectedFile?.isUntracked || $[61] !== selectedFile?.path || $[62] !== selectedHunks || $[63] !== selectedIndex || $[64] !== viewMode) {
-    t24 = diffData.files.length === 0 ? <Box marginTop={1}><Text dimColor={true}>{emptyMessage}</Text></Box> : viewMode === "list" ? <Box flexDirection="column" marginTop={1}><DiffFileList files={diffData.files} selectedIndex={selectedIndex} /></Box> : <Box flexDirection="column" marginTop={1}><DiffDetailView filePath={selectedFile?.path || ""} hunks={selectedHunks} isLargeFile={selectedFile?.isLargeFile} isBinary={selectedFile?.isBinary} isTruncated={selectedFile?.isTruncated} isUntracked={selectedFile?.isUntracked} /></Box>;
+  if ($[55] !== diffData.files || $[56] !== emptyMessage || $[73] !== diffData.loading || $[57] !== selectedFile?.isBinary || $[58] !== selectedFile?.isLargeFile || $[59] !== selectedFile?.isTruncated || $[60] !== selectedFile?.isUntracked || $[61] !== selectedFile?.path || $[62] !== selectedHunks || $[63] !== selectedIndex || $[64] !== viewMode) {
+    t24 = diffData.files.length === 0 ? <Box marginTop={1}>{diffData.loading ? <LoadingState message="Loading diff…" dimColor /> : <Text dimColor={true}>{emptyMessage}</Text>}</Box> : viewMode === "list" ? <Box flexDirection="column" marginTop={1}><DiffFileList files={diffData.files} selectedIndex={selectedIndex} /></Box> : <Box flexDirection="column" marginTop={1}><DiffDetailView filePath={selectedFile?.path || ""} hunks={selectedHunks} isLargeFile={selectedFile?.isLargeFile} isBinary={selectedFile?.isBinary} isTruncated={selectedFile?.isTruncated} isUntracked={selectedFile?.isUntracked} /></Box>;
     $[55] = diffData.files;
     $[56] = emptyMessage;
+    $[73] = diffData.loading;
     $[57] = selectedFile?.isBinary;
     $[58] = selectedFile?.isLargeFile;
     $[59] = selectedFile?.isTruncated;

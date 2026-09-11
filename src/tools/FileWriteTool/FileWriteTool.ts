@@ -22,7 +22,6 @@ import { isEnvTruthy } from '../../utils/envUtils.js'
 import { isENOENT } from '../../utils/errors.js'
 import { getFileModificationTime, writeTextContent } from '../../utils/file.js'
 import {
-  fileHistoryEnabled,
   fileHistoryTrackEdit,
 } from '../../utils/fileHistory.js'
 import { logFileOperation } from '../../utils/fileOperationAnalytics.js'
@@ -286,16 +285,14 @@ export const FileWriteTool = buildTool({
     // write (lazy-mkdir-on-ENOENT would fire a spurious tengu_atomic_write_error
     // inside writeFileSyncAndFlush_DEPRECATED before ENOENT propagates back).
     await getFsImplementation().mkdir(dir)
-    if (fileHistoryEnabled()) {
-      // Backup captures pre-edit content — safe to call before the staleness
-      // check (idempotent v1 backup keyed on content hash; if staleness fails
-      // later we just have an unused backup, not corrupt state).
-      await fileHistoryTrackEdit(
-        updateFileHistoryState,
-        fullFilePath,
-        parentMessage.uuid,
-      )
-    }
+    // Backup captures pre-edit content — safe to call before the staleness
+    // check (idempotent v1 backup keyed on content hash; if staleness fails
+    // later we just have an unused backup, not corrupt state).
+    await fileHistoryTrackEdit(
+      updateFileHistoryState,
+      fullFilePath,
+      parentMessage.uuid,
+    )
 
     // Load current state and confirm no changes since last read.
     // Please avoid async operations between here and writing to disk to preserve atomicity.

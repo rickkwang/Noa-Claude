@@ -1,8 +1,11 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
+import { getIsRemoteMode, setIsRemoteMode } from '../../bootstrap/state.js'
 import {
   AUTO_OPEN_MIN_COLUMNS,
   describeDiffBase,
   diffPanelCanMount,
+  diffPanelIsPreferred,
+  diffPanelOpenBlocker,
   diffPanelWidth,
   MIN_DIFF_PANEL_COLUMNS,
 } from '../../utils/diffPanelState.js'
@@ -98,5 +101,50 @@ describe('describeDiffBase', () => {
 describe('auto-open thresholds', () => {
   test('demands more width than a deliberate open', () => {
     expect(AUTO_OPEN_MIN_COLUMNS).toBeGreaterThan(MIN_DIFF_PANEL_COLUMNS)
+  })
+})
+
+describe('diffPanelIsPreferred', () => {
+  const wasRemote = getIsRemoteMode()
+  const previousNoFlicker = process.env.NOA_CLAUDE_NO_FLICKER
+
+  afterEach(() => {
+    setIsRemoteMode(wasRemote)
+    if (previousNoFlicker === undefined) delete process.env.NOA_CLAUDE_NO_FLICKER
+    else process.env.NOA_CLAUDE_NO_FLICKER = previousNoFlicker
+  })
+
+  test('prefers the sidebar in fullscreen', () => {
+    process.env.NOA_CLAUDE_NO_FLICKER = '1'
+    setIsRemoteMode(false)
+    expect(diffPanelIsPreferred()).toBe(true)
+  })
+
+  test('falls back to the dialog outside fullscreen', () => {
+    process.env.NOA_CLAUDE_NO_FLICKER = '0'
+    setIsRemoteMode(false)
+    expect(diffPanelIsPreferred()).toBe(false)
+  })
+
+  // The sidebar never gets a column in a remote session (diffPanelCanMount
+  // refuses on isThinClient), so routing `/diff` to the toggle there would
+  // flip a tab nothing renders — `/diff` would look dead.
+  test('falls back to the dialog in a remote session, fullscreen or not', () => {
+    process.env.NOA_CLAUDE_NO_FLICKER = '1'
+    setIsRemoteMode(true)
+    expect(diffPanelIsPreferred()).toBe(false)
+  })
+})
+
+describe('diffPanelOpenBlocker', () => {
+  // The test process runs inside this repo's git checkout.
+  test('names the column floor when the terminal is too narrow', () => {
+    expect(diffPanelOpenBlocker(MIN_DIFF_PANEL_COLUMNS - 1)).toContain(
+      `${MIN_DIFF_PANEL_COLUMNS} columns`,
+    )
+  })
+
+  test('is clear at the column floor', () => {
+    expect(diffPanelOpenBlocker(MIN_DIFF_PANEL_COLUMNS)).toBeNull()
   })
 })

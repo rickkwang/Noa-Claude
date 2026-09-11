@@ -475,6 +475,13 @@ export type Attachment =
       displayPath: string
     }
   | {
+      type: 'selected_lines_in_diff'
+      lineCount: number
+      content: string
+      /** Repo-relative path the selection sat under, when it sat under one. */
+      filePath?: string
+    }
+  | {
       type: 'opened_file_in_ide'
       filename: string
     }
@@ -2029,6 +2036,19 @@ async function getSelectedLinesFromIDE(
   ideSelection: IDESelection | null,
   toolUseContext: ToolUseContext,
 ): Promise<Attachment[]> {
+  // Diff-panel selections share this channel. They need no IDE and no deny
+  // check: the panel never renders read-denied files.
+  if (ideSelection?.source === 'diff' && ideSelection.text) {
+    return [
+      {
+        type: 'selected_lines_in_diff',
+        lineCount: ideSelection.lineCount,
+        content: ideSelection.text,
+        filePath: ideSelection.filePath,
+      },
+    ]
+  }
+
   const ideName = getConnectedIdeName(toolUseContext.options.mcpClients)
   if (
     !ideName ||

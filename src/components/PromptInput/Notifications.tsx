@@ -96,7 +96,6 @@ export function Notifications(t0) {
     status: ideStatus
   } = useIdeConnectionStatus(mcpClients);
   const notifications = useAppState(_temp);
-  const diffPanelVisible = useAppState(_tempDiffPanelVisible);
   const {
     addNotification,
     removeNotification
@@ -259,6 +258,7 @@ function NotificationContent({
   // Poll apiKeyHelper inflight state to show slow-helper notice.
   // Gated on configuration — most users never set apiKeyHelper, so the
   // effect is a no-op for them (no interval allocated).
+  const diffPanelVisible = useAppState(_tempDiffPanelVisible);
   const [apiKeyHelperSlow, setApiKeyHelperSlow] = useState<string | null>(null);
   useEffect(() => {
     if (!getConfiguredApiKeyHelper()) return;

@@ -35,6 +35,7 @@ describe('FileEditTool stale-read rescue (validateInput + call agreement)', () =
   function makeContext() {
     return {
       readFileState: new FileStateCache(100, 25 * 1024 * 1024),
+      updateFileHistoryState: () => {},
       dynamicSkillDirTriggers: new Set(),
       getAppState: () => ({
         toolPermissionContext: getEmptyToolPermissionContext(),

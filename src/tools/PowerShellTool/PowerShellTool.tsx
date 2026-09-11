@@ -13,6 +13,7 @@ import { buildTool, type ToolDef } from '../../Tool.js';
 import { backgroundExistingForegroundTask, markTaskNotified, registerForeground, spawnShellTask, unregisterForeground } from '../../tasks/LocalShellTask/LocalShellTask.js';
 import type { AgentId } from '../../types/ids.js';
 import type { AssistantMessage } from '../../types/message.js';
+import { fileHistoryTouch } from '../../utils/fileHistory.js';
 import { extractClaudeCodeHints } from '../../utils/claudeCodeHints.js';
 import { isEnvTruthy } from '../../utils/envUtils.js';
 import { errorMessage as getErrorMessage, ShellError } from '../../utils/errors.js';
@@ -606,6 +607,7 @@ export const PowerShellTool = buildTool({
       };
     } finally {
       if (setToolJSX) setToolJSX(null);
+      if (!this.isReadOnly?.(input)) fileHistoryTouch(toolUseContext.updateFileHistoryState);
     }
   },
   isResultTruncated(output: Out): boolean {

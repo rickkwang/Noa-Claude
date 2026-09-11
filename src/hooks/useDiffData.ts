@@ -1,14 +1,27 @@
-// @ts-nocheck
 import type { StructuredPatchHunk } from 'diff'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  fetchGitDiff,
-  fetchGitDiffHunks,
-  type GitDiffResult,
-  type GitDiffStats,
-} from '../utils/gitDiff.js'
+  diffRefForSnapshot,
+  EMPTY_DIFF_HUNKS,
+  fetchDiffHunksForRef,
+  fetchDiffSnapshot,
+  type DiffFetchMode,
+  type DiffHunks,
+  type DiffSnapshot,
+  type DiffSource,
+} from '../utils/diffData.js'
+import { subscribeToGitState } from '../utils/git/gitFilesystem.js'
+import type { GitDiffStats } from '../utils/gitDiff.js'
+import { logError } from '../utils/log.js'
 
 const MAX_LINES_PER_FILE = 400
+
+/**
+ * Debounce for refreshes. The first read runs immediately so a view isn't
+ * blank when it opens; later ones coalesce, since a multi-file edit turn would
+ * otherwise fire one git pass per file.
+ */
+const REFRESH_DEBOUNCE_MS = 150
 
 export type DiffFile = {
   path: string
@@ -19,7 +32,7 @@ export type DiffFile = {
   isTruncated: boolean
   isNewFile?: boolean
   isUntracked?: boolean
-  /** The file's last write predates this session — see `markPreSessionFiles`. */
+  /** The file's last write predates this session — `session` mode only. */
   preSession?: boolean
 }
 
@@ -28,86 +41,133 @@ export type DiffData = {
   files: DiffFile[]
   hunks: Map<string, StructuredPatchHunk[]>
   loading: boolean
+  /** What the diff was actually taken against. */
+  source: DiffSource
+  /** The mode that produced this data — lags the requested one mid-refresh. */
+  baseMode: DiffFetchMode
+  /** True when the repo has no commits, so the diff is against the index. */
+  noCommits?: boolean
+}
+
+type Loaded = {
+  snapshot: DiffSnapshot
+  baseMode: DiffFetchMode
+  hunks: DiffHunks
 }
 
 /**
- * Hook to fetch current git diff data on demand.
- * Fetches both stats and hunks when component mounts.
+ * Git diff data for `/diff`. Re-reads when `changeKey` advances (the
+ * file-history activity counter) and whenever the repo's committed state moves
+ * — a commit or checkout changes what the diff is taken against.
  */
-export function useDiffData(): DiffData {
-  const [diffResult, setDiffResult] = useState<GitDiffResult | null>(null)
-  const [hunks, setHunks] = useState<Map<string, StructuredPatchHunk[]>>(
-    new Map(),
-  )
+export function useDiffData(
+  changeKey = 0,
+  enabled = true,
+  baseMode: DiffFetchMode = 'auto',
+): DiffData {
+  const [loaded, setLoaded] = useState<Loaded | null>(null)
   const [loading, setLoading] = useState(true)
+  const [gitStateTick, setGitStateTick] = useState(0)
+  const hasLoadedOnce = useRef(false)
 
-  // Fetch diff data on mount
+  useEffect(() => subscribeToGitState(() => setGitStateTick(tick => tick + 1)), [])
+
   useEffect(() => {
+    if (!enabled) return
+
     let cancelled = false
+    const controller = new AbortController()
 
-    async function loadDiffData() {
+    async function read(): Promise<void> {
       try {
-        // Fetch both stats and hunks
-        const [statsResult, hunksResult] = await Promise.all([
-          fetchGitDiff(),
-          fetchGitDiffHunks(),
-        ])
+        const snapshot = await fetchDiffSnapshot(baseMode, controller.signal)
+        if (cancelled) return
+        if (snapshot === null) {
+          // Keep whatever was last read: null covers a whole merge or rebase
+          // as well as a transient git failure, and blanking for either would
+          // be worse than a slightly stale view.
+          hasLoadedOnce.current = true
+          setLoading(false)
+          return
+        }
 
-        if (!cancelled) {
-          setDiffResult(statsResult)
-          setHunks(hunksResult)
-          setLoading(false)
-        }
-      } catch (_error) {
-        if (!cancelled) {
-          setDiffResult(null)
-          setHunks(new Map())
-          setLoading(false)
-        }
+        const ref = diffRefForSnapshot(snapshot)
+        const hunks =
+          snapshot.stats.filesCount === 0
+            ? EMPTY_DIFF_HUNKS
+            : await fetchDiffHunksForRef(ref, controller.signal)
+        if (cancelled) return
+
+        setLoaded(previous => ({
+          snapshot,
+          baseMode,
+          // A failed hunk read keeps the previous hunks when they were taken
+          // against the same ref.
+          hunks:
+            hunks ??
+            (previous !== null && diffRefForSnapshot(previous.snapshot) === ref
+              ? previous.hunks
+              : EMPTY_DIFF_HUNKS),
+        }))
+      } catch (error) {
+        if (cancelled) return
+        logError(error)
       }
+      hasLoadedOnce.current = true
+      setLoading(false)
     }
 
-    void loadDiffData()
+    const delay =
+      hasLoadedOnce.current || changeKey !== 0 ? REFRESH_DEBOUNCE_MS : 0
+    const timer = setTimeout(read, delay)
 
     return () => {
       cancelled = true
+      clearTimeout(timer)
+      controller.abort()
     }
-  }, [])
+  }, [changeKey, gitStateTick, enabled, baseMode])
 
   return useMemo(() => {
-    if (!diffResult) {
-      return { stats: null, files: [], hunks: new Map(), loading }
+    if (!loaded) {
+      return {
+        stats: null,
+        files: [],
+        hunks: new Map(),
+        loading: enabled && loading,
+        source: { kind: 'working-tree' },
+        baseMode,
+      }
     }
 
-    const { stats, perFileStats } = diffResult
+    const { snapshot, hunks } = loaded
     const files: DiffFile[] = []
-
-    // Iterate over perFileStats to get all files including large/skipped ones
-    for (const [path, fileStats] of perFileStats) {
-      const fileHunks = hunks.get(path)
-      const isUntracked = fileStats.isUntracked ?? false
-
-      // Detect large file (in perFileStats but not in hunks, and not binary/untracked)
-      const isLargeFile = !fileStats.isBinary && !isUntracked && !fileHunks
-
-      // Detect truncated file (total > limit means we truncated)
-      const totalLines = fileStats.added + fileStats.removed
-      const isTruncated =
-        !isLargeFile && !fileStats.isBinary && totalLines > MAX_LINES_PER_FILE
-
+    for (const [path, stats] of snapshot.perFileStats) {
+      const isLargeFile = hunks.skippedLarge.has(path)
       files.push({
         path,
-        linesAdded: fileStats.added,
-        linesRemoved: fileStats.removed,
-        isBinary: fileStats.isBinary,
+        linesAdded: stats.added,
+        linesRemoved: stats.removed,
+        isBinary: stats.isBinary,
         isLargeFile,
-        isTruncated,
-        isUntracked,
+        isTruncated:
+          !isLargeFile &&
+          !stats.isBinary &&
+          stats.added + stats.removed > MAX_LINES_PER_FILE,
+        isUntracked: stats.isUntracked ?? false,
+        preSession: stats.preSession ?? false,
       })
     }
-
     files.sort((a, b) => a.path.localeCompare(b.path))
 
-    return { stats, files, hunks, loading: false }
-  }, [diffResult, hunks, loading])
+    return {
+      stats: snapshot.stats,
+      files,
+      hunks: hunks.hunks,
+      loading: false,
+      source: snapshot.source,
+      baseMode: loaded.baseMode,
+      noCommits: snapshot.noCommits,
+    }
+  }, [loaded, loading, enabled, baseMode])
 }

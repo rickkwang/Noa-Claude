@@ -52,10 +52,10 @@ type Props = {
   /** Ref passed via ModalContext so Tabs (or any scroll-owning descendant)
    *  can attach it to their own ScrollBox for tall content. */
   modalScrollRef?: React.RefObject<ScrollBoxHandle | null>;
-  /** Sidebar column rendered to the right of the whole layout (diff panel).
-   *  Everything else — scrollback, pill, bottom slot, modal — is confined to
-   *  the remaining columns, so the sidebar is never painted over. Fullscreen
-   *  only; ignored outside it, where there is no fixed-height root to split. */
+  /** Sidebar column rendered to the right of the scrollback (diff panel).
+   *  Only the scrollback and its chrome give up columns for it; the bottom
+   *  slot and modal keep the full width. Fullscreen only; ignored outside it,
+   *  where there is no fixed-height root to split. */
   sidebar?: ReactNode;
   /** Columns `sidebar` occupies. 0 (or no sidebar) keeps the single-column
    *  layout untouched. */
@@ -471,41 +471,36 @@ export function FullscreenLayout(t0) {
     } else {
       t18 = $[37];
     }
-    let t19;
-    if ($[38] !== t14 || $[39] !== t17 || $[40] !== t18) {
-      t19 = <PromptOverlayProvider>{t14}{t17}{t18}</PromptOverlayProvider>;
-      $[38] = t14;
-      $[39] = t17;
-      $[40] = t18;
-      $[41] = t19;
-    } else {
-      t19 = $[41];
-    }
-    // Always wrapped, even with no sidebar. Making the wrapper conditional
-    // reparents the entire REPL the moment the panel opens, which unmounts and
-    // remounts everything below it — including whatever `/diff` itself is
-    // rendering, whose remount toggles the panel again. Constant shape, and
-    // React only ever reconciles the sidebar slot.
+    // Always wrapped, even with no sidebar: a conditional wrapper would
+    // reparent the scrollback (and the sidebar host) the moment the panel
+    // opens, remounting both. Constant shape, so React only reconciles widths.
     //
     // Deliberately outside the memo cache: `_c(47)` is compiler-allocated and
-    // hand-adding slots would corrupt it. Two Boxes per render is noise next to
-    // what they contain.
+    // hand-adding slots would corrupt it. A few Boxes per render is noise next
+    // to what they contain.
+    //
     // The sidebar slot renders unconditionally. DiffPanelHost owns the toggle
     // and the first-edit auto-open, both of which must stay live while the
     // panel is closed — gating the element on hasSidebar unmounts it exactly
     // then, silently killing both. The host self-hides (returns null), so a
     // closed panel renders nothing here; hasSidebar gates width only.
     //
-    // Most of the REPL sizes itself from useTerminalSize() rather than from its
-    // layout box, so a sidebar has to narrow the reported terminal for the main
-    // column — otherwise the prompt frame, dividers and status line all draw at
-    // full width and wrap under the panel.
-    return <Box flexDirection="row" width="100%" flexGrow={1} overflow="hidden">
-        <Box flexDirection="column" width={mainColumns} flexShrink={0} overflow="hidden">
-          <TerminalSizeContext value={narrowedSize}>{t19}</TerminalSizeContext>
+    // Most of the scrollback sizes itself from useTerminalSize() rather than
+    // from its layout box, so the sidebar narrows the reported terminal for
+    // that column only. The bottom slot and modal sit below the row and keep
+    // the full width.
+    return <PromptOverlayProvider>
+        <Box flexDirection="row" width="100%" flexGrow={1} overflow="hidden">
+          <Box flexDirection="column" width={mainColumns} flexShrink={0} overflow="hidden">
+            <TerminalSizeContext value={narrowedSize}>{t14}</TerminalSizeContext>
+          </Box>
+          <Box flexDirection="column" width={hasSidebar ? sidebarWidth : 0} flexShrink={0} overflow="hidden" backgroundColor={hasSidebar ? "composerSidebarBackground" : undefined}>
+            {sidebar}
+          </Box>
         </Box>
-        {sidebar}
-      </Box>;
+        {t17}
+        {t18}
+      </PromptOverlayProvider>;
   }
   let t8;
   if ($[42] !== bottom || $[43] !== modal || $[44] !== overlay || $[45] !== scrollable) {

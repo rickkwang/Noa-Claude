@@ -14,6 +14,13 @@ type BaseNotification = {
    */
   exemptFromDiffPanelHold?: boolean;
   /**
+   * Set on an `immediate` notification that arrived while the diff panel was
+   * holding the row. It waits in the queue like any other, but keeps its
+   * priority: it survives later immediates and preempts a lower-priority
+   * current once the hold lifts.
+   */
+  heldDuringDiffPanel?: boolean;
+  /**
    * Keys of notifications that this notification invalidates.
    * If a notification is invalidated, it will be removed from the queue
    * and, if currently displayed, cleared immediately.
@@ -55,8 +62,17 @@ export function useNotifications(): {
   const processQueue = useCallback(() => {
     setAppState(prev => {
       const next = getNext(prev.diffPanelVisible ? prev.notifications.queue.filter(_ => _.exemptFromDiffPanelHold) : prev.notifications.queue);
-      if (prev.notifications.current !== null || !next) {
+      if (!next) {
         return prev;
+      }
+      const current = prev.notifications.current;
+      const preempted = current !== null && next.priority === 'immediate' && next.heldDuringDiffPanel === true && current.priority !== 'immediate' ? current : null;
+      if (current !== null && preempted === null) {
+        return prev;
+      }
+      if (currentTimeoutId) {
+        clearTimeout(currentTimeoutId);
+        currentTimeoutId = null;
       }
       currentTimeoutId = setTimeout((setAppState, nextKey, processQueue) => {
         currentTimeoutId = null;
@@ -78,17 +94,18 @@ export function useNotifications(): {
       return {
         ...prev,
         notifications: {
-          queue: prev.notifications.queue.filter(_ => _ !== next),
-          current: next
+          queue: [...(preempted !== null && survivesPreemption(preempted, next) ? [preempted] : []), ...prev.notifications.queue.filter(_ => _ !== next)],
+          current: next.heldDuringDiffPanel ? {
+            ...next,
+            heldDuringDiffPanel: undefined
+          } : next
         }
       };
     });
   }, [setAppState]);
   const addNotification = useCallback<AddNotificationFn>((notif: Notification) => {
-    // Handle immediate priority notifications. While the diff panel is up an
-    // immediate notification loses its cut-the-line privilege and falls through
-    // to the queue instead of painting over what the user is reading; it shows
-    // when the panel closes and drains the queue.
+    // Immediate notifications cut the line — except while the diff panel holds
+    // the row, where they queue marked `heldDuringDiffPanel` instead.
     if (notif.priority === 'immediate' && !store.getState().diffPanelVisible) {
       // Clear any existing timeout since we're showing a new immediate notification
       if (currentTimeoutId) {
@@ -120,21 +137,22 @@ export function useNotifications(): {
         ...prev,
         notifications: {
           current: notif,
-          queue:
-          // Only re-queue the current notification if it's not immediate
-          [...(prev.notifications.current ? [prev.notifications.current] : []), ...prev.notifications.queue].filter(_ => _.priority !== 'immediate' && !notif.invalidates?.includes(_.key))
+          queue: [...(prev.notifications.current ? [prev.notifications.current] : []), ...prev.notifications.queue].filter(_ => survivesPreemption(_, notif))
         }
       }));
       return; // IMPORTANT: Exit addNotification for immediate notifications
     }
 
-    // Handle non-immediate notifications
+    const queued = notif.priority === 'immediate' ? {
+      ...notif,
+      heldDuringDiffPanel: true
+    } : notif;
     setAppState(prev => {
       // Check if we can fold into an existing notification with the same key
-      if (notif.fold) {
+      if (queued.fold) {
         // Fold into current notification if keys match
-        if (prev.notifications.current?.key === notif.key) {
-          const folded = notif.fold(prev.notifications.current, notif);
+        if (prev.notifications.current?.key === queued.key) {
+          const folded = queued.fold(prev.notifications.current, queued);
           // Reset timeout for the folded notification
           if (currentTimeoutId) {
             clearTimeout(currentTimeoutId);
@@ -166,9 +184,9 @@ export function useNotifications(): {
         }
 
         // Fold into queued notification if keys match
-        const queueIdx = prev.notifications.queue.findIndex(_ => _.key === notif.key);
+        const queueIdx = prev.notifications.queue.findIndex(_ => _.key === queued.key);
         if (queueIdx !== -1) {
-          const folded = notif.fold(prev.notifications.queue[queueIdx]!, notif);
+          const folded = queued.fold(prev.notifications.queue[queueIdx]!, queued);
           const newQueue = [...prev.notifications.queue];
           newQueue[queueIdx] = folded;
           return {
@@ -183,9 +201,9 @@ export function useNotifications(): {
 
       // Only add to queue if not already present (prevent duplicates)
       const queuedKeys = new Set(prev.notifications.queue.map(_ => _.key));
-      const shouldAdd = !queuedKeys.has(notif.key) && prev.notifications.current?.key !== notif.key;
+      const shouldAdd = !queuedKeys.has(queued.key) && prev.notifications.current?.key !== queued.key;
       if (!shouldAdd) return prev;
-      const invalidatesCurrent = prev.notifications.current !== null && notif.invalidates?.includes(prev.notifications.current.key);
+      const invalidatesCurrent = prev.notifications.current !== null && queued.invalidates?.includes(prev.notifications.current.key);
       if (invalidatesCurrent && currentTimeoutId) {
         clearTimeout(currentTimeoutId);
         currentTimeoutId = null;
@@ -194,7 +212,7 @@ export function useNotifications(): {
         ...prev,
         notifications: {
           current: invalidatesCurrent ? null : prev.notifications.current,
-          queue: [...prev.notifications.queue.filter(_ => _.priority !== 'immediate' && !notif.invalidates?.includes(_.key)), notif]
+          queue: [...prev.notifications.queue.filter(_ => survivesPreemption(_, queued)), queued]
         }
       };
     });
@@ -260,6 +278,14 @@ export function isNotificationVisible(
   return current !== null && (!diffPanelVisible || current.exemptFromDiffPanelHold === true);
 }
 
+/**
+ * Whether a displaced or queued notification stays queued when `incoming`
+ * arrives. Immediates are dropped rather than replayed, unless they were only
+ * waiting out the diff panel's hold.
+ */
+export function survivesPreemption(queued: Notification, incoming: Notification): boolean {
+  return (queued.priority !== 'immediate' || queued.heldDuringDiffPanel === true) && !incoming.invalidates?.includes(queued.key);
+}
 export function getNext(queue: Notification[]): Notification | undefined {
   if (queue.length === 0) return undefined;
   return queue.reduce((min, n) => PRIORITIES[n.priority] < PRIORITIES[min.priority] ? n : min);

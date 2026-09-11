@@ -27,7 +27,6 @@ import {
   writeTextContent,
 } from '../../utils/file.js'
 import {
-  fileHistoryEnabled,
   fileHistoryTrackEdit,
 } from '../../utils/fileHistory.js'
 import { logFileOperation } from '../../utils/fileOperationAnalytics.js'
@@ -446,16 +445,14 @@ export const FileEditTool = buildTool({
     // These awaits must stay OUTSIDE the critical section below — a yield between
     // the staleness check and writeTextContent lets concurrent edits interleave.
     await fs.mkdir(dirname(absoluteFilePath))
-    if (fileHistoryEnabled()) {
-      // Backup captures pre-edit content — safe to call before the staleness
-      // check (idempotent v1 backup keyed on content hash; if staleness fails
-      // later we just have an unused backup, not corrupt state).
-      await fileHistoryTrackEdit(
-        updateFileHistoryState,
-        absoluteFilePath,
-        parentMessage.uuid,
-      )
-    }
+    // Backup captures pre-edit content — safe to call before the staleness
+    // check (idempotent v1 backup keyed on content hash; if staleness fails
+    // later we just have an unused backup, not corrupt state).
+    await fileHistoryTrackEdit(
+      updateFileHistoryState,
+      absoluteFilePath,
+      parentMessage.uuid,
+    )
 
     // 2. Load current state and confirm no changes since last read
     // Please avoid async operations between here and writing to disk to preserve atomicity

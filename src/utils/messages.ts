@@ -3454,6 +3454,15 @@ function getAutoModeSparseInstructions(): UserMessage[] {
   ])
 }
 
+const MAX_SELECTION_LENGTH = 2000
+
+/** Cap selected text lifted from an IDE or the diff panel before it reaches the model. */
+function truncateSelection(content: string): string {
+  return content.length > MAX_SELECTION_LENGTH
+    ? content.substring(0, MAX_SELECTION_LENGTH) + '\n... (truncated)'
+    : content
+}
+
 export function normalizeAttachmentForAPI(
   attachment: Attachment,
 ): UserMessage[] {
@@ -3615,16 +3624,17 @@ Read the team config to discover your teammates' names. Check the task list peri
       ])
     }
     case 'selected_lines_in_ide': {
-      const maxSelectionLength = 2000
-      const content =
-        attachment.content.length > maxSelectionLength
-          ? attachment.content.substring(0, maxSelectionLength) +
-            '\n... (truncated)'
-          : attachment.content
-
       return wrapMessagesInSystemReminder([
         createUserMessage({
-          content: `The user selected the lines ${attachment.lineStart} to ${attachment.lineEnd} from ${attachment.filename}:\n${content}\n\nThis may or may not be related to the current task.`,
+          content: `The user selected the lines ${attachment.lineStart} to ${attachment.lineEnd} from ${attachment.filename}:\n${truncateSelection(attachment.content)}\n\nThis may or may not be related to the current task.`,
+          isMeta: true,
+        }),
+      ])
+    }
+    case 'selected_lines_in_diff': {
+      return wrapMessagesInSystemReminder([
+        createUserMessage({
+          content: `The user selected the following ${attachment.lineCount} ${attachment.lineCount === 1 ? 'line' : 'lines'} from the diff view${attachment.filePath ? ` (in ${attachment.filePath})` : ''}:\n${truncateSelection(attachment.content)}\n\nThis may or may not be related to the current task.`,
           isMeta: true,
         }),
       ])

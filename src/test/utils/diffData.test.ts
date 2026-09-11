@@ -13,7 +13,7 @@ import {
   diffRefForSnapshot,
   fetchDiffHunksForRef,
   fetchDiffSnapshot,
-} from '../../utils/diffPanelData.js'
+} from '../../utils/diffData.js'
 import {
   resetCostState,
   setCwdState,
@@ -23,9 +23,9 @@ import { findGitRoot, getIsGit } from '../../utils/git.js'
 import { resetGitFileWatcher } from '../../utils/git/gitFilesystem.js'
 
 /**
- * The diff panel's base modes each answer a different question, and getting
- * them confused is silent — the panel just shows the wrong changes. These run
- * against throwaway repos so the answers are checked, not assumed.
+ * Each diff mode answers a different question, and getting them confused is
+ * silent — `/diff` just shows the wrong changes. These run against throwaway
+ * repos so the answers are checked, not assumed.
  */
 
 const repos: string[] = []
@@ -108,7 +108,7 @@ describe('fetchDiffSnapshot', () => {
     expect(snapshot?.stats.filesCount).toBe(1)
   })
 
-  test('uncommitted mode keeps untracked files that predate the session', async () => {
+  test('untracked files that predate the session only count in session mode', async () => {
     const dir = makeRepo()
     writeFileSync(join(dir, 'a.txt'), 'one\n')
     git(dir, 'add', '.')
@@ -121,17 +121,12 @@ describe('fetchDiffSnapshot', () => {
     resetCostState()
     useRepo(dir)
 
-    // "Everything vs HEAD" has to mean everything — an untracked file being
-    // old is a reason to sort it last, not to hide it. It must also stay
-    // *unflagged* here: the panel folds flagged files away, and "before this
-    // session" is not a distinction this base draws.
+    // Leftover untracked files aren't work: the other modes leave them out.
     const snapshot = await fetchDiffSnapshot('uncommitted')
-    expect(snapshot?.perFileStats.get('stale.txt')).toMatchObject({
-      isUntracked: true,
-    })
-    expect(snapshot?.perFileStats.get('stale.txt')?.preSession).toBeUndefined()
+    expect(snapshot?.perFileStats.has('stale.txt')).toBe(false)
+    expect(snapshot?.stats.filesCount).toBe(0)
 
-    // Session mode does draw it, so there it is flagged rather than dropped.
+    // Session mode keeps them, flagged, for its "edited before" fold.
     const session = await fetchDiffSnapshot('session')
     expect(session?.perFileStats.get('stale.txt')?.preSession).toBe(true)
   })
@@ -158,6 +153,54 @@ describe('fetchDiffSnapshot', () => {
 
     const uncommitted = await fetchDiffSnapshot('uncommitted')
     expect(uncommitted?.stats.filesCount).toBe(0)
+  })
+
+  test('auto mode shows uncommitted work when there is any', async () => {
+    const dir = makeRepo()
+    writeFileSync(join(dir, 'a.txt'), 'one\n')
+    git(dir, 'add', '.')
+    git(dir, 'commit', '-qm', 'first')
+    git(dir, 'checkout', '-q', '-b', 'feature')
+    writeFileSync(join(dir, 'b.txt'), 'committed on the branch\n')
+    git(dir, 'add', '.')
+    git(dir, 'commit', '-qm', 'branch work')
+    writeFileSync(join(dir, 'a.txt'), 'one\ntwo\n')
+    useRepo(dir)
+    process.env.CLAUDE_CODE_BASE_REF = 'main'
+
+    const snapshot = await fetchDiffSnapshot()
+    expect(snapshot?.source.kind).toBe('working-tree')
+    expect([...snapshot!.perFileStats.keys()]).toEqual(['a.txt'])
+  })
+
+  test('auto mode falls back to the branch diff on a clean tree', async () => {
+    const dir = makeRepo()
+    writeFileSync(join(dir, 'a.txt'), 'one\n')
+    git(dir, 'add', '.')
+    git(dir, 'commit', '-qm', 'first')
+    git(dir, 'checkout', '-q', '-b', 'feature')
+    writeFileSync(join(dir, 'b.txt'), 'committed on the branch\n')
+    git(dir, 'add', '.')
+    git(dir, 'commit', '-qm', 'branch work')
+    useRepo(dir)
+    process.env.CLAUDE_CODE_BASE_REF = 'main'
+
+    const snapshot = await fetchDiffSnapshot('auto')
+    expect(snapshot?.source).toMatchObject({ kind: 'branch', baseBranch: 'main' })
+    expect(snapshot?.perFileStats.has('b.txt')).toBe(true)
+  })
+
+  test('auto mode stays on the working tree when there is no branch to show', async () => {
+    const dir = makeRepo()
+    writeFileSync(join(dir, 'a.txt'), 'one\n')
+    git(dir, 'add', '.')
+    git(dir, 'commit', '-qm', 'first')
+    useRepo(dir)
+    process.env.CLAUDE_CODE_BASE_REF = 'does-not-exist'
+
+    const snapshot = await fetchDiffSnapshot('auto')
+    expect(snapshot?.source.kind).toBe('working-tree')
+    expect(snapshot?.stats.filesCount).toBe(0)
   })
 
   test('branch mode degrades to a HEAD diff when there is no base branch', async () => {

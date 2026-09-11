@@ -163,6 +163,11 @@ export function AttachmentMessage({
           lines from <Text bold>{attachment.displayPath}</Text> in{' '}
           {attachment.ideName}
         </Line>;
+    case 'selected_lines_in_diff':
+      return <Line>
+          ⧉ Selected <Text bold>{attachment.lineCount}</Text>{' '}
+          {attachment.lineCount === 1 ? 'line' : 'lines'} from diff view
+        </Line>;
     case 'nested_memory':
       return <Line>
           Loaded <Text bold>{attachment.displayPath}</Text>

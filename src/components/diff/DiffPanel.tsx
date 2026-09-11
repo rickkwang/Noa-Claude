@@ -1,70 +1,63 @@
 /**
- * The REPL diff sidebar — a live, always-visible view of what has changed,
- * rendered beside the transcript rather than as a modal over it.
+ * The REPL diff sidebar — a live view of what has changed, rendered beside the
+ * transcript rather than as a modal over it.
  *
- * `DiffPanelHost` owns the mount decision and the `/diff` toggle; `DiffPanel`
- * is the sidebar itself and only renders once the layout has given it a width.
- * The modal `DiffDialog` still exists for the cases the sidebar can't serve
- * (non-fullscreen, narrow terminals, non-git directories, per-turn diffs).
+ * `DiffPanelHost` owns the mount decision, the `/diff` toggle and auto-open;
+ * `DiffPanel` is the sidebar itself and only renders once the layout has given
+ * it a width. `DiffDialog` still covers everywhere the sidebar can't go.
  */
 import type { StructuredPatchHunk } from 'diff'
 import { resolve } from 'path'
 import * as React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNotifications } from '../../context/notifications.js'
 import { getSessionId } from '../../bootstrap/state.js'
-import { usePanelDiffData } from '../../hooks/usePanelDiffData.js'
+import { useNotifications } from '../../context/notifications.js'
+import { type DiffFile, useDiffData } from '../../hooks/useDiffData.js'
 import { useTerminalSize } from '../../hooks/useTerminalSize.js'
-import type { DiffFile } from '../../hooks/useDiffData.js'
+import { useTimeout } from '../../hooks/useTimeout.js'
 import { Box, Text } from '../../ink.js'
-import type { DOMElement } from '../../ink/dom.js'
 import ScrollBox, {
   type ScrollBoxHandle,
 } from '../../ink/components/ScrollBox.js'
+import type { DOMElement } from '../../ink/dom.js'
+import type { WheelEvent } from '../../ink/events/wheel-event.js'
+import { useSelection } from '../../ink/hooks/use-selection.js'
+import wrapText from '../../ink/wrap-text.js'
 import { useRegisterKeybindingContext } from '../../keybindings/KeybindingContext.js'
-import { useKeybinding } from '../../keybindings/useKeybinding.js'
+import {
+  useKeybinding,
+  useKeybindings,
+} from '../../keybindings/useKeybinding.js'
 import { useShortcutDisplay } from '../../keybindings/useShortcutDisplay.js'
 import { useAppState, useSetAppState } from '../../state/AppState.js'
 import type { AppState } from '../../state/AppStateStore.js'
-import type { DiffBaseMode, DiffSource } from '../../utils/diffPanelData.js'
 import { getCwd } from '../../utils/cwd.js'
-import { findGitRoot } from '../../utils/git.js'
+import type { DiffBaseMode, DiffSource } from '../../utils/diffData.js'
 import {
-  closeDiffPanel,
   cycleDiffBaseMode,
   describeDiffBase,
+  diffPanelOpenBlocker,
   diffPanelWidth,
   dismissDiffPanel,
   getDiffBaseMode,
   isGitRepo,
-  MIN_DIFF_PANEL_COLUMNS,
-  NO_GIT_REPO_MESSAGE,
   shouldAutoOpenDiffPanel,
   toggleReplTab,
-  tooNarrowMessage,
   type ReplTab,
 } from '../../utils/diffPanelState.js'
-import { readFileSafe } from '../../utils/file.js'
 import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js'
 import { isGeneratedFile, isTestFile } from '../../utils/generatedFiles.js'
+import { findGitRoot } from '../../utils/git.js'
 import { matchingRuleForInput } from '../../utils/permissions/filesystem.js'
 import { plural } from '../../utils/stringUtils.js'
 import type { TodoList } from '../../utils/todo/types.js'
 import { truncatePathMiddle } from '../../utils/truncate.js'
 import { Divider } from '../design-system/Divider.js'
+import { LoadingState } from '../design-system/LoadingState.js'
 import { ProgressBar } from '../design-system/ProgressBar.js'
-import { StructuredDiff } from '../StructuredDiff.js'
-
-// StructuredDiff lives in a type-unchecked module, so its prop types don't
-// survive the import. Re-declare them here rather than opting this file out.
-const TypedStructuredDiff = StructuredDiff as (props: {
-  patch: StructuredPatchHunk
-  filePath: string
-  firstLine: string | null
-  fileContent?: string
-  dim: boolean
-  width: number
-}) => React.ReactNode
+import { useDragToScroll } from '../ScrollKeybindingHandler.js'
+import { DiffDetailView } from './DiffDetailView.js'
+import { type DiffSelection, useDiffSelection } from './useDiffSelection.js'
 
 /** File-list rows shown before the "N more below" fold. */
 const FILE_LIST_ROWS = 8
@@ -72,11 +65,17 @@ const FILE_LIST_ROWS = 8
 /** Above this many pre-session files we list names only, no diffs. */
 const MAX_PRE_SESSION_DIFFS = 20
 
+/** A load faster than this never shows the spinner. */
+const LOADING_INDICATOR_DELAY_MS = 300
+
+/** Body rows one wheel notch scrolls. The file list moves one row per notch. */
+const WHEEL_ROWS_PER_NOTCH = 3
+
 const selectReplTab = (state: AppState): ReplTab => state.replTab
 const selectTrackedFileCount = (state: AppState): number =>
   state.fileHistory.trackedFiles.size
-const selectSnapshotSequence = (state: AppState): number =>
-  state.fileHistory.snapshotSequence ?? 0
+const selectTrackSequence = (state: AppState): number =>
+  state.fileHistory.trackSequence ?? 0
 type PanelPermissionContext = AppState['toolPermissionContext']
 const selectToolPermissionContext = (
   state: AppState,
@@ -84,10 +83,48 @@ const selectToolPermissionContext = (
 const selectTodos = (state: AppState): TodoList | undefined =>
   state.todos[getSessionId()]
 
+export function useSetReplTab(): (tab: ReplTab) => void {
+  const setAppState = useSetAppState()
+  return useCallback(
+    (tab: ReplTab) => {
+      setAppState(previous =>
+        previous.replTab === tab ? previous : { ...previous, replTab: tab },
+      )
+    },
+    [setAppState],
+  )
+}
+
+/**
+ * The tracked-file count auto-open must not react to: the count at mount, so a
+ * resumed session (whose tracked files are rebuilt from snapshots) doesn't
+ * fling the panel open at startup. It lapses as soon as the count moves, and a
+ * new session (`/clear`) starts without one.
+ */
+function useAutoOpenBaseline(trackedFileCount: number): number | null {
+  const sessionId = getSessionId()
+  const [state, setState] = useState(() => ({
+    sessionId,
+    baseline: trackedFileCount as number | null,
+  }))
+  let baseline = state.baseline
+  if (baseline !== null && trackedFileCount !== baseline) baseline = null
+  if (state.sessionId !== sessionId) baseline = null
+  if (state.sessionId !== sessionId || state.baseline !== baseline) {
+    setState({ sessionId, baseline })
+  }
+  return baseline
+}
+
 type HostProps = {
   /** Columns the layout reserved for the panel; 0 means don't render. */
   width: number
   isThinClient: boolean
+  /**
+   * Receives text the user selects inside the panel, to attach to their next
+   * prompt. Undefined while a modal owns the screen.
+   */
+  onAskAboutSelection?: (selection: DiffSelection) => void
 }
 
 /**
@@ -98,108 +135,53 @@ type HostProps = {
 export function DiffPanelHost({
   width,
   isThinClient,
+  onAskAboutSelection,
 }: HostProps): React.ReactNode {
   const replTab = useAppState(selectReplTab) as ReplTab
-  const setAppState = useSetAppState()
+  const setReplTab = useSetReplTab()
   const { columns } = useTerminalSize()
   const trackedFileCount = useAppState(selectTrackedFileCount) as number
-  // The count at the moment the host mounted. Auto-open is for "the first edit
-  // of a session that started clean" — if the panel comes up (or fullscreen
-  // flips on) with files already tracked, those are context, not a trigger.
-  const [autoOpenBaseline] = useState(() => trackedFileCount)
-  const setReplTab = useCallback(
-    (tab: ReplTab) => {
-      setAppState(previous =>
-        previous.replTab === tab ? previous : { ...previous, replTab: tab },
-      )
-    },
-    [setAppState],
-  )
+  const autoOpenBaseline = useAutoOpenBaseline(trackedFileCount)
 
-  // Open the panel unprompted the first time this session touches a file —
-  // the moment the panel has something to say and the user hasn't had to ask.
+  // Open the panel unprompted when this session starts touching files.
   useEffect(() => {
     if (replTab !== 'convo' || trackedFileCount === 0) return
-    if (trackedFileCount === autoOpenBaseline) return
+    if (autoOpenBaseline !== null && trackedFileCount === autoOpenBaseline) {
+      return
+    }
     if (!isFullscreenEnvEnabled() || isThinClient) return
     if (!shouldAutoOpenDiffPanel(columns)) return
     setReplTab('diff')
   }, [replTab, trackedFileCount, autoOpenBaseline, columns, isThinClient, setReplTab])
 
-  const toggle = useToggleDiffPanel()
-
+  const { addNotification } = useNotifications()
+  const toggle = useCallback(() => {
+    const blocker = replTab === 'diff' ? null : diffPanelOpenBlocker(columns)
+    if (blocker !== null) {
+      addNotification({
+        key: isGitRepo() ? 'diff-sidebar-too-narrow' : 'diff-sidebar-no-git',
+        text: blocker,
+        priority: 'immediate',
+        timeoutMs: 3000,
+      })
+      return
+    }
+    toggleReplTab(replTab, setReplTab)
+  }, [replTab, columns, addNotification, setReplTab])
   useKeybinding('app:toggleReplTab', toggle, {
     context: 'Global',
     isActive: isFullscreenEnvEnabled() && !isThinClient,
   })
 
-  const visible = replTab === 'diff' && width > 0
-
-  // Losing fullscreen or landing on a thin client removes the panel's reason to
-  // exist, so drop the tab rather than leaving state that can never render.
-  // Deliberately not done for a narrow terminal or an agent transcript: those
-  // are temporary, the width calculation already hides the panel, and keeping
-  // the tab means it comes straight back when they end.
-  useEffect(() => {
-    if (replTab !== 'diff') return
-    if (isFullscreenEnvEnabled() && !isThinClient) return
-    closeDiffPanel(setReplTab)
-  }, [replTab, isThinClient, setReplTab])
-
-  if (!visible) return null
-  return <DiffPanel width={width} />
+  // Losing the column (narrow terminal, agent transcript) keeps the tab, so
+  // the panel comes straight back when the column does.
+  if (replTab !== 'diff' || width === 0) return null
+  return <DiffPanel width={width} onAskAboutSelection={onAskAboutSelection} />
 }
 
 /**
- * The `/diff` action: flip the sidebar, or explain why it can't open.
- *
- * Shared by the `app:toggleReplTab` keybinding and the `/diff` command so both
- * enforce the same preconditions — an unresponsive `/diff` is indistinguishable
- * from a bug, so every refusal says why.
- */
-export function useToggleDiffPanel(): () => void {
-  const replTab = useAppState(selectReplTab) as ReplTab
-  const setAppState = useSetAppState()
-  const { columns } = useTerminalSize()
-  const { addNotification } = useNotifications()
-
-  const setReplTab = useCallback(
-    (tab: ReplTab) => {
-      setAppState(previous =>
-        previous.replTab === tab ? previous : { ...previous, replTab: tab },
-      )
-    },
-    [setAppState],
-  )
-
-  return useCallback(() => {
-    if (replTab !== 'diff') {
-      if (!isGitRepo()) {
-        addNotification({
-          key: 'diff-sidebar-no-git',
-          text: NO_GIT_REPO_MESSAGE,
-          priority: 'immediate',
-          timeoutMs: 3000,
-        })
-        return
-      }
-      if (columns < MIN_DIFF_PANEL_COLUMNS) {
-        addNotification({
-          key: 'diff-sidebar-too-narrow',
-          text: tooNarrowMessage(),
-          priority: 'immediate',
-          timeoutMs: 3000,
-        })
-        return
-      }
-    }
-    toggleReplTab(replTab, setReplTab)
-  }, [replTab, columns, addNotification, setReplTab])
-}
-
-/**
- * Compute the width the layout should reserve for the panel this render.
- * Exported so REPL can size the transcript in the same pass.
+ * The width the layout should reserve for the panel this render. Exported so
+ * REPL can size the transcript in the same pass.
  */
 export function useDiffPanelWidth(
   isThinClient: boolean,
@@ -217,12 +199,9 @@ export function useDiffPanelWidth(
   })
 }
 
-/**
- * `findGitRoot` is memoized and cheap, but a `git init` mid-session should still
- * be picked up — so re-check whenever files change or the tab flips.
- */
+/** Re-probed on file activity and tab flips, so a mid-session `git init` is picked up. */
 function useHasGitRepo(): boolean {
-  const trackSequence = useAppState(selectSnapshotSequence) as number
+  const trackSequence = useAppState(selectTrackSequence) as number
   const replTab = useAppState(selectReplTab) as ReplTab
   const cwd = getCwd()
   return useMemo(
@@ -232,20 +211,47 @@ function useHasGitRepo(): boolean {
   )
 }
 
-type PanelProps = { width: number }
+type EmptyState = { headline: string; hint: string | null }
 
-function DiffPanel({ width }: PanelProps): React.ReactNode {
+type PanelProps = {
+  width: number
+  onAskAboutSelection?: (selection: DiffSelection) => void
+}
+
+function DiffPanel({
+  width,
+  onAskAboutSelection,
+}: PanelProps): React.ReactNode {
   const setAppState = useSetAppState()
-  const trackSequence = useAppState(selectSnapshotSequence) as number
-  const permissionContext = useAppState(selectToolPermissionContext) as PanelPermissionContext
+  const setReplTab = useSetReplTab()
+  const trackSequence = useAppState(selectTrackSequence) as number
+  const permissionContext = useAppState(
+    selectToolPermissionContext,
+  ) as PanelPermissionContext
 
-  // Chord resolution and handler dispatch both run against the *registered*
-  // active contexts, so `ctrl+x b` only reaches the panel while this is on.
+  // Chord resolution only reaches handlers in *registered* contexts, so
+  // `ctrl+x b` belongs to the panel only while it is mounted.
   useRegisterKeybindingContext('DiffPanel', true)
 
-  // Tell the notification layer the panel is on screen, so transient toasts
-  // wait rather than pulling the eye off a diff. Draining the queue on unmount
-  // is what makes anything held during that time show promptly afterwards.
+  const [baseMode, setBaseMode] = useState<DiffBaseMode>(getDiffBaseMode)
+  const cycleBase = useCallback(
+    () => setBaseMode(current => cycleDiffBaseMode(current)),
+    [],
+  )
+  useKeybinding('app:cycleDiffBase', cycleBase, { context: 'DiffPanel' })
+
+  const {
+    stats,
+    files,
+    hunks,
+    loading,
+    source,
+    baseMode: loadedBaseMode,
+    noCommits,
+  } = useDiffData(trackSequence, true, baseMode)
+
+  // While the panel is up, transient toasts are held; draining on unmount shows
+  // anything that queued meanwhile.
   const { processQueue } = useNotifications()
   useEffect(() => {
     setAppState(previous =>
@@ -263,56 +269,75 @@ function DiffPanel({ width }: PanelProps): React.ReactNode {
     }
   }, [setAppState, processQueue])
 
-  const [baseMode, setBaseMode] = useState<DiffBaseMode>(getDiffBaseMode)
-  const cycleBase = useCallback(
-    () => setBaseMode(current => cycleDiffBaseMode(current)),
-    [],
-  )
-  useKeybinding('app:cycleDiffBase', cycleBase, { context: 'DiffPanel' })
-
-  const {
-    stats,
-    files,
-    hunks,
-    loading,
-    source,
-    baseMode: loadedBaseMode,
-    noCommits,
-  } = usePanelDiffData(trackSequence, true, baseMode)
-
-  const [showNoise, setShowNoise] = useState(false)
-  const [showPreSession, setShowPreSession] = useState(false)
-  const [listOffset, setListOffset] = useState(0)
+  const scrollRef = useRef<ScrollBoxHandle>(null)
+  const panelRef = useRef<DOMElement | null>(null)
+  const bodyRef = useRef<DOMElement | null>(null)
+  const fileAnchors = useRef(new Map<string, DOMElement>())
+  const { columns } = useTerminalSize()
+  useDiffSelection({
+    panelRef,
+    bodyRef,
+    minCol: columns - width,
+    anchors: fileAnchors,
+    onSelect: onAskAboutSelection,
+  })
+  // Dragging a selection past the body's edge scrolls the body — only for a
+  // selection that started in it.
+  const selection = useSelection()
+  useDragToScroll(scrollRef, selection, true, undefined, { requireScope: true })
 
   const contentWidth = Math.max(width - 2, 20)
 
-  const setReplTab = useCallback(
-    (tab: ReplTab) => {
-      setAppState(previous =>
-        previous.replTab === tab ? previous : { ...previous, replTab: tab },
-      )
-    },
-    [setAppState],
-  )
-
-  const partitioned = useMemo(
+  const [showNoise, setShowNoise] = useState(false)
+  const { visible, preSession, noiseCount, deniedCount } = useMemo(
     () => partitionFiles(files, permissionContext, showNoise),
     [files, permissionContext, showNoise],
   )
-  const { visible, preSession, noiseCount, deniedCount } = partitioned
 
-  const toggleNoise = useCallback(() => setShowNoise(v => !v), [])
-  const togglePreSession = useCallback(() => setShowPreSession(v => !v), [])
+  // Header counts describe this session's work, so pre-session files are
+  // subtracted — unless *everything* is pre-session, where zeroes would be
+  // more confusing than the totals.
+  const preSessionTotals = sumLines(preSession)
+  const allPreSession =
+    files.length > 0 &&
+    preSession.length === files.length &&
+    noiseCount === 0 &&
+    deniedCount === 0
+  const headerAdded = allPreSession
+    ? 0
+    : (stats?.linesAdded ?? 0) - preSessionTotals.added
+  const headerRemoved = allPreSession
+    ? 0
+    : (stats?.linesRemoved ?? 0) - preSessionTotals.removed
+  const headerFiles = allPreSession
+    ? 0
+    : (stats?.filesCount ?? files.length) - preSession.length
+
+  const [listOffset, setListOffset] = useState(0)
+  const maxOffset = Math.max(0, visible.length - FILE_LIST_ROWS)
+  const offset = Math.min(listOffset, maxOffset)
+  const rows = visible.slice(offset, offset + FILE_LIST_ROWS)
+  const below = visible.length - (offset + rows.length)
+  // Files git counted but never listed (over the per-file detail cap).
+  const notShown = Math.max(0, headerFiles - (files.length - preSession.length))
+  const hiddenNoiseCount = showNoise ? 0 : noiseCount
+
+  const status = loading
+    ? null
+    : describeStatus({
+        stats,
+        headerFiles,
+        noCommits,
+        baseMode: loadedBaseMode as DiffBaseMode,
+        source,
+      })
+
+  const toggleNoise = useCallback(() => setShowNoise(shown => !shown), [])
   useKeybinding('app:toggleDiffNoiseFilter', toggleNoise, {
     context: 'Global',
     isActive: noiseCount > 0,
   })
-  useKeybinding('app:toggleDiffPreSession', togglePreSession, {
-    context: 'Global',
-    isActive: preSession.length > 0,
-  })
 
-  const maxOffset = Math.max(0, visible.length - FILE_LIST_ROWS)
   const scrollList = useCallback(
     (delta: number) => {
       setListOffset(current =>
@@ -321,88 +346,79 @@ function DiffPanel({ width }: PanelProps): React.ReactNode {
     },
     [maxOffset],
   )
-  const scrollListUp = useCallback(() => scrollList(-1), [scrollList])
-  const scrollListDown = useCallback(() => scrollList(1), [scrollList])
-  useKeybinding('app:diffFileListUp', scrollListUp, {
-    context: 'Global',
-    isActive: maxOffset > 0,
-  })
-  useKeybinding('app:diffFileListDown', scrollListDown, {
-    context: 'Global',
-    isActive: maxOffset > 0,
-  })
-
+  useKeybindings(
+    {
+      'app:diffFileListUp': () => scrollList(-1),
+      'app:diffFileListDown': () => scrollList(1),
+    },
+    { context: 'Global', isActive: maxOffset > 0 },
+  )
   const scrollDownShortcut = useShortcutDisplay(
     'app:diffFileListDown',
     'Global',
-    'ctrl+down',
+    'alt+down',
   )
-  const offset = Math.min(listOffset, maxOffset)
-  const rows = visible.slice(offset, offset + FILE_LIST_ROWS)
-  const below = visible.length - (offset + rows.length)
 
-  // Header counts describe the current session's work, so pre-session files are
-  // subtracted out — except when *everything* is pre-session, where showing
-  // zeroes would be more confusing than showing the totals.
-  const allPreSession =
-    files.length > 0 &&
-    preSession.length === files.length &&
-    noiseCount === 0 &&
-    deniedCount === 0
-  const preSessionTotals = preSession.reduce(
-    (acc, file) => ({
-      added: acc.added + file.linesAdded,
-      removed: acc.removed + file.linesRemoved,
-    }),
-    { added: 0, removed: 0 },
+  const [showPreSession, setShowPreSession] = useState(false)
+  const togglePreSession = useCallback(
+    () => setShowPreSession(shown => !shown),
+    [],
   )
-  const headerFiles = allPreSession
-    ? 0
-    : (stats?.filesCount ?? files.length) - preSession.length
-  const headerAdded = allPreSession
-    ? 0
-    : (stats?.linesAdded ?? 0) - preSessionTotals.added
-  const headerRemoved = allPreSession
-    ? 0
-    : (stats?.linesRemoved ?? 0) - preSessionTotals.removed
-  // Files git counted but we never listed (over the per-file detail cap).
-  const notShown = Math.max(0, headerFiles - (files.length - preSession.length))
-
-  const empty = describeEmptyState({
-    loading,
-    stats,
-    headerFiles,
-    noCommits,
-    baseMode: loadedBaseMode,
-    source,
+  useKeybinding('app:toggleDiffPreSession', togglePreSession, {
+    context: 'Global',
+    isActive: preSession.length > 0,
   })
 
-  // Upstream also scrolls the panel body and the file-list window on hover
-  // wheel. Not ported: this ink fork routes the wheel through a global
-  // keybinding rather than per-Box `onWheel`, so there is no hit-tested target
-  // to attach it to. Keyboard scrolling covers both.
-  const scrollRef = useRef<ScrollBoxHandle>(null)
-  const fileAnchors = useRef(new Map<string, DOMElement>())
+  const empty: EmptyState | null = loading
+    ? null
+    : status !== null
+      ? status
+      : files.length === 0
+        ? {
+            headline: 'Too many changed files to show diff',
+            hint: 'Per-file diff is skipped above 500 files',
+          }
+        : visible.length === 0
+          ? describeAllHidden(deniedCount, hiddenNoiseCount)
+          : null
+  const centered = loading || (empty !== null && !showPreSession)
+  const loadingIndicatorDue = useTimeout(LOADING_INDICATOR_DELAY_MS)
+
   const scrollToFile = useCallback((path: string) => {
     const node = fileAnchors.current.get(path)
     if (node) scrollRef.current?.scrollToElement(node)
   }, [])
 
+  const onPanelWheel = useCallback((event: WheelEvent) => {
+    scrollRef.current?.scrollBy(event.deltaY * WHEEL_ROWS_PER_NOTCH)
+    event.preventDefault()
+    event.stopPropagation()
+  }, [])
+
+  const preSessionSection =
+    stats !== null && preSession.length > 0 ? (
+      <PreSessionSection
+        files={preSession}
+        hunks={hunks}
+        shown={showPreSession}
+        onToggle={togglePreSession}
+        width={contentWidth}
+      />
+    ) : null
+
   return (
     <Box
+      ref={panelRef}
       flexDirection="column"
       width={width}
-      flexShrink={0}
       height="100%"
-      overflow="hidden"
+      flexShrink={0}
+      onWheel={onPanelWheel}
+      selectionScope
     >
       <Box flexDirection="column" paddingX={1} paddingY={1} flexShrink={0}>
         <Box flexDirection="row">
-          {empty.title !== null ? (
-            <Text dimColor wrap="truncate">
-              {empty.title}
-            </Text>
-          ) : (
+          {!loading && status === null && (
             <Text>
               <Text bold>
                 {headerFiles} {plural(headerFiles, 'file')}
@@ -413,31 +429,54 @@ function DiffPanel({ width }: PanelProps): React.ReactNode {
             </Text>
           )}
           <Box flexGrow={1} />
-          <ClosePanelButton onClose={() => dismissDiffPanel(setReplTab)} />
+          <HoverToggle onClick={() => dismissDiffPanel(setReplTab)}>
+            {hovered => (
+              <Text bold={hovered} dimColor={!hovered}>
+                ✕
+              </Text>
+            )}
+          </HoverToggle>
         </Box>
         {stats !== null &&
           (noCommits ? (
             headerFiles > 0 && (
               <Text dimColor>no commits yet — showing staged and new files</Text>
             )
-          ) : baseMode !== 'session' || loadedBaseMode !== 'session' ? (
-            <Text dimColor>
-              {describeDiffBase(baseMode, source, baseMode !== loadedBaseMode)}
-            </Text>
-          ) : null)}
+          ) : (
+            (baseMode !== 'session' || loadedBaseMode !== 'session') && (
+              <Text dimColor>
+                {describeDiffBase(baseMode, source, baseMode !== loadedBaseMode)}
+              </Text>
+            )
+          ))}
         <TodoProgress width={contentWidth} />
         {(rows.length > 0 || noiseCount > 0) && (
-          <Box flexDirection="column" marginTop={1}>
+          <Box
+            flexDirection="column"
+            marginTop={1}
+            onWheel={
+              maxOffset > 0
+                ? (event: WheelEvent) => {
+                    scrollList(event.deltaY)
+                    event.preventDefault()
+                    event.stopPropagation()
+                  }
+                : undefined
+            }
+          >
             {offset > 0 && <Text dimColor>↑ {offset} more above</Text>}
             {rows.map(file => (
-              <FileListRow
-                key={file.path}
-                path={file.path}
-                added={file.linesAdded}
-                removed={file.linesRemoved}
-                width={contentWidth}
-                onClick={() => scrollToFile(file.path)}
-              />
+              <HoverToggle key={file.path} onClick={() => scrollToFile(file.path)}>
+                {hovered => (
+                  <>
+                    <Text dimColor={!hovered} underline={hovered}>
+                      {truncatePathMiddle(file.path, Math.max(contentWidth - 12, 8))}
+                    </Text>
+                    <Box flexGrow={1} />
+                    <LineCounts added={file.linesAdded} removed={file.linesRemoved} />
+                  </>
+                )}
+              </HoverToggle>
             ))}
             {(below > 0 || deniedCount > 0 || notShown > 0) && (
               <Text dimColor>
@@ -454,101 +493,172 @@ function DiffPanel({ width }: PanelProps): React.ReactNode {
               </Text>
             )}
             {noiseCount > 0 && (
-              <NoiseToggle
-                count={noiseCount}
-                shown={showNoise}
-                onToggle={() => setShowNoise(v => !v)}
-              />
+              <HoverToggle onClick={toggleNoise}>
+                {hovered => (
+                  <Text dimColor={!hovered} underline={hovered}>
+                    {noiseCount} {plural(noiseCount, 'test')}/generated (
+                    {showNoise ? 'hide' : 'show'})
+                  </Text>
+                )}
+              </HoverToggle>
             )}
           </Box>
         )}
       </Box>
-      <Box flexGrow={1} flexDirection="column" overflow="hidden">
-        <ScrollBox
-          ref={scrollRef}
-          flexGrow={1}
-          flexDirection="column"
-          stickyScroll={false}
-          paddingX={1}
-        >
-          <Box flexDirection="column" width={contentWidth}>
-            <PanelBody
-              loading={loading}
-              empty={empty}
-              totalFiles={files.length}
-              visible={visible}
-              hunks={hunks}
-              width={contentWidth}
-              deniedCount={deniedCount}
-              hiddenNoiseCount={showNoise ? 0 : noiseCount}
-              anchors={fileAnchors}
-            />
-            {!loading && stats !== null && preSession.length > 0 && (
-              <PreSessionSection
-                files={preSession}
-                hunks={hunks}
-                shown={showPreSession}
-                onToggle={() => setShowPreSession(v => !v)}
-                width={contentWidth}
-              />
+      <Box ref={bodyRef} flexGrow={1} flexDirection="column" overflow="hidden">
+        {centered ? (
+          <>
+            <Box
+              flexGrow={1}
+              flexDirection="column"
+              justifyContent="center"
+              alignItems="center"
+              paddingX={1}
+            >
+              {loading
+                ? loadingIndicatorDue && (
+                    <LoadingState message="Loading diff…" dimColor />
+                  )
+                : empty !== null &&
+                  [empty.headline, empty.hint ?? '']
+                    .flatMap(text =>
+                      text === ''
+                        ? []
+                        : wrapText(text, contentWidth, 'wrap').split('\n'),
+                    )
+                    .map((line, index) => (
+                      <Text key={index} dimColor>
+                        {line}
+                      </Text>
+                    ))}
+            </Box>
+            {preSessionSection && (
+              <Box flexShrink={0} paddingX={1} paddingBottom={1}>
+                {preSessionSection}
+              </Box>
             )}
-          </Box>
-        </ScrollBox>
+          </>
+        ) : (
+          <ScrollBox
+            ref={scrollRef}
+            flexGrow={1}
+            flexDirection="column"
+            stickyScroll={false}
+            paddingX={1}
+          >
+            <Box flexDirection="column" width={contentWidth}>
+              {empty !== null ? (
+                <Box flexDirection="column">
+                  <Text dimColor>{empty.headline}</Text>
+                  {empty.hint && (
+                    <Text dimColor italic>
+                      {empty.hint}
+                    </Text>
+                  )}
+                </Box>
+              ) : (
+                <Box flexDirection="column" gap={1}>
+                  {visible.map(file => (
+                    <Box
+                      key={file.path}
+                      flexDirection="column"
+                      ref={(node: DOMElement | null) => {
+                        if (node) fileAnchors.current.set(file.path, node)
+                        else fileAnchors.current.delete(file.path)
+                      }}
+                    >
+                      <Divider width={contentWidth} />
+                      <FileDiff file={file} hunks={hunks} width={contentWidth} />
+                    </Box>
+                  ))}
+                </Box>
+              )}
+              {preSessionSection}
+            </Box>
+          </ScrollBox>
+        )}
       </Box>
     </Box>
   )
 }
 
-type EmptyState = { title: string | null; detail: string | null }
-
-function describeEmptyState({
-  loading,
+/** The empty state git itself implies, or null when there is something to list. */
+function describeStatus({
   stats,
   headerFiles,
   noCommits,
   baseMode,
   source,
 }: {
-  loading: boolean
   stats: { filesCount: number } | null
   headerFiles: number
   noCommits: boolean | undefined
   baseMode: DiffBaseMode
   source: DiffSource
-}): EmptyState {
-  if (loading) return { title: null, detail: null }
+}): EmptyState | null {
   if (stats === null) {
     return {
-      title: 'Diff unavailable',
-      detail: "Couldn't read the git diff — it will retry on the next change",
+      headline: 'Diff unavailable',
+      hint: "Couldn't read the git diff — it will retry on the next change",
     }
   }
-  if (headerFiles !== 0) return { title: null, detail: null }
-
+  if (headerFiles !== 0) return null
   if (noCommits) {
     return {
-      title: 'No commits yet',
-      detail: "Nothing to diff against until the repo's first commit",
+      headline: 'No commits yet',
+      hint: "Nothing to diff against until the repo's first commit",
     }
   }
-  if (baseMode === 'uncommitted') {
-    return { title: 'No uncommitted changes', detail: null }
+  switch (baseMode) {
+    case 'uncommitted':
+      return { headline: 'No uncommitted changes', hint: null }
+    case 'branch':
+      return source.kind === 'branch'
+        ? { headline: `No changes vs ${source.baseBranch}`, hint: null }
+        : {
+            headline: 'No changes vs HEAD',
+            hint: 'No base branch to compare against — showing changes vs HEAD',
+          }
+    case 'session':
+      return { headline: 'No changes this session', hint: null }
   }
-  if (baseMode === 'branch') {
-    return source.kind === 'branch'
-      ? { title: `No changes vs ${source.baseBranch}`, detail: null }
-      : {
-          title: 'No changes vs HEAD',
-          detail: 'No base branch to compare against — showing changes vs HEAD',
-        }
+}
+
+function describeAllHidden(
+  deniedCount: number,
+  hiddenNoiseCount: number,
+): EmptyState {
+  if (deniedCount > 0 && hiddenNoiseCount > 0) {
+    return {
+      headline: 'Only hidden files changed',
+      hint: 'Read-denied, test, and generated files are hidden in this panel',
+    }
   }
-  return { title: 'No changes this session', detail: null }
+  if (deniedCount > 0) {
+    return {
+      headline: 'Only read-denied files changed',
+      hint: 'Read-denied files are hidden in this panel',
+    }
+  }
+  return {
+    headline: 'Only tests and generated files changed',
+    hint: 'Tests and generated files are hidden · click "show" above to view them',
+  }
+}
+
+function sumLines(files: DiffFile[]): { added: number; removed: number } {
+  let added = 0
+  let removed = 0
+  for (const file of files) {
+    added += file.linesAdded
+    removed += file.linesRemoved
+  }
+  return { added, removed }
 }
 
 /**
- * Todo completion, mirrored into the panel. The sidebar takes columns from the
- * transcript, so the progress that would otherwise sit under the prompt is
- * repeated where the user is now looking.
+ * Todo completion, mirrored into the panel: the sidebar takes the columns the
+ * progress would otherwise have under the prompt.
  */
 function TodoProgress({ width }: { width: number }): React.ReactNode {
   const todos = useAppState(selectTodos) as TodoList | undefined
@@ -570,96 +680,31 @@ function TodoProgress({ width }: { width: number }): React.ReactNode {
   )
 }
 
-function PanelBody({
-  loading,
-  empty,
-  totalFiles,
-  visible,
+function FileDiff({
+  file,
   hunks,
   width,
-  deniedCount,
-  hiddenNoiseCount,
-  anchors,
 }: {
-  loading: boolean
-  empty: EmptyState
-  totalFiles: number
-  visible: DiffFile[]
+  file: DiffFile
   hunks: Map<string, StructuredPatchHunk[]>
   width: number
-  deniedCount: number
-  hiddenNoiseCount: number
-  anchors: React.RefObject<Map<string, DOMElement>>
 }): React.ReactNode {
-  if (loading) {
-    return <Text dimColor>Loading diff…</Text>
-  }
-  if (empty.title !== null) {
-    return empty.detail !== null ? <Text dimColor>{empty.detail}</Text> : null
-  }
-  if (totalFiles === 0) {
-    return (
-      <Box flexDirection="column">
-        <Text dimColor>Too many changed files to show diff</Text>
-        <Text dimColor italic>
-          Per-file diff is skipped above 500 files
-        </Text>
-      </Box>
-    )
-  }
-  if (visible.length === 0) {
-    const both = deniedCount > 0 && hiddenNoiseCount > 0
-    return (
-      <Box flexDirection="column">
-        <Text dimColor>
-          {both
-            ? 'Only hidden files changed'
-            : deniedCount > 0
-              ? 'Only read-denied files changed'
-              : 'Only tests and generated files changed'}
-        </Text>
-        <Text dimColor italic>
-          {both
-            ? 'Read-denied, test, and generated files are hidden in this panel'
-            : deniedCount > 0
-              ? 'Read-denied files are hidden in this panel'
-              : 'Tests and generated files are hidden · click "show" above to view them'}
-        </Text>
-      </Box>
-    )
-  }
-
   return (
-    <Box flexDirection="column" gap={1}>
-      {visible.map(file => (
-        <Box
-          key={file.path}
-          flexDirection="column"
-          ref={(node: DOMElement | null) => {
-            if (node) anchors.current.set(file.path, node)
-            else anchors.current.delete(file.path)
-          }}
-        >
-          <Divider width={width} />
-          <PanelFileDiff
-            filePath={file.path}
-            hunks={hunks.get(file.path) ?? []}
-            isBinary={file.isBinary}
-            isLargeFile={file.isLargeFile}
-            isTruncated={file.isTruncated}
-            isUntracked={file.isUntracked}
-            width={width}
-          />
-        </Box>
-      ))}
-    </Box>
+    <DiffDetailView
+      filePath={file.path}
+      hunks={hunks.get(file.path) ?? []}
+      isBinary={file.isBinary}
+      isLargeFile={file.isLargeFile}
+      isTruncated={file.isTruncated}
+      isUntracked={file.isUntracked}
+      width={width}
+    />
   )
 }
 
 /**
- * Files that were already dirty when the session started. Collapsed by default:
- * they're context, not this session's work, and mixing them into the main list
- * would make "N files changed" mean nothing.
+ * Files that were already dirty when the session started. Collapsed by
+ * default: they're context, not this session's work.
  */
 function PreSessionSection({
   files,
@@ -674,20 +719,16 @@ function PreSessionSection({
   onToggle: () => void
   width: number
 }): React.ReactNode {
-  const [hovered, setHovered] = useState(false)
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Box
-        flexDirection="row"
-        onClick={onToggle}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-      >
-        <Text dimColor={!hovered} underline={hovered}>
-          +{files.length} {plural(files.length, 'file')} edited before this
-          session ({shown ? 'hide' : 'show'})
-        </Text>
-      </Box>
+      <HoverToggle onClick={onToggle}>
+        {hovered => (
+          <Text dimColor={!hovered} underline={hovered}>
+            +{files.length} {plural(files.length, 'file')} edited before this
+            session ({shown ? 'hide' : 'show'})
+          </Text>
+        )}
+      </HoverToggle>
       {shown && (
         <>
           <Box flexDirection="column" marginTop={1}>
@@ -697,10 +738,7 @@ function PreSessionSection({
                   {truncatePathMiddle(file.path, Math.max(width - 12, 8))}
                 </Text>
                 <Box flexGrow={1} />
-                <LineCounts
-                  added={file.linesAdded}
-                  removed={file.linesRemoved}
-                />
+                <LineCounts added={file.linesAdded} removed={file.linesRemoved} />
               </Box>
             ))}
           </Box>
@@ -710,15 +748,7 @@ function PreSessionSection({
             files.map(file => (
               <Box key={file.path} flexDirection="column">
                 <Divider width={width} />
-                <PanelFileDiff
-                  filePath={file.path}
-                  hunks={hunks.get(file.path) ?? []}
-                  isBinary={file.isBinary}
-                  isLargeFile={file.isLargeFile}
-                  isTruncated={file.isTruncated}
-                  isUntracked={file.isUntracked}
-                  width={width}
-                />
+                <FileDiff file={file} hunks={hunks} width={width} />
               </Box>
             ))
           )}
@@ -728,64 +758,15 @@ function PreSessionSection({
   )
 }
 
-function NoiseToggle({
-  count,
-  shown,
-  onToggle,
-}: {
-  count: number
-  shown: boolean
-  onToggle: () => void
-}): React.ReactNode {
-  const [hovered, setHovered] = useState(false)
-  return (
-    <Box
-      flexDirection="row"
-      onClick={onToggle}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      <Text dimColor={!hovered} underline={hovered}>
-        {count} {plural(count, 'test')}/generated ({shown ? 'hide' : 'show'})
-      </Text>
-    </Box>
-  )
-}
-
-function ClosePanelButton({
-  onClose,
-}: {
-  onClose: () => void
-}): React.ReactNode {
-  const [hovered, setHovered] = useState(false)
-  return (
-    <Box
-      onClick={onClose}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      <Text bold={hovered} dimColor={!hovered}>
-        ✕
-      </Text>
-    </Box>
-  )
-}
-
-function FileListRow({
-  path,
-  added,
-  removed,
-  width,
+/** A clickable row that restyles itself while the pointer is over it. */
+function HoverToggle({
   onClick,
+  children,
 }: {
-  path: string
-  added: number
-  removed: number
-  width: number
   onClick: () => void
+  children: (hovered: boolean) => React.ReactNode
 }): React.ReactNode {
   const [hovered, setHovered] = useState(false)
-  const label = truncatePathMiddle(path, Math.max(width - 12, 8))
   return (
     <Box
       flexDirection="row"
@@ -793,11 +774,7 @@ function FileListRow({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <Text dimColor={!hovered} underline={hovered}>
-        {label}
-      </Text>
-      <Box flexGrow={1} />
-      <LineCounts added={added} removed={removed} />
+      {children(hovered)}
     </Box>
   )
 }
@@ -819,134 +796,22 @@ function LineCounts({
 }
 
 /**
- * A single file's diff, sized to the panel rather than the terminal.
- * Mirrors `DiffDetailView` but takes an explicit width and skips the
- * dialog-only chrome.
- */
-function PanelFileDiff({
-  filePath,
-  hunks,
-  isBinary,
-  isLargeFile,
-  isTruncated,
-  isUntracked,
-  width,
-}: {
-  filePath: string
-  hunks: StructuredPatchHunk[]
-  isBinary?: boolean
-  isLargeFile?: boolean
-  isTruncated?: boolean
-  isUntracked?: boolean
-  width: number
-}): React.ReactNode {
-  const fileContent = useMemo(() => {
-    if (!filePath || isBinary || isLargeFile || isUntracked) return undefined
-    try {
-      // Diff paths are repo-root-relative; resolve against the git root so a
-      // session started in a subdirectory still reads the right file.
-      const root = findGitRoot(getCwd()) ?? getCwd()
-      return readFileSafe(resolve(root, filePath)) ?? undefined
-    } catch {
-      return undefined
-    }
-  }, [filePath, isBinary, isLargeFile, isUntracked])
-  const firstLine = fileContent?.split('\n')[0] ?? null
-
-  if (isUntracked) {
-    return (
-      <Box flexDirection="column" width="100%">
-        <Box>
-          <Text bold>{filePath}</Text>
-          <Text dimColor> (untracked)</Text>
-        </Box>
-        <Divider width={width} />
-        <Box flexDirection="column">
-          <Text dimColor italic>
-            New file not yet staged.
-          </Text>
-          <Text dimColor italic>
-            Run `git add :/{filePath}` to see line counts.
-          </Text>
-        </Box>
-      </Box>
-    )
-  }
-
-  if (isBinary || isLargeFile) {
-    return (
-      <Box flexDirection="column" width="100%">
-        <Box>
-          <Text bold>{filePath}</Text>
-        </Box>
-        <Divider width={width} />
-        <Box flexDirection="column">
-          <Text dimColor italic>
-            {isBinary
-              ? 'Binary file - cannot display diff'
-              : 'Large file - diff exceeds 1 MB limit'}
-          </Text>
-        </Box>
-      </Box>
-    )
-  }
-
-  return (
-    <Box flexDirection="column" width="100%">
-      <Box>
-        <Text bold>{filePath}</Text>
-        {isTruncated && <Text dimColor> (truncated)</Text>}
-      </Box>
-      <Divider width={width} />
-      <Box flexDirection="column">
-        {hunks.length === 0 ? (
-          <Text dimColor>No diff content</Text>
-        ) : (
-          hunks.map((hunk, index) => (
-            <TypedStructuredDiff
-              key={index}
-              patch={hunk}
-              filePath={filePath}
-              firstLine={firstLine}
-              fileContent={fileContent}
-              dim={false}
-              width={width}
-            />
-          ))
-        )}
-      </Box>
-      {isTruncated && (
-        <Text dimColor italic>
-          … diff truncated (exceeded 400 line limit)
-        </Text>
-      )}
-    </Box>
-  )
-}
-
-type Partitioned = {
-  visible: DiffFile[]
-  preSession: DiffFile[]
-  noiseCount: number
-  deniedCount: number
-}
-
-/**
  * Split the change set into what the panel shows, what it folds away, and what
- * it must not show at all.
- *
- * Read-deny rules are honoured here rather than at fetch time: the counts still
- * come from git (so totals stay honest) but the contents never reach the panel.
+ * it must not show at all. Read-deny rules apply here rather than at fetch
+ * time: the counts still come from git, but denied contents never render.
  */
 function partitionFiles(
   files: DiffFile[],
   permissionContext: PanelPermissionContext,
   showNoise: boolean,
-): Partitioned {
-  // Git reports repo-root-relative paths (the fetcher runs with
-  // diff.relative=false), so resolve against the git root — resolving against
-  // the session cwd would misplace every rule whenever the session runs from
-  // a subdirectory and let rooted deny rules miss.
+): {
+  visible: DiffFile[]
+  preSession: DiffFile[]
+  noiseCount: number
+  deniedCount: number
+} {
+  // Diff paths are repo-root-relative, so rules resolve against the git root;
+  // the session cwd would misplace every rule from a subdirectory.
   const root = findGitRoot(getCwd()) ?? getCwd()
   const visible: DiffFile[] = []
   const preSession: DiffFile[] = []
@@ -954,14 +819,14 @@ function partitionFiles(
   let deniedCount = 0
 
   for (const file of files) {
-    if (
+    const denied =
       matchingRuleForInput(
         resolve(root, file.path),
         permissionContext as Parameters<typeof matchingRuleForInput>[1],
         'read',
         'deny',
       ) !== null
-    ) {
+    if (denied) {
       deniedCount++
       continue
     }
@@ -969,7 +834,7 @@ function partitionFiles(
       preSession.push(file)
       continue
     }
-    if (isNoise(file.path)) {
+    if (isTestFile(file.path) || isGeneratedFile(file.path)) {
       noiseCount++
       if (!showNoise) continue
     }
@@ -977,13 +842,4 @@ function partitionFiles(
   }
 
   return { visible, preSession, noiseCount, deniedCount }
-}
-
-/**
- * Test suites and generated artifacts are real changes, but they crowd out the
- * code a reviewer actually needs to look at — so the panel folds them behind a
- * count by default.
- */
-function isNoise(path: string): boolean {
-  return isTestFile(path) || isGeneratedFile(path)
 }

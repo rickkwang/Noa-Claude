@@ -20,6 +20,7 @@ import { waitForScrollIdle } from '../../bootstrap/state.js'
 import { registerCleanup } from '../cleanupRegistry.js'
 import { getCwd } from '../cwd.js'
 import { findGitRoot } from '../git.js'
+import { createSignal } from '../signal.js'
 import { parseGitConfigValue } from './gitConfigParser.js'
 
 // ---------------------------------------------------------------------------
@@ -339,6 +340,7 @@ class GitFileWatcher {
   private watchedPaths: string[] = []
   private branchRefPath: string | null = null
   private cache = new Map<string, CacheEntry<unknown>>()
+  private stateChanged = createSignal()
 
   async ensureStarted(): Promise<void> {
     if (this.initialized) {
@@ -371,6 +373,13 @@ class GitFileWatcher {
     this.watchPath(join(this.commonDir ?? this.gitDir, 'config'), () => {
       this.invalidate()
     })
+    // computeDefaultBranch reads this; `git remote set-head` rewrites it.
+    this.watchPath(
+      join(this.commonDir ?? this.gitDir, 'refs', 'remotes', 'origin', 'HEAD'),
+      () => {
+        this.invalidate()
+      },
+    )
 
     // Watch the current branch's ref file for commit changes
     await this.watchCurrentBranchRef()
@@ -442,6 +451,18 @@ class GitFileWatcher {
     for (const entry of this.cache.values()) {
       entry.dirty = true
     }
+    // Emit after marking dirty, never before: a subscriber that re-reads
+    // synchronously must not be served the value the change just invalidated.
+    this.stateChanged.emit()
+  }
+
+  /**
+   * Subscribe to "the repo's committed state moved" — a commit, a branch
+   * switch, a config or origin/HEAD rewrite. Working-tree edits are *not*
+   * covered; nothing here watches the index or the files themselves.
+   */
+  onStateChange(listener: () => void): () => void {
+    return this.stateChanged.subscribe(listener)
   }
 
   private stopWatching(): void {
@@ -488,6 +509,7 @@ class GitFileWatcher {
   /** Reset all state. Stops file watchers. For testing only. */
   reset(): void {
     this.stopWatching()
+    this.stateChanged.clear()
     this.cache.clear()
     this.initialized = false
     this.initPromise = null
@@ -697,4 +719,10 @@ export async function getWorktreeCountFromFs(): Promise<number> {
     // No worktrees directory means only the main worktree
     return 1
   }
+}
+
+/** Start the git watcher if needed and subscribe to its state changes. */
+export function subscribeToGitState(listener: () => void): () => void {
+  void gitWatcher.ensureStarted()
+  return gitWatcher.onStateChange(listener)
 }

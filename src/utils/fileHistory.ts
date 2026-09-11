@@ -47,9 +47,15 @@ export type FileHistoryState = {
   snapshots: FileHistorySnapshot[]
   trackedFiles: Set<string>
   // Monotonically-increasing counter incremented on every snapshot, even when
-  // old snapshots are evicted.  Used by useGitDiffStats as an activity signal
-  // (snapshots.length plateaus once the cap is reached).
+  // old snapshots are evicted (snapshots.length plateaus once the cap is
+  // reached).
   snapshotSequence: number
+  /**
+   * Bumped whenever a tool may have written to disk — every tracked edit,
+   * including ones checkpointing skips, and every non-read-only shell command.
+   * The diff views re-read git on it.
+   */
+  trackSequence?: number
 }
 
 const MAX_SNAPSHOTS = 100
@@ -78,6 +84,20 @@ function fileHistoryEnabledSdk(): boolean {
   )
 }
 
+type UpdateFileHistoryState = (
+  updater: (prev: FileHistoryState) => FileHistoryState,
+) => void
+
+/** Record that files may have changed without anything to back up. */
+export function fileHistoryTouch(
+  updateFileHistoryState: UpdateFileHistoryState,
+): void {
+  updateFileHistoryState(state => ({
+    ...state,
+    trackSequence: (state.trackSequence ?? 0) + 1,
+  }))
+}
+
 /**
  * Tracks a file edit (and add) by creating a backup of its current contents (if necessary).
  *
@@ -85,13 +105,12 @@ function fileHistoryEnabledSdk(): boolean {
  * its contents before the edit.
  */
 export async function fileHistoryTrackEdit(
-  updateFileHistoryState: (
-    updater: (prev: FileHistoryState) => FileHistoryState,
-  ) => void,
+  updateFileHistoryState: UpdateFileHistoryState,
   filePath: string,
   messageId: UUID,
 ): Promise<void> {
   if (!fileHistoryEnabled()) {
+    fileHistoryTouch(updateFileHistoryState)
     return
   }
 
@@ -110,11 +129,13 @@ export async function fileHistoryTrackEdit(
   if (!mostRecent) {
     logError(new Error('FileHistory: Missing most recent snapshot'))
     logEvent('tengu_file_history_track_edit_failed', {})
+    fileHistoryTouch(updateFileHistoryState)
     return
   }
   if (mostRecent.trackedFileBackups[trackingPath]) {
     // Already tracked in the most recent snapshot; next makeSnapshot will
     // re-check mtime and re-backup if changed. Do not touch v1 backup.
+    fileHistoryTouch(updateFileHistoryState)
     return
   }
 
@@ -125,6 +146,7 @@ export async function fileHistoryTrackEdit(
   } catch (error) {
     logError(error)
     logEvent('tengu_file_history_track_edit_failed', {})
+    fileHistoryTouch(updateFileHistoryState)
     return
   }
   const isAddingFile = backup.backupFileName === null
@@ -132,12 +154,13 @@ export async function fileHistoryTrackEdit(
   // Phase 3: commit. Re-check tracked (another trackEdit may have raced).
   updateFileHistoryState((state: FileHistoryState) => {
     try {
+      const trackSequence = (state.trackSequence ?? 0) + 1
       const mostRecentSnapshot = state.snapshots.at(-1)
       if (
         !mostRecentSnapshot ||
         mostRecentSnapshot.trackedFileBackups[trackingPath]
       ) {
-        return state
+        return { ...state, trackSequence }
       }
 
       // This file has not already been tracked in the most recent snapshot, so we
@@ -166,6 +189,7 @@ export async function fileHistoryTrackEdit(
           return copy
         })(),
         trackedFiles: updatedTrackedFiles,
+        trackSequence,
       }
       maybeDumpStateForDebug(updatedState)
 

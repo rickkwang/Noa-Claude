@@ -6,6 +6,7 @@
  * repo, and the main (non-teammate) view. Everywhere else `/diff` falls back to
  * the modal dialog — see `src/commands/diff/`.
  */
+import { getIsRemoteMode } from '../bootstrap/state.js'
 import { getCwd } from './cwd.js'
 import { isFullscreenEnvEnabled } from './fullscreen.js'
 import { findGitRoot } from './git.js'
@@ -15,7 +16,7 @@ import {
   saveCurrentProjectConfig,
   saveGlobalConfig,
 } from './config.js'
-import { DIFF_BASE_MODES, type DiffBaseMode } from './diffPanelData.js'
+import { DIFF_BASE_MODES, type DiffBaseMode } from './diffData.js'
 
 /**
  * Below this the panel would leave the transcript unreadably narrow, so it
@@ -37,8 +38,15 @@ const PANEL_WIDTH_RATIO = 0.45
 export const NO_GIT_REPO_MESSAGE =
   'The diff panel shows git changes — the current directory isn’t in a git repository'
 
-export function tooNarrowMessage(): string {
+function tooNarrowMessage(): string {
   return `Resize your terminal to at least ${MIN_DIFF_PANEL_COLUMNS} columns to show the diff panel`
+}
+
+/** Why the panel can't open right now, or null when it can. */
+export function diffPanelOpenBlocker(columns: number): string | null {
+  if (!isGitRepo()) return NO_GIT_REPO_MESSAGE
+  if (columns < MIN_DIFF_PANEL_COLUMNS) return tooNarrowMessage()
+  return null
 }
 
 /** Which REPL column has focus: the transcript, or the diff sidebar. */
@@ -55,11 +63,15 @@ export function isGitRepo(): boolean {
  * toggle and the user gets told why ("not a git repository", "resize to at
  * least N columns") instead of a dialog they didn't ask for.
  *
+ * A remote session is the one case that must route to the dialog: the sidebar
+ * never gets a column there (see {@link diffPanelCanMount}), so toggling would
+ * flip a tab nothing renders and `/diff` would look dead.
+ *
  * Lives here rather than in the panel component so the command registry can
  * read it without pulling React and ink into startup.
  */
 export function diffPanelIsPreferred(): boolean {
-  return isFullscreenEnvEnabled()
+  return isFullscreenEnvEnabled() && !getIsRemoteMode()
 }
 
 type MountConditions = {
@@ -124,31 +136,19 @@ function rememberSidebarOpen(open: boolean): void {
   saveCurrentProjectConfig(config => ({ ...config, diffSidebarOpen: open }))
 }
 
-/**
- * Flip between transcript and diff sidebar, persisting the choice.
- * Returns the tab that is now active.
- */
+/** Flip between transcript and diff sidebar, remembering the choice per project. */
 export function toggleReplTab(
   current: ReplTab,
   setReplTab: (tab: ReplTab) => void,
-): ReplTab {
+): void {
   const next: ReplTab = current === 'diff' ? 'convo' : 'diff'
   setReplTab(next)
   rememberSidebarOpen(next === 'diff')
-  return next
 }
 
-/**
- * Close without persisting an opt-out. Used when the panel retracts for a
- * reason that isn't the user rejecting it (e.g. leaving fullscreen).
- */
-export function closeDiffPanel(setReplTab: (tab: ReplTab) => void): void {
-  setReplTab('convo')
-}
-
-/** Close because the user dismissed the panel — remembered across sessions. */
+/** Close because the user dismissed the panel — also stops auto-open here. */
 export function dismissDiffPanel(setReplTab: (tab: ReplTab) => void): void {
-  closeDiffPanel(setReplTab)
+  setReplTab('convo')
   rememberSidebarOpen(false)
 }
 

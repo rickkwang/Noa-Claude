@@ -190,6 +190,9 @@ export async function clearConversation({
           trackedFiles: new Set(),
           snapshotSequence: 0,
         },
+        // A new session starts on the transcript; the diff panel reopens on
+        // its first edit.
+        replTab: 'convo',
         // Reset MCP state to default to trigger re-initialization.
         // Preserve pluginReconnectKey so /clear doesn't cause a no-op
         // (it's only bumped by /reload-plugins).

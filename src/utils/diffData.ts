@@ -1,18 +1,18 @@
 /**
- * Base-mode-aware git diff collection for the REPL diff panel.
+ * Git diff snapshots for `/diff` — both the dialog and the fullscreen panel.
  *
- * The panel is long-lived, so unlike `fetchGitDiff()` (a one-shot snapshot for
- * the `/diff` dialog) this layer answers three different questions depending on
- * the user's chosen base:
+ * A snapshot answers one of four questions:
  *
- * - `session`     — everything uncommitted, split into "changed this session"
- *                   and "already dirty when we started" (see {@link markPreSessionFiles}).
- * - `uncommitted` — everything uncommitted vs HEAD, no session split.
+ * - `auto`        — uncommitted changes; when the tree is clean, the branch's
+ *                   committed work against its merge base instead. The dialog.
+ * - `session`     — uncommitted changes, with files already dirty before this
+ *                   session flagged `preSession` (see {@link markPreSessionFiles}).
+ * - `uncommitted` — uncommitted changes vs HEAD, no session split.
  * - `branch`      — a PR-shaped diff against the merge base with the default
- *                   branch, falling back to HEAD when there is no base branch.
+ *                   branch, degrading to HEAD when there is no base branch.
  *
- * Hunks are fetched separately (and against the ref the snapshot resolved to)
- * so a stats refresh doesn't have to re-parse megabytes of patch text.
+ * Hunks are fetched separately, against the ref the snapshot resolved to, so a
+ * stats refresh doesn't have to re-parse megabytes of patch text.
  */
 import type { StructuredPatchHunk } from 'diff'
 import { lstat } from 'fs/promises'
@@ -33,7 +33,7 @@ import {
   isInTransientGitState,
   MAX_FILES,
   MAX_FILES_FOR_DETAILS,
-  parseGitDiffDetailed,
+  parseGitDiff,
   parseGitNumstat,
   parseShortstat,
   type GitDiffStats,
@@ -49,6 +49,9 @@ export const DIFF_BASE_MODES: readonly DiffBaseMode[] = [
   'uncommitted',
   'branch',
 ]
+
+/** What a snapshot can be asked for: a panel base, or the dialog's `auto`. */
+export type DiffFetchMode = DiffBaseMode | 'auto'
 
 /** What the returned snapshot actually ended up comparing against. */
 export type DiffSource =
@@ -78,7 +81,8 @@ const BASE_DIFF_FLAGS = [
   '-c',
   'diff.relative=false',
   'diff',
-  '--ignore-submodules=all',
+  '--ignore-submodules=dirty',
+  '--submodule=short',
 ] as const
 
 type NumstatSnapshot = {
@@ -86,51 +90,49 @@ type NumstatSnapshot = {
   perFileStats: Map<string, PerFileStats>
 }
 
+type UntrackedFiles = Map<string, PerFileStats>
+
+const WORKING_TREE: DiffSource = { kind: 'working-tree' }
+
 /**
- * Collect diff stats for the panel. Returns null when the answer would be
- * misleading: outside a git repo, or mid merge/rebase/cherry-pick/revert where
- * the working tree holds incoming changes nobody here made.
+ * Collect diff stats. Returns null when the answer would be misleading:
+ * outside a git repo, or mid merge/rebase/cherry-pick/revert where the working
+ * tree holds incoming changes nobody here made.
  */
 export async function fetchDiffSnapshot(
-  baseMode: DiffBaseMode,
+  mode: DiffFetchMode = 'auto',
   signal?: AbortSignal,
 ): Promise<DiffSnapshot | null> {
   if (!(await getIsGit())) return null
   if (await isInTransientGitState()) return null
 
-  if (baseMode === 'branch') {
-    return fetchBranchSnapshot(signal)
-  }
+  if (mode === 'branch') return fetchBranchSnapshot(signal, true)
 
   const headDiff = await numstatAgainst('HEAD', signal)
-  // No HEAD to diff against — either a fresh repo or a broken one.
   if (headDiff === null) return fetchNoCommitsSnapshot(signal)
 
-  const workingTree = (snapshot: NumstatSnapshot): DiffSnapshot => ({
-    ...snapshot,
-    source: { kind: 'working-tree' },
-  })
-
+  const workingTree = { ...headDiff, source: WORKING_TREE }
   // Above this many files we report accurate totals but skip per-file work.
-  if (headDiff.stats.filesCount > MAX_FILES_FOR_DETAILS) {
-    return workingTree(headDiff)
-  }
+  if (headDiff.stats.filesCount > MAX_FILES_FOR_DETAILS) return workingTree
 
-  if (baseMode === 'session') {
-    // Untracked files mark their own preSession flag inside addUntrackedFiles,
-    // so the two enrichments can race each other safely.
+  if (mode === 'session') {
     await Promise.all([
       markPreSessionFiles(headDiff),
-      addUntrackedFiles(headDiff, true, signal),
+      addUntrackedFiles(headDiff, signal, { includePreSession: true }),
     ])
-    return workingTree(headDiff)
+    return workingTree
   }
 
-  // Only 'uncommitted' remains: 'session' returned above and 'branch' at the
-  // top, so this is a plain working-tree snapshot of everything vs HEAD —
-  // untracked files included, however old.
-  await addUntrackedFiles(headDiff, false, signal)
-  return workingTree(headDiff)
+  const untracked = await addUntrackedFiles(headDiff, signal)
+  if (mode === 'uncommitted' || headDiff.stats.filesCount > 0) {
+    return workingTree
+  }
+
+  // `auto` on a clean tree: show what the branch has committed instead.
+  const branch = await fetchBranchSnapshot(signal, false, untracked)
+  return branch === null || branch.stats.filesCount === 0
+    ? workingTree
+    : branch
 }
 
 /** The git ref a snapshot's hunks must be read against. */
@@ -142,35 +144,27 @@ export function diffRefForSnapshot(snapshot: DiffSnapshot): string {
 /**
  * Read the patch text for `ref` and parse it into per-file hunks.
  * Returns null when git fails, so the caller can keep showing the last good
- * hunks rather than blanking the panel on a transient error.
+ * hunks rather than blanking on a transient error.
  */
 export async function fetchDiffHunksForRef(
-  ref: string,
+  ref = 'HEAD',
   signal?: AbortSignal,
 ): Promise<DiffHunks | null> {
   if (!(await getIsGit())) return null
   if (await isInTransientGitState()) return null
 
-  const { stdout: shortstatOut, code: shortstatCode } = await execFileNoThrow(
-    gitExe(),
-    [...BASE_DIFF_FLAGS, ref, '--shortstat'],
-    { timeout: GIT_TIMEOUT_MS, preserveOutputOnError: false, abortSignal: signal },
-  )
-  if (shortstatCode === 0) {
-    const quick = parseShortstat(shortstatOut)
-    if (quick && quick.filesCount > MAX_FILES_FOR_DETAILS) {
-      return EMPTY_DIFF_HUNKS
-    }
+  const quick = await shortstatAgainst(ref, signal)
+  if (quick && quick.filesCount > MAX_FILES_FOR_DETAILS) {
+    return EMPTY_DIFF_HUNKS
   }
 
-  const { stdout, code } = await execFileNoThrow(
-    gitExe(),
+  const { stdout, code } = await runGit(
     [...BASE_DIFF_FLAGS, ...RAW_DIFF_FLAGS, ref],
-    { timeout: GIT_TIMEOUT_MS, preserveOutputOnError: false, abortSignal: signal },
+    signal,
   )
   if (code !== 0) return null
 
-  const parsed = parseGitDiffDetailed(stdout)
+  const parsed = parseGitDiff(stdout)
 
   // `--cached` shows the index, but a file staged and then edited again would
   // render a stale hunk. Drop anything that also has unstaged changes.
@@ -188,18 +182,16 @@ export async function fetchDiffHunksForRef(
 /**
  * Resolve the branch this checkout diverged from.
  *
- * The three non-error outcomes are meaningfully different to the panel:
  * - `merge-base`   — a real branch diff.
- * - `head-is-base` — we're sitting on the default branch, so a "branch diff" is
- *                    just the working tree; still labelled with the branch name.
- * - `no-base`      — no default branch exists here at all (a local-only repo).
- *                    Fall back to a HEAD diff and say so, rather than showing
- *                    nothing.
+ * - `head-is-base` — sitting on the default branch, so a "branch diff" is just
+ *                    the working tree; still labelled with the branch name.
+ * - `none`         — no base to compare against (detached HEAD, no default
+ *                    branch, unrelated histories).
  */
 type BranchBase =
   | { kind: 'merge-base'; baseBranch: string; mergeBase: string }
   | { kind: 'head-is-base'; baseBranch: string }
-  | { kind: 'no-base' }
+  | { kind: 'none' }
   | { kind: 'error' }
 
 async function resolveBranchBase(signal?: AbortSignal): Promise<BranchBase> {
@@ -207,19 +199,10 @@ async function resolveBranchBase(signal?: AbortSignal): Promise<BranchBase> {
     getBranch(),
     getDefaultBranch(),
   ])
-  // Detached HEAD: there is no "my branch" to compare against a base.
-  if (!currentBranch || currentBranch === 'HEAD') return { kind: 'no-base' }
+  if (!currentBranch || currentBranch === 'HEAD') return { kind: 'none' }
   const baseBranch = process.env.CLAUDE_CODE_BASE_REF || defaultBranch
-  if (!baseBranch || baseBranch.startsWith('-')) return { kind: 'no-base' }
-  // Sitting on the base branch: a "branch diff" is just the working tree.
+  if (!baseBranch || baseBranch.startsWith('-')) return { kind: 'none' }
   if (currentBranch === baseBranch) return { kind: 'head-is-base', baseBranch }
-
-  const options = {
-    timeout: GIT_TIMEOUT_MS,
-    preserveOutputOnError: false as const,
-    abortSignal: signal,
-  }
-  const run = (args: string[]) => execFileNoThrow(gitExe(), args, options)
 
   // Try the remote-tracking ref first, then the local branch; when both merge
   // bases exist, keep the later one (a stale local main would otherwise diff
@@ -227,83 +210,70 @@ async function resolveBranchBase(signal?: AbortSignal): Promise<BranchBase> {
   let sawNoMergeBase = false
   const candidates: string[] = []
   for (const ref of [`origin/${baseBranch}`, baseBranch]) {
-    const { stdout, code } = await run([
-      '--no-optional-locks',
-      'merge-base',
-      'HEAD',
-      ref,
-    ])
+    const { stdout, code } = await runGit(
+      ['--no-optional-locks', 'merge-base', 'HEAD', ref],
+      signal,
+    )
     if (code === 1) sawNoMergeBase = true
     if (code === 0 && stdout.trim()) candidates.push(stdout.trim())
   }
 
-  let mergeBase: string | null = null
-  if (candidates.length > 0) {
-    const [first, second] = candidates
-    if (second === undefined || second === first) {
-      mergeBase = first ?? null
-    } else {
-      const { code } = await run([
-        '--no-optional-locks',
-        'merge-base',
-        '--is-ancestor',
-        first ?? '',
-        second,
-      ])
-      mergeBase = code === 0 ? second : first ?? null
-    }
+  const [first, second] = candidates
+  let mergeBase = first ?? null
+  if (first && second && first !== second) {
+    const { code } = await runGit(
+      ['--no-optional-locks', 'merge-base', '--is-ancestor', first, second],
+      signal,
+    )
+    if (code === 0) mergeBase = second
   }
 
   if (mergeBase === null) {
     // merge-base exit 1 means the histories genuinely share no ancestor.
-    if (sawNoMergeBase) return { kind: 'no-base' }
-    // Otherwise the base ref itself is missing — unless it exists and the
-    // merge-base call failed for some other reason, which is a real error.
+    if (sawNoMergeBase) return { kind: 'none' }
+    // Otherwise the base ref is missing — unless it exists and merge-base
+    // failed for some other reason, which is a real error.
     for (const ref of [
       `refs/remotes/origin/${baseBranch}`,
       `refs/heads/${baseBranch}`,
     ]) {
-      const { code } = await run([
-        '--no-optional-locks',
-        'show-ref',
-        '--verify',
-        '--quiet',
-        ref,
-      ])
+      const { code } = await runGit(
+        ['--no-optional-locks', 'show-ref', '--verify', '--quiet', ref],
+        signal,
+      )
       if (code === 0) return { kind: 'error' }
     }
-    return { kind: 'no-base' }
+    return { kind: 'none' }
   }
 
-  const { stdout: headOut, code: headCode } = await run([
-    '--no-optional-locks',
-    'rev-parse',
-    'HEAD',
-  ])
-  if (headCode !== 0) return { kind: 'error' }
-  if (headOut.trim() === mergeBase) {
+  const head = await runGit(['--no-optional-locks', 'rev-parse', 'HEAD'], signal)
+  if (head.code !== 0) return { kind: 'error' }
+  if (head.stdout.trim() === mergeBase) {
     return { kind: 'head-is-base', baseBranch }
   }
   return { kind: 'merge-base', baseBranch, mergeBase }
 }
 
 /**
- * The panel only ever asks for `branch` explicitly, so this always degrades to
- * a HEAD diff (and says so) when no base branch exists, rather than returning
- * null. (Upstream additionally calls here with an implicit "auto" mode for the
- * /diff dialog — the panel has no such caller, so the parameter is gone.)
+ * A snapshot against the branch's merge base.
+ *
+ * `degrade` is the panel's explicit `branch` base: with no merge base it falls
+ * back to a HEAD diff (and says so) rather than returning null. `auto` passes
+ * false — it only wants a branch diff when one really exists — along with the
+ * untracked files it already listed.
  */
 async function fetchBranchSnapshot(
   signal: AbortSignal | undefined,
+  degrade: boolean,
+  untracked?: UntrackedFiles | null,
 ): Promise<DiffSnapshot | null> {
   const base = await resolveBranchBase(signal)
   if (base.kind === 'error') {
-    return fetchNoCommitsSnapshot(signal)
+    return degrade ? fetchNoCommitsSnapshot(signal) : null
   }
 
   let numstat: NumstatSnapshot | null
   let source: DiffSource
-
   if (base.kind === 'merge-base') {
     numstat = await numstatAgainst(base.mergeBase, signal)
     source = {
@@ -312,20 +282,19 @@ async function fetchBranchSnapshot(
       baseRef: base.mergeBase,
     }
   } else {
-    // No branch-shaped diff exists; fall back to a HEAD diff.
+    if (!degrade) return null
     numstat = await numstatAgainst('HEAD', signal)
     source =
       base.kind === 'head-is-base'
         ? { kind: 'branch', baseBranch: base.baseBranch, baseRef: 'HEAD' }
-        : { kind: 'working-tree' }
+        : WORKING_TREE
   }
 
   if (numstat === null) {
     return base.kind === 'merge-base' ? null : fetchNoCommitsSnapshot(signal)
   }
-
   if (numstat.stats.filesCount <= MAX_FILES_FOR_DETAILS) {
-    await addUntrackedFiles(numstat, false, signal)
+    await addUntrackedFiles(numstat, signal, { precomputed: untracked })
   }
   return { ...numstat, source }
 }
@@ -338,10 +307,9 @@ async function fetchBranchSnapshot(
 async function fetchNoCommitsSnapshot(
   signal?: AbortSignal,
 ): Promise<DiffSnapshot | null> {
-  const { code } = await execFileNoThrow(
-    gitExe(),
+  const { code } = await runGit(
     ['--no-optional-locks', 'rev-parse', '--verify', '--quiet', 'HEAD'],
-    { timeout: GIT_TIMEOUT_MS, preserveOutputOnError: false, abortSignal: signal },
+    signal,
   )
   // exit 1 is specifically "HEAD does not resolve"; anything else is a real
   // failure and shouldn't be reported as an empty repo.
@@ -350,7 +318,7 @@ async function fetchNoCommitsSnapshot(
   const snapshot: DiffSnapshot = {
     stats: { filesCount: 0, linesAdded: 0, linesRemoved: 0 },
     perFileStats: new Map(),
-    source: { kind: 'working-tree' },
+    source: WORKING_TREE,
     noCommits: true,
   }
 
@@ -364,7 +332,7 @@ async function fetchNoCommitsSnapshot(
     }
   }
 
-  await addUntrackedFiles(snapshot, false, signal)
+  await addUntrackedFiles(snapshot, signal)
   return snapshot
 }
 
@@ -396,77 +364,103 @@ async function foldUnstagedIntoStaged(
   }
 }
 
+function runGit(args: string[], signal?: AbortSignal) {
+  return execFileNoThrow(gitExe(), args, {
+    timeout: GIT_TIMEOUT_MS,
+    preserveOutputOnError: false,
+    abortSignal: signal,
+  })
+}
+
 async function numstatUnstaged(
   signal?: AbortSignal,
 ): Promise<NumstatSnapshot | null> {
-  const { stdout, code } = await execFileNoThrow(
-    gitExe(),
-    [...BASE_DIFF_FLAGS, '--numstat'],
-    { timeout: GIT_TIMEOUT_MS, preserveOutputOnError: false, abortSignal: signal },
-  )
+  const { stdout, code } = await runGit([...BASE_DIFF_FLAGS, '--numstat'], signal)
   if (code !== 0) return null
   return parseGitNumstat(stdout, Number.POSITIVE_INFINITY)
+}
+
+/** `--shortstat` totals: O(1) memory, so a huge diff is caught before enumeration. */
+async function shortstatAgainst(
+  ref: string,
+  signal?: AbortSignal,
+): Promise<GitDiffStats | null> {
+  const { stdout, code } = await runGit(
+    [...BASE_DIFF_FLAGS, ref, '--shortstat'],
+    signal,
+  )
+  return code === 0 ? parseShortstat(stdout) : null
 }
 
 async function numstatAgainst(
   ref: string,
   signal?: AbortSignal,
 ): Promise<NumstatSnapshot | null> {
-  // Cheap probe first: --shortstat is O(1) memory, so a huge diff is detected
-  // before we ask git to enumerate every file.
-  const { stdout: shortstatOut, code: shortstatCode } = await execFileNoThrow(
-    gitExe(),
-    [...BASE_DIFF_FLAGS, ref, '--shortstat'],
-    { timeout: GIT_TIMEOUT_MS, preserveOutputOnError: false, abortSignal: signal },
-  )
-  if (shortstatCode === 0) {
-    const quick = parseShortstat(shortstatOut)
-    if (quick && quick.filesCount > MAX_FILES_FOR_DETAILS) {
-      return { stats: quick, perFileStats: new Map() }
-    }
+  const quick = await shortstatAgainst(ref, signal)
+  if (quick && quick.filesCount > MAX_FILES_FOR_DETAILS) {
+    return { stats: quick, perFileStats: new Map() }
   }
 
-  const { stdout, code } = await execFileNoThrow(
-    gitExe(),
+  const { stdout, code } = await runGit(
     [...BASE_DIFF_FLAGS, ref, '--numstat'],
-    { timeout: GIT_TIMEOUT_MS, preserveOutputOnError: false, abortSignal: signal },
+    signal,
   )
   if (code !== 0) return null
   return parseGitNumstat(stdout)
 }
 
-/** Scan cap for the untracked listing — stats are per-file lstats, so bound them. */
+/** Scan cap for the untracked listing — each entry costs an lstat. */
 const UNTRACKED_SCAN_CAP = 500
 
 /**
- * Top up a snapshot with untracked files, respecting the MAX_FILES budget.
+ * Top up a snapshot with untracked files, within the MAX_FILES budget, and
+ * return what was listed so a follow-up snapshot can reuse it.
  *
- * Panel-local (the /diff dialog keeps its own cwd-relative fetcher): paths are
- * fetched repo-wide and root-relative so they share the numstat base
- * (`-c diff.relative=false`) — running plain `ls-files` from a subdirectory
- * would report cwd-relative paths and silently drop files above it.
+ * Paths are listed repo-wide and root-relative so they share the numstat base
+ * (`-c diff.relative=false`); a plain `ls-files` from a subdirectory would
+ * miss files above it.
  *
- * Fresh files win the MAX_FILES budget first: when a repo has more untracked
- * files than the panel can show, the ones touched this session are the ones
- * worth showing. Nothing is dropped for being old — an untracked file created
- * last week is still uncommitted.
- *
- * `flagPreSession` controls only whether the age is *recorded*. Session mode
- * folds flagged files into its "edited before this session" section; the other
- * bases have no session boundary to speak of, so flagging there would hide
- * files behind a heading that doesn't apply to them.
+ * Untracked files last written before this session started are left out —
+ * they're leftovers, not work — except with `includePreSession`, where they
+ * are kept, after the fresh ones, and flagged `preSession` for the session
+ * base to fold away.
  */
 async function addUntrackedFiles(
   snapshot: NumstatSnapshot,
-  flagPreSession: boolean,
-  signal?: AbortSignal,
-): Promise<void> {
+  signal: AbortSignal | undefined,
+  options: {
+    includePreSession?: boolean
+    precomputed?: UntrackedFiles | null
+  } = {},
+): Promise<UntrackedFiles | null> {
   const remaining = MAX_FILES - snapshot.perFileStats.size
-  if (remaining <= 0) return
+  if (remaining <= 0) return null
 
+  const untracked =
+    options.precomputed !== undefined
+      ? options.precomputed
+      : await listUntrackedFiles(
+          remaining,
+          signal,
+          options.includePreSession ?? false,
+        )
+  if (untracked) {
+    for (const [path, stats] of untracked) {
+      if (snapshot.perFileStats.has(path)) continue
+      snapshot.perFileStats.set(path, stats)
+      snapshot.stats.filesCount += 1
+    }
+  }
+  return untracked
+}
+
+async function listUntrackedFiles(
+  limit: number,
+  signal: AbortSignal | undefined,
+  includePreSession: boolean,
+): Promise<UntrackedFiles | null> {
   const root = findGitRoot(getCwd()) ?? getCwd()
-  const { stdout, code } = await execFileNoThrow(
-    gitExe(),
+  const { stdout, code } = await runGit(
     [
       '--no-optional-locks',
       '-C',
@@ -476,12 +470,12 @@ async function addUntrackedFiles(
       '--exclude-standard',
       '--full-name',
     ],
-    { timeout: GIT_TIMEOUT_MS, preserveOutputOnError: false, abortSignal: signal },
+    signal,
   )
-  if (code !== 0 || !stdout.trim()) return
+  if (code !== 0 || !stdout.trim()) return null
 
   const sessionStart = getSessionStartTime()
-  const marked = await Promise.all(
+  const listed = await Promise.all(
     stdout
       .trim()
       .split('\n')
@@ -492,32 +486,29 @@ async function addUntrackedFiles(
           const info = await lstat(join(root, path))
           return {
             path,
-            preSession:
-              Math.max(info.mtimeMs, info.ctimeMs) < sessionStart,
+            preSession: Math.max(info.mtimeMs, info.ctimeMs) < sessionStart,
           }
         } catch {
-          // Vanished between listing and stat — treat as fresh.
           return { path, preSession: false }
         }
       }),
   )
 
-  const ordered = [
-    ...marked.filter(file => !file.preSession),
-    ...marked.filter(file => file.preSession),
-  ]
+  const kept = listed.filter(file => !file.preSession)
+  if (includePreSession) kept.push(...listed.filter(file => file.preSession))
+  if (kept.length === 0) return null
 
-  for (const { path, preSession } of ordered.slice(0, remaining)) {
-    if (snapshot.perFileStats.has(path)) continue
-    snapshot.perFileStats.set(path, {
+  const untracked: UntrackedFiles = new Map()
+  for (const { path, preSession } of kept.slice(0, limit)) {
+    untracked.set(path, {
       added: 0,
       removed: 0,
       isBinary: false,
       isUntracked: true,
-      ...(flagPreSession && preSession ? { preSession: true } : {}),
+      ...(preSession ? { preSession } : {}),
     })
-    snapshot.stats.filesCount += 1
   }
+  return untracked
 }
 
 /**

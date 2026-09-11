@@ -4,13 +4,12 @@ import { access, readFile } from 'fs/promises'
 import { dirname, join, relative, sep } from 'path'
 import { getCwd } from './cwd.js'
 import { getCachedRepository } from './detectRepository.js'
-import { execFileNoThrow, execFileNoThrowWithCwd } from './execFileNoThrow.js'
+import { execFileNoThrowWithCwd } from './execFileNoThrow.js'
 import { isFileWithinReadSizeLimit } from './file.js'
 import {
   findGitRoot,
   getDefaultBranch,
   getGitDir,
-  getIsGit,
   gitExe,
   RAW_DIFF_FLAGS,
 } from './git.js'
@@ -34,113 +33,11 @@ export type PerFileStats = {
   preSession?: boolean
 }
 
-export type GitDiffResult = {
-  stats: GitDiffStats
-  perFileStats: Map<string, PerFileStats>
-  hunks: Map<string, StructuredPatchHunk[]>
-}
-
 export const GIT_TIMEOUT_MS = 5000
 export const MAX_FILES = 50
 const MAX_DIFF_SIZE_BYTES = 1_000_000 // 1 MB - skip files larger than this
 const MAX_LINES_PER_FILE = 400 // GitHub's auto-load limit
 export const MAX_FILES_FOR_DETAILS = 500 // Skip per-file details if more files than this
-
-/**
- * Fetch git diff stats and hunks comparing working tree to HEAD.
- * Returns null if not in a git repo or if git commands fail.
- *
- * Returns null during merge/rebase/cherry-pick/revert operations since the
- * working tree contains incoming changes that weren't intentionally
- * made by the user.
- */
-export async function fetchGitDiff(): Promise<GitDiffResult | null> {
-  const isGit = await getIsGit()
-  if (!isGit) return null
-
-  // Skip diff calculation during transient git states since the
-  // working tree contains incoming changes, not user-intentional edits
-  if (await isInTransientGitState()) {
-    return null
-  }
-
-  // Quick probe: use --shortstat to get totals without loading all content.
-  // This is O(1) memory and lets us detect massive diffs (e.g., jj workspaces)
-  // before committing to expensive operations.
-  const { stdout: shortstatOut, code: shortstatCode } = await execFileNoThrow(
-    gitExe(),
-    ['--no-optional-locks', 'diff', 'HEAD', '--shortstat'],
-    { timeout: GIT_TIMEOUT_MS, preserveOutputOnError: false },
-  )
-
-  if (shortstatCode === 0) {
-    const quickStats = parseShortstat(shortstatOut)
-    if (quickStats && quickStats.filesCount > MAX_FILES_FOR_DETAILS) {
-      // Too many files - return accurate totals but skip per-file details
-      // to avoid loading hundreds of MB into memory
-      return {
-        stats: quickStats,
-        perFileStats: new Map(),
-        hunks: new Map(),
-      }
-    }
-  }
-
-  // Get stats via --numstat (all uncommitted changes vs HEAD)
-  const { stdout: numstatOut, code: numstatCode } = await execFileNoThrow(
-    gitExe(),
-    ['--no-optional-locks', 'diff', 'HEAD', '--numstat'],
-    { timeout: GIT_TIMEOUT_MS, preserveOutputOnError: false },
-  )
-
-  if (numstatCode !== 0) return null
-
-  const { stats, perFileStats } = parseGitNumstat(numstatOut)
-
-  // Include untracked files (new files not yet staged)
-  // Just filenames - no content reading for performance
-  const remainingSlots = MAX_FILES - perFileStats.size
-  if (remainingSlots > 0) {
-    const untrackedStats = await fetchUntrackedFiles(remainingSlots)
-    if (untrackedStats) {
-      stats.filesCount += untrackedStats.size
-      for (const [path, fileStats] of untrackedStats) {
-        perFileStats.set(path, fileStats)
-      }
-    }
-  }
-
-  // Return stats only - hunks are fetched on-demand via fetchGitDiffHunks()
-  // to avoid expensive git diff HEAD call on every poll
-  return { stats, perFileStats, hunks: new Map() }
-}
-
-/**
- * Fetch git diff hunks on-demand (for DiffDialog).
- * Separated from fetchGitDiff() to avoid expensive calls during polling.
- */
-export async function fetchGitDiffHunks(): Promise<
-  Map<string, StructuredPatchHunk[]>
-> {
-  const isGit = await getIsGit()
-  if (!isGit) return new Map()
-
-  if (await isInTransientGitState()) {
-    return new Map()
-  }
-
-  const { stdout: diffOut, code: diffCode } = await execFileNoThrow(
-    gitExe(),
-    ['--no-optional-locks', 'diff', ...RAW_DIFF_FLAGS, 'HEAD'],
-    { timeout: GIT_TIMEOUT_MS, preserveOutputOnError: false },
-  )
-
-  if (diffCode !== 0) {
-    return new Map()
-  }
-
-  return parseGitDiff(diffOut)
-}
 
 export type NumstatResult = {
   stats: GitDiffStats
@@ -211,24 +108,13 @@ export type ParsedDiff = {
 
 /**
  * Parse unified diff output into per-file hunks.
- * Splits by "diff --git" and parses each file's hunks.
  *
  * Applies limits:
  * - MAX_FILES: stop after this many files
- * - Files >1MB: skipped entirely (not in result map)
+ * - Files >1MB: skipped, reported in `skippedLarge`
  * - Files ≤1MB: parsed but limited to MAX_LINES_PER_FILE lines
  */
-export function parseGitDiff(
-  stdout: string,
-): Map<string, StructuredPatchHunk[]> {
-  return parseGitDiffDetailed(stdout).hunks
-}
-
-/**
- * Like {@link parseGitDiff}, but also reports which files were skipped for
- * being too large so the caller can render a placeholder for them.
- */
-export function parseGitDiffDetailed(stdout: string): ParsedDiff {
+export function parseGitDiff(stdout: string): ParsedDiff {
   const result = new Map<string, StructuredPatchHunk[]>()
   const skippedLarge = new Set<string>()
   if (!stdout.trim()) return { hunks: result, skippedLarge }
@@ -354,46 +240,6 @@ export async function isInTransientGitState(): Promise<boolean> {
     ),
   )
   return results.some(Boolean)
-}
-
-/**
- * Fetch untracked file names (no content reading).
- * Returns file paths only - they'll be displayed with a note to stage them.
- *
- * Paths come back relative to the session cwd, matching this file's numstat
- * output (which runs without diff.relative). The diff panel has its own
- * root-relative fetcher — see diffPanelData.ts.
- *
- * @param maxFiles Maximum number of untracked files to include
- */
-async function fetchUntrackedFiles(
-  maxFiles: number,
-): Promise<Map<string, PerFileStats> | null> {
-  // Get list of untracked files (excludes gitignored)
-  const { stdout, code } = await execFileNoThrow(
-    gitExe(),
-    ['--no-optional-locks', 'ls-files', '--others', '--exclude-standard'],
-    { timeout: GIT_TIMEOUT_MS, preserveOutputOnError: false },
-  )
-
-  if (code !== 0 || !stdout.trim()) return null
-
-  const untrackedPaths = stdout.trim().split('\n').filter(Boolean)
-  if (untrackedPaths.length === 0) return null
-
-  const perFileStats = new Map<string, PerFileStats>()
-
-  // Just record filenames, no content reading
-  for (const filePath of untrackedPaths.slice(0, maxFiles)) {
-    perFileStats.set(filePath, {
-      added: 0,
-      removed: 0,
-      isBinary: false,
-      isUntracked: true,
-    })
-  }
-
-  return perFileStats
 }
 
 /**

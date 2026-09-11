@@ -3,6 +3,7 @@ import {
   getNext,
   isNotificationVisible,
   type Notification,
+  survivesPreemption,
 } from '../../context/notifications.js'
 
 /**
@@ -65,5 +66,22 @@ describe('queue selection under the hold', () => {
     const queue = [toast]
     expect(eligible(queue, true)).toBeUndefined()
     expect(eligible(queue, false)?.key).toBe('selection-copied')
+  })
+})
+
+describe('survivesPreemption', () => {
+  const lowPriority: Notification = { key: 'tip', text: 'tip', priority: 'low' }
+
+  test('drops a displaced immediate', () => {
+    expect(survivesPreemption(toast, confirm)).toBe(false)
+  })
+
+  test('keeps an immediate that was only waiting out the panel', () => {
+    expect(survivesPreemption({ ...toast, heldDuringDiffPanel: true }, confirm)).toBe(true)
+  })
+
+  test('keeps queued non-immediates unless invalidated', () => {
+    expect(survivesPreemption(lowPriority, toast)).toBe(true)
+    expect(survivesPreemption(lowPriority, { ...toast, invalidates: ['tip'] })).toBe(false)
   })
 })

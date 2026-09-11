@@ -27,6 +27,11 @@ export type IDESelection = {
   lineStart?: number
   text?: string
   filePath?: string
+  /**
+   * `'diff'` for text selected in the diff panel, which has no `lineStart` —
+   * the panel shows hunks, not whole files. Absent for the connected IDE.
+   */
+  source?: 'diff'
 }
 
 // Define the selection changed notification schema

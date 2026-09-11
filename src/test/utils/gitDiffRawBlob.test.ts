@@ -3,7 +3,13 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fetchGitDiffHunks, fetchSingleFileGitDiff } from '../../utils/gitDiff.js'
+import {
+  setCwdState,
+  setOriginalCwd,
+} from '../../bootstrap/state.js'
+import { fetchDiffHunksForRef } from '../../utils/diffData.js'
+import { findGitRoot, getIsGit } from '../../utils/git.js'
+import { fetchSingleFileGitDiff } from '../../utils/gitDiff.js'
 
 /**
  * Diff output we parse ourselves must come from the raw git blobs, never from
@@ -43,24 +49,31 @@ function makeRepo(): { dir: string; file: string } {
 }
 
 /**
- * fetchGitDiffHunks() shells out without an explicit cwd, so it resolves
- * against process.cwd() — chdir is the only way to point it at the fixture.
+ * fetchDiffHunksForRef() shells out without an explicit cwd and checks the repo
+ * through the bootstrap cwd, so both have to point at the fixture.
  */
 async function hunkLinesIn(dir: string): Promise<string[]> {
   const previous = process.cwd()
-  process.chdir(dir)
+  const useCwd = (cwd: string) => {
+    process.chdir(cwd)
+    setCwdState(cwd)
+    setOriginalCwd(cwd)
+    findGitRoot.cache.clear?.()
+    ;(getIsGit as unknown as { cache?: Map<unknown, unknown> }).cache?.clear()
+  }
+  useCwd(dir)
   try {
-    const hunks = await fetchGitDiffHunks()
-    return [...hunks.values()].flatMap(fileHunks =>
+    const parsed = await fetchDiffHunksForRef('HEAD')
+    return [...(parsed?.hunks.values() ?? [])].flatMap(fileHunks =>
       fileHunks.flatMap(hunk => hunk.lines),
     )
   } finally {
-    process.chdir(previous)
+    useCwd(previous)
   }
 }
 
 describe('git diff paths use raw blob contents', () => {
-  test('fetchGitDiffHunks ignores a configured textconv filter', async () => {
+  test('fetchDiffHunksForRef ignores a configured textconv filter', async () => {
     const { dir } = makeRepo()
     try {
       const lines = await hunkLinesIn(dir)
@@ -72,7 +85,7 @@ describe('git diff paths use raw blob contents', () => {
     }
   })
 
-  test('fetchGitDiffHunks ignores an external diff driver', async () => {
+  test('fetchDiffHunksForRef ignores an external diff driver', async () => {
     const { dir } = makeRepo()
     try {
       git(dir, 'config', 'diff.external', 'sh -c "echo NOT-A-UNIFIED-DIFF" --')

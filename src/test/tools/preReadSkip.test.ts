@@ -51,6 +51,7 @@ describe('overwriting a file the session never read', () => {
   function makeContext(model: string, permissionPatch = {}) {
     return {
       readFileState: new FileStateCache(100, 25 * 1024 * 1024),
+      updateFileHistoryState: () => {},
       dynamicSkillDirTriggers: new Set(),
       options: {
         mainLoopModel: model,

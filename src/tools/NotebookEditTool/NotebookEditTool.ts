@@ -2,7 +2,6 @@
 import { feature } from 'bun:bundle'
 import { extname, isAbsolute, resolve } from 'path'
 import {
-  fileHistoryEnabled,
   fileHistoryTrackEdit,
 } from 'src/utils/fileHistory.js'
 import { z } from 'zod/v4'
@@ -315,13 +314,11 @@ export const NotebookEditTool = buildTool({
       ? notebook_path
       : resolve(getCwd(), notebook_path)
 
-    if (fileHistoryEnabled()) {
-      await fileHistoryTrackEdit(
-        updateFileHistoryState,
-        fullPath,
-        parentMessage.uuid,
-      )
-    }
+    await fileHistoryTrackEdit(
+      updateFileHistoryState,
+      fullPath,
+      parentMessage.uuid,
+    )
 
     try {
       // readFileSyncWithMetadata gives content + encoding + line endings in
