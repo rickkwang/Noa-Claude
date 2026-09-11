@@ -308,7 +308,9 @@ export function FullscreenLayout(t0) {
   // that predicate mid-session, so a hook called inside the branch would change
   // the hook count between renders and crash React.
   const hasSidebar = sidebar != null && (sidebarWidth ?? 0) > 0;
-  const mainColumns = hasSidebar ? columns - (sidebarWidth ?? 0) : columns;
+  // The divider column comes out of the main column, not `sidebarWidth`, so
+  // the panel's origin column and width (used for hit-testing) stay exact.
+  const mainColumns = hasSidebar ? columns - (sidebarWidth ?? 0) - 1 : columns;
   // Memoized: a fresh value object every render would re-render every
   // useTerminalSize consumer in the main column on each REPL render.
   const narrowedSize = useMemo(() => ({
@@ -494,7 +496,8 @@ export function FullscreenLayout(t0) {
           <Box flexDirection="column" width={mainColumns} flexShrink={0} overflow="hidden">
             <TerminalSizeContext value={narrowedSize}>{t14}</TerminalSizeContext>
           </Box>
-          <Box flexDirection="column" width={hasSidebar ? sidebarWidth : 0} flexShrink={0} overflow="hidden" backgroundColor={hasSidebar ? "composerSidebarBackground" : undefined}>
+          {hasSidebar && <Box width={1} flexShrink={0} borderStyle="single" borderColor="subtle" borderTop={false} borderBottom={false} borderRight={false} />}
+          <Box flexDirection="column" width={hasSidebar ? sidebarWidth : 0} flexShrink={0} overflow="hidden">
             {sidebar}
           </Box>
         </Box>
