@@ -60,12 +60,16 @@ export type ScrollBoxHandle = {
    * cold start).
    */
   setClampBounds: (min: number | undefined, max: number | undefined) => void;
+  /** The scroll container's DOM node, e.g. to match a selection's scope. */
+  getDomElement: () => DOMElement | null;
 };
 export type ScrollBoxProps = Except<Styles, 'textWrap' | 'overflow' | 'overflowX' | 'overflowY'> & {
   ref?: Ref<ScrollBoxHandle>;
   /**
    * When true, automatically pins scroll position to the bottom when content
    * grows. Unset manually via scrollTo/scrollBy to break the stickiness.
+   * An explicit false also opts out of following growth while scrolled to the
+   * bottom, and makes scrollToBottom a one-shot jump.
    */
   stickyScroll?: boolean;
 };
@@ -123,6 +127,7 @@ function ScrollBox({
       // Explicit false overrides the DOM attribute so manual scroll
       // breaks stickiness. Render code checks ?? precedence.
       el.stickyScroll = false;
+      el.scrollHeightHwm = undefined;
       el.pendingScrollDelta = undefined;
       el.scrollAnchor = undefined;
       el.scrollTop = Math.max(0, Math.floor(y));
@@ -132,6 +137,7 @@ function ScrollBox({
       const box = domRef.current;
       if (!box) return;
       box.stickyScroll = false;
+      box.scrollHeightHwm = undefined;
       box.pendingScrollDelta = undefined;
       box.scrollAnchor = {
         el,
@@ -143,6 +149,12 @@ function ScrollBox({
       const el = domRef.current;
       if (!el) return;
       el.stickyScroll = false;
+      el.scrollHeightHwm = undefined;
+      // A scrollTop parked past the current max by the high-water mark would
+      // swallow the first rows of an upward scroll.
+      if (el.scrollHeight !== undefined) {
+        el.scrollTop = Math.min(el.scrollTop ?? 0, Math.max(0, el.scrollHeight - (el.scrollViewportHeight ?? 0)));
+      }
       // Wheel input cancels any in-flight anchor seek — user override.
       el.scrollAnchor = undefined;
       // Accumulate in pendingScrollDelta; renderer drains it at a capped
@@ -155,6 +167,12 @@ function ScrollBox({
       const el = domRef.current;
       if (!el) return;
       el.pendingScrollDelta = undefined;
+      if (stickyScroll === false) {
+        el.scrollAnchor = undefined;
+        el.scrollTop = Math.max(0, (el.scrollHeight ?? 0) - (el.scrollViewportHeight ?? 0));
+        scrollMutated(el);
+        return;
+      }
       el.stickyScroll = true;
       // Clear virtual-scroll clamp immediately. Otherwise the first sticky
       // frame can still be clamped to the previous non-sticky range and paint
@@ -199,15 +217,20 @@ function ScrollBox({
     setClampBounds(min, max) {
       const el = domRef.current;
       if (!el) return;
+      if (el.scrollClampMin === min && el.scrollClampMax === max) return;
       el.scrollClampMin = min;
       el.scrollClampMax = max;
+      markDirty(el);
+    },
+    getDomElement() {
+      return domRef.current;
     }
   }),
   // notify/scrollMutated are inline (no useCallback) but only close over
-  // refs + imports — stable. Empty deps avoids rebuilding the handle on
-  // every render (which re-registers the ref = churn).
+  // refs + imports — stable. Rebuilt only when stickyScroll flips, which
+  // scrollToBottom reads.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  []);
+  [stickyScroll]);
 
   // Structure: outer viewport (overflow:scroll, constrained height) >
   // inner content (flexGrow:1, flexShrink:0 — fills at least the viewport
@@ -219,7 +242,11 @@ function ScrollBox({
   //
   // stickyScroll is passed as a DOM attribute (via ink-box directly) so it's
   // available on the first render — ref callbacks fire after the initial
-  // commit, which is too late for the first frame.
+  // commit, which is too late for the first frame. It is passed whenever set,
+  // false included: the renderer reads an explicit false as "never follow".
+  //
+  // Every scroll box is a selection scope: a drag that starts inside it stays
+  // within its columns, whatever sits beside it.
   return <ink-box ref={el => {
     domRef.current = el;
     if (el) el.scrollTop ??= 0;
@@ -228,11 +255,12 @@ function ScrollBox({
     flexDirection: style.flexDirection ?? 'row',
     flexGrow: style.flexGrow ?? 0,
     flexShrink: style.flexShrink ?? 1,
+    selectionScope: true,
     ...style,
     overflowX: 'scroll',
     overflowY: 'scroll'
-  }} {...stickyScroll ? {
-    stickyScroll: true
+  }} {...stickyScroll !== undefined ? {
+    stickyScroll
   } : {}}>
       <Box flexDirection="column" flexGrow={1} flexShrink={0} width="100%">
         {children}

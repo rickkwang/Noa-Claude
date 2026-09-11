@@ -23,7 +23,7 @@ import * as dom from './dom.js';
 import { KeyboardEvent } from './events/keyboard-event.js';
 import { FocusManager } from './focus.js';
 import { emptyFrame, type Frame, type FrameEvent } from './frame.js';
-import { dispatchClick, dispatchHover } from './hit-test.js';
+import { dispatchClick, dispatchHover, dispatchWheel, selectionScopeAt } from './hit-test.js';
 import instances from './instances.js';
 import { LogUpdate } from './log-update.js';
 import { nodeCache } from './node-cache.js';
@@ -36,7 +36,7 @@ import { applyPositionedHighlight, type MatchPosition, scanPositions } from './r
 import createRenderer, { type Renderer } from './renderer.js';
 import { CellWidth, CharPool, cellAt, createScreen, HyperlinkPool, isEmptyCellAt, migrateScreenPools, StylePool } from './screen.js';
 import { applySearchHighlight } from './searchHighlight.js';
-import { applySelectionOverlay, captureScrolledRows, clearSelection, createSelectionState, extendSelection, type FocusMove, findPlainTextUrlAt, getSelectedText, hasSelection, moveFocus, type SelectionState, selectLineAt, selectWordAt, shiftAnchor, shiftSelection, shiftSelectionForFollow, startSelection, updateSelection } from './selection.js';
+import { applySelectionOverlay, captureScrolledRows, clearSelection, createSelectionState, extendSelection, type FocusMove, findPlainTextUrlAt, getSelectedText, hasSelection, moveFocus, type SelectionState, selectLineAt, selectWordAt, shiftAnchor, shiftSelection, startSelection, updateSelection } from './selection.js';
 import { SYNC_OUTPUT_SUPPORTED, supportsExtendedKeys, type Terminal, writeDiffToTerminal } from './terminal.js';
 import { CURSOR_HOME, cursorMove, cursorPosition, DISABLE_KITTY_KEYBOARD, DISABLE_MODIFY_OTHER_KEYS, ENABLE_KITTY_KEYBOARD, ENABLE_MODIFY_OTHER_KEYS, ERASE_SCREEN } from './termio/csi.js';
 import { DBP, DFE, DISABLE_MOUSE_TRACKING, ENABLE_MOUSE_TRACKING, ENTER_ALT_SCREEN, EXIT_ALT_SCREEN, SHOW_CURSOR } from './termio/dec.js';
@@ -482,31 +482,34 @@ export default class Ink {
     });
     const rendererMs = performance.now() - renderStart;
 
-    // Sticky/auto-follow scrolled the ScrollBox this frame. Translate the
-    // selection by the same delta so the highlight stays anchored to the
-    // TEXT (native terminal behavior — the selection walks up the screen
-    // as content scrolls, eventually clipping at the top). frontFrame
-    // still holds the PREVIOUS frame's screen (swap is at ~500 below), so
-    // captureScrolledRows reads the rows that are about to scroll out
-    // before they're overwritten — the text stays copyable until the
-    // selection scrolls entirely off. During drag, focus tracks the mouse
-    // (screen-local) so only anchor shifts — selection grows toward the
-    // mouse as the anchor walks up. After release, both ends are text-
-    // anchored and move as a block.
+    // A ScrollBox scrolled this frame (wheel, keyboard, drag-to-scroll or
+    // at-bottom follow). Translate the selection by the same delta so the
+    // highlight stays anchored to the TEXT (native terminal behavior — the
+    // selection walks with the content, clipping at the viewport edges).
+    // frontFrame still holds the PREVIOUS frame's screen (swap is below), so
+    // captureScrolledRows reads the rows that are about to scroll out before
+    // they're overwritten — the text stays copyable until the selection
+    // scrolls entirely off. During drag, focus tracks the mouse (screen-local)
+    // so only anchor shifts — selection grows toward the mouse as the anchor
+    // walks. After release, both ends are text-anchored and move as a block.
     const follow = consumeFollowScroll();
     if (follow && this.selection.anchor &&
-    // Only translate if the selection is ON scrollbox content. Selections
-    // in the footer/prompt/StickyPromptHeader are on static text — the
-    // scroll doesn't move what's under them. Without this guard, a
-    // footer selection would be shifted by -delta then clamped to
-    // viewportBottom, teleporting it into the scrollbox. Mirror the
-    // bounds check the deleted check() in ScrollKeybindingHandler had.
-    this.selection.anchor.row >= follow.viewportTop && this.selection.anchor.row <= follow.viewportBottom) {
+    // Only translate if the selection is ON the scrolled box's content.
+    // Selections in the footer/prompt/StickyPromptHeader — or in a box beside
+    // this one — sit on text the scroll doesn't move. Without this guard such
+    // a selection would be shifted by -delta and clamped into the viewport,
+    // teleporting it onto content it never covered.
+    this.selection.anchor.row >= follow.viewportTop && this.selection.anchor.row <= follow.viewportBottom && this.selection.anchor.col >= follow.viewportLeft && this.selection.anchor.col <= follow.viewportRight) {
       const {
         delta,
         viewportTop,
         viewportBottom
       } = follow;
+      // Rows leaving the viewport: the top ones when scrolling down, the
+      // bottom ones when scrolling up.
+      const leavingFirst = delta > 0 ? viewportTop : viewportBottom + delta + 1;
+      const leavingLast = delta > 0 ? viewportTop + delta - 1 : viewportBottom;
+      const side = delta > 0 ? 'above' : 'below';
       // captureScrolledRows and shift* are a pair: capture grabs rows about
       // to scroll off, shift moves the selection endpoint so the same rows
       // won't intersect again next frame. Capturing without shifting leaves
@@ -516,33 +519,33 @@ export default class Ink {
       // each shift branch so the pairing can't be broken by a new guard.
       if (this.selection.isDragging) {
         if (hasSelection(this.selection)) {
-          captureScrolledRows(this.selection, this.frontFrame.screen, viewportTop, viewportTop + delta - 1, 'above');
+          captureScrolledRows(this.selection, this.frontFrame.screen, leavingFirst, leavingLast, side);
         }
         shiftAnchor(this.selection, -delta, viewportTop, viewportBottom);
       } else if (
       // Flag-3 guard: the anchor check above only proves ONE endpoint is
       // on scrollbox content. A drag from row 3 (scrollbox) into the
       // footer at row 6, then release, leaves focus outside the viewport
-      // — shiftSelectionForFollow would clamp it to viewportBottom,
-      // teleporting the highlight from static footer into the scrollbox.
-      // Symmetric check: require BOTH ends inside to translate. A
-      // straddling selection falls through to NEITHER shift NOR capture:
-      // the footer endpoint pins the selection, text scrolls away under
-      // the highlight, and getSelectedText reads the CURRENT screen
-      // contents — no accumulation. Dragging branch doesn't need this:
-      // shiftAnchor ignores focus, and the anchor DOES shift (so capture
-      // is correct there even when focus is in the footer).
-      !this.selection.focus || this.selection.focus.row >= viewportTop && this.selection.focus.row <= viewportBottom) {
+      // — shifting would clamp it to the viewport edge, teleporting the
+      // highlight from static footer into the scrollbox. Symmetric check:
+      // require BOTH ends inside to translate. A straddling selection falls
+      // through to NEITHER shift NOR capture: the footer endpoint pins the
+      // selection, text scrolls away under the highlight, and
+      // getSelectedText reads the CURRENT screen contents — no accumulation.
+      // Dragging branch doesn't need this: shiftAnchor ignores focus, and the
+      // anchor DOES shift (so capture is correct there even when focus is in
+      // the footer).
+      !this.selection.focus || this.selection.focus.row >= viewportTop && this.selection.focus.row <= viewportBottom && this.selection.focus.col >= follow.viewportLeft && this.selection.focus.col <= follow.viewportRight) {
         if (hasSelection(this.selection)) {
-          captureScrolledRows(this.selection, this.frontFrame.screen, viewportTop, viewportTop + delta - 1, 'above');
+          captureScrolledRows(this.selection, this.frontFrame.screen, leavingFirst, leavingLast, side);
         }
-        const cleared = shiftSelectionForFollow(this.selection, -delta, viewportTop, viewportBottom);
-        // Auto-clear (both ends overshot minRow) must notify React-land
-        // so useHasSelection re-renders and the footer copy/escape hint
-        // disappears. notifySelectionChange() would recurse into onRender;
-        // fire the listeners directly — they schedule a React update for
-        // LATER, they don't re-enter this frame.
-        if (cleared) for (const cb of this.selectionListeners) cb();
+        shiftSelection(this.selection, -delta, viewportTop, viewportBottom, this.frontFrame.screen.width);
+        // A selection scrolled entirely out of view is cleared, and that
+        // must reach React-land so useHasSelection re-renders and the footer
+        // copy/escape hint disappears. notifySelectionChange() would recurse
+        // into onRender; fire the listeners directly — they schedule a React
+        // update for LATER, they don't re-enter this frame.
+        if (!this.selection.anchor) for (const cb of this.selectionListeners) cb();
       }
     }
 
@@ -1135,6 +1138,16 @@ export default class Ink {
     return text;
   }
 
+  /**
+   * Read the current selection as text without touching the clipboard.
+   * copySelectionNoClear() keeps the highlight but still fires OSC 52; this
+   * is for callers that only want to know what is selected.
+   */
+  getSelectedText(): string {
+    if (!hasSelection(this.selection)) return '';
+    return getSelectedText(this.selection, this.frontFrame.screen);
+  }
+
   /** Clear the current text selection without copying. */
   clearTextSelection(): void {
     if (!hasSelection(this.selection)) return;
@@ -1246,35 +1259,6 @@ export default class Ink {
   }
 
   /**
-   * Capture text from rows about to scroll out of the viewport during
-   * drag-to-scroll. Must be called BEFORE the ScrollBox scrolls so the
-   * screen buffer still holds the outgoing content. Accumulated into
-   * the selection state and joined back in by getSelectedText.
-   */
-  captureScrolledRows(firstRow: number, lastRow: number, side: 'above' | 'below'): void {
-    captureScrolledRows(this.selection, this.frontFrame.screen, firstRow, lastRow, side);
-  }
-
-  /**
-   * Shift anchor AND focus by dRow, clamped to [minRow, maxRow]. Used by
-   * keyboard scroll handlers (PgUp/PgDn etc.) so the highlight tracks the
-   * content instead of disappearing. Unlike shiftAnchor (drag-to-scroll),
-   * this moves BOTH endpoints — the user isn't holding the mouse at one
-   * edge. Supplies screen.width for the col-reset-on-clamp boundary.
-   */
-  shiftSelectionForScroll(dRow: number, minRow: number, maxRow: number): void {
-    const hadSel = hasSelection(this.selection);
-    shiftSelection(this.selection, dRow, minRow, maxRow, this.frontFrame.screen.width);
-    // shiftSelection clears when both endpoints overshoot the same edge
-    // (Home/g/End/G page-jump past the selection). Notify subscribers so
-    // useHasSelection updates. Safe to call notifySelectionChange here —
-    // this runs from keyboard handlers, not inside onRender().
-    if (hadSel && !hasSelection(this.selection)) {
-      this.notifySelectionChange();
-    }
-  }
-
-  /**
    * Keyboard selection extension (shift+arrow/home/end). Moves focus;
    * anchor stays fixed so the highlight grows or shrinks relative to it.
    * Left/right wrap across row boundaries — native macOS text-edit
@@ -1285,14 +1269,16 @@ export default class Ink {
   moveSelectionFocus(move: FocusMove): void {
     if (!this.altScreenActive) return;
     const {
-      focus
+      focus,
+      scope
     } = this.selection;
     if (!focus) return;
     const {
       width,
       height
     } = this.frontFrame.screen;
-    const maxCol = width - 1;
+    const minCol = scope ? scope.x1 : 0;
+    const maxCol = (scope ? Math.min(scope.x2, width) : width) - 1;
     const maxRow = height - 1;
     let {
       col,
@@ -1300,14 +1286,14 @@ export default class Ink {
     } = focus;
     switch (move) {
       case 'left':
-        if (col > 0) col--;else if (row > 0) {
+        if (col > minCol) col--;else if (row > 0) {
           col = maxCol;
           row--;
         }
         break;
       case 'right':
         if (col < maxCol) col++;else if (row < maxRow) {
-          col = 0;
+          col = minCol;
           row++;
         }
         break;
@@ -1318,7 +1304,7 @@ export default class Ink {
         if (row < maxRow) row++;
         break;
       case 'lineStart':
-        col = 0;
+        col = minCol;
         break;
       case 'lineEnd':
         col = maxCol;
@@ -1362,6 +1348,16 @@ export default class Ink {
   dispatchHover(col: number, row: number): void {
     if (!this.altScreenActive) return;
     dispatchHover(this.rootNode, col, row, this.hoveredNodes);
+  }
+  /**
+   * Bubble a WheelEvent from the Box under the pointer. Returns true if a
+   * handler consumed it, in which case the caller must not fall through to
+   * the global scroll keybindings. Gated on altScreenActive for the same
+   * reason as dispatchClick.
+   */
+  dispatchWheel(col: number, row: number, deltaY: number): boolean {
+    if (!this.altScreenActive) return false;
+    return dispatchWheel(this.rootNode, col, row, deltaY);
   }
   dispatchKeyboardEvent(parsedKey: ParsedKey): void {
     const target = this.focusManager.activeElement ?? this.rootNode;
@@ -1428,12 +1424,17 @@ export default class Ink {
     // selectWordAt/selectLineAt no-op on noSelect/out-of-bounds. Seed with
     // a char-mode selection so the press still starts a drag even if the
     // word/line scan finds nothing selectable.
-    startSelection(this.selection, col, row);
+    this.handleSelectionStart(col, row);
     if (count === 2) selectWordAt(this.selection, screen, col, row);else selectLineAt(this.selection, screen, row);
     // Ensure hasSelection is true so release doesn't re-dispatch onClickAt.
     // selectWordAt no-ops on noSelect; selectLineAt no-ops out-of-bounds.
     if (!this.selection.focus) this.selection.focus = this.selection.anchor;
     this.notifySelectionChange();
+  }
+
+  /** Start a char-mode selection, confined to any `selectionScope` under the press. */
+  handleSelectionStart(col: number, row: number): void {
+    startSelection(this.selection, col, row, selectionScopeAt(this.rootNode, col, row));
   }
 
   /**
@@ -1538,7 +1539,7 @@ export default class Ink {
   };
   render(node: ReactNode): void {
     this.currentNode = node;
-    const tree = <App stdin={this.options.stdin} stdout={this.options.stdout} stderr={this.options.stderr} exitOnCtrlC={this.options.exitOnCtrlC} onExit={this.unmount} terminalColumns={this.terminalColumns} terminalRows={this.terminalRows} selection={this.selection} onSelectionChange={this.notifySelectionChange} onClickAt={this.dispatchClick} onHoverAt={this.dispatchHover} getHyperlinkAt={this.getHyperlinkAt} onOpenHyperlink={this.openHyperlink} onMultiClick={this.handleMultiClick} onSelectionDrag={this.handleSelectionDrag} onStdinResume={this.reassertTerminalModes} onCursorDeclaration={this.setCursorDeclaration} dispatchKeyboardEvent={this.dispatchKeyboardEvent}>
+    const tree = <App stdin={this.options.stdin} stdout={this.options.stdout} stderr={this.options.stderr} exitOnCtrlC={this.options.exitOnCtrlC} onExit={this.unmount} terminalColumns={this.terminalColumns} terminalRows={this.terminalRows} selection={this.selection} onSelectionChange={this.notifySelectionChange} onClickAt={this.dispatchClick} onHoverAt={this.dispatchHover} onWheelAt={this.dispatchWheel} getHyperlinkAt={this.getHyperlinkAt} onOpenHyperlink={this.openHyperlink} onMultiClick={this.handleMultiClick} onSelectionStart={this.handleSelectionStart} onSelectionDrag={this.handleSelectionDrag} onStdinResume={this.reassertTerminalModes} onCursorDeclaration={this.setCursorDeclaration} dispatchKeyboardEvent={this.dispatchKeyboardEvent}>
         <TerminalWriteProvider value={this.writeRaw}>
           {node}
         </TerminalWriteProvider>

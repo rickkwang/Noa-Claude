@@ -2,7 +2,10 @@
 import type { DOMElement } from './dom.js'
 import { ClickEvent } from './events/click-event.js'
 import type { EventHandlerProps } from './events/event-handlers.js'
+import { LayoutEdge } from './layout/node.js'
+import { WheelEvent } from './events/wheel-event.js'
 import { nodeCache } from './node-cache.js'
+import type { SelectionScope } from './selection.js'
 
 /**
  * Find the deepest DOM element whose rendered rect contains (col, row).
@@ -101,6 +104,80 @@ export function dispatchClick(
     target = target.parentNode
   }
   return handled
+}
+
+/**
+ * Hit-test the root at (col, row) and bubble a WheelEvent from the deepest
+ * containing node up through parentNode, innermost first — that is what lets
+ * a nested scrollable region claim the wheel before its container sees it.
+ * Returns true if a handler called preventDefault(), meaning the wheel was
+ * consumed and must not also drive the global scroll keybindings.
+ */
+export function dispatchWheel(
+  root: DOMElement,
+  col: number,
+  row: number,
+  deltaY: number,
+): boolean {
+  let target: DOMElement | undefined = hitTest(root, col, row) ?? undefined
+  if (!target) return false
+
+  const event = new WheelEvent(col, row, deltaY)
+  while (target) {
+    const handler = target._eventHandlers?.onWheel as
+      | ((event: WheelEvent) => void)
+      | undefined
+    if (handler) {
+      handler(event)
+      if (event.didStopImmediatePropagation()) break
+    }
+    target = target.parentNode
+  }
+  return event.defaultPrevented
+}
+
+/**
+ * The column range a selection started at (col, row) is confined to: the
+ * content box (inside border and padding) of the nearest `selectionScope`
+ * ancestor, narrowed by any clipping ancestor above it. Undefined when no
+ * scope contains the point, which leaves the selection screen-wide.
+ */
+export function selectionScopeAt(
+  root: DOMElement,
+  col: number,
+  row: number,
+): SelectionScope | undefined {
+  let scope: SelectionScope | undefined
+  for (
+    let node: DOMElement | undefined = hitTest(root, col, row) ?? undefined;
+    node;
+    node = node.parentNode
+  ) {
+    const rect = nodeCache.get(node)
+    if (!rect) continue
+    const left = Math.floor(rect.x)
+    const right = Math.floor(rect.x + rect.width)
+    if (!scope) {
+      if (!node.style.selectionScope) continue
+      const yoga = node.yogaNode
+      const insetLeft = yoga
+        ? yoga.getComputedBorder(LayoutEdge.Left) +
+          yoga.getComputedPadding(LayoutEdge.Left)
+        : 0
+      const insetRight = yoga
+        ? yoga.getComputedBorder(LayoutEdge.Right) +
+          yoga.getComputedPadding(LayoutEdge.Right)
+        : 0
+      scope = { x1: left + insetLeft, x2: right - insetRight, node }
+      continue
+    }
+    const overflow = node.style.overflowX ?? node.style.overflow
+    if (overflow === 'hidden' || overflow === 'scroll') {
+      scope.x1 = Math.max(scope.x1, left)
+      scope.x2 = Math.min(scope.x2, right)
+    }
+  }
+  return scope && scope.x2 > scope.x1 ? scope : undefined
 }
 
 /**

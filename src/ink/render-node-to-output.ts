@@ -83,16 +83,19 @@ export function getScrollDrainNode(): DOMElement | null {
   return scrollDrainNode
 }
 
-// At-bottom follow scroll event this frame. When streaming content
-// triggers scrollTop = maxScroll, the ScrollBox records the delta +
-// viewport bounds here. ink.tsx consumes it post-render to translate any active
-// text selection by -delta so the highlight stays anchored to the TEXT
-// (native terminal behavior — the selection walks up the screen as content
-// scrolls, eventually clipping at the top). The frontFrame screen buffer
-// still holds the old content at that point — captureScrolledRows reads
-// from it before the front/back swap to preserve the text for copy.
+// A ScrollBox's painted scrollTop moved this frame — wheel, keyboard jump,
+// drag-to-scroll or at-bottom follow alike. The box records the delta and its
+// viewport rect here; ink.tsx consumes it post-render to translate any
+// selection inside that rect by -delta so the highlight stays anchored to the
+// TEXT (native terminal behavior — the selection walks with the content and
+// clips at the edges). The frontFrame screen buffer still holds the old
+// content at that point — captureScrolledRows reads from it before the
+// front/back swap to preserve the text for copy. The column bounds keep a
+// side-by-side box's scroll from dragging a selection in its neighbour.
 export type FollowScroll = {
   delta: number
+  viewportLeft: number
+  viewportRight: number
   viewportTop: number
   viewportBottom: number
 }
@@ -638,17 +641,23 @@ function renderNodeToOutput(
       // AND on the blit fast-path at line ~235 since blitRegion copies
       // the noSelect bitmap alongside cells).
       //
-      // 'from-left-edge' extends the exclusion from col 0 so any
+      // 'from-left-edge' extends the exclusion to the left edge of the
+      // enclosing selection scope (col 0 when there is none) so any
       // upstream indentation (tool prefix, tree lines) is covered too
       // — a multi-row drag over a diff gutter shouldn't pick up the
       // `  └─  ` prefix on row 0 or the blank cells under it on row 1+.
+      // Stopping at the scope keeps a gutter in a side panel from fencing
+      // off the columns of whatever sits to its left.
       if (node.style.noSelect) {
         const boxX = Math.floor(x)
-        const fromEdge = node.style.noSelect === 'from-left-edge'
+        const left =
+          node.style.noSelect === 'from-left-edge'
+            ? Math.min(selectionScopeLeft(node), boxX)
+            : boxX
         output.noSelect({
-          x: fromEdge ? 0 : boxX,
+          x: left,
           y: Math.floor(y),
-          width: fromEdge ? boxX + Math.floor(width) : Math.floor(width),
+          width: boxX - left + Math.floor(width),
           height: Math.floor(height),
         })
       }
@@ -749,22 +758,33 @@ function renderNodeToOutput(
         // flag is OR'd in for cold start (scrollTop=0 before first layout)
         // and scrollToBottom-from-far-away (flag set before scrollTop moves)
         // — the imperative field takes precedence over the attribute so
-        // scrollTo/scrollBy can break stickiness. pendingDelta<0 guard:
-        // don't cancel an in-flight scroll-up when content races in.
-        // Capture scrollTop before follow so ink.tsx can translate any
-        // active text selection by the same delta (native terminal behavior:
-        // view keeps scrolling, highlight walks up with the text).
+        // scrollTo/scrollBy can break stickiness. An explicit
+        // stickyScroll={false} opts out of positional follow entirely.
+        // pendingDelta<0 guard: don't cancel an in-flight scroll-up when
+        // content races in.
         const scrollTopBeforeFollow = node.scrollTop ?? 0
-        const sticky =
-          node.stickyScroll ?? Boolean(node.attributes['stickyScroll'])
-        const prevMaxScroll = Math.max(0, prevScrollHeight - prevInnerHeight)
+        const stickyAttribute = node.attributes['stickyScroll']
+        const sticky = node.stickyScroll ?? Boolean(stickyAttribute)
+        // Non-sticky boxes measure "previous" against the tallest content
+        // since the last user scroll, so a frame where content briefly
+        // shrinks neither clamps scrollTop down nor reads as being at bottom.
+        const prevHeight = sticky
+          ? prevScrollHeight
+          : Math.max(node.scrollHeightHwm ?? 0, prevScrollHeight)
+        node.scrollHeightHwm = sticky
+          ? undefined
+          : Math.max(prevHeight, scrollHeight)
+        const prevMaxScroll = Math.max(0, prevHeight - prevInnerHeight)
         // Positional check only valid when content grew — virtualization can
         // transiently SHRINK scrollHeight (tail unmount + stale heightCache
         // spacer) making scrollTop >= prevMaxScroll true by artifact, not
         // because the user was at bottom.
         const grew = scrollHeight >= prevScrollHeight
         const atBottom =
-          sticky || (grew && scrollTopBeforeFollow >= prevMaxScroll)
+          sticky ||
+          (stickyAttribute !== false &&
+            grew &&
+            scrollTopBeforeFollow >= prevMaxScroll)
         if (atBottom && (node.pendingScrollDelta ?? 0) >= 0) {
           node.scrollTop = maxScroll
           node.pendingScrollDelta = undefined
@@ -783,15 +803,6 @@ function renderNodeToOutput(
             scrollTopBeforeFollow >= prevMaxScroll
           ) {
             node.stickyScroll = true
-          }
-        }
-        const followDelta = (node.scrollTop ?? 0) - scrollTopBeforeFollow
-        if (followDelta > 0) {
-          const vpTop = node.scrollViewportTop ?? 0
-          followScroll = {
-            delta: followDelta,
-            viewportTop: vpTop,
-            viewportBottom: vpTop + innerHeight - 1,
           }
         }
         // Drain pendingScrollDelta. Native terminals (proportional burst
@@ -831,6 +842,13 @@ function renderNodeToOutput(
           // schedule an infinite loop of no-op drain frames.
           node.pendingScrollDelta = undefined
         }
+        // The stored scrollTop may sit past the current max, up to the
+        // high-water mark, so shrink-then-regrow lands back where it was; the
+        // painted one never does.
+        const storedScrollTop = Math.max(
+          0,
+          Math.min(cur, Math.max(maxScroll, prevHeight - innerHeight)),
+        )
         let scrollTop = Math.max(0, Math.min(cur, maxScroll))
         // Virtual-scroll clamp: if scrollTop raced past the currently-mounted
         // range (burst PageUp before React re-renders), render at the EDGE of
@@ -843,12 +861,25 @@ function renderNodeToOutput(
         const clamped = haveClamp
           ? Math.max(cMin, Math.min(scrollTop, cMax))
           : scrollTop
-        node.scrollTop = scrollTop
+        node.scrollTop = storedScrollTop
         // Clamp hitting top/bottom consumes any remainder. Set drainPending
         // only after clamp so a wasted no-op frame isn't scheduled.
-        if (scrollTop !== cur) node.pendingScrollDelta = undefined
+        if (storedScrollTop !== cur) node.pendingScrollDelta = undefined
         if (node.pendingScrollDelta !== undefined) scrollDrainNode = node
         scrollTop = clamped
+
+        const renderedDelta = scrollTop - (node.scrollTopRendered ?? scrollTop)
+        node.scrollTopRendered = scrollTop
+        if (renderedDelta !== 0) {
+          const vpTop = node.scrollViewportTop
+          followScroll = {
+            delta: renderedDelta,
+            viewportLeft: Math.floor(x),
+            viewportRight: Math.floor(x + width) - 1,
+            viewportTop: vpTop,
+            viewportBottom: vpTop + innerHeight - 1,
+          }
+        }
 
         if (content && contentYoga) {
           // Compute content wrapper's absolute render position with scroll
@@ -871,7 +902,13 @@ function renderNodeToOutput(
             const delta = contentCached.y - contentY
             const regionTop = Math.floor(y + contentYoga.getComputedTop())
             const regionBottom = regionTop + innerHeight - 1
+            // DECSTBM and output.shift move whole screen rows, so only a
+            // ScrollBox spanning the full width may take the fast path — a
+            // side-by-side layout would drag its neighbour's cells along.
+            const spansFullWidth =
+              Math.floor(x) <= 0 && Math.floor(x + width) >= output.width
             if (
+              spansFullWidth &&
               cached?.y === y &&
               cached.height === height &&
               innerHeight > 0 &&
@@ -1292,6 +1329,17 @@ function renderChildren(
       }
     }
   }
+}
+
+/** Screen column where the nearest `selectionScope` ancestor starts, or 0. */
+function selectionScopeLeft(node: DOMElement): number {
+  let scope = node.parentNode
+  while (scope && !scope.style?.selectionScope) scope = scope.parentNode
+  let left = 0
+  for (let n = scope; n; n = n.parentNode) {
+    left += n.yogaNode?.getComputedLeft() ?? 0
+  }
+  return Math.floor(left)
 }
 
 function clipsBothAxes(node: DOMElement): boolean {

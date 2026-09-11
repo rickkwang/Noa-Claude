@@ -112,7 +112,7 @@ const WHEEL_DECAY_IDLE_MS = 500;
  * shift+nav extends selection, and cmd/opt+nav are often intercepted by
  * the terminal emulator for scrollback nav — neither disturbs selection.
  * Bare arrows DO clear (user's cursor moves, native deselects). Wheel is
- * excluded — scroll:lineUp/Down already clears via the keybinding path.
+ * excluded — the selection scrolls along with the content.
  */
 export function shouldClearSelectionOnKey(key: Key): boolean {
   if (key.wheelUp || key.wheelDown) return false;
@@ -439,55 +439,11 @@ export function ScrollKeybindingHandler({
     isActive
   });
 
-  // Translate selection to track a keyboard page jump. Selection coords are
-  // screen-buffer-local; a scrollTo that moves content by N rows must also
-  // shift anchor+focus by N so the highlight stays on the same text (native
-  // terminal behavior: selection moves with content, clips at viewport
-  // edges). Rows that scroll out of the viewport are captured into
-  // scrolledOffAbove/Below before the scroll so getSelectedText still
-  // returns the full text. Wheel scroll (scroll:lineUp/Down via scrollBy)
-  // still clears — its async pendingScrollDelta drain means the actual
-  // delta isn't known synchronously (follow-up).
-  function translateSelectionForJump(s: ScrollBoxHandle, delta: number): void {
-    const sel = selection.getState();
-    if (!sel?.anchor || !sel.focus) return;
-    const top = s.getViewportTop();
-    const bottom = top + s.getViewportHeight() - 1;
-    // Only translate if the selection is ON scrollbox content. Selections
-    // in the footer/prompt/StickyPromptHeader are on static text — the
-    // scroll doesn't move what's under them. Same guard as ink.tsx's
-    // auto-follow translate (commit 36a8d154).
-    if (sel.anchor.row < top || sel.anchor.row > bottom) return;
-    // Cross-boundary: anchor in scrollbox, focus in footer/header. Mirror
-    // ink.tsx's Flag-3 guard — fall through without shifting OR capturing.
-    // The static endpoint pins the selection; shifting would teleport it
-    // into scrollbox content.
-    if (sel.focus.row < top || sel.focus.row > bottom) return;
-    const max = Math.max(0, s.getScrollHeight() - s.getViewportHeight());
-    const cur = s.getScrollTop() + s.getPendingDelta();
-    // Actual scroll distance after boundary clamp. jumpBy may call
-    // scrollToBottom when target >= max but the view can't move past max,
-    // so the selection shift is bounded here.
-    const actual = Math.max(0, Math.min(max, cur + delta)) - cur;
-    if (actual === 0) return;
-    if (actual > 0) {
-      // Scrolling down: content moves up. Rows at the TOP leave viewport.
-      // Anchor+focus shift -actual so they track the content that moved up.
-      selection.captureScrolledRows(top, top + actual - 1, 'above');
-      selection.shiftSelection(-actual, top, bottom);
-    } else {
-      // Scrolling up: content moves down. Rows at the BOTTOM leave viewport.
-      const a = -actual;
-      selection.captureScrolledRows(bottom - a + 1, bottom, 'below');
-      selection.shiftSelection(a, top, bottom);
-    }
-  }
   useKeybindings({
     'scroll:pageUp': () => {
       const s_0 = scrollRef.current;
       if (!s_0) return;
       const d = -Math.max(1, Math.floor(s_0.getViewportHeight() / 2));
-      translateSelectionForJump(s_0, d);
       const sticky = jumpBy(s_0, d);
       onScroll?.(sticky, s_0);
     },
@@ -495,15 +451,10 @@ export function ScrollKeybindingHandler({
       const s_1 = scrollRef.current;
       if (!s_1) return;
       const d_0 = Math.max(1, Math.floor(s_1.getViewportHeight() / 2));
-      translateSelectionForJump(s_1, d_0);
       const sticky_0 = jumpBy(s_1, d_0);
       onScroll?.(sticky_0, s_1);
     },
     'scroll:lineUp': () => {
-      // Wheel: scrollBy accumulates into pendingScrollDelta, drained async
-      // by the renderer. captureScrolledRows can't read the outgoing rows
-      // before they leave (drain is non-deterministic). Clear for now.
-      selection.clearSelection();
       const s_2 = scrollRef.current;
       // Return false (not consumed) when the ScrollBox content fits —
       // scroll would be a no-op. Lets a child component's handler take
@@ -515,7 +466,6 @@ export function ScrollKeybindingHandler({
       onScroll?.(false, s_2);
     },
     'scroll:lineDown': () => {
-      selection.clearSelection();
       const s_3 = scrollRef.current;
       if (!s_3 || s_3.getScrollHeight() <= s_3.getViewportHeight()) return false;
       wheelAccel.current ??= initAndLogWheelAccel();
@@ -526,21 +476,12 @@ export function ScrollKeybindingHandler({
     'scroll:top': () => {
       const s_4 = scrollRef.current;
       if (!s_4) return;
-      translateSelectionForJump(s_4, -(s_4.getScrollTop() + s_4.getPendingDelta()));
       s_4.scrollTo(0);
       onScroll?.(false, s_4);
     },
     'scroll:bottom': () => {
       const s_5 = scrollRef.current;
       if (!s_5) return;
-      const max_0 = Math.max(0, s_5.getScrollHeight() - s_5.getViewportHeight());
-      translateSelectionForJump(s_5, max_0 - (s_5.getScrollTop() + s_5.getPendingDelta()));
-      // scrollTo(max) eager-writes scrollTop so the render-phase sticky
-      // follow computes followDelta=0. Without this, scrollToBottom()
-      // alone leaves scrollTop stale → followDelta=max-stale →
-      // shiftSelectionForFollow applies the SAME shift we already did
-      // above, 2× offset. scrollToBottom() then re-enables sticky.
-      s_5.scrollTo(max_0);
       s_5.scrollToBottom();
       onScroll?.(true, s_5);
     },
@@ -559,7 +500,6 @@ export function ScrollKeybindingHandler({
       const s_6 = scrollRef.current;
       if (!s_6) return;
       const d_1 = -Math.max(1, Math.floor(s_6.getViewportHeight() / 2));
-      translateSelectionForJump(s_6, d_1);
       const sticky_1 = jumpBy(s_6, d_1);
       onScroll?.(sticky_1, s_6);
     },
@@ -567,7 +507,6 @@ export function ScrollKeybindingHandler({
       const s_7 = scrollRef.current;
       if (!s_7) return;
       const d_2 = Math.max(1, Math.floor(s_7.getViewportHeight() / 2));
-      translateSelectionForJump(s_7, d_2);
       const sticky_2 = jumpBy(s_7, d_2);
       onScroll?.(sticky_2, s_7);
     },
@@ -575,7 +514,6 @@ export function ScrollKeybindingHandler({
       const s_8 = scrollRef.current;
       if (!s_8) return;
       const d_3 = -Math.max(1, s_8.getViewportHeight());
-      translateSelectionForJump(s_8, d_3);
       const sticky_3 = jumpBy(s_8, d_3);
       onScroll?.(sticky_3, s_8);
     },
@@ -583,7 +521,6 @@ export function ScrollKeybindingHandler({
       const s_9 = scrollRef.current;
       if (!s_9) return;
       const d_4 = Math.max(1, s_9.getViewportHeight());
-      translateSelectionForJump(s_9, d_4);
       const sticky_4 = jumpBy(s_9, d_4);
       onScroll?.(sticky_4, s_9);
     }
@@ -611,7 +548,7 @@ export function ScrollKeybindingHandler({
   useInput((input, key, event) => {
     const s_10 = scrollRef.current;
     if (!s_10) return;
-    const sticky_5 = applyModalPagerAction(s_10, modalPagerAction(input, key), d_5 => translateSelectionForJump(s_10, d_5));
+    const sticky_5 = applyModalPagerAction(s_10, modalPagerAction(input, key));
     if (sticky_5 === null) return;
     onScroll?.(sticky_5, s_10);
     event.stopImmediatePropagation();
@@ -621,43 +558,30 @@ export function ScrollKeybindingHandler({
 
   // When Shift+↑/↓ tries to extend a selection past the viewport edge, scroll
   // the viewport by one row so the selection can grow into newly revealed
-  // content. Models drag-to-scroll: anchor tracks content (shiftAnchor), focus
-  // stays at the edge row, rows scrolling out of view are captured so
-  // getSelectedText still returns the full text. Returns true when a scroll
-  // happened (caller should stop propagation and skip moveFocus).
+  // content. Focus is parked one row past the edge (virtually) and the scroll
+  // brings that row in; the renderer's scroll follow then shifts the
+  // selection and captures the row leaving the other edge, landing focus
+  // back on the edge. Returns true when a scroll happened (caller should stop
+  // propagation and skip moveFocus).
   function tryScrollExtendSelection(move: 'up' | 'down'): boolean {
     const s = scrollRef.current;
     if (!s) return false;
     const sel = selection.getState();
-    if (!sel?.anchor || !sel.focus) return false;
+    if (!sel?.anchor || !sel.focus || !selectionBelongsTo(sel, s)) return false;
     if (s.getPendingDelta() !== 0) return false; // wait for pending scroll to drain
     const top = s.getViewportTop();
     const bottom = top + s.getViewportHeight() - 1;
     // Only apply within scrollable content — anchor outside means selection
     // spans a non-scrolling region (header/footer); don't auto-scroll there.
     if (sel.anchor.row < top || sel.anchor.row > bottom) return false;
-    if (move === 'up') {
-      if (sel.focus.row !== top) return false;
-      const scrollTop = s.getScrollTop();
-      if (scrollTop <= 0) return false;
-      // Rows at the bottom scroll out of view when content moves down.
-      selection.captureScrolledRows(bottom, bottom, 'below');
-      selection.shiftAnchor(1, top, bottom);
-      s.scrollBy(-1);
-      onScroll?.(false, s);
-      return true;
-    } else {
-      if (sel.focus.row !== bottom) return false;
-      const max = Math.max(0, s.getScrollHeight() - s.getViewportHeight());
-      const scrollTop = s.getScrollTop();
-      if (scrollTop >= max) return false;
-      // Rows at the top scroll out of view when content moves up.
-      selection.captureScrolledRows(top, top, 'above');
-      selection.shiftAnchor(-1, top, bottom);
-      s.scrollBy(1);
-      onScroll?.(false, s);
-      return true;
-    }
+    const up = move === 'up';
+    if (sel.focus.row !== (up ? top : bottom)) return false;
+    const max = Math.max(0, s.getScrollHeight() - s.getViewportHeight());
+    if (up ? s.getScrollTop() <= 0 : s.getScrollTop() >= max) return false;
+    sel.virtualFocusRow = up ? top - 1 : bottom + 1;
+    s.scrollBy(up ? -1 : 1);
+    onScroll?.(false, s);
+    return true;
   }
 
   // Esc clears selection; any other keystroke also clears it (matches
@@ -719,18 +643,30 @@ export function ScrollKeybindingHandler({
 }
 
 /**
- * Auto-scroll the ScrollBox when the user drags a selection past its top or
- * bottom edge. The anchor is shifted in the opposite direction so it stays
- * on the same content (content that was at viewport row N is now at row N±d
- * after scrolling by d). Focus stays at the mouse position (edge row).
- *
- * Selection coords are screen-buffer-local, so the anchor is clamped to the
- * viewport bounds once the original content scrolls out. To preserve the full
- * selection, rows about to scroll out are captured into scrolledOffAbove/
- * scrolledOffBelow before each scroll step and joined back in by
- * getSelectedText.
+ * Whether a selection is this scroll box's to act on: unscoped, or scoped to
+ * the box itself. A selection scoped to a side-by-side box can overlap this
+ * viewport's rows without having anything to do with it.
  */
-function useDragToScroll(scrollRef: RefObject<ScrollBoxHandle | null>, selection: ReturnType<typeof useSelection>, isActive: boolean, onScroll: Props['onScroll']): void {
+function selectionBelongsTo(sel: SelectionState | null, s: ScrollBoxHandle): boolean {
+  const node = sel?.scope?.node;
+  return !node || node === s.getDomElement();
+}
+
+/**
+ * Auto-scroll the ScrollBox when the user drags a selection past its top or
+ * bottom edge. Focus stays at the mouse position (edge row); the renderer's
+ * scroll follow shifts the anchor with the content and captures rows that
+ * scroll out into scrolledOffAbove/Below, so getSelectedText still returns
+ * the full selection.
+ *
+ * `requireScope` limits the box to selections scoped to it — for a box that
+ * sits beside others, where an unscoped drag belongs to the screen.
+ */
+export function useDragToScroll(scrollRef: RefObject<ScrollBoxHandle | null>, selection: ReturnType<typeof useSelection>, isActive: boolean, onScroll?: Props['onScroll'], {
+  requireScope = false
+}: {
+  requireScope?: boolean;
+} = {}): void {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const dirRef = useRef<-1 | 0 | 1>(0); // -1 scrolling up, +1 down, 0 idle
   // Survives stop() — reset only on drag-finish. See check() for semantics.
@@ -762,34 +698,14 @@ function useDragToScroll(scrollRef: RefObject<ScrollBoxHandle | null>, selection
         stop();
         return;
       }
-      // scrollBy accumulates into pendingScrollDelta; the screen buffer
-      // doesn't update until the next render drains it. If a previous
-      // tick's scroll hasn't drained yet, captureScrolledRows would read
-      // stale content (same rows as last tick → duplicated in the
-      // accumulator AND missing the rows that actually scrolled out).
-      // Skip this tick; the 50ms interval will retry after Ink's 16ms
-      // render catches up. Also prevents shiftAnchor from desyncing.
+      // The follow for the previous step hasn't painted yet; stepping again
+      // would capture rows from a screen that doesn't reflect it.
       if (s.getPendingDelta() !== 0) return;
-      const top = s.getViewportTop();
-      const bottom = top + s.getViewportHeight() - 1;
-      // Clamp anchor within [top, bottom]. Not [0, bottom]: the ScrollBox
-      // padding row at 0 would produce a blank line between scrolledOffAbove
-      // and the on-screen content in getSelectedText. The padding-row
-      // highlight was a minor visual nicety; text correctness wins.
       if (dir < 0) {
         if (s.getScrollTop() <= 0) {
           stop();
           return;
         }
-        // Scrolling up: content moves down in viewport, so anchor row +N.
-        // Clamp to actual scroll distance so anchor stays in sync when near
-        // the top boundary (renderer clamps scrollTop to 0 on drain).
-        const actual = Math.min(AUTOSCROLL_LINES, s.getScrollTop());
-        // Capture rows about to scroll out the BOTTOM before scrollBy
-        // overwrites them. Only rows inside the selection are captured
-        // (captureScrolledRows intersects with selection bounds).
-        selection.captureScrolledRows(bottom - actual + 1, bottom, 'below');
-        selection.shiftAnchor(actual, top, bottom);
         s.scrollBy(-AUTOSCROLL_LINES);
       } else {
         const max = Math.max(0, s.getScrollHeight() - s.getViewportHeight());
@@ -797,13 +713,6 @@ function useDragToScroll(scrollRef: RefObject<ScrollBoxHandle | null>, selection
           stop();
           return;
         }
-        // Scrolling down: content moves up in viewport, so anchor row -N.
-        // Clamp to actual scroll distance so anchor stays in sync when near
-        // the bottom boundary (renderer clamps scrollTop to max on drain).
-        const actual_0 = Math.min(AUTOSCROLL_LINES, max - s.getScrollTop());
-        // Capture rows about to scroll out the TOP.
-        selection.captureScrolledRows(top, top + actual_0 - 1, 'above');
-        selection.shiftAnchor(-actual_0, top, bottom);
         s.scrollBy(AUTOSCROLL_LINES);
       }
       onScrollRef.current?.(false, s);
@@ -836,15 +745,16 @@ function useDragToScroll(scrollRef: RefObject<ScrollBoxHandle | null>, selection
     // avoids useVirtualScroll's tail-walk → forward-walk phantom growth.
     function check(): void {
       const s_0 = scrollRef.current;
-      if (!s_0) {
+      const sel_0 = selection.getState();
+      if (!s_0 || !selectionBelongsTo(sel_0, s_0) || requireScope && !sel_0?.scope?.node) {
+        lastScrolledDirRef.current = 0;
         stop();
         return;
       }
       const top_0 = s_0.getViewportTop();
       const bottom_0 = top_0 + s_0.getViewportHeight() - 1;
-      const sel_0 = selection.getState();
       // Pass the LAST-scrolled direction (not dirRef) so the anchor guard is
-      // bypassed after shiftAnchor has clamped anchor toward row 0. Using
+      // bypassed after the follow has clamped anchor toward the edge. Using
       // lastScrolledDirRef (survives stop()) lets autoscroll resume after a
       // brief mouse dip into the viewport. Same-direction only — a mouse
       // jump from below-bottom to above-top must stop, since reversing while
@@ -884,7 +794,7 @@ function useDragToScroll(scrollRef: RefObject<ScrollBoxHandle | null>, selection
       stop();
       lastScrolledDirRef.current = 0;
     };
-  }, [isActive, scrollRef, selection]);
+  }, [isActive, requireScope, scrollRef, selection]);
 }
 
 /**
@@ -896,8 +806,8 @@ function useDragToScroll(scrollRef: RefObject<ScrollBoxHandle | null>, selection
  * spuriously scrolled the message history every 50ms until release).
  *
  * alreadyScrollingDir bypasses the anchor-in-viewport guard once autoscroll
- * is active (shiftAnchor legitimately clamps the anchor toward row 0, below
- * `top`) but only allows SAME-direction continuation. If the focus jumps to
+ * is active (the scroll follow legitimately clamps the anchor to the viewport
+ * edge) but only allows SAME-direction continuation. If the focus jumps to
  * the opposite edge (below→above or above→below — possible with a fast flick
  * or off-window drag since mode 1002 reports on cell change, not per cell),
  * returns 0 to stop — reversing without clearing scrolledOffAbove/Below
@@ -915,7 +825,7 @@ export function dragScrollDirection(sel: SelectionState | null, top: number, bot
   }
   // Anchor must be inside the viewport for us to own this drag. If the
   // user started selecting in the input box or header, autoscrolling the
-  // message history is surprising and corrupts the anchor via shiftAnchor.
+  // message history is surprising and would drag the anchor with it.
   if (sel.anchor.row < top || sel.anchor.row > bottom) return 0;
   return want;
 }
@@ -931,10 +841,6 @@ export function jumpBy(s: ScrollBoxHandle, delta: number): boolean {
   const max = Math.max(0, s.getScrollHeight() - s.getViewportHeight());
   const target = s.getScrollTop() + s.getPendingDelta() + delta;
   if (target >= max) {
-    // Eager-write scrollTop so follow-scroll sees followDelta=0. Callers
-    // that ran translateSelectionForJump already shifted; scrollToBottom()
-    // alone would double-shift via the render-phase sticky follow.
-    s.scrollTo(max);
     s.scrollToBottom();
     return true;
   }
@@ -1058,50 +964,32 @@ export function modalPagerAction(input: string, key: Pick<Key, 'ctrl' | 'meta' |
 /**
  * Applies a modal pager action to a ScrollBox. Returns the resulting sticky
  * state, or null if the action was null (nothing to do — caller should fall
- * through). Calls onBeforeJump(delta) before scrolling so the caller can
- * translate the text selection by the scroll delta (capture outgoing rows,
- * shift anchor+focus) instead of clearing it. Exported for testing.
+ * through). The text selection follows the scroll in the renderer.
  */
-export function applyModalPagerAction(s: ScrollBoxHandle, act: ModalPagerAction | null, onBeforeJump: (delta: number) => void): boolean | null {
+export function applyModalPagerAction(s: ScrollBoxHandle, act: ModalPagerAction | null): boolean | null {
   switch (act) {
     case null:
       return null;
     case 'lineUp':
     case 'lineDown':
-      {
-        const d = act === 'lineDown' ? 1 : -1;
-        onBeforeJump(d);
-        return jumpBy(s, d);
-      }
+      return jumpBy(s, act === 'lineDown' ? 1 : -1);
     case 'halfPageUp':
     case 'halfPageDown':
       {
         const half = Math.max(1, Math.floor(s.getViewportHeight() / 2));
-        const d = act === 'halfPageDown' ? half : -half;
-        onBeforeJump(d);
-        return jumpBy(s, d);
+        return jumpBy(s, act === 'halfPageDown' ? half : -half);
       }
     case 'fullPageUp':
     case 'fullPageDown':
       {
         const page = Math.max(1, s.getViewportHeight());
-        const d = act === 'fullPageDown' ? page : -page;
-        onBeforeJump(d);
-        return jumpBy(s, d);
+        return jumpBy(s, act === 'fullPageDown' ? page : -page);
       }
     case 'top':
-      onBeforeJump(-(s.getScrollTop() + s.getPendingDelta()));
       s.scrollTo(0);
       return false;
     case 'bottom':
-      {
-        const max = Math.max(0, s.getScrollHeight() - s.getViewportHeight());
-        onBeforeJump(max - (s.getScrollTop() + s.getPendingDelta()));
-        // Eager-write scrollTop before scrollToBottom — same double-shift
-        // fix as scroll:bottom and jumpBy's max branch.
-        s.scrollTo(max);
-        s.scrollToBottom();
-        return true;
-      }
+      s.scrollToBottom();
+      return true;
   }
 }

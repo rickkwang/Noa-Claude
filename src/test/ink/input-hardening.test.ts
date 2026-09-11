@@ -113,3 +113,31 @@ describe('SGR mouse partial detection', () => {
     expect(SGR_MOUSE_PARTIAL_RE.test(state.incomplete)).toBe(true)
   })
 })
+
+describe('wheel events carry the pointer position', () => {
+  // Without col/row a wheel can only drive the global scroll bindings; with
+  // them it can be hit-tested against the rendered tree first, which is what
+  // lets the diff sidebar take the wheel that lands on it.
+  test('SGR wheel up/down keep their coordinates', () => {
+    const [keys] = parseMultipleKeypresses(
+      INITIAL_STATE,
+      '\x1b[<64;150;30M\x1b[<65;12;3M',
+    )
+    const wheel = keys.filter(k => k.kind === 'key') as ParsedKey[]
+    expect(wheel.map(k => [k.name, k.col, k.row])).toEqual([
+      ['wheelup', 150, 30],
+      ['wheeldown', 12, 3],
+    ])
+  })
+
+  test('X10 wheel keeps its coordinates too', () => {
+    const [keys] = parseMultipleKeypresses(
+      INITIAL_STATE,
+      '\x1b[M' + String.fromCharCode(96, 32 + 40, 32 + 10),
+    )
+    const wheel = keys.filter(k => k.kind === 'key') as ParsedKey[]
+    expect(wheel.map(k => [k.name, k.col, k.row])).toEqual([
+      ['wheelup', 40, 10],
+    ])
+  })
+})

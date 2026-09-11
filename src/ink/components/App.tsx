@@ -11,7 +11,7 @@ import { InputEvent } from '../events/input-event.js';
 import { TerminalFocusEvent } from '../events/terminal-focus-event.js';
 import { INITIAL_STATE, type ParsedInput, type ParsedKey, type ParsedMouse, parseMultipleKeypresses, SGR_MOUSE_PARTIAL_RE } from '../parse-keypress.js';
 import reconciler from '../reconciler.js';
-import { finishSelection, hasSelection, type SelectionState, startSelection } from '../selection.js';
+import { finishSelection, hasSelection, type SelectionState } from '../selection.js';
 import { isXtermJs, reconcileSyncOutputSupported, SYNC_OUTPUT_SUPPORTED, setXtversionName, supportsExtendedKeys } from '../terminal.js';
 import { getTerminalFocused, setTerminalFocused } from '../terminal-focus-state.js';
 import { TerminalQuerier, decrqm, xtversion } from '../terminal-querier.js';
@@ -59,6 +59,10 @@ type Props = {
   // DOM elements. Called for mode-1003 motion events with no button held.
   // No-op outside fullscreen (Ink.dispatchHover gates on altScreenActive).
   readonly onHoverAt: (col: number, row: number) => void;
+  // Dispatch a wheel event at (col, row) — hit-tests the DOM tree and
+  // bubbles onWheel handlers. Returns true if one consumed it, in which
+  // case the wheel must not also reach the scroll keybindings.
+  readonly onWheelAt: (col: number, row: number, deltaY: number) => boolean;
   // Look up the OSC 8 hyperlink at (col, row) synchronously at click
   // time. Returns the URL or undefined. The browser-open is deferred by
   // MULTI_CLICK_TIMEOUT_MS so double-click can cancel it.
@@ -73,6 +77,7 @@ type Props = {
   // Called on drag-motion. Mode-aware: char mode updates focus to the
   // exact cell; word/line mode snaps to word/line boundaries. Needs
   // screen-buffer access (word boundaries) so lives on Ink, not here.
+  readonly onSelectionStart: (col: number, row: number) => void;
   readonly onSelectionDrag: (col: number, row: number) => void;
   // Called when stdin data arrives after a >STDIN_RESUME_GAP_MS gap.
   // Ink re-asserts terminal modes: extended key reporting, and (when in
@@ -526,6 +531,14 @@ function processKeysInBatch(app: App, items: ParsedInput[], _unused1: undefined,
       setTerminalFocused(true);
     }
 
+    // A Box with an onWheel handler under the pointer claims the wheel; only
+    // an unclaimed one reaches the scroll keybindings.
+    if (item.col !== undefined && item.row !== undefined && (item.name === 'wheelup' || item.name === 'wheeldown')) {
+      if (app.props.onWheelAt(item.col - 1, item.row - 1, item.name === 'wheelup' ? -1 : 1)) {
+        continue;
+      }
+    }
+
     // Handle Ctrl+Z (suspend) using parsed key to support both raw (\x1a) and
     // CSI u format (\x1b[122;5u) from Kitty keyboard protocol terminals
     if (item.name === 'z' && item.ctrl && SUPPORTS_SUSPEND) {
@@ -615,7 +628,7 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
       app.props.onMultiClick(col, row, count);
       return;
     }
-    startSelection(sel, col, row);
+    app.props.onSelectionStart(col, row);
     // SGR bit 0x08 = alt (xterm.js wires altKey here, not metaKey — see
     // comment at the hyperlink-open guard below). On macOS xterm.js,
     // receiving alt means macOptionClickForcesSelection is OFF (otherwise

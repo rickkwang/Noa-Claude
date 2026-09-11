@@ -578,6 +578,10 @@ export type ParsedKey = {
   raw: string | undefined
   code?: string
   isPasted: boolean
+  /** 1-indexed pointer column. Only set on wheel events. */
+  col?: number
+  /** 1-indexed pointer row. Only set on wheel events. */
+  row?: number
 }
 
 /** A terminal response sequence (DECRPM, DA1, OSC reply, etc.) parsed
@@ -705,8 +709,13 @@ function parseKeypress(s: string = ''): ParsedKey {
   // should still be recognized as wheelup/wheeldown.
   if ((match = SGR_MOUSE_RE.exec(s))) {
     const button = parseInt(match[1]!, 10)
-    if ((button & 0x43) === 0x40) return createNavKey(s, 'wheelup', false)
-    if ((button & 0x43) === 0x41) return createNavKey(s, 'wheeldown', false)
+    // Carry the pointer position so the wheel can be hit-tested against the
+    // rendered tree before falling back to the global scroll keybindings.
+    const at = { col: parseInt(match[2]!, 10), row: parseInt(match[3]!, 10) }
+    if ((button & 0x43) === 0x40)
+      return { ...createNavKey(s, 'wheelup', false), ...at }
+    if ((button & 0x43) === 0x41)
+      return { ...createNavKey(s, 'wheeldown', false), ...at }
     // Shouldn't reach here (parseMouseEvent catches non-wheel) but be safe
     return createNavKey(s, 'mouse', false)
   }
@@ -718,8 +727,11 @@ function parseKeypress(s: string = ''): ParsedKey {
   // tracking in alt-screen and only need wheel for ScrollBox.
   if (s.length === 6 && s.startsWith('\x1b[M')) {
     const button = s.charCodeAt(3) - 32
-    if ((button & 0x43) === 0x40) return createNavKey(s, 'wheelup', false)
-    if ((button & 0x43) === 0x41) return createNavKey(s, 'wheeldown', false)
+    const at = { col: s.charCodeAt(4) - 32, row: s.charCodeAt(5) - 32 }
+    if ((button & 0x43) === 0x40)
+      return { ...createNavKey(s, 'wheelup', false), ...at }
+    if ((button & 0x43) === 0x41)
+      return { ...createNavKey(s, 'wheeldown', false), ...at }
     return createNavKey(s, 'mouse', false)
   }
 

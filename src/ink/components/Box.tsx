@@ -7,6 +7,7 @@ import type { DOMElement } from '../dom.js';
 import type { ClickEvent } from '../events/click-event.js';
 import type { FocusEvent } from '../events/focus-event.js';
 import type { KeyboardEvent } from '../events/keyboard-event.js';
+import type { WheelEvent } from '../events/wheel-event.js';
 import type { Styles } from '../styles.js';
 import * as warn from '../warn.js';
 export type Props = Except<Styles, 'textWrap'> & {
@@ -29,6 +30,14 @@ export type Props = Except<Styles, 'textWrap'> & {
    * ancestors; call `event.stopImmediatePropagation()` to stop bubbling.
    */
   onClick?: (event: ClickEvent) => void;
+  /**
+   * Fired on wheel/trackpad scroll over this Box's rendered rect. Bubbles
+   * from the deepest hit Box upward; call `event.stopPropagation()` to stop
+   * bubbling and `event.preventDefault()` to keep the wheel from also
+   * driving the global scroll keybindings. Only works inside
+   * `<AlternateScreen>` where mouse tracking is enabled.
+   */
+  onWheel?: (event: WheelEvent) => void;
   onFocus?: (event: FocusEvent) => void;
   onFocusCapture?: (event: FocusEvent) => void;
   onBlur?: (event: FocusEvent) => void;
@@ -50,7 +59,7 @@ export type Props = Except<Styles, 'textWrap'> & {
  * `<Box>` is an essential Ink component to build your layout. It's like `<div style="display: flex">` in the browser.
  */
 function Box(t0) {
-  const $ = _c(42);
+  const $ = _c(44);
   let autoFocus;
   let children;
   let flexDirection;
@@ -66,6 +75,7 @@ function Box(t0) {
   let onKeyDownCapture;
   let onMouseEnter;
   let onMouseLeave;
+  let onWheel;
   let ref;
   let style;
   let tabIndex;
@@ -88,6 +98,7 @@ function Box(t0) {
       onMouseLeave: t15,
       onKeyDown: t16,
       onKeyDownCapture: t17,
+      onWheel: t19,
       ...t18
     } = t0;
     children = t1;
@@ -103,6 +114,7 @@ function Box(t0) {
     onMouseLeave = t15;
     onKeyDown = t16;
     onKeyDownCapture = t17;
+    onWheel = t19;
     style = t18;
     flexWrap = t2 === undefined ? "nowrap" : t2;
     flexDirection = t3 === undefined ? "row" : t3;
@@ -144,6 +156,7 @@ function Box(t0) {
     $[16] = ref;
     $[17] = style;
     $[18] = tabIndex;
+    $[42] = onWheel;
   } else {
     autoFocus = $[1];
     children = $[2];
@@ -163,6 +176,7 @@ function Box(t0) {
     ref = $[16];
     style = $[17];
     tabIndex = $[18];
+    onWheel = $[42];
   }
   const t1 = style.overflowX ?? style.overflow ?? "visible";
   const t2 = style.overflowY ?? style.overflow ?? "visible";
@@ -189,8 +203,8 @@ function Box(t0) {
     t3 = $[26];
   }
   let t4;
-  if ($[27] !== autoFocus || $[28] !== children || $[29] !== onBlur || $[30] !== onBlurCapture || $[31] !== onClick || $[32] !== onFocus || $[33] !== onFocusCapture || $[34] !== onKeyDown || $[35] !== onKeyDownCapture || $[36] !== onMouseEnter || $[37] !== onMouseLeave || $[38] !== ref || $[39] !== t3 || $[40] !== tabIndex) {
-    t4 = <ink-box ref={ref} tabIndex={tabIndex} autoFocus={autoFocus} onClick={onClick} onFocus={onFocus} onFocusCapture={onFocusCapture} onBlur={onBlur} onBlurCapture={onBlurCapture} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} onKeyDown={onKeyDown} onKeyDownCapture={onKeyDownCapture} style={t3}>{children}</ink-box>;
+  if ($[27] !== autoFocus || $[28] !== children || $[29] !== onBlur || $[30] !== onBlurCapture || $[31] !== onClick || $[32] !== onFocus || $[33] !== onFocusCapture || $[34] !== onKeyDown || $[35] !== onKeyDownCapture || $[36] !== onMouseEnter || $[37] !== onMouseLeave || $[38] !== ref || $[39] !== t3 || $[40] !== tabIndex || $[43] !== onWheel) {
+    t4 = <ink-box ref={ref} tabIndex={tabIndex} autoFocus={autoFocus} onClick={onClick} onFocus={onFocus} onFocusCapture={onFocusCapture} onBlur={onBlur} onBlurCapture={onBlurCapture} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} onWheel={onWheel} onKeyDown={onKeyDown} onKeyDownCapture={onKeyDownCapture} style={t3}>{children}</ink-box>;
     $[27] = autoFocus;
     $[28] = children;
     $[29] = onBlur;
@@ -205,6 +219,7 @@ function Box(t0) {
     $[38] = ref;
     $[39] = t3;
     $[40] = tabIndex;
+    $[43] = onWheel;
     $[41] = t4;
   } else {
     t4 = $[41];

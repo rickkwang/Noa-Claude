@@ -71,8 +71,15 @@ export type DOMElement = {
   scrollClampMin?: number
   scrollClampMax?: number
   scrollHeight?: number
+  // Tallest content height seen since the last user scroll, for non-sticky
+  // boxes. Content that shrinks for a frame (a remount, a refresh swapping
+  // rows) would otherwise clamp scrollTop down and jump the view.
+  scrollHeightHwm?: number
   scrollViewportHeight?: number
   scrollViewportTop?: number
+  // scrollTop as last painted, after every clamp. The renderer compares it
+  // with this frame's value to move a selection along with scrolled text.
+  scrollTopRendered?: number
   stickyScroll?: boolean
   // Set by ScrollBox.scrollToElement; render-node-to-output reads
   // el.yogaNode.getComputedTop() (FRESH — same Yoga pass as scrollHeight)

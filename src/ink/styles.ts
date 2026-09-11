@@ -402,6 +402,13 @@ export type Styles = {
    * doesn't pick up leading whitespace from middle rows.
    */
   readonly noSelect?: boolean | 'from-left-edge'
+
+  /**
+   * Confine a text selection that starts inside this box to its columns, so
+   * dragging across rows of a side panel doesn't pick up whatever shares those
+   * rows beside it. Only affects alt-screen text selection.
+   */
+  readonly selectionScope?: boolean
 }
 
 const applyPositionStyles = (node: LayoutNode, style: Styles): void => {
