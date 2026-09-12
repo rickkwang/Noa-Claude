@@ -82,11 +82,44 @@ const BASH_SEMANTIC_NEUTRAL_COMMANDS = new Set(['echo', 'printf', 'true', 'false
 // Commands that typically produce no stdout on success
 const BASH_SILENT_COMMANDS = new Set(['mv', 'cp', 'rm', 'mkdir', 'rmdir', 'chmod', 'chown', 'chgrp', 'touch', 'ln', 'cd', 'export', 'unset', 'wait']);
 
+type SearchOrReadFlags = {
+  isSearch: boolean;
+  isRead: boolean;
+  isList: boolean;
+};
+
+// Memoizes BashTool.isSearchOrReadCommand per tool_use input object. The WeakMap
+// is bounded by the live message list. Deliberate divergence: upstream
+// classifies uncached on every call.
+const searchOrReadCache = new WeakMap<object, SearchOrReadFlags>();
+// Second-level cache for the classification itself, keyed by command text —
+// catches repeated commands across different messages, which the per-object
+// WeakMap cannot.
+const SEARCH_OR_READ_CACHE_MAX = 512;
+const searchOrReadByCommand = new Map<string, SearchOrReadFlags>();
+
 /**
  * Checks if a bash command is a search or read operation.
  * Used to determine if the command should be collapsed in the UI.
  * Returns an object indicating whether it's a search or read operation.
- *
+ */
+export function isSearchOrReadBashCommand(command: string): SearchOrReadFlags {
+  const memoized = searchOrReadByCommand.get(command);
+  if (memoized) return memoized;
+  const flags = classifySearchOrReadBashCommand(command);
+  // Sessions repeat commands heavily (`git status`, `bun test`, `ls`), so a
+  // small cache turns the first render of a long transcript from one parse
+  // per Bash message into one per distinct command. Oldest-out at the cap:
+  // Map iterates in insertion order.
+  if (searchOrReadByCommand.size >= SEARCH_OR_READ_CACHE_MAX) {
+    const oldest = searchOrReadByCommand.keys().next().value;
+    if (oldest !== undefined) searchOrReadByCommand.delete(oldest);
+  }
+  searchOrReadByCommand.set(command, flags);
+  return flags;
+}
+
+/**
  * For pipelines (e.g., `cat file | bq`), ALL parts must be search/read commands
  * for the whole command to be considered collapsible.
  *
@@ -94,11 +127,7 @@ const BASH_SILENT_COMMANDS = new Set(['mv', 'cp', 'rm', 'mkdir', 'rmdir', 'chmod
  * position, as they're pure output/status commands that don't affect the read/search
  * nature of the pipeline (e.g. `ls dir && echo "---" && ls dir2` is still a read).
  */
-export function isSearchOrReadBashCommand(command: string): {
-  isSearch: boolean;
-  isRead: boolean;
-  isList: boolean;
-} {
+function classifySearchOrReadBashCommand(command: string): SearchOrReadFlags {
   let partsWithOperators: string[];
   try {
     partsWithOperators = splitCommandWithOperators(command);
@@ -479,13 +508,25 @@ export const BashTool = buildTool({
     };
   },
   isSearchOrReadCommand(input) {
+    // Keyed on the tool_use input object, which lives as long as the message
+    // and never mutates. collapseReadSearchGroups (and MessageRow's per-row
+    // render) asks twice per Bash message and re-runs whenever the message
+    // list changes, so a resumed session with thousands of Bash calls
+    // otherwise re-parses every command on every frame — the parse behind
+    // isSearchOrReadBashCommand is ~10us.
+    const cacheable = typeof input === 'object' && input !== null;
+    if (cacheable) {
+      const hit = searchOrReadCache.get(input);
+      if (hit) return hit;
+    }
     const parsed = inputSchema().safeParse(input);
-    if (!parsed.success) return {
+    const result = parsed.success ? isSearchOrReadBashCommand(parsed.data.command) : {
       isSearch: false,
       isRead: false,
       isList: false
     };
-    return isSearchOrReadBashCommand(parsed.data.command);
+    if (cacheable) searchOrReadCache.set(input, result);
+    return result;
   },
   get inputSchema(): InputSchema {
     return inputSchema();
