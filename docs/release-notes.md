@@ -2,824 +2,455 @@
 
 ## 1.14.0
 
-### New Features
-
-- **`/diff` now toggles a live diff sidebar in fullscreen** — with the fullscreen layout active, `/diff` opens a panel beside the transcript instead of a modal that hides it. The panel re-reads git on every file change, so it stays current while Claude works rather than showing a snapshot from the moment you asked. It has three bases, cycled with `ctrl+x b` and remembered globally: **session** (default; splits "changed this session" from files that were already dirty, folding the latter behind a `+N files edited before this session` toggle), **uncommitted** (everything vs HEAD), and **branch** (a PR-shaped diff against the merge base with the default branch, degrading to a labelled HEAD diff when there is no base branch). Test and generated files are folded behind a count, files matching a `Read` deny rule are excluded entirely and reported only as a count, and a repo with no commits diffs the index rather than reporting nothing. The file list scrolls with `ctrl+↑`/`ctrl+↓`; clicking a file jumps to its hunks. The panel opens itself on the session's first file edit once the terminal is at least 144 columns, and closing it with the `✕` is a per-project opt-out that also stops the auto-open. Outside fullscreen `/diff` keeps opening the existing dialog, which also remains the only way to see per-turn diffs; inside fullscreen it always routes to the toggle, so a directory that isn't a git repo or a terminal under 110 columns gets told exactly that instead of a dialog nobody asked for. Refreshes are driven by a file-history activity counter — bumped on every tool edit, with or without checkpointing, and after every non-read-only shell command — and by git state changes (commits, checkouts, branch switches). The dialog now reads git the same way: with a clean tree it shows the branch's committed changes against its base instead of reporting nothing. Untracked files last written before the session started only appear in the **session** base. While the panel is up the notification row is held — a toast landing directly under a diff pulls the eye off it — except for notifications that are half of an interaction (the `ctrl+x ctrl+k` confirmation), which opt out via `exemptFromDiffPanelHold`; anything held shows as soon as the panel closes, and an immediate notification held that way keeps its priority. New rebindable actions: `app:toggleReplTab`, `app:cycleDiffBase`, `app:diffFileListUp`/`Down`, `app:toggleDiffNoiseFilter`, `app:toggleDiffPreSession`, under a new `DiffPanel` keybinding context. The panel takes columns from the transcript only — the prompt, footer and dialogs keep the full terminal width — and a toggle that succeeds leaves nothing in the transcript. The wheel scrolls whatever part of the panel is under the pointer. Selecting text inside the panel stays within the panel's columns, scrolls the panel when dragged past its edge, and attaches the lines to the next prompt, shown as `⧉ N lines from <file>` in the footer. Every scroll region now confines a selection to its own columns, and a selection moves with its text when that region scrolls (wheel included, which used to clear it) while leaving selections in other regions alone.
-- **Plugin changes apply when the `/plugin` menu closes** — the menu wrote settings immediately but left the running session on the old plugin set, so enabling, disabling, installing or configuring a plugin ended with "Run /reload-plugins to apply" and a manual step to remember. Closing the menu now hands `/reload-plugins` back as the next input; a turn that is still streaming drains first, with the menu saying so instead of closing silently. Three defects had to be fixed for that to work at all: the Space toggle wrote settings without ever marking the session dirty, so nothing downstream knew a reload was owed; the same handler discarded the operation result, leaving a row reading "will disable" after a failed write with no error surfaced (the dirty flag now depends on the write landing, with the optimistic marker rolled back otherwise); and saving plugin options never marked dirty either, though `user_config` only reaches the session via a reload. Two races around the write window are closed as well: leaving the list waits for pending writes, and a second keypress on a row whose write is still in flight is dropped. `/reload-plugins` itself counted plugin commands as "skills" while plugin `skills/` directories load through a second loader the refresh never called — a plugin whose only content is skills reported "0 skills" after a reload that did pick it up; the refresh now loads both and the message reports their sum. The "Plugins changed" notification is retracted once something consumes the refresh, instead of staying pinned after the reload it asked for.
-- **Status line: richer command input, per-line rendering, reset-driven refresh** — the statusline command's JSON input gains `workspace.repo` (parsed from the origin remote) and makes `workspace.git_worktree` the linked worktree name; `context_window.total_*_tokens` now report current context occupancy instead of session-cumulative sums; `thinking` is always present, joined by `fast_mode` and `pr` (mirrored from the footer's existing PR poller, no extra `gh` calls); `vim.mode` reports "VISUAL LINE", and rate-limit windows past `resets_at` are omitted. Refresh is now event-driven: `statusLine.refreshInterval` (seconds) configures a poll, and the command re-runs when the earliest rate-limit window resets, when final token usage lands, and on fast-mode/PR changes. Multi-line output renders one truncated line per row, carrying SGR and OSC 8 sequences across lines; `statusLine.hideVimModeIndicator` hides the built-in vim mode hint; and `/statusline` can no longer be invoked by the model.
-- **Writes are verified to have landed** — `writeTextContent` now stats the file after writing and refuses to report success when the on-disk size disagrees with what was written: network drives and cloud-sync clients accept a write, return success, and land fewer bytes, and nothing downstream noticed because the tool reported success and `readFileState` recorded content the file did not have. The same stat's mtime is returned to Edit, Write, NotebookEdit and the simulated sed edit, so they record the timestamp of their own write instead of taking a second stat afterwards — one syscall less, and an external touch between the write and the bookkeeping no longer masks itself as our own write in the staleness check.
-
-### Bug Fixes
-
-- **Sandboxed commands no longer ignore permission rules whose paths contain parentheses** — the sandbox adapter kept a drifted local copy of the permission rule parser whose regex could not match a rule with a parenthesis in its content (a directory literally named `Docs (v2)`, or the escaped `\(` `\)` persisted form), so such a rule parsed to a bare tool name and was silently skipped: a deny rule never reached `denyWrite`/`denyRead`, and a folder marked read-only stayed writable from a sandboxed Bash command with no error. The copy is gone in favor of the canonical parser, which also settles the `Edit(*)` spelling (a tool-wide rule, not a path, and now treated as such on both sides). The same drift let a dangerous `--allowed-tools` grant containing parentheses go unreported by the CLI classifier; it routes through the canonical parser too.
-- **Backgrounding a foreground agent no longer restarts it** — backgrounding used to close the foreground iterator and restart the run from a rebuilt continuation history, re-executing every tool call from the partially finished turn. The running iterator — including its in-flight `next()` — is handed to the background lifecycle instead, with the tool context refreshed at model/tool boundaries so a backgrounded run picks up async tool filtering, permission-prompt suppression and its own denial counter. Resume now slices the stored transcript at the last compact boundary, so a resumed agent no longer replays the entire history it had already compacted away on top of the summary that replaced it.
-- **An agent id stays reserved until its own cleanup settles** — run ownership is now a per-registration token rather than bare set membership: `finishAgentRun` releases only when the caller's token still owns the slot, so a duplicate or late release cannot free a successor's run and have its worktree deleted or metadata overwritten underneath it. The previous force-release timer (which created exactly that failure mode on every kill) is dropped; the 30s cap still bounds what the caller waits for, but the release hangs off the cleanup promise itself, so the id outlives a timed-out removal. Inline MCP servers shared between agents with identical configs are now refcounted — `connectToServer` memoizes, so the first agent to finish previously closed the shared connection under the second — and the connection-cache eviction guards against a replacement already installed.
-- **Foreground agents release their personality name when they finish** — foreground agents left AppState through a path that deleted the task outright, bypassing the only code that released the personality name, so the name stayed reserved for the rest of the session and once the 32-name pool ran dry every further agent got Newton-2 / Einstein-3. Fan-out exhausted it in a few dozen spawns.
-- **The thread goal survives compaction and resume** — the goal was reconstructed purely by replaying the transcript, but a compact boundary stops chain rebuilding, so resuming a compacted session never saw the original `/goal` command and silently dropped the goal, on exactly the long-running sessions the feature exists for. The goal is now persisted as a `goal-state` metadata entry, which the full-file scan finds regardless of boundaries and which is re-written at compaction for the >5MB tail-scan load path; restore seeds the replay with the snapshot, and replay covers only messages newer than the snapshot's recorded timestamp, so settled history is no longer re-applied (a goal `/clear` dropped no longer resurrects on resume, and a `/goal` replace reached a second time no longer resets the accumulated counters). Four lifecycle fixes alongside: `update_goal` on a verify-gated goal reported success while doing nothing, so the model announced completion before the verify command had run (it now reports failure and says the goal is still active); `maxAutoContinueTurns` was a per-goal-lifetime budget that nothing reset, stopping auto-continuation forever after the 5th continuation (it now refills each user turn); replaying a goal tool result overwrote accumulated usage with a pre-charge snapshot, dropping the tokens of every turn that called the goal tool (counters are now monotonic within an objective); and `/clear` left the goal in AppState, carrying its usage into a conversation holding none of the evidence the evaluator judges against.
-- **A failed or vetoed `/summarize` no longer escapes as an unhandled rejection** — the message-selector summarize path had a `finally` but no `catch`, so a compaction that threw — an API failure, an Esc, or a PreCompact hook veto — rejected with no handler. A veto and an Esc already told the user what happened; anything else is reported once, and every case leaves the conversation untouched.
-- **A plugin declaring `outputStyles` no longer stacks its styles on top of the defaults** — the documented contract is that declaring `outputStyles` suppresses the default `output-styles/` directory, but a marketplace entry's declaration left the default directory registered and the manifest schema text promised an additive merge. Both now match the contract; strict-mode supplementation still appends.
-- **A previewed `sed -i` edit can no longer overwrite a change nobody reviewed** — the preview now carries a hash of the content it was computed from, and applying it re-reads the file and refuses when the hash no longer matches. Both sides normalize CRLF to LF before hashing, since the preview already does, and the check sits after the ENOENT branch so a missing file still reports as sed would.
-- **Scroll boxes no longer lose their viewport height when a sibling above them re-renders** — the layout engine's multi-entry cache served a measure-pass answer to a layout pass, so a flex-sized scroll box could come back with its whole content height as its own. The visible symptom was the diff panel after its file list scrolled: the body reported a 4000-row viewport, every jump clamped to the top, and clicking a file did nothing. Layout passes now recompute nodes measured earlier in the same pass, and only measure results are cached by input.
-- **Resuming a conversation that ended in compaction restores its trailing notes in a stable order** — chain rebuilding sorted the entries after the last turn by timestamp, and post-compact file restores were stamped in whatever order their reads finished (several often in the same millisecond), so the restored-file notes could come back in a different order from how they were written; the session listing also kept only the leaf's direct children. The tail is now walked parent to child, and `getLastSessionLog` anchors on the newest user/assistant turn rather than whatever entry has the latest timestamp.
-- **A compaction summary no longer picks up the drafting scratchpad** — `<summary>` was matched before the `<analysis>` block was removed, so a model mentioning "<summary> tags" while drafting opened the match early and leaked its notes into the summary. `$&`, `$'`, `$1` and `$$` in a summary were already kept verbatim here and are now pinned by a test.
-- **The hard context limit no longer follows `/autocompact`** — the blocking limit was computed from the auto-compact window, so a small configured window combined with auto-compact off (or tripped) blocked input far below what the model accepts. It is now measured against the model's real window; the auto-compact window still decides when compaction fires.
-- **Compaction retries on `--fallback-model`** — when the model stayed overloaded, the main loop switched to the fallback but the summary request did not, so compaction failed outright. Both the cache-sharing fork and the direct streaming path now retry on the fallback model (never on the model already in use).
-- **The startup banner no longer renders a trailing overflow character** on logo lines.
-
-### Changed
-
-- **Reactive compaction ships in the baseline build and is on by default** — when the main query itself comes back prompt-too-long or media-too-large (one oversized tool result can jump a turn past the limit before auto-compact gets a chance), the error is withheld, the conversation is compacted in place, and the request is retried once, instead of the turn ending on "Prompt is too long". The most recent rounds are kept verbatim when they fit a tail budget, so the retry continues from the user's actual latest request rather than a paraphrase; a round too large to keep — usually the tool result that caused the overflow — is summarized instead, since keeping it would overflow the retry again. When the error reports the overflow size, the tail grows past the budget only far enough to cover it, so the summary request fits on its first attempt while the retry still has room for the summary and re-injected context. Media-size rejections strip images and documents before the summary request and from the kept tail, and a recovery counts toward the rapid-refill breaker like any other compaction. It follows auto-compact: `DISABLE_AUTO_COMPACT`, `DISABLE_COMPACT` and `autoCompactEnabled: false` turn it off too, and `reactiveCompactEnabled: false` or `NOA_CLAUDE_REACTIVE_COMPACT=0` turn off only this layer. Forked summarizers and background side-task forks (prompt suggestions, away/agent progress summaries, speculation) never compact their own context — proactive auto-compact now skips those forks too, instead of spending a summary call on throwaway context and resetting state the main thread relies on. A prompt-too-long that recovery can't fix now always ends the turn without running stop hooks, whether recovery is on or off; interrupting during recovery ends the turn like any other interrupt instead of surfacing the overflow error.
-- **Compaction summaries list every user message again** — the summary prompt gains an "All User Messages" section: each user message that is not a tool result, in order, in the user's own words, with pasted logs/code/documents replaced by a one-line description. The condensed recap alone let intent drift across repeated compactions. The attribution rules that keep tool output and assistant-authored "user:" lines out of user intent now cover this section too.
-- **Attachments are written to the transcript** — post-compact file restores and their "too large to include" notes, plan, invoked skills, and delta announcements now reach disk (a `hook_success` with no output is still dropped), so resuming a compacted session replays the context the model actually had instead of losing it. One-shot reminders (`verify_plan_reminder`, `compaction_reminder`, `companion_intro`, …) are dropped on resume rather than replayed stale. Resume re-attaches everything that ran after the last turn in write order, and post-compact attachments are stamped in that same order. SessionStart hook context the conversation already carries is not added again on resume, so a hook printing the same context each time no longer stacks a copy per resume.
-- **A PreCompact hook can now stop a compaction** — the hook's decision was read for custom instructions only, so a hook answering `{"decision": "block"}` was treated as a success and its refusal ("not while the release build is running") was handed to the summarizer as *guidance* for the summary. A veto is now honored on every path: `/compact` stops and shows which hook declined and why, automatic compaction and overflow recovery skip the attempt, and a blocked automatic attempt no longer counts toward the auto-compact circuit breaker — a hook saying no is a decision, not a failure. Instructions from other hooks in the same run still apply.
-- **Keystrokes get an input-priority frame window** — the flat 16ms render throttle is replaced by a paced frame scheduler: normal commits still paint at 16ms cadence, but a parsed batch containing a real keystroke (not mouse/wheel/focus) opens a 50ms window in which the frame interval drops to 4ms, so a typed character no longer waits out a frame window started by a spinner or streaming repaint (simulated worst-case keystroke-to-paint delay 15ms → 3ms).
-- **Transcripts with many Bash calls render cheaper** — the search/read classification behind the collapse pass shell-parsed each command twice per message and re-ran on every message-list change, costing tens of milliseconds per frame on long transcripts to recompute an answer that never changes. It is now memoized behind a WeakMap on the tool-use input plus a small command-keyed map for commands that repeat across messages (2000 synthetic calls: 64.6ms → 17.4ms first pass, ~1ms after).
-- **Agent progress updates are throttled to one store write per 100ms per task** — `updateAgentProgress` ran once per streamed message with no rate limit, and the store notifies every subscriber unconditionally, so parallel background agents fired a full subscriber sweep hundreds of times a second for purely cosmetic counters. Dropping ticks is safe because each update is a cumulative snapshot, not a delta; the final tick's fallback rendering is aligned between the two panels that read it.
-
-### Tests
-
-- The input-priority frame pacer is extracted into a `FramePacer` module with an injectable clock and timer queue, pinned by deterministic tests driven by a manual clock — it was the only render-hot-path change without coverage. Behavior is unchanged.
-- The memoized search/read classification gains coverage pinning each category, with distinct commands interleaved so a cache that returned another command's answer would fail.
-
-### Chores
-
-- Removed the `/assistant` command and the inert KAIROS activation path — the assistant-mode gate, settings fields, and install-wizard surface were stubs with no activation path in any build. The perpetual plumbing and the remote assistant attach path are kept intact.
-- Removed four unreachable or duplicate slash commands: `/advisor`, `/brief` and `/web-setup` each gate on a GrowthBook value, and remote fetch is hard-disabled in this fork, so every gate resolves to its in-code default of false; `/stats` declared itself deprecated and rendered the same UsageDashboard as `/usage`, differing only in default tab. The surrounding features (advisor transcript stripping, brief-only mode) are untouched.
-- Removed session-memory compaction, which could only run behind a GrowthBook flag that resolves to off in this fork; its `/compact` and auto-compact branches, the `lastSummarizedMessageId` bookkeeping it alone read, and the survey field reporting it are gone with it. Also removed the never-reachable reactive-only mode (`/compact` rerouting, context-grid and token-warning branches), the `/compact` error mappings only that mode could produce, the always-true `tengu_compact_cache_prefix` gate, and the compact streaming retry loop whose gate was always off.
-- Dropped the session-memory extraction wait helper and the extraction timestamp it alone read, left behind by the session-memory compaction removal, and corrected comments whose `file.ts:line` pointers and "SM-compact" references no longer matched the code.
-- `promptCache1hEnv.ts` dropped a `@ts-nocheck` it never needed, and the nocheck ratchet baseline tightened accordingly (plus two doctor files cleaned up earlier without the baseline being moved down).
-- The PowerShell tool's parameter descriptions now carry the same wording as the Bash tool — plain-words `description` guidance, and `run_in_background` no longer says "Use Read to read the output later", which the tool prompt already explains. The Bash tool's `description` parameter likewise tells the model to say what a command does in plain words rather than echo its text, flags or paths.
-- Restored `src/commands/plugin/types.ts` — six files imported types from it and it did not exist; the imports survived only because they are type-only and every importer carries `@ts-nocheck`.
+- `/diff` now opens a live-updating diff sidebar in fullscreen instead of a modal, with three bases (`session`, `uncommitted`, `branch`) cycled via `ctrl+x b`
+- The `/plugin` menu now applies plugin changes automatically by queuing `/reload-plugins` when the menu closes, instead of requiring a manual reload
+- The statusline command's JSON input gains `workspace.repo`, `workspace.git_worktree`, `thinking`, `fast_mode`, and `pr` fields, and refresh is now event-driven via `statusLine.refreshInterval`
+- File writes are now verified against the on-disk file size after writing, so silently truncated writes on network/cloud-sync drives are detected instead of reported as success
+- Fixed sandboxed commands ignoring permission rules whose paths contain parentheses
+- Fixed backgrounding a foreground agent restarting it from scratch instead of continuing the in-flight run
+- Fixed a race where releasing one agent's run could free a different agent's reserved id and delete its worktree
+- Fixed foreground agents not releasing their personality name on exit, eventually exhausting the name pool
+- Fixed the thread goal being silently dropped on resume after a compaction boundary
+- Fixed a failed or vetoed `/summarize` throwing an unhandled rejection instead of reporting the error
+- Fixed a plugin declaring `outputStyles` failing to suppress the default `output-styles/` directory
+- Fixed a previewed `sed -i` edit being able to overwrite changes made after the preview was computed
+- Fixed scroll boxes losing their viewport height when a sibling above them re-rendered
+- Fixed restored trailing notes coming back in an unstable order when resuming a conversation that ended in compaction
+- Fixed a compaction summary leaking the model's drafting scratchpad when it mentioned `<summary>` tags
+- Fixed the hard context limit following the `/autocompact` window instead of the model's real context window
+- Compaction now retries on `--fallback-model` when the primary model is overloaded
+- Fixed the startup banner rendering a trailing overflow character on logo lines
+- Reactive compaction (compact-and-retry on prompt-too-long or media-too-large errors) now ships in the baseline build and is on by default
+- Compaction summaries now include an "All User Messages" section listing every user message in order
+- Post-compact file restores, plans, invoked skills, and delta announcements are now written to the transcript so resume can replay them
+- A PreCompact hook returning `{"decision": "block"}` now actually stops the compaction instead of being treated as guidance
+- Keystrokes now get a temporary 4ms frame interval instead of waiting on the normal 16ms render throttle
+- Transcripts with many Bash calls render faster due to memoized search/read classification
+- Agent progress updates are now throttled to one store write per 100ms per task
 
 ## 1.13.0
 
-### New Features
-
-- **Fable 5.1 model support** — registered as its own model (`claude-fable-5-1`) rather than folded into Fable 5, since the two differ in ways that are silent when confused. It takes over the `fable` alias and the picker's Fable row; Fable 5 stays selectable by id. What is new relative to Fable 5: **forced tool use is gone** — `tool_choice` of type `any`/`tool` returns a 400, so `modelRejectsForcedToolChoice()` gates it and the permission explainer (the one forced-tool call site) falls back to `auto` plus an instruction naming the tool; **cache reads are $0.25/Mtok** rather than $1, a separate cost tier so `/cost` doesn't over-report by 4× on cached prefixes; and the display/marketing names read "Fable 5.1". Everything the two generations share — adaptive-only thinking with an omitted `thinking` param when thinking is off (an explicit `{type:'disabled'}` 400s on both), rejected sampling params, the full `low`…`max` effort range, structured outputs, native 1M context, the lean prompt head with fable mitigations, advisor rank 5 — is inherited, and now pinned by tests rather than by substring luck. Mythos 5.1 gets the same prompt gates, advisor rank, and forced-tool-choice rule by name. Fast mode stays Opus-only and Priority Tier is unsupported on this tier, so neither needed a change.
-- **`NOA_CLAUDE_PROMPT_CACHE_1H` — the 1-hour prompt-cache TTL is reachable again** — `should1hCacheTTL` gates on a GrowthBook allowlist, and GrowthBook is hard-disabled in this fork (its two override paths are additionally `USER_TYPE === 'ant'`-only), so the allowlist was permanently empty: off Bedrock the long TTL could not fire at all. The new env var restores the lever locally — a bare `1` for the main thread and SDK, a comma-separated query-source list for finer control, or `0` as a hard off that outranks `ENABLE_PROMPT_CACHING_1H_BEDROCK`. It is deliberately **off by default and documented as usually not worth turning on**: a 1h write bills at 2x input against the 5-minute entry's 1.25x, so it only pays when more than ~37.5% of cache-write *volume* follows a gap longer than five minutes. Measured over this repo's own transcripts that share is 2.6% (the requests after a long gap do write ~11x more than in-loop ones, but there are almost none of them), which would have cost ~1.56x the write spend — so the README states the break-even rather than recommending the flag. A bare `1` deliberately excludes `agent:*`: subagents run back-to-back inside a turn and would take the 2x write with no long gap to survive. `/doctor` reports which branch fired.
-- **Per-provider model defaults now mirror upstream's alias table instead of a local guess** — `getDefaultOpusModel` / `getDefaultSonnetModel` branched on `provider !== 'firstParty'` and trailed one generation, on the reasoning that Noa cannot recover from a default the caller's account doesn't have (no 400 classifier, no per-model third-party fallback chain). The reasoning was sound; the values were invented. Read against the real alias table, the guess was wrong in **both** directions: Bedrock and Vertex get the *current* Opus (Noa sent 4.8), Foundry pins Opus *two* generations back at 4.6 (Noa sent 4.8 — ahead of upstream, which the old comment flagged as an unverified risk of failing the first request of every session), and every cloud provider's Sonnet is 4.5, not the 4.6 Noa sent. Fable has no cloud-provider entry at all, so all three get 5.1. The ad-hoc branches are replaced by an `ALIAS_DEFAULTS` table with the same `default` + `per_provider` shape, resolved by the same lookup; values stay `ModelKey`s so Bedrock inference-profile discovery and user `modelOverrides` still apply on top, and `ANTHROPIC_DEFAULT_*_MODEL` still outranks everything. `openaiCompatible` is not one of upstream's provider kinds and takes the default.
-- **Fable 5's third-party fallback suggestion pointed at the wrong model** — the "Model 'X' not found. Try 'Y' instead" chain suggested Opus 4.8 for Fable 5; the catalog's `fallback_3p` for it is Opus 5. Written before Opus 5 existed and never revisited. Both copies of the chain (`validateModel.ts` and `services/api/errors.ts`) are corrected, and both now honour the rule that a fable→opus fallback prefers an explicitly pinned `ANTHROPIC_DEFAULT_OPUS_MODEL` over the catalog value. The rest of the chain already matched row for row.
-- **The third-party model picker can reach the third-party default again** — moving Bedrock/Vertex to Opus 5 left the 3P branch of `/model` offering only Opus 4.1 / 4.8 / 4.8-1M, so a user who switched away from their default could not switch back without typing the full provider model id. The branch now offers Opus 5 as well; the older rows stay, since they are explicit downgrades and on Foundry (pinned to 4.6) Opus 5 is a deliberate opt-in. Two comments in that branch claimed defaults that had not been true for some time ("This is the default opus" on the 4.1 row; "Sonnet 4.6 is the (3P) default") and now point at `ALIAS_DEFAULTS` as the source of truth instead of restating a value that drifts.
-- **Corrected the reasoning on Opus 5's third-party context window** — `native1m.ts` justified the empty third-party set with "3P still defaults to Opus 4.8, so a 3P user only reaches Opus 5 by pinning it". That premise is gone. The value is unchanged and still correct for a better reason: upstream's catalog entry for Opus 5 carries `native_1m` and `supports_1m_beta`/`supports_1m_suffix` but no `native_1m_3p` map, so 1M on Bedrock/Vertex/Foundry is the `[1m]` opt-in — while Sonnet 5, which does carry `native_1m_3p:{bedrock,vertex,foundry}`, serves it natively. The comment now says so, and warns against re-deriving the answer from whatever the 3P default happens to be.
-- **Noa reported its own version to the API, which locked it out of new models** — the Anthropic API gates model access on the Claude Code version a client declares, because a client that predates a model cannot parse its responses. Noa sent `claude-cli/1.12.0` (its `package.json` version), so Fable 5.1 came back `400 claude_code_version_too_old — version 2.1.251 or newer is required`, on a fork that had just implemented every part of that model's contract. The fork version and the protocol baseline are now separate values: `CLAUDE_CODE_COMPAT_VERSION` in `constants/apiClientVersion.ts` names the upstream release whose request/response surface this fork implements (2.1.258, the binary the model catalog and prompt bundles were ported from), and `--version`, the updater, the bridge min-version checks and the release-notes diff keep using `MACRO.VERSION`, because those questions really are about the fork build. The `x-anthropic-billing-header` `cc_version` and the fingerprint hashed into it move with it — the server reads one as the client version and recomputes the other from it, so they cannot disagree. `NOA_CLAUDE_API_CLIENT_VERSION` overrides without a rebuild, for testing a gate or pinning lower if a future release ships a shape this fork mishandles. The value is a compatibility claim, not a version bump: it should be raised only alongside the port work that earns it.
-- **Fable 5.1 and Mythos 5.1 now carry their own prompt bundle** — the two models declare `fable_5_1_prompt_bundle` alongside the `fable_5_mitigations` they inherit, and the capability matrix recorded only the latter, so they were served Fable 5's prompt. The two overlap and the newer one wins where they disagree, which changes two sections. The long "# Communicating with the user" text is **replaced** by the short turn-updates line (upstream checks that branch first, so it supersedes rather than adds), and `# Delivering work` is turned **on**, which Fable 5 does not get. `# Corrections` and the bundled `action_caution` wording deliberately stay off: upstream leaves both on `opus_5_prompt_bundle` alone, so a 5.1 model keeps the unbundled phrasing there. Both new cache keys carry the bundle bit, for the same reason the other lean sections do. Verified field by field against a 2.1.258 binary, where `fable_5_1_prompt_bundle` appears on exactly two manifest rows; the new port is pinned by digest like the rest.
-- **A safeguard refusal on Fable 5.1 / Opus 5 no longer suggests dropping two model tiers** — `getErrorMessageIfRefusal` suggested the Sonnet default for every refusal, which predates the Fable and Opus 5 safety classifiers. Upstream arms a refusal fallback for exactly the models that run those classifiers (`claude-fable-*` and Opus 5; Mythos is guarded out ahead of the capability check) and its target is the constant `claude-opus-4-8`, resolved through `ANTHROPIC_DEFAULT_OPUS_MODEL` when pinned. Sonnet does not run the classifier that declined the request either, but it gives up two tiers of capability to get there; Opus 4.8 is the trade upstream makes. Every other model keeps the Sonnet suggestion, which is still the right one for them. Upstream additionally routes by refusal category (`bio` to Opus 5) — not ported, because the category lives in `stop_details`, which is informational, may be null on a genuine refusal, and is untyped in the pinned SDK; the category-independent target is Opus 4.8 either way.
-- **Canonicalization no longer collapses a `.1` generation into its predecessor** — `firstPartyNameToCanonical` matched `claude-fable-5` first, so `claude-fable-5-1` canonicalized to `claude-fable-5` and inherited its pricing, display name, and advisor row. The specific check now runs first, for both Fable and Mythos.
-- **Fable 5.1 / Mythos 5.1 degrade instead of failing on preserved thinking after an edited prefix** — the two models bind every thinking block to the exact conversation prefix that produced it (system prompt, tool set, every earlier message), and an enforced account gets a 400 the moment any of that is edited — which compaction, dropped orphaned thinking-only turns, and the per-request rebuilt system prompt all do routinely. Requests to this family now send the controls beta with `prefix_mismatch_behavior` explicitly set to `drop_block`, so the API drops the mismatched blocks and continues instead of erroring on every retry of the same body. WebSearchTool's forced `tool_choice` is also now derived from the model that actually serves the search (relevant when `ANTHROPIC_SMALL_FAST_MODEL` is pinned to one of these), falling back to `auto` since web_search is the only tool in that schema.
-- **`/provider` can switch back to the Anthropic subscription without `/login`** — previously the only way out of a third-party profile was the "None" row, which cleared persisted state but left the running process pointed at the third-party endpoint, so returning to Anthropic required logging in again even though the OAuth credential was already in the keychain. The stored account is now offered as a first-class row that re-points the session immediately; sessions with no stored credential (`--bare`, never logged in) keep the deferred "None" row, since there is nothing to fall back to mid-conversation.
-- **Every output style now states that its rules win over the general tone section** — the "these rules win" precedence clause previously shipped only inside the digest-pinned Concise port, so Explanatory, Learning, and custom styles could conflict with the main prompt's tone guidance with no arbiter. The clause is now appended for any style that doesn't carry its own.
-- **Data-retention 400s on Fable/Mythos are named instead of routed to the generic bug-report flow** — both models require 30-day retention and are unavailable to a zero-data-retention org unless Anthropic authorized an exception; the server's 400 said nothing about which setting to change, so it fell through to the generic handler that suggests `/share` and a bug report. The fix now matches on the server's wording (a property of the org, not the model id, since any model can become a Covered Model later) and names the actual fix: a workspace setting.
-- **Startup banner redesigned** — a compact 3-line ASCII logo (DOS Rebel variant) replaces the old 8-line block-letter one, a tagline sits under the info box, the CLAUDE wordmark is dropped, and the title now rides the top border line instead of its own row — the banner takes noticeably less vertical space.
-- **The prompt caret now renders as the terminal's own cursor** instead of a reverse-video (SGR 7) cell, so it picks up the emulator's actual cursor color, shape, and blink settings rather than a flat block that ignored the user's theme. Visibility is driven per frame (shown only while a focused input wants a caret) and carefully sequenced around synchronized-output writes so it doesn't smear on terminals without DEC 2026 support (tmux, older emulators). `NOA_CLAUDE_NATIVE_CURSOR=0` restores the old software caret.
-- **The animation clock backs off under sustained rendering load** instead of stuttering — an EMA of measured frame cost now halves the shared tick rate (16ms → 32ms) once frames run over 12ms, and recovers once they drop back under 8ms. Normal load is unaffected.
-- **Synchronized-output support is now probed live instead of guessed from `TERM`/`TMUX`** — the old allowlist missed real support (SSH drops `TERM_PROGRAM`, newer emulators aren't listed) and couldn't retract a false positive. A DECRQM query rides along with the existing terminal capability probe and the terminal's own answer overrides the env-based default in both directions; a non-answering terminal keeps the static default.
-- **`scripts/` gained an offline usage/cost profiler for past sessions** — reads local transcripts only, de-duplicating by `message.id` and keeping the cache-attributed variant so pre-normalization snapshots don't inflate uncached-input totals.
-
-### Bug Fixes
-
-- **Side queries no longer 400 on the Fable family when thinking is turned off** — turning thinking off is three different requests depending on the model, and `sideQuery` only knew one of them. It built `thinking: {type:'disabled'}` unconditionally, which Sonnet 5 / Opus 5 need (omitting the parameter still runs adaptive there) but which Fable 5 / Fable 5.1 / Mythos reject with a 400, since their thinking is always on and the off-switch is to omit the parameter. `claude.ts` already made this distinction on the main path; `sideQuery` bypassed it. Reachable in practice through the auto-mode classifier, which falls back to the main loop model when its Sonnet probe is demoted — so a session on `fable` took a 400 on every classifier call. New `modelThinkingCannotBeDisabled()` names the third case explicitly, next to `modelRequiresExplicitThinkingDisable()`; it is deliberately not `!modelRequiresExplicitThinkingDisable`, because 4.8-and-older sit in neither bucket (omitting is already off).
-- **The auto-mode classifier budgets tokens for thinking it cannot turn off** — the fix above converts the 400 into a subtler failure: thinking runs anyway, and the classifier's `max_tokens: 64 + padding` is exhausted before `<block>` is emitted, so `stop_reason: max_tokens` yields empty text that parses as "unparseable" and blocks safe commands. `getClassifierThinkingConfig` already had the headroom branch for always-on models, but behind `resolveAntModel`, which returns undefined unless `USER_TYPE === 'ant'` — so no released model could reach it. It now also fires for the Fable / Mythos family, giving them the same 2048-token padding.
-- **Bedrock inference-profile matching prefers the exact generation** — profiles were resolved with a plain substring search, and a needle is a prefix of the next `.1` release (`claude-fable-5` matches `us.anthropic.claude-fable-5-1`), so an account with both profiles enabled could silently pin the wrong model. `findFirstMatch` now skips a match whose needle is followed by another `-<digit>` version segment, falling back to any substring match so an unexpected profile shape still resolves rather than dropping to the hardcoded id.
-
-- **Parallel subagents run in parallel again (reverts a 1.12.0 change)** — 1.12.0 made the Agent tool's `isConcurrencySafe` conditional so that write-capable subagents serialized. The intent was sound but the layer was wrong, and the cost landed on the common case: a batch of `general-purpose` or custom agents in one message was split into single-tool batches, so the second agent was not initialized until the first had finished — indistinguishable from asking one question at a time, which is the entire point of subagents. The scheduler also cannot deliver what the gate promised: it only sees foreground siblings within one turn, so background, worktree-isolated, and forked agents overlapped regardless. Colliding file edits are already caught where they happen (read-before-write plus the mtime check in FileEdit/FileWrite), which is both narrower and more accurate than serializing every agent. `isConcurrencySafe` is unconditionally `true` again, and the tool-agnostic `(input, context)` plumbing added for the resolved-agent lookup is withdrawn with it — no implementation needs the context. Shell writes from parallel agents sharing a cwd remain an accepted boundary, now stated as such at the definition. Note this also restores agreement with the Agent tool's own prompt, which instructs the model to emit parallel agents in a single message — during 1.12.0 the prompt and the scheduler contradicted each other. Verified against an upstream 2.1.251 binary: its Agent tool is likewise `isConcurrencySafe(){return!0}` with no agent-type, isolation, or shadowing branch, and its batch partitioner and concurrency cap match ours line for line — the 1.12.0 gate was a local invention, not a port. Upstream does guard writes, but at the write site rather than the scheduler — a path-based check in Write/Edit/NotebookEdit `validateInput`, plus a separate one on the Bash working directory. Both are about *worktree isolation* (refusing to let an isolated agent reach back into the shared checkout, or an unisolated background session write it at all), not about two unisolated agents racing in a shared cwd — that case is unguarded upstream as well. Porting the isolation guard is worthwhile and orthogonal to this revert; it is done in the next entry.
-- **`isolation: "worktree"` is now an enforced boundary, not just a starting directory** — an isolated agent (or one given an explicit `cwd`) runs under a cwd override, but an override only redirects *relative* paths: an absolute path naming the parent checkout still wrote straight through it, so the isolation the caller asked for came apart with no sign. With parallel agents that is precisely the lost update the worktree was meant to prevent. `Write` and `Edit` now refuse a path that resolves out of the override and back into the shared checkout, naming the worktree so the agent can retarget. Ported from upstream 2.1.251's guard, minus the parts that are load-bearing only there: its unisolated-background-session branch gates on a session kind this fork has no equivalent of, and its symlink-dot-segment, UNC/`/net`, and case-spelling diagnostics are edge-platform paths we have no users for. The check keys on the cwd override specifically rather than on `getCwd() !== getOriginalCwd()` — a plain `cd` in the shell moves the cwd too, and reading that as a boundary would refuse ordinary writes for the rest of the session. It is also deliberately one-directional: writes *outside* the checkout (e.g. `/tmp`) stay allowed, since they cannot cause a lost update in the repo and blocking them would make this a sandbox, which it is not. Three things review caught before this shipped, all now pinned by tests: the check follows the **symlink chain** (`getPathsForPermissionCheck`, the same resolution the permission layer uses) rather than comparing the spelling it was handed — a symlink inside the worktree pointing at the checkout reads as contained by a textual test, so one `ln -s` would have retired the guard entirely; the shared checkout is **snapshotted when the override is established** rather than read at check time, because `/cd` and `EnterWorktree` both call `setOriginalCwd` and would otherwise move a concurrent agent's boundary out from under it (failing open); and `NotebookEdit` is guarded alongside Write and Edit, which upstream also does and which we had missed. **Not covered:** a shell command that `cd`s out of the worktree within a single invocation. Catching that needs command parsing, and upstream does not attempt it either — its Bash guard checks the resolved working directory, which under our override is the worktree by construction.
-- **Dropped the module-level active-agent snapshot** — the cache in `loadAgentsDir` existed only to let `isConcurrencySafe` resolve agents synchronously, and needed a carve-out to survive `/clear` without going stale. With its one consumer gone, the global mutable state goes too; `getActiveAgentsFromList` is a pure function again.
-- **Resumed agents now report when their prompt falls back to the default** — a fresh agent spawn already flagged it when a custom system prompt failed to build and the run fell back to `DEFAULT_AGENT_PROMPT`; `resumeAgent` never wired the same callback, so a resumed (non-fork) agent could run silently on the wrong prompt with no sign in the result.
-- **`/provider`'s Anthropic row was hidden by the exact state it exists to clear** — the row was gated on `isAnthropicAuthEnabled()`, which is `false` whenever a third-party profile is active — precisely the state the row is meant to let you exit. It now reads the persisted OAuth account record instead (cleared only by logout), so a third-party profile, a handwritten `settings.env` entry, or the launcher's product default no longer hide the way back. The `[active]` marker now follows `isAnthropicAuthEnabled()` rather than "no profile configured," and `--bare` sessions plus sessions authenticating via `apiKeyHelper`/`CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR` still opt out, since the row can't honor what it promises there.
-- **Global prompt-cache scope is now decided from the final merged tool set, not the pre-merge local tools** — the skip-global-cache guard ran before server tool schemas (e.g. WebSearch's `web_search_20250305`) were merged in, so a request carrying one sent a global-scoped system block followed by a non-global tool and got a 400. The check now runs after the merge, ignoring deferred (`defer_loading`) tools.
-- **Non-interactive sessions now get an explicit "this can never be approved" note on a denied ask** — an `ask` decision reaching the denial branch only happens in non-interactive (`--print`) sessions, since interactive prompts resolve to allow/deny upstream. The bare "This command requires approval" reason gave no signal, so sessions retried variations of a command that could never succeed (observed 4 wasted retries in 10 turns on one verification step); the message now tells the model to proceed without it or report the blocker instead.
-- **AutoFix timeout feedback reports the real configured timeout** instead of the literal string "true" (`timedOut` is a boolean; the value now threads through from `config.timeout`).
-- **Hook errors no longer fail silently** — a bad matcher pattern disabling every hook for an event is now logged instead of being indistinguishable from "no hooks configured," and a PreToolUse execution failure now surfaces its real error instead of rendering as `Error: undefined` (both error paths previously yielded only `stop`).
-- **Long tool-heavy turns can no longer leave the viewport showing blank space** — the virtual-mount budget capped the visible range by message index, but messages that render nothing (measured height 0) contributed no rows, so a tail packed with them could exhaust the cap before any visible row appeared. All four sites (end extension, start back-walk, final trim, resize height scaling) now budget by rendered-item count instead.
-- **Corrected six transcription errors in two upstream-ported prompt sections that had been digest-pinned but never byte-verified** — four commas/colons had shipped as em-dashes, "the PR merges" read where upstream has "the change merges" in the anti-verbosity section, and an em-dash aside in the autonomy-append section should have been a parenthetical. Checked against two real 2.1.x binaries; digests recomputed from the corrected text.
-- **Refreshed the PowerShell tool description port**, which had never been registered for verification and had drifted: the 5.1 encoding bullet wrongly claimed UTF-16 LE is the universal default (upstream splits `>`/`Out-File`, which use UTF-8 with BOM, from `Set-Content`/`Add-Content`, which use the system ANSI codepage), the "Unix commands that DO NOT exist in PowerShell" section and an exit-code note had been dropped, and the `-NonInteractive` heading was narrower than upstream's. Now registered and pinned by digest across all four edition branches.
-- **`sideQuery` no longer sends `temperature` to models that reject sampling params** — the main request path already strips it for Opus 4.7+, Opus 5, Fable, Mythos, and Sonnet 5, but `sideQuery` (reachable from the auto-mode classifier, which is on by default) sent it unconditionally and 400'd on those models.
-- **Stdin input hardened against several terminal edge cases**: a paste buffer without a matching end marker (lost to an SSH/tmux truncation) now force-emits and exits paste mode at 64MB instead of hanging or growing unbounded; SGR mouse-report prefixes hold for 150ms instead of the generic 50ms flush so slow links don't split a report into spurious keystrokes; and runaway CSI/escape/OSC sequences are now capped instead of buffering forever and being re-scanned on every feed (O(n²) on a garbage stream).
-- **Third-party and OpenAI-compatible provider fixes**: the streaming state machine now handles id re-echo, synthesized ids, split id/name-delta buffering, and `reasoning_content` → unsigned thinking blocks without forging a signature; a percent-encoded catalogue key format keeps separator-carrying model ids (e.g. Ollama-style `qwen2.5:7b`) resolving their declared context window and limits; profile activation now records and restores pre-overwrite env values on deactivate, so a handwritten `ANTHROPIC_BASE_URL` (corporate proxy) survives an activate/deactivate cycle instead of being lost; `settings.json` is now retro-chmod'd to 0600 when it holds credential keys, not just at creation; Anthropic tool-choice shapes are now translated to their OpenAI wire forms, fixing `/compact` and WebSearch's forced tool-choice 400ing on strict OpenAI-compatible endpoints; request timeouts are now honored on the OpenAI-compatible path (previously a hung endpoint stalled the CLI forever); and haiku-tier side-queries (permission precheck, session titles, tool summaries) are now pinned to the provider's own model for all 15 OpenAI-compatible provider types, not just two of them.
-- **Task-list surface aligned with upstream 2.1.251** — `TaskListV2` caps `maxDisplay` at 5 (was 10), and the `TaskUpdate` tool prompt and task-tracking sentence are restored to their verbatim upstream wording.
-- **Failed agent spawn reservations are now rolled back** instead of leaking a slot.
-- **Fixed a "Maximum update depth exceeded" crash from oscillating viewport visibility** — a visible element that grows, gets pushed into scrollback, flips invisible, and shrinks could loop indefinitely through consumers that reshape their own subtree based on visibility. Flip decisions are now counted and latched to visible once they exceed a small budget, releasing only on a real terminal resize.
-
-### Tests
-
-- `src/test/utils/fallback3p.test.ts` pins the whole suggestion chain against the catalog's `fallback_3p` column, plus the pinned-opus preference and the no-suggestion-on-first-party rule.
-- `src/test/utils/aliasDefaults.test.ts` pins the alias table per provider, including the two rows that read like typos (Foundry Opus 4.6, cloud Sonnet 4.5) and the precedence of `ANTHROPIC_DEFAULT_*_MODEL` over it. Four existing tests asserted the old trailing values and now assert the upstream ones.
-- The three shapes of "thinking off" are pinned in `src/test/utils/fableThinkingDisable.test.ts`, including the invariant that the two predicates are never simultaneously true and that 4.8-and-older fire neither.
-- The 1h-TTL opt-in is pinned in `src/test/utils/promptCache1hEnv.test.ts`: unset stays a fall-through (not a disable), a bare `1` resolves to main-thread/SDK only and does not match `agent:*`, an explicit `0` is a hard off that beats the Bedrock env var, the legacy `CLAUDE_CODE_` name still resolves with `NOA_CLAUDE_` winning, and `DISABLE_PROMPT_CACHING` still outranks the whole thing.
-- Fable 5.1's surface is pinned in `src/test/utils/fable51.test.ts`: separate canonicalization and marketing names from Fable 5, the forced-tool-choice rejection (with Fable 5 / Opus 5 asserted as *not* rejecting), the inherited thinking/effort/1M facts, the cheaper cache-read tier next to Fable 5's, and the Bedrock profile disambiguation in both directions.
-- The subagent concurrency-matrix unit test is replaced by end-to-end coverage asserting the property that actually matters: two foreground agents emitted in one message both start before either completes. Both dispatch paths are pinned (`runTools` and `StreamingToolExecutor`), since only one runs per turn and a single test would leave half the surface unguarded. The fixtures delegate to the real `AgentTool.isConcurrencySafe` rather than restating `true`, so a regression in the production predicate fails the tests.
-- `checkWorktreeEscape` is pinned on both sides of the boundary — worktree paths and out-of-checkout scratch paths allowed, shared-checkout and traversal paths refused — including the containment ordering (worktrees live *inside* the checkout at `.noa/worktrees/`, so the worktree test has to run first) and the plain-`cd` false positive that motivated keying on the override.
-- The ported-prompt digest registry and `verify:ports`'s byte-verification list are merged into one shared table (`src/test/constants/portedPromptRegistry.ts`), so a new port can no longer be pinned by digest without also being registered for verification against a real binary — the gap that let the six transcription errors above ship behind green digests. `verify:ports` now covers 25 subjects (was 23) and reports 0 mismatched. `SECURITY_POLICY` is also newly pinned in the registry, closing a section that had been in neither the digests nor the substring assertions.
-- The install-script fallback test now parses `FALLBACK_REF` out of `install.sh` instead of hardcoding the release tag, so a release commit that bumps it no longer breaks CI until the test is updated by hand (this happened on the v1.12.0 release).
-
-### Changed
-
-- **Bounded target-discovery to identifiable targets** — the prior execution-guard instruction told the model to treat "unclear" requests as coding work in the current directory, which invited guessing. It's replaced by a definition of an identifiable target (named or uniquely described), a rule against inferring one from the working directory, and instructions to ask a single concise question otherwise. Moved into its own section and repeated in the simple-mode head, which skips dynamic sections.
-- **Dropped several dated or self-contradicting prompting patterns** from ungated prompt text: TeamCreate's "use proactively" language, written for a model that under-triggered, now over-triggers a tool that spawns several agents (replaced with the actual cost tradeoff); an autonomous-work instruction not to narrate upcoming actions directly contradicted the turn-updates/communication sections asking for exactly that; PowerShell's numbered preamble and a stale "capture the output" line duplicated what the tool already does automatically; and a GOOD/BAD example block in EnterPlanMode re-illustrated lists already stated above it.
-- Clock-slowdown internals renamed and documented (`SLOW_TICK_INTERVAL_MS`, frame-cost module semantics) with no behavior change, ahead of the frame-cost backpressure feature above.
-
-### Chores
-
-- Documented, at the definition, why the Fable thinking-off path omits the `thinking` parameter rather than sending `{type: 'disabled'}` — the family's thinking cannot be turned off at all, so the header alone is what produces the observed drop-block behavior.
-- Documented the prompt debt already present in the fork-subagent boilerplate (`buildChildMessage`) at its definition, since the code path is currently unreachable (`isForkSubagentEnabled()` is hardcoded false) and would not survive a prompt audit as-is if that gate ever opens.
-- The probe script for Fable 5.1's thinking-display behavior now serializes its tool calls, since parallel tool use could otherwise collapse the inter-call gaps the probe measures.
+- Registered Fable 5.1 as its own model (`claude-fable-5-1`), taking over the `fable` alias, with forced tool use disabled, a cheaper $0.25/Mtok cache-read tier, and updated display names.
+- Added `NOA_CLAUDE_PROMPT_CACHE_1H` to opt into the 1-hour prompt-cache TTL locally, since GrowthBook's allowlist for it is permanently empty in this fork (off by default; `/doctor` reports which branch fired).
+- Replaced the hardcoded per-provider model defaults with an `ALIAS_DEFAULTS` table matching upstream's alias table (Bedrock/Vertex now default to current Opus, Foundry pins Opus 4.6, cloud Sonnet defaults to 4.5, Fable defaults to 5.1).
+- Fixed Fable 5's third-party fallback suggestion to point at Opus 5 instead of Opus 4.8.
+- Restored Opus 5 as an option in the third-party `/model` picker alongside Opus 4.1/4.8/4.8-1M.
+- Corrected the internal justification for Opus 5's third-party context window (native `[1m]` opt-in only, unlike Sonnet 5).
+- Fixed Noa reporting its own fork version to the Anthropic API, which caused `claude_code_version_too_old` errors on new models; added a separate `CLAUDE_CODE_COMPAT_VERSION` and `NOA_CLAUDE_API_CLIENT_VERSION` override.
+- Gave Fable 5.1 and Mythos 5.1 their own prompt bundle (`fable_5_1_prompt_bundle`) instead of serving them Fable 5's prompt.
+- Safeguard refusals on Fable 5.1 / Opus 5 now suggest falling back to Opus 4.8 instead of Sonnet.
+- Fixed canonicalization incorrectly collapsing `claude-fable-5-1` into `claude-fable-5`.
+- Fable 5.1 / Mythos 5.1 requests now set `prefix_mismatch_behavior: drop_block` so an edited conversation prefix degrades instead of 400ing on preserved thinking blocks.
+- `/provider` can now switch back to the Anthropic subscription directly from a stored OAuth account, without requiring `/login`.
+- Output styles without their own precedence clause now get an appended "these rules win" statement over the general tone section.
+- Data-retention 400s on Fable/Mythos now name the actual workspace setting to change instead of falling through to the generic bug-report flow.
+- Redesigned the startup banner with a compact 3-line ASCII logo, reducing vertical space used.
+- The prompt caret now renders as the terminal's native cursor instead of a reverse-video block (`NOA_CLAUDE_NATIVE_CURSOR=0` restores the old behavior).
+- The animation clock now backs off its tick rate under sustained rendering load instead of stuttering.
+- Synchronized-output terminal support is now probed live via DECRQM instead of guessed from `TERM`/`TMUX`.
+- Added an offline usage/cost profiler for past sessions under `scripts/`.
+- Fixed side queries 400ing on the Fable family when thinking is turned off, by omitting the `thinking` parameter instead of sending `{type: 'disabled'}`.
+- Fixed the auto-mode classifier exhausting its token budget on always-on-thinking models, causing safe commands to be misclassified as unparseable.
+- Fixed Bedrock inference-profile matching incorrectly matching a `.1` release via substring (e.g. `claude-fable-5` matching `claude-fable-5-1`).
+- Reverted a 1.12.0 change that serialized write-capable subagents; parallel subagents now run concurrently again.
+- Added an enforced worktree isolation boundary: `Write`, `Edit`, and `NotebookEdit` now refuse absolute paths that resolve out of an isolated agent's `cwd` override back into the shared checkout.
+- Fixed resumed agents not reporting when their custom system prompt fell back to the default.
+- Fixed `/provider`'s Anthropic row being hidden whenever a third-party profile was active, the exact state it's meant to let you exit.
+- Fixed a 400 caused by checking prompt-cache scope against the pre-merge tool set instead of the final merged set (e.g. with WebSearch enabled).
+- Non-interactive (`--print`) sessions now get an explicit note that a denied `ask` permission can never be approved, instead of a bare "requires approval" message.
+- Fixed AutoFix timeout feedback reporting the literal string "true" instead of the real configured timeout.
+- Hook errors (bad matcher patterns, PreToolUse execution failures) are now logged instead of failing silently.
+- Fixed long tool-heavy turns leaving blank space in the viewport by budgeting the visible range by rendered-item count instead of message index.
+- Corrected six transcription errors in upstream-ported prompt sections that had been digest-pinned but never byte-verified.
+- Refreshed the PowerShell tool description port to fix outdated encoding claims and restore dropped sections.
+- Fixed `sideQuery` sending `temperature` to models that reject sampling params (Opus 4.7+, Opus 5, Fable, Mythos, Sonnet 5).
+- Hardened stdin handling for terminal edge cases: unterminated paste buffers, slow-link SGR mouse reports, and runaway CSI/escape/OSC sequences.
+- Fixed several third-party/OpenAI-compatible provider issues: streaming id handling, `reasoning_content` conversion, model id catalogue lookup for separator-carrying ids, env restoration on profile deactivation, `settings.json` permission hardening, tool-choice translation, request timeouts, and haiku-tier side-query model pinning across all 15 provider types.
+- Aligned the task-list surface with upstream 2.1.251: `TaskListV2` now caps `maxDisplay` at 5, and `TaskUpdate`'s prompt wording is restored.
+- Fixed failed agent spawn reservations leaking a slot instead of being rolled back.
+- Fixed a "Maximum update depth exceeded" crash from oscillating viewport visibility.
+- Replaced the "unclear request" guidance that invited guessing a target from the current directory with a definition of an identifiable target and an instruction to ask instead.
+- Dropped several dated or self-contradicting prompting patterns (TeamCreate's "use proactively" language, a contradictory autonomous-work narration instruction, redundant PowerShell preamble text, and a redundant EnterPlanMode example block).
 
 ## 1.12.0
 
-### New Features
-
-- **Third-party provider profiles now carry the endpoint's own model catalogue** — an Anthropic-compatible endpoint (Kimi, MiniMax, …) reports provider `firstParty` because no `CLAUDE_CODE_USE_*` flag is set, so resolvers that only recognise Claude ids saw no useful catalogue: the model picker rendered four Claude-shaped rows all pinned to the profile's single default, `/model` offered no way to switch, effort capped at "not supported", and context collapsed to the 200k fallback. The endpoint's model list now flows through the profile env and replaces the picker rows, with per-model effort levels, context window, and output limits declared from platform docs (Kimi: K3 low/high/max at 1M context with a 128k default completion ceiling; K2.7 Code documented as taking no `reasoning_effort`). Only documented values are declared — over-reporting a context window overflows the request. Also fixed along the way: a profile-written `ANTHROPIC_MODEL` no longer outranks a `/model` choice on restart.
-
-### Bug Fixes
-
-- **Write-capable subagents no longer run concurrently in the same directory** — the Agent tool's `isConcurrencySafe` was unconditionally `true`, so a batch of parallel subagents sharing the parent's cwd could overwrite each other's edits mid-flight with no error surfaced. Read-only built-ins (Explore, Plan), worktree-isolated agents, and background spawns stay concurrent; general-purpose, custom, and unknown agent types now serialize. Two bypasses found in review are closed with it: a custom agent *named* "Explore"/"Plan" (custom sources shadow built-ins in the active-agent list) no longer passes the read-only check — the scheduler now verifies the resolved agent, not the input string — and the check reads a cache that every active-agent update path refreshes, so it can't lag behind `/model`-adjacent state. Background agents sharing cwd remain an explicitly accepted boundary: they detach from the scheduler by design, and closing that needs task-level write tracking, which is deliberately out of scope here.
-- **Subagent silent failures are now marked in the result** — a sync agent that errored mid-run previously returned its partial output as if complete; it now carries a `[PARTIAL]` marker naming the error. An agent whose custom system prompt fails to build previously ran on the generic fallback prompt with no sign of it; the result now carries a `[WARN]` marker, driven by the actual fallback site inside `runAgent` (so a successful internal retry no longer false-alarms, and the worktree/cwd path — where the prompt is built inside `runAgent` — no longer stays silent).
-- **Effort is clamped whenever thinking is explicitly disabled, on any model** — the API rejects effort above `high` alongside `thinking: {type: 'disabled'}`, but the clamp was scoped to Opus 5. The rule is a property of the request shape, not one model: Sonnet 5 is the other model that needs an explicit disable (omitting the param leaves adaptive thinking on), so "thinking off at xhigh/max" on Sonnet 5 was taking a 400. The predicate now keys on the effort alone, and the downgrade is logged since it overrides a user-chosen effort.
-- **A carried-over `effort` no longer 400s models without the parameter** — `output_config` is seeded from `CLAUDE_CODE_EXTRA_BODY`, so it could arrive carrying an `effort` set for a different model; sending it to a model with no effort parameter fails the whole request. The guard now strips it at the seeding site rather than skipping over it (deleting from the merged copy alone could empty it, skip the conditional spread, and ship the unstripped original anyway).
-- **Advisor works on current models, and rejects invalid pairings** — `modelSupportsAdvisor`/`isValidAdvisorModel` were the same two-entry allowlist frozen at the 4.6 generation, so advisor was simply unavailable on Opus 4.7/4.8/5, Sonnet 5, and Fable 5. Both are replaced by a rank table mirroring the capability data: a model needs a rank to use an advisor, rank ≥ 2 to be one, and a pair is valid only when the advisor ranks at or above the base — an advisor weaker than its advisee is rejected by the API and previously nothing checked for it. The startup `--advisor` check hard-errors; a mid-session `/model` switch to something stronger than the advisor skips the advisor with a log rather than failing the turn.
-- **Sonnet 4.6's output ceiling is 128k, not 64k** — the ceiling was set from a prose reading of the models overview; the capability table gives `{default: 32000, upper: 128000}`, and only the ceiling that `--max-output-tokens` clamps against moves (the 32k default is unchanged). Coverage now pins the whole ladder so the next generation is compared against the table, not re-derived from prose.
-- **Sonnet 5's $2/$10 rate has no expiry** — the tier was misread as introductory and given a 2026-09-01 cliff back to $3/$15; the capability table carries it as a plain entry with no expiry field. Left alone, `/cost`, the stats cache, and the model picker would all have started over-reporting Sonnet 5 spend by 50% on September 1st.
-- **`--task-budget` enforces the API minimum and reports bad input cleanly** — the API rejects `task_budget.total` below 20,000 with a 400, but the flag only checked for a positive integer, so a too-small budget failed remotely; it now validates client-side. The same parser also threw a plain `Error`, which commander doesn't recognise as user-input failure — every invalid value surfaced as a fatal with a minified stack trace; it now uses `InvalidArgumentError` like the neighbouring `--effort`.
-- **Fast mode no longer offers Opus 4.7** — upstream removed fast mode for 4.7, so `speed: "fast"` on it now returns an error; keeping it in the allowlist sent a parameter the API rejects whenever a user picked 4.7 with fast mode on.
-- **WebSearch sends the dynamic-filtering tool type where supported** — the tool sent `web_search_20250305` unconditionally, so models accepting the `web_search_20260209` variant never got it. Selection is an allowlist (an unknown tool type is a hard 400; the basic variant merely forgoes dynamic filtering), and both the schema build and the request now derive the tool type from the one model that will actually serve the search — previously a Haiku-experiment request could have been shaped by the main loop model it never reaches.
-
-### Chores
-
-- Corrected a stale comment claiming third-party providers "lag firstParty on new Opus releases" — the real reason third-party defaults trail is that Noa cannot recover from a default not enabled on the caller's account (no 400-strip-retry classifier, no third-party fallback chain), so stale-conservative is the safer direction. A wrong stated reason is how the next person talks themselves into the risky change.
-
-### Tests
-
-- New coverage pins the subagent concurrency rules (read-only built-ins concurrent; write-capable, custom, and shadowing agents serial; worktree/background concurrent) and the prompt-fallback reporting contract (the marker callback fires exactly when the custom prompt build throws and the default is used). The `configureEffortParams` tests no longer depend on the developer's shell: an exported `ANTHROPIC_BASE_URL` or provider flag flips first-party detection off and failed two tests unrelated to the code under test, so the provider env is cleared per test and restored after.
+- Third-party provider profiles (Kimi, MiniMax, etc.) now expose the endpoint's own model catalogue in the `/model` picker instead of four Claude-shaped rows pinned to one default, with per-model effort levels, context window, and output limits declared from platform docs.
+- A profile-written `ANTHROPIC_MODEL` no longer outranks a `/model` choice on restart.
+- Write-capable subagents (general-purpose, custom, unknown types) no longer run concurrently in the same directory, preventing them from overwriting each other's edits; read-only built-ins (Explore, Plan), worktree-isolated agents, and background spawns remain concurrent.
+- A custom agent named "Explore" or "Plan" no longer bypasses the write-serialization check by shadowing the built-in name.
+- A subagent that errors mid-run now marks its result `[PARTIAL]` instead of returning partial output as if complete.
+- An agent whose custom system prompt fails to build now marks its result `[WARN]` instead of silently falling back to the generic prompt.
+- Effort is now clamped whenever thinking is explicitly disabled on any model (previously only Opus 5), fixing 400 errors on Sonnet 5 at `xhigh`/`max` effort.
+- A carried-over `effort` value from `CLAUDE_CODE_EXTRA_BODY` no longer 400s models that don't accept the `effort` parameter.
+- Advisor now supports current models (Opus 4.7/4.8/5, Sonnet 5, Fable 5) via a capability-rank table instead of a frozen two-entry allowlist, and rejects an advisor weaker than its advisee.
+- Sonnet 4.6's output ceiling is corrected to 128k (was incorrectly capped at 64k).
+- Sonnet 5's $2/$10 rate is now recorded with no expiry (was set to revert to $3/$15 on 2026-09-01).
+- `--task-budget` now validates client-side against the API's 20,000 minimum and reports invalid values with `InvalidArgumentError` instead of a fatal stack trace.
+- Fast mode no longer offers Opus 4.7, matching its removal from the API.
+- WebSearch now sends the `web_search_20260209` tool type on models that support dynamic filtering.
 
 ## 1.11.0
 
-### New Features
-
-- **`spinnerTipsOverride` aligned with upstream 2.1.247** — tips entries can now be objects (`{id, text, cooldownSessions?, priority?}`) alongside plain strings, plus `tipsFile` (an absolute or `~/` path to a JSON array or `{"tips": [...]}`) and `label` (a prefix rendered before the tips declared alongside it), with behavior recovered from the string constants in an installed upstream binary. This release adds the source governance upstream's literals don't evidence: project/local settings ship inside a shared repo, so they may only contribute plain strings — object entries, `tipsFile`, and `label` are honored from user/managed/flag settings only, and a `tipsFile` named by *remote* managed settings is refused outright (a repo must not point a collaborator's CLI at an arbitrary local file, or brand its tips as an admin notice). `tipsFile` loading validates in six steps (UNC/network path, path form, regular file, 256KB size cap, JSON shape, existence) and caches against path+mtime+size, since an uncached loader put stat+read+parse on the spinner's once-per-turn hot path. Tip text and label share one spinner line, so both are Unicode-sanitized before reaching the terminal. `cooldownSessions` is now enforced for custom tips (previously stored and ignored), `priority` breaks ties among never-shown tips, `excludeDefault` gates on whether custom tips were *configured* rather than how many are eligible right now, and cooldown history is namespaced (`org-tip:<id>`, `org-tip:file:<id>`) instead of index-derived ids that shifted whenever the array was reordered.
-- **Clawd skip entrance animation on startup** — the existing-but-unused `skip` sequence (hop in from off-screen left, land with a poof) is now wired into the startup logos. Reduced-motion users and non-fullscreen environments still get the static Clawd.
-
-### Bug Fixes
-
-- **Auth and provider transitions hardened** — several fixes along the login/status/refresh chain. `noa login` over SSH or from a container previously had no path to completion: the localhost callback only closes the loop when the browser runs on the same host, and the CLI flow never offered the paste-back URL, leaving the flow to time out after 15 minutes; a TTY stdin now gets the manual URL and a paste prompt (state compared unconditionally — a pasted `code#state` with a mismatched state previously surfaced as an opaque token-exchange failure). `noa auth status` mislabeled third-party routes: `isUsing3PServices()` covers only the env-flag cloud gateways, so an Anthropic-compatible profile's Bearer token was reported as `oauth_token`, and an OpenAI-profile session could report itself as a claude.ai subscriber; the checks now key off `isDirectFirstParty()`/`openaiCompatible`. OAuth credential mutations across processes are serialized on a dedicated `.auth-transition` lockfile (canonicalized parent, so path aliases can't bypass it) instead of sharing the config-directory lock. Provider profiles: the file is now written `0600` (older world-readable files are narrowed on the next mutation), keys explicitly set to `undefined` no longer erase stored `apiKeys` on update, changing a profile's endpoint drops its stored key, and non-printable-ASCII characters are rejected from credentials. The OpenAI-compatible shim now sends `store: false` (opt out of provider-side retention; `CLAUDE_CODE_OPENAI_DISABLE_STORE` for endpoints that reject the field), and the Anthropic client no longer refreshes or copies an Anthropic Bearer into shim headers on OpenAI-compatible routes. A malformed provider profile no longer crashes startup as an unhandled rejection.
-- **`noa doctor` is a plain-text report that works in a pipe** — the terminal subcommand rendered an Ink screen, which needs a TTY: piped or in CI it threw "Raw mode is not supported" and printed a stack trace instead of the diagnostics, while still exiting 0 — silently useless in exactly the scripted and paste-into-an-issue contexts people reach for when something is broken. Interactively it also blocked on a keypress for no reason (leftover from when this was an in-session screen). One renderer now serves every context, and every source the screen read has a plain module entry point, so the text path is not a reduced version — the single thing given up is MCP tool-schema context cost, which needs live MCP connections (spawning every stdio server in project config just to be looked at would have made "only run this in directories you trust" a precondition for a diagnostic); the report says so and points at `/context`. A collector that throws is named in a "Checks that could not run" section and counted like any other issue — a diagnostic that silently omits a check it could not run reports a clean bill of health it did not earn. The piped path also no longer prunes stale update locks the way the screen did: a read-only report should not mutate state as a side effect.
-- **Curl installer and `noa update` safety** — installs previously landed on whatever `master` currently was. The installer now resolves the newest *published GitHub Release* at runtime (semver max over strict `vX.Y.Z` release tags — not the raw tags list, which also carries imported upstream Claude Code refs like `v2.1.x` that were never Noa releases; `/releases/latest` is unusable because GitHub defines it by creation date), with `NOA_INSTALL_REF` to pin, `NOA_INSTALL_REPO_TARBALL_URL` as a mirror escape hatch, and a bundled `FALLBACK_REF` when the API is unreachable. `NOA_INSTALL_EXPECTED_SHA256` pins the exact tarball bytes, aborting before extraction on mismatch. The installer refuses to clobber a `noa` binary in `~/.local/bin` that does not belong to this installation (checked before the expensive build; `NOA_INSTALL_FORCE_SYMLINK=1` overrides), and smoke-tests the swapped-in build (`noa --version`, with user auth env unset) before deleting the backup — a build that exits 0 can still produce a runtime that fails to start, and a failed smoke test now restores the previous install. `noa update` checks the latest published release first: already-current installs are told so (with the repair reinstall command), non-semver current versions and unreachable GitHub proceed with a warning instead of a blind reinstall.
-
-### Chores
-
-- **Release checklist added to product governance** — covering the version bump, README install-URL tag sync (now pinned to the release tag instead of a moving `master` ref), `install.sh` `FALLBACK_REF` bump, and tag/release verification. `NOA_CURL_INSTALL_COMMAND` stays on master intentionally so `noa update` keeps fetching the latest installer.
-
-### Tests
-
-- New coverage for the tips subsystem: the six `tipsFile` loader rejections, per-source trust rules, label injection, cooldown/priority ordering, and eight malformed-settings shapes that previously threw (settings schema is `safeParse`d whole-file, so normalization treats every field as untrusted — a throw would surface as an unhandled rejection once per turn). Plus coverage for the installer script (ref resolution, checksum, binary-conflict refusal, smoke-test rollback) and latest-release version comparison, and for the auth/provider fixes (manual auth-code flow, transition lock, profile credential normalization).
+- `spinnerTipsOverride` tips entries can now be objects (`{id, text, cooldownSessions?, priority?}`) in addition to plain strings, plus a `tipsFile` path and a `label` prefix, aligned with upstream 2.1.247.
+- Clawd now plays a skip entrance animation (hop in, land with a poof) on startup; reduced-motion and non-fullscreen environments still get the static Clawd.
+- `noa login` over SSH or in a container now offers a paste-back URL and prompt instead of hanging until the 15-minute timeout.
+- `noa auth status` no longer mislabels third-party provider sessions (Anthropic-compatible Bearer tokens, OpenAI-profile sessions) as OAuth or claude.ai subscriptions.
+- OAuth credential mutations across processes are now serialized on a dedicated lockfile instead of sharing the config-directory lock.
+- Provider profile files are now written with `0600` permissions, and updating a profile no longer erases stored `apiKeys` or leaves a stale key after an endpoint change.
+- Non-printable-ASCII characters are now rejected from stored credentials.
+- The OpenAI-compatible shim now sends `store: false` (configurable via `CLAUDE_CODE_OPENAI_DISABLE_STORE`), and no longer forwards an Anthropic Bearer token to OpenAI-compatible routes.
+- A malformed provider profile no longer crashes startup as an unhandled rejection.
+- `noa doctor` now prints a plain-text report in piped/non-TTY contexts instead of throwing "Raw mode is not supported"; checks that fail to run are now listed instead of silently omitted.
+- `noa doctor`'s piped path no longer prunes stale update locks as a side effect of a read-only report.
+- The curl installer and `noa update` now resolve the newest published GitHub Release at runtime instead of installing from `master`, with `NOA_INSTALL_REF` to pin a version, `NOA_INSTALL_REPO_TARBALL_URL` as a mirror, and `NOA_INSTALL_EXPECTED_SHA256` to verify the tarball.
+- The installer refuses to overwrite a `noa` binary it doesn't own and smoke-tests the new build before deleting the backup, restoring the previous install on failure.
+- `noa update` now checks the latest published release first and warns instead of blindly reinstalling when the current version is non-semver or GitHub is unreachable.
 
 ## 1.10.0
 
-### New Features
-
-- **Proactive and Concise output styles ported from upstream 2.1.237** — both style prompts and their one-line reminders are verbatim transcriptions diffed byte-for-byte against the installed upstream binary, digest-pinned in tests and registered in `verify:ports`. With them comes `turnReminder`, new machinery: a non-default style's one-liner now rides on the per-turn `output_style` attachment ("<Name> output style is active. <reminder>"), read off the attachment only — never off the built-in config, so a custom style file shadowing a built-in name can't get the built-in one-liner injected under its own prompt. Styles without a reminder (Explanatory, Learning) keep the previous generic sentence.
-- **The launcher routes by an explicit provider marker** — this fork ships MiniMax as its product default and previously applied that default unconditionally, overwriting `ANTHROPIC_BASE_URL`/`ANTHROPIC_MODEL` on every start, so an Anthropic login held only for the current process. The routing decision is now persisted as `launcherProvider` in the global config (written after credentials actually persist, reset on logout; unknown values are a hard config error), and the launcher applies product defaults only when the marker is not `'anthropic'`. Installs predating the marker keep their authenticated route via `oauthAccount` presence until the next login/logout. Consequences: `ANTHROPIC_AUTH_TOKEN` without an explicit `ANTHROPIC_BASE_URL` is now an error (a Bearer credential intended for another host was previously sent to MiniMax by default); login/logout run under a config-dir lock and provider-profiles.json mutations under a file lock; third-party profile deactivation is transactional and moves into the shared installer so the headless SDK login path gets it too.
-
-### Bug Fixes
-
-- **`bun run compile` emits working binaries again** — feeding the minified bundle back through `compile: true` mis-hoisted a binding and the binary died on the first real command with "Cannot access 'X' before initialization". The compile pass now stages a pre-minify copy and minifies inside it, which also enables Bun bytecode caching (0.28s → 0.12s launch). The build fails loudly when the `.jsc` step errors (bun#15528 reports success anyway) and warns when a plain build leaves `dist/cli` stale; it also throws instead of `process.exit` so the feature-flag rewrite always restores the source tree.
-- **`ANTHROPIC_AUTH_TOKEN` accepted as a CI credential** — under CI, the API-key guard threw unless `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` was set, ignoring the Bearer token third-party providers authenticate with, so any CI run using one died before its first request (including our own live smoke). It now satisfies the requirement the same way the OAuth token does.
-- **Caller env preserved when no provider profile is active** — `applyActiveProviderProfileEnv` deleted `ANTHROPIC_API_KEY` and friends unconditionally, even with no profiles configured; under `CI=true` the auth guard then threw before `--print` request handling. Only keys whose value matches what a previous profile application persisted are stripped now.
-- **Mid-session output-style switches actually take effect** — the `output_style` system-prompt section was memoized under a bare name living until `/clear` or `/compact`, so switching styles via `/config` kept serving the first turn's section — and when the first turn ran on `default` that section is null, so the model got a per-turn reminder announcing a style whose guidelines were never sent. The section is now keyed by style name (a deliberate departure; upstream keys it bare and carries the same gap). Also: built-in style classification used `in`, which walks the prototype chain, so a custom style named `toString.md` was treated as built-in; now `Object.hasOwn`, as upstream does.
-- **Compact spinner no longer recolored amber** — upstream never recolors at `compact_start` (the blue pair set at `hooks_start` stays until `compact_end`), and the amber override pointed body and shimmer at the same `warning` key, flattening the shimmer sweep to a no-op.
-- **Clawd glyphs aligned with upstream 2.1.241** — 6-wide eye field with an empty r1R, look-right shifts eyes inside the field instead of swapping chars, arms-up uses the asymmetric ▄ right arm, and the standard-terminal feet row is ▝▝ ▝▝ (Noa had copied the Apple Terminal variant). The noa-only wave poses are re-expressed in the same segment scheme; animation sequences unchanged.
-
-### Changed
-
-- **~100ms faster startup** — profiling `noa -h` (0.39s vs upstream's 0.11s) put ~110ms in JSC pre-parsing the 25MB bundle, with top-level evaluation spread flat across 2055 modules (largest single module 5.4ms — no hotspot to lazy-load). The production bundle now gets a second, identifier-minifying pass (25MB → 12.7MB, ~55ms; whitespace-only minification buys nothing measurable — the win is in the identifier table). It runs after the USER_TYPE patch rather than as `minify: true` on the first build, because the minifier would constant-fold `"external" === 'ant'` before the patch could rewrite it. Dev builds stay unminified; the runtime already expects mangled names. The launcher also stopped recursively stat'ing the whole `src/` tree on every start (~13ms), and `main.tsx`'s only top-level await became a static import — a precondition for a bytecode-cached build later. Result: 0.39s → 0.28s.
-- **`/rewind` and `/goal` registered as implemented non-baseline commands** — both shipped but were untracked by governance, a documentation-drift risk. Registration only: entries in `surfaceStatus.ts`, matrix/governance rows, README listing, and a smoke-features check that non-baseline commands stay discoverable. Baseline boundary unchanged.
-
-### Chores
-
-- **CI `@ts-nocheck` ratchet** — 1818/2029 non-test source files carry `@ts-nocheck`, so `tsc --noEmit` covers ~10% of the tree. Any PR that introduces a new unchecked file now fails with the offending paths listed; the baseline stores the full file list so swap-one-out-add-one-in is still caught. Tighten with `--update` as cleanup lands.
-- **CI hardening** — quality gates are hermetic and complete: clean Linux smoke runners supported, ripgrep installed on the live smoke runner, fail-fast with retry on the apt install step, and a dummy API key for the quality-guard check.
-
-### Tests
-
-- MiniMax defaults smoke check now actually runs (it previously didn't); the prompt budget render is isolated from project config; `mcpContextBudget` tests no longer hardcode `/private/tmp`; the new output-style fixes are covered by tests verified to fail against the pre-fix code, plus a roster tripwire that fails if a future style is added without updating the retry allowlist.
+- Proactive and Concise output styles ported from upstream 2.1.237, including per-style one-line reminders attached to the `output_style` system-prompt section.
+- The launcher now routes providers based on an explicit `launcherProvider` marker in global config instead of unconditionally overwriting `ANTHROPIC_BASE_URL`/`ANTHROPIC_MODEL` with this fork's MiniMax default; `ANTHROPIC_AUTH_TOKEN` without an explicit `ANTHROPIC_BASE_URL` is now a config error.
+- `bun run compile` produces working binaries again; a minification ordering bug previously caused "Cannot access 'X' before initialization" on first use.
+- `ANTHROPIC_AUTH_TOKEN` is now accepted as a valid CI credential alongside `ANTHROPIC_API_KEY`/`CLAUDE_CODE_OAUTH_TOKEN`.
+- Caller-supplied `ANTHROPIC_API_KEY` and related env vars are no longer deleted when no provider profile is active.
+- Mid-session output-style switches via `/config` now take effect immediately instead of continuing to serve the first turn's cached prompt section.
+- The compact spinner no longer gets recolored amber during compaction, matching upstream's blue spinner color.
+- Clawd's glyphs are realigned with upstream 2.1.241 (eye field, look-right animation, arm and feet rendering).
+- Startup is about 100ms faster (0.39s → 0.28s) via a second identifier-minifying pass on the production bundle, a static top-level import, and removing a recursive `src/` stat on every launch.
+- `/rewind` and `/goal` are now registered as implemented non-baseline commands in governance docs and the command surface.
 
 ## 1.9.1
 
-### Bug Fixes
-
-- **Five defects along the Bash tool's real call chain** — the output size watchdog was armed only inside `ShellCommand.background()`, leaving the entire foreground window (2 minutes by default) uncapped; in file mode the child writes straight to the output fd with no JS in the loop, so a runaway writer fills the disk long before the timeout fires. It now arms from construction and can kill a running command. `BashTool` used `timeout || default` raw — the schema only *describes* its ceiling in prose, so a model-supplied 10-hour value became a 10-hour foreground budget; it is clamped through `resolveTimeoutMs()`, which also rejects `0`/`NaN`/negatives (a negative delay fires `setTimeout` immediately). `BashTool` never read `ExecResult.stderr`, which in file mode is not the command's stderr but the only carrier for `ShellCommand`'s synthetic messages — timeouts, size-cap kills, and pre-spawn `EMFILE`/`EAGAIN`/`ENOENT` failures — so the model saw a bare "Exit code 143". Large output from a *failed* command was persisted after the throw, losing the tail in exactly the case where the tail matters. And the auto-background guard compared `parts[0]` against a whole-subcommand split, so only a bare `sleep` ever matched and every real `sleep <n>` was auto-backgrounded on timeout. **Behavior changes worth knowing**: `sleep 300` is now killed at the timeout (with a clear message) instead of being backgrounded, and a timeout above the advertised maximum is now actually clamped.
-- **Compaction recovers instead of failing when the summarize request itself overflows** — a full compaction that came back prompt-too-long had no retry path. It now re-runs as a partial compaction with a pivot sized from the reported overflow (parsed across the Anthropic/Vertex/Bedrock error shapes, falling back to halving when no gap is parseable) and snapped to preserve API invariants, with a genuine last-resort head-truncation round whose marker names the transcript so the dropped turns remain findable. Microcompact learned to write to-be-cleared content to disk and substitute pointers, deliberately without a preview — a preview would defeat the clearing. Separately, `shouldAutoCompact` now names a failure it previously only suffered: when the *fixed* prefix (system prompt, tool schemas, userContext — usually a large MCP tool set) clears the threshold on its own, every compaction succeeds and the next turn re-triggers, because summarizing messages cannot shrink the part that is actually too big. The log now says what to go turn off.
-- **Four loop-safety mechanisms restored from upstream 2.1.220/2.1.233** — dropped during the original reconstruction, verified against the shipped darwin-arm64 binaries. `stop_hook_active` is only advisory input to the hook process, so a hook that always blocks looped the turn forever; consecutive blocking continues are now counted and force-end the turn past `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP` (default 8). Interactive REPL sessions had no turn cap at all, now backstopped by `CLAUDE_CODE_MAX_TURNS` (an explicit `--max-turns` or SDK option still wins). Context refilling past the autocompact threshold within 3 turns, 3 times running, now ends the turn with upstream's thrashing message instead of paying a summary call every few turns forever. And when a failed stream had already yielded tool_use blocks, the non-streaming fallback re-issued them and re-ran the same tools; it now continues with the partial response, which also fixes a duplicate-`tool_result` 400 on the `model_error` path.
-- **Context claims the harness cannot honor, and the caches that served them stale** — `# System` promised "your conversation is not limited by the context window", which is false in any session that disabled compaction (`DISABLE_COMPACT`, `DISABLE_AUTO_COMPACT`, `autoCompactEnabled`); it is dropped as a duplicate, since `CONTEXT_MANAGEMENT_SECTION` ships unconditionally and already carries both halves. When compaction is off, session guidance now supersedes that section by name rather than contradicting it. Alongside: `resolveSystemPromptSections()` and `toolToAPISchema()` both awaited inside their compute and then wrote back unconditionally, so a `clearAllCaches()` landing mid-render restored the stale value into the cache it had just emptied — making `/reload-plugins` nondeterministically ineffective; both writes are now generation-guarded. `env_info_simple` and `frc` embed the model but were keyed without it, so a mid-session `/model` switch kept serving the previous model's text. Dynamic `/loop` self-rescheduling was unbounded and is now capped at 24 iterations / 24 hours through a single-use opaque token with issued→scheduled→consumed transitions, so a chain cannot be forged, replayed, or reused. The verbose prompt head compresses 24,053 → 17,615 characters (-27%) with every pinned upstream phrase still rendering.
-- **Tool results can no longer plant instructions in the compacted summary** — the standing-instruction harvest widened what the compact summarizer collects as user intent, but the attribution guard only excluded fake user turns embedded in assistant messages. Tool results ride in user-role messages while carrying attacker-controllable data (MCP responses, fetched pages), so instructions planted there could be swept into the summary and re-attributed as genuine user constraints on every subsequent compaction.
-- **`RemoteTrigger` is reachable by classifier review in auto mode** — it had no `checkPermissions` override, so it fell through to `buildTool()`'s default unconditional allow. Because `hasPermissionsToUseTool` short-circuits on an allow result before the auto-mode classifier block runs, its create/update/run actions were not merely skipping the interactive dialog — they were skipping the classifier entirely. Ports upstream 2.1.233's gate: `auto` routes to passthrough, every other mode keeps the prior behavior.
-- **A discarded streaming executor no longer pins the "tools running" state** — `StreamingToolExecutor.discard()` abandoned the in-progress marks it had taken. The only path that clears them returns early once discarded, and the fallback retry re-requests the turn and comes back with new `tool_use_id`s, so the old ids were never seen again and the REPL kept rendering tools as running for the rest of the session. Clearing alone was not enough: each tool's `promise.finally` re-enters `processQueue()`, which did not check `discarded` and would start a queued tool, re-adding a mark nothing would clear — `executeTool()` now bails out at the top, making good on `discard()`'s own doc comment that queued tools will not start. The same shape in `toolOrchestration` (cleanup as a trailing statement, skipped when a consumer stops pulling) moves into `finally`.
-
-### Chores
-
-- **277 dead exports, 6 orphan modules, and 4 unused barrel re-export sets removed** across four staged batches: 29 `*ForTesting`/`_reset*` hooks that came over during the upstream port without the tests that used them, 23 barrel re-exports every consumer already reached past, 28 unused types (six of them duplicate declarations whose same-named twin is the one actually consumed), and 197 exported declarations across 145 files plus `FlashingChar`, `MonitorTool`, `WorkflowTool/constants`, `contextAnalysis`, `peerAddress` and `withResolvers`. Also fixes 9 doc comments naming now-deleted functions — most consequentially `teamMemPaths.ts`, which pointed write validation at a function that no longer existed. Because 135 of the 139 touched files carry `@ts-nocheck`, `tsc` alone proves little here; a separate pass re-ran the checker with `@ts-nocheck` stripped from exactly those files and found zero "cannot find name" diagnostics.
-- **The loop parser's side effect is named** — `parseLoopArgs` consumed the chain token from the registry, so a second call on the same arguments silently killed the chain. Renamed to `parseAndConsumeLoopArgs` with its one-call-per-dispatch contract documented, and a `withLoopState` helper wrapping five provably-identity returns was folded away. No behavior change.
-- README corrections: `build:dev:full` enables 52 experimental flags, not ~70, and `NOA_CLAUDE_MAX_CONCURRENT_AGENTS` (shipped in 1.9.0) is now listed under Runtime Toggles.
-
-### Tests
-
-- **First coverage for the Bash tool** — it previously had none: nothing in `src/test` touched `BashTool`, `Shell`, `ShellCommand`, `TaskOutput` or the permission modules, so for the subsystem that is both the main side-effect surface and the main security boundary, `bun test` gave no signal at all. 30 cases across three files drive real processes through the real stack (the only stand-in is a ~20 line fake `ToolUseContext`): foreground and background size-cap kills, timeout kills and their stderr message, auto-background handoff, abort-kill versus the deliberate no-kill on `interrupt`, exit-code mapping, timeout clamping, the sleep guard, and persisted-output paths on both success and failure. Each case was verified to fail against the pre-fix code. Not covered: the permission layer (`bashToolHasPermission` is 894 lines over a 2.6k-line dependency tree) and `PowerShellTool` end to end.
-- **First coverage for the tool result budget** — `toolResultStorage.ts` carries the prompt-cache stability rules for tool results and had no direct test, and its failure mode is a silent cache miss: nothing errors, the turn just costs more. 27 cases pin the invariants the comments claim — a result left unreplaced is never replaced later, a replacement re-applies byte-identically and is not re-reported, tagged content is skipped even by a state that has never seen it, same-id assistant fragments do not split a budget group, skipped tools freeze rather than persist, and reconstruction freezes every candidate while restoring stored replacements verbatim. Every assertion was checked by mutation: breaking frozen partitioning, group flushing, the size clamp, `skipToolNames`, the gap-fill guard, or the already-compacted check each fails a test.
-- Prompt-size assertions gained floors (14,000 / 14,000 / 11,000 against measured 17,615 / 17,569 / 12,429). They previously asserted only upper bounds, so a head that lost a whole section would have read as a compression win.
+- The Bash tool's output size watchdog now arms from process construction instead of only in background mode, capping foreground runaway output.
+- `BashTool` timeouts are now clamped through a shared resolver, rejecting `0`, `NaN`, and negative values instead of passing a model-supplied value straight through.
+- `BashTool` now surfaces `ShellCommand`'s synthetic stderr messages (timeouts, size-cap kills, spawn failures) instead of showing a bare exit code.
+- Output from a failed command is now persisted before the throw instead of being lost.
+- `sleep <n>` commands are now correctly detected for auto-backgrounding on timeout (previously only a bare `sleep` matched); as a result, `sleep 300` is now killed at the timeout instead of silently backgrounded.
+- Compaction that itself overflows now retries as a partial compaction with a computed pivot instead of failing outright, with a last-resort head-truncation fallback.
+- `shouldAutoCompact` now detects and logs when the fixed prompt prefix alone exceeds the threshold, since summarizing messages can't shrink that part.
+- Restored four upstream loop-safety mechanisms: a cap on consecutive blocking stop-hook continues (`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`, default 8), a turn cap for interactive sessions (`CLAUDE_CODE_MAX_TURNS`), an end-of-turn thrashing guard for repeated autocompact-threshold refills, and a fix for duplicate tool re-execution on a failed-stream fallback.
+- Removed a false claim that context is unlimited when compaction is disabled; session guidance now supersedes it correctly.
+- Fixed cache staleness bugs where `resolveSystemPromptSections()`/`toolToAPISchema()` could write stale values back after `clearAllCaches()`, and where model-dependent prompt sections weren't keyed by model, both causing stale text to persist after a reload or `/model` switch.
+- `/loop` self-rescheduling is now capped at 24 iterations/24 hours via a single-use token, preventing a forged or replayed chain.
+- Tool results can no longer plant instructions that get swept into the compacted summary and re-attributed as genuine user constraints.
+- `RemoteTrigger` actions are now reachable by the auto-mode classifier instead of falling through to an unconditional allow.
+- A discarded streaming tool executor no longer leaves the "tools running" state stuck for the rest of the session.
 
 ## 1.9.0
 
-### New Features
-
-- **Auto mode ports upstream 2.1.233's unified classifier template** — drops the legacy tool_use classifier for the two-stage XML path and unifies on the external permissions template: `hard_deny` rules, `"$defaults"` splicing, a settings-deny anti-circumvention block, a session-identity block, and `<category>` verdict parsing. Settings deny rules are sanitized before entering the classifier prompt (`projectSettings` loads them without a trust gate), and CCR now honors `defaultMode: "auto"`.
-- **`/cost` reports session auto-mode classifier counters** — calls, latency, outcome breakdown (allowed/blocked/unavailable), stage-2 escalation rate, re-sample count, and token totals for the session, folded in at the one call site every classifier request passes through. Renders nothing when auto mode never ran; in-memory only, reset with the cost totals.
-- **`/login` repeats the `CLAUDE_CODE_OAUTH_TOKEN` override warning after success** — ported from upstream 2.1.229. By the time login completes the entry warning has scrolled behind the browser round-trip, so a bare "Login successful" used to read as "you are now on the new account". Wording is adapted: unlike upstream, this fork does not clear the env token during login, so the token keeps winning the auth header and the message says so instead of claiming a switch that would be false.
-- **MCP OAuth gains a `MCP_OAUTH_REDIRECT_HOST` escape hatch** — `localhost` stays the default (byte-identical to upstream 2.1.231, which reverted its own `127.0.0.1` experiment after it broke pre-registered OAuth clients like Slack), but a strict authorization server that only allows loopback IP redirect URIs under RFC 8252 can now opt into `127.0.0.1` without breaking the default path. The accepted values are a closed set — an arbitrary host would be an exfiltration vector for the auth code, and `[::1]` is excluded because the callback listener only binds IPv4 loopback.
-- **Sandbox approvals bracket IPv6 hosts in approved domain rules** — unbracketed multi-colon entries (`::1:443`) were read by the sandbox matcher as one addressless host with no port split and silently never matched. `noa doctor` and the `/sandbox` panel now flag existing unbracketed entries too. Bumps `@anthropic-ai/sandbox-runtime` to 0.0.71 for the bracket-aware pattern parser.
-- **Clipboard and dragged-in image pastes no longer stall the event loop** — aligning with Claude Code 2.1.232: screenshot and drag-in reads switch from a sync file read to an async one, removing an unbounded stall on large pastes or slow filesystems. Re-pasting the same text as a collapsed `[Pasted text #N]` now expands it inline (100k cap), with a footer hint, mirroring upstream's armed-paste state machine.
-- **Fullscreen mode deletes a selected input span with one Backspace/Delete** — mirrors Claude Code 2.1.232: with a text selection lying fully inside the prompt input, Backspace/Delete removes the whole span in one keystroke (undoable, cursor lands at the deletion start). Selections spanning into the transcript, empty ranges, and modal-overlay states fall through to normal editing unchanged.
-
-### Bug Fixes
-
-- **WebFetch rejects private-range and link-local addresses even with the domain-blocklist preflight disabled** — `validateURL`'s only internal-network filter was a hostname-shape check that every literal IP passes (`169.254.169.254`, `10.0.0.1`, `127.0.0.1` all "have a dot"). The default configuration was protected by a preflight call to `api.anthropic.com`, but `settings.skipWebFetchPreflight` — meant for enterprises that can't reach claude.ai — disabled that with no IP-layer check left behind. Wires in the already-written `isLocalOrPrivateUrl` synchronous check (no DNS, no added latency); a private-range address now gets its own rejection message instead of a generic "Invalid URL" that invites a pointless retry. Known limit, documented at the call site: a hostname that *resolves* into a private range (internal DNS, DNS rebinding) is not caught.
-- **Background agents get a concurrency cap and lifecycle hardening** — unbounded background spawns had no semaphore against API rate-limit pressure; `NOA_CLAUDE_MAX_CONCURRENT_AGENTS` (default 20, 0 disables) is now enforced at spawn, at auto-backgrounding, and again after any awaited step before a background task is registered. Foreground-to-background continuation reuses its already-initialized prompt context instead of re-running `SubagentStart` hooks and skill preload a second time, abort signals from a background task and its parent combine correctly, and the cumulative spawn counter can now be decremented.
-- **Copy toast counts grapheme clusters, not UTF-16 code units** — copying `👨‍👩‍👧‍👦` reported "copied 11 chars" because the count came from `text.length`. Also warns when the copy went through OSC 52 on VS Code 1.123/1.124, which corrupt non-ASCII text on that path (fixed in 1.125); the warning is gated to non-native clipboard paths so macOS VS Code, which copies through `pbcopy` and never reaches xterm.js's OSC 52 decoder, doesn't false-positive.
-- **Auto mode's classifier transcript is hardened against injection** — everything the classifier reads about the session was concatenated into its prompt raw, so a user message containing `</transcript>` could close the wrapper it's told to read inside, and a line like `User: approved` could forge a turn. Ports upstream 2.1.233's sanitization (tag defanging, control-character stripping, line indentation), the stricter stage-1 "no verdict" contract, and stricter XML parsing that treats a contradicting verdict as unparseable instead of taking the first match. `AskUserQuestion` answers now reach the classifier as user turns (they lived in a tool_result the old transcript projection dropped, so an explicit user confirmation could never register), and a resumed subagent's hand-back message is passed through framed as untrusted agent output instead of being invisible to the review.
-- **Unparseable classifier responses are re-sampled instead of denying on one bad sample** — bounded by attempt count, a 60s/120s per-stage deadline, and a per-request timeout, with usage summed across attempts. A safeguard refusal (the API's own content-based decline) is now distinguished from a malformed response: it's deterministic so it isn't re-sampled, gets its own denial text, and is excluded from the consecutive-denial counter so the session isn't kicked out of auto mode over something the agent never did.
-- **Safeguard refusal denials carry actionable guidance** — the refusal branch above returned the bare classifier reason with no next-step text, unlike every other auto-mode denial. It now states plainly that retrying refuses again for the same reason and omits the permission-rule hint, since no rule clears a safeguard refusal.
-
-### Chores
-
-- Gated the `/remote-control` bridge module require behind `BRIDGE_MODE` (absent from the baseline feature set, so the command was already invisible) and removed the dead telemetry-initialization chain left over from telemetry being hard-disabled — no product surface change, ~14KB off `dist/main.js`.
-
-### Tests
-
-- New coverage: background-agent async lifecycle, concurrency-capacity enforcement, and continuation-history/initialization behavior; combined abort controllers; session concurrency budget; 18 WebFetch SSRF cases across the newly-blocked private ranges and unaffected public addresses; boundary tests for the VS Code OSC 52 version window.
+- Auto mode now uses upstream 2.1.233's unified XML classifier template with `hard_deny` rules, settings-deny sanitization, and session-identity blocks.
+- `/cost` now reports session auto-mode classifier counters (calls, latency, outcome breakdown, escalation rate, token totals).
+- `/login` now repeats the `CLAUDE_CODE_OAUTH_TOKEN` override warning after a successful login.
+- MCP OAuth adds a `MCP_OAUTH_REDIRECT_HOST` setting to opt into `127.0.0.1` redirects for strict authorization servers (default remains `localhost`).
+- Sandbox approved-domain rules now correctly bracket IPv6 hosts (`[::1]:443`); `noa doctor` and `/sandbox` flag existing unbracketed entries. Bumps `@anthropic-ai/sandbox-runtime` to 0.0.71.
+- Clipboard and dragged-in image pastes no longer stall the event loop (async file reads instead of sync).
+- Re-pasting the same text as a collapsed `[Pasted text #N]` now expands it inline, with a footer hint.
+- Fullscreen mode now deletes a fully-selected input span with a single Backspace/Delete.
+- WebFetch now rejects private-range and link-local addresses (e.g. `169.254.169.254`) even when `settings.skipWebFetchPreflight` is enabled.
+- Background agents are now capped by `NOA_CLAUDE_MAX_CONCURRENT_AGENTS` (default 20, 0 disables), enforced at spawn and auto-backgrounding.
+- Foreground-to-background agent continuation no longer re-runs `SubagentStart` hooks and skill preload a second time.
+- The copy toast now counts grapheme clusters instead of UTF-16 code units, fixing incorrect character counts for emoji.
+- Copying via OSC 52 now warns on VS Code 1.123/1.124, which corrupt non-ASCII text on that path.
+- The auto-mode classifier transcript is now sanitized against injection (tag defanging, control-character stripping) so a user message can no longer forge a turn or escape its wrapper.
+- `AskUserQuestion` answers now reach the classifier as user turns instead of being dropped.
+- Unparseable classifier responses are now re-sampled (bounded by attempt count and timeout) instead of denying on one bad sample.
+- A safeguard content refusal is now distinguished from a malformed response and excluded from the consecutive-denial counter.
+- Safeguard refusal denials now include actionable guidance instead of a bare, unhelpful reason.
 
 ## 1.8.0
 
-### New Features
-
-- **Write and Edit may overwrite a file the session never read** — ported from upstream 2.1.228, which brought Write in line with Edit: a model that is not on upstream's pre-read denylist can overwrite an existing file without a preceding Read, so a full rewrite no longer costs a round trip. One deliberate deviation: the skip also bypasses the mtime staleness check, and upstream backs that with shadow telemetry plus a remote kill switch this fork has neither of — so untrusted model identities (customer-run Bedrock/Vertex/Foundry, Anthropic-compatible third parties) keep the guard the same way they keep the verbose prompt, and `NOA_CLAUDE_WRITE_REQUIRE_READ` stands in for the missing gate. First-party known models behave exactly as upstream does. Partial reads, notebooks, files outside every working directory, and contexts with no reading tool all keep the guard. Both prompt variants are pinned by digest, and `verify:ports` checks all four against the upstream binary.
-- **Slash-menu matches are highlighted by range, not by slicing** — ports the range-based matcher upstream introduced between 2.1.220 (this fork's baseline) and 2.1.224. The old renderer sliced at the first UTF-16 `indexOf` hit, which could cut inside a grapheme cluster (searching 👨 in `/ship-👨‍👩‍👧-it` split one glyph across two nodes; "cafe" against a decomposed "café" dropped the combining accent) and highlighted nothing at all on rows the Fuse fuzzy filter had put on screen. Ranges widen to cluster boundaries via `Intl.Segmenter` and merge; a subsequence fallback mirrors the search that selected the row, with `contiguousOnly` for descriptions so a sentence doesn't come back as three isolated letters. Matched runs are now distinguished by **bold** rather than by recoloring, leaving "suggestion" blue to mean only "this row is selected" — on selected rows the old highlight was invisible by construction, painting the match in the row's own color. Deviates from upstream by lowercasing the query itself instead of assuming the caller did, since `matchedPrefix` is public and a mixed-case caller would silently get no highlighting anywhere.
-- **Non-interactive sessions get upstream's autonomy guidance** — ports 2.1.226's `autonomy_append`, which tells the model to stop asking permission for reversible work and to finish the turn rather than promise it. Upstream gates it on the model alone (`fable_5_mitigations`); this fork adds a second condition — the session must also be non-interactive — because the text asserts the user "is not watching in real time and cannot answer questions mid-task", which is simply false in the TUI and would suppress questions the model ought to ask. The section name carries a `:fable` suffix so a mid-session `/model` switch busts the memoized value.
-
-### Bug Fixes
-
-- **A failed `security` call is no longer recorded as an empty keychain** — a transient failure and a genuinely empty keychain both collapsed to null, and the async read cached that null for its full 30s TTL. Every MCP server's OAuth token lives in one credentials blob, so a single spawn hiccup made all of them answer 401 at once, which reads as "auth never completed". Exit codes are now classified: 0/44/36 are answers and may be cached; a SIGTERM'd timeout or a missing binary are not, and serve the stale value while leaving the cache untouched. Alongside it: every `security` invocation is bounded (10s for reads/writes/deletes — deliberately above upstream's 2s, because 19 of 22 update sites do `read() || {}` and write the result straight back, so a read that wrongly reports "empty" feeds a blob-clobbering write); the sync-read failure cooldown is widened so a wedged keychain can't freeze the event loop during MCP startup; both prefetch slots are guarded by a generation captured at spawn so a `/login` mid-prefetch isn't undone; a timed-out write reports as transient instead of demoting credentials to plaintext; the keychain account resolves through `getUsername()` everywhere (the legacy read and delete interpolated an unquoted shell `-a $USER` while the write did not, making the entry write-only); and `saveApiKey()` no longer sets `savedToKeychain` regardless of the write's result. Not fixed and load-bearing: `fallbackStorage.read()` still hands `{}` to callers on a transient failure, so the read-modify-write clobber this narrows is not closed.
-- **`/clean-sessions` deletion safety rails** — bulk `delete --confirm` could remove any session under the requested size bucket with no human in the loop, and a typo'd flag silently downgraded that protection. The running session's own transcript and anything modified in the last 10 minutes are now never touched; unknown flags and unreadable `--max-bytes` values are rejected instead of falling back to the default bucket; bulk delete is gated behind `--trivial-only` and the default bucket, with anything wider going through the interactive picker; an explicit title is treated as a keep signal rather than deletion evidence; the `<uuid>/` sidecar is deleted with its transcript and counted toward the session's footprint, so a small `.jsonl` with a large sidecar stops passing as a small session; and per-file failures are reported rather than swallowed.
-- **`cleanup-data` no longer wipes custom memory directories wholesale** — a user-configured `autoMemoryDirectory` (or Cowork override) was deleted recursively, taking unrelated files with it, and every top-level `.md` was treated as memory-system-managed so a hand-written `notes.md` went with the topic files. Only entries the memory system manages are removed now — `MEMORY.md`, `logs/`, `team/`, `.consolidate-lock`, and `.md` files whose frontmatter carries a valid `type:` — with everything else kept and listed. Default-location dirs still go wholesale. Also: the custom-location label is based on `getMemoryBaseDir()` so `REMOTE_MEMORY_DIR` setups aren't mislabeled, and targets are `lstat`ed so symlinks report honestly instead of inflating the reclaimed size.
-- **Two ported prompt sections regained their paragraph breaks** — `AUTONOMY_SECTION` (3 breaks) and the `anti_verbosity` fable branch (6 breaks) had shipped with their blank lines collapsed to single newlines, and both digests were pinned to the collapsed text — so the integrity check certified the deviation instead of catching it. A digest is computed from whatever is already in the file and cannot tell a faithful transcription from a confident wrong one; both are now byte-identical to the 2.1.226 binary.
-
-### Changed
-
-- **The always-on memory prompt is a third of its former size** — the individual-memory prompt spent 7216 characters on four `<description>` essays and eight worked dialogues to say what upstream 2.1.226 says in one line per type. That section is replaced by a 914-character compact form and "## Memory and other forms of persistence" folds into the opening sentence, taking the whole prompt to 4915 characters. Everything with an eval result behind it is untouched — the shortening is a size decision, not a reversal of one. One instruction did not survive ("if your approach changes, update the plan rather than saving a memory"), following upstream, whose compact variant drops the persistence guidance outright. `TYPES_SECTION_INDIVIDUAL` stays exported and unchanged for the one-shot extraction classifier, which has to carry its own examples.
-
-### Tests
-
-- **`bun run verify:ports`** — diffs every pinned lean-prompt port against a real upstream binary, closing the gap a digest cannot cover. Deliberately outside `bun test` and `check:quality` since it needs a binary no CI runner has; without one it reports skipped and exits 0.
-- `scripts/*.ts` is now inside the typecheck scope — `include` was `["src/**/*", "*.ts"]`, whose second pattern is root-level only, so the one TypeScript file under `scripts/` was never checked.
-- New coverage: 32 keychain tests over exit-code classification, cache poisoning, cooldown windows, prefetch invalidation and account resolution, plus two source invariants in `check-runtime-health.mjs`; every `/clean-sessions` rail; `cleanup-data` arg rejection, preview gating, scope semantics, selective deletion and symlink handling; the pre-read skip end to end through both `validateInput` and `call`; and 12 matcher cases for grapheme-aligned ranges. The slash-menu renderer's color and weight decisions remain unverified — that component has no render harness in the tree.
+- Write and Edit may now overwrite a file the session never read, matching upstream 2.1.228 (first-party known models only; `NOA_CLAUDE_WRITE_REQUIRE_READ` restores the guard, and it stays on for untrusted model identities).
+- Slash-menu fuzzy-match highlighting now uses grapheme-aware ranges instead of a raw UTF-16 slice, fixing incorrect highlights on emoji and accented characters; matches are now shown in bold instead of by recoloring.
+- Non-interactive sessions now receive upstream's autonomy guidance telling the model to stop asking permission for reversible work and finish the turn rather than promise it.
+- A failed macOS `security` (keychain) call is no longer cached as an empty keychain, which previously made all MCP servers' OAuth tokens appear to fail authentication at once.
+- `security` invocations are now time-bounded (10s), and the keychain account now resolves consistently through `getUsername()` everywhere.
+- `/clean-sessions` bulk delete no longer removes the running session's transcript or anything modified in the last 10 minutes; unknown flags and invalid `--max-bytes` values are now rejected instead of silently falling back to defaults.
+- `cleanup-data` no longer wipes an entire custom memory directory; only files the memory system actually manages (`MEMORY.md`, `logs/`, `team/`, typed `.md` files) are removed.
+- Two ported prompt sections (`AUTONOMY_SECTION`, `anti_verbosity` fable branch) had their collapsed paragraph breaks restored to match upstream 2.1.226 byte-for-byte.
+- The always-on individual-memory prompt section is reduced from 7216 to 914 characters, matching upstream 2.1.226's more compact wording without dropping any eval-backed instruction.
 
 ## 1.7.1
 
-### New Features
-
-- **Fullscreen scrollback retains the full pre-compaction history** — aligning with upstream 2.1.224: repeated compactions no longer trim scrollback to the most recent compact interval; the entire pre-compaction history stays scrollable across any number of compactions. Because suffix-preserving compactions (auto keep-tail, session-memory) re-yield the kept tail after the boundary, the boundary handler now collects the previous boundary's original copies when the next boundary arrives, so no interval ever shows double.
-
-### Bug Fixes
-
-- **Edits that still apply cleanly no longer force a re-read** — ported from upstream 2.1.224 (`tengu_edit_tool_stale_read`): when a file's mtime moved past the last read but `old_string` still identifies a unique, unambiguous target in the current on-disk content, the edit goes through; ambiguity still rejects. FileWrite's validateInput gains the same content-compare fallback, so mtime false positives (Windows sync/AV, byte-identical linter rewrites) no longer force a re-read either.
-- **Diffs are taken against raw git blobs** — aligning with upstream 2.1.222: the workspace hunks behind `/diff`, the single-file diff for file edits in web sessions, the `/issue` and `/share` state capture, and the ultrareview precondition check now pass `--no-ext-diff --no-textconv`. A configured `diff.external` made git replace the unified diff with the external program's stdout (parsing to zero hunks), and a textconv filter rewrote hunks so line numbers drifted out of sync with disk. The status-line counters deliberately keep polling without the flags, as upstream does.
-- **The Stats panel counts cache tokens** — aligning with upstream 2.1.221: Total tokens summed input + output only, understating cache-heavy sessions severalfold (on a local all-time cache the figure goes from 1.6b to 4.1b, and the model ranking changes). Totals, sort keys, per-model percentages and the per-day chart now run through input + output + cache read + cache write, with a new breakdown line under the stat grid, a per-model "Cache: N read · N write" row, and a B unit on the chart's Y axis. Stale cached day buckets are rebuilt from on-disk transcripts via a `DAILY_MODEL_TOKENS_VERSION` marker. The book-comparison factoid deliberately stays on input + output and is reworded to say why.
-- **Sandbox network violations now reach the model** — `@anthropic-ai/sandbox-runtime` 0.0.51 → 0.0.70: network-outbound denies were never recorded into the violation store, so `<sandbox_violations>` only ever carried macOS filesystem denies. The bump records network denies with a reason string and adds a Linux violation monitor giving filesystem-deny parity with macOS.
-
-### Changed
-
-- **Auto mode permission checks reuse one cached conversation prefix** — aligning with upstream 2.1.221, which made three previously gated mechanisms unconditional. The classifier queue introduced opt-in in 1.6.1 is now **on by default** (`NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE=0` forces it off): concurrent classifier calls can't read each other's cache writes, so serializing is what lets a parallel tool batch share one prefix instead of each paying a cache write. Alongside it, the classifier now sees the turn's earlier tool uses appended after the conversation, and pins its transcript block boundaries by splitting out already-classified tool uses — both keep the shared prefix byte-identical across the batch — plus a second cache breakpoint at the end of the transcript. Permission mode is now re-checked after **every** classifier call rather than only queued ones, short-circuited by a mode/auto-active snapshot, and a mode change now re-prompts with the original verdict instead of a rewritten one that could swallow the prompt. (Documented under 1.7.0 in error; the change landed after that tag.)
-- **Emoji autocomplete aligned with upstream 2.1.221** — the alias layer (`thumbsup`/`thumbs_up`/`love`/`celebrate`/`hundred`/`plus_one`/`minus_one`/`thumbsdown`/`thumbs_down`) merges into a prototype-safe Map lookup, and accepts route through the shared `applyTriggerSuggestion` (glyph from displayText, trailing space, cursor past it) with the enabled-check re-run at accept time, replacing a bespoke apply path. Documented deviations stay: curated base table instead of the full emojilib dump, `emoji-` id prefix, no telemetry.
-- **The lean prompt's output-visibility bullet is ungated** — aligning with upstream 2.1.224, which dropped the `tengu_marl_cormorant` gate so every lean-prompt model gets "- Command output is displayed to you, not reliably to the user." The now-dead `:nb` bit is dropped from the tool-schema cache key (`action_caution` keeps its own; its text still varies).
+- Fullscreen scrollback now retains the full pre-compaction history across repeated compactions instead of trimming to the most recent interval, matching upstream 2.1.224.
+- Edits and writes to a file whose mtime moved (Windows sync/AV, linter rewrites) no longer force a re-read when the content still matches, matching upstream 2.1.224's stale-read fallback.
+- Diffs (`/diff`, single-file diffs, `/issue`, `/share`, ultrareview) are now taken against raw git blobs with `--no-ext-diff --no-textconv`, so a configured external diff or textconv filter can no longer corrupt them.
+- The Stats panel now counts cache read/write tokens in addition to input/output, matching upstream 2.1.221 and correcting a severe undercount on cache-heavy sessions.
+- Sandbox network-outbound denials are now recorded and reach the model in `<sandbox_violations>`; bumps `@anthropic-ai/sandbox-runtime` to 0.0.70 and adds a Linux violation monitor.
+- Auto mode permission checks now reuse one cached conversation prefix by default (`NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE=0` disables), matching upstream 2.1.221; permission mode is now re-checked after every classifier call instead of only queued ones.
+- Emoji autocomplete aliases are aligned with upstream 2.1.221 via a shared apply path.
+- The lean prompt's output-visibility bullet ("Command output is displayed to you, not reliably to the user.") is now shown for every lean-prompt model instead of being gated, matching upstream 2.1.224.
 
 ## 1.7.0
 
-### New Features
-
-- **Custom themes** — ported from upstream Claude Code 2.1.220: user themes from `<config>/themes/*.json`, plugin-provided themes (`<plugin>:<slug>` namespaced), selected via `custom:<slug>` settings refs. Adds the `/theme` picker rows, ctrl+e edit, and a theme editor (name → color tokens → value flow). Palette consumers now render through `useResolvedTheme()` so overrides apply. The upstream safe-mode gate is intentionally omitted (no safe-mode concept in this fork).
-- **Lean system prompt and tool descriptions** — a single gate, `shouldUseCompactSystemPrompt()`, drives a compact prompt head and per-tool lean descriptions for newer lean-trained models; older models keep the verbose text. Prompt text is ported verbatim from the upstream binary and pinned by digest tests. Measured on the default tool set: tool descriptions 33.4k → 6.6k chars, static head 13.9k → 2.1k. Also restores sections the fork was missing in every mode: `context_management`, pronoun guidance, act-don't-rederive, plus lean-gated Delivering work and Corrections. The verbose head is realigned with upstream's six-section shape.
-- **`/init` interview realigned with upstream 2.1.220** — Phase 0 now probes for an existing project instruction file and branches into review-and-improve / leave-it / start-fresh; Q1 gains a "Let Noa Claude decide" fast path; Q2 becomes a hint rather than a hard filter; Phases 4–7 gate on the approved proposal. The gate is now reachable: it moved from a build flag that baseline builds always folded to false to an env-only switch (`NOA_CLAUDE_NEW_INIT`, legacy `CLAUDE_CODE_NEW_INIT`), still default-off.
-
-### Bug Fixes
-
-- **Launcher resolves config dirs at run time, not build time** — the emitted bootstrap no longer bakes the build machine's absolute home path into `dist/main.js` or overwrites a caller-supplied `CLAUDE_CONFIG_DIR`, so distributed builds resolve `~/.noa` for the user running them. Home resolution falls back to `os.homedir()` (fixing a relative `.noa` being created in the cwd when `HOME` is unset) and exits with a config error when nothing can be resolved.
-- **`--bare` mode hardening** — three fixes: it no longer deletes the caller's provider env (an explicitly supplied `ANTHROPIC_API_KEY` was being erased before the client was created); a Bearer `ANTHROPIC_AUTH_TOKEN` (how third-party providers like Kimi authenticate) is now reported as logged in instead of source `none`; and provider-routing keys in the `env` block of user/global settings.json are stripped so an active provider profile can't silently re-enter a bare session. `/provider` under `--bare` now reports the selection takes effect next session.
-- **Concurrent sessions clobbering settings.json** — `updateSettingsForSource` now holds a cross-process lock around a fresh read-modify-write, fixing the intermittent fullscreen-mode loss when two sessions wrote at once. Also adopts the upstream `tui` settings key, migrating off the legacy `tuiMode` on write.
-- **Auto permission mode was unselectable** — selecting Auto in Default permission mode snapped straight back to Manual: a fork-specific divergence mapped `auto` onto `default` during round-trip. Both halves are restored to upstream, and the rest of the panel is aligned (wording, layout, a new Worktree base ref row, removal of a redundant picker gate).
-- **Model identity and capability matching** — customer-run Bedrock, Vertex and Foundry are no longer treated as trusted model identities for the lean prompt (a configured model id proves nothing about the model behind it); they keep the verbose prompt unless a `lean_prompt` capability override opts in. The `[1m]` suffix is now ignored when matching a capability override, so the 1M-context variant of a pinned model can opt in. Session caches for tool schemas and prompt sections now key on the lean/verbose tier, so a mid-session `/model` switch no longer serves the previous tier's text.
-- **`cache-probe` reliability for third-party providers** — a per-run nonce guarantees the cold call misses long-TTL provider caches, read/creation cache tokens are split, and `[1m]`-suffixed model ids are normalized so the suffix no longer leaks to the API. The `/effort` message drops a redundant description and the effort notification folds in place.
-- **Settings panel alignment with upstream** — the Usage weekly-limit bars show a date when the reset is days out ("Resets Aug 3, 5pm" instead of a bare time), the bar column no longer gets squeezed, Status/Stats spacing and the Stats footer key hint now track focus, the Settings dialog drops its oversized title/subtitle header while restoring the small "Settings" tab-bar label, and the Config Model row resolves through `modelDisplayString` instead of rendering raw stored values like `sonnet[1m]`.
-
-### Changed
-
-- **Default permission mode renamed to Manual** — aligning with upstream 2.1.220: the status line and Shift+Tab cycle now show a named Manual mode (⏸, gray) alongside Plan / Accept edits / Auto. `manual` is accepted as an alias for `default` in settings.json's `defaultMode` and `--permission-mode`.
-- **`/extra-usage` renamed to `/usage-credits`** — with copy updated from "extra usage" to "usage credits" across all call sites (rate-limit upsells, API error hints, tips, the `/model` billing suffix). `/extra-usage` stays registered but hidden as an alias, and the `DISABLE_EXTRA_USAGE_COMMAND` env var keeps its name.
-
-### Tests
-
-- The suite is now hermetic against ambient provider env (`ANTHROPIC_BASE_URL`, `ANTHROPIC_DEFAULT_*_MODEL`, …) so a developer shell with an active provider profile can't flip tests to branches they never set up.
-- The ported lean prompt strings are pinned by digest tests against accidental edits; the verbose head's section shape, gates, and tone rules are pinned by a contract test.
-- Coverage added for the launcher env bootstrap (executing the emitted code with controlled env), the `--bare` settings-env strip, the ghost-provider-profile guard, and the settings-write lock.
+- Custom themes: user themes from `<config>/themes/*.json`, plugin-provided themes, `/theme` picker rows, ctrl+e edit, and a theme editor, ported from upstream 2.1.220.
+- Lean system prompt and tool descriptions for newer lean-trained models, cutting default tool descriptions from 33.4k to 6.6k characters and the static prompt head from 13.9k to 2.1k; older models keep the verbose text.
+- `/init` interview realigned with upstream 2.1.220, including a Phase 0 check for an existing project instruction file and a "Let Noa Claude decide" fast path (behind `NOA_CLAUDE_NEW_INIT`, default off).
+- The launcher now resolves config directories at run time instead of baking the build machine's home path into `dist/main.js`.
+- `--bare` mode no longer deletes a caller-supplied `ANTHROPIC_API_KEY`, correctly reports a Bearer `ANTHROPIC_AUTH_TOKEN` as logged in, and strips provider-routing keys from settings.json's `env` block.
+- Concurrent sessions writing `settings.json` at the same time no longer clobber each other's changes (cross-process lock); migrates the legacy `tuiMode` key to `tui`.
+- Selecting Auto permission mode in Default mode no longer snaps back to Manual.
+- Customer-run Bedrock, Vertex, and Foundry model identities are no longer treated as trusted for the lean prompt and keep the verbose prompt unless a capability override opts in.
+- `cache-probe` now uses a per-run nonce so it can't hit a long-TTL provider cache, and correctly normalizes `[1m]`-suffixed model ids.
+- Settings panel alignment fixes: weekly-limit bars show a reset date, Stats/Status spacing and footer hints track focus, and the Config Model row renders through `modelDisplayString`.
+- Default permission mode is renamed to Manual, matching upstream 2.1.220; `manual` is accepted as an alias for `default` in settings.json and `--permission-mode`.
+- `/extra-usage` is renamed to `/usage-credits` (old command stays registered as a hidden alias; `DISABLE_EXTRA_USAGE_COMMAND` env var keeps its name).
 
 ## 1.6.1
 
-### New Features
-
-- **Claude Opus 5** — added as the first-party Opus default: 1M native context (default and maximum), 128K max output, thinking on by default (turning it off requires an explicit disable, and is only accepted at effort `high` or below — higher efforts are lowered rather than failing the request). Pricing is $5/$25 standard and $10/$50 in fast mode, so fast-mode tier selection is now model-aware. Third-party backends still default to Opus 4.8 and reach Opus 5 only by explicit pin.
-- **Auto-mode classifier queue** (opt-in, default-off) — a per-agent FIFO serializer so concurrent tool checks no longer fan out parallel classifier API calls. Enable via `NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE` or the config flag. After dequeue, permission mode is re-validated and falls back to deny/ask if it changed while queued.
-
-### Bug Fixes
-
-- **Resume crash on malformed attachments** — a transcript with a missing or malformed attachment payload crashed resume during attachment migration. Malformed payloads are now validated and dropped (with a warning that the transcript is partially corrupt) instead of throwing.
-- **Prompt history lost on write failure** — `immediateFlushHistory` cleared pending entries before the disk write, so a failed append silently dropped those prompts. Entries are now removed only after a successful write and stay queued for retry, with the Esc-rewind-during-write race guarded so a rewound entry isn't resurrected from disk.
-- **Third-party Opus fallback chain** — skipped Opus 4.5 entirely (4.6 jumped straight to 4.1); now falls through 5 → 4.8 → 4.7 → 4.6 → 4.5 → 4.1.
-- **Model migration notifications** — hardcoded "Opus 4.6"/"Sonnet 4.6" while the migrations write bare family aliases, telling users they'd been moved to a version they hadn't. Now resolved at notification time.
-- **Stale model strings** — `/model` 1M-unavailable messages no longer name a version (matching upstream, which names only the family), and default-model descriptions use the current "Best for everyday, complex tasks" wording.
+- Added Claude Opus 5 as the first-party Opus default: 1M native context (default and max), 128K max output, thinking on by default; fast mode pricing is model-aware ($5/$25 standard, $10/$50 fast). Third-party backends still default to Opus 4.8.
+- Added an opt-in auto-mode classifier queue (`NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE`) that serializes concurrent tool-permission classifier calls per agent instead of firing them in parallel.
+- Fixed a resume crash on transcripts with missing or malformed attachment payloads; they are now dropped with a warning instead of throwing.
+- Fixed prompt history loss on write failure: `immediateFlushHistory` now removes entries only after a successful disk write and keeps failed entries queued for retry.
+- Fixed the third-party Opus fallback chain skipping Opus 4.5; it now falls through 5 → 4.8 → 4.7 → 4.6 → 4.5 → 4.1.
+- Fixed model migration notifications hardcoding version numbers ("Opus 4.6"/"Sonnet 4.6") instead of resolving the actual migrated family at notification time.
+- Fixed `/model` 1M-unavailable messages and default-model descriptions to drop hardcoded version strings and match current upstream wording.
 
 ## 1.6.0
 
-### New Features
-
-- **Auto permission mode (shift+tab)** — the previously-mirrored YOLO/transcript classifier subsystem is now live behind a dedicated `AUTO_MODE` flag (shipped enabled in baseline builds), replacing the always-false `TRANSCRIPT_CLASSIFIER` gate. Includes an original (non-Anthropic) classifier system prompt and permissions template, upstream 2.1.210 model gate alignment (denylist instead of allowlist), and classifier request-shape alignment (two-stage XML classifier, temperature, retry count), plus a local customization swapping `auto`/`bypass` order in the shift+tab cycle.
-- **Probe-once classifier fallback** — when the main loop model can't self-classify (outside the trusted Sonnet/Haiku families), the first classifier call determines whether the default-Sonnet route works and remembers the verdict for the rest of the session instead of re-probing on every call.
-- **Sonnet 5 default** — now the recommended default model across pickers and refusal-message suggestions, with time-boxed introductory pricing ($2/$10 per Mtok through 2026-08-31, then $3/$15) and refactored provider-aware fallbacks (teammate model, refusal suggestions).
-- **`/doctor` agentic health-check** — converted from a static screen dispatch into a prompt-driven command that runs read-only diagnostics (install health, unused extensions, memory bloat, slow hooks, context cost, permission-mode tuning) and proposes gated fixes.
-- **`/autocompact` command** — persisted `autoCompactWindow` setting (`auto | 500k | 1m | 200000 | 200`), previously only configurable via env var.
-- **Precomputed & reactive compaction** (opt-in, default-off) — background summary arming to skip the compact API round-trip, and a real reactive-compact implementation that compacts in place and retries when a turn comes back prompt-too-long.
-- **Session-wide safety caps** — subagent spawns and WebSearch calls now cap at 200/session, resetting on `/clear`.
-
-### Bug Fixes
-
-- **Forged system-reminder tag injection** — untrusted content (memory files, hook stdout, a cloned repo's CLAUDE.md) could previously forge `<system-reminder>` block boundaries; now escaped.
-- **Mythos 5 capability gaps** — completed thinking/context/structured-output allowlists to match Fable 5 (was silently degrading: rejected sampling params sent, empty thinking-UI blocks, context caps incorrectly capped).
-- **StreamingToolExecutor concurrency cap** — now matches `runTools`' concurrency limit, instead of starting all concurrent-safe tool calls at once.
-- **Request-too-large message** — corrected to reference the actual 32MB API request ceiling (was reporting the 20MB per-PDF encoding target), and now suggests `/compact`.
-- **Provider-switch cache invalidation** — clears the model-string cache and classifier probe state on provider switch, preventing stale verdicts from a prior route.
-- **Compact chain hardening** — precompute slot restricted to the main conversation (was leaking across subagents), lifecycle/cleanup gaps closed, and reactive-compact outcome messages now map to their distinct user-facing reasons.
-
-### Removed
-
-- **Bundled `claude-api` skill** — deregistered and deleted (~250KB of per-language reference docs).
-
-### Refactors
-
-- `docs/release-notes.md` restored as the single source of truth for release notes (a stray root `CHANGELOG.md` reintroduced in error is removed).
-- `precomputedCompact.ts` de-suppressed from `@ts-nocheck`.
+- Added auto permission mode (`shift+tab`) behind the `AUTO_MODE` flag, replacing the always-off `TRANSCRIPT_CLASSIFIER` gate, with its own classifier prompt/permissions template and model gating.
+- Added a probe-once classifier fallback that determines once per session whether the default-Sonnet route works for non-Sonnet/Haiku main models, instead of re-probing every call.
+- Made Sonnet 5 the recommended default model across pickers and refusal-message suggestions, with introductory pricing through 2026-08-31.
+- Converted `/doctor` into a prompt-driven agentic health check that runs read-only diagnostics and proposes gated fixes.
+- Added a persisted `/autocompact` command for setting `autoCompactWindow` (`auto | 500k | 1m | 200000 | 200`).
+- Added opt-in precomputed and reactive compaction that can skip the compact API round-trip and retry in place when a turn comes back prompt-too-long.
+- Added session-wide caps of 200 subagent spawns and 200 WebSearch calls per session, resetting on `/clear`.
+- Fixed forged `<system-reminder>` tag injection from untrusted content (memory files, hook stdout, cloned repo CLAUDE.md) by escaping such tags.
+- Fixed Mythos 5 missing thinking/context/structured-output capabilities that caused silent degradation.
+- Fixed `StreamingToolExecutor` concurrency to match `runTools`' concurrency limit instead of starting all safe tool calls at once.
+- Fixed the request-too-large message to reference the actual 32MB API request ceiling and suggest `/compact`.
+- Fixed provider-switch cache invalidation to clear the model-string cache and classifier probe state.
+- Hardened the compact chain: precompute restricted to the main conversation, lifecycle/cleanup gaps closed, and reactive-compact outcome messages mapped to distinct reasons.
+- Removed the bundled `claude-api` skill.
 
 ## 1.5.0
 
-### New Features
-
-- **Claude Sonnet 5 model support** — full model registration, cost tracking, and thinking/context handling for the new Sonnet 5 family.
-- **Live file-path autocomplete in bash mode** — file paths are now suggested and completed live while typing shell commands.
-- **`/cd` command** — moves the session's working directory without restarting the session.
-- **Logo animation sequences** — programmatic animation sequences and particle effects added to the startup logo.
-
-### Bug Fixes
-
-- **Effort slider theming** — slider labels for low/medium/high now use semantic theme tokens (`warning`/`success`/`permission`) instead of hardcoded ansi colors, so they adapt to the active theme; `xhigh` gets a dedicated shimmer effect; Speed/Intelligence labels renamed to Faster/Smarter.
-- **Hook matcher exact-match** — hyphenated matcher identifiers in hooks now require an exact match instead of a prefix match.
-- **Logo banner width** — banner now matches terminal width; fixed dim-color bleed in feed titles.
-- **Ghostty spinner alignment** — spinner rendering aligned with upstream Claude Code behavior.
-- **Diff/code tab rendering** — leading tabs are now converted to spaces when rendering code and diffs.
-- **Local-day stats bucketing** — daily stats now bucket and display by local day instead of UTC.
-- **Structured-outputs model allowlist** — aligned with Opus 4.7/4.8; Opus now defaults to a 1M context window.
-- **Permission mode fallback** — removed a redundant result fallback in `initialPermissionModeFromCLI`.
-- **TUI ratchet viewport** — fixed a feedback loop that could break the ratchet viewport.
-
-### Removed
-
-- **Computer-use feature** — removed the native `ComputerTool` and associated computer-use feature surface.
-
-### Refactors
-
-- Centralized progress types and tightened `Tool` typechecking.
-- Cleaned up Noa marketplace and launcher naming.
-- Isolated provider environment state in prompt tests to prevent cross-test pollution.
+- Added Claude Sonnet 5 model support, including cost tracking and thinking/context handling.
+- Added live file-path autocomplete in bash mode.
+- Added a `/cd` command to change the session's working directory without restarting the session.
+- Added programmatic animation sequences and particle effects to the startup logo.
+- Fixed effort slider theming to use semantic theme tokens instead of hardcoded colors; `xhigh` now gets a shimmer effect; Speed/Intelligence labels renamed to Faster/Smarter.
+- Fixed hook matcher to require an exact match on hyphenated identifiers instead of a prefix match.
+- Fixed the logo banner to match terminal width and fixed dim-color bleed in feed titles.
+- Fixed Ghostty spinner alignment to match upstream behavior.
+- Fixed diff/code tab rendering to convert leading tabs to spaces.
+- Fixed daily stats to bucket and display by local day instead of UTC.
+- Fixed the structured-outputs model allowlist to align with Opus 4.7/4.8; Opus now defaults to a 1M context window.
+- Removed the native `ComputerTool` and computer-use feature surface.
 
 ## 1.4.0
 
-### New Features
-
-- **Keep-tail auto-compact** — auto-compaction now preserves a verbatim recent tail instead of replacing the entire conversation with a summary. A pivot is chosen so that older history is summarized while the most recent messages (including in-flight tool chains) remain intact. Falls back to full compaction when the window is too small, the tail would exceed threshold headroom, or the conversation is already re-compacting in a chain. Controlled via `CLAUDE_CODE_AUTOCOMPACT_KEEP_TAIL` (default on).
-- **Compact safety-constraint preservation** — the compact prompt now explicitly instructs the model to preserve verbatim any safety or destructive-action constraints the user set (sensitive files, forbidden operations, secret handling) so they survive summarization.
-
-### Refactors
-
-- **Query loop harness extracted** — `query.ts` refactored into `query/transitions.ts` (state machine), `query/deps.ts` (dependency injection), `query/config.ts`, `query/tokenBudget.ts`, and `query/stopHooks.ts`. All `@ts-nocheck` annotations removed from the query directory; phantom types (`ToolUseSummaryMessage`, `StreamEvent`, `RequestStartEvent`, `TombstoneMessage`, `StopHookInfo`) now formally defined. Stop hooks are injectable via `QueryDeps` for testability.
-- **Dead-code cleanup (13 upstream-only flags)** — removed never-buildable branches for `BG_SESSIONS`, `COORDINATOR_MODE`, `DIRECT_CONNECT`, `FORK_SUBAGENT`, `KAIROS_GITHUB_WEBHOOKS`, `MCP_SKILLS`, `MONITOR_TOOL`, `REVIEW_ARTIFACT`, `SSH_REMOTE`, `TEMPLATES`, `TRANSCRIPT_CLASSIFIER`, `UDS_INBOX`, `WORKFLOW_SCRIPTS`. Added no-op stubs for `HISTORY_SNIP`, `KAIROS`, `TERMINAL_PANEL`, and `EXPERIMENTAL_SKILL_SEARCH` so the dev-full profile bundles cleanly. `FEATURES.md` updated with removal audit.
-- **Vestigial sourcemap cleanup** — stripped 12MB of stale inline sourcemaps from 531 source files (leftover from prior bundle reconstruction, mapping to obsolete positions). Tracked source size reduced from ~16.8MB to ~4.7MB for these files; no runtime or build effect.
-
-### Bug Fixes
-
-- **Query loop recovery hardened** — five fixes from harness review:
-  1. `stopHooks` snapshot now respects `startsWith` output-style suffixes so `/btw` and styled paths read fresh params.
-  2. Goal continuation prompt deduplicated: gated on `state.transition === undefined` instead of `turnCount === 1`, preventing duplicate injection on recovery re-entries.
-  3. Prompt-too-long re-yield now tracks `lastAssistantWithheld` so dev-full builds no longer emit withheld errors twice.
-  4. `max_output_tokens` recovery carries the escalated 64k cap through retries instead of resetting to the capped default.
-  5. `QueryDeps` merge filters explicit `undefined` before spreading, preventing sparse partials from overwriting production deps.
-- **Microcompact input clearing** — `clearOldToolResults` now also replaces large Write/Edit input strings (≥1000 chars) with a marker, preventing write-heavy sessions from retaining duplicate on-disk content that dwarfed actual tool results.
-- **Reactive compact stub** — added `services/compact/reactiveCompact.ts` no-op stub so `--feature=REACTIVE_COMPACT` builds no longer fail with "Could not resolve".
-- **Provider profile credential validation** — API keys now pass CJK/whitespace denylist normalization before becoming Bearer tokens, preventing malformed credentials from reaching the wire.
-- **Bedrock count_tokens adaptive thinking** — `countTokensWithBedrock` now branches on `modelSupportsAdaptiveThinking` for Opus 4.7/4.8 and Fable 5, fixing silent degradation to rough estimation when `budget_tokens` was rejected on adaptive-only models.
-- **Fire-and-forget promise rejection handling** — `recordTranscript` (3x in `QueryEngine.ts`) and stop-hook executions (`executePromptSuggestion`, `executeExtractMemories`, `executeAutoDream`) now attach `.catch(logError)` instead of relying solely on the global `unhandledRejection` net. Failed transcript writes log with context instead of surfacing as anonymous `tengu_unhandled_rejection`.
-- **Transcript logging rejection handling** — `useLogMessages.ts` enqueueWrite promise now catches rejections, preventing unhandled rejections from the logging pipeline.
-- **Remote skill stub contract** — corrected `remoteSkillState.ts` to match the expected stub contract used by `query/transitions.ts`.
-- **Kimi model display cleanup** — removed dead `kimi-for-coding` display branches from `model.ts`; display now renders the raw id with no marketing name.
-
-### Tests
-
-- **Query loop recovery tests** — 5 loop-level recovery tests via `QueryDeps` injection: `max_output_tokens` withhold+resume, limit exhaustion, model fallback without mutating caller options, empty assistant turn, maxTurns. Regression guard: recovery limit 3→0 turns 2 tests red.
-- **Stop-hook loop tests** — coverage for both stop-hook paths: `stop_hook_blocking` feeds the error back to the model and the second round receives `stop_hook_active=true`; `preventContinuation` ends the turn with the `stop_hook_prevented` terminal.
-- **Microcompact tests** — expanded coverage for large Write/Edit input clearing and tokens-saved accounting.
-- **Reactive compact tests** — stub contract verification.
-- **Auto-compact tests** — 172 lines covering tail pivot selection, tool-chain boundary snap, environment flag disable, small window, threshold headroom, and re-compaction chain fallback.
-- **Compact partial tests** — 72 lines covering `getPartialCompactMessagesToSummarize` direction behavior and auto partial failure notification suppression.
-- **Provider profile tests** — 63 lines covering credential validation and denylist behavior.
-- **Kimi display tests** — repinned to passthrough behavior after display branch removal.
+- Added keep-tail auto-compact: auto-compaction now preserves a verbatim recent tail (including in-flight tool chains) instead of replacing the whole conversation with a summary, controlled via `CLAUDE_CODE_AUTOCOMPACT_KEEP_TAIL` (default on).
+- Added compact safety-constraint preservation so the compact prompt instructs the model to keep user-set safety/destructive-action constraints verbatim through summarization.
+- Fixed query loop recovery: stop-hook output-style suffix matching, duplicate goal-continuation prompt injection, double withheld errors on prompt-too-long, `max_output_tokens` cap reset on retry, and `QueryDeps` merge overwriting production deps with `undefined`.
+- Fixed microcompact to also clear large Write/Edit input strings (≥1000 chars), preventing write-heavy sessions from retaining duplicate on-disk content.
+- Fixed `--feature=REACTIVE_COMPACT` builds failing to resolve by adding a `services/compact/reactiveCompact.ts` stub.
+- Fixed provider profile API keys to pass CJK/whitespace denylist normalization before becoming Bearer tokens.
+- Fixed `countTokensWithBedrock` silently degrading to rough estimation on adaptive-thinking-only models (Opus 4.7/4.8, Fable 5).
+- Fixed fire-and-forget promise rejections in `recordTranscript` and stop-hook executions to log with context via `.catch(logError)`.
+- Fixed an unhandled rejection in `useLogMessages.ts`'s enqueueWrite promise.
+- Fixed `remoteSkillState.ts` to match the stub contract expected by `query/transitions.ts`.
+- Removed dead `kimi-for-coding` display branches from `model.ts`; Kimi model ids now render as-is.
 
 ## 1.3.7
 
-### New Features
-
-- **Fable 5 model support** — added full model registration, cost tracking, thinking configuration, context-window upgrade logic, and beta-flag handling for the new Fable 5 model family.
-- **Size-triggered microcompact** — compaction now triggers automatically when the conversation exceeds a token-size threshold, with configurable thresholds and a visible "tokens freed" notice. `summarizeMetadata` includes a density budget anchor for more consistent summary quality.
-- **Away-summary `/config` toggle** — return recaps can now be enabled or disabled reactively from the settings panel, with state persisted across sessions.
-- **Explore/Plan agent personality names** — worker subagents in Explore and Plan modes now get stable display names from the historical-figure pool, with consistent color assignment across the UI.
-
-### Refactors
-
-- **Compact token savings normalized** — compact and away-summary token accounting unified so both paths report savings consistently. SDK schema updated to expose the normalized field.
-- **Size-based microcompact tightened** — post-review adjustments to the size-triggered microcompact path: threshold calculation hardened, test coverage expanded.
-- **Legacy path cleanup** — removed remaining `.claude-agent` path references from skills, PowerShell validation, IDE detection, secure storage, and error strings. All onboarding and project-instruction loading now uses `.noa` consistently.
-- **Dead code removal** — dropped `getVersionChangelog` from `build.ts`, removed stale `AWAY_SUMMARY` feature-flag entries from `FEATURES.md` and build audit, deleted root `CHANGELOG.md` (release notes live in `docs/release-notes.md`).
-
-### Bug Fixes
-
-- **Streaming tool execution opt-in** — the streaming tool execution gate was unconditionally false (GrowthBook hard-disabled). The default is now explicit and can be enabled with `NOA_CLAUDE_STREAMING_TOOL_EXECUTION=1`.
-- **Streaming tool execution recovery** — `StreamingToolExecutor.discard()` now aborts in-flight tools to prevent double-execution on fallback; the abort listener excludes `'streaming_fallback'` so the turn can retry instead of dying. Context modifiers from concurrency-safe tools are now applied in block order (previously silently dropped), matching `runTools` behavior.
-- **Query loop hardening** — yields a warning when a `max_output_tokens` error is withheld but tool execution continues; consumes `pendingToolUseSummary` before `blocking_limit`/`model_error` early returns; copies `toolUseContext` instead of mutating shared options on model fallback; injects the goal prompt before the `toolUseContext.messages` snapshot so tools see the injected prompt.
-- **WebSearch/WebFetch always loaded** — removed deferred-loading guards so both tools are available unconditionally, eliminating the silent-unavailability race.
-- **WebFetch permissions** — deny/ask rules now take priority over preapproved hosts; matching is case-insensitive; Windows `~\` home paths are resolved correctly before permission checks.
-- **Noa project instruction loading** — `.noa/project.md` and `.noa/CLAUDE.md` now load consistently across all onboarding and query paths; legacy `.claude-agent/project.md` fallback removed.
-- **OpenAI-compatible shim provider-safe** — the shim no longer assumes first-party Anthropic endpoints; provider detection and capability checks are now provider-agnostic.
-- **Away-summary alignment** — recap behavior realigned with official Claude Code 2.1.165 semantics.
-- **README** — clarified that this is an independent project, not an active upstream fork.
+- Added Fable 5 model support, including cost tracking, thinking configuration, and context-window upgrade logic.
+- Added size-triggered microcompact with configurable thresholds and a "tokens freed" notice.
+- Added a reactive `/config` toggle for away-summary return recaps, persisted across sessions.
+- Added stable historical-figure display names and consistent colors for Explore/Plan worker subagents.
+- Fixed the streaming tool execution gate being unconditionally off; it can now be enabled with `NOA_CLAUDE_STREAMING_TOOL_EXECUTION=1`.
+- Fixed `StreamingToolExecutor.discard()` to abort in-flight tools on fallback, preventing double-execution; context modifiers from concurrency-safe tools are now applied in block order.
+- Fixed query loop handling: warns on withheld `max_output_tokens` errors, consumes `pendingToolUseSummary` before early returns, avoids mutating shared options on model fallback, and injects the goal prompt before the messages snapshot.
+- Fixed WebSearch/WebFetch to load unconditionally instead of being deferred, removing a silent-unavailability race.
+- Fixed WebFetch permissions so deny/ask rules take priority over preapproved hosts, matching is case-insensitive, and Windows `~\` paths resolve correctly.
+- Fixed `.noa/project.md` and `.noa/CLAUDE.md` to load consistently across all onboarding and query paths; removed the legacy `.claude-agent/project.md` fallback.
+- Fixed the OpenAI-compatible shim to stop assuming first-party Anthropic endpoints.
+- Fixed away-summary recap behavior to align with official Claude Code 2.1.165 semantics.
 
 ## 1.3.6
 
-### Bug Fixes
-
-- **OpenAI-compatible streaming usage recovered** — the OpenAI shim never asked for token usage on streamed turns, so OpenAI (and every OpenAI-compatible provider) omitted the trailing usage chunk and cost/token tracking reported zero for streamed responses. Streaming requests now send `stream_options: { include_usage: true }`; the existing usage-only-chunk handling picks the numbers up unchanged. The rare endpoint that rejects the field can opt out with `CLAUDE_CODE_OPENAI_DISABLE_STREAM_USAGE`.
-- **OpenAI-compatible tool schemas no longer 400 under strict mode** — the shim hardcoded `strict: true` on every tool but only normalized the top-level `required`, so any tool with a nested optional field (`SendMessage`, and most MCP-server tools) produced a schema OpenAI/Azure reject with a 400. Tools are now sent non-strict by default, which preserves honest optionality across all providers and removes the side-effect of forcing top-level optional params to be required. Strict mode is available as an opt-in OpenAI/Azure reliability tweak via `CLAUDE_CODE_OPENAI_STRICT_TOOLS`, and its normalization is now fully recursive (every nested object, array item, and `anyOf`/`oneOf`/`allOf` branch gets `required` = all keys + `additionalProperties: false`, with strict-unsupported `$schema`/`$id` keys stripped).
+- Fixed OpenAI-compatible streaming requests to send `stream_options: { include_usage: true }`, restoring cost/token tracking that previously reported zero for streamed responses (opt out via `CLAUDE_CODE_OPENAI_DISABLE_STREAM_USAGE`).
+- Fixed OpenAI-compatible tool schemas 400ing under strict mode by defaulting tools to non-strict; strict mode is now opt-in via `CLAUDE_CODE_OPENAI_STRICT_TOOLS` with fully recursive schema normalization.
 
 ## 1.3.5
 
-### Bug Fixes
-
-- **3P Opus default realigned with upstream** — 1.3.4 dropped the Bedrock/Vertex/Foundry → previous-gen Opus fallback so all providers defaulted to Opus 4.8. Upstream Claude Code still ships that fallback (`if provider !== firstParty return opus47`), so this release restores it. Sonnet/Haiku already match upstream and are unchanged. Bedrock Opus 4.7/4.8 IDs also picked up the missing `us.` CRIS prefix. Users who want Opus 4.8 on 3P can still set `ANTHROPIC_DEFAULT_OPUS_MODEL`.
-- **`/claude-api` bundled skill populated** — the `claude-api` skill shipped with empty doc files, so `/claude-api` produced no usable content. All 41 reference docs are now populated to match upstream; the `migrate` and `managed-agents-onboard` flows resolve their references. Lazy file delivery keeps the runtime footprint at ~140KB per invocation instead of ~360KB. Fixed the underlying Bun `.md` loader bug in `build.ts` and `bunfig.toml` so skill imports receive raw markdown text instead of HTML.
-- **Compact summary direction labeling** — full-compact paths were not stamping the `direction` field, so `isStaleFullCompactSummary` and the display ternary both relied on the undefined default. The display label was also inverted, so legacy summaries rendered as "from this point" even though full-compact is semantically "up to this point". Both full-compact paths now stamp `direction: 'up_to'`; the display ternary only special-cases `'from'`.
-- **Partial compact scoped to the recent tail** — partial compaction now passes a `targetMessageCount` parameter so only the recent original-message tail is summarized, and the prompt carries a "Recent-message boundary" instruction. `formatCompactSummary` is hardened to extract the `<summary>` block before stripping `<analysis>`, so the latter can tolerate attributes without breaking the former.
-- **Direct resume handling tightened** — no more fall-through to a custom title search after a UUID lookup misses; the `multipleMatches` error no longer reports a count; custom-title searches use `stopAfterDistinctMatches` to short-circuit; `shouldShowResumeSummaryGate` is wrapped in `try/catch` so a malformed stored goal never blocks resume; `getSessionLogFileInfo` populates `fileSize` for the picker; `ResumeSummaryGate` accepts a `backLabel` prop. `searchSessionsByCustomTitle` is split into focused helpers.
-
-### Refactors
-
-- **Custom title match helpers** — `searchSessionsByCustomTitle` is split into `filterCustomTitleMatches`, `addCustomTitleMatch`, `finalizeCustomTitleMatches`, and `normalizeCustomTitle` so each step is independently testable and the main path reads as a small composition.
+- Fixed the 3P Opus default fallback (Bedrock/Vertex/Foundry → previous-gen Opus) that 1.3.4 had dropped, restoring upstream behavior; Bedrock Opus 4.7/4.8 ids also picked up the missing `us.` CRIS prefix.
+- Fixed the bundled `claude-api` skill shipping empty doc files; all 41 reference docs are now populated, and a Bun `.md` loader bug in `build.ts`/`bunfig.toml` is fixed so skill imports receive raw markdown.
+- Fixed compact summary `direction` labeling: full-compact paths now stamp `direction: 'up_to'`, and the inverted display label is corrected.
+- Fixed partial compaction to scope summarization to the recent tail via a `targetMessageCount` parameter.
+- Fixed direct resume handling: removed a fall-through to custom-title search after a UUID-lookup miss, dropped the count from the `multipleMatches` error, added `stopAfterDistinctMatches` short-circuiting, wrapped `shouldShowResumeSummaryGate` in `try/catch`, and populated `fileSize` for the session picker.
 
 ## 1.3.4
 
-### New Features
-
-- **`/goal` auto-verification** — `/goal` and `/goal replace` now accept `--max-turns N` and `--verify "<cmd>"` flags. When a verify command is set, it runs automatically after each eligible turn; a non-zero exit blocks goal completion regardless of the evaluator's verdict. Model-requested completion stays pending until both verify passes and the evaluator approves. Verify state is preserved across session restore.
-- **Built-in Explore/Plan subagents enabled by default** — `BUILTIN_EXPLORE_PLAN_AGENTS` now ships on for all build profiles. The GrowthBook A/B gate is hard-disabled in this build, so the feature is unconditional.
-- **Startup banner redesigned** — new 8-line block-font ASCII logo, rounded box corners, content-driven width, inline `/provider` hint, and refined info row ordering. The endpoint row is back; the minimum width is now 64.
-- **Single-file grep read registration** — `grep` / `egrep` / `fgrep` commands targeting a single file now register that file as "read", so a follow-up `Edit`/`Write` no longer needs an explicit `Read` first. Aligns with upstream Claude Code.
-
-### Refactors
-
-- **Compact prompts streamlined** — near-duplicate analysis instructions were merged into a parameterized helper, shared sections extracted into a constant, the summary section count was reduced from 9 to 8, an explicit `<summary>` tag instruction was added, and a density budget anchor was added. Net result: ~35% fewer prompt tokens per compact call with the same information fidelity.
-- **`execFileNoThrow` converted to async/await** — prerequisite for the new awaitable goal-verify path; uses execa's `cancelSignal` API.
-- **Goal state flag parsing** — ad-hoc parsing replaced with a typed `GoalFlagError` union, centralized error messages, and shared `GOAL_OPTIONS_USAGE` help text.
-- **Command-surface cleanup** — removed stale build-excluded entries (`/agents-platform`, `/torch`) and stub entries (`/onboarding`, `/env`) that no longer have a backing file. Verified zero string-literal references remain.
-
-### Bug Fixes
-
-- **Agent worktree notification guarantee** — background agent tasks could permanently occupy the coordinator panel when the worktree probe threw, because the throw skipped `enqueueAgentNotification` and `evictTerminalTask` is gated on `notified: true`. Added `safeWorktreeResult` / `safeCleanupWorktree` helpers and a finally-block safety net that emits a minimal `failed` notification if all normal dispatch paths were skipped. The handoff classifier and the worktree probe now run in parallel.
-- **Compact context recovery hardened** — `/compact` session recovery strengthened against malformed snapshots and interrupted streams, covering both interactive and auto-compact paths.
-- **Empty compact summary blocks** — prevented empty transcript blocks from appearing in compact summary output.
-- **Invalid thinking signature stripping** — thinking block signatures are bound to the API key/context that produced them; mid-session model/provider switches and interrupted streams could persist stale signatures that failed with a 400 on replay. Three replay paths are now closed: `/compact` strips all thinking before summarization (lossless since thinking is disabled there), `/resume` strips all thinking in `deserializeMessagesWithInterruptDetection`, and `filterInvalidSignatureThinkingBlocks` drops empty-signature blocks at any position in API normalization.
-- **Provider gating tightened** — first-party and third-party provider switching hardened across beta flag handling, model remapping, and WebSearch tool provider checks.
-- **Model adaptation for Opus 4.8** — Opus 4.7+ thinking defaults to `display: 'summarized'` in adaptive mode to avoid streaming empty thinking blocks; Opus 4.8 defaults to `high` effort (per the official models overview), with `xhigh` remaining opt-in; Sonnet 4.6 max output corrected from 128k to 64k (128k/300k is Batches-only).
-- **Compact cache cleanup** — removed redundant `getUserContext.cache.clear` calls from three sites; `postCompactCleanup()` already handles this internally.
-
-### Docs
-
-- **README** — fixed commands, shortcuts, and governance info.
-- **Operating guide** — documented the new `--max-turns` and `--verify` flags and auto-run verify behavior.
-- **FEATURES.md** — added `BUILTIN_EXPLORE_PLAN_AGENTS` (default-on) and audit entries for `DUMP_SYSTEM_PROMPT` and `SKIP_DETECTION_WHEN_AUTOUPDATES_DISABLED`.
+- Added `--max-turns N` and `--verify "<cmd>"` flags to `/goal` and `/goal replace`; the verify command runs automatically after each eligible turn and a non-zero exit blocks completion.
+- Enabled built-in Explore/Plan subagents by default for all build profiles.
+- Redesigned the startup banner with a new 8-line block-font ASCII logo, rounded corners, content-driven width, and an inline `/provider` hint.
+- Fixed single-file `grep`/`egrep`/`fgrep` targets to register as "read", so a follow-up `Edit`/`Write` no longer needs an explicit `Read` first.
+- Fixed background agent tasks permanently occupying the coordinator panel when the worktree probe threw, by adding safe worktree helpers and a fallback `failed` notification.
+- Fixed `/compact` session recovery to better handle malformed snapshots and interrupted streams.
+- Fixed empty compact summary blocks appearing in transcript output.
+- Fixed stale thinking-block signatures causing 400s on replay: `/compact` strips thinking before summarization, `/resume` strips thinking during deserialization, and empty-signature blocks are dropped during API normalization.
+- Fixed provider switching hardening across beta flag handling, model remapping, and WebSearch provider checks.
+- Fixed Opus 4.7+ thinking defaults (`display: 'summarized'`) to avoid streaming empty thinking blocks; Opus 4.8 now defaults to `high` effort; Sonnet 4.6 max output corrected from 128k to 64k.
+- Fixed redundant `getUserContext.cache.clear` calls, since `postCompactCleanup()` already handles it.
 
 ## 1.3.3
 
-### New Features
-
-- **Claude Opus 4.8** — added support for the new flagship model.
-- **OpenAI-compatible `reasoning_effort` translation** — opt-in via `CLAUDE_CODE_OPENAI_REASONING_EFFORT`; maps effort level to OpenAI's top-level `reasoning_effort` field. Max is clamped to `xhigh` (no OpenAI equivalent). Bedrock 4.7/4.8 effort allowlist also added.
-- **Hide pre-compact tail from main view** — full-compact preserved tail no longer renders alongside its source summary; transcript (`ctrl+o`) still shows everything for inspection.
-
-### Refactors
-
-- **Drop incremental full-compact path** — the incremental checkpointing added in 1.3.2 is removed in favor of a simpler full-history rewrite. Edge cases (UUID collisions, summary ordering, stale-tail visibility) had accumulated; the cost was not paying off in practice. `compactConversation` now summarizes the whole post-boundary history in one pass.
-- **Shared memory-file detection in compact** — centralized the JSONL memory-file detection helper so both compact paths and the session-memory path agree on the boundary.
-
-### Bug Fixes
-
-- Fixed `Opus 4.7+` 400s on `temperature` / `top_p` / `top_k` — those models removed sampling params; `verifyApiKey` and `queryModel` now skip `temperature` for `opus-4-7` and `opus-4-8`.
-- Fixed `/provider` success string and dismissed-modal transcript entries leaking into the model context — both routes now use `display: 'skip'` plus a transient notification, since `SystemLocalCommandMessage` is wrapped as a user message by `normalizeMessagesForAPI` and shipped to the API.
-- Fixed partial-compact duplicate-UUID collision in fullscreen rendering via per-base-key dedup counters.
-- Fixed MCP tool input schemas that the Anthropic API rejects (top-level `oneOf` / `anyOf` / `allOf` or missing `type`) — `normalizeToolInputSchema` flattens composition keywords and defaults the type to `object`.
-- Fixed `scope: "global"` system-prompt cache gating — broadened from "MCP tools only" to "any non-deferred tool", so built-in-tool-only requests no longer hit the 400.
-- Fixed compact summary ordering — the post-compact message list now places `summaryMessages` after `boundaryMarker` and before any preserved content, matching the documented invariant.
-- Fixed subagent worktree creation leaking the personality name on failure; corrected `daVinci` → `DaVinci` in the worker name pool.
-- Updated default model health check to `Opus 4.8`; Bedrock 3P effort now defaults to `xhigh` via the provider allowlist.
-
-### Chores
-
-- Cleaned up review-flagged doc debt and a stale comment in `processSlashCommand.tsx` that contradicted the unconditional-skip code path.
-- Updated launcher release notes to match the new compact behavior.
+- Added Claude Opus 4.8 model support.
+- Added opt-in OpenAI-compatible `reasoning_effort` translation via `CLAUDE_CODE_OPENAI_REASONING_EFFORT` (clamped to `xhigh`); added Bedrock 4.7/4.8 effort allowlist.
+- Hid the pre-compact preserved tail from the main view after full-compact; `ctrl+o` transcript still shows everything.
+- Removed the incremental full-compact checkpointing path added in 1.3.2 in favor of a simpler single-pass full-history rewrite.
+- Fixed Opus 4.7+ 400 errors on `temperature`/`top_p`/`top_k` by skipping sampling params for `opus-4-7` and `opus-4-8`.
+- Fixed `/provider` success messages and dismissed-modal transcript entries leaking into model context by using `display: 'skip'` with a transient notification.
+- Fixed a partial-compact duplicate-UUID collision in fullscreen rendering via per-base-key dedup counters.
+- Fixed MCP tool input schemas with top-level `oneOf`/`anyOf`/`allOf` or missing `type` being rejected by the API; `normalizeToolInputSchema` now flattens composition keywords and defaults the type to `object`.
+- Fixed `scope: "global"` system-prompt cache gating to cover any non-deferred tool, not just MCP tools.
+- Fixed compact summary ordering to place `summaryMessages` after `boundaryMarker` and before preserved content.
+- Fixed subagent worktree creation leaking the personality name on failure, and corrected `daVinci` to `DaVinci` in the worker name pool.
+- Updated the default model health check to Opus 4.8; Bedrock 3P effort now defaults to `xhigh`.
 
 ## 1.3.2
 
-### New Features
-
-- **Incremental compaction checkpoints** — full compaction now preserves a recent original-message tail and incrementally updates the prior checkpoint instead of repeatedly re-summarizing the same history.
-
-### Refactors
-
-- **Launcher and bundle hygiene** — `noa` now uses bundled metadata for compatibility checks, keeps mtime-based source rebuilds behind `CLAUDE_CODE_LAUNCHER_AUTO_REBUILD=1`, and rebuild watching ignores non-bundle paths.
-- **Command surface cleanup** — removed dead build-excluded command registrations and the stale stub source directories they depended on.
-
-### Bug Fixes
-
+- Full compaction now preserves a recent original-message tail and incrementally updates the prior checkpoint instead of re-summarizing the same history each time.
 - Fixed compact cancel UX so manual compact, auto-compact, and message-selector summarize flows treat `Esc`/abort as cancellation instead of surfacing generic error states.
 - Fixed highlight loading and session title fallback paths that could trigger hook-order issues or malformed titles.
 - Fixed compact progress UI cues so compaction is visibly distinct from regular request activity.
 - Fixed launcher version display so `noa` shows a stable user-facing version instead of a stale dev bundle suffix.
-- Fixed session-memory compaction to run `PreCompact` and `PostCompact` hooks and to label the boundary marker with the actual trigger (`manual` vs `auto`). Previously the fast path bypassed both hooks and always wrote `auto`. Users with heavy `PreCompact` hooks will see the hook latency on every auto-compact attempt now, including ones that previously skipped it.
+- Fixed session-memory compaction to run `PreCompact` and `PostCompact` hooks and label the boundary marker with the actual trigger (`manual` vs `auto`) instead of always writing `auto`.
 
 ## 1.3.1
 
-### New Features
-
-- **Worker personality names** — generic worker subagents now get stable display names from a deterministic historical-figure pool, with color assignment that stays consistent across the UI.
-
-### Refactors
-
-- **React runtime deduplication** — build output now resolves `react`, `react-dom`, and `react-reconciler` through a single physical path so the bundled app does not carry duplicate React runtimes.
-- **Claude in Chrome optional dependency handling** — startup now treats `@ant/claude-for-chrome-mcp` as truly optional and avoids auto-enabling the feature when the package is unavailable.
-
-### Bug Fixes
-
+- Generic worker subagents now get stable display names from a deterministic historical-figure pool, with consistent color assignment across the UI.
 - Fixed `bun run dev` and bundled startup from trying to resolve a missing `@ant/claude-for-chrome-mcp` package as if it were required.
-- Fixed `Claude in Chrome` auto-enable logic so the feature does not get advertised or wired up when the optional MCP package is absent.
+- Fixed `Claude in Chrome` auto-enable logic so the feature is not advertised or wired up when the optional MCP package is absent.
 
 ## 1.3.0
 
-### New Features
-
-- **Complete curl-installer distribution pipeline** — native install/uninstall/update chain via `curl -fsSL https://noa.ai/install.sh | bash` with atomic swap and rollback, compatible with Homebrew, WinGet, and apt/dnf.
-- **Opus 4.7 xhigh effort level** — new xhigh speed/intelligence tier for Opus 4.7, removing the per-level capability gate and delegating clamping to runtime.
-- **Auto-dream hardening** — lock stamp moved to post-success; adds model downshift and session cap for resource-bound environments.
-
-### Refactors
-
-- **Global rebrand** — all `.claude-agent` config paths, startup banners, and mode aliases renamed to `.noa` / `Noa` / `noa` / `Noa Claude` across the entire codebase.
-- **Onboarding simplification** — drop redundant lodash memoize wrapper; drop sticky completion flag (derive from cwd state instead).
-- **Provider profile cleanup** — `ENABLE_TOOL_SEARCH` removed from managed env keys.
-
-### Bug Fixes
-
+- Added a curl-installer distribution pipeline (`curl -fsSL https://noa.ai/install.sh | bash`) with atomic swap and rollback, compatible with Homebrew, WinGet, and apt/dnf.
+- Added an `xhigh` speed/intelligence effort level for Opus 4.7.
+- Auto-dream lock stamp now moves to post-success and adds model downshift and a session cap for resource-bound environments.
 - Fixed Windows cross-project resume producing a PowerShell-incompatible `cd` command.
 - Fixed spinner and elapsed-time disappearing after terminal resize or window refocus.
-- Fixed skill list overflowing tab bounds inside margin box (constrained height + wrap).
+- Fixed skill list overflowing tab bounds inside the margin box.
 - Fixed prompt suggestions not responding to mouse hover/click.
-- Fixed provider command race condition and error message missing for third-party users.
+- Fixed a provider command race condition and a missing error message for third-party users.
 - Fixed computer-use chat workflows taking routine screenshots; now prefers keyboard-driven search-selection in WeChat and similar apps.
-- Fixed auto-compact entering infinite loop when collapse threshold reaches zero.
-- Fixed prompt-cache attaching dynamic attribution header to `systemHash` (stripped).
+- Fixed auto-compact entering an infinite loop when the collapse threshold reaches zero.
+- Fixed prompt-cache attaching a dynamic attribution header to `systemHash`.
 - Fixed subagent resume losing cwd context and compact rollback leaving orphaned state.
-- Fixed sync/async write race in sessionStorage transcript writes.
-- Fixed release-notes sidebar layout rebalancing.
-
-### Chores
-
-- README rewritten to 172 lines with feature-first structure, keyboard shortcuts, agent execution guidance, and complete session commands.
+- Fixed a sync/async write race in sessionStorage transcript writes.
+- Fixed release notes sidebar layout rebalancing.
 
 ## 1.2.0
 
-### New Features
-
-- **Native macOS Computer Use** — replaced the Anthropic MCP-based desktop control path with a self-contained macOS implementation built on `open`, AppleScript, `cliclick`, `screencapture`, `pbcopy`, and `pbpaste`.
-- **App-first workflow** — GUI actions now require the intended app to be opened or activated first, with frontmost-app guards to keep follow-up actions anchored to the right window.
-- **Search confirmation flow** — search-driven interactions now treat contact/item selection and message entry as separate phases, requiring `Return` after search results before typing the next payload.
-- **App identity aliases** — common app names, localized names, and bundle ids are normalized so WeChat, Weixin, 微信, and similar variants resolve consistently.
-
-### Refactors
-
-- **Desktop control hardening** — coordinate actions now require a fresh screenshot context and invalidate cached coordinates after mouse actions, reducing stale-click failures.
-- **Clipboard-backed typing** — non-ASCII and long text are routed through clipboard paste with clipboard restoration to avoid corruption from key synthesis.
-- **AppleScript gating** — low-risk `open location` calls pass through while destructive AppleScript verbs still trigger approval.
-
-### Bug Fixes
-
+- Replaced the Anthropic MCP-based desktop control path with a native macOS Computer Use implementation built on `open`, AppleScript, `cliclick`, `screencapture`, `pbcopy`, and `pbpaste`.
+- GUI actions now require the intended app to be opened or activated first, with frontmost-app guards to keep follow-up actions anchored to the right window.
+- Search-driven interactions now treat contact/item selection and message entry as separate phases, requiring `Return` after search results before typing the next payload.
+- Common app names, localized names, and bundle ids are normalized so WeChat, Weixin, 微信, and similar variants resolve consistently.
 - Fixed focus drift after app switching by reactivating the target app before foreground actions when needed.
 - Fixed `menu_click` so real menu-path failures are no longer hidden by alias retries.
 - Fixed retry behavior so a failed GUI flow restarts from app activation instead of assuming the previous app state is still valid.
 - Fixed log path matching for normalized project paths, including Windows drive letters.
 
-### Chores
-
-- Removed legacy computer-use MCP wrappers, cleanup helpers, and dead stub commands.
-- Updated prompt guidance and regression coverage for the new computer-use flow.
-
 ## 1.1.0
 
-### New Features
-
-- **Goal evaluator-driven auto-continue** — goals now automatically continue up to 5 turns when the evaluator determines work remains. Each turn the evaluator scores goal progress and decides whether to keep going.
-- **Richer goal state** — goals now track `autoContinueTurns`, `maxAutoContinueTurns`, `lastEvaluatorReason`, `completedAt`, and `stopReason` for better visibility into goal lifecycle.
-- **Goal evaluator Haiku integration** — `evaluateGoalCompletion()` queries Haiku with a conservative prompt and JSON schema output to score goal progress from conversation context.
-- **Centralized goal notice formatting** — `goalNotices.ts` consolidates all goal lifecycle message templates (`formatGoalCompleteNotice`, `formatGoalBudgetReachedNotice`, `formatGoalPausedNotice`, etc.) for consistent user-facing output.
-- **Goal audit logging** — `goalAudit.ts` emits structured debug logs for all goal state transitions (start, success, failure, auto-continue, paused, budget-limited).
-
-### Refactors
-
-- **Sessions tab removed** — agents UI cleaned up: removed `SessionsView`, `SessionDetail`, `SessionRow`, and `useSessionPolling`. AgentsList and AgentsMenu simplified.
-- **Build system migrated** — build script refactored from `Bun.spawn` CLI to `Bun.build()` API with a stub plugin for optional modules (`@ant/claude-for-chrome-mcp`, `@anthropic-ai/sandbox-runtime`) and feature-flag preprocessing.
-- **Tree connector visual refresh** — replaced `⎿` (U+23BF) with `└─` box-drawing character across all UI prefix gutters for cleaner terminal aesthetics.
-
-### Bug Fixes
-
+- Goals now automatically continue up to 5 turns when the evaluator determines work remains, scoring progress each turn.
+- Goal state now tracks `autoContinueTurns`, `maxAutoContinueTurns`, `lastEvaluatorReason`, `completedAt`, and `stopReason`.
+- Added a Haiku-based goal evaluator that scores goal progress from conversation context via a JSON schema output.
 - Fixed coordinator task panel visibility filtering.
-- Fixed `decideGoalEvaluatorAction` to return `exhausted` when auto-continue turn limit is reached (instead of incorrectly calling the evaluator).
-- Fixed context truncation in `buildGoalEvaluatorContext` to tail-first (preserving latest evidence) instead of head-last.
-
-### Chores
-
-- Added `node-forge`, `@pondwader/socks5-server` as transitive dependencies via `@anthropic-ai/sandbox-runtime`.
-- Added `@anthropic-ai/vertex-sdk` for Vertex AI integration.
+- Fixed `decideGoalEvaluatorAction` to return `exhausted` when the auto-continue turn limit is reached instead of incorrectly calling the evaluator.
+- Fixed context truncation in `buildGoalEvaluatorContext` to be tail-first (preserving latest evidence) instead of head-last.
 
 ## 1.0.9
 
-### New Features
-
-- Added Sessions view — view, select, and kill active agent sessions directly from the agents menu.
-- CLI `agents` command now displays active sessions alongside configured agents.
-
-### Bug Fixes
-
-- Fixed emoji highlighting using incorrect UTF-16 code unit boundaries — now uses Intl.Segmenter grapheme boundaries for proper multi-grapheme emoji handling.
-- Fixed multi-image paste so each image correctly captures its own undo state using synchronous ref writes.
+- Added a Sessions view to view, select, and kill active agent sessions from the agents menu.
+- The `agents` command now displays active sessions alongside configured agents.
+- Added an `xhigh` effort level option for Opus 4.7+ models.
+- Fixed emoji highlighting using incorrect UTF-16 code unit boundaries — now uses grapheme boundaries for proper multi-grapheme emoji handling.
+- Fixed multi-image paste so each image correctly captures its own undo state.
 - Fixed dark theme hyperlink color (blue → cyan) for better accessibility on dark terminals.
-- Fixed symlink path resolution by adding safeRealpath fallback for broken symlinks in settings detection.
-- Fixed marketplace key resolution to match by source when settings key differs from manifest name.
-
-### Chores
-
-- Added `xhigh` effort level option for Opus 4.7+ models.
-- GradientBanner now correctly passes displayModelLabel to provider detection.
+- Fixed symlink path resolution with a fallback for broken symlinks in settings detection.
+- Fixed marketplace key resolution to match by source when the settings key differs from the manifest name.
 
 ## 1.0.8
 
-### New Features
-
-- Increased slash-command overlay visible items from 5 to 12 for a more browsable fullscreen experience.
-
-### Bug Fixes
-
+- Increased the slash-command overlay's visible items from 5 to 12 for a more browsable fullscreen experience.
 - Refactored system prompt generation to extract core execution guards into a dedicated section, ensuring these constraints are always present regardless of output style configuration.
 - Removed the automatic scroll repin behavior when typing into an empty prompt, reducing interruption while reading long output.
 - Fixed ink viewport resize behavior to preserve scrollback in default (non-alt-screen) mode.
 
-### Chores
-
-- Added `.claude-agent/settings.local.json` to `.gitignore`.
-
 ## 1.0.7
-
-### Bug Fixes
 
 - Fixed MCP tool results that return both `content` and `structuredContent` so visible blocks are preserved instead of being replaced by JSON.
 - Fixed normal worktree creation to base new worktrees on local `HEAD`, preserving unpushed commits.
-- Fixed npm plugin cache updates so unpinned packages refresh on explicit update and semver ranges are compared against cached versions correctly.
-- Fixed `/context` output so the transcript stays visible without being added to the model-visible message history.
+- Fixed npm plugin cache updates so unpinned packages refresh on explicit update and semver ranges compare correctly against cached versions.
+- Fixed `/context` output so the transcript stays visible without being added to model-visible message history.
 - Fixed MCP URL policy matching for mixed-case schemes and hosts.
 - Fixed parallel Bash execution so read-only Bash failures no longer cancel unrelated read-only siblings.
 
-### Chores
-
-- Added regression coverage for the MCP, worktree, plugin cache, `/context`, policy matching, and streaming executor fixes.
-
 ## 1.0.6
 
-### Bug Fixes
-
-- Fixed release notes panel sometimes not appearing after upgrade because `lastReleaseNotesSeen` was written before the async changelog cache had loaded.
+- Fixed the release notes panel sometimes not appearing after upgrade because `lastReleaseNotesSeen` was written before the async changelog cache had loaded.
 - Fixed release notes panel flicker on startup by reading `hasReleaseNotes` once via lazy initialization instead of re-evaluating each render.
 - Fixed `/release-notes` so Enter expands the selected entry instead of immediately dismissing the panel.
 - Fixed `/release-notes` expanded view to stay within a fixed viewport and scroll instead of overflowing the terminal.
 
-### Chores
-
-- Added regression coverage for the synchronous release notes accessor's bundled-changelog fallback.
-
 ## 1.0.5
-
-### New Features
 
 - Exposed `bypass permissions` to local users.
 - Improved trust handling so the home directory can be trusted without leaking that trust to child directories.
-
-### Bug Fixes
-
 - Fixed fullscreen exit cleanup so residual screen artifacts no longer linger after leaving `/tui fullscreen`.
 - Fixed onboarding and trust dialogs so setup screens render and dismiss more consistently.
 - Fixed Bedrock `application-inference-profile` requests for Opus 4.7 by resolving the backing model before thinking/effort capability checks.
-- Fixed `thinking.type.enabled is not supported` 400s on Bedrock Opus 4.7 inference profiles.
-
-### Chores
-
-- Added runtime coverage for the Bedrock Opus 4.7 thinking path and home-directory trust inheritance.
+- Fixed `thinking.type.enabled is not supported` 400 errors on Bedrock Opus 4.7 inference profiles.
 
 ## 1.0.4
 
-### New Features
-
-- Added `xhigh` effort level for Opus 4.7+ models.
+- Added an `xhigh` effort level for Opus 4.7+ models.
 - Added support for GitLab and Bitbucket PR URLs in addition to GitHub.
 - Added `CLAUDE_CODE_HIDE_CWD` and `DISABLE_UPDATES` environment variables.
-- Added `duration_ms` field to PostToolUse hooks with corrected timeout default.
+- Added a `duration_ms` field to PostToolUse hooks with a corrected timeout default.
 - Exposed effort level and thinking state to the statusline.
 - Added vim visual and visual-line modes.
-- Implemented automatic terminal theme detection (light/dark).
-- Improved skills menu with better invocation guidance.
-
-### Bug Fixes
-
+- Added automatic terminal theme detection (light/dark).
+- Improved the skills menu with better invocation guidance.
 - Fixed branch fork copying dangling `tool_use` entries from compacted/snip-removed transcript entries.
-- Fixed malformed hooks in `settings.json` causing entire config to be rejected — now gracefully filters invalid hooks.
+- Fixed malformed hooks in `settings.json` causing the entire config to be rejected — invalid hooks are now filtered out gracefully.
 - Fixed `is_error` flag being lost when PostToolUse hooks replace non-MCP tool output.
-- Fixed PostToolUse hooks `updatedMCPToolOutput` field to work for all tools (was MCP-only).
-- Fixed resume race condition, UI lock, and fragile error classification.
-- Fixed compact distinguished exhaustion, error, and `media_unstrippable` failure messages.
-- Fixed wiki infinite loop by removing message state from `useEffect` dependencies.
+- Fixed PostToolUse hooks' `updatedMCPToolOutput` field to work for all tools instead of only MCP tools.
+- Fixed a resume race condition, UI lock, and fragile error classification.
+- Fixed compact to distinguish exhaustion, error, and `media_unstrippable` failure messages.
+- Fixed a wiki infinite loop by removing message state from a `useEffect` dependency array.
 - Fixed C++ and C# file extension aliases in the Write tool.
 - Fixed rename error logging and memory error messages.
 - Fixed session atomic branch writes and tag cleanup.
-- Fixed feedback submission routing to GitHub Issues instead of Anthropic API.
-- Fixed export dialog using deprecated `writeFileSync` — now uses async `writeFile`.
-- Fixed startup banner using sync FS calls — now uses `fs/promises`.
-- Fixed feedback survey transcript sharing to no longer POST to Anthropic.
+- Fixed feedback submission routing to GitHub Issues instead of the Anthropic API.
+- Fixed the export dialog using deprecated `writeFileSync` — now uses async `writeFile`.
+- Fixed the startup banner using sync FS calls — now uses `fs/promises`.
+- Fixed the feedback survey transcript sharing to no longer POST to Anthropic.
 - Fixed startup prefetches to be gated on `isFirstPartyAnthropicBaseUrl`.
 - Fixed privacy by removing Anthropic URLs and internal-only references.
-- Fixed effort slider Ctrl+C handling to properly exit through global exit path.
+- Fixed effort slider `Ctrl+C` handling to properly exit through the global exit path.
 - Fixed `noa claude` prompt and model chain alignment.
 - Fixed Opus 4.7 compatibility issues and updated hardcoded models.
-- Fixed fullscreen pill and teammate snapshot.
-- Fixed path references and dev-experience improvements.
-
-### Chores
-
-- Unified Noa Claude branding across the codebase.
-- Removed dead JS stubs and converged source stubs to TypeScript.
-- Restored gated runtime contracts.
-- Updated README with dev commands, env vars, and expanded command list.
+- Fixed the fullscreen pill and teammate snapshot.
 
 ## 1.0.3
 
 - Fixed plan mode state inconsistency: `/plan open` and `/plan <description>` now work regardless of current mode.
-- Fixed MCP OAuth error handling when auth server returns non-JSON (captive portals, proxy auth pages).
+- Fixed MCP OAuth error handling when the auth server returns non-JSON (captive portals, proxy auth pages).
 - Fixed Windows CRLF paste handling in prompt input.
 - Improved command suggestion highlighting in autocomplete.
-- Refactored SkillsMenu to standard React patterns (removed React compiler runtime dependency).
 
 ## 1.0.2
 
-- Unified `/status`, `/config`, `/usage`, and `/stats` onto the new status panel, with corrected tab navigation and layout.
-- Fixed banner/provider refresh so clawd and gradient banner content updates correctly after `/login` and provider switches in default TUI mode.
+- Unified `/status`, `/config`, `/usage`, and `/stats` onto a new status panel, with corrected tab navigation and layout.
+- Fixed banner/provider refresh so gradient banner content updates correctly after `/login` and provider switches in default TUI mode.
 - Improved model resolution after auth changes so provider-backed defaults are picked up consistently.
 
 ## 1.0.1
 
-- Added `/tui` command to toggle between default and fullscreen (no-flicker) terminal UI mode.
-- Fixed CondensedLogo never showing — the simplified mascot layout now correctly displays after onboarding and release notes are complete.
+- Added a `/tui` command to toggle between default and fullscreen (no-flicker) terminal UI mode.
+- Fixed `CondensedLogo` never showing — the simplified mascot layout now correctly displays after onboarding and release notes are complete.
 - Fixed `/tui` env var priority — `NOA_CLAUDE_NO_FLICKER` now correctly overrides persistent `tuiMode` settings.
 - Rebranded user-facing strings from Claude Code to Noa Claude.
 
@@ -828,4 +459,3 @@
 - Unified the standalone build and compile chain.
 - Added global startup banner modes and removed project-level overrides.
 - Switched default release notes to a local bundled source.
-- Consolidated the default help surface onto repository documentation.
