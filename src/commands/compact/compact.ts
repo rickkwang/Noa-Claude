@@ -5,11 +5,13 @@ import { getSystemContext, getUserContext } from '../../context.js'
 import { getShortcutDisplay } from '../../keybindings/shortcutFormat.js'
 import {
   beginCompactLifecycle,
+  CompactionBlockedError,
   compactConversation,
   endCompactLifecycle,
   ERROR_MESSAGE_INCOMPLETE_RESPONSE,
   ERROR_MESSAGE_NOT_ENOUGH_MESSAGES,
   type PreCompactHookResult,
+  throwIfBlockedByPreCompactHook,
 } from '../../services/compact/compact.js'
 import { suppressCompactWarning } from '../../services/compact/compactWarningState.js'
 import { microcompactMessages } from '../../services/compact/microCompact.js'
@@ -55,6 +57,7 @@ export const call: LocalCommandCall = async (args, context) => {
         },
         context.abortController.signal,
       )
+    throwIfBlockedByPreCompactHook(preCompactHookResult, context)
 
     context.onCompactProgress?.({ type: 'compact_start' })
 
@@ -87,7 +90,9 @@ export const call: LocalCommandCall = async (args, context) => {
       ),
     }
   } catch (error) {
-    if (abortController.signal.aborted) {
+    if (error instanceof CompactionBlockedError) {
+      throw new Error(formatCompactError('blocked_by_hook', error))
+    } else if (abortController.signal.aborted) {
       throw new Error(formatCompactError('aborted'))
     } else if (hasExactErrorMessage(error, ERROR_MESSAGE_NOT_ENOUGH_MESSAGES)) {
       throw new Error(formatCompactError('not_enough_messages'))
@@ -103,12 +108,23 @@ export const call: LocalCommandCall = async (args, context) => {
 }
 
 export function formatCompactError(
-  reason: 'aborted' | 'not_enough_messages' | 'incomplete' | 'failed',
+  reason:
+    | 'aborted'
+    | 'blocked_by_hook'
+    | 'not_enough_messages'
+    | 'incomplete'
+    | 'failed',
   cause?: unknown,
 ): string {
   switch (reason) {
     case 'aborted':
       return 'Compaction canceled.'
+    // The hook's own reason is the whole message here — a generic line would
+    // hide which hook declined and why.
+    case 'blocked_by_hook':
+      return cause instanceof Error
+        ? cause.message
+        : 'Compaction blocked by PreCompact hook'
     case 'not_enough_messages':
       return 'Nothing to compact yet.'
     case 'incomplete':

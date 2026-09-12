@@ -18,6 +18,7 @@ import { notifyCompaction } from '../api/promptCacheBreakDetection.js'
 import {
   beginCompactLifecycle,
   type CompactionResult,
+  ERROR_MESSAGE_COMPACT_BLOCKED_BY_HOOK,
   compactConversation,
   endCompactLifecycle,
   isCompactionUserAbort,
@@ -655,6 +656,18 @@ export async function autoCompactIfNeeded(
         { trigger: 'auto', customInstructions: null },
         toolUseContext.abortController.signal,
       )
+    // A hook veto is a decision, not a failure: skip this attempt and leave
+    // the circuit breaker's failure count where it was.
+    if (preCompactHookResult.blockedBy) {
+      logForDebugging(
+        `autocompact: ${ERROR_MESSAGE_COMPACT_BLOCKED_BY_HOOK}: ${preCompactHookResult.blockedBy}`,
+        { level: 'warn' },
+      )
+      return {
+        wasCompacted: false,
+        consecutiveFailures: tracking?.consecutiveFailures,
+      }
+    }
 
     toolUseContext.onCompactProgress?.({ type: 'compact_start' })
 

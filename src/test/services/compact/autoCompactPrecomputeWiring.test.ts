@@ -45,12 +45,15 @@ mock.module('../../../services/compact/compact.js', () => ({
   },
 }))
 
+let preCompactBlockedBy: string | undefined
+
 const actualHooks = await import('../../../utils/hooks.js')
 mock.module('../../../utils/hooks.js', () => ({
   ...actualHooks,
   executePreCompactHooks: async () => ({
     newCustomInstructions: undefined,
     userDisplayMessage: undefined,
+    blockedBy: preCompactBlockedBy,
   }),
 }))
 
@@ -125,6 +128,7 @@ beforeEach(() => {
   delete process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
   partialCalls = []
   fullCalls = 0
+  preCompactBlockedBy = undefined
   __resetForTest()
 })
 
@@ -244,5 +248,34 @@ describe('autoCompactIfNeeded consume branch', () => {
     expect(result.wasCompacted).toBe(false)
     expect(partialCalls).toHaveLength(0)
     expect(fullCalls).toBe(0)
+  })
+})
+
+describe('autoCompactIfNeeded PreCompact veto', () => {
+  test('a hook veto skips the compaction without counting a failure', async () => {
+    preCompactBlockedBy = '[guard.sh]: release build running'
+    const messages = overThresholdMessages()
+    armReadyAt2(messages)
+
+    const result = await autoCompactIfNeeded(
+      messages,
+      ctx(),
+      {} as never,
+      undefined,
+      {
+        compacted: false,
+        turnId: 'turn',
+        turnCounter: 0,
+        consecutiveFailures: 1,
+      } as never,
+    )
+
+    expect(result.wasCompacted).toBe(false)
+    // The failure counter is untouched: a veto is a decision, not a failure.
+    expect(result.consecutiveFailures).toBe(1)
+    expect(partialCalls).toEqual([])
+    expect(fullCalls).toBe(0)
+    // The armed summary is left for a later attempt.
+    expect(__getArmedForTest()).not.toBeNull()
   })
 })

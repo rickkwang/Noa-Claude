@@ -471,6 +471,44 @@ export type RecompactionInfo = {
 export type PreCompactHookResult = {
   newCustomInstructions?: string
   userDisplayMessage?: string
+  /** Set when a PreCompact hook declined the compaction. */
+  blockedBy?: string
+}
+
+export const ERROR_MESSAGE_COMPACT_BLOCKED_BY_HOOK =
+  'Compaction blocked by PreCompact hook'
+
+/** Distinguishes a deliberate hook veto from a compaction that failed. */
+export class CompactionBlockedError extends Error {}
+
+/**
+ * Honors a PreCompact hook that declined the compaction. Manual compaction
+ * throws so the user learns why nothing happened; the automatic paths handle
+ * the veto themselves (skip, and leave the failure counter alone — a hook
+ * saying no is not a broken compaction) and pass suppressNotification, since
+ * nobody asked for a compaction to interrupt them about.
+ */
+export function throwIfBlockedByPreCompactHook(
+  hookResult: PreCompactHookResult,
+  context: ToolUseContext,
+  opts?: { suppressNotification?: boolean },
+): void {
+  if (!hookResult.blockedBy) return
+  logForDebugging(
+    `${ERROR_MESSAGE_COMPACT_BLOCKED_BY_HOOK}: ${hookResult.blockedBy}`,
+    { level: 'warn' },
+  )
+  if (!opts?.suppressNotification) {
+    context.addNotification?.({
+      key: 'compaction-blocked-by-hook',
+      text: 'Compaction blocked by PreCompact hook',
+      priority: 'immediate',
+      color: 'warning',
+    })
+  }
+  throw new CompactionBlockedError(
+    `${ERROR_MESSAGE_COMPACT_BLOCKED_BY_HOOK}: ${hookResult.blockedBy}`,
+  )
 }
 
 /**
@@ -712,6 +750,9 @@ export async function compactConversation(
         },
         context.abortController.signal,
       )
+      throwIfBlockedByPreCompactHook(hookResult, context, {
+        suppressNotification: isAutoCompact,
+      })
     }
     customInstructions = mergeHookInstructions(
       customInstructions,
@@ -1126,6 +1167,9 @@ export async function partialCompactConversation(
         },
         context.abortController.signal,
       )
+      throwIfBlockedByPreCompactHook(hookResult, context, {
+        suppressNotification: trigger === 'auto',
+      })
     }
 
     // Merge hook instructions with user feedback

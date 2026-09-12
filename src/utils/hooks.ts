@@ -729,7 +729,8 @@ function processHookJSONOutput({
           // JSON-output hooks inject context via additionalContext →
           // hook_additional_context, not this field. Empty content suppresses
           // the trivial "X hook success: Success" system-reminder that
-          // otherwise pollutes every turn (messages.ts:3577 skips on '').
+          // otherwise pollutes every turn (normalizeAttachmentForAPI drops a
+          // hook_success whose content is empty).
           content: '',
           stdout,
           stderr,
@@ -4069,6 +4070,8 @@ export async function executePreCompactHooks(
 ): Promise<{
   newCustomInstructions?: string
   userDisplayMessage?: string
+  /** Set when a hook declined the compaction (exit 2 or decision: 'block'). */
+  blockedBy?: string
 }> {
   const hookInput: PreCompactHookInput = {
     ...createBaseHookInput(undefined),
@@ -4088,40 +4091,47 @@ export async function executePreCompactHooks(
     return {}
   }
 
-  // Extract custom instructions from successful hooks with non-empty output
+  // A blocking hook's output is its reason for declining, not instructions for
+  // the summary — a JSON hook blocks with exit 0, so without this check
+  // "do not compact this" would be handed to the summarizer as guidance.
   const successfulOutputs = results
-    .filter(result => result.succeeded && result.output.trim().length > 0)
+    .filter(
+      result =>
+        result.succeeded && !result.blocked && result.output.trim().length > 0,
+    )
     .map(result => result.output.trim())
 
   // Build user display messages with command info
   const displayMessages: string[] = []
   for (const result of results) {
-    if (result.succeeded) {
-      if (result.output.trim()) {
-        displayMessages.push(
-          `PreCompact [${result.command}] completed successfully: ${result.output.trim()}`,
-        )
-      } else {
-        displayMessages.push(
-          `PreCompact [${result.command}] completed successfully`,
-        )
-      }
+    const output = result.output.trim()
+    const suffix = output ? `: ${output}` : ''
+    if (result.blocked) {
+      displayMessages.push(
+        `PreCompact [${result.command}] blocked compaction${suffix}`,
+      )
+    } else if (result.succeeded) {
+      displayMessages.push(
+        `PreCompact [${result.command}] completed successfully${suffix}`,
+      )
     } else {
-      if (result.output.trim()) {
-        displayMessages.push(
-          `PreCompact [${result.command}] failed: ${result.output.trim()}`,
-        )
-      } else {
-        displayMessages.push(`PreCompact [${result.command}] failed`)
-      }
+      displayMessages.push(`PreCompact [${result.command}] failed${suffix}`)
     }
   }
+
+  const blockedBy = results
+    .filter(result => result.blocked)
+    .map(result => {
+      const output = result.output.trim()
+      return `[${result.command}]${output ? `: ${output}` : ''}`
+    })
 
   return {
     newCustomInstructions:
       successfulOutputs.length > 0 ? successfulOutputs.join('\n\n') : undefined,
     userDisplayMessage:
       displayMessages.length > 0 ? displayMessages.join('\n') : undefined,
+    blockedBy: blockedBy.length > 0 ? blockedBy.join('\n') : undefined,
   }
 }
 

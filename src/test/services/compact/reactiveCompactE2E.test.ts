@@ -85,10 +85,15 @@ mock.module('../../../services/compact/compact.js', () => ({
   },
 }))
 
+let preCompactBlockedBy: string | undefined
+
 const hooks = await import('../../../utils/hooks.js')
 mock.module('../../../utils/hooks.js', () => ({
   ...hooks,
-  executePreCompactHooks: async () => ({ userDisplayMessage: 'hook ran' }),
+  executePreCompactHooks: async () => ({
+    userDisplayMessage: 'hook ran',
+    blockedBy: preCompactBlockedBy,
+  }),
 }))
 
 // Suffixed so this is a fresh instance of the real module that resolves the
@@ -180,6 +185,7 @@ beforeEach(() => {
   compactCalls = []
   compactShouldThrow = null
   lifecycle = []
+  preCompactBlockedBy = undefined
 })
 
 afterEach(() => {
@@ -283,6 +289,16 @@ describe('tryReactiveCompact end-to-end', () => {
     await run(messages, ptlError(), true)
 
     expect(compactCalls).toHaveLength(1)
+  })
+
+  test('a PreCompact hook veto leaves the overflow error to surface', async () => {
+    preCompactBlockedBy = '[guard.sh]: not right now'
+    const result = await run(smallConversation(), ptlError())
+
+    expect(result).toBeNull()
+    expect(compactCalls).toEqual([])
+    // The lifecycle still closes — the spinner must not be left running.
+    expect(lifecycle).toEqual(['begin', 'end'])
   })
 
   test('forked summarizers and background side-task forks never compact', async () => {

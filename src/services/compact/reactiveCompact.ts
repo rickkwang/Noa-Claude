@@ -37,6 +37,7 @@ import {
   type CompactionResult,
   compactConversation,
   endCompactLifecycle,
+  ERROR_MESSAGE_COMPACT_BLOCKED_BY_HOOK,
   isCompactionUserAbort,
   partialCompactConversation,
   POST_COMPACT_SKILLS_TOKEN_BUDGET,
@@ -269,6 +270,15 @@ export async function tryReactiveCompact(params: {
       { trigger: 'auto', customInstructions: null },
       context.abortController.signal,
     )
+    // A hook declining the compaction leaves the overflow in place: surface
+    // the withheld error rather than retrying a request that cannot fit.
+    if (preCompactHookResult.blockedBy) {
+      logForDebugging(
+        `[REACTIVE] ${ERROR_MESSAGE_COMPACT_BLOCKED_BY_HOOK}: ${preCompactHookResult.blockedBy}`,
+        { level: 'warn' },
+      )
+      return null
+    }
     context.onCompactProgress?.({ type: 'compact_start' })
     const result =
       pivot === null
