@@ -11,7 +11,7 @@ import { useExitOnCtrlCDWithKeybindings } from '../../hooks/useExitOnCtrlCDWithK
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { Box, Text } from '../../ink.js';
 import { useKeybinding, useKeybindings } from '../../keybindings/useKeybinding.js';
-import { useAppState, useSetAppState } from '../../state/AppState.js';
+import { useAppState, useAppStateStore, useSetAppState } from '../../state/AppState.js';
 import type { PluginError } from '../../types/plugin.js';
 import { errorMessage } from '../../utils/errors.js';
 import { clearAllCaches } from '../../utils/plugins/cacheUtils.js';
@@ -22,6 +22,7 @@ import type { EditableSettingSource } from '../../utils/settings/constants.js';
 import { getSettingsForSource, updateSettingsForSource } from '../../utils/settings/settings.js';
 import { logDebugDiagnosticWarn } from '../../utils/debugDiagnostics.js';
 import { AddMarketplace } from './AddMarketplace.js';
+import { decideMenuAutoReload, RELOAD_COMMAND, withQueuedNote } from './autoReload.js';
 import { BrowseMarketplace } from './BrowseMarketplace.js';
 import { DiscoverPlugins } from './DiscoverPlugins.js';
 import { ManageMarketplaces } from './ManageMarketplaces.js';
@@ -730,12 +731,13 @@ function getInitialTab(viewState: ViewState): TabId {
   if (viewState.type === 'manage-marketplaces') return 'marketplaces';
   return 'discover';
 }
-export function PluginSettings(t0) {
+export function PluginSettings(t0: PluginSettingsProps) {
   const $ = _c(76);
   const {
-    onComplete,
+    onComplete: onCompleteProp,
     args,
-    showMcpRedirectMessage
+    showMcpRedirectMessage,
+    midTurn
   } = t0;
   let parsedCommand;
   let t1;
@@ -766,15 +768,22 @@ export function PluginSettings(t0) {
   const [result, setResult] = useState(null);
   const [childSearchActive, setChildSearchActive] = useState(false);
   const setAppState = useSetAppState();
+  const appStateStore = useAppStateStore();
   const pluginErrorCount = useAppState(_temp0);
   const errorsTabTitle = pluginErrorCount > 0 ? `Errors (${pluginErrorCount})` : "Errors";
   const exitState = useExitOnCtrlCDWithKeybindings();
   const { rows: terminalRows } = useTerminalSize();
   const tabContentHeight = Math.max(10, terminalRows - 8);
   const cliMode = parsedCommand.type === "marketplace" && parsedCommand.action === "add" && parsedCommand.target !== undefined;
+  // Set by every child view that writes plugin settings. Closing the dialog
+  // reads it to decide whether to queue /reload-plugins, so a menu that
+  // changed nothing closes without touching the session.
+  const changedSomething = React.useRef(false);
+  const closed = React.useRef(false);
   let t3;
   if ($[5] !== setAppState) {
     t3 = () => {
+      changedSomething.current = true;
       setAppState(_temp1);
     };
     $[5] = setAppState;
@@ -783,6 +792,28 @@ export function PluginSettings(t0) {
     t3 = $[6];
   }
   const markPluginsChanged = t3;
+  // Exactly one close, and it carries the activation with it: the dialog
+  // hands /reload-plugins back as the next input instead of leaving the user
+  // to run it. Every onComplete() below goes through here.
+  const onComplete = useCallback((message?: string) => {
+    if (closed.current) {
+      return;
+    }
+    closed.current = true;
+    const outcome = decideMenuAutoReload({
+      dirty: changedSomething.current,
+      needsRefresh: appStateStore.getState().plugins.needsRefresh === true,
+      midTurn: midTurn === true
+    });
+    if (outcome === "none") {
+      onCompleteProp(message);
+      return;
+    }
+    onCompleteProp(outcome === "deferred" ? withQueuedNote(message) : message, {
+      nextInput: RELOAD_COMMAND,
+      submitNextInput: true
+    });
+  }, [appStateStore, midTurn, onCompleteProp]);
   let t4;
   if ($[7] === Symbol.for("react.memo_cache_sentinel")) {
     t4 = tabId => {

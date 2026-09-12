@@ -1,10 +1,13 @@
 // @ts-nocheck
 import { feature } from 'bun:bundle'
-import { clearCommandMemoizationCaches } from '../../commands.js'
+import { clearCommandMemoizationCaches, type Command } from '../../commands.js'
 import { getIsRemoteMode } from '../../bootstrap/state.js'
 import { getAgentDefinitionsWithOverrides } from '../../tools/AgentTool/loadAgentsDir.js'
 import { getOriginalCwd } from '../../bootstrap/state.js'
-import { getPluginCommands } from '../../utils/plugins/loadPluginCommands.js'
+import {
+  getPluginCommands,
+  getPluginSkills,
+} from '../../utils/plugins/loadPluginCommands.js'
 import { redownloadUserSettings } from '../../services/settingsSync/index.js'
 import type { LocalCommandCall } from '../../types/command.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
@@ -39,17 +42,20 @@ export const call: LocalCommandCall = async (_args, context) => {
     }
   }
 
-  const [beforePluginCommands, beforeAgentDefinitions] = await Promise.all([
-    getPluginCommands(),
-    getAgentDefinitionsWithOverrides(getOriginalCwd()),
-  ])
+  const [beforePluginCommands, beforePluginSkills, beforeAgentDefinitions] =
+    await Promise.all([
+      getPluginCommands(),
+      getPluginSkills(),
+      getAgentDefinitionsWithOverrides(getOriginalCwd()),
+    ])
 
-  const beforeSkillFingerprintByName = new Map(
-    beforePluginCommands.map(command => [
-      command.name,
-      `${command.description}|${command.whenToUse ?? ''}|${command.version ?? ''}`,
-    ]),
-  )
+  // Plugins expose model-invocable units through two loaders — commands/ and
+  // skills/ — and the reload swaps both, so the diff has to cover both or a
+  // plugin whose only content is skills reports "+0".
+  const beforeSkillFingerprintByName = fingerprintSkills([
+    ...beforePluginCommands,
+    ...beforePluginSkills,
+  ])
   const beforeAgentFingerprintByKey = new Map(
     beforeAgentDefinitions.allAgents.map(agent => [
       `${agent.source}:${agent.agentType}`,
@@ -60,12 +66,10 @@ export const call: LocalCommandCall = async (_args, context) => {
   const r = await refreshActivePlugins(context.setAppState)
   clearCommandMemoizationCaches()
 
-  const afterSkillFingerprintByName = new Map(
-    r.pluginCommands.map(command => [
-      command.name,
-      `${command.description}|${command.whenToUse ?? ''}|${command.version ?? ''}`,
-    ]),
-  )
+  const afterSkillFingerprintByName = fingerprintSkills([
+    ...r.pluginCommands,
+    ...r.pluginSkills,
+  ])
   const afterAgentFingerprintByKey = new Map(
     r.agentDefinitions.allAgents.map(agent => [
       `${agent.source}:${agent.agentType}`,
@@ -97,7 +101,7 @@ export const call: LocalCommandCall = async (_args, context) => {
 
   const parts = [
     n(r.enabled_count, 'plugin'),
-    n(r.command_count, 'skill'),
+    n(r.command_count + r.skill_count, 'skill'),
     n(r.agent_count, 'agent'),
     n(r.hook_count, 'hook'),
     // "plugin MCP/LSP" disambiguates from user-config/built-in servers,
@@ -119,4 +123,14 @@ export const call: LocalCommandCall = async (_args, context) => {
 
 function n(count: number, noun: string): string {
   return `${count} ${plural(count, noun)}`
+}
+
+/** Name → identity of everything a plugin offers the model, for the diff. */
+function fingerprintSkills(commands: Command[]): Map<string, string> {
+  return new Map(
+    commands.map(command => [
+      command.name,
+      `${command.description}|${command.whenToUse ?? ''}|${command.version ?? ''}`,
+    ]),
+  )
 }

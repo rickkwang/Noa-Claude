@@ -29,7 +29,7 @@ import { logForDebugging } from '../debug.js'
 import { errorMessage } from '../errors.js'
 import { logError } from '../log.js'
 import { clearAllCaches } from './cacheUtils.js'
-import { getPluginCommands } from './loadPluginCommands.js'
+import { getPluginCommands, getPluginSkills } from './loadPluginCommands.js'
 import { loadPluginHooks } from './loadPluginHooks.js'
 import { loadPluginLspServers } from './lspPluginIntegration.js'
 import { loadPluginMcpServers } from './mcpPluginIntegration.js'
@@ -41,7 +41,12 @@ type SetAppState = (updater: (prev: AppState) => AppState) => void
 export type RefreshActivePluginsResult = {
   enabled_count: number
   disabled_count: number
+  /** Slash commands from plugin `commands/` directories. */
   command_count: number
+  /** Skills from plugin `skills/` directories — a separate loader from
+   * command_count, so reporting either one alone under-counts what the
+   * reload actually swapped in. */
+  skill_count: number
   agent_count: number
   hook_count: number
   mcp_count: number
@@ -55,6 +60,8 @@ export type RefreshActivePluginsResult = {
   agentDefinitions: AgentDefinitionsResult
   /** The refreshed plugin commands, same rationale as agentDefinitions. */
   pluginCommands: Command[]
+  /** The refreshed plugin skills, same rationale as pluginCommands. */
+  pluginSkills: Command[]
 }
 
 /**
@@ -87,8 +94,12 @@ export async function refreshActivePlugins(
   // the plugin, returning plugin-cache-miss. loadAllPlugins warms the
   // cache-only memoize on completion, so the awaits below are ~free.
   const pluginResult = await loadAllPlugins()
-  const [pluginCommands, agentDefinitions] = await Promise.all([
+  // Commands and skills are separate loaders over the same plugin set; both
+  // read the cache-only memoize loadAllPlugins() just warmed, so this is a
+  // parallel no-cost read rather than a second scan.
+  const [pluginCommands, pluginSkills, agentDefinitions] = await Promise.all([
     getPluginCommands(),
+    getPluginSkills(),
     getAgentDefinitionsWithOverrides(getOriginalCwd()),
   ])
 
@@ -174,13 +185,14 @@ export async function refreshActivePlugins(
   }, 0)
 
   logForDebugging(
-    `refreshActivePlugins: ${enabled.length} enabled, ${pluginCommands.length} commands, ${agentDefinitions.allAgents.length} agents, ${hook_count} hooks, ${mcp_count} MCP, ${lsp_count} LSP`,
+    `refreshActivePlugins: ${enabled.length} enabled, ${pluginCommands.length} commands, ${pluginSkills.length} skills, ${agentDefinitions.allAgents.length} agents, ${hook_count} hooks, ${mcp_count} MCP, ${lsp_count} LSP`,
   )
 
   return {
     enabled_count: enabled.length,
     disabled_count: disabled.length,
     command_count: pluginCommands.length,
+    skill_count: pluginSkills.length,
     agent_count: agentDefinitions.allAgents.length,
     hook_count,
     mcp_count,
@@ -188,6 +200,7 @@ export async function refreshActivePlugins(
     error_count: errors.length + (hook_load_failed ? 1 : 0),
     agentDefinitions,
     pluginCommands,
+    pluginSkills,
   }
 }
 

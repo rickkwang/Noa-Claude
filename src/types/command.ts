@@ -79,6 +79,12 @@ type LocalCommand = {
 }
 
 export type LocalJSXCommandContext = ToolUseContext & {
+  /**
+   * Set only on the immediate-command path, which runs while a turn is
+   * already active — so it doubles as "the main query is running" for
+   * commands that queue follow-up input.
+   */
+  dispatchedAsImmediate?: boolean
   canUseTool?: CanUseToolFn
   setMessages: (updater: (prev: Message[]) => Message[]) => void
   options: {

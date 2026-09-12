@@ -566,7 +566,9 @@ export async function installPluginFromMarketplace({
 
     return {
       success: true,
-      message: `✓ Installed ${entry.name}${result.depNote}. Run /reload-plugins to activate.`,
+      // No "run /reload-plugins" here: every caller that shows this message
+      // is a dialog whose close queues the reload itself.
+      message: `✓ Installed ${entry.name}${result.depNote}.`,
     }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err)

@@ -48,6 +48,7 @@ import { plural } from '../../utils/stringUtils.js';
 import { formatErrorMessage, getErrorGuidance } from './PluginErrors.js';
 import { PluginOptionsDialog } from './PluginOptionsDialog.js';
 import { PluginOptionsFlow } from './PluginOptionsFlow.js';
+import { APPLIES_ON_CLOSE_HINT } from './autoReload.js';
 import type { ViewState as ParentViewState } from './types.js';
 import { UnifiedInstalledCell } from './UnifiedInstalledCell.js';
 import type { UnifiedInstalledItem } from './unifiedTypes.js';
@@ -441,6 +442,17 @@ export function ManagePlugins({
   const [pluginStates, setPluginStates] = useState<PluginState[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingToggles, setPendingToggles] = useState<Map<string, 'will-enable' | 'will-disable'>>(new Map());
+  // Toggle writes settle after the keypress that started them. Leaving the
+  // list has to wait for them: the write is what marks the session dirty, and
+  // that flag is what makes closing the dialog queue /reload-plugins.
+  const inFlightToggles = React.useRef<Set<Promise<unknown>>>(new Set());
+  // Second keypress on a row whose write has not settled: dropping it keeps
+  // two opposing writes from racing to be the last one on disk.
+  const togglingIds = React.useRef<Set<string>>(new Set());
+  const trackToggle = React.useCallback((write: Promise<unknown>) => {
+    inFlightToggles.current.add(write);
+    void write.finally(() => inFlightToggles.current.delete(write));
+  }, []);
   const markPluginUninstalled = useCallback((pluginId: string) => {
     setPluginStates(states => states.map(state => `${state.plugin.name}@${state.marketplace}` === pluginId ? {
       ...state,
@@ -490,7 +502,7 @@ export function ManagePlugins({
       // User can configure later via the Configure options menu if they want.
       setViewState('plugin-list');
       setSelectedPlugin(null);
-      setResult('Plugin enabled. Configuration skipped — run /reload-plugins in ~/.noa to apply.');
+      setResult('Plugin enabled. Configuration skipped.');
       if (onManageComplete) {
         void onManageComplete();
       }
@@ -511,15 +523,22 @@ export function ManagePlugins({
         client: viewState.client
       });
     } else {
-      if (pendingToggles.size > 0) {
-        setResult('Run /reload-plugins in ~/.noa to apply plugin changes.');
+      // Pending toggles need no prompt here — handing control back to the
+      // parent closes the dialog, and that close queues the reload. A write
+      // still in flight has not marked the session dirty yet, so let it land
+      // first or the close decides on a stale flag.
+      const writes = [...inFlightToggles.current];
+      if (writes.length > 0) {
+        void Promise.allSettled(writes).then(() => setParentViewState({
+          type: 'menu'
+        }));
         return;
       }
       setParentViewState({
         type: 'menu'
       });
     }
-  }, [viewState, setParentViewState, pendingToggles, setResult]);
+  }, [viewState, setParentViewState, setResult]);
 
   // Escape when not in search mode - go back.
   // Excludes confirm-project-uninstall (has its own confirm:no handler in
@@ -1148,7 +1167,7 @@ export function ManagePlugins({
       // Single-line warning — notification timeout is ~8s, multi-line would scroll off.
       // The persistent record is in the Errors tab (dependency-unsatisfied after reload).
       const depWarn = reverseDependents && reverseDependents.length > 0 ? ` · required by ${reverseDependents.join(', ')}` : '';
-      const message = `✓ ${operationName} ${selectedPlugin.plugin.name}${depWarn}. Run /reload-plugins in ~/.noa to apply.`;
+      const message = `✓ ${operationName} ${selectedPlugin.plugin.name}${depWarn}.`;
       setResult(message);
       if (onManageComplete) {
         await onManageComplete();
@@ -1192,44 +1211,70 @@ export function ManagePlugins({
       const pluginScope_0 = item_7.scope;
       const isBuiltin_0 = pluginScope_0 === 'builtin';
       if (isBuiltin_0 || isInstallableScope(pluginScope_0)) {
+        if (togglingIds.current.has(pluginId_4)) return;
+        togglingIds.current.add(pluginId_4);
         const newPending = new Map(pendingToggles);
         // Omit scope — see handleSingleOperation's enable/disable comment.
         if (currentPending) {
           // Cancel: reverse the operation back to the original state
           newPending.delete(pluginId_4);
-          void (async () => {
+          trackToggle((async () => {
+            // A failed reversal leaves the first toggle on disk, so the
+            // marker goes back — the row has to show what settings say.
+            const restoreMarker = () => setPendingToggles(prev => new Map(prev).set(pluginId_4, currentPending));
             try {
-              if (currentPending === 'will-disable') {
-                await enablePluginOp(pluginId_4);
-              } else {
-                await disablePluginOp(pluginId_4);
+              const reverseResult = currentPending === 'will-disable' ? await enablePluginOp(pluginId_4) : await disablePluginOp(pluginId_4);
+              if (!reverseResult.success) {
+                restoreMarker();
+                setProcessError(reverseResult.message);
+                return;
               }
               clearAllCaches();
             } catch (err_0) {
+              restoreMarker();
+              setProcessError(`Failed to reverse the toggle: ${errorMessage(err_0)}`);
               logError(err_0);
+            } finally {
+              togglingIds.current.delete(pluginId_4);
             }
-          })();
+          })());
         } else {
           newPending.set(pluginId_4, isEnabled_0 ? 'will-disable' : 'will-enable');
-          void (async () => {
+          trackToggle((async () => {
+            const dropMarker = () => setPendingToggles(prev => {
+              const next = new Map(prev);
+              next.delete(pluginId_4);
+              return next;
+            });
             try {
-              if (isEnabled_0) {
-                await disablePluginOp(pluginId_4);
-              } else {
-                await enablePluginOp(pluginId_4);
+              const toggleResult = isEnabled_0 ? await disablePluginOp(pluginId_4) : await enablePluginOp(pluginId_4);
+              if (!toggleResult.success) {
+                dropMarker();
+                setProcessError(toggleResult.message);
+                return;
               }
               clearAllCaches();
+              // Settings changed: tell the parent so closing the dialog
+              // activates it. Reversals above skip this — the first toggle
+              // already marked the session dirty.
+              if (onManageComplete) {
+                void onManageComplete();
+              }
             } catch (err_1) {
+              dropMarker();
+              setProcessError(`Failed to toggle the plugin: ${errorMessage(err_1)}`);
               logError(err_1);
+            } finally {
+              togglingIds.current.delete(pluginId_4);
             }
-          })();
+          })());
         }
         setPendingToggles(newPending);
       }
     } else if (item_7?.type === 'mcp') {
       void toggleMcpServer(item_7.client.name);
     }
-  }, [selectedIndex, filteredItems, pendingToggles, pluginStates, toggleMcpServer]);
+  }, [selectedIndex, filteredItems, pendingToggles, pluginStates, toggleMcpServer, onManageComplete, trackToggle]);
 
   // Handle accept (Enter) in plugin-list
   const handleAccept = React.useCallback(() => {
@@ -1547,7 +1592,7 @@ export function ManagePlugins({
         return;
       }
       clearAllCaches();
-      setResult(`✓ Disabled ${selectedPlugin.plugin.name} in .noa/settings.local.json. Run /reload-plugins in ~/.noa to apply.`);
+      setResult(`✓ Disabled ${selectedPlugin.plugin.name} in .noa/settings.local.json.`);
       if (onManageComplete) void onManageComplete();
       setParentViewState({
         type: 'menu'
@@ -1657,9 +1702,8 @@ export function ManagePlugins({
     const pluginId_10 = `${selectedPlugin.plugin.name}@${selectedPlugin.marketplace}`;
     function finish(msg: string): void {
       setResult(msg);
-      // Plugin is enabled regardless of whether config was saved or
-      // skipped — onManageComplete → markPluginsChanged → the
-      // persistent "run /reload-plugins" notice.
+      // Plugin is enabled whether config was saved or skipped, so the
+      // session is dirty either way.
       if (onManageComplete) {
         void onManageComplete();
       }
@@ -1670,10 +1714,10 @@ export function ManagePlugins({
     return <PluginOptionsFlow plugin={selectedPlugin.plugin} pluginId={pluginId_10} onDone={(outcome, detail) => {
       switch (outcome) {
         case 'configured':
-          finish(`✓ Enabled and configured ${selectedPlugin.plugin.name}. Run /reload-plugins in ~/.noa to apply.`);
+          finish(`✓ Enabled and configured ${selectedPlugin.plugin.name}.`);
           break;
         case 'skipped':
-          finish(`✓ Enabled ${selectedPlugin.plugin.name}. Run /reload-plugins in ~/.noa to apply.`);
+          finish(`✓ Enabled ${selectedPlugin.plugin.name}.`);
           break;
         case 'error':
           finish(`Failed to save configuration: ${detail}`);
@@ -1689,7 +1733,12 @@ export function ManagePlugins({
       try {
         savePluginOptions(pluginId_11, values, viewState.schema);
         clearAllCaches();
-        setResult('Configuration saved. Run /reload-plugins in ~/.noa for changes to take effect.');
+        // user_config feeds plugin MCP args and hook commands, so the saved
+        // values only reach the session through a reload.
+        if (onManageComplete) {
+          void onManageComplete();
+        }
+        setResult('Configuration saved.');
       } catch (err_3) {
         setProcessError(`Failed to save configuration: ${errorMessage(err_3)}`);
       }
@@ -1729,7 +1778,10 @@ export function ManagePlugins({
         setProcessError(null);
         setConfigNeeded(null);
         setViewState('plugin-details');
-        setResult('Configuration saved. Run /reload-plugins in ~/.noa for changes to take effect.');
+        if (onManageComplete) {
+          void onManageComplete();
+        }
+        setResult('Configuration saved.');
       } catch (err_4) {
         const errorMsg_0 = errorMessage(err_4);
         setProcessError(`Failed to save configuration: ${errorMsg_0}`);
@@ -2230,10 +2282,9 @@ export function ManagePlugins({
         </Text>
       </Box>
 
-      {/* Reload disclaimer for plugin changes */}
       {pendingToggles.size > 0 && <Box marginLeft={1}>
           <Text dimColor italic>
-            Run /reload-plugins in ~/.noa to apply changes
+            {APPLIES_ON_CLOSE_HINT}
           </Text>
         </Box>}
     </Box>;

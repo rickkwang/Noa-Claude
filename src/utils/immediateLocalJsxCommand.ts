@@ -103,12 +103,17 @@ export async function tryHandleImmediateLocalJsxCommand(
   setPastedContents({})
   clearBuffer()
 
-  const context = getToolUseContext(
-    messages,
-    [],
-    createAbortController(),
-    mainLoopModel,
-  )
+  // This path is only reachable with a turn in flight (guarded above), so the
+  // flag tells the command its queued follow-up input won't run immediately.
+  const context = {
+    ...getToolUseContext(
+      messages,
+      [],
+      createAbortController(),
+      mainLoopModel,
+    ),
+    dispatchedAsImmediate: true,
+  }
 
   let doneWasCalled = false
   const onDone: LocalJSXCommandOnDone = (result, options) => {
