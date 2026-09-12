@@ -9,7 +9,7 @@ import { detectEncodingForResolvedPath } from 'src/utils/fileRead.js';
 import { getFsImplementation } from 'src/utils/fsOperations.js';
 import { Text } from '../../../ink.js';
 import { BashTool } from '../../../tools/BashTool/BashTool.js';
-import { applySedSubstitution, type SedEditInfo } from '../../../tools/BashTool/sedEditParser.js';
+import { applySedSubstitution, hashSedBaseContent, type SedEditInfo } from '../../../tools/BashTool/sedEditParser.js';
 import { FilePermissionDialog } from '../FilePermissionDialog/FilePermissionDialog.js';
 import type { PermissionRequestProps } from '../PermissionRequest.js';
 type SedEditPermissionRequestProps = PermissionRequestProps & {
@@ -78,7 +78,9 @@ function _temp(e) {
   };
 }
 function SedEditPermissionRequestInner(t0) {
-  const $ = _c(35);
+  // 36, not 35: slot 35 is the extra `oldContent` dependency on the
+  // parseInput memo below (it hashes oldContent into _simulatedSedEdit).
+  const $ = _c(36);
   let contentPromise;
   let props;
   let sedInfo;
@@ -153,19 +155,21 @@ function SedEditPermissionRequestInner(t0) {
   }
   const noChangesMessage = t3;
   let t4;
-  if ($[11] !== filePath || $[12] !== newContent) {
+  if ($[11] !== filePath || $[12] !== newContent || $[35] !== oldContent) {
     t4 = input => {
       const parsed = BashTool.inputSchema.parse(input);
       return {
         ...parsed,
         _simulatedSedEdit: {
           filePath,
-          newContent
+          newContent,
+          baseHash: hashSedBaseContent(oldContent)
         }
       };
     };
     $[11] = filePath;
     $[12] = newContent;
+    $[35] = oldContent;
     $[13] = t4;
   } else {
     t4 = $[13];

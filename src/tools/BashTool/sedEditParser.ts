@@ -4,7 +4,7 @@
  * Extracts file paths and substitution patterns to enable file-edit-style rendering
  */
 
-import { randomBytes } from 'crypto'
+import { createHash, randomBytes } from 'crypto'
 import { tryParseShellCommand } from '../../utils/bash/shellQuote.js'
 
 // BRE→ERE conversion placeholders (null-byte sentinels, never appear in user input)
@@ -311,4 +311,16 @@ export function applySedSubstitution(
     // If regex is invalid, return original content
     return content
   }
+}
+
+/**
+ * Hash of the content a sed preview was computed from, so the approved write
+ * can refuse a file that changed between preview and apply. The preview
+ * normalizes CRLF to LF before substituting, so both sides hash the
+ * normalized text — otherwise a CRLF file would never match its own preview.
+ */
+export function hashSedBaseContent(content: string): string {
+  return createHash('sha256')
+    .update(content.replaceAll('\r\n', '\n'), 'utf8')
+    .digest('hex')
 }

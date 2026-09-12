@@ -46,7 +46,7 @@ import { interpretCommandResult } from './commandSemantics.js';
 import { getDefaultTimeoutMs, getMaxTimeoutMs, getSimplePrompt } from './prompt.js';
 import { checkReadOnlyConstraints } from './readOnlyValidation.js';
 import { maybeRegisterGrepRead } from './grepReadRegistration.js';
-import { parseSedEditCommand } from './sedEditParser.js';
+import { hashSedBaseContent, parseSedEditCommand } from './sedEditParser.js';
 import { shouldUseSandbox } from './shouldUseSandbox.js';
 import { BASH_TOOL_NAME } from './toolName.js';
 import { BackgroundHint, renderToolResultMessage, renderToolUseErrorMessage, renderToolUseMessage, renderToolUseProgressMessage, renderToolUseQueuedMessage } from './UI.js';
@@ -231,6 +231,8 @@ const fullInputSchema = lazySchema(() => z.strictObject({
   timeout: semanticNumber(z.number().optional()).describe(`Optional timeout in milliseconds (max ${getMaxTimeoutMs()})`),
   description: z.string().optional().describe(`Clear, concise description of what this command does in active voice. Never use words like "complex" or "risk" in the description - just describe what it does.
 
+Say what the command does in plain words: do not echo the command's text, its flags, or file paths - the user reads this description, often without seeing the command.
+
 For simple commands (git, npm, standard CLI tools), keep it brief (5-10 words):
 - ls → "List files in current directory"
 - git status → "Show working tree status"
@@ -240,11 +242,12 @@ For commands that are harder to parse at a glance (piped commands, obscure flags
 - find . -name "*.tmp" -exec rm {} \\; → "Find and delete all .tmp files recursively"
 - git reset --hard origin/main → "Discard all local changes and match remote main"
 - curl -s url | jq '.data[]' → "Fetch JSON from URL and extract data array elements"`),
-  run_in_background: semanticBoolean(z.boolean().optional()).describe(`Set to true to run this command in the background. Use Read to read the output later.`),
+  run_in_background: semanticBoolean(z.boolean().optional()).describe(`Set to true to run this command in the background.`),
   dangerouslyDisableSandbox: semanticBoolean(z.boolean().optional()).describe('Set this to true to dangerously override sandbox mode and run commands without sandboxing.'),
   _simulatedSedEdit: z.object({
     filePath: z.string(),
-    newContent: z.string()
+    newContent: z.string(),
+    baseHash: z.string().optional()
   }).optional().describe('Internal: pre-computed sed edit result from preview')
 }));
 
@@ -344,10 +347,12 @@ type SimulatedSedEditContext = Pick<ToolUseContext, 'readFileState' | 'updateFil
 async function applySedEdit(simulatedEdit: {
   filePath: string;
   newContent: string;
+  baseHash?: string;
 }, toolUseContext: SimulatedSedEditContext, parentMessage?: AssistantMessage): Promise<SimulatedSedEditResult> {
   const {
     filePath,
-    newContent
+    newContent,
+    baseHash
   } = simulatedEdit;
   const absoluteFilePath = expandPath(filePath);
   const fs = getFsImplementation();
@@ -370,6 +375,13 @@ async function applySedEdit(simulatedEdit: {
       };
     }
     throw e;
+  }
+
+  // The user approved a diff computed from the file as it looked at preview
+  // time. If it changed since, writing newContent would silently clobber the
+  // change with content nobody reviewed.
+  if (baseHash !== undefined && hashSedBaseContent(originalContent) !== baseHash) {
+    throw new Error(`${absoluteFilePath}: file changed since the edit was previewed`);
   }
 
   // Track file history before making changes (for undo support)
