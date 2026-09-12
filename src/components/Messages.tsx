@@ -519,7 +519,7 @@ const MessagesImpl = ({
     const compactAwareMessages = verbose || isFullscreenEnvEnabled() ? normalizedMessages : getMessagesAfterCompactBoundary(normalizedMessages, {
       includeSnipped: true
     });
-    // Main view only: hide the partial/SM-compact preserved tail so the
+    // Main view only: hide a partial compact's preserved tail so the
     // summary doesn't render alongside its verbatim source. Transcript
     // (ctrl+o) keeps everything for inspection.
     const displayMessages = isTranscriptMode ? compactAwareMessages : projectCompactHistoryForMainDisplay(compactAwareMessages);

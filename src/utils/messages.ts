@@ -4710,12 +4710,11 @@ export function getMessagesAfterCompactBoundary<
 
 /**
  * Main-screen projection only: keep compact's model/resume payload intact,
- * but hide the preserved pre-compact tail under a partial/SM-compact notice.
+ * but hide the preserved pre-compact tail under a keep-tail compact notice.
  *
  * Only hides messages inside `boundary.compactMetadata.preservedSegment` (the
- * range the partial/SM compact intentionally kept verbatim for the model).
- * Full-compact boundaries don't set this metadata, so this is a no-op for
- * the recently simplified full path.
+ * range a partial compact intentionally kept verbatim for the model). Full
+ * compaction doesn't set that metadata, so this is a no-op there.
  */
 export function projectCompactHistoryForMainDisplay<
   T extends Message | NormalizedMessage,

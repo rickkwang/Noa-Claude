@@ -84,6 +84,7 @@
 - Documented the prompt debt already present in the fork-subagent boilerplate (`buildChildMessage`) at its definition, since the code path is currently unreachable (`isForkSubagentEnabled()` is hardcoded false) and would not survive a prompt audit as-is if that gate ever opens.
 - The probe script for Fable 5.1's thinking-display behavior now serializes its tool calls, since parallel tool use could otherwise collapse the inter-call gaps the probe measures.
 - Removed session-memory compaction, which could only run behind a GrowthBook flag that resolves to off in this fork; its `/compact` and auto-compact branches, the `lastSummarizedMessageId` bookkeeping it alone read, and the survey field reporting it are gone with it. Also removed the never-reachable reactive-only mode (`/compact` rerouting, context-grid and token-warning branches), the `/compact` error mappings only that mode could produce, the always-true `tengu_compact_cache_prefix` gate, and the compact streaming retry loop whose gate was always off.
+- Dropped the session-memory extraction wait helper and the extraction timestamp it alone read, left behind by the session-memory compaction removal, and corrected comments whose `file.ts:line` pointers and "SM-compact" references no longer matched the code.
 
 ## 1.12.0
 

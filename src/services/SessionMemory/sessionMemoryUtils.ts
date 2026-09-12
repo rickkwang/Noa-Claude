@@ -7,11 +7,8 @@
 import { isFsInaccessible } from '../../utils/errors.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
 import { getSessionMemoryPath } from '../../utils/permissions/filesystem.js'
-import { sleep } from '../../utils/sleep.js'
 import { logEvent } from '../analytics/index.js'
 
-const EXTRACTION_WAIT_TIMEOUT_MS = 15000
-const EXTRACTION_STALE_THRESHOLD_MS = 60000 // 1 minute
 
 /**
  * Configuration for session memory extraction thresholds
@@ -41,50 +38,11 @@ let sessionMemoryConfig: SessionMemoryConfig = {
   ...DEFAULT_SESSION_MEMORY_CONFIG,
 }
 
-// Track extraction state with timestamp (set by sessionMemory.ts)
-let extractionStartedAt: number | undefined
-
 // Track context size at last memory extraction (for minimumTokensBetweenUpdate)
 let tokensAtLastExtraction = 0
 
 // Track whether session memory has been initialized (met minimumMessageTokensToInit)
 let sessionMemoryInitialized = false
-
-/**
- * Mark extraction as started (called from sessionMemory.ts)
- */
-export function markExtractionStarted(): void {
-  extractionStartedAt = Date.now()
-}
-
-/**
- * Mark extraction as completed (called from sessionMemory.ts)
- */
-export function markExtractionCompleted(): void {
-  extractionStartedAt = undefined
-}
-
-/**
- * Wait for any in-progress session memory extraction to complete (with 15s timeout)
- * Returns immediately if no extraction is in progress or if extraction is stale (>1min old).
- */
-export async function waitForSessionMemoryExtraction(): Promise<void> {
-  const startTime = Date.now()
-  while (extractionStartedAt) {
-    const extractionAge = Date.now() - extractionStartedAt
-    if (extractionAge > EXTRACTION_STALE_THRESHOLD_MS) {
-      // Extraction is stale, don't wait
-      return
-    }
-
-    if (Date.now() - startTime > EXTRACTION_WAIT_TIMEOUT_MS) {
-      // Timeout - continue anyway
-      return
-    }
-
-    await sleep(1000)
-  }
-}
 
 /**
  * Get the current session memory content
@@ -184,5 +142,4 @@ export function resetSessionMemoryState(): void {
   sessionMemoryConfig = { ...DEFAULT_SESSION_MEMORY_CONFIG }
   tokensAtLastExtraction = 0
   sessionMemoryInitialized = false
-  extractionStartedAt = undefined
 }

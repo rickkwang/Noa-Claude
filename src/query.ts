@@ -496,8 +496,8 @@ async function* queryLoop(
     // over the REPL's full history. Summary messages live in the collapse
     // store, not the REPL array. This is what makes collapses persist
     // across turns: projectView() replays the commit log on every entry.
-    // Within a turn, the view flows forward via state.messages at the
-    // continue site (query.ts:1192), and the next projectView() no-ops
+    // Within a turn, the view flows forward via state.messages where the
+    // loop continues below, and the next projectView() no-ops
     // because the archived messages are already gone from its input.
     if (feature('CONTEXT_COLLAPSE') && contextCollapse) {
       const collapseResult = await contextCollapse.applyCollapsesIfNeeded(
@@ -595,7 +595,7 @@ async function* queryLoop(
       }
 
       // Reset on every compact so turnCounter/turnId reflect the MOST RECENT
-      // compact. recompactionInfo (autoCompact.ts:190) already captured the
+      // compact. autoCompactIfNeeded's recompactionInfo already captured the
       // old values for turnsSincePreviousCompact/previousCompactTurnId before
       // the call, so this reset doesn't lose those.
       tracking = {

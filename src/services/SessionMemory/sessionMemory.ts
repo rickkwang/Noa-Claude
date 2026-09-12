@@ -50,8 +50,6 @@ import {
   hasMetInitializationThreshold,
   hasMetUpdateThreshold,
   isSessionMemoryInitialized,
-  markExtractionCompleted,
-  markExtractionStarted,
   markSessionMemoryInitialized,
   recordExtractionTokenCount,
   type SessionMemoryConfig,
@@ -298,8 +296,6 @@ const extractSessionMemory = sequential(async function (
     return
   }
 
-  markExtractionStarted()
-
   // Create isolated context for setup to avoid polluting parent's cache
   const setupContext = createSubagentContext(toolUseContext)
 
@@ -343,8 +339,6 @@ const extractSessionMemory = sequential(async function (
 
   // Record the context size at extraction for tracking minimumTokensBetweenUpdate
   recordExtractionTokenCount(tokenCountWithEstimation(messages))
-
-  markExtractionCompleted()
 })
 
 /**

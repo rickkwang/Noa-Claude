@@ -51,6 +51,8 @@ function sessionStartContext(message: Message): string[] {
  * same context on every resume would otherwise stack another copy per resume.
  * Only the conversation after the last compact boundary counts — context
  * that survives only before it is out of the model's view and is added again.
+ * Messages carrying no model-facing context (a hook error, a display-only
+ * success) record what this resume did and always pass through.
  */
 export function dropRepeatedSessionStartContext(
   conversation: Message[],
@@ -80,9 +82,9 @@ export async function processSessionStartHooks(
     forceSyncExecution,
   }: SessionStartHooksOptions = {},
 ): Promise<HookResultMessage[]> {
-  // --bare skips all hooks. executeHooks already early-returns under --bare
-  // (hooks.ts:1861), but this skips the loadPluginHooks() await below too —
-  // no point loading plugin hooks that'll never run.
+  // --bare skips all hooks. executeHooks already early-returns under --bare,
+  // but this skips the loadPluginHooks() await below too — no point loading
+  // plugin hooks that'll never run.
   if (isBareMode()) {
     return []
   }
