@@ -502,24 +502,22 @@ const PluginManifestSkillsSchema = lazySchema(() =>
 /**
  * Schema for additional output style definitions in plugin manifest
  *
- * Allows plugins to specify extra output style files or directories beyond those in the
- * standard output-styles/ directory.
+ * Declaring outputStyles takes over style loading: the output-styles/
+ * directory is not auto-loaded, so list its files here too if both are wanted.
  */
 const PluginManifestOutputStylesSchema = lazySchema(() =>
   z.object({
     outputStyles: z.union([
       RelativePath().describe(
-        'Path to additional output styles directory or file (in addition to those in the output-styles/ directory, if it exists), relative to the plugin root',
+        'Path to an output-styles directory or file, relative to the plugin root. When set, the output-styles/ directory is not auto-loaded — list its files here if you want both.',
       ),
       z
         .array(
           RelativePath().describe(
-            'Path to additional output styles directory or file (in addition to those in the output-styles/ directory, if it exists), relative to the plugin root',
+            'Path to an output-styles directory or file, relative to the plugin root. When set, the output-styles/ directory is not auto-loaded — list its files here if you want both.',
           ),
         )
-        .describe(
-          'List of paths to additional output styles directories or files',
-        ),
+        .describe('List of output-style directory or file paths'),
     ]),
   }),
 )

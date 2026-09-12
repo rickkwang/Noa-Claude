@@ -2020,7 +2020,10 @@ async function getOutputStyleAttachment(): Promise<Attachment[]> {
     return []
   }
 
-  // Resolved (not raw-config) so plugin-forced styles get their reminder too.
+  // turnReminder comes from the resolved config (a plugin-forced style's
+  // reminder is honored when the user also picked a style), but the early
+  // return above keys off raw settings — a plugin-forced style with default
+  // settings gets no reminder. Same shape as upstream.
   const config = await getOutputStyleConfig()
 
   return [

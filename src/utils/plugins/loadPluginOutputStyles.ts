@@ -124,7 +124,9 @@ export const loadPluginOutputStyles = memoize(
         }
       }
 
-      // Load output styles from additional paths specified in manifest
+      // Load output styles from paths declared in the manifest or marketplace
+      // entry. A plugin.json declaration suppresses the default directory at
+      // registration time; a marketplace-only entry clears it after the fact.
       if (plugin.outputStylesPaths) {
         for (const stylePath of plugin.outputStylesPaths) {
           try {

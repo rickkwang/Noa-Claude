@@ -21,12 +21,11 @@ function mapConfigsToOptions(styles: {
   }));
 }
 export function OutputStylePicker(t0) {
-  const $ = _c(16);
+  const $ = _c(14);
   const {
     initialStyle,
     onComplete,
-    onCancel,
-    isStandaloneCommand
+    onCancel
   } = t0;
   let t1;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
@@ -71,8 +70,6 @@ export function OutputStylePicker(t0) {
     t4 = $[4];
   }
   const handleStyleSelect = t4;
-  const t5 = !isStandaloneCommand;
-  const t6 = !isStandaloneCommand;
   let t7;
   if ($[5] === Symbol.for("react.memo_cache_sentinel")) {
     t7 = <Box marginTop={1}><Text dimColor={true}>This changes how Noa Claude communicates with you</Text></Box>;
@@ -92,15 +89,13 @@ export function OutputStylePicker(t0) {
     t8 = $[10];
   }
   let t9;
-  if ($[11] !== onCancel || $[12] !== t5 || $[13] !== t6 || $[14] !== t8) {
-    t9 = <Dialog title="Preferred output style" onCancel={onCancel} hideInputGuide={t5} hideBorder={t6}>{t8}</Dialog>;
+  if ($[11] !== onCancel || $[12] !== t8) {
+    t9 = <Dialog title="Preferred output style" onCancel={onCancel} hideInputGuide={true} hideBorder={true}>{t8}</Dialog>;
     $[11] = onCancel;
-    $[12] = t5;
-    $[13] = t6;
-    $[14] = t8;
-    $[15] = t9;
+    $[12] = t8;
+    $[13] = t9;
   } else {
-    t9 = $[15];
+    t9 = $[13];
   }
   return t9;
 }

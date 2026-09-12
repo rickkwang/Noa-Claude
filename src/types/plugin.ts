@@ -52,7 +52,7 @@ export type LoadedPlugin = {
   skillsPath?: string
   skillsPaths?: string[] // Additional skill paths from manifest
   outputStylesPath?: string
-  outputStylesPaths?: string[] // Additional output style paths from manifest
+  outputStylesPaths?: string[] // Output style paths declared in manifest/marketplace entry; declaring replaces the auto-loaded outputStylesPath
   themesPath?: string
   themesPaths?: string[] // Additional theme paths from manifest
   hooksConfig?: HooksSettings

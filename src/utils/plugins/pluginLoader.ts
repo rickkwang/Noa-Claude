@@ -1638,7 +1638,9 @@ export async function createPluginFromPath(
     plugin.outputStylesPath = outputStylesPath
   }
 
-  // Step 4e: Process additional output style paths from manifest
+  // Step 4e: Process output style paths declared in the manifest. Declaring
+  // them suppresses the default output-styles/ directory (step 4d skipped the
+  // existence probe in that case).
   if (manifest.outputStyles) {
     const outputStylePaths = Array.isArray(manifest.outputStyles)
       ? manifest.outputStyles
@@ -2496,7 +2498,8 @@ async function loadPluginFromMarketplaceEntry(
  * entry supplementation — is identical. Extracted so the cache-only path
  * doesn't duplicate ~500 lines.
  */
-async function finishLoadingPluginFromPath(
+// Exported for testing.
+export async function finishLoadingPluginFromPath(
   entry: PluginMarketplaceEntry,
   pluginId: string,
   enabled: boolean,
@@ -2733,8 +2736,12 @@ async function finishLoadingPluginFromPath(
       logForDebugging(`Plugin ${entry.name} has no entry.skills defined`)
     }
 
-    // Process output styles from marketplace entry
+    // Process output styles from marketplace entry. Declared paths replace
+    // the auto-loaded output-styles/ directory entirely (the entry must list
+    // those files too if it wants both) — createPluginFromPath registered the
+    // default dir before we knew the entry declares its own paths.
     if (entry.outputStyles) {
+      plugin.outputStylesPath = undefined
       const outputStylePaths = Array.isArray(entry.outputStyles)
         ? entry.outputStyles
         : [entry.outputStyles]
