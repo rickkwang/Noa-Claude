@@ -201,7 +201,7 @@ import { extractReadFilesFromMessages, extractBashToolsFromMessages } from '../u
 import { resetMicrocompactState } from '../services/compact/microCompact.js';
 import { runPostCompactCleanup } from '../services/compact/postCompactCleanup.js';
 import { provisionContentReplacementState, reconstructContentReplacementState, type ContentReplacementRecord } from '../utils/toolResultStorage.js';
-import { buildPostCompactMessages, partialCompactConversation } from '../services/compact/compact.js';
+import { buildPostCompactMessages, CompactionBlockedError, isCompactionUserAbort, partialCompactConversation } from '../services/compact/compact.js';
 import type { LogOption } from '../types/logs.js';
 import type { AgentColorName } from '../tools/AgentTool/agentColorManager.js';
 import { fileHistoryMakeSnapshot, type FileHistoryState, fileHistoryRewind, fileHistoryTouch, type FileHistorySnapshot, copyFileHistoryForResume, fileHistoryEnabled, fileHistoryHasAnyChanges } from '../utils/fileHistory.js';
@@ -4986,6 +4986,20 @@ export function REPL({
                 toolUseContext: context,
                 forkContextMessages: compactMessages
               }, feedback, direction);
+            } catch (error) {
+              // A PreCompact hook veto and an Esc both already told the user
+              // what happened; anything else is a real failure worth naming,
+              // and every case leaves the conversation as it was.
+              if (!(error instanceof CompactionBlockedError) && !isCompactionUserAbort(error, newAbortController.signal)) {
+                logError(error);
+                addNotification({
+                  key: 'summarize-failed',
+                  text: 'Failed to summarize conversation',
+                  priority: 'immediate',
+                  color: 'error'
+                });
+              }
+              return;
             } finally {
               setAbortController(null);
             }
