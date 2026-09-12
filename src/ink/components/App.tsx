@@ -93,8 +93,8 @@ type Props = {
   // parsed key alongside the legacy EventEmitter path.
   readonly dispatchKeyboardEvent: (parsedKey: ParsedKey) => void;
   // Called when a parsed input batch contains a real keystroke (not a
-  // mouse/wheel/focus event). Ink shortens its frame-pacing interval for a
-  // short window so the keystroke's paint isn't stuck behind a frame window
+  // mouse/wheel/focus event). Ink's pacer then waits at most ~4ms for the
+  // next frame, so the keystroke's paint isn't stuck behind a frame window
   // started by a spinner/streaming repaint. Optional: tests never instantiate
   // App directly, and older call sites don't pass it.
   readonly onInputPriorityFrame?: () => void;

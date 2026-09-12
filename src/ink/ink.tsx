@@ -16,7 +16,8 @@ import { format } from 'util';
 import { colorize } from './colorize.js';
 import App from './components/App.js';
 import type { CursorDeclaration, CursorDeclarationSetter } from './components/CursorDeclarationContext.js';
-import { FRAME_INTERVAL_MS, INPUT_PRIORITY_FRAME_INTERVAL_MS, INPUT_PRIORITY_WINDOW_MS } from './constants.js';
+import { FRAME_INTERVAL_MS } from './constants.js';
+import { FramePacer } from './frame-pacer.js';
 import { reportFrameCost } from './frame-cost.js';
 import * as dom from './dom.js';
 import { KeyboardEvent } from './events/keyboard-event.js';
@@ -90,14 +91,9 @@ export default class Ink {
   private scheduleRender: (() => void) & {
     cancel?: () => void;
   };
-  // Frame pacer state (see scheduleFrame). lastPacedFrameAt starts at
-  // -Infinity so the first frame renders immediately.
-  private lastPacedFrameAt = -Infinity;
-  private frameTimer: ReturnType<typeof setTimeout> | null = null;
-  private frameTimerDueAt = 0;
-  private frameMicrotaskQueued = false;
-  private inputPriorityUntil = 0;
-  private readonly pacerNow = (): number => performance.now();
+  // Frame pacing lives in frame-pacer.ts. onRender is looked up at call time
+  // so autoBind order doesn't matter.
+  private readonly framePacer = new FramePacer(() => this.onRender());
   // Ignore last render after unmounting a tree to prevent empty output before exit
   private isUnmounted = false;
   private isPaused = false;
@@ -242,13 +238,13 @@ export default class Ink {
     // runs BEFORE React's layout phase (ref attach + useLayoutEffect). Any
     // state set in layout effects — notably the cursorDeclaration from
     // useDeclaredCursor — would lag one commit behind if we rendered
-    // synchronously. The pacer renders on a microtask (queuePacedFrame), so
-    // onRender runs after layout effects have committed and the native cursor
-    // tracks the caret without a one-keystroke lag. Test env uses
-    // onImmediateRender (direct onRender, no pacing) so existing synchronous
-    // lastFrame() tests are unaffected.
-    this.scheduleRender = Object.assign(() => this.scheduleFrame(), {
-      cancel: () => this.cancelScheduledFrame()
+    // synchronously. The pacer emits frames on a microtask, so onRender runs
+    // after layout effects have committed and the native cursor tracks the
+    // caret without a one-keystroke lag. Test env uses onImmediateRender
+    // (direct onRender, no pacing) so existing synchronous lastFrame() tests
+    // are unaffected.
+    this.scheduleRender = Object.assign(() => this.framePacer.schedule(), {
+      cancel: () => this.framePacer.cancel()
     });
 
     // Ignore last render after unmounting a tree to prevent empty output before exit
@@ -456,53 +452,9 @@ export default class Ink {
     // without the pop we'd accumulate depth on each editor round-trip).
     this.options.stdout.write('\x1b[?1004h' + (supportsExtendedKeys() ? DISABLE_KITTY_KEYBOARD + ENABLE_KITTY_KEYBOARD + ENABLE_MODIFY_OTHER_KEYS : ''));
   }
-  // App calls this when a batch of parsed input contains a real keystroke
-  // (not mouse/wheel/focus events). For the next INPUT_PRIORITY_WINDOW_MS the
-  // pacer uses the short input interval, so typed characters paint within ~4ms
-  // instead of waiting out a FRAME_INTERVAL_MS window started by a spinner or
-  // streaming repaint.
   requestInputPriorityFrame = (): void => {
-    this.inputPriorityUntil = this.pacerNow() + INPUT_PRIORITY_WINDOW_MS;
+    this.framePacer.requestInputPriorityFrame();
   };
-  private scheduleFrame(): void {
-    if (this.frameMicrotaskQueued) {
-      return;
-    }
-    const now = this.pacerNow();
-    const elapsed = now - this.lastPacedFrameAt;
-    const interval = now < this.inputPriorityUntil ? INPUT_PRIORITY_FRAME_INTERVAL_MS : FRAME_INTERVAL_MS;
-    if (elapsed >= interval) {
-      this.queuePacedFrame();
-      return;
-    }
-    // Not due yet — arm a timer for the exact due time. An earlier existing
-    // timer is left alone; a later one is re-armed earlier.
-    const dueAt = this.lastPacedFrameAt + interval;
-    if (this.frameTimer === null || dueAt < this.frameTimerDueAt) {
-      this.cancelScheduledFrame();
-      this.frameTimerDueAt = dueAt;
-      this.frameTimer = setTimeout(() => {
-        this.frameTimer = null;
-        this.queuePacedFrame();
-      }, Math.max(0, dueAt - now));
-    }
-  }
-  private queuePacedFrame(): void {
-    this.cancelScheduledFrame();
-    this.frameMicrotaskQueued = true;
-    this.inputPriorityUntil = 0;
-    this.lastPacedFrameAt = this.pacerNow();
-    queueMicrotask(() => {
-      this.frameMicrotaskQueued = false;
-      this.onRender();
-    });
-  }
-  private cancelScheduledFrame(): void {
-    if (this.frameTimer !== null) {
-      clearTimeout(this.frameTimer);
-      this.frameTimer = null;
-    }
-  }
   onRender() {
     if (this.isUnmounted || this.isPaused) {
       return;
