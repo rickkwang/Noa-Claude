@@ -92,6 +92,12 @@ type Props = {
   // Dispatch a keyboard event through the DOM tree. Called for each
   // parsed key alongside the legacy EventEmitter path.
   readonly dispatchKeyboardEvent: (parsedKey: ParsedKey) => void;
+  // Called when a parsed input batch contains a real keystroke (not a
+  // mouse/wheel/focus event). Ink shortens its frame-pacing interval for a
+  // short window so the keystroke's paint isn't stuck behind a frame window
+  // started by a spinner/streaming repaint. Optional: tests never instantiate
+  // App directly, and older call sites don't pass it.
+  readonly onInputPriorityFrame?: () => void;
 };
 
 // Multi-click detection thresholds. 500ms is the macOS default; a small
@@ -344,6 +350,9 @@ export default class App extends PureComponent<Props, State> {
     // This batches all state updates from handleInput and all useInput
     // listeners together within one high-priority update context.
     if (keys.length > 0) {
+      if (keys.some(isInputPriorityKey)) {
+        this.props.onInputPriorityFrame?.();
+      }
       reconciler.discreteUpdates(processKeysInBatch, this, keys, undefined, undefined);
     }
 
@@ -472,6 +481,17 @@ export default class App extends PureComponent<Props, State> {
     process.on('SIGCONT', resumeHandler);
     process.kill(process.pid, 'SIGSTOP');
   };
+}
+
+// Real keystrokes only — mouse, wheel, and focus in/out events don't open an
+// input-priority frame window (high-frequency noise or not typing).
+function isInputPriorityKey(item: ParsedInput): boolean {
+  return item.kind === 'key' &&
+    item.name !== 'wheelup' &&
+    item.name !== 'wheeldown' &&
+    item.name !== 'mouse' &&
+    item.sequence !== FOCUS_IN &&
+    item.sequence !== FOCUS_OUT;
 }
 
 // Helper to process all keys within a single discrete update context.

@@ -2,7 +2,6 @@
 import autoBind from 'auto-bind';
 import { closeSync, constants as fsConstants, openSync, readSync, writeSync } from 'fs';
 import noop from 'lodash-es/noop.js';
-import throttle from 'lodash-es/throttle.js';
 import React, { type ReactNode } from 'react';
 import type { FiberRoot } from 'react-reconciler';
 import { ConcurrentRoot } from 'react-reconciler/constants.js';
@@ -17,7 +16,7 @@ import { format } from 'util';
 import { colorize } from './colorize.js';
 import App from './components/App.js';
 import type { CursorDeclaration, CursorDeclarationSetter } from './components/CursorDeclarationContext.js';
-import { FRAME_INTERVAL_MS } from './constants.js';
+import { FRAME_INTERVAL_MS, INPUT_PRIORITY_FRAME_INTERVAL_MS, INPUT_PRIORITY_WINDOW_MS } from './constants.js';
 import { reportFrameCost } from './frame-cost.js';
 import * as dom from './dom.js';
 import { KeyboardEvent } from './events/keyboard-event.js';
@@ -91,6 +90,14 @@ export default class Ink {
   private scheduleRender: (() => void) & {
     cancel?: () => void;
   };
+  // Frame pacer state (see scheduleFrame). lastPacedFrameAt starts at
+  // -Infinity so the first frame renders immediately.
+  private lastPacedFrameAt = -Infinity;
+  private frameTimer: ReturnType<typeof setTimeout> | null = null;
+  private frameTimerDueAt = 0;
+  private frameMicrotaskQueued = false;
+  private inputPriorityUntil = 0;
+  private readonly pacerNow = (): number => performance.now();
   // Ignore last render after unmounting a tree to prevent empty output before exit
   private isUnmounted = false;
   private isPaused = false;
@@ -235,15 +242,13 @@ export default class Ink {
     // runs BEFORE React's layout phase (ref attach + useLayoutEffect). Any
     // state set in layout effects — notably the cursorDeclaration from
     // useDeclaredCursor — would lag one commit behind if we rendered
-    // synchronously. Deferring to a microtask runs onRender after layout
-    // effects have committed, so the native cursor tracks the caret without
-    // a one-keystroke lag. Same event-loop tick, so throughput is unchanged.
-    // Test env uses onImmediateRender (direct onRender, no throttle) so
-    // existing synchronous lastFrame() tests are unaffected.
-    const deferredRender = (): void => queueMicrotask(this.onRender);
-    this.scheduleRender = throttle(deferredRender, FRAME_INTERVAL_MS, {
-      leading: true,
-      trailing: true
+    // synchronously. The pacer renders on a microtask (queuePacedFrame), so
+    // onRender runs after layout effects have committed and the native cursor
+    // tracks the caret without a one-keystroke lag. Test env uses
+    // onImmediateRender (direct onRender, no pacing) so existing synchronous
+    // lastFrame() tests are unaffected.
+    this.scheduleRender = Object.assign(() => this.scheduleFrame(), {
+      cancel: () => this.cancelScheduledFrame()
     });
 
     // Ignore last render after unmounting a tree to prevent empty output before exit
@@ -450,6 +455,53 @@ export default class Ink {
     // Kitty stack balanced (a well-behaved editor restores our entry, so
     // without the pop we'd accumulate depth on each editor round-trip).
     this.options.stdout.write('\x1b[?1004h' + (supportsExtendedKeys() ? DISABLE_KITTY_KEYBOARD + ENABLE_KITTY_KEYBOARD + ENABLE_MODIFY_OTHER_KEYS : ''));
+  }
+  // App calls this when a batch of parsed input contains a real keystroke
+  // (not mouse/wheel/focus events). For the next INPUT_PRIORITY_WINDOW_MS the
+  // pacer uses the short input interval, so typed characters paint within ~4ms
+  // instead of waiting out a FRAME_INTERVAL_MS window started by a spinner or
+  // streaming repaint.
+  requestInputPriorityFrame = (): void => {
+    this.inputPriorityUntil = this.pacerNow() + INPUT_PRIORITY_WINDOW_MS;
+  };
+  private scheduleFrame(): void {
+    if (this.frameMicrotaskQueued) {
+      return;
+    }
+    const now = this.pacerNow();
+    const elapsed = now - this.lastPacedFrameAt;
+    const interval = now < this.inputPriorityUntil ? INPUT_PRIORITY_FRAME_INTERVAL_MS : FRAME_INTERVAL_MS;
+    if (elapsed >= interval) {
+      this.queuePacedFrame();
+      return;
+    }
+    // Not due yet — arm a timer for the exact due time. An earlier existing
+    // timer is left alone; a later one is re-armed earlier.
+    const dueAt = this.lastPacedFrameAt + interval;
+    if (this.frameTimer === null || dueAt < this.frameTimerDueAt) {
+      this.cancelScheduledFrame();
+      this.frameTimerDueAt = dueAt;
+      this.frameTimer = setTimeout(() => {
+        this.frameTimer = null;
+        this.queuePacedFrame();
+      }, Math.max(0, dueAt - now));
+    }
+  }
+  private queuePacedFrame(): void {
+    this.cancelScheduledFrame();
+    this.frameMicrotaskQueued = true;
+    this.inputPriorityUntil = 0;
+    this.lastPacedFrameAt = this.pacerNow();
+    queueMicrotask(() => {
+      this.frameMicrotaskQueued = false;
+      this.onRender();
+    });
+  }
+  private cancelScheduledFrame(): void {
+    if (this.frameTimer !== null) {
+      clearTimeout(this.frameTimer);
+      this.frameTimer = null;
+    }
   }
   onRender() {
     if (this.isUnmounted || this.isPaused) {
@@ -827,17 +879,12 @@ export default class Ink {
     this.prevFrameContaminated = selActive || hlActive;
 
     // A ScrollBox has pendingScrollDelta left to drain — schedule the next
-    // frame. MUST NOT call this.scheduleRender() here: we're inside a
-    // trailing-edge throttle invocation, timerId is undefined, and lodash's
-    // debounce sees timeSinceLastCall >= wait (last call was at the start
-    // of this window) → leadingEdge fires IMMEDIATELY → double render ~0.1ms
-    // apart → jank. Use a plain timeout. If a wheel event arrives first,
-    // its scheduleRender path fires a render which clears this timer at
-    // the top of onRender — no double.
-    //
-    // Drain frames are cheap (DECSTBM + ~10 patches, ~200 bytes) so run at
-    // quarter interval (~250fps, setTimeout practical floor) for max scroll
-    // speed. Regular renders stay at FRAME_INTERVAL_MS via the throttle.
+    // frame. Bypasses scheduleRender on purpose: the pacer would hold this to
+    // FRAME_INTERVAL_MS, while drain frames are cheap (DECSTBM + ~10 patches,
+    // ~200 bytes) and want quarter interval (~250fps, setTimeout practical
+    // floor) for max scroll speed. If a wheel event arrives first, its
+    // scheduleRender path fires a render which clears this timer at the top
+    // of onRender — no double.
     if (frame.scrollDrainPending) {
       this.drainTimer = setTimeout(() => this.onRender(), FRAME_INTERVAL_MS >> 2);
     }
@@ -1028,7 +1075,7 @@ export default class Ink {
   detachForShutdown(): void {
     this.isUnmounted = true;
     this.suppressAltScreenExitSequence = true;
-    // Cancel any pending throttled render so it doesn't fire between
+    // Cancel any pending paced render so it doesn't fire between
     // cleanupTerminalModes() and process.exit() and write to main screen.
     this.scheduleRender.cancel?.();
     // Restore stdin from raw mode. unmount() used to do this via React
@@ -1539,7 +1586,7 @@ export default class Ink {
   };
   render(node: ReactNode): void {
     this.currentNode = node;
-    const tree = <App stdin={this.options.stdin} stdout={this.options.stdout} stderr={this.options.stderr} exitOnCtrlC={this.options.exitOnCtrlC} onExit={this.unmount} terminalColumns={this.terminalColumns} terminalRows={this.terminalRows} selection={this.selection} onSelectionChange={this.notifySelectionChange} onClickAt={this.dispatchClick} onHoverAt={this.dispatchHover} onWheelAt={this.dispatchWheel} getHyperlinkAt={this.getHyperlinkAt} onOpenHyperlink={this.openHyperlink} onMultiClick={this.handleMultiClick} onSelectionStart={this.handleSelectionStart} onSelectionDrag={this.handleSelectionDrag} onStdinResume={this.reassertTerminalModes} onCursorDeclaration={this.setCursorDeclaration} dispatchKeyboardEvent={this.dispatchKeyboardEvent}>
+    const tree = <App stdin={this.options.stdin} stdout={this.options.stdout} stderr={this.options.stderr} exitOnCtrlC={this.options.exitOnCtrlC} onExit={this.unmount} terminalColumns={this.terminalColumns} terminalRows={this.terminalRows} selection={this.selection} onSelectionChange={this.notifySelectionChange} onClickAt={this.dispatchClick} onHoverAt={this.dispatchHover} onWheelAt={this.dispatchWheel} getHyperlinkAt={this.getHyperlinkAt} onOpenHyperlink={this.openHyperlink} onMultiClick={this.handleMultiClick} onSelectionStart={this.handleSelectionStart} onSelectionDrag={this.handleSelectionDrag} onStdinResume={this.reassertTerminalModes} onCursorDeclaration={this.setCursorDeclaration} dispatchKeyboardEvent={this.dispatchKeyboardEvent} onInputPriorityFrame={this.requestInputPriorityFrame}>
         <TerminalWriteProvider value={this.writeRaw}>
           {node}
         </TerminalWriteProvider>
@@ -1608,7 +1655,7 @@ export default class Ink {
 
     this.isUnmounted = true;
 
-    // Cancel any pending throttled renders to prevent accessing freed Yoga nodes
+    // Cancel any pending paced renders to prevent accessing freed Yoga nodes
     this.scheduleRender.cancel?.();
     if (this.drainTimer !== null) {
       clearTimeout(this.drainTimer);
