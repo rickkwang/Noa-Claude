@@ -4419,6 +4419,23 @@ export function createPermissionRetryMessage(
   }
 }
 
+// A dot-prefixed, always-visible notice used by /release-notes when a
+// version is picked. Its own subtype so SystemTextMessage renders it before
+// the generic level==='info' verbose-only gate (see permission_retry above).
+export function createReleaseNotesMessage(content: string): SystemMessage & {
+  subtype: 'release_notes'
+} {
+  return {
+    type: 'system',
+    subtype: 'release_notes',
+    content,
+    level: 'info',
+    isMeta: false,
+    timestamp: new Date().toISOString(),
+    uuid: randomUUID(),
+  }
+}
+
 export function createBridgeStatusMessage(
   url: string,
   upgradeNudge?: string,

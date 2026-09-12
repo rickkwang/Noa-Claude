@@ -198,6 +198,9 @@ export function SystemTextMessage(t0) {
     }
     return t6;
   }
+  if (message.subtype === "release_notes") {
+    return <Box flexDirection="row" width="100%"><SystemTextMessageInner content={message.content} addMargin={addMargin} dot={true} dimColor={true} /></Box>;
+  }
   const isStopHookSummary = message.subtype === "stop_hook_summary";
   if (!isStopHookSummary && !verbose && message.level === "info") {
     return null;

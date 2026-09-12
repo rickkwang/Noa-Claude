@@ -247,6 +247,31 @@ export function getAllReleaseNotes(
 }
 
 /**
+ * Formats one version's notes as upstream Claude Code does for its
+ * release-notes picker: a "Version X:" heading followed by "· " bullets.
+ */
+export function formatReleaseNotesForVersion(
+  version: string,
+  notes: string[],
+): string {
+  return `Version ${version}:\n${notes.map(note => `\u00b7 ${note}`).join('\n')}`
+}
+
+/**
+ * Formats every version for the picker's "Show all" option. Sorted oldest
+ * first (the reverse of the picker list order), matching upstream.
+ */
+export function formatAllReleaseNotes(
+  entries: Array<[string, string[]]>,
+): string {
+  return entries
+    .slice()
+    .sort(([a], [b]) => (gt(a, b) ? 1 : -1))
+    .map(([version, notes]) => formatReleaseNotesForVersion(version, notes))
+    .join('\n\n')
+}
+
+/**
  * Checks if there are release notes to show based on the last seen version.
  * Can be used by multiple components to determine whether to display release notes.
  * Also seeds the local changelog cache from the bundled release notes when needed.
