@@ -77,12 +77,21 @@ export async function getFileModificationTimeAsync(
   return Math.floor(s.mtimeMs)
 }
 
+/**
+ * Writes text to a file and returns its post-write modification time (floored,
+ * same semantics as getFileModificationTime) for the caller's readFileState.
+ *
+ * Verifies the on-disk size before returning. Network drives and cloud-sync
+ * clients can accept a write, report success, and land fewer bytes; nothing
+ * downstream would notice, because the tool reports success and readFileState
+ * records content the file does not actually have.
+ */
 export function writeTextContent(
   filePath: string,
   content: string,
   encoding: BufferEncoding,
   endings: LineEndingType,
-): void {
+): number {
   let toWrite = content
   if (endings === 'CRLF') {
     // Normalize any existing CRLF to LF first so a new_string that already
@@ -91,6 +100,15 @@ export function writeTextContent(
   }
 
   writeFileSyncAndFlush_DEPRECATED(filePath, toWrite, { encoding })
+
+  const expectedBytes = Buffer.byteLength(toWrite, encoding)
+  const stats = getFsImplementation().statSync(filePath)
+  if (stats.size !== expectedBytes) {
+    throw new Error(
+      `Write verification failed: ${filePath} is ${stats.size} bytes on disk, expected ${expectedBytes}. The filesystem may have silently truncated the write (network drive / cloud sync).`,
+    )
+  }
+  return Math.floor(stats.mtimeMs)
 }
 
 export function detectFileEncoding(filePath: string): BufferEncoding {

@@ -340,7 +340,7 @@ export const FileWriteTool = buildTool({
     // the old file's line endings (or sampled the repo via ripgrep for new
     // files), which silently corrupted e.g. bash scripts with \r on Linux when
     // overwriting a CRLF file or when binaries in cwd poisoned the repo sample.
-    writeTextContent(fullFilePath, content, enc, 'LF')
+    const writtenAt = writeTextContent(fullFilePath, content, enc, 'LF')
 
     // Notify LSP servers about file modification (didChange) and save (didSave)
     const lspManager = getLspServerManager()
@@ -369,7 +369,7 @@ export const FileWriteTool = buildTool({
     // Update read timestamp, to invalidate stale writes
     readFileState.set(fullFilePath, {
       content,
-      timestamp: getFileModificationTime(fullFilePath),
+      timestamp: writtenAt,
       offset: undefined,
       limit: undefined,
     })

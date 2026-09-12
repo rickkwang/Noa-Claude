@@ -19,7 +19,7 @@ import { extractClaudeCodeHints } from '../../utils/claudeCodeHints.js';
 import { detectCodeIndexingFromCommand } from '../../utils/codeIndexing.js';
 import { isEnvTruthy } from '../../utils/envUtils.js';
 import { isENOENT, ShellError } from '../../utils/errors.js';
-import { detectFileEncoding, detectLineEndings, getFileModificationTime, writeTextContent } from '../../utils/file.js';
+import { detectFileEncoding, detectLineEndings, writeTextContent } from '../../utils/file.js';
 import { fileHistoryTouch, fileHistoryTrackEdit } from '../../utils/fileHistory.js';
 import { formatFileSize, truncate } from '../../utils/format.js';
 import { getFsImplementation } from '../../utils/fsOperations.js';
@@ -393,7 +393,7 @@ async function applySedEdit(simulatedEdit: {
 
   // Detect line endings and write new content
   const endings = detectLineEndings(absoluteFilePath);
-  writeTextContent(absoluteFilePath, newContent, encoding, endings);
+  const writtenAt = writeTextContent(absoluteFilePath, newContent, encoding, endings);
 
   // Notify VS Code about the file change
   notifyVscodeFileUpdated(absoluteFilePath, originalContent, newContent);
@@ -402,7 +402,7 @@ async function applySedEdit(simulatedEdit: {
   // Update read timestamp to invalidate stale writes
   toolUseContext.readFileState.set(absoluteFilePath, {
     content: newContent,
-    timestamp: getFileModificationTime(absoluteFilePath),
+    timestamp: writtenAt,
     offset: undefined,
     limit: undefined
   });

@@ -433,14 +433,19 @@ export const NotebookEditTool = buildTool({
       // Write back to file
       const IPYNB_INDENT = 1
       const updatedContent = jsonStringify(notebook, null, IPYNB_INDENT)
-      writeTextContent(fullPath, updatedContent, encoding, lineEndings)
+      const writtenAt = writeTextContent(
+        fullPath,
+        updatedContent,
+        encoding,
+        lineEndings,
+      )
       // Update readFileState with post-write mtime (matches FileEditTool/
       // FileWriteTool). offset:undefined breaks FileReadTool's dedup match —
       // without this, Read→NotebookEdit→Read in the same millisecond would
       // return the file_unchanged stub against stale in-context content.
       readFileState.set(fullPath, {
         content: updatedContent,
-        timestamp: getFileModificationTime(fullPath),
+        timestamp: writtenAt,
         offset: undefined,
         limit: undefined,
       })

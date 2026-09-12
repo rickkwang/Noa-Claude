@@ -512,7 +512,12 @@ export const FileEditTool = buildTool({
     })
 
     // 5. Write to disk
-    writeTextContent(absoluteFilePath, updatedFile, encoding, endings)
+    const writtenAt = writeTextContent(
+      absoluteFilePath,
+      updatedFile,
+      encoding,
+      endings,
+    )
 
     // Notify LSP servers about file modification (didChange) and save (didSave)
     const lspManager = getLspServerManager()
@@ -543,7 +548,7 @@ export const FileEditTool = buildTool({
     // 6. Update read timestamp, to invalidate stale writes
     readFileState.set(absoluteFilePath, {
       content: updatedFile,
-      timestamp: getFileModificationTime(absoluteFilePath),
+      timestamp: writtenAt,
       offset: undefined,
       limit: undefined,
     })
