@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { c as _c } from "react/compiler-runtime";
-import type { Base64ImageSource, ImageBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
+import type { Base64ImageSource, ContentBlockParam, ImageBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useSettings } from '../../../hooks/useSettings.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
@@ -14,7 +14,7 @@ import { AskUserQuestionTool } from '../../../tools/AskUserQuestionTool/AskUserQ
 import { type CliHighlight, useCliHighlight } from '../../../utils/cliHighlight.js';
 import type { PastedContent } from '../../../utils/config.js';
 import type { ImageDimensions } from '../../../utils/imageResizer.js';
-import { maybeResizeAndDownsampleImageBlock } from '../../../utils/imageResizer.js';
+import { resizeImageBlockOrPlaceholder } from '../../../utils/imageResizer.js';
 import { cacheImagePath, storeImage } from '../../../utils/imageStore.js';
 import { logError } from '../../../utils/log.js';
 import { applyMarkdown } from '../../../utils/markdown.js';
@@ -593,7 +593,7 @@ function _temp2(contents) {
 function _temp(opt) {
   return opt.preview;
 }
-async function convertImagesToBlocks(images: PastedContent[]): Promise<ImageBlockParam[] | undefined> {
+async function convertImagesToBlocks(images: PastedContent[]): Promise<ContentBlockParam[] | undefined> {
   if (images.length === 0) return undefined;
   return Promise.all(images.map(async img => {
     const block: ImageBlockParam = {
@@ -604,7 +604,7 @@ async function convertImagesToBlocks(images: PastedContent[]): Promise<ImageBloc
         data: img.content
       }
     };
-    const resized = await maybeResizeAndDownsampleImageBlock(block);
+    const resized = await resizeImageBlockOrPlaceholder(block);
     return resized.block;
   }));
 }

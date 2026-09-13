@@ -45,7 +45,7 @@ import {
 } from '../hooks.js'
 import {
   createImageMetadataText,
-  maybeResizeAndDownsampleImageBlock,
+  resizeImageBlockOrPlaceholder,
 } from '../imageResizer.js'
 import { storeImages } from '../imageStore.js'
 import {
@@ -319,7 +319,7 @@ async function processUserInputBase(
     const processedBlocks: ContentBlockParam[] = []
     for (const block of input) {
       if (block.type === 'image') {
-        const resized = await maybeResizeAndDownsampleImageBlock(block)
+        const resized = await resizeImageBlockOrPlaceholder(block)
         // Collect image metadata for isMeta message
         if (resized.dimensions) {
           const metadataText = createImageMetadataText(resized.dimensions)
@@ -354,7 +354,6 @@ async function processUserInputBase(
   const imageContents = pastedContents
     ? Object.values(pastedContents).filter(isValidImagePaste)
     : []
-  const imagePasteIds = imageContents.map(img => img.id)
 
   // Store images to disk so Claude can reference the path in context
   // (for manipulation with CLI tools, uploading to PRs, etc.)
@@ -375,11 +374,9 @@ async function processUserInputBase(
           data: pastedImage.content,
         },
       }
-      logEvent('tengu_pasted_image_resize_attempt', {
-        original_size_bytes: pastedImage.content.length,
-      })
-      const resized = await maybeResizeAndDownsampleImageBlock(imageBlock)
+      const resized = await resizeImageBlockOrPlaceholder(imageBlock)
       return {
+        id: pastedImage.id,
         resized,
         originalDimensions: pastedImage.dimensions,
         sourcePath:
@@ -389,11 +386,18 @@ async function processUserInputBase(
   )
   // Collect results preserving order
   const imageContentBlocks: ContentBlockParam[] = []
+  // Only images that survived processing get an id; a failed one is sent as
+  // a text note and must not shift the image-index → paste-id mapping.
+  const imagePasteIds: number[] = []
   for (const {
+    id,
     resized,
     originalDimensions,
     sourcePath,
   } of imageProcessingResults) {
+    imageContentBlocks.push(resized.block)
+    if (resized.block.type !== 'image') continue
+    imagePasteIds.push(id)
     // Collect image metadata for isMeta message (prefer resized dimensions)
     if (resized.dimensions) {
       const metadataText = createImageMetadataText(
@@ -416,7 +420,6 @@ async function processUserInputBase(
       // If we have a source path but no dimensions, still add source info
       imageMetadataTexts.push(`[Image source: ${sourcePath}]`)
     }
-    imageContentBlocks.push(resized.block)
   }
   queryCheckpoint('query_pasted_image_processing_end')
 

@@ -42,11 +42,11 @@ import { PermissionRuleExplanation } from '../PermissionRuleExplanation.js';
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 const autoModeStateModule = feature('AUTO_MODE') ? require('../../../utils/permissions/autoModeState.js') as typeof import('../../../utils/permissions/autoModeState.js') : null;
-import type { Base64ImageSource, ImageBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
+import type { Base64ImageSource, ContentBlockParam, ImageBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
 /* eslint-enable @typescript-eslint/no-require-imports */
 import type { PastedContent } from '../../../utils/config.js';
 import type { ImageDimensions } from '../../../utils/imageResizer.js';
-import { maybeResizeAndDownsampleImageBlock } from '../../../utils/imageResizer.js';
+import { resizeImageBlockOrPlaceholder } from '../../../utils/imageResizer.js';
 import { cacheImagePath, storeImage } from '../../../utils/imageStore.js';
 type ResponseValue = 'yes-bypass-permissions' | 'yes-bypass-permissions-keep-context' | 'yes-accept-edits' | 'yes-accept-edits-keep-context' | 'yes-default-keep-context' | 'yes-resume-auto-mode' | 'yes-auto-clear-context' | 'ultraplan' | 'no';
 
@@ -487,8 +487,8 @@ export function ExitPlanModePermissionRequest({
         planStructureVariant
       });
 
-      // Convert pasted images to ImageBlockParam[] with resizing
-      let imageBlocks: ImageBlockParam[] | undefined;
+      // Convert pasted images to content blocks with resizing
+      let imageBlocks: ContentBlockParam[] | undefined;
       if (hasImages) {
         imageBlocks = await Promise.all(imageAttachments.map(async img => {
           const block: ImageBlockParam = {
@@ -499,7 +499,7 @@ export function ExitPlanModePermissionRequest({
               data: img.content
             }
           };
-          const resized = await maybeResizeAndDownsampleImageBlock(block);
+          const resized = await resizeImageBlockOrPlaceholder(block);
           return resized.block;
         }));
       }

@@ -39,7 +39,6 @@ This file is the build/runtime audit for experimental feature flags in this repo
 - `LODESTONE`
 - `MCP_RICH_OUTPUT`
 - `MESSAGE_ACTIONS`
-- `NATIVE_CLIPBOARD_IMAGE`
 - `POWERSHELL_AUTO_MODE`
 - `PROMPT_CACHE_BREAK_DETECTION`
 - `QUICK_SEARCH`
@@ -100,6 +99,7 @@ they are no longer flag-unlockable and no longer carry dead branches:
 - `KAIROS_GITHUB_WEBHOOKS` (bridge/webhookSanitizer, UserGitHubWebhookMessage)
 - `MCP_SKILLS` (skills/mcpSkills)
 - `MONITOR_TOOL` (tasks/MonitorMcpTask + dialogs)
+- `NATIVE_CLIPBOARD_IMAGE` (image-processor-napi NSPasteboard reader; the npm package is an empty placeholder)
 - `REVIEW_ARTIFACT` (ReviewArtifactTool + permission UI)
 - `SSH_REMOTE` (ssh/createSSHSession implementation)
 - `TEMPLATES` (src/jobs)

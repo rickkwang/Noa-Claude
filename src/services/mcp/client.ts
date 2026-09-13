@@ -72,7 +72,7 @@ import {
 } from '../../utils/errors.js'
 import { getMCPUserAgent } from '../../utils/http.js'
 import { maybeNotifyIDEConnected } from '../../utils/ide.js'
-import { maybeResizeAndDownsampleImageBuffer } from '../../utils/imageResizer.js'
+import { resizeImageBlockOrPlaceholder } from '../../utils/imageResizer.js'
 import { logMCPDebug, logMCPError } from '../../utils/log.js'
 import {
   getBinaryBlobSavedMessage,
@@ -2545,25 +2545,26 @@ export async function transformResultContent(
       )
     }
     case 'image': {
+      if (!IMAGE_MIME_TYPES.has(resultContent.mimeType ?? '')) {
+        // Not an image type the API accepts — persist it like any other blob.
+        return await persistBlobToTextBlock(
+          Buffer.from(String(resultContent.data), 'base64'),
+          resultContent.mimeType,
+          serverName,
+          `[Image from ${serverName}] `,
+        )
+      }
       // Resize and compress image data, enforcing API dimension limits
-      const imageBuffer = Buffer.from(String(resultContent.data), 'base64')
-      const ext = resultContent.mimeType?.split('/')[1] || 'png'
-      const resized = await maybeResizeAndDownsampleImageBuffer(
-        imageBuffer,
-        imageBuffer.length,
-        ext,
-      )
-      return [
-        {
-          type: 'image',
-          source: {
-            data: resized.buffer.toString('base64'),
-            media_type:
-              `image/${resized.mediaType}` as Base64ImageSource['media_type'],
-            type: 'base64',
-          },
+      const { block } = await resizeImageBlockOrPlaceholder({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: (resultContent.mimeType ||
+            'image/png') as Base64ImageSource['media_type'],
+          data: String(resultContent.data),
         },
-      ]
+      })
+      return [block]
     }
     case 'resource': {
       const resource = resultContent.resource
@@ -2581,13 +2582,15 @@ export async function transformResultContent(
 
         if (isImage) {
           // Resize and compress image blob, enforcing API dimension limits
-          const imageBuffer = Buffer.from(resource.blob, 'base64')
-          const ext = resource.mimeType?.split('/')[1] || 'png'
-          const resized = await maybeResizeAndDownsampleImageBuffer(
-            imageBuffer,
-            imageBuffer.length,
-            ext,
-          )
+          const { block } = await resizeImageBlockOrPlaceholder({
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: (resource.mimeType ||
+                'image/png') as Base64ImageSource['media_type'],
+              data: resource.blob,
+            },
+          })
           const content: MessageParam['content'] = []
           if (prefix) {
             content.push({
@@ -2595,15 +2598,7 @@ export async function transformResultContent(
               text: prefix,
             })
           }
-          content.push({
-            type: 'image',
-            source: {
-              data: resized.buffer.toString('base64'),
-              media_type:
-                `image/${resized.mediaType}` as Base64ImageSource['media_type'],
-              type: 'base64',
-            },
-          })
+          content.push(block)
           return content
         } else {
           return await persistBlobToTextBlock(

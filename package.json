@@ -83,7 +83,6 @@
     "google-auth-library": "^9.15.0",
     "highlight.js": "^11.11.1",
     "ignore": "^7.0.5",
-    "image-processor-napi": "^0.0.1",
     "ink": "^4.4.1",
     "jsonc-parser": "^3.3.1",
     "lodash-es": "^4.17.21",

@@ -241,10 +241,6 @@ export type BaseInputState = {
 
   // For paste handling
   isPasting?: boolean
-  pasteState?: {
-    chunks: string[]
-    timeoutId: ReturnType<typeof setTimeout> | null
-  }
 }
 
 /**
@@ -367,19 +363,6 @@ export type QueuedCommand = {
  */
 export function isValidImagePaste(c: PastedContent): boolean {
   return c.type === 'image' && c.content.length > 0
-}
-
-/** Extract image paste IDs from a QueuedCommand's pastedContents. */
-export function getImagePasteIds(
-  pastedContents: Record<number, PastedContent> | undefined,
-): number[] | undefined {
-  if (!pastedContents) {
-    return undefined
-  }
-  const ids = Object.values(pastedContents)
-    .filter(isValidImagePaste)
-    .map(c => c.id)
-  return ids.length > 0 ? ids : undefined
 }
 
 export type OrphanedPermission = {

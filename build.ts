@@ -69,7 +69,6 @@ const fullExperimentalFeatures = [
   'LODESTONE',
   'MCP_RICH_OUTPUT',
   'MESSAGE_ACTIONS',
-  'NATIVE_CLIPBOARD_IMAGE',
   'NATIVE_CLIENT_ATTESTATION',
   'OVERFLOW_TEST_TOOL',
   'POWERSHELL_AUTO_MODE',
@@ -249,7 +248,6 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 
 const externals = [
   'audio-capture-napi',
-  'image-processor-napi',
   'modifiers-napi',
   'url-handler-napi',
   'sharp',

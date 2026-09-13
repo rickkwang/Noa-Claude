@@ -61,7 +61,6 @@ import type {
 } from 'src/types/message.js'
 import {
   type QueuedCommand,
-  getImagePasteIds,
   isValidImagePaste,
 } from 'src/types/textInputTypes.js'
 import { createHash, randomUUID, type UUID } from 'crypto'
@@ -72,7 +71,7 @@ import type {
   ImageBlockParam,
   Base64ImageSource,
 } from '@anthropic-ai/sdk/resources/messages.mjs'
-import { maybeResizeAndDownsampleImageBlock } from './imageResizer.js'
+import { resizeImageBlockOrPlaceholder } from './imageResizer.js'
 import type { PastedContent } from './config.js'
 import { getGlobalConfig } from './config.js'
 import {
@@ -1472,7 +1471,8 @@ export async function getQueuedCommandAttachments(
   )
   return Promise.all(
     filtered.map(async _ => {
-      const imageBlocks = await buildImageContentBlocks(_.pastedContents)
+      const { blocks: imageBlocks, imagePasteIds } =
+        await buildImageContentBlocks(_.pastedContents)
       let prompt: string | Array<ContentBlockParam> = _.value
       if (imageBlocks.length > 0) {
         // Build content block array with text + images so the model sees them
@@ -1486,7 +1486,7 @@ export async function getQueuedCommandAttachments(
         type: 'queued_command' as const,
         prompt,
         source_uuid: _.uuid,
-        imagePasteIds: getImagePasteIds(_.pastedContents),
+        imagePasteIds,
         commandMode: _.mode,
         origin: _.origin,
         isMeta: _.isMeta,
@@ -1515,15 +1515,15 @@ export function getAgentPendingMessageAttachments(
 
 async function buildImageContentBlocks(
   pastedContents: Record<number, PastedContent> | undefined,
-): Promise<ImageBlockParam[]> {
+): Promise<{ blocks: ContentBlockParam[]; imagePasteIds?: number[] }> {
   if (!pastedContents) {
-    return []
+    return { blocks: [] }
   }
   const imageContents = Object.values(pastedContents).filter(isValidImagePaste)
   if (imageContents.length === 0) {
-    return []
+    return { blocks: [] }
   }
-  const results = await Promise.all(
+  const blocks = await Promise.all(
     imageContents.map(async img => {
       const imageBlock: ImageBlockParam = {
         type: 'image',
@@ -1534,11 +1534,19 @@ async function buildImageContentBlocks(
           data: img.content,
         },
       }
-      const resized = await maybeResizeAndDownsampleImageBlock(imageBlock)
+      const resized = await resizeImageBlockOrPlaceholder(imageBlock)
       return resized.block
     }),
   )
-  return results
+  // A failed image becomes a text note and gets no id, so ids stay aligned
+  // with the image blocks that remain.
+  const imagePasteIds = imageContents
+    .filter((_, i) => blocks[i]!.type === 'image')
+    .map(img => img.id)
+  return {
+    blocks,
+    imagePasteIds: imagePasteIds.length > 0 ? imagePasteIds : undefined,
+  }
 }
 
 function getPlanModeAttachmentTurnCount(messages: Message[]): {

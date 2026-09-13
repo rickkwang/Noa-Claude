@@ -2,6 +2,7 @@
 import type {
   Base64ImageSource,
   ImageBlockParam,
+  TextBlockParam,
 } from '@anthropic-ai/sdk/resources/messages.mjs'
 import {
   API_IMAGE_MAX_BASE64_SIZE,
@@ -9,7 +10,6 @@ import {
   IMAGE_MAX_WIDTH,
   IMAGE_TARGET_RAW_SIZE,
 } from '../constants/apiLimits.js'
-import { logEvent } from '../services/analytics/index.js'
 import {
   getImageProcessor,
   type SharpFunction,
@@ -22,15 +22,8 @@ import { logError } from './log.js'
 
 type ImageMediaType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'
 
-// Error type constants for analytics (numeric to comply with logEvent restrictions)
-const ERROR_TYPE_MODULE_LOAD = 1
-const ERROR_TYPE_PROCESSING = 2
-const ERROR_TYPE_UNKNOWN = 3
-const ERROR_TYPE_PIXEL_LIMIT = 4
-const ERROR_TYPE_MEMORY = 5
-const ERROR_TYPE_TIMEOUT = 6
-const ERROR_TYPE_VIPS = 7
-const ERROR_TYPE_PERMISSION = 8
+// Formats the Messages API accepts; anything else is re-encoded as PNG first.
+const API_IMAGE_FORMATS = new Set(['png', 'jpeg', 'gif', 'webp'])
 
 /**
  * Error thrown when image resizing fails and the image exceeds the API limit.
@@ -43,97 +36,185 @@ export class ImageResizeError extends Error {
 }
 
 /**
- * Classifies image processing errors for analytics.
- *
- * Uses error codes when available (Node.js module errors), falls back to
- * message matching for libraries like sharp that don't expose error codes.
+ * sharp/vips don't expose error codes, so decode failures (corrupt data,
+ * unsupported encodings) are recognized by message.
  */
-function classifyImageError(error: unknown): number {
-  // Check for Node.js error codes first (more reliable than string matching)
-  if (error instanceof Error) {
-    const errorWithCode = error as Error & { code?: string }
-    if (
-      errorWithCode.code === 'MODULE_NOT_FOUND' ||
-      errorWithCode.code === 'ERR_MODULE_NOT_FOUND' ||
-      errorWithCode.code === 'ERR_DLOPEN_FAILED'
-    ) {
-      return ERROR_TYPE_MODULE_LOAD
-    }
-    if (errorWithCode.code === 'EACCES' || errorWithCode.code === 'EPERM') {
-      return ERROR_TYPE_PERMISSION
-    }
-    if (errorWithCode.code === 'ENOMEM') {
-      return ERROR_TYPE_MEMORY
-    }
-  }
-
-  // Fall back to message matching for errors without codes
-  // Note: sharp doesn't expose error codes, so we must match on messages
+function isImageDecodeError(error: unknown): boolean {
   const message = errorMessage(error)
+  return [
+    'unsupported image format',
+    'Input buffer',
+    'Input file is missing',
+    'corrupt header',
+    'corrupt image',
+    'premature end',
+    'zlib: data error',
+    'zero width',
+    'zero height',
+  ].some(fragment => message.includes(fragment))
+}
 
-  // Module loading errors from our native wrapper
-  if (message.includes('Native image processor module not available')) {
-    return ERROR_TYPE_MODULE_LOAD
-  }
-
-  // Sharp/vips processing errors (format detection, corrupt data, etc.)
-  if (
-    message.includes('unsupported image format') ||
-    message.includes('Input buffer') ||
-    message.includes('Input file is missing') ||
-    message.includes('Input file has corrupt header') ||
-    message.includes('corrupt header') ||
-    message.includes('corrupt image') ||
-    message.includes('premature end') ||
-    message.includes('zlib: data error') ||
-    message.includes('zero width') ||
-    message.includes('zero height')
-  ) {
-    return ERROR_TYPE_PROCESSING
-  }
-
-  // Pixel/dimension limit errors from sharp/vips
-  if (
-    message.includes('pixel limit') ||
-    message.includes('too many pixels') ||
-    message.includes('exceeds pixel') ||
-    message.includes('image dimensions')
-  ) {
-    return ERROR_TYPE_PIXEL_LIMIT
-  }
-
-  // Memory allocation failures
-  if (
-    message.includes('out of memory') ||
-    message.includes('Cannot allocate') ||
-    message.includes('memory allocation')
-  ) {
-    return ERROR_TYPE_MEMORY
-  }
-
-  // Timeout errors
-  if (message.includes('timeout') || message.includes('timed out')) {
-    return ERROR_TYPE_TIMEOUT
-  }
-
-  // Vips-specific errors (VipsJpeg, VipsPng, VipsWebp, etc.)
-  if (message.includes('Vips')) {
-    return ERROR_TYPE_VIPS
-  }
-
-  return ERROR_TYPE_UNKNOWN
+function normalizeFormat(format: string): string {
+  return format === 'jpg' ? 'jpeg' : format
 }
 
 /**
- * Computes a simple numeric hash of a string for analytics grouping.
- * Uses djb2 algorithm, returning a 32-bit unsigned integer.
+ * Identify a supported image by magic bytes. Returns null for anything that
+ * isn't a PNG, JPEG, GIF or WebP — including files that merely carry an image
+ * extension.
  */
-function hashString(str: string): number {
-  let hash = 5381
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) + hash + str.charCodeAt(i)) | 0
+export function sniffImageMediaType(buffer: Buffer): ImageMediaType | null {
+  if (buffer.length < 4) return null
+  if (
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47
+  ) {
+    return 'image/png'
   }
-  return hash >>> 0
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg'
+  }
+  // GIF87a / GIF89a
+  if (
+    buffer.length >= 6 &&
+    buffer[0] === 0x47 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x38 &&
+    (buffer[4] === 0x37 || buffer[4] === 0x39) &&
+    buffer[5] === 0x61
+  ) {
+    return 'image/gif'
+  }
+  // RIFF....WEBP
+  if (
+    buffer.length >= 12 &&
+    buffer.toString('latin1', 0, 4) === 'RIFF' &&
+    buffer.toString('latin1', 8, 12) === 'WEBP'
+  ) {
+    return 'image/webp'
+  }
+  return null
+}
+
+/** Offset of the JPEG start-of-frame marker, which carries dimensions. */
+function findJpegStartOfFrame(buffer: Buffer): number | undefined {
+  if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) return
+  let offset = 2
+  while (offset + 9 < buffer.length) {
+    if (buffer[offset] !== 0xff) {
+      offset++
+      continue
+    }
+    const marker = buffer[offset + 1]
+    if (marker === 0xff) {
+      offset++
+      continue
+    }
+    // SOF0–SOF15, excluding DHT (C4), JPG (C8) and DAC (CC).
+    if (
+      marker !== undefined &&
+      marker >= 0xc0 &&
+      marker <= 0xcf &&
+      marker !== 0xc4 &&
+      marker !== 0xc8 &&
+      marker !== 0xcc
+    ) {
+      return offset
+    }
+    // Standalone markers (RSTn, SOI, EOI, TEM) have no length field.
+    if (
+      marker === undefined ||
+      (marker >= 0xd0 && marker <= 0xd9) ||
+      marker === 0x01
+    ) {
+      offset += 2
+      continue
+    }
+    const segmentLength = buffer.readUInt16BE(offset + 2)
+    if (segmentLength < 2) return
+    offset += 2 + segmentLength
+  }
+  return
+}
+
+/**
+ * Read pixel dimensions from the file header without decoding, so the size
+ * limits still hold when no image processor is available.
+ */
+export function readImageDimensionsFromHeader(
+  buffer: Buffer,
+): { width: number; height: number } | undefined {
+  if (buffer.length < 10) return
+  if (sniffImageMediaType(buffer) === 'image/png' && buffer.length >= 24) {
+    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) }
+  }
+  if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) {
+    return { width: buffer.readUInt16LE(6), height: buffer.readUInt16LE(8) }
+  }
+  const startOfFrame = findJpegStartOfFrame(buffer)
+  if (startOfFrame !== undefined) {
+    return {
+      height: buffer.readUInt16BE(startOfFrame + 5),
+      width: buffer.readUInt16BE(startOfFrame + 7),
+    }
+  }
+  if (sniffImageMediaType(buffer) === 'image/webp' && buffer.length >= 30) {
+    const chunk = buffer.toString('ascii', 12, 16)
+    if (chunk === 'VP8 ') {
+      return {
+        width: buffer.readUInt16LE(26) & 0x3fff,
+        height: buffer.readUInt16LE(28) & 0x3fff,
+      }
+    }
+    if (chunk === 'VP8L') {
+      const bits = buffer.readUInt32LE(21)
+      return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 }
+    }
+    if (chunk === 'VP8X') {
+      return {
+        width: buffer.readUIntLE(24, 3) + 1,
+        height: buffer.readUIntLE(27, 3) + 1,
+      }
+    }
+  }
+  return
+}
+
+function isAnimatedWebp(buffer: Buffer): boolean {
+  return (
+    buffer.length >= 30 &&
+    buffer.toString('latin1', 0, 4) === 'RIFF' &&
+    buffer.toString('latin1', 8, 12) === 'WEBP' &&
+    buffer.toString('latin1', 12, 16) === 'VP8X' &&
+    ((buffer[20] ?? 0) & 0x02) !== 0
+  )
+}
+
+function describeUndecodableImage(buffer: Buffer): {
+  reason: string
+  advice: string
+} {
+  const startOfFrame = findJpegStartOfFrame(buffer)
+  if (startOfFrame !== undefined && buffer[startOfFrame + 9] === 4) {
+    return {
+      reason: 'it is a CMYK JPEG, which cannot be decoded',
+      advice: 'Re-save it as an RGB PNG or JPEG and try again.',
+    }
+  }
+  if (isAnimatedWebp(buffer)) {
+    return {
+      reason: 'it is an animated WebP whose first frame cannot be decoded',
+      advice: 'Save its first frame as a PNG or JPEG and try again.',
+    }
+  }
+  return {
+    reason:
+      'its pixels could not be decoded (the file may be damaged, or use an unsupported encoding)',
+    advice: 'Re-save it as a PNG or JPEG and try again.',
+  }
 }
 
 export type ImageDimensions = {
@@ -164,8 +245,7 @@ interface CompressedImageResult {
 }
 
 /**
- * Extracted from FileReadTool's readImage function
- * Resizes image buffer to meet size and dimension constraints
+ * Resizes an image buffer to meet the API's size and dimension constraints.
  */
 export async function maybeResizeAndDownsampleImageBuffer(
   imageBuffer: Buffer,
@@ -173,51 +253,56 @@ export async function maybeResizeAndDownsampleImageBuffer(
   ext: string,
 ): Promise<ResizeResult> {
   if (imageBuffer.length === 0) {
-    // Empty buffer would fall through the catch block below (sharp throws
-    // "Unable to determine image format"), and the fallback's size check
-    // `0 ≤ 5MB` would pass it through, yielding an empty base64 string
-    // that the API rejects with `image cannot be empty`.
+    // sharp would throw "Unable to determine image format", and the fallback's
+    // `0 ≤ 5MB` check would pass an empty string the API rejects.
     throw new ImageResizeError('Image file is empty (0 bytes)')
   }
   try {
     const sharp = await getImageProcessor()
-    const image = sharp(imageBuffer)
-    const metadata = await image.metadata()
+    let buffer = imageBuffer
+    let size = originalSize
+    let metadata = await sharp(buffer).metadata()
+    let format = normalizeFormat(metadata.format ?? ext)
+    if (!API_IMAGE_FORMATS.has(format)) {
+      buffer = await sharp(imageBuffer).png().toBuffer()
+      size = buffer.length
+      metadata = await sharp(buffer).metadata()
+      format = 'png'
+    }
 
-    const mediaType = metadata.format ?? ext
-    // Normalize "jpg" to "jpeg" for media type compatibility
-    const normalizedMediaType = mediaType === 'jpg' ? 'jpeg' : mediaType
-
-    // If dimensions aren't available from metadata
     if (!metadata.width || !metadata.height) {
-      if (originalSize > IMAGE_TARGET_RAW_SIZE) {
-        // Create fresh sharp instance for compression
-        const compressedBuffer = await sharp(imageBuffer)
+      const header = readImageDimensionsFromHeader(buffer)
+      if (
+        header === undefined ||
+        header.width > IMAGE_MAX_WIDTH ||
+        header.height > IMAGE_MAX_HEIGHT
+      ) {
+        throw new ImageResizeError(
+          `Unable to resize image — could not verify image dimensions are within the ${IMAGE_MAX_WIDTH}x${IMAGE_MAX_HEIGHT}px API limit.`,
+        )
+      }
+      if (size > IMAGE_TARGET_RAW_SIZE) {
+        const compressedBuffer = await sharp(buffer)
           .jpeg({ quality: 80 })
           .toBuffer()
         return { buffer: compressedBuffer, mediaType: 'jpeg' }
       }
-      // Return without dimensions if we can't determine them
-      return { buffer: imageBuffer, mediaType: normalizedMediaType }
+      return { buffer, mediaType: format }
     }
 
-    // Store original dimensions (guaranteed to be defined here)
     const originalWidth = metadata.width
     const originalHeight = metadata.height
-
-    // Calculate dimensions while maintaining aspect ratio
     let width = originalWidth
     let height = originalHeight
 
-    // Check if the original file just works
     if (
-      originalSize <= IMAGE_TARGET_RAW_SIZE &&
+      size <= IMAGE_TARGET_RAW_SIZE &&
       width <= IMAGE_MAX_WIDTH &&
       height <= IMAGE_MAX_HEIGHT
     ) {
       return {
-        buffer: imageBuffer,
-        mediaType: normalizedMediaType,
+        buffer,
+        mediaType: format,
         dimensions: {
           originalWidth,
           originalHeight,
@@ -229,15 +314,14 @@ export async function maybeResizeAndDownsampleImageBuffer(
 
     const needsDimensionResize =
       width > IMAGE_MAX_WIDTH || height > IMAGE_MAX_HEIGHT
-    const isPng = normalizedMediaType === 'png'
+    const isPng = format === 'png'
 
-    // If dimensions are within limits but file is too large, try compression first
-    // This preserves full resolution when possible
-    if (!needsDimensionResize && originalSize > IMAGE_TARGET_RAW_SIZE) {
-      // For PNGs, try PNG compression first to preserve transparency
+    // Within dimension limits but too many bytes: try compression first to
+    // keep full resolution.
+    if (!needsDimensionResize && size > IMAGE_TARGET_RAW_SIZE) {
+      // PNG compression first to preserve transparency
       if (isPng) {
-        // Create fresh sharp instance for each compression attempt
-        const pngCompressed = await sharp(imageBuffer)
+        const pngCompressed = await sharp(buffer)
           .png({ compressionLevel: 9, palette: true })
           .toBuffer()
         if (pngCompressed.length <= IMAGE_TARGET_RAW_SIZE) {
@@ -253,10 +337,8 @@ export async function maybeResizeAndDownsampleImageBuffer(
           }
         }
       }
-      // Try JPEG compression (lossy but much smaller)
       for (const quality of [80, 60, 40, 20]) {
-        // Create fresh sharp instance for each attempt
-        const compressedBuffer = await sharp(imageBuffer)
+        const compressedBuffer = await sharp(buffer)
           .jpeg({ quality })
           .toBuffer()
         if (compressedBuffer.length <= IMAGE_TARGET_RAW_SIZE) {
@@ -275,7 +357,6 @@ export async function maybeResizeAndDownsampleImageBuffer(
       // Quality reduction alone wasn't enough, fall through to resize
     }
 
-    // Constrain dimensions if needed
     if (width > IMAGE_MAX_WIDTH) {
       height = Math.round((height * IMAGE_MAX_WIDTH) / width)
       width = IMAGE_MAX_WIDTH
@@ -286,23 +367,19 @@ export async function maybeResizeAndDownsampleImageBuffer(
       height = IMAGE_MAX_HEIGHT
     }
 
-    // IMPORTANT: Always create fresh sharp(imageBuffer) instances for each operation.
-    // The native image-processor-napi module doesn't properly apply format conversions
-    // when reusing a sharp instance after calling toBuffer(). This caused a bug where
-    // all compression attempts (PNG, JPEG at various qualities) returned identical sizes.
+    // Always create a fresh sharp(buffer) instance per operation: reusing one
+    // after toBuffer() doesn't reliably apply a new output format.
     logForDebugging(`Resizing to ${width}x${height}`)
-    const resizedImageBuffer = await sharp(imageBuffer)
+    const resizedImageBuffer = await sharp(buffer)
       .resize(width, height, {
         fit: 'inside',
         withoutEnlargement: true,
       })
       .toBuffer()
 
-    // If still too large after resize, try compression
     if (resizedImageBuffer.length > IMAGE_TARGET_RAW_SIZE) {
-      // For PNGs, try PNG compression first to preserve transparency
       if (isPng) {
-        const pngCompressed = await sharp(imageBuffer)
+        const pngCompressed = await sharp(buffer)
           .resize(width, height, {
             fit: 'inside',
             withoutEnlargement: true,
@@ -323,9 +400,8 @@ export async function maybeResizeAndDownsampleImageBuffer(
         }
       }
 
-      // Try JPEG with progressively lower quality
       for (const quality of [80, 60, 40, 20]) {
-        const compressedBuffer = await sharp(imageBuffer)
+        const compressedBuffer = await sharp(buffer)
           .resize(width, height, {
             fit: 'inside',
             withoutEnlargement: true,
@@ -345,13 +421,13 @@ export async function maybeResizeAndDownsampleImageBuffer(
           }
         }
       }
-      // If still too large, resize smaller and compress aggressively
+      // Still too large: shrink further and compress aggressively
       const smallerWidth = Math.min(width, 1000)
       const smallerHeight = Math.round(
         (height * smallerWidth) / Math.max(width, 1),
       )
       logForDebugging('Still too large, compressing with JPEG')
-      const compressedBuffer = await sharp(imageBuffer)
+      const compressedBuffer = await sharp(buffer)
         .resize(smallerWidth, smallerHeight, {
           fit: 'inside',
           withoutEnlargement: true,
@@ -373,7 +449,8 @@ export async function maybeResizeAndDownsampleImageBuffer(
 
     return {
       buffer: resizedImageBuffer,
-      mediaType: normalizedMediaType,
+      // The processor may re-encode formats it can't write (sips: webp → png).
+      mediaType: detectImageFormatFromBuffer(resizedImageBuffer).slice(6),
       dimensions: {
         originalWidth,
         originalHeight,
@@ -382,52 +459,45 @@ export async function maybeResizeAndDownsampleImageBuffer(
       },
     }
   } catch (error) {
-    // Log the error and emit analytics event
+    if (error instanceof ImageResizeError) throw error
     logError(error as Error)
-    const errorType = classifyImageError(error)
-    const errorMsg = errorMessage(error)
-    logEvent('tengu_image_resize_failed', {
-      original_size_bytes: originalSize,
-      error_type: errorType,
-      error_message_hash: hashString(errorMsg),
-    })
 
-    // Detect actual format from magic bytes instead of trusting extension
-    const detected = detectImageFormatFromBuffer(imageBuffer)
-    const normalizedExt = detected.slice(6) // Remove 'image/' prefix
-
-    // Calculate the base64 size (API limit is on base64-encoded length)
+    const mediaType = detectImageFormatFromBuffer(imageBuffer).slice(6)
+    // The API limit is on the base64-encoded length
     const base64Size = Math.ceil((originalSize * 4) / 3)
 
-    // Size-under-5MB does not imply dimensions-under-cap. Don't return the
-    // raw buffer if the PNG header says it's oversized — fall through to
-    // ImageResizeError instead. PNG sig is 8 bytes, IHDR dims at 16-24.
+    // Size-under-5MB does not imply dimensions-under-cap, so the header must
+    // prove the dimensions before the raw buffer is passed through.
+    const header = readImageDimensionsFromHeader(imageBuffer)
+    if (header === undefined) {
+      throw new ImageResizeError(
+        'Unable to resize image — image processing is unavailable and dimensions could not be read from the file header. ' +
+          'Please convert the image to PNG, JPEG, GIF, or WebP.',
+      )
+    }
     const overDim =
-      imageBuffer.length >= 24 &&
-      imageBuffer[0] === 0x89 &&
-      imageBuffer[1] === 0x50 &&
-      imageBuffer[2] === 0x4e &&
-      imageBuffer[3] === 0x47 &&
-      (imageBuffer.readUInt32BE(16) > IMAGE_MAX_WIDTH ||
-        imageBuffer.readUInt32BE(20) > IMAGE_MAX_HEIGHT)
+      header.width > IMAGE_MAX_WIDTH || header.height > IMAGE_MAX_HEIGHT
 
-    // If original image's base64 encoding is within API limit, allow it through uncompressed
     if (base64Size <= API_IMAGE_MAX_BASE64_SIZE && !overDim) {
-      logEvent('tengu_image_resize_fallback', {
-        original_size_bytes: originalSize,
-        base64_size_bytes: base64Size,
-        error_type: errorType,
-      })
-      return { buffer: imageBuffer, mediaType: normalizedExt }
+      return { buffer: imageBuffer, mediaType }
     }
 
-    // Image is too large and we failed to compress it - fail with user-friendly error
+    if (isImageDecodeError(error)) {
+      const { reason, advice } = describeUndecodableImage(imageBuffer)
+      const limit = overDim
+        ? `at ${header.width}x${header.height}px it is over the ${IMAGE_MAX_WIDTH}x${IMAGE_MAX_HEIGHT}px limit`
+        : `it is over the ${formatFileSize(API_IMAGE_MAX_BASE64_SIZE)} API limit (${formatFileSize(originalSize)} raw, ${formatFileSize(base64Size)} base64)`
+      throw new ImageResizeError(
+        `Unable to resize image — ${reason}, and ${limit}, so it cannot be sent. ${advice}`,
+      )
+    }
+
     throw new ImageResizeError(
       overDim
         ? `Unable to resize image — dimensions exceed the ${IMAGE_MAX_WIDTH}x${IMAGE_MAX_HEIGHT}px limit and image processing failed. ` +
             `Please resize the image to reduce its pixel dimensions.`
         : `Unable to resize image (${formatFileSize(originalSize)} raw, ${formatFileSize(base64Size)} base64). ` +
-            `The image exceeds the 5MB API limit and compression failed. ` +
+            `The image exceeds the ${formatFileSize(API_IMAGE_MAX_BASE64_SIZE)} API limit and compression failed. ` +
             `Please resize the image manually or use a smaller image.`,
     )
   }
@@ -451,22 +521,17 @@ export async function maybeResizeAndDownsampleImageBlock(
     return { block: imageBlock }
   }
 
-  // Decode base64 to buffer
   const imageBuffer = Buffer.from(imageBlock.source.data, 'base64')
   const originalSize = imageBuffer.length
-
-  // Extract extension from media type
   const mediaType = imageBlock.source.media_type
   const ext = mediaType?.split('/')[1] || 'png'
 
-  // Resize if needed
   const resized = await maybeResizeAndDownsampleImageBuffer(
     imageBuffer,
     originalSize,
     ext,
   )
 
-  // Return resized image block with dimension info
   return {
     block: {
       type: 'image',
@@ -482,55 +547,75 @@ export async function maybeResizeAndDownsampleImageBlock(
 }
 
 /**
+ * Like maybeResizeAndDownsampleImageBlock, but an image that can't be brought
+ * within limits becomes a text note instead of failing the whole prompt.
+ */
+export async function resizeImageBlockOrPlaceholder(
+  imageBlock: ImageBlockParam,
+): Promise<{
+  block: ImageBlockParam | TextBlockParam
+  dimensions?: ImageDimensions
+}> {
+  try {
+    return await maybeResizeAndDownsampleImageBlock(imageBlock)
+  } catch (error) {
+    if (!(error instanceof ImageResizeError)) throw error
+    return {
+      block: {
+        type: 'text',
+        text: `[Image could not be processed: ${error.message}]`,
+      },
+    }
+  }
+}
+
+/**
  * Compresses an image buffer to fit within a maximum byte size.
  *
- * Uses a multi-strategy fallback approach because simple compression often fails for
- * large screenshots, high-resolution photos, or images with complex gradients. Each
- * strategy is progressively more aggressive to handle edge cases where earlier
- * strategies produce files still exceeding the size limit.
- *
- * Strategy (from FileReadTool):
- * 1. Try to preserve original format (PNG, JPEG, WebP) with progressive resizing
- * 2. For PNG: Use palette optimization and color reduction if needed
- * 3. Last resort: Convert to JPEG with aggressive compression
- *
- * This ensures images fit within context windows while maintaining format when possible.
+ * Strategies get progressively more aggressive, because simple compression
+ * often fails for large screenshots, photos, or complex gradients:
+ * 1. Preserve the original format with progressive resizing
+ * 2. For PNG: palette optimization and color reduction
+ * 3. Last resort: JPEG with aggressive compression
  */
 export async function compressImageBuffer(
   imageBuffer: Buffer,
   maxBytes: number = IMAGE_TARGET_RAW_SIZE,
   originalMediaType?: string,
 ): Promise<CompressedImageResult> {
-  // Extract format from originalMediaType if provided (e.g., "image/png" -> "png")
-  const fallbackFormat = originalMediaType?.split('/')[1] || 'jpeg'
-  const normalizedFallback = fallbackFormat === 'jpg' ? 'jpeg' : fallbackFormat
+  const fallbackFormat = normalizeFormat(
+    originalMediaType?.split('/')[1] || 'jpeg',
+  )
 
   try {
     const sharp = await getImageProcessor()
-    const metadata = await sharp(imageBuffer).metadata()
-    const format = metadata.format || normalizedFallback
+    let buffer = imageBuffer
+    let metadata = await sharp(buffer).metadata()
+    let format = normalizeFormat(metadata.format || fallbackFormat)
+    if (!API_IMAGE_FORMATS.has(format)) {
+      buffer = await sharp(imageBuffer).png().toBuffer()
+      metadata = await sharp(buffer).metadata()
+      format = 'png'
+    }
     const originalSize = imageBuffer.length
 
     const context: ImageCompressionContext = {
-      imageBuffer,
+      imageBuffer: buffer,
       metadata,
       format,
       maxBytes,
       originalSize,
     }
 
-    // If image is already within size limit, return as-is without processing
-    if (originalSize <= maxBytes) {
-      return createCompressedImageResult(imageBuffer, format, originalSize)
+    if (buffer.length <= maxBytes) {
+      return createCompressedImageResult(buffer, format, originalSize)
     }
 
-    // Try progressive resizing with format preservation
     const resizedResult = await tryProgressiveResizing(context, sharp)
     if (resizedResult) {
       return resizedResult
     }
 
-    // For PNG, try palette optimization
     if (format === 'png') {
       const palettizedResult = await tryPalettePNG(context, sharp)
       if (palettizedResult) {
@@ -538,38 +623,31 @@ export async function compressImageBuffer(
       }
     }
 
-    // Try JPEG conversion with moderate compression
     const jpegResult = await tryJPEGConversion(context, 50, sharp)
     if (jpegResult) {
       return jpegResult
     }
 
-    // Last resort: ultra-compressed JPEG
     return await createUltraCompressedJPEG(context, sharp)
   } catch (error) {
-    // Log the error and emit analytics event
     logError(error as Error)
-    const errorType = classifyImageError(error)
-    const errorMsg = errorMessage(error)
-    logEvent('tengu_image_compress_failed', {
-      original_size_bytes: imageBuffer.length,
-      max_bytes: maxBytes,
-      error_type: errorType,
-      error_message_hash: hashString(errorMsg),
-    })
 
     // If original image is within the requested limit, allow it through
     if (imageBuffer.length <= maxBytes) {
-      // Detect actual format from magic bytes instead of trusting the provided media type
-      const detected = detectImageFormatFromBuffer(imageBuffer)
       return {
         base64: imageBuffer.toString('base64'),
-        mediaType: detected,
+        mediaType: detectImageFormatFromBuffer(imageBuffer),
         originalSize: imageBuffer.length,
       }
     }
 
-    // Image is too large and compression failed - throw error
+    if (isImageDecodeError(error)) {
+      const { reason, advice } = describeUndecodableImage(imageBuffer)
+      throw new ImageResizeError(
+        `Unable to compress image (${formatFileSize(imageBuffer.length)}) to fit within ${formatFileSize(maxBytes)} — ${reason}. ${advice}`,
+      )
+    }
+
     throw new ImageResizeError(
       `Unable to compress image (${formatFileSize(imageBuffer.length)}) to fit within ${formatFileSize(maxBytes)}. ` +
         `Please use a smaller image.`,
@@ -586,7 +664,6 @@ export async function compressImageBufferWithTokenLimit(
   maxTokens: number,
   originalMediaType?: string,
 ): Promise<CompressedImageResult> {
-  // Convert token limit to byte limit
   // base64 uses about 4/3 the original size, so we reverse this
   const maxBase64Chars = Math.floor(maxTokens / 0.125)
   const maxBytes = Math.floor(maxBase64Chars * 0.75)
@@ -602,20 +679,15 @@ export async function compressImageBlock(
   imageBlock: ImageBlockParam,
   maxBytes: number = IMAGE_TARGET_RAW_SIZE,
 ): Promise<ImageBlockParam> {
-  // Only process base64 images
   if (imageBlock.source.type !== 'base64') {
     return imageBlock
   }
 
-  // Decode base64 to buffer
   const imageBuffer = Buffer.from(imageBlock.source.data, 'base64')
-
-  // Check if already within size limit
   if (imageBuffer.length <= maxBytes) {
     return imageBlock
   }
 
-  // Compress the image
   const compressed = await compressImageBuffer(imageBuffer, maxBytes)
 
   return {
@@ -635,11 +707,10 @@ function createCompressedImageResult(
   mediaType: string,
   originalSize: number,
 ): CompressedImageResult {
-  const normalizedMediaType = mediaType === 'jpg' ? 'jpeg' : mediaType
   return {
     base64: buffer.toString('base64'),
     mediaType:
-      `image/${normalizedMediaType}` as Base64ImageSource['media_type'],
+      `image/${normalizeFormat(mediaType)}` as Base64ImageSource['media_type'],
     originalSize,
   }
 }
@@ -663,7 +734,6 @@ async function tryProgressiveResizing(
       withoutEnlargement: true,
     })
 
-    // Apply format-specific optimizations
     resizedImage = applyFormatOptimizations(resizedImage, context.format)
 
     const resizedBuffer = await resizedImage.toBuffer()
@@ -671,7 +741,7 @@ async function tryProgressiveResizing(
     if (resizedBuffer.length <= context.maxBytes) {
       return createCompressedImageResult(
         resizedBuffer,
-        context.format,
+        detectImageFormatFromBuffer(resizedBuffer).slice(6),
         context.originalSize,
       )
     }
@@ -691,7 +761,6 @@ function applyFormatOptimizations(
         palette: true,
       })
     case 'jpeg':
-    case 'jpg':
       return image.jpeg({ quality: 80 })
     case 'webp':
       return image.webp({ quality: 80 })
@@ -712,7 +781,7 @@ async function tryPalettePNG(
     .png({
       compressionLevel: 9,
       palette: true,
-      colors: 64, // Reduce colors to 64 for better compression
+      colors: 64,
     })
     .toBuffer()
 
@@ -763,68 +832,21 @@ async function createUltraCompressedJPEG(
 }
 
 /**
- * Detect image format from a buffer using magic bytes
- * @param buffer Buffer containing image data
- * @returns Media type string (e.g., 'image/png', 'image/jpeg') or 'image/png' as default
+ * Detect image format from a buffer using magic bytes, defaulting to PNG.
  */
 export function detectImageFormatFromBuffer(buffer: Buffer): ImageMediaType {
-  if (buffer.length < 4) return 'image/png' // default
-
-  // Check PNG signature
-  if (
-    buffer[0] === 0x89 &&
-    buffer[1] === 0x50 &&
-    buffer[2] === 0x4e &&
-    buffer[3] === 0x47
-  ) {
-    return 'image/png'
-  }
-
-  // Check JPEG signature (FFD8FF)
-  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
-    return 'image/jpeg'
-  }
-
-  // Check GIF signature (GIF87a or GIF89a)
-  if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) {
-    return 'image/gif'
-  }
-
-  // Check WebP signature (RIFF....WEBP)
-  if (
-    buffer[0] === 0x52 &&
-    buffer[1] === 0x49 &&
-    buffer[2] === 0x46 &&
-    buffer[3] === 0x46
-  ) {
-    if (
-      buffer.length >= 12 &&
-      buffer[8] === 0x57 &&
-      buffer[9] === 0x45 &&
-      buffer[10] === 0x42 &&
-      buffer[11] === 0x50
-    ) {
-      return 'image/webp'
-    }
-  }
-
-  // Default to PNG if unknown
-  return 'image/png'
+  return sniffImageMediaType(buffer) ?? 'image/png'
 }
 
 /**
- * Detect image format from base64 data using magic bytes
- * @param base64Data Base64 encoded image data
- * @returns Media type string (e.g., 'image/png', 'image/jpeg') or 'image/png' as default
+ * Detect image format from base64 data using magic bytes, defaulting to PNG.
  */
 export function detectImageFormatFromBase64(
   base64Data: string,
 ): ImageMediaType {
   try {
-    const buffer = Buffer.from(base64Data, 'base64')
-    return detectImageFormatFromBuffer(buffer)
+    return detectImageFormatFromBuffer(Buffer.from(base64Data, 'base64'))
   } catch {
-    // Default to PNG on any error
     return 'image/png'
   }
 }
@@ -838,8 +860,7 @@ export function createImageMetadataText(
   sourcePath?: string,
 ): string | null {
   const { originalWidth, originalHeight, displayWidth, displayHeight } = dims
-  // Skip if dimensions are not available or invalid
-  // Note: checks for undefined/null and zero to prevent division by zero
+  // Checks for undefined/null and zero to prevent division by zero
   if (
     !originalWidth ||
     !originalHeight ||
@@ -848,22 +869,18 @@ export function createImageMetadataText(
     displayWidth <= 0 ||
     displayHeight <= 0
   ) {
-    // If we have a source path but no valid dimensions, still return source info
     if (sourcePath) {
       return `[Image source: ${sourcePath}]`
     }
     return null
   }
-  // Check if image was resized
   const wasResized =
     originalWidth !== displayWidth || originalHeight !== displayHeight
 
-  // Only include metadata if there's useful info (resized or has source path)
   if (!wasResized && !sourcePath) {
     return null
   }
 
-  // Build metadata parts
   const parts: string[] = []
 
   if (sourcePath) {

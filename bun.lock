@@ -46,7 +46,6 @@
         "google-auth-library": "^9.15.0",
         "highlight.js": "^11.11.1",
         "ignore": "^7.0.5",
-        "image-processor-napi": "^0.0.1",
         "ink": "^4.4.1",
         "jsonc-parser": "^3.3.1",
         "lodash-es": "^4.17.21",
@@ -694,8 +693,6 @@
     "iconv-lite": ["iconv-lite@0.7.2", "", { "dependencies": { "safer-buffer": ">= 2.1.2 < 3.0.0" } }, "sha512-im9DjEDQ55s9fL4EYzOAv0yMqmMBSZp6G0VvFyTMPKWxiSBHUj9NW/qqLmXUwXrrM7AvqSlTCfvqRb0cM8yYqw=="],
 
     "ignore": ["ignore@7.0.5", "", {}, "sha512-Hs59xBNfUIunMFgWAbGX5cq6893IbWg4KnrjbYwX3tx0ztorVgTDA6B2sxf8ejHJ4wz8BqGUMYlnzNBer5NvGg=="],
-
-    "image-processor-napi": ["image-processor-napi@0.0.1", "", {}, "sha512-BJH2djIrJ+8doiXsLYUjj1fuIIL8KdZcuEtsVCjtyKMNyT6pVEL14Ug30PkGSR1V2yHdzhDVwZlQHWAS9Kd8fg=="],
 
     "import-in-the-middle": ["import-in-the-middle@1.15.0", "", { "dependencies": { "acorn": "^8.14.0", "acorn-import-attributes": "^1.9.5", "cjs-module-lexer": "^1.2.2", "module-details-from-path": "^1.0.3" } }, "sha512-bpQy+CrsRmYmoPMAE/0G33iwRqwW4ouqdRg8jgbH3aKuCtOc8lxgmYXg2dMM92CRiGP660EtBcymH/eVUpCSaA=="],
 

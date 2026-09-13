@@ -57,12 +57,7 @@ export function BaseTextInput(t0) {
     isPasting: t3
   } = usePasteHandler({
     onPaste: props.onPaste,
-    onInput: (input, key) => {
-      if (isPasting && key.return) {
-        return;
-      }
-      onInput(input, key);
-    },
+    onInput,
     onImagePaste: props.onImagePaste
   });
   const isPasting = t3;
