@@ -199,14 +199,30 @@ describe('effort support for provider profile models', () => {
     ])
   })
 
+  test('the K2.8 Preview behind kimi-for-coding takes the same ladder as K3', async () => {
+    const { getSupportedEffortLevelsForModel } = await import(
+      '../../utils/effort.js'
+    )
+
+    // kimi-for-coding now serves K2.8 Preview, which documents the same
+    // low/high/max reasoning_effort levels as K3.
+    expect(getSupportedEffortLevelsForModel('kimi-for-coding')).toEqual([
+      'low',
+      'high',
+      'max',
+    ])
+  })
+
   test('a model documented as taking no effort parameter is declared as such', async () => {
     const { getSupportedEffortLevelsForModel } = await import(
       '../../utils/effort.js'
     )
 
-    // K2.7 Code is `Thinking:ON` with no reasoning_effort — the same endpoint,
-    // a different answer from K3's.
-    expect(getSupportedEffortLevelsForModel('kimi-for-coding')).toEqual([])
+    // K2.7 Code HighSpeed is `Thinking:ON` with no reasoning_effort — the same
+    // endpoint, a different answer from K3's.
+    expect(
+      getSupportedEffortLevelsForModel('kimi-for-coding-highspeed'),
+    ).toEqual([])
   })
 
   test('offers exactly the levels the platform documents, skipping medium and xhigh', async () => {
@@ -237,7 +253,7 @@ describe('effort support for provider profile models', () => {
     // the field existed still has on disk.
     const env = buildProviderEnv(profile({ models: ['k3'] }))
     expect(env[PROVIDER_EFFORT_LEVELS_ENV_KEY]).toBe(
-      'k3=low:high:max,k3-256k=low:high:max,kimi-for-coding=,kimi-for-coding-highspeed=',
+      'k3=low:high:max,k3-256k=low:high:max,kimi-for-coding=low:high:max,kimi-for-coding-highspeed=',
     )
   })
 
@@ -300,7 +316,14 @@ describe('context window for provider profile models', () => {
     const { getContextWindowForModel } = await import('../../utils/context.js')
 
     expect(getContextWindowForModel('k3-256k')).toBe(262_144)
-    expect(getContextWindowForModel('kimi-for-coding')).toBe(262_144)
+    expect(getContextWindowForModel('kimi-for-coding-highspeed')).toBe(262_144)
+  })
+
+  test('kimi-for-coding reports the 1M window K2.8 Preview documents for all tiers', async () => {
+    applyKimiEnv()
+    const { getContextWindowForModel } = await import('../../utils/context.js')
+
+    expect(getContextWindowForModel('kimi-for-coding')).toBe(1_048_576)
   })
 
   test('an undocumented model stays on the conservative default rather than a guess', async () => {

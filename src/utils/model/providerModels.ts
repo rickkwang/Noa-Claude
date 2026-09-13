@@ -33,8 +33,10 @@ export const PROVIDER_CONTEXT_WINDOWS_ENV_KEY =
  * that shape.
  *
  * Per model, not per endpoint: one endpoint serves models that differ here.
- * Kimi's coding endpoint serves K3, which takes reasoning_effort, alongside
- * kimi-for-coding, whose thinking is always on and takes no level at all.
+ * Kimi's coding endpoint serves K3 and the K2.8 Preview behind
+ * kimi-for-coding, which take reasoning_effort, alongside
+ * kimi-for-coding-highspeed (K2.7 Code HighSpeed), whose thinking is always
+ * on and takes no level at all.
  */
 export const PROVIDER_EFFORT_LEVELS_ENV_KEY =
   'NOA_CLAUDE_PROVIDER_EFFORT_LEVELS'
