@@ -256,6 +256,8 @@ export function getParentCacheSuppressReason(
     : null
 }
 
+// Verbatim upstream, with one intentional deviation: the product name on the
+// first line is "Noa Claude", matching this fork's identity elsewhere.
 const SUGGESTION_PROMPT = `[SUGGESTION MODE: Suggest what the user might naturally type next into Noa Claude.]
 
 FIRST: Look at the user's recent messages and original request.
@@ -282,6 +284,8 @@ NEVER SUGGEST:
 - Multiple sentences
 
 Stay silent if the next step isn't obvious from what the user said.
+
+Stay silent if a suggestion could be unsafe or inappropriate — including any sensitive topic (security incidents, credentials, harm, private data). Even when the user is doing legitimate security or cybersecurity work, do not predict potentially unsafe actions.
 
 Format: 2-12 words, match the user's style. Or nothing.
 
@@ -342,7 +346,7 @@ export async function generateSuggestion(
     if (msg.type !== 'assistant') continue
     const textBlock = msg.message.content.find(b => b.type === 'text')
     if (textBlock?.type === 'text') {
-      const suggestion = textBlock.text.trim()
+      const suggestion = unwrapSuggestionText(textBlock.text)
       if (suggestion) {
         return { suggestion, generationRequestId }
       }
@@ -350,6 +354,82 @@ export async function generateSuggestion(
   }
 
   return { suggestion: null, generationRequestId }
+}
+
+// Models sometimes wrap the suggestion in a tag or prefix it with a label.
+// The label list covers English plus the CJK equivalents, since a non-English
+// session gets "提案: …" / "제안: …" rather than "Suggestion: …", and the
+// `prefixed_label` filter below only recognizes ASCII `\w+:`.
+const SUGGESTION_TAG_RE =
+  /^<(suggestion|response|output|answer|result)>([\s\S]*)<\/\1>$/i
+const SUGGESTION_LABEL_RE =
+  /^\s*(suggested\s+(response|reply|input|prompt)|suggestion|response|reply|answer|output|result|提案|回答|返信|応答|出力|結果|建议|回复|答案|输出|结果|제안|답변|응답|출력|결과)\s*[:：]\s*/i
+
+export function unwrapSuggestionText(text: string): string {
+  return text
+    .trim()
+    .replace(SUGGESTION_TAG_RE, (full, tag: string, inner: string) =>
+      // Nested closing tag means the outer pair wasn't a wrapper — keep as-is.
+      inner.includes(`</${tag.toLowerCase()}>`) ||
+      inner.includes(`</${tag.toUpperCase()}>`)
+        ? full
+        : inner,
+    )
+    .replace(SUGGESTION_LABEL_RE, '')
+    .trim()
+}
+
+const HAN_RE = /\p{Script=Han}/u
+// Kana plus the abjad-less scripts that also write without spaces.
+const PHONETIC_RE =
+  /[\p{Script=Hiragana}\p{Script=Katakana}\u30fc\uff70\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u
+const HANGUL_RE = /\p{Script=Hangul}/u
+const LETTER_OR_NUMBER_RE = /[\p{L}\p{N}]/u
+
+function classifyChars(text: string): {
+  han: number
+  phonetic: number
+  hangul: number
+  other: number
+} {
+  let han = 0
+  let phonetic = 0
+  let hangul = 0
+  let other = 0
+  for (const char of text) {
+    if (HAN_RE.test(char)) han++
+    else if (PHONETIC_RE.test(char)) phonetic++
+    else if (HANGUL_RE.test(char)) hangul++
+    else if (LETTER_OR_NUMBER_RE.test(char)) other++
+  }
+  return { han, phonetic, hangul, other }
+}
+
+/** Scriptless-word units, used to tell a real one-word suggestion from a CJK phrase. */
+function countCJKUnits(text: string): number {
+  const { han, phonetic, hangul } = classifyChars(text)
+  return han + phonetic + hangul
+}
+
+/**
+ * Whitespace word count, except that Japanese and Chinese don't put spaces
+ * between words: "テストを実行して" is one whitespace token but ~5 words, so a
+ * naive split under-counts it into `too_few_words`. Han counts as half a word,
+ * kana a quarter; Hangul does use spaces, so its tokens count as one.
+ */
+function countWords(text: string): number {
+  const trimmed = text.trim()
+  if (trimmed === '') return 0
+
+  let total = 0
+  for (const token of trimmed.split(/\s+/)) {
+    const { han, phonetic, hangul, other } = classifyChars(token)
+    total +=
+      han === 0 && phonetic === 0
+        ? 1
+        : (other + hangul > 0 ? 1 : 0) + han / 2 + phonetic / 4
+  }
+  return Math.ceil(total)
 }
 
 export function shouldFilterSuggestion(
@@ -363,10 +443,15 @@ export function shouldFilterSuggestion(
   }
 
   const lower = suggestion.toLowerCase()
-  const wordCount = suggestion.trim().split(/\s+/).length
+  const wordCount = countWords(suggestion)
 
   const filters: Array<[string, () => boolean]> = [
-    ['done', () => lower === 'done'],
+    [
+      'done',
+      () =>
+        lower === 'done' ||
+        /^\P{L}*(完了(しました)?|完成了?|완료됨?)\P{L}*$/u.test(suggestion),
+    ],
     [
       'meta_text',
       () =>
@@ -377,12 +462,17 @@ export function shouldFilterSuggestion(
         // Model spells out the prompt's "stay silent" instruction
         /\bsilence is\b|\bstay(s|ing)? silent\b/.test(lower) ||
         // Model outputs bare "silence" wrapped in punctuation/whitespace
-        /^\W*silence\W*$/.test(lower),
+        /^\W*silence\W*$/.test(lower) ||
+        // Same instruction, answered in the session's language
+        /^\P{L}*(沈黙|沉默|静默|침묵|提案(なし|はありません)|特に(なし|ありません)|[无没沒]有?建[议議]|(제안|해당)\s*없음)\P{L}*$/u.test(
+          suggestion,
+        ),
     ],
     [
       'meta_wrapped',
       // Model wraps meta-reasoning in parens/brackets: (silence — ...), [no suggestion]
-      () => /^\(.*\)$|^\[.*\]$/.test(suggestion),
+      // Full-width and CJK bracket pairs included; a CJK model reaches for those.
+      () => /^(\(.*\)|\[.*\]|（.*）|［.*］|【.*】|〔.*〕)$/.test(suggestion),
     ],
     [
       'error_message',
@@ -400,6 +490,10 @@ export function shouldFilterSuggestion(
         if (wordCount >= 2) return false
         // Allow slash commands — these are valid user commands
         if (suggestion.startsWith('/')) return false
+        // A CJK suggestion has no English word to match the allowlist against;
+        // judge it by character units instead ("再実行" is a real suggestion).
+        const cjkUnits = countCJKUnits(suggestion)
+        if (cjkUnits > 0) return cjkUnits < 2
         // Allow common single-word inputs that are valid user commands
         const ALLOWED_SINGLE_WORDS = new Set([
           // Affirmatives
@@ -428,19 +522,31 @@ export function shouldFilterSuggestion(
     ],
     ['too_many_words', () => wordCount > 12],
     ['too_long', () => suggestion.length >= 100],
-    ['multiple_sentences', () => /[.!?]\s+[A-Z]/.test(suggestion)],
+    [
+      'multiple_sentences',
+      // CJK sentences end in 。！？ and usually run on without a following space.
+      () => /[.!?]\s+[A-Z]|[。！？]\s*[\p{L}\p{N}]/u.test(suggestion),
+    ],
     ['has_formatting', () => /[\n*]|\*\*/.test(suggestion)],
     [
       'evaluative',
       () =>
         /thanks|thank you|looks good|sounds good|that works|that worked|that's all|nice|great|perfect|makes sense|awesome|excellent/.test(
           lower,
+        ) ||
+        // Thanks. Trailing 的 allowed so 谢谢你的帮助 is caught too.
+        /^\P{L}*(ありがとう(ございます|ございました)?|助かりました|[谢謝][谢謝][你您]?|感谢[你您]?|感謝します|감사합니다|고마워요?)(\P{L}|的|$)/u.test(
+          suggestion,
+        ) ||
+        // Approval, which in CJK lands at the end of the sentence.
+        /(良さそう|よさそう|いいですね|看起来不错|太好了|完璧|完美|좋네요)(です|ですね|だね)?\P{L}*$/u.test(
+          suggestion,
         ),
     ],
     [
       'claude_voice',
       () =>
-        /^(let me|i'll|i've|i'm|i can|i would|i think|i notice|here's|here is|here are|that's|this is|this will|you can|you should|you could|sure,|of course|certainly)/i.test(
+        /^(let me|i'll|i've|i'm|i can|i would|i think|i notice|here's|here is|here are|that's|this is|this will|you can|you should|you could|sure,|of course|certainly|让我(?!们)|我来|我会|我将)/i.test(
           suggestion,
         ),
     ],
