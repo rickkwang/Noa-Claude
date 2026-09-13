@@ -250,10 +250,16 @@ export const SYNTHETIC_TOOL_RESULT_PLACEHOLDER =
 const AUTO_MODE_REJECTION_PREFIX =
   'Permission for this action has been denied. Reason: '
 
-/** Stops an agent that just lost the classifier from reporting itself fully blocked. */
+/**
+ * Stops an agent that just lost the classifier from reporting itself fully
+ * blocked. Names the tools on the auto mode allowlist rather than "read-only
+ * operations": this fork has no isReadOnly surface, so a read-only Bash command
+ * still goes through the classifier and would still be denied.
+ */
 const CLASSIFIER_READ_ONLY_NOTE =
-  'Note: reading files, searching code, and other read-only operations ' +
-  'do not require the classifier and can still be used.'
+  'Note: the Read, Grep, and Glob tools never reach the classifier, ' +
+  'so reading files and searching code are still available ' +
+  '(read-only Bash commands are not exempt).'
 
 /**
  * Check if a tool result message is a classifier denial.
@@ -302,10 +308,9 @@ export function buildClassifierRefusalMessage(reason: string): string {
   // means, which a refusal keyed to conversation history cannot clear anyway.
   return (
     `${AUTO_MODE_REJECTION_PREFIX}${reason}. ` +
-    `This is not a judgment that the action is unsafe. ` +
-    `Retrying it will hit the same refusal, so don't rewrite or rework the action to get around this — ` +
-    `it reacts to earlier conversation content, not to the action itself, ` +
-    `and it will keep firing for the rest of this conversation. ` +
+    `This is not a judgment that the action is unsafe: the refusal reacts to earlier conversation content, ` +
+    `not to the action itself, and it will keep firing for the rest of this conversation. ` +
+    `So do not retry the action, and do not rewrite or rework it to get around the refusal. ` +
     `Continue with other tasks that don't require this action. ` +
     `If it is essential, stop and tell the user that auto mode could not evaluate it, ` +
     `and suggest running this action outside auto mode (switch back to the default permission mode) ` +
