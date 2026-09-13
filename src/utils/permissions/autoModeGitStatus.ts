@@ -10,7 +10,7 @@ import { POWERSHELL_TOOL_NAME } from '../../tools/PowerShellTool/toolName.js'
  * `{"meta":{"gitStatus":…}}` ground-truth lines for the auto-mode classifier,
  * which auto_mode_system_prompt.txt ("## Input") already tells the model how to
  * read. Ports upstream 2.1.270's ZLn/GFe, minus the `gitStatusUploads` half
- * (site default false there too), plus `--no-optional-locks` so a read-only
+ * (counts only, never the file listing), plus `--no-optional-locks` so a read-only
  * probe doesn't refresh the index under a concurrent user.
  *
  * Safe to default on: every failure returns null, and the prompt's contract for
