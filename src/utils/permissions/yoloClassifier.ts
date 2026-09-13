@@ -48,6 +48,7 @@ import { escapeRegExp } from '../stringUtils.js'
 import { modelThinkingCannotBeDisabled } from '../thinking.js'
 import { tokenCountWithEstimation } from '../tokens.js'
 import { getGitEmail } from '../user.js'
+import { computeGitStatusMeta } from './autoModeGitStatus.js'
 import {
   markToolUseClassified,
   wasToolUseClassified,
@@ -687,6 +688,34 @@ function toCompactBlock(
 
 function toCompact(entry: TranscriptEntry, lookup: ToolLookup): string {
   return entry.content.map(b => toCompactBlock(b, entry.role, lookup)).join('')
+}
+
+/**
+ * The `{"meta":{"gitStatus":…}}` line for the action under review, or ''. Sits
+ * directly above the action, where the ported prompt says to look. The payload
+ * is machine-generated, but takes the same escape path as any transcript line
+ * rather than relying on that staying true.
+ */
+async function buildGitStatusMetaLine(
+  action: TranscriptEntry,
+  signal: AbortSignal,
+): Promise<string> {
+  const toolUse = action.content.find(
+    (block): block is Extract<TranscriptBlock, { type: 'tool_use' }> =>
+      block.type === 'tool_use',
+  )
+  if (toolUse === undefined) return ''
+  const gitStatus = await computeGitStatusMeta(
+    toolUse.name,
+    toolUse.input ?? {},
+    signal,
+  )
+  if (gitStatus === null) return ''
+  return (
+    escapeLineSeparators(
+      neutralizeTranscriptTag(jsonStringify({ meta: { gitStatus } })),
+    ) + '\n'
+  )
 }
 
 /**
@@ -1722,6 +1751,14 @@ async function runYoloClassifier(
     return null
   }
 
+  // Kicked off before the prompt build so the `git status` subprocess overlaps
+  // it instead of extending the critical path. Awaited at its use below.
+  // .catch because it stays unawaited across the prompt build: a throw there
+  // would otherwise surface as an unhandled rejection instead of no line.
+  const gitStatusMetaLinePromise = buildGitStatusMetaLine(action, signal).catch(
+    () => '',
+  )
+
   const { systemPrompt, sessionContextBlock } =
     await buildYoloSystemPrompt(context)
   const transcriptEntries = buildTranscriptEntries(messages)
@@ -1774,7 +1811,13 @@ async function runYoloClassifier(
   }
   flushPending()
 
-  const userPrompt = userContentBlocks.map(b => b.text).join('') + actionCompact
+  // Awaited here, not at the block assembly below, so the error dump's
+  // userPrompt is byte-for-byte what the request carried.
+  const gitStatusMetaLine = await gitStatusMetaLinePromise
+  const userPrompt =
+    userContentBlocks.map(b => b.text).join('') +
+    gitStatusMetaLine +
+    actionCompact
   const promptLengths = {
     systemPrompt:
       systemPrompt.length + (sessionContextBlock?.text.length ?? 0),
@@ -1825,6 +1868,11 @@ async function runYoloClassifier(
   const lastTranscriptBlock = userContentBlocks.at(-1)
   if (lastTranscriptBlock !== undefined) {
     lastTranscriptBlock.cache_control = cacheControl
+  }
+  // Uncached, between the two breakpoints: re-read per action, so folding it
+  // into either cached block would evict a prefix shared across a tool batch.
+  if (gitStatusMetaLine !== '') {
+    userContentBlocks.push({ type: 'text' as const, text: gitStatusMetaLine })
   }
   userContentBlocks.push({
     type: 'text' as const,
@@ -2248,17 +2296,27 @@ function getTwoStageMode(): TwoStageMode {
 // ============================================================================
 // Intentional non-ports from upstream 2.1.233
 // ============================================================================
-// These upstream auto-mode knobs are deliberately NOT implemented. All are
-// GrowthBook-gated upstream with in-code defaults of false, so omitting them
-// matches upstream's default runtime behavior. Recorded here so nobody
-// "fixes" the absence later:
+// These upstream auto-mode knobs are deliberately NOT implemented. Recorded
+// here so nobody "fixes" the absence later.
+//
+// Do not assume "upstream gates it" means "off upstream too" — that blanket
+// justification is stale. When GrowthBook serves nothing, upstream falls back
+// to in-code SITE DEFAULTS, not an empty object, and several are `true` there
+// (2.1.270: repoVisibility, gitStatusType, severityByModel). A GrowthBook-less
+// fork is exactly the client that bundle targets, so each entry states its own
+// reason.
 //   - priorAssistantContext (assistant prose in the transcript) — default off
 //   - outcomeVisibility / outcome codes ({outcome:"ok"} lines) — default off
-//   - repoVisibility / gitStatus {"meta":…} ground-truth lines — default off
-//   - severityByModel / s1SuffixByModel / s2SuffixByModel per-model output
-//     formats (the <severity>N</severity> + <category> mode) — default off;
-//     the bundled ## Output Format (ported in the .txt) is the default
-//   - unavailableOuterRetries outer retry loop — default 0 retries
+//   - repoVisibility {"meta":…} lines — site default ON upstream, but resolving
+//     it means asking the GitHub API (`gh repo view`), a new outbound request
+//     this fork's privacy posture rules out. A local guess could never emit the
+//     authoritative `"visibility":"public"` the rule keys off, so emit nothing.
+//   - severityByModel / s1SuffixByModel / s2SuffixByModel (the
+//     <severity>N</severity> mode) — a REAL gap, not a match: the site default
+//     populates severityByModel. Needs a second parser plus per-model t1/t2
+//     thresholds; until then the bundled ## Output Format stands.
+//   - unavailableOuterRetries outer retry loop — upstream's own default is 0,
+//     so omitting it genuinely matches
 //   - auto-as-default-permission-mode rollout (tengu_harbor_willow /
 //     meadow_lantern) and the "Set up auto mode for your environment?"
 //     customization flow — upstream GB defaults off; this fork keeps the
