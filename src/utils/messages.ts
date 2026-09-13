@@ -250,6 +250,11 @@ export const SYNTHETIC_TOOL_RESULT_PLACEHOLDER =
 const AUTO_MODE_REJECTION_PREFIX =
   'Permission for this action has been denied. Reason: '
 
+/** Stops an agent that just lost the classifier from reporting itself fully blocked. */
+const CLASSIFIER_READ_ONLY_NOTE =
+  'Note: reading files, searching code, and other read-only operations ' +
+  'do not require the classifier and can still be used.'
+
 /**
  * Check if a tool result message is a classifier denial.
  * Used by the UI to render a short summary instead of the full message.
@@ -293,11 +298,19 @@ export function buildYoloRejectionMessage(reason: string): string {
  * which makes the "move on or ask" guidance more important than usual.
  */
 export function buildClassifierRefusalMessage(reason: string): string {
+  // No DENIAL_WORKAROUND_GUIDANCE here: it invites reaching the goal by other
+  // means, which a refusal keyed to conversation history cannot clear anyway.
   return (
     `${AUTO_MODE_REJECTION_PREFIX}${reason}. ` +
-    `Retrying this action will be refused again for the same reason, so do not repeat it. ` +
-    `Continue with other tasks that don't depend on it. ` +
-    DENIAL_WORKAROUND_GUIDANCE
+    `This is not a judgment that the action is unsafe. ` +
+    `Retrying it will hit the same refusal, so don't rewrite or rework the action to get around this — ` +
+    `it reacts to earlier conversation content, not to the action itself, ` +
+    `and it will keep firing for the rest of this conversation. ` +
+    `Continue with other tasks that don't require this action. ` +
+    `If it is essential, stop and tell the user that auto mode could not evaluate it, ` +
+    `and suggest running this action outside auto mode (switch back to the default permission mode) ` +
+    `or starting a fresh session. ` +
+    CLASSIFIER_READ_ONLY_NOTE
   )
 }
 
@@ -311,9 +324,10 @@ export function buildClassifierUnavailableMessage(
 ): string {
   return (
     `${classifierModel} is temporarily unavailable, so auto mode cannot determine the safety of ${toolName} right now. ` +
-    `Wait briefly and then try this action again. ` +
+    `This is not a judgment that the action is unsafe. ` +
+    `Wait briefly and then try this action again as-is; don't rewrite it. ` +
     `If it keeps failing, continue with other tasks that don't require this action and come back to it later. ` +
-    `Note: reading files, searching code, and other read-only operations do not require the classifier and can still be used.`
+    CLASSIFIER_READ_ONLY_NOTE
   )
 }
 
