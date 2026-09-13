@@ -397,6 +397,9 @@ async function dumpErrorPrompts(
     model: string
   },
 ): Promise<string | null> {
+  // Tests exercise the real error path; keep their stub dumps out of the
+  // shared temp dir so real failure dumps stay findable.
+  if (process.env.NODE_ENV === 'test') return null
   try {
     const path = getAutoModeClassifierErrorDumpPath()
     await mkdir(dirname(path), { recursive: true })
