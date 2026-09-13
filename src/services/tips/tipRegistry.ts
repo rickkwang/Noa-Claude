@@ -4,22 +4,14 @@ import { logForDebugging } from 'src/utils/debug.js'
 import { fileHistoryEnabled } from 'src/utils/fileHistory.js'
 import { getRemoteManagedSettingsSyncFromCache } from 'src/services/remoteManagedSettings/syncCacheState.js'
 import {
-  getInitialSettings,
   getSettings_DEPRECATED,
   getSettingsForSource,
 } from 'src/utils/settings/settings.js'
 import { shouldOfferTerminalSetup } from '../../commands/terminalSetup/terminalSetup.js'
 import { color } from '../../components/design-system/color.js'
-import { shouldShowOverageCreditUpsell } from '../../components/LogoV2/OverageCreditUpsell.js'
 import { getShortcutDisplay } from '../../keybindings/shortcutFormat.js'
-import { isKairosCronEnabled } from '../../tools/ScheduleCronTool/prompt.js'
-import { is1PApiCustomer } from '../../utils/auth.js'
 import { countConcurrentSessions } from '../../utils/concurrentSessions.js'
 import { getGlobalConfig } from '../../utils/config.js'
-import {
-  getEffortEnvOverride,
-  modelSupportsEffort,
-} from '../../utils/effort.js'
 import { env } from '../../utils/env.js'
 import { cacheKeys } from '../../utils/fileStateCache.js'
 import { getWorktreeCount } from '../../utils/git.js'
@@ -32,10 +24,6 @@ import {
   isVSCodeInstalled,
   isWindsurfInstalled,
 } from '../../utils/ide.js'
-import {
-  getMainLoopModel,
-  getUserSpecifiedModelSetting,
-} from '../../utils/model/model.js'
 import { getPlatform } from '../../utils/platform.js'
 import { getPreferredCliCommandName } from '../../utils/commandName.js'
 import { isPluginInstalled } from '../../utils/plugins/installedPluginsManager.js'
@@ -45,11 +33,6 @@ import {
   getCurrentSessionAgentColor,
   isCustomTitleEnabled,
 } from '../../utils/sessionStorage.js'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../analytics/growthbook.js'
-import {
-  formatGrantAmount,
-  getCachedOverageCreditGrant,
-} from '../api/overageCreditGrant.js'
 import { getSessionsSinceLastShown } from './tipHistory.js'
 import { loadTipsFile } from './tipsFileLoader.js'
 import type { Tip, TipContext } from './types.js'
@@ -321,13 +304,6 @@ const externalTips: Tip[] = [
     },
   },
   {
-    id: 'install-github-app',
-    content: async () =>
-      'Run /install-github-app to tag @claude right from your Github issues and PRs',
-    cooldownSessions: 10,
-    isRelevant: async () => !getGlobalConfig().githubActionSetupCount,
-  },
-  {
     id: 'permissions',
     content: async () =>
       'Use /permissions to pre-approve and pre-deny bash, edit, and MCP tools',
@@ -427,30 +403,6 @@ const externalTips: Tip[] = [
     },
   },
   {
-    id: 'web-app',
-    content: async () =>
-      'Run tasks in the cloud while you keep coding locally · clau.de/web',
-    cooldownSessions: 15,
-    isRelevant: async () => true,
-  },
-  {
-    id: 'opusplan-mode-reminder',
-    content: async () =>
-      `Your default model setting is Opus Plan Mode. Press ${getShortcutDisplay('chat:cycleMode', 'Chat', 'shift+tab')} twice to activate Plan Mode and plan with Noa Claude Opus.`,
-    cooldownSessions: 2,
-    async isRelevant() {
-      if (process.env.USER_TYPE === 'ant') return false
-      const config = getGlobalConfig()
-      const modelSetting = getUserSpecifiedModelSetting()
-      const hasOpusPlanMode = modelSetting === 'opusplan'
-      // Show reminder if they have Opus Plan Mode and haven't used plan mode recently (3+ days)
-      const daysSinceLastUse = config.lastPlanModeUse
-        ? (Date.now() - config.lastPlanModeUse) / (1000 * 60 * 60 * 24)
-        : Infinity
-      return hasOpusPlanMode && daysSinceLastUse > 3
-    },
-  },
-  {
     id: 'frontend-design-plugin',
     content: async ctx => {
       const blue = color('suggestion', ctx.theme)
@@ -474,94 +426,6 @@ const externalTips: Tip[] = [
         filePath: /(?:^|[/\\])vercel\.json$/i,
         cli: ['vercel'],
       }),
-  },
-  {
-    id: 'effort-high-nudge',
-    content: async ctx => {
-      const blue = color('suggestion', ctx.theme)
-      const cmd = blue('/effort high')
-      const variant = getFeatureValue_CACHED_MAY_BE_STALE<
-        'off' | 'copy_a' | 'copy_b'
-      >('tengu_tide_elm', 'off')
-      return variant === 'copy_b'
-        ? `Use ${cmd} for better one-shot answers. Noa Claude thinks it through first.`
-        : `Working on something tricky? ${cmd} gives better first answers`
-    },
-    cooldownSessions: 3,
-    isRelevant: async () => {
-      if (!is1PApiCustomer()) return false
-      if (!modelSupportsEffort(getMainLoopModel())) return false
-      if (getSettingsForSource('policySettings')?.effortLevel !== undefined) {
-        return false
-      }
-      if (getEffortEnvOverride() !== undefined) return false
-      const persisted = getInitialSettings().effortLevel
-      if (persisted === 'high' || persisted === 'max') return false
-      return (
-        getFeatureValue_CACHED_MAY_BE_STALE<'off' | 'copy_a' | 'copy_b'>(
-          'tengu_tide_elm',
-          'off',
-        ) !== 'off'
-      )
-    },
-  },
-  {
-    id: 'subagent-fanout-nudge',
-    content: async ctx => {
-      const blue = color('suggestion', ctx.theme)
-      const variant = getFeatureValue_CACHED_MAY_BE_STALE<
-        'off' | 'copy_a' | 'copy_b'
-      >('tengu_tern_alloy', 'off')
-      return variant === 'copy_b'
-        ? `For big tasks, tell Noa Claude to ${blue('use subagents')}. They work in parallel and keep your main thread clean.`
-        : `Say ${blue('"fan out subagents"')} and Noa Claude sends a team. Each one digs deep so nothing gets missed.`
-    },
-    cooldownSessions: 3,
-    isRelevant: async () => {
-      if (!is1PApiCustomer()) return false
-      return (
-        getFeatureValue_CACHED_MAY_BE_STALE<'off' | 'copy_a' | 'copy_b'>(
-          'tengu_tern_alloy',
-          'off',
-        ) !== 'off'
-      )
-    },
-  },
-  {
-    id: 'loop-command-nudge',
-    content: async ctx => {
-      const blue = color('suggestion', ctx.theme)
-      const variant = getFeatureValue_CACHED_MAY_BE_STALE<
-        'off' | 'copy_a' | 'copy_b'
-      >('tengu_timber_lark', 'off')
-      return variant === 'copy_b'
-        ? `Use ${blue('/loop 5m check the deploy')} to run any prompt on a schedule. Set it and forget it.`
-        : `${blue('/loop')} runs any prompt on a recurring schedule. Great for monitoring deploys, babysitting PRs, or polling status.`
-    },
-    cooldownSessions: 3,
-    isRelevant: async () => {
-      if (!is1PApiCustomer()) return false
-      if (!isKairosCronEnabled()) return false
-      return (
-        getFeatureValue_CACHED_MAY_BE_STALE<'off' | 'copy_a' | 'copy_b'>(
-          'tengu_timber_lark',
-          'off',
-        ) !== 'off'
-      )
-    },
-  },
-  {
-    id: 'overage-credit',
-    content: async ctx => {
-      const claude = color('claude', ctx.theme)
-      const info = getCachedOverageCreditGrant()
-      const amount = info ? formatGrantAmount(info) : null
-      if (!amount) return ''
-      // Copy from "OC & Bulk Overages copy" doc (#5 — CLI Rotating tip)
-      return `${claude(`${amount} in usage credits, on us`)} · third-party apps · ${claude('/usage-credits')}`
-    },
-    cooldownSessions: 3,
-    isRelevant: async () => shouldShowOverageCreditUpsell(),
   },
   {
     id: 'feedback-command',
