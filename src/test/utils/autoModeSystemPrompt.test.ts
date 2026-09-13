@@ -27,18 +27,32 @@ function sha256(path: string): string {
 }
 
 // Port-integrity pins, same contract as leanPromptPortIntegrity.test.ts: a
-// failure here means someone reworded the ported upstream 2.1.233 text.
+// failure here means someone reworded the ported upstream text.
 // Re-verify against upstream and only then update the digest, never the reverse.
-describe('upstream 2.1.233 prompt port integrity', () => {
-  test('base system prompt matches upstream hci()', () => {
+//
+// The base prompt is the 2.1.233 port. The permissions template is that port
+// plus two changes from 2.1.270 (its zstd asset permissions_external-*.txt.zst):
+// the provenance-based rewrite of Code from External, and the
+// URL-encodes-content clause of Public Data-Sharing Upload.
+//
+// Partial on purpose — 2.1.270's other four rules stay out:
+//   - Command Network Lists, Unrequested Artifact Publish: key off
+//     `allowed_domains` on Bash and an `Artifact` action, neither of which
+//     exists here. They could only misfire on lookalikes.
+//   - Containment Escape (+ its Host containment slot), Unverifiable Deletion
+//     Scope: assume containers, shared clusters, or cloud credentials. Inert on
+//     a single-user machine, but still cost tokens and can false-positive on
+//     cloud-auth debugging. Port them if the deployment changes.
+describe('upstream prompt port integrity', () => {
+  test('base system prompt matches upstream 2.1.233 hci()', () => {
     expect(sha256(join(PROMPTS_DIR, 'auto_mode_system_prompt.txt'))).toBe(
       '7897d23ee226cff448f918741b759ff296ee89962d1cf0667f3753fcc4ac8264',
     )
   })
 
-  test('external permissions template matches upstream Aci', () => {
+  test('external permissions template is the 2.1.233 port with the two selected 2.1.270 changes', () => {
     expect(sha256(join(PROMPTS_DIR, 'permissions_external.txt'))).toBe(
-      '4ac2ed0457a9d8fed122026389b81a2dd6abef21c5537d5687c714cf37b30cd7',
+      'f2a68e868f52c8c2836ae987ddf3d183c70a9647774646f85a26b9bd8294b3a2',
     )
   })
 })
