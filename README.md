@@ -93,6 +93,7 @@ The product baseline is `/fork`, `/workflows`, `/summary`, and `/share` (smoke-c
 - `/status` — Inspect runtime state, MCP, plugins, and agents
 - `/cache-probe` — Diagnose API cache hit rate by comparing `cached_tokens` across identical requests
 - `/usage` — View token usage for current session
+- `/stats` — View usage activity stats (sessions, tokens, models over time)
 - `/cost` — Estimate cost of the current conversation
 
 **Configuration**

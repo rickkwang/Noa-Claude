@@ -27,10 +27,11 @@ describe('built-in command registry', () => {
     expect(names.has('pause-memory')).toBe(true)
   })
 
-  test('registers the aliases that route to an existing command', () => {
+  test('registers the upstream muscle-memory entries', () => {
     const names = builtInCommandNames()
-    // /undo and /stats are muscle memory from upstream; /cost stays its own
-    // command here, so /usage deliberately does not claim it as an alias.
+    // /undo is an alias of /rewind. /stats is its own command landing on the
+    // dashboard's Stats tab — deliberately not a /usage alias, and /cost stays
+    // its own command as well.
     expect(names.has('undo')).toBe(true)
     expect(names.has('stats')).toBe(true)
     expect(names.has('cost')).toBe(true)
