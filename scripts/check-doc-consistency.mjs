@@ -207,19 +207,16 @@ for (const command of implementedNonBaselineCommands) {
   }
 }
 
-if (!/\/output-style[\s\S]*deprecated shim/i.test(productGovernance)) {
-  failures.push(
-    'Product governance doc must mark /output-style as a deprecated shim',
-  )
-}
-
+// /output-style and /config → Output style are two doors to one picker,
+// writing the same key to the same settings source. If they ever diverge, the
+// governance doc has to say which one wins before this line can change.
 if (
-  !/\/output-style[\s\S]*not eligible for baseline promotion/i.test(
+  !/\/output-style[\s\S]*\/config[\s\S]*interchangeable/i.test(
     productGovernance,
   )
 ) {
   failures.push(
-    'Product governance doc must state that /output-style is not baseline-promotable as a shim',
+    'Product governance doc must state that /output-style and /config stay interchangeable entry points',
   )
 }
 

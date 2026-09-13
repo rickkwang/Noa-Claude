@@ -1,6 +1,6 @@
 # Feature Availability Matrix
 
-Last updated: 2026-08-07
+Last updated: 2026-09-13
 
 ## Scope
 - This matrix reflects the current repository build/runtime behavior.
@@ -36,13 +36,15 @@ Last updated: 2026-08-07
 | `/cleanup-data` | Available | Unified cleanup command for local tracking data; requires `--confirm` to execute deletions. Custom-location memory dirs (env/settings override) only lose known memory files — unrecognized items are kept and reported. |
 | `/clean-sessions` | Available | Interactive picker for deleting small/trivial session transcripts (sidecar dirs go with them); bulk `delete --confirm` requires `--trivial-only` and the default size bucket. The running session and recently-modified (<10m) sessions are always excluded. |
 | `/heapdump` | Available | Exposed for engineering diagnostics. |
-| `/output-style` | Available | Deprecated shim only; compatibility prompt to `/config`, not promotable to baseline unless replaced by a supported configuration workflow. |
+| `/output-style` | Available | Direct entry to the output-style picker; writes `outputStyle` to local settings, the same key and source as `/config` → Output style. |
 | `/thinkback-play` | Available | Thinkback helper; still gated by runtime feature availability. |
 | `/rate-limit-options` | Available | Rate-limit action sheet; still gated by subscriber/runtime availability. |
 | `/cache-probe` | Available | Probe API cache hit rate by sending identical requests and comparing `cached_tokens` values. |
 | `/wiki` | Available | Project documentation management via `init`, `status`, `ingest` subcommands. |
 | `/provider` | Available | Manage named provider configurations (create, list, switch, delete profiles). |
-| `/rewind` | Available | Restore code and conversation to a previous checkpoint (alias `/checkpoint`); interactive only. |
+| `/rewind` | Available | Restore code and conversation to a previous checkpoint (aliases `/checkpoint`, `/undo`); interactive only. |
+| `/reload-skills` | Available | Re-scans skill directories mid-session. Covers the gap the file watcher cannot: it only watches directories that existed at startup. |
+| `/pause-memory` | Available | Session-scoped auto-memory pause. One-directional — resuming falls back to `CLAUDE_CODE_DISABLE_AUTO_MEMORY` / `autoMemoryEnabled`, it cannot override them. |
 | `/goal` | Available | Long-running objective with evaluator loop, auto-continue limits, token budget, and optional verify command. |
 
 ## Slash Commands: Product-Available

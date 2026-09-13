@@ -285,6 +285,26 @@ function scheduleReload(changedPath: string): void {
 }
 
 /**
+ * Run the watcher's reload body right now, skipping the debounce.
+ *
+ * getWatchablePaths() only registers directories that already exist when the
+ * watcher initializes, so a skills directory created mid-session (`mkdir
+ * .noa/skills`) never produces a file event. /reload-skills routes through
+ * here so the manual path performs exactly the same invalidation the watcher
+ * would have, instead of a second, drifting copy of it.
+ *
+ * ConfigChange hooks are deliberately not consulted: they exist to veto
+ * reloads triggered by someone else's file writes, and there is no file event
+ * here — the user asked for this one.
+ */
+export function reloadNow(): void {
+  clearSkillCaches()
+  clearCommandsCache()
+  resetSentSkillNames()
+  skillsChanged.emit()
+}
+
+/**
  * Reset internal state for testing purposes only.
  */
 export async function resetForTesting(overrides?: {
@@ -313,5 +333,6 @@ export const skillChangeDetector = {
   initialize,
   dispose,
   subscribe,
+  reloadNow,
   resetForTesting,
 }

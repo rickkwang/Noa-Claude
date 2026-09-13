@@ -86,6 +86,9 @@ import agents from './commands/agents/index.js'
 import plugin from './commands/plugin/index.js'
 import provider from './commands/provider/index.js'
 import reloadPlugins from './commands/reload-plugins/index.js'
+import reloadSkills from './commands/reload-skills/index.js'
+import outputStyle from './commands/output-style/index.js'
+import pauseMemory from './commands/pause-memory/index.js'
 import rewind from './commands/rewind/index.js'
 import heapDump from './commands/heapdump/index.js'
 import bridgeKick from './commands/bridge-kick.js'
@@ -216,6 +219,9 @@ const COMMANDS = memoize((): Command[] => [
   pr_comments,
   releaseNotes,
   reloadPlugins,
+  reloadSkills,
+  outputStyle,
+  pauseMemory,
   rename,
   resume,
   session,

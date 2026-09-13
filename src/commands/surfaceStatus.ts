@@ -107,6 +107,36 @@ const implementedNonBaseline: CommandSurfaceEntry[] = [
     upgradeCondition:
       'Promote after goal-state recovery smoke covers resume/compact interplay and budget edge cases.',
   },
+  {
+    command: '/output-style',
+    category: 'implemented-non-baseline',
+    discoverability: 'visible',
+    supportsNonInteractive: false,
+    reason:
+      'Direct entry to the output-style picker that /config hosts; same settings key and source, so it is a shortcut rather than its own workflow.',
+    upgradeCondition:
+      'Promote only if output styles become a primary configuration workflow rather than a /config submenu.',
+  },
+  {
+    command: '/reload-skills',
+    category: 'implemented-non-baseline',
+    discoverability: 'visible',
+    supportsNonInteractive: false,
+    reason:
+      'Manual skill re-scan for the case the watcher cannot cover: it only watches skill directories that existed at startup.',
+    upgradeCondition:
+      'Promote if the watcher gap is closed and this becomes the single documented refresh path.',
+  },
+  {
+    command: '/pause-memory',
+    category: 'implemented-non-baseline',
+    discoverability: 'visible',
+    supportsNonInteractive: true,
+    reason:
+      'Session-scoped auto-memory pause; the persistent controls both require a restart.',
+    upgradeCondition:
+      'Promote once memory controls are consolidated into one documented surface.',
+  },
 ]
 
 const buildExcluded: CommandSurfaceEntry[] = [

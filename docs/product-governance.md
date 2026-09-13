@@ -38,13 +38,15 @@ These commands are callable, but they are not core product workflows:
 - `/provider`
 - `/rewind`
 - `/goal`
+- `/reload-skills`
+- `/pause-memory`
 
 Policy:
 
 - keep behavior stable
 - do not claim full product parity
 - promotion to baseline requires smoke coverage and user-value justification
-- `/output-style` is a deprecated shim only and is not eligible for baseline promotion unless replaced by a supported configuration workflow
+- `/output-style` is a direct entry to the picker that `/config` hosts; both write `outputStyle` to local settings, so the two entry points must stay interchangeable
 
 Tracked surfaces:
 
@@ -59,6 +61,8 @@ Tracked surfaces:
 - `/provider`
 - `/rewind`
 - `/goal`
+- `/reload-skills`
+- `/pause-memory`
 
 ### Build-Excluded
 
