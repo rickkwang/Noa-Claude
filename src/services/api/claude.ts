@@ -240,6 +240,10 @@ import { isToolFromMcpServer } from '../mcp/utils.js'
 import { withStreamingVCR, withVCR } from '../vcr.js'
 import { CLIENT_REQUEST_ID_HEADER, getAnthropicClient } from './client.js'
 import {
+  getStreamIdleTimeoutMs,
+  isStreamWatchdogEnabled,
+} from './streamWatchdog.js'
+import {
   API_ERROR_MESSAGE_PREFIX,
   CUSTOM_OFF_SWITCH_MESSAGE,
   getAssistantMessageFromError,
@@ -2011,34 +2015,15 @@ async function* queryModel(
     stopReason = null
     isAdvisorInProgress = false
 
-    // Streaming idle timeout watchdog: abort the stream if no chunks arrive.
-    // Unlike the stall detection below (which only fires when the *next* chunk
-    // arrives), this uses setTimeout to actively kill hung streams. Without
-    // this, a silently dropped connection can hang the session indefinitely
-    // since the SDK's request timeout only covers the initial fetch(), not the
-    // streaming body. Background/remote thinking requests get a longer window:
-    // those sessions are more likely to run high-effort thinking while nobody
-    // is watching the spinner, so the normal 90s idle timeout can be a false
-    // positive rather than a dead connection.
-    const streamWatchdogEnabled = isEnvTruthy(
-      process.env.CLAUDE_ENABLE_STREAM_WATCHDOG,
-    )
-    const STREAM_IDLE_TIMEOUT_MS =
-      parseInt(process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS || '', 10) || 90_000
-    const STREAM_IDLE_THINKING_TIMEOUT_MS =
-      parseInt(process.env.CLAUDE_STREAM_THINKING_IDLE_TIMEOUT_MS || '', 10) ||
-      10 * 60_000
-    const STREAM_IDLE_SLEEP_DRIFT_MS =
-      parseInt(process.env.CLAUDE_STREAM_IDLE_SLEEP_DRIFT_MS || '', 10) ||
-      30_000
-    const hasThinkingForIdleWatchdog =
-      thinkingConfig.type !== 'disabled' &&
-      !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_THINKING)
-    const isRemoteOrBackgroundQuery =
-      isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) ||
-      options.querySource.startsWith('agent:') ||
-      options.agentId !== undefined
-    let isThinkingBlockInProgress = false
+    // Streaming idle timeout watchdog: abort the stream if no chunks arrive
+    // for the idle timeout. Unlike the stall detection below (which only fires
+    // when the *next* chunk arrives), this uses setTimeout to actively kill
+    // hung streams. Without this, a silently dropped connection can hang the
+    // session indefinitely since the SDK's request timeout only covers the
+    // initial fetch(), not the streaming body.
+    const streamWatchdogEnabled = isStreamWatchdogEnabled()
+    const streamIdleTimeoutMs = getStreamIdleTimeoutMs()
+    const streamIdleWarningMs = streamIdleTimeoutMs / 2
     let streamIdleAborted = false
     // performance.now() snapshot when watchdog fires, for measuring abort propagation delay
     let streamWatchdogFiredAt: number | null = null
@@ -2059,76 +2044,23 @@ async function* queryModel(
       if (!streamWatchdogEnabled) {
         return
       }
-      const idleTimeoutMs =
-        hasThinkingForIdleWatchdog &&
-        (isRemoteOrBackgroundQuery || isThinkingBlockInProgress)
-          ? Math.max(
-              STREAM_IDLE_TIMEOUT_MS,
-              STREAM_IDLE_THINKING_TIMEOUT_MS,
-            )
-          : STREAM_IDLE_TIMEOUT_MS
-      const idleWarningMs = idleTimeoutMs / 2
-      const warningExpectedAt = Date.now() + idleWarningMs
-      streamIdleWarningTimer = setTimeout(
-        (warnMs, expectedAt) => {
-          const driftMs = Date.now() - expectedAt
-          if (driftMs > STREAM_IDLE_SLEEP_DRIFT_MS) {
-            logForDebugging(
-              `Streaming idle warning skipped after likely sleep/wake drift (${driftMs}ms)`,
-              { level: 'warn' },
-            )
-            logEvent('tengu_streaming_idle_sleep_wake_drift', {
-              phase:
-                'warning' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-              drift_ms: driftMs,
-              timeout_ms: warnMs,
-              request_id: (streamRequestId ??
-                'unknown') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-              model:
-                options.model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-            })
-            resetStreamIdleTimer()
-            return
-          }
-          logForDebugging(
-            `Streaming idle warning: no chunks received for ${warnMs / 1000}s`,
-            { level: 'warn' },
-          )
-          logForDiagnosticsNoPII('warn', 'cli_streaming_idle_warning')
-        },
-        idleWarningMs,
-        idleWarningMs,
-        warningExpectedAt,
-      )
-      const timeoutExpectedAt = Date.now() + idleTimeoutMs
-      streamIdleTimer = setTimeout((timeoutMs: number) => {
-        const driftMs = Date.now() - timeoutExpectedAt
-        if (driftMs > STREAM_IDLE_SLEEP_DRIFT_MS) {
-          logForDebugging(
-            `Streaming idle timeout skipped after likely sleep/wake drift (${driftMs}ms)`,
-            { level: 'warn' },
-          )
-          logForDiagnosticsNoPII(
-            'warn',
-            'cli_streaming_idle_sleep_wake_drift',
-          )
-          logEvent('tengu_streaming_idle_sleep_wake_drift', {
-            phase:
-              'timeout' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-            drift_ms: driftMs,
-            timeout_ms: timeoutMs,
-            request_id: (streamRequestId ??
-              'unknown') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-            model:
-              options.model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-          })
-          resetStreamIdleTimer()
+      const armedAt = performance.now()
+      streamIdleWarningTimer = setTimeout(() => {
+        // Timers can fire a hair early; warn only once the window has elapsed.
+        if (performance.now() - armedAt < streamIdleWarningMs) {
           return
         }
+        logForDebugging(
+          `Streaming idle warning: no chunks received for ${streamIdleWarningMs / 1000}s`,
+          { level: 'warn' },
+        )
+        logForDiagnosticsNoPII('warn', 'cli_streaming_idle_warning')
+      }, streamIdleWarningMs)
+      streamIdleTimer = setTimeout(() => {
         streamIdleAborted = true
         streamWatchdogFiredAt = performance.now()
         logForDebugging(
-          `Streaming idle timeout: no chunks received for ${timeoutMs / 1000}s, aborting stream`,
+          `Streaming idle timeout: no chunks received for ${streamIdleTimeoutMs / 1000}s, aborting stream`,
           { level: 'error' },
         )
         logForDiagnosticsNoPII('error', 'cli_streaming_idle_timeout')
@@ -2137,12 +2069,11 @@ async function* queryModel(
             options.model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
           request_id: (streamRequestId ??
             'unknown') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-          timeout_ms: timeoutMs,
-          thinking_active: isThinkingBlockInProgress,
-          remote_or_background: isRemoteOrBackgroundQuery,
+          timeout_ms: streamIdleTimeoutMs,
+          tier: 'event' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
         })
         releaseStreamResources()
-      }, idleTimeoutMs, idleTimeoutMs)
+      }, streamIdleTimeoutMs)
     }
     resetStreamIdleTimer()
 
@@ -2246,8 +2177,6 @@ async function* queryModel(
                 }
                 break
               case 'thinking':
-                isThinkingBlockInProgress = true
-                resetStreamIdleTimer()
                 contentBlocks[part.index] = {
                   ...part.content_block,
                   // also awkward
@@ -2408,10 +2337,6 @@ async function* queryModel(
                   part.type as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
               })
               throw new Error('Message not found')
-            }
-            if (contentBlock.type === 'thinking') {
-              isThinkingBlockInProgress = false
-              resetStreamIdleTimer()
             }
             const m: AssistantMessage = {
               message: {
