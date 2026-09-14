@@ -198,6 +198,54 @@ describe('openaiShim stream usage', () => {
     expect(captured[0]!.body.stream_options).toEqual({ include_usage: true })
   })
 
+  test('aborting the stream controller ends a read stalled on a silent body', async () => {
+    const fetchOverride = (async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                `data: ${JSON.stringify({ id: 'c', choices: [{ delta: { content: 'hi' } }] })}\n\n`,
+              ),
+            )
+            // Never closes: a connection that went silent mid-stream.
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      )) as unknown as typeof fetch
+    const client = createOpenAIShimClient({
+      apiKey: 'test-key',
+      baseURL: 'https://api.example.test/v1',
+      defaultHeaders: {},
+      timeoutMs: 1000,
+      fetchOverride,
+    })
+    const stream = (await client.messages.create({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: 'hi' }],
+      max_tokens: 16,
+      stream: true,
+    })) as AsyncIterable<Record<string, unknown>> & {
+      controller: AbortController
+    }
+
+    const types: unknown[] = []
+    const consumed = (async () => {
+      for await (const event of stream) {
+        types.push(event.type)
+        if (event.type === 'content_block_delta') stream.controller.abort()
+      }
+    })()
+    const outcome = await Promise.race([
+      consumed.then(() => 'ended'),
+      new Promise(resolve => setTimeout(resolve, 1000, 'hung')),
+    ])
+
+    expect(outcome).toBe('ended')
+    expect(types).toContain('content_block_delta')
+    expect(types).not.toContain('message_stop')
+  })
+
   test('non-streaming request does not send stream_options', async () => {
     const { client, captured } = captureClient()
     await client.messages.create({

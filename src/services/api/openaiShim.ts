@@ -371,6 +371,7 @@ function convertChunkUsage(
 async function* openaiStreamToAnthropic(
   response: Response,
   model: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<Record<string, unknown>> {
   const messageId = makeMessageId()
   let contentBlockIndex = 0
@@ -407,6 +408,15 @@ async function* openaiStreamToAnthropic(
 
   const reader = response.body?.getReader()
   if (!reader) return
+
+  // cleanupStream() aborts the stream's controller when the idle watchdog
+  // fires; cancelling the reader is what wakes a read() blocked on a silent
+  // connection; the fetch signal stops covering the body once headers land.
+  const cancelReader = () => {
+    reader.cancel().catch(() => {})
+  }
+  if (signal?.aborted) cancelReader()
+  else signal?.addEventListener('abort', cancelReader, { once: true })
 
   const decoder = new TextDecoder()
   let buffer = ''
@@ -603,6 +613,9 @@ async function* openaiStreamToAnthropic(
     }
   }
 
+  // An aborted stream is incomplete; a message_stop would dress it up as done.
+  if (signal?.aborted) return
+
   // Handle any leftover data in buffer (incomplete JSON from early disconnect)
   const leftover = buffer.trim()
   const leftoverPayload = leftover.startsWith('data: ')
@@ -624,8 +637,15 @@ async function* openaiStreamToAnthropic(
 
 class OpenAIShimStream {
   controller = new AbortController()
+  private generator: AsyncGenerator<Record<string, unknown>>
 
-  constructor(private generator: AsyncGenerator<Record<string, unknown>>) {}
+  constructor(response: Response, model: string) {
+    this.generator = openaiStreamToAnthropic(
+      response,
+      model,
+      this.controller.signal,
+    )
+  }
 
   async *[Symbol.asyncIterator]() {
     yield* this.generator
@@ -661,9 +681,7 @@ class OpenAIShimMessages {
     const promise = (async () => {
       const response = await this._doRequest(params, options)
       if (params.stream) {
-        return new OpenAIShimStream(
-          openaiStreamToAnthropic(response, params.model),
-        )
+        return new OpenAIShimStream(response, params.model)
       }
 
       const data = await response.json()
