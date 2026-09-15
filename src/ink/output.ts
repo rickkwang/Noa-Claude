@@ -178,6 +178,14 @@ export default class Output {
 
   private charCache: Map<string, ClusteredChar[]> = new Map()
 
+  /**
+   * Last horizontal clip slice per line. During scroll, the same line is
+   * re-clipped with the same (from, to) every frame while only y changes —
+   * one entry per line hits reliably, and the map is capped with charCache.
+   */
+  private sliceCache: Map<string, { from: number; to: number; out: string }> =
+    new Map()
+
   constructor(options: Options) {
     const { width, height, stylePool, screen } = options
 
@@ -202,7 +210,10 @@ export default class Output {
     this.screen = screen
     this.operations.length = 0
     resetScreen(screen, width, height)
-    if (this.charCache.size > 16384) this.charCache.clear()
+    if (this.charCache.size > 16384) {
+      this.charCache.clear()
+      this.sliceCache.clear()
+    }
   }
 
   /**
@@ -434,6 +445,10 @@ export default class Output {
                 const from = x < clip.x1! ? clip.x1! - x : 0
                 const width = stringWidth(line)
                 const to = x + width > clip.x2! ? clip.x2! - x : width
+                const cached = this.sliceCache.get(line)
+                if (cached && cached.from === from && cached.to === to) {
+                  return cached.out
+                }
                 let sliced = sliceAnsi(line, from, to)
                 // Wide chars (CJK, emoji) occupy 2 cells. When `to` lands
                 // on the first cell of a wide char, sliceAnsi includes the
@@ -444,6 +459,7 @@ export default class Output {
                 if (stringWidth(sliced) > to - from) {
                   sliced = sliceAnsi(line, from, to - 1)
                 }
+                this.sliceCache.set(line, { from, to, out: sliced })
                 return sliced
               })
 
@@ -610,6 +626,21 @@ function flushBuffer(
     : styles
   const styleId = stylePool.intern(filteredStyles)
 
+  // Printable-ASCII fast path. Every char in 0x20-0x7E is its own grapheme
+  // of width 1 — no cluster can span two of them and no combining mark can
+  // follow — so the Intl.Segmenter walk and the per-grapheme stringWidth()
+  // call are both pure overhead. They dominate the cold-cache paint cost
+  // (~46µs/line vs ~1µs/line on a syntax-highlighted diff line), and nearly
+  // every run in a transcript or diff is plain ASCII. Tab and ESC are
+  // outside this range, so control-char handling in writeLineToScreen is
+  // unaffected.
+  if (ASCII_PRINTABLE.test(buffer)) {
+    for (let i = 0; i < buffer.length; i++) {
+      out.push({ value: buffer[i]!, width: 1, styleId, hyperlink })
+    }
+    return
+  }
+
   for (const { segment: grapheme } of getGraphemeSegmenter().segment(buffer)) {
     out.push({
       value: grapheme,
@@ -619,6 +650,8 @@ function flushBuffer(
     })
   }
 }
+
+const ASCII_PRINTABLE = /^[\x20-\x7e]*$/
 
 /**
  * Write a single line's characters into the screen buffer.
@@ -653,6 +686,17 @@ function writeLineToScreen(
 
   let offsetX = x
 
+  // Reused cell object for setCellAt calls. setCellAt reads the four fields
+  // and packs them into typed arrays without retaining the object, so one
+  // scratch per line write avoids ~cells-per-line allocations — a full
+  // screen rewrite is ~10k of these per frame.
+  const scratchCell: {
+    char: string
+    styleId: number
+    width: CellWidth
+    hyperlink: string | undefined
+  } = { char: ' ', styleId: stylePool.none, width: CellWidth.Narrow, hyperlink: undefined }
+
   for (let charIdx = 0; charIdx < characters.length; charIdx++) {
     const character = characters[charIdx]!
     const codePoint = character.value.codePointAt(0)
@@ -666,12 +710,11 @@ function writeLineToScreen(
         const tabWidth = 8
         const spacesToNextStop = tabWidth - (offsetX % tabWidth)
         for (let i = 0; i < spacesToNextStop && offsetX < screenWidth; i++) {
-          setCellAt(screen, offsetX, y, {
-            char: ' ',
-            styleId: stylePool.none,
-            width: CellWidth.Narrow,
-            hyperlink: undefined,
-          })
+          scratchCell.char = ' '
+          scratchCell.styleId = stylePool.none
+          scratchCell.width = CellWidth.Narrow
+          scratchCell.hyperlink = undefined
+          setCellAt(screen, offsetX, y, scratchCell)
           offsetX++
         }
       }
@@ -772,12 +815,11 @@ function writeLineToScreen(
     // the next line, desyncing our cursor model. Place a SpacerHead
     // to mark the blank column, matching terminal behavior.
     if (isWideCharacter && offsetX + 2 > screenWidth) {
-      setCellAt(screen, offsetX, y, {
-        char: ' ',
-        styleId: stylePool.none,
-        width: CellWidth.SpacerHead,
-        hyperlink: undefined,
-      })
+      scratchCell.char = ' '
+      scratchCell.styleId = stylePool.none
+      scratchCell.width = CellWidth.SpacerHead
+      scratchCell.hyperlink = undefined
+      setCellAt(screen, offsetX, y, scratchCell)
       offsetX++
       continue
     }
@@ -785,12 +827,11 @@ function writeLineToScreen(
     // styleId + hyperlink were precomputed during clustering (once per
     // style run, cached via charCache). Hot loop is now just property
     // reads — no intern, no extract, no filter per frame.
-    setCellAt(screen, offsetX, y, {
-      char: character.value,
-      styleId: character.styleId,
-      width: isWideCharacter ? CellWidth.Wide : CellWidth.Narrow,
-      hyperlink: character.hyperlink,
-    })
+    scratchCell.char = character.value
+    scratchCell.styleId = character.styleId
+    scratchCell.width = isWideCharacter ? CellWidth.Wide : CellWidth.Narrow
+    scratchCell.hyperlink = character.hyperlink
+    setCellAt(screen, offsetX, y, scratchCell)
     offsetX += isWideCharacter ? 2 : 1
   }
 
