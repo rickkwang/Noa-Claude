@@ -3921,7 +3921,10 @@ function runHeadlessStreaming(
                 question,
                 cacheSafeParams,
               })
-              sendControlResponseSuccess(message, { response: result.response })
+              sendControlResponseSuccess(message, {
+                response: result.response,
+                synthetic: result.synthetic,
+              })
             } catch (e) {
               sendControlResponseError(message, errorMessage(e))
             }

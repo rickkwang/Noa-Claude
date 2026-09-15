@@ -43,3 +43,76 @@ describe('findBtwTriggerPositions', () => {
     expect(findBtwTriggerPositions('ask /btw later')).toEqual([])
   })
 })
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function firstText(message: any): string {
+  return message.message.content[0].text
+}
+
+describe('btw history', () => {
+  test('append keeps the most recent 20 exchanges', async () => {
+    const { BtwHistory } = await import('../../utils/btwHistory.js')
+    const history = new BtwHistory()
+    for (let i = 0; i < 25; i++) history.append(`q${i}`, `a${i}`)
+    expect(history.exchanges).toHaveLength(20)
+    expect(history.exchanges[0]).toEqual({ question: 'q5', response: 'a5' })
+  })
+
+  test('resetBtwHistory starts a fresh history', async () => {
+    const { getBtwHistory, resetBtwHistory } = await import(
+      '../../utils/btwHistory.js'
+    )
+    getBtwHistory().append('q', 'a')
+    resetBtwHistory()
+    expect(getBtwHistory().exchanges).toEqual([])
+  })
+})
+
+describe('buildBtwHistoryMessages', () => {
+  test('replays exchanges as user/assistant pairs', async () => {
+    const { buildBtwHistoryMessages } = await import(
+      '../../utils/sideQuestion.js'
+    )
+    const messages = buildBtwHistoryMessages([
+      { question: 'what is x?', response: 'x is y' },
+    ])
+    expect(messages.map(m => m.type)).toEqual(['user', 'assistant'])
+    expect(firstText(messages[1])).toBe('x is y')
+  })
+
+  test('omits answers that wrote tool calls as text', async () => {
+    const { buildBtwHistoryMessages } = await import(
+      '../../utils/sideQuestion.js'
+    )
+    const [, assistant] = buildBtwHistoryMessages([
+      { question: 'q', response: `<${P}invoke name="Read">` },
+    ])
+    expect(firstText(assistant)).toContain('omitted')
+  })
+})
+
+describe('extractSideQuestionResponse', () => {
+  test('marks a tool-call attempt as synthetic', async () => {
+    const { extractSideQuestionResponse } = await import(
+      '../../utils/sideQuestion.js'
+    )
+    const result = extractSideQuestionResponse([
+      {
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', name: 'Read', id: 't', input: {} }] },
+      },
+    ] as never)
+    expect(result.synthetic).toBe(true)
+    expect(result.response).toContain('Read')
+  })
+
+  test('a text answer is not synthetic', async () => {
+    const { extractSideQuestionResponse } = await import(
+      '../../utils/sideQuestion.js'
+    )
+    const result = extractSideQuestionResponse([
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'hi' }] } },
+    ] as never)
+    expect(result).toEqual({ response: 'hi', synthetic: false })
+  })
+})

@@ -8,10 +8,15 @@
  */
 
 import { formatAPIError } from '../services/api/errorUtils.js'
-import type { NonNullableUsage } from '../services/api/logging.js'
+import { EMPTY_USAGE, type NonNullableUsage } from '../services/api/logging.js'
 import type { Message, SystemAPIErrorMessage } from '../types/message.js'
+import { type BtwExchange, getBtwHistory } from './btwHistory.js'
 import { type CacheSafeParams, runForkedAgent } from './forkedAgent.js'
-import { createUserMessage, extractTextContent } from './messages.js'
+import {
+  createAssistantMessage,
+  createUserMessage,
+  extractTextContent,
+} from './messages.js'
 
 // Pattern to detect "/btw" at start of input (case-insensitive, word boundary)
 const BTW_PATTERN = /^\/btw\b/gi
@@ -25,6 +30,10 @@ const LEAKED_TOOL_CALL_PATTERN = new RegExp(
 )
 const NOT_EXECUTED_NOTICE =
   "_/btw can't run tools: any tool calls or tool output shown above were not executed and may not reflect your actual files or data. Ask in the main conversation to check._"
+// Replayed in place of such an answer, so the next side question doesn't
+// see fabricated tool output as established context.
+const LEAKED_TOOL_CALL_OMITTED =
+  '(That answer wrote tool calls as text. Nothing was executed, so it is omitted here.)'
 
 export function containsLeakedToolCall(text: string): boolean {
   return LEAKED_TOOL_CALL_PATTERN.test(text)
@@ -55,25 +64,22 @@ export function findBtwTriggerPositions(text: string): Array<{
   return positions
 }
 
-export type SideQuestionResult = {
-  response: string | null
-  usage: NonNullableUsage
+export type SideQuestionRetry = {
+  retryAttempt: number
+  maxRetries: number
+  retryInMs: number
+  status: number | undefined
 }
 
-/**
- * Run a side question using a forked agent.
- * Shares the parent's prompt cache — no thinking override, no cache write.
- * All tools are blocked and we cap at 1 turn.
- */
-export async function runSideQuestion({
-  question,
-  cacheSafeParams,
-}: {
-  question: string
-  cacheSafeParams: CacheSafeParams
-}): Promise<SideQuestionResult> {
-  // Wrap the question with instructions to answer without tools
-  const wrappedQuestion = `<system-reminder>This is a side question from the user. You must answer this question directly in a single response.
+export type SideQuestionResult = {
+  response: string | null
+  /** A notice written by us (tool-call attempt, API error), not a model answer. */
+  synthetic: boolean
+  usage: NonNullableUsage
+  aborted?: true
+}
+
+const SIDE_QUESTION_REMINDER = `<system-reminder>This is a side question from the user. You must answer this question directly in a single response.
 
 IMPORTANT CONTEXT:
 - You are a separate, lightweight agent spawned to answer this one question
@@ -89,35 +95,102 @@ CRITICAL CONSTRAINTS:
 - NEVER say things like "Let me try...", "I'll now...", "Let me check...", or promise to take any action
 - If you don't know the answer, say so - do not offer to look it up or investigate
 
-Simply answer the question with the information you have.</system-reminder>
+Simply answer the question with the information you have.</system-reminder>`
 
-${question}`
-
-  const agentResult = await runForkedAgent({
-    promptMessages: [createUserMessage({ content: wrappedQuestion })],
-    // Do NOT override thinkingConfig — thinking is part of the API cache key,
-    // and diverging from the main thread's config busts the prompt cache.
-    // Adaptive thinking on a quick Q&A has negligible overhead.
-    cacheSafeParams,
-    canUseTool: async () => ({
-      behavior: 'deny' as const,
-      message: 'Side questions cannot use tools',
-      decisionReason: { type: 'other' as const, reason: 'side_question' },
+/** Earlier side questions, replayed as prior user/assistant turns. */
+export function buildBtwHistoryMessages(
+  exchanges: readonly BtwExchange[],
+): Message[] {
+  return exchanges.flatMap(exchange => [
+    createUserMessage({ content: exchange.question }),
+    createAssistantMessage({
+      content: containsLeakedToolCall(exchange.response)
+        ? LEAKED_TOOL_CALL_OMITTED
+        : exchange.response,
     }),
-    querySource: 'side_question',
-    forkLabel: 'side_question',
-    maxTurns: 1, // Single turn only - no tool use loops
-    // No future request shares this suffix; skip writing cache entries.
-    skipCacheWrite: true,
-    // Sidechain entries are filtered out of resume/branch/stats anyway, so
-    // recording would only re-write the whole fork context to the session log
-    // (awaited before the first token) for nobody to read.
-    skipTranscript: true,
-  })
+  ])
+}
 
-  return {
-    response: extractSideQuestionResponse(agentResult.messages),
-    usage: agentResult.totalUsage,
+/**
+ * Run a side question using a forked agent.
+ * Shares the parent's prompt cache — no thinking override, no cache write.
+ * All tools are blocked and we cap at 1 turn.
+ *
+ * Earlier /btw exchanges from this session are replayed before the question
+ * (`threadHistory`), and a real answer is appended to that history.
+ */
+export async function runSideQuestion({
+  question,
+  cacheSafeParams,
+  abortController,
+  onRetry,
+  threadHistory = true,
+}: {
+  question: string
+  cacheSafeParams: CacheSafeParams
+  abortController?: AbortController
+  onRetry?: (retry: SideQuestionRetry) => void
+  threadHistory?: boolean
+}): Promise<SideQuestionResult> {
+  const history = threadHistory ? getBtwHistory() : null
+  const historyMessages = buildBtwHistoryMessages(history?.exchanges ?? [])
+
+  try {
+    const agentResult = await runForkedAgent({
+      promptMessages: [
+        ...historyMessages,
+        createUserMessage({
+          content: `${SIDE_QUESTION_REMINDER}\n\n${question}`,
+        }),
+      ],
+      // Do NOT override thinkingConfig — thinking is part of the API cache key,
+      // and diverging from the main thread's config busts the prompt cache.
+      // Adaptive thinking on a quick Q&A has negligible overhead.
+      cacheSafeParams,
+      canUseTool: async () => ({
+        behavior: 'deny' as const,
+        message: 'Side questions cannot use tools',
+        decisionReason: { type: 'other' as const, reason: 'side_question' },
+      }),
+      querySource: 'side_question',
+      forkLabel: 'side_question',
+      maxTurns: 1, // Single turn only - no tool use loops
+      // No future request shares this suffix; skip writing cache entries.
+      skipCacheWrite: true,
+      // Sidechain entries are filtered out of resume/branch/stats anyway, so
+      // recording would only re-write the whole fork context to the session log
+      // (awaited before the first token) for nobody to read.
+      skipTranscript: true,
+      overrides: abortController ? { abortController } : undefined,
+      onMessage: onRetry
+        ? message => {
+            if (isAPIErrorMessage(message)) {
+              onRetry({
+                retryAttempt: message.retryAttempt,
+                maxRetries: message.maxRetries,
+                retryInMs: message.retryInMs,
+                status: message.error?.status,
+              })
+            }
+          }
+        : undefined,
+    })
+
+    const { response, synthetic } = extractSideQuestionResponse(
+      agentResult.messages,
+    )
+    if (history && response && !synthetic) history.append(question, response)
+    return { response, synthetic, usage: agentResult.totalUsage }
+  } catch (error) {
+    if (abortController?.signal.aborted) {
+      return {
+        response: null,
+        synthetic: false,
+        usage: EMPTY_USAGE,
+        aborted: true,
+      }
+    }
+    throw error
   }
 }
 
@@ -138,7 +211,10 @@ ${question}`
  *   - API error exhausts retries → query yields system api_error + user
  *     interruption, no assistant message at all.
  */
-function extractSideQuestionResponse(messages: Message[]): string | null {
+export function extractSideQuestionResponse(messages: Message[]): {
+  response: string | null
+  synthetic: boolean
+} {
   // Flatten all assistant content blocks across the per-block messages.
   const assistantBlocks = messages.flatMap(m =>
     m.type === 'assistant' ? m.message.content : [],
@@ -148,28 +224,42 @@ function extractSideQuestionResponse(messages: Message[]): string | null {
     // Concatenate all text blocks (there's normally at most one, but be safe).
     const text = extractTextContent(assistantBlocks, '\n\n').trim()
     if (text) {
-      return containsLeakedToolCall(text)
-        ? `${text}\n${NOT_EXECUTED_NOTICE}`
-        : text
+      return {
+        response: containsLeakedToolCall(text)
+          ? `${text}\n\n${NOT_EXECUTED_NOTICE}`
+          : text,
+        synthetic: false,
+      }
     }
 
     // No text — check if the model tried to call a tool despite instructions.
     const toolUse = assistantBlocks.find(b => b.type === 'tool_use')
     if (toolUse) {
       const toolName = 'name' in toolUse ? toolUse.name : 'a tool'
-      return `(The model tried to call ${toolName} instead of answering directly. Try rephrasing or ask in the main conversation.)`
+      return {
+        response: `(The model tried to call ${toolName} instead of answering directly. Try rephrasing or ask in the main conversation.)`,
+        synthetic: true,
+      }
     }
   }
 
   // No assistant content — likely API error exhausted retries. Surface the
   // first system api_error message so the user sees what happened.
-  const apiErr = messages.find(
-    (m): m is SystemAPIErrorMessage =>
-      m.type === 'system' && 'subtype' in m && m.subtype === 'api_error',
-  )
+  const apiErr = messages.find(isAPIErrorMessage)
   if (apiErr) {
-    return `(API error: ${formatAPIError(apiErr.error)})`
+    return {
+      response: `(API error: ${formatAPIError(apiErr.error)})`,
+      synthetic: true,
+    }
   }
 
-  return null
+  return { response: null, synthetic: false }
+}
+
+function isAPIErrorMessage(message: Message): message is SystemAPIErrorMessage {
+  return (
+    message.type === 'system' &&
+    'subtype' in message &&
+    message.subtype === 'api_error'
+  )
 }

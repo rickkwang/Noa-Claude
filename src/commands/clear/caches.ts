@@ -27,6 +27,7 @@ import { clearTrackedMagicDocs } from '../../services/MagicDocs/magicDocs.js'
 import { clearDynamicSkills } from '../../skills/loadSkillsDir.js'
 import { resetSentSkillNames } from '../../utils/attachments.js'
 import { clearCommandPrefixCaches } from '../../utils/bash/commands.js'
+import { resetBtwHistory } from '../../utils/btwHistory.js'
 import { resetGetMemoryFilesCache } from '../../utils/claudemd.js'
 import { clearRepositoryCaches } from '../../utils/detectRepository.js'
 import { clearResolveGitDirCache } from '../../utils/git/gitFilesystem.js'
@@ -87,6 +88,9 @@ export function clearSessionCaches(
 
   // Clear stored image paths cache
   clearStoredImagePaths()
+
+  // /btw history belongs to the conversation it was asked in
+  resetBtwHistory()
 
   // Clear all session ingress caches (lastUuidMap, sequentialAppendBySession)
   clearAllSessions()
