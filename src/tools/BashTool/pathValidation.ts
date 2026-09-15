@@ -62,6 +62,18 @@ export type PathCommand =
   | 'sha256sum'
   | 'sha1sum'
   | 'md5sum'
+  | 'tac'
+  | 'man'
+  | 'rev'
+  | 'fold'
+  | 'expand'
+  | 'unexpand'
+  | 'fmt'
+  | 'comm'
+  | 'cmp'
+  | 'pr'
+  | 'numfmt'
+  | 'tsort'
 
 /**
  * Checks if an rm/rmdir command targets dangerous paths that should always
@@ -165,17 +177,22 @@ export function _checkFindExecDeleteForTesting(command: string): PermissionResul
  * drops it, validation sees zero paths, returns passthrough, and the file is
  * deleted without a prompt. With `--` handling, the path IS extracted and
  * validated (blocked by isClaudeConfigFilePath / pathInAllowedWorkingPath).
+ *
+ * The first operand ends option parsing the same way: BSD getopt (macOS
+ * `cat`, `rev`, …) stops at it, so `cat a -/../x` reads `-/../x` as a file.
  */
 function filterOutFlags(args: string[]): string[] {
   const result: string[] = []
   let afterDoubleDash = false
+  let afterPositional = false
   for (const arg of args) {
-    if (afterDoubleDash) {
+    if (afterDoubleDash || afterPositional) {
       result.push(arg)
     } else if (arg === '--') {
       afterDoubleDash = true
-    } else if (!arg?.startsWith('-')) {
+    } else if (arg === '-' || !arg?.startsWith('-')) {
       result.push(arg)
+      afterPositional = true
     }
   }
   return result
@@ -224,6 +241,72 @@ function parsePatternCommand(
   }
 
   return paths.length > 0 ? paths : defaults
+}
+
+type FlagSpec = {
+  booleanShort: string
+  valuedShort: string
+  attachedShort?: string
+  booleanLong: Set<string>
+  valuedLong: Set<string>
+  attachedLong?: Set<string>
+}
+
+/**
+ * SECURITY: Positional extractor for commands whose options may take a
+ * separate value (`fmt -w 80 FILE`). Only a flag known to take a value skips
+ * the next argument. Once an option is not in the spec, its arity is unknown
+ * — it may itself consume the next token (`fmt -p -w FILE`, where GNU fmt
+ * reads `-w` as the prefix) — so no later option may skip anything either;
+ * otherwise a real input file that follows a known valued flag gets dropped
+ * and never validated. Everything after the first positional is positional.
+ */
+function positionalsBySpec(spec: FlagSpec): (args: string[]) => string[] {
+  const classify = (
+    arg: string,
+  ): 'boolean' | 'valued' | 'attached' | 'unknown' => {
+    if (arg.startsWith('--')) {
+      if (arg.includes('=')) return 'attached'
+      if (spec.booleanLong.has(arg)) return 'boolean'
+      if (spec.attachedLong?.has(arg)) return 'attached'
+      return spec.valuedLong.has(arg) ? 'valued' : 'unknown'
+    }
+    if (/^-\d+$/.test(arg)) return 'attached'
+    // Walk a short-flag cluster: booleans may bundle, the first valued flag
+    // takes the rest of the token or, when last, the next argument.
+    for (let i = 1; i < arg.length; i++) {
+      const ch = arg[i]
+      if (spec.booleanShort.includes(ch)) continue
+      if (spec.attachedShort?.includes(ch)) return 'attached'
+      if (!spec.valuedShort.includes(ch)) return 'unknown'
+      return i === arg.length - 1 ? 'valued' : 'attached'
+    }
+    return 'boolean'
+  }
+  return args => {
+    const result: string[] = []
+    let afterDoubleDash = false
+    let afterPositional = false
+    let flagsKnown = true
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i]
+      if (arg === undefined || arg === null) continue
+      if (afterDoubleDash || afterPositional) {
+        result.push(arg)
+      } else if (arg === '--') {
+        afterDoubleDash = true
+      } else if (arg !== '-' && arg.startsWith('-')) {
+        if (!flagsKnown) continue
+        const kind = classify(arg)
+        if (kind === 'valued') i++
+        else if (kind === 'unknown') flagsKnown = false
+      } else {
+        result.push(arg)
+        afterPositional = true
+      }
+    }
+    return result
+  }
 }
 
 /**
@@ -324,9 +407,199 @@ export const PATH_EXTRACTORS: Record<
   sort: filterOutFlags,
   uniq: filterOutFlags,
   wc: filterOutFlags,
-  cut: filterOutFlags,
-  paste: filterOutFlags,
-  column: filterOutFlags,
+  cut: positionalsBySpec({
+    booleanShort: 'nswz',
+    valuedShort: 'bcdf',
+    booleanLong: new Set([
+      '--complement',
+      '--only-delimited',
+      '--zero-terminated',
+    ]),
+    valuedLong: new Set([
+      '--bytes',
+      '--characters',
+      '--delimiter',
+      '--fields',
+      '--output-delimiter',
+    ]),
+  }),
+  paste: positionalsBySpec({
+    booleanShort: 'sz',
+    valuedShort: 'd',
+    booleanLong: new Set(['--serial', '--zero-terminated']),
+    valuedLong: new Set(['--delimiters']),
+  }),
+  column: positionalsBySpec({
+    booleanShort: 'txdemLJhV',
+    valuedShort: 'cosNOClEHRTWrip',
+    booleanLong: new Set([
+      '--table',
+      '--fillrows',
+      '--table-noheadings',
+      '--table-header-repeat',
+      '--table-maxout',
+      '--keep-empty-lines',
+      '--json',
+    ]),
+    valuedLong: new Set([
+      '--separator',
+      '--output-separator',
+      '--output-width',
+      '--table-name',
+      '--table-order',
+      '--table-column',
+      '--table-columns',
+      '--table-columns-limit',
+      '--table-noextreme',
+      '--table-hide',
+      '--table-right',
+      '--table-truncate',
+      '--table-wrap',
+      '--tree',
+      '--tree-id',
+      '--tree-parent',
+    ]),
+  }),
+  tac: positionalsBySpec({
+    booleanShort: 'br',
+    valuedShort: 's',
+    booleanLong: new Set(['--before', '--regex']),
+    valuedLong: new Set(['--separator']),
+  }),
+  rev: filterOutFlags,
+  fold: positionalsBySpec({
+    booleanShort: 'bs',
+    valuedShort: 'w',
+    booleanLong: new Set(['--bytes', '--spaces']),
+    valuedLong: new Set(['--width']),
+  }),
+  expand: positionalsBySpec({
+    booleanShort: 'i',
+    valuedShort: 't',
+    booleanLong: new Set(['--initial']),
+    valuedLong: new Set(['--tabs']),
+  }),
+  unexpand: positionalsBySpec({
+    booleanShort: 'af',
+    valuedShort: 't',
+    booleanLong: new Set(['--all', '--first-only']),
+    valuedLong: new Set(['--tabs']),
+  }),
+  fmt: positionalsBySpec({
+    booleanShort: 'csumn',
+    valuedShort: 'wgdl',
+    booleanLong: new Set([
+      '--crown-margin',
+      '--split-only',
+      '--tagged-paragraph',
+      '--uniform-spacing',
+    ]),
+    valuedLong: new Set(['--width', '--goal', '--prefix']),
+  }),
+  comm: positionalsBySpec({
+    booleanShort: '123iz',
+    valuedShort: '',
+    booleanLong: new Set([
+      '--check-order',
+      '--nocheck-order',
+      '--total',
+      '--zero-terminated',
+    ]),
+    valuedLong: new Set(['--output-delimiter']),
+  }),
+  cmp: positionalsBySpec({
+    booleanShort: 'blsvxzh',
+    valuedShort: '',
+    booleanLong: new Set(['--print-bytes', '--verbose', '--quiet', '--silent']),
+    valuedLong: new Set(['--ignore-initial', '--bytes']),
+  }),
+  pr: positionalsBySpec({
+    booleanShort: 'acdFfJmprtTv',
+    attachedShort: 'einsS',
+    valuedShort: 'hlwWoND',
+    booleanLong: new Set([
+      '--across',
+      '--show-control-chars',
+      '--double-space',
+      '--form-feed',
+      '--join-lines',
+      '--merge',
+      '--no-file-warnings',
+      '--omit-header',
+      '--omit-pagination',
+      '--show-nonprinting',
+    ]),
+    attachedLong: new Set([
+      '--expand-tabs',
+      '--output-tabs',
+      '--number-lines',
+      '--separator',
+      '--sep-string',
+    ]),
+    valuedLong: new Set([
+      '--header',
+      '--length',
+      '--width',
+      '--page-width',
+      '--indent',
+      '--first-line-number',
+      '--date-format',
+      '--columns',
+    ]),
+  }),
+  numfmt: positionalsBySpec({
+    booleanShort: 'z',
+    valuedShort: 'd',
+    booleanLong: new Set(['--grouping', '--zero-terminated', '--debug']),
+    attachedLong: new Set(['--header']),
+    valuedLong: new Set([
+      '--from',
+      '--to',
+      '--from-unit',
+      '--to-unit',
+      '--format',
+      '--padding',
+      '--delimiter',
+      '--field',
+      '--round',
+      '--suffix',
+      '--invalid',
+    ]),
+  }),
+  tsort: filterOutFlags,
+  // man: page names are not paths, but `-l`/`--local-file` turns every
+  // operand into a file, and path-shaped operands (or option values) are
+  // read as files regardless.
+  man: args => {
+    const localFile = args.some(
+      a => a === '--local-file' || (/^-[^-]/.test(a) && a.includes('l')),
+    )
+    return args.flatMap((arg, i) => {
+      if (i > 0 && (args[i - 1] === '-C' || args[i - 1] === '--config-file')) {
+        return [arg]
+      }
+      const pathStart = arg.search(/[\\/~]/)
+      const candidates = !arg.startsWith('-')
+        ? [arg]
+        : [
+            ...new Set([
+              ...(arg.includes('=') ? [arg.slice(arg.indexOf('=') + 1)] : []),
+              ...(arg.length > 2 && !arg.startsWith('--')
+                ? [arg.slice(2)]
+                : []),
+              ...(pathStart > 0 ? [arg.slice(pathStart)] : []),
+            ]),
+          ]
+      return candidates.filter(
+        c =>
+          c !== '' &&
+          (localFile ||
+            /[\\/]/.test(c) ||
+            c.startsWith('~') ||
+            c.startsWith('.')),
+      )
+    })
+  },
   file: filterOutFlags,
   stat: filterOutFlags,
   diff: filterOutFlags,
@@ -590,6 +863,18 @@ const ACTION_VERBS: Record<PathCommand, string> = {
   sha256sum: 'compute SHA-256 checksums for files in',
   sha1sum: 'compute SHA-1 checksums for files in',
   md5sum: 'compute MD5 checksums for files in',
+  tac: 'read files (reversed) from',
+  man: 'read manual page files from',
+  rev: 'read files (reversed lines) from',
+  fold: 'wrap lines of files from',
+  expand: 'convert tabs in files from',
+  unexpand: 'convert spaces in files from',
+  fmt: 'reformat files from',
+  comm: 'compare files from',
+  cmp: 'compare files from',
+  pr: 'paginate files from',
+  numfmt: 'reformat numbers in files from',
+  tsort: 'sort files from',
 }
 
 export const COMMAND_OPERATION_TYPE: Record<PathCommand, FileOperationType> = {
@@ -629,6 +914,18 @@ export const COMMAND_OPERATION_TYPE: Record<PathCommand, FileOperationType> = {
   sha256sum: 'read',
   sha1sum: 'read',
   md5sum: 'read',
+  tac: 'read',
+  man: 'read',
+  rev: 'read',
+  fold: 'read',
+  expand: 'read',
+  unexpand: 'read',
+  fmt: 'read',
+  comm: 'read',
+  cmp: 'read',
+  pr: 'read',
+  numfmt: 'read',
+  tsort: 'read',
 }
 
 /**
