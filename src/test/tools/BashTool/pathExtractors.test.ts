@@ -90,3 +90,50 @@ describe('Bash path extraction for auto-allowed text readers', () => {
     expect(pathBehavior('man ls')).toBe('passthrough')
   })
 })
+
+describe('Bash path extraction for files read through options', () => {
+  test.each([
+    `grep -f ${OUTSIDE} README.md`,
+    `grep -f${OUTSIDE} README.md`,
+    `grep --file=${OUTSIDE} README.md`,
+    `grep -rf ${OUTSIDE} .`,
+    `grep --exclude-from=${OUTSIDE} x .`,
+    `rg -f ${OUTSIDE} x`,
+    `rg --ignore-file ${OUTSIDE} x`,
+    `egrep x ${OUTSIDE}`,
+    `fgrep x ${OUTSIDE}`,
+    `awk -f ${OUTSIDE} README.md`,
+    `gawk 1 ${OUTSIDE}`,
+    `jq --slurpfile n ${OUTSIDE} . README.md`,
+    `jq -f ${OUTSIDE} README.md`,
+    `git diff ${OUTSIDE}`,
+    `git grep x /etc`,
+    `git -C /etc grep x`,
+  ])('%s asks for a file outside the workspace', command => {
+    expect(pathBehavior(command)).toBe('ask')
+  })
+
+  test('git operands resolve against -C and --work-tree', () => {
+    expect(PATH_EXTRACTORS.git(['-C', 'sub', 'diff', 'a.txt'])).toEqual([
+      'sub/a.txt',
+    ])
+    expect(
+      PATH_EXTRACTORS.git(['--work-tree=/wt', 'diff', '--', 'a', '/dev/null']),
+    ).toEqual(['/wt/a'])
+    expect(PATH_EXTRACTORS.git(['-C', '/r', 'grep', 'x'])).toEqual(['/r'])
+    expect(PATH_EXTRACTORS.git(['-c', 'k=v', 'status'])).toEqual([])
+    expect(pathBehavior('git status')).toBe('passthrough')
+  })
+
+  test('tee validates written files but not standard streams', () => {
+    expect(pathBehavior('tee /etc/x')).toBe('ask')
+    expect(pathBehavior('echo hi | tee /dev/null')).toBe('passthrough')
+    expect(pathBehavior('echo hi | tee')).toBe('passthrough')
+  })
+
+  test('cd takes one operand and asks for zsh cd OLD NEW', () => {
+    expect(PATH_EXTRACTORS.cd(['-P', 'src'])).toEqual(['src'])
+    expect(pathBehavior('cd src')).toBe('passthrough')
+    expect(pathBehavior('cd src test')).toBe('ask')
+  })
+})

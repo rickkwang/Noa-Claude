@@ -74,6 +74,12 @@ export type PathCommand =
   | 'pr'
   | 'numfmt'
   | 'tsort'
+  | 'gawk'
+  | 'mawk'
+  | 'nawk'
+  | 'egrep'
+  | 'fgrep'
+  | 'tee'
 
 /**
  * Checks if an rm/rmdir command targets dangerous paths that should always
@@ -198,7 +204,33 @@ function filterOutFlags(args: string[]): string[] {
   return result
 }
 
+/**
+ * The value attached to one of `flags` inside a single token: `--file=X`, or
+ * `-fX` for a two-character short flag. Undefined when the token carries none.
+ */
+function attachedFlagValue(arg: string, flags: string[]): string | undefined {
+  if (!arg.startsWith('-')) return undefined
+  const eq = arg.indexOf('=')
+  if (eq >= 0) {
+    return flags.includes(arg.slice(0, eq)) ? arg.slice(eq + 1) : undefined
+  }
+  for (const flag of flags) {
+    if (
+      flag.length === 2 &&
+      flag[0] === '-' &&
+      arg.startsWith(flag) &&
+      arg !== flag
+    ) {
+      return arg.slice(2)
+    }
+  }
+  return undefined
+}
+
 // Helper: Parse grep/rg style commands (pattern then paths)
+// SECURITY: files named by -f/--file, a bundle ending in f (`-rf FILE`),
+// --exclude-from/--include-from/--ignore-file are read too, so they are
+// returned as paths alongside the operands.
 function parsePatternCommand(
   args: string[],
   flagsWithArgs: Set<string>,
@@ -209,29 +241,74 @@ function parsePatternCommand(
   // SECURITY: Track `--` end-of-options delimiter. After `--`, all args are
   // positional regardless of leading `-`. See filterOutFlags() doc comment.
   let afterDoubleDash = false
+  let afterPositional = false
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]
     if (arg === undefined || arg === null) continue
 
-    if (!afterDoubleDash && arg === '--') {
+    if (!afterDoubleDash && !afterPositional && arg === '--') {
       afterDoubleDash = true
       continue
     }
 
-    if (!afterDoubleDash && arg.startsWith('-')) {
-      const flag = arg.split('=')[0]
+    if (
+      !afterDoubleDash &&
+      !afterPositional &&
+      arg !== '-' &&
+      arg.startsWith('-')
+    ) {
+      const eq = arg.indexOf('=')
+      const flag = eq >= 0 ? arg.slice(0, eq) : arg
       // Pattern flags mark that we've found the pattern
-      if (flag && ['-e', '--regexp', '-f', '--file'].includes(flag)) {
+      if (['-e', '--regexp', '-f', '--file'].includes(flag)) {
         patternFound = true
+        if (flag === '-f' || flag === '--file') {
+          const file = eq >= 0 ? arg.slice(eq + 1) : args[i + 1]
+          if (file) paths.push(file)
+        }
+      }
+      if (
+        /^-[a-zA-Z]*f$/.test(flag) &&
+        flag !== '-f' &&
+        eq < 0 &&
+        args[i + 1] !== undefined
+      ) {
+        patternFound = true
+        paths.push(args[i + 1])
+        i++
+        continue
+      }
+      if (
+        ['--exclude-from', '--include-from', '--ignore-file'].includes(flag)
+      ) {
+        const file = eq >= 0 ? arg.slice(eq + 1) : args[i + 1]
+        if (file) paths.push(file)
+        if (eq < 0) i++
+        continue
+      }
+      if (eq < 0) {
+        const file = attachedFlagValue(arg, ['-f', '--file'])
+        if (file !== undefined) {
+          patternFound = true
+          paths.push(file)
+          continue
+        }
+        if (arg.length > 2 && arg.startsWith('-e')) {
+          patternFound = true
+          continue
+        }
       }
       // Skip next arg if flag needs it
-      if (flag && flagsWithArgs.has(flag) && !arg.includes('=')) {
-        i++
-      }
+      if (flagsWithArgs.has(flag) && eq < 0) i++
       continue
     }
 
+    if (afterPositional && !afterDoubleDash) {
+      const file = attachedFlagValue(arg, ['-f', '--file'])
+      if (file !== undefined) paths.push(file)
+    }
+    afterPositional = true
     // First non-flag is pattern, rest are paths
     if (!patternFound) {
       patternFound = true
@@ -241,6 +318,159 @@ function parsePatternCommand(
   }
 
   return paths.length > 0 ? paths : defaults
+}
+
+const GREP_FLAGS_WITH_ARGS = new Set([
+  '-e',
+  '--regexp',
+  '-f',
+  '--file',
+  '--exclude',
+  '--include',
+  '--exclude-dir',
+  '--include-dir',
+  '-m',
+  '--max-count',
+  '-A',
+  '--after-context',
+  '-B',
+  '--before-context',
+  '-C',
+  '--context',
+])
+
+// grep: pattern then paths, defaults to stdin (or `.` when recursive)
+function extractGrepPaths(args: string[]): string[] {
+  const paths = parsePatternCommand(args, GREP_FLAGS_WITH_ARGS)
+  if (
+    paths.length === 0 &&
+    args.some(a => ['-r', '-R', '--recursive'].includes(a))
+  ) {
+    return ['.']
+  }
+  return paths
+}
+
+// awk: program then input files; -f/--file and gawk's -E/--exec name
+// program files, which are read as well.
+function extractAwkPaths(args: string[]): string[] {
+  const flagsWithArgs = new Set([
+    '-F',
+    '--field-separator',
+    '-v',
+    '--assign',
+    '-e',
+    '--source',
+  ])
+  const programFileFlags = new Set(['-f', '--file', '-E', '--exec'])
+  const paths: string[] = []
+  let afterDoubleDash = false
+  let programFound = false
+  let afterPositional = false
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (arg === undefined || arg === null) continue
+
+    if (!afterDoubleDash && !afterPositional && arg === '--') {
+      afterDoubleDash = true
+      continue
+    }
+
+    if (
+      !afterDoubleDash &&
+      !afterPositional &&
+      arg !== '-' &&
+      arg.startsWith('-')
+    ) {
+      const eq = arg.indexOf('=')
+      const flag = eq >= 0 ? arg.slice(0, eq) : arg
+      if (flagsWithArgs.has(flag)) {
+        if (flag === '-e' || flag === '--source') programFound = true
+        if (eq < 0) i++
+        continue
+      }
+      if (programFileFlags.has(flag)) {
+        programFound = true
+        if (eq >= 0) {
+          paths.push(arg.slice(eq + 1))
+        } else {
+          const file = args[i + 1]
+          if (file !== undefined) {
+            paths.push(file)
+            i++
+          }
+        }
+      }
+      continue
+    }
+
+    if (afterPositional && !afterDoubleDash) {
+      const file = attachedFlagValue(arg, ['-f', '--file', '-E', '--exec'])
+      if (file !== undefined) paths.push(file)
+    }
+    afterPositional = true
+    if (!programFound) {
+      programFound = true
+      continue
+    }
+    paths.push(arg)
+  }
+  return paths
+}
+
+// tee operands that write nowhere on disk.
+const TEE_PASSTHROUGH_FILES = new Set([
+  '/dev/null',
+  '/dev/stdout',
+  '/dev/stderr',
+  '/dev/tty',
+])
+
+function isStandardStreamPath(path: string): boolean {
+  return (
+    path === '/dev/null' ||
+    path === '/dev/stdin' ||
+    path === '/dev/stdout' ||
+    path === '/dev/stderr' ||
+    path === '/dev/tty' ||
+    /^\/dev\/fd\/\d+$/.test(path) ||
+    /^\/proc\/self\/fd\/[0-2]$/.test(path)
+  )
+}
+
+// git global options that consume the following argument.
+const GIT_GLOBAL_OPTIONS_WITH_VALUE = new Set([
+  '-C',
+  '-c',
+  '--git-dir',
+  '--work-tree',
+  '--namespace',
+  '--super-prefix',
+  '--config-env',
+  '--attr-source',
+  '--shallow-file',
+])
+
+const GIT_GREP_FLAGS_WITH_ARGS = new Set([
+  '-e',
+  '--regexp',
+  '-f',
+  '--file',
+  '-A',
+  '--after-context',
+  '-B',
+  '--before-context',
+  '-C',
+  '--context',
+  '-m',
+  '--max-count',
+  '--max-depth',
+  '--threads',
+])
+
+function joinGitPrefix(prefix: string, path: string): string {
+  return prefix === '' ? path : `${prefix.replace(/\/+$/, '')}/${path}`
 }
 
 type FlagSpec = {
@@ -317,8 +547,13 @@ export const PATH_EXTRACTORS: Record<
   PathCommand,
   (args: string[]) => string[]
 > = {
-  // cd: special case - all args form one path
-  cd: args => (args.length === 0 ? [homedir()] : [args.join(' ')]),
+  // cd: the first operand; no operand means $HOME. More than one operand is
+  // rejected by COMMAND_VALIDATOR (zsh `cd OLD NEW`).
+  cd: args => {
+    const operands = filterOutFlags(args)
+    if (operands.length === 0) return args.at(-1) === '-' ? ['-'] : [homedir()]
+    return [operands[0]]
+  },
 
   // ls: filter flags, default to current dir
   ls: args => {
@@ -603,7 +838,10 @@ export const PATH_EXTRACTORS: Record<
   file: filterOutFlags,
   stat: filterOutFlags,
   diff: filterOutFlags,
-  awk: filterOutFlags,
+  awk: extractAwkPaths,
+  gawk: extractAwkPaths,
+  mawk: extractAwkPaths,
+  nawk: extractAwkPaths,
   strings: filterOutFlags,
   hexdump: filterOutFlags,
   od: filterOutFlags,
@@ -612,6 +850,8 @@ export const PATH_EXTRACTORS: Record<
   sha256sum: filterOutFlags,
   sha1sum: filterOutFlags,
   md5sum: filterOutFlags,
+  tee: args =>
+    filterOutFlags(args).filter(path => !TEE_PASSTHROUGH_FILES.has(path)),
 
   // tr: special case - skip character sets
   tr: args => {
@@ -625,36 +865,9 @@ export const PATH_EXTRACTORS: Record<
     return nonFlags.slice(hasDelete ? 1 : 2) // Skip SET1 or SET1+SET2
   },
 
-  // grep: pattern then paths, defaults to stdin
-  grep: args => {
-    const flags = new Set([
-      '-e',
-      '--regexp',
-      '-f',
-      '--file',
-      '--exclude',
-      '--include',
-      '--exclude-dir',
-      '--include-dir',
-      '-m',
-      '--max-count',
-      '-A',
-      '--after-context',
-      '-B',
-      '--before-context',
-      '-C',
-      '--context',
-    ])
-    const paths = parsePatternCommand(args, flags)
-    // Special: if -r/-R flag present and no paths, use current dir
-    if (
-      paths.length === 0 &&
-      args.some(a => ['-r', '-R', '--recursive'].includes(a))
-    ) {
-      return ['.']
-    }
-    return paths
-  },
+  grep: extractGrepPaths,
+  egrep: extractGrepPaths,
+  fgrep: extractGrepPaths,
 
   // rg: pattern then paths, defaults to current dir
   rg: args => {
@@ -689,6 +902,7 @@ export const PATH_EXTRACTORS: Record<
     const paths: string[] = []
     let skipNext = false
     let scriptFound = false
+    let scriptSeen = false
     // SECURITY: Track `--` end-of-options delimiter. After `--`, all args are
     // positional regardless of leading `-`. See filterOutFlags() doc comment.
     let afterDoubleDash = false
@@ -702,13 +916,18 @@ export const PATH_EXTRACTORS: Record<
       const arg = args[i]
       if (!arg) continue
 
-      if (!afterDoubleDash && arg === '--') {
+      if (!afterDoubleDash && !scriptSeen && arg === '--') {
         afterDoubleDash = true
         continue
       }
 
-      // Handle flags (only before `--`)
-      if (!afterDoubleDash && arg.startsWith('-')) {
+      // Handle flags (only before `--` and the first operand)
+      if (
+        !afterDoubleDash &&
+        !scriptSeen &&
+        arg !== '-' &&
+        arg.startsWith('-')
+      ) {
         // -f flag: next arg is a script file that needs validation
         if (['-f', '--file'].includes(arg)) {
           const scriptFile = args[i + 1]
@@ -731,6 +950,7 @@ export const PATH_EXTRACTORS: Record<
       }
 
       // First non-flag is the script (if not already found via -e/-f)
+      scriptSeen = true
       if (!scriptFound) {
         scriptFound = true
         continue
@@ -746,17 +966,15 @@ export const PATH_EXTRACTORS: Record<
   // jq: filter then file paths (similar to grep)
   // The jq command structure is: jq [flags] filter [files...]
   // If no files are provided, jq reads from stdin
+  // SECURITY: -f/--from-file names the filter file and --slurpfile/--rawfile
+  // NAME FILE read FILE, so those files are returned as paths too.
   jq: args => {
     const paths: string[] = []
     const flagsWithArgs = new Set([
       '-e',
       '--expression',
-      '-f',
-      '--from-file',
       '--arg',
       '--argjson',
-      '--slurpfile',
-      '--rawfile',
       '--args',
       '--jsonargs',
       '-L',
@@ -779,13 +997,33 @@ export const PATH_EXTRACTORS: Record<
       }
 
       if (!afterDoubleDash && arg.startsWith('-')) {
-        const flag = arg.split('=')[0]
+        const eq = arg.indexOf('=')
+        const flag = eq >= 0 ? arg.slice(0, eq) : arg
         // Pattern flags mark that we've found the filter
-        if (flag && ['-e', '--expression'].includes(flag)) {
+        if (['-e', '--expression'].includes(flag)) {
           filterFound = true
         }
+        if (['-f', '--from-file'].includes(flag)) {
+          filterFound = true
+          if (eq >= 0) {
+            paths.push(arg.slice(eq + 1))
+          } else {
+            const file = args[i + 1]
+            if (file !== undefined) {
+              paths.push(file)
+              i++
+            }
+          }
+          continue
+        }
+        if (['--slurpfile', '--rawfile'].includes(flag)) {
+          const file = args[i + 2]
+          if (file !== undefined) paths.push(file)
+          i += 2
+          continue
+        }
         // Skip next arg if flag needs it
-        if (flag && flagsWithArgs.has(flag) && !arg.includes('=')) {
+        if (flagsWithArgs.has(flag) && eq < 0) {
           i++
         }
         continue
@@ -803,24 +1041,56 @@ export const PATH_EXTRACTORS: Record<
     return paths
   },
 
-  // git: handle subcommands that access arbitrary files outside the repository
+  // git: `diff` and `grep` read the files they name — `git diff A B` falls
+  // back to --no-index outside a repository — so their operands are paths,
+  // resolved against -C / --work-tree. Other subcommands operate within the
+  // repository and are constrained by git itself.
   git: args => {
-    // git diff --no-index is special - it explicitly compares files outside git's control
-    // This flag allows git diff to compare any two files on the filesystem, not just
-    // files within the repository, which is why it needs path validation
-    if (args.length >= 1 && args[0] === 'diff') {
-      if (args.includes('--no-index')) {
-        // SECURITY: git diff --no-index accepts `--` before file paths.
-        // Use filterOutFlags which handles `--` correctly instead of naive
-        // startsWith('-') filtering, to catch paths like `-/../etc/passwd`.
-        const filePaths = filterOutFlags(args.slice(1))
-        return filePaths.slice(0, 2) // git diff --no-index expects exactly 2 paths
+    let prefix = ''
+    const setPrefix = (dir: string) => {
+      prefix =
+        isAbsolute(expandTilde(dir)) || dir.startsWith('~')
+          ? dir
+          : joinGitPrefix(prefix, dir)
+    }
+    let index = 0
+    while (index < args.length && args[index].startsWith('-')) {
+      const opt = args[index++]
+      if (opt.startsWith('--work-tree=')) {
+        setPrefix(opt.slice('--work-tree='.length))
+      } else if (
+        GIT_GLOBAL_OPTIONS_WITH_VALUE.has(opt) &&
+        index < args.length
+      ) {
+        const value = args[index++]
+        if (opt === '-C' || opt === '--work-tree') setPrefix(value)
       }
     }
-    // Other git commands (add, rm, mv, show, etc.) operate within the repository context
-    // and are already constrained by git's own security model, so they don't need
-    // additional path validation
-    return []
+    const resolveOperand = (path: string) =>
+      prefix === '' || isAbsolute(expandTilde(path)) || path.startsWith('~')
+        ? path
+        : joinGitPrefix(prefix, path)
+    const rest = args.slice(index + 1)
+
+    if (args[index] === 'grep') {
+      const paths = parsePatternCommand(rest, GIT_GREP_FLAGS_WITH_ARGS)
+      return paths.length > 0
+        ? paths.map(resolveOperand)
+        : [prefix === '' ? '.' : prefix]
+    }
+    if (args[index] !== 'diff') return []
+
+    const paths: string[] = []
+    let afterDoubleDash = false
+    for (const arg of rest) {
+      if (!afterDoubleDash && arg === '--') {
+        afterDoubleDash = true
+      } else if (afterDoubleDash || arg === '-' || !arg.startsWith('-')) {
+        const path = resolveOperand(arg)
+        if (!isStandardStreamPath(path)) paths.push(path)
+      }
+    }
+    return paths
   },
 }
 
@@ -875,6 +1145,12 @@ const ACTION_VERBS: Record<PathCommand, string> = {
   pr: 'paginate files from',
   numfmt: 'reformat numbers in files from',
   tsort: 'sort files from',
+  gawk: 'process text from files in',
+  mawk: 'process text from files in',
+  nawk: 'process text from files in',
+  egrep: 'search for patterns in files from',
+  fgrep: 'search for patterns in files from',
+  tee: 'write to files in',
 }
 
 export const COMMAND_OPERATION_TYPE: Record<PathCommand, FileOperationType> = {
@@ -926,6 +1202,12 @@ export const COMMAND_OPERATION_TYPE: Record<PathCommand, FileOperationType> = {
   pr: 'read',
   numfmt: 'read',
   tsort: 'read',
+  gawk: 'read',
+  mawk: 'read',
+  nawk: 'read',
+  egrep: 'read',
+  fgrep: 'read',
+  tee: 'write',
 }
 
 /**
@@ -938,6 +1220,24 @@ const COMMAND_VALIDATOR: Partial<
 > = {
   mv: (args: string[]) => !args.some(arg => arg?.startsWith('-')),
   cp: (args: string[]) => !args.some(arg => arg?.startsWith('-')),
+  // At most one directory operand: zsh's `cd OLD NEW` substitutes OLD→NEW in
+  // $PWD, a target that cannot be validated statically.
+  cd: (args: string[]) => {
+    let optionsDone = false
+    let operands = 0
+    for (const arg of args) {
+      if (!optionsDone) {
+        if (arg === '--') {
+          optionsDone = true
+          continue
+        }
+        if (arg.startsWith('-') && arg !== '-') continue
+        optionsDone = true
+      }
+      operands++
+    }
+    return operands <= 1
+  },
 }
 
 function validateCommandPaths(
@@ -952,11 +1252,29 @@ function validateCommandPaths(
   const paths = extractor(args)
   const operationType = operationTypeOverride ?? COMMAND_OPERATION_TYPE[command]
 
+  // tee with no file (or only /dev/null and friends) just copies stdin to stdout.
+  if (command === 'tee' && paths.length === 0) {
+    return {
+      behavior: 'passthrough',
+      message: 'Path validation passed for tee command',
+    }
+  }
+
   // SECURITY: Check command-specific validators (e.g., to block flags that could bypass path validation)
   // Some commands like mv/cp have flags (--target-directory=PATH) that can bypass path extraction,
   // so we block ALL flags for these commands to ensure security.
   const validator = COMMAND_VALIDATOR[command]
   if (validator && !validator(args)) {
+    if (command === 'cd') {
+      return {
+        behavior: 'ask',
+        message: `cd with two or more directory arguments requires manual approval. zsh's "cd OLD NEW" form substitutes OLD→NEW in $PWD, producing a target path that cannot be statically validated.`,
+        decisionReason: {
+          type: 'other',
+          reason: 'cd with two or more directory arguments',
+        },
+      }
+    }
     return {
       behavior: 'ask',
       message: `${command} with flags requires manual approval to ensure path safety. For security, Noa Claude cannot automatically validate ${command} commands that use flags, as some flags like --target-directory=PATH can bypass path validation.`,
