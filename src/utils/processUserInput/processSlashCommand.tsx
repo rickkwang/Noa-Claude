@@ -889,7 +889,12 @@ async function getMessagesForPromptSlashCommand(command: CommandBase & PromptCom
       command
     };
   }
-  const result = await command.getPromptForCommand(args, context);
+  // The expanded prompt goes to the model holding context.options.tools, so
+  // an undecided inline shell command can be handed to it (auto mode).
+  const result = await command.getPromptForCommand(args, {
+    ...context,
+    promptShellHandOff: true
+  });
 
   // Register skill hooks if defined. Under ["hooks"]-only (skills not locked),
   // user skills still load and reach this point — block hook REGISTRATION here

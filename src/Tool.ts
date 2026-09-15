@@ -261,6 +261,13 @@ export type ToolUseContext = {
    * across the batch.
    */
   sameTurnToolUses?: AssistantMessage[]
+  /**
+   * Set by callers whose expanded prompt goes to a model holding
+   * `options.tools`. In auto mode, an inline `!` shell command that no
+   * permission rule decides is then handed to that model to run as a
+   * reviewed tool call, instead of failing the prompt expansion.
+   */
+  promptShellHandOff?: boolean
   fileReadingLimits?: {
     maxTokens?: number
     maxSizeBytes?: number

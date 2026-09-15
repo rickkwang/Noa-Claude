@@ -665,7 +665,13 @@ export async function* runAgent({
         validSkills.map(async ({ skillName, skill }) => ({
           skillName,
           skill,
-          content: await skill.getPromptForCommand('', toolUseContext),
+          // Preloaded content goes to this agent, so hand-off eligibility is
+          // judged against its own tools rather than the parent's.
+          content: await skill.getPromptForCommand('', {
+            ...toolUseContext,
+            promptShellHandOff: true,
+            options: { ...toolUseContext.options, tools: resolvedTools },
+          }),
         })),
       )
       for (const { skillName, skill, content } of loaded) {

@@ -206,8 +206,15 @@ export async function prepareForkedCommandContext(
   args: string,
   context: ToolUseContext,
 ): Promise<PreparedForkedContext> {
-  // Get skill content with $ARGUMENTS replaced
-  const skillPrompt = await command.getPromptForCommand(args, context)
+  // Get skill content with $ARGUMENTS replaced. Only the general-purpose fork
+  // runs with the caller's tool set, so only it can take over an undecided
+  // inline shell command; a named agent's tools may not include the shell.
+  const skillPrompt = await command.getPromptForCommand(
+    args,
+    command.agent === undefined
+      ? { ...context, promptShellHandOff: true }
+      : context,
+  )
   const skillContent = skillPrompt
     .map(block => (block.type === 'text' ? block.text : ''))
     .join('\n')
