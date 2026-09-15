@@ -4,6 +4,8 @@ import { c as _c } from "react/compiler-runtime";
 import { feature } from 'bun:bundle';
 import { Box, Text, useTheme, useThemeSetting, useTerminalFocus } from '../../ink.js';
 import type { KeyboardEvent } from '../../ink/events/keyboard-event.js';
+import type { ClickEvent } from '../../ink/events/click-event.js';
+import type { WheelEvent } from '../../ink/events/wheel-event.js';
 import * as React from 'react';
 import { useState, useCallback } from 'react';
 import { useKeybinding, useKeybindings } from '../../keybindings/useKeybinding.js';
@@ -94,7 +96,8 @@ export function Config({
 }: Props): React.ReactNode {
   const {
     headerFocused,
-    focusHeader
+    focusHeader,
+    blurHeader
   } = useTabHeaderFocus();
   const insideModal = useIsInsideModal();
   const [, setTheme] = useTheme();
@@ -109,6 +112,27 @@ export function Config({
   const initialLanguage = React.useRef(currentLanguage);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
+  // A whole stdin chunk is processed inside one discreteUpdates batch
+  // (processKeysInBatch in ink/components/App.tsx), so every notch of a fast
+  // trackpad flick lands before React re-renders. These refs hold the pending
+  // position across the batch; handlers reading the render closure instead
+  // would collapse the whole flick into a single row. Resynced on every
+  // render, so they never drift from the committed state.
+  const selectedIndexRef = React.useRef(selectedIndex);
+  selectedIndexRef.current = selectedIndex;
+  const scrollOffsetRef = React.useRef(scrollOffset);
+  scrollOffsetRef.current = scrollOffset;
+  const commitSelectedIndex = useCallback((index: number) => {
+    selectedIndexRef.current = index;
+    setSelectedIndex(index);
+  }, []);
+  const commitScrollOffset = useCallback((offset: number) => {
+    scrollOffsetRef.current = offset;
+    setScrollOffset(offset);
+  }, []);
+  // Id (not index) of the row the pointer is over, so the highlight sticks to
+  // the setting rather than to a slot the list may scroll something else into.
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [isSearchMode, setIsSearchMode] = useState(true);
   const isTerminalFocused = useTerminalFocus();
   const {
@@ -1148,27 +1172,29 @@ export function Config({
   React.useEffect(() => {
     if (selectedIndex >= filteredSettingsItems.length) {
       const newIndex = Math.max(0, filteredSettingsItems.length - 1);
-      setSelectedIndex(newIndex);
-      setScrollOffset(Math.max(0, newIndex - maxVisible + 1));
+      commitSelectedIndex(newIndex);
+      commitScrollOffset(Math.max(0, newIndex - maxVisible + 1));
       return;
     }
-    setScrollOffset(prev_21 => {
-      if (selectedIndex < prev_21) return selectedIndex;
-      if (selectedIndex >= prev_21 + maxVisible) return selectedIndex - maxVisible + 1;
-      return prev_21;
-    });
-  }, [filteredSettingsItems.length, selectedIndex, maxVisible]);
+    const prev_21 = scrollOffsetRef.current;
+    if (selectedIndex < prev_21) {
+      commitScrollOffset(selectedIndex);
+    } else if (selectedIndex >= prev_21 + maxVisible) {
+      commitScrollOffset(selectedIndex - maxVisible + 1);
+    }
+  }, [filteredSettingsItems.length, selectedIndex, maxVisible, commitSelectedIndex, commitScrollOffset]);
 
   // Keep the selected item visible within the scroll window.
   // Called synchronously from navigation handlers to avoid a render frame
   // where the selected item falls outside the visible window.
   const adjustScrollOffset = useCallback((newIndex_0: number) => {
-    setScrollOffset(prev_22 => {
-      if (newIndex_0 < prev_22) return newIndex_0;
-      if (newIndex_0 >= prev_22 + maxVisible) return newIndex_0 - maxVisible + 1;
-      return prev_22;
-    });
-  }, [maxVisible]);
+    const prev_22 = scrollOffsetRef.current;
+    if (newIndex_0 < prev_22) {
+      commitScrollOffset(newIndex_0);
+    } else if (newIndex_0 >= prev_22 + maxVisible) {
+      commitScrollOffset(newIndex_0 - maxVisible + 1);
+    }
+  }, [maxVisible, commitScrollOffset]);
 
   // Enter: keep all changes (already persisted by onChange handlers), close
   // with a summary of what changed.
@@ -1213,7 +1239,7 @@ export function Config({
       formattedChanges.push(`Set response language to ${chalk.bold(currentLanguage ?? 'Default (English)')}`);
     }
     if (globalConfig.editorMode !== initialConfig.current.editorMode) {
-      formattedChanges.push(`Set editor mode to ${chalk.bold(globalConfig.editorMode || 'emacs')}`);
+      formattedChanges.push(`Set editor mode to ${chalk.bold(globalConfig.editorMode || 'normal')}`);
     }
     if (globalConfig.diffTool !== initialConfig.current.diffTool) {
       formattedChanges.push(`Set diff tool to ${chalk.bold(globalConfig.diffTool)}`);
@@ -1372,10 +1398,10 @@ export function Config({
     isActive: showSubmenu === null && !isSearchMode && !headerFocused
   });
 
-  // Settings navigation and toggle actions via configurable keybindings.
-  // Only active when not in search mode and no submenu is open.
+  // Reads the pending index rather than the render closure, so a click can
+  // select a row and act on it within the same input batch.
   const toggleSetting = useCallback(() => {
-    const setting_0 = filteredSettingsItems[selectedIndex];
+    const setting_0 = filteredSettingsItems[selectedIndexRef.current];
     if (!setting_0 || !setting_0.onChange) {
       return;
     }
@@ -1460,34 +1486,98 @@ export function Config({
       setting_0.onChange(setting_0.options[nextIndex]!);
       return;
     }
-  }, [autoUpdaterDisabledReason, filteredSettingsItems, selectedIndex, settingsData?.autoUpdatesChannel, setTabsHidden]);
+  }, [autoUpdaterDisabledReason, filteredSettingsItems, settingsData?.autoUpdatesChannel, setTabsHidden]);
   const moveSelection = (delta: -1 | 1): void => {
     setShowThinkingWarning(false);
-    const newIndex_1 = Math.max(0, Math.min(filteredSettingsItems.length - 1, selectedIndex + delta));
-    setSelectedIndex(newIndex_1);
+    const newIndex_1 = Math.max(0, Math.min(filteredSettingsItems.length - 1, selectedIndexRef.current + delta));
+    commitSelectedIndex(newIndex_1);
     adjustScrollOffset(newIndex_1);
   };
+
+  // Mouse. Clicks, wheel and hover only reach Box handlers while the
+  // alternate screen is active (see Ink.dispatch* gating), i.e. in fullscreen
+  // mode; outside it the wheel still arrives as the scroll:line* keybindings
+  // below.
+  const maxScrollOffset = Math.max(0, filteredSettingsItems.length - maxVisible);
+  // Wheel scrolls the window, not the selection — the selection only moves
+  // when it would otherwise be scrolled out of view.
+  const scrollListBy = (delta: -1 | 1): void => {
+    const prevOffset = scrollOffsetRef.current;
+    const newOffset = Math.max(0, Math.min(maxScrollOffset, prevOffset + delta));
+    if (newOffset === prevOffset) return;
+    commitScrollOffset(newOffset);
+    const index_0 = selectedIndexRef.current;
+    if (index_0 < newOffset) {
+      commitSelectedIndex(newOffset);
+    } else if (index_0 > newOffset + maxVisible - 1) {
+      commitSelectedIndex(newOffset + maxVisible - 1);
+    }
+  };
+  const handleWheel = (e: WheelEvent): void => {
+    if (e.deltaY === 0) return;
+    // preventDefault keeps the same notch from also driving scroll:lineUp/
+    // scroll:lineDown, which would move the selection on top of the scroll.
+    e.preventDefault();
+    e.stopPropagation();
+    scrollListBy(e.deltaY > 0 ? 1 : -1);
+  };
+  // A row only counts as active when the list itself owns focus, so a click
+  // that arrives while the search box or the tab header has focus selects the
+  // row instead of changing its value.
+  const isRowActive = (index: number): boolean => !isSearchMode && !headerFocused && index === selectedIndexRef.current;
+  const selectRow = (index: number): void => {
+    if (headerFocused) {
+      blurHeader();
+    }
+    setIsSearchMode(false);
+    setShowThinkingWarning(false);
+    commitSelectedIndex(index);
+  };
+  const handleRowClick = (e: ClickEvent, index: number): void => {
+    e.stopImmediatePropagation();
+    if (isRowActive(index)) {
+      toggleSetting();
+    } else {
+      selectRow(index);
+    }
+  };
+  // Clicking the value column changes it outright — one click instead of the
+  // select-then-click the label needs.
+  const handleValueClick = (e: ClickEvent, index: number): void => {
+    // The value column stretches to the pane edge; a click on the blank run
+    // past the end of the text isn't aimed at the value.
+    if (e.cellIsBlank) return;
+    e.stopImmediatePropagation();
+    if (!isRowActive(index)) {
+      selectRow(index);
+    }
+    toggleSetting();
+  };
+
+  // Settings navigation and toggle actions via configurable keybindings.
+  // Only active when not in search mode and no submenu is open.
   useKeybindings({
     'select:previous': () => {
-      if (selectedIndex === 0) {
+      if (selectedIndexRef.current === 0) {
         // ↑ at top enters search mode so users can type-to-filter after
         // reaching the list boundary. Wheel-up (scroll:lineUp) clamps
         // instead — overshoot shouldn't move focus away from the list.
         setShowThinkingWarning(false);
         setIsSearchMode(true);
-        setScrollOffset(0);
+        commitScrollOffset(0);
       } else {
         moveSelection(-1);
       }
     },
     'select:next': () => moveSelection(1),
-    // Wheel. ScrollKeybindingHandler's scroll:line* returns false (not
-    // consumed) when the ScrollBox content fits — which it always does
-    // here because the list is paginated (slice). The event falls through
-    // to this handler which navigates the list, clamping at boundaries.
+    // Wheel outside fullscreen, where the Box onWheel handler never fires.
+    // ScrollKeybindingHandler's scroll:line* returns false (not consumed)
+    // when the ScrollBox content fits — which it always does here because
+    // the list is paginated (slice). The event falls through to this handler
+    // which navigates the list, clamping at boundaries.
     'scroll:lineUp': () => moveSelection(-1),
     'scroll:lineDown': () => moveSelection(1),
-    'select:accept': toggleSetting,
+    'select:accept': () => toggleSetting(),
     'settings:search': () => {
       setIsSearchMode(true);
       setSearchQuery('');
@@ -1517,8 +1607,8 @@ export function Config({
       if (e.key === 'return' || e.key === 'down' || e.key === 'wheeldown') {
         e.preventDefault();
         setIsSearchMode(false);
-        setSelectedIndex(0);
-        setScrollOffset(0);
+        commitSelectedIndex(0);
+        commitScrollOffset(0);
       }
       return;
     }
@@ -1541,8 +1631,8 @@ export function Config({
       setIsSearchMode(true);
       setSearchQuery(e.key);
     }
-  }, [showSubmenu, headerFocused, isSearchMode, searchQuery, setSearchQuery, toggleSetting]);
-  return <Box flexDirection="column" width="100%" tabIndex={0} autoFocus onKeyDown={handleKeyDown}>
+  }, [showSubmenu, headerFocused, isSearchMode, searchQuery, setSearchQuery, toggleSetting, commitSelectedIndex, commitScrollOffset]);
+  return <Box flexDirection="column" width="100%" tabIndex={0} autoFocus onKeyDown={handleKeyDown} onWheel={showSubmenu === null ? handleWheel : undefined}>
       {showSubmenu === 'Theme' ? <>
           <ThemePicker onThemeSelect={setting_1 => {
         isDirty.current = true;
@@ -1759,15 +1849,20 @@ export function Config({
                 {filteredSettingsItems.slice(scrollOffset, scrollOffset + maxVisible).map((setting_2, i) => {
             const actualIndex = scrollOffset + i;
             const isSelected = actualIndex === selectedIndex && !headerFocused && !isSearchMode;
+            const isHovered = hoveredId === setting_2.id;
             return <React.Fragment key={setting_2.id}>
-                        <Box>
+                        <Box onClick={e_0 => handleRowClick(e_0, actualIndex)} onMouseEnter={() => setHoveredId(setting_2.id)}
+                        // Compare before clearing: a filter or scroll may
+                        // already have moved this id off the row the pointer
+                        // is leaving, and it must not clear the new hover.
+                        onMouseLeave={() => setHoveredId(prev_28 => prev_28 === setting_2.id ? null : prev_28)}>
                           <Box width={labelColumnWidth} flexShrink={0} marginRight={LABEL_GUTTER}>
                             <Text color={isSelected ? 'suggestion' : undefined} wrap="truncate-end">
-                              {isSelected ? figures.pointer : ' '}{' '}
+                              {isSelected ? <Text>{figures.pointer} </Text> : isHovered ? <Text dimColor>{figures.pointer} </Text> : <Text>{'  '}</Text>}
                               {setting_2.label}
                             </Text>
                           </Box>
-                          <Box flexGrow={1} minWidth={0} key={isSelected ? 'selected' : 'unselected'}>
+                          <Box flexGrow={1} minWidth={0} key={isSelected ? 'selected' : 'unselected'} onClick={e_1 => handleValueClick(e_1, actualIndex)}>
                             {setting_2.type === 'boolean' ? <>
                                 <Text color={isSelected ? 'suggestion' : undefined} wrap="truncate-end">
                                   {setting_2.value.toString()}
