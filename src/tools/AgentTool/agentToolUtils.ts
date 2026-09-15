@@ -422,8 +422,14 @@ export async function classifyHandoffIfNeeded({
   if (feature('AUTO_MODE')) {
     if (toolPermissionContext.mode !== 'auto') return null
 
-    const agentTranscript = buildTranscriptForClassifier(agentMessages, tools)
-    if (!agentTranscript) return null
+    // Review when either half has content: a subagent with no reviewable
+    // transcript can still hand back text the parent will act on.
+    if (
+      !handBackText?.trim() &&
+      !buildTranscriptForClassifier(agentMessages, tools)
+    ) {
+      return null
+    }
 
     const classifierResult = await classifyYoloAction(
       agentMessages,
@@ -670,6 +676,10 @@ export async function runAsyncAgentLifecycle({
           abortSignal: abortController.signal,
           subagentType: metadata.agentType,
           totalToolUseCount: agentResult.totalToolUseCount,
+          // The report the parent receives in the task notification — the
+          // transcript projection drops assistant text, so without this the
+          // classifier never sees what a background agent reported.
+          handBackText: finalMessage,
         })
       : Promise.resolve(null)
     const [handoffWarning, worktreeResult] = await Promise.all([
