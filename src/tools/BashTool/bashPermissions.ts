@@ -1127,12 +1127,15 @@ export const bashToolCheckPermission = (
     return pathResult
   }
   // Noa keeps sed out of that override: a rule-approved `sed -i` script could
-  // still `w` or `e` its way outside the workspace, so the sed checks run first.
-  if (pathResult.behavior === 'ask') {
-    const sedResult = checkSedConstraints(input, toolPermissionContext)
-    if (sedResult.behavior !== 'passthrough') {
-      return sedResult
-    }
+  // still `w` or `e` its way outside the workspace. Such a command gets the
+  // original path prompt, with its acceptEdits suggestion.
+  if (
+    pathResult.behavior === 'ask' &&
+    (exactMatchResult.behavior === 'allow' ||
+      matchingAllowRules[0] !== undefined) &&
+    checkSedConstraints(input, toolPermissionContext).behavior !== 'passthrough'
+  ) {
+    return pathResult
   }
 
   // 4. Allow if command had an exact match allow

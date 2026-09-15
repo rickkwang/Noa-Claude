@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { getEmptyToolPermissionContext } from '../../../Tool.js'
-import { bashToolHasPermission } from '../../../tools/BashTool/bashPermissions.js'
+import {
+  bashToolCheckPermission,
+  bashToolHasPermission,
+} from '../../../tools/BashTool/bashPermissions.js'
 
 // validatePath reaches getBundledSkillsRoot(), which interpolates MACRO, a
 // build-time global the bundler injects.
@@ -51,6 +54,24 @@ describe('Bash allow rules approve in-workspace writes outside acceptEdits', () 
     ['rm -rf ..', ['Bash(rm:*)']],
   ])('%s with %p still asks', async (command, rules) => {
     expect(await decide(command, rules)).toBe('ask')
+  })
+
+  test('sed -i keeps the path prompt and its acceptEdits suggestion', () => {
+    for (const rules of [[], ['Bash(sed:*)']]) {
+      const result = bashToolCheckPermission(
+        { command: 'sed -i s/a/b/ README.md' } as never,
+        {
+          ...getEmptyToolPermissionContext(),
+          alwaysAllowRules: { localSettings: rules },
+        } as never,
+      )
+      if (result.behavior !== 'ask') throw new Error(result.behavior)
+      expect(result.suggestions).toContainEqual({
+        type: 'setMode',
+        mode: 'acceptEdits',
+        destination: 'session',
+      })
+    }
   })
 
   test('removing a working directory asks even in acceptEdits mode', async () => {

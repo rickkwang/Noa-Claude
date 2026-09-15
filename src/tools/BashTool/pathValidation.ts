@@ -10,7 +10,11 @@ import {
 } from '../../utils/bash/commands.js'
 import { tryParseShellCommand } from '../../utils/bash/shellQuote.js'
 import { getDirectoryForPath } from '../../utils/path.js'
-import { allWorkingDirectories } from '../../utils/permissions/filesystem.js'
+import { getPathsForPermissionCheck } from '../../utils/fsOperations.js'
+import {
+  allWorkingDirectories,
+  getResolvedWorkingDirPaths,
+} from '../../utils/permissions/filesystem.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
 import { createReadRuleSuggestion } from '../../utils/permissions/PermissionUpdate.js'
 import type { PermissionUpdate } from '../../utils/permissions/PermissionUpdateSchema.js'
@@ -92,8 +96,9 @@ function checkDangerousRemovalPaths(
   cwd: string,
   context: ToolPermissionContext,
 ): PermissionResult {
-  const workspaceDirs = [cwd, ...allWorkingDirectories(context)].map(dir =>
-    resolve(dir),
+  // Both the given and the symlink-resolved forms (/tmp vs /private/tmp).
+  const workspaceDirs = [cwd, ...allWorkingDirectories(context)].flatMap(dir =>
+    getResolvedWorkingDirPaths(resolve(dir)),
   )
   // Extract paths using the existing path extractor
   const extractor = PATH_EXTRACTORS[command]
@@ -124,10 +129,14 @@ function checkDangerousRemovalPaths(
 
     // A working directory or one of its parents: `rm -rf .` must never be
     // approved by a Bash(rm:*) rule or acceptEdits mode.
-    const target = resolve(absolutePath)
-    const targetPrefix = target.endsWith(sep) ? target : target + sep
+    const targets = getPathsForPermissionCheck(resolve(absolutePath))
     if (
-      workspaceDirs.some(dir => dir === target || dir.startsWith(targetPrefix))
+      targets.some(target => {
+        const targetPrefix = target.endsWith(sep) ? target : target + sep
+        return workspaceDirs.some(
+          dir => dir === target || dir.startsWith(targetPrefix),
+        )
+      })
     ) {
       return {
         behavior: 'ask',
