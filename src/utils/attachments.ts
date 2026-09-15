@@ -312,7 +312,8 @@ export type CompactFileReferenceAttachment = {
 export type PDFReferenceAttachment = {
   type: 'pdf_reference'
   filename: string
-  pageCount: number
+  /** Null when pdfinfo could not determine the page count */
+  pageCount: number | null
   fileSize: number
   /** Path relative to CWD at creation time, for stable display */
   displayPath: string
@@ -3433,22 +3434,30 @@ export async function tryGetPDFReference(
     return null
   }
   try {
-    const [stats, pageCount] = await Promise.all([
+    const [stats, { pageCount, pdfinfoFailure }] = await Promise.all([
       getFsImplementation().stat(filename),
       getPDFPageCount(filename),
     ])
-    // Use page count if available, otherwise fall back to size heuristic (~100KB per page)
-    const effectivePageCount = pageCount ?? Math.ceil(stats.size / (100 * 1024))
-    if (effectivePageCount > PDF_AT_MENTION_INLINE_THRESHOLD) {
+    // The size heuristic (~100KB per page) only decides whether to inline;
+    // a guessed count is never surfaced to the user or the model.
+    const exceedsThreshold =
+      pageCount !== null
+        ? pageCount > PDF_AT_MENTION_INLINE_THRESHOLD
+        : Math.ceil(stats.size / (100 * 1024)) > PDF_AT_MENTION_INLINE_THRESHOLD
+    if (exceedsThreshold) {
       logEvent('tengu_pdf_reference_attachment', {
-        pageCount: effectivePageCount,
+        pageCount: pageCount ?? Math.ceil(stats.size / (100 * 1024)),
         fileSize: stats.size,
         hadPdfinfo: pageCount !== null,
+        ...(pdfinfoFailure && { pdfinfoFailure: pdfinfoFailure.reason }),
+        ...(pdfinfoFailure?.reason === 'nonzero_exit' && {
+          pdfinfoExitCode: pdfinfoFailure.exitCode,
+        }),
       } as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS)
       return {
         type: 'pdf_reference',
         filename,
-        pageCount: effectivePageCount,
+        pageCount,
         fileSize: stats.size,
         displayPath: relative(getCwd(), filename),
       }

@@ -3611,11 +3611,15 @@ Read the team config to discover your teammates' names. Check the task list peri
       return wrapMessagesInSystemReminder([
         createUserMessage({
           content:
-            `PDF file: ${attachment.filename} (${attachment.pageCount} pages, ${formatFileSize(attachment.fileSize)}). ` +
-            `This PDF is too large to read all at once. You MUST use the ${FILE_READ_TOOL_NAME} tool with the pages parameter ` +
-            `to read specific page ranges (e.g., pages: "1-5"). Do NOT call ${FILE_READ_TOOL_NAME} without the pages parameter ` +
-            `or it will fail. Start by reading the first few pages to understand the structure, then read more as needed. ` +
-            `Maximum 20 pages per request.`,
+            attachment.pageCount === null
+              ? `PDF file: ${attachment.filename} (page count unknown, ${formatFileSize(attachment.fileSize)}). ` +
+                `It was not attached because it may be too long. Use the ${FILE_READ_TOOL_NAME} tool with the pages parameter ` +
+                `to read specific page ranges (e.g., pages: "1-5"). `
+              : `PDF file: ${attachment.filename} (${attachment.pageCount} pages, ${formatFileSize(attachment.fileSize)}). ` +
+                `This PDF is too large to read all at once. You MUST use the ${FILE_READ_TOOL_NAME} tool with the pages parameter ` +
+                `to read specific page ranges (e.g., pages: "1-5"). Do NOT call ${FILE_READ_TOOL_NAME} without the pages parameter ` +
+                `or it will fail. Start by reading the first few pages to understand the structure, then read more as needed. ` +
+                `Maximum 20 pages per request.`,
           isMeta: true,
         }),
       ])

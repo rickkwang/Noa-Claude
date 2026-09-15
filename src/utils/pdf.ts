@@ -113,26 +113,34 @@ export async function readPDF(filePath: string): Promise<
   }
 }
 
+export type PDFInfoFailure =
+  | { reason: 'no_page_count' }
+  | { reason: 'nonzero_exit'; exitCode: number }
+
 /**
  * Get the number of pages in a PDF file using `pdfinfo` (from poppler-utils).
- * Returns `null` if pdfinfo is not available or if the page count cannot be determined.
+ * `pageCount` is `null` when pdfinfo is unavailable or the count cannot be
+ * determined; `pdfinfoFailure` then records why.
  */
 export async function getPDFPageCount(
   filePath: string,
-): Promise<number | null> {
+): Promise<{ pageCount: number | null; pdfinfoFailure?: PDFInfoFailure }> {
   const { code, stdout } = await execFileNoThrow('pdfinfo', [filePath], {
     timeout: 10_000,
     useCwd: false,
   })
   if (code !== 0) {
-    return null
+    return {
+      pageCount: null,
+      pdfinfoFailure: { reason: 'nonzero_exit', exitCode: code },
+    }
   }
   const match = /^Pages:\s+(\d+)/m.exec(stdout)
-  if (!match) {
-    return null
+  const count = match ? parseInt(match[1]!, 10) : NaN
+  if (isNaN(count)) {
+    return { pageCount: null, pdfinfoFailure: { reason: 'no_page_count' } }
   }
-  const count = parseInt(match[1]!, 10)
-  return isNaN(count) ? null : count
+  return { pageCount: count }
 }
 
 export type PDFExtractPagesResult = {

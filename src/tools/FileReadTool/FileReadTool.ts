@@ -956,7 +956,7 @@ async function callInner(
       }
     }
 
-    const pageCount = await getPDFPageCount(resolvedFilePath)
+    const { pageCount } = await getPDFPageCount(resolvedFilePath)
     if (pageCount !== null && pageCount > PDF_AT_MENTION_INLINE_THRESHOLD) {
       throw new Error(
         `This PDF has ${pageCount} pages, which is too many to read at once. ` +
