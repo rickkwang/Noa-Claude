@@ -206,15 +206,35 @@ export async function prepareForkedCommandContext(
   args: string,
   context: ToolUseContext,
 ): Promise<PreparedForkedContext> {
-  // Get skill content with $ARGUMENTS replaced. Only the general-purpose fork
-  // runs with the caller's tool set, so only it can take over an undecided
-  // inline shell command; a named agent's tools may not include the shell.
-  const skillPrompt = await command.getPromptForCommand(
-    args,
-    command.agent === undefined
-      ? { ...context, promptShellHandOff: true }
-      : context,
+  // Use command.agent if specified, otherwise 'general-purpose'
+  const agentTypeName = command.agent ?? 'general-purpose'
+  const agents = context.options.agentDefinitions.activeAgents
+  const baseAgent =
+    agents.find(a => a.agentType === agentTypeName) ??
+    agents.find(a => a.agentType === 'general-purpose') ??
+    agents[0]
+
+  if (!baseAgent) {
+    throw new Error('No agent available for forked execution')
+  }
+
+  // Get skill content with $ARGUMENTS replaced. The content goes to the
+  // forked agent, so judge inline shell hand-off against the tools that
+  // agent will run with (both fork callers run it synchronously on
+  // context.options.tools), not the caller's. Lazy import: agentToolUtils is
+  // already loaded by the fork callers, and a static import would join its
+  // AgentTool cycle from this widely imported module.
+  const { resolveAgentTools } = await import(
+    '../tools/AgentTool/agentToolUtils.js'
   )
+  const skillPrompt = await command.getPromptForCommand(args, {
+    ...context,
+    promptShellHandOff: true,
+    options: {
+      ...context.options,
+      tools: resolveAgentTools(baseAgent, context.options.tools).resolvedTools,
+    },
+  })
   const skillContent = skillPrompt
     .map(block => (block.type === 'text' ? block.text : ''))
     .join('\n')
@@ -227,18 +247,6 @@ export async function prepareForkedCommandContext(
     context.getAppState,
     allowedTools,
   )
-
-  // Use command.agent if specified, otherwise 'general-purpose'
-  const agentTypeName = command.agent ?? 'general-purpose'
-  const agents = context.options.agentDefinitions.activeAgents
-  const baseAgent =
-    agents.find(a => a.agentType === agentTypeName) ??
-    agents.find(a => a.agentType === 'general-purpose') ??
-    agents[0]
-
-  if (!baseAgent) {
-    throw new Error('No agent available for forked execution')
-  }
 
   // Prepare prompt messages
   const promptMessages = [createUserMessage({ content: skillContent })]

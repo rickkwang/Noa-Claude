@@ -73,11 +73,12 @@ type HandedOffCommand = {
  * - Inline: !`command`
  *
  * The commands are the prompt author's, not the model's, so auto mode's
- * classifier has no model intent to review them against: they are checked
- * against the permission rules as default mode would check them. A command
- * no rule decides fails the expansion — unless the caller opted in with
- * `context.promptShellHandOff` in auto mode, in which case it is left for
- * the model to run as an ordinary tool call, which auto mode does review.
+ * classifier has no model intent to review them against. When the caller
+ * opted in with `context.promptShellHandOff` and its model can run the shell
+ * tool, auto mode checks them against the permission rules as default mode
+ * would, and a command no rule decides is left for the model to run as an
+ * ordinary tool call, which auto mode does review. Otherwise the commands
+ * are checked as before, and one that is not allowed fails the expansion.
  *
  * @param shell - Shell to route commands through. Defaults to bash.
  *   This is *never* read from settings.defaultShell — it comes from .md
@@ -99,11 +100,16 @@ export async function executeShellCommandsInPrompt(
       ? getPowerShellTool()
       : BashTool
 
-  const permissionContext = withAutoModeCheckedAsDefault(context)
   const canHandOff =
     context.promptShellHandOff === true &&
     context.getAppState().toolPermissionContext.mode === 'auto' &&
     findToolByName(context.options.tools, shellTool.name) !== undefined
+  // Deliberately narrower than skipping the classifier outright: with no
+  // model to hand an undecided command to, the classifier's verdict is the
+  // only way it can still run, so that path is kept.
+  const permissionContext = canHandOff
+    ? withAutoModeCheckedAsDefault(context)
+    : context
   const handedOff: HandedOffCommand[] = []
 
   // INLINE_PATTERN's lookbehind is ~100x slower than BLOCK_PATTERN on large

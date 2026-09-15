@@ -61,6 +61,12 @@ describe('executeShellCommandsInPrompt permission mode', () => {
     await executeShellCommandsInPrompt('!`ls`', context('acceptEdits'), '/s')
     expect(checkedModes).toEqual(['acceptEdits'])
   })
+
+  test('keeps auto mode when there is no model to hand a command to', async () => {
+    await executeShellCommandsInPrompt('!`ls`', context('auto', { promptShellHandOff: undefined }), '/s')
+    await executeShellCommandsInPrompt('!`ls`', context('auto', { options: { tools: [] } }), '/s')
+    expect(checkedModes).toEqual(['auto', 'auto'])
+  })
 })
 
 describe('executeShellCommandsInPrompt hand-off', () => {
