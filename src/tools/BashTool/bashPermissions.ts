@@ -1118,8 +1118,21 @@ export const bashToolCheckPermission = (
     astCommand?.redirects,
     astCommand ? [astCommand] : undefined,
   )
-  if (pathResult.behavior !== 'passthrough') {
+  // An in-workspace write refused only for lack of acceptEdits mode is left
+  // for a matching allow rule (steps 4-5) to approve.
+  if (
+    pathResult.behavior !== 'passthrough' &&
+    !(pathResult.behavior === 'ask' && pathResult.bashAllowRuleOverridable)
+  ) {
     return pathResult
+  }
+  // Noa keeps sed out of that override: a rule-approved `sed -i` script could
+  // still `w` or `e` its way outside the workspace, so the sed checks run first.
+  if (pathResult.behavior === 'ask') {
+    const sedResult = checkSedConstraints(input, toolPermissionContext)
+    if (sedResult.behavior !== 'passthrough') {
+      return sedResult
+    }
   }
 
   // 4. Allow if command had an exact match allow
@@ -1137,6 +1150,10 @@ export const bashToolCheckPermission = (
         rule: matchingAllowRules[0],
       },
     }
+  }
+
+  if (pathResult.behavior === 'ask') {
+    return pathResult
   }
 
   // 5b. Check sed constraints (blocks dangerous sed operations before mode auto-allow)
@@ -2051,7 +2068,12 @@ export async function bashToolHasPermission(
         astRedirects,
         astCommands,
       )
-      if (pathResult.behavior !== 'passthrough') {
+      // An overridable ask was already settled per segment: the segment
+      // doing the write reached 'allow' only through a matching allow rule.
+      if (
+        pathResult.behavior === 'deny' ||
+        (pathResult.behavior === 'ask' && !pathResult.bashAllowRuleOverridable)
+      ) {
         return pathResult
       }
     }
@@ -2308,7 +2330,13 @@ export async function bashToolHasPermission(
   //
   // When no subcommand asked (all allow, or all passthrough like `printf > file`),
   // pathResult IS the only ask — return it so redirection checks surface.
-  if (pathResult.behavior === 'ask' && askSubresult === undefined) {
+  // An overridable pathResult is not "the only ask": the subcommand doing the
+  // write asked on its own unless an allow rule approved it.
+  if (
+    pathResult.behavior === 'ask' &&
+    askSubresult === undefined &&
+    !pathResult.bashAllowRuleOverridable
+  ) {
     return pathResult
   }
 

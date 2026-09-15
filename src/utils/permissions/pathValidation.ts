@@ -30,6 +30,11 @@ export type FileOperationType = 'read' | 'write' | 'create'
 export type PathCheckResult = {
   allowed: boolean
   decisionReason?: PermissionDecisionReason
+  /**
+   * Set on a refusal with no other reason: the path is inside a working
+   * directory and was refused only because a write needs acceptEdits mode.
+   */
+  isInWorkingDir?: boolean
 }
 
 export type ResolvedPathCheckResult = PathCheckResult & {
@@ -260,7 +265,7 @@ export function isPathAllowed(
   }
 
   // 5. Path is not allowed
-  return { allowed: false }
+  return { allowed: false, isInWorkingDir }
 }
 
 /**
@@ -490,5 +495,6 @@ export function validatePath(
     allowed: result.allowed,
     resolvedPath,
     decisionReason: result.decisionReason,
+    isInWorkingDir: result.isInWorkingDir,
   }
 }

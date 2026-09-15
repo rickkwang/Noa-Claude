@@ -206,6 +206,12 @@ export type PermissionAskDecision<
   decisionReason?: PermissionDecisionReason
   suggestions?: PermissionUpdate[]
   blockedPath?: string
+  /**
+   * Bash path check only: the sole objection is a write inside a working
+   * directory outside acceptEdits mode, so a matching Bash allow rule may
+   * approve the command instead of prompting.
+   */
+  bashAllowRuleOverridable?: boolean
   metadata?: PermissionMetadata
   /**
    * If true, this ask decision was triggered by a bashCommandIsSafe_DEPRECATED security check

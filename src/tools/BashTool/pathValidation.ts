@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { homedir } from 'os'
-import { isAbsolute, resolve } from 'path'
+import { isAbsolute, resolve, sep } from 'path'
 import type { z } from 'zod/v4'
 import type { ToolPermissionContext } from '../../Tool.js'
 import type { Redirect, SimpleCommand } from '../../utils/bash/ast.js'
@@ -90,7 +90,11 @@ function checkDangerousRemovalPaths(
   command: 'rm' | 'rmdir',
   args: string[],
   cwd: string,
+  context: ToolPermissionContext,
 ): PermissionResult {
+  const workspaceDirs = [cwd, ...allWorkingDirectories(context)].map(dir =>
+    resolve(dir),
+  )
   // Extract paths using the existing path extractor
   const extractor = PATH_EXTRACTORS[command]
   const paths = extractor(args)
@@ -114,6 +118,24 @@ function checkDangerousRemovalPaths(
           reason: `Dangerous ${command} operation on critical path: ${absolutePath}`,
         },
         // Don't provide suggestions - we don't want to encourage saving dangerous commands
+        suggestions: [],
+      }
+    }
+
+    // A working directory or one of its parents: `rm -rf .` must never be
+    // approved by a Bash(rm:*) rule or acceptEdits mode.
+    const target = resolve(absolutePath)
+    const targetPrefix = target.endsWith(sep) ? target : target + sep
+    if (
+      workspaceDirs.some(dir => dir === target || dir.startsWith(targetPrefix))
+    ) {
+      return {
+        behavior: 'ask',
+        message: `Dangerous ${command} operation detected: '${absolutePath}'\n\nThis command would remove a workspace directory (the working directory, an additional working directory, or one of their parent directories). This requires explicit approval and cannot be auto-allowed by permission rules.`,
+        decisionReason: {
+          type: 'other',
+          reason: `Dangerous ${command} operation on working directory or its ancestor: ${absolutePath}`,
+        },
         suggestions: [],
       }
     }
@@ -1312,13 +1334,13 @@ function validateCommandPaths(
     }
   }
 
+  // An ask whose only objection is an in-workspace write outside acceptEdits
+  // mode is held back: a later path may need a stricter answer, and a Bash
+  // allow rule may still approve it (see bashToolCheckPermission).
+  let overridableAsk: PermissionResult | undefined
   for (const path of paths) {
-    const { allowed, resolvedPath, decisionReason } = validatePath(
-      path,
-      cwd,
-      toolPermissionContext,
-      operationType,
-    )
+    const { allowed, resolvedPath, decisionReason, isInWorkingDir } =
+      validatePath(path, cwd, toolPermissionContext, operationType)
 
     if (!allowed) {
       const workingDirs = Array.from(
@@ -1342,14 +1364,21 @@ function validateCommandPaths(
         }
       }
 
-      return {
+      const ask: PermissionResult = {
         behavior: 'ask',
         message,
         blockedPath: resolvedPath,
         decisionReason,
       }
+      if (isInWorkingDir === true && decisionReason === undefined) {
+        ask.bashAllowRuleOverridable = true
+        overridableAsk ??= ask
+        continue
+      }
+      return ask
     }
   }
+  if (overridableAsk) return overridableAsk
 
   // All paths are valid - return passthrough
   return {
@@ -1388,7 +1417,12 @@ export function createPathChecker(
     // were rejected, but respects explicit deny rules. Dangerous patterns get a specific
     // error message that overrides generic glob pattern rejection messages.
     if (command === 'rm' || command === 'rmdir') {
-      const dangerousPathResult = checkDangerousRemovalPaths(command, args, cwd)
+      const dangerousPathResult = checkDangerousRemovalPaths(
+        command,
+        args,
+        cwd,
+        context,
+      )
       if (dangerousPathResult.behavior !== 'passthrough') {
         return dangerousPathResult
       }
@@ -1732,30 +1766,31 @@ export function checkPathConstraints(
   // shell-quote has a single-quote backslash bug that causes
   // parseCommandArguments to silently return [] and skip path validation
   // (isDangerousRemovalPath etc). The AST already resolved argv correctly.
-  if (astCommands) {
-    for (const cmd of astCommands) {
-      const result = validateSinglePathCommandArgv(
-        cmd,
-        cwd,
-        toolPermissionContext,
-        compoundCommandHasCd,
+  // Asks a Bash allow rule may override are returned only when nothing
+  // stricter turns up in the remaining commands.
+  let overridableAsk: PermissionResult | undefined
+  const results = astCommands
+    ? astCommands.map(cmd =>
+        validateSinglePathCommandArgv(
+          cmd,
+          cwd,
+          toolPermissionContext,
+          compoundCommandHasCd,
+        ),
       )
-      if (result.behavior === 'ask' || result.behavior === 'deny') {
-        return result
-      }
-    }
-  } else {
-    const commands = splitCommand_DEPRECATED(input.command)
-    for (const cmd of commands) {
-      const result = validateSinglePathCommand(
-        cmd,
-        cwd,
-        toolPermissionContext,
-        compoundCommandHasCd,
+    : splitCommand_DEPRECATED(input.command).map(cmd =>
+        validateSinglePathCommand(
+          cmd,
+          cwd,
+          toolPermissionContext,
+          compoundCommandHasCd,
+        ),
       )
-      if (result.behavior === 'ask' || result.behavior === 'deny') {
-        return result
-      }
+  for (const result of results) {
+    if (result.behavior === 'deny') return result
+    if (result.behavior === 'ask') {
+      if (!result.bashAllowRuleOverridable) return result
+      overridableAsk ??= result
     }
   }
 
@@ -1767,6 +1802,7 @@ export function checkPathConstraints(
   if (findExecDeleteResult.behavior !== 'passthrough') {
     return findExecDeleteResult
   }
+  if (overridableAsk) return overridableAsk
 
   // Always return passthrough to let other permission checks handle the command
   return {
