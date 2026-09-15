@@ -8,15 +8,12 @@ import { OutputLine } from '../../components/shell/OutputLine.js';
 import { ShellTimeDisplay } from '../../components/shell/ShellTimeDisplay.js';
 import { Box, Text } from '../../ink.js';
 import type { Out as BashOut } from './BashTool.js';
+import { SHELL_CWD_RESET_PATTERN } from './utils.js';
 type Props = {
   content: Omit<BashOut, 'interrupted'>;
   verbose: boolean;
   timeoutMs?: number;
 };
-
-// Pattern to match "Shell cwd was reset to <path>" message
-// Use (?:^|\n) to match either start of string or after a newline
-const SHELL_CWD_RESET_PATTERN = /(?:^|\n)(Shell cwd was reset to .+)$/;
 
 /**
  * Extracts sandbox violations from stderr if present

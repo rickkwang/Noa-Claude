@@ -6,17 +6,18 @@ import { spawnSync } from 'child_process';
 import { snapshotOutputTokensForTurn, getCurrentTurnTokenBudget, getTurnOutputTokens, getBudgetContinuationCount, getTotalInputTokens } from '../bootstrap/state.js';
 import { parseTokenBudget } from '../utils/tokenBudget.js';
 import { count } from '../utils/array.js';
-import { dirname, join } from 'path';
+import { basename, dirname, join } from 'path';
 import { tmpdir } from 'os';
 import figures from 'figures';
 // eslint-disable-next-line custom-rules/prefer-use-keybindings -- / n N Esc [ v are bare letters in transcript modal context, same class as g/G/j/k in ScrollKeybindingHandler
 import { useInput } from '../ink.js';
 import { useSearchInput } from '../hooks/useSearchInput.js';
 import { useTerminalSize } from '../hooks/useTerminalSize.js';
+import { stringWidth } from '../ink/stringWidth.js';
 import { useSearchHighlight } from '../ink/hooks/use-search-highlight.js';
 import type { JumpHandle } from '../components/VirtualMessageList.js';
 import { renderMessagesToPlainText } from '../utils/exportRenderer.js';
-import { openFileInExternalEditor } from '../utils/editor.js';
+import { getExternalEditor, openFileInExternalEditor } from '../utils/editor.js';
 import { writeFile } from 'fs/promises';
 import { Box, Text, useStdin, useTheme, useTerminalFocus, useTerminalTitle, useTabStatus } from '../ink.js';
 import type { TabStatusKind } from '../ink/hooks/use-tab-status.js';
@@ -156,7 +157,7 @@ import { getGlobalConfig, saveGlobalConfig, getGlobalConfigWriteCount } from '..
 import { hasConsoleBillingAccess } from '../utils/billing.js';
 import { logEvent, type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from 'src/services/analytics/index.js';
 import { getFeatureValue_CACHED_MAY_BE_STALE } from 'src/services/analytics/growthbook.js';
-import { textForResubmit, handleMessageFromStream, type StreamingToolUse, type StreamingThinking, isCompactBoundaryMessage, findLastCompactBoundaryIndex, getMessagesAfterCompactBoundary, getContentText, createUserMessage, createAssistantMessage, createTurnDurationMessage, createAgentsKilledMessage, createApiMetricsMessage, createSystemMessage, createCommandInputMessage, formatCommandInputTags } from '../utils/messages.js';
+import { textForResubmit, handleMessageFromStream, type StreamingToolUse, isCompactBoundaryMessage, findLastCompactBoundaryIndex, getMessagesAfterCompactBoundary, getContentText, createUserMessage, createAssistantMessage, createTurnDurationMessage, createAgentsKilledMessage, createApiMetricsMessage, createSystemMessage, createCommandInputMessage, formatCommandInputTags } from '../utils/messages.js';
 import { generateSessionTitle } from '../utils/sessionTitle.js';
 import { BASH_INPUT_TAG, COMMAND_MESSAGE_TAG, COMMAND_NAME_TAG, LOCAL_COMMAND_STDOUT_TAG } from '../constants/xml.js';
 import { escapeXml } from '../utils/xml.js';
@@ -338,51 +339,84 @@ function median(values: number[]): number {
   return sorted.length % 2 === 0 ? Math.round((sorted[mid - 1]! + sorted[mid]!) / 2) : sorted[mid]!;
 }
 
+const EDITOR_LAUNCHER_WORDS = new Set(['start', 'cmd', 'cmd.exe']);
+
+/** Short editor name for the "v to open in …" hint: the first word of the
+ *  editor command that isn't a launcher (`start /wait notepad` → notepad),
+ *  a flag, or a Windows switch. Long names fall back to "editor". */
+function getEditorDisplayName(): string | undefined {
+  const editor = getExternalEditor();
+  if (!editor) return undefined;
+  const words = editor.trim().split(/\s+/);
+  const word = words.find(w => !/^\/[^/]+$/.test(w) && !w.startsWith('-') && !EDITOR_LAUNCHER_WORDS.has(basename(w).toLowerCase()));
+  const name = basename(word ?? words[0] ?? editor);
+  return name && name.length <= 8 ? name : undefined;
+}
+const TRANSCRIPT_FOOTER_PADDING = 2;
+
 /**
  * Small component to display transcript mode footer with dynamic keybinding.
  * Must be rendered inside KeybindingSetup to access keybinding context.
  */
-function TranscriptModeFooter(t0) {
-  const $ = _c(9);
-  const {
-    showAllInTranscript,
-    virtualScroll,
-    searchBadge,
-    suppressShowAll: t1,
-    status
-  } = t0;
-  const suppressShowAll = t1 === undefined ? false : t1;
+function TranscriptModeFooter({
+  showAllInTranscript,
+  virtualScroll,
+  searchBadge,
+  suppressShowAll = false,
+  status
+}: {
+  showAllInTranscript: boolean;
+  virtualScroll: boolean;
+  searchBadge?: {
+    current: number;
+    count: number;
+  };
+  suppressShowAll?: boolean;
+  status?: string;
+}): React.ReactNode {
   const toggleShortcut = useShortcutDisplay("app:toggleTranscript", "Global", "ctrl+o");
   const showAllShortcut = useShortcutDisplay("transcript:toggleShowAll", "Transcript", "ctrl+e");
-  const t2 = searchBadge ? " \xB7 n/N to navigate" : virtualScroll ? ` · ${figures.arrowUp}${figures.arrowDown} scroll · home/end top/bottom` : suppressShowAll ? "" : ` · ${showAllShortcut} to ${showAllInTranscript ? "collapse" : "show all"}`;
-  let t3;
-  if ($[0] !== t2 || $[1] !== toggleShortcut) {
-    t3 = <Text dimColor={true}>Transcript focus view · {toggleShortcut} to toggle{t2}</Text>;
-    $[0] = t2;
-    $[1] = toggleShortcut;
-    $[2] = t3;
-  } else {
-    t3 = $[2];
-  }
-  let t4;
-  if ($[3] !== searchBadge || $[4] !== status) {
-    t4 = status ? <><Box flexGrow={1} /><Text>{status} </Text></> : searchBadge ? <><Box flexGrow={1} /><Text dimColor={true}>{searchBadge.current}/{searchBadge.count}{"  "}</Text></> : null;
-    $[3] = searchBadge;
-    $[4] = status;
-    $[5] = t4;
-  } else {
-    t4 = $[5];
-  }
-  let t5;
-  if ($[6] !== t3 || $[7] !== t4) {
-    t5 = <Box noSelect={true} alignItems="center" alignSelf="center" borderTopDimColor={true} borderBottom={false} borderLeft={false} borderRight={false} borderStyle="single" marginTop={1} paddingLeft={2} width="100%">{t3}{t4}</Box>;
-    $[6] = t3;
-    $[7] = t4;
-    $[8] = t5;
-  } else {
-    t5 = $[8];
-  }
-  return t5;
+  const {
+    columns
+  } = useTerminalSize();
+  const editorName = getEditorDisplayName();
+  const openLabel = editorName ? `open in ${editorName}` : 'open in editor';
+  const scrollHints = `${figures.arrowUp}${figures.arrowDown} scroll · v to ${openLabel} · ? for shortcuts`;
+  // Narrow terminals keep only the help pointer rather than truncating mid-hint.
+  const virtualHint = TRANSCRIPT_FOOTER_PADDING + stringWidth(['Showing detailed transcript', `${toggleShortcut} to toggle`, scrollHints].join(' · ')) + stringWidth(status ? `${status} ` : 'verbose ') < columns ? scrollHints : '? for shortcuts';
+  const hint = searchBadge ? 'n/N to navigate' : virtualScroll ? virtualHint : suppressShowAll ? `v to ${openLabel}` : `${showAllShortcut} to ${showAllInTranscript ? 'collapse' : 'show all'}`;
+  return <Box noSelect={true} alignItems="center" alignSelf="center" borderTopDimColor={true} borderBottom={false} borderLeft={false} borderRight={false} borderStyle="single" marginTop={1} paddingLeft={TRANSCRIPT_FOOTER_PADDING} width="100%">
+      <Text dimColor={true} wrap="truncate-end">Showing detailed transcript · {toggleShortcut} to toggle · {hint}</Text>
+      <Box flexGrow={1} />
+      {status ? <Text>{status} </Text> : searchBadge ? <Text dimColor={true}>{searchBadge.current}/{searchBadge.count}{"  "}</Text> : <Text dimColor={true}>verbose </Text>}
+    </Box>;
+}
+
+/** `?` overlay in the fullscreen transcript: every key the transcript pager
+ *  answers to. Same border-top chrome as TranscriptModeFooter. */
+function TranscriptHelp(): React.ReactNode {
+  const toggleShortcut = useShortcutDisplay("app:toggleTranscript", "Global", "ctrl+o");
+  const exitShortcut = useShortcutDisplay("transcript:exit", "Transcript", "q");
+  const editorName = getEditorDisplayName();
+  return <Box noSelect={true} borderTopDimColor={true} borderBottom={false} borderLeft={false} borderRight={false} borderStyle="single" marginTop={1} paddingLeft={TRANSCRIPT_FOOTER_PADDING} width="100%" flexDirection="row" gap={4}>
+      <Box flexDirection="column">
+        <Text dimColor={true}>{`${figures.arrowUp}${figures.arrowDown} j/k`.padEnd(9)}scroll</Text>
+        <Text dimColor={true}>{"ctrl+u/d".padEnd(9)}half page</Text>
+        <Text dimColor={true}>{"space b".padEnd(9)}page</Text>
+        <Text dimColor={true}>{"g/G".padEnd(9)}top/bottom</Text>
+      </Box>
+      <Box flexDirection="column">
+        <Text dimColor={true}>{"/".padEnd(5)}search</Text>
+        <Text dimColor={true}>{"n/N".padEnd(5)}next/prev match</Text>
+        <Text dimColor={true}>{"[".padEnd(5)}print to scrollback</Text>
+        <Text dimColor={true}>{"v".padEnd(5)}open in {editorName ?? 'editor'}</Text>
+      </Box>
+      <Box flexDirection="column">
+        <Text dimColor={true}>{toggleShortcut.padEnd(7)}toggle transcript</Text>
+        <Text dimColor={true}>{exitShortcut.padEnd(7)}exit</Text>
+        <Text dimColor={true}>{"?".padEnd(7)}close help</Text>
+      </Box>
+    </Box>;
 }
 
 /** less-style / bar. 1-row, same border-top styling as TranscriptModeFooter
@@ -882,21 +916,6 @@ export function REPL({
   const streamModeRef = useRef(streamMode);
   streamModeRef.current = streamMode;
   const [streamingToolUses, setStreamingToolUses] = useState<StreamingToolUse[]>([]);
-  const [streamingThinking, setStreamingThinking] = useState<StreamingThinking | null>(null);
-
-  // Auto-hide streaming thinking after 30 seconds of being completed
-  useEffect(() => {
-    if (streamingThinking && !streamingThinking.isStreaming && streamingThinking.streamingEndedAt) {
-      const elapsed = Date.now() - streamingThinking.streamingEndedAt;
-      const remaining = 30000 - elapsed;
-      if (remaining > 0) {
-        const timer = setTimeout(setStreamingThinking, remaining, null);
-        return () => clearTimeout(timer);
-      } else {
-        setStreamingThinking(null);
-      }
-    }
-  }, [streamingThinking]);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   // Ref that always points to the current abort controller, used by the
   // REPL bridge to abort the active query when a remote interrupt arrives.
@@ -2744,7 +2763,7 @@ export function REPL({
     }, setStreamMode, setStreamingToolUses, tombstonedMessage => {
       setMessages(oldMessages => oldMessages.filter(m => m !== tombstonedMessage));
       void removeTranscriptMessage(tombstonedMessage.uuid);
-    }, setStreamingThinking, metrics => {
+    }, metrics => {
       const now = Date.now();
       const baseline = responseLengthRef.current;
       apiMetricsRef.current.push({
@@ -2755,7 +2774,7 @@ export function REPL({
         endResponseLength: baseline
       });
     }, onStreamingText);
-  }, [setMessages, setResponseLength, setStreamMode, setStreamingToolUses, setStreamingThinking, onStreamingText]);
+  }, [setMessages, setResponseLength, setStreamMode, setStreamingToolUses, onStreamingText]);
   const onQueryImpl = useCallback(async (messagesIncludingNewMessages: MessageType[], newMessages: MessageType[], abortController: AbortController, shouldQuery: boolean, additionalAllowedTools: string[], mainLoopModelParam: string, effort?: EffortValue) => {
     // Prepare IDE integration for new prompt. Read mcpClients fresh from
     // store — useManageMCPConnections may have populated it since the
@@ -4248,6 +4267,7 @@ export function REPL({
   // working after Enter dismisses the bar (less semantics).
   const jumpRef = useRef<JumpHandle | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [transcriptHelpOpen, setTranscriptHelpOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchCount, setSearchCount] = useState(0);
   const [searchCurrent, setSearchCurrent] = useState(0);
@@ -4266,6 +4286,7 @@ export function REPL({
       // mount-effect calls setSearchQuery.
       jumpRef.current?.setAnchor();
       setSearchOpen(true);
+      setTranscriptHelpOpen(false);
       event.stopImmediatePropagation();
       return;
     }
@@ -4315,13 +4336,17 @@ export function REPL({
   // competing for input) — same class as g/G/j/k in ScrollKeybindingHandler.
   useInput((input, key, event) => {
     if (key.ctrl || key.meta) return;
-    if (input === '[' && !dumpMode) {
+    if (input === '?' && !dumpMode) {
+      setTranscriptHelpOpen(open => !open);
+      event.stopImmediatePropagation();
+    } else if (input === '[' && !dumpMode) {
       // Force dump-to-scrollback. Also expand + uncap — no point dumping
       // a subset. Terminal/tmux cmd-F can now find anything. Guard here
-      // (not in isActive) so v still works post-[ — dump-mode footer at
-      // ~4898 wires editorStatus, confirming v is meant to stay live.
+      // (not in isActive) so v still works post-[ — the dump-mode
+      // TranscriptModeFooter wires editorStatus, confirming v stays live.
       setDumpMode(true);
       setShowAllInTranscript(true);
+      setTranscriptHelpOpen(false);
       event.stopImmediatePropagation();
     } else if (input === 'v') {
       // less-style: v opens the file in $VISUAL/$EDITOR. Render the full
@@ -4333,6 +4358,7 @@ export function REPL({
       // completes would run a second parallel render (double memory, two
       // tempfiles, two editor spawns). editorGenRef only guards
       // transcript-exit staleness, not same-session concurrency.
+      setTranscriptHelpOpen(false);
       if (editorRenderingRef.current) return;
       editorRenderingRef.current = true;
       // Capture generation + make a staleness-aware setter. Each write
@@ -4386,6 +4412,7 @@ export function REPL({
       setSearchCount(0);
       setSearchCurrent(0);
       setSearchOpen(false);
+      setTranscriptHelpOpen(false);
       editorGenRef.current++;
       clearTimeout(editorTimerRef.current);
       setDumpMode(false);
@@ -4439,7 +4466,7 @@ export function REPL({
     // and transcript-mode are mutually exclusive (this early return), so
     // only one ScrollBox is ever mounted at a time.
     const transcriptScrollRef = isFullscreenEnvEnabled() && !disableVirtualScroll && !dumpMode ? scrollRef : undefined;
-    const transcriptMessagesElement = <Messages messages={transcriptMessages} tools={tools} commands={commands} verbose={true} toolJSX={null} toolUseConfirmQueue={[]} inProgressToolUseIDs={inProgressToolUseIDs} isMessageSelectorVisible={false} conversationId={conversationId} screen={screen} agentDefinitions={agentDefinitions} streamingToolUses={transcriptStreamingToolUses} showAllInTranscript={showAllInTranscript} onOpenRateLimitOptions={handleOpenRateLimitOptions} isLoading={isLoading} hidePastThinking={true} streamingThinking={streamingThinking} scrollRef={transcriptScrollRef} jumpRef={jumpRef} onSearchMatchesChange={onSearchMatchesChange} scanElement={scanElement} setPositions={setPositions} disableRenderCap={dumpMode} />;
+    const transcriptMessagesElement = <Messages messages={transcriptMessages} tools={tools} commands={commands} verbose={true} toolJSX={null} toolUseConfirmQueue={[]} inProgressToolUseIDs={inProgressToolUseIDs} isMessageSelectorVisible={false} conversationId={conversationId} screen={screen} agentDefinitions={agentDefinitions} streamingToolUses={transcriptStreamingToolUses} showAllInTranscript={showAllInTranscript} onOpenRateLimitOptions={handleOpenRateLimitOptions} isLoading={isLoading} scrollRef={transcriptScrollRef} jumpRef={jumpRef} onSearchMatchesChange={onSearchMatchesChange} scanElement={scanElement} setPositions={setPositions} disableRenderCap={dumpMode} />;
     const transcriptToolJSX = toolJSX && <Box flexDirection="column" width="100%">
         {toolJSX.jsx}
       </Box>;
@@ -4482,7 +4509,7 @@ export function REPL({
         setSearchOpen(false);
         // onCancel path: bar unmounts before its useEffect([query])
         // can fire with ''. Without this, searchCount stays stale
-        // (n guard at :4956 passes) and VML's matches[] too
+        // (the n/N guard in the transcript search useInput passes) and VML's matches[] too
         // (nextMatch walks the old array). Phantom nav, no
         // highlight. onExit (Enter, q non-empty) still commits.
         if (!q) {
@@ -4503,7 +4530,7 @@ export function REPL({
         jumpRef.current?.setSearchQuery('');
         jumpRef.current?.setSearchQuery(searchQuery);
         setHighlight(searchQuery);
-      }} setHighlight={setHighlight} /> : <TranscriptModeFooter showAllInTranscript={showAllInTranscript} virtualScroll={true} status={editorStatus || undefined} searchBadge={searchQuery && searchCount > 0 ? {
+      }} setHighlight={setHighlight} /> : transcriptHelpOpen ? <TranscriptHelp /> : <TranscriptModeFooter showAllInTranscript={showAllInTranscript} virtualScroll={true} status={editorStatus || undefined} searchBadge={searchQuery && searchCount > 0 ? {
         current: searchCurrent,
         count: searchCount
       } : undefined} />} /> : <>

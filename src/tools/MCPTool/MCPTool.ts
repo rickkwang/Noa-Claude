@@ -65,8 +65,15 @@ export const MCPTool = buildTool({
   userFacingName: () => 'mcp',
   renderToolUseProgressMessage,
   renderToolResultMessage,
-  isResultTruncated(output: Output): boolean {
-    return isOutputLineTruncated(output)
+  isResultTruncated(output: Output, options?: { columns?: number }): boolean {
+    if (Array.isArray(output)) {
+      return output.some(
+        block =>
+          block?.type === 'text' &&
+          isOutputLineTruncated(block.text, options?.columns),
+      )
+    }
+    return isOutputLineTruncated(output, options?.columns)
   },
   mapToolResultToToolResultBlockParam(content, toolUseID) {
     return {

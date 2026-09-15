@@ -10,6 +10,22 @@ import { useShortcutDisplay } from '../keybindings/useShortcutDisplay.js';
 import { countCharInString } from '../utils/stringUtils.js';
 import { MessageResponse } from './MessageResponse.js';
 const MAX_RENDERED_LINES = 10;
+
+/** The error text as rendered (before folding past MAX_RENDERED_LINES). */
+export function formatFallbackToolError(result: ToolResultBlockParam['content'], verbose: boolean): string {
+  if (typeof result !== "string") return "Tool execution failed";
+  const extractedError = extractTag(result, "tool_use_error") ?? result;
+  const withoutSandboxViolations = removeSandboxViolationTags(extractedError);
+  const trimmed = withoutSandboxViolations.replace(/<\/?error>/g, "").trim();
+  if (!verbose && trimmed.includes("InputValidationError: ")) return "Invalid tool parameters";
+  if (trimmed.startsWith("Error: ") || trimmed.startsWith("Cancelled: ")) return trimmed;
+  return `Error: ${trimmed}`;
+}
+
+/** Whether the non-verbose render folds, i.e. shows "… +N lines". */
+export function isFallbackToolErrorFolded(result: ToolResultBlockParam['content']): boolean {
+  return countCharInString(formatFallbackToolError(result, false), "\n") >= MAX_RENDERED_LINES;
+}
 type Props = {
   result: ToolResultBlockParam['content'];
   verbose: boolean;
@@ -29,24 +45,7 @@ export function FallbackToolUseErrorMessage(t0) {
   let t2;
   let t3;
   if ($[0] !== result || $[1] !== verbose) {
-    let error;
-    if (typeof result !== "string") {
-      error = "Tool execution failed";
-    } else {
-      const extractedError = extractTag(result, "tool_use_error") ?? result;
-      const withoutSandboxViolations = removeSandboxViolationTags(extractedError);
-      const withoutErrorTags = withoutSandboxViolations.replace(/<\/?error>/g, "");
-      const trimmed = withoutErrorTags.trim();
-      if (!verbose && trimmed.includes("InputValidationError: ")) {
-        error = "Invalid tool parameters";
-      } else {
-        if (trimmed.startsWith("Error: ") || trimmed.startsWith("Cancelled: ")) {
-          error = trimmed;
-        } else {
-          error = `Error: ${trimmed}`;
-        }
-      }
-    }
+    const error = formatFallbackToolError(result, verbose);
     plusLines = countCharInString(error, "\n") + 1 - MAX_RENDERED_LINES;
     T2 = MessageResponse;
     T1 = Box;

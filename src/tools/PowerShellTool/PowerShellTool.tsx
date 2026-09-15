@@ -612,8 +612,11 @@ export const PowerShellTool = buildTool({
       if (!this.isReadOnly?.(input)) fileHistoryTouch(toolUseContext.updateFileHistoryState);
     }
   },
-  isResultTruncated(output: Out): boolean {
-    return isOutputLineTruncated(output.stdout) || isOutputLineTruncated(output.stderr);
+  isResultTruncated(output: Out, options?: {
+    columns?: number;
+  }): boolean {
+    if (output.isImage) return false;
+    return isOutputLineTruncated(output.stdout, options?.columns) || isOutputLineTruncated(output.stderr, options?.columns);
   }
 } satisfies ToolDef<InputSchema, Out>);
 async function* runPowerShellCommand({

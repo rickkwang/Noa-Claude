@@ -146,8 +146,8 @@ export const ReadMcpResourceTool = buildTool({
   renderToolUseMessage,
   userFacingName,
   renderToolResultMessage,
-  isResultTruncated(output: Output): boolean {
-    return isOutputLineTruncated(jsonStringify(output))
+  isResultTruncated(output: Output, options?: { columns?: number }): boolean {
+    return isOutputLineTruncated(jsonStringify(output), options?.columns)
   },
   mapToolResultToToolResultBlockParam(content, toolUseID) {
     return {

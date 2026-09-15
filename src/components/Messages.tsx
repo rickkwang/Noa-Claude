@@ -30,8 +30,10 @@ import { getGlobalConfig } from '../utils/config.js';
 import { isEnvTruthy } from '../utils/envUtils.js';
 import { isFullscreenEnvEnabled } from '../utils/fullscreen.js';
 import { applyGrouping } from '../utils/groupToolUses.js';
-import { buildMessageLookups, createAssistantMessage, deriveUUID, getMessagesAfterCompactBoundary, getToolUseID, getToolUseIDs, hasUnresolvedHooksFromLookup, isNotEmptyMessage, normalizeMessages, projectCompactHistoryForMainDisplay, reorderMessagesInUI, type StreamingThinking, type StreamingToolUse, shouldShowUserMessage } from '../utils/messages.js';
+import { buildMessageLookups, createAssistantMessage, deriveUUID, extractTag, getMessagesAfterCompactBoundary, getToolUseID, getToolUseIDs, hasUnresolvedHooksFromLookup, isNotEmptyMessage, normalizeMessages, projectCompactHistoryForMainDisplay, reorderMessagesInUI, type StreamingToolUse, shouldShowUserMessage } from '../utils/messages.js';
 import { plural } from '../utils/stringUtils.js';
+import { isFallbackToolErrorFolded } from './FallbackToolUseErrorMessage.js';
+import { isBashResultTruncated } from '../tools/BashTool/utils.js';
 import { renderableSearchText } from '../utils/transcriptSearch.js';
 import { Divider } from './design-system/Divider.js';
 import type { UnseenDivider } from './FullscreenLayout.js';
@@ -42,7 +44,6 @@ import { StreamingMarkdown } from './Markdown.js';
 import { hasContentAfterIndex, MessageRow } from './MessageRow.js';
 import { buildRenderableMessageKeys } from './messageKeys.js';
 import { InVirtualListContext, type MessageActionsNav, MessageActionsSelectedContext, type MessageActionsState } from './messageActions.js';
-import { AssistantThinkingMessage } from './messages/AssistantThinkingMessage.js';
 import { isNullRenderingAttachment } from './messages/nullRenderingAttachments.js';
 import { OffscreenFreeze } from './OffscreenFreeze.js';
 import type { ToolUseConfirm } from './permissions/PermissionRequest.js';
@@ -249,10 +250,6 @@ type Props = {
   /** Hide the logo/header - used for subagent zoom view */
   hideLogo?: boolean;
   isLoading: boolean;
-  /** In transcript mode, hide all thinking blocks except the last one */
-  hidePastThinking?: boolean;
-  /** Streaming thinking content (live updates, not frozen) */
-  streamingThinking?: StreamingThinking | null;
   /** Streaming text preview (rendered as last item so transition to final message is positionally seamless) */
   streamingText?: string | null;
   /** When true, only show Brief tool output (hide everything else) */
@@ -378,8 +375,6 @@ const MessagesImpl = ({
   onOpenRateLimitOptions,
   hideLogo = false,
   isLoading,
-  hidePastThinking = false,
-  streamingThinking,
   streamingText,
   isBriefOnly = false,
   unseenDivider,
@@ -400,46 +395,6 @@ const MessagesImpl = ({
   } = useTerminalSize();
   const toggleShowAllShortcut = useShortcutDisplay('transcript:toggleShowAll', 'Transcript', 'Ctrl+E');
   const normalizedMessages = useMemo(() => normalizeMessages(messages).filter(isNotEmptyMessage), [messages]);
-
-  // Check if streaming thinking should be visible (streaming or within 30s timeout)
-  const isStreamingThinkingVisible = useMemo(() => {
-    if (!streamingThinking) return false;
-    if (streamingThinking.isStreaming) return true;
-    if (streamingThinking.streamingEndedAt) {
-      return Date.now() - streamingThinking.streamingEndedAt < 30000;
-    }
-    return false;
-  }, [streamingThinking]);
-
-  // Find the last thinking block (message UUID + content index) for hiding past thinking in transcript mode
-  // When streaming thinking is visible, use a special ID that won't match any completed thinking block
-  // With adaptive thinking, only consider thinking blocks from the current turn and stop searching once we
-  // hit the last user message.
-  const lastThinkingBlockId = useMemo(() => {
-    if (!hidePastThinking) return null;
-    // If streaming thinking is visible, hide all completed thinking blocks by using a non-matching ID
-    if (isStreamingThinkingVisible) return 'streaming';
-    // Iterate backwards to find the last message with a thinking block
-    for (let i = normalizedMessages.length - 1; i >= 0; i--) {
-      const msg = normalizedMessages[i];
-      if (msg?.type === 'assistant') {
-        const content = msg.message.content;
-        // Find the last thinking block in this message
-        for (let j = content.length - 1; j >= 0; j--) {
-          if (content[j]?.type === 'thinking') {
-            return `${msg.uuid}:${j}`;
-          }
-        }
-      } else if (msg?.type === 'user') {
-        const hasToolResult = msg.message.content.some(block => block.type === 'tool_result');
-        if (!hasToolResult) {
-          // Reached a previous user turn so don't show stale thinking from before
-          return 'no-thinking';
-        }
-      }
-    }
-    return null;
-  }, [normalizedMessages, hidePastThinking, isStreamingThinkingVisible]);
 
   // Find the latest user bash output message (from ! commands)
   // This allows us to show full output for the most recent bash command
@@ -598,27 +553,42 @@ const MessagesImpl = ({
   }, []);
   const isItemExpanded = useCallback((msg_5: RenderableMessage) => expandedKeys.size > 0 && expandedKeys.has(expandKey(msg_5)), [expandedKeys]);
   // Only hover/click messages where the verbose toggle reveals more:
-  // collapsed read/search groups, or tool results that self-report truncation
-  // via isResultTruncated. Callback must be stable across message updates: if
+  // collapsed read/search groups, older ! bash output, errors past the
+  // 10-line fold, or tool results that self-report truncation via
+  // isResultTruncated. Callback must be stable across message updates: if
   // its identity (or return value) flips during streaming, onMouseEnter
   // attaches after the mouse is already inside → hover never fires. tools is
   // session-stable; lookups is read via ref so the callback doesn't churn on
   // every new message.
   const lookupsRef = useRef(lookups_0);
   lookupsRef.current = lookups_0;
+  const latestBashOutputUUIDRef = useRef(latestBashOutputUUID);
+  latestBashOutputUUIDRef.current = latestBashOutputUUID;
   const isItemClickable = useCallback((msg_6: RenderableMessage): boolean => {
     if (msg_6.type === 'collapsed_read_search') return true;
     if (msg_6.type === 'assistant') {
+      if (verbose) return false;
       const b = msg_6.message.content[0] as unknown as AdvisorBlock | undefined;
       return b != null && isAdvisorBlock(b) && b.type === 'advisor_tool_result' && b.content.type === 'advisor_result';
     }
     if (msg_6.type !== 'user') return false;
     const b_0 = msg_6.message.content[0];
-    if (b_0?.type !== 'tool_result' || b_0.is_error || !msg_6.toolUseResult) return false;
+    if (b_0?.type === 'text' && isBashOutputText(b_0.text)) {
+      // The latest ! output already renders in full.
+      if (verbose || msg_6.uuid === latestBashOutputUUIDRef.current) return false;
+      return isBashOutputTruncated(b_0.text, columns);
+    }
+    if (b_0?.type !== 'tool_result') return false;
+    // Measure the error as FallbackToolUseErrorMessage renders it; verbose
+    // (transcript) shows it in full.
+    if (b_0.is_error) return !verbose && isFallbackToolErrorFolded(b_0.content);
+    if (!msg_6.toolUseResult) return false;
     const name = lookupsRef.current.toolUseByToolUseID.get(b_0.tool_use_id)?.name;
     const tool = name ? findToolByName(tools, name) : undefined;
-    return tool?.isResultTruncated?.(msg_6.toolUseResult as never) ?? false;
-  }, [tools]);
+    return tool?.isResultTruncated?.(msg_6.toolUseResult as never, {
+      columns
+    }) ?? false;
+  }, [tools, verbose, columns]);
   const canAnimate = (!toolJSX || !!toolJSX.shouldContinueAnimation) && !toolUseConfirmQueue.length && !isMessageSelectorVisible;
   const hasToolsInProgress = inProgressToolUseIDs.size > 0;
 
@@ -673,7 +643,7 @@ const MessagesImpl = ({
     // streaming instead of waiting for the block to finalize.
     const hasContentAfter = msg_8.type === 'collapsed_read_search' && (!!streamingText || hasContentAfterIndex(renderableMessages, index, tools, streamingToolUseIDs));
     const k_0 = messageKeys[index] ?? `${msg_8.uuid}-${conversationId}`;
-    const row = <MessageRow key={k_0} message={msg_8} isUserContinuation={isUserContinuation} hasContentAfter={hasContentAfter} tools={tools} commands={commands} verbose={verbose || isItemExpanded(msg_8) || cursor?.expanded === true && index === selectedIdx} inProgressToolUseIDs={inProgressToolUseIDs} streamingToolUseIDs={streamingToolUseIDs} screen={screen} canAnimate={canAnimate} onOpenRateLimitOptions={onOpenRateLimitOptions} lastThinkingBlockId={lastThinkingBlockId} latestBashOutputUUID={latestBashOutputUUID} columns={columns} isLoading={isLoading} lookups={lookups_0} />;
+    const row = <MessageRow key={k_0} message={msg_8} isUserContinuation={isUserContinuation} hasContentAfter={hasContentAfter} tools={tools} commands={commands} verbose={verbose || isItemExpanded(msg_8) || cursor?.expanded === true && index === selectedIdx} inProgressToolUseIDs={inProgressToolUseIDs} streamingToolUseIDs={streamingToolUseIDs} screen={screen} canAnimate={canAnimate} onOpenRateLimitOptions={onOpenRateLimitOptions} latestBashOutputUUID={latestBashOutputUUID} columns={columns} isLoading={isLoading} lookups={lookups_0} />;
 
     // Per-row Provider — only 2 rows re-render on selection change.
     // Wrapped BEFORE divider branch so both return paths get it.
@@ -762,15 +732,19 @@ const MessagesImpl = ({
             </Box>
           </Box>
         </Box>}
-
-      {isStreamingThinkingVisible && streamingThinking && !isBriefOnly && <Box marginTop={1}>
-          <AssistantThinkingMessage param={{
-        type: 'thinking',
-        thinking: streamingThinking.thinking
-      }} addMargin={false} isTranscriptMode={true} verbose={verbose} hideInTranscript={false} />
-        </Box>}
     </>;
 };
+
+function isBashOutputText(text: string): boolean {
+  return text.startsWith('<bash-stdout') || text.startsWith('<bash-stderr');
+}
+
+/** Mirrors UserBashOutputMessage's tag parsing + BashTool's fold check. */
+function isBashOutputTruncated(text: string, columns: number): boolean {
+  const rawStdout = extractTag(text, 'bash-stdout') ?? '';
+  const stdout = extractTag(rawStdout, 'persisted-output') ?? rawStdout;
+  return isBashResultTruncated(stdout, extractTag(text, 'bash-stderr') ?? '', columns);
+}
 
 /** Key for click-to-expand: tool_use_id where available (so tool_use + its
  *  tool_result expand together), else uuid for groups/thinking. */
@@ -782,7 +756,6 @@ function expandKey(msg: RenderableMessage): string {
 // Default React.memo does shallow comparison which fails when:
 // 1. onOpenRateLimitOptions callback is recreated (doesn't affect render output)
 // 2. streamingToolUses array is recreated on every delta, but only contentBlock matters for rendering
-// 3. streamingThinking changes on every delta - we DO want to re-render for this
 function setsEqual<T>(a: Set<T>, b: Set<T>): boolean {
   if (a.size !== b.size) return false;
   for (const item of a) {
@@ -821,8 +794,6 @@ export const Messages = React.memo(MessagesImpl, (prev, next) => {
           continue;
         }
       }
-      // streamingThinking changes frequently - always re-render when it changes
-      // (no special handling needed, default behavior is correct)
       return false;
     }
   }

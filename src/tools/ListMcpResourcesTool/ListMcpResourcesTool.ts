@@ -103,8 +103,8 @@ export const ListMcpResourcesTool = buildTool({
   renderToolUseMessage,
   userFacingName: () => 'listMcpResources',
   renderToolResultMessage,
-  isResultTruncated(output: Output): boolean {
-    return isOutputLineTruncated(jsonStringify(output))
+  isResultTruncated(output: Output, options?: { columns?: number }): boolean {
+    return isOutputLineTruncated(jsonStringify(output), options?.columns)
   },
   mapToolResultToToolResultBlockParam(content, toolUseID) {
     if (!content || content.length === 0) {

@@ -35,7 +35,6 @@ import { semanticNumber } from '../../utils/semanticNumber.js';
 import { EndTruncatingAccumulator } from '../../utils/stringUtils.js';
 import { getTaskOutputPath } from '../../utils/task/diskOutput.js';
 import { TaskOutput } from '../../utils/task/TaskOutput.js';
-import { isOutputLineTruncated } from '../../utils/terminal.js';
 import { buildLargeToolResultMessage, generatePreview, PREVIEW_SIZE_BYTES } from '../../utils/toolResultStorage.js';
 import { validateUuid } from '../../utils/uuid.js';
 import { userFacingName as fileEditUserFacingName } from '../FileEditTool/UI.js';
@@ -50,7 +49,7 @@ import { hashSedBaseContent, parseSedEditCommand } from './sedEditParser.js';
 import { shouldUseSandbox } from './shouldUseSandbox.js';
 import { BASH_TOOL_NAME } from './toolName.js';
 import { BackgroundHint, renderToolResultMessage, renderToolUseErrorMessage, renderToolUseMessage, renderToolUseProgressMessage, renderToolUseQueuedMessage } from './UI.js';
-import { buildImageToolResult, isImageOutput, resetCwdIfOutsideProject, resizeShellImageOutput, stdErrAppendShellResetMessage, stripEmptyLines } from './utils.js';
+import { buildImageToolResult, isBashResultTruncated, isImageOutput, resetCwdIfOutsideProject, resizeShellImageOutput, stdErrAppendShellResetMessage, stripEmptyLines } from './utils.js';
 const EOL = '\n';
 
 // Progress display constants
@@ -870,8 +869,11 @@ export const BashTool = buildTool({
     };
   },
   renderToolUseErrorMessage,
-  isResultTruncated(output: Out): boolean {
-    return isOutputLineTruncated(output.stdout) || isOutputLineTruncated(output.stderr);
+  isResultTruncated(output: Out, options?: {
+    columns?: number;
+  }): boolean {
+    if (output.isImage) return false;
+    return isBashResultTruncated(output.stdout, output.stderr, options?.columns);
   }
 } satisfies ToolDef<InputSchema, Out, BashProgress>);
 async function* runShellCommand({

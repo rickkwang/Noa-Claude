@@ -2916,12 +2916,6 @@ export type StreamingToolUse = {
   unparsedToolInput: string
 }
 
-export type StreamingThinking = {
-  thinking: string
-  isStreaming: boolean
-  streamingEndedAt?: number
-}
-
 /**
  * Handles messages from a stream, updating response length for deltas and appending completed messages
  */
@@ -2939,9 +2933,6 @@ export function handleMessageFromStream(
     f: (streamingToolUse: StreamingToolUse[]) => StreamingToolUse[],
   ) => void,
   onTombstone?: (message: Message) => void,
-  onStreamingThinking?: (
-    f: (current: StreamingThinking | null) => StreamingThinking | null,
-  ) => void,
   onApiMetrics?: (metrics: { ttftMs: number }) => void,
   onStreamingText?: (f: (current: string | null) => string | null) => void,
 ): void {
@@ -2957,19 +2948,6 @@ export function handleMessageFromStream(
     // Tool use summary messages are SDK-only, ignore them in stream handling
     if (message.type === 'tool_use_summary') {
       return
-    }
-    // Capture complete thinking blocks for real-time display in transcript mode
-    if (message.type === 'assistant') {
-      const thinkingBlock = message.message.content.find(
-        block => block.type === 'thinking',
-      )
-      if (thinkingBlock && thinkingBlock.type === 'thinking') {
-        onStreamingThinking?.(() => ({
-          thinking: thinkingBlock.thinking,
-          isStreaming: false,
-          streamingEndedAt: Date.now(),
-        }))
-      }
     }
     // Clear streaming text NOW so the render can switch displayedMessages
     // from deferredMessages to messages in the same batch, making the

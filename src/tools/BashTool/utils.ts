@@ -10,11 +10,35 @@ import { logEvent } from 'src/services/analytics/index.js'
 import type { ToolPermissionContext } from 'src/Tool.js'
 import { getCwd } from 'src/utils/cwd.js'
 import { pathInAllowedWorkingPath } from 'src/utils/permissions/filesystem.js'
+import { removeSandboxViolationTags } from 'src/utils/sandbox/sandbox-ui-utils.js'
 import { setCwd } from 'src/utils/Shell.js'
 import { shouldMaintainProjectWorkingDir } from '../../utils/envUtils.js'
 import { maybeResizeAndDownsampleImageBuffer } from '../../utils/imageResizer.js'
 import { getMaxOutputLength } from '../../utils/shell/outputLimits.js'
 import { countCharInString, plural } from '../../utils/stringUtils.js'
+import { isOutputLineTruncated } from '../../utils/terminal.js'
+
+// Pattern to match "Shell cwd was reset to <path>" message
+// Use (?:^|\n) to match either start of string or after a newline
+export const SHELL_CWD_RESET_PATTERN = /(?:^|\n)(Shell cwd was reset to .+)$/
+
+/** Would BashToolResultMessage fold this output? stderr is measured as it
+ *  renders: sandbox violations and the cwd-reset warning display separately. */
+export function isBashResultTruncated(
+  stdout: string,
+  stderr: string,
+  columns?: number,
+): boolean {
+  return (
+    isOutputLineTruncated(stdout, columns) ||
+    isOutputLineTruncated(
+      removeSandboxViolationTags(stderr)
+        .trim()
+        .replace(SHELL_CWD_RESET_PATTERN, ''),
+      columns,
+    )
+  )
+}
 /**
  * Strips leading and trailing lines that contain only whitespace/newlines.
  * Unlike trim(), this preserves whitespace within content lines and only removes

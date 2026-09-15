@@ -69,7 +69,7 @@ function computeSearchText(msg: RenderableMessage): string {
       if (Array.isArray(c)) {
         // text blocks + tool_use inputs. tool_use renders as "⏺ Bash(cmd)"
         // — the command/pattern/path is visible and searchable-expected.
-        // Skip thinking (hidden by hidePastThinking in transcript mount).
+        // Thinking is not indexed.
         raw = c
           .flatMap(b => {
             if (b.type === 'text') return [b.text]

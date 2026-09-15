@@ -113,20 +113,46 @@ export function renderTruncatedContent(
     .join('\n')
 }
 
-/** Fast check: would OutputLine truncate this content? Counts raw newlines
- *  only (ignores terminal-width wrapping), so it may return false for a single
- *  very long line that wraps past 3 visual rows — acceptable, since the common
- *  case is multi-line output. */
-export function isOutputLineTruncated(content: string): boolean {
+/** Fast check: would renderTruncatedContent fold this content? Raw newlines
+ *  decide first; with `columns`, long lines that wrap past the fold count too
+ *  (same wrap width renderTruncatedContent uses). Without `columns` only raw
+ *  newlines are counted. */
+export function isOutputLineTruncated(
+  content: unknown,
+  columns?: number,
+): boolean {
+  if (typeof content !== 'string') return false
+  // A trailing newline is a terminator, not a new line — match
+  // renderTruncatedContent's trimEnd() behavior.
+  const trimmed = content.trimEnd()
   let pos = 0
+  let newlines = 0
   // Need more than MAX_LINES_TO_SHOW newlines (content fills > 3 lines).
   // The +1 accounts for wrapText showing an extra line when remainingLines==1.
   for (let i = 0; i <= MAX_LINES_TO_SHOW; i++) {
-    pos = content.indexOf('\n', pos)
-    if (pos === -1) return false
+    pos = trimmed.indexOf('\n', pos)
+    if (pos === -1) break
+    newlines++
     pos++
   }
-  // A trailing newline is a terminator, not a new line — match
-  // renderTruncatedContent's trimEnd() behavior.
-  return pos < content.length
+  if (pos !== -1 && pos < trimmed.length) return true
+  if (columns === undefined) return false
+
+  const wrapWidth = Math.max(columns - PADDING_TO_PREVENT_OVERFLOW, 10)
+  const maxRows = MAX_LINES_TO_SHOW + 1
+  // renderTruncatedContent pre-truncates past this and always folds.
+  if (trimmed.length > MAX_LINES_TO_SHOW * wrapWidth * 4) return true
+  if (newlines === 0) {
+    const limit = maxRows * wrapWidth
+    // A code unit is at most two columns wide (CJK), so only a length that
+    // fits even at double width can skip measuring.
+    if (trimmed.length * 2 <= limit) return false
+    return stringWidth(trimmed) > limit
+  }
+  let rows = 0
+  for (const line of trimmed.split('\n')) {
+    rows += Math.max(1, Math.ceil(stringWidth(line) / wrapWidth))
+    if (rows > maxRows) return true
+  }
+  return false
 }

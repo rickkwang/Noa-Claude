@@ -8,7 +8,7 @@ import type { Tools } from '../Tool.js';
 import type { RenderableMessage } from '../types/message.js';
 import { getDisplayMessageFromCollapsed, getToolSearchOrReadInfo, getToolUseIdsFromCollapsedGroup, hasAnyToolInProgress } from '../utils/collapseReadSearch.js';
 import { type buildMessageLookups, EMPTY_STRING_SET, getProgressMessagesFromLookup, getSiblingToolUseIDsFromLookup, getToolUseID } from '../utils/messages.js';
-import { hasThinkingContent, Message } from './Message.js';
+import { Message } from './Message.js';
 import { MessageModel } from './MessageModel.js';
 import { shouldRenderStatically } from './Messages.js';
 import { MessageTimestamp } from './MessageTimestamp.js';
@@ -31,7 +31,6 @@ export type Props = {
   screen: Screen;
   canAnimate: boolean;
   onOpenRateLimitOptions?: () => void;
-  lastThinkingBlockId: string | null;
   latestBashOutputUUID: string | null;
   columns: number;
   isLoading: boolean;
@@ -105,7 +104,6 @@ function MessageRowImpl(t0) {
     screen,
     canAnimate,
     onOpenRateLimitOptions,
-    lastThinkingBlockId,
     latestBashOutputUUID,
     columns,
     isLoading,
@@ -230,15 +228,14 @@ function MessageRowImpl(t0) {
   const t6 = !hasMetadata;
   const t7 = hasMetadata ? undefined : columns;
   let t8;
-  if ($[37] !== commands || $[38] !== inProgressToolUseIDs || $[39] !== isActiveCollapsedGroup || $[40] !== isStatic || $[41] !== isTranscriptMode || $[42] !== isUserContinuation || $[43] !== lastThinkingBlockId || $[44] !== latestBashOutputUUID || $[45] !== lookups || $[46] !== msg || $[47] !== onOpenRateLimitOptions || $[48] !== progressMessagesForMessage || $[49] !== shouldAnimate || $[50] !== t6 || $[51] !== t7 || $[52] !== tools || $[53] !== verbose) {
-    t8 = <Message message={msg} lookups={lookups} addMargin={t6} containerWidth={t7} tools={tools} commands={commands} verbose={verbose} inProgressToolUseIDs={inProgressToolUseIDs} progressMessagesForMessage={progressMessagesForMessage} shouldAnimate={shouldAnimate} shouldShowDot={true} isTranscriptMode={isTranscriptMode} isStatic={isStatic} onOpenRateLimitOptions={onOpenRateLimitOptions} isActiveCollapsedGroup={isActiveCollapsedGroup} isUserContinuation={isUserContinuation} lastThinkingBlockId={lastThinkingBlockId} latestBashOutputUUID={latestBashOutputUUID} />;
+  if ($[37] !== commands || $[38] !== inProgressToolUseIDs || $[39] !== isActiveCollapsedGroup || $[40] !== isStatic || $[41] !== isTranscriptMode || $[42] !== isUserContinuation || $[44] !== latestBashOutputUUID || $[45] !== lookups || $[46] !== msg || $[47] !== onOpenRateLimitOptions || $[48] !== progressMessagesForMessage || $[49] !== shouldAnimate || $[50] !== t6 || $[51] !== t7 || $[52] !== tools || $[53] !== verbose) {
+    t8 = <Message message={msg} lookups={lookups} addMargin={t6} containerWidth={t7} tools={tools} commands={commands} verbose={verbose} inProgressToolUseIDs={inProgressToolUseIDs} progressMessagesForMessage={progressMessagesForMessage} shouldAnimate={shouldAnimate} shouldShowDot={true} isTranscriptMode={isTranscriptMode} isStatic={isStatic} onOpenRateLimitOptions={onOpenRateLimitOptions} isActiveCollapsedGroup={isActiveCollapsedGroup} isUserContinuation={isUserContinuation} latestBashOutputUUID={latestBashOutputUUID} />;
     $[37] = commands;
     $[38] = inProgressToolUseIDs;
     $[39] = isActiveCollapsedGroup;
     $[40] = isStatic;
     $[41] = isTranscriptMode;
     $[42] = isUserContinuation;
-    $[43] = lastThinkingBlockId;
     $[44] = latestBashOutputUUID;
     $[45] = lookups;
     $[46] = msg;
@@ -362,13 +359,6 @@ export function areMessageRowPropsEqual(prev: Props, next: Props): boolean {
   const prevIsLatestBash = prev.latestBashOutputUUID === prev.message.uuid;
   const nextIsLatestBash = next.latestBashOutputUUID === next.message.uuid;
   if (prevIsLatestBash !== nextIsLatestBash) return false;
-
-  // lastThinkingBlockId affects thinking block visibility — but only for
-  // messages that HAVE thinking content. Checking unconditionally busts the
-  // memo for every scrollback message whenever thinking starts/stops (CC-941).
-  if (prev.lastThinkingBlockId !== next.lastThinkingBlockId && hasThinkingContent(next.message)) {
-    return false;
-  }
 
   // Check if this message is still "in flight"
   const isStreaming = isMessageStreaming(prev.message, prev.streamingToolUseIDs);

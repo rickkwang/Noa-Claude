@@ -51,8 +51,6 @@ export type Props = {
   onOpenRateLimitOptions?: () => void;
   isActiveCollapsedGroup?: boolean;
   isUserContinuation?: boolean;
-  /** ID of the last thinking block (uuid:index) to show, used for hiding past thinking in transcript mode */
-  lastThinkingBlockId?: string | null;
   /** UUID of the latest user bash output message (for auto-expanding) */
   latestBashOutputUUID?: string | null;
 };
@@ -76,7 +74,6 @@ function MessageImpl(t0) {
     onOpenRateLimitOptions,
     isActiveCollapsedGroup,
     isUserContinuation: t1,
-    lastThinkingBlockId,
     latestBashOutputUUID
   } = t0;
   const isUserContinuation = t1 === undefined ? false : t1;
@@ -100,15 +97,14 @@ function MessageImpl(t0) {
       {
         const t2 = containerWidth ?? "100%";
         let t3;
-        if ($[5] !== addMargin || $[6] !== commands || $[7] !== inProgressToolUseIDs || $[8] !== isTranscriptMode || $[9] !== lastThinkingBlockId || $[10] !== lookups || $[11] !== message.advisorModel || $[12] !== message.message.content || $[13] !== message.uuid || $[14] !== onOpenRateLimitOptions || $[15] !== progressMessagesForMessage || $[16] !== shouldAnimate || $[17] !== shouldShowDot || $[18] !== tools || $[19] !== verbose || $[20] !== width) {
+        if ($[5] !== addMargin || $[6] !== commands || $[7] !== inProgressToolUseIDs || $[8] !== isTranscriptMode || $[10] !== lookups || $[11] !== message.advisorModel || $[12] !== message.message.content || $[13] !== message.uuid || $[14] !== onOpenRateLimitOptions || $[15] !== progressMessagesForMessage || $[16] !== shouldAnimate || $[17] !== shouldShowDot || $[18] !== tools || $[19] !== verbose || $[20] !== width) {
           let t4;
-          if ($[22] !== addMargin || $[23] !== commands || $[24] !== inProgressToolUseIDs || $[25] !== isTranscriptMode || $[26] !== lastThinkingBlockId || $[27] !== lookups || $[28] !== message.advisorModel || $[29] !== message.uuid || $[30] !== onOpenRateLimitOptions || $[31] !== progressMessagesForMessage || $[32] !== shouldAnimate || $[33] !== shouldShowDot || $[34] !== tools || $[35] !== verbose || $[36] !== width) {
-            t4 = (_, index_0) => <AssistantMessageBlock key={index_0} param={_} addMargin={addMargin} tools={tools} commands={commands} verbose={verbose} inProgressToolUseIDs={inProgressToolUseIDs} progressMessagesForMessage={progressMessagesForMessage} shouldAnimate={shouldAnimate} shouldShowDot={shouldShowDot} width={width} inProgressToolCallCount={inProgressToolUseIDs.size} isTranscriptMode={isTranscriptMode} lookups={lookups} onOpenRateLimitOptions={onOpenRateLimitOptions} thinkingBlockId={`${message.uuid}:${index_0}`} lastThinkingBlockId={lastThinkingBlockId} advisorModel={message.advisorModel} />;
+          if ($[22] !== addMargin || $[23] !== commands || $[24] !== inProgressToolUseIDs || $[25] !== isTranscriptMode || $[27] !== lookups || $[28] !== message.advisorModel || $[29] !== message.uuid || $[30] !== onOpenRateLimitOptions || $[31] !== progressMessagesForMessage || $[32] !== shouldAnimate || $[33] !== shouldShowDot || $[34] !== tools || $[35] !== verbose || $[36] !== width) {
+            t4 = (_, index_0) => <AssistantMessageBlock key={index_0} param={_} addMargin={addMargin} tools={tools} commands={commands} verbose={verbose} inProgressToolUseIDs={inProgressToolUseIDs} progressMessagesForMessage={progressMessagesForMessage} shouldAnimate={shouldAnimate} shouldShowDot={shouldShowDot} width={width} inProgressToolCallCount={inProgressToolUseIDs.size} isTranscriptMode={isTranscriptMode} lookups={lookups} onOpenRateLimitOptions={onOpenRateLimitOptions} advisorModel={message.advisorModel} />;
             $[22] = addMargin;
             $[23] = commands;
             $[24] = inProgressToolUseIDs;
             $[25] = isTranscriptMode;
-            $[26] = lastThinkingBlockId;
             $[27] = lookups;
             $[28] = message.advisorModel;
             $[29] = message.uuid;
@@ -128,7 +124,6 @@ function MessageImpl(t0) {
           $[6] = commands;
           $[7] = inProgressToolUseIDs;
           $[8] = isTranscriptMode;
-          $[9] = lastThinkingBlockId;
           $[10] = lookups;
           $[11] = message.advisorModel;
           $[12] = message.message.content;
@@ -448,8 +443,6 @@ function AssistantMessageBlock(t0) {
     isTranscriptMode,
     lookups,
     onOpenRateLimitOptions,
-    thinkingBlockId,
-    lastThinkingBlockId,
     advisorModel
   } = t0;
   if (feature("CONNECTOR_TEXT")) {
@@ -542,16 +535,11 @@ function AssistantMessageBlock(t0) {
         if (!isTranscriptMode && !verbose) {
           return null;
         }
-        const isLastThinking = !lastThinkingBlockId || thinkingBlockId === lastThinkingBlockId;
-        const t1 = isTranscriptMode && !isLastThinking;
         let t2;
-        if ($[31] !== addMargin || $[32] !== isTranscriptMode || $[33] !== param || $[34] !== t1 || $[35] !== verbose) {
-          t2 = <AssistantThinkingMessage addMargin={addMargin} param={param} isTranscriptMode={isTranscriptMode} verbose={verbose} hideInTranscript={t1} />;
+        if ($[31] !== addMargin || $[33] !== param) {
+          t2 = <AssistantThinkingMessage addMargin={addMargin} param={param} />;
           $[31] = addMargin;
-          $[32] = isTranscriptMode;
           $[33] = param;
-          $[34] = t1;
-          $[35] = verbose;
           $[36] = t2;
         } else {
           t2 = $[36];
@@ -589,27 +577,9 @@ function AssistantMessageBlock(t0) {
       }
   }
 }
-export function hasThinkingContent(m: {
-  type: string;
-  message?: {
-    content: Array<{
-      type: string;
-    }>;
-  };
-}): boolean {
-  if (m.type !== 'assistant' || !m.message) return false;
-  return m.message.content.some(b => b.type === 'thinking' || b.type === 'redacted_thinking');
-}
-
 /** Exported for testing */
 export function areMessagePropsEqual(prev: Props, next: Props): boolean {
   if (prev.message.uuid !== next.message.uuid) return false;
-  // Only re-render on lastThinkingBlockId change if this message actually
-  // has thinking content — otherwise every message in scrollback re-renders
-  // whenever streaming thinking starts/stops (CC-941).
-  if (prev.lastThinkingBlockId !== next.lastThinkingBlockId && hasThinkingContent(next.message)) {
-    return false;
-  }
   // Verbose toggle changes thinking block visibility/expansion
   if (prev.verbose !== next.verbose) return false;
   // Only re-render if this message's "is latest bash output" status changed,
