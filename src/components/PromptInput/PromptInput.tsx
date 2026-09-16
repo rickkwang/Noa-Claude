@@ -268,6 +268,11 @@ function PromptInput({
   // iterations or the undo history collapses to the first image only.
   const pastedContentsRef = React.useRef(pastedContents);
   pastedContentsRef.current = pastedContents;
+  // The keystroke handler asks for the current mode while deciding whether a
+  // leading "!" switches modes or is text; a ref keeps that getter stable.
+  const modeRef = React.useRef(mode);
+  modeRef.current = mode;
+  const getInputMode = React.useCallback(() => modeRef.current, []);
   if (input !== lastInternalInputRef.current) {
     // Input changed externally (not through any internal handler) — move cursor to end
     setCursorOffset(input.length);
@@ -872,7 +877,13 @@ function PromptInput({
     submitCount,
     viewingAgentName
   });
-  const onChange = useCallback((value: string) => {
+  const onChange = useCallback((value: string, options?: {
+    interpretLeadingModeCharacter?: boolean;
+  }) => {
+    // Callers that already split a stored entry into value + mode (history
+    // navigation) opt out, so a command that itself starts with "!" doesn't
+    // lose that character on the way back into the input.
+    const interpretLeadingModeCharacter = options?.interpretLeadingModeCharacter ?? true;
     if (value === '?') {
       logEvent('tengu_help_toggled', {});
       setHelpOpen(v => !v);
@@ -890,15 +901,18 @@ function PromptInput({
     // Check if this is a single character insertion at the start
     const isSingleCharInsertion = value.length === input.length + 1;
     const insertedAtStart = cursorOffset === 0;
-    const mode = getModeFromInput(value);
-    if (insertedAtStart && mode !== 'prompt') {
+    const insertedMode = getModeFromInput(value);
+    // Only swallow the leading mode character when it actually switches modes —
+    // already in bash mode, a leading "!" is part of the command (e.g. "! grep …").
+    if (interpretLeadingModeCharacter && insertedAtStart && insertedMode !== 'prompt') {
       if (isSingleCharInsertion) {
-        onModeChange(mode);
-        return;
-      }
-      // Multi-char insertion into empty input (e.g. tab-accepting "! gcloud auth login")
-      if (input.length === 0) {
-        onModeChange(mode);
+        if (insertedMode !== mode) {
+          onModeChange(insertedMode);
+          return;
+        }
+      } else if (input.length === 0 && insertedMode !== mode) {
+        // Multi-char insertion into empty input (e.g. tab-accepting "! gcloud auth login")
+        onModeChange(insertedMode);
         const valueWithoutMode = getValueFromInput(value).replaceAll('\t', '    ');
         pushToBuffer(input, cursorOffset, pastedContents);
         trackAndSetInput(valueWithoutMode);
@@ -919,7 +933,7 @@ function PromptInput({
       footerSelection: null
     });
     trackAndSetInput(processedValue);
-  }, [trackAndSetInput, onModeChange, input, cursorOffset, pushToBuffer, pastedContents, dismissStashHint, setAppState]);
+  }, [trackAndSetInput, onModeChange, mode, input, cursorOffset, pushToBuffer, pastedContents, dismissStashHint, setAppState]);
   const {
     resetHistory,
     onHistoryUp,
@@ -927,7 +941,9 @@ function PromptInput({
     dismissSearchHint,
     historyIndex
   } = useArrowKeyHistory((value: string, historyMode: HistoryMode, pastedContents: Record<number, PastedContent>) => {
-    onChange(value);
+    onChange(value, {
+      interpretLeadingModeCharacter: false
+    });
     onModeChange(historyMode);
     setPastedContents(pastedContents);
   }, input, pastedContents, setCursorOffset, mode);
@@ -1263,10 +1279,12 @@ function PromptInput({
       }
     }
 
-    // Match typed/auto-suggest: `!cmd` pasted into empty input enters bash mode.
+    // Match typed/auto-suggest: `!cmd` pasted into empty input enters bash mode
+    // — but only when that switches modes, so pasting a negated command while
+    // already in bash mode keeps its `!`.
     if (input.length === 0) {
       const pastedMode = getModeFromInput(text);
-      if (pastedMode !== 'prompt') {
+      if (pastedMode !== 'prompt' && pastedMode !== mode) {
         onModeChange(pastedMode);
         text = getValueFromInput(text);
       }
@@ -2294,6 +2312,7 @@ function PromptInput({
     disableEscapeDoublePress: suggestions.length > 0,
     cursorOffset,
     onChangeCursorOffset: setCursorOffset,
+    getInputMode,
     onPaste: onTextPaste,
     onIsPastingChange: setIsPasting,
     focus: !isSearchingHistory && !isModalOverlayActive && !footerItemSelected,

@@ -72,7 +72,10 @@ export default function VimTextInput(props) {
       onOffsetChange: props.onChangeCursorOffset,
       inputFilter: props.inputFilter,
       onModeChange: props.onModeChange,
-      onUndo: props.onUndo
+      onUndo: props.onUndo,
+      // Not in the memo deps below: PromptInput passes a ref-backed getter
+      // whose identity never changes.
+      getInputMode: props.getInputMode
     };
     $[2] = props.columns;
     $[3] = props.cursorOffset;

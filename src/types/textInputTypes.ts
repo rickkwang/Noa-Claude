@@ -83,6 +83,14 @@ export type BaseTextInputProps = {
   readonly onSubmit?: (value: string) => void
 
   /**
+   * Reads the prompt mode the input is currently in. Only the main prompt
+   * passes this: it tells the keystroke handler whether a leading mode
+   * character ("!") is about to be swallowed by a mode switch (so the cursor
+   * must stay put) or typed as ordinary text (e.g. `! grep …` in bash mode).
+   */
+  readonly getInputMode?: () => PromptInputMode
+
+  /**
    * Function to call when Ctrl+C is pressed to exit.
    */
   readonly onExit?: () => void
