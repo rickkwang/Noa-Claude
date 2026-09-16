@@ -7,7 +7,7 @@ import type { Screen } from '../screens/REPL.js';
 import type { Tools } from '../Tool.js';
 import type { RenderableMessage } from '../types/message.js';
 import { getDisplayMessageFromCollapsed, getToolSearchOrReadInfo, getToolUseIdsFromCollapsedGroup, hasAnyToolInProgress } from '../utils/collapseReadSearch.js';
-import { type buildMessageLookups, EMPTY_STRING_SET, getProgressMessagesFromLookup, getSiblingToolUseIDsFromLookup, getToolUseID } from '../utils/messages.js';
+import { type buildMessageLookups, EMPTY_STRING_SET, getProgressMessagesFromLookup, getSiblingToolUseIDsFromLookup, getToolUseID, hasUnresolvedHooksFromLookup } from '../utils/messages.js';
 import { Message } from './Message.js';
 import { MessageModel } from './MessageModel.js';
 import { shouldRenderStatically } from './Messages.js';
@@ -366,6 +366,16 @@ export function areMessageRowPropsEqual(prev: Props, next: Props): boolean {
 
   // Only bail out for truly static messages
   if (isStreaming || !isResolved) return false;
+
+  // A PostToolUse hook runs after the tool result, so the tool reads as
+  // resolved while UserToolSuccessMessage is still counting hooks down. That
+  // counter lives in lookups, not in the message, and the message object no
+  // longer changes on every progress tick — without this the running-hook line
+  // would never appear.
+  const toolUseID = getToolUseID(prev.message);
+  if (toolUseID && (hasUnresolvedHooksFromLookup(toolUseID, 'PostToolUse', prev.lookups) || hasUnresolvedHooksFromLookup(toolUseID, 'PostToolUse', next.lookups))) {
+    return false;
+  }
 
   // Static message - safe to skip re-render
   return true;

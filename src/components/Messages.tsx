@@ -30,7 +30,7 @@ import { getGlobalConfig } from '../utils/config.js';
 import { isEnvTruthy } from '../utils/envUtils.js';
 import { isFullscreenEnvEnabled } from '../utils/fullscreen.js';
 import { applyGrouping } from '../utils/groupToolUses.js';
-import { buildMessageLookups, createAssistantMessage, deriveUUID, extractTag, getMessagesAfterCompactBoundary, getToolUseID, getToolUseIDs, hasUnresolvedHooksFromLookup, isNotEmptyMessage, normalizeMessages, projectCompactHistoryForMainDisplay, reorderMessagesInUI, type StreamingToolUse, shouldShowUserMessage } from '../utils/messages.js';
+import { buildMessageLookups, buildProgressLookups, buildTranscriptLookups, createAssistantMessage, deriveUUID, extractTag, getMessagesAfterCompactBoundary, getToolUseID, getToolUseIDs, hasUnresolvedHooksFromLookup, isNotEmptyMessage, MessageStreamSplit, mergeMessageLookups, normalizeMessages, projectCompactHistoryForMainDisplay, reorderMessagesInUI, type StreamingToolUse, shouldShowUserMessage } from '../utils/messages.js';
 import { plural } from '../utils/stringUtils.js';
 import { isFallbackToolErrorFolded } from './FallbackToolUseErrorMessage.js';
 import { isBashResultTruncated } from '../tools/BashTool/utils.js';
@@ -394,7 +394,18 @@ const MessagesImpl = ({
     columns
   } = useTerminalSize();
   const toggleShowAllShortcut = useShortcutDisplay('transcript:toggleShowAll', 'Transcript', 'Ctrl+E');
-  const normalizedMessages = useMemo(() => normalizeMessages(messages).filter(isNotEmptyMessage), [messages]);
+  // Progress messages (hook progress, subagent activity) arrive one per tick and
+  // feed only the progress lookups. Splitting them off here keeps the transcript
+  // array identical across ticks, so every memo below skips — a tick no longer
+  // re-derives the whole conversation. See MessageStreamSplit.
+  const splitRef = useRef<MessageStreamSplit | null>(null);
+  splitRef.current ??= new MessageStreamSplit();
+  const {
+    transcript: transcriptMessages,
+    progress: progressMessages
+  } = useMemo(() => splitRef.current!.split(messages), [messages]);
+  const normalizedMessages = useMemo(() => normalizeMessages(transcriptMessages).filter(isNotEmptyMessage), [transcriptMessages]);
+  const progressLookups = useMemo(() => buildProgressLookups(progressMessages), [progressMessages]);
 
   // Find the latest user bash output message (from ! commands)
   // This allows us to show full output for the most recent bash command
@@ -451,14 +462,15 @@ const MessagesImpl = ({
   const sliceAnchorRef = useRef<SliceAnchor>(null);
 
   // Expensive message transforms — filter, reorder, group, collapse, lookups.
-  // All O(n) over 27k messages. Split from the renderRange slice so scrolling
-  // (which only changes renderRange) doesn't re-run these. Previously this
-  // useMemo included renderRange → every scroll rebuilt 6 Maps over 27k
+  // All O(n) over the transcript half (progress messages are split off above,
+  // so a progress tick never reaches here). Split from the renderRange slice so
+  // scrolling (which only changes renderRange) doesn't re-run these. Previously
+  // this useMemo included renderRange → every scroll rebuilt 6 Maps over 27k
   // messages + 4 filter/map passes = ~50ms alloc per scroll → GC pressure →
   // 100-173ms stop-the-world pauses on the 1GB heap.
   const {
     collapsed: collapsed_0,
-    lookups: lookups_0,
+    transcriptLookups: transcriptLookups_0,
     hasTruncatedMessages: hasTruncatedMessages_0,
     hiddenMessageCount: hiddenMessageCount_0
   } = useMemo(() => {
@@ -500,15 +512,19 @@ const MessagesImpl = ({
       messages: groupedMessages
     } = applyGrouping(messagesToShow, tools, verbose);
     const collapsed = collapseBackgroundBashNotifications(collapseHookSummaries(collapseTeammateShutdowns(collapseReadSearchGroups(groupedMessages, tools))), verbose);
-    const lookups = buildMessageLookups(normalizedMessages, messagesToShow);
+    const transcriptLookups = buildTranscriptLookups(normalizedMessages, messagesToShow);
     const hiddenMessageCount = messagesToShowNotTruncated.length - MAX_MESSAGES_TO_SHOW_IN_TRANSCRIPT_MODE;
     return {
       collapsed,
-      lookups,
+      transcriptLookups,
       hasTruncatedMessages,
       hiddenMessageCount
     };
   }, [verbose, normalizedMessages, isTranscriptMode, syntheticStreamingToolUseMessages, shouldTruncate, tools, isBriefOnly]);
+
+  // Cheap join — the two halves are memoized independently above, so a progress
+  // tick rebuilds only the progress half.
+  const lookups_0 = useMemo(() => mergeMessageLookups(transcriptLookups_0, progressLookups), [transcriptLookups_0, progressLookups]);
 
   // Cheap slice — only runs when scroll range or slice config changes.
   const renderableMessages = useMemo(() => {

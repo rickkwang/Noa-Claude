@@ -1090,8 +1090,6 @@ export type MessageLookups = {
   toolResultByToolUseID: Map<string, NormalizedMessage>
   /** Maps tool_use_id to the ToolUseBlockParam */
   toolUseByToolUseID: Map<string, ToolUseBlockParam>
-  /** Total count of normalized messages (for truncation indicator text) */
-  normalizedMessageCount: number
   /** Set of tool use IDs that have a corresponding tool_result */
   resolvedToolUseIDs: Set<string>
   /** Set of tool use IDs that have an errored tool_result */
@@ -1099,16 +1097,165 @@ export type MessageLookups = {
 }
 
 /**
- * Build pre-computed lookups for efficient O(1) access to message relationships.
- * Call once per render, then use the lookups for all messages.
+ * Splits a message list into its transcript and progress halves, reusing the
+ * previous arrays whenever a half is unchanged.
  *
- * This avoids O(n²) behavior from resolving progress messages, sibling tool
- * use IDs, and unresolved hooks separately for each message.
+ * Hook progress and subagent activity append one progress message per tick. The
+ * transcript half is identical across those ticks, so handing back the very same
+ * array lets every memo keyed on it — normalization, reordering, grouping,
+ * collapsing, the transcript lookups — skip the tick entirely. Without the reuse
+ * each tick re-derives the whole conversation, which is what makes a long
+ * session crawl.
+ *
+ * Stateful because the reuse is against the previous call: hold one instance per
+ * renderer (a ref), never a module-level singleton.
+ */
+export class MessageStreamSplit {
+  private transcript: Message[] = []
+  private progress: ProgressMessage[] = []
+
+  split(messages: readonly Message[]): {
+    transcript: Message[]
+    progress: ProgressMessage[]
+  } {
+    const prevTranscript = this.transcript
+    const prevProgress = this.progress
+    // Walk in lockstep with the previous result; only fork a half into a fresh
+    // array once it diverges, so an unchanged half keeps its identity.
+    let transcriptMatched = 0
+    let progressMatched = 0
+    let transcript: Message[] | null = null
+    let progress: ProgressMessage[] | null = null
+
+    for (const msg of messages) {
+      if (msg.type === 'progress') {
+        if (progress !== null) {
+          progress.push(msg as ProgressMessage)
+        } else if (prevProgress[progressMatched] === msg) {
+          progressMatched++
+        } else {
+          progress = prevProgress.slice(0, progressMatched)
+          progress.push(msg as ProgressMessage)
+        }
+      } else if (transcript !== null) {
+        transcript.push(msg)
+      } else if (prevTranscript[transcriptMatched] === msg) {
+        transcriptMatched++
+      } else {
+        transcript = prevTranscript.slice(0, transcriptMatched)
+        transcript.push(msg)
+      }
+    }
+
+    // A half that only matched a prefix lost entries at the end (a rewind or a
+    // compaction) — truncate rather than hand back the stale tail.
+    transcript ??=
+      transcriptMatched === prevTranscript.length
+        ? prevTranscript
+        : prevTranscript.slice(0, transcriptMatched)
+    progress ??=
+      progressMatched === prevProgress.length
+        ? prevProgress
+        : prevProgress.slice(0, progressMatched)
+
+    this.transcript = transcript
+    this.progress = progress
+    return { transcript, progress }
+  }
+}
+
+/** The progress-derived half of MessageLookups. */
+export type ProgressLookups = Pick<
+  MessageLookups,
+  'progressMessagesByToolUseID' | 'inProgressHookCounts'
+>
+
+/** Everything in MessageLookups that no progress message contributes to. */
+export type TranscriptLookups = Omit<MessageLookups, keyof ProgressLookups>
+
+/**
+ * Progress half of the lookups. Split out from buildTranscriptLookups because
+ * hook progress and subagent activity arrive as a progress message per tick:
+ * keeping the two halves on separate inputs lets a tick rebuild only this one,
+ * which walks the progress messages instead of the whole conversation.
+ */
+export function buildProgressLookups(
+  progressMessages: readonly ProgressMessage[],
+): ProgressLookups {
+  const progressMessagesByToolUseID = new Map<string, ProgressMessage[]>()
+  const inProgressHookCounts = new Map<string, Map<HookEvent, number>>()
+
+  for (const msg of progressMessages) {
+    // Heartbeat ticks are keep-alive only — never part of a tool's rendered
+    // progress trail. Exclude them from the per-tool lookup entirely, matching
+    // upstream.
+    if (msg.data.type === 'tool_heartbeat') {
+      continue
+    }
+    const toolUseID = msg.parentToolUseID
+    const existing = progressMessagesByToolUseID.get(toolUseID)
+    if (existing) {
+      existing.push(msg)
+    } else {
+      progressMessagesByToolUseID.set(toolUseID, [msg])
+    }
+
+    // Count in-progress hooks
+    if (msg.data.type === 'hook_progress') {
+      const hookEvent = msg.data.hookEvent
+      let byHookEvent = inProgressHookCounts.get(toolUseID)
+      if (!byHookEvent) {
+        byHookEvent = new Map()
+        inProgressHookCounts.set(toolUseID, byHookEvent)
+      }
+      byHookEvent.set(hookEvent, (byHookEvent.get(hookEvent) ?? 0) + 1)
+    }
+  }
+
+  return { progressMessagesByToolUseID, inProgressHookCounts }
+}
+
+/** Joins the two halves back into the object the renderers consume. */
+export function mergeMessageLookups(
+  transcript: TranscriptLookups,
+  progress: ProgressLookups,
+): MessageLookups {
+  return { ...transcript, ...progress }
+}
+
+/**
+ * Build pre-computed lookups for efficient O(1) access to message relationships,
+ * avoiding O(n²) behavior from resolving progress messages, sibling tool use IDs
+ * and unresolved hooks separately for each message.
+ *
+ * Convenience wrapper over buildTranscriptLookups + buildProgressLookups for
+ * callers holding one undivided list. The renderer memoizes the two halves
+ * separately instead, so that a progress tick only rebuilds one of them.
  */
 export function buildMessageLookups(
   normalizedMessages: NormalizedMessage[],
   messages: Message[],
 ): MessageLookups {
+  const progressMessages: ProgressMessage[] = []
+  const transcriptMessages: NormalizedMessage[] = []
+  for (const msg of normalizedMessages) {
+    if (msg.type === 'progress') progressMessages.push(msg as ProgressMessage)
+    else transcriptMessages.push(msg)
+  }
+  return mergeMessageLookups(
+    buildTranscriptLookups(transcriptMessages, messages),
+    buildProgressLookups(progressMessages),
+  )
+}
+
+/**
+ * Non-progress half of the lookups: tool use / result relationships, hook
+ * resolution counts and the resolved/errored sets.
+ */
+export function buildTranscriptLookups(
+  transcriptMessages: NormalizedMessage[],
+  messages: Message[],
+): TranscriptLookups {
   // First pass: group assistant messages by ID and collect all tool use IDs per message
   const toolUseIDsByMessageID = new Map<string, Set<string>>()
   const toolUseIDToMessageID = new Map<string, string>()
@@ -1137,9 +1284,7 @@ export function buildMessageLookups(
     siblingToolUseIDs.set(toolUseID, toolUseIDsByMessageID.get(messageID)!)
   }
 
-  // Single pass over normalizedMessages to build progress, hook, and tool result lookups
-  const progressMessagesByToolUseID = new Map<string, ProgressMessage[]>()
-  const inProgressHookCounts = new Map<string, Map<HookEvent, number>>()
+  // Single pass over the transcript to build hook and tool result lookups
   // Track unique hook names per (toolUseID, hookEvent).
   // A single hook can produce multiple attachment messages (e.g., hook_success + hook_additional_context),
   // so we deduplicate by hookName.
@@ -1149,35 +1294,7 @@ export function buildMessageLookups(
   const resolvedToolUseIDs = new Set<string>()
   const erroredToolUseIDs = new Set<string>()
 
-  for (const msg of normalizedMessages) {
-    if (msg.type === 'progress') {
-      // Heartbeat ticks are keep-alive only — never part of a tool's rendered
-      // progress trail. Exclude them from the per-tool lookup entirely, matching
-      // upstream.
-      if (msg.data.type === 'tool_heartbeat') {
-        continue
-      }
-      // Build progress messages lookup
-      const toolUseID = msg.parentToolUseID
-      const existing = progressMessagesByToolUseID.get(toolUseID)
-      if (existing) {
-        existing.push(msg)
-      } else {
-        progressMessagesByToolUseID.set(toolUseID, [msg])
-      }
-
-      // Count in-progress hooks
-      if (msg.data.type === 'hook_progress') {
-        const hookEvent = msg.data.hookEvent
-        let byHookEvent = inProgressHookCounts.get(toolUseID)
-        if (!byHookEvent) {
-          byHookEvent = new Map()
-          inProgressHookCounts.set(toolUseID, byHookEvent)
-        }
-        byHookEvent.set(hookEvent, (byHookEvent.get(hookEvent) ?? 0) + 1)
-      }
-    }
-
+  for (const msg of transcriptMessages) {
     // Build tool result lookup and resolved/errored sets
     if (msg.type === 'user') {
       for (const content of msg.message.content) {
@@ -1252,7 +1369,7 @@ export function buildMessageLookups(
   const lastMsg = messages.at(-1)
   const lastAssistantMsgId =
     lastMsg?.type === 'assistant' ? lastMsg.message.id : undefined
-  for (const msg of normalizedMessages) {
+  for (const msg of transcriptMessages) {
     if (msg.type !== 'assistant') continue
     // Skip blocks from the last original message if it's an assistant,
     // since it may still be in progress.
@@ -1272,12 +1389,9 @@ export function buildMessageLookups(
 
   return {
     siblingToolUseIDs,
-    progressMessagesByToolUseID,
-    inProgressHookCounts,
     resolvedHookCounts,
     toolResultByToolUseID,
     toolUseByToolUseID,
-    normalizedMessageCount: normalizedMessages.length,
     resolvedToolUseIDs,
     erroredToolUseIDs,
   }
@@ -1291,7 +1405,6 @@ export const EMPTY_LOOKUPS: MessageLookups = {
   resolvedHookCounts: new Map(),
   toolResultByToolUseID: new Map(),
   toolUseByToolUseID: new Map(),
-  normalizedMessageCount: 0,
   resolvedToolUseIDs: new Set(),
   erroredToolUseIDs: new Set(),
 }
