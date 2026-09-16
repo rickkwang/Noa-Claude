@@ -75,7 +75,10 @@ import {
   stripSafeHeredocSubstitutions,
 } from './bashSecurity.js'
 import { checkPermissionMode } from './modeValidation.js'
-import { checkPathConstraints } from './pathValidation.js'
+import {
+  checkDangerousRemovalInHiddenCommands,
+  checkPathConstraints,
+} from './pathValidation.js'
 import { checkSedConstraints } from './sedValidation.js'
 import { shouldUseSandbox } from './shouldUseSandbox.js'
 
@@ -1403,6 +1406,28 @@ function filterCdCwdSubcommands(
 }
 
 /**
+ * Guards catastrophic removals that a subshell, command group or substitution
+ * keeps out of subcommand decomposition — see
+ * checkDangerousRemovalInHiddenCommands.
+ *
+ * Deny rules still win; an allow rule does not, matching the "cannot be
+ * auto-allowed by permission rules" wording the prompt already carries.
+ */
+function checkHiddenDangerousRemoval(
+  input: z.infer<typeof BashTool.inputSchema>,
+  toolPermissionContext: ToolPermissionContext,
+): PermissionResult | null {
+  const hidden = checkDangerousRemovalInHiddenCommands(
+    input.command,
+    getCwd(),
+    toolPermissionContext,
+  )
+  if (hidden === null) return null
+  const deny = checkEarlyExitDeny(input, toolPermissionContext)
+  return deny?.behavior === 'deny' ? deny : hidden
+}
+
+/**
  * Early-exit deny enforcement for the AST too-complex and checkSemantics
  * paths. Returns the exact-match result if non-passthrough (deny/ask/allow),
  * then checks prefix/wildcard deny rules. Returns null if neither matched,
@@ -1687,6 +1712,15 @@ export async function bashToolHasPermission(
   getCommandSubcommandPrefixFn = getCommandSubcommandPrefix,
 ): Promise<PermissionResult> {
   let appState = context.getAppState()
+
+  // 0a. Catastrophic removals a shell construct keeps out of decomposition.
+  // Ahead of everything else because the paths below hand these back as a
+  // generic ask that bypassPermissions mode auto-approves.
+  const hiddenRemoval = checkHiddenDangerousRemoval(
+    input,
+    appState.toolPermissionContext,
+  )
+  if (hiddenRemoval !== null) return hiddenRemoval
 
   // 0. AST-based security parse. This replaces both tryParseShellCommand
   // (the shell-quote pre-check) and the bashCommandIsSafe misparsing gate.

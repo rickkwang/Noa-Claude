@@ -119,7 +119,13 @@ function checkDangerousRemovalPaths(
         behavior: 'ask',
         message: `Dangerous ${command} operation detected: '${absolutePath}'\n\nThis command would remove a critical system directory. This requires explicit approval and cannot be auto-allowed by permission rules.`,
         decisionReason: {
-          type: 'other',
+          // safetyCheck, not 'other': hasPermissionsToUseTool step 1g holds
+          // safety checks back in bypassPermissions mode, where an 'other' ask
+          // is auto-approved. classifierApprovable stays true so auto mode
+          // still routes the call to the classifier, which has explicit rules
+          // for catastrophic deletions.
+          type: 'safetyCheck',
+          classifierApprovable: true,
           reason: `Dangerous ${command} operation on critical path: ${absolutePath}`,
         },
         // Don't provide suggestions - we don't want to encourage saving dangerous commands
@@ -142,7 +148,8 @@ function checkDangerousRemovalPaths(
         behavior: 'ask',
         message: `Dangerous ${command} operation detected: '${absolutePath}'\n\nThis command would remove a workspace directory (the working directory, an additional working directory, or one of their parent directories). This requires explicit approval and cannot be auto-allowed by permission rules.`,
         decisionReason: {
-          type: 'other',
+          type: 'safetyCheck',
+          classifierApprovable: true,
           reason: `Dangerous ${command} operation on working directory or its ancestor: ${absolutePath}`,
         },
         suggestions: [],
@@ -155,6 +162,133 @@ function checkDangerousRemovalPaths(
     behavior: 'passthrough',
     message: `No dangerous removals detected for ${command} command`,
   }
+}
+
+/**
+ * Shell constructs the permission checker never decomposes into subcommands:
+ * command substitution, backticks, subshells, command groups and process
+ * substitution. Everything wrapped in one of these resolves to a generic
+ * `{type:'other'}` ask, which bypassPermissions mode auto-approves.
+ */
+const HIDDEN_COMMAND_CONSTRUCT = /\$\(|`|<\(|>\(|(?:^|[\s;&|])[({]/
+
+/**
+ * Text following an `rm`/`rmdir` word, up to the next separator or closing
+ * delimiter. Crude on purpose: it runs over the whole command rather than a
+ * parsed span, so nesting cannot hide a removal from it.
+ */
+const REMOVAL_INVOCATION = /\b(?:rm|rmdir)\b[^\n;&|()}`]*/g
+
+/** Index of the `)` closing the `(` at `open`, or -1. Skips quoted regions. */
+function matchingParen(command: string, open: number): number {
+  let depth = 0
+  for (let i = open; i < command.length; i++) {
+    const ch = command[i]
+    if (ch === '\\') {
+      i++
+    } else if (ch === "'") {
+      const end = command.indexOf("'", i + 1)
+      if (end === -1) return -1
+      i = end
+    } else if (ch === '"') {
+      const end = command.indexOf('"', i + 1)
+      if (end === -1) return -1
+      i = end
+    } else if (ch === '(') {
+      depth++
+    } else if (ch === ')') {
+      depth--
+      if (depth === 0) return i
+    }
+  }
+  return -1
+}
+
+/**
+ * Blanks out quoted text that the shell cannot execute, keeping the command
+ * substitutions that survive inside double quotes.
+ *
+ * Without this, a quoted mention of a removal reads as the real thing: the
+ * commit message in `git commit -m "drop (rm -rf /) from the docs"` would look
+ * like a subshell wiping the filesystem. Single quotes suppress every
+ * expansion, so they go entirely; double quotes keep only `$(...)` and
+ * backticks, which do still run.
+ */
+function stripInertQuotedText(command: string): string {
+  let out = ''
+  let i = 0
+  while (i < command.length) {
+    const ch = command[i]
+    if (ch === '\\') {
+      i += 2
+      continue
+    }
+    if (ch === "'") {
+      const end = command.indexOf("'", i + 1)
+      out += ' '
+      i = end === -1 ? command.length : end + 1
+      continue
+    }
+    if (ch !== '"') {
+      out += ch
+      i++
+      continue
+    }
+    i++
+    out += ' '
+    while (i < command.length && command[i] !== '"') {
+      if (command[i] === '\\') {
+        i += 2
+      } else if (command[i] === '`') {
+        // Re-spelled as $(...) so the surviving text still reads as a hidden
+        // construct once the quotes are gone.
+        const end = command.indexOf('`', i + 1)
+        out += ` $(${command.slice(i + 1, end === -1 ? command.length : end)}) `
+        i = end === -1 ? command.length : end + 1
+      } else if (command[i] === '$' && command[i + 1] === '(') {
+        const end = matchingParen(command, i + 1)
+        out += ` $(${command.slice(i + 2, end === -1 ? command.length : end)}) `
+        i = end === -1 ? command.length : end + 1
+      } else {
+        i++
+      }
+    }
+    out += ' '
+    i++
+  }
+  return out
+}
+
+/**
+ * Catches catastrophic removals hidden inside a construct the checker cannot
+ * decompose. Returns the same bypass-immune safety check that a bare
+ * `rm -rf /` produces, or null when nothing dangerous is in reach.
+ *
+ * Every command it fires on already ends in an unconditional prompt today, so
+ * it can only strengthen a decision: what changes is that the prompt now
+ * survives bypassPermissions mode.
+ */
+export function checkDangerousRemovalInHiddenCommands(
+  command: string,
+  cwd: string,
+  toolPermissionContext: ToolPermissionContext,
+): PermissionResult | null {
+  if (!/\brm(?:dir)?\b/.test(command)) return null
+  const executable = stripInertQuotedText(command)
+  if (!HIDDEN_COMMAND_CONSTRUCT.test(executable)) return null
+
+  for (const match of executable.match(REMOVAL_INVOCATION) ?? []) {
+    const [baseCmd, ...args] = parseCommandArguments(stripSafeWrappers(match))
+    if (baseCmd !== 'rm' && baseCmd !== 'rmdir') continue
+    const result = checkDangerousRemovalPaths(
+      baseCmd,
+      args,
+      cwd,
+      toolPermissionContext,
+    )
+    if (result.behavior !== 'passthrough') return result
+  }
+  return null
 }
 
 /**
@@ -195,6 +329,7 @@ function checkFindExecDelete(command: string): PermissionResult {
   return { behavior: 'passthrough', message: 'No dangerous find flags detected' }
 }
 
+/** Entry point for scripts/check-runtime-health.mjs — no other caller. */
 export function _checkFindExecDeleteForTesting(command: string): PermissionResult {
   return checkFindExecDelete(command)
 }
