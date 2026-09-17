@@ -13,6 +13,7 @@ import type {
   UserMessage,
 } from 'src/types/message.js'
 import {
+  getActiveApiKeyHelperFailure,
   getAnthropicApiKeyWithSource,
   getClaudeAIOAuthTokens,
   getOauthAccountInfo,
@@ -188,6 +189,8 @@ export function isMediaSizeErrorMessage(msg: AssistantMessage): boolean {
 }
 export const CREDIT_BALANCE_TOO_LOW_ERROR_MESSAGE = 'Credit balance is too low'
 export const INVALID_API_KEY_ERROR_MESSAGE = 'Not logged in · Please run /login'
+export const API_KEY_HELPER_FAILING_ERROR_MESSAGE =
+  "Your apiKeyHelper script is failing · This usually means you need to re-authenticate with your provider · Run /status to see the script's error output"
 export const INVALID_API_KEY_ERROR_MESSAGE_EXTERNAL =
   'Invalid API key · Fix external API key'
 export const ORG_DISABLED_ERROR_MESSAGE_ENV_KEY_WITH_OAUTH =
@@ -860,6 +863,26 @@ export function getAssistantMessageFromError(
         content: hasStoredOAuth
           ? ORG_DISABLED_ERROR_MESSAGE_ENV_KEY_WITH_OAUTH
           : ORG_DISABLED_ERROR_MESSAGE_ENV_KEY,
+      })
+    }
+  }
+
+  // A failing apiKeyHelper sends the ' ' sentinel, so the API's 401 says
+  // nothing about the real cause. Point at /status, which shows the script's
+  // captured error, instead of a misleading "invalid key" or "/login".
+  if (
+    error instanceof APIError &&
+    (error.status === 401 || error.status === 403) &&
+    getAPIProvider() === 'firstParty'
+  ) {
+    const helperFailure = getActiveApiKeyHelperFailure()
+    if (helperFailure) {
+      return createAssistantAPIErrorMessage({
+        error: 'invalid_request',
+        // --print has no /status, so inline the captured script error there.
+        content: getIsNonInteractiveSession()
+          ? `Your apiKeyHelper script is failing · Last run ${helperFailure}`
+          : API_KEY_HELPER_FAILING_ERROR_MESSAGE,
       })
     }
   }

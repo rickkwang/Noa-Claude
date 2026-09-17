@@ -3,7 +3,7 @@ import chalk from 'chalk';
 import * as React from 'react';
 import { color } from '../ink.js';
 import type { MCPServerConnection } from '../services/mcp/types.js';
-import { getAccountInformation, isClaudeAISubscriber } from './auth.js';
+import { getAccountInformation, getActiveApiKeyHelperFailure, isClaudeAISubscriber } from './auth.js';
 import { getLargeMemoryFiles, getMemoryFiles, MAX_MEMORY_CHARACTER_COUNT } from './claudemd.js';
 import { getDoctorDiagnostic } from './doctorDiagnostic.js';
 import { getAWSRegion, getDefaultVertexRegion, isEnvTruthy } from './envUtils.js';
@@ -165,6 +165,13 @@ export function buildAccountProperties(): Property[] {
     properties.push({
       label: 'API key',
       value: accountInfo.apiKeySource
+    });
+  }
+  const helperFailure = getActiveApiKeyHelperFailure();
+  if (helperFailure) {
+    properties.push({
+      label: 'apiKeyHelper',
+      value: process.env.IS_DEMO ? 'Failing' : `Failing — last run ${helperFailure}`
     });
   }
 

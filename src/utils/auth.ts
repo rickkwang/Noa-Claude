@@ -4,6 +4,7 @@ import { execa, execaSync } from 'execa'
 import { stat } from 'fs/promises'
 import memoize from 'lodash-es/memoize.js'
 import { join } from 'path'
+import stripAnsi from 'strip-ansi'
 import { CLAUDE_AI_PROFILE_SCOPE } from 'src/constants/oauth.js'
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -493,6 +494,35 @@ let _apiKeyHelperInflight: {
   startedAt: number | null
 } | null = null
 let _apiKeyHelperEpoch = 0
+// Error detail from the most recent failed run that left no usable key.
+// Survives clearApiKeyHelperCache() (a 401 retry clears the cache before the
+// user can open /status) and is cleared only by a successful run.
+let _apiKeyHelperLastFailure: string | null = null
+const API_KEY_HELPER_FAILURE_MAX_CHARS = 500
+
+/**
+ * The last apiKeyHelper failure, sanitized for single-line display, while the
+ * helper is the credential in use; null otherwise or once a run succeeds.
+ */
+export function getActiveApiKeyHelperFailure(): string | null {
+  if (!_apiKeyHelperLastFailure) return null
+  if (isEnvTruthy(process.env.CLAUDE_CODE_REMOTE)) return null
+  const { source } = getAnthropicApiKeyWithSource({
+    skipRetrievingKeyFromApiKeyHelper: true,
+  })
+  return source === 'apiKeyHelper' ? _apiKeyHelperLastFailure : null
+}
+
+function formatApiKeyHelperFailure(detail: string): string {
+  // stderr is arbitrary script output: drop escapes/control chars and fold
+  // newlines so it can't repaint the terminal or break the /status row.
+  const flat = stripAnsi(detail)
+    .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (flat.length <= API_KEY_HELPER_FAILURE_MAX_CHARS) return flat
+  return `${flat.slice(0, API_KEY_HELPER_FAILURE_MAX_CHARS - 1)}…`
+}
 
 export function getApiKeyHelperElapsedMs(): number {
   const startedAt = _apiKeyHelperInflight?.startedAt
@@ -541,6 +571,7 @@ async function _runAndCache(
     if (epoch !== _apiKeyHelperEpoch) return value
     if (value !== null) {
       _apiKeyHelperCache = { value, timestamp: Date.now() }
+      _apiKeyHelperLastFailure = null
     }
     return value
   } catch (e) {
@@ -558,6 +589,7 @@ async function _runAndCache(
       _apiKeyHelperCache = { ..._apiKeyHelperCache, timestamp: Date.now() }
       return _apiKeyHelperCache.value
     }
+    _apiKeyHelperLastFailure = formatApiKeyHelperFailure(detail)
     // Cold cache or prior error — cache ' ' so callers don't fall back to OAuth
     _apiKeyHelperCache = { value: ' ', timestamp: Date.now() }
     return ' '
