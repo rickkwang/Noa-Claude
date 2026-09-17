@@ -15,6 +15,7 @@ import { tryRenderTaskAssignmentMessage } from './TaskAssignmentMessage.js';
 type Props = {
   addMargin: boolean;
   param: TextBlockParam;
+  verbose?: boolean;
   isTranscriptMode?: boolean;
 };
 type ParsedMessage = {
@@ -47,6 +48,15 @@ function parseTeammateMessages(text: string): ParsedMessage[] {
   }
   return messages;
 }
+/**
+ * Collapsed teammate messages show only the sender + summary line; the body
+ * is revealed by verbose rendering, so fullscreen makes these rows clickable.
+ * Anchored at the start (every producer emits the tag first) so a human
+ * prompt that merely quotes the tag doesn't become a no-op click target.
+ */
+export function hasTeammateMessageTag(text: string): boolean {
+  return text.startsWith(`<${TEAMMATE_MESSAGE_TAG} `);
+}
 function getDisplayName(teammateId: string): string {
   if (teammateId === 'leader') {
     return 'leader';
@@ -58,6 +68,7 @@ export function UserTeammateMessage({
   param: {
     text
   },
+  verbose,
   isTranscriptMode
 }: Props): React.ReactNode {
   const messages = parseTeammateMessages(text).filter(msg => {
@@ -137,7 +148,7 @@ export function UserTeammateMessage({
       }
 
       // Default: plain text message (truncated)
-      return <TeammateMessageContent key={index} displayName={displayName} inkColor={inkColor} content={msg_0.content} summary={msg_0.summary} isTranscriptMode={isTranscriptMode} />;
+      return <TeammateMessageContent key={index} displayName={displayName} inkColor={inkColor} content={msg_0.content} summary={msg_0.summary} expanded={verbose || isTranscriptMode} />;
     })}
     </Box>;
 }
@@ -146,7 +157,8 @@ type TeammateMessageContentProps = {
   inkColor: TextProps['color'];
   content: string;
   summary?: string;
-  isTranscriptMode?: boolean;
+  // Transcript mode, verbose, or a fullscreen click on the row.
+  expanded?: boolean;
 };
 export function TeammateMessageContent(t0) {
   const $ = _c(14);
@@ -155,7 +167,7 @@ export function TeammateMessageContent(t0) {
     inkColor,
     content,
     summary,
-    isTranscriptMode
+    expanded
   } = t0;
   const t1 = `@${displayName}${figures.pointer}`;
   let t2;
@@ -185,10 +197,10 @@ export function TeammateMessageContent(t0) {
     t4 = $[7];
   }
   let t5;
-  if ($[8] !== content || $[9] !== isTranscriptMode) {
-    t5 = isTranscriptMode && <Box paddingLeft={2}><Text><Ansi>{content}</Ansi></Text></Box>;
+  if ($[8] !== content || $[9] !== expanded) {
+    t5 = expanded && <Box paddingLeft={2}><Text><Ansi>{content}</Ansi></Text></Box>;
     $[8] = content;
-    $[9] = isTranscriptMode;
+    $[9] = expanded;
     $[10] = t5;
   } else {
     t5 = $[10];

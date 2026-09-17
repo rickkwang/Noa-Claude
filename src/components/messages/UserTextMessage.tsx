@@ -28,7 +28,7 @@ type Props = {
   timestamp?: string;
 };
 export function UserTextMessage(t0) {
-  const $ = _c(49);
+  const $ = _c(50);
   const {
     addMargin,
     param,
@@ -129,11 +129,12 @@ export function UserTextMessage(t0) {
   }
   if (isAgentSwarmsEnabled() && param.text.includes(`<${TEAMMATE_MESSAGE_TAG}`)) {
     let t1;
-    if ($[22] !== addMargin || $[23] !== isTranscriptMode || $[24] !== param) {
-      t1 = <UserTeammateMessage addMargin={addMargin} param={param} isTranscriptMode={isTranscriptMode} />;
+    if ($[22] !== addMargin || $[23] !== isTranscriptMode || $[24] !== param || $[49] !== verbose) {
+      t1 = <UserTeammateMessage addMargin={addMargin} param={param} verbose={verbose} isTranscriptMode={isTranscriptMode} />;
       $[22] = addMargin;
       $[23] = isTranscriptMode;
       $[24] = param;
+      $[49] = verbose;
       $[25] = t1;
     } else {
       t1 = $[25];

@@ -22,6 +22,7 @@ import { findToolByName } from '../Tool.js';
 import type { AgentDefinitionsResult } from '../tools/AgentTool/loadAgentsDir.js';
 import type { Message as MessageType, NormalizedMessage, ProgressMessage as ProgressMessageType, RenderableMessage } from '../types/message.js';
 import { type AdvisorBlock, isAdvisorBlock } from '../utils/advisor.js';
+import { isAgentSwarmsEnabled } from '../utils/agentSwarmsEnabled.js';
 import { collapseBackgroundBashNotifications } from '../utils/collapseBackgroundBashNotifications.js';
 import { collapseHookSummaries } from '../utils/collapseHookSummaries.js';
 import { collapseReadSearchGroups } from '../utils/collapseReadSearch.js';
@@ -30,9 +31,10 @@ import { getGlobalConfig } from '../utils/config.js';
 import { isEnvTruthy } from '../utils/envUtils.js';
 import { isFullscreenEnvEnabled } from '../utils/fullscreen.js';
 import { applyGrouping } from '../utils/groupToolUses.js';
-import { buildMessageLookups, buildProgressLookups, buildTranscriptLookups, createAssistantMessage, deriveUUID, extractTag, getMessagesAfterCompactBoundary, getToolUseID, getToolUseIDs, hasUnresolvedHooksFromLookup, isNotEmptyMessage, MessageStreamSplit, mergeMessageLookups, normalizeMessages, projectCompactHistoryForMainDisplay, reorderMessagesInUI, type StreamingToolUse, shouldShowUserMessage } from '../utils/messages.js';
+import { buildMessageLookups, buildProgressLookups, buildTranscriptLookups, createAssistantMessage, deriveUUID, extractTag, getContentText, getMessagesAfterCompactBoundary, getToolUseID, getToolUseIDs, hasUnresolvedHooksFromLookup, isNotEmptyMessage, MessageStreamSplit, mergeMessageLookups, normalizeMessages, projectCompactHistoryForMainDisplay, reorderMessagesInUI, type StreamingToolUse, shouldShowUserMessage } from '../utils/messages.js';
 import { plural } from '../utils/stringUtils.js';
 import { isFallbackToolErrorFolded } from './FallbackToolUseErrorMessage.js';
+import { hasTeammateMessageTag } from './messages/UserTeammateMessage.js';
 import { isBashResultTruncated } from '../tools/BashTool/utils.js';
 import { renderableSearchText } from '../utils/transcriptSearch.js';
 import { Divider } from './design-system/Divider.js';
@@ -569,9 +571,9 @@ const MessagesImpl = ({
   }, []);
   const isItemExpanded = useCallback((msg_5: RenderableMessage) => expandedKeys.size > 0 && expandedKeys.has(expandKey(msg_5)), [expandedKeys]);
   // Only hover/click messages where the verbose toggle reveals more:
-  // collapsed read/search groups, older ! bash output, errors past the
-  // 10-line fold, or tool results that self-report truncation via
-  // isResultTruncated. Callback must be stable across message updates: if
+  // collapsed read/search groups, collapsed teammate messages, older ! bash
+  // output, errors past the 10-line fold, or tool results that self-report
+  // truncation via isResultTruncated. Callback must be stable across message updates: if
   // its identity (or return value) flips during streaming, onMouseEnter
   // attaches after the mouse is already inside → hover never fires. tools is
   // session-stable; lookups is read via ref so the callback doesn't churn on
@@ -582,6 +584,16 @@ const MessagesImpl = ({
   latestBashOutputUUIDRef.current = latestBashOutputUUID;
   const isItemClickable = useCallback((msg_6: RenderableMessage): boolean => {
     if (msg_6.type === 'collapsed_read_search') return true;
+    if (msg_6.type === 'attachment') {
+      if (verbose || !isAgentSwarmsEnabled()) return false;
+      const att = msg_6.attachment;
+      if (att.type === 'teammate_mailbox') return att.messages.length > 0;
+      if (att.type === 'queued_command') {
+        const prompt = typeof att.prompt === 'string' ? att.prompt : getContentText(att.prompt) || '';
+        return hasTeammateMessageTag(prompt.trimStart());
+      }
+      return false;
+    }
     if (msg_6.type === 'assistant') {
       if (verbose) return false;
       const b = msg_6.message.content[0] as unknown as AdvisorBlock | undefined;
@@ -589,6 +601,7 @@ const MessagesImpl = ({
     }
     if (msg_6.type !== 'user') return false;
     const b_0 = msg_6.message.content[0];
+    if (b_0?.type === 'text' && hasTeammateMessageTag(b_0.text) && isAgentSwarmsEnabled()) return !verbose;
     if (b_0?.type === 'text' && isBashOutputText(b_0.text)) {
       // The latest ! output already renders in full.
       if (verbose || msg_6.uuid === latestBashOutputUUIDRef.current) return false;
