@@ -1471,12 +1471,13 @@ async function* queryLoop(
       }
 
       if (stopHookResult.blockingErrors.length > 0) {
-        // hasAttemptedReactiveCompact carries forward via nextState — if
-        // compact already ran and couldn't recover from prompt-too-long,
-        // retrying after a stop-hook blocking error will produce the same
-        // result. Resetting to false here caused an infinite loop: compact →
-        // still too long → error → stop hook blocking → compact → … burning
-        // thousands of API calls.
+        // Re-arm the reactive-compact single-shot guard (upstream parity): a
+        // blocking continue is a turn boundary, so Stop-hook-driven sessions
+        // that keep the session active must be able to compact again when a
+        // LATER turn overflows. The burn risk this once caused (compact →
+        // still too long → block → compact → …) is now bounded by
+        // stopHookBlockingCount's cap below and the rapid-refill breaker at
+        // the recovery site.
         const nextTurnCountOnBlock = turnCount + 1
         const blockCount = stopHookBlockingCount + 1
         // maxTurns still wins over the block cap (upstream order).
@@ -1527,6 +1528,7 @@ async function* queryLoop(
           toolUseContext,
           autoCompactTracking: tracking,
           maxOutputTokensRecoveryCount: 0,
+          hasAttemptedReactiveCompact: false,
           stopHookActive: true,
           stopHookBlockingCount: blockCount,
           // Bump turnCount (upstream parity): a blocking continue IS a turn

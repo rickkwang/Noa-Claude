@@ -99,9 +99,11 @@ type RequiredNextFields = Pick<
  *
  * - Carry forward: maxOutputTokensRecoveryCount, hasAttemptedReactiveCompact,
  *   stopHookBlockingCount, turnCount. These are loop-safety counters/guards — resetting one by
- *   accident re-arms a retry path (the stop_hook_blocking +
- *   hasAttemptedReactiveCompact reset bug burned thousands of API calls).
- *   A stale carry merely stops recovery one turn early.
+ *   accident re-arms a retry path. Turn-boundary continues (next_turn,
+ *   token_budget, goal, stop_hook_blocking) reset the recovery counters
+ *   explicitly; stopHookBlockingCount itself survives stop_hook_blocking
+ *   (it IS the cap), and the rapid-refill breaker bounds re-armed
+ *   compactions.
  * - Reset to undefined: maxOutputTokensOverride, pendingToolUseSummary,
  *   stopHookActive. These are consumed within a single iteration by default.
  *   The max-output recovery path may opt back into carrying the internally

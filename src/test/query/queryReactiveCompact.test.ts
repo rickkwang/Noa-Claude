@@ -148,6 +148,7 @@ function proactiveCompactionWithStreak(consecutiveRapidRefills: number) {
 async function drain(
   callModel: QueryDeps['callModel'],
   autocompact: QueryDeps['autocompact'] = async () => ({ wasCompacted: false }),
+  stopHooks?: QueryDeps['stopHooks'],
 ): Promise<{ events: Message[]; terminal: Terminal }> {
   let uuidCounter = 0
   const gen = query({
@@ -168,6 +169,7 @@ async function drain(
       microcompact: async messages => ({ messages }),
       autocompact,
       callModel,
+      ...(stopHooks ? { stopHooks } : {}),
     } as Partial<QueryDeps>,
   })
   const events: Message[] = []
@@ -215,6 +217,43 @@ describe('query loop: reactive compaction', () => {
     expect(reactiveCalls.map(c => c.hasAttempted)).toEqual([false, true])
     expect(events.filter(isPtl)).toHaveLength(1)
     expect(terminal).toEqual({ reason: 'prompt_too_long' })
+  })
+
+  test('a stop-hook block re-arms recovery: a later overflow compacts again', async () => {
+    // Hook-driven sessions (Stop hooks keeping the session active) cross a
+    // turn boundary on every block, so the single-shot guard must reset:
+    // otherwise one recovered overflow poisons the rest of the session and
+    // the next overflow ends it with "Prompt is too long".
+    let blocksLeft = 1
+    const stopHooks: QueryDeps['stopHooks'] = async function* () {
+      if (blocksLeft-- > 0) {
+        return {
+          blockingErrors: [
+            createUserMessage({ content: 'Stop hook: keep going', isMeta: true }),
+          ],
+          preventContinuation: false,
+        }
+      }
+      return { blockingErrors: [], preventContinuation: false }
+    }
+    let calls = 0
+    const { events, terminal } = await drain(
+      async function* () {
+        calls += 1
+        // Overflow, recover, get blocked, overflow again, recover.
+        if (calls === 1 || calls === 3) {
+          yield promptTooLong()
+          return
+        }
+        yield createAssistantMessage({ content: `ok ${calls}` })
+      },
+      undefined,
+      stopHooks,
+    )
+
+    expect(reactiveCalls.map(c => c.hasAttempted)).toEqual([false, false])
+    expect(events.some(isPtl)).toBe(false)
+    expect(terminal).toEqual({ reason: 'completed' })
   })
 
   test('with recovery turned off the error surfaces once and the turn ends', async () => {
