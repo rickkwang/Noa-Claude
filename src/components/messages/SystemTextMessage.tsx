@@ -19,7 +19,7 @@ import { TURN_COMPLETION_VERBS } from '../../constants/turnCompletionVerbs.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import type { SystemMessage, SystemStopHookSummaryMessage, SystemBridgeStatusMessage, SystemTurnDurationMessage, SystemThinkingMessage, SystemMemorySavedMessage } from '../../types/message.js';
 import { SystemAPIErrorMessage } from './SystemAPIErrorMessage.js';
-import { formatDuration, formatNumber, formatSecondsShort } from '../../utils/format.js';
+import { formatDuration, formatNumber, formatSecondsShort, formatTurnDoneAt } from '../../utils/format.js';
 import { getGlobalConfig } from '../../utils/config.js';
 import Link from '../../ink/components/Link.js';
 import ThemedText from '../design-system/ThemedText.js';
@@ -503,6 +503,8 @@ function TurnDurationMessage(t0) {
   } = t0;
   const bg = useSelectedMessageBg();
   const [verb] = useState(_temp4);
+  // Computed once, like the verb: re-renders must not rewrite a finished turn's line.
+  const [doneAt] = useState(() => formatTurnDoneAt(message.timestamp));
   const store = useAppStateStore();
   let t1;
   if ($[0] !== store) {
@@ -568,7 +570,7 @@ function TurnDurationMessage(t0) {
   } else {
     t6 = $[8];
   }
-  const t7 = showTurnDuration && `${verb} for ${duration}`;
+  const t7 = showTurnDuration && `${verb} for ${duration}${doneAt ? ` \u00B7 done ${doneAt}` : ""}`;
   const t8 = backgroundTaskSummary && ` \u00B7 ${backgroundTaskSummary} still running`;
   let t9;
   if ($[9] !== budgetSuffix || $[10] !== t7 || $[11] !== t8) {

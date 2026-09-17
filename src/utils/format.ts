@@ -300,6 +300,34 @@ export function formatResetTime(
   )
 }
 
+/**
+ * Wall-clock time a turn finished, for "Worked for 3m · done 9:44 PM".
+ * Resumed transcripts replay old turns, so a bare clock time would be
+ * ambiguous: turns from earlier this week get the weekday, older ones the date.
+ */
+export function formatTurnDoneAt(
+  timestamp: string,
+  now: Date = new Date(),
+): string {
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return ''
+  const time = date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+  const startOfDay = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000)
+  if (days === 0) return time
+  const weekday = date.toLocaleDateString('en-US', { weekday: 'long' })
+  if (days > 0 && days < 7) return `${weekday} ${time}`
+  const monthDay = date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  })
+  return `${weekday}, ${monthDay}, ${time}`
+}
+
 export function formatResetText(
   resetsAt: string,
   showTimezone: boolean = false,
