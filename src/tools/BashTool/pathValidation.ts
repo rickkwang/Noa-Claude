@@ -166,11 +166,23 @@ function checkDangerousRemovalPaths(
 
 /**
  * Shell constructs the permission checker never decomposes into subcommands:
- * command substitution, backticks, subshells, command groups and process
- * substitution. Everything wrapped in one of these resolves to a generic
- * `{type:'other'}` ask, which bypassPermissions mode auto-approves.
+ * command substitution, backticks, subshells, command groups, process
+ * substitution, and compound statements. Everything wrapped in one of these
+ * resolves to a generic `{type:'other'}` ask — or, when the legacy splitter
+ * shreds it into fragments that parse as nothing (`if true; then rm -rf /; fi`
+ * splits into `["if true", "then rm -rf /", "fi"]`), to a `subcommandResults`
+ * passthrough. Both are auto-approved by bypassPermissions mode.
+ *
+ * The compound-statement keywords matter only while the tree-sitter path is
+ * off (`TREE_SITTER_BASH` is not in build.ts's `defaultFeatures`, so
+ * `parseCommandRaw` returns null and decomposition falls back to
+ * `splitCommand_DEPRECATED`). With the AST path on, a loop or conditional
+ * parses to `kind:'simple'` and its `rm` surfaces as a real SimpleCommand that
+ * the ordinary removal check already covers — the keywords are then redundant,
+ * not wrong.
  */
-const HIDDEN_COMMAND_CONSTRUCT = /\$\(|`|<\(|>\(|(?:^|[\s;&|])[({]/
+const HIDDEN_COMMAND_CONSTRUCT =
+  /\$\(|`|<\(|>\(|(?:^|[\s;&|])[({]|(?:^|[\s;&|])(?:if|while|until|for|case)\b/
 
 /**
  * Text following an `rm`/`rmdir` word, up to the next separator or closing
