@@ -242,16 +242,26 @@ export function useNotifications(): {
     processQueue();
   }, [setAppState, processQueue]);
 
-  // Process queue on mount if there are notifications in the initial state.
-  // Imperative read (not useAppState) — a subscription in a mount-only
-  // effect would be vestigial and make every caller re-render on queue changes.
+  // Drain on mount, then whenever something lands in the queue while nothing is
+  // showing. addNotification drains for its own callers, but code outside React
+  // — a tool writing through ToolUseContext.setAppState, for one — can only
+  // append to the queue, and without this its notification would sit there
+  // until some unrelated notification happened to finish and drain it.
+  //
+  // store.subscribe rather than useAppState: this reacts to queue changes
+  // without re-rendering every component that calls useNotifications.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only effect, store is a stable context ref
+  // biome-ignore lint/correctness/useExhaustiveDependencies: store is a stable context ref
   useEffect(() => {
-    if (store.getState().notifications.queue.length > 0) {
-      processQueue();
-    }
-  }, []);
+    const drainIfIdle = () => {
+      const { notifications } = store.getState();
+      if (notifications.current === null && notifications.queue.length > 0) {
+        processQueue();
+      }
+    };
+    drainIfIdle();
+    return store.subscribe(drainIfIdle);
+  }, [processQueue]);
   return {
     addNotification,
     removeNotification,

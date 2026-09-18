@@ -10,6 +10,7 @@ import { startsWithApiErrorPrefix } from '../services/api/errors.js';
 import type { Message } from '../types/message.js';
 import { openBrowser } from '../utils/browser.js';
 import { env } from '../utils/env.js';
+import { deleteFeedbackDraft, type FeedbackDraft, formatFeedbackDraft, listFeedbackDrafts } from '../utils/feedbackDrafts.js';
 import { type GitRepoState, getGitState, getIsGit } from '../utils/git.js';
 import { getInMemoryErrors, logError } from '../utils/log.js';
 import { jsonStringify } from '../utils/slowOperations.js';
@@ -40,7 +41,7 @@ type Props = {
     };
   };
 };
-type Step = 'userInput' | 'consent' | 'submitting' | 'done';
+type Step = 'drafts' | 'userInput' | 'consent' | 'submitting' | 'done';
 // Utility function to redact sensitive information from strings
 export function redactSensitiveInfo(text: string): string {
   let redacted = text;
@@ -115,7 +116,13 @@ export function Feedback({
   onDone,
   backgroundTasks = {}
 }: Props): React.ReactNode {
-  const [step, setStep] = useState<Step>('userInput');
+  // Drafts the model queued through SendFeedbackTool. Read once on mount: the
+  // queue only changes from this dialog while it is open. An explicit argument
+  // (`/feedback <text>`) is the person saying what they want to report, so it
+  // skips the review list rather than burying their text behind it.
+  const [drafts, setDrafts] = useState<FeedbackDraft[]>(() => initialDescription ? [] : listFeedbackDrafts());
+  const [selectedDraft, setSelectedDraft] = useState(0);
+  const [step, setStep] = useState<Step>(() => drafts.length > 0 ? 'drafts' : 'userInput');
   const [cursorOffset, setCursorOffset] = useState(0);
   const [description, setDescription] = useState(initialDescription ?? '');
   const [error, setError] = useState<string | null>(null);
@@ -176,7 +183,54 @@ export function Feedback({
     context: 'Settings',
     isActive: step === 'userInput'
   });
+  // Review list for model-queued drafts: pick one to carry into the normal
+  // write/consent/submit flow, discard one, or skip the list entirely.
   useInput((input, key) => {
+    if (step !== 'drafts') return;
+    if (key.upArrow) {
+      setSelectedDraft(i => (i - 1 + drafts.length) % drafts.length);
+      return;
+    }
+    if (key.downArrow) {
+      setSelectedDraft(i => (i + 1) % drafts.length);
+      return;
+    }
+    if (key.return) {
+      const draft = drafts[selectedDraft];
+      if (draft) {
+        const body = formatFeedbackDraft(draft);
+        setDescription(body);
+        setCursorOffset(body.length);
+        // The draft leaves the queue as soon as it is carried into the report:
+        // the person is now holding it, and a copy left behind would resurface
+        // on the next /feedback as if it were unreviewed.
+        deleteFeedbackDraft(draft.id);
+      }
+      setStep('userInput');
+      return;
+    }
+    if (input === 'd') {
+      const draft = drafts[selectedDraft];
+      if (draft) {
+        deleteFeedbackDraft(draft.id);
+        const remaining = drafts.filter(d => d.id !== draft.id);
+        setDrafts(remaining);
+        setSelectedDraft(i => Math.min(i, Math.max(0, remaining.length - 1)));
+        if (remaining.length === 0) {
+          setStep('userInput');
+        }
+      }
+      return;
+    }
+    if (input === 'n') {
+      setStep('userInput');
+    }
+  }, {
+    isActive: step === 'drafts'
+  });
+  useInput((input, key) => {
+    // The review list owns the keyboard while it is up.
+    if (step === 'drafts') return;
     // Allow any key press to close the dialog when done or when there's an error
     if (step === 'done') {
       if (key.return && title) {
@@ -211,10 +265,40 @@ export function Feedback({
   return <Dialog title="Submit Feedback / Bug Report" onCancel={handleCancel} isCancelActive={step !== 'userInput'} inputGuide={exitState => exitState.pending ? <Text>Press {exitState.keyName} again to exit</Text> : step === 'userInput' ? <Byline>
             <KeyboardShortcutHint shortcut="Enter" action="continue" />
             <ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="cancel" />
+          </Byline> : step === 'drafts' ? <Byline>
+            <KeyboardShortcutHint shortcut="↑↓" action="select" />
+            <KeyboardShortcutHint shortcut="Enter" action="review" />
+            <KeyboardShortcutHint shortcut="d" action="discard" />
+            <KeyboardShortcutHint shortcut="n" action="write my own" />
           </Byline> : step === 'consent' ? <Byline>
             <KeyboardShortcutHint shortcut="Enter" action="submit" />
             <ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="cancel" />
           </Byline> : null}>
+      {step === 'drafts' && <Box flexDirection="column" gap={1}>
+          <Text>
+            Noa drafted {drafts.length} {drafts.length === 1 ? 'report' : 'reports'} during your sessions.
+            {' '}<Text dimColor>Nothing has been sent.</Text>
+          </Text>
+          <Box flexDirection="column">
+            {drafts.map((draft, i) => <Box key={draft.id} flexDirection="column">
+                <Text color={i === selectedDraft ? 'success' : undefined}>
+                  {i === selectedDraft ? '❯ ' : '  '}
+                  <Text bold={i === selectedDraft}>{draft.title}</Text>
+                </Text>
+                <Text dimColor>
+                  {'    '}{draft.type}
+                  {draft.failureMode ? ` · ${draft.failureMode}` : ''}
+                  {draft.area ? ` · ${draft.area}` : ''}
+                  {' · '}{draft.createdAt.slice(0, 10)}
+                </Text>
+              </Box>)}
+          </Box>
+          <Text dimColor wrap="wrap">
+            Enter loads the selected draft into the report below, where you can
+            edit it before anything leaves your machine.
+          </Text>
+        </Box>}
+
       {step === 'userInput' && <Box flexDirection="column" gap={1}>
           <Text>Describe the issue below:</Text>
           <TextInput value={description} onChange={value => {

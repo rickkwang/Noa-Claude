@@ -167,6 +167,7 @@ Provider profiles enable saved configurations for providers like Kimi, MiniMax, 
 - **MCP Tool Compaction** — MCP tool results (`mcp__<server>__<tool>`) are always compactable, often cutting token use on MCP-heavy sessions.
 - **128k Fallback** — Unknown OpenAI-compatible models use a conservative 128k context window to prevent compact threshold underestimation.
 - **Auto-fix Hook** — After file edits, automatically run configurable lint/test commands (configured in `settings.json` under `autoFix`).
+- **Self-drafted Feedback** — When a session goes wrong, Noa can draft a report itself (`SendFeedback`) instead of leaving it to you to notice. Drafts queue locally under `~/.noa/feedback-drafts/` (one file each, capped at 10, expiring after 30 days), never reach the network on their own, and `/feedback` lists them for you to edit, open as a prefilled GitHub issue, or discard. Disable with `NOA_CLAUDE_DISABLE_FEEDBACK_DRAFTS=1`.
 - **Cache-probe** — `/cache-probe` command to diagnose API cache hit rate.
 - **SSRF Protection** — URL resolution validated against IPv4/IPv6 private ranges before outbound HTTP requests.
 - **TUI Mode** — `/tui` switches between default and fullscreen (no-flicker) terminal layout.
@@ -213,6 +214,7 @@ All builds require [Bun](https://bun.sh).
 - `NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT=1|0` — Force the compact (`1`) or long (`0`) system prompt instead of letting the model decide. See [System prompt length](#system-prompt-length)
 - `NOA_CLAUDE_NEW_INIT=1` — Opt `/init` in to the interview-style setup flow (existing-file branch, proposal review, optional skills/hooks) instead of the single-shot prompt
 - `NOA_CLAUDE_PROMPT_CACHE_1H=1|0|<patterns>` — Opt in to the 1-hour prompt-cache TTL. Off by default, and it should stay off unless your rhythm is genuinely interrupted. See [1-hour prompt cache](#1-hour-prompt-cache)
+- `NOA_CLAUDE_DISABLE_FEEDBACK_DRAFTS=1` — Turn off both the `SendFeedback` tool and `/feedback` (also disabled by `DISABLE_FEEDBACK_COMMAND`/`DISABLE_BUG_COMMAND`)
 
 Legacy `CLAUDE_CODE_*` names are still accepted for compatibility; `NOA_CLAUDE_*` is preferred.
 
@@ -271,6 +273,7 @@ Hardcoded privacy defaults — no configuration needed:
 - Remote managed-settings overlay hard-disabled
 - OpenAI-compatible requests send `store: false` to opt out of provider-side retention; Bedrock/Vertex/Foundry and Anthropic-compatible endpoints have no such field (the Anthropic Messages API does not define `store`)
 - In-product help / docs links point to the project's own docs repo (e.g. `PRODUCT_MCP_URL`); not fetched by telemetry.
+- Feedback drafts (`SendFeedback`, `/feedback`) stay on disk under `~/.noa/feedback-drafts/`, one file per draft at mode `0600`. There is no upload path: the only egress is the browser you open yourself from the `/feedback` review dialog, which prefills a GitHub issue you can still edit or abandon.
 
 ## Verification
 
