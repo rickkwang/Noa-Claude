@@ -122,6 +122,10 @@ export function Feedback({
   // skips the review list rather than burying their text behind it.
   const [drafts, setDrafts] = useState<FeedbackDraft[]>(() => initialDescription ? [] : listFeedbackDrafts());
   const [selectedDraft, setSelectedDraft] = useState(0);
+  // The draft carried into the report editor, if any. It stays in the on-disk
+  // queue until the report is actually opened in the browser, so cancelling
+  // the dialog midway leaves it queued rather than lost.
+  const [carriedDraftId, setCarriedDraftId] = useState<string | null>(null);
   const [step, setStep] = useState<Step>(() => drafts.length > 0 ? 'drafts' : 'userInput');
   const [cursorOffset, setCursorOffset] = useState(0);
   const [description, setDescription] = useState(initialDescription ?? '');
@@ -201,10 +205,7 @@ export function Feedback({
         const body = formatFeedbackDraft(draft);
         setDescription(body);
         setCursorOffset(body.length);
-        // The draft leaves the queue as soon as it is carried into the report:
-        // the person is now holding it, and a copy left behind would resurface
-        // on the next /feedback as if it were unreviewed.
-        deleteFeedbackDraft(draft.id);
+        setCarriedDraftId(draft.id);
       }
       setStep('userInput');
       return;
@@ -237,6 +238,12 @@ export function Feedback({
         // Open GitHub issue URL when Enter is pressed
         const issueUrl = createGitHubIssueUrl('', title, description, getSanitizedErrorLogs());
         void openBrowser(issueUrl);
+        // The report has left the dialog for the browser; the queued copy has
+        // served its purpose. (Before this point a cancel re-queues nothing —
+        // the draft simply stays on disk.)
+        if (carriedDraftId) {
+          deleteFeedbackDraft(carriedDraftId);
+        }
       }
       if (error) {
         onDone('Error submitting feedback / bug report', {
