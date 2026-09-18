@@ -1,5 +1,33 @@
 # Release Notes
 
+## 1.15.0
+
+- The settings panel now supports the mouse in fullscreen: the wheel scrolls without dragging the selection, clicking selects a row or changes its value, and the hovered row shows a pointer
+- `/btw` keeps a session history of side questions — browse with ⇧←/→ or `[`/`]`, copy an answer with `c`, clear with `x` — and a bare `/btw` reopens the last answer
+- Added `/output-style`, `/reload-skills`, and `/pause-memory` commands; `/stats` is now its own command that opens the Stats tab instead of being a `/usage` alias
+- Auto mode's classifier now receives a real `git status --porcelain` line (counts only) for commands that can destroy uncommitted work, instead of presuming the tree state (`NOA_CLAUDE_AUTO_MODE_GIT_STATUS=0` disables)
+- The turn duration line now shows when the turn finished — "Churned for 3m 15s · done 9:44 PM" — with weekday or date for older resumed turns
+- Collapsed teammate messages are now clickable in fullscreen, and the per-row verbose toggle reveals the body
+- `kimi-for-coding` realigned with K2.8 Preview (reasoning_effort low/high/max, 1M context); `kimi-for-coding-highspeed` remains K2.7 Code HighSpeed
+- Bypass permissions mode no longer silently runs catastrophic removals (`rm -rf /`, `~`, or the working directory and its ancestors); removals hidden in subshells, command groups, and substitutions are now scanned too
+- Bash path validation now covers files read through options of `grep`/`egrep`/`fgrep`/`rg`, `awk`, `jq`, `git diff`/`grep`, and `sed`, plus input files of `fmt`, `tac`, `rev`, `fold`, `expand`, `comm`, `cmp`, `pr`, `numfmt`, `tsort`, and `man -l`
+- A matching Bash allow rule can now approve in-workspace writes (`tee out.txt`, `mkdir build`) outside acceptEdits mode; `rm`/`rmdir` now ask before removing a working directory or one of its parents
+- The stream idle watchdog is now on by default, so a silently dropped connection aborts and recovers through the non-streaming fallback instead of freezing the spinner (5-minute floor, `CLAUDE_STREAM_IDLE_TIMEOUT_MS` raises it)
+- Aborting a hung stream now wakes a read stalled on a silent OpenAI-compatible response body
+- Reactive compaction re-arms across stop-hook turn boundaries, so hook-driven sessions recover from more than one context overflow per chain
+- A leading `!` typed in shell mode is no longer swallowed by the mode-switch or history-restore paths
+- Japanese, Chinese, and Korean prompt suggestions are no longer dropped by the word-count and meta-text filters, and CJK response labels are stripped
+- Large image pastes no longer hang the prompt: the compiled binary falls back to macOS `sips`, unreadable images become text notes, and clipboard handling is hardened
+- A failing `apiKeyHelper` is now surfaced as a row in `/status`, and 401/403 errors point there (inlined under `--print`)
+- `/btw` answers that fabricate tool-call markup now carry a notice that nothing ran, and synthetic notices stay out of history
+- PDF attachments show "page count unknown" instead of a size-derived page-count guess when `pdfinfo` fails
+- The `ctrl+o` transcript renders every thinking block, and click-to-expand covers older `!` bash output and folded tool errors with CJK-aware truncation
+- Auto mode: inline `!`cmd` shell commands from skills and slash commands are checked against permission rules instead of the classifier; the report text background agents hand back is now reviewed; safeguard-refusal messages no longer suggest workarounds; the external-code rule keys off where the code came from, not how it was launched
+- Removed the duplicate space between spinner glyph and message, and dropped seven spinner tips whose triggers are dead in this fork
+- `/release-notes` now matches upstream behavior: a single-column version picker that appends the selected notes to the transcript
+- Progress ticks no longer re-derive the whole conversation — a tick at 25k messages costs 0.68ms instead of 6.2ms and leaves row objects intact for memoization
+- The Ink renderer fast-paths printable-ASCII line painting and caches horizontal clip slices, cutting cold paint of a syntax-highlighted screen from ~1.31ms to ~0.58ms per frame
+
 ## 1.14.0
 
 - `/diff` now opens a live-updating diff sidebar in fullscreen instead of a modal, with three bases (`session`, `uncommitted`, `branch`) cycled via `ctrl+x b`
