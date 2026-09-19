@@ -27,7 +27,7 @@ afterEach(() => {
 })
 
 describe('project memory path selection', () => {
-  test('loads one project instruction file per directory using AGENTS before CLAUDE', () => {
+  test('loads one project instruction file per directory using CLAUDE before AGENTS', () => {
     const project = makeProject()
     write(join(project, '.noa', 'AGENTS.md'))
     write(join(project, '.noa', 'CLAUDE.md'))
@@ -35,18 +35,18 @@ describe('project memory path selection', () => {
     write(join(project, 'CLAUDE.md'))
 
     expect(getProjectMemoryFileCandidates(project)).toEqual([
-      join(project, '.noa', 'AGENTS.md'),
+      join(project, '.noa', 'CLAUDE.md'),
     ])
   })
 
-  test('falls back to root AGENTS before any CLAUDE file', () => {
+  test('prefers any CLAUDE file over AGENTS files', () => {
     const project = makeProject()
     write(join(project, 'AGENTS.md'))
     write(join(project, '.noa', 'CLAUDE.md'))
     write(join(project, 'CLAUDE.md'))
 
     expect(getProjectMemoryFileCandidates(project)).toEqual([
-      join(project, 'AGENTS.md'),
+      join(project, '.noa', 'CLAUDE.md'),
     ])
   })
 

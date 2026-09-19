@@ -37,13 +37,13 @@ describe('project instruction helpers', () => {
     write(join(project, 'CLAUDE.md'))
 
     expect(getProjectInstructionFilePath(project)).toBe(
-      join(project, '.noa', 'AGENTS.md'),
+      join(project, '.noa', 'CLAUDE.md'),
     )
-    expect(hasAgentsMd(project)).toBe(true)
-    expect(hasClaudeMdOnly(project)).toBe(false)
+    expect(hasAgentsMd(project)).toBe(false)
+    expect(hasClaudeMdOnly(project)).toBe(true)
   })
 
-  test('reports CLAUDE only when AGENTS candidates are absent', () => {
+  test('selects CLAUDE.md when AGENTS candidates are absent', () => {
     const project = makeProject()
     write(join(project, '.noa', 'CLAUDE.md'))
     write(join(project, 'CLAUDE.md'))

@@ -106,16 +106,18 @@ export function getPreferredProjectMemoryFilePath(cwd: string): string {
 }
 
 function getProjectMemoryFilePriority(cwd: string): string[] {
+  // Load priority: CLAUDE.md wins over AGENTS.md when both exist (upstream
+  // parity); AGENTS.md stays the creation default via PRIMARY_… above.
   return Array.from(
     new Set([
-      ...getProjectConfigRoots(cwd).map(root =>
-        join(root, PRIMARY_PROJECT_INSTRUCTION_FILE),
-      ),
-      join(cwd, PRIMARY_PROJECT_INSTRUCTION_FILE),
       ...getProjectConfigRoots(cwd).map(root =>
         join(root, FALLBACK_PROJECT_INSTRUCTION_FILE),
       ),
       join(cwd, FALLBACK_PROJECT_INSTRUCTION_FILE),
+      ...getProjectConfigRoots(cwd).map(root =>
+        join(root, PRIMARY_PROJECT_INSTRUCTION_FILE),
+      ),
+      join(cwd, PRIMARY_PROJECT_INSTRUCTION_FILE),
     ]),
   )
 }

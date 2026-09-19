@@ -2,7 +2,7 @@
 /**
  * Project instruction file handling with Noa project path priority.
  *
- * Noa Claude prioritizes AGENTS.md over CLAUDE.md as the primary project
+ * Noa Claude prioritizes CLAUDE.md over AGENTS.md as the project
  * instruction file, with .noa-scoped files preferred within each filename tier.
  * This module provides utilities for finding and loading project instruction files.
  */
@@ -23,8 +23,8 @@ export {
 
 /**
  * Get the path to the project instruction file.
- * Uses the same priority as the memory loader: .noa/AGENTS.md, AGENTS.md,
- * .noa/CLAUDE.md, then CLAUDE.md.
+ * Uses the same priority as the memory loader: .noa/CLAUDE.md, CLAUDE.md,
+ * .noa/AGENTS.md, then AGENTS.md.
  *
  * @param dir - The directory to check for the project instruction file
  * @returns The absolute path to the project instruction file
@@ -48,7 +48,7 @@ export function hasAgentsMd(dir: string): boolean {
  * Check if a directory's selected project instruction file is CLAUDE.md.
  *
  * @param dir - The directory to check
- * @returns True if the selected directory-level instruction falls back to CLAUDE.md
+ * @returns True if the selected directory-level instruction is CLAUDE.md
  */
 export function hasClaudeMdOnly(dir: string): boolean {
   const path = getDirectoryProjectInstructionFilePath(dir)

@@ -4,7 +4,7 @@
  *
  * 1. Managed memory (eg. /etc/claude-code/CLAUDE.md) - Global instructions for all users
  * 2. User memory (~/.noa/CLAUDE.md) - Private global instructions for all projects
- * 3. Project memory (AGENTS.md, falling back to CLAUDE.md, plus rules/*.md in project roots) - Instructions checked into the codebase
+ * 3. Project memory (CLAUDE.md, falling back to AGENTS.md, plus rules/*.md in project roots) - Instructions checked into the codebase
  * 4. Local memory (CLAUDE.local.md in project roots) - Private project-specific instructions
  *
  * Files are loaded in reverse order of priority, i.e. the latest files are highest priority
@@ -14,7 +14,7 @@
  * - User memory is loaded from the user's home directory
  * - Project and Local files are discovered by traversing from the current directory up to root
  * - Files closer to the current directory have higher priority (loaded later)
- * - AGENTS.md is checked in each directory for Project memory, with CLAUDE.md as a fallback, along with all .md files in project rules dirs
+ * - CLAUDE.md is checked in each directory for Project memory, with AGENTS.md as a fallback, along with all .md files in project rules dirs
  *
  * Memory @include directive:
  * - Memory files can include other files using @ notation
@@ -945,7 +945,7 @@ export const getMemoryFiles = memoize(
       }
     }
 
-    // Process AGENTS.md, falling back to CLAUDE.md, from additional directories (--add-dir) if env var is enabled
+    // Process CLAUDE.md, falling back to AGENTS.md, from additional directories (--add-dir) if env var is enabled
     // This is controlled by CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD and defaults to off
     // Note: we don't check isSettingSourceEnabled('projectSettings') here because --add-dir
     // is an explicit user action and the SDK defaults settingSources to [] when not specified
@@ -1256,7 +1256,7 @@ export async function getMemoryFilesForNestedDirectory(
 ): Promise<MemoryFileInfo[]> {
   const result: MemoryFileInfo[] = []
 
-  // Process the preferred project memory file (AGENTS.md, falling back to CLAUDE.md).
+  // Process the preferred project memory file (CLAUDE.md, falling back to AGENTS.md).
   if (isSettingSourceEnabled('projectSettings')) {
     for (const projectPath of getProjectMemoryFileCandidates(dir)) {
       result.push(

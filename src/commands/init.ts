@@ -12,7 +12,7 @@ What to add:
 2. High-level code architecture and structure so that future instances can be productive more quickly. Focus on the "big picture" architecture that requires reading multiple files to understand.
 
 Usage notes:
-- If there's already a ${PRIMARY_PROJECT_INSTRUCTION_FILE}, suggest improvements to it. If the repo also has CLAUDE.md, read it too and fold the useful parts into ${PRIMARY_PROJECT_INSTRUCTION_FILE}, with ${PRIMARY_PROJECT_INSTRUCTION_FILE} taking priority when the two disagree.
+- If there's already a ${PRIMARY_PROJECT_INSTRUCTION_FILE} or CLAUDE.md, suggest improvements to whichever Noa Claude loads (CLAUDE.md when both exist), folding the other file's useful parts into it.
 - When you make the initial ${PRIMARY_PROJECT_INSTRUCTION_FILE}, do not repeat yourself and do not include obvious instructions like "Provide helpful error messages to users", "Write unit tests for all new utilities", "Never include sensitive information (API keys, tokens) in code or commits".
 - Avoid listing every component or file structure that can be easily discovered.
 - Don't include generic development practices.
@@ -29,11 +29,11 @@ This file provides guidance to Noa Claude when working with code in this reposit
 
 const NEW_INIT_PROMPT = `Set up minimal project instructions (and optionally skills and hooks) for this repo.
 
-**File-priority rule:** Noa Claude loads one project instruction file per directory, picking the first that exists: .noa/${PRIMARY_PROJECT_INSTRUCTION_FILE} → ${PRIMARY_PROJECT_INSTRUCTION_FILE} → .noa/CLAUDE.md → CLAUDE.md. All phases below refer to the winner as "the selected instruction file". It is loaded into every Noa Claude session, so it must be concise — only include what Noa Claude would get wrong without it.
+**File-priority rule:** Noa Claude loads one project instruction file per directory, picking the first that exists: .noa/CLAUDE.md → CLAUDE.md → .noa/${PRIMARY_PROJECT_INSTRUCTION_FILE} → ${PRIMARY_PROJECT_INSTRUCTION_FILE}. All phases below refer to the winner as "the selected instruction file". It is loaded into every Noa Claude session, so it must be concise — only include what Noa Claude would get wrong without it.
 
 ## Phase 0: Check for an existing project instruction file
 
-Before asking anything, check whether a project instruction file already exists at the project root, walking the priority chain in order: \`.noa/${PRIMARY_PROJECT_INSTRUCTION_FILE}\`, \`${PRIMARY_PROJECT_INSTRUCTION_FILE}\`, \`.noa/CLAUDE.md\`, \`CLAUDE.md\`. Read the first one that exists — that is the selected instruction file. Only project-root files count; don't explore the tree yet. This branches Phase 1.
+Before asking anything, check whether a project instruction file already exists at the project root, walking the priority chain in order: \`.noa/CLAUDE.md\`, \`CLAUDE.md\`, \`.noa/${PRIMARY_PROJECT_INSTRUCTION_FILE}\`, \`${PRIMARY_PROJECT_INSTRUCTION_FILE}\`. Read the first one that exists — that is the selected instruction file. Only project-root files count; don't explore the tree yet. This branches Phase 1.
 
 ## Phase 1: Ask what to set up
 
@@ -42,7 +42,7 @@ Use AskUserQuestion to find out what the user wants. Which question you ask depe
 Before the first question, print this primer as normal assistant text so first-time users know the terms:
 
 > Quick context:
-> - **Project instruction files** (${PRIMARY_PROJECT_INSTRUCTION_FILE}, or CLAUDE.md as a fallback) give Noa Claude persistent instructions for a project, your personal workflow, or your organization. Noa Claude reads them at the start of every session.
+> - **Project instruction files** (CLAUDE.md, or ${PRIMARY_PROJECT_INSTRUCTION_FILE} as a fallback) give Noa Claude persistent instructions for a project, your personal workflow, or your organization. Noa Claude reads them at the start of every session.
 > - **Skills** are packaged instructions Noa Claude invokes automatically when a task matches, or that you trigger with a slash command (e.g. \`/frontend-design\`, \`/commit-push-pr\`).
 > - **Hooks** allow you to run shell commands automatically on lifecycle events: get notified when Noa Claude is blocked on your input, auto-format after edits, enforce checks before commits — these are deterministic and Noa Claude can't skip them.
 
