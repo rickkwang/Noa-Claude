@@ -3,6 +3,7 @@ import { execFileSync, spawn } from 'child_process'
 import { constants as fsConstants, readFileSync, unlinkSync } from 'fs'
 import { type FileHandle, mkdir, open, realpath } from 'fs/promises'
 import memoize from 'lodash-es/memoize.js'
+import { tmpdir } from 'os'
 import { isAbsolute, resolve } from 'path'
 import { join as posixJoin } from 'path/posix'
 import { logEvent } from 'src/services/analytics/index.js'
@@ -313,10 +314,19 @@ export async function exec(
     )
   }
 
+  const baseEnv = subprocessEnv()
+  // When the parent process has no TMPDIR (GUI/daemon launch), unsandboxed
+  // children see $TMPDIR expand empty while sandboxed ones get the sandbox
+  // override — backstop it so every spawned shell has a usable temp dir.
+  // Windows is skipped: Git Bash would receive a native C:\... path.
+  if (!baseEnv.TMPDIR && getPlatform() !== 'windows') {
+    baseEnv.TMPDIR = tmpdir()
+  }
+
   try {
     const childProcess = spawn(spawnBinary, shellArgs, {
       env: {
-        ...subprocessEnv(),
+        ...baseEnv,
         SHELL: shellType === 'bash' ? binShell : undefined,
         GIT_EDITOR: 'true',
         CLAUDECODE: '1',
