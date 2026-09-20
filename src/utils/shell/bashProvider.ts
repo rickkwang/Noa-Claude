@@ -233,6 +233,12 @@ export async function createBashShellProvider(
       if (claudeTmuxEnv) {
         env.TMUX = claudeTmuxEnv
       }
+      // Apply session env vars set via /env BEFORE the sandbox overrides so
+      // `/env TMPDIR=...` can't clobber the sandbox-writable temp dir and
+      // break isolation (matches powershellProvider and upstream ordering).
+      for (const [key, value] of getSessionEnvVars()) {
+        env[key] = value
+      }
       if (currentSandboxTmpDir) {
         let posixTmpDir = currentSandboxTmpDir
         if (getPlatform() === 'windows') {
@@ -245,10 +251,6 @@ export async function createBashShellProvider(
         // heredocs work in sandboxed zsh commands.
         // Safe to set unconditionally — non-zsh shells ignore TMPPREFIX.
         env.TMPPREFIX = posixJoin(posixTmpDir, 'zsh')
-      }
-      // Apply session env vars set via /env (child processes only, not the REPL)
-      for (const [key, value] of getSessionEnvVars()) {
-        env[key] = value
       }
       return env
     },

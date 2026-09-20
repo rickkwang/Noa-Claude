@@ -108,8 +108,7 @@ export function createPowerShellProvider(shellPath: string): ShellProvider {
       // commands but not PowerShell — so PyCharm users with a stripped
       // PATH can't self-rescue.
       // Ordering: session vars FIRST so the sandbox TMPDIR below can't be
-      // overridden by `/env TMPDIR=...`. bashProvider.ts has these in the
-      // opposite order (pre-existing), but sandbox isolation should win.
+      // overridden by `/env TMPDIR=...` — sandbox isolation wins.
       for (const [key, value] of getSessionEnvVars()) {
         env[key] = value
       }
