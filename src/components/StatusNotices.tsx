@@ -2,8 +2,9 @@
 import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { use, useState } from 'react';
-import { Box } from '../ink.js';
+import { Box, Text } from '../ink.js';
 import type { AgentDefinitionsResult } from '../tools/AgentTool/loadAgentsDir.js';
+import { plural } from '../utils/stringUtils.js';
 import { getMemoryFiles } from '../utils/claudemd.js';
 import { getGlobalConfig } from '../utils/config.js';
 import { getFullscreenNoticeTrigger, subscribeToFullscreenNoticeTrigger } from '../commands/tui/tui.js';
@@ -46,10 +47,20 @@ export function StatusNotices(t0) {
   if (activeNotices.length === 0) {
     return null;
   }
+  // Warnings all render; info notices compete for a single slot — the winner
+  // renders and the rest collapse into a "N more notice(s) hidden" line.
+  const warnings = activeNotices.filter(notice => notice.type === 'warning');
+  const infos = activeNotices.filter(notice => notice.type !== 'warning');
+  const slot = infos[0] ?? null;
+  const slotOverflowCount = slot === null ? 0 : infos.length - 1;
   const T0 = Box;
   const t3 = "column";
   const t4 = 1;
-  const t5 = activeNotices.map(notice => <React.Fragment key={notice.id}>{notice.render(context)}</React.Fragment>);
+  const t5 = <>
+      {warnings.map(notice => <React.Fragment key={notice.id}>{notice.render(context)}</React.Fragment>)}
+      {slot !== null && <React.Fragment key={slot.id}>{slot.render(context)}</React.Fragment>}
+      {slotOverflowCount > 0 && <Box paddingLeft={1}><Text dimColor>{slotOverflowCount} more {plural(slotOverflowCount, 'notice')} hidden</Text></Box>}
+    </>;
   let t6;
   if ($[1] !== T0 || $[2] !== t5) {
     t6 = <T0 flexDirection={t3} paddingLeft={t4}>{t5}</T0>;
