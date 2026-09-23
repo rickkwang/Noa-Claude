@@ -2,10 +2,7 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { getInitialMainLoopModel } from '../../bootstrap/state.js'
 import {
-  getSubscriptionType,
   isClaudeAISubscriber,
-  isMaxSubscriber,
-  isTeamPremiumSubscriber,
 } from '../auth.js'
 import { getModelStrings } from './modelStrings.js'
 import {
@@ -30,7 +27,9 @@ import {
   getDefaultMainLoopModelSetting,
   getMarketingNameForModel,
   getUserSpecifiedModelSetting,
+  isNonCustomOpusModel,
   isOpus1mMergeEnabled,
+  isOpusDefaultSubscriber,
   parseUserSpecifiedModel,
   getOpusPricingSuffix,
   renderDefaultModelSetting,
@@ -68,23 +67,13 @@ function isSubscriberSafe(): boolean {
 
 // Per-Mtok API pricing is only meaningful to PAYG users. Subscribers draw from
 // plan usage, so upstream's subscriber rows omit the price entirely and use
-// usage language instead (see getProUsageMultiplierSuffix / "Draws from usage
-// credits"). Showing them $/Mtok would state a price they do not pay.
+// usage language instead ("Draws from usage credits"). Showing them $/Mtok
+// would state a price they do not pay.
 function getFirstPartyPricingSuffix(costs: ModelCosts): string {
   if (isSubscriberSafe()) {
     return ''
   }
   return isDirectFirstParty() ? ` · ${formatModelPricing(costs)}` : ''
-}
-
-/**
- * Pro accounts spend roughly twice the plan usage on Opus versus Sonnet;
- * upstream surfaces that on the Opus rows in place of a price.
- */
-export function getProUsageMultiplierSuffix(): string {
-  return isSubscriberSafe() && getSubscriptionType() === 'pro'
-    ? ' · ~2× usage vs Sonnet'
-    : ''
 }
 
 export function getDefaultOptionForUser(fastMode = false): ModelOption {
@@ -110,11 +99,25 @@ export function getDefaultOptionForUser(fastMode = false): ModelOption {
   }
 
   // PAYG
+  const setting = getDefaultMainLoopModelSetting()
+  const model = parseUserSpecifiedModel(setting).replace(/\[1m\]$/i, '')
+  const pricing = isNonCustomOpusModel(model)
+    ? getOpusPricingSuffix(fastMode, model)
+    : getFirstPartyPricingSuffix(COST_TIER_2_10)
   return {
     value: null,
-    label: 'Default (recommended)',
-    description: `${renderDefaultModelSetting(getDefaultMainLoopModelSetting())} · Efficient for routine tasks${getFirstPartyPricingSuffix(COST_TIER_2_10)}`,
+    label:
+      getAPIProvider() === 'firstParty' ? 'Default (recommended)' : 'Default',
+    description: `Use the default model (currently ${renderDefaultModelSetting(setting)})${pricing}`,
   }
+}
+
+/** Whether the Default row already stands for the `opus` alias. */
+function isDefaultOpus(): boolean {
+  return (
+    getDefaultMainLoopModelSetting().replace(/\[1m\]$/i, '') ===
+    getDefaultOpusModel()
+  )
 }
 
 function getCustomSonnetOption(): ModelOption | undefined {
@@ -179,7 +182,7 @@ function getOpus48Option(fastMode = false): ModelOption {
   return {
     value: is3P ? getModelStrings().opus48 : 'opus',
     label: 'Opus',
-    description: `Opus 4.8 · Best for everyday, complex tasks${getProUsageMultiplierSuffix()}${getOpusPricingSuffix(fastMode, getModelStrings().opus48)}`,
+    description: `Opus 4.8 · Best for everyday, complex tasks${getOpusPricingSuffix(fastMode, getModelStrings().opus48)}`,
     descriptionForModel: 'Opus 4.8 - best for everyday, complex tasks',
   }
 }
@@ -189,7 +192,7 @@ export function getOpus48_1MOption(fastMode = false): ModelOption {
   return {
     value: is3P ? getModelStrings().opus48 + '[1m]' : 'opus[1m]',
     label: 'Opus (1M context)',
-    description: `Opus 4.8 with 1M context · Best for everyday, complex tasks${getProUsageMultiplierSuffix()}${getOpusPricingSuffix(fastMode, getModelStrings().opus48)}`,
+    description: `Opus 4.8 with 1M context · Best for everyday, complex tasks${getOpusPricingSuffix(fastMode, getModelStrings().opus48)}`,
     descriptionForModel:
       'Opus 4.8 with 1M context window - for long sessions with large codebases',
   }
@@ -213,7 +216,7 @@ function getOpus55Option(fastMode = false): ModelOption {
   return {
     value: is3P ? model : 'opus',
     label: 'Opus',
-    description: `Opus 5.5 · Best for everyday, complex tasks${getProUsageMultiplierSuffix()}${getOpusPricingSuffix(fastMode, model)}`,
+    description: `Opus 5.5 · Best for everyday, complex tasks${getOpusPricingSuffix(fastMode, model)}`,
     descriptionForModel: 'Opus 5.5 - best for everyday, complex tasks',
   }
 }
@@ -224,7 +227,7 @@ export function getOpus55_1MOption(fastMode = false): ModelOption {
   return {
     value: is3P ? model + '[1m]' : 'opus[1m]',
     label: 'Opus (1M context)',
-    description: `Opus 5.5 with 1M context · Best for everyday, complex tasks${getProUsageMultiplierSuffix()}${getOpusPricingSuffix(fastMode, model)}`,
+    description: `Opus 5.5 with 1M context · Best for everyday, complex tasks${getOpusPricingSuffix(fastMode, model)}`,
     descriptionForModel:
       'Opus 5.5 with 1M context window - for long sessions with large codebases',
   }
@@ -313,7 +316,7 @@ function getMaxOpusOption(fastMode = false): ModelOption {
   return {
     value: 'opus',
     label: 'Opus',
-    description: `Opus 5.5 · Best for everyday, complex tasks${getProUsageMultiplierSuffix()}${fastMode ? getOpusPricingSuffix(true, getModelStrings().opus55) : ''}`,
+    description: `Opus 5.5 · Best for everyday, complex tasks${fastMode ? getOpusPricingSuffix(true, getModelStrings().opus55) : ''}`,
   }
 }
 
@@ -333,10 +336,12 @@ function getMergedOpus1MOption(fastMode = false): ModelOption {
   // pinning a version string.
   const model = getDefaultOpusModel()
   const name = getMarketingNameForModel(model) ?? 'Opus'
+  const pricing =
+    !is3P && !isSubscriberSafe() ? getOpusPricingSuffix(fastMode, model) : ''
   return {
     value: is3P ? model + '[1m]' : 'opus[1m]',
     label: 'Opus (1M context)',
-    description: `${name} with 1M context · Best for everyday, complex tasks${!is3P && fastMode ? getOpusPricingSuffix(fastMode, model) : ''}`,
+    description: `${name} with 1M context · Best for everyday, complex tasks${pricing}`,
     descriptionForModel: `${name} with 1M context - best for everyday, complex tasks`,
   }
 }
@@ -345,6 +350,64 @@ const MaxSonnet5Option: ModelOption = {
   value: 'sonnet',
   label: 'Sonnet',
   description: 'Sonnet 5 · Efficient for routine tasks',
+}
+
+/** Explicit `opus` alias row for a first-party picker. */
+function getOpusAliasOption(fastMode: boolean): ModelOption {
+  if (isOpus1mMergeEnabled()) {
+    return getMergedOpus1MOption(fastMode)
+  }
+  const subscriber = isSubscriberSafe()
+  const model = getDefaultOpusModel()
+  if (model === getModelStrings().opus55) {
+    return subscriber ? getMaxOpusOption() : getOpus55Option(fastMode)
+  }
+  const name = getMarketingNameForModel(model) ?? 'Opus'
+  return {
+    value: 'opus',
+    label: 'Opus',
+    description: `${name} · Best for everyday, complex tasks${subscriber ? '' : getOpusPricingSuffix(fastMode, model)}`,
+    descriptionForModel: `${name} - best for everyday, complex tasks`,
+  }
+}
+
+/** Explicit `sonnet` alias row for a first-party picker. */
+function getSonnetAliasOption(): ModelOption {
+  const model = getDefaultSonnetModel()
+  if (model === getModelStrings().sonnet5) {
+    return isSubscriberSafe() ? MaxSonnet5Option : getSonnet5Option()
+  }
+  const name = getMarketingNameForModel(model) ?? 'Sonnet'
+  return {
+    value: 'sonnet',
+    label: 'Sonnet',
+    description: `${name} · Efficient for routine tasks`,
+    descriptionForModel: `${name} - efficient for routine tasks`,
+  }
+}
+
+/**
+ * The Default row follows whatever the tier resolves to, so the family it
+ * currently stands for also gets an explicit alias row right after it —
+ * picking that row pins the family instead of tracking the default.
+ */
+function withDefaultFamilyRow(
+  options: ModelOption[],
+  family: 'opus' | 'sonnet',
+  fastMode: boolean,
+): ModelOption[] {
+  const merged = family === 'opus' && isOpus1mMergeEnabled()
+  if (
+    options.some(
+      o => o.value === family || (merged && o.value === `${family}[1m]`),
+    )
+  ) {
+    return options
+  }
+  const row =
+    family === 'opus' ? getOpusAliasOption(fastMode) : getSonnetAliasOption()
+  options.splice(options.findIndex(o => o.value === null) + 1, 0, row)
+  return options
 }
 
 const MaxHaiku45Option: ModelOption = {
@@ -426,8 +489,8 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
   }
 
   if (isClaudeAISubscriber()) {
-    if (isMaxSubscriber() || isTeamPremiumSubscriber()) {
-      // Max and Team Premium users: Opus is default, show Sonnet as alternative
+    if (isOpusDefaultSubscriber()) {
+      // Opus-default plans (see isOpusDefaultSubscriber): show Sonnet as alternative
       const premiumOptions = [getDefaultOptionForUser(fastMode)]
       if (!isOpus1mMergeEnabled() && checkOpus1mAccess()) {
         premiumOptions.push(getMaxOpus55_1MOption(fastMode))
@@ -441,10 +504,10 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
       }
 
       premiumOptions.push(MaxHaiku45Option)
-      return premiumOptions
+      return withDefaultFamilyRow(premiumOptions, 'opus', fastMode)
     }
 
-    // Pro/Team Standard/Enterprise users: Sonnet is default, show Opus as alternative
+    // Free and Sonnet-only plans: Sonnet is default, show Opus as alternative
     const standardOptions = [getDefaultOptionForUser(fastMode)]
     if (checkSonnet1mAccess()) {
       standardOptions.push(getMaxSonnet5_1MOption())
@@ -453,34 +516,30 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
     if (isOpus1mMergeEnabled()) {
       standardOptions.push(getMergedOpus1MOption(fastMode))
     } else {
-      standardOptions.push(getOpus55Option(fastMode))
+      standardOptions.push(getMaxOpusOption())
       if (checkOpus1mAccess()) {
-        standardOptions.push(getOpus55_1MOption(fastMode))
+        standardOptions.push(getMaxOpus55_1MOption())
       }
     }
 
     standardOptions.push(getFable5Option())
     standardOptions.push(MaxHaiku45Option)
-    return standardOptions
+    return withDefaultFamilyRow(standardOptions, 'sonnet', fastMode)
   }
 
-  // PAYG 1P API: Default (Sonnet) + Sonnet 1M + Opus 5.5 + Opus 1M + Haiku
+  // PAYG 1P API: Default (Opus) + Opus + Opus 1M + Sonnet 5 + Sonnet 1M + Fable + Haiku
   if (getAPIProvider() === 'firstParty') {
     const payg1POptions = [getDefaultOptionForUser(fastMode)]
+    if (!isOpus1mMergeEnabled() && checkOpus1mAccess()) {
+      payg1POptions.push(getOpus55_1MOption(fastMode))
+    }
+    payg1POptions.push(getSonnet5Option())
     if (checkSonnet1mAccess()) {
       payg1POptions.push(getSonnet5_1MOption())
     }
-    if (isOpus1mMergeEnabled()) {
-      payg1POptions.push(getMergedOpus1MOption(fastMode))
-    } else {
-      payg1POptions.push(getOpus55Option(fastMode))
-      if (checkOpus1mAccess()) {
-        payg1POptions.push(getOpus55_1MOption(fastMode))
-      }
-    }
     payg1POptions.push(getFable5Option())
     payg1POptions.push(getHaiku45Option())
-    return payg1POptions
+    return withDefaultFamilyRow(payg1POptions, 'opus', fastMode)
   }
 
   // PAYG 3P: Sonnet rows + Opus rows (5.5, 5, 4.1, 4.8, 4.8-1M) + Fable + Haiku.
@@ -671,8 +730,8 @@ export function getModelOptions(fastMode = false): ModelOption[] {
   } else if (customModel === 'opusplan') {
     return filterModelOptionsByAllowlist(mergeNative1mOptions([...options, getOpusPlanOption()]))
   } else if (customModel === 'opus' && getAPIProvider() === 'firstParty') {
-    // Max/Team Premium default is already Opus — adding an explicit Opus row duplicates the Default entry.
-    if (isMaxSubscriber() || isTeamPremiumSubscriber()) {
+    // When the default is already Opus, an explicit Opus row duplicates the Default entry.
+    if (isDefaultOpus()) {
       return filterModelOptionsByAllowlist(mergeNative1mOptions(options))
     }
     return filterModelOptionsByAllowlist(mergeNative1mOptions([
@@ -680,8 +739,8 @@ export function getModelOptions(fastMode = false): ModelOption[] {
       getMaxOpusOption(fastMode),
     ]))
   } else if (customModel === 'opus[1m]' && getAPIProvider() === 'firstParty') {
-    // When Max/Team Premium has 1M-merge enabled, default already represents Opus 1M.
-    if ((isMaxSubscriber() || isTeamPremiumSubscriber()) && isOpus1mMergeEnabled()) {
+    // With 1M-merge enabled, an Opus default already represents Opus 1M.
+    if (isDefaultOpus() && isOpus1mMergeEnabled()) {
       return filterModelOptionsByAllowlist(mergeNative1mOptions(options))
     }
     return filterModelOptionsByAllowlist(mergeNative1mOptions([

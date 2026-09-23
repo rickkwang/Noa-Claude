@@ -10,7 +10,6 @@ import { getMainLoopModelOverride } from '../../bootstrap/state.js'
 import {
   getSubscriptionType,
   isClaudeAISubscriber,
-  isMaxSubscriber,
   isTeamPremiumSubscriber,
 } from '../auth.js'
 import {
@@ -262,11 +261,46 @@ export function getRuntimeMainLoopModel(params: {
 }
 
 /**
+ * A deployment that pinned only a Sonnet model has told us Opus isn't
+ * provisioned there, so the Opus-by-default tiers fall back to Sonnet.
+ */
+function isSonnetOnlyDeployment(): boolean {
+  return (
+    process.env.ANTHROPIC_DEFAULT_SONNET_MODEL !== undefined &&
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL === undefined
+  )
+}
+
+/**
+ * Subscription plans whose built-in default is Opus: Max and Team Premium
+ * unconditionally; Pro, Team and Enterprise unless the deployment is
+ * Sonnet-only. Free and unclassified accounts keep Sonnet.
+ */
+export function isOpusDefaultSubscriber(): boolean {
+  const subscriptionType = getSubscriptionType()
+  if (subscriptionType === 'max' || isTeamPremiumSubscriber()) {
+    return true
+  }
+  return (
+    (subscriptionType === 'pro' ||
+      subscriptionType === 'team' ||
+      subscriptionType === 'enterprise') &&
+    !isSonnetOnlyDeployment()
+  )
+}
+
+function getDefaultOpusSetting(): ModelName {
+  return getDefaultOpusModel() + (isOpus1mMergeEnabled() ? '[1m]' : '')
+}
+
+/**
  * Get the default main loop model setting.
  *
  * This handles the built-in default:
- * - Opus for Max and Team Premium users
- * - Sonnet 4.6 for all other users (including Team Standard, Pro, Enterprise)
+ * - Subscribers: Opus for the plans in isOpusDefaultSubscriber(), else Sonnet
+ * - API keys on first party: Opus
+ * - Bedrock/Vertex: Opus, unless the deployment pinned only a Sonnet model
+ * - Foundry and OpenAI-compatible: Sonnet
  *
  * @returns The default model setting to use
  */
@@ -279,18 +313,23 @@ export function getDefaultMainLoopModelSetting(): ModelName | ModelAlias {
     )
   }
 
-  // Max users get Opus as default
-  if (isMaxSubscriber()) {
-    return getDefaultOpusModel() + (isOpus1mMergeEnabled() ? '[1m]' : '')
+  if (isClaudeAISubscriber()) {
+    if (isOpusDefaultSubscriber()) {
+      return getDefaultOpusSetting()
+    }
+  } else if (getAPIProvider() === 'firstParty') {
+    return getDefaultOpusSetting()
   }
 
-  // Team Premium gets Opus (same as Max)
-  if (isTeamPremiumSubscriber()) {
-    return getDefaultOpusModel() + (isOpus1mMergeEnabled() ? '[1m]' : '')
+  const provider = getAPIProvider()
+  if (
+    (provider === 'bedrock' || provider === 'vertex') &&
+    !isSonnetOnlyDeployment()
+  ) {
+    return getDefaultOpusModel()
   }
 
-  // PAYG (1P and 3P), Enterprise, Team Standard, and Pro get Sonnet as default
-  // Note that PAYG (3P) may default to an older Sonnet model
+  // Note that 3P may default to an older Sonnet model
   return getDefaultSonnetModel()
 }
 
@@ -416,11 +455,14 @@ export function getCanonicalName(fullModelName: ModelName | undefined): ModelSho
 export function getClaudeAiUserDefaultModelDescription(
   fastMode = false,
 ): string {
-  if (isMaxSubscriber() || isTeamPremiumSubscriber()) {
+  if (isOpusDefaultSubscriber()) {
+    const opusModel = getDefaultOpusModel()
+    const opusName = getMarketingNameForModel(opusModel) ?? 'Opus'
+    const pricing = fastMode ? getOpusPricingSuffix(true, opusModel) : ''
     if (isOpus1mMergeEnabled()) {
-      return `Opus with 1M context · Best for everyday, complex tasks${fastMode ? getOpusPricingSuffix(true, getDefaultOpusModel()) : ''}`
+      return `${opusName} with 1M context · Best for everyday, complex tasks${pricing}`
     }
-    return `Opus · Best for everyday, complex tasks${fastMode ? getOpusPricingSuffix(true, getDefaultOpusModel()) : ''}`
+    return `${opusName} · Best for everyday, complex tasks${pricing}`
   }
   const sonnetName = getMarketingNameForModel(getDefaultSonnetModel()) ?? 'Sonnet'
   return `${sonnetName} · Efficient for routine tasks`
@@ -448,9 +490,8 @@ export function getOpusPricingSuffix(
   model: ModelName = getDefaultOpusModel(),
 ): string {
   if (getAPIProvider() !== 'firstParty') return ''
-  // Subscribers draw from plan usage, not per-Mtok API pricing. Upstream shows
-  // them a usage multiplier instead (see getProUsageMultiplierSuffix); the
-  // fast-mode indicator still applies since that is a mode, not a price.
+  // Subscribers draw from plan usage, not per-Mtok API pricing; the fast-mode
+  // indicator still applies since that is a mode, not a price.
   // isClaudeAISubscriber() throws without credentials — an indeterminate answer
   // falls through to the PAYG rendering rather than breaking the picker.
   try {
