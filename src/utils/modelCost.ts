@@ -15,6 +15,7 @@ import {
   CLAUDE_OPUS_4_7_CONFIG,
   CLAUDE_OPUS_4_8_CONFIG,
   CLAUDE_OPUS_5_CONFIG,
+  CLAUDE_OPUS_5_5_CONFIG,
   CLAUDE_OPUS_4_CONFIG,
   CLAUDE_FABLE_5_1_CONFIG,
   CLAUDE_FABLE_5_CONFIG,
@@ -35,7 +36,10 @@ import { isDirectFirstParty } from './model/providers.js'
 export type ModelCosts = {
   inputTokens: number
   outputTokens: number
+  /** 5-minute TTL cache writes (1.25x input). */
   promptCacheWriteTokens: number
+  /** 1-hour TTL cache writes (2x input). */
+  promptCacheWrite1hTokens: number
   promptCacheReadTokens: number
   webSearchRequests: number
 }
@@ -45,6 +49,7 @@ export const COST_TIER_3_15 = {
   inputTokens: 3,
   outputTokens: 15,
   promptCacheWriteTokens: 3.75,
+  promptCacheWrite1hTokens: 6,
   promptCacheReadTokens: 0.3,
   webSearchRequests: 0.01,
 } as const satisfies ModelCosts
@@ -61,24 +66,18 @@ export const COST_TIER_2_10 = {
   inputTokens: 2,
   outputTokens: 10,
   promptCacheWriteTokens: 2.5,
+  promptCacheWrite1hTokens: 4,
   promptCacheReadTokens: 0.2,
   webSearchRequests: 0.01,
 } as const satisfies ModelCosts
 
-/**
- * Sonnet 5's first-party tier. Callers still gate on isDirectFirstParty(): a
- * proxy or partner endpoint on ANTHROPIC_BASE_URL bills at its own rates, so
- * those fall through to MODEL_COSTS' conservative Sonnet entry.
- */
-export function getSonnet5CostTier(): ModelCosts {
-  return COST_TIER_2_10
-}
 
 // Pricing tier for Opus 4/4.1: $15 input / $75 output per Mtok
 export const COST_TIER_15_75 = {
   inputTokens: 15,
   outputTokens: 75,
   promptCacheWriteTokens: 18.75,
+  promptCacheWrite1hTokens: 30,
   promptCacheReadTokens: 1.5,
   webSearchRequests: 0.01,
 } as const satisfies ModelCosts
@@ -88,6 +87,7 @@ export const COST_TIER_5_25 = {
   inputTokens: 5,
   outputTokens: 25,
   promptCacheWriteTokens: 6.25,
+  promptCacheWrite1hTokens: 10,
   promptCacheReadTokens: 0.5,
   webSearchRequests: 0.01,
 } as const satisfies ModelCosts
@@ -97,6 +97,7 @@ export const COST_TIER_30_150 = {
   inputTokens: 30,
   outputTokens: 150,
   promptCacheWriteTokens: 37.5,
+  promptCacheWrite1hTokens: 60,
   promptCacheReadTokens: 3,
   webSearchRequests: 0.01,
 } as const satisfies ModelCosts
@@ -106,6 +107,7 @@ export const COST_TIER_10_50 = {
   inputTokens: 10,
   outputTokens: 50,
   promptCacheWriteTokens: 12.5,
+  promptCacheWrite1hTokens: 20,
   promptCacheReadTokens: 1,
   webSearchRequests: 0.01,
 } as const satisfies ModelCosts
@@ -116,7 +118,28 @@ export const COST_TIER_10_50_CHEAP_CACHE = {
   inputTokens: 10,
   outputTokens: 50,
   promptCacheWriteTokens: 12.5,
+  promptCacheWrite1hTokens: 20,
   promptCacheReadTokens: 0.25,
+  webSearchRequests: 0.01,
+} as const satisfies ModelCosts
+
+// Pricing tier for Opus 5.5: $4 input / $20 output per Mtok, $0.20 cache reads.
+export const COST_TIER_4_20 = {
+  inputTokens: 4,
+  outputTokens: 20,
+  promptCacheWriteTokens: 5,
+  promptCacheWrite1hTokens: 8,
+  promptCacheReadTokens: 0.2,
+  webSearchRequests: 0.01,
+} as const satisfies ModelCosts
+
+// Fast mode pricing for Opus 5.5: 2x standard, $8 input / $40 output per Mtok.
+export const COST_TIER_8_40 = {
+  inputTokens: 8,
+  outputTokens: 40,
+  promptCacheWriteTokens: 10,
+  promptCacheWrite1hTokens: 16,
+  promptCacheReadTokens: 0.4,
   webSearchRequests: 0.01,
 } as const satisfies ModelCosts
 
@@ -125,6 +148,7 @@ export const COST_HAIKU_35 = {
   inputTokens: 0.8,
   outputTokens: 4,
   promptCacheWriteTokens: 1,
+  promptCacheWrite1hTokens: 1.6,
   promptCacheReadTokens: 0.08,
   webSearchRequests: 0.01,
 } as const satisfies ModelCosts
@@ -134,6 +158,7 @@ export const COST_HAIKU_45 = {
   inputTokens: 1,
   outputTokens: 5,
   promptCacheWriteTokens: 1.25,
+  promptCacheWrite1hTokens: 2,
   promptCacheReadTokens: 0.1,
   webSearchRequests: 0.01,
 } as const satisfies ModelCosts
@@ -151,14 +176,25 @@ export function getOpus46CostTier(fastMode: boolean): ModelCosts {
 }
 
 /**
- * Get the cost tier for Opus 5 based on fast mode. Opus 5 prices fast mode at
- * $10/$50 per Mtok — not the $30/$150 that Opus 4.6/4.7 charged.
+ * Get the cost tier for Opus 4.8 / Opus 5 based on fast mode. Both price fast
+ * mode at $10/$50 per Mtok — not the $30/$150 that Opus 4.6/4.7 charged.
  */
 export function getOpus5CostTier(fastMode: boolean): ModelCosts {
   if (isFastModeEnabled() && fastMode) {
     return COST_TIER_10_50
   }
   return COST_TIER_5_25
+}
+
+/**
+ * Get the cost tier for Opus 5.5 based on fast mode ($8/$40 fast, $4/$20
+ * standard).
+ */
+export function getOpus55CostTier(fastMode: boolean): ModelCosts {
+  if (isFastModeEnabled() && fastMode) {
+    return COST_TIER_8_40
+  }
+  return COST_TIER_4_20
 }
 
 /**
@@ -169,8 +205,12 @@ export function getOpusCostTierForModel(
   model: string,
   fastMode: boolean,
 ): ModelCosts {
-  return getCanonicalName(model) ===
-    firstPartyNameToCanonical(CLAUDE_OPUS_5_CONFIG.firstParty)
+  const canonical = getCanonicalName(model)
+  if (canonical === firstPartyNameToCanonical(CLAUDE_OPUS_5_5_CONFIG.firstParty)) {
+    return getOpus55CostTier(fastMode)
+  }
+  return canonical === firstPartyNameToCanonical(CLAUDE_OPUS_5_CONFIG.firstParty) ||
+    canonical === firstPartyNameToCanonical(CLAUDE_OPUS_4_8_CONFIG.firstParty)
     ? getOpus5CostTier(fastMode)
     : getOpus46CostTier(fastMode)
 }
@@ -207,6 +247,7 @@ export const MODEL_COSTS: Record<ModelShortName, ModelCosts> = {
   [firstPartyNameToCanonical(CLAUDE_OPUS_4_8_CONFIG.firstParty)]:
     COST_TIER_5_25,
   [firstPartyNameToCanonical(CLAUDE_OPUS_5_CONFIG.firstParty)]: COST_TIER_5_25,
+  [firstPartyNameToCanonical(CLAUDE_OPUS_5_5_CONFIG.firstParty)]: COST_TIER_4_20,
   [firstPartyNameToCanonical(CLAUDE_FABLE_5_CONFIG.firstParty)]: COST_TIER_10_50,
   [firstPartyNameToCanonical(CLAUDE_FABLE_5_1_CONFIG.firstParty)]:
     COST_TIER_10_50_CHEAP_CACHE,
@@ -216,13 +257,22 @@ export const MODEL_COSTS: Record<ModelShortName, ModelCosts> = {
  * Calculates the USD cost based on token usage and model cost configuration
  */
 function tokensToUSDCost(modelCosts: ModelCosts, usage: Usage): number {
+  // 1h-TTL writes are billed at 2x input rather than 1.25x. The split comes
+  // from usage.cache_creation; clamp so a malformed breakdown never exceeds
+  // the total.
+  const cacheWriteTokens = usage.cache_creation_input_tokens ?? 0
+  const cacheWrite1hTokens = Math.min(
+    usage.cache_creation?.ephemeral_1h_input_tokens ?? 0,
+    cacheWriteTokens,
+  )
   return (
     (usage.input_tokens / 1_000_000) * modelCosts.inputTokens +
     (usage.output_tokens / 1_000_000) * modelCosts.outputTokens +
     ((usage.cache_read_input_tokens ?? 0) / 1_000_000) *
       modelCosts.promptCacheReadTokens +
-    ((usage.cache_creation_input_tokens ?? 0) / 1_000_000) *
+    ((cacheWriteTokens - cacheWrite1hTokens) / 1_000_000) *
       modelCosts.promptCacheWriteTokens +
+    (cacheWrite1hTokens / 1_000_000) * modelCosts.promptCacheWrite1hTokens +
     (usage.server_tool_use?.web_search_requests ?? 0) *
       modelCosts.webSearchRequests
   )
@@ -231,11 +281,14 @@ function tokensToUSDCost(modelCosts: ModelCosts, usage: Usage): number {
 export function getModelCosts(model: string, usage: Usage): ModelCosts {
   const shortName = getCanonicalName(model)
 
+  // Sonnet 5's $2/$10 applies on direct first party only: a proxy or partner
+  // endpoint on ANTHROPIC_BASE_URL bills at its own rates, so those fall
+  // through to MODEL_COSTS' conservative Sonnet entry.
   if (
     shortName === firstPartyNameToCanonical(CLAUDE_SONNET_5_CONFIG.firstParty) &&
     isDirectFirstParty()
   ) {
-    return getSonnet5CostTier()
+    return COST_TIER_2_10
   }
 
   // Check if this is an Opus 4.6/4.7 model with fast mode active.
@@ -247,11 +300,19 @@ export function getModelCosts(model: string, usage: Usage): ModelCosts {
     return getOpus46CostTier(isFastMode)
   }
 
-  // Opus 5 fast mode prices at $10/$50, not the $30/$150 of Opus 4.6/4.7.
+  // Opus 4.8 / Opus 5 fast mode prices at $10/$50, not the $30/$150 of
+  // Opus 4.6/4.7.
   if (
-    shortName === firstPartyNameToCanonical(CLAUDE_OPUS_5_CONFIG.firstParty)
+    shortName === firstPartyNameToCanonical(CLAUDE_OPUS_5_CONFIG.firstParty) ||
+    shortName === firstPartyNameToCanonical(CLAUDE_OPUS_4_8_CONFIG.firstParty)
   ) {
     return getOpus5CostTier(usage.speed === 'fast')
+  }
+
+  if (
+    shortName === firstPartyNameToCanonical(CLAUDE_OPUS_5_5_CONFIG.firstParty)
+  ) {
+    return getOpus55CostTier(usage.speed === 'fast')
   }
 
   const costs = MODEL_COSTS[shortName]
@@ -330,7 +391,7 @@ export function getModelPricingString(model: string): string | undefined {
   if (
     shortName === firstPartyNameToCanonical(CLAUDE_SONNET_5_CONFIG.firstParty)
   ) {
-    return formatModelPricing(getSonnet5CostTier())
+    return formatModelPricing(COST_TIER_2_10)
   }
   const costs = MODEL_COSTS[shortName]
   if (!costs) return undefined

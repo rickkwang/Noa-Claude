@@ -1584,6 +1584,10 @@ function checkModelFallbackSuggestions() {
     // Re-import with 3P provider set — imports are cached, so we call the
     // function directly (it reads getAPIProvider() at call time, not import time).
     assert(
+      _get3PFallbackSuggestionForTesting('opus-5-5') === 'claude-opus-5',
+      'opus-5-5 should fallback to opus-5',
+    );
+    assert(
       _get3PFallbackSuggestionForTesting('opus-5') === 'claude-opus-4-8',
       'opus-5 should fallback to opus-4-8',
     );
@@ -1671,13 +1675,17 @@ function checkOpusUserPaths() {
   const opus5_1mDisplayName = getPublicModelDisplayName(getModelStrings().opus5 + '[1m]');
   assert(opus5_1mDisplayName === 'Opus 5 (1M context)', `opus5[1m] display name should be 'Opus 5 (1M context)', got: ${opus5_1mDisplayName}`);
 
+  // getPublicModelDisplayName for opus-5-5
+  const opus55DisplayName = getPublicModelDisplayName(getModelStrings().opus55);
+  assert(opus55DisplayName === 'Opus 5.5', `getPublicModelDisplayName(opus55) should return 'Opus 5.5', got: ${opus55DisplayName}`);
+
   // getDefaultOpusModel — first-party path returns the current Opus default
   const defaultOpus = getDefaultOpusModel();
-  assert(defaultOpus === getModelStrings().opus5, `getDefaultOpusModel() should return opus5 for first-party, got: ${defaultOpus}`);
+  assert(defaultOpus === getModelStrings().opus55, `getDefaultOpusModel() should return opus55 for first-party, got: ${defaultOpus}`);
 
   // getBestModel is an alias for getDefaultOpusModel
   const bestModel = getBestModel();
-  assert(bestModel === getModelStrings().opus5, `getBestModel() should equal opus5 for first-party, got: ${bestModel}`);
+  assert(bestModel === getModelStrings().opus55, `getBestModel() should equal opus55 for first-party, got: ${bestModel}`);
 
   // Opus 5 carries the full effort ladder (low..max, including xhigh).
   assert(modelSupportsEffort('claude-opus-5') === true, 'claude-opus-5 should support effort');

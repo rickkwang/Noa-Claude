@@ -5,6 +5,7 @@
  * Contains information about deprecated models and their retirement dates.
  */
 
+import { getCanonicalName } from './model.js'
 import { type APIProvider, getAPIProvider } from './providers.js'
 
 type DeprecatedModelInfo = {
@@ -27,11 +28,31 @@ type DeprecationEntry = {
 }
 
 /**
- * Deprecated models and their retirement dates by provider.
- * Keys are substrings to match in model IDs (case-insensitive).
- * To add a new deprecated model, add an entry to this object.
+ * Deprecated models and their retirement dates by provider, keyed by canonical
+ * name (getCanonicalName). Mirrors upstream's table (2.1.280); Opus 4.1 is
+ * absent because upstream lists no dates for it, only the legacy remap that
+ * isLegacyModelRemapEnabled() already covers.
  */
 const DEPRECATED_MODELS: Record<string, DeprecationEntry> = {
+  'claude-opus-4-0': {
+    modelName: 'Claude Opus 4',
+    retirementDates: {
+      firstParty: 'June 15, 2026',
+      bedrock: 'May 31, 2026',
+      vertex: 'September 14, 2026',
+      foundry: null,
+    },
+  },
+  // Canonical name for claude-sonnet-4-20250514 is 'claude-sonnet-4'.
+  'claude-sonnet-4': {
+    modelName: 'Claude Sonnet 4',
+    retirementDates: {
+      firstParty: 'June 15, 2026',
+      bedrock: 'October 14, 2026',
+      vertex: 'September 14, 2026',
+      foundry: null,
+    },
+  },
   'claude-3-opus': {
     modelName: 'Claude 3 Opus',
     retirementDates: {
@@ -65,22 +86,18 @@ const DEPRECATED_MODELS: Record<string, DeprecationEntry> = {
  * Check if a model is deprecated and get its deprecation info
  */
 function getDeprecatedModelInfo(modelId: string): DeprecationInfo {
-  const lowercaseModelId = modelId.toLowerCase()
-  const provider = getAPIProvider()
-
-  for (const [key, value] of Object.entries(DEPRECATED_MODELS)) {
-    const retirementDate = value.retirementDates[provider]
-    if (!lowercaseModelId.includes(key) || !retirementDate) {
-      continue
-    }
-    return {
-      isDeprecated: true,
-      modelName: value.modelName,
-      retirementDate,
-    }
+  const entry = Object.hasOwn(DEPRECATED_MODELS, getCanonicalName(modelId))
+    ? DEPRECATED_MODELS[getCanonicalName(modelId)]
+    : undefined
+  const retirementDate = entry?.retirementDates[getAPIProvider()]
+  if (!entry || !retirementDate) {
+    return { isDeprecated: false }
   }
-
-  return { isDeprecated: false }
+  return {
+    isDeprecated: true,
+    modelName: entry.modelName,
+    retirementDate,
+  }
 }
 
 /**
@@ -98,5 +115,9 @@ export function getModelDeprecationWarning(
     return null
   }
 
+  const retired = new Date(info.retirementDate)
+  if (!Number.isNaN(retired.getTime()) && retired < new Date()) {
+    return `⚠ ${info.modelName} was retired on ${info.retirementDate}. Switch to a newer model with /model.`
+  }
   return `⚠ ${info.modelName} will be retired on ${info.retirementDate}. Consider switching to a newer model.`
 }

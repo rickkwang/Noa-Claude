@@ -109,7 +109,20 @@ export async function computeMainSessionEnvInfo(
 
 function getKnowledgeCutoff(modelId: string): string | null {
   const canonical = getCanonicalName(modelId)
-  if (canonical.includes('claude-opus-5')) {
+  // Values from upstream's baked model catalog (`knowledge_cutoff`, 2.1.280).
+  // Order matters: each `.1`/`-5` release is a prefix match of its successor.
+  if (
+    canonical.includes('claude-opus-5-5') ||
+    canonical.includes('claude-fable-5-1') ||
+    canonical.includes('claude-mythos-5-1')
+  ) {
+    return 'June 2026'
+  } else if (
+    canonical.includes('claude-fable-5') ||
+    canonical.includes('claude-mythos-5')
+  ) {
+    return 'January 2026'
+  } else if (canonical.includes('claude-opus-5')) {
     return 'May 2026'
   } else if (canonical.includes('claude-opus-4-8')) {
     return 'January 2026'

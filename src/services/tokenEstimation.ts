@@ -139,10 +139,42 @@ export async function countTokensWithAPI(
   return countMessagesTokensWithAPI([message], [])
 }
 
+/**
+ * Drop the per-tool request knobs count_tokens has no use for. None of them
+ * changes the token count, and eager_input_streaming in particular is a
+ * streaming-only field that Bedrock's older serving stack 400s on — upstream
+ * strips the same three before every count.
+ */
+function stripCountTokensToolFields(
+  tools: Anthropic.Beta.Messages.BetaToolUnion[],
+): Anthropic.Beta.Messages.BetaToolUnion[] {
+  return tools.map(tool => {
+    if (
+      !('eager_input_streaming' in tool) &&
+      !('defer_loading' in tool) &&
+      !('strict' in tool)
+    ) {
+      return tool
+    }
+    const {
+      eager_input_streaming: _eager,
+      defer_loading: _defer,
+      strict: _strict,
+      ...rest
+    } = tool as typeof tool & {
+      eager_input_streaming?: boolean
+      defer_loading?: boolean
+      strict?: boolean
+    }
+    return rest as Anthropic.Beta.Messages.BetaToolUnion
+  })
+}
+
 export async function countMessagesTokensWithAPI(
   messages: Anthropic.Beta.Messages.BetaMessageParam[],
-  tools: Anthropic.Beta.Messages.BetaToolUnion[],
+  rawTools: Anthropic.Beta.Messages.BetaToolUnion[],
 ): Promise<number | null> {
+  const tools = stripCountTokensToolFields(rawTools)
   return withTokenCountVCR(messages, tools, async () => {
     try {
       const model = getMainLoopModel()

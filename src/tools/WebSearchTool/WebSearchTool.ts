@@ -7,6 +7,7 @@ import type {
 import {
   modelRejectsForcedToolChoice,
   modelSupportsWebSearchDynamicFiltering,
+  vertexModelSupportsWebSearch,
 } from 'src/utils/betas.js'
 import {
   getAPIProvider,
@@ -195,17 +196,10 @@ export const WebSearchTool = buildTool({
       return true
     }
 
-    // Enable for Vertex AI with supported models (Claude 4.0+)
+    // Enable for Vertex AI with supported models (Claude 4.0+). Bedrock does
+    // not serve the server-side web search tool at all.
     if (provider === 'vertex') {
-      const model = getMainLoopModel()
-      const supportsWebSearch =
-        model.includes('claude-opus-4') ||
-        model.includes('claude-opus-5') ||
-        model.includes('claude-sonnet-4') ||
-        model.includes('claude-sonnet-5') ||
-        model.includes('claude-haiku-4')
-
-      return supportsWebSearch
+      return vertexModelSupportsWebSearch(getMainLoopModel())
     }
 
     // Foundry only ships models that already support Web Search
@@ -327,7 +321,7 @@ export const WebSearchTool = buildTool({
       options: {
         getToolPermissionContext: async () => appState.toolPermissionContext,
         model: searchModel,
-        // Fable 5.1 / Mythos 5.1 reject forced tool_choice with a 400. The
+        // Fable 5.1 / Mythos 5.1 / Opus 5.5 reject forced tool_choice with a 400. The
         // Haiku experiment normally points searchModel at the small fast
         // model, but ANTHROPIC_SMALL_FAST_MODEL can pin it to anything — so
         // gate on the model that actually receives the request. Dropping to

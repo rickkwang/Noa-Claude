@@ -178,13 +178,16 @@ function get3PFallbackSuggestion(model: string | undefined): string | undefined 
     return getModelStrings().fable5
   }
   if (lowerModel.includes('fable-5') || lowerModel.includes('fable_5')) {
-    // Upstream's fallback_3p for Fable 5 is Opus 5, and when a fable model
-    // falls back onto the opus family it prefers an explicitly pinned
-    // ANTHROPIC_DEFAULT_OPUS_MODEL over the catalog value.
-    return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL || getModelStrings().opus5
+    // Upstream's fallback_3p for Fable 5 is Opus 5.5 (2.1.280), and when a
+    // fable model falls back onto the opus family it prefers an explicitly
+    // pinned ANTHROPIC_DEFAULT_OPUS_MODEL over the catalog value.
+    return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL || getModelStrings().opus55
   }
   if (lowerModel.includes('sonnet-5') || lowerModel.includes('sonnet_5')) {
     return getModelStrings().sonnet46
+  }
+  if (lowerModel.includes('opus-5-5') || lowerModel.includes('opus_5_5')) {
+    return getModelStrings().opus5
   }
   if (lowerModel.includes('opus-5') || lowerModel.includes('opus_5')) {
     return getModelStrings().opus48

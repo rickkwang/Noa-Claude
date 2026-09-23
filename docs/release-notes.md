@@ -1,5 +1,18 @@
 # Release Notes
 
+## Unreleased
+
+- New: Claude Opus 5.5 (`claude-opus-5-5`) — the `opus` alias now resolves to it on first party, Bedrock and Vertex (Foundry stays on Opus 4.6); Opus 5 remains selectable by id
+- Opus 5.5 requests follow its API surface: thinking is never sent as `disabled`, forced `tool_choice` falls back to `auto`, preserved-thinking controls are sent, and the default max output is 128K
+- Opus 5.5 is billed at $4/$20 per Mtok ($0.20 cache reads), $8/$40 in fast mode; the status bar shows its API default effort as `medium`
+- Knowledge cutoffs added for Fable 5/5.1 and Mythos 5/5.1; Fable 5's third-party fallback suggestion is now Opus 5.5
+- Fixed Vertex (all models) and Bedrock (Sonnet 5, Sonnet/Opus 4.6) sending `budget_tokens` to adaptive-only models, which the API rejects with a 400; effort is now also sent on Bedrock/Vertex for every model where it is GA (Opus 4.5 excepted)
+- Fixed cost reporting: Opus 4.8 fast mode is $10/$50 (was priced at $30/$150), 1-hour cache writes bill at 2x input (were priced as 5-minute writes), `/fast` shows the model fast mode will run on and its price instead of Opus 5 at the retired $30/$150 rate, and the Opus 4.8 picker rows show Opus 4.8's own fast-mode price
+- Bedrock/Vertex now get `eager_input_streaming` on models whose deployments accept it, so large tool inputs stream instead of arriving in one burst
+- Dynamic-filtering web search is limited to first party; Foundry Hosted-on-Azure only serves the basic tool
+- Claude Opus 4 and Sonnet 4 now show their retirement dates, and past dates read as "was retired"
+- Fixed Vertex per-model region overrides for Opus 4.5–5.5, Sonnet 5 and Fable (`VERTEX_REGION_CLAUDE_*`); Opus 4.5+ previously fell through to the Opus 4.0 variable
+
 ## 1.15.0
 
 - New: mouse support in the settings panel (fullscreen) — wheel scrolls, click selects or changes a value, hovered row shows a pointer

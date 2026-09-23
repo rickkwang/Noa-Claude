@@ -156,6 +156,24 @@ export const CLAUDE_FABLE_5_1_CONFIG = {
   foundry: 'claude-fable-5-1',
 } as const satisfies ModelConfig
 
+// Opus 5.5 — successor to Opus 5 at a lower price ($4/$20, $0.20 cache reads).
+// Request surface is Fable 5.1's, not Opus 5's:
+//   1. thinking can't be disabled — {type:'disabled'} and budget_tokens both
+//      400 at every effort level; omit the param (always adaptive).
+//   2. forced tool_choice {type:'any'|'tool'} returns a 400.
+//   3. preserved thinking: blocks are bound to the model and the conversation
+//      prefix, same controls as Fable 5.1.
+//   4. default effort is `medium`, one level below Opus 5's `high`.
+// Keeps Opus 5's fast mode. 1M context; 128K max output (also the default).
+// Note 'claude-opus-5' is a prefix of 'claude-opus-5-5' — every substring
+// check for Opus 5 must rule 5.5 out first.
+export const CLAUDE_OPUS_5_5_CONFIG = {
+  firstParty: 'claude-opus-5-5',
+  bedrock: 'us.anthropic.claude-opus-5-5',
+  vertex: 'claude-opus-5-5',
+  foundry: 'claude-opus-5-5',
+} as const satisfies ModelConfig
+
 // @[MODEL LAUNCH]: Register the new config here.
 export const ALL_MODEL_CONFIGS = {
   haiku35: CLAUDE_3_5_HAIKU_CONFIG,
@@ -173,6 +191,7 @@ export const ALL_MODEL_CONFIGS = {
   opus47: CLAUDE_OPUS_4_7_CONFIG,
   opus48: CLAUDE_OPUS_4_8_CONFIG,
   opus5: CLAUDE_OPUS_5_CONFIG,
+  opus55: CLAUDE_OPUS_5_5_CONFIG,
   fable5: CLAUDE_FABLE_5_CONFIG,
   fable51: CLAUDE_FABLE_5_1_CONFIG,
 } as const satisfies Record<string, ModelConfig>

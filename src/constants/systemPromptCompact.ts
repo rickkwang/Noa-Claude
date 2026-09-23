@@ -71,6 +71,18 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     fable5Mitigations: false,
     fable51PromptBundle: false,
   },
+  // Opus 5.5 declares `lean_prompt` plus its own `opus_5_5_prompt_bundle`
+  // (2.1.280), not Opus 5's bundle. Every section that bundle switches on is
+  // harness behaviour (silent-turn reminder, hook-notice visibility, Bash
+  // steering variant) with no ported counterpart here, so the row carries no
+  // bundle bit. Listed explicitly so the third-party "upstream" policy treats
+  // it as a known manifest row rather than an unknown future model.
+  'claude-opus-5-5': {
+    leanPrompt: true,
+    opus5PromptBundle: false,
+    fable5Mitigations: false,
+    fable51PromptBundle: false,
+  },
   'claude-fable-5': {
     leanPrompt: true,
     opus5PromptBundle: false,

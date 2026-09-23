@@ -149,8 +149,8 @@ describe('native-1M model-setting normalization', () => {
 
   test('keeps opus[1m] visible, matching upstream display semantics', () => {
     const resolved = parseUserSpecifiedModel('opus[1m]')
-    expect(resolved).toBe('claude-opus-5[1m]')
-    expect(renderModelName(resolved)).toBe('Opus 5 (1M context)')
+    expect(resolved).toBe('claude-opus-5-5[1m]')
+    expect(renderModelName(resolved)).toBe('Opus 5.5 (1M context)')
   })
 
   test('does not enable the merged Opus 1M setting for Pro', () => {

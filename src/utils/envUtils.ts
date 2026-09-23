@@ -191,7 +191,8 @@ export function isInProtectedNamespace(): boolean {
 
 // @[MODEL LAUNCH]: Add a Vertex region override env var for the new model.
 /**
- * Model prefix → env var for Vertex region overrides.
+ * Model prefix → env var for Vertex region overrides. Names mirror upstream's
+ * catalog `vertex_region_env_var` field (2.1.280); Mythos has none.
  * Order matters: more specific prefixes must come before less specific ones
  * (e.g., 'claude-opus-4-1' before 'claude-opus-4').
  */
@@ -200,8 +201,17 @@ const VERTEX_REGION_OVERRIDES: ReadonlyArray<[string, string]> = [
   ['claude-3-5-haiku', 'VERTEX_REGION_CLAUDE_3_5_HAIKU'],
   ['claude-3-5-sonnet', 'VERTEX_REGION_CLAUDE_3_5_SONNET'],
   ['claude-3-7-sonnet', 'VERTEX_REGION_CLAUDE_3_7_SONNET'],
+  ['claude-fable-5-1', 'VERTEX_REGION_CLAUDE_FABLE_5_1'],
+  ['claude-fable-5', 'VERTEX_REGION_CLAUDE_FABLE_5'],
+  ['claude-opus-5-5', 'VERTEX_REGION_CLAUDE_5_5_OPUS'],
+  ['claude-opus-5', 'VERTEX_REGION_CLAUDE_5_OPUS'],
+  ['claude-opus-4-8', 'VERTEX_REGION_CLAUDE_4_8_OPUS'],
+  ['claude-opus-4-7', 'VERTEX_REGION_CLAUDE_4_7_OPUS'],
+  ['claude-opus-4-6', 'VERTEX_REGION_CLAUDE_4_6_OPUS'],
+  ['claude-opus-4-5', 'VERTEX_REGION_CLAUDE_4_5_OPUS'],
   ['claude-opus-4-1', 'VERTEX_REGION_CLAUDE_4_1_OPUS'],
   ['claude-opus-4', 'VERTEX_REGION_CLAUDE_4_0_OPUS'],
+  ['claude-sonnet-5', 'VERTEX_REGION_CLAUDE_5_SONNET'],
   ['claude-sonnet-4-6', 'VERTEX_REGION_CLAUDE_4_6_SONNET'],
   ['claude-sonnet-4-5', 'VERTEX_REGION_CLAUDE_4_5_SONNET'],
   ['claude-sonnet-4', 'VERTEX_REGION_CLAUDE_4_0_SONNET'],

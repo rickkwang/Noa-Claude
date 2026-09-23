@@ -43,6 +43,8 @@ const PROJECTS_DIR = join(CONFIG_HOME, 'projects')
 const PRICES = {
   'claude-fable-5-1': [10, 50],
   'claude-fable-5': [10, 50],
+  // Before 'claude-opus-5': priceFor() matches by prefix.
+  'claude-opus-5-5': [4, 20],
   'claude-opus-5': [5, 25],
   'claude-opus-4-8': [5, 25],
   'claude-opus-4-7': [5, 25],
@@ -53,8 +55,9 @@ const PRICES = {
 }
 const CACHE_WRITE_5M = 1.25
 const CACHE_WRITE_1H = 2
-// Fable 5.1 / Mythos 5.1 read at 0.025x; every other model at 0.1x.
-const cacheReadMultiplier = model => (/fable-5-1|mythos-5-1/.test(model) ? 0.025 : 0.1)
+// Fable 5.1 / Mythos 5.1 read at 0.025x, Opus 5.5 at 0.05x; every other model at 0.1x.
+const cacheReadMultiplier = model =>
+  /fable-5-1|mythos-5-1/.test(model) ? 0.025 : /opus-5-5/.test(model) ? 0.05 : 0.1
 
 function priceFor(model) {
   const key = Object.keys(PRICES).find(k => model.startsWith(k))

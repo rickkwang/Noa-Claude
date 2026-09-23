@@ -22,6 +22,8 @@ import { getGlobalConfig, saveGlobalConfig } from './config.js'
 import { logForDebugging } from './debug.js'
 import { isEnvTruthy } from './envUtils.js'
 import {
+  getDefaultOpusModel,
+  getMarketingNameForModel,
   getDefaultMainLoopModelSetting,
   isOpus1mMergeEnabled,
   type ModelSetting,
@@ -141,7 +143,13 @@ export function getFastModeUnavailableReason(): string | null {
 }
 
 // @[MODEL LAUNCH]: Update supported Fast Mode models.
-export const FAST_MODE_MODEL_DISPLAY = 'Opus 5'
+/**
+ * Display name of the model fast mode runs on: whatever the `opus` alias
+ * resolves to (getFastModeModel), as upstream renders it.
+ */
+export function getFastModeModelDisplay(): string {
+  return getMarketingNameForModel(getDefaultOpusModel()) ?? 'Opus'
+}
 
 export function getFastModeModel(): string {
   return 'opus' + (isOpus1mMergeEnabled() ? '[1m]' : '')
@@ -179,6 +187,7 @@ export function isFastModeSupportedByModel(
   // but it is still a selectable model (CLAUDE_OPUS_4_7_CONFIG), so leaving it
   // here would send `speed: "fast"` and fail the request for anyone who picks
   // it with fast mode on.
+  // 'claude-opus-5' also matches Opus 5.5, which keeps fast mode ($8/$40).
   return lower.includes('opus-4-8') || lower.includes('claude-opus-5')
 }
 

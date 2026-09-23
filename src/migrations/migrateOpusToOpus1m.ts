@@ -27,7 +27,7 @@ export function migrateOpusToOpus1m(): void {
   const model = getSettingsForSource('userSettings')?.model
 
   // Earlier builds incorrectly enabled the merged-1M experience for Pro and
-  // persisted `opus[1m]`. Opus 4.8 is natively 1M, so the suffix is a no-op
+  // persisted `opus[1m]`. Current Opus is natively 1M, so the suffix is a no-op
   // that only leaks "(1M context)" into the banner and picker. Upstream
   // excludes Pro from the merge; normalize affected settings back to `opus`.
   try {

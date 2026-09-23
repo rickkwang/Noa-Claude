@@ -93,18 +93,16 @@ export function getSupportedEffortLevelsForModel(
   const canonical = getCanonicalName(model).toLowerCase()
   const raw = model.toLowerCase()
   const modelKey = `${canonical} ${raw}`
-  // Surface effort for Opus 4.7/4.8 on Bedrock. This mirrors the Bedrock
-  // model allowlist used by modelSupportsAdaptiveThinking (thinking.ts), which
-  // is a separate API capability — so this is an allowlist convention, NOT
-  // proof that Bedrock accepts output_config.effort. Verify against a live
-  // Bedrock endpoint before relying on it; if Bedrock rejects the field,
-  // remove this branch.
-  const isBedrockSupported =
-    provider === 'bedrock' &&
-    (modelKey.includes('opus-4-7') ||
-      modelKey.includes('opus-4-8') ||
-      modelKey.includes('claude-opus-5'))
-  if (!directFirstParty && provider !== 'foundry' && !isBedrockSupported) {
+  // Effort is GA on Bedrock and Vertex as well as first party and Foundry
+  // (platform availability: "Adaptive thinking / effort — Yes" everywhere), so
+  // the per-model ladder below applies to all four. Only an unrecognised
+  // endpoint (custom ANTHROPIC_BASE_URL, OpenAI-compatible) stays opted out.
+  if (
+    !directFirstParty &&
+    provider !== 'foundry' &&
+    provider !== 'bedrock' &&
+    provider !== 'vertex'
+  ) {
     return []
   }
 
@@ -125,6 +123,12 @@ export function getSupportedEffortLevelsForModel(
     return ['low', 'medium', 'high', 'max']
   }
   if (modelKey.includes('opus-4-5')) {
+    // Opus 4.5's effort predates the GA rollout and upstream still sends the
+    // `effort-2025-11-24` beta for it; Noa sends effort without that header,
+    // so keep it to first party and Foundry, where it is known to work.
+    if (provider === 'bedrock' || provider === 'vertex') {
+      return []
+    }
     return ['low', 'medium', 'high']
   }
   return []
@@ -290,15 +294,27 @@ export function resolveAppliedEffort(
 }
 
 /**
+ * The level the API applies when a request carries no effort param. `high` for
+ * every model except Opus 5.5, whose API default is `medium`.
+ *
+ * @[MODEL LAUNCH]: add models whose API-side default effort is not `high`.
+ */
+export function getApiDefaultEffortForModel(model: string): EffortLevel {
+  return getCanonicalName(model).includes('claude-opus-5-5') ? 'medium' : 'high'
+}
+
+/**
  * Resolve the effort level to show the user. Wraps resolveAppliedEffort
- * with the 'high' fallback (what the API uses when no effort param is sent).
+ * with the API-side fallback (what the API uses when no effort param is sent).
  * Single source of truth for the status bar and /effort output (CC-1088).
  */
 export function getDisplayedEffortLevel(
   model: string,
   appStateEffort: EffortValue | undefined,
 ): EffortLevel {
-  const resolved = resolveAppliedEffort(model, appStateEffort) ?? 'high'
+  const resolved =
+    resolveAppliedEffort(model, appStateEffort) ??
+    getApiDefaultEffortForModel(model)
   return convertEffortValueToLevel(resolved)
 }
 

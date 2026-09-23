@@ -38,12 +38,13 @@ import { TASK_OUTPUT_TOOL_NAME } from '../tools/TaskOutputTool/constants.js'
 import type { Message } from '../types/message.js'
 import { isAgentSwarmsEnabled } from './agentSwarmsEnabled.js'
 import {
+  cloudProviderSupportsEagerInputStreaming,
   modelSupportsStructuredOutputs,
   shouldUseGlobalCacheScope,
 } from './betas.js'
 import { getCwd } from './cwd.js'
 import { logForDebugging } from './debug.js'
-import { isEnvTruthy } from './envUtils.js'
+import { isEnvDefinedFalsy, isEnvTruthy } from './envUtils.js'
 import { createUserMessage, wrapInSystemReminder } from './messages.js'
 import {
   getAPIProvider,
@@ -242,13 +243,24 @@ export async function toolToAPISchema(
       : ''
   const supportsStructuredOutputs =
     options.model !== undefined && modelSupportsStructuredOutputs(options.model)
+  // Per-model on Bedrock/Vertex, so it must vary the key like the bits above.
+  const fgtsOverride = process.env.CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING
+  const eagerInputStreaming =
+    !isEnvDefinedFalsy(fgtsOverride) &&
+    (isEnvTruthy(fgtsOverride) ||
+      (getAPIProvider() === 'firstParty' &&
+        isFirstPartyAnthropicBaseUrl() &&
+        getFeatureValue_CACHED_MAY_BE_STALE('tengu_fgts', false)) ||
+      (options.model !== undefined &&
+        cloudProviderSupportsEagerInputStreaming(options.model)))
   const cacheKey =
     ('inputJSONSchema' in tool && tool.inputJSONSchema
       ? `${tool.name}:${jsonStringify(tool.inputJSONSchema)}`
       : tool.name) +
     leanSuffix +
     preReadSuffix +
-    (supportsStructuredOutputs ? ':X' : '')
+    (supportsStructuredOutputs ? ':X' : '') +
+    (eagerInputStreaming ? ':E' : '')
   const cache = getToolSchemaCache()
   const cacheGeneration = getToolSchemaCacheGeneration()
   let base = cache.get(cacheKey)
@@ -300,14 +312,10 @@ export async function toolToAPISchema(
     // Enable fine-grained tool streaming via per-tool API field.
     // Without FGTS, the API buffers entire tool input parameters before sending
     // input_json_delta events, causing multi-minute hangs on large tool inputs.
-    // Gated to direct api.anthropic.com: proxies (LiteLLM etc.) and Bedrock/Vertex
-    // with Claude 4.5 reject this field with 400. See GH#32742, PR #21729.
-    if (
-      getAPIProvider() === 'firstParty' &&
-      isFirstPartyAnthropicBaseUrl() &&
-      (getFeatureValue_CACHED_MAY_BE_STALE('tengu_fgts', false) ||
-        isEnvTruthy(process.env.CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING))
-    ) {
+    // First party: direct api.anthropic.com behind tengu_fgts (proxies such as
+    // LiteLLM reject the field). Bedrock/Vertex: per model, from upstream's
+    // catalog. CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING=1|0 forces it.
+    if (eagerInputStreaming) {
       base.eager_input_streaming = true
     }
 

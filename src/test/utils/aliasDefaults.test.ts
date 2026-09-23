@@ -38,13 +38,13 @@ afterEach(() => {
 })
 
 /**
- * Mirrors the `aliases` table in upstream's baked model catalog (2.1.258).
+ * Mirrors the `aliases` table in upstream's baked model catalog (2.1.280).
  * Asserted on the canonical substring, since Bedrock/Vertex render their own
  * provider-specific id shapes.
  */
 describe('per-provider alias defaults match the upstream catalog', () => {
   test('first party gets the current generation of every family', () => {
-    expect(getDefaultOpusModel()).toBe('claude-opus-5')
+    expect(getDefaultOpusModel()).toBe('claude-opus-5-5')
     expect(getDefaultSonnetModel()).toBe('claude-sonnet-5')
     expect(getDefaultFableModel()).toBe('claude-fable-5-1')
     expect(getDefaultHaikuModel()).toContain('claude-haiku-4-5')
@@ -53,7 +53,7 @@ describe('per-provider alias defaults match the upstream catalog', () => {
   test('Bedrock and Vertex get current Opus — not a trailing generation', () => {
     for (const env of ['CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX']) {
       useProvider(env)
-      expect(getDefaultOpusModel()).toContain('claude-opus-5')
+      expect(getDefaultOpusModel()).toContain('claude-opus-5-5')
     }
   })
 
@@ -95,11 +95,13 @@ describe('the picker can reach every provider default', () => {
   test('the third-party Opus rows include the model that is now the default', () => {
     // Regression guard: the 3P branch offered only 4.1 / 4.8 while the default
     // moved to Opus 5, leaving no way back to the default from the picker.
+    // The default is now Opus 5.5; Opus 5 stays as an explicit downgrade.
     const src = readFileSync(
       new URL('../../utils/model/modelOptions.ts', import.meta.url),
       'utf8',
     )
     const payg3p = src.slice(src.indexOf('payg3pOptions'))
+    expect(payg3p).toContain('payg3pOptions.push(getOpus55Option(fastMode))')
     expect(payg3p).toContain('payg3pOptions.push(getOpus5Option(fastMode))')
   })
 })

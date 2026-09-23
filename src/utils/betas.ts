@@ -18,7 +18,6 @@ import {
   STRUCTURED_OUTPUTS_BETA_HEADER,
   SUMMARIZE_CONNECTOR_TEXT_BETA_HEADER,
   THINKING_BINDING_CONTROLS_BETA_HEADER,
-  TOKEN_EFFICIENT_TOOLS_BETA_HEADER,
   TOOL_SEARCH_BETA_HEADER_1P,
   TOOL_SEARCH_BETA_HEADER_3P,
   WEB_SEARCH_BETA_HEADER,
@@ -124,15 +123,16 @@ export function modelSupportsISP(model: string): boolean {
   )
 }
 
-function vertexModelSupportsWebSearch(model: string): boolean {
+/** Web search on Vertex is served for Claude 4.0+ models only. */
+export function vertexModelSupportsWebSearch(model: string): boolean {
   const canonical = getCanonicalName(model)
-  // Web search only supported on Claude 4.0+ models on Vertex
   return (
     canonical.includes('claude-opus-4') ||
     canonical.includes('claude-opus-5') ||
     canonical.includes('claude-sonnet-4') ||
     canonical.includes('claude-sonnet-5') ||
-    canonical.includes('claude-haiku-4')
+    canonical.includes('claude-haiku-4') ||
+    canonical.includes('claude-fable-5')
   )
 }
 
@@ -146,16 +146,20 @@ function vertexModelSupportsWebSearch(model: string): boolean {
  * an unknown tool type is a hard 400 that fails the whole request, whereas
  * falling back to the basic variant just forgoes dynamic filtering. So this is
  * an allowlist of models documented to accept it, and everything else — older
- * models, Vertex (which serves only the basic variant), Bedrock, and 3P
- * Anthropic-compatible endpoints — stays on `web_search_20250305`.
+ * models, Vertex and Foundry Hosted-on-Azure (which serve only the basic
+ * variant), and 3P Anthropic-compatible endpoints — stays on
+ * `web_search_20250305`. Opus 5.5 matches via the `claude-opus-5` prefix; it
+ * keeps Opus 5's server tools.
  *
  * @[MODEL LAUNCH]: Add the new model here once it is documented to accept the
- * dynamic-filtering variant. Fable 5 and Mythos 5 are deliberately absent:
- * they are not named in the compatibility list, and guessing costs a 400.
+ * dynamic-filtering variant. The Fable / Mythos family is deliberately
+ * absent: it is not named in the compatibility list, and guessing costs a 400.
  */
 export function modelSupportsWebSearchDynamicFiltering(model: string): boolean {
-  // Vertex serves only the basic variant, whatever the model.
-  if (!isDirectFirstParty() && getAPIProvider() !== 'foundry') {
+  // First party only: Vertex serves only the basic variant, and so does
+  // Foundry's Hosted-on-Azure path, which Noa cannot tell apart from Foundry's
+  // Hosted-on-Anthropic path by configuration alone.
+  if (!isDirectFirstParty()) {
     return false
   }
   const canonical = getCanonicalName(model)
@@ -197,7 +201,7 @@ export function modelSupportsContextManagement(model: string): boolean {
 }
 
 /**
- * Fable 5.1 / Mythos 5.1 removed forced tool use: `tool_choice` of type `any`
+ * Fable 5.1 / Mythos 5.1 / Opus 5.5 removed forced tool use: `tool_choice` of type `any`
  * or `tool` returns a 400 ("tool_choice: type \"tool\" and \"any\" are not
  * supported for this model."), on count_tokens and Batches too. `auto` and
  * `none` are unaffected.
@@ -212,12 +216,13 @@ export function modelRejectsForcedToolChoice(model: string): boolean {
   const canonical = getCanonicalName(model)
   return (
     canonical.includes('claude-fable-5-1') ||
-    canonical.includes('claude-mythos-5-1')
+    canonical.includes('claude-mythos-5-1') ||
+    canonical.includes('claude-opus-5-5')
   )
 }
 
 /**
- * Fable 5.1 / Mythos 5.1 enforce "preserved thinking": a thinking block's
+ * Fable 5.1 / Mythos 5.1 / Opus 5.5 enforce "preserved thinking": a thinking block's
  * signature records the conversation prefix that produced it (top-level
  * `system`, the `tools` set, and every earlier message), so editing an earlier
  * turn invalidates every later block. Noa edits history routinely — compaction
@@ -236,7 +241,8 @@ export function modelEnforcesThinkingPrefixBinding(model: string): boolean {
   const canonical = getCanonicalName(model)
   return (
     canonical.includes('claude-fable-5-1') ||
-    canonical.includes('claude-mythos-5-1')
+    canonical.includes('claude-mythos-5-1') ||
+    canonical.includes('claude-opus-5-5')
   )
 }
 
@@ -253,6 +259,65 @@ export function shouldSendThinkingBindingControls(model: string): boolean {
     isDirectFirstParty() &&
     !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS)
   )
+}
+
+/**
+ * Models whose Bedrock / Vertex deployments accept the per-tool
+ * `eager_input_streaming` field, from upstream's catalog (2.1.280). Bedrock
+ * only takes it on its newer serving stack; older deployments 400 on it.
+ *
+ * @[MODEL LAUNCH]: mirror the new model's catalog `eager_input_streaming`.
+ */
+const EAGER_INPUT_STREAMING_VERTEX = new Set([
+  'claude-3-5-haiku',
+  'claude-sonnet-4',
+  'claude-sonnet-4-5',
+  'claude-sonnet-4-6',
+  'claude-sonnet-5',
+  'claude-opus-4-5',
+  'claude-opus-4-6',
+  'claude-opus-4-7',
+  'claude-opus-4-8',
+  'claude-opus-5',
+  'claude-opus-5-5',
+  'claude-fable-5',
+  'claude-fable-5-1',
+])
+const EAGER_INPUT_STREAMING_BEDROCK = new Set([
+  'claude-sonnet-4-6',
+  'claude-sonnet-5',
+  'claude-opus-4-7',
+  'claude-opus-4-8',
+  'claude-opus-5',
+  'claude-opus-5-5',
+  'claude-fable-5',
+  'claude-fable-5-1',
+])
+
+/**
+ * Whether Bedrock / Vertex should get `eager_input_streaming` on tools for
+ * this model. A custom ANTHROPIC_{BEDROCK,VERTEX}_BASE_URL may be a proxy that
+ * rejects the field, so it opts out, as upstream does. First party is decided
+ * separately in api.ts.
+ */
+export function cloudProviderSupportsEagerInputStreaming(
+  model: string,
+): boolean {
+  const canonical = getCanonicalName(model)
+  const provider = getAPIProvider()
+  if (provider === 'vertex') {
+    return (
+      !process.env.ANTHROPIC_VERTEX_BASE_URL &&
+      EAGER_INPUT_STREAMING_VERTEX.has(canonical)
+    )
+  }
+  if (provider === 'bedrock') {
+    return (
+      !process.env.ANTHROPIC_BEDROCK_BASE_URL &&
+      EAGER_INPUT_STREAMING_BEDROCK.has(canonical)
+    )
+  }
+  return false
 }
 
 // @[MODEL LAUNCH]: Add the new model ID to this list if it supports structured outputs.
@@ -481,28 +546,12 @@ export const getAllModelBetas = memoize((model: string): string[] => {
   // github.com/deshaw/anthropic-issues/issues/5
   const strictToolsEnabled =
     checkStatsigFeatureGate_CACHED_MAY_BE_STALE('tengu_tool_pear')
-  // 3P default: false. API rejects strict + token-efficient-tools together
-  // (tool_use.py:139), so these are mutually exclusive — strict wins.
-  const tokenEfficientToolsEnabled =
-    !strictToolsEnabled &&
-    getFeatureValue_CACHED_MAY_BE_STALE('tengu_amber_json_tools', false)
   if (
     includeFirstPartyOnlyBetas &&
     modelSupportsStructuredOutputs(model) &&
     strictToolsEnabled
   ) {
     betaHeaders.push(STRUCTURED_OUTPUTS_BETA_HEADER)
-  }
-  // JSON tool_use format (FC v3) — ~4.5% output token reduction vs ANTML.
-  // Sends the v2 header (2026-03-28) added in anthropics/anthropic#337072 to
-  // isolate the CC A/B cohort from ~9.2M/week existing v1 senders. Ant-only
-  // while the restored JsonToolUseOutputParser soaks.
-  if (
-    process.env.USER_TYPE === 'ant' &&
-    includeFirstPartyOnlyBetas &&
-    tokenEfficientToolsEnabled
-  ) {
-    betaHeaders.push(TOKEN_EFFICIENT_TOOLS_BETA_HEADER)
   }
 
   // Add web search beta for Vertex Claude 4.0+ models only

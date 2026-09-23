@@ -177,7 +177,7 @@ Explain this command in context.`
     const model = getMainLoopModel()
 
     // Use sideQuery with forced tool choice for guaranteed structured output.
-    // Fable 5.1 / Mythos 5.1 reject forced tool_choice with a 400, so there we
+    // Fable 5.1 / Mythos 5.1 / Opus 5.5 reject forced tool_choice with a 400, so there we
     // fall back to `auto` plus an instruction naming the tool; the tool_use
     // block is optional either way (the miss path below already handles it).
     const rejectsForcedToolChoice = modelRejectsForcedToolChoice(model)

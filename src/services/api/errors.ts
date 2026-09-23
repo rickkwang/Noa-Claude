@@ -1041,16 +1041,21 @@ function get3PModelFallbackSuggestion(model: string): string | undefined {
   if (m.includes('fable-5-1') || m.includes('fable_5_1')) {
     return getModelStrings().fable5
   }
-  // If the failing model looks like a Fable 5 variant, suggest Opus 4.8
+  // If the failing model looks like a Fable 5 variant, suggest Opus 5.5
   if (m.includes('fable-5') || m.includes('fable_5')) {
-    // Upstream's fallback_3p for Fable 5 is Opus 5, and when a fable model
-    // falls back onto the opus family it prefers an explicitly pinned
-    // ANTHROPIC_DEFAULT_OPUS_MODEL over the catalog value.
-    return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL || getModelStrings().opus5
+    // Upstream's fallback_3p for Fable 5 is Opus 5.5 (2.1.280), and when a
+    // fable model falls back onto the opus family it prefers an explicitly
+    // pinned ANTHROPIC_DEFAULT_OPUS_MODEL over the catalog value.
+    return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL || getModelStrings().opus55
   }
   // If the failing model looks like a Sonnet 5 variant, suggest Sonnet 4.6
   if (m.includes('sonnet-5') || m.includes('sonnet_5')) {
     return getModelStrings().sonnet46
+  }
+  // If the failing model looks like an Opus 5.5 variant, suggest Opus 5
+  // (upstream's fallback_3p). Must precede the Opus 5 check, a prefix of it.
+  if (m.includes('opus-5-5') || m.includes('opus_5_5')) {
+    return getModelStrings().opus5
   }
   // If the failing model looks like an Opus 5 variant, suggest Opus 4.8
   if (m.includes('opus-5') || m.includes('opus_5')) {
@@ -1346,7 +1351,9 @@ function hasArmedRefusalFallback(model: string): boolean {
   const canonical = getCanonicalName(model)
   if (canonical.startsWith('claude-mythos-')) return false
   return (
-    canonical.startsWith('claude-fable-') || canonical === 'claude-opus-5'
+    canonical.startsWith('claude-fable-') ||
+    canonical === 'claude-opus-5' ||
+    canonical === 'claude-opus-5-5'
   )
 }
 

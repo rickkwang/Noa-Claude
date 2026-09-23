@@ -116,12 +116,16 @@ export function modelSupportsThinking(model: string): boolean {
   if (isThirdPartyAnthropicCompatibleProvider()) {
     return false
   }
-  // Bedrock/Vertex: only Opus 4+ and Sonnet 4+.
+  // Bedrock/Vertex: every Claude 4+ model, as upstream (its thinking gate is
+  // provider-independent: anything but claude-3-*).
   return (
     canonical.includes('sonnet-4') ||
     canonical.includes('sonnet-5') ||
     canonical.includes('opus-4') ||
-    canonical.includes('claude-opus-5')
+    canonical.includes('claude-opus-5') ||
+    canonical.includes('haiku-4') ||
+    canonical.includes('fable-5') ||
+    canonical.includes('mythos')
   )
 }
 
@@ -135,21 +139,19 @@ export function modelSupportsAdaptiveThinking(model: string): boolean {
   const provider = getAPIProvider()
   const directFirstParty = isDirectFirstParty()
 
-  // First-party, Foundry, and Bedrock Opus 4.7 use adaptive thinking.
+  // Adaptive thinking is a property of the model, not the platform: upstream's
+  // gate reads the catalog's `adaptive_thinking` capability on every provider.
+  // An earlier Bedrock/Vertex carve-out sent budget_tokens to Opus 4.7+ and
+  // Sonnet 5 there, which those models reject with a 400.
   if (
-    ((directFirstParty || provider === 'foundry') &&
-      (canonical.includes('opus-4-6') ||
-        canonical.includes('opus-4-7') ||
-        canonical.includes('opus-4-8') ||
-        canonical.includes('claude-opus-5') ||
-        canonical.includes('fable-5') ||
-        canonical.includes('mythos') ||
-        canonical.includes('sonnet-5') ||
-        canonical.includes('sonnet-4-6'))) ||
-    (provider === 'bedrock' &&
-      (canonical.includes('opus-4-7') ||
-        canonical.includes('opus-4-8') ||
-        canonical.includes('claude-opus-5')))
+    canonical.includes('opus-4-6') ||
+    canonical.includes('opus-4-7') ||
+    canonical.includes('opus-4-8') ||
+    canonical.includes('claude-opus-5') ||
+    canonical.includes('fable-5') ||
+    canonical.includes('mythos') ||
+    canonical.includes('sonnet-5') ||
+    canonical.includes('sonnet-4-6')
   ) {
     return true
   }
@@ -216,13 +218,16 @@ export function modelOmitsThinkingByDefault(model: string): boolean {
 // @[MODEL LAUNCH]: Add new models that require an explicit thinking:{type:'disabled'}
 // to turn thinking off (i.e. omitting the param still runs adaptive thinking).
 export function modelRequiresExplicitThinkingDisable(model: string): boolean {
+  // Opus 5.5 shares the 'claude-opus-5' prefix but rejects {type:'disabled'}.
+  if (modelThinkingCannotBeDisabled(model)) return false
   const canonical = getCanonicalName(model)
   return canonical.includes('sonnet-5') || canonical.includes('claude-opus-5')
 }
 
 /**
  * Models whose thinking cannot be turned off at all: the Fable / Mythos family
- * runs adaptive thinking always, and an explicit {type:'disabled'} is a 400.
+ * and Opus 5.5 run adaptive thinking always, and an explicit {type:'disabled'}
+ * is a 400 at every effort level.
  *
  * Distinct from modelRequiresExplicitThinkingDisable, which marks the opposite
  * problem — models (Sonnet 5, Opus 5) where omitting the parameter still runs
@@ -239,7 +244,11 @@ export function modelRequiresExplicitThinkingDisable(model: string): boolean {
  */
 export function modelThinkingCannotBeDisabled(model: string): boolean {
   const canonical = getCanonicalName(model)
-  return canonical.includes('fable-5') || canonical.includes('mythos')
+  return (
+    canonical.includes('fable-5') ||
+    canonical.includes('mythos') ||
+    canonical.includes('claude-opus-5-5')
+  )
 }
 
 // The API rejects effort above `high` when thinking is explicitly disabled

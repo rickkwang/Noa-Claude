@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import {
+  calculateUSDCost,
   COST_TIER_2_10,
   COST_TIER_10_50,
   COST_TIER_30_150,
@@ -8,7 +9,6 @@ import {
   getModelCosts,
   getModelPricingString,
   getOpusCostTierForModel,
-  getSonnet5CostTier,
 } from '../../utils/modelCost.js'
 import { getSonnet5_1MOption } from '../../utils/model/modelOptions.js'
 
@@ -24,13 +24,30 @@ afterEach(() => {
 })
 
 describe('Opus 5 pricing', () => {
-  test('fast mode charges $10/$50, not the $30/$150 of Opus 4.6/4.7', () => {
+  test('fast mode charges $10/$50 on Opus 5 and 4.8, not the $30/$150 of Opus 4.6/4.7', () => {
     delete process.env.CLAUDE_CODE_DISABLE_FAST_MODE
 
     expect(getOpusCostTierForModel('claude-opus-5', true)).toBe(COST_TIER_10_50)
     expect(getOpusCostTierForModel('claude-opus-4-8', true)).toBe(
+      COST_TIER_10_50,
+    )
+    expect(getOpusCostTierForModel('claude-opus-4-6', true)).toBe(
       COST_TIER_30_150,
     )
+  })
+
+  test('1h cache writes bill at 2x input, 5m writes at 1.25x', () => {
+    const usage = {
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_creation_input_tokens: 2_000_000,
+      cache_creation: {
+        ephemeral_1h_input_tokens: 1_000_000,
+        ephemeral_5m_input_tokens: 1_000_000,
+      },
+    } as never
+    // Opus 5: $6.25 (5m) + $10 (1h)
+    expect(calculateUSDCost('claude-opus-5', usage)).toBeCloseTo(16.25)
   })
 
   test('standard mode is $5/$25 across the Opus generations', () => {
@@ -74,12 +91,12 @@ describe('Sonnet 5 pricing', () => {
   // of it as introductory put a 2026-09-01 cliff back to $3/$15 here; these
   // tests pin the absence of any such cliff.
   test('uses the $2/$10 tier regardless of date', () => {
-    expect(getSonnet5CostTier()).toBe(COST_TIER_2_10)
+    expect(getModelCosts('claude-sonnet-5', {} as never)).toBe(COST_TIER_2_10)
     expect(getModelPricingString('claude-sonnet-5')).toBe('$2/$10 per Mtok')
   })
 
   test('does not revert to the $3/$15 Sonnet tier over time', () => {
-    expect(getSonnet5CostTier()).not.toBe(COST_TIER_3_15)
+    expect(getModelCosts('claude-sonnet-5', {} as never)).not.toBe(COST_TIER_3_15)
   })
 
   test('does not apply or display first-party Sonnet 5 pricing on custom endpoints', () => {

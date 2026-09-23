@@ -24,9 +24,11 @@ const NATIVE_1M_MODELS: Record<string, { thirdParty: ReadonlySet<string> }> = {
   // no `native_1m_3p` map, so on Bedrock/Vertex/Foundry the 1M window is the
   // `[1m]` opt-in rather than the default. (Sonnet 5 is the model that *does*
   // carry `native_1m_3p:{bedrock,vertex,foundry}` — hence the difference below.)
-  // Do not "fix" this by reasoning from the 3P default: Bedrock and Vertex now
-  // default to Opus 5, and it is still 200k there until `[1m]` is asked for.
+  // Do not "fix" this by reasoning from the 3P default: Bedrock and Vertex
+  // default to current Opus, and it is still 200k there until `[1m]` is asked for.
   'claude-opus-5': { thirdParty: new Set() },
+  // Opus 5.5: same catalog shape as Opus 5 (native_1m, no native_1m_3p).
+  'claude-opus-5-5': { thirdParty: new Set() },
   'claude-fable-5': { thirdParty: new Set() },
   'claude-fable-5-1': { thirdParty: new Set() },
 }

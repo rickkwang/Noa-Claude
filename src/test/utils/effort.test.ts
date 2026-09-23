@@ -111,7 +111,7 @@ describe('effort model support', () => {
     expect(resolveAppliedEffort('claude-haiku-4-5', 'low')).toBeUndefined()
   })
 
-  test('Bedrock supports effort on Opus 4.7/4.8 but not other models', () => {
+  test('Bedrock applies the same per-model effort ladder as first party', () => {
     process.env.CLAUDE_CODE_USE_BEDROCK = '1'
     expect(getSupportedEffortLevelsForModel('claude-opus-4-7')).toEqual([
       'low',
@@ -134,9 +134,17 @@ describe('effort model support', () => {
         'us.anthropic.claude-opus-4-7-20251101-v1:0',
       ),
     ).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
-    // Older models on Bedrock still get no effort (mirrors adaptive-thinking allowlist).
-    expect(getSupportedEffortLevelsForModel('claude-opus-4-6')).toEqual([])
-    expect(getSupportedEffortLevelsForModel('claude-sonnet-4-6')).toEqual([])
+    // Effort is GA on Bedrock, so older models get their own ladders.
+    expect(getSupportedEffortLevelsForModel('claude-opus-4-6')).toEqual([
+      'low',
+      'medium',
+      'high',
+      'max',
+    ])
+    expect(getSupportedEffortLevelsForModel('claude-haiku-4-5')).toEqual([])
+    process.env.CLAUDE_CODE_USE_BEDROCK = ''
+    process.env.CLAUDE_CODE_USE_VERTEX = '1'
+    expect(getSupportedEffortLevelsForModel('claude-sonnet-5')).toContain('xhigh')
   })
 
   test('third-party Anthropic-compatible models require capability overrides', () => {

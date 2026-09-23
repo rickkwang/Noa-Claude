@@ -224,7 +224,13 @@ export function getModelMaxOutputTokens(model: string): {
 
   const m = getCanonicalName(model)
 
-  if (m.includes('opus-4-6') || m.includes('opus-4-7') || m.includes('opus-4-8') || m.includes('claude-opus-5') || m.includes('fable-5') || m.includes('mythos') || m.includes('sonnet-5')) {
+  if (m.includes('claude-opus-5-5')) {
+    // Opus 5.5 defaults to its 128K ceiling (upstream catalog:
+    // `max_output_tokens:{default:128000,upper:128000}`) — thinking is always
+    // on and counts toward max_tokens, so the 64k default would cut turns off.
+    defaultTokens = 128_000
+    upperLimit = 128_000
+  } else if (m.includes('opus-4-6') || m.includes('opus-4-7') || m.includes('opus-4-8') || m.includes('claude-opus-5') || m.includes('fable-5') || m.includes('mythos') || m.includes('sonnet-5')) {
     // Sonnet 5's max output is 128K per the models overview, same ceiling as
     // Opus 4.6+ (unlike Sonnet 4.6, which caps at 64k on the streaming
     // Messages API — see the branch below).
