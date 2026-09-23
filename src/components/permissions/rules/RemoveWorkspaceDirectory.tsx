@@ -98,7 +98,7 @@ export function RemoveWorkspaceDirectory(t0) {
   }
   let t7;
   if ($[15] !== onCancel || $[16] !== t3 || $[17] !== t6) {
-    t7 = <Dialog title="Remove directory from workspace?" onCancel={onCancel} color="error">{t3}{t4}{t6}</Dialog>;
+    t7 = <Dialog title="Remove directory from workspace?" onCancel={onCancel} onExit={onCancel} color="error">{t3}{t4}{t6}</Dialog>;
     $[15] = onCancel;
     $[16] = t3;
     $[17] = t6;

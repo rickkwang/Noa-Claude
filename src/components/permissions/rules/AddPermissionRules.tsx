@@ -164,7 +164,7 @@ export function AddPermissionRules(t0) {
   }
   let t10;
   if ($[21] !== onCancel || $[22] !== t5 || $[23] !== t9 || $[24] !== title) {
-    t10 = <Dialog title={title} onCancel={onCancel} color="permission">{t5}{t9}</Dialog>;
+    t10 = <Dialog title={title} onCancel={onCancel} onExit={onCancel} color="permission">{t5}{t9}</Dialog>;
     $[21] = onCancel;
     $[22] = t5;
     $[23] = t9;

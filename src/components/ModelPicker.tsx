@@ -38,7 +38,7 @@ export type Props = {
 };
 const NO_PREFERENCE = '__NO_PREFERENCE__';
 export function ModelPicker(t0) {
-  const $ = _c(82);
+  const $ = _c(83);
   const {
     initial,
     sessionModel,
@@ -51,7 +51,9 @@ export function ModelPicker(t0) {
   } = t0;
   const safeInitial = typeof initial === 'string' || initial === null ? initial : null;
   const setAppState = useSetAppState();
-  const exitState = useExitOnCtrlCDWithKeybindings();
+  // Double Ctrl+C/D closes the picker when it has somewhere to go back to;
+  // only a picker with no onCancel quits the app.
+  const exitState = useExitOnCtrlCDWithKeybindings(onCancel);
   const initialValue = safeInitial === null ? NO_PREFERENCE : safeInitial;
   const [focusedValue, setFocusedValue] = useState(initialValue);
   const isFastMode = useAppState(_temp);
@@ -346,10 +348,11 @@ export function ModelPicker(t0) {
     t26 = $[73];
   }
   let t27;
-  if ($[74] !== exitState || $[75] !== isStandaloneCommand) {
-    t27 = isStandaloneCommand && <Text dimColor={true} italic={true}>{exitState.pending ? <>Press {exitState.keyName} again to exit</> : <Byline><KeyboardShortcutHint shortcut="Enter" action="confirm" /><ConfigurableShortcutHint action="select:cancel" context="Select" fallback="Esc" description="exit" /></Byline>}</Text>;
+  if ($[74] !== exitState || $[75] !== isStandaloneCommand || $[82] !== onCancel) {
+    t27 = isStandaloneCommand && <Text dimColor={true} italic={true}>{exitState.pending ? <>Press {exitState.keyName} again to {onCancel ? 'cancel' : 'exit'}</> : <Byline><KeyboardShortcutHint shortcut="Enter" action="confirm" /><ConfigurableShortcutHint action="select:cancel" context="Select" fallback="Esc" description="exit" /></Byline>}</Text>;
     $[74] = exitState;
     $[75] = isStandaloneCommand;
+    $[82] = onCancel;
     $[76] = t27;
   } else {
     t27 = $[76];

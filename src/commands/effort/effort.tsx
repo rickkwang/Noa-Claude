@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useExitOnCtrlCDWithKeybindings } from '../../hooks/useExitOnCtrlCDWithKeybindings.js';
 import { useMainLoopModel } from '../../hooks/useMainLoopModel.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from '../../services/analytics/index.js';
@@ -276,7 +276,8 @@ function EffortSlider({ onDone, model }: { onDone: LocalJSXCommandOnDone; model:
   const currentEffort = useAppState((s: any) => s.effortValue);
   const setAppState = useSetAppState();
   const { columns } = useTerminalSize();
-  const exitState = useExitOnCtrlCDWithKeybindings();
+  const cancel = useCallback(() => onDone('Effort unchanged', { display: 'system' } as any), [onDone]);
+  const exitState = useExitOnCtrlCDWithKeybindings(cancel);
 
   const initialIdx = (() => {
     const envOverride = getEffortEnvOverride();
@@ -306,7 +307,7 @@ function EffortSlider({ onDone, model }: { onDone: LocalJSXCommandOnDone; model:
       }
       onDone(result.message);
     } else if (key.escape) {
-      onDone('Effort unchanged', { display: 'system' } as any);
+      cancel();
     }
   });
 
@@ -343,7 +344,7 @@ function EffortSlider({ onDone, model }: { onDone: LocalJSXCommandOnDone; model:
       <Box marginTop={1}>
         <Text dimColor>
           {exitState.pending
-            ? `Press ${exitState.keyName} again to exit`
+            ? `Press ${exitState.keyName} again to cancel`
             : '←/→ to change effort · Enter to confirm · Esc to cancel'}
         </Text>
       </Box>

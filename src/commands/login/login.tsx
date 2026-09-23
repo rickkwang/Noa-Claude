@@ -79,7 +79,7 @@ export function Login(props) {
   }
   let t3;
   if ($[9] !== t0 || $[10] !== t2) {
-    t3 = <Dialog title="Login" onCancel={t0} color="permission" inputGuide={_temp}>{t2}</Dialog>;
+    t3 = <Dialog title="Login" onCancel={t0} onExit={t0} color="permission" inputGuide={_temp}>{t2}</Dialog>;
     $[9] = t0;
     $[10] = t2;
     $[11] = t3;
@@ -89,5 +89,5 @@ export function Login(props) {
   return t3;
 }
 function _temp(exitState) {
-  return exitState.pending ? <Text>Press {exitState.keyName} again to exit</Text> : <ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="cancel" />;
+  return exitState.pending ? <Text>Press {exitState.keyName} again to cancel</Text> : <ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="cancel" />;
 }

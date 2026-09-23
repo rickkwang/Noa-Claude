@@ -90,7 +90,7 @@ export function ChannelDowngradeDialog(t0) {
   }
   let t9;
   if ($[13] !== handleCancel || $[14] !== t3 || $[15] !== t8) {
-    t9 = <Dialog title="Switch to Stable Channel" onCancel={handleCancel} color="permission" hideBorder={true} hideInputGuide={true}>{t3}{t4}{t8}</Dialog>;
+    t9 = <Dialog title="Switch to Stable Channel" onCancel={handleCancel} onExit={handleCancel} color="permission" hideBorder={true} hideInputGuide={true}>{t3}{t4}{t8}</Dialog>;
     $[13] = handleCancel;
     $[14] = t3;
     $[15] = t8;

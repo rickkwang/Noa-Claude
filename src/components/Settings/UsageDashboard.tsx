@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Suspense, useState } from 'react';
 import { useIsInsideModal, useModalOrTerminalSize } from '../../context/modalContext.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
-import type { ExitState } from '../../hooks/useExitOnCtrlCDWithKeybindings.js';
+import { type ExitState, useExitOnCtrlCDWithKeybindings } from '../../hooks/useExitOnCtrlCDWithKeybindings.js';
 import type { CommandResultDisplay, LocalJSXCommandContext } from '../../commands.js';
 import { Dialog } from '../design-system/Dialog.js';
 import { Tab, Tabs } from '../design-system/Tabs.js';
@@ -39,16 +39,27 @@ export function UsageDashboard({
     onClose('Usage dialog dismissed', { display: 'system' });
   }, [onClose, tabsHidden]);
 
+  const dialogOwnsKeys = !tabsHidden && !(selectedTab === 'Config' && configOwnsEsc);
+  // Config's search box owns Esc but passes Ctrl+C/D through (see Config.tsx
+  // useSearchInput), so keep a close handler live while Dialog's is off.
+  const searchExitState = useExitOnCtrlCDWithKeybindings(
+    handleEscape,
+    undefined,
+    !tabsHidden && !dialogOwnsKeys,
+  );
+
   return (
     <Dialog
       color="permission"
       onCancel={handleEscape}
-      isCancelActive={!tabsHidden && !(selectedTab === 'Config' && configOwnsEsc)}
-      inputGuide={(exitState: ExitState) =>
-        exitState.pending
-          ? `Press ${exitState.keyName} again to exit`
-          : '←/→ to switch tabs, Esc to close'
-      }
+      isCancelActive={dialogOwnsKeys}
+      onExit={handleEscape}
+      inputGuide={(dialogExitState: ExitState) => {
+        const exitState = dialogExitState.pending ? dialogExitState : searchExitState;
+        return exitState.pending
+          ? `Press ${exitState.keyName} again to close`
+          : '←/→ to switch tabs, Esc to close';
+      }}
     >
       <Tabs
         title="Settings"

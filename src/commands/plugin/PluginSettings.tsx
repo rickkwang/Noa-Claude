@@ -771,7 +771,6 @@ export function PluginSettings(t0: PluginSettingsProps) {
   const appStateStore = useAppStateStore();
   const pluginErrorCount = useAppState(_temp0);
   const errorsTabTitle = pluginErrorCount > 0 ? `Errors (${pluginErrorCount})` : "Errors";
-  const exitState = useExitOnCtrlCDWithKeybindings();
   const { rows: terminalRows } = useTerminalSize();
   const tabContentHeight = Math.max(10, terminalRows - 8);
   const cliMode = parsedCommand.type === "marketplace" && parsedCommand.action === "add" && parsedCommand.target !== undefined;
@@ -814,6 +813,10 @@ export function PluginSettings(t0: PluginSettingsProps) {
       submitNextInput: true
     });
   }, [appStateStore, midTurn, onCompleteProp]);
+  // Double Ctrl+C/D closes the menu (through onComplete, so pending plugin
+  // changes still queue /reload-plugins) rather than quitting the app.
+  const closeOnCtrlCD = useCallback(() => onComplete(), [onComplete]);
+  const exitState = useExitOnCtrlCDWithKeybindings(closeOnCtrlCD);
   let t4;
   if ($[7] === Symbol.for("react.memo_cache_sentinel")) {
     t4 = tabId => {

@@ -1769,6 +1769,9 @@ export function Config({
         </> : showSubmenu === 'EnableAutoUpdates' ? <Dialog title="Enable Auto-Updates" onCancel={() => {
       setShowSubmenu(null);
       setTabsHidden(false);
+    }} onExit={() => {
+      setShowSubmenu(null);
+      setTabsHidden(false);
     }} hideBorder hideInputGuide>
           {autoUpdaterDisabledReason?.type !== 'config' ? <>
               <Text>

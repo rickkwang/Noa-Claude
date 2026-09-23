@@ -555,7 +555,7 @@ export function ManageMarketplaces({
 
         <Box marginLeft={3}>
           <Text dimColor italic>
-            {exitState.pending ? <>Press {exitState.keyName} again to go back</> : <Byline>
+            {exitState.pending ? <>Press {exitState.keyName} again to close</> : <Byline>
                 <ConfigurableShortcutHint action="select:accept" context="Select" fallback="Enter" description="select" />
                 <ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="go back" />
               </Byline>}
@@ -773,7 +773,7 @@ function ManageMarketplacesKeyHints(t0) {
   if (exitState.pending) {
     let t1;
     if ($[0] !== exitState.keyName) {
-      t1 = <Box marginTop={1}><Text dimColor={true} italic={true}>Press {exitState.keyName} again to go back</Text></Box>;
+      t1 = <Box marginTop={1}><Text dimColor={true} italic={true}>Press {exitState.keyName} again to close</Text></Box>;
       $[0] = exitState.keyName;
       $[1] = t1;
     } else {

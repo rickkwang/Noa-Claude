@@ -16,6 +16,8 @@ type WorkflowOption = {
 type Props = {
   onSubmit: (selectedWorkflows: Workflow[]) => void;
   defaultSelections: Workflow[];
+  /** Double Ctrl-C/D handler; omit to quit the app. */
+  onExit?: () => void;
 };
 const WORKFLOWS: WorkflowOption[] = [{
   value: 'claude' as const,
@@ -24,9 +26,9 @@ const WORKFLOWS: WorkflowOption[] = [{
   value: 'claude-review' as const,
   label: 'Noa Claude Review - Automated code review on new PRs'
 }];
-function renderInputGuide(exitState: ExitState): React.ReactNode {
+function renderInputGuide(exitState: ExitState, closes: boolean): React.ReactNode {
   if (exitState.pending) {
-    return <Text>Press {exitState.keyName} again to exit</Text>;
+    return <Text>Press {exitState.keyName} again to {closes ? 'cancel' : 'exit'}</Text>;
   }
   return <Byline>
       <KeyboardShortcutHint shortcut="↑↓" action="navigate" />
@@ -36,10 +38,11 @@ function renderInputGuide(exitState: ExitState): React.ReactNode {
     </Byline>;
 }
 export function WorkflowMultiselectDialog(t0) {
-  const $ = _c(14);
+  const $ = _c(15);
   const {
     onSubmit,
-    defaultSelections
+    defaultSelections,
+    onExit
   } = t0;
   const [showError, setShowError] = useState(false);
   let t1;
@@ -110,10 +113,11 @@ export function WorkflowMultiselectDialog(t0) {
     t7 = $[10];
   }
   let t8;
-  if ($[11] !== t6 || $[12] !== t7) {
-    t8 = <Dialog title="Select GitHub workflows to install" subtitle="We'll create a workflow file in your repository for each one you select." onCancel={handleCancel} inputGuide={renderInputGuide}>{t4}{t6}{t7}</Dialog>;
+  if ($[11] !== t6 || $[12] !== t7 || $[14] !== onExit) {
+    t8 = <Dialog title="Select GitHub workflows to install" subtitle="We'll create a workflow file in your repository for each one you select." onCancel={handleCancel} onExit={onExit} inputGuide={exitState => renderInputGuide(exitState, !!onExit)}>{t4}{t6}{t7}</Dialog>;
     $[11] = t6;
     $[12] = t7;
+    $[14] = onExit;
     $[13] = t8;
   } else {
     t8 = $[13];

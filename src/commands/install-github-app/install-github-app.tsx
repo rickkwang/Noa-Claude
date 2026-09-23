@@ -53,7 +53,9 @@ function InstallGitHubApp(props: {
     useExistingKey: !!existingApiKey,
     selectedApiKeyOption: (existingApiKey ? 'existing' : isAnthropicAuthEnabled() ? 'oauth' : 'new') as 'existing' | 'new' | 'oauth'
   });
-  useExitOnCtrlCDWithKeybindings();
+  const { onDone } = props;
+  const cancelOnCtrlCD = useCallback(() => onDone('Installation cancelled by user'), [onDone]);
+  useExitOnCtrlCDWithKeybindings(cancelOnCtrlCD);
   React.useEffect(() => {
     logEvent('tengu_install_github_app_started', {});
   }, []);
@@ -559,7 +561,7 @@ function InstallGitHubApp(props: {
           <ErrorStep error={state.error} errorReason={state.errorReason} errorInstructions={state.errorInstructions} />
         </Box>;
     case 'select-workflows':
-      return <WorkflowMultiselectDialog defaultSelections={state.selectedWorkflows} onSubmit={selectedWorkflows => {
+      return <WorkflowMultiselectDialog defaultSelections={state.selectedWorkflows} onExit={cancelOnCtrlCD} onSubmit={selectedWorkflows => {
         logEvent('tengu_install_github_app_step_completed', {
           step: 'select-workflows' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
         });

@@ -27,9 +27,15 @@ type DialogProps = {
    * press, delete-forward on ctrl+d with text). Defaults to `true`.
    */
   isCancelActive?: boolean;
+  /**
+   * Called on a double Ctrl-C/D press. Omit to quit the app (startup and
+   * permission dialogs); in-session command dialogs pass their close handler
+   * so the second press dismisses the dialog instead.
+   */
+  onExit?: () => void;
 };
 export function Dialog(t0) {
-  const $ = _c(27);
+  const $ = _c(28);
   const {
     title,
     subtitle,
@@ -39,11 +45,12 @@ export function Dialog(t0) {
     hideInputGuide,
     hideBorder,
     inputGuide,
-    isCancelActive: t2
+    isCancelActive: t2,
+    onExit
   } = t0;
   const color = t1 === undefined ? "permission" : t1;
   const isCancelActive = t2 === undefined ? true : t2;
-  const exitState = useExitOnCtrlCDWithKeybindings(undefined, undefined, isCancelActive);
+  const exitState = useExitOnCtrlCDWithKeybindings(onExit, undefined, isCancelActive);
   let t3;
   if ($[0] !== isCancelActive) {
     t3 = {
@@ -57,10 +64,11 @@ export function Dialog(t0) {
   }
   useKeybinding("confirm:no", onCancel, t3);
   let t4;
-  if ($[2] !== exitState.keyName || $[3] !== exitState.pending) {
-    t4 = exitState.pending ? <Text>Press {exitState.keyName} again to exit</Text> : <Byline><KeyboardShortcutHint shortcut="Enter" action="confirm" /><ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="cancel" /></Byline>;
+  if ($[2] !== exitState.keyName || $[3] !== exitState.pending || $[27] !== onExit) {
+    t4 = exitState.pending ? <Text>Press {exitState.keyName} again to {onExit ? 'close' : 'exit'}</Text> : <Byline><KeyboardShortcutHint shortcut="Enter" action="confirm" /><ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="cancel" /></Byline>;
     $[2] = exitState.keyName;
     $[3] = exitState.pending;
+    $[27] = onExit;
     $[4] = t4;
   } else {
     t4 = $[4];

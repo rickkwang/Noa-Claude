@@ -80,7 +80,7 @@ function RuleDetails(t0) {
     onDelete,
     onCancel
   } = t0;
-  const exitState = useExitOnCtrlCDWithKeybindings();
+  const exitState = useExitOnCtrlCDWithKeybindings(onCancel);
   let t1;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     t1 = {
@@ -136,7 +136,7 @@ function RuleDetails(t0) {
   const ruleDescription = t6;
   let t7;
   if ($[13] !== exitState.keyName || $[14] !== exitState.pending) {
-    t7 = <Box marginLeft={3}>{exitState.pending ? <Text dimColor={true}>Press {exitState.keyName} again to exit</Text> : <Text dimColor={true}>Esc to cancel</Text>}</Box>;
+    t7 = <Box marginLeft={3}>{exitState.pending ? <Text dimColor={true}>Press {exitState.keyName} again to cancel</Text> : <Text dimColor={true}>Esc to cancel</Text>}</Box>;
     $[13] = exitState.keyName;
     $[14] = exitState.pending;
     $[15] = t7;
@@ -643,7 +643,6 @@ export function PermissionRuleList(t0) {
     t6 = $[14];
   }
   const getRulesOptions = t6;
-  const exitState = useExitOnCtrlCDWithKeybindings();
   const isSearchModeActive = !selectedRule && !addingRuleToTab && !validatedRule && !isAddingWorkspaceDirectory && !removingDirectory;
   const t7 = isSearchModeActive && isSearchMode;
   let t8;
@@ -825,6 +824,9 @@ export function PermissionRuleList(t0) {
     t18 = $[33];
   }
   const handleRulesCancel = t18;
+  // Double Ctrl+C/D closes /permissions the same way Esc does (keeping the
+  // change summary and denial retries) instead of quitting the app.
+  const exitState = useExitOnCtrlCDWithKeybindings(handleRulesCancel);
   const t19 = isSearchModeActive && !isSearchMode;
   let t20;
   if ($[34] !== t19) {
@@ -1129,7 +1131,7 @@ export function PermissionRuleList(t0) {
   }
   let t31;
   if ($[101] !== defaultTab || $[102] !== exitState.keyName || $[103] !== exitState.pending || $[104] !== headerFocused || $[105] !== isSearchMode) {
-    t31 = <Box marginTop={1} paddingLeft={1}><Text dimColor={true}>{exitState.pending ? <>Press {exitState.keyName} again to exit</> : headerFocused ? <>←/→ tab switch · ↓ return · Esc cancel</> : isSearchMode ? <>Type to filter · Enter/↓ select · ↑ tabs · Esc clear</> : hasDenials && defaultTab === "recent" ? <>Enter approve · r retry · ↑↓ navigate · ←/→ switch · Esc cancel</> : <>↑↓ navigate · Enter select · Type to search · ←/→ switch · Esc cancel</>}</Text></Box>;
+    t31 = <Box marginTop={1} paddingLeft={1}><Text dimColor={true}>{exitState.pending ? <>Press {exitState.keyName} again to cancel</> : headerFocused ? <>←/→ tab switch · ↓ return · Esc cancel</> : isSearchMode ? <>Type to filter · Enter/↓ select · ↑ tabs · Esc clear</> : hasDenials && defaultTab === "recent" ? <>Enter approve · r retry · ↑↓ navigate · ←/→ switch · Esc cancel</> : <>↑↓ navigate · Enter select · Type to search · ←/→ switch · Esc cancel</>}</Text></Box>;
     $[101] = defaultTab;
     $[102] = exitState.keyName;
     $[103] = exitState.pending;

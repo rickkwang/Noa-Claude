@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { c as _c } from "react/compiler-runtime";
-import React from 'react';
+import React, { useCallback } from 'react';
+import { useExitOnCtrlCDWithKeybindings } from '../../hooks/useExitOnCtrlCDWithKeybindings.js';
 import { PRODUCT_SANDBOXING_URL } from '../../constants/links.js';
 import { Box, color, Link, Text, useTheme } from '../../ink.js';
 import { useKeybindings } from '../../keybindings/useKeybinding.js';
@@ -22,7 +23,7 @@ type Props = {
 };
 type SandboxMode = 'auto-allow' | 'regular' | 'disabled';
 export function SandboxSettings(t0) {
-  const $ = _c(34);
+  const $ = _c(36);
   const {
     onComplete,
     depCheck
@@ -168,6 +169,11 @@ export function SandboxSettings(t0) {
     t12 = $[17];
   }
   useKeybindings(t11, t12);
+  // Double Ctrl+C/D closes the menu like Esc does, instead of quitting the app.
+  const closeOnCtrlCD = useCallback(() => onComplete(undefined, {
+    display: "skip"
+  }), [onComplete]);
+  const exitState = useExitOnCtrlCDWithKeybindings(closeOnCtrlCD);
   let t13;
   if ($[18] !== handleSelect || $[19] !== onComplete || $[20] !== options || $[21] !== showSocketWarning) {
     t13 = <Tab key="mode" title="Mode"><SandboxModeTab showSocketWarning={showSocketWarning} options={options} onSelect={handleSelect} onComplete={onComplete} /></Tab>;
@@ -212,9 +218,11 @@ export function SandboxSettings(t0) {
   }
   const tabs = t16;
   let t17;
-  if ($[32] !== tabs) {
-    t17 = <Pane color="permission"><Tabs title="Sandbox:" color="permission" defaultTab="Mode">{tabs}</Tabs></Pane>;
+  if ($[32] !== tabs || $[34] !== exitState.pending || $[35] !== exitState.keyName) {
+    t17 = <Pane color="permission"><Tabs title="Sandbox:" color="permission" defaultTab="Mode">{tabs}</Tabs>{exitState.pending && <Box marginTop={1}><Text dimColor={true} italic={true}>Press {exitState.keyName} again to close</Text></Box>}</Pane>;
     $[32] = tabs;
+    $[34] = exitState.pending;
+    $[35] = exitState.keyName;
     $[33] = t17;
   } else {
     t17 = $[33];
