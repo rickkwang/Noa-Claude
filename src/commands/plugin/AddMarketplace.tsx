@@ -5,6 +5,7 @@ import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEve
 import { ConfigurableShortcutHint } from '../../components/ConfigurableShortcutHint.js';
 import { Byline } from '../../components/design-system/Byline.js';
 import { KeyboardShortcutHint } from '../../components/design-system/KeyboardShortcutHint.js';
+import { useIsInsideModal } from '../../context/modalContext.js';
 import { Spinner } from '../../components/Spinner.js';
 import TextInput from '../../components/TextInput.js';
 import { Box, Text } from '../../ink.js';
@@ -40,6 +41,9 @@ export function AddMarketplace({
   onAddComplete,
   cliMode = false
 }: Props): React.ReactNode {
+  // Fullscreen renders /plugin inside a modal pane that already draws the
+  // frame, so skip our own border and line the hints up with the content.
+  const insideModal = useIsInsideModal();
   const hasAttemptedAutoAdd = useRef(false);
   const [isLoading, setLoading] = useState(false);
   const [progressMessage, setProgressMessage] = useState<string>('');
@@ -122,7 +126,7 @@ export function AddMarketplace({
   }, []); // Only run once on mount
 
   return <Box flexDirection="column">
-      <Box flexDirection="column" paddingX={1} borderStyle="round">
+      <Box flexDirection="column" paddingX={1} borderStyle={insideModal ? undefined : "round"}>
         <Box marginBottom={1}>
           <Text bold>Add Marketplace</Text>
         </Box>
@@ -150,7 +154,7 @@ export function AddMarketplace({
             <Text>{result}</Text>
           </Box>}
       </Box>
-      <Box marginLeft={3}>
+      <Box marginLeft={insideModal ? 1 : 3} marginTop={insideModal ? 1 : 0}>
         <Text dimColor italic>
           <Byline>
             <KeyboardShortcutHint shortcut="Enter" action="add" />
