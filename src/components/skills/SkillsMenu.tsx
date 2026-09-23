@@ -579,7 +579,7 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
           ) : mode === 'user-only' ? (
             <Text color="warning">◯ user-only</Text>
           ) : (
-            <Text color="error">{figures.cross} off</Text>
+            <Text color="inactive">{figures.circle} off</Text>
           )}
         </Box>
         <Text color={isSelected ? 'suggestion' : undefined}>
