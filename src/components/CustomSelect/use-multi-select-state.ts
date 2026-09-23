@@ -111,6 +111,12 @@ export type MultiSelectState<T> = {
   visibleToIndex: number
 
   /**
+   * Scroll the viewport without moving focus unless it would leave the
+   * viewport. Returns whether the viewport moved.
+   */
+  scrollViewport: (delta: number) => boolean
+
+  /**
    * All options.
    */
   options: OptionWithDescription<T>[]

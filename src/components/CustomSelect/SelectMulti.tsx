@@ -9,6 +9,7 @@ import type { OptionWithDescription } from './select.js';
 import { SelectInputOption } from './select-input-option.js';
 import { SelectOption } from './select-option.js';
 import { useMultiSelectState } from './use-multi-select-state.js';
+import { useSelectWheel } from './use-select-wheel.js';
 export type SelectMultiProps<T> = {
   readonly isDisabled?: boolean;
   readonly visibleOptionCount?: number;
@@ -57,7 +58,7 @@ export type SelectMultiProps<T> = {
   readonly onRemoveImage?: (id: number) => void;
 };
 export function SelectMulti(t0) {
-  const $ = _c(44);
+  const $ = _c(45);
   const {
     isDisabled: t1,
     visibleOptionCount: t2,
@@ -127,6 +128,13 @@ export function SelectMulti(t0) {
     t6 = $[16];
   }
   const state = useMultiSelectState(t6);
+  const wheel = useSelectWheel({
+    isDisabled,
+    visibleFromIndex: state.visibleFromIndex,
+    visibleToIndex: state.visibleToIndex,
+    optionCount: options.length,
+    scrollViewport: state.scrollViewport
+  });
   let T0;
   let T1;
   let t7;
@@ -178,11 +186,12 @@ export function SelectMulti(t0) {
     t9 = $[30];
   }
   let t10;
-  if ($[31] !== T0 || $[32] !== t7 || $[33] !== t8) {
-    t10 = <T0 flexDirection={t7}>{t8}</T0>;
+  if ($[31] !== T0 || $[32] !== t7 || $[33] !== t8 || $[44] !== wheel) {
+    t10 = <T0 flexDirection={t7} ref={wheel.ref} onWheel={wheel.onWheel}>{t8}</T0>;
     $[31] = T0;
     $[32] = t7;
     $[33] = t8;
+    $[44] = wheel;
     $[34] = t10;
   } else {
     t10 = $[34];

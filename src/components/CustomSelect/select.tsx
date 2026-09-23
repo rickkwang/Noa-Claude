@@ -12,6 +12,7 @@ import { SelectInputOption } from './select-input-option.js';
 import { SelectOption } from './select-option.js';
 import { useSelectInput } from './use-select-input.js';
 import { useSelectState } from './use-select-state.js';
+import { useSelectWheel } from './use-select-wheel.js';
 
 // Extract text content from ReactNode for width calculation
 function getTextContent(node: ReactNode): string {
@@ -191,7 +192,7 @@ export type SelectProps<T> = {
   readonly onRemoveImage?: (id: number) => void;
 };
 export function Select(t0) {
-  const $ = _c(72);
+  const $ = _c(73);
   const {
     isDisabled: t1,
     hideIndexes: t2,
@@ -347,11 +348,18 @@ export function Select(t0) {
     t14 = $[27];
   }
   useSelectInput(t14);
+  const wheel = useSelectWheel({
+    isDisabled,
+    visibleFromIndex: state.visibleFromIndex,
+    visibleToIndex: state.visibleToIndex,
+    optionCount: options.length,
+    scrollViewport: state.scrollViewport
+  });
   let T0;
   let t15;
   let t16;
   let t17;
-  if ($[28] !== hideIndexes || $[29] !== highlightText || $[30] !== imagesSelected || $[31] !== inlineDescriptions || $[32] !== inputValues || $[33] !== isDisabled || $[34] !== layout || $[35] !== onCancel || $[36] !== onChange || $[37] !== onImagePaste || $[38] !== onOpenEditor || $[39] !== onRemoveImage || $[40] !== options.length || $[41] !== pastedContents || $[42] !== selectedImageIndex || $[43] !== state.focusedValue || $[44] !== state.options || $[45] !== state.value || $[46] !== state.visibleFromIndex || $[47] !== state.visibleOptions || $[48] !== state.visibleToIndex) {
+  if ($[28] !== hideIndexes || $[29] !== highlightText || $[30] !== imagesSelected || $[31] !== inlineDescriptions || $[32] !== inputValues || $[33] !== isDisabled || $[34] !== layout || $[35] !== onCancel || $[36] !== onChange || $[37] !== onImagePaste || $[38] !== onOpenEditor || $[39] !== onRemoveImage || $[40] !== options.length || $[41] !== pastedContents || $[42] !== selectedImageIndex || $[43] !== state.focusedValue || $[44] !== state.options || $[45] !== state.value || $[46] !== state.visibleFromIndex || $[47] !== state.visibleOptions || $[48] !== state.visibleToIndex || $[72] !== wheel) {
     t17 = Symbol.for("react.early_return_sentinel");
     bb0: {
       const styles = {
@@ -368,7 +376,7 @@ export function Select(t0) {
           t18 = $[54];
         }
         const maxIndexWidth = t18.length;
-        t17 = <Box {...styles.container()}>{state.visibleOptions.map((option_1, index) => {
+        t17 = <SelectRows container={styles.container()} rows={wheel}>{state.visibleOptions.map((option_1, index) => {
             const isFirstVisibleOption = option_1.index === state.visibleFromIndex;
             const isLastVisibleOption = option_1.index === state.visibleToIndex - 1;
             const areMoreOptionsBelow = state.visibleToIndex < options.length;
@@ -402,7 +410,7 @@ export function Select(t0) {
             const isOptionDisabled = option_1.disabled === true;
             const optionColor = isOptionDisabled ? undefined : isSelected ? "success" : isFocused ? "suggestion" : undefined;
             return <Box key={String(option_1.value)} flexDirection="column" flexShrink={0}><SelectOption isFocused={isFocused} isSelected={isSelected} shouldShowDownArrow={areMoreOptionsBelow && isLastVisibleOption} shouldShowUpArrow={areMoreOptionsAbove && isFirstVisibleOption}><Text dimColor={isOptionDisabled} color={optionColor}>{label}</Text></SelectOption>{option_1.description && <Box paddingLeft={2}><Text dimColor={isOptionDisabled || option_1.dimDescription !== false} color={optionColor}><Ansi>{option_1.description}</Ansi></Text></Box>}<Text> </Text></Box>;
-          })}</Box>;
+          })}</SelectRows>;
         break bb0;
       }
       if (layout === "compact-vertical") {
@@ -416,7 +424,7 @@ export function Select(t0) {
           t18 = $[57];
         }
         const maxIndexWidth_0 = t18;
-        t17 = <Box {...styles.container()}>{state.visibleOptions.map((option_2, index_1) => {
+        t17 = <SelectRows container={styles.container()} rows={wheel}>{state.visibleOptions.map((option_2, index_1) => {
             const isFirstVisibleOption_0 = option_2.index === state.visibleFromIndex;
             const isLastVisibleOption_0 = option_2.index === state.visibleToIndex - 1;
             const areMoreOptionsBelow_0 = state.visibleToIndex < options.length;
@@ -449,7 +457,7 @@ export function Select(t0) {
             }
             const isOptionDisabled_0 = option_2.disabled === true;
             return <Box key={String(option_2.value)} flexDirection="column" flexShrink={0}><SelectOption isFocused={isFocused_0} isSelected={isSelected_0} shouldShowDownArrow={areMoreOptionsBelow_0 && isLastVisibleOption_0} shouldShowUpArrow={areMoreOptionsAbove_0 && isFirstVisibleOption_0}><>{!hideIndexes && <Text dimColor={true}>{`${i_0}.`.padEnd(maxIndexWidth_0 + 1)}</Text>}<Text dimColor={isOptionDisabled_0} color={isOptionDisabled_0 ? undefined : isSelected_0 ? "success" : isFocused_0 ? "suggestion" : undefined}>{label_0}</Text></></SelectOption>{option_2.description && <Box paddingLeft={hideIndexes ? 4 : maxIndexWidth_0 + 4}><Text dimColor={isOptionDisabled_0 || option_2.dimDescription !== false} color={isOptionDisabled_0 ? undefined : isSelected_0 ? "success" : isFocused_0 ? "suggestion" : undefined}><Ansi>{option_2.description}</Ansi></Text></Box>}</Box>;
-          })}</Box>;
+          })}</SelectRows>;
         break bb0;
       }
       let t18;
@@ -529,10 +537,10 @@ export function Select(t0) {
         } else {
           t20 = $[67];
         }
-        t17 = <Box {...styles.container()}>{optionData.map(t20)}</Box>;
+        t17 = <SelectRows container={styles.container()} rows={wheel}>{optionData.map(t20)}</SelectRows>;
         break bb0;
       }
-      T0 = Box;
+      T0 = SelectRows;
       t15 = styles.container();
       t16 = state.visibleOptions.map((option_4, index_4) => {
         if (option_4.type === "input") {
@@ -597,6 +605,7 @@ export function Select(t0) {
     $[46] = state.visibleFromIndex;
     $[47] = state.visibleOptions;
     $[48] = state.visibleToIndex;
+    $[72] = wheel;
     $[49] = T0;
     $[50] = t15;
     $[51] = t16;
@@ -612,7 +621,7 @@ export function Select(t0) {
   }
   let t18;
   if ($[68] !== T0 || $[69] !== t15 || $[70] !== t16) {
-    t18 = <T0 {...t15}>{t16}</T0>;
+    t18 = <T0 container={t15} rows={wheel}>{t16}</T0>;
     $[68] = T0;
     $[69] = t15;
     $[70] = t16;
@@ -621,6 +630,21 @@ export function Select(t0) {
     t18 = $[71];
   }
   return t18;
+}
+
+// Outer box takes the layout's container props; the inner column holds the
+// option rows and owns the wheel handler, so the wheel hit-test covers
+// exactly the rows.
+function SelectRows({
+  container,
+  rows,
+  children
+}: {
+  container: React.ComponentProps<typeof Box>;
+  rows: ReturnType<typeof useSelectWheel>;
+  children: ReactNode;
+}) {
+  return <Box {...container}><Box flexDirection="column" ref={rows.ref} onWheel={rows.onWheel}>{children}</Box></Box>;
 }
 
 // Row container for the two-column (label + description) layout. Unlike

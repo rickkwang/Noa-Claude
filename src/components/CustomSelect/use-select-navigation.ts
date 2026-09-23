@@ -44,6 +44,7 @@ type Action<T> =
   | FocusNextPageAction
   | FocusPreviousPageAction
   | SetFocusAction<T>
+  | ScrollViewportAction
   | ResetAction<T>
 
 type SetFocusAction<T> = {
@@ -67,12 +68,17 @@ type FocusPreviousPageAction = {
   type: 'focus-previous-page'
 }
 
+type ScrollViewportAction = {
+  type: 'scroll-viewport'
+  delta: number
+}
+
 type ResetAction<T> = {
   type: 'reset'
   state: State<T>
 }
 
-const reducer = <T>(state: State<T>, action: Action<T>): State<T> => {
+export const reducer = <T>(state: State<T>, action: Action<T>): State<T> => {
   switch (action.type) {
     case 'focus-next-option': {
       if (state.focusedValue === undefined) {
@@ -276,6 +282,38 @@ const reducer = <T>(state: State<T>, action: Action<T>): State<T> => {
       return action.state
     }
 
+    // Wheel scrolls the window, not the selection — focus only moves when it
+    // would otherwise be scrolled out of view.
+    case 'scroll-viewport': {
+      const nextVisibleFromIndex = Math.min(
+        Math.max(0, state.optionMap.size - state.visibleOptionCount),
+        Math.max(0, state.visibleFromIndex + action.delta),
+      )
+      if (nextVisibleFromIndex === state.visibleFromIndex) {
+        return state
+      }
+      const nextVisibleToIndex = Math.min(
+        state.optionMap.size,
+        nextVisibleFromIndex + state.visibleOptionCount,
+      )
+      let item =
+        state.focusedValue === undefined
+          ? undefined
+          : state.optionMap.get(state.focusedValue)
+      while (item?.next && item.index < nextVisibleFromIndex) {
+        item = item.next
+      }
+      while (item?.previous && item.index >= nextVisibleToIndex) {
+        item = item.previous
+      }
+      return {
+        ...state,
+        focusedValue: item?.value,
+        visibleFromIndex: nextVisibleFromIndex,
+        visibleToIndex: nextVisibleToIndex,
+      }
+    }
+
     case 'set-focus': {
       // Early return if already focused on this value
       if (state.focusedValue === action.value) {
@@ -420,6 +458,12 @@ export type SelectNavigation<T> = {
    * Focus a specific option by value.
    */
   focusOption: (value: T | undefined) => void
+
+  /**
+   * Scroll the viewport by `delta` rows without moving focus unless it
+   * would leave the viewport. Returns whether the viewport moved.
+   */
+  scrollViewport: (delta: number) => boolean
 }
 
 const createDefaultState = <T>({
@@ -520,6 +564,11 @@ export function useSelectNavigation<T>({
     createDefaultState<T>,
   )
 
+  // Latest reducer state, advanced synchronously by scrollViewport so several
+  // wheel events in one input batch each see the previous one's result.
+  const stateRef = useRef(state)
+  stateRef.current = state
+
   // Store onFocus in a ref to avoid re-running useEffect when callback changes
   const onFocusRef = useRef(onFocus)
   onFocusRef.current = onFocus
@@ -575,6 +624,18 @@ export function useSelectNavigation<T>({
         value,
       })
     }
+  }, [])
+
+  const scrollViewport = useCallback((delta: number) => {
+    const action: ScrollViewportAction = { type: 'scroll-viewport', delta }
+    const prev = stateRef.current
+    const next = reducer(prev, action)
+    if (next === prev) {
+      return false
+    }
+    stateRef.current = next
+    dispatch(action)
+    return true
   }, [])
 
   const visibleOptions = useMemo(() => {
@@ -649,6 +710,7 @@ export function useSelectNavigation<T>({
     focusNextPage,
     focusPreviousPage,
     focusOption,
+    scrollViewport,
     options,
   }
 }

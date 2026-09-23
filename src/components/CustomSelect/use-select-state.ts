@@ -110,6 +110,12 @@ export type SelectState<T> = {
   focusOption: (value: T | undefined) => void
 
   /**
+   * Scroll the viewport without moving focus unless it would leave the
+   * viewport. Returns whether the viewport moved.
+   */
+  scrollViewport: (delta: number) => boolean
+
+  /**
    * Select currently focused option.
    */
   selectFocusedOption: () => void
