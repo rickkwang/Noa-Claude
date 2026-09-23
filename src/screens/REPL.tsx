@@ -83,6 +83,7 @@ import { useAfterFirstRender } from '../hooks/useAfterFirstRender.js';
 import { useDeferredHookMessages } from '../hooks/useDeferredHookMessages.js';
 import { addToHistory, removeLastFromHistory, expandPastedTextRefs, parseReferences } from '../history.js';
 import { prependModeCharacterToInput } from '../components/PromptInput/inputModes.js';
+import type { StashedPrompt } from '../components/PromptInput/promptStash.js';
 import { prependToShellHistoryCache } from '../utils/suggestions/shellHistoryCompletion.js';
 import { useApiKeyVerification } from '../hooks/useApiKeyVerification.js';
 import { GlobalKeybindingHandlers } from '../hooks/useGlobalKeybindings.js';
@@ -1401,11 +1402,7 @@ export function REPL({
     return () => clearTimeout(timer);
   }, [inputValue]);
   const [inputMode, setInputMode] = useState<PromptInputMode>('prompt');
-  const [stashedPrompt, setStashedPrompt] = useState<{
-    text: string;
-    cursorOffset: number;
-    pastedContents: Record<number, PastedContent>;
-  } | undefined>();
+  const [stashedPrompt, setStashedPrompt] = useState<StashedPrompt | undefined>();
 
   // Callback to filter commands based on CCR's available slash commands
   const handleRemoteInit = useCallback((remoteSlashCommands: string[]) => {
@@ -3360,6 +3357,7 @@ export function REPL({
             // The normal stash restoration path (below) is skipped because
             // local-jsx commands return early from onSubmit.
             if (stashedPrompt !== undefined) {
+              setInputMode(stashedPrompt.mode);
               setInputValue(stashedPrompt.text);
               helpers.setCursorOffset(stashedPrompt.cursorOffset);
               setPastedContents(stashedPrompt.pastedContents);
@@ -3452,7 +3450,8 @@ export function REPL({
     // accepting speculation, or in remote mode (which sends via WS and
     // returns early without calling handlePromptSubmit).
     const submitsNow = !isLoading || speculationAccept || activeRemote.isRemoteMode;
-    if (stashedPrompt !== undefined && !isSlashCommand && submitsNow) {
+    const restoresStashNow = stashedPrompt !== undefined && !isSlashCommand && submitsNow;
+    if (restoresStashNow) {
       setInputValue(stashedPrompt.text);
       helpers.setCursorOffset(stashedPrompt.cursorOffset);
       setPastedContents(stashedPrompt.pastedContents);
@@ -3467,7 +3466,7 @@ export function REPL({
       setPastedContents({});
     }
     if (submitsNow) {
-      setInputMode('prompt');
+      setInputMode(restoresStashNow ? stashedPrompt.mode : 'prompt');
       setIDESelection(undefined);
       setSubmitCount(_ => _ + 1);
       helpers.clearBuffer();
@@ -3632,6 +3631,7 @@ export function REPL({
     // - Loading (queued): handlePromptSubmit enqueued + cleared input, then
     //   returned quickly. Restoring now places the stash back after the clear.
     if ((isSlashCommand || isLoading) && stashedPrompt !== undefined) {
+      setInputMode(stashedPrompt.mode);
       setInputValue(stashedPrompt.text);
       helpers.setCursorOffset(stashedPrompt.cursorOffset);
       setPastedContents(stashedPrompt.pastedContents);

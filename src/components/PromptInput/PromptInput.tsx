@@ -118,6 +118,7 @@ import { FOOTER_TEMPORARY_STATUS_TIMEOUT, Notifications } from './Notifications.
 import PromptInputFooter from './PromptInputFooter.js';
 import type { SuggestionItem } from './PromptInputFooterSuggestions.js';
 import { PromptInputModeIndicator } from './PromptInputModeIndicator.js';
+import { getStashAction, type StashedPrompt } from './promptStash.js';
 import { PromptInputQueuedCommands } from './PromptInputQueuedCommands.js';
 import { PromptInputStashNotice } from './PromptInputStashNotice.js';
 import { useMaybeTruncateInput } from './useMaybeTruncateInput.js';
@@ -142,16 +143,8 @@ type Props = {
   onInputChange: (value: string) => void;
   mode: PromptInputMode;
   onModeChange: (mode: PromptInputMode) => void;
-  stashedPrompt: {
-    text: string;
-    cursorOffset: number;
-    pastedContents: Record<number, PastedContent>;
-  } | undefined;
-  setStashedPrompt: (value: {
-    text: string;
-    cursorOffset: number;
-    pastedContents: Record<number, PastedContent>;
-  } | undefined) => void;
+  stashedPrompt: StashedPrompt | undefined;
+  setStashedPrompt: (value: StashedPrompt | undefined) => void;
   submitCount: number;
   onShowMessageSelector: () => void;
   /** Fullscreen message actions: shift+↑ enters cursor. */
@@ -1444,19 +1437,23 @@ function PromptInput({
 
   // Handler for chat:stash - stash/unstash prompt
   const handleStash = useCallback(() => {
-    if (input.trim() === '' && stashedPrompt !== undefined) {
+    const action = getStashAction({
+      text: input,
+      cursorOffset,
+      pastedContents,
+      mode
+    }, stashedPrompt);
+    if (action.type === 'pop') {
       // Pop stash when input is empty
-      trackAndSetInput(stashedPrompt.text);
-      setCursorOffset(stashedPrompt.cursorOffset);
-      setPastedContents(stashedPrompt.pastedContents);
+      onModeChange(action.stash.mode);
+      trackAndSetInput(action.stash.text);
+      setCursorOffset(action.stash.cursorOffset);
+      setPastedContents(action.stash.pastedContents);
       setStashedPrompt(undefined);
-    } else if (input.trim() !== '') {
-      // Push to stash (save text, cursor position, and pasted contents)
-      setStashedPrompt({
-        text: input,
-        cursorOffset,
-        pastedContents
-      });
+    } else if (action.type === 'push') {
+      // Push to stash (save text, cursor position, pasted contents and mode)
+      setStashedPrompt(action.stash);
+      onModeChange('prompt');
       trackAndSetInput('');
       setCursorOffset(0);
       setPastedContents({});
@@ -1469,7 +1466,7 @@ function PromptInput({
         };
       });
     }
-  }, [input, cursorOffset, stashedPrompt, trackAndSetInput, setStashedPrompt, pastedContents, setPastedContents]);
+  }, [input, cursorOffset, mode, onModeChange, stashedPrompt, trackAndSetInput, setStashedPrompt, pastedContents, setPastedContents]);
 
   // Handler for chat:modelPicker - toggle model picker
   const handleModelPicker = useCallback(() => {
