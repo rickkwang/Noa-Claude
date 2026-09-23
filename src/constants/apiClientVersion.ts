@@ -27,6 +27,12 @@
  * stop reason; native 1M context with the `[1m]` opt-in; and the per-model cost
  * tiers including cheap cache reads.
  *
+ * Raised to 2.1.280 for Opus 5.5, which the API withholds below it. Its
+ * catalog capabilities are Fable 5.1's plus `fast_mode` and its own prompt
+ * bundle, all already handled; 2.1.280's stream reader adds no server event
+ * or stop reason Noa lacks except `compaction_delta`, which the server only
+ * sends to clients that opt into server-side compaction (Noa does not).
+ *
  * It is deliberately *not* set above the version whose catalog was ported: a
  * higher claim would invite response shapes this fork has no reader for, which
  * is the failure mode the gate exists to prevent.
@@ -34,7 +40,7 @@
  * `NOA_CLAUDE_API_CLIENT_VERSION` overrides it without a rebuild — for testing
  * a gate, or pinning lower if a future release ships a shape Noa mishandles.
  */
-export const CLAUDE_CODE_COMPAT_VERSION = '2.1.258'
+export const CLAUDE_CODE_COMPAT_VERSION = '2.1.280'
 
 export function getApiClientVersion(): string {
   const override = process.env.NOA_CLAUDE_API_CLIENT_VERSION?.trim()

@@ -14,6 +14,13 @@ afterEach(() => {
   else process.env.NOA_CLAUDE_API_CLIENT_VERSION = original
 })
 
+const rank = (version: string): number => {
+  const parts = version.split('.').map(Number)
+  expect(parts).toHaveLength(3)
+  expect(parts.every(Number.isInteger)).toBe(true)
+  return parts.reduce((acc, part) => acc * 1e4 + part, 0)
+}
+
 describe('the version Noa reports to the Anthropic API', () => {
   // The API withholds models from clients that predate them. Reporting the
   // fork's own version answers the wrong question and loses the user working
@@ -25,15 +32,17 @@ describe('the version Noa reports to the Anthropic API', () => {
   })
 
   test('clears the gate that rejected Fable 5.1', () => {
-    const rank = (version: string): number => {
-      const parts = version.split('.').map(Number)
-      expect(parts).toHaveLength(3)
-      expect(parts.every(Number.isInteger)).toBe(true)
-      return parts.reduce((acc, part) => acc * 1e4 + part, 0)
-    }
     // `version 2.1.251 or newer is required`
     expect(rank(CLAUDE_CODE_COMPAT_VERSION)).toBeGreaterThanOrEqual(
       rank('2.1.251'),
+    )
+  })
+
+  test('clears the gate that rejected Opus 5.5', () => {
+    // `Claude Code 2.1.258 does not support this model; version 2.1.280 or
+    // newer is required` — Opus 5.5 is the default for most tiers.
+    expect(rank(CLAUDE_CODE_COMPAT_VERSION)).toBeGreaterThanOrEqual(
+      rank('2.1.280'),
     )
   })
 
