@@ -560,34 +560,46 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
     const blockingSource = blockingSources.get(skill.name) ?? null
     const isToggleable =
       canToggleSkillMode(skill) && blockingSource === null
-    const readOnlyReason =
+    const overriddenBy =
       blockingSource !== null
-        ? ` · overridden by ${getSettingSourceDisplayNameLowercase(blockingSource)}`
-        : !isToggleable
-          ? ' · read-only'
-          : ''
+        ? `overridden by ${getSettingSourceDisplayNameLowercase(blockingSource)}`
+        : ''
+    const readOnly = blockingSource === null && !isToggleable ? 'read-only' : ''
+    // ✔ / ◯ is the whole on/off signal; the partial modes are still "on" and
+    // carry their word in the details instead of widening a status column.
+    const isOn = mode !== 'off'
+    const modeWord =
+      mode === 'name-only' ? 'name-only' : mode === 'user-only' ? 'user-only' : ''
+    // Most telling first, so truncation on a narrow terminal cuts the least.
+    const details = [
+      overriddenBy,
+      modeWord,
+      pluginName || sourceLabel,
+      `${tokenDisplay} tok`,
+      readOnly,
+    ].filter(Boolean)
     return (
       <Box key={`${skill.name}-${skill.source}`}>
         <Text color={isSelected ? 'suggestion' : undefined}>
           {isSelected ? '❯ ' : '  '}
         </Text>
-        <Box width={14}>
-          {mode === 'name-only' ? (
-            <Text color="white">● name-only</Text>
-          ) : mode === 'on' ? (
-            <Text color="success">{figures.tick} on</Text>
-          ) : mode === 'user-only' ? (
-            <Text color="warning">◯ user-only</Text>
-          ) : (
-            <Text color="inactive">{figures.circle} off</Text>
-          )}
+        <Box flexShrink={0} marginRight={1}>
+          <Text color={isOn ? 'success' : 'inactive'}>
+            {isOn ? figures.tick : figures.circle}
+          </Text>
         </Box>
-        <Text color={isSelected ? 'suggestion' : undefined}>
-          {getCommandName(skill)}
-        </Text>
-        <Text dimColor>
-          {pluginName ? ` · ${pluginName}` : ` · ${sourceLabel}`} · {tokenDisplay} tok{readOnlyReason}
-        </Text>
+        {/* One Text so a narrow terminal truncates the row instead of
+            wrapping it; the name comes first and is the last thing cut. */}
+        <Box flexShrink={1}>
+          <Text wrap="truncate-end">
+            <Text color={isSelected ? 'suggestion' : undefined}>
+              {getCommandName(skill)}
+            </Text>
+            <Text dimColor>
+              {details.map(detail => ` · ${detail}`).join('')}
+            </Text>
+          </Text>
+        </Box>
       </Box>
     )
   }
