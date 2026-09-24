@@ -44,6 +44,7 @@ import {
   clearAwsIniCache,
   isValidAwsStsOutput,
 } from './aws.js'
+import { AuthRefreshSupervisor } from './authRefreshProcess.js'
 import { AwsAuthStatusManager } from './awsAuthStatusManager.js'
 import { clearBetasCaches } from './betas.js'
 import {
@@ -719,9 +720,11 @@ export function refreshAwsAuth(awsAuthRefresh: string): Promise<boolean> {
   authStatusManager.startAuthentication()
 
   return new Promise(resolve => {
-    const refreshProc = exec(awsAuthRefresh, {
-      timeout: AWS_AUTH_REFRESH_TIMEOUT_MS,
-    })
+    const refreshProc = exec(awsAuthRefresh)
+    const supervisor = new AuthRefreshSupervisor(
+      refreshProc,
+      AWS_AUTH_REFRESH_TIMEOUT_MS,
+    )
     refreshProc.stdout!.on('data', data => {
       const output = data.toString().trim()
       if (output) {
@@ -740,22 +743,25 @@ export function refreshAwsAuth(awsAuthRefresh: string): Promise<boolean> {
       }
     })
 
-    refreshProc.on('close', (code, signal) => {
+    refreshProc.on('close', code => {
+      supervisor.settle()
       if (code === 0) {
         logForDebugging('AWS auth refresh completed successfully')
         authStatusManager.endAuthentication(true)
         void resolve(true)
       } else {
-        const timedOut = signal === 'SIGTERM'
-        const message = timedOut
-          ? chalk.red(
-              'AWS auth refresh timed out after 3 minutes. Run your auth command manually in a separate terminal.',
-            )
-          : chalk.red(
-              'Error running awsAuthRefresh (in settings or ~/.noa/.config.json):',
-            )
-        // biome-ignore lint/suspicious/noConsole:: intentional console output
-        console.error(message)
+        const message =
+          supervisor.killReason === 'timeout'
+            ? chalk.red(
+                'AWS auth refresh timed out after 3 minutes. Run your auth command manually in a separate terminal.',
+              )
+            : chalk.red(
+                'Error running awsAuthRefresh (in settings or ~/.noa/.config.json):',
+              )
+        if (supervisor.killReason !== 'shutdown') {
+          // biome-ignore lint/suspicious/noConsole:: intentional console output
+          console.error(message)
+        }
         authStatusManager.endAuthentication(false)
         void resolve(false)
       }
@@ -987,9 +993,11 @@ export function refreshGcpAuth(gcpAuthRefresh: string): Promise<boolean> {
   authStatusManager.startAuthentication()
 
   return new Promise(resolve => {
-    const refreshProc = exec(gcpAuthRefresh, {
-      timeout: GCP_AUTH_REFRESH_TIMEOUT_MS,
-    })
+    const refreshProc = exec(gcpAuthRefresh)
+    const supervisor = new AuthRefreshSupervisor(
+      refreshProc,
+      GCP_AUTH_REFRESH_TIMEOUT_MS,
+    )
     refreshProc.stdout!.on('data', data => {
       const output = data.toString().trim()
       if (output) {
@@ -1008,22 +1016,25 @@ export function refreshGcpAuth(gcpAuthRefresh: string): Promise<boolean> {
       }
     })
 
-    refreshProc.on('close', (code, signal) => {
+    refreshProc.on('close', code => {
+      supervisor.settle()
       if (code === 0) {
         logForDebugging('GCP auth refresh completed successfully')
         authStatusManager.endAuthentication(true)
         void resolve(true)
       } else {
-        const timedOut = signal === 'SIGTERM'
-        const message = timedOut
-          ? chalk.red(
-              'GCP auth refresh timed out after 3 minutes. Run your auth command manually in a separate terminal.',
-            )
-          : chalk.red(
-              'Error running gcpAuthRefresh (in settings or ~/.noa/.config.json):',
-            )
-        // biome-ignore lint/suspicious/noConsole:: intentional console output
-        console.error(message)
+        const message =
+          supervisor.killReason === 'timeout'
+            ? chalk.red(
+                'GCP auth refresh timed out after 3 minutes. Run your auth command manually in a separate terminal.',
+              )
+            : chalk.red(
+                'Error running gcpAuthRefresh (in settings or ~/.noa/.config.json):',
+              )
+        if (supervisor.killReason !== 'shutdown') {
+          // biome-ignore lint/suspicious/noConsole:: intentional console output
+          console.error(message)
+        }
         authStatusManager.endAuthentication(false)
         void resolve(false)
       }
