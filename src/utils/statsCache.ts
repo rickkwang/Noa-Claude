@@ -32,8 +32,10 @@ const STATS_CACHE_FILENAME = 'stats-cache.json'
  * v2: usage is counted once per API response instead of once per transcript
  * entry (one entry per content block), which had inflated input-side totals
  * ~2x. Also rebuilds `modelUsage`, which carried the same overcount.
+ * v3: a response replayed into forked transcripts (compact, aside_question)
+ * is counted once across files, not once per file.
  */
-export const DAILY_MODEL_TOKENS_VERSION = 2
+export const DAILY_MODEL_TOKENS_VERSION = 3
 
 /**
  * Simple in-memory lock to prevent concurrent cache operations.

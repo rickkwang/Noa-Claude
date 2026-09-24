@@ -130,6 +130,9 @@ async function processSessionFiles(
   const hourCounts = new Map<number, number>()
   let totalMessages = 0
   let totalSpeculationTimeSavedMs = 0
+  // Forked transcripts (compact, aside_question) replay the parent's history,
+  // so the same response can appear in several files — count it once overall.
+  const countedResponseIds = new Set<string>()
   const modelUsageAgg: { [modelName: string]: ModelUsage } = {}
   const shotDistributionMap = feature('SHOT_STATS')
     ? new Map<number, number>()
@@ -322,7 +325,9 @@ async function processSessionFiles(
           const responseId = message.message?.id
           if (
             message.message?.usage &&
-            (!responseId || finalUsageEntry.get(responseId) === message)
+            (!responseId ||
+              (finalUsageEntry.get(responseId) === message &&
+                !countedResponseIds.has(responseId)))
           ) {
             const usage = message.message.usage
             const model = message.message.model || 'unknown'
@@ -331,6 +336,7 @@ async function processSessionFiles(
             if (model === SYNTHETIC_MODEL) {
               continue
             }
+            if (responseId) countedResponseIds.add(responseId)
 
             if (!modelUsageAgg[model]) {
               modelUsageAgg[model] = {

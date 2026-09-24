@@ -71,4 +71,28 @@ describe('stats token usage', () => {
     expect(usage.inputTokens).toBe(2)
     expect(usage.outputTokens).toBe(300)
   })
+
+  test('counts a response replayed into a forked transcript once', async () => {
+    const now = new Date().toISOString()
+    const usage = {
+      input_tokens: 2,
+      output_tokens: 100,
+      cache_read_input_tokens: 50_000,
+      cache_creation_input_tokens: 500,
+    }
+    const user = { type: 'user', uuid: 'u1', timestamp: now, sessionId: 's1', message: { role: 'user', content: 'hi' } }
+    const parent = assistantEntry('msg_p', { type: 'text', text: 'ok' }, usage, now)
+    const projectDir = join(configDir, 'projects', 'p')
+    const subagentsDir = join(projectDir, 's1', 'subagents')
+    mkdirSync(subagentsDir, { recursive: true })
+    writeFileSync(join(projectDir, 's1.jsonl'), [user, parent].map(e => JSON.stringify(e)).join('\n') + '\n')
+    // The compact fork's transcript replays the parent's history.
+    writeFileSync(
+      join(subagentsDir, 'agent-acompact-abc.jsonl'),
+      [user, parent].map(e => JSON.stringify({ ...e, isSidechain: true })).join('\n') + '\n',
+    )
+
+    const stats = await aggregateClaudeCodeStatsForRange('7d')
+    expect(stats.modelUsage['claude-opus-5']!.cacheReadInputTokens).toBe(50_000)
+  })
 })
