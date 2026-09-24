@@ -38,6 +38,11 @@ import {
   getSettingsRootPathForSource,
 } from '../settings/settings.js'
 import { containsVulnerableUncPath } from '../shell/readOnlyCommandValidation.js'
+import {
+  isKernelRedirectedPath,
+  isNetworkPath,
+  isUncPath,
+} from '../networkPath.js'
 import { getToolResultsDir } from '../toolResultStorage.js'
 import { windowsPathToPosixPath } from '../windowsPaths.js'
 import {
@@ -458,7 +463,7 @@ function isDangerousFilePathToAutoEdit(path: string): boolean {
 
   // Check for UNC paths (defense-in-depth to catch any patterns that might not be caught by containsVulnerableUncPath)
   // Block anything starting with \\ or // as these are potentially UNC paths that could access network resources
-  if (path.startsWith('\\\\') || path.startsWith('//')) {
+  if (isNetworkPath(path)) {
     return true
   }
 
@@ -1104,13 +1109,23 @@ export function checkReadPermissionForTool(
   // This catches paths starting with \\ or // that could access network resources
   // This may catch some UNC patterns not detected by containsVulnerableUncPath
   for (const pathToCheck of pathsToCheck) {
-    if (pathToCheck.startsWith('\\\\') || pathToCheck.startsWith('//')) {
+    if (isUncPath(pathToCheck)) {
       return {
         behavior: 'ask',
         message: `Claude requested permissions to read from ${path}, which appears to be a UNC path that could access network resources.`,
         decisionReason: {
           type: 'other',
           reason: 'UNC path detected (defense-in-depth check)',
+        },
+      }
+    }
+    if (isKernelRedirectedPath(pathToCheck)) {
+      return {
+        behavior: 'ask',
+        message: `Claude requested permissions to read from ${path}, which is under /.vol, /.file, /.nofollow or /.resolve (paths the macOS kernel redirects) and could reach a network mount, triggering a DNS lookup and mount to a remote host.`,
+        decisionReason: {
+          type: 'other',
+          reason: 'Kernel-resolved path prefix (/.vol etc.) detected (defense-in-depth check)',
         },
       }
     }

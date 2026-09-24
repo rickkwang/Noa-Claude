@@ -15,6 +15,11 @@ import { getCwd } from '../../utils/cwd.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { getErrnoCode } from '../../utils/errors.js'
 import { IMAGE_EXTENSION_REGEX } from '../../utils/imagePaste.js'
+import {
+  isKernelRedirectedPath,
+  isNetworkPath,
+  isUncPath,
+} from '../../utils/networkPath.js'
 import { expandPath } from '../../utils/path.js'
 
 export type ResolvedAttachment = {
@@ -30,6 +35,22 @@ export async function validateAttachmentPaths(
   const cwd = getCwd()
   for (const rawPath of rawPaths) {
     const fullPath = expandPath(rawPath)
+    // validateInput runs before the permission check, so decide on network
+    // paths from the string alone — a stat could reach a share or mount.
+    if (isUncPath(rawPath) || isUncPath(fullPath)) {
+      return {
+        result: false,
+        message: `Attachment "${rawPath}" is a UNC network path, which is not supported.`,
+        errorCode: 1,
+      }
+    }
+    if (isKernelRedirectedPath(fullPath)) {
+      return {
+        result: false,
+        message: `Attachment "${rawPath}" is under /.vol, /.file, /.nofollow or /.resolve, which could trigger a network mount, so it is not supported. Copy the file to an ordinary local path and pass that path instead.`,
+        errorCode: 1,
+      }
+    }
     try {
       const stats = await stat(fullPath)
       if (!stats.isFile()) {
@@ -71,6 +92,11 @@ export async function resolveAttachments(
   const stated: ResolvedAttachment[] = []
   for (const rawPath of rawPaths) {
     const fullPath = expandPath(rawPath)
+    if (isUncPath(rawPath) || isNetworkPath(fullPath)) {
+      throw new Error(
+        `Attachment "${rawPath}" is a network path, which is not supported.`,
+      )
+    }
     // Single stat — we need size, so this is the operation, not a guard.
     // validateInput ran before us, but the file could have moved since
     // (TOCTOU); if it did, let the error propagate so the model sees it.

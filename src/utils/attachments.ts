@@ -18,6 +18,7 @@ import {
 } from '../tools/FileReadTool/FileReadTool.js'
 import { FileTooLargeError, readFileInRange } from './readFileInRange.js'
 import { expandPath } from './path.js'
+import { isNetworkPath } from './networkPath.js'
 import { countCharInString } from './stringUtils.js'
 import { count, uniq } from './array.js'
 import { getFsImplementation } from './fsOperations.js'
@@ -2072,7 +2073,7 @@ async function getSelectedLinesFromIDE(
   }
 
   const appState = toolUseContext.getAppState()
-  if (isFileReadDenied(ideSelection.filePath, appState.toolPermissionContext)) {
+  if (isAttachmentReadBlocked(ideSelection.filePath, appState.toolPermissionContext)) {
     return []
   }
 
@@ -2316,7 +2317,7 @@ async function getOpenedFileFromIDE(
   }
 
   const appState = toolUseContext.getAppState()
-  if (isFileReadDenied(ideSelection.filePath, appState.toolPermissionContext)) {
+  if (isAttachmentReadBlocked(ideSelection.filePath, appState.toolPermissionContext)) {
     return []
   }
 
@@ -2352,7 +2353,7 @@ async function processAtMentionedFiles(
         const absoluteFilename = expandPath(filename)
 
         if (
-          isFileReadDenied(absoluteFilename, appState.toolPermissionContext)
+          isAttachmentReadBlocked(absoluteFilename, appState.toolPermissionContext)
         ) {
           return null
         }
@@ -2526,7 +2527,7 @@ export async function getChangedFiles(
       const normalizedPath = expandPath(filePath)
 
       // Check if file has a deny rule configured
-      if (isFileReadDenied(normalizedPath, appState.toolPermissionContext)) {
+      if (isAttachmentReadBlocked(normalizedPath, appState.toolPermissionContext)) {
         return null
       }
 
@@ -3489,7 +3490,7 @@ export async function generateFileAttachment(
 
   // Check if file has a deny rule configured
   const appState = toolUseContext.getAppState()
-  if (isFileReadDenied(filename, appState.toolPermissionContext)) {
+  if (isAttachmentReadBlocked(filename, appState.toolPermissionContext)) {
     return null
   }
 
@@ -3592,7 +3593,7 @@ export async function generateFileAttachment(
 
       // Check deny rules before reading truncated file
       const appState = toolUseContext.getAppState()
-      if (isFileReadDenied(filename, appState.toolPermissionContext)) {
+      if (isAttachmentReadBlocked(filename, appState.toolPermissionContext)) {
         return null
       }
 
@@ -4428,10 +4429,17 @@ export function getContextEfficiencyAttachment(
 }
 
 
-function isFileReadDenied(
+/**
+ * Attachments are read without a permission prompt, so besides deny rules
+ * they must skip network paths: a stat on a UNC path or a macOS /.vol,
+ * /.file, /.nofollow, /.resolve prefix can reach a network share or mount.
+ * The Read tool still reaches them, behind its permission check.
+ */
+function isAttachmentReadBlocked(
   filePath: string,
   toolPermissionContext: ToolPermissionContext,
 ): boolean {
+  if (isNetworkPath(expandPath(filePath))) return true
   const denyRule = matchingRuleForInput(
     filePath,
     toolPermissionContext,

@@ -57,6 +57,7 @@ import {
   mapNotebookCellsToToolResult,
   readNotebook,
 } from '../../utils/notebook.js'
+import { isNetworkPath } from '../../utils/networkPath.js'
 import { expandPath } from '../../utils/path.js'
 import { extractPDFPages, getPDFPageCount, readPDF } from '../../utils/pdf.js'
 import {
@@ -460,11 +461,10 @@ export const FileReadTool = buildTool({
       }
     }
 
-    // SECURITY: UNC path check (no I/O) — defer filesystem operations
+    // SECURITY: network path check (no I/O) — defer filesystem operations
     // until after user grants permission to prevent NTLM credential leaks
-    const isUncPath =
-      fullFilePath.startsWith('\\\\') || fullFilePath.startsWith('//')
-    if (isUncPath) {
+    // or a macOS resolution prefix reaching a network mount
+    if (isNetworkPath(fullFilePath)) {
       return { result: true }
     }
 

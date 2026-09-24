@@ -11,6 +11,7 @@ import {
 import { getFsImplementation } from '../../utils/fsOperations.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { expandPath, toRelativePath } from '../../utils/path.js'
+import { isNetworkPath } from '../../utils/networkPath.js'
 import {
   checkReadPermissionForTool,
   getFileReadIgnorePatterns,
@@ -206,7 +207,7 @@ export const GrepTool = buildTool({
       const absolutePath = expandPath(path)
 
       // SECURITY: Skip filesystem operations for UNC paths to prevent NTLM credential leaks.
-      if (absolutePath.startsWith('\\\\') || absolutePath.startsWith('//')) {
+      if (isNetworkPath(absolutePath)) {
         return { result: true }
       }
 

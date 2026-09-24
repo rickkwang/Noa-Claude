@@ -14,6 +14,7 @@ import {
 import { homedir } from 'os'
 import * as nodePath from 'path'
 import { getErrnoCode } from './errors.js'
+import { isNetworkPath } from './networkPath.js'
 import { slowLogging } from './slowOperations.js'
 
 /**
@@ -140,9 +141,10 @@ export function safeResolvePath(
   fs: FsOperations,
   filePath: string,
 ): { resolvedPath: string; isSymlink: boolean; isCanonical: boolean } {
-  // Block UNC paths before any filesystem access to prevent network
-  // requests (DNS/SMB) during validation on Windows
-  if (filePath.startsWith('//') || filePath.startsWith('\\\\')) {
+  // Block UNC paths and macOS kernel-redirected prefixes (/.vol, /.file,
+  // /.nofollow, /.resolve) before any filesystem access so validation never
+  // touches a network share or mount
+  if (isNetworkPath(filePath)) {
     return { resolvedPath: filePath, isSymlink: false, isCanonical: false }
   }
 
@@ -302,9 +304,10 @@ export function getPathsForPermissionCheck(inputPath: string): string[] {
   // Always check the original path
   pathSet.add(path)
 
-  // Block UNC paths before any filesystem access to prevent network
-  // requests (DNS/SMB) during validation on Windows
-  if (path.startsWith('//') || path.startsWith('\\\\')) {
+  // Block UNC paths and macOS kernel-redirected prefixes (/.vol, /.file,
+  // /.nofollow, /.resolve) before any filesystem access so validation never
+  // touches a network share or mount
+  if (isNetworkPath(path)) {
     return Array.from(pathSet)
   }
 

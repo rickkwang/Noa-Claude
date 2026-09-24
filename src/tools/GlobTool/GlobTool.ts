@@ -12,6 +12,7 @@ import { getFsImplementation } from '../../utils/fsOperations.js'
 import { glob } from '../../utils/glob.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { expandPath, toRelativePath } from '../../utils/path.js'
+import { isNetworkPath } from '../../utils/networkPath.js'
 import { checkReadPermissionForTool } from '../../utils/permissions/filesystem.js'
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
 import { matchWildcardPattern } from '../../utils/permissions/shellRuleMatching.js'
@@ -99,7 +100,7 @@ export const GlobTool = buildTool({
       const absolutePath = expandPath(path)
 
       // SECURITY: Skip filesystem operations for UNC paths to prevent NTLM credential leaks.
-      if (absolutePath.startsWith('\\\\') || absolutePath.startsWith('//')) {
+      if (isNetworkPath(absolutePath)) {
         return { result: true }
       }
 

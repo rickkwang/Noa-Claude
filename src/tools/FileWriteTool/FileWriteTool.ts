@@ -34,6 +34,7 @@ import {
 import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
 import { expandPath } from '../../utils/path.js'
+import { isNetworkPath } from '../../utils/networkPath.js'
 import {
   checkWritePermissionForTool,
   matchingRuleForInput,
@@ -180,7 +181,7 @@ export const FileWriteTool = buildTool({
     // SECURITY: Skip filesystem operations for UNC paths to prevent NTLM credential leaks.
     // On Windows, fs.existsSync() on UNC paths triggers SMB authentication which could
     // leak credentials to malicious servers. Let the permission check handle UNC paths.
-    if (fullFilePath.startsWith('\\\\') || fullFilePath.startsWith('//')) {
+    if (isNetworkPath(fullFilePath)) {
       return { result: true }
     }
 

@@ -2,6 +2,7 @@ import { homedir } from 'os'
 import { dirname, isAbsolute, join, normalize, relative, resolve } from 'path'
 import { getCwd } from './cwd.js'
 import { getFsImplementation } from './fsOperations.js'
+import { isNetworkPath } from './networkPath.js'
 import { getPlatform } from './platform.js'
 import { posixPathToWindowsPath } from './windowsPaths.js'
 
@@ -121,7 +122,7 @@ export function toRelativePath(absolutePath: string): string {
 export function getDirectoryForPath(path: string): string {
   const absolutePath = expandPath(path)
   // SECURITY: Skip filesystem operations for UNC paths to prevent NTLM credential leaks.
-  if (absolutePath.startsWith('\\\\') || absolutePath.startsWith('//')) {
+  if (isNetworkPath(absolutePath)) {
     return dirname(absolutePath)
   }
   try {
