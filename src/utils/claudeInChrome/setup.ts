@@ -21,6 +21,7 @@ import {
 import { execFileNoThrowWithCwd } from '../execFileNoThrow.js'
 import { getPlatform } from '../platform.js'
 import { jsonStringify } from '../slowOperations.js'
+import { isToolSearchEnabledOptimistic } from '../toolSearch.js'
 import {
   CLAUDE_IN_CHROME_MCP_SERVER_NAME,
   getAllBrowserDataPaths,
@@ -139,7 +140,7 @@ export function setupClaudeInChrome(): {
         },
       },
       allowedTools,
-      systemPrompt: getChromeSystemPrompt(),
+      systemPrompt: getChromeSystemPrompt(isToolSearchEnabledOptimistic()),
     }
   } else {
     const __filename = fileURLToPath(import.meta.url)
@@ -172,7 +173,7 @@ export function setupClaudeInChrome(): {
     return {
       mcpConfig,
       allowedTools,
-      systemPrompt: getChromeSystemPrompt(),
+      systemPrompt: getChromeSystemPrompt(isToolSearchEnabledOptimistic()),
     }
   }
 }
