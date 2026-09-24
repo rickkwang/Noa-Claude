@@ -5,18 +5,10 @@ import type { VimInputState, VimMode } from '../types/textInputTypes.js'
 import { Cursor } from '../utils/Cursor.js'
 import { getGraphemeSegmenter, lastGrapheme } from '../utils/intl.js'
 import {
-  executeIndent,
-  executeJoin,
-  executeOpenLine,
-  executeOperatorFind,
-  executeOperatorMotion,
-  executeOperatorTextObj,
-  executeReplace,
-  executeToggleCase,
   executeVisualOperator,
-  executeX,
   type OperatorContext,
 } from '../vim/operators.js'
+import { replayRecordedChange } from '../vim/replay.js'
 import { resolveMotion } from '../vim/motions.js'
 import { type TransitionContext, transition } from '../vim/transitions.js'
 import {
@@ -34,6 +26,11 @@ type UseVimInputProps = Omit<UseTextInputProps, 'inputFilter'> & {
   onUndo?: () => void
   inputFilter?: UseTextInputProps['inputFilter']
 }
+
+// Text a NORMAL-mode command produced, not keys typed at the prompt: a leading
+// "!" in it is text (a pasted line, the line o opened under, a repeated
+// insert), never the shell-mode trigger it is when typed into an empty input.
+const NORMAL_MODE_EDIT = { interpretLeadingModeCharacter: false } as const
 
 export function useVimInput(props: UseVimInputProps): VimInputState {
   const vimStateRef = React.useRef<VimState>(createInitialVimState())
@@ -64,10 +61,19 @@ export function useVimInput(props: UseVimInputProps): VimInputState {
 
   const switchToNormalMode = useCallback((): void => {
     const current = vimStateRef.current
-    if (current.mode === 'INSERT' && current.insertedText) {
-      persistentRef.current.lastChange = {
-        type: 'insert',
-        text: current.insertedText,
+    if (current.mode === 'INSERT') {
+      if (current.changeToExtend) {
+        // cw / cc / C / o ... then text: `.` repeats both, even when nothing
+        // was typed (cw<Esc> repeats as a plain delete).
+        persistentRef.current.lastChange = {
+          ...current.changeToExtend,
+          insertText: current.insertedText,
+        }
+      } else if (current.insertedText) {
+        persistentRef.current.lastChange = {
+          type: 'insert',
+          text: current.insertedText,
+        }
       }
     }
 
@@ -112,7 +118,7 @@ export function useVimInput(props: UseVimInputProps): VimInputState {
     return {
       cursor,
       text: props.value,
-      setText: (newText: string) => props.onChange(newText),
+      setText: (newText: string) => props.onChange(newText, NORMAL_MODE_EDIT),
       setOffset: (offset: number) => textInput.setOffset(offset),
       enterInsert: (offset: number) => switchToInsertMode(offset),
       getRegister: () => persistentRef.current.register,
@@ -128,6 +134,12 @@ export function useVimInput(props: UseVimInputProps): VimInputState {
         ? () => {}
         : (change: RecordedChange) => {
             persistentRef.current.lastChange = change
+            // The command just opened insert mode (it runs enterInsert before
+            // recording): remember it so Esc can fold the typed text in.
+            const state = vimStateRef.current
+            if (state.mode === 'INSERT') {
+              vimStateRef.current = { ...state, changeToExtend: change }
+            }
           },
     }
   }
@@ -135,67 +147,15 @@ export function useVimInput(props: UseVimInputProps): VimInputState {
   function replayLastChange(): void {
     const change = persistentRef.current.lastChange
     if (!change) return
-
     const cursor = Cursor.fromText(props.value, props.columns, textInput.offset)
-    const ctx = createOperatorContext(cursor, true)
-
-    switch (change.type) {
-      case 'insert':
-        if (change.text) {
-          const newCursor = cursor.insert(change.text)
-          props.onChange(newCursor.text)
-          textInput.setOffset(newCursor.offset)
-        }
-        break
-
-      case 'x':
-        executeX(change.count, ctx)
-        break
-
-      case 'replace':
-        executeReplace(change.char, change.count, ctx)
-        break
-
-      case 'toggleCase':
-        executeToggleCase(change.count, ctx)
-        break
-
-      case 'indent':
-        executeIndent(change.dir, change.count, ctx)
-        break
-
-      case 'join':
-        executeJoin(change.count, ctx)
-        break
-
-      case 'openLine':
-        executeOpenLine(change.direction, ctx)
-        break
-
-      case 'operator':
-        executeOperatorMotion(change.op, change.motion, change.count, ctx)
-        break
-
-      case 'operatorFind':
-        executeOperatorFind(
-          change.op,
-          change.find,
-          change.char,
-          change.count,
-          ctx,
-        )
-        break
-
-      case 'operatorTextObj':
-        executeOperatorTextObj(
-          change.op,
-          change.scope,
-          change.objType,
-          change.count,
-          ctx,
-        )
-        break
+    const result = replayRecordedChange(
+      change,
+      createOperatorContext(cursor, true),
+    )
+    if (result.text !== props.value) {
+      props.onChange(result.text, NORMAL_MODE_EDIT)
     }
+    textInput.setOffset(result.offset)
   }
 
   // Compute [from, to) byte range for a visual selection.
@@ -350,7 +310,7 @@ export function useVimInput(props: UseVimInputProps): VimInputState {
       if (key.backspace || key.delete) {
         if (state.insertedText.length > 0) {
           vimStateRef.current = {
-            mode: 'INSERT',
+            ...state,
             insertedText: state.insertedText.slice(
               0,
               -(lastGrapheme(state.insertedText).length || 1),
@@ -359,7 +319,7 @@ export function useVimInput(props: UseVimInputProps): VimInputState {
         }
       } else {
         vimStateRef.current = {
-          mode: 'INSERT',
+          ...state,
           insertedText: state.insertedText + input,
         }
       }

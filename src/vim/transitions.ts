@@ -100,9 +100,12 @@ function handleNormalInput(
   input: string,
   count: number,
   ctx: TransitionContext,
+  countGiven: boolean,
 ): TransitionResult | null {
   if (isOperatorKey(input)) {
-    return { next: { type: 'operator', op: OPERATORS[input], count } }
+    return {
+      next: { type: 'operator', op: OPERATORS[input], count, countGiven },
+    }
   }
 
   if (SIMPLE_MOTIONS.has(input)) {
@@ -147,13 +150,12 @@ function handleNormalInput(
   if (input === 'G') {
     return {
       execute: () => {
-        // count=1 means no count given, go to last line
-        // otherwise go to line N
-        if (count === 1) {
-          ctx.setOffset(ctx.cursor.startOfLastLine().offset)
-        } else {
-          ctx.setOffset(ctx.cursor.goToLine(count).offset)
-        }
+        // {N}G goes to line N (1G included); a bare G to the last line.
+        ctx.setOffset(
+          countGiven
+            ? ctx.cursor.goToLine(count).offset
+            : ctx.cursor.startOfLastLine().offset,
+        )
       },
     }
   }
@@ -209,6 +211,7 @@ function handleOperatorInput(
   count: number,
   input: string,
   ctx: TransitionContext,
+  countGiven: boolean,
 ): TransitionResult | null {
   if (isTextObjScopeKey(input)) {
     return {
@@ -232,11 +235,11 @@ function handleOperatorInput(
   }
 
   if (input === 'G') {
-    return { execute: () => executeOperatorG(op, count, ctx) }
+    return { execute: () => executeOperatorG(op, count, ctx, countGiven) }
   }
 
   if (input === 'g') {
-    return { next: { type: 'operatorG', op, count } }
+    return { next: { type: 'operatorG', op, count, countGiven } }
   }
 
   return null
@@ -257,7 +260,7 @@ function fromIdle(input: string, ctx: TransitionContext): TransitionResult {
     }
   }
 
-  const result = handleNormalInput(input, 1, ctx)
+  const result = handleNormalInput(input, 1, ctx, false)
   if (result) return result
 
   return {}
@@ -275,14 +278,14 @@ function fromCount(
   }
 
   const count = parseInt(state.digits, 10)
-  const result = handleNormalInput(input, count, ctx)
+  const result = handleNormalInput(input, count, ctx, true)
   if (result) return result
 
   return { next: { type: 'idle' } }
 }
 
 function fromOperator(
-  state: { type: 'operator'; op: Operator; count: number },
+  state: { type: 'operator'; op: Operator; count: number; countGiven: boolean },
   input: string,
   ctx: TransitionContext,
 ): TransitionResult {
@@ -291,7 +294,8 @@ function fromOperator(
     return { execute: () => executeLineOp(state.op, state.count, ctx) }
   }
 
-  if (/[0-9]/.test(input)) {
+  // A count can't start with 0: d0 / c0 / y0 operate to the start of the line.
+  if (/[1-9]/.test(input)) {
     return {
       next: {
         type: 'operatorCount',
@@ -302,7 +306,13 @@ function fromOperator(
     }
   }
 
-  const result = handleOperatorInput(state.op, state.count, input, ctx)
+  const result = handleOperatorInput(
+    state.op,
+    state.count,
+    input,
+    ctx,
+    state.countGiven,
+  )
   if (result) return result
 
   return { next: { type: 'idle' } }
@@ -326,7 +336,13 @@ function fromOperatorCount(
 
   const motionCount = parseInt(state.digits, 10)
   const effectiveCount = state.count * motionCount
-  const result = handleOperatorInput(state.op, effectiveCount, input, ctx)
+  const result = handleOperatorInput(
+    state.op,
+    effectiveCount,
+    input,
+    ctx,
+    true,
+  )
   if (result) return result
 
   return { next: { type: 'idle' } }
@@ -419,7 +435,12 @@ function fromG(
 }
 
 function fromOperatorG(
-  state: { type: 'operatorG'; op: Operator; count: number },
+  state: {
+    type: 'operatorG'
+    op: Operator
+    count: number
+    countGiven: boolean
+  },
   input: string,
   ctx: TransitionContext,
 ): TransitionResult {
@@ -430,7 +451,10 @@ function fromOperatorG(
     }
   }
   if (input === 'g') {
-    return { execute: () => executeOperatorGg(state.op, state.count, ctx) }
+    return {
+      execute: () =>
+        executeOperatorGg(state.op, state.count, ctx, state.countGiven),
+    }
   }
   // Any other input cancels the operator
   return { next: { type: 'idle' } }

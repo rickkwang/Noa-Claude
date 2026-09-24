@@ -132,7 +132,11 @@ export function resetYankState(): void {
  */
 
 // Pre-compiled regex patterns for Vim word detection (avoid creating in hot loops)
-export const VIM_WORD_CHAR_REGEX = /^[\p{L}\p{N}\p{M}_]$/u
+// Tested against whole graphemes, not code points: in Devanagari, Bengali and
+// other Indic scripts a single grapheme is a letter plus combining vowel signs
+// or a virama (\p{M}), sometimes joined by ZWJ/ZWNJ. A one-code-point pattern
+// classed those graphemes as punctuation and split every word apart.
+export const VIM_WORD_CHAR_REGEX = /^[\p{L}\p{N}\p{M}_\u200C\u200D]+$/u
 export const WHITESPACE_REGEX = /\s/
 
 // Exported helper functions for Vim character classification
@@ -449,6 +453,9 @@ export class Cursor {
 
   // Helper methods for finding logical line boundaries
   private findLogicalLineStart(fromOffset: number = this.offset): number {
+    // lastIndexOf clamps a negative start to 0, so at offset 0 it would find
+    // a newline at index 0 (an empty first line) and put the start past it.
+    if (fromOffset <= 0) return 0
     const prevNewline = this.text.lastIndexOf('\n', fromOffset - 1)
     return prevNewline === -1 ? 0 : prevNewline + 1
   }
@@ -999,8 +1006,9 @@ export class Cursor {
     const lastNewlineIndex = this.text.lastIndexOf('\n')
 
     if (lastNewlineIndex === -1) {
-      // If there are no newlines, the text is a single line
-      return this.startOfLine()
+      // A single logical line: its start is offset 0, even when it wraps
+      // (startOfLine() would give the start of the current display row).
+      return new Cursor(this.measuredText, 0, 0)
     }
 
     // Position after the last newline character

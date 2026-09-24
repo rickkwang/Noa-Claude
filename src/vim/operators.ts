@@ -5,7 +5,12 @@
  * Pure functions for executing vim operators (delete, change, yank, etc.)
  */
 
-import { Cursor } from '../utils/Cursor.js'
+import {
+  Cursor,
+  isVimPunctuation,
+  isVimWhitespace,
+  isVimWordChar,
+} from '../utils/Cursor.js'
 import { firstGrapheme, lastGrapheme } from '../utils/intl.js'
 import { countCharInString } from '../utils/stringUtils.js'
 import {
@@ -38,6 +43,23 @@ export type OperatorContext = {
 }
 
 /**
+ * Record a change for `.` — yanks change nothing, so they never replace the
+ * change `.` repeats.
+ */
+function recordChange(
+  op: Operator,
+  ctx: OperatorContext,
+  change: RecordedChange,
+): void {
+  if (op !== 'yank') ctx.recordChange(change)
+}
+
+// Motions that always succeed, so an operator over an empty range still runs:
+// c0 in column 0 or c$ on an empty line enter insert mode, where ch in column
+// 0 (h cannot move) does nothing.
+const NEVER_FAILING_MOTIONS = new Set(['0', '^', '$'])
+
+/**
  * Execute an operator with a simple motion.
  */
 export function executeOperatorMotion(
@@ -46,12 +68,36 @@ export function executeOperatorMotion(
   count: number,
   ctx: OperatorContext,
 ): void {
-  const target = resolveMotion(motion, ctx.cursor, count)
-  if (target.equals(ctx.cursor)) return
+  if (op === 'change' && (motion === 'w' || motion === 'W')) {
+    const range = getChangeWordRange(ctx.cursor, motion === 'W', count)
+    applyOperator(op, range.from, range.to, ctx)
+    recordChange(op, ctx, { type: 'operator', op, motion, count })
+    return
+  }
 
-  const range = getOperatorRange(ctx.cursor, target, motion, op, count)
-  applyOperator(op, range.from, range.to, ctx, range.linewise)
-  ctx.recordChange({ type: 'operator', op, motion, count })
+  const target = resolveMotion(motion, ctx.cursor, count)
+  // j/k past the first or last line land on the text's start or end rather
+  // than staying put; under an operator that is a failed motion (dj on the
+  // last line does nothing), not a one-line range.
+  const lineOf = (offset: number): number =>
+    countCharInString(ctx.text.slice(0, offset), '\n')
+  if (
+    (motion === 'j' || motion === 'k') &&
+    lineOf(target.offset) === lineOf(ctx.cursor.offset)
+  ) {
+    return
+  }
+  if (target.equals(ctx.cursor)) {
+    if (op === 'change' && NEVER_FAILING_MOTIONS.has(motion)) {
+      applyOperator(op, ctx.cursor.offset, ctx.cursor.offset, ctx)
+      recordChange(op, ctx, { type: 'operator', op, motion, count })
+    }
+    return
+  }
+
+  const range = getOperatorRange(ctx.cursor, target, motion)
+  applyOperator(op, range.from, range.to, ctx, range.linewise, range.motionStart)
+  recordChange(op, ctx, { type: 'operator', op, motion, count })
 }
 
 /**
@@ -72,7 +118,7 @@ export function executeOperatorFind(
 
   applyOperator(op, range.from, range.to, ctx)
   ctx.setLastFind(findType, char)
-  ctx.recordChange({ type: 'operatorFind', op, find: findType, char, count })
+  recordChange(op, ctx, { type: 'operatorFind', op, find: findType, char, count })
 }
 
 /**
@@ -94,7 +140,7 @@ export function executeOperatorTextObj(
   if (!range) return
 
   applyOperator(op, range.start, range.end, ctx)
-  ctx.recordChange({ type: 'operatorTextObj', op, objType, scope, count })
+  recordChange(op, ctx, { type: 'operatorTextObj', op, objType, scope, count })
 }
 
 /**
@@ -163,7 +209,7 @@ export function executeLineOp(
     }
   }
 
-  ctx.recordChange({ type: 'operator', op, motion: op[0]!, count })
+  recordChange(op, ctx, { type: 'lineOp', op, count })
 }
 
 /**
@@ -341,6 +387,7 @@ export function executePaste(
     ctx.setText(newText)
     ctx.setOffset(Math.max(insertPoint, newOffset))
   }
+  ctx.recordChange({ type: 'paste', after, count })
 }
 
 /**
@@ -420,6 +467,18 @@ export function executeOpenLine(
 // Internal Helpers
 // ============================================================================
 
+/** Offset of the first non-blank on the line starting at lineStart. */
+function firstNonBlankOffset(text: string, lineStart: number): number {
+  let i = lineStart
+  while (i < text.length && (text[i] === ' ' || text[i] === '\t')) i++
+  // An all-blank line has no non-blank: stay on its last blank (or its start
+  // when empty) rather than on the newline or past the end of the text.
+  if (i >= text.length || text[i] === '\n') {
+    return i > lineStart ? i - 1 : lineStart
+  }
+  return i
+}
+
 /**
  * Calculate the offset of a line's start position.
  */
@@ -431,48 +490,101 @@ function getOperatorRange(
   cursor: Cursor,
   target: Cursor,
   motion: string,
-  op: Operator,
-  count: number,
-): { from: number; to: number; linewise: boolean } {
-  let from = Math.min(cursor.offset, target.offset)
+): { from: number; to: number; linewise: boolean; motionStart: number } {
+  const text = cursor.text
+  // Where a yank leaves the cursor: the start of the motion (yj stays put,
+  // yk moves up), not the start of the widened linewise range.
+  const motionStart = Math.min(cursor.offset, target.offset)
+  let from = motionStart
   let to = Math.max(cursor.offset, target.offset)
   let linewise = false
 
-  // Special case: cw/cW changes to end of word, not start of next word
-  if (op === 'change' && (motion === 'w' || motion === 'W')) {
-    // For cw with count, move forward (count-1) words, then find end of that word
-    let wordCursor = cursor
-    for (let i = 0; i < count - 1; i++) {
-      wordCursor =
-        motion === 'w' ? wordCursor.nextVimWord() : wordCursor.nextWORD()
-    }
-    const wordEnd =
-      motion === 'w' ? wordCursor.endOfVimWord() : wordCursor.endOfWORD()
-    to = cursor.measuredText.nextOffset(wordEnd.offset)
-  } else if (isLinewiseMotion(motion)) {
-    // Linewise motions extend to include entire lines
+  if (isLinewiseMotion(motion)) {
+    // Whole lines, from the start of the first to past the newline ending the
+    // last (or to the end of the text). applyOperator decides what happens to
+    // the newlines at the edges.
     linewise = true
-    const text = cursor.text
+    // (lastIndexOf clamps a negative start to 0 and would find a newline
+    // there, so line 1 is handled explicitly.)
+    from = from === 0 ? 0 : text.lastIndexOf('\n', from - 1) + 1
     const nextNewline = text.indexOf('\n', to)
-    if (nextNewline === -1) {
-      // Deleting to end of file - include the preceding newline if exists
-      to = text.length
-      if (from > 0 && text[from - 1] === '\n') {
-        from -= 1
-      }
-    } else {
-      to = nextNewline + 1
-    }
+    to = nextNewline === -1 ? text.length : nextNewline + 1
+  } else if (motion === 'w' || motion === 'W') {
+    to = clampWordMotionAtLineEnd(text, from, to)
   } else if (isInclusiveMotion(motion) && cursor.offset <= target.offset) {
     to = cursor.measuredText.nextOffset(to)
   }
 
   // Word motions can land inside an [Image #N] chip; extend the range to
   // cover the whole chip so dw/cw/yw never leave a partial placeholder.
-  from = cursor.snapOutOfImageRef(from, 'start')
-  to = cursor.snapOutOfImageRef(to, 'end')
+  if (!linewise) {
+    from = cursor.snapOutOfImageRef(from, 'start')
+    to = cursor.snapOutOfImageRef(to, 'end')
+  }
 
-  return { from, to, linewise }
+  return { from, to, linewise, motionStart }
+}
+
+/**
+ * w/W under an operator stop at the end of the line they leave: when the
+ * motion crosses a line break to reach the next line's first word, the
+ * operated text ends at that line break (vim's exclusive-motion rule). An empty
+ * line is the exception — there the line break is all there is to operate on.
+ */
+function clampWordMotionAtLineEnd(
+  text: string,
+  from: number,
+  to: number,
+): number {
+  if (text[from] === '\n') return to
+  const lastNewline = text.lastIndexOf('\n', to - 1)
+  if (lastNewline < from) return to
+  if (text.slice(lastNewline + 1, to).trim() !== '') return to
+  return lastNewline
+}
+
+/**
+ * Range for cw / cW. Unlike dw, it changes to the end of the word under the
+ * cursor and never reaches into the next one: on the last character of a word
+ * or a one-letter word it changes just that. On blanks it behaves like dw,
+ * changing the blanks up to the next word, and on an empty line it changes
+ * nothing (it only enters insert mode).
+ */
+function getChangeWordRange(
+  cursor: Cursor,
+  bigWord: boolean,
+  count: number,
+): { from: number; to: number } {
+  const text = cursor.text
+  const from = cursor.offset
+  const current = firstGrapheme(text.slice(from))
+  if (current === '' || current === '\n') return { from, to: from }
+
+  if (isVimWhitespace(current)) {
+    const target = resolveMotion(bigWord ? 'W' : 'w', cursor, count)
+    return { from, to: clampWordMotionAtLineEnd(text, from, target.offset) }
+  }
+
+  const sameClass = (grapheme: string): boolean =>
+    grapheme !== '' &&
+    (bigWord
+      ? !isVimWhitespace(grapheme)
+      : isVimWordChar(current)
+        ? isVimWordChar(grapheme)
+        : isVimPunctuation(grapheme))
+  let end = cursor
+  const next = firstGrapheme(text.slice(cursor.measuredText.nextOffset(from)))
+  if (sameClass(next)) {
+    end = bigWord ? cursor.endOfWORD() : cursor.endOfVimWord()
+  }
+  for (let i = 1; i < count; i++) {
+    end = bigWord ? end.endOfWORD() : end.endOfVimWord()
+  }
+  const to = Math.min(text.length, cursor.measuredText.nextOffset(end.offset))
+  return {
+    from: cursor.snapOutOfImageRef(from, 'start'),
+    to: cursor.snapOutOfImageRef(to, 'end'),
+  }
 }
 
 /**
@@ -497,6 +609,7 @@ function applyOperator(
   to: number,
   ctx: OperatorContext,
   linewise: boolean = false,
+  yankOffset: number = from,
 ): void {
   let content = ctx.text.slice(from, to)
   // Ensure linewise content ends with newline for paste detection
@@ -506,54 +619,72 @@ function applyOperator(
   ctx.setRegister(content, linewise)
 
   if (op === 'yank') {
-    ctx.setOffset(from)
+    ctx.setOffset(yankOffset)
   } else if (op === 'delete') {
-    const newText = ctx.text.slice(0, from) + ctx.text.slice(to)
+    // Deleting through the last line leaves the newline before the range
+    // behind; take it too so no empty trailing line remains.
+    const deleteFrom =
+      linewise && to === ctx.text.length && from > 0 ? from - 1 : from
+    const newText = ctx.text.slice(0, deleteFrom) + ctx.text.slice(to)
     ctx.setText(newText)
-    const maxOff = Math.max(
-      0,
-      newText.length - (lastGrapheme(newText).length || 1),
-    )
-    ctx.setOffset(Math.min(from, maxOff))
+    if (linewise) {
+      // Vim lands on the first non-blank of the line that took the deleted
+      // lines' place, or of the new last line when they were at the end.
+      const lineStart =
+        deleteFrom === from
+          ? Math.min(from, newText.length)
+          : newText.lastIndexOf('\n', deleteFrom - 1) + 1
+      ctx.setOffset(firstNonBlankOffset(newText, lineStart))
+    } else {
+      const maxOff = Math.max(
+        0,
+        newText.length - (lastGrapheme(newText).length || 1),
+      )
+      ctx.setOffset(Math.min(deleteFrom, maxOff))
+    }
   } else if (op === 'change') {
-    const newText = ctx.text.slice(0, from) + ctx.text.slice(to)
+    // Linewise change (cj, cG, ...) replaces the lines with one empty line,
+    // like cc, rather than joining what is left around them.
+    const keepNewline = linewise && to < ctx.text.length && to > from
+    const newText =
+      ctx.text.slice(0, from) + (keepNewline ? '\n' : '') + ctx.text.slice(to)
     ctx.setText(newText)
     ctx.enterInsert(from)
   }
 }
 
+/**
+ * dG / d{N}G. Linewise, so it always has at least the current line to act on:
+ * dG on the last line deletes that line rather than doing nothing. A count
+ * names the target line; 1G is line 1, not the last line.
+ */
 export function executeOperatorG(
   op: Operator,
   count: number,
   ctx: OperatorContext,
+  countGiven: boolean = count !== 1,
 ): void {
-  // count=1 means no count given, target = end of file
-  // otherwise target = line N
-  const target =
-    count === 1 ? ctx.cursor.startOfLastLine() : ctx.cursor.goToLine(count)
-
-  if (target.equals(ctx.cursor)) return
-
-  const range = getOperatorRange(ctx.cursor, target, 'G', op, count)
-  applyOperator(op, range.from, range.to, ctx, range.linewise)
-  ctx.recordChange({ type: 'operator', op, motion: 'G', count })
+  const target = countGiven
+    ? ctx.cursor.goToLine(count)
+    : ctx.cursor.startOfLastLine()
+  const range = getOperatorRange(ctx.cursor, target, 'G')
+  applyOperator(op, range.from, range.to, ctx, range.linewise, range.motionStart)
+  recordChange(op, ctx, { type: 'operator', op, motion: 'G', count, countGiven })
 }
 
+/** dgg / d{N}gg — see executeOperatorG. */
 export function executeOperatorGg(
   op: Operator,
   count: number,
   ctx: OperatorContext,
+  countGiven: boolean = count !== 1,
 ): void {
-  // count=1 means no count given, target = first line
-  // otherwise target = line N
-  const target =
-    count === 1 ? ctx.cursor.startOfFirstLine() : ctx.cursor.goToLine(count)
-
-  if (target.equals(ctx.cursor)) return
-
-  const range = getOperatorRange(ctx.cursor, target, 'gg', op, count)
-  applyOperator(op, range.from, range.to, ctx, range.linewise)
-  ctx.recordChange({ type: 'operator', op, motion: 'gg', count })
+  const target = countGiven
+    ? ctx.cursor.goToLine(count)
+    : ctx.cursor.startOfFirstLine()
+  const range = getOperatorRange(ctx.cursor, target, 'gg')
+  applyOperator(op, range.from, range.to, ctx, range.linewise, range.motionStart)
+  recordChange(op, ctx, { type: 'operator', op, motion: 'gg', count, countGiven })
 }
 
 /**

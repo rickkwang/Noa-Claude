@@ -57,7 +57,14 @@ export type VisualState =
  * VISUAL / VISUAL_LINE: Track visual selection anchor
  */
 export type VimState =
-  | { mode: 'INSERT'; insertedText: string }
+  | {
+      mode: 'INSERT'
+      insertedText: string
+      // The change that opened this insert (cw, cc, C, o, ...). On Esc the
+      // typed text is folded into it, so `.` repeats the change and the text
+      // together, as vim does.
+      changeToExtend?: RecordedChange
+    }
   | { mode: 'NORMAL'; command: CommandState }
   | { mode: 'VISUAL'; visual: VisualState & { linewise: false } }
   | { mode: 'VISUAL_LINE'; visual: VisualState & { linewise: true } }
@@ -71,7 +78,9 @@ export type VimState =
 export type CommandState =
   | { type: 'idle' }
   | { type: 'count'; digits: string }
-  | { type: 'operator'; op: Operator; count: number }
+  // countGiven: a count was typed. Needed where a count of 1 differs from no
+  // count at all (1G is line 1, G is the last line).
+  | { type: 'operator'; op: Operator; count: number; countGiven: boolean }
   | { type: 'operatorCount'; op: Operator; count: number; digits: string }
   | { type: 'operatorFind'; op: Operator; count: number; find: FindType }
   | {
@@ -82,7 +91,7 @@ export type CommandState =
     }
   | { type: 'find'; find: FindType; count: number }
   | { type: 'g'; count: number }
-  | { type: 'operatorG'; op: Operator; count: number }
+  | { type: 'operatorG'; op: Operator; count: number; countGiven: boolean }
   | { type: 'replace'; count: number }
   | { type: 'indent'; dir: '>' | '<'; count: number }
 
@@ -101,34 +110,40 @@ export type PersistentState = {
  * Recorded change for dot-repeat.
  * Captures everything needed to replay a command.
  */
+/** Text typed in the insert mode a change opened (see changeToExtend). */
+type InsertTail = { insertText?: string }
+
 export type RecordedChange =
   | { type: 'insert'; text: string }
-  | {
+  | ({
       type: 'operator'
       op: Operator
       motion: string
       count: number
-    }
-  | {
+      countGiven?: boolean
+    } & InsertTail)
+  | ({ type: 'lineOp'; op: Operator; count: number } & InsertTail)
+  | ({
       type: 'operatorTextObj'
       op: Operator
       objType: string
       scope: TextObjScope
       count: number
-    }
-  | {
+    } & InsertTail)
+  | ({
       type: 'operatorFind'
       op: Operator
       find: FindType
       char: string
       count: number
-    }
+    } & InsertTail)
   | { type: 'replace'; char: string; count: number }
   | { type: 'x'; count: number }
   | { type: 'toggleCase'; count: number }
   | { type: 'indent'; dir: '>' | '<'; count: number }
-  | { type: 'openLine'; direction: 'above' | 'below' }
+  | ({ type: 'openLine'; direction: 'above' | 'below' } & InsertTail)
   | { type: 'join'; count: number }
+  | { type: 'paste'; after: boolean; count: number }
 
 // ============================================================================
 // Key Groups - Named constants, no magic strings
