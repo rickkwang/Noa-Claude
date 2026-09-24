@@ -465,8 +465,12 @@ function DiffPanel({
             }
           >
             {offset > 0 && <Text dimColor>↑ {offset} more above</Text>}
-            {rows.map(file => (
-              <HoverToggle key={file.path} onClick={() => scrollToFile(file.path)}>
+            {rows.map((file, i) => (
+              <HoverToggle
+                key={file.path}
+                drawnAt={`${offset} ${i}`}
+                onClick={() => scrollToFile(file.path)}
+              >
                 {hovered => (
                   <>
                     <Text dimColor={!hovered} underline={hovered}>
@@ -758,23 +762,30 @@ function PreSessionSection({
   )
 }
 
-/** A clickable row that restyles itself while the pointer is over it. */
+/**
+ * A clickable row that restyles itself while the pointer is over it. Rows in
+ * a scrolling list pass where they are drawn: hover only fires on pointer
+ * motion, so once a scroll or filter moves the row the pointer is no longer
+ * over it and the highlight must drop.
+ */
 function HoverToggle({
   onClick,
+  drawnAt = '',
   children,
 }: {
   onClick: () => void
+  drawnAt?: string
   children: (hovered: boolean) => React.ReactNode
 }): React.ReactNode {
-  const [hovered, setHovered] = useState(false)
+  const [hoveredAt, setHoveredAt] = useState<string | null>(null)
   return (
     <Box
       flexDirection="row"
       onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={() => setHoveredAt(drawnAt)}
+      onMouseLeave={() => setHoveredAt(null)}
     >
-      {children(hovered)}
+      {children(hoveredAt === drawnAt)}
     </Box>
   )
 }

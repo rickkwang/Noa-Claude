@@ -130,9 +130,14 @@ export function Config({
     scrollOffsetRef.current = offset;
     setScrollOffset(offset);
   }, []);
-  // Id (not index) of the row the pointer is over, so the highlight sticks to
-  // the setting rather than to a slot the list may scroll something else into.
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // The row the pointer entered, plus a signature of what was drawn above it
+  // then. Hover only fires on pointer motion, so a scroll or filter can move
+  // the row out from under a still pointer; a changed signature means the
+  // row moved and the highlight must not follow it.
+  const [hovered, setHovered] = useState<{
+    id: string;
+    drawnAbove: string;
+  } | null>(null);
   const [isSearchMode, setIsSearchMode] = useState(true);
   const isTerminalFocused = useTerminalFocus();
   const {
@@ -1849,16 +1854,20 @@ export function Config({
                 {scrollOffset > 0 && <Text dimColor>
                     {figures.arrowUp} {scrollOffset} more above
                   </Text>}
-                {filteredSettingsItems.slice(scrollOffset, scrollOffset + maxVisible).map((setting_2, i) => {
+                {filteredSettingsItems.slice(scrollOffset, scrollOffset + maxVisible).map((setting_2, i, visibleSettings) => {
             const actualIndex = scrollOffset + i;
             const isSelected = actualIndex === selectedIndex && !headerFocused && !isSearchMode;
-            const isHovered = hoveredId === setting_2.id;
+            const drawnAbove = `${columns}x${rows} ${showThinkingWarning} ${visibleSettings.slice(0, i).map(_ => _.id).join(' ')}`;
+            const isHovered = hovered?.id === setting_2.id && hovered.drawnAbove === drawnAbove;
             return <React.Fragment key={setting_2.id}>
-                        <Box onClick={e_0 => handleRowClick(e_0, actualIndex)} onMouseEnter={() => setHoveredId(setting_2.id)}
+                        <Box onClick={e_0 => handleRowClick(e_0, actualIndex)} onMouseEnter={() => setHovered({
+                id: setting_2.id,
+                drawnAbove
+              })}
                         // Compare before clearing: a filter or scroll may
                         // already have moved this id off the row the pointer
                         // is leaving, and it must not clear the new hover.
-                        onMouseLeave={() => setHoveredId(prev_28 => prev_28 === setting_2.id ? null : prev_28)}>
+                        onMouseLeave={() => setHovered(prev_28 => prev_28?.id === setting_2.id ? null : prev_28)}>
                           <Box width={labelColumnWidth} flexShrink={0} marginRight={LABEL_GUTTER}>
                             <Text color={isSelected ? 'suggestion' : undefined} wrap="truncate-end">
                               {isSelected ? <Text>{figures.pointer} </Text> : isHovered ? <Text dimColor>{figures.pointer} </Text> : <Text>{'  '}</Text>}
