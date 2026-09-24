@@ -14,6 +14,7 @@ import { type TransitionContext, transition } from '../vim/transitions.js'
 import {
   createInitialPersistentState,
   createInitialVimState,
+  type InsertEntry,
   type PersistentState,
   type RecordedChange,
   type VimState,
@@ -48,34 +49,44 @@ export function useVimInput(props: UseVimInputProps): VimInputState {
   const { onModeChange, inputFilter } = props
 
   const switchToInsertMode = useCallback(
-    (offset?: number): void => {
+    (offset?: number, entry?: InsertEntry): void => {
       if (offset !== undefined) {
         textInput.setOffset(offset)
       }
-      vimStateRef.current = { mode: 'INSERT', insertedText: '' }
+      vimStateRef.current = {
+        mode: 'INSERT',
+        insertedText: '',
+        insertEntry: entry,
+      }
       setMode('INSERT')
       onModeChange?.('INSERT')
     },
     [textInput, onModeChange],
   )
 
-  const switchToNormalMode = useCallback((): void => {
+  // Fold the current insert session into lastChange, as leaving insert mode
+  // does.
+  const commitInsert = useCallback((): void => {
     const current = vimStateRef.current
-    if (current.mode === 'INSERT') {
-      if (current.changeToExtend) {
-        // cw / cc / C / o ... then text: `.` repeats both, even when nothing
-        // was typed (cw<Esc> repeats as a plain delete).
-        persistentRef.current.lastChange = {
-          ...current.changeToExtend,
-          insertText: current.insertedText,
-        }
-      } else if (current.insertedText) {
-        persistentRef.current.lastChange = {
-          type: 'insert',
-          text: current.insertedText,
-        }
+    if (current.mode !== 'INSERT') return
+    if (current.changeToExtend) {
+      // cw / cc / C / o ... then text: `.` repeats both, even when nothing
+      // was typed (cw<Esc> repeats as a plain delete).
+      persistentRef.current.lastChange = {
+        ...current.changeToExtend,
+        insertText: current.insertedText,
+      }
+    } else if (current.insertedText) {
+      persistentRef.current.lastChange = {
+        type: 'insert',
+        text: current.insertedText,
+        entry: current.insertEntry,
       }
     }
+  }, [])
+
+  const switchToNormalMode = useCallback((): void => {
+    commitInsert()
 
     // Vim behavior: move cursor left by 1 when exiting insert mode
     // (unless at beginning of line or at offset 0)
@@ -87,7 +98,7 @@ export function useVimInput(props: UseVimInputProps): VimInputState {
     vimStateRef.current = { mode: 'NORMAL', command: { type: 'idle' } }
     setMode('NORMAL')
     onModeChange?.('NORMAL')
-  }, [onModeChange, textInput, props.value])
+  }, [commitInsert, onModeChange, textInput, props.value])
 
   const switchToVisualMode = useCallback((): void => {
     vimStateRef.current = {
@@ -120,7 +131,8 @@ export function useVimInput(props: UseVimInputProps): VimInputState {
       text: props.value,
       setText: (newText: string) => props.onChange(newText, NORMAL_MODE_EDIT),
       setOffset: (offset: number) => textInput.setOffset(offset),
-      enterInsert: (offset: number) => switchToInsertMode(offset),
+      enterInsert: (offset: number, entry?: InsertEntry) =>
+        switchToInsertMode(offset, entry),
       getRegister: () => persistentRef.current.register,
       setRegister: (content: string, linewise: boolean) => {
         persistentRef.current.register = content
@@ -301,6 +313,14 @@ export function useVimInput(props: UseVimInputProps): VimInputState {
 
     // Pass Enter to base handler regardless of mode (allows submission from NORMAL)
     if (key.return) {
+      if (state.mode === 'INSERT') {
+        // Enter usually submits, and the next prompt starts in the same
+        // INSERT state. Close the insert session here, as Esc would, so a
+        // pending change (cw ...) is not extended by the next prompt's typing
+        // and replayed onto its text by `.`.
+        commitInsert()
+        vimStateRef.current = { mode: 'INSERT', insertedText: '' }
+      }
       textInput.onInput(input, key)
       return
     }

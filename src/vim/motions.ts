@@ -6,6 +6,21 @@
  */
 
 import type { Cursor } from '../utils/Cursor.js'
+import type { InsertEntry } from './types.js'
+
+/** Offset where i / I / a / A start inserting from `cursor`. */
+export function insertEntryOffset(entry: InsertEntry, cursor: Cursor): number {
+  switch (entry) {
+    case 'i':
+      return cursor.offset
+    case 'I':
+      return cursor.firstNonBlankInLogicalLine().offset
+    case 'a':
+      return cursor.isAtEnd() ? cursor.offset : cursor.right().offset
+    case 'A':
+      return cursor.endOfLogicalLine().offset
+  }
+}
 
 /**
  * Resolve a motion to a target cursor position.

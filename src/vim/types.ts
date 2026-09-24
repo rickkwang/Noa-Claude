@@ -64,6 +64,8 @@ export type VimState =
       // typed text is folded into it, so `.` repeats the change and the text
       // together, as vim does.
       changeToExtend?: RecordedChange
+      // i / I / a / A: where `.` should re-insert the typed text.
+      insertEntry?: InsertEntry
     }
   | { mode: 'NORMAL'; command: CommandState }
   | { mode: 'VISUAL'; visual: VisualState & { linewise: false } }
@@ -113,8 +115,11 @@ export type PersistentState = {
 /** Text typed in the insert mode a change opened (see changeToExtend). */
 type InsertTail = { insertText?: string }
 
+/** The key that entered insert mode; `.` re-enters the same way (A → line end). */
+export type InsertEntry = 'i' | 'I' | 'a' | 'A'
+
 export type RecordedChange =
-  | { type: 'insert'; text: string }
+  | { type: 'insert'; text: string; entry?: InsertEntry }
   | ({
       type: 'operator'
       op: Operator

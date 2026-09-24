@@ -3,6 +3,7 @@
  */
 
 import { lastGrapheme } from '../utils/intl.js'
+import { insertEntryOffset } from './motions.js'
 import {
   executeIndent,
   executeJoin,
@@ -52,7 +53,9 @@ export function replayRecordedChange(
 
   switch (change.type) {
     case 'insert':
-      insertAt = offset
+      insertAt = change.entry
+        ? insertEntryOffset(change.entry, ctx.cursor)
+        : offset
       break
     case 'x':
       executeX(change.count, local)

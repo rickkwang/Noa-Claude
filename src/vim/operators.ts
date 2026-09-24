@@ -21,6 +21,7 @@ import {
 import { findTextObject } from './textObjects.js'
 import type {
   FindType,
+  InsertEntry,
   Operator,
   RecordedChange,
   TextObjScope,
@@ -34,7 +35,7 @@ export type OperatorContext = {
   text: string
   setText: (text: string) => void
   setOffset: (offset: number) => void
-  enterInsert: (offset: number) => void
+  enterInsert: (offset: number, entry?: InsertEntry) => void
   getRegister: () => string
   setRegister: (content: string, linewise: boolean) => void
   getLastFind: () => { type: FindType; char: string } | null
@@ -189,11 +190,7 @@ export function executeLineOp(
 
     const newText = text.slice(0, deleteStart) + text.slice(deleteEnd)
     ctx.setText(newText || '')
-    const maxOff = Math.max(
-      0,
-      newText.length - (lastGrapheme(newText).length || 1),
-    )
-    ctx.setOffset(Math.min(deleteStart, maxOff))
+    ctx.setOffset(linewiseDeleteLanding(newText, lineStart, deleteStart))
   } else if (op === 'change') {
     // For single line, just clear it
     if (lines.length === 1) {
@@ -480,6 +477,24 @@ function firstNonBlankOffset(text: string, lineStart: number): number {
 }
 
 /**
+ * Where the cursor lands after deleting whole lines that started at `from`:
+ * vim puts it on the first non-blank of the line that took their place, or of
+ * the new last line when they were at the end (deleteFrom < from there, as the
+ * delete also took the line break before them).
+ */
+function linewiseDeleteLanding(
+  newText: string,
+  from: number,
+  deleteFrom: number,
+): number {
+  const lineStart =
+    deleteFrom === from
+      ? Math.min(from, newText.length)
+      : newText.lastIndexOf('\n', deleteFrom - 1) + 1
+  return firstNonBlankOffset(newText, lineStart)
+}
+
+/**
  * Calculate the offset of a line's start position.
  */
 function getLineStartOffset(lines: string[], lineIndex: number): number {
@@ -511,7 +526,13 @@ function getOperatorRange(
     to = nextNewline === -1 ? text.length : nextNewline + 1
   } else if (motion === 'w' || motion === 'W') {
     to = clampWordMotionAtLineEnd(text, from, to)
-  } else if (isInclusiveMotion(motion) && cursor.offset <= target.offset) {
+  } else if (
+    isInclusiveMotion(motion) &&
+    cursor.offset <= target.offset &&
+    // $ already lands on the line break (endOfLogicalLine), one past the last
+    // character; extending would take the break too and join the lines.
+    motion !== '$'
+  ) {
     to = cursor.measuredText.nextOffset(to)
   }
 
@@ -628,13 +649,7 @@ function applyOperator(
     const newText = ctx.text.slice(0, deleteFrom) + ctx.text.slice(to)
     ctx.setText(newText)
     if (linewise) {
-      // Vim lands on the first non-blank of the line that took the deleted
-      // lines' place, or of the new last line when they were at the end.
-      const lineStart =
-        deleteFrom === from
-          ? Math.min(from, newText.length)
-          : newText.lastIndexOf('\n', deleteFrom - 1) + 1
-      ctx.setOffset(firstNonBlankOffset(newText, lineStart))
+      ctx.setOffset(linewiseDeleteLanding(newText, from, deleteFrom))
     } else {
       const maxOff = Math.max(
         0,

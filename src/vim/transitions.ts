@@ -6,7 +6,7 @@
  * To understand what happens in any state, look up that state's transition function.
  */
 
-import { resolveMotion } from './motions.js'
+import { insertEntryOffset, resolveMotion } from './motions.js'
 import {
   executeIndent,
   executeJoin,
@@ -168,28 +168,10 @@ function handleNormalInput(
   if (input === 'u') {
     return { execute: () => ctx.onUndo?.() }
   }
-  if (input === 'i') {
-    return { execute: () => ctx.enterInsert(ctx.cursor.offset) }
-  }
-  if (input === 'I') {
+  if (input === 'i' || input === 'I' || input === 'a' || input === 'A') {
     return {
       execute: () =>
-        ctx.enterInsert(ctx.cursor.firstNonBlankInLogicalLine().offset),
-    }
-  }
-  if (input === 'a') {
-    return {
-      execute: () => {
-        const newOffset = ctx.cursor.isAtEnd()
-          ? ctx.cursor.offset
-          : ctx.cursor.right().offset
-        ctx.enterInsert(newOffset)
-      },
-    }
-  }
-  if (input === 'A') {
-    return {
-      execute: () => ctx.enterInsert(ctx.cursor.endOfLogicalLine().offset),
+        ctx.enterInsert(insertEntryOffset(input, ctx.cursor), input),
     }
   }
   if (input === 'o') {
@@ -336,6 +318,10 @@ function fromOperatorCount(
 
   const motionCount = parseInt(state.digits, 10)
   const effectiveCount = state.count * motionCount
+  // d2d, c3c, y2y = line operation over that many lines, like 2dd
+  if (input === state.op[0]) {
+    return { execute: () => executeLineOp(state.op, effectiveCount, ctx) }
+  }
   const result = handleOperatorInput(
     state.op,
     effectiveCount,

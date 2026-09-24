@@ -4,7 +4,11 @@ import { resolveMotion } from '../../vim/motions.js'
 import type { OperatorContext } from '../../vim/operators.js'
 import { replayRecordedChange } from '../../vim/replay.js'
 import { type TransitionContext, transition } from '../../vim/transitions.js'
-import type { CommandState, RecordedChange } from '../../vim/types.js'
+import type {
+  CommandState,
+  InsertEntry,
+  RecordedChange,
+} from '../../vim/types.js'
 
 const ESC = '\x1b'
 
@@ -19,6 +23,7 @@ class Editor {
   lastChange: RecordedChange | null = null
   inserted = ''
   changeToExtend: RecordedChange | undefined
+  insertEntry: InsertEntry | undefined
 
   constructor(
     public text: string,
@@ -36,11 +41,12 @@ class Editor {
       setOffset: o => {
         this.offset = o
       },
-      enterInsert: o => {
+      enterInsert: (o, entry) => {
         this.offset = o
         this.mode = 'INSERT'
         this.inserted = ''
         this.changeToExtend = undefined
+        this.insertEntry = entry
       },
       getRegister: () => this.register,
       setRegister: content => {
@@ -67,18 +73,22 @@ class Editor {
     }
   }
 
+  private commitInsert(): void {
+    this.lastChange = this.changeToExtend
+      ? ({
+          ...this.changeToExtend,
+          insertText: this.inserted,
+        } as RecordedChange)
+      : this.inserted
+        ? { type: 'insert', text: this.inserted, entry: this.insertEntry }
+        : this.lastChange
+  }
+
   keys(seq: string): this {
     for (const ch of seq) {
       if (this.mode === 'INSERT') {
         if (ch === ESC) {
-          this.lastChange = this.changeToExtend
-            ? ({
-                ...this.changeToExtend,
-                insertText: this.inserted,
-              } as RecordedChange)
-            : this.inserted
-              ? { type: 'insert', text: this.inserted }
-              : this.lastChange
+          this.commitInsert()
           this.mode = 'NORMAL'
           this.command = { type: 'idle' }
           if (this.offset > 0 && this.text[this.offset - 1] !== '\n') {
@@ -288,5 +298,47 @@ describe('. repeat', () => {
 
   test('a yank does not replace the change . repeats', () => {
     expect(new Editor('abcdef', 0).keys('xyw.').text).toBe('cdef')
+  })
+})
+
+describe('review follow-ups', () => {
+  test('d$ / D / C / y$ stop at the line break instead of joining lines', () => {
+    expect(new Editor('ab\ncd', 0).keys('d$').text).toBe('\ncd')
+    expect(new Editor('ab\ncd', 1).keys('D').text).toBe('a\ncd')
+    const c = new Editor('ab\ncd', 0).keys('C')
+    expect(c.text).toBe('\ncd')
+    expect(c.mode).toBe('INSERT')
+    expect(new Editor('ab\ncd', 0).keys('y$').register).toBe('ab')
+    expect(new Editor('ab', 0).keys('d$').text).toBe('')
+  })
+
+  test('dd lands on the first non-blank of the next line', () => {
+    const e = new Editor('aaa\nxxx\n  cc', 4).keys('dd')
+    expect(e.text).toBe('aaa\n  cc')
+    expect(e.offset).toBe(6)
+  })
+
+  test('dd on the last line lands on the first non-blank of the new last line', () => {
+    const e = new Editor('  aa\nbb', 5).keys('dd')
+    expect(e.text).toBe('  aa')
+    expect(e.offset).toBe(2)
+  })
+
+  test('d2d / c2c / y2y act on that many lines, like 2dd', () => {
+    expect(new Editor(LINES, 0).keys('d2d').text).toBe('three\nfour')
+    expect(new Editor(LINES, 0).keys('y2y').register).toBe('one\ntwo\n')
+    const c = new Editor(LINES, 0).keys('c2c')
+    expect(c.text).toBe('\nthree\nfour')
+    expect(c.mode).toBe('INSERT')
+  })
+
+  test('. after A appends at the end of the line, after a after the cursor', () => {
+    expect(new Editor('hello\nworld', 0).keys(`A!${ESC}j0.`).text).toBe(
+      'hello!\nworld!',
+    )
+    expect(new Editor('ab\ncd', 0).keys(`ax${ESC}j0.`).text).toBe('axb\ncxd')
+    expect(new Editor('  ab\n  cd', 3).keys(`I-${ESC}j$.`).text).toBe(
+      '  -ab\n  -cd',
+    )
   })
 })
