@@ -37,7 +37,8 @@ export function createFallbackStorage(
 
       if (!result.success && result.transient) {
         // The primary didn't refuse the write, it never got an answer (keychain
-        // timeout). Falling through would write the credentials to plaintext
+        // timeout) or is only locked for now over an entry it still holds.
+        // Falling through would write the credentials to plaintext
         // and delete a keychain entry that may be perfectly fine. Surface the
         // failure and let the caller retry instead.
         return result

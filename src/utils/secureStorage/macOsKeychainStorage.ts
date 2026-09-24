@@ -8,13 +8,14 @@ import {
   clearKeychainCache,
   getMacOsKeychainStorageServiceName,
   getUsername,
-  isDefinitiveKeychainExitCode,
+  isDefinitiveKeychainReadExit,
   KEYCHAIN_BLOCKING_EXEC_TIMEOUT_MS,
   KEYCHAIN_BLOCKING_FAILURE_COOLDOWN_MS,
   KEYCHAIN_CACHE_TTL_MS,
   KEYCHAIN_FAILURE_COOLDOWN_MS,
   keychainCacheState,
   SEC_ERR_ITEM_NOT_FOUND,
+  SEC_ERR_KEYCHAIN_LOCKED,
   TRANSIENT_READ_FAILURE,
   type TransientReadFailure,
 } from './macOsKeychainHelpers.js'
@@ -117,9 +118,13 @@ export const macOsKeychainStorage = {
           maxBuffer: 1_000_000,
         },
       )
-      definitive = isDefinitiveKeychainExitCode(result.exitCode)
+      definitive = isDefinitiveKeychainReadExit(result.exitCode)
+      if (result.exitCode === SEC_ERR_ITEM_NOT_FOUND) {
+        keychainCacheState.keychainHoldsItem = false
+      }
       const stdout = result.exitCode === 0 ? result.stdout?.trim() : ''
       if (stdout) {
+        keychainCacheState.keychainHoldsItem = true
         const data = jsonParse(stdout)
         keychainCacheState.cache = { data, cachedAt: Date.now() }
         // A successful sync read proves the keychain is answering, so don't let
@@ -234,10 +239,15 @@ export const macOsKeychainStorage = {
   update(data: SecureStorageData): {
     success: boolean
     warning?: string
-    // Set when the write failed without a verdict (keychain timeout), so
-    // createFallbackStorage() knows not to demote the credentials to plaintext.
+    // Set when the write failed without a verdict (keychain timeout, or a
+    // lock over an entry we know is there), so createFallbackStorage() knows
+    // not to demote the credentials to plaintext.
     transient?: boolean
+    keychainLocked?: boolean
   } {
+    // Kept so a write refused by a temporarily locked keychain can put back
+    // what the keychain still holds, rather than leave reads to a cold cache.
+    const prevData = keychainCacheState.cache.data
     // Invalidate cache before update
     clearKeychainCache()
 
@@ -296,6 +306,23 @@ export const macOsKeychainStorage = {
       }
 
       if (result.exitCode !== 0) {
+        // Locked, but the keychain held our entry earlier this session: it was
+        // unlocked then and will be again (a Mac just woken from sleep), and
+        // the entry is still there. Demoting to plaintext here is what lost
+        // MCP OAuth tokens — the plaintext copy is shadowed by the keychain
+        // entry once it unlocks, or, when the best-effort delete lands, the
+        // keychain entry is gone and only the plaintext blob (often built from
+        // a partial read) survives. Treat it as transient: drop this write,
+        // keep the entry.
+        if (
+          result.exitCode === SEC_ERR_KEYCHAIN_LOCKED &&
+          keychainCacheState.keychainHoldsItem
+        ) {
+          if (prevData !== null) {
+            keychainCacheState.cache = { data: prevData, cachedAt: Date.now() }
+          }
+          return { success: false, transient: true, keychainLocked: true }
+        }
         // A timed-out write is not evidence the keychain is unusable, and the
         // fallback would answer it by writing the credentials to plaintext and
         // deleting the keychain entry. Report it as transient so the caller
@@ -306,20 +333,15 @@ export const macOsKeychainStorage = {
         // is the 10s blocking one, not 2s: it has to be long enough that a
         // timeout really means wedged.
         //
-        // Only a timeout counts. A locked keychain (exit 36, the common SSH
-        // case) is deliberately NOT transient: it is a real refusal, so the
-        // credentials go to plaintext (0o600) rather than nowhere. Be aware
-        // where that lands, though — createFallbackStorage() follows the
-        // plaintext write with a best-effort primary.delete(), which on a
-        // locked keychain fails too. The old keychain entry survives, read()
-        // prefers primary, and the stale token shadows the fresh plaintext one
-        // until some later write succeeds. That is the #30337 state
-        // fallbackStorage's own comment calls "a bad state we can't fix from
-        // here" — pre-existing, and not something a flag here can repair.
+        // Otherwise only a timeout counts. A keychain locked since before we
+        // ever saw our entry in it (exit 36, the common SSH case) is NOT
+        // transient: it is a real refusal, and the credentials go to
+        // plaintext (0o600) rather than nowhere.
         return { success: false, transient: result.timedOut === true }
       }
 
       // Update cache with new data on success
+      keychainCacheState.keychainHoldsItem = true
       keychainCacheState.cache = { data, cachedAt: Date.now() }
       return { success: true }
     } catch (_e) {
@@ -359,9 +381,10 @@ export const macOsKeychainStorage = {
       // result — but the honest value is what a future "logout didn't fully
       // succeed" prompt would need, and returning a bare `true` here was
       // simply false.
-      return (
+      const gone =
         result.exitCode === 0 || result.exitCode === SEC_ERR_ITEM_NOT_FOUND
-      )
+      if (gone) keychainCacheState.keychainHoldsItem = false
+      return gone
     } catch (_e) {
       return false
     }
@@ -386,9 +409,13 @@ async function doReadAsync(): Promise<
       },
     )
     if (code === 0 && stdout) {
+      keychainCacheState.keychainHoldsItem = true
       return jsonParse(stdout.trim())
     }
-    if (isDefinitiveKeychainExitCode(code)) {
+    if (code === SEC_ERR_ITEM_NOT_FOUND) {
+      keychainCacheState.keychainHoldsItem = false
+    }
+    if (isDefinitiveKeychainReadExit(code)) {
       return null
     }
     // Everything else — spawn failure, SIGTERM from our own timeout (execa

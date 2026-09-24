@@ -130,7 +130,8 @@ export const KEYCHAIN_BLOCKING_EXEC_TIMEOUT_MS = 10_000
 
 // `security` exit codes that answer the question rather than failing to ask it:
 // the entry isn't there, or the keychain is locked so nothing is readable this
-// session either way. Both are safe to cache as "no credentials".
+// session either way. Both are safe to cache as "no credentials" — except a
+// lock over an entry we have already seen; see isDefinitiveKeychainReadExit().
 export const SEC_ERR_ITEM_NOT_FOUND = 44
 export const SEC_ERR_KEYCHAIN_LOCKED = 36
 
@@ -151,6 +152,22 @@ export function isDefinitiveKeychainExitCode(code: number | undefined): boolean 
   )
 }
 
+/**
+ * A locked keychain answers "nothing readable this session" only when the
+ * entry was never seen. If it was (keychainHoldsItem), the lock is temporary
+ * and the entry is still behind it, so the exit is a failure to ask, not an
+ * answer — caching it as "no credentials" would feed the read-modify-write
+ * sites a blob without the entry's tokens.
+ */
+export function isDefinitiveKeychainReadExit(
+  code: number | undefined,
+): boolean {
+  if (code === SEC_ERR_KEYCHAIN_LOCKED && keychainCacheState.keychainHoldsItem) {
+    return false
+  }
+  return isDefinitiveKeychainExitCode(code)
+}
+
 export const keychainCacheState: {
   cache: { data: SecureStorageData | null; cachedAt: number } // cachedAt 0 = invalid
   // Incremented on every cache invalidation. readAsync() captures this before
@@ -164,11 +181,20 @@ export const keychainCacheState: {
   // Timestamp of the last transient read failure, or null if the last read
   // succeeded. Gates the cooldown above; reset on success and on invalidation.
   lastReadFailure: number | null
+  // Whether this process has seen our entry in the keychain (a read that
+  // returned it, or a write that stored it) and not since seen it gone.
+  // Lets a locked keychain (exit 36) be told apart: with this set, the lock is
+  // temporary (e.g. just after wake) and the entry is still there behind it;
+  // without it, the keychain was locked all session (the SSH case) and the
+  // plaintext fallback is the real store. Deliberately survives
+  // clearKeychainCache() — invalidating the cache says nothing about the entry.
+  keychainHoldsItem: boolean
 } = {
   cache: { data: null, cachedAt: 0 },
   generation: 0,
   readInFlight: null,
   lastReadFailure: null,
+  keychainHoldsItem: false,
 }
 
 export function clearKeychainCache(): void {
@@ -211,4 +237,5 @@ export function primeKeychainCacheFromPrefetch(
     }
   }
   keychainCacheState.cache = { data, cachedAt: Date.now() }
+  if (data !== null) keychainCacheState.keychainHoldsItem = true
 }
