@@ -76,7 +76,9 @@ export function BrowseMarketplace({
   // Pagination for plugin list (continuous scrolling)
   const pagination = usePagination<InstallablePlugin>({
     totalItems: availablePlugins.length,
-    selectedIndex
+    selectedIndex,
+    // Wheel scrolls the window; drag the selection along so it stays visible.
+    onScroll: (start, end) => setSelectedIndex(prev => Math.max(start, Math.min(prev, end - 1)))
   });
 
   // Details view state
@@ -746,6 +748,7 @@ export function BrowseMarketplace({
         <Text bold>Install Plugins</Text>
       </Box>
 
+      <Box flexDirection="column" onWheel={pagination.onWheel}>
       {/* Scroll up indicator */}
       {pagination.scrollPosition.canScrollUp && <Box>
           <Text dimColor> {figures.arrowUp} more above</Text>
@@ -789,6 +792,7 @@ export function BrowseMarketplace({
       {pagination.scrollPosition.canScrollDown && <Box>
           <Text dimColor> {figures.arrowDown} more below</Text>
         </Box>}
+      </Box>
 
       {/* Error messages shown in the UI */}
       {error && <Box marginTop={1}>

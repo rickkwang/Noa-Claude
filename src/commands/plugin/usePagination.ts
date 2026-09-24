@@ -1,5 +1,6 @@
 // @ts-nocheck
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import type { WheelEvent } from '../../ink/events/wheel-event.js'
 
 const DEFAULT_MAX_VISIBLE = 5
 
@@ -7,6 +8,10 @@ type UsePaginationOptions = {
   totalItems: number
   maxVisible?: number
   selectedIndex?: number
+  // Called with the new visible window [startIndex, endIndex) after a wheel
+  // scroll. The caller must move its selection into it, or the next render
+  // snaps the window back to the selection.
+  onScroll?: (startIndex: number, endIndex: number) => void
 }
 
 type UsePaginationResult<T> = {
@@ -37,6 +42,8 @@ type UsePaginationResult<T> = {
     direction: 'left' | 'right',
     setSelectedIndex: (index: number) => void,
   ) => boolean
+  // Spread onto the Box wrapping the rows; undefined when everything fits
+  onWheel: ((event: WheelEvent) => void) | undefined
   // Scroll position info for UI display
   scrollPosition: {
     current: number
@@ -50,11 +57,15 @@ export function usePagination<T>({
   totalItems,
   maxVisible = DEFAULT_MAX_VISIBLE,
   selectedIndex = 0,
+  onScroll,
 }: UsePaginationOptions): UsePaginationResult<T> {
   const needsPagination = totalItems > maxVisible
 
   // Use a ref to track the previous scroll offset for smooth scrolling
   const scrollOffsetRef = useRef(0)
+  // Bumped by a wheel scroll so the offset below recomputes even when the
+  // selection didn't have to move.
+  const [scrollTick, setScrollTick] = useState(0)
 
   // Compute the scroll offset based on selectedIndex
   // This ensures the selected item is always visible
@@ -82,7 +93,7 @@ export function usePagination<T>({
     const clampedOffset = Math.min(prevOffset, maxOffset)
     scrollOffsetRef.current = clampedOffset
     return clampedOffset
-  }, [selectedIndex, maxVisible, needsPagination, totalItems])
+  }, [selectedIndex, maxVisible, needsPagination, totalItems, scrollTick])
 
   const startIndex = scrollOffset
   const endIndex = Math.min(scrollOffset + maxVisible, totalItems)
@@ -143,6 +154,26 @@ export function usePagination<T>({
     [],
   )
 
+  // The list claims the wheel even at its ends, so a notch past the last row
+  // doesn't scroll the transcript behind the dialog instead.
+  const onWheel = useCallback(
+    (event: WheelEvent) => {
+      if (event.deltaY === 0) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      const prev = scrollOffsetRef.current
+      const next = Math.max(
+        0,
+        Math.min(prev + (event.deltaY > 0 ? 1 : -1), totalItems - maxVisible),
+      )
+      if (next === prev) return
+      scrollOffsetRef.current = next
+      setScrollTick(tick => tick + 1)
+      onScroll?.(next, next + maxVisible)
+    },
+    [totalItems, maxVisible, onScroll],
+  )
+
   // Calculate page-like values for backwards compatibility
   const totalPages = Math.max(1, Math.ceil(totalItems / maxVisible))
   const currentPage = Math.floor(scrollOffset / maxVisible)
@@ -162,6 +193,7 @@ export function usePagination<T>({
     prevPage,
     handleSelectionChange,
     handlePageNavigation,
+    onWheel: needsPagination ? onWheel : undefined,
     scrollPosition: {
       current: selectedIndex + 1,
       total: totalItems,

@@ -846,7 +846,9 @@ export function ManagePlugins({
   const pagination = usePagination<UnifiedInstalledItem>({
     totalItems: filteredItems.length,
     selectedIndex,
-    maxVisible: 8
+    maxVisible: 8,
+    // Wheel scrolls the window; drag the selection along so it stays visible.
+    onScroll: (start, end) => setSelectedIndex(prev => Math.max(start, Math.min(prev, end - 1)))
   });
 
   // Details view state
@@ -2219,6 +2221,7 @@ export function ManagePlugins({
           <Text dimColor>No items match &quot;{searchQuery}&quot;</Text>
         </Box>}
 
+      <Box flexDirection="column" onWheel={pagination.onWheel}>
       {/* Scroll up indicator */}
       {pagination.scrollPosition.canScrollUp && <Box>
           <Text dimColor> {figures.arrowUp} more above</Text>
@@ -2270,6 +2273,7 @@ export function ManagePlugins({
       {pagination.scrollPosition.canScrollDown && <Box>
           <Text dimColor> {figures.arrowDown} more below</Text>
         </Box>}
+      </Box>
 
       {/* Help text */}
       <Box marginTop={1} marginLeft={1}>

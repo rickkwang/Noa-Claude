@@ -101,7 +101,9 @@ export function DiscoverPlugins({
   // Pagination for plugin list (continuous scrolling)
   const pagination = usePagination<InstallablePlugin>({
     totalItems: filteredPlugins.length,
-    selectedIndex
+    selectedIndex,
+    // Wheel scrolls the window; drag the selection along so it stays visible.
+    onScroll: (start, end) => setSelectedIndex(prev => Math.max(start, Math.min(prev, end - 1)))
   });
 
   // Reset selection when search query changes
@@ -597,6 +599,7 @@ export function DiscoverPlugins({
           <Text dimColor>No plugins match &quot;{searchQuery}&quot;</Text>
         </Box>}
 
+      <Box flexDirection="column" onWheel={pagination.onWheel}>
       {/* Scroll up indicator */}
       {pagination.scrollPosition.canScrollUp && <Box>
           <Text dimColor> {figures.arrowUp} more above</Text>
@@ -638,6 +641,7 @@ export function DiscoverPlugins({
       {pagination.scrollPosition.canScrollDown && <Box>
           <Text dimColor> {figures.arrowDown} more below</Text>
         </Box>}
+      </Box>
 
       {/* Error messages */}
       {error && <Box marginTop={1}>
