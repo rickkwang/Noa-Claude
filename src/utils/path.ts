@@ -6,6 +6,18 @@ import { getPlatform } from './platform.js'
 import { posixPathToWindowsPath } from './windowsPaths.js'
 
 /**
+ * Thrown by expandPath for a path containing a NUL byte. Its own class so
+ * callers outside tool execution can tell this model-input fault apart from a
+ * genuine bug and keep it from ending the turn.
+ */
+export class NullBytePathError extends Error {
+  constructor() {
+    super('Path contains null bytes')
+    this.name = 'NullBytePathError'
+  }
+}
+
+/**
  * Expands a path that may contain tilde notation (~) to an absolute path.
  *
  * On Windows, POSIX-style paths (e.g., `/c/Users/...`) are automatically converted
@@ -46,7 +58,7 @@ export function expandPath(path: string, baseDir?: string): string {
 
   // Security: Check for null bytes
   if (path.includes('\0') || actualBaseDir.includes('\0')) {
-    throw new Error('Path contains null bytes')
+    throw new NullBytePathError()
   }
 
   // Handle empty or whitespace-only paths

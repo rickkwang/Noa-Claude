@@ -178,6 +178,17 @@ export const NotebookEditTool = buildTool({
     { notebook_path, cell_type, cell_id, edit_mode = 'replace' },
     toolUseContext: ToolUseContext,
   ) {
+    // resolve() passes NUL through, so without this the fs calls below fail
+    // with a misleading message (e.g. "File has not been read yet").
+    if (notebook_path.includes('\0')) {
+      return {
+        result: false,
+        message:
+          'notebook_path cannot contain null bytes (\\0). Remove the null byte and try again.',
+        errorCode: 12,
+      }
+    }
+
     const fullPath = isAbsolute(notebook_path)
       ? notebook_path
       : resolve(getCwd(), notebook_path)

@@ -39,6 +39,7 @@ import type {
   TombstoneMessage,
 } from './types/message.js'
 import { logError } from './utils/log.js'
+import { NullBytePathError } from './utils/path.js'
 import {
   PROMPT_TOO_LONG_ERROR_MESSAGE,
   isPromptTooLongMessage,
@@ -886,7 +887,22 @@ async function* queryLoop(
                   if (tool?.backfillObservableInput) {
                     const originalInput = block.input as Record<string, unknown>
                     const inputCopy = { ...originalInput }
-                    tool.backfillObservableInput(inputCopy)
+                    // Runs outside any tool's error boundary, so a throw here
+                    // (e.g. a NUL byte in file_path) would end the whole turn.
+                    // Yield the input as sent; toolExecution then fails just
+                    // this call with a tool_result error.
+                    try {
+                      tool.backfillObservableInput(inputCopy)
+                    } catch (error) {
+                      if (error instanceof NullBytePathError) {
+                        logForDebugging(
+                          `${tool.name}: backfillObservableInput met a path expandPath refuses (null byte); passing the tool input on as the model sent it`,
+                        )
+                      } else {
+                        logError(error)
+                      }
+                      continue
+                    }
                     // Only yield a clone when backfill ADDED fields; skip if
                     // it only OVERWROTE existing ones (e.g. file tools
                     // expanding file_path). Overwrites change the serialized
