@@ -14,8 +14,9 @@ import {
  *
  * Queued input is already drained mid-turn at the next tool boundary
  * (query.ts). What delays it is a long-running tool, so the move is to
- * background the foreground shells and subagents holding that boundary — the
- * same thing ctrl+b does — and let the drain pick the input up.
+ * background the foreground shells and subagents holding that boundary (as
+ * ctrl+b would, but only this turn's own, not work nested inside subagents)
+ * and let the drain pick the input up.
  *
  * A tool that can't be moved is waited out rather than interrupted: an
  * 'interrupt' abort lets such a tool finish anyway (only 'cancel' tools stop),
@@ -48,12 +49,12 @@ export type SendNowState = {
   isHeldByDialog: boolean
   /** The first pending target can be drained at a tool boundary. */
   isDeliverableMidTurn: boolean
-  /** Foreground shells/subagents that ctrl+b could background. */
+  /** Foreground shells/subagents holding this turn's running tool calls. */
   hasMovableTasks: boolean
   isBackgroundingDisabled: boolean
-  /** A tool is running or the model is streaming a tool call. */
+  /** A tool is running. */
   isExecuting: boolean
-  /** The model is streaming a reply. */
+  /** The model is streaming a reply or a tool call's input. */
   isSampling: boolean
 }
 
@@ -73,10 +74,13 @@ export function decideSendNow(s: SendNowState): SendNowDecision {
   if (!s.isTurnActive) return { action: 'stand_by' }
   // Never cut across a permission prompt the user is looking at.
   if (s.isHeldByDialog) return { action: 'wait', reason: 'held_by_dialog' }
-  if (!s.isDeliverableMidTurn) return { action: 'interrupt' }
+  // Background first even when the input can't be delivered mid-turn: the
+  // interrupt below lets running tools finish, so moving them is what keeps
+  // the interrupted turn from being held open.
   if (s.hasMovableTasks && !s.isBackgroundingDisabled) {
     return { action: 'background' }
   }
+  if (!s.isDeliverableMidTurn) return { action: 'interrupt' }
   if (s.isExecuting) return { action: 'wait', reason: 'tool_running' }
   if (s.isSampling) return { action: 'interrupt' }
   return { action: 'wait', reason: 'not_sampling' }
@@ -117,8 +121,9 @@ export type SendNowTurnState = {
 
 export type SendNowDeps = {
   getTurnState: () => SendNowTurnState
-  /** Background every foreground shell and subagent (ctrl+b). */
-  backgroundAll: () => void
+  /** Background the foreground shells and subagents holding this turn's
+   *  running tool calls. */
+  backgroundRunningTools: () => void
   setTimeout: (fn: () => void, ms: number) => () => void
 }
 
@@ -210,7 +215,7 @@ export class SendNowController {
         this.#stop()
         return
       case 'background':
-        this.#deps.backgroundAll()
+        this.#deps.backgroundRunningTools()
         this.#backgroundPasses++
         this.#schedule(SEND_NOW_TICK_MS)
         return

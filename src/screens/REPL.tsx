@@ -99,7 +99,7 @@ import { errorMessage } from '../utils/errors.js';
 import { isHumanTurn } from '../utils/messagePredicates.js';
 import { logError } from '../utils/log.js';
 import { SendNowController } from '../utils/sendNow.js';
-import { backgroundAll, hasForegroundTasks } from '../tasks/LocalShellTask/LocalShellTask.js';
+import { backgroundTasksForToolUses, hasForegroundTasksForToolUses } from '../tasks/LocalShellTask/LocalShellTask.js';
 import { useClassifierCheckingVersion, useHasAnyClassifierChecking } from '../utils/classifierApprovalsHook.js';
 
 type FrustrationDetectionHook = (
@@ -1436,13 +1436,15 @@ export function REPL({
         return {
           isTurnActive: queryGuard.isActive,
           isHeldByDialog: live.isWaitingForApproval,
-          hasMovableTasks: hasForegroundTasks(store.getState()),
+          hasMovableTasks: hasForegroundTasksForToolUses(store.getState(), live.inProgressToolUseIDs),
           isBackgroundingDisabled: isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS),
-          isExecuting: live.inProgressToolUseIDs.size > 0 || mode === 'tool-input' || mode === 'tool-use',
-          isSampling: mode === 'requesting' || mode === 'responding' || mode === 'thinking'
+          isExecuting: live.inProgressToolUseIDs.size > 0 || mode === 'tool-use',
+          // Streaming a tool call's input is still sampling: nothing has
+          // started running that an interrupt would have to wait for.
+          isSampling: mode === 'requesting' || mode === 'responding' || mode === 'thinking' || mode === 'tool-input'
         };
       },
-      backgroundAll: () => backgroundAll(() => store.getState(), setAppState),
+      backgroundRunningTools: () => backgroundTasksForToolUses(() => store.getState(), setAppState, sendNowLiveRef.current.inProgressToolUseIDs),
       setTimeout: (fn, ms) => {
         const timer = setTimeout(fn, ms);
         return () => clearTimeout(timer);

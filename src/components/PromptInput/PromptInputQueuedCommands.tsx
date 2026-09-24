@@ -128,7 +128,8 @@ function PromptInputQueuedCommandsImpl({
   if (viewingAgent || messages === null) {
     return null;
   }
-  const showSendNowHint = isLoading && queuedCommands.some(isSendNowTarget);
+  // Hidden once the input was promoted to 'now' — it's already being sent.
+  const showSendNowHint = isLoading && queuedCommands.some(cmd => isSendNowTarget(cmd) && cmd.priority !== 'now');
   return <Box marginTop={1} flexDirection="column">
       {messages.map((message, i) => <QueuedMessageProvider key={i} isFirst={i === 0} useBriefLayout={useBriefLayout}>
           <Message message={message} lookups={EMPTY_LOOKUPS} addMargin={false} tools={[]} commands={[]} verbose={false} inProgressToolUseIDs={EMPTY_SET} progressMessagesForMessage={[]} shouldAnimate={false} shouldShowDot={false} isTranscriptMode={false} isStatic={true} />

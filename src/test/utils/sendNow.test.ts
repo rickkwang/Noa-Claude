@@ -3,6 +3,7 @@ import { DEFAULT_BINDINGS } from '../../keybindings/defaultBindings.js'
 import { parseBindings } from '../../keybindings/parser.js'
 import { resolveKeyWithChordState } from '../../keybindings/resolver.js'
 import { getSendNowShortcut } from '../../keybindings/sendNowShortcut.js'
+import { hasForegroundTasksForToolUses } from '../../tasks/LocalShellTask/LocalShellTask.js'
 import type { QueuedCommand } from '../../types/textInputTypes.js'
 import {
   enqueue,
@@ -43,8 +44,13 @@ describe('decideSendNow', () => {
       { action: 'wait', reason: 'held_by_dialog' },
     ],
     [
-      'not deliverable mid-turn falls back to interrupt',
+      'not deliverable mid-turn: background first so the interrupt is not held',
       { isDeliverableMidTurn: false, hasMovableTasks: true },
+      { action: 'background' },
+    ],
+    [
+      'not deliverable mid-turn, nothing to move: interrupt',
+      { isDeliverableMidTurn: false, isExecuting: true },
       { action: 'interrupt' },
     ],
     [
@@ -120,7 +126,7 @@ function harness(turn: Partial<SendNowTurnState>) {
   let backgroundCalls = 0
   const controller = new SendNowController({
     getTurnState: () => state,
-    backgroundAll: () => {
+    backgroundRunningTools: () => {
       backgroundCalls++
     },
     setTimeout: fn => {
@@ -179,12 +185,15 @@ describe('SendNowController', () => {
     expect(getCommandQueue()[0]!.priority).toBe('next')
   })
 
-  test('a slash command interrupts: it can only run after the turn', () => {
+  test('a slash command backgrounds, then interrupts: it runs after the turn', () => {
     enqueue({ value: '/compact', mode: 'prompt' })
     const h = harness({ hasMovableTasks: true, isExecuting: true })
     h.controller.sendQueuedNow()
     h.tick()
-    expect(h.backgroundCalls()).toBe(0)
+    expect(h.backgroundCalls()).toBe(1)
+    expect(getCommandQueue()[0]!.priority).toBe('next')
+    h.state.hasMovableTasks = false
+    h.tick()
     expect(getCommandQueue()[0]!.priority).toBe('now')
   })
 
@@ -263,5 +272,40 @@ describe('chat:sendNow keybindings', () => {
     expect(getSendNowShortcut(bindings, true)).toBe('ctrl+enter')
     expect(getSendNowShortcut(bindings, false)).toBe('ctrl+x ctrl+s')
     expect(getSendNowShortcut([], true)).toBe('')
+  })
+})
+
+describe('send-now background scope', () => {
+  const shell = (patch: object) => ({
+    type: 'local_bash',
+    status: 'running',
+    isBackgrounded: false,
+    shellCommand: {},
+    toolUseId: 'tu_main',
+    ...patch,
+  })
+  const agent = (patch: object) => ({
+    type: 'local_agent',
+    agentType: 'general-purpose',
+    status: 'running',
+    isBackgrounded: false,
+    toolUseId: 'tu_main',
+    ...patch,
+  })
+  const has = (tasks: Record<string, object>) =>
+    hasForegroundTasksForToolUses({ tasks } as never, new Set(['tu_main']))
+
+  test("moves the turn's own shell and subagent", () => {
+    expect(has({ a: shell({}) })).toBe(true)
+    expect(has({ a: agent({}) })).toBe(true)
+  })
+
+  test('leaves other work alone', () => {
+    expect(has({ a: shell({ toolUseId: 'tu_other' }) })).toBe(false)
+    expect(has({ a: shell({ agentId: 'agent-1' }) })).toBe(false)
+    expect(has({ a: shell({ isBackgrounded: true }) })).toBe(false)
+    expect(has({ a: shell({ shellCommand: null }) })).toBe(false)
+    expect(has({ a: agent({ toolUseId: undefined }) })).toBe(false)
+    expect(has({ a: agent({ status: 'completed' }) })).toBe(false)
   })
 })

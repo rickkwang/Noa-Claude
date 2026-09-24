@@ -392,6 +392,47 @@ export function backgroundAll(getAppState: () => AppState, setAppState: SetAppSt
 }
 
 /**
+ * Foreground tasks holding one of the given tool calls: the main thread's
+ * shells and the subagents it is waiting on. Unlike backgroundAll (ctrl+b),
+ * this leaves work nested inside subagents alone — send-now only needs the
+ * calling turn's tool boundary to arrive.
+ */
+function getForegroundTaskIdsForToolUses(state: AppState, toolUseIds: ReadonlySet<string>): {
+  shells: string[];
+  agents: string[];
+} {
+  const shells: string[] = [];
+  const agents: string[] = [];
+  for (const [id, task] of Object.entries(state.tasks)) {
+    if (task.toolUseId === undefined || !toolUseIds.has(task.toolUseId)) continue;
+    if (isLocalShellTask(task) && !task.isBackgrounded && task.shellCommand && task.agentId === undefined) {
+      shells.push(id);
+    } else if (isLocalAgentTask(task) && !task.isBackgrounded && task.status === 'running' && !isMainSessionTask(task)) {
+      agents.push(id);
+    }
+  }
+  return {
+    shells,
+    agents
+  };
+}
+export function hasForegroundTasksForToolUses(state: AppState, toolUseIds: ReadonlySet<string>): boolean {
+  const {
+    shells,
+    agents
+  } = getForegroundTaskIdsForToolUses(state, toolUseIds);
+  return shells.length > 0 || agents.length > 0;
+}
+export function backgroundTasksForToolUses(getAppState: () => AppState, setAppState: SetAppState, toolUseIds: ReadonlySet<string>): void {
+  const {
+    shells,
+    agents
+  } = getForegroundTaskIdsForToolUses(getAppState(), toolUseIds);
+  for (const taskId of shells) backgroundTask(taskId, getAppState, setAppState);
+  for (const taskId of agents) backgroundAgentTask(taskId, getAppState, setAppState);
+}
+
+/**
  * Background an already-registered foreground task in-place.
  * Unlike spawn(), this does NOT re-register the task — it flips isBackgrounded
  * on the existing registration and sets up a completion handler.
