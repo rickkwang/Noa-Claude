@@ -3,6 +3,7 @@ import type { RenderableMessage } from '../types/message.js'
 import {
   INTERRUPT_MESSAGE,
   INTERRUPT_MESSAGE_FOR_TOOL_USE,
+  TURN_ENDED_FOR_MESSAGE_TOOL_RESULT,
 } from './messages.js'
 
 const SYSTEM_REMINDER_CLOSE = '</system-reminder>'
@@ -13,6 +14,7 @@ const SYSTEM_REMINDER_CLOSE = '</system-reminder>'
 const RENDERED_AS_SENTINEL = new Set([
   INTERRUPT_MESSAGE,
   INTERRUPT_MESSAGE_FOR_TOOL_USE,
+  TURN_ENDED_FOR_MESSAGE_TOOL_RESULT,
 ])
 
 const searchTextCache = new WeakMap<RenderableMessage, string>()

@@ -124,10 +124,14 @@ function harness(turn: Partial<SendNowTurnState>) {
   }
   const timers: (() => void)[] = []
   let backgroundCalls = 0
+  let interrupts = 0
   const controller = new SendNowController({
     getTurnState: () => state,
     backgroundRunningTools: () => {
       backgroundCalls++
+    },
+    onInterrupt: () => {
+      interrupts++
     },
     setTimeout: fn => {
       timers.push(fn)
@@ -146,6 +150,7 @@ function harness(turn: Partial<SendNowTurnState>) {
     tick,
     pendingTimers: () => timers.length,
     backgroundCalls: () => backgroundCalls,
+    interrupts: () => interrupts,
   }
 }
 
@@ -211,6 +216,7 @@ describe('SendNowController', () => {
     const h = harness({ isSampling: true })
     h.controller.sendQueuedNow()
     h.tick()
+    expect(h.interrupts()).toBe(1)
     expect(getCommandQueue()[0]!.priority).toBe('now')
   })
 
@@ -317,5 +323,37 @@ describe('what the model is told', () => {
     expect(text).toContain('surfaces messages the user sends mid-turn')
     expect(text).toContain('Address the message above as you continue this turn.')
     expect(text).not.toContain('After completing your current task')
+  })
+})
+
+describe('tool calls cut off by a send-now interrupt', () => {
+  test('are marked as ended to deliver a message, only for that turn', async () => {
+    const {
+      isTurnEndedForMessage,
+      markTurnEndedForMessage,
+      SYNTHETIC_MESSAGES,
+      TURN_ENDED_FOR_MESSAGE_TOOL_RESULT,
+    } = await import('../../utils/messages.js')
+    const ended = new AbortController()
+    const other = new AbortController()
+    markTurnEndedForMessage(ended.signal)
+    markTurnEndedForMessage(undefined)
+    expect(isTurnEndedForMessage(ended.signal)).toBe(true)
+    expect(isTurnEndedForMessage(other.signal)).toBe(false)
+    expect(SYNTHETIC_MESSAGES.has(TURN_ENDED_FOR_MESSAGE_TOOL_RESULT)).toBe(true)
+  })
+})
+
+describe('interrupt promotes only the head', () => {
+  test('a second queued command is not left as now to abort the next turn', () => {
+    enqueue({ value: '/compact', mode: 'prompt' })
+    enqueue({ value: 'then this', mode: 'prompt' })
+    const h = harness({ isExecuting: true })
+    h.controller.sendQueuedNow()
+    h.tick()
+    expect(getCommandQueue().map(c => [c.value, c.priority])).toEqual([
+      ['/compact', 'now'],
+      ['then this', 'next'],
+    ])
   })
 })

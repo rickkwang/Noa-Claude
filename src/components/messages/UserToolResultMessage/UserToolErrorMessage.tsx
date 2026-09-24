@@ -7,7 +7,7 @@ import { BULLET_OPERATOR } from '../../../constants/figures.js';
 import { Text } from '../../../ink.js';
 import { filterToolProgressMessages, type Tool, type Tools } from '../../../Tool.js';
 import type { ProgressMessage } from '../../../types/message.js';
-import { INTERRUPT_MESSAGE_FOR_TOOL_USE, isClassifierDenial, PLAN_REJECTION_PREFIX, REJECT_MESSAGE_WITH_REASON_PREFIX } from '../../../utils/messages.js';
+import { INTERRUPT_MESSAGE_FOR_TOOL_USE, TURN_ENDED_FOR_MESSAGE_TOOL_RESULT, isClassifierDenial, PLAN_REJECTION_PREFIX, REJECT_MESSAGE_WITH_REASON_PREFIX } from '../../../utils/messages.js';
 import { FallbackToolUseErrorMessage } from '../../FallbackToolUseErrorMessage.js';
 import { InterruptedByUser } from '../../InterruptedByUser.js';
 import { MessageResponse } from '../../MessageResponse.js';
@@ -31,7 +31,7 @@ export function UserToolErrorMessage(t0) {
     verbose,
     isTranscriptMode
   } = t0;
-  if (typeof param.content === "string" && param.content.includes(INTERRUPT_MESSAGE_FOR_TOOL_USE)) {
+  if (typeof param.content === "string" && (param.content.includes(INTERRUPT_MESSAGE_FOR_TOOL_USE) || param.content.includes(TURN_ENDED_FOR_MESSAGE_TOOL_RESULT))) {
     let t1;
     if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
       t1 = <MessageResponse height={1}><InterruptedByUser /></MessageResponse>;

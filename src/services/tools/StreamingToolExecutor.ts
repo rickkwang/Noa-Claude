@@ -2,7 +2,9 @@
 import type { ToolUseBlock } from '@anthropic-ai/sdk/resources/index.mjs'
 import {
   createUserMessage,
+  isTurnEndedForMessage,
   REJECT_MESSAGE,
+  TURN_ENDED_FOR_MESSAGE_TOOL_RESULT,
   withMemoryCorrectionHint,
 } from 'src/utils/messages.js'
 import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
@@ -197,6 +199,22 @@ export class StreamingToolExecutor {
     // For user interruptions (ESC to reject), use REJECT_MESSAGE so the UI shows
     // "User rejected edit" instead of "Error editing file"
     if (reason === 'user_interrupted') {
+      // Send-now ended the turn to deliver the user's next message: not a
+      // rejection, so don't tell the model to stop and wait.
+      if (isTurnEndedForMessage(this.toolUseContext.abortController.signal)) {
+        return createUserMessage({
+          content: [
+            {
+              type: 'tool_result',
+              content: TURN_ENDED_FOR_MESSAGE_TOOL_RESULT,
+              is_error: true,
+              tool_use_id: toolUseId,
+            },
+          ],
+          toolUseResult: TURN_ENDED_FOR_MESSAGE_TOOL_RESULT,
+          sourceToolAssistantUUID: assistantMessage.uuid,
+        })
+      }
       return createUserMessage({
         content: [
           {

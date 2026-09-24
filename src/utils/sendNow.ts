@@ -124,6 +124,9 @@ export type SendNowDeps = {
   /** Background the foreground shells and subagents holding this turn's
    *  running tool calls. */
   backgroundRunningTools: () => void
+  /** Called right before an interrupt, so tool calls it cuts off can say the
+   *  turn was ended to deliver a message rather than rejected. */
+  onInterrupt: () => void
   setTimeout: (fn: () => void, ms: number) => () => void
 }
 
@@ -223,7 +226,12 @@ export class SendNowController {
         this.#schedule(SEND_NOW_TICK_MS)
         return
       case 'interrupt':
-        promoteToNow([...this.#targets])
+        this.#deps.onInterrupt()
+        // Only the head: the REPL aborts whatever turn runs while a 'now'
+        // command is queued, and the queue processor runs slash/bash commands
+        // one at a time — a second 'now' left behind would abort the turn that
+        // runs the first. The rest follow in order once the turn ends.
+        if (head !== undefined) promoteToNow([head])
         this.#stop()
         return
     }

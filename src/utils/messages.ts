@@ -207,6 +207,24 @@ export function deriveShortMessageId(uuid: string): string {
 export const INTERRUPT_MESSAGE = '[Request interrupted by user]'
 export const INTERRUPT_MESSAGE_FOR_TOOL_USE =
   '[Request interrupted by user for tool use]'
+/**
+ * Result of a tool call cut off because send-now ended the turn to deliver the
+ * user's next message. Unlike REJECT_MESSAGE it doesn't tell the model to stop
+ * and wait — the message it should act on follows immediately.
+ */
+export const TURN_ENDED_FOR_MESSAGE_TOOL_RESULT =
+  '[Tool call did not complete: the turn was ended to deliver the message that follows. Nothing refused it; re-run it if still needed.]'
+
+// Abort signals of turns send-now ended to deliver a message. The reason stays
+// 'interrupt' — shells check that to background rather than kill — so the
+// "why" rides alongside instead of replacing it.
+const turnsEndedForMessage = new WeakSet<AbortSignal>()
+export function markTurnEndedForMessage(signal: AbortSignal | undefined): void {
+  if (signal) turnsEndedForMessage.add(signal)
+}
+export function isTurnEndedForMessage(signal: AbortSignal): boolean {
+  return turnsEndedForMessage.has(signal)
+}
 export const CANCEL_MESSAGE =
   "The user doesn't want to take this action right now. STOP what you are doing and wait for the user to tell you how to proceed."
 export const REJECT_MESSAGE =
@@ -341,6 +359,7 @@ export const SYNTHETIC_MODEL = '<synthetic>'
 export const SYNTHETIC_MESSAGES = new Set([
   INTERRUPT_MESSAGE,
   INTERRUPT_MESSAGE_FOR_TOOL_USE,
+  TURN_ENDED_FOR_MESSAGE_TOOL_RESULT,
   CANCEL_MESSAGE,
   REJECT_MESSAGE,
   NO_RESPONSE_REQUESTED,

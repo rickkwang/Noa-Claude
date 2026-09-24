@@ -48,6 +48,8 @@ import { logAntError, logForDebugging } from './utils/debug.js'
 import {
   createUserMessage,
   createUserInterruptionMessage,
+  isTurnEndedForMessage,
+  TURN_ENDED_FOR_MESSAGE_TOOL_RESULT,
   normalizeMessagesForAPI,
   createSystemMessage,
   createAssistantAPIErrorMessage,
@@ -1209,7 +1211,9 @@ async function* queryLoop(
       } else {
         yield* yieldMissingToolResultBlocks(
           assistantMessages,
-          'Interrupted by user',
+          isTurnEndedForMessage(toolUseContext.abortController.signal)
+            ? TURN_ENDED_FOR_MESSAGE_TOOL_RESULT
+            : 'Interrupted by user',
         )
       }
       yield* yieldInterruptionNotice(toolUseContext, { toolUse: false })
