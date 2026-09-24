@@ -468,6 +468,12 @@ function should1hCacheTTL(querySource?: QuerySource): boolean {
   // paths ant-only), so without this branch the 1h TTL never fires off Bedrock.
   const envAllowlist = getPromptCache1hEnvAllowlist()
   if (envAllowlist !== undefined) {
+    // Anthropic-compatible third parties (Kimi, MiniMax, …) share the
+    // firstParty provider but not its cache pricing or `ttl` support, and the
+    // opt-in lives in global settings that follow every provider profile.
+    if (getAPIProvider() === 'firstParty' && !isFirstPartyAnthropicBaseUrl()) {
+      return false
+    }
     return (
       querySource !== undefined && matchAllowlist(querySource, envAllowlist)
     )

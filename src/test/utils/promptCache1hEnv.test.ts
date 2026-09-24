@@ -5,6 +5,7 @@ import {
   PROMPT_CACHE_1H_DEFAULT_SOURCES,
 } from '../../utils/promptCache1hEnv.js'
 import { getPromptCache1hDiagnostic } from '../../utils/promptCache1h.js'
+import { getCacheControl } from '../../services/api/claude.js'
 
 const SAVED = { ...process.env }
 
@@ -13,6 +14,7 @@ beforeEach(() => {
   delete process.env.CLAUDE_CODE_PROMPT_CACHE_1H
   delete process.env.ENABLE_PROMPT_CACHING_1H_BEDROCK
   delete process.env.DISABLE_PROMPT_CACHING
+  delete process.env.ANTHROPIC_BASE_URL
 })
 
 afterEach(() => {
@@ -81,6 +83,24 @@ describe('1h TTL diagnostic', () => {
     const d = getPromptCache1hDiagnostic('repl_main_thread')
     expect(d.enabled).toBe(false)
     expect(d.reason).toBe('disabled_env')
+  })
+
+  test('an Anthropic-compatible third-party endpoint never gets the 1h TTL', () => {
+    // The opt-in lives in global settings, which follow every provider
+    // profile; Kimi/MiniMax don't share Anthropic's `ttl` field or pricing.
+    process.env.NOA_CLAUDE_PROMPT_CACHE_1H = '1'
+    process.env.ANTHROPIC_BASE_URL = 'https://api.kimi.com/coding'
+    const d = getPromptCache1hDiagnostic('repl_main_thread')
+    expect(d.enabled).toBe(false)
+    expect(d.reason).toBe('third_party_endpoint')
+    expect(getCacheControl({ querySource: 'repl_main_thread' })).toEqual({
+      type: 'ephemeral',
+    })
+    process.env.ANTHROPIC_BASE_URL = 'https://api.anthropic.com'
+    expect(getCacheControl({ querySource: 'repl_main_thread' })).toEqual({
+      type: 'ephemeral',
+      ttl: '1h',
+    })
   })
 
   test('DISABLE_PROMPT_CACHING still wins over the opt-in', () => {

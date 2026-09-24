@@ -11,7 +11,10 @@ import {
   getPromptCache1hEnvAllowlist,
   matchAllowlist,
 } from './promptCache1hEnv.js'
-import { getAPIProvider } from './model/providers.js'
+import {
+  getAPIProvider,
+  isFirstPartyAnthropicBaseUrl,
+} from './model/providers.js'
 import {
   getDefaultOpusModel,
   getDefaultSonnetModel,
@@ -30,6 +33,7 @@ export type PromptCache1hReason =
   | 'enabled_bedrock_env'
   | 'prompt_caching_disabled'
   | 'disabled_env'
+  | 'third_party_endpoint'
   | 'not_eligible'
   | 'allowlist_miss'
   | 'missing_query_source'
@@ -101,6 +105,15 @@ export function getPromptCache1hDiagnostic(
       return {
         enabled: false,
         reason: 'disabled_env',
+        querySource,
+        userEligible: true,
+        allowlist: envAllowlist,
+      }
+    }
+    if (getAPIProvider() === 'firstParty' && !isFirstPartyAnthropicBaseUrl()) {
+      return {
+        enabled: false,
+        reason: 'third_party_endpoint',
         querySource,
         userEligible: true,
         allowlist: envAllowlist,

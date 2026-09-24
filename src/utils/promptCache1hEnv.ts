@@ -24,13 +24,15 @@ export const PROMPT_CACHE_1H_DEFAULT_SOURCES = ['repl_main_thread*', 'sdk']
  * all. This makes the lever reachable without reintroducing a remote-config
  * dependency.
  *
- * **It should stay off for most sessions.** A 1h cache write bills at 2x input
- * against 1.25x for the 5-minute entry, so switching every write to the long
- * TTL only pays when more than ~37.5% of a session's cache-write *volume*
- * follows a gap longer than five minutes. Measured over this repo's own
- * transcripts that share is 2.6% — enabling it there would have cost about
- * 1.56x the write spend. It pays for a genuinely interrupted rhythm: ask,
- * leave for half an hour, come back to the same session.
+ * **Off by default; whether it pays depends on the user's rhythm.** A 1h cache
+ * write bills at 2x input against 1.25x for the 5-minute entry, so switching
+ * every write to the long TTL only pays when more than ~37.5% of a session's
+ * cache-write *volume* follows a gap of five minutes to an hour. That share
+ * varies widely between users (2.6% in one set of this repo's transcripts,
+ * 48% in another) — measure it from the transcripts' `usage` before opting in.
+ * A tight back-to-back rhythm makes it pure surcharge; ask, leave for half an
+ * hour, come back to the same session, and it pays. Anthropic-compatible
+ * third-party endpoints never get it (see `should1hCacheTTL`).
  *
  * Accepted values: a boolean (`1`/`true`/`on` → {@link
  * PROMPT_CACHE_1H_DEFAULT_SOURCES}, `0`/`false`/`off` → hard off, outranking
