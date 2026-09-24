@@ -48,20 +48,23 @@ import tui from './commands/tui/index.js'
 import vim from './commands/vim/index.js'
 import { feature } from 'bun:bundle'
 // Dead code elimination: conditional imports.
-// Only `bridge` is gated here. BRIDGE_MODE is absent from build.ts's
-// defaultFeatures, so its own isEnabled() already makes the command
-// permanently invisible in the baseline build — the require then pulls in a
-// module nothing can reach. Gating the require too lets the bundler drop
-// commands/bridge/bridge.tsx (~14KB off dist/main.js). Note that src/bridge/
-// itself stays in the bundle regardless: REPL hooks, PromptInput footer,
-// Config and cli/print all import it on the hot path.
+// Only `bridge` and `voice` are gated here. Neither BRIDGE_MODE nor
+// VOICE_MODE is in build.ts's defaultFeatures, so their own isEnabled()
+// already makes the commands permanently invisible in the baseline build —
+// the require then pulls in a module nothing can reach. Gating the require
+// too lets the bundler drop commands/bridge/bridge.tsx (~14KB off
+// dist/main.js). Note that src/bridge/ itself stays in the bundle
+// regardless: REPL hooks, PromptInput footer, Config and cli/print all
+// import it on the hot path.
 // The other requires below have no flag, or gate behaviour inside the module
 // while keeping the command visible, so they must stay unconditional.
 /* eslint-disable @typescript-eslint/no-require-imports */
 const bridge = feature('BRIDGE_MODE')
   ? require('./commands/bridge/index.js').default
   : null
-const voiceCommand = require('./commands/voice/index.js').default
+const voiceCommand = feature('VOICE_MODE')
+  ? require('./commands/voice/index.js').default
+  : null
 const workflowsCmd = (
     require('./commands/workflows/index.js') as typeof import('./commands/workflows/index.js')
   ).default

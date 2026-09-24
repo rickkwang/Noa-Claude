@@ -32,6 +32,10 @@ const dev = args.includes('--dev')
 // AUTO_MODE flag (below), which ships enabled in the baseline build so shift+tab
 // reaches auto mode. TRANSCRIPT_CLASSIFIER no longer gates anything.
 //
+// VOICE_MODE builds, but is omitted from both lists: its recorder
+// (audio-capture-napi) is an empty npm placeholder, so /voice throws, and its
+// STT endpoint needs claude.ai OAuth. Its branches stay in source, inert.
+//
 // The remaining never-buildable flags (BG_SESSIONS, DIRECT_CONNECT,
 // FORK_SUBAGENT, KAIROS_GITHUB_WEBHOOKS, MCP_SKILLS, MONITOR_TOOL,
 // REVIEW_ARTIFACT, SSH_REMOTE, TEMPLATES, UDS_INBOX, WORKFLOW_SCRIPTS) have had
@@ -86,7 +90,6 @@ const fullExperimentalFeatures = [
   'UNATTENDED_RETRY',
   'UPLOAD_USER_SETTINGS',
   'VERIFICATION_AGENT',
-  'VOICE_MODE',
   'WEB_BROWSER_TOOL',
 ] as const
 
@@ -126,7 +129,6 @@ function getBundledReleaseNotes(): string {
 }
 
 const defaultFeatures = [
-  'VOICE_MODE',
   'AUTO_THEME',
   'BUILTIN_EXPLORE_PLAN_AGENTS',
   'AUTO_MODE',

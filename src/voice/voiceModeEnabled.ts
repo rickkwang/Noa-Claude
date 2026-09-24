@@ -18,7 +18,9 @@ export function isVoiceGrowthBookEnabled(): boolean {
   // Positive ternary pattern — see docs/feature-gating.md.
   // Negative pattern (if (!feature(...)) return) does not eliminate
   // inline string literals from external builds.
-  return !getFeatureValue_CACHED_MAY_BE_STALE('tengu_amber_quartz_disabled', false)
+  return feature('VOICE_MODE')
+    ? !getFeatureValue_CACHED_MAY_BE_STALE('tengu_amber_quartz_disabled', false)
+    : false
 }
 
 /**

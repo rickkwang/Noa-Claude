@@ -53,7 +53,6 @@ This file is the build/runtime audit for experimental feature flags in this repo
 - `ULTRATHINK`
 - `UNATTENDED_RETRY`
 - `VERIFICATION_AGENT`
-- `VOICE_MODE`
 - `WEB_BROWSER_TOOL`
 
 ## Unlocked but Runtime-Caveated
@@ -86,6 +85,12 @@ yolo classifier). The classifier prompts (`yolo-classifier-prompts/*.txt`) are
 now present in this fork and the whole subsystem was re-gated under the dedicated
 `AUTO_MODE` flag above, which ships enabled in the baseline build.
 `TRANSCRIPT_CLASSIFIER` no longer gates anything.
+
+`VOICE_MODE` builds, but is off in every profile, including dev-full: its
+native recorder (`audio-capture-napi`) is an empty npm placeholder, so `/voice`
+throws, and the `voice_stream` STT endpoint needs claude.ai OAuth. Its branches
+stay in source, inert; re-add the flag to `build.ts` once a working recorder
+and STT path exist.
 
 ### Removed never-buildable surfaces
 
