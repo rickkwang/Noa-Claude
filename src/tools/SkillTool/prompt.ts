@@ -177,26 +177,16 @@ export function formatCommandsWithinBudget(
 }
 
 export const getPrompt = memoize(async (_cwd: string): Promise<string> => {
-  return `Execute a skill within the main conversation
+  // Upstream's current Skill description, minus its sentences on directory-
+  // scoped skills and background skills, neither of which this fork has.
+  return `Invoke a skill.
 
-When users ask you to perform tasks, check if any of the available skills match. Skills provide specialized capabilities and domain knowledge.
+A skill is a packaged set of instructions the user or project has set up for a particular kind of task (deploy steps, a review checklist, a repo-specific workflow). Available skills appear in a system-reminder listing with one-line descriptions. When the task at hand is one a listed skill covers, call this tool first — the skill's instructions load into the turn for you to follow in place of your default approach; some skills instead run in a subagent and return the finished result. Users may also ask for one by name (\`/<name>\`, or "slash command"); that's a request to invoke it.
 
-When users reference a "slash command" or "/<something>" (e.g., "/commit", "/review-pr"), they are referring to a skill. Use this tool to invoke it.
+- \`skill\`: exact name from the listing, no leading slash. Plugin skills use \`plugin:skill\`.
+- \`args\`: optional arguments to pass through.
 
-How to invoke:
-- Set \`skill\` to the exact name of an available skill (no leading slash). For plugin-namespaced skills use the fully qualified \`plugin:skill\` form.
-- Set \`args\` to pass optional arguments.
-
-Important:
-- Available skills are listed in system-reminder messages in the conversation
-- If the user explicitly names a skill or uses /<skill-name>, invoking that skill is required
-- When a listed skill clearly and specifically matches the task and provides the intended workflow, invoke the relevant Skill tool early
-- Do not treat broad or ambiguous skill matches as a blocking requirement when direct tool use is simpler, more reliable, or clearly better for the task
-- NEVER mention a skill without actually calling this tool
-- Do not invoke a skill that is already running
-- Do not use this tool for built-in CLI commands (like /help, /clear, etc.)
-- Only invoke a skill that appears in that list, or one the user explicitly typed as \`/<name>\` in their message. Never guess or invent a skill name from training data; otherwise do not call this tool
-- If you see a <${COMMAND_NAME_TAG}> tag in the current conversation turn, the skill has ALREADY been loaded - follow the instructions directly instead of calling this tool again
+Only names from the listing (or that the user typed explicitly) are valid. Built-in CLI commands (\`/help\`, \`/clear\`, …) aren't skills. If a \`<${COMMAND_NAME_TAG}>\` block is already present this turn, the skill is loaded — follow it directly rather than calling again.
 `
 })
 

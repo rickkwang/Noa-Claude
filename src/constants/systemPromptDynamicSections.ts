@@ -11,7 +11,6 @@ import {
 } from '../tools/AgentTool/built-in/exploreAgent.js'
 import { areExplorePlanAgentsEnabled } from '../tools/AgentTool/builtInAgents.js'
 import { isForkSubagentEnabled } from '../tools/AgentTool/forkSubagent.js'
-import { ASK_USER_QUESTION_TOOL_NAME } from '../tools/AskUserQuestionTool/prompt.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import { GLOB_TOOL_NAME } from '../tools/GlobTool/prompt.js'
 import { GREP_TOOL_NAME } from '../tools/GrepTool/prompt.js'
@@ -131,7 +130,6 @@ export function getSessionSpecificGuidanceSection(
   discoverSkillsToolName: string | null,
   autoCompactEnabled: boolean,
 ): string | null {
-  const hasAskUserQuestionTool = enabledTools.has(ASK_USER_QUESTION_TOOL_NAME)
   const hasSkills =
     skillToolCommands.length > 0 && enabledTools.has(SKILL_TOOL_NAME)
   const hasAgentTool = enabledTools.has(AGENT_TOOL_NAME)
@@ -156,9 +154,6 @@ export function getSessionSpecificGuidanceSection(
     !autoCompactEnabled
       ? `Automatic compaction is disabled for this session, so the summarization described under # Context management will not run and the context window is a hard limit. Keep tool output bounded and avoid loading context you do not need.`
       : null,
-    hasAskUserQuestionTool
-      ? `If you do not understand why the user has denied a tool call, use the ${ASK_USER_QUESTION_TOOL_NAME} to ask them.`
-      : null,
     getIsNonInteractiveSession()
       ? null
       : `If you need the user to run a shell command themselves (e.g., an interactive login like \`gcloud auth login\`), suggest they type \`! <command>\` in the prompt — the \`!\` prefix runs the command in this session so its output lands directly in the conversation.`,
@@ -169,12 +164,11 @@ export function getSessionSpecificGuidanceSection(
     areExplorePlanAgentsEnabled() &&
     !isForkSubagentEnabled()
       ? [
-          `For simple, directed codebase searches (e.g. for a specific file/class/function) use ${searchTools} directly.`,
-          `For broader codebase exploration and deep research, use the ${AGENT_TOOL_NAME} tool with subagent_type=${EXPLORE_AGENT.agentType}. This is slower than using ${searchTools} directly, so use this only when a simple, directed search proves to be insufficient or when your task will clearly require more than ${EXPLORE_AGENT_MIN_QUERIES} queries.`,
+          `For broad codebase exploration or research that'll take more than ${EXPLORE_AGENT_MIN_QUERIES} queries, spawn ${AGENT_TOOL_NAME} with subagent_type=${EXPLORE_AGENT.agentType}. Otherwise use ${searchTools} directly.`,
         ]
       : []),
     hasSkills
-      ? `/<skill-name> (e.g., /commit) is shorthand for invoking a user-invocable skill via the ${SKILL_TOOL_NAME} tool — the skill expands to a full prompt when executed. If the user explicitly names a skill or uses /<skill-name>, invoking that skill is required. When a listed skill clearly and specifically matches the task and provides the intended workflow, invoke it early. Do not treat broad or ambiguous skill matches as a blocking requirement when direct tool use is simpler, more reliable, or clearly better for the task. Only invoke skills listed in the user-invocable skills section — do not guess names or treat built-in CLI commands as skills.`
+      ? `When the user types \`/<skill-name>\`, invoke it via ${SKILL_TOOL_NAME}. Only use skills listed in the user-invocable skills section — don't guess.`
       : null,
     hasSkills && skillRoutingRules.length > 0
       ? `Skill routing disambiguators (additive — skills not listed below still trigger via their own description; these only clarify the boundaries that are commonly mis-applied): ${skillRoutingRules.join(' ')}`

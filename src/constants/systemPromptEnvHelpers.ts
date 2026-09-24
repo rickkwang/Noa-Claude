@@ -176,17 +176,5 @@ export function getScratchpadInstructions(): string | null {
 
   return `# Scratchpad Directory
 
-IMPORTANT: Always use this scratchpad directory for temporary files instead of \`/tmp\` or other system temp directories:
-\`${scratchpadDir}\`
-
-Use this directory for ALL temporary file needs:
-- Storing intermediate results or data during multi-step tasks
-- Writing temporary scripts or configuration files
-- Saving outputs that don't belong in the user's project
-- Creating temporary working files during analysis or processing
-- Any file that would otherwise go to \`/tmp\`
-
-Only use \`/tmp\` if the user explicitly requests it.
-
-The scratchpad directory is session-specific, isolated from the user's project, and can be used freely without permission prompts. It is for temporary work product, not a default place to create planning, analysis, decision, or notes documents unless the user explicitly asks for them.`
+\`${scratchpadDir}\` — always use it for temporary files (intermediate results, scripts, outputs that don't belong in the project) instead of \`/tmp\` or other system temp directories; it is session-specific, isolated from the project, and can generally be used without permission prompts. Only use \`/tmp\` if the user explicitly asks. It is for temporary work product, not a default place to create planning, analysis, decision, or notes documents unless the user explicitly asks for them.`
 }

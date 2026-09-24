@@ -148,16 +148,12 @@ describe('prompt behavior contracts', () => {
     expect(prompt).not.toContain('err on the side of planning')
   })
 
-  test('skill invocation preserves explicit commands without making broad matches blocking', async () => {
+  test('skill description states the contract without pressure language', async () => {
     const prompt = await getSkillToolPrompt('/tmp')
 
-    expect(prompt).toContain(
-      'If the user explicitly names a skill or uses /<skill-name>, invoking that skill is required',
-    )
-    expect(prompt).toContain(
-      'Do not treat broad or ambiguous skill matches as a blocking requirement',
-    )
-    expect(prompt).not.toContain('this is a BLOCKING REQUIREMENT')
+    expect(prompt).toContain("that's a request to invoke it")
+    expect(prompt).toContain('Only names from the listing')
+    expect(prompt).not.toMatch(/\b(NEVER|BLOCKING REQUIREMENT)\b/)
   })
 
   test('web search cites material sources without forcing noisy source sections or query years', () => {
