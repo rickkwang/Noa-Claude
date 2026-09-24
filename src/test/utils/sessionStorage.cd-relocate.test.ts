@@ -10,7 +10,13 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { getSessionId, setCwdState, setOriginalCwd } from '../../bootstrap/state.js'
+import {
+  getCwdState,
+  getOriginalCwd,
+  getSessionId,
+  setCwdState,
+  setOriginalCwd,
+} from '../../bootstrap/state.js'
 import {
   getProjectDir,
   getTranscriptPath,
@@ -28,6 +34,10 @@ import {
 describe('relocateSessionTranscript (/cd transcript move)', () => {
   let configDir: string
   let workDirs: string[] = []
+  // The tests point the process-wide cwd at tmpdirs they delete afterwards;
+  // restore it so later files in the same process don't run in a missing dir.
+  let savedCwd: string
+  let savedOriginalCwd: string
 
   const mkWork = (tag: string): string => {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), `noa-cd-${tag}-`)))
@@ -36,6 +46,8 @@ describe('relocateSessionTranscript (/cd transcript move)', () => {
   }
 
   beforeEach(() => {
+    savedCwd = getCwdState()
+    savedOriginalCwd = getOriginalCwd()
     process.env.TEST_ENABLE_SESSION_PERSISTENCE = '1'
     configDir = realpathSync(mkdtempSync(join(tmpdir(), 'noa-cd-cfg-')))
     process.env.CLAUDE_CONFIG_DIR = configDir
@@ -43,6 +55,8 @@ describe('relocateSessionTranscript (/cd transcript move)', () => {
   })
 
   afterEach(() => {
+    setCwdState(savedCwd)
+    setOriginalCwd(savedOriginalCwd)
     resetProjectForTesting()
     rmSync(configDir, { recursive: true, force: true })
     for (const dir of workDirs) {

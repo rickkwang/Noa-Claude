@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'bun:test'
-import { setCwdState } from '../../bootstrap/state.js'
+import { getCwdState, setCwdState } from '../../bootstrap/state.js'
 import { runWithCwdOverride } from '../../utils/cwd.js'
 import {
   createAgentWorktree,
@@ -162,6 +162,8 @@ describe('worktree creation', () => {
 
   test('agent worktrees follow the same baseRef policy', async () => {
     const { root, repo } = await createRepoWithRemote()
+    // root is deleted below; don't leave the process-wide cwd pointing into it.
+    const savedCwd = getCwdState()
 
     try {
       await writeFile(join(repo, 'file.txt'), 'second\n')
@@ -185,6 +187,7 @@ describe('worktree creation', () => {
         created.gitRoot,
       )
     } finally {
+      setCwdState(savedCwd)
       await rm(root, { recursive: true, force: true })
     }
   })
