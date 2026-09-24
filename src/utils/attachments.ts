@@ -4433,8 +4433,9 @@ export function getContextEfficiencyAttachment(
 
 /**
  * Attachments are read without a permission prompt, so besides deny rules
- * they must skip network paths: a stat on a UNC path or a macOS /.vol,
- * /.file, /.nofollow, /.resolve prefix can reach a network share or mount.
+ * they must skip network paths: a stat on a UNC path, a /net or /Network
+ * automount, or a macOS /.vol-style redirect (directly or through a symlink)
+ * can reach a network share or mount.
  * The Read tool still reaches them, behind its permission check.
  */
 function isAttachmentReadBlocked(

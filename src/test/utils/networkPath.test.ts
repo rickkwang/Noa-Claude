@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { safeResolvePath } from '../../utils/fsOperations.js'
-import { isNetworkPath } from '../../utils/networkPath.js'
+import {
+  isAutomountNetRoot,
+  isNetworkPath,
+} from '../../utils/networkPath.js'
 
 describe('isNetworkPath', () => {
   test('flags UNC paths in both separator styles', () => {
@@ -32,6 +35,28 @@ describe('isNetworkPath', () => {
     expect(isNetworkPath('/tmp/.vol/../x')).toBe(false)
   })
 
+  test('flags the automount hosts map and browse surface', () => {
+    for (const p of [
+      '/net/host',
+      '/net/host/export/f',
+      '/NET/host',
+      '/Network/Servers/host/f',
+      '/Network',
+      '/network/x',
+      '/tmp/../net/host',
+      '/n\u200cet/host',
+    ]) {
+      expect(isNetworkPath(p)).toBe(true)
+    }
+  })
+
+  test('/net itself is not a lookup, but is flagged separately', () => {
+    expect(isNetworkPath('/net')).toBe(false)
+    expect(isAutomountNetRoot('/net')).toBe(true)
+    expect(isAutomountNetRoot('/net/')).toBe(true)
+    expect(isAutomountNetRoot('/net/host')).toBe(false)
+  })
+
   test('leaves ordinary paths alone', () => {
     for (const p of [
       '/Users/me/.vol/f',
@@ -39,6 +64,9 @@ describe('isNetworkPath', () => {
       '/.nofollowing',
       '/.resolved/x',
       '/tmp/a.pdf',
+      '/netx/host',
+      '/tmp/net/host',
+      '/Volumes/share/f',
       'relative/.vol',
     ]) {
       expect(isNetworkPath(p)).toBe(false)

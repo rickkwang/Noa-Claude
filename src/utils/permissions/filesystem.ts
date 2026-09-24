@@ -17,9 +17,11 @@ import { getOriginalCwd, getSessionId } from '../../bootstrap/state.js'
 import { checkStatsigFeatureGate_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
 import type { AnyObject, Tool, ToolPermissionContext } from '../../Tool.js'
 import { FILE_READ_TOOL_NAME } from '../../tools/FileReadTool/prompt.js'
+import { GLOB_TOOL_NAME } from '../../tools/GlobTool/prompt.js'
 import { getCwd } from '../cwd.js'
 import { getClaudeConfigHomeDir } from '../envUtils.js'
 import {
+  findNetworkPathViaSymlinks,
   getFsImplementation,
   getPathsForPermissionCheck,
 } from '../fsOperations.js'
@@ -39,6 +41,9 @@ import {
 } from '../settings/settings.js'
 import { containsVulnerableUncPath } from '../shell/readOnlyCommandValidation.js'
 import {
+  isAutomountBrowsePath,
+  isAutomountHostsPath,
+  isAutomountNetRoot,
   isKernelRedirectedPath,
   isNetworkPath,
   isUncPath,
@@ -1085,6 +1090,67 @@ export function matchingRuleForInput(
 /**
  * Permission result for read permission for the specified tool & tool input
  */
+function globNetworkAsk(
+  pattern: string,
+  description: string,
+  reason: string,
+): PermissionDecision {
+  return {
+    behavior: 'ask',
+    message: `Claude requested permissions to glob ${pattern}, which ${description}.`,
+    decisionReason: { type: 'other', reason },
+  }
+}
+
+function checkGlobPatternForNetworkPath(
+  pattern: string,
+): PermissionDecision | null {
+  if (isUncPath(pattern)) {
+    return globNetworkAsk(
+      pattern,
+      'appears to be a UNC pattern that could access network resources',
+      'UNC glob pattern detected (defense-in-depth check)',
+    )
+  }
+  if (isAutomountHostsPath(pattern) || isAutomountNetRoot(pattern)) {
+    return globNetworkAsk(
+      pattern,
+      'is under the /net automount map and could trigger a DNS lookup and NFS mount to a remote host',
+      'Automount -hosts glob pattern detected (defense-in-depth check)',
+    )
+  }
+  if (isAutomountBrowsePath(pattern)) {
+    return globNetworkAsk(
+      pattern,
+      'is under the /Network automount browse surface and could trigger a directory-service lookup and mount to a remote host',
+      'Automount browse surface glob pattern detected (defense-in-depth check)',
+    )
+  }
+  if (isKernelRedirectedPath(pattern)) {
+    return globNetworkAsk(
+      pattern,
+      'is under /.vol, /.file, /.nofollow or /.resolve (paths the macOS kernel redirects) and could reach a network mount, triggering a DNS lookup and mount to a remote host',
+      'Kernel-resolved path prefix (/.vol etc.) glob pattern detected (defense-in-depth check)',
+    )
+  }
+  // The directory ripgrep will start in: the pattern's static prefix.
+  if (pattern.startsWith('/')) {
+    const firstGlobChar = pattern.search(/[*?[{]/)
+    const staticPrefix =
+      firstGlobChar === -1 ? pattern : pattern.slice(0, firstGlobChar)
+    const baseDir = staticPrefix.slice(0, staticPrefix.lastIndexOf('/')) || '/'
+    const target = findNetworkPathViaSymlinks(getFsImplementation(), baseDir)
+    if (target !== undefined) {
+      return globNetworkAsk(
+        pattern,
+        `leads through a symbolic link to ${target}, which could access network resources`,
+        'Glob pattern links to a network path (defense-in-depth check)',
+      )
+    }
+  }
+  return null
+}
+
 export function checkReadPermissionForTool(
   tool: Tool,
   input: { [key: string]: unknown },
@@ -1119,6 +1185,26 @@ export function checkReadPermissionForTool(
         },
       }
     }
+    if (isAutomountHostsPath(pathToCheck) || isAutomountNetRoot(pathToCheck)) {
+      return {
+        behavior: 'ask',
+        message: `Claude requested permissions to read from ${path}, which is under the /net automount map and could trigger a DNS lookup and NFS mount to a remote host.`,
+        decisionReason: {
+          type: 'other',
+          reason: 'Automount -hosts path detected (defense-in-depth check)',
+        },
+      }
+    }
+    if (isAutomountBrowsePath(pathToCheck)) {
+      return {
+        behavior: 'ask',
+        message: `Claude requested permissions to read from ${path}, which is under the /Network automount browse surface and could trigger a directory-service lookup and mount to a remote host.`,
+        decisionReason: {
+          type: 'other',
+          reason: 'Automount browse surface detected (defense-in-depth check)',
+        },
+      }
+    }
     if (isKernelRedirectedPath(pathToCheck)) {
       return {
         behavior: 'ask',
@@ -1129,6 +1215,13 @@ export function checkReadPermissionForTool(
         },
       }
     }
+  }
+
+  // Glob searches an absolute pattern's own base directory, whatever `path`
+  // says, so the pattern needs the same network-path checks.
+  if (tool.name === GLOB_TOOL_NAME && typeof input.pattern === 'string') {
+    const globNetworkAsk = checkGlobPatternForNetworkPath(input.pattern)
+    if (globNetworkAsk) return globNetworkAsk
   }
 
   // 2. Check for suspicious Windows path patterns (defense in depth)

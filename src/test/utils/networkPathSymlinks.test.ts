@@ -83,3 +83,13 @@ describe('permission-path resolution never follows a link into /.vol', () => {
     expect(reachesNetworkPath(join(root, 'local', 'f.txt'))).toBe(false)
   })
 })
+
+describe('automount paths through links', () => {
+  test('a link into /net/<host> is found without looking the host up', () => {
+    const link = join(root, 'nfs')
+    symlinkSync('/net/fileserver/export', link)
+    expect(findNetworkPathViaSymlinks(noFollowFs, join(link, 'f'))).toBe(
+      '/net/fileserver/export',
+    )
+  })
+})

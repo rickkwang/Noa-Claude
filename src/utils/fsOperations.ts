@@ -212,8 +212,8 @@ export function safeResolvePath(
   fs: FsOperations,
   filePath: string,
 ): { resolvedPath: string; isSymlink: boolean; isCanonical: boolean } {
-  // Block UNC paths and macOS kernel-redirected prefixes (/.vol, /.file,
-  // /.nofollow, /.resolve) before any filesystem access so validation never
+  // Block network paths (UNC, /net and /Network automounts, macOS /.vol-style
+  // kernel redirects) before any filesystem access so validation never
   // touches a network share or mount
   if (isNetworkPath(filePath)) {
     return { resolvedPath: filePath, isSymlink: false, isCanonical: false }
@@ -384,8 +384,8 @@ export function getPathsForPermissionCheck(inputPath: string): string[] {
   // Always check the original path
   pathSet.add(path)
 
-  // Block UNC paths and macOS kernel-redirected prefixes (/.vol, /.file,
-  // /.nofollow, /.resolve) before any filesystem access so validation never
+  // Block network paths (UNC, /net and /Network automounts, macOS /.vol-style
+  // kernel redirects) before any filesystem access so validation never
   // touches a network share or mount
   if (isNetworkPath(path)) {
     return Array.from(pathSet)

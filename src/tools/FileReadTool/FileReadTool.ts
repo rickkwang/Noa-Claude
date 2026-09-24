@@ -463,9 +463,10 @@ export const FileReadTool = buildTool({
       }
     }
 
-    // SECURITY: network path check (no I/O) — defer filesystem operations
-    // until after user grants permission to prevent NTLM credential leaks
-    // or a macOS resolution prefix reaching a network mount
+    // SECURITY: network path check (lstat/readlink only) — defer filesystem
+    // operations until after user grants permission, so no NTLM credential
+    // leak and no lookup (automount, macOS /.vol redirect, or a symlink to
+    // either) reaches a network mount
     if (reachesNetworkPath(fullFilePath)) {
       return { result: true }
     }

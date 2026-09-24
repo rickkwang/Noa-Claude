@@ -17,7 +17,8 @@ import { getErrnoCode } from '../../utils/errors.js'
 import { IMAGE_EXTENSION_REGEX } from '../../utils/imagePaste.js'
 import { reachesNetworkPath } from '../../utils/fsOperations.js'
 import {
-  isKernelRedirectedPath,
+  isAutomountNetRoot,
+  isNetworkPath,
   isUncPath,
 } from '../../utils/networkPath.js'
 import { expandPath } from '../../utils/path.js'
@@ -44,10 +45,10 @@ export async function validateAttachmentPaths(
         errorCode: 1,
       }
     }
-    if (isKernelRedirectedPath(fullPath)) {
+    if (isNetworkPath(fullPath) || isAutomountNetRoot(fullPath)) {
       return {
         result: false,
-        message: `Attachment "${rawPath}" is under /.vol, /.file, /.nofollow or /.resolve, which could trigger a network mount, so it is not supported. Copy the file to an ordinary local path and pass that path instead.`,
+        message: `Attachment "${rawPath}" is under /net, /Network, /.vol, /.file, /.nofollow or /.resolve, which could trigger a network mount, so it is not supported. Copy the file to an ordinary local path and pass that path instead.`,
         errorCode: 1,
       }
     }
