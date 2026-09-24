@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { isAbsolute } from 'path'
 import { z } from 'zod/v4'
 import type { ValidationResult } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
@@ -12,7 +13,7 @@ import {
   getFsImplementation,
   reachesNetworkPath,
 } from '../../utils/fsOperations.js'
-import { glob } from '../../utils/glob.js'
+import { extractGlobBaseDirectory, glob } from '../../utils/glob.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { expandPath, toRelativePath } from '../../utils/path.js'
 import { checkReadPermissionForTool } from '../../utils/permissions/filesystem.js'
@@ -89,7 +90,13 @@ export const GlobTool = buildTool({
   isSearchOrReadCommand() {
     return { isSearch: true, isRead: false }
   },
-  getPath({ path }): string {
+  // glob() searches an absolute pattern's own base directory and ignores
+  // `path`, so that directory is what permission checks must see.
+  getPath({ path, pattern }): string {
+    if (pattern && isAbsolute(pattern)) {
+      const { baseDir } = extractGlobBaseDirectory(pattern)
+      if (baseDir) return expandPath(baseDir)
+    }
     return path ? expandPath(path) : getCwd()
   },
   async preparePermissionMatcher({ pattern }) {

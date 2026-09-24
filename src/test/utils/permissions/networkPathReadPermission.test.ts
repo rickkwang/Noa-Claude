@@ -15,7 +15,10 @@ import {
   setOriginalCwd,
 } from '../../../bootstrap/state.js'
 import { getEmptyToolPermissionContext } from '../../../Tool.js'
+import { GlobTool } from '../../../tools/GlobTool/GlobTool.js'
 import { checkReadPermissionForTool } from '../../../utils/permissions/filesystem.js'
+
+;(globalThis as { MACRO?: unknown }).MACRO ??= { VERSION: 'test' }
 
 const dir = realpathSync(mkdtempSync(join(tmpdir(), 'net-perm-')))
 const prev = { original: getOriginalCwd(), cwd: getCwdState() }
@@ -35,10 +38,7 @@ afterAll(() => {
 })
 
 const read = { name: 'Read', getPath: (i: { file_path: string }) => i.file_path }
-const glob = {
-  name: 'Glob',
-  getPath: (i: { path?: string }) => i.path ?? getCwdState(),
-}
+const glob = GlobTool
 
 function decide(tool: object, input: object, ctx = getEmptyToolPermissionContext()) {
   const r = checkReadPermissionForTool(tool as never, input as never, ctx)
@@ -89,15 +89,33 @@ describe('deny rules still win over the network-path ask', () => {
   })
 })
 
+describe('Glob absolute patterns are checked against their search directory', () => {
+  test('outside the working directory asks', () => {
+    expect(decide(glob, { pattern: '/etc/host*' }).behavior).toBe('ask')
+    expect(decide(glob, { pattern: join(tmpdir(), '*.txt') }).behavior).toBe(
+      'ask',
+    )
+  })
+
+  test('inside the working directory is still allowed', () => {
+    expect(decide(glob, { pattern: join(dir, '*.txt') }).behavior).toBe('allow')
+    expect(decide(glob, { pattern: join(dir, 'ok.txt') }).behavior).toBe('allow')
+  })
+
+  test('an absolute pattern overrides path, as the search does', () => {
+    expect(decide(glob, { pattern: '/etc/*', path: dir }).behavior).toBe('ask')
+  })
+})
+
 describe('Glob pattern network checks', () => {
   test('relative patterns are unaffected', () => {
     expect(decide(glob, { pattern: '**/*.ts' }).behavior).toBe('allow')
   })
 
   test.each([
-    ['/.vol/1/2/*', 'Kernel-resolved path prefix (/.vol etc.) glob pattern detected (defense-in-depth check)'],
-    ['/net/host/**', 'Automount -hosts glob pattern detected (defense-in-depth check)'],
-    ['/Network/**', 'Automount browse surface glob pattern detected (defense-in-depth check)'],
+    ['/.vol/1/2/*', 'Kernel-resolved path prefix (/.vol etc.) detected (defense-in-depth check)'],
+    ['/net/host/**', 'Automount -hosts path detected (defense-in-depth check)'],
+    ['/Network/**', 'Automount browse surface detected (defense-in-depth check)'],
     ['//server/share/*', 'UNC glob pattern detected (defense-in-depth check)'],
   ])('%s asks', (pattern, reason) => {
     expect(decide(glob, { pattern })).toEqual({ behavior: 'ask', reason })
@@ -106,7 +124,7 @@ describe('Glob pattern network checks', () => {
   test('an absolute pattern through a symlink to a network path asks', () => {
     expect(decide(glob, { pattern: join(dir, 'nfs', '**', '*.c') })).toEqual({
       behavior: 'ask',
-      reason: 'Glob pattern links to a network path (defense-in-depth check)',
+      reason: 'Automount -hosts path detected (defense-in-depth check)',
     })
   })
 })

@@ -21,7 +21,6 @@ import { GLOB_TOOL_NAME } from '../../tools/GlobTool/prompt.js'
 import { getCwd } from '../cwd.js'
 import { getClaudeConfigHomeDir } from '../envUtils.js'
 import {
-  findNetworkPathViaSymlinks,
   getFsImplementation,
   getPathsForPermissionCheck,
 } from '../fsOperations.js'
@@ -1133,21 +1132,6 @@ function checkGlobPatternForNetworkPath(
       'Kernel-resolved path prefix (/.vol etc.) glob pattern detected (defense-in-depth check)',
     )
   }
-  // The directory ripgrep will start in: the pattern's static prefix.
-  if (pattern.startsWith('/')) {
-    const firstGlobChar = pattern.search(/[*?[{]/)
-    const staticPrefix =
-      firstGlobChar === -1 ? pattern : pattern.slice(0, firstGlobChar)
-    const baseDir = staticPrefix.slice(0, staticPrefix.lastIndexOf('/')) || '/'
-    const target = findNetworkPathViaSymlinks(getFsImplementation(), baseDir)
-    if (target !== undefined) {
-      return globNetworkAsk(
-        pattern,
-        `leads through a symbolic link to ${target}, which could access network resources`,
-        'Glob pattern links to a network path (defense-in-depth check)',
-      )
-    }
-  }
   return null
 }
 
@@ -1254,8 +1238,9 @@ export function checkReadPermissionForTool(
     }
   }
 
-  // Glob searches an absolute pattern's own base directory, whatever `path`
-  // says, so the pattern needs the same network-path checks.
+  // Glob's getPath is an absolute pattern's base directory, which the checks
+  // above already cover (symlinks included); the pattern itself still gets
+  // the network checks with glob-specific wording.
   if (tool.name === GLOB_TOOL_NAME && typeof input.pattern === 'string') {
     const globNetworkAsk = checkGlobPatternForNetworkPath(input.pattern)
     if (globNetworkAsk) return globNetworkAsk
