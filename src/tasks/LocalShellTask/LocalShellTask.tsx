@@ -423,12 +423,28 @@ export function hasForegroundTasksForToolUses(state: AppState, toolUseIds: Reado
   } = getForegroundTaskIdsForToolUses(state, toolUseIds);
   return shells.length > 0 || agents.length > 0;
 }
+// Shell commands moved to the background by send-now, so the tool can tell
+// the model why (it was not the user pressing ctrl+b, and it was not stopped).
+const backgroundedToDeliverMessage = new WeakSet<ShellCommand>();
+export function wasBackgroundedToDeliverMessage(shellCommand: ShellCommand): boolean {
+  return backgroundedToDeliverMessage.has(shellCommand);
+}
 export function backgroundTasksForToolUses(getAppState: () => AppState, setAppState: SetAppState, toolUseIds: ReadonlySet<string>): void {
+  const state = getAppState();
   const {
     shells,
     agents
-  } = getForegroundTaskIdsForToolUses(getAppState(), toolUseIds);
-  for (const taskId of shells) backgroundTask(taskId, getAppState, setAppState);
+  } = getForegroundTaskIdsForToolUses(state, toolUseIds);
+  for (const taskId of shells) {
+    const task = state.tasks[taskId];
+    const shellCommand = isLocalShellTask(task) ? task.shellCommand : null;
+    // Mark before backgrounding: the tool's poll loop may observe the
+    // 'backgrounded' status as soon as background() flips it.
+    if (shellCommand) backgroundedToDeliverMessage.add(shellCommand);
+    if (!backgroundTask(taskId, getAppState, setAppState) && shellCommand) {
+      backgroundedToDeliverMessage.delete(shellCommand);
+    }
+  }
   for (const taskId of agents) backgroundAgentTask(taskId, getAppState, setAppState);
 }
 

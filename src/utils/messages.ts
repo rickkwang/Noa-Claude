@@ -5779,6 +5779,9 @@ export function wrapCommandText(
     case 'human':
     case undefined:
     default:
-      return `The user sent a new message while you were working:\n${raw}\n\nIMPORTANT: After completing your current task, you MUST address the user's message above. Do not ignore it.`
+      // Says why a user message arrives inside a system reminder, so the model
+      // doesn't mistake it for an injection, and asks it to act now rather
+      // than after the current task — send-now delivers mid-turn on purpose.
+      return `The user sent a new message while you were working:\n${raw}\n\nThis is how Noa Claude surfaces messages the user sends mid-turn — within the running turn, often alongside the next tool result, rather than as a separate conversation turn. Address the message above as you continue this turn.`
   }
 }

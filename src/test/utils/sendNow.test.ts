@@ -309,3 +309,13 @@ describe('send-now background scope', () => {
     expect(has({ a: agent({ status: 'completed' }) })).toBe(false)
   })
 })
+
+describe('what the model is told', () => {
+  test('a mid-turn user message is explained, not deferred', async () => {
+    const { wrapCommandText } = await import('../../utils/messages.js')
+    const text = wrapCommandText('hi', undefined)
+    expect(text).toContain('surfaces messages the user sends mid-turn')
+    expect(text).toContain('Address the message above as you continue this turn.')
+    expect(text).not.toContain('After completing your current task')
+  })
+})

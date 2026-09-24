@@ -15,6 +15,8 @@ export type ExecResult = {
   interrupted: boolean
   backgroundTaskId?: string
   backgroundedByUser?: boolean
+  /** Moved to the background by send-now so a queued message could reach the model. */
+  backgroundedToDeliverMessage?: boolean
   /** Set when assistant-mode auto-backgrounded a long-running blocking command. */
   assistantAutoBackgrounded?: boolean
   /** Set when stdout was too large to fit inline — points to the output file on disk. */
