@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { randomUUID } from 'crypto'
-import { mkdir, readdir, readFile } from 'fs/promises'
+import { mkdir, readdir, readFile, rm } from 'fs/promises'
 import { join } from 'path'
 import {
   PDF_MAX_EXTRACT_SIZE,
@@ -124,10 +124,12 @@ export type PDFInfoFailure =
  */
 export async function getPDFPageCount(
   filePath: string,
+  abortSignal?: AbortSignal,
 ): Promise<{ pageCount: number | null; pdfinfoFailure?: PDFInfoFailure }> {
   const { code, stdout } = await execFileNoThrow('pdfinfo', [filePath], {
     timeout: 10_000,
     useCwd: false,
+    abortSignal,
   })
   if (code !== 0) {
     return {
@@ -176,11 +178,12 @@ export async function isPdftoppmAvailable(): Promise<boolean> {
  * This enables reading large PDFs and works with all API providers.
  *
  * @param filePath Path to the PDF file
- * @param options Optional page range (1-indexed, inclusive)
+ * @param options Optional page range (1-indexed, inclusive) and an abort
+ *   signal that kills pdftoppm (otherwise it runs until its 2-minute timeout)
  */
 export async function extractPDFPages(
   filePath: string,
-  options?: { firstPage?: number; lastPage?: number },
+  options?: { firstPage?: number; lastPage?: number; abortSignal?: AbortSignal },
 ): Promise<PDFResult<PDFExtractPagesResult>> {
   try {
     const fs = getFsImplementation()
@@ -233,7 +236,16 @@ export async function extractPDFPages(
     const { code, stderr } = await execFileNoThrow('pdftoppm', args, {
       timeout: 120_000,
       useCwd: false,
+      abortSignal: options?.abortSignal,
     })
+
+    if (options?.abortSignal?.aborted) {
+      await rm(outputDir, { recursive: true, force: true }).catch(() => {})
+      return {
+        success: false,
+        error: { reason: 'unknown', message: 'PDF page rendering was aborted.' },
+      }
+    }
 
     if (code !== 0) {
       if (/password/i.test(stderr)) {

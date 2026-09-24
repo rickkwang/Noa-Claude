@@ -6,7 +6,6 @@ import { posix, win32 } from 'path'
 import { z } from 'zod/v4'
 import {
   PDF_AT_MENTION_INLINE_THRESHOLD,
-  PDF_EXTRACT_SIZE_THRESHOLD,
   PDF_MAX_PAGES_PER_READ,
 } from '../../constants/apiLimits.js'
 import { hasBinaryExtension } from '../../constants/files.js'
@@ -30,7 +29,7 @@ import type { ToolUseContext } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { getCwd } from '../../utils/cwd.js'
 import { getClaudeConfigHomeDir, isEnvTruthy } from '../../utils/envUtils.js'
-import { getErrnoCode, isENOENT } from '../../utils/errors.js'
+import { AbortError, getErrnoCode, isENOENT } from '../../utils/errors.js'
 import {
   addLineNumbers,
   FILE_NOT_FOUND_CWD_NOTE,
@@ -906,10 +905,13 @@ async function callInner(
   if (isPDFExtension(ext)) {
     if (pages) {
       const parsedRange = parsePDFPageRange(pages)
-      const extractResult = await extractPDFPages(
-        resolvedFilePath,
-        parsedRange ?? undefined,
-      )
+      const extractResult = await extractPDFPages(resolvedFilePath, {
+        ...parsedRange,
+        abortSignal: context.abortController.signal,
+      })
+      if (context.abortController.signal.aborted) {
+        throw new AbortError()
+      }
       if (!extractResult.success) {
         throw new Error(extractResult.error.message)
       }
@@ -957,35 +959,16 @@ async function callInner(
       }
     }
 
-    const { pageCount } = await getPDFPageCount(resolvedFilePath)
+    const { pageCount } = await getPDFPageCount(
+      resolvedFilePath,
+      context.abortController.signal,
+    )
     if (pageCount !== null && pageCount > PDF_AT_MENTION_INLINE_THRESHOLD) {
       throw new Error(
         `This PDF has ${pageCount} pages, which is too many to read at once. ` +
           `Use the pages parameter to read specific page ranges (e.g., pages: "1-5"). ` +
           `Maximum ${PDF_MAX_PAGES_PER_READ} pages per request.`,
       )
-    }
-
-    const fs = getFsImplementation()
-    const stats = await fs.stat(resolvedFilePath)
-    const shouldExtractPages =
-      !isPDFSupported() || stats.size > PDF_EXTRACT_SIZE_THRESHOLD
-
-    if (shouldExtractPages) {
-      const extractResult = await extractPDFPages(resolvedFilePath)
-      if (extractResult.success) {
-        logEvent('tengu_pdf_page_extraction', {
-          success: true,
-          pageCount: extractResult.data.file.count,
-          fileSize: extractResult.data.file.originalSize,
-        })
-      } else {
-        logEvent('tengu_pdf_page_extraction', {
-          success: false,
-          available: extractResult.error.reason !== 'unavailable',
-          fileSize: stats.size,
-        })
-      }
     }
 
     if (!isPDFSupported()) {
