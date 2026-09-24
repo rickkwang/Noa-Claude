@@ -8,12 +8,15 @@ import { type DiffData, useDiffData } from '../../hooks/useDiffData.js';
 import { type TurnDiff, useTurnDiffs } from '../../hooks/useTurnDiffs.js';
 import { Box, Text } from '../../ink.js';
 import { useKeybindings } from '../../keybindings/useKeybinding.js';
+import { useModalScrollRef } from '../../context/modalContext.js';
+import { jumpBy } from '../ScrollKeybindingHandler.js';
 import { useShortcutDisplay } from '../../keybindings/useShortcutDisplay.js';
 import type { Message } from '../../types/message.js';
 import { plural } from '../../utils/stringUtils.js';
 import { Byline } from '../design-system/Byline.js';
 import { Dialog } from '../design-system/Dialog.js';
 import { LoadingState } from '../design-system/LoadingState.js';
+import { Tab, Tabs } from '../design-system/Tabs.js';
 import { DiffDetailView } from './DiffDetailView.js';
 import { DiffFileList } from './DiffFileList.js';
 type Props = {
@@ -23,6 +26,7 @@ type Props = {
   }) => void;
 };
 type ViewMode = 'list' | 'detail';
+type DetailScrollAction = 'up' | 'down' | 'pageUp' | 'pageDown' | 'fullPageUp' | 'fullPageDown' | 'top' | 'bottom';
 type DiffSource = {
   type: 'current';
 } | {
@@ -148,111 +152,81 @@ export function DiffDialog(t0) {
   }
   useEffect(t7, t8);
   useRegisterOverlay("diff-dialog");
-  let t10;
-  let t9;
-  if ($[16] !== sources.length || $[17] !== viewMode) {
-    t9 = () => {
+  // Detail view scrolls inside the modal's ScrollBox (Tabs attaches it). Null
+  // outside fullscreen, where the terminal's own scrollback does the job.
+  const modalScrollRef = useModalScrollRef();
+  const scrollDetail = (action: DetailScrollAction) => {
+    const s = modalScrollRef?.current;
+    if (viewMode !== "detail" || !s) return false;
+    const half = Math.max(1, Math.floor(s.getViewportHeight() / 2));
+    const full = Math.max(1, s.getViewportHeight());
+    switch (action) {
+      case "up":
+        s.scrollBy(-1);
+        break;
+      case "down":
+        s.scrollBy(1);
+        break;
+      case "pageUp":
+        jumpBy(s, -half);
+        break;
+      case "pageDown":
+        jumpBy(s, half);
+        break;
+      case "fullPageUp":
+        jumpBy(s, -full);
+        break;
+      case "fullPageDown":
+        jumpBy(s, full);
+        break;
+      case "top":
+        s.scrollTo(0);
+        break;
+      case "bottom":
+        s.scrollToBottom();
+    }
+  };
+  useKeybindings({
+    "diff:previousSource": () => {
       if (viewMode === "detail") {
         setViewMode("list");
-      } else {
-        if (viewMode === "list" && sources.length > 1) {
-          setSourceIndex(_temp2);
-        }
+      } else if (sources.length > 1) {
+        setSourceIndex(prev => (prev - 1 + sources.length) % sources.length);
       }
-    };
-    t10 = () => {
+    },
+    "diff:nextSource": () => {
       if (viewMode === "list" && sources.length > 1) {
-        setSourceIndex(prev_0 => Math.min(sources.length - 1, prev_0 + 1));
+        setSourceIndex(prev_0 => (prev_0 + 1) % sources.length);
       }
-    };
-    $[16] = sources.length;
-    $[17] = viewMode;
-    $[18] = t10;
-    $[19] = t9;
-  } else {
-    t10 = $[18];
-    t9 = $[19];
-  }
-  let t11;
-  if ($[20] !== viewMode) {
-    t11 = () => {
+    },
+    "diff:back": () => {
       if (viewMode === "detail") {
         setViewMode("list");
       }
-    };
-    $[20] = viewMode;
-    $[21] = t11;
-  } else {
-    t11 = $[21];
-  }
-  let t12;
-  if ($[22] !== selectedFile || $[23] !== viewMode) {
-    t12 = () => {
+    },
+    "diff:viewDetails": () => {
       if (viewMode === "list" && selectedFile) {
+        modalScrollRef?.current?.scrollTo(0);
         setViewMode("detail");
       }
-    };
-    $[22] = selectedFile;
-    $[23] = viewMode;
-    $[24] = t12;
-  } else {
-    t12 = $[24];
-  }
-  let t13;
-  if ($[25] !== viewMode) {
-    t13 = () => {
-      if (viewMode === "list") {
-        setSelectedIndex(_temp3);
-      }
-    };
-    $[25] = viewMode;
-    $[26] = t13;
-  } else {
-    t13 = $[26];
-  }
-  let t14;
-  if ($[27] !== diffData.files.length || $[28] !== viewMode) {
-    t14 = () => {
-      if (viewMode === "list") {
-        setSelectedIndex(prev_2 => Math.min(diffData.files.length - 1, prev_2 + 1));
-      }
-    };
-    $[27] = diffData.files.length;
-    $[28] = viewMode;
-    $[29] = t14;
-  } else {
-    t14 = $[29];
-  }
-  let t15;
-  if ($[30] !== t10 || $[31] !== t11 || $[32] !== t12 || $[33] !== t13 || $[34] !== t14 || $[35] !== t9) {
-    t15 = {
-      "diff:previousSource": t9,
-      "diff:nextSource": t10,
-      "diff:back": t11,
-      "diff:viewDetails": t12,
-      "diff:previousFile": t13,
-      "diff:nextFile": t14
-    };
-    $[30] = t10;
-    $[31] = t11;
-    $[32] = t12;
-    $[33] = t13;
-    $[34] = t14;
-    $[35] = t9;
-    $[36] = t15;
-  } else {
-    t15 = $[36];
-  }
-  let t16;
-  if ($[37] === Symbol.for("react.memo_cache_sentinel")) {
-    t16 = {
-      context: "DiffDialog"
-    };
-    $[37] = t16;
-  } else {
-    t16 = $[37];
-  }
-  useKeybindings(t15, t16);
+    },
+    "diff:previousFile": () => {
+      if (viewMode === "detail") return scrollDetail("up");
+      setSelectedIndex(_temp3);
+    },
+    "diff:nextFile": () => {
+      if (viewMode === "detail") return scrollDetail("down");
+      setSelectedIndex(prev_2 => Math.min(diffData.files.length - 1, prev_2 + 1));
+    },
+    "scroll:pageUp": () => scrollDetail("pageUp"),
+    "scroll:pageDown": () => scrollDetail("pageDown"),
+    "scroll:fullPageUp": () => scrollDetail("fullPageUp"),
+    "scroll:fullPageDown": () => scrollDetail("fullPageDown"),
+    "scroll:top": () => scrollDetail("top"),
+    "scroll:bottom": () => scrollDetail("bottom")
+  }, {
+    context: "DiffDialog"
+  });
   let t17;
   if ($[38] !== diffData.stats) {
     t17 = diffData.stats ? <Text dimColor={true}>{diffData.stats.filesCount} {plural(diffData.stats.filesCount, "file")}{" "}changed{diffData.stats.linesAdded > 0 && <Text color="diffAddedWord"> +{diffData.stats.linesAdded}</Text>}{diffData.stats.linesRemoved > 0 && <Text color="diffRemovedWord"> -{diffData.stats.linesRemoved}</Text>}</Text> : null;
@@ -266,20 +240,6 @@ export function DiffDialog(t0) {
   const branchSource = !currentTurn && diffData.source.kind === "branch" ? diffData.source : null;
   const headerTitle = currentTurn ? `Turn ${currentTurn.turnIndex}` : noCommits ? "Staged and new files" : branchSource ? "Branch changes" : "Uncommitted changes";
   const headerSubtitle = currentTurn ? currentTurn.userPromptPreview ? `"${currentTurn.userPromptPreview}"` : "" : noCommits ? "(no commits yet)" : branchSource ? `(vs ${branchSource.baseBranch})` : "(git diff HEAD)";
-  let t18;
-  if ($[40] !== sourceIndex || $[41] !== sources) {
-    t18 = sources.length > 1 ? <Box>{sourceIndex > 0 && <Text dimColor={true}>◀ </Text>}{sources.map((source, i) => {
-        const isSelected = i === sourceIndex;
-        const label = source.type === "current" ? "Current" : `T${source.turn.turnIndex}`;
-        return <Text key={i} dimColor={!isSelected} bold={isSelected}>{i > 0 ? " \xB7 " : ""}{label}</Text>;
-      })}{sourceIndex < sources.length - 1 && <Text dimColor={true}> ▶</Text>}</Box> : null;
-    $[40] = sourceIndex;
-    $[41] = sources;
-    $[42] = t18;
-  } else {
-    t18 = $[42];
-  }
-  const sourceSelector = t18;
   const dismissShortcut = useShortcutDisplay("diff:dismiss", "DiffDialog", "esc");
   let t19;
   bb0: {
@@ -331,11 +291,12 @@ export function DiffDialog(t0) {
   }
   const handleCancel = t22;
   let t23;
-  if ($[51] !== dismissShortcut || $[52] !== sources.length || $[53] !== viewMode) {
-    t23 = exitState => exitState.pending ? <Text>Press {exitState.keyName} again to exit</Text> : viewMode === "list" ? <Byline>{sources.length > 1 && <Text>←/→ source</Text>}<Text>↑/↓ select</Text><Text>Enter view</Text><Text>{dismissShortcut} close</Text></Byline> : <Byline><Text>← back</Text><Text>{dismissShortcut} close</Text></Byline>;
+  if ($[51] !== dismissShortcut || $[52] !== sources.length || $[53] !== viewMode || $[16] !== modalScrollRef) {
+    t23 = exitState => exitState.pending ? <Text>Press {exitState.keyName} again to exit</Text> : viewMode === "list" ? <Byline>{sources.length > 1 && <Text>←/→ source</Text>}<Text>↑/↓ select</Text><Text>Enter view</Text><Text>{dismissShortcut} close</Text></Byline> : <Byline>{modalScrollRef && <Text>↑/↓ scroll</Text>}<Text>← back</Text><Text>{dismissShortcut} close</Text></Byline>;
     $[51] = dismissShortcut;
     $[52] = sources.length;
     $[53] = viewMode;
+    $[16] = modalScrollRef;
     $[54] = t23;
   } else {
     t23 = $[54];
@@ -358,26 +319,14 @@ export function DiffDialog(t0) {
   } else {
     t24 = $[65];
   }
-  let t25;
-  if ($[66] !== handleCancel || $[67] !== sourceSelector || $[68] !== subtitle || $[69] !== t23 || $[70] !== t24 || $[71] !== title) {
-    t25 = <Dialog title={title} onCancel={handleCancel} color="background" inputGuide={t23}>{sourceSelector}{subtitle}{t24}</Dialog>;
-    $[66] = handleCancel;
-    $[67] = sourceSelector;
-    $[68] = subtitle;
-    $[69] = t23;
-    $[70] = t24;
-    $[71] = title;
-    $[72] = t25;
-  } else {
-    t25 = $[72];
-  }
-  return t25;
+  // Every source renders the same content; Tabs shows only the selected one
+  // and, inside a fullscreen modal, wraps it in the ScrollBox detail scrolling
+  // drives. Tabs owns ←/→/tab in list mode; detail mode hands ← to diff:back.
+  const content = <Box flexDirection="column">{subtitle}{t24}</Box>;
+  return <Dialog title={title} onCancel={handleCancel} color="background" inputGuide={t23}><Tabs title={undefined} hidden={sources.length <= 1} selectedTab={String(sourceIndex)} onTabChange={id => setSourceIndex(Number(id))} disableNavigation={viewMode === "detail"}>{sources.map((source, i) => <Tab key={i} id={String(i)} title={source.type === "current" ? "Current" : `T${source.turn.turnIndex}`}>{content}</Tab>)}</Tabs></Dialog>;
 }
 function _temp3(prev_1) {
   return Math.max(0, prev_1 - 1);
-}
-function _temp2(prev) {
-  return Math.max(0, prev - 1);
 }
 function _temp(turn) {
   return {

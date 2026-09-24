@@ -8,6 +8,7 @@ import { getCwd } from '../../utils/cwd.js'
 import { isFileWithinReadSizeLimit, readFileSafe } from '../../utils/file.js'
 import { findGitRoot } from '../../utils/git.js'
 import { Divider } from '../design-system/Divider.js'
+import { formatDiffPathForDisplay } from './DiffFileList.js'
 import { StructuredDiff } from '../StructuredDiff.js'
 
 /** Files above this are diffed without syntax context from their contents. */
@@ -50,6 +51,7 @@ export function DiffDetailView({
 }: Props): React.ReactNode {
   const { columns } = useTerminalSize()
   const contentWidth = width ?? columns - 4
+  const displayPath = formatDiffPathForDisplay(filePath)
 
   const fileContent = useMemo(() => {
     if (!filePath || isBinary || isLargeFile || isUntracked) return undefined
@@ -67,7 +69,7 @@ export function DiffDetailView({
     return (
       <Box flexDirection="column" width="100%">
         <Box>
-          <Text bold>{filePath}</Text>
+          <Text bold>{displayPath}</Text>
           <Text dimColor> (untracked)</Text>
         </Box>
         <Divider width={contentWidth} />
@@ -76,7 +78,7 @@ export function DiffDetailView({
             New file not yet staged.
           </Text>
           <Text dimColor italic>
-            Run `git add :/{filePath}` to see line counts.
+            Run `git add :/{displayPath}` to see line counts.
           </Text>
         </Box>
       </Box>
@@ -87,7 +89,7 @@ export function DiffDetailView({
     return (
       <Box flexDirection="column" width="100%">
         <Box>
-          <Text bold>{filePath}</Text>
+          <Text bold>{displayPath}</Text>
         </Box>
         <Divider width={contentWidth} />
         <Box flexDirection="column">
@@ -104,7 +106,7 @@ export function DiffDetailView({
   return (
     <Box flexDirection="column" width="100%">
       <Box>
-        <Text bold>{filePath}</Text>
+        <Text bold>{displayPath}</Text>
         {isTruncated && <Text dimColor> (truncated)</Text>}
       </Box>
       <Divider width={contentWidth} />

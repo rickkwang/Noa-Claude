@@ -319,6 +319,22 @@ export const DEFAULT_BINDINGS: KeybindingBlock[] = [
       up: 'diff:previousFile',
       down: 'diff:nextFile',
       enter: 'diff:viewDetails',
+      j: 'diff:nextFile',
+      k: 'diff:previousFile',
+      // Scroll the detail view. Only live when the dialog sits in a fullscreen
+      // modal (remote mode; local fullscreen `/diff` opens the sidebar panel
+      // instead) — plain scrollback leaves scrolling to the terminal. PgUp/PgDn
+      // don't reach it: the REPL's Scroll handler registers first and takes
+      // them for the transcript behind the modal.
+      pageup: 'scroll:pageUp',
+      pagedown: 'scroll:pageDown',
+      space: 'scroll:fullPageDown',
+      'shift+space': 'scroll:fullPageUp',
+      b: 'scroll:fullPageUp',
+      g: 'scroll:top',
+      'shift+g': 'scroll:bottom',
+      home: 'scroll:top',
+      end: 'scroll:bottom',
       // Note: diff:back is handled by left arrow in detail mode
     },
   },
