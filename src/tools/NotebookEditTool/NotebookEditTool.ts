@@ -17,7 +17,7 @@ import { parseCellId } from '../../utils/notebook.js'
 import { checkWritePermissionForTool } from '../../utils/permissions/filesystem.js'
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
 import { jsonParse, jsonStringify } from '../../utils/slowOperations.js'
-import { isNetworkPath } from '../../utils/networkPath.js'
+import { reachesNetworkPath } from '../../utils/fsOperations.js'
 import { checkWorktreeEscape } from '../../utils/worktreeEscape.js'
 import { NOTEBOOK_EDIT_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, PROMPT } from './prompt.js'
@@ -195,7 +195,7 @@ export const NotebookEditTool = buildTool({
       : resolve(getCwd(), notebook_path)
 
     // SECURITY: Skip filesystem operations for UNC paths to prevent NTLM credential leaks.
-    if (isNetworkPath(fullPath)) {
+    if (reachesNetworkPath(fullPath)) {
       return { result: true }
     }
 

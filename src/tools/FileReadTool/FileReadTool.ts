@@ -39,7 +39,10 @@ import {
 } from '../../utils/file.js'
 import { logFileOperation } from '../../utils/fileOperationAnalytics.js'
 import { formatFileSize } from '../../utils/format.js'
-import { getFsImplementation } from '../../utils/fsOperations.js'
+import {
+  getFsImplementation,
+  reachesNetworkPath,
+} from '../../utils/fsOperations.js'
 import {
   compressImageBufferWithTokenLimit,
   createImageMetadataText,
@@ -57,7 +60,6 @@ import {
   mapNotebookCellsToToolResult,
   readNotebook,
 } from '../../utils/notebook.js'
-import { isNetworkPath } from '../../utils/networkPath.js'
 import { expandPath } from '../../utils/path.js'
 import { extractPDFPages, getPDFPageCount, readPDF } from '../../utils/pdf.js'
 import {
@@ -464,7 +466,7 @@ export const FileReadTool = buildTool({
     // SECURITY: network path check (no I/O) — defer filesystem operations
     // until after user grants permission to prevent NTLM credential leaks
     // or a macOS resolution prefix reaching a network mount
-    if (isNetworkPath(fullFilePath)) {
+    if (reachesNetworkPath(fullFilePath)) {
       return { result: true }
     }
 

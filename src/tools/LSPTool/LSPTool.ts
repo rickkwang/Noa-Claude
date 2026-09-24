@@ -26,11 +26,13 @@ import { getCwd } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { isENOENT, toError } from '../../utils/errors.js'
 import { execFileNoThrowWithCwd } from '../../utils/execFileNoThrow.js'
-import { getFsImplementation } from '../../utils/fsOperations.js'
+import {
+  getFsImplementation,
+  reachesNetworkPath,
+} from '../../utils/fsOperations.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
 import { expandPath } from '../../utils/path.js'
-import { isNetworkPath } from '../../utils/networkPath.js'
 import { checkReadPermissionForTool } from '../../utils/permissions/filesystem.js'
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
 import {
@@ -170,7 +172,7 @@ export const LSPTool = buildTool({
     const absolutePath = expandPath(input.filePath)
 
     // SECURITY: Skip filesystem operations for UNC paths to prevent NTLM credential leaks.
-    if (isNetworkPath(absolutePath)) {
+    if (reachesNetworkPath(absolutePath)) {
       return { result: true }
     }
 

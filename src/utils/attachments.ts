@@ -18,10 +18,12 @@ import {
 } from '../tools/FileReadTool/FileReadTool.js'
 import { FileTooLargeError, readFileInRange } from './readFileInRange.js'
 import { expandPath } from './path.js'
-import { isNetworkPath } from './networkPath.js'
 import { countCharInString } from './stringUtils.js'
 import { count, uniq } from './array.js'
-import { getFsImplementation } from './fsOperations.js'
+import {
+  getFsImplementation,
+  reachesNetworkPath,
+} from './fsOperations.js'
 import { mkdir, readFile, readdir, rename, stat, writeFile } from 'fs/promises'
 import { realpathSync } from 'fs'
 import type { IDESelection } from '../hooks/useIdeSelection.js'
@@ -4439,7 +4441,7 @@ function isAttachmentReadBlocked(
   filePath: string,
   toolPermissionContext: ToolPermissionContext,
 ): boolean {
-  if (isNetworkPath(expandPath(filePath))) return true
+  if (reachesNetworkPath(expandPath(filePath))) return true
   const denyRule = matchingRuleForInput(
     filePath,
     toolPermissionContext,

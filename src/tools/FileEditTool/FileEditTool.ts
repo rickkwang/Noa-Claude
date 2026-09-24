@@ -35,14 +35,16 @@ import {
   readFileSyncWithMetadata,
 } from '../../utils/fileRead.js'
 import { formatFileSize } from '../../utils/format.js'
-import { getFsImplementation } from '../../utils/fsOperations.js'
+import {
+  getFsImplementation,
+  reachesNetworkPath,
+} from '../../utils/fsOperations.js'
 import {
   fetchSingleFileGitDiff,
   type ToolUseDiff,
 } from '../../utils/gitDiff.js'
 import { logError } from '../../utils/log.js'
 import { expandPath } from '../../utils/path.js'
-import { isNetworkPath } from '../../utils/networkPath.js'
 import {
   checkWritePermissionForTool,
   matchingRuleForInput,
@@ -180,7 +182,7 @@ export const FileEditTool = buildTool({
     // SECURITY: Skip filesystem operations for UNC paths to prevent NTLM credential leaks.
     // On Windows, fs.existsSync() on UNC paths triggers SMB authentication which could
     // leak credentials to malicious servers. Let the permission check handle UNC paths.
-    if (isNetworkPath(fullFilePath)) {
+    if (reachesNetworkPath(fullFilePath)) {
       return { result: true }
     }
 

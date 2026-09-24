@@ -15,9 +15,9 @@ import { getCwd } from '../../utils/cwd.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { getErrnoCode } from '../../utils/errors.js'
 import { IMAGE_EXTENSION_REGEX } from '../../utils/imagePaste.js'
+import { reachesNetworkPath } from '../../utils/fsOperations.js'
 import {
   isKernelRedirectedPath,
-  isNetworkPath,
   isUncPath,
 } from '../../utils/networkPath.js'
 import { expandPath } from '../../utils/path.js'
@@ -48,6 +48,13 @@ export async function validateAttachmentPaths(
       return {
         result: false,
         message: `Attachment "${rawPath}" is under /.vol, /.file, /.nofollow or /.resolve, which could trigger a network mount, so it is not supported. Copy the file to an ordinary local path and pass that path instead.`,
+        errorCode: 1,
+      }
+    }
+    if (reachesNetworkPath(fullPath)) {
+      return {
+        result: false,
+        message: `Attachment "${rawPath}" leads through a symbolic link to a network path, which is not supported. Copy the file to an ordinary local path and pass that path instead.`,
         errorCode: 1,
       }
     }
@@ -92,7 +99,7 @@ export async function resolveAttachments(
   const stated: ResolvedAttachment[] = []
   for (const rawPath of rawPaths) {
     const fullPath = expandPath(rawPath)
-    if (isUncPath(rawPath) || isNetworkPath(fullPath)) {
+    if (isUncPath(rawPath) || reachesNetworkPath(fullPath)) {
       throw new Error(
         `Attachment "${rawPath}" is a network path, which is not supported.`,
       )

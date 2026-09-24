@@ -125,6 +125,77 @@ export type FsOperations = {
 }
 
 /**
+ * Find the network path an absolute path would reach through its symlinks,
+ * without letting the OS follow any of them. `isNetworkPath` only sees the
+ * spelling, so `./link -> /.vol/<fsid>/<id>` looks local; realpath/stat on it
+ * would walk into the kernel redirect (or UNC target) and could trigger a
+ * mount before the user approved anything.
+ *
+ * Resolves one component at a time with lstat + readlink, so every lstat's
+ * parent is already a real, non-link directory and nothing is followed
+ * implicitly. Stops at the first network spelling — a component or a link
+ * target — and returns it. Returns undefined when the path stays local, when a
+ * component is missing (nothing past it can be followed), or on non-POSIX
+ * paths.
+ */
+export function findNetworkPathViaSymlinks(
+  fs: FsOperations,
+  absolutePath: string,
+): string | undefined {
+  if (isNetworkPath(absolutePath)) return absolutePath
+  if (!absolutePath.startsWith('/') || nodePath.sep !== '/') return undefined
+  let pending = absolutePath.split('/')
+  let resolved = '/'
+  let hops = 0
+  while (pending.length > 0) {
+    const segment = pending.shift()!
+    if (segment === '' || segment === '.') continue
+    if (segment === '..') {
+      resolved = nodePath.dirname(resolved)
+      continue
+    }
+    const next = nodePath.join(resolved, segment)
+    if (isNetworkPath(next)) return next
+    let st: fs.Stats
+    try {
+      st = fs.lstatSync(next)
+    } catch {
+      return undefined
+    }
+    if (!st.isSymbolicLink()) {
+      resolved = next
+      continue
+    }
+    // Matches typical SYMLOOP_MAX; the OS gives up with ELOOP there too.
+    if (++hops > 40) return undefined
+    let target: string
+    try {
+      target = fs.readlinkSync(next)
+    } catch {
+      return undefined
+    }
+    const absTarget = nodePath.isAbsolute(target)
+      ? target
+      : nodePath.join(resolved, target)
+    if (isNetworkPath(absTarget)) return absTarget
+    pending = [...absTarget.split('/'), ...pending]
+    resolved = '/'
+  }
+  return undefined
+}
+
+/**
+ * True when touching `path` could reach a network share or mount: its own
+ * spelling is a network path, or one of its symlinks points at one.
+ */
+export function reachesNetworkPath(path: string): boolean {
+  return (
+    isNetworkPath(path) ||
+    findNetworkPathViaSymlinks(getFsImplementation(), path) !== undefined
+  )
+}
+
+/**
  * Safely resolves a file path, handling symlinks and errors gracefully.
  *
  * Error handling strategy:
@@ -146,6 +217,15 @@ export function safeResolvePath(
   // touches a network share or mount
   if (isNetworkPath(filePath)) {
     return { resolvedPath: filePath, isSymlink: false, isCanonical: false }
+  }
+  // Same for a path whose symlinks lead to one: realpath would follow them.
+  const networkTarget = findNetworkPathViaSymlinks(fs, filePath)
+  if (networkTarget !== undefined) {
+    return {
+      resolvedPath: networkTarget,
+      isSymlink: networkTarget !== filePath,
+      isCanonical: false,
+    }
   }
 
   try {
@@ -308,6 +388,13 @@ export function getPathsForPermissionCheck(inputPath: string): string[] {
   // /.nofollow, /.resolve) before any filesystem access so validation never
   // touches a network share or mount
   if (isNetworkPath(path)) {
+    return Array.from(pathSet)
+  }
+  // A symlink that leads to one is reported by its network target, so the
+  // callers' network-path checks ask, and nothing below follows it.
+  const networkTarget = findNetworkPathViaSymlinks(fsImpl, path)
+  if (networkTarget !== undefined) {
+    pathSet.add(networkTarget)
     return Array.from(pathSet)
   }
 

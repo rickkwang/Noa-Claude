@@ -27,3 +27,20 @@ describe('BriefTool attachment network paths', () => {
     ).rejects.toThrow('network path')
   })
 })
+
+describe('BriefTool attachment symlinks', () => {
+  test('validate refuses a link that leads to a network path', async () => {
+    const { mkdtempSync, rmSync, symlinkSync } = await import('fs')
+    const { tmpdir } = await import('os')
+    const { join } = await import('path')
+    const dir = mkdtempSync(join(tmpdir(), 'brief-link-'))
+    try {
+      symlinkSync('/.vol/1/2', join(dir, 'l.png'))
+      const r = await validateAttachmentPaths([join(dir, 'l.png')])
+      expect(r.result).toBe(false)
+      expect((r as { message: string }).message).toContain('symbolic link')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
