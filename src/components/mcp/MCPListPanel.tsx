@@ -339,7 +339,7 @@ export function MCPListPanel(t0) {
       const toolsCount = server_3.toolsCount ?? 0;
       const toolsText = `${toolsCount} tool${toolsCount === 1 ? '' : 's'}`;
       const showTools = server_3.client.type === 'connected';
-      return <Box key={`${server_3.name}-${index}`}><Text color={isSelected ? "suggestion" : undefined}>{isSelected ? `${figures.pointer} ` : "  "}</Text><Text color={isSelected ? "suggestion" : undefined}>{server_3.name}</Text><Text dimColor={!isSelected}> · {statusIcon} </Text><Text dimColor={!isSelected}>{statusText}</Text>{showTools && <Text dimColor={!isSelected && toolsCount > 0} color={toolsCount === 0 ? "warning" : undefined}>{` · ${toolsText}`}</Text>}</Box>;
+      return <Box key={`${server_3.name}-${index}`}><Text wrap="truncate-end"><Text color={isSelected ? "suggestion" : undefined}>{isSelected ? `${figures.pointer} ` : "  "}</Text><Text color={isSelected ? "suggestion" : undefined}>{server_3.name}</Text><Text dimColor={!isSelected}> · {statusIcon} </Text><Text dimColor={!isSelected}>{statusText}</Text>{showTools && <Text dimColor={!isSelected && toolsCount > 0} color={toolsCount === 0 ? "warning" : undefined}>{` · ${toolsText}`}</Text>}</Text></Box>;
     };
     $[37] = getServerIndex;
     $[38] = selectedIndex;
@@ -356,7 +356,7 @@ export function MCPListPanel(t0) {
       const isSelected_0 = selectedIndex === index_0;
       const statusIcon_0 = agentServer_1.needsAuth ? color("warning", theme)(figures.triangleUpOutline) : color("inactive", theme)(figures.radioOff);
       const statusText_0 = agentServer_1.needsAuth ? "may need auth" : "agent-only";
-      return <Box key={`agent-${agentServer_1.name}-${index_0}`}><Text color={isSelected_0 ? "suggestion" : undefined}>{isSelected_0 ? `${figures.pointer} ` : "  "}</Text><Text color={isSelected_0 ? "suggestion" : undefined}>{agentServer_1.name}</Text><Text dimColor={!isSelected_0}> · {statusIcon_0} </Text><Text dimColor={!isSelected_0}>{statusText_0}</Text></Box>;
+      return <Box key={`agent-${agentServer_1.name}-${index_0}`}><Text wrap="truncate-end"><Text color={isSelected_0 ? "suggestion" : undefined}>{isSelected_0 ? `${figures.pointer} ` : "  "}</Text><Text color={isSelected_0 ? "suggestion" : undefined}>{agentServer_1.name}</Text><Text dimColor={!isSelected_0}> · {statusIcon_0} </Text><Text dimColor={!isSelected_0}>{statusText_0}</Text></Text></Box>;
     };
     $[41] = getAgentServerIndex;
     $[42] = selectedIndex;
@@ -391,7 +391,7 @@ export function MCPListPanel(t0) {
         return null;
       }
       const heading = getScopeHeading(scope_0);
-      return <Box key={scope_0} flexDirection="column" marginBottom={1}><Box paddingLeft={2}><Text bold={true}>{heading.label}</Text>{heading.path && <Text dimColor={true}> ({heading.path})</Text>}</Box>{scopeServers_0.map(server_4 => renderServerItem(server_4))}</Box>;
+      return <Box key={scope_0} flexDirection="column" marginBottom={1}><Box paddingLeft={2}><Text wrap="truncate-end"><Text bold={true}>{heading.label}</Text>{heading.path && <Text dimColor={true}> ({heading.path})</Text>}</Text></Box>{scopeServers_0.map(server_4 => renderServerItem(server_4))}</Box>;
     });
     $[48] = renderServerItem;
     $[49] = serversByScope;
@@ -410,7 +410,7 @@ export function MCPListPanel(t0) {
   }
   let t24;
   if ($[54] !== agentServers || $[55] !== renderAgentServerItem) {
-    t24 = agentServers.length > 0 && <Box flexDirection="column" marginBottom={1}><Box paddingLeft={2}><Text bold={true}>Agent MCPs</Text></Box>{[...new Set(agentServers.flatMap(_temp6))].map(agentName => <Box key={agentName} flexDirection="column" marginTop={1}><Box paddingLeft={2}><Text dimColor={true}>@{agentName}</Text></Box>{agentServers.filter(s_3 => s_3.sourceAgents.includes(agentName)).map(agentServer_2 => renderAgentServerItem(agentServer_2))}</Box>)}</Box>;
+    t24 = agentServers.length > 0 && <Box flexDirection="column" marginBottom={1}><Box paddingLeft={2}><Text bold={true}>Agent MCPs</Text></Box>{[...new Set(agentServers.flatMap(_temp6))].map(agentName => <Box key={agentName} flexDirection="column" marginTop={1}><Box paddingLeft={2}><Text dimColor={true} wrap="truncate-end">@{agentName}</Text></Box>{agentServers.filter(s_3 => s_3.sourceAgents.includes(agentName)).map(agentServer_2 => renderAgentServerItem(agentServer_2))}</Box>)}</Box>;
     $[54] = agentServers;
     $[55] = renderAgentServerItem;
     $[56] = t24;
@@ -419,7 +419,7 @@ export function MCPListPanel(t0) {
   }
   let t25;
   if ($[57] !== dynamicServers || $[58] !== renderServerItem) {
-    t25 = dynamicServers.length > 0 && <Box flexDirection="column" marginBottom={1}><Box paddingLeft={2}><Text bold={true}>{dynamicHeading.label}</Text>{dynamicHeading.path && <Text dimColor={true}> ({dynamicHeading.path})</Text>}</Box>{dynamicServers.map(server_6 => renderServerItem(server_6))}</Box>;
+    t25 = dynamicServers.length > 0 && <Box flexDirection="column" marginBottom={1}><Box paddingLeft={2}><Text wrap="truncate-end"><Text bold={true}>{dynamicHeading.label}</Text>{dynamicHeading.path && <Text dimColor={true}> ({dynamicHeading.path})</Text>}</Text></Box>{dynamicServers.map(server_6 => renderServerItem(server_6))}</Box>;
     $[57] = dynamicServers;
     $[58] = renderServerItem;
     $[59] = t25;

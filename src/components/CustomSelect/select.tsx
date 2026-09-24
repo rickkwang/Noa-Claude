@@ -5,9 +5,11 @@ import React, { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useDeclaredCursor } from '../../ink/hooks/use-declared-cursor.js';
 import { stringWidth } from '../../ink/stringWidth.js';
 import { Ansi, Box, Text } from '../../ink.js';
+import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { count } from '../../utils/array.js';
 import type { PastedContent } from '../../utils/config.js';
 import type { ImageDimensions } from '../../utils/imageResizer.js';
+import { truncateToWidth } from '../../utils/truncate.js';
 import { SelectInputOption } from './select-input-option.js';
 import { SelectOption } from './select-option.js';
 import { useSelectInput } from './use-select-input.js';
@@ -192,7 +194,7 @@ export type SelectProps<T> = {
   readonly onRemoveImage?: (id: number) => void;
 };
 export function Select(t0) {
-  const $ = _c(73);
+  const $ = _c(74);
   const {
     isDisabled: t1,
     hideIndexes: t2,
@@ -355,11 +357,14 @@ export function Select(t0) {
     optionCount: options.length,
     scrollViewport: state.scrollViewport
   });
+  const {
+    columns
+  } = useTerminalSize();
   let T0;
   let t15;
   let t16;
   let t17;
-  if ($[28] !== hideIndexes || $[29] !== highlightText || $[30] !== imagesSelected || $[31] !== inlineDescriptions || $[32] !== inputValues || $[33] !== isDisabled || $[34] !== layout || $[35] !== onCancel || $[36] !== onChange || $[37] !== onImagePaste || $[38] !== onOpenEditor || $[39] !== onRemoveImage || $[40] !== options.length || $[41] !== pastedContents || $[42] !== selectedImageIndex || $[43] !== state.focusedValue || $[44] !== state.options || $[45] !== state.value || $[46] !== state.visibleFromIndex || $[47] !== state.visibleOptions || $[48] !== state.visibleToIndex || $[72] !== wheel) {
+  if ($[28] !== hideIndexes || $[29] !== highlightText || $[30] !== imagesSelected || $[31] !== inlineDescriptions || $[32] !== inputValues || $[33] !== isDisabled || $[34] !== layout || $[35] !== onCancel || $[36] !== onChange || $[37] !== onImagePaste || $[38] !== onOpenEditor || $[39] !== onRemoveImage || $[40] !== options.length || $[41] !== pastedContents || $[42] !== selectedImageIndex || $[43] !== state.focusedValue || $[44] !== state.options || $[45] !== state.value || $[46] !== state.visibleFromIndex || $[47] !== state.visibleOptions || $[48] !== state.visibleToIndex || $[72] !== wheel || $[73] !== columns) {
     t17 = Symbol.for("react.early_return_sentinel");
     bb0: {
       const styles = {
@@ -516,19 +521,27 @@ export function Select(t0) {
         } else {
           t19 = $[63];
         }
-        const maxLabelWidth = Math.max(...optionData.map(t19));
+        // Cap the label column so a long label can't take the whole row and
+        // squeeze the description to nothing; labels past the cap truncate.
+        const maxLabelWidth = Math.min(Math.max(...optionData.map(t19)), Math.floor(columns * TWO_COLUMN_LABEL_RATIO));
         let t20;
         if ($[64] !== hideIndexes || $[65] !== maxIndexWidth_1 || $[66] !== maxLabelWidth) {
           t20 = data_0 => {
             if (data_0.option.type === "input") {
               return null;
             }
-            const labelText_3 = getTextContent(data_0.option.label);
+            let labelText_3 = getTextContent(data_0.option.label);
             const indexWidth_0 = hideIndexes ? 0 : maxIndexWidth_1 + 2;
             const checkmarkWidth_0 = data_0.isSelected ? 2 : 0;
+            const labelBudget = maxLabelWidth - 2 - indexWidth_0 - checkmarkWidth_0;
+            let rowLabel = data_0.label;
+            if (stringWidth(labelText_3) > labelBudget) {
+              labelText_3 = truncateToWidth(labelText_3, Math.max(1, labelBudget));
+              rowLabel = labelText_3;
+            }
             const currentLabelWidth = 2 + indexWidth_0 + stringWidth(labelText_3) + checkmarkWidth_0;
             const padding = maxLabelWidth - currentLabelWidth;
-            return <TwoColumnRow key={String(data_0.option.value)} isFocused={data_0.isFocused}><Box flexDirection="row" flexShrink={0}>{data_0.isFocused ? <Text color="suggestion">{figures.pointer}</Text> : data_0.shouldShowDownArrow ? <Text dimColor={true}>{figures.arrowDown}</Text> : data_0.shouldShowUpArrow ? <Text dimColor={true}>{figures.arrowUp}</Text> : <Text> </Text>}<Text> </Text><Text dimColor={data_0.isOptionDisabled} color={data_0.isOptionDisabled ? undefined : data_0.isSelected ? "success" : data_0.isFocused ? "suggestion" : undefined}>{!hideIndexes && <Text dimColor={true}>{`${data_0.index}.`.padEnd(maxIndexWidth_1 + 2)}</Text>}{data_0.label}</Text>{data_0.isSelected && <Text color="success"> {figures.tick}</Text>}{padding > 0 && <Text>{" ".repeat(padding)}</Text>}</Box><Box flexGrow={1} marginLeft={2}><Text wrap="wrap" dimColor={data_0.isOptionDisabled || data_0.option.dimDescription !== false} color={data_0.isOptionDisabled ? undefined : data_0.isSelected ? "success" : data_0.isFocused ? "suggestion" : undefined}><Ansi>{data_0.option.description || " "}</Ansi></Text></Box></TwoColumnRow>;
+            return <TwoColumnRow key={String(data_0.option.value)} isFocused={data_0.isFocused}><Box flexDirection="row" flexShrink={0}>{data_0.isFocused ? <Text color="suggestion">{figures.pointer}</Text> : data_0.shouldShowDownArrow ? <Text dimColor={true}>{figures.arrowDown}</Text> : data_0.shouldShowUpArrow ? <Text dimColor={true}>{figures.arrowUp}</Text> : <Text> </Text>}<Text> </Text><Text dimColor={data_0.isOptionDisabled} color={data_0.isOptionDisabled ? undefined : data_0.isSelected ? "success" : data_0.isFocused ? "suggestion" : undefined}>{!hideIndexes && <Text dimColor={true}>{`${data_0.index}.`.padEnd(maxIndexWidth_1 + 2)}</Text>}{rowLabel}</Text>{data_0.isSelected && <Text color="success"> {figures.tick}</Text>}{padding > 0 && <Text>{" ".repeat(padding)}</Text>}</Box><Box flexGrow={1} marginLeft={2}><Text wrap="wrap" dimColor={data_0.isOptionDisabled || data_0.option.dimDescription !== false} color={data_0.isOptionDisabled ? undefined : data_0.isSelected ? "success" : data_0.isFocused ? "suggestion" : undefined}><Ansi>{data_0.option.description || " "}</Ansi></Text></Box></TwoColumnRow>;
           };
           $[64] = hideIndexes;
           $[65] = maxIndexWidth_1;
@@ -606,6 +619,7 @@ export function Select(t0) {
     $[47] = state.visibleOptions;
     $[48] = state.visibleToIndex;
     $[72] = wheel;
+    $[73] = columns;
     $[49] = T0;
     $[50] = t15;
     $[51] = t16;
@@ -631,6 +645,9 @@ export function Select(t0) {
   }
   return t18;
 }
+
+// Widest share of the row the two-column layout's label column may take.
+const TWO_COLUMN_LABEL_RATIO = 0.6;
 
 // Outer box takes the layout's container props; the inner column holds the
 // option rows and owns the wheel handler, so the wheel hit-test covers
