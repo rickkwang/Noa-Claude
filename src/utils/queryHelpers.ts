@@ -36,6 +36,10 @@ import type {
 } from './permissions/PermissionPromptToolResultSchema.js'
 import type { ProcessUserInputContext } from './processUserInput/processUserInput.js'
 import { recordTranscript } from './sessionStorage.js'
+import {
+  PERSISTED_OUTPUT_TAG,
+  TOOL_RESULT_CLEARED_MESSAGE,
+} from './toolResultStorage.js'
 
 export type PermissionPromptTool = Tool<
   ReturnType<typeof permissionToolInputSchema>,
@@ -431,32 +435,23 @@ export function extractReadFilesFromMessages(
   // Second pass: find corresponding tool results and extract content
   for (const message of messages) {
     if (message.type === 'user' && Array.isArray(message.message.content)) {
+      // toolUseResult is per message, so it only describes a tool_result when
+      // that result is the message's only one.
+      const toolResultCount = message.message.content.filter(
+        block => block.type === 'tool_result',
+      ).length
       for (const content of message.message.content) {
         if (content.type === 'tool_result' && content.tool_use_id) {
           // Handle Read tool results
           const readFilePath = fileReadToolUseIds.get(content.tool_use_id)
-          if (
-            readFilePath &&
-            typeof content.content === 'string' &&
-            // Dedup stubs contain no file content — the earlier real Read
-            // already cached it. Chronological last-wins would otherwise
-            // overwrite the real entry with stub text.
-            !content.content.startsWith(FILE_UNCHANGED_STUB)
-          ) {
-            // Remove system-reminder blocks from the content
-            const processedContent = content.content.replace(
-              /<system-reminder>[\s\S]*?<\/system-reminder>/g,
-              '',
-            )
-
-            // Extract the actual file content from the tool result
-            // Tool results for text files contain line numbers, we need to strip those
-            const fileContent = processedContent
-              .split('\n')
-              .map(stripLineNumberPrefix)
-              .join('\n')
-              .trim()
-
+          const fileContent =
+            readFilePath && content.is_error !== true
+              ? getReadResultFileContent(
+                  content.content,
+                  toolResultCount === 1 ? message.toolUseResult : undefined,
+                )
+              : undefined
+          if (readFilePath && fileContent !== undefined) {
             // Cache the file content with the message timestamp
             if (message.timestamp) {
               const timestamp = new Date(message.timestamp).getTime()
@@ -471,7 +466,14 @@ export function extractReadFilesFromMessages(
 
           // Handle Write tool results - use content from the tool input
           const writeToolData = fileWriteToolUseIds.get(content.tool_use_id)
-          if (writeToolData && message.timestamp) {
+          // A failed Write (e.g. "File has not been read yet") never wrote
+          // its content; caching it would claim the model knows a state the
+          // file never had.
+          if (
+            writeToolData &&
+            content.is_error !== true &&
+            message.timestamp
+          ) {
             const timestamp = new Date(message.timestamp).getTime()
             cache.set(writeToolData.filePath, {
               content: writeToolData.content,
@@ -483,21 +485,31 @@ export function extractReadFilesFromMessages(
 
           // Handle Edit tool results — post-edit content isn't in the
           // tool_use input (only old_string/new_string) nor fully in the
-          // result (only a snippet). Read from disk now, using actual mtime
-          // so getChangedFiles's mtime check passes on the next turn.
-          //
-          // Callers seed the cache once at process start (print.ts --resume,
-          // Cowork cold-restart per turn), so disk content at extraction time
-          // IS the post-edit state. No dedup: processing every Edit preserves
-          // last-wins semantics when Read/Write interleave (Edit→Read→Edit).
+          // result (only a snippet), so it comes from disk. Disk is only the
+          // post-edit state if nothing touched the file after the Edit: its
+          // mtime can't be later than the result that reported the Edit.
+          // Otherwise (another Edit later in the session, or a change made
+          // while the session was closed) the model has not seen what is on
+          // disk now, so drop the entry and let Edit/Write require a fresh
+          // Read and getChangedFiles stay quiet about a diff it can't know.
+          // No dedup: processing every Edit preserves last-wins semantics
+          // when Read/Write interleave (Edit→Read→Edit).
           const editFilePath = fileEditToolUseIds.get(content.tool_use_id)
           if (editFilePath && content.is_error !== true) {
             try {
+              const mtime = getFileModificationTime(editFilePath)
+              const editedAt = message.timestamp
+                ? new Date(message.timestamp).getTime()
+                : NaN
+              if (!(mtime <= editedAt)) {
+                cache.delete(editFilePath)
+                continue
+              }
               const { content: diskContent } =
                 readFileSyncWithMetadata(editFilePath)
               cache.set(editFilePath, {
                 content: diskContent,
-                timestamp: getFileModificationTime(editFilePath),
+                timestamp: mtime,
                 offset: undefined,
                 limit: undefined,
               })
@@ -514,6 +526,53 @@ export function extractReadFilesFromMessages(
   }
 
   return cache
+}
+
+/**
+ * The file content a restored Read entry should hold: what the Read tool put in
+ * readFileState at the time, not a reconstruction of what the model was shown.
+ *
+ * The structured result (toolUseResult.file.content) is those exact bytes.
+ * Rebuilding from the numbered tool_result text is lossy — it trims leading
+ * indentation and trailing newlines — which makes the restored entry disagree
+ * with an unchanged file, so the mtime fallback in Edit/Write rejects it and
+ * changed-file diffs pick up phantom whitespace. The text is the fallback
+ * only for transcripts without the structured result.
+ *
+ * Returns undefined when the result holds no file content: dedup stubs,
+ * results microcompact cleared or moved to disk, and non-text reads.
+ */
+function getReadResultFileContent(
+  resultContent: unknown,
+  toolUseResult: unknown,
+): string | undefined {
+  const structured = toolUseResult as
+    | { type?: string; file?: { content?: unknown } }
+    | undefined
+  if (
+    structured?.type === 'text' &&
+    typeof structured.file?.content === 'string'
+  ) {
+    return structured.file.content
+  }
+  if (
+    typeof resultContent !== 'string' ||
+    // Dedup stubs contain no file content — the earlier real Read already
+    // cached it. Chronological last-wins would otherwise overwrite the real
+    // entry with stub text.
+    resultContent.startsWith(FILE_UNCHANGED_STUB) ||
+    resultContent.startsWith(TOOL_RESULT_CLEARED_MESSAGE) ||
+    resultContent.startsWith(PERSISTED_OUTPUT_TAG)
+  ) {
+    return undefined
+  }
+  // Remove system-reminder blocks, then the line-number prefixes.
+  return resultContent
+    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '')
+    .split('\n')
+    .map(stripLineNumberPrefix)
+    .join('\n')
+    .trim()
 }
 
 /**
