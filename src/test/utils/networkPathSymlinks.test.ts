@@ -41,7 +41,7 @@ describe('findNetworkPathViaSymlinks', () => {
     )
     expect(
       findNetworkPathViaSymlinks(noFollowFs, join(root, 'vol-dir', 'x', 'y')),
-    ).toBe('/.vol/16777234')
+    ).toBe('/.vol/16777234/x/y')
     expect(findNetworkPathViaSymlinks(noFollowFs, join(root, 'hop'))).toBe(
       '/.vol/16777234/2',
     )
@@ -49,7 +49,7 @@ describe('findNetworkPathViaSymlinks', () => {
 
   test('finds a link to a UNC path', () => {
     expect(findNetworkPathViaSymlinks(noFollowFs, join(root, 'unc', 'f'))).toBe(
-      '//server/share',
+      '//server/share/f',
     )
   })
 
@@ -67,7 +67,7 @@ describe('findNetworkPathViaSymlinks', () => {
 describe('permission-path resolution never follows a link into /.vol', () => {
   test('safeResolvePath reports the network target without realpath', () => {
     expect(safeResolvePath(noFollowFs, join(root, 'vol-dir', 'f'))).toEqual({
-      resolvedPath: '/.vol/16777234',
+      resolvedPath: '/.vol/16777234/f',
       isSymlink: true,
       isCanonical: false,
     })
@@ -89,7 +89,7 @@ describe('automount paths through links', () => {
     const link = join(root, 'nfs')
     symlinkSync('/net/fileserver/export', link)
     expect(findNetworkPathViaSymlinks(noFollowFs, join(link, 'f'))).toBe(
-      '/net/fileserver/export',
+      '/net/fileserver/export/f',
     )
   })
 })

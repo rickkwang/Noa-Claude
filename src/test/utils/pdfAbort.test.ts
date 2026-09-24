@@ -1,20 +1,26 @@
-import { afterAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
+import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
+import { extractPDFPages, isPdftoppmAvailable } from '../../utils/pdf.js'
+import { getToolResultsDir } from '../../utils/toolResultStorage.js'
+
+// getClaudeConfigHomeDir is memoized: reset it on both sides so page images
+// land in this file's tmp dir, and later files don't inherit a deleted one.
 const tmp = mkdtempSync(join(tmpdir(), 'pdf-abort-'))
 const prevConfigDir = process.env.CLAUDE_CONFIG_DIR
-process.env.CLAUDE_CONFIG_DIR = join(tmp, 'config')
 
-const { extractPDFPages, isPdftoppmAvailable } = await import(
-  '../../utils/pdf.js'
-)
-const { getToolResultsDir } = await import('../../utils/toolResultStorage.js')
+beforeAll(() => {
+  process.env.CLAUDE_CONFIG_DIR = join(tmp, 'config')
+  getClaudeConfigHomeDir.cache.clear?.()
+})
 
 afterAll(() => {
   if (prevConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR
   else process.env.CLAUDE_CONFIG_DIR = prevConfigDir
+  getClaudeConfigHomeDir.cache.clear?.()
   rmSync(tmp, { recursive: true, force: true })
 })
 
@@ -75,6 +81,10 @@ describe('extractPDFPages abort', () => {
       abortSignal: new AbortController().signal,
     })
     expect(result.success).toBe(true)
-    if (result.success) expect(result.data.file.count).toBe(1)
+    if (result.success) {
+      expect(result.data.file.outputDir.startsWith(tmp)).toBe(true)
+      expect(result.data.file.count).toBe(1)
+      rmSync(result.data.file.outputDir, { recursive: true, force: true })
+    }
   })
 })

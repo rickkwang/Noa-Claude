@@ -40,12 +40,8 @@ const glob = {
   getPath: (i: { path?: string }) => i.path ?? getCwdState(),
 }
 
-function decide(tool: object, input: object) {
-  const r = checkReadPermissionForTool(
-    tool as never,
-    input as never,
-    getEmptyToolPermissionContext(),
-  )
+function decide(tool: object, input: object, ctx = getEmptyToolPermissionContext()) {
+  const r = checkReadPermissionForTool(tool as never, input as never, ctx)
   return {
     behavior: r.behavior,
     reason: (r as { decisionReason?: { reason?: string } }).decisionReason
@@ -73,6 +69,23 @@ describe('read permission for network paths inside the working directory', () =>
       behavior: 'ask',
       reason: 'Automount -hosts path detected (defense-in-depth check)',
     })
+  })
+})
+
+describe('deny rules still win over the network-path ask', () => {
+  test('a deny on the real location applies through the symlink', () => {
+    const ctx = {
+      ...getEmptyToolPermissionContext(),
+      alwaysDenyRules: { userSettings: ['Read(//net/fileserver/export/secret/**)'] },
+    }
+    expect(
+      decide(read, { file_path: join(dir, 'nfs', 'secret', 'k') }, ctx as never)
+        .behavior,
+    ).toBe('deny')
+    expect(
+      decide(read, { file_path: join(dir, 'nfs', 'public', 'k') }, ctx as never)
+        .behavior,
+    ).toBe('ask')
   })
 })
 

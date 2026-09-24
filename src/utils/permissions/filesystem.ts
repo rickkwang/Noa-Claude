@@ -1151,6 +1151,32 @@ function checkGlobPatternForNetworkPath(
   return null
 }
 
+function readDenyDecision(
+  path: string,
+  pathsToCheck: readonly string[],
+  toolPermissionContext: ToolPermissionContext,
+): PermissionDecision | null {
+  for (const pathToCheck of pathsToCheck) {
+    const denyRule = matchingRuleForInput(
+      pathToCheck,
+      toolPermissionContext,
+      'read',
+      'deny',
+    )
+    if (denyRule) {
+      return {
+        behavior: 'deny',
+        message: `Permission to read ${path} has been denied.`,
+        decisionReason: {
+          type: 'rule',
+          rule: denyRule,
+        },
+      }
+    }
+  }
+  return null
+}
+
 export function checkReadPermissionForTool(
   tool: Tool,
   input: { [key: string]: unknown },
@@ -1170,6 +1196,17 @@ export function checkReadPermissionForTool(
   // existsSync/lstatSync/realpathSync syscalls on the same path (previously
   // 6× = 30 syscalls per Read permission check).
   const pathsToCheck = getPathsForPermissionCheck(path)
+
+  // A network path gets an ask below; an explicit deny rule still wins over
+  // it (rule matching is string-only, so checking it first touches nothing).
+  if (pathsToCheck.some(isNetworkPath)) {
+    const denyDecision = readDenyDecision(
+      path,
+      pathsToCheck,
+      toolPermissionContext,
+    )
+    if (denyDecision) return denyDecision
+  }
 
   // 1. Defense-in-depth: Block UNC paths early (before other checks)
   // This catches paths starting with \\ or // that could access network resources
@@ -1242,24 +1279,8 @@ export function checkReadPermissionForTool(
   // 3. Check for READ-SPECIFIC deny rules first - check both the original path and resolved symlink path
   // SECURITY: This must come before any allow checks (including "edit access implies read access")
   // to prevent bypassing explicit read deny rules
-  for (const pathToCheck of pathsToCheck) {
-    const denyRule = matchingRuleForInput(
-      pathToCheck,
-      toolPermissionContext,
-      'read',
-      'deny',
-    )
-    if (denyRule) {
-      return {
-        behavior: 'deny',
-        message: `Permission to read ${path} has been denied.`,
-        decisionReason: {
-          type: 'rule',
-          rule: denyRule,
-        },
-      }
-    }
-  }
+  const denyDecision = readDenyDecision(path, pathsToCheck, toolPermissionContext)
+  if (denyDecision) return denyDecision
 
   // 4. Check for READ-SPECIFIC ask rules - check both the original path and resolved symlink path
   // SECURITY: This must come before implicit allow checks to ensure explicit ask rules are honored

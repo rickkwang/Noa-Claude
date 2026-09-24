@@ -966,6 +966,10 @@ async function callInner(
       resolvedFilePath,
       context.abortController.signal,
     )
+    // An aborted pdfinfo reports no page count; don't go on to read the file.
+    if (context.abortController.signal.aborted) {
+      throw new AbortError()
+    }
     if (pageCount !== null && pageCount > PDF_AT_MENTION_INLINE_THRESHOLD) {
       throw new Error(
         `This PDF has ${pageCount} pages, which is too many to read at once. ` +

@@ -14,7 +14,7 @@ import {
 import { homedir } from 'os'
 import * as nodePath from 'path'
 import { getErrnoCode } from './errors.js'
-import { isNetworkPath } from './networkPath.js'
+import { isNetworkPath, isUncPath } from './networkPath.js'
 import { slowLogging } from './slowOperations.js'
 
 /**
@@ -134,7 +134,8 @@ export type FsOperations = {
  * Resolves one component at a time with lstat + readlink, so every lstat's
  * parent is already a real, non-link directory and nothing is followed
  * implicitly. Stops at the first network spelling — a component or a link
- * target — and returns it. Returns undefined when the path stays local, when a
+ * target — and returns it with the path's remaining segments appended, so
+ * rules written against the real location still match. Returns undefined when the path stays local, when a
  * component is missing (nothing past it can be followed), or on non-POSIX
  * paths.
  */
@@ -155,7 +156,7 @@ export function findNetworkPathViaSymlinks(
       continue
     }
     const next = nodePath.join(resolved, segment)
-    if (isNetworkPath(next)) return next
+    if (isNetworkPath(next)) return joinRemaining(next, pending)
     let st: fs.Stats
     try {
       st = fs.lstatSync(next)
@@ -177,11 +178,19 @@ export function findNetworkPathViaSymlinks(
     const absTarget = nodePath.isAbsolute(target)
       ? target
       : nodePath.join(resolved, target)
-    if (isNetworkPath(absTarget)) return absTarget
+    if (isNetworkPath(absTarget)) return joinRemaining(absTarget, pending)
     pending = [...absTarget.split('/'), ...pending]
     resolved = '/'
   }
   return undefined
+}
+
+// path.join would collapse a UNC target's leading `//`; keep its spelling.
+function joinRemaining(target: string, pending: string[]): string {
+  if (!isUncPath(target)) return nodePath.join(target, ...pending)
+  const rest = pending.filter(segment => segment !== '')
+  if (rest.length === 0) return target
+  return `${target.replace(/\/+$/, '')}/${rest.join('/')}`
 }
 
 /**
