@@ -52,7 +52,8 @@ export type SessionMetaLoadPlanResult = {
   missingCacheSessions: LiteSessionInfo[]
 }
 
-export const META_SCHEMA_VERSION = 1
+// v2: token counts are per API response, not per transcript entry.
+export const META_SCHEMA_VERSION = 2
 
 const MISSING_CACHE_LOAD_RESERVE_RATIO = 0.25
 

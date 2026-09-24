@@ -11,6 +11,7 @@ import {
   selectSessionMetaLoadCandidates,
   isValidSessionMeta,
 } from '../../commands/insightsCache.js'
+import { extractToolStats } from '../../commands/insights.js'
 
 function makeMeta(overrides: Partial<SessionMeta> = {}): SessionMeta {
   return {
@@ -402,5 +403,31 @@ describe('/insights cache validation', () => {
     await expect(readFile(markerPath, 'utf8')).rejects.toMatchObject({
       code: 'ENOENT',
     })
+  })
+})
+
+describe('/insights token counts', () => {
+  test('counts one API response once, not once per content-block entry', () => {
+    const entry = (block: Record<string, unknown>, output: number) => ({
+      type: 'assistant',
+      timestamp: '2026-09-24T00:00:00.000Z',
+      message: {
+        id: 'msg_a',
+        role: 'assistant',
+        content: [block],
+        usage: { input_tokens: 500, output_tokens: output },
+      },
+    })
+    const stats = extractToolStats({
+      messages: [
+        entry({ type: 'thinking', thinking: '' }, 0),
+        entry({ type: 'text', text: 'ok' }, 0),
+        entry({ type: 'tool_use', id: 't1', name: 'Read', input: {} }, 300),
+      ],
+    } as never)
+    expect(stats.inputTokens).toBe(500)
+    expect(stats.outputTokens).toBe(300)
+    // Per-block data is still counted per entry.
+    expect(stats.toolCounts.Read).toBe(1)
   })
 })

@@ -261,7 +261,7 @@ function getLanguageFromPath(filePath: string): string | null {
   return EXTENSION_TO_LANGUAGE[ext] || null
 }
 
-function extractToolStats(log: LogOption): {
+export function extractToolStats(log: LogOption): {
   toolCounts: Record<string, number>
   languages: Record<string, number>
   gitCommits: number
@@ -309,6 +309,14 @@ function extractToolStats(log: LogOption): {
   let usesWebFetch = false
   let lastAssistantTimestamp: string | null = null
 
+  // One API response is logged as one entry per content block, each carrying
+  // that response's usage; count it once, from the response's last entry.
+  const finalUsageEntry = new Map<string, unknown>()
+  for (const msg of log.messages) {
+    const id = msg.type === 'assistant' ? msg.message?.id : undefined
+    if (id && msg.message?.usage) finalUsageEntry.set(id, msg)
+  }
+
   for (const msg of log.messages) {
     // Get message timestamp for response time calculation
     const msgTimestamp = (msg as { timestamp?: string }).timestamp
@@ -324,7 +332,11 @@ function extractToolStats(log: LogOption): {
           usage?: { input_tokens?: number; output_tokens?: number }
         }
       ).usage
-      if (usage) {
+      const responseId = msg.message.id
+      if (
+        usage &&
+        (!responseId || finalUsageEntry.get(responseId) === msg)
+      ) {
         inputTokens += usage.input_tokens || 0
         outputTokens += usage.output_tokens || 0
       }
