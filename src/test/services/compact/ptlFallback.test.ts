@@ -128,7 +128,12 @@ mock.module('../../../utils/sessionStorage.js', () => ({
 // above. Held in a variable because tsc can't resolve a suffixed specifier.
 const REAL_COMPACT_MODULE =
   '../../../services/compact/compact.js?ptl-fallback-real'
-const { compactConversation, partialCompactConversation, PTL_RETRY_MARKER } =
+const {
+  compactConversation,
+  partialCompactConversation,
+  PTL_RETRY_MARKER,
+  OPENING_ROUND_SUMMARY_MARKER,
+} =
   (await import(REAL_COMPACT_MODULE)) as typeof import('../../../services/compact/compact.js')
 
 // ~250 rough tokens each, so a 40-turn conversation is comfortably larger than
@@ -353,5 +358,82 @@ describe('full compaction falls back to partial on prompt-too-long', () => {
     // The direct path merges pre- and post-compact hook messages; taking the
     // fallback must not silently drop the pre-compact one.
     expect(result.userDisplayMessage).toContain('pre-compact hook said this')
+  })
+})
+
+// One huge first prompt (~25k rough tokens) followed by a few short turns: the
+// overflow sits inside the opening round, so no boundary slide can shed it.
+function makeHugeOpeningSession(): Message[] {
+  const prompt = {
+    type: 'user',
+    uuid: 'opening',
+    message: { role: 'user', content: 'SPEC '.repeat(20_000) },
+  } as unknown as Message
+  return [prompt, ...makeTurns(6)]
+}
+
+describe('a session dominated by a huge first prompt', () => {
+  test('summarizes the opening round on its own instead of dropping it', async () => {
+    forkReplies = ['ptl', 'opening summary text', 'final summary']
+
+    await compactConversation(
+      makeHugeOpeningSession(),
+      makeContext(),
+      {} as never,
+      false,
+      undefined,
+      true,
+    )
+
+    expect(forkCalls.length).toBe(3)
+    // The second request carries the opening round alone.
+    expect(forkCalls[1]!.forkContextMessages!.map(m => m.uuid)).toEqual([
+      'opening',
+    ])
+    // The retry replaces it with that summary; nothing is head-truncated.
+    const retry = JSON.stringify(forkCalls[2]!.forkContextMessages)
+    expect(retry).toContain(OPENING_ROUND_SUMMARY_MARKER)
+    expect(retry).toContain('opening summary text')
+    expect(retry).not.toContain('SPEC SPEC')
+    expect(retry).not.toContain(PTL_RETRY_MARKER)
+    expect(forkCalls[2]!.forkContextMessages!.length).toBe(7)
+  })
+
+  test('falls back to head truncation when the opening round cannot be summarized', async () => {
+    forkReplies = ['ptl', 'ptl', 'final summary']
+
+    await compactConversation(
+      makeHugeOpeningSession(),
+      makeContext(),
+      {} as never,
+      false,
+      undefined,
+      true,
+    )
+
+    expect(forkCalls.length).toBe(3)
+    expect(JSON.stringify(forkCalls[2])).toContain(PTL_RETRY_MARKER)
+  })
+
+  test('partial compaction does the same once it cannot slide', async () => {
+    forkReplies = ['ptl', 'opening summary text', 'final summary']
+
+    // Pivot 2: the prefix is the opening prompt plus one turn, so the slide
+    // has nowhere smaller to go.
+    await partialCompactConversation(
+      makeHugeOpeningSession(),
+      2,
+      makeContext(),
+      {} as never,
+      undefined,
+      'up_to',
+      { trigger: 'auto', ownsLifecycle: false },
+    )
+
+    expect(forkCalls.length).toBe(3)
+    expect(forkCalls[1]!.forkContextMessages!.map(m => m.uuid)).toEqual([
+      'opening',
+    ])
+    expect(JSON.stringify(forkCalls[2])).toContain(OPENING_ROUND_SUMMARY_MARKER)
   })
 })

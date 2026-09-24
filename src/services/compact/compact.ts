@@ -424,6 +424,107 @@ function buildPTLRetryMarker(): string {
   }
 }
 
+export const OPENING_ROUND_SUMMARY_MARKER =
+  '[The conversation opened with a message too long to include in compaction. A summary of that opening round stands in for it:]'
+
+// Room the summary request needs besides the summarized messages: the compact
+// prompt plus the summary it asks for. Shrinking the opening round is only
+// worth a separate request if that alone covers the overflow and this.
+const OPENING_ROUND_REQUEST_HEADROOM_TOKENS = 20_000
+
+const OPENING_ROUND_SUMMARY_PROMPT = `The messages above open a conversation that is too long to compact as a whole. Summarize them so the rest of the conversation can still be understood and continued without them.
+
+Keep everything the work depends on: the task and its goals, requirements and constraints, decisions, file paths, names, identifiers, exact values, code and commands that matter, and any data the later conversation is likely to refer back to. Drop repetition and material nothing depends on.
+
+Reply with the summary only, as plain text. Do not call any tools.`
+
+/**
+ * Head truncation drops the oldest round first. When that round is the
+ * conversation's opening prompt and it is what makes the summary request too
+ * long — one huge paste followed by a few turns — boundary sliding cannot help
+ * (the overflow sits inside the first round), and dropping it leaves the
+ * summary blind to what the session was about. Before that happens, summarize
+ * the opening round in a request of its own and let that stand in for it.
+ *
+ * Returns the messages with the opening round replaced, or null when the
+ * opening round is not what makes the request too long, or its own summary
+ * could not be produced — the caller then falls back to head truncation.
+ */
+export async function summarizeOpeningRoundForPTLRetry({
+  messages,
+  ptlResponse,
+  appState,
+  context,
+  preCompactTokenCount,
+  cacheSafeParams,
+}: {
+  messages: Message[]
+  ptlResponse: AssistantMessage
+  appState: Awaited<ReturnType<ToolUseContext['getAppState']>>
+  context: ToolUseContext
+  preCompactTokenCount: number
+  cacheSafeParams: CacheSafeParams
+}): Promise<Message[] | null> {
+  const groups = groupMessagesByApiRound(messages)
+  if (groups.length < 2) return null
+  const opening = groups[0]!
+  // Only a real opening prompt: not our own truncation marker (meta), and not
+  // a prior compact summary, which is already a summary.
+  const hasOpeningPrompt = opening.some(
+    m =>
+      m.type === 'user' &&
+      !m.isMeta &&
+      !m.isCompactSummary &&
+      m.toolUseResult === undefined,
+  )
+  if (!hasOpeningPrompt) return null
+
+  const openingTokens = roughTokenCountEstimationForMessages(opening)
+  const tokenGap = getPromptTooLongTokenGap(ptlResponse)
+  // Replacing the round with its summary sheds roughly nine tenths of it. That
+  // must cover the overflow; with no parseable gap, require the round to be at
+  // least half the request — the thing the request mostly consists of.
+  const sheds = openingTokens - Math.ceil(openingTokens / 10)
+  const worthIt =
+    tokenGap !== undefined
+      ? sheds >= tokenGap + OPENING_ROUND_REQUEST_HEADROOM_TOKENS
+      : openingTokens * 2 >= roughTokenCountEstimationForMessages(messages)
+  if (!worthIt) return null
+
+  const response = await streamCompactSummary({
+    messages: opening,
+    summaryRequest: createUserMessage({ content: OPENING_ROUND_SUMMARY_PROMPT }),
+    appState,
+    context,
+    preCompactTokenCount,
+    cacheSafeParams: { ...cacheSafeParams, forkContextMessages: opening },
+  })
+  const text = getAssistantMessageText(response)?.trim()
+  if (
+    !text ||
+    text.startsWith(PROMPT_TOO_LONG_ERROR_MESSAGE) ||
+    startsWithApiErrorPrefix(text)
+  ) {
+    logForDebugging(
+      '[compact] opening round could not be summarized on its own; falling back to head truncation',
+      { level: 'warn' },
+    )
+    return null
+  }
+
+  logEvent('tengu_compact_ptl_opening_summarized', {
+    openingTokens,
+    messagesReplaced: opening.length,
+  })
+  return [
+    createUserMessage({
+      content: `${OPENING_ROUND_SUMMARY_MARKER}\n\n${text}`,
+      isMeta: true,
+    }),
+    ...groups.slice(1).flat(),
+  ]
+}
+
 export const ERROR_MESSAGE_PROMPT_TOO_LONG =
   'Conversation too long. Press esc twice to go up a few messages and try again.'
 export const ERROR_MESSAGE_USER_ABORT = 'API Error: Request was aborted.'
@@ -770,6 +871,7 @@ export async function compactConversation(
     let summary: string | null
     let ptlAttempts = 0
     let triedPartialPTLFallback = false
+    let triedOpeningRoundSummary = false
     for (;;) {
       summaryResponse = await streamCompactSummary({
         messages: messagesToSummarize,
@@ -831,6 +933,25 @@ export async function compactConversation(
       }
 
       ptlAttempts++
+      if (!triedOpeningRoundSummary && ptlAttempts <= MAX_PTL_RETRIES) {
+        triedOpeningRoundSummary = true
+        const condensed = await summarizeOpeningRoundForPTLRetry({
+          messages: messagesToSummarize,
+          ptlResponse: summaryResponse,
+          appState,
+          context,
+          preCompactTokenCount,
+          cacheSafeParams: retryCacheSafeParams,
+        })
+        if (condensed) {
+          messagesToSummarize = condensed
+          retryCacheSafeParams = {
+            ...retryCacheSafeParams,
+            forkContextMessages: condensed,
+          }
+          continue
+        }
+      }
       const truncated =
         ptlAttempts <= MAX_PTL_RETRIES
           ? truncateHeadForPTLRetry(messagesToSummarize, summaryResponse)
@@ -1221,6 +1342,9 @@ export async function partialCompactConversation(
     // Latched off once a slide can't shed enough, so we never ping-pong between
     // sliding and truncating within one budget.
     let canSlideBoundary = direction === 'up_to'
+    // 'up_to' only: 'from' sends its head as context for a summary of the
+    // tail, so a head it has to drop was never going into that summary.
+    let triedOpeningRoundSummary = direction !== 'up_to'
     if (opts?.precomputedSummary) {
       // Precomputed path: the summary was already produced in the background
       // (precomputedCompact.ts) over this exact 'up_to' prefix. Use it directly
@@ -1289,6 +1413,26 @@ export async function partialCompactConversation(
           continue
         }
         canSlideBoundary = false
+
+        if (!triedOpeningRoundSummary) {
+          triedOpeningRoundSummary = true
+          const condensed = await summarizeOpeningRoundForPTLRetry({
+            messages: apiMessages,
+            ptlResponse: summaryResponse,
+            appState: context.getAppState(),
+            context,
+            preCompactTokenCount,
+            cacheSafeParams: retryCacheSafeParams,
+          })
+          if (condensed) {
+            apiMessages = condensed
+            retryCacheSafeParams = {
+              ...retryCacheSafeParams,
+              forkContextMessages: condensed,
+            }
+            continue
+          }
+        }
 
         const truncated = truncateHeadForPTLRetry(apiMessages, summaryResponse)
         if (!truncated) {
