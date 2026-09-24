@@ -16,10 +16,17 @@ export type AwsStsOutput = {
 
 type AwsError = {
   name: string
+  cause?: unknown
 }
 
+// bedrock-sdk wraps provider-chain failures in an APIConnectionError whose
+// `cause` is the original CredentialsProviderError.
 export function isAwsCredentialsProviderError(err: unknown) {
-  return (err as AwsError | undefined)?.name === 'CredentialsProviderError'
+  const e = err as AwsError | undefined
+  return (
+    e?.name === 'CredentialsProviderError' ||
+    (e?.cause as AwsError | undefined)?.name === 'CredentialsProviderError'
+  )
 }
 
 /** Typeguard to validate AWS STS assume-role output */

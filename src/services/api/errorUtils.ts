@@ -253,6 +253,19 @@ export function formatAPIError(error: APIError): string {
     )
   }
 
+  // Provider SDKs wrap credential failures in a status-less APIConnectionError
+  // ("Failed to acquire Google OAuth credentials.") and keep the actionable
+  // reason (missing ADC file, expired SSO session, …) only in `cause`.
+  const cause = (error as { cause?: unknown }).cause
+  if (
+    error.status === undefined &&
+    cause instanceof Error &&
+    cause.message &&
+    cause.message !== error.message
+  ) {
+    return `${error.message} ${cause.message}`
+  }
+
   const sanitizedMessage = sanitizeAPIError(error)
   // Use sanitized message if it's different from the original (i.e., HTML was sanitized)
   return sanitizedMessage !== error.message && sanitizedMessage.length > 0

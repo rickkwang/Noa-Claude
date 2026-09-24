@@ -93,6 +93,19 @@ function createStderrLogger(): ClientOptions['logger'] {
   }
 }
 
+/**
+ * With no apiKey/authToken, the SDK lazily resolves credentials from ant-CLI
+ * profiles (~/.config/anthropic), ANTHROPIC_PROFILE and WIF env vars, and a
+ * profile may also supply the base URL. Noa picks credentials itself, so an
+ * unauthenticated client must fail as unauthenticated instead of picking up
+ * whatever else is on the machine.
+ */
+export class NoaAnthropic extends Anthropic {
+  protected override _shouldResolveDefaultCredentials(): boolean {
+    return false
+  }
+}
+
 function isOpenAIApiKeyPlaceholder(value: string | undefined): boolean {
   if (!value) return false
   const normalized = value.trim().toLowerCase()
@@ -248,8 +261,9 @@ export async function getAnthropicClient({
     let azureADTokenProvider: (() => Promise<string>) | undefined
     if (!process.env.ANTHROPIC_FOUNDRY_API_KEY) {
       if (isEnvTruthy(process.env.CLAUDE_CODE_SKIP_FOUNDRY_AUTH)) {
-        // Mock token provider for testing/proxy scenarios (similar to Vertex mock GoogleAuth)
-        azureADTokenProvider = () => Promise.resolve('')
+        // Mock token provider for testing/proxy scenarios (similar to Vertex mock GoogleAuth).
+        // Must be non-empty: the Foundry SDK rejects an empty token.
+        azureADTokenProvider = () => Promise.resolve('skip-foundry-auth')
       } else {
         // Use real Azure AD authentication with DefaultAzureCredential
         const {
@@ -319,8 +333,9 @@ export async function getAnthropicClient({
     const googleAuth = isEnvTruthy(process.env.CLAUDE_CODE_SKIP_VERTEX_AUTH)
       ? ({
           // Mock GoogleAuth for testing/proxy scenarios
+          // vertex-sdk calls .get() on the result, so it must be a Headers.
           getClient: () => ({
-            getRequestHeaders: () => ({}),
+            getRequestHeaders: () => new Headers(),
           }),
         } as unknown as GoogleAuth)
       : new GoogleAuth({
@@ -442,7 +457,7 @@ export async function getAnthropicClient({
     ...(isDebugToStdErr() && { logger: createStderrLogger() }),
   }
 
-  return new Anthropic(clientConfig)
+  return new NoaAnthropic(clientConfig)
 }
 
 async function configureApiKeyHeaders(

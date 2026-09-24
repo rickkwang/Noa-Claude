@@ -678,8 +678,15 @@ function handleAwsCredentialError(error: unknown): boolean {
 
 // google-auth-library throws plain Error (no typed name like AWS's
 // CredentialsProviderError). Match common SDK-level credential-failure messages.
+// vertex-sdk wraps these in an APIConnectionError whose `cause` is the original.
 function isGoogleAuthLibraryCredentialError(error: unknown): boolean {
   if (!(error instanceof Error)) return false
+  if (
+    error instanceof APIConnectionError &&
+    isGoogleAuthLibraryCredentialError(error.cause)
+  ) {
+    return true
+  }
   const msg = error.message
   return (
     msg.includes('Could not load the default credentials') ||
