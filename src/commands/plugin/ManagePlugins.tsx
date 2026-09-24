@@ -50,7 +50,7 @@ import { PluginOptionsDialog } from './PluginOptionsDialog.js';
 import { PluginOptionsFlow } from './PluginOptionsFlow.js';
 import { APPLIES_ON_CLOSE_HINT } from './autoReload.js';
 import type { ViewState as ParentViewState } from './types.js';
-import { UnifiedInstalledCell } from './UnifiedInstalledCell.js';
+import { getInstalledNameColumnWidth, UnifiedInstalledCell } from './UnifiedInstalledCell.js';
 import type { UnifiedInstalledItem } from './unifiedTypes.js';
 import { usePagination } from './usePagination.js';
 type Props = {
@@ -2207,6 +2207,7 @@ export function ManagePlugins({
 
   // Plugin list view (main management interface)
   const visibleItems = pagination.getVisibleItems(filteredItems);
+  const nameColumnWidth = getInstalledNameColumnWidth(filteredItems, terminalWidth);
   return <Box flexDirection="column">
       {/* Search box */}
       <Box marginBottom={1}>
@@ -2261,7 +2262,7 @@ export function ManagePlugins({
                   {getScopeLabel(item_10.scope)}
                 </Text>
               </Box>}
-            <UnifiedInstalledCell item={item_10} isSelected={isSelected_0} />
+            <UnifiedInstalledCell item={item_10} isSelected={isSelected_0} nameWidth={nameColumnWidth} />
           </React.Fragment>;
     })}
 
