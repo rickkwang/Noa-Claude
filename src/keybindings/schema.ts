@@ -99,6 +99,7 @@ export const KEYBINDING_ACTIONS = [
   'chat:undo',
   'chat:externalEditor',
   'chat:stash',
+  'chat:sendNow',
   'chat:imagePaste',
   'chat:messageActions',
   // Autocomplete menu actions

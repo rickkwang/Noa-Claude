@@ -80,6 +80,12 @@ export const DEFAULT_BINDINGS: KeybindingBlock[] = [
       'meta+o': 'chat:fastMode',
       'meta+t': 'chat:thinkingToggle',
       enter: 'chat:submit',
+      // Send the queued message now: background running tools instead of
+      // waiting for them, cancelling the turn only when nothing can move.
+      // ctrl+enter needs a terminal that reports it (Kitty protocol /
+      // modifyOtherKeys); the ctrl+x chord works everywhere.
+      'ctrl+x ctrl+s': 'chat:sendNow',
+      'ctrl+enter': 'chat:sendNow',
       up: 'history:previous',
       down: 'history:next',
       // Editing shortcuts (defined here, migration in progress)

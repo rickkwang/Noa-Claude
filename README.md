@@ -117,6 +117,7 @@ Default bindings from `src/keybindings/defaultBindings.ts`. Some bindings (e.g. 
 | `ctrl+l` | Clear screen and force full redraw (recovery path) |
 | `ctrl+x ctrl+e` / `ctrl+g` | Open external editor |
 | `ctrl+s` | Stash chat input |
+| `ctrl+enter` / `ctrl+x ctrl+s` | Send queued input now: moves running shells and subagents to the background instead of cancelling the turn (`ctrl+enter` needs a terminal that reports it) |
 | `ctrl+r` | History search |
 | `escape` | Abort current operation |
 | `ctrl+c` | Cancel speculation when idle |

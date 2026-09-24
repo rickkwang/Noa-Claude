@@ -247,6 +247,26 @@ export function dequeueAllMatching(
 }
 
 /**
+ * Raise the given commands (by reference identity) to 'now' priority, keeping
+ * their queue position. Consumers treat a 'now' command as "interrupt and
+ * send": the REPL aborts the running turn with reason 'interrupt'.
+ * Returns true when at least one command was promoted.
+ */
+export function promoteToNow(commands: QueuedCommand[]): boolean {
+  const targets = new Set(commands)
+  let promoted = false
+  for (let i = 0; i < commandQueue.length; i++) {
+    const cmd = commandQueue[i]!
+    if (targets.has(cmd) && cmd.priority !== 'now') {
+      commandQueue[i] = { ...cmd, priority: 'now' }
+      promoted = true
+    }
+  }
+  if (promoted) notifySubscribers()
+  return promoted
+}
+
+/**
  * Remove specific commands from the queue by reference identity.
  * Callers must pass the same object references that are in the queue
  * (e.g. from getCommandsByMaxPriority). Logs a 'remove' operation for each.

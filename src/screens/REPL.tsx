@@ -98,6 +98,8 @@ import { useTeammateViewAutoExit } from '../hooks/useTeammateViewAutoExit.js';
 import { errorMessage } from '../utils/errors.js';
 import { isHumanTurn } from '../utils/messagePredicates.js';
 import { logError } from '../utils/log.js';
+import { SendNowController } from '../utils/sendNow.js';
+import { backgroundAll, hasForegroundTasks } from '../tasks/LocalShellTask/LocalShellTask.js';
 import { useClassifierCheckingVersion, useHasAnyClassifierChecking } from '../utils/classifierApprovalsHook.js';
 
 type FrustrationDetectionHook = (
@@ -1412,6 +1414,55 @@ export function REPL({
   }, [setLocalCommands]);
   const [inProgressToolUseIDs, setInProgressToolUseIDs] = useState<Set<string>>(new Set());
   const hasInterruptibleToolInProgressRef = useRef(false);
+
+  // chat:sendNow — deliver queued input to the running turn now, moving
+  // foreground tools to the background rather than cancelling the turn
+  // (see utils/sendNow.ts). The controller polls, so it reads live values
+  // through a ref instead of closing over one render's state.
+  const sendNowLiveRef = useRef({
+    inProgressToolUseIDs,
+    isWaitingForApproval: Boolean(isWaitingForApproval)
+  });
+  sendNowLiveRef.current = {
+    inProgressToolUseIDs,
+    isWaitingForApproval: Boolean(isWaitingForApproval)
+  };
+  const sendNowControllerRef = useRef<SendNowController | null>(null);
+  useEffect(() => {
+    const controller = new SendNowController({
+      getTurnState: () => {
+        const mode = streamModeRef.current;
+        const live = sendNowLiveRef.current;
+        return {
+          isTurnActive: queryGuard.isActive,
+          isHeldByDialog: live.isWaitingForApproval,
+          hasMovableTasks: hasForegroundTasks(store.getState()),
+          isBackgroundingDisabled: isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS),
+          isExecuting: live.inProgressToolUseIDs.size > 0 || mode === 'tool-input' || mode === 'tool-use',
+          isSampling: mode === 'requesting' || mode === 'responding' || mode === 'thinking'
+        };
+      },
+      backgroundAll: () => backgroundAll(() => store.getState(), setAppState),
+      setTimeout: (fn, ms) => {
+        const timer = setTimeout(fn, ms);
+        return () => clearTimeout(timer);
+      }
+    });
+    sendNowControllerRef.current = controller;
+    return () => {
+      controller.dispose();
+      if (sendNowControllerRef.current === controller) sendNowControllerRef.current = null;
+    };
+  }, [queryGuard, store, setAppState]);
+  const onSendNow = useCallback((submit: () => Promise<void>) => {
+    // Act only on the turn that was running before this submit: if the
+    // submit itself started a turn, its input went straight to it.
+    const turnBefore = abortControllerRef.current;
+    void submit().then(() => {
+      if (turnBefore === null || abortControllerRef.current !== turnBefore) return;
+      sendNowControllerRef.current?.sendQueuedNow();
+    }).catch(logError);
+  }, []);
 
   // Remote session hook - manages WebSocket connection and message handling for --remote mode
   const remoteSession = useRemoteSession({
@@ -4654,7 +4705,7 @@ export function REPL({
               {showSpinner && <SpinnerWithVerb mode={streamMode} spinnerTip={spinnerTip} responseLengthRef={responseLengthRef} apiMetricsRef={apiMetricsRef} overrideMessage={spinnerMessage} spinnerSuffix={stopHookSpinnerSuffix} verbose={verbose} loadingStartTimeRef={loadingStartTimeRef} totalPausedMsRef={totalPausedMsRef} pauseStartTimeRef={pauseStartTimeRef} overrideColor={effectiveSpinnerColor} overrideShimmerColor={effectiveSpinnerShimmerColor} hasActiveTools={inProgressToolUseIDs.size > 0} leaderIsIdle={!isLoading} />}
               {showSpinner && compactProgressStartedAt !== null && <CompactProgressBar startedAt={compactProgressStartedAt} />}
               {!showSpinner && !isLoading && !userInputOnProcessing && !hasRunningTeammates && isBriefOnly && !viewedAgentTask && <BriefIdleStatus />}
-              {isFullscreenEnvEnabled() && <PromptInputQueuedCommands />}
+              {isFullscreenEnvEnabled() && <PromptInputQueuedCommands isLoading={isLoading} />}
             </>} bottom={<Box flexDirection={companionNarrow ? 'column' : 'row'} width="100%" alignItems={companionNarrow ? undefined : 'flex-end'}>
               {companionNarrow && isFullscreenEnvEnabled() && companionVisible ? <CompanionSprite /> : null}
               <Box flexDirection="column" flexGrow={1}>
@@ -4960,7 +5011,7 @@ export function REPL({
                       {showIssueFlagBanner && <IssueFlagBanner />}
                       {}
                       <PromptInput debug={debug} ideSelection={ideSelection} hasSuppressedDialogs={!!hasSuppressedDialogs} isLocalJSXCommandActive={isShowingLocalJSXCommand} getToolUseContext={getToolUseContext} toolPermissionContext={toolPermissionContext} setToolPermissionContext={setToolPermissionContext} apiKeyStatus={apiKeyStatus} commands={commands} agents={agentDefinitions.activeAgents} isLoading={isLoading} onExit={handleExit} verbose={verbose} messages={messages} onAutoUpdaterResult={setAutoUpdaterResult} autoUpdaterResult={autoUpdaterResult} input={inputValue} onInputChange={setInputValue} mode={inputMode} onModeChange={setInputMode} stashedPrompt={stashedPrompt} setStashedPrompt={setStashedPrompt} submitCount={submitCount} onShowMessageSelector={handleShowMessageSelector} onMessageActionsEnter={
-            isFullscreenEnvEnabled() && !disableMessageActions ? enterMessageActions : undefined} mcpClients={mcpClients} pastedContents={pastedContents} setPastedContents={setPastedContents} vimMode={vimMode} setVimMode={setVimMode} showBashesDialog={showBashesDialog} setShowBashesDialog={setShowBashesDialog} onSubmit={onSubmit} onAgentSubmit={onAgentSubmit} isSearchingHistory={isSearchingHistory} setIsSearchingHistory={setIsSearchingHistory} helpOpen={isHelpOpen} setHelpOpen={setIsHelpOpen} insertTextRef={insertTextRef} voiceInterimRange={voice.interimRange} />
+            isFullscreenEnvEnabled() && !disableMessageActions ? enterMessageActions : undefined} mcpClients={mcpClients} pastedContents={pastedContents} setPastedContents={setPastedContents} vimMode={vimMode} setVimMode={setVimMode} showBashesDialog={showBashesDialog} setShowBashesDialog={setShowBashesDialog} onSubmit={onSubmit} onAgentSubmit={onAgentSubmit} onSendNow={onSendNow} isSearchingHistory={isSearchingHistory} setIsSearchingHistory={setIsSearchingHistory} helpOpen={isHelpOpen} setHelpOpen={setIsHelpOpen} insertTextRef={insertTextRef} voiceInterimRange={voice.interimRange} />
                       <SessionBackgroundHint onBackgroundSession={handleBackgroundSession} isLoading={isLoading} />
                     </>}
                 {cursor &&

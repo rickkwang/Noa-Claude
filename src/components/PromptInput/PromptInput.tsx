@@ -166,6 +166,9 @@ type Props = {
     fromKeybinding?: boolean;
   }) => Promise<void>;
   onAgentSubmit?: (input: string, task: InProcessTeammateTaskState | LocalAgentTaskState, helpers: PromptInputHelpers) => Promise<void>;
+  /** chat:sendNow — runs `submit` (queueing any typed input), then asks the
+   *  running turn to take the queued input now. */
+  onSendNow?: (submit: () => Promise<void>) => void;
   isSearchingHistory: boolean;
   setIsSearchingHistory: (isSearching: boolean) => void;
   onDismissSideQuestion?: () => void;
@@ -221,6 +224,7 @@ function PromptInput({
   getToolUseContext,
   onSubmit: onSubmitProp,
   onAgentSubmit,
+  onSendNow,
   isSearchingHistory,
   setIsSearchingHistory,
   onDismissSideQuestion,
@@ -1735,6 +1739,20 @@ function PromptInput({
     });
   }, [keybindingContext, isModalOverlayActive, onSubmit, input]);
 
+  // chat:sendNow (ctrl+enter / ctrl+x ctrl+s): queue what's typed, then
+  // deliver the queue to the running turn now. Only for the leader's prompt
+  // input — a viewed teammate or bash-mode input just submits as usual.
+  const handleSendNow = useCallback(() => {
+    const hasInput = input.trim() !== '' || Object.values(pastedContents).some(c => c.type === 'image');
+    const submit = () => hasInput ? onSubmit(input) : Promise.resolve();
+    const isLeaderPrompt = mode === 'prompt' && getActiveAgentForInput(store.getState()).type === 'leader';
+    if (!isLeaderPrompt || !onSendNow) {
+      void submit();
+      return;
+    }
+    onSendNow(submit);
+  }, [input, pastedContents, onSubmit, mode, store, onSendNow]);
+
   // Chat context keybindings for editing shortcuts
   // Note: history:previous/history:next are NOT handled here. They are passed as
   // onHistoryUp/onHistoryDown props to TextInput, so that useTextInput's
@@ -1748,8 +1766,9 @@ function PromptInput({
     'chat:modelPicker': handleModelPicker,
     'chat:thinkingToggle': handleThinkingToggle,
     'chat:cycleMode': handleCycleMode,
-    'chat:imagePaste': handleImagePaste
-  }), [handleUndo, handleNewline, handleExternalEditor, handleStash, handleModelPicker, handleThinkingToggle, handleCycleMode, handleImagePaste]);
+    'chat:imagePaste': handleImagePaste,
+    'chat:sendNow': handleSendNow
+  }), [handleUndo, handleNewline, handleExternalEditor, handleStash, handleModelPicker, handleThinkingToggle, handleCycleMode, handleImagePaste, handleSendNow]);
   useKeybindings(chatHandlers, {
     context: 'Chat',
     isActive: !isModalOverlayActive
@@ -2358,7 +2377,7 @@ function PromptInput({
   }
   const textInputElement = isVimModeEnabled() ? <VimTextInput {...baseProps} initialMode={vimMode} onModeChange={setVimMode} /> : <TextInput {...baseProps} />;
   return <Box flexDirection="column" marginTop={briefOwnsGap ? 0 : 1}>
-      {!isFullscreenEnvEnabled() && <PromptInputQueuedCommands />}
+      {!isFullscreenEnvEnabled() && <PromptInputQueuedCommands isLoading={isLoading} />}
       {hasSuppressedDialogs && <Box marginTop={1} marginLeft={2}>
           <Text dimColor>Waiting for permission…</Text>
         </Box>}

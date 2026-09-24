@@ -2,7 +2,8 @@
 import { feature } from 'bun:bundle';
 import * as React from 'react';
 import { useMemo } from 'react';
-import { Box } from 'src/ink.js';
+import { Box, Text } from 'src/ink.js';
+import { supportsExtendedKeys } from 'src/ink/terminal.js';
 import { useAppState } from 'src/state/AppState.js';
 import { STATUS_TAG, SUMMARY_TAG, TASK_NOTIFICATION_TAG } from '../../constants/xml.js';
 import { QueuedMessageProvider } from '../../context/QueuedMessageContext.js';
@@ -11,6 +12,10 @@ import type { QueuedCommand } from '../../types/textInputTypes.js';
 import { isQueuedCommandVisible } from '../../utils/messageQueueManager.js';
 import { createUserMessage, EMPTY_LOOKUPS, normalizeMessages } from '../../utils/messages.js';
 import { jsonParse } from '../../utils/slowOperations.js';
+import { useOptionalKeybindingContext } from '../../keybindings/KeybindingContext.js';
+import { getSendNowShortcut } from '../../keybindings/sendNowShortcut.js';
+import { isSendNowTarget } from '../../utils/sendNow.js';
+import { KeyboardShortcutHint } from '../design-system/KeyboardShortcutHint.js';
 import { Message } from '../Message.js';
 const EMPTY_SET = new Set<string>();
 
@@ -69,7 +74,22 @@ function processQueuedCommands(queuedCommands: QueuedCommand[]): QueuedCommand[]
   };
   return [...otherCommands, ...visibleNotifications, overflowCommand];
 }
-function PromptInputQueuedCommandsImpl(): React.ReactNode {
+/** "ctrl+enter to send now" under queued input while a turn runs. */
+function SendNowHint(): React.ReactNode {
+  const keybindingContext = useOptionalKeybindingContext();
+  const shortcut = useMemo(() => getSendNowShortcut(keybindingContext?.bindings ?? [], supportsExtendedKeys() && !process.env.TMUX && !process.env.STY), [keybindingContext?.bindings]);
+  if (shortcut === '') return null;
+  return <Box paddingLeft={2}>
+      <Text dimColor>
+        <KeyboardShortcutHint shortcut={shortcut} action="send now" />
+      </Text>
+    </Box>;
+}
+function PromptInputQueuedCommandsImpl({
+  isLoading = false
+}: {
+  isLoading?: boolean;
+}): React.ReactNode {
   const queuedCommands = useCommandQueue();
   const viewingAgent = useAppState(s => !!s.viewingAgentTaskId);
   // Brief layout: dim queue items + skip the paddingX (brief messages
@@ -108,10 +128,12 @@ function PromptInputQueuedCommandsImpl(): React.ReactNode {
   if (viewingAgent || messages === null) {
     return null;
   }
+  const showSendNowHint = isLoading && queuedCommands.some(isSendNowTarget);
   return <Box marginTop={1} flexDirection="column">
       {messages.map((message, i) => <QueuedMessageProvider key={i} isFirst={i === 0} useBriefLayout={useBriefLayout}>
           <Message message={message} lookups={EMPTY_LOOKUPS} addMargin={false} tools={[]} commands={[]} verbose={false} inProgressToolUseIDs={EMPTY_SET} progressMessagesForMessage={[]} shouldAnimate={false} shouldShowDot={false} isTranscriptMode={false} isStatic={true} />
         </QueuedMessageProvider>)}
+      {showSendNowHint && <SendNowHint />}
     </Box>;
 }
 export const PromptInputQueuedCommands = React.memo(PromptInputQueuedCommandsImpl);
