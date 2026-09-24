@@ -29,8 +29,11 @@ const STATS_CACHE_FILENAME = 'stats-cache.json'
  *
  * v1: per-day totals include cache read + cache write, matching the panel's
  * "Total tokens". Previously they were input + output only.
+ * v2: usage is counted once per API response instead of once per transcript
+ * entry (one entry per content block), which had inflated input-side totals
+ * ~2x. Also rebuilds `modelUsage`, which carried the same overcount.
  */
-export const DAILY_MODEL_TOKENS_VERSION = 1
+export const DAILY_MODEL_TOKENS_VERSION = 2
 
 /**
  * Simple in-memory lock to prevent concurrent cache operations.

@@ -293,6 +293,16 @@ async function processSessionFiles(
         dailyActivityMap.set(dateKey, existing)
       }
 
+      // One API response is written as one transcript entry per content block
+      // (thinking, text, tool_use), each carrying that response's usage — the
+      // first as the message_start snapshot, the last as the final count. Count
+      // usage once per response, from its last entry.
+      const finalUsageEntry = new Map<string, TranscriptMessage>()
+      for (const message of mainMessages) {
+        const id = message.type === 'assistant' ? message.message?.id : undefined
+        if (id && message.message?.usage) finalUsageEntry.set(id, message)
+      }
+
       // Process messages for tool usage and model stats
       for (const message of mainMessages) {
         if (message.type === 'assistant') {
@@ -309,7 +319,11 @@ async function processSessionFiles(
           }
 
           // Track model usage if available (skip synthetic messages)
-          if (message.message?.usage) {
+          const responseId = message.message?.id
+          if (
+            message.message?.usage &&
+            (!responseId || finalUsageEntry.get(responseId) === message)
+          ) {
             const usage = message.message.usage
             const model = message.message.model || 'unknown'
 
@@ -658,23 +672,28 @@ export async function aggregateClaudeCodeStats(): Promise<ClaudeCodeStats> {
     let cache = await loadStatsCache()
     const yesterday = getYesterdayDateString()
 
-    // Rebuild dailyModelTokens in place when it was computed by an older
-    // formula. Only this field is recomputed; everything else the migration
-    // preserved stays put.
+    // Rebuild the token aggregates (dailyModelTokens, modelUsage) in place
+    // when they were computed by an older formula. Everything else the
+    // migration preserved stays put; the rebuilt totals cover only
+    // transcripts still on disk.
     if ((cache.dailyModelTokensVersion ?? 0) < DAILY_MODEL_TOKENS_VERSION) {
       let rebuilt: DailyModelTokens[] = []
+      let rebuiltModelUsage: typeof cache.modelUsage = {}
       if (cache.lastComputedDate) {
         const through = isDateBefore(yesterday, cache.lastComputedDate)
           ? yesterday
           : cache.lastComputedDate
         logForDebugging(`Rebuilding stats dailyModelTokens through ${through}`)
-        rebuilt = (
-          await processSessionFiles(allSessionFiles, { toDate: through })
-        ).dailyModelTokens
+        const recomputed = await processSessionFiles(allSessionFiles, {
+          toDate: through,
+        })
+        rebuilt = recomputed.dailyModelTokens
+        rebuiltModelUsage = recomputed.modelUsage
       }
       cache = {
         ...cache,
         dailyModelTokens: rebuilt,
+        modelUsage: rebuiltModelUsage,
         dailyModelTokensVersion: DAILY_MODEL_TOKENS_VERSION,
       }
       await saveStatsCache(cache)
