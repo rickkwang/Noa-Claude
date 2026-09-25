@@ -15,8 +15,8 @@ type Props = {
 
 // Standard-terminal pose fragments. Each row is split into segments so we can
 // vary only the parts that change (eyes, arms) while keeping the body/bg spans
-// stable. Glyphs match upstream Claude Code 2.1.241: row 1 is r1L(2) + r1E(6)
-// + r1R, row 2 is r2L(2) + █████(5) + r2R(2).
+// stable. Glyphs match upstream Claude Code 2.1.283: row 1 is r1L(2) + r1E(6)
+// + r1R, row 2 is r2L(2) + █████(5) + r2R(2), feet row is ` ▝▝   ▝▝ `.
 //
 // arms-up: the row-2 arm shapes move to row 1 — left as ▗▟, right as a lone ▄
 // (upstream is asymmetric).
@@ -187,7 +187,7 @@ export function Clawd(t0) {
   }
   let t11;
   if ($[22] === Symbol.for("react.memo_cache_sentinel")) {
-    t11 = <Text color="clawd_body">{"  "}▝▝ ▝▝{"  "}</Text>;
+    t11 = <Text color="clawd_body"> ▝▝   ▝▝ </Text>;
     $[22] = t11;
   } else {
     t11 = $[22];
@@ -243,7 +243,7 @@ function AppleTerminalClawd(t0) {
   let t7;
   if ($[6] === Symbol.for("react.memo_cache_sentinel")) {
     t6 = <Text backgroundColor="clawd_body">{" ".repeat(7)}</Text>;
-    t7 = <Text color="clawd_body">▘▘ ▝▝</Text>;
+    t7 = <Text color="clawd_body">▘▘   ▝▝</Text>;
     $[6] = t6;
     $[7] = t7;
   } else {
