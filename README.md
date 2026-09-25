@@ -210,7 +210,7 @@ All builds require [Bun](https://bun.sh).
 - `NOA_CLAUDE_DISABLE_MOUSE_CLICKS=1` — Mouse tracking on, clicks ignored
 - `CLAUDE_CODE_HIDE_CWD=1` — Hide cwd from status bar
 - `DISABLE_UPDATES=1` — Disable automatic update checks
-- `NOA_CLAUDE_STREAMING_TOOL_EXECUTION=1` — Opt in to streaming tool execution (tools start while the model response is still streaming; experimental, off by default)
+- `NOA_CLAUDE_STREAMING_TOOL_EXECUTION=0` — Wait for the full model response before running tools (by default tools start while the response is still streaming)
 - `NOA_CLAUDE_MAX_CONCURRENT_AGENTS=N` — Cap concurrent background agents (default 20; `0` disables the cap)
 - `NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT=1|0` — Force the compact (`1`) or long (`0`) system prompt instead of letting the model decide. See [System prompt length](#system-prompt-length)
 - `NOA_CLAUDE_NEW_INIT=1` — Opt `/init` in to the interview-style setup flow (existing-file branch, proposal review, optional skills/hooks) instead of the single-shot prompt

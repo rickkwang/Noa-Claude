@@ -13,13 +13,13 @@ afterEach(() => {
 })
 
 describe('buildQueryConfig streamingToolExecution gate', () => {
-  test('defaults to false (GrowthBook hard-disabled, no inert-gate surprise)', () => {
+  test('defaults to on', () => {
     delete process.env[ENV_KEY]
-    expect(buildQueryConfig().gates.streamingToolExecution).toBe(false)
+    expect(buildQueryConfig().gates.streamingToolExecution).toBe(true)
   })
 
-  test('NOA_CLAUDE_STREAMING_TOOL_EXECUTION=1 opts in', () => {
-    process.env[ENV_KEY] = '1'
-    expect(buildQueryConfig().gates.streamingToolExecution).toBe(true)
+  test('NOA_CLAUDE_STREAMING_TOOL_EXECUTION=0 opts out', () => {
+    process.env[ENV_KEY] = '0'
+    expect(buildQueryConfig().gates.streamingToolExecution).toBe(false)
   })
 })

@@ -169,7 +169,7 @@ describe('malformed tool names', () => {
   })
 })
 
-describe('streaming Bash sibling cancellation', () => {
+describe('streaming Bash failures', () => {
   test('read-only Bash failures do not cancel parallel read-only siblings', async () => {
     const failingToolUse = {
       type: 'tool_use',
@@ -216,7 +216,7 @@ describe('streaming Bash sibling cancellation', () => {
     expect(siblingResult?.content).toBe('ok')
   })
 
-  test('non-read-only Bash failures still cancel queued siblings', async () => {
+  test('non-read-only Bash failures do not cancel queued siblings', async () => {
     const failingToolUse = {
       type: 'tool_use',
       id: 'toolu_mutating_fail',
@@ -257,7 +257,7 @@ describe('streaming Bash sibling cancellation', () => {
     const siblingResult = results.find(
       result => result.tool_use_id === siblingToolUse.id,
     )
-    expect(siblingResult?.is_error).toBe(true)
-    expect(String(siblingResult?.content)).toContain('Cancelled')
+    expect(siblingResult?.is_error).not.toBe(true)
+    expect(siblingResult?.content).toBe('ok')
   })
 })

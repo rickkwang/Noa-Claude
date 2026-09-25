@@ -1,7 +1,6 @@
 import { getSessionId } from '../bootstrap/state.js'
-import { checkStatsigFeatureGate_CACHED_MAY_BE_STALE } from '../services/analytics/growthbook.js'
 import type { SessionId } from '../types/ids.js'
-import { isEnvTruthy } from '../utils/envUtils.js'
+import { isEnvDefinedFalsy, isEnvTruthy } from '../utils/envUtils.js'
 
 // -- config
 
@@ -17,8 +16,6 @@ export type QueryConfig = {
 
   // Runtime gates (env/statsig). NOT feature() gates — see above.
   gates: {
-    // Statsig — CACHED_MAY_BE_STALE already admits staleness, so snapshotting
-    // once per query() call stays within the existing contract.
     streamingToolExecution: boolean
     emitToolUseSummaries: boolean
     isAnt: boolean
@@ -32,17 +29,11 @@ export function buildQueryConfig(): QueryConfig {
     gates: {
       // Streaming tool execution (StreamingToolExecutor) starts tools while
       // the model is still streaming instead of after the full response.
-      // GrowthBook is hard-disabled in this build, so the upstream statsig
-      // gate resolves to false unconditionally and neither override channel
-      // (env/config) works without USER_TYPE=ant — leaving the non-streaming
-      // runTools path as the permanent default. That default is an explicit
-      // decision here, not an accident: the streaming path is still
-      // unvalidated in this fork. NOA_CLAUDE_STREAMING_TOOL_EXECUTION=1 opts in.
-      streamingToolExecution:
-        isEnvTruthy(process.env.NOA_CLAUDE_STREAMING_TOOL_EXECUTION) ||
-        checkStatsigFeatureGate_CACHED_MAY_BE_STALE(
-          'tengu_streaming_tool_execution2',
-        ),
+      // On by default, as upstream; NOA_CLAUDE_STREAMING_TOOL_EXECUTION=0
+      // falls back to the runTools path.
+      streamingToolExecution: !isEnvDefinedFalsy(
+        process.env.NOA_CLAUDE_STREAMING_TOOL_EXECUTION,
+      ),
       emitToolUseSummaries: isEnvTruthy(
         process.env.CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES,
       ),

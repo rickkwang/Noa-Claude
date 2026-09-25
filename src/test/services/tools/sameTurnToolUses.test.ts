@@ -149,9 +149,8 @@ describe('resolvePrecedingToolUses', () => {
   })
 })
 
-// runTools is the default path in this fork (the streamingToolExecution gate
-// resolves to false without NOA_CLAUDE_STREAMING_TOOL_EXECUTION=1), but
-// upstream implements sibling context on the executor — so both need coverage.
+// The executor is the default path; runTools still serves
+// NOA_CLAUDE_STREAMING_TOOL_EXECUTION=0 — so both need coverage.
 describe('StreamingToolExecutor.buildSameTurnToolUses', () => {
   function executorWithTools(
     tracked: Array<{ block: ToolUseBlock; assistantMessage: AssistantMessage }>,

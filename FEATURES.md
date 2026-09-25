@@ -139,8 +139,6 @@ in shipped builds:
   escalate retry in query.ts never fires; multi-turn recovery still applies.
 - `tengu_hive_evidence` (default `false`) — the VERIFICATION_AGENT system-prompt
   section never injects, even in dev-full builds.
-- `tengu_streaming_tool_execution2` (default `false`) — streaming tool execution
-  stays off; `NOA_CLAUDE_STREAMING_TOOL_EXECUTION=1` is the only working opt-in.
 
 ## Command Surfaces Outside Flag Unlock
 
