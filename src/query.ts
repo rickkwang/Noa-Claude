@@ -11,6 +11,7 @@ import {
   calculateTokenWarningState,
   countConsecutiveRapidRefills,
   isAutoCompactEnabled,
+  isBackgroundForkQuerySource,
   RAPID_REFILL_MAX_CONSECUTIVE,
 } from './services/compact/autoCompact.js'
 import { buildPostCompactMessages } from './services/compact/compact.js'
@@ -1451,7 +1452,56 @@ async function* queryLoop(
         return { reason: 'completed' }
       }
 
+      // stop_reason says a tool call follows, but none parsed (leaked or
+      // malformed call). Ending here drops the action the model announced.
+      if (lastMessage?.message.stop_reason === 'tool_use') {
+        if (state.transition?.reason !== 'malformed_tool_use_retry') {
+          for (const msg of assistantMessages) {
+            yield { type: 'tombstone' as const, message: msg }
+          }
+          state = nextState(state, {
+            messages: [
+              ...messagesForQuery,
+              createUserMessage({
+                content:
+                  'The previous response failed to produce a valid tool call. Please retry the tool call now.',
+                isMeta: true,
+              }),
+            ],
+            toolUseContext,
+            autoCompactTracking: tracking,
+            transition: { reason: 'malformed_tool_use_retry' },
+          })
+          continue
+        }
+        yield createAssistantAPIErrorMessage({
+          content:
+            "The model's tool call could not be parsed (retry also failed).",
+        })
+        return { reason: 'completed' }
+      }
+
       if (isEmptyAssistantTurn(assistantMessages)) {
+        if (
+          state.transition?.reason !== 'empty_response_retry' &&
+          querySource !== 'compact' &&
+          !isBackgroundForkQuerySource(querySource)
+        ) {
+          state = nextState(state, {
+            messages: [
+              ...messagesForQuery,
+              createUserMessage({
+                content:
+                  '[Your previous response had no visible output. Please continue and produce a user-visible response.]',
+                isMeta: true,
+              }),
+            ],
+            toolUseContext,
+            autoCompactTracking: tracking,
+            transition: { reason: 'empty_response_retry' },
+          })
+          continue
+        }
         logEvent('tengu_empty_assistant_turn_prevented', {
           assistantMessages: assistantMessages.length,
           queryChainId: queryChainIdForAnalytics,

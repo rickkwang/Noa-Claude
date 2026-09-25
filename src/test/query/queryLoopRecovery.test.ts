@@ -211,6 +211,64 @@ describe('query loop recovery', () => {
     expect(terminal).toEqual({ reason: 'completed' })
   }, 5000)
 
+  test('empty assistant turn: nudges once, and the nudged answer ends the turn', async () => {
+    const callMessages: Message[][] = []
+    const deps = makeDeps(async function* ({ messages }) {
+      callMessages.push(messages)
+      if (callMessages.length === 1) return
+      yield createAssistantMessage({ content: 'answer' })
+    })
+
+    const { events, terminal } = await drain({ deps })
+
+    expect(callMessages).toHaveLength(2)
+    expect(JSON.stringify(callMessages[1]!.at(-1))).toContain(
+      'had no visible output',
+    )
+    expect(events.some(e => e.type === 'assistant' && e.isApiErrorMessage)).toBe(false)
+    expect(terminal).toEqual({ reason: 'completed' })
+  }, 5000)
+
+  test('malformed tool call: drops the broken response and retries once', async () => {
+    const callMessages: Message[][] = []
+    const deps = makeDeps(async function* ({ messages }) {
+      callMessages.push(messages)
+      if (callMessages.length === 1) {
+        const broken = createAssistantMessage({ content: 'Let me edit it.' })
+        broken.message!.stop_reason = 'tool_use'
+        yield broken
+        return
+      }
+      yield createAssistantMessage({ content: 'done' })
+    })
+
+    const { events, terminal } = await drain({ deps })
+
+    expect(callMessages).toHaveLength(2)
+    const retry = JSON.stringify(callMessages[1])
+    expect(retry).toContain('failed to produce a valid tool call')
+    expect(retry).not.toContain('Let me edit it.')
+    expect(events.some(e => (e as { type: string }).type === 'tombstone')).toBe(true)
+    expect(terminal).toEqual({ reason: 'completed' })
+  }, 5000)
+
+  test('malformed tool call: a second failure surfaces an error', async () => {
+    let calls = 0
+    const deps = makeDeps(async function* () {
+      calls++
+      const broken = createAssistantMessage({ content: 'Let me edit it.' })
+      broken.message!.stop_reason = 'tool_use'
+      yield broken
+    })
+
+    const { events, terminal } = await drain({ deps })
+
+    expect(calls).toBe(2)
+    const error = events.find(e => e.type === 'assistant' && e.isApiErrorMessage)
+    expect(JSON.stringify(error)).toContain('could not be parsed')
+    expect(terminal).toEqual({ reason: 'completed' })
+  }, 5000)
+
   test('stop hook blocking: feeds the error back to the model with stop_hook_active set', async () => {
     const callMessages: Message[][] = []
     const stopHookActiveFlags: Array<boolean | undefined> = []

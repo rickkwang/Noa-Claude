@@ -30,6 +30,12 @@ export type Continue =
   | { reason: 'token_budget_continuation' }
   // Goal evaluator judged the goal unmet and asked for another turn.
   | { reason: 'goal_auto_continue' }
+  // stop_reason was tool_use but no tool call parsed; retry once without
+  // the broken response.
+  | { reason: 'malformed_tool_use_retry' }
+  // The response had no visible output (thinking only, or nothing); nudge
+  // the model once to answer.
+  | { reason: 'empty_response_retry' }
   // Normal turn boundary: tool results collected, recurse.
   | { reason: 'next_turn' }
 
