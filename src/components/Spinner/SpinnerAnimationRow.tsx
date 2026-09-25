@@ -46,8 +46,8 @@ function progressiveThinkingText(thinkingMs: number): string {
 const TOOL_TIMER_MIN_MS = 2000;
 
 // Tool-call timing window (upstream gn/kn): open when tools start, close when
-// they end; cleared if thinking resumes. Shows `running tool for Ns` while
-// open (>=2s) and `ran tool for Ns` briefly after close.
+// they end; cleared once a thinking status appears. With showToolCallTimer,
+// shows `running tool for Ns` while open (>=2s) and `ran tool for Ns` after.
 type ToolWindow = {
   start: number | null;
   end: number | null;
@@ -93,6 +93,8 @@ export type SpinnerAnimationRowProps = {
   // Thinking (state owned by parent, mode-dependent)
   thinkingStatus: 'thinking' | number | null;
   effortSuffix: string;
+  // Show `running tool for Ns` / `ran tool for Ns` in the status line.
+  showToolCallTimer?: boolean;
 };
 
 /**
@@ -125,12 +127,12 @@ export function SpinnerAnimationRow({
   foregroundedTeammate,
   leaderIsIdle = false,
   thinkingStatus,
-  effortSuffix
+  effortSuffix,
+  showToolCallTimer = false
 }: SpinnerAnimationRowProps): React.ReactNode {
-  // Upstream runs requesting on a 100ms clock (`glimmerParked`): the glimmer
-  // still moves every 50ms of animation time, but the frame loop ticks half
-  // as often while waiting on the API.
-  const [viewportRef, time] = useAnimationFrame(reducedMotion ? null : mode === 'requesting' ? 100 : 50);
+  // The requesting glimmer steps every 50ms; every other mode steps at 200ms
+  // or slower, so a 100ms clock is enough there.
+  const [viewportRef, time] = useAnimationFrame(reducedMotion ? null : mode === 'requesting' ? 50 : 100);
 
   // === Elapsed time (wall-clock, derived from refs each frame) ===
   const now = Date.now();
@@ -257,9 +259,9 @@ export function SpinnerAnimationRow({
     | { kind: 'thought-for'; thoughtMs: number }
     | { kind: 'none' };
   let statusKind: StatusText;
-  if (hasActiveTools && toolWindow.start !== null && now - toolWindow.start >= TOOL_TIMER_MIN_MS) {
+  if (showToolCallTimer && hasActiveTools && toolWindow.start !== null && now - toolWindow.start >= TOOL_TIMER_MIN_MS) {
     statusKind = { kind: 'tool-running', toolMs: now - toolWindow.start };
-  } else if (!hasActiveTools && thinkingStatus === null && toolWindow.start !== null && toolWindow.end !== null && toolWindow.end - toolWindow.start >= TOOL_TIMER_MIN_MS) {
+  } else if (showToolCallTimer && !hasActiveTools && thinkingStatus === null && toolWindow.start !== null && toolWindow.end !== null && toolWindow.end - toolWindow.start >= TOOL_TIMER_MIN_MS) {
     statusKind = { kind: 'tool-done', toolMs: toolWindow.end - toolWindow.start };
   } else if (thinkingStatus === 'thinking' && !hasActiveTools) {
     statusKind = { kind: 'thinking', thinkingMs: toolWindow.thinkingBurstStart !== null ? now - toolWindow.thinkingBurstStart : 0 };

@@ -2287,18 +2287,23 @@ function checkThinkingSpinnerThresholds() {
 
   assert(_getThinkingTextForTesting('thinking', 10_000, '') === 'still thinking',
     'at 10s exactly: shows "still thinking"');
-  assert(_getThinkingTextForTesting('thinking', 29_999, '') === 'still thinking',
+  assert(_getThinkingTextForTesting('thinking', 19_999, '') === 'still thinking',
+    'just under 20s threshold');
+
+  assert(_getThinkingTextForTesting('thinking', 20_000, '') === 'thinking more',
+    'at 20s exactly: shows "thinking more"');
+  assert(_getThinkingTextForTesting('thinking', 29_999, '') === 'thinking more',
     'just under 30s threshold');
 
-  assert(_getThinkingTextForTesting('thinking', 30_000, '') === 'thinking more',
-    'at 30s exactly: shows "thinking more"');
-  assert(_getThinkingTextForTesting('thinking', 59_999, '') === 'thinking more',
-    'just under 60s threshold');
+  assert(_getThinkingTextForTesting('thinking', 30_000, '') === 'thinking some more',
+    'at 30s exactly: shows "thinking some more"');
+  assert(_getThinkingTextForTesting('thinking', 44_999, '') === 'thinking some more',
+    'just under 45s threshold');
 
-  assert(_getThinkingTextForTesting('thinking', 60_000, '') === 'almost done thinking',
-    'at 60s exactly: shows "almost done thinking"');
-  assert(_getThinkingTextForTesting('thinking', 300_000, '') === 'almost done thinking',
-    '5min: still "almost done thinking"');
+  assert(_getThinkingTextForTesting('thinking', 45_000, '') === 'deep in thought',
+    'at 45s exactly: shows "deep in thought"');
+  assert(_getThinkingTextForTesting('thinking', 300_000, '') === 'deep in thought',
+    '5min: still "deep in thought"');
 
   // Status: number (seconds thought)
   assert(_getThinkingTextForTesting(5_000, 0, '') === 'thought for 5s',

@@ -259,11 +259,6 @@ function SpinnerWithVerbInner({
   const showBtwTip = tipsEnabled && elapsedSnapshot > 30_000 && !getGlobalConfig().btwUseCount;
   const effectiveTip = contextTipsActive ? undefined : showClearTip && !nextTask ? 'Use /clear to start fresh when switching topics and free up context' : showBtwTip && !nextTask ? "Use /btw to ask a quick side question without interrupting Claude's current work" : spinnerTip;
 
-  // Tool activity narrates itself in the transcript above the spinner (and
-  // now in the status line via `running tool for Ns`), so a static tip line
-  // underneath just flickers — upstream shows nothing there while tools run.
-  const suppressTipRow = hasActiveTools && !showExpandedTodos;
-
   // Budget text (ant-only) — shown above the tip line
   let budgetText: string | null = null;
   if (feature('TOKEN_BUDGET')) {
@@ -284,12 +279,12 @@ function SpinnerWithVerbInner({
     }
   }
   return <Box flexDirection="column" width="100%" alignItems="flex-start">
-      <SpinnerAnimationRow mode={mode} reducedMotion={reducedMotion} hasActiveTools={hasActiveTools} responseLengthRef={responseLengthRef} message={message} messageColor={messageColor} shimmerColor={shimmerColor} overrideColor={overrideColor} loadingStartTimeRef={loadingStartTimeRef} totalPausedMsRef={totalPausedMsRef} pauseStartTimeRef={pauseStartTimeRef} spinnerSuffix={spinnerSuffix} verbose={verbose} columns={columns} hasRunningTeammates={hasRunningTeammates} teammateTokens={teammateTokens} foregroundedTeammate={foregroundedTeammate} leaderIsIdle={leaderIsIdle} thinkingStatus={thinkingStatus} effortSuffix={effortSuffix} />
+      <SpinnerAnimationRow mode={mode} reducedMotion={reducedMotion} hasActiveTools={hasActiveTools} responseLengthRef={responseLengthRef} message={message} messageColor={messageColor} shimmerColor={shimmerColor} overrideColor={overrideColor} loadingStartTimeRef={loadingStartTimeRef} totalPausedMsRef={totalPausedMsRef} pauseStartTimeRef={pauseStartTimeRef} spinnerSuffix={spinnerSuffix} verbose={verbose} columns={columns} hasRunningTeammates={hasRunningTeammates} teammateTokens={teammateTokens} foregroundedTeammate={foregroundedTeammate} leaderIsIdle={leaderIsIdle} thinkingStatus={thinkingStatus} effortSuffix={effortSuffix} showToolCallTimer={getFeatureValue_CACHED_MAY_BE_STALE('tengu_shining_fractals', false)} />
       {showSpinnerTree && hasRunningTeammates ? <TeammateSpinnerTree selectedIndex={selectedIPAgentIndex} isInSelectionMode={viewSelectionMode === 'selecting-agent'} allIdle={allIdle} leaderVerb={leaderIsIdle ? undefined : leaderVerb} leaderIdleText={leaderIsIdle ? 'Idle' : undefined} leaderTokenCount={leaderTokenCount} /> : showExpandedTodos && tasksV2 && tasksV2.length > 0 ? <Box width="100%" flexDirection="column">
           <MessageResponse>
             <TaskListV2 tasks={tasksV2} />
           </MessageResponse>
-        </Box> : nextTask || effectiveTip || budgetText ? suppressTipRow ? null :
+        </Box> : nextTask || effectiveTip || budgetText ?
     // IMPORTANT: we need this width="100%" to avoid an Ink bug where the
     // tip gets duplicated over and over while the spinner is running if
     // the terminal is very small. TODO: fix this in Ink.
