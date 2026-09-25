@@ -4,7 +4,7 @@ import figures from 'figures';
 import * as React from 'react';
 import { useMemo, useRef } from 'react';
 import { stringWidth } from '../../ink/stringWidth.js';
-import { Box, Text, useAnimationFrame } from '../../ink.js';
+import { Box, Text, useAnimationFrame, useResolvedTheme } from '../../ink.js';
 import type { InProcessTeammateTaskState } from '../../tasks/InProcessTeammateTask/types.js';
 import { formatDuration, formatNumber } from '../../utils/format.js';
 import { toInkColor } from '../../utils/ink.js';
@@ -14,7 +14,7 @@ import { GlimmerMessage } from './GlimmerMessage.js';
 import { SpinnerGlyph } from './SpinnerGlyph.js';
 import type { SpinnerMode } from './types.js';
 import { useStalledAnimation } from './useStalledAnimation.js';
-import { interpolateColor, toRGBColor } from './utils.js';
+import { interpolateColor, parseRGB, toRGBColor } from './utils.js';
 const SEP_WIDTH = stringWidth(' · ');
 const THINKING_BARE_WIDTH = stringWidth('thinking');
 const SHOW_TOKENS_AFTER_MS = 30_000;
@@ -34,6 +34,32 @@ const THINKING_INACTIVE_SHIMMER = {
 };
 const THINKING_DELAY_MS = 3000;
 const THINKING_GLOW_PERIOD_S = 2;
+// Thresholds match upstream CC 2.1.283 Lo(): 10s still, 20s more,
+// 30s some more, 45s deep in thought.
+function progressiveThinkingText(thinkingMs: number): string {
+  if (thinkingMs >= 45_000) return 'deep in thought';
+  if (thinkingMs >= 30_000) return 'thinking some more';
+  if (thinkingMs >= 20_000) return 'thinking more';
+  if (thinkingMs >= 10_000) return 'still thinking';
+  return 'thinking';
+}
+const TOOL_TIMER_MIN_MS = 2000;
+
+// Tool-call timing window (upstream gn/kn): open when tools start, close when
+// they end; cleared if thinking resumes. Shows `running tool for Ns` while
+// open (>=2s) and `ran tool for Ns` briefly after close.
+type ToolWindow = {
+  start: number | null;
+  end: number | null;
+  thinkingBurstStart: number | null;
+  wasThinking: boolean;
+};
+const INITIAL_TOOL_WINDOW: ToolWindow = {
+  start: null,
+  end: null,
+  thinkingBurstStart: null,
+  wasThinking: false
+};
 export type SpinnerAnimationRowProps = {
   // Animation inputs
   mode: SpinnerMode;
@@ -101,7 +127,10 @@ export function SpinnerAnimationRow({
   thinkingStatus,
   effortSuffix
 }: SpinnerAnimationRowProps): React.ReactNode {
-  const [viewportRef, time] = useAnimationFrame(reducedMotion ? null : 50);
+  // Upstream runs requesting on a 100ms clock (`glimmerParked`): the glimmer
+  // still moves every 50ms of animation time, but the frame loop ticks half
+  // as often while waiting on the API.
+  const [viewportRef, time] = useAnimationFrame(reducedMotion ? null : mode === 'requesting' ? 100 : 50);
 
   // === Elapsed time (wall-clock, derived from refs each frame) ===
   const now = Date.now();
@@ -169,30 +198,100 @@ export function SpinnerAnimationRow({
   const tokensText = hasRunningTeammates ? `${tokenCount} tokens` : `${figures.arrowDown} ${tokenCount} tokens`;
   const tokensWidth = stringWidth(tokensText);
 
+  // === Tool-call window + thinking burst tracking (upstream gn/kn) ===
+  const toolWindowRef = useRef<ToolWindow>(INITIAL_TOOL_WINDOW);
+  {
+    const w = toolWindowRef.current;
+    const isThinking = mode === 'thinking';
+    if (hasActiveTools) {
+      if (w.start === null || w.end !== null) w.start = now;
+      w.end = null;
+    } else if (w.start !== null && w.end === null) {
+      w.end = now;
+    }
+    if (!hasActiveTools && thinkingStatus !== null) {
+      w.start = null;
+      w.end = null;
+    }
+    if (isThinking) {
+      if (!w.wasThinking) w.thinkingBurstStart = now;
+    } else {
+      w.thinkingBurstStart = null;
+    }
+    w.wasThinking = isThinking;
+  }
+  const toolWindow = toolWindowRef.current;
+
+  // Thinking intensity (upstream Tn): ramps 0→1 over 10s→20s of a thinking
+  // burst; suppressed while tools run. Smoothed like stalledIntensity.
+  const rawThinkingIntensity = hasActiveTools || mode !== 'thinking' || toolWindow.thinkingBurstStart === null ? 0 : Math.min(Math.max((now - toolWindow.thinkingBurstStart - 10_000) / 10_000, 0), 1);
+  const thinkingIntensityRef = useRef(0);
+  const thinkingSmoothRef = useRef(time);
+  if (!reducedMotion && (rawThinkingIntensity > 0 || thinkingIntensityRef.current > 0)) {
+    const dt = time - thinkingSmoothRef.current;
+    if (dt >= 50) {
+      const steps = Math.floor(dt / 50);
+      let current = thinkingIntensityRef.current;
+      for (let i = 0; i < steps; i++) {
+        const diff = rawThinkingIntensity - current;
+        if (Math.abs(diff) < 0.01) {
+          current = rawThinkingIntensity;
+          break;
+        }
+        current += diff * 0.1;
+      }
+      thinkingIntensityRef.current = current;
+      thinkingSmoothRef.current = time;
+    }
+  } else {
+    thinkingIntensityRef.current = rawThinkingIntensity;
+    thinkingSmoothRef.current = time;
+  }
+  const thinkingIntensity = reducedMotion ? rawThinkingIntensity : thinkingIntensityRef.current;
+
+  // Status-line kind (upstream kn): tool timer > thinking > thought-for.
+  type StatusText =
+    | { kind: 'tool-running'; toolMs: number }
+    | { kind: 'tool-done'; toolMs: number }
+    | { kind: 'thinking'; thinkingMs: number }
+    | { kind: 'thought-for'; thoughtMs: number }
+    | { kind: 'none' };
+  let statusKind: StatusText;
+  if (hasActiveTools && toolWindow.start !== null && now - toolWindow.start >= TOOL_TIMER_MIN_MS) {
+    statusKind = { kind: 'tool-running', toolMs: now - toolWindow.start };
+  } else if (!hasActiveTools && thinkingStatus === null && toolWindow.start !== null && toolWindow.end !== null && toolWindow.end - toolWindow.start >= TOOL_TIMER_MIN_MS) {
+    statusKind = { kind: 'tool-done', toolMs: toolWindow.end - toolWindow.start };
+  } else if (thinkingStatus === 'thinking' && !hasActiveTools) {
+    statusKind = { kind: 'thinking', thinkingMs: toolWindow.thinkingBurstStart !== null ? now - toolWindow.thinkingBurstStart : 0 };
+  } else if (typeof thinkingStatus === 'number') {
+    statusKind = { kind: 'thought-for', thoughtMs: thinkingStatus };
+  } else {
+    statusKind = { kind: 'none' };
+  }
+
   // === Thinking text (may shrink to fit) ===
+  const progressiveBase = statusKind.kind === 'thinking' ? progressiveThinkingText(statusKind.thinkingMs) : 'thinking';
   let thinkingText =
-    thinkingStatus === 'thinking'
-      ? effectiveElapsedMs >= 60_000
-        ? `almost done thinking${effortSuffix}`
-        : effectiveElapsedMs >= 30_000
-          ? `thinking more${effortSuffix}`
-          : effectiveElapsedMs >= 10_000
-            ? `still thinking${effortSuffix}`
-            : `thinking${effortSuffix}`
-      : typeof thinkingStatus === 'number'
-        ? `thought for ${Math.max(1, Math.round(thinkingStatus / 1000))}s`
-        : null
+    statusKind.kind === 'tool-running'
+      ? `running tool for ${formatDuration(statusKind.toolMs)}`
+      : statusKind.kind === 'tool-done'
+        ? `ran tool for ${formatDuration(statusKind.toolMs)}`
+        : statusKind.kind === 'thinking'
+          ? `${progressiveBase}${effortSuffix}`
+          : statusKind.kind === 'thought-for'
+            ? `thought for ${Math.max(1, Math.round(statusKind.thoughtMs / 1000))}s`
+            : null
 
   let thinkingWidthValue = thinkingText ? stringWidth(thinkingText) : 0;
 
   // === Progressive width gating ===
   const messageWidth = glimmerMessageWidth + 2;
   const sep = SEP_WIDTH;
-  const wantsThinking = thinkingStatus !== null;
+  const wantsThinking = statusKind.kind !== 'none';
   const wantsTimerAndTokens = verbose || hasRunningTeammates || effectiveElapsedMs > SHOW_TOKENS_AFTER_MS;
   const availableSpace = columns - messageWidth - 5;
   let showThinking = wantsThinking && availableSpace > thinkingWidthValue;
-  if (!showThinking && wantsThinking && thinkingStatus === 'thinking' && effortSuffix) {
+  if (!showThinking && wantsThinking && statusKind.kind === 'thinking' && (effortSuffix || progressiveBase !== 'thinking')) {
     if (availableSpace > THINKING_BARE_WIDTH) {
       thinkingText = 'thinking';
       thinkingWidthValue = THINKING_BARE_WIDTH;
@@ -203,14 +302,22 @@ export function SpinnerAnimationRow({
   const showTimer = wantsTimerAndTokens && availableSpace > usedAfterThinking + timerWidth;
   const usedAfterTimer = usedAfterThinking + (showTimer ? timerWidth + sep : 0);
   const showTokens = wantsTimerAndTokens && totalTokens > 0 && availableSpace > usedAfterTimer + tokensWidth;
-  const thinkingOnly = showThinking && thinkingStatus === 'thinking' && !spinnerSuffix && !showTimer && !showTokens && true;
+  const thinkingOnly = showThinking && statusKind.kind === 'thinking' && !spinnerSuffix && !showTimer && !showTokens && true;
 
   // === Thinking shimmer color (formerly ThinkingShimmerText's own timer) ===
   // Same sine-wave opacity, but derived from our shared `time` instead of a
-  // second useAnimationFrame(50) subscription.
+  // second useAnimationFrame(50) subscription. Blended toward the theme's
+  // warning color as thinkingIntensity ramps up (upstream Do).
   const thinkingElapsedSec = (time - THINKING_DELAY_MS) / 1000;
   const thinkingOpacity = time < THINKING_DELAY_MS ? 0 : (Math.sin(thinkingElapsedSec * Math.PI * 2 / THINKING_GLOW_PERIOD_S) + 1) / 2;
-  const thinkingShimmerColor = toRGBColor(interpolateColor(THINKING_INACTIVE, THINKING_INACTIVE_SHIMMER, thinkingOpacity));
+  const theme = useResolvedTheme();
+  const warningRGB = thinkingIntensity > 0 && theme.warning ? parseRGB(theme.warning) : null;
+  let thinkingColor = interpolateColor(THINKING_INACTIVE, THINKING_INACTIVE_SHIMMER, thinkingOpacity);
+  if (warningRGB && thinkingIntensity > 0) {
+    thinkingColor = interpolateColor(thinkingColor, warningRGB, thinkingIntensity);
+  }
+  const thinkingShimmerColor = toRGBColor(thinkingColor);
+  const thinkingTextColor = !warningRGB && thinkingIntensity > 0.5 ? 'warning' : thinkingShimmerColor;
 
   // === Build status parts ===
   const parts = [...(spinnerSuffix ? [<Text dimColor key="suffix">
@@ -220,7 +327,7 @@ export function SpinnerAnimationRow({
           </Text>] : []), ...(showTokens ? [<Box flexDirection="row" key="tokens">
             {!hasRunningTeammates && <SpinnerModeGlyph mode={mode} />}
             <Text dimColor>{tokenCount} tokens</Text>
-          </Box>] : []), ...(showThinking && thinkingText ? [thinkingStatus === 'thinking' && !reducedMotion ? <Text key="thinking" color={thinkingShimmerColor}>
+          </Box>] : []), ...(showThinking && thinkingText ? [statusKind.kind === 'thinking' && !reducedMotion ? <Text key="thinking" color={thinkingTextColor}>
               {thinkingOnly ? `(${thinkingText})` : thinkingText}
             </Text> : <Text dimColor key="thinking">
               {thinkingText}
@@ -282,10 +389,7 @@ export function _getThinkingTextForTesting(
   effortSuffix: string,
 ): string | null {
   if (thinkingStatus === 'thinking') {
-    if (effectiveElapsedMs >= 60_000) return `almost done thinking${effortSuffix}`
-    if (effectiveElapsedMs >= 30_000) return `thinking more${effortSuffix}`
-    if (effectiveElapsedMs >= 10_000) return `still thinking${effortSuffix}`
-    return `thinking${effortSuffix}`
+    return `${progressiveThinkingText(effectiveElapsedMs)}${effortSuffix}`
   }
   if (typeof thinkingStatus === 'number') {
     return `thought for ${Math.max(1, Math.round(thinkingStatus / 1000))}s`

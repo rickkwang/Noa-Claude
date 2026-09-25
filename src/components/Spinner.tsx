@@ -259,6 +259,11 @@ function SpinnerWithVerbInner({
   const showBtwTip = tipsEnabled && elapsedSnapshot > 30_000 && !getGlobalConfig().btwUseCount;
   const effectiveTip = contextTipsActive ? undefined : showClearTip && !nextTask ? 'Use /clear to start fresh when switching topics and free up context' : showBtwTip && !nextTask ? "Use /btw to ask a quick side question without interrupting Claude's current work" : spinnerTip;
 
+  // Tool activity narrates itself in the transcript above the spinner (and
+  // now in the status line via `running tool for Ns`), so a static tip line
+  // underneath just flickers — upstream shows nothing there while tools run.
+  const suppressTipRow = hasActiveTools && !showExpandedTodos;
+
   // Budget text (ant-only) — shown above the tip line
   let budgetText: string | null = null;
   if (feature('TOKEN_BUDGET')) {
@@ -284,7 +289,7 @@ function SpinnerWithVerbInner({
           <MessageResponse>
             <TaskListV2 tasks={tasksV2} />
           </MessageResponse>
-        </Box> : nextTask || effectiveTip || budgetText ?
+        </Box> : nextTask || effectiveTip || budgetText ? suppressTipRow ? null :
     // IMPORTANT: we need this width="100%" to avoid an Ink bug where the
     // tip gets duplicated over and over while the spinner is running if
     // the terminal is very small. TODO: fix this in Ink.
