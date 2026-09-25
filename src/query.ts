@@ -108,6 +108,7 @@ import { ESCALATED_MAX_TOKENS } from './utils/context.js'
 import { getStopHookBlockCap } from './utils/envUtils.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from './services/analytics/growthbook.js'
 import { SLEEP_TOOL_NAME } from './tools/SleepTool/prompt.js'
+import { SYNTHETIC_OUTPUT_TOOL_NAME } from './tools/SyntheticOutputTool/SyntheticOutputTool.js'
 import { executePostSamplingHooks } from './utils/hooks/postSamplingHooks.js'
 import { executeStopFailureHooks } from './utils/hooks.js'
 import type { QuerySource } from './constants/querySource.js'
@@ -239,6 +240,33 @@ function hasAssistantOutputContent(message: AssistantMessage): boolean {
         return true
     }
   })
+}
+
+// Once StructuredOutput has delivered the result (SDK --json-schema), an
+// empty closing response is the expected end of the turn, not a failure.
+function calledStructuredOutputSinceLastPrompt(messages: Message[]): boolean {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]!
+    if (msg.type === 'user') {
+      const content = msg.message.content
+      if (
+        msg.isMeta ||
+        (Array.isArray(content) && content.some(b => b.type === 'tool_result'))
+      ) {
+        continue
+      }
+      return false
+    }
+    if (
+      msg.type === 'assistant' &&
+      msg.message.content.some(
+        b => b.type === 'tool_use' && b.name === SYNTHETIC_OUTPUT_TOOL_NAME,
+      )
+    ) {
+      return true
+    }
+  }
+  return false
 }
 
 function isEmptyAssistantTurn(assistantMessages: AssistantMessage[]): boolean {
@@ -1481,7 +1509,10 @@ async function* queryLoop(
         return { reason: 'completed' }
       }
 
-      if (isEmptyAssistantTurn(assistantMessages)) {
+      if (
+        isEmptyAssistantTurn(assistantMessages) &&
+        !calledStructuredOutputSinceLastPrompt(messagesForQuery)
+      ) {
         if (
           state.transition?.reason !== 'empty_response_retry' &&
           querySource !== 'compact' &&

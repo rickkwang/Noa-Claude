@@ -88,9 +88,10 @@ async function drain(params: {
   toolUseContext?: ToolUseContext
   maxTurns?: number
   fallbackModel?: string
+  messages?: Message[]
 }): Promise<{ events: Message[]; terminal: Terminal }> {
   const gen = query({
-    messages: [createUserMessage({ content: 'start' })],
+    messages: params.messages ?? [createUserMessage({ content: 'start' })],
     systemPrompt: asSystemPrompt([]),
     userContext: {},
     systemContext: {},
@@ -225,6 +226,30 @@ describe('query loop recovery', () => {
     expect(JSON.stringify(callMessages[1]!.at(-1))).toContain(
       'had no visible output',
     )
+    expect(events.some(e => e.type === 'assistant' && e.isApiErrorMessage)).toBe(false)
+    expect(terminal).toEqual({ reason: 'completed' })
+  }, 5000)
+
+  test('empty assistant turn after StructuredOutput: ends cleanly, no nudge or error', async () => {
+    const toolUse = createAssistantMessage({
+      content: [
+        { type: 'tool_use', id: 'so1', name: 'StructuredOutput', input: { ok: true } },
+      ],
+    })
+    const toolResult = createUserMessage({
+      content: [{ type: 'tool_result', tool_use_id: 'so1', content: 'ok' }],
+    })
+    let calls = 0
+    const deps = makeDeps(async function* () {
+      calls++
+    })
+
+    const { events, terminal } = await drain({
+      deps,
+      messages: [createUserMessage({ content: 'start' }), toolUse, toolResult],
+    })
+
+    expect(calls).toBe(1)
     expect(events.some(e => e.type === 'assistant' && e.isApiErrorMessage)).toBe(false)
     expect(terminal).toEqual({ reason: 'completed' })
   }, 5000)
