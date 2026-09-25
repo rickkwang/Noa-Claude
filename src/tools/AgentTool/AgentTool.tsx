@@ -48,7 +48,7 @@ import { BackgroundHint } from '../BashTool/UI.js';
 import { FILE_READ_TOOL_NAME } from '../FileReadTool/prompt.js';
 import { spawnTeammate } from '../shared/spawnMultiAgent.js';
 import { setAgentColor } from './agentColorManager.js';
-import { agentToolResultSchema, classifyHandoffIfNeeded, emitTaskProgress, finalizeAgentTool, getLastToolUseName, runAsyncAgentLifecycle } from './agentToolUtils.js';
+import { agentToolResultSchema, classifyHandoffIfNeeded, emitTaskProgress, finalizeAgentTool, findAgentsByType, getLastToolUseName, runAsyncAgentLifecycle } from './agentToolUtils.js';
 import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js';
 import { AGENT_TOOL_NAME, assignAgentPersonalityName, LEGACY_AGENT_TOOL_NAME, ONE_SHOT_BUILTIN_AGENT_TYPES, releaseAgentPersonalityName, shouldUseAgentPersonalityName } from './constants.js';
 import { buildForkedMessages, buildWorktreeNotice, FORK_AGENT, isForkSubagentEnabled, isInForkChild } from './forkSubagent.js';
@@ -60,6 +60,7 @@ import { renderGroupedAgentToolUse, renderToolResultMessage, renderToolUseErrorM
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 const proactiveModule = feature('PROACTIVE') || feature('KAIROS') ? require('../../proactive/index.js') as typeof import('../../proactive/index.js') : null;
+const autoModeStateModule = feature('AUTO_MODE') ? require('../../utils/permissions/autoModeState.js') as typeof import('../../utils/permissions/autoModeState.js') : null;
 /* eslint-enable @typescript-eslint/no-require-imports */
 
 // Progress display constants (for showing background hint)
@@ -357,13 +358,18 @@ export const AgentTool = buildTool({
       const agents = filterDeniedAgents(
       // When allowedAgentTypes is set (from Agent(x,y) tool spec), restrict to those types
       allowedAgentTypes ? allAgents.filter(a => allowedAgentTypes.includes(a.agentType)) : allAgents, appState.toolPermissionContext, AGENT_TOOL_NAME);
-      const found = agents.find(agent => agent.agentType === effectiveType);
+      const matches = findAgentsByType(agents, effectiveType);
+      if (matches.length > 1) {
+        throw new Error(`Agent type '${effectiveType}' is ambiguous — matches ${matches.map(a => a.agentType).join(', ')}. Use the exact name.`);
+      }
+      const found = matches[0];
       if (!found) {
         // Check if the agent exists but is denied by permission rules
-        const agentExistsButDenied = allAgents.find(agent => agent.agentType === effectiveType);
+        const agentExistsButDenied = findAgentsByType(allAgents, effectiveType)[0];
         if (agentExistsButDenied) {
-          const denyRule = getDenyRuleForAgent(appState.toolPermissionContext, AGENT_TOOL_NAME, effectiveType);
-          throw new Error(`Agent type '${effectiveType}' has been denied by permission rule '${AGENT_TOOL_NAME}(${effectiveType})' from ${denyRule?.source ?? 'settings'}.`);
+          const deniedType = agentExistsButDenied.agentType;
+          const denyRule = getDenyRuleForAgent(appState.toolPermissionContext, AGENT_TOOL_NAME, deniedType);
+          throw new Error(`Agent type '${deniedType}' has been denied by permission rule '${AGENT_TOOL_NAME}(${deniedType})' from ${denyRule?.source ?? 'settings'}.`);
         }
         throw new Error(`Agent type '${effectiveType}' not found. Available agents: ${agents.map(a => a.agentType).join(', ')}`);
       }
@@ -1235,7 +1241,15 @@ export const AgentTool = buildTool({
           // This allows the parent agent to see partial progress even after an error
           logForDebugging(`Sync agent recovering from error with ${agentMessages.length} messages`);
         }
-        const agentResult = finalizeAgentTool(agentMessages, syncAgentId, metadata);
+        let agentResult: ReturnType<typeof finalizeAgentTool>;
+        try {
+          agentResult = finalizeAgentTool(agentMessages, syncAgentId, metadata);
+        } catch (error) {
+          // The worktree may hold the agent's edits; a thrown result would
+          // otherwise drop the only pointer to it.
+          if (!worktreeResult.worktreePath) throw error;
+          throw new Error(`${errorMessage(error)} Changes kept in worktree ${worktreeResult.worktreePath}.`);
+        }
         if (syncAgentError) {
           agentResult.content = [{
             type: 'text',
@@ -1313,10 +1327,10 @@ export const AgentTool = buildTool({
   async checkPermissions(input, context): Promise<PermissionResult> {
     const appState = context.getAppState();
 
-    // Only route through auto mode classifier when in auto mode
-    // In all other modes, auto-approve sub-agent generation
-    // Note: "external" === 'ant' guard enables dead code elimination for external builds
-    if ("external" === 'ant' && appState.toolPermissionContext.mode === 'auto') {
+    // Auto mode (including plan with auto active) sends the spawn to the
+    // classifier; other modes auto-approve.
+    const mode = appState.toolPermissionContext.mode;
+    if (feature('AUTO_MODE') && (mode === 'auto' || mode === 'plan' && (autoModeStateModule?.isAutoModeActive() ?? false))) {
       return {
         behavior: 'passthrough',
         message: 'Agent tool requires permission to spawn sub-agents.'
@@ -1358,8 +1372,8 @@ The agent is now running and will receive instructions via mailbox.`
     }
     if (data.status === 'async_launched') {
       const agentNameLine = data.personalityName ? `\nagentName: ${data.personalityName}` : '';
-      const prefix = `Async agent launched successfully.\nagentId: ${data.agentId} (internal ID - do not mention to user. Use SendMessage with to: '${data.agentId}' to continue this agent.)${agentNameLine}\nThe agent is working in the background. You will be notified automatically when it completes.`;
-      const instructions = data.canReadOutputFile ? `Do not duplicate this agent's work — avoid working with the same files or topics it is using. Work on non-overlapping tasks, or briefly tell the user what you launched and end your response.\noutput_file: ${data.outputFile}\nIf asked, you can check progress before completion by using ${FILE_READ_TOOL_NAME} or ${BASH_TOOL_NAME} tail on the output file.` : `Briefly tell the user what you launched and end your response. Do not generate any other text — agent results will arrive in a subsequent message.`;
+      const prefix = `Async agent launched successfully.\nagentId: ${data.agentId} (internal ID - do not mention to user. Use SendMessage with to: '${data.agentId}' to continue this agent.)${agentNameLine}\nThe agent is working in the background. You will be notified automatically when it completes. You know nothing about its results until that notification arrives — do not report, assume, or predict them.`;
+      const instructions = data.canReadOutputFile ? `Do not duplicate this agent's work — avoid working with the same files or topics it is using. Work on non-overlapping tasks, or briefly tell the user what you launched and end your response.\noutput_file: ${data.outputFile}\nDo NOT ${FILE_READ_TOOL_NAME} or tail this file via ${BASH_TOOL_NAME} — it is the full subagent JSONL transcript and reading it will overflow your context. If the user asks for progress, say the agent is still running; you'll get a completion notification.` : `Briefly tell the user what you launched and end your response. Do not generate any other text — agent results will arrive in a subsequent message. If the user asks for progress, say the agent is still running.`;
       const text = `${prefix}\n${instructions}`;
       return {
         tool_use_id: toolUseID,

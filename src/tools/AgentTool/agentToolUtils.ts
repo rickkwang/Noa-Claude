@@ -39,7 +39,10 @@ import {
   updateProgressFromMessage,
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { asAgentId } from '../../types/ids.js'
-import type { Message as MessageType } from '../../types/message.js'
+import type {
+  AssistantMessage,
+  Message as MessageType,
+} from '../../types/message.js'
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { isInProtectedNamespace } from '../../utils/envUtils.js'
@@ -62,7 +65,12 @@ import { emitTaskProgress as emitTaskProgressEvent } from '../../utils/task/sdkP
 import { isInProcessTeammate } from '../../utils/teammateContext.js'
 import { getTokenCountFromUsage } from '../../utils/tokens.js'
 import { EXIT_PLAN_MODE_V2_TOOL_NAME } from '../ExitPlanModeTool/constants.js'
-import { AGENT_TOOL_NAME, LEGACY_AGENT_TOOL_NAME } from './constants.js'
+import { SEND_MESSAGE_TOOL_NAME } from '../SendMessageTool/constants.js'
+import {
+  AGENT_TOOL_NAME,
+  LEGACY_AGENT_TOOL_NAME,
+  ONE_SHOT_BUILTIN_AGENT_TYPES,
+} from './constants.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
 export type ResolvedAgentTools = {
   hasWildcard: boolean
@@ -265,6 +273,26 @@ export const agentToolResultSchema = lazySchema(() =>
 
 export type AgentToolResult = z.input<ReturnType<typeof agentToolResultSchema>>
 
+/** Case- and separator-insensitive, so `explore` or `general_purpose` still
+ * resolves to the agent the model meant. */
+function normalizeAgentType(agentType: string): string {
+  return agentType
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\p{White_Space}\p{Pd}_]+/gu, '')
+}
+
+/** An exact match wins; otherwise every agent whose normalized name matches. */
+export function findAgentsByType<T extends { agentType: string }>(
+  agents: T[],
+  requested: string,
+): T[] {
+  const exact = agents.find(a => a.agentType === requested)
+  if (exact) return [exact]
+  const key = normalizeAgentType(requested)
+  return agents.filter(a => normalizeAgentType(a.agentType) === key)
+}
+
 export function countToolUses(messages: MessageType[]): number {
   let count = 0
   for (const m of messages) {
@@ -277,6 +305,30 @@ export function countToolUses(messages: MessageType[]): number {
     }
   }
   return count
+}
+
+// API error kinds that cut a run off for capacity reasons rather than because
+// the request itself was bad — only these salvage the agent's partial output.
+const TRANSIENT_API_ERROR_KINDS: ReadonlySet<string> = new Set([
+  'rate_limit',
+  'server_error',
+])
+
+function describeApiError(message: AssistantMessage): string {
+  const text = extractTextContent(message.message.content, '\n')
+  return message.error ? `${text} (error type ${message.error})` : text
+}
+
+/** The turn cap the run stopped at, if its last event was hitting it. */
+function getMaxTurnsReached(messages: MessageType[]): number | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!
+    if (m.type === 'assistant') return undefined
+    if (m.type === 'attachment' && m.attachment.type === 'max_turns_reached') {
+      return m.attachment.maxTurns
+    }
+  }
+  return undefined
 }
 
 export function finalizeAgentTool(
@@ -304,9 +356,30 @@ export function finalizeAgentTool(
     promptFallback,
   } = metadata
 
-  const lastAssistantMessage = getLastAssistantMessage(agentMessages)
+  let lastAssistantMessage = getLastAssistantMessage(agentMessages)
   if (lastAssistantMessage === undefined) {
     throw new Error('No assistant messages found')
+  }
+  // query() surfaces a terminal API error as an assistant message and returns
+  // normally, so without this check the error text would be handed back as
+  // the agent's finished report. A transient cut-off with earlier text keeps
+  // that text, marked partial; anything else fails the run.
+  let reportMessages = agentMessages
+  let apiErrorNote: string | undefined
+  if (lastAssistantMessage.isApiErrorMessage) {
+    const errorDescription = `Agent terminated early due to an API error: ${describeApiError(lastAssistantMessage)}`
+    const withoutErrors = agentMessages.filter(
+      m => m.type !== 'assistant' || !m.isApiErrorMessage,
+    )
+    if (
+      !TRANSIENT_API_ERROR_KINDS.has(lastAssistantMessage.error ?? '') ||
+      extractPartialResult(withoutErrors) === undefined
+    ) {
+      throw new Error(errorDescription)
+    }
+    reportMessages = withoutErrors
+    lastAssistantMessage = getLastAssistantMessage(withoutErrors)!
+    apiErrorNote = `${errorDescription}\n\nEverything below is PARTIAL output recovered from the agent before it was cut off. The agent did NOT finish its task — treat these results as incomplete.`
   }
   // Extract text content from the agent's response. If the final assistant
   // message is a pure tool_use block (loop exited mid-turn), fall back to
@@ -315,8 +388,8 @@ export function finalizeAgentTool(
     _ => _.type === 'text',
   )
   if (content.length === 0) {
-    for (let i = agentMessages.length - 1; i >= 0; i--) {
-      const m = agentMessages[i]!
+    for (let i = reportMessages.length - 1; i >= 0; i--) {
+      const m = reportMessages[i]!
       if (m.type !== 'assistant') continue
       const textBlocks = m.message.content.filter(_ => _.type === 'text')
       if (textBlocks.length > 0) {
@@ -357,6 +430,28 @@ export function finalizeAgentTool(
 
   if (promptFallback) {
     content = [{ type: 'text', text: '[WARN] This agent\'s custom system prompt failed to build; it ran with a generic fallback prompt and may not have followed its specialization.' }, ...content]
+  }
+
+  const maxTurns = getMaxTurnsReached(agentMessages)
+  if (maxTurns !== undefined) {
+    const progress =
+      content.length > 0
+        ? 'The text below is PARTIAL output; treat it as incomplete.'
+        : 'It was still calling tools and had produced no report.'
+    const resumeHint = ONE_SHOT_BUILTIN_AGENT_TYPES.has(agentType)
+      ? ''
+      : ` Send the agent a message (${SEND_MESSAGE_TOOL_NAME}) to let it continue from where it stopped.`
+    content = [
+      {
+        type: 'text',
+        text: `NOTE: this agent stopped at its ${maxTurns}-turn limit before finishing. ${progress}${resumeHint}`,
+      },
+      ...content,
+    ]
+  }
+
+  if (apiErrorNote) {
+    content = [{ type: 'text', text: apiErrorNote }, ...content]
   }
 
   return {

@@ -857,6 +857,9 @@ export async function* runAgent({
           logForDebugging(
             `[Agent: ${agentDefinition.agentType}] Reached max turns limit (${message.attachment.maxTurns})`,
           )
+          // Forward the signal so finalizeAgentTool can mark the report as
+          // partial; without it the parent reads a cut-off run as finished.
+          yield message
           break
         }
         yield message
