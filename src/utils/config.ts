@@ -367,9 +367,6 @@ export type GlobalConfig = {
   voiceLangHintLastLanguage?: string // Resolved STT language code when the hint was last shown — reset count when it changes
   voiceFooterHintSeenCount?: number // Number of sessions the "hold X to speak" footer hint has been shown
 
-  // Opus 1M merge notice tracking
-  opus1mMergeNoticeSeenCount?: number // Number of times the opus-1m-merge notice has been shown
-
   // Experiment enrollment notice tracking (keyed by experiment id)
   experimentNoticesSeenCount?: Record<string, number>
 
@@ -872,10 +869,10 @@ export function saveGlobalConfig(
         if (config === current) {
           return current
         }
-        written = {
+        written = removeRetiredGlobalConfigKeys({
           ...config,
           projects: removeProjectHistory(current.projects),
-        }
+        })
         return written
       },
     )
@@ -910,10 +907,10 @@ export function saveGlobalConfig(
     if (config === currentConfig) {
       return
     }
-    written = {
+    written = removeRetiredGlobalConfigKeys({
       ...config,
       projects: removeProjectHistory(currentConfig.projects),
-    }
+    })
     saveConfig(getGlobalClaudeFile(), written, DEFAULT_GLOBAL_CONFIG)
     writeThroughGlobalConfigCache(written)
   }
@@ -1040,6 +1037,36 @@ function removeProjectHistory(
   }
 
   return needsCleaning ? cleanedProjects : projects
+}
+
+// Keys for retired features, removed from the type but possibly present in
+// old configs. voiceNoticeSeenCount and speculationEnabled are still read
+// here, so unlike upstream they are not on this list.
+const RETIRED_GLOBAL_CONFIG_KEYS = [
+  'opus1mMergeNoticeSeenCount',
+  'opus47LaunchSeenCount',
+  'opus48LaunchSeenCount',
+  'fleetViewPeakConcurrent',
+  'pluginUsageLspGraceApplied',
+  'autoModeOptInDismissed',
+  'prideFlag',
+  'routineFiredWatermark',
+] as const
+
+/**
+ * Drops retired keys so they leave the file on the next write
+ * @internal
+ */
+function removeRetiredGlobalConfigKeys(config: GlobalConfig): GlobalConfig {
+  const legacy = config as GlobalConfig & Record<string, unknown>
+  if (RETIRED_GLOBAL_CONFIG_KEYS.every(key => legacy[key] === undefined)) {
+    return config
+  }
+  const cleaned = { ...legacy }
+  for (const key of RETIRED_GLOBAL_CONFIG_KEYS) {
+    delete cleaned[key]
+  }
+  return cleaned
 }
 
 // fs.watchFile poll interval for detecting writes from other instances (ms)
@@ -1703,13 +1730,13 @@ export function saveCurrentProjectConfig(
         if (newProjectConfig === currentProjectConfig) {
           return current
         }
-        written = {
+        written = removeRetiredGlobalConfigKeys({
           ...current,
           projects: {
             ...current.projects,
             [absolutePath]: newProjectConfig,
           },
-        }
+        })
         return written
       },
     )
@@ -1739,13 +1766,13 @@ export function saveCurrentProjectConfig(
     if (newProjectConfig === currentProjectConfig) {
       return
     }
-    written = {
+    written = removeRetiredGlobalConfigKeys({
       ...config,
       projects: {
         ...config.projects,
         [absolutePath]: newProjectConfig,
       },
-    }
+    })
     saveConfig(getGlobalClaudeFile(), written, DEFAULT_GLOBAL_CONFIG)
     writeThroughGlobalConfigCache(written)
   }
@@ -1866,6 +1893,8 @@ export function getUserClaudeRulesDir(): string {
 // Exported for testing only
 export const _getConfigForTesting = getConfig
 export const _wouldLoseAuthStateForTesting = wouldLoseAuthState
+export const _removeRetiredGlobalConfigKeysForTesting =
+  removeRetiredGlobalConfigKeys
 export function _setGlobalConfigCacheForTesting(
   config: GlobalConfig | null,
 ): void {

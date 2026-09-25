@@ -310,7 +310,6 @@
     "src/components/LogoV2/FeedColumn.tsx",
     "src/components/LogoV2/GuestPassesUpsell.tsx",
     "src/components/LogoV2/LogoV2.tsx",
-    "src/components/LogoV2/Opus1mMergeNotice.tsx",
     "src/components/LogoV2/OverageCreditUpsell.tsx",
     "src/components/LogoV2/VoiceModeNotice.tsx",
     "src/components/LogoV2/WelcomeV2.tsx",
