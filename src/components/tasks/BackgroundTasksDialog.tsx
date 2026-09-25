@@ -12,7 +12,7 @@ import { DreamTask, type DreamTaskState } from 'src/tasks/DreamTask/DreamTask.js
 import { InProcessTeammateTask } from 'src/tasks/InProcessTeammateTask/InProcessTeammateTask.js';
 import type { InProcessTeammateTaskState } from 'src/tasks/InProcessTeammateTask/types.js';
 import type { LocalAgentTaskState } from 'src/tasks/LocalAgentTask/LocalAgentTask.js';
-import { LocalAgentTask } from 'src/tasks/LocalAgentTask/LocalAgentTask.js';
+import { killAsyncAgent } from 'src/tasks/LocalAgentTask/LocalAgentTask.js';
 import type { LocalShellTaskState } from 'src/tasks/LocalShellTask/guards.js';
 import { LocalShellTask } from 'src/tasks/LocalShellTask/LocalShellTask.js';
 // Type import is erased at build time — safe even though module is ant-gated.
@@ -311,7 +311,9 @@ export function BackgroundTasksDialog({
     await LocalShellTask.kill(taskId, setAppState);
   }
   async function killAgentTask(taskId_0: string): Promise<void> {
-    await LocalAgentTask.kill(taskId_0, setAppState);
+    killAsyncAgent(taskId_0, setAppState, {
+      stoppedByUser: true
+    });
   }
   async function killTeammateTask(taskId_1: string): Promise<void> {
     await InProcessTeammateTask.kill(taskId_1, setAppState);

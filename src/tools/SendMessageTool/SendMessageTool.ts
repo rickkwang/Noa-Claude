@@ -34,6 +34,7 @@ import {
   createShutdownRequestMessage,
   writeToMailbox,
 } from '../../utils/teammateMailbox.js'
+import { AGENT_TOOL_NAME } from '../AgentTool/constants.js'
 import { resumeAgentBackground } from '../AgentTool/resumeAgent.js'
 import { SEND_MESSAGE_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, getPrompt } from './prompt.js'
@@ -512,7 +513,7 @@ async function handlePlanRejection(
 export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
   buildTool({
     name: SEND_MESSAGE_TOOL_NAME,
-    searchHint: 'send messages to agent teammates (swarm protocol)',
+    searchHint: 'continue a spawned subagent or message agent teammates',
     maxResultSizeChars: 100_000,
 
     userFacingName() {
@@ -524,9 +525,8 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
     },
     shouldDefer: true,
 
-    isEnabled() {
-      return isAgentSwarmsEnabled()
-    },
+    // Always on: continuing a subagent by agentId needs no team. Teammate
+    // routing below still requires agent teams.
 
     isReadOnly(input) {
       return typeof input.message === 'string'
@@ -644,7 +644,7 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
     },
 
     async prompt() {
-      return getPrompt()
+      return getPrompt(isAgentSwarmsEnabled())
     },
 
     mapToolResultToToolResultBlockParam(data, toolUseID) {
@@ -670,6 +670,14 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
         if (agentId) {
           const task = appState.tasks[agentId]
           if (isLocalAgentTask(task) && !isMainSessionTask(task)) {
+            if (task.stoppedByUser) {
+              return {
+                data: {
+                  success: false,
+                  message: `Agent "${input.to}" was stopped by the user and was not resumed. Treat its work as cancelled; only start a new agent for it if the user explicitly asks.`,
+                },
+              }
+            }
             if (task.status === 'running') {
               queuePendingMessage(
                 agentId,
@@ -734,6 +742,15 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
               }
             }
           }
+        }
+      }
+
+      if (!isAgentSwarmsEnabled()) {
+        return {
+          data: {
+            success: false,
+            message: `No subagent "${input.to}" in this session. Address a subagent by the agentId (or name) from its ${AGENT_TOOL_NAME} result; messaging teammates needs agent teams enabled.`,
+          },
         }
       }
 

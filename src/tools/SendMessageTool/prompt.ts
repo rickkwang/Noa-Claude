@@ -1,7 +1,24 @@
 // @ts-nocheck
+import { AGENT_TOOL_NAME } from '../AgentTool/constants.js'
+
 export const DESCRIPTION = 'Send a message to another agent'
 
-export function getPrompt(): string {
+// Without agent teams the tool only continues subagents, so it gets its own
+// prompt instead of the teammate one.
+const SUBAGENT_ONLY_PROMPT = `
+# SendMessage
+
+Send a message to a subagent you spawned with ${AGENT_TOOL_NAME}, continuing it with its context intact.
+
+\`\`\`json
+{"to": "<agentId from the ${AGENT_TOOL_NAME} result>", "summary": "fix the failing test", "message": "the null check broke login; fix it and rerun the tests"}
+\`\`\`
+
+Address the agent by the \`agentId\` from its ${AGENT_TOOL_NAME} result. A running agent gets the message at its next tool round; a finished or stopped one resumes from its transcript in the background and notifies you when it finishes. An agent the user stopped is not resumed. Your plain text output is NOT visible to other agents — to reach one, you MUST call this tool.
+`.trim()
+
+export function getPrompt(agentTeamsEnabled: boolean): string {
+  if (!agentTeamsEnabled) return SUBAGENT_ONLY_PROMPT
   return `
 # SendMessage
 

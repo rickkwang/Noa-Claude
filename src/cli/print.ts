@@ -3829,6 +3829,7 @@ function runHeadlessStreaming(
             await stopTask(taskId, {
               getAppState,
               setAppState,
+              stoppedByUser: true,
             })
             sendControlResponseSuccess(message, {})
           } catch (error) {
