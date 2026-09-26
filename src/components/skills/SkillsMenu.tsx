@@ -547,6 +547,9 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
     displayIdx: number,
   ): React.ReactNode => {
     const isSelected = displayIdx === clampedIdx
+    // While the search box owns the keyboard, keep the row marker but drop
+    // the highlight so two pointers don't read as focused at once.
+    const isHighlighted = isSelected && !isSearchMode
     const estimatedTokens = estimateSkillFrontmatterTokens(skill)
     const tokenDisplay = `~${formatTokens(estimatedTokens)}`
     const pluginName =
@@ -580,7 +583,7 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
     ].filter(Boolean)
     return (
       <Box key={`${skill.name}-${skill.source}`}>
-        <Text color={isSelected ? 'suggestion' : undefined}>
+        <Text color={isHighlighted ? 'suggestion' : undefined}>
           {isSelected ? '❯ ' : '  '}
         </Text>
         <Box flexShrink={0} marginRight={1}>
@@ -592,7 +595,7 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
             wrapping it; the name comes first and is the last thing cut. */}
         <Box flexShrink={1}>
           <Text wrap="truncate-end">
-            <Text color={isSelected ? 'suggestion' : undefined}>
+            <Text color={isHighlighted ? 'suggestion' : undefined}>
               {getCommandName(skill)}
             </Text>
             <Text dimColor>
