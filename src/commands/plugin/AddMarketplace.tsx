@@ -27,6 +27,12 @@ type Props = {
   setViewState: (state: ViewState) => void;
   onAddComplete?: () => void | Promise<void>;
   cliMode?: boolean;
+  /** `marketplace add --scope`: settings source to record the marketplace in */
+  scope?: 'user' | 'project' | 'local';
+  /** `marketplace add --sparse`: git sparse-checkout paths (github/git sources only) */
+  sparsePaths?: string[];
+  /** Flags parsed but unsupported by Noa — rejected with a clear error */
+  unsupportedFlags?: string[];
 };
 export function AddMarketplace({
   inputValue,
@@ -39,7 +45,10 @@ export function AddMarketplace({
   setResult,
   setViewState,
   onAddComplete,
-  cliMode = false
+  cliMode = false,
+  scope,
+  sparsePaths,
+  unsupportedFlags
 }: Props): React.ReactNode {
   // Fullscreen renders /plugin inside a modal pane that already draws the
   // frame, so skip our own border and line the hints up with the content.
@@ -48,6 +57,18 @@ export function AddMarketplace({
   const [isLoading, setLoading] = useState(false);
   const [progressMessage, setProgressMessage] = useState<string>('');
   const handleAdd = async () => {
+    // Reject flags CC accepts but Noa has no backend for, rather than letting
+    // them leak into the marketplace source string.
+    if (unsupportedFlags && unsupportedFlags.length > 0) {
+      const message = unsupportedFlags[0]!.startsWith('Invalid ') || unsupportedFlags[0]!.startsWith('--sparse')
+        ? unsupportedFlags[0]!
+        : `${unsupportedFlags.join(', ')} is not supported by Noa Claude (claude.ai-hosted marketplaces and the console flow have no local backend)`;
+      setError(message);
+      if (cliMode) {
+        setResult(`Error: ${message}`);
+      }
+      return;
+    }
     const input = inputValue.trim();
     if (!input) {
       setError('Please enter a marketplace source');
@@ -64,6 +85,24 @@ export function AddMarketplace({
       setError(parsed.error);
       return;
     }
+
+    // --sparse only applies to git-backed sources (mirrors the CLI handler)
+    let marketplaceSource = parsed;
+    if (sparsePaths && sparsePaths.length > 0) {
+      if (parsed.source === 'github' || parsed.source === 'git') {
+        marketplaceSource = {
+          ...parsed,
+          sparsePaths
+        };
+      } else {
+        const message = `--sparse is only supported for github and git marketplace sources (got: ${parsed.source})`;
+        setError(message);
+        if (cliMode) {
+          setResult(`Error: ${message}`);
+        }
+        return;
+      }
+    }
     setError(null);
     try {
       setLoading(true);
@@ -71,12 +110,13 @@ export function AddMarketplace({
       const {
         name,
         resolvedSource
-      } = await addMarketplaceSource(parsed, message => {
+      } = await addMarketplaceSource(marketplaceSource, message => {
         setProgressMessage(message);
       });
+      const settingSource = scope === 'project' ? 'projectSettings' : scope === 'local' ? 'localSettings' : 'userSettings';
       saveMarketplaceToSettings(name, {
         source: resolvedSource
-      });
+      }, settingSource);
       clearAllCaches();
       let sourceType = parsed.source;
       if (parsed.source === 'github') {

@@ -31,7 +31,16 @@ export type ViewState =
     }
   | { type: 'marketplace-menu' }
   | { type: 'marketplace-list' }
-  | { type: 'add-marketplace'; initialValue?: string }
+  | {
+      type: 'add-marketplace'
+      initialValue?: string
+      /** `marketplace add --scope`: settings source to record the marketplace in */
+      scope?: 'user' | 'project' | 'local'
+      /** `marketplace add --sparse`: git sparse-checkout paths (github/git sources only) */
+      sparsePaths?: string[]
+      /** Flags parsed but not supported by Noa (e.g. --claudeai) — rejected with an error */
+      unsupportedFlags?: string[]
+    }
 
 export type PluginSettingsProps = {
   onComplete: LocalJSXCommandOnDone

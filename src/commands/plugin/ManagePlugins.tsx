@@ -37,6 +37,7 @@ import { getMarketplace } from '../../utils/plugins/marketplaceManager.js';
 import { isMcpbSource, loadMcpbFile, type McpbNeedsConfigResult, type UserConfigValues } from '../../utils/plugins/mcpbHandler.js';
 import { getPluginDataDirSize, pluginDataDirPath } from '../../utils/plugins/pluginDirectories.js';
 import { getFlaggedPlugins, markFlaggedPluginsSeen, removeFlaggedPlugin } from '../../utils/plugins/pluginFlagging.js';
+import { getFavoritePluginSet, toggleFavoritePlugin } from '../../utils/plugins/pluginFavorites.js';
 import { type PersistablePluginScope, parsePluginIdentifier } from '../../utils/plugins/pluginIdentifier.js';
 import { loadAllPlugins } from '../../utils/plugins/pluginLoader.js';
 import { loadPluginOptions, type PluginOptionSchema, savePluginOptions } from '../../utils/plugins/pluginOptionsStorage.js';
@@ -442,6 +443,10 @@ export function ManagePlugins({
   const [pluginStates, setPluginStates] = useState<PluginState[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingToggles, setPendingToggles] = useState<Map<string, 'will-enable' | 'will-disable'>>(new Map());
+  // Bumped when a favorite is toggled so favoriteIds (and the sections that
+  // depend on it) recompute; settings writes don't notify this component.
+  const [favoritesVersion, setFavoritesVersion] = useState(0);
+  const favoriteIds = useMemo(() => getFavoritePluginSet(), [favoritesVersion]);
   // Toggle writes settle after the keypress that started them. Leaving the
   // list has to wait for them: the write is what marks the session dirty, and
   // that flag is what makes closing the dialog queue /reload-plugins.
@@ -820,8 +825,50 @@ export function ManagePlugins({
       }
       unified.push(...standaloneMcpsInScope);
     }
-    return unified;
-  }, [pluginStates, mcpClients, pluginErrors, pendingToggles, flaggedPlugins]);
+
+    // Smart sections (CC 2.1.283 list assembly parity): attention (enabled
+    // plugins with errors, failed/flagged plugins, failing MCP connectors),
+    // then favorites, then the main scope groups. Disabled plugins/MCPs go
+    // last under a collapsed "Show N disabled" header (expanded via Space).
+    // CC additionally splits never-connected connectors out of attention via
+    // `everConnected`, which Noa doesn't track — all failing MCPs land in
+    // attention here.
+    const attentionItems: UnifiedInstalledItem[] = [];
+    const favoriteItems: UnifiedInstalledItem[] = [];
+    const restItems: UnifiedInstalledItem[] = [];
+    const disabledItems: UnifiedInstalledItem[] = [];
+    let i_0 = 0;
+    while (i_0 < unified.length) {
+      const head = unified[i_0]!;
+      const group_1: UnifiedInstalledItem[] = [head];
+      i_0++;
+      if (head.type !== 'mcp') {
+        let nextItem_0 = unified[i_0];
+        while (nextItem_0?.type === 'mcp' && nextItem_0.indented) {
+          group_1.push(nextItem_0);
+          i_0++;
+          nextItem_0 = unified[i_0];
+        }
+      }
+      const needsAttention = head.type === 'failed-plugin' || head.type === 'flagged-plugin' || head.type === 'plugin' && head.isEnabled && head.errorCount > 0 || head.type === 'mcp' && !head.indented && (head.status === 'needs-auth' || head.status === 'failed');
+      const isFavorite = !needsAttention && (head.type === 'plugin' || head.type === 'mcp') && favoriteIds.has(head.id);
+      const isDisabled = !needsAttention && !isFavorite && (head.type === 'plugin' && !head.isEnabled || head.type === 'mcp' && head.status === 'disabled');
+      const section = needsAttention ? 'attention' : isFavorite ? 'favorites' : isDisabled ? 'disabled' : undefined;
+      for (const groupItem of group_1) {
+        groupItem.section = section;
+      }
+      if (needsAttention) {
+        attentionItems.push(...group_1);
+      } else if (isFavorite) {
+        favoriteItems.push(...group_1);
+      } else if (isDisabled) {
+        disabledItems.push(...group_1);
+      } else {
+        restItems.push(...group_1);
+      }
+    }
+    return [...attentionItems, ...favoriteItems, ...restItems, ...disabledItems];
+  }, [pluginStates, mcpClients, pluginErrors, pendingToggles, flaggedPlugins, favoriteIds]);
 
   // Mark flagged plugins as seen when the Installed view renders them.
   // After 48 hours from seenAt, they auto-clear on next load.
@@ -832,12 +879,30 @@ export function ManagePlugins({
     }
   }, [flaggedIds]);
 
-  // Filter items based on search query (matches name or description)
+  // Filter items based on search query (matches name or description).
+  // Search flattens sections (CC parity: no headers while filtering).
+  // Outside search, disabled rows collapse behind a "Show N disabled" header.
+  const [showDisabled, setShowDisabled] = useState(false);
   const filteredItems = useMemo(() => {
-    if (!searchQuery) return unifiedItems;
-    const lowerQuery = searchQuery.toLowerCase();
-    return unifiedItems.filter(item_5 => item_5.name.toLowerCase().includes(lowerQuery) || 'description' in item_5 && item_5.description?.toLowerCase().includes(lowerQuery));
-  }, [unifiedItems, searchQuery]);
+    if (searchQuery) {
+      const lowerQuery = searchQuery.toLowerCase();
+      return unifiedItems.filter(item_5 => item_5.name.toLowerCase().includes(lowerQuery) || 'description' in item_5 && item_5.description?.toLowerCase().includes(lowerQuery));
+    }
+    const disabledRows = unifiedItems.filter(item_6 => item_6.section === 'disabled');
+    if (disabledRows.length === 0) {
+      return unifiedItems.filter(item_7 => item_7.section !== 'disabled');
+    }
+    const visibleRows = unifiedItems.filter(item_8 => item_8.section !== 'disabled');
+    const headerRow: UnifiedInstalledItem = {
+      type: 'disabled-header',
+      id: '__disabled-header__',
+      name: '',
+      scope: 'disabled',
+      section: 'disabled',
+      disabledCount: disabledRows.length
+    };
+    return [...visibleRows, headerRow, ...(showDisabled ? disabledRows : [])];
+  }, [unifiedItems, searchQuery, showDisabled]);
 
   // Selection state
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -1204,6 +1269,11 @@ export function ManagePlugins({
   const handleToggle = React.useCallback(() => {
     if (selectedIndex >= filteredItems.length) return;
     const item_7 = filteredItems[selectedIndex];
+    // Space on the collapsed "Show N disabled" header expands/collapses it (CC parity)
+    if (item_7?.type === 'disabled-header') {
+      setShowDisabled(v => !v);
+      return;
+    }
     if (item_7?.type === 'flagged-plugin') return;
     if (item_7?.type === 'plugin') {
       const pluginId_4 = `${item_7.plugin.name}@${item_7.marketplace}`;
@@ -1276,12 +1346,40 @@ export function ManagePlugins({
     } else if (item_7?.type === 'mcp') {
       void toggleMcpServer(item_7.client.name);
     }
-  }, [selectedIndex, filteredItems, pendingToggles, pluginStates, toggleMcpServer, onManageComplete, trackToggle]);
+  }, [selectedIndex, filteredItems, pendingToggles, pluginStates, toggleMcpServer, onManageComplete, trackToggle, setShowDisabled]);
+
+  // Handle favorite toggle (f key). CC 2.1.283 favorites any list row — both
+  // plugins and MCP connectors; failed/flagged entries and the disabled
+  // header are skipped.
+  const followAfterFavoriteRef = useRef<string | null>(null);
+  const handleFavorite = React.useCallback(() => {
+    if (selectedIndex >= filteredItems.length) return;
+    const item_fav = filteredItems[selectedIndex];
+    if (item_fav?.type !== 'plugin' && item_fav?.type !== 'mcp') return;
+    if (toggleFavoritePlugin(item_fav.id) !== null) {
+      // The row moves between sections; follow it so the cursor stays put (CC parity)
+      followAfterFavoriteRef.current = item_fav.id;
+      setFavoritesVersion(v => v + 1);
+    }
+  }, [selectedIndex, filteredItems]);
+  useEffect(() => {
+    if (followAfterFavoriteRef.current === null) return;
+    const newIndex = filteredItems.findIndex(item_9 => item_9.id === followAfterFavoriteRef.current);
+    if (newIndex >= 0) {
+      setSelectedIndex(newIndex);
+    }
+    followAfterFavoriteRef.current = null;
+  }, [filteredItems]);
 
   // Handle accept (Enter) in plugin-list
   const handleAccept = React.useCallback(() => {
     if (selectedIndex >= filteredItems.length) return;
     const item_8 = filteredItems[selectedIndex];
+    // Enter on the collapsed "Show N disabled" header expands/collapses it
+    if (item_8?.type === 'disabled-header') {
+      setShowDisabled(v => !v);
+      return;
+    }
     if (item_8?.type === 'plugin') {
       const state_0 = pluginStates.find(s_4 => s_4.plugin.name === item_8.plugin.name && s_4.marketplace === item_8.marketplace);
       if (state_0) {
@@ -1345,7 +1443,8 @@ export function ManagePlugins({
     isActive: viewState === 'plugin-list' && !isSearchMode
   });
   useKeybindings({
-    'plugin:toggle': handleToggle
+    'plugin:toggle': handleToggle,
+    'plugin:favorite': handleFavorite
   }, {
     context: 'Plugin',
     isActive: viewState === 'plugin-list' && !isSearchMode
@@ -1378,6 +1477,15 @@ export function ManagePlugins({
     menuItems.push({
       label: isEnabled_1 ? 'Disable plugin' : 'Enable plugin',
       action: () => void handleSingleOperation(isEnabled_1 ? 'disable' : 'enable')
+    });
+    // CC 2.1.283 details-menu parity: favorite entry right after enable/disable
+    menuItems.push({
+      label: favoriteIds.has(pluginId_5) ? 'Remove from favorites' : 'Add to favorites',
+      action: () => {
+        if (toggleFavoritePlugin(pluginId_5) !== null) {
+          setFavoritesVersion(v => v + 1);
+        }
+      }
     });
 
     // Update/Uninstall options — not available for built-in plugins
@@ -1490,7 +1598,7 @@ export function ManagePlugins({
       }
     });
     return menuItems;
-  }, [viewState, selectedPlugin, selectedPluginHasMcpb, pluginStates]);
+  }, [viewState, selectedPlugin, selectedPluginHasMcpb, pluginStates, favoriteIds]);
 
   // Plugin-details navigation
   useKeybindings({
@@ -1669,12 +1777,13 @@ export function ManagePlugins({
       return;
     }
 
-    // Enter search mode with '/' or any printable character (except navigation keys)
+    // Enter search mode with '/' or any printable character (except navigation
+    // keys and bound Plugin actions: space = toggle, f = favorite)
     if (input_0 === '/' && keyIsNotCtrlOrMeta) {
       setIsSearchMode(true);
       setSearchQuery('');
       setSelectedIndex(0);
-    } else if (keyIsNotCtrlOrMeta && input_0.length > 0 && !/^\s+$/.test(input_0) && input_0 !== 'j' && input_0 !== 'k' && input_0 !== ' ') {
+    } else if (keyIsNotCtrlOrMeta && input_0.length > 0 && !/^\s+$/.test(input_0) && input_0 !== 'j' && input_0 !== 'k' && input_0 !== ' ' && input_0 !== 'f') {
       setIsSearchMode(true);
       setSearchQuery(input_0);
       setSelectedIndex(0);
@@ -2210,6 +2319,10 @@ export function ManagePlugins({
   // Plugin list view (main management interface)
   const visibleItems = pagination.getVisibleItems(filteredItems);
   const nameColumnWidth = getInstalledNameColumnWidth(filteredItems, terminalWidth);
+  // CC parity: "· N to sign in" only when every Needs-attention row is a
+  // needs-auth MCP (mixed attention rows get no sign-in summary).
+  const attentionRows = filteredItems.filter(item_11 => item_11.section === 'attention');
+  const attentionSignInCount = attentionRows.length > 0 && attentionRows.every(item_12 => item_12.type === 'mcp' && item_12.status === 'needs-auth') ? attentionRows.length : 0;
   return <Box flexDirection="column">
       {/* Search box */}
       <Box marginBottom={1}>
@@ -2227,14 +2340,26 @@ export function ManagePlugins({
           <Text dimColor> {figures.arrowUp} more above</Text>
         </Box>}
 
-      {/* Unified list of plugins and MCPs grouped by scope */}
+      {/* Unified list: smart sections (Needs attention / Favorites), scope groups, collapsed Disabled */}
       {visibleItems.map((item_10, visibleIndex) => {
       const actualIndex = pagination.toActualIndex(visibleIndex);
       const isSelected_0 = actualIndex === selectedIndex && !isSearchMode;
 
-      // Check if we need to show a scope header
+      // Collapsed disabled-section header row (Space/Enter expands)
+      if (item_10.type === 'disabled-header') {
+        return <Box key={item_10.id} marginTop={visibleIndex > 0 ? 1 : 0}>
+                <Text color={isSelected_0 ? 'suggestion' : undefined}>{isSelected_0 ? `${figures.pointer} ` : '  '}</Text>
+                <Text dimColor={!isSelected_0}>{showDisabled ? figures.arrowDown : figures.arrowRight} Show {item_10.disabledCount} disabled ({item_10.disabledCount})</Text>
+              </Box>;
+      }
+
+      // Section-aware header: smart sections first, then scope groups.
+      // Suppressed while searching (CC flattens the list during search) and
+      // inside the expanded disabled section (the header row covers it).
       const prevItem = visibleIndex > 0 ? visibleItems[visibleIndex - 1] : null;
-      const showScopeHeader = !prevItem || prevItem.scope !== item_10.scope;
+      const sectionKey = item_10.section ?? item_10.scope;
+      const prevSectionKey = prevItem ? prevItem.section ?? prevItem.scope : null;
+      const showScopeHeader = !searchQuery && item_10.section !== 'disabled' && (!prevItem || prevSectionKey !== sectionKey);
 
       // Get scope label
       const getScopeLabel = (scope_8: string): string => {
@@ -2259,10 +2384,13 @@ export function ManagePlugins({
             return scope_8;
         }
       };
+      const headerLabel = item_10.section === 'attention' ? 'Needs attention' : item_10.section === 'favorites' ? 'Favorites' : getScopeLabel(item_10.scope);
+      const headerWarning = item_10.section === 'attention' || item_10.scope === 'flagged';
       return <React.Fragment key={item_10.id}>
             {showScopeHeader && <Box marginTop={visibleIndex > 0 ? 1 : 0} paddingLeft={2}>
-                <Text dimColor={item_10.scope !== 'flagged'} color={item_10.scope === 'flagged' ? 'warning' : undefined} bold={item_10.scope === 'flagged'}>
-                  {getScopeLabel(item_10.scope)}
+                <Text dimColor={!headerWarning && item_10.section !== 'favorites'} color={headerWarning ? 'warning' : undefined} bold={headerWarning || item_10.section === 'favorites'}>
+                  {headerLabel}
+                  {item_10.section === 'attention' && attentionSignInCount > 0 && <Text color="warning"> · {attentionSignInCount} to sign in</Text>}
                 </Text>
               </Box>}
             <UnifiedInstalledCell item={item_10} isSelected={isSelected_0} nameWidth={nameColumnWidth} />
@@ -2281,6 +2409,7 @@ export function ManagePlugins({
           <Byline>
             <Text>type to search</Text>
             <ConfigurableShortcutHint action="plugin:toggle" context="Plugin" fallback="Space" description="toggle" />
+            <ConfigurableShortcutHint action="plugin:favorite" context="Plugin" fallback="f" description="favorite" />
             <ConfigurableShortcutHint action="select:accept" context="Select" fallback="Enter" description="details" />
             <ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="back" />
           </Byline>

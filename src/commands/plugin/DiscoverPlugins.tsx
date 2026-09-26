@@ -19,6 +19,7 @@ import { errorMessage } from '../../utils/errors.js';
 import { clearAllCaches } from '../../utils/plugins/cacheUtils.js';
 import { formatInstallCount, getInstallCounts } from '../../utils/plugins/installCounts.js';
 import { isPluginGloballyInstalled } from '../../utils/plugins/installedPluginsManager.js';
+import { getFavoritePluginSet, toggleFavoritePlugin } from '../../utils/plugins/pluginFavorites.js';
 import { createPluginId, detectEmptyMarketplaceReason, type EmptyMarketplaceReason, formatFailureDetails, formatMarketplaceLoadingErrors, loadMarketplacesWithGracefulDegradation } from '../../utils/plugins/marketplaceHelpers.js';
 import { loadKnownMarketplacesConfig } from '../../utils/plugins/marketplaceManager.js';
 import { OFFICIAL_MARKETPLACE_NAME } from '../../utils/plugins/officialMarketplace.js';
@@ -97,6 +98,10 @@ export function DiscoverPlugins({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [selectedForInstall, setSelectedForInstall] = useState<Set<string>>(new Set());
   const [installingPlugins, setInstallingPlugins] = useState<Set<string>>(new Set());
+  // Bumped when a favorite is toggled so favoriteIds recomputes; settings
+  // writes don't notify this component.
+  const [favoritesVersion, setFavoritesVersion] = useState(0);
+  const favoriteIds = useMemo(() => getFavoritePluginSet(), [favoritesVersion]);
 
   // Pagination for plugin list (continuous scrolling)
   const pagination = usePagination<InstallablePlugin>({
@@ -348,8 +353,9 @@ export function DiscoverPlugins({
         setIsSearchMode(true);
         setSearchQuery('');
       } else if (keyIsNotCtrlOrMeta && input.length > 0 && !/^\s+$/.test(input) &&
-      // Don't enter search mode for navigation keys
-      input !== 'j' && input !== 'k' && input !== 'i') {
+      // Don't enter search mode for navigation keys or bound Plugin actions
+      // (i = install, f = favorite)
+      input !== 'j' && input !== 'k' && input !== 'i' && input !== 'f') {
         setIsSearchMode(true);
         setSearchQuery(input);
       }
@@ -415,6 +421,12 @@ export function DiscoverPlugins({
     'plugin:install': () => {
       if (selectedForInstall.size > 0) {
         void installSelectedPlugins();
+      }
+    },
+    'plugin:favorite': () => {
+      const plugin_fav = filteredPlugins[selectedIndex];
+      if (plugin_fav && toggleFavoritePlugin(plugin_fav.pluginId) !== null) {
+        setFavoritesVersion(v => v + 1);
       }
     }
   }, {
@@ -620,6 +632,7 @@ export function DiscoverPlugins({
               <Text>
                 {isInstallingThis ? figures.ellipsis : isSelectedForInstall ? figures.radioOn : figures.radioOff}{' '}
                 {plugin_5.entry.name}
+                {favoriteIds.has(plugin_5.pluginId) && <Text color="warning"> {figures.star}</Text>}
                 <Text dimColor> · {plugin_5.marketplaceName}</Text>
                 {plugin_5.entry.tags?.includes('community-managed') && <Text dimColor> [Community Managed]</Text>}
                 {installCounts && plugin_5.marketplaceName === OFFICIAL_MARKETPLACE_NAME && <Text dimColor>
@@ -654,7 +667,7 @@ export function DiscoverPlugins({
     </Box>;
 }
 function DiscoverPluginsKeyHint(t0) {
-  const $ = _c(10);
+  const $ = _c(11);
   const {
     hasSelection,
     canToggle
@@ -693,14 +706,21 @@ function DiscoverPluginsKeyHint(t0) {
     t4 = $[5];
     t5 = $[6];
   }
+  let t7;
+  if ($[9] === Symbol.for("react.memo_cache_sentinel")) {
+    t7 = <ConfigurableShortcutHint action="plugin:favorite" context="Plugin" fallback="f" description="favorite" />;
+    $[9] = t7;
+  } else {
+    t7 = $[9];
+  }
   let t6;
   if ($[7] !== t1 || $[8] !== t3) {
-    t6 = <Box marginTop={1}><Text dimColor={true} italic={true}><Byline>{t1}{t2}{t3}{t4}{t5}</Byline></Text></Box>;
+    t6 = <Box marginTop={1}><Text dimColor={true} italic={true}><Byline>{t1}{t2}{t3}{t7}{t4}{t5}</Byline></Text></Box>;
     $[7] = t1;
     $[8] = t3;
-    $[9] = t6;
+    $[10] = t6;
   } else {
-    t6 = $[9];
+    t6 = $[10];
   }
   return t6;
 }
