@@ -100,9 +100,9 @@ const PERSISTENT_MAX_BACKOFF_MS = 5 * 60 * 1000
 const PERSISTENT_RESET_CAP_MS = 6 * 60 * 60 * 1000
 const PERSISTENT_TOTAL_TIMEOUT_MS = 24 * 60 * 60 * 1000
 const HEARTBEAT_INTERVAL_MS = 30_000
-// Interactive sessions still honor Retry-After, but a pathological gateway
-// header (e.g. 86400) must not park the session for a day.
-const NORMAL_RETRY_AFTER_CAP_MS = 10 * 60 * 1000
+// Interactive sessions honor Retry-After as a floor, but a wait beyond
+// RETRY_AFTER_TOO_LONG_MS fails the request instead of parking the session.
+const RETRY_AFTER_TOO_LONG_MS = 60_000
 
 function isPersistentRetryEnabled(): boolean {
   return feature('UNATTENDED_RETRY')
@@ -477,10 +477,15 @@ export async function* withRetry<T>(
           PERSISTENT_RESET_CAP_MS,
         )
       } else {
-        delayMs = Math.min(
-          getRetryDelay(attempt, retryAfter),
-          NORMAL_RETRY_AFTER_CAP_MS,
-        )
+        delayMs = getRetryDelay(attempt + persistentAttempt, retryAfter)
+        if (delayMs > RETRY_AFTER_TOO_LONG_MS) {
+          logEvent('tengu_api_retry_after_too_long', {
+            delayMs,
+            status: (error as APIError).status,
+            provider: getAPIProviderForStatsig(),
+          })
+          throw new CannotRetryError(error, retryContext)
+        }
       }
 
       // In persistent mode the for-loop `attempt` is clamped at maxRetries+1;
@@ -553,19 +558,20 @@ export function getRetryDelay(
   retryAfterHeader?: string | null,
   maxDelayMs = 32000,
 ): number {
-  if (retryAfterHeader) {
-    const seconds = parseInt(retryAfterHeader, 10)
-    if (!isNaN(seconds)) {
-      return seconds * 1000
-    }
-  }
-
   const baseDelay = Math.min(
     BASE_DELAY_MS * Math.pow(2, attempt - 1),
     maxDelayMs,
   )
-  const jitter = Math.random() * 0.25 * baseDelay
-  return baseDelay + jitter
+  const jittered = Math.round(baseDelay + Math.random() * 0.25 * baseDelay)
+  if (retryAfterHeader) {
+    const seconds = parseInt(retryAfterHeader, 10)
+    if (!isNaN(seconds)) {
+      // Server directive is a floor, not a replacement — never wait less
+      // than the computed backoff.
+      return Math.max(seconds * 1000, jittered)
+    }
+  }
+  return jittered
 }
 
 export function parseMaxTokensContextOverflowError(error: APIError):
@@ -721,9 +727,75 @@ function handleGcpCredentialError(error: unknown): boolean {
   return false
 }
 
+const OVERAGE_DISABLED_REASON_HEADER =
+  'anthropic-ratelimit-unified-overage-disabled-reason'
+const ORG_OVERAGE_DISABLED_REASONS = new Set([
+  'org_spend_cap_reached',
+  'org_level_disabled_until',
+])
+const OVERAGE_DISABLED_REASONS = new Set([
+  ...ORG_OVERAGE_DISABLED_REASONS,
+  'out_of_credits',
+  'org_level_disabled',
+  'org_service_level_disabled',
+])
+const OVERAGE_DISABLED_REASON_RE = /\\?"overageDisabledReason\\?":\s*\\?"([a-z_]+)\\?"/
+
+function hasUnifiedRateLimitHeaders(error: APIError): boolean {
+  return Boolean(
+    error.headers?.get?.('anthropic-ratelimit-unified-representative-claim') ||
+      error.headers?.get?.('anthropic-ratelimit-unified-overage-status'),
+  )
+}
+
+// 429s caused by spend caps / exhausted credits: retrying can never succeed.
+function isSpendCapOrCreditsError(error: APIError): boolean {
+  if (error.status !== 429) return false
+  if (error.message?.includes('service_spend_limit_reached')) return true
+  const reason = error.headers?.get?.(OVERAGE_DISABLED_REASON_HEADER)
+  if (
+    reason &&
+    (ORG_OVERAGE_DISABLED_REASONS.has(reason) ||
+      (!hasUnifiedRateLimitHeaders(error) &&
+        OVERAGE_DISABLED_REASONS.has(reason)))
+  ) {
+    return true
+  }
+  const match = error.message?.includes('exceeded_limit')
+    ? OVERAGE_DISABLED_REASON_RE.exec(error.message)?.[1]
+    : undefined
+  return match !== undefined && OVERAGE_DISABLED_REASONS.has(match)
+}
+
+// A 429 with no unified rate-limit metadata: subscribers can still retry it
+// (e.g. legacy per-request limits), unlike spend-cap rejections.
+function isPlainRateLimitError(error: APIError): boolean {
+  return (
+    error.status === 429 &&
+    !hasUnifiedRateLimitHeaders(error) &&
+    !error.headers?.get?.(OVERAGE_DISABLED_REASON_HEADER)
+  )
+}
+
 function shouldRetry(error: APIError): boolean {
   // Never retry mock errors - they're from /mock-limits command for testing
   if (isMockRateLimitError(error)) {
+    return false
+  }
+
+  if (
+    error.status === 429 &&
+    (error.error?.error?.details?.error_code === 'credits_required' ||
+      error.message?.toLowerCase().includes('usage credits are required') ||
+      error.message?.toLowerCase().includes('extra usage is required'))
+  ) {
+    const reason = error.headers?.get?.(OVERAGE_DISABLED_REASON_HEADER)
+    if (reason !== 'fetch_error' && reason !== 'org_level_disabled_until') {
+      return false
+    }
+  }
+
+  if (isSpendCapOrCreditsError(error)) {
     return false
   }
 
@@ -764,18 +836,15 @@ function shouldRetry(error: APIError): boolean {
   // Enterprise users can retry because they typically use PAYG instead of rate limits.
   if (
     shouldRetryHeader === 'true' &&
-    (!isClaudeAISubscriber() || isEnterpriseSubscriber())
+    (!isClaudeAISubscriber() ||
+      isEnterpriseSubscriber() ||
+      isPlainRateLimitError(error))
   ) {
     return true
   }
 
-  // Ants can ignore x-should-retry: false for 5xx server errors only.
-  // For other status codes (401, 403, 400, 429, etc.), respect the header.
   if (shouldRetryHeader === 'false') {
-    const is5xxError = error.status !== undefined && error.status >= 500
-    if (!(process.env.USER_TYPE === 'ant' && is5xxError)) {
-      return false
-    }
+    return false
   }
 
   if (error instanceof APIConnectionError) {
@@ -793,7 +862,11 @@ function shouldRetry(error: APIError): boolean {
   // Retry on rate limits, but not for ClaudeAI Subscription users
   // Enterprise users can retry because they typically use PAYG instead of rate limits
   if (error.status === 429) {
-    return !isClaudeAISubscriber() || isEnterpriseSubscriber()
+    return (
+      !isClaudeAISubscriber() ||
+      isEnterpriseSubscriber() ||
+      isPlainRateLimitError(error)
+    )
   }
 
   // Clear API key cache on 401 and allow retry.
@@ -814,11 +887,26 @@ function shouldRetry(error: APIError): boolean {
   return false
 }
 
+const MAX_EXTERNAL_RETRIES = 15
+const PERSISTENT_DEFAULT_MAX_RETRIES = 300
+
 export function getDefaultMaxRetries(): number {
   if (process.env.CLAUDE_CODE_MAX_RETRIES) {
-    return parseInt(process.env.CLAUDE_CODE_MAX_RETRIES, 10)
+    const parsed = parseInt(process.env.CLAUDE_CODE_MAX_RETRIES, 10)
+    if (!Number.isNaN(parsed) && parsed >= 0) {
+      if (parsed > MAX_EXTERNAL_RETRIES && !isPersistentRetryEnabled()) {
+        logForDebugging(
+          `CLAUDE_CODE_MAX_RETRIES=${parsed} clamped to ${MAX_EXTERNAL_RETRIES}`,
+          { level: 'warn' },
+        )
+        return MAX_EXTERNAL_RETRIES
+      }
+      return parsed
+    }
   }
-  return DEFAULT_MAX_RETRIES
+  return isPersistentRetryEnabled()
+    ? PERSISTENT_DEFAULT_MAX_RETRIES
+    : DEFAULT_MAX_RETRIES
 }
 function getMaxRetries(options: RetryOptions): number {
   return options.maxRetries ?? getDefaultMaxRetries()
