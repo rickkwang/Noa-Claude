@@ -16,6 +16,11 @@ describe('isStreamWatchdogEnabled', () => {
     }
   })
 
+  test('stays on for truthy, empty, or unrecognized values', () => {
+    for (const value of ['1', 'true', '', 'maybe']) {
+      expect(isStreamWatchdogEnabled(value)).toBe(true)
+    }
+  })
 })
 
 describe('getStreamIdleTimeoutMs', () => {
