@@ -70,7 +70,6 @@ import { SkillImprovementSurvey } from '../components/SkillImprovementSurvey.js'
 import { useSkillImprovementSurvey } from '../hooks/useSkillImprovementSurvey.js';
 import { useMoreRight } from '../moreright/useMoreRight.js';
 import { SpinnerWithVerb, BriefIdleStatus, type SpinnerMode } from '../components/Spinner.js';
-import { CompactProgressBar } from '../components/CompactProgressBar.js';
 import { getSystemPrompt } from '../constants/prompts.js';
 import { buildEffectiveSystemPrompt } from '../utils/systemPrompt.js';
 import { getSystemContext, getUserContext } from '../context.js';
@@ -1558,6 +1557,8 @@ export function REPL({
   const [spinnerColor, setSpinnerColor] = useState<keyof Theme | null>(null);
   const [spinnerShimmerColor, setSpinnerShimmerColor] = useState<keyof Theme | null>(null);
   const [compactProgressStartedAt, setCompactProgressStartedAt] = useState<number | null>(null);
+  const [compactOutputTokens, setCompactOutputTokens] = useState(0);
+  const lastCompactProgressUpdateRef = useRef(0);
   const [isAutoModeClassifierStalled, setIsAutoModeClassifierStalled] = useState(false);
   const hasAnyClassifierChecking = useHasAnyClassifierChecking();
   const classifierCheckingVersion = useClassifierCheckingVersion();
@@ -2652,12 +2653,25 @@ export function REPL({
             // to the SAME key, flattening the shimmer sweep to a no-op.
             setSpinnerMessage('Compacting conversation');
             setCompactProgressStartedAt(Date.now());
+            setCompactOutputTokens(0);
             break;
+          case 'compact_progress': {
+            // output_tokens is cumulative within one API call; a fallback-model
+            // retry restarts it, so keep the line monotonic. message_delta usage
+            // events can fire many times a second — throttle the re-render.
+            const now = Date.now();
+            if (now - lastCompactProgressUpdateRef.current >= 100) {
+              lastCompactProgressUpdateRef.current = now;
+              setCompactOutputTokens(prev => Math.max(prev, event.outputTokens));
+            }
+            break;
+          }
           case 'compact_end':
             setSpinnerMessage(null);
             setSpinnerColor(null);
             setSpinnerShimmerColor(null);
             setCompactProgressStartedAt(null);
+            setCompactOutputTokens(0);
             break;
         }
       },
@@ -4705,8 +4719,7 @@ export function REPL({
               {"external" === 'ant' && <TungstenLiveMonitor />}
               {WebBrowserPanel ? <WebBrowserPanel /> : null}
               <Box flexGrow={1} />
-              {showSpinner && <SpinnerWithVerb mode={streamMode} spinnerTip={spinnerTip} responseLengthRef={responseLengthRef} apiMetricsRef={apiMetricsRef} overrideMessage={spinnerMessage} spinnerSuffix={stopHookSpinnerSuffix} verbose={verbose} loadingStartTimeRef={loadingStartTimeRef} totalPausedMsRef={totalPausedMsRef} pauseStartTimeRef={pauseStartTimeRef} overrideColor={effectiveSpinnerColor} overrideShimmerColor={effectiveSpinnerShimmerColor} hasActiveTools={inProgressToolUseIDs.size > 0} leaderIsIdle={!isLoading} />}
-              {showSpinner && compactProgressStartedAt !== null && <CompactProgressBar startedAt={compactProgressStartedAt} />}
+              {showSpinner && <SpinnerWithVerb mode={streamMode} spinnerTip={spinnerTip} responseLengthRef={responseLengthRef} apiMetricsRef={apiMetricsRef} overrideMessage={spinnerMessage} spinnerSuffix={stopHookSpinnerSuffix} verbose={verbose} loadingStartTimeRef={loadingStartTimeRef} totalPausedMsRef={totalPausedMsRef} pauseStartTimeRef={pauseStartTimeRef} overrideColor={effectiveSpinnerColor} overrideShimmerColor={effectiveSpinnerShimmerColor} hasActiveTools={inProgressToolUseIDs.size > 0} leaderIsIdle={!isLoading} compact={compactProgressStartedAt !== null ? { startedAt: compactProgressStartedAt, outputTokens: compactOutputTokens } : undefined} />}
               {!showSpinner && !isLoading && !userInputOnProcessing && !hasRunningTeammates && isBriefOnly && !viewedAgentTask && <BriefIdleStatus />}
               {isFullscreenEnvEnabled() && <PromptInputQueuedCommands isLoading={isLoading} />}
             </>} bottom={<Box flexDirection={companionNarrow ? 'column' : 'row'} width="100%" alignItems={companionNarrow ? undefined : 'flex-end'}>

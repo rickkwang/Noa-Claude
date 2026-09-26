@@ -55,6 +55,9 @@ type Props = {
   hasActiveTools?: boolean;
   /** Leader's turn has completed (no active query). Used to suppress stall-red spinner when only teammates are running. */
   leaderIsIdle?: boolean;
+  /** While compacting: timer runs from compaction start and the token count
+   *  tracks the summary's streamed output tokens (upstream 2.1.283). */
+  compact?: { startedAt: number; outputTokens: number };
 };
 
 // Thin wrapper: branches on isBriefOnly so the two variants have independent
@@ -93,7 +96,8 @@ function SpinnerWithVerbInner({
   spinnerSuffix,
   verbose,
   hasActiveTools = false,
-  leaderIsIdle = false
+  leaderIsIdle = false,
+  compact
 }: Props): React.ReactNode {
   const settings = useSettings();
   const reducedMotion = settings.prefersReducedMotion ?? false;
@@ -279,7 +283,7 @@ function SpinnerWithVerbInner({
     }
   }
   return <Box flexDirection="column" width="100%" alignItems="flex-start">
-      <SpinnerAnimationRow mode={mode} reducedMotion={reducedMotion} hasActiveTools={hasActiveTools} responseLengthRef={responseLengthRef} message={message} messageColor={messageColor} shimmerColor={shimmerColor} overrideColor={overrideColor} loadingStartTimeRef={loadingStartTimeRef} totalPausedMsRef={totalPausedMsRef} pauseStartTimeRef={pauseStartTimeRef} spinnerSuffix={spinnerSuffix} verbose={verbose} columns={columns} hasRunningTeammates={hasRunningTeammates} teammateTokens={teammateTokens} foregroundedTeammate={foregroundedTeammate} leaderIsIdle={leaderIsIdle} thinkingStatus={thinkingStatus} effortSuffix={effortSuffix} showToolCallTimer={getFeatureValue_CACHED_MAY_BE_STALE('tengu_shining_fractals', false)} />
+      <SpinnerAnimationRow mode={mode} reducedMotion={reducedMotion} hasActiveTools={hasActiveTools} responseLengthRef={responseLengthRef} message={message} messageColor={messageColor} shimmerColor={shimmerColor} overrideColor={overrideColor} loadingStartTimeRef={loadingStartTimeRef} totalPausedMsRef={totalPausedMsRef} pauseStartTimeRef={pauseStartTimeRef} spinnerSuffix={spinnerSuffix} verbose={verbose} columns={columns} hasRunningTeammates={hasRunningTeammates} teammateTokens={teammateTokens} foregroundedTeammate={foregroundedTeammate} leaderIsIdle={leaderIsIdle} thinkingStatus={thinkingStatus} effortSuffix={effortSuffix} showToolCallTimer={getFeatureValue_CACHED_MAY_BE_STALE('tengu_shining_fractals', false)} compact={compact} />
       {showSpinnerTree && hasRunningTeammates ? <TeammateSpinnerTree selectedIndex={selectedIPAgentIndex} isInSelectionMode={viewSelectionMode === 'selecting-agent'} allIdle={allIdle} leaderVerb={leaderIsIdle ? undefined : leaderVerb} leaderIdleText={leaderIsIdle ? 'Idle' : undefined} leaderTokenCount={leaderTokenCount} /> : showExpandedTodos && tasksV2 && tasksV2.length > 0 ? <Box width="100%" flexDirection="column">
           <MessageResponse>
             <TaskListV2 tasks={tasksV2} />

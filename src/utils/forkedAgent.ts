@@ -123,6 +123,9 @@ export type ForkedAgentParams = {
   modelOverride?: string
   /** Model the query loop switches to if the fork's model is overloaded. */
   fallbackModel?: string
+  /** Called with the cumulative output-token count as the response streams
+   *  (from message_delta usage). Lets callers show live progress. */
+  onOutputTokens?: (outputTokens: number) => void
 }
 
 export type ForkedAgentResult = {
@@ -524,6 +527,7 @@ export async function runForkedAgent({
   maxOutputTokens,
   maxTurns,
   onMessage,
+  onOutputTokens,
   skipTranscript,
   skipCacheWrite,
   modelOverride,
@@ -607,6 +611,11 @@ export async function runForkedAgent({
         ) {
           const turnUsage = updateUsage({ ...EMPTY_USAGE }, message.event.usage)
           totalUsage = accumulateUsage(totalUsage, turnUsage)
+          // output_tokens in message_delta usage is cumulative within the API
+          // call, so it doubles as a live progress signal.
+          if (onOutputTokens && message.event.usage.output_tokens) {
+            onOutputTokens(message.event.usage.output_tokens)
+          }
         }
         continue
       }

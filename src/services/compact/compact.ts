@@ -1769,6 +1769,8 @@ export async function streamCompactSummary({
         // fork — same signal the streaming fallback uses at
         // `signal: context.abortController.signal` below.
         overrides: { abortController: context.abortController },
+        onOutputTokens: outputTokens =>
+          context.onCompactProgress?.({ type: 'compact_progress', outputTokens }),
       })
       const assistantMsg = getLastAssistantMessage(result.messages)
       const assistantText = assistantMsg
@@ -1905,6 +1907,17 @@ export async function streamCompactSummary({
           ) {
             const charactersStreamed = event.event.delta.text.length
             context.setResponseLength?.(length => length + charactersStreamed)
+          }
+
+          if (
+            event.type === 'stream_event' &&
+            event.event.type === 'message_delta' &&
+            event.event.usage?.output_tokens
+          ) {
+            context.onCompactProgress?.({
+              type: 'compact_progress',
+              outputTokens: event.event.usage.output_tokens,
+            })
           }
 
           if (event.type === 'assistant') {

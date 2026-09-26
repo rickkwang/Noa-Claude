@@ -153,6 +153,9 @@ export type CompactProgressEvent =
       hookType: 'pre_compact' | 'post_compact' | 'session_start'
     }
   | { type: 'compact_start' }
+  // Live output-token count of the summary as it streams (upstream 2.1.283:
+  // the spinner counts the summary's tokens as they stream).
+  | { type: 'compact_progress'; outputTokens: number }
   | { type: 'compact_end' }
 
 export type ToolUseContext = {

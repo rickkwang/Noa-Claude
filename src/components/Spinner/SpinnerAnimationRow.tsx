@@ -95,6 +95,9 @@ export type SpinnerAnimationRowProps = {
   effortSuffix: string;
   // Show `running tool for Ns` / `ran tool for Ns` in the status line.
   showToolCallTimer?: boolean;
+  /** While compacting: timer runs from compaction start and the token count
+   *  tracks the summary's streamed output tokens (upstream 2.1.283). */
+  compact?: { startedAt: number; outputTokens: number };
 };
 
 /**
@@ -128,7 +131,8 @@ export function SpinnerAnimationRow({
   leaderIsIdle = false,
   thinkingStatus,
   effortSuffix,
-  showToolCallTimer = false
+  showToolCallTimer = false,
+  compact
 }: SpinnerAnimationRowProps): React.ReactNode {
   // The requesting glimmer steps every 50ms; every other mode steps at 200ms
   // or slower, so a 100ms clock is enough there.
@@ -190,14 +194,15 @@ export function SpinnerAnimationRow({
   }
   const displayedResponseLength = tokenCounterRef.current;
   const leaderTokens = Math.round(displayedResponseLength / 4);
-  const effectiveElapsedMs = hasRunningTeammates ? Math.max(elapsedTimeMs, now - turnStartRef.current) : elapsedTimeMs;
+  const effectiveElapsedMs = compact ? now - compact.startedAt : hasRunningTeammates ? Math.max(elapsedTimeMs, now - turnStartRef.current) : elapsedTimeMs;
   const timerText = formatDuration(effectiveElapsedMs);
   const timerWidth = stringWidth(timerText);
 
   // === Token count (leader + teammates, or foregrounded teammate) ===
-  const totalTokens = foregroundedTeammate && !foregroundedTeammate.isIdle ? foregroundedTeammate.progress?.tokenCount ?? 0 : leaderTokens + teammateTokens;
+  // During compact the count is the summary's streamed output tokens.
+  const totalTokens = compact ? compact.outputTokens : foregroundedTeammate && !foregroundedTeammate.isIdle ? foregroundedTeammate.progress?.tokenCount ?? 0 : leaderTokens + teammateTokens;
   const tokenCount = formatNumber(totalTokens);
-  const tokensText = hasRunningTeammates ? `${tokenCount} tokens` : `${figures.arrowDown} ${tokenCount} tokens`;
+  const tokensText = compact ? `${tokenCount} tokens` : hasRunningTeammates ? `${tokenCount} tokens` : `${figures.arrowDown} ${tokenCount} tokens`;
   const tokensWidth = stringWidth(tokensText);
 
   // === Tool-call window + thinking burst tracking (upstream gn/kn) ===
@@ -290,7 +295,9 @@ export function SpinnerAnimationRow({
   const messageWidth = glimmerMessageWidth + 2;
   const sep = SEP_WIDTH;
   const wantsThinking = statusKind.kind !== 'none';
-  const wantsTimerAndTokens = verbose || hasRunningTeammates || effectiveElapsedMs > SHOW_TOKENS_AFTER_MS;
+  // During compact the timer shows from the first frame (upstream: the timer
+  // starts when compaction begins, not after SHOW_TOKENS_AFTER_MS).
+  const wantsTimerAndTokens = compact !== undefined || verbose || hasRunningTeammates || effectiveElapsedMs > SHOW_TOKENS_AFTER_MS;
   const availableSpace = columns - messageWidth - 5;
   let showThinking = wantsThinking && availableSpace > thinkingWidthValue;
   if (!showThinking && wantsThinking && statusKind.kind === 'thinking' && (effortSuffix || progressiveBase !== 'thinking')) {
