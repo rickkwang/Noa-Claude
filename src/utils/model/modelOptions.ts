@@ -702,8 +702,14 @@ export function getModelOptions(fastMode = false): ModelOption[] {
   // Skip OpenAI-compatible discoveries when the active provider is no longer
   // openaiCompatible — otherwise stale cache from a prior provider leaks
   // (e.g. 100+ OpenAI models showing up in a first-party Claude session).
+  // Under an active provider profile, skip the whole cache: bootstrap never
+  // runs there, so stale first-party entries can't be evicted at fetch time.
   const isOpenAICompatible = getAPIProvider() === 'openaiCompatible'
+  const providerProfileActive = getActiveProviderModelNames().length > 0
   for (const opt of getGlobalConfig().additionalModelOptionsCache ?? []) {
+    if (providerProfileActive) {
+      break
+    }
     if (
       !isOpenAICompatible &&
       opt.description === 'Discovered from OpenAI-compatible endpoint'
