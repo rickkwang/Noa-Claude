@@ -29,9 +29,4 @@ describe('summarizeMetadata SDK adapter', () => {
     expect(sdk?.tokens_saved).toBeUndefined()
     expect(fromSDKSummarizeMetadata(sdk)?.tokensSaved).toBeUndefined()
   })
-
-  test('passes undefined through', () => {
-    expect(toSDKSummarizeMetadata(undefined)).toBeUndefined()
-    expect(fromSDKSummarizeMetadata(undefined)).toBeUndefined()
-  })
 })

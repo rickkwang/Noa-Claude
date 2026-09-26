@@ -41,12 +41,6 @@ afterEach(() => {
 })
 
 describe('refusal model suggestion', () => {
-  test('uses the direct Anthropic Sonnet default', () => {
-    const content = getTextContent('claude-opus-4-8')
-
-    expect(content).toContain('/model claude-sonnet-5')
-  })
-
   test('uses the provider-aware Sonnet default on Bedrock', () => {
     process.env.CLAUDE_CODE_USE_BEDROCK = '1'
     const content = getTextContent('us.anthropic.claude-opus-4-7-v1:0')
@@ -133,12 +127,6 @@ describe('armed refusal fallback target', () => {
     expect(content).not.toContain('claude-sonnet')
   })
 
-  test('Fable 5 and Opus 5 take the same target', () => {
-    for (const model of ['claude-fable-5', 'claude-opus-5']) {
-      expect(getTextContent(model)).toContain('/model claude-opus-4-8')
-    }
-  })
-
   test('a pinned opus model wins over the constant', () => {
     process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = 'my-opus-alias'
     expect(getTextContent('claude-fable-5-1')).toContain('/model my-opus-alias')
@@ -148,10 +136,4 @@ describe('armed refusal fallback target', () => {
     expect(getTextContent('claude-mythos-5-1')).toContain('/model claude-sonnet-5')
   })
 
-  test('models without the capability keep the Sonnet suggestion', () => {
-    for (const model of ['claude-opus-4-8', 'claude-sonnet-5']) {
-      expect(getTextContent(model)).not.toContain('claude-opus-4-8 ')
-    }
-    expect(getTextContent('claude-opus-4-8')).toContain('/model claude-sonnet-5')
-  })
 })

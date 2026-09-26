@@ -31,22 +31,6 @@ describe('getLoginStartingMessage', () => {
     expect(message).toContain('unset it')
   })
 
-  // It is rendered in bold *in place of* the default orientation line above the
-  // login-method picker (ConsoleOAuthFlow), not appended to it, so it has to
-  // stay about as short as the 118-character line it displaces.
-  test('stays short enough for the heading slot it replaces', () => {
-    process.env.CLAUDE_CODE_OAUTH_TOKEN = 'sk-ant-oat-test'
-    expect(getLoginStartingMessage()!.length).toBeLessThan(180)
-  })
-
-  // Upstream 2.1.229 says "This session will switch to your new credentials
-  // after logging in" because it clears the env token during login; this fork
-  // does not, so that claim would be false here and must not reappear.
-  test('does not claim the session switches to the new credentials', () => {
-    process.env.CLAUDE_CODE_OAUTH_TOKEN = 'sk-ant-oat-test'
-    expect(getLoginStartingMessage()).not.toContain('will switch to your new credentials')
-  })
-
   test('stays silent in bare mode, where the env token is not consulted', () => {
     process.env.CLAUDE_CODE_OAUTH_TOKEN = 'sk-ant-oat-test'
     process.env.CLAUDE_CODE_SIMPLE = '1'

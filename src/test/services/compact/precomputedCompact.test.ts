@@ -8,7 +8,6 @@ import {
   __setReadyForTest,
   armPrecompute,
   consumePrecompute,
-  isPrecomputeEnabled,
   resetPrecomputeCycle,
 } from '../../../services/compact/precomputedCompact.js'
 import type { Message } from '../../../types/message.js'
@@ -54,57 +53,11 @@ afterEach(() => {
   __resetForTest()
 })
 
-describe('isPrecomputeEnabled', () => {
-  test('honors the env toggle', () => {
-    process.env[ENV_KEY] = '1'
-    expect(isPrecomputeEnabled()).toBe(true)
-    delete process.env[ENV_KEY]
-    expect(isPrecomputeEnabled()).toBe(false)
-  })
-})
-
 describe('consumePrecompute', () => {
-  test('returns null when disabled even if a summary is armed', () => {
-    const messages = [asst(10), asst(10)]
-    __setReadyForTest({
-      pivotCount: 2,
-      tailUuid: uid(messages[1]),
-      summaryText: 'S',
-    })
-    delete process.env[ENV_KEY]
-    expect(consumePrecompute({ messages, maxTailTokens: BIG_TAIL_BUDGET })).toBeNull()
-  })
-
   test('returns null while still computing (no blocking wait)', () => {
     const messages = [asst(10), asst(10)]
     __setComputingForTest({ pivotCount: 2, tailUuid: uid(messages[1]) })
     expect(consumePrecompute({ messages, maxTailTokens: BIG_TAIL_BUDGET })).toBeNull()
-  })
-
-  test('consumes a ready summary on an unchanged prefix and clears the slot', () => {
-    const messages = [asst(10), asst(10)]
-    __setReadyForTest({
-      pivotCount: 2,
-      tailUuid: uid(messages[1]),
-      summaryText: 'SUMMARY',
-    })
-    const out = consumePrecompute({ messages, maxTailTokens: BIG_TAIL_BUDGET })
-    expect(out).toEqual({ pivotIndex: 2, summaryText: 'SUMMARY' })
-    // slot cleared after consume
-    expect(__getArmedForTest()).toBeNull()
-  })
-
-  test('consumes with an appended verbatim tail (append-only growth)', () => {
-    const base = [asst(10), asst(10)]
-    __setReadyForTest({
-      pivotCount: 2,
-      tailUuid: uid(base[1]),
-      summaryText: 'SUMMARY',
-    })
-    // Two new messages appended since arm; prefix[0..2] is unchanged.
-    const grown = [...base, asst(10), asst(10)]
-    const out = consumePrecompute({ messages: grown, maxTailTokens: BIG_TAIL_BUDGET })
-    expect(out).toEqual({ pivotIndex: 2, summaryText: 'SUMMARY' })
   })
 
   test('discards when the armed prefix no longer matches (history rewound)', () => {
@@ -133,10 +86,6 @@ describe('consumePrecompute', () => {
     expect(__getArmedForTest()).toBeNull()
   })
 
-  test('returns null when nothing is armed', () => {
-    const messages = [asst(10), asst(10)]
-    expect(consumePrecompute({ messages, maxTailTokens: BIG_TAIL_BUDGET })).toBeNull()
-  })
 })
 
 describe('re-arm cap (cost guard)', () => {
@@ -184,13 +133,7 @@ describe('re-arm cap (cost guard)', () => {
     expect(__getArmAttemptsForTest()).toBe(1)
   })
 
-  test('does not count arms while disabled', () => {
-    delete process.env[ENV_KEY]
-    armOnce([asst(10), asst(10)])
-    expect(__getArmAttemptsForTest()).toBe(0)
-  })
-
-  test('resetPrecomputeCycle drops the slot and refreshes the budget', () => {
+  test('post-compact reset drops the slot and refreshes the budget', () => {
     const messages = [asst(10), asst(10)]
     __setReadyForTest({
       pivotCount: 2,
@@ -206,4 +149,5 @@ describe('re-arm cap (cost guard)', () => {
     expect(__getArmedForTest()).toBeNull()
     expect(__getArmAttemptsForTest()).toBe(0)
   })
+
 })

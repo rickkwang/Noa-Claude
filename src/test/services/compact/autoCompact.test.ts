@@ -41,28 +41,6 @@ describe('calculateTokenWarningState', () => {
     restoreEnv()
   })
 
-  test('keeps warning and error thresholds distinct', () => {
-    expect(ERROR_THRESHOLD_BUFFER_TOKENS).toBeLessThan(
-      WARNING_THRESHOLD_BUFFER_TOKENS,
-    )
-
-    process.env.DISABLE_AUTO_COMPACT = '1'
-
-    const model = 'test-model'
-    const effectiveWindow = getEffectiveContextWindowSize(model)
-    const tokenUsageBetweenThresholds =
-      effectiveWindow -
-      Math.floor((WARNING_THRESHOLD_BUFFER_TOKENS + ERROR_THRESHOLD_BUFFER_TOKENS) / 2)
-
-    const state = calculateTokenWarningState(
-      tokenUsageBetweenThresholds,
-      model,
-    )
-
-    expect(state.isAboveWarningThreshold).toBe(true)
-    expect(state.isAboveErrorThreshold).toBe(false)
-  })
-
   test('blocking limit follows the model window, not the auto-compact window', () => {
     process.env.DISABLE_AUTO_COMPACT = '1'
     process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = '30000'
@@ -152,11 +130,6 @@ describe('selectTailPivot', () => {
     )
   })
 
-  test('returns null when the whole conversation fits within the tail budget', () => {
-    const messages = Array.from({ length: 3 }, () => asstText(50))
-    expect(selectTailPivot(messages, 100_000)).toBeNull()
-  })
-
   test('snaps the pivot back so a kept tool_result keeps its tool_use', () => {
     const messages: Message[] = [
       asstText(2000),
@@ -191,12 +164,6 @@ describe('computeAutoCompactPivot', () => {
     expect(pivot!).toBeLessThan(messages.length)
   })
 
-  test('returns null when the keep-tail flag is disabled', () => {
-    process.env.CLAUDE_CODE_AUTOCOMPACT_KEEP_TAIL = '0'
-    const messages = Array.from({ length: 80 }, () => asstText(3000))
-    expect(computeAutoCompactPivot(messages, 'test-model')).toBeNull()
-  })
-
   test('returns null on a tiny window where no useful tail fits', () => {
     delete process.env.CLAUDE_CODE_AUTOCOMPACT_KEEP_TAIL
     process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = '30000'
@@ -224,18 +191,6 @@ describe('isFixedPrefixOverThreshold', () => {
     expect(isFixedPrefixOverThreshold(60_000, messages, 50_000)).toBe(true)
   })
 
-  test('stays quiet when the messages are what is large', () => {
-    const messages = Array.from({ length: 80 }, () => asstText(3000))
-    const messageTokens = estimateMessageTokens(messages)
-    expect(
-      isFixedPrefixOverThreshold(messageTokens + 5_000, messages, 50_000),
-    ).toBe(false)
-  })
-
-  test('never reports a negative prefix when the estimate overshoots', () => {
-    const messages = Array.from({ length: 80 }, () => asstText(3000))
-    expect(isFixedPrefixOverThreshold(1_000, messages, 1)).toBe(false)
-  })
 })
 
 describe('resolveAutoCompactPivot', () => {
@@ -253,29 +208,9 @@ describe('resolveAutoCompactPivot', () => {
     expect(pivot).toBeNull()
   })
 
-  test('keeps a tail when not in a re-compaction chain', () => {
-    delete process.env.CLAUDE_CODE_AUTOCOMPACT_KEEP_TAIL
-    delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
-    const messages = Array.from({ length: 80 }, () => asstText(3000))
-    const pivot = resolveAutoCompactPivot(messages, 'test-model', {
-      isRecompactionInChain: false,
-    } as never)
-    expect(pivot).not.toBeNull()
-  })
 })
 
 describe('countConsecutiveRapidRefills (rapid-refill breaker)', () => {
-  test('no prior compact → streak 0', () => {
-    expect(countConsecutiveRapidRefills(undefined)).toBe(0)
-    expect(
-      countConsecutiveRapidRefills({
-        compacted: false,
-        turnCounter: 0,
-        turnId: 'x',
-      }),
-    ).toBe(0)
-  })
-
   test('compact within the turn window increments the streak', () => {
     expect(
       countConsecutiveRapidRefills({

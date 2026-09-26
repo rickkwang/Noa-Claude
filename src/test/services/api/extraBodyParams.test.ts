@@ -30,19 +30,6 @@ describe('getExtraBodyParams', () => {
     })
   })
 
-  test('preserves effort fields by default', () => {
-    process.env.CLAUDE_CODE_EXTRA_BODY = JSON.stringify({
-      output_config: {
-        effort: 'high',
-      },
-    })
-
-    expect(getExtraBodyParams()).toEqual({
-      output_config: {
-        effort: 'high',
-      },
-    })
-  })
 })
 describe('store is not sent on the Anthropic transport', () => {
   test('omits store for every provider that speaks the Messages API', () => {

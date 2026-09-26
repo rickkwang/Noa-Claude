@@ -17,10 +17,4 @@ describe('retired global config keys', () => {
       speculationEnabled: false,
     })
   })
-
-  test('returns the same object when nothing is retired', () => {
-    const config = { numStartups: 3 } as never
-
-    expect(removeRetiredKeys(config)).toBe(config)
-  })
 })

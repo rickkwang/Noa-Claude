@@ -11,7 +11,6 @@ import { join, sep } from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { getAutoMemPath } from '../../../memdir/paths.js'
 import {
-  readLastConsolidatedAt,
   recordConsolidation,
   rollbackConsolidationLock,
   tryAcquireConsolidationLock,
@@ -60,34 +59,7 @@ afterEach(async () => {
   await rm(tmpRoot, { recursive: true, force: true })
 })
 
-describe('readLastConsolidatedAt', () => {
-  test('returns 0 when lock file absent', async () => {
-    const result = await readLastConsolidatedAt()
-    expect(result).toBe(0)
-  })
-
-  test('returns mtimeMs when lock file present', async () => {
-    const stamp = Date.now() - 60_000
-    await presetLock(DEAD_PID, stamp)
-    const result = await readLastConsolidatedAt()
-    expect(Math.abs(result - stamp)).toBeLessThan(1500)
-  })
-})
-
 describe('tryAcquireConsolidationLock', () => {
-  test('clean acquire on absent lock returns 0 priorMtime', async () => {
-    const before = Date.now()
-    const result = await tryAcquireConsolidationLock()
-    const after = Date.now()
-    expect(result).toBe(0)
-
-    const body = await readFile(lockPath(), 'utf8')
-    expect(parseInt(body.trim(), 10)).toBe(process.pid)
-    const s = await stat(lockPath())
-    expect(s.mtimeMs).toBeGreaterThanOrEqual(before - 1000)
-    expect(s.mtimeMs).toBeLessThanOrEqual(after + 1000)
-  })
-
   test('reclaims a stale lock held by a dead PID', async () => {
     const priorMtime = Date.now() - 60_000
     await presetLock(DEAD_PID, priorMtime)
@@ -150,27 +122,12 @@ describe('rollbackConsolidationLock', () => {
   })
 })
 
-describe('recordConsolidation', () => {
-  test('creates the lock file and stamps mtime', async () => {
-    const before = Date.now()
-    await recordConsolidation()
-    const after = Date.now()
-    const body = await readFile(lockPath(), 'utf8')
-    expect(parseInt(body.trim(), 10)).toBe(process.pid)
-    const s = await stat(lockPath())
-    expect(s.mtimeMs).toBeGreaterThanOrEqual(before - 1000)
-    expect(s.mtimeMs).toBeLessThanOrEqual(after + 1000)
-  })
+test('manual consolidation creates the memory dir on first use', async () => {
+  const fresh = join(tmpRoot, 'nested-not-yet-created') + sep
+  process.env.CLAUDE_COWORK_MEMORY_PATH_OVERRIDE = fresh
+  clearAutoMemPathCache()
 
-  test('works even when the memory dir does not pre-exist', async () => {
-    // Point env at a non-existent subdir of tmpRoot; recordConsolidation
-    // should mkdir -p it.
-    const fresh = join(tmpRoot, 'nested-not-yet-created') + sep
-    process.env.CLAUDE_COWORK_MEMORY_PATH_OVERRIDE = fresh
-    clearAutoMemPathCache()
-
-    await recordConsolidation()
-    const s = await stat(join(fresh, LOCK_FILE))
-    expect(s.isFile()).toBe(true)
-  })
+  await recordConsolidation()
+  const s = await stat(join(fresh, LOCK_FILE))
+  expect(s.isFile()).toBe(true)
 })

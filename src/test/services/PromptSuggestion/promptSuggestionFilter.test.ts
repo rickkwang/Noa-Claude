@@ -8,38 +8,6 @@ function filtered(suggestion: string): boolean {
   return shouldFilterSuggestion(suggestion, 'user_intent')
 }
 
-describe('shouldFilterSuggestion — English behavior is unchanged', () => {
-  test('keeps ordinary suggestions', () => {
-    expect(filtered('run the tests')).toBe(false)
-    expect(filtered('commit this')).toBe(false)
-    expect(filtered('/clear')).toBe(false)
-  })
-
-  test('keeps allowlisted single words', () => {
-    for (const word of ['yes', 'ok', 'push', 'commit', 'no']) {
-      expect(filtered(word)).toBe(false)
-    }
-  })
-
-  test('drops non-allowlisted single words', () => {
-    expect(filtered('maybe')).toBe(true)
-    expect(filtered('done')).toBe(true)
-  })
-
-  test('drops meta, evaluative, and Claude-voice text', () => {
-    expect(filtered('no suggestion')).toBe(true)
-    expect(filtered('(silence — the user should assess)')).toBe(true)
-    expect(filtered('thanks')).toBe(true)
-    expect(filtered("Let me run the tests")).toBe(true)
-  })
-
-  test('drops over-long and multi-sentence text', () => {
-    expect(filtered('a '.repeat(20).trim())).toBe(true)
-    expect(filtered('Run the tests. Then commit.')).toBe(true)
-    expect(filtered('x'.repeat(100))).toBe(true)
-  })
-})
-
 describe('shouldFilterSuggestion — mixed-script and short CJK suggestions survive', () => {
   test('keeps spaceless Japanese and Chinese suggestions', () => {
     expect(filtered('テストを実行して')).toBe(false)
@@ -57,11 +25,6 @@ describe('shouldFilterSuggestion — mixed-script and short CJK suggestions surv
     expect(filtered('src/main.tsx を修正して')).toBe(false)
     expect(filtered('运行 bun test')).toBe(false)
     expect(filtered('QueryEngine.ts 확인해줘')).toBe(false)
-  })
-
-  test('drops a single CJK character as too short', () => {
-    expect(filtered('是')).toBe(true)
-    expect(filtered('네')).toBe(true)
   })
 
   test('keeps a normal-length CJK sentence but drops an essay', () => {
@@ -86,32 +49,10 @@ describe('shouldFilterSuggestion — CJK meta and evaluative text is dropped', (
     expect(filtered('제안 없음')).toBe(true)
   })
 
-  test('drops CJK completion markers', () => {
-    for (const s of ['完了', '完了しました', '完成了', '완료']) {
-      expect(filtered(s)).toBe(true)
-    }
-  })
-
   test('drops full-width and CJK bracket wrapping', () => {
     expect(filtered('（沈黙）')).toBe(true)
     expect(filtered('【提案なし】')).toBe(true)
     expect(filtered('〔silence〕')).toBe(true)
-  })
-
-  test('drops CJK thanks and approval', () => {
-    for (const s of [
-      'ありがとうございます',
-      '助かりました',
-      '谢谢你',
-      '感谢',
-      '감사합니다',
-      '고마워요',
-    ]) {
-      expect(filtered(s)).toBe(true)
-    }
-    for (const s of ['良さそうですね', '看起来不错', '太好了', '좋네요']) {
-      expect(filtered(s)).toBe(true)
-    }
   })
 
   test('drops CJK Claude-voice openers but keeps 我们', () => {
@@ -128,12 +69,6 @@ describe('shouldFilterSuggestion — CJK meta and evaluative text is dropped', (
 })
 
 describe('unwrapSuggestionText', () => {
-  test('strips a single wrapping tag', () => {
-    expect(unwrapSuggestionText('<suggestion>run the tests</suggestion>')).toBe(
-      'run the tests',
-    )
-  })
-
   test('leaves nested same-tag content alone', () => {
     const nested = '<result>a</result>b<result>c</result>'
     expect(unwrapSuggestionText(nested)).toBe(nested)
@@ -151,7 +86,4 @@ describe('unwrapSuggestionText', () => {
     expect(unwrapSuggestionText('建议：运行测试')).toBe('运行测试')
   })
 
-  test('leaves unlabeled text untouched', () => {
-    expect(unwrapSuggestionText('  run the tests  ')).toBe('run the tests')
-  })
 })

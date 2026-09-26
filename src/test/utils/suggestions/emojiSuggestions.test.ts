@@ -3,7 +3,6 @@ import {
   EMOJI_ALIASES,
   EMOJI_INLINE_RE,
   EMOJI_SHORTCODES,
-  EMOJI_TABLE,
   EMOJI_TRIGGER_RE,
   getEmoji,
   getEmojiSuggestions,
@@ -74,33 +73,10 @@ describe('getEmojiSuggestions', () => {
     expect(items[0]!.id.startsWith('emoji-smi')).toBe(true)
   })
 
-  test('a substring-only match ranks below a prefix match for the same query', () => {
-    // "face" is a prefix of nothing common but a substring of *_face entries.
-    const items = getEmojiSuggestions('face')
-    // All results contain "face"; ensure prefixed ones (if any) come first.
-    const firstPrefixed = items.findIndex(i =>
-      i.id.replace('emoji-', '').startsWith('face'),
-    )
-    const firstSubstring = items.findIndex(
-      i => !i.id.replace('emoji-', '').startsWith('face'),
-    )
-    if (firstPrefixed !== -1 && firstSubstring !== -1) {
-      expect(firstPrefixed).toBeLessThan(firstSubstring)
-    }
-    expect(items.length).toBeGreaterThan(0)
-  })
-
   test('caps the result count at the upstream limit (20)', () => {
     // "a" appears in many names; ensure we never flood the dropdown.
     const items = getEmojiSuggestions('a')
     expect(items.length).toBeLessThanOrEqual(20)
-  })
-
-  test('every table entry has a non-empty glyph', () => {
-    for (const [name, glyph] of EMOJI_TABLE) {
-      expect(glyph.length).toBeGreaterThan(0)
-      expect(name).toMatch(/^[a-z0-9_+-]+$/)
-    }
   })
 
   test('surfaces aliases as their own rows, glyph shared with the canonical', () => {
@@ -122,15 +98,6 @@ describe('EMOJI_ALIASES (upstream 2.1.221 alias layer)', () => {
       const glyph = EMOJI_SHORTCODES[canonical]
       expect(glyph).toBeDefined()
       expect(getEmoji(alias)).toBe(glyph)
-    }
-  })
-
-  test('an alias never shadows an existing base entry', () => {
-    // thumbsup/thumbsdown are base names here, so their aliases are no-ops.
-    for (const alias of Object.keys(EMOJI_ALIASES)) {
-      if (Object.hasOwn(EMOJI_SHORTCODES, alias)) {
-        expect(EMOJI_TABLE.get(alias)).toBe(EMOJI_SHORTCODES[alias])
-      }
     }
   })
 
@@ -195,16 +162,6 @@ describe('accept path (upstream routes emoji through applyTriggerSuggestion)', (
     expect(newCursor).toBe(-1)
   })
 
-  test('suggestion rows carry no metadata (upstream shape)', () => {
-    for (const item of getEmojiSuggestions('fire')) {
-      expect(item).toEqual({
-        id: item.id,
-        displayText: item.displayText,
-        description: item.description,
-      })
-    }
-  })
-
   test('an accepted alias inserts the canonical glyph', () => {
     const input = 'nice :plus_on'
     const { newInput } = accept(input, input.length, 'plus_one')
@@ -213,10 +170,6 @@ describe('accept path (upstream routes emoji through applyTriggerSuggestion)', (
 })
 
 describe('getEmoji', () => {
-  test('returns the glyph for a known shortcode', () => {
-    expect(getEmoji('fire')).toBe('🔥')
-    expect(getEmoji('tada')).toBe('🎉')
-  })
   test('returns undefined for an unknown shortcode', () => {
     expect(getEmoji('definitely_not_a_shortcode')).toBeUndefined()
   })

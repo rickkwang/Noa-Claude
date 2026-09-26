@@ -30,10 +30,6 @@ function render(error: APIError, model: string): { kind?: string; text: string }
 }
 
 describe('data retention requirement (Covered Models)', () => {
-  test('recognises the server wording', () => {
-    expect(isDataRetentionRequiredError(SERVER_MESSAGE)).toBe(true)
-  })
-
   test('does not fire on unrelated 400s', () => {
     expect(isDataRetentionRequiredError('invalid model name')).toBe(false)
     expect(

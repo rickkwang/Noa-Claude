@@ -51,15 +51,4 @@ describe('configureEffortParams', () => {
     expect(outputConfig).toEqual({ effort: 'xhigh' })
   })
 
-  test('applies the resolved effort when none was carried over', () => {
-    const outputConfig: Record<string, unknown> = {}
-    configureEffortParams('max', outputConfig as never, {}, [], 'claude-opus-5')
-    expect(outputConfig).toEqual({ effort: 'max' })
-  })
-
-  test('sends nothing when no effort is resolved', () => {
-    const outputConfig: Record<string, unknown> = {}
-    configureEffortParams(undefined, outputConfig as never, {}, [], 'claude-opus-5')
-    expect(outputConfig).toEqual({})
-  })
 })

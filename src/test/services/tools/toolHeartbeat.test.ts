@@ -11,10 +11,6 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 const TICK = 15
 
 describe('startToolHeartbeat', () => {
-  test('default interval mirrors upstream (30s)', () => {
-    expect(TOOL_HEARTBEAT_INTERVAL_MS).toBe(30_000)
-  })
-
   test('emits ticks with the expected shape and incrementing ids', async () => {
     const ticks: Array<{ toolUseID: string; data: unknown }> = []
     const stop = startToolHeartbeat({

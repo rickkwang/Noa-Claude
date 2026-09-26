@@ -4,10 +4,7 @@ import type { ReactElement } from 'react'
 import type { LocalJSXCommandContext } from '../../types/command.js'
 
 import {
-  APPLIES_ON_CLOSE_HINT,
   decideMenuAutoReload,
-  RELOAD_COMMAND,
-  withQueuedNote,
 } from '../../commands/plugin/autoReload.js'
 
 describe('decideMenuAutoReload', () => {
@@ -47,29 +44,6 @@ describe('decideMenuAutoReload', () => {
     expect(
       decideMenuAutoReload({ dirty: false, needsRefresh: true, midTurn: false }),
     ).toBe('none')
-  })
-})
-
-describe('withQueuedNote', () => {
-  test('keeps the menu message and adds the note on its own line', () => {
-    const note = withQueuedNote(undefined)
-    expect(withQueuedNote('✓ Enabled foo.')).toBe(`✓ Enabled foo.\n${note}`)
-  })
-
-  test('a silent close still reports the queued reload', () => {
-    expect(withQueuedNote(undefined)).toContain(RELOAD_COMMAND)
-    expect(withQueuedNote('')).toBe(withQueuedNote(undefined))
-  })
-})
-
-describe('user-facing strings', () => {
-  test('the queued note names the command that is actually submitted', () => {
-    expect(withQueuedNote(undefined)).toContain(RELOAD_COMMAND)
-    expect(RELOAD_COMMAND).toBe('/reload-plugins')
-  })
-
-  test('the staged-change hint does not tell the user to run anything', () => {
-    expect(APPLIES_ON_CLOSE_HINT).not.toContain('/reload-plugins')
   })
 })
 

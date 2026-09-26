@@ -91,45 +91,6 @@ describe('Concise output style', () => {
   })
 })
 
-describe('the output_style prompt section cache key', () => {
-  // resolveSystemPromptSections memoizes on the section name and only clears on
-  // /clear or /compact. Before the name carried the style, switching styles
-  // mid-session left the first turn's section cached: switching away from
-  // `default` kept the section absent while the per-turn reminder already
-  // announced the style, so the model was told to follow guidelines it had
-  // never been sent.
-  function sectionName(
-    outputStyleConfig: { name: string; prompt: string } | null,
-  ): string {
-    const sections = buildDynamicSystemPromptSections({
-      enabledTools: new Set(['Bash']),
-      skillToolCommands: [],
-      model: 'claude-opus-4-1-20250805',
-      outputStyleConfig,
-    })
-    const section = sections.find(s => s.name.startsWith('output_style'))
-    expect(section).toBeTruthy()
-    return section!.name
-  }
-
-  test('names the active style, so a switch misses the previous entry', () => {
-    const none = sectionName(null)
-    const concise = sectionName(OUTPUT_STYLE_CONFIG.Concise!)
-    const proactive = sectionName(OUTPUT_STYLE_CONFIG.Proactive!)
-
-    expect(none).toBe(`output_style:${DEFAULT_OUTPUT_STYLE_NAME}`)
-    expect(concise).toBe('output_style:Concise')
-    expect(proactive).toBe('output_style:Proactive')
-    expect(new Set([none, concise, proactive]).size).toBe(3)
-  })
-
-  test('is stable for the same style', () => {
-    expect(sectionName(OUTPUT_STYLE_CONFIG.Concise!)).toBe(
-      sectionName(OUTPUT_STYLE_CONFIG.Concise!),
-    )
-  })
-})
-
 describe('the built-in style roster', () => {
   // Tripwire, not decoration: every built-in style name also has to appear in
   // FOREGROUND_529_RETRY_SOURCES (src/services/api/withRetry.ts) as

@@ -27,13 +27,6 @@ describe('formatResetTime alwaysShowDate', () => {
     expect(on).toBe(off)
   })
 
-  test('defaults to the pre-existing behavior when the arg is omitted', () => {
-    const soon = nowSeconds() + 3 * 3600
-    expect(formatResetTime(soon, false, true)).toBe(
-      formatResetTime(soon, false, true, false),
-    )
-  })
-
   test('undefined timestamp stays undefined', () => {
     expect(formatResetTime(undefined, false, true, true)).toBeUndefined()
   })

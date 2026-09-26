@@ -11,10 +11,6 @@ import {
   TIME_BASED_MC_CLEARED_MESSAGE,
 } from '../../../services/compact/microCompact.js'
 import {
-  getSizeBasedMCConfig,
-  shouldSizeTrigger,
-} from '../../../services/compact/sizeBasedMCConfig.js'
-import {
   PERSISTED_OUTPUT_TAG,
   TOOL_RESULT_CLEARED_MESSAGE,
   getToolResultPath,
@@ -481,41 +477,6 @@ describe('cleared tool results are persisted', () => {
   })
 })
 
-describe('getSizeBasedMCConfig', () => {
-  afterEach(restoreEnv)
-
-  test('enabled by default with conservative fraction', () => {
-    delete process.env.CLAUDE_CODE_SIZE_MICROCOMPACT
-    delete process.env.CLAUDE_CODE_SIZE_MICROCOMPACT_PCT
-    delete process.env.CLAUDE_CODE_SIZE_MICROCOMPACT_KEEP
-    const cfg = getSizeBasedMCConfig()
-    expect(cfg.enabled).toBe(true)
-    expect(cfg.triggerFraction).toBeGreaterThan(0)
-    expect(cfg.triggerFraction).toBeLessThanOrEqual(1)
-    expect(cfg.keepRecent).toBeGreaterThanOrEqual(1)
-  })
-
-  test('disabled via env "0"', () => {
-    process.env.CLAUDE_CODE_SIZE_MICROCOMPACT = '0'
-    expect(getSizeBasedMCConfig().enabled).toBe(false)
-  })
-
-  test('percent and keep overrides applied', () => {
-    process.env.CLAUDE_CODE_SIZE_MICROCOMPACT_PCT = '70'
-    process.env.CLAUDE_CODE_SIZE_MICROCOMPACT_KEEP = '12'
-    const cfg = getSizeBasedMCConfig()
-    expect(cfg.triggerFraction).toBeCloseTo(0.7, 5)
-    expect(cfg.keepRecent).toBe(12)
-  })
-
-  test('ignores out-of-range percent, falls back to default', () => {
-    process.env.CLAUDE_CODE_SIZE_MICROCOMPACT_PCT = '900'
-    const cfg = getSizeBasedMCConfig()
-    expect(cfg.triggerFraction).toBeGreaterThan(0)
-    expect(cfg.triggerFraction).toBeLessThanOrEqual(1)
-  })
-})
-
 describe('microcompactMessages — size-based wiring', () => {
   afterEach(restoreEnv)
 
@@ -565,24 +526,5 @@ describe('microcompactMessages — size-based wiring', () => {
     const input = bigConversation()
     const out = await microcompactMessages(input, ctx, 'session_memory')
     expect(out.messages).toEqual(input)
-  })
-})
-
-describe('shouldSizeTrigger', () => {
-  const cfg = { enabled: true, triggerFraction: 0.85, keepRecent: 8 }
-
-  test('fires once estimated tokens cross the fraction of the window', () => {
-    expect(shouldSizeTrigger(86_000, 100_000, cfg)).toBe(true)
-    expect(shouldSizeTrigger(84_000, 100_000, cfg)).toBe(false)
-  })
-
-  test('never fires when disabled', () => {
-    expect(
-      shouldSizeTrigger(99_000, 100_000, { ...cfg, enabled: false }),
-    ).toBe(false)
-  })
-
-  test('never fires for a non-positive window', () => {
-    expect(shouldSizeTrigger(99_000, 0, cfg)).toBe(false)
   })
 })

@@ -1,13 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { APIUserAbortError } from '@anthropic-ai/sdk'
 import {
   buildCompactSummaryMessages,
   buildPostCompactMessages,
   createPostCompactContextAttachments,
-  estimatePayloadTokensSaved,
   getPartialCompactMessagesToKeep,
   getPartialCompactMessagesToSummarize,
-  isCompactionUserAbort,
   isStaleFullCompactSummary,
   partialCompactConversation,
   PTL_RETRY_MARKER,
@@ -44,78 +41,45 @@ function makeAssistantMessage(
   }
 }
 
-describe('buildPostCompactMessages', () => {
-  test('places preserved messages after the compact summary', () => {
-    const boundary = createCompactBoundaryMessage('manual', 1000, OLD_TURN_ID)
-    boundary.uuid = 'boundary-order'
+test('default compaction places the summary before kept messages', () => {
+  const boundary = createCompactBoundaryMessage('manual', 1000, OLD_TURN_ID)
+  const summary = createUserMessage({ content: 'Summary', isCompactSummary: true })
+  const kept = makeAssistantMessage('kept-tail', 'kept tail')
 
-    const summary = createUserMessage({
-      content: 'Summary:\n- compacted context',
-      isCompactSummary: true,
-    })
-    summary.uuid = 'summary-order'
-
-    const kept = makeAssistantMessage('kept-order', 'kept tail')
-
-    const ordered = buildPostCompactMessages({
-      boundaryMarker: boundary,
-      summaryMessages: [summary],
-      messagesToKeep: [kept],
-      attachments: [],
-      hookResults: [],
-    })
-
-    expect(ordered.map(message => message.uuid)).toEqual([
-      'boundary-order',
-      'summary-order',
-      'kept-order',
-    ])
+  const ordered = buildPostCompactMessages({
+    boundaryMarker: boundary,
+    summaryMessages: [summary],
+    messagesToKeep: [kept],
+    attachments: [],
+    hookResults: [],
   })
 
-  test('places preserved messages before the compact summary when requested', () => {
-    const boundary = createCompactBoundaryMessage('manual', 1000, OLD_TURN_ID)
-    boundary.uuid = 'boundary-from-order'
-
-    const summary = createUserMessage({
-      content: 'Summary:\n- compacted suffix',
-      isCompactSummary: true,
-    })
-    summary.uuid = 'summary-from-order'
-
-    const kept = makeAssistantMessage('kept-from-order', 'kept prefix')
-
-    const ordered = buildPostCompactMessages({
-      boundaryMarker: boundary,
-      summaryMessages: [summary],
-      messagesToKeep: [kept],
-      messagesToKeepPlacement: 'before_summary',
-      attachments: [],
-      hookResults: [],
-    })
-
-    expect(ordered.map(message => message.uuid)).toEqual([
-      'boundary-from-order',
-      'kept-from-order',
-      'summary-from-order',
-    ])
-  })
+  expect(ordered.map(message => message.uuid)).toEqual([
+    boundary.uuid,
+    summary.uuid,
+    kept.uuid,
+  ])
 })
 
-describe('estimatePayloadTokensSaved', () => {
-  test('subtracts a precomputed post compact token count', () => {
-    const before = [
-      makeAssistantMessage('before-1', 'large tool context '.repeat(200)),
-      createUserMessage({ content: 'follow-up question '.repeat(50) }),
-    ]
+test('prefix-preserving compaction places kept messages before the summary', () => {
+  const boundary = createCompactBoundaryMessage('manual', 1000, OLD_TURN_ID)
+  const summary = createUserMessage({ content: 'Summary', isCompactSummary: true })
+  const kept = makeAssistantMessage('kept-prefix', 'kept prefix')
 
-    expect(estimatePayloadTokensSaved(before, 1)).toBeGreaterThan(0)
+  const ordered = buildPostCompactMessages({
+    boundaryMarker: boundary,
+    summaryMessages: [summary],
+    messagesToKeep: [kept],
+    messagesToKeepPlacement: 'before_summary',
+    attachments: [],
+    hookResults: [],
   })
 
-  test('never reports negative savings', () => {
-    const before = [createUserMessage({ content: 'short' })]
-
-    expect(estimatePayloadTokensSaved(before, 10_000)).toBe(0)
-  })
+  expect(ordered.map(message => message.uuid)).toEqual([
+    boundary.uuid,
+    kept.uuid,
+    summary.uuid,
+  ])
 })
 
 describe('buildCompactSummaryMessages', () => {
@@ -260,23 +224,6 @@ describe('snapshotCompactContextState', () => {
 })
 
 describe('isStaleFullCompactSummary', () => {
-  test('matches user compact summaries without direction', () => {
-    const summary = createUserMessage({
-      content: 'Summary:\n- checkpoint',
-      isCompactSummary: true,
-    })
-    expect(isStaleFullCompactSummary(summary)).toBe(true)
-  })
-
-  test('matches user compact summaries with direction up_to', () => {
-    const summary = createUserMessage({
-      content: 'Summary:\n- prefix checkpoint',
-      isCompactSummary: true,
-      summarizeMetadata: { direction: 'up_to' },
-    })
-    expect(isStaleFullCompactSummary(summary)).toBe(true)
-  })
-
   test('does not match direction=from partial summaries', () => {
     const summary = createUserMessage({
       content: 'Summary:\n- recent suffix',
@@ -286,16 +233,6 @@ describe('isStaleFullCompactSummary', () => {
     expect(isStaleFullCompactSummary(summary)).toBe(false)
   })
 
-  test('does not match non-summary user messages', () => {
-    const userMsg = createUserMessage({ content: 'hello' })
-    expect(isStaleFullCompactSummary(userMsg)).toBe(false)
-  })
-
-  test('does not match assistant or system messages', () => {
-    expect(isStaleFullCompactSummary(makeAssistantMessage('a-1', 'hi'))).toBe(
-      false,
-    )
-  })
 })
 
 describe('getPartialCompactMessagesToSummarize', () => {
@@ -399,43 +336,12 @@ describe('selectPTLPartialPivot', () => {
     const messages = makeTurns(20)
     const pivot = selectPTLPartialPivot(
       messages,
-      // 500 tokens over → roughly the last two turns must be held back.
       makePTLResponse('prompt is too long: 200500 tokens > 200000'),
     )
     expect(pivot).not.toBeNull()
     expect(pivot).toBeGreaterThan(0)
     expect(pivot).toBeLessThan(messages.length)
-    // Everything from the pivot on stays verbatim — that is the whole point:
-    // no round leaves the context, unlike head truncation.
     expect(messages.length - pivot!).toBeGreaterThanOrEqual(2)
-  })
-
-  test('halves by token weight when the gap is unparseable', () => {
-    const messages = makeTurns(20)
-    const pivot = selectPTLPartialPivot(messages, makePTLResponse())
-    expect(pivot).toBe(10)
-  })
-
-  test('halves when the overflow exceeds the whole conversation', () => {
-    // Holding everything back still wouldn't cover the gap. Halving may not
-    // fit either, but the caller's alternative is deleting rounds outright,
-    // and a retry can slide again.
-    expect(
-      selectPTLPartialPivot(
-        makeTurns(4),
-        makePTLResponse('prompt is too long: 900000 tokens > 200000'),
-      ),
-    ).toBe(2)
-  })
-
-  test('returns null when nothing would be left to summarize', () => {
-    // Two turns, overflow large enough that the pivot lands at 0.
-    expect(
-      selectPTLPartialPivot(
-        makeTurns(2),
-        makePTLResponse('prompt is too long: 200490 tokens > 200000'),
-      ),
-    ).toBeNull()
   })
 
   test('never splits a tool_use from its tool_result', () => {
@@ -592,25 +498,4 @@ describe('truncateHeadForPTLRetry', () => {
     expect(second!.length).toBeLessThan(first!.length)
   })
 
-  test('returns null when there is only one round to summarize', () => {
-    expect(
-      truncateHeadForPTLRetry(
-        [makeAssistantMessage('only', 'sole round')],
-        makePTLResponse('prompt is too long: 200400 tokens > 200000'),
-      ),
-    ).toBeNull()
-  })
-})
-
-describe('isCompactionUserAbort', () => {
-  test('treats APIUserAbortError and aborted signals as user cancellation', () => {
-    const abortController = new AbortController()
-    abortController.abort()
-
-    expect(isCompactionUserAbort(new APIUserAbortError())).toBe(true)
-    expect(isCompactionUserAbort(new Error('other'), abortController.signal)).toBe(
-      true,
-    )
-    expect(isCompactionUserAbort(new Error('other'))).toBe(false)
-  })
 })

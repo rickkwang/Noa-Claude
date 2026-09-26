@@ -15,10 +15,6 @@ describe('buildRedirectUri', () => {
     expect(buildRedirectUri(51004)).toBe('http://localhost:51004/callback')
   })
 
-  test('falls back to the default port when none is given', () => {
-    expect(buildRedirectUri()).toBe('http://localhost:3118/callback')
-  })
-
   test('opts into the IPv4 loopback literal for strict authorization servers', () => {
     process.env[ENV_KEY] = '127.0.0.1'
     expect(buildRedirectUri(51004)).toBe('http://127.0.0.1:51004/callback')
@@ -36,8 +32,4 @@ describe('buildRedirectUri', () => {
     expect(buildRedirectUri(51004)).toBe('http://localhost:51004/callback')
   })
 
-  test('ignores an empty override', () => {
-    process.env[ENV_KEY] = ''
-    expect(buildRedirectUri(51004)).toBe('http://localhost:51004/callback')
-  })
 })

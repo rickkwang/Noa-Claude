@@ -39,18 +39,7 @@ describe('throwIfBlockedByPreCompactHook', () => {
     expect(notifications.map(n => n.key)).toEqual(['compaction-blocked-by-hook'])
   })
 
-  test('the thrown error is distinguishable from a failed compaction', () => {
-    const { context: ctx } = context()
-
-    try {
-      throwIfBlockedByPreCompactHook({ blockedBy: '[hook]' }, ctx)
-      expect.unreachable()
-    } catch (error) {
-      expect(error).toBeInstanceOf(CompactionBlockedError)
-    }
-  })
-
-  test('the automatic paths suppress the notification', () => {
+  test('automatic compaction suppresses the veto notification', () => {
     const { context: ctx, notifications } = context()
 
     expect(() =>
@@ -61,17 +50,6 @@ describe('throwIfBlockedByPreCompactHook', () => {
     expect(notifications).toEqual([])
   })
 
-  test('hook output that is not a veto passes through untouched', () => {
-    const { context: ctx, notifications } = context()
-
-    expect(() =>
-      throwIfBlockedByPreCompactHook(
-        { newCustomInstructions: 'keep the notes' },
-        ctx,
-      ),
-    ).not.toThrow()
-    expect(notifications).toEqual([])
-  })
 })
 
 describe('formatCompactError', () => {

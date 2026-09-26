@@ -15,5 +15,4 @@ latest
 .claude-agent/settings.local.json
 .claude-agent/mcp.json
 AGENTS.md
-CLAUDE.md
 CLAUDE.local.md
