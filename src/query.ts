@@ -96,7 +96,10 @@ import {
 import { notifyCommandLifecycle } from './utils/commandLifecycle.js'
 import { headlessProfilerCheckpoint } from './utils/headlessProfiler.js'
 import {
+  getDefaultMainLoopModelSetting,
   getRuntimeMainLoopModel,
+  getUserSpecifiedModelSetting,
+  parseUserSpecifiedModel,
   renderModelName,
 } from './utils/model/model.js'
 import {
@@ -394,6 +397,14 @@ async function* queryLoop(
     state.messages,
     state.toolUseContext,
   )
+
+  // Live /model switches apply to the main thread only: subagents read the
+  // same AppState but run their own model. Only a change to the pick counts,
+  // so a fallback or session-scoped model isn't undone on the next turn.
+  const tracksLiveModelPick =
+    querySource.startsWith('repl_main_thread') || querySource === 'sdk'
+  const startState = state.toolUseContext.getAppState()
+  let pickSeen = startState.mainLoopModelForSession ?? startState.mainLoopModel
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
@@ -719,13 +730,49 @@ async function* queryLoop(
       : null
     let updatedToolUseContext = toolUseContext
 
+    const exceeds200kTokens =
+      permissionMode === 'plan' &&
+      doesMostRecentAssistantMessageExceed200k(messagesForQuery)
     let currentModel = getRuntimeMainLoopModel({
       permissionMode,
       mainLoopModel: toolUseContext.options.mainLoopModel,
-      exceeds200kTokens:
-        permissionMode === 'plan' &&
-        doesMostRecentAssistantMessageExceed200k(messagesForQuery),
+      exceeds200kTokens,
     })
+
+    // An immediate /model mid-turn only writes AppState; adopt it here, at the
+    // next API call, instead of when the task ends.
+    const livePick = appState.mainLoopModelForSession ?? appState.mainLoopModel
+    if (tracksLiveModelPick && livePick !== pickSeen) {
+      pickSeen = livePick
+      const picked = parseUserSpecifiedModel(
+        livePick ??
+          getUserSpecifiedModelSetting() ??
+          getDefaultMainLoopModelSetting(),
+      )
+      if (picked !== toolUseContext.options.mainLoopModel) {
+        const switchedModel = getRuntimeMainLoopModel({
+          permissionMode,
+          mainLoopModel: picked,
+          exceeds200kTokens,
+        })
+        logEvent('tengu_live_model_switch', {
+          from_model:
+            currentModel as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          to_model:
+            switchedModel as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        })
+        currentModel = switchedModel
+        toolUseContext = {
+          ...toolUseContext,
+          options: { ...toolUseContext.options, mainLoopModel: picked },
+        }
+        updatedToolUseContext = toolUseContext
+        // Same model-bound signature strip the fallback path applies.
+        if (process.env.USER_TYPE === 'ant') {
+          messagesForQuery = stripSignatureBlocks(messagesForQuery)
+        }
+      }
+    }
 
     queryCheckpoint('query_setup_end')
 

@@ -1,16 +1,7 @@
 // @ts-nocheck
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growthbook.js'
-
-/**
- * Whether inference-config commands (/model, /fast, /effort) should execute
- * immediately (during a running query) rather than waiting for the current
- * turn to finish.
- *
- * Always enabled for ants; gated by experiment for external users.
- */
+// Was gated on a GrowthBook flag that can never turn on here (remote fetch is
+// hard-disabled), which left /model, /fast and /effort queued behind a running
+// task. query() re-reads all three at each API call, so they apply mid-turn.
 export function shouldInferenceConfigCommandBeImmediate(): boolean {
-  return (
-    process.env.USER_TYPE === 'ant' ||
-    getFeatureValue_CACHED_MAY_BE_STALE('tengu_immediate_model_command', false)
-  )
+  return true
 }
