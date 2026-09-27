@@ -79,13 +79,24 @@ export function parseRGB(colorStr: string): RGBColorType | null {
   if (cached !== undefined) return cached
 
   const match = colorStr.match(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/)
-  const result = match
-    ? {
-        r: parseInt(match[1]!, 10),
-        g: parseInt(match[2]!, 10),
-        b: parseInt(match[3]!, 10),
-      }
-    : null
+  const hexMatch = colorStr.match(/^#([\da-f]{3}|[\da-f]{6})$/i)
+  let result: RGBColorType | null = null
+  if (match) {
+    result = {
+      r: parseInt(match[1]!, 10),
+      g: parseInt(match[2]!, 10),
+      b: parseInt(match[3]!, 10),
+    }
+  } else if (hexMatch) {
+    const hex = hexMatch[1]!.length === 3
+      ? hexMatch[1]!.replace(/./g, digit => digit + digit)
+      : hexMatch[1]!
+    result = {
+      r: parseInt(hex.slice(0, 2), 16),
+      g: parseInt(hex.slice(2, 4), 16),
+      b: parseInt(hex.slice(4, 6), 16),
+    }
+  }
   RGB_CACHE.set(colorStr, result)
   return result
 }

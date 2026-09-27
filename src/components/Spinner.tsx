@@ -102,9 +102,9 @@ function SpinnerWithVerbInner({
   const settings = useSettings();
   const reducedMotion = settings.prefersReducedMotion ?? false;
 
-  // NOTE: useAnimationFrame(50) lives in SpinnerAnimationRow, not here.
+  // NOTE: useAnimationFrame(32) lives in SpinnerAnimationRow, not here.
   // This component only re-renders when props or app state change —
-  // it is no longer on the 50ms clock. All `time`-derived values
+  // it is no longer on the animation clock. All `time`-derived values
   // (frame, glimmer, stalled intensity, token counter, thinking shimmer,
   // elapsed-time timer) are computed inside the child.
 
@@ -255,7 +255,7 @@ function SpinnerWithVerbInner({
   }
 
   // Time-based tip overrides: coarse thresholds so a stale ref read (we're
-  // off the 50ms clock) is fine. Other triggers (mode change, setMessages)
+  // off the animation clock) is fine. Other triggers (mode change, setMessages)
   // cause re-renders that refresh this in practice.
   let contextTipsActive = false;
   const tipsEnabled = settings.spinnerTipsEnabled !== false;

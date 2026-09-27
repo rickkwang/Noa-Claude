@@ -208,6 +208,21 @@ export function GlimmerMessage(t0) {
   if (t2 !== Symbol.for("react.early_return_sentinel")) {
     return t2;
   }
+  if (mode !== "tool-use") {
+    const baseRGB = parseRGB(theme[messageColor]);
+    const shimmerRGB = parseRGB(theme[shimmerColor]);
+    if (baseRGB && shimmerRGB) {
+      const halfWidth = Math.max(messageWidth * 0.1, 3);
+      let column = 0;
+      return <>{segments.map(({ segment, width }, index) => {
+        const center = column + width / 2;
+        column += width;
+        const distance = Math.min(Math.abs(center - glimmerIndex) / halfWidth, 1);
+        const intensity = (1 + Math.cos(Math.PI * distance)) / 2;
+        return <Text key={index} color={toRGBColor(interpolateColor(baseRGB, shimmerRGB, intensity))}>{segment}</Text>;
+      })}<Text color={messageColor}> </Text></>;
+    }
+  }
   const shimmerStart = glimmerIndex - 1;
   const shimmerEnd = glimmerIndex + 1;
   if (shimmerStart >= messageWidth || shimmerEnd < 0) {

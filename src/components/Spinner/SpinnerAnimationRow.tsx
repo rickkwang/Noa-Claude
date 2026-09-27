@@ -20,8 +20,8 @@ const THINKING_BARE_WIDTH = stringWidth('thinking');
 const SHOW_TOKENS_AFTER_MS = 30_000;
 
 // Thinking shimmer constants. Previously lived in a separate ThinkingShimmerText
-// component with its own useAnimationFrame(50) — inlined here to reuse our
-// existing 50ms clock and eliminate the redundant subscriber.
+// component with its own useAnimationFrame(50) — inlined here to reuse the
+// row's animation clock and eliminate the redundant subscriber.
 const THINKING_INACTIVE = {
   r: 153,
   g: 153,
@@ -101,11 +101,12 @@ export type SpinnerAnimationRowProps = {
 };
 
 /**
- * The 50ms-animated portion of SpinnerWithVerb. Owns useAnimationFrame(50)
- * and all values derived from the animation clock (frame, glimmer, token
- * counter animation, elapsed-time, stalled intensity, thinking shimmer).
+ * The animation-clock-driven portion of SpinnerWithVerb. Owns
+ * useAnimationFrame(32) and all values derived from that clock (frame,
+ * glimmer, token counter animation, elapsed-time, stalled intensity,
+ * thinking shimmer).
  *
- * The parent SpinnerWithVerb is freed from the 50ms render loop and only
+ * The parent SpinnerWithVerb is freed from the animation render loop and only
  * re-renders when its props/app state change (~25x/turn instead of ~383x).
  * That keeps the outer Box shells, useAppState selectors, task filtering,
  * and tip/tree subtrees out of the hot animation path.
@@ -134,9 +135,7 @@ export function SpinnerAnimationRow({
   showToolCallTimer = false,
   compact
 }: SpinnerAnimationRowProps): React.ReactNode {
-  // The requesting glimmer steps every 50ms; every other mode steps at 200ms
-  // or slower, so a 100ms clock is enough there.
-  const [viewportRef, time] = useAnimationFrame(reducedMotion ? null : mode === 'requesting' ? 50 : 100);
+  const [viewportRef, time] = useAnimationFrame(reducedMotion ? null : 32);
 
   // === Elapsed time (wall-clock, derived from refs each frame) ===
   const now = Date.now();
@@ -165,31 +164,32 @@ export function SpinnerAnimationRow({
     stalledIntensity
   } = useStalledAnimation(time, currentResponseLength, hasActiveTools || leaderIsIdle, reducedMotion);
   const frame = reducedMotion ? 0 : Math.floor(time / 120);
-  const glimmerSpeed = mode === 'requesting' ? 50 : 200;
   // message is stable within a turn; stringWidth is expensive enough (Bun native
-  // call per code point) to memoize explicitly across the 50ms loop.
+  // call per code point) to memoize explicitly across the animation loop.
   const glimmerMessageWidth = useMemo(() => stringWidth(message), [message]);
-  const cycleLength = glimmerMessageWidth + 20;
-  const cyclePosition = Math.floor(time / glimmerSpeed);
-  const glimmerIndex = reducedMotion ? -100 : isStalled ? -100 : mode === 'requesting' ? cyclePosition % cycleLength - 10 : glimmerMessageWidth + 10 - cyclePosition % cycleLength;
+  const glimmerHalfWidth = Math.max(glimmerMessageWidth * 0.1, 3);
+  const sweep = time % 2000 / 2000 * (glimmerMessageWidth + 2 * glimmerHalfWidth);
+  const glimmerIndex = reducedMotion || isStalled ? -100 : mode === 'requesting' ? sweep - glimmerHalfWidth : glimmerMessageWidth + glimmerHalfWidth - sweep;
   const flashOpacity = reducedMotion ? 0 : mode === 'tool-use' ? (Math.sin(time / 1000 * Math.PI) + 1) / 2 : 0;
 
-  // === Token counter animation (smooth increment, driven by 50ms clock) ===
+  // === Token counter animation (smooth increment, rate-based so the clock
+  // interval can change without retuning the constants) ===
   const tokenCounterRef = useRef(currentResponseLength);
+  const tokenTickRef = useRef(time);
+  // Cap dt: the clock freezes while offscreen, so the first tick after
+  // returning would otherwise snap the counter straight to the target.
+  const dtSec = Math.min(time - tokenTickRef.current, 250) / 1000;
+  tokenTickRef.current = time;
   if (reducedMotion) {
     tokenCounterRef.current = currentResponseLength;
   } else {
     const gap = currentResponseLength - tokenCounterRef.current;
     if (gap > 0) {
-      let increment;
-      if (gap < 70) {
-        increment = 3;
-      } else if (gap < 200) {
-        increment = Math.max(8, Math.ceil(gap * 0.15));
-      } else {
-        increment = 50;
-      }
-      tokenCounterRef.current = Math.min(tokenCounterRef.current + increment, currentResponseLength);
+      // Rates are the old per-tick constants read at the 100ms clock they were
+      // tuned for: 30 tok/s when close, 80 tok/s plus 15%/tick while catching
+      // up, 500 tok/s when far behind.
+      const rate = gap < 70 ? 30 : gap < 200 ? Math.max(80, gap * 1.5) : 500;
+      tokenCounterRef.current = Math.min(tokenCounterRef.current + rate * dtSec, currentResponseLength);
     }
   }
   const displayedResponseLength = tokenCounterRef.current;
