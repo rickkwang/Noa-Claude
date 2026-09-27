@@ -14,6 +14,7 @@ import { withOAuth401Retry } from '../../utils/http.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
 import { discoverOpenAICompatibleModelOptions } from '../../utils/model/openaiModelDiscovery.js'
+import { DISCOVERED_MODEL_DESCRIPTION } from '../../utils/model/modelOptions.js'
 import { getAPIProvider, isFirstPartyAnthropicBaseUrl } from '../../utils/model/providers.js'
 import { isEssentialTrafficOnly } from '../../utils/privacyLevel.js'
 import { getClaudeCodeUserAgent } from '../../utils/userAgent.js'
@@ -144,7 +145,7 @@ export async function fetchBootstrapData(): Promise<void> {
     // from cache so they don't bleed into the model picker on next boot.
     if (getAPIProvider() !== 'openaiCompatible') {
       additionalModelOptions = additionalModelOptions.filter(
-        opt => opt.description !== 'Discovered from OpenAI-compatible endpoint',
+        opt => opt.description !== DISCOVERED_MODEL_DESCRIPTION,
       )
     }
 

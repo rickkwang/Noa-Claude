@@ -1,11 +1,10 @@
 import axios from 'axios'
 import { logForDebugging } from '../debug.js'
-import type { ModelOption } from './modelOptions.js'
+import { DISCOVERED_MODEL_DESCRIPTION, type ModelOption } from './modelOptions.js'
 import { getAPIProvider } from './providers.js'
 import type { ProviderType } from '../providerProfile.js'
 
 const DISCOVERY_TIMEOUT_MS = 5000
-const DISCOVERED_MODEL_DESCRIPTION = 'Discovered from OpenAI-compatible endpoint'
 
 type OpenAIModelsResponse = {
   data?: Array<{

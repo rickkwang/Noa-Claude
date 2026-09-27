@@ -42,6 +42,11 @@ import { getActiveProviderModelNames } from './providerModels.js'
 
 // @[MODEL LAUNCH]: Update all the available and default model option strings below.
 
+// Marks picker options found by querying an OpenAI-compatible /models list, so
+// they can be evicted when the session is no longer on that provider.
+export const DISCOVERED_MODEL_DESCRIPTION =
+  'Discovered from OpenAI-compatible endpoint'
+
 export type ModelOption = {
   value: ModelSetting
   label: string
@@ -712,7 +717,7 @@ export function getModelOptions(fastMode = false): ModelOption[] {
     }
     if (
       !isOpenAICompatible &&
-      opt.description === 'Discovered from OpenAI-compatible endpoint'
+      opt.description === DISCOVERED_MODEL_DESCRIPTION
     ) {
       continue
     }
