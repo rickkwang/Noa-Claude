@@ -2841,11 +2841,26 @@ export function isEmptyMessageText(text: string): boolean {
     stripPromptXMLTags(text).trim() === '' || text.trim() === NO_CONTENT_MESSAGE
   )
 }
-const STRIPPED_TAGS_RE =
-  /<(commit_analysis|context|function_analysis|pr_analysis)>.*?<\/\1>\n?/gs
+const STRIPPED_TAG_NAMES = ['commit_analysis', 'context', 'function_analysis', 'pr_analysis']
+const STRIPPED_TAGS_RE = new RegExp(
+  `<(${STRIPPED_TAG_NAMES.join('|')})>.*?<\\/\\1>\\n?`,
+  'gs',
+)
 
-export function stripPromptXMLTags(content: string): string {
-  return content.replace(STRIPPED_TAGS_RE, '').trim()
+export function stripPromptXMLTags(content: string, streaming = false): string {
+  const stripped = content.replace(STRIPPED_TAGS_RE, '')
+  if (!streaming) return stripped.trim()
+
+  let end = stripped.length
+  for (const tag of STRIPPED_TAG_NAMES) {
+    const start = stripped.indexOf(`<${tag}>`)
+    if (start !== -1 && start < end) end = start
+  }
+  const partialStart = stripped.lastIndexOf('<', end - 1)
+  if (partialStart !== -1 && STRIPPED_TAG_NAMES.some(tag => `<${tag}>`.startsWith(stripped.slice(partialStart, end)))) {
+    end = partialStart
+  }
+  return stripped.slice(0, end).trim()
 }
 
 export function getToolUseID(message: NormalizedMessage): string | null {

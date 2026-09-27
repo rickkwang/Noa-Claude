@@ -159,7 +159,7 @@ import { getGlobalConfig, saveGlobalConfig, getGlobalConfigWriteCount } from '..
 import { hasConsoleBillingAccess } from '../utils/billing.js';
 import { logEvent, type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from 'src/services/analytics/index.js';
 import { getFeatureValue_CACHED_MAY_BE_STALE } from 'src/services/analytics/growthbook.js';
-import { textForResubmit, handleMessageFromStream, type StreamingToolUse, isCompactBoundaryMessage, findLastCompactBoundaryIndex, getMessagesAfterCompactBoundary, getContentText, createUserMessage, createAssistantMessage, createTurnDurationMessage, createAgentsKilledMessage, createApiMetricsMessage, createSystemMessage, createCommandInputMessage, formatCommandInputTags, markTurnEndedForMessage } from '../utils/messages.js';
+import { textForResubmit, handleMessageFromStream, type StreamingToolUse, isCompactBoundaryMessage, findLastCompactBoundaryIndex, getMessagesAfterCompactBoundary, getContentText, createUserMessage, createAssistantMessage, createTurnDurationMessage, createAgentsKilledMessage, createApiMetricsMessage, createSystemMessage, createCommandInputMessage, formatCommandInputTags, markTurnEndedForMessage, stripPromptXMLTags } from '../utils/messages.js';
 import { generateSessionTitle } from '../utils/sessionTitle.js';
 import { BASH_INPUT_TAG, COMMAND_MESSAGE_TAG, COMMAND_NAME_TAG, LOCAL_COMMAND_STDOUT_TAG } from '../constants/xml.js';
 import { escapeXml } from '../utils/xml.js';
@@ -1547,11 +1547,9 @@ export function REPL({
     setStreamingText(f);
   }, [showStreamingText]);
 
-  // Hide the in-progress source line so text streams line-by-line, not
-  // char-by-char. lastIndexOf returns -1 when no newline, giving '' → null.
   // Guard on showStreamingText so toggling reducedMotion mid-stream
   // immediately hides the streaming preview.
-  const visibleStreamingText = streamingText && showStreamingText ? streamingText.substring(0, streamingText.lastIndexOf('\n') + 1) || null : null;
+  const visibleStreamingText = streamingText && showStreamingText ? stripPromptXMLTags(streamingText, true) || null : null;
   const [lastQueryCompletionTime, setLastQueryCompletionTime] = useState(0);
   const [spinnerMessage, setSpinnerMessage] = useState<string | null>(null);
   const [spinnerColor, setSpinnerColor] = useState<keyof Theme | null>(null);
@@ -2231,9 +2229,10 @@ export function REPL({
     // generated before pressing Esc. Pushed before resetLoadingState clears
     // streamingText, and before query.ts yields the async interrupt marker,
     // giving final order [user, partial-assistant, [Request interrupted by user]].
-    if (streamingText?.trim()) {
+    const interruptedText = streamingText ? stripPromptXMLTags(streamingText, true) : null;
+    if (interruptedText) {
       setMessages(prev => [...prev, createAssistantMessage({
-        content: streamingText
+        content: interruptedText
       })]);
     }
     resetLoadingState();
