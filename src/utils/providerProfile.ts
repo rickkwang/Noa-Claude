@@ -369,6 +369,17 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
       setEnvKey(env, 'ANTHROPIC_BASE_URL', normalizedBaseUrl)
       setEnvKey(env, 'ANTHROPIC_API_KEY', normalizedProfile.apiKey)
       setEnvKey(env, 'ANTHROPIC_MODEL', normalizedProfile.model)
+      // DeepSeek's endpoint maps unknown claude-* ids server-side (Opus →
+      // deepseek-v4-pro at Pro rates, everything else → deepseek-flash), so an
+      // unpinned Opus alias silently changes model and bill. Pin the tiers the
+      // way its Claude Code guide does: main tiers follow the chosen model,
+      // small-model and subagent calls stay on flash.
+      if (isDeepSeekAnthropicBaseUrl(normalizedBaseUrl)) {
+        setEnvKey(env, 'ANTHROPIC_DEFAULT_OPUS_MODEL', normalizedProfile.model)
+        setEnvKey(env, 'ANTHROPIC_DEFAULT_SONNET_MODEL', normalizedProfile.model)
+        setEnvKey(env, 'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'deepseek-flash')
+        setEnvKey(env, 'CLAUDE_CODE_SUBAGENT_MODEL', 'deepseek-flash')
+      }
       break
     case 'minimax':
     case 'kimi':
@@ -453,6 +464,15 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
   )
 
   return env
+}
+
+function isDeepSeekAnthropicBaseUrl(baseUrl: string | undefined): boolean {
+  if (!baseUrl) return false
+  try {
+    return new URL(baseUrl).hostname === 'api.deepseek.com'
+  } catch {
+    return false
+  }
 }
 
 function getNormalizedBaseUrl(profile: ProviderProfile): string | undefined {
