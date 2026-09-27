@@ -410,7 +410,9 @@ export async function getAnthropicClient({
       baseURL: resolvedBaseUrl,
       defaultHeaders: defaultHeadersForShim,
       timeoutMs: parseInt(process.env.API_TIMEOUT_MS || String(600 * 1000), 10),
-      fetchOverride,
+      // Same wrapper as the Anthropic clients, so the shim's endpoints also get
+      // the uncompressed-body request (see buildFetch).
+      fetchOverride: resolvedFetch as typeof fetch,
     }) as unknown as Anthropic
   }
 
