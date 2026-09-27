@@ -431,7 +431,7 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
   // An explicit tier pin wins over whatever the protocol branch pinned above.
   const tierModels = {
     ...getEndpointTierModels(normalizedBaseUrl, normalizedProfile.model),
-    ...normalizedProfile.tierModels,
+    ...declaredTierOverrides(normalizedProfile.tierModels),
   }
   setEnvKey(env, 'ANTHROPIC_DEFAULT_OPUS_MODEL', tierModels.opus)
   setEnvKey(env, 'ANTHROPIC_DEFAULT_SONNET_MODEL', tierModels.sonnet)
@@ -513,8 +513,27 @@ function getEndpointTierModels(
   if (!pins) return {}
   const out: TierModels = {}
   for (const [tier, value] of Object.entries(pins) as [keyof TierModels, string][]) {
-    const resolved = value === 'main' ? model : value
+    const resolved = (value === 'main' ? model : value)?.trim()
     if (resolved) out[tier] = resolved
+  }
+  return out
+}
+
+/**
+ * Keep only the pins a profile actually declares.
+ *
+ * An empty or whitespace-only value is how a hand-edited profile says "no
+ * opinion". Letting it through would clear the pin the endpoint table just
+ * supplied and drop that tier back to a claude-* id the endpoint maps on its
+ * own — the silent billing change this feature exists to prevent.
+ */
+function declaredTierOverrides(tierModels: TierModels | undefined): TierModels {
+  if (!tierModels) return {}
+  const out: TierModels = {}
+  for (const [tier, value] of Object.entries(tierModels)) {
+    // The file is hand-edited and never schema-checked; a non-string is no pin.
+    const trimmed = typeof value === 'string' ? value.trim() : undefined
+    if (trimmed) out[tier as keyof TierModels] = trimmed
   }
   return out
 }
