@@ -67,7 +67,16 @@ export interface ProviderProfile {
   // Output-token limits per model id. Merged over
   // PROVIDER_TYPE_MAX_OUTPUT_TOKENS, like contextWindows.
   maxOutputTokens?: Record<string, MaxOutputTokens>
+  // Model id for each Claude tier alias and for subagents, e.g.
+  // { "opus": "deepseek-v4-pro" }. Merged over the endpoint's documented
+  // defaults (ENDPOINT_TIER_MODELS), so a gateway in front of a known
+  // endpoint, or a user who wants a different split, declares it here.
+  tierModels?: TierModels
 }
+
+export type TierModels = Partial<
+  Record<'opus' | 'sonnet' | 'haiku' | 'subagent', string>
+>
 
 /**
  * The exact effort levels a provider type's endpoint accepts, per model.
@@ -272,6 +281,7 @@ const ENDPOINT_SCOPED_KEYS = [
   'effortLevels',
   'contextWindows',
   'maxOutputTokens',
+  'tierModels',
 ] as const satisfies readonly (keyof ProviderProfile)[]
 
 export async function updateProviderProfile(
@@ -369,17 +379,6 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
       setEnvKey(env, 'ANTHROPIC_BASE_URL', normalizedBaseUrl)
       setEnvKey(env, 'ANTHROPIC_API_KEY', normalizedProfile.apiKey)
       setEnvKey(env, 'ANTHROPIC_MODEL', normalizedProfile.model)
-      // DeepSeek's endpoint maps unknown claude-* ids server-side (Opus →
-      // deepseek-v4-pro at Pro rates, everything else → deepseek-flash), so an
-      // unpinned Opus alias silently changes model and bill. Pin the tiers the
-      // way its Claude Code guide does: main tiers follow the chosen model,
-      // small-model and subagent calls stay on flash.
-      if (isDeepSeekAnthropicBaseUrl(normalizedBaseUrl)) {
-        setEnvKey(env, 'ANTHROPIC_DEFAULT_OPUS_MODEL', normalizedProfile.model)
-        setEnvKey(env, 'ANTHROPIC_DEFAULT_SONNET_MODEL', normalizedProfile.model)
-        setEnvKey(env, 'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'deepseek-flash')
-        setEnvKey(env, 'CLAUDE_CODE_SUBAGENT_MODEL', 'deepseek-flash')
-      }
       break
     case 'minimax':
     case 'kimi':
@@ -429,6 +428,16 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
       break
   }
 
+  // An explicit tier pin wins over whatever the protocol branch pinned above.
+  const tierModels = {
+    ...getEndpointTierModels(normalizedBaseUrl, normalizedProfile.model),
+    ...normalizedProfile.tierModels,
+  }
+  setEnvKey(env, 'ANTHROPIC_DEFAULT_OPUS_MODEL', tierModels.opus)
+  setEnvKey(env, 'ANTHROPIC_DEFAULT_SONNET_MODEL', tierModels.sonnet)
+  setEnvKey(env, 'ANTHROPIC_DEFAULT_HAIKU_MODEL', tierModels.haiku)
+  setEnvKey(env, 'CLAUDE_CODE_SUBAGENT_MODEL', tierModels.subagent)
+
   // Independent of protocol: every profile type declares what its endpoint
   // serves the same way. The three records merge type defaults with the
   // profile's own entries — keyed by model, so overriding one entry doesn't
@@ -466,13 +475,48 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
   return env
 }
 
-function isDeepSeekAnthropicBaseUrl(baseUrl: string | undefined): boolean {
-  if (!baseUrl) return false
+/**
+ * Tier pins an endpoint documents, keyed by hostname.
+ *
+ * Keyed by host rather than ProviderType: DeepSeek is reachable both as the
+ * generic `anthropic` type and as the OpenAI-compatible `deepseek` preset, and
+ * the pins hold for both. `main` stands for the profile's chosen model.
+ */
+const ENDPOINT_TIER_MODELS: Record<
+  string,
+  Record<keyof TierModels, string>
+> = {
+  // DeepSeek maps unknown claude-* ids server-side — Opus to deepseek-v4-pro at
+  // Pro rates, the rest to deepseek-flash — so an unpinned Opus alias silently
+  // changes model and bill. Its Claude Code guide pins the main tiers to the
+  // chosen model and Haiku/subagent to deepseek-flash.
+  'api.deepseek.com': {
+    opus: 'main',
+    sonnet: 'main',
+    haiku: 'deepseek-flash',
+    subagent: 'deepseek-flash',
+  },
+}
+
+function getEndpointTierModels(
+  baseUrl: string | undefined,
+  model: string | undefined,
+): TierModels {
+  if (!baseUrl) return {}
+  let host: string
   try {
-    return new URL(baseUrl).hostname === 'api.deepseek.com'
+    host = new URL(baseUrl).hostname.replace(/\.$/, '')
   } catch {
-    return false
+    return {}
   }
+  const pins = ENDPOINT_TIER_MODELS[host]
+  if (!pins) return {}
+  const out: TierModels = {}
+  for (const [tier, value] of Object.entries(pins) as [keyof TierModels, string][]) {
+    const resolved = value === 'main' ? model : value
+    if (resolved) out[tier] = resolved
+  }
+  return out
 }
 
 function getNormalizedBaseUrl(profile: ProviderProfile): string | undefined {

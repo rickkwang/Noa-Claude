@@ -138,6 +138,14 @@ Noa ships first-party support for multiple backends:
 
 Provider profiles enable saved configurations for providers like Kimi, MiniMax, DeepSeek, and other Anthropic-compatible endpoints using Bearer token auth (`ANTHROPIC_AUTH_TOKEN`).
 
+Optional per-profile fields in `~/.noa/provider-profiles.json` declare what the endpoint serves; each merges over the built-in defaults for that provider:
+- `contextWindows` — `{ "<model>": <tokens> }`
+- `effortLevels` — `{ "<model>": ["low", "high", "max"] }` (`[]` declares none)
+- `maxOutputTokens` — `{ "<model>": { "default": <n>, "upperLimit": <n> } }`
+- `tierModels` — `{ "opus": "<model>", "sonnet": "<model>", "haiku": "<model>", "subagent": "<model>" }`: the model each Claude tier alias and subagents resolve to. `api.deepseek.com` gets DeepSeek's documented split by default (Opus/Sonnet → the profile's model, Haiku/subagent → `deepseek-flash`); set it explicitly when the endpoint sits behind a gateway, otherwise DeepSeek maps an unpinned Opus alias to `deepseek-v4-pro` server-side.
+
+Changing a profile's `baseUrl` clears these fields.
+
 **OpenAI-compatible configuration:**
 - `OPENAI_BASE_URL` — API endpoint (default: `https://api.openai.com/v1`)
 - `OPENAI_API_KEY` — API key

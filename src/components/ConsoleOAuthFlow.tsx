@@ -140,7 +140,7 @@ const PLATFORM_PRESETS: PlatformPreset[] = [{
   type: 'deepseek',
   profileName: 'DeepSeek',
   baseUrl: 'https://api.deepseek.com/v1',
-  model: 'deepseek-chat'
+  model: 'deepseek-flash'
 }, {
   value: 'gemini',
   name: 'Google Gemini',
@@ -304,7 +304,7 @@ const PROVIDER_FORM_STEPS: Array<{
 }, {
   key: 'model',
   label: 'Default model',
-  placeholder: 'e.g. deepseek-chat',
+  placeholder: 'e.g. deepseek-flash',
   helpText: 'Model name to use when automatic discovery is unavailable.'
 }];
 function ProviderSetupWizard({
