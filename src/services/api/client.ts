@@ -510,9 +510,18 @@ function buildFetch(
   // and unknown headers risk rejection by strict proxies (inc-4029 class).
   const injectClientRequestId =
     getAPIProvider() === 'firstParty' && isFirstPartyAnthropicBaseUrl()
+  // Bun's native HTTP client prints "Decompression error: …" straight to fd 2
+  // when a compressed body is truncated or corrupt (flaky third-party
+  // endpoints, capture proxies that keep Content-Encoding after decoding).
+  // That write bypasses Ink's stderr patch and tears the TUI, so ask other
+  // endpoints for an uncompressed body; SSE gains little from compression.
+  const requestIdentityEncoding = !injectClientRequestId
   return (input, init) => {
     // eslint-disable-next-line eslint-plugin-n/no-unsupported-features/node-builtins
     const headers = new Headers(init?.headers)
+    if (requestIdentityEncoding && !headers.has('accept-encoding')) {
+      headers.set('accept-encoding', 'identity')
+    }
     // Generate a client-side request ID so timeouts (which return no server
     // request ID) can still be correlated with server logs by the API team.
     // Callers that want to track the ID themselves can pre-set the header.
