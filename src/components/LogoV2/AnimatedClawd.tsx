@@ -96,6 +96,8 @@ const FRAME_MS = 60;
 const incrementFrame = (i: number) => i + 1;
 const CLAWD_HEIGHT = 3;
 const CLAWD_WIDTH = 9;
+// Forced sequences that have already been shown in this process.
+const playedSequences = new Set<ClawdAnimation>();
 
 // Pad the front of a forced sequence so it starts after `delayMs`. The lead
 // frame reuses the sequence's own first frame when it carries an x offset
@@ -111,11 +113,11 @@ function padDelay(seq: readonly Frame[], delayMs?: number): readonly Frame[] {
 type Props = {
   /** Loop IDLE_LOOP forever instead of waiting for a click. */
   autoplay?: boolean;
-  /** Play a specific animation once (ignores clicks while it runs). */
+  /** Play a specific animation once per process (ignores clicks while it runs). */
   sequence?: ClawdAnimation;
   /** Delay before a forced `sequence` begins. */
   delayMs?: number;
-  /** Fired when a forced `sequence` finishes (or immediately if reduced-motion). */
+  /** Fired when a forced `sequence` finishes (or immediately if reduced-motion or already played). */
   onComplete?: () => void;
 };
 
@@ -155,13 +157,21 @@ function useClawdAnimation(
   // Read once at mount — no useSettings() subscription, since that would
   // re-render on any settings change.
   const [reducedMotion] = useState(() => getInitialSettings().prefersReducedMotion ?? false);
-  const playImmediately = (autoplay || sequence !== undefined) && !reducedMotion;
+  // A forced `sequence` is an entrance: play it once per process. The logo
+  // remounts on screen switches (e.g. Ctrl+O transcript toggle), which would
+  // otherwise replay it every time.
+  const [alreadyPlayed] = useState(() => sequence !== undefined && playedSequences.has(sequence));
+  useEffect(() => {
+    if (sequence !== undefined) playedSequences.add(sequence);
+  }, [sequence]);
+  const skipAnimation = reducedMotion || alreadyPlayed;
+  const playImmediately = (autoplay || sequence !== undefined) && !skipAnimation;
   const [frameIndex, setFrameIndex] = useState(playImmediately ? 0 : -1);
   const sequenceRef = useRef<readonly Frame[]>(
     padDelay(sequence ? ANIMATIONS[sequence] : autoplay ? IDLE_LOOP : JUMP, sequence ? delayMs : undefined),
   );
   // A forced `sequence` owns playback and ignores clicks until it finishes.
-  const canClickRef = useRef(sequence === undefined);
+  const canClickRef = useRef(sequence === undefined || alreadyPlayed);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
@@ -172,10 +182,10 @@ function useClawdAnimation(
     setFrameIndex(0);
   };
 
-  // Reduced-motion: never animates, so resolve any onComplete waiter at once.
+  // Not animating (reduced-motion or already played): resolve any onComplete waiter at once.
   useEffect(() => {
-    if (reducedMotion) onCompleteRef.current?.();
-  }, [reducedMotion]);
+    if (skipAnimation) onCompleteRef.current?.();
+  }, [skipAnimation]);
 
   useEffect(() => {
     if (frameIndex === -1) return;
