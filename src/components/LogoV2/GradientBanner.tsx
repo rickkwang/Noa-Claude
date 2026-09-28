@@ -1,6 +1,6 @@
 /**
  * Gradient ASCII banner — Ink component version.
- * Logo has gradient colors, info box uses solid colors for stability.
+ * Logo has gradient colors; the info lines below it use solid colors.
  */
 
 import React from 'react'
@@ -9,8 +9,8 @@ import { useAppState } from '../../state/AppState.js'
 import type { AppState } from '../../state/AppStateStore.js'
 import { getOriginalCwd } from '../../bootstrap/state.js'
 import { renderModelName } from '../../utils/model/model.js'
-import { getAPIProvider } from '../../utils/model/providers.js'
 import { useMainLoopModel } from '../../hooks/useMainLoopModel.js'
+import { GREETINGS } from './greetings.js'
 
 declare const MACRO: { VERSION: string; DISPLAY_VERSION?: string }
 
@@ -46,7 +46,10 @@ function gradAt(stops: RGB[], t: number): RGB {
 }
 
 const ACCENT_HEX = rgbToHex(240, 148, 100)
-const BORDER_HEX = rgbToHex(136, 136, 136)
+const DIM_HEX = rgbToHex(136, 136, 136)
+
+// Module scope: one greeting per process, stable across re-renders.
+const GREETING = GREETINGS[Math.floor(Math.random() * GREETINGS.length)]!
 
 const LOGO_OPEN = [
   "░▀▄░░░░█▀█░█▀█░█▀█░░░█▀▀░█░░░█▀█░█░█░█▀▄░█▀▀░",
@@ -54,40 +57,11 @@ const LOGO_OPEN = [
   "░▀░░░░░▀░▀░▀▀▀░▀░▀░░░▀▀▀░▀▀▀░▀░▀░▀▀▀░▀▀░░▀▀▀░",
 ]
 
-function detectProvider(displayModelLabel: string) {
-  const provider = getAPIProvider()
-
-  switch (provider) {
-    case 'bedrock':
-      return { name: 'Amazon Bedrock', model: displayModelLabel, baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://bedrock.amazonaws.com' }
-    case 'vertex':
-      return { name: 'Google Vertex AI', model: displayModelLabel, baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://vertexai.googleapis.com' }
-    case 'foundry':
-      return { name: 'Microsoft Foundry', model: displayModelLabel, baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://foundry.ai.azure.com' }
-    case 'openaiCompatible': {
-      const baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
-      let name = 'OpenAI Compatible'
-      if (/deepseek/i.test(baseUrl)) name = 'DeepSeek'
-      else if (/openrouter/i.test(baseUrl)) name = 'OpenRouter'
-      else if (/together/i.test(baseUrl)) name = 'Together AI'
-      else if (/groq/i.test(baseUrl)) name = 'Groq'
-      else if (/azure/i.test(baseUrl)) name = 'Azure OpenAI'
-      else if (/ollama/i.test(baseUrl) || /localhost|127\.0\.0\.1|\.local/.test(baseUrl)) name = 'Ollama / Local'
-      return { name, model: displayModelLabel, baseUrl }
-    }
-    case 'firstParty':
-    default: {
-      return { name: 'Anthropic', model: displayModelLabel, baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com' }
-    }
-  }
-}
-
 export function GradientBanner() {
-  // Login/provider switch bumps authVersion; subscribe so provider/model/baseUrl
-  // rows re-read process.env immediately after auth changes.
+  // Login/provider switch bumps authVersion; subscribe so the model row
+  // re-reads the active provider immediately after auth changes.
   useAppState((s: AppState) => s.authVersion)
-  const displayModelLabel = renderModelName(useMainLoopModel())
-  const p = detectProvider(displayModelLabel)
+  const modelLine = renderModelName(useMainLoopModel())
 
   const renderLogoSection = (lines: string[], offset: number, total: number): React.ReactNode[] =>
     lines.map((line, i) => {
@@ -109,23 +83,7 @@ export function GradientBanner() {
     ? '~' + cwd.slice(homeDir.length)
     : cwd
 
-  const modelLine = p.model
-  const modelHint = '/provider to change'
-  const ep = p.baseUrl.length > 40 ? p.baseUrl.slice(0, 37) + '...' : p.baseUrl
   const version = MACRO.DISPLAY_VERSION ?? MACRO.VERSION
-
-  // Compute dynamic box width based on content length
-  const titleLen = 14 + version.length       // ' Noa Claude v' + version + ' '
-  const modelLen = 38 + modelLine.length     // '  model:     ' + model + gap + hint
-  const dirLen = 13 + cwdDisplay.length      // '  directory: ' + cwd
-  const epLen = 13 + ep.length               // '  endpoint:  ' + ep
-  const logoMaxWidth = Math.max(...LOGO_OPEN.map(l => l.length))
-  const maxContentLen = Math.max(titleLen, modelLen, dirLen, epLen, logoMaxWidth - 4)
-  const CONTENT_W = maxContentLen + 2        // 2 chars buffer on the right
-  const W = CONTENT_W + 2
-
-  const titleText = ` Noa Claude v${version} `
-  const dashFill = Math.max(0, W - 2 - 2 - titleText.length)
 
   return (
     <Box flexDirection="column">
@@ -133,53 +91,14 @@ export function GradientBanner() {
       {logoTop}
       <Box height={1} />
 
-      {/* Top border with title */}
       <Text>
-        <Text color={BORDER_HEX}>{'╭─ '}</Text>
         <Text bold>Noa Claude</Text>
-        <Text color={BORDER_HEX}>{` v${version} ─${'─'.repeat(dashFill)}╮`}</Text>
+        <Text color={DIM_HEX}>{` v${version}`}</Text>
       </Text>
+      <Text color={DIM_HEX}>{`${modelLine} · ${cwdDisplay}`}</Text>
 
-      {/* Empty row */}
-      <Text>
-        <Text color={BORDER_HEX}>│</Text>
-        <Text>{' '.repeat(CONTENT_W)}</Text>
-        <Text color={BORDER_HEX}>│</Text>
-      </Text>
-
-      {/* Model row */}
-      <Text>
-        <Text color={BORDER_HEX}>│</Text>
-        <Text color={BORDER_HEX}>{'  model:     '}</Text>
-        <Text>{modelLine}</Text>
-        <Text color={ACCENT_HEX}>{' '.repeat(8)}/provider</Text><Text color={BORDER_HEX}> to change</Text>
-        <Text>{' '.repeat(Math.max(0, CONTENT_W - 13 - modelLine.length - 8 - modelHint.length))}</Text>
-        <Text color={BORDER_HEX}>│</Text>
-      </Text>
-
-      {/* Endpoint row */}
-      <Text>
-        <Text color={BORDER_HEX}>│</Text>
-        <Text color={BORDER_HEX}>{'  endpoint:  '}</Text>
-        <Text>{ep}</Text>
-        <Text>{' '.repeat(Math.max(0, CONTENT_W - 13 - ep.length))}</Text>
-        <Text color={BORDER_HEX}>│</Text>
-      </Text>
-
-      {/* Directory row */}
-      <Text>
-        <Text color={BORDER_HEX}>│</Text>
-        <Text color={BORDER_HEX}>{'  directory: '}</Text>
-        <Text>{cwdDisplay}</Text>
-        <Text>{' '.repeat(Math.max(0, CONTENT_W - 13 - cwdDisplay.length))}</Text>
-        <Text color={BORDER_HEX}>│</Text>
-      </Text>
-
-      {/* Bottom border */}
-      <Text color={BORDER_HEX}>╰{'─'.repeat(W - 2)}╯</Text>
-
-      {/* Tagline */}
-      <Text color={ACCENT_HEX}> ⋆ Venture beyond the known...</Text>
+      <Box height={1} />
+      <Text color={ACCENT_HEX}>{GREETING}</Text>
     </Box>
   )
 }
