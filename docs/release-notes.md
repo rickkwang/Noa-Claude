@@ -1,5 +1,9 @@
 # Release Notes
 
+## 1.16.1
+
+- Fixed `/release-notes` showing an old Claude Code changelog instead of Noa's bundled release notes when a stale cache file exists
+
 ## 1.16.0
 
 - New: Claude Opus 5.5 (`claude-opus-5-5`); the `opus` alias now resolves to it on first party, Bedrock and Vertex (Foundry stays on Opus 4.6), and Opus 5 remains selectable by id

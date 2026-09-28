@@ -95,6 +95,11 @@ export async function seedBundledChangelogCache(): Promise<void> {
  * @returns The cached changelog content or empty string if not available
  */
 export async function getStoredChangelog(): Promise<string> {
+  const bundled = getBundledChangelog()
+  if (bundled) {
+    changelogMemoryCache = bundled
+    return bundled
+  }
   if (changelogMemoryCache !== null) {
     return changelogMemoryCache
   }
@@ -104,7 +109,6 @@ export async function getStoredChangelog(): Promise<string> {
     changelogMemoryCache = content
     return content
   } catch {
-    const bundled = getBundledChangelog()
     changelogMemoryCache = bundled
     return bundled
   }
