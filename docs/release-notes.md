@@ -1,8 +1,8 @@
 # Release Notes
 
-## Unreleased
+## 1.16.0
 
-- New: Claude Opus 5.5 (`claude-opus-5-5`) — the `opus` alias now resolves to it on first party, Bedrock and Vertex (Foundry stays on Opus 4.6); Opus 5 remains selectable by id
+- New: Claude Opus 5.5 (`claude-opus-5-5`); the `opus` alias now resolves to it on first party, Bedrock and Vertex (Foundry stays on Opus 4.6), and Opus 5 remains selectable by id
 - Opus 5.5 requests follow its API surface: thinking is never sent as `disabled`, forced `tool_choice` falls back to `auto`, preserved-thinking controls are sent, and the default max output is 128K
 - Opus 5.5 is billed at $4/$20 per Mtok ($0.20 cache reads), $8/$40 in fast mode; the status bar shows its API default effort as `medium`
 - Knowledge cutoffs added for Fable 5/5.1 and Mythos 5/5.1; Fable 5's third-party fallback suggestion is now Opus 5.5
@@ -11,7 +11,35 @@
 - Bedrock/Vertex now get `eager_input_streaming` on models whose deployments accept it, so large tool inputs stream instead of arriving in one burst
 - Dynamic-filtering web search is limited to first party; Foundry Hosted-on-Azure only serves the basic tool
 - Claude Opus 4 and Sonnet 4 now show their retirement dates, and past dates read as "was retired"
-- Fixed Vertex per-model region overrides for Opus 4.5–5.5, Sonnet 5 and Fable (`VERTEX_REGION_CLAUDE_*`); Opus 4.5+ previously fell through to the Opus 4.0 variable
+- Fixed Vertex per-model region overrides for Opus 4.5 through 5.5, Sonnet 5 and Fable (`VERTEX_REGION_CLAUDE_*`); Opus 4.5+ previously fell through to the Opus 4.0 variable
+- New: `/feedback` lets you review, edit, open, or discard reports drafted by Noa after a session goes wrong; drafts stay local until you choose to open an issue
+- New: `ctrl+enter` or `ctrl+x ctrl+s` sends a queued message during a running turn and moves that turn's tools to the background; `ctrl+enter` needs terminal support
+- New: tools begin running while the model response is still streaming, instead of waiting for the complete response
+- New: `SendMessage` can continue a subagent without enabling agent teams; completed hand-backs wait for the subagent's actual result
+- When a project has both `CLAUDE.md` and `AGENTS.md`, Noa now follows `CLAUDE.md` first
+- New: `/plugin` groups installed plugins into clearer sections, supports favorites, and accepts add flags for marketplaces; long plugin lists scroll under the mouse
+- New: provider profiles can pin Opus, Sonnet, Haiku, and subagent models per profile or endpoint; DeepSeek's Anthropic endpoint gets tier defaults that can be overridden
+- Switching `/model` during a task now takes effect on the next API call; provider profiles no longer show cached bootstrap model choices from another endpoint
+- The `max` effort setting persists when the provider declares `max_effort` support
+- The startup header is more compact and shows a random greeting; extra notices collapse into a count, and the mascot entrance plays once
+- Spinner output now shows compaction time and streamed summary tokens, keeps timing and tips aligned with the active task, and animates smoothly across themes
+- The streaming response shows its in-progress line while hiding incomplete internal prompt tags
+- `/skills` shows names first with clearer on/off markers; its pointer dims while search has focus
+- Fullscreen option lists support mouse-wheel scrolling, long rows truncate in narrow terminals, and hover follows the row after a scroll or filter
+- Stashing input with `ctrl+s` keeps shell mode; pressing `ctrl+c` or `ctrl+d` twice closes an open dialog without quitting Noa
+- Long diff file lists have a scrollbar and keep long paths on one line
+- Vim editing fixes cover linewise deletes, `cw`, counts, dot-repeat, insert-mode commands, and Indic word motions
+- `/stats` and `/insights` no longer double-count API usage, including responses replayed into forked transcripts
+- An oversized opening prompt is summarized during compaction instead of being dropped; resumed sessions restore the file-read cache as the model last saw it
+- A turn ending with a broken tool call or no visible output gets one retry; an empty close after structured output finishes cleanly
+- Network-path permissions now cover macOS redirected paths, `/net` and `/Network` mounts, symlinks, and absolute Glob patterns without probing protected paths before approval; deny rules still win
+- Bash catches catastrophic removals hidden in compound commands, and spawned shells keep a usable `TMPDIR` when the parent has none
+- PDF whole-file reads avoid an unnecessary page render, and interrupted renders stop `pdftoppm`
+- A temporarily locked macOS login keychain no longer causes stored credentials to be replaced; timed-out AWS and GCP auth refreshes stop their child processes
+- File tools report a NUL byte in a path as a failed call instead of ending the turn
+- Third-party API calls avoid compressed response bodies, the OpenAI-compatible shim uses the shared fetch path, and unrecoverable rate limits stop retrying sooner
+- One-hour prompt caching stays off for Anthropic-compatible third-party providers
+- Voice mode is disabled in every build profile
 
 ## 1.15.0
 

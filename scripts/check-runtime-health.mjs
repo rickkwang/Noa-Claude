@@ -1764,6 +1764,8 @@ function checkOpusUserPaths() {
 }
 
 function checkOpus47ThirdPartyEffortDefaults() {
+  const prevConfigDir = process.env.CLAUDE_CONFIG_DIR;
+  const configDir = mkdtempSync(join(tmpdir(), 'noa-effort-health-'));
   const prevUseBedrock = process.env.CLAUDE_CODE_USE_BEDROCK;
   const prevBaseUrl = process.env.ANTHROPIC_BASE_URL;
   const prevPinnedOpus = process.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
@@ -1771,6 +1773,8 @@ function checkOpus47ThirdPartyEffortDefaults() {
     process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES;
   const prevUserType = process.env.USER_TYPE;
   try {
+    process.env.CLAUDE_CONFIG_DIR = configDir;
+    resetSettingsCache();
     delete process.env.CLAUDE_CODE_USE_BEDROCK;
     delete process.env.USER_TYPE;
     process.env.ANTHROPIC_BASE_URL =
@@ -1873,6 +1877,10 @@ function checkOpus47ThirdPartyEffortDefaults() {
       '3P opus-4-7 should not inject an explicit default unless xhigh is advertised',
     );
   } finally {
+    if (prevConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = prevConfigDir;
+    resetSettingsCache();
+    rmSync(configDir, { recursive: true, force: true });
     if (prevUseBedrock === undefined) delete process.env.CLAUDE_CODE_USE_BEDROCK;
     else process.env.CLAUDE_CODE_USE_BEDROCK = prevUseBedrock;
     if (prevBaseUrl === undefined) delete process.env.ANTHROPIC_BASE_URL;
