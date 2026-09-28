@@ -117,6 +117,15 @@ const ADVISOR_RANKS: Record<string, number> = {
   'claude-mythos-5-1': 5,
 }
 
+/**
+ * Pairings the API rejects even though the rank rule would allow them: a
+ * Sonnet 5.5 executor refuses Opus 4.8, Opus 4.7 and Sonnet 5 as advisors
+ * (Opus 5 shares their rank, so no rank threshold can express this).
+ */
+const REJECTED_ADVISORS_BY_BASE: Record<string, readonly string[]> = {
+  'claude-sonnet-5-5': ['claude-opus-4-8', 'claude-opus-4-7', 'claude-sonnet-5'],
+}
+
 /** Minimum rank a model needs to serve as somebody's advisor. */
 const MIN_ADVISOR_RANK = 2
 
@@ -170,6 +179,13 @@ export function isValidAdvisorPairing(
   const advisorRank = getAdvisorRank(advisorModel)
   if (baseRank === undefined || advisorRank === undefined) {
     return true
+  }
+  if (
+    REJECTED_ADVISORS_BY_BASE[getCanonicalName(baseModel)]?.includes(
+      getCanonicalName(advisorModel),
+    )
+  ) {
+    return false
   }
   return advisorRank >= baseRank
 }
