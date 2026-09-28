@@ -4,6 +4,7 @@
  */
 
 import React from 'react'
+import { sep } from 'path'
 import { Box, Text } from '../../ink.js'
 import { useAppState } from '../../state/AppState.js'
 import type { AppState } from '../../state/AppStateStore.js'
@@ -79,7 +80,7 @@ export function GradientBanner() {
 
   const cwd = getOriginalCwd()
   const homeDir = process.env.HOME ?? ''
-  const cwdDisplay = homeDir && cwd.startsWith(homeDir)
+  const cwdDisplay = homeDir && (cwd === homeDir || cwd.startsWith(homeDir + sep))
     ? '~' + cwd.slice(homeDir.length)
     : cwd
 
@@ -95,7 +96,7 @@ export function GradientBanner() {
         <Text bold>Noa Claude</Text>
         <Text color={DIM_HEX}>{` v${version}`}</Text>
       </Text>
-      <Text color={DIM_HEX}>{`${modelLine} · ${cwdDisplay}`}</Text>
+      <Text color={DIM_HEX} wrap="truncate-middle">{`${modelLine} · ${cwdDisplay}`}</Text>
 
       <Box height={1} />
       <Text color={ACCENT_HEX}>{GREETING}</Text>
