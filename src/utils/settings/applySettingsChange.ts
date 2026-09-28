@@ -14,6 +14,8 @@ import { syncPermissionRulesFromDisk } from '../permissions/permissions.js'
 import { loadAllPermissionRulesFromDisk } from '../permissions/permissionsLoader.js'
 import type { SettingSource } from './constants.js'
 import { getInitialSettings } from './settings.js'
+import { toPersistableEffort } from '../effort.js'
+import { getMainLoopModel } from '../model/model.js'
 
 /**
  * Apply a settings change to app state. Re-reads settings from disk,
@@ -75,8 +77,13 @@ export function applySettingsChange(
     // itself changed — otherwise unrelated settings churn (e.g. tips dismissal
     // on startup) would clobber a --effort CLI flag value held in AppState.
     const prevEffort = prev.settings.effortLevel
-    const newEffort = newSettings.effortLevel
-    const effortChanged = prevEffort !== newEffort
+    // The schema accepts max for every model; only the model's provider can
+    // say whether it is a persisted level, same gate as startup.
+    const newEffort = toPersistableEffort(
+      newSettings.effortLevel,
+      getMainLoopModel(),
+    )
+    const effortChanged = prevEffort !== newSettings.effortLevel
 
     return {
       ...prev,

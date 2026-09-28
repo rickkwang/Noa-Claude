@@ -213,6 +213,7 @@ export function getEffortValueOptionsDescription(): string {
  */
 export function toPersistableEffort(
   value: EffortValue | undefined,
+  model?: string,
 ): EffortLevel | undefined {
   if (
     value === 'low' ||
@@ -225,13 +226,27 @@ export function toPersistableEffort(
   if (value === 'max' && process.env.USER_TYPE === 'ant') {
     return value
   }
+  // Session-only max is a first-party policy. A provider profile that declares
+  // max for this model documents it as an ordinary level (DeepSeek's guide sets
+  // it as the default), and the only other way to keep it across sessions is
+  // CLAUDE_CODE_EFFORT_LEVEL, which then locks /effort out entirely.
+  if (
+    value === 'max' &&
+    model !== undefined &&
+    getActiveProviderEffortLevels(model)?.includes('max')
+  ) {
+    return value
+  }
   return undefined
 }
 
-export function getInitialEffortSetting(): EffortLevel | undefined {
+export function getInitialEffortSetting(
+  model?: string,
+): EffortLevel | undefined {
   // toPersistableEffort filters 'max' for non-ants on read, so a manually
-  // edited settings.json doesn't leak session-scoped max into a fresh session.
-  return toPersistableEffort(getInitialSettings().effortLevel)
+  // edited settings.json doesn't leak session-scoped max into a fresh session
+  // — unless the starting model's provider declares max.
+  return toPersistableEffort(getInitialSettings().effortLevel, model)
 }
 
 /**

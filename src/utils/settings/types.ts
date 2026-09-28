@@ -789,11 +789,10 @@ export const SettingsSchema = lazySchema(() =>
             'enabled automatically for supported models.',
         ),
       effortLevel: z
-        .enum(
-          process.env.USER_TYPE === 'ant'
-            ? ['low', 'medium', 'high', 'xhigh', 'max']
-            : ['low', 'medium', 'high', 'xhigh'],
-        )
+        // max is accepted here and gated per model on read
+        // (getInitialEffortSetting), since only the model knows whether its
+        // provider declares it.
+        .enum(['low', 'medium', 'high', 'xhigh', 'max'])
         .optional()
         .catch(undefined)
         .describe('Persisted effort level for supported models.'),

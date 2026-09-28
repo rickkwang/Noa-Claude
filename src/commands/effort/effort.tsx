@@ -28,7 +28,7 @@ function setEffortValue(effortValue: EffortValue, model?: string): EffortCommand
       message: `Effort is not supported for current model/provider (${model}); no change made`
     };
   }
-  const persistable = toPersistableEffort(effortValue);
+  const persistable = toPersistableEffort(effortValue, model);
   if (persistable !== undefined) {
     const result = updateSettingsForSource('userSettings', {
       effortLevel: persistable
