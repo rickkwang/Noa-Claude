@@ -223,7 +223,7 @@ export function ModelPicker(t0) {
       });
       if (!skipSettingsWrite) {
         const effortLevel = resolvePickerEffortPersistence(effort, getDefaultEffortLevelForOption(value_0), getSettingsForSource("userSettings")?.effortLevel, hasToggledEffort);
-        const persistable = toPersistableEffort(effortLevel, resolveOptionModel(value_0) ?? undefined);
+        const persistable = toPersistableEffort(effortLevel, resolveOptionModel(value_0));
         if (persistable !== undefined) {
           updateSettingsForSource("userSettings", {
             effortLevel: persistable

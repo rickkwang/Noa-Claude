@@ -207,7 +207,9 @@ export function getEffortValueOptionsDescription(): string {
 
 /**
  * Numeric values are model-default only and not persisted.
- * 'max' is session-scoped for external users (ants can persist it).
+ * 'max' is session-scoped for external users (ants can persist it), except
+ * when a provider profile or ANTHROPIC_DEFAULT_*_MODEL_SUPPORTED_CAPABILITIES
+ * declares it for `model`.
  * Write sites call this before saving to settings so the Zod schema
  * (which only accepts string levels) never rejects a write.
  */
@@ -226,14 +228,19 @@ export function toPersistableEffort(
   if (value === 'max' && process.env.USER_TYPE === 'ant') {
     return value
   }
-  // Session-only max is a first-party policy. A provider profile that declares
-  // max for this model documents it as an ordinary level (DeepSeek's guide sets
-  // it as the default), and the only other way to keep it across sessions is
-  // CLAUDE_CODE_EFFORT_LEVEL, which then locks /effort out entirely.
+  // Session-only max is a first-party policy. A user-declared max — a provider
+  // profile's effortLevels or a max_effort capability, in the precedence
+  // getSupportedEffortLevelsForModel reads them — documents it as an ordinary
+  // level (DeepSeek's guide sets it as the default), and the only other way to
+  // keep it across sessions is CLAUDE_CODE_EFFORT_LEVEL, which then locks
+  // /effort out entirely. The built-in model ladder doesn't count: that is the
+  // first-party case the policy is for.
   if (
     value === 'max' &&
     model !== undefined &&
-    getActiveProviderEffortLevels(model)?.includes('max')
+    (
+      getActiveProviderEffortLevels(model) ?? getThirdPartyEffortLevels(model)
+    )?.includes('max')
   ) {
     return value
   }
