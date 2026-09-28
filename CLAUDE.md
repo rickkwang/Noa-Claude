@@ -82,5 +82,5 @@ Changing product surface: run `check:docs` + `smoke:features`; keep `README.md`,
 - Config namespace `~/.noa/` and project-local `.noa/` (e.g. `.noa/progress.md`). Resolve the user-level dir via `getClaudeConfigHomeDir()` from `src/utils/envUtils.ts` (honors `CLAUDE_CONFIG_DIR`) — never hardcode `~/.noa`. Toggles prefer `NOA_CLAUDE_*`; legacy `CLAUDE_CODE_*` still accepted.
 - **Privacy hardcoded, not configurable**: telemetry, GrowthBook remote fetch, remote policy/settings overlays hard-disabled; GB gates resolve to in-code defaults. Don't reintroduce remote-fetch/telemetry sinks.
 - Commit messages must not describe work as an upstream port (no "port upstream X.Y.ZZZ"); history stays as-is.
-- `CLAUDE.md` is tracked. `AGENTS.md`, `CLAUDE.local.md`, and `*.log` are gitignored.
+- `CLAUDE.md` is tracked. `AGENTS.md`, `CLAUDE.local.md`, and `*.log` are gitignored, so durable project rules go in `CLAUDE.md`, not `AGENTS.md`.
 - Non-negotiable stability signals: interactive startup stays alive, `--print` usable, resume/continue survive compaction, MCP startup degrades gracefully, permission boundaries hold. `docs/operating-guide.md` has the failure-mode checklist.
