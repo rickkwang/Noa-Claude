@@ -113,6 +113,7 @@ function getKnowledgeCutoff(modelId: string): string | null {
   // Order matters: each `.1`/`-5` release is a prefix match of its successor.
   if (
     canonical.includes('claude-opus-5-5') ||
+    canonical.includes('claude-sonnet-5-5') ||
     canonical.includes('claude-fable-5-1') ||
     canonical.includes('claude-mythos-5-1')
   ) {

@@ -44,7 +44,7 @@ afterEach(() => {
 describe('per-provider alias defaults match the upstream catalog', () => {
   test('first party gets the current generation of every family', () => {
     expect(getDefaultOpusModel()).toBe('claude-opus-5-5')
-    expect(getDefaultSonnetModel()).toBe('claude-sonnet-5')
+    expect(getDefaultSonnetModel()).toBe('claude-sonnet-5-5')
     expect(getDefaultFableModel()).toBe('claude-fable-5-1')
     expect(getDefaultHaikuModel()).toContain('claude-haiku-4-5')
   })

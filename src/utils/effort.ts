@@ -317,12 +317,17 @@ export function resolveAppliedEffort(
 
 /**
  * The level the API applies when a request carries no effort param. `high` for
- * every model except Opus 5.5, whose API default is `medium`.
+ * every model except Opus 5.5 and Sonnet 5.5, whose catalog `default_effort`
+ * is `medium`.
  *
  * @[MODEL LAUNCH]: add models whose API-side default effort is not `high`.
  */
 export function getApiDefaultEffortForModel(model: string): EffortLevel {
-  return getCanonicalName(model).includes('claude-opus-5-5') ? 'medium' : 'high'
+  const canonical = getCanonicalName(model)
+  return canonical.includes('claude-opus-5-5') ||
+    canonical.includes('claude-sonnet-5-5')
+    ? 'medium'
+    : 'high'
 }
 
 /**

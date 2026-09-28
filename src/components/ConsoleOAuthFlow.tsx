@@ -84,7 +84,7 @@ const PLATFORM_PRESETS: PlatformPreset[] = [{
   type: 'anthropic',
   profileName: 'Anthropic',
   baseUrl: 'https://api.anthropic.com',
-  model: 'claude-sonnet-5'
+  model: 'claude-sonnet-5-5'
 }, {
   value: 'ollama',
   name: 'Ollama',

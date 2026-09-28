@@ -125,6 +125,23 @@ export const CLAUDE_SONNET_5_CONFIG = {
   foundry: 'claude-sonnet-5',
 } as const satisfies ModelConfig
 
+// Sonnet 5.5 — successor to Sonnet 5 at the same price ($2/$10). Request
+// surface differs from Sonnet 5 in three ways:
+//   1. {type:'disabled'} thinking returns a 400 (omit = adaptive; the only way
+//      to turn thinking off is {type:'between_tools'}).
+//   2. forced tool_choice {type:'any'|'tool'} returns a 400.
+//   3. preserved thinking: blocks are bound to the model and the conversation
+//      prefix, same controls as Fable 5.1 / Opus 5.5.
+// 1M context; 128K max output (also the default). Note 'claude-sonnet-5' is a
+// prefix of 'claude-sonnet-5-5' — every substring check for Sonnet 5 must rule
+// 5.5 out first (or deliberately include it).
+export const CLAUDE_SONNET_5_5_CONFIG = {
+  firstParty: 'claude-sonnet-5-5',
+  bedrock: 'us.anthropic.claude-sonnet-5-5',
+  vertex: 'claude-sonnet-5-5',
+  foundry: 'claude-sonnet-5-5',
+} as const satisfies ModelConfig
+
 // Fable 5 — most powerful tier, above Opus. Same request surface as Opus 4.8
 // (adaptive thinking only; sampling params + budget_tokens removed) with one
 // extra quirk: an explicit thinking:{type:'disabled'} returns 400 — omit the
@@ -184,6 +201,7 @@ export const ALL_MODEL_CONFIGS = {
   sonnet45: CLAUDE_SONNET_4_5_CONFIG,
   sonnet46: CLAUDE_SONNET_4_6_CONFIG,
   sonnet5: CLAUDE_SONNET_5_CONFIG,
+  sonnet55: CLAUDE_SONNET_5_5_CONFIG,
   opus40: CLAUDE_OPUS_4_CONFIG,
   opus41: CLAUDE_OPUS_4_1_CONFIG,
   opus45: CLAUDE_OPUS_4_5_CONFIG,

@@ -16,6 +16,10 @@ const NATIVE_1M_MODELS: Record<string, { thirdParty: ReadonlySet<string> }> = {
   'claude-sonnet-5': {
     thirdParty: new Set(['bedrock', 'vertex', 'foundry']),
   },
+  // Sonnet 5.5: same catalog shape as Sonnet 5 (native_1m + native_1m_3p).
+  'claude-sonnet-5-5': {
+    thirdParty: new Set(['bedrock', 'vertex', 'foundry']),
+  },
   'claude-opus-4-7': { thirdParty: new Set() },
   'claude-opus-4-8': { thirdParty: new Set() },
   // Opus 5 serves 1M natively on first party only. The empty third-party set

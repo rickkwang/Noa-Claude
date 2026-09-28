@@ -49,6 +49,8 @@ const PRICES = {
   'claude-opus-4-8': [5, 25],
   'claude-opus-4-7': [5, 25],
   'claude-opus-4-6': [5, 25],
+  // Before 'claude-sonnet-5': priceFor() matches by prefix.
+  'claude-sonnet-5-5': [2, 10],
   'claude-sonnet-5': [2, 10],
   'claude-sonnet-4-6': [3, 15],
   'claude-haiku-4-5': [1, 5],

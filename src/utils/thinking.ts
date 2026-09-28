@@ -218,7 +218,8 @@ export function modelOmitsThinkingByDefault(model: string): boolean {
 // @[MODEL LAUNCH]: Add new models that require an explicit thinking:{type:'disabled'}
 // to turn thinking off (i.e. omitting the param still runs adaptive thinking).
 export function modelRequiresExplicitThinkingDisable(model: string): boolean {
-  // Opus 5.5 shares the 'claude-opus-5' prefix but rejects {type:'disabled'}.
+  // Opus 5.5 / Sonnet 5.5 share the 'claude-opus-5' / 'sonnet-5' prefixes but
+  // reject {type:'disabled'}.
   if (modelThinkingCannotBeDisabled(model)) return false
   const canonical = getCanonicalName(model)
   return canonical.includes('sonnet-5') || canonical.includes('claude-opus-5')
@@ -227,7 +228,9 @@ export function modelRequiresExplicitThinkingDisable(model: string): boolean {
 /**
  * Models whose thinking cannot be turned off at all: the Fable / Mythos family
  * and Opus 5.5 run adaptive thinking always, and an explicit {type:'disabled'}
- * is a 400 at every effort level.
+ * is a 400 at every effort level. Sonnet 5.5 also 400s on `disabled` (catalog
+ * capability `rejects_disabled_thinking`); its only off switch is
+ * {type:'between_tools'}, which we do not send, so it is treated the same way.
  *
  * Distinct from modelRequiresExplicitThinkingDisable, which marks the opposite
  * problem — models (Sonnet 5, Opus 5) where omitting the parameter still runs
@@ -247,7 +250,8 @@ export function modelThinkingCannotBeDisabled(model: string): boolean {
   return (
     canonical.includes('fable-5') ||
     canonical.includes('mythos') ||
-    canonical.includes('claude-opus-5-5')
+    canonical.includes('claude-opus-5-5') ||
+    canonical.includes('claude-sonnet-5-5')
   )
 }
 

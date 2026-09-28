@@ -2,6 +2,8 @@
 
 ## 1.16.1
 
+- New: Claude Sonnet 5.5 (`claude-sonnet-5-5`); the `sonnet` alias now resolves to it on first party (Bedrock, Vertex and Foundry stay on Sonnet 4.5), and Sonnet 5 remains selectable by its full id
+- Sonnet 5.5 requests follow its API surface: thinking is never sent as `disabled`, forced `tool_choice` falls back to `auto`, preserved-thinking controls apply, and the status bar shows its default effort as `medium`; it uses the lean system prompt, 128K default max output and 1M context, and bills at $2/$10 per Mtok
 - Fixed `/release-notes` showing an old Claude Code changelog instead of Noa's bundled release notes when a stale cache file exists
 
 ## 1.16.0

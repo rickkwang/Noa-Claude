@@ -201,7 +201,7 @@ export function modelSupportsContextManagement(model: string): boolean {
 }
 
 /**
- * Fable 5.1 / Mythos 5.1 / Opus 5.5 removed forced tool use: `tool_choice` of type `any`
+ * Fable 5.1 / Mythos 5.1 / Opus 5.5 / Sonnet 5.5 removed forced tool use: `tool_choice` of type `any`
  * or `tool` returns a 400 ("tool_choice: type \"tool\" and \"any\" are not
  * supported for this model."), on count_tokens and Batches too. `auto` and
  * `none` are unaffected.
@@ -217,12 +217,13 @@ export function modelRejectsForcedToolChoice(model: string): boolean {
   return (
     canonical.includes('claude-fable-5-1') ||
     canonical.includes('claude-mythos-5-1') ||
-    canonical.includes('claude-opus-5-5')
+    canonical.includes('claude-opus-5-5') ||
+    canonical.includes('claude-sonnet-5-5')
   )
 }
 
 /**
- * Fable 5.1 / Mythos 5.1 / Opus 5.5 enforce "preserved thinking": a thinking block's
+ * Fable 5.1 / Mythos 5.1 / Opus 5.5 / Sonnet 5.5 enforce "preserved thinking": a thinking block's
  * signature records the conversation prefix that produced it (top-level
  * `system`, the `tools` set, and every earlier message), so editing an earlier
  * turn invalidates every later block. Noa edits history routinely — compaction
@@ -242,7 +243,8 @@ export function modelEnforcesThinkingPrefixBinding(model: string): boolean {
   return (
     canonical.includes('claude-fable-5-1') ||
     canonical.includes('claude-mythos-5-1') ||
-    canonical.includes('claude-opus-5-5')
+    canonical.includes('claude-opus-5-5') ||
+    canonical.includes('claude-sonnet-5-5')
   )
 }
 
@@ -274,6 +276,7 @@ const EAGER_INPUT_STREAMING_VERTEX = new Set([
   'claude-sonnet-4-5',
   'claude-sonnet-4-6',
   'claude-sonnet-5',
+  'claude-sonnet-5-5',
   'claude-opus-4-5',
   'claude-opus-4-6',
   'claude-opus-4-7',
@@ -286,6 +289,7 @@ const EAGER_INPUT_STREAMING_VERTEX = new Set([
 const EAGER_INPUT_STREAMING_BEDROCK = new Set([
   'claude-sonnet-4-6',
   'claude-sonnet-5',
+  'claude-sonnet-5-5',
   'claude-opus-4-7',
   'claude-opus-4-8',
   'claude-opus-5',

@@ -164,7 +164,7 @@ const ALIAS_DEFAULTS = {
     perProvider: { bedrock: 'opus55', vertex: 'opus55', foundry: 'opus46' },
   },
   sonnet: {
-    default: 'sonnet5',
+    default: 'sonnet55',
     perProvider: {
       bedrock: 'sonnet45',
       vertex: 'sonnet45',
@@ -393,6 +393,10 @@ export function firstPartyNameToCanonical(name: ModelName | undefined): ModelSho
   if (name.includes('claude-mythos-5')) {
     return 'claude-mythos-5'
   }
+  // Order matters: 'claude-sonnet-5' is a prefix of 'claude-sonnet-5-5'.
+  if (name.includes('claude-sonnet-5-5')) {
+    return 'claude-sonnet-5-5'
+  }
   if (name.includes('claude-sonnet-5')) {
     return 'claude-sonnet-5'
   }
@@ -582,6 +586,10 @@ export function getPublicModelDisplayName(model: ModelName): string | null {
       return 'Opus 4.1'
     case getModelStrings().opus40:
       return 'Opus 4'
+    case getModelStrings().sonnet55 + '[1m]':
+      return 'Sonnet 5.5 (1M context)'
+    case getModelStrings().sonnet55:
+      return 'Sonnet 5.5'
     case getModelStrings().sonnet5 + '[1m]':
       return 'Sonnet 5 (1M context)'
     case getModelStrings().sonnet5:
@@ -851,6 +859,9 @@ export function getMarketingNameForModel(modelId: string | undefined): string | 
   }
   if (canonical.includes('claude-opus-4')) {
     return 'Opus 4'
+  }
+  if (canonical.includes('claude-sonnet-5-5')) {
+    return has1m ? 'Sonnet 5.5 (with 1M context)' : 'Sonnet 5.5'
   }
   if (canonical.includes('claude-sonnet-5')) {
     return has1m ? 'Sonnet 5 (with 1M context)' : 'Sonnet 5'

@@ -22,6 +22,7 @@ import {
   CLAUDE_SONNET_4_5_CONFIG,
   CLAUDE_SONNET_4_6_CONFIG,
   CLAUDE_SONNET_5_CONFIG,
+  CLAUDE_SONNET_5_5_CONFIG,
   CLAUDE_SONNET_4_CONFIG,
 } from './model/configs.js'
 import {
@@ -235,6 +236,8 @@ export const MODEL_COSTS: Record<ModelShortName, ModelCosts> = {
     COST_TIER_3_15,
   [firstPartyNameToCanonical(CLAUDE_SONNET_5_CONFIG.firstParty)]:
     COST_TIER_3_15,
+  [firstPartyNameToCanonical(CLAUDE_SONNET_5_5_CONFIG.firstParty)]:
+    COST_TIER_3_15,
   [firstPartyNameToCanonical(CLAUDE_OPUS_4_CONFIG.firstParty)]: COST_TIER_15_75,
   [firstPartyNameToCanonical(CLAUDE_OPUS_4_1_CONFIG.firstParty)]:
     COST_TIER_15_75,
@@ -281,11 +284,13 @@ function tokensToUSDCost(modelCosts: ModelCosts, usage: Usage): number {
 export function getModelCosts(model: string, usage: Usage): ModelCosts {
   const shortName = getCanonicalName(model)
 
-  // Sonnet 5's $2/$10 applies on direct first party only: a proxy or partner
-  // endpoint on ANTHROPIC_BASE_URL bills at its own rates, so those fall
+  // Sonnet 5 / 5.5's $2/$10 applies on direct first party only: a proxy or
+  // partner endpoint on ANTHROPIC_BASE_URL bills at its own rates, so those fall
   // through to MODEL_COSTS' conservative Sonnet entry.
   if (
-    shortName === firstPartyNameToCanonical(CLAUDE_SONNET_5_CONFIG.firstParty) &&
+    (shortName === firstPartyNameToCanonical(CLAUDE_SONNET_5_CONFIG.firstParty) ||
+      shortName ===
+        firstPartyNameToCanonical(CLAUDE_SONNET_5_5_CONFIG.firstParty)) &&
     isDirectFirstParty()
   ) {
     return COST_TIER_2_10
@@ -389,7 +394,8 @@ export function formatModelPricing(costs: ModelCosts): string {
 export function getModelPricingString(model: string): string | undefined {
   const shortName = getCanonicalName(model)
   if (
-    shortName === firstPartyNameToCanonical(CLAUDE_SONNET_5_CONFIG.firstParty)
+    shortName === firstPartyNameToCanonical(CLAUDE_SONNET_5_CONFIG.firstParty) ||
+    shortName === firstPartyNameToCanonical(CLAUDE_SONNET_5_5_CONFIG.firstParty)
   ) {
     return formatModelPricing(COST_TIER_2_10)
   }

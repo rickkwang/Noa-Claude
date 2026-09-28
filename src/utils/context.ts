@@ -128,7 +128,7 @@ function resolveContextWindowForModel(
   if (betas?.includes(CONTEXT_1M_BETA_HEADER) && modelSupports1M(model)) {
     return 1_000_000
   }
-  // Native 1M — Sonnet 5 / Opus 4.7+ / Fable 5 serve 1M without any opt-in.
+  // Native 1M — Sonnet 5+ / Opus 4.7+ / Fable 5 serve 1M without any opt-in.
   if (!is1mContextDisabled() && hasNative1mContext(model)) {
     return 1_000_000
   }
@@ -224,8 +224,8 @@ export function getModelMaxOutputTokens(model: string): {
 
   const m = getCanonicalName(model)
 
-  if (m.includes('claude-opus-5-5')) {
-    // Opus 5.5 defaults to its 128K ceiling (upstream catalog:
+  if (m.includes('claude-opus-5-5') || m.includes('claude-sonnet-5-5')) {
+    // Opus 5.5 / Sonnet 5.5 default to their 128K ceiling (upstream catalog:
     // `max_output_tokens:{default:128000,upper:128000}`) — thinking is always
     // on and counts toward max_tokens, so the 64k default would cut turns off.
     defaultTokens = 128_000

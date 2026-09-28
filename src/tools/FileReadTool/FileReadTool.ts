@@ -742,6 +742,7 @@ const MITIGATION_EXEMPT_MODELS = new Set([
   'claude-opus-5',
   'claude-opus-5-5',
   'claude-sonnet-5',
+  'claude-sonnet-5-5',
   'claude-fable-5',
   'claude-fable-5-1',
 ])

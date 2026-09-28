@@ -24,7 +24,7 @@ const original = Object.fromEntries(ENV_KEYS.map(k => [k, process.env[k]]))
 beforeEach(() => {
   // getDefaultSonnetModel() prefers ANTHROPIC_DEFAULT_SONNET_MODEL over the
   // built-in default — an ambient value (e.g. from an active provider
-  // profile) would replace the 'claude-sonnet-5' these tests assert.
+  // profile) would replace the 'claude-sonnet-5-5' these tests assert.
   delete process.env.ANTHROPIC_DEFAULT_SONNET_MODEL
 })
 
@@ -76,7 +76,7 @@ describe('provider switch cache clearing', () => {
   test('rebuilds provider-specific model IDs after switching providers', () => {
     delete process.env.CLAUDE_CODE_USE_BEDROCK
     clearProviderSwitchCaches()
-    expect(getDefaultSonnetModel()).toBe('claude-sonnet-5')
+    expect(getDefaultSonnetModel()).toBe('claude-sonnet-5-5')
 
     process.env.CLAUDE_CODE_USE_BEDROCK = '1'
     clearProviderSwitchCaches()
@@ -85,7 +85,7 @@ describe('provider switch cache clearing', () => {
 
     delete process.env.CLAUDE_CODE_USE_BEDROCK
     clearProviderSwitchCaches()
-    expect(getDefaultSonnetModel()).toBe('claude-sonnet-5')
+    expect(getDefaultSonnetModel()).toBe('claude-sonnet-5-5')
   })
 
   test('ignores an in-flight Bedrock cache fill after switching providers', async () => {
@@ -110,7 +110,7 @@ describe('provider switch cache clearing', () => {
     delete process.env.CLAUDE_CODE_USE_BEDROCK
     clearProviderSwitchCaches()
     await ensureModelStringsInitialized()
-    expect(getDefaultSonnetModel()).toBe('claude-sonnet-5')
+    expect(getDefaultSonnetModel()).toBe('claude-sonnet-5-5')
 
     resolveProfiles([
       'us.anthropic.claude-sonnet-4-6-v1:0',
@@ -118,6 +118,6 @@ describe('provider switch cache clearing', () => {
     ])
     await staleInitialization
 
-    expect(getDefaultSonnetModel()).toBe('claude-sonnet-5')
+    expect(getDefaultSonnetModel()).toBe('claude-sonnet-5-5')
   })
 })

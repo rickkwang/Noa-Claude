@@ -105,6 +105,7 @@ const ADVISOR_RANKS: Record<string, number> = {
   'claude-haiku-4-5': 1,
   'claude-sonnet-4-6': 2,
   'claude-sonnet-5': 3,
+  'claude-sonnet-5-5': 3,
   'claude-opus-4-6': 3,
   'claude-opus-4-7': 4,
   'claude-opus-4-8': 4,

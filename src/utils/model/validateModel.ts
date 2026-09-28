@@ -183,6 +183,9 @@ function get3PFallbackSuggestion(model: string | undefined): string | undefined 
     // pinned ANTHROPIC_DEFAULT_OPUS_MODEL over the catalog value.
     return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL || getModelStrings().opus55
   }
+  if (lowerModel.includes('sonnet-5-5') || lowerModel.includes('sonnet_5_5')) {
+    return getModelStrings().sonnet5
+  }
   if (lowerModel.includes('sonnet-5') || lowerModel.includes('sonnet_5')) {
     return getModelStrings().sonnet46
   }

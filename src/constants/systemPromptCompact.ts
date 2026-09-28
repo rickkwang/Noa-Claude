@@ -83,6 +83,17 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     fable5Mitigations: false,
     fable51PromptBundle: false,
   },
+  // Sonnet 5.5 declares `lean_prompt` (2.1.284 catalog; Sonnet 5 does not), so it
+  // needs an explicit row: without one, needsLegacyPromptCapabilities() folds
+  // every `sonnet` id into the verbose head. Like Opus 5.5, its remaining
+  // capabilities (silent_turn_reminder, org_locked_thinking) are harness
+  // behaviour with no ported counterpart here, so no bundle bit is set.
+  'claude-sonnet-5-5': {
+    leanPrompt: true,
+    opus5PromptBundle: false,
+    fable5Mitigations: false,
+    fable51PromptBundle: false,
+  },
   'claude-fable-5': {
     leanPrompt: true,
     opus5PromptBundle: false,

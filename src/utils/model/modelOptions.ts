@@ -145,14 +145,25 @@ function getCustomSonnetOption(): ModelOption | undefined {
 
 // @[MODEL LAUNCH]: Update or add model option functions (getSonnetXXOption, getOpusXXOption, etc.)
 // with the new model's label and description. These appear in the /model picker.
-function getSonnet5Option(): ModelOption {
+function getSonnet55Option(): ModelOption {
   const is3P = getAPIProvider() !== 'firstParty'
   return {
-    value: is3P ? getModelStrings().sonnet5 : 'sonnet',
+    value: is3P ? getModelStrings().sonnet55 : 'sonnet',
     label: 'Sonnet',
-    description: `Sonnet 5 · Efficient for routine tasks${getFirstPartyPricingSuffix(COST_TIER_2_10)}`,
+    description: `Sonnet 5.5 · Efficient for routine tasks${getFirstPartyPricingSuffix(COST_TIER_2_10)}`,
     descriptionForModel:
-      'Sonnet 5 - efficient for routine tasks. Generally recommended for most coding tasks',
+      'Sonnet 5.5 - efficient for routine tasks. Generally recommended for most coding tasks',
+  }
+}
+
+// Explicit older row: the `sonnet` alias now resolves to 5.5, so Sonnet 5 is
+// only reachable by its full id (third-party pickers list it as a downgrade).
+function getSonnet5Option(): ModelOption {
+  return {
+    value: getModelStrings().sonnet5,
+    label: 'Sonnet 5',
+    description: `Sonnet 5 · Efficient for routine tasks${getFirstPartyPricingSuffix(COST_TIER_2_10)}`,
+    descriptionForModel: 'Sonnet 5 - efficient for routine tasks',
   }
 }
 
@@ -261,14 +272,14 @@ function getFable5Option(): ModelOption {
   }
 }
 
-export function getSonnet5_1MOption(): ModelOption {
+export function getSonnet55_1MOption(): ModelOption {
   const is3P = getAPIProvider() !== 'firstParty'
   return {
-    value: is3P ? getModelStrings().sonnet5 + '[1m]' : 'sonnet[1m]',
+    value: is3P ? getModelStrings().sonnet55 + '[1m]' : 'sonnet[1m]',
     label: 'Sonnet (1M context)',
-    description: `Sonnet 5 with 1M context · Efficient for routine tasks${getFirstPartyPricingSuffix(COST_TIER_2_10)}`,
+    description: `Sonnet 5.5 with 1M context · Efficient for routine tasks${getFirstPartyPricingSuffix(COST_TIER_2_10)}`,
     descriptionForModel:
-      'Sonnet 5 with 1M context window - for long sessions with large codebases',
+      'Sonnet 5.5 with 1M context window - for long sessions with large codebases',
   }
 }
 
@@ -325,12 +336,12 @@ function getMaxOpusOption(fastMode = false): ModelOption {
   }
 }
 
-export function getMaxSonnet5_1MOption(): ModelOption {
+export function getMaxSonnet55_1MOption(): ModelOption {
   const billingInfo = isClaudeAISubscriber() ? ' · Draws from usage credits' : ''
   return {
     value: 'sonnet[1m]',
     label: 'Sonnet (1M context)',
-    description: `Sonnet 5 with 1M context${billingInfo}${getFirstPartyPricingSuffix(COST_TIER_2_10)}`,
+    description: `Sonnet 5.5 with 1M context${billingInfo}${getFirstPartyPricingSuffix(COST_TIER_2_10)}`,
   }
 }
 
@@ -351,10 +362,10 @@ function getMergedOpus1MOption(fastMode = false): ModelOption {
   }
 }
 
-const MaxSonnet5Option: ModelOption = {
+const MaxSonnet55Option: ModelOption = {
   value: 'sonnet',
   label: 'Sonnet',
-  description: 'Sonnet 5 · Efficient for routine tasks',
+  description: 'Sonnet 5.5 · Efficient for routine tasks',
 }
 
 /** Explicit `opus` alias row for a first-party picker. */
@@ -379,8 +390,8 @@ function getOpusAliasOption(fastMode: boolean): ModelOption {
 /** Explicit `sonnet` alias row for a first-party picker. */
 function getSonnetAliasOption(): ModelOption {
   const model = getDefaultSonnetModel()
-  if (model === getModelStrings().sonnet5) {
-    return isSubscriberSafe() ? MaxSonnet5Option : getSonnet5Option()
+  if (model === getModelStrings().sonnet55) {
+    return isSubscriberSafe() ? MaxSonnet55Option : getSonnet55Option()
   }
   const name = getMarketingNameForModel(model) ?? 'Sonnet'
   return {
@@ -487,8 +498,8 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
       ...antModelOptions,
       getMergedOpus1MOption(fastMode),
       getFable5Option(),
-      getSonnet5Option(),
-      getSonnet5_1MOption(),
+      getSonnet55Option(),
+      getSonnet55_1MOption(),
       getHaiku45Option(),
     ]
   }
@@ -503,9 +514,9 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
 
       premiumOptions.push(getFable5Option())
 
-      premiumOptions.push(MaxSonnet5Option)
+      premiumOptions.push(MaxSonnet55Option)
       if (checkSonnet1mAccess()) {
-        premiumOptions.push(getMaxSonnet5_1MOption())
+        premiumOptions.push(getMaxSonnet55_1MOption())
       }
 
       premiumOptions.push(MaxHaiku45Option)
@@ -515,7 +526,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
     // Free and Sonnet-only plans: Sonnet is default, show Opus as alternative
     const standardOptions = [getDefaultOptionForUser(fastMode)]
     if (checkSonnet1mAccess()) {
-      standardOptions.push(getMaxSonnet5_1MOption())
+      standardOptions.push(getMaxSonnet55_1MOption())
     }
 
     if (isOpus1mMergeEnabled()) {
@@ -532,15 +543,15 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
     return withDefaultFamilyRow(standardOptions, 'sonnet', fastMode)
   }
 
-  // PAYG 1P API: Default (Opus) + Opus + Opus 1M + Sonnet 5 + Sonnet 1M + Fable + Haiku
+  // PAYG 1P API: Default (Opus) + Opus + Opus 1M + Sonnet 5.5 + Sonnet 1M + Fable + Haiku
   if (getAPIProvider() === 'firstParty') {
     const payg1POptions = [getDefaultOptionForUser(fastMode)]
     if (!isOpus1mMergeEnabled() && checkOpus1mAccess()) {
       payg1POptions.push(getOpus55_1MOption(fastMode))
     }
-    payg1POptions.push(getSonnet5Option())
+    payg1POptions.push(getSonnet55Option())
     if (checkSonnet1mAccess()) {
-      payg1POptions.push(getSonnet5_1MOption())
+      payg1POptions.push(getSonnet55_1MOption())
     }
     payg1POptions.push(getFable5Option())
     payg1POptions.push(getHaiku45Option())
@@ -555,11 +566,13 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
   if (customSonnet !== undefined) {
     payg3pOptions.push(customSonnet)
   } else {
-    // Sonnet 5 is not the third-party default (upstream's alias table pins
-    // every cloud provider to Sonnet 4.5), so it needs its own row.
+    // Sonnet 5.5 is not the third-party default (upstream's alias table pins
+    // every cloud provider to Sonnet 4.5), so it needs its own row. Sonnet 5
+    // stays as an explicit downgrade for accounts that don't have 5.5 yet.
+    payg3pOptions.push(getSonnet55Option())
     payg3pOptions.push(getSonnet5Option())
     if (checkSonnet1mAccess()) {
-      payg3pOptions.push(getSonnet5_1MOption())
+      payg3pOptions.push(getSonnet55_1MOption())
     }
   }
 
@@ -605,6 +618,7 @@ function getModelFamilyInfo(
 
   // Sonnet family
   if (
+    canonical.includes('claude-sonnet-5') ||
     canonical.includes('claude-sonnet-4-6') ||
     canonical.includes('claude-sonnet-4-5') ||
     canonical.includes('claude-sonnet-4-') ||

@@ -1048,6 +1048,11 @@ function get3PModelFallbackSuggestion(model: string): string | undefined {
     // pinned ANTHROPIC_DEFAULT_OPUS_MODEL over the catalog value.
     return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL || getModelStrings().opus55
   }
+  // If the failing model looks like a Sonnet 5.5 variant, suggest Sonnet 5
+  // (upstream's fallback_3p). Must precede the Sonnet 5 check, a prefix of it.
+  if (m.includes('sonnet-5-5') || m.includes('sonnet_5_5')) {
+    return getModelStrings().sonnet5
+  }
   // If the failing model looks like a Sonnet 5 variant, suggest Sonnet 4.6
   if (m.includes('sonnet-5') || m.includes('sonnet_5')) {
     return getModelStrings().sonnet46
@@ -1334,7 +1339,12 @@ export function categorizeRetryableAPIError(
  * category-independent target is Opus 4.8 either way, so reading it would only
  * change the `bio` case.
  */
-function getRefusalFallbackModel(): string {
+function getRefusalFallbackModel(model: string): string {
+  // Sonnet 5.5's own fallback map (2.1.284: cyber and frontier_llm both go to
+  // claude-sonnet-5) stays inside the Sonnet family rather than jumping to Opus.
+  if (getCanonicalName(model) === 'claude-sonnet-5-5') {
+    return getModelStrings().sonnet5
+  }
   return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL || getModelStrings().opus48
 }
 
@@ -1353,7 +1363,8 @@ function hasArmedRefusalFallback(model: string): boolean {
   return (
     canonical.startsWith('claude-fable-') ||
     canonical === 'claude-opus-5' ||
-    canonical === 'claude-opus-5-5'
+    canonical === 'claude-opus-5-5' ||
+    canonical === 'claude-sonnet-5-5'
   )
 }
 
@@ -1385,7 +1396,7 @@ export function getErrorMessageIfRefusal(
   const suggestedModel = !canRecommendClaudeModel
     ? undefined
     : hasArmedRefusalFallback(model)
-      ? getRefusalFallbackModel()
+      ? getRefusalFallbackModel(model)
       : getDefaultSonnetModel()
   const modelSuggestion =
     suggestedModel && model !== suggestedModel
