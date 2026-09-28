@@ -2136,6 +2136,27 @@ async function* queryModel(
             partialMessage = part.message
             ttftMs = Date.now() - start
             usage = updateUsage(usage, part.message?.usage)
+            // Preserved thinking: with the controls beta the API lists every
+            // thinking block it dropped (or would have failed) under
+            // `input_transformations`. Record it locally so history edits that
+            // cost reasoning are visible; entries hold only block paths and
+            // reasons, never message content.
+            {
+              const transformations = (
+                part.message as unknown as { input_transformations?: unknown }
+              ).input_transformations
+              if (Array.isArray(transformations) && transformations.length > 0) {
+                logForDiagnosticsNoPII('warn', 'thinking_input_transformations', {
+                  request_id: streamRequestId ?? 'unknown',
+                  count: transformations.length,
+                  entries: transformations.slice(0, 20),
+                  mismatch_diagnosis:
+                    streamResponse?.headers?.get(
+                      'anthropic-thinking-prefix-mismatch',
+                    ) ?? undefined,
+                })
+              }
+            }
             // Capture research from message_start if available (internal only).
             // Always overwrite with the latest value.
             if (
