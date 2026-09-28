@@ -33,15 +33,15 @@ Existing tests live in `src/test/` mirroring `src/`; self-contained (no preload)
 
 **`typecheck` proves less than it looks like**: `tsconfig.json` excludes only `node_modules`/`dist`/`.bun`, but ~88% of non-test source files carry `@ts-nocheck` (`QueryEngine.ts`, `utils/envUtils.ts`, …), so a green `tsc --noEmit` covers the other ~12%. Prefer E2E evidence for behavior. `check:nocheck` holds a path-list baseline that may only shrink — after removing a `@ts-nocheck`, tighten it with `node scripts/check-nocheck-ratchet.mjs --update`.
 
-**Production bundles are minified, dev bundles are not**: `bun run build` adds an identifier-minifying pass over `dist/main.js` (25MB → 12.7MB; JSC pre-parse scales with bytes, so ~55ms off every launch). Mangled stack traces and `constructor.name` from `dist/main.js` are expected, not a broken build — `utils/errors.ts` and `classifyToolError` already handle it. Use `bun run dev` / `build:dev` when you need real names.
+**Production bundles are minified, dev bundles are not**: `bun run build` adds an identifier-minifying pass over `dist/main.js` (roughly halves the bundle; JSC pre-parse scales with bytes, so every launch is faster). Mangled stack traces and `constructor.name` from `dist/main.js` are expected, not a broken build — `utils/errors.ts` and `classifyToolError` already handle it. Use `bun run dev` / `build:dev` when you need real names.
 
 ## Feature flags — read before editing gated code
 
 Source calls `feature('FLAG')` from `bun:bundle`, which **is not a real runtime module** — `build.ts` rewrites every `src/**.ts(x)` *in place* before bundling, stripping the import and replacing each call with a `true`/`false` literal (restored in a `finally`), enabling dead-code elimination.
 
 - Keep `feature('X')` an **inline literal call** — never alias, wrap, or compute the flag name, or the regex/DCE breaks.
-- Baseline build enables only `build.ts`'s `defaultFeatures` — `AUTO_THEME`, `BUILTIN_EXPLORE_PLAN_AGENTS`, `AUTO_MODE`; `--feature-set=dev-full` adds `fullExperimentalFeatures` (49 flags); unknown flags → `false`.
-- Some flags gate **modules absent from this fork** — enabling them breaks the build (`build:dev:full` is the canary). `COORDINATOR_MODE` is in neither list, so its 26 call sites are intentionally inert branches woven through resume/session hot paths; don't "fix" them. `FEATURES.md` is the authoritative audit.
+- Baseline build enables only `build.ts`'s `defaultFeatures` — `AUTO_THEME`, `BUILTIN_EXPLORE_PLAN_AGENTS`, `AUTO_MODE`; `--feature-set=dev-full` adds `fullExperimentalFeatures`; unknown flags → `false`.
+- Some flags gate **modules absent from this fork** — enabling them breaks the build (`build:dev:full` is the canary). `COORDINATOR_MODE` is in neither list, so its call sites are intentionally inert branches woven through resume/session hot paths; don't "fix" them. `FEATURES.md` is the authoritative audit.
 
 ## Lean vs verbose prompt — the second load-bearing gate
 
@@ -58,7 +58,7 @@ Source calls `feature('FLAG')` from `bun:bundle`, which **is not a real runtime 
 Launch: `bin/noa.js → run-noa.js → dist/main.js → main() in src/main.tsx`
 
 - `run-noa.js` — launcher: validates `launcher-config.js`, lockfile-guarded auto-rebuild of `dist/main.js` when source is newer (gated by `CLAUDE_CODE_LAUNCHER_AUTO_REBUILD`), then imports the bundle. Plain JS run directly by Bun — must keep working when `dist/` is stale/missing. (Same for `bin/noa.js`, `launcher-config.js`, `build.ts`.)
-- `src/main.tsx` — bundle entrypoint (`main()`; REPL + UI orchestration). ~4.4k LOC itself, but pulls in most of the ~540k-LOC non-test `src/` tree. `src/entrypoints/cli.tsx` is a fast-path bootstrap (`--version`, MCP subservers, bridge/daemon) that lazy-imports the main loop.
+- `src/main.tsx` — bundle entrypoint (`main()`; REPL + UI orchestration). a few thousand LOC itself, but pulls in most of the non-test `src/` tree. `src/entrypoints/cli.tsx` is a fast-path bootstrap (`--version`, MCP subservers, bridge/daemon) that lazy-imports the main loop.
 - `src/query.ts` — `query()`, the async-generator agent loop (model → tools → results → repeat). `src/QueryEngine.ts` wraps it: SDK message stream, usage, compaction, abort/retry.
 - `src/Tool.ts` (`Tool` type, `ToolUseContext`, `buildTool()`) + `src/tools.ts` (registry); one dir per tool in `src/tools/<Name>Tool/` (availability is feature-gated/governed). `src/commands.ts` + `src/commands/` for slash commands.
 - Subsystems: `src/services/` (api, mcp, oauth, lsp, compact, autoFix), `src/components/`+`src/hooks/` (TUI), `src/bridge/` (remote/session), `src/utils/`. README has the full map.
