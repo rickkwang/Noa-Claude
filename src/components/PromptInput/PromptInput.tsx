@@ -1,5 +1,4 @@
 // @ts-nocheck
-import { feature } from 'bun:bundle';
 import chalk from 'chalk';
 import * as path from 'path';
 import { getLastAttachAt, isBgSession, requestBgDetach } from '../../utils/background/bgJob.js';
@@ -79,7 +78,7 @@ import type { ImageDimensions } from '../../utils/imageResizer.js';
 import { cacheImagePath, storeImage } from '../../utils/imageStore.js';
 import { isMacosOptionChar, MACOS_OPTION_SPECIAL_CHARS } from '../../utils/keyboardShortcuts.js';
 import { logError } from '../../utils/log.js';
-import { isOpus1mMergeEnabled, modelDisplayString } from '../../utils/model/model.js';
+import { getDefaultMainLoopModelSetting, isOpus1mMergeEnabled, modelDisplayString } from '../../utils/model/model.js';
 import { setAutoModeActive } from '../../utils/permissions/autoModeState.js';
 import { cyclePermissionMode, getNextPermissionMode } from '../../utils/permissions/getNextPermissionMode.js';
 import { transitionPermissionMode } from '../../utils/permissions/permissionSetup.js';
@@ -2225,7 +2224,7 @@ function PromptInput({
     });
     setShowModelPicker(false);
     const effectiveFastMode = (isFastMode ?? false) && !wasFastModeDisabled;
-    let message = `Model set to ${modelDisplayString(model)}`;
+    let message = `Model set to ${modelDisplayString(model)} and saved as your default for new sessions`;
     if (isBilledAsExtraUsage(model, effectiveFastMode, isOpus1mMergeEnabled())) {
       message += ' · Billed as usage credits';
     }
@@ -2245,15 +2244,33 @@ function PromptInput({
   const handleModelCancel = useCallback(() => {
     setShowModelPicker(false);
   }, []);
+  const handleModelSessionOnly = useCallback((model: string | null, _effort: EffortLevel | undefined) => {
+    // Null is the Default row: resolve it now, otherwise clearing the override
+    // would leave the session on the persisted base model.
+    setAppState(prev => ({
+      ...prev,
+      mainLoopModelForSession: model ?? getDefaultMainLoopModelSetting()
+    }));
+    setShowModelPicker(false);
+    addNotification({
+      key: 'model-switched',
+      jsx: <Text>{`Model set to ${modelDisplayString(model)} for this session only`}</Text>,
+      priority: 'immediate',
+      timeoutMs: 3000
+    });
+    logEvent('tengu_model_picker_hotkey', {
+      model: model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
+    });
+  }, [setAppState, addNotification]);
 
   // Memoize the model picker element to prevent unnecessary re-renders
   // when AppState changes for unrelated reasons (e.g., notifications arriving)
   const modelPickerElement = useMemo(() => {
     if (!showModelPicker) return null;
     return <Box flexDirection="column" marginTop={1}>
-        <ModelPicker initial={mainLoopModel_} sessionModel={mainLoopModelForSession} onSelect={handleModelSelect} onCancel={handleModelCancel} isStandaloneCommand showFastModeNotice={isFastModeEnabled() && isFastMode && isFastModeSupportedByModel(mainLoopModel_) && isFastModeAvailable()} />
+        <ModelPicker initial={mainLoopModel_} sessionModel={mainLoopModelForSession} onSelect={handleModelSelect} onSelectSessionOnly={handleModelSessionOnly} onCancel={handleModelCancel} isStandaloneCommand showFastModeNotice={isFastModeEnabled() && isFastMode && isFastModeSupportedByModel(mainLoopModel_) && isFastModeAvailable()} />
       </Box>;
-  }, [showModelPicker, mainLoopModel_, mainLoopModelForSession, handleModelSelect, handleModelCancel]);
+  }, [showModelPicker, mainLoopModel_, mainLoopModelForSession, handleModelSelect, handleModelSessionOnly, handleModelCancel]);
   const handleFastModeSelect = useCallback((result?: string) => {
     setShowFastModePicker(false);
     if (result) {

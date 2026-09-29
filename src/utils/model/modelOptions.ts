@@ -7,7 +7,9 @@ import {
 import { getModelStrings } from './modelStrings.js'
 import {
   type ModelCosts,
+  COST_TIER_10_50,
   COST_TIER_10_50_CHEAP_CACHE,
+  COST_TIER_3_15,
   COST_HAIKU_35,
   COST_HAIKU_45,
   formatModelPricing,
@@ -145,25 +147,40 @@ function getCustomSonnetOption(): ModelOption | undefined {
 
 // @[MODEL LAUNCH]: Update or add model option functions (getSonnetXXOption, getOpusXXOption, etc.)
 // with the new model's label and description. These appear in the /model picker.
+//
+// Main-row text mirrors the upstream model catalog (the signed remote catalog
+// at downloads.claude.ai/model-catalog, baked fallback in the binary): labels
+// are the versioned marketing names ("Opus 5.5"), descriptions the catalog's
+// per-model strings. Values stay Noa-side: family aliases on 1P so the pick
+// tracks the alias across launches, pinned full ids on 3P.
 function getSonnet55Option(): ModelOption {
   const is3P = getAPIProvider() !== 'firstParty'
   return {
     value: is3P ? getModelStrings().sonnet55 : 'sonnet',
-    label: 'Sonnet',
-    description: `Sonnet 5.5 · Efficient for routine tasks${getFirstPartyPricingSuffix(COST_TIER_2_10)}`,
+    label: 'Sonnet 5.5',
+    description: `Sonnet 5.5 · Most efficient for simpler tasks${getFirstPartyPricingSuffix(COST_TIER_2_10)}`,
     descriptionForModel:
-      'Sonnet 5.5 - efficient for routine tasks. Generally recommended for most coding tasks',
+      'Sonnet 5.5 - most efficient for simpler tasks. Generally recommended for most coding tasks',
   }
 }
 
-// Explicit older row: the `sonnet` alias now resolves to 5.5, so Sonnet 5 is
-// only reachable by its full id (third-party pickers list it as a downgrade).
+// Overflow row: the `sonnet` alias now resolves to 5.5, so Sonnet 5 is only
+// reachable by its full id.
 function getSonnet5Option(): ModelOption {
   return {
     value: getModelStrings().sonnet5,
     label: 'Sonnet 5',
     description: `Sonnet 5 · Efficient for routine tasks${getFirstPartyPricingSuffix(COST_TIER_2_10)}`,
     descriptionForModel: 'Sonnet 5 - efficient for routine tasks',
+  }
+}
+
+function getSonnet46Option(): ModelOption {
+  return {
+    value: getModelStrings().sonnet46,
+    label: 'Sonnet 4.6',
+    description: `Sonnet 4.6 · Efficient for routine tasks${getFirstPartyPricingSuffix(COST_TIER_3_15)}`,
+    descriptionForModel: 'Sonnet 4.6 - efficient for routine tasks',
   }
 }
 
@@ -184,22 +201,34 @@ function getCustomOpusOption(): ModelOption | undefined {
   }
 }
 
-function getOpus41Option(): ModelOption {
+// Overflow row: Opus 4.8 pins its full id (the `opus` alias resolves to 5.5).
+function getOpus48Option(fastMode = false): ModelOption {
+  const model = getModelStrings().opus48
   return {
-    value: 'opus',
-    label: 'Opus 4.1',
-    description: `Opus 4.1 · Legacy`,
-    descriptionForModel: 'Opus 4.1 - legacy version',
+    value: model,
+    label: 'Opus 4.8',
+    description: `Opus 4.8 · Best for everyday, complex tasks${getOpusPricingSuffix(fastMode, model)}`,
+    descriptionForModel: 'Opus 4.8 - best for everyday, complex tasks',
   }
 }
 
-function getOpus48Option(fastMode = false): ModelOption {
-  const is3P = getAPIProvider() !== 'firstParty'
+function getOpus47Option(fastMode = false): ModelOption {
+  const model = getModelStrings().opus47
   return {
-    value: is3P ? getModelStrings().opus48 : 'opus',
-    label: 'Opus',
-    description: `Opus 4.8 · Best for everyday, complex tasks${getOpusPricingSuffix(fastMode, getModelStrings().opus48)}`,
-    descriptionForModel: 'Opus 4.8 - best for everyday, complex tasks',
+    value: model,
+    label: 'Opus 4.7',
+    description: `Opus 4.7 · Best for everyday, complex tasks${getOpusPricingSuffix(fastMode, model)}`,
+    descriptionForModel: 'Opus 4.7 - best for everyday, complex tasks',
+  }
+}
+
+function getOpus46Option(fastMode = false): ModelOption {
+  const model = getModelStrings().opus46
+  return {
+    value: model,
+    label: 'Opus 4.6',
+    description: `Opus 4.6 · Best for everyday, complex tasks${getOpusPricingSuffix(fastMode, model)}`,
+    descriptionForModel: 'Opus 4.6 - best for everyday, complex tasks',
   }
 }
 
@@ -214,15 +243,15 @@ export function getOpus48_1MOption(fastMode = false): ModelOption {
   }
 }
 
-// Opus 5 pinned by id. No longer what the `opus` alias resolves to, so it is
-// an explicit third-party row for accounts that don't have Opus 5.5 yet.
+// Overflow row: Opus 5 pinned by id. No longer what the `opus` alias resolves
+// to, so it is an explicit row for accounts that don't have Opus 5.5 yet.
 function getOpus5Option(fastMode = false): ModelOption {
   const model = getModelStrings().opus5
   return {
     value: model,
     label: 'Opus 5',
-    description: `Opus 5 · Previous generation${getOpusPricingSuffix(fastMode, model)}`,
-    descriptionForModel: 'Opus 5 - previous Opus generation',
+    description: `Opus 5 · Best for everyday, complex tasks${getOpusPricingSuffix(fastMode, model)}`,
+    descriptionForModel: 'Opus 5 - best for everyday, complex tasks',
   }
 }
 
@@ -231,9 +260,9 @@ function getOpus55Option(fastMode = false): ModelOption {
   const model = getModelStrings().opus55
   return {
     value: is3P ? model : 'opus',
-    label: 'Opus',
-    description: `Opus 5.5 · Best for everyday, complex tasks${getOpusPricingSuffix(fastMode, model)}`,
-    descriptionForModel: 'Opus 5.5 - best for everyday, complex tasks',
+    label: 'Opus 5.5',
+    description: `Opus 5.5 · For complex work and everyday tasks${getOpusPricingSuffix(fastMode, model)}`,
+    descriptionForModel: 'Opus 5.5 - for complex work and everyday tasks',
   }
 }
 
@@ -243,7 +272,7 @@ export function getOpus55_1MOption(fastMode = false): ModelOption {
   return {
     value: is3P ? model + '[1m]' : 'opus[1m]',
     label: 'Opus (1M context)',
-    description: `Opus 5.5 with 1M context · Best for everyday, complex tasks${getOpusPricingSuffix(fastMode, model)}`,
+    description: `Opus 5.5 with 1M context · For complex work and everyday tasks${getOpusPricingSuffix(fastMode, model)}`,
     descriptionForModel:
       'Opus 5.5 with 1M context window - for long sessions with large codebases',
   }
@@ -261,14 +290,25 @@ export function getMaxOpus55_1MOption(fastMode = false): ModelOption {
 // Fable 5.1 — top tier, above Opus. Never a default (it's the most expensive
 // model); offered as an explicit opt-in row. The `[1m]` variant is reachable
 // via the `fable[1m]` alias.
-function getFable5Option(): ModelOption {
+function getFable51Option(): ModelOption {
   const is3P = getAPIProvider() !== 'firstParty'
   return {
     value: is3P ? getModelStrings().fable51 : 'fable',
-    label: 'Fable',
-    description: `Fable 5.1 · Most capable for your hardest and longest-running tasks${getFirstPartyPricingSuffix(COST_TIER_10_50_CHEAP_CACHE)}`,
+    label: 'Fable 5.1',
+    description: `Fable 5.1 · For your toughest challenges${getFirstPartyPricingSuffix(COST_TIER_10_50_CHEAP_CACHE)}`,
+    descriptionForModel: 'Fable 5.1 - for your toughest challenges',
+  }
+}
+
+// Overflow row: Fable 5 pinned by id (the `fable` alias resolves to 5.1).
+function getFable5Option(): ModelOption {
+  const model = getModelStrings().fable5
+  return {
+    value: model,
+    label: 'Fable 5',
+    description: `Fable 5 · Most capable for your hardest and longest-running tasks${getFirstPartyPricingSuffix(COST_TIER_10_50)}`,
     descriptionForModel:
-      'Fable 5.1 - most capable for your hardest and longest-running tasks',
+      'Fable 5 - most capable for your hardest and longest-running tasks',
   }
 }
 
@@ -277,7 +317,7 @@ export function getSonnet55_1MOption(): ModelOption {
   return {
     value: is3P ? getModelStrings().sonnet55 + '[1m]' : 'sonnet[1m]',
     label: 'Sonnet (1M context)',
-    description: `Sonnet 5.5 with 1M context · Efficient for routine tasks${getFirstPartyPricingSuffix(COST_TIER_2_10)}`,
+    description: `Sonnet 5.5 with 1M context · Most efficient for simpler tasks${getFirstPartyPricingSuffix(COST_TIER_2_10)}`,
     descriptionForModel:
       'Sonnet 5.5 with 1M context window - for long sessions with large codebases',
   }
@@ -303,7 +343,7 @@ function getHaiku45Option(): ModelOption {
   const is3P = getAPIProvider() !== 'firstParty'
   return {
     value: 'haiku',
-    label: 'Haiku',
+    label: 'Haiku 4.5',
     description: `Haiku 4.5 · Fastest for quick answers${getFirstPartyPricingSuffix(COST_HAIKU_45)}`,
     descriptionForModel:
       'Haiku 4.5 - fastest for quick answers. Lower cost but less capable than Sonnet 4.6.',
@@ -331,8 +371,8 @@ function getHaikuOption(): ModelOption {
 function getMaxOpusOption(fastMode = false): ModelOption {
   return {
     value: 'opus',
-    label: 'Opus',
-    description: `Opus 5.5 · Best for everyday, complex tasks${fastMode ? getOpusPricingSuffix(true, getModelStrings().opus55) : ''}`,
+    label: 'Opus 5.5',
+    description: `Opus 5.5 · For complex work and everyday tasks${fastMode ? getOpusPricingSuffix(true, getModelStrings().opus55) : ''}`,
   }
 }
 
@@ -357,15 +397,15 @@ function getMergedOpus1MOption(fastMode = false): ModelOption {
   return {
     value: is3P ? model + '[1m]' : 'opus[1m]',
     label: 'Opus (1M context)',
-    description: `${name} with 1M context · Best for everyday, complex tasks${pricing}`,
-    descriptionForModel: `${name} with 1M context - best for everyday, complex tasks`,
+    description: `${name} with 1M context · For complex work and everyday tasks${pricing}`,
+    descriptionForModel: `${name} with 1M context - for complex work and everyday tasks`,
   }
 }
 
 const MaxSonnet55Option: ModelOption = {
   value: 'sonnet',
-  label: 'Sonnet',
-  description: 'Sonnet 5.5 · Efficient for routine tasks',
+  label: 'Sonnet 5.5',
+  description: 'Sonnet 5.5 · Most efficient for simpler tasks',
 }
 
 /** Explicit `opus` alias row for a first-party picker. */
@@ -381,7 +421,7 @@ function getOpusAliasOption(fastMode: boolean): ModelOption {
   const name = getMarketingNameForModel(model) ?? 'Opus'
   return {
     value: 'opus',
-    label: 'Opus',
+    label: name,
     description: `${name} · Best for everyday, complex tasks${subscriber ? '' : getOpusPricingSuffix(fastMode, model)}`,
     descriptionForModel: `${name} - best for everyday, complex tasks`,
   }
@@ -396,7 +436,7 @@ function getSonnetAliasOption(): ModelOption {
   const name = getMarketingNameForModel(model) ?? 'Sonnet'
   return {
     value: 'sonnet',
-    label: 'Sonnet',
+    label: name,
     description: `${name} · Efficient for routine tasks`,
     descriptionForModel: `${name} - efficient for routine tasks`,
   }
@@ -428,7 +468,7 @@ function withDefaultFamilyRow(
 
 const MaxHaiku45Option: ModelOption = {
   value: 'haiku',
-  label: 'Haiku',
+  label: 'Haiku 4.5',
   description: 'Haiku 4.5 · Fastest for quick answers',
 }
 
@@ -475,6 +515,26 @@ function getProviderProfileOptions(): ModelOption[] {
   ]
 }
 
+/**
+ * Previous-generation rows, in the upstream catalog's overflow order
+ * (Sonnet 5, Opus 5, Fable 5, Opus 4.8, Opus 4.7, Opus 4.6, Sonnet 4.6).
+ * Every value pins a full model id — the family aliases resolve to
+ * the current generation, so only a literal id reaches these. Offered on every
+ * tier, not just 3P: the upstream picker lists them for first-party accounts
+ * too (10 rows visible, rest behind scroll).
+ */
+function getOverflowOptions(fastMode = false): ModelOption[] {
+  return [
+    getSonnet5Option(),
+    getOpus5Option(fastMode),
+    getFable5Option(),
+    getOpus48Option(fastMode),
+    getOpus47Option(fastMode),
+    getOpus46Option(fastMode),
+    getSonnet46Option(),
+  ]
+}
+
 // @[MODEL LAUNCH]: Update the model picker lists below to include/reorder options for the new model.
 // Each user tier (ant, Max/Team Premium, Pro/Team Standard/Enterprise, PAYG 1P, PAYG 3P) has its own list.
 function getModelOptionsBase(fastMode = false): ModelOption[] {
@@ -497,7 +557,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
       getDefaultOptionForUser(),
       ...antModelOptions,
       getMergedOpus1MOption(fastMode),
-      getFable5Option(),
+      getFable51Option(),
       getSonnet55Option(),
       getSonnet55_1MOption(),
       getHaiku45Option(),
@@ -506,20 +566,22 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
 
   if (isClaudeAISubscriber()) {
     if (isOpusDefaultSubscriber()) {
-      // Opus-default plans (see isOpusDefaultSubscriber): show Sonnet as alternative
+      // Opus-default plans (see isOpusDefaultSubscriber): main rows in the
+      // upstream catalog order (Opus, Sonnet, Fable, Haiku) + overflow.
       const premiumOptions = [getDefaultOptionForUser(fastMode)]
       if (!isOpus1mMergeEnabled() && checkOpus1mAccess()) {
         premiumOptions.push(getMaxOpus55_1MOption(fastMode))
       }
-
-      premiumOptions.push(getFable5Option())
 
       premiumOptions.push(MaxSonnet55Option)
       if (checkSonnet1mAccess()) {
         premiumOptions.push(getMaxSonnet55_1MOption())
       }
 
+      premiumOptions.push(getFable51Option())
+
       premiumOptions.push(MaxHaiku45Option)
+      premiumOptions.push(...getOverflowOptions(fastMode))
       return withDefaultFamilyRow(premiumOptions, 'opus', fastMode)
     }
 
@@ -538,12 +600,14 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
       }
     }
 
-    standardOptions.push(getFable5Option())
+    standardOptions.push(getFable51Option())
     standardOptions.push(MaxHaiku45Option)
+    standardOptions.push(...getOverflowOptions(fastMode))
     return withDefaultFamilyRow(standardOptions, 'sonnet', fastMode)
   }
 
-  // PAYG 1P API: Default (Opus) + Opus + Opus 1M + Sonnet 5.5 + Sonnet 1M + Fable + Haiku
+  // PAYG 1P API: Default + Opus 5.5 + Sonnet 5.5 + Fable 5.1 + Haiku 4.5 (+1M
+  // variants where they survive the native-1M merge) + overflow rows.
   if (getAPIProvider() === 'firstParty') {
     const payg1POptions = [getDefaultOptionForUser(fastMode)]
     if (!isOpus1mMergeEnabled() && checkOpus1mAccess()) {
@@ -553,28 +617,16 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
     if (checkSonnet1mAccess()) {
       payg1POptions.push(getSonnet55_1MOption())
     }
-    payg1POptions.push(getFable5Option())
+    payg1POptions.push(getFable51Option())
     payg1POptions.push(getHaiku45Option())
+    payg1POptions.push(...getOverflowOptions(fastMode))
     return withDefaultFamilyRow(payg1POptions, 'opus', fastMode)
   }
 
-  // PAYG 3P: Sonnet rows + Opus rows (5.5, 5, 4.1, 4.8, 4.8-1M) + Fable + Haiku.
-  // Provider defaults come from ALIAS_DEFAULTS in model.ts, not from this list.
+  // PAYG 3P: main rows in catalog order (Opus 5.5, Sonnet 5.5, Fable 5.1,
+  // Haiku) + the full overflow set. Provider defaults come from ALIAS_DEFAULTS
+  // in model.ts, not from this list.
   const payg3pOptions = [getDefaultOptionForUser(fastMode)]
-
-  const customSonnet = getCustomSonnetOption()
-  if (customSonnet !== undefined) {
-    payg3pOptions.push(customSonnet)
-  } else {
-    // Sonnet 5.5 is not the third-party default (upstream's alias table pins
-    // every cloud provider to Sonnet 4.5), so it needs its own row. Sonnet 5
-    // stays as an explicit downgrade for accounts that don't have 5.5 yet.
-    payg3pOptions.push(getSonnet55Option())
-    payg3pOptions.push(getSonnet5Option())
-    if (checkSonnet1mAccess()) {
-      payg3pOptions.push(getSonnet55_1MOption())
-    }
-  }
 
   const customOpus = getCustomOpusOption()
   if (customOpus !== undefined) {
@@ -583,24 +635,47 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
     // Opus 5.5 is the Bedrock/Vertex default (Foundry gets 4.6), so it must be
     // reachable from the picker — without this row a third-party user who
     // switches away from the default cannot switch back without typing the
-    // full model id. The older rows stay: they are explicit downgrades (Opus 5
-    // for accounts whose region hasn't enabled 5.5 yet), and on Foundry Opus
-    // 5.5 is a deliberate opt-in rather than the default.
+    // full model id.
     payg3pOptions.push(getOpus55Option(fastMode))
-    payg3pOptions.push(getOpus5Option(fastMode))
-    payg3pOptions.push(getOpus41Option())
-    payg3pOptions.push(getOpus48Option(fastMode))
-    if (checkOpus1mAccess()) {
-      payg3pOptions.push(getOpus48_1MOption(fastMode))
-    }
-    payg3pOptions.push(getFable5Option())
   }
+
+  const customSonnet = getCustomSonnetOption()
+  if (customSonnet !== undefined) {
+    payg3pOptions.push(customSonnet)
+  } else {
+    // Sonnet 5.5 is not the third-party default (upstream's alias table pins
+    // every cloud provider to Sonnet 4.5), so it needs its own row.
+    payg3pOptions.push(getSonnet55Option())
+    if (checkSonnet1mAccess()) {
+      payg3pOptions.push(getSonnet55_1MOption())
+    }
+  }
+
+  payg3pOptions.push(getFable51Option())
+
   const customHaiku = getCustomHaikuOption()
   if (customHaiku !== undefined) {
     payg3pOptions.push(customHaiku)
   } else {
     payg3pOptions.push(getHaikuOption())
   }
+
+  // Overflow rows pin versioned ids, so they never collide with a custom env
+  // main row — offer them regardless of custom model configuration (the
+  // pre-rework 3P list likewise kept the other family's rows when a custom
+  // model replaced one family).
+  const overflow = getOverflowOptions(fastMode)
+  if (checkOpus1mAccess()) {
+    // Opus 4.8 is not natively 1M on 3P, so its [1m] opt-in stays a real row
+    // there (on 1P the native-1M merge drops it against the base row).
+    const idx = overflow.findIndex(o => o.value === getModelStrings().opus48)
+    overflow.splice(
+      idx === -1 ? overflow.length : idx + 1,
+      0,
+      getOpus48_1MOption(fastMode),
+    )
+  }
+  payg3pOptions.push(...overflow)
   return payg3pOptions
 }
 

@@ -18,7 +18,7 @@ import { getDefaultMainLoopModelSetting, isOpus1mMergeEnabled, renderDefaultMode
 import { isModelAllowed } from '../../utils/model/modelAllowlist.js';
 import { validateModel } from '../../utils/model/validateModel.js';
 function ModelPickerWrapper(t0) {
-  const $ = _c(17);
+  const $ = _c(22);
   const {
     onDone
   } = t0;
@@ -57,7 +57,7 @@ function ModelPickerWrapper(t0) {
         mainLoopModel: model,
         mainLoopModelForSession: null
       }));
-      let message = `Set model to ${chalk.bold(renderModelLabel(model))}`;
+      let message = `Set model to ${chalk.bold(renderModelLabel(model))} and saved as your default for new sessions`;
       if (effort !== undefined) {
         message = message + ` with ${chalk.bold(effort)} effort`;
       }
@@ -91,6 +91,34 @@ function ModelPickerWrapper(t0) {
     t2 = $[7];
   }
   const handleSelect = t2;
+  let t5;
+  if ($[17] !== mainLoopModel || $[18] !== onDone || $[19] !== setAppState) {
+    t5 = function handleSelectSessionOnly(model, effort) {
+      logEvent("tengu_model_command_menu", {
+        action: "session-only" as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        from_model: mainLoopModel as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        to_model: model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
+      });
+      // Null is the Default row: resolve it now, otherwise clearing the
+      // override would leave the session on the persisted base model.
+      setAppState(prev_1 => ({
+        ...prev_1,
+        mainLoopModelForSession: model ?? getDefaultMainLoopModelSetting()
+      }));
+      let message = `Set model to ${chalk.bold(renderModelLabel(model))} for this session only`;
+      if (effort !== undefined) {
+        message = message + ` with ${chalk.bold(effort)} effort`;
+      }
+      onDone(message);
+    };
+    $[17] = mainLoopModel;
+    $[18] = onDone;
+    $[19] = setAppState;
+    $[20] = t5;
+  } else {
+    t5 = $[20];
+  }
+  const handleSelectSessionOnly = t5;
   let t3;
   if ($[8] !== isFastMode || $[9] !== mainLoopModel) {
     t3 = isFastModeEnabled() && isFastMode && isFastModeSupportedByModel(mainLoopModel) && isFastModeAvailable();
@@ -101,13 +129,14 @@ function ModelPickerWrapper(t0) {
     t3 = $[10];
   }
   let t4;
-  if ($[11] !== handleCancel || $[12] !== handleSelect || $[13] !== mainLoopModel || $[14] !== mainLoopModelForSession || $[15] !== t3) {
-    t4 = <ModelPicker initial={mainLoopModel} sessionModel={mainLoopModelForSession} onSelect={handleSelect} onCancel={handleCancel} isStandaloneCommand={true} showFastModeNotice={t3} />;
+  if ($[11] !== handleCancel || $[12] !== handleSelect || $[13] !== mainLoopModel || $[14] !== mainLoopModelForSession || $[15] !== t3 || $[21] !== handleSelectSessionOnly) {
+    t4 = <ModelPicker initial={mainLoopModel} sessionModel={mainLoopModelForSession} onSelect={handleSelect} onSelectSessionOnly={handleSelectSessionOnly} onCancel={handleCancel} isStandaloneCommand={true} showFastModeNotice={t3} />;
     $[11] = handleCancel;
     $[12] = handleSelect;
     $[13] = mainLoopModel;
     $[14] = mainLoopModelForSession;
     $[15] = t3;
+    $[21] = handleSelectSessionOnly;
     $[16] = t4;
   } else {
     t4 = $[16];
@@ -257,7 +286,7 @@ function ShowModelAndClose(t0) {
   const displayModel = renderModelLabel(mainLoopModel);
   const effortInfo = effortValue !== undefined ? ` (effort: ${effortValue})` : "";
   if (mainLoopModelForSession) {
-    onDone(`Current model: ${chalk.bold(renderModelLabel(mainLoopModelForSession))} (session override from plan mode)\nBase model: ${displayModel}${effortInfo}`);
+    onDone(`Current model: ${chalk.bold(renderModelLabel(mainLoopModelForSession))} for this session only (base model: ${displayModel})${effortInfo}`);
   } else {
     onDone(`Current model: ${displayModel}${effortInfo}`);
   }

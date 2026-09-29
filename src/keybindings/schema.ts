@@ -162,9 +162,10 @@ export const KEYBINDING_ACTIONS = [
   'diff:viewDetails',
   'diff:previousFile',
   'diff:nextFile',
-  // Model picker actions (ant-only)
+  // Model picker actions (effort cycling is ant-only)
   'modelPicker:decreaseEffort',
   'modelPicker:increaseEffort',
+  'modelPicker:thisSessionOnly',
   // Select component actions (distinct from confirm: to avoid collisions)
   'select:next',
   'select:previous',

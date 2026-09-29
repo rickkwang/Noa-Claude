@@ -10,7 +10,7 @@ import { Box, Text } from '../ink.js';
 import { useKeybindings } from '../keybindings/useKeybinding.js';
 import { useAppState, useSetAppState } from '../state/AppState.js';
 import { convertEffortValueToLevel, type EffortLevel, getApiDefaultEffortForModel, getDefaultEffortForModel, getEffortEnvOverride, getSupportedEffortLevelsForModel, modelSupportsEffort, resolvePickerEffortPersistence, toPersistableEffort } from '../utils/effort.js';
-import { getDefaultMainLoopModel, type ModelSetting, modelDisplayString, parseUserSpecifiedModel } from '../utils/model/model.js';
+import { getDefaultMainLoopModel, type ModelSetting, modelDisplayString, parseUserSpecifiedModel, renderDefaultModelSetting, getDefaultMainLoopModelSetting } from '../utils/model/model.js';
 import { getModelOptions } from '../utils/model/modelOptions.js';
 import { getSettingsForSource, updateSettingsForSource } from '../utils/settings/settings.js';
 import { ConfigurableShortcutHint } from './ConfigurableShortcutHint.js';
@@ -18,11 +18,17 @@ import { Select } from './CustomSelect/index.js';
 import { Byline } from './design-system/Byline.js';
 import { KeyboardShortcutHint } from './design-system/KeyboardShortcutHint.js';
 import { Pane } from './design-system/Pane.js';
-import { effortLevelToSymbol } from './EffortIndicator.js';
+import { effortLevelToSymbol, getEffortNotificationText } from './EffortIndicator.js';
 export type Props = {
   initial: string | null;
   sessionModel?: ModelSetting;
   onSelect: (model: string | null, effort: EffortLevel | undefined) => void;
+  /**
+   * Session-only pick (the `s` key): applies the focused model to this
+   * session without persisting a default. When omitted, the footer hides the
+   * `s` hint and the keybinding no-ops.
+   */
+  onSelectSessionOnly?: (model: string | null, effort: EffortLevel | undefined) => void;
   onCancel?: () => void;
   isStandaloneCommand?: boolean;
   showFastModeNotice?: boolean;
@@ -38,11 +44,12 @@ export type Props = {
 };
 const NO_PREFERENCE = '__NO_PREFERENCE__';
 export function ModelPicker(t0) {
-  const $ = _c(83);
+  const $ = _c(94);
   const {
     initial,
     sessionModel,
     onSelect,
+    onSelectSessionOnly,
     onCancel,
     isStandaloneCommand,
     showFastModeNotice,
@@ -68,6 +75,13 @@ export function ModelPicker(t0) {
     t1 = $[1];
   }
   const [effort, setEffort] = useState(t1);
+  // Badge for the pane's top-right corner ("◐ medium · /effort"): the
+  // session's currently-applied effort — same text the main input area shows.
+  // Undefined when the current model doesn't support effort.
+  const badgeModel = sessionModel ? parseUserSpecifiedModel(sessionModel) : resolveOptionModel(initialValue);
+  const effortBadge = badgeModel ? getEffortNotificationText(effortValue, badgeModel) : undefined;
+  // Base model label for the session-override header line.
+  const baseModelLabel = renderDefaultModelSetting(safeInitial ?? getDefaultMainLoopModelSetting());
   const t2 = isFastMode ?? false;
   let t3;
   if ($[2] !== t2) {
@@ -194,13 +208,46 @@ export function ModelPicker(t0) {
     setEffort(prev => cycleEffortLevel(prev ?? focusedDefaultEffort, direction, focusedSupportedEffortLevels));
     setHasToggledEffort(true);
   };
+  let t11;
+  if ($[83] !== onSelectSessionOnly || $[84] !== effort || $[85] !== hasToggledEffort || $[86] !== skipSettingsWrite || $[87] !== setAppState || $[88] !== focusedValue) {
+    t11 = function handleSessionOnly() {
+      if (!onSelectSessionOnly) {
+        return;
+      }
+      logEvent("tengu_model_command_menu_session_only", {
+        effort: effort as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
+      });
+      // Session-only: apply a cycled effort to AppState but never persist it.
+      if (!skipSettingsWrite && hasToggledEffort) {
+        setAppState(prev_1 => ({
+          ...prev_1,
+          effortValue: effort ?? getDefaultEffortLevelForOption(focusedValue)
+        }));
+      }
+      const selectedModel = resolveOptionModel(focusedValue);
+      const selectedEffort = hasToggledEffort && selectedModel && modelSupportsEffort(selectedModel) ? effort : undefined;
+      onSelectSessionOnly(focusedValue === NO_PREFERENCE ? null : focusedValue, selectedEffort);
+    };
+    $[83] = onSelectSessionOnly;
+    $[84] = effort;
+    $[85] = hasToggledEffort;
+    $[86] = skipSettingsWrite;
+    $[87] = setAppState;
+    $[88] = focusedValue;
+    $[89] = t11;
+  } else {
+    t11 = $[89];
+  }
+  const handleSessionOnly = t11;
   let t12;
-  if ($[32] !== handleCycleEffort) {
+  if ($[32] !== handleCycleEffort || $[90] !== handleSessionOnly) {
     t12 = {
       "modelPicker:decreaseEffort": () => handleCycleEffort("left"),
-      "modelPicker:increaseEffort": () => handleCycleEffort("right")
+      "modelPicker:increaseEffort": () => handleCycleEffort("right"),
+      "modelPicker:thisSessionOnly": () => handleSessionOnly()
     };
     $[32] = handleCycleEffort;
+    $[90] = handleSessionOnly;
     $[33] = t12;
   } else {
     t12 = $[33];
@@ -259,7 +306,7 @@ export function ModelPicker(t0) {
   } else {
     t15 = $[41];
   }
-  const t16 = headerText ?? "Switch between Claude models. Applies to this session and future Noa Claude sessions. For other/previous model names, specify with --model.";
+  const t16 = headerText ?? "Switch between Claude models. Your pick becomes the default for new sessions. For other/previous model names, specify with --model.";
   let t17;
   if ($[42] !== t16) {
     t17 = <Text dimColor={true}>{t16}</Text>;
@@ -269,9 +316,10 @@ export function ModelPicker(t0) {
     t17 = $[43];
   }
   let t18;
-  if ($[44] !== sessionModel) {
-    t18 = sessionModel && <Text dimColor={true}>Currently using {modelDisplayString(sessionModel)} for this session (set by plan mode). Selecting a model will undo this.</Text>;
+  if ($[44] !== sessionModel || $[93] !== baseModelLabel) {
+    t18 = sessionModel && <Text dimColor={true}>Currently using {modelDisplayString(sessionModel)} for this session only (base model: {baseModelLabel}). Selecting a model here replaces both.</Text>;
     $[44] = sessionModel;
+    $[93] = baseModelLabel;
     $[45] = t18;
   } else {
     t18 = $[45];
@@ -302,7 +350,7 @@ export function ModelPicker(t0) {
   }
   let t22;
   if ($[57] !== hiddenCount) {
-    t22 = hiddenCount > 0 && <Box paddingLeft={3}><Text dimColor={true}>and {hiddenCount} more…</Text></Box>;
+    t22 = hiddenCount > 0 && <Box paddingLeft={3}><Text dimColor={true}>...+{hiddenCount} models</Text></Box>;
     $[57] = hiddenCount;
     $[58] = t22;
   } else {
@@ -348,11 +396,12 @@ export function ModelPicker(t0) {
     t26 = $[73];
   }
   let t27;
-  if ($[74] !== exitState || $[75] !== isStandaloneCommand || $[82] !== onCancel) {
-    t27 = isStandaloneCommand && <Text dimColor={true} italic={true}>{exitState.pending ? <>Press {exitState.keyName} again to {onCancel ? 'cancel' : 'exit'}</> : <Byline><KeyboardShortcutHint shortcut="Enter" action="confirm" /><ConfigurableShortcutHint action="select:cancel" context="Select" fallback="Esc" description="exit" /></Byline>}</Text>;
+  if ($[74] !== exitState || $[75] !== isStandaloneCommand || $[82] !== onCancel || $[91] !== onSelectSessionOnly) {
+    t27 = isStandaloneCommand && <Text dimColor={true} italic={true}>{exitState.pending ? <>Press {exitState.keyName} again to {onCancel ? 'cancel' : 'exit'}</> : <Byline><KeyboardShortcutHint shortcut="Enter" action="set as default" />{onSelectSessionOnly ? <ConfigurableShortcutHint action="modelPicker:thisSessionOnly" context="ModelPicker" fallback="s" description="use this session only" /> : null}<ConfigurableShortcutHint action="select:cancel" context="Select" fallback="Esc" description="cancel" /></Byline>}</Text>;
     $[74] = exitState;
     $[75] = isStandaloneCommand;
     $[82] = onCancel;
+    $[91] = onSelectSessionOnly;
     $[76] = t27;
   } else {
     t27 = $[76];
@@ -371,9 +420,10 @@ export function ModelPicker(t0) {
     return content;
   }
   let t29;
-  if ($[80] !== content) {
-    t29 = <Pane color="permission">{content}</Pane>;
+  if ($[80] !== content || $[92] !== effortBadge) {
+    t29 = <Pane color="permission" topRight={effortBadge}>{content}</Pane>;
     $[80] = content;
+    $[92] = effortBadge;
     $[81] = t29;
   } else {
     t29 = $[81];

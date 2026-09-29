@@ -347,12 +347,14 @@ export const DEFAULT_BINDINGS: KeybindingBlock[] = [
       'ctrl+x b': 'app:cycleDiffBase',
     },
   },
-  // Model picker effort cycling (ant-only)
+  // Model picker: effort cycling (ant-only) and the session-only pick (`s`,
+  // applies the focused model to this session without persisting a default).
   {
     context: 'ModelPicker',
     bindings: {
       left: 'modelPicker:decreaseEffort',
       right: 'modelPicker:increaseEffort',
+      s: 'modelPicker:thisSessionOnly',
     },
   },
   // Select component navigation (used by /model, /resume, permission prompts, etc.)
