@@ -35,7 +35,6 @@
     "src/buddy/sprites.ts",
     "src/buddy/types.ts",
     "src/buddy/useBuddyNotification.tsx",
-    "src/cli/handlers/agents.ts",
     "src/cli/handlers/auth.ts",
     "src/cli/handlers/autoMode.ts",
     "src/cli/handlers/mcp.tsx",

@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { isImmediateCommand } from './commandImmediate.js'
 import { logEvent } from 'src/services/analytics/index.js'
 import type { AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from 'src/services/analytics/metadata.js'
 import { type Command, getCommandName, isCommandEnabled } from '../commands.js'
@@ -77,7 +78,7 @@ export async function tryHandleImmediateLocalJsxCommand(
 
   const immediateCommand = commands.find(
     cmd =>
-      cmd.immediate &&
+      isImmediateCommand(cmd, commandArgs) &&
       isCommandEnabled(cmd) &&
       (cmd.name === commandName ||
         cmd.aliases?.includes(commandName) ||

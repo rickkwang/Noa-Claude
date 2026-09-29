@@ -27,6 +27,8 @@ import { agenticSessionSearch } from '../utils/agenticSessionSearch.js';
 import { renameRecordingForSession } from '../utils/asciicast.js';
 import { updateSessionName } from '../utils/concurrentSessions.js';
 import { loadConversationForResume } from '../utils/conversationRecovery.js';
+import { getBgJobShort } from '../utils/background/bgJob.js';
+import { heldByBackgroundMessage, listJobs, markBackgroundHeld } from '../utils/background/jobs.js';
 import { checkCrossProjectResume } from '../utils/crossProjectResume.js';
 import type { FileHistorySnapshot } from '../utils/fileHistory.js';
 import { logError } from '../utils/log.js';
@@ -124,7 +126,8 @@ export function ResumeConversation({
   }, [logs, filterByPr]);
   const isResumeWithRenameEnabled = isCustomTitleEnabled();
   React.useEffect(() => {
-    loadSameRepoMessageLogsProgressive(worktreePaths).then(result_0 => {
+    loadSameRepoMessageLogsProgressive(worktreePaths).then(async result_0 => {
+      await markBackgroundHeld(result_0.logs, getBgJobShort());
       sessionLogResultRef.current = result_0;
       logCountRef.current = result_0.logs.length;
       setLogs(result_0.logs);
@@ -137,7 +140,8 @@ export function ResumeConversation({
   const loadMoreLogs = React.useCallback((count: number) => {
     const ref = sessionLogResultRef.current;
     if (!ref || ref.nextIndex >= ref.allStatLogs.length) return;
-    void enrichLogs(ref.allStatLogs, ref.nextIndex, count).then(result_1 => {
+    void enrichLogs(ref.allStatLogs, ref.nextIndex, count).then(async result_1 => {
+      await markBackgroundHeld(result_1.logs, getBgJobShort());
       ref.nextIndex = result_1.nextIndex;
       if (result_1.logs.length > 0) {
         // enrichLogs returns fresh unshared objects — safe to mutate in place.
@@ -156,7 +160,8 @@ export function ResumeConversation({
   const loadLogs = React.useCallback((allProjects: boolean) => {
     setLoading(true);
     const promise = allProjects ? loadAllProjectsMessageLogsProgressive() : loadSameRepoMessageLogsProgressive(worktreePaths);
-    promise.then(result_2 => {
+    promise.then(async result_2 => {
+      await markBackgroundHeld(result_2.logs, getBgJobShort());
       sessionLogResultRef.current = result_2;
       logCountRef.current = result_2.logs.length;
       setLogs(result_2.logs);
@@ -176,6 +181,16 @@ export function ResumeConversation({
     process.exit(1);
   }
   async function onSelect(log_0: LogOption, skipSummaryGate = false) {
+    // A live background session is running this conversation: resuming it
+    // here too would put two writers on one transcript.
+    if (log_0.backgroundJob) {
+      const job = (await listJobs()).find(j => j.short === log_0.backgroundJob && j.alive);
+      if (job) {
+        process.stderr.write(`${heldByBackgroundMessage(job, 'resume')}\n`);
+        // eslint-disable-next-line custom-rules/no-process-exit
+        process.exit(1);
+      }
+    }
     setResuming(true);
     const resumeStart = performance.now();
     const crossProjectCheck = checkCrossProjectResume(log_0, showAllProjects, worktreePaths);

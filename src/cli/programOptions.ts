@@ -42,6 +42,10 @@ export function configureProgramOptions(program: CommanderCommand): void {
     )
     .option('--local-only', 'Local-only startup profile. Equivalent to --bare and explicitly enables CLAUDE_CODE_LOCAL_ONLY=1.', () => true)
     .addOption(new Option('--init', 'Run Setup hooks with init trigger, then continue').hideHelp())
+    .option('--bg', 'Start a background session on the prompt and return to the shell (see `noa agents`)', () => true)
+    .addOption(new Option('--background', 'Alias for --bg').hideHelp())
+    .addOption(new Option('--reply-on-resume', 'When resuming, immediately query if the loaded transcript ends in a user-role message (set by /background mid-turn so the fork continues the in-flight turn).').hideHelp())
+    .addOption(new Option('--inherit-permission-mode <mode>', 'Permission mode carried from a parent session, used only when nothing else configures one').hideHelp())
     .addOption(new Option('--init-only', 'Run Setup and SessionStart:startup hooks, then exit').hideHelp())
     .addOption(new Option('--maintenance', 'Run Setup hooks with maintenance trigger, then continue').hideHelp())
     .addOption(

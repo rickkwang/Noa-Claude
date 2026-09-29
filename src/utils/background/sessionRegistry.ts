@@ -24,12 +24,6 @@ export type SessionEntry = {
   derivedState: SessionState
 }
 
-export type SessionGroup = {
-  label: string
-  state: SessionState
-  sessions: SessionEntry[]
-}
-
 function getSessionsDir(): string {
   return join(getClaudeConfigHomeDir(), 'sessions')
 }
@@ -94,25 +88,4 @@ export async function readAllSessions(): Promise<SessionEntry[]> {
     }
   }
   return entries.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))
-}
-
-export function formatRelativeTime(ms: number): string {
-  const seconds = Math.floor((Date.now() - ms) / 1000)
-  if (seconds < 60) return `${seconds}s`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h`
-  const days = Math.floor(hours / 24)
-  return `${days}d`
-}
-
-export function truncateCwd(cwd: string, maxLen: number = 30): string {
-  if (cwd.length <= maxLen) return cwd
-  const home = process.env.HOME
-  if (home && cwd.startsWith(home)) {
-    cwd = '~' + cwd.slice(home.length)
-  }
-  if (cwd.length <= maxLen) return cwd
-  return '...' + cwd.slice(cwd.length - maxLen + 3)
 }

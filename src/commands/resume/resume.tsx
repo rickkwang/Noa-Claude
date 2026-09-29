@@ -26,6 +26,8 @@ import { logError } from '../../utils/log.js';
 import { shouldUseResumeSummaryGate } from '../../utils/resumeSummaryGate.js';
 import { getLastSessionLog, getSessionIdFromLog, isCustomTitleEnabled, isLiteLog, loadAllProjectsMessageLogs, loadFullLog, loadSameRepoMessageLogs, RESUME_PICKER_MAX_SESSIONS, searchSessionsByCustomTitle } from '../../utils/sessionStorage.js';
 import { validateUuid } from '../../utils/uuid.js';
+import { getBgJobShort } from '../../utils/background/bgJob.js';
+import { findBackgroundHolder, heldByBackgroundMessage, markBackgroundHeld } from '../../utils/background/jobs.js';
 type ResumeResult = {
   resultType: 'sessionNotFound';
   arg: string;
@@ -271,6 +273,8 @@ function ResumeCommand({
         onDoneRef.current('No conversations found to resume');
         return;
       }
+      await markBackgroundHeld(resumable, getBgJobShort());
+      if (gen !== loadGenRef.current) return;
       setLogs(resumable);
     } catch (error) {
       if (gen !== loadGenRef.current) return;
@@ -377,6 +381,13 @@ function shouldShowResumeSummaryGate(log: LogOption): boolean {
 export const _shouldShowResumeSummaryGateForTesting = shouldShowResumeSummaryGate;
 export const call: LocalJSXCommandCall = async (onDone, context, args) => {
   const onResume = async (sessionId: UUID, log: LogOption, entrypoint: ResumeEntrypoint) => {
+    // A live background session is running this conversation: two writers
+    // on one transcript would corrupt it.
+    const holder = await findBackgroundHolder(sessionId, getBgJobShort(), 'resume');
+    if (holder) {
+      onDone(heldByBackgroundMessage(holder, 'resume'));
+      return;
+    }
     try {
       await context.resume?.(sessionId, log, entrypoint);
       onDone(undefined, {

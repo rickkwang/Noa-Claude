@@ -392,6 +392,7 @@ export type GlobalConfig = {
   todoFeatureEnabled: boolean // Whether the todo feature is enabled
   showExpandedTodos?: boolean // Whether to show todos expanded, even when empty
   showSpinnerTree?: boolean // Whether to show the teammate spinner tree instead of pills
+  leftArrowOpensAgents?: boolean // ← on an empty prompt opens the agents view (default on)
 
   // First start time tracking
   firstStartTime?: string // ISO timestamp when Claude Code was first started on this machine
@@ -670,6 +671,7 @@ export const GLOBAL_CONFIG_KEYS = [
   'tipsHistory',
   'todoFeatureEnabled',
   'showExpandedTodos',
+  'leftArrowOpensAgents',
   'messageIdleNotifThresholdMs',
   'autoConnectIde',
   'autoInstallIdeExtension',

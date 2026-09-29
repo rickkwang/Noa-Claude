@@ -39,7 +39,8 @@ import { useIsInsideModal } from '../../context/modalContext.js';
 import { SearchBox } from '../SearchBox.js';
 import { isSupportedTerminal, hasAccessToIDEExtensionDiffFeature } from '../../utils/ide.js';
 import { getInitialSettings, getSettingsForSource, updateSettingsForSource } from '../../utils/settings/settings.js';
-import { getUserMsgOptIn, setUserMsgOptIn } from '../../bootstrap/state.js';
+import { getIsRemoteMode, getUserMsgOptIn, setUserMsgOptIn } from '../../bootstrap/state.js';
+import { isAgentViewDisabled } from '../../utils/background/gate.js';
 import { DEFAULT_OUTPUT_STYLE_NAME } from 'src/constants/outputStyles.js';
 import { isEnvTruthy, isRunningOnHomespace } from 'src/utils/envUtils.js';
 import type { LocalJSXCommandContext, CommandResultDisplay } from '../../commands.js';
@@ -314,7 +315,22 @@ export function Config({
         enabled: autoCompactEnabled
       });
     }
-  }, {
+  }, ...(isAgentViewDisabled() || getIsRemoteMode() ? [] : [{
+    id: 'leftArrowOpensAgents',
+    label: '← opens agents',
+    value: globalConfig.leftArrowOpensAgents ?? true,
+    type: 'boolean' as const,
+    onChange(leftArrowOpensAgents: boolean) {
+      saveGlobalConfig(current_0 => ({
+        ...current_0,
+        leftArrowOpensAgents
+      }));
+      setGlobalConfig({
+        ...getGlobalConfig(),
+        leftArrowOpensAgents
+      });
+    }
+  }]), {
     id: 'spinnerTipsEnabled',
     label: 'Show tips',
     value: settingsData?.spinnerTipsEnabled ?? true,

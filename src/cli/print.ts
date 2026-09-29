@@ -4948,6 +4948,28 @@ type LoadInitialMessagesResult = {
   agentSetting?: string
 }
 
+/**
+ * --continue / --resume in place of a conversation a live background session
+ * holds: refuse rather than put two writers on one transcript.
+ */
+async function refuseIfHeldByBackground(
+  sessionId: string | undefined,
+  via: 'continue' | 'resume',
+  options: { forkSession?: boolean; outputFormat?: string },
+): Promise<boolean> {
+  if (!sessionId || options.forkSession) return false
+  const { getBgJobShort } = await import('../utils/background/bgJob.js')
+  const { findBackgroundHolder, heldByBackgroundMessage } = await import('../utils/background/jobs.js')
+  const holder = await findBackgroundHolder(sessionId, getBgJobShort(), via)
+  if (!holder) return false
+  emitLoadError(
+    formatDiagnosticError('CONFIG_ERROR', heldByBackgroundMessage(holder, via)),
+    options.outputFormat,
+  )
+  gracefulShutdownSync(1)
+  return true
+}
+
 async function loadInitialMessages(
   setAppState: (f: (prev: AppState) => AppState) => void,
   options: {
@@ -4971,6 +4993,9 @@ async function loadInitialMessages(
         undefined /* sessionId */,
         undefined /* file path */,
       )
+      if (result && (await refuseIfHeldByBackground(result.sessionId, 'continue', options))) {
+        return { messages: [] }
+      }
       if (result) {
         // Match coordinator mode to the resumed session's mode
         if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
@@ -5138,6 +5163,9 @@ async function loadInitialMessages(
         parsedSessionId.sessionId,
         parsedSessionId.jsonlFile || undefined,
       )
+      if (result && (await refuseIfHeldByBackground(result.sessionId, 'resume', options))) {
+        return { messages: [] }
+      }
 
       // hydrateFromCCRv2InternalEvents writes an empty transcript file for
       // fresh sessions (writeFile(sessionFile, '') with zero events), so

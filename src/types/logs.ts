@@ -52,6 +52,7 @@ export type LogOption = {
   summary?: string // Optional conversation summary
   customTitle?: string // Optional user-set custom title
   tag?: string // Optional tag for the session (searchable in /resume)
+  backgroundJob?: string // Background session (job id) currently running this conversation
   fileHistorySnapshots?: FileHistorySnapshot[] // Optional file history snapshots
   attributionSnapshots?: AttributionSnapshotMessage[] // Optional attribution snapshots
   contextCollapseCommits?: ContextCollapseCommitEntry[] // Ordered — commit B may reference commit A's summary

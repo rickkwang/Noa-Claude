@@ -214,6 +214,7 @@ export function formatLogMetadata(log: {
   agentSetting?: string
   prNumber?: number
   prRepository?: string
+  backgroundJob?: string
 }): string {
   const sizeOrCount =
     log.fileSize !== undefined
@@ -230,6 +231,9 @@ export function formatLogMetadata(log: {
   ]
   if (log.tag) {
     parts.push(`#${log.tag}`)
+  }
+  if (log.backgroundJob) {
+    parts.push(`bg:${log.backgroundJob}`)
   }
   if (log.agentSetting) {
     parts.push(`@${log.agentSetting}`)

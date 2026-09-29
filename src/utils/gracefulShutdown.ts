@@ -159,6 +159,14 @@ function cleanupTerminalModes(): void {
 }
 
 let resumeHintPrinted = false
+
+/**
+ * Skip the resume hint on exit: the conversation was handed to a background
+ * session, so resuming it here would fork it a second time.
+ */
+export function suppressResumeHint(): void {
+  resumeHintPrinted = true
+}
 const SUPPORTS_OSC9_PROGRESS = ['iTerm.app', 'WezTerm', 'ghostty', 'conemu']
 
 /**

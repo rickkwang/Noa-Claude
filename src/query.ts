@@ -181,13 +181,15 @@ function* yieldMissingToolResultBlocks(
 /**
  * Emit the user-interruption message after an abort. Skipped for
  * submit-interrupts — the queued user message that follows provides
- * sufficient context.
+ * sufficient context — and for 'handoff', where the conversation moves to a
+ * background session that finishes the turn (the user didn't stop it).
  */
 function* yieldInterruptionNotice(
   toolUseContext: ToolUseContext,
   options: { toolUse: boolean },
 ) {
-  if (toolUseContext.abortController.signal.reason !== 'interrupt') {
+  const reason = toolUseContext.abortController.signal.reason
+  if (reason !== 'interrupt' && reason !== 'handoff') {
     yield createUserInterruptionMessage(options)
   }
 }

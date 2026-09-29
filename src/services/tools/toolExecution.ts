@@ -73,6 +73,8 @@ import { logError } from '../../utils/log.js'
 import { formatToolNameForError } from '../../utils/toolName.js'
 import {
   CANCEL_MESSAGE,
+  isTurnEndedForMessage,
+  TURN_ENDED_FOR_MESSAGE_TOOL_RESULT,
   createProgressMessage,
   createStopHookSummaryMessage,
   createToolResultStopMessage,
@@ -465,11 +467,15 @@ export async function* runToolUse(
         ),
       })
       const content = createToolResultStopMessage(toolUse.id)
-      content.content = withMemoryCorrectionHint(CANCEL_MESSAGE)
+      // A turn ended to deliver a message (send-now, background handoff) was
+      // not the user declining this tool: don't tell the model to stop.
+      const endedForMessage = isTurnEndedForMessage(toolUseContext.abortController.signal)
+      const cancelText = endedForMessage ? TURN_ENDED_FOR_MESSAGE_TOOL_RESULT : CANCEL_MESSAGE
+      content.content = endedForMessage ? cancelText : withMemoryCorrectionHint(cancelText)
       yield {
         message: createUserMessage({
           content: [content],
-          toolUseResult: CANCEL_MESSAGE,
+          toolUseResult: cancelText,
           sourceToolAssistantUUID: assistantMessage.uuid,
         }),
       }

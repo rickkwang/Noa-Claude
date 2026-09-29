@@ -2,7 +2,6 @@
 import { c as _c } from "react/compiler-runtime";
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { feature } from 'bun:bundle';
-import { spawnSync } from 'child_process';
 import { snapshotOutputTokensForTurn, getCurrentTurnTokenBudget, getTurnOutputTokens, getBudgetContinuationCount, getTotalInputTokens } from '../bootstrap/state.js';
 import { parseTokenBudget } from '../utils/tokenBudget.js';
 import { count } from '../utils/array.js';
@@ -211,7 +210,17 @@ import { fileHistoryMakeSnapshot, type FileHistoryState, fileHistoryRewind, file
 import { type AttributionState, incrementPromptCount } from '../utils/commitAttribution.js';
 import { recordAttributionSnapshot } from '../utils/sessionStorage.js';
 import { computeStandaloneAgentContext, restoreAgentFromSession, restoreSessionStateFromLog, restoreWorktreeForResume, exitRestoredWorktree } from '../utils/sessionRestore.js';
-import { isBgSession, updateSessionName, updateSessionActivity } from '../utils/concurrentSessions.js';
+import { updateSessionName, updateSessionActivity } from '../utils/concurrentSessions.js';
+import { isBgSession, requestBgDetach } from '../utils/background/bgJob.js';
+import { isImmediateCommand } from '../utils/commandImmediate.js';
+import { deriveBgActivity, reportBgActivity } from '../utils/background/bgSession.js';
+import { registerBackgroundHandoff } from '../utils/background/handoff.js';
+import { type HandoffPrefill } from '../utils/background/dispatch.js';
+import { buildDispatchDefaults, forkToBackground } from '../utils/background/fork.js';
+import { getBackgroundBlock } from '../utils/background/gate.js';
+import { handoffBoundaryUuid, isBetweenModelCalls, partialReplyText } from '../utils/background/turnState.js';
+import { abandonableTasks, BackgroundConfirmDialog } from '../components/BackgroundConfirmDialog.js';
+
 import { isInProcessTeammateTask, type InProcessTeammateTaskState } from '../tasks/InProcessTeammateTask/types.js';
 import { restoreRemoteAgentTasks } from '../tasks/RemoteAgentTask/RemoteAgentTask.js';
 import { useInboxPoller } from '../hooks/useInboxPoller.js';
@@ -219,6 +228,8 @@ import { useInboxPoller } from '../hooks/useInboxPoller.js';
 /* eslint-disable @typescript-eslint/no-require-imports */
 const proactiveModule = require('../proactive/index.js');
 const PROACTIVE_NO_OP_SUBSCRIBE = (_cb: () => void) => () => {};
+/** How long ← waits for a turn busy between model calls before stopping it. */
+const BACKGROUND_DEFER_CAP_MS = 10_000;
 const PROACTIVE_FALSE = () => false;
 const SUGGEST_BG_PR_NOOP = (_p: string, _n: string): boolean => false;
 const useProactive = require('../proactive/useProactive.js').useProactive;
@@ -232,7 +243,7 @@ import { useIDEIntegration } from '../hooks/useIDEIntegration.js';
 import exit from '../commands/exit/index.js';
 import { ExitFlow } from '../components/ExitFlow.js';
 import { getCurrentWorktreeSession } from '../utils/worktree.js';
-import { popAllEditable, enqueue, type SetAppState, getCommandQueue, getCommandQueueLength, removeByFilter } from '../utils/messageQueueManager.js';
+import { popAllEditable, enqueue, type SetAppState, getCommandQueue, getCommandQueueLength, removeByFilter, isQueuedCommandEditable } from '../utils/messageQueueManager.js';
 import { useCommandQueue } from '../hooks/useCommandQueue.js';
 import { SessionBackgroundHint } from '../components/SessionBackgroundHint.js';
 import { startBackgroundSession } from '../tasks/LocalMainSessionTask.js';
@@ -1235,6 +1246,19 @@ export function REPL({
   }, [setToolUseConfirmQueue]);
   const [messages, rawSetMessages] = useState<MessageType[]>(initialMessages ?? []);
   const messagesRef = useRef(messages);
+
+  // Background sessions (started from the agents view) mirror their activity
+  // into their job record so the agents view can list and group them.
+  const bgActivity = useMemo(() => isBgSession() ? deriveBgActivity(messages, tools) : null, [messages, tools]);
+  useEffect(() => {
+    if (!bgActivity) return;
+    reportBgActivity({
+      ...bgActivity,
+      status: sessionStatus,
+      waitingFor,
+      title: getCurrentSessionTitle(getSessionId())
+    });
+  }, [bgActivity, sessionStatus, waitingFor]);
   // Stores the willowMode variant that was shown (or false if no hint shown).
   // Captured at hint_shown time so hint_converted telemetry reports the same
   // variant — the GrowthBook value shouldn't change mid-session, but reading
@@ -1540,6 +1564,9 @@ export function REPL({
   // throttle batches rapid updates). Cleared on message arrival (messages.ts)
   // so displayedMessages switches from deferredMessages to messages atomically.
   const [streamingText, setStreamingText] = useState<string | null>(null);
+  // Read by the background handoff, which is registered once.
+  const streamingTextRef = useRef(streamingText);
+  streamingTextRef.current = streamingText;
   const reducedMotion = useAppState(s => s.settings.prefersReducedMotion) ?? false;
   const showStreamingText = !reducedMotion && !hasCursorUpViewportYankBug();
   const onStreamingText = useCallback((f: (current: string | null) => string | null) => {
@@ -2216,6 +2243,8 @@ export function REPL({
       return;
     }
     logForDebugging(`[onCancel] focusedInputDialog=${focusedInputDialog} streamMode=${streamMode}`);
+    // esc while waiting to background: stay here.
+    clearHandoffPending();
 
     // Pause proactive mode so the user gets control back.
     // It will resume when they submit their next input (see onSubmit).
@@ -3196,6 +3225,25 @@ export function REPL({
     }
   }, [onQueryImpl, setAppState, resetLoadingState, queryGuard, mrOnBeforeQuery, mrOnTurnComplete]);
 
+  // --reply-on-resume: the transcript ends on the turn that was cut off when
+  // the conversation moved here — query straight away to finish it.
+  const replayOnMount = useAppState(s => s.replayOnMount);
+  const replayStartedRef = useRef(false);
+  useEffect(() => {
+    if (!replayOnMount || isLoading || replayStartedRef.current) return;
+    replayStartedRef.current = true;
+    setAppState(prev => ({
+      ...prev,
+      replayOnMount: null
+    }));
+    void (async () => {
+      await awaitPendingHooks();
+      const controller = createAbortController();
+      setAbortController(controller);
+      void onQuery(replayOnMount.hint, controller, true, [], mainLoopModel);
+    })();
+  }, [replayOnMount, isLoading, setAppState, onQuery, mainLoopModel]);
+
   // Handle initial message (from CLI args or plan mode exit with context clear)
   // This effect runs when isLoading becomes false and there's a pending message
   const initialMessageRef = useRef(false);
@@ -3361,7 +3409,7 @@ export function REPL({
         });
         idleHintShownRef.current = false;
       }
-      const shouldTreatAsImmediate = queryGuard.isActive && (matchingCommand?.immediate || options?.fromKeybinding);
+      const shouldTreatAsImmediate = queryGuard.isActive && (matchingCommand && isImmediateCommand(matchingCommand, commandArgs) || options?.fromKeybinding);
       if (matchingCommand && shouldTreatAsImmediate && matchingCommand.type === 'local-jsx') {
         // Only clear input if the submitted text matches what's in the prompt.
         // When a command keybinding fires, input is "/<command>" but the actual
@@ -3436,7 +3484,11 @@ export function REPL({
           // Read messages via ref to keep onSubmit stable across message
           // updates — matches the pattern at L2384/L2400/L2662 and avoids
           // pinning stale REPL render scopes in downstream closures.
-          const context = getToolUseContext(messagesRef.current, [], createAbortController(), mainLoopModel);
+          // Only reached with a turn in flight (shouldTreatAsImmediate).
+          const context = {
+            ...getToolUseContext(messagesRef.current, [], createAbortController(), mainLoopModel),
+            dispatchedAsImmediate: true
+          };
           const mod = await matchingCommand.load();
           const jsx = await mod.call(onDone, context, commandArgs);
 
@@ -3786,6 +3838,204 @@ export function REPL({
   // old REPL scopes can be GC'd — saves ~35MB over a 1000-turn session.
   const onSubmitRef = useRef(onSubmit);
   onSubmitRef.current = onSubmit;
+
+  // Moving the conversation to the background (← on an empty prompt, or
+  // /background typed while a turn runs), with upstream's gesture: idle →
+  // fork now; a reply streaming → stop it and carry the partial text; between
+  // model calls (tools running) → let the turn finish, for at most 10s or
+  // until ← again. esc cancels a wait. The fork picks a cut-off turn back up
+  // (--reply-on-resume).
+  const handoffRef = useRef<{
+    inFlight: boolean;
+    pending: null | {
+      anchor: number;
+      lastPress: number;
+      cap: ReturnType<typeof setTimeout>;
+      confirmed: boolean;
+    };
+  }>({
+    inFlight: false,
+    pending: null
+  });
+  const clearHandoffPending = useCallback(() => {
+    const pending = handoffRef.current.pending;
+    if (pending) clearTimeout(pending.cap);
+    handoffRef.current.pending = null;
+  }, []);
+  const handoffWarn = useCallback((text: string) => {
+    setMessages(prev => {
+      const last = prev.at(-1);
+      if (last?.type === 'system' && last.subtype === 'informational' && last.content === text) return prev;
+      return [...prev, createSystemMessage(text, 'warning')];
+    });
+  }, [setMessages]);
+  // Why the conversation can't move right now; null when it can.
+  const handoffBlocker = useCallback((): [reason: string, hint: string] | null => {
+    if (getBackgroundBlock() === 'persistence') return ['session persistence is disabled, so this conversation cannot be backgrounded', ''];
+    if (getBackgroundBlock() !== null) return ['background sessions are not available here', ''];
+    const queued = getCommandQueue().filter(isQueuedCommandEditable).length;
+    if (queued > 0) return [`${queued} queued ${queued === 1 ? 'command' : 'commands'} would be lost`, `Run or clear ${queued === 1 ? 'it' : 'them'} first.`];
+    if (inputValueRef.current.trim() !== '') return ['you have unsent text in the input', 'Send it or clear it first (double-tap esc clears).'];
+    return null;
+  }, []);
+  const waitTurnSettled = useCallback(() => new Promise<void>(resolve => {
+    const settle = () => void setTimeout(resolve, 50);
+    if (!queryGuard.isActive) return settle();
+    const unsubscribe = queryGuard.subscribe(() => {
+      if (queryGuard.isActive) return;
+      unsubscribe();
+      settle();
+    });
+  }), [queryGuard]);
+  // Stop the running turn for the handoff: no interruption marker, cut-off
+  // tools are not reported as refused. Returns the reply that was streaming.
+  const stopTurnForHandoff = useCallback(async (): Promise<HandoffPrefill | undefined> => {
+    if (!queryGuard.isActive) return undefined;
+    clearHandoffPending();
+    const prefill = {
+      text: partialReplyText(messagesRef.current, streamingTextRef.current),
+      boundaryUuid: handoffBoundaryUuid(messagesRef.current)
+    };
+    const settled = waitTurnSettled();
+    markTurnEndedForMessage(abortControllerRef.current?.signal);
+    abortControllerRef.current?.abort('handoff');
+    await settled;
+    return prefill;
+  }, [queryGuard, clearHandoffPending, waitTurnSettled]);
+  const runHandoff = useCallback(async (opts: {
+    replyOnResume: boolean;
+    abort?: boolean;
+  }) => {
+    const handoff = handoffRef.current;
+    if (handoff.inFlight) return;
+    handoff.inFlight = true;
+    try {
+      const prefill = opts.abort ? await stopTurnForHandoff() : undefined;
+      const appState = store.getState();
+      const short = await forkToBackground({
+        appState,
+        replyOnResume: opts.replyOnResume,
+        prefill
+      });
+      const {
+        replaceReplWithAgentsView
+      } = await import('../cli/handlers/agentsView.js');
+      replaceReplWithAgentsView(short, buildDispatchDefaults(appState));
+    } catch (e) {
+      handoff.inFlight = false;
+      handoffWarn(`Cannot open agents — ${errorMessage(e)}`);
+    }
+  }, [store, stopTurnForHandoff, handoffWarn]);
+  const startHandoff = useCallback((confirmed: boolean) => {
+    if (!queryGuard.isActive) {
+      void runHandoff({
+        replyOnResume: false
+      });
+      return;
+    }
+    if (!isBetweenModelCalls(messagesRef.current, streamingTextRef.current, sendNowLiveRef.current.inProgressToolUseIDs.size > 0)) {
+      void runHandoff({
+        replyOnResume: true,
+        abort: true
+      });
+      return;
+    }
+    const now = Date.now();
+    handoffRef.current.pending = {
+      anchor: now,
+      lastPress: now,
+      confirmed,
+      cap: setTimeout(() => {
+        const pending = handoffRef.current.pending;
+        if (!pending || !queryGuard.isActive) return;
+        if (handoffBlocker()) return;
+        const tasks = abandonableTasks(store.getState().tasks);
+        if (!pending.confirmed && tasks.count > 0) {
+          handoffWarn(`Still backgrounding after the current tool — ${tasks.summary} would be abandoned by skipping ahead.`);
+          return;
+        }
+        handoffRef.current.pending = null;
+        void runHandoff({
+          replyOnResume: true,
+          abort: true
+        });
+      }, BACKGROUND_DEFER_CAP_MS)
+    };
+    handoffWarn('Backgrounding after the current tool finishes…');
+  }, [queryGuard, store, runHandoff, handoffBlocker, handoffWarn]);
+  const onBackgroundLeftArrow = useCallback(() => {
+    const handoff = handoffRef.current;
+    if (handoff.inFlight) return;
+    const blocked = handoffBlocker();
+    if (blocked) {
+      clearHandoffPending();
+      handoffWarn(`Cannot open agents — ${blocked[0]}.${blocked[1] ? ` ${blocked[1]}` : ''}`);
+      return;
+    }
+    const pending = handoff.pending;
+    if (pending) {
+      // ← again while waiting: skip ahead — but not on key repeat, nor on a
+      // press too soon after the last one to be a deliberate second press.
+      const now = Date.now();
+      const repeat = now - pending.lastPress < 150;
+      if (repeat) pending.anchor = now;
+      pending.lastPress = now;
+      if (repeat || now - pending.anchor < 1000) return;
+      pending.anchor = now;
+      const tasks = abandonableTasks(store.getState().tasks);
+      if (!pending.confirmed && tasks.count > 0) {
+        handoffWarn(`Still backgrounding after the current tool — ${tasks.summary} would be abandoned by skipping ahead.`);
+        return;
+      }
+      clearHandoffPending();
+      void runHandoff({
+        replyOnResume: true,
+        abort: queryGuard.isActive
+      });
+      return;
+    }
+    const tasks = abandonableTasks(store.getState().tasks);
+    if (tasks.count === 0) {
+      startHandoff(false);
+      return;
+    }
+    const close = () => setToolJSX({
+      jsx: null,
+      shouldHidePromptInput: false,
+      clearLocalJSX: true
+    });
+    setToolJSX({
+      jsx: <BackgroundConfirmDialog count={tasks.count} summary={tasks.summary} onConfirm={() => {
+        close();
+        startHandoff(true);
+      }} onCancel={close} />,
+      shouldHidePromptInput: true,
+      isLocalJSXCommand: true
+    });
+  }, [queryGuard, store, handoffBlocker, clearHandoffPending, handoffWarn, runHandoff, startHandoff, setToolJSX]);
+  useEffect(() => registerBackgroundHandoff({
+    onLeftArrow: onBackgroundLeftArrow,
+    stopTurnForHandoff: async () => stopTurnForHandoff()
+  }), [onBackgroundLeftArrow, stopTurnForHandoff]);
+  // The turn we were waiting on ended on its own: move now, unless something
+  // arrived meanwhile that the move would lose.
+  useEffect(() => queryGuard.subscribe(() => {
+    if (queryGuard.isActive) return;
+    const pending = handoffRef.current.pending;
+    if (!pending) return;
+    clearHandoffPending();
+    const blocked = handoffBlocker();
+    const tasks = abandonableTasks(store.getState().tasks);
+    if (blocked) {
+      handoffWarn(`Backgrounding cancelled — ${blocked[0]}. ${blocked[1] || 'Press ← again once it clears.'}`);
+    } else if (!pending.confirmed && tasks.count > 0) {
+      handoffWarn(`Backgrounding cancelled — ${tasks.summary} would be abandoned. Press ← again to confirm.`);
+    } else {
+      void runHandoff({
+        replyOnResume: true
+      });
+    }
+  }), [queryGuard, store, clearHandoffPending, handoffBlocker, handoffWarn, runHandoff]);
   const handleOpenRateLimitOptions = useCallback(() => {
     void onSubmitRef.current('/rate-limit-options', {
       setCursorOffset: () => {},
@@ -3799,9 +4049,7 @@ export function REPL({
     // active. Without this guard, the worktree branch below short-circuits into
     // ExitFlow (which calls gracefulShutdown) before exit.tsx is ever loaded.
     if (isBgSession()) {
-      spawnSync('tmux', ['detach-client'], {
-        stdio: 'ignore'
-      });
+      requestBgDetach();
       setIsExiting(false);
       return;
     }

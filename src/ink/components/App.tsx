@@ -9,6 +9,7 @@ import { logError } from '../../utils/log.js';
 import { EventEmitter } from '../events/emitter.js';
 import { InputEvent } from '../events/input-event.js';
 import { TerminalFocusEvent } from '../events/terminal-focus-event.js';
+import { setSoloKeypress } from '../soloKeypress.js';
 import { INITIAL_STATE, type ParsedInput, type ParsedKey, type ParsedMouse, parseMultipleKeypresses, SGR_MOUSE_PARTIAL_RE } from '../parse-keypress.js';
 import reconciler from '../reconciler.js';
 import { finishSelection, hasSelection, type SelectionState } from '../selection.js';
@@ -353,6 +354,9 @@ export default class App extends PureComponent<Props, State> {
       if (keys.some(isInputPriorityKey)) {
         this.props.onInputPriorityFrame?.();
       }
+      // Terminal replies (DA, XTVERSION, mode reports) can share a read with
+      // a keypress, most often right after startup; they aren't typing.
+      setSoloKeypress(keys.filter(k => k.kind !== 'response').length === 1);
       reconciler.discreteUpdates(processKeysInBatch, this, keys, undefined, undefined);
     }
 

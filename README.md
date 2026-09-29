@@ -63,6 +63,7 @@ The product baseline is `/fork`, `/workflows`, `/summary`, and `/share` (smoke-c
 
 **Sessions**
 - `/fork` — Create a resumable fork of the current conversation
+- `/background` (alias `/bg`) — Fork the conversation into a background session and free the terminal; ← on an empty prompt moves it and opens the agents view. `noa agents` opens the view directly (enter or → opens a session, ← returns to the list, ctrl+x stops then deletes, ctrl+r renames, ? lists the keys); `noa --bg '<task>'` starts one from the shell and `noa attach|logs|stop|kill|respawn|rm <id>` manage them. `/resume` marks conversations a background session is running (`bg:<id>`) and won't open them twice
 - `/resume` — Resume a previous conversation
 - `/compact` — Summarize long conversations to preserve context
 - `/session` — Show remote session URL and QR code (remote mode only)

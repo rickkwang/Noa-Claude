@@ -5,6 +5,7 @@ import {
   getSessionId,
   onSessionSwitch,
 } from '../bootstrap/state.js'
+import { isBgSession } from './background/bgJob.js'
 import { registerCleanup } from './cleanupRegistry.js'
 import { logForDebugging } from './debug.js'
 import { getClaudeConfigHomeDir } from './envUtils.js'
@@ -22,15 +23,6 @@ function getSessionsDir(): string {
 }
 
 /**
- * True when this REPL is running inside a `claude --bg` tmux session.
- * BG_SESSIONS is not buildable in this fork (utils/udsClient is absent),
- * so no spawner ever sets a session-kind override.
- */
-export function isBgSession(): boolean {
-  return false
-}
-
-/**
  * Write a PID file for this session and register cleanup.
  *
  * Registers all top-level sessions — interactive CLI, SDK (vscode, desktop,
@@ -44,7 +36,7 @@ export function isBgSession(): boolean {
 export async function registerSession(): Promise<boolean> {
   if (getAgentId() != null) return false
 
-  const kind: SessionKind = 'interactive'
+  const kind: SessionKind = isBgSession() ? 'bg' : 'interactive'
   const dir = getSessionsDir()
   const pidFile = join(dir, `${process.pid}.json`)
 

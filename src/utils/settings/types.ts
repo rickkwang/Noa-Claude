@@ -498,6 +498,12 @@ export const SettingsSchema = lazySchema(() =>
         .boolean()
         .optional()
         .describe('Disable all hooks and statusLine execution'),
+      disableAgentView: z
+        .boolean()
+        .optional()
+        .describe(
+          'Disable agent view (`noa agents`, /background, ← for agents). Typically set in managed settings. Equivalent to NOA_CLAUDE_DISABLE_AGENT_VIEW=1.',
+        ),
       // Which shell backs input-box `!` (see docs/design/ps-shell-selection.md §4.2)
       defaultShell: z
         .enum(['bash', 'powershell'])

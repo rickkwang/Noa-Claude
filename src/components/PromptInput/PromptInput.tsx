@@ -2,6 +2,10 @@
 import { feature } from 'bun:bundle';
 import chalk from 'chalk';
 import * as path from 'path';
+import { getLastAttachAt, isBgSession, requestBgDetach } from '../../utils/background/bgJob.js';
+import { requestBackgroundHandoff } from '../../utils/background/handoff.js';
+import { getBackgroundBlock, leftArrowOpensAgents } from '../../utils/background/gate.js';
+import { isSoloKeypress } from '../../ink/soloKeypress.js';
 import * as React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useNotifications } from 'src/context/notifications.js';
@@ -766,6 +770,12 @@ function PromptInput({
     addNotification,
     removeNotification
   } = useNotifications();
+  const leftArrowGestureRef = useRef({
+    editedEmptyAt: 0,
+    armedAt: 0,
+    absorbAnchor: 0,
+    lastPress: 0
+  });
 
   // Show ultrathink notification
   useEffect(() => {
@@ -881,6 +891,8 @@ function PromptInput({
     // navigation) opt out, so a command that itself starts with "!" doesn't
     // lose that character on the way back into the input.
     const interpretLeadingModeCharacter = options?.interpretLeadingModeCharacter ?? true;
+    // An edit that empties the draft arms the ← second-press guard.
+    if (value === '') leftArrowGestureRef.current.editedEmptyAt = Date.now();
     if (value === '?') {
       logEvent('tengu_help_toggled', {});
       setHelpOpen(v => !v);
@@ -973,6 +985,7 @@ function PromptInput({
       void popAllCommandsFromQueue();
       return;
     }
+    leftArrowGestureRef.current.editedEmptyAt = Date.now();
     onHistoryUp();
   }
   function handleHistoryDown() {
@@ -987,6 +1000,7 @@ function PromptInput({
       return;
     }
 
+    leftArrowGestureRef.current.editedEmptyAt = Date.now();
     // At bottom of history → enter footer at first visible pill
     if (onHistoryDown() && footerItems.length > 0) {
       const first = footerItems[0]!;
@@ -1961,6 +1975,48 @@ function PromptInput({
     // render via early return, but hooks run unconditionally — so without this
     // guard, Escape inside a dialog leaks to the double-press message-selector.
     if (showTeamsDialog || showQuickOpen || showGlobalSearch || showHistoryPicker) {
+      return;
+    }
+
+    // ← on an empty prompt opens the agents view: a background session hands
+    // the terminal back to it, a foreground one moves there. Upstream's
+    // guards: a ← soon after the draft was emptied asks for a second press
+    // (it was probably cursor movement), presses soon after firing or on
+    // key repeat are absorbed, and a ← that came in a burst of input is
+    // just a cursor key.
+    const plainLeft = key.leftArrow && !key.ctrl && !key.meta && !key.shift;
+    const g = leftArrowGestureRef.current;
+    if (!plainLeft && g.armedAt !== 0) {
+      g.armedAt = 0;
+      removeNotification('left-arrow-agents');
+    }
+    const bg = isBgSession();
+    if (plainLeft && input === '' && mode === 'prompt' && !isModalOverlayActive && !footerItemSelected && isSoloKeypress() && (bg || getBackgroundBlock() === null && leftArrowOpensAgents())) {
+      const now = Date.now();
+      // Stamps from before the latest attach belong to an earlier visit.
+      const since = getLastAttachAt();
+      const recent = (at: number) => at !== 0 && at >= since;
+      const decision = recent(g.absorbAnchor) && now - g.absorbAnchor < 1000 || recent(g.lastPress) && now - g.lastPress < 150 ? 'absorb' : recent(g.armedAt) && now - g.armedAt <= 3000 ? 'fire' : recent(g.editedEmptyAt) && now - g.editedEmptyAt < 2000 ? 'arm' : 'fire';
+      if (decision === 'absorb') {
+        if (now - g.lastPress < 150) g.absorbAnchor = now;
+        g.lastPress = now;
+        return;
+      }
+      g.absorbAnchor = now;
+      g.lastPress = now;
+      if (decision === 'arm') {
+        g.armedAt = now;
+        addNotification({
+          key: 'left-arrow-agents',
+          text: bg ? 'Press ← again to go back to agents' : 'Press ← again to open agents',
+          priority: 'immediate',
+          timeoutMs: 3000
+        });
+        return;
+      }
+      g.armedAt = 0;
+      removeNotification('left-arrow-agents');
+      if (bg) requestBgDetach();else requestBackgroundHandoff();
       return;
     }
 

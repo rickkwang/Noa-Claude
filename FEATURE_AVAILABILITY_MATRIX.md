@@ -46,6 +46,7 @@ Last updated: 2026-09-13
 | `/reload-skills` | Available | Re-scans skill directories mid-session. Covers the gap the file watcher cannot: it only watches directories that existed at startup. |
 | `/pause-memory` | Available | Session-scoped auto-memory pause. One-directional — resuming falls back to `CLAUDE_CODE_DISABLE_AUTO_MEMORY` / `autoMemoryEnabled`, it cannot override them. |
 | `/goal` | Available | Long-running objective with evaluator loop, auto-continue limits, token budget, and optional verify command. |
+| `/background` | Available | Alias `/bg`. Forks the conversation into a background session and exits (bare `/bg` mid-turn stops the turn and the background session finishes it; `/bg <prompt>` waits for the turn). ← on an empty prompt moves it and opens the agents view instead. `/exit` in a background session detaches; `/stop` ends it. |
 
 ## Slash Commands: Product-Available
 | Command | Status | Notes |
@@ -85,7 +86,7 @@ Bridge/remote runtime modules can exist in source, but this build does not regis
 | Daemon worker registry | Build-Excluded | `src/daemon/workerRegistry.ts` |
 | Environment runner | Build-Excluded | `src/environment-runner/main.ts` |
 | Self-hosted runner | Build-Excluded | `src/self-hosted-runner/main.ts` |
-| Background session attach/launch | Build-Excluded | `src/cli/bg.ts` |
+| Background sessions + agents view (`noa agents`, `noa --bg <task>`, `noa attach/logs/stop/kill/respawn/rm <id>`) | Available (core) | `src/utils/background/`, `src/components/FleetView/` — detached PTY host per session, no daemon. `disableAgentView` / `NOA_CLAUDE_DISABLE_AGENT_VIEW=1` turns it off; `leftArrowOpensAgents: false` (or ← opens agents in `/config`) keeps ← a cursor key |
 | Template jobs | Build-Excluded | `src/cli/handlers/templateJobs.ts` |
 | Remote control in this build | Build-Excluded | `src/bridge/bridgeEnabled.ts` |
 | Channels in print mode | Build-Excluded | `src/cli/print.ts` |

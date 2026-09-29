@@ -3,6 +3,8 @@
 import addDir from './commands/add-dir/index.js'
 import autocompact from './commands/autocompact/index.js'
 import cd from './commands/cd/index.js'
+import background from './commands/background/index.js'
+import stop from './commands/stop/index.js'
 import btw from './commands/btw/index.js'
 import feedback from './commands/feedback/index.js'
 import clear from './commands/clear/index.js'
@@ -189,6 +191,8 @@ const COMMANDS = memoize((): Command[] => [
   cd,
   agents,
   branch,
+  background,
+  stop,
   btw,
   chrome,
   clear,

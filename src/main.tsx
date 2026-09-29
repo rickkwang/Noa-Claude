@@ -7,6 +7,7 @@
 //    key) in parallel — isRemoteManagedSettingsEligible() otherwise reads them
 //    sequentially via sync spawn inside applySafeConfigEnvironmentVariables()
 //    (~65ms on every macOS startup)
+import { captureBgJobEnv, getBgJobShort } from './utils/background/bgJob.js';
 import { profileCheckpoint, profileReport } from './utils/startupProfiler.js';
 import { isDebugDiagnosticsEnabled, logDebugDiagnosticWarn } from './utils/debugDiagnostics.js';
 
@@ -584,6 +585,16 @@ const _pendingAssistantChat: PendingAssistantChat | undefined = feature('KAIROS'
 export async function main() {
   profileCheckpoint('main_function_start');
 
+  // Background session PTY host (spawned detached by the agents view). It only
+  // relays a terminal, so it skips all CLI setup.
+  if (process.argv[2] === '--bg-pty-host') {
+    const {
+      runPtyHost
+    } = await import('./utils/background/ptyHost.js');
+    await runPtyHost(process.argv.slice(3));
+  }
+  captureBgJobEnv();
+
   // SECURITY: Prevent Windows from executing commands from current directory
   // This must be set before ANY command execution to prevent PATH hijacking attacks
   // See: https://docs.microsoft.com/en-us/windows/win32/api/processenv/nf-processenv-searchpathw
@@ -886,6 +897,34 @@ async function run(): Promise<CommanderCommand> {
   // -p/--print mode: skip subcommand registration
   program.action(async (prompt, options) => {
     profileCheckpoint('action_handler_start');
+
+    // --bg: hand the prompt to a background session and return to the shell.
+    if ((options as {
+      bg?: boolean;
+    }).bg || (options as {
+      background?: boolean;
+    }).background) {
+      const {
+        getBackgroundBlock
+      } = await import('./utils/background/gate.js');
+      const refuse = (message: string): never => {
+        process.stderr.write(`${message}\n`);
+        process.exit(1);
+      };
+      const block = getBackgroundBlock();
+      if (block === 'disabled') refuse('Background sessions are disabled (disableAgentView / NOA_CLAUDE_DISABLE_AGENT_VIEW).');
+      if (block === 'persistence') refuse('--bg needs session persistence, which is disabled here.');
+      if (process.argv.includes('-p') || process.argv.includes('--print')) refuse("--bg starts an interactive session in the background, so it can't be combined with --print. The prompt is the positional: noa --bg '<task>'");
+      const argv = process.argv.slice(2);
+      const pick = (flag: string) => {
+        const i = argv.indexOf(flag);
+        return i !== -1 && i + 1 < argv.length ? [flag, argv[i + 1]!] : [];
+      };
+      const {
+        bgFlagHandler
+      } = await import('./cli/handlers/bgCli.js');
+      await bgFlagHandler(prompt, argv, [...pick('--model'), ...pick('--effort'), ...pick('--permission-mode'), ...(argv.includes('--dangerously-skip-permissions') ? ['--dangerously-skip-permissions'] : [])]);
+    }
 
     // --bare = one-switch minimal mode. Sets SIMPLE so all the existing
     // gates fire (CLAUDE.md, skills, hooks inside executeHooks, agent
@@ -1223,7 +1262,8 @@ async function run(): Promise<CommanderCommand> {
       notification: permissionModeNotification
     } = initialPermissionModeFromCLI({
       permissionModeCli,
-      dangerouslySkipPermissions
+      dangerouslySkipPermissions,
+      inheritedPermissionMode: options.inheritPermissionMode
     });
 
     // Store session bypass permissions mode for trust dialog check
@@ -3016,6 +3056,14 @@ async function run(): Promise<CommanderCommand> {
           });
           return await exitWithError(root, 'No conversation found to continue');
         }
+        if (!options.forkSession && result.sessionId) {
+          const {
+            findBackgroundHolder,
+            heldByBackgroundMessage
+          } = await import('./utils/background/jobs.js');
+          const holder = await findBackgroundHolder(result.sessionId, getBgJobShort(), 'continue');
+          if (holder) return await exitWithError(root, heldByBackgroundMessage(holder, 'continue'));
+        }
         const loaded = await processResumedConversation(result, {
           forkSession: !!options.forkSession,
           includeAttribution: true,
@@ -3496,12 +3544,37 @@ async function run(): Promise<CommanderCommand> {
             });
             return await exitWithError(root, `No conversation found with session ID: ${sessionId}`);
           }
+          if (!options.forkSession && result.sessionId) {
+            const {
+              findBackgroundHolder,
+              heldByBackgroundMessage
+            } = await import('./utils/background/jobs.js');
+            const holder = await findBackgroundHolder(result.sessionId, getBgJobShort(), 'resume');
+            if (holder) return await exitWithError(root, heldByBackgroundMessage(holder, 'resume'));
+          }
           const fullPath = matchedLog?.fullPath ?? result.fullPath;
           processedResume = await processResumedConversation(result, {
             forkSession: !!options.forkSession,
             sessionIdOverride: sessionId,
             transcriptPath: fullPath
           }, resumeContext);
+          // Forked from a turn that was cut off (← / /background while
+          // working): finish it before waiting for the user.
+          if (options.replyOnResume) {
+            const {
+              prepareReplyOnResume
+            } = await import('./utils/background/replyOnResume.js');
+            const replay = await prepareReplyOnResume(processedResume.messages, result.turnInterruptionState);
+            if (replay) {
+              processedResume.messages = replay.messages;
+              processedResume.initialState = {
+                ...processedResume.initialState,
+                replayOnMount: {
+                  hint: replay.hint
+                }
+              };
+            }
+          }
           if (processedResume.restoredAgentDef) {
             mainThreadAgentDefinition = processedResume.restoredAgentDef;
           }
@@ -3887,13 +3960,82 @@ async function run(): Promise<CommanderCommand> {
     await setupTokenHandler(root);
   });
 
-  // Agents command - list configured agents
-  program.command('agents').description('List configured agents').option('--setting-sources <sources>', 'Comma-separated list of setting sources to load (user, project, local).').action(async () => {
+  // Agents command - the background sessions view; --json lists sessions
+  // for scripts (no TTY needed).
+  program.command('agents').description('Manage background agents').option('--setting-sources <sources>', 'Comma-separated list of setting sources to load (user, project, local).').option('--cwd <path>', 'Show only background sessions started under <path>').option('--add-dir <directory>', 'Additional directory to allow tool access to in dispatched sessions (repeatable)').option('--plugin-dir <path>', 'Load plugins from specified directory for dispatched sessions (repeatable)').option('--settings <file-or-json>', 'Settings file or JSON string to apply to dispatched sessions').option('--mcp-config <config>', 'MCP server configuration to apply to dispatched sessions (repeatable)').option('--strict-mcp-config', 'Only use MCP servers from --mcp-config in dispatched sessions').option('--permission-mode <mode>', 'Default permission mode for sessions dispatched from agent view').addOption(new Option('--inherit-permission-mode <mode>').hideHelp()).option('--dangerously-skip-permissions', 'Alias for --permission-mode bypassPermissions').option('--model <model>', 'Default model for sessions dispatched from agent view').option('--effort <level>', 'Default effort level for sessions dispatched from agent view').option('--agent <agent>', 'Default agent for sessions dispatched from agent view').option('--json', 'Print active sessions (interactive and background) as a JSON array and exit (for scripting; does not require a TTY)').option('--all', 'With --json: also include completed background sessions').action(async (options: {
+    cwd?: string;
+    json?: boolean;
+    all?: boolean;
+  }) => {
+    if (options.json) {
+      const {
+        agentsJsonHandler
+      } = await import('./cli/handlers/bgCli.js');
+      await agentsJsonHandler({
+        all: options.all,
+        cwd: options.cwd ? resolve(options.cwd) : undefined
+      });
+    }
+    if (!process.stdout.isTTY || !process.stdin.isTTY) {
+      process.stderr.write("noa agents requires an interactive terminal (stdout is not a TTY) — use 'noa agents --json' for a machine-readable listing\n");
+      process.exit(1);
+    }
     const {
-      agentsHandler
-    } = await import('./cli/handlers/agents.js');
-    await agentsHandler();
+      isAgentViewDisabled
+    } = await import('./utils/background/gate.js');
+    if (isAgentViewDisabled()) {
+      process.stderr.write('Agent view is disabled (disableAgentView / NOA_CLAUDE_DISABLE_AGENT_VIEW).\n');
+      process.exit(1);
+    }
+    // Everything after `agents` shapes the sessions it starts, bar the
+    // view's own flags.
+    const {
+      passthroughLaunchFlags
+    } = await import('./utils/background/fork.js');
+    const argv = process.argv.slice(process.argv.indexOf('agents') + 1);
+    const pick = (flag: string) => {
+      const i = argv.indexOf(flag);
+      return i !== -1 && i + 1 < argv.length ? [flag, argv[i + 1]!] : [];
+    };
+    const respawnFlags = [...passthroughLaunchFlags(argv), ...pick('--model'), ...pick('--effort'), ...pick('--permission-mode'), ...pick('--inherit-permission-mode'), ...(argv.includes('--dangerously-skip-permissions') ? ['--dangerously-skip-permissions'] : [])];
+    const [{
+      runAgentsView
+    }, {
+      createRoot
+    }] = await Promise.all([import('./cli/handlers/agentsView.js'), import('./ink.js')]);
+    const root = await createRoot(getBaseRenderOptions(false));
+    await runAgentsView(root, respawnFlags, options.cwd ? resolve(options.cwd) : undefined);
     process.exit(0);
+  });
+  program.command('attach <id>').description('Open a background session in this terminal').action(async (id: string) => {
+    const {
+      attachHandler
+    } = await import('./cli/handlers/bgCli.js');
+    await attachHandler(id);
+  });
+  program.command('logs <id>').description("Show a background session's recent output").action(async (id: string) => {
+    const {
+      logsHandler
+    } = await import('./cli/handlers/bgCli.js');
+    await logsHandler(id);
+  });
+  program.command('stop <id>').alias('kill').description('Stop a background session; its transcript is kept').action(async (id: string) => {
+    const {
+      stopHandler
+    } = await import('./cli/handlers/bgCli.js');
+    await stopHandler(id);
+  });
+  program.command('respawn <id>').description('Start a stopped background session again (its conversation resumes)').action(async (id: string) => {
+    const {
+      respawnHandler
+    } = await import('./cli/handlers/bgCli.js');
+    await respawnHandler(id);
+  });
+  program.command('rm <id>').description('Stop a background session if running and remove it from the list').action(async (id: string) => {
+    const {
+      rmHandler
+    } = await import('./cli/handlers/bgCli.js');
+    await rmHandler(id);
   });
   if (feature('AUTO_MODE')) {
     // Skip when tengu_auto_mode_config.enabled === 'disabled' (circuit breaker).

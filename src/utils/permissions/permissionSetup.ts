@@ -12,6 +12,7 @@ import type {
   ToolPermissionContext,
   ToolPermissionRulesBySource,
 } from '../../Tool.js'
+import { getGlobalConfig } from '../config.js'
 import { getCwd } from '../cwd.js'
 import { isEnvTruthy } from '../envUtils.js'
 import type { SettingSource } from '../settings/constants.js'
@@ -694,9 +695,16 @@ function isSymlinkTo({
 export function initialPermissionModeFromCLI({
   permissionModeCli,
   dangerouslySkipPermissions,
+  inheritedPermissionMode,
 }: {
   permissionModeCli: string | undefined
   dangerouslySkipPermissions: boolean | undefined
+  /**
+   * --inherit-permission-mode: the mode of the session that started this one
+   * (agents view dispatch). Lowest precedence — used only when neither the
+   * CLI nor settings configure a mode — and never grants bypass on its own.
+   */
+  inheritedPermissionMode?: string
 }): { mode: PermissionMode; notification?: string } {
   const settings = getSettings_DEPRECATED() || {}
 
@@ -774,6 +782,21 @@ export function initialPermissionModeFromCLI({
       }
     } else {
       orderedModes.push(settingsMode)
+    }
+  }
+
+  if (inheritedPermissionMode) {
+    const inherited = permissionModeFromString(inheritedPermissionMode)
+    if (
+      inherited === 'bypassPermissions' &&
+      !getGlobalConfig().bypassPermissionsModeAccepted
+    ) {
+      logForDebugging(
+        'inherited bypassPermissions ignored — bypass mode was never accepted on this machine',
+        { level: 'warn' },
+      )
+    } else if (!(feature('AUTO_MODE') && inherited === 'auto' && autoModeCircuitBrokenSync)) {
+      orderedModes.push(inherited)
     }
   }
 

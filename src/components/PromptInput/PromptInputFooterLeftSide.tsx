@@ -27,6 +27,9 @@ import { useAppState, useAppStateStore, useSetAppState } from 'src/state/AppStat
 import { getIsRemoteMode } from '../../bootstrap/state.js';
 import HistorySearchInput from './HistorySearchInput.js';
 import { usePrStatus } from '../../hooks/usePrStatus.js';
+import { useAgentsNeedingInput } from '../../hooks/useAgentsNeedingInput.js';
+import { isBgSession } from '../../utils/background/bgJob.js';
+import { getBackgroundBlock, leftArrowOpensAgents } from '../../utils/background/gate.js';
 import { KeyboardShortcutHint } from '../design-system/KeyboardShortcutHint.js';
 import { Byline } from '../design-system/Byline.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
@@ -59,6 +62,8 @@ type Props = {
   mode: PromptInputMode;
   toolPermissionContext: ToolPermissionContext;
   suppressHint: boolean;
+  /** ← for agents: hidden while typing or searching, but not by a custom status line. */
+  showAgentsHint?: boolean;
   isLoading: boolean;
   showMemoryTypeSelector?: boolean;
   tasksSelected: boolean;
@@ -128,7 +133,7 @@ function ProactiveCountdown() {
   return t4;
 }
 export function PromptInputFooterLeftSide(t0) {
-  const $ = _c(29);
+  const $ = _c(30);
   const {
     exitMessage,
     vimMode,
@@ -136,6 +141,7 @@ export function PromptInputFooterLeftSide(t0) {
     mode,
     toolPermissionContext,
     suppressHint,
+    showAgentsHint,
     isLoading,
     tasksSelected,
     teamsSelected,
@@ -212,8 +218,9 @@ export function PromptInputFooterLeftSide(t0) {
   }
   const t4 = !suppressHint && !showVim;
   let t5;
-  if ($[15] !== isLoading || $[16] !== mode || $[17] !== onOpenTasksDialog || $[18] !== t4 || $[19] !== tasksSelected || $[20] !== teammateFooterIndex || $[21] !== teamsSelected || $[22] !== tmuxSelected || $[23] !== toolPermissionContext) {
-    t5 = <ModeIndicator mode={mode} toolPermissionContext={toolPermissionContext} showHint={t4} isLoading={isLoading} tasksSelected={tasksSelected} teamsSelected={teamsSelected} teammateFooterIndex={teammateFooterIndex} tmuxSelected={tmuxSelected} onOpenTasksDialog={onOpenTasksDialog} />;
+  if ($[29] !== showAgentsHint || $[15] !== isLoading || $[16] !== mode || $[17] !== onOpenTasksDialog || $[18] !== t4 || $[19] !== tasksSelected || $[20] !== teammateFooterIndex || $[21] !== teamsSelected || $[22] !== tmuxSelected || $[23] !== toolPermissionContext) {
+    t5 = <ModeIndicator mode={mode} toolPermissionContext={toolPermissionContext} showHint={t4} showAgentsHint={showAgentsHint} isLoading={isLoading} tasksSelected={tasksSelected} teamsSelected={teamsSelected} teammateFooterIndex={teammateFooterIndex} tmuxSelected={tmuxSelected} onOpenTasksDialog={onOpenTasksDialog} />;
+    $[29] = showAgentsHint;
     $[15] = isLoading;
     $[16] = mode;
     $[17] = onOpenTasksDialog;
@@ -243,6 +250,7 @@ type ModeIndicatorProps = {
   mode: PromptInputMode;
   toolPermissionContext: ToolPermissionContext;
   showHint: boolean;
+  showAgentsHint?: boolean;
   isLoading: boolean;
   tasksSelected: boolean;
   teamsSelected: boolean;
@@ -254,6 +262,7 @@ function ModeIndicator({
   mode,
   toolPermissionContext,
   showHint,
+  showAgentsHint,
   isLoading,
   tasksSelected,
   teamsSelected,
@@ -261,6 +270,7 @@ function ModeIndicator({
   teammateFooterIndex,
   onOpenTasksDialog
 }: ModeIndicatorProps): React.ReactNode {
+  const agentsNudge = useAgentsNeedingInput();
   const {
     columns
   } = useTerminalSize();
@@ -446,6 +456,26 @@ function ModeIndicator({
     parts.push(<Text dimColor key="shortcuts-hint">
         ? for shortcuts
       </Text>);
+  }
+  // ← for agents — also while a turn runs (after "esc to interrupt"): ←
+  // moves a working conversation too.
+  if (showAgentsHint && mode === 'prompt' && (isBgSession() || getBackgroundBlock() === null && leftArrowOpensAgents())) {
+    const {
+      needsInput,
+      flash,
+      justDone
+    } = agentsNudge;
+    parts.push(needsInput === 0 && justDone > 0 ? <Text key="agents-hint">
+          <Text dimColor>← </Text>
+          <Text color="success">{justDone > 99 ? '99+' : justDone}</Text>
+          <Text dimColor> done</Text>
+        </Text> : needsInput > 0 ? <Text key="agents-hint">
+          <Text dimColor>← </Text>
+          <Text color={flash === 'awaiting' ? 'warning' : undefined} dimColor={flash === 'none'}>{needsInput > 99 ? '99+' : needsInput}</Text>
+          <Text dimColor> {needsInput === 1 ? 'agent' : 'agents'}</Text>
+        </Text> : <Text dimColor key="agents-hint">
+          ← for agents
+        </Text>);
   }
 
   // Only replace the idle voice hint when there's something to say — otherwise

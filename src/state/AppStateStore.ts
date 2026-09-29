@@ -381,6 +381,12 @@ export type AppState = DeepImmutable<{
     // Session-scoped permission rules from plan mode (e.g., "run tests", "install dependencies")
     allowedPrompts?: AllowedPrompt[]
   } | null
+  /**
+   * --reply-on-resume: query once on mount without a new user message — the
+   * resumed transcript ends on the turn that was cut off. `hint` carries the
+   * partial reply the model should continue from.
+   */
+  replayOnMount?: { hint: Message[] } | null
   // Pending plan verification state (set when exiting plan mode)
   // Used by VerifyPlanExecution tool to trigger background verification
   pendingPlanVerification?: {
