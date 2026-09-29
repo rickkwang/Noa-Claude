@@ -269,7 +269,7 @@ function filterForClick(names: readonly ClawdAnimation[]): ClawdAnimation[] {
       return typeof first.pose === 'string' && first.offset === 0 && (first.x ?? 0) === 0;
     }
     if (!isEyesOpenPose(first.pose) || first.offset !== 0 || (first.x ?? 0) !== 0) return false;
-    return !hasFacing(ANIMATIONS[name]);
+    return true;
   });
 }
 
@@ -285,7 +285,7 @@ function filterForEntrance(names: readonly ClawdAnimation[]): ClawdAnimation[] {
         ANIMATIONS[name].every((f) => isEyesOpenPose(f.pose))
       );
     }
-    return !hasFacing(ANIMATIONS[name]);
+    return true;
   });
 }
 
