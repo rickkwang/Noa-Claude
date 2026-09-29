@@ -28,6 +28,8 @@ import { getDefaultCharacters } from '../Spinner/utils.js';
 
 const POLL_MS = 1000;
 const PLACEHOLDER = 'describe a task for a new session';
+/** Typed into the view and submitted, these quit it instead of starting a session. */
+const EXIT_WORDS = ['exit', 'quit', ':q', ':q!', ':wq', ':wq!'];
 
 type Group = 'needs' | 'working' | 'completed';
 const GROUP_LABELS: Record<Group, string> = {
@@ -354,13 +356,11 @@ export function FleetView({
       setHelpOpen(v => !v);
       return;
     }
-    if (key.upArrow || key.ctrl && char === 'p') {
-      const next = flat[Math.max(0, selectedIndex - 1)];
-      if (next) setSelected(next.short);
-      return;
-    }
-    if (key.downArrow || key.ctrl && char === 'n') {
-      const next = flat[Math.min(flat.length - 1, selectedIndex + 1)];
+    // ↑/↓ wrap around the list and clear a stale hint.
+    const step = key.upArrow || key.ctrl && char === 'p' ? -1 : key.downArrow || key.ctrl && char === 'n' ? 1 : 0;
+    if (step !== 0) {
+      setHint(undefined);
+      const next = flat[(selectedIndex + step + flat.length) % flat.length];
       if (next) setSelected(next.short);
       return;
     }
@@ -371,7 +371,10 @@ export function FleetView({
     }
     if (key.return) {
       const prompt = input.trim();
-      if (prompt) {
+      if (EXIT_WORDS.includes(prompt.toLowerCase())) {
+        setInput('');
+        onExit();
+      } else if (prompt) {
         setInput('');
         void startJob(prompt);
       } else if (selectedJob) {

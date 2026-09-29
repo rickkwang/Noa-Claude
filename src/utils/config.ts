@@ -393,7 +393,6 @@ export type GlobalConfig = {
   showExpandedTodos?: boolean // Whether to show todos expanded, even when empty
   showSpinnerTree?: boolean // Whether to show the teammate spinner tree instead of pills
   leftArrowOpensAgents?: boolean // ← on an empty prompt opens the agents view (default on)
-  lastClawdEntranceVersion?: string // Version the logo entrance animation last played for (plays once per version)
 
   // First start time tracking
   firstStartTime?: string // ISO timestamp when Claude Code was first started on this machine
@@ -673,7 +672,6 @@ export const GLOBAL_CONFIG_KEYS = [
   'todoFeatureEnabled',
   'showExpandedTodos',
   'leftArrowOpensAgents',
-  'lastClawdEntranceVersion',
   'messageIdleNotifThresholdMs',
   'autoConnectIde',
   'autoInstallIdeExtension',

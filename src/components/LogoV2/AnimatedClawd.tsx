@@ -3,7 +3,7 @@ import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Box, Text } from '../../ink.js';
 import { env } from '../../utils/env.js';
-import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js';
+import { isBgSession } from '../../utils/background/bgJob.js';
 import { getInitialSettings } from '../../utils/settings/settings.js';
 import { Clawd, type ClawdPose } from './Clawd.js';
 
@@ -92,22 +92,16 @@ const ANIMATIONS: Record<ClawdAnimation, readonly Frame[]> = {
 const CLICK_ANIMATIONS: readonly (readonly Frame[])[] = [JUMP, LOOK, WAVE];
 const APPLE_TERMINAL_CLICK_ANIMATIONS: readonly (readonly Frame[])[] = [JUMP, LOOK];
 
-// The entrance (upstream draws one of these at random) plays at most once per
-// version, persisted — not once per process. A background-session fork is a
-// fresh process on the same version, and without this gate its entrance
-// frames land in the PTY host's replay buffer and replay on every attach.
+// The entrance (upstream draws one of these at random) plays once per
+// process. A background session skips it: its frames would land in the PTY
+// host's replay buffer and replay on every attach.
 const ENTRANCE_SEQUENCES: readonly ClawdAnimation[] = ['skip', 'jump', 'look', 'spin'];
-// MACRO is a build-time global; guard it like sessionStorage.ts does so
-// running from source (dev:source) doesn't throw.
-const CURRENT_VERSION: string = typeof MACRO !== 'undefined' ? MACRO.VERSION : 'unknown';
 let clawdEntranceTaken = false;
 
-/** The entrance animation to play at startup, if any (once per version). */
+/** The entrance animation to play at startup, if any. */
 export function getClawdEntranceSequence(): ClawdAnimation | undefined {
-  if (clawdEntranceTaken) return undefined;
-  if (getGlobalConfig().lastClawdEntranceVersion === CURRENT_VERSION) return undefined;
+  if (clawdEntranceTaken || isBgSession()) return undefined;
   clawdEntranceTaken = true;
-  saveGlobalConfig(current => ({ ...current, lastClawdEntranceVersion: CURRENT_VERSION }));
   return ENTRANCE_SEQUENCES[Math.floor(Math.random() * ENTRANCE_SEQUENCES.length)];
 }
 
