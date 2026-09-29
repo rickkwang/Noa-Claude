@@ -1,262 +1,272 @@
 // @ts-nocheck
-import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { Box, Text } from '../../ink.js';
 import { env } from '../../utils/env.js';
-export type ClawdPose = 'default' | 'arms-up' // both arms raised (used during jump)
-| 'look-left' // both pupils shifted left
-| 'look-right' // both pupils shifted right
-| 'wave-left' // left arm raised
-| 'wave-right'; // right arm raised
+
+// Clawd pose model, aligned with upstream Claude Code 2.1.285: a pose is
+// parameterized as {eyes, arms, feet} instead of a flat per-pose glyph table.
+//   eyes: open | left | right | closed (4-segment blink) | wink (3-segment)
+//   arms: down | up | one-up (noa-only: left down, right up — kept from the
+//         noa-exclusive wave poses, which upstream still lacks)
+//   feet: both | left | right (one foot lifted)
+// Closed/wink eyes are drawn as "lid" spans: the lid glyph is painted in
+// clawd_body as the character with a clawd_background background, so it reads
+// as the body color cutting into the white of the eye.
+// A pose may also be a facing sprite ({facing}) for the 360° turn — 15 hand-
+// drawn stages (right-12 … back … left-12) with per-row {glyphs, from, to}
+// background spans.
+
+type Eyes = 'open' | 'left' | 'right' | 'closed' | 'wink';
+type Arms = 'down' | 'up' | 'one-up';
+type Feet = 'both' | 'left' | 'right';
+
+export type ClawdPoseSpec = {
+  eyes: Eyes;
+  arms: Arms;
+  feet: Feet;
+};
+
+export type ClawdFacing = {
+  facing: string;
+};
+
+// Pose accepted by <Clawd />: an upstream/named pose, a spec object, or a
+// facing sprite. The legacy noa names (default / arms-up / look-left /
+// look-right / wave-left / wave-right) map onto specs; wave-left/wave-right
+// remain noa-only single-arm-up poses.
+export type ClawdPose = ClawdPoseSpec | ClawdFacing;
 
 type Props = {
   pose?: ClawdPose;
 };
 
-// Standard-terminal pose fragments. Each row is split into segments so we can
-// vary only the parts that change (eyes, arms) while keeping the body/bg spans
-// stable. Glyphs match upstream Claude Code 2.1.283: row 1 is r1L(2) + r1E(6)
-// + r1R, row 2 is r2L(2) + █████(5) + r2R(2), feet row is ` ▝▝   ▝▝ `.
-//
-// arms-up: the row-2 arm shapes move to row 1 — left as ▗▟, right as a lone ▄
-// (upstream is asymmetric).
-//
-// look-* shift the eyes inside the 6-wide eye field (▛/▟ + edge █) rather
-// than swapping character types.
-//
-// wave-left/wave-right are noa-only (upstream has no wave), expressed in the
-// same segment scheme: one arm up, the other side identical to default.
-type Segments = {
-  /** row 1 left (no bg): optional raised arm + side */
-  r1L: string;
-  /** row 1 eyes (with bg): 6-wide eye field */
-  r1E: string;
-  /** row 1 right (no bg): optional raised arm */
-  r1R: string;
-  /** row 2 left (no bg): arm + body curve */
-  r2L: string;
-  /** row 2 right (no bg): body curve + arm */
-  r2R: string;
+const NAMED_POSES: Record<string, ClawdPoseSpec> = {
+  default: { eyes: 'open', arms: 'down', feet: 'both' },
+  'arms-up': { eyes: 'open', arms: 'up', feet: 'both' },
+  'look-left': { eyes: 'left', arms: 'down', feet: 'both' },
+  'look-right': { eyes: 'right', arms: 'down', feet: 'both' },
+  // noa-only single-arm poses (upstream has no wave; its one-up arm state is
+  // used only for the ultra-effort wand, which this fork does not port).
+  'wave-left': { eyes: 'open', arms: 'up', feet: 'both' },
+  'wave-right': { eyes: 'open', arms: 'one-up', feet: 'both' },
 };
-const POSES: Record<ClawdPose, Segments> = {
-  default: {
-    r1L: ' ▐',
-    r1E: '▛███▛█',
-    r1R: '',
-    r2L: '▝▜',
-    r2R: '█▀'
-  },
-  'look-left': {
-    r1L: ' ▐',
-    r1E: '▟███▟█',
-    r1R: '',
-    r2L: '▝▜',
-    r2R: '█▀'
-  },
-  'look-right': {
-    r1L: ' ▐',
-    r1E: '█▟███▟',
-    r1R: '',
-    r2L: '▝▜',
-    r2R: '█▀'
-  },
-  'arms-up': {
-    r1L: '▗▟',
-    r1E: '▛███▛█',
-    r1R: '▄',
-    r2L: ' ▜',
-    r2R: '█▘'
-  },
-  'wave-left': {
-    r1L: '▗▟',
-    r1E: '▛███▛█',
-    r1R: '',
-    r2L: ' ▜',
-    r2R: '█▀'
-  },
-  'wave-right': {
-    r1L: ' ▐',
-    r1E: '▛███▛█',
-    r1R: '▄',
-    r2L: '▝▜',
-    r2R: '█▘'
-  }
+
+// Row-1/row-2 arm + body-curve segments, keyed by arm state.
+const ARMS: Record<Arms, { r1L: string; r1R: string; r2L: string; r2R: string }> = {
+  down: { r1L: ' ▐', r1R: '', r2L: '▝▜', r2R: '█▀' },
+  up: { r1L: '▗▟', r1R: '▄', r2L: ' ▜', r2R: '█▘' },
+  'one-up': { r1L: ' ▐', r1R: '▄', r2L: '▝▜', r2R: '█▘' },
+};
+
+// Multi-segment eye rows. Upstream stacks these as consecutive spans starting
+// at column 2 (after the 2-char r1L); segment lengths must sum to 6.
+const EYES: Record<Eyes, { glyphs: string; lid?: boolean }[]> = {
+  open: [{ glyphs: '▛███▛█' }],
+  left: [{ glyphs: '▟███▟█' }],
+  right: [{ glyphs: '█▟███▟' }],
+  closed: [{ glyphs: '▂', lid: true }, { glyphs: '███' }, { glyphs: '▂', lid: true }, { glyphs: '█' }],
+  wink: [{ glyphs: '▛███' }, { glyphs: '▂', lid: true }, { glyphs: '█' }],
+};
+
+const FEET: Record<Feet, string> = {
+  both: ' ▝▝   ▝▝ ',
+  left: ' ▝▝      ',
+  right: '      ▝▝ ',
 };
 
 // Apple Terminal uses a bg-fill trick (see below), so only eye poses make
-// sense. Arm poses fall back to default.
-const APPLE_EYES: Record<ClawdPose, string> = {
-  default: ' ▗   ▖ ',
-  'look-left': ' ▘   ▘ ',
-  'look-right': ' ▝   ▝ ',
-  'arms-up': ' ▗   ▖ ',
-  'wave-left': ' ▗   ▖ ',
-  'wave-right': ' ▗   ▖ '
+// sense. Arm/feet variation and facing sprites fall back to the eye field.
+const APPLE_EYES: Record<Eyes, string> = {
+  open: ' ▗   ▖ ',
+  left: ' ▘   ▘ ',
+  right: ' ▝   ▝ ',
+  closed: ' ▂   ▂ ',
+  wink: ' ▗   ▂ ',
 };
-export function Clawd(t0) {
-  const $ = _c(26);
-  let t1;
-  if ($[0] !== t0) {
-    t1 = t0 === undefined ? {} : t0;
-    $[0] = t0;
-    $[1] = t1;
-  } else {
-    t1 = $[1];
-  }
-  const {
-    pose: t2
-  } = t1;
-  const pose = t2 === undefined ? "default" : t2;
-  if (env.terminal === "Apple_Terminal") {
-    let t3;
-    if ($[2] !== pose) {
-      t3 = <AppleTerminalClawd pose={pose} />;
-      $[2] = pose;
-      $[3] = t3;
-    } else {
-      t3 = $[3];
-    }
-    return t3;
-  }
-  const p = POSES[pose];
-  let t3;
-  if ($[4] !== p.r1L) {
-    t3 = <Text color="clawd_body">{p.r1L}</Text>;
-    $[4] = p.r1L;
-    $[5] = t3;
-  } else {
-    t3 = $[5];
-  }
-  let t4;
-  if ($[6] !== p.r1E) {
-    t4 = <Text color="clawd_body" backgroundColor="clawd_background">{p.r1E}</Text>;
-    $[6] = p.r1E;
-    $[7] = t4;
-  } else {
-    t4 = $[7];
-  }
-  let t5;
-  if ($[8] !== p.r1R) {
-    t5 = <Text color="clawd_body">{p.r1R}</Text>;
-    $[8] = p.r1R;
-    $[9] = t5;
-  } else {
-    t5 = $[9];
-  }
-  let t6;
-  if ($[10] !== t3 || $[11] !== t4 || $[12] !== t5) {
-    t6 = <Text>{t3}{t4}{t5}</Text>;
-    $[10] = t3;
-    $[11] = t4;
-    $[12] = t5;
-    $[13] = t6;
-  } else {
-    t6 = $[13];
-  }
-  let t7;
-  if ($[14] !== p.r2L) {
-    t7 = <Text color="clawd_body">{p.r2L}</Text>;
-    $[14] = p.r2L;
-    $[15] = t7;
-  } else {
-    t7 = $[15];
-  }
-  let t8;
-  if ($[16] === Symbol.for("react.memo_cache_sentinel")) {
-    t8 = <Text color="clawd_body" backgroundColor="clawd_background">█████</Text>;
-    $[16] = t8;
-  } else {
-    t8 = $[16];
-  }
-  let t9;
-  if ($[17] !== p.r2R) {
-    t9 = <Text color="clawd_body">{p.r2R}</Text>;
-    $[17] = p.r2R;
-    $[18] = t9;
-  } else {
-    t9 = $[18];
-  }
-  let t10;
-  if ($[19] !== t7 || $[20] !== t9) {
-    t10 = <Text>{t7}{t8}{t9}</Text>;
-    $[19] = t7;
-    $[20] = t9;
-    $[21] = t10;
-  } else {
-    t10 = $[21];
-  }
-  let t11;
-  if ($[22] === Symbol.for("react.memo_cache_sentinel")) {
-    t11 = <Text color="clawd_body"> ▝▝   ▝▝ </Text>;
-    $[22] = t11;
-  } else {
-    t11 = $[22];
-  }
-  let t12;
-  if ($[23] !== t10 || $[24] !== t6) {
-    t12 = <Box flexDirection="column">{t6}{t10}{t11}</Box>;
-    $[23] = t10;
-    $[24] = t6;
-    $[25] = t12;
-  } else {
-    t12 = $[25];
-  }
-  return t12;
+
+function isFacing(pose: ClawdPose): pose is ClawdFacing {
+  return typeof pose === 'object' && pose !== null && 'facing' in pose;
 }
-function AppleTerminalClawd(t0) {
-  const $ = _c(10);
-  const {
-    pose
-  } = t0;
-  let t1;
-  if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
-    t1 = <Text color="clawd_body">▗</Text>;
-    $[0] = t1;
-  } else {
-    t1 = $[0];
-  }
-  const t2 = APPLE_EYES[pose];
-  let t3;
-  if ($[1] !== t2) {
-    t3 = <Text color="clawd_background" backgroundColor="clawd_body">{t2}</Text>;
-    $[1] = t2;
-    $[2] = t3;
-  } else {
-    t3 = $[2];
-  }
-  let t4;
-  if ($[3] === Symbol.for("react.memo_cache_sentinel")) {
-    t4 = <Text color="clawd_body">▖</Text>;
-    $[3] = t4;
-  } else {
-    t4 = $[3];
-  }
-  let t5;
-  if ($[4] !== t3) {
-    t5 = <Text>{t1}{t3}{t4}</Text>;
-    $[4] = t3;
-    $[5] = t5;
-  } else {
-    t5 = $[5];
-  }
-  let t6;
-  let t7;
-  if ($[6] === Symbol.for("react.memo_cache_sentinel")) {
-    t6 = <Text backgroundColor="clawd_body">{" ".repeat(7)}</Text>;
-    t7 = <Text color="clawd_body">▘▘   ▝▝</Text>;
-    $[6] = t6;
-    $[7] = t7;
-  } else {
-    t6 = $[6];
-    t7 = $[7];
-  }
-  let t8;
-  if ($[8] !== t5) {
-    t8 = <Box flexDirection="column" alignItems="center">{t5}{t6}{t7}</Box>;
-    $[8] = t5;
-    $[9] = t8;
-  } else {
-    t8 = $[9];
-  }
-  return t8;
+
+function normalizePose(pose: ClawdPose): ClawdPose {
+  return typeof pose === 'string' ? NAMED_POSES[pose] : pose;
 }
+
+function isAppleTerminal(): boolean {
+  return env.terminal === 'Apple_Terminal';
+}
+
+// One row of a facing sprite: glyphs outside [from,to) take `color`; inside,
+// clawd_background is set behind the glyph (the eye white), matching upstream.
+function FacingRow({ glyphs, from, to, color }: { glyphs: string; from: number; to: number; color: string }) {
+  return (
+    <Text color={color}>
+      {glyphs.slice(0, from)}
+      <Text backgroundColor="clawd_background">{glyphs.slice(from, to)}</Text>
+      {glyphs.slice(to)}
+    </Text>
+  );
+}
+
+const FACING_SPRITES: Record<string, { glyphs: string; from: number; to: number }[]> = {
+  'right-12': [
+    { glyphs: ' ▐█▜██▛█ ', from: 2, to: 8 },
+    { glyphs: '▝▜██████▀', from: 2, to: 7 },
+    { glyphs: ' ▝▝   ▝▝ ', from: 0, to: 0 },
+  ],
+  'right-30': [
+    { glyphs: '  █▛██▛▌ ', from: 2, to: 7 },
+    { glyphs: ' ▝█████▛ ', from: 2, to: 7 },
+    { glyphs: '  ▘▘  ▘▘ ', from: 0, to: 0 },
+  ],
+  'right-55': [
+    { glyphs: '  ▐█▛█▜  ', from: 3, to: 7 },
+    { glyphs: '  ▐████  ', from: 3, to: 7 },
+    { glyphs: '  ▝▝ ▝▝  ', from: 0, to: 0 },
+  ],
+  'right-75': [
+    { glyphs: '   ██▛▌  ', from: 3, to: 6 },
+    { glyphs: '   ███▌  ', from: 3, to: 6 },
+    { glyphs: '   ▘  ▘  ', from: 0, to: 0 },
+  ],
+  edge: [
+    { glyphs: '   ▐██   ', from: 4, to: 6 },
+    { glyphs: '   ▐██   ', from: 4, to: 6 },
+    { glyphs: '   ▝ ▝   ', from: 0, to: 0 },
+  ],
+  'back-105': [
+    { glyphs: '   ███▌  ', from: 3, to: 6 },
+    { glyphs: '   ███▌  ', from: 3, to: 6 },
+    { glyphs: '   ▘  ▘  ', from: 0, to: 0 },
+  ],
+  'back-125': [
+    { glyphs: '  ▐████  ', from: 3, to: 7 },
+    { glyphs: '  ▐████  ', from: 3, to: 7 },
+    { glyphs: '  ▝▝ ▝▝  ', from: 0, to: 0 },
+  ],
+  'back-150': [
+    { glyphs: '  █████▌ ', from: 2, to: 7 },
+    { glyphs: ' ▝█████▛ ', from: 2, to: 7 },
+    { glyphs: '  ▘▘  ▘▘ ', from: 0, to: 0 },
+  ],
+  back: [
+    { glyphs: ' ▐██████ ', from: 2, to: 8 },
+    { glyphs: '▝▜██████▀', from: 2, to: 7 },
+    { glyphs: ' ▝▝   ▝▝ ', from: 0, to: 0 },
+  ],
+  'left-75': [
+    { glyphs: '   ▛██▌  ', from: 3, to: 6 },
+    { glyphs: '   ███▌  ', from: 3, to: 6 },
+    { glyphs: '   ▘  ▘  ', from: 0, to: 0 },
+  ],
+  'left-55': [
+    { glyphs: '  ▐▜▛██  ', from: 3, to: 7 },
+    { glyphs: '  ▐████  ', from: 3, to: 7 },
+    { glyphs: '  ▝▝ ▝▝  ', from: 0, to: 0 },
+  ],
+  'left-30': [
+    { glyphs: '  ▛██▛█▌ ', from: 2, to: 7 },
+    { glyphs: ' ▝█████▛ ', from: 2, to: 7 },
+    { glyphs: '  ▘▘  ▘▘ ', from: 0, to: 0 },
+  ],
+  'left-12': [
+    { glyphs: ' ▐▛███▜█ ', from: 2, to: 8 },
+    { glyphs: '▝▜██████▀', from: 2, to: 7 },
+    { glyphs: ' ▝▝   ▝▝ ', from: 0, to: 0 },
+  ],
+};
+
+function FacingClawd({ facing, color }: { facing: string; color: string }) {
+  const rows = FACING_SPRITES[facing] ?? FACING_SPRITES['right-12'];
+  return (
+    <Box flexDirection="column" flexShrink={0}>
+      {rows.map((row, i) => (
+        <FacingRow key={i} glyphs={row.glyphs} from={row.from} to={row.to} color={color} />
+      ))}
+    </Box>
+  );
+}
+
+function AppleTerminalClawd({ spec, color }: { spec: ClawdPoseSpec; color: string }) {
+  const eyes = APPLE_EYES[spec.eyes];
+  return (
+    <Box flexDirection="column" alignItems="center">
+      <Text>
+        <Text color={color}>▗</Text>
+        <Text color="clawd_background" backgroundColor={color}>{eyes}</Text>
+        <Text color={color}>▖</Text>
+      </Text>
+      <Text backgroundColor={color}>{' '.repeat(7)}</Text>
+      <Text color={color}>▘▘   ▝▝</Text>
+    </Box>
+  );
+}
+
+// Paints one glyph row. Spaces continue the previous segment's color (mirrors
+// upstream's run-length grouping); non-lid spans carry the clawd_background
+// behind the glyph (the eye white), lid spans invert fg/bg so the body color
+// reads as an eyelid over the eye.
+function GlyphRow({ glyphs, color, on }: { glyphs: string; color: string; on?: 'lid' | 'eyes' }) {
+  const segments: { text: string; color: string }[] = [];
+  Array.from(glyphs).forEach((ch) => {
+    const c = ch === ' ' && segments.length > 0 ? segments[segments.length - 1].color : color;
+    const last = segments[segments.length - 1];
+    if (last && last.color === c) last.text += ch;
+    else segments.push({ text: ch, color: c });
+  });
+  return (
+    <Text>
+      {segments.map((seg, i) =>
+        on === 'lid' ? (
+          <Text key={i} color="clawd_background" backgroundColor={seg.color}>{seg.text}</Text>
+        ) : (
+          <Text key={i} color={seg.color} backgroundColor={on === 'eyes' ? 'clawd_background' : undefined}>{seg.text}</Text>
+        ),
+      )}
+    </Text>
+  );
+}
+
+export function Clawd({ pose }: Props = {}) {
+  const p = normalizePose(pose ?? 'default');
+  if (isFacing(p)) {
+    return isAppleTerminal()
+      ? <AppleTerminalClawd spec={NAMED_POSES.default} color="clawd_body" />
+      : <FacingClawd facing={p.facing} color="clawd_body" />;
+  }
+  if (isAppleTerminal()) {
+    return <AppleTerminalClawd spec={p} color="clawd_body" />;
+  }
+  const arms = ARMS[p.arms];
+  // Eye segments stack from column 2; columns must line up with r1L (2 chars).
+  let column = 2;
+  const eyeSpans = EYES[p.eyes].map((span) => {
+    const at = column;
+    column += span.glyphs.length;
+    return { ...span, column: at };
+  });
+  return (
+    <Box flexDirection="column" flexShrink={0}>
+      <Text>
+        <GlyphRow glyphs={arms.r1L} color="clawd_body" />
+        {eyeSpans.map((span, i) => (
+          <GlyphRow key={i} glyphs={span.glyphs} color="clawd_body" on={span.lid ? 'lid' : 'eyes'} />
+        ))}
+        <GlyphRow glyphs={arms.r1R} color="clawd_body" />
+      </Text>
+      <Text>
+        <GlyphRow glyphs={arms.r2L} color="clawd_body" />
+        <GlyphRow glyphs="█████" color="clawd_body" on="eyes" />
+        <GlyphRow glyphs={arms.r2R} color="clawd_body" />
+      </Text>
+      <GlyphRow glyphs={FEET[p.feet]} color="clawd_body" />
+    </Box>
+  );
+}
+
+// Test-only raw tables so frame/glyph dumps can run without booting config.
+export const NAMED_POSES_FOR_TEST = NAMED_POSES;
+export const ARMS_FOR_TEST = ARMS;
+export const EYES_FOR_TEST = EYES;
+export const FEET_FOR_TEST = FEET;
+export const FACING_SPRITES_FOR_TEST = FACING_SPRITES;
