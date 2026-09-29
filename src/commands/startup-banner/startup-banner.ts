@@ -46,7 +46,7 @@ function cycleMode(current: StartupBannerMode | null): StartupBannerMode {
   return STARTUP_BANNER_MODES[(idx + 1) % STARTUP_BANNER_MODES.length]
 }
 
-export const call = async (args: string, context?: { setAppState?: (updater: (prev: any) => any) => void }): Promise<{ type: 'text'; value: string }> => {
+export const call = async (args: string, context?: { setAppState?: (updater: (prev: any) => any) => void }): Promise<{ type: 'text'; value: string } | { type: 'skip' }> => {
   try {
     const arg = args?.trim().toLowerCase() ?? ''
 
@@ -72,19 +72,19 @@ export const call = async (args: string, context?: { setAppState?: (updater: (pr
       authVersion: prev.authVersion + 1,
     }))
 
-    let message: string
-    message =
-      newMode === 'claude'
-        ? 'Startup banner: Noa gradient logo'
-        : 'Startup banner: Noa logo'
-
+    // The banner re-renders in place, so a confirmation would only add noise to
+    // the conversation (and to the model's context). Stay silent unless there is
+    // something to warn about.
     const projectPath = join(getOriginalCwd(), PRODUCT_PROJECT_DIR, STARTUP_BANNER_SETTINGS_FILENAME)
     const globalPath = getSettingsPath()
     if (existsSync(projectPath) && projectPath !== globalPath) {
-      message += `\nNote: project override detected at ${projectPath}. It is ignored; startup banner now uses global config at ${globalPath}.`
+      return {
+        type: 'text',
+        value: `Note: project override detected at ${projectPath}. It is ignored; startup banner now uses global config at ${globalPath}.`,
+      }
     }
 
-    return { type: 'text', value: message }
+    return { type: 'skip' }
   } catch (e) {
     return { type: 'text', value: `Error: ${e instanceof Error ? e.message : String(e)}` }
   }
