@@ -25,9 +25,8 @@ export function replaceReplWithAgentsView(originShort: string, respawnFlags: str
   const ink = instances.get(process.stdout);
   if (!ink) return;
   suppressResumeHint();
-  const exit = () => void gracefulShutdown(0, 'other', {
-    finalMessage: 'Background sessions keep running — `noa agents` shows them.'
-  });
+  // Quiet exit, as a standalone `noa agents` quits.
+  const exit = () => void gracefulShutdown(0, 'other');
   ink.render(<ThemeProvider>
       <FleetView cwd={getCwd()} originShort={originShort} respawnFlags={respawnFlags} onExit={exit} />
     </ThemeProvider>);

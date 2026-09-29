@@ -76,11 +76,30 @@ export async function runPtyHost(argv: string[]): Promise<never> {
       if (clients.size) broadcast(encodeFrame(FRAME_DATA, chunk))
     },
   })
-  const child = Bun.spawn(command, {
-    cwd: process.cwd(),
-    env: { ...process.env, TERM: process.env.TERM || 'xterm-256color' },
-    terminal,
-  })
+
+  /** A session that never started must not stay listed as working. */
+  const failBeforeStart = async (e: unknown): Promise<never> => {
+    const detail = e instanceof Error ? e.message : String(e)
+    await patchJob(short, {
+      state: 'failed',
+      tempo: 'idle',
+      needs: undefined,
+      exitCode: 1,
+      detail: `failed to start: ${detail}`.slice(0, 200),
+    }).catch(() => {})
+    process.exit(1)
+  }
+
+  let child: ReturnType<typeof Bun.spawn>
+  try {
+    child = Bun.spawn(command, {
+      cwd: process.cwd(),
+      env: { ...process.env, TERM: process.env.TERM || 'xterm-256color' },
+      terminal,
+    })
+  } catch (e) {
+    return failBeforeStart(e)
+  }
 
   function handleControl(msg: ClientControl): void {
     if (exited) return
@@ -153,7 +172,13 @@ export async function runPtyHost(argv: string[]): Promise<never> {
     process.on(signal, stopSession)
   }
 
-  const code = await child.exited
+  let code: number
+  try {
+    code = await child.exited
+  } catch (e) {
+    // Spawn failure (e.g. the self binary vanished): child.exited rejects.
+    return failBeforeStart(e)
+  }
   exited = true
 
   // A session that ends without reporting its own outcome (crash, kill)

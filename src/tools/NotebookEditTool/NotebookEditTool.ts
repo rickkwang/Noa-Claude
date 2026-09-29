@@ -19,6 +19,7 @@ import type { PermissionDecision } from '../../utils/permissions/PermissionResul
 import { jsonParse, jsonStringify } from '../../utils/slowOperations.js'
 import { reachesNetworkPath } from '../../utils/fsOperations.js'
 import { checkWorktreeEscape } from '../../utils/worktreeEscape.js'
+import { checkBgIsolation } from '../../utils/background/isolation.js'
 import { NOTEBOOK_EDIT_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, PROMPT } from './prompt.js'
 import {
@@ -202,6 +203,13 @@ export const NotebookEditTool = buildTool({
     const escapeError = checkWorktreeEscape(fullPath)
     if (escapeError) {
       return { result: false, message: escapeError, errorCode: 11 }
+    }
+
+    // A background session must isolate (EnterWorktree) before writing to the
+    // shared checkout — bgIsolation, default 'worktree'.
+    const bgIsolationError = checkBgIsolation(fullPath)
+    if (bgIsolationError) {
+      return { result: false, message: bgIsolationError, errorCode: 13 }
     }
 
     if (extname(fullPath) !== '.ipynb') {

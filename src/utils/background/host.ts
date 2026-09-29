@@ -42,6 +42,13 @@ export async function ensureHost(job: Job): Promise<boolean> {
   // A host that crashed leaves its socket behind; don't mistake it for the
   // new host's.
   rmSync(socketPath, { force: true })
-  reviveJob(job)
+  // A refusal (transcript held by a live interactive session) means no host
+  // is coming; a silently returned lock contention means another process is
+  // spawning it — wait for that socket.
+  try {
+    await reviveJob(job)
+  } catch {
+    return false
+  }
   return waitForSocket(job.short)
 }

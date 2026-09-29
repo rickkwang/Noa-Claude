@@ -48,7 +48,7 @@ Policy:
 - do not claim full product parity
 - promotion to baseline requires smoke coverage and user-value justification
 - `/output-style` is a direct entry to the picker that `/config` hosts; both write `outputStyle` to local settings, so the two entry points must stay interchangeable
-- `/background` (alias `/bg`), ← on an empty prompt, `noa agents`, `noa --bg` and `noa attach|logs|stop|kill|respawn|rm` are one surface: background sessions run in detached PTY hosts with no daemon, and `scripts/e2e-agents-view.mjs` is its live E2E (needs tmux and a working model; `--entry bin/noa.js` / `--entry dist/cli` cover the production bundle and the compiled binary). Not covered: prewarmed spares, replying without attaching, groups/pins, cloud sessions, and carrying running shells/subagents into the fork (the move asks first and stops them)
+- `/background` (alias `/bg`), ← on an empty prompt, `noa agents`, `noa --bg` and `noa attach|logs|stop|kill|respawn|rm` are one surface: background sessions run in detached PTY hosts with no daemon, and `scripts/e2e-agents-view.mjs` is its live E2E (needs tmux and a working model; `--entry bin/noa.js` / `--entry dist/cli` cover the production bundle and the compiled binary). Not covered: prewarmed spares, replying without attaching, groups/pins, cloud sessions, and carrying running shells/subagents into the fork (the move asks first and stops them). Background sessions are isolated like upstream: Edit/Write/NotebookEdit into the shared checkout is rejected until the session calls EnterWorktree — `worktree.bgIsolation: "none"` (or `NOA_CLAUDE_BG_ISOLATION=none` / `CLAUDE_BG_ISOLATION=none`) works in place
 
 Tracked surfaces:
 

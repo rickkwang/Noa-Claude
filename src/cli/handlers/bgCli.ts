@@ -113,7 +113,14 @@ export async function respawnHandler(id: string): Promise<void> {
     process.stdout.write(`${job.short} is already running — \`noa attach ${job.short}\` opens it\n`)
     process.exit(0)
   }
-  reviveJob(job)
+  // A refusal (e.g. the transcript is open in a live interactive session) is
+  // surfaced; lock contention means another process is starting the host, so
+  // fall through to the same polling.
+  try {
+    await reviveJob(job)
+  } catch (e) {
+    fail(`Couldn't respawn ${job.short}: ${e instanceof Error ? e.message : String(e)}`)
+  }
   // The host writes host.json once it has the session running.
   for (let i = 0; i < 50; i++) {
     const again = (await listJobs()).find(j => j.short === job.short)

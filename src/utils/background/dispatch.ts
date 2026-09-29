@@ -5,10 +5,12 @@
 import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
 import { existsSync, readdirSync } from 'fs'
-import { readFile, rm, writeFile } from 'fs/promises'
+import { mkdir, readFile, rm, stat, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { isInBundledMode } from '../bundledMode.js'
 import { getClaudeConfigHomeDir } from '../envUtils.js'
+import { isProcessRunning } from '../genericProcessUtils.js'
+import { readAllSessions } from './sessionRegistry.js'
 import {
   getJobDir,
   IDLE_DETAIL,
@@ -16,6 +18,7 @@ import {
   type Job,
   newJobShort,
   patchJob,
+  readHostPid,
   writeJob,
   type JobRecord,
 } from './jobs.js'
@@ -162,6 +165,42 @@ export async function dispatchJob(opts: DispatchOptions): Promise<string> {
 }
 
 /**
+ * Cross-process spawn mutex: two terminals can find the same job's host dead
+ * at once, and without serialization both would spawn a session resuming the
+ * same transcript. mkdir is atomic; a lock whose holder died mid-spawn is
+ * broken after 60s. (Upstream serializes this through its spare-host claim
+ * protocol; a lock file is the fork's smaller equivalent.)
+ */
+const SPAWN_LOCK_STALE_MS = 60_000
+
+async function acquireSpawnLock(short: string): Promise<(() => void) | null> {
+  const lock = join(getJobDir(short), 'spawn.lock')
+  const deadline = Date.now() + 10_000
+  for (;;) {
+    try {
+      await mkdir(lock)
+      return () => {
+        rm(lock, { recursive: true, force: true }).catch(() => {})
+      }
+    } catch {
+      let stale = false
+      try {
+        stale = Date.now() - (await stat(lock)).mtimeMs > SPAWN_LOCK_STALE_MS
+      } catch {
+        // lock vanished between attempts: loop and try again
+        continue
+      }
+      if (stale) {
+        await rm(lock, { recursive: true, force: true }).catch(() => {})
+        continue
+      }
+      if (Date.now() >= deadline) return null
+      await new Promise(r => setTimeout(r, 50))
+    }
+  }
+}
+
+/**
  * Bring a stopped session back (its host exited: /exit, crash, reboot) by
  * resuming its transcript under the same session id.
  */
@@ -176,13 +215,40 @@ function transcriptExists(sessionId: string): boolean {
   }
 }
 
-export function reviveJob(job: Job): void {
-  if (job.stopRequested) void patchJob(job.short, { stopRequested: undefined }).catch(() => null)
-  // A session that never started has no transcript to resume: launch it
-  // the way it was first meant to.
-  const args =
-    job.launchArgs && !transcriptExists(job.sessionId)
-      ? job.launchArgs
-      : [...job.respawnFlags, '--resume', job.sessionId]
-  spawnHost(job.short, job.cwd, args)
+export async function reviveJob(job: Job): Promise<void> {
+  const release = await acquireSpawnLock(job.short)
+  // No lock: another process is starting this host — leave it to them.
+  if (!release) return
+  try {
+    // The process we waited on for the lock may have spawned the host.
+    const pid = await readHostPid(job.short)
+    if (pid !== undefined && isProcessRunning(pid)) return
+    // A live interactive session holding this transcript would make two
+    // writers on it.
+    const holder = (await readAllSessions()).find(
+      s => s.alive && s.kind !== 'bg' && s.sessionId === job.sessionId,
+    )
+    if (holder) {
+      throw new Error(
+        `this conversation is open in another running session (pid ${holder.pid}) — resume it there or /exit that session first`,
+      )
+    }
+    if (job.stopRequested) void patchJob(job.short, { stopRequested: undefined }).catch(() => null)
+    // A session that never started has no transcript to resume: launch it
+    // the way it was first meant to.
+    const args =
+      job.launchArgs && !transcriptExists(job.sessionId)
+        ? job.launchArgs
+        : [...job.respawnFlags, '--resume', job.sessionId]
+    spawnHost(job.short, job.cwd, args)
+    // Hold the lock until the new host has recorded its pid: released any
+    // earlier, the next holder finds no live host and spawns a second one.
+    for (let i = 0; i < 100; i++) {
+      const hostPid = await readHostPid(job.short)
+      if (hostPid !== undefined && isProcessRunning(hostPid)) break
+      await new Promise(r => setTimeout(r, 50))
+    }
+  } finally {
+    release()
+  }
 }

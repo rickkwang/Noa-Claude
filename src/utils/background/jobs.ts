@@ -8,11 +8,12 @@
  */
 import { randomBytes } from 'crypto'
 import { mkdirSync } from 'fs'
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'fs/promises'
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'fs/promises'
 import { tmpdir, userInfo } from 'os'
 import { join } from 'path'
 import { getClaudeConfigHomeDir } from '../envUtils.js'
 import { isProcessRunning } from '../genericProcessUtils.js'
+import { sanitizePersistedFlags } from './launchFlags.js'
 
 /** Where the session is in its lifecycle. */
 export type JobState = 'working' | 'blocked' | 'done' | 'failed'
@@ -112,7 +113,16 @@ export function newJobShort(): string {
 
 export async function readJob(short: string): Promise<JobRecord | null> {
   try {
-    return JSON.parse(await readFile(getStatePath(short), 'utf8')) as JobRecord
+    const record = JSON.parse(await readFile(getStatePath(short), 'utf8')) as JobRecord
+    // Persisted flags are untrusted: anything running as this user can edit
+    // state.json, and reviveJob would replay them into a spawn verbatim.
+    if (Array.isArray(record.respawnFlags)) {
+      record.respawnFlags = sanitizePersistedFlags(record.respawnFlags)
+    }
+    if (Array.isArray(record.launchArgs)) {
+      record.launchArgs = sanitizePersistedFlags(record.launchArgs)
+    }
+    return record
   } catch {
     return null
   }
@@ -129,22 +139,63 @@ export async function writeJob(record: JobRecord): Promise<void> {
 const patchChains = new Map<string, Promise<unknown>>()
 
 /**
- * Read-modify-write. Across processes the writers never race: the session
- * (activity, /stop) runs before its PTY host writes the exit, and whoever
- * stops a job marks it before signalling. Within one process patches to a
- * job are chained, so a write can't land on a record read before another.
+ * Cross-process mutex for state.json read-modify-write: the session reports
+ * activity while `noa stop` or the agents view (stop, rename) writes from
+ * another process, and a full-record write built on a stale read would drop
+ * the other side's fields. mkdir is atomic; a lock whose holder died
+ * mid-patch is broken after 30s. If the job dir doesn't exist there is
+ * nothing to race with — proceed unlocked.
+ */
+const STATE_LOCK_STALE_MS = 30_000
+
+async function withStateLock<T>(short: string, fn: () => Promise<T>): Promise<T> {
+  const lock = join(getJobDir(short), 'state.lock')
+  const deadline = Date.now() + 10_000
+  for (;;) {
+    try {
+      await mkdir(lock)
+      break
+    } catch (e) {
+      if ((e as { code?: string }).code === 'ENOENT') return fn()
+      let stale = false
+      try {
+        stale = Date.now() - (await stat(lock)).mtimeMs > STATE_LOCK_STALE_MS
+      } catch {
+        continue
+      }
+      if (stale) {
+        await rm(lock, { recursive: true, force: true }).catch(() => {})
+        continue
+      }
+      if (Date.now() >= deadline) throw new Error('timed out waiting for the job state lock')
+      await new Promise(r => setTimeout(r, 25))
+    }
+  }
+  try {
+    return await fn()
+  } finally {
+    await rm(lock, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+/**
+ * Read-modify-write. The file lock serializes writers across processes; the
+ * per-job promise chain serializes them within this one (the chain alone
+ * can't order two processes, the lock alone would let this process's own
+ * bursts interleave lock acquisition — both are needed).
  */
 export function patchJob(
   short: string,
   patch: Partial<JobRecord>,
 ): Promise<JobRecord | null> {
-  const run = async (): Promise<JobRecord | null> => {
-    const current = await readJob(short)
-    if (!current) return null
-    const next = { ...current, ...patch, updatedAt: new Date().toISOString() }
-    await writeJob(next)
-    return next
-  }
+  const run = async (): Promise<JobRecord | null> =>
+    withStateLock(short, async () => {
+      const current = await readJob(short)
+      if (!current) return null
+      const next = { ...current, ...patch, updatedAt: new Date().toISOString() }
+      await writeJob(next)
+      return next
+    })
   const result = (patchChains.get(short) ?? Promise.resolve()).then(run, run)
   const tail = result.catch(() => null)
   patchChains.set(short, tail)

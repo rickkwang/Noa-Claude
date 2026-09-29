@@ -44,6 +44,7 @@ import {
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
 import { matchWildcardPattern } from '../../utils/permissions/shellRuleMatching.js'
 import { checkWorktreeEscape } from '../../utils/worktreeEscape.js'
+import { checkBgIsolation } from '../../utils/background/isolation.js'
 import { FILE_UNEXPECTEDLY_MODIFIED_ERROR } from '../FileEditTool/constants.js'
 import { gitDiffSchema, hunkSchema } from '../FileEditTool/types.js'
 import { canSkipPreRead, isNotebookPath } from '../shared/preReadGuard.js'
@@ -190,6 +191,13 @@ export const FileWriteTool = buildTool({
     const escapeError = checkWorktreeEscape(fullFilePath)
     if (escapeError) {
       return { result: false, message: escapeError, errorCode: 4 }
+    }
+
+    // A background session must isolate (EnterWorktree) before writing to the
+    // shared checkout — bgIsolation, default 'worktree'.
+    const bgIsolationError = checkBgIsolation(fullFilePath)
+    if (bgIsolationError) {
+      return { result: false, message: bgIsolationError, errorCode: 7 }
     }
 
     const fs = getFsImplementation()

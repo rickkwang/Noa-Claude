@@ -19,78 +19,9 @@ import {
 } from '../sessionStorage.js'
 import { dispatchJob, type HandoffPrefill } from './dispatch.js'
 import { listJobs } from './jobs.js'
+import { passthroughLaunchFlags } from './launchFlags.js'
 
-/** Flags taking one value that a relaunch of this session must keep. */
-const VALUE_FLAGS = new Set([
-  '--agent',
-  '--agents',
-  '--settings',
-  '--setting-sources',
-  '--system-prompt',
-  '--system-prompt-file',
-  '--append-system-prompt',
-  '--append-system-prompt-file',
-  '--fallback-model',
-  '--plugin-dir',
-  '--max-thinking-tokens',
-  '--max-budget-usd',
-  '--thinking',
-  '--advisor',
-])
-/** Variadic flags (commander consumes every following non-flag token). */
-const LIST_FLAGS = new Set([
-  '--add-dir',
-  '--mcp-config',
-  '--betas',
-  '--allowed-tools',
-  '--allowedTools',
-  '--disallowed-tools',
-  '--disallowedTools',
-  '--tools',
-])
-const BOOLEAN_FLAGS = new Set([
-  '--strict-mcp-config',
-  '--verbose',
-  '--ide',
-  '--chrome',
-  '--no-chrome',
-  '--bare',
-  '--local-only',
-  '--brief',
-  '--disable-slash-commands',
-  '--allow-dangerously-skip-permissions',
-])
-
-/**
- * The launch flags of this process that shape the session itself (MCP
- * servers, settings, extra directories, tool lists, system prompts…). The
- * model, effort and permission mode are left out: they are passed from the
- * live session state, which /model and shift+tab may have changed since.
- */
-export function passthroughLaunchFlags(argv: readonly string[] = process.argv.slice(2)): string[] {
-  const out: string[] = []
-  for (let i = 0; i < argv.length; i++) {
-    const token = argv[i]!
-    if (token === '--') break
-    const eq = token.indexOf('=')
-    const name = token.startsWith('--') && eq !== -1 ? token.slice(0, eq) : token
-    if (BOOLEAN_FLAGS.has(name) && eq === -1) {
-      out.push(token)
-    } else if (VALUE_FLAGS.has(name)) {
-      if (eq !== -1) out.push(token)
-      else if (i + 1 < argv.length) out.push(token, argv[++i]!)
-    } else if (LIST_FLAGS.has(name)) {
-      if (eq !== -1) {
-        out.push(token)
-        continue
-      }
-      const values: string[] = []
-      while (i + 1 < argv.length && !argv[i + 1]!.startsWith('-')) values.push(argv[++i]!)
-      if (values.length) out.push(token, ...values)
-    }
-  }
-  return out
-}
+export { passthroughLaunchFlags }
 
 function permissionFlags(mode: string, inherited: boolean): string[] {
   if (inherited) return ['--inherit-permission-mode', mode]

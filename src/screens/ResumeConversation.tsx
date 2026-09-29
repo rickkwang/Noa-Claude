@@ -104,6 +104,7 @@ export function ResumeConversation({
     mainThreadAgentDefinition?: AgentDefinition;
   } | null>(null);
   const [crossProjectCommand, setCrossProjectCommand] = React.useState<string | null>(null);
+  const [exitNotice, setExitNotice] = React.useState<string | null>(null);
   const sessionLogResultRef = React.useRef<SessionLogResult | null>(null);
   // Mirror of logs.length so loadMoreLogs can compute value indices outside
   // the setLogs updater (keeping it pure per React's contract).
@@ -182,13 +183,14 @@ export function ResumeConversation({
   }
   async function onSelect(log_0: LogOption, skipSummaryGate = false) {
     // A live background session is running this conversation: resuming it
-    // here too would put two writers on one transcript.
+    // here too would put two writers on one transcript. Render the refusal
+    // (Ink's patchConsole swallows console output) and exit like the
+    // cross-project path does.
     if (log_0.backgroundJob) {
       const job = (await listJobs()).find(j => j.short === log_0.backgroundJob && j.alive);
       if (job) {
-        process.stderr.write(`${heldByBackgroundMessage(job, 'resume')}\n`);
-        // eslint-disable-next-line custom-rules/no-process-exit
-        process.exit(1);
+        setExitNotice(heldByBackgroundMessage(job, 'resume'));
+        return;
       }
     }
     setResuming(true);
@@ -317,6 +319,9 @@ export function ResumeConversation({
   if (crossProjectCommand) {
     return <CrossProjectMessage command={crossProjectCommand} />;
   }
+  if (exitNotice) {
+    return <ExitNoticeMessage message={exitNotice} />;
+  }
   if (resumeData) {
     return <REPL debug={debug} commands={commands} initialTools={initialTools} initialMessages={resumeData.messages} initialFileHistorySnapshots={resumeData.fileHistorySnapshots} initialContentReplacements={resumeData.contentReplacements} initialAgentName={resumeData.agentName} initialAgentColor={resumeData.agentColor} mcpClients={mcpClients} dynamicMcpConfig={dynamicMcpConfig} strictMcpConfig={strictMcpConfig} systemPrompt={systemPrompt} appendSystemPrompt={appendSystemPrompt} mainThreadAgentDefinition={resumeData.mainThreadAgentDefinition} autoConnectIdeFlag={autoConnectIdeFlag} disableSlashCommands={disableSlashCommands} taskListId={taskListId} thinkingConfig={thinkingConfig} onTurnComplete={onTurnComplete} />;
   }
@@ -421,6 +426,22 @@ function CrossProjectMessage(t0) {
     t6 = $[7];
   }
   return t6;
+}
+function ExitNoticeMessage({
+  message
+}: {
+  message: string;
+}): React.ReactNode {
+  React.useEffect(() => {
+    const timeout = setTimeout(() => {
+      // eslint-disable-next-line custom-rules/no-process-exit
+      process.exit(1);
+    }, 100);
+    return () => clearTimeout(timeout);
+  }, []);
+  return <Box flexDirection="column" gap={1}>
+      <Text>{message}</Text>
+    </Box>;
 }
 function _temp3() {
   const timeout = setTimeout(_temp2, 100);

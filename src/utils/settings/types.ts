@@ -475,6 +475,12 @@ export const SettingsSchema = lazySchema(() =>
               'Base ref for new worktrees. "fresh" starts from origin/<default branch> so unpushed local commits are excluded. ' +
                 '"head" preserves the current behavior and starts from local HEAD.',
             ),
+          bgIsolation: z
+            .enum(['worktree', 'none'])
+            .optional()
+            .describe(
+              "Isolation mode for background sessions in this repo. 'worktree' (default) blocks Edit/Write in the main checkout until EnterWorktree is called. 'none' lets background jobs edit the working copy directly.",
+            ),
           symlinkDirectories: z
             .array(z.string())
             .optional()

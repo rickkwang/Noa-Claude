@@ -10,6 +10,7 @@ import { getCwd } from '../utils/cwd.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
 import { isMcpInstructionsDeltaEnabled } from '../utils/mcpInstructionsDelta.js'
 import { loadMemoryPrompt } from '../memdir/memdir.js'
+import { getBgSessionSection } from '../utils/background/isolation.js'
 import {
   DEFAULT_OUTPUT_STYLE_NAME,
   getOutputStyleConfig,
@@ -199,6 +200,10 @@ export function buildDynamicSystemPromptSections(params: {
     systemPromptSection(`env_info_simple:${model}`, () =>
       computeMainSessionEnvInfo(model, additionalWorkingDirectories),
     ),
+    // Background sessions only (null otherwise) — isBgSession() is fixed for
+    // the process, so a plain cached section is safe. Upstream registers this
+    // as the "bg-session" section right after env info.
+    systemPromptSection('bg-session', () => getBgSessionSection()),
     systemPromptSection('language', () => getLanguageSection(language)),
     // Keyed by style name, not the bare section name: the cache lives until
     // /clear or /compact, so a mid-session switch (via /config) would otherwise

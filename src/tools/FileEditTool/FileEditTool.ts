@@ -53,6 +53,7 @@ import type { PermissionDecision } from '../../utils/permissions/PermissionResul
 import { matchWildcardPattern } from '../../utils/permissions/shellRuleMatching.js'
 import { validateInputForSettingsFileEdit } from '../../utils/settings/validateEditTool.js'
 import { checkWorktreeEscape } from '../../utils/worktreeEscape.js'
+import { checkBgIsolation } from '../../utils/background/isolation.js'
 import { NOTEBOOK_EDIT_TOOL_NAME } from '../NotebookEditTool/constants.js'
 import { canSkipPreRead } from '../shared/preReadGuard.js'
 import {
@@ -189,6 +190,13 @@ export const FileEditTool = buildTool({
     const escapeError = checkWorktreeEscape(fullFilePath)
     if (escapeError) {
       return { result: false, message: escapeError, errorCode: 11 }
+    }
+
+    // A background session must isolate (EnterWorktree) before writing to the
+    // shared checkout — bgIsolation, default 'worktree'.
+    const bgIsolationError = checkBgIsolation(fullFilePath)
+    if (bgIsolationError) {
+      return { result: false, message: bgIsolationError, errorCode: 12 }
     }
 
     const fs = getFsImplementation()

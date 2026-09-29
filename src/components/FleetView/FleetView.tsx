@@ -6,6 +6,7 @@
 import { basename } from 'path';
 import * as React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDoublePress } from '../../hooks/useDoublePress.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { Box, Text, useInput } from '../../ink.js';
 import { AlternateScreen } from '../../ink/components/AlternateScreen.js';
@@ -26,7 +27,6 @@ import { Clawd } from '../LogoV2/Clawd.js';
 import { getDefaultCharacters } from '../Spinner/utils.js';
 
 const POLL_MS = 1000;
-const DOUBLE_PRESS_MS = 2000;
 const PLACEHOLDER = 'describe a task for a new session';
 
 type Group = 'needs' | 'working' | 'completed';
@@ -42,7 +42,7 @@ const HELP: Array<[string, string]> = [
   ['type + enter', 'start a new session with that task'],
   ['ctrl+x', 'stop the selected session, again to delete it'],
   ['ctrl+r', 'rename the selected session'],
-  ['esc', 'clear the draft, or return to the moved conversation'],
+  ['esc', 'clear the draft, return to the moved conversation, or quit'],
   ['ctrl+c ×2', 'quit — sessions keep running']
 ];
 
@@ -158,7 +158,10 @@ export function FleetView({
   const [renaming, setRenaming] = useState<{ short: string; draft: string; taken?: boolean } | undefined>();
   const [now, setNow] = useState(Date.now());
   const attachingRef = useRef(false);
-  const ctrlCAtRef = useRef(0);
+  // esc / ctrl+c while a session is still being opened: don't attach.
+  const attachCancelledRef = useRef(false);
+  const [exitPending, setExitPending] = useState(false);
+  const handleCtrlC = useDoublePress(setExitPending, onExit);
 
   const refresh = useCallback(async () => {
     const list = await listJobs();
@@ -209,13 +212,27 @@ export function FleetView({
     const ink = instances.get(process.stdout);
     if (!ink || attachingRef.current) return;
     attachingRef.current = true;
-    setHint(undefined);
-    ink.enterAlternateScreen();
+    attachCancelledRef.current = false;
+    setHint(`Opening ${job.name ?? job.short}… · esc to cancel`);
     let outcome: Awaited<ReturnType<typeof attachToJob>> = 'unavailable';
     try {
-      if (await ensureHost(job)) outcome = await attachToJob(job.short);
+      // The host may need reviving first; keys stay with the view until the
+      // terminal is handed over, so esc / ctrl+c can still back out.
+      const ready = await ensureHost(job);
+      if (attachCancelledRef.current) {
+        setHint(undefined);
+        return;
+      }
+      setHint(undefined);
+      if (ready) {
+        ink.enterAlternateScreen();
+        try {
+          outcome = await attachToJob(job.short);
+        } finally {
+          ink.exitAlternateScreen();
+        }
+      }
     } finally {
-      ink.exitAlternateScreen();
       attachingRef.current = false;
     }
     if (outcome === 'unavailable') setHint(`Couldn't open ${job.name ?? job.short}`);
@@ -239,7 +256,10 @@ export function FleetView({
   }, [cwd, respawnFlags, refresh]);
 
   useInput((char, key) => {
-    if (attachingRef.current) return;
+    if (attachingRef.current) {
+      if (key.escape || key.ctrl && char === 'c') attachCancelledRef.current = true;
+      return;
+    }
     // Keys can arrive in one batch (↓ then ctrl+x): act on the selection the
     // earlier ones made, not the last render's.
     const selectedJob = flat.find(j => j.short === selectedRef.current) ?? flat[0];
@@ -272,24 +292,41 @@ export function FleetView({
       }
       return;
     }
+    // ctrl+c closes the help first; otherwise it clears the draft and counts
+    // as the first of the two presses that quit.
+    if (key.ctrl && char === 'c') {
+      if (helpOpen) {
+        setHelpOpen(false);
+        return;
+      }
+      setInput('');
+      handleCtrlC();
+      return;
+    }
+    // esc peels back one layer at a time: the help, the draft, a pending
+    // delete, then the view itself — back into the moved conversation if
+    // there is one, otherwise out.
+    if (key.escape) {
+      if (helpOpen) {
+        setHelpOpen(false);
+      } else if (input) {
+        setInput('');
+      } else if (deleteArmed) {
+        setDeleteArmed(undefined);
+      } else {
+        if (originUsable) void openJob(originJob);
+        else onExit();
+      }
+      return;
+    }
+    // Any other key but ? and up/down navigation closes the help.
+    if (helpOpen && char !== '?' && !key.upArrow && !key.downArrow && !(key.ctrl && (char === 'p' || char === 'n'))) {
+      setHelpOpen(false);
+    }
     if (key.ctrl && char === 'r' && !input) {
       if (!selectedJob) return;
       setDeleteArmed(undefined);
       setRenaming({ short: selectedJob.short, draft: selectedJob.name ?? '' });
-      return;
-    }
-    if (key.ctrl && char === 'c') {
-      if (input) {
-        setInput('');
-        return;
-      }
-      if (Date.now() - ctrlCAtRef.current < DOUBLE_PRESS_MS) {
-        onExit();
-        return;
-      }
-      ctrlCAtRef.current = Date.now();
-      const running = flat.filter(j => j.alive).length;
-      setHint(`Press Ctrl-C again to exit${running > 0 ? ` · ${running} ${running === 1 ? 'agent' : 'agents'} will keep running` : ''}`);
       return;
     }
     // ctrl+x on a running session stops it (transcript kept); on a stopped
@@ -310,22 +347,6 @@ export function FleetView({
         return;
       }
       setDeleteArmed({ short: selectedJob.short, justKilled: false });
-      return;
-    }
-    // esc peels back one layer at a time: the draft, a pending delete, then
-    // the view itself — back into the moved conversation if there is one,
-    // otherwise out.
-    if (key.escape) {
-      if (input) {
-        setInput('');
-      } else if (deleteArmed) {
-        setDeleteArmed(undefined);
-      } else if (helpOpen) {
-        setHelpOpen(false);
-      } else {
-        if (originUsable) void openJob(originJob);
-        else onExit();
-      }
       return;
     }
     if (deleteArmed) setDeleteArmed(undefined);
@@ -407,7 +428,11 @@ export function FleetView({
   const focusedGroup = selectedJob ? groupOf(selectedJob) : undefined;
 
   const footer: React.ReactNode[] = [];
-  if (hint) {
+  if (exitPending) {
+    // Like the view's counts: sessions awaiting input or working.
+    const running = ordered.needs.length + ordered.working.length;
+    footer.push(`Press Ctrl-C again to exit${running > 0 ? ` · ${running} ${running === 1 ? 'agent' : 'agents'} will keep running` : ''}`);
+  } else if (hint) {
     footer.push(hint);
   } else {
     if (mode) footer.push(<Text key="mode" color={getModeColor(mode)}>{permissionModeSymbol(mode)} {permissionModeIndicator(mode)}</Text>);
