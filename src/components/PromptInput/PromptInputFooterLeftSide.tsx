@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { isBgSession } from '../../utils/background/bgJob.js';
 import { c as _c } from "react/compiler-runtime";
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { feature } from 'bun:bundle';
@@ -159,7 +160,7 @@ export function PromptInputFooterLeftSide(t0) {
   if (exitMessage.show) {
     let t1;
     if ($[0] !== exitMessage.key) {
-      t1 = <Text dimColor={true} key="exit-message">Press {exitMessage.key} again to exit</Text>;
+      t1 = <Text dimColor={true} key="exit-message">Press {exitMessage.key} again to {isBgSession() ? "detach (session keeps running)" : "exit"}</Text>;
       $[0] = exitMessage.key;
       $[1] = t1;
     } else {

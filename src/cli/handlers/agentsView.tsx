@@ -10,9 +10,9 @@ import instances from '../../ink/instances.js';
 import { getCwd } from '../../utils/cwd.js';
 import { gracefulShutdown, suppressResumeHint } from '../../utils/gracefulShutdown.js';
 
-export async function runAgentsView(root: Root, respawnFlags: string[], cwdFilter?: string): Promise<void> {
+export async function runAgentsView(root: Root, respawnFlags: string[], cwdFilter?: string, originShort?: string): Promise<void> {
   await new Promise<void>(resolve => {
-    root.render(<FleetView cwd={getCwd()} cwdFilter={cwdFilter} respawnFlags={respawnFlags} onExit={resolve} />);
+    root.render(<FleetView cwd={getCwd()} cwdFilter={cwdFilter} originShort={originShort} respawnFlags={respawnFlags} onExit={resolve} />);
   });
   root.unmount();
 }

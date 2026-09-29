@@ -64,7 +64,8 @@ export function attachToJob(short: string): Promise<AttachOutcome> {
       stdin.off('readable', onInput)
       stdout.off('resize', sendSize)
       socket.destroy()
-      if (connected) stdout.write(RESET_MODES + '\x1b[2J\x1b[H')
+      // Clear before RESET_MODES leaves the alt screen, so the shell's screen survives.
+      if (connected) stdout.write('\x1b[2J\x1b[H' + RESET_MODES)
       resolve(outcome)
     }
 

@@ -7,6 +7,7 @@
 import { attachToJob, readJobOutput } from '../../utils/background/attach.js'
 import { dispatchJob, reviveJob } from '../../utils/background/dispatch.js'
 import { formatBackgrounded, passthroughLaunchFlags } from '../../utils/background/fork.js'
+import { isAgentViewDisabled } from '../../utils/background/gate.js'
 import { ensureHost } from '../../utils/background/host.js'
 import { deleteJob, type Job, listJobs, readJob, stopJob } from '../../utils/background/jobs.js'
 import { DETACH_SEQUENCE } from '../../utils/background/ptyProtocol.js'
@@ -27,16 +28,19 @@ async function resolveJob(id: string): Promise<Job> {
   return fail(`No background session "${id}" — \`noa agents\` lists them`)
 }
 
-export async function attachHandler(id: string): Promise<void> {
+/** Resolves with the short id when the user detached (the caller shows the agents view); exits otherwise. */
+export async function attachHandler(id: string): Promise<string | undefined> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) fail('noa attach requires an interactive terminal')
   const job = await resolveJob(id)
   if (!(await ensureHost(job))) fail(`Couldn't open ${job.name ?? job.short}`)
   process.stdout.write('\x1b[?1049h')
   const outcome = await attachToJob(job.short)
   process.stdout.write('\x1b[?1049l')
+  const label = job.name ?? job.short
+  // The agents view takes over stdin as it is; only a process that is about to exit releases it.
+  if (outcome === 'detached' && !isAgentViewDisabled()) return job.short
   if (process.stdin.isTTY) process.stdin.setRawMode(false)
   process.stdin.pause()
-  const label = job.name ?? job.short
   if (outcome === 'unavailable') fail(`Couldn't open ${label}`)
   process.stdout.write(
     outcome === 'detached'

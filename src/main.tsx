@@ -4011,7 +4011,17 @@ async function run(): Promise<CommanderCommand> {
     const {
       attachHandler
     } = await import('./cli/handlers/bgCli.js');
-    await attachHandler(id);
+    const detachedFrom = await attachHandler(id);
+    if (detachedFrom === undefined) return;
+    // Detaching lands in the agents view with this session selected.
+    const [{
+      runAgentsView
+    }, {
+      createRoot
+    }] = await Promise.all([import('./cli/handlers/agentsView.js'), import('./ink.js')]);
+    const root = await createRoot(getBaseRenderOptions(false));
+    await runAgentsView(root, [], undefined, detachedFrom);
+    process.exit(0);
   });
   program.command('logs <id>').description("Show a background session's recent output").action(async (id: string) => {
     const {
