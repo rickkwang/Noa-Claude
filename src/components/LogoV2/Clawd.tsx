@@ -38,6 +38,8 @@ export type ClawdPose = ClawdPoseSpec | ClawdFacing;
 
 type Props = {
   pose?: ClawdPose;
+  /** Per-cell body color override (wand ripple); omit for the flat clawd_body. */
+  paint?: Paint;
 };
 
 const NAMED_POSES: Record<string, ClawdPoseSpec> = {
@@ -202,14 +204,17 @@ function AppleTerminalClawd({ spec, color }: { spec: ClawdPoseSpec; color: strin
   );
 }
 
+/** Per-cell body color (column, row) → css color; used by the wand ripple. */
+export type Paint = (column: number, row: number) => string;
+
 // Paints one glyph row. Spaces continue the previous segment's color (mirrors
 // upstream's run-length grouping); non-lid spans carry the clawd_background
 // behind the glyph (the eye white), lid spans invert fg/bg so the body color
 // reads as an eyelid over the eye.
-function GlyphRow({ glyphs, color, on }: { glyphs: string; color: string; on?: 'lid' | 'eyes' }) {
+function GlyphRow({ glyphs, color, on, column = 0, row = 0, paint }: { glyphs: string; color: string; on?: 'lid' | 'eyes'; column?: number; row?: number; paint?: Paint }) {
   const segments: { text: string; color: string }[] = [];
-  Array.from(glyphs).forEach((ch) => {
-    const c = ch === ' ' && segments.length > 0 ? segments[segments.length - 1].color : color;
+  Array.from(glyphs).forEach((ch, i) => {
+    const c = ch === ' ' && segments.length > 0 ? segments[segments.length - 1].color : paint ? paint(column + i, row) : color;
     const last = segments[segments.length - 1];
     if (last && last.color === c) last.text += ch;
     else segments.push({ text: ch, color: c });
@@ -227,7 +232,7 @@ function GlyphRow({ glyphs, color, on }: { glyphs: string; color: string; on?: '
   );
 }
 
-export function Clawd({ pose }: Props = {}) {
+export function Clawd({ pose, paint }: Props = {}) {
   const p = normalizePose(pose ?? 'default');
   if (isFacing(p)) {
     return isAppleTerminal()
@@ -248,18 +253,18 @@ export function Clawd({ pose }: Props = {}) {
   return (
     <Box flexDirection="column" flexShrink={0}>
       <Text>
-        <GlyphRow glyphs={arms.r1L} color="clawd_body" />
+        <GlyphRow glyphs={arms.r1L} color="clawd_body" column={0} row={0} paint={paint} />
         {eyeSpans.map((span, i) => (
-          <GlyphRow key={i} glyphs={span.glyphs} color="clawd_body" on={span.lid ? 'lid' : 'eyes'} />
+          <GlyphRow key={i} glyphs={span.glyphs} color="clawd_body" on={span.lid ? 'lid' : 'eyes'} column={span.column} row={0} paint={paint} />
         ))}
-        <GlyphRow glyphs={arms.r1R} color="clawd_body" />
+        <GlyphRow glyphs={arms.r1R} color="clawd_body" column={8} row={0} paint={paint} />
       </Text>
       <Text>
-        <GlyphRow glyphs={arms.r2L} color="clawd_body" />
-        <GlyphRow glyphs="█████" color="clawd_body" on="eyes" />
-        <GlyphRow glyphs={arms.r2R} color="clawd_body" />
+        <GlyphRow glyphs={arms.r2L} color="clawd_body" column={0} row={1} paint={paint} />
+        <GlyphRow glyphs="█████" color="clawd_body" on="eyes" column={2} row={1} paint={paint} />
+        <GlyphRow glyphs={arms.r2R} color="clawd_body" column={7} row={1} paint={paint} />
       </Text>
-      <GlyphRow glyphs={FEET[p.feet]} color="clawd_body" />
+      <GlyphRow glyphs={FEET[p.feet]} color="clawd_body" column={0} row={2} paint={paint} />
     </Box>
   );
 }

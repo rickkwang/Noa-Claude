@@ -6,6 +6,7 @@ import { env } from '../../utils/env.js';
 import { isBgSession } from '../../utils/background/bgJob.js';
 import { getInitialSettings } from '../../utils/settings/settings.js';
 import { Clawd, normalizePose, type ClawdPose } from './Clawd.js';
+import { ClawdWand, WAND_COLUMNS, useWandActive, useWandClock, useWandPaint } from './ClawdWand.js';
 
 type PoofKind = 'dot' | 'wave';
 type ShadowKind = 'wide' | 'narrow';
@@ -274,6 +275,8 @@ export function getClawdEntranceSequence(): ClawdAnimation | undefined {
 }
 
 const IDLE: Frame = { pose: 'default', offset: 0 };
+// Resting pose while the wand is out: right arm raised, holding it.
+const WAND_REST: Frame = { pose: { eyes: 'open', arms: 'one-up', feet: 'both' }, offset: 0 };
 
 // Pad the front of a forced sequence so it starts after `delayMs`. The lead
 // frame reuses the sequence's own first frame when it carries an x offset
@@ -310,22 +313,29 @@ type Props = {
  * elsewhere this renders and behaves identically to plain `<Clawd />`.
  */
 export function AnimatedClawd({ autoplay, sequence, delayMs, onComplete, reserveCrouchRow }: Props = {}) {
-  const { pose, bounceOffset, x, poof, shadow, onClick } = useClawdAnimation(autoplay, sequence, delayMs, onComplete);
+  const wandActive = useWandActive();
+  const { pose, bounceOffset, x, poof, shadow, playing, reducedMotion, onClick } = useClawdAnimation(autoplay, sequence, delayMs, onComplete, wandActive);
+  const wandVisible = wandActive && !playing;
+  const wandMs = useWandClock(wandVisible, !reducedMotion);
+  const wandPaint = useWandPaint(wandVisible && !reducedMotion, wandMs);
   // Height is fixed for the whole animation (upstream reserveCrouchRow is a
   // caller prop, default off): a deep crouch clips inside the 3 rows instead of
   // growing the container and shoving the layout around.
   const height = reserveCrouchRow ? 4 : 3;
   const marginTop = bounceOffset > 1 ? bounceOffset + height - 3 : bounceOffset;
   return (
-    <Box height={height} width={CLAWD_WIDTH} flexDirection="column" flexShrink={0} overflow="hidden" onClick={onClick}>
+    <Box height={height} width={wandActive ? CLAWD_WIDTH + WAND_COLUMNS : CLAWD_WIDTH} flexDirection="column" flexShrink={0} overflow="hidden" onClick={onClick}>
       <Box marginTop={marginTop} marginLeft={x} flexShrink={0}>
-        <Clawd pose={pose} />
+        <Clawd pose={pose} paint={wandPaint} />
       </Box>
       {poof && bounceOffset > 0 ? (
         <>
           <Box position="absolute" top={height - 1} left={0}><Text color="inactive">{POOF[poof]}</Text></Box>
           <Box position="absolute" top={height - 1} right={0}><Text color="inactive">{POOF[poof]}</Text></Box>
         </>
+      ) : null}
+      {wandVisible ? (
+        <Box position="absolute" top={0} left={CLAWD_WIDTH}><ClawdWand ms={wandMs} animate={!reducedMotion} /></Box>
       ) : null}
       {shadow ? (
         <Box position="absolute" top={height - 1} left={SHADOW[shadow].left}><Text color="inactive">{SHADOW[shadow].glyphs}</Text></Box>
@@ -339,7 +349,8 @@ function useClawdAnimation(
   sequence?: ClawdAnimation,
   delayMs?: number,
   onComplete?: () => void,
-): { pose: ClawdPose; bounceOffset: number; x: number; poof?: PoofKind; shadow?: ShadowKind; onClick: () => void } {
+  wandActive?: boolean,
+): { pose: ClawdPose; bounceOffset: number; x: number; poof?: PoofKind; shadow?: ShadowKind; playing: boolean; reducedMotion: boolean; onClick: () => void } {
   // Read once at mount — no useSettings() subscription, since that would
   // re-render on any settings change.
   const [reducedMotion] = useState(() => getInitialSettings().prefersReducedMotion ?? false);
@@ -388,7 +399,7 @@ function useClawdAnimation(
   }, [frameIndex, autoplay, sequence]);
 
   const seq = sequenceRef.current;
-  const fallback = sequence ? ANIMATIONS[sequence].at(-1)! : IDLE;
+  const fallback = wandActive ? WAND_REST : sequence ? ANIMATIONS[sequence].at(-1)! : IDLE;
   const current = frameIndex >= 0 && frameIndex < seq.length ? seq[frameIndex]! : fallback;
   return {
     pose: current.pose,
@@ -396,6 +407,8 @@ function useClawdAnimation(
     x: current.x ?? 0,
     poof: current.poof,
     shadow: current.shadow,
+    playing: frameIndex >= 0 && frameIndex < seq.length,
+    reducedMotion,
     onClick,
   };
 }
