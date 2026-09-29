@@ -4,9 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Box, Text } from '../../ink.js';
 import { env } from '../../utils/env.js';
 import { isBgSession } from '../../utils/background/bgJob.js';
-import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js';
 import { getInitialSettings } from '../../utils/settings/settings.js';
-import { Clawd, type ClawdPose } from './Clawd.js';
+import { Clawd, normalizePose, type ClawdPose } from './Clawd.js';
 
 type PoofKind = 'dot' | 'wave';
 type ShadowKind = 'wide' | 'narrow';
@@ -222,24 +221,12 @@ export const ANIMATIONS: Record<ClawdAnimation, readonly Frame[]> = {
   boop: BOOP, tap: TAP, sneeze: SNEEZE, turn: TURN, 'coin-hop': COIN_HOP,
 };
 
-// All entrances upstream can draw at random (the full animation list).
-const ALL_ENTRANCES: readonly ClawdAnimation[] = [
-  'skip', 'jump', 'look', 'spin', 'peekaboo', 'drop', 'waddle', 'peek', 'wink',
-  'boop', 'tap', 'sneeze', 'turn', 'coin-hop',
-];
-
-// Click pool: the shared animations plus noa's WAVE. Apple Terminal falls back
-// to eye-only animations (raised arms and facing sprites can't render there).
-const CLICK_ANIMATIONS: readonly (readonly Frame[])[] = [JUMP, LOOK, WAVE, PEEKABOO, BOOP, TAP, SNEEZE, TURN, COIN_HOP];
-const APPLE_TERMINAL_CLICK_ANIMATIONS: readonly (readonly Frame[])[] = [JUMP, LOOK, WAVE, PEEKABOO, BOOP, TAP, SNEEZE];
-
 const FRAME_MS = 60;
 const CLAWD_WIDTH = 9;
 const incrementFrame = (i: number) => i + 1;
 // Forced sequences that have already been shown in this process.
 const playedSequences = new Set<ClawdAnimation>();
-// Whether this process has already served an entrance (the entrance also
-// replays once per version bump — see getClawdEntranceSequence).
+// Whether this process has already served an entrance.
 let clawdEntranceTaken = false;
 
 function isAppleTerminal(): boolean {
@@ -250,66 +237,40 @@ function hasFacing(frames: readonly Frame[]): boolean {
   return frames.some((f) => typeof f.pose === 'object' && 'facing' in f.pose);
 }
 
-function isEyesOpenPose(pose: ClawdPose): boolean {
-  if (typeof pose === 'string') return true; // all named poses have open eyes
-  return 'eyes' in pose && pose.eyes === 'open';
+// Click pool: every animation whose first frame sits on-screen (x === 0) —
+// upstream's Kl — plus noa's WAVE. Only Apple Terminal filters further (see
+// appleTerminalAllows); every other terminal draws the whole pool.
+const CLICK_POOL: readonly ClawdAnimation[] = [
+  'jump', 'look', 'wave', 'spin', 'peekaboo', 'drop', 'wink', 'boop', 'tap', 'sneeze', 'turn', 'coin-hop',
+];
+
+// Apple Terminal restriction (upstream $s, applied to the click pool): no
+// facing sprites, and the first frame must not be a plain open-eyed rest frame.
+function appleTerminalAllows(name: ClawdAnimation): boolean {
+  const seq = ANIMATIONS[name];
+  const first = seq[0];
+  if (first === undefined || hasFacing(seq)) return false;
+  const pose = normalizePose(first.pose) as { eyes: string };
+  return pose.eyes !== 'open' || first.offset !== 0 || (first.x ?? 0) !== 0;
 }
 
-// Upstream's $s/Kl filter. For clicks (Kl): drop sequences whose first frame
-// starts off-screen (x !== 0) or with eyes closed/offset — those read as
-// glitches out of context. On Apple Terminal the pool is further restricted
-// to plain named poses that render in the bg-fill eye field. For entrances
-// ($s with the full list): facing sprites are dropped everywhere (they only
-// render on non-Apple terminals).
 function filterForClick(names: readonly ClawdAnimation[]): ClawdAnimation[] {
   return names.filter((name) => {
     const first = ANIMATIONS[name][0];
-    if (first === undefined) return false;
-    if (isAppleTerminal()) {
-      return typeof first.pose === 'string' && first.offset === 0 && (first.x ?? 0) === 0;
-    }
-    if (!isEyesOpenPose(first.pose) || first.offset !== 0 || (first.x ?? 0) !== 0) return false;
-    return true;
-  });
-}
-
-function filterForEntrance(names: readonly ClawdAnimation[]): ClawdAnimation[] {
-  return names.filter((name) => {
-    if (isAppleTerminal()) {
-      const first = ANIMATIONS[name][0];
-      // Apple Terminal: only sequences of plain named poses with open eyes.
-      return (
-        first !== undefined &&
-        typeof first.pose === 'string' &&
-        ANIMATIONS[name].every((f) => typeof f.pose === 'string') &&
-        ANIMATIONS[name].every((f) => isEyesOpenPose(f.pose))
-      );
-    }
-    return true;
+    if (first === undefined || (first.x ?? 0) !== 0) return false;
+    return !isAppleTerminal() || appleTerminalAllows(name);
   });
 }
 
 /**
- * The entrance animation to play at startup, if any. Upstream replays the
- * entrance when the installed version is newer than the last one that played
- * (lastClawdEntranceVersion in global config); noa keeps the same gate on top
- * of its per-process-once rule. A background session skips it entirely: its
- * frames would land in the PTY host's replay buffer and replay on every
- * attach.
+ * The entrance animation to play at startup. Always the hop-in `skip`, on every
+ * foreground launch (once per process). A background session skips it: its
+ * frames would land in the PTY host's replay buffer and replay on every attach.
  */
 export function getClawdEntranceSequence(): ClawdAnimation | undefined {
   if (clawdEntranceTaken || isBgSession()) return undefined;
-  const cfg = getGlobalConfig();
-  const last = cfg.lastClawdEntranceVersion;
-  const versionBumped = last === undefined || MACRO.VERSION !== last;
-  if (!versionBumped) return undefined;
   clawdEntranceTaken = true;
-  const pool = filterForEntrance(ALL_ENTRANCES);
-  const pick = pool[Math.floor(Math.random() * pool.length)] ?? 'jump';
-  // Persist even if the render is skipped downstream (reduced motion / screen
-  // toggle): upstream records the impression when the sequence is served.
-  saveGlobalConfig((current) => ({ ...current, lastClawdEntranceVersion: MACRO.VERSION }));
-  return pick;
+  return 'skip';
 }
 
 const IDLE: Frame = { pose: 'default', offset: 0 };
@@ -320,7 +281,7 @@ const IDLE: Frame = { pose: 'default', offset: 0 };
 function padDelay(seq: readonly Frame[], delayMs?: number): readonly Frame[] {
   if (!delayMs || seq.length === 0) return seq;
   const first = seq[0]!;
-  const lead = first.x !== undefined && first.x !== 0 ? first : IDLE;
+  const lead = (first.x ?? 0) !== 0 || Math.abs(first.offset) >= 3 ? first : IDLE;
   const count = Math.max(1, Math.round(delayMs / FRAME_MS));
   return [...Array.from({ length: count }, () => lead), ...seq];
 }
@@ -334,11 +295,13 @@ type Props = {
   delayMs?: number;
   /** Fired when a forced `sequence` finishes (or immediately if reduced-motion or already played). */
   onComplete?: () => void;
+  /** Reserve a 4th row so a deep crouch stays visible (caller must own the extra row). */
+  reserveCrouchRow?: boolean;
 };
 
 /**
  * Clawd with click-triggered animations plus optional programmatic playback.
- * Container height is fixed (3 rows, 4 while a deep crouch is on screen) and
+ * Container height is fixed (3 rows, or 4 with `reserveCrouchRow`) and
  * width at CLAWD_WIDTH with overflow hidden — same footprint as a bare
  * `<Clawd />` — so the surrounding layout never shifts. During a crouch the
  * feet row clips below the frame; horizontal movement slides the body and
@@ -346,13 +309,13 @@ type Props = {
  * mouse tracking is enabled (i.e. inside `<AlternateScreen>` / fullscreen);
  * elsewhere this renders and behaves identically to plain `<Clawd />`.
  */
-export function AnimatedClawd({ autoplay, sequence, delayMs, onComplete }: Props = {}) {
+export function AnimatedClawd({ autoplay, sequence, delayMs, onComplete, reserveCrouchRow }: Props = {}) {
   const { pose, bounceOffset, x, poof, shadow, onClick } = useClawdAnimation(autoplay, sequence, delayMs, onComplete);
-  // Reserve the crouch row while a deep-crouch (offset>1) frame may be on
-  // screen so the layout doesn't jump mid-sequence (upstream reserveCrouchRow).
-  const reserveCrouchRow = (ANIMATIONS[sequence ?? 'jump'] ?? []).some((f) => f.offset > 1);
-  const height = bounceOffset > 1 || reserveCrouchRow ? 4 : 3;
-  const marginTop = bounceOffset > 1 ? bounceOffset + 1 : bounceOffset;
+  // Height is fixed for the whole animation (upstream reserveCrouchRow is a
+  // caller prop, default off): a deep crouch clips inside the 3 rows instead of
+  // growing the container and shoving the layout around.
+  const height = reserveCrouchRow ? 4 : 3;
+  const marginTop = bounceOffset > 1 ? bounceOffset + height - 3 : bounceOffset;
   return (
     <Box height={height} width={CLAWD_WIDTH} flexDirection="column" flexShrink={0} overflow="hidden" onClick={onClick}>
       <Box marginTop={marginTop} marginLeft={x} flexShrink={0}>
@@ -400,9 +363,7 @@ function useClawdAnimation(
 
   const onClick = () => {
     if (autoplay || reducedMotion || frameIndex !== -1 || !canClickRef.current) return;
-    const names = isAppleTerminal()
-      ? filterForClick(['jump', 'look', 'wave', 'peekaboo', 'boop', 'tap', 'sneeze'])
-      : filterForClick(['jump', 'look', 'wave', 'peekaboo', 'boop', 'tap', 'sneeze', 'turn', 'coin-hop']);
+    const names = filterForClick(CLICK_POOL);
     const pick = names[Math.floor(Math.random() * names.length)] ?? 'jump';
     sequenceRef.current = ANIMATIONS[pick];
     setFrameIndex(0);

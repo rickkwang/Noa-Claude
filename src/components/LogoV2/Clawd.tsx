@@ -88,7 +88,7 @@ function isFacing(pose: ClawdPose): pose is ClawdFacing {
   return typeof pose === 'object' && pose !== null && 'facing' in pose;
 }
 
-function normalizePose(pose: ClawdPose): ClawdPose {
+export function normalizePose(pose: ClawdPose): ClawdPose {
   return typeof pose === 'string' ? NAMED_POSES[pose] : pose;
 }
 

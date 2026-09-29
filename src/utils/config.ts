@@ -215,9 +215,6 @@ export type GlobalConfig = {
   lastOnboardingVersion?: string
   // Tracks the last version for which release notes were seen, used for managing release notes
   lastReleaseNotesSeen?: string
-  // Tracks the last version whose Clawd entrance animation played; the entrance
-  // replays once when the version changes (mirrors upstream lastClawdEntranceVersion)
-  lastClawdEntranceVersion?: string
   // Timestamp when changelog was last fetched (content stored in ~/.noa/cache/changelog.md)
   changelogLastFetched?: number
   // @deprecated - Migrated to ~/.noa/cache/changelog.md. Keep for migration support.
