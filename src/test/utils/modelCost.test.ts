@@ -91,11 +91,13 @@ describe('Sonnet 5 pricing', () => {
   // of it as introductory put a 2026-09-01 cliff back to $3/$15 here; these
   // tests pin the absence of any such cliff.
   test('uses the $2/$10 tier regardless of date', () => {
+    delete process.env.ANTHROPIC_BASE_URL
     expect(getModelCosts('claude-sonnet-5', {} as never)).toBe(COST_TIER_2_10)
     expect(getModelPricingString('claude-sonnet-5')).toBe('$2/$10 per Mtok')
   })
 
   test('does not revert to the $3/$15 Sonnet tier over time', () => {
+    delete process.env.ANTHROPIC_BASE_URL
     expect(getModelCosts('claude-sonnet-5', {} as never)).not.toBe(COST_TIER_3_15)
   })
 

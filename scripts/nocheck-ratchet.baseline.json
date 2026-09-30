@@ -303,6 +303,7 @@
     "src/components/LogoV2/AnimatedClawd.tsx",
     "src/components/LogoV2/ChannelsNotice.tsx",
     "src/components/LogoV2/Clawd.tsx",
+    "src/components/LogoV2/ClawdWand.tsx",
     "src/components/LogoV2/CondensedLogo.tsx",
     "src/components/LogoV2/EmergencyTip.tsx",
     "src/components/LogoV2/Feed.tsx",
