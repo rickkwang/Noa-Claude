@@ -34,5 +34,5 @@
   "harness_paths": [
     "scripts/evals/lean-prompt/cases.json"
   ],
-  "harness_sha": "8dcc4acb9747f2e24e1b2c4e2404ab4325713c9dd4fbaffa727f83375f4e8076"
+  "harness_sha": "dbb6fc0d326425a3aad7e63bb46c1eb27cd61dece32df163746940f296d5d742"
 }

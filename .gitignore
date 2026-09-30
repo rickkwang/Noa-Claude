@@ -26,3 +26,4 @@ CLAUDE.local.md
 .claude/hillclimb/*/baseline/ref/
 .claude/hillclimb/*/v9/
 .claude/hillclimb/*/*/progress.txt
+.claude/hillclimb/*/*/timeouts/
