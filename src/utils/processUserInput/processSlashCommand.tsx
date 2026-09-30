@@ -3,7 +3,7 @@ import { feature } from 'bun:bundle';
 import type { ContentBlockParam, TextBlockParam } from '@anthropic-ai/sdk/resources';
 import { randomUUID } from 'crypto';
 import { setPromptId } from 'src/bootstrap/state.js';
-import { builtInCommandNames, type Command, type CommandBase, findCommand, getCommand, getCommandName, hasCommand, type PromptCommand } from 'src/commands.js';
+import { builtInCommandNames, type Command, type CommandBase, findBuiltInCommand, findCommand, getCommand, getCommandName, hasCommand, type PromptCommand } from 'src/commands.js';
 import { NO_CONTENT_MESSAGE } from 'src/constants/messages.js';
 import type { SetToolJSXFn, ToolUseContext } from 'src/Tool.js';
 import type { AssistantMessage, AttachmentMessage, Message, NormalizedUserMessage, ProgressMessage, UserMessage } from 'src/types/message.js';
@@ -22,6 +22,7 @@ import type { CommandResultDisplay } from '../../types/command.js';
 import { createAbortController } from '../abortController.js';
 import { getAgentContext } from '../agentContext.js';
 import { createAttachmentMessage, getAttachmentMessages } from '../attachments.js';
+import { createUnknownCommandFallback, escapeCommandText, findClosestCommandName, getSuggestableCommands, truncateCommandText } from './unknownCommand.js';
 import { logForDebugging } from '../debug.js';
 import { isEnvTruthy } from '../envUtils.js';
 import { AbortError, MalformedCommandError } from '../errors.js';
@@ -309,7 +310,8 @@ async function executeForkedSlashCommand(command: CommandBase & PromptCommand, a
 
 /**
  * Determines if a string looks like a valid command name.
- * Valid command names only contain letters, numbers, colons, hyphens, and underscores.
+ * Valid command names only contain letters, numbers, colons, hyphens, and
+ * underscores, and start with a letter, number, or underscore.
  *
  * @param commandName - The potential command name to check
  * @returns true if it looks like a command name, false if it contains non-command characters
@@ -317,12 +319,39 @@ async function executeForkedSlashCommand(command: CommandBase & PromptCommand, a
 export function looksLikeCommand(commandName: string): boolean {
   // Command names should only contain [a-zA-Z0-9:_-]
   // If it contains other characters, it's probably a file path or other input
-  return !/[^a-zA-Z0-9:\-_]/.test(commandName);
+  return /^[a-zA-Z0-9_][a-zA-Z0-9:_-]*$/.test(commandName);
 }
 export async function processSlashCommand(inputString: string, precedingInputBlocks: ContentBlockParam[], imageContentBlocks: ContentBlockParam[], attachmentMessages: AttachmentMessage[], context: ProcessUserInputContext, setToolJSX: SetToolJSXFn, uuid?: string, isAlreadyProcessing?: boolean, canUseTool?: CanUseToolFn): Promise<ProcessUserInputBaseResult> {
+  const sendAsPrompt = (extraMessages: AttachmentMessage[] = [], extractPromptAttachments = false): ProcessUserInputBaseResult => {
+    const promptId = randomUUID();
+    setPromptId(promptId);
+    logEvent('tengu_input_prompt', {});
+    // Log user prompt event for OTLP
+    void logOTelEvent('user_prompt', {
+      prompt_length: String(inputString.length),
+      prompt: redactIfDisabled(inputString),
+      'prompt.id': promptId
+    });
+    return {
+      messages: [createUserMessage({
+        content: prepareUserContent({
+          inputString,
+          precedingInputBlocks
+        }),
+        uuid: uuid
+      }), ...attachmentMessages, ...extraMessages],
+      shouldQuery: true,
+      ...(extractPromptAttachments && {
+        extractPromptAttachments: true
+      })
+    };
+  };
   const parsed = parseSlashCommand(inputString);
   if (!parsed) {
     logEvent('tengu_input_slash_missing', {});
+    if (context.options.isNonInteractiveSession) {
+      return sendAsPrompt();
+    }
     const errorMessage = 'Commands are in the form `/command [args]`';
     return {
       messages: [createSyntheticUserCaveatMessage(), ...attachmentMessages, createUserMessage({
@@ -357,14 +386,32 @@ export async function processSlashCommand(inputString: string, precedingInputBlo
       logEvent('tengu_input_slash_invalid', {
         input: commandName as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
       });
-      const unknownMessage = `Unknown skill: ${commandName}`;
+      const displayName = truncateCommandText(commandName);
+      const isNonInteractive = context.options.isNonInteractiveSession;
+
+      // Headless sessions drop commands that can't run there, so a real
+      // built-in shows up as unknown; say so instead of denying it exists.
+      const builtIn = isNonInteractive ? findBuiltInCommand(commandName) : undefined;
+      if (builtIn) {
+        const unavailableMessage = `/${escapeCommandText(displayName)} isn't available in this environment.`;
+        const echoedArgs = builtIn.isSensitive && parsedArgs.trim() ? '***' : escapeCommandText(parsedArgs);
+        return {
+          messages: [...attachmentMessages, createCommandInputMessage(`/${escapeCommandText(displayName)}${echoedArgs ? ` ${echoedArgs}` : ''}`), createCommandInputMessage(`<local-command-stdout>${unavailableMessage}</local-command-stdout>`)],
+          shouldQuery: false,
+          resultText: unavailableMessage
+        };
+      }
+      const suggestableCommands = getSuggestableCommands(context.options.commands);
+
+      // A headless caller can't see a warning and retype, so the model takes
+      // the message as a plain request, told the command didn't run.
+      if (isNonInteractive) {
+        return sendAsPrompt([createAttachmentMessage(createUnknownCommandFallback(commandName, suggestableCommands))], true);
+      }
+      const suggestion = findClosestCommandName(commandName, suggestableCommands);
+      const unknownMessage = suggestion ? `Unknown command: /${displayName}. Did you mean /${truncateCommandText(suggestion)}?` : `Unknown command: /${displayName}`;
       return {
-        messages: [createSyntheticUserCaveatMessage(), ...attachmentMessages, createUserMessage({
-          content: prepareUserContent({
-            inputString: unknownMessage,
-            precedingInputBlocks
-          })
-        }),
+        messages: [...attachmentMessages, createSystemMessage(unknownMessage, 'warning'),
         // gh-32591: preserve args so the user can copy/resubmit without
         // retyping. System warning is UI-only (filtered before API).
         ...(parsedArgs ? [createSystemMessage(`Args from unknown skill: ${parsedArgs}`, 'warning')] : [])],
@@ -372,25 +419,7 @@ export async function processSlashCommand(inputString: string, precedingInputBlo
         resultText: unknownMessage
       };
     }
-    const promptId = randomUUID();
-    setPromptId(promptId);
-    logEvent('tengu_input_prompt', {});
-    // Log user prompt event for OTLP
-    void logOTelEvent('user_prompt', {
-      prompt_length: String(inputString.length),
-      prompt: redactIfDisabled(inputString),
-      'prompt.id': promptId
-    });
-    return {
-      messages: [createUserMessage({
-        content: prepareUserContent({
-          inputString,
-          precedingInputBlocks
-        }),
-        uuid: uuid
-      }), ...attachmentMessages],
-      shouldQuery: true
-    };
+    return sendAsPrompt();
   }
 
   // Track slash command usage for feature discovery

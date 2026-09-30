@@ -283,6 +283,11 @@ export const builtInCommandNames = memoize(
     new Set(COMMANDS().flatMap(_ => [_.name, ...(_.aliases ?? [])])),
 )
 
+/** A built-in by name or alias, even when this session didn't load it. */
+export function findBuiltInCommand(commandName: string): Command | undefined {
+  return findCommand(commandName, COMMANDS())
+}
+
 async function getSkills(cwd: string): Promise<{
   skillDirCommands: Command[]
   pluginSkills: Command[]

@@ -28,6 +28,7 @@ import { mkdir, readFile, readdir, rename, stat, writeFile } from 'fs/promises'
 import { realpathSync } from 'fs'
 import type { IDESelection } from '../hooks/useIdeSelection.js'
 import { TODO_WRITE_TOOL_NAME } from '../tools/TodoWriteTool/constants.js'
+import type { UnknownCommandFallbackAttachment } from './processUserInput/unknownCommand.js'
 import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
 import { TASK_UPDATE_TOOL_NAME } from '../tools/TaskUpdateTool/constants.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
@@ -628,6 +629,7 @@ export type Attachment =
       model?: string
     }
   | AgentMentionAttachment
+  | UnknownCommandFallbackAttachment
   | {
       type: 'task_status'
       taskId: string

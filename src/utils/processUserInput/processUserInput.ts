@@ -81,6 +81,9 @@ export type ProcessUserInputBaseResult = {
   // Used by /discover to chain into the selected feature's command
   nextInput?: string
   submitNextInput?: boolean
+  // Slash input skips prompt attachments; set when it ends up sent to the
+  // model as a plain request, so @-mentions and the IDE selection still apply.
+  extractPromptAttachments?: boolean
 }
 
 export async function processUserInput({
@@ -550,6 +553,19 @@ async function processUserInputBase(
       isAlreadyProcessing,
       canUseTool,
     )
+    if (slashResult.extractPromptAttachments && !skipAttachments) {
+      const promptAttachments = await toArray(
+        getAttachmentMessages(
+          inputString,
+          context,
+          ideSelection ?? null,
+          [],
+          messages,
+          querySource,
+        ),
+      )
+      slashResult.messages.splice(1, 0, ...promptAttachments)
+    }
     return addImageMetadataMessage(slashResult, imageMetadataTexts)
   }
 

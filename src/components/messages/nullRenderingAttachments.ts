@@ -18,6 +18,7 @@ const NULL_RENDERING_TYPES = [
   'hook_cancelled',
   'command_permissions',
   'agent_mention',
+  'unknown_command_fallback',
   'budget_usd',
   'critical_system_reminder',
   'edited_image_file',

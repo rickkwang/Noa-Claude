@@ -163,6 +163,7 @@ import { escapeRegExp } from './stringUtils.js'
 import { getMainLoopModel } from './model/model.js'
 import { isTodoV2Enabled } from './tasks.js'
 import { areTodoToolsEnabled } from './todoTools.js'
+import { renderUnknownCommandFallback } from './processUserInput/unknownCommand.js'
 
 // Lazy import to avoid circular dependency (teammateMailbox -> teammate -> ... -> messages)
 function getTeammateMailbox(): typeof import('./teammateMailbox.js') {
@@ -4148,6 +4149,14 @@ You have exited auto mode. The user may now want to interact more directly. You 
           }),
         ])
       }
+    }
+    case 'unknown_command_fallback': {
+      return wrapMessagesInSystemReminder([
+        createUserMessage({
+          content: renderUnknownCommandFallback(attachment),
+          isMeta: true,
+        }),
+      ])
     }
     case 'agent_mention': {
       return wrapMessagesInSystemReminder([
