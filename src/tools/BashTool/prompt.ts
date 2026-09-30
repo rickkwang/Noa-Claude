@@ -22,7 +22,9 @@ import { FILE_READ_TOOL_NAME } from '../FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from '../FileWriteTool/prompt.js'
 import { GLOB_TOOL_NAME } from '../GlobTool/prompt.js'
 import { GREP_TOOL_NAME } from '../GrepTool/prompt.js'
-import { TodoWriteTool } from '../TodoWriteTool/TodoWriteTool.js'
+import { TASK_CREATE_TOOL_NAME } from '../TaskCreateTool/constants.js'
+import { TODO_WRITE_TOOL_NAME } from '../TodoWriteTool/constants.js'
+import { isTodoV2Enabled } from '../../utils/tasks.js'
 import { BASH_TOOL_NAME } from './toolName.js'
 
 export function getDefaultTimeoutMs(): number {
@@ -41,6 +43,9 @@ function getBackgroundUsageNote(): string | null {
 }
 
 function getCommitAndPRInstructions(): string {
+  const taskToolName = isTodoV2Enabled()
+    ? TASK_CREATE_TOOL_NAME
+    : TODO_WRITE_TOOL_NAME
   // Defense-in-depth: undercover instructions must survive even if the user
   // has disabled git instructions entirely. Attribution stripping and model-ID
   // hiding are mechanical and work regardless, but the explicit "don't blow
@@ -112,7 +117,7 @@ Git Safety Protocol:
 
 Important notes:
 - NEVER run additional commands to read or explore code, besides git bash commands
-- NEVER use the ${TodoWriteTool.name} or ${AGENT_TOOL_NAME} tools
+- NEVER use the ${taskToolName} or ${AGENT_TOOL_NAME} tools
 - DO NOT push to the remote repository unless the user explicitly asks you to do so
 - IMPORTANT: Never use git commands with the -i flag (like git rebase -i or git add -i) since they require interactive input which is not supported.
 - IMPORTANT: Do not use --no-edit with git rebase commands, as the --no-edit flag is not a valid option for git rebase.
@@ -154,7 +159,7 @@ EOF
 </example>
 
 Important:
-- DO NOT use the ${TodoWriteTool.name} or ${AGENT_TOOL_NAME} tools
+- DO NOT use the ${taskToolName} or ${AGENT_TOOL_NAME} tools
 - Return the PR URL when you're done, so the user can see it
 
 # Other common operations

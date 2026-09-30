@@ -20,6 +20,7 @@ import { installStreamJsonStdoutGuard } from 'src/utils/streamJsonStdoutGuard.js
 import type { ToolPermissionContext } from 'src/Tool.js'
 import type { ThinkingConfig } from 'src/utils/thinking.js'
 import { assembleToolPool, filterToolsByDenyRules } from 'src/tools.js'
+import { filterTodoToolsForModel } from 'src/utils/todoTools.js'
 import uniqBy from 'lodash-es/uniqBy.js'
 import { uniq } from 'src/utils/array.js'
 import { mergeAndFilterTools } from 'src/utils/toolPool.js'
@@ -1548,6 +1549,9 @@ function runHeadlessStreaming(
         tool => !toolMatchesName(tool, options.permissionPromptToolName!),
       )
     }
+    // The startup `tools` were built before --model/set_model settled, so the
+    // model-dependent todo gate runs again here on every turn.
+    allTools = filterTodoToolsForModel(allTools, getMainLoopModel())
     const initJsonSchema = getInitJsonSchema()
     if (initJsonSchema && !options.jsonSchema) {
       const syntheticOutputResult = createSyntheticOutputTool(initJsonSchema)

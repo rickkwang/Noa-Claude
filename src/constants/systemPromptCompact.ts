@@ -201,6 +201,45 @@ export function allowsWriteWithoutPriorRead(model: string | undefined): boolean 
 }
 
 /**
+ * Models that still get the task-tracking tools (TaskCreate/Get/Update/List or
+ * TodoWrite). Newer generations track multi-step work on their own, so upstream
+ * 2.1.285 stops registering either family for them; this is its list.
+ */
+const MODELS_WITH_TODO_TOOLS = new Set([
+  'claude-3-opus',
+  'claude-3-sonnet',
+  'claude-3-haiku',
+  'claude-3-5-sonnet',
+  'claude-3-5-haiku',
+  'claude-3-7-sonnet',
+  'claude-opus-4-0',
+  'claude-opus-4-1',
+  'claude-opus-4-5',
+  'claude-opus-4-6',
+  'claude-opus-4-7',
+  // Upstream lists 'claude-sonnet-4-0'; getCanonicalName folds it to this.
+  'claude-sonnet-4',
+  'claude-sonnet-4-5',
+  'claude-sonnet-4-6',
+  'claude-haiku-4-5',
+])
+
+/**
+ * Upstream keeps the tools when the model id is unknown or an inference
+ * profile. Noa goes further, as with the verbose head: any untrusted identity
+ * keeps them, since dropping a tool the model relies on costs more than
+ * carrying one it ignores.
+ */
+export function modelNeedsTodoTools(model: string | undefined): boolean {
+  if (!model) return true
+  if (isUntrustedModelIdentity() && !trustsThirdPartyModelIdentity()) {
+    return true
+  }
+  if (model.includes('application-inference-profile')) return true
+  return MODELS_WITH_TODO_TOOLS.has(getCanonicalName(model))
+}
+
+/**
  * Backends whose model id doesn't reliably identify the model actually serving
  * the request keep the verbose head.
  *

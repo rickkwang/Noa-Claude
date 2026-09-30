@@ -13,6 +13,8 @@ import {
   resetTaskList,
 } from '../utils/tasks.js'
 import { isTeamLead } from '../utils/teammate.js'
+import { areTodoToolsEnabled } from '../utils/todoTools.js'
+import { useMainLoopModel } from './useMainLoopModel.js'
 
 const HIDE_DELAY_MS = 5000
 const DEBOUNCE_MS = 50
@@ -212,14 +214,18 @@ const NOOP_SNAPSHOT = (): undefined => undefined
 
 /**
  * Hook to get the current task list for the persistent UI display.
- * Returns tasks when TodoV2 is enabled, otherwise returns undefined.
+ * Returns tasks when the model is offered the Task tools, otherwise undefined.
  * All hook instances share a single file watcher via TasksV2Store.
  * Hides the list after 5 seconds if there are no open tasks.
  */
 export function useTasksV2(): Task[] | undefined {
   const teamContext = useAppState(s => s.teamContext)
+  const mainLoopModel = useMainLoopModel()
 
-  const enabled = isTodoV2Enabled() && (!teamContext || isTeamLead(teamContext))
+  const enabled =
+    isTodoV2Enabled() &&
+    areTodoToolsEnabled(mainLoopModel) &&
+    (!teamContext || isTeamLead(teamContext))
 
   const store = enabled ? getStore() : null
 

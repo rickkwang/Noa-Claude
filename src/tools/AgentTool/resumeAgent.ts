@@ -186,7 +186,11 @@ export async function resumeAgentBackground({
   }
   const workerTools = isResumedFork
     ? toolUseContext.options.tools
-    : assembleToolPool(workerPermissionContext, appState.mcp.tools)
+    : assembleToolPool(
+        workerPermissionContext,
+        appState.mcp.tools,
+        toolUseContext.options.mainLoopModel,
+      )
 
   // Transcript/system-prompt reconstruction can await; recheck immediately
   // before allocating personality or a running background task.

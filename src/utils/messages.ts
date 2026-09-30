@@ -160,7 +160,9 @@ import {
   isPlanModeInterviewPhaseEnabled,
 } from './planModeV2.js'
 import { escapeRegExp } from './stringUtils.js'
+import { getMainLoopModel } from './model/model.js'
 import { isTodoV2Enabled } from './tasks.js'
+import { areTodoToolsEnabled } from './todoTools.js'
 
 // Lazy import to avoid circular dependency (teammateMailbox -> teammate -> ... -> messages)
 function getTeammateMailbox(): typeof import('./teammateMailbox.js') {
@@ -3838,6 +3840,9 @@ Read the team config to discover your teammates' names. Check the task list peri
       ])
     }
     case 'todo_reminder': {
+      if (isTodoV2Enabled() || !areTodoToolsEnabled(getMainLoopModel())) {
+        return []
+      }
       const todoItems = attachment.content
         .map((todo, index) => `${index + 1}. [${todo.status}] ${todo.content}`)
         .join('\n')
@@ -3855,7 +3860,7 @@ Read the team config to discover your teammates' names. Check the task list peri
       ])
     }
     case 'task_reminder': {
-      if (!isTodoV2Enabled()) {
+      if (!isTodoV2Enabled() || !areTodoToolsEnabled(getMainLoopModel())) {
         return []
       }
       const taskItems = attachment.content

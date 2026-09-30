@@ -188,6 +188,7 @@ import { dropRepeatedSessionStartContext, processSessionStartHooks } from '../ut
 import { executeSessionEndHooks, getSessionEndHookTimeoutMs } from '../utils/hooks.js';
 import { type IDESelection, useIdeSelection } from '../hooks/useIdeSelection.js';
 import { getTools, assembleToolPool } from '../tools.js';
+import { filterTodoToolsForModel } from '../utils/todoTools.js';
 import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js';
 import { resolveAgentTools } from '../tools/AgentTool/agentToolUtils.js';
 import { resumeAgentBackground } from '../tools/AgentTool/resumeAgent.js';
@@ -770,7 +771,8 @@ export function REPL({
   // /brief mid-session leaves the stale tool list (no SendUserMessage) and
   // the model emits plain text the brief filter hides.
   const isBriefOnly = useAppState(s => s.isBriefOnly);
-  const localTools = useMemo(() => getTools(toolPermissionContext), [toolPermissionContext, proactiveActive, isBriefOnly]);
+  // The todo/task tool gate depends on the model, so /model re-runs it too.
+  const localTools = useMemo(() => filterTodoToolsForModel(getTools(toolPermissionContext), mainLoopModel), [toolPermissionContext, proactiveActive, isBriefOnly, mainLoopModel]);
   useKickOffCheckAndDisableBypassPermissionsIfNeeded();
   useKickOffCheckAndDisableAutoModeIfNeeded();
   const [dynamicMcpConfig, setDynamicMcpConfig] = useState<Record<string, ScopedMcpServerConfig> | undefined>(initialDynamicMcpConfig);
@@ -885,7 +887,7 @@ export function REPL({
   useSwarmInitialization(setAppState, initialMessages, {
     enabled: !isRemoteSession
   });
-  const mergedTools = useMergedTools(combinedInitialTools, mcp.tools, toolPermissionContext);
+  const mergedTools = useMergedTools(combinedInitialTools, mcp.tools, toolPermissionContext, mainLoopModel);
 
   // Apply agent tool restrictions if mainThreadAgentDefinition is set
   const {
@@ -2574,7 +2576,7 @@ export function REPL({
     // for mid-query tool list updates.
     const computeTools = () => {
       const state = store.getState();
-      const assembled = assembleToolPool(state.toolPermissionContext, state.mcp.tools);
+      const assembled = assembleToolPool(state.toolPermissionContext, state.mcp.tools, mainLoopModel);
       const merged = mergeAndFilterTools(combinedInitialTools, assembled, state.toolPermissionContext.mode);
       if (!mainThreadAgentDefinition) return merged;
       return resolveAgentTools(mainThreadAgentDefinition, merged, false, true).resolvedTools;

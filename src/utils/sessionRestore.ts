@@ -638,8 +638,8 @@ export function restoreSessionStateFromLog(
     }
   }
 
-  // Restore TodoWrite state from transcript (SDK/non-interactive only).
-  // Interactive mode uses file-backed v2 tasks, so AppState.todos is unused there.
+  // Restore TodoWrite state from transcript (CLAUDE_CODE_ENABLE_TASKS=0 only).
+  // Otherwise tasks are file-backed, so AppState.todos is unused.
   if (!isTodoV2Enabled() && result.messages && result.messages.length > 0) {
     const todos = extractTodosFromTranscript(result.messages)
     if (todos.length > 0) {

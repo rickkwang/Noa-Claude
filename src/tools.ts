@@ -127,6 +127,8 @@ import { hasEmbeddedSearchTools } from './utils/embeddedTools.js'
 import { isEnvTruthy } from './utils/envUtils.js'
 import { isPowerShellToolEnabled } from './utils/shell/shellToolUtils.js'
 import { isAgentSwarmsEnabled } from './utils/agentSwarmsEnabled.js'
+import { getMainLoopModel } from './utils/model/model.js'
+import { filterTodoToolsForModel } from './utils/todoTools.js'
 import { isWorktreeModeEnabled } from './utils/worktreeModeEnabled.js'
 import {
   REPL_TOOL_NAME,
@@ -331,8 +333,12 @@ export const getTools = (permissionContext: ToolPermissionContext): Tools => {
 export function assembleToolPool(
   permissionContext: ToolPermissionContext,
   mcpTools: Tools,
+  mainLoopModel: string | undefined = getMainLoopModel(),
 ): Tools {
-  const builtInTools = getTools(permissionContext)
+  const builtInTools = filterTodoToolsForModel(
+    getTools(permissionContext),
+    mainLoopModel,
+  )
 
   // Filter out MCP tools that are in the deny list
   const allowedMcpTools = filterToolsByDenyRules(mcpTools, permissionContext)
