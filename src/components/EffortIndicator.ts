@@ -18,7 +18,7 @@ import {
  * Returns undefined if the model doesn't support effort.
  */
 export function getEffortNotificationText(
-  effortValue: EffortValue | undefined,
+  effortValue: EffortValue | null | undefined,
   model: string,
 ): string | undefined {
   if (!modelSupportsEffort(model)) return undefined

@@ -808,6 +808,9 @@ export const SettingsSchema = lazySchema(() =>
         .optional()
         .catch(undefined)
         .describe('Persisted effort level for supported models.'),
+      modelSettings: z.record(z.string(), z.object({
+        effortLevel: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().catch(undefined),
+      }).passthrough()).optional(),
       advisorModel: z
         .string()
         .optional()
@@ -1271,4 +1274,3 @@ export function isMcpServerUrlEntry(
 ): entry is { serverUrl: string } {
   return 'serverUrl' in entry && entry.serverUrl !== undefined
 }
-

@@ -10,6 +10,8 @@ import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEve
 import { useAppState, useSetAppState } from '../../state/AppState.js';
 import type { LocalJSXCommandCall } from '../../types/command.js';
 import type { EffortLevel } from '../../utils/effort.js';
+import { getInitialEffortSetting } from '../../utils/effort.js';
+import { useMainLoopModel } from '../../hooks/useMainLoopModel.js';
 import { isBilledAsExtraUsage } from '../../utils/extraUsage.js';
 import { clearFastModeCooldown, isFastModeAvailable, isFastModeEnabled, isFastModeSupportedByModel } from '../../utils/fastMode.js';
 import { MODEL_ALIASES } from '../../utils/model/aliases.js';
@@ -282,7 +284,9 @@ function ShowModelAndClose(t0) {
   } = t0;
   const mainLoopModel = useAppState(_temp7);
   const mainLoopModelForSession = useAppState(_temp8);
-  const effortValue = useAppState(_temp9);
+  const sessionEffort = useAppState(_temp9);
+  const model = useMainLoopModel();
+  const effortValue = sessionEffort === null ? undefined : sessionEffort ?? getInitialEffortSetting(model);
   const displayModel = renderModelLabel(mainLoopModel);
   const effortInfo = effortValue !== undefined ? ` (effort: ${effortValue})` : "";
   if (mainLoopModelForSession) {

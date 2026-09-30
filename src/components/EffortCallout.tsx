@@ -5,7 +5,7 @@ import { Box, Text } from '../ink.js';
 import { isMaxSubscriber, isProSubscriber, isTeamSubscriber } from '../utils/auth.js';
 import { getGlobalConfig, saveGlobalConfig } from '../utils/config.js';
 import type { EffortLevel } from '../utils/effort.js';
-import { convertEffortValueToLevel, getDefaultEffortForModel, getOpusDefaultEffortConfig, getSupportedEffortLevelsForModel, toPersistableEffort } from '../utils/effort.js';
+import { convertEffortValueToLevel, getDefaultEffortForModel, getEffortSettingsUpdate, getOpusDefaultEffortConfig, getSupportedEffortLevelsForModel, toPersistableEffort } from '../utils/effort.js';
 import { parseUserSpecifiedModel } from '../utils/model/model.js';
 import { updateSettingsForSource } from '../utils/settings/settings.js';
 import type { OptionWithDescription } from './CustomSelect/select.js';
@@ -19,7 +19,7 @@ type Props = {
 };
 const AUTO_DISMISS_MS = 30_000;
 export function EffortCallout(t0) {
-  const $ = _c(22);
+  const $ = _c(23);
   const {
     model,
     onDone
@@ -88,15 +88,15 @@ export function EffortCallout(t0) {
   }
   const defaultLevel = t7;
   let t8;
-  if ($[9] !== defaultLevel) {
+  if ($[9] !== defaultLevel || $[22] !== model) {
     t8 = value => {
       const effortLevel = value === defaultLevel ? undefined : value;
-      updateSettingsForSource("userSettings", {
-        effortLevel: toPersistableEffort(effortLevel)
-      });
+      const result = updateSettingsForSource("userSettings", getEffortSettingsUpdate(model, toPersistableEffort(effortLevel, model)));
+      if (result.error) return;
       onDoneRef.current(value);
     };
     $[9] = defaultLevel;
+    $[22] = model;
     $[10] = t8;
   } else {
     t8 = $[10];

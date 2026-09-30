@@ -402,8 +402,8 @@ export type AppState = DeepImmutable<{
   fastMode?: boolean
   // Advisor model for server-side advisor tool (undefined = disabled).
   advisorModel?: string
-  // Effort value
-  effortValue?: EffortValue
+  // undefined inherits saved settings; null explicitly uses the model default.
+  effortValue?: EffortValue | null
   // Set synchronously in launchUltraplan before the detached flow starts.
   // Prevents duplicate launches during the ~5s window before
   // ultraplanSessionUrl is set by teleportToRemote. Cleared by launchDetached

@@ -31,7 +31,7 @@ function permissionFlags(mode: string, inherited: boolean): string[] {
 function modelEffortFlags(appState: AppState): string[] {
   return [
     ...(appState.mainLoopModel ? ['--model', appState.mainLoopModel] : []),
-    ...(appState.effortValue !== undefined ? ['--effort', String(appState.effortValue)] : []),
+    ...(appState.effortValue !== undefined ? ['--effort', appState.effortValue === null ? 'auto' : String(appState.effortValue)] : []),
   ]
 }
 

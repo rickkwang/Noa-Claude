@@ -279,6 +279,7 @@ import { getModelOptions } from 'src/utils/model/modelOptions.js'
 import {
   getSupportedEffortLevelsForModel,
   modelSupportsEffort,
+  parseEffortValue,
   resolveAppliedEffort,
 } from 'src/utils/effort.js'
 import { modelSupportsAdaptiveThinking } from 'src/utils/thinking.js'
@@ -3781,6 +3782,13 @@ function runHeadlessStreaming(
           // (loadPluginHooks, sandbox-adapter) about the change, which the
           // previous direct call skipped.
           settingsChangeDetector.notifyChange('flagSettings')
+
+          if ('effortLevel' in incoming) {
+            const effortValue = incoming.effortLevel === null ? null : parseEffortValue(incoming.effortLevel)
+            if (effortValue !== undefined) {
+              setAppState(prev => ({ ...prev, effortValue }))
+            }
+          }
 
           // If the incoming settings include a model change, update the
           // override so getMainLoopModel() reflects it. The override has

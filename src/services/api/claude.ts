@@ -784,7 +784,7 @@ export type Options = {
   enablePromptCaching?: boolean
   skipCacheWrite?: boolean
   temperatureOverride?: number
-  effortValue?: EffortValue
+  effortValue?: EffortValue | null
   mcpTools: Tools
   hasPendingMcpServers?: boolean
   queryTracking?: QueryChainTracking

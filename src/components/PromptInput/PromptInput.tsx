@@ -67,6 +67,7 @@ import { getGlobalConfig, type PastedContent, saveGlobalConfig } from '../../uti
 import { logForDebugging } from '../../utils/debug.js';
 import { parseDirectMemberMessage, sendDirectMemberMessage } from '../../utils/directMemberMessage.js';
 import type { EffortLevel } from '../../utils/effort.js';
+import { getInitialEffortSetting } from '../../utils/effort.js';
 import { env } from '../../utils/env.js';
 import { errorMessage } from '../../utils/errors.js';
 import { isBilledAsExtraUsage } from '../../utils/extraUsage.js';
@@ -344,7 +345,7 @@ function PromptInput({
   const mainLoopModelForSession = useAppState(s => s.mainLoopModelForSession);
   const thinkingEnabled = useAppState(s => s.thinkingEnabled);
   const isFastMode = useAppState(s => isFastModeEnabled() ? s.fastMode : false);
-  const effortValue = useAppState(s => s.effortValue);
+  const effortValue = useAppState(s => s.effortValue === undefined ? getInitialEffortSetting(mainLoopModel) : s.effortValue);
   const viewedTeammate = getViewedTeammateTask(store.getState());
   const viewingAgentName = viewedTeammate?.identity.agentName;
   // identity.color is typed as `string | undefined` (not AgentColorName) because

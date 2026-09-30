@@ -192,10 +192,11 @@ export function configureProgramOptions(program: CommanderCommand): void {
       `Model for the current session. Provide an alias for the latest model (e.g. 'fable', 'opus', or 'sonnet') or a model's full name.`
     )
     .addOption(
-      new Option('--effort <level>', `Effort level for the current session (${EFFORT_LEVELS.join(', ')})`).argParser((rawValue: string) => {
+      new Option('--effort <level>', `Effort level for the current session (${EFFORT_LEVELS.join(', ')}, auto)`).argParser((rawValue: string) => {
+        if (rawValue.trim().toLowerCase() === 'auto') return 'auto'
         const value = rawValue.toLowerCase();
         if (!(EFFORT_LEVELS as readonly string[]).includes(value)) {
-          throw new InvalidArgumentError(`It must be one of: ${EFFORT_LEVELS.join(', ')}`);
+          throw new InvalidArgumentError(`It must be one of: ${EFFORT_LEVELS.join(', ')}, auto`);
         }
         return value;
       })

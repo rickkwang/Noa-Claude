@@ -9,10 +9,10 @@ import { getFastModeModelDisplay, isFastModeAvailable, isFastModeCooldown, isFas
 import { Box, Text } from '../ink.js';
 import { useKeybindings } from '../keybindings/useKeybinding.js';
 import { useAppState, useSetAppState } from '../state/AppState.js';
-import { convertEffortValueToLevel, type EffortLevel, getApiDefaultEffortForModel, getDefaultEffortForModel, getEffortEnvOverride, getSupportedEffortLevelsForModel, modelSupportsEffort, resolvePickerEffortPersistence, toPersistableEffort } from '../utils/effort.js';
+import { convertEffortValueToLevel, type EffortLevel, getApiDefaultEffortForModel, getDefaultEffortForModel, getEffortEnvOverride, getEffortSettingsUpdate, getInitialEffortSetting, getSupportedEffortLevelsForModel, modelSupportsEffort, toPersistableEffort } from '../utils/effort.js';
 import { getDefaultMainLoopModel, type ModelSetting, modelDisplayString, parseUserSpecifiedModel, renderDefaultModelSetting, getDefaultMainLoopModelSetting } from '../utils/model/model.js';
 import { getModelOptions } from '../utils/model/modelOptions.js';
-import { getSettingsForSource, updateSettingsForSource } from '../utils/settings/settings.js';
+import { updateSettingsForSource } from '../utils/settings/settings.js';
 import { ConfigurableShortcutHint } from './ConfigurableShortcutHint.js';
 import { Select } from './CustomSelect/index.js';
 import { Byline } from './design-system/Byline.js';
@@ -44,7 +44,7 @@ export type Props = {
 };
 const NO_PREFERENCE = '__NO_PREFERENCE__';
 export function ModelPicker(t0) {
-  const $ = _c(94);
+  const $ = _c(95);
   const {
     initial,
     sessionModel,
@@ -68,7 +68,7 @@ export function ModelPicker(t0) {
   const effortValue = useAppState(_temp2);
   let t1;
   if ($[0] !== effortValue) {
-    t1 = effortValue !== undefined ? convertEffortValueToLevel(effortValue) : undefined;
+    t1 = effortValue != null ? convertEffortValueToLevel(effortValue) : undefined;
     $[0] = effortValue;
     $[1] = t1;
   } else {
@@ -174,9 +174,10 @@ export function ModelPicker(t0) {
   const focusedModelForEffort = resolveOptionModel(focusedValue);
   const focusedSupportedEffortLevels = focusedModelForEffort ? getSupportedEffortLevelsForModel(focusedModelForEffort) : [];
   let t9;
-  if ($[23] !== focusedValue) {
-    t9 = getDefaultEffortLevelForOption(focusedValue);
+  if ($[23] !== focusedValue || $[94] !== effortValue) {
+    t9 = getDefaultEffortLevelForOption(focusedValue, effortValue !== null);
     $[23] = focusedValue;
+    $[94] = effortValue;
     $[24] = t9;
   } else {
     t9 = $[24];
@@ -187,8 +188,8 @@ export function ModelPicker(t0) {
   if ($[25] !== effortValue || $[26] !== hasToggledEffort) {
     t10 = value => {
       setFocusedValue(value);
-      if (!hasToggledEffort && effortValue === undefined) {
-        setEffort(getDefaultEffortLevelForOption(value));
+      if (!hasToggledEffort && effortValue == null) {
+        setEffort(getDefaultEffortLevelForOption(value, effortValue !== null));
       }
     };
     $[25] = effortValue;
@@ -268,13 +269,13 @@ export function ModelPicker(t0) {
       logEvent("tengu_model_command_menu_effort", {
         effort: effort as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
       });
-      if (!skipSettingsWrite) {
-        const effortLevel = resolvePickerEffortPersistence(effort, getDefaultEffortLevelForOption(value_0), getSettingsForSource("userSettings")?.effortLevel, hasToggledEffort);
-        const persistable = toPersistableEffort(effortLevel, resolveOptionModel(value_0));
+      if (!skipSettingsWrite && hasToggledEffort) {
+        const selectedModel = resolveOptionModel(value_0) ?? getDefaultMainLoopModel();
+        const effortLevel = effort ?? getDefaultEffortLevelForOption(value_0);
+        const persistable = toPersistableEffort(effortLevel, selectedModel);
         if (persistable !== undefined) {
-          updateSettingsForSource("userSettings", {
-            effortLevel: persistable
-          });
+          const result = updateSettingsForSource("userSettings", getEffortSettingsUpdate(selectedModel, persistable));
+          if (result.error) return;
         }
         setAppState(prev_0 => ({
           ...prev_0,
@@ -494,8 +495,8 @@ function clampEffortLevelForModel(effort: EffortLevel | undefined, supportedLeve
   if (supportedLevels.includes('medium')) return 'medium';
   return supportedLevels[0];
 }
-function getDefaultEffortLevelForOption(value?: string): EffortLevel {
+function getDefaultEffortLevelForOption(value?: string, inherit = true): EffortLevel {
   const resolved = resolveOptionModel(value) ?? getDefaultMainLoopModel();
-  const defaultValue = getDefaultEffortForModel(resolved);
+  const defaultValue = (inherit ? getInitialEffortSetting(resolved) : undefined) ?? getDefaultEffortForModel(resolved);
   return defaultValue !== undefined ? convertEffortValueToLevel(defaultValue) : getApiDefaultEffortForModel(resolved);
 }

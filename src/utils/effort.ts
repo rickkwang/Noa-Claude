@@ -1,11 +1,12 @@
 // @ts-nocheck
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
-import { getInitialSettings } from './settings/settings.js'
+import { getInitialSettings, getSettingsForSource } from './settings/settings.js'
+import { getEnabledSettingSources } from './settings/constants.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from 'src/services/analytics/growthbook.js'
 import { getAPIProvider, isFirstPartyAnthropicBaseUrl } from './model/providers.js'
 import { get3PModelCapabilityOverride } from './model/modelSupportOverrides.js'
 import { getActiveProviderEffortLevels } from './model/providerModels.js'
-import { getCanonicalName } from './model/model.js'
+import { getCanonicalName, parseUserSpecifiedModel } from './model/model.js'
 import {
   getAntModelOverrideConfig,
   resolveAntModel,
@@ -250,10 +251,32 @@ export function toPersistableEffort(
 export function getInitialEffortSetting(
   model?: string,
 ): EffortLevel | undefined {
-  // toPersistableEffort filters 'max' for non-ants on read, so a manually
-  // edited settings.json doesn't leak session-scoped max into a fresh session
-  // — unless the starting model's provider declares max.
+  if (model !== undefined) {
+    const key = getEffortModelKey(model)
+    for (const source of [...getEnabledSettingSources()].reverse()) {
+      const settings = getSettingsForSource(source)
+      const table = settings?.modelSettings
+      const scoped = table && (Object.hasOwn(table, key) && table[key]?.effortLevel !== undefined ? table[key] :
+        Object.entries(table).find(([name, entry]) => entry?.effortLevel !== undefined && getEffortModelKey(name) === key)?.[1])
+      if (scoped?.effortLevel !== undefined) {
+        return toPersistableEffort(scoped.effortLevel, model)
+      }
+      if (settings?.effortLevel !== undefined) {
+        return toPersistableEffort(settings.effortLevel, model)
+      }
+    }
+  }
   return toPersistableEffort(getInitialSettings().effortLevel, model)
+}
+
+function getEffortModelKey(model: string): string {
+  return parseUserSpecifiedModel(model).replace(/\[1m\]$/i, '')
+}
+
+export function getEffortSettingsUpdate(model: string, value: EffortLevel | undefined) {
+  const key = getEffortModelKey(model)
+  return Object.hasOwn(Object.prototype, key) ? { effortLevel: value } :
+    { modelSettings: { [key]: { effortLevel: value } } }
 }
 
 /**
@@ -290,21 +313,22 @@ export function getEffortEnvOverride(): EffortValue | null | undefined {
 /**
  * Resolve the effort value that will actually be sent to the API for a given
  * model, following the full precedence chain:
- *   env CLAUDE_CODE_EFFORT_LEVEL → appState.effortValue → model default
+ *   env CLAUDE_CODE_EFFORT_LEVEL → appState.effortValue → saved model effort → model default
  *
  * Returns undefined when no effort parameter should be sent (env set to
  * 'unset', or no default exists for the model).
  */
 export function resolveAppliedEffort(
   model: string,
-  appStateEffortValue: EffortValue | undefined,
+  appStateEffortValue: EffortValue | null | undefined,
 ): EffortValue | undefined {
   const envOverride = getEffortEnvOverride()
   if (envOverride === null) {
     return undefined
   }
   const resolved =
-    envOverride ?? appStateEffortValue ?? getDefaultEffortForModel(model)
+    envOverride ?? (appStateEffortValue === null ? getDefaultEffortForModel(model) :
+      appStateEffortValue ?? getInitialEffortSetting(model) ?? getDefaultEffortForModel(model))
   const supportedLevels = getSupportedEffortLevelsForModel(model)
   if (supportedLevels.length === 0) {
     return undefined
@@ -337,7 +361,7 @@ export function getApiDefaultEffortForModel(model: string): EffortLevel {
  */
 export function getDisplayedEffortLevel(
   model: string,
-  appStateEffort: EffortValue | undefined,
+  appStateEffort: EffortValue | null | undefined,
 ): EffortLevel {
   const resolved =
     resolveAppliedEffort(model, appStateEffort) ??
@@ -353,9 +377,9 @@ export function getDisplayedEffortLevel(
  */
 export function getEffortSuffix(
   model: string,
-  effortValue: EffortValue | undefined,
+  effortValue: EffortValue | null | undefined,
 ): string {
-  if (effortValue === undefined) return ''
+  if (effortValue === null || effortValue === undefined && getInitialEffortSetting(model) === undefined) return ''
   const resolved = resolveAppliedEffort(model, effortValue)
   if (resolved === undefined) return ''
   return ` with ${convertEffortValueToLevel(resolved)} effort`

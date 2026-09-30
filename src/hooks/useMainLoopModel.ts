@@ -15,6 +15,7 @@ import {
 export function useMainLoopModel(): ModelName {
   const mainLoopModel = useAppState(s => s.mainLoopModel)
   const mainLoopModelForSession = useAppState(s => s.mainLoopModelForSession)
+  useAppState(s => s.settings)
   // Auth/provider switches bump authVersion and may rewrite env-backed model
   // settings without touching mainLoopModel fields.
   useAppState(s => s.authVersion)

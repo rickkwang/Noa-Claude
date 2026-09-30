@@ -7,7 +7,7 @@ import { useMainLoopModel } from '../../hooks/useMainLoopModel.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from '../../services/analytics/index.js';
 import { useAppState, useSetAppState } from '../../state/AppState.js';
 import type { LocalJSXCommandOnDone } from '../../types/command.js';
-import { type EffortValue, getDisplayedEffortLevel, getEffortEnvOverride, getEffortValueDescription, isEffortLevel, modelSupportsEffort, resolveAppliedEffort, toPersistableEffort } from '../../utils/effort.js';
+import { type EffortValue, convertEffortValueToLevel, getDisplayedEffortLevel, getEffortEnvOverride, getEffortSettingsUpdate, getInitialEffortSetting, getEffortValueDescription, isEffortLevel, modelSupportsEffort, resolveAppliedEffort, toPersistableEffort } from '../../utils/effort.js';
 import { getMainLoopModel } from '../../utils/model/model.js';
 import { get3PModelCapabilityOverride } from '../../utils/model/modelSupportOverrides.js';
 import { getAPIProvider, isFirstPartyAnthropicBaseUrl } from '../../utils/model/providers.js';
@@ -19,7 +19,7 @@ const COMMON_HELP_ARGS = ['help', '-h', '--help'];
 type EffortCommandResult = {
   message: string;
   effortUpdate?: {
-    value: EffortValue | undefined;
+    value: EffortValue | null | undefined;
   };
 };
 function setEffortValue(effortValue: EffortValue, model?: string): EffortCommandResult {
@@ -30,9 +30,7 @@ function setEffortValue(effortValue: EffortValue, model?: string): EffortCommand
   }
   const persistable = toPersistableEffort(effortValue, model);
   if (persistable !== undefined) {
-    const result = updateSettingsForSource('userSettings', {
-      effortLevel: persistable
-    });
+    const result = updateSettingsForSource('userSettings', getEffortSettingsUpdate(model ?? getMainLoopModel(), persistable));
     if (result.error) {
       return {
         message: `Failed to set effort level: ${result.error.message}`
@@ -85,9 +83,9 @@ function isEffortSentToProvider(model: string): boolean {
   return get3PModelCapabilityOverride(model, 'effort') === true || get3PModelCapabilityOverride(model, 'max_effort') === true || get3PModelCapabilityOverride(model, 'xhigh_effort') === true;
 }
 
-export function showCurrentEffort(appStateEffort: EffortValue | undefined, model: string): EffortCommandResult {
+export function showCurrentEffort(appStateEffort: EffortValue | null | undefined, model: string): EffortCommandResult {
   const envOverride = getEffortEnvOverride();
-  const requestedValue = envOverride === null ? undefined : envOverride ?? appStateEffort;
+  const requestedValue = envOverride === null ? undefined : envOverride ?? (appStateEffort === null ? undefined : appStateEffort ?? getInitialEffortSetting(model));
   if (!modelSupportsEffort(model)) {
     return {
       message:
@@ -114,10 +112,8 @@ export function showCurrentEffort(appStateEffort: EffortValue | undefined, model
     message: `Current effort level: ${appliedValue}${configuredSuffix} (${description})`
   };
 }
-function unsetEffortLevel(): EffortCommandResult {
-  const result = updateSettingsForSource('userSettings', {
-    effortLevel: undefined
-  });
+function unsetEffortLevel(model: string): EffortCommandResult {
+  const result = updateSettingsForSource('userSettings', getEffortSettingsUpdate(model, undefined));
   if (result.error) {
     return {
       message: `Failed to set effort level: ${result.error.message}`
@@ -134,21 +130,21 @@ function unsetEffortLevel(): EffortCommandResult {
     return {
       message: `Cleared effort from settings, but CLAUDE_CODE_EFFORT_LEVEL=${envRaw} still controls this session`,
       effortUpdate: {
-        value: undefined
+        value: null
       }
     };
   }
   return {
     message: 'Effort level set to auto',
     effortUpdate: {
-      value: undefined
+      value: null
     }
   };
 }
 export function executeEffort(args: string, model?: string): EffortCommandResult {
   const normalized = args.toLowerCase();
   if (normalized === 'auto' || normalized === 'unset') {
-    return unsetEffortLevel();
+    return unsetEffortLevel(model ?? getMainLoopModel());
   }
   if (!isEffortLevel(normalized)) {
     return {
@@ -281,12 +277,9 @@ function EffortSlider({ onDone, model }: { onDone: LocalJSXCommandOnDone; model:
 
   const initialIdx = (() => {
     const envOverride = getEffortEnvOverride();
-    const effective = envOverride ?? (typeof currentEffort === 'string' ? currentEffort : undefined);
-    if (effective) {
-      const i = SLIDER_LEVELS.indexOf(effective as any);
-      if (i !== -1) return i;
-    }
-    return 1;
+    const effective = envOverride === null ? getDisplayedEffortLevel(model, currentEffort) :
+      envOverride ?? (currentEffort === null ? undefined : currentEffort ?? getInitialEffortSetting(model)) ?? getDisplayedEffortLevel(model, currentEffort);
+    return SLIDER_LEVELS.indexOf(typeof effective === 'number' ? convertEffortValueToLevel(effective) : effective);
   })();
 
   const [selectedIdx, setSelectedIdx] = useState(initialIdx);

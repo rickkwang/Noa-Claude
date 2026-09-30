@@ -205,7 +205,6 @@ function StatusLineInner({
   const abortControllerRef = useRef<AbortController | undefined>(undefined);
   const permissionMode = useAppState(s => s.toolPermissionContext.mode);
   const additionalWorkingDirectories = useAppState(s => s.toolPermissionContext.additionalWorkingDirectories);
-  const effortValue = useAppState(s => s.effortValue);
   const thinkingEnabled = useAppState(s => s.thinkingEnabled);
   const fastMode = useAppState(s => s.fastMode ?? false);
   const prStatus = useAppState(s => s.prStatus);
@@ -219,6 +218,7 @@ function StatusLineInner({
   // re-reads settings.json on every call, so another session's /model write
   // would leak into this session's statusline (anthropics/claude-code#37596).
   const mainLoopModel = useMainLoopModel();
+  const effortValue = useAppState(s => modelSupportsEffort(mainLoopModel) ? getDisplayedEffortLevel(mainLoopModel, s.effortValue) : undefined);
 
   // Keep latest values in refs for stable callback access
   const settingsRef = useRef(settings);
