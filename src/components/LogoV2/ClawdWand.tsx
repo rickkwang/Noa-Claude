@@ -1,8 +1,8 @@
-// @ts-nocheck
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { Text } from '../../ink.js';
 import { useAppState } from '../../state/AppState.js';
+import type { AppState } from '../../state/AppStateStore.js';
 import { useMainLoopModel } from '../../hooks/useMainLoopModel.js';
 import { getDisplayedEffortLevel } from '../../utils/effort.js';
 import { useResolvedTheme, useTheme } from '../design-system/ThemeProvider.js';
@@ -82,7 +82,8 @@ export function wandRipplePaint(base: RGB | null, ms: number, light: boolean): P
 
 export function parseRgb(color: string | undefined): RGB | null {
   const m = color?.match(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/);
-  return m ? { r: +m[1], g: +m[2], b: +m[3] } : null;
+  // The pattern guarantees all three groups when it matches.
+  return m ? { r: +m[1]!, g: +m[2]!, b: +m[3]! } : null;
 }
 
 /** Shared animation clock (ms) for the wand flame and the body ripple. */
@@ -109,7 +110,7 @@ export function useWandPaint(active: boolean, ms: number): Paint | undefined {
 /** True when the wand should be shown: high (xhigh/max) effort on the main model. */
 export function useWandActive(): boolean {
   const model = useMainLoopModel();
-  const effortValue = useAppState((s) => s.effortValue);
+  const effortValue = useAppState((s: AppState) => s.effortValue);
   try {
     const level = getDisplayedEffortLevel(model, effortValue);
     return level === 'xhigh' || level === 'max';
