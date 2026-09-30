@@ -44,9 +44,11 @@ describe('native 1M context', () => {
     expect(getContextWindowForModel('claude-haiku-4-5-20251001')).toBe(200_000)
   })
 
-  test('a non-Anthropic base URL does not get native 1M', () => {
+  test('a non-Anthropic base URL still gets native 1M', () => {
+    // The catalog flag is trusted over the gateway's unknown ceiling; a
+    // gateway that stops at 200k is capped via /autocompact 200k instead.
     process.env.ANTHROPIC_BASE_URL = 'https://proxy.example.com'
-    expect(getContextWindowForModel('claude-opus-4-8')).toBe(200_000)
+    expect(getContextWindowForModel('claude-opus-4-8')).toBe(1_000_000)
   })
 
   test('Opus 4.8 has no native 1M on Bedrock; Sonnet 5 does', () => {

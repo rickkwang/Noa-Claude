@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { getCanonicalName } from './model.js'
-import { getAPIProvider, isFirstPartyAnthropicBaseUrl } from './providers.js'
+import { getAPIProvider } from './providers.js'
 
 /**
  * Models that serve a 1M context window natively — no `[1m]` suffix and no
@@ -40,9 +40,10 @@ const NATIVE_1M_MODELS: Record<string, { thirdParty: ReadonlySet<string> }> = {
 /**
  * Whether this model serves 1M context natively for the current backend.
  *
- * First-party access is gated on the base URL actually pointing at Anthropic —
- * a proxy or gateway sitting on ANTHROPIC_BASE_URL may not honour 1M, and
- * over-reporting the window would push auto-compact past the real limit.
+ * First-party provider counts even behind a custom ANTHROPIC_BASE_URL: the
+ * catalog flag is trusted over the gateway's unknown ceiling. A gateway that
+ * stops at 200k is handled by the user setting `/autocompact 200k` (or
+ * CLAUDE_CODE_AUTO_COMPACT_WINDOW), not by under-reporting every session.
  */
 export function hasNative1mContext(model: string): boolean {
   const entry = NATIVE_1M_MODELS[getCanonicalName(model)]
@@ -52,7 +53,7 @@ export function hasNative1mContext(model: string): boolean {
 
   const provider = getAPIProvider()
   if (provider === 'firstParty') {
-    return isFirstPartyAnthropicBaseUrl()
+    return true
   }
   return entry.thirdParty.has(provider)
 }
