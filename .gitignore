@@ -16,3 +16,13 @@ latest
 .claude-agent/mcp.json
 AGENTS.md
 CLAUDE.local.md
+
+# eval artifacts (derived / bulk output)
+.claude/hillclimb/*/traces/
+.claude/hillclimb/*/*/traces/
+.claude/hillclimb/*/report.html
+.claude/hillclimb/*/trajectory/
+.claude/hillclimb/*/_archive/
+.claude/hillclimb/*/baseline/ref/
+.claude/hillclimb/*/v9/
+.claude/hillclimb/*/*/progress.txt
