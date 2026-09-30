@@ -25,7 +25,7 @@ import { type AdvisorBlock, isAdvisorBlock } from '../utils/advisor.js';
 import { isAgentSwarmsEnabled } from '../utils/agentSwarmsEnabled.js';
 import { collapseBackgroundBashNotifications } from '../utils/collapseBackgroundBashNotifications.js';
 import { collapseHookSummaries } from '../utils/collapseHookSummaries.js';
-import { collapseReadSearchGroups } from '../utils/collapseReadSearch.js';
+import { collapseReadSearchGroups, getToolUseIdsFromCollapsedGroup } from '../utils/collapseReadSearch.js';
 import { collapseTeammateShutdowns } from '../utils/collapseTeammateShutdowns.js';
 import { getGlobalConfig } from '../utils/config.js';
 import { isEnvTruthy } from '../utils/envUtils.js';
@@ -36,6 +36,7 @@ import { plural } from '../utils/stringUtils.js';
 import { isFallbackToolErrorFolded } from './FallbackToolUseErrorMessage.js';
 import { hasTeammateMessageTag } from './messages/UserTeammateMessage.js';
 import { isBashResultTruncated } from '../tools/BashTool/utils.js';
+import { getReplPrimitiveTools } from '../tools/REPLTool/primitiveTools.js';
 import { renderableSearchText } from '../utils/transcriptSearch.js';
 import { Divider } from './design-system/Divider.js';
 import type { UnseenDivider } from './FullscreenLayout.js';
@@ -362,7 +363,7 @@ export function computeSliceStart(collapsed: ReadonlyArray<{
 }
 const MessagesImpl = ({
   messages,
-  tools,
+  tools: executionTools,
   commands,
   verbose,
   toolJSX,
@@ -455,6 +456,7 @@ const MessagesImpl = ({
   // only passed when isFullscreenEnvEnabled() is true (REPL.tsx gates it),
   // so scrollRef's presence is the signal.
   const virtualScrollRuntimeGate = scrollRef != null && !disableVirtualScroll;
+  const tools = useMemo(() => isTranscriptMode && virtualScrollRuntimeGate ? [...executionTools, ...getReplPrimitiveTools().filter(tool => !findToolByName(executionTools, tool.name))] : executionTools, [executionTools, isTranscriptMode, virtualScrollRuntimeGate]);
   const shouldTruncate = isTranscriptMode && !showAllInTranscript && !virtualScrollRuntimeGate;
 
   // Anchor for the first rendered message in the non-virtualized cap slice.
@@ -513,7 +515,7 @@ const MessagesImpl = ({
     const {
       messages: groupedMessages
     } = applyGrouping(messagesToShow, tools, verbose);
-    const collapsed = collapseBackgroundBashNotifications(collapseHookSummaries(collapseTeammateShutdowns(collapseReadSearchGroups(groupedMessages, tools))), verbose);
+    const collapsed = collapseBackgroundBashNotifications(collapseHookSummaries(collapseTeammateShutdowns(isTranscriptMode && virtualScrollRuntimeGate ? groupedMessages : collapseReadSearchGroups(groupedMessages, tools))), verbose);
     const transcriptLookups = buildTranscriptLookups(normalizedMessages, messagesToShow);
     const hiddenMessageCount = messagesToShowNotTruncated.length - MAX_MESSAGES_TO_SHOW_IN_TRANSCRIPT_MODE;
     return {
@@ -522,7 +524,7 @@ const MessagesImpl = ({
       hasTruncatedMessages,
       hiddenMessageCount
     };
-  }, [verbose, normalizedMessages, isTranscriptMode, syntheticStreamingToolUseMessages, shouldTruncate, tools, isBriefOnly]);
+  }, [verbose, normalizedMessages, isTranscriptMode, virtualScrollRuntimeGate, syntheticStreamingToolUseMessages, shouldTruncate, tools, isBriefOnly]);
 
   // Cheap join — the two halves are memoized independently above, so a progress
   // tick rebuilds only the progress half.
@@ -829,9 +831,6 @@ export const Messages = React.memo(MessagesImpl, (prev, next) => {
   return true;
 });
 export function shouldRenderStatically(message: RenderableMessage, streamingToolUseIDs: Set<string>, inProgressToolUseIDs: Set<string>, siblingToolUseIDs: ReadonlySet<string>, screen: Screen, lookups: ReturnType<typeof buildMessageLookups>): boolean {
-  if (screen === 'transcript') {
-    return true;
-  }
   switch (message.type) {
     case 'attachment':
     case 'user':
@@ -877,9 +876,8 @@ export function shouldRenderStatically(message: RenderableMessage, streamingTool
       }
     case 'collapsed_read_search':
       {
-        // In prompt mode, never mark as static to prevent flicker between API turns
-        // (In transcript mode, we already returned true at the top of this function)
-        return false;
+        // Prompt groups stay live between API turns; transcript groups freeze only after completion.
+        return screen === 'transcript' && getToolUseIdsFromCollapsedGroup(message).every(id => lookups.resolvedToolUseIDs.has(id));
       }
   }
 }
