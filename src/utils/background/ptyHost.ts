@@ -94,7 +94,7 @@ export async function runPtyHost(argv: string[]): Promise<never> {
   try {
     child = Bun.spawn(command, {
       cwd: process.cwd(),
-      env: { ...process.env, TERM: process.env.TERM || 'xterm-256color' },
+      env: childEnv(),
       terminal,
     })
   } catch (e) {
@@ -219,4 +219,17 @@ function lastLine(chunks: Buffer[]): string | undefined {
     .filter(Boolean)
   const line = lines.at(-1)
   return line ? line.slice(0, 200) : undefined
+}
+
+/**
+ * The session runs in a PTY that any terminal can attach to later, so it must
+ * not carry the launcher's tmux marker: that clamps colors to 256 for the
+ * session's whole life (the brand orange turns salmon) even when it is
+ * reopened from a truecolor terminal.
+ */
+function childEnv(): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = { ...process.env, TERM: process.env.TERM || 'xterm-256color' }
+  delete env.TMUX
+  delete env.TMUX_PANE
+  return env
 }
