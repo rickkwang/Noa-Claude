@@ -303,7 +303,7 @@ export function DiffDialog(t0) {
   }
   let t24;
   if ($[55] !== diffData.files || $[56] !== emptyMessage || $[73] !== diffData.loading || $[57] !== selectedFile?.isBinary || $[58] !== selectedFile?.isLargeFile || $[59] !== selectedFile?.isTruncated || $[60] !== selectedFile?.isUntracked || $[61] !== selectedFile?.path || $[62] !== selectedHunks || $[63] !== selectedIndex || $[64] !== viewMode) {
-    t24 = diffData.files.length === 0 ? <Box marginTop={1}>{diffData.loading ? <LoadingState message="Loading diff…" dimColor /> : <Text dimColor={true}>{emptyMessage}</Text>}</Box> : viewMode === "list" ? <Box flexDirection="column" marginTop={1}><DiffFileList files={diffData.files} selectedIndex={selectedIndex} /></Box> : <Box flexDirection="column" marginTop={1}><DiffDetailView filePath={selectedFile?.path || ""} hunks={selectedHunks} isLargeFile={selectedFile?.isLargeFile} isBinary={selectedFile?.isBinary} isTruncated={selectedFile?.isTruncated} isUntracked={selectedFile?.isUntracked} /></Box>;
+    t24 = diffData.files.length === 0 ? <Box marginTop={1}>{diffData.loading ? <LoadingState message="Loading diff…" dimColor /> : <Text dimColor={true}>{emptyMessage}</Text>}</Box> : viewMode === "list" ? <Box flexDirection="column" marginTop={1}><DiffFileList files={diffData.files} selectedIndex={selectedIndex} onSelectIndex={setSelectedIndex} /></Box> : <Box flexDirection="column" marginTop={1}><DiffDetailView filePath={selectedFile?.path || ""} hunks={selectedHunks} isLargeFile={selectedFile?.isLargeFile} isBinary={selectedFile?.isBinary} isTruncated={selectedFile?.isTruncated} isUntracked={selectedFile?.isUntracked} /></Box>;
     $[55] = diffData.files;
     $[56] = emptyMessage;
     $[73] = diffData.loading;

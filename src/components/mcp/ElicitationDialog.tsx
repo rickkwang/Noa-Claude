@@ -17,6 +17,7 @@ import { ConfigurableShortcutHint } from '../ConfigurableShortcutHint.js';
 import { Byline } from '../design-system/Byline.js';
 import { Dialog } from '../design-system/Dialog.js';
 import { KeyboardShortcutHint } from '../design-system/KeyboardShortcutHint.js';
+import { MoreRow } from '../ui/MoreRow.js';
 import TextInput from '../TextInput.js';
 type Props = {
   event: ElicitationRequestEvent;
@@ -287,7 +288,7 @@ function ElicitationFormDialog({
       updateValidationError(fieldName);
     }
   }
-  function handleNavigation(direction: 'up' | 'down'): void {
+  function handleNavigation(direction: 'up' | 'down', targetIndex?: number): void {
     // Collapse accordion and validate on navigate away
     if (currentField && isMultiSelectEnumSchema(currentField.schema)) {
       validateMultiSelect(currentField.name, currentField.schema);
@@ -315,7 +316,7 @@ function ElicitationFormDialog({
     // Fields + accept + decline
     const itemCount = schemaFields.length + 2;
     const index = currentFieldIndex ?? (focusedButton === 'accept' ? schemaFields.length : focusedButton === 'decline' ? schemaFields.length + 1 : undefined);
-    const nextIndex = index !== undefined ? (index + (direction === 'up' ? itemCount - 1 : 1)) % itemCount : 0;
+    const nextIndex = targetIndex ?? (index !== undefined ? (index + (direction === 'up' ? itemCount - 1 : 1)) % itemCount : 0);
     if (nextIndex < schemaFields.length) {
       setCurrentFieldIndex(nextIndex);
       setFocusedButton(null);
@@ -774,16 +775,10 @@ function ElicitationFormDialog({
       end
     };
   }, [schemaFields.length, maxVisibleFields, currentFieldIndex]);
-  const hasFieldsAbove = scrollWindow.start > 0;
-  const hasFieldsBelow = scrollWindow.end < schemaFields.length;
   function renderFormFields(): React.ReactNode {
     if (!schemaFields.length) return null;
     return <Box flexDirection="column">
-        {hasFieldsAbove && <Box marginLeft={2}>
-            <Text dimColor>
-              {figures.arrowUp} {scrollWindow.start} more above
-            </Text>
-          </Box>}
+        <MoreRow direction="above" count={scrollWindow.start} onPress={() => handleNavigation('up', 0)} />
         {schemaFields.slice(scrollWindow.start, scrollWindow.end).map((field_0, visibleIdx) => {
         const index_0 = scrollWindow.start + visibleIdx;
         const {
@@ -947,12 +942,7 @@ function ElicitationFormDialog({
                 </Box>
               </Box>;
       })}
-        {hasFieldsBelow && <Box marginLeft={2}>
-            <Text dimColor>
-              {figures.arrowDown} {schemaFields.length - scrollWindow.end} more
-              below
-            </Text>
-          </Box>}
+        <MoreRow direction="below" count={schemaFields.length - scrollWindow.end} onPress={() => handleNavigation('down', schemaFields.length - 1)} />
       </Box>;
   }
   return <Dialog title={`MCP server \u201c${serverName}\u201d requests your input`} subtitle={`\n${message}`} color="permission" onCancel={() => onResponse('cancel')} isCancelActive={(!currentField || !!focusedButton) && !expandedAccordion} inputGuide={exitState => exitState.pending ? <Text>Press {exitState.keyName} again to exit</Text> : <Byline>

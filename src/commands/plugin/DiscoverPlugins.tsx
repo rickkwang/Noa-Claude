@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { c as _c } from "react/compiler-runtime";
+import { MoreRow } from '../../components/ui/MoreRow.js';
 import figures from 'figures';
 import * as React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -613,9 +614,7 @@ export function DiscoverPlugins({
 
       <Box flexDirection="column" onWheel={pagination.onWheel}>
       {/* Scroll up indicator */}
-      {pagination.scrollPosition.canScrollUp && <Box>
-          <Text dimColor> {figures.arrowUp} more above</Text>
-        </Box>}
+      <MoreRow direction="above" count={pagination.startIndex} onPress={() => setSelectedIndex(0)} />
 
       {/* Plugin list - use startIndex in key to force re-render on scroll */}
       {visiblePlugins.map((plugin_5, visibleIndex) => {
@@ -651,9 +650,7 @@ export function DiscoverPlugins({
     })}
 
       {/* Scroll down indicator */}
-      {pagination.scrollPosition.canScrollDown && <Box>
-          <Text dimColor> {figures.arrowDown} more below</Text>
-        </Box>}
+      <MoreRow direction="below" count={filteredPlugins.length - pagination.endIndex} onPress={() => setSelectedIndex(filteredPlugins.length - 1)} />
       </Box>
 
       {/* Error messages */}

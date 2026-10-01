@@ -42,6 +42,7 @@ import { plural } from '../../utils/stringUtils.js'
 import { ConfigurableShortcutHint } from '../ConfigurableShortcutHint.js'
 import { Dialog } from '../design-system/Dialog.js'
 import { Tab, Tabs } from '../design-system/Tabs.js'
+import { MoreRow } from '../ui/MoreRow.js'
 import { SearchBox } from '../SearchBox.js'
 
 type SkillCommand = CommandBase & PromptCommand
@@ -633,11 +634,11 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
         overflow="hidden"
       >
         {!showTabs && pathSubtitle && <Text dimColor>{pathSubtitle}</Text>}
-        {aboveCount > 0 && <Text dimColor>↑ {aboveCount} more above</Text>}
+        <MoreRow direction="above" count={aboveCount} onPress={() => setSelectedIdx(0)} />
         {displaySkills.slice(windowStart, windowEnd).map((skill, i) =>
           renderSkill(skill, windowStart + i),
         )}
-        {belowCount > 0 && <Text dimColor>↓ {belowCount} more below</Text>}
+        <MoreRow direction="below" count={belowCount} onPress={() => setSelectedIdx(displaySkills.length - 1)} />
       </Box>
     )
   }

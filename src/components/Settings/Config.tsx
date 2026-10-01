@@ -49,6 +49,7 @@ import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js';
 import { getCliTeammateModeOverride, clearCliTeammateModeOverride } from '../../utils/swarm/backends/teammateModeSnapshot.js';
 import { getDefaultTeammateModelFallback } from '../../utils/swarm/teammateModel.js';
 import { useSearchInput } from '../../hooks/useSearchInput.js';
+import { MoreRow, useMoreRowClickGuard } from '../ui/MoreRow.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { clearFastModeCooldown, getFastModeModelDisplay, isFastModeAvailable, isFastModeEnabled, getFastModeModel, isFastModeSupportedByModel } from '../../utils/fastMode.js';
 import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js';
@@ -113,6 +114,7 @@ export function Config({
   const initialLanguage = React.useRef(currentLanguage);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const moreRowClicks = useMoreRowClickGuard();
   // A whole stdin chunk is processed inside one discreteUpdates batch
   // (processKeysInBatch in ink/components/App.tsx), so every notch of a fast
   // trackpad flick lands before React re-renders. These refs hold the pending
@@ -1534,6 +1536,12 @@ export function Config({
       commitSelectedIndex(newOffset + maxVisible - 1);
     }
   };
+  const scrollListToEdge = (e: ClickEvent, direction: -1 | 1): void => {
+    moreRowClicks.pressed(e);
+    const offset = direction < 0 ? 0 : maxScrollOffset;
+    commitScrollOffset(offset);
+    commitSelectedIndex(Math.max(offset, Math.min(selectedIndexRef.current, offset + maxVisible - 1)));
+  };
   const handleWheel = (e: WheelEvent): void => {
     if (e.deltaY === 0) return;
     // preventDefault keeps the same notch from also driving scroll:lineUp/
@@ -1556,6 +1564,7 @@ export function Config({
   };
   const handleRowClick = (e: ClickEvent, index: number): void => {
     e.stopImmediatePropagation();
+    if (moreRowClicks.blocks(e)) return;
     if (isRowActive(index)) {
       toggleSetting();
     } else {
@@ -1569,6 +1578,7 @@ export function Config({
     // past the end of the text isn't aimed at the value.
     if (e.cellIsBlank) return;
     e.stopImmediatePropagation();
+    if (moreRowClicks.blocks(e)) return;
     if (!isRowActive(index)) {
       selectRow(index);
     }
@@ -1867,9 +1877,7 @@ export function Config({
             {filteredSettingsItems.length === 0 ? <Text dimColor italic wrap="truncate-end">
                 No settings match &quot;{searchQuery}&quot;
               </Text> : <>
-                {scrollOffset > 0 && <Text dimColor>
-                    {figures.arrowUp} {scrollOffset} more above
-                  </Text>}
+                <MoreRow direction="above" count={scrollOffset} onPress={e => scrollListToEdge(e, -1)} />
                 {filteredSettingsItems.slice(scrollOffset, scrollOffset + maxVisible).map((setting_2, i, visibleSettings) => {
             const actualIndex = scrollOffset + i;
             const isSelected = actualIndex === selectedIndex && !headerFocused && !isSearchMode;
@@ -1922,11 +1930,7 @@ export function Config({
                         </Box>
                       </React.Fragment>;
           })}
-                {scrollOffset + maxVisible < filteredSettingsItems.length && <Text dimColor>
-                    {figures.arrowDown}{' '}
-                    {filteredSettingsItems.length - scrollOffset - maxVisible}{' '}
-                    more below
-                  </Text>}
+                <MoreRow direction="below" count={filteredSettingsItems.length - scrollOffset - maxVisible} onPress={e => scrollListToEdge(e, 1)} />
               </>}
           </Box>
           {headerFocused ? <Text dimColor>

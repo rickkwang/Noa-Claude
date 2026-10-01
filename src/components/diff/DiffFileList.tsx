@@ -8,7 +8,7 @@ import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { Box, Text } from '../../ink.js';
 import { truncateStartToWidth } from '../../utils/format.js';
 import { partiallySanitizeUnicode } from '../../utils/sanitization.js';
-import { plural } from '../../utils/stringUtils.js';
+import { MoreRow } from '../ui/MoreRow.js';
 const MAX_VISIBLE_FILES = 5;
 
 /**
@@ -100,12 +100,14 @@ function ScrollBar({
 type Props = {
   files: DiffFile[];
   selectedIndex: number;
+  onSelectIndex?: (index: number) => void;
 };
 export function DiffFileList(t0) {
-  const $ = _c(36);
+  const $ = _c(39);
   const {
     files,
-    selectedIndex
+    selectedIndex,
+    onSelectIndex
   } = t0;
   const {
     columns
@@ -167,7 +169,7 @@ export function DiffFileList(t0) {
   let t2;
   let t3;
   let t4;
-  if ($[6] !== columns || $[7] !== endIndex || $[8] !== files || $[9] !== selectedIndex || $[10] !== startIndex) {
+  if ($[6] !== columns || $[7] !== endIndex || $[8] !== files || $[9] !== selectedIndex || $[10] !== startIndex || $[36] !== onSelectIndex) {
     const visibleFiles = files.slice(startIndex, endIndex);
     const hasMoreAbove = startIndex > 0;
     hasMoreBelow = endIndex < files.length;
@@ -175,12 +177,13 @@ export function DiffFileList(t0) {
     const rowWidth = columns - PANE_PADDING_WIDTH - (needsPagination ? SCROLLBAR_WIDTH : 0);
     T0 = Box;
     t2 = "column";
-    if ($[17] !== hasMoreAbove || $[18] !== needsPagination || $[19] !== startIndex) {
-      t3 = needsPagination && <Text dimColor={true}>{hasMoreAbove ? ` ↑ ${startIndex} more ${plural(startIndex, "file")}` : " "}</Text>;
+    if ($[17] !== hasMoreAbove || $[18] !== needsPagination || $[19] !== startIndex || $[37] !== onSelectIndex) {
+      t3 = needsPagination && (hasMoreAbove ? <MoreRow direction="above" count={startIndex} onPress={onSelectIndex ? () => onSelectIndex(0) : undefined} /> : <Text> </Text>);
       $[17] = hasMoreAbove;
       $[18] = needsPagination;
       $[19] = startIndex;
       $[20] = t3;
+      $[37] = onSelectIndex;
     } else {
       t3 = $[20];
     }
@@ -201,6 +204,7 @@ export function DiffFileList(t0) {
     $[8] = files;
     $[9] = selectedIndex;
     $[10] = startIndex;
+    $[36] = onSelectIndex;
     $[11] = T0;
     $[12] = hasMoreBelow;
     $[13] = needsPagination;
@@ -216,13 +220,14 @@ export function DiffFileList(t0) {
     t4 = $[16];
   }
   let t5;
-  if ($[25] !== endIndex || $[26] !== files.length || $[27] !== hasMoreBelow || $[28] !== needsPagination) {
-    t5 = needsPagination && <Text dimColor={true}>{hasMoreBelow ? ` ↓ ${files.length - endIndex} more ${plural(files.length - endIndex, "file")}` : " "}</Text>;
+  if ($[25] !== endIndex || $[26] !== files.length || $[27] !== hasMoreBelow || $[28] !== needsPagination || $[38] !== onSelectIndex) {
+    t5 = needsPagination && (hasMoreBelow ? <MoreRow direction="below" count={files.length - endIndex} onPress={onSelectIndex ? () => onSelectIndex(files.length - 1) : undefined} /> : <Text> </Text>);
     $[25] = endIndex;
     $[26] = files.length;
     $[27] = hasMoreBelow;
     $[28] = needsPagination;
     $[29] = t5;
+    $[38] = onSelectIndex;
   } else {
     t5 = $[29];
   }

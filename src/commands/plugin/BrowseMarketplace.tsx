@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { MoreRow } from '../../components/ui/MoreRow.js';
 import figures from 'figures';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
@@ -750,9 +751,7 @@ export function BrowseMarketplace({
 
       <Box flexDirection="column" onWheel={pagination.onWheel}>
       {/* Scroll up indicator */}
-      {pagination.scrollPosition.canScrollUp && <Box>
-          <Text dimColor> {figures.arrowUp} more above</Text>
-        </Box>}
+      <MoreRow direction="above" count={pagination.startIndex} onPress={() => setSelectedIndex(0)} />
 
       {/* Plugin list */}
       {visiblePlugins.map((plugin_6, visibleIndex) => {
@@ -789,9 +788,7 @@ export function BrowseMarketplace({
     })}
 
       {/* Scroll down indicator */}
-      {pagination.scrollPosition.canScrollDown && <Box>
-          <Text dimColor> {figures.arrowDown} more below</Text>
-        </Box>}
+      <MoreRow direction="below" count={availablePlugins.length - pagination.endIndex} onPress={() => setSelectedIndex(availablePlugins.length - 1)} />
       </Box>
 
       {/* Error messages shown in the UI */}

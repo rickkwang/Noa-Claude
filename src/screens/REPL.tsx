@@ -52,6 +52,7 @@ import { type Command, type CommandResultDisplay, type ResumeEntrypoint, getComm
 import type { PromptInputMode, QueuedCommand, VimMode } from '../types/textInputTypes.js';
 import { MessageSelector, selectableUserMessagesFilter, messagesAfterAreOnlySynthetic } from '../components/MessageSelector.js';
 import { useIdeLogging } from '../hooks/useIdeLogging.js';
+import { PermissionQueueCountContext, usePermissionQueues } from '../components/permissions/PermissionQueueCount.js';
 import { PermissionRequest, type ToolUseConfirm } from '../components/permissions/PermissionRequest.js';
 import { ElicitationDialog } from '../components/mcp/ElicitationDialog.js';
 import { PromptDialog } from '../components/hooks/PromptDialog.js';
@@ -1167,15 +1168,11 @@ export function REPL({
     }
     setToolJSXInternal(args);
   }, []);
-  const [toolUseConfirmQueue, setToolUseConfirmQueue] = useState<ToolUseConfirm[]>([]);
+  const { toolUseConfirmQueue, setToolUseConfirmQueue, sandboxPermissionRequestQueue, setSandboxPermissionRequestQueue, permissionQueueLabel } = usePermissionQueues(store);
   // Sticky footer JSX registered by permission request components (currently
   // only ExitPlanModePermissionRequest). Renders in FullscreenLayout's `bottom`
   // slot so response options stay visible while the user scrolls a long plan.
   const [permissionStickyFooter, setPermissionStickyFooter] = useState<React.ReactNode | null>(null);
-  const [sandboxPermissionRequestQueue, setSandboxPermissionRequestQueue] = useState<Array<{
-    hostPattern: NetworkHostPattern;
-    resolvePromise: (allowConnection: boolean) => void;
-  }>>([]);
   const [promptQueue, setPromptQueue] = useState<Array<{
     request: PromptRequest;
     title: string;
@@ -4929,7 +4926,7 @@ export function REPL({
   // flexGrow in FullscreenLayout resolves against this Box. The transcript
   // early return above wraps its virtual-scroll branch the same way; only
   // the 30-cap dump branch stays unwrapped for native terminal scrollback.
-  const mainReturn = <KeybindingSetup>
+  const mainReturn = <PermissionQueueCountContext.Provider value={permissionQueueLabel}><KeybindingSetup>
       <AnimatedTerminalTitle isAnimating={titleIsAnimating} title={terminalTitle} disabled={titleDisabled} noPrefix={showStatusInTerminalTab} />
       <GlobalKeybindingHandlers {...globalKeybindingProps} />
       <VoiceKeybindingHandler voiceHandleKeyEvent={voice.handleKeyEvent} stripTrailing={voice.stripTrailing} resetAnchor={voice.resetAnchor} isActive={!toolJSX?.isLocalJSXCommand} />
@@ -5390,7 +5387,7 @@ export function REPL({
               {!(companionNarrow && isFullscreenEnvEnabled()) && companionVisible ? <CompanionSprite /> : null}
             </Box>} />
       </MCPConnectionManager>
-    </KeybindingSetup>;
+    </KeybindingSetup></PermissionQueueCountContext.Provider>;
   if (isFullscreenEnvEnabled()) {
     return <AlternateScreen mouseTracking={isMouseTrackingEnabled()}>
         {mainReturn}

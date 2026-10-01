@@ -1,8 +1,11 @@
 // @ts-nocheck
 import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
-import { Box } from '../../ink.js';
+import { Box, Text } from '../../ink.js';
 import type { Theme } from '../../utils/theme.js';
+import { useTerminalSize } from '../../hooks/useTerminalSize.js';
+import { stringWidth } from '../../ink/stringWidth.js';
+import { PermissionQueueCountContext } from './PermissionQueueCount.js';
 import { PermissionRequestTitle } from './PermissionRequestTitle.js';
 import type { WorkerBadgeProps } from './WorkerBadge.js';
 type Props = {
@@ -16,7 +19,7 @@ type Props = {
   children: React.ReactNode;
 };
 export function PermissionDialog(t0) {
-  const $ = _c(15);
+  const $ = _c(16);
   const {
     title,
     subtitle,
@@ -29,6 +32,10 @@ export function PermissionDialog(t0) {
   } = t0;
   const color = t1 === undefined ? "permission" : t1;
   const innerPaddingX = t2 === undefined ? 1 : t2;
+  const queueLabel = React.useContext(PermissionQueueCountContext);
+  const { columns } = useTerminalSize();
+  const headerWidth = stringWidth(title) + (workerBadge ? stringWidth(` · @${workerBadge.name}`) : 0);
+  const count = titleRight == null && queueLabel && headerWidth + 1 + stringWidth(queueLabel) <= columns - 2 ? queueLabel : null;
   let t3;
   if ($[0] !== subtitle || $[1] !== title || $[2] !== titleColor || $[3] !== workerBadge) {
     t3 = <PermissionRequestTitle title={title} subtitle={subtitle} color={titleColor} workerBadge={workerBadge} />;
@@ -41,11 +48,12 @@ export function PermissionDialog(t0) {
     t3 = $[4];
   }
   let t4;
-  if ($[5] !== t3 || $[6] !== titleRight) {
-    t4 = <Box paddingX={1} flexDirection="column"><Box justifyContent="space-between">{t3}{titleRight}</Box></Box>;
+  if ($[5] !== t3 || $[6] !== titleRight || $[15] !== count) {
+    t4 = <Box paddingX={1} flexDirection="column"><Box justifyContent="space-between">{t3}{titleRight ?? (count && <Text dimColor>{count}</Text>)}</Box></Box>;
     $[5] = t3;
     $[6] = titleRight;
     $[7] = t4;
+    $[15] = count;
   } else {
     t4 = $[7];
   }

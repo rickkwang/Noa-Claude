@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { MoreRow } from '../../components/ui/MoreRow.js';
 import figures from 'figures';
 import type { Dirent } from 'fs';
 import * as fs from 'fs/promises';
@@ -2336,9 +2337,7 @@ export function ManagePlugins({
 
       <Box flexDirection="column" onWheel={pagination.onWheel}>
       {/* Scroll up indicator */}
-      {pagination.scrollPosition.canScrollUp && <Box>
-          <Text dimColor> {figures.arrowUp} more above</Text>
-        </Box>}
+      <MoreRow direction="above" count={pagination.startIndex} onPress={() => setSelectedIndex(0)} />
 
       {/* Unified list: smart sections (Needs attention / Favorites), scope groups, collapsed Disabled */}
       {visibleItems.map((item_10, visibleIndex) => {
@@ -2398,9 +2397,7 @@ export function ManagePlugins({
     })}
 
       {/* Scroll down indicator */}
-      {pagination.scrollPosition.canScrollDown && <Box>
-          <Text dimColor> {figures.arrowDown} more below</Text>
-        </Box>}
+      <MoreRow direction="below" count={filteredItems.length - pagination.endIndex} onPress={() => setSelectedIndex(filteredItems.length - 1)} />
       </Box>
 
       {/* Help text */}

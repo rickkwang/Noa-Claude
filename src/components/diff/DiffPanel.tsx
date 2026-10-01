@@ -20,6 +20,8 @@ import ScrollBox, {
   type ScrollBoxHandle,
 } from '../../ink/components/ScrollBox.js'
 import type { DOMElement } from '../../ink/dom.js'
+import { MoreRow, useMoreRowClickGuard } from '../ui/MoreRow.js'
+import type { ClickEvent } from '../../ink/events/click-event.js'
 import type { WheelEvent } from '../../ink/events/wheel-event.js'
 import { useSelection } from '../../ink/hooks/use-selection.js'
 import wrapText from '../../ink/wrap-text.js'
@@ -314,6 +316,7 @@ function DiffPanel({
     : (stats?.filesCount ?? files.length) - preSession.length
 
   const [listOffset, setListOffset] = useState(0)
+  const moreRowClicks = useMoreRowClickGuard()
   const maxOffset = Math.max(0, visible.length - FILE_LIST_ROWS)
   const offset = Math.min(listOffset, maxOffset)
   const rows = visible.slice(offset, offset + FILE_LIST_ROWS)
@@ -464,12 +467,12 @@ function DiffPanel({
                 : undefined
             }
           >
-            {offset > 0 && <Text dimColor>↑ {offset} more above</Text>}
+            <MoreRow direction="above" count={offset} onPress={event => { moreRowClicks.pressed(event); setListOffset(0) }} />
             {rows.map((file, i) => (
               <HoverToggle
                 key={file.path}
                 drawnAt={`${offset} ${i}`}
-                onClick={() => scrollToFile(file.path)}
+                onClick={event => { if (!moreRowClicks.blocks(event)) scrollToFile(file.path) }}
               >
                 {hovered => (
                   <>
@@ -482,20 +485,12 @@ function DiffPanel({
                 )}
               </HoverToggle>
             ))}
-            {(below > 0 || deniedCount > 0 || notShown > 0) && (
-              <Text dimColor>
-                {below > 0 ? '↓ ' : '… '}
-                {[
-                  below > 0
-                    ? `${below} more below${scrollDownShortcut ? ` (${scrollDownShortcut} to scroll)` : ''}`
-                    : null,
-                  deniedCount > 0 ? `${deniedCount} read-denied` : null,
-                  notShown > 0 ? `${notShown} not shown` : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </Text>
-            )}
+            {below > 0 ? <MoreRow direction="below" count={below}
+              suffix={`${scrollDownShortcut ? ` (${scrollDownShortcut} to scroll)` : ''}${deniedCount > 0 ? ` · ${deniedCount} read-denied` : ''}${notShown > 0 ? ` · ${notShown} not shown` : ''}`}
+              onPress={event => { moreRowClicks.pressed(event); setListOffset(maxOffset) }} />
+              : (deniedCount > 0 || notShown > 0) && <Text dimColor>
+                {'… '}{[deniedCount > 0 ? `${deniedCount} read-denied` : null, notShown > 0 ? `${notShown} not shown` : null].filter(Boolean).join(' · ')}
+              </Text>}
             {noiseCount > 0 && (
               <HoverToggle onClick={toggleNoise}>
                 {hovered => (
@@ -773,7 +768,7 @@ function HoverToggle({
   drawnAt = '',
   children,
 }: {
-  onClick: () => void
+  onClick: (event: ClickEvent) => void
   drawnAt?: string
   children: (hovered: boolean) => React.ReactNode
 }): React.ReactNode {
