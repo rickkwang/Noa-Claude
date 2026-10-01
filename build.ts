@@ -239,10 +239,19 @@ function restoreModifiedFiles() {
 preProcessFeatureFlags(join(import.meta.dirname ?? '.', 'src'))
 const numModified = modifiedFiles.size
 
+// Staged code-split build (its entry chunk, and the directory holding every
+// chunk), consumed by the compile pass below. Declared up here so the finally
+// block and the signal handlers can clean it up when a build stops in between.
+let compileSource: string | null = null
+let compileSourceDir: string | null = null
+
 // Restore source files on abrupt termination
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
     restoreModifiedFiles()
+    if (compileSourceDir) {
+      rmSync(compileSourceDir, { recursive: true, force: true })
+    }
     process.exit(signal === 'SIGINT' ? 130 : 143)
   })
 }
@@ -403,12 +412,6 @@ const defineEntries: Record<string, string> = {}
 for (const [key, value] of Object.entries(defines)) {
   defineEntries[key] = value
 }
-
-// Staged code-split build (its entry chunk, and the directory holding every
-// chunk), consumed by the compile pass below. Hoisted so the finally block can
-// clean it up when a build throws in between.
-let compileSource: string | null = null
-let compileSourceDir: string | null = null
 
 // USER_TYPE is defined to "external", which leaves these comparisons in the
 // output as string-literal tests; they are rewritten after bundling.
