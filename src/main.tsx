@@ -830,8 +830,16 @@ async function run(): Promise<CommanderCommand> {
 
   // Use preAction hook to run initialization only when executing a command,
   // not when displaying help. This avoids the need for env variable signaling.
-  program.hook('preAction', async thisCommand => {
+  program.hook('preAction', async (thisCommand, actionCommand) => {
     profileCheckpoint('preAction_start');
+    // The bootstrap captures keystrokes for the REPL's prompt on every launch.
+    // Only the default command mounts a REPL to take them over; under a
+    // subcommand the capture would keep reading stdin in raw mode ahead of
+    // whatever the subcommand reads itself (`attach`, a readline confirm).
+    if (actionCommand !== program) {
+      stopCapturingEarlyInput();
+      if (process.stdin.isTTY) process.stdin.setRawMode(false);
+    }
     // Await async subprocess loads started at module evaluation (lines 12-20).
     // Nearly free — subprocesses complete during the ~135ms of imports above.
     // Must resolve before init() which triggers the first settings read
