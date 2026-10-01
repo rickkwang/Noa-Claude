@@ -1,6 +1,6 @@
 # Features Audit
 
-Last updated: 2026-09-12
+Last updated: 2026-10-01
 
 This file is the build/runtime audit for experimental feature flags in this repository.
 
@@ -25,15 +25,11 @@ This file is the build/runtime audit for experimental feature flags in this repo
 - `AUTO_THEME`
 - `BASH_CLASSIFIER`
 - `BUILTIN_EXPLORE_PLAN_AGENTS` (default-on; enables the built-in Explore + Plan subagents. Its GrowthBook A/B gate `tengu_amber_stoat` is inert here — GrowthBook is hard-disabled — so the default `true` applies.)
-- `CACHED_MICROCOMPACT`
 - `COMMIT_ATTRIBUTION`
 - `CONNECTOR_TEXT`
-- `CONTEXT_COLLAPSE`
-- `EXPERIMENTAL_SKILL_SEARCH`
 - `EXTRACT_MEMORIES`
 - `FILE_PERSISTENCE`
 - `HISTORY_PICKER`
-- `HISTORY_SNIP`
 - `KAIROS`
 - `KAIROS_BRIEF`
 - `LODESTONE`
@@ -46,14 +42,12 @@ This file is the build/runtime audit for experimental feature flags in this repo
 - `SKILL_IMPROVEMENT`
 - `SLOW_OPERATION_LOGGING`
 - `TEAMMEM`
-- `TERMINAL_PANEL`
 - `TOKEN_BUDGET`
 - `TREE_SITTER_BASH`
 - `TREE_SITTER_BASH_SHADOW`
 - `ULTRATHINK`
 - `UNATTENDED_RETRY`
 - `VERIFICATION_AGENT`
-- `WEB_BROWSER_TOOL`
 
 ## Unlocked but Runtime-Caveated
 
@@ -65,10 +59,36 @@ This file is the build/runtime audit for experimental feature flags in this repo
 - `DOWNLOAD_USER_SETTINGS` (depends on first-party auth/settings sync path)
 - `UPLOAD_USER_SETTINGS` (depends on first-party auth/settings sync path)
 - `NATIVE_CLIENT_ATTESTATION` (platform/integration dependent)
-- `OVERFLOW_TEST_TOOL` (test/diagnostic pathway)
 - `IS_LIBC_GLIBC` (platform-specific)
 - `IS_LIBC_MUSL` (platform-specific)
 - `HARD_FAIL` (runtime mode behavior gate)
+
+## Unlocked but Inert (placeholder implementation)
+
+These flags build and are enabled in `dev-full`, but the implementation behind
+them is a placeholder in this fork, so enabling them adds no working behavior.
+The placeholders exist so the gated call sites resolve; each must keep exporting
+every name those call sites read (see `CLAUDE.md`, "Feature flags").
+
+- `CACHED_MICROCOMPACT` — `services/compact/cachedMCConfig.ts` returns a config
+  with `enabled: false` and no supported models, so cache editing never engages.
+- `CONTEXT_COLLAPSE` — `services/contextCollapse/` is a pass-through
+  (`isContextCollapseEnabled()` is `false`); the `CtxInspect` tool is a null
+  shell and never registers.
+- `EXPERIMENTAL_SKILL_SEARCH` — `services/skillSearch/` returns no results
+  (`isSkillSearchEnabled()` is `false`).
+- `HISTORY_SNIP` — `services/compact/snipCompact.ts` never snips
+  (`isSnipRuntimeEnabled()` is `false`); the `Snip` tool is a null shell.
+- `OVERFLOW_TEST_TOOL` — the tool is a null shell and never registers.
+- `TERMINAL_PANEL` — the `TerminalCapture` tool is a null shell and never
+  registers.
+- `WEB_BROWSER_TOOL` — the tool and its panel are null shells and never
+  register.
+
+`KAIROS` stays under "Runtime-Active" for the parts that exist (e.g. the Brief
+tool), but its `Sleep`, `SendUserFile` and `PushNotification` tools are class
+shells that the tool registry drops, and its session-transcript segment writer
+is a no-op.
 
 ## Not Unlockable in This Build (by flag-only unlock)
 

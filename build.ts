@@ -1,6 +1,5 @@
 import {
   chmodSync,
-  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -257,7 +256,9 @@ const externals = [
 
 const defines: Record<string, string> = {
   'process.env.USER_TYPE': JSON.stringify('external'),
-  ...(dev ? { 'process.env.NODE_ENV': JSON.stringify('development') } : {}),
+  // Always defined: left unset, the bundler resolves React's NODE_ENV switch to
+  // the development build.
+  'process.env.NODE_ENV': JSON.stringify(dev ? 'development' : 'production'),
   ...(dev
     ? { 'process.env.CLAUDE_CODE_EXPERIMENTAL_BUILD': JSON.stringify('true') }
     : {}),
@@ -403,26 +404,42 @@ for (const [key, value] of Object.entries(defines)) {
   defineEntries[key] = value
 }
 
-// Staged copy of the pre-minify bundle, consumed by the compile pass below.
-// Hoisted so the finally block can clean it up when a build throws in between.
+// Staged code-split build (its entry chunk, and the directory holding every
+// chunk), consumed by the compile pass below. Hoisted so the finally block can
+// clean it up when a build throws in between.
 let compileSource: string | null = null
+let compileSourceDir: string | null = null
+
+// USER_TYPE is defined to "external", which leaves these comparisons in the
+// output as string-literal tests; they are rewritten after bundling.
+function patchUserType(content: string): string {
+  return content
+    .replace(/"external"\s*===\s*'ant'/g, 'true')
+    .replace(/'external'\s*===\s*"ant"/g, 'true')
+    .replace(/"external"\s*!==\s*'ant'/g, 'false')
+    .replace(/'external'\s*!==\s*"ant"/g, 'false')
+}
+
+const bundleOptions = {
+  // The bootstrap, not main.tsx: its static import graph is empty, so the
+  // bundler wraps everything behind it in lazy init functions and fast paths
+  // such as --version return without evaluating the CLI.
+  entrypoints: ['./src/entrypoints/cli.tsx'],
+  target: 'bun',
+  format: 'esm',
+  external: externals,
+  define: defineEntries,
+  // Bun's default loader for .md is 'html' (markdown→HTML). Bundled skills
+  // such as verify import .md files expecting raw markdown text, so force
+  // the text loader.
+  loader: { '.md': 'text' },
+  plugins: [dedupeReactPlugin, stubPlugin],
+} satisfies Parameters<typeof Bun.build>[0]
 
 try {
   const result = await Bun.build({
-    // The bootstrap, not main.tsx: its static import graph is empty, so the
-    // bundler wraps everything behind it in lazy init functions and fast paths
-    // such as --version return without evaluating the CLI.
-    entrypoints: ['./src/entrypoints/cli.tsx'],
-    target: 'bun',
-    format: 'esm',
+    ...bundleOptions,
     outdir: dirname(resolve(outfile)),
-    external: externals,
-    define: defineEntries,
-    // Bun's default loader for .md is 'html' (markdown→HTML). Bundled skills
-    // such as verify import .md files expecting raw markdown text, so force
-    // the text loader.
-    loader: { '.md': 'text' },
-    plugins: [dedupeReactPlugin, stubPlugin],
   })
 
   // Bun.build throws an AggregateError on build errors instead of returning
@@ -458,12 +475,7 @@ try {
   // Patch the bundled output before optional binary compilation.
   {
     const content = readFileSync(expectedPath, 'utf-8')
-    let patched = content
-    patched = patched
-      .replace(/"external"\s*===\s*'ant'/g, 'true')
-      .replace(/'external'\s*===\s*"ant"/g, 'true')
-      .replace(/"external"\s*!==\s*'ant'/g, 'false')
-      .replace(/'external'\s*!==\s*"ant"/g, 'false')
+    const patched = patchUserType(content)
 
     if (patched === content) {
       console.warn(
@@ -475,17 +487,44 @@ try {
     console.log(`Build complete: ${outfile}`)
   }
 
-  // The compile pass below needs the bundle as it is *right now*, before the
-  // minify pass rewrites it in place: feeding Bun's minified output back
-  // through `compile: true` mis-hoists a binding, and the binary dies on the
-  // first real command with "Cannot access 'X' before initialization" while
-  // `-h`/`--version` still work. The same corruption reproduces on a plain
-  // non-bytecode ESM compile, so it predates the bytecode work — `bun run
-  // compile` has been emitting broken binaries. Minifying inside the compile
-  // pass instead produces a working binary of the same size.
+  // The compile pass below is fed an unminified build: feeding Bun's minified
+  // output back through `compile: true` mis-hoists a binding, and the binary
+  // dies on the first real command with "Cannot access 'X' before
+  // initialization" while `-h`/`--version` still work. Minifying inside the
+  // compile pass instead produces a working binary of the same size.
+  //
+  // It is a second, code-split build rather than a copy of dist/main.js: in a
+  // single-file bundle a dynamic import only defers evaluation, so every launch
+  // still loads the whole bundle's bytecode (~65ms). Split, each import() is its
+  // own chunk with its own bytecode, and `--version` loads the bootstrap alone.
   if (compile) {
-    compileSource = join(outDir, `.compile-src-${process.pid}.js`)
-    copyFileSync(resolve(expectedPath), compileSource)
+    compileSourceDir = mkdtempSync(join(outDir, '.compile-src-'))
+    const splitResult = await Bun.build({
+      ...bundleOptions,
+      outdir: compileSourceDir,
+      splitting: true,
+    })
+    if (!splitResult.success) {
+      for (const log of splitResult.logs) {
+        console.error(log)
+      }
+      throw new Error('Split build failed')
+    }
+    const splitEntry = splitResult.outputs.find(o => o.kind === 'entry-point')
+    if (!splitEntry) {
+      throw new Error('No split entry-point output found')
+    }
+    for (const output of splitResult.outputs) {
+      if (!output.path.endsWith('.js')) continue
+      const patched = patchUserType(readFileSync(output.path, 'utf-8'))
+      writeFileSync(
+        output.path,
+        output === splitEntry
+          ? patched + '\n' + getLauncherBootstrapCode()
+          : patched,
+      )
+    }
+    compileSource = splitEntry.path
   }
 
   // Startup cost is dominated by JSC pre-parsing the bundle, and that scales
@@ -558,10 +597,13 @@ try {
       entrypoints: [compileSource],
       target: 'bun',
       format: 'esm',
-      outdir: dirname(resolve(cliOutfile)),
       external: externals,
       plugins: [dedupeReactPlugin, stubPlugin],
-      compile: true,
+      // An explicit outfile, not outdir: the binary would otherwise be named
+      // after the split entry (`cli`), so a dev compile would land on — and
+      // then be renamed away from — the production dist/cli.
+      compile: { outfile: resolve(cliOutfile) },
+      splitting: true,
       bytecode: true,
       // Same reason dist/main.js stays unminified in dev builds: real names in
       // stack traces.
@@ -608,8 +650,8 @@ try {
 } finally {
   // Always restore source files, even if Bun.build() throws
   restoreModifiedFiles()
-  if (compileSource) {
-    rmSync(compileSource, { force: true })
+  if (compileSourceDir) {
+    rmSync(compileSourceDir, { recursive: true, force: true })
   }
   if (wroteBundleMetadata) {
     const touchedAt = new Date()
