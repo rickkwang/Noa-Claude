@@ -307,7 +307,7 @@ async function run() {
   await step('← while a tool runs: waits (10s cap), stops the turn, the background session finishes it', async () => {
     await waitFor('repl ready', () => agentsHint('mid'), 30000);
     await sleep(500);
-    type('mid', 'Run the shell command: sleep 15 && echo SLEPT. Then reply with exactly the word MIDTURN-DONE.');
+    type('mid', 'Run this shell command in the foreground (never in the background): sleep 15 && echo SLEPT. Then reply with exactly the word MIDTURN-DONE.');
     keys('mid', 'Enter');
     await waitFor('tool running', () => toolRunning('mid'), 90000);
     // The progress line can show while the tool call is still streaming.
@@ -335,7 +335,7 @@ async function run() {
     await waitFor('repl ready', () => agentsHint('esc'), 30000);
     await sleep(500);
     const before = jobIds();
-    type('esc', 'Run the shell command: sleep 8 && echo SLEPT. Then reply with exactly the word ESC-DONE.');
+    type('esc', 'Run this shell command in the foreground (never in the background): sleep 8 && echo SLEPT. Then reply with exactly the word ESC-DONE.');
     keys('esc', 'Enter');
     await waitFor('tool running', () => toolRunning('esc'), 90000);
     // The progress line can show while the tool call is still streaming.
@@ -347,7 +347,7 @@ async function run() {
     if (screen('esc').includes('Your conversation moved to the background')) throw new Error('esc did not cancel the move');
     if (ourJobs().some(j => !before.has(j.short))) throw new Error('a background session was started anyway');
     // A prompt queued behind a running turn would be lost: ← refuses.
-    type('esc', 'Run the shell command: sleep 6 && echo AGAIN. Then reply with exactly the word QUEUE-DONE.');
+    type('esc', 'Run this shell command in the foreground (never in the background): sleep 6 && echo AGAIN. Then reply with exactly the word QUEUE-DONE.');
     keys('esc', 'Enter');
     await waitFor('tool running again', () => toolRunning('esc'), 90000);
     type('esc', 'Reply with exactly the word QUEUED.');
@@ -406,7 +406,7 @@ async function run() {
     keys('bgcmd', 'Enter');
     await waitFor('refused', () => screen('bgcmd').includes('Nothing to background yet'), 10000);
     const before = jobIds();
-    type('bgcmd', 'Run the shell command: sleep 4 && echo SLEPT. Then reply with exactly the word BG-DONE.');
+    type('bgcmd', 'Run this shell command in the foreground (never in the background): sleep 4 && echo SLEPT. Then reply with exactly the word BG-DONE.');
     keys('bgcmd', 'Enter');
     await waitFor('tool running', () => toolRunning('bgcmd'), 90000);
     type('bgcmd', '/bg');
@@ -440,7 +440,7 @@ async function run() {
     await waitFor('repl ready', () => agentsHint('queued'), 30000);
     await sleep(500);
     const before = jobIds();
-    type('queued', 'Run the shell command: sleep 3 && echo FIRST. Then reply with exactly the word FIRST-DONE.');
+    type('queued', 'Run this shell command in the foreground (never in the background): sleep 3 && echo FIRST. Then reply with exactly the word FIRST-DONE.');
     keys('queued', 'Enter');
     await waitFor('tool running', () => toolRunning('queued'), 90000);
     type('queued', '/bg Reply with exactly the word CARRIED-PROMPT.');
