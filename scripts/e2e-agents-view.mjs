@@ -18,7 +18,7 @@
  * /bg with nothing to move, bare /bg mid-turn (exits; the background session
  * finishes the turn), /bg <prompt> typed mid-turn (queued, prompt kept), and
  * the shell side: `noa --continue` refusing a conversation held in the
- * background, `noa logs`, `noa attach` (← detaches back to the shell) and
+ * background, `noa logs`, `noa attach` (← detaches to the agents view) and
  * `noa stop`, then `respawn`/`kill`, the /resume tag and refusal, `--bg`, ctrl+r
  * rename in the view and `rm`. Only jobs created by this run are touched; they are removed at
  * the end. Writes a JSON artifact with the command, revision, inputs,
@@ -426,8 +426,13 @@ async function run() {
     tmux('new-session', '-d', '-s', 'att', '-x', '150', '-y', '40', '-c', repoRoot, `${launch} attach ${bgJob.short}; echo EXIT:$?; sleep 600`);
     await waitFor('attached', () => screen('att').includes('BG-DONE') && agentsHint('att'), 30000);
     await sleep(500);
+    // ← lands in the agents view, not the shell; ctrl+c twice quits that.
     keys('att', 'Left');
-    await waitFor('detached to the shell', () => screen('att').includes('detached ·') && screen('att').includes('EXIT:0'), 20000);
+    await waitFor('detached to the agents view', () => inList('att'), 20000);
+    keys('att', 'C-c');
+    await sleep(300);
+    keys('att', 'C-c');
+    await waitFor('back in the shell', () => screen('att').includes('EXIT:0'), 20000);
     const stop = cli('stop', bgJob.short);
     if (stop.status !== 0 || !stop.out.includes('stopped')) throw new Error(`stop: ${stop.status} ${stop.out}`);
     await waitFor('host gone', () => ourJobs().find(j => j.short === bgJob.short && !hostAlive(j)), 20000);
