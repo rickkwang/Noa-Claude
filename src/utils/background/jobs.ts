@@ -142,9 +142,13 @@ const patchChains = new Map<string, Promise<unknown>>()
  * Cross-process mutex for state.json read-modify-write: the session reports
  * activity while `noa stop` or the agents view (stop, rename) writes from
  * another process, and a full-record write built on a stale read would drop
- * the other side's fields. mkdir is atomic; a lock whose holder died
- * mid-patch is broken after 30s. If the job dir doesn't exist there is
- * nothing to race with — proceed unlocked.
+ * the other side's fields. mkdir is atomic. The holder records its pid inside
+ * the lock, so a lock whose holder died mid-patch is broken at once: a session
+ * ending on /stop exits while its last activity report holds the lock, and the
+ * host — waiting on that lock to stamp the outcome — would otherwise give up
+ * and leave the job unmarked. A lock with no readable pid is broken after 30s.
+ * If the job dir doesn't exist there is nothing to race with — proceed
+ * unlocked.
  */
 const STATE_LOCK_STALE_MS = 30_000
 
@@ -154,6 +158,7 @@ async function withStateLock<T>(short: string, fn: () => Promise<T>): Promise<T>
   for (;;) {
     try {
       await mkdir(lock)
+      await writeFile(join(lock, 'pid'), String(process.pid)).catch(() => {})
       break
     } catch (e) {
       if ((e as { code?: string }).code === 'ENOENT') return fn()
@@ -162,6 +167,10 @@ async function withStateLock<T>(short: string, fn: () => Promise<T>): Promise<T>
         stale = Date.now() - (await stat(lock)).mtimeMs > STATE_LOCK_STALE_MS
       } catch {
         continue
+      }
+      if (!stale) {
+        const holder = Number(await readFile(join(lock, 'pid'), 'utf8').catch(() => ''))
+        stale = Number.isInteger(holder) && holder > 0 && !isProcessRunning(holder)
       }
       if (stale) {
         await rm(lock, { recursive: true, force: true }).catch(() => {})
