@@ -1,4 +1,3 @@
-// @ts-nocheck
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { toolMatchesName, type Tool, type Tools } from './Tool.js'
 import { AgentTool } from './tools/AgentTool/AgentTool.js'
@@ -181,7 +180,14 @@ export function getToolsForDefaultPreset(): string[] {
  * NOTE: This MUST stay in sync with https://console.statsig.com/4aF3Ewatb6xPVpCwxb5nA3/dynamic_configs/claude_code_global_system_caching, in order to cache the system prompt across users.
  */
 export function getAllBaseTools(): Tools {
-  return [
+  // Several flag-gated tools are placeholder shells here (a bare class, or a
+  // null export) because their implementation is absent from this fork. The
+  // flags still build, so drop anything that is not a real tool rather than
+  // letting it reach isEnabled() and take the whole CLI down at startup.
+  // isEnabled, not call: the class shells inherit Function.prototype.call.
+  const isImplemented = (tool: unknown): tool is Tool =>
+    typeof (tool as Partial<Tool> | null)?.isEnabled === 'function'
+  const candidates: unknown[] = [
     AgentTool,
     TaskOutputTool,
     BashTool,
@@ -236,6 +242,7 @@ export function getAllBaseTools(): Tools {
     // The actual decision to defer tools happens at request time in claude.ts
     ...(isToolSearchEnabledOptimistic() ? [ToolSearchTool] : []),
   ]
+  return candidates.filter(isImplemented)
 }
 
 /**

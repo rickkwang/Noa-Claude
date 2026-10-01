@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { feature } from 'bun:bundle'
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
 import { randomUUID } from 'crypto'
@@ -8,13 +7,22 @@ import {
   isSessionPersistenceDisabled,
 } from 'src/bootstrap/state.js'
 import type {
-  PermissionMode,
-  SDKCompactBoundaryMessage,
   SDKMessage,
-  SDKPermissionDenial,
   SDKStatus,
   SDKUserMessageReplay,
 } from 'src/entrypoints/agentSdkTypes.js'
+import type {
+  PermissionModeSchema,
+  SDKCompactBoundaryMessageSchema,
+  SDKPermissionDenialSchema,
+} from 'src/entrypoints/sdk/coreSchemas.js'
+import type { z } from 'zod/v4'
+
+type PermissionMode = z.infer<ReturnType<typeof PermissionModeSchema>>
+type SDKCompactBoundaryMessage = z.infer<
+  ReturnType<typeof SDKCompactBoundaryMessageSchema>
+>
+type SDKPermissionDenial = z.infer<ReturnType<typeof SDKPermissionDenialSchema>>
 import { accumulateUsage, updateUsage } from 'src/services/api/claude.js'
 import type { NonNullableUsage } from 'src/services/api/logging.js'
 import { EMPTY_USAGE } from 'src/services/api/logging.js'
@@ -40,7 +48,7 @@ import type { AppState } from './state/AppState.js'
 import { type Tools, type ToolUseContext, toolMatchesName } from './Tool.js'
 import type { AgentDefinition } from './tools/AgentTool/loadAgentsDir.js'
 import { SYNTHETIC_OUTPUT_TOOL_NAME } from './tools/SyntheticOutputTool/SyntheticOutputTool.js'
-import type { Message } from './types/message.js'
+import type { Message, SystemAPIErrorMessage } from './types/message.js'
 import type { OrphanedPermission } from './types/textInputTypes.js'
 import { createAbortController, createChildAbortController } from './utils/abortController.js'
 import type { AttributionState } from './utils/commitAttribution.js'
@@ -954,14 +962,17 @@ export class QueryEngine {
             }
           }
           if (message.subtype === 'api_error') {
+            // subtype is not a discriminant on SystemMessage; api_error
+            // messages only come from createSystemAPIErrorMessage.
+            const retry = message as SystemAPIErrorMessage
             yield {
               type: 'system',
               subtype: 'api_retry' as const,
-              attempt: message.retryAttempt,
-              max_retries: message.maxRetries,
-              retry_delay_ms: message.retryInMs,
-              error_status: message.error.status ?? null,
-              error: categorizeRetryableAPIError(message.error),
+              attempt: retry.retryAttempt,
+              max_retries: retry.maxRetries,
+              retry_delay_ms: retry.retryInMs,
+              error_status: retry.error.status ?? null,
+              error: categorizeRetryableAPIError(retry.error),
               session_id: getSessionId(),
               uuid: message.uuid,
             }

@@ -5,8 +5,8 @@ import { lazySchema } from '../utils/lazySchema.js'
 import {
   type HookEvent,
   type HookInput,
-  type PermissionUpdate,
 } from 'src/entrypoints/agentSdkTypes.js'
+import type { PermissionUpdate } from './permissions.js'
 import type {
   HookJSONOutput,
   AsyncHookJSONOutput,

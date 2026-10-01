@@ -62,18 +62,22 @@ export function subscribe(listener: Listener): () => void {
   return () => listeners.delete(listener);
 }
 
+// The stubs below take the full argument lists their callers in query.ts pass,
+// so the call sites type-check against this inert implementation.
 export async function applyCollapsesIfNeeded(
   messages: Message[],
+  ..._rest: unknown[]
 ): Promise<{ messages: Message[] }> {
   return { messages };
 }
 
-export function isWithheldPromptTooLong(): boolean {
+export function isWithheldPromptTooLong(..._args: unknown[]): boolean {
   return false;
 }
 
 export function recoverFromOverflow(
   messages: Message[],
+  ..._rest: unknown[]
 ): { messages: Message[]; committed: number } {
   return { messages, committed: 0 };
 }

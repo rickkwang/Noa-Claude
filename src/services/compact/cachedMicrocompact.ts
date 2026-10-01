@@ -6,6 +6,9 @@ import {
 } from './cachedMCConfig.js'
 
 export type { CacheEditsBlock, PinnedCacheEdits } from './cachedMCConfig.js'
+// Named as well as on the default object: services/api/claude.ts destructures
+// it from a dynamic import of this module.
+export { getCachedMCConfig }
 
 export type CachedMCState = {
   registeredTools: Set<string>

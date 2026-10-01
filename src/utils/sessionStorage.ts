@@ -2173,7 +2173,7 @@ function applyPreservedSegmentRelinks(
             cache_read_input_tokens: 0,
           },
         },
-      })
+      } as typeof msg)
     }
   }
 
@@ -4923,11 +4923,11 @@ function transformMessagesForExternalTranscript(
       if (filtered.length === 0) continue
       if (m.isVirtual) {
         const { isVirtual: _omit, ...rest } = m
-        transformed.push({ ...rest, message: { ...payload, content: filtered } })
+        transformed.push({ ...rest, message: { ...payload, content: filtered } } as typeof m)
         continue
       }
       if (filtered !== content) {
-        transformed.push({ ...m, message: { ...payload, content: filtered } })
+        transformed.push({ ...m, message: { ...payload, content: filtered } } as typeof m)
         continue
       }
       transformed.push(m)
@@ -4950,11 +4950,11 @@ function transformMessagesForExternalTranscript(
       if (filtered.length === 0) continue
       if (m.isVirtual) {
         const { isVirtual: _omit, ...rest } = m
-        transformed.push({ ...rest, message: { ...payload, content: filtered } })
+        transformed.push({ ...rest, message: { ...payload, content: filtered } } as typeof m)
         continue
       }
       if (filtered !== content) {
-        transformed.push({ ...m, message: { ...payload, content: filtered } })
+        transformed.push({ ...m, message: { ...payload, content: filtered } } as typeof m)
         continue
       }
       transformed.push(m)

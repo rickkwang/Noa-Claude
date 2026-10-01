@@ -42,7 +42,7 @@ Source calls `feature('FLAG')` from `bun:bundle`, which **is not a real runtime 
 
 - Keep `feature('X')` an **inline literal call** — never alias, wrap, or compute the flag name, or the regex/DCE breaks.
 - Baseline build enables only `build.ts`'s `defaultFeatures` — `AUTO_THEME`, `BUILTIN_EXPLORE_PLAN_AGENTS`, `AUTO_MODE`; `--feature-set=dev-full` adds `fullExperimentalFeatures`; unknown flags → `false`.
-- Some flags gate **modules absent from this fork** — enabling them breaks the build (`build:dev:full` is the canary). `COORDINATOR_MODE` is in neither list, so its call sites are intentionally inert branches woven through resume/session hot paths; don't "fix" them. `FEATURES.md` is the authoritative audit.
+- Some flags gate **modules absent from this fork** — enabling them breaks the build (`build:dev:full` is the canary). A green `build:dev:full` only proves the bundle resolves: the placeholder modules behind those flags must still export every name their gated call sites read, or the binary dies at startup or on the first turn. CI runs `e2e-agent-loop.mjs --entry dist/main-dev.js` against the full-feature bundle for that reason. `COORDINATOR_MODE` is in neither list, so its call sites are intentionally inert branches woven through resume/session hot paths; don't "fix" them. `FEATURES.md` is the authoritative audit.
 
 ## Lean vs verbose prompt — the second load-bearing gate
 
@@ -56,10 +56,11 @@ Source calls `feature('FLAG')` from `bun:bundle`, which **is not a real runtime 
 
 ## Architecture
 
-Launch: `bin/noa.js → run-noa.js → dist/main.js → main() in src/main.tsx`
+Launch: `bin/noa.js → run-noa.js → dist/main.js → bootstrapCli() in src/entrypoints/cli.tsx → main() in src/main.tsx`
 
 - `run-noa.js` — launcher: validates `launcher-config.js`, lockfile-guarded auto-rebuild of `dist/main.js` when source is newer (gated by `CLAUDE_CODE_LAUNCHER_AUTO_REBUILD`), then imports the bundle. Plain JS run directly by Bun — must keep working when `dist/` is stale/missing. (Same for `bin/noa.js`, `launcher-config.js`, `build.ts`.)
-- `src/main.tsx` — bundle entrypoint (`main()`; REPL + UI orchestration). a few thousand LOC itself, but pulls in most of the non-test `src/` tree. `src/entrypoints/cli.tsx` is a fast-path bootstrap (`--version`, MCP subservers, bridge/daemon) that lazy-imports the main loop.
+- `src/entrypoints/cli.tsx` — bundle entrypoint (`bootstrapCli()`, exported as `main`): fast paths (`--version`, MCP subservers, bridge/daemon) that return before the CLI is evaluated, then a lazy import of `src/main.tsx`. Keep its imports dynamic — one static import drags the whole tree back onto every launch (`check:runtime` asserts `--version` never evaluates `main.tsx`). The bootstrap block appended to the bundle calls `bootstrapCli()` as a bare identifier, so that name must stay unique in the bundle scope.
+- `src/main.tsx` — `main()`; REPL + UI orchestration. a few thousand LOC itself, but pulls in most of the non-test `src/` tree. `dev:source` imports it directly, skipping the bootstrap.
 - `src/query.ts` — `query()`, the async-generator agent loop (model → tools → results → repeat). `src/QueryEngine.ts` wraps it: SDK message stream, usage, compaction, abort/retry.
 - `src/Tool.ts` (`Tool` type, `ToolUseContext`, `buildTool()`) + `src/tools.ts` (registry); one dir per tool in `src/tools/<Name>Tool/` (availability is feature-gated/governed). `src/commands.ts` + `src/commands/` for slash commands.
 - Subsystems: `src/services/` (api, mcp, oauth, lsp, compact, autoFix), `src/components/`+`src/hooks/` (TUI), `src/bridge/` (remote/session), `src/utils/`. README has the full map.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { feature } from 'bun:bundle'
 import type {
   ContentBlockParam,
@@ -553,7 +552,13 @@ function streamedCheckPermissionsAndCallTool(
       // the progress metric with them. Matches upstream, which gates this same
       // analytics event on `data.type !== 'tool_heartbeat'`. The progress
       // message itself is still enqueued below.
-      if (progress.data?.type !== 'tool_heartbeat') {
+      const data: unknown = progress.data
+      const isHeartbeat =
+        typeof data === 'object' &&
+        data !== null &&
+        'type' in data &&
+        data.type === 'tool_heartbeat'
+      if (!isHeartbeat) {
         logEvent('tengu_tool_use_progress', {
           messageID:
             messageId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,

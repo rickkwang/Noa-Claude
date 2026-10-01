@@ -18,7 +18,7 @@ const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'n
 mkdirSync(artifacts, { recursive: true });
 const model = 'claude-sonnet-4-6';
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'refusal', 'refusal-repeat', 'budget-streaming', 'budget-nonstream', 'compact-resume'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'refusal', 'refusal-repeat', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -74,7 +74,9 @@ const server = createServer(async (req, res) => {
       content = [{ type: 'text', text: 'Partial answer.' }]; stop = 'refusal';
     } else if (active.case.startsWith('budget-')) {
       content = [{ type: 'tool_use', id: `toolu_${n}`, name: 'Bash', input: { command: 'printf started > started.txt; sleep 2; printf finished > finished.txt', timeout: 10000 } }]; stop = 'tool_use';
-    } else if (active.case === 'max-turns' || (active.case === 'read' && n === 1) || (active.case === 'compact-resume' && n <= 3)) {
+    } else if ((active.case === 'permission-deny' || active.case === 'deny-rule') && n === 1) {
+      content = [{ type: 'tool_use', id: `toolu_${n}`, name: 'Bash', input: { command: 'printf denied > denied.txt' } }]; stop = 'tool_use';
+    } else if (active.case === 'max-turns' || ((active.case === 'read' || active.case === 'hook-block') && n === 1) || (active.case === 'compact-resume' && n <= 3)) {
       content = [
         ...(active.case === 'compact-resume' ? [{ type: 'text', text: 'prior-context '.repeat(5000) }] : []),
         { type: 'tool_use', id: `toolu_${n}`, name: 'Read', input: { file_path: join(active.dir, 'fixture.txt') } },
@@ -119,13 +121,19 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
     NOA_CLAUDE_STREAMING_TOOL_EXECUTION: scenario === 'budget-nonstream' ? '0' : '1', FALLBACK_FOR_ALL_PRIMARY_MODELS: '1', CLAUDE_CODE_EAGER_FLUSH: '1',
   });
   const streamingInput = scenario.startsWith('budget-');
-  const command = ['--bare', '--print', '--verbose', '--output-format', 'stream-json', '--model', model, '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', 'Read,Bash', '--max-turns', scenario === 'compact-resume' ? '6' : '2'];
+  // Hooks are off under --bare, so the hook scenario runs the full startup path.
+  const command = [...(scenario === 'hook-block' ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', model, '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', 'Read,Bash', '--max-turns', scenario === 'compact-resume' ? '6' : '2'];
   if (scenario !== 'compact-resume') command.push('--no-session-persistence');
   if (scenario === 'fallback') command.push('--fallback-model', 'claude-haiku-4-5');
+  // An allow rule that the narrower deny rule must still beat.
+  if (scenario === 'deny-rule') command.push('--allowedTools', 'Bash', '--disallowedTools', 'Bash(printf:*)');
+  if (scenario === 'hook-block') command.push('--settings', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'printf ran > hook-ran.txt; echo HOOK_BLOCKED_42 >&2; exit 2' }] }] } }));
   if (streamingInput) command.push('--input-format', 'stream-json', '--allowedTools', 'Bash', '--max-budget-usd', '0.0001');
   command.push(...extra);
   const started = performance.now();
-  const child = spawn(executable, command, { cwd: active.dir, env, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+  // A bundle (dist/main-dev.js) has no shebang; run it through bun.
+  const [bin, binArgs] = executable.endsWith('.js') ? ['bun', [executable, ...command]] : [executable, command];
+  const child = spawn(bin, binArgs, { cwd: active.dir, env, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
   children.add(child);
   let stdout = '', stderr = '', pending = '', result;
   let budgetObservation;
@@ -191,9 +199,13 @@ try {
         } else {
           runResult = await run(executable, scenario);
           const count = active.requests.length;
+          // Without --bare the CLI also makes side requests; the loop's own carry the tool list.
+          const main = active.requests.filter(r => r.body.tools?.length);
           if (scenario === 'alternating' || scenario === 'fallback') {
             assert.equal(runResult.code, 1, 'recovery only stopped when the scripted provider succeeded');
             assert.equal(runResult.result.is_error, true);
+            // An error before the first request also ends with is_error; that is a crash, not bounded recovery.
+            assert.ok(count >= 2, `recovery never ran: ${count} requests`);
             assert.ok(count <= (scenario === 'fallback' ? 6 : 3), `unbounded recovery: ${count} requests`);
           } else if (scenario === 'refusal-repeat') {
             assert.equal(runResult.result.is_error, true); assert.equal(count, 2, `refusal retried ${count - 1} times`);
@@ -206,6 +218,18 @@ try {
             if (scenario === 'budget-streaming') assert.equal(active.started, true, 'Bash did not start; cancellation path untested');
             assert.equal(active.finishedAtResult, false, 'Bash already finished before the budget result');
             assert.equal(active.finished, false, 'Bash wrote after the terminal budget result');
+          } else if (scenario === 'permission-deny' || scenario === 'deny-rule') {
+            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
+            assert.equal(existsSync(join(dir, 'denied.txt')), false, 'denied Bash command still ran');
+            const toolResult = main[1]?.body.messages.at(-1).content.find(b => b.type === 'tool_result');
+            assert.equal(toolResult?.is_error, true, 'denial was not reported to the model as an error');
+            assert.deepEqual(runResult.result.permission_denials.map(d => d.tool_name), ['Bash']);
+          } else if (scenario === 'hook-block') {
+            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
+            assert.equal(existsSync(join(dir, 'hook-ran.txt')), true, 'PreToolUse hook never ran; block path untested');
+            const followUp = JSON.stringify(main[1]?.body.messages);
+            assert.ok(followUp.includes('HOOK_BLOCKED_42'), 'hook block reason did not reach the model');
+            assert.ok(!followUp.includes('LOCAL_FIXTURE_42'), 'Read ran despite the blocking hook');
           } else {
             assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK'); assert.equal(count, 2);
             if (scenario === 'refusal') assert.ok(JSON.stringify(active.requests[1].body.messages).includes('stopped by a safety classifier'), 'retry did not tell the model why it stopped');

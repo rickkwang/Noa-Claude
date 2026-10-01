@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { feature } from 'bun:bundle'
 import { APIUserAbortError } from '@anthropic-ai/sdk'
 import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
@@ -770,6 +769,7 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
         if (currentAppState.toolPermissionContext.shouldAvoidPermissionPrompts) {
           return {
             behavior: 'deny',
+            message: result.message,
             decisionReason: {
               type: 'asyncAgent',
               reason:

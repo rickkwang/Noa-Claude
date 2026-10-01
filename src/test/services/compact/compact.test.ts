@@ -38,7 +38,8 @@ function makeAssistantMessage(
       content: [{ type: 'text', text }],
     },
     ...extra,
-  }
+    // Deliberately partial: only the fields message ordering reads.
+  } as unknown as Message
 }
 
 test('default compaction places the summary before kept messages', () => {
@@ -275,7 +276,7 @@ describe('getPartialCompactMessagesToSummarize', () => {
       'from',
     )
 
-    expect(selected.map(m => m.uuid)).toEqual(['suffix'])
+    expect(selected.map(m => m.uuid as string)).toEqual(['suffix'])
   })
 })
 

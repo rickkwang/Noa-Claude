@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { feature } from 'bun:bundle'
 import type { UUID } from 'crypto'
 import uniqBy from 'lodash-es/uniqBy.js'
@@ -1365,7 +1364,7 @@ export async function partialCompactConversation(
         if (!summary?.startsWith(PROMPT_TOO_LONG_ERROR_MESSAGE)) break
 
         ptlAttempts++
-        const failPTL = (): never => {
+        const failPTL: () => never = () => {
           logEvent('tengu_partial_compact_failed', {
             reason:
               'prompt_too_long' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,

@@ -1,5 +1,6 @@
 import { feature } from 'bun:bundle'
 import type { UUID } from 'crypto'
+import type { BetaToolUseBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import { readFile, rename, writeFile } from 'fs/promises'
 import { dirname } from 'path'
 import {
@@ -190,7 +191,9 @@ function extractTodosFromTranscript(messages: Message[]): TodoList {
       continue
     }
     const toolUse = msg.message.content.find(
-      (block): block is ToolUseBlock =>
+      // isToolUseBlock first: a transcript read back from disk can hold a
+      // malformed block, and this runs on every resume.
+      (block): block is BetaToolUseBlock =>
         isToolUseBlock(block) && block.name === TODO_WRITE_TOOL_NAME,
     )
     if (!toolUse) continue

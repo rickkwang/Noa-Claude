@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { ToolUseBlock } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import { findToolByName, type ToolUseContext } from '../../Tool.js'
@@ -6,7 +5,10 @@ import type { AssistantMessage, Message } from '../../types/message.js'
 import { errorMessage } from '../../utils/errors.js'
 import { createChildAbortController } from '../../utils/abortController.js'
 import { all } from '../../utils/generators.js'
-import { logEvent } from '../analytics/index.js'
+import {
+  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+  logEvent,
+} from '../analytics/index.js'
 import { type MessageUpdateLazy, runToolUse } from './toolExecution.js'
 
 export function getMaxToolUseConcurrency(): number {
@@ -148,7 +150,8 @@ export function buildSameTurnToolUses(
     // take down tool execution. Falling back to undefined just means the
     // classifier sees the turn without its sibling calls.
     logEvent('tengu_auto_mode_sibling_context_error', {
-      error: errorMessage(error),
+      error:
+        errorMessage(error) as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
     })
     return undefined
   }

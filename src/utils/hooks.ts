@@ -73,6 +73,7 @@ import {
   isAsyncHookJSONOutput,
   isSyncHookJSONOutput,
   type PermissionRequestResult,
+  type HookProgress,
 } from '../types/hooks.js'
 import type {
   HookEvent,
@@ -147,7 +148,12 @@ import { createAttachmentMessage } from './attachments.js'
 import { all } from './generators.js'
 import { findToolByName, type Tools, type ToolUseContext } from '../Tool.js'
 import { execPromptHook } from './hooks/execPromptHook.js'
-import type { Message, AssistantMessage } from '../types/message.js'
+import type {
+  Message,
+  AssistantMessage,
+  AttachmentMessage,
+  ProgressMessage,
+} from '../types/message.js'
 import { execAgentHook } from './hooks/execAgentHook.js'
 import { execHttpHook } from './hooks/execHttpHook.js'
 import type { ShellCommand } from './ShellCommand.js'
@@ -361,7 +367,7 @@ export type AggregatedHookResult = {
   // Progress and attachment messages at runtime (hook executors yield
   // createAttachmentMessage / progress updates), never 'hook_result' —
   // consumers discriminate on message.type.
-  message?: Message
+  message?: AttachmentMessage | ProgressMessage<HookProgress>
   blockingError?: HookBlockingError
   preventContinuation?: boolean
   stopReason?: string

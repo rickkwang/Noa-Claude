@@ -2282,6 +2282,59 @@ function checkFindExecDeleteSecurity() {
 // ============================================================================
 // Priority 5: thinking spinner text thresholds
 // ============================================================================
+// The bundle entry is the bootstrap (src/entrypoints/cli.tsx), so --version
+// must return without evaluating main.tsx. main.tsx marks 'main_tsx_entry' as
+// its first statement; --help is the control proving the probe can see it.
+function checkVersionFastPath() {
+  const bundle = resolve(repoRoot, 'dist/main.js');
+  // Through the launcher first: on a fresh checkout it builds the bundle the
+  // probes below import directly.
+  const launched = runAgent(['--version'], { timeout: 300000 });
+  assert(
+    launched.status === 0 && existsSync(bundle),
+    'launcher did not produce dist/main.js for the fast-path probe',
+    launched.stderr || launched.stdout,
+  );
+  const probe = (flag) => {
+    const script = `
+      process.on('exit', () => {
+        const hit = performance.getEntriesByName('main_tsx_entry').length;
+        process.stderr.write('\\nMAIN_TSX_EVALUATED=' + hit + '\\n');
+      });
+      const m = await import(${JSON.stringify(bundle)});
+      process.argv = [process.argv[0], ${JSON.stringify(bundle)}, ${JSON.stringify(flag)}];
+      await m.main();
+    `;
+    return spawnSync(process.execPath, ['-e', script], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: 'pipe',
+      timeout: 15000,
+      killSignal: 'SIGKILL',
+      env: { ...process.env, CLAUDE_CODE_PROFILE_STARTUP: '1' },
+    });
+  };
+
+  const version = probe('--version');
+  assert(
+    version.status === 0 && /\(Noa Claude\)/.test(version.stdout),
+    '--version did not print the version through the bundle entry',
+    version.stderr || version.stdout,
+  );
+  assert(
+    version.stderr.includes('MAIN_TSX_EVALUATED=0'),
+    '--version evaluated main.tsx; the bootstrap fast path is not the bundle entry',
+    version.stderr,
+  );
+
+  const help = probe('--help');
+  assert(
+    help.stderr.includes('MAIN_TSX_EVALUATED=1'),
+    'fast-path probe is blind: --help did not record main_tsx_entry',
+    help.stderr,
+  );
+}
+
 function checkThinkingSpinnerThresholds() {
   const effSuffix = ' (medium effort)';
 
@@ -2348,6 +2401,9 @@ await checkCompactUtilities();
 
 console.log('Checking ripgrep local search paths...');
 await checkRipgrep();
+
+console.log('Checking --version fast path...');
+checkVersionFastPath();
 
 console.log('Checking launcher failure paths...');
 checkLauncherFailurePaths();

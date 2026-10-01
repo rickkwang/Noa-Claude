@@ -409,7 +409,10 @@ let compileSource: string | null = null
 
 try {
   const result = await Bun.build({
-    entrypoints: ['./src/main.tsx'],
+    // The bootstrap, not main.tsx: its static import graph is empty, so the
+    // bundler wraps everything behind it in lazy init functions and fast paths
+    // such as --version return without evaluating the CLI.
+    entrypoints: ['./src/entrypoints/cli.tsx'],
     target: 'bun',
     format: 'esm',
     outdir: dirname(resolve(outfile)),

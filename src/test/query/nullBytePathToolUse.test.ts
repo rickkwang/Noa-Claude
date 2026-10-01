@@ -77,7 +77,7 @@ test('a NUL byte in a file tool path fails only that call, not the turn', async 
     },
   } as Partial<QueryDeps>
 
-  const results = new Map<string, { content: unknown; is_error?: boolean }>()
+  const results = new Map<string, { content?: unknown; is_error?: boolean }>()
   for await (const message of query({
     messages: [createUserMessage({ content: 'start' })],
     systemPrompt: asSystemPrompt([]),

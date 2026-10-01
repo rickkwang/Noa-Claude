@@ -17,6 +17,7 @@ export function isSnipMarkerMessage(): boolean {
 
 export function snipCompactIfNeeded(
   messages: Message[],
+  ..._rest: unknown[]
 ): {
   messages: Message[];
   tokensFreed: number;

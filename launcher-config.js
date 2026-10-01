@@ -307,7 +307,7 @@ export function getLauncherBootstrapCode() {
 if (import.meta.main) {
 ${getLauncherEnvBootstrapCode()}
   globalThis.MACRO = ${JSON.stringify(LAUNCHER_MACRO, null, 2)};
-  main().catch(e => {
+  bootstrapCli().catch(e => {
     console.error('Fatal error:', e);
     process.exit(1);
   });

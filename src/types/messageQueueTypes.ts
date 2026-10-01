@@ -1,5 +1,4 @@
 import type { UUID } from 'crypto'
-import type { Message } from './message.js'
 
 export type QueueOperation =
   | 'enqueue'
@@ -7,7 +6,8 @@ export type QueueOperation =
   | 'remove'
   | 'popAll'
 
-export type QueueOperationMessage = Message & {
+// A transcript log entry, not a conversation message: it has no uuid chain.
+export type QueueOperationMessage = {
   type: 'queue-operation'
   operation: QueueOperation
   timestamp: string

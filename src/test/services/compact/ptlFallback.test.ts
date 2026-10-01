@@ -387,7 +387,9 @@ describe('a session dominated by a huge first prompt', () => {
 
     expect(forkCalls.length).toBe(3)
     // The second request carries the opening round alone.
-    expect(forkCalls[1]!.forkContextMessages!.map(m => m.uuid)).toEqual([
+    expect(
+      forkCalls[1]!.forkContextMessages!.map(m => m.uuid as string),
+    ).toEqual([
       'opening',
     ])
     // The retry replaces it with that summary; nothing is head-truncated.
@@ -431,7 +433,9 @@ describe('a session dominated by a huge first prompt', () => {
     )
 
     expect(forkCalls.length).toBe(3)
-    expect(forkCalls[1]!.forkContextMessages!.map(m => m.uuid)).toEqual([
+    expect(
+      forkCalls[1]!.forkContextMessages!.map(m => m.uuid as string),
+    ).toEqual([
       'opening',
     ])
     expect(JSON.stringify(forkCalls[2])).toContain(OPENING_ROUND_SUMMARY_MARKER)

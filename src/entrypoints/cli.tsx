@@ -29,8 +29,15 @@ if (feature('ABLATION_BASELINE') && process.env.CLAUDE_CODE_ABLATION_BASELINE) {
  * Bootstrap entrypoint - checks for special flags before loading the full CLI.
  * All imports are dynamic to minimize module evaluation for fast paths.
  * Fast-path for --version has zero imports beyond this file.
+ *
+ * Exported rather than self-invoked: this is the bundle entry (build.ts), and
+ * both callers — run-noa.js and the bootstrap block appended to the bundle —
+ * invoke it themselves after resolving the config dir.
+ *
+ * Named bootstrapCli, not main: the appended block calls it as a bare
+ * identifier, and main.tsx's own main() shares the bundle's top-level scope.
  */
-async function main(): Promise<void> {
+export async function bootstrapCli(): Promise<void> {
   const args = process.argv.slice(2);
 
   // Fast-path for --version/-v: zero module loading needed
@@ -227,6 +234,4 @@ async function main(): Promise<void> {
   await cliMain();
   profileCheckpoint('cli_after_main_complete');
 }
-
-// eslint-disable-next-line custom-rules/no-top-level-side-effects
-void main();
+export { bootstrapCli as main };

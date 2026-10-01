@@ -1,9 +1,10 @@
-// @ts-nocheck
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import type {
   ToolResultBlockParam,
   ToolUseBlock,
 } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
+import type { ConnectorTextBlock } from './types/connectorText.js'
 import type { CanUseToolFn } from './hooks/useCanUseTool.js'
 import { FallbackTriggeredError } from './services/api/withRetry.js'
 import {
@@ -236,7 +237,8 @@ function isRefusalMessage(
 }
 
 function hasAssistantOutputContent(message: AssistantMessage): boolean {
-  const content = message.message?.content
+  const content: Array<BetaContentBlock | ConnectorTextBlock> | undefined =
+    message.message?.content
   if (!Array.isArray(content)) {
     return false
   }
@@ -704,7 +706,7 @@ async function* queryLoop(
         setAppState: toolUseContext.setAppState,
       })
       const goal = toolUseContext.getAppState().goal
-      if (shouldInjectGoalPrompt(goal)) {
+      if (goal && shouldInjectGoalPrompt(goal)) {
         messagesForQuery = [
           createUserMessage({
             content: getGoalPromptForStatus(goal),
@@ -1173,7 +1175,7 @@ async function* queryLoop(
               ...toolUseContext,
               options: {
                 ...toolUseContext.options,
-                mainLoopModel: fallbackModel,
+                mainLoopModel: currentModel,
               },
             }
             updatedToolUseContext = toolUseContext
@@ -1501,10 +1503,12 @@ async function* queryLoop(
         // evaluate. Running stop hooks on prompt-too-long creates a death
         // spiral: error → hook blocking → retry → error → … (the hook
         // injects more tokens each cycle).
-        if (lastAssistantWithheld) {
-          yield lastMessage
+        if (lastMessage) {
+          if (lastAssistantWithheld) {
+            yield lastMessage
+          }
+          void executeStopFailureHooks(lastMessage, toolUseContext)
         }
-        void executeStopFailureHooks(lastMessage, toolUseContext)
         return { reason: isWithheldMedia ? 'image_error' : 'prompt_too_long' }
       }
 
@@ -1805,7 +1809,7 @@ async function* queryLoop(
         agentId: toolUseContext.agentId,
         permissionMode,
       })
-      if (goalEvaluatorAction === 'run') {
+      if (goalEvaluatorAction === 'run' && goal) {
         if (toolUseContext.abortController.signal.aborted) {
           yield* yieldInterruptionNotice(toolUseContext, { toolUse: false })
           return { reason: 'aborted_streaming' }
