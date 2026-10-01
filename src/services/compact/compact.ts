@@ -1767,9 +1767,13 @@ export async function streamCompactSummary({
         // Pass the compact context's abortController so user Esc aborts the
         // fork — same signal the streaming fallback uses at
         // `signal: context.abortController.signal` below.
-        overrides: { abortController: context.abortController },
-        onOutputTokens: outputTokens =>
-          context.onCompactProgress?.({ type: 'compact_progress', outputTokens }),
+        // shareSetResponseLength lets the spinner's char-based token count
+        // track the summary stream (upstream behavior; works on providers
+        // that don't stream usage deltas).
+        overrides: {
+          abortController: context.abortController,
+          shareSetResponseLength: true,
+        },
       })
       const assistantMsg = getLastAssistantMessage(result.messages)
       const assistantText = assistantMsg
@@ -1906,17 +1910,6 @@ export async function streamCompactSummary({
           ) {
             const charactersStreamed = event.event.delta.text.length
             context.setResponseLength?.(length => length + charactersStreamed)
-          }
-
-          if (
-            event.type === 'stream_event' &&
-            event.event.type === 'message_delta' &&
-            event.event.usage?.output_tokens
-          ) {
-            context.onCompactProgress?.({
-              type: 'compact_progress',
-              outputTokens: event.event.usage.output_tokens,
-            })
           }
 
           if (event.type === 'assistant') {

@@ -1581,8 +1581,6 @@ export function REPL({
   const [spinnerColor, setSpinnerColor] = useState<keyof Theme | null>(null);
   const [spinnerShimmerColor, setSpinnerShimmerColor] = useState<keyof Theme | null>(null);
   const [compactProgressStartedAt, setCompactProgressStartedAt] = useState<number | null>(null);
-  const [compactOutputTokens, setCompactOutputTokens] = useState(0);
-  const lastCompactProgressUpdateRef = useRef(0);
   const [isAutoModeClassifierStalled, setIsAutoModeClassifierStalled] = useState(false);
   const hasAnyClassifierChecking = useHasAnyClassifierChecking();
   const classifierCheckingVersion = useClassifierCheckingVersion();
@@ -2679,26 +2677,18 @@ export function REPL({
             // resets. The previous 'warning' amber also set body and shimmer
             // to the SAME key, flattening the shimmer sweep to a no-op.
             setSpinnerMessage('Compacting conversation');
-            setCompactProgressStartedAt(Date.now());
-            setCompactOutputTokens(0);
+            // A repeated compact_start (retry) keeps the original start.
+            setCompactProgressStartedAt(prev => prev ?? Date.now());
+            // Restart the spinner's char-based token count from 0 so it tracks
+            // the streamed summary (upstream: the compact count is the summary
+            // stream's own length, not the turn-so-far count).
+            setResponseLength(() => 0);
             break;
-          case 'compact_progress': {
-            // output_tokens is cumulative within one API call; a fallback-model
-            // retry restarts it, so keep the line monotonic. message_delta usage
-            // events can fire many times a second — throttle the re-render.
-            const now = Date.now();
-            if (now - lastCompactProgressUpdateRef.current >= 100) {
-              lastCompactProgressUpdateRef.current = now;
-              setCompactOutputTokens(prev => Math.max(prev, event.outputTokens));
-            }
-            break;
-          }
           case 'compact_end':
             setSpinnerMessage(null);
             setSpinnerColor(null);
             setSpinnerShimmerColor(null);
             setCompactProgressStartedAt(null);
-            setCompactOutputTokens(0);
             break;
         }
       },
@@ -2711,7 +2701,7 @@ export function REPL({
       requestPrompt: requestPrompt,
       contentReplacementState: contentReplacementStateRef.current
     };
-  }, [commands, combinedInitialTools, mainThreadAgentDefinition, debug, initialMcpClients, ideInstallationStatus, dynamicMcpConfig, theme, allowedAgentTypes, store, setAppState, reverify, addNotification, setMessages, onChangeDynamicMcpConfig, resume, requestPrompt, disabled, customSystemPrompt, appendSystemPrompt, setConversationId]);
+  }, [commands, combinedInitialTools, mainThreadAgentDefinition, debug, initialMcpClients, ideInstallationStatus, dynamicMcpConfig, theme, allowedAgentTypes, store, setAppState, reverify, addNotification, setMessages, onChangeDynamicMcpConfig, resume, requestPrompt, disabled, customSystemPrompt, appendSystemPrompt, setConversationId, setResponseLength]);
 
   // Session backgrounding (Ctrl+B to background/foreground)
   const handleBackgroundQuery = useCallback(() => {
@@ -4965,7 +4955,7 @@ export function REPL({
               {"external" === 'ant' && <TungstenLiveMonitor />}
               {WebBrowserPanel ? <WebBrowserPanel /> : null}
               <Box flexGrow={1} />
-              {showSpinner && <SpinnerWithVerb mode={streamMode} spinnerTip={spinnerTip} responseLengthRef={responseLengthRef} apiMetricsRef={apiMetricsRef} overrideMessage={spinnerMessage} spinnerSuffix={stopHookSpinnerSuffix} verbose={verbose} loadingStartTimeRef={loadingStartTimeRef} totalPausedMsRef={totalPausedMsRef} pauseStartTimeRef={pauseStartTimeRef} overrideColor={effectiveSpinnerColor} overrideShimmerColor={effectiveSpinnerShimmerColor} hasActiveTools={inProgressToolUseIDs.size > 0} leaderIsIdle={!isLoading} compact={compactProgressStartedAt !== null ? { startedAt: compactProgressStartedAt, outputTokens: compactOutputTokens } : undefined} />}
+              {showSpinner && <SpinnerWithVerb mode={streamMode} spinnerTip={spinnerTip} responseLengthRef={responseLengthRef} apiMetricsRef={apiMetricsRef} overrideMessage={spinnerMessage} spinnerSuffix={stopHookSpinnerSuffix} verbose={verbose} loadingStartTimeRef={loadingStartTimeRef} totalPausedMsRef={totalPausedMsRef} pauseStartTimeRef={pauseStartTimeRef} overrideColor={effectiveSpinnerColor} overrideShimmerColor={effectiveSpinnerShimmerColor} hasActiveTools={inProgressToolUseIDs.size > 0} leaderIsIdle={!isLoading} compact={compactProgressStartedAt !== null ? { startedAt: compactProgressStartedAt } : undefined} />}
               {!showSpinner && !isLoading && !userInputOnProcessing && !hasRunningTeammates && isBriefOnly && !viewedAgentTask && <BriefIdleStatus />}
               {isFullscreenEnvEnabled() && <PromptInputQueuedCommands isLoading={isLoading} />}
             </>} bottom={<Box flexDirection={companionNarrow ? 'column' : 'row'} width="100%" alignItems={companionNarrow ? undefined : 'flex-end'}>

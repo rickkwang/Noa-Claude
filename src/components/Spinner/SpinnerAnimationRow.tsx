@@ -95,9 +95,11 @@ export type SpinnerAnimationRowProps = {
   effortSuffix: string;
   // Show `running tool for Ns` / `ran tool for Ns` in the status line.
   showToolCallTimer?: boolean;
-  /** While compacting: timer runs from compaction start and the token count
-   *  tracks the summary's streamed output tokens (upstream 2.1.283). */
-  compact?: { startedAt: number; outputTokens: number };
+  /** While compacting: timer runs from compaction start (upstream 2.1.287).
+   *  The token count stays on the shared streamed-char counter — REPL resets
+   *  responseLengthRef to 0 on compact_start and the summary stream counts up
+   *  from there, same as upstream. */
+  compact?: { startedAt: number };
 };
 
 /**
@@ -176,6 +178,12 @@ export function SpinnerAnimationRow({
   // interval can change without retuning the constants) ===
   const tokenCounterRef = useRef(currentResponseLength);
   const tokenTickRef = useRef(time);
+  // Compact resets responseLengthRef to 0 mid-turn (REPL compact_start); the
+  // counter below only counts up, so snap it down or the pre-compact turn's
+  // count would linger over the summary's fresh count.
+  if (compact && tokenCounterRef.current > currentResponseLength) {
+    tokenCounterRef.current = currentResponseLength;
+  }
   // Cap dt: the clock freezes while offscreen, so the first tick after
   // returning would otherwise snap the counter straight to the target.
   const dtSec = Math.min(time - tokenTickRef.current, 250) / 1000;
@@ -199,10 +207,9 @@ export function SpinnerAnimationRow({
   const timerWidth = stringWidth(timerText);
 
   // === Token count (leader + teammates, or foregrounded teammate) ===
-  // During compact the count is the summary's streamed output tokens.
-  const totalTokens = compact ? compact.outputTokens : foregroundedTeammate && !foregroundedTeammate.isIdle ? foregroundedTeammate.progress?.tokenCount ?? 0 : leaderTokens + teammateTokens;
+  const totalTokens = foregroundedTeammate && !foregroundedTeammate.isIdle ? foregroundedTeammate.progress?.tokenCount ?? 0 : leaderTokens + teammateTokens;
   const tokenCount = formatNumber(totalTokens);
-  const tokensText = compact ? `${tokenCount} tokens` : hasRunningTeammates ? `${tokenCount} tokens` : `${figures.arrowDown} ${tokenCount} tokens`;
+  const tokensText = `${figures.arrowDown} ${tokenCount} tokens`;
   const tokensWidth = stringWidth(tokensText);
 
   // === Tool-call window + thinking burst tracking (upstream gn/kn) ===

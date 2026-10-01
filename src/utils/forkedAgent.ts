@@ -123,9 +123,6 @@ export type ForkedAgentParams = {
   modelOverride?: string
   /** Model the query loop switches to if the fork's model is overloaded. */
   fallbackModel?: string
-  /** Called with the cumulative output-token count as the response streams
-   *  (from message_delta usage). Lets callers show live progress. */
-  onOutputTokens?: (outputTokens: number) => void
 }
 
 export type ForkedAgentResult = {
@@ -527,7 +524,6 @@ export async function runForkedAgent({
   maxOutputTokens,
   maxTurns,
   onMessage,
-  onOutputTokens,
   skipTranscript,
   skipCacheWrite,
   modelOverride,
@@ -611,10 +607,21 @@ export async function runForkedAgent({
         ) {
           const turnUsage = updateUsage({ ...EMPTY_USAGE }, message.event.usage)
           totalUsage = accumulateUsage(totalUsage, turnUsage)
-          // output_tokens in message_delta usage is cumulative within the API
-          // call, so it doubles as a live progress signal.
-          if (onOutputTokens && message.event.usage.output_tokens) {
-            onOutputTokens(message.event.usage.output_tokens)
+        }
+        // Count streamed text into the parent's responseLength (a no-op unless
+        // the caller opted into shareSetResponseLength) so the spinner's
+        // char-based token count tracks the fork's stream — this is what feeds
+        // the token count during compact, on any provider.
+        if ('event' in message && message.event?.type === 'content_block_delta') {
+          const delta = message.event.delta
+          const streamed =
+            delta?.type === 'text_delta'
+              ? delta.text.length
+              : delta?.type === 'input_json_delta'
+                ? delta.partial_json.length
+                : 0
+          if (streamed > 0) {
+            isolatedToolUseContext.setResponseLength(len => len + streamed)
           }
         }
         continue
