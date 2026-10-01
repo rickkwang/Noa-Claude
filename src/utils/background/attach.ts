@@ -26,6 +26,17 @@ const RESET_MODES =
   '\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l' +
   '\x1b[?1004l\x1b[?2004l\x1b[<u\x1b[>4m\x1b[?1049l\x1b[0m\x1b[?25h'
 
+/**
+ * The queries a session sends its terminal (ink/terminal-querier.ts: DECRQM,
+ * DA1, DA2, kitty keyboard, DECXCPR, XTVERSION, OSC colour). The replay holds
+ * the ones the session sent earlier; written to this terminal they would be
+ * answered a second time, and the answers go to the session as input it no
+ * longer expects — a reply split by the escape-flush timer lands in the prompt
+ * as text (`?1;2;4c`).
+ */
+// eslint-disable-next-line no-control-regex
+const TERMINAL_QUERY_RE = /\x1b\[(?:\?\d+\$p|0?c|>c|\?u|\?6n|>0q)|\x1b\]\d+;\?(?:\x07|\x1b\\)/g
+
 export function attachToJob(short: string): Promise<AttachOutcome> {
   return new Promise(resolve => {
     const stdin = process.stdin
@@ -39,6 +50,7 @@ export function attachToJob(short: string): Promise<AttachOutcome> {
     // Tail kept back from stdout in case it holds the start of a split
     // DETACH_SEQUENCE.
     let held = ''
+    let replayed = ''
 
     // Same paused-mode 'readable' reading Ink uses: switching the stream to
     // flowing mode ('data') and back drops the first keypress after detach.
@@ -73,7 +85,9 @@ export function attachToJob(short: string): Promise<AttachOutcome> {
       let text = held + data.toString('latin1')
       held = ''
       if (!live) {
-        stdout.write(Buffer.from(text.split(DETACH_SEQUENCE).join(''), 'latin1'))
+        // Buffered until the host says the replay is over: a query can
+        // straddle two chunks, and it has to be stripped whole.
+        replayed += text
         return
       }
       const at = text.indexOf(DETACH_SEQUENCE)
@@ -109,7 +123,16 @@ export function attachToJob(short: string): Promise<AttachOutcome> {
           writeOutput(payload)
         } else if (type === FRAME_CONTROL) {
           const msg = JSON.parse(payload.toString('utf8')) as HostControl
-          if (msg.t === 'live') live = true
+          if (msg.t === 'live') {
+            live = true
+            stdout.write(
+              Buffer.from(
+                replayed.split(DETACH_SEQUENCE).join('').replace(TERMINAL_QUERY_RE, ''),
+                'latin1',
+              ),
+            )
+            replayed = ''
+          }
           else if (msg.t === 'exit') finish('exited')
         }
       }),
