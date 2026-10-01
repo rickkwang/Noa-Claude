@@ -33,6 +33,7 @@
     "smoke:perf": "bun ./scripts/smoke-perf.mjs",
     "smoke:engine": "bun ./scripts/smoke-engineering.mjs",
     "smoke:engine:live": "bun ./scripts/smoke-engineering-live.mjs",
+    "e2e:loop": "bun ./scripts/e2e-agent-loop.mjs",
     "scan:pr-intent": "node ./scripts/pr-intent-scan.mjs --fail-on high",
     "profile:usage": "node ./scripts/usage-profile.mjs",
     "test": "bun test",

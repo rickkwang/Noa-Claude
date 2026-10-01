@@ -219,6 +219,7 @@ function createPermissionContext(
       suggestions: PermissionUpdate[] | undefined,
       updatedInput?: Record<string, unknown>,
       permissionPromptStartTimeMs?: number,
+      claimInterrupt?: () => boolean,
     ): Promise<PermissionDecision | null> {
       for await (const hookResult of executePermissionRequestHooks(
         tool.name,
@@ -243,7 +244,7 @@ function createPermissionContext(
               { decision: 'reject', source: { type: 'hook' } },
               { permissionPromptStartTimeMs },
             )
-            if (decision.interrupt) {
+            if (decision.interrupt && (!claimInterrupt || claimInterrupt())) {
               logForDebugging(
                 `Hook interrupt: tool=${tool.name} hookMessage=${decision.message}`,
               )

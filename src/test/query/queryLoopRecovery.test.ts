@@ -291,7 +291,7 @@ describe('query loop recovery', () => {
     expect(calls).toBe(2)
     const error = events.find(e => e.type === 'assistant' && e.isApiErrorMessage)
     expect(JSON.stringify(error)).toContain('could not be parsed')
-    expect(terminal).toEqual({ reason: 'completed' })
+    expect(terminal).toEqual({ reason: 'malformed_tool_use_exhausted' })
   }, 5000)
 
   test('stop hook blocking: feeds the error back to the model with stop_hook_active set', async () => {

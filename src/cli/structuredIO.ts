@@ -36,7 +36,6 @@ import type {
   PermissionDecisionReason,
 } from 'src/utils/permissions/PermissionResult.js'
 import { hasPermissionsToUseTool } from 'src/utils/permissions/permissions.js'
-import { writeToStdout } from 'src/utils/process.js'
 import { jsonStringify } from 'src/utils/slowOperations.js'
 import { z } from 'zod/v4'
 import { notifyCommandLifecycle } from '../utils/commandLifecycle.js'
@@ -528,7 +527,22 @@ export class StructuredIO {
   }
 
   async write(message: StdoutMessage): Promise<void> {
-    writeToStdout(ndjsonSafeStringify(message) + '\n')
+    if (process.stdout.destroyed) return
+    await new Promise<void>((resolve, reject) => {
+      process.stdout.write(ndjsonSafeStringify(message) + '\n', error => {
+        // A closed pipe drops the write, as before. EPIPE destroys stdout
+        // (handleEPIPE), which fails the writes queued behind it with
+        // ERR_STREAM_DESTROYED rather than EPIPE.
+        if (
+          error &&
+          error.code !== 'EPIPE' &&
+          error.code !== 'ERR_STREAM_DESTROYED' &&
+          !process.stdout.destroyed
+        ) {
+          reject(error)
+        } else resolve()
+      })
+    })
   }
 
   private async sendRequest<Response>(

@@ -150,15 +150,7 @@ export function registerElicitationHandler(
             },
           }))
 
-          extra.signal.addEventListener('abort', onAbort)
-
-          // Ensure the listener is removed when the promise settles,
-          // regardless of whether the signal fired or the response was provided.
-          // This prevents listener accumulation on long-running sessions where
-          // signals complete normally (vs being aborted) and never trigger { once: true }.
-          response.finally(() => {
-            extra.signal.removeEventListener('abort', onAbort)
-          })
+          extra.signal.addEventListener('abort', onAbort, { once: true })
         })
         const rawResult = await response
         logMCPDebug(

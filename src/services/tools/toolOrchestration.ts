@@ -4,6 +4,7 @@ import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import { findToolByName, type ToolUseContext } from '../../Tool.js'
 import type { AssistantMessage, Message } from '../../types/message.js'
 import { errorMessage } from '../../utils/errors.js'
+import { createChildAbortController } from '../../utils/abortController.js'
 import { all } from '../../utils/generators.js'
 import { logEvent } from '../analytics/index.js'
 import { type MessageUpdateLazy, runToolUse } from './toolExecution.js'
@@ -24,6 +25,24 @@ export async function* runTools(
   canUseTool: CanUseToolFn,
   toolUseContext: ToolUseContext,
 ): AsyncGenerator<MessageUpdate, void> {
+  const executionController = createChildAbortController(toolUseContext.abortController)
+  let disposed = false
+  executionController.signal.addEventListener('abort', () => {
+    if (!disposed && !toolUseContext.abortController.signal.aborted) {
+      toolUseContext.abortController.abort(executionController.signal.reason)
+    }
+  }, { once: true })
+  using executionCleanup = {
+    [Symbol.dispose]() {
+      disposed = true
+      executionController.abort()
+      toolUseContext.setInProgressToolUseIDs(prev => {
+        const next = new Set(prev)
+        for (const toolUse of toolUseMessages) next.delete(toolUse.id)
+        return next
+      })
+    },
+  }
   let currentContext = toolUseContext
   // Tool uses from earlier batches of this same turn. Batches run in order,
   // so everything here has already been dispatched by the time the next
@@ -47,6 +66,7 @@ export async function* runTools(
         canUseTool,
         currentContext,
         batchPrecedingBlocks,
+        executionController,
       )) {
         if (update.contextModifier) {
           const { toolUseID, modifyContext } = update.contextModifier
@@ -78,6 +98,7 @@ export async function* runTools(
         canUseTool,
         currentContext,
         batchPrecedingBlocks,
+        executionController,
       )) {
         if (update.newContext) {
           currentContext = update.newContext
@@ -194,7 +215,8 @@ async function* runToolsSerially(
   assistantMessages: AssistantMessage[],
   canUseTool: CanUseToolFn,
   toolUseContext: ToolUseContext,
-  precedingBlocks: ToolUseBlock[] = [],
+  precedingBlocks: ToolUseBlock[],
+  abortController: AbortController,
 ): AsyncGenerator<MessageUpdate, void> {
   let currentContext = toolUseContext
 
@@ -223,7 +245,7 @@ async function* runToolsSerially(
           ),
         )!,
         canUseTool,
-        { ...currentContext, sameTurnToolUses },
+        { ...currentContext, abortController, sameTurnToolUses },
       )) {
         if (update.contextModifier) {
           currentContext = update.contextModifier.modifyContext(currentContext)
@@ -244,7 +266,8 @@ async function* runToolsConcurrently(
   assistantMessages: AssistantMessage[],
   canUseTool: CanUseToolFn,
   toolUseContext: ToolUseContext,
-  precedingBlocks: ToolUseBlock[] = [],
+  precedingBlocks: ToolUseBlock[],
+  abortController: AbortController,
 ): AsyncGenerator<MessageUpdateLazy, void> {
   yield* all(
     toolUseMessages.map(async function* (toolUse, index) {
@@ -271,7 +294,7 @@ async function* runToolsConcurrently(
             ),
           )!,
           canUseTool,
-          { ...toolUseContext, sameTurnToolUses },
+          { ...toolUseContext, abortController, sameTurnToolUses },
         )
       } finally {
         markToolUseAsComplete(toolUseContext, toolUse.id)

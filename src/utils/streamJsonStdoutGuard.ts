@@ -41,7 +41,7 @@ function isJsonLine(line: string): boolean {
  * tagged with STDOUT_GUARD_MARKER so they remain visible without corrupting
  * the JSON stream.
  *
- * The blessed JSON path (structuredIO.write → writeToStdout → stdout.write)
+ * The blessed JSON path (structuredIO.write → stdout.write)
  * always emits `ndjsonSafeStringify(msg) + '\n'`, so it passes straight
  * through. Only out-of-band writes are diverted.
  *
@@ -67,25 +67,34 @@ export function installStreamJsonStdoutGuard(): void {
 
     buffer += text
     let newlineIdx: number
-    let wrote = true
+    let output = ''
+    let diverted = ''
     while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
       const line = buffer.slice(0, newlineIdx)
       buffer = buffer.slice(newlineIdx + 1)
       if (isJsonLine(line)) {
-        wrote = originalWrite!(line + '\n')
+        output += line + '\n'
       } else {
-        process.stderr.write(`${STDOUT_GUARD_MARKER} ${line}\n`)
+        diverted += `${STDOUT_GUARD_MARKER} ${line}\n`
         logForDebugging(
           `streamJsonStdoutGuard diverted non-JSON stdout line: ${line.slice(0, 200)}`,
         )
       }
     }
 
-    // Fire the callback once buffering is done. We report success even when
-    // a line was diverted — the caller's intent (emit text) was honored,
-    // just on a different fd.
     const callback = typeof encodingOrCb === 'function' ? encodingOrCb : cb
-    if (callback) {
+    let pending = Number(Boolean(output)) + Number(Boolean(diverted))
+    let writeError: Error | undefined
+    const complete = (error?: Error) => {
+      writeError ??= error
+      if (--pending === 0) callback?.(writeError)
+    }
+    // Acknowledging buffered lines before the actual writes finish lets
+    // headless shutdown truncate the final NDJSON result under backpressure.
+    let wrote = true
+    if (output) wrote = originalWrite!(output, callback ? complete : undefined)
+    if (diverted) process.stderr.write(diverted, callback ? complete : undefined)
+    if (callback && !output && !diverted) {
       queueMicrotask(() => callback())
     }
     return wrote

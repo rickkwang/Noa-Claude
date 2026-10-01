@@ -48,3 +48,8 @@ jobs:
 
       - name: Critical path tests
         run: bun run test
+
+      - name: Compiled agent loop E2E
+        run: |
+          bun run compile
+          bun run e2e:loop

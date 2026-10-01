@@ -68,7 +68,11 @@ function handleInteractivePermission(
     channelCallbacks,
   } = params
 
-  const { resolve: resolveOnce, isResolved, claim } = createResolveOnce(resolve)
+  const signal = ctx.toolUseContext.abortController.signal
+  const { resolve: resolveOnce, isResolved, claim } = createResolveOnce(decision => {
+    signal.removeEventListener('abort', handleAbort)
+    resolve(decision)
+  })
   let userInteracted = false
   let checkmarkTransitionTimer: ReturnType<typeof setTimeout> | undefined
   // Hoisted so onDismissCheckmark (Esc during checkmark window) can also
@@ -231,6 +235,21 @@ function handleInteractivePermission(
       }
     },
   })
+
+  function handleAbort(): void {
+    if (!claim()) return
+    if (bridgeCallbacks && bridgeRequestId) bridgeCallbacks.cancelRequest(bridgeRequestId)
+    channelUnsubscribe?.()
+    clearClassifierChecking(ctx.toolUseID)
+    ctx.removeFromQueue()
+    ctx.logCancelled()
+    resolveOnce(ctx.cancelAndAbort(undefined, true))
+  }
+  if (signal.aborted) {
+    handleAbort()
+    return
+  }
+  signal.addEventListener('abort', handleAbort, { once: true })
 
   // Race 4: Bridge permission response from CCR (claude.ai)
   // When the bridge is connected, send the permission request to CCR and
@@ -415,13 +434,15 @@ function handleInteractivePermission(
     void (async () => {
       if (isResolved()) return
       const currentAppState = ctx.toolUseContext.getAppState()
+      let hookClaimed = false
       const hookDecision = await ctx.runHooks(
         currentAppState.toolPermissionContext.mode,
         result.suggestions,
         result.updatedInput,
         permissionPromptStartTimeMs,
+        () => (hookClaimed = claim()),
       )
-      if (!hookDecision || !claim()) return
+      if (!hookDecision || (!hookClaimed && !claim())) return
       if (bridgeCallbacks && bridgeRequestId) {
         bridgeCallbacks.cancelRequest(bridgeRequestId)
       }

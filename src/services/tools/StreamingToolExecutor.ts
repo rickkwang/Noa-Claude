@@ -73,7 +73,9 @@ export class StreamingToolExecutor {
    * occurs and results from the failed attempt should be abandoned.
    * Queued tools won't start, and in-progress tools will receive synthetic errors.
    */
-  discard(): void {
+  discard(
+    reason: 'streaming_fallback' | 'iteration_cleanup' = 'streaming_fallback',
+  ): void {
     this.discarded = true
     // Kill in-flight tools (Bash subprocesses listen to this signal) so their
     // side effects stop now — the fallback retry may re-issue the same tool
@@ -82,7 +84,7 @@ export class StreamingToolExecutor {
     // listeners exclude the 'streaming_fallback' reason (and check
     // this.discarded, set above), so this abort never bubbles up to the
     // query controller — the turn itself is not ended.
-    this.discardAbortController.abort('streaming_fallback')
+    this.discardAbortController.abort(reason)
 
     // Release the in-progress marks this executor took. Normally ids are
     // cleared in getCompletedResults, but that returns early once discarded,
@@ -483,12 +485,11 @@ export class StreamingToolExecutor {
 
       if (tool.status === 'completed' && tool.results) {
         tool.status = 'yielded'
+        markToolUseAsComplete(this.toolUseContext, tool.id)
 
         for (const message of tool.results) {
           yield { message, newContext: this.toolUseContext }
         }
-
-        markToolUseAsComplete(this.toolUseContext, tool.id)
       } else if (tool.status === 'executing' && !tool.isConcurrencySafe) {
         break
       }

@@ -227,6 +227,10 @@ export function estimateMessageTokens(messages: Message[]): number {
       continue
     }
 
+    if (typeof message.message.content === 'string') {
+      totalTokens += roughTokenCountEstimation(message.message.content)
+      continue
+    }
     if (!Array.isArray(message.message.content)) {
       continue
     }

@@ -682,7 +682,7 @@ export class QueryEngine {
 
     const runQuery = this.config.queryRunner ?? query
 
-    for await (const message of runQuery({
+    const queryIterator = runQuery({
       messages,
       systemPrompt,
       userContext,
@@ -695,7 +695,8 @@ export class QueryEngine {
       // backstop (ported from upstream 2.1.x).
       maxTurns: resolveMaxTurns(maxTurns),
       taskBudget,
-    })) {
+    })
+    for await (const message of queryIterator) {
       // Record assistant, user, and compact boundary messages
       if (
         message.type === 'assistant' ||
@@ -982,6 +983,8 @@ export class QueryEngine {
 
       // Check if USD budget has been exceeded
       if (maxBudgetUsd !== undefined && getTotalCost() >= maxBudgetUsd) {
+        turnAbortController.abort()
+        await queryIterator.return({ reason: 'aborted_tools' })
         if (persistSession) {
           if (
             isEnvTruthy(process.env.CLAUDE_CODE_EAGER_FLUSH) ||
@@ -1025,6 +1028,8 @@ export class QueryEngine {
           10,
         )
         if (callsThisQuery >= maxRetries) {
+          turnAbortController.abort()
+          await queryIterator.return({ reason: 'aborted_tools' })
           if (persistSession) {
             if (
               isEnvTruthy(process.env.CLAUDE_CODE_EAGER_FLUSH) ||

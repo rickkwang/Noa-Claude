@@ -1405,6 +1405,8 @@ export function getErrorMessageIfRefusal(
 
   return createAssistantAPIErrorMessage({
     content: baseMessage + modelSuggestion,
+    // Lets the query loop withhold this while its one retry is available.
+    apiError: 'refusal',
     error: 'invalid_request',
   })
 }

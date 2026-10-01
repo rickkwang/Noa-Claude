@@ -721,7 +721,7 @@ export async function runHeadless(
             }
         }
       })()
-      void structuredIO.write(message)
+      void structuredIO.write(message).catch(logError)
     })
   }
 

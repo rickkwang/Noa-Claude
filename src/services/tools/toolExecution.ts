@@ -1275,6 +1275,9 @@ async function checkPermissionsAndCallTool(
   try {
     let result
     try {
+      if (toolUseContext.abortController.signal.aborted) {
+        throw new AbortError()
+      }
       result = await tool.call(
         callInput,
         {

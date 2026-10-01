@@ -108,7 +108,7 @@ import {
   tokenCountWithEstimation,
 } from './utils/tokens.js'
 import { ESCALATED_MAX_TOKENS } from './utils/context.js'
-import { getStopHookBlockCap } from './utils/envUtils.js'
+import { getStopHookBlockCap, isEnvTruthy } from './utils/envUtils.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from './services/analytics/growthbook.js'
 import { SLEEP_TOOL_NAME } from './tools/SleepTool/prompt.js'
 import { SYNTHETIC_OUTPUT_TOOL_NAME } from './tools/SyntheticOutputTool/SyntheticOutputTool.js'
@@ -222,6 +222,17 @@ function isWithheldMaxOutputTokens(
   msg: Message | StreamEvent | undefined,
 ): msg is AssistantMessage {
   return msg?.type === 'assistant' && msg.apiError === 'max_output_tokens'
+}
+
+// Verbatim upstream wording.
+const REFUSAL_RETRY_NUDGE =
+  'Your response above was stopped by a safety classifier \u2014 this is not a tool or API error. ' +
+  'The rest of it was withheld, and tool calls in it that had not finished did not run. Do not produce that content again, even reworded.'
+
+function isRefusalMessage(
+  msg: Message | StreamEvent | undefined,
+): msg is AssistantMessage {
+  return msg?.type === 'assistant' && msg.apiError === 'refusal'
 }
 
 function hasAssistantOutputContent(message: AssistantMessage): boolean {
@@ -368,6 +379,9 @@ async function* queryLoop(
     autoCompactTracking: undefined,
     stopHookActive: undefined,
     maxOutputTokensRecoveryCount: 0,
+    hasRetriedMalformedToolUse: false,
+    hasRetriedEmptyResponse: false,
+    hasRetriedRefusal: false,
     hasAttemptedReactiveCompact: false,
     stopHookBlockingCount: 0,
     turnCount: 1,
@@ -720,6 +734,14 @@ async function* queryLoop(
     // The withhold predicates are runtime-gated, so assuming a withhold
     // happened would double-yield the error when recovery is turned off.
     let lastAssistantWithheld = false
+    const refusalRetryEnabled =
+      !state.hasRetriedRefusal &&
+      querySource !== 'compact' &&
+      !isBackgroundForkQuerySource(querySource) &&
+      !isEnvTruthy(
+        process.env.NOA_CLAUDE_DISABLE_REFUSAL_RETRY ??
+          process.env.CLAUDE_CODE_DISABLE_REFUSAL_RETRY,
+      )
 
     queryCheckpoint('query_setup_start')
     const useStreamingToolExecution = config.gates.streamingToolExecution
@@ -730,6 +752,11 @@ async function* queryLoop(
           toolUseContext,
         )
       : null
+    using executorCleanup = {
+      [Symbol.dispose]() {
+        streamingToolExecutor?.discard('iteration_cleanup')
+      },
+    }
     let updatedToolUseContext = toolUseContext
 
     const exceeds200kTokens =
@@ -851,6 +878,7 @@ async function* queryLoop(
       }
     }
 
+    let remainingFallbackModel = currentModel === fallbackModel ? undefined : fallbackModel
     let attemptWithFallback = true
 
     queryCheckpoint('query_api_loop_start')
@@ -879,7 +907,7 @@ async function* queryLoop(
               toolChoice: undefined,
               isNonInteractiveSession:
                 toolUseContext.options.isNonInteractiveSession,
-              fallbackModel,
+              fallbackModel: remainingFallbackModel,
               onStreamingFallback: () => {
                 streamingFallbackOccured = true
               },
@@ -1039,6 +1067,9 @@ async function* queryLoop(
             if (isWithheldMaxOutputTokens(message)) {
               withheld = true
             }
+            if (refusalRetryEnabled && isRefusalMessage(message)) {
+              withheld = true
+            }
             if (!withheld) {
               yield yieldMessage
             }
@@ -1117,9 +1148,10 @@ async function* queryLoop(
             }
           }
         } catch (innerError) {
-          if (innerError instanceof FallbackTriggeredError && fallbackModel) {
+          if (innerError instanceof FallbackTriggeredError && remainingFallbackModel) {
             // Fallback was triggered - switch model and retry
-            currentModel = fallbackModel
+            currentModel = remainingFallbackModel
+            remainingFallbackModel = undefined
             attemptWithFallback = true
 
             // Clear assistant messages since we'll retry the entire request
@@ -1304,6 +1336,33 @@ async function* queryLoop(
       if (summary) {
         yield summary
       }
+    }
+
+    // Refusal recovery: the streaming loop withheld the refusal. Retry once
+    // on the same model, keeping the partial response and telling the model
+    // why it stopped. If tool calls were already dispatched, the retry would
+    // need their results reconciled first — surface the refusal as before.
+    const refusal = assistantMessages.at(-1)
+    if (refusalRetryEnabled && isRefusalMessage(refusal)) {
+      if (!needsFollowUp) {
+        yield createSystemMessage(
+          `${renderModelName(currentModel)}'s safeguards stopped the response above \u00b7 continuing once with that noted`,
+          'warning',
+        )
+        state = nextState(state, {
+          messages: [
+            ...messagesForQuery,
+            ...assistantMessages.filter(msg => msg !== refusal),
+            createUserMessage({ content: REFUSAL_RETRY_NUDGE, isMeta: true }),
+          ],
+          toolUseContext,
+          autoCompactTracking: tracking,
+          hasRetriedRefusal: true,
+          transition: { reason: 'refusal_retry' },
+        })
+        continue
+      }
+      yield refusal
     }
 
     if (!needsFollowUp) {
@@ -1532,7 +1591,7 @@ async function* queryLoop(
       // stop_reason says a tool call follows, but none parsed (leaked or
       // malformed call). Ending here drops the action the model announced.
       if (lastMessage?.message.stop_reason === 'tool_use') {
-        if (state.transition?.reason !== 'malformed_tool_use_retry') {
+        if (!state.hasRetriedMalformedToolUse) {
           for (const msg of assistantMessages) {
             yield { type: 'tombstone' as const, message: msg }
           }
@@ -1547,6 +1606,7 @@ async function* queryLoop(
             ],
             toolUseContext,
             autoCompactTracking: tracking,
+            hasRetriedMalformedToolUse: true,
             transition: { reason: 'malformed_tool_use_retry' },
           })
           continue
@@ -1555,7 +1615,7 @@ async function* queryLoop(
           content:
             "The model's tool call could not be parsed (retry also failed).",
         })
-        return { reason: 'completed' }
+        return { reason: 'malformed_tool_use_exhausted' }
       }
 
       if (
@@ -1563,7 +1623,7 @@ async function* queryLoop(
         !calledStructuredOutputSinceLastPrompt(messagesForQuery)
       ) {
         if (
-          state.transition?.reason !== 'empty_response_retry' &&
+          !state.hasRetriedEmptyResponse &&
           querySource !== 'compact' &&
           !isBackgroundForkQuerySource(querySource)
         ) {
@@ -1578,6 +1638,7 @@ async function* queryLoop(
             ],
             toolUseContext,
             autoCompactTracking: tracking,
+            hasRetriedEmptyResponse: true,
             transition: { reason: 'empty_response_retry' },
           })
           continue
@@ -1678,6 +1739,7 @@ async function* queryLoop(
           toolUseContext,
           autoCompactTracking: tracking,
           maxOutputTokensRecoveryCount: 0,
+          hasRetriedMalformedToolUse: false,
           hasAttemptedReactiveCompact: false,
           stopHookActive: true,
           stopHookBlockingCount: blockCount,
@@ -2217,6 +2279,8 @@ async function* queryLoop(
       autoCompactTracking: tracking,
       turnCount: nextTurnCount,
       maxOutputTokensRecoveryCount: 0,
+      hasRetriedMalformedToolUse: false,
+      hasRetriedEmptyResponse: false,
       hasAttemptedReactiveCompact: false,
       stopHookBlockingCount: 0,
       pendingToolUseSummary: nextPendingToolUseSummary,

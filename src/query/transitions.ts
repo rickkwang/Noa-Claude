@@ -33,6 +33,9 @@ export type Continue =
   // stop_reason was tool_use but no tool call parsed; retry once without
   // the broken response.
   | { reason: 'malformed_tool_use_retry' }
+  // The response was stopped by a refusal before any tool call was
+  // dispatched; retry once on the same model with that noted.
+  | { reason: 'refusal_retry' }
   // The response had no visible output (thinking only, or nothing); nudge
   // the model once to answer.
   | { reason: 'empty_response_retry' }
@@ -53,6 +56,9 @@ export type Terminal =
   // queryModelWithStreaming threw (it normally yields synthetic error
   // messages instead — this path is a runtime bug surfacing).
   | { reason: 'model_error'; error: unknown }
+  // stop_reason was tool_use with no parseable call, and the retry failed
+  // the same way.
+  | { reason: 'malformed_tool_use_exhausted' }
   | { reason: 'aborted_streaming' }
   | { reason: 'aborted_tools' }
   // Autocompact rapid-refill breaker tripped: context refilled past the
@@ -75,6 +81,10 @@ export type State = {
   toolUseContext: ToolUseContext
   autoCompactTracking: AutoCompactTrackingState | undefined
   maxOutputTokensRecoveryCount: number
+  hasRetriedMalformedToolUse: boolean
+  hasRetriedEmptyResponse: boolean
+  // Spent once per query() call, not per turn: a second refusal surfaces.
+  hasRetriedRefusal: boolean
   hasAttemptedReactiveCompact: boolean
   maxOutputTokensOverride: number | undefined
   pendingToolUseSummary: Promise<ToolUseSummaryMessage | null> | undefined
@@ -122,6 +132,9 @@ export function nextState(
 ): State {
   return {
     maxOutputTokensRecoveryCount: prev.maxOutputTokensRecoveryCount,
+    hasRetriedMalformedToolUse: prev.hasRetriedMalformedToolUse,
+    hasRetriedEmptyResponse: prev.hasRetriedEmptyResponse,
+    hasRetriedRefusal: prev.hasRetriedRefusal,
     hasAttemptedReactiveCompact: prev.hasAttemptedReactiveCompact,
     stopHookBlockingCount: prev.stopHookBlockingCount,
     turnCount: prev.turnCount,
