@@ -189,7 +189,16 @@ export function getRecentReleaseNotes(
 
     // Strip SHA from both versions to compare only the base versions
     const baseCurrentVersion = coerce(currentVersion)
-    const basePreviousVersion = previousVersion ? coerce(previousVersion) : null
+    const seenVersion = previousVersion ? coerce(previousVersion) : null
+    // A marker ahead of the running version was not written by this release
+    // line (a stale config carried a Claude Code version number), and would
+    // otherwise hide every future release. Treat it as never seen.
+    const basePreviousVersion =
+      seenVersion &&
+      baseCurrentVersion &&
+      gt(seenVersion.version, baseCurrentVersion.version)
+        ? null
+        : seenVersion
 
     if (
       !basePreviousVersion ||
