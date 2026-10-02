@@ -57,7 +57,7 @@ import {
 } from './config.js'
 import { logForDebugging } from './debug.js'
 import { logForDiagnosticsNoPII } from './diagLogs.js'
-import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
+import { getClaudeConfigHomeDir, isBareMode, isEnvTruthy } from './envUtils.js'
 import { getErrnoCode } from './errors.js'
 import { normalizePathForComparison } from './file.js'
 import { cacheKeys, type FileStateCache } from './fileStateCache.js'
@@ -810,6 +810,42 @@ export async function processMdRules({
   }
 }
 
+/**
+ * CLAUDE.md (falling back to AGENTS.md) and rules from the --add-dir
+ * directories.
+ */
+async function processAdditionalDirectories(
+  processedPaths: Set<string>,
+  includeExternal: boolean,
+): Promise<MemoryFileInfo[]> {
+  const result: MemoryFileInfo[] = []
+  for (const dir of getAdditionalDirectoriesForClaudeMd()) {
+    for (const projectPath of getProjectMemoryFileCandidates(dir)) {
+      result.push(
+        ...(await processMemoryFile(
+          projectPath,
+          'Project',
+          processedPaths,
+          includeExternal,
+        )),
+      )
+    }
+
+    for (const rulesDir of getProjectRulesDirCandidates(dir)) {
+      result.push(
+        ...(await processMdRules({
+          rulesDir,
+          type: 'Project',
+          processedPaths,
+          includeExternal,
+          conditionalRule: false,
+        })),
+      )
+    }
+  }
+  return result
+}
+
 export const getMemoryFiles = memoize(
   async (forceIncludeExternal: boolean = false): Promise<MemoryFileInfo[]> => {
     const startTime = Date.now()
@@ -822,6 +858,15 @@ export const getMemoryFiles = memoize(
       forceIncludeExternal ||
       config.hasClaudeMdExternalIncludesApproved ||
       false
+
+    // --bare: no discovery at all (managed, user, cwd walk). The --add-dir
+    // directories are the one explicit ask, so they load without the env
+    // opt-in the discovered path needs.
+    if (isBareMode()) {
+      return dedupeMemoryFiles(
+        await processAdditionalDirectories(processedPaths, includeExternal),
+      )
+    }
 
     // Process Managed file first (always loaded - policy settings)
     const managedClaudeMd = getMemoryPath('Managed')
@@ -950,31 +995,9 @@ export const getMemoryFiles = memoize(
     // Note: we don't check isSettingSourceEnabled('projectSettings') here because --add-dir
     // is an explicit user action and the SDK defaults settingSources to [] when not specified
     if (isEnvTruthy(process.env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD)) {
-      const additionalDirs = getAdditionalDirectoriesForClaudeMd()
-      for (const dir of additionalDirs) {
-        for (const projectPath of getProjectMemoryFileCandidates(dir)) {
-          result.push(
-            ...(await processMemoryFile(
-              projectPath,
-              'Project',
-              processedPaths,
-              includeExternal,
-            )),
-          )
-        }
-
-        for (const rulesDir of getProjectRulesDirCandidates(dir)) {
-          result.push(
-            ...(await processMdRules({
-              rulesDir,
-              type: 'Project',
-              processedPaths,
-              includeExternal,
-              conditionalRule: false,
-            })),
-          )
-        }
-      }
+      result.push(
+        ...(await processAdditionalDirectories(processedPaths, includeExternal)),
+      )
     }
 
     // Memdir entrypoint (memory.md) - only if feature is on and file exists
