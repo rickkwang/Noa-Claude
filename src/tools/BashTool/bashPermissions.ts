@@ -1416,11 +1416,13 @@ function filterCdCwdSubcommands(
 function checkHiddenDangerousRemoval(
   input: z.infer<typeof BashTool.inputSchema>,
   toolPermissionContext: ToolPermissionContext,
+  requireHiddenConstruct = true,
 ): PermissionResult | null {
   const hidden = checkDangerousRemovalInHiddenCommands(
     input.command,
     getCwd(),
     toolPermissionContext,
+    requireHiddenConstruct,
   )
   if (hidden === null) return null
   const deny = checkEarlyExitDeny(input, toolPermissionContext)
@@ -1800,6 +1802,14 @@ export async function bashToolHasPermission(
     // fall through to ask if no deny matched — don't downgrade deny to ask.
     const earlyExit = checkEarlyExitDeny(input, appState.toolPermissionContext)
     if (earlyExit !== null) return earlyExit
+    // The ask below is generic, so bypassPermissions would run a
+    // catastrophic removal riding along in the same command.
+    const removal = checkHiddenDangerousRemoval(
+      input,
+      appState.toolPermissionContext,
+      false,
+    )
+    if (removal !== null) return removal
     const decisionReason: PermissionDecisionReason = {
       type: 'other' as const,
       reason: astResult.reason,
@@ -1836,6 +1846,12 @@ export async function bashToolHasPermission(
         astResult.commands,
       )
       if (earlyExit !== null) return earlyExit
+      const removal = checkHiddenDangerousRemoval(
+        input,
+        appState.toolPermissionContext,
+        false,
+      )
+      if (removal !== null) return removal
       const decisionReason: PermissionDecisionReason = {
         type: 'other' as const,
         reason: sem.reason,
@@ -1869,6 +1885,12 @@ export async function bashToolHasPermission(
     )
     const parseResult = tryParseShellCommand(input.command)
     if (!parseResult.success) {
+      const removal = checkHiddenDangerousRemoval(
+        input,
+        appState.toolPermissionContext,
+        false,
+      )
+      if (removal !== null) return removal
       const decisionReason = {
         type: 'other' as const,
         reason: `Command contains malformed syntax that cannot be parsed: ${parseResult.error}`,
@@ -2063,8 +2085,14 @@ export async function bashToolHasPermission(
         safetyResult.behavior !== 'passthrough' &&
         safetyResult.behavior !== 'allow'
       ) {
-        // Attach pending classifier check - may auto-approve before user responds
         appState = context.getAppState()
+        const removal = checkHiddenDangerousRemoval(
+          input,
+          appState.toolPermissionContext,
+          false,
+        )
+        if (removal !== null) return removal
+        // Attach pending classifier check - may auto-approve before user responds
         return {
           behavior: 'ask',
           message: createPermissionRequestMessage(BashTool.name, {
@@ -2165,9 +2193,15 @@ export async function bashToolHasPermission(
         (remainderResult?.behavior === 'ask' &&
           remainderResult.isBashSecurityCheckForMisparsing)
       ) {
+        appState = context.getAppState()
+        const removal = checkHiddenDangerousRemoval(
+          input,
+          appState.toolPermissionContext,
+          false,
+        )
+        if (removal !== null) return removal
         // Allow if the exact command has an explicit allow permission — the user
         // made a conscious choice to permit this specific command.
-        appState = context.getAppState()
         const exactMatchResult = bashToolCheckExactMatchPermission(
           input,
           appState.toolPermissionContext,
@@ -2343,6 +2377,35 @@ export async function bashToolHasPermission(
   )
   if (pathResult.behavior === 'deny') {
     return pathResult
+  }
+
+  // SECURITY: A safety-check ask (`rm -rf /`, `rm -rf ~`) must reach the
+  // caller as itself. The merge flow below would fold it into a
+  // 'subcommandResults' ask, which bypassPermissions auto-approves — and it
+  // gets there whenever a second part also needs approval: a redirect target
+  // (`rm -rf / > ~/out`, split off as its own part) or another subcommand.
+  const safetyAsks = [pathResult, ...subcommandPermissionDecisions].filter(
+    _ =>
+      _.behavior === 'ask' &&
+      _.decisionReason?.type === 'safetyCheck' &&
+      !_.bashAllowRuleOverridable,
+  )
+  // One the auto-mode classifier may not approve outranks one it may.
+  const safetyAsk =
+    safetyAsks.find(_ => !_.decisionReason.classifierApprovable) ??
+    safetyAsks[0]
+  if (safetyAsk !== undefined) {
+    return {
+      ...safetyAsk,
+      ...(feature('BASH_CLASSIFIER')
+        ? {
+            pendingClassifierCheck: buildPendingClassifierCheck(
+              input.command,
+              appState.toolPermissionContext,
+            ),
+          }
+        : {}),
+    }
   }
 
   const askSubresult = subcommandPermissionDecisions.find(

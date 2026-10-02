@@ -284,10 +284,15 @@ export function checkDangerousRemovalInHiddenCommands(
   command: string,
   cwd: string,
   toolPermissionContext: ToolPermissionContext,
+  // False where the caller is about to hand the whole command back as one
+  // generic ask without decomposing it, whatever construct caused that.
+  requireHiddenConstruct = true,
 ): PermissionResult | null {
   if (!/\brm(?:dir)?\b/.test(command)) return null
   const executable = stripInertQuotedText(command)
-  if (!HIDDEN_COMMAND_CONSTRUCT.test(executable)) return null
+  if (requireHiddenConstruct && !HIDDEN_COMMAND_CONSTRUCT.test(executable)) {
+    return null
+  }
 
   for (const match of executable.match(REMOVAL_INVOCATION) ?? []) {
     const [baseCmd, ...args] = parseCommandArguments(stripSafeWrappers(match))
@@ -1873,17 +1878,18 @@ export function checkPathConstraints(
   // Require explicit approval for any command containing process substitution.
   // Skip on AST path — process_substitution is in DANGEROUS_TYPES and
   // already returned too-complex before reaching here.
-  if (!astCommands && />>\s*>\s*\(|>\s*>\s*\(|<\s*\(/.test(input.command)) {
-    return {
-      behavior: 'ask',
-      message:
-        'Process substitution (>(...) or <(...)) can execute arbitrary commands and requires manual approval',
-      decisionReason: {
-        type: 'other',
-        reason: 'Process substitution requires manual approval',
-      },
-    }
-  }
+  const processSubstitutionAsk: PermissionResult | undefined =
+    !astCommands && />>\s*>\s*\(|>\s*>\s*\(|<\s*\(/.test(input.command)
+      ? {
+          behavior: 'ask',
+          message:
+            'Process substitution (>(...) or <(...)) can execute arbitrary commands and requires manual approval',
+          decisionReason: {
+            type: 'other',
+            reason: 'Process substitution requires manual approval',
+          },
+        }
+      : undefined
 
   // SECURITY: When AST-derived redirects are available, use them directly
   // instead of re-parsing with shell-quote. shell-quote has a known
@@ -1895,36 +1901,11 @@ export function checkPathConstraints(
     ? astRedirectsToOutputRedirections(astRedirects)
     : extractOutputRedirections(input.command)
 
-  // SECURITY: If we found a redirection operator with a target containing shell expansion
-  // syntax ($VAR or %VAR%), require manual approval since the target can't be safely validated.
-  if (hasDangerousRedirection) {
-    return {
-      behavior: 'ask',
-      message: 'Shell expansion syntax in paths requires manual approval',
-      decisionReason: {
-        type: 'other',
-        reason: 'Shell expansion syntax in paths requires manual approval',
-      },
-    }
-  }
-  const redirectionResult = validateOutputRedirections(
-    redirections,
-    cwd,
-    toolPermissionContext,
-    compoundCommandHasCd,
-  )
-  if (redirectionResult.behavior !== 'passthrough') {
-    return redirectionResult
-  }
-
   // SECURITY: When AST-derived commands are available, iterate them with
   // pre-parsed argv instead of re-parsing via splitCommand_DEPRECATED + shell-quote.
   // shell-quote has a single-quote backslash bug that causes
   // parseCommandArguments to silently return [] and skip path validation
   // (isDangerousRemovalPath etc). The AST already resolved argv correctly.
-  // Asks a Bash allow rule may override are returned only when nothing
-  // stricter turns up in the remaining commands.
-  let overridableAsk: PermissionResult | undefined
   const results = astCommands
     ? astCommands.map(cmd =>
         validateSinglePathCommandArgv(
@@ -1942,6 +1923,53 @@ export function checkPathConstraints(
           compoundCommandHasCd,
         ),
       )
+
+  const denied = results.find(result => result.behavior === 'deny')
+  if (denied) return denied
+
+  // SECURITY: The asks below are ordinary ones — bypassPermissions
+  // auto-approves them and a redirect ask offers an "add directory"
+  // suggestion. Returning one for `rm -rf / > ~/out` would drop the
+  // always-ask removal check, so that check takes its place unless the ask
+  // is a safety check itself.
+  const safetyAsk = results.find(
+    result =>
+      result.behavior === 'ask' &&
+      result.decisionReason?.type === 'safetyCheck' &&
+      !result.bashAllowRuleOverridable,
+  )
+  if (processSubstitutionAsk) return safetyAsk ?? processSubstitutionAsk
+
+  // SECURITY: If we found a redirection operator with a target containing shell expansion
+  // syntax ($VAR or %VAR%), require manual approval since the target can't be safely validated.
+  if (hasDangerousRedirection) {
+    if (safetyAsk) return safetyAsk
+    return {
+      behavior: 'ask',
+      message: 'Shell expansion syntax in paths requires manual approval',
+      decisionReason: {
+        type: 'other',
+        reason: 'Shell expansion syntax in paths requires manual approval',
+      },
+    }
+  }
+  const redirectionResult = validateOutputRedirections(
+    redirections,
+    cwd,
+    toolPermissionContext,
+    compoundCommandHasCd,
+  )
+  if (redirectionResult.behavior !== 'passthrough') {
+    return redirectionResult.behavior === 'ask' &&
+      redirectionResult.decisionReason?.type !== 'safetyCheck' &&
+      safetyAsk
+      ? safetyAsk
+      : redirectionResult
+  }
+
+  // Asks a Bash allow rule may override are returned only when nothing
+  // stricter turns up in the remaining commands.
+  let overridableAsk: PermissionResult | undefined
   for (const result of results) {
     if (result.behavior === 'deny') return result
     if (result.behavior === 'ask') {
