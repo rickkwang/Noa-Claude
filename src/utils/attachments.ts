@@ -198,6 +198,7 @@ import {
   extractTextContent,
   getUserMessageText,
   isThinkingMessage,
+  getMessagesAfterCompactBoundary,
 } from './messages.js'
 import { isHumanTurn } from './messagePredicates.js'
 import { isEnvTruthy, getClaudeConfigHomeDir } from './envUtils.js'
@@ -1300,7 +1301,9 @@ export async function getAttachments(
           ),
         ],
     maybe('changed_files', () => getChangedFiles(context)),
-    maybe('nested_memory', () => getNestedMemoryAttachments(context)),
+    maybe('nested_memory', () =>
+      getNestedMemoryAttachments(context, messages),
+    ),
     // relevant_memories moved to async prefetch (startRelevantMemoryPrefetch)
     maybe('dynamic_skill', () => getDynamicSkillAttachments(context)),
     maybe('skill_listing', () => getSkillListingAttachments(context)),
@@ -2162,6 +2165,7 @@ export function memoryFilesToAttachments(
   memoryFiles: MemoryFileInfo[],
   toolUseContext: ToolUseContext,
   triggerFilePath?: string,
+  inTranscript?: ReadonlyMap<string, string>,
 ): Attachment[] {
   const attachments: Attachment[] = []
   const shouldFireHook = hasInstructionsLoadedHook()
@@ -2174,12 +2178,20 @@ export function memoryFilesToAttachments(
       continue
     }
     if (!toolUseContext.readFileState.has(memoryFile.path)) {
-      attachments.push({
-        type: 'nested_memory',
-        path: memoryFile.path,
-        content: memoryFile,
-        displayPath: relative(getCwd(), memoryFile.path),
-      })
+      // Resume and compaction reset both dedup stores while the transcript
+      // can still carry the earlier attachment (resumed history, or the tail
+      // a partial compact keeps). Same content already there → re-seed the
+      // stores without attaching it a second time.
+      const alreadyInTranscript =
+        inTranscript?.get(memoryFile.path) === memoryFile.content.trim()
+      if (!alreadyInTranscript) {
+        attachments.push({
+          type: 'nested_memory',
+          path: memoryFile.path,
+          content: memoryFile,
+          displayPath: relative(getCwd(), memoryFile.path),
+        })
+      }
       toolUseContext.loadedNestedMemoryPaths?.add(memoryFile.path)
 
       // Mark as loaded in readFileState — this provides cross-function and
@@ -2200,6 +2212,7 @@ export function memoryFilesToAttachments(
         isPartialView: memoryFile.contentDiffersFromDisk,
       })
 
+      if (alreadyInTranscript) continue
 
       // Fire InstructionsLoaded hook for audit/observability (fire-and-forget)
       if (shouldFireHook && isInstructionsMemoryType(memoryFile.type)) {
@@ -2244,6 +2257,7 @@ async function getNestedMemoryAttachmentsForFile(
   filePath: string,
   toolUseContext: ToolUseContext,
   appState: { toolPermissionContext: ToolPermissionContext },
+  inTranscript?: ReadonlyMap<string, string>,
 ): Promise<Attachment[]> {
   const attachments: Attachment[] = []
 
@@ -2262,7 +2276,12 @@ async function getNestedMemoryAttachmentsForFile(
       processedPaths,
     )
     attachments.push(
-      ...memoryFilesToAttachments(managedUserRules, toolUseContext, filePath),
+      ...memoryFilesToAttachments(
+        managedUserRules,
+        toolUseContext,
+        filePath,
+        inTranscript,
+      ),
     )
 
     // Phase 2: Get directories to process
@@ -2285,7 +2304,12 @@ async function getNestedMemoryAttachmentsForFile(
         f => !skipProjectLevel || (f.type !== 'Project' && f.type !== 'Local'),
       )
       attachments.push(
-        ...memoryFilesToAttachments(memoryFiles, toolUseContext, filePath),
+        ...memoryFilesToAttachments(
+          memoryFiles,
+          toolUseContext,
+          filePath,
+          inTranscript,
+        ),
       )
     }
 
@@ -2302,7 +2326,12 @@ async function getNestedMemoryAttachmentsForFile(
         f => !skipProjectLevel || (f.type !== 'Project' && f.type !== 'Local'),
       )
       attachments.push(
-        ...memoryFilesToAttachments(conditionalRules, toolUseContext, filePath),
+        ...memoryFilesToAttachments(
+          conditionalRules,
+          toolUseContext,
+          filePath,
+          inTranscript,
+        ),
       )
     }
   } catch (error) {
@@ -2617,6 +2646,7 @@ export async function getChangedFiles(
  */
 async function getNestedMemoryAttachments(
   toolUseContext: ToolUseContext,
+  messages: Message[] | undefined,
 ): Promise<Attachment[]> {
   // Check triggers first — getAppState() waits for a React render cycle,
   // and the common case is an empty trigger set.
@@ -2630,11 +2660,23 @@ async function getNestedMemoryAttachments(
   const appState = toolUseContext.getAppState()
   const attachments: Attachment[] = []
 
+  // path → trimmed content of the nested_memory attachments still in context.
+  const inTranscript = new Map<string, string>()
+  for (const msg of getMessagesAfterCompactBoundary(messages ?? [])) {
+    if (msg.type !== 'attachment') continue
+    if (msg.attachment.type !== 'nested_memory') continue
+    const content = msg.attachment.content?.content
+    if (typeof content === 'string') {
+      inTranscript.set(msg.attachment.path, content.trim())
+    }
+  }
+
   for (const filePath of toolUseContext.nestedMemoryAttachmentTriggers) {
     const nestedAttachments = await getNestedMemoryAttachmentsForFile(
       filePath,
       toolUseContext,
       appState,
+      inTranscript,
     )
     attachments.push(...nestedAttachments)
   }
