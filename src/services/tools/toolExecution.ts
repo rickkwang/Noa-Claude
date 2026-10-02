@@ -69,7 +69,10 @@ import {
 } from '../../utils/errors.js'
 import { executePermissionDeniedHooks } from '../../utils/hooks.js'
 import { logError } from '../../utils/log.js'
-import { formatToolNameForError } from '../../utils/toolName.js'
+import {
+  formatToolNameForError,
+  formatUnknownToolError,
+} from '../../utils/toolName.js'
 import {
   CANCEL_MESSAGE,
   isTurnEndedForMessage,
@@ -388,6 +391,10 @@ export async function* runToolUse(
     const sanitizedToolName = sanitizeUnknownToolNameForAnalytics(toolName)
     const toolNameForMessage = formatToolNameForError(toolName)
     logForDebugging(`Unknown tool ${toolNameForMessage}: ${toolUse.id}`)
+    const unknownToolError = formatUnknownToolError(
+      toolName,
+      toolUseContext.options.tools,
+    )
     logEvent('tengu_tool_use_error', {
       error:
         `No such tool available: ${sanitizedToolName}` as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -423,12 +430,12 @@ export async function* runToolUse(
         content: [
           {
             type: 'tool_result',
-            content: `<tool_use_error>Error: No such tool available: ${toolNameForMessage}</tool_use_error>`,
+            content: `<tool_use_error>${unknownToolError}</tool_use_error>`,
             is_error: true,
             tool_use_id: toolUse.id,
           },
         ],
-        toolUseResult: `Error: No such tool available: ${toolNameForMessage}`,
+        toolUseResult: unknownToolError,
         sourceToolAssistantUUID: assistantMessage.uuid,
       }),
     }

@@ -250,7 +250,7 @@ export async function toolToAPISchema(
     (isEnvTruthy(fgtsOverride) ||
       (getAPIProvider() === 'firstParty' &&
         isFirstPartyAnthropicBaseUrl() &&
-        getFeatureValue_CACHED_MAY_BE_STALE('tengu_fgts', false)) ||
+        getFeatureValue_CACHED_MAY_BE_STALE('tengu_fgts', true)) ||
       (options.model !== undefined &&
         cloudProviderSupportsEagerInputStreaming(options.model)))
   const cacheKey =
@@ -312,8 +312,9 @@ export async function toolToAPISchema(
     // Enable fine-grained tool streaming via per-tool API field.
     // Without FGTS, the API buffers entire tool input parameters before sending
     // input_json_delta events, causing multi-minute hangs on large tool inputs.
-    // First party: direct api.anthropic.com behind tengu_fgts (proxies such as
-    // LiteLLM reject the field). Bedrock/Vertex: per model, from upstream's
+    // First party: on for direct api.anthropic.com (tengu_fgts resolves to its
+    // in-code default here; proxies such as LiteLLM reject the field, so a
+    // custom base URL stays off). Bedrock/Vertex: per model, from upstream's
     // catalog. CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING=1|0 forces it.
     if (eagerInputStreaming) {
       base.eager_input_streaming = true

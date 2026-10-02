@@ -210,6 +210,19 @@ export function modelOmitsThinkingByDefault(model: string): boolean {
   )
 }
 
+// Print mode with text output (or non-verbose json) never shows thinking, so
+// the request asks for it to be omitted instead of streaming text nobody reads.
+// Set once by the headless entrypoint; stream-json keeps the model default.
+let headlessOmitsThinkingDisplay = false
+
+export function setHeadlessOmitsThinkingDisplay(value: boolean): void {
+  headlessOmitsThinkingDisplay = value
+}
+
+export function getHeadlessOmitsThinkingDisplay(): boolean {
+  return headlessOmitsThinkingDisplay
+}
+
 // Sonnet 5 is adaptive-by-default: omitting `thinking` entirely still runs
 // adaptive thinking (unlike Opus 4.7/4.8, where omitting means no thinking).
 // To actually disable thinking on Sonnet 5 the request must send an explicit

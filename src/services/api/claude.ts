@@ -185,6 +185,7 @@ import { calculateUSDCost } from 'src/utils/modelCost.js'
 import { endQueryProfile, queryCheckpoint } from 'src/utils/queryProfiler.js'
 import {
   effortRejectedWithDisabledThinking,
+  getHeadlessOmitsThinkingDisplay,
   MAX_EFFORT_WITH_DISABLED_THINKING,
   modelOmitsThinkingByDefault,
   modelRejectsSamplingParams,
@@ -1781,6 +1782,20 @@ async function* queryModel(
       thinking = {
         ...thinking,
         block_binding: { prefix_mismatch_behavior: 'drop_block' },
+      } satisfies BetaMessageStreamParams['thinking']
+    }
+
+    // `display` is only sent where it is already known to be accepted: the
+    // first-party API, or a model that takes the 'summarized' opt-in above.
+    if (
+      thinking &&
+      thinking.type !== 'disabled' &&
+      getHeadlessOmitsThinkingDisplay() &&
+      (isDirectFirstParty() || modelOmitsThinkingByDefault(apiModel))
+    ) {
+      thinking = {
+        ...thinking,
+        display: 'omitted',
       } satisfies BetaMessageStreamParams['thinking']
     }
 

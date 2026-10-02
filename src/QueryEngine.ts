@@ -704,7 +704,14 @@ export class QueryEngine {
       maxTurns: resolveMaxTurns(maxTurns),
       taskBudget,
     })
-    for await (const message of queryIterator) {
+    // for-await drops a generator's return value, and that value is the
+    // reason the loop ended.
+    let terminalReason: string | undefined
+    let ttftMs: number | undefined
+    const queryMessages = (async function* () {
+      terminalReason = (yield* queryIterator)?.reason
+    })()
+    for await (const message of queryMessages) {
       // Record assistant, user, and compact boundary messages
       if (
         message.type === 'assistant' ||
@@ -808,6 +815,8 @@ export class QueryEngine {
           break
         case 'stream_event':
           if (message.event.type === 'message_start') {
+            // Measured from the start of the turn, so it includes setup.
+            ttftMs ??= Date.now() - startTime
             // Reset current message usage for new message
             currentMessageUsage = EMPTY_USAGE
             currentMessageUsage = updateUsage(
@@ -886,6 +895,8 @@ export class QueryEngine {
                 mainLoopModel,
                 initialAppState.fastMode,
               ),
+              terminal_reason: 'max_turns',
+              ...(ttftMs !== undefined && { ttft_ms: ttftMs }),
               uuid: randomUUID(),
               errors: [
                 `Reached maximum number of turns (${message.attachment.maxTurns})`,
@@ -1021,6 +1032,8 @@ export class QueryEngine {
             mainLoopModel,
             initialAppState.fastMode,
           ),
+          terminal_reason: 'budget_exhausted',
+          ...(ttftMs !== undefined && { ttft_ms: ttftMs }),
           uuid: randomUUID(),
           errors: [`Reached maximum budget ($${maxBudgetUsd})`],
         }
@@ -1066,6 +1079,8 @@ export class QueryEngine {
               mainLoopModel,
               initialAppState.fastMode,
             ),
+            terminal_reason: 'structured_output_retry_exhausted',
+            ...(ttftMs !== undefined && { ttft_ms: ttftMs }),
             uuid: randomUUID(),
             errors: [
               `Failed to provide valid structured output after ${maxRetries} attempts`,
@@ -1125,6 +1140,8 @@ export class QueryEngine {
           mainLoopModel,
           initialAppState.fastMode,
         ),
+        ...(terminalReason !== undefined && { terminal_reason: terminalReason }),
+        ...(ttftMs !== undefined && { ttft_ms: ttftMs }),
         uuid: randomUUID(),
         // Diagnostic prefix: these are what isResultSuccessful() checks — if
         // the result type isn't assistant-with-text/thinking or user-with-
@@ -1179,6 +1196,8 @@ export class QueryEngine {
         mainLoopModel,
         initialAppState.fastMode,
       ),
+      ...(terminalReason !== undefined && { terminal_reason: terminalReason }),
+      ...(ttftMs !== undefined && { ttft_ms: ttftMs }),
       uuid: randomUUID(),
     }
   }

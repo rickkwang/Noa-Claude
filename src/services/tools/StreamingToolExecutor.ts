@@ -10,7 +10,7 @@ import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import { findToolByName, type Tools, type ToolUseContext } from '../../Tool.js'
 import type { AssistantMessage, Message } from '../../types/message.js'
 import { createChildAbortController } from '../../utils/abortController.js'
-import { formatToolNameForError } from '../../utils/toolName.js'
+import { formatUnknownToolError } from '../../utils/toolName.js'
 import {
   buildSameTurnToolUses,
   getMaxToolUseConcurrency,
@@ -106,7 +106,10 @@ export class StreamingToolExecutor {
   addTool(block: ToolUseBlock, assistantMessage: AssistantMessage): void {
     const toolDefinition = findToolByName(this.toolDefinitions, block.name)
     if (!toolDefinition) {
-      const toolNameForMessage = formatToolNameForError(block.name)
+      const unknownToolError = formatUnknownToolError(
+        block.name,
+        this.toolDefinitions,
+      )
       this.tools.push({
         id: block.id,
         block,
@@ -119,12 +122,12 @@ export class StreamingToolExecutor {
             content: [
               {
                 type: 'tool_result',
-                content: `<tool_use_error>Error: No such tool available: ${toolNameForMessage}</tool_use_error>`,
+                content: `<tool_use_error>${unknownToolError}</tool_use_error>`,
                 is_error: true,
                 tool_use_id: block.id,
               },
             ],
-            toolUseResult: `Error: No such tool available: ${toolNameForMessage}`,
+            toolUseResult: unknownToolError,
             sourceToolAssistantUUID: assistantMessage.uuid,
           }),
         ],

@@ -45,7 +45,10 @@ import type { PermissionDecision } from '../../utils/permissions/PermissionResul
 import { matchWildcardPattern } from '../../utils/permissions/shellRuleMatching.js'
 import { checkWorktreeEscape } from '../../utils/worktreeEscape.js'
 import { checkBgIsolation } from '../../utils/background/isolation.js'
-import { FILE_UNEXPECTEDLY_MODIFIED_ERROR } from '../FileEditTool/constants.js'
+import {
+  FILE_STATE_CURRENT_NOTE,
+  FILE_UNEXPECTEDLY_MODIFIED_ERROR,
+} from '../FileEditTool/constants.js'
 import { gitDiffSchema, hunkSchema } from '../FileEditTool/types.js'
 import { canSkipPreRead, isNotebookPath } from '../shared/preReadGuard.js'
 import { FILE_WRITE_TOOL_NAME, getWriteToolDescription } from './prompt.js'
@@ -470,13 +473,13 @@ export const FileWriteTool = buildTool({
         return {
           tool_use_id: toolUseID,
           type: 'tool_result',
-          content: `File created successfully at: ${filePath}`,
+          content: `File created successfully at: ${filePath}${FILE_STATE_CURRENT_NOTE}`,
         }
       case 'update':
         return {
           tool_use_id: toolUseID,
           type: 'tool_result',
-          content: `The file ${filePath} has been updated successfully.`,
+          content: `The file ${filePath} has been updated successfully.${FILE_STATE_CURRENT_NOTE}`,
         }
     }
   },

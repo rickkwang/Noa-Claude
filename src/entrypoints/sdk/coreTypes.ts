@@ -81,6 +81,8 @@ export type SDKResultSuccess = {
   permission_denials: Array<Record<string, unknown>>
   structured_output?: unknown
   fast_mode_state?: unknown
+  terminal_reason?: string
+  ttft_ms?: number
   uuid: string
   session_id: string
 }

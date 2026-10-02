@@ -1432,6 +1432,18 @@ export const SDKResultSuccessSchema = lazySchema(() =>
     permission_denials: z.array(SDKPermissionDenialSchema()),
     structured_output: z.unknown().optional(),
     fast_mode_state: FastModeStateSchema().optional(),
+    terminal_reason: z
+      .string()
+      .optional()
+      .describe(
+        'Why the query loop terminated. Unset when the loop was bypassed (local slash command).',
+      ),
+    ttft_ms: z
+      .number()
+      .optional()
+      .describe(
+        'Milliseconds from the start of the turn to the first streamed response.',
+      ),
     uuid: UUIDPlaceholder(),
     session_id: z.string(),
   }),
@@ -1457,6 +1469,18 @@ export const SDKResultErrorSchema = lazySchema(() =>
     permission_denials: z.array(SDKPermissionDenialSchema()),
     errors: z.array(z.string()),
     fast_mode_state: FastModeStateSchema().optional(),
+    terminal_reason: z
+      .string()
+      .optional()
+      .describe(
+        'Why the query loop terminated. Unset when the loop was bypassed (local slash command).',
+      ),
+    ttft_ms: z
+      .number()
+      .optional()
+      .describe(
+        'Milliseconds from the start of the turn to the first streamed response.',
+      ),
     uuid: UUIDPlaceholder(),
     session_id: z.string(),
   }),
