@@ -1,9 +1,36 @@
 # Release Notes
 
-## 1.16.1
+## 1.17.0
 
 - New: Claude Sonnet 5.5 (`claude-sonnet-5-5`); the `sonnet` alias now resolves to it on first party (Bedrock, Vertex and Foundry stay on Sonnet 4.5), and Sonnet 5 remains selectable by its full id
 - Sonnet 5.5 requests follow its API surface: thinking is never sent as `disabled`, forced `tool_choice` falls back to `auto`, preserved-thinking controls apply, and the status bar shows its default effort as `medium`; it uses the lean system prompt, 128K default max output and 1M context, and bills at $2/$10 per Mtok
+- New: background sessions. `←` on an empty prompt (or `/background`, `/bg`) moves the conversation into a background session that keeps running; `noa agents` lists sessions by needs input / working / completed, and `noa --bg <task>`, `noa attach|logs|stop|kill|respawn|rm <id>` manage them from the shell
+- Background sessions edit files in their own worktree by default (`worktree.bgIsolation`); `disableAgentView` and `leftArrowOpensAgents` control the agents view
+- New: `--bare` requests are about 4KB on every model and provider (previously 8-19KB): tools carry one-line descriptions, the system prompt is the identity line plus working directory and date, and no reminder is added ahead of the prompt
+- `--bare` with `--add-dir` now loads `CLAUDE.md` from the added directories and nowhere else; previously it loaded the working directory's file instead
+- `--bare` no longer offers `run_in_background` on Bash, and an unknown slash command in print mode is passed through as typed
+- Print mode with text output no longer requests thinking summaries that were never shown
+- Large tool inputs now stream on the first-party API instead of arriving in one burst; `CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING=0` turns this off
+- A successful Edit or Write tells the model the file state is current, saving a read-back turn; calling a tool the session does not have now lists the tools it does have when the list is short
+- `--output-format json` and stream-json results include `terminal_reason` (why the turn ended) and `ttft_ms`
+- New: `/effort` and the model picker save the effort level per model, so a level picked for one model no longer applies to the others; `--effort auto` and `/effort auto` return to the model default
+- The `/model` picker uses versioned names and catalog descriptions, lists previous generations as pinned rows, and adds `s` to pick a model for the current session only
+- Task-tracking tools are offered only to models that need them: the Claude 5 family and Opus 4.8 on first party no longer receive them, while older models and third-party providers keep them; `NOA_CLAUDE_ENABLE_TODO_TOOLS=1|0` forces either way
+- A model with a native 1M context window now gets it behind a custom `ANTHROPIC_BASE_URL`; cap a gateway that stops at 200k with `/autocompact 200k`
+- An unknown slash command shows a warning with a "Did you mean" suggestion; in print mode the message goes to the model as a plain request with a note that the command did not run
+- Permission prompts show their position ("2 of 5") when several are waiting, and "N more" rows in lists are clickable
+- Startup is faster: `noa --version` returns in about 11ms (was about 75ms) and the first interactive paint is about 20ms sooner
+- Fixed recovery retries that could alternate without limit after a malformed tool call or an empty response; the fallback model is now tried once per request
+- Fixed tools that kept running after a budget or structured-output limit ended the turn, and print-mode output truncated when stdout was slow to drain
+- A refusal is retried once on the same model, keeping the partial response; `NOA_CLAUDE_DISABLE_REFUSAL_RETRY=1` turns this off
+- Fixed `ctrl+o` freezing on long transcripts; a tool still running when the transcript opens now shows its result when it finishes
+- Fixed the compaction spinner showing no token count on providers that do not stream usage
+- Fixed the API rejecting Opus 4.7/4.8 or Sonnet 5 as an advisor for a Sonnet 5.5 executor; these pairings are now refused locally
+- Fixed `/startup-banner` writing a confirmation into the conversation
+- The mascot has ten new animations and holds a wand at `xhigh`/`max` effort; the startup banner gets a light sweep
+
+## 1.16.1
+
 - Fixed `/release-notes` showing an old Claude Code changelog instead of Noa's bundled release notes when a stale cache file exists
 
 ## 1.16.0
