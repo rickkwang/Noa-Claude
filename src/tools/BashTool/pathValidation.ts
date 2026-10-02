@@ -9,6 +9,7 @@ import {
   splitCommand_DEPRECATED,
 } from '../../utils/bash/commands.js'
 import { tryParseShellCommand } from '../../utils/bash/shellQuote.js'
+import { isEnvTruthy } from '../../utils/envUtils.js'
 import { getDirectoryForPath } from '../../utils/path.js'
 import { getPathsForPermissionCheck } from '../../utils/fsOperations.js'
 import {
@@ -306,6 +307,272 @@ export function checkDangerousRemovalInHiddenCommands(
     if (result.behavior !== 'passthrough') return result
   }
   return null
+}
+
+const CMDSUB = '__CMDSUB__'
+/** A variable the command itself assigns from something not known statically. */
+const UNKNOWN_VALUE = '__UNKNOWN__'
+const SHELL_KEYWORDS = new Set([
+  'if', 'then', 'else', 'elif', 'fi', 'do', 'done', 'while', 'until', '!', '{', '}',
+])
+const REMOVAL_WRAPPERS = new Set([
+  'sudo', 'command', 'builtin', 'exec', 'env', 'nohup', 'time', 'nice', 'noglob', 'xargs', 'timeout', 'stdbuf',
+])
+const DECLARATION_BUILTINS = new Set([
+  'export', 'local', 'declare', 'typeset', 'readonly',
+])
+const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=([\s\S]*)$/
+
+type ExpandedWord = { text: string; expanded: boolean; quoted: boolean }
+
+function removalSubstitutionAsk(command: 'rm' | 'rmdir'): PermissionResult {
+  return {
+    behavior: 'ask',
+    message: `Dangerous ${command} operation detected: the target is the output of a command substitution (\`$(...)\` or backticks) and cannot be checked before the command runs. This requires explicit approval and cannot be auto-allowed by permission rules.\n\nRun the substitution on its own first, then remove the literal paths it prints.`,
+    decisionReason: {
+      type: 'safetyCheck',
+      classifierApprovable: true,
+      reason: `Dangerous ${command} operation on statically-unresolvable target: command substitution output`,
+    },
+    suggestions: [],
+  }
+}
+
+/**
+ * Catches removals whose target only becomes catastrophic once the shell
+ * expands it: `rm -rf $HOME`, `rm -rf "$DIR"/*` with DIR unset, `rm -rf $(…)/`.
+ * The ordinary check sees the unexpanded text and hands back a generic
+ * "shell expansion" ask, which bypassPermissions auto-approves.
+ *
+ * Variables resolve the way the spawned shell would see them: a literal
+ * assignment earlier in the command, else this process's environment, else
+ * empty. A command substitution counts as empty when it is part of a path and
+ * as unknowable when it is the whole target. Only removals that actually use
+ * an expansion are judged here — literal ones belong to the ordinary check.
+ */
+export function checkDangerousRemovalThroughExpansion(
+  command: string,
+  cwd: string,
+  toolPermissionContext: ToolPermissionContext,
+  vars: Map<string, string> = new Map(),
+  depth = 0,
+): PermissionResult | null {
+  if (depth > 4 || !/\brm(?:dir)?\b/.test(command) || !/[$`]/.test(command)) {
+    return null
+  }
+  let found: PermissionResult | null = null
+  const recurse = (inner: string): void => {
+    found ??= checkDangerousRemovalThroughExpansion(
+      inner,
+      cwd,
+      toolPermissionContext,
+      new Map(vars),
+      depth + 1,
+    )
+  }
+  const lookup = (name: string): string =>
+    vars.has(name) ? vars.get(name)! : (process.env[name] ?? '')
+
+  let words: ExpandedWord[] = []
+  let word: ExpandedWord | null = null
+  let skipNextWord = false
+  const heredocs: string[] = []
+  const cur = (): ExpandedWord =>
+    (word ??= { text: '', expanded: false, quoted: false })
+  const endWord = (): void => {
+    if (!word) return
+    if (skipNextWord) skipNextWord = false
+    else if (word.text !== '' || word.quoted) words.push(word)
+    word = null
+  }
+  const endCommand = (): void => {
+    endWord()
+    const cmd = words
+    words = []
+    let i = 0
+    while (i < cmd.length && SHELL_KEYWORDS.has(cmd[i]!.text)) i++
+    if (cmd[i]?.text === 'for' && cmd[i + 1]) {
+      vars.set(cmd[i + 1]!.text, UNKNOWN_VALUE)
+      return
+    }
+    const assign = (w: ExpandedWord): boolean => {
+      const m = ASSIGNMENT.exec(w.text)
+      if (!m) return false
+      vars.set(
+        m[1]!,
+        m[2]!.includes(CMDSUB) || m[2]!.includes(UNKNOWN_VALUE)
+          ? UNKNOWN_VALUE
+          : m[2]!,
+      )
+      return true
+    }
+    // `X=1 cmd` scopes X to cmd alone and does not affect cmd's own
+    // arguments (already expanded); only a bare assignment persists.
+    const bare = cmd.slice(i).every(w => ASSIGNMENT.test(w.text))
+    while (i < cmd.length && ASSIGNMENT.test(cmd[i]!.text)) {
+      if (bare) assign(cmd[i]!)
+      i++
+    }
+    while (i < cmd.length && REMOVAL_WRAPPERS.has(cmd[i]!.text)) {
+      i++
+      while (i < cmd.length && /^-|^\d+[smhd]?$|=/.test(cmd[i]!.text)) i++
+    }
+    const base = cmd[i]?.text.replace(/^.*\//, '')
+    const args = cmd.slice(i + 1)
+    if (base === undefined) return
+    if (DECLARATION_BUILTINS.has(base)) {
+      for (const a of args) assign(a)
+    } else if (base === 'read') {
+      for (const a of args) {
+        if (!a.text.startsWith('-')) vars.set(a.text, UNKNOWN_VALUE)
+      }
+    } else if (base === 'eval') {
+      recurse(args.map(a => a.text).join(' '))
+    } else if (/^(?:ba|z|da|k)?sh$/.test(base)) {
+      const c = args.findIndex(a => /^-[a-z]*c$/.test(a.text))
+      if (c !== -1 && args[c + 1]) recurse(args[c + 1]!.text)
+    } else if (base === 'rm' || base === 'rmdir') {
+      if (!args.some(a => a.expanded)) return
+      const texts = args.map(a => a.text)
+      const dashDash = texts.indexOf('--')
+      const flags = dashDash === -1 ? texts : texts.slice(0, dashDash)
+      if (
+        base === 'rm' &&
+        flags.some(a => /^--r/.test(a) || /^-[a-zA-Z]*[rR]/.test(a)) &&
+        texts.some(a => /^(?:__CMDSUB__[/*.]*)+$/.test(a)) &&
+        !isEnvTruthy(process.env.NOA_CLAUDE_DISABLE_SUBSTITUTION_RM_PROMPT) &&
+        !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_SUBSTITUTION_RM_PROMPT)
+      ) {
+        found ??= removalSubstitutionAsk(base)
+        return
+      }
+      const result = checkDangerousRemovalPaths(
+        base,
+        texts.map(a => a.replaceAll(CMDSUB, '')).filter(a => a !== ''),
+        cwd,
+        toolPermissionContext,
+      )
+      if (result.behavior !== 'passthrough') found ??= result
+    }
+  }
+
+  // Appends the expansion starting at command[i] === '$'; returns the index
+  // of its last character.
+  const expand = (i: number): number => {
+    const w = cur()
+    const next = command[i + 1]
+    if (next === '(') {
+      const end = matchingParen(command, i + 1)
+      const close = end === -1 ? command.length : end
+      recurse(command.slice(i + 2, close))
+      w.text += CMDSUB
+      w.expanded = true
+      return close
+    }
+    if (next === '{') {
+      const end = command.indexOf('}', i + 2)
+      const close = end === -1 ? command.length : end
+      const m = /^([A-Za-z_][A-Za-z0-9_]*)(?::?([-=+?])([\s\S]*))?/.exec(
+        command.slice(i + 2, close),
+      )
+      const value = m ? lookup(m[1]!) : ''
+      w.text +=
+        m && (m[2] === '-' || m[2] === '=') && value === ''
+          ? (m[3] ?? '')
+          : m?.[2] === '+'
+            ? ''
+            : value
+      w.expanded = true
+      return close
+    }
+    const m = /^[A-Za-z_][A-Za-z0-9_]*/.exec(command.slice(i + 1))
+    if (m) {
+      w.text += lookup(m[0])
+      w.expanded = true
+      return i + m[0].length
+    }
+    if (next !== undefined && /[0-9@*#?$!-]/.test(next)) {
+      w.expanded = true
+      return i + 1
+    }
+    w.text += '$'
+    return i
+  }
+  const backtick = (i: number): number => {
+    const end = command.indexOf('`', i + 1)
+    const close = end === -1 ? command.length : end
+    recurse(command.slice(i + 1, close))
+    const w = cur()
+    w.text += CMDSUB
+    w.expanded = true
+    return close
+  }
+
+  for (let i = 0; i < command.length && found === null; i++) {
+    const ch = command[i]!
+    if (ch === '\\') {
+      if (command[i + 1] === '\n') i++
+      else cur().text += command[++i] ?? ''
+    } else if (ch === "'") {
+      const end = command.indexOf("'", i + 1)
+      const close = end === -1 ? command.length : end
+      const w = cur()
+      w.text += command.slice(i + 1, close)
+      w.quoted = true
+      i = close
+    } else if (ch === '"') {
+      cur().quoted = true
+      for (i++; i < command.length && command[i] !== '"'; i++) {
+        if (command[i] === '\\' && /[$`"\\]/.test(command[i + 1] ?? '')) {
+          cur().text += command[++i]
+        } else if (command[i] === '$') i = expand(i)
+        else if (command[i] === '`') i = backtick(i)
+        else cur().text += command[i]
+      }
+    } else if (ch === '$') {
+      i = expand(i)
+    } else if (ch === '`') {
+      i = backtick(i)
+    } else if (ch === '#' && word === null) {
+      const end = command.indexOf('\n', i)
+      i = end === -1 ? command.length : end - 1
+    } else if (ch === ' ' || ch === '\t') {
+      endWord()
+    } else if (ch === '<' && command[i + 1] === '<' && command[i + 2] !== '<') {
+      // Heredoc: its body is data, not commands.
+      endWord()
+      const m = /^<<-?[ \t]*(\S+)/.exec(command.slice(i))
+      if (m) {
+        heredocs.push(m[1]!.replace(/['"\\]/g, ''))
+        i += m[0].length - 1
+      } else {
+        i++
+      }
+    } else if (ch === '\n' && heredocs.length > 0) {
+      endCommand()
+      for (const delimiter of heredocs.splice(0)) {
+        while (i < command.length) {
+          const end = command.indexOf('\n', i + 1)
+          const line = command.slice(i + 1, end === -1 ? command.length : end)
+          i = end === -1 ? command.length : end
+          if (line.replace(/^\t+/, '') === delimiter) break
+        }
+      }
+      i--
+    } else if (ch === '>' || ch === '<') {
+      // A redirect target is not an argument; `2>` leaves no stray `2` behind.
+      if (word && /^\d*$/.test(word.text) && !word.quoted) word = null
+      endWord()
+      while (/[<>&|]/.test(command[i + 1] ?? '') && command[i + 1] !== '(') i++
+      skipNextWord = command[i + 1] !== '('
+    } else if (/[;&|\n()]/.test(ch)) {
+      endCommand()
+    } else {
+      cur().text += ch
+    }
+  }
+  if (found === null) endCommand()
+  return found
 }
 
 /**

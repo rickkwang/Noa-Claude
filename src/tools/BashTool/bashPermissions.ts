@@ -77,6 +77,7 @@ import {
 import { checkPermissionMode } from './modeValidation.js'
 import {
   checkDangerousRemovalInHiddenCommands,
+  checkDangerousRemovalThroughExpansion,
   checkPathConstraints,
 } from './pathValidation.js'
 import { checkSedConstraints } from './sedValidation.js'
@@ -1418,12 +1419,18 @@ function checkHiddenDangerousRemoval(
   toolPermissionContext: ToolPermissionContext,
   requireHiddenConstruct = true,
 ): PermissionResult | null {
-  const hidden = checkDangerousRemovalInHiddenCommands(
-    input.command,
-    getCwd(),
-    toolPermissionContext,
-    requireHiddenConstruct,
-  )
+  const hidden =
+    checkDangerousRemovalInHiddenCommands(
+      input.command,
+      getCwd(),
+      toolPermissionContext,
+      requireHiddenConstruct,
+    ) ??
+    checkDangerousRemovalThroughExpansion(
+      input.command,
+      getCwd(),
+      toolPermissionContext,
+    )
   if (hidden === null) return null
   const deny = checkEarlyExitDeny(input, toolPermissionContext)
   return deny?.behavior === 'deny' ? deny : hidden
