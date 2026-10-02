@@ -53,6 +53,7 @@ jobs:
         run: |
           bun run compile
           bun run e2e:loop
+          bun run e2e:bare
 
       # build:dev:full only proves the bundle resolves; the placeholder modules
       # behind the experimental flags have crashed it at startup before.

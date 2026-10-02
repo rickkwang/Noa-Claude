@@ -18,6 +18,7 @@ bun run check:runtime     # runtime health check
 bun run smoke:features    # command/governance surface smoke
 bun run smoke:engine      # engine smoke (no live API); `:live` needs ANTHROPIC_API_KEY
 bun run e2e:loop          # compiled CLI loop/transport E2E against a local scripted API
+bun run e2e:bare          # compiled CLI `--bare` request shape + tool loop against a local scripted API
 bun run smoke:perf        # startup/perf smoke
 bun run verify:ports      # byte-diff pinned prompt ports vs. an upstream binary (manual; skips without one)
 bun run scan:pr-intent    # fail PR diffs with suspicious links/downloads

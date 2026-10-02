@@ -283,8 +283,9 @@ For commands that are harder to parse at a glance (piped commands, obscure flags
 // field set by SedEditPermissionRequest after the user approves a sed edit preview.
 // Exposing it in the schema would let the model bypass permission checks and the
 // sandbox by pairing an innocuous command with an arbitrary file write.
-// Also conditionally remove run_in_background when background tasks are disabled.
-const inputSchema = lazySchema(() => isBackgroundTasksDisabled ? fullInputSchema().omit({
+// Also conditionally remove run_in_background when background tasks are disabled,
+// or under --bare / SIMPLE, where a scripted call has nothing to be notified later.
+const inputSchema = lazySchema(() => isBackgroundTasksDisabled || isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE) ? fullInputSchema().omit({
   run_in_background: true,
   _simulatedSedEdit: true
 }) : fullInputSchema().omit({

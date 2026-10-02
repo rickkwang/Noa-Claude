@@ -184,7 +184,11 @@ export const getUserContext = memoize(
 
     return {
       ...(claudeMd && { claudeMd }),
-      currentDate: `Today's date is ${getLocalISODate()}.`,
+      // --bare / SIMPLE: the system prompt already carries the date, and with
+      // no CLAUDE.md this leaves the context empty, so no reminder is sent.
+      ...(!isBareMode() && {
+        currentDate: `Today's date is ${getLocalISODate()}.`,
+      }),
     }
   },
 )

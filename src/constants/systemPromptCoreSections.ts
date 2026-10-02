@@ -159,17 +159,6 @@ export function getDoingTasksSection(
 }
 
 /**
- * CLAUDE_CODE_SIMPLE only, where the prompt is two sections and the group needs
- * a heading of its own. The main head reaches these bullets through
- * getDoingTasksSection().
- */
-export function getCoreExecutionGuardsSection(): string {
-  return [`# Execution guards`, ...prependBullets(getExecutionGuardItems())].join(
-    `\n`,
-  )
-}
-
-/**
  * Compact rendering of upstream's action-caution behavior and git guardrails.
  *
  * Compressed, but three things stay literal on purpose, because this is the

@@ -284,15 +284,24 @@ export async function toolToAPISchema(
     // the entire request rather than just the offending tool. Normalize them.
     input_schema = normalizeToolInputSchema(input_schema)
 
-    base = {
-      name: tool.name,
-      description: await tool.prompt({
+    // --bare / SIMPLE: the one-line search hint stands in for the full prompt,
+    // on every model. A tool without one (MCP) keeps its first paragraph.
+    const bare = isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)
+    let description = bare ? tool.searchHint : undefined
+    if (!description) {
+      const prompt = await tool.prompt({
         getToolPermissionContext: options.getToolPermissionContext,
         tools: options.tools,
         agents: options.agents,
         allowedAgentTypes: options.allowedAgentTypes,
         model: options.model,
-      }),
+      })
+      description = (bare && prompt.split('\n\n')[0].trim()) || prompt
+    }
+
+    base = {
+      name: tool.name,
+      description,
       input_schema,
     }
 

@@ -3,10 +3,7 @@ import {
   computeMainSessionEnvInfo,
   SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
 } from '../../constants/prompts.js'
-import {
-  buildDynamicSystemPromptSections,
-  buildSimpleModeSystemPrompt,
-} from '../../constants/systemPromptAssemblyHelpers.js'
+import { buildDynamicSystemPromptSections } from '../../constants/systemPromptAssemblyHelpers.js'
 import { BOUNDED_TARGET_DISCOVERY_SECTION } from '../../constants/systemPromptCoreSections.js'
 import {
   clearSystemPromptSectionCache,
@@ -124,15 +121,6 @@ describe('prompt behavior contracts', () => {
     )
     expect(BOUNDED_TARGET_DISCOVERY_SECTION).toContain(
       'end the turn without calling tools',
-    )
-  })
-
-  test('simple mode prompt keeps the target-discovery rule', () => {
-    // CLAUDE_CODE_SIMPLE / --bare returns early with only the simple-mode
-    // sections, so the rule must appear there too, not just in the dynamic
-    // sections of the main head.
-    expect(buildSimpleModeSystemPrompt()).toContain(
-      BOUNDED_TARGET_DISCOVERY_SECTION,
     )
   })
 

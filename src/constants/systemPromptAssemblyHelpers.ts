@@ -37,7 +37,6 @@ import {
   DELIVERING_WORK_SECTION,
   PRONOUNS_SECTION,
   getActionsSection,
-  getCoreExecutionGuardsSection,
   getDoingTasksSection,
   getSimpleIntroSection,
   getSimpleSystemSection,
@@ -79,8 +78,6 @@ const skillSearchFeatureCheck = feature('EXPERIMENTAL_SKILL_SEARCH')
   : null
 /* eslint-enable @typescript-eslint/no-require-imports */
 
-const SIMPLE_MODE_IDENTITY = `You are Noa Claude, an AI coding agent built for software engineering tasks.`
-
 const SYSTEM_PROMPT_ENV_NOTES = `Notes:
 - Agent threads always have their cwd reset between bash calls, as a result please only use absolute file paths.
 - In your final response, share file paths (always absolute, never relative) that are relevant to the task. Include code snippets only when the exact text is load-bearing (e.g., a bug you found, a function signature the caller asked for) — do not recap code you merely read.
@@ -116,13 +113,8 @@ export async function resolveSystemPromptBuildInputs(tools: Tools): Promise<{
 }
 
 export function buildSimpleModeSystemPrompt(): string[] {
-  return [
-    `${SIMPLE_MODE_IDENTITY}\n\nCWD: ${getCwd()}\nDate: ${getSessionStartDate()}`,
-    getCoreExecutionGuardsSection(),
-    // Simple mode never assembles the dynamic sections, so the target-discovery
-    // rule (which lives there now) has to be repeated here explicitly.
-    BOUNDED_TARGET_DISCOVERY_SECTION,
-  ]
+  // The identity line is the sysprompt prefix block; nothing else is added.
+  return [`CWD: ${getCwd()}\nDate: ${getSessionStartDate()}`]
 }
 
 export function buildDynamicSystemPromptSections(params: {

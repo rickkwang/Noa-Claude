@@ -406,6 +406,10 @@ export async function processSlashCommand(inputString: string, precedingInputBlo
       // A headless caller can't see a warning and retype, so the model takes
       // the message as a plain request, told the command didn't run.
       if (isNonInteractive) {
+        // --bare / SIMPLE: the text goes through as typed, with no note.
+        if (isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)) {
+          return sendAsPrompt([], true);
+        }
         return sendAsPrompt([createAttachmentMessage(createUnknownCommandFallback(commandName, suggestableCommands))], true);
       }
       const suggestion = findClosestCommandName(commandName, suggestableCommands);
