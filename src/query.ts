@@ -662,9 +662,6 @@ async function* queryLoop(
     }
 
     const appState = toolUseContext.getAppState()
-    const goalForAccounting = toolUseContext.goalAtStart === undefined
-      ? appState.goal ?? null
-      : toolUseContext.goalAtStart
     const setGoalState = toolUseContext.goalAtStart === undefined
       ? toolUseContext.setAppState
       : toolUseContext.setAppStateForTasks ?? toolUseContext.setAppState
@@ -694,10 +691,17 @@ async function* queryLoop(
       // evaluator can spend it (see resetGoalAutoContinueForNewTurn).
       resetGoalAutoContinueForNewTurn({
         setAppState: toolUseContext.setAppState,
-        // Only the user's own prompt: task notifications are not a reply.
-        resetWakeCounters: (prompt => !!prompt && !prompt.isMeta && (prompt.origin as { kind?: string } | undefined)?.kind !== 'task-notification')(
-          messagesForQuery.findLast(message => message.type === 'user' && !message.toolUseResult),
-        ),
+        // Only the user's own prompt: task notifications are not a reply. An
+        // image or skill prompt is followed by its own meta messages, so look
+        // at everything since the last response, not just the final message.
+        resetWakeCounters: messagesForQuery
+          .slice(messagesForQuery.findLastIndex(message => message.type === 'assistant') + 1)
+          .some(message =>
+            message.type === 'user' &&
+            !message.toolUseResult &&
+            !message.isMeta &&
+            (message.origin as { kind?: string } | undefined)?.kind !== 'task-notification',
+          ),
       })
       const goal = toolUseContext.getAppState().goal
       if (goal && shouldInjectGoalPrompt(goal)) {
@@ -710,6 +714,10 @@ async function* queryLoop(
         ]
       }
     }
+
+    const goalForAccounting = toolUseContext.goalAtStart === undefined
+      ? toolUseContext.getAppState().goal ?? null
+      : toolUseContext.goalAtStart
 
     //TODO: no need to set toolUseContext.messages during set-up since it is updated here
     toolUseContext = {
@@ -1339,6 +1347,23 @@ async function* queryLoop(
       }
     }
 
+    if (!needsFollowUp) {
+      const goalAccounting = accountGoalUsage({
+        assistantMessages,
+        getAppState: toolUseContext.getAppState,
+        setAppState: setGoalState,
+        goalAtTurnStart: goalForAccounting,
+        includeModelNotice: false,
+      })
+      if (goalAccounting.userNotice) {
+        yield goalAccounting.userNotice
+      }
+      const accountedGoal = toolUseContext.getAppState().goal
+      if (goalForAccounting?.status === 'active' && isSameGoal(accountedGoal, goalForAccounting) && accountedGoal?.status === 'budget_limited') {
+        return { reason: 'completed' }
+      }
+    }
+
     // Refusal recovery: the streaming loop withheld the refusal. Retry once
     // on the same model, keeping the partial response and telling the model
     // why it stopped. If tool calls were already dispatched, the retry would
@@ -1703,17 +1728,6 @@ async function* queryLoop(
           error: 'empty_response',
         })
         return { reason: 'completed' }
-      }
-
-      const goalAccounting = accountGoalUsage({
-        assistantMessages,
-        getAppState: toolUseContext.getAppState,
-        setAppState: setGoalState,
-        goalAtTurnStart: goalForAccounting,
-        includeModelNotice: false,
-      })
-      if (goalAccounting.userNotice) {
-        yield goalAccounting.userNotice
       }
 
       const stopHookResult = yield* deps.stopHooks(
