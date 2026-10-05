@@ -534,7 +534,7 @@ Continue working toward the active thread goal.`,
 })
 
 describe('goal tool result mapping', () => {
-  test('marks a goal without a verify command complete immediately', async () => {
+  test('keeps a goal active until independent evaluation confirms completion', async () => {
     const { result, state } = await requestGoalCompletion(
       createThreadGoal({
         objective: 'Finish work',
@@ -543,8 +543,8 @@ describe('goal tool result mapping', () => {
       }),
     )
 
-    expect(result.data.success).toBe(true)
-    expect(state.goal?.status).toBe('complete')
+    expect(result.data.success).toBe(false)
+    expect(state.goal?.status).toBe('active')
   })
 
   test('keeps a verified goal active when the model requests completion', async () => {

@@ -45,6 +45,7 @@ export type Continue =
 // Why queryLoop returned. Reached via `yield* queryLoop(...)` in query().
 export type Terminal =
   | { reason: 'completed' }
+  | { reason: 'api_error' }
   // Preempted before the API call: context over the hard blocking limit
   // with automatic compaction disabled.
   | { reason: 'blocking_limit' }

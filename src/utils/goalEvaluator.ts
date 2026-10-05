@@ -19,6 +19,7 @@ const GOAL_EVALUATOR_PROMPT = `Evaluate whether the active thread goal is comple
 
 Return JSON only with:
 - achieved: true only if the objective is actually complete and no required work remains.
+- impossible: true only when the objective cannot be satisfied, rather than merely being unfinished or blocked temporarily.
 - reason: one concise sentence explaining the decision.
 
 Be conservative. Treat missing verification, unclear state, blocked work, or partial progress as not achieved.
@@ -60,6 +61,7 @@ ${tail || '(no output)'}`
 const goalEvaluationSchema = lazySchema(() =>
   z.object({
     achieved: z.boolean(),
+    impossible: z.boolean().optional(),
     reason: z.string(),
   }),
 )
@@ -80,6 +82,7 @@ export function enforceGoalVerifyResult(
     ? ''
     : truncateGoalNoticeReason(evaluation.reason)
   return {
+    ...evaluation,
     achieved: false,
     reason: `Verify command failed with exit code ${verifyResult.code}.${evaluatorReason ? ` ${evaluatorReason}` : ''}`,
   }
@@ -224,18 +227,24 @@ export async function evaluateGoalCompletion({
   signal,
   isNonInteractiveSession,
   verifyResult,
+  backgroundTasks = [],
 }: {
   goal: ThreadGoal
   messages: Message[]
   signal: AbortSignal
   isNonInteractiveSession: boolean
   verifyResult?: GoalVerifyResult | null
+  backgroundTasks?: readonly { id: string; description: string }[]
 }): Promise<GoalEvaluationOutcome> {
   logGoalAudit({ goal, action: 'evaluator_start', reason: null })
   const verifyBlock =
     verifyResult && goal.verifyCommand
       ? `\n${formatVerifyResultForEvaluator(goal.verifyCommand, verifyResult)}\n`
       : ''
+  const taskSummary = backgroundTasks.map(task => `- ${task.id}: ${task.description}`).join('\n')
+  const taskBlock = backgroundTasks.length
+    ? `Running work started during this goal (${backgroundTasks.length} tasks):\n${taskSummary.slice(0, MAX_GOAL_EVALUATOR_CONTEXT)}${taskSummary.length > MAX_GOAL_EVALUATOR_CONTEXT ? '\n[task details truncated]' : ''}\nA running task alone does not mean the goal is unfinished: a service may be expected to remain running. Determine whether required work is still pending.\n`
+    : ''
   try {
     const response = await queryHaiku({
       systemPrompt: asSystemPrompt([GOAL_EVALUATOR_PROMPT]),
@@ -244,6 +253,7 @@ Status: ${goal.status}
 Tokens used: ${goal.tokensUsed}${goal.tokenBudget ? ` of ${goal.tokenBudget}` : ''}
 Auto-continue turns: ${goal.autoContinueTurns} of ${goal.maxAutoContinueTurns}
 ${verifyBlock}
+${taskBlock}
 Recent conversation:
 ${buildGoalEvaluatorContext(messages)}
 
@@ -254,6 +264,7 @@ Decision:`,
           type: 'object',
           properties: {
             achieved: { type: 'boolean' },
+            impossible: { type: 'boolean' },
             reason: { type: 'string' },
           },
           required: ['achieved', 'reason'],
@@ -292,7 +303,8 @@ Decision:`,
     return {
       evaluation: enforceGoalVerifyResult(
         {
-          achieved: parsed.data.achieved,
+          achieved: parsed.data.achieved && !parsed.data.impossible,
+          impossible: parsed.data.impossible,
           reason: parsed.data.reason.trim() || 'No evaluator reason provided.',
         },
         verifyResult,

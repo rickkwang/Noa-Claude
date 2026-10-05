@@ -18,7 +18,7 @@ const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'n
 mkdirSync(artifacts, { recursive: true });
 const model = 'claude-sonnet-4-6';
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'refusal', 'refusal-repeat', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -42,7 +42,11 @@ const server = createServer(async (req, res) => {
     const summary = lastText.startsWith('CRITICAL: Respond with TEXT ONLY.') || /create a detailed continuation summary|summarize the recent messages|summary of the conversation|summarizing.*conversation/i.test(lastText);
     active.requests.push({ path: req.url, body, summary });
     writeFileSync(join(active.dir, 'requests.json'), JSON.stringify(active.requests, null, 2));
-    const n = active.requests.filter(r => !r.summary).length;
+    const harness = active.case.startsWith('task-') || active.case === 'goal-child-usage' || active.case==='agent-custom-fork';
+    const customChild=active.case==='agent-custom-fork'&&((lastText.includes('CHILD_CUSTOM_FORK_')||body.tools?.every(t=>t.name==='Read'))||body.messages?.at(-1)?.content?.some?.(b=>b.type==='tool_result'&&b.tool_use_id.startsWith('custom_read_')));
+    const child = customChild || active.case === 'goal-child-usage' && (lastText.includes('CHILD_USAGE_FIXTURE') || body.messages?.at(-1)?.content?.some?.(b => b.type === 'tool_result' && b.tool_use_id === 'child_read'));
+    active.requests.at(-1).child = child;
+    const n = active.requests.filter(r => harness ? r.body.tools?.length && !r.child : !r.summary).length;
     const error = (status, type, message) => {
       res.writeHead(status, { 'content-type': 'application/json', 'retry-after': '0', 'x-should-retry': status === 529 ? 'true' : 'false' });
       res.end(JSON.stringify({ type: 'error', error: { type, message } }));
@@ -51,8 +55,41 @@ const server = createServer(async (req, res) => {
       error(529, 'overloaded_error', 'Scripted overload on primary and fallback');
       return;
     }
+    if(active.case==='provider-quota'){error(403,'permission_error',"You've reached your weekly (7-day) usage limit. Your quota will reset when the current 7-day window ends.");return;}
     let content, stop = 'end_turn';
-    if (summary) {
+    if (harness && !body.tools?.length) {
+      content = [{type:'text',text:active.case==='goal-child-usage'?JSON.stringify({achieved:true,reason:'Fixture child Read completed.'}):'metadata'}];
+    } else if (customChild) {
+      active.childRequests=(active.childRequests||0)+1;
+      active.requests.at(-1).childStep=active.childRequests;
+      const reading=active.childRequests%2===1;
+      content=reading?[{type:'tool_use',id:'custom_read_'+active.childRequests,name:'Read',input:{file_path:join(active.dir,'fixture.txt')}}]:[{type:'text',text:'CUSTOM_DONE'}];stop=reading?'tool_use':'end_turn';
+    } else if(active.case==='agent-custom-fork') {
+      const agentName=body.tools.find(t=>t.name==='Task'||t.name==='Agent')?.name||'Task';
+      let step;
+      if(n===1)step={name:agentName,input:{prompt:'CHILD_CUSTOM_FORK_LAUNCH',description:'Custom fork fixture',subagent_type:'fork',run_in_background:false}};
+      else if(n===2){const all=JSON.stringify(body.messages);const id=all.match(/agentId:\s*([a-zA-Z0-9_-]+)/)?.[1];assert.ok(id,'agent id not returned');step={name:'SendMessage',input:{to:id,message:'CHILD_CUSTOM_FORK_RESUME',summary:'Resume custom fixture'}};}
+      else if((active.childRequests||0)<4)step={name:'Bash',input:{command:'sleep 0.2',description:'Await resumed fixture'}};
+      content=step?[{type:'tool_use',id:'parent_'+n,...step}]:[{type:'text',text:'AUDIT_OK'}];stop=step?'tool_use':'end_turn';
+    } else if (child) {
+      active.childRequests=(active.childRequests||0)+1;
+      content=active.childRequests===1?[{type:'tool_use',id:'child_read',name:'Read',input:{file_path:join(active.dir,'fixture.txt')}}]:[{type:'text',text:'CHILD_'},{type:'text',text:'DONE'}];stop=active.childRequests===1?'tool_use':'end_turn';
+    } else if(active.case==='task-crud'){
+      const steps=[{name:'TaskCreate',input:{subject:'HARNESS_TASK_PROBE',description:'Isolated CRUD'}},{name:'TaskUpdate',input:{taskId:'1',status:'in_progress'}},{name:'TaskGet',input:{taskId:'1'}},{name:'TaskUpdate',input:{taskId:'1',status:'completed'}},{name:'TaskList',input:{}}];
+      const step=steps[n-1];content=step?[{type:'tool_use',id:'task_'+n,...step}]:[{type:'text',text:'AUDIT_OK'}];stop=step?'tool_use':'end_turn';
+    } else if(active.case==='task-metadata-race'){
+      if(n===1){content=[{type:'tool_use',id:'create',name:'TaskCreate',input:{subject:'HARNESS_METADATA_RACE',description:'Concurrent field merge'}}];stop='tool_use'}
+      else if(n===2){content=[{type:'tool_use',id:'alpha',name:'TaskUpdate',input:{taskId:'1',metadata:{alpha:1}}},{type:'tool_use',id:'beta',name:'TaskUpdate',input:{taskId:'1',metadata:{beta:2}}}];stop='tool_use'}
+      else content=[{type:'text',text:'AUDIT_OK'}];
+    } else if(active.case==='task-dependency-race'){
+      if(n<=3){content=[{type:'tool_use',id:'create_'+n,name:'TaskCreate',input:{subject:'DEPENDENCY_'+n,description:'Concurrent graph'}}];stop='tool_use'}
+      else if(n===4){content=[{type:'tool_use',id:'block_b',name:'TaskUpdate',input:{taskId:'1',addBlocks:['2']}},{type:'tool_use',id:'block_c',name:'TaskUpdate',input:{taskId:'1',addBlocks:['3']}}];stop='tool_use'}
+      else content=[{type:'text',text:'AUDIT_OK'}];
+    } else if(active.case==='goal-child-usage'){
+      const agentName=body.tools.find(t=>t.name==='Task'||t.name==='Agent')?.name||'Task';
+      const steps=[{name:'goal',input:{operation:'create_goal',objective:'Run the explicitly requested isolated child usage test and finish.',token_budget:100000}},{name:agentName,input:{prompt:'CHILD_USAGE_FIXTURE',description:'Read fixture',subagent_type:'general-purpose'}},{name:'goal',input:{operation:'get_goal'}},{name:'goal',input:{operation:'update_goal',status:'complete'}}];
+      const step=steps[n-1];content=step?[{type:'tool_use',id:'goal_'+n,...step}]:[{type:'text',text:'AUDIT_OK'}];stop=step?'tool_use':'end_turn';
+    } else if (summary) {
       active.summaries++;
       assert.ok(JSON.stringify(body.messages).includes(sentinel), 'summary request lost original constraint');
       content = [{ type: 'text', text: `<summary>Original project constraint: ${sentinel}. Continue the active task; bulky pasted data is omitted.</summary>` }];
@@ -84,13 +121,13 @@ const server = createServer(async (req, res) => {
     } else {
       content = [{ type: 'text', text: 'AUDIT_OK' }];
     }
-    const msg = { id: `msg_${active.requests.length}`, type: 'message', role: 'assistant', model: body.model, content, stop_reason: stop, stop_sequence: null, usage: { input_tokens: 100, output_tokens: 10 } };
+    const msg = { id: `msg_${active.requests.length}`, type: 'message', role: 'assistant', model: body.model, content, stop_reason: stop, stop_sequence: null, usage: child ? {input_tokens:1,output_tokens:1,cache_read_input_tokens:5000,cache_creation_input_tokens:4000} : harness ? {input_tokens:1,output_tokens:1} : {input_tokens:100,output_tokens:10} };
     if (!body.stream) {
       res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(msg)); return;
     }
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     const emit = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-    emit('message_start', { type: 'message_start', message: { ...msg, content: [], stop_reason: null, usage: { input_tokens: 100, output_tokens: 0 } } });
+    emit('message_start', { type: 'message_start', message: { ...msg, content: [], stop_reason: null, usage: {...msg.usage,output_tokens:0} } });
     for (const [index, block] of content.entries()) {
       emit('content_block_start', { type: 'content_block_start', index, content_block: block.type === 'text' ? { type: 'text', text: '' } : { ...block, input: {} } });
       emit('content_block_delta', { type: 'content_block_delta', index, delta: block.type === 'text' ? { type: 'text_delta', text: block.text } : { type: 'input_json_delta', partial_json: JSON.stringify(block.input) } });
@@ -99,7 +136,7 @@ const server = createServer(async (req, res) => {
     if (active.case === 'budget-streaming') {
       for (let i = 0; i < 100 && !existsSync(join(active.dir, 'started.txt')); i++) await delay(20);
     }
-    emit('message_delta', { type: 'message_delta', delta: { stop_reason: stop, stop_sequence: null }, usage: { output_tokens: 10 } });
+    emit('message_delta', { type: 'message_delta', delta: { stop_reason: stop, stop_sequence: null }, usage: {output_tokens:msg.usage.output_tokens} });
     emit('message_stop', { type: 'message_stop' });
     res.end();
   } catch (error) {
@@ -118,12 +155,13 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   Object.assign(env, {
     CLAUDE_CONFIG_DIR: join(active.dir, 'config'), ANTHROPIC_API_KEY: 'local-e2e-dummy', ANTHROPIC_BASE_URL: baseUrl,
     ANTHROPIC_MODEL: model, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', DISABLE_AUTOUPDATER: '1',
-    NOA_CLAUDE_STREAMING_TOOL_EXECUTION: scenario === 'budget-nonstream' ? '0' : '1', FALLBACK_FOR_ALL_PRIMARY_MODELS: '1', CLAUDE_CODE_EAGER_FLUSH: '1',
+    CLAUDE_CODE_TASK_LIST_ID: 'harness-probe', NOA_CLAUDE_STREAMING_TOOL_EXECUTION: scenario === 'budget-nonstream' ? '0' : '1', FALLBACK_FOR_ALL_PRIMARY_MODELS: '1', CLAUDE_CODE_EAGER_FLUSH: '1',
   });
   const streamingInput = scenario.startsWith('budget-');
+  const harness = scenario.startsWith('task-') || scenario === 'goal-child-usage' || scenario==='agent-custom-fork';
   // Hooks are off under --bare, so the hook scenario runs the full startup path.
-  const command = [...(scenario === 'hook-block' ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', model, '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', 'Read,Bash', '--max-turns', scenario === 'compact-resume' ? '6' : '2'];
-  if (scenario !== 'compact-resume') command.push('--no-session-persistence');
+  const command = [...(scenario === 'hook-block' || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', model, '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':'TaskCreate,TaskUpdate,TaskGet,TaskList') : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : '2'];
+  if (scenario !== 'compact-resume' && scenario!=='agent-custom-fork') command.push('--no-session-persistence');
   if (scenario === 'fallback') command.push('--fallback-model', 'claude-haiku-4-5');
   // An allow rule that the narrower deny rule must still beat.
   if (scenario === 'deny-rule') command.push('--allowedTools', 'Bash', '--disallowedTools', 'Bash(printf:*)');
@@ -133,6 +171,7 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   const started = performance.now();
   // A bundle (dist/main-dev.js) has no shebang; run it through bun.
   const [bin, binArgs] = executable.endsWith('.js') ? ['bun', [executable, ...command]] : [executable, command];
+  if(scenario==='agent-custom-fork')binArgs.push('--agents',JSON.stringify({fork:{description:'Custom agent named fork',prompt:'FORK_CUSTOM_RULE_42',tools:['Read']}}));
   const child = spawn(bin, binArgs, { cwd: active.dir, env, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
   children.add(child);
   let stdout = '', stderr = '', pending = '', result;
@@ -178,7 +217,7 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
 try {
   for (const executable of [entry, ...(compare ? [resolve(compare)] : [])]) {
     for (const scenario of cases) {
-      if (executable !== entry && scenario === 'compact-resume') continue;
+      if (executable !== entry && (scenario === 'compact-resume' || scenario === 'goal-child-usage')) continue;
       const dir = join(artifacts, `${executable === entry ? 'candidate' : 'comparison'}-${scenario}`);
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, 'fixture.txt'), 'LOCAL_FIXTURE_42\n');
@@ -197,11 +236,27 @@ try {
           assert.ok(active.summaries > 0, 'compaction never executed');
           assert.equal(active.oversized, 0, 'oversized verbatim tail reached the model after compaction');
         } else {
-          runResult = await run(executable, scenario);
+          runResult = await run(executable, scenario, [], scenario==='goal-child-usage'?'Create a temporary goal, run a child agent, report its usage and finish.':'Run the local loop fixture.');
           const count = active.requests.length;
           // Without --bare the CLI also makes side requests; the loop's own carry the tool list.
           const main = active.requests.filter(r => r.body.tools?.length);
-          if (scenario === 'alternating' || scenario === 'fallback') {
+          if(scenario==='agent-custom-fork'){
+            assert.equal(runResult.code,0);assert.equal(runResult.result.result,'AUDIT_OK');assert.ok(active.childRequests>=4,'resumed child never ran');
+            const resumed=active.requests.find(r=>r.childStep===3);assert.ok(JSON.stringify(resumed.body.system).includes('FORK_CUSTOM_RULE_42'),'custom agent named fork lost its system prompt on resume');assert.deepEqual(resumed.body.tools.map(t=>t.name),['Read'],'resuming custom fork widened its tool pool');
+          } else if (scenario.startsWith('task-') || scenario==='goal-child-usage') {
+          assert.equal(runResult.code,0);assert.equal(runResult.result.result,'AUDIT_OK');assert.ok(count>=3,'tools never ran');
+          const task=id=>JSON.parse(readFileSync(join(dir,`config/tasks/harness-probe/${id}.json`),'utf8'));
+          if(scenario==='task-crud')assert.equal(task(1).status,'completed');
+          if(scenario==='task-metadata-race'){active.finalState=task(1);assert.deepEqual(active.finalState.metadata,{alpha:1,beta:2});}
+          if(scenario==='task-dependency-race'){active.finalState=[task(1),task(2),task(3)];assert.deepEqual(active.finalState[0].blocks.sort(),['2','3']);assert.deepEqual(active.finalState[1].blockedBy,['1']);assert.deepEqual(active.finalState[2].blockedBy,['1']);}
+          if(scenario==='goal-child-usage'){
+            const goals=active.requests.flatMap(r=>r.body.messages||[]).flatMap(m=>Array.isArray(m.content)?m.content:[]).filter(b=>b.type==='tool_result'&&b.tool_use_id==='goal_3').map(b=>{try{return JSON.parse(b.content).goal}catch{return null}}).filter(Boolean);
+            assert.ok(active.childRequests>=2,'child did not call a real tool');assert.ok(goals.some(g=>g.tokens_used===2*(1+1+5000+4000)+2),'child/cache tokens missing from parent goal');
+          }
+          } else if(scenario==='provider-quota') {
+            assert.equal(runResult.code,1);assert.equal(runResult.result.is_error,true);assert.equal(runResult.result.terminal_reason,'api_error');assert.equal(count,1);assert.ok(runResult.result.result.includes('weekly (7-day) usage limit'));
+            if(executable===entry)assert.ok(runResult.result.result.startsWith('Usage limit reached.'),'quota was reported as invalid authentication');
+          } else if (scenario === 'alternating' || scenario === 'fallback') {
             assert.equal(runResult.code, 1, 'recovery only stopped when the scripted provider succeeded');
             assert.equal(runResult.result.is_error, true);
             // An error before the first request also ends with is_error; that is a crash, not bounded recovery.
@@ -239,7 +294,7 @@ try {
         assert.equal(active.transportError, undefined);
         passed = true;
       } catch (error) { failure = String(error); }
-      observation = { result: runResult?.result, requests: active.requests.length, summaries: active.summaries, oversized: active.oversized, startedAtResult: active.startedAtResult, finishedAtResult: active.finishedAtResult, started: active.started, finished: active.finished };
+      observation = { result: runResult?.result, finalState:active.finalState, childRequests:active.childRequests, requests: active.requests.length, summaries: active.summaries, oversized: active.oversized, startedAtResult: active.startedAtResult, finishedAtResult: active.finishedAtResult, started: active.started, finished: active.finished };
       results.push({ executable, required: executable === entry, scenario, passed, failure, observation, invocations: active.invocations });
       writeFileSync(join(artifacts, 'results.json'), JSON.stringify(results, null, 2));
       console.log(`${passed ? 'PASS' : 'FAIL'} ${executable === entry ? 'candidate' : 'comparison'} ${scenario}${failure ? `: ${failure}` : ''}`);

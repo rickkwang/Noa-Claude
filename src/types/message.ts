@@ -102,6 +102,15 @@ export type UserMessage = MessageBase & {
 
 export type NormalizedUserMessage = UserMessage
 
+export type ApiFailureCategory =
+  | 'auth'
+  | 'credit'
+  | 'context'
+  | 'model'
+  | 'rate_limit'
+  | 'transient'
+  | 'other'
+
 export type AssistantMessage = MessageBase & {
   type: 'assistant'
   uuid: UUID
@@ -109,6 +118,7 @@ export type AssistantMessage = MessageBase & {
   message: BetaMessage
   requestId?: string
   apiError?: string
+  apiFailureCategory?: ApiFailureCategory
   error?: SDKAssistantMessageError
   errorDetails?: string
   isApiErrorMessage?: boolean

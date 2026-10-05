@@ -128,11 +128,19 @@ Runtime behavior:
 - after the configured number of auto-continue turns, the goal is paused and can be resumed with `/goal resume`
 - a `--verify` command runs automatically after each eligible goal turn; a non-zero exit code always prevents completion
 - when `--verify` is configured, model-requested completion remains pending until the verify command passes and the evaluator approves completion
+- every model completion request remains pending until the independent evaluator confirms it, including goals without `--verify`
+- the evaluator sees running shells and subagents started during the active goal. It can confirm an expected long-running service; unfinished required work defers continuation. Earlier unrelated tasks do not block the goal. Work started during evaluation requires another check; replacing a goal invalidates outstanding evaluations and queued wakeups for it
+- interactive transient API failures retry at most three times; permanent failures and rate limits pause the goal while preserving its objective and evidence
+- three consecutive evaluated turns without tool use pause continuation (a new user prompt resets the count); an impossible verdict also pauses the goal for explicit user action
+- interactive background check-ins start after 30 minutes, back off to 1 hour then 2 hours, and stop after three idle check-ins until a user prompt; `CLAUDE_CODE_GOAL_CHECKIN_MINUTES=0` disables check-ins and automatic retries
+- token usage includes input, output, cache reads, cache writes, and child-agent responses; streaming blocks from the same response are counted once
+- child-agent usage is charged to the goal active at launch; replacing or clearing that goal does not transfer usage to a later goal
 - if a token budget is reached, the goal becomes `budget_limited` and will not auto-continue
+- budgets are checked after responses finish, so an in-flight response can exceed the limit
 - budget-limited goals resume only when the same objective is set with a larger `--budget`
 - session restore replays transcript evidence to recover goal status, usage, verify command, auto-continue count, and stop reason
 
-The model can inspect, create, and mark a goal complete through the goal tool. Pause, resume, clear, and replace remain user-controlled slash commands.
+The model can inspect, create, and request completion through the goal tool. Pause, resume, clear, and replace remain user-controlled slash commands.
 
 ### Progress Artifacts
 

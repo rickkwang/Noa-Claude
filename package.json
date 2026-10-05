@@ -35,6 +35,7 @@
     "smoke:engine:live": "bun ./scripts/smoke-engineering-live.mjs",
     "e2e:loop": "bun ./scripts/e2e-agent-loop.mjs",
     "e2e:bare": "bun ./scripts/e2e-bare.mjs",
+    "e2e:goal": "NODE_ENV=development bun ./scripts/e2e-goal-runtime.ts",
     "scan:pr-intent": "node ./scripts/pr-intent-scan.mjs --fail-on high",
     "profile:usage": "node ./scripts/usage-profile.mjs",
     "test": "bun test",

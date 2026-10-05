@@ -9,6 +9,7 @@ import { AFK_MODE_BETA_HEADER } from 'src/constants/betas.js'
 import type { SDKAssistantMessageError } from 'src/entrypoints/agentSdkTypes.js'
 import type {
   AssistantMessage,
+  ApiFailureCategory,
   Message,
   UserMessage,
 } from 'src/types/message.js'
@@ -454,6 +455,30 @@ function isLongContextCreditsError(message: string | undefined): boolean {
 }
 
 export function getAssistantMessageFromError(
+  error: unknown,
+  model: string,
+  options?: {
+    messages?: Message[]
+    messagesForAPI?: (UserMessage | AssistantMessage)[]
+  },
+): AssistantMessage {
+  const message = mapAssistantMessageFromError(error, model, options)
+  let category: ApiFailureCategory = 'other'
+  if (error instanceof APIConnectionError) category = 'transient'
+  else if (error instanceof ImageSizeError || error instanceof ImageResizeError) category = 'context'
+  else if (error instanceof APIError) {
+    if (error.status === 403 && message.error === 'rate_limit') category = 'rate_limit'
+    else if (error.status === 402 || error.message.includes('Your credit balance is too low') || isLongContextCreditsError(error.message)) category = 'credit'
+    else if (isContextOverflowErrorMessage(error.message) || error.status === 413) category = 'context'
+    else if (error.status === 401 || error.status === 403) category = 'auth'
+    else if (error.status === 404 || error.message.toLowerCase().includes('invalid model name')) category = 'model'
+    else if (error.status === 429) category = 'rate_limit'
+    else if (error.status !== undefined && error.status >= 500) category = 'transient'
+  }
+  return { ...message, apiFailureCategory: category }
+}
+
+function mapAssistantMessageFromError(
   error: unknown,
   model: string,
   options?: {
@@ -950,6 +975,9 @@ export function getAssistantMessageFromError(
   }
 
   // Generic handler for other 401/403 authentication errors
+  if (error instanceof APIError && error.status === 403 && error.message.includes("You've reached your weekly (7-day) usage limit")) {
+    return createAssistantAPIErrorMessage({ error: 'rate_limit', content: `Usage limit reached. ${API_ERROR_MESSAGE_PREFIX}: ${error.message}` })
+  }
   if (
     error instanceof APIError &&
     (error.status === 401 || error.status === 403)

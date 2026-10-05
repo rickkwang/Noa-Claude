@@ -247,6 +247,7 @@ import { ExitFlow } from '../components/ExitFlow.js';
 import { getCurrentWorktreeSession } from '../utils/worktree.js';
 import { popAllEditable, enqueue, type SetAppState, getCommandQueue, getCommandQueueLength, removeByFilter, isQueuedCommandEditable } from '../utils/messageQueueManager.js';
 import { useCommandQueue } from '../hooks/useCommandQueue.js';
+import { consumeGoalWake, getGoalWakeDelay } from '../utils/goalRuntime.js';
 import { SessionBackgroundHint } from '../components/SessionBackgroundHint.js';
 import { startBackgroundSession } from '../tasks/LocalMainSessionTask.js';
 import { useSessionBackgrounding } from '../hooks/useSessionBackgrounding.js';
@@ -705,6 +706,7 @@ export function REPL({
   const pendingSandboxRequest = useAppState(s => s.pendingSandboxRequest);
   const teamContext = useAppState(s => s.teamContext);
   const tasks = useAppState(s => s.tasks);
+  const threadGoal = useAppState(s => s.goal);
   const workerSandboxPermissions = useAppState(s => s.workerSandboxPermissions);
   const elicitation = useAppState(s => s.elicitation);
   const ultraplanPendingChoice = useAppState(s => s.ultraplanPendingChoice);
@@ -4305,6 +4307,20 @@ export function REPL({
       startBackgroundHousekeeping();
     }
   }, [submitCount]);
+
+  // Goal check-ins and retries use the same queue as user input and task results.
+  useEffect(() => {
+    if (isLoading || toolJSX || viewingAgentTaskId || inputValue.trim() || queuedCommands.length || !threadGoal || toolPermissionContext.mode === 'plan') return;
+    const delay = getGoalWakeDelay(threadGoal);
+    if (delay === null) return;
+    const timer = setTimeout(() => {
+      if (queryGuard.isActive || getCommandQueueLength() || focusedInputDialogRef.current !== undefined || inputValueRef.current.trim() || store.getState().viewingAgentTaskId || store.getState().toolPermissionContext.mode === 'plan') return;
+      const prompt = consumeGoalWake({ goal: threadGoal, getAppState: store.getState, setAppState });
+      if (!prompt) return;
+      enqueue({ mode: 'prompt', value: prompt, uuid: randomUUID(), priority: 'later', isMeta: true, skipSlashCommands: true, goalWake: { createdAt: threadGoal.createdAt, objective: threadGoal.objective } });
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [threadGoal, isLoading, toolJSX, viewingAgentTaskId, inputValue, queuedCommands, store, setAppState, queryGuard, toolPermissionContext.mode]);
 
   // Show notification when Noa Claude is done responding and user is idle
   useEffect(() => {

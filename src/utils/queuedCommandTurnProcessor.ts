@@ -39,7 +39,6 @@ export async function processQueuedCommandsForTurn(
   params: ProcessQueuedCommandsForTurnParams,
 ): Promise<ProcessQueuedCommandsForTurnResult> {
   const {
-    commands,
     messages,
     setToolJSX,
     makeContext,
@@ -48,6 +47,11 @@ export async function processQueuedCommandsForTurn(
     canUseTool,
     ideSelection,
   } = params
+  const commands = params.commands.filter(command => {
+    if (!command.goalWake) return true
+    const goal = makeContext().getAppState().goal
+    return goal?.status === 'active' && goal.createdAt === command.goalWake.createdAt && goal.objective === command.goalWake.objective
+  })
 
   const newMessages: Message[] = []
   let shouldQuery = false

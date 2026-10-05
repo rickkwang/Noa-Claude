@@ -74,10 +74,17 @@ import {
 import {
   applyGoalRuntimeEvaluation,
   applyGoalRuntimeEvaluationFailure,
+  applyGoalTurnFailure,
+  deferGoalForBackground,
+  getGoalBackgroundTasks,
+  goalFailureCategory,
   decideGoalEvaluatorAction,
+  isSameGoal,
   resetGoalAutoContinueForNewTurn,
 } from './utils/goalRuntime.js'
 import { normalizeGoal, recordGoalEvaluatorResult } from './utils/goalState.js'
+import { isAnthropicAuthEnabled, isManagedOAuthContext } from './utils/auth.js'
+import type { ApiFailureCategory } from './types/message.js'
 import {
   createAttachmentMessage,
   filterDuplicateMemoryAttachments,
@@ -397,6 +404,7 @@ async function* queryLoop(
   // trigger point. Loop-local (not on State) to avoid touching the 7 continue
   // sites.
   let taskBudgetRemaining: number | undefined = undefined
+  let usedToolsForGoal = false
 
   // Snapshot immutable env/statsig/session state once at entry. See QueryConfig
   // for what's included and why feature() gates are intentionally excluded.
@@ -645,7 +653,20 @@ async function* queryLoop(
     }
 
     const appState = toolUseContext.getAppState()
+    const goalForAccounting = toolUseContext.goalAtStart === undefined
+      ? appState.goal ?? null
+      : toolUseContext.goalAtStart
+    const setGoalState = toolUseContext.goalAtStart === undefined
+      ? toolUseContext.setAppState
+      : toolUseContext.setAppStateForTasks ?? toolUseContext.setAppState
     const permissionMode = appState.toolPermissionContext.mode
+    const goalFailureNotice = (category: ApiFailureCategory) => toolUseContext.agentId ? null : applyGoalTurnFailure({
+      category,
+      goal: appState.goal,
+      setAppState: toolUseContext.setAppState,
+      isNonInteractiveSession: toolUseContext.options.isNonInteractiveSession,
+      managedAuth: category === 'auth' && isManagedOAuthContext() && isAnthropicAuthEnabled(),
+    })
 
     // Inject goal continuation prompt on the first iteration only. Gated on
     // state.transition, not turnCount: recovery continues (stop_hook_blocking,
@@ -664,6 +685,7 @@ async function* queryLoop(
       // evaluator can spend it (see resetGoalAutoContinueForNewTurn).
       resetGoalAutoContinueForNewTurn({
         setAppState: toolUseContext.setAppState,
+        resetWakeCounters: messagesForQuery.findLast(message => message.type === 'user' && !message.toolUseResult)?.isMeta !== true,
       })
       const goal = toolUseContext.getAppState().goal
       if (goal && shouldInjectGoalPrompt(goal)) {
@@ -1249,6 +1271,8 @@ async function* queryLoop(
       yield createAssistantAPIErrorMessage({
         content: errorMessage,
       })
+      const goalNotice = goalFailureNotice('other')
+      if (goalNotice) yield goalNotice
 
       // To help track down bugs, log loudly for ants
       logAntError('Query error', error)
@@ -1469,6 +1493,8 @@ async function* queryLoop(
           }
           void executeStopFailureHooks(lastMessage, toolUseContext)
         }
+        const goalNotice = goalFailureNotice(isWithheldMedia ? 'other' : 'context')
+        if (goalNotice) yield goalNotice
         return { reason: isWithheldMedia ? 'image_error' : 'prompt_too_long' }
       }
 
@@ -1548,8 +1574,10 @@ async function* queryLoop(
       // real response — hooks evaluating it create a death spiral:
       // error → hook blocking → retry → error → …
       if (lastMessage?.isApiErrorMessage) {
+        const goalNotice = goalFailureNotice(goalFailureCategory(lastMessage))
+        if (goalNotice) yield goalNotice
         void executeStopFailureHooks(lastMessage, toolUseContext)
-        return { reason: 'completed' }
+        return { reason: 'api_error' }
       }
 
       // stop_reason says a tool call follows, but none parsed (leaked or
@@ -1623,7 +1651,8 @@ async function* queryLoop(
       const goalAccounting = accountGoalUsage({
         assistantMessages,
         getAppState: toolUseContext.getAppState,
-        setAppState: toolUseContext.setAppState,
+        setAppState: setGoalState,
+        goalAtTurnStart: goalForAccounting,
         includeModelNotice: false,
       })
       if (goalAccounting.userNotice) {
@@ -1642,6 +1671,8 @@ async function* queryLoop(
       )
 
       if (stopHookResult.preventContinuation) {
+        const goalNotice = goalFailureNotice('other')
+        if (goalNotice) yield goalNotice
         return { reason: 'stop_hook_prevented' }
       }
 
@@ -1785,13 +1816,16 @@ async function* queryLoop(
           yield* yieldInterruptionNotice(toolUseContext, { toolUse: false })
           return { reason: 'aborted_streaming' }
         }
-        const { evaluation, evaluatorMessage } = await evaluateGoalCompletion({
+        if (!isSameGoal(toolUseContext.getAppState().goal, currentGoal)) return { reason: 'completed' }
+        const evaluatorTasks = getGoalBackgroundTasks(toolUseContext.getAppState(), currentGoal)
+        const { evaluation: initialEvaluation, evaluatorMessage } = await evaluateGoalCompletion({
           goal: currentGoal,
           messages: [...messagesForQuery, ...assistantMessages],
           signal: toolUseContext.abortController.signal,
           isNonInteractiveSession:
             toolUseContext.options.isNonInteractiveSession,
           verifyResult,
+          backgroundTasks: evaluatorTasks,
         })
         if (toolUseContext.abortController.signal.aborted) {
           yield* yieldInterruptionNotice(toolUseContext, { toolUse: false })
@@ -1807,10 +1841,35 @@ async function* queryLoop(
                 goalAtTurnStart: currentGoal,
               })
             : null
+        if (!isSameGoal(toolUseContext.getAppState().goal, currentGoal)) return { reason: 'completed' }
+        let evaluation = initialEvaluation
+        if (evaluation?.achieved && getGoalBackgroundTasks(toolUseContext.getAppState(), currentGoal).some(task => !evaluatorTasks.some(initial => initial.id === task.id))) {
+          evaluation = { ...evaluation, achieved: false, reason: 'Background work started during evaluation; check it before completing the goal.' }
+        }
+        if (evaluation && !evaluation.achieved && !evaluation.impossible) {
+          const background = deferGoalForBackground({ goal: currentGoal, getAppState: toolUseContext.getAppState, setAppState: toolUseContext.setAppState })
+          if (background.waiting) {
+            const accounting = accountEvaluatorUsage()
+            if (accounting?.userNotice) yield accounting.userNotice
+            if (background.userNotice) yield background.userNotice
+            const latest = toolUseContext.getAppState().goal
+            if (!isSameGoal(latest, currentGoal) || latest?.status !== 'active') return { reason: 'completed' }
+            if (!background.modelNotice) return { reason: 'completed' }
+            const nextTurnCount = turnCount + 1
+            if (maxTurns && nextTurnCount > maxTurns) {
+              yield createAttachmentMessage({ type: 'max_turns_reached', maxTurns, turnCount: nextTurnCount })
+              return { reason: 'max_turns', turnCount: nextTurnCount }
+            }
+            state = nextState(state, { messages: [...messagesForQuery, ...assistantMessages, background.modelNotice], toolUseContext, autoCompactTracking: tracking, turnCount: nextTurnCount, transition: { reason: 'goal_auto_continue' } })
+            continue
+          }
+        }
         if (evaluation?.achieved) {
           const goalRuntimeDecision = applyGoalRuntimeEvaluation({
             evaluation,
             setAppState: toolUseContext.setAppState,
+            goal: currentGoal,
+            madeProgress: usedToolsForGoal,
           })
           let yieldedFinalUsageNotice = false
           const evaluatorAccounting = accountEvaluatorUsage()
@@ -1828,12 +1887,10 @@ async function* queryLoop(
           }
         }
         if (!evaluation) {
-          const goalRuntimeDecision = applyGoalRuntimeEvaluationFailure({
-            setAppState: toolUseContext.setAppState,
-          })
-          if (goalRuntimeDecision.userNotice) {
-            yield goalRuntimeDecision.userNotice
-          }
+          const notice = evaluatorMessage?.isApiErrorMessage
+            ? applyGoalTurnFailure({ category: goalFailureCategory(evaluatorMessage), goal: currentGoal, setAppState: toolUseContext.setAppState, isNonInteractiveSession: toolUseContext.options.isNonInteractiveSession, managedAuth: goalFailureCategory(evaluatorMessage) === 'auth' && isManagedOAuthContext() && isAnthropicAuthEnabled() })
+            : applyGoalRuntimeEvaluationFailure({ setAppState: toolUseContext.setAppState, goal: currentGoal }).userNotice
+          if (notice) yield notice
         }
         if (evaluation && !evaluation.achieved) {
           const nextTurnCount = turnCount + 1
@@ -1846,7 +1903,7 @@ async function* queryLoop(
           ) {
             const now = Date.now()
             toolUseContext.setAppState(prev => {
-              if (!prev.goal) return prev
+              if (!prev.goal || !isSameGoal(prev.goal, currentGoal)) return prev
               const current = normalizeGoal(prev.goal)
               if (current.status !== 'active') return prev
               return {
@@ -1868,6 +1925,8 @@ async function* queryLoop(
           const goalRuntimeDecision = applyGoalRuntimeEvaluation({
             evaluation,
             setAppState: toolUseContext.setAppState,
+            goal: currentGoal,
+            madeProgress: usedToolsForGoal,
           })
           if (goalRuntimeDecision.userNotice) {
             yield goalRuntimeDecision.userNotice
@@ -1877,6 +1936,7 @@ async function* queryLoop(
               yield* yieldInterruptionNotice(toolUseContext, { toolUse: false })
               return { reason: 'aborted_streaming' }
             }
+            usedToolsForGoal = false
             state = nextState(state, {
               messages: [
                 ...messagesForQuery,
@@ -1960,13 +2020,14 @@ async function* queryLoop(
       }
     }
     queryCheckpoint('query_tool_execution_end')
+    usedToolsForGoal = true
 
     const goalAccounting = accountGoalUsage({
       assistantMessages,
       getAppState: toolUseContext.getAppState,
-      setAppState: toolUseContext.setAppState,
-      includeModelNotice: true,
-      goalAtTurnStart: appState.goal,
+      setAppState: setGoalState,
+      includeModelNotice: !toolUseContext.agentId,
+      goalAtTurnStart: goalForAccounting,
     })
     if (goalAccounting.userNotice) {
       yield goalAccounting.userNotice

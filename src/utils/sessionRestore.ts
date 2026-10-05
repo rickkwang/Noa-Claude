@@ -269,11 +269,7 @@ function applyGoalToolUse(
     return createThreadGoal({ objective, tokenBudget, now })
   }
   if (record.operation === 'update_goal' && record.status === 'complete') {
-    if (!goal) return goal
-    const current = normalizeGoal(goal)
-    return current.verifyCommand
-      ? current
-      : (markGoalComplete(current, now) ?? current)
+    return goal
   }
   return goal
 }
@@ -348,7 +344,13 @@ function applyGoalToolResult(
       outputGoal.stop_reason === 'max_auto_continue_turns' ||
       outputGoal.stop_reason === 'budget_limited' ||
       outputGoal.stop_reason === 'evaluator_failed' ||
-      outputGoal.stop_reason === 'complete'
+      outputGoal.stop_reason === 'complete' ||
+      outputGoal.stop_reason === 'unrecoverable_error' ||
+      outputGoal.stop_reason === 'rate_limit' ||
+      outputGoal.stop_reason === 'retry_exhausted' ||
+      outputGoal.stop_reason === 'turn_failed' ||
+      outputGoal.stop_reason === 'impossible' ||
+      outputGoal.stop_reason === 'no_progress'
         ? outputGoal.stop_reason
         : null,
     createdAt: goal?.createdAt ?? now,
@@ -388,6 +390,7 @@ function addGoalUsage(
 
   const usage = message.message?.usage
   const tokenDelta = (usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0)
+    + (usage?.cache_read_input_tokens ?? 0) + (usage?.cache_creation_input_tokens ?? 0)
   if (tokenDelta <= 0) return current
 
   const updated: ThreadGoal = {
@@ -467,6 +470,9 @@ function applyGoalMetaMessage(
       now,
     })
   }
+  if (message.content.startsWith('Goal paused: ')) {
+    return { ...current, status: 'paused', stopReason: 'turn_failed', lastEvaluatorReason: message.content.slice('Goal paused: '.length), retryAt: null, nextCheckInAt: null, updatedAt: now }
+  }
   const pausedMatch = message.content.match(GOAL_PAUSED_AFTER_REGEX)
   if (pausedMatch) {
     const turns = parseInt(pausedMatch[1]!, 10)
@@ -526,6 +532,11 @@ function extractGoalFromTranscript(
   // already accounts for. See replayableSince.
   let goal: ThreadGoal | undefined = seed ? normalizeGoal(seed) : undefined
   const goalToolUseIDs = new Set<string>()
+  const finalResponses = new Map<string, Message>()
+  const responseStartGoals = new Map<string, ThreadGoal | undefined>()
+  for (const message of messages) {
+    if (message.type === 'assistant' && message.message?.id) finalResponses.set(message.message.id, message)
+  }
   for (const message of messages) {
     const now = timestampMs(message)
     if (message.type === 'system' && message.subtype === 'local_command') {
@@ -542,7 +553,11 @@ function extractGoalFromTranscript(
     }
 
     if (message.type === 'assistant') {
-      const goalAtTurnStart = goal
+      const responseID = message.message?.id
+      if (responseID && !responseStartGoals.has(responseID)) {
+        responseStartGoals.set(responseID, goal)
+      }
+      const goalAtTurnStart = responseID ? responseStartGoals.get(responseID) : goal
       if (Array.isArray(message.message?.content)) {
         for (const block of message.message.content) {
           if (isToolUseBlock(block) && block.name === 'goal') {
@@ -551,7 +566,9 @@ function extractGoalFromTranscript(
           }
         }
       }
-      goal = addGoalUsage(goal, goalAtTurnStart, message, now)
+      if (!message.message?.id || finalResponses.get(message.message.id) === message) {
+        goal = addGoalUsage(goal, goalAtTurnStart, message, now)
+      }
       continue
     }
 

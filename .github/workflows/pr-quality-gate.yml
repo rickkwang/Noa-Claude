@@ -54,6 +54,7 @@ jobs:
           bun run compile
           bun run e2e:loop
           bun run e2e:bare
+          bun run e2e:goal
 
       # build:dev:full only proves the bundle resolves; the placeholder modules
       # behind the experimental flags have crashed it at startup before.

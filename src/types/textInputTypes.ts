@@ -8,6 +8,7 @@ import type { PastedContent } from '../utils/config.js'
 import type { ImageDimensions } from '../utils/imageResizer.js'
 import type { TextHighlight } from '../utils/textHighlighting.js'
 import type { AgentId } from './ids.js'
+import type { ThreadGoal } from './goal.js'
 import type { AssistantMessage, MessageOrigin } from './message.js'
 
 /**
@@ -307,6 +308,9 @@ export type QueuedCommand = {
   /** Defaults to the priority implied by `mode` when enqueued. */
   priority?: QueuePriority
   uuid?: UUID
+  /** Durable background replies keep their UUID until recorded, rather than moving into the editable draft. */
+  backgroundReply?: boolean
+  goalWake?: Pick<ThreadGoal, 'createdAt' | 'objective'>
   orphanedPermission?: OrphanedPermission
   /** Raw pasted contents including images. Images are resized at execution time. */
   pastedContents?: Record<number, PastedContent>

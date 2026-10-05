@@ -1,5 +1,5 @@
 import type { AppState } from '../state/AppStateStore.js'
-import type { Message, UserMessage } from '../types/message.js'
+import type { ApiFailureCategory, Message, UserMessage } from '../types/message.js'
 import type { ThreadGoal } from '../types/goal.js'
 import {
   advanceGoalAutoContinue,
@@ -22,6 +22,7 @@ import {
 
 export type GoalRuntimeEvaluation = {
   achieved: boolean
+  impossible?: boolean
   reason: string
 }
 
@@ -30,6 +31,157 @@ export type GoalRuntimeDecision =
   | { action: 'continue'; modelNotice: UserMessage; userNotice: Message | null }
 
 export type GoalEvaluatorAction = 'run' | 'skip'
+
+const MAX_IDLE_CHECK_INS = 3
+const MAX_GOAL_RETRIES = 3
+const MAX_NO_PROGRESS_TURNS = 3
+
+export function isSameGoal(a: ThreadGoal | undefined, b: ThreadGoal): boolean {
+  return !!a && a.createdAt === b.createdAt && a.objective === b.objective
+}
+
+export function goalFailureCategory(message: Message): ApiFailureCategory {
+  if (message.type !== 'assistant') return 'other'
+  if (message.apiFailureCategory && message.apiFailureCategory !== 'other') return message.apiFailureCategory
+  switch (message.error) {
+    case 'authentication_failed': return 'auth'
+    case 'billing_error': return 'credit'
+    case 'rate_limit': return 'rate_limit'
+    case 'server_error': return 'transient'
+    default: return 'other'
+  }
+}
+
+function checkInIntervalMs(): number {
+  const raw = process.env.CLAUDE_CODE_GOAL_CHECKIN_MINUTES
+  const minutes = raw === undefined ? 30 : Number(raw)
+  return Number.isFinite(minutes) && minutes > 0 ? Math.max(1, minutes * 60_000) : 0
+}
+
+export function getGoalBackgroundTasks(state: AppState, goal: ThreadGoal) {
+  return Object.values(state.tasks ?? {}).filter(task =>
+    task.status === 'running' &&
+    task.startTime >= goal.createdAt &&
+    (task.type === 'local_bash' || task.type === 'local_agent' || task.type === 'remote_agent') &&
+    !('isBackgrounded' in task && task.isBackgrounded === false),
+  )
+}
+
+function backgroundCheckInPrompt(goal: ThreadGoal, state: AppState): string {
+  const tasks = getGoalBackgroundTasks(state, goal)
+  const running = tasks.map(task => `- ${task.id}: ${task.description}`).join('\n')
+  return `<!-- goal-wake -->\nGoal: ${goal.objective}\n\n${running
+    ? `Background work is still running:\n${running}\nRead its output. Keep waiting if it is progressing; fix or stop tasks that are stuck.`
+    : 'Background work is no longer running. Continue toward the goal and verify the result.'}`
+}
+
+export function deferGoalForBackground({
+  goal, getAppState, setAppState, now = Date.now(),
+}: {
+  goal: ThreadGoal
+  getAppState: () => AppState
+  setAppState: (updater: (prev: AppState) => AppState) => void
+  now?: number
+}): { waiting: boolean; modelNotice: UserMessage | null; userNotice: Message | null } {
+  const result = { waiting: false, modelNotice: null as UserMessage | null, userNotice: null as Message | null }
+  if (getGoalBackgroundTasks(getAppState(), goal).length === 0) {
+    setAppState(prev => !isSameGoal(prev.goal, goal) || !prev.goal?.backgroundWaitingSince
+      ? prev
+      : { ...prev, goal: { ...prev.goal, backgroundWaitingSince: null, nextCheckInAt: null, checkInCount: 0 } })
+    return result
+  }
+  result.waiting = true
+  const interval = checkInIntervalMs()
+  setAppState(prev => {
+    if (!isSameGoal(prev.goal, goal) || prev.goal?.status !== 'active') return prev
+    const current = normalizeGoal(prev.goal)
+    const since = current.backgroundWaitingSince ?? now
+    const due = current.nextCheckInAt ?? (interval ? since + interval : null)
+    if (interval && due !== null && now >= due) {
+      const advanced = advanceGoalAutoContinue({ goal: current, reason: 'Checking background work.', now })
+      if (!advanced.shouldContinue) {
+        result.userNotice = createSystemMessage(formatGoalPausedNotice(advanced.goal.maxAutoContinueTurns), 'warning')
+        return { ...prev, goal: advanced.goal }
+      }
+      const count = (current.checkInCount ?? 0) + 1
+      result.modelNotice = createUserMessage({ content: backgroundCheckInPrompt(current, prev), isMeta: true })
+      return { ...prev, goal: { ...advanced.goal, backgroundWaitingSince: since, checkInCount: count, nextCheckInAt: now + interval * 2 ** Math.min(count, 2) } }
+    }
+    if (current.backgroundWaitingSince === since && current.nextCheckInAt === due) return prev
+    return { ...prev, goal: { ...current, backgroundWaitingSince: since, nextCheckInAt: due } }
+  })
+  return result
+}
+
+export function applyGoalTurnFailure({
+  category, goal, setAppState, isNonInteractiveSession, managedAuth = false, now = Date.now(),
+}: {
+  category: ApiFailureCategory
+  goal: ThreadGoal | undefined
+  setAppState: (updater: (prev: AppState) => AppState) => void
+  isNonInteractiveSession: boolean
+  managedAuth?: boolean
+  now?: number
+}): Message | null {
+  if (!goal) return null
+  let notice: Message | null = null
+  setAppState(prev => {
+    if (!isSameGoal(prev.goal, goal) || prev.goal?.status !== 'active') return prev
+    const current = normalizeGoal(prev.goal)
+    const reset = { retryAt: null, nextCheckInAt: null, backgroundWaitingSince: null }
+    if (category === 'auth' && managedAuth) {
+      notice = createSystemMessage('Goal still active: waiting for the host to restore authentication.', 'warning')
+      return { ...prev, goal: { ...current, ...reset } }
+    }
+    const interval = checkInIntervalMs()
+    if (category === 'transient') {
+      if (isNonInteractiveSession) return prev
+      const count = current.retryCount ?? 0
+      if (interval && count < MAX_GOAL_RETRIES) {
+        const delay = Math.min(30_000 * 2 ** count, interval)
+        notice = createSystemMessage(`Goal still active: transient API failure; retry ${count + 1}/${MAX_GOAL_RETRIES} in ${Math.ceil(delay / 1000)} seconds.`, 'warning')
+        return { ...prev, goal: { ...current, ...reset, retryCount: count + 1, retryAt: now + delay } }
+      }
+    }
+    const fatal = ['auth', 'credit', 'context', 'model'].includes(category)
+    const reason = fatal ? `Unrecoverable ${category} error; fix the cause and use /goal resume.`
+      : category === 'transient' ? 'Automatic retries are exhausted or disabled; use /goal resume.'
+      : category === 'rate_limit' ? 'API rate limit; wait for access to reset, then use /goal resume.'
+      : 'The turn ended without a usable result; use /goal resume after fixing the cause.'
+    notice = createSystemMessage(`Goal paused: ${reason}`, 'warning')
+    return { ...prev, goal: { ...current, ...reset, status: 'paused', stopReason: fatal ? 'unrecoverable_error' : category === 'rate_limit' ? 'rate_limit' : category === 'transient' ? 'retry_exhausted' : 'turn_failed', lastEvaluatorReason: reason, updatedAt: now } }
+  })
+  return notice
+}
+
+export function getGoalWakeDelay(goal: ThreadGoal | undefined, now = Date.now()): number | null {
+  if (!goal || goal.status !== 'active' || !checkInIntervalMs()) return null
+  const due = goal.retryAt ?? ((goal.idleCheckInCount ?? 0) < MAX_IDLE_CHECK_INS ? goal.nextCheckInAt : null)
+  return due == null ? null : Math.max(0, due - now)
+}
+
+export function consumeGoalWake({ goal, getAppState, setAppState, now = Date.now() }: {
+  goal: ThreadGoal
+  getAppState: () => AppState
+  setAppState: (updater: (prev: AppState) => AppState) => void
+  now?: number
+}): string | null {
+  let prompt: string | null = null
+  setAppState(prev => {
+    if (!isSameGoal(prev.goal, goal) || prev.goal?.status !== 'active' || getGoalWakeDelay(prev.goal, now) !== 0) return prev
+    const current = normalizeGoal(prev.goal)
+    if (current.retryAt != null) {
+      prompt = `<!-- goal-wake -->\nRetry the interrupted turn toward the active goal: ${current.objective}`
+      return { ...prev, goal: { ...current, retryAt: null } }
+    }
+    const count = (current.checkInCount ?? 0) + 1
+    const idleCount = (current.idleCheckInCount ?? 0) + 1
+    prompt = backgroundCheckInPrompt(current, getAppState())
+    if (idleCount >= MAX_IDLE_CHECK_INS) prompt += '\nThis is the third idle check-in; further idle check-ins wait for the next user prompt.'
+    return { ...prev, goal: { ...current, checkInCount: count, idleCheckInCount: idleCount, nextCheckInAt: now + checkInIntervalMs() * 2 ** Math.min(count, 2) } }
+  })
+  return prompt
+}
 
 export function decideGoalEvaluatorAction({
   goal,
@@ -68,33 +220,46 @@ Continue working toward the active thread goal. Choose the next concrete action 
 // paused at the cap must stay paused until the user resumes it.
 export function resetGoalAutoContinueForNewTurn({
   setAppState,
+  resetWakeCounters = true,
 }: {
   setAppState: (updater: (prev: AppState) => AppState) => void
+  resetWakeCounters?: boolean
 }): void {
   setAppState(prev => {
     if (!prev.goal) return prev
     const current = normalizeGoal(prev.goal)
-    if (current.status !== 'active' || current.autoContinueTurns === 0) {
+    if (current.status !== 'active' || (current.autoContinueTurns === 0 && !resetWakeCounters)) {
       return prev
     }
-    return { ...prev, goal: { ...current, autoContinueTurns: 0 } }
+    return { ...prev, goal: { ...current, autoContinueTurns: 0, ...(resetWakeCounters ? { idleCheckInCount: 0, retryCount: 0, retryAt: null, noProgressTurns: 0 } : {}) } }
   })
 }
 
 export function applyGoalRuntimeEvaluation({
   evaluation,
   setAppState,
+  goal,
+  madeProgress = true,
 }: {
   evaluation: GoalRuntimeEvaluation
   setAppState: (updater: (prev: AppState) => AppState) => void
+  goal?: ThreadGoal
+  madeProgress?: boolean
 }): GoalRuntimeDecision {
   let decision: GoalRuntimeDecision = { action: 'stop', userNotice: null }
   const now = Date.now()
 
   setAppState(prev => {
-    if (!prev.goal) return prev
+    if (!prev.goal || (goal && !isSameGoal(prev.goal, goal))) return prev
     const current = normalizeGoal(prev.goal)
     if (current.status !== 'active') return prev
+
+    const noProgress = madeProgress ? 0 : (current.noProgressTurns ?? 0) + 1
+    if (evaluation.impossible || (!evaluation.achieved && noProgress >= MAX_NO_PROGRESS_TURNS)) {
+      const reason = evaluation.impossible ? evaluation.reason : 'No tool use for three evaluated turns; use /goal resume after providing new direction.'
+      decision = { action: 'stop', userNotice: createSystemMessage(`Goal paused: ${reason}`, 'warning') }
+      return { ...prev, goal: { ...current, status: 'paused', stopReason: evaluation.impossible ? 'impossible' : 'no_progress', lastEvaluatorReason: reason, retryAt: null, nextCheckInAt: null, updatedAt: now } }
+    }
 
     if (evaluation.achieved) {
       const completed = markGoalComplete(
@@ -118,11 +283,11 @@ export function applyGoalRuntimeEvaluation({
         action: 'complete',
         reason: evaluation.reason,
       })
-      return { ...prev, goal: completed }
+      return { ...prev, goal: { ...completed, retryAt: null, nextCheckInAt: null } }
     }
 
     const advanced = advanceGoalAutoContinue({
-      goal: current,
+      goal: { ...current, noProgressTurns: noProgress, retryCount: 0, retryAt: null },
       reason: evaluation.reason,
       now,
     })
@@ -166,14 +331,16 @@ export function applyGoalRuntimeEvaluation({
 
 export function applyGoalRuntimeEvaluationFailure({
   setAppState,
+  goal,
 }: {
   setAppState: (updater: (prev: AppState) => AppState) => void
+  goal?: ThreadGoal
 }): GoalRuntimeDecision {
   let decision: GoalRuntimeDecision = { action: 'stop', userNotice: null }
   const now = Date.now()
 
   setAppState(prev => {
-    if (!prev.goal) return prev
+    if (!prev.goal || (goal && !isSameGoal(prev.goal, goal))) return prev
     const current = normalizeGoal(prev.goal)
     if (current.status !== 'active') return prev
     decision = {

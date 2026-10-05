@@ -4,7 +4,6 @@ import { lazySchema } from '../../utils/lazySchema.js'
 import type { ThreadGoal } from '../../types/goal.js'
 import {
   createThreadGoal,
-  markGoalComplete,
   normalizeGoal,
 } from '../../utils/goalState.js'
 
@@ -97,18 +96,6 @@ function goalToolResult(
       message,
     },
   }
-}
-
-function buildCompletionReport(goal: ThreadGoal): string | null {
-  if (!goal.tokenBudget && goal.timeUsedSeconds <= 0) return null
-  const parts: string[] = []
-  if (goal.tokenBudget) {
-    parts.push(`tokens used: ${goal.tokensUsed} of ${goal.tokenBudget}`)
-  }
-  if (goal.timeUsedSeconds > 0) {
-    parts.push(`time used: ${goal.timeUsedSeconds} seconds`)
-  }
-  return `Goal achieved. Report final usage: ${parts.join('; ')}.`
 }
 
 export const GoalTool = buildTool({
@@ -213,7 +200,6 @@ The model cannot pause, resume, or clear goals — those are user-controlled via
       case 'update_goal': {
         let alreadyComplete: ThreadGoal | null = null
         let pendingVerification: ThreadGoal | null = null
-        let updated: ThreadGoal | null = null
 
         setAppState(prev => {
           const existing = prev.goal
@@ -223,12 +209,8 @@ The model cannot pause, resume, or clear goals — those are user-controlled via
             return prev
           }
           const current = normalizeGoal(existing)
-          if (current.verifyCommand) {
-            pendingVerification = current
-            return prev
-          }
-          updated = markGoalComplete(existing, Date.now())
-          return { ...prev, goal: updated ?? undefined }
+          pendingVerification = current
+          return prev
         })
 
         if (alreadyComplete) {
@@ -244,23 +226,16 @@ The model cannot pause, resume, or clear goals — those are user-controlled via
         // continuation prompt tells it to report final usage once the tool
         // succeeds) before the verify command had run even once.
         if (pendingVerification) {
+          const current = pendingVerification as ThreadGoal
           return goalToolResult(
             false,
-            pendingVerification as ThreadGoal,
-            'Goal NOT marked complete: a verify command is configured, so completion is decided by the verify command and the evaluator at the end of this turn. The goal is still active. Do not tell the user the goal is complete — keep working or end the turn normally.',
+            current,
+            current.status !== 'active'
+              ? `Goal is ${current.status}. Only the user can resume it; completion has not been confirmed.`
+              : `Goal NOT marked complete: completion is decided by ${current.verifyCommand ? 'the verify command and ' : ''}the independent evaluator at the end of this turn. Do not tell the user the goal is complete; keep working or end the turn normally.`,
           )
         }
-
-        if (!updated) {
-          return goalToolResult(false, null, 'No goal exists to update.')
-        }
-
-        const u = updated as ThreadGoal
-        return goalToolResult(
-          true,
-          u,
-          buildCompletionReport(u) ?? 'Goal marked as complete.',
-        )
+        return goalToolResult(false, null, 'No goal exists to update.')
       }
     }
   },

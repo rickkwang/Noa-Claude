@@ -166,7 +166,7 @@ describe('query loop recovery', () => {
     expect(calls).toBe(4)
     // Only the final, unrecoverable error surfaces to the consumer.
     expect(yieldedMaxOutputTokensErrors(events)).toHaveLength(1)
-    expect(terminal).toEqual({ reason: 'completed' })
+    expect(terminal).toEqual({ reason: 'api_error' })
   }, 5000)
 
   test('model fallback: retries on the fallback model without mutating caller options', async () => {

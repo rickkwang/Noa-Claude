@@ -11,6 +11,7 @@ import type { z } from 'zod/v4'
 import type { Command } from './commands.js'
 import type { CanUseToolFn } from './hooks/useCanUseTool.js'
 import type { ThinkingConfig } from './utils/thinking.js'
+import type { ThreadGoal } from './types/goal.js'
 
 export type ToolInputJSONSchema = {
   [x: string]: unknown
@@ -194,6 +195,8 @@ export type ToolUseContext = {
    * fall back to setAppState.
    */
   setAppStateForTasks?: (f: (prev: AppState) => AppState) => void
+  /** A fork is charged only to the goal active when it was launched. */
+  goalAtStart?: ThreadGoal | null
   /**
    * Optional handler for URL elicitations triggered by tool call errors (-32042).
    * In print/SDK mode, this delegates to structuredIO.handleElicitation.

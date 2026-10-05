@@ -5,6 +5,12 @@ export type ThreadGoalStopReason =
   | 'budget_limited'
   | 'evaluator_failed'
   | 'complete'
+  | 'unrecoverable_error'
+  | 'rate_limit'
+  | 'retry_exhausted'
+  | 'turn_failed'
+  | 'impossible'
+  | 'no_progress'
   | null
 
 export type ThreadGoal = {
@@ -21,4 +27,11 @@ export type ThreadGoal = {
   stopReason: ThreadGoalStopReason
   createdAt: number
   updatedAt: number
+  backgroundWaitingSince?: number | null
+  nextCheckInAt?: number | null
+  checkInCount?: number
+  idleCheckInCount?: number
+  retryAt?: number | null
+  retryCount?: number
+  noProgressTurns?: number
 }

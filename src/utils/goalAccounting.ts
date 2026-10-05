@@ -15,7 +15,7 @@ type GoalAccountingParams = {
   getAppState: () => AppState
   setAppState: (updater: (prev: AppState) => AppState) => void
   includeModelNotice: boolean
-  goalAtTurnStart?: ThreadGoal
+  goalAtTurnStart?: ThreadGoal | null
 }
 
 type GoalAccountingResult = {
@@ -24,10 +24,18 @@ type GoalAccountingResult = {
 }
 
 function sumAssistantUsage(assistantMessages: AssistantMessage[]): number {
-  return assistantMessages.reduce((sum, message) => {
+  let sum = 0
+  const responses = new Set<string>()
+  // Streaming emits several blocks per response; only the final one has final usage.
+  for (const message of [...assistantMessages].reverse()) {
+    const id = message.message?.id
+    if (id && responses.has(id)) continue
+    if (id) responses.add(id)
     const usage = message.message?.usage
-    return sum + (usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0)
-  }, 0)
+    sum += (usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0)
+      + (usage?.cache_read_input_tokens ?? 0) + (usage?.cache_creation_input_tokens ?? 0)
+  }
+  return sum
 }
 
 export function accountGoalUsage({
@@ -39,7 +47,7 @@ export function accountGoalUsage({
 }: GoalAccountingParams): GoalAccountingResult {
   let modelNotice: UserMessage | null = null
   let userNotice: Message | null = null
-  const currentGoal = goalAtTurnStart ?? getAppState().goal
+  const currentGoal = goalAtTurnStart === undefined ? getAppState().goal : goalAtTurnStart
   if (
     !currentGoal ||
     (currentGoal.status !== 'active' && currentGoal.status !== 'budget_limited')
@@ -61,6 +69,7 @@ export function accountGoalUsage({
     const canChargeGoal =
       currentPrevGoal.status === 'active' ||
       currentPrevGoal.status === 'budget_limited' ||
+      currentPrevGoal.status === 'paused' ||
       currentPrevGoal.status === 'complete'
     if (!isSameGoal || !canChargeGoal) {
       return prev
@@ -68,8 +77,8 @@ export function accountGoalUsage({
 
     const newTokensUsed = currentPrevGoal.tokensUsed + tokenDelta
     const newStatus =
-      currentPrevGoal.status === 'complete'
-        ? 'complete'
+      currentPrevGoal.status === 'complete' || currentPrevGoal.status === 'paused'
+        ? currentPrevGoal.status
         : currentPrevGoal.tokenBudget &&
             newTokensUsed >= currentPrevGoal.tokenBudget
           ? 'budget_limited'

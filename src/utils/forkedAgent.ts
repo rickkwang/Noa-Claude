@@ -443,6 +443,9 @@ export function createSubagentContext(
     // are never registered and never killed (PPID=1 zombie).
     setAppStateForTasks:
       parentContext.setAppStateForTasks ?? parentContext.setAppState,
+    goalAtStart: parentContext.goalAtStart === undefined
+      ? parentContext.getAppState().goal ?? null
+      : parentContext.goalAtStart,
     // Async subagents whose setAppState is a no-op need local denial tracking
     // so the denial counter actually accumulates across retries.
     localDenialTracking: overrides?.shareSetAppState

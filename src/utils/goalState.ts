@@ -249,6 +249,13 @@ export function resumeGoal(goal: ThreadGoal, now: number): ThreadGoal | null {
     autoContinueTurns: 0,
     lastEvaluatorReason: null,
     stopReason: null,
+    retryCount: 0,
+    retryAt: null,
+    idleCheckInCount: 0,
+    noProgressTurns: 0,
+    backgroundWaitingSince: null,
+    nextCheckInAt: null,
+    checkInCount: 0,
     updatedAt: now,
   }
 }
