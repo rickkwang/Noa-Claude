@@ -1089,7 +1089,6 @@
     "src/tools/AgentTool/constants.ts",
     "src/tools/AgentTool/forkSubagent.ts",
     "src/tools/AgentTool/loadAgentsDir.ts",
-    "src/tools/AgentTool/prompt.ts",
     "src/tools/AgentTool/resumeAgent.ts",
     "src/tools/AgentTool/runAgent.ts",
     "src/tools/AskUserQuestionTool/AskUserQuestionTool.tsx",

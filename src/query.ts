@@ -138,11 +138,6 @@ import {
 import { createBudgetTracker, checkTokenBudget } from './query/tokenBudget.js'
 import { count } from './utils/array.js'
 
-/* eslint-disable @typescript-eslint/no-require-imports */
-const snipModule = feature('HISTORY_SNIP')
-  ? (require('./services/compact/snipCompact.js') as typeof import('./services/compact/snipCompact.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
 
 function* yieldMissingToolResultBlocks(
   assistantMessages: AssistantMessage[],
@@ -516,21 +511,7 @@ async function* queryLoop(
       ),
     )
 
-    // Apply snip before microcompact (both may run — they are not mutually exclusive).
-    // snipTokensFreed is plumbed to autocompact so its threshold check reflects
-    // what snip removed; tokenCountWithEstimation alone can't see it (reads usage
-    // from the protected-tail assistant, which survives snip unchanged).
-    let snipTokensFreed = 0
-    if (feature('HISTORY_SNIP')) {
-      queryCheckpoint('query_snip_start')
-      const snipResult = snipModule!.snipCompactIfNeeded(messagesForQuery)
-      messagesForQuery = snipResult.messages
-      snipTokensFreed = snipResult.tokensFreed
-      if (snipResult.boundaryMessage) {
-        yield snipResult.boundaryMessage
-      }
-      queryCheckpoint('query_snip_end')
-    }
+    const snipTokensFreed = 0
 
     // Apply microcompact before autocompact
     queryCheckpoint('query_microcompact_start')
@@ -547,27 +528,6 @@ async function* queryLoop(
       ? microcompactResult.compactionInfo?.pendingCacheEdits
       : undefined
     queryCheckpoint('query_microcompact_end')
-
-    // Project the collapsed context view and maybe commit more collapses.
-    // Runs BEFORE autocompact so that if collapse gets us under the
-    // autocompact threshold, autocompact is a no-op and we keep granular
-    // context instead of a single summary.
-    //
-    // Nothing is yielded — the collapsed view is a read-time projection
-    // over the REPL's full history. Summary messages live in the collapse
-    // store, not the REPL array. This is what makes collapses persist
-    // across turns: projectView() replays the commit log on every entry.
-    // Within a turn, the view flows forward via state.messages where the
-    // loop continues below, and the next projectView() no-ops
-    // because the archived messages are already gone from its input.
-    if (feature('CONTEXT_COLLAPSE') && contextCollapse) {
-      const collapseResult = await contextCollapse.applyCollapsesIfNeeded(
-        messagesForQuery,
-        toolUseContext,
-        querySource,
-      )
-      messagesForQuery = collapseResult.messages
-    }
 
     const fullSystemPrompt = asSystemPrompt(
       appendSystemContext(systemPrompt, systemContext),
