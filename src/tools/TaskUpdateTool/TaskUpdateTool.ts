@@ -199,15 +199,7 @@ export const TaskUpdateTool = buildTool({
       }
     }
     if (metadata !== undefined) {
-      const merged = { ...(existingTask.metadata ?? {}) }
-      for (const [key, value] of Object.entries(metadata)) {
-        if (value === null) {
-          delete merged[key]
-        } else {
-          merged[key] = value
-        }
-      }
-      updates.metadata = merged
+      updates.metadata = metadata
       updatedFields.push('metadata')
     }
     if (status !== undefined) {
@@ -271,7 +263,15 @@ export const TaskUpdateTool = buildTool({
     }
 
     if (Object.keys(updates).length > 0) {
-      await updateTask(taskListId, taskId, updates)
+      await updateTask(taskListId, taskId, current => {
+        if (metadata === undefined) return updates
+        const merged = { ...(current.metadata ?? {}) }
+        for (const [key, value] of Object.entries(metadata)) {
+          if (value === null) delete merged[key]
+          else merged[key] = value
+        }
+        return { ...updates, metadata: merged }
+      })
     }
 
     // Notify new owner via mailbox when ownership changes

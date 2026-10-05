@@ -807,6 +807,9 @@ async function checkPermissionsAndCallTool(
   // it, the schema's strictObject should already reject it, but we strip here
   // as a safeguard against future regressions.
   let processedInput = parsedInput.data
+  const originalFileInput = tool.name === FILE_WRITE_TOOL_NAME || tool.name === FILE_EDIT_TOOL_NAME
+    ? { ...parsedInput.data }
+    : undefined
   if (
     tool.name === BASH_TOOL_NAME &&
     processedInput &&
@@ -1296,6 +1299,11 @@ async function checkPermissionsAndCallTool(
           ...toolUseContext,
           toolUseId: toolUseID,
           userModified: permissionDecision.userModified ?? false,
+          inputModified:
+            originalFileInput !== undefined &&
+            ['file_path', 'content', 'old_string', 'new_string', 'replace_all'].some(
+              key => (callInput as Record<string, unknown>)[key] !== originalFileInput[key],
+            ),
         },
         canUseTool,
         assistantMessage,

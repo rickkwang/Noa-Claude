@@ -1,5 +1,6 @@
 // @ts-nocheck
-import { mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises'
+import { mkdir, readdir, readFile, rename, unlink, writeFile } from 'fs/promises'
+import { randomUUID } from 'crypto'
 import { join } from 'path'
 import { z } from 'zod/v4'
 import { getSessionId } from '../bootstrap/state.js'
@@ -357,18 +358,26 @@ export async function getTask(
 
 // Internal: no lock. Callers already holding a lock on taskPath must use this
 // to avoid deadlock (claimTask, deleteTask cascade, etc.).
+type TaskUpdates = Partial<Omit<Task, 'id'>> | ((task: Task) => Partial<Omit<Task, 'id'>>)
+
 async function updateTaskUnsafe(
   taskListId: string,
   taskId: string,
-  updates: Partial<Omit<Task, 'id'>>,
+  updates: TaskUpdates,
 ): Promise<Task | null> {
   const existing = await getTask(taskListId, taskId)
   if (!existing) {
     return null
   }
-  const updated: Task = { ...existing, ...updates, id: taskId }
+  const updated: Task = { ...existing, ...(typeof updates === 'function' ? updates(existing) : updates), id: taskId }
   const path = getTaskPath(taskListId, taskId)
-  await writeFile(path, jsonStringify(updated, null, 2))
+  const temp = `${path}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    await writeFile(temp, jsonStringify(updated, null, 2), { mode: 0o600 })
+    await rename(temp, path)
+  } finally {
+    await unlink(temp).catch(() => {})
+  }
   notifyTasksUpdated()
   return updated
 }
@@ -376,7 +385,7 @@ async function updateTaskUnsafe(
 export async function updateTask(
   taskListId: string,
   taskId: string,
-  updates: Partial<Omit<Task, 'id'>>,
+  updates: TaskUpdates,
 ): Promise<Task | null> {
   const path = getTaskPath(taskListId, taskId)
 
@@ -406,14 +415,19 @@ export async function deleteTask(
     // Update high water mark before deleting to prevent ID reuse
     const numericId = parseInt(taskId, 10)
     if (!isNaN(numericId)) {
-      const currentMark = await readHighWaterMark(taskListId)
-      if (numericId > currentMark) {
-        await writeHighWaterMark(taskListId, numericId)
+      const release = await lockfile.lock(await ensureTaskListLockFile(taskListId), LOCK_OPTIONS)
+      try {
+        const currentMark = await readHighWaterMark(taskListId)
+        if (numericId > currentMark) await writeHighWaterMark(taskListId, numericId)
+      } finally {
+        await release()
       }
     }
 
     // Delete the task file
+    let release: (() => Promise<void>) | undefined
     try {
+      release = await lockfile.lock(path, LOCK_OPTIONS)
       await unlink(path)
     } catch (e) {
       const code = getErrnoCode(e)
@@ -421,6 +435,8 @@ export async function deleteTask(
         return false
       }
       throw e
+    } finally {
+      await release?.()
     }
 
     // Remove references to this task from other tasks
@@ -432,10 +448,10 @@ export async function deleteTask(
         newBlocks.length !== task.blocks.length ||
         newBlockedBy.length !== task.blockedBy.length
       ) {
-        await updateTask(taskListId, task.id, {
-          blocks: newBlocks,
-          blockedBy: newBlockedBy,
-        })
+        await updateTask(taskListId, task.id, current => ({
+          blocks: current.blocks.filter(id => id !== taskId),
+          blockedBy: current.blockedBy.filter(id => id !== taskId),
+        }))
       }
     }
 
@@ -466,29 +482,29 @@ export async function blockTask(
   fromTaskId: string,
   toTaskId: string,
 ): Promise<boolean> {
-  const [fromTask, toTask] = await Promise.all([
-    getTask(taskListId, fromTaskId),
-    getTask(taskListId, toTaskId),
-  ])
-  if (!fromTask || !toTask) {
-    return false
+  const releases: Array<() => Promise<void>> = []
+  try {
+    // Every edge uses the same lock order, including concurrent reverse edges.
+    const paths = [...new Set([fromTaskId, toTaskId])].map(id => getTaskPath(taskListId, id)).sort()
+    for (const path of paths) releases.push(await lockfile.lock(path, LOCK_OPTIONS))
+    const [fromTask, toTask] = await Promise.all([
+      getTask(taskListId, fromTaskId),
+      getTask(taskListId, toTaskId),
+    ])
+    if (!fromTask || !toTask) return false
+    if (!fromTask.blocks.includes(toTaskId)) {
+      await updateTaskUnsafe(taskListId, fromTaskId, { blocks: [...fromTask.blocks, toTaskId] })
+    }
+    if (!toTask.blockedBy.includes(fromTaskId)) {
+      await updateTaskUnsafe(taskListId, toTaskId, { blockedBy: [...toTask.blockedBy, fromTaskId] })
+    }
+    return true
+  } catch (error) {
+    if (getErrnoCode(error) === 'ENOENT') return false
+    throw error
+  } finally {
+    for (const release of releases.reverse()) await release()
   }
-
-  // Update source task: A blocks B
-  if (!fromTask.blocks.includes(toTaskId)) {
-    await updateTask(taskListId, fromTaskId, {
-      blocks: [...fromTask.blocks, toTaskId],
-    })
-  }
-
-  // Update target task: B is blockedBy A
-  if (!toTask.blockedBy.includes(fromTaskId)) {
-    await updateTask(taskListId, toTaskId, {
-      blockedBy: [...toTask.blockedBy, fromTaskId],
-    })
-  }
-
-  return true
 }
 
 export type ClaimTaskResult = {

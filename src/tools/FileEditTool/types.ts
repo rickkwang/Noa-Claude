@@ -66,6 +66,7 @@ const outputSchema = lazySchema(() =>
     filePath: z.string().describe('The file path that was edited'),
     oldString: z.string().describe('The original string that was replaced'),
     newString: z.string().describe('The new string that replaced it'),
+    inputModified: z.boolean().optional(),
     originalFile: z
       .string()
       .describe('The original file contents before editing'),

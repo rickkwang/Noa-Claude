@@ -267,6 +267,7 @@ async function computeSummary(
     // no-op rather than nulling it out — the background summary must not move
     // the live session's response-length counter.
     setResponseLength: () => {},
+    pushApiMetricsEntry: undefined,
   }
 
   const summaryRequest = createUserMessage({
@@ -280,7 +281,7 @@ async function computeSummary(
     context: quietContext,
     preCompactTokenCount: estimateMessageTokens(messages),
     // 'up_to' summarizes the whole armed set; forkContextMessages must match.
-    cacheSafeParams: { ...cacheSafeParams, forkContextMessages: messages },
+    cacheSafeParams: { ...cacheSafeParams, toolUseContext: quietContext, forkContextMessages: messages },
   })
 
   if (abort.signal.aborted) return null

@@ -606,6 +606,7 @@ export const FileEditTool = buildTool({
       originalFile: originalFileContents,
       structuredPatch: patch,
       userModified: userModified ?? false,
+      inputModified: Boolean(toolUseContext.inputModified),
       replaceAll: replace_all,
       ...(gitDiff && { gitDiff }),
     }
@@ -614,12 +615,12 @@ export const FileEditTool = buildTool({
     }
   },
   mapToolResultToToolResultBlockParam(data: FileEditOutput, toolUseID) {
-    const { filePath, userModified, replaceAll } = data
+    const { filePath, userModified, inputModified, replaceAll } = data
     const modifiedNote = userModified
       ? '.  The user modified your proposed changes before accepting them. '
       : ''
     // Not after a user modification: what landed differs from what was sent.
-    const currentNote = userModified ? '' : FILE_STATE_CURRENT_NOTE
+    const currentNote = userModified || inputModified ? '' : FILE_STATE_CURRENT_NOTE
 
     if (replaceAll) {
       return {

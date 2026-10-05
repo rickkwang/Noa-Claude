@@ -916,7 +916,8 @@ async function maybeSizeBasedMicrocompact(
   toolUseContext?: ToolUseContext,
 ): Promise<MicrocompactResult | null> {
   const config = getSizeBasedMCConfig()
-  if (!config.enabled || !querySource || !isMainThreadSource(querySource)) {
+  const sdkCanRestore = querySource === 'sdk' && toolUseContext?.options.tools.some(tool => tool.name === FILE_READ_TOOL_NAME)
+  if (!config.enabled || !querySource || !(isMainThreadSource(querySource) || sdkCanRestore)) {
     return null
   }
 

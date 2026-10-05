@@ -24,6 +24,7 @@ import {
 import { getAgentModel } from '../../utils/model/agent.js'
 import { getQuerySourceForAgent } from '../../utils/promptCategory.js'
 import {
+  flushSessionStorage,
   getAgentTranscript,
   readAgentMetadata,
 } from '../../utils/sessionStorage.js'
@@ -102,6 +103,7 @@ export async function resumeAgentBackground({
     toolUseContext.setAppStateForTasks ?? toolUseContext.setAppState
   const permissionMode = appState.toolPermissionContext.mode
 
+  await flushSessionStorage()
   const [transcript, meta] = await Promise.all([
     getAgentTranscript(asAgentId(agentId)),
     readAgentMetadata(asAgentId(agentId)),
@@ -124,14 +126,14 @@ export async function resumeAgentBackground({
   // Skip filterDeniedAgents re-gating — original spawn already passed permission checks
   let selectedAgent: AgentDefinition
   let isResumedFork = false
-  if (meta?.agentType === FORK_AGENT.agentType) {
+  const configuredAgent = toolUseContext.options.agentDefinitions.activeAgents.find(
+    a => a.agentType === meta?.agentType,
+  )
+  if (configuredAgent) {
+    selectedAgent = configuredAgent
+  } else if (meta?.agentType === FORK_AGENT.agentType) {
     selectedAgent = FORK_AGENT
     isResumedFork = true
-  } else if (meta?.agentType) {
-    const found = toolUseContext.options.agentDefinitions.activeAgents.find(
-      a => a.agentType === meta.agentType,
-    )
-    selectedAgent = found ?? GENERAL_PURPOSE_AGENT
   } else {
     selectedAgent = GENERAL_PURPOSE_AGENT
   }

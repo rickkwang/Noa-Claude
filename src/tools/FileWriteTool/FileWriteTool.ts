@@ -83,6 +83,7 @@ const outputSchema = lazySchema(() =>
       ),
     filePath: z.string().describe('The path to the file that was written'),
     content: z.string().describe('The content that was written to the file'),
+    inputModified: z.boolean().optional(),
     structuredPatch: z
       .array(hunkSchema())
       .describe('Diff patch showing the changes'),
@@ -423,6 +424,7 @@ export const FileWriteTool = buildTool({
 
       const data = {
         type: 'update' as const,
+        inputModified: Boolean(toolUseContext.userModified || toolUseContext.inputModified),
         filePath: file_path,
         content,
         structuredPatch: patch,
@@ -446,6 +448,7 @@ export const FileWriteTool = buildTool({
 
     const data = {
       type: 'create' as const,
+      inputModified: Boolean(toolUseContext.userModified || toolUseContext.inputModified),
       filePath: file_path,
       content,
       structuredPatch: [],
@@ -467,19 +470,20 @@ export const FileWriteTool = buildTool({
       data,
     }
   },
-  mapToolResultToToolResultBlockParam({ filePath, type }, toolUseID) {
+  mapToolResultToToolResultBlockParam({ filePath, type, inputModified }, toolUseID) {
+    const currentNote = inputModified ? '' : FILE_STATE_CURRENT_NOTE
     switch (type) {
       case 'create':
         return {
           tool_use_id: toolUseID,
           type: 'tool_result',
-          content: `File created successfully at: ${filePath}${FILE_STATE_CURRENT_NOTE}`,
+          content: `File created successfully at: ${filePath}${currentNote}`,
         }
       case 'update':
         return {
           tool_use_id: toolUseID,
           type: 'tool_result',
-          content: `The file ${filePath} has been updated successfully.${FILE_STATE_CURRENT_NOTE}`,
+          content: `The file ${filePath} has been updated successfully.${currentNote}`,
         }
     }
   },

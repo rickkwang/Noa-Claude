@@ -56,6 +56,7 @@ import { logError } from '../../utils/log.js'
 import { isAutoMemFile } from '../../utils/memoryFileDetection.js'
 import { createUserMessage } from '../../utils/messages.js'
 import { getCanonicalName, getMainLoopModel } from '../../utils/model/model.js'
+import { isDirectFirstParty } from '../../utils/model/providers.js'
 import {
   mapNotebookCellsToToolResult,
   readNotebook,
@@ -596,7 +597,7 @@ export const FileReadTool = buildTool({
     }
 
     try {
-      return await callInner(
+      const result = await callInner(
         file_path,
         fullFilePath,
         fullFilePath,
@@ -610,6 +611,10 @@ export const FileReadTool = buildTool({
         context,
         parentMessage?.message.id,
       )
+      if (result.data.type === 'text') {
+        fileReadMitigations.set(result.data, shouldIncludeFileReadMitigation(parentMessage?.message.model ?? context.options?.mainLoopModel))
+      }
+      return result
     } catch (error) {
       // Handle file-not-found: suggest similar files
       const code = getErrnoCode(error)
@@ -701,7 +706,7 @@ export const FileReadTool = buildTool({
           content =
             memoryFileFreshnessPrefix(data) +
             formatFileLines(data.file) +
-            (shouldIncludeFileReadMitigation()
+            ((fileReadMitigations.get(data) ?? shouldIncludeFileReadMitigation())
               ? CYBER_RISK_MITIGATION_REMINDER
               : '')
         } else {
@@ -747,9 +752,10 @@ const MITIGATION_EXEMPT_MODELS = new Set([
   'claude-fable-5-1',
 ])
 
-function shouldIncludeFileReadMitigation(): boolean {
-  const shortName = getCanonicalName(getMainLoopModel())
-  return !MITIGATION_EXEMPT_MODELS.has(shortName)
+const fileReadMitigations = new WeakMap<object, boolean>()
+
+function shouldIncludeFileReadMitigation(model = getMainLoopModel()): boolean {
+  return !isDirectFirstParty() || !MITIGATION_EXEMPT_MODELS.has(getCanonicalName(model))
 }
 
 /**
