@@ -136,7 +136,7 @@ async function run(bin, name) {
   server.close();
   let result = null;
   try { result = JSON.parse(out.trim().split('\n').at(-1)); } catch {}
-  return { ok: result?.result === FINAL && !result?.is_error, requests: n, exit: code, result: String(result?.result ?? out.slice(-200)).slice(0, 200), terminal: result?.terminal_reason, sideEffect: existsSync(join(dir, 'DENIED')), requestLog: requests };
+  return { ok: result?.result === FINAL && !result?.is_error, requests: n, exit: code, isError: result?.is_error, subtype: result?.subtype, validResult: result?.type === 'result' && typeof result?.is_error === 'boolean', result: String(result?.result ?? out.slice(-200)).slice(0, 200), terminal: result?.terminal_reason, sideEffect: existsSync(join(dir, 'DENIED')), requestLog: requests };
 }
 
 const sha = path => createHash('sha256').update(readFileSync(path)).digest('hex');
@@ -145,7 +145,10 @@ if (!cases.length) { console.error('verify:harness — unknown --case'); process
 const results = [];
 for (const name of cases) {
   const [reference, candidate] = await Promise.all([run(upstream, name), run(entry, name)]);
-  const match = reference.ok === candidate.ok && reference.requests === candidate.requests && reference.sideEffect === candidate.sideEffect;
+  const match = reference.ok === candidate.ok && reference.requests === candidate.requests && reference.sideEffect === false && candidate.sideEffect === false
+    && reference.validResult && candidate.validResult
+    && reference.exit === candidate.exit && reference.isError === candidate.isError
+    && reference.subtype === candidate.subtype && reference.terminal === candidate.terminal;
   results.push({ name, match, reference, candidate });
   console.log(`${match ? 'MATCH' : 'DIFF '} ${name}  upstream ${reference.ok ? 'ok' : 'err'}/${reference.requests}  noa ${candidate.ok ? 'ok' : 'err'}/${candidate.requests}${match ? '' : `  noa: ${candidate.result.slice(0, 80)}`}`);
 }
