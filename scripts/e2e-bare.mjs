@@ -40,6 +40,7 @@ const scenarios = {
     ],
   },
 };
+for (const mode of ['continue', 'unsupported', 'expired', 'fingerprint', 'nonthread']) scenarios['thread-'+mode] = { ...scenarios['tool-loop'], threadMode: mode };
 const cases = Object.keys(scenarios).filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 let active;
@@ -52,8 +53,30 @@ const server = createServer(async (req, res) => {
   }
   const body = JSON.parse(raw || '{}');
   active.requests.push({ path: req.url, body });
-  const step = active.script[active.requests.length - 1];
-  const block = step ? { type: 'tool_use', id: `toolu_${active.requests.length}`, name: step.name, input: step.input } : { type: 'text', text: 'BARE_OK' };
+  if (active.threadMode && active.threadMode !== 'continue' && active.completed === 1 && !active.injected) {
+    active.injected = true;
+    const status = active.threadMode === 'expired' ? 404 : 400;
+    const code = active.threadMode === 'expired' ? 'thread_not_found' : active.threadMode === 'fingerprint' ? 'thread_fingerprint_mismatch' : 'thread_unsupported_request';
+    res.writeHead(status, { 'content-type': 'application/json', 'x-should-retry': 'false' });
+    if (active.threadMode === 'nonthread') { res.end(JSON.stringify({type:'error',error:{type:'invalid_request_error',message:'FIXTURE_UNRELATED_400'}})); return; }
+    res.end(JSON.stringify({type:'error',error:{type:'invalid_request_error',message:code,details:{error_code:code}}}));return;
+  }
+  let history = body.messages;
+  const previous = active.stored.get(body.thread?.previous_message_id);
+  if (body.thread?.type === 'continue') {
+    assert.ok(previous, 'unknown thread pointer');
+    assert.equal(body.messages.length, 1, 'continuation contains old history');
+    history = [...previous.history, ...body.messages];
+    assert.ok(JSON.stringify(history).includes('Run the bare fixture.'), 'thread lost original user input');
+  }
+  const step = active.script[active.completed++];
+  const block = step ? { type: 'tool_use', id: `toolu_${active.completed}`, name: step.name, input: step.input } : { type: 'text', text: 'BARE_OK' };
+  const tools = body.tools ?? previous?.tools;
+  const stableSystem = body.system?.filter(b=>!b.text?.startsWith('x-anthropic-billing-header:'));
+  const system = stableSystem?.length ? body.system : previous?.system ?? body.system;
+  if(body.thread?.type==='continue')assert.ok(JSON.stringify(system).includes('CWD:'),'server lost static system prompt');
+  if(step && ['Bash','Read','Edit'].includes(step.name)) assert.ok(tools?.some(t=>t.name===step.name), 'server lost available tool');
+  active.stored.set(`msg_${active.requests.length}`, { history: [...history,{role:'assistant',content:[block]}], tools, system });
   res.writeHead(200, { 'content-type': 'text/event-stream' });
   const emit = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify({ type: event, ...data })}\n\n`);
   emit('message_start', { message: { id: `msg_${active.requests.length}`, type: 'message', role: 'assistant', model: body.model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 100, output_tokens: 0 } } });
@@ -73,10 +96,11 @@ async function run(name) {
   mkdirSync(join(dir, 'extra'), { recursive: true });
   writeFileSync(join(dir, 'CLAUDE.md'), 'CWD_RULE_42\n');
   writeFileSync(join(dir, 'extra', 'CLAUDE.md'), 'ADD_DIR_RULE_42\n');
-  active = { requests: [], script: scenario.script?.(dir) ?? [] };
+  active = { requests: [], script: scenario.script?.(dir) ?? [], completed: 0, stored: new Map(), threadMode: scenario.threadMode };
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => ['PATH', 'HOME', 'TMPDIR', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL'].includes(k)));
   Object.assign(env, { CLAUDE_CONFIG_DIR: join(dir, 'config'), ANTHROPIC_API_KEY: 'local-e2e-dummy', DISABLE_AUTOUPDATER: '1' },
     scenario.route === 'custom' ? { ANTHROPIC_BASE_URL: local } : { ANTHROPIC_BASE_URL: 'http://api.anthropic.com', HTTP_PROXY: local, http_proxy: local });
+  if (scenario.threadMode) env.NOA_CLAUDE_TETHER_LIVE='1';
   const prompt = scenario.prompt ?? 'Run the bare fixture.';
   const command = ['--bare', '--print', prompt, '--output-format', 'json', '--model', scenario.model, ...(scenario.extra?.(dir) ?? [])];
   // A bundle (dist/main-dev.js) has no shebang; run it through bun.
@@ -98,6 +122,12 @@ async function run(name) {
 }
 
 function check(name, { dir, exit, result }) {
+  if (name === 'thread-nonthread') {
+    // An ordinary 400 on a continuation surfaces once; it is not resent stateless.
+    assert.ok(active.injected); assert.notEqual(exit.code, 0); assert.ok(String(result.result).includes('FIXTURE_UNRELATED_400'));
+    assert.deepEqual(active.requests.map(r => r.body.thread?.type), ['create', 'continue']);
+    return;
+  }
   assert.equal(exit.code, 0);
   assert.equal(result.result, 'BARE_OK');
   assert.equal(result.terminal_reason, 'completed');
@@ -112,6 +142,11 @@ function check(name, { dir, exit, result }) {
   assert.ok(!('run_in_background' in bash.input_schema.properties), 'bare Bash schema offers run_in_background');
   const first = body.messages[0].content;
   const firstText = typeof first === 'string' ? first : first.map(b => b.text).join('');
+  if (name.startsWith('thread-')) {
+    assert.equal(active.requests[0].body.thread?.type,'create');
+    if(name==='thread-continue'){assert.equal(active.requests.length,6);assert.equal(active.requests.filter(r=>r.body.thread?.type==='continue').length,5);}
+    else {assert.ok(active.injected);assert.equal(active.requests.length,7);if(name==='thread-unsupported')assert.ok(active.requests.slice(2).every(r=>!r.body.thread));else assert.equal(active.requests[2].body.thread.type,'create');}
+  }
   if (name === 'add-dir') {
     assert.ok(firstText.includes('ADD_DIR_RULE_42'), '--add-dir CLAUDE.md was not loaded');
     assert.ok(!firstText.includes('CWD_RULE_42'), 'cwd CLAUDE.md leaked into a bare session');
@@ -120,12 +155,12 @@ function check(name, { dir, exit, result }) {
   } else {
     assert.equal(firstText, 'Run the bare fixture.', 'something was injected ahead of the prompt');
   }
-  if (name !== 'tool-loop') { assert.equal(active.requests.length, 1); return; }
-  assert.equal(active.requests.length, 6);
+  if (name !== 'tool-loop' && !name.startsWith('thread-')) { assert.equal(active.requests.length, 1); return; }
+  if (!name.startsWith('thread-')) assert.equal(active.requests.length, 6);
   assert.equal(readFileSync(join(dir, 'f.txt'), 'utf8'), 'A\nb\n', 'Bash and Edit did not produce the expected file');
   assert.equal(existsSync(join(dir, 'n.txt')), false, 'Write ran although bare does not offer it');
-  const results = active.requests.at(-1).body.messages.flatMap(m => Array.isArray(m.content) ? m.content : []).filter(b => b.type === 'tool_result');
-  const text = id => { const c = results.find(r => r.tool_use_id === id)?.content; return typeof c === 'string' ? c : JSON.stringify(c); };
+  const results = active.requests.flatMap(r=>r.body.messages).flatMap(m => Array.isArray(m.content) ? m.content : []).filter(b => b.type === 'tool_result');
+  const text = id => { const c = results.findLast(r => r.tool_use_id === id)?.content; return typeof c === 'string' ? c : JSON.stringify(c); };
   assert.ok(text('toolu_2').includes('1\ta'), 'Read result missing');
   assert.ok(text('toolu_3').includes('no need to Read it back'), 'Edit result does not say the file state is current');
   assert.ok(text('toolu_4').includes('No such tool available: Write. Tools available in this session: Bash, Edit, Read.'), 'unknown-tool error does not name the tools');

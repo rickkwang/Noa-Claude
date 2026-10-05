@@ -72,6 +72,8 @@ import {
 } from '../../utils/context.js'
 import { resolveAppliedEffort } from '../../utils/effort.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
+import { createMessageThreadRequest } from './messageThreads.js'
 import { errorMessage } from '../../utils/errors.js'
 import { computeFingerprintFromMessages } from '../../utils/fingerprint.js'
 import {
@@ -1624,6 +1626,7 @@ async function* queryModel(
   // Capture the betas sent in the last API request, including the ones that
   // were dynamically added, so we can log and send it to telemetry.
   let lastRequestBetas: string[] | undefined
+  const messageThreadRequest = createMessageThreadRequest(options.querySource, options.agentId)
 
   const paramsFromContext = (retryContext: RetryContext) => {
     const betasParams = [...betas]
@@ -1966,7 +1969,6 @@ async function* queryModel(
         queryCheckpoint('query_client_creation_end')
 
         const params = paramsFromContext(context)
-        captureAPIRequest(params, options.querySource) // Capture for bug reports
 
         maxOutputTokens = params.max_tokens
 
@@ -1990,17 +1992,31 @@ async function* queryModel(
         // BetaMessageStream calls partialParse() on every input_json_delta, which we don't need
         // since we handle tool input accumulation ourselves
         // biome-ignore lint/plugin: main conversation loop handles attribution separately
-        const result = await anthropic.beta.messages
-          .create(
-            { ...params, stream: true },
-            {
-              signal,
-              ...(clientRequestId && {
-                headers: { [CLIENT_REQUEST_ID_HEADER]: clientRequestId },
-              }),
-            },
-          )
-          .withResponse()
+        const threadEnvironment = messageThreadRequest.isEnabled() ? {
+          permissions: await options.getToolPermissionContext(),
+          hooks: getInitialSettings().hooks,
+        } : undefined
+        let result
+        for (;;) {
+          const requestParams = messageThreadRequest.prepare(params, threadEnvironment)
+          captureAPIRequest(requestParams, options.querySource)
+          try {
+            result = await anthropic.beta.messages
+              .create(
+                { ...requestParams, stream: true },
+                {
+                  signal,
+                  ...(clientRequestId && {
+                    headers: { [CLIENT_REQUEST_ID_HEADER]: clientRequestId },
+                  }),
+                },
+              )
+              .withResponse()
+            break
+          } catch (error) {
+            if (signal.aborted || !messageThreadRequest.recover(error)) throw error
+          }
+        }
         queryCheckpoint('query_response_headers_received')
         streamRequestId = result.request_id
         streamResponse = result.response
@@ -2484,6 +2500,12 @@ async function* queryModel(
             break
           }
           case 'message_stop':
+            if (!signal.aborted && partialMessage?.id && stopReason) {
+              messageThreadRequest.complete(
+                partialMessage.id,
+                normalizeMessagesForAPI(newMessages, filteredTools).map(message => message.message),
+              )
+            }
             break
         }
 
@@ -2616,6 +2638,7 @@ async function* queryModel(
         responseHeaders = resp.headers
       }
     } catch (streamingError) {
+      messageThreadRequest.invalidate()
       // Clear the idle timeout watchdog on error path too
       clearStreamIdleTimers()
 
@@ -3108,6 +3131,7 @@ async function* queryModel(
       return
     }
   } finally {
+    messageThreadRequest.discardIncomplete()
     stopSessionActivity('api_call')
     // Must be in the finally block: if the generator is terminated early
     // via .return() (e.g. consumer breaks out of for-await-of, or query.ts

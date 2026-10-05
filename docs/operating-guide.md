@@ -152,6 +152,12 @@ An orphaned session with a live child prevents duplicate revival. Stopping it re
 
 Background hosts explicitly inherit the active configuration directory. An inherited default product directory must not redirect a child away from a caller's custom `CLAUDE_CONFIG_DIR`.
 
+### Experimental first-party message threads
+
+`NOA_CLAUDE_TETHER_LIVE=1` (legacy alias `CLAUDE_CODE_TETHER_LIVE=1`) opts in to the `message-threads-2026-08-12` beta observed in official CC. The default remains stateless. This path retains conversation state at the first-party service; its public Messages API contract and credential eligibility are not established by local scripted tests.
+
+Only a direct first-party endpoint uses threads. Other providers retain full requests. Complete responses can continue with incremental messages and inherited static fields; changed history, model, tools, permissions or hooks create a fresh thread. Unsupported protocol responses disable threading for the session; expired pointers and fingerprint failures have bounded recovery. Partial streams never become continuation anchors.
+
 ### Progress Artifacts
 
 Use a project-local path inside the product namespace:
