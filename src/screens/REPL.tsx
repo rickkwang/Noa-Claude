@@ -216,6 +216,7 @@ import { updateSessionName, updateSessionActivity } from '../utils/concurrentSes
 import { isBgSession, requestBgDetach } from '../utils/background/bgJob.js';
 import { isImmediateCommand } from '../utils/commandImmediate.js';
 import { deriveBgActivity, reportBgActivity } from '../utils/background/bgSession.js';
+import { watchJobReplies } from '../utils/background/replies.js';
 import { registerBackgroundHandoff } from '../utils/background/handoff.js';
 import { type HandoffPrefill } from '../utils/background/dispatch.js';
 import { buildDispatchDefaults, forkToBackground } from '../utils/background/fork.js';
@@ -1247,6 +1248,14 @@ export function REPL({
   }, [setToolUseConfirmQueue]);
   const [messages, rawSetMessages] = useState<MessageType[]>(initialMessages ?? []);
   const messagesRef = useRef(messages);
+  const jobRepliesRef = useRef<ReturnType<typeof watchJobReplies>>();
+  useEffect(() => {
+    if (!isBgSession()) return;
+    const replies = watchJobReplies(() => messagesRef.current);
+    jobRepliesRef.current = replies;
+    return () => { replies.close(); jobRepliesRef.current = undefined; };
+  }, []);
+  useEffect(() => { jobRepliesRef.current?.sync(); }, [messages]);
 
   // Background sessions (started from the agents view) mirror their activity
   // into their job record so the agents view can list and group them.

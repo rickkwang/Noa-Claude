@@ -26,7 +26,7 @@ jobs:
       - name: Install runtime tools
         run: |
           for attempt in 1 2 3; do
-            if timeout 120 sudo apt-get update && timeout 120 sudo apt-get install -y ripgrep; then
+            if timeout 120 sudo apt-get update && timeout 120 sudo apt-get install -y ripgrep tmux; then
               exit 0
             fi
             echo "apt attempt $attempt failed or timed out; retrying"
@@ -55,6 +55,7 @@ jobs:
           bun run e2e:loop
           bun run e2e:bare
           bun run e2e:goal
+          bun run e2e:background
 
       # build:dev:full only proves the bundle resolves; the placeholder modules
       # behind the experimental flags have crashed it at startup before.

@@ -142,6 +142,16 @@ Runtime behavior:
 
 The model can inspect, create, and request completion through the goal tool. Pause, resume, clear, and replace remain user-controlled slash commands.
 
+### Background replies and recovery
+
+`noa reply <id> '<message>'` sends a text prompt without attaching. In `noa agents`, Space previews the selected session and opens a reply input; Ctrl+S sends the main draft to the selected session. Enter on the main screen still creates a session.
+
+Replies use the existing input queue and do not answer permission dialogs. Slash and bang prefixes in external replies remain text. Inbox entries retain their UUID until the user message is flushed to the transcript, so a process restart preserves unacknowledged replies.
+
+An orphaned session with a live child prevents duplicate revival. Stopping it requires a verifiable process identity; when identity cannot be established, Noa refuses to signal the PID. Custom configuration directories have separate socket namespaces; hosts started by an older build under a custom directory must be stopped with that older build before restarting. The default configuration's socket path stays compatible.
+
+Background hosts explicitly inherit the active configuration directory. An inherited default product directory must not redirect a child away from a caller's custom `CLAUDE_CONFIG_DIR`.
+
 ### Progress Artifacts
 
 Use a project-local path inside the product namespace:

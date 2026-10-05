@@ -12,6 +12,7 @@ import { ensureHost } from '../../utils/background/host.js'
 import { deleteJob, type Job, listJobs, readJob, stopJob } from '../../utils/background/jobs.js'
 import { DETACH_SEQUENCE } from '../../utils/background/ptyProtocol.js'
 import { readAllSessions } from '../../utils/background/sessionRegistry.js'
+import { queueJobReply } from '../../utils/background/replies.js'
 
 function fail(message: string): never {
   process.stderr.write(`${message}\n`)
@@ -101,12 +102,24 @@ export async function logsHandler(id: string): Promise<void> {
 
 export async function stopHandler(id: string): Promise<void> {
   const job = await resolveJob(id)
-  if (!job.alive) {
+  if (!job.alive && !job.sessionPid) {
     process.stdout.write(`${job.short} is not running\n`)
     process.exit(0)
   }
   if (!(await stopJob(job))) fail(`Couldn't stop ${job.short}`)
   process.stdout.write(`stopped · ${job.short} (transcript kept — \`noa attach ${job.short}\` resumes it)\n`)
+  process.exit(0)
+}
+
+/** Queue a plain-text user message without opening the terminal or answering a dialog. */
+export async function replyHandler(id: string, text: string): Promise<void> {
+  const job = await resolveJob(id)
+  const uuid = await queueJobReply(job.short, text)
+  const current = (await listJobs()).find(j => j.short === job.short)
+  if (!current || (!current.alive && !current.sessionPid && !(await ensureHost(current)))) {
+    fail(`Reply ${uuid} is saved, but ${job.short} could not start — it will be delivered when the session resumes`)
+  }
+  process.stdout.write(`queued reply · ${job.short} · ${uuid}\n`)
   process.exit(0)
 }
 
@@ -184,7 +197,7 @@ export async function agentsJsonHandler(opts: { all?: boolean; cwd?: string }): 
       cwd: j.cwd,
       name: j.name,
       state: j.state,
-      running: j.alive,
+      running: j.alive || j.sessionPid !== undefined,
       needs: j.needs,
       detail: j.detail,
       result: j.output?.result,

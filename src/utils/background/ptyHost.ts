@@ -100,6 +100,13 @@ export async function runPtyHost(argv: string[]): Promise<never> {
   } catch (e) {
     return failBeforeStart(e)
   }
+  try {
+    await writeHostPid(short, process.pid, child.pid)
+  } catch (e) {
+    child.kill('SIGTERM')
+    terminal.close()
+    return failBeforeStart(e)
+  }
 
   function handleControl(msg: ClientControl): void {
     if (exited) return

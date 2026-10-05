@@ -6,14 +6,19 @@
  * it; the PTY host stamps the terminal outcome when the session exits. The
  * file is the only shared state — there is no daemon.
  */
-import { randomBytes } from 'crypto'
-import { mkdirSync } from 'fs'
+import { createHash, randomBytes } from 'crypto'
+import { mkdirSync, realpathSync } from 'fs'
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'fs/promises'
-import { tmpdir, userInfo } from 'os'
-import { join } from 'path'
+import { homedir, tmpdir, userInfo } from 'os'
+import { connect } from 'net'
+import { join, resolve } from 'path'
 import { getClaudeConfigHomeDir } from '../envUtils.js'
-import { isProcessRunning } from '../genericProcessUtils.js'
+import { getProcessCommand, isProcessRunning } from '../genericProcessUtils.js'
+import { PRODUCT_HOME_DIR } from '../productPathConstants.js'
 import { sanitizePersistedFlags } from './launchFlags.js'
+import { readAllSessions } from './sessionRegistry.js'
+import { processBirth } from './processIdentity.js'
+import { encodeControl } from './ptyProtocol.js'
 
 /** Where the session is in its lifecycle. */
 export type JobState = 'working' | 'blocked' | 'done' | 'failed'
@@ -51,6 +56,8 @@ export type JobRecord = {
 export type Job = JobRecord & {
   /** From host.json, which only the PTY host writes. */
   hostPid?: number
+  /** A live session whose PTY host may have gone away. */
+  sessionPid?: number
   /** The PTY host is still running, so the session can be attached. */
   alive: boolean
 }
@@ -79,8 +86,15 @@ function getHostPath(short: string): string {
   return join(getJobDir(short), 'host.json')
 }
 
-export async function writeHostPid(short: string, pid: number): Promise<void> {
-  await writeFile(getHostPath(short), JSON.stringify({ pid }), { mode: 0o600 })
+export async function writeHostPid(short: string, pid: number, sessionPid?: number): Promise<void> {
+  const temp = `${getHostPath(short)}.${process.pid}.tmp`
+  try {
+    const [hostStartedAt, sessionStartedAt] = await Promise.all([processBirth(pid), sessionPid ? processBirth(sessionPid) : undefined])
+    await writeFile(temp, JSON.stringify({ pid, hostStartedAt, sessionPid, sessionStartedAt }), { mode: 0o600 })
+    await rename(temp, getHostPath(short))
+  } finally {
+    await rm(temp, { force: true }).catch(() => {})
+  }
 }
 
 export async function readHostPid(short: string): Promise<number | undefined> {
@@ -92,13 +106,49 @@ export async function readHostPid(short: string): Promise<number | undefined> {
   }
 }
 
+/** Liveness is enough to refuse a second launch, but is not authority to send a signal. */
+export async function readHostedSessionHint(short: string): Promise<number | undefined> {
+  try {
+    const { sessionPid } = JSON.parse(await readFile(getHostPath(short), 'utf8'))
+    return typeof sessionPid === 'number' && isProcessRunning(sessionPid) ? sessionPid : undefined
+  } catch { return undefined }
+}
+
+/** Covers a host lost before the child registered its session. */
+export async function readHostedSessionPid(short: string): Promise<number | undefined> {
+  try {
+    const { sessionPid, sessionStartedAt } = JSON.parse(await readFile(getHostPath(short), 'utf8'))
+    if (typeof sessionPid !== 'number' || !isProcessRunning(sessionPid) || typeof sessionStartedAt !== 'string') return undefined
+    return await processBirth(sessionPid) === sessionStartedAt ? sessionPid : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export async function readRunningHostPid(short: string): Promise<number | undefined> {
+  try {
+    const { pid, hostStartedAt } = JSON.parse(await readFile(getHostPath(short), 'utf8'))
+    if (typeof pid !== 'number' || !isProcessRunning(pid)) return undefined
+    const matches = typeof hostStartedAt === 'string'
+      ? await processBirth(pid) === hostStartedAt
+      : getProcessCommand(pid)?.includes(`--bg-pty-host ${short}`) === true
+    return matches ? pid : undefined
+  } catch { return undefined }
+}
+
 /**
  * Attach socket for a job. Kept under /tmp rather than the job dir: macOS
  * caps sun_path at 104 bytes, and CLAUDE_CONFIG_DIR can be arbitrarily deep.
  */
 export function getJobSocketPath(short: string): string {
   const base = process.platform === 'win32' ? tmpdir() : '/tmp'
-  return join(base, `noa-bg-${userInfo().uid}`, `${short}.sock`)
+  const canonical = (path: string): string => {
+    try { return realpathSync(path) } catch { return resolve(path) }
+  }
+  const config = canonical(getClaudeConfigHomeDir())
+  const isDefault = config === canonical(join(homedir(), PRODUCT_HOME_DIR))
+  const namespace = isDefault ? '' : `-${createHash('sha256').update(config).digest('hex').slice(0, 12)}`
+  return join(base, `noa-bg-${userInfo().uid}${namespace}`, `${short}.sock`)
 }
 
 export function ensureJobSocketDir(short: string): string {
@@ -112,8 +162,10 @@ export function newJobShort(): string {
 }
 
 export async function readJob(short: string): Promise<JobRecord | null> {
+  if (!/^[0-9a-f]{8}$/.test(short)) return null
   try {
     const record = JSON.parse(await readFile(getStatePath(short), 'utf8')) as JobRecord
+    if (record?.short !== short) return null
     // Persisted flags are untrusted: anything running as this user can edit
     // state.json, and reviveJob would replay them into a spawn verbatim.
     if (Array.isArray(record.respawnFlags)) {
@@ -156,24 +208,26 @@ async function withStateLock<T>(short: string, fn: () => Promise<T>): Promise<T>
   const lock = join(getJobDir(short), 'state.lock')
   const deadline = Date.now() + 10_000
   for (;;) {
+    if (Date.now() >= deadline) throw new Error('timed out waiting for the job state lock')
     try {
       await mkdir(lock)
       await writeFile(join(lock, 'pid'), String(process.pid)).catch(() => {})
       break
     } catch (e) {
       if ((e as { code?: string }).code === 'ENOENT') return fn()
+      if ((e as { code?: string }).code !== 'EEXIST') throw e
       let stale = false
       try {
         stale = Date.now() - (await stat(lock)).mtimeMs > STATE_LOCK_STALE_MS
       } catch {
-        continue
+        // The holder may have released the lock; use the normal retry backoff.
       }
       if (!stale) {
         const holder = Number(await readFile(join(lock, 'pid'), 'utf8').catch(() => ''))
         stale = Number.isInteger(holder) && holder > 0 && !isProcessRunning(holder)
       }
       if (stale) {
-        await rm(lock, { recursive: true, force: true }).catch(() => {})
+        await rm(lock, { recursive: true, force: true })
         continue
       }
       if (Date.now() >= deadline) throw new Error('timed out waiting for the job state lock')
@@ -221,6 +275,7 @@ export async function listJobs(): Promise<Job[]> {
   } catch {
     return []
   }
+  const sessions = await readAllSessions()
   const jobs = await Promise.all(
     names.map(async (name): Promise<Job | null> => {
       if (!/^[0-9a-f]{8}$/.test(name)) return null
@@ -228,7 +283,22 @@ export async function listJobs(): Promise<Job[]> {
       if (!record) return null
       const hostPid = await readHostPid(name)
       const alive = hostPid ? isProcessRunning(hostPid) : false
-      return { ...record, hostPid, alive }
+      const hostedPid = !alive ? await readHostedSessionHint(name) : undefined
+      const sessionPid = sessions.find(s => s.alive && s.kind === 'bg' && s.sessionId === record.sessionId)?.pid
+        ?? (hostedPid && isProcessRunning(hostedPid) ? hostedPid : undefined)
+      const interrupted = hostPid !== undefined && !alive && record.exitCode === undefined && !record.stopRequested
+      return {
+        ...record,
+        ...(interrupted && {
+          state: 'failed' as const,
+          tempo: 'idle' as const,
+          needs: undefined,
+          detail: sessionPid ? 'background host disconnected; session is still running' : 'background host exited before reporting its result',
+        }),
+        hostPid,
+        sessionPid,
+        alive,
+      }
     }),
   )
   return jobs.filter((j): j is Job => j !== null)
@@ -239,10 +309,39 @@ export async function listJobs(): Promise<Job[]> {
  * (revived) again. The host forwards SIGTERM to the session and exits with it.
  */
 export async function stopJob(job: Job): Promise<boolean> {
-  if (!job.alive || !job.hostPid) return false
+  const requested = await new Promise<boolean>(resolve => {
+    const socket = connect(getJobSocketPath(job.short))
+    let done = false
+    const finish = (result: boolean): void => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      socket.destroy()
+      resolve(result)
+    }
+    const timer = setTimeout(() => finish(false), 2000)
+    socket.once('connect', () => {
+      void patchJob(job.short, { stopRequested: true }).catch(() => null).then(() => {
+        if (!done) socket.end(encodeControl({ t: 'kill' }), () => finish(true))
+      })
+    })
+    socket.once('error', () => finish(false))
+    socket.once('close', () => finish(false))
+  })
+  if (requested) return true
+  const hostPid = await readRunningHostPid(job.short)
+  const hostAlive = hostPid !== undefined
+  const hostedPid = !hostAlive ? await readHostedSessionPid(job.short) : undefined
+  const session = !hostAlive ? (await readAllSessions()).find(s => s.alive && s.kind === 'bg' && s.sessionId === job.sessionId) : undefined
+  const sessionPid = session?.processStartedAt && await processBirth(session.pid) === session.processStartedAt ? session.pid : undefined
+  const pid = hostAlive
+    ? hostPid
+    : hostedPid ?? sessionPid
+  if (!pid) return false
   await patchJob(job.short, { stopRequested: true }).catch(() => null)
   try {
-    process.kill(job.hostPid, 'SIGTERM')
+    process.kill(pid, 'SIGTERM')
+    if (!hostAlive) await patchJob(job.short, { state: 'done', tempo: 'idle', detail: 'stopped', needs: undefined }).catch(() => {})
     return true
   } catch {
     return false
@@ -251,17 +350,15 @@ export async function stopJob(job: Job): Promise<boolean> {
 
 /** Stop a job's session (if running) and forget it. */
 export async function deleteJob(job: Job): Promise<void> {
-  if (job.alive && job.hostPid) {
-    try {
-      process.kill(job.hostPid, 'SIGTERM')
-    } catch {
-      // already gone
-    }
+  if (job.alive || job.sessionPid) {
+    await stopJob(job)
     // Let the host take its session down first, so nothing outlives the row.
     // (It gives the session 5s before a SIGKILL.)
-    for (let i = 0; i < 70 && isProcessRunning(job.hostPid); i++) {
+    const pid = job.alive ? job.hostPid : job.sessionPid
+    for (let i = 0; i < 70 && pid && isProcessRunning(pid); i++) {
       await new Promise(r => setTimeout(r, 100))
     }
+    if (pid && isProcessRunning(pid)) throw new Error('session is still running; stop it before deleting this job')
   }
   await rm(getJobDir(job.short), { recursive: true, force: true })
 }

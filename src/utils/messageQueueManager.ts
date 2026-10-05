@@ -318,13 +318,15 @@ export function removeByFilter(
 
 /**
  * Clear all commands from the queue.
- * Used by ESC cancellation to discard queued notifications.
+ * Discard queued notifications/input, preserving durable background replies.
  */
 export function clearCommandQueue(): void {
   if (commandQueue.length === 0) {
     return
   }
-  commandQueue.length = 0
+  for (let i = commandQueue.length - 1; i >= 0; i--) {
+    if (!commandQueue[i]!.backgroundReply) commandQueue.splice(i, 1)
+  }
   notifySubscribers()
 }
 
@@ -358,7 +360,7 @@ export function isPromptInputModeEditable(
  * the user's input.
  */
 export function isQueuedCommandEditable(cmd: QueuedCommand): boolean {
-  return isPromptInputModeEditable(cmd.mode) && !cmd.isMeta
+  return isPromptInputModeEditable(cmd.mode) && !cmd.isMeta && !cmd.backgroundReply
 }
 
 /**
@@ -367,6 +369,7 @@ export function isQueuedCommandEditable(cmd: QueuedCommand): boolean {
  * sees what arrived) but stay non-editable (raw XML).
  */
 export function isQueuedCommandVisible(cmd: QueuedCommand): boolean {
+  if (cmd.backgroundReply) return true
   if (
     (feature('KAIROS') || feature('KAIROS_CHANNELS')) &&
     cmd.origin?.kind === 'channel'

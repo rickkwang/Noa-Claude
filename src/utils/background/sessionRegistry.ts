@@ -12,6 +12,7 @@ export type SessionEntry = {
   sessionId?: string
   cwd?: string
   startedAt?: number
+  processStartedAt?: string
   kind?: SessionKind
   name?: string
   logPath?: string
@@ -72,6 +73,7 @@ export async function readAllSessions(): Promise<SessionEntry[]> {
         sessionId: typeof parsed.sessionId === 'string' ? parsed.sessionId : undefined,
         cwd: typeof parsed.cwd === 'string' ? parsed.cwd : undefined,
         startedAt: typeof parsed.startedAt === 'number' ? parsed.startedAt : undefined,
+        processStartedAt: typeof parsed.processStartedAt === 'string' ? parsed.processStartedAt : undefined,
         kind: typeof parsed.kind === 'string' ? parsed.kind as SessionKind : undefined,
         name: typeof parsed.name === 'string' ? parsed.name : undefined,
         logPath: typeof parsed.logPath === 'string' ? parsed.logPath : undefined,

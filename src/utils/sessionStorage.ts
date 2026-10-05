@@ -693,6 +693,7 @@ class Project {
   >()
   private flushTimer: ReturnType<typeof setTimeout> | null = null
   private activeDrain: Promise<void> | null = null
+  private failedWritePaths = new Set<string>()
   private FLUSH_INTERVAL_MS = 100
   private readonly MAX_CHUNK_BYTES = 100 * 1024 * 1024
 
@@ -706,6 +707,7 @@ class Project {
     this.flushTimer = null
     this.activeDrain = null
     this.writeQueues = new Map()
+    this.failedWritePaths.clear()
   }
 
   private incrementPendingWrites(): void {
@@ -750,9 +752,15 @@ class Project {
     }
     this.flushTimer = setTimeout(async () => {
       this.flushTimer = null
-      this.activeDrain = this.drainWriteQueue()
-      await this.activeDrain
-      this.activeDrain = null
+      const drain = this.activeDrain ??= this.drainWriteQueue()
+      try {
+        await drain
+      } catch (error) {
+        logError(error)
+        return
+      } finally {
+        if (this.activeDrain === drain) this.activeDrain = null
+      }
       // If more items arrived during drain, schedule again
       if (this.writeQueues.size > 0) {
         this.scheduleDrain()
@@ -778,8 +786,7 @@ class Project {
    * splice but before appendFile resolves) — the race this closes is
    * the 100ms FLUSH_INTERVAL_MS window between enqueue and drain start.
    *
-   * Resolvers fire in a finally so an appendFileSync exception doesn't
-   * leave awaiting callers hanging forever.
+   * Failed chunks remain queued; callers are resolved only after a successful write.
    *
    * @internal
    */
@@ -796,20 +803,26 @@ class Project {
       const batch = queue.splice(0)
       const resolvers: Array<() => void> = []
       let content = ''
-      for (const { entry, resolve } of batch) {
-        const line = jsonStringify(entry) + '\n'
-        // Mirror drainWriteQueue's 100MB chunk boundary so a giant queued
-        // batch doesn't materialize as a single multi-hundred-MB string.
-        if (content.length + line.length >= this.MAX_CHUNK_BYTES) {
-          this.syncAppendChunk(fs, filePath, content, resolvers)
-          resolvers.length = 0
-          content = ''
+      let committed = 0
+      try {
+        for (const { entry, resolve } of batch) {
+          const line = jsonStringify(entry) + '\n'
+          // Mirror drainWriteQueue's 100MB chunk boundary so a giant queued
+          // batch doesn't materialize as a single multi-hundred-MB string.
+          if (content.length + line.length >= this.MAX_CHUNK_BYTES) {
+            this.syncAppendChunk(fs, filePath, content, resolvers)
+            committed += resolvers.length
+            resolvers.length = 0
+            content = ''
+          }
+          content += line
+          resolvers.push(resolve)
         }
-        content += line
-        resolvers.push(resolve)
-      }
-      if (content.length > 0) {
-        this.syncAppendChunk(fs, filePath, content, resolvers)
+        if (content.length > 0) this.syncAppendChunk(fs, filePath, content, resolvers)
+      } catch (error) {
+        this.failedWritePaths.add(filePath)
+        this.writeQueues.set(filePath, [...batch.slice(committed), ...queue])
+        throw error
       }
       drained.push(filePath)
     }
@@ -832,28 +845,27 @@ class Project {
     content: string,
     resolvers: Array<() => void>,
   ): void {
+    const prefix = this.failedWritePaths.has(filePath) ? '\n' : ''
     try {
-      try {
-        fs.appendFileSync(filePath, content, { mode: 0o600 })
-      } catch {
-        fs.mkdirSync(dirname(filePath), { mode: 0o700 })
-        fs.appendFileSync(filePath, content, { mode: 0o600 })
-      }
-    } finally {
-      // Always resolve so awaiting callers don't hang on write failure;
-      // the exception propagates to the sync caller of this method.
-      for (const r of resolvers) r()
+      fs.appendFileSync(filePath, prefix + content, { mode: 0o600 })
+    } catch (error) {
+      fs.mkdirSync(dirname(filePath), { mode: 0o700 })
+      const retryPrefix = getErrnoCode(error) === 'ENOENT' ? prefix : '\n'
+      fs.appendFileSync(filePath, retryPrefix + content, { mode: 0o600 })
     }
+    this.failedWritePaths.delete(filePath)
+    for (const r of resolvers) r()
   }
 
   private async appendToFile(filePath: string, data: string): Promise<void> {
     try {
       await fsAppendFile(filePath, data, { mode: 0o600 })
-    } catch {
+    } catch (error) {
       // Directory may not exist — some NFS-like filesystems return
       // unexpected error codes, so don't discriminate on code.
       await mkdir(dirname(filePath), { recursive: true, mode: 0o700 })
-      await fsAppendFile(filePath, data, { mode: 0o600 })
+      // A non-ENOENT failure may have appended part of a JSONL record.
+      await fsAppendFile(filePath, (getErrnoCode(error) === 'ENOENT' ? '' : '\n') + data, { mode: 0o600 })
     }
   }
 
@@ -866,29 +878,42 @@ class Project {
 
       let content = ''
       const resolvers: Array<() => void> = []
+      let committed = 0
 
-      for (const { entry, resolve } of batch) {
-        const line = jsonStringify(entry) + '\n'
+      try {
+        for (const { entry, resolve } of batch) {
+          const line = jsonStringify(entry) + '\n'
 
-        if (content.length + line.length >= this.MAX_CHUNK_BYTES) {
-          // Flush chunk and resolve its entries before starting a new one
-          await this.appendToFile(filePath, content)
+          if (content.length + line.length >= this.MAX_CHUNK_BYTES) {
+            // Flush chunk and resolve its entries before starting a new one.
+            const prefix = this.failedWritePaths.has(filePath) ? '\n' : ''
+            await this.appendToFile(filePath, prefix + content)
+            this.failedWritePaths.delete(filePath)
+            committed += resolvers.length
+            for (const r of resolvers) {
+              r()
+            }
+            resolvers.length = 0
+            content = ''
+          }
+
+          content += line
+          resolvers.push(resolve)
+        }
+
+        if (content.length > 0) {
+          const prefix = this.failedWritePaths.has(filePath) ? '\n' : ''
+          await this.appendToFile(filePath, prefix + content)
+          this.failedWritePaths.delete(filePath)
           for (const r of resolvers) {
             r()
           }
-          resolvers.length = 0
-          content = ''
         }
-
-        content += line
-        resolvers.push(resolve)
-      }
-
-      if (content.length > 0) {
-        await this.appendToFile(filePath, content)
-        for (const r of resolvers) {
-          r()
-        }
+      } catch (error) {
+        // A failed append can leave a partial JSONL line; separate the retry.
+        this.failedWritePaths.add(filePath)
+        this.writeQueues.set(filePath, [...batch.slice(committed), ...queue])
+        throw error
       }
     }
 
@@ -1072,12 +1097,15 @@ class Project {
       clearTimeout(this.flushTimer)
       this.flushTimer = null
     }
-    // Wait for any in-flight drain to finish
-    if (this.activeDrain) {
-      await this.activeDrain
+    // Share a drain with timer/manual callers; a concurrent empty flush is not an acknowledgment.
+    while (this.activeDrain || this.writeQueues.size > 0) {
+      const drain = this.activeDrain ??= this.drainWriteQueue()
+      try {
+        await drain
+      } finally {
+        if (this.activeDrain === drain) this.activeDrain = null
+      }
     }
-    // Drain anything remaining in the queues
-    await this.drainWriteQueue()
 
     // Wait for non-queue tracked operations (e.g. removeMessageByUuid)
     if (this.pendingWriteCount === 0) {

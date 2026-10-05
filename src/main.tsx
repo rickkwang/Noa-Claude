@@ -4042,6 +4042,10 @@ async function run(): Promise<CommanderCommand> {
     } = await import('./cli/handlers/bgCli.js');
     await logsHandler(id);
   });
+  program.command('reply <id> <message>').description('Send a text reply to a background session without opening it').action(async (id: string, message: string) => {
+    const { replyHandler } = await import('./cli/handlers/bgCli.js');
+    await replyHandler(id, message);
+  });
   program.command('stop <id>').alias('kill').description('Stop a background session; its transcript is kept').action(async (id: string) => {
     const {
       stopHandler

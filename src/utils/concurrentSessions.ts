@@ -1,11 +1,14 @@
-import { chmod, mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises'
+import { randomUUID } from 'crypto'
+import { chmod, mkdir, readdir, readFile, rename, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import {
   getOriginalCwd,
   getSessionId,
   onSessionSwitch,
 } from '../bootstrap/state.js'
-import { isBgSession } from './background/bgJob.js'
+import { getBgJobShort, isBgSession } from './background/bgJob.js'
+import { patchJob } from './background/jobs.js'
+import { processBirth } from './background/processIdentity.js'
 import { registerCleanup } from './cleanupRegistry.js'
 import { logForDebugging } from './debug.js'
 import { getClaudeConfigHomeDir } from './envUtils.js'
@@ -58,6 +61,7 @@ export async function registerSession(): Promise<boolean> {
         sessionId: getSessionId(),
         cwd: getOriginalCwd(),
         startedAt: Date.now(),
+        processStartedAt: await processBirth(process.pid),
         kind,
         entrypoint: process.env.CLAUDE_CODE_ENTRYPOINT,
       }),
@@ -67,6 +71,8 @@ export async function registerSession(): Promise<boolean> {
     // reads the wrong transcript.
     onSessionSwitch(id => {
       void updatePidFile({ sessionId: id })
+      const short = getBgJobShort()
+      if (short) void patchJob(short, { sessionId: id }).catch(() => {})
     })
     return true
   } catch (e) {
@@ -80,19 +86,24 @@ export async function registerSession(): Promise<boolean> {
  * can surface it. Best-effort: silently no-op if name is falsy, the
  * file doesn't exist (session not registered), or read/write fails.
  */
-async function updatePidFile(patch: Record<string, unknown>): Promise<void> {
-  const pidFile = join(getSessionsDir(), `${process.pid}.json`)
-  try {
-    const data = jsonParse(await readFile(pidFile, 'utf8')) as Record<
-      string,
-      unknown
-    >
-    await writeFile(pidFile, jsonStringify({ ...data, ...patch }))
-  } catch (e) {
-    logForDebugging(
-      `[concurrentSessions] updatePidFile failed: ${errorMessage(e)}`,
-    )
+let pidUpdateChain = Promise.resolve()
+
+function updatePidFile(patch: Record<string, unknown>): Promise<void> {
+  const run = async (): Promise<void> => {
+    const pidFile = join(getSessionsDir(), `${process.pid}.json`)
+    const temp = `${pidFile}.${randomUUID()}.tmp`
+    try {
+      const data = jsonParse(await readFile(pidFile, 'utf8')) as Record<string, unknown>
+      await writeFile(temp, jsonStringify({ ...data, ...patch }), { mode: 0o600 })
+      await rename(temp, pidFile)
+    } catch (e) {
+      logForDebugging(`[concurrentSessions] updatePidFile failed: ${errorMessage(e)}`)
+    } finally {
+      await unlink(temp).catch(() => {})
+    }
   }
+  pidUpdateChain = pidUpdateChain.then(run, run)
+  return pidUpdateChain
 }
 
 export async function updateSessionName(
@@ -119,12 +130,11 @@ export async function updateSessionBridgeId(
  * status-change effect — a dropped write just means ps falls back to
  * transcript-tail derivation for one refresh.
  */
-export async function updateSessionActivity(_patch: {
+export async function updateSessionActivity(patch: {
   status?: SessionStatus
   waitingFor?: string
 }): Promise<void> {
-  // BG_SESSIONS is not buildable in this fork — `claude ps` never ships,
-  // so activity tracking is intentionally a no-op.
+  await updatePidFile({ ...patch, updatedAt: Date.now() })
 }
 
 /**

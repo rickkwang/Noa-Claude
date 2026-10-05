@@ -20,6 +20,7 @@ bun run smoke:engine      # engine smoke (no live API); `:live` needs ANTHROPIC_
 bun run e2e:loop          # compiled CLI loop/transport E2E against a local scripted API
 bun run e2e:bare          # compiled CLI `--bare` request shape + tool loop against a local scripted API
 bun run e2e:goal          # source query/tool/evaluator integration for async goal boundaries
+bun run e2e:background    # query/queue/transcript pipeline + compiled tmux/PTY replies and failure UI; requires tmux
 bun run smoke:perf        # startup/perf smoke
 bun run verify:ports      # byte-diff pinned prompt ports vs. an upstream binary (manual; skips without one)
 bun run scan:pr-intent    # fail PR diffs with suspicious links/downloads

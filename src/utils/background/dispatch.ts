@@ -19,6 +19,7 @@ import {
   newJobShort,
   patchJob,
   readHostPid,
+  readHostedSessionHint,
   writeJob,
   type JobRecord,
 } from './jobs.js'
@@ -41,7 +42,7 @@ export function selfCommand(): string[] {
   return compiled ? [process.execPath] : [process.execPath, script]
 }
 
-function spawnHost(short: string, cwd: string, sessionArgs: string[]): void {
+async function spawnHost(short: string, cwd: string, sessionArgs: string[]): Promise<void> {
   const cols = process.stdout.columns || 120
   const rows = process.stdout.rows || 40
   const self = selfCommand()
@@ -62,11 +63,19 @@ function spawnHost(short: string, cwd: string, sessionArgs: string[]): void {
       cwd,
       detached: true,
       stdio: 'ignore',
-      env: { ...process.env, [BG_JOB_ENV]: short },
+      env: { ...process.env, CLAUDE_CODE_PRODUCT_DIR: getClaudeConfigHomeDir(), CLAUDE_CONFIG_DIR: getClaudeConfigHomeDir(), [BG_JOB_ENV]: short },
     },
   )
-  child.unref()
-  if (!child.pid) throw new Error('failed to start background session')
+  try {
+    await new Promise<void>((resolve, reject) => {
+      child.once('error', reject)
+      child.once('spawn', resolve)
+    })
+    child.unref()
+  } catch (e) {
+    await patchJob(short, { state: 'failed', tempo: 'idle', exitCode: 1, needs: undefined, detail: `failed to start: ${e instanceof Error ? e.message : String(e)}`.slice(0, 200) }).catch(() => {})
+    throw e
+  }
 }
 
 /**
@@ -160,7 +169,7 @@ export async function dispatchJob(opts: DispatchOptions): Promise<string> {
   if (opts.beforeStart) {
     await Promise.race([opts.beforeStart(sessionId).catch(() => {}), new Promise(r => setTimeout(r, 2000))])
   }
-  spawnHost(short, opts.cwd, args)
+  await spawnHost(short, opts.cwd, args)
   return short
 }
 
@@ -177,21 +186,22 @@ async function acquireSpawnLock(short: string): Promise<(() => void) | null> {
   const lock = join(getJobDir(short), 'spawn.lock')
   const deadline = Date.now() + 10_000
   for (;;) {
+    if (Date.now() >= deadline) return null
     try {
       await mkdir(lock)
       return () => {
         rm(lock, { recursive: true, force: true }).catch(() => {})
       }
-    } catch {
+    } catch (e) {
+      if ((e as { code?: string }).code !== 'EEXIST') throw e
       let stale = false
       try {
         stale = Date.now() - (await stat(lock)).mtimeMs > SPAWN_LOCK_STALE_MS
       } catch {
-        // lock vanished between attempts: loop and try again
-        continue
+        // The holder may have released it; keep the normal retry backoff.
       }
       if (stale) {
-        await rm(lock, { recursive: true, force: true }).catch(() => {})
+        await rm(lock, { recursive: true, force: true })
         continue
       }
       if (Date.now() >= deadline) return null
@@ -221,12 +231,16 @@ export async function reviveJob(job: Job): Promise<void> {
   if (!release) return
   try {
     // The process we waited on for the lock may have spawned the host.
-    const pid = await readHostPid(job.short)
-    if (pid !== undefined && isProcessRunning(pid)) return
+    const hostPid = await readHostPid(job.short)
+    if (hostPid !== undefined && isProcessRunning(hostPid)) return
+    const sessionPid = await readHostedSessionHint(job.short)
+    if (sessionPid !== undefined && isProcessRunning(sessionPid)) {
+      throw new Error(`this session is still running (pid ${sessionPid}) but its background host is disconnected — stop it before restarting`)
+    }
     // A live interactive session holding this transcript would make two
     // writers on it.
     const holder = (await readAllSessions()).find(
-      s => s.alive && s.kind !== 'bg' && s.sessionId === job.sessionId,
+      s => s.alive && s.sessionId === job.sessionId,
     )
     if (holder) {
       throw new Error(
@@ -240,7 +254,7 @@ export async function reviveJob(job: Job): Promise<void> {
       job.launchArgs && !transcriptExists(job.sessionId)
         ? job.launchArgs
         : [...job.respawnFlags, '--resume', job.sessionId]
-    spawnHost(job.short, job.cwd, args)
+    await spawnHost(job.short, job.cwd, args)
     // Hold the lock until the new host has recorded its pid: released any
     // earlier, the next holder finds no live host and spawns a second one.
     for (let i = 0; i < 100; i++) {

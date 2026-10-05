@@ -4,6 +4,7 @@
  * session; typing a task and pressing enter starts a new one.
  */
 import { basename } from 'path';
+import stripAnsi from 'strip-ansi';
 import * as React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDoublePress } from '../../hooks/useDoublePress.js';
@@ -13,9 +14,11 @@ import { AlternateScreen } from '../../ink/components/AlternateScreen.js';
 import { useDeclaredCursor } from '../../ink/hooks/use-declared-cursor.js';
 import instances from '../../ink/instances.js';
 import { stringWidth } from '../../ink/stringWidth.js';
-import { attachToJob } from '../../utils/background/attach.js';
+import { attachToJob, readJobOutput } from '../../utils/background/attach.js';
 import { dispatchJob } from '../../utils/background/dispatch.js';
 import { ensureHost } from '../../utils/background/host.js';
+import { queueJobReply } from '../../utils/background/replies.js';
+import { DETACH_SEQUENCE } from '../../utils/background/ptyProtocol.js';
 import { deleteJob, IDLE_DETAIL, IDLE_NEEDS, type Job, listJobs, patchJob, readJob, stopJob } from '../../utils/background/jobs.js';
 import { getLogoDisplayData } from '../../utils/logoV2Utils.js';
 import { getModeColor, permissionModeFromString, permissionModeIndicator, permissionModeSymbol, type PermissionMode } from '../../utils/permissions/PermissionMode.js';
@@ -42,6 +45,8 @@ const HELP: Array<[string, string]> = [
   ['enter / →', 'open the selected session (← in it comes back here)'],
   ['↑ ↓', 'select'],
   ['type + enter', 'start a new session with that task'],
+  ['space', 'preview the selected session and reply without opening it'],
+  ['ctrl+s', 'send the draft to the selected session'],
   ['ctrl+x', 'stop the selected session, again to delete it'],
   ['ctrl+r', 'rename the selected session'],
   ['esc', 'clear the draft, return to the moved conversation, or quit'],
@@ -154,12 +159,14 @@ export function FleetView({
   const [selected, setSelected] = useState<string | undefined>(originShort);
   const [input, setInput] = useState('');
   const [hint, setHint] = useState<string | undefined>();
+  const [peek, setPeek] = useState<{ job: Job; output: string; draft: string; sending?: boolean; error?: string }>();
   const [deleteArmed, setDeleteArmed] = useState<{ short: string; justKilled: boolean } | undefined>();
   const [helpOpen, setHelpOpen] = useState(false);
   // ctrl+r: the name being typed for a session, edited in its row.
   const [renaming, setRenaming] = useState<{ short: string; draft: string; taken?: boolean } | undefined>();
   const [now, setNow] = useState(Date.now());
   const attachingRef = useRef(false);
+  const replySendingRef = useRef(false);
   // esc / ctrl+c while a session is still being opened: don't attach.
   const attachCancelledRef = useRef(false);
   const [exitPending, setExitPending] = useState(false);
@@ -257,6 +264,15 @@ export function FleetView({
     }
   }, [cwd, respawnFlags, refresh]);
 
+  const sendReply = useCallback(async (job: Job, text: string, onSaved: () => void): Promise<void> => {
+    await queueJobReply(job.short, text);
+    onSaved();
+    const current = (await listJobs()).find(j => j.short === job.short);
+    if (!current || (!current.alive && !current.sessionPid && !(await ensureHost(current)))) throw new Error('Reply saved; it will be delivered when this session resumes');
+    setHint(`Reply queued for ${job.name ?? job.short}`);
+    await refresh();
+  }, [refresh]);
+
   useInput((char, key) => {
     if (attachingRef.current) {
       if (key.escape || key.ctrl && char === 'c') attachCancelledRef.current = true;
@@ -270,6 +286,20 @@ export function FleetView({
       selectedRef.current = short;
       setSelected(short);
     };
+    if (peek) {
+      if (key.escape || key.ctrl && char === 'c') setPeek(undefined);
+      else if (!peek.sending && key.return && peek.draft.trim()) {
+        const sending = { ...peek, sending: true, error: undefined };
+        let saved = false;
+        setPeek(sending);
+        void sendReply(peek.job, peek.draft, () => { saved = true; }).then(
+          () => setPeek(current => current === sending ? undefined : current),
+          e => setPeek(current => current === sending ? { ...current, draft: saved ? '' : current.draft, sending: false, error: String(e) } : current)
+        );
+      } else if (!peek.sending && (key.backspace || key.delete)) setPeek({ ...peek, draft: peek.draft.slice(0, -1) });
+      else if (!peek.sending && char && !key.ctrl && !key.meta && !key.tab) setPeek({ ...peek, draft: peek.draft + char.replace(/[\r\n]+/g, ' ') });
+      return;
+    }
     if (renaming) {
       if (key.escape || key.ctrl && char === 'c') {
         setRenaming(undefined);
@@ -337,15 +367,16 @@ export function FleetView({
       if (!selectedJob) return;
       if (deleteArmed?.short === selectedJob.short) {
         setDeleteArmed(undefined);
-        void deleteJob(selectedJob).then(refresh);
+        void deleteJob(selectedJob).then(refresh).catch(e => setHint(`Couldn't remove session: ${e instanceof Error ? e.message : String(e)}`));
         return;
       }
-      if (selectedJob.alive) {
+      if (selectedJob.alive || selectedJob.sessionPid) {
         const job = selectedJob;
-        void stopJob(job).then(() => {
-          setDeleteArmed({ short: job.short, justKilled: true });
+        void stopJob(job).then(stopped => {
+          if (stopped) setDeleteArmed({ short: job.short, justKilled: true });
+          else setHint("Couldn't stop session: its process is still running or its identity could not be verified.");
           return refresh();
-        });
+        }).catch(e => setHint(`Couldn't stop session: ${e instanceof Error ? e.message : String(e)}`));
         return;
       }
       setDeleteArmed({ short: selectedJob.short, justKilled: false });
@@ -354,6 +385,22 @@ export function FleetView({
     if (deleteArmed) setDeleteArmed(undefined);
     if (char === '?' && !input) {
       setHelpOpen(v => !v);
+      return;
+    }
+    if (char === ' ' && !input && selectedJob) {
+      const job = selectedJob;
+      setPeek({ job, output: job.output?.result ?? job.detail, draft: '' });
+      void readJobOutput(job.short).then(output => {
+        if (output !== null) setPeek(current => current?.job.short === job.short && !current.sending ? { ...current, output: stripAnsi(output.split(DETACH_SEQUENCE).join('')).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, '').slice(-10_000) } : current);
+      });
+      return;
+    }
+    if (key.ctrl && char === 's' && input.trim() && selectedJob) {
+      if (replySendingRef.current) return;
+      const text = input;
+      replySendingRef.current = true;
+      void sendReply(selectedJob, text, () => setInput(current => current === text ? '' : current))
+        .catch(e => setHint(String(e))).finally(() => { replySendingRef.current = false; });
       return;
     }
     // ↑/↓ wrap around the list and clear a stale hint.
@@ -397,7 +444,7 @@ export function FleetView({
   const nativeCursor = useMemo(() => isNativeCursorEnabled(), []);
   const cursorRef = useDeclaredCursor({
     line: 0,
-    column: Math.min(stringWidth(input), Math.max(0, columns - 6)),
+    column: Math.min(stringWidth(peek?.draft ?? input), Math.max(0, columns - 6)),
     active: true
   });
 
@@ -448,6 +495,20 @@ export function FleetView({
     }
   }
 
+  if (peek) return <AlternateScreen mouseTracking={false}>
+    <Box flexDirection="column" height={rows}>
+      <Text bold>{peek.job.name ?? peek.job.short}</Text>
+      <Text dimColor>{peek.job.state} · {peek.job.cwd}</Text>
+      <Box flexDirection="column" flexGrow={1} marginTop={1}>
+        {peek.output.split('\n').slice(-Math.max(1, rows - 7)).map((line, i) => <Text key={i} wrap="truncate">{line}</Text>)}
+      </Box>
+      {peek.error && <Text color="error" wrap="truncate">{peek.error}</Text>}
+      <Box borderStyle="round" borderLeft={false} borderRight={false} borderDimColor>
+        <Text>❯ </Text><Box ref={cursorRef} flexGrow={1}><Text wrap="truncate-start">{peek.draft || 'write a reply'}{!nativeCursor && <Text inverse> </Text>}</Text></Box>
+      </Box>
+      <Text dimColor>{peek.sending ? 'Sending…' : 'enter sends a reply · esc returns to sessions'}</Text>
+    </Box>
+  </AlternateScreen>;
   return <AlternateScreen mouseTracking={false}>
       <Box flexDirection="column" height={rows}>
         <Box gap={2} marginTop={1} marginBottom={1}>
