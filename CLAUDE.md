@@ -23,6 +23,7 @@ bun run e2e:goal          # source query/tool/evaluator integration for async go
 bun run e2e:background    # query/queue/transcript pipeline + compiled tmux/PTY replies and failure UI; requires tmux
 bun run smoke:perf        # startup/perf smoke
 bun run verify:ports      # byte-diff pinned prompt ports vs. an upstream binary (manual; skips without one)
+bun run verify:harness    # black-box recovery/tool-loop parity vs. an upstream binary on a scripted API (manual; skips without one; needs compile)
 bun run scan:pr-intent    # fail PR diffs with suspicious links/downloads
 ```
 
