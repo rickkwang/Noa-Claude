@@ -305,7 +305,10 @@ export function getLauncherBootstrapCode() {
   // machine's home directory.
   return `
 if (import.meta.main) {
+  const versionOnly = process.argv.length === 3 && ['--version', '-v', '-V'].includes(process.argv[2]);
+  if (!versionOnly) {
 ${getLauncherEnvBootstrapCode()}
+  }
   globalThis.MACRO = ${JSON.stringify(LAUNCHER_MACRO, null, 2)};
   bootstrapCli().catch(e => {
     console.error('Fatal error:', e);

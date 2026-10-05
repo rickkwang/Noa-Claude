@@ -54,8 +54,8 @@ process.on('uncaughtException', (error) => {
 });
 
 try {
-  const m = await import('./src/main.tsx');
-  const result = m.main();
+  const m = await import('./src/entrypoints/cli.tsx');
+  const result = m.bootstrapCli();
   if (result instanceof Promise) {
     result.then(() => {
       if (launcherDebugEnabled) {
