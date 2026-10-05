@@ -55,7 +55,6 @@ import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
 import { isAutoMemFile } from '../../utils/memoryFileDetection.js'
 import { createUserMessage } from '../../utils/messages.js'
-import { getCanonicalName, getMainLoopModel } from '../../utils/model/model.js'
 import { isDirectFirstParty } from '../../utils/model/providers.js'
 import {
   mapNotebookCellsToToolResult,
@@ -597,7 +596,7 @@ export const FileReadTool = buildTool({
     }
 
     try {
-      const result = await callInner(
+      return await callInner(
         file_path,
         fullFilePath,
         fullFilePath,
@@ -611,10 +610,6 @@ export const FileReadTool = buildTool({
         context,
         parentMessage?.message.id,
       )
-      if (result.data.type === 'text') {
-        fileReadMitigations.set(result.data, shouldIncludeFileReadMitigation(parentMessage?.message.model ?? context.options?.mainLoopModel))
-      }
-      return result
     } catch (error) {
       // Handle file-not-found: suggest similar files
       const code = getErrnoCode(error)
@@ -706,7 +701,7 @@ export const FileReadTool = buildTool({
           content =
             memoryFileFreshnessPrefix(data) +
             formatFileLines(data.file) +
-            ((fileReadMitigations.get(data) ?? shouldIncludeFileReadMitigation())
+            (shouldIncludeFileReadMitigation()
               ? CYBER_RISK_MITIGATION_REMINDER
               : '')
         } else {
@@ -739,23 +734,11 @@ function formatFileLines(file: { content: string; startLine: number }): string {
 export const CYBER_RISK_MITIGATION_REMINDER =
   '\n\n<system-reminder>\nWhenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.\n</system-reminder>\n'
 
-// Models where cyber risk mitigation should be skipped
-const MITIGATION_EXEMPT_MODELS = new Set([
-  'claude-opus-4-6',
-  'claude-opus-4-7',
-  'claude-opus-4-8',
-  'claude-opus-5',
-  'claude-opus-5-5',
-  'claude-sonnet-5',
-  'claude-sonnet-5-5',
-  'claude-fable-5',
-  'claude-fable-5-1',
-])
-
-const fileReadMitigations = new WeakMap<object, boolean>()
-
-function shouldIncludeFileReadMitigation(model = getMainLoopModel()): boolean {
-  return !isDirectFirstParty() || !MITIGATION_EXEMPT_MODELS.has(getCanonicalName(model))
+// Official CC no longer sends this reminder; first-party requests rely on
+// server-side safeguards. Other providers keep it, since a configured model id
+// there proves nothing about the model behind it.
+function shouldIncludeFileReadMitigation(): boolean {
+  return !isDirectFirstParty()
 }
 
 /**
