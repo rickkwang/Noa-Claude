@@ -131,6 +131,50 @@ describe('catastrophic removals stay bypass-immune', () => {
     expect(result.decisionReason?.type).not.toBe('safetyCheck')
   })
 
+  // A wrapper, eval or `sh -c` used to carry the removal past the guard: the
+  // ordinary check never strips sudo, and `sudo -u root` read `root` as the
+  // command, so an allow rule ran these without a prompt in every mode.
+  test.each([
+    'sudo rm -rf /',
+    'sudo -u root rm -rf /',
+    'sudo -u root rm -rf $HOME',
+    'doas -u root rm -rf /',
+    'env -u FOO rm -rf /',
+    'eval rm -rf /',
+    'bash -c "rm -rf /"',
+    "sh -c 'rm -rf /'",
+    'find $HOME -delete',
+    'find / -xdev -delete',
+    'sudo find $HOME -mindepth 1 -delete',
+    // Actions that print instead of filter, and global options before the path.
+    'find $HOME -print -delete',
+    'find $HOME -true -delete',
+    'find -L $HOME -delete',
+    'find -H / -delete',
+    'find -O3 / -delete',
+    'find -D tree $HOME -delete',
+  ])('%s cannot hide the removal behind a wrapper', async command => {
+    const result = await decide(command, ['Bash(rm:*)', 'Bash(sudo:*)', 'Bash(doas:*)', 'Bash(env:*)', 'Bash(find:*)'])
+    expect(result.behavior).toBe('ask')
+    expect(result.decisionReason?.type).toBe('safetyCheck')
+  })
+
+  // Expansions that cannot reach a critical path: `$(pwd)/build` names a real
+  // directory, `${X:?}` aborts the shell instead of expanding to nothing, and a
+  // filtered `find -delete` only removes what matches.
+  test.each([
+    ['rm -rf "$(pwd)/build"', ['Bash(rm:*)']],
+    ['rm -rf $(git rev-parse --show-toplevel)/dist', ['Bash(rm:*)']],
+    ['rm -rf "${OUT_DIR:?}/dist"', ['Bash(rm:*)']],
+    ['sudo rm -rf ./build', ['Bash(sudo:*)']],
+    ["find . -name '*.o' -delete", ['Bash(find:*)']],
+    ['find / -name x -delete', ['Bash(find:*)']],
+    ['find -L . -name "*.o" -print -delete', ['Bash(find:*)']],
+  ])('%s is not a catastrophic removal', async (command, rules) => {
+    const result = await decide(command, rules)
+    expect(result.decisionReason?.type).not.toBe('safetyCheck')
+  })
+
   // A removal the shell would never run is text, not a command. Reading it as
   // one turned `git commit -m "drop (rm -rf /) from docs"` into a prompt.
   test.each([

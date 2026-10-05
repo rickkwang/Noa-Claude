@@ -96,6 +96,7 @@ function checkDangerousRemovalPaths(
   args: string[],
   cwd: string,
   context: ToolPermissionContext,
+  label: string = command,
 ): PermissionResult {
   // Both the given and the symlink-resolved forms (/tmp vs /private/tmp).
   const workspaceDirs = [cwd, ...allWorkingDirectories(context)].flatMap(dir =>
@@ -118,7 +119,7 @@ function checkDangerousRemovalPaths(
     if (isDangerousRemovalPath(absolutePath)) {
       return {
         behavior: 'ask',
-        message: `Dangerous ${command} operation detected: '${absolutePath}'\n\nThis command would remove a critical system directory. This requires explicit approval and cannot be auto-allowed by permission rules.`,
+        message: `Dangerous ${label} operation detected: '${absolutePath}'\n\nThis command would remove a critical system directory. This requires explicit approval and cannot be auto-allowed by permission rules.`,
         decisionReason: {
           // safetyCheck, not 'other': hasPermissionsToUseTool step 1g holds
           // safety checks back in bypassPermissions mode, where an 'other' ask
@@ -127,7 +128,7 @@ function checkDangerousRemovalPaths(
           // for catastrophic deletions.
           type: 'safetyCheck',
           classifierApprovable: true,
-          reason: `Dangerous ${command} operation on critical path: ${absolutePath}`,
+          reason: `Dangerous ${label} operation on critical path: ${absolutePath}`,
         },
         // Don't provide suggestions - we don't want to encourage saving dangerous commands
         suggestions: [],
@@ -147,11 +148,11 @@ function checkDangerousRemovalPaths(
     ) {
       return {
         behavior: 'ask',
-        message: `Dangerous ${command} operation detected: '${absolutePath}'\n\nThis command would remove a workspace directory (the working directory, an additional working directory, or one of their parent directories). This requires explicit approval and cannot be auto-allowed by permission rules.`,
+        message: `Dangerous ${label} operation detected: '${absolutePath}'\n\nThis command would remove a workspace directory (the working directory, an additional working directory, or one of their parent directories). This requires explicit approval and cannot be auto-allowed by permission rules.`,
         decisionReason: {
           type: 'safetyCheck',
           classifierApprovable: true,
-          reason: `Dangerous ${command} operation on working directory or its ancestor: ${absolutePath}`,
+          reason: `Dangerous ${label} operation on working directory or its ancestor: ${absolutePath}`,
         },
         suggestions: [],
       }
@@ -316,8 +317,18 @@ const SHELL_KEYWORDS = new Set([
   'if', 'then', 'else', 'elif', 'fi', 'do', 'done', 'while', 'until', '!', '{', '}',
 ])
 const REMOVAL_WRAPPERS = new Set([
-  'sudo', 'command', 'builtin', 'exec', 'env', 'nohup', 'time', 'nice', 'noglob', 'xargs', 'timeout', 'stdbuf',
+  'sudo', 'doas', 'command', 'builtin', 'exec', 'env', 'nohup', 'time', 'nice', 'noglob', 'xargs', 'timeout', 'stdbuf',
 ])
+/** Wrapper options that take the next word as their value (`sudo -u root rm`). */
+const WRAPPER_VALUE_OPTIONS: Record<string, Set<string>> = {
+  sudo: new Set(['-u', '-g', '-C', '-D', '-h', '-p', '-R', '-T', '-U', '--user', '--group', '--host', '--prompt', '--close-from', '--chdir', '--role', '--type', '--other-user']),
+  doas: new Set(['-u', '-C']),
+  xargs: new Set(['-n', '-P', '-I', '-L', '-s', '-d', '-E', '-a', '--arg-file', '--max-args', '--max-procs', '--delimiter']),
+  env: new Set(['-u', '-C', '-P', '--unset', '--chdir']),
+  timeout: new Set(['-s', '--signal', '-k', '--kill-after']),
+  nice: new Set(['-n', '--adjustment']),
+  exec: new Set(['-a']),
+}
 const DECLARATION_BUILTINS = new Set([
   'export', 'local', 'declare', 'typeset', 'readonly',
 ])
@@ -357,7 +368,7 @@ export function checkDangerousRemovalThroughExpansion(
   vars: Map<string, string> = new Map(),
   depth = 0,
 ): PermissionResult | null {
-  if (depth > 4 || !/\brm(?:dir)?\b/.test(command) || !/[$`]/.test(command)) {
+  if (depth > 4 || !/(?:\b|-[i0v]*S)(?:rm|rmdir|find)\b/.test(command)) {
     return null
   }
   let found: PermissionResult | null = null
@@ -413,9 +424,35 @@ export function checkDangerousRemovalThroughExpansion(
       if (bare) assign(cmd[i]!)
       i++
     }
-    while (i < cmd.length && REMOVAL_WRAPPERS.has(cmd[i]!.text)) {
+    const wrapped = i < cmd.length && REMOVAL_WRAPPERS.has(cmd[i]!.text.replace(/^.*\//, ''))
+    while (i < cmd.length && REMOVAL_WRAPPERS.has(cmd[i]!.text.replace(/^.*\//, ''))) {
+      const wrapper = cmd[i]!.text.replace(/^.*\//, '')
+      const valued = WRAPPER_VALUE_OPTIONS[wrapper]
       i++
-      while (i < cmd.length && /^-|^\d+[smhd]?$|=/.test(cmd[i]!.text)) i++
+      while (i < cmd.length && /^-|^\d+[smhd]?$|=/.test(cmd[i]!.text)) {
+        const option = cmd[i]!.text
+        if (option === '--') { i++; break }
+        if (wrapper === 'env' && /^(?:-[i0v]*S|--split-string(?:=|$))/.test(option)) {
+          const attached = option.startsWith('--') ? option.slice('--split-string'.length).replace(/^=/, '') : option.slice(option.indexOf('S') + 1)
+          const split = attached || cmd[++i]?.text
+          if (split !== undefined) {
+            const tail = cmd.slice(i + 1).map(w => "'" + w.text.replaceAll("'", "'\\''") + "'")
+            recurse([split.replaceAll('\\_', ' '), ...tail].join(' '))
+          }
+          return
+        }
+        let takesNext = valued?.has(option) ?? false
+        if (/^-[^-]/.test(option)) {
+          for (let j = 1; j < option.length; j++) {
+            if (valued?.has(`-${option[j]}`)) {
+              takesNext = j === option.length - 1
+              break
+            }
+          }
+        }
+        if (takesNext) i++
+        i++
+      }
     }
     const base = cmd[i]?.text.replace(/^.*\//, '')
     const args = cmd.slice(i + 1)
@@ -431,8 +468,41 @@ export function checkDangerousRemovalThroughExpansion(
     } else if (/^(?:ba|z|da|k)?sh$/.test(base)) {
       const c = args.findIndex(a => /^-[a-z]*c$/.test(a.text))
       if (c !== -1 && args[c + 1]) recurse(args[c + 1]!.text)
+    } else if (base === 'find') {
+      // find's start paths come before the first expression. A full-match
+      // glob does not narrow deletion; omitted paths default to cwd.
+      // Global options (-H -L -P -O<n> -D <debug>) precede the start paths.
+      let first = 0
+      while (first < args.length && /^-(?:[HLP]|O\d*|D)$/.test(args[first]!.text)) {
+        first += args[first]!.text === '-D' ? 2 : 1
+      }
+      const rest = args.slice(first)
+      const start = rest.findIndex(a => /^[-(!]/.test(a.text))
+      const expression = start === -1 ? [] : rest.slice(start).map(a => a.text)
+      for (let j = 0; j + 1 < expression.length; j++) {
+        if (/^-(?:i?name|i?path)$/.test(expression[j]!) && /^\*+$/.test(expression[j + 1]!)) {
+          expression.splice(j, 2, '-true')
+        }
+      }
+      if (!expression.includes('-delete')) return
+      // OR/NOT can put -delete on an unrestricted branch. Only simple
+      // narrowing tests are exempt from the critical-root check.
+      if (
+        !expression.some(t => /^(?:-o|-or|!|-not)$/.test(t)) &&
+        !expression.every(t => /^(?:-delete|-depth|-xdev|-mount|-(?:min|max)depth|-print0?|-ls|-true|-a|-and|[()]|\d+)$/.test(t))
+      ) return
+      const rootWords = start === -1 ? rest : rest.slice(0, start)
+      if (rootWords.some(a => a.text.includes(CMDSUB))) {
+        found ??= removalSubstitutionAsk('rm')
+        return
+      }
+      const roots = rootWords.length ? rootWords.map(a => a.text) : ['.']
+      const result = checkDangerousRemovalPaths('rm', ['-r', '--', ...roots], cwd, toolPermissionContext, 'find -delete')
+      if (result.behavior !== 'passthrough') found ??= result
     } else if (base === 'rm' || base === 'rmdir') {
-      if (!args.some(a => a.expanded)) return
+      // A plain literal removal belongs to the ordinary check; one reached
+      // through a wrapper, eval or sh -c never gets there.
+      if (!args.some(a => a.expanded) && !wrapped && depth === 0) return
       const texts = args.map(a => a.text)
       const dashDash = texts.indexOf('--')
       const flags = dashDash === -1 ? texts : texts.slice(0, dashDash)
@@ -448,7 +518,9 @@ export function checkDangerousRemovalThroughExpansion(
       }
       const result = checkDangerousRemovalPaths(
         base,
-        texts.map(a => a.replaceAll(CMDSUB, '')).filter(a => a !== ''),
+        texts
+          .map(a => a.replace(/^__CMDSUB__(?=\/[^/*.])/, UNKNOWN_VALUE).replaceAll(CMDSUB, ''))
+          .filter(a => a !== ''),
         cwd,
         toolPermissionContext,
       )
@@ -481,7 +553,9 @@ export function checkDangerousRemovalThroughExpansion(
           ? (m[3] ?? '')
           : m?.[2] === '+'
             ? ''
-            : value
+            : m?.[2] === '?' && value === ''
+              ? UNKNOWN_VALUE // `${X:?}` stops the shell rather than expand to nothing
+              : value
       w.expanded = true
       return close
     }
