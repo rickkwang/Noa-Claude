@@ -794,6 +794,8 @@ class Project {
     if (this.writeQueues.size === 0) return
     const fs = getFsImplementation()
     const drained: string[] = []
+    // One unwritable transcript must not hold back the others; report it after.
+    let failure: unknown
     for (const [filePath, queue] of this.writeQueues) {
       if (targetFile !== undefined && filePath !== targetFile) continue
       if (queue.length === 0) {
@@ -822,7 +824,8 @@ class Project {
       } catch (error) {
         this.failedWritePaths.add(filePath)
         this.writeQueues.set(filePath, [...batch.slice(committed), ...queue])
-        throw error
+        failure ??= error
+        continue
       }
       drained.push(filePath)
     }
@@ -837,6 +840,7 @@ class Project {
       clearTimeout(this.flushTimer)
       this.flushTimer = null
     }
+    if (failure !== undefined) throw failure
   }
 
   private syncAppendChunk(
@@ -870,6 +874,8 @@ class Project {
   }
 
   private async drainWriteQueue(): Promise<void> {
+    // One unwritable transcript must not hold back the others; report it after.
+    let failure: unknown
     for (const [filePath, queue] of this.writeQueues) {
       if (queue.length === 0) {
         continue
@@ -913,7 +919,7 @@ class Project {
         // A failed append can leave a partial JSONL line; separate the retry.
         this.failedWritePaths.add(filePath)
         this.writeQueues.set(filePath, [...batch.slice(committed), ...queue])
-        throw error
+        failure ??= error
       }
     }
 
@@ -923,6 +929,7 @@ class Project {
         this.writeQueues.delete(filePath)
       }
     }
+    if (failure !== undefined) throw failure
   }
 
   resetSessionFile(): void {
