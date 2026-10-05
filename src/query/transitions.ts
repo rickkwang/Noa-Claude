@@ -36,6 +36,10 @@ export type Continue =
   // The response was stopped by a refusal before any tool call was
   // dispatched; retry once on the same model with that noted.
   | { reason: 'refusal_retry' }
+  // The stream was cut after output (subagent / non-interactive): ask to resume.
+  | { reason: 'truncated_response_recovery'; attempt: number }
+  // A thinking signature was rejected: resend without thinking blocks.
+  | { reason: 'thinking_signature_retry' }
   // The response had no visible output (thinking only, or nothing); nudge
   // the model once to answer.
   | { reason: 'empty_response_retry' }

@@ -18,7 +18,7 @@ const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'n
 mkdirSync(artifacts, { recursive: true });
 const model = 'claude-sonnet-4-6';
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -107,6 +107,13 @@ const server = createServer(async (req, res) => {
       content = [{ type: 'text', text: 'Calling a tool now.' }]; stop = 'tool_use';
     } else if ((active.case === 'empty' && n === 1) || (active.case === 'alternating' && n <= 8 && n % 2 === 0)) {
       content = [];
+    } else if (active.case === 'truncated' && n === 1) {
+      content = [{ type: 'text', text: 'PARTIAL_' }];
+    } else if (active.case === 'stale-signature' && n === 1) {
+      content = [{ type: 'thinking', thinking: 'plan', signature: 'sig' }, { type: 'tool_use', id: 'toolu_1', name: 'Read', input: { file_path: join(active.dir, 'fixture.txt') } }]; stop = 'tool_use';
+    } else if (active.case === 'stale-signature' && n === 2) {
+      error(400, 'invalid_request_error', 'messages.1.content.0: Invalid `signature` in `thinking` block');
+      return;
     } else if ((active.case === 'refusal' && n === 1) || active.case === 'refusal-repeat') {
       content = [{ type: 'text', text: 'Partial answer.' }]; stop = 'refusal';
     } else if (active.case.startsWith('budget-')) {
@@ -129,6 +136,13 @@ const server = createServer(async (req, res) => {
     const emit = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     emit('message_start', { type: 'message_start', message: { ...msg, content: [], stop_reason: null, usage: {...msg.usage,output_tokens:0} } });
     for (const [index, block] of content.entries()) {
+      if (block.type === 'thinking') {
+        emit('content_block_start', { type: 'content_block_start', index, content_block: { type: 'thinking', thinking: '', signature: '' } });
+        emit('content_block_delta', { type: 'content_block_delta', index, delta: { type: 'thinking_delta', thinking: block.thinking } });
+        emit('content_block_delta', { type: 'content_block_delta', index, delta: { type: 'signature_delta', signature: block.signature } });
+        emit('content_block_stop', { type: 'content_block_stop', index });
+        continue;
+      }
       emit('content_block_start', { type: 'content_block_start', index, content_block: block.type === 'text' ? { type: 'text', text: '' } : { ...block, input: {} } });
       emit('content_block_delta', { type: 'content_block_delta', index, delta: block.type === 'text' ? { type: 'text_delta', text: block.text } : { type: 'input_json_delta', partial_json: JSON.stringify(block.input) } });
       emit('content_block_stop', { type: 'content_block_stop', index });
@@ -136,6 +150,8 @@ const server = createServer(async (req, res) => {
     if (active.case === 'budget-streaming') {
       for (let i = 0; i < 100 && !existsSync(join(active.dir, 'started.txt')); i++) await delay(20);
     }
+    // The connection drops after output: no stop reason, no message_stop.
+    if (active.case === 'truncated' && n === 1) { res.end(); return; }
     emit('message_delta', { type: 'message_delta', delta: { stop_reason: stop, stop_sequence: null }, usage: {output_tokens:msg.usage.output_tokens} });
     emit('message_stop', { type: 'message_stop' });
     res.end();
@@ -279,6 +295,10 @@ try {
             const toolResult = main[1]?.body.messages.at(-1).content.find(b => b.type === 'tool_result');
             assert.equal(toolResult?.is_error, true, 'denial was not reported to the model as an error');
             assert.deepEqual(runResult.result.permission_denials.map(d => d.tool_name), ['Bash']);
+          } else if (scenario === 'stale-signature') {
+            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK'); assert.equal(count, 3);
+            assert.ok(JSON.stringify(active.requests[1].body.messages).includes('"thinking"'), 'fixture never replayed a thinking block');
+            assert.ok(!JSON.stringify(active.requests[2].body.messages).includes('"thinking"'), 'retry still sent the rejected thinking block');
           } else if (scenario === 'hook-block') {
             assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
             assert.equal(existsSync(join(dir, 'hook-ran.txt')), true, 'PreToolUse hook never ran; block path untested');
@@ -287,6 +307,7 @@ try {
             assert.ok(!followUp.includes('LOCAL_FIXTURE_42'), 'Read ran despite the blocking hook');
           } else {
             assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK'); assert.equal(count, 2);
+            if (scenario === 'truncated') assert.ok(JSON.stringify(active.requests[1].body.messages).includes('cut off mid-stream'), 'truncated output was returned as complete');
             if (scenario === 'refusal') assert.ok(JSON.stringify(active.requests[1].body.messages).includes('stopped by a safety classifier'), 'retry did not tell the model why it stopped');
             if (scenario === 'read') assert.ok(JSON.stringify(active.requests[1].body.messages).includes('LOCAL_FIXTURE_42'), 'actual Read result missing');
           }

@@ -122,6 +122,8 @@ export type AssistantMessage = MessageBase & {
   error?: SDKAssistantMessageError
   errorDetails?: string
   isApiErrorMessage?: boolean
+  /** The stream ended after output, without a stop reason: the response above may be incomplete. */
+  truncatedAfterOutput?: boolean
 }
 
 export type ProgressMessage<T = unknown> = MessageBase & {

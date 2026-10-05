@@ -1939,6 +1939,7 @@ async function* queryModel(
   let usage: NonNullableUsage = EMPTY_USAGE
   let costUSD = 0
   let stopReason: BetaStopReason | null = null
+  let sawMessageStop = false
   let didFallBackToNonStreaming = false
   let fallbackMessage: AssistantMessage | undefined
   let maxOutputTokens = 0
@@ -2500,6 +2501,7 @@ async function* queryModel(
             break
           }
           case 'message_stop':
+            sawMessageStop = true
             if (!signal.aborted && partialMessage?.id && stopReason) {
               messageThreadRequest.complete(
                 partialMessage.id,
@@ -2597,6 +2599,17 @@ async function* queryModel(
             'unknown') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
         })
         throw new Error('Stream ended after thinking without a response')
+      }
+
+      // Output arrived, then the connection closed without a stop reason or
+      // message_stop. Say so instead of passing the cut text off as complete.
+      if (!stopReason && !sawMessageStop && !signal.aborted) {
+        const truncated = createAssistantAPIErrorMessage({
+          content: `${API_ERROR_MESSAGE_PREFIX}: Connection lost mid-response. The response above may be incomplete.`,
+          error: 'server_error',
+        })
+        truncated.truncatedAfterOutput = true
+        yield truncated
       }
 
       // Log summary if any stalls occurred during streaming

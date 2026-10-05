@@ -139,6 +139,7 @@ import {
 import { feature } from 'bun:bundle'
 import {
   getCurrentTurnTokenBudget,
+  getSessionId,
   getTurnOutputTokens,
   incrementBudgetContinuationCount,
 } from './bootstrap/state.js'
@@ -211,6 +212,14 @@ function* yieldInterruptionNotice(
  * rules, ye will be punished with an entire day of debugging and hair pulling.
  */
 const MAX_OUTPUT_TOKENS_RECOVERY_LIMIT = 3
+
+const TRUNCATED_RESUME_PROMPT = 'Your response above was cut off mid-stream. Resume directly from where it stops — no apology, no recap. If none of it survived, answer the request from the start.'
+// A subagent delivers only its final message, so it rewrites the whole answer.
+const TRUNCATED_REWRITE_PROMPT = 'Your response above was cut off mid-stream and only your next message is delivered. Write the complete response again from the start — no apology, no mention of the cut-off.'
+const INVALID_THINKING_SIGNATURE = /invalid `?signature`? in `?thinking`? block/i
+// Sessions whose history carries thinking signatures the API rejected (a model
+// switch, proxy or resumed transcript): thinking blocks are stripped from then on.
+const signatureStripSessions = new Set<string>()
 
 /**
  * Is this a max_output_tokens error message? If so, the streaming loop should
@@ -876,6 +885,9 @@ async function* queryLoop(
           let streamingFallbackOccured = false
           queryCheckpoint('query_api_streaming_start')
           toolUseContext = toolUseContext.refreshRuntimeContext?.(toolUseContext) ?? toolUseContext
+          if (signatureStripSessions.has(getSessionId())) {
+            messagesForQuery = stripSignatureBlocks(messagesForQuery)
+          }
           for await (const message of deps.callModel({
             messages: prependUserContext(messagesForQuery, userContext),
             systemPrompt: fullSystemPrompt,
@@ -1576,6 +1588,46 @@ async function* queryLoop(
       // prompt-too-long, auth failure, etc.). The model never produced a
       // real response — hooks evaluating it create a death spiral:
       // error → hook blocking → retry → error → …
+      if (
+        lastMessage?.truncatedAfterOutput &&
+        (toolUseContext.agentId || toolUseContext.options.isNonInteractiveSession) &&
+        maxOutputTokensRecoveryCount < MAX_OUTPUT_TOKENS_RECOVERY_LIMIT
+      ) {
+        const resumeMessage = createUserMessage({
+          content: toolUseContext.agentId ? TRUNCATED_REWRITE_PROMPT : TRUNCATED_RESUME_PROMPT,
+          isMeta: true,
+        })
+        yield resumeMessage
+        state = nextState(state, {
+          messages: [
+            ...messagesForQuery,
+            ...assistantMessages.filter(message => !message.isApiErrorMessage),
+            resumeMessage,
+          ],
+          toolUseContext,
+          autoCompactTracking: tracking,
+          maxOutputTokensRecoveryCount: maxOutputTokensRecoveryCount + 1,
+          transition: { reason: 'truncated_response_recovery', attempt: maxOutputTokensRecoveryCount + 1 },
+        })
+        continue
+      }
+
+      if (
+        lastMessage?.isApiErrorMessage &&
+        !signatureStripSessions.has(getSessionId()) &&
+        INVALID_THINKING_SIGNATURE.test(JSON.stringify(lastMessage.message.content))
+      ) {
+        signatureStripSessions.add(getSessionId())
+        yield { type: 'tombstone' as const, message: lastMessage }
+        state = nextState(state, {
+          messages: stripSignatureBlocks(messagesForQuery),
+          toolUseContext,
+          autoCompactTracking: tracking,
+          transition: { reason: 'thinking_signature_retry' },
+        })
+        continue
+      }
+
       if (lastMessage?.isApiErrorMessage) {
         const goalNotice = goalFailureNotice(goalFailureCategory(lastMessage))
         if (goalNotice) yield goalNotice
