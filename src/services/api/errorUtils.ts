@@ -266,6 +266,12 @@ export function formatAPIError(error: APIError): string {
     return `${error.message} ${cause.message}`
   }
 
+  // The SDK message is "<status> <raw JSON body>"; show the API's own message.
+  const nestedMessage = error.status !== undefined && error.message.includes('{')
+    ? extractNestedErrorMessage(error)
+    : null
+  if (nestedMessage) return `${error.status} ${nestedMessage}`
+
   const sanitizedMessage = sanitizeAPIError(error)
   // Use sanitized message if it's different from the original (i.e., HTML was sanitized)
   return sanitizedMessage !== error.message && sanitizedMessage.length > 0

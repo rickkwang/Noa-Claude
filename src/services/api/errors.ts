@@ -1045,7 +1045,7 @@ function mapAssistantMessageFromError(
 
   if (error instanceof Error) {
     return createAssistantAPIErrorMessage({
-      content: `${API_ERROR_MESSAGE_PREFIX}: ${error.message}`,
+      content: `${API_ERROR_MESSAGE_PREFIX}: ${error instanceof APIError ? formatAPIError(error) : error.message}`,
       error: 'unknown',
     })
   }
