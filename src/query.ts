@@ -685,7 +685,10 @@ async function* queryLoop(
       // evaluator can spend it (see resetGoalAutoContinueForNewTurn).
       resetGoalAutoContinueForNewTurn({
         setAppState: toolUseContext.setAppState,
-        resetWakeCounters: messagesForQuery.findLast(message => message.type === 'user' && !message.toolUseResult)?.isMeta !== true,
+        // Only the user's own prompt: task notifications are not a reply.
+        resetWakeCounters: (prompt => !!prompt && !prompt.isMeta && (prompt.origin as { kind?: string } | undefined)?.kind !== 'task-notification')(
+          messagesForQuery.findLast(message => message.type === 'user' && !message.toolUseResult),
+        ),
       })
       const goal = toolUseContext.getAppState().goal
       if (goal && shouldInjectGoalPrompt(goal)) {
@@ -1607,6 +1610,8 @@ async function* queryLoop(
           content:
             "The model's tool call could not be parsed (retry also failed).",
         })
+        const goalNotice = goalFailureNotice('transient')
+        if (goalNotice) yield goalNotice
         return { reason: 'malformed_tool_use_exhausted' }
       }
 

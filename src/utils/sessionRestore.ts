@@ -471,7 +471,15 @@ function applyGoalMetaMessage(
     })
   }
   if (message.content.startsWith('Goal paused: ')) {
-    return { ...current, status: 'paused', stopReason: 'turn_failed', lastEvaluatorReason: message.content.slice('Goal paused: '.length), retryAt: null, nextCheckInAt: null, updatedAt: now }
+    const reason = message.content.slice('Goal paused: '.length)
+    // Mirrors the notices in goalRuntime.ts; any other text is an evaluator's impossible verdict.
+    const stopReason = reason.startsWith('Unrecoverable ') ? 'unrecoverable_error'
+      : reason.startsWith('Automatic retries') ? 'retry_exhausted'
+      : reason.startsWith('API rate limit') ? 'rate_limit'
+      : reason.startsWith('The turn ended') ? 'turn_failed'
+      : reason.startsWith('No tool use') ? 'no_progress'
+      : 'impossible'
+    return { ...current, status: 'paused', stopReason, lastEvaluatorReason: reason, retryAt: null, nextCheckInAt: null, updatedAt: now }
   }
   const pausedMatch = message.content.match(GOAL_PAUSED_AFTER_REGEX)
   if (pausedMatch) {

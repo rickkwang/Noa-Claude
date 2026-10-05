@@ -33,7 +33,10 @@ export type GoalRuntimeDecision =
 export type GoalEvaluatorAction = 'run' | 'skip'
 
 const MAX_IDLE_CHECK_INS = 3
-const MAX_GOAL_RETRIES = 3
+const GOAL_RETRY_DELAYS_MS = [60_000, 300_000, 900_000]
+const MAX_GOAL_RETRIES = GOAL_RETRY_DELAYS_MS.length
+// A failure that a new user prompt may fix; other paused goals wait for /goal resume.
+const PROMPT_RESUMABLE_STOP_REASONS = new Set(['rate_limit', 'retry_exhausted', 'turn_failed', 'no_progress'])
 const MAX_NO_PROGRESS_TURNS = 3
 
 export function isSameGoal(a: ThreadGoal | undefined, b: ThreadGoal): boolean {
@@ -47,7 +50,9 @@ export function goalFailureCategory(message: Message): ApiFailureCategory {
     case 'authentication_failed': return 'auth'
     case 'billing_error': return 'credit'
     case 'rate_limit': return 'rate_limit'
-    case 'server_error': return 'transient'
+    case 'server_error':
+    case 'max_output_tokens':
+    case 'unknown': return 'transient'
     default: return 'other'
   }
 }
@@ -129,27 +134,25 @@ export function applyGoalTurnFailure({
     if (!isSameGoal(prev.goal, goal) || prev.goal?.status !== 'active') return prev
     const current = normalizeGoal(prev.goal)
     const reset = { retryAt: null, nextCheckInAt: null, backgroundWaitingSince: null }
-    if (category === 'auth' && managedAuth) {
-      notice = createSystemMessage('Goal still active: waiting for the host to restore authentication.', 'warning')
-      return { ...prev, goal: { ...current, ...reset } }
-    }
+    // The host restores managed credentials itself, so retry as for an outage.
+    const kind = category === 'auth' && managedAuth ? 'transient' : category
     const interval = checkInIntervalMs()
-    if (category === 'transient') {
+    if (kind === 'transient') {
       if (isNonInteractiveSession) return prev
       const count = current.retryCount ?? 0
       if (interval && count < MAX_GOAL_RETRIES) {
-        const delay = Math.min(30_000 * 2 ** count, interval)
-        notice = createSystemMessage(`Goal still active: transient API failure; retry ${count + 1}/${MAX_GOAL_RETRIES} in ${Math.ceil(delay / 1000)} seconds.`, 'warning')
+        const delay = Math.min(Math.round(GOAL_RETRY_DELAYS_MS[count]! * (1 + Math.random() * 0.2)), interval)
+        notice = createSystemMessage(`Goal still active: API failure; retry ${count + 1}/${MAX_GOAL_RETRIES} in ${Math.max(1, Math.round(delay / 60_000))} min. Send a message to retry now.`, 'warning')
         return { ...prev, goal: { ...current, ...reset, retryCount: count + 1, retryAt: now + delay } }
       }
     }
-    const fatal = ['auth', 'credit', 'context', 'model'].includes(category)
-    const reason = fatal ? `Unrecoverable ${category} error; fix the cause and use /goal resume.`
-      : category === 'transient' ? 'Automatic retries are exhausted or disabled; use /goal resume.'
-      : category === 'rate_limit' ? 'API rate limit; wait for access to reset, then use /goal resume.'
-      : 'The turn ended without a usable result; use /goal resume after fixing the cause.'
+    const fatal = ['auth', 'credit', 'context', 'model'].includes(kind)
+    const reason = fatal ? `Unrecoverable ${kind} error; fix the cause and use /goal resume.`
+      : kind === 'transient' ? 'Automatic retries are exhausted or disabled; send a message to continue.'
+      : kind === 'rate_limit' ? 'API rate limit; send a message once access resets to continue.'
+      : 'The turn ended without a usable result; send a message to continue.'
     notice = createSystemMessage(`Goal paused: ${reason}`, 'warning')
-    return { ...prev, goal: { ...current, ...reset, status: 'paused', stopReason: fatal ? 'unrecoverable_error' : category === 'rate_limit' ? 'rate_limit' : category === 'transient' ? 'retry_exhausted' : 'turn_failed', lastEvaluatorReason: reason, updatedAt: now } }
+    return { ...prev, goal: { ...current, ...reset, status: 'paused', stopReason: fatal ? 'unrecoverable_error' : kind === 'rate_limit' ? 'rate_limit' : kind === 'transient' ? 'retry_exhausted' : 'turn_failed', lastEvaluatorReason: reason, updatedAt: now } }
   })
   return notice
 }
@@ -217,7 +220,9 @@ Continue working toward the active thread goal. Choose the next concrete action 
 // the counter accumulated for the lifetime of the goal, so a goal with the
 // default cap of 5 stopped auto-continuing forever after its 5th continuation
 // and needed a manual /goal resume. Only 'active' goals reset: a goal already
-// paused at the cap must stay paused until the user resumes it.
+// paused at the cap must stay paused until the user resumes it. A user prompt
+// does resume a goal paused by a failure it may have fixed (see
+// PROMPT_RESUMABLE_STOP_REASONS), as official CC continues on the next message.
 export function resetGoalAutoContinueForNewTurn({
   setAppState,
   resetWakeCounters = true,
@@ -228,6 +233,9 @@ export function resetGoalAutoContinueForNewTurn({
   setAppState(prev => {
     if (!prev.goal) return prev
     const current = normalizeGoal(prev.goal)
+    if (resetWakeCounters && current.status === 'paused' && PROMPT_RESUMABLE_STOP_REASONS.has(current.stopReason ?? '')) {
+      return { ...prev, goal: { ...current, status: 'active', stopReason: null, lastEvaluatorReason: null, autoContinueTurns: 0, idleCheckInCount: 0, retryCount: 0, retryAt: null, noProgressTurns: 0, backgroundWaitingSince: null, nextCheckInAt: null, checkInCount: 0, updatedAt: Date.now() } }
+    }
     if (current.status !== 'active' || (current.autoContinueTurns === 0 && !resetWakeCounters)) {
       return prev
     }
@@ -256,7 +264,7 @@ export function applyGoalRuntimeEvaluation({
 
     const noProgress = madeProgress ? 0 : (current.noProgressTurns ?? 0) + 1
     if (evaluation.impossible || (!evaluation.achieved && noProgress >= MAX_NO_PROGRESS_TURNS)) {
-      const reason = evaluation.impossible ? evaluation.reason : 'No tool use for three evaluated turns; use /goal resume after providing new direction.'
+      const reason = evaluation.impossible ? evaluation.reason : 'No tool use for three evaluated turns; send a message with new direction to continue.'
       decision = { action: 'stop', userNotice: createSystemMessage(`Goal paused: ${reason}`, 'warning') }
       return { ...prev, goal: { ...current, status: 'paused', stopReason: evaluation.impossible ? 'impossible' : 'no_progress', lastEvaluatorReason: reason, retryAt: null, nextCheckInAt: null, updatedAt: now } }
     }

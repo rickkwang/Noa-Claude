@@ -130,8 +130,9 @@ Runtime behavior:
 - when `--verify` is configured, model-requested completion remains pending until the verify command passes and the evaluator approves completion
 - every model completion request remains pending until the independent evaluator confirms it, including goals without `--verify`
 - the evaluator sees running shells and subagents started during the active goal. It can confirm an expected long-running service; unfinished required work defers continuation. Earlier unrelated tasks do not block the goal. Work started during evaluation requires another check; replacing a goal invalidates outstanding evaluations and queued wakeups for it
-- interactive transient API failures retry at most three times; permanent failures and rate limits pause the goal while preserving its objective and evidence
-- three consecutive evaluated turns without tool use pause continuation (a new user prompt resets the count); an impossible verdict also pauses the goal for explicit user action
+- interactive API outages, unclassified API errors, output-limit failures, unreadable tool calls and host-managed sign-in refreshes retry at most three times, after about 1, 5 and 15 minutes; auth, credit, context and model failures pause the goal for `/goal resume` while preserving its objective and evidence
+- a goal paused by a rate limit, exhausted retries, a failed turn or lack of progress continues on the user's next prompt; task notifications do not resume it
+- three consecutive evaluated turns without tool use pause continuation (a new user prompt resets the count); an impossible verdict pauses the goal for `/goal resume`
 - interactive background check-ins start after 30 minutes, back off to 1 hour then 2 hours, and stop after three idle check-ins until a user prompt; `CLAUDE_CODE_GOAL_CHECKIN_MINUTES=0` disables check-ins and automatic retries
 - token usage includes input, output, cache reads, cache writes, and child-agent responses; streaming blocks from the same response are counted once
 - child-agent usage is charged to the goal active at launch; replacing or clearing that goal does not transfer usage to a later goal

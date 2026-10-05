@@ -24,9 +24,9 @@ process.env.CLAUDE_CODE_SIMPLE = '1'
 const { enableConfigs } = await import('../src/utils/config.js')
 const { query } = await import('../src/query.js')
 const { createThreadGoal } = await import('../src/utils/goalState.js')
-const { consumeGoalWake } = await import('../src/utils/goalRuntime.js')
+const { consumeGoalWake, goalFailureCategory, applyGoalTurnFailure } = await import('../src/utils/goalRuntime.js')
 const { getAssistantMessageFromError } = await import('../src/services/api/errors.js')
-const { createAssistantMessage, createUserMessage } = await import('../src/utils/messages.js')
+const { createAssistantMessage, createAssistantAPIErrorMessage, createUserMessage } = await import('../src/utils/messages.js')
 const { getEmptyToolPermissionContext } = await import('../src/Tool.js')
 const { FileStateCache } = await import('../src/utils/fileStateCache.js')
 const { GoalTool } = await import('../src/tools/GoalTool/GoalTool.js')
@@ -113,8 +113,8 @@ try {
       let restored=getDefaultAppState()
       const blocks=[createAssistantMessage({content:'first',usage:{input_tokens:10,output_tokens:0,cache_read_input_tokens:20,cache_creation_input_tokens:30} as any}),createAssistantMessage({content:'last',usage:{input_tokens:10,output_tokens:4,cache_read_input_tokens:20,cache_creation_input_tokens:30} as any})]
       for(const m of blocks)m.message.id='one_response'
-      restoreSessionStateFromLog({messages:[...blocks,createSystemMessage('Goal paused: Fixture API rate limit','warning')],goalState:goal},update=>{restored=update(restored)})
-      assert.equal(restored.goal?.tokensUsed,64);assert.equal(restored.goal?.status,'paused')
+      restoreSessionStateFromLog({messages:[...blocks,createSystemMessage('Goal paused: API rate limit; send a message once access resets to continue.','warning')],goalState:goal},update=>{restored=update(restored)})
+      assert.equal(restored.goal?.tokensUsed,64);assert.equal(restored.goal?.status,'paused');assert.equal(restored.goal?.stopReason,'rate_limit')
       results.push({scenario,passed:true,tokens:64,status:restored.goal?.status});console.log('PASS restore-cache');continue
     }
     if(scenario==='stale-wake') {
@@ -129,6 +129,7 @@ try {
     await run([createUserMessage({ content: 'Work toward the fixture goal.' })])
     if (scenario === 'transient') {
       assert.equal(state.goal.retryCount, 1)
+      assert.ok(state.goal.retryAt - Date.now() >= 55_000, 'first retry is sooner than a minute')
       for (let i = 0; i < 3; i++) {
         const prompt = consumeGoalWake({ goal: state.goal, getAppState: () => state, setAppState: context.setAppState, now: state.goal.retryAt })
         assert.ok(prompt, 'retry never scheduled')
@@ -142,10 +143,24 @@ try {
     if (['unrelated-background','background-service'].includes(scenario)) {assert.equal(evaluations,1);assert.equal(state.goal.status,'complete')}
     if (scenario==='background-starts-during-evaluation') {assert.equal(evaluations,1);assert.equal(state.goal.status,'active');assert.ok(state.goal.nextCheckInAt)}
     if (scenario === 'stale') { assert.equal(evaluations, 1); assert.equal(state.goal.objective, 'UNRELATED_GOAL_B'); assert.equal(state.goal.status, 'active'); assert.equal(state.goal.tokensUsed, 0) }
-    if (scenario === 'fatal') { assert.equal(state.goal.status, 'paused'); assert.equal(state.goal.stopReason, 'unrecoverable_error') }
+    if (scenario === 'fatal') {
+      assert.equal(state.goal.status, 'paused'); assert.equal(state.goal.stopReason, 'unrecoverable_error')
+      await run([createUserMessage({ content: 'Try again.' })]); assert.equal(state.goal.status, 'paused', 'a user prompt resumed an unrecoverable failure')
+      // Host-managed credentials come back on their own: retry instead of waiting without a wake.
+      let managed: any = { goal: { ...goal, status: 'active' } }
+      applyGoalTurnFailure({ category: 'auth', managedAuth: true, goal: managed.goal, setAppState: u => { managed = u(managed) }, isNonInteractiveSession: false })
+      assert.equal(managed.goal.status, 'active'); assert.equal(managed.goal.retryCount, 1); assert.ok(managed.goal.retryAt)
+    }
     if (scenario === 'mapped-auth') {assert.equal(state.goal.status,'paused');assert.equal(state.goal.stopReason,'unrecoverable_error')}
     if (scenario==='provider-quota') {assert.equal(state.goal.status,'paused');assert.equal(state.goal.stopReason,'rate_limit');assert.equal(calls,1);assert.equal(evaluations,0)}
-    if (scenario === 'transient') { assert.equal(state.goal.status, 'paused'); assert.equal(state.goal.retryCount, 3); assert.equal(state.goal.stopReason, 'retry_exhausted'); assert.equal(calls, 4) }
+    if (scenario === 'transient') {
+      assert.equal(state.goal.status, 'paused'); assert.equal(state.goal.retryCount, 3); assert.equal(state.goal.stopReason, 'retry_exhausted'); assert.equal(calls, 4)
+      // A finished background task is not the user's answer; the user's next prompt resumes the goal.
+      const notification = createUserMessage({ content: '<task-notification>done</task-notification>' }); (notification as any).origin = { kind: 'task-notification' }
+      await run([notification]); assert.equal(state.goal.status, 'paused'); assert.equal(calls, 5)
+      await run([createUserMessage({ content: 'The outage is over, carry on.' })]); assert.equal(state.goal.status, 'active'); assert.equal(state.goal.retryCount, 1); assert.equal(calls, 6)
+      for (const error of ['max_output_tokens', 'unknown'] as const) assert.equal(goalFailureCategory(createAssistantAPIErrorMessage({ content: 'Fixture', error })), 'transient')
+    }
     if (scenario === 'impossible') { assert.equal(state.goal.stopReason, 'impossible'); assert.equal(evaluations, 1) }
     if (scenario === 'impossible-verify') {assert.equal(state.goal.stopReason,'impossible');assert.equal(evaluations,1);assert.equal(calls,1)}
     if (scenario === 'live-created-goal') {assert.equal(state.goal.tokensUsed,14);assert.equal(state.goal.status,'complete')}
