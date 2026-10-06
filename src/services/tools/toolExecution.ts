@@ -880,7 +880,9 @@ async function checkPermissionsAndCallTool(
         }
         break
       case 'hookPermissionResult':
-        hookPermissionResult = result.hookPermissionResult
+        if (hookPermissionResult?.behavior !== 'deny') {
+          hookPermissionResult = result.hookPermissionResult
+        }
         break
       case 'hookUpdatedInput':
         // Hook provided updatedInput without making a permission decision (passthrough)
@@ -1289,9 +1291,18 @@ async function checkPermissionsAndCallTool(
       })
   try {
     let result
+    let releaseExecution: (() => void) | undefined
     try {
       if (toolUseContext.abortController.signal.aborted) {
         throw new AbortError()
+      }
+      if (toolUseContext.acquireToolExecution) {
+        let isConcurrencySafe = false
+        try {
+          isConcurrencySafe = Boolean(tool.isConcurrencySafe(callInput))
+        } catch {}
+        releaseExecution = await toolUseContext.acquireToolExecution(isConcurrencySafe, toolUseContext.abortController.signal)
+        if (toolUseContext.abortController.signal.aborted) throw new AbortError()
       }
       result = await tool.call(
         callInput,
@@ -1310,6 +1321,7 @@ async function checkPermissionsAndCallTool(
         forwardToolProgress,
       )
     } finally {
+      releaseExecution?.()
       stopToolHeartbeat?.()
     }
     const durationMs = Date.now() - startTime

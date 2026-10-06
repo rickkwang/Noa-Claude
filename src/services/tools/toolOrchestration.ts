@@ -2,7 +2,7 @@ import type { ToolUseBlock } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import { findToolByName, type ToolUseContext } from '../../Tool.js'
 import type { AssistantMessage, Message } from '../../types/message.js'
-import { errorMessage } from '../../utils/errors.js'
+import { AbortError, errorMessage } from '../../utils/errors.js'
 import { createChildAbortController } from '../../utils/abortController.js'
 import { all } from '../../utils/generators.js'
 import {
@@ -14,6 +14,45 @@ import { type MessageUpdateLazy, runToolUse } from './toolExecution.js'
 export function getMaxToolUseConcurrency(): number {
   const limit = Number(process.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY)
   return Number.isSafeInteger(limit) && limit > 0 ? limit : 10
+}
+
+// Hooks and permissions can turn a read into a write after initial scheduling.
+export function createToolExecutionGate(): NonNullable<ToolUseContext['acquireToolExecution']> {
+  let writer: Promise<void> = Promise.resolve()
+  const readers = new Set<Promise<void>>()
+  return async (isConcurrencySafe, signal) => {
+    if (signal.aborted) throw new AbortError()
+    const preceding = isConcurrencySafe ? writer : Promise.all([writer, ...readers])
+    let finish!: () => void
+    const finished = new Promise<void>(resolve => {
+      finish = resolve
+    })
+    const completed = preceding.then(() => finished)
+    if (isConcurrencySafe) readers.add(completed)
+    else {
+      writer = completed
+      readers.clear()
+    }
+    const release = () => {
+      readers.delete(completed)
+      finish()
+    }
+    let onAbort!: () => void
+    const aborted = new Promise<never>((_, reject) => {
+      onAbort = () => reject(new AbortError())
+      signal.addEventListener('abort', onAbort, { once: true })
+    })
+    try {
+      await Promise.race([preceding, aborted])
+      if (signal.aborted) throw new AbortError()
+      return release
+    } catch (error) {
+      release()
+      throw error
+    } finally {
+      signal.removeEventListener('abort', onAbort)
+    }
+  }
 }
 
 export type MessageUpdate = {
@@ -46,6 +85,7 @@ export async function* runTools(
     },
   }
   let currentContext = toolUseContext
+  const acquireToolExecution = createToolExecutionGate()
   // Tool uses from earlier batches of this same turn. Batches run in order,
   // so everything here has already been dispatched by the time the next
   // batch starts.
@@ -66,7 +106,7 @@ export async function* runTools(
         blocks,
         assistantMessages,
         canUseTool,
-        currentContext,
+        { ...currentContext, acquireToolExecution },
         batchPrecedingBlocks,
         executionController,
       )) {
@@ -98,7 +138,7 @@ export async function* runTools(
         blocks,
         assistantMessages,
         canUseTool,
-        currentContext,
+        { ...currentContext, acquireToolExecution },
         batchPrecedingBlocks,
         executionController,
       )) {

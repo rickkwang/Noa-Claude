@@ -737,7 +737,7 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
               return {
                 data: {
                   success: false,
-                  message: `Agent "${input.to}" is registered but has no transcript to resume. It may have been cleaned up. (${errorMessage(e)})`,
+                  message: `Agent "${input.to}" could not be resumed: ${errorMessage(e)}`,
                 },
               }
             }

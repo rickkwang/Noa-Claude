@@ -27,6 +27,7 @@ import {
   flushSessionStorage,
   getAgentTranscript,
   readAgentMetadata,
+  isAgentStoppedByUser,
 } from '../../utils/sessionStorage.js'
 import { buildEffectiveSystemPrompt } from '../../utils/systemPrompt.js'
 import type { SystemPrompt } from '../../utils/systemPromptType.js'
@@ -94,6 +95,9 @@ export async function resumeAgentBackground({
   canUseTool: CanUseToolFn
   invokingRequestId?: string
 }): Promise<ResumeAgentResult> {
+  if (isAgentStoppedByUser(asAgentId(agentId))) {
+    throw new Error(`Agent "${agentId}" was stopped by the user. Treat its work as cancelled; only start a new agent if the user explicitly asks.`)
+  }
   const startTime = Date.now()
   const appState = toolUseContext.getAppState()
   assertCanStartBackgroundAgent(appState.tasks)
@@ -197,6 +201,9 @@ export async function resumeAgentBackground({
   // Transcript/system-prompt reconstruction can await; recheck immediately
   // before allocating personality or a running background task.
   assertCanStartBackgroundAgent(toolUseContext.getAppState().tasks)
+  if (isAgentStoppedByUser(asAgentId(agentId))) {
+    throw new Error(`Agent "${agentId}" was stopped by the user. Treat its work as cancelled; only start a new agent if the user explicitly asks.`)
+  }
 
   // Recreate the display-only personality mapping when resuming in a fresh
   // process, restoring the persisted name when available. Gate on

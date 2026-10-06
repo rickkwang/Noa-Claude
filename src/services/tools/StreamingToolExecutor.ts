@@ -13,6 +13,7 @@ import { createChildAbortController } from '../../utils/abortController.js'
 import { formatUnknownToolError } from '../../utils/toolName.js'
 import {
   buildSameTurnToolUses,
+  createToolExecutionGate,
   getMaxToolUseConcurrency,
   type PrecedingToolUse,
 } from './toolOrchestration.js'
@@ -53,6 +54,7 @@ export class StreamingToolExecutor {
   // Aborting this does NOT abort the parent — query.ts won't end the turn.
   private discardAbortController: AbortController
   private discarded = false
+  private acquireToolExecution = createToolExecutionGate()
   // Signal to wake up getRemainingResults when progress is available
   private progressAvailableResolve?: () => void
 
@@ -398,6 +400,7 @@ export class StreamingToolExecutor {
         {
           ...this.toolUseContext,
           abortController: toolAbortController,
+          acquireToolExecution: this.acquireToolExecution,
           sameTurnToolUses: this.buildSameTurnToolUses(tool),
         },
       )

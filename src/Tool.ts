@@ -181,6 +181,7 @@ export type ToolUseContext = {
     refreshTools?: () => Tools
   }
   abortController: AbortController
+  acquireToolExecution?: (isConcurrencySafe: boolean, signal: AbortSignal) => Promise<() => void>
   readFileState: FileStateCache
   getAppState(): AppState
   /** Refresh copied contexts at model/tool boundaries after a runtime transition. */

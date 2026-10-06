@@ -83,6 +83,7 @@ import { setCwd } from './utils/Shell.js'
 import {
   flushSessionStorage,
   recordTranscript,
+  removeTranscriptMessage,
 } from './utils/sessionStorage.js'
 import { asSystemPrompt } from './utils/systemPromptType.js'
 import { resolveThemeSetting } from './utils/systemTheme.js'
@@ -783,9 +784,17 @@ export class QueryEngine {
       }
 
       switch (message.type) {
-        case 'tombstone':
-          // Tombstone messages are control signals for removing messages, skip them
+        case 'tombstone': {
+          for (const history of [messages, this.mutableMessages]) {
+            const index = history.findIndex(m => m.uuid === message.message.uuid)
+            if (index !== -1) history.splice(index, 1)
+          }
+          if (persistSession) {
+            await flushSessionStorage()
+            await removeTranscriptMessage(message.message.uuid)
+          }
           break
+        }
         case 'assistant':
           // Capture stop_reason if already set (synthetic messages). For
           // streamed responses, this is null at content_block_stop time;

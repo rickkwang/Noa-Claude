@@ -18,7 +18,7 @@ const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'n
 mkdirSync(artifacts, { recursive: true });
 const model = 'claude-sonnet-4-6';
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -46,7 +46,7 @@ const server = createServer(async (req, res) => {
     const customChild=active.case==='agent-custom-fork'&&((lastText.includes('CHILD_CUSTOM_FORK_')||body.tools?.every(t=>t.name==='Read'))||body.messages?.at(-1)?.content?.some?.(b=>b.type==='tool_result'&&b.tool_use_id.startsWith('custom_read_')));
     const child = customChild || active.case === 'goal-child-usage' && (lastText.includes('CHILD_USAGE_FIXTURE') || body.messages?.at(-1)?.content?.some?.(b => b.type === 'tool_result' && b.tool_use_id === 'child_read'));
     active.requests.at(-1).child = child;
-    const n = active.requests.filter(r => harness ? r.body.tools?.length && !r.child : !r.summary).length;
+    const n = active.requests.filter(r => (harness || active.case.startsWith('hook-') || active.case.startsWith('concurrency-')) ? r.body.tools?.length && !r.child : !r.summary).length;
     const error = (status, type, message) => {
       res.writeHead(status, { 'content-type': 'application/json', 'retry-after': '0', 'x-should-retry': status === 529 ? 'true' : 'false' });
       res.end(JSON.stringify({ type: 'error', error: { type, message } }));
@@ -103,7 +103,7 @@ const server = createServer(async (req, res) => {
       }
       assert.ok(raw.includes(sentinel), 'postcompact request lost original constraint');
       content = [{ type: 'text', text: 'AUDIT_OK' }];
-    } else if ((active.case === 'malformed' && n === 1) || (active.case === 'alternating' && n <= 8 && n % 2 === 1)) {
+    } else if ((['malformed', 'tombstone-resume'].includes(active.case) && n === 1) || (active.case === 'alternating' && n <= 8 && n % 2 === 1)) {
       content = [{ type: 'text', text: 'Calling a tool now.' }]; stop = 'tool_use';
     } else if ((active.case === 'empty' && n === 1) || (active.case === 'alternating' && n <= 8 && n % 2 === 0)) {
       content = [];
@@ -120,7 +120,9 @@ const server = createServer(async (req, res) => {
       content = [{ type: 'tool_use', id: `toolu_${n}`, name: 'Bash', input: { command: 'printf started > started.txt; sleep 2; printf finished > finished.txt', timeout: 10000 } }]; stop = 'tool_use';
     } else if ((active.case === 'permission-deny' || active.case === 'deny-rule') && n === 1) {
       content = [{ type: 'tool_use', id: `toolu_${n}`, name: 'Bash', input: { command: 'printf denied > denied.txt' } }]; stop = 'tool_use';
-    } else if (active.case === 'max-turns' || ((active.case === 'read' || active.case === 'hook-block') && n === 1) || (active.case === 'compact-resume' && n <= 3)) {
+    } else if (active.case.startsWith('concurrency-') && n === 1) {
+      content = [1, 2].map(i => ({ type: 'tool_use', id: 'write_' + i, name: 'Bash', input: { command: 'pwd' } })); stop = 'tool_use';
+    } else if (active.case === 'max-turns' || ((active.case === 'read' || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3)) {
       content = [
         ...(active.case === 'compact-resume' ? [{ type: 'text', text: 'prior-context '.repeat(5000) }] : []),
         { type: 'tool_use', id: `toolu_${n}`, name: 'Read', input: { file_path: join(active.dir, 'fixture.txt') } },
@@ -171,17 +173,25 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   Object.assign(env, {
     CLAUDE_CONFIG_DIR: join(active.dir, 'config'), ANTHROPIC_API_KEY: 'local-e2e-dummy', ANTHROPIC_BASE_URL: baseUrl,
     ANTHROPIC_MODEL: model, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', DISABLE_AUTOUPDATER: '1',
-    CLAUDE_CODE_TASK_LIST_ID: 'harness-probe', NOA_CLAUDE_STREAMING_TOOL_EXECUTION: scenario === 'budget-nonstream' ? '0' : '1', FALLBACK_FOR_ALL_PRIMARY_MODELS: '1', CLAUDE_CODE_EAGER_FLUSH: '1',
+    CLAUDE_CODE_TASK_LIST_ID: 'harness-probe', NOA_CLAUDE_STREAMING_TOOL_EXECUTION: ['budget-nonstream', 'concurrency-nonstream'].includes(scenario) ? '0' : '1', FALLBACK_FOR_ALL_PRIMARY_MODELS: '1', CLAUDE_CODE_EAGER_FLUSH: '1',
   });
   const streamingInput = scenario.startsWith('budget-');
   const harness = scenario.startsWith('task-') || scenario === 'goal-child-usage' || scenario==='agent-custom-fork';
   // Hooks are off under --bare, so the hook scenario runs the full startup path.
-  const command = [...(scenario === 'hook-block' || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', model, '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':'TaskCreate,TaskUpdate,TaskGet,TaskList') : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : '2'];
-  if (scenario !== 'compact-resume' && scenario!=='agent-custom-fork') command.push('--no-session-persistence');
+  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('concurrency-') || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', model, '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':'TaskCreate,TaskUpdate,TaskGet,TaskList') : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : '2'];
+  if (scenario !== 'compact-resume' && scenario !== 'tombstone-resume' && scenario!=='agent-custom-fork') command.push('--no-session-persistence');
   if (scenario === 'fallback') command.push('--fallback-model', 'claude-haiku-4-5');
   // An allow rule that the narrower deny rule must still beat.
   if (scenario === 'deny-rule') command.push('--allowedTools', 'Bash', '--disallowedTools', 'Bash(printf:*)');
   if (scenario === 'hook-block') command.push('--settings', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'printf ran > hook-ran.txt; echo HOOK_BLOCKED_42 >&2; exit 2' }] }] } }));
+  if (scenario === 'hook-composition') command.push('--settings', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Read', hooks: [
+    { type: 'command', command: 'printf ran > hook-ran.txt; echo HOOK_BLOCKED_42 >&2; exit 2' },
+    { type: 'command', command: `sleep 0.05; echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}'` },
+  ] }] } }));
+  if (scenario.startsWith('concurrency-')) {
+    writeFileSync(join(active.dir, 'rewrite-hook.cjs'), `let raw='';process.stdin.on('data',b=>raw+=b);process.stdin.on('end',()=>{const id=JSON.parse(raw).tool_use_id;const command='if mkdir write-lock 2>/dev/null; then echo start-'+id+' >> writes.txt; sleep 0.1; echo end-'+id+' >> writes.txt; rmdir write-lock; else echo OVERLAP >> writes.txt; fi';console.log(JSON.stringify({hookSpecificOutput:{hookEventName:'PreToolUse',permissionDecision:'allow',updatedInput:{command}}}));});`);
+    command.push('--settings', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'bun rewrite-hook.cjs' }] }] } }));
+  }
   if (streamingInput) command.push('--input-format', 'stream-json', '--allowedTools', 'Bash', '--max-budget-usd', '0.0001');
   command.push(...extra);
   const started = performance.now();
@@ -240,7 +250,16 @@ try {
       active = { case: scenario, dir, requests: [], invocations: [], summaries: 0, oversized: 0 };
       let passed = false, failure, observation, runResult;
       try {
-        if (scenario === 'compact-resume') {
+        if (scenario === 'tombstone-resume') {
+          active.phase = 'seed';
+          const seed = await run(executable, scenario);
+          assert.equal(seed.code, 0); assert.equal(seed.result.result, 'AUDIT_OK');
+          assert.ok(active.requests.some(r => JSON.stringify(r.body.messages).includes('failed to produce a valid tool call')), 'malformed recovery never ran');
+          active.phase = 'resume';
+          runResult = await run(executable, scenario, ['--resume', seed.result.session_id], 'Continue the prior task.');
+          assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
+          assert.ok(!JSON.stringify(active.requests.at(-1).body.messages).includes('Calling a tool now.'), 'tombstoned response returned on resume');
+        } else if (scenario === 'compact-resume') {
           active.phase = 'seed';
           const seed = await run(executable, scenario, [], `PROJECT_CONSTRAINT: ${sentinel}. Read the fixture three times, then pause.`);
           assert.equal(seed.code, 0);
@@ -295,11 +314,18 @@ try {
             const toolResult = main[1]?.body.messages.at(-1).content.find(b => b.type === 'tool_result');
             assert.equal(toolResult?.is_error, true, 'denial was not reported to the model as an error');
             assert.deepEqual(runResult.result.permission_denials.map(d => d.tool_name), ['Bash']);
+          } else if (scenario.startsWith('concurrency-')) {
+            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
+            const writes = readFileSync(join(dir, 'writes.txt'), 'utf8').trim().split('\n');
+            assert.equal(writes.length, 4, 'a rewritten write was skipped or overlapped');
+            assert.deepEqual(writes.map(line => line.split('-')[0]), ['start', 'end', 'start', 'end']);
+            assert.equal(writes[0].slice(6), writes[1].slice(4)); assert.equal(writes[2].slice(6), writes[3].slice(4));
+            active.finalState = writes;
           } else if (scenario === 'stale-signature') {
             assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK'); assert.equal(count, 3);
             assert.ok(JSON.stringify(active.requests[1].body.messages).includes('"thinking"'), 'fixture never replayed a thinking block');
             assert.ok(!JSON.stringify(active.requests[2].body.messages).includes('"thinking"'), 'retry still sent the rejected thinking block');
-          } else if (scenario === 'hook-block') {
+          } else if (scenario.startsWith('hook-')) {
             assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
             assert.equal(existsSync(join(dir, 'hook-ran.txt')), true, 'PreToolUse hook never ran; block path untested');
             const followUp = JSON.stringify(main[1]?.body.messages);

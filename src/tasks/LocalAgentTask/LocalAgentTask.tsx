@@ -17,7 +17,7 @@ import { registerCleanup } from '../../utils/cleanupRegistry.js';
 import { getToolSearchOrReadInfo } from '../../utils/collapseReadSearch.js';
 import { enqueuePendingNotification } from '../../utils/messageQueueManager.js';
 import { escapeXml } from '../../utils/xml.js';
-import { getAgentTranscriptPath } from '../../utils/sessionStorage.js';
+import { getAgentTranscriptPath, markAgentStoppedByUser } from '../../utils/sessionStorage.js';
 import { evictTaskOutput, getTaskOutputPath, initTaskOutputAsSymlink } from '../../utils/task/diskOutput.js';
 import { PANEL_GRACE_MS, registerTask, updateTaskState } from '../../utils/task/framework.js';
 import { getMaxConcurrentAgents } from '../../utils/task/sessionBudget.js';
@@ -334,6 +334,7 @@ export function killAsyncAgent(taskId: string, setAppState: SetAppState, {
   });
   clearProgressThrottle(taskId);
   if (killed) {
+    if (stoppedByUser) markAgentStoppedByUser(asAgentId(taskId));
     void evictTaskOutput(taskId);
     // Abort is cooperative. Keep the id owned until the run exits: a late
     // catch or cleanup still addresses state by id and could affect a resume.

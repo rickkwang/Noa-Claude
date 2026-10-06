@@ -1,10 +1,10 @@
 import { feature } from 'bun:bundle'
 import { randomUUID, type UUID } from 'crypto'
 import type { Dirent } from 'fs'
-// Sync fs primitives for readFileTailSync — separate from fs/promises
+// Sync fs primitives for transcript reads and cancellation markers — separate from fs/promises
 // imports above. Named (not wildcard) per CLAUDE.md style; no collisions
 // with the async-suffixed names.
-import { closeSync, fstatSync, openSync, readSync } from 'fs'
+import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readSync, writeFileSync } from 'fs'
 import {
   appendFile as fsAppendFile,
   open as fsOpen,
@@ -287,6 +287,21 @@ export function getAgentTranscriptPath(agentId: AgentId): string {
 
 function getAgentMetadataPath(agentId: AgentId): string {
   return getAgentTranscriptPath(agentId).replace(/\.jsonl$/, '.meta.json')
+}
+
+// Cancellation must survive metadata cleanup and /clear's session-path change.
+function getAgentCancellationPath(agentId: AgentId): string {
+  return join(getClaudeConfigHomeDir(), 'agent-cancellations', `${agentId}.cancelled`)
+}
+
+export function markAgentStoppedByUser(agentId: AgentId): void {
+  const path = getAgentCancellationPath(agentId)
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, '')
+}
+
+export function isAgentStoppedByUser(agentId: AgentId): boolean {
+  return existsSync(getAgentCancellationPath(agentId))
 }
 
 export type AgentMetadata = {
