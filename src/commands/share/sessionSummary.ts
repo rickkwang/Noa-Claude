@@ -1,4 +1,3 @@
-import type { LocalCommandResult } from '../../types/command.js'
 import type { Message } from '../../types/message.js'
 
 type SummaryMode = 'short' | 'detailed'
@@ -44,7 +43,6 @@ function firstLine(input: string, max = 120): string {
 function isCommandText(text: string): boolean {
   const value = text.trim().toLowerCase()
   return (
-    value.startsWith('/summary') ||
     value.startsWith('/share') ||
     value.startsWith('/fork') ||
     value.startsWith('/workflows')
@@ -129,29 +127,4 @@ export function buildSessionSummary(
     'Risks:',
     ...(risks.length > 0 ? risks : ['- No obvious risk signal detected']),
   ].join('\n')
-}
-
-function resolveMode(args: string): SummaryMode {
-  const normalized = args.trim().toLowerCase()
-  if (
-    normalized === 'detailed' ||
-    normalized === 'detail' ||
-    normalized === 'long' ||
-    normalized === '--detailed'
-  ) {
-    return 'detailed'
-  }
-  return 'short'
-}
-
-export async function call(
-  args: string,
-  context: { messages: Message[] },
-): Promise<LocalCommandResult> {
-  const mode = resolveMode(args)
-  const summary = buildSessionSummary(context.messages ?? [], mode)
-  return {
-    type: 'text',
-    value: summary,
-  }
 }

@@ -28,7 +28,6 @@ import initVerifiers from './commands/init-verifiers.js'
 import keybindings from './commands/keybindings/index.js'
 import login from './commands/login/index.js'
 import logout from './commands/logout/index.js'
-import installGitHubApp from './commands/install-github-app/index.js'
 import cacheProbe from './commands/cache-probe/index.js'
 import mcp from './commands/mcp/index.js'
 import pr_comments from './commands/pr_comments/index.js'
@@ -96,10 +95,8 @@ import reloadSkills from './commands/reload-skills/index.js'
 import outputStyle from './commands/output-style/index.js'
 import pauseMemory from './commands/pause-memory/index.js'
 import rewind from './commands/rewind/index.js'
-import heapDump from './commands/heapdump/index.js'
 import bridgeKick from './commands/bridge-kick.js'
 import version from './commands/version.js'
-import summary from './commands/summary/index.js'
 import sandboxToggle from './commands/sandbox-toggle/index.js'
 import chrome from './commands/chrome/index.js'
 import { logError } from './utils/log.js'
@@ -137,7 +134,6 @@ import statusline from './commands/statusline.js'
 import effort from './commands/effort/index.js'
 import goal from './commands/goal/index.js'
 import startupBanner from './commands/startup-banner/index.js'
-import wiki from './commands/wiki/index.js'
 // insights.ts is 113KB (3200 lines, includes diffLines/html rendering). Lazy
 // shim defers the heavy module until /insights is actually invoked.
 const usageReport: Command = {
@@ -212,12 +208,10 @@ const COMMANDS = memoize((): Command[] => [
   exit,
   fast,
   files,
-  heapDump,
   help,
   ide,
   init,
   keybindings,
-  installGitHubApp,
   mcp,
   memory,
   model,
@@ -239,7 +233,6 @@ const COMMANDS = memoize((): Command[] => [
   stats,
   statusline,
   startupBanner,
-  summary,
   tag,
   theme,
   tui,
@@ -258,7 +251,6 @@ const COMMANDS = memoize((): Command[] => [
   usageReport,
   vim,
   autocompact,
-  wiki,
   ...(forkCmd ? [forkCmd] : []),
   ...(buddy ? [buddy] : []),
   ...(bridge ? [bridge] : []),
@@ -598,7 +590,6 @@ export const BRIDGE_SAFE_COMMANDS: Set<Command> = new Set(
     compact, // Shrink context — useful mid-session from a phone
     clear, // Wipe transcript
     cost, // Show session cost
-    summary, // Summarize conversation
     releaseNotes, // Show changelog
     files, // List tracked files
   ].filter((c): c is Command => c !== null),

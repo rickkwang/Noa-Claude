@@ -42,14 +42,6 @@ const baseline: CommandSurfaceEntry[] = [
     upgradeCondition: 'N/A',
   },
   {
-    command: '/summary',
-    category: 'baseline',
-    discoverability: 'visible',
-    supportsNonInteractive: true,
-    reason: 'Core session summarization for continuity.',
-    upgradeCondition: 'N/A',
-  },
-  {
     command: '/share',
     category: 'baseline',
     discoverability: 'visible',
@@ -60,15 +52,6 @@ const baseline: CommandSurfaceEntry[] = [
 ]
 
 const implementedNonBaseline: CommandSurfaceEntry[] = [
-  {
-    command: '/heapdump',
-    category: 'implemented-non-baseline',
-    discoverability: 'visible',
-    supportsNonInteractive: true,
-    reason: 'Engineering diagnostic utility, not primary workflow.',
-    upgradeCondition:
-      'Promote only if converted to user-facing diagnostics workflow.',
-  },
   {
     command: '/cleanup-data',
     category: 'implemented-non-baseline',

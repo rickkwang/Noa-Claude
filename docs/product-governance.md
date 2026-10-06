@@ -20,7 +20,6 @@ These are the baseline workflows that must remain discoverable and meaningful:
 
 - `/fork`
 - `/workflows`
-- `/summary`
 - `/share`
 
 ### Implemented but Non-Baseline
@@ -29,12 +28,9 @@ These commands are callable, but they are not core product workflows:
 
 - `/cleanup-data`
 - `/clean-sessions`
-- `/heapdump`
 - `/output-style`
-- `/thinkback-play`
 - `/rate-limit-options`
 - `/cache-probe`
-- `/wiki`
 - `/provider`
 - `/rewind`
 - `/goal`
@@ -54,12 +50,9 @@ Tracked surfaces:
 
 - `/cleanup-data`
 - `/clean-sessions`
-- `/heapdump`
 - `/output-style`
-- `/thinkback-play`
 - `/rate-limit-options`
 - `/cache-probe`
-- `/wiki`
 - `/provider`
 - `/rewind`
 - `/goal`
@@ -133,7 +126,7 @@ Use it as the default freeze-period decision framework for bug fixes, stability 
 
 ## Operating Principles
 
-- Treat `/fork`, `/workflows`, `/summary`, and `/share` as the supported product baseline.
+- Treat `/fork`, `/workflows`, and `/share` as the supported product baseline.
 - Treat implemented-but-non-baseline commands as stable-but-not-core.
 - Treat build-excluded commands as deliberate build scope; do not describe them as regressions in this build.
 - Treat stubs as implementation gaps and keep them out of baseline claims.

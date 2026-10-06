@@ -53,7 +53,6 @@ const sessionStorage = await import('../src/utils/sessionStorage.ts');
 const workflowCommand = await import('../src/commands/workflows/workflows.ts');
 const workflowShared = await import('../src/commands/workflows/shared.ts');
 const forkCommand = await import('../src/commands/fork/fork.ts');
-const summaryCommand = await import('../src/commands/summary/summary.ts');
 const shareCommand = await import('../src/commands/share/share.ts');
 const mcpConfig = await import('../src/services/mcp/config.ts');
 const productPaths = await import('../src/utils/productPaths.ts');
@@ -61,7 +60,6 @@ const commandsModule = await import('../src/commands.ts');
 const surfaceStatus = await import('../src/commands/surfaceStatus.ts');
 const buildExcluded = await import('../src/commands/buildExcluded.ts');
 const forkIndex = await import('../src/commands/fork/index.ts');
-const summaryIndex = await import('../src/commands/summary/index.ts');
 const shareIndex = await import('../src/commands/share/index.ts');
 
 function prepareProject(projectDir) {
@@ -189,39 +187,6 @@ async function runWorkflowSmoke() {
     recorder.getLastCall()?.message?.includes("Deleted workflow 'deploy'."),
     'Workflow delete did not succeed',
     recorder.getLastCall(),
-  );
-}
-
-async function runSummarySmoke() {
-  const empty = await summaryCommand.call('', { messages: [] });
-  assert(
-    empty.value.includes('Session state: empty'),
-    'Empty summary output was not stable',
-    empty.value,
-  );
-
-  const detailed = await summaryCommand.call('detailed', {
-    messages: [
-      { type: 'user', content: 'Implement local workflows' },
-      { type: 'assistant', content: 'Added workflow loading and execution.' },
-      {
-        type: 'system',
-        subtype: 'api_error',
-        content: 'Temporary API error during earlier run',
-      },
-    ],
-  });
-  assert(
-    detailed.value.includes('Objective: Implement local workflows'),
-    'Detailed summary missed objective',
-    detailed.value,
-  );
-  assert(
-    detailed.value.includes('Key Updates:') &&
-      detailed.value.includes('Pending / Next:') &&
-      detailed.value.includes('Risks:'),
-    'Detailed summary structure was incomplete',
-    detailed.value,
   );
 }
 
@@ -425,11 +390,6 @@ function runNonInteractiveBoundarySmoke() {
     forkIndex.default,
   );
   assert(
-    summaryIndex.default.supportsNonInteractive === true,
-    'Summary command must remain non-interactive compatible',
-    summaryIndex.default,
-  );
-  assert(
     shareIndex.default.supportsNonInteractive === true,
     'Share command must remain non-interactive compatible',
     shareIndex.default,
@@ -439,7 +399,6 @@ function runNonInteractiveBoundarySmoke() {
 try {
   await runForkSmoke();
   await runWorkflowSmoke();
-  await runSummarySmoke();
   await runShareSmoke();
   await runMcpPathSmoke();
   await runCommandSurfaceSmoke();

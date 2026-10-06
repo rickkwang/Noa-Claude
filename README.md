@@ -59,7 +59,7 @@ If `~/.local/bin` is not on your `PATH`, the installer prints the line to add �
 
 ## Core Features
 
-The product baseline is `/fork`, `/workflows`, `/summary`, and `/share` (smoke-checked). Other listed commands are non-baseline — see [docs/product-governance.md](docs/product-governance.md).
+The product baseline is `/fork`, `/workflows`, and `/share` (smoke-checked). Other listed commands are non-baseline — see [docs/product-governance.md](docs/product-governance.md).
 
 **Sessions**
 - `/fork` — Create a resumable fork of the current conversation
@@ -71,7 +71,6 @@ The product baseline is `/fork`, `/workflows`, `/summary`, and `/share` (smoke-c
 - `/export` — Export conversation to a file
 - `/rename` — Rename the current session
 - `/tag` — Tag the current session for quick lookup
-- `/summary` — Generate structured session summaries
 - `/share` — Export share snapshots under `.noa/shares`
 - `/rewind` (aliases `/checkpoint`, `/undo`) — Restore the code and/or conversation to a previous point
 - `/goal` — Set a long-running objective that survives turns: auto-continues with turn/token limits and an optional verify command (details in [docs/operating-guide.md](docs/operating-guide.md))
@@ -103,7 +102,6 @@ The product baseline is `/fork`, `/workflows`, `/summary`, and `/share` (smoke-c
 - `/reload-skills` — Re-scan skill directories after editing `SKILL.md` files mid-session
 - `/pause-memory` — Pause auto-memory reads and writes for this session only
 - `/workflows` — Manage reusable workflows
-- `/wiki init` / `/wiki status` / `/wiki ingest` — Project documentation management
 - `AGENTS.md` / `CLAUDE.md` — Project-level context files
 
 ## Keyboard Shortcuts

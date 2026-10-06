@@ -35,12 +35,9 @@ Last updated: 2026-09-13
 |---|---|---|
 | `/cleanup-data` | Available | Unified cleanup command for local tracking data; requires `--confirm` to execute deletions. Custom-location memory dirs (env/settings override) only lose known memory files — unrecognized items are kept and reported. |
 | `/clean-sessions` | Available | Interactive picker for deleting small/trivial session transcripts (sidecar dirs go with them); bulk `delete --confirm` requires `--trivial-only` and the default size bucket. The running session and recently-modified (<10m) sessions are always excluded. |
-| `/heapdump` | Available | Exposed for engineering diagnostics. |
 | `/output-style` | Available | Direct entry to the output-style picker; writes `outputStyle` to local settings, the same key and source as `/config` → Output style. |
-| `/thinkback-play` | Available | Thinkback helper; still gated by runtime feature availability. |
 | `/rate-limit-options` | Available | Rate-limit action sheet; still gated by subscriber/runtime availability. |
 | `/cache-probe` | Available | Probe API cache hit rate by sending identical requests and comparing `cached_tokens` values. |
-| `/wiki` | Available | Project documentation management via `init`, `status`, `ingest` subcommands. |
 | `/provider` | Available | Manage named provider configurations (create, list, switch, delete profiles). |
 | `/rewind` | Available | Restore code and conversation to a previous checkpoint (aliases `/checkpoint`, `/undo`); interactive only. |
 | `/reload-skills` | Available | Re-scans skill directories mid-session. Covers the gap the file watcher cannot: it only watches directories that existed at startup. |
@@ -53,7 +50,6 @@ Last updated: 2026-09-13
 |---|---|---|
 | `/fork` | Available | Creates a resumable fork of the current conversation. |
 | `/workflows` | Available | Supports local `list/create/run/delete` and project workflow discovery. |
-| `/summary` | Available | Produces structured short or detailed session summaries. |
 | `/share` | Available | Exports local session share snapshots under `.noa/shares`. |
 
 ## Slash Commands: Build-Excluded
@@ -93,7 +89,7 @@ Bridge/remote runtime modules can exist in source, but this build does not regis
 
 ## Engineering Interpretation
 - Current product is operational for primary usage: interactive coding and non-interactive `--print`.
-- `/fork`, `/workflows`, `/summary`, and `/share` are now part of the supported product baseline and are covered by dedicated non-live smoke checks.
+- `/fork`, `/workflows`, and `/share` are now part of the supported product baseline and are covered by dedicated non-live smoke checks.
 - Excluded/stub commands are not a runtime defect; they are deliberate build-scope or placeholder surfaces.
 - For roadmap prioritization, treat these categories differently:
   - `Build-Excluded`: requires feature delivery, not a simple toggle.

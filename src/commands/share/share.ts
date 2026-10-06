@@ -5,7 +5,7 @@ import type { LocalCommandResult } from '../../types/command.js'
 import type { Message } from '../../types/message.js'
 import { getCwd } from '../../utils/cwd.js'
 import { getPrimaryProjectSubdir } from '../../utils/productPaths.js'
-import { buildSessionSummary } from '../summary/summary.js'
+import { buildSessionSummary } from './sessionSummary.js'
 
 function formatTimestamp(date: Date): string {
   const year = date.getFullYear()

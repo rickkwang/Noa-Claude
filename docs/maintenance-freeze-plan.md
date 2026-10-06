@@ -36,7 +36,7 @@ documentation alignment over new feature surface area.
 
 ## Priority Order
 
-1. Regressions in baseline workflows: `/fork`, `/workflows`, `/summary`, `/share`.
+1. Regressions in baseline workflows: `/fork`, `/workflows`, `/share`.
 2. Runtime correctness: startup, `--print`, resume/continue, compact, and tool execution.
 3. Provider reliability: configured endpoint behavior, live smoke failures, request/response compatibility.
 4. Operational degradation: MCP timeouts, slow startup, stuck tasks, failed recovery.
