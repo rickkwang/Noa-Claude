@@ -18,7 +18,7 @@ const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'n
 mkdirSync(artifacts, { recursive: true });
 const model = 'claude-sonnet-4-6';
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'bedrock-overflow'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -30,7 +30,8 @@ const server = createServer(async (req, res) => {
     let raw = '';
     for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw || '{}');
-    if (!req.url.includes('/messages')) {
+    const openai = req.url.includes('/chat/completions');
+    if (!openai && !req.url.includes('/messages')) {
       res.writeHead(200, { 'content-type': 'application/json' }); res.end('{}'); return;
     }
     if (req.url.includes('count_tokens')) {
@@ -53,6 +54,20 @@ const server = createServer(async (req, res) => {
     };
     if (active.case === 'fallback' && n <= 8) {
       error(529, 'overloaded_error', 'Scripted overload on primary and fallback');
+      return;
+    }
+    // After one real tool round (history to compact), a gateway-style
+    // overflow: plain text, not JSON, so only the status
+    // classification can carry the context-overflow signal.
+    if (active.case === 'openai-overflow' && !summary && n === 2) {
+      res.writeHead(400, { 'content-type': 'text/plain' });
+      res.end("This model's maximum context length is 8192 tokens. However, your messages resulted in 9000 tokens.");
+      return;
+    }
+    // Bedrock's overflow wording, served over the Anthropic transport: this
+    // checks the wording → reactive compact path, not Bedrock's own client.
+    if (active.case === 'bedrock-overflow' && !summary && n === 2) {
+      error(400, 'invalid_request_error', 'Input is too long for requested model.');
       return;
     }
     if(active.case==='provider-quota'){error(403,'permission_error',"You've reached your weekly (7-day) usage limit. Your quota will reset when the current 7-day window ends.");return;}
@@ -128,7 +143,7 @@ const server = createServer(async (req, res) => {
         : { command: 'sleep 4', description: 'Wait past the deadline' } }]; stop = 'tool_use';
     } else if (active.case.startsWith('concurrency-') && n === 1) {
       content = [1, 2].map(i => ({ type: 'tool_use', id: 'write_' + i, name: 'Bash', input: { command: 'pwd' } })); stop = 'tool_use';
-    } else if (active.case === 'max-turns' || ((active.case === 'read' || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3)) {
+    } else if (active.case === 'max-turns' || ((active.case === 'read' || active.case.endsWith('-overflow') || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3)) {
       content = [
         ...(active.case === 'compact-resume' ? [{ type: 'text', text: 'prior-context '.repeat(5000) }] : []),
         { type: 'tool_use', id: `toolu_${n}`, name: 'Read', input: { file_path: join(active.dir, 'fixture.txt') } },
@@ -137,6 +152,23 @@ const server = createServer(async (req, res) => {
       content = [{ type: 'text', text: 'AUDIT_OK' }];
     }
     const msg = { id: `msg_${active.requests.length}`, type: 'message', role: 'assistant', model: body.model, content, stop_reason: stop, stop_sequence: null, usage: child ? {input_tokens:1,output_tokens:1,cache_read_input_tokens:5000,cache_creation_input_tokens:4000} : harness ? {input_tokens:1,output_tokens:1} : {input_tokens:100,output_tokens:10} };
+    if (openai) {
+      const text = textOf(content) || null;
+      const toolCalls = content.filter(b => b.type === 'tool_use').map(b => ({ id: b.id, type: 'function', function: { name: b.name, arguments: JSON.stringify(b.input) } }));
+      const finish = toolCalls.length ? 'tool_calls' : 'stop';
+      const usage = { prompt_tokens: msg.usage.input_tokens, completion_tokens: msg.usage.output_tokens, total_tokens: msg.usage.input_tokens + msg.usage.output_tokens };
+      if (!body.stream) {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ id: msg.id, object: 'chat.completion', model: body.model, choices: [{ index: 0, message: { role: 'assistant', content: text, ...(toolCalls.length && { tool_calls: toolCalls }) }, finish_reason: finish }], usage }));
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      const chunk = (delta, finish_reason = null, extra = {}) => res.write(`data: ${JSON.stringify({ id: msg.id, object: 'chat.completion.chunk', model: body.model, choices: [{ index: 0, delta, finish_reason }], ...extra })}\n\n`);
+      chunk({ role: 'assistant', content: text, ...(toolCalls.length && { tool_calls: toolCalls.map((tc, index) => ({ index, ...tc })) }) });
+      chunk({}, finish, { usage });
+      res.end('data: [DONE]\n\n');
+      return;
+    }
     if (!body.stream) {
       res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(msg)); return;
     }
@@ -179,6 +211,7 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   Object.assign(env, {
     CLAUDE_CONFIG_DIR: join(active.dir, 'config'), ANTHROPIC_API_KEY: 'local-e2e-dummy', ANTHROPIC_BASE_URL: baseUrl,
     ANTHROPIC_MODEL: model, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', DISABLE_AUTOUPDATER: '1',
+    ...(scenario === 'openai-overflow' && { CLAUDE_CODE_USE_OPENAI: '1', OPENAI_BASE_URL: `${baseUrl}/v1`, OPENAI_API_KEY: 'local-e2e-dummy' }),
     CLAUDE_CODE_TASK_LIST_ID: 'harness-probe', NOA_CLAUDE_STREAMING_TOOL_EXECUTION: ['budget-nonstream', 'concurrency-nonstream'].includes(scenario) ? '0' : '1', FALLBACK_FOR_ALL_PRIMARY_MODELS: '1', CLAUDE_CODE_EAGER_FLUSH: '1',
   });
   const streamingInput = scenario.startsWith('budget-');
@@ -279,7 +312,7 @@ try {
           assert.ok(active.summaries > 0, 'compaction never executed');
           assert.equal(active.oversized, 0, 'oversized verbatim tail reached the model after compaction');
         } else {
-          runResult = await run(executable, scenario, [], scenario==='goal-child-usage'?'Create a temporary goal, run a child agent, report its usage and finish.':'Run the local loop fixture.');
+          runResult = await run(executable, scenario, [], scenario==='goal-child-usage'?'Create a temporary goal, run a child agent, report its usage and finish.':scenario.endsWith('-overflow')?`PROJECT_CONSTRAINT: ${sentinel}. Run the local loop fixture.`:'Run the local loop fixture.');
           const count = active.requests.length;
           // Without --bare the CLI also makes side requests; the loop's own carry the tool list.
           const main = active.requests.filter(r => r.body.tools?.length);
@@ -296,6 +329,12 @@ try {
             const goals=active.requests.flatMap(r=>r.body.messages||[]).flatMap(m=>Array.isArray(m.content)?m.content:[]).filter(b=>b.type==='tool_result'&&b.tool_use_id==='goal_3').map(b=>{try{return JSON.parse(b.content).goal}catch{return null}}).filter(Boolean);
             assert.ok(active.childRequests>=2,'child did not call a real tool');assert.ok(goals.some(g=>g.tokens_used===2*(1+1+5000+4000)+2),'child/cache tokens missing from parent goal');
           }
+          } else if (scenario.endsWith('-overflow')) {
+            assert.equal(runResult.code, 0, `overflow surfaced as: ${runResult.result.result}`); assert.equal(runResult.result.result, 'AUDIT_OK');
+            if (scenario === 'openai-overflow') assert.ok(active.requests.every(r => r.path.includes('/chat/completions')), 'request left the OpenAI-compatible transport');
+            assert.equal(active.summaries, 1, 'context overflow did not trigger reactive compact');
+            assert.equal(count, 4);
+            assert.ok(JSON.stringify(active.requests.at(-1).body.messages).includes(sentinel), 'retry after compaction lost the original constraint');
           } else if(scenario==='provider-quota') {
             assert.equal(runResult.code,1);assert.equal(runResult.result.is_error,true);assert.equal(runResult.result.terminal_reason,'api_error');assert.equal(count,1);assert.ok(runResult.result.result.includes('weekly (7-day) usage limit'));
             if(executable===entry)assert.ok(runResult.result.result.startsWith('Usage limit reached.'),'quota was reported as invalid authentication');
@@ -380,7 +419,7 @@ try {
   const shaOf = file => existsSync(file) ? sha(readFileSync(file)) : 'missing';
   writeFileSync(join(artifacts, 'verification.manifest.json'), JSON.stringify({
     command: [process.execPath, ...process.argv.slice(1)], revision, runtime: process.version,
-    transport: 'deterministic localhost Anthropic SSE; no actual model-quality benchmark',
+    transport: 'deterministic localhost Anthropic SSE (OpenAI-compatible chat completions for openai-overflow); no actual model-quality benchmark',
     entry, entry_sha256: shaOf(entry), comparison: compare ? { entry: resolve(compare), sha256: shaOf(resolve(compare)) } : undefined,
     script_sha256: sha(readFileSync(fileURLToPath(import.meta.url))),
     results_sha256: shaOf(join(artifacts, 'results.json')),

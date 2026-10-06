@@ -118,15 +118,21 @@ export function parsePromptTooLongTokenCounts(rawMessage: string): {
 }
 
 /**
- * Matches both the Anthropic literal ("prompt is too long") and the OpenAI
- * Chat Completions context-overflow shapes ("maximum context length is …",
- * error code context_length_exceeded) so reactive compact can fire on
- * OpenAI-compatible providers too.
+ * Matches the Anthropic literal ("prompt is too long"), Bedrock's wording
+ * ("input is too long for requested model"), a 413 that names the context
+ * window, and the OpenAI Chat Completions context-overflow shapes ("maximum
+ * context length is …", error code context_length_exceeded) so reactive
+ * compact can fire on every backend.
  */
-function isContextOverflowErrorMessage(message: string): boolean {
+function isContextOverflowErrorMessage(
+  message: string,
+  status?: number,
+): boolean {
   const lower = message.toLowerCase()
   return (
     lower.includes('prompt is too long') ||
+    lower.includes('input is too long for requested model') ||
+    (status === 413 && lower.includes('context window')) ||
     lower.includes('maximum context length') ||
     lower.includes('context_length_exceeded')
   )
@@ -627,7 +633,13 @@ function mapAssistantMessageFromError(
 
   // Handle prompt too long errors (Vertex returns 413, direct API returns 400,
   // OpenAI-compatible endpoints say "maximum context length is …")
-  if (error instanceof Error && isContextOverflowErrorMessage(error.message)) {
+  if (
+    error instanceof Error &&
+    isContextOverflowErrorMessage(
+      error.message,
+      error instanceof APIError ? error.status : undefined,
+    )
+  ) {
     // Content stays generic (UI matches on exact string). The raw error with
     // token counts goes into errorDetails — reactive compact's retry loop
     // parses the gap from there via getPromptTooLongTokenGap.

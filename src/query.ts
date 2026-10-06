@@ -410,8 +410,8 @@ async function* queryLoop(
   // only the summary and would under-count spend; remaining tells it the
   // pre-compact final window that got summarized away. Cumulative across
   // multiple compacts: each subtracts the final context at that compact's
-  // trigger point. Loop-local (not on State) to avoid touching the 7 continue
-  // sites.
+  // trigger point. Loop-local (not on State) so the continue sites don't
+  // have to thread it through nextState().
   let taskBudgetRemaining: number | undefined = undefined
   let usedToolsForGoal = false
   const hasNewUserPrompt = params.messages

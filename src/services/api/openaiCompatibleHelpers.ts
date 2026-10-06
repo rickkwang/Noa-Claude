@@ -33,6 +33,23 @@ export function classifyOpenAICompatibleError(
   body: string,
 ): string {
   const lowered = body.toLowerCase();
+  // The returned text must itself carry "maximum context length": the shim
+  // only appends the provider's wording when the body is JSON, and
+  // errors.ts recognizes context overflow (→ reactive compact) by message
+  // text alone. A bare 413 counts too, unlike on the Anthropic path: this
+  // transport has no strip-media retry for oversized bodies, so compaction
+  // is the only recovery (e.g. nginx's 1MB default body limit in front of a
+  // self-hosted server), and reactive compact runs at most once per turn.
+  if (
+    status === 413 ||
+    includesAny(lowered, [
+      'prompt is too long',
+      'maximum context length',
+      'context_length_exceeded',
+    ])
+  ) {
+    return `OpenAI-compatible context overflow (${status}): maximum context length exceeded.`;
+  }
   if (
     status === 401 ||
     status === 403 ||
