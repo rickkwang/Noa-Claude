@@ -80,7 +80,9 @@ export function CancelRequestHandler(props: CancelRequestHandlerProps): null {
   } = props
   const store = useAppStateStore()
   const setAppState = useSetAppState()
-  const queuedCommandsLength = useCommandQueue().length
+  const queuedCommandsLength = useCommandQueue().filter(
+    cmd => cmd.agentId === undefined,
+  ).length
   const { addNotification, removeNotification } = useNotifications()
   const lastKillAgentsPressRef = useRef<number>(0)
   const viewSelectionMode = useAppState(s => s.viewSelectionMode)
