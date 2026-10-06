@@ -31,7 +31,6 @@ import {
 import {
   ACT_DONT_REDERIVE_SECTION,
   AUTONOMY_SECTION,
-  BOUNDED_TARGET_DISCOVERY_SECTION,
   CONTEXT_MANAGEMENT_SECTION,
   CORRECTIONS_SECTION,
   DELIVERING_WORK_SECTION,
@@ -163,7 +162,7 @@ export function buildDynamicSystemPromptSections(params: {
     ? 'anti_verbosity:turn_updates'
     : fable
       ? 'anti_verbosity:fable'
-      : `anti_verbosity${antiVerbosity !== null ? ':L' : ''}`
+      : `anti_verbosity${lean ? ':L' : ''}`
 
   return [
     systemPromptSection(antiVerbosityName, () => antiVerbosity),
@@ -206,13 +205,6 @@ export function buildDynamicSystemPromptSections(params: {
     systemPromptSection(
       `output_style:${outputStyleConfig?.name ?? DEFAULT_OUTPUT_STYLE_NAME}`,
       () => getOutputStyleSection(outputStyleConfig),
-    ),
-    // Lean-prompt models carry neither this nor the summarize-tool-results
-    // line below: upstream's current lean and verbose heads both drop them, and
-    // the lean models have internalized the behavior. The verbose head keeps
-    // them. Keyed on the lean bit so a /model switch re-renders them.
-    systemPromptSection(lean ? 'target_discovery:L' : 'target_discovery', () =>
-      lean ? null : BOUNDED_TARGET_DISCOVERY_SECTION,
     ),
     // When delta enabled, instructions are announced via persisted
     // mcp_instructions_delta attachments (attachments.ts) instead of this

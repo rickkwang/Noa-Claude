@@ -4,7 +4,6 @@ import {
   SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
 } from '../../constants/prompts.js'
 import { buildDynamicSystemPromptSections } from '../../constants/systemPromptAssemblyHelpers.js'
-import { BOUNDED_TARGET_DISCOVERY_SECTION } from '../../constants/systemPromptCoreSections.js'
 import {
   clearSystemPromptSectionCache,
   resolveSystemPromptSections,
@@ -94,7 +93,7 @@ describe('CLI sysprompt prefix splitting', () => {
 })
 
 describe('prompt behavior contracts', () => {
-  test('target clarification follows output style guidance', async () => {
+  test('output style is not overridden by target clarification', async () => {
     clearSystemPromptSectionCache()
     const sections = await resolveSystemPromptSections(
       buildDynamicSystemPromptSections({
@@ -111,18 +110,8 @@ describe('prompt behavior contracts', () => {
     const outputStyleIndex = sections.findIndex(section =>
       section?.startsWith('# Output Style:'),
     )
-    const targetDiscoveryIndex = sections.indexOf(
-      BOUNDED_TARGET_DISCOVERY_SECTION,
-    )
-
     expect(outputStyleIndex).toBeGreaterThanOrEqual(0)
-    expect(targetDiscoveryIndex).toBeGreaterThan(outputStyleIndex)
-    expect(BOUNDED_TARGET_DISCOVERY_SECTION).toContain(
-      'do not infer one from the current directory',
-    )
-    expect(BOUNDED_TARGET_DISCOVERY_SECTION).toContain(
-      'end the turn without calling tools',
-    )
+    expect(sections.join('\n')).not.toContain('end the turn without calling tools')
   })
 
   test('plan mode is reserved for material ambiguity instead of routine implementation', () => {

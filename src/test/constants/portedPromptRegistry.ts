@@ -28,6 +28,11 @@ import {
   CONTEXT_MANAGEMENT_SECTION,
   CORRECTIONS_SECTION,
   DELIVERING_WORK_SECTION,
+  getActionsSection,
+  getDoingTasksSection,
+  getSimpleSystemSection,
+  getSimpleToneAndStyleSection,
+  getUsingYourToolsSection,
   PRONOUNS_SECTION,
 } from '../../constants/systemPromptCoreSections.js'
 import {
@@ -76,12 +81,45 @@ const LEAN_MODEL = 'claude-opus-5'
  */
 const UNBUNDLED_MODEL = 'claude-fable-5'
 
+/** No `lean_prompt` capability, so every gate takes the verbose branch. */
+const VERBOSE_MODEL = 'claude-sonnet-4-5'
+
+const VERBOSE_HEAD_TOOLS = new Set([
+  'Bash',
+  'Read',
+  'Edit',
+  'Write',
+  'Glob',
+  'Grep',
+  'TaskCreate',
+])
+
 function withPreReadRequired(render: () => string): string {
   process.env.NOA_CLAUDE_WRITE_REQUIRE_READ = '1'
   try {
     return render()
   } finally {
     delete process.env.NOA_CLAUDE_WRITE_REQUIRE_READ
+  }
+}
+
+/**
+ * The /help sub-bullets name this product and its issue tracker, so they are
+ * the one part of the section that is not upstream text and are dropped before
+ * hashing. MACRO is a build-time define; outside a bundle it may not exist, and
+ * only those dropped lines read it.
+ */
+function renderVerboseDoingTasks(): string {
+  const g = globalThis as { MACRO?: unknown }
+  const hadMacro = 'MACRO' in g
+  if (!hadMacro) g.MACRO = { ISSUES_EXPLAINER: '' }
+  try {
+    return (getDoingTasksSection(VERBOSE_HEAD_TOOLS, true) ?? '')
+      .split('\n')
+      .filter(line => !line.startsWith('  - '))
+      .join('\n')
+  } finally {
+    if (!hadMacro) delete g.MACRO
   }
 }
 
@@ -115,6 +153,14 @@ export function buildPortedSubjects(): Record<string, string> {
     'Edit lean': withPreReadRequired(() => getEditToolDescription(LEAN_MODEL)),
     'Write lean (pre-read skipped)': getWriteToolDescription(LEAN_MODEL),
     'Edit lean (pre-read skipped)': getEditToolDescription(LEAN_MODEL),
+    'verbose # System': getSimpleSystemSection(),
+    'verbose # Doing tasks': renderVerboseDoingTasks(),
+    'verbose # Executing actions with care': getActionsSection(),
+    'verbose # Using your tools': getUsingYourToolsSection(VERBOSE_HEAD_TOOLS),
+    'verbose # Tone and style': getSimpleToneAndStyleSection(),
+    'anti_verbosity verbose branch': getAntiVerbositySection(
+      VERBOSE_MODEL,
+    ) as string,
     'PowerShell edition (desktop)': getPowerShellEditionSection('desktop'),
     'PowerShell edition (core)': getPowerShellEditionSection('core'),
     'PowerShell edition (unknown)': getPowerShellEditionSection(null),
@@ -190,6 +236,15 @@ export const PORTED_DIGESTS: Record<string, string> = {
   // the single description is the port. Refreshed against 2.1.258; the earlier
   // transcription predated it and had drifted (a wrong 5.1 encoding default, a
   // missing Unix-equivalents section, a locally added sleep duration).
+  // Upstream's verbose head and its text-output section, re-ported against
+  // 2.1.291. `# System` omits the closing context-is-unlimited bullet (see its
+  // definition); `# Doing tasks` is hashed without its /help sub-bullets.
+  'verbose # System': '9134b25ababd619d',
+  'verbose # Doing tasks': 'cd52ea6235a08a31',
+  'verbose # Executing actions with care': 'f801973827e0e515',
+  'verbose # Using your tools': '1256ea5d7ccbaf1f',
+  'verbose # Tone and style': '657ab1c8b980b41a',
+  'anti_verbosity verbose branch': 'c184a5d4b4b6a0fc',
   'PowerShell edition (desktop)': 'b84252846b69ab41',
   'PowerShell edition (core)': 'b911baef6ada701e',
   'PowerShell edition (unknown)': '029e116530be9302',

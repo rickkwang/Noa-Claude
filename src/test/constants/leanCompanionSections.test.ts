@@ -129,7 +129,9 @@ describe('sections that ship alongside the compact head', () => {
     expect(resolve(LEAN_MODEL, 'anti_verbosity:L')).toBe(
       MATCH_SURROUNDING_CODE_SECTION,
     )
-    expect(resolve(VERBOSE_MODEL, 'anti_verbosity')).toBeNull()
+    expect(resolve(VERBOSE_MODEL, 'anti_verbosity')).toContain(
+      'End-of-turn summary: one or two sentences.',
+    )
   })
 
   // Fable/Mythos take upstream's long branch instead, which restates the

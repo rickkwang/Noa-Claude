@@ -177,6 +177,9 @@ const INTERPOLATED = [
   'Glob',
   'Grep',
   'Read',
+  // Before 'Task': alternation is first-match, and 'Task' alone would leave
+  // "Create …" glued to the following prose.
+  'TaskCreate',
   'Task',
   'Write',
   'Agent',
@@ -200,7 +203,11 @@ function checkLines(haystack: string, text: string): { miss: string[] } {
   const miss: string[] = []
   for (const line of text.split('\n')) {
     if (line.trim() === '' || present(haystack, line)) continue
-    for (const run of line.split(splitter)) {
+    // Bulleted sections are stored upstream as bare item strings and joined
+    // with their ` - ` / `  - ` prefix at runtime, so the prefix never appears
+    // next to the text in the binary.
+    const body = line.replace(/^ {1,2}- /, '')
+    for (const run of body.split(splitter)) {
       if (run.trim().length >= MIN_RUN && !present(haystack, run)) miss.push(run)
     }
   }

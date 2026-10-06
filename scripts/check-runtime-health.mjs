@@ -1930,7 +1930,7 @@ async function checkQualityRegressionGuards() {
   );
   assert(
     assembledExternalPrompt.includes(
-      'Clear first, concise second. Never let brevity reduce accuracy or omit information the reader needs to understand, verify, or act.',
+      'When you do write updates, write so the reader can pick up cold: complete sentences, no unexplained jargon or shorthand from earlier in the session.',
     ),
     'external prompt should preserve concise-but-complete communication guidance',
   );

@@ -508,20 +508,30 @@ Only write a code comment to state a constraint the code itself can't show, neve
  * the one-sentence lean branch, and a long "# Text output" one for everything
  * else.
  *
- * The third is deliberately not ported: Noa's verbose path already carries its
- * own "# Tone and style" section in the long head, so it has nowhere to go.
- *
  * Upstream also forces the first branch on for any model via an env/settings
  * flag. That is a rollout switch rather than a property of the model, and Noa
  * resolves the equivalents in-code, so it has no counterpart here.
  */
+const VERBOSE_TEXT_OUTPUT_SECTION = `# Text output (does not apply to tool calls)
+Assume users can't see most tool calls or thinking — only your text output. Before your first tool call, state in one sentence what you're about to do. While working, give short updates at key moments: when you find something, when you change direction, or when you hit a blocker. Brief is good — silent is not. One sentence per update is almost always enough.
+
+Don't narrate your internal deliberation. User-facing text should be relevant communication to the user, not a running commentary on your thought process. State results and decisions directly, and focus user-facing text on relevant updates for the user.
+
+When you do write updates, write so the reader can pick up cold: complete sentences, no unexplained jargon or shorthand from earlier in the session. But keep it tight — a clear sentence is better than a clear paragraph.
+
+End-of-turn summary: one or two sentences. What changed and what's next. Nothing else.
+
+Match responses to the task: a simple question gets a direct answer, not headers and sections.
+
+In code: default to writing no comments. Never write multi-paragraph docstrings or multi-line comment blocks — one short line max. Don't create planning, decision, or analysis documents unless the user asks for them — work from conversation context, not intermediate files.`
+
 export function getAntiVerbositySection(model: string | undefined): string | null {
   // Upstream checks the turn-updates branch first, so on models carrying both
   // capabilities (Fable 5.1, Mythos 5.1) the short form supersedes the long one.
   if (hasFable51PromptBundle(model)) return TURN_UPDATES_SECTION
   if (hasFableMitigations(model)) return getCommunicatingWithUserSection()
   if (shouldUseCompactSystemPrompt(model)) return MATCH_SURROUNDING_CODE_SECTION
-  return null
+  return VERBOSE_TEXT_OUTPUT_SECTION
 }
 
 /**
@@ -571,18 +581,17 @@ export const SECURITY_POLICY = `IMPORTANT: Assist with authorized security testi
  * the static prefix.
  *
  * Spacing follows upstream: a leading newline, then blank lines between the
- * identity line, the security policy and the Harness block. The Noa identity
- * sentence ahead of them is this fork's one addition here.
+ * identity line, the security policy and the Harness block. The identity line
+ * adds only the Noa product name.
  */
 export function getCompactHeadSection(hasOutputStyle: boolean): string {
-  const identity = hasOutputStyle
-    ? `You are an interactive agent that helps users according to your "Output Style" below, which describes how you should respond to user queries.`
-    : `You are an interactive agent that helps users with software engineering tasks.`
+  const audience = hasOutputStyle
+    ? `according to your "Output Style" below, which describes how you should respond to user queries.`
+    : `with software engineering tasks.`
 
   // eslint-disable-next-line custom-rules/prompt-spacing
   return `
-You are Noa Claude, an AI coding agent built on top of Claude Code's publicly available source. Refer to the product as Noa Claude. When users ask about your underlying model, answer truthfully based on the environment information below.
-${identity}
+You are Noa Claude, an interactive agent that helps users ${audience}
 
 ${SECURITY_POLICY}
 

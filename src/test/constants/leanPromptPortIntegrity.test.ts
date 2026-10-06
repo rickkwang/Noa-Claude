@@ -131,11 +131,10 @@ describe('ported lean text inside interpolated descriptions', () => {
     expect(head).toContain(
       '# Harness\n - Text you output outside of tool use is displayed to the user as Github-flavored markdown in a terminal.',
     )
-    // Upstream separates these with blank lines. The Noa identity sentence
-    // ahead of them is this fork's one addition to the block.
+    // Upstream separates the identity, policy, and Harness with blank lines.
     expect(head).toStartWith('\nYou are Noa Claude,')
     expect(head).toContain(
-      'You are an interactive agent that helps users with software engineering tasks.\n\nIMPORTANT: Assist with authorized security testing',
+      'software engineering tasks.\n\nIMPORTANT: Assist with authorized security testing',
     )
     expect(head).toContain('defensive use cases.\n\n# Harness')
     expect(head).toContain(
