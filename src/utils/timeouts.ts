@@ -1,7 +1,4 @@
 // @ts-nocheck
-import { getIsNonInteractiveSession } from '../bootstrap/state.js'
-import { isEnvTruthy } from './envUtils.js'
-
 // Constants for timeout values
 const DEFAULT_TIMEOUT_MS = 120_000 // 2 minutes
 const MAX_TIMEOUT_MS = 600_000 // 10 minutes
@@ -44,22 +41,6 @@ export function getMaxBashTimeoutMs(env: EnvLike = process.env): number {
   }
   // Always ensure max is at least as large as default
   return Math.max(MAX_TIMEOUT_MS, getDefaultBashTimeoutMs(env))
-}
-
-/**
- * Whether a command started with `run_in_background` is stopped once it has
- * run for its background time limit.
- *
- * Only in non-interactive sessions: there nobody watches the task list, so a
- * hung background command would leave the model waiting for a notification
- * that never arrives. Interactively the user sees and can stop the task, and
- * long-lived commands like dev servers are expected to outlive any limit.
- */
-export function isBackgroundDeadlineEnabled(): boolean {
-  return (
-    getIsNonInteractiveSession() &&
-    !isEnvTruthy(process.env.NOA_CLAUDE_DISABLE_BACKGROUND_DEADLINE)
-  )
 }
 
 export function getMaxBackgroundTimeoutMs(env: EnvLike = process.env): number {

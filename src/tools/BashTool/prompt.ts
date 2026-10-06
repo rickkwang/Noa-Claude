@@ -8,12 +8,12 @@ import { shouldIncludeGitInstructions } from '../../utils/gitSettings.js'
 import { getClaudeTempDir } from '../../utils/permissions/filesystem.js'
 import { SandboxManager } from '../../utils/sandbox/sandbox-adapter.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
+import { isBackgroundDeadlineEnabled } from '../../tasks/LocalShellTask/backgroundDeadline.js'
 import {
   DEFAULT_BACKGROUND_TIMEOUT_MS,
   getDefaultBashTimeoutMs,
   getMaxBackgroundTimeoutMs,
   getMaxBashTimeoutMs,
-  isBackgroundDeadlineEnabled,
 } from '../../utils/timeouts.js'
 import {
   getUndercoverInstructions,

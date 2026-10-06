@@ -43,7 +43,7 @@ import { persistLargeOutput } from '../shared/persistLargeOutput.js';
 import { bashToolHasPermission, commandHasAnyCd, matchWildcardPattern, permissionRuleExtractPrefix } from './bashPermissions.js';
 import { interpretCommandResult } from './commandSemantics.js';
 import { getDefaultTimeoutMs, getMaxTimeoutMs, getRunInBackgroundDescription, getSimplePrompt } from './prompt.js';
-import { isBackgroundDeadlineEnabled, resolveBackgroundTimeoutMs } from '../../utils/timeouts.js';
+import { getBackgroundDeadlineMs } from '../../tasks/LocalShellTask/backgroundDeadline.js';
 import { checkReadOnlyConstraints } from './readOnlyValidation.js';
 import { maybeRegisterGrepRead } from './grepReadRegistration.js';
 import { hashSedBaseContent, parseSedEditCommand } from './sedEditParser.js';
@@ -321,7 +321,6 @@ const outputSchema = lazySchema(() => z.object({
   backgroundedByUser: z.boolean().optional().describe('True if the user manually backgrounded the command with Ctrl+B'),
   backgroundedToDeliverMessage: z.boolean().optional().describe('True if the command was moved to the background so a message sent with send-now could reach the model'),
   assistantAutoBackgrounded: z.boolean().optional().describe('True if assistant-mode auto-backgrounded a long-running blocking command'),
-  backgroundDeadlineMs: z.number().optional().describe('How long the command may run in the background before it is stopped'),
   dangerouslyDisableSandbox: z.boolean().optional().describe('Flag to indicate if sandbox mode was overridden'),
   returnCodeInterpretation: z.string().optional().describe('Semantic interpretation for non-error exit codes with special meaning'),
   noOutputExpected: z.boolean().optional().describe('Whether the command is expected to produce no output on success'),
@@ -607,7 +606,6 @@ export const BashTool = buildTool({
     backgroundedByUser,
     backgroundedToDeliverMessage,
     assistantAutoBackgrounded,
-    backgroundDeadlineMs,
     structuredContent,
     persistedOutputPath,
     persistedOutputSize
@@ -654,16 +652,21 @@ export const BashTool = buildTool({
     let backgroundInfo = '';
     if (backgroundTaskId) {
       const outputPath = getTaskOutputPath(backgroundTaskId);
+      // A command started with run_in_background had its limit stated by the
+      // schema; one that landed in the background some other way gets the
+      // default limit, which the model has not been told about yet.
+      const deadlineMs = assistantAutoBackgrounded || backgroundedToDeliverMessage || backgroundedByUser ? getBackgroundDeadlineMs() : undefined;
+      const deadlineInfo = deadlineMs !== undefined ? ` If it is still running after ${formatDuration(deadlineMs, {
+        hideTrailingZeros: true
+      })} in the background, it will be stopped and you will be notified.` : '';
       if (assistantAutoBackgrounded) {
-        backgroundInfo = `Command exceeded the assistant-mode blocking budget (${ASSISTANT_BLOCKING_BUDGET_MS / 1000}s) and was moved to the background with ID: ${backgroundTaskId}. It is still running — you will be notified when it completes. Output is being written to: ${outputPath}. In assistant mode, delegate long-running work to a subagent or use run_in_background to keep this conversation responsive.`;
+        backgroundInfo = `Command exceeded the assistant-mode blocking budget (${ASSISTANT_BLOCKING_BUDGET_MS / 1000}s) and was moved to the background with ID: ${backgroundTaskId}. It is still running — you will be notified when it completes. Output is being written to: ${outputPath}. In assistant mode, delegate long-running work to a subagent or use run_in_background to keep this conversation responsive.${deadlineInfo}`;
       } else if (backgroundedToDeliverMessage) {
-        backgroundInfo = `Command was moved to the background (ID: ${backgroundTaskId}) so that a message that arrived while it was running can reach you; it was not interrupted. Output is being written to: ${outputPath}.`;
+        backgroundInfo = `Command was moved to the background (ID: ${backgroundTaskId}) so that a message that arrived while it was running can reach you; it was not interrupted. Output is being written to: ${outputPath}.${deadlineInfo}`;
       } else if (backgroundedByUser) {
-        backgroundInfo = `Command was manually backgrounded by user with ID: ${backgroundTaskId}. Output is being written to: ${outputPath}`;
+        backgroundInfo = `Command was manually backgrounded by user with ID: ${backgroundTaskId}. Output is being written to: ${outputPath}${deadlineInfo ? `.${deadlineInfo}` : ''}`;
       } else {
-        backgroundInfo = `Command running in background with ID: ${backgroundTaskId}. Output is being written to: ${outputPath}${backgroundDeadlineMs !== undefined ? `. If it is still running after ${formatDuration(backgroundDeadlineMs, {
-          hideTrailingZeros: true
-        })} in the background, it will be stopped and you will be notified.` : ''}`;
+        backgroundInfo = `Command running in background with ID: ${backgroundTaskId}. Output is being written to: ${outputPath}`;
       }
     }
     return {
@@ -871,7 +874,6 @@ export const BashTool = buildTool({
       backgroundedByUser: result.backgroundedByUser,
       backgroundedToDeliverMessage: result.backgroundedToDeliverMessage,
       assistantAutoBackgrounded: result.assistantAutoBackgrounded,
-      backgroundDeadlineMs: result.backgroundTaskId !== undefined && input.run_in_background === true && isBackgroundDeadlineEnabled() ? resolveBackgroundTimeoutMs(input.timeout) : undefined,
       dangerouslyDisableSandbox: 'dangerouslyDisableSandbox' in input ? input.dangerouslyDisableSandbox as boolean | undefined : undefined,
       persistedOutputPath,
       persistedOutputSize
@@ -966,14 +968,14 @@ async function* runShellCommand({
   const resultPromise = shellCommand.result;
 
   // Helper to spawn a background task and return its ID
-  async function spawnBackgroundTask(backgroundDeadlineMs?: number): Promise<string> {
+  async function spawnBackgroundTask(backgroundTimeout?: number): Promise<string> {
     const handle = await spawnShellTask({
       command,
       description: description || command,
       shellCommand,
       toolUseId,
       agentId,
-      backgroundDeadlineMs
+      timeout: backgroundTimeout
     }, {
       abortController,
       getAppState: () => {
@@ -1053,7 +1055,8 @@ async function* runShellCommand({
   // regardless of the command type (isAutobackgroundingAllowed only applies to automatic backgrounding)
   // Skip if background tasks are disabled - run in foreground instead
   if (run_in_background === true && !isBackgroundTasksDisabled) {
-    const shellId = await spawnBackgroundTask(isBackgroundDeadlineEnabled() ? resolveBackgroundTimeoutMs(timeout) : undefined);
+    // With run_in_background, `timeout` is the background time limit.
+    const shellId = await spawnBackgroundTask(timeout);
     logEvent('tengu_bash_command_explicitly_backgrounded', {
       command_type: getCommandTypeForLogging(command)
     });

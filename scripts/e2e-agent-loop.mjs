@@ -185,7 +185,7 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   const harness = scenario.startsWith('task-') || scenario === 'goal-child-usage' || scenario==='agent-custom-fork';
   // Hooks are off under --bare, so the hook scenario runs the full startup path.
   // --bare drops run_in_background, so the deadline scenario needs the full startup path too.
-  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('concurrency-') || scenario === 'background-deadline' || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', model, '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':'TaskCreate,TaskUpdate,TaskGet,TaskList') : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : '2'];
+  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('concurrency-') || scenario === 'background-deadline' || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', model, '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':'TaskCreate,TaskUpdate,TaskGet,TaskList') : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'background-deadline' ? '4' : '2'];
   if (scenario !== 'compact-resume' && scenario !== 'tombstone-resume' && scenario!=='agent-custom-fork') command.push('--no-session-persistence');
   if (scenario === 'fallback') command.push('--fallback-model', 'claude-haiku-4-5');
   // An allow rule that the narrower deny rule must still beat.
@@ -337,10 +337,11 @@ try {
             assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
             const bash = main[0].body.tools.find(t => t.name === 'Bash');
             assert.ok(bash.input_schema.properties.run_in_background.description.includes('limits how long the command may run in the background'), 'schema does not state the background limit');
-            const launched = JSON.stringify(main[1].body.messages.at(-1));
-            assert.ok(launched.includes('If it is still running after 2s in the background, it will be stopped'), 'tool result does not state the limit');
-            const later = JSON.stringify(main.slice(2).map(r => r.body.messages));
-            assert.ok(later.includes('was stopped after reaching its 2s background time limit'), 'model was never told the command hit its limit');
+            // The limit fires during the foreground wait, so the notification
+            // must arrive with that tool result, inside the same turn.
+            const sameTurn = JSON.stringify(main[2].body.messages.slice(-1));
+            assert.ok(sameTurn.includes('was stopped after reaching its background time limit'), 'limit notification did not arrive within the turn');
+            assert.ok(sameTurn.includes('<note>If the work in progress still needs it'), 'notification lacks the next-step note');
             // The fixture's unusual duration is its fingerprint in the process table.
             let survivors = '';
             try { survivors = execFileSync('pgrep', ['-f', 'sleep 37.25'], { encoding: 'utf8' }).trim(); } catch {}

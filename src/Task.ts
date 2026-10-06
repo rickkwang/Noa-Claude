@@ -60,13 +60,12 @@ export type TaskStateBase = {
 export type LocalShellSpawnInput = {
   command: string
   description: string
+  /** With `run_in_background`, how long the command may run in the background. */
   timeout?: number
   toolUseId?: string
   agentId?: AgentId
   /** UI display variant: description-as-label, dialog title, status bar pill. */
   kind?: 'bash' | 'monitor'
-  /** Stop the command once it has run this long in the background. */
-  backgroundDeadlineMs?: number
 }
 
 // What getTaskByType dispatches for: kill. spawn/render were never

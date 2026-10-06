@@ -1,13 +1,12 @@
 // @ts-nocheck
 import { stat } from 'fs/promises';
-import { OUTPUT_FILE_TAG, STATUS_TAG, SUMMARY_TAG, TASK_ID_TAG, TASK_NOTIFICATION_TAG, TOOL_USE_ID_TAG } from '../../constants/xml.js';
+import { NOTE_TAG, OUTPUT_FILE_TAG, STATUS_TAG, SUMMARY_TAG, TASK_ID_TAG, TASK_NOTIFICATION_TAG, TOOL_USE_ID_TAG } from '../../constants/xml.js';
 import { abortSpeculation } from '../../services/PromptSuggestion/speculation.js';
 import type { AppState } from '../../state/AppState.js';
 import type { LocalShellSpawnInput, SetAppState, Task, TaskContext, TaskHandle } from '../../Task.js';
 import { createTaskStateBase } from '../../Task.js';
 import type { AgentId } from '../../types/ids.js';
 import { registerCleanup } from '../../utils/cleanupRegistry.js';
-import { formatDuration } from '../../utils/format.js';
 import { tailFile } from '../../utils/fsOperations.js';
 import { logError } from '../../utils/log.js';
 import { enqueuePendingNotification } from '../../utils/messageQueueManager.js';
@@ -17,6 +16,7 @@ import { registerTask, updateTaskState } from '../../utils/task/framework.js';
 import { escapeXml } from '../../utils/xml.js';
 import { backgroundAgentTask, isLocalAgentTask } from '../LocalAgentTask/LocalAgentTask.js';
 import { isMainSessionTask } from '../LocalMainSessionTask.js';
+import { BACKGROUND_STOP_CAUSES, type BackgroundStopCause, getBackgroundDeadlineMs } from './backgroundDeadline.js';
 import { type BashTaskKind, isLocalShellTask, type LocalShellTaskState } from './guards.js';
 import { killTask } from './killShellTasks.js';
 
@@ -103,7 +103,17 @@ The command is likely blocked on an interactive prompt. Kill this task and re-ru
     clearInterval(timer);
   };
 }
-function enqueueShellNotification(taskId: string, description: string, status: 'completed' | 'failed' | 'killed', exitCode: number | undefined, setAppState: SetAppState, toolUseId?: string, kind: BashTaskKind = 'bash', agentId?: AgentId, stoppedAtDeadlineMs?: number): void {
+type ShellNotificationOptions = {
+  toolUseId?: string;
+  kind?: BashTaskKind;
+  agentId?: AgentId;
+  stopCause?: BackgroundStopCause;
+};
+function enqueueShellNotification(taskId: string, description: string, status: 'completed' | 'failed' | 'killed', exitCode: number | undefined, setAppState: SetAppState, {
+  toolUseId,
+  agentId,
+  stopCause
+}: ShellNotificationOptions = {}): void {
   // Atomically check and set notified flag to prevent duplicate notifications.
   // If the task was already marked as notified (e.g., by TaskStopTool), skip
   // enqueueing to avoid sending redundant messages to the model.
@@ -135,7 +145,7 @@ function enqueueShellNotification(taskId: string, description: string, status: '
       summary = `${BACKGROUND_BASH_SUMMARY_PREFIX}"${description}" failed${exitCode !== undefined ? ` with exit code ${exitCode}` : ''}`;
       break;
     case 'killed':
-      summary = stoppedAtDeadlineMs !== undefined ? `${BACKGROUND_BASH_SUMMARY_PREFIX}"${description}" was stopped after reaching its ${formatDuration(stoppedAtDeadlineMs)} background time limit` : `${BACKGROUND_BASH_SUMMARY_PREFIX}"${description}" was stopped`;
+      summary = `${BACKGROUND_BASH_SUMMARY_PREFIX}"${description}" was ${stopCause ? BACKGROUND_STOP_CAUSES[stopCause].summary : 'stopped'}`;
       break;
   }
   const outputPath = getTaskOutputPath(taskId);
@@ -144,14 +154,51 @@ function enqueueShellNotification(taskId: string, description: string, status: '
 <${TASK_ID_TAG}>${taskId}</${TASK_ID_TAG}>${toolUseIdLine}
 <${OUTPUT_FILE_TAG}>${outputPath}</${OUTPUT_FILE_TAG}>
 <${STATUS_TAG}>${status}</${STATUS_TAG}>
-<${SUMMARY_TAG}>${escapeXml(summary)}</${SUMMARY_TAG}>
+<${SUMMARY_TAG}>${escapeXml(summary)}</${SUMMARY_TAG}>${stopCause ? `\n<${NOTE_TAG}>${escapeXml(BACKGROUND_STOP_CAUSES[stopCause].note)}</${NOTE_TAG}>` : ''}
 </${TASK_NOTIFICATION_TAG}>`;
+  // 'next', not 'later': delivered between tool calls, so a model still
+  // working in the same turn hears about the task without waiting for the
+  // turn to end.
   enqueuePendingNotification({
     value: message,
     mode: 'task-notification',
-    priority: 'later',
+    priority: 'next',
     agentId
   });
+}
+
+/**
+ * Stop a background shell at its time limit. The notification goes out first,
+ * carrying the cause; killTask then marks the task killed and notified, so the
+ * completion handler's own notification is suppressed.
+ */
+function armBackgroundDeadline(taskId: string, description: string, setAppState: SetAppState, {
+  toolUseId,
+  kind,
+  agentId
+}: ShellNotificationOptions, requestedTimeoutMs?: number): () => void {
+  if (kind === 'monitor') return () => {};
+  const deadlineMs = getBackgroundDeadlineMs(requestedTimeoutMs);
+  if (deadlineMs === undefined) return () => {};
+  const timer = setTimeout(() => {
+    let stillRunning = false;
+    updateTaskState<LocalShellTaskState>(taskId, setAppState, task => {
+      // The process can exit on its own just before the timer fires; only a
+      // shell still in the background was stopped by the limit.
+      stillRunning = task.status === 'running' && !task.notified && task.shellCommand?.status === 'backgrounded';
+      return task;
+    });
+    if (!stillRunning) return;
+    enqueueShellNotification(taskId, description, 'killed', undefined, setAppState, {
+      toolUseId,
+      kind,
+      agentId,
+      stopCause: 'deadline'
+    });
+    killTask(taskId, setAppState);
+  }, deadlineMs);
+  timer.unref();
+  return () => clearTimeout(timer);
 }
 export const LocalShellTask: Task = {
   name: 'LocalShellTask',
@@ -170,7 +217,7 @@ export async function spawnShellTask(input: LocalShellSpawnInput & {
     toolUseId,
     agentId,
     kind,
-    backgroundDeadlineMs
+    timeout
   } = input;
   const {
     setAppState
@@ -203,44 +250,20 @@ export async function spawnShellTask(input: LocalShellSpawnInput & {
   // Just transition to backgrounded state so the process keeps running.
   shellCommand.background(taskId);
   const cancelStallWatchdog = startStallWatchdog(taskId, description, kind, toolUseId, agentId);
-
-  // Killed directly rather than through killTask, which marks the task
-  // notified: the model has to hear why its command stopped.
-  let stoppedAtDeadline = false;
-  const deadlineTimer = backgroundDeadlineMs === undefined ? undefined : setTimeout(() => {
-    let stillRunning = false;
-    updateTaskState<LocalShellTaskState>(taskId, setAppState, task => {
-      stillRunning = task.status === 'running' && !task.notified;
-      return task;
-    });
-    if (!stillRunning) return;
-    stoppedAtDeadline = true;
-    shellCommand.kill();
-  }, backgroundDeadlineMs);
-  deadlineTimer?.unref();
+  const cancelDeadline = armBackgroundDeadline(taskId, description, setAppState, {
+    toolUseId,
+    kind,
+    agentId
+  }, timeout);
   void shellCommand.result.then(async result => {
     cancelStallWatchdog();
-    if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+    cancelDeadline();
     await flushAndCleanup(shellCommand);
     let wasKilled = false;
     updateTaskState<LocalShellTaskState>(taskId, setAppState, task => {
       if (task.status === 'killed') {
         wasKilled = true;
         return task;
-      }
-      if (stoppedAtDeadline) {
-        wasKilled = true;
-        return {
-          ...task,
-          status: 'killed',
-          result: {
-            code: result.code,
-            interrupted: result.interrupted
-          },
-          shellCommand: null,
-          unregisterCleanup: undefined,
-          endTime: Date.now()
-        };
       }
       return {
         ...task,
@@ -254,7 +277,11 @@ export async function spawnShellTask(input: LocalShellSpawnInput & {
         endTime: Date.now()
       };
     });
-    enqueueShellNotification(taskId, description, wasKilled ? 'killed' : result.code === 0 ? 'completed' : 'failed', result.code, setAppState, toolUseId, kind, agentId, stoppedAtDeadline ? backgroundDeadlineMs : undefined);
+    enqueueShellNotification(taskId, description, wasKilled ? 'killed' : result.code === 0 ? 'completed' : 'failed', result.code, setAppState, {
+      toolUseId,
+      kind,
+      agentId
+    });
     void evictTaskOutput(taskId);
   });
   return {
@@ -340,10 +367,16 @@ function backgroundTask(taskId: string, getAppState: () => AppState, setAppState
     };
   });
   const cancelStallWatchdog = startStallWatchdog(taskId, description, kind, toolUseId, agentId);
+  const cancelDeadline = armBackgroundDeadline(taskId, description, setAppState, {
+    toolUseId,
+    kind,
+    agentId
+  });
 
   // Set up result handler
   void shellCommand.result.then(async result => {
     cancelStallWatchdog();
+    cancelDeadline();
     await flushAndCleanup(shellCommand);
     let wasKilled = false;
     let cleanupFn: (() => void) | undefined;
@@ -371,10 +404,18 @@ function backgroundTask(taskId: string, getAppState: () => AppState, setAppState
     // Call cleanup outside of the state updater (avoid side effects in updater)
     cleanupFn?.();
     if (wasKilled) {
-      enqueueShellNotification(taskId, description, 'killed', result.code, setAppState, toolUseId, kind, agentId);
+      enqueueShellNotification(taskId, description, 'killed', result.code, setAppState, {
+        toolUseId,
+        kind,
+        agentId
+      });
     } else {
       const finalStatus = result.code === 0 ? 'completed' : 'failed';
-      enqueueShellNotification(taskId, description, finalStatus, result.code, setAppState, toolUseId, kind, agentId);
+      enqueueShellNotification(taskId, description, finalStatus, result.code, setAppState, {
+        toolUseId,
+        kind,
+        agentId
+      });
     }
     void evictTaskOutput(taskId);
   });
@@ -511,10 +552,15 @@ export function backgroundExistingForegroundTask(taskId: string, shellCommand: S
     };
   });
   const cancelStallWatchdog = startStallWatchdog(taskId, description, undefined, toolUseId, agentId);
+  const cancelDeadline = armBackgroundDeadline(taskId, description, setAppState, {
+    toolUseId,
+    agentId
+  });
 
   // Set up result handler (mirrors backgroundTask's handler)
   void shellCommand.result.then(async result => {
     cancelStallWatchdog();
+    cancelDeadline();
     await flushAndCleanup(shellCommand);
     let wasKilled = false;
     let cleanupFn: (() => void) | undefined;
@@ -538,7 +584,10 @@ export function backgroundExistingForegroundTask(taskId: string, shellCommand: S
     });
     cleanupFn?.();
     const finalStatus = wasKilled ? 'killed' : result.code === 0 ? 'completed' : 'failed';
-    enqueueShellNotification(taskId, description, finalStatus, result.code, setAppState, toolUseId, undefined, agentId);
+    enqueueShellNotification(taskId, description, finalStatus, result.code, setAppState, {
+      toolUseId,
+      agentId
+    });
     void evictTaskOutput(taskId);
   });
   return true;

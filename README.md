@@ -225,7 +225,7 @@ All builds require [Bun](https://bun.sh).
 - `NOA_CLAUDE_NEW_INIT=1` — Opt `/init` in to the interview-style setup flow (existing-file branch, proposal review, optional skills/hooks) instead of the single-shot prompt
 - `NOA_CLAUDE_PROMPT_CACHE_1H=1|0|<patterns>` — Opt in to the 1-hour prompt-cache TTL. Off by default, and it should stay off unless your rhythm is genuinely interrupted. See [1-hour prompt cache](#1-hour-prompt-cache)
 - `NOA_CLAUDE_DISABLE_FEEDBACK_DRAFTS=1` — Turn off both the `SendFeedback` tool and `/feedback` (also disabled by `DISABLE_FEEDBACK_COMMAND`/`DISABLE_BUG_COMMAND`)
-- `NOA_CLAUDE_DISABLE_BACKGROUND_DEADLINE=1` — In `--print`/SDK sessions, let `run_in_background` Bash commands run without a time limit. By default they are stopped after their `timeout` (30 minutes unless set, at most 2 hours) and the model is notified; interactive sessions never apply a limit
+- `NOA_CLAUDE_DISABLE_BACKGROUND_DEADLINE=1` — In `--print`/SDK sessions, let background Bash commands run without a time limit. By default a background command is stopped after 30 minutes, or after its `timeout` when started with `run_in_background` (at most 2 hours), and the model is notified; interactive sessions never apply a limit
 
 Legacy `CLAUDE_CODE_*` names are still accepted for compatibility; `NOA_CLAUDE_*` is preferred.
 
