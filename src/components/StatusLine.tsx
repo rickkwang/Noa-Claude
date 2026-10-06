@@ -2,7 +2,6 @@
 import { feature } from 'bun:bundle';
 import * as React from 'react';
 import { memo, useCallback, useEffect, useRef } from 'react';
-import { logEvent } from 'src/services/analytics/index.js';
 import { useAppState, useSetAppState } from 'src/state/AppState.js';
 import type { PermissionMode } from 'src/utils/permissions/PermissionMode.js';
 import { getIsRemoteMode, getKairosActive, getMainThreadAgentType, getOriginalCwd, getSdkBetas, getSessionId } from '../bootstrap/state.js';
@@ -429,11 +428,6 @@ function StatusLineInner({
   useEffect(() => {
     const statusLine = settings?.statusLine;
     if (statusLine) {
-      logEvent('tengu_status_line_mount', {
-        command_length: statusLine.command.length,
-        padding: statusLine.padding,
-        refresh_interval_ms: getStatusLineRefreshMs(statusLine) ?? undefined
-      });
       // Log if status line is configured but disabled by disableAllHooks
       if (settings.disableAllHooks === true) {
         logForDebugging('Status line is configured but disableAllHooks is true', {
@@ -455,8 +449,6 @@ function StatusLineInner({
         });
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
   }, []); // Only run once on mount - settings stable for initial logging
 
   // Initial update on mount + cleanup on unmount
@@ -471,8 +463,6 @@ function StatusLineInner({
         clearTimeout(wakeTimerRef.current);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
   }, []); // Only run once on mount, not when doUpdate changes
 
   // Get padding from settings or default to 0
