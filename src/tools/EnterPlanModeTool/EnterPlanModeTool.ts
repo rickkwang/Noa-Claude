@@ -2,6 +2,7 @@
 import { feature } from 'bun:bundle'
 import { z } from 'zod/v4'
 import {
+  canPromptUserForInput,
   getAllowedChannels,
   getIsInteractive,
   handlePlanModeTransition,
@@ -56,6 +57,7 @@ export const EnterPlanModeTool: Tool<InputSchema, Output> = buildTool({
   },
   shouldDefer: true,
   isEnabled() {
+    if (!canPromptUserForInput()) return false
     // In headless channel sessions, ExitPlanMode's approval dialog cannot be
     // answered locally. Keep interactive TUI sessions enabled: --channels is
     // just an additional input path there, not a replacement for the terminal.

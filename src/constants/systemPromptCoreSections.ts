@@ -4,6 +4,7 @@ import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from '../tools/FileWriteTool/prompt.js'
 import { GLOB_TOOL_NAME } from '../tools/GlobTool/prompt.js'
 import { GREP_TOOL_NAME } from '../tools/GrepTool/prompt.js'
+import { canPromptUserForInput } from '../bootstrap/state.js'
 import { ASK_USER_QUESTION_TOOL_NAME } from '../tools/AskUserQuestionTool/prompt.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import { SKILL_TOOL_NAME } from '../tools/SkillTool/constants.js'
@@ -94,7 +95,7 @@ function getExecutionGuardItems(): Array<string | string[]> {
   return [
     `Call out misconceptions and relevant adjacent bugs; apply judgment, not blind compliance.`,
     `In general, do not propose changes to code you haven't read. Read and understand the relevant files first.`,
-    `If an approach fails, diagnose why before switching tactics: read the error, check assumptions, and try a focused fix. Never retry blindly. Use ${ASK_USER_QUESTION_TOOL_NAME} only when investigation cannot unblock you.`,
+    `If an approach fails, diagnose why before switching tactics: read the error, check assumptions, and try a focused fix. Never retry blindly.${canPromptUserForInput() ? ` Use ${ASK_USER_QUESTION_TOOL_NAME} only when investigation cannot unblock you.` : ''}`,
     `Avoid command injection, XSS, SQL injection, and other OWASP top 10 vulnerabilities. Fix insecure code you introduce.`,
     // The gold-plating clause is corrective, not descriptive: it stops the
     // minimalism rules above from being read as license to stop early. It sits

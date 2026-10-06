@@ -3,6 +3,7 @@ import { feature } from 'bun:bundle'
 import { writeFile } from 'fs/promises'
 import { z } from 'zod/v4'
 import {
+  canPromptUserForInput,
   getAllowedChannels,
   getIsInteractive,
   hasExitedPlanModeInSession,
@@ -167,6 +168,8 @@ export const ExitPlanModeV2Tool: Tool<InputSchema, Output> = buildTool({
   },
   shouldDefer: true,
   isEnabled() {
+    // Teammates exit plan mode through the mailbox, with no local prompt.
+    if (!canPromptUserForInput() && !isTeammate()) return false
     // In headless channel sessions, the approval dialog cannot be answered
     // locally. Interactive TUI sessions still have the terminal available, so
     // --channels must not hide the plan approval tool.

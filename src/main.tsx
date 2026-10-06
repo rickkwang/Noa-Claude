@@ -177,7 +177,7 @@ import { setCwd } from 'src/utils/Shell.js';
 import { type ProcessedResume, processResumedConversation } from 'src/utils/sessionRestore.js';
 import { parseSettingSourcesFlag } from 'src/utils/settings/constants.js';
 import { plural } from 'src/utils/stringUtils.js';
-import { type ChannelEntry, getInitialMainLoopModel, getIsNonInteractiveSession, getSdkBetas, getSessionId, getUserMsgOptIn, setAllowedChannels, setAllowedSettingSources, setChromeFlagOverride, setClientType, setCwdState, setFlagSettingsPath, setInitialMainLoopModel, setInlinePlugins, setIsInteractive, setKairosActive, setOriginalCwd, setQuestionPreviewFormat, setSdkBetas, setSessionBypassPermissionsMode, setSessionPersistenceDisabled, setSessionSource, setUserMsgOptIn, switchSession } from './bootstrap/state.js';
+import { type ChannelEntry, getInitialMainLoopModel, getIsNonInteractiveSession, getSdkBetas, getSessionId, getUserMsgOptIn, setAllowedChannels, setAllowedSettingSources, setChromeFlagOverride, setClientType, setCwdState, setFlagSettingsPath, setInitialMainLoopModel, setInlinePlugins, setIsInteractive, setKairosActive, setOriginalCwd, setPermissionPromptToolConfigured, setQuestionPreviewFormat, setSdkBetas, setSessionBypassPermissionsMode, setSessionPersistenceDisabled, setSessionSource, setUserMsgOptIn, switchSession } from './bootstrap/state.js';
 
 // Statically imported rather than `await import(...)`: this was the bundle's
 // only top-level await, and one of them keeps dist/main.js pinned to ESM, which
@@ -1733,6 +1733,8 @@ async function run(): Promise<CommanderCommand> {
       maybeActivateProactive(options);
       logForDebugging('[STARTUP] Proactive mode activation complete');
       logForDebugging('[STARTUP] Loading tools...');
+      // A remote SDK host (--sdk-url) relays permission prompts like the tool does.
+      setPermissionPromptToolConfigured(!!options.permissionPromptTool || !!sdkUrl);
       tools = getTools(toolPermissionContext);
     }
 

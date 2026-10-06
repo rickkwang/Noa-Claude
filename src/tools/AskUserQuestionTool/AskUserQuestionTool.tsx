@@ -2,7 +2,7 @@
 import { c as _c } from "react/compiler-runtime";
 import { feature } from 'bun:bundle';
 import * as React from 'react';
-import { getAllowedChannels, getQuestionPreviewFormat } from 'src/bootstrap/state.js';
+import { canPromptUserForInput, getAllowedChannels, getQuestionPreviewFormat } from 'src/bootstrap/state.js';
 import { MessageResponse } from 'src/components/MessageResponse.js';
 import { BLACK_CIRCLE } from 'src/constants/figures.js';
 import { getModeColor } from 'src/utils/permissions/PermissionMode.js';
@@ -134,6 +134,7 @@ export const AskUserQuestionTool: Tool<InputSchema, Output> = buildTool({
     return '';
   },
   isEnabled() {
+    if (!canPromptUserForInput()) return false;
     // When --channels is active the user is likely on Telegram/Discord, not
     // watching the TUI. The multiple-choice dialog would hang with nobody at
     // the keyboard. Channel permission relay already skips

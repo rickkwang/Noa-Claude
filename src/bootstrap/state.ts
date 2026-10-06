@@ -123,6 +123,8 @@ type State = {
   initialMainLoopModel: ModelSetting
   modelStrings: ModelStrings | null
   isInteractive: boolean
+  // --permission-prompt-tool was given, so a host can answer user-input tools
+  permissionPromptToolConfigured: boolean
   kairosActive: boolean
   // When true, ensureToolResultPairing throws on mismatch instead of
   // repairing with synthetic placeholders. HFI opts in at startup so
@@ -352,6 +354,7 @@ function getInitialState(): State {
     initialMainLoopModel: null,
     modelStrings: null,
     isInteractive: false,
+    permissionPromptToolConfigured: false,
     kairosActive: false,
     strictToolResultPairing: false,
     sdkAgentProgressSummariesEnabled: false,
@@ -1187,6 +1190,21 @@ export function getIsInteractive(): boolean {
 
 export function setIsInteractive(value: boolean): void {
   STATE.isInteractive = value
+}
+
+export function setPermissionPromptToolConfigured(value: boolean): void {
+  STATE.permissionPromptToolConfigured = value
+}
+
+/**
+ * Whether anyone can answer a tool that waits on the user (AskUserQuestion,
+ * the plan-mode tools): a terminal, or a host wired up through
+ * --permission-prompt-tool, which is how the Agent SDK passes `canUseTool`.
+ * A bare --print or stream-json run has neither, so those tools would only be
+ * auto-denied after costing the model a schema and a wasted call.
+ */
+export function canPromptUserForInput(): boolean {
+  return STATE.isInteractive || STATE.permissionPromptToolConfigured
 }
 
 export function getClientType(): string {
