@@ -37,7 +37,6 @@ export type FileReadingLimits = {
   maxTokens: number
   maxSizeBytes: number
   includeMaxSizeInPrompt?: boolean
-  targetedRangeNudge?: boolean
 }
 
 /**
@@ -79,15 +78,9 @@ export const getDefaultFileReadingLimits = memoize((): FileReadingLimits => {
       ? override.includeMaxSizeInPrompt
       : undefined
 
-  const targetedRangeNudge =
-    typeof override?.targetedRangeNudge === 'boolean'
-      ? override.targetedRangeNudge
-      : undefined
-
   return {
     maxSizeBytes,
     maxTokens,
     includeMaxSizeInPrompt,
-    targetedRangeNudge,
   }
 })

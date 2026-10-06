@@ -1,16 +1,17 @@
 // @ts-nocheck
 export function getEnterWorktreeToolPrompt(): string {
-  return `Use this tool ONLY when the user explicitly asks to work in a worktree. This tool creates an isolated git worktree and switches the current session into it.
+  return `Use this tool ONLY when explicitly instructed to work in a worktree — either by the user directly, or by project instructions (CLAUDE.md / memory). This tool creates an isolated git worktree and switches the current session into it.
 
 ## When to Use
 
 - The user explicitly says "worktree" (e.g., "start a worktree", "work in a worktree", "create a worktree", "use a worktree")
+- CLAUDE.md or memory instructions direct you to work in a worktree for the current task
 
 ## When NOT to Use
 
 - The user asks to create a branch, switch branches, or work on a different branch — use git commands instead
-- The user asks to fix a bug or work on a feature — use normal git workflow unless they specifically mention worktrees
-- Never use this tool unless the user explicitly mentions "worktree"
+- The user asks to fix a bug or work on a feature — use normal git workflow unless worktrees are explicitly requested by the user or project instructions
+- Never use this tool unless "worktree" is explicitly mentioned by the user or in CLAUDE.md / memory instructions
 
 ## Requirements
 
@@ -19,7 +20,7 @@ export function getEnterWorktreeToolPrompt(): string {
 
 ## Behavior
 
-- In a git repository: creates a new git worktree inside \`.noa/worktrees/\` with a new branch based on HEAD
+- In a git repository: creates a new git worktree inside \`.noa/worktrees/\` on a new branch. The base ref is governed by the \`worktree.baseRef\` setting: \`fresh\` (default) branches from origin/<default-branch>; \`head\` branches from your current local HEAD
 - Outside a git repository: delegates to WorktreeCreate/WorktreeRemove hooks for VCS-agnostic isolation
 - Switches the session's working directory to the new worktree
 - Use ExitWorktree to leave the worktree mid-session (keep or remove). On session exit, if still in the worktree, the user will be prompted to keep or remove it
