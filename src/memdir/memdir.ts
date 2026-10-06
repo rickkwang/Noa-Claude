@@ -290,7 +290,7 @@ export function buildMemoryLines(
  * Compact memory instructions for models on the lean system prompt. Verbatim
  * from upstream's lean variant: one paragraph per concern, no examples. The
  * frontmatter nests the type under `metadata:`, which memoryScan reads next to
- * the legacy top-level `type:` — the verbose builder above still writes that.
+ * the legacy top-level `type:`.
  * Auto-memory only: the team and daily-log prompts keep their own builders.
  */
 export function buildCompactMemoryLines(

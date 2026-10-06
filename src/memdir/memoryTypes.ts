@@ -290,16 +290,23 @@ export const TYPES_SECTION_COMPACT: readonly string[] = [
 ]
 
 /**
- * Frontmatter format example with the `type` field.
+ * Frontmatter format example. The type nests under `metadata:` and the body
+ * links related memories with `[[name]]`, matching upstream's current format
+ * and the lean variant in buildCompactMemoryLines, so both prompt tiers and the
+ * extraction agent write the same shape. memoryScan reads `metadata.type` and
+ * still accepts a legacy top-level `type:`.
  */
 export const MEMORY_FRONTMATTER_EXAMPLE: readonly string[] = [
   '```markdown',
   '---',
-  'name: {{memory name}}',
-  'description: {{one-line description — used to decide relevance in future conversations, so be specific}}',
-  `type: {{${MEMORY_TYPES.join(', ')}}}`,
+  'name: {{short-kebab-case-slug}}',
+  'description: {{one-line summary, used to decide relevance in future conversations, so be specific}}',
+  'metadata:',
+  `  type: {{${MEMORY_TYPES.join(', ')}}}`,
   '---',
   '',
-  '{{memory content — for feedback/project types, structure as: rule/fact, then **Why:** and **How to apply:** lines}}',
+  '{{memory content — for feedback/project types, structure as: rule/fact, then **Why:** and **How to apply:** lines. Link related memories with [[their-name]].}}',
   '```',
+  '',
+  "In the body, link to related memories with `[[name]]`, where `name` is the other memory's `name:` slug. Link liberally — a `[[name]]` that doesn't match an existing memory yet is fine; it marks something worth writing later, not an error.",
 ]

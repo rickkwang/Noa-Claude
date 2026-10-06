@@ -59,8 +59,8 @@ export async function scanMemoryFiles(
           filePath,
           mtimeMs,
           description: frontmatter.description || null,
-          // `type:` at the top level (verbose prompt) or under `metadata:`
-          // (lean prompt) — both are written by the model, so read both.
+          // Both prompt tiers now teach `type:` under `metadata:`; files
+          // written before that carry it at the top level, so read both.
           type: parseMemoryType(
             frontmatter.type ??
               (frontmatter.metadata as { type?: unknown } | undefined)?.type,
