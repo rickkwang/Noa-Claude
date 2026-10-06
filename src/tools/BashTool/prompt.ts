@@ -9,8 +9,11 @@ import { getClaudeTempDir } from '../../utils/permissions/filesystem.js'
 import { SandboxManager } from '../../utils/sandbox/sandbox-adapter.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import {
+  DEFAULT_BACKGROUND_TIMEOUT_MS,
   getDefaultBashTimeoutMs,
+  getMaxBackgroundTimeoutMs,
   getMaxBashTimeoutMs,
+  isBackgroundDeadlineEnabled,
 } from '../../utils/timeouts.js'
 import {
   getUndercoverInstructions,
@@ -39,7 +42,16 @@ function getBackgroundUsageNote(): string | null {
   if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)) {
     return null
   }
-  return "You can use the `run_in_background` parameter to run the command in the background. Only use this if you don't need the result immediately and are OK being notified when the command completes later. You do not need to check the output right away - you'll be notified when it finishes. You do not need to use '&' at the end of the command when using this parameter."
+  const deadline = isBackgroundDeadlineEnabled()
+    ? ` With \`run_in_background\` the timeout is instead how long the command may run in the background (default ${DEFAULT_BACKGROUND_TIMEOUT_MS}ms / ${DEFAULT_BACKGROUND_TIMEOUT_MS / 60000} minutes, max ${getMaxBackgroundTimeoutMs()}ms / ${getMaxBackgroundTimeoutMs() / 3600000} hours); at that limit it is stopped and you are notified.`
+    : ''
+  return `You can use the \`run_in_background\` parameter to run the command in the background. Only use this if you don't need the result immediately and are OK being notified when the command completes later. You do not need to check the output right away - you'll be notified when it finishes. You do not need to use '&' at the end of the command when using this parameter.${deadline}`
+}
+
+export function getRunInBackgroundDescription(): string {
+  return isBackgroundDeadlineEnabled()
+    ? `Set to true to run this command in the background. With it, \`timeout\` limits how long the command may run in the background before it is stopped (default ${DEFAULT_BACKGROUND_TIMEOUT_MS} ms, max ${getMaxBackgroundTimeoutMs()} ms).`
+    : 'Set to true to run this command in the background.'
 }
 
 function getCommitAndPRInstructions(): string {
@@ -354,7 +366,7 @@ function getLeanPrompt(model?: string): string {
     `- \`timeout\` is in milliseconds: default ${getDefaultTimeoutMs()}, max ${getMaxTimeoutMs()}.`,
     ...(getBackgroundUsageNote() !== null
       ? [
-          '- `run_in_background` runs the command detached: it keeps running across turns and re-invokes you when it exits. No `&` needed.',
+          `- \`run_in_background\` runs the command detached: it keeps running across turns and re-invokes you when it exits.${isBackgroundDeadlineEnabled() ? ` With it, \`timeout\` is how long the command may run in the background (default ${DEFAULT_BACKGROUND_TIMEOUT_MS}, max ${getMaxBackgroundTimeoutMs()}); at that limit it is stopped and you are re-invoked.` : ''} No \`&\` needed.`,
         ]
       : []),
     ...(sandboxSection ? [sandboxSection] : []),

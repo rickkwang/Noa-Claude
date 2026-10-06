@@ -18,7 +18,7 @@ const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'n
 mkdirSync(artifacts, { recursive: true });
 const model = 'claude-sonnet-4-6';
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -46,7 +46,7 @@ const server = createServer(async (req, res) => {
     const customChild=active.case==='agent-custom-fork'&&((lastText.includes('CHILD_CUSTOM_FORK_')||body.tools?.every(t=>t.name==='Read'))||body.messages?.at(-1)?.content?.some?.(b=>b.type==='tool_result'&&b.tool_use_id.startsWith('custom_read_')));
     const child = customChild || active.case === 'goal-child-usage' && (lastText.includes('CHILD_USAGE_FIXTURE') || body.messages?.at(-1)?.content?.some?.(b => b.type === 'tool_result' && b.tool_use_id === 'child_read'));
     active.requests.at(-1).child = child;
-    const n = active.requests.filter(r => (harness || active.case.startsWith('hook-') || active.case.startsWith('concurrency-')) ? r.body.tools?.length && !r.child : !r.summary).length;
+    const n = active.requests.filter(r => (harness || active.case.startsWith('hook-') || active.case.startsWith('concurrency-') || active.case === 'background-deadline') ? r.body.tools?.length && !r.child : !r.summary).length;
     const error = (status, type, message) => {
       res.writeHead(status, { 'content-type': 'application/json', 'retry-after': '0', 'x-should-retry': status === 529 ? 'true' : 'false' });
       res.end(JSON.stringify({ type: 'error', error: { type, message } }));
@@ -120,6 +120,12 @@ const server = createServer(async (req, res) => {
       content = [{ type: 'tool_use', id: `toolu_${n}`, name: 'Bash', input: { command: 'printf started > started.txt; sleep 2; printf finished > finished.txt', timeout: 10000 } }]; stop = 'tool_use';
     } else if ((active.case === 'permission-deny' || active.case === 'deny-rule') && n === 1) {
       content = [{ type: 'tool_use', id: `toolu_${n}`, name: 'Bash', input: { command: 'printf denied > denied.txt' } }]; stop = 'tool_use';
+    } else if (active.case === 'background-deadline' && n <= 2) {
+      // A background command that outlives its limit, then a foreground wait
+      // long enough for the limit to fire while the turn is still open.
+      content = [{ type: 'tool_use', id: `toolu_${n}`, name: 'Bash', input: n === 1
+        ? { command: 'sleep 37.25', run_in_background: true, timeout: 2000, description: 'Deadline fixture' }
+        : { command: 'sleep 4', description: 'Wait past the deadline' } }]; stop = 'tool_use';
     } else if (active.case.startsWith('concurrency-') && n === 1) {
       content = [1, 2].map(i => ({ type: 'tool_use', id: 'write_' + i, name: 'Bash', input: { command: 'pwd' } })); stop = 'tool_use';
     } else if (active.case === 'max-turns' || ((active.case === 'read' || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3)) {
@@ -178,11 +184,13 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   const streamingInput = scenario.startsWith('budget-');
   const harness = scenario.startsWith('task-') || scenario === 'goal-child-usage' || scenario==='agent-custom-fork';
   // Hooks are off under --bare, so the hook scenario runs the full startup path.
-  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('concurrency-') || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', model, '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':'TaskCreate,TaskUpdate,TaskGet,TaskList') : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : '2'];
+  // --bare drops run_in_background, so the deadline scenario needs the full startup path too.
+  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('concurrency-') || scenario === 'background-deadline' || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', model, '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':'TaskCreate,TaskUpdate,TaskGet,TaskList') : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : '2'];
   if (scenario !== 'compact-resume' && scenario !== 'tombstone-resume' && scenario!=='agent-custom-fork') command.push('--no-session-persistence');
   if (scenario === 'fallback') command.push('--fallback-model', 'claude-haiku-4-5');
   // An allow rule that the narrower deny rule must still beat.
   if (scenario === 'deny-rule') command.push('--allowedTools', 'Bash', '--disallowedTools', 'Bash(printf:*)');
+  if (scenario === 'background-deadline') command.push('--allowedTools', 'Bash');
   if (scenario === 'hook-block') command.push('--settings', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'printf ran > hook-ran.txt; echo HOOK_BLOCKED_42 >&2; exit 2' }] }] } }));
   if (scenario === 'hook-composition') command.push('--settings', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Read', hooks: [
     { type: 'command', command: 'printf ran > hook-ran.txt; echo HOOK_BLOCKED_42 >&2; exit 2' },
@@ -325,6 +333,19 @@ try {
             assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK'); assert.equal(count, 3);
             assert.ok(JSON.stringify(active.requests[1].body.messages).includes('"thinking"'), 'fixture never replayed a thinking block');
             assert.ok(!JSON.stringify(active.requests[2].body.messages).includes('"thinking"'), 'retry still sent the rejected thinking block');
+          } else if (scenario === 'background-deadline') {
+            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
+            const bash = main[0].body.tools.find(t => t.name === 'Bash');
+            assert.ok(bash.input_schema.properties.run_in_background.description.includes('limits how long the command may run in the background'), 'schema does not state the background limit');
+            const launched = JSON.stringify(main[1].body.messages.at(-1));
+            assert.ok(launched.includes('If it is still running after 2s in the background, it will be stopped'), 'tool result does not state the limit');
+            const later = JSON.stringify(main.slice(2).map(r => r.body.messages));
+            assert.ok(later.includes('was stopped after reaching its 2s background time limit'), 'model was never told the command hit its limit');
+            // The fixture's unusual duration is its fingerprint in the process table.
+            let survivors = '';
+            try { survivors = execFileSync('pgrep', ['-f', 'sleep 37.25'], { encoding: 'utf8' }).trim(); } catch {}
+            assert.equal(survivors, '', 'background command kept running past its limit');
+            active.finalState = { notified: true, survivors };
           } else if (scenario.startsWith('hook-')) {
             assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
             assert.equal(existsSync(join(dir, 'hook-ran.txt')), true, 'PreToolUse hook never ran; block path untested');

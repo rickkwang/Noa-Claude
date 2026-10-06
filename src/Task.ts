@@ -65,6 +65,8 @@ export type LocalShellSpawnInput = {
   agentId?: AgentId
   /** UI display variant: description-as-label, dialog title, status bar pill. */
   kind?: 'bash' | 'monitor'
+  /** Stop the command once it has run this long in the background. */
+  backgroundDeadlineMs?: number
 }
 
 // What getTaskByType dispatches for: kill. spawn/render were never

@@ -21,7 +21,7 @@ import { isEnvTruthy } from '../../utils/envUtils.js';
 import { isENOENT, ShellError } from '../../utils/errors.js';
 import { detectFileEncoding, detectLineEndings, writeTextContent } from '../../utils/file.js';
 import { fileHistoryTouch, fileHistoryTrackEdit } from '../../utils/fileHistory.js';
-import { formatFileSize, truncate } from '../../utils/format.js';
+import { formatDuration, formatFileSize, truncate } from '../../utils/format.js';
 import { getFsImplementation } from '../../utils/fsOperations.js';
 import { lazySchema } from '../../utils/lazySchema.js';
 import { expandPath } from '../../utils/path.js';
@@ -42,7 +42,8 @@ import { trackGitOperations } from '../shared/gitOperationTracking.js';
 import { persistLargeOutput } from '../shared/persistLargeOutput.js';
 import { bashToolHasPermission, commandHasAnyCd, matchWildcardPattern, permissionRuleExtractPrefix } from './bashPermissions.js';
 import { interpretCommandResult } from './commandSemantics.js';
-import { getDefaultTimeoutMs, getMaxTimeoutMs, getSimplePrompt } from './prompt.js';
+import { getDefaultTimeoutMs, getMaxTimeoutMs, getRunInBackgroundDescription, getSimplePrompt } from './prompt.js';
+import { isBackgroundDeadlineEnabled, resolveBackgroundTimeoutMs } from '../../utils/timeouts.js';
 import { checkReadOnlyConstraints } from './readOnlyValidation.js';
 import { maybeRegisterGrepRead } from './grepReadRegistration.js';
 import { hashSedBaseContent, parseSedEditCommand } from './sedEditParser.js';
@@ -270,7 +271,7 @@ For commands that are harder to parse at a glance (piped commands, obscure flags
 - find . -name "*.tmp" -exec rm {} \\; → "Find and delete all .tmp files recursively"
 - git reset --hard origin/main → "Discard all local changes and match remote main"
 - curl -s url | jq '.data[]' → "Fetch JSON from URL and extract data array elements"`),
-  run_in_background: semanticBoolean(z.boolean().optional()).describe(`Set to true to run this command in the background.`),
+  run_in_background: semanticBoolean(z.boolean().optional()).describe(getRunInBackgroundDescription()),
   dangerouslyDisableSandbox: semanticBoolean(z.boolean().optional()).describe('Set this to true to dangerously override sandbox mode and run commands without sandboxing.'),
   _simulatedSedEdit: z.object({
     filePath: z.string(),
@@ -320,6 +321,7 @@ const outputSchema = lazySchema(() => z.object({
   backgroundedByUser: z.boolean().optional().describe('True if the user manually backgrounded the command with Ctrl+B'),
   backgroundedToDeliverMessage: z.boolean().optional().describe('True if the command was moved to the background so a message sent with send-now could reach the model'),
   assistantAutoBackgrounded: z.boolean().optional().describe('True if assistant-mode auto-backgrounded a long-running blocking command'),
+  backgroundDeadlineMs: z.number().optional().describe('How long the command may run in the background before it is stopped'),
   dangerouslyDisableSandbox: z.boolean().optional().describe('Flag to indicate if sandbox mode was overridden'),
   returnCodeInterpretation: z.string().optional().describe('Semantic interpretation for non-error exit codes with special meaning'),
   noOutputExpected: z.boolean().optional().describe('Whether the command is expected to produce no output on success'),
@@ -605,6 +607,7 @@ export const BashTool = buildTool({
     backgroundedByUser,
     backgroundedToDeliverMessage,
     assistantAutoBackgrounded,
+    backgroundDeadlineMs,
     structuredContent,
     persistedOutputPath,
     persistedOutputSize
@@ -658,7 +661,9 @@ export const BashTool = buildTool({
       } else if (backgroundedByUser) {
         backgroundInfo = `Command was manually backgrounded by user with ID: ${backgroundTaskId}. Output is being written to: ${outputPath}`;
       } else {
-        backgroundInfo = `Command running in background with ID: ${backgroundTaskId}. Output is being written to: ${outputPath}`;
+        backgroundInfo = `Command running in background with ID: ${backgroundTaskId}. Output is being written to: ${outputPath}${backgroundDeadlineMs !== undefined ? `. If it is still running after ${formatDuration(backgroundDeadlineMs, {
+          hideTrailingZeros: true
+        })} in the background, it will be stopped and you will be notified.` : ''}`;
       }
     }
     return {
@@ -866,6 +871,7 @@ export const BashTool = buildTool({
       backgroundedByUser: result.backgroundedByUser,
       backgroundedToDeliverMessage: result.backgroundedToDeliverMessage,
       assistantAutoBackgrounded: result.assistantAutoBackgrounded,
+      backgroundDeadlineMs: result.backgroundTaskId !== undefined && input.run_in_background === true && isBackgroundDeadlineEnabled() ? resolveBackgroundTimeoutMs(input.timeout) : undefined,
       dangerouslyDisableSandbox: 'dangerouslyDisableSandbox' in input ? input.dangerouslyDisableSandbox as boolean | undefined : undefined,
       persistedOutputPath,
       persistedOutputSize
@@ -960,13 +966,14 @@ async function* runShellCommand({
   const resultPromise = shellCommand.result;
 
   // Helper to spawn a background task and return its ID
-  async function spawnBackgroundTask(): Promise<string> {
+  async function spawnBackgroundTask(backgroundDeadlineMs?: number): Promise<string> {
     const handle = await spawnShellTask({
       command,
       description: description || command,
       shellCommand,
       toolUseId,
-      agentId
+      agentId,
+      backgroundDeadlineMs
     }, {
       abortController,
       getAppState: () => {
@@ -1046,7 +1053,7 @@ async function* runShellCommand({
   // regardless of the command type (isAutobackgroundingAllowed only applies to automatic backgrounding)
   // Skip if background tasks are disabled - run in foreground instead
   if (run_in_background === true && !isBackgroundTasksDisabled) {
-    const shellId = await spawnBackgroundTask();
+    const shellId = await spawnBackgroundTask(isBackgroundDeadlineEnabled() ? resolveBackgroundTimeoutMs(timeout) : undefined);
     logEvent('tengu_bash_command_explicitly_backgrounded', {
       command_type: getCommandTypeForLogging(command)
     });

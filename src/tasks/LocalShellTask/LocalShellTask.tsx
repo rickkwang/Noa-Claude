@@ -7,6 +7,7 @@ import type { LocalShellSpawnInput, SetAppState, Task, TaskContext, TaskHandle }
 import { createTaskStateBase } from '../../Task.js';
 import type { AgentId } from '../../types/ids.js';
 import { registerCleanup } from '../../utils/cleanupRegistry.js';
+import { formatDuration } from '../../utils/format.js';
 import { tailFile } from '../../utils/fsOperations.js';
 import { logError } from '../../utils/log.js';
 import { enqueuePendingNotification } from '../../utils/messageQueueManager.js';
@@ -102,7 +103,7 @@ The command is likely blocked on an interactive prompt. Kill this task and re-ru
     clearInterval(timer);
   };
 }
-function enqueueShellNotification(taskId: string, description: string, status: 'completed' | 'failed' | 'killed', exitCode: number | undefined, setAppState: SetAppState, toolUseId?: string, kind: BashTaskKind = 'bash', agentId?: AgentId): void {
+function enqueueShellNotification(taskId: string, description: string, status: 'completed' | 'failed' | 'killed', exitCode: number | undefined, setAppState: SetAppState, toolUseId?: string, kind: BashTaskKind = 'bash', agentId?: AgentId, stoppedAtDeadlineMs?: number): void {
   // Atomically check and set notified flag to prevent duplicate notifications.
   // If the task was already marked as notified (e.g., by TaskStopTool), skip
   // enqueueing to avoid sending redundant messages to the model.
@@ -134,7 +135,7 @@ function enqueueShellNotification(taskId: string, description: string, status: '
       summary = `${BACKGROUND_BASH_SUMMARY_PREFIX}"${description}" failed${exitCode !== undefined ? ` with exit code ${exitCode}` : ''}`;
       break;
     case 'killed':
-      summary = `${BACKGROUND_BASH_SUMMARY_PREFIX}"${description}" was stopped`;
+      summary = stoppedAtDeadlineMs !== undefined ? `${BACKGROUND_BASH_SUMMARY_PREFIX}"${description}" was stopped after reaching its ${formatDuration(stoppedAtDeadlineMs)} background time limit` : `${BACKGROUND_BASH_SUMMARY_PREFIX}"${description}" was stopped`;
       break;
   }
   const outputPath = getTaskOutputPath(taskId);
@@ -168,7 +169,8 @@ export async function spawnShellTask(input: LocalShellSpawnInput & {
     shellCommand,
     toolUseId,
     agentId,
-    kind
+    kind,
+    backgroundDeadlineMs
   } = input;
   const {
     setAppState
@@ -201,14 +203,44 @@ export async function spawnShellTask(input: LocalShellSpawnInput & {
   // Just transition to backgrounded state so the process keeps running.
   shellCommand.background(taskId);
   const cancelStallWatchdog = startStallWatchdog(taskId, description, kind, toolUseId, agentId);
+
+  // Killed directly rather than through killTask, which marks the task
+  // notified: the model has to hear why its command stopped.
+  let stoppedAtDeadline = false;
+  const deadlineTimer = backgroundDeadlineMs === undefined ? undefined : setTimeout(() => {
+    let stillRunning = false;
+    updateTaskState<LocalShellTaskState>(taskId, setAppState, task => {
+      stillRunning = task.status === 'running' && !task.notified;
+      return task;
+    });
+    if (!stillRunning) return;
+    stoppedAtDeadline = true;
+    shellCommand.kill();
+  }, backgroundDeadlineMs);
+  deadlineTimer?.unref();
   void shellCommand.result.then(async result => {
     cancelStallWatchdog();
+    if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
     await flushAndCleanup(shellCommand);
     let wasKilled = false;
     updateTaskState<LocalShellTaskState>(taskId, setAppState, task => {
       if (task.status === 'killed') {
         wasKilled = true;
         return task;
+      }
+      if (stoppedAtDeadline) {
+        wasKilled = true;
+        return {
+          ...task,
+          status: 'killed',
+          result: {
+            code: result.code,
+            interrupted: result.interrupted
+          },
+          shellCommand: null,
+          unregisterCleanup: undefined,
+          endTime: Date.now()
+        };
       }
       return {
         ...task,
@@ -222,7 +254,7 @@ export async function spawnShellTask(input: LocalShellSpawnInput & {
         endTime: Date.now()
       };
     });
-    enqueueShellNotification(taskId, description, wasKilled ? 'killed' : result.code === 0 ? 'completed' : 'failed', result.code, setAppState, toolUseId, kind, agentId);
+    enqueueShellNotification(taskId, description, wasKilled ? 'killed' : result.code === 0 ? 'completed' : 'failed', result.code, setAppState, toolUseId, kind, agentId, stoppedAtDeadline ? backgroundDeadlineMs : undefined);
     void evictTaskOutput(taskId);
   });
   return {
