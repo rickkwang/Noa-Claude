@@ -1,12 +1,12 @@
 // @ts-nocheck
-import { getIsNonInteractiveSession } from '../../bootstrap/state.js'
-import { checkHasTrustDialogAccepted } from '../../utils/config.js'
-import { logAntError } from '../../utils/debug.js'
+import { getIsNonInteractiveSession, getOriginalCwd } from '../../bootstrap/state.js'
+import { getProjectTrustKey, hasPersistedProjectTrust, isPathTrusted } from '../../utils/config.js'
+import { getGlobalClaudeFile } from '../../utils/env.js'
 import { errorMessage } from '../../utils/errors.js'
 import { execFileNoThrowWithCwd } from '../../utils/execFileNoThrow.js'
 import { logError, logMCPDebug, logMCPError } from '../../utils/log.js'
 import { jsonParse } from '../../utils/slowOperations.js'
-import { logEvent } from '../analytics/index.js'
+import { credentialFreeSubprocessEnv, subprocessEnv } from '../../utils/subprocessEnv.js'
 import type {
   McpHTTPServerConfig,
   McpSSEServerConfig,
@@ -24,6 +24,13 @@ function isMcpServerFromProjectOrLocalSettings(
   return config.scope === 'project' || config.scope === 'local'
 }
 
+// Repository config names and paths reach the terminal; keep them inert.
+function printable(value: string): string {
+  return value.replace(/[\p{Cc}\p{Cf}\u2028\u2029]+/gu, ' ')
+}
+
+const reportedMissingTrust = new Set<string>()
+
 /**
  * Get dynamic headers for an MCP server using the headersHelper script
  * @param serverName The name of the MCP server
@@ -38,37 +45,45 @@ export async function getMcpHeadersFromHelper(
     return null
   }
 
-  // Security check for project/local settings
-  // Skip trust check in non-interactive mode (e.g., CI/CD, automation)
-  if (
-    'scope' in config &&
-    isMcpServerFromProjectOrLocalSettings(config as ScopedMcpServerConfig) &&
-    !getIsNonInteractiveSession()
-  ) {
-    // Check if trust has been established for this project
-    const hasTrust = checkHasTrustDialogAccepted()
-    if (!hasTrust) {
-      const error = new Error(
-        `Security: headersHelper for MCP server '${serverName}' executed before workspace trust is confirmed. If you see this message, post in ${MACRO.FEEDBACK_CHANNEL}.`,
-      )
-      logAntError('MCP headersHelper invoked before trust check', error)
-      logEvent('tengu_mcp_headersHelper_missing_trust', {})
-      return null
+  const scope = 'scope' in config ? (config as ScopedMcpServerConfig).scope : undefined
+  const repoResident = scope !== undefined && isMcpServerFromProjectOrLocalSettings(config as ScopedMcpServerConfig)
+  // The directory whose trust authorizes the helper; it also runs there, so
+  // a relative helper path keeps meaning the same file after /cd.
+  const sourceDir = repoResident ? (config as ScopedMcpServerConfig).sourceDir ?? getOriginalCwd() : undefined
+  if (sourceDir !== undefined && !hasPersistedProjectTrust(sourceDir)) {
+    const configFix = `set projects[${JSON.stringify(printable(getProjectTrustKey(sourceDir)))}].hasTrustDialogAccepted in ${printable(getGlobalClaudeFile())}`
+    // Trust inherited from a parent folder suppresses the trust dialog, so
+    // only the config edit can grant this workspace its own trust.
+    const fix = isPathTrusted(sourceDir)
+      ? `trust inherited from a parent folder does not count and the trust dialog will not appear there; ${configFix}`
+      : `accept the trust dialog in ${printable(sourceDir)} once interactively, or ${configFix}`
+    const message = `MCP server '${printable(serverName)}': headersHelper not run — this workspace has no persisted trust; ${fix}. Using static headers only.`
+    logMCPDebug(serverName, message)
+    if (getIsNonInteractiveSession() && !reportedMissingTrust.has(serverName)) {
+      reportedMissingTrust.add(serverName)
+      process.stderr.write(message + '\n')
     }
+    return null
   }
 
+  // Pass server context so one helper script can serve multiple MCP servers
+  // (git credential-helper style). See deshaw/anthropic-issues#28.
+  const serverContext = {
+    CLAUDE_CODE_MCP_SERVER_NAME: serverName,
+    CLAUDE_CODE_MCP_SERVER_URL: config.url,
+  }
   try {
     logMCPDebug(serverName, 'Executing headersHelper to get dynamic headers')
     const execResult = await execFileNoThrowWithCwd(config.headersHelper, [], {
       shell: true,
       timeout: 10000,
-      // Pass server context so one helper script can serve multiple MCP servers
-      // (git credential-helper style). See deshaw/anthropic-issues#28.
-      env: {
-        ...process.env,
-        CLAUDE_CODE_MCP_SERVER_NAME: serverName,
-        CLAUDE_CODE_MCP_SERVER_URL: config.url,
-      },
+      cwd: sourceDir,
+      extendEnv: false,
+      // A .mcp.json helper's output goes to a repository-chosen URL, so it
+      // inherits no credentials from the environment.
+      env: scope === 'project'
+        ? credentialFreeSubprocessEnv(serverContext)
+        : { ...subprocessEnv(), ...serverContext },
     })
     if (execResult.code !== 0 || !execResult.stdout) {
       throw new Error(

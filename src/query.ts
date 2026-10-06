@@ -414,6 +414,11 @@ async function* queryLoop(
   // sites.
   let taskBudgetRemaining: number | undefined = undefined
   let usedToolsForGoal = false
+  const hasNewUserPrompt = params.messages
+    .slice(params.messages.findLastIndex(message => message.type === 'assistant') + 1)
+    .some(message => message.type === 'user' && !message.toolUseResult &&
+      !message.isMeta && !message.isCompactSummary &&
+      (message.origin as { kind?: string } | undefined)?.kind !== 'task-notification')
 
   // Snapshot immutable env/statsig/session state once at entry. See QueryConfig
   // for what's included and why feature() gates are intentionally excluded.
@@ -692,16 +697,9 @@ async function* queryLoop(
       resetGoalAutoContinueForNewTurn({
         setAppState: toolUseContext.setAppState,
         // Only the user's own prompt: task notifications are not a reply. An
-        // image or skill prompt is followed by its own meta messages, so look
-        // at everything since the last response, not just the final message.
-        resetWakeCounters: messagesForQuery
-          .slice(messagesForQuery.findLastIndex(message => message.type === 'assistant') + 1)
-          .some(message =>
-            message.type === 'user' &&
-            !message.toolUseResult &&
-            !message.isMeta &&
-            (message.origin as { kind?: string } | undefined)?.kind !== 'task-notification',
-          ),
+        // image/skill metadata or a compact summary must not replace the
+        // pre-compaction fact of whether the user sent a prompt.
+        resetWakeCounters: hasNewUserPrompt,
       })
       const goal = toolUseContext.getAppState().goal
       if (goal && shouldInjectGoalPrompt(goal)) {
@@ -1230,6 +1228,14 @@ async function* queryLoop(
         }
       }
     } catch (error) {
+      const accounting = accountGoalUsage({
+        assistantMessages,
+        getAppState: toolUseContext.getAppState,
+        setAppState: setGoalState,
+        goalAtTurnStart: goalForAccounting,
+        includeModelNotice: false,
+      })
+      if (accounting.userNotice) yield accounting.userNotice
       logError(error)
       const errorMessage =
         error instanceof Error ? error.message : String(error)
@@ -1319,6 +1325,15 @@ async function* queryLoop(
     // executor can generate synthetic tool_result blocks for queued/in-progress tools.
     // Without this, tool_use blocks would lack matching tool_result blocks.
     if (toolUseContext.abortController.signal.aborted) {
+      const accounting = accountGoalUsage({
+        assistantMessages,
+        getAppState: toolUseContext.getAppState,
+        setAppState: setGoalState,
+        goalAtTurnStart: goalForAccounting,
+        includeModelNotice: false,
+      })
+      if (accounting.userNotice) yield accounting.userNotice
+
       if (streamingToolExecutor) {
         // Consume remaining results - executor generates synthetic tool_results for
         // aborted tools since it checks the abort signal in executeTool()
@@ -1898,10 +1913,6 @@ async function* queryLoop(
           verifyResult,
           backgroundTasks: evaluatorTasks,
         })
-        if (toolUseContext.abortController.signal.aborted) {
-          yield* yieldInterruptionNotice(toolUseContext, { toolUse: false })
-          return { reason: 'aborted_streaming' }
-        }
         const accountEvaluatorUsage = () =>
           evaluatorMessage
             ? accountGoalUsage({
@@ -1912,6 +1923,12 @@ async function* queryLoop(
                 goalAtTurnStart: currentGoal,
               })
             : null
+        if (toolUseContext.abortController.signal.aborted) {
+          const accounting = accountEvaluatorUsage()
+          if (accounting?.userNotice) yield accounting.userNotice
+          yield* yieldInterruptionNotice(toolUseContext, { toolUse: false })
+          return { reason: 'aborted_streaming' }
+        }
         if (!isSameGoal(toolUseContext.getAppState().goal, currentGoal)) return { reason: 'completed' }
         let evaluation = initialEvaluation
         if (evaluation?.achieved && getGoalBackgroundTasks(toolUseContext.getAppState(), currentGoal).some(task => !evaluatorTasks.some(initial => initial.id === task.id))) {

@@ -22,6 +22,7 @@ import { logForDebugging } from '../utils/debug.js'
 import { hasEmbeddedSearchTools } from '../utils/embeddedTools.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
 import { formatFileSize } from '../utils/format.js'
+import { truncate } from '../utils/truncate.js'
 import { getProjectDir } from '../utils/sessionStorage.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
 import {
@@ -59,7 +60,7 @@ export function truncateEntrypointContent(raw: string): EntrypointTruncation {
   const trimmed = raw.trim()
   const contentLines = trimmed.split('\n')
   const lineCount = contentLines.length
-  const byteCount = trimmed.length
+  const byteCount = Buffer.byteLength(trimmed, 'utf8')
 
   const wasLineTruncated = lineCount > MAX_ENTRYPOINT_LINES
   // Check original byte count — long lines are the failure mode the byte cap
@@ -80,10 +81,23 @@ export function truncateEntrypointContent(raw: string): EntrypointTruncation {
     ? contentLines.slice(0, MAX_ENTRYPOINT_LINES).join('\n')
     : trimmed
 
-  if (truncated.length > MAX_ENTRYPOINT_BYTES) {
-    const cutAt = truncated.lastIndexOf('\n', MAX_ENTRYPOINT_BYTES)
-    truncated = truncated.slice(0, cutAt > 0 ? cutAt : MAX_ENTRYPOINT_BYTES)
+  if (Buffer.byteLength(truncated, 'utf8') > MAX_ENTRYPOINT_BYTES) {
+    const bytes = Buffer.from(truncated, 'utf8')
+    let end = MAX_ENTRYPOINT_BYTES
+    while ((bytes[end]! & 0xc0) === 0x80) end--
+    const prefix = bytes.subarray(0, end).toString('utf8')
+    const cutAt = prefix.lastIndexOf('\n')
+    truncated = cutAt > 0 ? prefix.slice(0, cutAt) : prefix
   }
+
+  // Name the first entry the model cannot see. Both caps keep a prefix that
+  // ends before a newline, unless line 1 alone exceeds the byte cap.
+  const keptLines = trimmed[truncated.length] === '\n' ? truncated.split('\n').length : 0
+  const nextLineEnd = trimmed.indexOf('\n', truncated.length + 1)
+  const firstDropped = trimmed.slice(truncated.length + 1, nextLineEnd < 0 ? undefined : nextLineEnd).trim()
+  const dropped = keptLines === 0
+    ? `everything after the first ${[...truncated].length} characters of line 1 was cut off`
+    : `${lineCount - keptLines} of ${lineCount} lines were cut off, starting at line ${keptLines + 1}${firstDropped ? ` ("${truncate(firstDropped, 80)}")` : ''}`
 
   const reason =
     wasByteTruncated && !wasLineTruncated
@@ -95,7 +109,7 @@ export function truncateEntrypointContent(raw: string): EntrypointTruncation {
   return {
     content:
       truncated +
-      `\n\n> WARNING: ${ENTRYPOINT_NAME} is ${reason}. Only part of it was loaded. Keep index entries to one line under ~200 chars; move detail into topic files.`,
+      `\n\n> WARNING: ${ENTRYPOINT_NAME} is ${reason}. Only part of it was loaded: ${dropped}. Keep index entries to one line under ~200 chars; move detail into topic files.`,
     lineCount,
     byteCount,
     wasLineTruncated,

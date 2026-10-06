@@ -93,6 +93,19 @@ Important visibility rule:
 - `/mcp` and `mcp list` show MCP servers, not total enabled plugins
 - plugins that only provide skills/agents/hooks and no MCP server do not appear in MCP server lists
 
+### MCP headersHelper Trust
+
+A `headersHelper` declared in project (`.mcp.json`) or local scope runs only when
+the declaring directory's repository has its own persisted trust
+(`projects[<git root>].hasTrustDialogAccepted` in the global config):
+
+- this holds in `--print`/CI too; there is no non-interactive bypass. Without trust the
+  server connects with its static `headers` and stderr names the exact key to set
+- trust inherited from a parent folder does not count, and it also suppresses the trust
+  dialog, so a nested repository has to get the key set directly
+- the helper runs in the declaring directory; a project-scope helper gets no
+  credential-shaped environment variables (proxy settings are kept)
+
 ## Session Continuity
 
 Long-running work depends on these paths staying aligned:

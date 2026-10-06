@@ -55,6 +55,8 @@ jobs:
           bun run e2e:loop
           bun run e2e:bare
           bun run e2e:goal
+          bun run e2e:state
+          bun run e2e:startup
           bun run e2e:background
 
       # build:dev:full only proves the bundle resolves; the placeholder modules

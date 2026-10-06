@@ -2,7 +2,6 @@
 import { feature } from 'bun:bundle'
 import { randomBytes } from 'crypto'
 import { unwatchFile, watchFile } from 'fs'
-import memoize from 'lodash-es/memoize.js'
 import pickBy from 'lodash-es/pickBy.js'
 import { homedir } from 'os'
 import { basename, dirname, join, resolve } from 'path'
@@ -778,11 +777,21 @@ function computeTrustDialogAccepted(): boolean {
   return false
 }
 
+/** The projects[] key trust for `dir` is saved under: its git root, else the directory. */
+export function getProjectTrustKey(dir: string): string {
+  return normalizePathForConfigKey(findCanonicalGitRoot(dir) ?? resolve(dir))
+}
+
+/** Persisted trust for this repository/directory only, without session or ancestor trust. */
+export function hasPersistedProjectTrust(dir: string): boolean {
+  return getGlobalConfig().projects?.[getProjectTrustKey(dir)]?.hasTrustDialogAccepted === true
+}
+
 /**
  * Check trust for an arbitrary directory (not the session cwd).
  * Walks up from `dir`, returning true if any ancestor has trust persisted.
  * Unlike checkHasTrustDialogAccepted, this does NOT consult session trust or
- * the memoized project path — use when the target dir differs from cwd (e.g.
+ * the session project path — use when the target dir differs from cwd (e.g.
  * /assistant installing into a user-typed path).
  */
 export function isPathTrusted(dir: string): boolean {
@@ -1668,19 +1677,12 @@ function getConfig<A>(
 }
 
 // Memoized function to get the project path for config lookup
-export const getProjectPathForConfig = memoize((): string => {
-  const originalCwd = getOriginalCwd()
-  const gitRoot = findCanonicalGitRoot(originalCwd)
-
-  if (gitRoot) {
-    // Normalize for consistent JSON keys (forward slashes on all platforms)
-    // This ensures paths like C:\Users\... and C:/Users/... map to the same key
-    return normalizePathForConfigKey(gitRoot)
-  }
-
-  // Not in a git repo
-  return normalizePathForConfigKey(resolve(originalCwd))
-})
+// Derived from the current originalCwd on every call, never memoized once:
+// /cd moves originalCwd, and project config and trust must follow it.
+// findCanonicalGitRoot caches per directory, so this stays cheap.
+export function getProjectPathForConfig(): string {
+  return getProjectTrustKey(getOriginalCwd())
+}
 
 export function getCurrentProjectConfig(): ProjectConfig {
   if (process.env.NODE_ENV === 'test') {

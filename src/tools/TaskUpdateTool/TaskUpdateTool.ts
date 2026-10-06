@@ -298,16 +298,19 @@ export const TaskUpdateTool = buildTool({
       )
     }
 
+    let dependencyError: string | undefined
+
     // Add blocks if provided and not already present
     if (addBlocks && addBlocks.length > 0) {
       const newBlocks = addBlocks.filter(
         id => !existingTask.blocks.includes(id),
       )
       for (const blockId of newBlocks) {
-        await blockTask(taskListId, taskId, blockId)
-      }
-      if (newBlocks.length > 0) {
-        updatedFields.push('blocks')
+        if (await blockTask(taskListId, taskId, blockId)) {
+          if (!updatedFields.includes('blocks')) updatedFields.push('blocks')
+        } else {
+          dependencyError ??= `Cannot add dependency #${taskId} → #${blockId}: one of the tasks no longer exists.`
+        }
       }
     }
 
@@ -317,10 +320,11 @@ export const TaskUpdateTool = buildTool({
         id => !existingTask.blockedBy.includes(id),
       )
       for (const blockerId of newBlockedBy) {
-        await blockTask(taskListId, blockerId, taskId)
-      }
-      if (newBlockedBy.length > 0) {
-        updatedFields.push('blockedBy')
+        if (await blockTask(taskListId, blockerId, taskId)) {
+          if (!updatedFields.includes('blockedBy')) updatedFields.push('blockedBy')
+        } else {
+          dependencyError ??= `Cannot add dependency #${blockerId} → #${taskId}: one of the tasks no longer exists.`
+        }
       }
     }
 
@@ -351,7 +355,8 @@ export const TaskUpdateTool = buildTool({
 
     return {
       data: {
-        success: true,
+        success: dependencyError === undefined,
+        error: dependencyError,
         taskId,
         updatedFields,
         statusChange:
@@ -378,7 +383,9 @@ export const TaskUpdateTool = buildTool({
       return {
         tool_use_id: toolUseID,
         type: 'tool_result',
-        content: error || `Task #${taskId} not found`,
+        // A failed dependency edge does not undo the rest of the update.
+        content: (error || `Task #${taskId} not found`) +
+          (updatedFields.length > 0 ? `\nOther updates to task #${taskId} were applied: ${updatedFields.join(', ')}` : ''),
       }
     }
 

@@ -33,7 +33,9 @@ const { GoalTool } = await import('../src/tools/GoalTool/GoalTool.js')
 const { asSystemPrompt } = await import('../src/utils/systemPromptType.js')
 enableConfigs()
 const recoveryCases = ['truncated-budget', 'truncated-unlimited', 'truncated-no-goal', 'truncated-child-paused', 'max-output-budget', 'refusal-budget']
-const scenarios = ['resume-accounting', ...recoveryCases, 'background', 'background-budget', 'background-large-description', 'unrelated-background', 'background-service', 'background-starts-during-evaluation', 'stale', 'fatal', 'mapped-auth', 'provider-quota', 'transient', 'impossible', 'impossible-verify', 'no-progress', 'no-progress-user-reset', 'completion', 'live-created-goal', 'verify', 'child-paused', 'stale-wake', 'restore-cache', 'restore-created-goal'].filter(name => !process.argv.includes('--case') || name === process.argv[process.argv.indexOf('--case') + 1])
+const abortCases = ['abort-usage', 'abort-throw-usage', 'abort-child-usage', 'abort-replaced-goal']
+const compactCases = ['compact-notification', 'compact-user']
+const scenarios = [...abortCases, ...compactCases, 'resume-accounting', ...recoveryCases, 'background', 'background-budget', 'background-large-description', 'unrelated-background', 'background-service', 'background-starts-during-evaluation', 'stale', 'fatal', 'mapped-auth', 'provider-quota', 'transient', 'impossible', 'impossible-verify', 'no-progress', 'no-progress-user-reset', 'completion', 'live-created-goal', 'verify', 'child-paused', 'stale-wake', 'restore-cache', 'restore-created-goal'].filter(name => !process.argv.includes('--case') || name === process.argv[process.argv.indexOf('--case') + 1])
 assert.ok(scenarios.length, 'unknown case')
 const results: unknown[] = []
 const originalFetch = globalThis.fetch
@@ -45,6 +47,7 @@ try {
     if (scenario==='background-budget') state.goal={...goal,tokensUsed:13,tokenBudget:20,nextCheckInAt:Date.now()-1}
     if (scenario==='background-large-description') state.tasks.bg={id:'bg',type:'local_bash',status:'running',isBackgrounded:true,description:'LONG_BG_MARKER_'+ 'X'.repeat(20000),startTime:goal.createdAt}
     if (['live-created-goal','truncated-no-goal'].includes(scenario)) state.goal=undefined
+    if (compactCases.includes(scenario)) state.goal={...goal,status:'paused',stopReason:'rate_limit'}
     if (scenario==='resume-accounting') state.goal={...goal,status:'paused',stopReason:'rate_limit'}
     if (['truncated-budget','max-output-budget','refusal-budget'].includes(scenario)) state.goal={...goal,tokenBudget:100}
     if (scenario==='truncated-unlimited') state.goal={...goal,tokenBudget:null}
@@ -53,8 +56,8 @@ try {
       options: { commands: [], debug: false, mainLoopModel: 'claude-sonnet-4-6', tools: ['completion','live-created-goal'].includes(scenario) ? [GoalTool] : [], verbose: false, thinkingConfig: { type: 'disabled' }, mcpClients: [], mcpResources: {}, isNonInteractiveSession: scenario !== 'transient', agentDefinitions: state.agentDefinitions },
       abortController: new AbortController(), readFileState: new FileStateCache(100, 100000), getAppState: () => state, setAppState: update => { state = update(state) }, setInProgressToolUseIDs: () => {}, setResponseLength: () => {}, updateFileHistoryState: () => {}, updateAttributionState: () => {}, messages: [],
     } as ToolUseContext
-    if(['child-paused','truncated-child-paused'].includes(scenario)){context.agentId='fixture-child' as any;context.goalAtStart=goal;context.setAppStateForTasks=context.setAppState;state.goal={...goal,status:'paused'}}
-    let evaluations = 0, calls = 0, completionWasPending = false
+    if(['child-paused','truncated-child-paused','abort-child-usage'].includes(scenario)){context.agentId='fixture-child' as any;context.goalAtStart=goal;context.setAppStateForTasks=context.setAppState;state.goal={...goal,status:'paused'}}
+    let evaluations = 0, calls = 0, compactions = 0, completionWasPending = false
     const events: any[] = []
     globalThis.fetch = (async (...args:any[]) => {
       evaluations++
@@ -79,11 +82,24 @@ try {
     }) as typeof fetch
     const run = async (messages: any[]) => {
       const deps: any = {
-        uuid: () => crypto.randomUUID(), microcompact: async (messages: any[]) => ({ messages }), autocompact: async () => ({ wasCompacted: false }),
+        uuid: () => crypto.randomUUID(), microcompact: async (messages: any[]) => ({ messages }), autocompact: async (messages: any[], ctx: any, cache: any) => {
+          if (!compactCases.includes(scenario)) return { wasCompacted: false }
+          const { autoCompactIfNeeded } = await import('../src/services/compact/autoCompact.js')
+          const result = await autoCompactIfNeeded(messages, ctx, cache, 'repl_main_thread')
+          if (result.wasCompacted) compactions++
+          writeFileSync(join(artifacts, scenario+'-compaction.json'), JSON.stringify(result, null, 2))
+          return result
+        },
         stopHooks: async function* () { return { blockingErrors: [], preventContinuation: false } },
         callModel: async function* (params: any) {
           calls++
-          if (scenario === 'fatal' || scenario === 'transient') yield getAssistantMessageFromError(new APIError(scenario === 'fatal' ? 401 : 529, { type: 'error', error: { type: scenario === 'fatal' ? 'authentication_error' : 'overloaded_error', message: 'Fixture failure' } }, 'Fixture failure', new Headers()), 'claude-sonnet-4-6')
+          if (abortCases.includes(scenario)) {
+            yield createAssistantMessage({content:'Received response.',usage:{input_tokens:1000,output_tokens:10,cache_read_input_tokens:200,cache_creation_input_tokens:100} as any})
+            if (scenario==='abort-replaced-goal') state.goal=createThreadGoal({objective:'UNRELATED_GOAL_B',tokenBudget:null,now:goal.createdAt+1})
+            context.abortController.abort()
+            if (scenario==='abort-throw-usage') throw new Error('Fixture transport aborted after usage')
+          }
+          else if (scenario === 'fatal' || scenario === 'transient') yield getAssistantMessageFromError(new APIError(scenario === 'fatal' ? 401 : 529, { type: 'error', error: { type: scenario === 'fatal' ? 'authentication_error' : 'overloaded_error', message: 'Fixture failure' } }, 'Fixture failure', new Headers()), 'claude-sonnet-4-6')
           else if(scenario==='provider-quota')yield getAssistantMessageFromError(new APIError(403,{type:'error',error:{type:'permission_error',message:"You've reached your weekly (7-day) usage limit"}},"You've reached your weekly (7-day) usage limit",new Headers()),'claude-sonnet-4-6')
           else if (scenario==='mapped-auth') {
             const route=process.env.ANTHROPIC_BASE_URL;process.env.ANTHROPIC_BASE_URL='http://api.anthropic.com'
@@ -139,7 +155,13 @@ try {
       state.goal=goal;const active=await processQueue();assert.equal(active.shouldQuery,true);assert.ok(JSON.stringify(active.newMessages).includes('GOAL_WAKE_FIXTURE'))
       results.push({scenario,passed:true,pausedDropped:true,replacedDropped:true,activeDelivered:true});console.log('PASS stale-wake');continue
     }
-    await run([createUserMessage({ content: 'Work toward the fixture goal.' })])
+    if (compactCases.includes(scenario)) {
+      const prior=createAssistantMessage({content:'Prior long response',usage:{input_tokens:190000,output_tokens:10,cache_read_input_tokens:0,cache_creation_input_tokens:0} as any})
+      prior.message.model='claude-sonnet-4-6'
+      const prompt=createUserMessage({content:scenario==='compact-user'?'Resume the fixture goal.':'BACKGROUND_FINISHED',...(scenario!=='compact-user'?{isMeta:true as const}:{})})
+      if (scenario!=='compact-user') prompt.origin={kind:'task-notification'} as any
+      await run([prior,prompt])
+    } else await run([createUserMessage({ content: 'Work toward the fixture goal.' })])
     if (scenario === 'transient') {
       assert.equal(state.goal.retryCount, 1)
       assert.ok(state.goal.retryAt - Date.now() >= 55_000, 'first retry is sooner than a minute')
@@ -149,7 +171,19 @@ try {
         await run([createUserMessage({ content: prompt, isMeta: true })])
       }
     }
-    writeFileSync(join(artifacts, `${scenario}-observed.json`), JSON.stringify({ calls, evaluations, goal: state.goal, notices: events.filter(e => e.type === 'system').map(e => e.content) }, null, 2))
+    writeFileSync(join(artifacts, `${scenario}-observed.json`), JSON.stringify({ calls, evaluations, compactions, goal: state.goal, notices: events.filter(e => e.type === 'system').map(e => e.content) }, null, 2))
+    if (abortCases.includes(scenario)) {
+      assert.equal(calls,1);assert.equal(evaluations,0)
+      assert.equal(state.goal.tokensUsed,scenario==='abort-replaced-goal'?0:1310)
+      if (scenario==='abort-child-usage') assert.equal(state.goal.status,'paused')
+      if (scenario==='abort-replaced-goal') assert.equal(state.goal.objective,'UNRELATED_GOAL_B')
+    }
+    if (compactCases.includes(scenario)) {
+      assert.equal(compactions,1);assert.equal(calls,1)
+      assert.equal(evaluations,scenario==='compact-user'?2:1)
+      assert.equal(state.goal.status,scenario==='compact-user'?'complete':'paused')
+      if (scenario==='compact-notification') assert.equal(state.goal.tokensUsed,0)
+    }
     if (scenario==='resume-accounting') {assert.equal(calls,3);assert.equal(evaluations,3);assert.equal(state.goal.tokensUsed,3972);assert.equal(state.goal.stopReason,'no_progress')}
     if (['truncated-budget','max-output-budget','refusal-budget'].includes(scenario)) {assert.equal(calls,1);assert.equal(evaluations,0);assert.equal(state.goal.tokensUsed,1010);assert.equal(state.goal.status,'budget_limited')}
     if (scenario==='truncated-unlimited') {assert.equal(calls,2);assert.equal(evaluations,1);assert.equal(state.goal.tokensUsed,1046);assert.equal(state.goal.status,'complete')}
@@ -197,3 +231,6 @@ try {
   let revision = 'unavailable'; try { revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: resolve(import.meta.dir, '..'), encoding: 'utf8' }).trim() } catch {}
   writeFileSync(join(artifacts, 'verification.manifest.json'), JSON.stringify({ command: process.argv, revision, nodeEnv: process.env.NODE_ENV, transport: 'Real query/tool/independent evaluator chain, scripted model transport, no live API', resultsSha256: createHash('sha256').update(JSON.stringify(results)).digest('hex'), passed: results.length, expected: scenarios.length, exit_code: results.length === scenarios.length ? 0 : 1 }, null, 2))
 }
+
+await (await import('../src/utils/cleanupRegistry.js')).runCleanupFunctions()
+process.exit(results.length === scenarios.length ? 0 : 1)

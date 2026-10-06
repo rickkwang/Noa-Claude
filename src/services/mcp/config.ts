@@ -14,6 +14,7 @@ import { getIsNonInteractiveSession } from '../../bootstrap/state.js'
 import {
   getCurrentProjectConfig,
   getGlobalConfig,
+  getProjectPathForConfig,
   saveCurrentProjectConfig,
   saveGlobalConfig,
 } from '../../utils/config.js'
@@ -118,13 +119,14 @@ export function getEnterpriseMcpFilePath(): string {
 function addScopeToServers(
   servers: Record<string, McpServerConfig> | undefined,
   scope: ConfigScope,
+  sourceDir?: string,
 ): Record<string, ScopedMcpServerConfig> {
   if (!servers) {
     return {}
   }
   const scopedServers: Record<string, ScopedMcpServerConfig> = {}
   for (const [name, config] of Object.entries(servers)) {
-    scopedServers[name] = { ...config, scope }
+    scopedServers[name] = { ...config, scope, ...(sourceDir ? { sourceDir } : {}) }
   }
   return scopedServers
 }
@@ -927,7 +929,7 @@ export function getProjectMcpConfigsFromCwd(): {
   return {
     configPath: mcpJsonPath,
     servers: config.mcpServers
-      ? addScopeToServers(config.mcpServers, 'project')
+      ? addScopeToServers(config.mcpServers, 'project', getCwd())
       : {},
     errors: errors || [],
   }
@@ -996,7 +998,7 @@ export function getMcpConfigsByScope(
 
         if (config.mcpServers) {
           // Merge servers, with files closer to CWD overriding parent configs
-          Object.assign(allServers, addScopeToServers(config.mcpServers, scope))
+          Object.assign(allServers, addScopeToServers(config.mcpServers, scope, dir))
         }
 
         if (errors.length > 0) {
@@ -1039,7 +1041,7 @@ export function getMcpConfigsByScope(
       })
 
       return {
-        servers: addScopeToServers(config?.mcpServers, scope),
+        servers: addScopeToServers(config?.mcpServers, scope, getProjectPathForConfig()),
         errors,
       }
     }

@@ -8,7 +8,8 @@
  * Note: Inboxes are keyed by agent name within a team.
  */
 
-import { mkdir, readFile, writeFile } from 'fs/promises'
+import { randomUUID } from 'crypto'
+import { mkdir, readFile, rename, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { z } from 'zod/v4'
 import { TEAMMATE_MESSAGE_TAG } from '../constants/xml.js'
@@ -16,7 +17,6 @@ import { PermissionModeSchema } from '../entrypoints/sdk/coreSchemas.js'
 import { SEND_MESSAGE_TOOL_NAME } from '../tools/SendMessageTool/constants.js'
 import type { Message } from '../types/message.js'
 import { generateRequestId } from './agentId.js'
-import { count } from './array.js'
 import { logForDebugging } from './debug.js'
 import { getTeamsDir } from './envUtils.js'
 import { getErrnoCode } from './errors.js'
@@ -42,6 +42,7 @@ const LOCK_OPTIONS = {
 }
 
 export type TeammateMessage = {
+  id?: string
   from: string
   text: string
   timestamp: string
@@ -105,6 +106,19 @@ export async function readMailbox(
     logForDebugging(`Failed to read inbox for ${agentName}: ${error}`)
     logError(error)
     return []
+  }
+}
+
+// Replace the inbox by rename: a crash mid-write must not leave truncated
+// JSON, which readMailbox reads as [] and the next write would then persist.
+async function writeInbox(inboxPath: string, messages: TeammateMessage[]): Promise<void> {
+  const tempPath = `${inboxPath}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    await writeFile(tempPath, jsonStringify(messages, null, 2), { encoding: 'utf-8', flush: true })
+    await rename(tempPath, inboxPath)
+  } catch (error) {
+    await rm(tempPath, { force: true })
+    throw error
   }
 }
 
@@ -173,12 +187,13 @@ export async function writeToMailbox(
 
     const newMessage: TeammateMessage = {
       ...message,
+      id: message.id ?? randomUUID(),
       read: false,
     }
 
     messages.push(newMessage)
 
-    await writeFile(inboxPath, jsonStringify(messages, null, 2), 'utf-8')
+    await writeInbox(inboxPath, messages)
     logForDebugging(
       `[TeammateMailbox] Wrote message to ${recipientName}'s inbox from ${message.from}`,
     )
@@ -245,7 +260,7 @@ export async function markMessageAsReadByIndex(
 
     messages[messageIndex] = { ...message, read: true }
 
-    await writeFile(inboxPath, jsonStringify(messages, null, 2), 'utf-8')
+    await writeInbox(inboxPath, messages)
     logForDebugging(
       `[TeammateMailbox] markMessageAsReadByIndex: marked message at index ${messageIndex} as read`,
     )
@@ -271,75 +286,24 @@ export async function markMessageAsReadByIndex(
   }
 }
 
-/**
- * Mark all messages in a teammate's inbox as read
- * Uses file locking to prevent race conditions
- * @param agentName - The agent name to mark messages as read for
- * @param teamName - Optional team name
- */
+/** Mark the delivered snapshot as read; callers without a snapshot mark the whole inbox. */
 export async function markMessagesAsRead(
   agentName: string,
   teamName?: string,
+  delivered?: TeammateMessage[],
 ): Promise<void> {
-  const inboxPath = getInboxPath(agentName, teamName)
-  logForDebugging(
-    `[TeammateMailbox] markMessagesAsRead called: agentName=${agentName}, teamName=${teamName}, path=${inboxPath}`,
-  )
-
-  const lockFilePath = `${inboxPath}.lock`
-
-  let release: (() => Promise<void>) | undefined
-  try {
-    logForDebugging(`[TeammateMailbox] markMessagesAsRead: acquiring lock...`)
-    release = await lockfile.lock(inboxPath, {
-      lockfilePath: lockFilePath,
-      ...LOCK_OPTIONS,
-    })
-    logForDebugging(`[TeammateMailbox] markMessagesAsRead: lock acquired`)
-
-    // Re-read messages after acquiring lock to get the latest state
-    const messages = await readMailbox(agentName, teamName)
-    logForDebugging(
-      `[TeammateMailbox] markMessagesAsRead: read ${messages.length} messages after lock`,
+  const remaining = delivered?.slice()
+  await markMessagesAsReadByPredicate(agentName, message => {
+    if (!remaining) return true
+    const index = remaining.findIndex(item =>
+      item.id !== undefined || message.id !== undefined ? item.id === message.id :
+      item.from === message.from && item.timestamp === message.timestamp &&
+      item.text === message.text && item.color === message.color && item.summary === message.summary,
     )
-
-    if (messages.length === 0) {
-      logForDebugging(
-        `[TeammateMailbox] markMessagesAsRead: no messages to mark`,
-      )
-      return
-    }
-
-    const unreadCount = count(messages, m => !m.read)
-    logForDebugging(
-      `[TeammateMailbox] markMessagesAsRead: ${unreadCount} unread of ${messages.length} total`,
-    )
-
-    // messages comes from jsonParse — fresh, unshared objects safe to mutate
-    for (const m of messages) m.read = true
-
-    await writeFile(inboxPath, jsonStringify(messages, null, 2), 'utf-8')
-    logForDebugging(
-      `[TeammateMailbox] markMessagesAsRead: WROTE ${unreadCount} message(s) as read to ${inboxPath}`,
-    )
-  } catch (error) {
-    const code = getErrnoCode(error)
-    if (code === 'ENOENT') {
-      logForDebugging(
-        `[TeammateMailbox] markMessagesAsRead: file does not exist at ${inboxPath}`,
-      )
-      return
-    }
-    logForDebugging(
-      `[TeammateMailbox] markMessagesAsRead FAILED for ${agentName}: ${error}`,
-    )
-    logError(error)
-  } finally {
-    if (release) {
-      await release()
-      logForDebugging(`[TeammateMailbox] markMessagesAsRead: lock released`)
-    }
-  }
+    if (index < 0) return false
+    remaining.splice(index, 1)
+    return true
+  }, teamName)
 }
 
 /**
@@ -1098,7 +1062,7 @@ export async function markMessagesAsReadByPredicate(
       !m.read && predicate(m) ? { ...m, read: true } : m,
     )
 
-    await writeFile(inboxPath, jsonStringify(updatedMessages, null, 2), 'utf-8')
+    await writeInbox(inboxPath, updatedMessages)
   } catch (error) {
     const code = getErrnoCode(error)
     if (code === 'ENOENT') {

@@ -51,6 +51,8 @@ type ExecFileWithCwdOptions = {
   maxBuffer?: number
   cwd?: string
   env?: NodeJS.ProcessEnv
+  // false: `env` is the complete environment (execa merges process.env by default)
+  extendEnv?: boolean
   shell?: boolean | string | undefined
   stdin?: 'ignore' | 'inherit' | 'pipe'
   input?: string
@@ -96,6 +98,7 @@ export async function execFileNoThrowWithCwd(
     preserveOutputOnError: finalPreserveOutput = true,
     cwd: finalCwd,
     env: finalEnv,
+    extendEnv,
     maxBuffer,
     shell,
     stdin: finalStdin,
@@ -114,6 +117,7 @@ export async function execFileNoThrowWithCwd(
       timeout: finalTimeout,
       cwd: finalCwd,
       env: finalEnv,
+      extendEnv,
       shell,
       stdin: finalStdin,
       input: finalInput,
