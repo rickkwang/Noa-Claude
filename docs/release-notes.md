@@ -1,5 +1,28 @@
 # Release Notes
 
+## 1.18.0
+
+- New: `noa reply <id> <message>`, and Space / Ctrl+S in the agents view, send a reply to a background session without attaching; the reply survives a restart or an Esc that clears the queue
+- Agents now run in the background by default and keep their working directory and isolation across continuation; `EnterWorktree` can enter an existing worktree, and WebFetch pages through long documents
+- New: goals complete only after the independent evaluator agrees, which waits for unfinished shells and subagents and can return impossible; long background work gets check-ins after 30 minutes, then 1 and 2 hours
+- Goals pause with a reason on auth, credit, context, model or rate-limit failures and resume with the next prompt when the failure was recoverable; retries back off about 1, 5 and 15 minutes, and goal usage now includes cache tokens and child agents
+- In `--print` and SDK sessions, a backgrounded shell stops at its time limit (its `timeout`, 30 minutes by default, 2 hours at most) and the model is told; `NOA_CLAUDE_DISABLE_BACKGROUND_DEADLINE=1` turns this off. Finished background shells are reported between tool calls in the same turn
+- New: `NOA_CLAUDE_TETHER_LIVE=1` sends only the new messages on a direct first-party endpoint (message threads beta); the default stays stateless
+- A stream cut off mid-response is reported as "Connection lost mid-response" instead of passing as complete, and subagents and print mode ask the model to resume; a rejected thinking signature resends the turn without thinking blocks
+- Context overflow on Bedrock and OpenAI-compatible providers now triggers automatic compaction instead of ending the turn, including gateways that answer with a non-JSON body or a bare 413
+- API errors show the API's own message ("API Error: 400 messages: …") instead of the raw JSON body
+- `AskUserQuestion`, `EnterPlanMode` and `ExitPlanMode` are offered only when someone can answer them, so `--print` runs no longer pay for tools that are always denied
+- Lean-prompt models get a shorter system prompt (about 6.4K characters, was 10.3K); verbose-prompt models get the full long-form guidance; memories use one frontmatter format everywhere, and older files still load
+- The Read malware reminder is no longer added on direct first-party requests
+- Fixed `rm -rf` of a critical path running unprompted in bypass mode when the same command also needed another approval, and removals whose target becomes dangerous on expansion (`rm -rf $HOME`, an unset `$DIR/*`, `$(...)`) now prompt
+- Fixed hook denials being overridden, cancellation being lost across restart, and tools running with an input the hook or permission prompt had already rewritten
+- Fixed project MCP `headersHelper` running without that repository's trust; project config and trust now follow `/cd`
+- Fixed task files getting out of sync under concurrent updates, and transcripts stalling after one failed write
+- Fixed a nested `CLAUDE.md` being attached twice after resume or compaction
+- Fixed the spinner, Esc and goal wake-ups treating an idle main session as busy while a background agent had a queued notification
+- Fixed What's new never showing when the config held a Claude Code version marker
+- Corrected the NotebookEdit, Read, WebFetch, EnterWorktree and Bash tool descriptions
+
 ## 1.17.0
 
 - New: Claude Sonnet 5.5 (`claude-sonnet-5-5`); the `sonnet` alias now resolves to it on first party (Bedrock, Vertex and Foundry stay on Sonnet 4.5), and Sonnet 5 remains selectable by its full id
