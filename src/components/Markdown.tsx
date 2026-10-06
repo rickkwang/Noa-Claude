@@ -139,43 +139,66 @@ type StreamingProps = {
   children: string;
 };
 
+// Once the unfinished tail passes this size it is frozen into its own chunk,
+// so each delta only re-lexes/re-formats the last few KB. Without it a single
+// long list (one top-level token that is always "the growing block") is
+// re-parsed in full on every delta.
+const FREEZE_LIMIT = 4096;
+// Top-level list item start — the only mid-block cut we allow. Ordered lists
+// keep their numbering because marked honors the start number of the cut.
+const LIST_ITEM_START_RE = /\n(?=(?:[-*+]|\d{1,9}[.)]) )/g;
+const FENCE_RE = /^ {0,3}(?:`{3,}|~{3,})/gm;
+type FrozenChunk = {
+  text: string;
+  /** Blank line before the next piece (true at a real block boundary). */
+  gapAfter: boolean;
+};
+
 /**
  * Renders markdown during streaming by splitting at the last top-level block
  * boundary: everything before is stable (memoized, never re-parsed), only the
  * final block is re-parsed per delta. marked.lexer() correctly handles
  * unclosed code fences as a single token, so block boundaries are always safe.
+ * Past FREEZE_LIMIT the stable prefix (or, for one oversized list, the
+ * leading items) is frozen into immutable chunks.
  *
- * The stable boundary only advances (monotonic), so ref mutation during render
+ * The boundaries only advance (monotonic), so ref mutation during render
  * is idempotent and safe under StrictMode double-rendering. Component unmounts
  * between turns (streamingText → null), resetting the ref.
  */
 export function StreamingMarkdown({
   children
 }: StreamingProps): React.ReactNode {
-  // React Compiler: this component reads and writes stablePrefixRef.current
-  // during render by design. The boundary only advances (monotonic), so
-  // the ref mutation is idempotent under StrictMode double-render — but the
-  // compiler can't prove that, and memoizing around the ref reads would
-  // break the algorithm (stale boundary). Opt out.
+  // React Compiler: this component reads and writes the ref during render by
+  // design (monotonic, idempotent under StrictMode double-render). Memoizing
+  // around the ref reads would break the algorithm. Opt out.
   'use no memo';
 
   configureMarked();
 
-  // Strip before boundary tracking so it matches <Markdown>'s stripping
-  // (line 29). When a closing tag arrives, stripped(N+1) is not a prefix
-  // of stripped(N), but the startsWith reset below handles that with a
-  // one-time re-lex on the smaller stripped string.
+  // Strip before boundary tracking so it matches <Markdown>'s stripping.
+  // When a closing tag arrives, stripped(N+1) is not a prefix of stripped(N),
+  // but the startsWith reset below handles that with a one-time re-lex.
   const stripped = stripPromptXMLTags(children);
-  const stablePrefixRef = useRef('');
+  const stateRef = useRef({
+    chunks: [] as FrozenChunk[],
+    frozen: '',
+    stablePrefix: ''
+  });
+  const state = stateRef.current;
 
   // Reset if text was replaced (defensive; normally unmount handles this)
-  if (!stripped.startsWith(stablePrefixRef.current)) {
-    stablePrefixRef.current = '';
+  if (!stripped.startsWith(state.frozen)) {
+    state.chunks = [];
+    state.frozen = '';
+    state.stablePrefix = '';
   }
+  let rest = stripped.substring(state.frozen.length);
+  if (!rest.startsWith(state.stablePrefix)) state.stablePrefix = '';
 
   // Lex only from current boundary — O(unstable length), not O(full text)
-  const boundary = stablePrefixRef.current.length;
-  const tokens = marked.lexer(stripped.substring(boundary));
+  const boundary = state.stablePrefix.length;
+  const tokens = marked.lexer(rest.substring(boundary));
 
   // Last non-space token is the growing block; everything before is final
   let lastContentIdx = tokens.length - 1;
@@ -187,15 +210,48 @@ export function StreamingMarkdown({
     advance += tokens[i]!.raw.length;
   }
   if (advance > 0) {
-    stablePrefixRef.current = stripped.substring(0, boundary + advance);
+    state.stablePrefix = rest.substring(0, boundary + advance);
   }
-  const stablePrefix = stablePrefixRef.current;
-  const unstableSuffix = stripped.substring(stablePrefix.length);
+
+  let cut = -1;
+  let gapAfter = true;
+  if (state.stablePrefix.length > FREEZE_LIMIT) {
+    cut = state.stablePrefix.length;
+  } else if (rest.length - state.stablePrefix.length > FREEZE_LIMIT) {
+    // One oversized block (typically a long list): cut before its last
+    // top-level item, unless that would land inside a code fence.
+    let at = -1;
+    for (const m of rest.substring(state.stablePrefix.length).matchAll(LIST_ITEM_START_RE)) {
+      at = m.index! + 1;
+    }
+    if (at > 0) {
+      const candidate = state.stablePrefix.length + at;
+      const fences = rest.substring(0, candidate).match(FENCE_RE);
+      if (!fences || fences.length % 2 === 0) {
+        cut = candidate;
+        gapAfter = false;
+      }
+    }
+  }
+  if (cut > 0) {
+    state.chunks = [...state.chunks, { text: rest.substring(0, cut), gapAfter }];
+    state.frozen += rest.substring(0, cut);
+    state.stablePrefix = '';
+    rest = stripped.substring(state.frozen.length);
+  }
+
+  const stablePrefix = state.stablePrefix;
+  const unstableSuffix = rest.substring(stablePrefix.length);
+  const last = state.chunks[state.chunks.length - 1];
+  const gapBeforeRest = last?.gapAfter ? 1 : 0;
 
   // stablePrefix is memoized inside <Markdown> via useMemo([children, ...])
   // so it never re-parses as the unstable suffix grows
-  return <Box flexDirection="column" gap={1}>
-      {stablePrefix && <Markdown>{stablePrefix}</Markdown>}
-      {unstableSuffix && <Markdown>{unstableSuffix}</Markdown>}
+  return <Box flexDirection="column">
+      {state.chunks.map((c, i) => <Box key={i} marginTop={i > 0 && state.chunks[i - 1]!.gapAfter ? 1 : 0}>
+          <Markdown>{c.text}</Markdown>
+        </Box>)}
+      {stablePrefix && <Box marginTop={gapBeforeRest}><Markdown>{stablePrefix}</Markdown></Box>}
+      {unstableSuffix && <Box marginTop={stablePrefix ? 1 : gapBeforeRest}><Markdown>{unstableSuffix}</Markdown></Box>}
     </Box>;
 }
