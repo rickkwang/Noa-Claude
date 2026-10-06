@@ -188,9 +188,9 @@ describe('sections that ship alongside the compact head', () => {
     expect(resolve(UNBUNDLED_LEAN_MODEL, 'delivering_work')).toBeNull()
     expect(resolve(UNBUNDLED_LEAN_MODEL, 'corrections')).toBeNull()
 
-    // ...but it does get the longer action-caution wording.
-    expect(resolve(UNBUNDLED_LEAN_MODEL, 'action_caution:L:nb')).toContain(
-      "if what you find contradicts how it was described, or you didn't create it",
+    // The action-caution wording is the same for every lean model.
+    expect(resolve(UNBUNDLED_LEAN_MODEL, 'action_caution:L')).toBe(
+      resolve(LEAN_MODEL, 'action_caution:L'),
     )
   })
 
@@ -311,11 +311,9 @@ describe('the Fable 5.1 prompt bundle', () => {
     expect(resolve(LEAN_MODEL, 'corrections:L')).toBe(CORRECTIONS_SECTION)
   })
 
-  test('does not turn on the bundled action-caution wording', () => {
-    // Upstream gates the trailing "if what you find contradicts…" clause on
-    // `opus_5_prompt_bundle` alone, so a 5.1 model keeps the longer wording.
-    expect(resolve(FABLE_51_MODEL, 'action_caution:L:nb')).toContain(
-      'surface that instead of proceeding',
+  test('uses the same action-caution wording as every other lean model', () => {
+    expect(resolve(FABLE_51_MODEL, 'action_caution:L')).toBe(
+      resolve(LEAN_MODEL, 'action_caution:L'),
     )
   })
 })

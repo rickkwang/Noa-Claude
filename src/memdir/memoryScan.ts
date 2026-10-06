@@ -59,7 +59,12 @@ export async function scanMemoryFiles(
           filePath,
           mtimeMs,
           description: frontmatter.description || null,
-          type: parseMemoryType(frontmatter.type),
+          // `type:` at the top level (verbose prompt) or under `metadata:`
+          // (lean prompt) — both are written by the model, so read both.
+          type: parseMemoryType(
+            frontmatter.type ??
+              (frontmatter.metadata as { type?: unknown } | undefined)?.type,
+          ),
         }
       }),
     )

@@ -333,14 +333,6 @@ describe('compact system prompt gate', () => {
 
     expect(shouldUseCompactSystemPrompt('kimi-k2-turbo')).toBe(true)
     expect(hasOpus5PromptBundle('kimi-k2-turbo')).toBe(false)
-
-    // The trailing "unfamiliar state" clause upstream gates on the bundle, not
-    // on the lean prompt. (Bash's own bundle-gated bullet was retired as a
-    // distinguishing example when upstream 2.1.224 made it unconditional — see
-    // getLeanPrompt() in tools/BashTool/prompt.ts.)
-    expect(getActionCautionSection('kimi-k2-turbo')).toContain(
-      "if what you find contradicts how it was described, or you didn't create it, surface that instead of proceeding",
-    )
   })
 
   test('a pin can declare both capabilities', () => {
@@ -350,9 +342,6 @@ describe('compact system prompt gate', () => {
       'lean_prompt,opus_5_prompt_bundle'
 
     expect(hasOpus5PromptBundle('kimi-k2-turbo')).toBe(true)
-    expect(getActionCautionSection('kimi-k2-turbo')).not.toContain(
-      "if what you find contradicts how it was described, or you didn't create it, surface that instead of proceeding",
-    )
   })
 
   // Upstream's manifest declares `lean_prompt` for Opus 5, Fable 5 and Opus 4.8

@@ -128,5 +128,7 @@ test('base system prompt and built-in tool matrix stays within model-aware budge
   // pass.
   expect(verbose.system).toBeGreaterThan(14_000)
   expect(thirdParty.system).toBeGreaterThan(14_000)
-  expect(lean.system).toBeGreaterThan(11_000)
+  // Lowered from 11_000 when the lean head switched to the compact memory
+  // section (~2k chars instead of ~6k), which is the upstream lean variant.
+  expect(lean.system).toBeGreaterThan(9_000)
 })

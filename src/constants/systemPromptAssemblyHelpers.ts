@@ -151,14 +151,9 @@ export function buildDynamicSystemPromptSections(params: {
   const fable51 = hasFable51PromptBundle(model)
   const autoCompactEnabled = isAutoCompactEnabled()
   const bundleSuffix = bundle ? ':L' : ''
-  // Emitted only under the lean prompt, but worded by the bundle gate, so the
-  // key has to carry both bits. Upstream keys this one on the lean bit alone,
-  // which lets a switch between two lean models that disagree on the bundle
-  // (Opus 5 -> Fable 5) serve the previous model's wording for the rest of the
-  // session. Carrying both bits is a deliberate departure, not a port gap.
-  const actionCautionName = lean
-    ? `action_caution:L${bundle ? '' : ':nb'}`
-    : 'action_caution'
+  // Emitted only under the lean prompt, with the same wording for every lean
+  // model, so the lean bit is the whole key.
+  const actionCautionName = lean ? 'action_caution:L' : 'action_caution'
 
   // Upstream's first dynamic section, ahead of the pronoun guidance. Three
   // possible texts (the Fable branch, the lean one-liner, nothing), so the key
@@ -177,15 +172,19 @@ export function buildDynamicSystemPromptSections(params: {
       getActionCautionSection(model),
     ),
     systemPromptSection(
-      `session_guidance:${autoCompactEnabled ? 'ac' : 'noac'}`,
+      `session_guidance:${autoCompactEnabled ? 'ac' : 'noac'}${lean ? ':L' : ''}`,
       () => getSessionSpecificGuidanceSection(
         enabledTools,
         skillToolCommands,
         DISCOVER_SKILLS_TOOL_NAME,
         autoCompactEnabled,
+        lean,
       ),
     ),
-    systemPromptSection('memory', () => loadMemoryPrompt()),
+    // Text depends on the lean gate, so the key carries it (see above).
+    systemPromptSection(lean ? 'memory:L' : 'memory', () =>
+      loadMemoryPrompt(model),
+    ),
     systemPromptSection('ant_model_override', () =>
       getAntModelOverrideSection(),
     ),
@@ -208,8 +207,12 @@ export function buildDynamicSystemPromptSections(params: {
       `output_style:${outputStyleConfig?.name ?? DEFAULT_OUTPUT_STYLE_NAME}`,
       () => getOutputStyleSection(outputStyleConfig),
     ),
-    systemPromptSection('target_discovery', () =>
-      BOUNDED_TARGET_DISCOVERY_SECTION,
+    // Lean-prompt models carry neither this nor the summarize-tool-results
+    // line below: upstream's current lean and verbose heads both drop them, and
+    // the lean models have internalized the behavior. The verbose head keeps
+    // them. Keyed on the lean bit so a /model switch re-renders them.
+    systemPromptSection(lean ? 'target_discovery:L' : 'target_discovery', () =>
+      lean ? null : BOUNDED_TARGET_DISCOVERY_SECTION,
     ),
     // When delta enabled, instructions are announced via persisted
     // mcp_instructions_delta attachments (attachments.ts) instead of this
@@ -233,8 +236,8 @@ export function buildDynamicSystemPromptSections(params: {
       getFunctionResultClearingSection(model),
     ),
     systemPromptSection(
-      'summarize_tool_results',
-      () => SUMMARIZE_TOOL_RESULTS_SECTION,
+      lean ? 'summarize_tool_results:L' : 'summarize_tool_results',
+      () => (lean ? null : SUMMARIZE_TOOL_RESULTS_SECTION),
     ),
     ...(feature('TOKEN_BUDGET')
       ? [

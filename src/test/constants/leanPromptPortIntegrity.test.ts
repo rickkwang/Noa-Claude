@@ -148,7 +148,7 @@ describe('ported lean text inside interpolated descriptions', () => {
     )
   })
 
-  test('action caution keeps its upstream sentences in both bundle states', () => {
+  test('action caution keeps its upstream sentences with and without the bundle', () => {
     const withBundle = getActionCautionSection(LEAN_MODEL)
     expect(withBundle).toStartWith(
       'For actions that are hard to reverse or outward-facing, confirm first unless durably authorized or explicitly told to proceed without asking; approval in one context doesn\'t extend to the next.',
@@ -160,10 +160,7 @@ describe('ported lean text inside interpolated descriptions', () => {
       'when something is done and verified, state it plainly without hedging.',
     )
 
-    // The clause upstream adds for lean models that lack the prompt bundle.
-    const withoutBundle = getActionCautionSection(UNBUNDLED_MODEL)
-    expect(withoutBundle).toContain(
-      "Before deleting or overwriting, look at the target — if what you find contradicts how it was described, or you didn't create it, surface that instead of proceeding. Report outcomes faithfully:",
-    )
+    // 2.1.290 sends the same sentence to lean models without the bundle.
+    expect(getActionCautionSection(UNBUNDLED_MODEL)).toBe(withBundle)
   })
 })

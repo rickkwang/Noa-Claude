@@ -129,6 +129,7 @@ export function getSessionSpecificGuidanceSection(
   skillToolCommands: Command[],
   discoverSkillsToolName: string | null,
   autoCompactEnabled: boolean,
+  lean = false,
 ): string | null {
   const hasSkills =
     skillToolCommands.length > 0 && enabledTools.has(SKILL_TOOL_NAME)
@@ -159,8 +160,11 @@ export function getSessionSpecificGuidanceSection(
       : `If you need the user to run a shell command themselves (e.g., an interactive login like \`gcloud auth login\`), suggest they type \`! <command>\` in the prompt — the \`!\` prefix runs the command in this session so its output lands directly in the conversation.`,
     // isForkSubagentEnabled() reads getIsNonInteractiveSession() — must be
     // post-boundary or it fragments the static prefix on session type.
-    hasAgentTool ? getAgentToolSection() : null,
+    // Upstream's lean head carries neither the Agent nor the Explore guidance
+    // (the Agent tool's own description covers it) nor the routing hints below.
+    hasAgentTool && !lean ? getAgentToolSection() : null,
     ...(hasAgentTool &&
+    !lean &&
     areExplorePlanAgentsEnabled() &&
     !isForkSubagentEnabled()
       ? [
@@ -170,7 +174,7 @@ export function getSessionSpecificGuidanceSection(
     hasSkills
       ? `When the user types \`/<skill-name>\`, invoke it via ${SKILL_TOOL_NAME}. Only use skills listed in the user-invocable skills section — don't guess.`
       : null,
-    hasSkills && skillRoutingRules.length > 0
+    hasSkills && !lean && skillRoutingRules.length > 0
       ? `Skill routing disambiguators (additive — skills not listed below still trigger via their own description; these only clarify the boundaries that are commonly mis-applied): ${skillRoutingRules.join(' ')}`
       : null,
     discoverSkillsToolName !== null &&

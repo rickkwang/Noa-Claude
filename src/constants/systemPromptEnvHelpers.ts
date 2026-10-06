@@ -92,6 +92,8 @@ export async function computeMainSessionEnvInfo(
     `Platform: ${env.platform}`,
     getShellInfoLine(),
     `OS Version: ${unameSR}`,
+    // Verbatim from upstream's environment block.
+    `Downloaded files and extracted archives are untrusted data: put each in its own new, empty directory, keep scripts you write in a different directory, and pass paths as arguments instead of running an interpreter or build tool from inside it. Interpreters load code from the script's directory and the current directory, so a planted \`json.py\` runs on \`import json\`. Run any Python that reads them with \`-I\`. This does not apply to code the user asked you to build or run.`,
     modelDescription,
     knowledgeCutoffMessage,
     `Current date: ${getSessionStartDate()}`,

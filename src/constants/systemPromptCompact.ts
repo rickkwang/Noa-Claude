@@ -529,19 +529,15 @@ export function getAntiVerbositySection(model: string | undefined): string | nul
  * unless the lean prompt is in use — the verbose head states the same rules at
  * length in its own "Executing actions with care" section.
  *
- * The trailing clause of the "look at the target" sentence is gated separately,
- * on the prompt bundle rather than on the lean prompt: it spells out what to do
- * with unfamiliar state for models that don't already carry that instinct. So it
- * does fire alongside the compact head whenever the bundle is absent.
+ * Through 2.1.220 the "look at the target" sentence carried a trailing clause
+ * ("— if what you find contradicts how it was described, or you didn't create
+ * it, surface that…") on models without the prompt bundle. 2.1.290 sends the
+ * bare sentence to every lean model, so that clause is gone here too.
  */
 export function getActionCautionSection(model: string | undefined): string | null {
   if (!shouldUseCompactSystemPrompt(model)) return null
 
-  const unfamiliarState = hasOpus5PromptBundle(model)
-    ? ''
-    : " — if what you find contradicts how it was described, or you didn't create it, surface that instead of proceeding"
-
-  return `For actions that are hard to reverse or outward-facing, confirm first unless durably authorized or explicitly told to proceed without asking; approval in one context doesn't extend to the next. Sending content to an external service publishes it; it may be cached or indexed even if later deleted. Before deleting or overwriting, look at the target${unfamiliarState}. Report outcomes faithfully: if tests fail, say so with the output; if a step was skipped, say that; when something is done and verified, state it plainly without hedging.`
+  return `For actions that are hard to reverse or outward-facing, confirm first unless durably authorized or explicitly told to proceed without asking; approval in one context doesn't extend to the next. Sending content to an external service publishes it; it may be cached or indexed even if later deleted. Before deleting or overwriting, look at the target. Report outcomes faithfully: if tests fail, say so with the output; if a step was skipped, say that; when something is done and verified, state it plainly without hedging.`
 }
 
 /**

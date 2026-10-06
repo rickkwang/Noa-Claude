@@ -100,7 +100,8 @@ describe('prompt behavior contracts', () => {
       buildDynamicSystemPromptSections({
         enabledTools: new Set(),
         skillToolCommands: [],
-        model: 'claude-opus-5',
+        // Verbose head: lean-prompt models no longer carry this section.
+        model: 'claude-sonnet-4-6',
         outputStyleConfig: {
           name: 'Test Proactive',
           prompt: 'When in doubt, start coding.',
