@@ -100,6 +100,17 @@ export function getCommandQueueLength(): number {
 }
 
 /**
+ * Count only commands the main thread will process. Subagent-addressed
+ * notifications wait for their own loop and must not make an idle main
+ * thread look busy.
+ */
+export function getMainThreadQueueLength(): number {
+  let count = 0
+  for (const cmd of commandQueue) if (cmd.agentId === undefined) count++
+  return count
+}
+
+/**
  * Check if there are commands in the queue.
  */
 export function hasCommandsInQueue(): boolean {

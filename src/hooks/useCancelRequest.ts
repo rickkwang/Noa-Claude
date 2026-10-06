@@ -31,7 +31,7 @@ import type { PromptInputMode, VimMode } from '../types/textInputTypes.js'
 import {
   clearCommandQueue,
   enqueuePendingNotification,
-  hasCommandsInQueue,
+  getMainThreadQueueLength,
 } from '../utils/messageQueueManager.js'
 import { emitTaskTerminatedSdk } from '../utils/sdkEventQueue.js'
 
@@ -103,7 +103,7 @@ export function CancelRequestHandler(props: CancelRequestHandlerProps): null {
     }
 
     // Priority 2: Pop queue when Claude is idle (no running task to cancel)
-    if (hasCommandsInQueue()) {
+    if (getMainThreadQueueLength() > 0) {
       if (popCommandFromQueue) {
         popCommandFromQueue()
         return

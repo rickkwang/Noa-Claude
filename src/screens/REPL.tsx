@@ -246,7 +246,7 @@ import { useIDEIntegration } from '../hooks/useIDEIntegration.js';
 import exit from '../commands/exit/index.js';
 import { ExitFlow } from '../components/ExitFlow.js';
 import { getCurrentWorktreeSession } from '../utils/worktree.js';
-import { popAllEditable, enqueue, type SetAppState, getCommandQueue, getCommandQueueLength, removeByFilter, isQueuedCommandEditable } from '../utils/messageQueueManager.js';
+import { popAllEditable, enqueue, type SetAppState, getCommandQueue, getMainThreadQueueLength, removeByFilter, isQueuedCommandEditable } from '../utils/messageQueueManager.js';
 import { useCommandQueue } from '../hooks/useCommandQueue.js';
 import { consumeGoalWake, getGoalWakeDelay } from '../utils/goalRuntime.js';
 import { SessionBackgroundHint } from '../components/SessionBackgroundHint.js';
@@ -1796,7 +1796,7 @@ export function REPL({
   // Without this, the spinner briefly disappears between consecutive notifications
   // (e.g., multiple background agents completing in rapid succession) because
   // isLoading goes false momentarily between processing each one.
-  getCommandQueueLength() > 0) &&
+  getMainThreadQueueLength() > 0) &&
   // Hide spinner when waiting for leader to approve permission request
   !pendingWorkerRequest && !onlySleepToolActive && (
   // Hide spinner when streaming text is visible (the text IS the feedback),
@@ -3209,7 +3209,7 @@ export function REPL({
       // avoids removeLastFromHistory removing B's entry instead of A's),
       // not viewing a teammate (messagesRef is the main conversation — the
       // old Up-arrow quick-restore had this guard, preserve it).
-      if (abortController.signal.reason === 'user-cancel' && !queryGuard.isActive && inputValueRef.current === '' && getCommandQueueLength() === 0 && !store.getState().viewingAgentTaskId) {
+      if (abortController.signal.reason === 'user-cancel' && !queryGuard.isActive && inputValueRef.current === '' && getMainThreadQueueLength() === 0 && !store.getState().viewingAgentTaskId) {
         const msgs = messagesRef.current;
         const lastUserMsg = msgs.findLast(selectableUserMessagesFilter);
         if (lastUserMsg) {
@@ -4323,7 +4323,7 @@ export function REPL({
     const delay = getGoalWakeDelay(threadGoal);
     if (delay === null) return;
     const timer = setTimeout(() => {
-      if (queryGuard.isActive || getCommandQueueLength() || focusedInputDialogRef.current !== undefined || inputValueRef.current.trim() || store.getState().viewingAgentTaskId || store.getState().toolPermissionContext.mode === 'plan') return;
+      if (queryGuard.isActive || getMainThreadQueueLength() || focusedInputDialogRef.current !== undefined || inputValueRef.current.trim() || store.getState().viewingAgentTaskId || store.getState().toolPermissionContext.mode === 'plan') return;
       const prompt = consumeGoalWake({ goal: threadGoal, getAppState: store.getState, setAppState });
       if (!prompt) return;
       enqueue({ mode: 'prompt', value: prompt, uuid: randomUUID(), priority: 'later', isMeta: true, skipSlashCommands: true, goalWake: { createdAt: threadGoal.createdAt, objective: threadGoal.objective } });
