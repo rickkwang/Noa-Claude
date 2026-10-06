@@ -306,6 +306,10 @@ export function isAgentStoppedByUser(agentId: AgentId): boolean {
 
 export type AgentMetadata = {
   agentType: string
+  cwd?: string
+  cwdIsolated?: boolean
+  isolationRoot?: string
+  worktreeSession?: PersistedWorktreeSession
   /** Worktree path if the agent was spawned with isolation: "worktree" */
   worktreePath?: string
   /** Original task description from the AgentTool input. Persisted so a
@@ -3342,6 +3346,8 @@ export function saveWorktreeState(
         sessionId: worktreeSession.sessionId,
         tmuxSessionName: worktreeSession.tmuxSessionName,
         hookBased: worktreeSession.hookBased,
+        enteredExisting: worktreeSession.enteredExisting,
+        originalCwdIsolated: worktreeSession.originalCwdIsolated,
       }
     : null
   const project = getProject()

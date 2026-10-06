@@ -314,6 +314,7 @@ import {
 import {
   restoreAgentFromSession,
   restoreSessionStateFromLog,
+  restoreWorktreeForResume,
 } from 'src/utils/sessionRestore.js'
 import { SandboxManager } from 'src/utils/sandbox/sandbox-adapter.js'
 import {
@@ -5058,6 +5059,7 @@ async function loadInitialMessages(
             ? { ...result, worktreeSession: undefined }
             : result,
         )
+        if (!options.forkSession) restoreWorktreeForResume(result.worktreeSession)
 
         // Write mode entry for the resumed session
         if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
@@ -5271,6 +5273,7 @@ async function loadInitialMessages(
           ? { ...result, worktreeSession: undefined }
           : result,
       )
+      if (!options.forkSession) restoreWorktreeForResume(result.worktreeSession)
 
       // Write mode entry for the resumed session
       if (feature('COORDINATOR_MODE') && coordinatorModeModule) {

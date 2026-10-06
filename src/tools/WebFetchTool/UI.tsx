@@ -9,10 +9,12 @@ import { formatFileSize, truncate } from '../../utils/format.js';
 import type { Output } from './WebFetchTool.js';
 export function renderToolUseMessage({
   url,
-  prompt
+  prompt,
+  offset
 }: Partial<{
   url: string;
   prompt: string;
+  offset: number;
 }>, {
   verbose
 }: {
@@ -23,7 +25,7 @@ export function renderToolUseMessage({
     return null;
   }
   if (verbose) {
-    return `url: "${url}"${verbose && prompt ? `, prompt: "${prompt}"` : ''}`;
+    return `url: "${url}"${verbose && prompt ? `, prompt: "${prompt}"` : ''}${offset ? `, offset: ${offset}` : ''}`;
   }
   return url;
 }

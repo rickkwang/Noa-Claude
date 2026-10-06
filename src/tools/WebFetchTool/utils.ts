@@ -512,6 +512,7 @@ export async function applyPromptToMarkdown(
   signal: AbortSignal,
   isNonInteractiveSession: boolean,
   isPreapprovedDomain: boolean,
+  contentLead = '',
 ): Promise<string> {
   // Truncate content to avoid "Prompt is too long" errors from the secondary model
   const truncatedContent =
@@ -520,7 +521,7 @@ export async function applyPromptToMarkdown(
         '\n\n[Content truncated due to length...]'
       : markdownContent
 
-  const modelPrompt = makeSecondaryModelPrompt(
+  const modelPrompt = contentLead + makeSecondaryModelPrompt(
     truncatedContent,
     prompt,
     isPreapprovedDomain,

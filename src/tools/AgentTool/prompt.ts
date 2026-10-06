@@ -150,7 +150,6 @@ When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to sel
   //   - agent definitions live under `.noa/`, not `.claude/`
   //   - omitted subagent_type selects general-purpose; implicit forks are
   //     unavailable in this build
-  //   - background runs are opt-in here, opt-out upstream
   //   - the agent list is inlined; upstream points at a <system-reminder>
   //
   // Everything else follows upstream's lean branch. Note that its "## When not
@@ -167,7 +166,7 @@ When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to sel
     const backgroundNote =
       !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS) &&
       !isInProcessTeammate()
-        ? "\n- Pass `run_in_background: true` to run an agent detached; you'll be notified when it completes. Never fabricate or predict a pending agent's results — the notification is never something you write yourself; if the user asks before it arrives, say it's still running."
+        ? "\n- Subagents run in the background by default; you'll be notified when one completes. Pass `run_in_background: false` only when your very next action depends on the result and nothing else could usefully happen while it runs — otherwise background it so the user can interject. Never fabricate or predict a pending agent's results — the notification is never something you write yourself; if the user asks before it arrives, say it's still running."
         : ''
 
     const teammateNote = isInProcessTeammate()
@@ -231,8 +230,8 @@ Usage notes:
     !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS) &&
     !isInProcessTeammate()
       ? `
-- You can optionally run agents in the background using the run_in_background parameter. When an agent runs in the background, you will be automatically notified when it completes — do NOT sleep, poll, or proactively check on its progress. Continue with other work or respond to the user instead.
-- **Foreground vs background**: Use foreground (default) when you need the agent's results before you can proceed — e.g., research agents whose findings inform your next steps. Use background when you have genuinely independent work to do in parallel.`
+- Agents run in the background by default. When an agent runs in the background, you will be automatically notified when it completes — do NOT sleep, poll, or proactively check on its progress. Continue with other work or respond to the user instead.
+- **Foreground vs background**: Pass run_in_background: false only when your very next action depends on the result and nothing else could usefully happen while it runs — otherwise leave it in the background so the user can interject.`
       : ''
   }
 - To continue a previously spawned agent, use ${SEND_MESSAGE_TOOL_NAME} with the agent's ID or name as the \`to\` field. The agent resumes with its full context preserved. Each Agent invocation starts fresh — provide a complete task description.

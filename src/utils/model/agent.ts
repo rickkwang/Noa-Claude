@@ -20,11 +20,10 @@ export type AgentModelOption = {
 }
 
 /**
- * Get the default subagent model. Returns 'inherit' so subagents inherit
- * the model from the parent thread.
+ * Get the configured default subagent model, otherwise inherit the parent.
  */
 export function getDefaultSubagentModel(): string {
-  return 'inherit'
+  return process.env.CLAUDE_CODE_SUBAGENT_MODEL || 'inherit'
 }
 
 /**
@@ -41,10 +40,6 @@ export function getAgentModel(
   toolSpecifiedModel?: ModelAlias,
   permissionMode?: PermissionMode,
 ): string {
-  if (process.env.CLAUDE_CODE_SUBAGENT_MODEL) {
-    return parseUserSpecifiedModel(process.env.CLAUDE_CODE_SUBAGENT_MODEL)
-  }
-
   // Extract Bedrock region prefix from parent model to inherit for subagents.
   // This ensures subagents use the same cross-region inference profile (e.g., "eu.", "us.")
   // as the parent, which is required when IAM permissions only allow specific regions.

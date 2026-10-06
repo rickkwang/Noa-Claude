@@ -15,7 +15,9 @@ import {
 import { assembleToolPool } from '../../tools.js'
 import { asAgentId } from '../../types/ids.js'
 import { runWithAgentContext } from '../../utils/agentContext.js'
-import { runWithCwdOverride } from '../../utils/cwd.js'
+import { getCwd, getCwdOverride, runWithCwdOverride } from '../../utils/cwd.js'
+import { restoreWorktreeSession } from '../../utils/worktree.js'
+import { pathInWorkingPath } from '../../utils/permissions/filesystem.js'
 import { logForDebugging } from '../../utils/debug.js'
 import {
   buildContinuationHistory,
@@ -237,12 +239,20 @@ export async function resumeAgentBackground({
   // failing the resume. Fail loudly with an actionable message; the user can
   // delete the agent metadata file to abandon the resume.
   let resumedWorktreePath: string | undefined
+  let isolationRoot: string | undefined
+  let settledMeta = meta
   try {
-    const settledMeta = await readAgentMetadata(asAgentId(agentId))
+    settledMeta = await readAgentMetadata(asAgentId(agentId))
     resumedWorktreePath = await resolveResumedWorktreePath(
-      settledMeta?.worktreePath,
+      settledMeta?.cwd ?? settledMeta?.worktreePath,
     )
-    if (resumedWorktreePath) {
+    isolationRoot = settledMeta?.isolationRoot ?? settledMeta?.worktreePath ??
+      (settledMeta?.cwdIsolated && !settledMeta.worktreeSession ? resumedWorktreePath : undefined)
+    if (isolationRoot && resumedWorktreePath &&
+        !pathInWorkingPath(await fsp.realpath(resumedWorktreePath), await fsp.realpath(isolationRoot))) {
+      throw new Error(`Cannot resume agent outside its assigned isolation root ${isolationRoot}`)
+    }
+    if (resumedWorktreePath && (settledMeta?.worktreePath || settledMeta?.worktreeSession)) {
       // Bump mtime so stale-worktree cleanup doesn't delete a just-resumed worktree (#22355)
       const now = new Date()
       await fsp.utimes(resumedWorktreePath, now, now)
@@ -292,7 +302,7 @@ export async function resumeAgentBackground({
     forkContextMessages: undefined,
     ...(isResumedFork && { useExactTools: true }),
     // Re-persist so metadata survives runAgent's writeAgentMetadata overwrite
-    worktreePath: resumedWorktreePath,
+    worktreePath: settledMeta?.worktreePath,
     description: meta?.description,
     personalityName,
     contentReplacementState: resumedReplacementState,
@@ -312,8 +322,14 @@ export async function resumeAgentBackground({
     invocationEmitted: false,
   }
 
+  const resumedCwd = resumedWorktreePath ?? getCwd()
   const wrapWithCwd = <T>(fn: () => T): T =>
-    resumedWorktreePath ? runWithCwdOverride(resumedWorktreePath, fn) : fn()
+    runWithCwdOverride(resumedCwd, () => {
+      const override = getCwdOverride()!
+      override.isolationRoot = isolationRoot
+      restoreWorktreeSession(settledMeta?.worktreeSession ?? null)
+      return fn()
+    }, settledMeta?.cwdIsolated ?? Boolean(settledMeta?.worktreePath))
 
   void runWithAgentContext(asyncAgentContext, () =>
     wrapWithCwd(() =>

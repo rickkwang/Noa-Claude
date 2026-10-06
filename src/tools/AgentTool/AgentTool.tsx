@@ -32,7 +32,7 @@ import type { PermissionResult } from '../../utils/permissions/PermissionResult.
 import { filterDeniedAgents, getDenyRuleForAgent } from '../../utils/permissions/permissions.js';
 import { enqueueSdkEvent } from '../../utils/sdkEventQueue.js';
 import { decrementTotalAgentSpawns, getMaxSubagentsPerSession, getTotalAgentSpawns, incrementTotalAgentSpawns } from '../../utils/task/sessionBudget.js';
-import { writeAgentMetadata } from '../../utils/sessionStorage.js';
+import { readAgentMetadata, writeAgentMetadata } from '../../utils/sessionStorage.js';
 import { sleep, withTimeout } from '../../utils/sleep.js';
 import { buildEffectiveSystemPrompt } from '../../utils/systemPrompt.js';
 import { asSystemPrompt } from '../../utils/systemPromptType.js';
@@ -87,8 +87,8 @@ const baseInputSchema = lazySchema(() => z.object({
   description: z.string().describe('A short (3-5 word) description of the task'),
   prompt: z.string().describe('The task for the agent to perform'),
   subagent_type: z.string().optional().describe('The type of specialized agent to use for this task'),
-  model: z.enum(['sonnet', 'opus', 'haiku']).optional().describe("Optional model override for this agent. Takes precedence over the agent definition's model frontmatter. If omitted, uses the agent definition's model, or inherits from the parent."),
-  run_in_background: z.boolean().optional().describe('Set to true to run this agent in the background. You will be notified when it completes.')
+  model: z.enum(['sonnet', 'opus', 'haiku', 'fable']).optional().describe("Optional model override for this agent. Takes precedence over the agent definition's model frontmatter and the configured default subagent model. If omitted, uses the agent definition's model, else the default (inherits from the parent unless a default subagent model is configured)."),
+  run_in_background: z.boolean().optional().describe("Agents run in the background by default; you will be notified when one completes. Set to false only when your very next action depends on this agent's result and nothing else could usefully happen while it runs — otherwise leave it in the background so the user can hand you other work.")
 }));
 
 // Full schema combining base + multi-agent params + isolation
@@ -379,7 +379,7 @@ export const AgentTool = buildTool({
     // Same lifecycle constraint as the run_in_background guard above, but for
     // agent definitions that force background via `background: true`. Checked
     // here because selectedAgent is only now resolved.
-    if (isInProcessTeammate() && teamName && selectedAgent.background === true) {
+    if (isInProcessTeammate() && teamName && selectedAgent.background === true && run_in_background !== false) {
       throw new Error(`In-process teammates cannot spawn background agents. Agent '${selectedAgent.agentType}' has background: true in its definition.`);
     }
 
@@ -435,6 +435,8 @@ export const AgentTool = buildTool({
       setAgentColor(selectedAgent.agentType, selectedAgent.color);
     }
 
+    const runInBackground = run_in_background ?? (selectedAgent.background ?? !isInProcessTeammate());
+
     // Resolve agent params for logging (these are already resolved in runAgent)
     const resolvedAgentModel = getAgentModel(selectedAgent.model, toolUseContext.options.mainLoopModel, isForkPath ? undefined : model, permissionMode);
     logEvent('tengu_agent_tool_selected', {
@@ -444,7 +446,7 @@ export const AgentTool = buildTool({
       color: selectedAgent.color as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       is_built_in_agent: isBuiltInAgent(selectedAgent),
       is_resume: false,
-      is_async: (run_in_background === true || selectedAgent.background === true) && !isBackgroundTasksDisabled,
+      is_async: runInBackground && !isBackgroundTasksDisabled,
       is_fork: isForkPath
     });
 
@@ -579,7 +581,7 @@ export const AgentTool = buildTool({
     // <task-notification> re-entry there is handled by the else branch
     // below (registerAsyncAgentTask + notifyOnCompletion).
     const assistantForceAsync = feature('KAIROS') ? appState.kairosEnabled : false;
-    const shouldRunAsync = (run_in_background === true || selectedAgent.background === true || isCoordinator || forceAsync || assistantForceAsync || (proactiveModule?.isProactiveActive() ?? false)) && !isBackgroundTasksDisabled;
+    const shouldRunAsync = (runInBackground || isCoordinator || forceAsync || assistantForceAsync || (proactiveModule?.isProactiveActive() ?? false)) && !isBackgroundTasksDisabled;
     if (shouldRunAsync) {
       // Preflight before personality/worktree allocation. Registration checks
       // again after any asynchronous worktree setup.
@@ -674,15 +676,16 @@ export const AgentTool = buildTool({
       isBuiltInAgent: isBuiltInAgent(selectedAgent),
       startTime,
       agentType: selectedAgent.agentType,
-      isAsync: (run_in_background === true || selectedAgent.background === true) && !isBackgroundTasksDisabled,
+      isAsync: runInBackground && !isBackgroundTasksDisabled,
       personalityName,
       promptFallback: false
     };
 
     // Helper to wrap execution with a cwd override: explicit cwd arg (KAIROS)
     // takes precedence over worktree isolation path.
-    const cwdOverridePath = cwd ?? worktreeInfo?.worktreePath;
-    const wrapWithCwd = <T,>(fn: () => T): T => cwdOverridePath ? runWithCwdOverride(cwdOverridePath, fn) : fn();
+    const cwdOverridePath = cwd ?? worktreeInfo?.worktreePath ?? getCwd();
+    const cwdIsolated = cwd !== undefined || worktreeInfo !== null;
+    const wrapWithCwd = <T,>(fn: () => T): T => runWithCwdOverride(cwdOverridePath, fn, cwdIsolated);
 
     // Helper to clean up worktree after agent completes
     const cleanupWorktreeIfNeeded = async (): Promise<{
@@ -700,6 +703,10 @@ export const AgentTool = buildTool({
       // Null out to make idempotent — guards against double-call if code
       // between cleanup and end of try throws into catch
       worktreeInfo = null;
+      const latest = await readAgentMetadata(asAgentId(earlyAgentId));
+      if (latest?.worktreeSession?.enteredExisting && latest.cwd !== worktreePath) {
+        return { worktreePath: latest.cwd, worktreeBranch: latest.worktreeSession.worktreeBranch };
+      }
       if (hookBased) {
         // Hook-based worktrees are always kept since we can't detect VCS changes
         logForDebugging(`Hook-based agent worktree kept at: ${worktreePath}`);
@@ -713,9 +720,12 @@ export const AgentTool = buildTool({
           await removeAgentWorktree(worktreePath, worktreeBranch, gitRoot);
           // Finish metadata cleanup before allowing a same-id resume.
           await writeAgentMetadata(asAgentId(earlyAgentId), {
+            ...latest,
             agentType: selectedAgent.agentType,
             description,
-            ...(personalityName && { personalityName })
+            ...(personalityName && { personalityName }),
+            worktreePath: undefined,
+            ...(latest?.cwd === worktreePath && { cwd: undefined, cwdIsolated: undefined, isolationRoot: undefined, worktreeSession: undefined })
           }).catch(_err => logForDebugging(`Failed to clear worktree metadata: ${_err}`));
           return {};
         }

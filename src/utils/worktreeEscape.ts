@@ -29,8 +29,9 @@ export function checkWorktreeEscape(
   override: CwdOverride | undefined = getCwdOverride(),
 ): string | null {
   // Not an isolated agent: nothing here applies.
-  if (override === undefined) return null
-  const { cwd, sharedCheckout } = override
+  if (override === undefined || (override.isolated === false && !override.isolationRoot)) return null
+  const { sharedCheckout } = override
+  const cwd = override.isolationRoot ?? override.cwd
   if (cwd === sharedCheckout) return null
 
   // Every link in the chain, not just the spelling we were handed: a symlink

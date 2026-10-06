@@ -45,6 +45,7 @@ import type {
   UserMessage,
 } from '../../types/message.js'
 import { createAttachmentMessage } from '../../utils/attachments.js'
+import { getCwd, getCwdOverride } from '../../utils/cwd.js'
 import { AbortError } from '../../utils/errors.js'
 import { getDisplayPath } from '../../utils/file.js'
 import {
@@ -820,6 +821,10 @@ export async function* runAgent({
     // Finish the initial metadata write before this run can clear it on exit.
     await writeAgentMetadata(agentId, {
       agentType: agentDefinition.agentType,
+      cwd: getCwd(),
+      cwdIsolated: getCwdOverride()?.isolated ?? false,
+      isolationRoot: getCwdOverride()?.isolationRoot,
+      worktreeSession: getCwdOverride()?.worktreeSession,
       ...(worktreePath && { worktreePath }),
       ...(description && { description }),
       ...(personalityName && { personalityName }),

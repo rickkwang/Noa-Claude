@@ -1,11 +1,11 @@
 // @ts-nocheck
 export function getExitWorktreeToolPrompt(): string {
-  return `Exit a worktree session created by EnterWorktree and return the session to the original working directory.
+  return `Exit a worktree session entered by EnterWorktree and return the session to the original working directory.
 
 ## Scope
 
-This tool ONLY operates on worktrees created by EnterWorktree in this session. It will NOT touch:
-- Worktrees you created manually with \`git worktree add\`
+This tool ONLY operates on worktrees created or explicitly entered with EnterWorktree in this session. It will NOT touch:
+- Worktrees you created manually with \`git worktree add\` unless explicitly entered with EnterWorktree({path})
 - Worktrees from a previous session (even if created by EnterWorktree then)
 - The directory you're in if EnterWorktree was never called
 
@@ -20,7 +20,7 @@ If called outside an EnterWorktree session, the tool is a **no-op**: it reports 
 
 - \`action\` (required): \`"keep"\` or \`"remove"\`
   - \`"keep"\` — leave the worktree directory and branch intact on disk. Use this if the user wants to come back to the work later, or if there are changes to preserve.
-  - \`"remove"\` — delete the worktree directory and its branch. Use this for a clean exit when the work is done or abandoned.
+  - \`"remove"\` — delete a worktree created by this session and its branch. Worktrees entered with \`path\` cannot be removed; use \`"keep"\`.
 - \`discard_changes\` (optional, default false): only meaningful with \`action: "remove"\`. If the worktree has uncommitted files or commits not on the original branch, the tool will REFUSE to remove it unless this is set to \`true\`. If the tool returns an error listing changes, confirm with the user before re-invoking with \`discard_changes: true\`.
 
 ## Behavior

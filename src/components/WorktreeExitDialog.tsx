@@ -38,6 +38,15 @@ export function WorktreeExitDialog({
   const worktreeSession = getCurrentWorktreeSession();
   useEffect(() => {
     async function loadChanges() {
+      if (worktreeSession?.enteredExisting) {
+        await keepWorktree();
+        setCwd(worktreeSession.originalCwd);
+        recordWorktreeExit();
+        getPlansDirectory.cache.clear?.();
+        setResultMessage(`Worktree kept at ${worktreeSession.worktreePath}`);
+        setStatus('done');
+        return;
+      }
       let changeLines: string[] = [];
       const gitStatus = await execFileNoThrow('git', ['status', '--porcelain']);
       if (gitStatus.stdout) {

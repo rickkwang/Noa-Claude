@@ -8,14 +8,16 @@ import {
   mkdir,
   readdir,
   readFile,
+  realpath,
   stat,
   symlink,
   utimes,
 } from 'fs/promises'
 import ignore from 'ignore'
-import { basename, dirname, join } from 'path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path'
 import { saveCurrentProjectConfig } from './config.js'
-import { getCwd } from './cwd.js'
+import { getCwd, getCwdOverride } from './cwd.js'
+import { pathInWorkingPath } from './permissions/filesystem.js'
 import { logForDebugging } from './debug.js'
 import { errorMessage, getErrnoCode } from './errors.js'
 import { execFileNoThrow, execFileNoThrowWithCwd } from './execFileNoThrow.js'
@@ -152,6 +154,8 @@ export type WorktreeSession = {
   sessionId: string
   tmuxSessionName?: string
   hookBased?: boolean
+  enteredExisting?: boolean
+  originalCwdIsolated?: boolean
   /** How long worktree creation took (unset when resuming an existing worktree). */
   creationDurationMs?: number
   /** True if git sparse-checkout was applied via settings.worktree.sparsePaths. */
@@ -161,6 +165,8 @@ export type WorktreeSession = {
 let currentWorktreeSession: WorktreeSession | null = null
 
 export function getCurrentWorktreeSession(): WorktreeSession | null {
+  const override = getCwdOverride()
+  if (override) return override.worktreeSession ?? null
   return currentWorktreeSession
 }
 
@@ -170,7 +176,68 @@ export function getCurrentWorktreeSession(): WorktreeSession | null {
  * state (cwd, originalCwd).
  */
 export function restoreWorktreeSession(session: WorktreeSession | null): void {
+  const override = getCwdOverride()
+  if (override) {
+    override.worktreeSession = session ?? undefined
+    return
+  }
   currentWorktreeSession = session
+}
+
+export async function enterExistingWorktree(
+  sessionId: string,
+  path: string,
+): Promise<WorktreeSession> {
+  const target = await realpath(resolve(getCwd(), path))
+  const repoRoot = findCanonicalGitRoot(target)
+  if (!repoRoot) throw new Error('The target is not a registered git worktree')
+
+  const current = getCurrentWorktreeSession()
+  const override = getCwdOverride()
+  if (override?.isolationRoot &&
+      !pathInWorkingPath(target, await realpath(override.isolationRoot))) {
+    throw new Error(`This agent is isolated in ${override.isolationRoot}; entering ${target} would exceed its assigned write scope`)
+  }
+  const sourceRoot = findCanonicalGitRoot(getCwd())
+  const nested = relative(await realpath(current?.originalCwd ?? getCwd()), repoRoot)
+  if (repoRoot !== sourceRoot &&
+      (current || override || nested === '..' || nested.startsWith(`..${sep}`) || isAbsolute(nested))) {
+    throw new Error('The worktree must belong to the current repository or a repository nested in the launch directory')
+  }
+  if (current || override) {
+    const inside = relative(join(repoRoot, '.noa', 'worktrees'), target)
+    if (!inside || inside === '..' || inside.startsWith(`..${sep}`) || isAbsolute(inside)) {
+      throw new Error('Switching from a worktree or isolated agent requires a worktree under .noa/worktrees in the same repository')
+    }
+  }
+
+  const listed = await execFileNoThrowWithCwd(
+    gitExe(), ['worktree', 'list', '--porcelain', '-z'], { cwd: repoRoot },
+  )
+  let registered = false
+  for (const match of listed.stdout.matchAll(/(?:^|\0)worktree ([^\0]+)\0/g)) {
+    if (await realpath(match[1]).catch(() => null) === target) registered = true
+  }
+  if (listed.code !== 0 || !registered) {
+    throw new Error('The target must appear in git worktree list for its repository')
+  }
+  const branch = await execFileNoThrowWithCwd(
+    gitExe(), ['symbolic-ref', '--quiet', '--short', 'HEAD'], { cwd: target },
+  )
+  const session: WorktreeSession = {
+    originalCwd: current?.originalCwd ?? getCwd(),
+    worktreePath: target,
+    worktreeName: basename(target),
+    worktreeBranch: branch.code === 0 ? branch.stdout.trim() : undefined,
+    sessionId,
+    enteredExisting: true,
+    ...(override && { originalCwdIsolated: current?.originalCwdIsolated ?? override.isolated ?? true }),
+  }
+  restoreWorktreeSession(session)
+  if (!override) {
+    saveCurrentProjectConfig(config => ({ ...config, activeWorktreeSession: session }))
+  }
+  return session
 }
 
 export function generateTmuxSessionName(
@@ -857,7 +924,15 @@ export async function createWorktreeForSession(
 }
 
 export async function keepWorktree(): Promise<void> {
-  if (!currentWorktreeSession) {
+  const session = getCurrentWorktreeSession()
+  if (!session) {
+    return
+  }
+  const override = getCwdOverride()
+  if (override) {
+    override.cwd = session.originalCwd
+    override.isolated = session.originalCwdIsolated ?? true
+    restoreWorktreeSession(null)
     return
   }
 
@@ -890,6 +965,9 @@ export async function keepWorktree(): Promise<void> {
 }
 
 export async function cleanupWorktree(): Promise<void> {
+  if (getCurrentWorktreeSession()?.enteredExisting) {
+    throw new Error('Worktrees entered with path cannot be removed; use action: "keep"')
+  }
   if (!currentWorktreeSession) {
     return
   }

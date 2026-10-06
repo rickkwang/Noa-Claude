@@ -12,12 +12,15 @@ import type { Tool } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { count } from '../../utils/array.js'
 import { clearMemoryFileCaches } from '../../utils/claudemd.js'
+import { getCwdOverride } from '../../utils/cwd.js'
+import { getAgentContext } from '../../utils/agentContext.js'
+import { asAgentId } from '../../types/ids.js'
 import { execFileNoThrow } from '../../utils/execFileNoThrow.js'
 import { updateHooksConfigSnapshot } from '../../utils/hooks/hooksConfigSnapshot.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { getPlansDirectory } from '../../utils/plans.js'
 import { setCwd } from '../../utils/Shell.js'
-import { saveWorktreeState } from '../../utils/sessionStorage.js'
+import { readAgentMetadata, saveWorktreeState, writeAgentMetadata } from '../../utils/sessionStorage.js'
 import {
   cleanupWorktree,
   getCurrentWorktreeSession,
@@ -124,6 +127,14 @@ function restoreSessionToOriginalCwd(
   originalCwd: string,
   projectRootIsWorktree: boolean,
 ): void {
+  const override = getCwdOverride()
+  if (override) {
+    override.cwd = originalCwd
+    clearSystemPromptSections()
+    clearMemoryFileCaches()
+    getPlansDirectory.cache.clear?.()
+    return
+  }
   setCwd(originalCwd)
   // EnterWorktree sets originalCwd to the *worktree* path (intentional — see
   // state.ts getProjectRoot comment). Reset to the real original.
@@ -173,18 +184,21 @@ export const ExitWorktreeTool: Tool<InputSchema, Output> = buildTool({
     return input.action
   },
   async validateInput(input) {
-    // Scope guard: getCurrentWorktreeSession() is null unless EnterWorktree
-    // (specifically createWorktreeForSession) ran in THIS session. Worktrees
-    // created by `git worktree add`, or by EnterWorktree in a previous
-    // session, do not populate it. This is the sole entry gate — everything
-    // past this point operates on a path EnterWorktree created.
+    // Only an explicit EnterWorktree call grants ownership of session exit.
     const session = getCurrentWorktreeSession()
     if (!session) {
       return {
         result: false,
         message:
-          'No-op: there is no active EnterWorktree session to exit. This tool only operates on worktrees created by EnterWorktree in the current session — it will not touch worktrees created manually or in a previous session. No filesystem changes were made.',
+          'No-op: there is no active EnterWorktree session to exit. No filesystem changes were made.',
         errorCode: 1,
+      }
+    }
+    if (input.action === 'remove' && session.enteredExisting) {
+      return {
+        result: false,
+        message: 'Worktrees entered with path cannot be removed. Use action: "keep" to return to the original directory.',
+        errorCode: 4,
       }
     }
 
@@ -262,6 +276,17 @@ export const ExitWorktreeTool: Tool<InputSchema, Output> = buildTool({
     if (input.action === 'keep') {
       await keepWorktree()
       restoreSessionToOriginalCwd(originalCwd, projectRootIsWorktree)
+      const override = getCwdOverride()
+      const agentId = getAgentContext()?.agentId
+      if (override && agentId) {
+        const metadata = await readAgentMetadata(asAgentId(agentId))
+        if (metadata) await writeAgentMetadata(asAgentId(agentId), {
+          ...metadata,
+          cwd: override.cwd,
+          cwdIsolated: override.isolated,
+          worktreeSession: undefined,
+        })
+      }
 
       logEvent('tengu_worktree_kept', {
         mid_session: true,

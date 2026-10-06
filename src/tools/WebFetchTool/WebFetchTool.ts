@@ -27,6 +27,9 @@ const inputSchema = lazySchema(() =>
   z.strictObject({
     url: z.string().url().describe('The URL to fetch content from'),
     prompt: z.string().describe('The prompt to run on the fetched content'),
+    offset: z.number().int().nonnegative().optional().describe(
+      'Character position in the page text to start reading from. Use it to read on through a page too long for one call, with the value the previous result gave.',
+    ),
   }),
 )
 type InputSchema = ReturnType<typeof inputSchema>
@@ -216,7 +219,7 @@ ${DESCRIPTION}`
   renderToolUseProgressMessage,
   renderToolResultMessage,
   async call(
-    { url, prompt },
+    { url, prompt, offset = 0 },
     { abortController, options: { isNonInteractiveSession } },
   ) {
     const start = Date.now()
@@ -242,7 +245,7 @@ Status: ${response.statusCode} ${statusText}
 
 To complete your request, I need to fetch content from the redirected URL. Please use WebFetch again with these parameters:
 - url: "${response.redirectUrl}"
-- prompt: "${prompt}"`
+- prompt: "${prompt}"${offset > 0 ? `\n- offset: ${offset}` : ''}`
 
       const output: Output = {
         bytes: Buffer.byteLength(message),
@@ -269,22 +272,33 @@ To complete your request, I need to fetch content from the redirected URL. Pleas
     } = response as FetchedContent
 
     const isPreapproved = isPreapprovedUrl(url)
+    const remainingContent = content.slice(offset)
 
     let result: string
-    if (
+    if (offset > 0 && remainingContent.length === 0) {
+      result = `Nothing left to read from offset ${offset}: this page's text is ${content.length} characters long.`
+    } else if (
       isPreapproved &&
       contentType.includes('text/markdown') &&
-      content.length < MAX_MARKDOWN_LENGTH
+      remainingContent.length < MAX_MARKDOWN_LENGTH
     ) {
-      result = content
+      result = remainingContent
     } else {
       result = await applyPromptToMarkdown(
         prompt,
-        content,
+        remainingContent,
         abortController.signal,
         isNonInteractiveSession,
         isPreapproved,
+        offset > 0
+          ? `The content below is one part of a longer page: it starts ${offset} characters into the page's ${content.length}.\n`
+          : '',
       )
+    }
+
+    const end = Math.min(offset + MAX_MARKDOWN_LENGTH, content.length)
+    if (!persistedPath && end < content.length) {
+      result += `\n\n[WebFetch note: this page's text is ${content.length} characters long and the answer above covers only characters ${offset} to ${end}; the final ${content.length - end} were not read. To read more, call WebFetch with the same url and prompt and offset: ${end}.]`
     }
 
     // Binary content (PDFs, etc.) was additionally saved to disk with a

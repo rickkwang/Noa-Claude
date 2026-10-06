@@ -87,7 +87,7 @@ const server = createServer(async (req, res) => {
       else content=[{type:'text',text:'AUDIT_OK'}];
     } else if(active.case==='goal-child-usage'){
       const agentName=body.tools.find(t=>t.name==='Task'||t.name==='Agent')?.name||'Task';
-      const steps=[{name:'goal',input:{operation:'create_goal',objective:'Run the explicitly requested isolated child usage test and finish.',token_budget:100000}},{name:agentName,input:{prompt:'CHILD_USAGE_FIXTURE',description:'Read fixture',subagent_type:'general-purpose'}},{name:'goal',input:{operation:'get_goal'}},{name:'goal',input:{operation:'update_goal',status:'complete'}}];
+      const steps=[{name:'goal',input:{operation:'create_goal',objective:'Run the explicitly requested isolated child usage test and finish.',token_budget:100000}},{name:agentName,input:{prompt:'CHILD_USAGE_FIXTURE',description:'Read fixture',subagent_type:'general-purpose',run_in_background:false}},{name:'goal',input:{operation:'get_goal'}},{name:'goal',input:{operation:'update_goal',status:'complete'}}];
       const step=steps[n-1];content=step?[{type:'tool_use',id:'goal_'+n,...step}]:[{type:'text',text:'AUDIT_OK'}];stop=step?'tool_use':'end_turn';
     } else if (summary) {
       active.summaries++;

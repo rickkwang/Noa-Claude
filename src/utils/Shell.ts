@@ -13,7 +13,7 @@ import {
   setCwdState,
 } from '../bootstrap/state.js'
 import { generateTaskId } from '../Task.js'
-import { pwd } from './cwd.js'
+import { getCwdOverride, pwd } from './cwd.js'
 import { logForDebugging } from './debug.js'
 import { errorMessage, isENOENT } from './errors.js'
 import { getFsImplementation } from './fsOperations.js'
@@ -472,7 +472,9 @@ export function setCwd(path: string, relativeTo?: string): void {
     throw e
   }
 
-  setCwdState(physicalPath)
+  const override = getCwdOverride()
+  if (override) override.cwd = physicalPath
+  else setCwdState(physicalPath)
   if (process.env.NODE_ENV !== 'test') {
     try {
       logEvent('tengu_shell_set_cwd', {

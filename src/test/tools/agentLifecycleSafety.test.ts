@@ -74,7 +74,7 @@ describe('agent lifecycle ownership', () => {
         throw new Error('must not restart')
       }
     }) as any)
-    const call = AgentTool.call({ prompt: 'test', description: 'test', subagent_type: 'test-worker' }, context, undefined as never, createAssistantMessage({ content: 'spawn' }))
+    const call = AgentTool.call({ prompt: 'test', description: 'test', subagent_type: 'test-worker', run_in_background: false }, context, undefined as never, createAssistantMessage({ content: 'spawn' }))
     try {
       await pending.promise
       const id = Object.keys(store.getState().tasks)[0]!

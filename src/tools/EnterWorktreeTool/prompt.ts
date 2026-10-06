@@ -16,7 +16,7 @@ export function getEnterWorktreeToolPrompt(): string {
 ## Requirements
 
 - Must be in a git repository, OR have WorktreeCreate/WorktreeRemove hooks configured in settings.json
-- Must not already be in a worktree
+- Must not already be in a worktree session when creating a new worktree (\`name\`); switching into another existing worktree via \`path\` is allowed
 
 ## Behavior
 
@@ -25,8 +25,15 @@ export function getEnterWorktreeToolPrompt(): string {
 - Switches the session's working directory to the new worktree
 - Use ExitWorktree to leave the worktree mid-session (keep or remove). On session exit, if still in the worktree, the user will be prompted to keep or remove it
 
+## Entering an existing worktree
+
+Pass \`path\` instead of \`name\` to switch the session into a worktree that already exists (e.g., one you just created with \`git worktree add\`). On first entry from the launch directory, the path must appear in \`git worktree list\` for the repository that owns it — the current repository or, in a multi-repo workspace, a repository nested inside it; paths registered by neither are rejected. ExitWorktree will not remove a worktree entered this way; use \`action: "keep"\` to return to the original directory.
+
+Switching with \`path\` also works when the session is already in a worktree (the previous worktree is left on disk, untouched, and only the new one is tracked for exit-time cleanup), and from agents whose working directory was pinned at launch (subagent isolation or explicit cwd). In both cases the target must be a worktree under \`.noa/worktrees/\` of the same repository, and from a pinned agent the switch only affects this agent, not the parent session. An explicitly isolated agent may switch only within its originally assigned isolation root; changing directories never widens that write scope.
+
 ## Parameters
 
-- \`name\` (optional): A name for the worktree. If not provided, a random name is generated.
+- \`name\` (optional): A name for a new worktree. If neither \`name\` nor \`path\` is provided, a random name is generated.
+- \`path\` (optional): Path to an existing worktree to enter instead of creating one — of the current repository, or (on first entry from the launch directory) of a repository nested inside it. Mutually exclusive with \`name\`.
 `
 }
