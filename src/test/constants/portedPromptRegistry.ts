@@ -175,7 +175,7 @@ export const PORTED_DIGESTS: Record<string, string> = {
   // certifies what currently ships — run `verify:ports` against a binary to
   // confirm the transcription itself.
   SECURITY_POLICY: '10591efdcea75a16',
-  'WebFetch.LEAN_DESCRIPTION': '7db6b3cae057d3c9',
+  'WebFetch.LEAN_DESCRIPTION': '28495ef9c5abd0ed',
   'TodoWrite lean': '863d3a2d90b3c43e',
   'Glob lean': '33fb1e4be95ad7cf',
   'Grep lean': 'dde2d0b4701de45b',

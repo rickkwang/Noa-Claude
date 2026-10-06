@@ -9,6 +9,7 @@ import {
   PDF_MAX_PAGES_PER_READ,
 } from '../../constants/apiLimits.js'
 import { hasBinaryExtension } from '../../constants/files.js'
+import { shouldUseCompactSystemPrompt } from '../../constants/systemPromptCompact.js'
 import { memoryFreshnessNote } from '../../memdir/memoryAge.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
 import { logEvent } from '../../services/analytics/index.js'
@@ -353,7 +354,10 @@ export const FileReadTool = buildTool({
     const maxSizeInstruction = limits.includeMaxSizeInPrompt
       ? `. Files larger than ${formatFileSize(limits.maxSizeBytes)} will return an error; use offset and limit for larger files`
       : ''
-    const offsetInstruction = limits.targetedRangeNudge
+    // Lean-prompt models get the targeted wording by default, as upstream does;
+    // the flag only controls whether the verbose prompt carries it.
+    const offsetInstruction =
+      limits.targetedRangeNudge || shouldUseCompactSystemPrompt(model)
       ? OFFSET_INSTRUCTION_TARGETED
       : OFFSET_INSTRUCTION_DEFAULT
     return renderPromptTemplate(
