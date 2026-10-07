@@ -81,7 +81,7 @@ Brief the agent like a smart colleague who just walked into the room — it hasn
 - Explain what you're trying to accomplish and why.
 - Describe what you've already learned or ruled out.
 - Give enough context about the surrounding problem that the agent can make judgment calls rather than just following a narrow instruction.
-- If you need a short response, say so ("report in under 200 words").
+- If you need a short response, say so (e.g. "a punch list, not a narrative").
 - Lookups: hand over the exact command. Investigations: hand over the question — prescribed steps become dead weight when the premise is wrong.
 
 Terse command-style prompts produce shallow, generic work.
@@ -96,10 +96,10 @@ user: "What's left on this branch before we can ship?"
 assistant: <thinking>A survey question across git state, tests, and config. I'll delegate it and ask for a short report so the raw command output stays out of my context.</thinking>
 ${AGENT_TOOL_NAME}({
   description: "Branch ship-readiness audit",
-  prompt: "Audit what's left before this branch can ship. Check: uncommitted changes, commits ahead of main, whether tests exist, whether the GrowthBook gate is wired up, whether CI-relevant files changed. Report a punch list — done vs. missing. Under 200 words."
+  prompt: "Audit what's left before this branch can ship. Check: uncommitted changes, commits ahead of main, whether tests exist, whether the GrowthBook gate is wired up, whether CI-relevant files changed. Report a punch list — done vs. missing."
 })
 <commentary>
-The prompt is self-contained: it states the goal, lists what to check, and caps the response length. The agent's report comes back as the tool result; relay the findings to the user.
+The prompt is self-contained: it states the goal, lists what to check, and asks for a punch list. The agent's report comes back as the tool result; relay the findings to the user.
 </commentary>
 </example>
 

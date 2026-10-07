@@ -324,11 +324,11 @@ If the user wants something to happen automatically in response to an EVENT, the
 
 **Hook events:** PreToolUse, PostToolUse, PreCompact, PostCompact, Stop, Notification, SessionStart
 
-## CRITICAL: Read Before Write
+## Read before writing
 
 **Always read the existing settings file before making changes.** Merge new settings with existing ones - never replace the entire file.
 
-## CRITICAL: Use AskUserQuestion for Ambiguity
+## Ask when the request is ambiguous
 
 When the user's request is ambiguous, use AskUserQuestion to clarify:
 - Which settings file to modify (user/project/local)

@@ -159,7 +159,7 @@ const SECTION_INTRO = [
   '',
   'Create or modify `~/.noa/keybindings.json` to customize keyboard shortcuts.',
   '',
-  '## CRITICAL: Read Before Write',
+  '## Read before writing',
   '',
   '**Always read `~/.noa/keybindings.json` first** (it may not exist yet). Merge changes with existing bindings — never replace the entire file.',
   '',
