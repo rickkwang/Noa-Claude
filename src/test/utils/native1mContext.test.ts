@@ -40,8 +40,10 @@ describe('native 1M context', () => {
   })
 
   test('non-native models stay at the 200k default', () => {
-    expect(getContextWindowForModel('claude-sonnet-4-6')).toBe(200_000)
+    expect(getContextWindowForModel('claude-sonnet-4-5')).toBe(200_000)
     expect(getContextWindowForModel('claude-haiku-4-5-20251001')).toBe(200_000)
+    // Opus 4.6 / Sonnet 4.6 are documented at 1M.
+    expect(getContextWindowForModel('claude-sonnet-4-6')).toBe(1_000_000)
   })
 
   test('a non-Anthropic base URL still gets native 1M', () => {

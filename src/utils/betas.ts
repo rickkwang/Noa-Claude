@@ -24,7 +24,8 @@ import {
 } from '../constants/betas.js'
 import { OAUTH_BETA_HEADER } from '../constants/oauth.js'
 import { isClaudeAISubscriber } from './auth.js'
-import { has1mContext } from './context.js'
+import { has1mContext, is1mContextDisabled } from './context.js'
+import { native1mNeedsBetaHeader } from './model/native1m.js'
 import { isEnvDefinedFalsy, isEnvTruthy } from './envUtils.js'
 import { getCanonicalName } from './model/model.js'
 import { get3PModelCapabilityOverride } from './model/modelSupportOverrides.js'
@@ -223,7 +224,7 @@ export function modelRejectsForcedToolChoice(model: string): boolean {
 }
 
 /**
- * Fable 5.1 / Mythos 5.1 / Opus 5.5 / Sonnet 5.5 / Haiku 5.5 enforce "preserved thinking": a thinking block's
+ * Fable 5.1 / Opus 5.5 / Sonnet 5.5 / Haiku 5.5 enforce "preserved thinking": a thinking block's
  * signature records the conversation prefix that produced it (top-level
  * `system`, the `tools` set, and every earlier message), so editing an earlier
  * turn invalidates every later block. Noa edits history routinely — compaction
@@ -236,13 +237,15 @@ export function modelRejectsForcedToolChoice(model: string): boolean {
  * only for accounts created on/after 2026-08-31, but setting the field opts
  * every request in, which is what makes the behaviour uniform.
  *
+ * Mythos 5.1 is absent on purpose: it does not run the history-editing check,
+ * so it gets no controls.
+ *
  * @[MODEL LAUNCH]: add models that bind thinking blocks to the prefix here.
  */
 export function modelEnforcesThinkingPrefixBinding(model: string): boolean {
   const canonical = getCanonicalName(model)
   return (
     canonical.includes('claude-fable-5-1') ||
-    canonical.includes('claude-mythos-5-1') ||
     canonical.includes('claude-opus-5-5') ||
     canonical.includes('claude-sonnet-5-5') ||
     canonical.includes('claude-haiku-5-5')
@@ -473,7 +476,10 @@ export const getAllModelBetas = memoize((model: string): string[] => {
   if (isClaudeAISubscriber()) {
     betaHeaders.push(OAUTH_BETA_HEADER)
   }
-  if (has1mContext(model)) {
+  if (
+    has1mContext(model) ||
+    (!is1mContextDisabled() && native1mNeedsBetaHeader(model))
+  ) {
     betaHeaders.push(CONTEXT_1M_BETA_HEADER)
   }
   if (

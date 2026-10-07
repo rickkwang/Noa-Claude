@@ -131,9 +131,9 @@ describe('Bedrock inference profile matching', () => {
 })
 
 describe('preserved thinking (prefix binding)', () => {
-  test('only the 5.1 pair binds thinking blocks to the prefix', () => {
+  test('Fable 5.1 binds thinking blocks to the prefix; Mythos 5.1 does not', () => {
     expect(modelEnforcesThinkingPrefixBinding('claude-fable-5-1')).toBe(true)
-    expect(modelEnforcesThinkingPrefixBinding('claude-mythos-5-1')).toBe(true)
+    expect(modelEnforcesThinkingPrefixBinding('claude-mythos-5-1')).toBe(false)
     expect(modelEnforcesThinkingPrefixBinding('claude-fable-5')).toBe(false)
     expect(modelEnforcesThinkingPrefixBinding('claude-opus-5')).toBe(false)
     expect(modelEnforcesThinkingPrefixBinding('claude-opus-4-8')).toBe(false)

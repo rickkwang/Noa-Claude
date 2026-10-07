@@ -95,11 +95,11 @@ describe('mergeNative1mOptions', () => {
 
   test('leaves non-native models untouched', () => {
     const rows = [
-      row('claude-sonnet-4-6', 'Sonnet', 'Sonnet 4.6 · Best for everyday tasks'),
+      row('claude-sonnet-4-5', 'Sonnet', 'Sonnet 4.5 · Best for everyday tasks'),
       row(
-        'claude-sonnet-4-6[1m]',
+        'claude-sonnet-4-5[1m]',
         'Sonnet (1M context)',
-        'Sonnet 4.6 with 1M context',
+        'Sonnet 4.5 with 1M context',
       ),
     ]
     expect(mergeNative1mOptions(rows)).toEqual(rows)
@@ -114,11 +114,11 @@ describe('mergeNative1mOptions', () => {
   test('does not collapse a model without native 1M on a 3P backend', () => {
     process.env.CLAUDE_CODE_USE_BEDROCK = '1'
     const rows = [
-      row('claude-sonnet-4-6', 'Sonnet', 'Sonnet 4.6'),
+      row('claude-sonnet-4-5', 'Sonnet', 'Sonnet 4.5'),
       row(
-        'claude-sonnet-4-6[1m]',
+        'claude-sonnet-4-5[1m]',
         'Sonnet (1M context)',
-        'Sonnet 4.6 with 1M context',
+        'Sonnet 4.5 with 1M context',
       ),
     ]
     expect(mergeNative1mOptions(rows)).toEqual(rows)

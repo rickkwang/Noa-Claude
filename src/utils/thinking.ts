@@ -238,7 +238,11 @@ export function modelRequiresExplicitThinkingDisable(model: string): boolean {
   // reject {type:'disabled'}.
   if (modelThinkingCannotBeDisabled(model)) return false
   const canonical = getCanonicalName(model)
-  return canonical.includes('sonnet-5') || canonical.includes('claude-opus-5')
+  return (
+    canonical.includes('sonnet-5') ||
+    canonical.includes('claude-opus-5') ||
+    canonical.includes('claude-haiku-5-5')
+  )
 }
 
 /**
@@ -247,10 +251,9 @@ export function modelRequiresExplicitThinkingDisable(model: string): boolean {
  * is a 400 at every effort level. Sonnet 5.5 also 400s on `disabled` (catalog
  * capability `rejects_disabled_thinking`); its only off switch is
  * {type:'between_tools'}, which we do not send, so it is treated the same way.
- * Haiku 5.5 also rejects `disabled` and is treated the same.
  *
  * Distinct from modelRequiresExplicitThinkingDisable, which marks the opposite
- * problem — models (Sonnet 5, Opus 5) where omitting the parameter still runs
+ * problem — models (Sonnet 5, Opus 5, Haiku 5.5) where omitting the parameter still runs
  * adaptive thinking, so turning it off means stating `disabled` outright. A
  * caller that wants thinking off has to branch on both:
  *
@@ -268,8 +271,7 @@ export function modelThinkingCannotBeDisabled(model: string): boolean {
     canonical.includes('fable-5') ||
     canonical.includes('mythos') ||
     canonical.includes('claude-opus-5-5') ||
-    canonical.includes('claude-sonnet-5-5') ||
-    canonical.includes('claude-haiku-5-5')
+    canonical.includes('claude-sonnet-5-5')
   )
 }
 
