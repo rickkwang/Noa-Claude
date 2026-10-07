@@ -287,7 +287,6 @@ export async function setup(
   // raced ahead and memoized an empty bundledSkills list.
   if (!isBareMode()) {
     initSessionMemory() // Synchronous - registers hook, gate check happens lazily
-    // initContextCollapse() // contextCollapse stub - noop
   }
   void lockCurrentVersion() // Lock current version to prevent deletion by other processes
   logForDiagnosticsNoPII('info', 'setup_background_jobs_launched')

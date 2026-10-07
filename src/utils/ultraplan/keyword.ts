@@ -99,19 +99,11 @@ export function findUltraplanTriggerPositions(text: string): TriggerPosition[] {
   return findKeywordTriggerPositions(text, 'ultraplan')
 }
 
-export function findUltrareviewTriggerPositions(
-  text: string,
-): TriggerPosition[] {
-  return findKeywordTriggerPositions(text, 'ultrareview')
-}
 
 export function hasUltraplanKeyword(text: string): boolean {
   return findUltraplanTriggerPositions(text).length > 0
 }
 
-export function hasUltrareviewKeyword(text: string): boolean {
-  return findUltrareviewTriggerPositions(text).length > 0
-}
 
 /**
  * Replace the first triggerable "ultraplan" with "plan" so the forwarded

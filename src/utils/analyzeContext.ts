@@ -1108,15 +1108,7 @@ export async function analyzeContextUsage(
   // would be misleading — skip it and let Free space fill the grid.
   let reservedTokens = 0
   let skipReservedBuffer = false
-  if (feature('CONTEXT_COLLAPSE')) {
-    /* eslint-disable @typescript-eslint/no-require-imports */
-    const { isContextCollapseEnabled } =
-      require('../services/contextCollapse/index.js') as typeof import('../services/contextCollapse/index.js')
-    /* eslint-enable @typescript-eslint/no-require-imports */
-    if (isContextCollapseEnabled()) {
-      skipReservedBuffer = true
-    }
-  }
+
   if (skipReservedBuffer) {
     // No buffer category pushed.
   } else if (isAutoCompact && autoCompactThreshold !== undefined) {

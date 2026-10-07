@@ -236,8 +236,6 @@ export function configureProgramOptions(program: CommanderCommand): void {
       [] as string[]
     )
     .option('--disable-slash-commands', 'Disable all skills', () => true)
-    .option('--chrome', 'Enable Claude in Chrome integration')
-    .option('--no-chrome', 'Disable Claude in Chrome integration')
     .option(
       '--file <specs...>',
       'File resources to download at startup. Format: file_id:relative_path (e.g., --file file_abc:doc.txt file_def:img.png)'

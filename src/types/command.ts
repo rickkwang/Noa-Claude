@@ -204,7 +204,6 @@ export type CommandBase = {
     | 'managed'
     | 'bundled'
     | 'mcp' // Where the command was loaded from
-  kind?: 'workflow' // Distinguishes workflow-backed commands (badged in autocomplete)
   /**
    * If true, command executes immediately without waiting for a stop point
    * (bypasses queue). A function decides per invocation from the args — e.g.

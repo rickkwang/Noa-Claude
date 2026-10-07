@@ -293,9 +293,6 @@ export type GlobalConfig = {
   // Example GitLab: "https://gitlab.com/{owner}/{repo}/-/merge_requests/{number}"
   prUrlTemplate?: string
 
-  // /buddy companion soul — bones regenerated from userId on read. See src/buddy/.
-  companion?: import('../buddy/types.js').StoredCompanion
-  companionMuted?: boolean
 
   // Feedback survey tracking
   feedbackSurveyState?: {
@@ -517,8 +514,6 @@ export type GlobalConfig = {
   officialMarketplaceAutoInstallNextRetryTime?: number // Earliest time to retry again
 
   // Claude in Chrome settings
-  hasCompletedClaudeInChromeOnboarding?: boolean // Whether Claude in Chrome onboarding has been shown
-  claudeInChromeDefaultEnabled?: boolean // Whether Claude in Chrome is enabled by default (undefined means platform default)
   cachedChromeExtensionInstalled?: boolean // Cached result of whether Chrome extension is installed
 
   // Chrome extension pairing state (persisted across sessions)

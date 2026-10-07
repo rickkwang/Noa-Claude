@@ -308,7 +308,7 @@ function enqueueRemoteReviewFailureNotification(taskId: string, reason: string, 
 <${STATUS_TAG}>failed</${STATUS_TAG}>
 <${SUMMARY_TAG}>Remote review failed: ${reason}</${SUMMARY_TAG}>
 </${TASK_NOTIFICATION_TAG}>
-Remote review did not produce output (${reason}). Tell the user to retry /ultrareview, or use /review for a local review instead.`;
+Remote review did not produce output (${reason}). Tell the user to use /review for a local review instead.`;
   enqueuePendingNotification({
     value: message,
     mode: 'task-notification'

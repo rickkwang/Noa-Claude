@@ -33,22 +33,6 @@ const baseline: CommandSurfaceEntry[] = [
     reason: 'Core resumable workflow for session branching.',
     upgradeCondition: 'N/A',
   },
-  {
-    command: '/workflows',
-    category: 'baseline',
-    discoverability: 'visible',
-    supportsNonInteractive: null,
-    reason: 'Core reusable workflow management surface.',
-    upgradeCondition: 'N/A',
-  },
-  {
-    command: '/share',
-    category: 'baseline',
-    discoverability: 'visible',
-    supportsNonInteractive: true,
-    reason: 'Core local export for session artifacts.',
-    upgradeCondition: 'N/A',
-  },
 ]
 
 const implementedNonBaseline: CommandSurfaceEntry[] = [

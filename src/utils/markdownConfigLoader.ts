@@ -38,7 +38,6 @@ export const CLAUDE_CONFIG_DIRECTORIES = [
   'agents',
   'output-styles',
   'skills',
-  'workflows',
 ] as const
 
 export type ClaudeConfigDirectory = (typeof CLAUDE_CONFIG_DIRECTORIES)[number]

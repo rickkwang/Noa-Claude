@@ -59,7 +59,7 @@ If `~/.local/bin` is not on your `PATH`, the installer prints the line to add �
 
 ## Core Features
 
-The product baseline is `/fork`, `/workflows`, and `/share` (smoke-checked). Other listed commands are non-baseline — see [docs/product-governance.md](docs/product-governance.md).
+The session-fork workflow (`/fork`) is smoke-checked. Other listed commands are non-baseline — see [docs/product-governance.md](docs/product-governance.md).
 
 **Sessions**
 - `/fork` — Create a resumable fork of the current conversation
@@ -70,8 +70,6 @@ The product baseline is `/fork`, `/workflows`, and `/share` (smoke-checked). Oth
 - `/clear` — Clear the current conversation and start fresh
 - `/export` — Export conversation to a file
 - `/rename` — Rename the current session
-- `/tag` — Tag the current session for quick lookup
-- `/share` — Export share snapshots under `.noa/shares`
 - `/rewind` (aliases `/checkpoint`, `/undo`) — Restore the code and/or conversation to a previous point
 - `/goal` — Set a long-running objective that survives turns: auto-continues with turn/token limits and an optional verify command (details in [docs/operating-guide.md](docs/operating-guide.md))
 
@@ -101,7 +99,6 @@ The product baseline is `/fork`, `/workflows`, and `/share` (smoke-checked). Oth
 - `/output-style` — Pick how Noa communicates in its responses (same picker as `/config` → Output style)
 - `/reload-skills` — Re-scan skill directories after editing `SKILL.md` files mid-session
 - `/pause-memory` — Pause auto-memory reads and writes for this session only
-- `/workflows` — Manage reusable workflows
 - `AGENTS.md` / `CLAUDE.md` — Project-level context files
 
 ## Keyboard Shortcuts

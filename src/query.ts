@@ -17,11 +17,6 @@ import {
 } from './services/compact/autoCompact.js'
 import { buildPostCompactMessages } from './services/compact/compact.js'
 import * as reactiveCompact from './services/compact/reactiveCompact.js'
-/* eslint-disable @typescript-eslint/no-require-imports */
-const contextCollapse = feature('CONTEXT_COLLAPSE')
-  ? (require('./services/contextCollapse/index.js') as typeof import('./services/contextCollapse/index.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
 import {
   logEvent,
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -145,7 +140,6 @@ import {
 } from './bootstrap/state.js'
 import { createBudgetTracker, checkTokenBudget } from './query/tokenBudget.js'
 import { count } from './utils/array.js'
-
 
 function* yieldMissingToolResultBlocks(
   assistantMessages: AssistantMessage[],
@@ -833,18 +827,7 @@ async function* queryLoop(
     // error returns before the API call, so reactive compact would never see
     // a prompt-too-long to react to.
     //
-    // Same skip for context-collapse: its recoverFromOverflow drains
-    // staged collapses on a REAL API 413, then falls through to
-    // reactiveCompact. A synthetic preempt here would return before the
-    // API call and starve both recovery paths. The isAutoCompactEnabled()
-    // conjunct preserves the user's explicit "no automatic anything"
-    // config — if they set DISABLE_AUTO_COMPACT, they get the preempt.
-    let collapseOwnsIt = false
-    if (feature('CONTEXT_COLLAPSE')) {
-      collapseOwnsIt =
-        (contextCollapse?.isContextCollapseEnabled() ?? false) &&
-        isAutoCompactEnabled()
-    }
+
     // Resolve the recovery gate once per turn: withholding (inside the
     // stream loop) and recovery (after it) must agree, or a config change
     // mid-stream would withhold an error that nothing then surfaces. Sources
@@ -855,8 +838,7 @@ async function* queryLoop(
       !compactionResult &&
       querySource !== 'compact' &&
       querySource !== 'session_memory' &&
-      !reactiveRecoveryEnabled &&
-      !collapseOwnsIt
+      !reactiveRecoveryEnabled
     ) {
       const { isAtBlockingLimit } = calculateTokenWarningState(
         tokenCountWithEstimation(messagesForQuery) - snipTokensFreed,
@@ -1040,28 +1022,11 @@ async function* queryLoop(
               }
             }
             // Withhold recoverable errors (prompt-too-long, max-output-tokens)
-            // until we know whether recovery (collapse drain / reactive
+            // until we know whether recovery (reactive
             // compact / truncation retry) can succeed. Still pushed to
             // assistantMessages so the recovery checks below find them.
-            // Either subsystem's withhold is sufficient — they're
-            // independent so turning one off doesn't break the other's
-            // recovery path.
-            //
-            // feature() only works in if/ternary conditions (bun:bundle
-            // tree-shaking constraint), so the collapse check is nested
-            // rather than composed.
             let withheld = false
-            if (feature('CONTEXT_COLLAPSE')) {
-              if (
-                contextCollapse?.isWithheldPromptTooLong(
-                  message,
-                  isPromptTooLongMessage,
-                  querySource,
-                )
-              ) {
-                withheld = true
-              }
-            }
+
             if (
               reactiveRecoveryEnabled &&
               (reactiveCompact.isWithheldPromptTooLong(message) ||
@@ -1410,48 +1375,18 @@ async function* queryLoop(
       const lastMessage = assistantMessages.at(-1)
 
       // Prompt-too-long recovery: the streaming loop withheld the error.
-      // Try collapse drain first (cheap, keeps granular context), then
-      // reactive compact (full summary). Single-shot on each — if a retry
-      // still 413's, the next stage handles it or the error surfaces.
+      // Try reactive compact once; repeated overflows surface the error.
       const isWithheld413 =
         lastMessage?.type === 'assistant' &&
         lastMessage.isApiErrorMessage &&
         isPromptTooLongMessage(lastMessage)
       // Media-size rejections (image/PDF/many-image) are recoverable via
-      // reactive compact's strip-retry. Unlike PTL, media errors skip the
-      // collapse drain — collapse doesn't strip images. If the oversized
+      // reactive compact's strip-retry. If the oversized
       // media survives compaction, hasAttemptedReactiveCompact stops a
       // spiral and the error surfaces.
       const isWithheldMedia =
         reactiveRecoveryEnabled &&
         reactiveCompact.isWithheldMediaSizeError(lastMessage)
-      if (isWithheld413) {
-        // First: drain all staged context-collapses. Gated on the PREVIOUS
-        // transition not being collapse_drain_retry — if we already drained
-        // and the retry still 413'd, fall through to reactive compact.
-        if (
-          feature('CONTEXT_COLLAPSE') &&
-          contextCollapse &&
-          state.transition?.reason !== 'collapse_drain_retry'
-        ) {
-          const drained = contextCollapse.recoverFromOverflow(
-            messagesForQuery,
-            querySource,
-          )
-          if (drained.committed > 0) {
-            state = nextState(state, {
-              messages: drained.messages,
-              toolUseContext,
-              autoCompactTracking: tracking,
-              transition: {
-                reason: 'collapse_drain_retry',
-                committed: drained.committed,
-              },
-            })
-            continue
-          }
-        }
-      }
       if (isWithheld413 || isWithheldMedia) {
         // Reactive compaction counts toward the rapid-refill breaker like the
         // proactive path: a context that overflows again within a few turns of
@@ -2063,7 +1998,6 @@ async function* queryLoop(
 
     queryCheckpoint('query_tool_execution_start')
 
-
     if (streamingToolExecutor) {
       logEvent('tengu_streaming_tool_execution_used', {
         tool_count: toolUseBlocks.length,
@@ -2309,7 +2243,6 @@ async function* queryLoop(
       }
       pendingMemoryPrefetch.consumedOnIteration = turnCount - 1
     }
-
 
     // Inject prefetched skill discovery. collectSkillDiscoveryPrefetch emits
     // hidden_by_main_turn — true when the prefetch resolved before this point

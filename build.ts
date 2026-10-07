@@ -55,7 +55,6 @@ const fullExperimentalFeatures = [
   'CCR_MIRROR',
   'COMMIT_ATTRIBUTION',
   'CONNECTOR_TEXT',
-  'CONTEXT_COLLAPSE',
   'DOWNLOAD_USER_SETTINGS',
   'EXPERIMENTAL_SKILL_SEARCH',
   'EXTRACT_MEMORIES',
@@ -367,7 +366,6 @@ const stubPlugin: BunPlugin = {
   setup(build) {
     // Modules that may not be installed at build time
     const stubModules = [
-      '@ant/claude-for-chrome-mcp',
       '@anthropic-ai/sandbox-runtime',
       // ink pulls react-devtools-core in dev mode; not needed for prod bundle.
       'react-devtools-core',

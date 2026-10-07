@@ -103,9 +103,7 @@ import { feature } from 'bun:bundle'
 const OverflowTestTool = feature('OVERFLOW_TEST_TOOL')
   ? require('./tools/OverflowTestTool/OverflowTestTool.js').OverflowTestTool
   : null
-const CtxInspectTool = feature('CONTEXT_COLLAPSE')
-  ? require('./tools/CtxInspectTool/CtxInspectTool.js').CtxInspectTool
-  : null
+
 const TerminalCaptureTool = feature('TERMINAL_PANEL')
   ? require('./tools/TerminalCaptureTool/TerminalCaptureTool.js')
       .TerminalCaptureTool
@@ -216,7 +214,6 @@ export function getAllBaseTools(): Tools {
       ? [TaskCreateTool, TaskGetTool, TaskUpdateTool, TaskListTool]
       : []),
     ...(OverflowTestTool ? [OverflowTestTool] : []),
-    ...(CtxInspectTool ? [CtxInspectTool] : []),
     ...(TerminalCaptureTool ? [TerminalCaptureTool] : []),
     ...(isEnvTruthy(process.env.ENABLE_LSP_TOOL) ? [LSPTool] : []),
     ...(isWorktreeModeEnabled() ? [EnterWorktreeTool, ExitWorktreeTool] : []),

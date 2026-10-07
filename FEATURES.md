@@ -72,9 +72,6 @@ every name those call sites read (see `CLAUDE.md`, "Feature flags").
 
 - `CACHED_MICROCOMPACT` — `services/compact/cachedMCConfig.ts` returns a config
   with `enabled: false` and no supported models, so cache editing never engages.
-- `CONTEXT_COLLAPSE` — `services/contextCollapse/` is a pass-through
-  (`isContextCollapseEnabled()` is `false`); the `CtxInspect` tool is a null
-  shell and never registers.
 - `EXPERIMENTAL_SKILL_SEARCH` — `services/skillSearch/` returns no results
   (`isSkillSearchEnabled()` is `false`).
 - `HISTORY_SNIP` — `services/compact/snipCompact.ts` never snips

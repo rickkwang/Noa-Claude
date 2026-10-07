@@ -4,7 +4,6 @@
  */
 
 import {
-  getChromeFlagOverride,
   getFlagSettingsPath,
   getInlinePlugins,
   getMainLoopModelOverride,
@@ -78,13 +77,6 @@ export function buildInheritedCliFlags(options?: {
   const sessionMode = getTeammateModeFromSnapshot()
   flags.push(`--teammate-mode ${sessionMode}`)
 
-  // Propagate --chrome / --no-chrome if explicitly set on the CLI
-  const chromeFlagOverride = getChromeFlagOverride()
-  if (chromeFlagOverride === true) {
-    flags.push('--chrome')
-  } else if (chromeFlagOverride === false) {
-    flags.push('--no-chrome')
-  }
 
   return flags.join(' ')
 }

@@ -34,9 +34,8 @@ import pr_comments from './commands/pr_comments/index.js'
 import releaseNotes from './commands/release-notes/index.js'
 import rename from './commands/rename/index.js'
 import resume from './commands/resume/index.js'
-import review, { ultrareview } from './commands/review.js'
+import review from './commands/review.js'
 import session from './commands/session/index.js'
-import share from './commands/share/index.js'
 import skills from './commands/skills/index.js'
 import status from './commands/status/index.js'
 import stats from './commands/stats/index.js'
@@ -66,9 +65,6 @@ const bridge = feature('BRIDGE_MODE')
 const voiceCommand = feature('VOICE_MODE')
   ? require('./commands/voice/index.js').default
   : null
-const workflowsCmd = (
-    require('./commands/workflows/index.js') as typeof import('./commands/workflows/index.js')
-  ).default
 const clearSkillIndexCache = (
     require('./services/skillSearch/localSearch.js') as typeof import('./services/skillSearch/localSearch.js')
   ).clearSkillIndexCache
@@ -76,9 +72,6 @@ const ultraplan = require('./commands/ultraplan.js').default
 const forkCmd = (
     require('./commands/fork/index.js') as typeof import('./commands/fork/index.js')
   ).default
-const buddy = (
-  require('./commands/buddy/index.js') as typeof import('./commands/buddy/index.js')
-).default
 /* eslint-enable @typescript-eslint/no-require-imports */
 import permissions from './commands/permissions/index.js'
 import plan from './commands/plan/index.js'
@@ -98,7 +91,6 @@ import rewind from './commands/rewind/index.js'
 import bridgeKick from './commands/bridge-kick.js'
 import version from './commands/version.js'
 import sandboxToggle from './commands/sandbox-toggle/index.js'
-import chrome from './commands/chrome/index.js'
 import { logError } from './utils/log.js'
 import { toError } from './utils/errors.js'
 import { logForDebugging } from './utils/debug.js'
@@ -190,7 +182,6 @@ const COMMANDS = memoize((): Command[] => [
   background,
   stop,
   btw,
-  chrome,
   clear,
   cleanSessions,
   cleanupData,
@@ -227,7 +218,6 @@ const COMMANDS = memoize((): Command[] => [
   rename,
   resume,
   session,
-  share,
   skills,
   status,
   stats,
@@ -238,7 +228,6 @@ const COMMANDS = memoize((): Command[] => [
   tui,
   feedback,
   review,
-  ultrareview,
   rewind,
   securityReview,
   terminalSetup,
@@ -252,7 +241,6 @@ const COMMANDS = memoize((): Command[] => [
   vim,
   autocompact,
   ...(forkCmd ? [forkCmd] : []),
-  ...(buddy ? [buddy] : []),
   ...(bridge ? [bridge] : []),
   ...(voiceCommand ? [voiceCommand] : []),
   permissions,
@@ -264,7 +252,6 @@ const COMMANDS = memoize((): Command[] => [
   sandboxToggle,
   ...(!isUsing3PServices() ? [logout, login()] : []),
   tasks,
-  ...(workflowsCmd ? [workflowsCmd] : []),
   ...(process.env.USER_TYPE === 'ant' && !process.env.IS_DEMO
     ? INTERNAL_ONLY_COMMANDS
     : []),
@@ -327,11 +314,6 @@ async function getSkills(cwd: string): Promise<{
   }
 }
 
-/* eslint-disable @typescript-eslint/no-require-imports */
-const getWorkflowCommands = (
-    require('./tools/WorkflowTool/createWorkflowCommand.js') as typeof import('./tools/WorkflowTool/createWorkflowCommand.js')
-  ).getWorkflowCommands
-/* eslint-enable @typescript-eslint/no-require-imports */
 
 /**
  * Filters commands by their declared `availability` (auth/provider requirement).
@@ -371,25 +353,22 @@ export function meetsAvailabilityRequirement(cmd: Command): boolean {
 }
 
 /**
- * Loads all command sources (skills, plugins, workflows). Memoized by cwd
+ * Loads all command sources (skills, plugins). Memoized by cwd
  * because loading is expensive (disk I/O, dynamic imports).
  */
 const loadAllCommands = memoize(async (cwd: string): Promise<Command[]> => {
   const [
     { skillDirCommands, pluginSkills, bundledSkills, builtinPluginSkills },
     pluginCommands,
-    workflowCommands,
   ] = await Promise.all([
     getSkills(cwd),
     getPluginCommands(),
-    getWorkflowCommands ? getWorkflowCommands(cwd) : Promise.resolve([]),
   ])
 
   return [
     ...bundledSkills,
     ...builtinPluginSkills,
     ...skillDirCommands,
-    ...workflowCommands,
     ...pluginCommands,
     ...pluginSkills,
     ...COMMANDS(),
@@ -664,10 +643,6 @@ export function getCommand(commandName: string, commands: Command[]): Command {
 export function formatDescriptionWithSource(cmd: Command): string {
   if (cmd.type !== 'prompt') {
     return cmd.description
-  }
-
-  if (cmd.kind === 'workflow') {
-    return `${cmd.description} (workflow)`
   }
 
   if (cmd.source === 'plugin') {

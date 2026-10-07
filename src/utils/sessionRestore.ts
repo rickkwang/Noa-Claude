@@ -162,17 +162,6 @@ function goalToolResultBlocks(
   )
 }
 
-type ContextCollapsePersistModule = {
-  restoreFromEntries: (
-    commits: ContextCollapseCommitEntry[],
-    snapshot?: ContextCollapseSnapshotEntry,
-  ) => void
-}
-
-function loadContextCollapsePersist(): ContextCollapsePersistModule {
-  return require('../services/contextCollapse/index.js') as ContextCollapsePersistModule
-}
-
 /**
  * Scan the transcript for the last TodoWrite tool_use block and return its todos.
  * Used to hydrate AppState.todos on SDK --resume so the model's todo list
@@ -651,20 +640,6 @@ export function restoreSessionStateFromLog(
   // undefined/empty entries) because restoreFromEntries resets the store
   // first — without that, an in-session /resume into a session with no
   // commits would leave the prior session's stale commit log intact.
-  if (feature('CONTEXT_COLLAPSE')) {
-    try {
-      /* eslint-disable @typescript-eslint/no-require-imports */
-      loadContextCollapsePersist().restoreFromEntries(
-        result.contextCollapseCommits ?? [],
-        result.contextCollapseSnapshot,
-      )
-      /* eslint-enable @typescript-eslint/no-require-imports */
-    } catch (error) {
-      logForDebugging(
-        `Skipping context-collapse restore due to malformed session data: ${String(error)}`,
-      )
-    }
-  }
 
   // Restore TodoWrite state from transcript (CLAUDE_CODE_ENABLE_TASKS=0 only).
   // Otherwise tasks are file-backed, so AppState.todos is unused.
@@ -1189,20 +1164,6 @@ export async function processResumedConversation(
   // /resume path goes through restoreSessionStateFromLog (REPL.tsx); CLI
   // --continue/--resume goes through here instead. Called unconditionally
   // — see the restoreSessionStateFromLog callsite above for why.
-  if (feature('CONTEXT_COLLAPSE')) {
-    try {
-      /* eslint-disable @typescript-eslint/no-require-imports */
-      loadContextCollapsePersist().restoreFromEntries(
-        result.contextCollapseCommits ?? [],
-        result.contextCollapseSnapshot,
-      )
-      /* eslint-enable @typescript-eslint/no-require-imports */
-    } catch (error) {
-      logForDebugging(
-        `Skipping context-collapse restore during processResumedConversation: ${String(error)}`,
-      )
-    }
-  }
 
   // Restore agent setting from resumed session
   const { agentDefinition: restoredAgent, agentType: resumedAgentType } =

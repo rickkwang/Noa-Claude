@@ -1,14 +1,10 @@
 // @ts-nocheck
-import { shouldAutoEnableClaudeInChrome } from 'src/utils/claudeInChrome/setup.js'
 import { registerBatchSkill } from './batch.js'
-import { registerClaudeInChromeSkill } from './claudeInChrome.js'
 import { registerDebugSkill } from './debug.js'
 import { registerKeybindingsSkill } from './keybindings.js'
-import { registerLoremIpsumSkill } from './loremIpsum.js'
 import { registerRememberSkill } from './remember.js'
 import { registerSimplifySkill } from './simplify.js'
 import { registerSkillifySkill } from './skillify.js'
-import { registerStuckSkill } from './stuck.js'
 import { registerUpdateConfigSkill } from './updateConfig.js'
 import { registerVerifySkill } from './verify.js'
 
@@ -26,22 +22,15 @@ export function initBundledSkills(): void {
   registerKeybindingsSkill()
   registerVerifySkill()
   registerDebugSkill()
-  registerLoremIpsumSkill()
   registerSkillifySkill()
   registerRememberSkill()
   registerSimplifySkill()
   registerBatchSkill()
-  registerStuckSkill()
   {
     /* eslint-disable @typescript-eslint/no-require-imports */
     const { registerDreamSkill } = require('./dream.js')
     /* eslint-enable @typescript-eslint/no-require-imports */
     registerDreamSkill()
-  }
-  {
-    /* eslint-disable @typescript-eslint/no-require-imports */
-    // const { registerHunterSkill } = require('./hunter.js')
-    // registerHunterSkill() // hunter.ts is a stub - not available in leak
   }
   {
     /* eslint-disable @typescript-eslint/no-require-imports */
@@ -54,13 +43,5 @@ export function initBundledSkills(): void {
     const { registerScheduleRemoteAgentsSkill } = require('./scheduleRemoteAgents.js')
     /* eslint-enable @typescript-eslint/no-require-imports */
     registerScheduleRemoteAgentsSkill()
-  }
-  if (shouldAutoEnableClaudeInChrome()) {
-    registerClaudeInChromeSkill()
-  }
-  {
-    /* eslint-disable @typescript-eslint/no-require-imports */
-    // const { registerRunSkillGeneratorSkill } = require('./runSkillGenerator.js')
-    // registerRunSkillGeneratorSkill() // runSkillGenerator.ts is a stub - not available in leak
   }
 }

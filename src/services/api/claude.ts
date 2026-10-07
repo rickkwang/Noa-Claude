@@ -168,8 +168,6 @@ import {
   shouldIncludeFirstPartyOnlyBetas,
   shouldUseGlobalCacheScope,
 } from 'src/utils/betas.js'
-import { CLAUDE_IN_CHROME_MCP_SERVER_NAME } from 'src/utils/claudeInChrome/common.js'
-import { CHROME_TOOL_SEARCH_INSTRUCTIONS } from 'src/utils/claudeInChrome/prompt.js'
 import { getMaxThinkingTokensForModel } from 'src/utils/context.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { logForDiagnosticsNoPII } from 'src/utils/diagLogs.js'
@@ -239,7 +237,6 @@ import {
   pinCacheEdits,
 } from '../compact/microCompact.js'
 import { getInitializationStatus } from '../lsp/manager.js'
-import { isToolFromMcpServer } from '../mcp/utils.js'
 import { withStreamingVCR, withVCR } from '../vcr.js'
 import { CLIENT_REQUEST_ID_HEADER, getAnthropicClient } from './client.js'
 import {
@@ -1439,16 +1436,6 @@ async function* queryModel(
     }
   }
 
-  // Chrome tool-search instructions: when the delta attachment is enabled,
-  // these are carried as a client-side block in mcp_instructions_delta
-  // (attachments.ts) instead of here. This per-request sys-prompt append
-  // busts the prompt cache when chrome connects late.
-  const hasChromeTools = filteredTools.some(t =>
-    isToolFromMcpServer(t.name, CLAUDE_IN_CHROME_MCP_SERVER_NAME),
-  )
-  const injectChromeHere =
-    useToolSearch && hasChromeTools && !isMcpInstructionsDeltaEnabled()
-
   // filter(Boolean) works by converting each element to a boolean - empty strings become false and are filtered out.
   systemPrompt = asSystemPrompt(
     [
@@ -1459,7 +1446,6 @@ async function* queryModel(
       }),
       ...systemPrompt,
       ...(advisorModel ? [ADVISOR_TOOL_INSTRUCTIONS] : []),
-      ...(injectChromeHere ? [CHROME_TOOL_SEARCH_INSTRUCTIONS] : []),
     ].filter(Boolean),
   )
 

@@ -80,7 +80,7 @@ Backend by env flag: `CLAUDE_CODE_USE_OPENAI`/`_BEDROCK`/`_VERTEX`/`_FOUNDRY` (d
 ## Command-surface governance (don't claim false parity)
 
 `docs/product-governance.md` is authoritative. Four buckets:
-- **Product-Available / baseline** (`/fork`, `/workflows`, `/share`) — supported, smoke-covered.
+- **Product-Available / baseline** (`/fork`) — supported, smoke-covered.
 - **Non-baseline** — callable & stable but not core; promote only with smoke coverage.
 - **Build-excluded** (`/proactive`, `/peers`, `/remote-control`, `/force-snip`, `/subscribe-pr`) — deliberately unregistered, not a regression; stable `E_BUILD_EXCLUDED_*` IDs in `src/commands/buildExcluded.ts`.
 - **Stub** — governance placeholders, kept out of runtime + baseline docs.

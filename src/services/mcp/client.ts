@@ -219,13 +219,7 @@ function getMcpToolTimeoutMs(): number {
   return configured > 0 ? configured : DEFAULT_MCP_TOOL_TIMEOUT_MS
 }
 
-import { isClaudeInChromeMCPServer } from '../../utils/claudeInChrome/common.js'
 
-// Lazy: toolRendering.tsx pulls React/ink; only needed when Claude-in-Chrome MCP server is connected
-/* eslint-disable @typescript-eslint/no-require-imports */
-const claudeInChromeToolRendering =
-  (): typeof import('../../utils/claudeInChrome/toolRendering.js') =>
-    require('../../utils/claudeInChrome/toolRendering.js')
 
 import { mkdir, readFile, unlink, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
@@ -976,26 +970,6 @@ export const connectToServer = memoize(
           transportOptions,
         )
         logMCPDebug(name, `claude.ai proxy transport created successfully`)
-      } else if (
-        (serverRef.type === 'stdio' || !serverRef.type) &&
-        isClaudeInChromeMCPServer(name)
-      ) {
-        // Run the Chrome MCP server in-process to avoid spawning a ~325 MB subprocess
-        const { createChromeContext } = await import(
-          '../../utils/claudeInChrome/mcpServer.js'
-        )
-        const { createClaudeForChromeMcpServer } = await import(
-          '../../utils/claudeInChrome/runtime.js'
-        )
-        const { createLinkedTransportPair } = await import(
-          './InProcessTransport.js'
-        )
-        const context = createChromeContext(serverRef.env)
-        inProcessServer = createClaudeForChromeMcpServer(context)
-        const [clientTransport, serverTransport] = createLinkedTransportPair()
-        await inProcessServer.connect(serverTransport)
-        transport = clientTransport
-        logMCPDebug(name, `In-process Chrome MCP server started`)
       } else if (serverRef.type === 'stdio' || !serverRef.type) {
         const finalCommand =
           process.env.CLAUDE_CODE_SHELL_PREFIX || serverRef.command
@@ -2032,12 +2006,6 @@ export const fetchToolsForClient = memoizeWithLRU(
               const displayName = tool.annotations?.title || tool.name
               return `${client.name} - ${displayName} (MCP)`
             },
-            ...(isClaudeInChromeMCPServer(client.name) &&
-            (client.config.type === 'stdio' || !client.config.type)
-              ? claudeInChromeToolRendering().getClaudeInChromeMCPToolOverrides(
-                  tool.name,
-                )
-              : {}),
           }
         })
         .filter(isIncludedMcpTool)

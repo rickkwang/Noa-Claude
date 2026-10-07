@@ -272,9 +272,7 @@ import { usePostCompactSurvey } from 'src/components/FeedbackSurvey/usePostCompa
 import { FeedbackSurvey } from 'src/components/FeedbackSurvey/FeedbackSurvey.js';
 import { useInstallMessages } from 'src/hooks/notifs/useInstallMessages.js';
 import { useAwaySummary } from 'src/hooks/useAwaySummary.js';
-import { useChromeExtensionNotification } from 'src/hooks/useChromeExtensionNotification.js';
 import { useOfficialMarketplaceNotification } from 'src/hooks/useOfficialMarketplaceNotification.js';
-import { usePromptsFromClaudeInChrome } from 'src/hooks/usePromptsFromClaudeInChrome.js';
 import { getTipToShowOnSpinner, recordShownTip } from 'src/services/tips/tipScheduler.js';
 import type { Theme } from 'src/utils/theme.js';
 import { checkAndDisableBypassPermissionsIfNeeded, checkAndDisableAutoModeIfNeeded, useKickOffCheckAndDisableBypassPermissionsIfNeeded, useKickOffCheckAndDisableAutoModeIfNeeded } from 'src/utils/permissions/bypassPermissionsKillswitch.js';
@@ -319,7 +317,6 @@ const WebBrowserPanel = typeof WebBrowserPanelModule?.WebBrowserPanel === 'funct
 const TungstenLiveMonitorComponent = TungstenLiveMonitor as unknown as React.ComponentType;
 import { IssueFlagBanner } from '../components/PromptInput/IssueFlagBanner.js';
 import { useIssueFlagBanner } from '../hooks/useIssueFlagBanner.js';
-import { CompanionSprite, CompanionFloatingBubble, MIN_COLS_FOR_FULL_SPRITE } from '../buddy/CompanionSprite.js';
 import { DevBar } from '../components/DevBar.js';
 // Session manager removed - using AppState now
 import type { RemoteSessionConfig } from '../remote/RemoteSessionManager.js';
@@ -845,7 +842,6 @@ export function REPL({
   useNpmDeprecationNotification();
   useAntOrgWarningNotification();
   useInstallMessages();
-  useChromeExtensionNotification();
   useOfficialMarketplaceNotification();
   useLspInitializationNotification();
   useTeammateLifecycleNotification();
@@ -881,10 +877,6 @@ export function REPL({
     if (isRemoteSession) return;
     void performStartupChecks(setAppState);
   }, [setAppState, isRemoteSession]);
-
-  // Allow Claude in Chrome MCP to send prompts through MCP notifications
-  // and sync permission mode changes to the Chrome extension
-  usePromptsFromClaudeInChrome(isRemoteSession ? EMPTY_MCP_CLIENTS : mcpClients, toolPermissionContext.mode);
 
   // Initialize swarm features: teammate hooks and context
   // Handles both fresh spawns and resumed teammate sessions
@@ -1380,15 +1372,8 @@ export function REPL({
     } else {
       onScrollAway(handle);
       maybeLoadOlder(handle);
-      // Dismiss the companion bubble on scroll — it's absolute-positioned
-      // at bottom-right and covers transcript content. Scrolling = user is
-      // trying to read something under it.
-      setAppState(prev => prev.companionReaction === undefined ? prev : {
-        ...prev,
-        companionReaction: undefined
-      });
     }
-  }, [onRepin, onScrollAway, maybeLoadOlder, setAppState]);
+  }, [onRepin, onScrollAway, maybeLoadOlder]);
   // Deferred SessionStart hook messages — REPL renders immediately and
   // hook messages are injected when they resolve. awaitPendingHooks()
   // must be called before the first API call so the model sees hook context.
@@ -3009,10 +2994,6 @@ export function REPL({
     })) {
       onQueryEvent(event);
     }
-    void fireCompanionObserver(messagesRef.current, reaction => setAppState(prev => prev.companionReaction === reaction ? prev : {
-      ...prev,
-      companionReaction: reaction
-    }));
     queryCheckpoint('query_end');
 
     // Capture ant-only API metrics before resetLoadingState clears the ref.
@@ -4096,7 +4077,6 @@ export function REPL({
     // Reset cached microcompact state so stale pinned cache edits
     // don't reference tool_use_ids from truncated messages
     resetMicrocompactState();
-    (require('../services/contextCollapse/index.js') as typeof import('../services/contextCollapse/index.js')).resetContextCollapse();
 
     // Restore state from the message we're rewinding to
     setAppState(prev => ({
@@ -4914,17 +4894,6 @@ export function REPL({
   const placeholderText = userInputOnProcessing && !viewedAgentTask && displayedMessages.length <= userInputBaselineRef.current ? userInputOnProcessing : undefined;
   const toolPermissionOverlay = focusedInputDialog === 'tool-permission' ? <PermissionRequest key={toolUseConfirmQueue[0]?.toolUseID} onDone={() => setToolUseConfirmQueue(([_, ...tail]) => tail)} onReject={handleQueuedCommandOnCancel} toolUseConfirm={toolUseConfirmQueue[0]!} toolUseContext={getToolUseContext(messages, messages, abortController ?? createAbortController(), mainLoopModel)} verbose={verbose} workerBadge={toolUseConfirmQueue[0]?.workerBadge} setStickyFooter={isFullscreenEnvEnabled() ? setPermissionStickyFooter : undefined} /> : null;
 
-  // Narrow terminals: companion collapses to a one-liner that REPL stacks
-  // on its own row (above input in fullscreen, below in scrollback) instead
-  // of row-beside. Wide terminals keep the row layout with sprite on the right.
-  const companionNarrow = transcriptCols < MIN_COLS_FOR_FULL_SPRITE;
-  // Hide the sprite when PromptInput early-returns BackgroundTasksDialog.
-  // The sprite sits as a row sibling of PromptInput, so the dialog's Pane
-  // divider draws at useTerminalSize() width but only gets terminalWidth -
-  // spriteWidth — divider stops short and dialog text wraps early. Don't
-  // check footerSelection: pill FOCUS (arrow-down to tasks pill) must keep
-  // the sprite visible so arrow-right can navigate to it.
-  const companionVisible = !toolJSX?.shouldHidePromptInput && !focusedInputDialog && !showBashesDialog;
 
   // In fullscreen, ALL local-jsx slash commands float in the modal slot —
   // FullscreenLayout wraps them in an absolute-positioned bottom-anchored
@@ -4958,7 +4927,7 @@ export function REPL({
       {isFullscreenEnvEnabled() && !disableMessageActions ? <MessageActionsKeybindings handlers={messageActionHandlers} isActive={cursor !== null} /> : null}
       <CancelRequestHandler {...cancelRequestProps} />
       <MCPConnectionManager key={remountKey} dynamicMcpConfig={dynamicMcpConfig} isStrictMcpConfig={strictMcpConfig}>
-        <FullscreenLayout scrollRef={scrollRef} overlay={toolPermissionOverlay} bottomFloat={companionVisible && !companionNarrow ? <CompanionFloatingBubble /> : undefined} modal={centeredModal} modalScrollRef={modalScrollRef} sidebarWidth={diffPanelWidthCols} sidebar={<SentryErrorBoundary><DiffPanelHost width={diffPanelWidthCols} isThinClient={isRemoteSession} onAskAboutSelection={centeredModal ? undefined : setIDESelection} /></SentryErrorBoundary>} dividerYRef={dividerYRef} hidePill={!!viewedAgentTask} hideSticky={!!viewedTeammateTask} newMessageCount={unseenDivider?.count ?? 0} onPillClick={() => {
+        <FullscreenLayout scrollRef={scrollRef} overlay={toolPermissionOverlay} modal={centeredModal} modalScrollRef={modalScrollRef} sidebarWidth={diffPanelWidthCols} sidebar={<SentryErrorBoundary><DiffPanelHost width={diffPanelWidthCols} isThinClient={isRemoteSession} onAskAboutSelection={centeredModal ? undefined : setIDESelection} /></SentryErrorBoundary>} dividerYRef={dividerYRef} hidePill={!!viewedAgentTask} hideSticky={!!viewedTeammateTask} newMessageCount={unseenDivider?.count ?? 0} onPillClick={() => {
         setCursor(null);
         jumpToNew(scrollRef.current);
       }} scrollable={<>
@@ -4983,8 +4952,7 @@ export function REPL({
               {showSpinner && <SpinnerWithVerb mode={streamMode} spinnerTip={spinnerTip} responseLengthRef={responseLengthRef} apiMetricsRef={apiMetricsRef} overrideMessage={spinnerMessage} spinnerSuffix={stopHookSpinnerSuffix} verbose={verbose} loadingStartTimeRef={loadingStartTimeRef} totalPausedMsRef={totalPausedMsRef} pauseStartTimeRef={pauseStartTimeRef} overrideColor={effectiveSpinnerColor} overrideShimmerColor={effectiveSpinnerShimmerColor} hasActiveTools={inProgressToolUseIDs.size > 0} leaderIsIdle={!isLoading} compact={compactProgressStartedAt !== null ? { startedAt: compactProgressStartedAt } : undefined} />}
               {!showSpinner && !isLoading && !userInputOnProcessing && !hasRunningTeammates && isBriefOnly && !viewedAgentTask && <BriefIdleStatus />}
               {isFullscreenEnvEnabled() && <PromptInputQueuedCommands isLoading={isLoading} />}
-            </>} bottom={<Box flexDirection={companionNarrow ? 'column' : 'row'} width="100%" alignItems={companionNarrow ? undefined : 'flex-end'}>
-              {companionNarrow && isFullscreenEnvEnabled() && companionVisible ? <CompanionSprite /> : null}
+            </>} bottom={<Box flexDirection="column" width="100%">
               <Box flexDirection="column" flexGrow={1}>
                 {permissionStickyFooter}
                 {/* Immediate local-jsx commands (/btw, /sandbox, /assistant,
@@ -5399,7 +5367,6 @@ export function REPL({
           }} />}
                 {"external" === 'ant' && <DevBar />}
               </Box>
-              {!(companionNarrow && isFullscreenEnvEnabled()) && companionVisible ? <CompanionSprite /> : null}
             </Box>} />
       </MCPConnectionManager>
     </KeybindingSetup></PermissionQueueCountContext.Provider>;

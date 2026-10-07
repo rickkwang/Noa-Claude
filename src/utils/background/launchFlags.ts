@@ -38,8 +38,6 @@ const BOOLEAN_FLAGS = new Set([
   '--strict-mcp-config',
   '--verbose',
   '--ide',
-  '--chrome',
-  '--no-chrome',
   '--bare',
   '--local-only',
   '--brief',

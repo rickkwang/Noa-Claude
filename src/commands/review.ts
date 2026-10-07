@@ -1,7 +1,6 @@
 // @ts-nocheck
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.js'
 import type { Command } from '../commands.js'
-import { isUltrareviewEnabled } from './review/ultrareviewEnabled.js'
 
 const LOCAL_REVIEW_PROMPT = (args: string) => `
       You are an expert code reviewer. Follow these steps:
@@ -39,16 +38,4 @@ const review: Command = {
   },
 }
 
-// /ultrareview is the ONLY entry point to the remote bughunter path —
-// /review stays purely local. local-jsx type renders the overage permission
-// dialog when free reviews are exhausted.
-const ultrareview: Command = {
-  type: 'local-jsx',
-  name: 'ultrareview',
-  description: `~10–20 min · Finds and verifies bugs in your branch. Runs in Noa Claude on the web.`,
-  isEnabled: () => isUltrareviewEnabled(),
-  load: () => import('./review/ultrareviewCommand.js'),
-}
-
 export default review
-export { ultrareview }

@@ -1,10 +1,9 @@
 // @ts-nocheck
-import { initializeAnalyticsSink } from '../services/analytics/sink.js'
 import { initializeErrorLogSink } from './errorLogSink.js'
 
 /**
- * Attach error log and analytics sinks, draining any events queued before
- * attachment. Both inits are idempotent. Called from setup() for the default
+ * Attach the error log sink, draining any events queued before
+ * attachment. Initialization is idempotent. Called from setup() for the default
  * command; other entrypoints (subcommands, daemon, bridge) call this directly
  * since they bypass setup().
  *
@@ -13,5 +12,4 @@ import { initializeErrorLogSink } from './errorLogSink.js'
  */
 export function initSinks(): void {
   initializeErrorLogSink()
-  initializeAnalyticsSink()
 }

@@ -40,15 +40,7 @@ export function runPostCompactCleanup(querySource?: QuerySource): void {
     querySource === 'sdk'
 
   resetMicrocompactState()
-  if (feature('CONTEXT_COLLAPSE')) {
-    if (isMainThreadCompact) {
-      /* eslint-disable @typescript-eslint/no-require-imports */
-      ;(
-        require('../contextCollapse/index.js') as typeof import('../contextCollapse/index.js')
-      ).resetContextCollapse()
-      /* eslint-enable @typescript-eslint/no-require-imports */
-    }
-  }
+
   if (isMainThreadCompact) {
     // The precompute slot describes the main thread's PRE-compact history —
     // after any main-thread compaction it can never match again, so drop it

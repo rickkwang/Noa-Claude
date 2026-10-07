@@ -9,7 +9,6 @@ import { getPlatform } from 'src/utils/platform.js'
 import { PRODUCT_MCP_URL } from '../../constants/links.js'
 import type { PluginError, PluginLoadResult } from '../../types/plugin.js'
 import { getPluginErrorMessage } from '../../types/plugin.js'
-import { isClaudeInChromeMCPServer } from '../../utils/claudeInChrome/common.js'
 import { getIsNonInteractiveSession } from '../../bootstrap/state.js'
 import {
   getCurrentProjectConfig,
@@ -685,10 +684,6 @@ export async function addMcpConfig(
     )
   }
 
-  // Block reserved server name "claude-in-chrome"
-  if (isClaudeInChromeMCPServer(name)) {
-    throw new Error(`Cannot add MCP server "${name}": this name is reserved.`)
-  }
 
   // Block adding servers when enterprise MCP config exists (it has exclusive control)
   if (doesEnterpriseMcpConfigExist()) {

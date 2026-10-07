@@ -206,11 +206,7 @@ function isExcludedSource(querySource: QuerySource): boolean {
   if (isBackgroundForkQuerySource(querySource)) {
     return true
   }
-  if (feature('CONTEXT_COLLAPSE')) {
-    if (querySource === 'marble_origami') {
-      return true
-    }
-  }
+
   return false
 }
 

@@ -94,7 +94,6 @@ import { relative, resolve } from 'path';
 import { isAnalyticsDisabled } from 'src/services/analytics/config.js';
 import { getFeatureValue_CACHED_MAY_BE_STALE } from 'src/services/analytics/growthbook.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from 'src/services/analytics/index.js';
-import { initializeAnalyticsGates } from 'src/services/analytics/sink.js';
 import { getOriginalCwd, setAdditionalDirectoriesForClaudeMd, setIsRemoteMode, setMainLoopModelOverride, setMainThreadAgentType, setTeleportedSessionInfo } from './bootstrap/state.js';
 import { filterCommandsForRemoteMode, getCommands } from './commands.js';
 import type { StatsStore } from './context/stats.js';
@@ -111,8 +110,6 @@ import { getActiveAgentsFromList, getAgentDefinitionsWithOverrides, isBuiltInAge
 import type { LogOption } from './types/logs.js';
 import type { Message as MessageType } from './types/message.js';
 import { assertMinVersion } from './utils/autoUpdater.js';
-import { CLAUDE_IN_CHROME_SKILL_HINT_WITH_WEBBROWSER } from './utils/claudeInChrome/prompt.js';
-import { setupClaudeInChrome, shouldAutoEnableClaudeInChrome, shouldEnableClaudeInChrome } from './utils/claudeInChrome/setup.js';
 import { getContextWindowForModel } from './utils/context.js';
 import { loadConversationForResume } from './utils/conversationRecovery.js';
 import { buildDeepLinkBanner } from './utils/deepLink/banner.js';
@@ -160,7 +157,6 @@ import { excludeCommandsByServer, excludeResourcesByServer } from 'src/services/
 import { isXaaEnabled } from 'src/services/mcp/xaaIdpLogin.js';
 import { getRelevantTips } from 'src/services/tips/tipRegistry.js';
 import { logContextMetrics } from 'src/utils/api.js';
-import { CLAUDE_IN_CHROME_MCP_SERVER_NAME, isClaudeInChromeMCPServer } from 'src/utils/claudeInChrome/common.js';
 import { registerCleanup } from 'src/utils/cleanupRegistry.js';
 import { eagerParseCliFlag } from 'src/utils/cliArgs.js';
 import { createEmptyAttributionState } from 'src/utils/commitAttribution.js';
@@ -177,7 +173,7 @@ import { setCwd } from 'src/utils/Shell.js';
 import { type ProcessedResume, processResumedConversation } from 'src/utils/sessionRestore.js';
 import { parseSettingSourcesFlag } from 'src/utils/settings/constants.js';
 import { plural } from 'src/utils/stringUtils.js';
-import { type ChannelEntry, getInitialMainLoopModel, getIsNonInteractiveSession, getSdkBetas, getSessionId, getUserMsgOptIn, setAllowedChannels, setAllowedSettingSources, setChromeFlagOverride, setClientType, setCwdState, setFlagSettingsPath, setInitialMainLoopModel, setInlinePlugins, setIsInteractive, setKairosActive, setOriginalCwd, setPermissionPromptToolConfigured, setQuestionPreviewFormat, setSdkBetas, setSessionBypassPermissionsMode, setSessionPersistenceDisabled, setSessionSource, setUserMsgOptIn, switchSession } from './bootstrap/state.js';
+import { type ChannelEntry, getInitialMainLoopModel, getIsNonInteractiveSession, getSdkBetas, getSessionId, getUserMsgOptIn, setAllowedChannels, setAllowedSettingSources, setClientType, setCwdState, setFlagSettingsPath, setInitialMainLoopModel, setInlinePlugins, setIsInteractive, setKairosActive, setOriginalCwd, setPermissionPromptToolConfigured, setQuestionPreviewFormat, setSdkBetas, setSessionBypassPermissionsMode, setSessionPersistenceDisabled, setSessionSource, setUserMsgOptIn, switchSession } from './bootstrap/state.js';
 
 // Statically imported rather than `await import(...)`: this was the bundle's
 // only top-level await, and one of them keeps dist/main.js pinned to ESM, which
@@ -447,7 +443,6 @@ export function startDeferredPrefetches(): void {
   void countFilesRoundedRg(getCwd(), AbortSignal.timeout(3000), []);
 
   // Analytics and feature flag initialization
-  void initializeAnalyticsGates();
   void prefetchOfficialMcpUrls();
   void refreshModelCapabilities();
 
@@ -1349,20 +1344,6 @@ async function run(): Promise<CommanderCommand> {
         process.exit(1);
       }
       if (Object.keys(allConfigs).length > 0) {
-        // SDK hosts (Nest/Desktop) own their server naming and may reuse
-        // built-in names — skip reserved-name checks for type:'sdk'.
-        const nonSdkConfigNames = Object.entries(allConfigs).filter(([, config]) => config.type !== 'sdk').map(([name]) => name);
-        let reservedNameError: string | null = null;
-        if (nonSdkConfigNames.some(isClaudeInChromeMCPServer)) {
-          reservedNameError = `Invalid MCP configuration: "${CLAUDE_IN_CHROME_MCP_SERVER_NAME}" is a reserved MCP name.`;
-        }
-        if (reservedNameError) {
-          // stderr+exit(1) — a throw here becomes a silent unhandled
-          // rejection in stream-json mode (void main() in cli.tsx).
-          process.stderr.write(`Error: ${reservedNameError}\n`);
-          process.exit(1);
-        }
-
         // Add dynamic scope to all configs. type:'sdk' entries pass through
         // unchanged — they're extracted into sdkMcpConfigs downstream and
         // passed to print.ts. The Python SDK relies on this path (it doesn't
@@ -1392,65 +1373,6 @@ async function run(): Promise<CommanderCommand> {
           ...dynamicMcpConfig,
           ...allowed
         };
-      }
-    }
-
-    // Extract Claude in Chrome option and enforce claude.ai subscriber check (unless user is ant)
-    const chromeOpts = options as {
-      chrome?: boolean;
-    };
-    // Store the explicit CLI flag so teammates can inherit it
-    setChromeFlagOverride(chromeOpts.chrome);
-    const enableClaudeInChrome = shouldEnableClaudeInChrome(chromeOpts.chrome) && ("external" === 'ant' || isClaudeAISubscriber());
-    const autoEnableClaudeInChrome = !enableClaudeInChrome && shouldAutoEnableClaudeInChrome();
-    if (enableClaudeInChrome) {
-      const platform = getPlatform();
-      try {
-        logEvent('tengu_claude_in_chrome_setup', {
-          platform: platform as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
-        });
-        const {
-          mcpConfig: chromeMcpConfig,
-          allowedTools: chromeMcpTools,
-          systemPrompt: chromeSystemPrompt
-        } = setupClaudeInChrome();
-        dynamicMcpConfig = {
-          ...dynamicMcpConfig,
-          ...chromeMcpConfig
-        };
-        allowedTools.push(...chromeMcpTools);
-        if (chromeSystemPrompt) {
-          appendSystemPrompt = appendSystemPrompt ? `${chromeSystemPrompt}\n\n${appendSystemPrompt}` : chromeSystemPrompt;
-        }
-      } catch (error) {
-        logEvent('tengu_claude_in_chrome_setup_failed', {
-          platform: platform as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
-        });
-        logForDebugging(`[Claude in Chrome] Error: ${error}`);
-        logError(error);
-        // biome-ignore lint/suspicious/noConsole:: intentional console output
-        console.error(`Error: Failed to run with Claude in Chrome.`);
-        process.exit(1);
-      }
-    } else if (autoEnableClaudeInChrome) {
-      try {
-        const {
-          mcpConfig: chromeMcpConfig
-        } = setupClaudeInChrome();
-        dynamicMcpConfig = {
-          ...dynamicMcpConfig,
-          ...chromeMcpConfig
-        };
-        // The claude-in-chrome skill listing already says to invoke it before
-        // any mcp__claude-in-chrome__* tool; a hint is only needed to split
-        // work between it and the WebBrowser tool.
-        if (feature('WEB_BROWSER_TOOL') && typeof Bun !== 'undefined' && 'WebView' in Bun) {
-          const hint = CLAUDE_IN_CHROME_SKILL_HINT_WITH_WEBBROWSER;
-          appendSystemPrompt = appendSystemPrompt ? `${appendSystemPrompt}\n\n${hint}` : hint;
-        }
-      } catch (error) {
-        // Silently skip any errors for the auto-enable
-        logForDebugging(`[Claude in Chrome] Error (auto-enable): ${error}`);
       }
     }
 
@@ -2099,7 +2021,7 @@ async function run(): Promise<CommanderCommand> {
       });
       logForDebugging('[STARTUP] Running showSetupScreens()...');
       const setupScreensStart = Date.now();
-      const onboardingShown = await showSetupScreens(root, permissionMode, allowDangerouslySkipPermissions, commands, enableClaudeInChrome, devChannels);
+      const onboardingShown = await showSetupScreens(root, permissionMode, allowDangerouslySkipPermissions, commands, devChannels);
       logForDebugging(`[STARTUP] showSetupScreens() completed in ${Date.now() - setupScreensStart}ms`);
 
       // Now that trust is established and GrowthBook has auth headers,
