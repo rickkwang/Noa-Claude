@@ -153,6 +153,14 @@ type Position = {
   column: number
 }
 
+// Placeholder chips the cursor treats as one unit. Same pattern as upstream's
+// placeholder regex, minus forms Noa never inserts (Team setup guide, IDE
+// selection).
+const PLACEHOLDER_SOURCE =
+  String.raw`\[(?:Pasted text|Image|\.\.\.Truncated text) #\d+(?: \+\d+ lines)?\.*\]`
+const PLACEHOLDER_END_RE = new RegExp(`${PLACEHOLDER_SOURCE}$`)
+const PLACEHOLDER_START_RE = new RegExp(`^${PLACEHOLDER_SOURCE}`)
+
 export class Cursor {
   readonly offset: number
   constructor(
@@ -311,26 +319,27 @@ export class Cursor {
   }
 
   /**
-   * If an [Image #N] chip ends at `offset`, return its bounds. Used by left()
-   * to hop the cursor over the chip instead of stepping into it.
+   * If a placeholder chip ([Image #N], [Pasted text #N], [...Truncated text #N])
+   * ends at `offset`, return its bounds. Used by left() to hop the cursor over
+   * the chip instead of stepping into it.
    */
   imageRefEndingAt(offset: number): { start: number; end: number } | null {
-    const m = this.text.slice(0, offset).match(/\[Image #\d+\]$/)
+    const m = this.text.slice(0, offset).match(PLACEHOLDER_END_RE)
     return m ? { start: offset - m[0].length, end: offset } : null
   }
 
   imageRefStartingAt(offset: number): { start: number; end: number } | null {
-    const m = this.text.slice(offset).match(/^\[Image #\d+\]/)
+    const m = this.text.slice(offset).match(PLACEHOLDER_START_RE)
     return m ? { start: offset, end: offset + m[0].length } : null
   }
 
   /**
-   * If offset lands strictly inside an [Image #N] chip, snap it to the given
+   * If offset lands strictly inside a placeholder chip, snap it to the given
    * boundary. Used by word-movement methods so Ctrl+W / Alt+D never leave a
    * partial chip.
    */
   snapOutOfImageRef(offset: number, toward: 'start' | 'end'): number {
-    const re = /\[Image #\d+\]/g
+    const re = new RegExp(PLACEHOLDER_SOURCE, 'g')
     let m
     while ((m = re.exec(this.text)) !== null) {
       const start = m.index
@@ -930,15 +939,9 @@ export class Cursor {
    * Only triggers when cursor is at end of token (followed by whitespace or EOL).
    */
   deleteTokenBefore(): Cursor | null {
-    // Cursor at chip.start is the "selected" state — backspace deletes the
-    // chip forward, not the char before it.
-    const chipAfter = this.imageRefStartingAt(this.offset)
-    if (chipAfter) {
-      const end =
-        this.text[chipAfter.end] === ' ' ? chipAfter.end + 1 : chipAfter.end
-      return this.modifyText(new Cursor(this.measuredText, end))
-    }
-
+    // A caret placed before an [Image #N] chip is a plain caret: backspace
+    // there removes the character before it, not the chip. The chip is
+    // removed by backspace from its end (backspace() hops over it).
     if (this.isAtStart()) {
       return null
     }

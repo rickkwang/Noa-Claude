@@ -2,6 +2,7 @@
 import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { memo, type ReactNode, useEffect, useState } from 'react';
+import figures from 'figures';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { stringWidth } from '../../ink/stringWidth.js';
 import { Box, Text } from '../../ink.js';
@@ -259,11 +260,14 @@ export function PromptInputFooterSuggestions({
             onClick={onSelect ? () => onSelect(absoluteIndex) : undefined}
             onMouseEnter={enableMouseHover ? () => setHoveredSuggestion(absoluteIndex) : undefined}
           >
-            <SuggestionItemRow
-              item={item}
-              maxColumnWidth={maxColumnWidth}
-              isSelected={item.id === suggestions[highlightedSuggestion]?.id}
-            />
+            <Text wrap="truncate">
+              <Text color="suggestion">{item.id === suggestions[highlightedSuggestion]?.id ? figures.pointer : ' '} </Text>
+              <SuggestionItemRow
+                item={item}
+                maxColumnWidth={maxColumnWidth}
+                isSelected={item.id === suggestions[highlightedSuggestion]?.id}
+              />
+            </Text>
           </Box>
         );
       })}

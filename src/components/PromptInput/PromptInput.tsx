@@ -590,10 +590,12 @@ function PromptInput({
     }
     return highlights;
   }, [displayedValue, teamContext]);
-  const imageRefPositions = useMemo(() => parseReferences(displayedValue).filter(r => r.match.startsWith('[Image')).map(r => ({
+  // Offsets must index the same string the cursor edits (`input`), not the
+  // history-search preview in displayedValue.
+  const placeholderPositions = useMemo(() => parseReferences(input).map(r => ({
     start: r.index,
     end: r.index + r.match.length
-  })), [displayedValue]);
+  })), [input]);
 
   // "paste again to expand" hint: only when the armed placeholder is still
   // present in the input (upstream also gates on a non-empty input).
@@ -602,37 +604,19 @@ function PromptInput({
     parseReferences(input).some(r => r.id === expandablePasteId),
   [expandablePasteId, input]);
 
-  // chip.start is the "selected" state: the inverted chip IS the cursor.
-  // chip.end stays a normal position so you can park the cursor right after
-  // `]` like any other character.
-  const cursorAtImageChip = imageRefPositions.some(r => r.start === cursorOffset);
-
   // up/down movement or a fullscreen click can land the cursor strictly
   // inside a chip; snap to the nearer boundary so it's never editable
   // char-by-char.
   useEffect(() => {
-    const inside = imageRefPositions.find(r => cursorOffset > r.start && cursorOffset < r.end);
+    const inside = placeholderPositions.find(r => cursorOffset > r.start && cursorOffset < r.end);
     if (inside) {
       const mid = (inside.start + inside.end) / 2;
       setCursorOffset(cursorOffset < mid ? inside.start : inside.end);
     }
-  }, [cursorOffset, imageRefPositions, setCursorOffset]);
+  }, [cursorOffset, placeholderPositions, setCursorOffset]);
   const combinedHighlights = useMemo((): TextHighlight[] => {
     const highlights: TextHighlight[] = [];
 
-    // Invert the [Image #N] chip when the cursor is at chip.start (the
-    // "selected" state) so backspace-to-delete is visually obvious.
-    for (const ref of imageRefPositions) {
-      if (cursorOffset === ref.start) {
-        highlights.push({
-          start: ref.start,
-          end: ref.end,
-          color: undefined,
-          inverse: true,
-          priority: 8
-        });
-      }
-    }
     if (isSearchingHistory && historyMatch && !historyFailedMatch) {
       highlights.push({
         start: cursorOffset,
@@ -731,7 +715,7 @@ function PromptInput({
 
 
     return highlights;
-  }, [isSearchingHistory, historyQuery, historyMatch, historyFailedMatch, cursorOffset, btwTriggers, imageRefPositions, memberMentionHighlights, slashCommandTriggers, tokenBudgetTriggers, slackChannelTriggers, displayedValue, voiceInterimRange, thinkTriggers, ultraplanTriggers]);
+  }, [isSearchingHistory, historyQuery, historyMatch, historyFailedMatch, cursorOffset, btwTriggers, placeholderPositions, memberMentionHighlights, slashCommandTriggers, tokenBudgetTriggers, slackChannelTriggers, displayedValue, voiceInterimRange, thinkTriggers, ultraplanTriggers]);
   const {
     addNotification,
     removeNotification
@@ -2355,7 +2339,7 @@ function PromptInput({
     onPaste: onTextPaste,
     onIsPastingChange: setIsPasting,
     focus: !isSearchingHistory && !isModalOverlayActive && !footerItemSelected,
-    showCursor: !footerItemSelected && !isSearchingHistory && !cursorAtImageChip,
+    showCursor: !footerItemSelected && !isSearchingHistory,
     argumentHint: commandArgumentHint,
     onUndo: canUndo ? () => {
       const previousState = undo();
