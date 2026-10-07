@@ -220,7 +220,7 @@ import { watchJobReplies } from '../utils/background/replies.js';
 import { registerBackgroundHandoff } from '../utils/background/handoff.js';
 import { type HandoffPrefill } from '../utils/background/dispatch.js';
 import { buildDispatchDefaults, forkToBackground } from '../utils/background/fork.js';
-import { getBackgroundBlock } from '../utils/background/gate.js';
+import { getBackgroundBlock, getQueuedMessagesBlock } from '../utils/background/gate.js';
 import { handoffBoundaryUuid, isBetweenModelCalls, partialReplyText } from '../utils/background/turnState.js';
 import { abandonableTasks, BackgroundConfirmDialog } from '../components/BackgroundConfirmDialog.js';
 
@@ -246,7 +246,7 @@ import { useIDEIntegration } from '../hooks/useIDEIntegration.js';
 import exit from '../commands/exit/index.js';
 import { ExitFlow } from '../components/ExitFlow.js';
 import { getCurrentWorktreeSession } from '../utils/worktree.js';
-import { popAllEditable, enqueue, type SetAppState, getCommandQueue, getMainThreadQueueLength, removeByFilter, isQueuedCommandEditable } from '../utils/messageQueueManager.js';
+import { popAllEditable, enqueue, type SetAppState, getCommandQueue, getMainThreadQueueLength, removeByFilter } from '../utils/messageQueueManager.js';
 import { useCommandQueue } from '../hooks/useCommandQueue.js';
 import { consumeGoalWake, getGoalWakeDelay } from '../utils/goalRuntime.js';
 import { SessionBackgroundHint } from '../components/SessionBackgroundHint.js';
@@ -3854,8 +3854,8 @@ export function REPL({
   const handoffBlocker = useCallback((): [reason: string, hint: string] | null => {
     if (getBackgroundBlock() === 'persistence') return ['session persistence is disabled, so this conversation cannot be backgrounded', ''];
     if (getBackgroundBlock() !== null) return ['background sessions are not available here', ''];
-    const queued = getCommandQueue().filter(isQueuedCommandEditable).length;
-    if (queued > 0) return [`${queued} queued ${queued === 1 ? 'command' : 'commands'} would be lost`, `Run or clear ${queued === 1 ? 'it' : 'them'} first.`];
+    const queuedBlock = getQueuedMessagesBlock();
+    if (queuedBlock) return queuedBlock;
     if (inputValueRef.current.trim() !== '') return ['you have unsent text in the input', 'Send it or clear it first (double-tap esc clears).'];
     return null;
   }, []);

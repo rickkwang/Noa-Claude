@@ -5,7 +5,7 @@ import { Text } from '../../ink.js';
 import type { LocalJSXCommandCall, LocalJSXCommandContext, LocalJSXCommandOnDone } from '../../types/command.js';
 import { isBgSession, requestBgDetach } from '../../utils/background/bgJob.js';
 import { forkToBackground, formatBackgrounded, hasConversationToBackground } from '../../utils/background/fork.js';
-import { getBackgroundBlock } from '../../utils/background/gate.js';
+import { getBackgroundBlock, getQueuedMessagesBlock } from '../../utils/background/gate.js';
 import { stopTurnForHandoff } from '../../utils/background/handoff.js';
 import { errorMessage } from '../../utils/errors.js';
 import { gracefulShutdown, suppressResumeHint } from '../../utils/gracefulShutdown.js';
@@ -87,6 +87,13 @@ export const call: LocalJSXCommandCall = async (onDone, context, args): Promise<
   const block = getBackgroundBlock();
   if (block) {
     onDone(block === 'persistence' ? 'Cannot background — session persistence is disabled, so the forked job would have nothing to resume.' : 'Cannot background — background sessions are not available here.', {
+      display: 'system'
+    });
+    return null;
+  }
+  const queuedBlock = getQueuedMessagesBlock();
+  if (queuedBlock) {
+    onDone(`Cannot background — ${queuedBlock[0]}. ${queuedBlock[1]}`, {
       display: 'system'
     });
     return null;
