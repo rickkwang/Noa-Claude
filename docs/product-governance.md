@@ -28,7 +28,6 @@ These commands are callable, but they are not core product workflows:
 - `/clean-sessions`
 - `/output-style`
 - `/rate-limit-options`
-- `/cache-probe`
 - `/provider`
 - `/rewind`
 - `/goal`
@@ -50,7 +49,6 @@ Tracked surfaces:
 - `/clean-sessions`
 - `/output-style`
 - `/rate-limit-options`
-- `/cache-probe`
 - `/provider`
 - `/rewind`
 - `/goal`

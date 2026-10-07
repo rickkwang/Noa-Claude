@@ -37,7 +37,6 @@ Last updated: 2026-09-13
 | `/clean-sessions` | Available | Interactive picker for deleting small/trivial session transcripts (sidecar dirs go with them); bulk `delete --confirm` requires `--trivial-only` and the default size bucket. The running session and recently-modified (<10m) sessions are always excluded. |
 | `/output-style` | Available | Direct entry to the output-style picker; writes `outputStyle` to local settings, the same key and source as `/config` → Output style. |
 | `/rate-limit-options` | Available | Rate-limit action sheet; still gated by subscriber/runtime availability. |
-| `/cache-probe` | Available | Probe API cache hit rate by sending identical requests and comparing `cached_tokens` values. |
 | `/provider` | Available | Manage named provider configurations (create, list, switch, delete profiles). |
 | `/rewind` | Available | Restore code and conversation to a previous checkpoint (aliases `/checkpoint`, `/undo`); interactive only. |
 | `/reload-skills` | Available | Re-scans skill directories mid-session. Covers the gap the file watcher cannot: it only watches directories that existed at startup. |

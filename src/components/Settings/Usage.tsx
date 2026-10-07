@@ -3,8 +3,9 @@ import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { extraUsage as extraUsageCommand } from 'src/commands/usage-credits/index.js';
-import { formatCost, getModelUsage, getTotalCacheCreationInputTokens, getTotalCacheReadInputTokens, getTotalCost, getTotalInputTokens, getTotalOutputTokens } from 'src/cost-tracker.js';
-import { getSubscriptionType } from 'src/utils/auth.js';
+import { formatAutoModeClassifierUsage, formatCost, formatTotalCost, getModelUsage, getTotalCacheCreationInputTokens, getTotalCacheReadInputTokens, getTotalInputTokens, getTotalOutputTokens } from 'src/cost-tracker.js';
+import { currentLimits } from 'src/services/claudeAiLimits.js';
+import { getSubscriptionType, isClaudeAISubscriber } from 'src/utils/auth.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { Box, Text } from '../../ink.js';
 import { useKeybinding } from '../../keybindings/useKeybinding.js';
@@ -260,6 +261,7 @@ export function Usage(): React.ReactNode {
     limit
   }) => limit);
   return <Box flexDirection="column" gap={1} width="100%">
+      <SessionCostSection />
       {!hasRemoteLimits && <LocalUsageSummary />}
 
       {limits.map(({
@@ -282,12 +284,28 @@ type ExtraUsageSectionProps = {
   maxWidth: number;
 };
 const EXTRA_USAGE_SECTION_TITLE = 'Usage credits';
+// Same content as the former /cost command, now on the Usage tab: subscribers
+// get their plan state and classifier counts, everyone else gets total cost,
+// API duration and per-model breakdown.
+function SessionCostSection(): React.ReactNode {
+  if (!isClaudeAISubscriber()) {
+    return <Text>{formatTotalCost()}</Text>;
+  }
+  const plan = currentLimits.isUsingOverage
+    ? 'You are currently using your overages to power your Noa Claude usage. We will automatically switch you back to your subscription rate limits when they reset'
+    : 'You are currently using your subscription to power your Noa Claude usage';
+  const autoMode = formatAutoModeClassifierUsage();
+  return <Box flexDirection="column">
+      <Text>{plan}</Text>
+      {process.env.USER_TYPE === 'ant' && <Text>{'[ANT-ONLY] Showing cost anyway:\n ' + formatTotalCost()}</Text>}
+      {autoMode && <Text>{autoMode}</Text>}
+    </Box>;
+}
 function LocalUsageSummary(): React.ReactNode {
   const totalInput = getTotalInputTokens();
   const totalOutput = getTotalOutputTokens();
   const totalCacheRead = getTotalCacheReadInputTokens();
   const totalCacheWrite = getTotalCacheCreationInputTokens();
-  const totalCost = getTotalCost();
   const modelsUsed = Object.keys(getModelUsage()).length;
   const hasAnyUsage = totalInput + totalOutput + totalCacheRead + totalCacheWrite > 0;
   if (!hasAnyUsage) {
@@ -303,7 +321,7 @@ function LocalUsageSummary(): React.ReactNode {
         (<Text dimColor={true}>in {formatNumber(totalInput)} · out {formatNumber(totalOutput)} · cache read {formatNumber(totalCacheRead)} · cache write {formatNumber(totalCacheWrite)}</Text>)
       </Text>
       <Text>
-        Cost: <Text color="claude">{formatCost(totalCost, 2)}</Text> · Models used: <Text color="claude">{modelsUsed}</Text>
+        Models used: <Text color="claude">{modelsUsed}</Text>
       </Text>
     </Box>;
 }

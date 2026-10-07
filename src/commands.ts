@@ -17,20 +17,16 @@ import commitPushPr from './commands/commit-push-pr.js'
 import compact from './commands/compact/index.js'
 import config from './commands/config/index.js'
 import { context, contextNonInteractive } from './commands/context/index.js'
-import cost from './commands/cost/index.js'
 import diff from './commands/diff/index.js'
 import doctor from './commands/doctor/index.js'
 import memory from './commands/memory/index.js'
 import help from './commands/help/index.js'
 import ide from './commands/ide/index.js'
 import init from './commands/init.js'
-import initVerifiers from './commands/init-verifiers.js'
 import keybindings from './commands/keybindings/index.js'
 import login from './commands/login/index.js'
 import logout from './commands/logout/index.js'
-import cacheProbe from './commands/cache-probe/index.js'
 import mcp from './commands/mcp/index.js'
-import pr_comments from './commands/pr_comments/index.js'
 import releaseNotes from './commands/release-notes/index.js'
 import rename from './commands/rename/index.js'
 import resume from './commands/resume/index.js'
@@ -38,14 +34,12 @@ import review from './commands/review.js'
 import session from './commands/session/index.js'
 import skills from './commands/skills/index.js'
 import status from './commands/status/index.js'
-import stats from './commands/stats/index.js'
 import tasks from './commands/tasks/index.js'
 import securityReview from './commands/security-review.js'
 import terminalSetup from './commands/terminalSetup/index.js'
 import usage from './commands/usage/index.js'
 import theme from './commands/theme/index.js'
 import tui from './commands/tui/index.js'
-import vim from './commands/vim/index.js'
 import { feature } from 'bun:bundle'
 // Dead code elimination: conditional imports.
 // Only `bridge` and `voice` are gated here. Neither BRIDGE_MODE nor
@@ -88,7 +82,6 @@ import reloadSkills from './commands/reload-skills/index.js'
 import outputStyle from './commands/output-style/index.js'
 import pauseMemory from './commands/pause-memory/index.js'
 import rewind from './commands/rewind/index.js'
-import bridgeKick from './commands/bridge-kick.js'
 import version from './commands/version.js'
 import sandboxToggle from './commands/sandbox-toggle/index.js'
 import { logError } from './utils/log.js'
@@ -166,8 +159,6 @@ export { getCommandName, isCommandEnabled } from './types/command.js'
 export const INTERNAL_ONLY_COMMANDS = [
   commit,
   commitPushPr,
-  initVerifiers,
-  bridgeKick,
   version,
   ...(ultraplan ? [ultraplan] : []),
 ]
@@ -185,14 +176,12 @@ const COMMANDS = memoize((): Command[] => [
   clear,
   cleanSessions,
   cleanupData,
-  cacheProbe,
   color,
   compact,
   config,
   copy,
   context,
   contextNonInteractive,
-  cost,
   diff,
   doctor,
   effort,
@@ -209,7 +198,6 @@ const COMMANDS = memoize((): Command[] => [
   remoteEnv,
   plugin,
   provider,
-  pr_comments,
   releaseNotes,
   reloadPlugins,
   reloadSkills,
@@ -220,7 +208,6 @@ const COMMANDS = memoize((): Command[] => [
   session,
   skills,
   status,
-  stats,
   statusline,
   startupBanner,
   tag,
@@ -238,7 +225,6 @@ const COMMANDS = memoize((): Command[] => [
   rateLimitOptions,
   usage,
   usageReport,
-  vim,
   autocompact,
   ...(forkCmd ? [forkCmd] : []),
   ...(bridge ? [bridge] : []),
@@ -540,8 +526,6 @@ export const REMOTE_SAFE_COMMANDS: Set<Command> = new Set([
   help, // Show help
   theme, // Change terminal theme
   color, // Change agent color
-  vim, // Toggle vim mode
-  cost, // Show session cost (local cost tracking)
   usage, // Show usage info
   copy, // Copy last message
   btw, // Quick note
@@ -568,7 +552,6 @@ export const BRIDGE_SAFE_COMMANDS: Set<Command> = new Set(
   [
     compact, // Shrink context — useful mid-session from a phone
     clear, // Wipe transcript
-    cost, // Show session cost
     releaseNotes, // Show changelog
     files, // List tracked files
   ].filter((c): c is Command => c !== null),

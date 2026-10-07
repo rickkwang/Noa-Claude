@@ -16,10 +16,6 @@ const maintenanceFreezePlan = readFileSync(
   'utf8',
 )
 const initPrompt = readFileSync(resolve(root, 'src', 'commands', 'init.ts'), 'utf8')
-const initVerifiersPrompt = readFileSync(
-  resolve(root, 'src', 'commands', 'init-verifiers.ts'),
-  'utf8',
-)
 const productPaths = readFileSync(
   resolve(root, 'src', 'utils', 'productPaths.ts'),
   'utf8',
@@ -292,7 +288,6 @@ if (!/## Agents/.test(operatingGuide)) {
 
 for (const [label, text] of [
   ['init prompt', initPrompt],
-  ['init verifier prompt', initVerifiersPrompt],
   ['product paths', productPaths],
   ['skill change detector', skillChangeDetector],
   ['MCP approval dialog', mcpApprovalDialog],

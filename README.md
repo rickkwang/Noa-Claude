@@ -79,7 +79,7 @@ The session-fork workflow (`/fork`) is smoke-checked. Other listed commands are 
 - `/login` / `/logout` — Authenticate with your Anthropic account via OAuth (Anthropic-specific)
 
 **Agent execution**
-- `/agent` — Spawn sub-agents for parallel task execution
+- `/agents` — Manage sub-agents for parallel task execution
 
 **Verification and diagnostics**
 - `/doctor` (alias `/checkup`) — Agentic health check: runs read-only diagnostics
@@ -89,10 +89,7 @@ The session-fork workflow (`/fork`) is smoke-checked. Other listed commands are 
   screen — zero tokens, no model, no network, plain text in a terminal or a pipe —
   run `noa doctor` in a terminal.
 - `/status` — Inspect runtime state, MCP, plugins, and agents
-- `/cache-probe` — Diagnose API cache hit rate by comparing `cached_tokens` across identical requests
-- `/usage` — View token usage for current session
-- `/stats` — View usage activity stats (sessions, tokens, models over time)
-- `/cost` — Estimate cost of the current conversation
+- `/usage` (aliases `/cost`, `/stats`) — View session cost, plan usage, and stats
 
 **Configuration**
 - `/config` — View and edit settings
@@ -173,7 +170,6 @@ Changing a profile's `baseUrl` clears these fields.
 - **128k Fallback** — Unknown OpenAI-compatible models use a conservative 128k context window to prevent compact threshold underestimation.
 - **Auto-fix Hook** — After file edits, automatically run configurable lint/test commands (configured in `settings.json` under `autoFix`).
 - **Self-drafted Feedback** — When a session goes wrong, Noa can draft a report itself (`SendFeedback`) instead of leaving it to you to notice. Drafts queue locally under `~/.noa/feedback-drafts/` (one file each, capped at 10, expiring after 30 days), never reach the network on their own, and `/feedback` lists them for you to edit, open as a prefilled GitHub issue, or discard. Disable with `NOA_CLAUDE_DISABLE_FEEDBACK_DRAFTS=1`.
-- **Cache-probe** — `/cache-probe` command to diagnose API cache hit rate.
 - **SSRF Protection** — URL resolution validated against IPv4/IPv6 private ranges before outbound HTTP requests.
 - **TUI Mode** — `/tui` switches between default and fullscreen (no-flicker) terminal layout.
 - **PR Intent Scan** — CI checks PR added lines for suspicious links/download patterns and fails on high-severity findings.
