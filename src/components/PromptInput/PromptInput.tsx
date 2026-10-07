@@ -904,7 +904,8 @@ function PromptInput({
     onHistoryUp,
     onHistoryDown,
     dismissSearchHint,
-    historyIndex
+    historyIndex,
+    historyEdited
   } = useArrowKeyHistory((value: string, historyMode: HistoryMode, pastedContents: Record<number, PastedContent>) => {
     onChange(value, {
       interpretLeadingModeCharacter: false
@@ -1133,7 +1134,7 @@ function PromptInput({
     agents,
     setSuggestionsState,
     suggestionsState,
-    suppressSuggestions: isSearchingHistory || historyIndex > 0,
+    suppressSuggestions: isSearchingHistory || (historyIndex > 0 && !historyEdited),
     markAccepted,
     onModeChange
   });

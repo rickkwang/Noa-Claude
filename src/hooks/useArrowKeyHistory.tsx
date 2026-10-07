@@ -63,6 +63,7 @@ async function loadHistoryEntries(minCount: number, modeFilter?: HistoryMode): P
 }
 export function useArrowKeyHistory(onSetInput: (value: string, mode: HistoryMode, pastedContents: Record<number, PastedContent>) => void, currentInput: string, pastedContents: Record<number, PastedContent>, setCursorOffset?: (offset: number) => void, currentMode?: HistoryMode): {
   historyIndex: number;
+  historyEdited: boolean;
   setHistoryIndex: (index: number) => void;
   onHistoryUp: () => void;
   onHistoryDown: () => boolean;
@@ -87,6 +88,7 @@ export function useArrowKeyHistory(onSetInput: (value: string, mode: HistoryMode
   // Synchronous tracker for history index to avoid stale closure issues
   // React state updates are async, so rapid keypresses can see stale values
   const historyIndexRef = useRef(0);
+  const historyInputRef = useRef<string | null>(null);
 
   // Track the mode filter that was active when history navigation started
   // This is set on the first arrow press and stays fixed until reset
@@ -103,6 +105,7 @@ export function useArrowKeyHistory(onSetInput: (value: string, mode: HistoryMode
   pastedContentsRef.current = pastedContents;
   currentModeRef.current = currentMode;
   const setInputWithCursor = useCallback((value: string, mode: HistoryMode, contents: Record<number, PastedContent>, cursorToStart = false): void => {
+    historyInputRef.current = value.replaceAll('\t', '    ');
     onSetInput(value, mode, contents);
     setCursorOffset?.(cursorToStart ? 0 : value.length);
   }, [onSetInput, setCursorOffset]);
@@ -210,6 +213,7 @@ export function useArrowKeyHistory(onSetInput: (value: string, mode: HistoryMode
     setLastShownHistoryEntry(undefined);
     setHistoryIndex(0);
     historyIndexRef.current = 0;
+    historyInputRef.current = null;
     initialModeFilterRef.current = undefined;
     removeNotification('search-history-hint');
     historyCache.current = [];
@@ -220,6 +224,7 @@ export function useArrowKeyHistory(onSetInput: (value: string, mode: HistoryMode
   }, [removeNotification]);
   return {
     historyIndex,
+    historyEdited: historyIndex > 0 && currentInput !== historyInputRef.current,
     setHistoryIndex,
     onHistoryUp,
     onHistoryDown,
