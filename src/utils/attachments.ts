@@ -1983,7 +1983,7 @@ export function getMcpInstructionsDeltaAttachment(
 ): Attachment[] {
   if (!isMcpInstructionsDeltaEnabled()) return []
 
-  const delta = getMcpInstructionsDelta(mcpClients, messages ?? [])
+  const delta = getMcpInstructionsDelta(mcpClients, messages ?? [], [])
   if (!delta) return []
   return [
     {
