@@ -335,9 +335,9 @@ When the user's request is ambiguous, use AskUserQuestion to clarify:
 - Whether to add to existing arrays or replace them
 - Specific values when multiple options exist
 
-## Updating Settings
+## Decision: /config command vs Direct Edit
 
-**Edit settings.json directly** for these simple settings:
+**Suggest the \`/config\` slash command** for these simple settings:
 - \`theme\`, \`editorMode\`, \`verbose\`, \`model\`
 - \`language\`, \`alwaysThinkingEnabled\`
 - \`permissions.defaultMode\`
@@ -450,7 +450,7 @@ export function registerUpdateConfigSkill(): void {
   registerBundledSkill({
     name: 'update-config',
     description:
-      'Use this skill to configure the Noa Claude harness via settings.json. Automated behaviors ("from now on when X", "each time X", "whenever X", "before/after X") require hooks configured in settings.json - the harness executes these, not Noa Claude, so memory/preferences cannot fulfill them. Also use for: permissions ("allow X", "add permission", "move permission to"), env vars ("set X=Y"), hook troubleshooting, or any changes to settings.json/settings.local.json files. Examples: "allow npm commands", "add bq permission to global settings", "move permission to user settings", "set DEBUG=true", "when Noa stops show X". For simple settings like theme/model, edit the corresponding settings.json fields or point the user to /config.',
+      'Use this skill to configure the Noa Claude harness via settings.json. Automated behaviors ("from now on when X", "each time X", "whenever X", "before/after X") require hooks configured in settings.json - the harness executes these, not Noa Claude, so memory/preferences cannot fulfill them. Also use for: permissions ("allow X", "add permission", "move permission to"), env vars ("set X=Y"), hook troubleshooting, or any changes to settings.json/settings.local.json files. Examples: "allow npm commands", "add bq permission to global settings", "move permission to user settings", "set DEBUG=true", "when Noa stops show X". For simple settings like theme/model, suggest the /config command.',
     allowedTools: ['Read'],
     userInvocable: true,
     async getPromptForCommand(args) {
