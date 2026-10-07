@@ -116,6 +116,7 @@ function getKnowledgeCutoff(modelId: string): string | null {
   if (
     canonical.includes('claude-opus-5-5') ||
     canonical.includes('claude-sonnet-5-5') ||
+    canonical.includes('claude-haiku-5-5') ||
     canonical.includes('claude-fable-5-1') ||
     canonical.includes('claude-mythos-5-1')
   ) {

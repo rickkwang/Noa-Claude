@@ -223,7 +223,7 @@ export function modelRejectsForcedToolChoice(model: string): boolean {
 }
 
 /**
- * Fable 5.1 / Mythos 5.1 / Opus 5.5 / Sonnet 5.5 enforce "preserved thinking": a thinking block's
+ * Fable 5.1 / Mythos 5.1 / Opus 5.5 / Sonnet 5.5 / Haiku 5.5 enforce "preserved thinking": a thinking block's
  * signature records the conversation prefix that produced it (top-level
  * `system`, the `tools` set, and every earlier message), so editing an earlier
  * turn invalidates every later block. Noa edits history routinely — compaction
@@ -244,7 +244,8 @@ export function modelEnforcesThinkingPrefixBinding(model: string): boolean {
     canonical.includes('claude-fable-5-1') ||
     canonical.includes('claude-mythos-5-1') ||
     canonical.includes('claude-opus-5-5') ||
-    canonical.includes('claude-sonnet-5-5')
+    canonical.includes('claude-sonnet-5-5') ||
+    canonical.includes('claude-haiku-5-5')
   )
 }
 
@@ -349,7 +350,8 @@ export function modelSupportsStructuredOutputs(model: string): boolean {
     canonical.includes('claude-opus-5') ||
     canonical.includes('claude-fable-5') ||
     canonical.includes('mythos') ||
-    canonical.includes('claude-haiku-4-5')
+    canonical.includes('claude-haiku-4-5') ||
+    canonical.includes('claude-haiku-5-5')
   )
 }
 

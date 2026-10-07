@@ -12,6 +12,7 @@ import {
   COST_TIER_3_15,
   COST_HAIKU_35,
   COST_HAIKU_45,
+  COST_HAIKU_55,
   formatModelPricing,
   COST_TIER_2_10,
 } from '../modelCost.js'
@@ -350,6 +351,16 @@ function getHaiku45Option(): ModelOption {
   }
 }
 
+function getHaiku55Option(): ModelOption {
+  return {
+    value: 'haiku',
+    label: 'Haiku 5.5',
+    description: `Haiku 5.5 · Fastest for quick answers${getFirstPartyPricingSuffix(COST_HAIKU_55)}`,
+    descriptionForModel:
+      'Haiku 5.5 - fastest for quick answers. Lower cost but less capable than Sonnet 5.5.',
+  }
+}
+
 function getHaiku35Option(): ModelOption {
   return {
     value: 'haiku',
@@ -363,6 +374,7 @@ function getHaiku35Option(): ModelOption {
 function getHaikuOption(): ModelOption {
   // Return correct Haiku option based on provider
   const haikuModel = getDefaultHaikuModel()
+  if (haikuModel === getModelStrings().haiku55) return getHaiku55Option()
   return haikuModel === getModelStrings().haiku45
     ? getHaiku45Option()
     : getHaiku35Option()
@@ -466,10 +478,10 @@ function withDefaultFamilyRow(
   return options
 }
 
-const MaxHaiku45Option: ModelOption = {
+const MaxHaiku55Option: ModelOption = {
   value: 'haiku',
-  label: 'Haiku 4.5',
-  description: 'Haiku 4.5 · Fastest for quick answers',
+  label: 'Haiku 5.5',
+  description: 'Haiku 5.5 · Fastest for quick answers',
 }
 
 function getOpusPlanOption(): ModelOption {
@@ -560,7 +572,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
       getFable51Option(),
       getSonnet55Option(),
       getSonnet55_1MOption(),
-      getHaiku45Option(),
+      getHaikuOption(),
     ]
   }
 
@@ -580,7 +592,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
 
       premiumOptions.push(getFable51Option())
 
-      premiumOptions.push(MaxHaiku45Option)
+      premiumOptions.push(MaxHaiku55Option)
       premiumOptions.push(...getOverflowOptions(fastMode))
       return withDefaultFamilyRow(premiumOptions, 'opus', fastMode)
     }
@@ -601,12 +613,12 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
     }
 
     standardOptions.push(getFable51Option())
-    standardOptions.push(MaxHaiku45Option)
+    standardOptions.push(MaxHaiku55Option)
     standardOptions.push(...getOverflowOptions(fastMode))
     return withDefaultFamilyRow(standardOptions, 'sonnet', fastMode)
   }
 
-  // PAYG 1P API: Default + Opus 5.5 + Sonnet 5.5 + Fable 5.1 + Haiku 4.5 (+1M
+  // PAYG 1P API: Default + Opus 5.5 + Sonnet 5.5 + Fable 5.1 + Haiku (+1M
   // variants where they survive the native-1M merge) + overflow rows.
   if (getAPIProvider() === 'firstParty') {
     const payg1POptions = [getDefaultOptionForUser(fastMode)]
@@ -618,7 +630,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
       payg1POptions.push(getSonnet55_1MOption())
     }
     payg1POptions.push(getFable51Option())
-    payg1POptions.push(getHaiku45Option())
+    payg1POptions.push(getHaikuOption())
     payg1POptions.push(...getOverflowOptions(fastMode))
     return withDefaultFamilyRow(payg1POptions, 'opus', fastMode)
   }

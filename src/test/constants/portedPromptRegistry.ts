@@ -39,6 +39,7 @@ import {
   getAntiVerbositySection,
   MATCH_SURROUNDING_CODE_SECTION,
   SECURITY_POLICY,
+  HAIKU_55_EARLY_STOPPING_SECTION,
   TURN_UPDATES_SECTION,
 } from '../../constants/systemPromptCompact.js'
 import { getDescription as getGlobDescription } from '../../tools/GlobTool/prompt.js'
@@ -142,6 +143,7 @@ export function buildPortedSubjects(): Record<string, string> {
     DELIVERING_WORK_SECTION,
     CORRECTIONS_SECTION,
     AUTONOMY_SECTION,
+    HAIKU_55_EARLY_STOPPING_SECTION,
     SECURITY_POLICY,
     'WebFetch.LEAN_DESCRIPTION': WEB_FETCH_LEAN_DESCRIPTION,
     'TodoWrite lean': getTodoWritePrompt(LEAN_MODEL),
@@ -215,6 +217,8 @@ export const PORTED_DIGESTS: Record<string, string> = {
   DELIVERING_WORK_SECTION: '7e908e68a04f6843',
   CORRECTIONS_SECTION: '4593459b100aad5e',
   AUTONOMY_SECTION: '07f554da420e0445',
+  // Haiku 5.5 early-stopping guidance.
+  HAIKU_55_EARLY_STOPPING_SECTION: 'c16ef3a0e06b3d97',
   // Registered late: this port shipped pinned by neither the digests here nor
   // the substring assertions in leanPromptPortIntegrity, which is the exact
   // "never registered at all" gap described at the top of this file. The digest

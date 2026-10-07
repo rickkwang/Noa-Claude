@@ -16,7 +16,7 @@ export const CLAUDE_3_7_SONNET_CONFIG = {
 
 export const CLAUDE_3_5_V2_SONNET_CONFIG = {
   firstParty: 'claude-3-5-sonnet-20241022',
-  bedrock: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+  bedrock: 'us.anthropic.claude-3-5-sonnet-20241022-v2:0',
   vertex: 'claude-3-5-sonnet-v2@20241022',
   foundry: 'claude-3-5-sonnet',
 } as const satisfies ModelConfig
@@ -33,6 +33,24 @@ export const CLAUDE_HAIKU_4_5_CONFIG = {
   bedrock: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
   vertex: 'claude-haiku-4-5@20251001',
   foundry: 'claude-haiku-4-5',
+} as const satisfies ModelConfig
+
+// Haiku 5.5 — successor to Haiku 4.5. Request surface follows the 5.5 line,
+// not Haiku 4.5's:
+//   1. adaptive thinking only and on by default; budget_tokens 400s. We
+//      never send {type:'disabled'} for it.
+//   2. non-default temperature/top_p/top_k and assistant prefill 400.
+//   3. preserved thinking: blocks are bound to the conversation prefix, same
+//      controls as Opus 5.5 / Sonnet 5.5.
+//   4. effort is new on the Haiku line; the API default is `medium`.
+// Forced tool_choice is still accepted (unlike Opus/Sonnet 5.5). No
+// server-side refusal fallback. 1M context; 128K max output (also the default).
+// Pricing has two rate cards split at a 100K-token prompt — see modelCost.ts.
+export const CLAUDE_HAIKU_5_5_CONFIG = {
+  firstParty: 'claude-haiku-5-5',
+  bedrock: 'us.anthropic.claude-haiku-5-5',
+  vertex: 'claude-haiku-5-5',
+  foundry: 'claude-haiku-5-5',
 } as const satisfies ModelConfig
 
 export const CLAUDE_SONNET_4_CONFIG = {
@@ -195,6 +213,7 @@ export const CLAUDE_OPUS_5_5_CONFIG = {
 export const ALL_MODEL_CONFIGS = {
   haiku35: CLAUDE_3_5_HAIKU_CONFIG,
   haiku45: CLAUDE_HAIKU_4_5_CONFIG,
+  haiku55: CLAUDE_HAIKU_5_5_CONFIG,
   sonnet35: CLAUDE_3_5_V2_SONNET_CONFIG,
   sonnet37: CLAUDE_3_7_SONNET_CONFIG,
   sonnet40: CLAUDE_SONNET_4_CONFIG,

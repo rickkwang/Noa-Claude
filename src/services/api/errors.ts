@@ -1088,6 +1088,10 @@ function get3PModelFallbackSuggestion(model: string): string | undefined {
     // pinned ANTHROPIC_DEFAULT_OPUS_MODEL over the catalog value.
     return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL || getModelStrings().opus55
   }
+  // If the failing model looks like a Haiku 5.5 variant, suggest Haiku 4.5.
+  if (m.includes('haiku-5-5') || m.includes('haiku_5_5')) {
+    return getModelStrings().haiku45
+  }
   // If the failing model looks like a Sonnet 5.5 variant, suggest Sonnet 5
   // (upstream's fallback_3p). Must precede the Sonnet 5 check, a prefix of it.
   if (m.includes('sonnet-5-5') || m.includes('sonnet_5_5')) {

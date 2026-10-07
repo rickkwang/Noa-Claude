@@ -68,12 +68,14 @@ const OFFICIAL_PROMPT_CAPABILITIES = {
     opus5PromptBundle: true,
     fable5Mitigations: false,
   fable51PromptBundle: false,
+  haiku55EarlyStopping: false,
   },
   'claude-fable-5': {
     leanPrompt: true,
     opus5PromptBundle: false,
     fable5Mitigations: true,
   fable51PromptBundle: false,
+  haiku55EarlyStopping: false,
   },
   // Mythos 5's manifest row upstream is `capabilities:[]` — empty. Both
   // `true`s here come from upstream's by-name short-circuits, not a manifest
@@ -89,18 +91,21 @@ const OFFICIAL_PROMPT_CAPABILITIES = {
     opus5PromptBundle: false,
     fable5Mitigations: true,
   fable51PromptBundle: false,
+  haiku55EarlyStopping: false,
   },
   'claude-opus-4-8': {
     leanPrompt: true,
     opus5PromptBundle: false,
     fable5Mitigations: false,
   fable51PromptBundle: false,
+  haiku55EarlyStopping: false,
   },
   'claude-opus-4-7': {
     leanPrompt: false,
     opus5PromptBundle: false,
     fable5Mitigations: false,
   fable51PromptBundle: false,
+  haiku55EarlyStopping: false,
   },
 } as const
 

@@ -46,13 +46,24 @@ describe('per-provider alias defaults match the upstream catalog', () => {
     expect(getDefaultOpusModel()).toBe('claude-opus-5-5')
     expect(getDefaultSonnetModel()).toBe('claude-sonnet-5-5')
     expect(getDefaultFableModel()).toBe('claude-fable-5-1')
-    expect(getDefaultHaikuModel()).toContain('claude-haiku-4-5')
+    expect(getDefaultHaikuModel()).toContain('claude-haiku-5-5')
   })
 
   test('Bedrock and Vertex get current Opus — not a trailing generation', () => {
     for (const env of ['CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX']) {
       useProvider(env)
       expect(getDefaultOpusModel()).toContain('claude-opus-5-5')
+    }
+  })
+
+  test('cloud providers keep Haiku on 4.5', () => {
+    for (const env of [
+      'CLAUDE_CODE_USE_BEDROCK',
+      'CLAUDE_CODE_USE_VERTEX',
+      'CLAUDE_CODE_USE_FOUNDRY',
+    ]) {
+      useProvider(env)
+      expect(getDefaultHaikuModel()).toContain('claude-haiku-4-5')
     }
   })
 

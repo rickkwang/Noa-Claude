@@ -57,7 +57,7 @@ export function modelSupports1M(model: string): boolean {
     return false
   }
   const canonical = getCanonicalName(model)
-  return canonical.includes('claude-sonnet-4') || canonical.includes('claude-sonnet-5') || canonical.includes('opus-4-6') || canonical.includes('opus-4-7') || canonical.includes('opus-4-8') || canonical.includes('claude-opus-5') || canonical.includes('fable-5') || canonical.includes('mythos')
+  return canonical.includes('claude-sonnet-4') || canonical.includes('claude-sonnet-5') || canonical.includes('opus-4-6') || canonical.includes('opus-4-7') || canonical.includes('opus-4-8') || canonical.includes('claude-opus-5') || canonical.includes('fable-5') || canonical.includes('mythos') || canonical.includes('claude-haiku-5-5')
 }
 
 export function getContextWindowForModel(
@@ -224,8 +224,12 @@ export function getModelMaxOutputTokens(model: string): {
 
   const m = getCanonicalName(model)
 
-  if (m.includes('claude-opus-5-5') || m.includes('claude-sonnet-5-5')) {
-    // Opus 5.5 / Sonnet 5.5 default to their 128K ceiling (upstream catalog:
+  if (
+    m.includes('claude-opus-5-5') ||
+    m.includes('claude-sonnet-5-5') ||
+    m.includes('claude-haiku-5-5')
+  ) {
+    // Opus 5.5 / Sonnet 5.5 / Haiku 5.5 default to their 128K ceiling (
     // `max_output_tokens:{default:128000,upper:128000}`) — thinking is always
     // on and counts toward max_tokens, so the 64k default would cut turns off.
     defaultTokens = 128_000

@@ -113,7 +113,8 @@ export function getSupportedEffortLevelsForModel(
     modelKey.includes('claude-opus-5') ||
     modelKey.includes('fable-5') ||
     modelKey.includes('mythos') ||
-    modelKey.includes('sonnet-5')
+    modelKey.includes('sonnet-5') ||
+    modelKey.includes('haiku-5-5')
   ) {
     return ['low', 'medium', 'high', 'xhigh', 'max']
   }
@@ -340,16 +341,17 @@ export function resolveAppliedEffort(
 }
 
 /**
- * The level the API applies when a request carries no effort param. `high` for
- * every model except Opus 5.5 and Sonnet 5.5, whose catalog `default_effort`
- * is `medium`.
+ * The level shown when no effort param is resolved: `high`, except Opus 5.5,
+ * Sonnet 5.5 and Haiku 5.5, which are `medium` (for Sonnet 5.5 the API itself would run `high`, which is why
+ * getDefaultEffortForModel sends `medium` explicitly).
  *
  * @[MODEL LAUNCH]: add models whose API-side default effort is not `high`.
  */
 export function getApiDefaultEffortForModel(model: string): EffortLevel {
   const canonical = getCanonicalName(model)
   return canonical.includes('claude-opus-5-5') ||
-    canonical.includes('claude-sonnet-5-5')
+    canonical.includes('claude-sonnet-5-5') ||
+    canonical.includes('claude-haiku-5-5')
     ? 'medium'
     : 'high'
 }
@@ -507,9 +509,22 @@ export function getDefaultEffortForModel(
   // higher intelligence ceiling makes xhigh prone to overthinking), 4.8 falls
   // through to undefined → the API resolves that to high. xhigh remains an
   // available level (see getSupportedEffortLevelsForModel) for users who opt in.
+  //
+  // Opus 5.5 / Sonnet 5.5 / Haiku 5.5 default to `medium`, sent explicitly.
+  // For Sonnet 5.5 that is below the API's own default (`high`), so leaving it
+  // unset would run a level higher than intended.
   const modelKey = `${getCanonicalName(model)} ${model}`.toLowerCase()
-  if (modelKey.includes('opus-4-7') && getSupportedEffortLevelsForModel(model).includes('xhigh')) {
+  const supported = getSupportedEffortLevelsForModel(model)
+  if (modelKey.includes('opus-4-7') && supported.includes('xhigh')) {
     return 'xhigh'
+  }
+  if (
+    (modelKey.includes('claude-opus-5-5') ||
+      modelKey.includes('claude-sonnet-5-5') ||
+      modelKey.includes('claude-haiku-5-5')) &&
+    supported.includes('medium')
+  ) {
+    return 'medium'
   }
 
   // Fallback to undefined, which means we don't set an effort level. This

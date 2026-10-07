@@ -25,6 +25,8 @@ import {
   getCompactHeadSection,
   hasFable51PromptBundle,
   hasFableMitigations,
+  hasHaiku55EarlyStoppingGuidance,
+  HAIKU_55_EARLY_STOPPING_SECTION,
   hasOpus5PromptBundle,
   shouldUseCompactSystemPrompt,
 } from './systemPromptCompact.js'
@@ -148,6 +150,7 @@ export function buildDynamicSystemPromptSections(params: {
   const bundle = hasOpus5PromptBundle(model)
   const fable = hasFableMitigations(model)
   const fable51 = hasFable51PromptBundle(model)
+  const haiku55EarlyStopping = hasHaiku55EarlyStoppingGuidance(model)
   const autoCompactEnabled = isAutoCompactEnabled()
   const bundleSuffix = bundle ? ':L' : ''
   // Emitted only under the lean prompt, with the same wording for every lean
@@ -264,6 +267,11 @@ export function buildDynamicSystemPromptSections(params: {
     ),
     systemPromptSection(`corrections${bundleSuffix}`, () =>
       bundle ? CORRECTIONS_SECTION : null,
+    ),
+    // Haiku 5.5 early-stopping guidance, placed just ahead of `autonomy_append`.
+    systemPromptSection(
+      `haiku55_early_stopping${haiku55EarlyStopping ? ':on' : ''}`,
+      () => (haiku55EarlyStopping ? HAIKU_55_EARLY_STOPPING_SECTION : null),
     ),
     // Gated on the Fable branch AND a non-interactive session — see
     // AUTONOMY_SECTION for why the second condition is ours. Only the model bit

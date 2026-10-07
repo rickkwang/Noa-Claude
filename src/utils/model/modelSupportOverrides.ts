@@ -32,6 +32,9 @@ export type ModelCapabilityOverride =
   // disagree, so it is a separate capability rather than a refinement of it.
   // See hasFable51PromptBundle() in constants/systemPromptCompact.ts.
   | 'fable_5_1_prompt_bundle'
+  // Gates the early-stopping guidance section. Declared for Haiku 5.5 only.
+  // See hasHaiku55EarlyStoppingGuidance() in constants/systemPromptCompact.ts.
+  | 'haiku_5_5_early_stopping_guidance'
 
 const TIERS = [
   {

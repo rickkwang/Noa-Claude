@@ -99,31 +99,26 @@ export function getExperimentAdvisorModels():
  * cannot be one. That is the same fail-closed shape upstream uses, and it is
  * why older Opus/Sonnet generations are simply omitted rather than listed at 0.
  *
+ * Ranks are spread out rather than compressed so that, e.g., a Sonnet 5.5 executor (6) rejects
+ * Opus 4.8/4.7 (5) and Sonnet 5 (4) advisors by the rank rule alone.
+ *
  * @[MODEL LAUNCH]: Give the new model a rank if it participates in advisor.
  */
 const ADVISOR_RANKS: Record<string, number> = {
   'claude-haiku-4-5': 1,
   'claude-sonnet-4-6': 2,
-  'claude-sonnet-5': 3,
-  'claude-sonnet-5-5': 3,
   'claude-opus-4-6': 3,
-  'claude-opus-4-7': 4,
-  'claude-opus-4-8': 4,
-  'claude-opus-5': 4,
-  'claude-opus-5-5': 4,
-  'claude-fable-5': 5,
-  'claude-fable-5-1': 5,
-  'claude-mythos-5': 5,
-  'claude-mythos-5-1': 5,
-}
-
-/**
- * Pairings the API rejects even though the rank rule would allow them: a
- * Sonnet 5.5 executor refuses Opus 4.8, Opus 4.7 and Sonnet 5 as advisors
- * (Opus 5 shares their rank, so no rank threshold can express this).
- */
-const REJECTED_ADVISORS_BY_BASE: Record<string, readonly string[]> = {
-  'claude-sonnet-5-5': ['claude-opus-4-8', 'claude-opus-4-7', 'claude-sonnet-5'],
+  'claude-sonnet-5': 4,
+  'claude-haiku-5-5': 4,
+  'claude-opus-4-7': 5,
+  'claude-opus-4-8': 5,
+  'claude-sonnet-5-5': 6,
+  'claude-opus-5': 7,
+  'claude-opus-5-5': 7,
+  'claude-fable-5': 8,
+  'claude-mythos-5': 8,
+  'claude-fable-5-1': 9,
+  'claude-mythos-5-1': 9,
 }
 
 /** Minimum rank a model needs to serve as somebody's advisor. */
@@ -179,13 +174,6 @@ export function isValidAdvisorPairing(
   const advisorRank = getAdvisorRank(advisorModel)
   if (baseRank === undefined || advisorRank === undefined) {
     return true
-  }
-  if (
-    REJECTED_ADVISORS_BY_BASE[getCanonicalName(baseModel)]?.includes(
-      getCanonicalName(advisorModel),
-    )
-  ) {
-    return false
   }
   return advisorRank >= baseRank
 }

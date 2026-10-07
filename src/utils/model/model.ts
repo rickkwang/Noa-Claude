@@ -171,7 +171,14 @@ const ALIAS_DEFAULTS = {
       foundry: 'sonnet45',
     },
   },
-  haiku: { default: 'haiku45', perProvider: {} },
+  haiku: {
+    default: 'haiku55',
+    perProvider: {
+      bedrock: 'haiku45',
+      vertex: 'haiku45',
+      foundry: 'haiku45',
+    },
+  },
   fable: { default: 'fable51', perProvider: {} },
 } as const satisfies Record<
   string,
@@ -221,14 +228,12 @@ export function getDefaultSonnetModel(): ModelName {
   return resolveAliasDefault('sonnet')
 }
 
-// @[MODEL LAUNCH]: Update the default Haiku model.
+// @[MODEL LAUNCH]: Update the default Haiku model in ALIAS_DEFAULTS above.
 export function getDefaultHaikuModel(): ModelName {
   if (process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL) {
     return process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL
   }
-
-  // Haiku 4.5 is available on all platforms (first-party, Foundry, Bedrock, Vertex)
-  return getModelStrings().haiku45 || 'claude-haiku-4-5'
+  return resolveAliasDefault('haiku')
 }
 
 /**
@@ -408,6 +413,9 @@ export function firstPartyNameToCanonical(name: ModelName | undefined): ModelSho
   }
   if (name.includes('claude-sonnet-4')) {
     return 'claude-sonnet-4'
+  }
+  if (name.includes('claude-haiku-5-5')) {
+    return 'claude-haiku-5-5'
   }
   if (name.includes('claude-haiku-4-5')) {
     return 'claude-haiku-4-5'
@@ -610,6 +618,8 @@ export function getPublicModelDisplayName(model: ModelName): string | null {
       return 'Sonnet 3.7'
     case getModelStrings().sonnet35:
       return 'Sonnet 3.5'
+    case getModelStrings().haiku55:
+      return 'Haiku 5.5'
     case getModelStrings().haiku45:
       return 'Haiku 4.5'
     case getModelStrings().haiku35:
@@ -880,6 +890,9 @@ export function getMarketingNameForModel(modelId: string | undefined): string | 
   }
   if (canonical.includes('claude-3-5-sonnet')) {
     return 'Claude 3.5 Sonnet'
+  }
+  if (canonical.includes('claude-haiku-5-5')) {
+    return has1m ? 'Haiku 5.5 (with 1M context)' : 'Haiku 5.5'
   }
   if (canonical.includes('claude-haiku-4-5')) {
     return 'Haiku 4.5'

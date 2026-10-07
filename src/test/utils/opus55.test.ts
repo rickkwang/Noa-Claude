@@ -84,7 +84,8 @@ describe('Opus 5.5 request surface', () => {
       'xhigh',
       'max',
     ])
-    expect(getDefaultEffortForModel(OPUS_55)).toBeUndefined()
+    // The default effort is sent explicitly.
+    expect(getDefaultEffortForModel(OPUS_55)).toBe('medium')
     expect(getApiDefaultEffortForModel(OPUS_55)).toBe('medium')
     expect(getApiDefaultEffortForModel('claude-opus-5')).toBe('high')
   })
@@ -105,6 +106,7 @@ describe('Opus 5.5 request surface', () => {
       opus5PromptBundle: false,
       fable5Mitigations: false,
       fable51PromptBundle: false,
+      haiku55EarlyStopping: false,
     })
   })
 })

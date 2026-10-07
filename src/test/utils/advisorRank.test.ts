@@ -73,8 +73,10 @@ describe('isValidAdvisorPairing', () => {
     expect(isValidAdvisorPairing('claude-sonnet-5', 'claude-opus-4-7')).toBe(
       true,
     )
-    expect(isValidAdvisorPairing('claude-opus-5', 'claude-opus-4-8')).toBe(true)
     expect(isValidAdvisorPairing('claude-opus-5', 'claude-fable-5')).toBe(true)
+    expect(isValidAdvisorPairing('claude-haiku-5-5', 'claude-sonnet-5')).toBe(
+      true,
+    )
   })
 
   test('an advisor below the base rank is rejected', () => {
@@ -85,13 +87,30 @@ describe('isValidAdvisorPairing', () => {
     expect(isValidAdvisorPairing('claude-sonnet-5', 'claude-sonnet-4-6')).toBe(
       false,
     )
+    // Catalog ranks, not a compressed ordering: these pairs were wrongly
+    // accepted while Opus 4.8 / Opus 5 and Fable 5 / 5.1 shared a rank.
+    expect(isValidAdvisorPairing('claude-opus-5', 'claude-opus-4-8')).toBe(
+      false,
+    )
+    expect(isValidAdvisorPairing('claude-fable-5-1', 'claude-fable-5')).toBe(
+      false,
+    )
+    expect(isValidAdvisorPairing('claude-sonnet-5-5', 'claude-opus-4-8')).toBe(
+      false,
+    )
+    expect(isValidAdvisorPairing('claude-haiku-5-5', 'claude-opus-4-6')).toBe(
+      false,
+    )
   })
 
   test('equal ranks pair with each other', () => {
-    expect(isValidAdvisorPairing('claude-opus-4-6', 'claude-sonnet-5')).toBe(
+    expect(isValidAdvisorPairing('claude-opus-4-7', 'claude-opus-4-8')).toBe(
       true,
     )
-    expect(isValidAdvisorPairing('claude-opus-4-7', 'claude-opus-5')).toBe(true)
+    expect(isValidAdvisorPairing('claude-opus-5', 'claude-opus-5-5')).toBe(true)
+    expect(isValidAdvisorPairing('claude-haiku-5-5', 'claude-sonnet-5')).toBe(
+      true,
+    )
   })
 
   test('an unranked model on either side is not blocked here', () => {

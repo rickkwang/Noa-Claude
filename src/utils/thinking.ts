@@ -151,7 +151,8 @@ export function modelSupportsAdaptiveThinking(model: string): boolean {
     canonical.includes('fable-5') ||
     canonical.includes('mythos') ||
     canonical.includes('sonnet-5') ||
-    canonical.includes('sonnet-4-6')
+    canonical.includes('sonnet-4-6') ||
+    canonical.includes('haiku-5-5')
   ) {
     return true
   }
@@ -188,7 +189,8 @@ export function modelRejectsSamplingParams(model: string): boolean {
     canonical.includes('claude-opus-5') ||
     canonical.includes('fable-5') ||
     canonical.includes('mythos') ||
-    canonical.includes('sonnet-5')
+    canonical.includes('sonnet-5') ||
+    canonical.includes('haiku-5-5')
   )
 }
 
@@ -206,7 +208,8 @@ export function modelOmitsThinkingByDefault(model: string): boolean {
     canonical.includes('claude-opus-5') ||
     canonical.includes('fable-5') ||
     canonical.includes('mythos') ||
-    canonical.includes('sonnet-5')
+    canonical.includes('sonnet-5') ||
+    canonical.includes('haiku-5-5')
   )
 }
 
@@ -244,6 +247,7 @@ export function modelRequiresExplicitThinkingDisable(model: string): boolean {
  * is a 400 at every effort level. Sonnet 5.5 also 400s on `disabled` (catalog
  * capability `rejects_disabled_thinking`); its only off switch is
  * {type:'between_tools'}, which we do not send, so it is treated the same way.
+ * Haiku 5.5 also rejects `disabled` and is treated the same.
  *
  * Distinct from modelRequiresExplicitThinkingDisable, which marks the opposite
  * problem — models (Sonnet 5, Opus 5) where omitting the parameter still runs
@@ -264,7 +268,8 @@ export function modelThinkingCannotBeDisabled(model: string): boolean {
     canonical.includes('fable-5') ||
     canonical.includes('mythos') ||
     canonical.includes('claude-opus-5-5') ||
-    canonical.includes('claude-sonnet-5-5')
+    canonical.includes('claude-sonnet-5-5') ||
+    canonical.includes('claude-haiku-5-5')
   )
 }
 

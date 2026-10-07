@@ -37,7 +37,8 @@ function isEarlyAccessModel(model: string): boolean {
  * cache key on an older rule.
  *
  * `leanPrompt`, `opus5PromptBundle` and `fable5Mitigations` were read off the
- * 2.1.220 manifest; `fable51PromptBundle` off 2.1.258, where Fable 5.1 and
+ * 2.1.220 manifest; `haiku55EarlyStopping` is set for Haiku 5.5 only;
+ * `fable51PromptBundle` off 2.1.258, where Fable 5.1 and
  * Mythos 5.1 are the only rows carrying it.
  */
 export type BuiltInPromptCapabilities = {
@@ -45,6 +46,7 @@ export type BuiltInPromptCapabilities = {
   opus5PromptBundle: boolean
   fable5Mitigations: boolean
   fable51PromptBundle: boolean
+  haiku55EarlyStopping: boolean
 }
 
 const LEGACY_PROMPT_CAPABILITIES: BuiltInPromptCapabilities = {
@@ -52,6 +54,7 @@ const LEGACY_PROMPT_CAPABILITIES: BuiltInPromptCapabilities = {
   opus5PromptBundle: false,
   fable5Mitigations: false,
   fable51PromptBundle: false,
+  haiku55EarlyStopping: false,
 }
 
 const DEFAULT_PROMPT_CAPABILITIES: BuiltInPromptCapabilities = {
@@ -59,6 +62,7 @@ const DEFAULT_PROMPT_CAPABILITIES: BuiltInPromptCapabilities = {
   opus5PromptBundle: false,
   fable5Mitigations: false,
   fable51PromptBundle: false,
+  haiku55EarlyStopping: false,
 }
 
 const BUILT_IN_PROMPT_CAPABILITIES: Record<
@@ -70,6 +74,7 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     opus5PromptBundle: true,
     fable5Mitigations: false,
     fable51PromptBundle: false,
+    haiku55EarlyStopping: false,
   },
   // Opus 5.5 declares `lean_prompt` plus its own `opus_5_5_prompt_bundle`
   // (2.1.280), not Opus 5's bundle. Every section that bundle switches on is
@@ -82,6 +87,7 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     opus5PromptBundle: false,
     fable5Mitigations: false,
     fable51PromptBundle: false,
+    haiku55EarlyStopping: false,
   },
   // Sonnet 5.5 declares `lean_prompt` (2.1.284 catalog; Sonnet 5 does not), so it
   // needs an explicit row: without one, needsLegacyPromptCapabilities() folds
@@ -93,12 +99,24 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     opus5PromptBundle: false,
     fable5Mitigations: false,
     fable51PromptBundle: false,
+    haiku55EarlyStopping: false,
+  },
+  // Haiku 5.5 declares `lean_prompt` and `haiku_5_5_early_stopping_guidance`
+  // Its other capabilities (org_locked_thinking,
+  // per_turn_effort) are harness behaviour with no ported counterpart here.
+  'claude-haiku-5-5': {
+    leanPrompt: true,
+    opus5PromptBundle: false,
+    fable5Mitigations: false,
+    fable51PromptBundle: false,
+    haiku55EarlyStopping: true,
   },
   'claude-fable-5': {
     leanPrompt: true,
     opus5PromptBundle: false,
     fable5Mitigations: true,
     fable51PromptBundle: false,
+    haiku55EarlyStopping: false,
   },
   // Fable 5.1 / Mythos 5.1 keep their predecessors' lean head and still declare
   // `fable_5_mitigations`, but they add `fable_5_1_prompt_bundle` on top — the
@@ -109,6 +127,7 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     opus5PromptBundle: false,
     fable5Mitigations: true,
     fable51PromptBundle: true,
+    haiku55EarlyStopping: false,
   },
   // Mythos 5's manifest row upstream is `capabilities:[]` — empty. Both
   // `true`s here come from upstream's by-name short-circuits, not a manifest
@@ -122,12 +141,14 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     opus5PromptBundle: false,
     fable5Mitigations: true,
     fable51PromptBundle: false,
+    haiku55EarlyStopping: false,
   },
   'claude-mythos-5-1': {
     leanPrompt: true,
     opus5PromptBundle: false,
     fable5Mitigations: true,
     fable51PromptBundle: true,
+    haiku55EarlyStopping: false,
   },
   'claude-opus-4-8': DEFAULT_PROMPT_CAPABILITIES,
 }
@@ -437,6 +458,40 @@ export function hasFable51PromptBundle(model: string | undefined): boolean {
   if (untrustedIdentity) return false
   return getBuiltInPromptCapabilities(model).fable51PromptBundle
 }
+
+export function hasHaiku55EarlyStoppingGuidance(
+  model: string | undefined,
+): boolean {
+  if (!model) return false
+  const untrustedIdentity = isUntrustedModelIdentity()
+  if (untrustedIdentity && trustsThirdPartyModelIdentity()) {
+    return getBuiltInPromptCapabilities(model).haiku55EarlyStopping
+  }
+  const declared = get3PModelCapabilityOverride(
+    model,
+    'haiku_5_5_early_stopping_guidance',
+  )
+  if (declared !== undefined) {
+    return declared
+  }
+  if (untrustedIdentity) return false
+  return getBuiltInPromptCapabilities(model).haiku55EarlyStopping
+}
+
+/**
+ * Guidance behind the `haiku_5_5_early_stopping_guidance` capability, emitted
+ * in both prompt modes. It counters Haiku 5.5 stopping early and handing the task back
+ * at low effort under a long agent prompt.
+ */
+export const HAIKU_55_EARLY_STOPPING_SECTION = `The reasoning effort setting changes how much you think before you act. It does not change how much of the request you are expected to finish. A turn lasts as long as you keep working, so a large task can be finished in the turn where it was asked. The size of a task is not a reason to check in first.
+
+Ending your turn stops all work until the user replies, and they may be away for a while. If you stop before changing anything, they come back to the same code they left, plus a message to read and answer. End your turn when the request is done or nothing is left that you can do without them.
+
+Ask before you start only when you cannot name the most likely reading of the request. If you can name it, act on it, and say in your final message which reading you took. The other reason to ask first is that the whole task depends on a fact, a file, or access that only they have. Their approval of a choice you could make yourself is not one of these. Actions that are hard to reverse or outward-facing still need their confirmation. If they say they want to approve something before you go on, such as a plan, stop there. Words that only set an order, such as "plan, then build", are not a stopping point. Do each step and keep going. If they are asking a question or still deciding between options, they want your answer, not a change. If they also asked for work, answer and then do it.
+
+The user can inspect and undo edits to files in the working tree. Such edits are not hard-to-reverse or outward-facing actions, unless they would overwrite changes the user has in progress. That leaves the open choices to you: how to build the change, how to split it up, how to handle a case the request did not cover. Pick what you would recommend, and keep to what the user wrote where they were specific. List your choices in the final message so the user can redirect you. Start editing once you know the first change. A design worked out in files persists, while a long stretch of thinking can be cut off and lost.
+
+When one part of a task is blocked, unclear, or apparently wrong, the rest usually is not. If you suspect a step will fail, try it before you report it. Finish everything that does not depend on the stuck part, and open your final message with what is stuck. Finished parts are useful to the user even when the whole task is not done. Setting up the project so you can build and test it, such as installing its declared dependencies, is part of the work. If the code still cannot be built or run here, say so and make the changes you can verify by reading. If you investigate a problem and cannot find the cause, report what you ruled out and what would settle it. A question at the end of finished work costs the user one reply, the same as a question asked before any work.`
 
 /**
  * Ported verbatim from upstream's `turn_updates` branch of the `communication`

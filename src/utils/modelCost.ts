@@ -9,6 +9,7 @@ import {
   CLAUDE_3_5_V2_SONNET_CONFIG,
   CLAUDE_3_7_SONNET_CONFIG,
   CLAUDE_HAIKU_4_5_CONFIG,
+  CLAUDE_HAIKU_5_5_CONFIG,
   CLAUDE_OPUS_4_1_CONFIG,
   CLAUDE_OPUS_4_5_CONFIG,
   CLAUDE_OPUS_4_6_CONFIG,
@@ -164,6 +165,29 @@ export const COST_HAIKU_45 = {
   webSearchRequests: 0.01,
 } as const satisfies ModelCosts
 
+// Pricing for Haiku 5.5 has two rate cards chosen by prompt length: $0.10 /
+// $0.50 per Mtok up to a 100K-token prompt, $0.50 / $2.50 above it.
+export const COST_HAIKU_55 = {
+  inputTokens: 0.1,
+  outputTokens: 0.5,
+  promptCacheWriteTokens: 0.125,
+  promptCacheWrite1hTokens: 0.2,
+  promptCacheReadTokens: 0.01,
+  webSearchRequests: 0.01,
+} as const satisfies ModelCosts
+
+export const COST_HAIKU_55_LONG_PROMPT = {
+  inputTokens: 0.5,
+  outputTokens: 2.5,
+  promptCacheWriteTokens: 0.625,
+  promptCacheWrite1hTokens: 1,
+  promptCacheReadTokens: 0.05,
+  webSearchRequests: 0.01,
+} as const satisfies ModelCosts
+
+/** Prompt size (uncached + cache read + cache write) above which the long card applies. */
+const HAIKU_55_LONG_PROMPT_THRESHOLD = 100_000
+
 const DEFAULT_UNKNOWN_MODEL_COST = COST_TIER_5_25
 
 /**
@@ -224,6 +248,8 @@ export const MODEL_COSTS: Record<ModelShortName, ModelCosts> = {
     COST_HAIKU_35,
   [firstPartyNameToCanonical(CLAUDE_HAIKU_4_5_CONFIG.firstParty)]:
     COST_HAIKU_45,
+  [firstPartyNameToCanonical(CLAUDE_HAIKU_5_5_CONFIG.firstParty)]:
+    COST_HAIKU_55,
   [firstPartyNameToCanonical(CLAUDE_3_5_V2_SONNET_CONFIG.firstParty)]:
     COST_TIER_3_15,
   [firstPartyNameToCanonical(CLAUDE_3_7_SONNET_CONFIG.firstParty)]:
@@ -254,6 +280,10 @@ export const MODEL_COSTS: Record<ModelShortName, ModelCosts> = {
   [firstPartyNameToCanonical(CLAUDE_FABLE_5_CONFIG.firstParty)]: COST_TIER_10_50,
   [firstPartyNameToCanonical(CLAUDE_FABLE_5_1_CONFIG.firstParty)]:
     COST_TIER_10_50_CHEAP_CACHE,
+  // Mythos has no ModelConfig (it is not a selectable alias target), but it is
+  // reachable by id and priced like its Fable counterpart.
+  'claude-mythos-5': COST_TIER_10_50,
+  'claude-mythos-5-1': COST_TIER_10_50_CHEAP_CACHE,
 }
 
 /**
@@ -294,6 +324,16 @@ export function getModelCosts(model: string, usage: Usage): ModelCosts {
     isDirectFirstParty()
   ) {
     return COST_TIER_2_10
+  }
+
+  if (shortName === firstPartyNameToCanonical(CLAUDE_HAIKU_5_5_CONFIG.firstParty)) {
+    const promptTokens =
+      (usage?.input_tokens ?? 0) +
+      (usage?.cache_read_input_tokens ?? 0) +
+      (usage?.cache_creation_input_tokens ?? 0)
+    return promptTokens > HAIKU_55_LONG_PROMPT_THRESHOLD
+      ? COST_HAIKU_55_LONG_PROMPT
+      : COST_HAIKU_55
   }
 
   // Check if this is an Opus 4.6/4.7 model with fast mode active.

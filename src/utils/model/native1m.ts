@@ -1,59 +1,34 @@
 // @ts-nocheck
 import { getCanonicalName } from './model.js'
-import { getAPIProvider } from './providers.js'
 
 /**
  * Models that serve a 1M context window natively — no `[1m]` suffix and no
- * `context-1m-*` beta header required. Mirrors the `context.native_1m` /
- * `context.native_1m_3p` fields in the upstream model-capability table.
- *
- * `thirdParty` lists the non-first-party backends that also serve 1M natively;
- * a backend absent from the set falls back to the 200k default.
+ * `context-1m-*` beta header required. This holds on every provider: a 3P
+ * deployment of a native-1M model is 1M too, not a `[1m]` opt-in.
  *
  * @[MODEL LAUNCH]: add new native-1M models here.
  */
-const NATIVE_1M_MODELS: Record<string, { thirdParty: ReadonlySet<string> }> = {
-  'claude-sonnet-5': {
-    thirdParty: new Set(['bedrock', 'vertex', 'foundry']),
-  },
-  // Sonnet 5.5: same catalog shape as Sonnet 5 (native_1m + native_1m_3p).
-  'claude-sonnet-5-5': {
-    thirdParty: new Set(['bedrock', 'vertex', 'foundry']),
-  },
-  'claude-opus-4-7': { thirdParty: new Set() },
-  'claude-opus-4-8': { thirdParty: new Set() },
-  // Opus 5 serves 1M natively on first party only. The empty third-party set
-  // is upstream's own value, not caution on our part: its catalog entry for
-  // Opus 5 carries `native_1m` and `supports_1m_beta`/`supports_1m_suffix` but
-  // no `native_1m_3p` map, so on Bedrock/Vertex/Foundry the 1M window is the
-  // `[1m]` opt-in rather than the default. (Sonnet 5 is the model that *does*
-  // carry `native_1m_3p:{bedrock,vertex,foundry}` — hence the difference below.)
-  // Do not "fix" this by reasoning from the 3P default: Bedrock and Vertex
-  // default to current Opus, and it is still 200k there until `[1m]` is asked for.
-  'claude-opus-5': { thirdParty: new Set() },
-  // Opus 5.5: same catalog shape as Opus 5 (native_1m, no native_1m_3p).
-  'claude-opus-5-5': { thirdParty: new Set() },
-  'claude-fable-5': { thirdParty: new Set() },
-  'claude-fable-5-1': { thirdParty: new Set() },
-}
+const NATIVE_1M_MODELS: ReadonlySet<string> = new Set([
+  'claude-haiku-5-5',
+  'claude-sonnet-5',
+  'claude-sonnet-5-5',
+  'claude-opus-4-7',
+  'claude-opus-4-8',
+  'claude-opus-5',
+  'claude-opus-5-5',
+  'claude-fable-5',
+  'claude-fable-5-1',
+  'claude-mythos-5',
+  'claude-mythos-5-1',
+])
 
 /**
- * Whether this model serves 1M context natively for the current backend.
- *
- * First-party provider counts even behind a custom ANTHROPIC_BASE_URL: the
+ * Whether this model serves 1M context natively. Provider-independent.
+ * First party counts even behind a custom ANTHROPIC_BASE_URL: the
  * catalog flag is trusted over the gateway's unknown ceiling. A gateway that
  * stops at 200k is handled by the user setting `/autocompact 200k` (or
  * CLAUDE_CODE_AUTO_COMPACT_WINDOW), not by under-reporting every session.
  */
 export function hasNative1mContext(model: string): boolean {
-  const entry = NATIVE_1M_MODELS[getCanonicalName(model)]
-  if (!entry) {
-    return false
-  }
-
-  const provider = getAPIProvider()
-  if (provider === 'firstParty') {
-    return true
-  }
-  return entry.thirdParty.has(provider)
+  return NATIVE_1M_MODELS.has(getCanonicalName(model))
 }

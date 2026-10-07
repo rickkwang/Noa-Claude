@@ -51,9 +51,10 @@ describe('native 1M context', () => {
     expect(getContextWindowForModel('claude-opus-4-8')).toBe(1_000_000)
   })
 
-  test('Opus 4.8 has no native 1M on Bedrock; Sonnet 5 does', () => {
+  test('native 1M is provider-independent', () => {
     process.env.CLAUDE_CODE_USE_BEDROCK = '1'
-    expect(getContextWindowForModel('claude-opus-4-8')).toBe(200_000)
+    expect(getContextWindowForModel('claude-opus-4-8')).toBe(1_000_000)
+    expect(getContextWindowForModel('claude-haiku-4-5')).toBe(200_000)
     expect(getContextWindowForModel('claude-sonnet-5')).toBe(1_000_000)
   })
 
