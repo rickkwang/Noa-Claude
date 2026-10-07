@@ -6,6 +6,7 @@ import type {
   MCPServerConnection,
 } from '../services/mcp/types.js'
 import type { Message } from '../types/message.js'
+import { compareAsciiFirst } from './compareAsciiFirst.js'
 import { isEnvDefinedFalsy, isEnvTruthy } from './envUtils.js'
 
 export type McpInstructionsDelta = {
@@ -122,7 +123,7 @@ export function getMcpInstructionsDelta(
     midCount,
   })
 
-  added.sort((a, b) => a.name.localeCompare(b.name))
+  added.sort((a, b) => compareAsciiFirst(a.name, b.name))
   return {
     addedNames: added.map(a => a.name),
     addedBlocks: added.map(a => a.block),

@@ -1,5 +1,6 @@
 // @ts-nocheck
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
+import { compareAsciiFirst } from './compareAsciiFirst.js'
 import {
   logEvent,
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -1959,7 +1960,7 @@ export function getAgentListingDeltaAttachment(
 
   // Sort for deterministic output — agent load order is nondeterministic
   // (plugin load races, MCP async connect).
-  added.sort((a, b) => a.agentType.localeCompare(b.agentType))
+  added.sort((a, b) => compareAsciiFirst(a.agentType, b.agentType))
   removed.sort()
 
   return [
