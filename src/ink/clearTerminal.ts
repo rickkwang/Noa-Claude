@@ -7,6 +7,8 @@
 import {
   CURSOR_HOME,
   csi,
+  cursorDown,
+  ERASE_LINE,
   ERASE_SCREEN,
   ERASE_SCROLLBACK,
 } from './termio/csi.js'
@@ -73,3 +75,12 @@ export function getClearTerminalSequence(): string {
  * Clears the terminal screen. On supported terminals, also clears scrollback.
  */
 export const clearTerminal = getClearTerminalSequence()
+
+/**
+ * Erase every visible row in place (home, EL + cursor-down per row, home)
+ * without touching scrollback — unlike ED2, which iTerm2 handles by pushing
+ * the erased page into scrollback.
+ */
+export function getEraseRowsInPlaceSequence(rows: number): string {
+  return CURSOR_HOME + (ERASE_LINE + cursorDown(1)).repeat(rows) + CURSOR_HOME
+}

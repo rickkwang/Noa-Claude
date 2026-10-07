@@ -14,6 +14,7 @@ import { logError } from 'src/utils/log.js';
 import { isNativeCursorEnabled } from 'src/utils/nativeCursor.js';
 import { format } from 'util';
 import { colorize } from './colorize.js';
+import { getEraseRowsInPlaceSequence } from './clearTerminal.js';
 import App from './components/App.js';
 import type { CursorDeclaration, CursorDeclarationSetter } from './components/CursorDeclarationContext.js';
 import { FRAME_INTERVAL_MS } from './constants.js';
@@ -59,6 +60,8 @@ const ERASE_THEN_HOME_PATCH = Object.freeze({
   type: 'stdout' as const,
   content: ERASE_SCREEN + CURSOR_HOME
 });
+// iTerm2 pushes ED2-erased pages into scrollback; erase rows in place with EL instead.
+const IS_ITERM2 = process.env.TERM_PROGRAM === 'iTerm.app';
 // DECTCEM toggles for the real terminal cursor. Frozen singletons: these are
 // emitted on most frames while an input is focused, so avoid re-allocating.
 const CURSOR_HIDE_PATCH = Object.freeze({
@@ -684,7 +687,10 @@ export default class Ink {
       // render() takes.
       if (this.needsEraseBeforePaint) {
         this.needsEraseBeforePaint = false;
-        optimized.unshift(ERASE_THEN_HOME_PATCH);
+        optimized.unshift(IS_ITERM2 ? {
+          type: 'stdout',
+          content: getEraseRowsInPlaceSequence(this.terminalRows)
+        } : ERASE_THEN_HOME_PATCH);
       } else {
         optimized.unshift(CURSOR_HOME_PATCH);
       }
@@ -915,10 +921,12 @@ export default class Ink {
    */
   forceRedraw(): void {
     if (!this.options.stdout.isTTY || this.isUnmounted || this.isPaused) return;
-    this.options.stdout.write(ERASE_SCREEN + CURSOR_HOME);
     if (this.altScreenActive) {
+      // Defer the erase into onRender's atomic BSU/ESU block.
+      this.needsEraseBeforePaint = true;
       this.resetFramesForAltScreen();
     } else {
+      this.options.stdout.write(ERASE_SCREEN + CURSOR_HOME);
       this.repaint();
       // repaint() resets frontFrame to 0×0. Without this flag the next
       // frame's blit optimization copies from that empty screen and the

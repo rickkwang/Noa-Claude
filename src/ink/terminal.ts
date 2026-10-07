@@ -3,9 +3,9 @@ import { coerce } from 'semver'
 import type { Writable } from 'stream'
 import { env } from '../utils/env.js'
 import { gte, lt } from '../utils/semver.js'
-import { getClearTerminalSequence } from './clearTerminal.js'
+import { getClearTerminalSequence, getEraseRowsInPlaceSequence } from './clearTerminal.js'
 import type { Diff } from './frame.js'
-import { CURSOR_HOME, ERASE_SCREEN, cursorMove, cursorTo, eraseLines } from './termio/csi.js'
+import { cursorMove, cursorTo, eraseLines } from './termio/csi.js'
 import { BSU, ESU, HIDE_CURSOR, SHOW_CURSOR } from './termio/dec.js'
 import { link } from './termio/osc.js'
 
@@ -244,9 +244,9 @@ export function writeDiffToTerminal(
         }
         break
       case 'clearTerminal':
-        buffer += patch.preserveScrollback
-          ? ERASE_SCREEN + CURSOR_HOME
-          : getClearTerminalSequence()
+        buffer += patch.altScreen
+          ? getClearTerminalSequence()
+          : getEraseRowsInPlaceSequence(patch.viewportRows)
         break
       case 'cursorHide':
         buffer += HIDE_CURSOR

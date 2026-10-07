@@ -516,7 +516,7 @@ function fullResetSequence_CAUSES_FLICKER(
   const screen = new VirtualScreen({ x: 0, y: 0 }, frame.viewport.width)
   renderFrame(screen, frame, stylePool)
   return [
-    { type: 'clearTerminal', reason, preserveScrollback: false, debug },
+    { type: 'clearTerminal', reason, altScreen, viewportRows: frame.viewport.height, debug },
     ...screen.diff,
   ]
 }
