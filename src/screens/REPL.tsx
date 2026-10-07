@@ -1164,6 +1164,9 @@ export function REPL({
     setToolJSXInternal(args);
   }, []);
   const { toolUseConfirmQueue, setToolUseConfirmQueue, sandboxPermissionRequestQueue, setSandboxPermissionRequestQueue, permissionQueueLabel } = usePermissionQueues(store);
+  // Read by handoffBlocker, which is memoized and needs the current queue.
+  const toolUseConfirmQueueRef = useRef(toolUseConfirmQueue);
+  toolUseConfirmQueueRef.current = toolUseConfirmQueue;
   // Sticky footer JSX registered by permission request components (currently
   // only ExitPlanModePermissionRequest). Renders in FullscreenLayout's `bottom`
   // slot so response options stay visible while the user scrolls a long plan.
@@ -3857,6 +3860,7 @@ export function REPL({
     const queuedBlock = getQueuedMessagesBlock();
     if (queuedBlock) return queuedBlock;
     if (inputValueRef.current.trim() !== '') return ['you have unsent text in the input', 'Send it or clear it first (double-tap esc clears).'];
+    if (toolUseConfirmQueueRef.current.some(item => item.tool.name === 'AskUserQuestion')) return ['a question is waiting for your answer', 'Answer it first.'];
     return null;
   }, []);
   const waitTurnSettled = useCallback(() => new Promise<void>(resolve => {
@@ -3929,7 +3933,12 @@ export function REPL({
       cap: setTimeout(() => {
         const pending = handoffRef.current.pending;
         if (!pending || !queryGuard.isActive) return;
-        if (handoffBlocker()) return;
+        const blocked = handoffBlocker();
+        if (blocked) {
+          clearHandoffPending();
+          handoffWarn(`Backgrounding cancelled — ${blocked[0]}. ${blocked[1] || 'Press ← again once it clears.'}`);
+          return;
+        }
         const tasks = abandonableTasks(store.getState().tasks);
         if (!pending.confirmed && tasks.count > 0) {
           handoffWarn(`Still backgrounding after the current tool — ${tasks.summary} would be abandoned by skipping ahead.`);
