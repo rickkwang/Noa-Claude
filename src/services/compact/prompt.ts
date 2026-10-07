@@ -208,10 +208,17 @@ export const COMPACT_SUMMARY_CONTINUATION_PREFIX =
 export const COMPACT_SUMMARY_PROACTIVE_MODE_PREFIX =
   'You are running in autonomous/proactive mode.'
 
+// Written when the recent tail is kept verbatim AFTER the summary ('up_to').
+// The summary was drafted without seeing that tail, so its Pending Tasks /
+// Next Step may describe actions the tail already completed.
+export const COMPACT_SUMMARY_KEPT_TAIL_NOTE =
+  'The messages after this summary are the most recent messages from before compaction, kept verbatim. The summary was written without seeing them, so something it says has not happened yet may already have happened in them.'
+
 export function getCompactUserSummaryMessage(
   summary: string,
   suppressFollowUpQuestions?: boolean,
   transcriptPath?: string,
+  keptTailAfterSummary?: boolean,
 ): string {
   const formattedSummary = formatCompactSummary(summary)
 
@@ -221,6 +228,10 @@ ${formattedSummary}`
 
   if (transcriptPath) {
     baseSummary += `\n\n${COMPACT_SUMMARY_TRANSCRIPT_HINT_PREFIX} (like exact code snippets, error messages, or content you generated), read the full transcript at: ${transcriptPath}`
+  }
+
+  if (keptTailAfterSummary) {
+    baseSummary += `\n\n${COMPACT_SUMMARY_KEPT_TAIL_NOTE}`
   }
 
   if (suppressFollowUpQuestions) {

@@ -1531,6 +1531,7 @@ export async function partialCompactConversation(
           summary,
           suppressFollowUpQuestions,
           transcriptPath,
+          direction === 'up_to' && messagesToKeep.length > 0,
         ),
         isCompactSummary: true,
         summarizeMetadata: {
