@@ -147,10 +147,8 @@ export function selectReactiveTailPivot(
     Math.max(Math.floor(window * REACTIVE_TAIL_FRACTION), REACTIVE_TAIL_FLOOR_TOKENS),
     REACTIVE_TAIL_CEIL_TOKENS,
   )
-  const hardCap = Math.max(
-    budget,
-    Math.min(Math.floor(window / 2), window - getRetryOverheadTokens()),
-  )
+  const hardCap = Math.min(Math.floor(window / 2), window - getRetryOverheadTokens())
+  if (hardCap <= 0) return null
   const minTail =
     tokenGap !== undefined ? tokenGap + SUMMARY_REQUEST_OVERHEAD_TOKENS : 0
   if (minTail > hardCap) return null

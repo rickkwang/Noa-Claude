@@ -51,6 +51,12 @@ describe('selectReactiveTailPivot', () => {
     expect(pivot).toBe(messages.length - 2)
   })
 
+  test('does not let the tail floor override a small reported window', () => {
+    const messages = rounds(3, 12_000)
+    expect(selectReactiveTailPivot(messages, 'test-model', undefined, 16_000)).toBeNull()
+    expect(selectReactiveTailPivot(messages, 'test-model', undefined, 200_000)).not.toBeNull()
+  })
+
   test('grows the tail past the budget only far enough to cover a reported overflow', () => {
     // Rounds of ~5K tokens. The budget alone keeps three; a 20K overflow needs
     // 23K kept out of the summary request — five rounds, not one more.
