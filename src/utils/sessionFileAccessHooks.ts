@@ -86,12 +86,10 @@ function getSessionFileTypeFromInput(
     case GREP_TOOL_NAME: {
       const parsed = GrepTool.inputSchema.safeParse(toolInput)
       if (!parsed.success) return null
-      // Check path if provided
       if (parsed.data.path) {
         const pathType = detectSessionFileType(parsed.data.path)
         if (pathType) return pathType
       }
-      // Check glob pattern
       if (parsed.data.glob) {
         const globType = detectSessionPatternType(parsed.data.glob)
         if (globType) return globType
@@ -101,12 +99,10 @@ function getSessionFileTypeFromInput(
     case GLOB_TOOL_NAME: {
       const parsed = GlobTool.inputSchema.safeParse(toolInput)
       if (!parsed.success) return null
-      // Check path if provided
       if (parsed.data.path) {
         const pathType = detectSessionFileType(parsed.data.path)
         if (pathType) return pathType
       }
-      // Check pattern
       const patternType = detectSessionPatternType(parsed.data.pattern)
       if (patternType) return patternType
       return null

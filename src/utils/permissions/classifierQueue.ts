@@ -7,9 +7,8 @@
 // batch: concurrent classifier calls can't read each other's cache writes, so
 // N parallel requests all miss and all pay a cache write. Queued behind each
 // other, request 2..N read the conversation prefix request 1 wrote. Upstream
-// Claude Code 2.1.221 made the queue unconditional for exactly this reason
-// (it deleted both CLAUDE_CODE_AUTO_MODE_CLASSIFIER_QUEUE and the
-// tengu_auto_mode_classifier_queue gate that guarded it in 2.1.220).
+// made the queue unconditional for exactly this reason, deleting the opt-in
+// env var and gate that used to guard it.
 //
 // Deviation from upstream: the escape hatch is kept, inverted — on by
 // default, and NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE=0 (or legacy

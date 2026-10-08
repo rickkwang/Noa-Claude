@@ -2331,7 +2331,6 @@ async function getOpenedFileFromIDE(
     return []
   }
 
-  // Get nested memory files
   const nestedMemoryAttachments = await getNestedMemoryAttachmentsForFile(
     ideSelection.filePath,
     toolUseContext,
@@ -4190,7 +4189,6 @@ async function getTeammateMailboxAttachments(
           : undefined
 
         if (teammateId) {
-          // Remove from team file
           removeTeammateFromTeamFile(teamName, {
             agentId: teammateId,
             name: teammateToRemove,

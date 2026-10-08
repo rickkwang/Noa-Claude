@@ -117,7 +117,6 @@ export function parseEnvVars(
 ): Record<string, string> {
   const parsedEnv: Record<string, string> = {}
 
-  // Parse individual env vars
   if (rawEnvArgs) {
     for (const envStr of rawEnvArgs) {
       const [key, ...valueParts] = envStr.split('=')
@@ -156,7 +155,7 @@ export function shouldMaintainProjectWorkingDir(): boolean {
 }
 
 /**
- * Check if running on Homespace (ant-internal cloud environment)
+ * Check if running in the ant-internal cloud environment
  */
 export function isRunningOnHomespace(): boolean {
   return (
@@ -171,8 +170,8 @@ export function isRunningOnHomespace(): boolean {
  *
  * Conservative means: when signals are ambiguous, assume protected. We would
  * rather over-report protected usage than miss it. Unprotected environments
- * are homespace, namespaces on the open allowlist, and no k8s/COO signals
- * at all (laptop/local dev).
+ * are the ant-internal cloud environment, namespaces on the open allowlist, and
+ * environments with no Kubernetes signals at all (laptop/local dev).
  *
  * Used for telemetry to measure auto-mode usage in sensitive environments.
  */

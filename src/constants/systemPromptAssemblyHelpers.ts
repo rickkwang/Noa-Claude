@@ -259,7 +259,7 @@ export function buildDynamicSystemPromptSections(params: {
     // scope and self-correction discipline that the verbose head spells out
     // across its own sections.
     // `delivering_work` is the one companion the Fable 5.1 bundle also turns on
-    // (upstream: `tU(model) || tnr(model)`); `corrections` below stays on the
+    // (upstream ORs the two bundle gates); `corrections` below stays on the
     // Opus 5 bundle alone, so the two keys are no longer the same suffix.
     systemPromptSection(
       `delivering_work${bundle || fable51 ? ':L' : ''}`,

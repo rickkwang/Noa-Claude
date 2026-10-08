@@ -187,7 +187,7 @@ export type BridgeCoreParams = {
    * isBypassPermissionsModeAvailable) BEFORE calling transitionPermissionMode —
    * that function's internal auto-gate check is a defensive throw, not a
    * graceful guard, and its side-effect order is setAutoModeActive(true) then
-   * throw, which corrupts the 3-way invariant documented in src/CLAUDE.md if
+   * throw, which corrupts the 3-way invariant if
    * the callback lets the throw escape here.
    */
   onSetPermissionMode?: (
@@ -389,8 +389,8 @@ export async function initBridgeCore(
       )
       return false
     }
-    // The pointer stores what createBridgeSession returned (session_*,
-    // compat/convert.go:41). /bridge/reconnect is an environments-layer
+    // The pointer stores what createBridgeSession returned (session_*).
+    // /bridge/reconnect is an environments-layer
     // endpoint — once the server's ccr_v2_compat_enabled gate is on it
     // looks sessions up by their infra tag (cse_*) and returns "Session
     // not found" for the session_* costume. We don't know the gate state
@@ -1115,9 +1115,9 @@ export async function initBridgeCore(
       //
       // Compare by underlying UUID, not by tagged-ID prefix. When CCR
       // v2's compat layer serves the session, createBridgeSession gets
-      // session_* from the v1-facing API (compat/convert.go:41) but the
-      // infrastructure layer delivers cse_* in the work queue
-      // (container_manager.go:129). Same UUID, different tag.
+      // session_* from the v1-facing API, but the
+      // infrastructure layer delivers cse_* in the work queue.
+      // Same UUID, different tag.
       if (!sameSessionId(workSessionId, currentSessionId)) {
         logForDebugging(
           `[bridge:repl] Rejecting foreign session: expected=${currentSessionId} got=${workSessionId}`,
@@ -1146,10 +1146,10 @@ export async function initBridgeCore(
       //   because the standard OAuth refresh flow handles expiry — no
       //   separate JWT refresh scheduler needed.
       //
-      // - v2 (CCR /worker/*): REQUIRES the JWT. register_worker.go:32
+      // - v2 (CCR /worker/*): REQUIRES the JWT. The server
       //   validates the session_id claim, which OAuth tokens don't carry.
       //   The JWT from the work secret has both that claim and the worker
-      //   role (environment_auth.py:856). JWT refresh: when it expires the
+      //   role. JWT refresh: when it expires the
       //   server re-dispatches work with a fresh one, and onWorkReceived
       //   fires again. createV2ReplTransport stores it via
       //   updateSessionIngressAuthToken() before touching the network.
@@ -1379,7 +1379,7 @@ export async function initBridgeCore(
         // workSessionId is the cse_* form (infrastructure-layer ID from the
         // work queue), which is what /v1/code/sessions/{id}/worker/* wants.
         // The session_* form (currentSessionId) is NOT usable here —
-        // handler/convert.go:30 validates TagCodeSession.
+        // the server validates TagCodeSession.
         const sessionUrl = buildCCRv2SdkUrl(baseUrl, workSessionId)
         const thisGen = v2Generation
         logForDebugging(

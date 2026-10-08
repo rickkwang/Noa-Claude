@@ -64,7 +64,7 @@ export function checkIsInGitRepo(): boolean {
 /**
  * Checks if GitHub app is installed on a specific repository
  * @param owner The repository owner (e.g., "anthropics")
- * @param repo The repository name (e.g., "claude-cli-internal")
+ * @param repo The repository name (e.g., "my-repo")
  * @returns true if GitHub app is installed, false otherwise
  */
 export async function checkGithubAppInstalled(

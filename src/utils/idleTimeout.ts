@@ -23,7 +23,6 @@ export function createIdleTimeoutManager(isIdle: () => boolean): {
 
   return {
     start() {
-      // Clear any existing timer
       if (timer) {
         clearTimeout(timer)
         timer = null

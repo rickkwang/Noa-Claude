@@ -243,7 +243,6 @@ async function installBindingsForVSCodeTerminal(editor: 'VSCode' | 'Cursor' | 'W
       return `${color('warning', theme)(`Found existing ${editor} terminal Shift+Enter key binding. Remove it to continue.`)}${EOL}${chalk.dim(`See ${formatPathLink(keybindingsPath)}`)}${EOL}`;
     }
 
-    // Create the new keybinding
     const newKeybinding: VSCodeKeybinding = {
       key: 'shift+enter',
       command: 'workbench.action.terminal.sendSequence',
@@ -426,7 +425,6 @@ chars = "\\u001B\\r"`;
         return `${color('warning', theme)('Found existing Alacritty Shift+Enter key binding. Remove it to continue.')}${EOL}${chalk.dim(`See ${formatPathLink(configPath)}`)}${EOL}`;
       }
 
-      // Create backup
       const randomSha = randomBytes(4).toString('hex');
       const backupPath = `${configPath}.${randomSha}.bak`;
       try {
@@ -448,7 +446,6 @@ chars = "\\u001B\\r"`;
     }
     updatedContent += '\n' + ALACRITTY_KEYBINDING + '\n';
 
-    // Write the updated config
     await writeFile(configPath, updatedContent, {
       encoding: 'utf-8'
     });
@@ -485,7 +482,6 @@ async function installBindingsForZed(theme: ThemeName): Promise<string> {
         return `${color('warning', theme)('Found existing Zed Shift+Enter key binding. Remove it to continue.')}${EOL}${chalk.dim(`See ${formatPathLink(keymapPath)}`)}${EOL}`;
       }
 
-      // Create backup
       const randomSha = randomBytes(4).toString('hex');
       const backupPath = `${keymapPath}.${randomSha}.bak`;
       try {
@@ -517,7 +513,6 @@ async function installBindingsForZed(theme: ThemeName): Promise<string> {
       }
     });
 
-    // Write the updated keymap
     await writeFile(keymapPath, jsonStringify(keymap, null, 2) + '\n', {
       encoding: 'utf-8'
     });

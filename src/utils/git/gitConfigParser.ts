@@ -204,7 +204,6 @@ function matchesSectionHeader(
   // line starts with '['
   let i = 1
 
-  // Read section name
   while (
     i < line.length &&
     line[i] !== ']' &&

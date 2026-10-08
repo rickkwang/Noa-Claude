@@ -67,7 +67,6 @@ function processQueuedCommands(queuedCommands: QueuedCommand[]): QueuedCommand[]
   const visibleNotifications = taskNotifications.slice(0, MAX_VISIBLE_NOTIFICATIONS - 1);
   const overflowCount = taskNotifications.length - (MAX_VISIBLE_NOTIFICATIONS - 1);
 
-  // Create synthetic overflow message
   const overflowCommand: QueuedCommand = {
     value: createOverflowNotificationMessage(overflowCount),
     mode: 'task-notification'

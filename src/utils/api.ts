@@ -627,7 +627,6 @@ export async function logContextMetrics(
   const gitStatusSize = systemContext.gitStatus?.length ?? 0
   const claudeMdSize = userContext.claudeMd?.length ?? 0
 
-  // Calculate total context size
   const totalContextSize = gitStatusSize + claudeMdSize
 
   // Get file count using ripgrep (rounded to nearest power of 10 for privacy)
@@ -643,7 +642,6 @@ export async function logContextMetrics(
     normalizedIgnorePatterns,
   )
 
-  // Calculate tool metrics
   let mcpToolsCount = 0
   let mcpServersCount = 0
   let mcpToolsTokens = 0

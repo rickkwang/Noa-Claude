@@ -428,7 +428,6 @@ export async function call(onDone: (result?: string, options?: {
     onChangeDynamicMcpConfig
   } = context;
 
-  // Handle 'open' argument
   if (args?.trim() === 'open') {
     const worktreeSession = getCurrentWorktreeSession();
     const targetPath = worktreeSession ? worktreeSession.worktreePath : getCwd();
@@ -441,7 +440,6 @@ export async function call(onDone: (result?: string, options?: {
       return null;
     }
 
-    // Return IDE selection component
     return <IDEOpenSelection availableIDEs={availableIDEs} onSelectIDE={async (selectedIDE?: DetectedIDEInfo) => {
       if (!selectedIDE) {
         onDone('No IDE selected.');

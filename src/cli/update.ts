@@ -138,7 +138,6 @@ export async function update(options: { yes?: boolean } = {}) {
     `update: Config install method: ${diagnostic.configInstallMethod}`,
   )
 
-  // Check for multiple installations
   if (diagnostic.multipleInstallations.length > 1) {
     writeToStdout('\n')
     writeToStdout(chalk.yellow('Warning: Multiple installations found') + '\n')
@@ -312,7 +311,6 @@ export async function update(options: { yes?: boolean } = {}) {
     try {
       const result = await installLatestNative(channel, true)
 
-      // Handle lock contention gracefully
       if (result.lockFailed) {
         const pidInfo = result.lockHolderPid
           ? ` (PID ${result.lockHolderPid})`

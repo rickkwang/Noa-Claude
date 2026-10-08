@@ -259,9 +259,8 @@ export const TRUSTING_RECALL_SECTION: readonly string[] = [
 /**
  * Compact stand-in for TYPES_SECTION_INDIVIDUAL in the always-on system
  * prompt. The long version spends ~7k characters on four `<description>`
- * essays and eight worked dialogues; upstream 2.1.226 states each type in one
- * line and pushes scope/structure/examples into an on-demand skill. This keeps
- * upstream's one-line-per-type shape.
+ * essays and eight worked dialogues; upstream states each type in one line and
+ * moves scope/structure/examples into an on-demand skill. This keeps that shape.
  *
  * Unlike TRUSTING_RECALL_SECTION and the explicit-save gate above, nothing in
  * the long types section carries an eval result — the shortening is a size

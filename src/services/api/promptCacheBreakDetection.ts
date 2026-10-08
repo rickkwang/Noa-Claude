@@ -35,8 +35,8 @@ type PreviousState = {
   cacheControlHash: number
   toolNames: string[]
   /** Per-tool schema hash. Diffed to name which tool's description changed
-   *  when toolSchemasChanged but added=removed=0 (77% of tool breaks per
-   *  BQ 2026-03-22). AgentTool/SkillTool embed dynamic agent/command lists. */
+   *  when toolSchemasChanged but added=removed=0. AgentTool/SkillTool embed
+   *  dynamic agent/command lists. */
   perToolHashes: Record<string, number>
   systemCharCount: number
   model: string
@@ -583,10 +583,9 @@ export async function checkResponseForCacheBreak(
       timeSinceLastAssistantMsg !== null &&
       timeSinceLastAssistantMsg > CACHE_TTL_1HOUR_MS
 
-    // Post PR #19823 BQ analysis (bq-queries/prompt-caching/cache_break_pr19823_analysis.sql):
-    // when all client-side flags are false and the gap is under TTL, ~90% of breaks
-    // are server-side routing/eviction or billed/inference disagreement. Label
-    // accordingly instead of implying a CC bug hunt.
+    // When all client-side flags are false and the gap is under TTL, most breaks
+    // are server-side routing/eviction or billing/inference disagreement. Label
+    // accordingly instead of implying a client bug.
     let reason: string
     if (parts.length > 0) {
       reason = parts.join(', ')

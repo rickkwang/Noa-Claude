@@ -399,7 +399,6 @@ export function extractToolStats(log: LogOption): {
       }
     }
 
-    // Check user messages
     if (msg.type === 'user' && msg.message) {
       const content = msg.message.content
 
@@ -830,7 +829,6 @@ RESPOND WITH ONLY A VALID JSON OBJECT matching this schema:
 
     const text = extractTextContent(result.message.content)
 
-    // Parse JSON from response
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (!jsonMatch) return null
 
@@ -1091,7 +1089,6 @@ function aggregateData(
   result.date_range.start = dates[0]?.split('T')[0] || ''
   result.date_range.end = dates[dates.length - 1]?.split('T')[0] || ''
 
-  // Calculate response time stats
   result.user_response_times = allResponseTimes
   if (allResponseTimes.length > 0) {
     const sorted = [...allResponseTimes].sort((a, b) => a - b)
@@ -1386,7 +1383,6 @@ async function generateSectionInsight(
     const text = extractTextContent(result.message.content)
 
     if (text) {
-      // Parse JSON from response
       const jsonMatch = text.match(/\{[\s\S]*\}/)
       if (jsonMatch) {
         try {
@@ -1407,7 +1403,6 @@ async function generateParallelInsights(
   data: AggregatedData,
   facets: Map<string, SessionFacets>,
 ): Promise<InsightResults> {
-  // Build data context string
   const facetSummaries = Array.from(facets.values())
     .slice(0, 50)
     .map(f => `- ${f.brief_summary} (${f.outcome}, ${f.claude_helpfulness})`)
@@ -1772,7 +1767,6 @@ function generateHtmlReport(
     `
     : ''
 
-  // Build project areas section
   const projectAreas = insights.project_areas?.areas || []
   const projectAreasHtml =
     projectAreas.length > 0
@@ -1796,7 +1790,6 @@ function generateHtmlReport(
     `
       : ''
 
-  // Build interaction style section
   const interactionStyle = insights.interaction_style
   const interactionHtml = interactionStyle?.narrative
     ? `
@@ -1808,7 +1801,6 @@ function generateHtmlReport(
     `
     : ''
 
-  // Build what works section
   const whatWorks = insights.what_works
   const whatWorksHtml =
     whatWorks?.impressive_workflows && whatWorks.impressive_workflows.length > 0
@@ -1830,7 +1822,6 @@ function generateHtmlReport(
     `
       : ''
 
-  // Build friction section
   const frictionAnalysis = insights.friction_analysis
   const frictionHtml =
     frictionAnalysis?.categories && frictionAnalysis.categories.length > 0
@@ -1853,7 +1844,6 @@ function generateHtmlReport(
     `
       : ''
 
-  // Build suggestions section
   const suggestions = insights.suggestions
   const suggestionsHtml = suggestions
     ? `
@@ -2052,7 +2042,6 @@ function generateHtmlReport(
     `
       : ''
 
-  // Build Fun Ending section
   const funEnding = insights.fun_ending
   const funEndingHtml = funEnding?.headline
     ? `
@@ -2851,7 +2840,6 @@ export async function generateUsageReport(options?: {
   // Generate HTML report
   const htmlReport = generateHtmlReport(aggregated, insights)
 
-  // Save reports
   try {
     await mkdir(getDataDir(), { recursive: true })
   } catch {
@@ -2900,7 +2888,6 @@ const usageReport: Command = {
     let hasRemoteHosts = false
 
     if (process.env.USER_TYPE === 'ant') {
-      // Parse --homespaces flag
       collectRemote = args?.includes('--homespaces') ?? false
 
       // Check for available remote hosts
@@ -2950,7 +2937,6 @@ Then access at: ${s3Url}`
       }
     }
 
-    // Build header with stats
     const sessionLabel =
       data.total_sessions_scanned &&
       data.total_sessions_scanned > data.total_sessions

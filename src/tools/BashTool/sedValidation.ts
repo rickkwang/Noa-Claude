@@ -86,7 +86,6 @@ export function isLinePrintingCommand(
       hasNFlag = true
       break
     }
-    // Check in combined flags
     if (flag.startsWith('-') && !flag.startsWith('--') && flag.includes('n')) {
       hasNFlag = true
       break
@@ -344,7 +343,6 @@ export function hasFileArgs(command: string): boolean {
         continue
       }
 
-      // Handle --expression=value format
       if (arg.startsWith('--expression=')) {
         hasEFlag = true
         continue
@@ -428,7 +426,6 @@ export function extractSedExpressions(command: string): string[] {
         continue
       }
 
-      // Handle --expression=value format
       if (arg.startsWith('--expression=')) {
         foundEFlag = true
         expressions.push(arg.slice('--expression='.length))

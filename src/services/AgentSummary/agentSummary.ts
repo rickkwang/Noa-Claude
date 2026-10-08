@@ -189,7 +189,6 @@ export function startAgentSummarization(
     }
   }
 
-  // Start the first timer
   scheduleNext()
 
   return { stop }

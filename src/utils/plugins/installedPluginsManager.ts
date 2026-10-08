@@ -431,7 +431,6 @@ export function getInMemoryInstalledPlugins(): InstalledPluginsFileV2 {
  */
 export function loadInstalledPluginsFromDisk(): InstalledPluginsFileV2 {
   try {
-    // Read from main file
     const rawData = readInstalledPluginsFileRaw()
 
     if (rawData) {

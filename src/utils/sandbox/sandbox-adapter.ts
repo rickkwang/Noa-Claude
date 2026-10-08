@@ -688,7 +688,6 @@ function getLinuxGlobPatternWarnings(): string[] {
       return /[*?[\]]/.test(stripped)
     }
 
-    // Check all permission rules
     for (const ruleString of [
       ...(permissions.allow || []),
       ...(permissions.deny || []),
@@ -891,7 +890,6 @@ async function reset(): Promise<void> {
   worktreeMainRepoPath = undefined
   bareGitRepoScrubPaths.length = 0
 
-  // Clear memoized caches
   checkDependencies.cache.clear?.()
   isSupportedPlatform.cache.clear?.()
   initializationPromise = undefined

@@ -59,7 +59,6 @@ export function Onboarding({
   }
   const exitState = useExitOnCtrlCDWithKeybindings();
 
-  // Define all onboarding steps
   const themeStep = <Box marginX={1}>
       <ThemePicker onThemeSelect={handleThemeSelection} showIntroText={true} helpText="To change this later, run /theme" hideEscToCancel={true} skipExitHandling={true} // Skip exit handling as Onboarding already handles it
     />

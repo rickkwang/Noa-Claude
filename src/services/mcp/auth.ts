@@ -1865,7 +1865,6 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
   }
 
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
-    // Store the authorization URL
     this._authorizationUrl = authorizationUrl.toString()
 
     // Extract and store scopes from the authorization URL for later use in token exchange

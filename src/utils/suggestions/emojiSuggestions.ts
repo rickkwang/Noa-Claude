@@ -186,7 +186,7 @@ export const EMOJI_SHORTCODES: Readonly<Record<string, string>> = {
 }
 
 /**
- * Alias → canonical shortcode. Verbatim port of upstream 2.1.221's table (the
+ * Alias → canonical shortcode. Verbatim port of upstream's table (the
  * GitHub/Slack spellings emojilib itself does not carry).
  */
 export const EMOJI_ALIASES: Readonly<Record<string, string>> = {
@@ -224,7 +224,7 @@ export const EMOJI_TABLE: ReadonlyMap<string, string> = new Map<string, string>(
 
 const EMOJI_NAMES: readonly string[] = [...EMOJI_TABLE.keys()]
 
-// Matches Claude Code 2.1.217's cap of 20 candidates in the popup.
+// Matches upstream's cap of 20 candidates in the popup.
 const MAX_EMOJI_SUGGESTIONS = 20
 
 /**

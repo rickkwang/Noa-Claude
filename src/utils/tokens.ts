@@ -70,8 +70,8 @@ export function tokenCountFromLastAPIResponse(messages: Message[]): number {
  * Final context window size from the last API response's usage.iterations[-1].
  * Used for task_budget.remaining computation across compaction boundaries —
  * the server's budget countdown is context-based, so remaining decrements by
- * the pre-compact final window, not billing spend. See monorepo
- * api/api/sampling/prompt/renderer.py:292 for the server-side computation.
+ * the pre-compact final window, not billing spend. The server computes the
+ * countdown from context size.
  *
  * Falls back to top-level input_tokens + output_tokens when iterations is
  * absent (no server-side tool loops, so top-level usage IS the final window).
@@ -102,7 +102,7 @@ export function finalContextTokensFromLastResponse(
       // window. Match the iterations path's formula (input + output, no cache)
       // rather than getTokenCountFromUsage — #304930 defines final window as
       // non-cache input + output. Whether the server's budget countdown
-      // (renderer.py:292 calculate_context_tokens) counts cache the same way
+      // (server-side calculate_context_tokens) counts cache the same way
       // is an open question; aligning with the iterations path keeps the two
       // branches consistent until that's resolved.
       return usage.input_tokens + usage.output_tokens

@@ -87,7 +87,6 @@ function parseInputContext(input: string, cursorOffset: number): InputContext {
     return { prefix: varMatch[0], completionType: 'variable' }
   }
 
-  // Parse with shell-quote
   const parseResult = tryParseShellCommand(beforeCursor)
   if (!parseResult.success) {
     // Fallback to simple parsing

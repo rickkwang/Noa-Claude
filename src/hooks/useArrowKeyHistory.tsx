@@ -33,7 +33,6 @@ async function loadHistoryEntries(minCount: number, modeFilter?: HistoryMode): P
     await pendingLoad;
   }
 
-  // Start a new load
   pendingLoadTarget = target;
   pendingLoadModeFilter = modeFilter;
   pendingLoad = (async () => {

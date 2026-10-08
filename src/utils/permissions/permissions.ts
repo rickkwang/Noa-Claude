@@ -1557,7 +1557,6 @@ function convertRulesToUpdates(
     grouped.get(key)!.push(rule.ruleValue)
   }
 
-  // Convert to PermissionUpdate array
   const updates: PermissionUpdate[] = []
   for (const [key, ruleValues] of grouped) {
     const [source, behavior] = key.split(':')

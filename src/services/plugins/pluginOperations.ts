@@ -211,7 +211,6 @@ function findPluginByIdentifier(
   const { name, marketplace } = parsePluginIdentifier(plugin)
 
   return plugins.find(p => {
-    // Check exact name match
     if (p.name === plugin || p.name === name) return true
 
     // If marketplace specified, check if it matches the source
@@ -849,7 +848,6 @@ export async function updatePluginOp(
 
   const { entry, marketplaceInstallLocation } = pluginInfo
 
-  // Get installations from disk
   const diskData = loadInstalledPluginsFromDisk()
   const installations = diskData.plugins[pluginId]
 

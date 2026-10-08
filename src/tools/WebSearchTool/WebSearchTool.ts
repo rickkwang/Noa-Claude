@@ -273,7 +273,7 @@ export const WebSearchTool = buildTool({
     const startTime = performance.now()
     const { query } = input
 
-    // Session-wide WebSearch cap (upstream 2.1.212): soft-fail with a message
+    // Session-wide WebSearch cap: soft-fail with a message
     // to the model instead of throwing, so a runaway search loop winds down
     // gracefully with the information it already has.
     const maxSearches = getMaxWebSearchesPerSession()

@@ -56,7 +56,6 @@ async function withFixture<T>(
     `fixtures/${fixtureName}-${hash}.json`,
   )
 
-  // Fetch cached fixture
   try {
     const cached = jsonParse(
       await readFile(filename, { encoding: 'utf8' }),
@@ -115,7 +114,6 @@ export async function withVCR(
     `fixtures/${dehydratedInput.map(_ => createHash('sha1').update(jsonStringify(_)).digest('hex').slice(0, 6)).join('-')}.json`,
   )
 
-  // Fetch cached fixture
   try {
     const cached = jsonParse(
       await readFile(filename, { encoding: 'utf8' }),
@@ -361,7 +359,6 @@ export async function* withStreamingVCR(
     return yield* f()
   }
 
-  // Compute and yield messages
   const buffer: (StreamEvent | AssistantMessage | SystemAPIErrorMessage)[] = []
 
   // Record messages (or fetch from cache)

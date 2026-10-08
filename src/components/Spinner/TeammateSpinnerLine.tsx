@@ -125,7 +125,6 @@ export function TeammateSpinnerLine({
   const fullAgentName = `@${teammate.identity.agentName}`;
   const fullNameWidth = stringWidth(fullAgentName);
 
-  // Get stats from progress
   const toolUseCount = teammate.progress?.toolUseCount ?? 0;
   const tokenCount = teammate.progress?.tokenCount ?? 0;
   const statsText = ` · ${toolUseCount} tool ${toolUseCount === 1 ? 'use' : 'uses'} · ${formatNumber(tokenCount)} tokens`;

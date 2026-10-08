@@ -92,7 +92,6 @@ export function checkPermissionMode(
 
   const commands = splitCommand_DEPRECATED(input.command)
 
-  // Check each subcommand
   for (const cmd of commands) {
     const result = validateCommandForMode(cmd, toolPermissionContext)
 

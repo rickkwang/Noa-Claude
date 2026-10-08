@@ -696,7 +696,6 @@ export class WebSocketTransport implements Transport {
   }
 
   private startPingInterval(): void {
-    // Clear any existing interval
     this.stopPingInterval()
 
     this.pongReceived = true

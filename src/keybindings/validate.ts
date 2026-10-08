@@ -165,7 +165,6 @@ function validateBlock(
     contextName = rawContext
   }
 
-  // Validate bindings
   if (typeof b.bindings !== 'object' || b.bindings === null) {
     warnings.push({
       type: 'parse_error',
@@ -177,14 +176,12 @@ function validateBlock(
 
   const bindings = b.bindings as Record<string, unknown>
   for (const [key, action] of Object.entries(bindings)) {
-    // Validate key syntax
     const keyError = validateKeystroke(key)
     if (keyError) {
       keyError.context = contextName
       warnings.push(keyError)
     }
 
-    // Validate action
     if (action !== null && typeof action !== 'string') {
       warnings.push({
         type: 'invalid_action',
@@ -194,7 +191,6 @@ function validateBlock(
         context: contextName,
       })
     } else if (typeof action === 'string' && action.startsWith('command:')) {
-      // Validate command binding format
       if (!/^command:[a-zA-Z0-9:\-_]+$/.test(action)) {
         warnings.push({
           type: 'invalid_action',
@@ -380,7 +376,6 @@ export function checkReservedShortcuts(
     const keyDisplay = chordToString(binding.chord)
     const normalizedKey = normalizeKeyForComparison(keyDisplay)
 
-    // Check against reserved shortcuts
     for (const res of reserved) {
       if (normalizeKeyForComparison(res.key) === normalizedKey) {
         warnings.push({
@@ -428,7 +423,6 @@ export function validateBindings(
 ): KeybindingWarning[] {
   const warnings: KeybindingWarning[] = []
 
-  // Validate user config structure
   warnings.push(...validateUserConfig(userBlocks))
 
   // Check for duplicates in user config

@@ -215,7 +215,7 @@ export async function clearConversation({
   clearSessionMetadata()
 
   // Reset session-wide subagent/WebSearch budgets — the new session gets a
-  // fresh runaway-loop allowance (upstream 2.1.212: "/clear resets the budget")
+  // fresh runaway-loop allowance (upstream: "/clear resets the budget")
   resetSessionBudgets()
 
   // Generate new session ID to provide fresh state

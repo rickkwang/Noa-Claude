@@ -17,8 +17,7 @@ type Props = {
 
 /**
  * StatusNotices contains the information displayed to users at startup. We have
- * moved neutral or positive status to src/components/Status.tsx instead, which
- * users can access through /status.
+ * moved neutral or positive status out of this list and into /status.
  */
 export function StatusNotices(t0) {
   const $ = _c(4);

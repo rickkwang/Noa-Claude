@@ -3,8 +3,6 @@
  * Magic Docs automatically maintains markdown documentation files marked with special headers.
  * When a file with "# MAGIC DOC: [title]" is read, it runs periodically in the background
  * using a forked subagent to update the document with new learnings from the conversation.
- *
- * See docs/magic-docs.md for more information.
  */
 
 import type { Tool, ToolUseContext } from '../../Tool.js'

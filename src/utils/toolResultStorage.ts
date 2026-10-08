@@ -325,7 +325,6 @@ async function maybePersistLargeToolResult(
 
   const message = buildLargeToolResultMessage(result)
 
-  // Log analytics
   logEvent('tengu_tool_result_persisted', {
     toolName: sanitizeToolNameForAnalytics(toolName),
     originalSizeBytes: result.originalSize,

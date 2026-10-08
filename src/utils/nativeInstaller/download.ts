@@ -3,7 +3,7 @@
  * Download functionality for native installer
  *
  * Handles downloading Claude binaries from various sources:
- * - Artifactory NPM packages
+ * - Internal-registry NPM packages (ant builds)
  * - GCS bucket
  */
 
@@ -140,7 +140,7 @@ export async function getLatestVersion(
 
   // Route to appropriate source
   if (process.env.USER_TYPE === 'ant') {
-    // Use Artifactory for ant users
+    // Ant users pull from the internal registry
     const npmTag = channel === 'stable' ? 'stable' : 'latest'
     return getLatestVersionFromArtifactory(npmTag)
   }
@@ -343,7 +343,6 @@ async function downloadAndVerifyBinary(
         )
       }
 
-      // Write binary to disk
       await writeFile(binaryPath, Buffer.from(response.data))
       await chmod(binaryPath, 0o755)
 
@@ -394,11 +393,9 @@ export async function downloadVersionFromBinaryRepo(
   // If we get here, we own the lock and can delete a partial download
   await fs.rm(stagingPath, { recursive: true, force: true })
 
-  // Get platform
   const platform = getPlatform()
   const startTime = Date.now()
 
-  // Log download attempt start
   logEvent('tengu_binary_download_attempt', {})
 
   // Fetch manifest to get checksum
@@ -449,7 +446,6 @@ export async function downloadVersionFromBinaryRepo(
   const binaryName = getBinaryName(platform)
   const binaryUrl = `${baseUrl}/${version}/${platform}/${binaryName}`
 
-  // Write to staging
   await fs.mkdir(stagingPath)
   const binaryPath = join(stagingPath, binaryName)
 
@@ -508,7 +504,7 @@ export async function downloadVersion(
   }
 
   if (process.env.USER_TYPE === 'ant') {
-    // Use Artifactory for ant users
+    // Ant users pull from the internal registry
     await downloadVersionFromArtifactory(version, stagingPath)
     return 'npm'
   }

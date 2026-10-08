@@ -399,7 +399,6 @@ export const LSPTool = buildTool({
       const err = toError(error)
       const errorMessage = err.message
 
-      // Log error for tracking
       logError(
         new Error(
           `LSP tool request failed for ${input.operation} on ${input.filePath}: ${errorMessage}`,

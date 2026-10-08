@@ -23,13 +23,10 @@ const REDIRECT_PORT_FALLBACK = 3118
  * `http://localhost/callback` carries no such obligation, so a strict server is
  * within spec to reject the ephemeral port we actually listen on.
  *
- * Upstream ran that experiment and reverted it. 2.1.229 shipped
- * `http://127.0.0.1:${port}/callback` ("Fixed MCP OAuth with strict
- * authorization servers"); 2.1.231 put it back to `localhost` ("Fixed MCP OAuth
- * sign-in failing with a redirect URI mismatch for servers that use a
- * pre-registered OAuth client, such as Slack"). Pre-registered clients are
- * exact-match and cannot re-register the way a DCR client can, so for them a
- * host swap is unrecoverable — and that cohort turned out to be the larger one.
+ * Upstream tried the IP literal (2.1.229) and reverted to `localhost` (2.1.231)
+ * because pre-registered OAuth clients are exact-match and cannot re-register
+ * the way a DCR client can. For them a host swap is unrecoverable, and that
+ * cohort is the larger one.
  *
  * So: keep `localhost` as the default, and let the strict-AS cohort opt in via
  * MCP_OAUTH_REDIRECT_HOST instead of trading one breakage for the other. Do not
@@ -58,8 +55,8 @@ const ALLOWED_REDIRECT_HOSTS = new Set(['localhost', '127.0.0.1'])
 /**
  * Opt-in override, for authorization servers that reject `http://localhost:`
  * redirect URIs or apply the §7.3 any-port rule only to loopback IP literals.
- * Deviates from upstream, which has no escape hatch for that cohort — it
- * covers them without reintroducing the 2.1.229 default-behaviour regression.
+ * Deviates from upstream, which has no escape hatch for that cohort. The
+ * default stays `localhost`.
  *
  * Set to `127.0.0.1` for such a server. A DCR client registered under the old
  * host must re-register: clear it with `/mcp` re-auth.

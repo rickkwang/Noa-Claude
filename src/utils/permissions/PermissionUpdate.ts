@@ -267,7 +267,6 @@ export function persistPermissionUpdate(update: PermissionUpdate): void {
     }
 
     case 'removeRules': {
-      // Handle rule removal
       logForDebugging(
         `Removing ${update.rules.length} ${update.behavior} rule(s) from ${update.destination}`,
       )
@@ -303,7 +302,6 @@ export function persistPermissionUpdate(update: PermissionUpdate): void {
       const existingDirs =
         existingSettings?.permissions?.additionalDirectories || []
 
-      // Remove specified directories
       const dirsToRemove = new Set(update.directories)
       const filteredDirs = existingDirs.filter(dir => !dirsToRemove.has(dir))
 

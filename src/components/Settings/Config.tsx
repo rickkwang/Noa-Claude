@@ -1735,7 +1735,6 @@ export function Config({
         setShowSubmenu(null);
         setTabsHidden(false);
 
-        // Save to local settings
         updateSettingsForSource('localSettings', {
           outputStyle: style
         });
@@ -1761,7 +1760,6 @@ export function Config({
         setShowSubmenu(null);
         setTabsHidden(false);
 
-        // Save to user settings
         updateSettingsForSource('userSettings', {
           language
         });

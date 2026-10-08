@@ -414,7 +414,6 @@ async function fetchAndLoadPolicyLimits(): Promise<
       return null
     }
 
-    // Handle 304 Not Modified
     if (result.restrictions === null && cachedRestrictions) {
       logForDebugging('Policy limits: Cache still valid (304 Not Modified)')
       sessionCache = cachedRestrictions

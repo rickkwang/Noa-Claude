@@ -68,7 +68,7 @@ export function getAttributionTexts(): AttributionTexts {
     return { commit: '', pr: '' }
   }
 
-  // @[MODEL LAUNCH]: Update the hardcoded fallback model name below (guards against codename leaks).
+  // @[MODEL LAUNCH]: Update the hardcoded fallback model name below.
   // For internal repos, use the real model name. For external repos,
   // fall back to "Claude Opus 5" for unrecognized models to avoid leaking codenames.
   const model = getMainLoopModel()

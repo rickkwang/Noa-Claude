@@ -67,17 +67,14 @@ export function validateZipFile(
 
   let error: string | undefined
 
-  // Check file count
   if (state.fileCount > LIMITS.MAX_FILE_COUNT) {
     error = `Archive contains too many files: ${state.fileCount} (max: ${LIMITS.MAX_FILE_COUNT})`
   }
 
-  // Validate path safety
   if (!isPathSafe(file.name)) {
     error = `Unsafe file path detected: "${file.name}". Path traversal or absolute paths are not allowed.`
   }
 
-  // Check individual file size
   const fileSize = file.originalSize || 0
   if (fileSize > LIMITS.MAX_FILE_SIZE) {
     error = `File "${file.name}" is too large: ${Math.round(fileSize / 1024 / 1024)}MB (max: ${Math.round(LIMITS.MAX_FILE_SIZE / 1024 / 1024)}MB)`
@@ -86,7 +83,6 @@ export function validateZipFile(
   // Track total uncompressed size
   state.totalUncompressedSize += fileSize
 
-  // Check total size
   if (state.totalUncompressedSize > LIMITS.MAX_TOTAL_SIZE) {
     error = `Archive total size is too large: ${Math.round(state.totalUncompressedSize / 1024 / 1024)}MB (max: ${Math.round(LIMITS.MAX_TOTAL_SIZE / 1024 / 1024)}MB)`
   }

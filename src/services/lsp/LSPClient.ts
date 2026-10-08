@@ -269,7 +269,6 @@ export function createLSPClient(
 
         capabilities = result.capabilities
 
-        // Send initialized notification
         await connection.sendNotification('initialized', {})
 
         isInitialized = true

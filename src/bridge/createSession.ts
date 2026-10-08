@@ -355,7 +355,7 @@ export async function updateBridgeSessionTitle(
     'x-organization-uuid': orgUUID,
   }
 
-  // Compat gateway only accepts session_* (compat/convert.go:27). v2 callers
+  // Compat gateway only accepts session_*. v2 callers
   // pass raw cse_*; retag here so all callers can pass whatever they hold.
   // Idempotent for v1's session_* and bridgeMain's pre-converted compatSessionId.
   const compatId = toCompatSessionId(sessionId)

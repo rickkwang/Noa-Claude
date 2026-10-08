@@ -6,10 +6,10 @@ import type { BridgeApiClient } from './types.js'
 /**
  * Ant-only fault injection for manually testing bridge recovery paths.
  *
- * Real failure modes this targets (BQ 2026-03-12, 7-day window):
- *   poll 404 not_found_error   — 147K sessions/week, dead onEnvironmentLost gate
- *   ws_closed 1002/1006        —  22K sessions/week, zombie poll after close
- *   register transient failure —  residual: network blips during doReconnect
+ * Failure modes this targets:
+ *   poll 404 not_found_error   — dead onEnvironmentLost gate
+ *   ws_closed 1002/1006        — zombie poll after close
+ *   register transient failure — network blips during doReconnect
  *
  * Usage: /bridge-kick <subcommand> from the REPL while Remote Control is
  * connected, then tail debug.log to watch the recovery machinery react.

@@ -216,8 +216,7 @@ function getServerUrl(config: McpServerConfig): string | null {
  * CCR proxy URL path markers. In remote sessions, claude.ai connectors arrive
  * via --mcp-config with URLs rewritten to route through the CCR/session-ingress
  * SHTTP proxy. The original vendor URL is preserved in the mcp_url query param
- * so the proxy knows where to forward. See api-go/ccr/internal/ccrshared/
- * mcp_url_rewriter.go and api-go/ccr/internal/mcpproxy/proxy.go.
+ * so the proxy knows where to forward.
  */
 const CCR_PROXY_PATH_MARKERS = [
   '/v2/session_ingress/shttp/mcp/',
@@ -421,7 +420,6 @@ function isMcpServerDenied(
     return false // No restrictions
   }
 
-  // Check name-based denial
   for (const entry of settings.deniedMcpServers) {
     if (isMcpServerNameEntry(entry) && entry.serverName === serverName) {
       return true
@@ -749,7 +747,6 @@ export async function addMcpConfig(
       throw new Error('Cannot add MCP server to scope: claudeai')
   }
 
-  // Add based on scope
   switch (scope) {
     case 'project': {
       const { configPath, servers: existingServers } =
@@ -1158,7 +1155,6 @@ export async function getClaudeCodeMcpConfigs(
     ? noServers
     : getMcpConfigsByScope('local')
 
-  // Load plugin MCP servers
   const pluginMcpServers: Record<string, ScopedMcpServerConfig> = {}
 
   const pluginResult = await loadPluginMcpCandidates()

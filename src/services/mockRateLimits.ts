@@ -195,7 +195,6 @@ function updateRetryAfter(): void {
     (!overageStatus || overageStatus === 'rejected') &&
     reset
   ) {
-    // Calculate seconds until reset
     const resetTimestamp = Number(reset)
     const secondsUntilReset = Math.max(
       0,
@@ -231,7 +230,6 @@ function updateRepresentativeClaim(): void {
     const overageStatus =
       mockHeaders['anthropic-ratelimit-unified-overage-status']
     if (!overageStatus || overageStatus === 'rejected') {
-      // Calculate seconds until reset
       const secondsUntilReset = Math.max(
         0,
         furthest.resetsAt - Math.floor(Date.now() / 1000),
@@ -337,7 +335,6 @@ export function setMockRateLimitScenario(scenario: MockScenario): void {
   const fiveHoursFromNow = Math.floor(Date.now() / 1000) + 5 * 3600
   const sevenDaysFromNow = Math.floor(Date.now() / 1000) + 7 * 24 * 3600
 
-  // Clear existing headers
   mockHeaders = {}
   mockHeaderless429Message = null
 
@@ -653,7 +650,6 @@ export function getMockStatus(): string {
         .replace(/-/g, ' ')
         .replace(/\b\w/g, c => c.toUpperCase())
 
-      // Format timestamps as human-readable
       if (key.includes('reset') && value) {
         const timestamp = Number(value)
         const date = new Date(timestamp * 1000)

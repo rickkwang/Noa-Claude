@@ -70,7 +70,6 @@ export function expandPath(path: string, baseDir?: string): string {
     return normalize(actualBaseDir).normalize('NFC')
   }
 
-  // Handle home directory notation
   if (trimmedPath === '~') {
     return homedir().normalize('NFC')
   }
@@ -90,12 +89,10 @@ export function expandPath(path: string, baseDir?: string): string {
     }
   }
 
-  // Handle absolute paths
   if (isAbsolute(processedPath)) {
     return normalize(processedPath).normalize('NFC')
   }
 
-  // Handle relative paths
   return resolve(actualBaseDir, processedPath).normalize('NFC')
 }
 

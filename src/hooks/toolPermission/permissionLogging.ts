@@ -192,7 +192,6 @@ function logPermissionDecision(
       ? Date.now() - permissionPromptStartTimeMs
       : undefined
 
-  // Log the analytics event
   if (args.decision === 'accept') {
     logApprovalEvent(
       tool,

@@ -214,7 +214,6 @@ const TEXT_FILE_EXTENSIONS = new Set([
   '.f90',
   '.f95',
   '.for',
-  // Build files
   '.cmake',
   '.make',
   '.makefile',
@@ -676,7 +675,6 @@ export async function processMemoryFile(
     return []
   }
 
-  // Add parent information
   if (parent) {
     memoryFile.parent = parent
   }

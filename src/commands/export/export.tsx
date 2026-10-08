@@ -52,7 +52,6 @@ async function exportWithReactRenderer(context: ToolUseContext): Promise<string>
   return renderMessagesToPlainText(context.messages, tools);
 }
 export async function call(onDone: LocalJSXCommandOnDone, context: ToolUseContext, args: string): Promise<React.ReactNode> {
-  // Render the conversation content
   const content = await exportWithReactRenderer(context);
 
   // If args are provided, write directly to file and skip dialog

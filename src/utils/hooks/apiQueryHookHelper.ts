@@ -108,7 +108,6 @@ export function createApiQueryHook<TResult>(
         },
       })
 
-      // Parse response
       const content = extractTextContent(response.message.content).trim()
 
       try {

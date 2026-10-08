@@ -9,11 +9,10 @@ import type { Message } from '../types/message.js'
 import { useAppState } from '../state/AppState.js'
 import { createAwaySummaryMessage } from '../utils/messages.js'
 
-// Official Claude Code default (Cwq): recap fires after 3 minutes of blur.
+// Recap fires after 3 minutes of blur.
 const BLUR_DELAY_MS = 3 * 60_000
 
-// Mirrors official Claude Code: only the first few recaps carry the opt-out
-// hint, after which it's just noise.
+// Only the first few recaps carry the opt-out hint, after which it's just noise.
 const RECAP_HINT = ' (disable recaps in /config)'
 const MAX_HINTED_RECAPS = 3
 
@@ -44,7 +43,7 @@ export function isAwaySummaryEnabled(
  * countdown is anchored to when the last turn ended — not to when the terminal
  * lost focus — so stepping away after a long idle fires the recap immediately.
  *
- * Two paths, mirroring official Claude Code:
+ * Two paths:
  *  - a timer scheduled at turn-end fires at turn-end + 3min, gated on blur; and
  *  - blurring while already idle ≥3min fires it right away.
  *

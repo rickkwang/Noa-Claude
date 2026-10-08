@@ -40,13 +40,11 @@ const DESTRUCTIVE_PATTERNS: DestructivePattern[] = [
     warning: 'Note: may force-remove files',
   },
 
-  // Clear-Content on broad paths
   {
     pattern: /\bClear-Content\b[^|;&\n]*\*/i,
     warning: 'Note: may clear content of multiple files',
   },
 
-  // Format-Volume and Clear-Disk
   {
     pattern: /\bFormat-Volume\b/i,
     warning: 'Note: may format a disk volume',

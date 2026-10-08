@@ -85,8 +85,7 @@ const SEND_USER_FILE_TOOL_NAME: string | null = feature('KAIROS')
  * restore iterates invoked_skills.skills); every other type passes through so
  * this stays a crash-guard, not a schema gate. A partially-written or corrupt
  * transcript can persist an attachment with a missing/mistyped payload, and
- * dereferencing it later throws and aborts the whole resume. Mirrors upstream
- * CC 2.1.218's isWellFormedAttachmentPayload.
+ * dereferencing it later throws and aborts the whole resume.
  */
 export function isWellFormedAttachmentPayload(attachment: unknown): boolean {
   if (
@@ -128,8 +127,7 @@ export function isWellFormedAttachmentPayload(attachment: unknown): boolean {
  * Drops attachment messages whose payload is missing or malformed, so the
  * downstream resume pipeline (migration, skill-state restore, API replay)
  * never dereferences a corrupt payload and crashes. Non-attachment messages
- * and well-formed attachments pass through untouched. Mirrors upstream CC
- * 2.1.218's dropMalformedAttachments.
+ * and well-formed attachments pass through untouched.
  */
 export function dropMalformedAttachments(messages: Message[]): Message[] {
   let dropped = 0

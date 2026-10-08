@@ -246,7 +246,6 @@ async function detectMultipleInstallations(): Promise<
   const fs = getFsImplementation()
   const installations: Array<{ type: string; path: string }> = []
 
-  // Check for local installation
   const localPath = join(getClaudeConfigHomeDir(), 'local')
   if (await localInstallationExists()) {
     installations.push({ type: 'npm-local', path: localPath })

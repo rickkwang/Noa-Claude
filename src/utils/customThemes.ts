@@ -4,7 +4,7 @@
  * built-in base theme. A custom theme is selected by storing
  * `custom:<slug>` as the `theme` setting (see customThemeRef).
  *
- * Ported from upstream Claude Code 2.1.220. Upstream gates the whole
+ * Ported from upstream Claude Code. Upstream gates the whole
  * subsystem behind safe mode; this fork has no safe-mode concept, so that
  * gate is intentionally absent (documented in FEATURES.md).
  */

@@ -130,7 +130,6 @@ export function profileReport(): void {
 
   // Output detailed report if CLAUDE_CODE_PROFILE_STARTUP=1
   if (DETAILED_PROFILING) {
-    // Write to file
     const path = getStartupPerfLogPath()
     const dir = dirname(path)
     const fs = getFsImplementation()
@@ -165,13 +164,11 @@ export function logStartupPerf(): void {
   const marks = perf.getEntriesByType('mark')
   if (marks.length === 0) return
 
-  // Build checkpoint lookup
   const checkpointTimes = new Map<string, number>()
   for (const mark of marks) {
     checkpointTimes.set(mark.name, mark.startTime)
   }
 
-  // Compute phase durations
   const metadata: Record<string, number | undefined> = {}
 
   for (const [phaseName, [startCheckpoint, endCheckpoint]] of Object.entries(

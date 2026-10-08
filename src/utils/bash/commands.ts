@@ -1049,7 +1049,6 @@ function handleRedirection(
     }
   }
 
-  // Handle >& operator
   if (isOperator(part, '>&')) {
     // File descriptor redirect (2>&1) - preserve as-is
     if (isFileDescriptor(prev) && isFileDescriptor(next)) {
@@ -1205,7 +1204,6 @@ function reconstructCommand(kept: ParseEntry[], originalCmd: string): string {
     const prev = kept[i - 1]
     const next = kept[i + 1]
 
-    // Handle strings
     if (typeof part === 'string') {
       // For strings containing command separators (|&;), use double quotes to make them unambiguous
       // For other strings (spaces, etc), use shell-quote's quote() which handles escaping correctly
@@ -1241,11 +1239,9 @@ function reconstructCommand(kept: ParseEntry[], originalCmd: string): string {
       continue
     }
 
-    // Handle operators
     if (typeof part !== 'object' || !part || !('op' in part)) continue
     const op = part.op as string
 
-    // Handle glob patterns
     if (op === 'glob' && 'pattern' in part) {
       result = addToken(result, part.pattern as string)
       continue
@@ -1266,7 +1262,6 @@ function reconstructCommand(kept: ParseEntry[], originalCmd: string): string {
       continue
     }
 
-    // Handle heredocs
     if (op === '<' && isOperator(next, '<')) {
       const delimiter = kept[i + 2]
       if (delimiter && typeof delimiter === 'string') {
@@ -1282,7 +1277,6 @@ function reconstructCommand(kept: ParseEntry[], originalCmd: string): string {
       continue
     }
 
-    // Handle parentheses
     if (op === '(') {
       const isCmdSub = detectCommandSubstitution(prev, kept, i)
 
@@ -1323,7 +1317,6 @@ function reconstructCommand(kept: ParseEntry[], originalCmd: string): string {
       continue
     }
 
-    // Handle process substitution
     if (op === '<(') {
       inProcessSub = true
       result = addToken(result, op)

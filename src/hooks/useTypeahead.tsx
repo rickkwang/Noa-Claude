@@ -491,7 +491,6 @@ export function useTypeahead({
   // "the user just typed the closing colon" (vs. deletion / navigation).
   const prevInputForEmojiRef = useRef<string | undefined>(undefined);
 
-  // Clear all suggestions
   const clearSuggestions = useCallback(() => {
     setSuggestionsState(() => ({
       commandArgumentHint: undefined,

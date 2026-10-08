@@ -321,7 +321,6 @@ export function findDangerousClassifierPermissions(
     }
   }
 
-  // Check CLI --allowed-tools arguments
   for (const toolSpec of cliAllowedTools) {
     // Parse tool spec: "Bash" or "Bash(pattern)" or "Agent" or "Agent(subagent_type)".
     // Use the canonical escape-aware parser: a naive /^([^(]+)(\(([^)]*)\))?$/
@@ -884,7 +883,6 @@ export function parseToolListFromCLI(tools: string[]): string[] {
       }
     }
 
-    // Push any remaining tool
     if (current.trim()) {
       result.push(current.trim())
     }

@@ -264,7 +264,7 @@ export async function connectVoiceStream(
           resolveFinalize = null
           cancelNoDataTimer = null
           // Legacy Deepgram can leave an interim in lastTranscriptText
-          // with no TranscriptEndpoint (websocket_manager.py sends
+          // with no TranscriptEndpoint (the server sends
           // TranscriptChunk and TranscriptEndpoint as independent
           // channel items). All resolve triggers must promote it;
           // centralize here. No-op when the close handler already did.

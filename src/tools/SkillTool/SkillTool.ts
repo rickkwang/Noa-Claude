@@ -399,7 +399,6 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
     // Get available commands (including MCP skills)
     const commands = await getAllCommands(context)
 
-    // Check if command exists
     const foundCommand = findCommand(normalizedCommandName, commands)
     if (!foundCommand) {
       return {
@@ -467,7 +466,6 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
       return false
     }
 
-    // Check for deny rules
     const denyRules = getRuleByContentsForTool(
       permissionContext,
       SkillTool as Tool,
@@ -504,7 +502,6 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
       }
     }
 
-    // Check for allow rules
     const allowRules = getRuleByContentsForTool(
       permissionContext,
       SkillTool as Tool,
@@ -845,7 +842,6 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
     result: Output,
     toolUseID: string,
   ): ToolResultBlockParam {
-    // Handle forked skill result
     if ('status' in result && result.status === 'forked') {
       return {
         type: 'tool_result' as const,

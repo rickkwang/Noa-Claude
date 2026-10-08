@@ -277,7 +277,6 @@ export function setupPluginHookHotReload(): void {
         'Plugin hooks: reloading due to plugin-affecting settings change',
       )
 
-      // Clear all plugin-related caches
       clearPluginCache('loadPluginHooks: plugin-affecting settings changed')
       clearPluginHookCache()
 

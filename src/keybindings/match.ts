@@ -62,10 +62,8 @@ function modifiersMatch(
   inkMods: InkModifiers,
   target: ParsedKeystroke,
 ): boolean {
-  // Check ctrl modifier
   if (inkMods.ctrl !== target.ctrl) return false
 
-  // Check shift modifier
   if (inkMods.shift !== target.shift) return false
 
   // Alt and meta both map to key.meta in Ink (terminal limitation)

@@ -45,10 +45,8 @@ In order to encourage learning, before and after writing code, always provide br
 
 These insights should be included in the conversation, not in the codebase. You should generally focus on interesting insights that are specific to the codebase or the code you just wrote, rather than general programming concepts.`
 
-// Proactive and Concise are verbatim ports from upstream Claude Code 2.1.237
-// (`Oke.Proactive` / `Oke.Concise`, with `NAT`/`FAT` and `$AT`/`BAT` as the
-// rules body and the per-turn reminder). Both are registered in
-// scripts/verify-ported-prompts.ts and digest-pinned in
+// Proactive and Concise are verbatim ports from upstream Claude Code 2.1.237.
+// Both are registered in scripts/verify-ported-prompts.ts and digest-pinned in
 // src/test/constants/outputStyles.test.ts: a digest failure means the text was
 // reworded, so re-verify against upstream rather than refreshing the digest.
 const PROACTIVE_FEATURE_PROMPT = `The user chose continuous, autonomous execution. You should:
@@ -205,7 +203,6 @@ export const getAllOutputStyles = memoize(async function getAllOutputStyles(
   const customStyles = await getOutputStyleDirStyles(cwd)
   const pluginStyles = await loadPluginOutputStyles()
 
-  // Start with built-in modes
   const allStyles = {
     ...OUTPUT_STYLE_CONFIG,
   }

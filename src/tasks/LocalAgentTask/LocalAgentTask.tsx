@@ -673,7 +673,6 @@ export function registerAgentForeground({
     diskLoaded: false
   };
 
-  // Create background signal promise
   let resolveBackgroundSignal: () => void;
   const backgroundSignal = new Promise<void>(resolve => {
     resolveBackgroundSignal = resolve;

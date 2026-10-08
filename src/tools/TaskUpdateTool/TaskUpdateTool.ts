@@ -143,7 +143,6 @@ export const TaskUpdateTool = buildTool({
       return { ...prev, expandedView: 'tasks' as const }
     })
 
-    // Check if task exists
     const existingTask = await getTask(taskListId, taskId)
     if (!existingTask) {
       return {

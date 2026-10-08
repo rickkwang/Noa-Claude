@@ -132,7 +132,6 @@ export function parseChangelog(content: string): Record<string, string[]> {
   try {
     if (!content) return {}
 
-    // Parse the content
     const releaseNotes: Record<string, string[]> = {}
 
     // Split by heading lines (## X.X.X)

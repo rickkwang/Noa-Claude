@@ -35,7 +35,6 @@ export function useClipboardImageHint(
       return
     }
 
-    // Clear any pending check
     if (checkTimeoutRef.current) {
       clearTimeout(checkTimeoutRef.current)
     }

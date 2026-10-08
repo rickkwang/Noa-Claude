@@ -373,7 +373,6 @@ function backgroundTask(taskId: string, getAppState: () => AppState, setAppState
     agentId
   });
 
-  // Set up result handler
   void shellCommand.result.then(async result => {
     cancelStallWatchdog();
     cancelDeadline();

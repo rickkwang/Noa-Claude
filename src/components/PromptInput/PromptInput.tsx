@@ -636,7 +636,6 @@ function PromptInput({
       });
     }
 
-    // Add /command highlighting (blue)
     for (const trigger of slashCommandTriggers) {
       highlights.push({
         start: trigger.start,
@@ -1026,7 +1025,6 @@ function PromptInput({
       }
     }
 
-    // Handle @name direct message
     if (isAgentSwarmsEnabled()) {
       const directMessage = parseDirectMemberMessage(inputParam);
       if (directMessage) {
@@ -2005,7 +2003,6 @@ function PromptInput({
     // - when double pressed, it's used to clear the input
     // - when input is empty, pop from command queue
 
-    // Handle ESC key press
     if (key.escape) {
       // Abort active speculation
       if (speculation.status === 'active') {
@@ -2446,7 +2443,6 @@ function getInitialPasteId(messages: Message[]): number {
   let maxId = 0;
   for (const message of messages) {
     if (message.type === 'user') {
-      // Check image paste IDs
       if (message.imagePasteIds) {
         for (const id of message.imagePasteIds) {
           if (id > maxId) maxId = id;

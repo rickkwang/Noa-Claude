@@ -613,7 +613,6 @@ export async function maybeInstallIDEExtension(
     }
   } catch (error) {
     logEvent('tengu_ext_install_error', {})
-    // Handle installation errors
     const errorMessage = error instanceof Error ? error.message : String(error)
     logError(error as Error)
     return {

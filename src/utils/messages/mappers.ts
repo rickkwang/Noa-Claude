@@ -64,7 +64,6 @@ export function toInternalMessages(
           } as Message,
         ]
       case 'system':
-        // Handle compact boundary messages
         if (message.subtype === 'compact_boundary') {
           const compactMsg = message
           return [
@@ -211,7 +210,7 @@ export function toSDKMessages(messages: Message[]): SDKMessage[] {
  * Emitted as assistant instead of the dedicated SDKLocalCommandOutputMessage
  * because the system/local_command_output subtype is unknown to:
  *   - mobile-apps Android SdkMessageTypes.kt (no local_command_output handler)
- *   - api-go session-ingress convertSystemEvent (only init/compact_boundary)
+ *   - server-side session-ingress convertSystemEvent (only init/compact_boundary)
  * See: https://anthropic.sentry.io/issues/7266299248/ (Android)
  *
  * Strips ANSI (e.g. chalk.dim() in /cost) then unwraps the XML wrapper tags.

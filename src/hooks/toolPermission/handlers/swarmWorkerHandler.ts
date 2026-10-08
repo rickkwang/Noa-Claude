@@ -68,7 +68,6 @@ async function handleSwarmWorkerPermission(
     const decision = await new Promise<PermissionDecision>(resolve => {
       const { resolve: resolveOnce, claim } = createResolveOnce(resolve)
 
-      // Create the permission request
       const request = createPermissionRequest({
         toolName: ctx.tool.name,
         toolUseId: ctx.toolUseID,

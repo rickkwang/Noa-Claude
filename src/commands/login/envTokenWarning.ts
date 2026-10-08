@@ -52,10 +52,10 @@ export function isEnvOAuthTokenSet(): boolean {
  * full remediation detail goes in the post-login note instead, which lands in
  * the transcript as an ordinary message.
  *
- * Deliberate wording deviation from upstream: 2.1.229 says "This session will
- * switch to your new credentials after logging in", which it can say because it
+ * Deliberate wording deviation from upstream's "This session will switch to
+ * your new credentials after logging in". Upstream can say that because it
  * clears the env token during login. This fork does not clear it, so the env
- * token keeps winning and upstream's sentence would be false here.
+ * token keeps winning and the sentence would be false here.
  */
 export function getLoginStartingMessage(): string | undefined {
   if (!envOAuthTokenOverridesLogin()) {
@@ -67,8 +67,8 @@ export function getLoginStartingMessage(): string | undefined {
 /**
  * The message /login reports on success.
  *
- * Ports upstream 2.1.229's repeat of the override warning: by the time login
- * completes, the entry warning has scrolled away behind the browser
+ * Repeats upstream's override warning: by the time login completes, the entry
+ * warning has scrolled away behind the browser
  * round-trip, and a bare "Login successful" reads as "you are now on the new
  * account" when in this fork you are not.
  *

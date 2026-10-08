@@ -63,7 +63,7 @@ const pollIntervalConfigSchema = lazySchema(() =>
         .int()
         .refine(v => v === 0 || v >= 100, zeroOrAtLeast100)
         .default(DEFAULT_POLL_CONFIG.multisession_poll_interval_ms_at_capacity),
-      // .min(1) matches the server's ge=1 constraint (work_v1.py:230).
+      // .min(1) matches the server's ge=1 constraint.
       reclaim_older_than_ms: z.number().int().min(1).default(5000),
       session_keepalive_interval_v2_ms: z
         .number()

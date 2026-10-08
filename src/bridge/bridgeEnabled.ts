@@ -27,7 +27,7 @@ import { lt } from '../utils/semver.js'
  * is only referenced when bridge mode is enabled at build time.
  */
 export function isBridgeEnabled(): boolean {
-  // Positive ternary pattern — see docs/feature-gating.md.
+  // Positive ternary pattern — see FEATURES.md.
   // Negative pattern (if (!feature(...)) return) does not eliminate
   // inline string literals from external builds.
   return feature('BRIDGE_MODE')
@@ -133,7 +133,7 @@ export function isEnvLessBridgeEnabled(): boolean {
 /**
  * Kill-switch for the `cse_*` → `session_*` client-side retag shim.
  *
- * The shim exists because compat/convert.go:27 validates TagSession and the
+ * The shim exists because the server validates TagSession and the
  * claude.ai frontend routes on `session_*`, while v2 worker endpoints hand out
  * `cse_*`. Once the server tags by environment_kind and the frontend accepts
  * `cse_*` directly, flip this to false to make toCompatSessionId a no-op.
@@ -159,7 +159,7 @@ export function isCseShimEnabled(): boolean {
  * loaded yet, the default '0.0.0' means the check passes — a safe fallback.
  */
 export function checkBridgeMinVersion(): string | null {
-  // Positive pattern — see docs/feature-gating.md.
+  // Positive pattern — see FEATURES.md.
   // Negative pattern (if (!feature(...)) return) does not eliminate
   // inline string literals from external builds.
   if (feature('BRIDGE_MODE')) {

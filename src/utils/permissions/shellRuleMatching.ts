@@ -103,7 +103,6 @@ export function matchWildcardPattern(
   while (i < trimmedPattern.length) {
     const char = trimmedPattern[i]
 
-    // Handle escape sequences
     if (char === '\\' && i + 1 < trimmedPattern.length) {
       const nextChar = trimmedPattern[i + 1]
       if (nextChar === '*') {

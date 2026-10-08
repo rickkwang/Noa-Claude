@@ -526,7 +526,6 @@ function processHookJSONOutput({
   // At this point we know it's a sync response
   const syncJson = json
 
-  // Handle common elements
   if (syncJson.continue === false) {
     result.preventContinuation = true
     if (syncJson.stopReason) {
@@ -554,12 +553,10 @@ function processHookJSONOutput({
     }
   }
 
-  // Handle systemMessage field
   if (json.systemMessage) {
     result.systemMessage = json.systemMessage
   }
 
-  // Handle PreToolUse specific
   if (
     json.hookSpecificOutput?.hookEventName === 'PreToolUse' &&
     json.hookSpecificOutput.permissionDecision
@@ -589,7 +586,6 @@ function processHookJSONOutput({
     result.hookPermissionDecisionReason = json.reason
   }
 
-  // Handle hookSpecificOutput
   if (json.hookSpecificOutput) {
     // Validate hook event name matches expected if provided
     if (
@@ -755,7 +751,6 @@ function processHookJSONOutput({
  * Shell resolution: hook.shell → 'bash'. PowerShell hooks spawn pwsh
  * with -NoProfile -NonInteractive -Command and skip bash-specific prep
  * (POSIX path conversion, .sh auto-prepend, CLAUDE_CODE_SHELL_PREFIX).
- * See docs/design/ps-shell-selection.md §5.1.
  */
 async function execCommandHook(
   hook: HookCommand & { type: 'command' },
@@ -792,7 +787,7 @@ async function execCommandHook(
   const isWindows = getPlatform() === 'windows'
 
   // --
-  // Per-hook shell selection (phase 1 of docs/design/ps-shell-selection.md).
+  // Per-hook shell selection (phase 1).
   // Resolution order: hook.shell → DEFAULT_HOOK_SHELL. The defaultShell
   // fallback (settings.defaultShell) is phase 2 — not wired yet.
   //
@@ -2850,7 +2845,6 @@ async function* executeHooks({
   for await (const result of all(hookPromises)) {
     outcomes[result.outcome]++
 
-    // Check for preventContinuation early
     if (result.preventContinuation) {
       logForDebugging(
         `Hook ${hookEvent} (${getHookDisplayText(result.hook)}) requested preventContinuation`,
@@ -2861,7 +2855,6 @@ async function* executeHooks({
       }
     }
 
-    // Handle different result types
     if (result.blockingError) {
       yield {
         blockingError: result.blockingError,
@@ -3191,7 +3184,6 @@ async function executeHooksOutsideREPL({
   // Run all hooks in parallel with individual timeouts
   const hookPromises = matchingHooks.map(
     async ({ hook, pluginRoot, pluginId }, hookIndex) => {
-      // Handle callback hooks
       if (hook.type === 'callback') {
         const callbackTimeoutMs = hook.timeout ? hook.timeout * 1000 : timeoutMs
         const { signal: abortSignal, cleanup } = createCombinedAbortSignal(
@@ -3384,7 +3376,6 @@ async function executeHooksOutsideREPL({
         }
       }
 
-      // Handle command hooks
       const commandTimeoutMs = hook.timeout ? hook.timeout * 1000 : timeoutMs
       const { signal: abortSignal, cleanup } = createCombinedAbortSignal(
         signal,
@@ -4881,7 +4872,6 @@ async function executeFunctionHook({
   })
 
   try {
-    // Check if already aborted
     if (abortSignal.aborted) {
       cleanup()
       return {
@@ -4892,7 +4882,6 @@ async function executeFunctionHook({
 
     // Execute callback with abort signal
     const passed = await new Promise<boolean>((resolve, reject) => {
-      // Handle abort signal
       const onAbort = () => reject(new Error('Function hook cancelled'))
       abortSignal.addEventListener('abort', onAbort)
 
@@ -4927,7 +4916,6 @@ async function executeFunctionHook({
   } catch (error) {
     cleanup()
 
-    // Handle cancellation
     if (
       error instanceof Error &&
       (error.message === 'Function hook cancelled' ||
@@ -4939,7 +4927,6 @@ async function executeFunctionHook({
       }
     }
 
-    // Log for monitoring
     logError(error)
     return {
       message: createAttachmentMessage({

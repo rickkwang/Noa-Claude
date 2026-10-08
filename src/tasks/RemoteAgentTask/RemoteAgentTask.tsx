@@ -745,10 +745,8 @@ function startRemoteSessionPolling(taskId: string, context: TaskContext): () => 
     }
   };
 
-  // Start polling
   void poll();
 
-  // Return cleanup function
   return () => {
     isRunning = false;
   };

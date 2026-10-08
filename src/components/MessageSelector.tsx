@@ -238,7 +238,6 @@ export function MessageSelector({
     setIsRestoring(false);
     setMessageToRestore(undefined);
 
-    // Handle errors
     if (conversationError && codeError) {
       setError(`Failed to restore the conversation and code:\n${conversationError}\n${codeError}`);
     } else if (conversationError) {
@@ -294,7 +293,6 @@ export function MessageSelector({
       if (!isFileHistoryEnabled) {
         return;
       }
-      // Load file snapshot metadata
       void Promise.all(messageOptions.map(async (userMessage, itemIndex) => {
         if (userMessage.uuid !== currentUUID) {
           const canRestore = fileHistoryCanRestore(fileHistory, userMessage.uuid);

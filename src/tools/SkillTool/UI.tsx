@@ -19,7 +19,6 @@ type Input = z.infer<ReturnType<typeof inputSchema>>;
 const MAX_PROGRESS_MESSAGES_TO_SHOW = 3;
 const INITIALIZING_TEXT = 'Initializing…';
 export function renderToolResultMessage(output: Output): React.ReactNode {
-  // Handle forked skill result
   if ('status' in output && output.status === 'forked') {
     return <MessageResponse height={1}>
         <Text>

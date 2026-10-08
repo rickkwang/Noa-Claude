@@ -717,11 +717,9 @@ export function extractTag(html: string, tagName: string): string | null {
   const closingTag = new RegExp(`<\\/${escapedTag}>`, 'gi')
 
   while ((match = pattern.exec(html)) !== null) {
-    // Check for nested tags
     const content = match[1]
     const beforeMatch = html.slice(lastIndex, match.index)
 
-    // Reset depth counter
     depth = 0
 
     // Count opening tags before this match
@@ -940,7 +938,6 @@ export function reorderMessagesInUI(
 
   // First pass: group messages by tool use ID
   for (const message of messages) {
-    // Handle tool use messages
     if (isToolUseRequestMessage(message)) {
       const toolUseID = message.message.content[0]?.id
       if (toolUseID) {
@@ -957,7 +954,6 @@ export function reorderMessagesInUI(
       continue
     }
 
-    // Handle pre-tool-use hooks
     if (
       isHookAttachmentMessage(message) &&
       message.attachment.hookEvent === 'PreToolUse'
@@ -975,7 +971,6 @@ export function reorderMessagesInUI(
       continue
     }
 
-    // Handle tool results
     if (
       message.type === 'user' &&
       message.message.content[0]?.type === 'tool_result'
@@ -993,7 +988,6 @@ export function reorderMessagesInUI(
       continue
     }
 
-    // Handle post-tool-use hooks
     if (
       isHookAttachmentMessage(message) &&
       message.attachment.hookEvent === 'PostToolUse'
@@ -1070,7 +1064,6 @@ export function reorderMessagesInUI(
       continue
     }
 
-    // Add standalone messages
     result.push(message)
   }
 
@@ -4241,7 +4234,6 @@ You have exited auto mode. The user may now want to interact more directly. You 
       const response = attachment.response
       const messages: UserMessage[] = []
 
-      // Handle systemMessage
       if (response.systemMessage) {
         messages.push(
           createUserMessage({
@@ -4251,7 +4243,6 @@ You have exited auto mode. The user may now want to interact more directly. You 
         )
       }
 
-      // Handle additionalContext
       if (
         response.hookSpecificOutput &&
         'additionalContext' in response.hookSpecificOutput &&

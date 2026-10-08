@@ -58,7 +58,6 @@ function detectManifestType(
   const fileName = path.basename(filePath)
   const dirName = path.basename(path.dirname(filePath))
 
-  // Check filename patterns
   if (fileName === 'plugin.json') return 'plugin'
   if (fileName === 'marketplace.json') return 'marketplace'
 
@@ -180,7 +179,6 @@ export async function validatePluginManifest(
   if (parsed && typeof parsed === 'object') {
     const obj = parsed as Record<string, unknown>
 
-    // Check commands
     if (obj.commands) {
       const commands = Array.isArray(obj.commands)
         ? obj.commands
@@ -192,7 +190,6 @@ export async function validatePluginManifest(
       })
     }
 
-    // Check agents
     if (obj.agents) {
       const agents = Array.isArray(obj.agents) ? obj.agents : [obj.agents]
       agents.forEach((agent, i) => {
@@ -202,7 +199,6 @@ export async function validatePluginManifest(
       })
     }
 
-    // Check skills
     if (obj.skills) {
       const skills = Array.isArray(obj.skills) ? obj.skills : [obj.skills]
       skills.forEach((skill, i) => {
@@ -424,7 +420,6 @@ export async function validateMarketplaceManifest(
       })
     }
 
-    // Check each plugin entry
     if (marketplace.plugins) {
       marketplace.plugins.forEach((plugin, i) => {
         // Check for duplicate plugin names

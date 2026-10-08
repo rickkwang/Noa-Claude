@@ -176,7 +176,6 @@ function AutoUpdaterImpl({
     void checkForUpdates();
   }, [checkForUpdates]);
 
-  // Check every 30 minutes
   useInterval(checkForUpdates, 30 * 60 * 1000);
   if (!autoUpdaterResult?.version && (!versions.global || !versions.latest)) {
     return null;

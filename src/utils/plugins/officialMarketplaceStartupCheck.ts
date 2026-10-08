@@ -289,7 +289,6 @@ export async function checkAndInstallOfficialMarketplace(): Promise<OfficialMark
       return { installed: false, skipped: true, reason: 'gcs_unavailable' }
     }
 
-    // Check git availability
     const gitAvailable = await checkGitAvailable()
     if (!gitAvailable) {
       logForDebugging(
@@ -362,7 +361,6 @@ export async function checkAndInstallOfficialMarketplace(): Promise<OfficialMark
     })
     return { installed: true, skipped: false }
   } catch (error) {
-    // Handle installation failure
     const errorMessage = error instanceof Error ? error.message : String(error)
 
     // On macOS, /usr/bin/git is an xcrun shim that always exists on PATH, so

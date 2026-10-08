@@ -12,7 +12,6 @@ export function prewarmModifiers(): void {
     return
   }
   prewarmed = true
-  // Load module in background
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { prewarm } = require('modifiers-napi') as { prewarm: () => void }

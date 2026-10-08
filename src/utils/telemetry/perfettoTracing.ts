@@ -449,7 +449,6 @@ export function startLLMRequestPerfettoSpan(args: {
     },
   })
 
-  // Emit begin event
   events.push({
     name: 'API Call',
     cat: 'api',
@@ -708,7 +707,6 @@ export function startToolPerfettoSpan(
     },
   })
 
-  // Emit begin event
   events.push({
     name: `Tool: ${toolName}`,
     cat: 'tool',
@@ -749,7 +747,6 @@ export function endToolPerfettoSpan(
     duration_ms: duration / 1000,
   }
 
-  // Emit end event
   events.push({
     name: pending.name,
     cat: pending.category,
@@ -782,7 +779,6 @@ export function startUserInputPerfettoSpan(context?: string): string {
     },
   })
 
-  // Emit begin event
   events.push({
     name: 'Waiting for User Input',
     cat: 'user_input',
@@ -821,7 +817,6 @@ export function endUserInputPerfettoSpan(
     duration_ms: duration / 1000,
   }
 
-  // Emit end event
   events.push({
     name: pending.name,
     cat: pending.category,
@@ -899,7 +894,6 @@ export function startInteractionPerfettoSpan(userPrompt?: string): string {
     },
   })
 
-  // Emit begin event
   events.push({
     name: 'Interaction',
     cat: 'interaction',
@@ -925,7 +919,6 @@ export function endInteractionPerfettoSpan(spanId: string): void {
   const endTime = getTimestamp()
   const duration = endTime - pending.startTime
 
-  // Emit end event
   events.push({
     name: pending.name,
     cat: pending.category,

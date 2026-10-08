@@ -236,7 +236,6 @@ export function useRemoteSession({
           }
         }
 
-        // Check if session ended
         if (isSessionEndMessage(sdkMessage)) {
           isCompactingRef.current = false
           setIsLoading(false)
@@ -448,7 +447,6 @@ export function useRemoteSession({
 
     return () => {
       logForDebugging('[useRemoteSession] Cleanup - disconnecting')
-      // Clear any pending timeout
       if (responseTimeoutRef.current) {
         clearTimeout(responseTimeoutRef.current)
         responseTimeoutRef.current = null
@@ -481,7 +479,6 @@ export function useRemoteSession({
         return false
       }
 
-      // Clear any existing timeout
       if (responseTimeoutRef.current) {
         clearTimeout(responseTimeoutRef.current)
       }
@@ -569,7 +566,6 @@ export function useRemoteSession({
 
   // Cancel the current request on the remote session
   const cancelRequest = useCallback(() => {
-    // Clear any pending timeout
     if (responseTimeoutRef.current) {
       clearTimeout(responseTimeoutRef.current)
       responseTimeoutRef.current = null
@@ -586,7 +582,6 @@ export function useRemoteSession({
 
   // Disconnect from the session
   const disconnect = useCallback(() => {
-    // Clear any pending timeout
     if (responseTimeoutRef.current) {
       clearTimeout(responseTimeoutRef.current)
       responseTimeoutRef.current = null

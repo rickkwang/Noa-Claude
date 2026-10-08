@@ -809,7 +809,7 @@ export async function initEnvLessBridgeCore(
         session_id: sessionId,
       }))
       // v2 does not derive worker_status from events server-side (unlike v1
-      // session-ingress session_status_updater.go). Push it from here so the
+      // session-ingress). Push it from here so the
       // CCR web session list shows Running instead of stuck on Idle. A user
       // message in the batch marks turn start. CCRClient.reportState dedupes
       // consecutive same-state pushes.

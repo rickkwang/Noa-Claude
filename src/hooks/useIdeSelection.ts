@@ -132,7 +132,6 @@ export function useIdeSelection(
             selectionData.selection.start &&
             selectionData.selection.end
           ) {
-            // Handle selection changes
             selectionChangeHandler(selectionData as SelectionData)
           } else if (selectionData.text !== undefined) {
             // Handle empty selection (when text is empty string)

@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * Ant-internal homespace data collection for /insights.
+ * Ant-internal data collection for /insights.
  * All functions are no-ops for non-ant users (USER_TYPE !== 'ant').
  */
 import { constants as fsConstants } from 'fs'

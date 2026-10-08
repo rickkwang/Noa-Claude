@@ -37,7 +37,6 @@ export async function call(onDone: (result?: string) => void, _context: unknown,
     return null;
   }
 
-  // Parse the arguments
   const trimmedArgs = args?.trim() || '';
 
   // If no args, show the interactive menu
@@ -45,12 +44,10 @@ export async function call(onDone: (result?: string) => void, _context: unknown,
     return <SandboxSettings onComplete={onDone} depCheck={depCheck} />;
   }
 
-  // Handle subcommands
   if (trimmedArgs) {
     const parts = trimmedArgs.split(' ');
     const subcommand = parts[0];
     if (subcommand === 'exclude') {
-      // Handle exclude subcommand
       const commandPattern = trimmedArgs.slice('exclude '.length).trim();
       if (!commandPattern) {
         const message = color('error', themeName)('Error: Please provide a command pattern to exclude (e.g., /sandbox exclude "npm run test:*")');
@@ -58,10 +55,8 @@ export async function call(onDone: (result?: string) => void, _context: unknown,
         return null;
       }
 
-      // Remove quotes if present
       const cleanPattern = commandPattern.replace(/^["']|["']$/g, '');
 
-      // Add to excludedCommands
       addToExcludedCommands(cleanPattern);
 
       // Get the local settings path and make it relative to cwd

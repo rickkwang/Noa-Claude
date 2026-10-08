@@ -84,7 +84,6 @@ export function ResumeTask({
     void loadSessions();
   };
 
-  // Handle escape via keybinding
   useKeybinding('confirm:no', onCancel, {
     context: 'Confirmation'
   });

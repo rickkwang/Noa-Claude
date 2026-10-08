@@ -92,7 +92,7 @@ export function isToolDetailsLoggingEnabled(): boolean {
  * Check if detailed tool name logging (MCP server/tool names) is enabled
  * for analytics events.
  *
- * Per go/taxonomy, MCP names are medium PII. We log them for:
+ * MCP names are medium PII under the data taxonomy. We log them for:
  * - Cowork (entrypoint=local-agent) — no ZDR concept, log all MCPs
  * - claude.ai-proxied connectors — always official (from claude.ai's list)
  * - Servers whose URL matches the official MCP registry — directory
@@ -800,12 +800,9 @@ export function to1PEventFormat(
   // Convert envContext to snake_case.
   // IMPORTANT: env is typed as the proto-generated EnvironmentMetadata so that
   // adding a field here that the proto doesn't define is a compile error. The
-  // generated toJSON() serializer silently drops unknown keys — a hand-written
-  // parallel type previously let #11318, #13924, #19448, and coworker_type all
-  // ship fields that never reached BQ.
-  // Adding a field? Update the monorepo proto first (go/cc-logging):
-  //   event_schemas/.../claude_code/v1/claude_code_internal_event.proto
-  // then run `bun run generate:proto` here.
+  // generated toJSON() serializer silently drops unknown keys. A hand-written
+  // parallel type has let fields ship that never reached the analytics tables.
+  // Adding a field? Update the event schema first; this type must match it.
   const env: EnvironmentMetadata = {
     platform: envContext.platform,
     platform_raw: envContext.platformRaw,
@@ -828,7 +825,6 @@ export function to1PEventFormat(
     deployment_environment: envContext.deploymentEnvironment,
   }
 
-  // Add optional env fields
   if (envContext.remoteEnvironmentType) {
     env.remote_environment_type = envContext.remoteEnvironmentType
   }
@@ -888,7 +884,6 @@ export function to1PEventFormat(
     client_type: coreFields.clientType,
   }
 
-  // Add other core fields
   if (coreFields.betas) {
     core.betas = coreFields.betas
   }

@@ -201,7 +201,6 @@ export const ConfigTool = buildTool({
       }
     }
 
-    // Check options
     const options = getOptionsForSetting(setting)
     if (options && !options.includes(String(finalValue))) {
       return {

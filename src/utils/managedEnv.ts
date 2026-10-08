@@ -118,10 +118,9 @@ type SettingsEnvSource =
  * caller's own env (the bare contract explicitly allows apiKeyHelper via
  * --settings).
  *
- * Deliberate hardening beyond upstream, not parity: Claude Code 2.1.220's
- * init applies settings env under --bare with no such filter (verified
- * against the binary — its apply/filter functions have no CLAUDE_CODE_SIMPLE
- * gate).
+ * Deliberate hardening beyond upstream, not parity: upstream applies settings
+ * env under --bare with no such filter (no CLAUDE_CODE_SIMPLE gate in its
+ * apply/filter functions).
  */
 function withoutBareProviderVars(
   env: Record<string, string> | undefined,

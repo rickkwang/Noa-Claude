@@ -414,7 +414,6 @@ export const NotebookEditTool = buildTool({
       }
 
       if (edit_mode === 'delete') {
-        // Delete the specified cell
         notebook.cells.splice(cellIndex, 1)
       } else if (edit_mode === 'insert') {
         let new_cell: NotebookCell
@@ -450,7 +449,6 @@ export const NotebookEditTool = buildTool({
           targetCell.cell_type = cell_type
         }
       }
-      // Write back to file
       const IPYNB_INDENT = 1
       const updatedContent = jsonStringify(notebook, null, IPYNB_INDENT)
       const writtenAt = writeTextContent(

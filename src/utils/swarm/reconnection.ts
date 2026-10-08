@@ -100,7 +100,6 @@ export function initializeTeammateContextFromSession(
 
   const teamFilePath = getTeamFilePath(teamName)
 
-  // Set teamContext in AppState
   setAppState(prev => ({
     ...prev,
     teamContext: {

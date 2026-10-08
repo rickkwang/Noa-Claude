@@ -159,7 +159,6 @@ export function MarkdownTable({
   // Step 4: Calculate max row lines to determine if vertical format is needed
   function calculateMaxRowLines(): number {
     let maxLines = 1;
-    // Check header
     for (let i_1 = 0; i_1 < token.header.length; i_1++) {
       const content = formatCell(token.header[i_1]!.tokens);
       const wrapped = wrapText(content, columnWidths[i_1]!, {
@@ -167,7 +166,6 @@ export function MarkdownTable({
       });
       maxLines = Math.max(maxLines, wrapped.length);
     }
-    // Check rows
     for (const row_1 of token.rows) {
       for (let i_2 = 0; i_2 < row_1.length; i_2++) {
         const content_0 = formatCell(row_1[i_2]?.tokens);

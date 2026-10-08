@@ -23,7 +23,6 @@ export type EnvironmentSelectionInfo = {
  *     or null if using the default (first environment)
  */
 export async function getEnvironmentSelectionInfo(): Promise<EnvironmentSelectionInfo> {
-  // Fetch available environments
   const environments = await fetchEnvironments()
 
   if (environments.length === 0) {

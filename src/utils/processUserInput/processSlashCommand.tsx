@@ -270,7 +270,6 @@ async function executeForkedSlashCommand(command: CommandBase & PromptCommand, a
       }
     }
   } finally {
-    // Clear the progress display
     setToolJSX(null);
   }
   // Post-success hook for the bundled /dream skill: stamp the consolidation

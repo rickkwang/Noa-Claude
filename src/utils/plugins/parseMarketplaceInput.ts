@@ -39,7 +39,6 @@ export async function parseMarketplaceInput(
     return ref ? { source: 'git', url, ref } : { source: 'git', url }
   }
 
-  // Handle URLs
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     // Extract fragment (ref) from URL if present
     const fragmentMatch = trimmed.match(/^([^#]+)(#(.+))?$/)

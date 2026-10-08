@@ -123,7 +123,6 @@ export function parseGitDiff(stdout: string): ParsedDiff {
   const fileDiffs = stdout.split(/^diff --git /m).filter(Boolean)
 
   for (const fileDiff of fileDiffs) {
-    // Stop after MAX_FILES
     if (result.size + skippedLarge.size >= MAX_FILES) break
 
     const lines = fileDiff.split('\n')

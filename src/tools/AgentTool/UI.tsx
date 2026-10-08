@@ -84,7 +84,6 @@ function getSearchOrReadInfo(progressMessage: ProgressMessage<Progress>, tools: 
   }
   const message = progressMessage.data.message;
 
-  // Check tool_use (assistant message)
   if (message.type === 'assistant') {
     return getSearchOrReadFromContent(message.message.content[0], tools);
   }
@@ -896,7 +895,6 @@ export function extractLastToolInfo(progressMessages: ProgressMessage<Progress>[
         const input = toolUseBlock.input as Record<string, unknown>;
         const parsedInput = tool.inputSchema.safeParse(input);
 
-        // Get user-facing tool name
         const userFacingToolName = tool.userFacingName(parsedInput.success ? parsedInput.data : undefined);
 
         // Try to get summary from the tool itself

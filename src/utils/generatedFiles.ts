@@ -90,12 +90,10 @@ export function isGeneratedFile(filePath: string): boolean {
   const fileName = basename(filePath).toLowerCase()
   const ext = extname(filePath).toLowerCase()
 
-  // Check exact filename matches
   if (EXCLUDED_FILENAMES.has(fileName)) {
     return true
   }
 
-  // Check extension matches
   if (EXCLUDED_EXTENSIONS.has(ext)) {
     return true
   }
@@ -109,14 +107,12 @@ export function isGeneratedFile(filePath: string): boolean {
     }
   }
 
-  // Check directory patterns
   for (const dir of EXCLUDED_DIRECTORIES) {
     if (normalizedPath.includes(dir)) {
       return true
     }
   }
 
-  // Check filename patterns
   for (const pattern of EXCLUDED_FILENAME_PATTERNS) {
     if (pattern.test(fileName)) {
       return true

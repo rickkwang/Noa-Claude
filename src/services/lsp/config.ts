@@ -19,7 +19,6 @@ export async function getAllLspServers(): Promise<{
   const allServers: Record<string, ScopedLspServerConfig> = {}
 
   try {
-    // Get all enabled plugins
     const { enabled: plugins } = await loadAllPluginsCacheOnly()
 
     // Load LSP servers from each plugin in parallel.
@@ -54,7 +53,6 @@ export async function getAllLspServers(): Promise<{
         )
       }
 
-      // Log any errors encountered
       if (errors.length > 0) {
         logForDebugging(
           `${errors.length} error(s) loading LSP servers from plugin: ${plugin.name}`,

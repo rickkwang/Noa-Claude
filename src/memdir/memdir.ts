@@ -255,11 +255,9 @@ export function buildMemoryLines(
     // hold in-conversation progress.
     //
     // Not everything there survived — "if your approach changes, update the
-    // plan rather than saving a memory" has no counterpart here. That follows
-    // upstream: 2.1.226 still ships the long section for its other memory
-    // surfaces, but its compact variant (the one this section mirrors) drops
-    // the persistence guidance outright. Restoring the sentence would be a
-    // deviation, not a fix.
+    // plan rather than saving a memory" has no counterpart here. Upstream's
+    // compact variant (the one this section mirrors) drops that guidance too;
+    // restoring it would be a deviation, not a fix.
     'Default to not saving memory. Add or update memories only when the information is likely to matter in future conversations and is not better preserved in the codebase, the current thread, or a plan/task — a plan is where an approach you are about to implement belongs, and tasks are where in-conversation progress belongs.',
     '',
     'If the user explicitly asks you to remember something, save it immediately as whichever type fits best. If they ask you to forget something, find and remove the relevant entry. Do not save transient tasks, speculative inferences, or details that are likely to change soon.',

@@ -29,7 +29,7 @@ import { feature } from 'bun:bundle';
 
 // Conditional require so ChannelsNotice.tsx tree-shakes when both flags are
 // false. A module-scope helper component inside a feature() ternary does NOT
-// tree-shake (docs/feature-gating.md); the require pattern eliminates the
+// tree-shake (FEATURES.md); the require pattern eliminates the
 // whole file. VoiceModeNotice uses the unsafe helper pattern but VOICE_MODE
 // is external: true so it's moot there.
 /* eslint-disable @typescript-eslint/no-require-imports */

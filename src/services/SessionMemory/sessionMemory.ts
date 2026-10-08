@@ -303,7 +303,6 @@ const extractSessionMemory = sequential(async function (
   const { memoryPath, currentMemory } =
     await setupSessionMemoryFile(setupContext)
 
-  // Create extraction message
   const userPrompt = await buildSessionMemoryUpdatePrompt(
     currentMemory,
     memoryPath,

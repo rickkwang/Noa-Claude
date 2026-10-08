@@ -1,11 +1,11 @@
 // @ts-nocheck
 /**
- * Tagged ID encoding compatible with the API's tagged_id.py format.
+ * Tagged ID encoding compatible with the API's tagged-ID format.
  *
  * Produces IDs like "user_01PaGUP2rbg1XDh7Z9W1CEpd" from a UUID string.
  * The format is: {tag}_{version}{base58(uuid_as_128bit_int)}
  *
- * This must stay in sync with api/api/common/utils/tagged_id.py.
+ * This must stay in sync with the server-side implementation.
  */
 
 const BASE_58_CHARS =

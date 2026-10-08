@@ -78,7 +78,7 @@ export function getUsername(): string {
 // The sync read() path takes ~500ms per `security` spawn. With 50+ claude.ai
 // MCP connectors authenticating at startup, a short TTL expires mid-storm and
 // triggers repeat sync reads — observed as a 5.5s event-loop stall
-// (go/ccshare/adamj-20260326-212235). 30s of cross-process staleness is fine:
+// (a reproduced multi-process login race). 30s of cross-process staleness is fine:
 // OAuth tokens expire in hours, and the only cross-process writer is another
 // CC instance's /login or refresh.
 //

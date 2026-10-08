@@ -187,7 +187,6 @@ export function validateSettingsFileContent(content: string):
       fullSchema: string
     } {
   try {
-    // Parse the JSON first
     const jsonData = jsonParse(content)
 
     // Validate against SettingsSchema in strict mode

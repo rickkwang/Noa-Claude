@@ -210,7 +210,6 @@ export default class App extends PureComponent<Props, State> {
       this.props.stdout.write(SHOW_CURSOR);
     }
 
-    // Clear any pending timers
     if (this.incompleteEscapeTimer) {
       clearTimeout(this.incompleteEscapeTimer);
       this.incompleteEscapeTimer = null;
@@ -315,7 +314,6 @@ export default class App extends PureComponent<Props, State> {
 
   // Helper to flush incomplete escape sequences
   flushIncomplete = (): void => {
-    // Clear the timer reference
     this.incompleteEscapeTimer = null;
 
     // Only proceed if we have incomplete sequences
@@ -460,7 +458,6 @@ export default class App extends PureComponent<Props, State> {
     // Emit suspend event for Claude Code to handle. Mostly just has a notification
     this.internal_eventEmitter.emit('suspend');
 
-    // Set up resume handler
     const resumeHandler = () => {
       // Restore raw mode to exact previous state
       for (let i = 0; i < rawModeCountBeforeSuspend; i++) {

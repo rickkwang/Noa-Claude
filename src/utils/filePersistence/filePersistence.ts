@@ -80,7 +80,6 @@ export async function runFilePersistence(
 
   const outputsDir = join(getCwd(), sessionId, OUTPUTS_SUBDIR)
 
-  // Check if aborted
   if (signal?.aborted) {
     logDebug('Persistence aborted before processing')
     return null

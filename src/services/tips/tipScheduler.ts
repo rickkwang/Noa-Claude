@@ -59,7 +59,6 @@ export function recordShownTip(tip: Tip): void {
   // Record in history
   recordTipShown(tip.id)
 
-  // Log event for analytics
   logEvent('tengu_tip_shown', {
     tipIdLength:
       tip.id as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,

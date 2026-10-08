@@ -352,7 +352,6 @@ export function ExitPlanModePermissionRequest({
         autoModeStateModule?.setAutoModeActive(true);
       }
 
-      // Log plan exit event
       logEvent('tengu_plan_exit', {
         planLengthChars: currentPlan.length,
         outcome: value as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -453,7 +452,6 @@ export function ExitPlanModePermissionRequest({
       return;
     }
 
-    // Handle standard approval options
     const standardModes: Record<string, PermissionMode> = {
       'yes-bypass-permissions': 'bypassPermissions',
       'yes-accept-edits': 'acceptEdits'

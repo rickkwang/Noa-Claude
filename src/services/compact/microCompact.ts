@@ -421,7 +421,6 @@ async function cachedMicrocompactPath(
       `Cached MC deleting ${toolsToDelete.length} tool(s): ${toolsToDelete.join(', ')}`,
     )
 
-    // Log the event
     logEvent('tengu_cached_microcompact', {
       toolsDeleted: toolsToDelete.length,
       deletedToolIds: toolsToDelete.join(

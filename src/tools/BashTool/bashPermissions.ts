@@ -487,7 +487,6 @@ const ANT_ONLY_SAFE_ENV_VARS = new Set([
   'DBT_PER_DEVELOPER_ENVIRONMENTS', // DBT config
   'STATSIG_FORD_DB_CHECKS', // statsig DB check flag
 
-  // Build configuration
   'ANT_ENVIRONMENT', // Anthropic environment name
   'ANT_SERVICE', // Anthropic service name
   'MONOREPO_ROOT_DIR', // monorepo root path
@@ -1926,7 +1925,6 @@ export async function bashToolHasPermission(
     }
   }
 
-  // Check exact match first
   const exactMatchResult = bashToolCheckExactMatchPermission(
     input,
     appState.toolPermissionContext,
@@ -2567,7 +2565,6 @@ export async function bashToolHasPermission(
     return result
   }
 
-  // Check subcommand permission results
   const subcommandResults: Map<string, PermissionResult> = new Map()
   for (const subcommand of subcommands) {
     subcommandResults.set(

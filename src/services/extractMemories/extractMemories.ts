@@ -542,7 +542,6 @@ export function initExtractMemories(): void {
       return
     }
 
-    // Check auto-memory is enabled
     if (!isAutoMemoryEnabled()) {
       return
     }

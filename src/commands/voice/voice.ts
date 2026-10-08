@@ -71,7 +71,6 @@ export const call: LocalCommandCall = async () => {
     }
   }
 
-  // Check for API key
   if (!isVoiceStreamAvailable()) {
     return {
       type: 'text' as const,
@@ -80,7 +79,6 @@ export const call: LocalCommandCall = async () => {
     }
   }
 
-  // Check for recording tools
   const { checkVoiceDependencies, requestMicrophonePermission } = await import(
     '../../services/voice.js'
   )

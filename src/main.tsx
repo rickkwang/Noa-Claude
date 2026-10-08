@@ -683,7 +683,6 @@ export async function main() {
     stopCapturingEarlyInput();
   }
 
-  // Set simplified tracking fields
   const isInteractive = !isNonInteractive;
   setIsInteractive(isInteractive);
 
@@ -960,10 +959,9 @@ async function run(): Promise<CommanderCommand> {
       });
     }
 
-    // Assistant mode (KAIROS) was removed — its gate module and settings
-    // fields are gone from every build, so this startup latch is permanently
-    // off and no --feature-set brings it back. Distinct from kairosActive,
-    // which `claude assistant` still sets when attaching to a remote session.
+    // Pinned off: assistant-mode startup is not available in this fork, and no
+    // --feature-set re-enables it. Distinct from kairosActive, which
+    // `claude assistant` still sets when attaching to a remote session.
     const kairosEnabled = false;
     const {
       debug = false,
@@ -1040,7 +1038,6 @@ async function run(): Promise<CommanderCommand> {
       tmux?: boolean;
     }).tmux === true;
 
-    // Validate tmux option
     if (tmuxEnabled) {
       if (!worktreeEnabled) {
         process.stderr.write(chalk.red('Error: --tmux requires --worktree\n'));
@@ -1214,7 +1211,6 @@ async function run(): Promise<CommanderCommand> {
       process.exit(1);
     }
 
-    // Handle system prompt options
     let systemPrompt = options.systemPrompt;
     if (options.systemPromptFile) {
       if (options.systemPrompt) {
@@ -2061,7 +2057,7 @@ async function run(): Promise<CommanderCommand> {
       }
       if (onboardingShown) {
         // Refresh auth-dependent services now that the user has logged in during onboarding.
-        // Keep in sync with the post-login logic in src/commands/login.tsx
+        // Keep in sync with the post-login logic in src/commands/login/
         void refreshRemoteManagedSettings();
         void refreshPolicyLimits();
         // Clear user data cache BEFORE GrowthBook refresh so it picks up fresh credentials
@@ -2746,7 +2742,6 @@ async function run(): Promise<CommanderCommand> {
     // Get deprecation warning for the initial model (resolvedInitialModel computed earlier for hooks parallelization)
     const deprecationWarning = getModelDeprecationWarning(resolvedInitialModel);
 
-    // Build initial notification queue
     const initialNotifications: Array<{
       key: string;
       text: string;
@@ -3138,7 +3133,6 @@ async function run(): Promise<CommanderCommand> {
       // PR filter for --from-pr flag
       let filterByPr: boolean | number | string | undefined = undefined;
 
-      // Handle --from-pr flag
       if (options.fromPr) {
         if (options.fromPr === true) {
           // Show all sessions with linked PRs
@@ -3300,7 +3294,6 @@ async function run(): Promise<CommanderCommand> {
             if (repoValidation.status === 'mismatch' || repoValidation.status === 'not_in_repo') {
               const sessionRepo = repoValidation.sessionRepo;
               if (sessionRepo) {
-                // Check for known paths
                 const knownPaths = getKnownPathsForRepo(sessionRepo);
                 const existingPaths = await filterExistingPaths(knownPaths);
                 if (existingPaths.length > 0) {
@@ -3351,7 +3344,7 @@ async function run(): Promise<CommanderCommand> {
       }
       if ("external" === 'ant') {
         if (options.resume && typeof options.resume === 'string' && !maybeSessionId) {
-          // Check for ccshare URL (e.g. https://go/ccshare/boris-20260311-211036)
+          // Check for a shared-session URL
           const {
             parseCcshareId,
             loadCcshare

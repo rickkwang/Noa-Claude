@@ -652,7 +652,6 @@ async function captureUntrackedFiles(): Promise<
   let totalSize = 0
 
   for (const filePath of files) {
-    // Check file count limit
     if (result.length >= MAX_FILE_COUNT) {
       logForDebugging(
         `Untracked file capture: reached max file count (${MAX_FILE_COUNT})`,
@@ -677,7 +676,6 @@ async function captureUntrackedFiles(): Promise<
         continue
       }
 
-      // Check total size limit
       if (totalSize + fileSize > MAX_TOTAL_SIZE_BYTES) {
         logForDebugging(
           `Untracked file capture: reached total size limit (${MAX_TOTAL_SIZE_BYTES} bytes)`,

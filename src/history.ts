@@ -154,8 +154,7 @@ async function* makeLogEntryReader(): AsyncGenerator<LogEntry> {
   // immediateFlushHistory), so an entry can momentarily live BOTH here and on
   // disk during the in-flight window. Yield it once from the snapshot and skip
   // the disk copy via the key set. Snapshotting also insulates the loop from a
-  // concurrent flush reassigning pendingEntries mid-iteration. Mirrors upstream
-  // CC 2.1.218.
+  // concurrent flush reassigning pendingEntries mid-iteration.
   const pendingSnapshot = pendingEntries.slice()
   const pendingKeys = new Set(
     pendingSnapshot.map(e => `${e.timestamp}\x00${e.sessionId ?? ''}`),
@@ -363,8 +362,7 @@ const skippedTimestamps = new Set<number>()
 // entry can be spliced out of pendingEntries by removeLastFromHistory while
 // its bytes are already committed to the append snapshot and headed for disk.
 // This set lets removeLastFromHistory recognize that case and add the entry to
-// skippedTimestamps so the reader skips the disk copy. Mirrors upstream CC
-// 2.1.218's in-flight tracking set.
+// skippedTimestamps so the reader skips the disk copy.
 let inFlightEntries: Set<LogEntry> | null = null
 
 // Core flush logic - writes pending entries to disk
@@ -376,8 +374,8 @@ async function immediateFlushHistory(): Promise<boolean> {
   // Snapshot the entries we're about to write. Do NOT clear pendingEntries
   // here — the entries stay queued until the append actually succeeds, so a
   // failed write (disk full, revoked permissions, read-only mount) does not
-  // silently drop prompt history. Mirrors upstream CC 2.1.218, which snapshots
-  // and only removes written entries on success.
+  // silently drop prompt history. Only written entries are removed, and only on
+  // success.
   const entriesToWrite = pendingEntries.slice()
   // Mark these as in-flight so removeLastFromHistory knows they will reach disk
   // even if it splices them out of pendingEntries mid-write.
@@ -448,7 +446,7 @@ async function flushPromptHistory(retries: number): Promise<void> {
 
       // Reset the retry budget on a successful write (any leftover entries are
       // newly-arrived, not failures); only count consecutive write failures
-      // toward the > 5 give-up cap. Mirrors upstream CC 2.1.218.
+      // toward the > 5 give-up cap.
       void flushPromptHistory(succeeded ? 0 : retries + 1)
     }
   }

@@ -152,7 +152,6 @@ export async function spawnInProcessTeammate(
       registerPerfettoAgent(agentId, name, parentSessionId)
     }
 
-    // Create task state
     const description = `${name}: ${prompt.substring(0, 50)}${prompt.length > 50 ? '...' : ''}`
 
     const taskState: InProcessTeammateTaskState = {
@@ -256,7 +255,6 @@ export function killInProcessTeammate(
     // Abort the controller to stop execution
     teammateTask.abortController?.abort()
 
-    // Call cleanup handler
     teammateTask.unregisterCleanup?.()
 
     // Update task state and remove from teamContext.teammates

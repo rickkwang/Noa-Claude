@@ -54,7 +54,6 @@ export async function detectPythonPackageManager(): Promise<PythonPackageManager
     return 'pipx'
   }
 
-  // Check pip (fallback)
   const pipResult = await execFileNoThrow('which', ['pip'])
   if (pipResult.code === 0) {
     logForDebugging('[it2Setup] Found pip package manager')

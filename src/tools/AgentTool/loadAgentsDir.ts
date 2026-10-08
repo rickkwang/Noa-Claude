@@ -574,7 +574,6 @@ export function parseAgentFromMarkdown(
       model = trimmed.toLowerCase() === 'inherit' ? 'inherit' : trimmed
     }
 
-    // Parse background flag
     const backgroundRaw = frontmatter['background']
 
     if (
@@ -592,7 +591,6 @@ export function parseAgentFromMarkdown(
     const background =
       backgroundRaw === 'true' || backgroundRaw === true ? true : undefined
 
-    // Parse memory scope
     const VALID_MEMORY_SCOPES: AgentMemoryScope[] = ['user', 'project', 'local']
     const memoryRaw = frontmatter['memory'] as string | undefined
     let memory: AgentMemoryScope | undefined
@@ -646,7 +644,6 @@ export function parseAgentFromMarkdown(
       logForDebugging(errorMsg)
     }
 
-    // Parse maxTurns from frontmatter
     const maxTurnsRaw = frontmatter['maxTurns']
     const maxTurns = parsePositiveIntFromFrontmatter(maxTurnsRaw)
     if (maxTurnsRaw !== undefined && maxTurns === undefined) {
@@ -658,7 +655,6 @@ export function parseAgentFromMarkdown(
     // Extract filename without extension
     const filename = basename(filePath, '.md')
 
-    // Parse tools from frontmatter
     let tools = parseAgentToolsFromFrontmatter(frontmatter['tools'])
 
     // If memory is enabled, inject Write/Edit/Read tools for memory access
@@ -682,7 +678,6 @@ export function parseAgentFromMarkdown(
         ? parseAgentToolsFromFrontmatter(disallowedToolsRaw)
         : undefined
 
-    // Parse skills from frontmatter
     const skills = parseSlashCommandToolsFromFrontmatter(frontmatter['skills'])
 
     const initialPromptRaw = frontmatter['initialPrompt']
@@ -709,7 +704,6 @@ export function parseAgentFromMarkdown(
         .filter((item): item is AgentMcpServerSpec => item !== null)
     }
 
-    // Parse hooks from frontmatter
     const hooks = parseHooksFromFrontmatter(frontmatter, agentType)
 
     const systemPrompt = content.trim()

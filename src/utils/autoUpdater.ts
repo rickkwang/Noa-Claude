@@ -436,7 +436,6 @@ export async function installGlobalPackage(
     logError(
       new AutoUpdaterError('Another process is currently installing an update'),
     )
-    // Log the lock contention
     logEvent('tengu_auto_updater_lock_contention', {
       pid: process.pid,
       currentVersion:

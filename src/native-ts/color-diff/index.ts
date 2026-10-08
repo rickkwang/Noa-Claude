@@ -6,7 +6,7 @@
  * crate for word diffing. This port uses highlight.js (already a dep via
  * cli-highlight) and the diff npm package's diffArrays.
  *
- * API matches vendor/color-diff-src/index.d.ts exactly so callers don't change.
+ * API matches the upstream color-diff typings exactly so callers don't change.
  *
  * Key semantic differences from the native module:
  * - Syntax highlighting uses highlight.js. Scope colors were measured from
@@ -48,7 +48,7 @@ import { convertLeadingTabsToSpaces } from '../../utils/file.js'
 import { logError } from '../../utils/log.js'
 
 // ---------------------------------------------------------------------------
-// Public API types (match vendor/color-diff-src/index.d.ts)
+// Public API types (match the upstream color-diff typings)
 // ---------------------------------------------------------------------------
 
 export type Hunk = {
@@ -984,7 +984,7 @@ export function getSyntaxTheme(themeName: string): SyntaxTheme {
   return { theme: defaultSyntaxThemeName(themeName), source: null }
 }
 
-// Lazy loader to match vendor/color-diff-src/index.ts API
+// Lazy loader to match the upstream color-diff API
 let cachedModule: NativeModule | null = null
 
 export function getNativeModule(): NativeModule | null {

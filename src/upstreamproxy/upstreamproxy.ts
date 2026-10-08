@@ -16,8 +16,6 @@
  *
  * Every step fails open: any error logs a warning and disables the proxy.
  * A broken proxy setup must never break an otherwise-working session.
- *
- * Design doc: api-go/ccr/docs/plans/CCR_AUTH_DESIGN.md § "Week-1 pilot scope".
  */
 
 import { mkdir, readFile, unlink, writeFile } from 'fs/promises'

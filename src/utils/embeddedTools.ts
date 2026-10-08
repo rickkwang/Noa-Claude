@@ -11,7 +11,7 @@ import { isEnvTruthy } from './envUtils.js'
  * - The dedicated Glob/Grep tools are removed from the tool registry
  * - Prompt guidance steering Claude away from find/grep is omitted
  *
- * Set as a build-time define in scripts/build-with-plugins.ts for ant-native builds.
+ * Set as a build-time define for ant-native builds.
  */
 export function hasEmbeddedSearchTools(): boolean {
   if (!isEnvTruthy(process.env.EMBEDDED_SEARCH_TOOLS)) return false

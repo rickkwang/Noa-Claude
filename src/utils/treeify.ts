@@ -72,7 +72,6 @@ export function treeify(obj: TreeNode, options: TreeifyOptions = {}): string {
       return
     }
 
-    // Check for circular references
     if (visited.has(node)) {
       lines.push(prefix + colorize('[Circular]', treeCharColors.value))
       return
@@ -123,7 +122,6 @@ export function treeify(obj: TreeNode, options: TreeifyOptions = {}): string {
         const nextPrefix = nodePrefix + coloredContinuation + ' '
         growBranch(value, nextPrefix, isLastKey, depth + 1)
       } else if (Array.isArray(value)) {
-        // Handle arrays
         lines.push(
           line +
             (shouldAddColon ? ': ' : line ? ' ' : '') +
@@ -144,7 +142,6 @@ export function treeify(obj: TreeNode, options: TreeifyOptions = {}): string {
     })
   }
 
-  // Start growing the tree
   const keys = Object.keys(obj)
   if (keys.length === 0) {
     return colorize('(empty)', treeCharColors.value)

@@ -436,7 +436,6 @@ async function fetchSessionLogsFromUrl(
     if (response.status === 200) {
       const data = response.data
 
-      // Validate the response structure
       if (!data || typeof data !== 'object' || !Array.isArray(data.loglines)) {
         logError(
           new Error(

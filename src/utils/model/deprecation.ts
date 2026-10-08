@@ -29,7 +29,7 @@ type DeprecationEntry = {
 
 /**
  * Deprecated models and their retirement dates by provider, keyed by canonical
- * name (getCanonicalName). Mirrors upstream's table (2.1.280); Opus 4.1 is
+ * name (getCanonicalName). Mirrors upstream's table; Opus 4.1 is
  * absent because upstream lists no dates for it, only the legacy remap that
  * isLegacyModelRemapEnabled() already covers.
  */

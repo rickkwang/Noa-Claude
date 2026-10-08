@@ -26,7 +26,6 @@ const command = {
         ? 'sandbox enabled (auto-allow)'
         : 'sandbox enabled'
 
-      // Add unsandboxed fallback status
       statusText += allowUnsandboxed ? ', fallback allowed' : ''
     }
 

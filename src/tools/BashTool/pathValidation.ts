@@ -1126,7 +1126,6 @@ export const PATH_EXTRACTORS: Record<
         continue
       }
 
-      // Handle flags
       if (arg.startsWith('-')) {
         // Global options don't stop collection
         if (['-H', '-L', '-P'].includes(arg)) continue
@@ -1972,7 +1971,6 @@ export function createPathChecker(
       result.suggestions = suggestions
     }
 
-    // Return the decision directly
     return result
   }
 }

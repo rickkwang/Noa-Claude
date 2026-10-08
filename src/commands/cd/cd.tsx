@@ -28,9 +28,9 @@ import type { LocalJSXCommandOnDone } from '../../types/command.js'
 import { CdConfirm } from './CdConfirm.js'
 
 /**
- * Relocate the session to `target`. Mirrors Claude Code's MbO: update the
- * shell cwd (where Bash runs) and originalCwd (the permission workspace +
- * project anchor), physically move the transcript to the new project directory
+ * Relocate the session to `target`: update the shell cwd (where Bash runs) and
+ * originalCwd (the permission workspace + project anchor), physically move the
+ * transcript to the new project directory
  * (so `--resume` from there lists the session), then clear cwd-dependent caches
  * so env_info, memory, git branch, and plans recompute. Returns a
  * model-visible message noting the env block is now stale.

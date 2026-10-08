@@ -349,7 +349,6 @@ async function handleSpawnSplitPane(
       })
     })
 
-    // Clear the JSX
     context.setToolJSX(null)
 
     if (setupResult === 'cancelled') {
@@ -420,7 +419,6 @@ async function handleSpawnSplitPane(
       .split(' ')
       .filter((flag, i, arr) => flag !== '--model' && arr[i - 1] !== '--model')
       .join(' ')
-    // Add the teammate's model
     inheritedFlags = inheritedFlags
       ? `${inheritedFlags} --model ${quote([model])}`
       : `--model ${quote([model])}`
@@ -627,7 +625,6 @@ async function handleSpawnSeparateWindow(
       .split(' ')
       .filter((flag, i, arr) => flag !== '--model' && arr[i - 1] !== '--model')
       .join(' ')
-    // Add the teammate's model
     inheritedFlags = inheritedFlags
       ? `${inheritedFlags} --model ${quote([model])}`
       : `--model ${quote([model])}`

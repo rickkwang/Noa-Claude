@@ -1,10 +1,8 @@
 // @ts-nocheck
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 /**
- * Ensure that any model codenames introduced here are also added to
- * scripts/excluded-strings.txt to avoid leaking them. Wrap any codename string
- * literals with process.env.USER_TYPE === 'ant' for Bun to remove the codenames
- * during dead code elimination
+ * Wrap any codename string literal in process.env.USER_TYPE === 'ant' so Bun's
+ * dead code elimination removes it from external builds.
  */
 import { getMainLoopModelOverride } from '../../bootstrap/state.js'
 import {

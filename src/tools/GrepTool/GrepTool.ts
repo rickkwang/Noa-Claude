@@ -346,12 +346,10 @@ export const GrepTool = buildTool({
       args.push('-U', '--multiline-dotall')
     }
 
-    // Add optional flags
     if (case_insensitive) {
       args.push('-i')
     }
 
-    // Add output mode flags
     if (output_mode === 'files_with_matches') {
       args.push('-l')
     } else if (output_mode === 'count') {
@@ -412,7 +410,6 @@ export const GrepTool = buildTool({
       }
     }
 
-    // Add ignore patterns
     const appState = getAppState()
     const ignorePatterns = normalizePatternsToPath(
       getFileReadIgnorePatterns(appState.toolPermissionContext),

@@ -70,7 +70,7 @@ export const DEFAULT_POLL_CONFIG: PollIntervalConfig = {
   multisession_poll_interval_ms_at_capacity:
     MULTISESSION_POLL_INTERVAL_MS_AT_CAPACITY,
   // Poll query param: reclaim unacknowledged work items older than this.
-  // Matches the server's DEFAULT_RECLAIM_OLDER_THAN_MS (work_service.py:24).
+  // Matches the server's DEFAULT_RECLAIM_OLDER_THAN_MS.
   // Enables picking up stale-pending work after JWT expiry, when the prior
   // ack failed because the session_ingress_token was already stale.
   reclaim_older_than_ms: 5000,

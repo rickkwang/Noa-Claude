@@ -24,7 +24,7 @@ import {
 } from '../analytics/index.js'
 
 // Files API is currently in beta. oauth-2025-04-20 enables Bearer OAuth
-// on public-api routes (auth.py: "oauth_auth" not in beta_versions → 404).
+// on public-api routes (the server: "oauth_auth" not in beta_versions → 404).
 const FILES_API_BETA_HEADER = 'files-api-2025-04-14,oauth-2025-04-20'
 const ANTHROPIC_VERSION = '2023-06-01'
 
@@ -241,7 +241,6 @@ export async function downloadAndSaveFile(
     const parentDir = path.dirname(fullPath)
     await fs.mkdir(parentDir, { recursive: true })
 
-    // Write the file
     await fs.writeFile(fullPath, content)
 
     logDebug(`Saved file ${fileId} to ${fullPath} (${content.length} bytes)`)
@@ -427,7 +426,6 @@ export async function uploadFile(
   const boundary = `----FormBoundary${randomUUID()}`
   const filename = path.basename(relativePath)
 
-  // Build the multipart body
   const bodyParts: Buffer[] = []
 
   // File part

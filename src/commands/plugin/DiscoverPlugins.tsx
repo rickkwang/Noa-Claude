@@ -265,7 +265,6 @@ export function DiscoverPlugins({
     setSelectedForInstall(new Set());
     clearAllCaches();
 
-    // Handle installation results
     if (failureCount === 0) {
       const message = `✓ Installed ${successCount_0} ${plural(successCount_0, 'plugin')}.`;
       setResult(message);
@@ -319,7 +318,6 @@ export function DiscoverPlugins({
     }
   };
 
-  // Handle error state
   useEffect(() => {
     if (error) {
       setResult(error);

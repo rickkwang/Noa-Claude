@@ -299,7 +299,6 @@ export function removeMemberFromTeam(
     return false
   }
 
-  // Remove from members array
   teamFile.members.splice(memberIndex, 1)
 
   // Also remove from hiddenPaneIds if present
@@ -338,7 +337,6 @@ export function removeMemberByAgentId(
     return false
   }
 
-  // Remove from members array
   teamFile.members.splice(memberIndex, 1)
 
   writeTeamFile(teamName, teamFile)

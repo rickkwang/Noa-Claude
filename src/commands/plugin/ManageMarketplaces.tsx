@@ -195,7 +195,6 @@ export function ManageMarketplaces({
       let removedCount = 0;
       const refreshedMarketplaces = new Set<string>();
       for (const state of statesToProcess) {
-        // Handle remove
         if (state.pendingRemove) {
           // First uninstall all plugins from this marketplace
           if (state.installedPlugins && state.installedPlugins.length > 0) {
@@ -222,7 +221,6 @@ export function ManageMarketplaces({
           continue;
         }
 
-        // Handle update
         if (state.pendingUpdate) {
           // Refresh individual marketplace for efficiency with progress reporting
           await refreshMarketplace(state.name, (message: string) => {
@@ -250,10 +248,8 @@ export function ManageMarketplaces({
         updatedPluginCount = updatedPluginIds.length;
       }
 
-      // Clear caches after changes
       clearAllCaches();
 
-      // Call completion callback
       if (onManageComplete) {
         await onManageComplete();
       }
@@ -303,7 +299,6 @@ export function ManageMarketplaces({
         }
       }
 
-      // Build success message
       const actions: string[] = [];
       if (updatedCount > 0) {
         const pluginPart = updatedPluginCount > 0 ? ` (${updatedPluginCount} ${plural(updatedPluginCount, 'plugin')} bumped)` : '';
@@ -394,7 +389,6 @@ export function ManageMarketplaces({
     try {
       await setMarketplaceAutoUpdate(marketplace.name, newAutoUpdate);
 
-      // Update local state
       setMarketplaceStates(prev => prev.map(state => state.name === marketplace.name ? {
         ...state,
         autoUpdate: newAutoUpdate
@@ -700,7 +694,6 @@ export function ManageMarketplaces({
         {marketplaceStates.map((state, idx) => {
         const isSelected = idx + 1 === selectedIndex; // +1 because Add Marketplace is at index 0
 
-        // Build status indicators
         const indicators: string[] = [];
         if (state.pendingUpdate) indicators.push('UPDATE');
         if (state.pendingRemove) indicators.push('REMOVE');

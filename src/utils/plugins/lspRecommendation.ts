@@ -223,7 +223,6 @@ async function getLspPluginsFromMarketplaces(): Promise<
 export async function getMatchingLspPlugins(
   filePath: string,
 ): Promise<LspPluginRecommendation[]> {
-  // Check if globally disabled
   if (isLspRecommendationsDisabled()) {
     logForDebugging('[lspRecommendation] Recommendations are disabled')
     return []
@@ -241,7 +240,6 @@ export async function getMatchingLspPlugins(
   // Get all LSP plugins from marketplaces
   const allLspPlugins = await getLspPluginsFromMarketplaces()
 
-  // Get config for filtering
   const config = getGlobalConfig()
   const neverPlugins = config.lspRecommendationNeverPlugins ?? []
 
@@ -249,7 +247,6 @@ export async function getMatchingLspPlugins(
   const matchingPlugins: Array<{ info: LspPluginInfo; pluginId: string }> = []
 
   for (const [pluginId, info] of allLspPlugins) {
-    // Check extension match
     if (!info.extensions.has(ext)) {
       continue
     }
@@ -297,7 +294,6 @@ export async function getMatchingLspPlugins(
     return 0
   })
 
-  // Convert to recommendations
   return pluginsWithBinary.map(({ info, pluginId }) => ({
     pluginId,
     pluginName: info.entry.name,

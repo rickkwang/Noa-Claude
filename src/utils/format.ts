@@ -260,7 +260,6 @@ export function formatResetTime(
   const now = new Date()
   const minutes = date.getMinutes()
 
-  // Calculate hours until reset
   const hoursUntilReset = (date.getTime() - now.getTime()) / (1000 * 60 * 60)
 
   // If reset is more than 24 hours away, show the date as well. Weekly limits

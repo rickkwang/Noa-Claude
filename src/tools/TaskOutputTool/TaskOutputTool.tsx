@@ -81,7 +81,6 @@ async function getTaskOutputData(task: TaskState): Promise<TaskOutput> {
     output
   };
 
-  // Add type-specific fields
   if (task.type === 'local_bash') {
     const bashTask = task as LocalShellTaskState;
     return {
@@ -121,7 +120,6 @@ async function waitForTaskCompletion(taskId: string, getAppState: () => {
 }, timeoutMs: number, abortController?: AbortController): Promise<TaskState | null> {
   const startTime = Date.now();
   while (Date.now() - startTime < timeoutMs) {
-    // Check abort signal
     if (abortController?.signal.aborted) {
       throw new AbortError();
     }
@@ -134,7 +132,6 @@ async function waitForTaskCompletion(taskId: string, getAppState: () => {
       return task;
     }
 
-    // Wait before polling again
     await sleep(100);
   }
 

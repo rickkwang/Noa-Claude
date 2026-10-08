@@ -216,7 +216,6 @@ async function initializeAgentMcpServers(
       const client = await connection
       agentClients.push(client)
 
-      // Fetch tools if connected
       if (client.type === 'connected') {
         const tools = await fetchToolsForClient(client)
         agentTools.push(...tools)
@@ -714,7 +713,6 @@ export async function* runAgent({
         ? uniqBy([...resolvedTools, ...agentMcpTools], 'name')
         : resolvedTools
 
-    // Build agent-specific options
     const agentOptions: ToolUseContext['options'] = {
       isNonInteractiveSession: useExactTools
         ? toolUseContext.options.isNonInteractiveSession

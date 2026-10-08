@@ -610,7 +610,6 @@ export const BashTool = buildTool({
     persistedOutputPath,
     persistedOutputSize
   }, toolUseID): ToolResultBlockParam {
-    // Handle structured content
     if (structuredContent && structuredContent.length > 0) {
       return {
         tool_use_id: toolUseID,
@@ -964,7 +963,6 @@ async function* runShellCommand({
     shouldAutoBackground
   });
 
-  // Start the command execution
   const resultPromise = shellCommand.result;
 
   // Helper to spawn a background task and return its ID

@@ -53,8 +53,8 @@ export function buildSdkUrl(apiBaseUrl: string, sessionId: string): string {
  *
  * Tagged IDs have the form {tag}_{body} or {tag}_staging_{body}, where the
  * body encodes a UUID. CCR v2's compat layer returns `session_*` to v1 API
- * clients (compat/convert.go:41) but the infrastructure layer (sandbox-gateway
- * work queue, work poll response) uses `cse_*` (compat/CLAUDE.md:13). Both
+ * clients but the infrastructure layer (sandbox-gateway
+ * work queue, work poll response) uses `cse_*`. Both
  * have the same underlying UUID.
  *
  * Without this, replBridge rejects its own session as "foreign" at the
@@ -92,8 +92,7 @@ export function buildCCRv2SdkUrl(
  * Returns the worker_epoch, which must be passed to the child CC process
  * so its CCRClient can include it in every heartbeat/state/event request.
  *
- * Mirrors what environment-manager does in the container path
- * (api-go/environment-manager/cmd/cmd_task_run.go RegisterWorker).
+ * Mirrors the container path's worker registration.
  */
 export async function registerWorker(
   sessionUrl: string,

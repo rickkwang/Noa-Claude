@@ -217,7 +217,6 @@ export function detectUnreachableRules(
       continue // Don't also report ask-shadowing if deny-shadowed
     }
 
-    // Check ask shadowing
     const askResult = isAllowRuleShadowedByAskRule(allowRule, askRules, options)
     if (askResult.shadowed) {
       const shadowSource = formatSource(askResult.shadowedBy.source)

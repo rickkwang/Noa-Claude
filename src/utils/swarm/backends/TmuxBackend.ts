@@ -215,7 +215,6 @@ export class TmuxBackend implements PaneBackend {
     const tmuxColor = getTmuxColorName(color)
     const runTmux = useExternalSession ? runTmuxInSwarm : runTmuxInUserSession
 
-    // Set the pane title
     await runTmux(['select-pane', '-t', paneId, '-T', name])
 
     // Enable pane border status with colored format
@@ -525,7 +524,6 @@ export class TmuxBackend implements PaneBackend {
       return { windowTarget, paneId: panes[0] || '' }
     }
 
-    // Create the swarm-view window
     const createResult = await runTmuxInSwarm([
       'new-window',
       '-t',

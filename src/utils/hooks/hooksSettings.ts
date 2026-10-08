@@ -142,7 +142,6 @@ export function getAllHooks(appState: AppState): IndividualHookConfig[] {
     }
   }
 
-  // Get session hooks
   const sessionId = getSessionId()
   const sessionHooks = getSessionHooks(appState, sessionId)
   for (const [event, matchers] of sessionHooks.entries()) {

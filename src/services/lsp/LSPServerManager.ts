@@ -117,7 +117,6 @@ export function createLSPServerManager(): LSPServerManager {
           }
         }
 
-        // Create server instance
         const instance = createLSPServerInstance(serverName, config)
         servers.set(serverName, instance)
 
@@ -263,7 +262,6 @@ export function createLSPServerManager(): LSPServerManager {
     }
   }
 
-  // Return public interface
   function getAllServers(): Map<string, LSPServerInstance> {
     return servers
   }

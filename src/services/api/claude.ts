@@ -556,9 +556,8 @@ export function configureEffortParams(
 
 // output_config.task_budget — API-side token budget awareness for the model.
 // Stainless SDK types don't yet include task_budget on BetaOutputConfig, so we
-// define the wire shape locally and cast. The API validates on receipt; see
-// api/api/schemas/messages/request/output_config.py:12-39 in the monorepo.
-// Beta: task-budgets-2026-03-13 (EAP, claude-strudel-eap only as of Mar 2026).
+// define the wire shape locally and cast. The API validates on receipt.
+// Beta: task-budgets-2026-03-13 (early access).
 type TaskBudgetParam = {
   type: 'tokens'
   total: number
@@ -661,7 +660,6 @@ export async function verifyApiKey(
       error = errorFromRetry.originalError
     }
     logError(error)
-    // Check for authentication error
     if (
       error instanceof Error &&
       (error.message.includes(
@@ -2442,7 +2440,6 @@ async function* queryModel(
               lastMsg.message.stop_reason = stopReason
             }
 
-            // Update cost
             const costUSDForPart = calculateUSDCost(resolvedModel, usage)
             costUSD += addToTotalSessionCost(
               costUSDForPart,

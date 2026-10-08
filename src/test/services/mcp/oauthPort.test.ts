@@ -8,9 +8,9 @@ afterEach(() => {
 })
 
 describe('buildRedirectUri', () => {
-  // Upstream shipped 127.0.0.1 in 2.1.229 and reverted to localhost in 2.1.231
-  // after it broke pre-registered OAuth clients (Slack). This pins the default
-  // so the reverted change doesn't get reintroduced. See REDIRECT_HOST.
+  // Pins the default to localhost. The 127.0.0.1 change broke pre-registered
+  // OAuth clients (Slack) and was reverted, so it must not come back.
+  // See REDIRECT_HOST.
   test('defaults to localhost, matching upstream 2.1.231', () => {
     expect(buildRedirectUri(51004)).toBe('http://localhost:51004/callback')
   })

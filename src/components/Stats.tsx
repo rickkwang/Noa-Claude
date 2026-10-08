@@ -1234,7 +1234,6 @@ function renderOverviewToAnsi(stats: ClaudeCodeStats): string[] {
     lines.push('');
   }
 
-  // Calculate values
   const {
     modelEntries,
     totalTokens

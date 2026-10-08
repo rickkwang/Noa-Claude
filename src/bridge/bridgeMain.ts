@@ -269,8 +269,8 @@ export async function runBridgeLoop(
   }
 
   // Sessions spawned with CCR v2 env vars. v2 children cannot use OAuth
-  // tokens (CCR worker endpoints validate the JWT's session_id claim,
-  // register_worker.go:32), so onRefresh triggers server re-dispatch
+  // tokens (CCR worker endpoints validate the JWT's session_id claim), so
+  // onRefresh triggers server re-dispatch
   // instead — the next poll delivers fresh work with a new JWT via the
   // existingHandle path below.
   const v2Sessions = new Set<string>()
@@ -454,13 +454,11 @@ export async function runBridgeLoop(
       logger.removeSession(compatId)
       titledSessions.delete(compatId)
       v2Sessions.delete(sessionId)
-      // Clear per-session timeout timer
       const timer = sessionTimers.get(sessionId)
       if (timer) {
         clearTimeout(timer)
         sessionTimers.delete(sessionId)
       }
-      // Clear token refresh timer
       tokenRefresh?.cancel(sessionId)
       // Wake the at-capacity sleep so the bridge can accept new work immediately
       capacityWake.wake()
@@ -1175,7 +1173,6 @@ export async function runBridgeLoop(
               ),
             )
 
-          // Start per-session timeout watchdog
           const timeoutMs =
             config.sessionTimeoutMs ?? DEFAULT_SESSION_TIMEOUT_MS
           if (timeoutMs > 0) {

@@ -6,7 +6,7 @@
  * Keep this file dependency-free to prevent circular imports.
  *
  * Last verified: 2025-12-22
- * Source: api/api/schemas/messages/blocks/ and api/api/config.py
+ * Source: the server's message block schemas and config
  *
  * Future: See issue #13240 for dynamic limits fetching from server.
  */
@@ -33,7 +33,7 @@ export const IMAGE_TARGET_RAW_SIZE = (API_IMAGE_MAX_BASE64_SIZE * 3) / 4 // 3.75
  * Client-side maximum dimensions for image resizing.
  *
  * Note: The API internally resizes images larger than 1568px (source:
- * encoding/full_encoding.py), but this is handled server-side and doesn't
+ * the server's image encoder), but this is handled server-side and doesn't
  * cause errors. These client-side limits (2000px) are slightly larger to
  * preserve quality when beneficial.
  *

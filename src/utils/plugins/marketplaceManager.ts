@@ -298,7 +298,6 @@ export async function loadKnownMarketplacesConfig(): Promise<KnownMarketplacesCo
       encoding: 'utf-8',
     })
     const data = jsonParse(content)
-    // Validate against schema
     const parsed = KnownMarketplacesFileSchema().safeParse(data)
     if (!parsed.success) {
       const errorMsg = `Marketplace configuration file is corrupted: ${parsed.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`
@@ -355,7 +354,6 @@ export async function loadKnownMarketplacesConfigSafe(): Promise<KnownMarketplac
 export async function saveKnownMarketplacesConfig(
   config: KnownMarketplacesConfig,
 ): Promise<void> {
-  // Validate before saving
   const normalized = normalizeKnownMarketplacesConfig(config)
   const parsed = KnownMarketplacesFileSchema().safeParse(normalized)
   const configFile = getKnownMarketplacesFile()
@@ -1983,7 +1981,6 @@ export async function removeMarketplaceSource(name: string): Promise<void> {
     )
   }
 
-  // Remove from config
   delete config[name]
   await saveKnownMarketplacesConfig(config)
 
@@ -2643,7 +2640,6 @@ export async function refreshMarketplace(
       throw new Error(`Unsupported marketplace source type for refresh`)
     }
 
-    // Update lastUpdated timestamp
     config[name]!.lastUpdated = new Date().toISOString()
     await saveKnownMarketplacesConfig(config)
 

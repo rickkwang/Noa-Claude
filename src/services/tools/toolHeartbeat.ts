@@ -5,7 +5,7 @@ import { logError } from '../../utils/log.js'
 /**
  * Interval between tool heartbeat ticks, in ms.
  *
- * Mirrors upstream Claude Code (30s). Long enough that a heartbeat is only
+ * 30s, as upstream. Long enough that a heartbeat is only
  * ever seen for genuinely slow tool calls, short enough that a headless/remote
  * consumer never sees more than ~30s of silence before a "still running"
  * signal.
@@ -23,9 +23,9 @@ const NOOP = (): void => {}
  *
  * No-op for the Agent tool — subagents surface their own `agent_progress`, and
  * a heartbeat would be redundant noise. Subagent-context tool calls are
- * excluded by the caller (they gate on `agentId`), matching upstream. (The
- * Agent tool's canonical name is the only one checked here, mirroring upstream;
- * the legacy `Task` alias never appears as a live tool's `.name`.)
+ * excluded by the caller (they gate on `agentId`). Only the Agent tool's
+ * canonical name is checked here; the legacy `Task` alias never appears as a
+ * live tool's `.name`.
  *
  * The emitted progress reuses the same callback the tool itself writes to, so
  * the heartbeat message carries `parentToolUseID = <the real tool use id>` and
@@ -33,8 +33,6 @@ const NOOP = (): void => {}
  * interactive message list (the REPL drops it) or a tool's rendered progress
  * trail, and progress messages are never persisted to the transcript — the
  * frame exists only for the headless/SDK output stream.
- *
- * Mirrors upstream Claude Code (added 2.1.213).
  */
 export function startToolHeartbeat({
   toolName,

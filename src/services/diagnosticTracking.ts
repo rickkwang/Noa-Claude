@@ -77,7 +77,6 @@ export class DiagnosticTrackingService {
   }
 
   private normalizeFileUri(fileUri: string): string {
-    // Remove our protocol prefixes
     const protocolPrefixes = [
       'file://',
       '_claude_fs_right:',

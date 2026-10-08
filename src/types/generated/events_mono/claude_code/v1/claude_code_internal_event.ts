@@ -18,7 +18,7 @@ export interface GitHubActionsMetadata {
 
 /**
  * EnvironmentMetadata contains environment and runtime information
- * See claude-cli-internal/src/services/statsig.ts for the source of these fields
+ * Field sources are defined by the upstream analytics client, not this fork.
  */
 export interface EnvironmentMetadata {
   platform?: string | undefined
@@ -75,8 +75,7 @@ export interface SlackContext {
 
 /**
  * ClaudeCodeInternalEvent represents events logged from Claude Code via Statsig
- * This schema matches the structure in claude-cli-internal/src/services/statsig.ts
- * Source table: proj-product-data-nhme.raw_statsig_internal_tools.events
+ * This schema matches the upstream analytics client event structure
  */
 export interface ClaudeCodeInternalEvent {
   /** Event name (e.g., "tengu_binary_feedback", "tengu_api_success") */

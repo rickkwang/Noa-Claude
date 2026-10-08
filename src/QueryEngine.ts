@@ -942,7 +942,7 @@ export class QueryEngine {
           // markers persist and re-trigger on every turn, and mutableMessages
           // never shrinks (memory leak in long SDK sessions). The subtype
           // check lives inside the injected callback so feature-gated strings
-          // stay out of this file (excluded-strings check).
+          // stay out of this file.
           const snipResult = this.config.snipReplay?.(
             message,
             this.mutableMessages,

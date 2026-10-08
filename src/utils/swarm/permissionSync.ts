@@ -229,7 +229,6 @@ export async function writePermissionRequest(
   try {
     release = await lockfile.lock(lockFilePath)
 
-    // Write the request file
     await writeFile(pendingPath, jsonStringify(request, null, 2), 'utf-8')
 
     logForDebugging(
@@ -381,7 +380,6 @@ export async function resolvePermission(
   try {
     release = await lockfile.lock(lockFilePath)
 
-    // Read the pending request
     let content: string
     try {
       content = await readFile(pendingPath, 'utf-8')
@@ -417,14 +415,12 @@ export async function resolvePermission(
       permissionUpdates: resolution.permissionUpdates,
     }
 
-    // Write to resolved directory
     await writeFile(
       resolvedPath,
       jsonStringify(resolvedRequest, null, 2),
       'utf-8',
     )
 
-    // Remove from pending directory
     await unlink(pendingPath)
 
     logForDebugging(

@@ -210,7 +210,6 @@ export function installAsciicastRecorder(): void {
     return originalWrite(chunk, encodingOrCb, cb)
   } as typeof process.stdout.write
 
-  // Handle terminal resize events
   function onResize(): void {
     const elapsed = (performance.now() - startTime) / 1000
     const { cols: newCols, rows: newRows } = getTerminalSize()

@@ -205,7 +205,6 @@ export function formatAPIError(error: APIError): string {
   if (connectionDetails) {
     const { code, isSSLError } = connectionDetails
 
-    // Handle timeout errors
     if (code === 'ETIMEDOUT') {
       return 'Request timed out. Check your internet connection and proxy settings'
     }

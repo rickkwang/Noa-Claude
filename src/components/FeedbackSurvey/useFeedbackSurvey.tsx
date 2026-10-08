@@ -239,7 +239,6 @@ export function useFeedbackSurvey(messages: Message[], isLoading: boolean, submi
       return false;
     }
 
-    // Check session-local pacing
     if (feedbackSurvey.timeLastShown) {
       // Check time elapsed since last appearance in this session
       const timeSinceLastShown = Date.now() - feedbackSurvey.timeLastShown;

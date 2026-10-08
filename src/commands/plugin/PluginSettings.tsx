@@ -328,7 +328,6 @@ function removeExtraMarketplace(name: string, sources: Array<{
     if (!settings) continue;
     const updates: Record<string, unknown> = {};
 
-    // Remove from extraKnownMarketplaces
     if (settings.extraKnownMarketplaces?.[name]) {
       updates.extraKnownMarketplaces = {
         ...settings.extraKnownMarketplaces,

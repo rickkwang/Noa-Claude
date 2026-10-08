@@ -52,7 +52,6 @@ export async function withStatsCacheLock<T>(fn: () => Promise<T>): Promise<T> {
     await statsCacheLockPromise
   }
 
-  // Create our lock
   let releaseLock: (() => void) | undefined
   statsCacheLockPromise = new Promise<void>(resolve => {
     releaseLock = resolve
@@ -184,7 +183,6 @@ export async function loadStatsCache(): Promise<PersistedStatsCache> {
     const content = await fs.readFile(cachePath, { encoding: 'utf-8' })
     const parsed = jsonParse(content) as PersistedStatsCache
 
-    // Validate version
     if (parsed.version !== STATS_CACHE_VERSION) {
       const migrated = migrateStatsCache(parsed)
       if (!migrated) {
@@ -370,7 +368,6 @@ export function mergeCacheWithNewStats(
     hourCounts[hourNum] = (hourCounts[hourNum] || 0) + count
   }
 
-  // Update session aggregates
   const totalSessions =
     existingCache.totalSessions + newStats.sessionStats.length
   const totalMessages =

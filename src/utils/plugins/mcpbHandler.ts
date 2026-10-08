@@ -355,7 +355,6 @@ export function validateUserConfig(
   for (const [key, fieldSchema] of Object.entries(schema)) {
     const value = values[key]
 
-    // Check required fields
     if (fieldSchema.required && (value === undefined || value === '')) {
       errors.push(`${fieldSchema.title || key} is required but not provided`)
       continue
@@ -553,7 +552,6 @@ async function extractMcpbContents(
     onProgress('Extracting files...')
   }
 
-  // Create extraction directory
   await getFsImplementation().mkdir(extractPath)
 
   // Write all files. Filter directory entries from the count so progress
@@ -729,7 +727,6 @@ export async function loadMcpbFile(
     const manifestData = new TextEncoder().encode(manifestContent)
     const manifest = await parseAndValidateManifestFromBytes(manifestData)
 
-    // Check for user_config requirement
     if (manifest.user_config && Object.keys(manifest.user_config).length > 0) {
       // Server name from DXT manifest
       const serverName = manifest.name
@@ -803,7 +800,6 @@ export async function loadMcpbFile(
     mcpbFilePath = join(cacheDir, `${sourceHash}.mcpb`)
     mcpbData = await downloadMcpb(source, mcpbFilePath, onProgress)
   } else {
-    // Load from local path
     const localPath = join(pluginPath, source)
 
     if (onProgress) {
@@ -845,7 +841,6 @@ export async function loadMcpbFile(
     throw error
   }
 
-  // Parse and validate manifest
   const manifest = await parseAndValidateManifestFromBytes(manifestData)
   logForDebugging(
     `MCPB manifest: ${manifest.name} v${manifest.version} by ${manifest.author.name}`,
@@ -864,7 +859,6 @@ export async function loadMcpbFile(
   const extractPath = join(cacheDir, contentHash)
   await extractMcpbContents(unzipped, extractPath, modes, onProgress)
 
-  // Check for user_config requirement
   if (manifest.user_config && Object.keys(manifest.user_config).length > 0) {
     // Server name from DXT manifest
     const serverName = manifest.name
@@ -887,7 +881,6 @@ export async function loadMcpbFile(
       }
       await saveCacheMetadata(cacheDir, source, newMetadata)
 
-      // Return "needs configuration" status
       return {
         status: 'needs-config',
         manifest,

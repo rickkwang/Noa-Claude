@@ -350,7 +350,7 @@ function openTunnel(
   authHeader: string,
   wsAuthHeader: string,
 ): void {
-  // core/websocket/stream.go picks JSON vs binary-proto from the upgrade
+  // the server picks JSON vs binary-proto from the upgrade
   // request's Content-Type header (defaults to JSON). Without application/proto
   // the server protojson.Unmarshals our hand-encoded binary chunks and fails
   // silently with EOF.

@@ -29,7 +29,7 @@ export function setCseShimGate(gate: () => boolean): void {
  * Worker endpoints (/v1/code/sessions/{id}/worker/*) want `cse_*`; that's
  * what the work poll delivers. Client-facing compat endpoints
  * (/v1/sessions/{id}, /v1/sessions/{id}/archive, /v1/sessions/{id}/events)
- * want `session_*` — compat/convert.go:27 validates TagSession. Same UUID,
+ * want `session_*` — the server validates TagSession. Same UUID,
  * different costume. No-op for IDs that aren't `cse_*`.
  *
  * bridgeMain holds one sessionId variable for both worker registration and
@@ -48,7 +48,7 @@ export function toCompatSessionId(id: string): string {
  * Inverse of toCompatSessionId. POST /v1/environments/{id}/bridge/reconnect
  * lives below the compat layer: once ccr_v2_compat_enabled is on server-side,
  * it looks sessions up by their infra tag (`cse_*`). createBridgeSession still
- * returns `session_*` (compat/convert.go:41) and that's what bridge-pointer
+ * returns `session_*` and that's what bridge-pointer
  * stores — so perpetual reconnect passes the wrong costume and gets "Session
  * not found" back. Same UUID, wrong tag. No-op for IDs that aren't `session_*`.
  */

@@ -534,13 +534,11 @@ export function resetScreen(
   screen.noSelect.fill(0, 0, size)
   screen.softWrap.fill(0, 0, height)
 
-  // Update dimensions
   screen.width = width
   screen.height = height
 
   // Shared pools accumulate — no clearing needed. Unique char/hyperlink sets are bounded.
 
-  // Clear damage tracking
   screen.damage = undefined
 }
 

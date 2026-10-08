@@ -81,7 +81,6 @@ export function parseAnsi(text: string): ParsedLine[] {
           while (k < codes.length) {
             const code = codes[k]!
             if (code === 0) {
-              // Reset
               currentColor = DEFAULT_FG
               bold = false
             } else if (code === 1) {

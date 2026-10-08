@@ -195,7 +195,6 @@ export function PreviewQuestionView({
       return;
     }
 
-    // Handle option navigation (vertical)
     if (e.key === 'up' || e.ctrl && e.key === 'p') {
       e.preventDefault();
       if (focusedIndex > 0) {

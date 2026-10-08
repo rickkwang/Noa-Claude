@@ -88,7 +88,6 @@ export function shouldBypassProxy(
 ): boolean {
   if (!noProxy) return false
 
-  // Handle wildcard
   if (noProxy === '*') return true
 
   try {
@@ -103,7 +102,6 @@ export function shouldBypassProxy(
     return noProxyList.some(pattern => {
       pattern = pattern.toLowerCase().trim()
 
-      // Check for port-specific match
       if (pattern.includes(':')) {
         return hostWithPort === pattern
       }

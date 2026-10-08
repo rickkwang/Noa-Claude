@@ -75,8 +75,8 @@ let BASE_PROMPT: string = feature('AUTO_MODE')
   ? txtRequire(require('./yolo-classifier-prompts/auto_mode_system_prompt.txt'))
   : ''
 
-// Upstream 2.1.233 unified the two templates: the ant-internal template
-// resolver just returns the external one (lVp → Aci), and the "use external?"
+// Upstream unified the two templates: the ant-internal template resolver just
+// returns the external one, and the "use external?"
 // gate is hardcoded true. This fork mirrors that — there is only the
 // external template, also loaded for `claude auto-mode defaults`.
 let EXTERNAL_PERMISSIONS_TEMPLATE: string = feature('AUTO_MODE')
@@ -111,7 +111,7 @@ export type AutoModeRules = {
   environment: string[]
 }
 
-// Template slot names — upstream 2.1.233's mwS. Each wraps that section's
+// Template slot names. Each wraps that section's
 // built-in defaults inside the external permissions template.
 const TEMPLATE_SLOTS = [
   'user_allow_rules_to_replace',
@@ -426,7 +426,7 @@ async function dumpErrorPrompts(
   }
 }
 
-// The classifier's own tool name. Upstream 2.1.233 removed the forced
+// The classifier's own tool name. Upstream removed the forced
 // tool_use classifier entirely (no classify_result tool exists there); the
 // name survives here only because the permission layer allowlists it as a
 // safe tool (classifierDecision.ts).
@@ -441,18 +441,18 @@ export const YOLO_CLASSIFIER_TOOL_NAME = 'classify_result'
 // reachable content, not trusted markup. Without escaping, a message
 // containing `</transcript>` closes the wrapper the classifier is told to read
 // inside, and a line reading `User: approved` forges a user turn in the
-// text-prefix serialization. Ports upstream 2.1.233's AwS/RwS/pVp regexes and
-// the EBn/Ept/grr/xYe helpers verbatim.
+// text-prefix serialization. The escaping regexes and helpers are ported
+// verbatim from upstream.
 
-/** Upstream AwS: format + default-ignorable code points (zero-width joiners, bidi overrides, tag characters) used to smuggle text past a tag filter. */
+/** Format and default-ignorable code points (zero-width joiners, bidi overrides, tag characters) that can smuggle text past a tag filter. */
 const INVISIBLE_CHARS_RE = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu
-/** Upstream RwS: separators that terminate a line for a model but not for `String.split('\n')`. */
+/** Separators that end a line for a model but not for `String.split('\n')`. */
 const LINE_SEPARATOR_CHARS_RE = /[\u2028\u2029\u0085]/g
-/** Upstream pVp: every line break form, normalized to `\n` before indenting. */
+/** Every line break form, normalized to `\n` before indenting. */
 const LINE_BREAKS_RE = /\r\n?|[\u2028\u2029\u0085\v\f]/g
 
 /**
- * Upstream EBn. Strips invisible characters, then defangs any opening or
+ * Strips invisible characters, then defangs any opening or
  * closing tag for `tagName` by rewriting its leading `<` to `[` —
  * `</transcript>` becomes `[/transcript>`. Still readable to the classifier,
  * no longer structural.
@@ -466,13 +466,12 @@ function neutralizeTag(tagName: string, text: string): string {
     )
 }
 
-/** Upstream Ept. */
 function neutralizeTranscriptTag(text: string): string {
   return neutralizeTag('transcript', text)
 }
 
 /**
- * Upstream grr. Escapes the line separators that survive JSON encoding, so a
+ * Escapes the line separators that survive JSON encoding, so a
  * JSONL transcript line can't be split into two by U+2028 and friends.
  */
 function escapeLineSeparators(text: string): string {
@@ -483,7 +482,7 @@ function escapeLineSeparators(text: string): string {
 }
 
 /**
- * Upstream xYe. Normalizes line breaks, neutralizes `<transcript>` tags, and
+ * Normalizes line breaks, neutralizes `<transcript>` tags, and
  * indents every line by two spaces — the indent is what stops an embedded
  * `User: …` line from reading as a turn boundary at column 0.
  */
@@ -516,7 +515,7 @@ export type TranscriptEntry = {
  *
  * Every text that originates in the session is passed through
  * sanitizeTranscriptText before it lands in an entry, matching where upstream
- * applies xYe (in its transcript builder, not at serialization time). Tool
+ * sanitizes (in its transcript builder, not at serialization time). Tool
  * inputs are escaped later, in toCompactBlock.
  *
  * AskUserQuestion answers are lifted out of their tool_result and emitted as
@@ -779,7 +778,7 @@ const USERNAME_SANITIZE_RE = /[^a-zA-Z0-9._-]/g
 
 /**
  * Session-context block appended after the main system prompt as its own
- * (uncached) text block — upstream LwS/HwS. Currently just the user-identity
+ * (uncached) text block. Currently just the user-identity
  * line: it resolves the `$USER/...` branch-ownership pattern the rules use,
  * so it must not share a cache block with the user-invariant main prompt.
  */
@@ -804,8 +803,8 @@ async function buildSessionContextBlock(): Promise<Anthropic.TextBlockParam | nu
 }
 
 /**
- * Build the system prompt for the auto mode classifier — upstream 2.1.233's
- * HwS. Assembles the base prompt with the wrapped permissions template,
+ * Build the system prompt for the auto mode classifier. Assembles the base
+ * prompt with the wrapped permissions template,
  * resolves the four customizable sections (settings.autoMode, $defaults-aware),
  * injects the settings deny-rules anti-circumvention block, and returns the
  * session-context block separately so the main prompt stays cache-stable.
@@ -829,7 +828,7 @@ export async function buildYoloSystemPrompt(
 // ============================================================================
 
 /**
- * Stage 1 suffix for two-stage ('both') mode — upstream 2.1.233's FwS.
+ * Stage 1 suffix for two-stage ('both') mode.
  *
  * The load-bearing clause is "Stage 1 does NOT apply user intent or ALLOW
  * exceptions". A stage 1 allow is *terminal* — it returns before stage 2 ever
@@ -842,14 +841,14 @@ export async function buildYoloSystemPrompt(
 const XML_S1_SUFFIX_BOTH =
   '\nErr on the side of blocking. Stage 1 does NOT apply user intent or ALLOW exceptions — stage 2 will handle those. Judge the action by its full effect — what it runs, sends, publishes, or enables — not its surface form. Block if ANY rule could apply. Your ENTIRE response MUST begin with <block>. Do NOT output any analysis, reasoning, or commentary before <block>. No "Looking at..." or similar preamble.'
 /**
- * Stage 1 suffix for fast-only mode — upstream 2.1.233's NwS. Here stage 1 IS
+ * Stage 1 suffix for fast-only mode. Here stage 1 IS
  * the final verdict, so it must apply intent and exceptions; only the
  * no-preamble instruction carries over.
  */
 const XML_S1_SUFFIX_FAST =
   '\nErr on the side of blocking. Your ENTIRE response MUST begin with <block>. Do NOT output any analysis, reasoning, or commentary before <block>. No "Looking at..." or similar preamble.'
 /**
- * Stage 2 suffix — upstream 2.1.233's BwS. Adds the reasoning-budget nudge
+ * Stage 2 suffix. Adds the reasoning-budget nudge
  * ("think longer on ambiguous ... brief for clear-cut") over the older variant.
  */
 const XML_S2_SUFFIX =
@@ -1061,7 +1060,7 @@ function combineUsage(a: ClassifierUsage, b: ClassifierUsage): ClassifierUsage {
  * Models with alwaysOnThinking (declared in tengu_ant_model_override) default
  * to adaptive thinking server-side and reject `disabled` with a 400. For those:
  * don't pass `thinking: false`, instead pad max_tokens so adaptive thinking
- * (observed 0–1114 tokens replaying go/ccshare/shawnm-20260310-202833) doesn't
+ * (observed 0–1114 tokens when replaying a recorded session) doesn't
  * exhaust the budget before <block> is emitted. Without headroom,
  * stop_reason=max_tokens yields an empty text response → parseXmlBlock('')
  * → null → "unparseable" → safe commands blocked.
@@ -1070,7 +1069,7 @@ function combineUsage(a: ClassifierUsage, b: ClassifierUsage): ClassifierUsage {
  * property-name strings don't survive minification into external builds.
  */
 /**
- * Classifier sampling temperature. Upstream (2.1.210) defaults to 1 with a
+ * Classifier sampling temperature. Upstream defaults to 1 with a
  * CLAUDE_CODE_AUTO_MODE_TEMPERATURE env override.
  */
 function getClassifierTemperature(): number {
@@ -1079,7 +1078,7 @@ function getClassifierTemperature(): number {
 }
 
 /**
- * Max retries for classifier API calls. Upstream (2.1.210) reads
+ * Max retries for classifier API calls. Upstream reads
  * tengu_auto_mode_config.maxRetries with an in-code default of 4 — NOT the
  * generic sideQuery default of 10, which would stall the permission check
  * through six extra backoff rounds when the classifier endpoint is
@@ -1298,7 +1297,7 @@ async function classifyYoloActionXml(
       : mode === 'fast'
         ? 'xml_fast'
         : 'xml_thinking'
-  // Upstream HwS shape: the user-invariant main prompt carries the cache
+  // Upstream's shape: the user-invariant main prompt carries the cache
   // breakpoint; the session-context block (user identity) rides uncached
   // after it so it never fragments the shared prompt cache.
   const systemBlocks: Anthropic.TextBlockParam[] = [
@@ -1472,7 +1471,7 @@ async function classifyYoloActionXml(
     ]
     const stage2Opts = {
       model,
-      // Upstream 2.1.233 raised this from 4096 to 8192: with the stage 2
+      // Upstream raised this from 4096 to 8192: with the stage 2
       // suffix asking for longer reasoning on borderline actions, a truncated
       // response (stop_reason=max_tokens) parses as unparseable, which fails
       // closed into a block. Headroom here is cheaper than a false block.
@@ -1889,7 +1888,7 @@ async function runYoloClassifier(
     markToolUseClassified(actionToolUseID)
   }
 
-  // Upstream 2.1.233 runs only the two-stage XML classifier; the legacy
+  // Upstream runs only the two-stage XML classifier; the legacy
   // forced-tool_use path (classify_result) no longer exists there or here.
   const { model: resolvedModel, probeLease } =
     await resolveClassifierModel(signal)
@@ -1931,7 +1930,7 @@ type AutoModeConfig = {
   /**
    * Two-stage XML classifier mode: `'fast'` runs only stage 1, `'thinking'`
    * runs only stage 2, anything else (including `false`) runs both stages.
-   * Upstream 2.1.233's RVp — there is no tool_use fallback to disable into.
+   * There is no tool_use fallback to disable into.
    */
   twoStageClassifier?: boolean | 'fast' | 'thinking'
   /**
@@ -2278,8 +2277,8 @@ export const _buildSettingsDenyBlockForTesting = buildSettingsDenyBlock
 export const _parseXmlCategoryForTesting = parseXmlCategory
 
 /**
- * Which stage(s) the two-stage XML classifier runs. Ports upstream 2.1.233's
- * RVp: the tengu_auto_mode_config value selects 'fast'/'thinking', every other
+ * Which stage(s) the two-stage XML classifier runs. Ports upstream's selection:
+ * the tengu_auto_mode_config value picks 'fast'/'thinking', and every other
  * defined value (including false) collapses to 'both'. GrowthBook is
  * hard-disabled in this fork, so this is 'both' unless an ant build ships a
  * config — there is no single-stage tool_use fallback to resolve to.

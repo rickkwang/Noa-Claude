@@ -117,7 +117,6 @@ export const CLAUDE_CODE_GUIDE_AGENT: BuiltInAgentDefinition = {
   getSystemPrompt({ toolUseContext }) {
     const commands = toolUseContext.options.commands
 
-    // Build context sections
     const contextSections: string[] = []
 
     // 1. Custom skills

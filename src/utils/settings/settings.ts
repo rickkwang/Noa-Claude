@@ -717,7 +717,6 @@ export function updateSettingsForSource(
         key: string | number | symbol,
         object: Record<string | number | symbol, unknown>,
       ) => {
-        // Handle undefined as deletion
         if (srcValue === undefined && object && typeof key === 'string') {
           delete object[key]
           return undefined
@@ -1015,7 +1014,6 @@ function loadSettingsFromDisk(): SettingsWithErrors {
 
           const { settings, errors } = parseSettingsFile(filePath)
 
-          // Add unique errors (deduplication)
           for (const error of errors) {
             const errorKey = `${error.file}:${error.path}:${error.message}`
             if (!seenErrors.has(errorKey)) {

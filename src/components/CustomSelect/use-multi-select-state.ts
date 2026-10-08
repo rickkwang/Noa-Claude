@@ -250,7 +250,6 @@ export function useMultiSelectState<T>({
     [options, updateSelectedValues],
   )
 
-  // Handle all keyboard input
   useInput(
     (input, key, event: InputEvent) => {
       const normalizedInput = normalizeFullWidthDigits(input)
@@ -347,7 +346,6 @@ export function useMultiSelectState<T>({
         return
       }
 
-      // Handle page navigation
       if (key.pageDown) {
         navigation.focusNextPage()
         return
@@ -401,7 +399,6 @@ export function useMultiSelectState<T>({
         return
       }
 
-      // Handle Escape
       if (key.escape) {
         onCancel()
         event.stopImmediatePropagation()

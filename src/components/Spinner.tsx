@@ -149,7 +149,6 @@ function SpinnerWithVerbInner({
       // Show "thinking..." for remaining time if < 2s elapsed, then show duration
       const showDuration = (): void => {
         setThinkingStatus(duration);
-        // Clear after 2s
         clearStatusTimer = setTimeout(setThinkingStatus, 2000, null);
       };
       if (remainingThinkingTime > 0) {

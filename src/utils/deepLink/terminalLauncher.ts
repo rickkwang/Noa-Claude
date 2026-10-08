@@ -126,7 +126,6 @@ async function detectMacosTerminal(): Promise<TerminalInfo> {
  * Checks $TERMINAL, then x-terminal-emulator, then walks a priority list.
  */
 async function detectLinuxTerminal(): Promise<TerminalInfo | null> {
-  // Check $TERMINAL env var
   const termEnv = process.env.TERMINAL
   if (termEnv) {
     const resolved = await which(termEnv)

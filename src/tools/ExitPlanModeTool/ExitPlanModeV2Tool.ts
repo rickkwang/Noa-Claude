@@ -464,7 +464,6 @@ Request ID: ${requestId}`,
       }
     }
 
-    // Handle empty plan
     if (!plan || plan.trim() === '') {
       return {
         type: 'tool_result',

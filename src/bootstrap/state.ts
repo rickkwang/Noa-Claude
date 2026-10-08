@@ -1731,11 +1731,9 @@ export function addSlowOperation(operation: string, durationMs: number): void {
     return
   }
   const now = Date.now()
-  // Remove stale operations
   STATE.slowOperations = STATE.slowOperations.filter(
     op => now - op.timestamp < SLOW_OPERATION_TTL_MS,
   )
-  // Add new operation
   STATE.slowOperations.push({ operation, durationMs, timestamp: now })
   // Keep only the most recent operations
   if (STATE.slowOperations.length > MAX_SLOW_OPERATIONS) {

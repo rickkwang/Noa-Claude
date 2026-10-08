@@ -51,7 +51,6 @@ export function clearSessionCaches(
   preservedAgentIds: ReadonlySet<string> = new Set(),
 ): void {
   const hasPreserved = preservedAgentIds.size > 0
-  // Clear context caches
   getUserContext.cache.clear?.()
   getSystemContext.cache.clear?.()
   getGitStatus.cache.clear?.()
@@ -113,11 +112,9 @@ export function clearSessionCaches(
       ({ clearAttributionCaches }) => clearAttributionCaches(),
     ).catch(err => logError(err as Error))
   }
-  // Clear repository detection caches
   clearRepositoryCaches()
   // Clear bash command prefix caches (Haiku-extracted prefixes)
   clearCommandPrefixCaches()
-  // Clear dump prompts state
   if (!hasPreserved) clearAllDumpState()
   // Clear invoked skills cache (each entry holds full skill file content)
   clearInvokedSkills(preservedAgentIds)
@@ -127,9 +124,7 @@ export function clearSessionCaches(
   clearDynamicSkills()
   // Clear LSP diagnostic tracking state
   resetAllLSPDiagnosticState()
-  // Clear tracked magic docs
   clearTrackedMagicDocs()
-  // Clear session environment variables
   clearSessionEnvVars()
   // Clear WebFetch URL cache (up to 50MB of cached page content)
   void import('../../tools/WebFetchTool/utils.js').then(

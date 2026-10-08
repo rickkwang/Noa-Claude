@@ -58,7 +58,6 @@ function parseKey(keypress: ParsedKey): [Key, string] {
 
   let input = keypress.ctrl ? keypress.name : keypress.sequence
 
-  // Handle undefined input case
   if (input === undefined) {
     input = ''
   }

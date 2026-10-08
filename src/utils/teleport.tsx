@@ -224,7 +224,6 @@ async function ensureUpstreamIsSet(branchName: string): Promise<void> {
     return;
   }
 
-  // Check if origin/<branchName> exists
   const {
     code: remoteCheckCode
   } = await execFileNoThrow(gitExe(), ['rev-parse', '--verify', `origin/${branchName}`]);
@@ -442,7 +441,6 @@ export async function teleportResumeCodeSession(sessionId: string, onProgress?: 
       throw new Error('Noa Claude web sessions require authentication with a Claude.ai account. API key authentication is not sufficient. Please run /login to authenticate, or check your authentication status with /status.');
     }
 
-    // Get organization UUID
     const orgUUID = await getOrganizationUUID();
     if (!orgUUID) {
       logEvent('tengu_teleport_resume_error', {
@@ -510,7 +508,6 @@ export async function teleportResumeCodeSession(sessionId: string, onProgress?: 
 async function handleTeleportPrerequisites(root: Root, errorsToIgnore?: Set<TeleportLocalErrorType>): Promise<void> {
   const errors = await getTeleportErrors();
   if (errors.size > 0) {
-    // Log teleport errors detected
     logEvent('tengu_teleport_errors_detected', {
       error_types: Array.from(errors).join(',') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       errors_ignored: Array.from(errorsToIgnore || []).join(',') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
@@ -604,7 +601,6 @@ export async function teleportFromSessionsAPI(sessionId: string, orgUUID: string
   } catch (error) {
     const err = toError(error);
 
-    // Handle 404 specifically
     if (axios.isAxiosError(error) && error.response?.status === 404) {
       logEvent('tengu_teleport_error_session_not_found_404', {
         sessionId: sessionId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
@@ -754,7 +750,7 @@ export async function teleportToRemote(options: {
    * Write-only at the API layer (stripped from Get/List responses). When
    * environmentId is set, CLAUDE_CODE_OAUTH_TOKEN is auto-injected from the
    * caller's accessToken so the container's hook can hit inference (the
-   * server only passes through what the caller sends; bughunter.go mints
+   * server only passes through what the caller sends; the server mints
    * its own, user sessions don't get one automatically).
    */
   environmentVariables?: Record<string, string>;
@@ -799,7 +795,6 @@ export async function teleportToRemote(options: {
     signal
   } = options;
   try {
-    // Check authentication
     await checkAndRefreshOAuthTokenIfNeeded();
     const accessToken = getClaudeAIOAuthTokens()?.accessToken;
     if (!accessToken) {
@@ -807,7 +802,6 @@ export async function teleportToRemote(options: {
       return null;
     }
 
-    // Get organization UUID
     const orgUUID = await getOrganizationUUID();
     if (!orgUUID) {
       logError(new Error('Unable to get organization UUID for remote session creation'));
@@ -817,7 +811,7 @@ export async function teleportToRemote(options: {
     // Explicit environmentId short-circuits Haiku title-gen + env selection.
     // Still runs repo detection so the container gets a working directory —
     // the code_review orchestrator reads --repo-dir $(pwd), it doesn't clone
-    // (bughunter.go:520 sets a git source too; env-manager does the checkout
+    // (the server sets a git source too; env-manager does the checkout
     // before the SessionStart hook fires).
     if (options.environmentId) {
       const url = `${getOauthConfig().BASE_API_URL}/v1/sessions`;
@@ -1052,7 +1046,6 @@ export async function teleportToRemote(options: {
       logForDebugging('[teleportToRemote] No repository detected — session will have an empty sandbox');
     }
 
-    // Fetch available environments
     let environments = await fetchEnvironments();
     if (!environments || environments.length === 0) {
       logError(new Error('No environments available for session creation'));
@@ -1172,7 +1165,6 @@ export async function teleportToRemote(options: {
       return null;
     }
 
-    // Parse response as SessionResource
     const sessionData = response.data as SessionResource;
     if (!sessionData || typeof sessionData.id !== 'string') {
       logError(new Error(`Cannot determine session ID from API response: ${jsonStringify(response.data)}`));
@@ -1193,7 +1185,7 @@ export async function teleportToRemote(options: {
 /**
  * Best-effort session archive. POST /v1/sessions/{id}/archive has no
  * running-status check (unlike DELETE which 409s on RUNNING), so it works
- * mid-implementation. Archived sessions reject new events (send_events.go),
+ * mid-implementation. Archived sessions reject new events,
  * so the remote stops on its next write. 409 (already archived) treated as
  * success. Fire-and-forget; failure leaks a visible session until the
  * reaper collects it.

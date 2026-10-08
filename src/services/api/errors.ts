@@ -336,7 +336,6 @@ function logToolUseToolResultMismatch(
       if (originalIndex !== -1) break
     }
 
-    // Build normalized sequence
     const normalizedSeq: string[] = []
     for (let i = normalizedIndex + 1; i < messagesForAPI.length; i++) {
       const msg = messagesForAPI[i]
@@ -364,7 +363,6 @@ function logToolUseToolResultMismatch(
       }
     }
 
-    // Build pre-normalized sequence
     const preNormalizedSeq: string[] = []
     for (let i = originalIndex + 1; i < messages.length; i++) {
       const msg = messages[i]
@@ -428,7 +426,6 @@ function logToolUseToolResultMismatch(
       }
     }
 
-    // Log to Statsig
     logEvent('tengu_tool_use_tool_result_mismatch_error', {
       toolUseId:
         toolUseId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -1083,7 +1080,7 @@ function get3PModelFallbackSuggestion(model: string): string | undefined {
   }
   // If the failing model looks like a Fable 5 variant, suggest Opus 5.5
   if (m.includes('fable-5') || m.includes('fable_5')) {
-    // Upstream's fallback_3p for Fable 5 is Opus 5.5 (2.1.280), and when a
+    // Upstream's fallback_3p for Fable 5 is Opus 5.5, and when a
     // fable model falls back onto the opus family it prefers an explicitly
     // pinned ANTHROPIC_DEFAULT_OPUS_MODEL over the catalog value.
     return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL || getModelStrings().opus55
@@ -1371,8 +1368,8 @@ export function categorizeRetryableAPIError(
 
 /**
  * Upstream's armed refusal-fallback target: the model a safeguard refusal is
- * re-served on. Verified against 2.1.258, where it is the constant
- * `claude-opus-4-8`, resolved through ANTHROPIC_DEFAULT_OPUS_MODEL when the
+ * re-served on. Verified against 2.1.258: the constant `claude-opus-4-8`,
+ * resolved through ANTHROPIC_DEFAULT_OPUS_MODEL when the
  * catalog is unavailable — the same pinned-opus preference the other fallback
  * suggestions in this file use.
  *
@@ -1384,7 +1381,7 @@ export function categorizeRetryableAPIError(
  * change the `bio` case.
  */
 function getRefusalFallbackModel(model: string): string {
-  // Sonnet 5.5's own fallback map (2.1.284: cyber and frontier_llm both go to
+  // Sonnet 5.5's own fallback map (cyber and frontier_llm both go to
   // claude-sonnet-5) stays inside the Sonnet family rather than jumping to Opus.
   if (getCanonicalName(model) === 'claude-sonnet-5-5') {
     return getModelStrings().sonnet5
@@ -1395,7 +1392,7 @@ function getRefusalFallbackModel(model: string): string {
 /**
  * Whether upstream arms a refusal fallback for the refusing model.
  *
- * Ported from 2.1.258's guard, in its order: Mythos models return early with no
+ * Ported from upstream's guard, in its order: Mythos models return early with no
  * fallback at all, then the model must carry the `refusal_fallback` capability
  * or be a `claude-fable-*`. Everything else — every Sonnet, Haiku, and Opus
  * through 4.8 — keeps the plain refusal error with no model suggestion, because

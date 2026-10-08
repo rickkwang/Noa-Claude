@@ -71,7 +71,6 @@ export function editFileInEditor(filePath: string): EditorResult {
       stdio: 'inherit',
     })
 
-    // Read the edited content
     const editedContent = fs.readFileSync(filePath, { encoding: 'utf-8' })
     return { content: editedContent }
   } catch (err) {

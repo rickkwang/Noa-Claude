@@ -31,7 +31,7 @@ export type AntModelOverrideConfig = {
 }
 
 // @[MODEL LAUNCH]: Update tengu_ant_model_override with new ant-only models
-// @[MODEL LAUNCH]: Add the codename to scripts/excluded-strings.txt to prevent it from leaking to external builds.
+// @[MODEL LAUNCH]: Keep ant-only codename literals behind USER_TYPE === 'ant' so they stay out of external builds.
 export function getAntModelOverrideConfig(): AntModelOverrideConfig | null {
   if (process.env.USER_TYPE !== 'ant') {
     return null

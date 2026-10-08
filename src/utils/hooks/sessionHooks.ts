@@ -138,7 +138,6 @@ function addHookToSession(
 
     let updatedMatchers: SessionHookMatcher[]
     if (existingMatcherIndex >= 0) {
-      // Add to existing matcher
       updatedMatchers = [...eventMatchers]
       const existingMatcher = updatedMatchers[existingMatcherIndex]!
       updatedMatchers[existingMatcherIndex] = {
@@ -147,7 +146,6 @@ function addHookToSession(
         hooks: [...existingMatcher.hooks, { hook, onHookSuccess }],
       }
     } else {
-      // Create new matcher
       updatedMatchers = [
         ...eventMatchers,
         {

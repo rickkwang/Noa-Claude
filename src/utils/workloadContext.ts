@@ -3,7 +3,7 @@
  * Turn-scoped workload tag via AsyncLocalStorage.
  *
  * WHY a separate module from bootstrap/state.ts:
- * bootstrap is transitively imported by src/entrypoints/browser-sdk.ts, and
+ * bootstrap is transitively imported by the browser SDK entry, and
  * the browser bundle cannot import Node's async_hooks. This module is only
  * imported from CLI/SDK code paths that never end up in the browser build.
  *
@@ -20,7 +20,7 @@
 import { AsyncLocalStorage } from 'async_hooks'
 
 /**
- * Server-side sanitizer (_sanitize_entrypoint in claude_code.py) accepts
+ * Server-side sanitizer (_sanitize_entrypoint in the server) accepts
  * only lowercase [a-z0-9_-]{0,32}. Uppercase stops parsing at char 0.
  */
 export type Workload = 'cron'

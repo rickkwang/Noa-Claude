@@ -1062,7 +1062,6 @@ export const connectToServer = memoize(
             `Parsed URL: host=${testUrl.hostname}, port=${testUrl.port || 'default'}, protocol=${testUrl.protocol}`,
           )
 
-          // Log DNS resolution attempt
           if (
             testUrl.hostname === '127.0.0.1' ||
             testUrl.hostname === 'localhost'
@@ -1199,7 +1198,6 @@ export const connectToServer = memoize(
         )
       }
 
-      // Log successful connection details
       logMCPDebug(
         name,
         `Connection established with capabilities: ${jsonStringify({
@@ -1246,7 +1244,6 @@ export const connectToServer = memoize(
       const connectionStartTime = Date.now()
       let hasErrorOccurred = false
 
-      // Store original handlers
       const originalOnerror = client.onerror
       const originalOnclose = client.onclose
 
@@ -1393,7 +1390,6 @@ export const connectToServer = memoize(
           }
         }
 
-        // Call original handler
         if (originalOnerror) {
           originalOnerror(error)
         }
@@ -2217,7 +2213,6 @@ export async function reconnectMcpServerImpl(
     // Handle errors gracefully - connection might have closed during fetch
     logMCPError(name, `Error during reconnection: ${errorMessage(error)}`)
 
-    // Return with failed status
     return {
       client: { name, type: 'failed' as const, config },
       tools: [],
@@ -2361,7 +2356,6 @@ export async function getMcpToolsCommandsAndResources(
       const [tools, commands, resources] = await Promise.all([
         fetchToolsForClient(client),
         fetchCommandsForClient(client),
-        // Fetch resources if supported
         supportsResources
           ? fetchResourcesForClient(client)
           : Promise.resolve([]),
@@ -3193,7 +3187,6 @@ async function callMCPTool({
         | undefined,
     }
   } catch (e) {
-    // Clear intervals on error
     if (progressInterval !== undefined) {
       clearInterval(progressInterval)
     }

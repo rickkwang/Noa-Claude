@@ -188,7 +188,6 @@ export function computeLevel(chunk: Buffer): number {
   if (samples === 0) return 0
   let sumSq = 0
   for (let i = 0; i < chunk.length - 1; i += 2) {
-    // Read 16-bit signed little-endian
     const sample = ((chunk[i]! | (chunk[i + 1]! << 8)) << 16) >> 16
     sumSq += sample * sample
   }
@@ -675,7 +674,6 @@ export function useVoice({
     logForDebugging(
       '[voice] Starting recording session, connecting voice stream',
     )
-    // Clear any previous error
     setVoiceState(prev => {
       if (!prev.voiceError) return prev
       return { ...prev, voiceError: null }

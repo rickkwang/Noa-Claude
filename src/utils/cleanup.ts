@@ -79,7 +79,6 @@ async function cleanupOldFilesInDirectory(
         const timestamp = convertFileNameToDate(file.name)
         if (timestamp < cutoffDate) {
           await getFsImplementation().unlink(join(dirPath, file.name))
-          // Increment the appropriate counter
           if (isMessagePath) {
             result.messages++
           } else {

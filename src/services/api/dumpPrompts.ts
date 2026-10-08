@@ -160,7 +160,6 @@ export function createDumpPromptsFetch(
     // eslint-disable-next-line eslint-plugin-n/no-unsupported-features/node-builtins
     const response = await globalThis.fetch(input, init)
 
-    // Save response async
     if (timestamp && response.ok && process.env.USER_TYPE === 'ant') {
       const cloned = response.clone()
       void (async () => {

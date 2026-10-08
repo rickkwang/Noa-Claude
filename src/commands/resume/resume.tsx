@@ -322,7 +322,6 @@ function ResumeCommand({
       const raw = await setClipboard(crossProjectCheck.command);
       if (raw) process.stdout.write(raw);
 
-      // Format the output message
       const message = ['', 'This conversation is from a different directory.', '', 'To resume, run:', `  ${crossProjectCheck.command}`, '', '(Command copied to clipboard)', ''].join('\n');
       onDoneRef.current(message, {
         display: 'user'

@@ -158,7 +158,6 @@ async function loadLspServersFromManifest(
         continue
       }
 
-      // Load from file
       try {
         const content = await readFile(validatedPath, 'utf-8')
         const parsed = jsonParse(content)
@@ -354,6 +353,5 @@ export async function getPluginLspServers(
     )
   }
 
-  // Add plugin scope
   return addPluginScopeToLspServers(resolvedServers, plugin.name)
 }

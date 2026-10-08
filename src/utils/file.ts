@@ -283,8 +283,7 @@ export async function suggestPathUnderCwd(
 /**
  * Whether to use the compact line-number prefix format (`N\t` instead of
  * `     N→`). The padded-arrow format costs 9 bytes/line overhead; at
- * 1.35B Read calls × 132 lines avg this is 2.18% of fleet uncached input
- * (bq-queries/read_line_prefix_overhead_verify.sql).
+ * 1.35B Read calls × 132 lines avg this is 2.18% of fleet uncached input.
  *
  * Ant soak validated no Edit error regression (6.29% vs 6.86% baseline).
  * Killswitch pattern: GB can disable if issues surface externally.

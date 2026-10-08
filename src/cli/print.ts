@@ -2624,7 +2624,6 @@ function runHeadlessStreaming(
                   : undefined
 
                 if (teammateId) {
-                  // Remove from team file
                   removeTeammateFromTeamFile(teamName, {
                     agentId: teammateId,
                     name: teammateToRemove,
@@ -2693,7 +2692,6 @@ function runHeadlessStreaming(
             return // run() will come back here after processing
           }
 
-          // Wait and check again
           await sleep(POLL_INTERVAL_MS)
         }
       }
@@ -4502,7 +4500,6 @@ async function handleInitializeRequest(
   const outputStyle = settings?.outputStyle || DEFAULT_OUTPUT_STYLE_NAME
   const availableOutputStyles = await getAllOutputStyles(getCwd())
 
-  // Get account information
   const accountInfo = getAccountInformation()
   if (request.hooks) {
     const hooks: Partial<Record<HookEvent, HookCallbackMatcher[]>> = {}
@@ -5493,7 +5490,6 @@ export async function handleMcpSetServers(
     }
   }
 
-  // Handle SDK servers
   const currentSdkNames = new Set(Object.keys(sdkState.configs))
   const newSdkNames = new Set(Object.keys(sdkServers))
   const sdkAdded: string[] = []
@@ -5533,7 +5529,6 @@ export async function handleMcpSetServers(
     }
   }
 
-  // Handle process-based servers
   const processResult = await reconcileMcpServers(
     processServers,
     dynamicState,
@@ -5611,7 +5606,6 @@ export async function reconcileMcpServers(
     const prefix = `mcp__${name}__`
     newTools = newTools.filter(t => !t.name.startsWith(prefix))
 
-    // Remove from clients list
     newClients = newClients.filter(c => c.name !== name)
 
     // Track removal (only for actually removed, not replaced)
@@ -5652,7 +5646,6 @@ export async function reconcileMcpServers(
     }
   }
 
-  // Build new configs
   const newConfigs: Record<string, ScopedMcpServerConfig> = {}
   for (const name of desiredNames) {
     const config = desiredConfigs[name]
@@ -5675,7 +5668,6 @@ export async function reconcileMcpServers(
       ...Object.keys(newConfigs),
     ])
 
-    // Remove old dynamic tools
     const nonDynamicTools = prev.mcp.tools.filter(t => {
       for (const serverName of allDynamicServerNames) {
         if (t.name.startsWith(`mcp__${serverName}__`)) {
@@ -5685,7 +5677,6 @@ export async function reconcileMcpServers(
       return true
     })
 
-    // Remove old dynamic clients
     const nonDynamicClients = prev.mcp.clients.filter(c => {
       return !allDynamicServerNames.has(c.name)
     })

@@ -52,7 +52,6 @@ function getInstallationPath(): string {
   const isWindows = env.platform === 'win32';
   const homeDir = homedir();
   if (isWindows) {
-    // Convert to Windows-style path
     const windowsPath = join(homeDir, '.local', 'bin', 'noa.exe');
     // Replace forward slashes with backslashes for Windows display
     return windowsPath.replace(/\//g, '\\');
@@ -175,7 +174,6 @@ function Install({
           logForDebugging(`Shell alias cleanup: ${aliasMessages.map(m => m.message).join('; ')}`);
         }
 
-        // Log success event
         logEvent('tengu_claude_install_command', {
           has_version: result.latestVersion ? 1 : 0,
           forced: force ? 1 : 0
@@ -314,7 +312,6 @@ export const install = {
   async call(onDone: (result: string, options?: {
     display?: CommandResultDisplay;
   }) => void, _context: unknown, args: string[]) {
-    // Parse arguments
     const force = args.includes('--force');
     const nonFlagArgs = args.filter(arg => !arg.startsWith('--'));
     const target = nonFlagArgs[0]; // 'latest', 'stable', or version like '1.0.34'

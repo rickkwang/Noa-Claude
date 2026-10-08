@@ -73,7 +73,6 @@ export class LogUpdate {
       for (let x = 0; x < screen.width; x++) {
         const cell = cellAt(screen, x, y)
         if (cell && cell.width !== CellWidth.SpacerTail) {
-          // Handle hyperlink transitions
           if (cell.hyperlink !== currentHyperlink) {
             if (currentHyperlink !== undefined) {
               line += LINK_END
@@ -589,7 +588,6 @@ function renderFrameSlice(
 
       moveCursorTo(screen, x, renderY)
 
-      // Handle hyperlink
       const targetHyperlink = cell.hyperlink
       currentHyperlink = transitionHyperlink(
         screen.diff,

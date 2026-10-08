@@ -169,7 +169,6 @@ export async function resetTaskList(taskListId: string): Promise<void> {
       }
     }
 
-    // Delete all task files
     let files: string[]
     try {
       files = await readdir(dir)
@@ -424,7 +423,6 @@ export async function deleteTask(
       }
     }
 
-    // Delete the task file
     let release: (() => Promise<void>) | undefined
     try {
       release = await lockfile.lock(path, LOCK_OPTIONS)
@@ -587,7 +585,6 @@ export async function claimTask(
     // Acquire exclusive lock on the task file
     release = await lockfile.lock(taskPath, LOCK_OPTIONS)
 
-    // Read current task state
     const task = await getTask(taskListId, taskId)
     if (!task) {
       return { success: false, reason: 'task_not_found' }
@@ -598,7 +595,6 @@ export async function claimTask(
       return { success: false, reason: 'already_claimed', task }
     }
 
-    // Check if already resolved
     if (task.status === 'completed') {
       return { success: false, reason: 'already_resolved', task }
     }
@@ -663,7 +659,6 @@ async function claimTaskWithBusyCheck(
       return { success: false, reason: 'already_claimed', task }
     }
 
-    // Check if already resolved
     if (task.status === 'completed') {
       return { success: false, reason: 'already_resolved', task }
     }
@@ -816,7 +811,6 @@ export async function unassignTeammateTasks(
     )
   }
 
-  // Build notification message
   const actionVerb =
     reason === 'terminated' ? 'was terminated' : 'has shut down'
   let notificationMessage = `${teammateName} ${actionVerb}.`

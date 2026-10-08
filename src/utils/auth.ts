@@ -114,7 +114,7 @@ export function isAnthropicAuthEnabled(): boolean {
   // oauth-2025 beta header to match what the proxy will inject). The remote's
   // ~/.noa settings (apiKeyHelper, settings.env.ANTHROPIC_API_KEY) MUST NOT
   // flip this — they'd cause a header mismatch with the proxy and a bogus
-  // "invalid x-api-key" from the API. See src/ssh/sshAuthProxy.ts.
+  // "invalid x-api-key" from the API.
   if (process.env.ANTHROPIC_UNIX_SOCKET) {
     return !!process.env.CLAUDE_CODE_OAUTH_TOKEN
   }
@@ -864,7 +864,6 @@ export const refreshAndGetAwsCredentials = memoizeWithTTLAsync(
     // First run auth refresh if needed
     const refreshed = await runAwsAuthRefresh()
 
-    // Get credentials from export
     const credentials = await getAwsCredsFromCredentialExport()
 
     // Clear AWS INI cache to ensure fresh credentials are used

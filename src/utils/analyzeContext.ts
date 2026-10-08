@@ -855,7 +855,6 @@ async function approximateMessageTokens(
 ): Promise<MessageBreakdown> {
   const microcompactResult = await microcompactMessages(messages)
 
-  // Initialize tracking
   const breakdown: MessageBreakdown = {
     totalTokens: 0,
     toolCallTokens: 0,
@@ -931,7 +930,6 @@ export async function analyzeContextUsage(
     permissionMode: (await getToolPermissionContext()).mode,
     mainLoopModel: model,
   })
-  // Get context window size
   const contextWindow = getContextWindowForModel(runtimeModel, getSdkBetas())
 
   // Build the effective system prompt using the shared utility
@@ -1004,7 +1002,6 @@ export async function analyzeContextUsage(
     ? getEffectiveContextWindowSize(model) - AUTOCOMPACT_BUFFER_TOKENS
     : undefined
 
-  // Create categories
   const cats: ContextCategory[] = []
 
   // System prompt is always shown first (fixed overhead)
@@ -1284,13 +1281,11 @@ export async function analyzeContextUsage(
     { callTokens: number; resultTokens: number }
   >()
 
-  // Add call tokens
   for (const [name, tokens] of messageBreakdown.toolCallsByType.entries()) {
     const existing = toolsMap.get(name) || { callTokens: 0, resultTokens: 0 }
     toolsMap.set(name, { ...existing, callTokens: tokens })
   }
 
-  // Add result tokens
   for (const [name, tokens] of messageBreakdown.toolResultsByType.entries()) {
     const existing = toolsMap.get(name) || { callTokens: 0, resultTokens: 0 }
     toolsMap.set(name, { ...existing, resultTokens: tokens })

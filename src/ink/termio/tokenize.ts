@@ -320,7 +320,6 @@ function tokenize(
     }
   }
 
-  // Handle end of input
   if (result.state === 'ground') {
     flushText()
   } else if (flush) {

@@ -568,7 +568,6 @@ const COMMAND_ALLOWLIST: Record<string, CommandConfig> = {
       '-t': 'none', // Text mode
       '--text': 'none',
 
-      // Check/verify flags
       '-c': 'none', // Verify checksums from file
       '--check': 'none',
       '--ignore-missing': 'none', // Ignore missing files during check
@@ -596,7 +595,6 @@ const COMMAND_ALLOWLIST: Record<string, CommandConfig> = {
       '-t': 'none', // Text mode
       '--text': 'none',
 
-      // Check/verify flags
       '-c': 'none', // Verify checksums from file
       '--check': 'none',
       '--ignore-missing': 'none', // Ignore missing files during check
@@ -624,7 +622,6 @@ const COMMAND_ALLOWLIST: Record<string, CommandConfig> = {
       '-t': 'none', // Text mode
       '--text': 'none',
 
-      // Check/verify flags
       '-c': 'none', // Verify checksums from file
       '--check': 'none',
       '--ignore-missing': 'none', // Ignore missing files during check
@@ -1142,7 +1139,7 @@ const COMMAND_ALLOWLIST: Record<string, CommandConfig> = {
 const ANT_ONLY_COMMAND_ALLOWLIST: Record<string, CommandConfig> = {
   // All gh read-only commands from shared validation map
   ...GH_READ_ONLY_COMMANDS,
-  // aki — Anthropic internal knowledge-base search CLI.
+  // aki — internal knowledge-base search CLI.
   // Network read-only (same policy as gh). --audit-csv omitted: writes to disk.
   aki: {
     safeFlags: {
@@ -1609,7 +1606,6 @@ function containsUnquotedExpansion(command: string): boolean {
   for (let i = 0; i < command.length; i++) {
     const currentChar = command[i]
 
-    // Handle escape sequences
     if (escaped) {
       escaped = false
       continue
@@ -1631,7 +1627,6 @@ function containsUnquotedExpansion(command: string): boolean {
       continue
     }
 
-    // Update quote state
     if (currentChar === "'" && !inDoubleQuote) {
       inSingleQuote = !inSingleQuote
       continue

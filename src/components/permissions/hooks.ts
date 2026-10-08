@@ -129,7 +129,6 @@ export function usePermissionRequestLogging(
       },
     }))
 
-    // Log analytics event
     logEvent('tengu_tool_use_show_permission_request', {
       messageID: toolUseConfirm.assistantMessage.message
         .id as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,

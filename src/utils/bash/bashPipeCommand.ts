@@ -140,7 +140,6 @@ function buildCommandParts(
       const op = parsed[i + 1] as { op: string }
       const target = parsed[i + 2]
 
-      // Handle 2>&1 style redirections
       if (
         op.op === '>&' &&
         typeof target === 'string' &&
@@ -173,7 +172,6 @@ function buildCommandParts(
       }
     }
 
-    // Handle regular entries
     if (typeof entry === 'string') {
       // Environment variable assignments are only valid at the start of a command,
       // before any non-env-var tokens (the actual command and its arguments)

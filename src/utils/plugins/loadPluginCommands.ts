@@ -189,7 +189,6 @@ async function loadCommandsFromDirectory(
   // Apply skill transformation
   const processedFiles = transformPluginSkillFiles(markdownFiles)
 
-  // Convert to commands
   const commands: Command[] = []
   for (const file of processedFiles) {
     const commandName = getCommandNameFromFile(
@@ -513,7 +512,6 @@ export const getPluginCommands = memoize(async (): Promise<Command[]> => {
                   return []
                 }
 
-                // Load single command file
                 const content = await fs.readFile(commandPath, {
                   encoding: 'utf-8',
                 })

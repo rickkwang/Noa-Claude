@@ -135,7 +135,6 @@ export function resolveKeyWithChordState(
     return { type: 'chord_cancelled' }
   }
 
-  // Build current keystroke
   const currentKeystroke = buildKeystroke(input, key)
   if (!currentKeystroke) {
     if (pending !== null) {

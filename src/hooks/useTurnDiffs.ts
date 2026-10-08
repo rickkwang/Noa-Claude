@@ -184,7 +184,6 @@ export function useTurnDiffs(messages: Message[]): TurnDiff[] {
             // Append hunks (same file may be edited multiple times in a turn)
             fileEntry.hunks.push(...structuredPatch)
 
-            // Update line counts
             const { added, removed } = countHunkLines(structuredPatch)
             fileEntry.linesAdded += added
             fileEntry.linesRemoved += removed

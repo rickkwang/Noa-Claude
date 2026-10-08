@@ -93,7 +93,6 @@ export class RemoteIO extends StructuredIO {
       refreshHeaders,
     )
 
-    // Set up data callback
     this.isBridge = process.env.CLAUDE_CODE_ENVIRONMENT_KIND === 'bridge'
     this.isDebug = isDebugMode()
     this.transport.setOnData((data: string) => {

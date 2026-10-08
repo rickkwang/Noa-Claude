@@ -81,7 +81,7 @@ export async function axiosGetWithRetry<T>(
   throw lastError
 }
 
-// Types matching the actual Sessions API response from api/schemas/sessions/sessions.py
+// Types matching the actual Sessions API response from the server
 export type SessionStatus = 'requires_action' | 'running' | 'idle' | 'archived'
 
 export type GitSource = {
@@ -98,7 +98,7 @@ export type KnowledgeBaseSource = {
 
 export type SessionContextSource = GitSource | KnowledgeBaseSource
 
-// Outcome types from api/schemas/sandbox.py
+// Outcome types from the server
 export type OutcomeGitInfo = {
   type: 'github'
   repo: string

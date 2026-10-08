@@ -107,7 +107,6 @@ export function useSearchInput({
 
     const cursor = Cursor.fromText(query, effectiveColumns, cursorOffset)
 
-    // Check passthrough ctrl keys
     if (e.ctrl && passthroughCtrlKeys.includes(e.key.toLowerCase())) {
       return
     }

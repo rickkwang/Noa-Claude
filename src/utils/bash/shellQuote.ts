@@ -151,7 +151,6 @@ export function hasMalformedTokens(
     const closeBraces = (entry.match(/}/g) || []).length
     if (openBraces !== closeBraces) return true
 
-    // Check for unbalanced parentheses
     const openParens = (entry.match(/\(/g) || []).length
     const closeParens = (entry.match(/\)/g) || []).length
     if (openParens !== closeParens) return true

@@ -71,7 +71,6 @@ export function generateShellSuggestionsLabel(suggestions: PermissionUpdate[], s
   const readRules = allRules.filter(r => r.toolName === 'Read');
   const shellRules = allRules.filter(r => r.toolName === shellToolName);
 
-  // Get directory info
   const directories = suggestions.filter(s => s.type === 'addDirectories').flatMap(s => s.directories || []);
 
   // Extract paths from Read rules (keep separate from directories)
@@ -84,12 +83,10 @@ export function generateShellSuggestionsLabel(suggestions: PermissionUpdate[], s
     return commandTransform ? commandTransform(command) : command;
   }))];
 
-  // Check what we have
   const hasDirectories = directories.length > 0;
   const hasReadPaths = readPaths.length > 0;
   const hasCommands = shellCommands.length > 0;
 
-  // Handle single type cases
   if (hasReadPaths && !hasDirectories && !hasCommands) {
     // Only Read rules - use "reading from" language
     if (readPaths.length === 1) {
@@ -132,7 +129,6 @@ export function generateShellSuggestionsLabel(suggestions: PermissionUpdate[], s
       </Text>;
   }
 
-  // Handle mixed cases
   if ((hasDirectories || hasReadPaths) && !hasCommands) {
     // Combine directories and read paths since they're both path access
     const allPaths = [...directories, ...readPaths];

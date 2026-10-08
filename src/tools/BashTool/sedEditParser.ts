@@ -66,7 +66,6 @@ export function parseSedEditCommand(command: string): SedEditInfo | null {
     }
   }
 
-  // Parse flags and arguments
   let hasInPlaceFlag = false
   let extendedRegex = false
   let expression: string | null = null
@@ -103,7 +102,6 @@ export function parseSedEditCommand(command: string): SedEditInfo | null {
       continue
     }
 
-    // Handle extended regex flags
     if (arg === '-E' || arg === '-r' || arg === '--regexp-extended') {
       extendedRegex = true
       i++
@@ -240,7 +238,6 @@ export function applySedSubstitution(
   // Convert sed pattern to JavaScript regex
   let regexFlags = ''
 
-  // Handle global flag
   if (sedInfo.flags.includes('g')) {
     regexFlags += 'g'
   }

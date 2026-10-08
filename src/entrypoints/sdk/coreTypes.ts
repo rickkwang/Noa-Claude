@@ -3,7 +3,6 @@
 // Types are generated from Zod schemas in coreSchemas.ts.
 // To modify types:
 // 1. Edit Zod schemas in coreSchemas.ts
-// 2. Run: bun scripts/generate-sdk-types.ts
 //
 // Schemas are available in coreSchemas.ts for runtime validation but are not
 // part of the public API.

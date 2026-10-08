@@ -374,7 +374,6 @@ export async function copyPluginToVersionedCache(
     return seedPath
   }
 
-  // Create parent directories
   await getFsImplementation().mkdir(dirname(cachePath))
 
   // For local plugins: copy entry.source directory (the single source of truth)

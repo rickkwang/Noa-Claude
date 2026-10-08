@@ -31,15 +31,13 @@ function isEarlyAccessModel(model: string): boolean {
 }
 
 /**
- * The four prompt capabilities are independent in Claude Code's model
- * manifest. Keep the verified facts together so a model launch cannot
- * accidentally update the compact-head gate but leave a companion section or
- * cache key on an older rule.
+ * The four prompt capabilities are independent in the upstream model manifest.
+ * Keeping them together stops a model launch from updating the compact-head
+ * gate while a companion section or cache key stays on an older rule.
  *
- * `leanPrompt`, `opus5PromptBundle` and `fable5Mitigations` were read off the
- * 2.1.220 manifest; `haiku55EarlyStopping` is set for Haiku 5.5 only;
- * `fable51PromptBundle` off 2.1.258, where Fable 5.1 and
- * Mythos 5.1 are the only rows carrying it.
+ * Source of each fact: `leanPrompt`, `opus5PromptBundle` and `fable5Mitigations`
+ * from the 2.1.220 manifest; `fable51PromptBundle` from 2.1.258 (Fable 5.1 and
+ * Mythos 5.1 only); `haiku55EarlyStopping` for Haiku 5.5 only.
  */
 export type BuiltInPromptCapabilities = {
   leanPrompt: boolean
@@ -167,8 +165,8 @@ function needsLegacyPromptCapabilities(canonical: string): boolean {
 }
 
 /**
- * Resolve the capability facts encoded in Claude Code 2.1.220's model
- * manifest, plus its denylist fallback for legacy and future models.
+ * Resolve the capability facts in the 2.1.220 model manifest, plus its denylist
+ * fallback for legacy and future models.
  */
 export function getBuiltInPromptCapabilities(
   model: string,
@@ -224,7 +222,7 @@ export function allowsWriteWithoutPriorRead(model: string | undefined): boolean 
 /**
  * Models that still get the task-tracking tools (TaskCreate/Get/Update/List or
  * TodoWrite). Newer generations track multi-step work on their own, so upstream
- * 2.1.285 stops registering either family for them; this is its list.
+ * stopped registering either family for them in 2.1.285.
  */
 const MODELS_WITH_TODO_TOOLS = new Set([
   'claude-3-opus',
@@ -350,22 +348,15 @@ export function shouldUseCompactSystemPrompt(model: string | undefined): boolean
  * sections that travel with the compact head (delivering-work, corrections, the
  * shorter action-caution wording).
  *
- * Upstream's Bash tool used to gate its "Command output is displayed to you,
- * not reliably to the user." bullet on this same capability (true through
- * 2.1.223); 2.1.224 made that bullet unconditional for every lean-prompt model,
- * so it no longer belongs to this bundle — see getLeanPrompt() in
- * tools/BashTool/prompt.ts. Upstream also has a different Bash bullet
- * ("Commands are cheap to run and their errors are informative...") behind a
- * separate GrowthBook flag (`tengu_gorse_plover`/`CLAUDE_CODE_GORSE_PLOVER`,
- * off by default, no bundle fallback — present since at least 2.1.222) that is
- * not ported here.
+ * The Bash "Command output is displayed to you" bullet is not part of this
+ * bundle: upstream made it unconditional for lean-prompt models in 2.1.224 (see
+ * getLeanPrompt() in tools/BashTool/prompt.ts). The GrowthBook-gated Bash bullet
+ * (`tengu_gorse_plover`) is not ported.
  *
- * This is a *different* capability from `lean_prompt`, and the two are not
- * co-extensive. Upstream's model manifest declares `lean_prompt` for Opus 5,
- * Fable 5 and Opus 4.8, but `opus_5_prompt_bundle` for Opus 5 alone — so three
- * of the four models on the compact head do *not* carry the bundle. Treating
- * one gate as a proxy for the other gives those three a prompt no upstream
- * build ever produces.
+ * This is a different capability from `lean_prompt`, and the two are not
+ * interchangeable. Upstream declares `lean_prompt` for Opus 5, Fable 5 and
+ * Opus 4.8, but `opus_5_prompt_bundle` for Opus 5 alone. Using one gate as a
+ * proxy for the other gives the other models a prompt no upstream build produces.
  *
  * Unknown models default to false for the two companion capabilities, as
  * upstream's manifest lookup does: it returns "not declared", never "assume
@@ -521,12 +512,8 @@ function hasMidTurnUserChannel(): boolean {
 /**
  * Ported verbatim from the `fable_5_mitigations` branch of upstream's
  * `anti_verbosity` section. It supersedes the lean one-liner rather than
- * adding to it — the last two paragraphs restate it.
- *
- * Verified line by line against 2.1.258, which corrected five deviations the
- * digest had certified: four of upstream's commas and colons had shipped as
- * em-dash asides, and the closing sentence read "the PR merges" for upstream's
- * "the change merges". The punctuation and wording below are upstream's.
+ * adding to it. Punctuation and wording are upstream's; do not tidy them
+ * (em dashes, "PR" vs "change") without re-checking the binary.
  */
 function getCommunicatingWithUserSection(): string {
   const midTurnTextIsUnreliable = !hasMidTurnUserChannel()
@@ -594,10 +581,9 @@ export function getAntiVerbositySection(model: string | undefined): string | nul
  * unless the lean prompt is in use — the verbose head states the same rules at
  * length in its own "Executing actions with care" section.
  *
- * Through 2.1.220 the "look at the target" sentence carried a trailing clause
- * ("— if what you find contradicts how it was described, or you didn't create
- * it, surface that…") on models without the prompt bundle. 2.1.290 sends the
- * bare sentence to every lean model, so that clause is gone here too.
+ * The "look at the target" sentence is bare for every lean model. Upstream
+ * dropped the trailing clause that earlier versions added for models without
+ * the prompt bundle (2.1.290).
  */
 export function getActionCautionSection(model: string | undefined): string | null {
   if (!shouldUseCompactSystemPrompt(model)) return null
@@ -606,19 +592,16 @@ export function getActionCautionSection(model: string | undefined): string | nul
 }
 
 /**
- * The text is upstream's, byte for byte, and so is the placement in both
- * tiers. Verified against the 2.1.220 binary, where the constant (`c8s`) is
- * declared once and referenced exactly twice:
+ * Byte-for-byte upstream text, placed the same way in both tiers. Upstream
+ * references the constant twice in the 2.1.220 binary:
  *
- * - The verbose intro builder (`hMy`) emits it as identity line, blank line,
- *   policy, then the URL rule on the very next line (a single newline, not a
- *   blank one). getSimpleIntroSection() reproduces that shape.
- * - The lean head builder (`wMy`) emits it as identity line, blank line,
- *   policy, blank line, `# Harness`. getCompactHeadSection() reproduces that.
+ * - Verbose intro: identity, blank line, policy, then the URL rule on the next
+ *   line with a single newline. getSimpleIntroSection() reproduces this.
+ * - Lean head: identity, blank line, policy, blank line, `# Harness`.
+ *   getCompactHeadSection() reproduces this.
  *
- * Both builders sit in the same minified scope, so a grep that misses the
- * `${c8s}` template interpolations will report a false "declared but never
- * referenced" — don't "correct" either tier against such a reading.
+ * A grep for the constant's name misses the template-literal interpolations in
+ * the minified source, so a "declared but never referenced" reading is false.
  *
  * Lives here rather than beside the other verbose sections for the same reason
  * MATCH_SURROUNDING_CODE_SECTION does: the tool prompt modules import this file,

@@ -403,7 +403,6 @@ async function getAllSessionFiles(): Promise<string[]> {
   const projectsDir = getProjectsDir()
   const fs = getFsImplementation()
 
-  // Get all project directories
   let allEntries
   try {
     allEntries = await fs.readdir(projectsDir)
@@ -548,7 +547,6 @@ function cacheToStats(
     }
   }
 
-  // Calculate derived stats
   const dailyActivityArray = Array.from(dailyActivityMap.values()).sort(
     (a, b) => a.date.localeCompare(b.date),
   )
@@ -937,7 +935,6 @@ function calculateStreaks(dailyActivity: DailyActivity[]): StreakInfo {
     checkDate.setDate(checkDate.getDate() - 1)
   }
 
-  // Calculate longest streak
   let longestStreak = 0
   let longestStreakStart: string | null = null
   let longestStreakEnd: string | null = null
@@ -968,7 +965,6 @@ function calculateStreaks(dailyActivity: DailyActivity[]): StreakInfo {
       }
     }
 
-    // Check final streak
     if (tempStreak > longestStreak) {
       longestStreak = tempStreak
       longestStreakStart = tempStart

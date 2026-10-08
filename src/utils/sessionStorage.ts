@@ -1934,7 +1934,6 @@ export async function hydrateFromCCRv2InternalEvents(
   }
 
   try {
-    // Fetch foreground events
     const events = await reader()
     if (!events) {
       logForDebugging('Failed to read internal events for resume')
@@ -1945,7 +1944,6 @@ export async function hydrateFromCCRv2InternalEvents(
     const projectDir = getProjectDir(getOriginalCwd())
     await mkdir(projectDir, { recursive: true, mode: 0o700 })
 
-    // Write foreground transcript
     const sessionFile = getTranscriptPathForSession(sessionId)
     const fgContent = events.map(e => jsonStringify(e.payload) + '\n').join('')
     await writeFile(sessionFile, fgContent, { encoding: 'utf8', mode: 0o600 })
@@ -2273,8 +2271,8 @@ function applyPreservedSegmentRelinks(
  */
 function applySnipRemovals(messages: Map<UUID, TranscriptMessage>): void {
   // Structural check — snipMetadata only exists on the boundary subtype.
-  // Avoids the subtype literal which is in excluded-strings.txt
-  // (HISTORY_SNIP is ant-only; the literal must not leak into external builds).
+  // Avoids the subtype literal, which must not leak into external builds
+  // (HISTORY_SNIP is ant-only).
   type WithSnipMeta = { snipMetadata?: { removedUuids?: UUID[] } }
   const toDelete = new Set<UUID>()
   for (const entry of messages.values()) {
@@ -4781,7 +4779,6 @@ export async function getAgentTranscript(agentId: AgentId): Promise<{
       return null
     }
 
-    // Build the conversation chain
     const transcript = buildConversationChain(messages, leafMessage)
 
     // Filter to only include messages with this agentId

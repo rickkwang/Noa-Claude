@@ -73,7 +73,6 @@ export async function validateDirectoryForWorkspace(
     throw e
   }
 
-  // Get current permission context
   const currentWorkingDirs = allWorkingDirectories(permissionContext)
 
   // Check if already within an existing working directory

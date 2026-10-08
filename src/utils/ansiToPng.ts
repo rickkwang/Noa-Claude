@@ -15,8 +15,7 @@
  *
  * Font: Fira Code Regular rasterized at 24×48 with 8-bit anti-aliased alpha
  * (SIL OFL 1.1 — see scripts/LICENSE-FiraCode). Covers printable ASCII plus
- * the unicode chars used by /stats output. Regenerate with:
- *   bun scripts/generate-bitmap-font.ts
+ * the unicode chars used by /stats output.
  */
 
 import { deflateSync } from 'zlib'

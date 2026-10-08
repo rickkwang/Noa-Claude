@@ -141,7 +141,6 @@ export function useDiffInIDE({
   useEffect(() => {
     void showDiff()
 
-    // Set flag on unmount
     return () => {
       isUnmounted.current = true
     }

@@ -97,7 +97,6 @@ export function validatePermissionRule(rule: string): {
     }
   }
 
-  // Parse the rule
   const parsed = permissionRuleValueFromString(rule)
 
   // MCP validation - must be done before general tool validation

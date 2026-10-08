@@ -154,7 +154,6 @@ export async function loadPluginMcpServers(
   if (plugin.manifest.mcpServers) {
     const mcpServersSpec = plugin.manifest.mcpServers
 
-    // Handle different mcpServers formats
     if (typeof mcpServersSpec === 'string') {
       // Check if it's an MCPB file
       if (isMcpbSource(mcpServersSpec)) {
@@ -249,7 +248,6 @@ async function loadMcpServersFromFile(
     // Check if it's in the .mcp.json format with mcpServers key
     const mcpServers = parsed.mcpServers || parsed
 
-    // Validate each server config
     const validatedServers: Record<string, McpServerConfig> = {}
     for (const [name, config] of Object.entries(mcpServers)) {
       const result = McpServerConfigSchema().safeParse(config)
@@ -498,7 +496,6 @@ export function resolvePluginMcpEnvironment(
 
   let resolved: McpServerConfig
 
-  // Handle different server types
   switch (config.type) {
     case undefined:
     case 'stdio': {
@@ -636,6 +633,5 @@ export async function getPluginMcpServers(
     }
   }
 
-  // Add plugin scope
   return addPluginScopeToServers(resolvedServers, plugin.name, plugin.source)
 }

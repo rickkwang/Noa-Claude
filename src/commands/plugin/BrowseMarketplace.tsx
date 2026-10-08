@@ -346,7 +346,6 @@ export function BrowseMarketplace({
     setSelectedForInstall(new Set());
     clearAllCaches();
 
-    // Handle installation results
     if (failureCount === 0) {
       // All succeeded
       const message = `✓ Installed ${successCount_0} ${plural(successCount_0, 'plugin')}.`;
@@ -405,7 +404,6 @@ export function BrowseMarketplace({
     }
   };
 
-  // Handle error state
   useEffect(() => {
     if (error) {
       setResult(error);

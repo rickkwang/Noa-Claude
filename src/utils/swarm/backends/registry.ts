@@ -431,7 +431,6 @@ export async function getTeammateExecutor(
     return getInProcessBackend()
   }
 
-  // Return pane backend executor
   logForDebugging('[BackendRegistry] Using pane backend executor')
   return getPaneBackendExecutor()
 }

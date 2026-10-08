@@ -2,8 +2,7 @@
 /**
  * Native Installer Implementation
  *
- * This module implements the file-based native installer system described in
- * docs/native-installer.md. It provides:
+ * This module implements the file-based native installer system. It provides:
  * - Directory structure management with symlinks
  * - Version installation and activation
  * - Multi-process safety with locking
@@ -1527,7 +1526,6 @@ async function manualRemoveNpmPackage(
   packageName: string,
 ): Promise<{ success: boolean; error?: string; warning?: string }> {
   try {
-    // Get npm global prefix
     const prefixResult = await execFileNoThrowWithCwd('npm', [
       'config',
       'get',

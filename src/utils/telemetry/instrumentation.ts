@@ -372,7 +372,6 @@ async function initializeBetaTracing(
     url: `${endpoint}/v1/logs`,
   }
 
-  // Initialize trace exporter
   const traceExporter = new OTLPTraceExporter(httpConfig)
   const spanProcessor = new BatchSpanProcessor(traceExporter, {
     scheduledDelayMillis: DEFAULT_TRACES_EXPORT_INTERVAL_MS,
@@ -386,7 +385,6 @@ async function initializeBetaTracing(
   trace.setGlobalTracerProvider(tracerProvider)
   setTracerProvider(tracerProvider)
 
-  // Initialize log exporter
   const logExporter = new OTLPLogExporter(logHttpConfig)
   const loggerProvider = new LoggerProvider({
     resource,
@@ -400,7 +398,6 @@ async function initializeBetaTracing(
   logs.setGlobalLoggerProvider(loggerProvider)
   setLoggerProvider(loggerProvider)
 
-  // Initialize event logger
   const eventLogger = logs.getLogger(
     'com.anthropic.claude_code.events',
     MACRO.VERSION,
@@ -599,7 +596,6 @@ export async function initializeTelemetry() {
       logs.setGlobalLoggerProvider(loggerProvider)
       setLoggerProvider(loggerProvider)
 
-      // Initialize event logger
       const eventLogger = logs.getLogger(
         'com.anthropic.claude_code.events',
         MACRO.VERSION,
@@ -771,7 +767,6 @@ function getOTLPExporterConfig() {
   const mtlsConfig = getMTLSConfig()
   const settings = getSettings_DEPRECATED()
 
-  // Build base config
   const config: Record<string, unknown> = {}
 
   // Parse static headers from env var once (doesn't change at runtime)

@@ -9,7 +9,6 @@ export function getRelativeMemoryPath(path: string): string {
   const homeDir = homedir();
   const cwd = getCwd();
 
-  // Calculate relative paths
   const relativeToHome = path.startsWith(homeDir) ? '~' + path.slice(homeDir.length) : null;
   const relativeToCwd = path.startsWith(cwd) ? './' + relative(cwd, path) : null;
 

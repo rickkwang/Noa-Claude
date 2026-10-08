@@ -88,7 +88,6 @@ const TASK_ID_PREFIXES: Record<string, string> = {
   dream: 'd',
 }
 
-// Get task ID prefix
 function getTaskIdPrefix(type: TaskType): string {
   return TASK_ID_PREFIXES[type] ?? 'x'
 }

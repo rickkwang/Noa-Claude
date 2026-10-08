@@ -442,7 +442,6 @@ export function extractReadFilesFromMessages(
       ).length
       for (const content of message.message.content) {
         if (content.type === 'tool_result' && content.tool_use_id) {
-          // Handle Read tool results
           const readFilePath = fileReadToolUseIds.get(content.tool_use_id)
           const fileContent =
             readFilePath && content.is_error !== true

@@ -55,7 +55,6 @@ export function extractDangerousSettings(
     }
   }
 
-  // Check for hooks
   const hasHooks =
     settings.hooks !== undefined &&
     settings.hooks !== null &&

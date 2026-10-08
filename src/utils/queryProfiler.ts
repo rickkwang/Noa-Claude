@@ -203,7 +203,6 @@ function getQueryProfileReport(): string {
     lines.push(`Total time: ${formatMs(totalTime)}ms`)
   }
 
-  // Add phase summary
   lines.push(getPhaseSummary(marks, baselineTime))
 
   lines.push('='.repeat(80))

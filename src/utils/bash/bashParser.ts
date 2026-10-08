@@ -4063,7 +4063,6 @@ function parseTestExtglobRhs(P: ParseState): TsNode[] {
 
 function parseTestPrimary(P: ParseState, closer: string): TsNode | null {
   skipBlanks(P.L)
-  // Stop at closer
   if (closer === ']' && peek(P.L) === ']') return null
   if (closer === ']]' && peek(P.L) === ']' && peek(P.L, 1) === ']') return null
   return parseWord(P, 'arg')

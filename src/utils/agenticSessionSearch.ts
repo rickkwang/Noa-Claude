@@ -112,23 +112,17 @@ function extractTranscript(messages: SerializedMessage[]): string {
  * Checks if a log contains the query term in any searchable field.
  */
 function logContainsQuery(log: LogOption, queryLower: string): boolean {
-  // Check title
   const title = getLogDisplayTitle(log).toLowerCase()
   if (title.includes(queryLower)) return true
 
-  // Check custom title
   if (log.customTitle?.toLowerCase().includes(queryLower)) return true
 
-  // Check tag
   if (log.tag?.toLowerCase().includes(queryLower)) return true
 
-  // Check branch
   if (log.gitBranch?.toLowerCase().includes(queryLower)) return true
 
-  // Check summary
   if (log.summary?.toLowerCase().includes(queryLower)) return true
 
-  // Check first prompt
   if (log.firstPrompt?.toLowerCase().includes(queryLower)) return true
 
   // Check transcript (more expensive, do last)
@@ -280,7 +274,6 @@ Find the sessions that are most relevant to this query.`
     // Debug: log the response
     logForDebugging(`Agentic search response: ${textContent.text}`)
 
-    // Parse the JSON response
     const jsonMatch = textContent.text.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
       logForDebugging('Could not find JSON in agentic search response')

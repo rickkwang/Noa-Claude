@@ -232,7 +232,6 @@ export function parseMultipleKeypresses(
   const isFlush = input === null
   const inputString = isFlush ? '' : inputToString(input)
 
-  // Get or create tokenizer
   const tokenizer = prevState._tokenizer ?? createTokenizer({ x10Mouse: true })
 
   // Tokenize the input
@@ -315,7 +314,6 @@ export function parseMultipleKeypresses(
     pasteBuffer = ''
   }
 
-  // Build new state
   const newState: KeyParseState = {
     mode: inPaste ? 'IN_PASTE' : 'NORMAL',
     incomplete: tokenizer.buffer(),

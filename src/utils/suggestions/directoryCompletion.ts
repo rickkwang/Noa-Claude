@@ -57,7 +57,6 @@ export function parsePartialPath(
   partialPath: string,
   basePath?: string,
 ): ParsedPath {
-  // Handle empty input
   if (!partialPath) {
     const directory = basePath || getCwd()
     return { directory, prefix: '' }
@@ -92,7 +91,6 @@ export async function scanDirectory(
   }
 
   try {
-    // Read directory contents
     const fs = getFsImplementation()
     const entries = await fs.readdir(dirPath)
 

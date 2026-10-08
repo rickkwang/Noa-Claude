@@ -672,7 +672,6 @@ export function ManagePlugins({
       });
     }
 
-    // Build standalone MCP items
     const standaloneMcps: UnifiedInstalledItem[] = [];
     for (const client_1 of mcpClients) {
       if (client_1.name === 'ide') continue;
@@ -935,7 +934,6 @@ export function ManagePlugins({
       return;
     }
     async function detectMcpb() {
-      // Check plugin manifest first
       const mcpServersSpec = selectedPlugin!.plugin.manifest.mcpServers;
       let hasMcpb = false;
       if (mcpServersSpec) {
@@ -1266,7 +1264,6 @@ export function ManagePlugins({
     }
   }, [viewState, selectedPlugin]);
 
-  // Handle toggle enable/disable
   const handleToggle = React.useCallback(() => {
     if (selectedIndex >= filteredItems.length) return;
     const item_7 = filteredItems[selectedIndex];
@@ -2005,7 +2002,6 @@ export function ManagePlugins({
     const isEnabled_2 = mergedSettings_2?.enabledPlugins?.[pluginId_13] !== false;
     const isUninstalled = selectedPlugin.isUninstalled === true;
 
-    // Compute plugin errors section
     const filteredPluginErrors = pluginErrors.filter(e_1 => 'plugin' in e_1 && e_1.plugin === selectedPlugin.plugin.name || e_1.source === pluginId_13 || e_1.source.startsWith(`${selectedPlugin.plugin.name}@`));
     const pluginErrorsSection = filteredPluginErrors.length === 0 ? null : <Box flexDirection="column" marginBottom={1}>
           <Text bold color="error">
@@ -2360,7 +2356,6 @@ export function ManagePlugins({
       const prevSectionKey = prevItem ? prevItem.section ?? prevItem.scope : null;
       const showScopeHeader = !searchQuery && item_10.section !== 'disabled' && (!prevItem || prevSectionKey !== sectionKey);
 
-      // Get scope label
       const getScopeLabel = (scope_8: string): string => {
         switch (scope_8) {
           case 'flagged':

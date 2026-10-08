@@ -34,7 +34,7 @@ const THINKING_INACTIVE_SHIMMER = {
 };
 const THINKING_DELAY_MS = 3000;
 const THINKING_GLOW_PERIOD_S = 2;
-// Thresholds match upstream CC 2.1.283 Lo(): 10s still, 20s more,
+// Thresholds match upstream CC 2.1.283: 10s still, 20s more,
 // 30s some more, 45s deep in thought.
 function progressiveThinkingText(thinkingMs: number): string {
   if (thinkingMs >= 45_000) return 'deep in thought';

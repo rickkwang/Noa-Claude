@@ -121,7 +121,6 @@ export function TeamsDialog({
       return;
     }
 
-    // Handle up/down navigation
     if (key.upArrow || key.downArrow) {
       const maxIndex = getMaxIndex();
       if (key.upArrow) {

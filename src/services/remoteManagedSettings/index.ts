@@ -215,7 +215,6 @@ async function fetchWithRetry(
   for (let attempt = 1; attempt <= DEFAULT_MAX_RETRIES + 1; attempt++) {
     lastResult = await fetchRemoteManagedSettings(cachedChecksum)
 
-    // Return immediately on success
     if (lastResult.success) {
       return lastResult
     }
@@ -390,13 +389,11 @@ async function saveSettings(settings: SettingsJson): Promise<void> {
  * Clear all remote settings (session, persistent, and stop polling)
  */
 export async function clearRemoteManagedSettingsCache(): Promise<void> {
-  // Stop background polling
   stopBackgroundPolling()
 
   // Clear session cache
   resetSyncCache()
 
-  // Clear loading promise state
   loadingCompletePromise = null
   loadingCompleteResolve = null
 
@@ -561,7 +558,6 @@ export async function loadRemoteManagedSettings(): Promise<void> {
  * Fails open - if fetch fails, continues without remote settings
  */
 export async function refreshRemoteManagedSettings(): Promise<void> {
-  // Clear caches first
   await clearRemoteManagedSettingsCache()
 
   // If not enabled, notify that policy settings changed (to empty)

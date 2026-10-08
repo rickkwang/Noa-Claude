@@ -520,7 +520,6 @@ export class Cursor {
       return new Cursor(this.measuredText, 0, 0)
     }
 
-    // Calculate target column position
     const currentColumn = this.offset - currentStart
 
     // Find previous line bounds
@@ -542,7 +541,6 @@ export class Cursor {
       return new Cursor(this.measuredText, this.text.length, 0)
     }
 
-    // Calculate target column position
     const currentColumn = this.offset - currentStart
 
     // Find next line bounds
@@ -1385,7 +1383,6 @@ export class MeasuredText {
   public getOffsetFromPosition(position: Position): number {
     const wrappedLine = this.getLine(position.line)
 
-    // Handle blank lines specially
     if (wrappedLine.text.length === 0 && wrappedLine.endsWithNewline) {
       return wrappedLine.startOffset
     }
@@ -1402,7 +1399,6 @@ export class MeasuredText {
       displayColumnWithLeading,
     )
 
-    // Calculate the actual offset
     const offset = wrappedLine.startOffset + stringIndex
 
     // For normal lines

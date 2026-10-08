@@ -945,7 +945,6 @@ export async function keepWorktree(): Promise<void> {
     // Clear the session but keep the worktree intact
     currentWorktreeSession = null
 
-    // Update config
     saveCurrentProjectConfig(current => ({
       ...current,
       activeWorktreeSession: undefined,
@@ -1011,10 +1010,8 @@ export async function cleanupWorktree(): Promise<void> {
       }
     }
 
-    // Clear the session
     currentWorktreeSession = null
 
-    // Update config
     saveCurrentProjectConfig(current => ({
       ...current,
       activeWorktreeSession: undefined,
@@ -1443,7 +1440,6 @@ export async function execIntoTmuxWorktree(args: string[]): Promise<{
     }
 
     repoName = basename(repoRoot)
-    // Create or resume worktree
     try {
       const result = await getOrCreateWorktree(
         repoRoot,
@@ -1553,7 +1549,7 @@ export async function execIntoTmuxWorktree(args: string[]): Promise<{
     )
   }
 
-  // For ants in claude-cli-internal, set up dev panes (watch + start)
+  // For ants in the internal CLI repo, set up dev panes (watch + start)
   const isAnt = process.env.USER_TYPE === 'ant'
   const isClaudeCliInternal = repoName === 'claude-cli-internal'
   const shouldSetupDevPanes = isAnt && isClaudeCliInternal && !sessionExists
@@ -1631,7 +1627,6 @@ export async function execIntoTmuxWorktree(args: string[]): Promise<{
           stdio: 'inherit',
         })
       } else {
-        // Create new detached session
         spawnSync(
           'tmux',
           [

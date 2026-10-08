@@ -100,7 +100,6 @@ export async function loadMarketplacesWithGracefulDegradation(
       const errorMessage = err instanceof Error ? err.message : String(err)
       failures.push({ name, error: errorMessage })
 
-      // Log for monitoring
       logError(toError(err))
     }
 
@@ -561,7 +560,6 @@ export async function detectEmptyMarketplaceReason({
     return 'git-not-installed'
   }
 
-  // Check policy restrictions
   const allowlist = getStrictKnownMarketplaces()
   if (allowlist !== null) {
     if (allowlist.length === 0) {

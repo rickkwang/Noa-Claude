@@ -256,7 +256,6 @@ async function bashToolCheckCommandOperatorPermissions(
     pipeSegments.map(segment => buildSegmentWithoutRedirections(segment)),
   )
 
-  // Handle as segmented command
   return segmentedCommandPermissionResult(
     input,
     segments,

@@ -155,13 +155,11 @@ export function createLSPServerInstance(
       state = 'starting'
       logForDebugging(`Starting LSP server instance: ${name}`)
 
-      // Start the client
       await client.start(config.command, config.args || [], {
         env: config.env,
         cwd: config.workspaceFolder,
       })
 
-      // Initialize with workspace info
       const workspaceFolder = config.workspaceFolder || getCwd()
       const workspaceUri = pathToFileURL(workspaceFolder).href
 
@@ -466,7 +464,6 @@ export function createLSPServerInstance(
     client.onRequest(method, handler)
   }
 
-  // Return public API
   return {
     name,
     config,

@@ -51,7 +51,6 @@ export function useInputBuffer({
     ) => {
       const now = Date.now()
 
-      // Clear any pending push
       if (pendingPush.current) {
         clearTimeout(pendingPush.current)
         pendingPush.current = null
@@ -82,7 +81,6 @@ export function useInputBuffer({
           return newBuffer
         }
 
-        // Add new entry
         const updatedBuffer = [
           ...newBuffer,
           { text, cursorOffset, pastedContents, timestamp: now },

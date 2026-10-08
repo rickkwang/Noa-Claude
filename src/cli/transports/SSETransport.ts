@@ -131,8 +131,8 @@ type SSETransportState =
  * Payload for `event: client_event` frames, matching the StreamClientEvent
  * proto message in session_stream.proto. This is the only event type sent
  * to worker subscribers — delivery_update, session_update, ephemeral_event,
- * and catch_up_truncated are client-channel-only (see notifier.go and
- * event_stream.go SubscriberClient guard).
+ * and catch_up_truncated are client-channel-only (see the server's notifier
+ * and SubscriberClient guard).
  */
 export type StreamClientEvent = {
   event_id: string
@@ -316,7 +316,6 @@ export class SSETransport implements Transport {
       this.reconnectStartTime = null
       this.resetLivenessTimer()
 
-      // Read the SSE stream
       await this.readStream(response.body)
     } catch (error) {
       if (this.abortController?.signal.aborted) {
@@ -419,7 +418,7 @@ export class SSETransport implements Transport {
    * Handle a single SSE frame. The event: field names the variant; data:
    * carries the inner proto JSON directly (no envelope).
    *
-   * Worker subscribers only receive client_event frames (see notifier.go) —
+   * Worker subscribers only receive client_event frames (see the server's notifier) —
    * any other event type indicates a server-side change that CC doesn't yet
    * understand. Log a diagnostic so we notice in telemetry.
    */
@@ -484,7 +483,6 @@ export class SSETransport implements Transport {
 
     const elapsed = now - this.reconnectStartTime
     if (elapsed < RECONNECT_GIVE_UP_MS) {
-      // Clear any existing timer
       if (this.reconnectTimer) {
         clearTimeout(this.reconnectTimer)
         this.reconnectTimer = null
@@ -504,7 +502,6 @@ export class SSETransport implements Transport {
         RECONNECT_BASE_DELAY_MS * Math.pow(2, this.reconnectAttempts - 1),
         RECONNECT_MAX_DELAY_MS,
       )
-      // Add ±25% jitter
       const delay = Math.max(
         0,
         baseDelay + baseDelay * 0.25 * (2 * Math.random() - 1),

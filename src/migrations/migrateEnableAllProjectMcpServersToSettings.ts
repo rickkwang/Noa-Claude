@@ -107,7 +107,6 @@ export function migrateEnableAllProjectMcpServersToSettings(): void {
       })
     }
 
-    // Log the migration event
     logEvent('tengu_migrate_mcp_approval_fields_success', {
       migratedCount: fieldsToRemove.length,
     })

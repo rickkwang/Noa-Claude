@@ -136,7 +136,7 @@ const useFrustrationDetection: FrustrationDetectionHook = ("external" as string)
   handleTranscriptSelect: () => {}
 });
 // Ant-only org warning. Conditional require so the org UUID list is
-// eliminated from external builds (one UUID is on excluded-strings).
+// eliminated from external builds.
 const useAntOrgWarningNotification: AntOrgWarningNotificationHook = ("external" as string) === 'ant' ? require('../hooks/notifs/useAntOrgWarningNotification.js').useAntOrgWarningNotification : () => {};
 // Dead code elimination: conditional import for coordinator mode
 const getCoordinatorUserContext: (mcpClients: ReadonlyArray<{
@@ -679,7 +679,6 @@ export function REPL({
   // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
   useMemo(() => isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_MESSAGE_ACTIONS), []);
 
-  // Log REPL mount/unmount lifecycle
   useEffect(() => {
     logForDebugging(`[REPL:mount] REPL mounted, disabled=${disabled}`);
     return () => logForDebugging(`[REPL:unmount] REPL unmounting`);
@@ -859,7 +858,6 @@ export function REPL({
     return [...localTools, ...initialTools];
   }, [localTools, initialTools]);
 
-  // Initialize plugin management
   useManagePlugins({
     enabled: !isRemoteSession
   });
@@ -1845,7 +1843,6 @@ export function REPL({
   // Frustration detection: show transcript sharing prompt after detecting frustrated messages
   const frustrationDetection = useFrustrationDetection(messages, isLoading, hasActivePrompt, feedbackSurvey.state !== 'closed' || postCompactSurvey.state !== 'closed' || memorySurvey.state !== 'closed');
 
-  // Initialize IDE integration
   useIDEIntegration({
     autoConnectIdeFlag,
     ideToInstallExtension,
@@ -2771,10 +2768,9 @@ export function REPL({
         return;
       }
       if (isCompactBoundaryMessage(newMessage)) {
-        // Fullscreen: keep the full pre-compact history in scrollback
-        // across repeated compactions (upstream 2.1.224, reducer action
-        // "remove-uuids-and-append"; previously trimmed to the last
-        // boundary). query.ts slices at the boundary for API calls,
+        // Fullscreen keeps the full pre-compact history in scrollback across
+        // repeated compactions (upstream's "remove-uuids-and-append" reducer
+        // action). query.ts slices at the boundary for API calls,
         // Messages.tsx skips the boundary filter in fullscreen, and
         // useLogMessages treats this as an incremental append (first uuid
         // unchanged).
@@ -2785,11 +2781,10 @@ export function REPL({
             // each seg-boundary leaves two copies in the array: the
             // pre-boundary originals (these stay visible — the projection
             // hides only the post-boundary re-yield) and the re-yielded
-            // copies. Pre-2.1.224 the next compaction's trim collected the
-            // originals; with full retention, do it explicitly when the NEXT
-            // boundary arrives: cut the previous seg-boundary's originals
-            // (they lie before it). Keeps the single-visible-copy invariant
-            // projectCompactHistoryForMainDisplay relies on.
+            // copies. With full retention, the NEXT boundary must cut the
+            // previous seg-boundary's originals (they lie before it). This keeps
+            // the single-visible-copy invariant projectCompactHistoryForMainDisplay
+            // relies on.
             const prevIdx = findLastCompactBoundaryIndex(old);
             const seg = prevIdx === -1 ? undefined : old[prevIdx]?.compactMetadata?.preservedSegment;
             if (seg) {
@@ -3597,7 +3592,6 @@ export function REPL({
       }));
     }
 
-    // Handle speculation acceptance
     if (speculationAccept) {
       const {
         queryRequired
@@ -3687,7 +3681,6 @@ export function REPL({
       });
       setMessages(prev => [...prev, userMessage]);
 
-      // Send to remote session
       await activeRemote.sendMessage(remoteContent, {
         uuid: userMessage.uuid
       });
@@ -4518,7 +4511,6 @@ export function REPL({
   const [remountKey, setRemountKey] = useState(0);
   useEffect(() => {
     const handleSuspend = () => {
-      // Print suspension instructions
       process.stdout.write(`\nNoa Claude has been suspended. Run \`fg\` to bring Noa Claude back.\nNote: ctrl + z now suspends Noa Claude, ctrl + _ undoes input.\n`);
     };
     const handleResume = () => {
@@ -5082,7 +5074,6 @@ export function REPL({
               SandboxManager.refreshConfig();
             }
 
-            // Remove from queue
             setAppState(prev => ({
               ...prev,
               workerSandboxPermissions: {
@@ -5111,7 +5102,6 @@ export function REPL({
             }
           }} onWaitingDismiss={action => {
             const currentRequest = elicitation.queue[0];
-            // Remove from queue
             setAppState(prev => ({
               ...prev,
               elicitation: {

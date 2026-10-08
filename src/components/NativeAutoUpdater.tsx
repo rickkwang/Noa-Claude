@@ -113,7 +113,6 @@ function NativeAutoUpdaterImpl({
         return; // Silently skip this update check, will try again later
       }
 
-      // Update versions for display
       setVersions({
         current: currentVersion,
         latest: result.latestVersion
@@ -166,7 +165,6 @@ function NativeAutoUpdaterImpl({
     void checkForUpdates();
   }, [checkForUpdates]);
 
-  // Check every 30 minutes
   useInterval(checkForUpdates, 30 * 60 * 1000);
   const hasUpdateResult = !!autoUpdaterResult?.version;
   const hasVersionInfo = !!versions.current && !!versions.latest;

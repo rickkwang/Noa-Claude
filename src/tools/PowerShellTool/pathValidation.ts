@@ -1990,7 +1990,6 @@ function checkPathConstraintsForStatement(
     }
   }
 
-  // Check file redirections
   if (statement.redirections) {
     for (const redir of statement.redirections) {
       if (redir.isMerging) continue

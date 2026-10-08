@@ -68,7 +68,6 @@ async function loadInstallCountsCache(): Promise<InstallCountsCache | null> {
     const content = await readFile(cachePath, { encoding: 'utf-8' })
     const parsed = jsonParse(content) as unknown
 
-    // Validate basic structure
     if (
       typeof parsed !== 'object' ||
       parsed === null ||
@@ -86,7 +85,6 @@ async function loadInstallCountsCache(): Promise<InstallCountsCache | null> {
       counts: unknown
     }
 
-    // Validate version
     if (cache.version !== INSTALL_COUNTS_CACHE_VERSION) {
       logForDebugging(
         `Install counts cache version mismatch (got ${cache.version}, expected ${INSTALL_COUNTS_CACHE_VERSION})`,
@@ -94,7 +92,6 @@ async function loadInstallCountsCache(): Promise<InstallCountsCache | null> {
       return null
     }
 
-    // Validate fetchedAt and counts
     if (typeof cache.fetchedAt !== 'string' || !Array.isArray(cache.counts)) {
       logForDebugging('Install counts cache has invalid structure')
       return null
@@ -159,7 +156,6 @@ async function saveInstallCountsCache(
     const pluginsDir = getPluginsDirectory()
     await getFsImplementation().mkdir(pluginsDir)
 
-    // Write to temp file
     const content = jsonStringify(cache, null, 2)
     await writeFile(tempPath, content, {
       encoding: 'utf-8',
@@ -254,7 +250,6 @@ export async function getInstallCounts(): Promise<Map<string, number> | null> {
     }
     await saveInstallCountsCache(newCache)
 
-    // Convert to Map
     const map = new Map<string, number>()
     for (const entry of counts) {
       map.set(entry.plugin, entry.unique_installs)

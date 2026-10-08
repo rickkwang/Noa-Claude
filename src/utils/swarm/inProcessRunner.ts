@@ -745,7 +745,6 @@ async function waitForNextPromptOrShutdown(
     }
     pollCount++
 
-    // Check for abort
     if (abortController.signal.aborted) {
       logForDebugging(
         `[inProcessRunner] ${identity.agentName} aborted while waiting (poll #${pollCount})`,

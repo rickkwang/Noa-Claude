@@ -107,8 +107,8 @@ export function createV1ReplTransport(
  * v2 adapter: wrap SSETransport (reads) + CCRClient (writes, heartbeat,
  * state, delivery tracking).
  *
- * Auth: v2 endpoints validate the JWT's session_id claim (register_worker.go:32)
- * and worker role (environment_auth.py:856). OAuth tokens have neither.
+ * Auth: v2 endpoints validate the JWT's session_id claim
+ * and worker role. OAuth tokens have neither.
  * This is the inverse of the v1 replBridge path, which deliberately uses OAuth.
  * The JWT is refreshed when the poll loop re-dispatches work — the caller
  * invokes createV2ReplTransport again with the fresh token.

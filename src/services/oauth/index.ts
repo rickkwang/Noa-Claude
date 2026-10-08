@@ -186,7 +186,6 @@ export class OAuthService {
         settle(() => resolve(authorizationCode))
       this.manualAuthCodeRejecter = error => settle(() => reject(error))
 
-      // Start automatic flow
       if (!this.authCodeListener) {
         void onReady().catch(error => {
           this.manualAuthCodeResolver = null

@@ -148,7 +148,6 @@ export function readLockContent(
 
     const parsed = jsonParse(content) as VersionLockContent
 
-    // Validate required fields
     if (typeof parsed.pid !== 'number' || !parsed.version || !parsed.execPath) {
       return null
     }
@@ -274,7 +273,6 @@ export async function tryAcquireLock(
 
     logForDebugging(`Acquired PID lock for ${versionName} (PID ${process.pid})`)
 
-    // Return release function
     return () => {
       try {
         // Only release if we still own the lock

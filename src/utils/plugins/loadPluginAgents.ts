@@ -126,7 +126,6 @@ async function loadAgentFromFile(
       )
     }
 
-    // Parse memory scope
     const memoryRaw = frontmatter.memory as string | undefined
     let memory: AgentMemoryScope | undefined
     if (memoryRaw !== undefined) {
@@ -139,7 +138,6 @@ async function loadAgentFromFile(
       }
     }
 
-    // Parse isolation mode
     const isolationRaw = frontmatter.isolation as string | undefined
     const isolation =
       isolationRaw === 'worktree' ? ('worktree' as const) : undefined
@@ -171,7 +169,6 @@ async function loadAgentFromFile(
       }
     }
 
-    // Parse maxTurns
     const maxTurnsRaw = frontmatter.maxTurns
     const maxTurns = parsePositiveIntFromFrontmatter(maxTurnsRaw)
     if (maxTurnsRaw !== undefined && maxTurns === undefined) {
@@ -180,7 +177,6 @@ async function loadAgentFromFile(
       )
     }
 
-    // Parse disallowedTools
     const disallowedTools =
       frontmatter.disallowedTools !== undefined
         ? parseAgentToolsFromFrontmatter(frontmatter.disallowedTools)
@@ -305,7 +301,6 @@ export const loadPluginAgents = memoize(
                     }
                     return agents
                   } else if (stats.isFile() && agentPath.endsWith('.md')) {
-                    // Load single agent file
                     const agent = await loadAgentFromFile(
                       agentPath,
                       plugin.name,

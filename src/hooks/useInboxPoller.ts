@@ -575,7 +575,6 @@ export function useInboxPoller({
           `[InboxPoller] Applying mode change from team-lead: ${targetMode}`,
         )
 
-        // Update local permission context
         setAppState(prev => ({
           ...prev,
           toolPermissionContext: applyPermissionUpdate(

@@ -56,7 +56,7 @@ export type FrontmatterData = {
   // Shell to use for !`cmd` and ```! blocks in skill/command .md content.
   // 'bash' (default) or 'powershell'. File-scoped — applies to all !-blocks.
   // Never consults settings.defaultShell: skills are portable across platforms,
-  // so the author picks the shell, not the reader. See docs/design/ps-shell-selection.md §5.3.
+  // so the author picks the shell, not the reader.
   shell?: string | null
   [key: string]: unknown
 }
@@ -222,7 +222,6 @@ export function splitPathInFrontmatter(input: string | string[]): string[] {
     }
   }
 
-  // Add the last part
   const trimmed = current.trim()
   if (trimmed) {
     parts.push(trimmed)

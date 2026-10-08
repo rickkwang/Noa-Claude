@@ -12,8 +12,6 @@
  * the pending hint. The store is a single slot (not a queue) — we surface
  * at most one prompt per session, so there's no reason to accumulate.
  * React subscribes via useSyncExternalStore.
- *
- * See docs/claude-code-hints.md for the vendor-facing spec.
  */
 
 import { logForDebugging } from './debug.js'

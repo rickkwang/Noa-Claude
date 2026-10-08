@@ -212,7 +212,6 @@ export const GIT_READ_ONLY_COMMANDS: Record<string, ExternalCommandConfig> = {
       '--topo-order': 'none',
       '--date-order': 'none',
       '--author-date-order': 'none',
-      // Format control
       '--pretty': 'string',
       '--format': 'string',
       // Diff filtering
@@ -1783,7 +1782,6 @@ export function validateFlags(
             // This is a flag with attached numeric argument
             const flagArgType = config.safeFlags[potentialFlag]
             if (flagArgType === 'number' || flagArgType === 'string') {
-              // Validate the numeric value
               if (validateFlagArgument(potentialValue, flagArgType)) {
                 i++
                 continue
@@ -1831,7 +1829,6 @@ export function validateFlags(
         }
       }
 
-      // Validate flag arguments
       if (flagArgType === 'none') {
         // SECURITY: hasEquals covers `-FLAG=` (empty inline). Without it,
         // `-FLAG=` with 'none' type would pass (inlineValue='' is falsy).

@@ -243,7 +243,6 @@ export function formatToken(
         return Math.max(maxWidth, 3) // Minimum width of 3
       })
 
-      // Format header row
       let tableOutput = '| '
       tableToken.header.forEach((header, index) => {
         const content =
@@ -258,7 +257,6 @@ export function formatToken(
       })
       tableOutput = tableOutput.trimEnd() + EOL
 
-      // Add separator row
       tableOutput += '|'
       columnWidths.forEach(width => {
         // Always use dashes, don't show alignment colons in the output
@@ -267,7 +265,6 @@ export function formatToken(
       })
       tableOutput += EOL
 
-      // Format data rows
       tableToken.rows.forEach(row => {
         tableOutput += '| '
         row.forEach((cell, index) => {

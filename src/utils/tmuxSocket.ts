@@ -365,7 +365,6 @@ async function doInitialize(): Promise<void> {
   const baseTmpDir = process.env.TMPDIR || '/tmp'
   const fallbackPath = posix.join(baseTmpDir, `tmux-${uid}`, socket)
 
-  // Get server PID separately
   const pidResult = await execTmux([
     '-L',
     socket,

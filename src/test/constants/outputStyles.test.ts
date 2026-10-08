@@ -25,7 +25,7 @@ describe('Proactive output style', () => {
     expect(proactive?.keepCodingInstructions).toBe(true)
   })
 
-  // Verbatim port from upstream Claude Code 2.1.237 (`Oke.Proactive`). Same
+  // Verbatim port from upstream Claude Code 2.1.237 (Proactive). Same
   // rule as below: a digest failure means the port was reworded, so re-verify
   // upstream rather than refreshing the digest.
   test('prompt matches the pinned upstream port', () => {
@@ -61,7 +61,7 @@ describe('Concise output style', () => {
     expect(concise?.keepCodingInstructions).toBe(true)
   })
 
-  // Verbatim port from upstream Claude Code 2.1.237 (`Oke.Concise`). A digest
+  // Verbatim port from upstream Claude Code 2.1.237 (Concise). A digest
   // failure means someone reworded the port: re-verify against upstream and
   // update the digest, never the other way round.
   test('prompt matches the pinned upstream port', () => {

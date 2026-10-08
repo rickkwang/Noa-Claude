@@ -108,7 +108,6 @@ export function generateHeatmap(
     }
   }
 
-  // Build output
   const lines: string[] = []
 
   // Month labels - evenly spaced across the grid

@@ -165,7 +165,6 @@ export class InProcessBackend implements TeammateExecutor {
 
     const { agentName, teamName } = parsed
 
-    // Write to file-based mailbox
     await writeToMailbox(
       agentName,
       {
@@ -224,14 +223,12 @@ export class InProcessBackend implements TeammateExecutor {
     // Generate deterministic request ID
     const requestId = `shutdown-${agentId}-${Date.now()}`
 
-    // Create shutdown request message
     const shutdownRequest = createShutdownRequestMessage({
       requestId,
       from: 'team-lead', // Terminate is always called by the leader
       reason,
     })
 
-    // Send to teammate's mailbox
     const teammateAgentName = task.identity.agentName
     await writeToMailbox(
       teammateAgentName,

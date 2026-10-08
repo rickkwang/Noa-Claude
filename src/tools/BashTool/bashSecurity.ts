@@ -1267,7 +1267,6 @@ function validateObfuscatedFlags(context: ValidationContext): PermissionResult {
     const currentChar = originalCommand[i]
     const nextChar = originalCommand[i + 1]
 
-    // Update quote state
     if (escaped) {
       escaped = false
       continue
