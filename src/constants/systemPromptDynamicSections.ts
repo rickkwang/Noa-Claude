@@ -151,6 +151,10 @@ export function getSessionSpecificGuidanceSection(
   )
 
   const items = [
+    // Intentional deviation from upstream; applies to both lean and verbose prompts.
+    enabledTools.has(BASH_TOOL_NAME)
+      ? `Before reporting completion, check each requirement; state which checks you ran and what remains unverified. A passing provided test only verifies its covered cases.`
+      : null,
     // Override the shared compaction guidance when this session disables it.
     !autoCompactEnabled
       ? `Automatic compaction is disabled for this session, so the summarization described under # Context management will not run and the context window is a hard limit. Keep tool output bounded and avoid loading context you do not need.`

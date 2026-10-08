@@ -1,0 +1,18 @@
+{
+  "duration": {
+    "module": "duration.py",
+    "code": "import re\n\ndef parse_duration(value):\n    match = re.fullmatch(r'(\\d+)([smh])', value)\n    if not match:\n        raise ValueError('invalid duration')\n    return float(match[1]) * {'s':1, 'm':60, 'h':3600}[match[2]]\n",
+    "spec": "Implement parse_duration(value) returning seconds as float. Accept only a nonnegative plain decimal followed by s/m/h, allowing surrounding whitespace: 1.5h, 90s, 0m. Reject signs, exponent notation, NaN/Inf, missing units, malformed decimals and non-strings with ValueError. Preserve the function signature. Do not add dependencies. The numeric part must start with a digit; if a decimal point is present, digits are required after it.",
+    "public": "from duration import parse_duration\nassert parse_duration('1.5h') == 5400\nassert parse_duration(' 90s ') == 90\nprint('PUBLIC_OK')\n",
+    "judge": "import duration\nfor text,value in [('1.5h',5400),(' 90s ',90),('0m',0),('0.25m',15),('12h',43200),('2.0s',2)]:\n assert duration.parse_duration(text)==value,(text,'wrong result')\nfor text in ['-1h','+1s','1e3s','NaNh','Infm','1..2m','5','.5h','1.h',None,12]:\n try: duration.parse_duration(text)\n except ValueError: pass\n else: raise AssertionError(('accepted invalid',repr(text)))\nprint('JUDGE_OK')\n",
+    "reference": "import re\n\ndef parse_duration(value):\n    if not isinstance(value,str): raise ValueError('invalid duration')\n    match=re.fullmatch(r'([0-9]+(?:\\.[0-9]+)?)([smh])',value.strip())\n    if not match: raise ValueError('invalid duration')\n    return float(match[1])*{'s':1,'m':60,'h':3600}[match[2]]\n"
+  },
+  "merge": {
+    "module": "patch.py",
+    "code": "def apply_patch(original, patch):\n    result = original.copy()\n    result.update(patch)\n    return result\n",
+    "spec": "Implement apply_patch(original, patch) for nested JSON-like dictionaries. Merge dictionaries recursively, preserve unspecified keys, replace scalar/list values rather than concatenate them, and treat None in patch as deletion of that key. Return an independent result: do not mutate either input and do not share mutable dict/list objects with them. Preserve the signature. Use only Python standard library. Deletion applies recursively even inside a newly introduced dictionary.",
+    "public": "from patch import apply_patch\na={'settings':{'theme':'dark','font':12},'old':True}\nb={'settings':{'font':14},'old':None}\nassert apply_patch(a,b)=={'settings':{'theme':'dark','font':14}}\nassert a['old'] is True\nprint('PUBLIC_OK')\n",
+    "judge": "import patch,copy\ncases=[({'a':{'x':1,'y':[1]}},{'a':{'x':2}}, {'a':{'x':2,'y':[1]}}),({'a':{'x':1}},{'a':[2]},{'a':[2]}),({'a':[1]},{'a':{'b':2}},{'a':{'b':2}}),({'a':1},{'a':None,'missing':None},{}),({}, {'a':{'b':None,'c':3}},{'a':{'c':3}})]\nfor a,b,expected in cases:\n aa,bb=copy.deepcopy(a),copy.deepcopy(b)\n assert patch.apply_patch(a,b)==expected\n assert a==aa and b==bb\noriginal={'a':{'x':[1]}};changes={'b':[2]};result=patch.apply_patch(original,changes)\nresult['a']['x'].append(3);result['b'].append(4)\nassert original=={'a':{'x':[1]}} and changes=={'b':[2]}\nprint('JUDGE_OK')\n",
+    "reference": "import copy\n\ndef apply_patch(original,patch):\n    result=copy.deepcopy(original) if isinstance(original,dict) else {}\n    for key,value in patch.items():\n        if value is None: result.pop(key,None)\n        elif isinstance(value,dict): result[key]=apply_patch(result.get(key,{}),value)\n        else: result[key]=copy.deepcopy(value)\n    return result\n"
+  }
+}

@@ -12,6 +12,22 @@ import {
 } from '../../utils/messages.js'
 
 describe('goal evaluator context', () => {
+  test('retains tool names, key inputs and IDs without copying large write content', () => {
+    const context = buildGoalEvaluatorContext([
+      createAssistantMessage({ content: [
+        { type: 'tool_use', id: 'check-1', name: 'Bash', input: { command: 'python3 independent_check.py' } },
+        { type: 'tool_use', id: 'write-1', name: 'Write', input: { content: 'BULK_CONTENT'.repeat(5000), file_path: '/tmp/fixture.py' } },
+      ] }),
+      createUserMessage({ content: [{ type: 'tool_result', tool_use_id: 'check-1', is_error: true, content: 'Nested deletion failed.' }] }),
+    ])
+    expect(context).toContain('name=Bash id=check-1')
+    expect(context).toContain('python3 independent_check.py')
+    expect(context).toContain('name=Write id=write-1')
+    expect(context).toContain('/tmp/fixture.py')
+    expect(context).toContain('is_error=true id=check-1')
+    expect(context).not.toContain('BULK_CONTENT')
+    expect(context.length).toBeLessThan(2000)
+  })
   test('bounds dense Unicode by UTF-8 bytes without splitting characters', () => {
     const context = buildGoalEvaluatorContext([
       createUserMessage({ content: 'HEAD_FAILURE ' + '汉🦊'.repeat(5000) + ' TAIL_EVIDENCE' }),

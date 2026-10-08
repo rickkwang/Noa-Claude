@@ -182,6 +182,16 @@ function formatMessageForEvaluator(message: Message): string | null {
   if ('isMeta' in message && message.isMeta) return null
   if (message.type !== 'user' && message.type !== 'assistant') return null
   const messageParts: string[] = []
+  if (message.type === 'assistant') {
+    for (const block of message.message.content) {
+      if (block.type !== 'tool_use') continue
+      const keyInputs = Object.fromEntries(Object.entries((block.input ?? {}) as Record<string, unknown>).filter(
+        ([key]) => ['command', 'file_path', 'path', 'url', 'pattern', 'operation', 'taskId'].includes(key),
+      ))
+      const input = Object.keys(keyInputs).length ? keyInputs : (block.input ?? {})
+      messageParts.push(`tool call: name=${block.name} id=${block.id} input=${fitSegmentToEvaluatorContext(JSON.stringify(input), 1000)}`)
+    }
+  }
   if (message.type === 'user' && Array.isArray(message.message.content)) {
     for (const block of message.message.content) {
       if (block.type !== 'tool_result') continue

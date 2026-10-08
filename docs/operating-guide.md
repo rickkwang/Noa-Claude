@@ -145,7 +145,7 @@ Runtime behavior:
 - the evaluator sees running shells and subagents started during the active goal. It can confirm an expected long-running service; unfinished required work defers continuation. Earlier unrelated tasks do not block the goal. Work started during evaluation requires another check; replacing a goal invalidates outstanding evaluations and queued wakeups for it
 - interactive API outages, unclassified API errors, output-limit failures, unreadable tool calls and host-managed sign-in refreshes retry at most three times, after about 1, 5 and 15 minutes; auth, credit, context and model failures pause the goal for `/goal resume` while preserving its objective and evidence
 - a goal paused by a rate limit, exhausted retries, a failed turn or lack of progress continues on the user's next prompt; task notifications do not resume it
-- three consecutive evaluated turns without tool use pause continuation (a new user prompt resets the count); an impossible verdict pauses the goal for `/goal resume`
+- three consecutive evaluated turns without successful tool use pause continuation (a new user prompt resets the count); an impossible verdict pauses the goal for `/goal resume`
 - interactive background check-ins start after 30 minutes, back off to 1 hour then 2 hours, and stop after three idle check-ins until a user prompt; `CLAUDE_CODE_GOAL_CHECKIN_MINUTES=0` disables check-ins and automatic retries
 - token usage includes input, output, cache reads, cache writes, and child-agent responses; streaming blocks from the same response are counted once
 - child-agent usage is charged to the goal active at launch; replacing or clearing that goal does not transfer usage to a later goal
@@ -153,6 +153,8 @@ Runtime behavior:
 - budgets are checked after responses finish, so an in-flight response can exceed the limit
 - budget-limited goals resume only when the same objective is set with a larger `--budget`
 - session restore replays transcript evidence to recover goal status, usage, verify command, auto-continue count, and stop reason
+
+For tasks with clear acceptance conditions, use `/goal <objective> --verify "python3 independent_check.py"`. Keep that check independent of model-generated tests. A public test passing covers its assertions, not every requirement; completion reports should identify checks run and requirements still unverified. The small opt-in real-model checks in `scripts/evals/coding/README.md` grade finished artifacts separately from the agent's report.
 
 The model can inspect, create, and request completion through the goal tool. Pause, resume, clear, and replace remain user-controlled slash commands.
 
