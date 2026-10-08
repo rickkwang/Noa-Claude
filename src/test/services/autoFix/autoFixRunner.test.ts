@@ -20,10 +20,12 @@ describe('autoFix command execution', () => {
   test('timeout stops the shell and its child before later side effects', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'noa-autofix-timeout-'))
     const marker = join(dir, 'finished')
+    const started = join(dir, 'started')
     try {
-      const result = await runCommand(`sleep 0.5; touch '${marker}'`, 50)
+      const result = await runCommand(`/bin/sh -c "touch '${started}'; sleep 0.5; touch '${marker}'" & wait`, 150)
       expect(result.timedOut).toBe(true)
       expect(result.success).toBe(false)
+      expect(existsSync(started)).toBe(true)
       await Bun.sleep(600)
       expect(existsSync(marker)).toBe(false)
       expect((await runCommand(`touch '${marker}'`, 1000)).success).toBe(true)
