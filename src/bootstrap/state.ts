@@ -112,6 +112,7 @@ type State = {
   turnHookCount: number
   turnClassifierCount: number
   autoModeClassifierStats: AutoModeClassifierStats
+  promptCacheBreaks: PromptCacheBreakStats
   startTime: number
   lastInteractionTime: number
   totalLinesAdded: number
@@ -339,6 +340,7 @@ function getInitialState(): State {
     turnToolDurationMs: 0,
     turnClassifierDurationMs: 0,
     autoModeClassifierStats: createAutoModeClassifierStats(),
+    promptCacheBreaks: { count: 0, missedTokens: 0, lastReason: null },
     turnToolCount: 0,
     turnHookCount: 0,
     turnClassifierCount: 0,
@@ -722,6 +724,18 @@ export function resetAutoModeClassifierStats(): void {
   STATE.autoModeClassifierStats = createAutoModeClassifierStats()
 }
 
+type PromptCacheBreakStats = { count: number; missedTokens: number; lastReason: string | null }
+
+export function getPromptCacheBreakStats(): Readonly<PromptCacheBreakStats> {
+  return STATE.promptCacheBreaks
+}
+
+export function recordPromptCacheBreak(missedTokens: number, reason: string): void {
+  STATE.promptCacheBreaks.count++
+  STATE.promptCacheBreaks.missedTokens += missedTokens
+  STATE.promptCacheBreaks.lastReason = reason
+}
+
 export function getStatsStore(): {
   observe(name: string, value: number): void
 } | null {
@@ -988,6 +1002,7 @@ export function resetCostState(): void {
   STATE.modelUsage = {}
   // Reported alongside the cost totals by /cost, so it shares their lifetime.
   STATE.autoModeClassifierStats = createAutoModeClassifierStats()
+  STATE.promptCacheBreaks = { count: 0, missedTokens: 0, lastReason: null }
   STATE.promptId = null
   outputTokensAtTurnStart = 0
   currentTurnTokenBudget = null

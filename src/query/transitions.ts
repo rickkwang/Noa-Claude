@@ -1,6 +1,6 @@
 import type { AutoCompactTrackingState } from '../services/compact/autoCompact.js'
 import type { ToolUseContext } from '../Tool.js'
-import type { Message, ToolUseSummaryMessage } from '../types/message.js'
+import type { ApiFailureCategory, Message, ToolUseSummaryMessage } from '../types/message.js'
 
 // -- query loop transitions
 //
@@ -48,8 +48,9 @@ export type Continue =
 
 // Why queryLoop returned. Reached via `yield* queryLoop(...)` in query().
 export type Terminal =
-  | { reason: 'completed' }
-  | { reason: 'api_error' }
+  // failure: the turn ended without a usable result (goal pause/retry input).
+  | { reason: 'completed'; failure?: ApiFailureCategory }
+  | { reason: 'api_error'; failure: ApiFailureCategory }
   // Preempted before the API call: context over the hard blocking limit
   // with automatic compaction disabled.
   | { reason: 'blocking_limit' }

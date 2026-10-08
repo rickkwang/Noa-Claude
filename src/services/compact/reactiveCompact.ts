@@ -25,6 +25,7 @@ import {
   getPromptTooLongTokenGap,
   isMediaSizeErrorMessage,
   isPromptTooLongMessage,
+  parsePromptTooLongTokenCounts,
 } from '../api/errors.js'
 import { roughTokenCountEstimationForMessages } from '../tokenEstimation.js'
 import {
@@ -136,11 +137,12 @@ export function selectReactiveTailPivot(
   messages: Message[],
   model: string,
   tokenGap?: number,
+  reportedLimit?: number,
 ): number | null {
   const groups = groupMessagesByApiRound(messages)
   if (groups.length < MIN_GROUPS_TO_COMPACT) return null
 
-  const window = getModelEffectiveContextWindowSize(model)
+  const window = Math.min(getModelEffectiveContextWindowSize(model), reportedLimit ?? Infinity)
   const budget = Math.min(
     Math.max(Math.floor(window * REACTIVE_TAIL_FRACTION), REACTIVE_TAIL_FLOOR_TOKENS),
     REACTIVE_TAIL_CEIL_TOKENS,
@@ -255,6 +257,7 @@ export async function tryReactiveCompact(params: {
     messages,
     context.options.mainLoopModel,
     tokenGap,
+    error?.errorDetails ? parsePromptTooLongTokenCounts(error.errorDetails).limitTokens : undefined,
   )
 
   beginCompactLifecycle(context)

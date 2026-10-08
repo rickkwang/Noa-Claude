@@ -5,7 +5,6 @@ import { getAutoFixConfig } from './autoFixConfig.js'
 import {
   formatAutoFixFeedback,
   runCommand,
-  runLintWithRetry,
 } from './autoFixRunner.js'
 
 /**
@@ -32,9 +31,8 @@ export async function runAutoFix(): Promise<string | null> {
 
   // Run lint first if configured
   if (config.lint) {
-    const lintResult = await runLintWithRetry(
+    const lintResult = await runCommand(
       config.lint,
-      config.maxRetries,
       config.timeout,
     )
 

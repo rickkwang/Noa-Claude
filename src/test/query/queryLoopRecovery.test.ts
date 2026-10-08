@@ -13,6 +13,7 @@ import {
   createUserMessage,
 } from '../../utils/messages.js'
 import { asSystemPrompt } from '../../utils/systemPromptType.js'
+import { createThreadGoal } from '../../utils/goalState.js'
 
 // Loop-level tests for queryLoop's recovery paths, driven through QueryDeps
 // injection (same harness as streamingToolExecution.test.ts). Each test
@@ -128,6 +129,17 @@ function yieldedMaxOutputTokensErrors(events: Message[]) {
 }
 
 describe('query loop recovery', () => {
+  test('exhausted empty responses schedule recovery for an active interactive goal', async () => {
+    const context = createContext()
+    let appState = { ...context.getAppState(), goal: createThreadGoal({ objective: 'Finish fixture', tokenBudget: null, now: Date.now() }) }
+    context.getAppState = () => appState
+    context.setAppState = update => { appState = update(appState) as typeof appState }
+    context.options.isNonInteractiveSession = false
+    const { events } = await drain({ toolUseContext: context, deps: makeDeps(async function* () {}) })
+    expect(events.filter(e => e.type === 'assistant').map(e => String(e.error))).toContain('empty_response')
+    expect(appState.goal.status === 'paused' || appState.goal.retryAt !== null).toBe(true)
+  }, 5000)
+
   test('max_output_tokens: withholds the error, injects a resume prompt, and retries', async () => {
     const callMessages: Message[][] = []
     const deps = makeDeps(async function* ({ messages }) {
@@ -166,7 +178,7 @@ describe('query loop recovery', () => {
     expect(calls).toBe(4)
     // Only the final, unrecoverable error surfaces to the consumer.
     expect(yieldedMaxOutputTokensErrors(events)).toHaveLength(1)
-    expect(terminal).toEqual({ reason: 'api_error' })
+    expect(terminal).toMatchObject({ reason: 'api_error' })
   }, 5000)
 
   test('model fallback: retries on the fallback model without mutating caller options', async () => {
@@ -209,7 +221,7 @@ describe('query loop recovery', () => {
     )
     expect(errorEvent).toBeDefined()
     expect(errorEvent!.error).toBe('empty_response')
-    expect(terminal).toEqual({ reason: 'completed' })
+    expect(terminal).toEqual({ reason: 'completed', failure: 'transient' })
   }, 5000)
 
   test('empty assistant turn: nudges once, and the nudged answer ends the turn', async () => {
@@ -379,7 +391,7 @@ describe('query loop recovery', () => {
           String(e.content).includes('A hook blocked the turn from ending'),
       )
       expect(warning).toBeDefined()
-      expect(terminal).toEqual({ reason: 'completed' })
+      expect(terminal).toEqual({ reason: 'completed', failure: 'other' })
     } finally {
       if (prevCap === undefined) {
         delete process.env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP

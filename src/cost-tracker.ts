@@ -12,6 +12,7 @@ import {
   getTokenCounter,
   getTotalAPIDuration,
   getTotalAPIDurationWithoutRetries,
+  getPromptCacheBreakStats,
   getTotalCacheCreationInputTokens,
   getTotalCacheReadInputTokens,
   getTotalCostUSD,
@@ -243,8 +244,21 @@ export function formatTotalCost(): string {
       `Total duration (API):  ${formatDuration(getTotalAPIDuration())}
 Total duration (wall): ${formatDuration(getTotalDuration())}
 Total code changes:    ${getTotalLinesAdded()} ${getTotalLinesAdded() === 1 ? 'line' : 'lines'} added, ${getTotalLinesRemoved()} ${getTotalLinesRemoved() === 1 ? 'line' : 'lines'} removed
-${modelUsageDisplay}${autoModeDisplay}`,
+${modelUsageDisplay}${formatPromptCacheUsage()}${autoModeDisplay}`,
   )
+}
+
+// Cache reads as a share of all input, plus the breaks the detector attributed.
+export function formatPromptCacheUsage(): string {
+  const read = getTotalCacheReadInputTokens()
+  const total = getTotalInputTokens() + read + getTotalCacheCreationInputTokens()
+  if (total === 0) return ''
+  const { count, missedTokens, lastReason } = getPromptCacheBreakStats()
+  const breaks =
+    count === 0
+      ? 'no cache breaks'
+      : `${count} cache ${count === 1 ? 'break' : 'breaks'} (~${formatNumber(missedTokens)} tokens re-cached), last: ${lastReason}`
+  return `\nPrompt cache:          ${Math.round((read / total) * 100)}% of input read from cache · ${breaks}`
 }
 
 /**

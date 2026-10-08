@@ -68,7 +68,6 @@ import {
 } from './utils/goalEvaluator.js'
 import {
   applyGoalRuntimeEvaluation,
-  applyGoalRuntimeEvaluationFailure,
   applyGoalTurnFailure,
   deferGoalForBackground,
   getGoalBackgroundTasks,
@@ -335,6 +334,8 @@ export async function* query(
 > {
   const consumedCommandUuids: string[] = []
   const terminal = yield* queryLoop(params, consumedCommandUuids)
+  const goalNotice = goalFailureNotice(terminal, params.toolUseContext)
+  if (goalNotice) yield goalNotice
   // Only reached if queryLoop returned normally. Skipped on throw (error
   // propagates through yield*) and on .return() (Return completion closes
   // both generators). This gives the same asymmetric started-without-completed
@@ -343,6 +344,39 @@ export async function* query(
     notifyCommandLifecycle(uuid, 'completed')
   }
   return terminal
+}
+
+function goalFailureForTerminal(terminal: Terminal): ApiFailureCategory | undefined {
+  switch (terminal.reason) {
+    case 'rapid_refill_breaker':
+    case 'blocking_limit':
+    case 'prompt_too_long':
+      return 'context'
+    case 'malformed_tool_use_exhausted':
+      return 'transient'
+    case 'image_error':
+    case 'model_error':
+    case 'stop_hook_prevented':
+    case 'hook_stopped':
+      return 'other'
+    case 'api_error':
+    case 'completed':
+      return terminal.failure
+    default:
+      return undefined
+  }
+}
+
+function goalFailureNotice(terminal: Terminal, toolUseContext: ToolUseContext): Message | null {
+  const category = goalFailureForTerminal(terminal)
+  if (!category || toolUseContext.agentId) return null
+  return applyGoalTurnFailure({
+    category,
+    goal: toolUseContext.getAppState().goal,
+    setAppState: toolUseContext.setAppState,
+    isNonInteractiveSession: toolUseContext.options.isNonInteractiveSession,
+    managedAuth: category === 'auth' && isManagedOAuthContext() && isAnthropicAuthEnabled(),
+  })
 }
 
 async function* queryLoop(
@@ -665,13 +699,6 @@ async function* queryLoop(
       ? toolUseContext.setAppState
       : toolUseContext.setAppStateForTasks ?? toolUseContext.setAppState
     const permissionMode = appState.toolPermissionContext.mode
-    const goalFailureNotice = (category: ApiFailureCategory) => toolUseContext.agentId ? null : applyGoalTurnFailure({
-      category,
-      goal: appState.goal,
-      setAppState: toolUseContext.setAppState,
-      isNonInteractiveSession: toolUseContext.options.isNonInteractiveSession,
-      managedAuth: category === 'auth' && isManagedOAuthContext() && isAnthropicAuthEnabled(),
-    })
 
     // Inject goal continuation prompt on the first iteration only. Gated on
     // state.transition, not turnCount: recovery continues (stop_hook_blocking,
@@ -1265,8 +1292,6 @@ async function* queryLoop(
       yield createAssistantAPIErrorMessage({
         content: errorMessage,
       })
-      const goalNotice = goalFailureNotice('other')
-      if (goalNotice) yield goalNotice
 
       // To help track down bugs, log loudly for ants
       logAntError('Query error', error)
@@ -1483,8 +1508,6 @@ async function* queryLoop(
           }
           void executeStopFailureHooks(lastMessage, toolUseContext)
         }
-        const goalNotice = goalFailureNotice(isWithheldMedia ? 'other' : 'context')
-        if (goalNotice) yield goalNotice
         return { reason: isWithheldMedia ? 'image_error' : 'prompt_too_long' }
       }
 
@@ -1604,10 +1627,8 @@ async function* queryLoop(
       }
 
       if (lastMessage?.isApiErrorMessage) {
-        const goalNotice = goalFailureNotice(goalFailureCategory(lastMessage))
-        if (goalNotice) yield goalNotice
         void executeStopFailureHooks(lastMessage, toolUseContext)
-        return { reason: 'api_error' }
+        return { reason: 'api_error', failure: goalFailureCategory(lastMessage) }
       }
 
       // stop_reason says a tool call follows, but none parsed (leaked or
@@ -1637,8 +1658,6 @@ async function* queryLoop(
           content:
             "The model's tool call could not be parsed (retry also failed).",
         })
-        const goalNotice = goalFailureNotice('transient')
-        if (goalNotice) yield goalNotice
         return { reason: 'malformed_tool_use_exhausted' }
       }
 
@@ -1677,7 +1696,7 @@ async function* queryLoop(
             'Noa Claude finished thinking but produced no response. Please retry your request.',
           error: 'empty_response',
         })
-        return { reason: 'completed' }
+        return { reason: 'completed', failure: 'transient' }
       }
 
       const stopHookResult = yield* deps.stopHooks(
@@ -1692,8 +1711,6 @@ async function* queryLoop(
       )
 
       if (stopHookResult.preventContinuation) {
-        const goalNotice = goalFailureNotice('other')
-        if (goalNotice) yield goalNotice
         return { reason: 'stop_hook_prevented' }
       }
 
@@ -1744,7 +1761,7 @@ async function* queryLoop(
               `Set CLAUDE_CODE_STOP_HOOK_BLOCK_CAP to raise this limit.`,
             'warning',
           )
-          return { reason: 'completed' }
+          return { reason: 'completed', failure: 'other' }
         }
         state = nextState(state, {
           messages: [
@@ -1910,9 +1927,12 @@ async function* queryLoop(
           }
         }
         if (!evaluation) {
-          const notice = evaluatorMessage?.isApiErrorMessage
-            ? applyGoalTurnFailure({ category: goalFailureCategory(evaluatorMessage), goal: currentGoal, setAppState: toolUseContext.setAppState, isNonInteractiveSession: toolUseContext.options.isNonInteractiveSession, managedAuth: goalFailureCategory(evaluatorMessage) === 'auth' && isManagedOAuthContext() && isAnthropicAuthEnabled() })
-            : applyGoalRuntimeEvaluationFailure({ setAppState: toolUseContext.setAppState, goal: currentGoal }).userNotice
+          // An unparseable verdict retries like an outage; without a wake scheduler
+          // (non-interactive) it pauses with a notice instead of staying silent.
+          const category = evaluatorMessage?.isApiErrorMessage
+            ? goalFailureCategory(evaluatorMessage)
+            : toolUseContext.options.isNonInteractiveSession ? 'other' : 'transient'
+          const notice = applyGoalTurnFailure({ category, goal: currentGoal, setAppState: toolUseContext.setAppState, isNonInteractiveSession: toolUseContext.options.isNonInteractiveSession, managedAuth: category === 'auth' && isManagedOAuthContext() && isAnthropicAuthEnabled() })
           if (notice) yield notice
         }
         if (evaluation && !evaluation.achieved) {

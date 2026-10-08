@@ -76,7 +76,7 @@ Launch: `bin/noa.js → run-noa.js → dist/main.js → bootstrapCli() in src/en
 
 ## Multi-provider routing
 
-Backend via `CLAUDE_CODE_USE_OPENAI`/`_BEDROCK`/`_VERTEX`/`_FOUNDRY` (default Anthropic); wiring in `src/services/api/`. Anthropic-compatible third parties (Kimi, MiniMax, DeepSeek…) use profiles in `~/.noa/provider-profiles.json` (Bearer `ANTHROPIC_AUTH_TOKEN`). Unknown OpenAI-compatible models → 128k context (`src/utils/context.ts`). Only the OpenAI shim sends `store: false`; it isn't an Anthropic Messages field.
+Backend via `CLAUDE_CODE_USE_OPENAI`/`_BEDROCK`/`_VERTEX`/`_FOUNDRY` (default Anthropic); wiring in `src/services/api/`. Anthropic-compatible third parties (Kimi, MiniMax, DeepSeek…) use profiles in `~/.noa/provider-profiles.json` (Bearer `ANTHROPIC_AUTH_TOKEN`). Unknown OpenAI-compatible models → 128k context (`src/utils/context.ts`). Only the OpenAI shim sends `store: false`; it isn't an Anthropic Messages field. A 400 naming an optional request field is latched per provider/base URL/model in `src/services/api/requestLatches.ts` and left out on retry; a new optional top-level field heals only if listed in `OPTIONAL_ROOTS`.
 
 ## Command-surface governance
 

@@ -10,8 +10,13 @@ import { asSystemPrompt } from './systemPromptType.js'
 import { logGoalAudit, truncateGoalNoticeReason } from './goalAudit.js'
 import { execFileNoThrowWithCwd } from './execFileNoThrow.js'
 import { getCwd } from './cwd.js'
+import { getContextWindowForModel } from './context.js'
+import { getSmallFastModel } from './model/model.js'
+import { groupMessagesByApiRound } from '../services/compact/grouping.js'
+import { isPromptTooLongMessage } from '../services/api/errors.js'
 
-const MAX_GOAL_EVALUATOR_CONTEXT = 4000
+const EVALUATOR_CONTEXT_FRACTION = 0.5
+const MAX_TASK_SUMMARY = 4000
 const MAX_VERIFY_OUTPUT_TAIL = 2000
 const VERIFY_COMMAND_TIMEOUT_MS = 120_000
 
@@ -20,7 +25,7 @@ const GOAL_EVALUATOR_PROMPT = `Evaluate whether the active thread goal is comple
 Return JSON only with:
 - achieved: true only if the objective is actually complete and no required work remains.
 - impossible: true only when the objective cannot be satisfied, rather than merely being unfinished or blocked temporarily.
-- reason: one concise sentence explaining the decision.
+- reason: one concise sentence quoting the specific conversation text that shows the objective is met, or naming what is missing or blocking it. If the conversation has no clear evidence of completion, it is not achieved.
 
 Be conservative. Treat missing verification, unclear state, blocked work, or partial progress as not achieved.
 
@@ -122,12 +127,8 @@ function fitSegmentToEvaluatorContext(segment: string, maxLength: number): strin
   if (maxLength <= 0) return ''
   if (segment.length <= maxLength) return segment
 
-  const headerEnd = segment.indexOf('\n')
-  const rawHeader =
-    headerEnd === -1 ? segment.slice(0, 80) : segment.slice(0, headerEnd)
-  const header =
-    rawHeader.length > 80 ? `${rawHeader.slice(0, 77)}...` : rawHeader
   const marker = '\n[truncated]\n'
+  const header = segment.slice(0, Math.max(0, Math.min(512, maxLength - marker.length - 1)))
   const availableTailLength = Math.max(
     0,
     maxLength - header.length - marker.length,
@@ -158,6 +159,10 @@ function toolResultText(result: unknown): string {
   for (const key of ['content', 'output', 'result', 'text', 'message']) {
     const value = record[key]
     if (typeof value === 'string') parts.push(value)
+    else if (key === 'content' && Array.isArray(value)) {
+      const text = getContentText(value)
+      if (text) parts.push(text)
+    }
   }
   for (const key of ['filenames', 'lines', 'results']) {
     const value = record[key]
@@ -172,6 +177,19 @@ function formatMessageForEvaluator(message: Message): string | null {
   if ('isMeta' in message && message.isMeta) return null
   if (message.type !== 'user' && message.type !== 'assistant') return null
   const messageParts: string[] = []
+  if (message.type === 'user' && Array.isArray(message.message.content)) {
+    for (const block of message.message.content) {
+      if (block.type !== 'tool_result') continue
+      messageParts.push(`tool result: is_error=${block.is_error === true} id=${block.tool_use_id}`)
+    }
+    for (const block of message.message.content) {
+      if (block.type !== 'tool_result') continue
+      if (message.toolUseResult === undefined) {
+        const text = typeof block.content === 'string' ? block.content : getContentText(block.content)
+        if (text) messageParts.push(text)
+      }
+    }
+  }
   if (message.message) {
     const text =
       typeof message.message.content === 'string'
@@ -180,6 +198,12 @@ function formatMessageForEvaluator(message: Message): string | null {
     if (text) messageParts.push(text)
   }
   if (message.type === 'user' && message.toolUseResult !== undefined) {
+    if (message.toolUseResult && typeof message.toolUseResult === 'object') {
+      const result = message.toolUseResult as Record<string, unknown>
+      const code = result.exitCode ?? result.code
+      if (typeof code === 'number') messageParts.push(`tool exit code: ${code}`)
+      if (result.isError === true) messageParts.push('tool is_error=true')
+    }
     const toolText = toolResultText(message.toolUseResult).trim()
     if (toolText) messageParts.push(`tool result:\n${toolText}`)
   }
@@ -187,38 +211,37 @@ function formatMessageForEvaluator(message: Message): string | null {
   return `${message.type}: ${messageParts.join('\n')}`
 }
 
-export function buildGoalEvaluatorContext(messages: Message[]): string {
-  const segmentsReversed: string[] = []
-  let totalLength = 0
-  const separator = '\n\n'
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const segment = formatMessageForEvaluator(messages[i]!)
-    if (!segment) continue
-    const addedLength =
-      segment.length + (segmentsReversed.length > 0 ? separator.length : 0)
-    if (totalLength + addedLength > MAX_GOAL_EVALUATOR_CONTEXT) {
-      const shouldFitPartialSegment =
-        segment.length > MAX_GOAL_EVALUATOR_CONTEXT ||
-        segment.includes('tool result:\n')
-      if (!shouldFitPartialSegment) break
+const OMITTED_NOTICE = '[Earlier conversation truncated to fit the evaluator context. If the required evidence may be in the omitted part, the goal is not achieved.]'
 
-      const separatorLength =
-        segmentsReversed.length > 0 ? separator.length : 0
-      const remainingLength =
-        MAX_GOAL_EVALUATOR_CONTEXT - totalLength - separatorLength
-      const fittedSegment = fitSegmentToEvaluatorContext(
-        segment,
-        remainingLength,
-      )
-      if (fittedSegment) {
-        segmentsReversed.push(fittedSegment)
-      }
+function evaluatorContextBudget(fraction: number): number {
+  return Math.floor(getContextWindowForModel(getSmallFastModel()) * fraction) * 4
+}
+
+// Newest API rounds first, as many as fit; the newest round is always kept,
+// head+tail truncated if it alone overflows.
+export function buildGoalEvaluatorContext(
+  messages: Message[],
+  maxLength = evaluatorContextBudget(EVALUATOR_CONTEXT_FRACTION),
+): string {
+  const separator = '\n\n'
+  const kept: string[] = []
+  let total = 0
+  let omitted = false
+  const rounds = groupMessagesByApiRound(messages)
+  for (let i = rounds.length - 1; i >= 0; i--) {
+    const text = rounds[i]!.map(formatMessageForEvaluator).filter(Boolean).join(separator)
+    if (!text) continue
+    const added = text.length + (kept.length > 0 ? separator.length : 0)
+    if (total + added > maxLength) {
+      if (kept.length === 0) kept.push(fitSegmentToEvaluatorContext(text, maxLength))
+      omitted = true
       break
     }
-    segmentsReversed.push(segment)
-    totalLength += addedLength
+    kept.push(text)
+    total += added
   }
-  return segmentsReversed.reverse().join(separator)
+  if (omitted) kept.push(OMITTED_NOTICE)
+  return kept.reverse().join(separator)
 }
 
 export async function evaluateGoalCompletion({
@@ -243,10 +266,10 @@ export async function evaluateGoalCompletion({
       : ''
   const taskSummary = backgroundTasks.map(task => `- ${task.id}: ${task.description}`).join('\n')
   const taskBlock = backgroundTasks.length
-    ? `Running work started during this goal (${backgroundTasks.length} tasks):\n${taskSummary.slice(0, MAX_GOAL_EVALUATOR_CONTEXT)}${taskSummary.length > MAX_GOAL_EVALUATOR_CONTEXT ? '\n[task details truncated]' : ''}\nA running task alone does not mean the goal is unfinished: a service may be expected to remain running. Determine whether required work is still pending.\n`
+    ? `Running work started during this goal (${backgroundTasks.length} tasks):\n${taskSummary.slice(0, MAX_TASK_SUMMARY)}${taskSummary.length > MAX_TASK_SUMMARY ? '\n[task details truncated]' : ''}\nA running task alone does not mean the goal is unfinished: a service may be expected to remain running. Determine whether required work is still pending.\n`
     : ''
   try {
-    const response = await queryHaiku({
+    const ask = (fraction: number) => queryHaiku({
       systemPrompt: asSystemPrompt([GOAL_EVALUATOR_PROMPT]),
       userPrompt: `Goal: ${goal.objective}
 Status: ${goal.status}
@@ -255,7 +278,7 @@ Auto-continue turns: ${goal.autoContinueTurns} of ${goal.maxAutoContinueTurns}
 ${verifyBlock}
 ${taskBlock}
 Recent conversation:
-${buildGoalEvaluatorContext(messages)}
+${buildGoalEvaluatorContext(messages, evaluatorContextBudget(fraction))}
 
 Decision:`,
       outputFormat: {
@@ -280,13 +303,15 @@ Decision:`,
         mcpTools: [],
       },
     })
+    let response = await ask(EVALUATOR_CONTEXT_FRACTION)
+    if (isPromptTooLongMessage(response)) response = await ask(EVALUATOR_CONTEXT_FRACTION / 2)
 
     const text = response.message
       ? typeof response.message.content === 'string'
         ? response.message.content
         : getContentText(response.message.content)
       : ''
-    const parsed = goalEvaluationSchema().safeParse(safeParseJSON(text))
+    const parsed = goalEvaluationSchema().safeParse(safeParseJSON(text?.match(/\{[\s\S]*\}/)?.[0] ?? text))
     if (!parsed.success) {
       logGoalAudit({
         goal,

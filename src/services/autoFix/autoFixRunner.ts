@@ -1,5 +1,7 @@
 // @ts-nocheck
 import { spawn } from 'bun'
+import treeKill from 'tree-kill'
+import { getCwd } from '../../utils/cwd.js'
 
 export interface CommandResult {
   success: boolean
@@ -16,79 +18,38 @@ export async function runCommand(
   command: string,
   timeoutMs: number,
 ): Promise<CommandResult> {
-  // Parse command string into args array
-  const args = command.trim().split(/\s+/)
-
-  return new Promise(resolve => {
-    const timedOut = { value: false }
-
-    const proc = spawn({
-      cmd: args,
-      cwd: process.cwd(),
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-
-    // Set up timeout using process group killing (like OpenClaude)
-    // Must be after proc is declared so we can reference proc.pid in the callback
-    const timeoutId = setTimeout(() => {
-      timedOut.value = true
-      // Kill the entire process group
-      try {
-        process.kill(-proc.pid, 'SIGTERM')
-      } catch {
-        // Process may have already exited
-      }
-    }, timeoutMs)
-
-    let stdout = ''
-    let stderr = ''
-
-    proc.stdout?.text().then(text => {
-      stdout = text
-    })
-
-    proc.stderr?.text().then(text => {
-      stderr = text
-    })
-
-    proc.exited.then(code => {
-      clearTimeout(timeoutId)
-      resolve({
-        success: code === 0 && !timedOut.value,
-        stdout,
-        stderr,
-        exitCode: code,
-        timedOut: timedOut.value,
-      })
-    })
+  const windows = process.platform === 'win32'
+  const proc = spawn({
+    cmd: windows ? [process.env.COMSPEC || 'cmd.exe', '/d', '/s', '/c', command] : ['/bin/sh', '-c', command],
+    cwd: getCwd(),
+    detached: !windows,
+    stdio: ['ignore', 'pipe', 'pipe'],
   })
+  let timedOut = false
+  const timeoutId = setTimeout(() => {
+    timedOut = true
+    if (windows) treeKill(proc.pid, 'SIGKILL')
+    else {
+      try { process.kill(-proc.pid, 'SIGKILL') }
+      catch { proc.kill('SIGKILL') }
+    }
+  }, timeoutMs)
+  const output = { stdout: '', stderr: '' }
+  const drained = Promise.all([collect(proc.stdout, output, 'stdout'), collect(proc.stderr, output, 'stderr')])
+  try {
+    const exitCode = await proc.exited
+    // A detached descendant (setsid) can hold the pipes open long after the
+    // command itself exited, beyond the reach of the process-group kill.
+    await Promise.race([drained, Bun.sleep(PIPE_GRACE_MS)])
+    return { success: exitCode === 0 && !timedOut, ...output, exitCode, timedOut }
+  } finally { clearTimeout(timeoutId) }
 }
 
-/**
- * Run lint command with retries.
- */
-export async function runLintWithRetry(
-  lintCommand: string,
-  maxRetries: number,
-  timeoutMs: number,
-): Promise<CommandResult> {
-  let lastResult: CommandResult | null = null
+const PIPE_GRACE_MS = 100
 
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    if (attempt > 0) {
-      // Wait before retry
-      await new Promise(r => setTimeout(r, 1000 * attempt))
-    }
-
-    const result = await runCommand(lintCommand, timeoutMs)
-    lastResult = result
-
-    if (result.success) {
-      return result
-    }
-  }
-
-  return lastResult!
+async function collect(stream: ReadableStream<Uint8Array>, output: { stdout: string; stderr: string }, key: 'stdout' | 'stderr'): Promise<void> {
+  const decoder = new TextDecoder()
+  for await (const chunk of stream) output[key] += decoder.decode(chunk, { stream: true })
 }
 
 /**
@@ -103,7 +64,9 @@ export function formatAutoFixFeedback(
 ): string {
   const lines: string[] = ['<auto_fix_feedback>']
 
-  if (lintResult.timedOut) {
+  if (!lintCommand) {
+    // test-only configuration
+  } else if (lintResult.timedOut) {
     lines.push(`Lint timed out after ${timeoutMs}ms: ${lintCommand}`)
   } else if (!lintResult.success) {
     lines.push(`Lint failed (exit ${lintResult.exitCode}): ${lintCommand}`)
@@ -117,9 +80,6 @@ export function formatAutoFixFeedback(
     }
   } else {
     lines.push(`Lint passed: ${lintCommand}`)
-    if (lintResult.stdout) {
-      lines.push(lintResult.stdout.slice(0, 500))
-    }
   }
 
   if (testCommand && testResult) {
@@ -137,9 +97,6 @@ export function formatAutoFixFeedback(
       }
     } else {
       lines.push(`Tests passed: ${testCommand}`)
-      if (testResult.stdout) {
-        lines.push(testResult.stdout.slice(0, 500))
-      }
     }
   }
 

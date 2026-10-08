@@ -3,7 +3,7 @@ import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { extraUsage as extraUsageCommand } from 'src/commands/usage-credits/index.js';
-import { formatAutoModeClassifierUsage, formatCost, formatTotalCost, getModelUsage, getTotalCacheCreationInputTokens, getTotalCacheReadInputTokens, getTotalInputTokens, getTotalOutputTokens } from 'src/cost-tracker.js';
+import { formatAutoModeClassifierUsage, formatCost, formatPromptCacheUsage, formatTotalCost, getModelUsage, getTotalCacheCreationInputTokens, getTotalCacheReadInputTokens, getTotalInputTokens, getTotalOutputTokens } from 'src/cost-tracker.js';
 import { currentLimits } from 'src/services/claudeAiLimits.js';
 import { getSubscriptionType, isClaudeAISubscriber } from 'src/utils/auth.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
@@ -295,9 +295,11 @@ function SessionCostSection(): React.ReactNode {
     ? 'You are currently using your overages to power your Noa Claude usage. We will automatically switch you back to your subscription rate limits when they reset'
     : 'You are currently using your subscription to power your Noa Claude usage';
   const autoMode = formatAutoModeClassifierUsage();
+  const promptCache = formatPromptCacheUsage().trim();
   return <Box flexDirection="column">
       <Text>{plan}</Text>
       {process.env.USER_TYPE === 'ant' && <Text>{'[ANT-ONLY] Showing cost anyway:\n ' + formatTotalCost()}</Text>}
+      {promptCache && <Text>{promptCache}</Text>}
       {autoMode && <Text>{autoMode}</Text>}
     </Box>;
 }

@@ -1649,8 +1649,9 @@ async function checkPermissionsAndCallTool(
     }
 
     // Run auto-fix after file edit/write tools complete
-    if (isFileEditTool(tool.name)) {
-      const autoFixFeedback = await runAutoFix()
+    if (isFileEditTool(tool.name) && !mappedToolResultBlock.is_error) {
+      // The edit already succeeded; an autoFix failure must not report it as failed.
+      const autoFixFeedback = await runAutoFix().catch(() => null)
       if (autoFixFeedback) {
         resultingMessages.push({
           message: createUserMessage({

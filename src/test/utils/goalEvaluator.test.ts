@@ -12,6 +12,17 @@ import {
 } from '../../utils/messages.js'
 
 describe('goal evaluator context', () => {
+  test('keeps MCP failure status and text as completion evidence', () => {
+    const context = buildGoalEvaluatorContext([createUserMessage({
+      content: [{ type: 'tool_result', tool_use_id: 'mcp_failure', is_error: true,
+        content: [{ type: 'text', text: 'Deployment failed: HTTP 500' }] }] as never,
+      toolUseResult: { content: [{ type: 'text', text: 'Deployment failed: HTTP 500' }], isError: true },
+    })])
+    expect(context).toContain('mcp_failure')
+    expect(context).toContain('is_error=true')
+    expect(context).toContain('Deployment failed: HTTP 500')
+  })
+
   test('includes native tool results for completion evidence', () => {
     const message = createUserMessage({
       content: [
@@ -34,56 +45,6 @@ describe('goal evaluator context', () => {
     expect(context).toContain('2 pass')
     expect(context).toContain('0 fail')
     expect(context).not.toContain('model-facing wrapper')
-  })
-
-  test('truncates on message boundaries, never mid-segment', () => {
-    const big = 'x'.repeat(1500)
-    const messages = [
-      createUserMessage({ content: `oldest ${big}` }),
-      createAssistantMessage({ content: `middle ${big}` }),
-      createUserMessage({ content: `newer ${big}` }),
-      createAssistantMessage({ content: `newest ${big}` }),
-    ]
-
-    const context = buildGoalEvaluatorContext(messages)
-
-    expect(context.length).toBeLessThanOrEqual(4000)
-    expect(
-      context.startsWith('user: ') || context.startsWith('assistant: '),
-    ).toBe(true)
-    expect(context).toContain('newest')
-    expect(context).not.toContain('middle')
-    expect(context).not.toContain('oldest')
-  })
-
-  test('keeps tail evidence when the latest segment exceeds the context limit', () => {
-    const context = buildGoalEvaluatorContext([
-      createUserMessage({
-        content: 'older completion context',
-      }),
-      createUserMessage({
-        content: 'tool wrapper',
-        toolUseResult: {
-          stdout: `${'x'.repeat(5000)}\nTests: 120 pass, 0 fail`,
-        },
-      }),
-    ])
-
-    expect(context.length).toBeLessThanOrEqual(4000)
-    expect(context.startsWith('user: tool wrapper')).toBe(true)
-    expect(context).toContain('[truncated]')
-    expect(context).toContain('Tests: 120 pass, 0 fail')
-    expect(context).not.toContain('older completion context')
-  })
-
-  test('bounds oversized single-line segments', () => {
-    const context = buildGoalEvaluatorContext([
-      createUserMessage({ content: `${'x'.repeat(5000)}DONE` }),
-    ])
-
-    expect(context.length).toBeLessThanOrEqual(4000)
-    expect(context).toContain('[truncated]')
-    expect(context).toContain('DONE')
   })
 
   test('formats a passing verify result with exit code and output tail', () => {
@@ -187,19 +148,32 @@ describe('goal evaluator context', () => {
     expect(result?.stderr).toContain('exit code 9')
   })
 
-  test('keeps tail evidence from an oversized segment before a short latest message', () => {
+  test('keeps the newest API rounds and marks the omitted prefix', () => {
+    const big = 'x'.repeat(1500)
     const context = buildGoalEvaluatorContext([
-      createUserMessage({
-        content: 'tool wrapper',
-        toolUseResult: {
-          stdout: `${'x'.repeat(5000)}\nTypecheck passed`,
-        },
-      }),
-      createAssistantMessage({ content: 'I ran verification.' }),
-    ])
+      createUserMessage({ content: `oldest ${big}` }),
+      createAssistantMessage({ content: `middle ${big}` }),
+      createUserMessage({ content: `newer ${big}` }),
+      createAssistantMessage({ content: `newest ${big}` }),
+    ], 4000)
+    expect(context.startsWith('[Earlier conversation truncated')).toBe(true)
+    expect(context).toContain('newest')
+    expect(context).not.toContain('middle')
+    expect(context).not.toContain('oldest')
+  })
 
-    expect(context.length).toBeLessThanOrEqual(4000)
-    expect(context).toContain('Typecheck passed')
-    expect(context).toContain('assistant: I ran verification.')
+  test('keeps failure status, head and tail when the newest round overflows', () => {
+    const context = buildGoalEvaluatorContext([
+      createAssistantMessage({ content: 'older context' }),
+      createAssistantMessage({ content: 'Running the build' }),
+      createUserMessage({
+        content: [{ type: 'tool_result', tool_use_id: 'build_failure', is_error: true, content: 'error' }] as never,
+        toolUseResult: 'Error: build failed with exit code 1\n' + 'x'.repeat(5000) + '\nDone processing',
+      }),
+    ], 2000)
+    expect(context).toContain('is_error=true id=build_failure')
+    expect(context).toContain('build failed with exit code 1')
+    expect(context).toContain('Done processing')
+    expect(context).not.toContain('older context')
   })
 })

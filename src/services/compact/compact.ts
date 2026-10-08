@@ -101,6 +101,7 @@ import {
 } from '../api/claude.js'
 import {
   getPromptTooLongTokenGap,
+  parsePromptTooLongTokenCounts,
   PROMPT_TOO_LONG_ERROR_MESSAGE,
   startsWithApiErrorPrefix,
 } from '../api/errors.js'
@@ -281,12 +282,15 @@ export const PTL_RETRY_MARKER =
  * Vertex/Bedrock error formats). Snapped by adjustIndexToPreserveAPIInvariants
  * so a kept tool_result never loses its tool_use.
  *
- * Returns null when the pivot leaves nothing to summarize or nothing to keep —
- * partial can't help there, and the caller falls through to head truncation.
+ * Returns null when the pivot leaves nothing to summarize or nothing to keep,
+ * or when the verbatim tail (plus `alreadyKept`) exceeds half the endpoint's
+ * reported limit — keeping it would overflow the next request — so the caller
+ * falls through to head truncation.
  */
 export function selectPTLPartialPivot(
   messages: Message[],
   ptlResponse: AssistantMessage,
+  alreadyKept: Message[] = [],
 ): number | null {
   const tokenGap = getPromptTooLongTokenGap(ptlResponse)
   const target =
@@ -339,6 +343,12 @@ export function selectPTLPartialPivot(
     pivot = safePivot
   }
   if (pivot >= messages.length) return null
+  const limit = ptlResponse.errorDetails
+    ? parsePromptTooLongTokenCounts(ptlResponse.errorDetails).limitTokens
+    : undefined
+  if (limit !== undefined && roughTokenCountEstimationForMessages([
+    ...messages.slice(pivot), ...alreadyKept,
+  ]) > limit / 2) return null
   return pivot
 }
 
@@ -1382,7 +1392,7 @@ export async function partialCompactConversation(
         // sheds the overflow while the conversation loses nothing. Head
         // truncation is only for when no smaller boundary exists.
         const slidPivot = canSlideBoundary
-          ? selectPTLPartialPivot(messagesToSummarize, summaryResponse)
+          ? selectPTLPartialPivot(messagesToSummarize, summaryResponse, messagesToKeep)
           : null
         if (slidPivot !== null) {
           logEvent('tengu_compact_ptl_slide', {

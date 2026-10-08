@@ -3,6 +3,7 @@ import { feature } from 'bun:bundle'
 import { resetCostState } from '../bootstrap/state.js'
 import type { LocalJSXCommandContext } from '../commands.js'
 import { refreshGrowthBookAfterAuthChange } from '../services/analytics/growthbook.js'
+import { resetPromptCacheBreakDetection } from '../services/api/promptCacheBreakDetection.js'
 import { refreshPolicyLimits } from '../services/policyLimits/index.js'
 import { refreshRemoteManagedSettings } from '../services/remoteManagedSettings/index.js'
 import { clearBetasCaches } from './betas.js'
@@ -26,6 +27,7 @@ export function clearProviderSwitchCaches(): void {
   clearModelStringsCache()
   clearToolSchemaCache()
   resetClassifierProbeState()
+  resetPromptCacheBreakDetection()
 }
 
 /**

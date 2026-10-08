@@ -18,7 +18,7 @@ const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'n
 mkdirSync(artifacts, { recursive: true });
 const model = 'claude-sonnet-4-6';
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'bedrock-overflow'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'bedrock-overflow', 'field-reject'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -52,6 +52,13 @@ const server = createServer(async (req, res) => {
       res.writeHead(status, { 'content-type': 'application/json', 'retry-after': '0', 'x-should-retry': status === 529 ? 'true' : 'false' });
       res.end(JSON.stringify({ type: 'error', error: { type, message } }));
     };
+    if (active.case === 'compact-resume' && summary && raw.length > 500_000) {
+      error(400, 'invalid_request_error', 'prompt is too long: 280000 tokens > 200000 maximum');
+      return;
+    }
+    if (active.case === 'field-reject') {
+      if (body.metadata) { error(400, 'invalid_request_error', 'metadata: Extra inputs are not permitted'); return; }
+    }
     if (active.case === 'fallback' && n <= 8) {
       error(529, 'overloaded_error', 'Scripted overload on primary and fallback');
       return;
@@ -113,7 +120,7 @@ const server = createServer(async (req, res) => {
     } else if (active.case === 'compact-resume' && active.phase === 'resume') {
       if (raw.length > 500_000) {
         active.oversized++;
-        error(400, 'invalid_request_error', 'prompt is too long: 280000 tokens > 200000 maximum');
+        error(400, 'invalid_request_error', 'prompt is too long');
         return;
       }
       assert.ok(raw.includes(sentinel), 'postcompact request lost original constraint');
@@ -143,7 +150,7 @@ const server = createServer(async (req, res) => {
         : { command: 'sleep 4', description: 'Wait past the deadline' } }]; stop = 'tool_use';
     } else if (active.case.startsWith('concurrency-') && n === 1) {
       content = [1, 2].map(i => ({ type: 'tool_use', id: 'write_' + i, name: 'Bash', input: { command: 'pwd' } })); stop = 'tool_use';
-    } else if (active.case === 'max-turns' || ((active.case === 'read' || active.case.endsWith('-overflow') || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3)) {
+    } else if (active.case === 'max-turns' || ((active.case === 'read' || active.case.endsWith('-overflow') || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3) || (active.case === 'field-reject' && n === 2)) {
       content = [
         ...(active.case === 'compact-resume' ? [{ type: 'text', text: 'prior-context '.repeat(5000) }] : []),
         { type: 'tool_use', id: `toolu_${n}`, name: 'Read', input: { file_path: join(active.dir, 'fixture.txt') } },
@@ -305,12 +312,12 @@ try {
           const seed = await run(executable, scenario, [], `PROJECT_CONSTRAINT: ${sentinel}. Read the fixture three times, then pause.`);
           assert.equal(seed.code, 0);
           active.phase = 'resume';
-          writeFileSync(join(dir, 'resume-input.txt'), 'Continue the prior task. Bulky input follows:\n' + 'x'.repeat(1000000));
+          writeFileSync(join(dir, 'resume-input.txt'), 'Continue the prior task. Bulky input follows:\n' + 'x'.repeat(350000));
           runResult = await run(executable, scenario, ['--resume', seed.result.session_id], readFileSync(join(dir, 'resume-input.txt'), 'utf8'));
           assert.equal(runResult.code, 0);
           assert.equal(runResult.result.result, 'AUDIT_OK');
           assert.ok(active.summaries > 0, 'compaction never executed');
-          assert.equal(active.oversized, 0, 'oversized verbatim tail reached the model after compaction');
+          assert.equal(active.oversized, 1, 'only the pre-compaction request may overflow; an oversized tail reached the endpoint after compaction');
         } else {
           runResult = await run(executable, scenario, [], scenario==='goal-child-usage'?'Create a temporary goal, run a child agent, report its usage and finish.':scenario.endsWith('-overflow')?`PROJECT_CONSTRAINT: ${sentinel}. Run the local loop fixture.`:'Run the local loop fixture.');
           const count = active.requests.length;
@@ -335,6 +342,9 @@ try {
             assert.equal(active.summaries, 1, 'context overflow did not trigger reactive compact');
             assert.equal(count, 4);
             assert.ok(JSON.stringify(active.requests.at(-1).body.messages).includes(sentinel), 'retry after compaction lost the original constraint');
+          } else if (scenario === 'field-reject') {
+            assert.equal(runResult.code, 0, `field rejection surfaced as: ${runResult.result.result}`); assert.equal(runResult.result.result, 'AUDIT_OK'); assert.equal(count, 3);
+            assert.ok(active.requests.slice(1).every(r => !('metadata' in r.body)), 'the rejected field was sent again on a later turn');
           } else if(scenario==='provider-quota') {
             assert.equal(runResult.code,1);assert.equal(runResult.result.is_error,true);assert.equal(runResult.result.terminal_reason,'api_error');assert.equal(count,1);assert.ok(runResult.result.result.includes('weekly (7-day) usage limit'));
             if(executable===entry)assert.ok(runResult.result.result.startsWith('Usage limit reached.'),'quota was reported as invalid authentication');

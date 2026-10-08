@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import { getDefaultAppState, type AppState } from '../../state/AppStateStore.js'
 import {
   applyGoalRuntimeEvaluation,
-  applyGoalRuntimeEvaluationFailure,
   decideGoalEvaluatorAction,
   resetGoalAutoContinueForNewTurn,
 } from '../../utils/goalRuntime.js'
@@ -86,37 +85,6 @@ describe('goal runtime', () => {
     expect(decision.action).toBe('stop')
     expect(state.state.goal?.status).toBe('paused')
     expect(state.state.goal?.autoContinueTurns).toBe(0)
-  })
-
-  test('pauses active goal when evaluator fails', () => {
-    const state = harness(
-      createThreadGoal({ objective: 'Ship', tokenBudget: null, now: 1 }),
-    )
-
-    const decision = applyGoalRuntimeEvaluationFailure({
-      setAppState: state.setAppState,
-    })
-
-    expect(decision.action).toBe('stop')
-    expect(decision.userNotice?.type).toBe('system')
-    expect(state.state.goal?.status).toBe('paused')
-    expect(state.state.goal?.stopReason).toBe('evaluator_failed')
-  })
-
-  test('does not emit evaluator failure notice for non-active goals', () => {
-    const state = harness({
-      ...createThreadGoal({ objective: 'Ship', tokenBudget: null, now: 1 }),
-      status: 'paused',
-    })
-
-    const decision = applyGoalRuntimeEvaluationFailure({
-      setAppState: state.setAppState,
-    })
-
-    expect(decision.action).toBe('stop')
-    expect(decision.userNotice).toBeNull()
-    expect(state.state.goal?.status).toBe('paused')
-    expect(state.state.goal?.stopReason).toBeNull()
   })
 
   test('gates evaluator to main-thread non-plan active goals', () => {

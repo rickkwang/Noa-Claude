@@ -1201,7 +1201,7 @@ export const SettingsSchema = lazySchema(() =>
             .int()
             .nonnegative()
             .optional()
-            .describe('Maximum retries for lint command (default: 3)'),
+            .describe('Deprecated: lint failures are returned immediately; this setting is ignored'),
           timeout: z
             .number()
             .int()

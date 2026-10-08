@@ -4,7 +4,6 @@ import type { ThreadGoal } from '../types/goal.js'
 import {
   advanceGoalAutoContinue,
   markGoalComplete,
-  markGoalEvaluatorFailed,
   normalizeGoal,
   recordGoalEvaluatorResult,
 } from './goalState.js'
@@ -13,8 +12,6 @@ import { createSystemMessage, createUserMessage } from './messages.js'
 import {
   GOAL_CONTINUATION_MARKER,
   GOAL_CONTINUATION_REASON_PREFIX,
-  GOAL_EVALUATOR_FAILED_NOTICE,
-  GOAL_EVALUATOR_FAILED_REASON,
   formatGoalAutoContinueNotice,
   formatGoalCompleteNotice,
   formatGoalPausedNotice,
@@ -332,43 +329,6 @@ export function applyGoalRuntimeEvaluation({
       reason: evaluation.reason,
     })
     return { ...prev, goal: advanced.goal }
-  })
-
-  return decision
-}
-
-export function applyGoalRuntimeEvaluationFailure({
-  setAppState,
-  goal,
-}: {
-  setAppState: (updater: (prev: AppState) => AppState) => void
-  goal?: ThreadGoal
-}): GoalRuntimeDecision {
-  let decision: GoalRuntimeDecision = { action: 'stop', userNotice: null }
-  const now = Date.now()
-
-  setAppState(prev => {
-    if (!prev.goal || (goal && !isSameGoal(prev.goal, goal))) return prev
-    const current = normalizeGoal(prev.goal)
-    if (current.status !== 'active') return prev
-    decision = {
-      action: 'stop',
-      userNotice: createSystemMessage(GOAL_EVALUATOR_FAILED_NOTICE, 'warning'),
-    }
-    const failedGoal = markGoalEvaluatorFailed({
-      goal: current,
-      reason: GOAL_EVALUATOR_FAILED_REASON,
-      now,
-    })
-    logGoalAudit({
-      goal: failedGoal,
-      action: 'evaluator_failed',
-      reason: GOAL_EVALUATOR_FAILED_REASON,
-    })
-    return {
-      ...prev,
-      goal: failedGoal,
-    }
   })
 
   return decision

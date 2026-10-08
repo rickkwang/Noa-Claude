@@ -35,7 +35,7 @@ enableConfigs()
 const recoveryCases = ['truncated-budget', 'truncated-unlimited', 'truncated-no-goal', 'truncated-child-paused', 'max-output-budget', 'refusal-budget']
 const abortCases = ['abort-usage', 'abort-throw-usage', 'abort-child-usage', 'abort-replaced-goal']
 const compactCases = ['compact-notification', 'compact-user']
-const scenarios = [...abortCases, ...compactCases, 'resume-accounting', ...recoveryCases, 'background', 'background-budget', 'background-large-description', 'unrelated-background', 'background-service', 'background-starts-during-evaluation', 'stale', 'fatal', 'mapped-auth', 'provider-quota', 'transient', 'impossible', 'impossible-verify', 'no-progress', 'no-progress-user-reset', 'completion', 'live-created-goal', 'verify', 'child-paused', 'stale-wake', 'restore-cache', 'restore-created-goal'].filter(name => !process.argv.includes('--case') || name === process.argv[process.argv.indexOf('--case') + 1])
+const scenarios = [...abortCases, ...compactCases, 'resume-accounting', ...recoveryCases, 'background', 'background-budget', 'background-large-description', 'unrelated-background', 'background-service', 'background-starts-during-evaluation', 'stale', 'fatal', 'mapped-auth', 'provider-quota', 'transient', 'impossible', 'impossible-verify', 'no-progress', 'no-progress-user-reset', 'completion', 'live-created-goal', 'verify', 'child-paused', 'stale-wake', 'restore-cache', 'restore-created-goal', 'fenced-verdict', 'evaluator-garbage', 'evaluator-garbage-print', 'stop-hook-prevented'].filter(name => !process.argv.includes('--case') || name === process.argv[process.argv.indexOf('--case') + 1])
 assert.ok(scenarios.length, 'unknown case')
 const results: unknown[] = []
 const originalFetch = globalThis.fetch
@@ -53,7 +53,7 @@ try {
     if (scenario==='truncated-unlimited') state.goal={...goal,tokenBudget:null}
     if (scenario==='no-progress-user-reset') state.goal={...goal,noProgressTurns:2}
     const context: ToolUseContext = {
-      options: { commands: [], debug: false, mainLoopModel: 'claude-sonnet-4-6', tools: ['completion','live-created-goal'].includes(scenario) ? [GoalTool] : [], verbose: false, thinkingConfig: { type: 'disabled' }, mcpClients: [], mcpResources: {}, isNonInteractiveSession: scenario !== 'transient', agentDefinitions: state.agentDefinitions },
+      options: { commands: [], debug: false, mainLoopModel: 'claude-sonnet-4-5', tools: ['completion','live-created-goal'].includes(scenario) ? [GoalTool] : [], verbose: false, thinkingConfig: { type: 'disabled' }, mcpClients: [], mcpResources: {}, isNonInteractiveSession: !['transient', 'evaluator-garbage'].includes(scenario), agentDefinitions: state.agentDefinitions },
       abortController: new AbortController(), readFileState: new FileStateCache(100, 100000), getAppState: () => state, setAppState: update => { state = update(state) }, setInProgressToolUseIDs: () => {}, setResponseLength: () => {}, updateFileHistoryState: () => {}, updateAttributionState: () => {}, messages: [],
     } as ToolUseContext
     if(['child-paused','truncated-child-paused','abort-child-usage'].includes(scenario)){context.agentId='fixture-child' as any;context.goalAtStart=goal;context.setAppStateForTasks=context.setAppState;state.goal={...goal,status:'paused'}}
@@ -66,12 +66,13 @@ try {
       if (['background','background-budget'].includes(scenario)) assert.ok(args[1]?.body.includes('pending shell'),'evaluator did not receive pending work')
       if (scenario==='background-large-description') {assert.ok(args[1]?.body.includes('LONG_BG_MARKER_'));assert.ok(args[1]?.body.length<15000,'task description bypassed evaluator context bound');assert.ok(args[1]?.body.includes('[task details truncated]'))}
       const verdict = { achieved: !['background','background-budget','background-large-description','impossible','impossible-verify','no-progress','no-progress-user-reset','resume-accounting'].includes(scenario), impossible: ['impossible','impossible-verify'].includes(scenario), reason: 'Independent fixture verdict' }
-      const message = { id: `eval_${evaluations}`, type: 'message', role: 'assistant', model: 'claude-haiku-4-5', content: [{ type: 'text', text: JSON.stringify(verdict) }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 10, output_tokens: 4, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } }
+      const verdictText = scenario === 'fenced-verdict' ? '```json\n' + JSON.stringify(verdict) + '\n```' : scenario.startsWith('evaluator-garbage') ? 'The goal looks done to me.' : JSON.stringify(verdict)
+      const message = { id: `eval_${evaluations}`, type: 'message', role: 'assistant', model: 'claude-haiku-4-5', content: [{ type: 'text', text: verdictText }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 10, output_tokens: 4, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } }
       if (JSON.parse(args[1]?.body ?? '{}').stream) {
         const events = [
           { type: 'message_start', message: { ...message, content: [], stop_reason: null, usage: { ...message.usage, output_tokens: 0 } } },
           { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
-          { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: JSON.stringify(verdict) } },
+          { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: verdictText } },
           { type: 'content_block_stop', index: 0 },
           { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 4 } },
           { type: 'message_stop' },
@@ -90,7 +91,7 @@ try {
           writeFileSync(join(artifacts, scenario+'-compaction.json'), JSON.stringify(result, null, 2))
           return result
         },
-        stopHooks: async function* () { return { blockingErrors: [], preventContinuation: false } },
+        stopHooks: async function* () { return { blockingErrors: [], preventContinuation: scenario === 'stop-hook-prevented' } },
         callModel: async function* (params: any) {
           calls++
           if (abortCases.includes(scenario)) {
@@ -99,12 +100,12 @@ try {
             context.abortController.abort()
             if (scenario==='abort-throw-usage') throw new Error('Fixture transport aborted after usage')
           }
-          else if (scenario === 'fatal' || scenario === 'transient') yield getAssistantMessageFromError(new APIError(scenario === 'fatal' ? 401 : 529, { type: 'error', error: { type: scenario === 'fatal' ? 'authentication_error' : 'overloaded_error', message: 'Fixture failure' } }, 'Fixture failure', new Headers()), 'claude-sonnet-4-6')
-          else if(scenario==='provider-quota')yield getAssistantMessageFromError(new APIError(403,{type:'error',error:{type:'permission_error',message:"You've reached your weekly (7-day) usage limit"}},"You've reached your weekly (7-day) usage limit",new Headers()),'claude-sonnet-4-6')
+          else if (scenario === 'fatal' || scenario === 'transient') yield getAssistantMessageFromError(new APIError(scenario === 'fatal' ? 401 : 529, { type: 'error', error: { type: scenario === 'fatal' ? 'authentication_error' : 'overloaded_error', message: 'Fixture failure' } }, 'Fixture failure', new Headers()), 'claude-sonnet-4-5')
+          else if(scenario==='provider-quota')yield getAssistantMessageFromError(new APIError(403,{type:'error',error:{type:'permission_error',message:"You've reached your weekly (7-day) usage limit"}},"You've reached your weekly (7-day) usage limit",new Headers()),'claude-sonnet-4-5')
           else if (scenario==='mapped-auth') {
             const route=process.env.ANTHROPIC_BASE_URL;process.env.ANTHROPIC_BASE_URL='http://api.anthropic.com'
             let errorMessage
-            try {errorMessage=getAssistantMessageFromError(new Error('Could not resolve authentication method: X-Api-Key'),'claude-sonnet-4-6')} finally {process.env.ANTHROPIC_BASE_URL=route}
+            try {errorMessage=getAssistantMessageFromError(new Error('Could not resolve authentication method: X-Api-Key'),'claude-sonnet-4-5')} finally {process.env.ANTHROPIC_BASE_URL=route}
             assert.equal(errorMessage.error,'authentication_failed');yield errorMessage
           }
           else if (recoveryCases.includes(scenario)) {
@@ -157,7 +158,7 @@ try {
     }
     if (compactCases.includes(scenario)) {
       const prior=createAssistantMessage({content:'Prior long response',usage:{input_tokens:190000,output_tokens:10,cache_read_input_tokens:0,cache_creation_input_tokens:0} as any})
-      prior.message.model='claude-sonnet-4-6'
+      prior.message.model='claude-sonnet-4-5'
       const prompt=createUserMessage({content:scenario==='compact-user'?'Resume the fixture goal.':'BACKGROUND_FINISHED',...(scenario!=='compact-user'?{isMeta:true as const}:{})})
       if (scenario!=='compact-user') prompt.origin={kind:'task-notification'} as any
       await run([prior,prompt])
@@ -215,6 +216,10 @@ try {
       for (const error of ['max_output_tokens', 'unknown'] as const) assert.equal(goalFailureCategory(createAssistantAPIErrorMessage({ content: 'Fixture', error })), 'transient')
     }
     if (scenario === 'impossible') { assert.equal(state.goal.stopReason, 'impossible'); assert.equal(evaluations, 1) }
+    if (scenario === 'evaluator-garbage-print') {assert.equal(evaluations,1);assert.equal(state.goal.status,'paused');assert.equal(state.goal.stopReason,'turn_failed');assert.ok(events.some(e=>e.type==='system'&&String(e.content).startsWith('Goal paused')),'non-interactive pause gave no notice')}
+    if (scenario === 'stop-hook-prevented') {assert.equal(evaluations,0);assert.equal(state.goal.status,'paused');assert.equal(state.goal.stopReason,'turn_failed')}
+    if (scenario === 'fenced-verdict') {assert.equal(evaluations,1);assert.equal(state.goal.status,'complete')}
+    if (scenario === 'evaluator-garbage') {assert.equal(evaluations,1);assert.equal(state.goal.status,'active');assert.equal(state.goal.retryCount,1);assert.ok(state.goal.retryAt > Date.now(),'unparseable verdict did not schedule a retry')}
     if (scenario === 'impossible-verify') {assert.equal(state.goal.stopReason,'impossible');assert.equal(evaluations,1);assert.equal(calls,1)}
     if (scenario === 'live-created-goal') {assert.equal(state.goal.tokensUsed,14);assert.equal(state.goal.status,'complete')}
     if (scenario === 'no-progress') { assert.equal(state.goal.stopReason, 'no_progress'); assert.equal(evaluations, 3) }

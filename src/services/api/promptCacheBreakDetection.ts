@@ -4,6 +4,7 @@ import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
 import { createPatch } from 'diff'
 import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
+import { recordPromptCacheBreak } from 'src/bootstrap/state.js'
 import type { AgentId } from 'src/types/ids.js'
 import type { Message } from 'src/types/message.js'
 import { logForDebugging } from 'src/utils/debug.js'
@@ -598,6 +599,8 @@ export async function checkResponseForCacheBreak(
     } else {
       reason = 'unknown cause'
     }
+    // Telemetry is disabled in this fork; /usage is where a break is visible.
+    recordPromptCacheBreak(tokenDrop, reason)
 
     logEvent('tengu_prompt_cache_break', {
       systemPromptChanged: changes?.systemPromptChanged ?? false,

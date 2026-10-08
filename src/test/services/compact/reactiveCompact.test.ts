@@ -8,6 +8,7 @@ const REAL_REACTIVE_MODULE =
 const { selectReactiveTailPivot } = (await import(
   REAL_REACTIVE_MODULE
 )) as typeof import('../../../services/compact/reactiveCompact.js')
+const { selectPTLPartialPivot } = await import('../../../services/compact/compact.js')
 
 describe('selectReactiveTailPivot', () => {
   let n = 0
@@ -71,5 +72,21 @@ describe('selectReactiveTailPivot', () => {
     ]
     // The only assistant turn is in group 1 → nothing left to keep after it.
     expect(selectReactiveTailPivot(messages, 'test-model')).toBeNull()
+  })
+
+  test('honors a reported 200k endpoint limit for a model configured at 1M', () => {
+    const messages = [...rounds(3), asst(40), user(1_000_000)]
+    expect(selectReactiveTailPivot(messages, 'claude-sonnet-4-6', 80_000)).not.toBeNull()
+    expect(selectReactiveTailPivot(messages, 'claude-sonnet-4-6', 80_000, 200_000)).toBeNull()
+  })
+
+  test('summary PTL fallback cannot put an oversized latest input back in the tail', () => {
+    const error = { type: 'assistant', isApiErrorMessage: true,
+      errorDetails: 'prompt is too long: 280000 tokens > 200000 maximum',
+      message: { content: [{ type: 'text', text: 'Prompt is too long' }] },
+    } as never
+    expect(selectPTLPartialPivot([...rounds(3), user(1_000_000)], error)).toBeNull()
+    expect(selectPTLPartialPivot([...rounds(3), user(350_000)], error)).not.toBeNull()
+    expect(selectPTLPartialPivot([...rounds(3), user(350_000)], error, [user(100_000)])).toBeNull()
   })
 })

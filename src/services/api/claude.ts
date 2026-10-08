@@ -261,6 +261,7 @@ import {
   checkResponseForCacheBreak,
   recordPromptState,
 } from './promptCacheBreakDetection.js'
+import { applyRequestLatches } from './requestLatches.js'
 import {
   CannotRetryError,
   FallbackTriggeredError,
@@ -1855,9 +1856,7 @@ async function* queryModel(
         ? (options.temperatureOverride ?? 1)
         : undefined
 
-    lastRequestBetas = betasParams
-
-    return {
+    const params = applyRequestLatches({
       model: normalizeModelStringForAPI(options.model),
       messages: addCacheBreakpoints(
         messagesForAPI,
@@ -1885,7 +1884,9 @@ async function* queryModel(
         output_config: outputConfig,
       }),
       ...(speed !== undefined && { speed }),
-    }
+    }, retryContext.model)
+    lastRequestBetas = params.betas ?? []
+    return params
   }
 
   // Compute log scalars synchronously so the fire-and-forget .then() closure
