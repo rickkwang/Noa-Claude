@@ -1,8 +1,30 @@
 # Release Notes
 
-## Unreleased
+## 1.19.0
 
+- New: Claude Haiku 5.5 (`claude-haiku-5-5`) with 1M native context, 128K output and effort from low to max (default medium); the `haiku` alias resolves to it on first party, and Bedrock, Vertex and Foundry stay on Haiku 4.5
+- Native 1M context no longer depends on the provider, and Mythos 5 and 5.1 get 1M context at Fable-tier pricing; Opus 4.6 and Sonnet 4.6 still send the context-1m beta header; Opus 5.5, Sonnet 5.5 and Haiku 5.5 send medium as the default effort
+- Haiku 5.5 accepts disabled thinking at high effort or below, so turning thinking off sends it as disabled instead of adaptive
 - New: PostToolUse hooks can return `hookSpecificOutput.updatedToolOutput` to replace a tool's output for any tool, including falsy values; when several hooks replace output, this field takes precedence over `updatedMCPToolOutput`, which still works for every tool
+- Removed: `/vim` (editor mode is set with `/config` → `editorMode`), `/cache-probe`, `/init-verifiers`, `/bridge-kick`, `/pr-comments`, `/install-github-app`, `/share`, `/summary`, `/heapdump`, `/wiki`, `/workflows`, `/chrome`, `/buddy`, `/ultrareview` and the `--chrome` flag
+- `/cost` and `/stats` are now aliases of `/usage`; the Usage tab shows the session cost summary that `/cost` printed, and `/usage` shows the prompt-cache read share and any detected cache breaks with their cause
+- `/usage` lists active compatibility fallbacks (omitted request fields) for the current endpoint, so a session-long degradation is visible
+- A 400 that names an optional request field (effort, structured output, thinking settings, a beta header, `cache_control`, or an optional top-level field on third-party endpoints) is remembered per provider, base URL and model; requests leave that field out and retry at once, including the API key check at startup
+- A `cache_control.ttl` rejection now drops only the TTL and keeps the ephemeral cache marker
+- Goals: the evaluator's verdict is accepted only as whole-text JSON or a single fenced block, so quoted JSON in evidence is not mistaken for it; the evaluator sees the newest rounds up to half its window and must quote evidence in its verdict
+- Goals: a turn counts as progress only when some tool result is not an error, so failed or denied calls no longer reset the no-progress counter; a pause names the cause
+- Goal turns that end with `blocking_limit`, `image_error` or a stop hook are classified correctly; an unparseable verdict retries with backoff in interactive sessions and pauses with a notice otherwise
+- Compaction drops the verbatim tail when the endpoint's window cannot hold it and summarizes everything instead; a kept tail is flagged to the model as possibly having already acted on the summary
+- autoFix runs through the shell in the session's directory, returns lint failures without pointless retries, kills the whole process group on timeout, and never turns a successful edit into a failure
+- Background sessions: `←` and `/background` are refused while messages are queued, and a pending `←` handoff is cancelled with a reason when a question is waiting or the prompt has unsent text
+- Prompt: placeholder chips (`[Image #N]`, `[Pasted text #N]`, `[...Truncated text #N]`) are one unit for cursor movement and backspace; the selected slash command shows a leading pointer
+- Recalled history entries bring back the suggestions once edited again
+- Agent and MCP instruction listings put pure-ASCII names first
+- Subagent notifications no longer claim Esc or Ctrl+C when the main session is idle
+- On iTerm2, fullscreen clears and Ctrl+L no longer push stale pages into scrollback, and main-screen resets keep existing scrollback
+- Long streaming lists stop re-parsing on every delta
+- `update-config` sends simple settings such as theme, model and language to `/config`
+- Developers: opt-in real-model coding acceptance checks (`scripts/evals/coding`) grade finished code with an independent checker
 
 ## 1.18.0
 
