@@ -95,6 +95,7 @@ export const syncHookResponseSchema = lazySchema(() =>
         z.object({
           hookEventName: z.literal('PostToolUse'),
           additionalContext: z.string().optional(),
+          updatedToolOutput: z.unknown().describe('Replaces tool output before it is sent to the model').optional(),
           updatedMCPToolOutput: z
             .unknown()
             .describe('Updates the output for MCP tools')

@@ -34,6 +34,7 @@ import type { McpServerType, MessageUpdateLazy } from './toolExecution.js'
 
 export type PostToolUseHooksResult<Output> =
   | MessageUpdateLazy<AttachmentMessage | ProgressMessage<HookProgress>>
+  | { updatedToolOutput: Output }
   | { updatedMCPToolOutput: Output }
 
 export async function* runPostToolUseHooks<Input extends AnyObject, Output>(
@@ -144,9 +145,11 @@ export async function* runPostToolUseHooks<Input extends AnyObject, Output>(
           }
         }
 
-        // If hooks provided updatedMCPToolOutput, apply it for any tool.
-        // The field name is kept for backward compatibility but applies to all tools.
-        if (result.updatedMCPToolOutput !== undefined) {
+        // Prefer the canonical field while retaining Noa's legacy replacement behavior.
+        if (result.updatedToolOutput !== undefined) {
+          toolOutput = result.updatedToolOutput as Output
+          yield { updatedToolOutput: toolOutput }
+        } else if (result.updatedMCPToolOutput !== undefined) {
           toolOutput = result.updatedMCPToolOutput as Output
           yield {
             updatedMCPToolOutput: toolOutput,

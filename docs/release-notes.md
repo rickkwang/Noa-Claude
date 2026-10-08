@@ -1,5 +1,9 @@
 # Release Notes
 
+## Unreleased
+
+- New: PostToolUse hooks can return `hookSpecificOutput.updatedToolOutput` to replace a tool's output for any tool, including falsy values; when several hooks replace output, this field takes precedence over `updatedMCPToolOutput`, which still works for every tool
+
 ## 1.18.0
 
 - New: `noa reply <id> <message>`, and Space / Ctrl+S in the agents view, send a reply to a background session without attaching; the reply survives a restart or an Esc that clears the queue

@@ -18,7 +18,7 @@ const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'n
 mkdirSync(artifacts, { recursive: true });
 const model = 'claude-sonnet-4-6';
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'bedrock-overflow', 'field-reject'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'bedrock-overflow', 'field-reject'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -62,7 +62,7 @@ const server = createServer(async (req, res) => {
     if (active.case === 'small-window-overflow' && !summary) {
       active.endpointLimit ??= Math.ceil(JSON.stringify({system:body.system,tools:body.tools}).length/4)+2000;
       const tokens=Math.ceil(JSON.stringify({system:body.system,tools:body.tools,messages:body.messages}).length/4);
-      if (n===3 || tokens>active.endpointLimit) {error(400,'invalid_request_error',`prompt is too long: ${Math.max(tokens,active.endpointLimit+1000)} tokens > ${active.endpointLimit} maximum`);return;}
+      if (tokens>active.endpointLimit) {error(400,'invalid_request_error',`prompt is too long: ${tokens} tokens > ${active.endpointLimit} maximum`);return;}
     }
     if (active.case === 'field-reject') {
       if (body.metadata) { error(400, 'invalid_request_error', 'metadata: Extra inputs are not permitted'); return; }
@@ -120,7 +120,7 @@ const server = createServer(async (req, res) => {
       const steps=[{name:'goal',input:{operation:'create_goal',objective:'Run the explicitly requested isolated child usage test and finish.',token_budget:100000}},{name:agentName,input:{prompt:'CHILD_USAGE_FIXTURE',description:'Read fixture',subagent_type:'general-purpose',run_in_background:false}},{name:'goal',input:{operation:'get_goal'}},{name:'goal',input:{operation:'update_goal',status:'complete'}}];
       const step=steps[n-1];content=step?[{type:'tool_use',id:'goal_'+n,...step}]:[{type:'text',text:'AUDIT_OK'}];stop=step?'tool_use':'end_turn';
     } else if(active.case==='small-window-overflow' && n<=2) {
-      content=[{type:'tool_use',id:'small_output',name:'Bash',input:{command:n===1?'echo prior-round':"head -c 24000 /dev/zero | tr '\\0' x",description:'Generate bounded fixture output'}}];stop='tool_use';
+      content=[{type:'tool_use',id:'small_output_'+n,name:'Bash',input:{command:n===1?'echo prior-round':"head -c 24000 /dev/zero | tr '\\0' x",description:'Generate bounded fixture output'}}];stop='tool_use';
     } else if (summary) {
       active.summaries++;
       assert.ok(JSON.stringify(body.messages).includes(sentinel), 'summary request lost original constraint');
@@ -242,6 +242,7 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   // An allow rule that the narrower deny rule must still beat.
   if (scenario === 'deny-rule') command.push('--allowedTools', 'Bash', '--disallowedTools', 'Bash(printf:*)');
   if (scenario === 'background-deadline' || scenario === 'small-window-overflow') command.push('--allowedTools', 'Bash');
+  if (scenario==='hook-output' || scenario==='hook-output-null') command.push('--settings',JSON.stringify({hooks:{PostToolUse:[{matcher:'Read',hooks:[{type:'command',command:`echo '${JSON.stringify({hookSpecificOutput:{hookEventName:'PostToolUse',updatedToolOutput:scenario==='hook-output-null'?null:'HOOK_REDACTED',updatedMCPToolOutput:'LEGACY_MUST_NOT_WIN'}})}'`}]}]}}));
   if (scenario === 'hook-block') command.push('--settings', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'printf ran > hook-ran.txt; echo HOOK_BLOCKED_42 >&2; exit 2' }] }] } }));
   if (scenario === 'hook-composition') command.push('--settings', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Read', hooks: [
     { type: 'command', command: 'printf ran > hook-ran.txt; echo HOOK_BLOCKED_42 >&2; exit 2' },
@@ -334,7 +335,9 @@ try {
           const count = active.requests.length;
           // Without --bare the CLI also makes side requests; the loop's own carry the tool list.
           const main = active.requests.filter(r => r.body.tools?.length);
-          if(scenario==='blocking-limit' || scenario==='image-error') {
+          if(scenario==='hook-output' || scenario==='hook-output-null') {
+            assert.equal(runResult.code,0);const followUp=JSON.stringify(main[1]?.body.messages);assert.ok(followUp.includes(scenario==='hook-output-null'?'null':'HOOK_REDACTED'));assert.ok(!followUp.includes('LOCAL_FIXTURE_42'));assert.ok(!followUp.includes('LEGACY_MUST_NOT_WIN'));
+          } else if(scenario==='blocking-limit' || scenario==='image-error') {
             assert.equal(runResult.code,1);assert.equal(runResult.result.is_error,true);assert.equal(runResult.result.terminal_reason,scenario==='blocking-limit'?'blocking_limit':'image_error');assert.equal(count,scenario==='blocking-limit'?0:1);
           } else if(scenario==='agent-custom-fork'){
             assert.equal(runResult.code,0);assert.equal(runResult.result.result,'AUDIT_OK');assert.ok(active.childRequests>=4,'resumed child never ran');

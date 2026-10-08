@@ -1582,6 +1582,7 @@ async function checkPermissionsAndCallTool(
     // collected in hookResults and flushed after addToolResult to preserve
     // the user-facing ordering: tool result → autoFix → hook attachments.
     let outputModifiedByHook = false
+    let canonicalHookOutput = false
     const postToolHookInfos: StopHookInfo[] = []
     const postToolHookStart = Date.now()
     for await (const hookResult of runPostToolUseHooks(
@@ -1596,9 +1597,16 @@ async function checkPermissionsAndCallTool(
       mcpServerBaseUrl,
       durationMs,
     )) {
-      if ('updatedMCPToolOutput' in hookResult) {
-        toolOutput = hookResult.updatedMCPToolOutput
+      if ('updatedToolOutput' in hookResult) {
+        toolOutput = hookResult.updatedToolOutput
         outputModifiedByHook = true
+        canonicalHookOutput = true
+      } else if ('updatedMCPToolOutput' in hookResult) {
+        // A canonical replacement from any hook takes precedence over legacy output.
+        if (!canonicalHookOutput) {
+          toolOutput = hookResult.updatedMCPToolOutput
+          outputModifiedByHook = true
+        }
       } else {
         hookResults.push(hookResult)
         if (hookResult.message.type === 'attachment') {
@@ -1627,11 +1635,10 @@ async function checkPermissionsAndCallTool(
 
     // Add tool result. Reuse the cached mapped block when hooks didn't modify
     // the output (the common fast path); remap from scratch otherwise.
-    // For non-MCP tools, hook-replaced output may not match the tool's
-    // native data shape, which would crash mapToolResultToToolResultBlockParam.
+    // Canonical replacements need not match the tool's native output shape.
     // Bypass the tool-specific mapper and build a generic text content block
     // from the hook's payload (stringified if non-string).
-    if (isMcpTool(tool)) {
+    if (isMcpTool(tool) && !canonicalHookOutput) {
       await addToolResult(toolOutput)
     } else if (outputModifiedByHook) {
       const hookContent =

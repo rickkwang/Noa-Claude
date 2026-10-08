@@ -354,6 +354,7 @@ export interface HookResult {
   additionalContext?: string
   initialUserMessage?: string
   updatedInput?: Record<string, unknown>
+  updatedToolOutput?: unknown
   updatedMCPToolOutput?: unknown
   permissionRequestResult?: PermissionRequestResult
   elicitationResponse?: ElicitationResponse
@@ -377,6 +378,7 @@ export type AggregatedHookResult = {
   additionalContexts?: string[]
   initialUserMessage?: string
   updatedInput?: Record<string, unknown>
+  updatedToolOutput?: unknown
   updatedMCPToolOutput?: unknown
   permissionRequestResult?: PermissionRequestResult
   watchPaths?: string[]
@@ -652,10 +654,10 @@ function processHookJSONOutput({
         break
       case 'PostToolUse':
         result.additionalContext = json.hookSpecificOutput.additionalContext
-        // Extract updatedMCPToolOutput if provided
-        if (json.hookSpecificOutput.updatedMCPToolOutput !== undefined) {
-          result.updatedMCPToolOutput =
-            json.hookSpecificOutput.updatedMCPToolOutput
+        if (json.hookSpecificOutput.updatedToolOutput !== undefined) {
+          result.updatedToolOutput = json.hookSpecificOutput.updatedToolOutput
+        } else if (json.hookSpecificOutput.updatedMCPToolOutput !== undefined) {
+          result.updatedMCPToolOutput = json.hookSpecificOutput.updatedMCPToolOutput
         }
         break
       case 'PostToolUseFailure':
@@ -2911,8 +2913,10 @@ async function* executeHooks({
       }
     }
 
-    // Yield updatedMCPToolOutput if provided (from PostToolUse hooks)
-    if (result.updatedMCPToolOutput !== undefined) {
+    // Yield updatedToolOutput, or the legacy updatedMCPToolOutput, if provided (from PostToolUse hooks)
+    if (result.updatedToolOutput !== undefined) {
+      yield { updatedToolOutput: result.updatedToolOutput }
+    } else if (result.updatedMCPToolOutput !== undefined) {
       logForDebugging(
         `Hook ${hookEvent} (${getHookDisplayText(result.hook)}) replaced MCP tool output`,
       )
