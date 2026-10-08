@@ -172,7 +172,9 @@ Background hosts explicitly inherit the active configuration directory. An inher
 
 `NOA_CLAUDE_TETHER_LIVE=1` (legacy alias `CLAUDE_CODE_TETHER_LIVE=1`) opts in to the `message-threads-2026-08-12` beta observed in official CC. The default remains stateless. This path retains conversation state at the first-party service; its public Messages API contract and credential eligibility are not established by local scripted tests.
 
-Only a direct first-party endpoint uses threads. Other providers retain full requests. Complete responses can continue with incremental messages and inherited static fields; changed history, model, tools, permissions or hooks create a fresh thread. Unsupported protocol responses disable threading for the session; expired pointers and fingerprint failures have bounded recovery. Partial streams never become continuation anchors.
+Only a direct first-party endpoint uses threads. Other providers retain full requests. Complete responses can continue with incremental messages and inherited static fields; changed history, model, tools, permissions or hooks create a fresh thread. Unsupported protocol responses disable threading for the model (a rejected beta header disables it for the session); expired pointers and fingerprint failures have bounded recovery. Partial streams never become continuation anchors.
+
+Deliberate deviation from upstream: continuations omit static `system`/`tools` by default, where upstream sends them in full unless its `tengu_quiet_heron` gate is on. A fingerprint mismatch that names an omitted field switches the session to full fields. Unrecognised HTTP 400s are surfaced, not retried stateless.
 
 ### Progress Artifacts
 

@@ -1613,7 +1613,7 @@ async function* queryModel(
   // Capture the betas sent in the last API request, including the ones that
   // were dynamically added, so we can log and send it to telemetry.
   let lastRequestBetas: string[] | undefined
-  const messageThreadRequest = createMessageThreadRequest(options.querySource, options.agentId)
+  const messageThreadRequest = createMessageThreadRequest(options.querySource, options.agentId, options.model)
 
   const paramsFromContext = (retryContext: RetryContext) => {
     const betasParams = [...betas]
