@@ -653,7 +653,7 @@ function processHookJSONOutput({
       case 'PostToolUse':
         result.additionalContext = json.hookSpecificOutput.additionalContext
         // Extract updatedMCPToolOutput if provided
-        if (json.hookSpecificOutput.updatedMCPToolOutput) {
+        if (json.hookSpecificOutput.updatedMCPToolOutput !== undefined) {
           result.updatedMCPToolOutput =
             json.hookSpecificOutput.updatedMCPToolOutput
         }
@@ -2912,7 +2912,7 @@ async function* executeHooks({
     }
 
     // Yield updatedMCPToolOutput if provided (from PostToolUse hooks)
-    if (result.updatedMCPToolOutput) {
+    if (result.updatedMCPToolOutput !== undefined) {
       logForDebugging(
         `Hook ${hookEvent} (${getHookDisplayText(result.hook)}) replaced MCP tool output`,
       )

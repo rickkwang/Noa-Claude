@@ -146,7 +146,7 @@ export async function* runPostToolUseHooks<Input extends AnyObject, Output>(
 
         // If hooks provided updatedMCPToolOutput, apply it for any tool.
         // The field name is kept for backward compatibility but applies to all tools.
-        if (result.updatedMCPToolOutput) {
+        if (result.updatedMCPToolOutput !== undefined) {
           toolOutput = result.updatedMCPToolOutput as Output
           yield {
             updatedMCPToolOutput: toolOutput,
