@@ -1,6 +1,6 @@
 # Features Audit
 
-Last updated: 2026-10-01
+Last updated: 2026-10-08
 
 This file is the build/runtime audit for experimental feature flags in this repository.
 
@@ -89,44 +89,19 @@ is a no-op.
 
 ## Not Unlockable in This Build (by flag-only unlock)
 
-Implementation modules absent from this repository — enabling either of these
-fails `bun run build:dev:full` at bundle resolve time (see the omission note
-above `fullExperimentalFeatures` in build.ts):
+The following flag references modules absent from this repository. Adding it
+to a build profile fails at bundle resolve time (see the omission note above
+`fullExperimentalFeatures` in build.ts):
 
 - `COORDINATOR_MODE` (coordinator/workerAgent) — `isCoordinatorMode()` resolves
   false; its branches are deeply woven into resume/session hot paths and are
   retained rather than excised.
-
-`TRANSCRIPT_CLASSIFIER` used to appear here (the upstream flag for the auto-mode
-yolo classifier). The classifier prompts (`yolo-classifier-prompts/*.txt`) are
-now present in this fork and the whole subsystem was re-gated under the dedicated
-`AUTO_MODE` flag above, which ships enabled in the baseline build.
-`TRANSCRIPT_CLASSIFIER` no longer gates anything.
 
 `VOICE_MODE` builds, but is off in every profile, including dev-full: its
 native recorder (`audio-capture-napi`) is an empty npm placeholder, so `/voice`
 throws, and the `voice_stream` STT endpoint needs claude.ai OAuth. Its branches
 stay in source, inert; re-add the flag to `build.ts` once a working recorder
 and STT path exist.
-
-### Removed never-buildable surfaces
-
-The following flags previously gated absent modules. Their `feature()` branches
-have been deleted from source entirely (they no longer appear in any build), so
-they are no longer flag-unlockable and no longer carry dead branches:
-
-- `BG_SESSIONS` (utils/taskSummary, utils/udsClient)
-- `DIRECT_CONNECT` (src/server/* command surface)
-- `FORK_SUBAGENT` (UserForkBoilerplateMessage)
-- `KAIROS_GITHUB_WEBHOOKS` (bridge/webhookSanitizer, UserGitHubWebhookMessage)
-- `MCP_SKILLS` (skills/mcpSkills)
-- `MONITOR_TOOL` (tasks/MonitorMcpTask + dialogs)
-- `NATIVE_CLIPBOARD_IMAGE` (image-processor-napi NSPasteboard reader; the npm package is an empty placeholder)
-- `REVIEW_ARTIFACT` (ReviewArtifactTool + permission UI)
-- `SSH_REMOTE` (ssh/createSSHSession implementation)
-- `TEMPLATES` (src/jobs)
-- `UDS_INBOX` (UserCrossSessionMessage)
-- `WORKFLOW_SCRIPTS` (WorkflowTool + LocalWorkflowTask + dialogs)
 
 Build-scope exclusions:
 
@@ -178,11 +153,8 @@ Refer to `FEATURE_AVAILABILITY_MATRIX.md` for command-level availability.
   custom themes behind safe mode (`--safe-mode` / `CLAUDE_CODE_SAFE_MODE=1`)
   and shows a "disabled in safe mode" notice; this fork has no safe-mode
   concept, so that gate and its copy are absent.
-- **`/status` "Session kind" row** — upstream 2.1.221 added a row after
-  "Session ID" showing `interactive` / `background job · attached` /
-  `background job · unattended`, driven by the `CLAUDE_CODE_SESSION_KIND=bg`
-  env contract plus an `attacherCaps` attach-state signal. Intentional
-  deviation: this fork has no detached background-job session type (and no
-  `CLAUDE_CODE_SESSION_KIND`/`attacherCaps` plumbing anywhere in `src/`), so
-  the row would permanently read "interactive". Not ported; revisit only if a
-  real background-job session type lands here.
+- **`/status` "Session kind" row** — the upstream 2.1.221 row uses
+  `CLAUDE_CODE_SESSION_KIND=bg` and `attacherCaps`. This fork has detached
+  background sessions with its own `NOA_CLAUDE_BG_JOB` marker and PTY
+  attach/detach protocol (`src/utils/background/`); it does not use those
+  upstream signals. The upstream row has not been ported.

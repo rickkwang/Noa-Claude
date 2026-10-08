@@ -1,4 +1,8 @@
-# lean-prompt eval — candidate inputs (DRAFT, awaiting sign-off)
+# lean-prompt eval — case notes
+
+These notes describe the cases used in historical baseline/v1 runs. Generated
+results are kept locally and excluded from version control. Harness approval
+is checked separately by `run-eval.mjs` against `_state.json`.
 
 Flow: `--print` on claude-opus-5-5, lean vs verbose head (`NOA_CLAUDE_SIMPLE_SYSTEM_PROMPT=1|0`).
 Source: this repo's own git history (no personal session data). Ground truth = human-written fix commits (not model output).

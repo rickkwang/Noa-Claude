@@ -24,7 +24,7 @@ git clone https://github.com/rickkwang/Noa-Claude.git && cd Noa-Claude
 Run from source without installing:
 
 ```bash
-bun run dev
+bun run dev:source
 ```
 
 Typical first session:
@@ -195,10 +195,11 @@ Entry → QueryEngine → Agent Loop → Tools / Services / State
 
 | Command | Output |
 |---------|--------|
-| `bun run dev` | Run directly from source |
+| `bun run dev` | Build dev bundle and run `dist/main-dev.js` |
+| `bun run dev:source` | Run directly from source |
 | `bun run build` | Production JS bundle to `dist/main.js` |
 | `bun run build:dev` | Dev build |
-| `bun run build:dev:full` | Dev build + 52 experimental features |
+| `bun run build:dev:full` | Dev build + expanded experimental feature set |
 | `bun run compile` | Standalone binary at `dist/cli` |
 
 All builds require [Bun](https://bun.sh).

@@ -27,3 +27,12 @@ CLAUDE.local.md
 .claude/hillclimb/*/v9/
 .claude/hillclimb/*/*/progress.txt
 .claude/hillclimb/*/*/timeouts/
+
+# generated eval results
+.claude/hillclimb/**/results.jsonl
+.claude/hillclimb/**/errors.jsonl
+
+# local settings and generated worktrees
+**/.noa/settings.local.json
+**/.claude/settings.local.json
+**/.noa/worktrees/

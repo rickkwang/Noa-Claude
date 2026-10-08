@@ -61,7 +61,7 @@ export const DEFAULT_PRODUCT_MODEL =
 export const LAUNCHER_MACRO = {
   VERSION: pkg.version,
   DISPLAY_VERSION: pkg.version,
-  BUILD_TIME: '2026-04-28T00:00:00.000Z',
+  BUILD_TIME: '',
   FEEDBACK_CHANNEL: `#${PRODUCT_NAMESPACE}`,
   ISSUES_EXPLAINER: 'https://github.com/rickkwang/Noa-Claude/issues',
   PACKAGE_URL: '@rickkwang/noa-claude',
