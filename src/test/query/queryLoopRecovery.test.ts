@@ -14,6 +14,8 @@ import {
 } from '../../utils/messages.js'
 import { asSystemPrompt } from '../../utils/systemPromptType.js'
 import { createThreadGoal } from '../../utils/goalState.js'
+import { clearOldToolResults } from '../../services/compact/microCompact.js'
+import { tokenCountWithEstimation } from '../../utils/tokens.js'
 
 // Loop-level tests for queryLoop's recovery paths, driven through QueryDeps
 // injection (same harness as streamingToolExecution.test.ts). Each test
@@ -129,6 +131,86 @@ function yieldedMaxOutputTokensErrors(events: Message[]) {
 }
 
 describe('query loop recovery', () => {
+  test.each(['prefix', 'tail', 'no-usage', 'split-response', 'retry', 'malformed-retry', 'refresh'])(
+    'microcompact savings use the API anchor correctly: %s',
+    async position => {
+      const context = createContext()
+      const history: Message[] = []
+      for (let i = 0; i < 3; i++) {
+        history.push(createAssistantMessage({ content: [{
+          type: 'tool_use', id: `read-${i}`, name: 'Read', input: { file_path: `/tmp/read-${i}` },
+        }] }))
+        history.push(createUserMessage({ content: [{
+          type: 'tool_result', tool_use_id: `read-${i}`, content: 'x'.repeat(80000),
+        }] }))
+      }
+      const anchor = createAssistantMessage({ content: 'Continue.' })
+      anchor.message.usage.input_tokens = 185000
+      anchor.message.usage.output_tokens = 10
+      anchor.message.model = 'claude-sonnet-4-6'
+      if (position === 'tail') history.unshift(anchor)
+      else if (position !== 'no-usage') history.push(anchor)
+      if (position === 'split-response') {
+        const sibling = createAssistantMessage({ content: 'Sibling.' })
+        sibling.message.model = anchor.message.model
+        sibling.message.id = anchor.message.id
+        history.unshift(sibling)
+      }
+      const observed: number[] = []
+      let calls = 0
+      const { terminal } = await drain({
+        messages: history,
+        toolUseContext: context,
+        deps: makeDeps(async function* () {
+          calls++
+          if (position === 'retry' && calls === 1) yield maxOutputTokensError()
+          else if (position === 'malformed-retry' && calls === 1) {
+            const response = createAssistantMessage({ content: 'Calling a tool.' })
+            response.message.model = anchor.message.model
+            response.message.usage.input_tokens = 100000
+            response.message.stop_reason = 'tool_use'
+            yield response
+          }
+          else if (position === 'refresh' && calls === 1) {
+            const response = createAssistantMessage({ content: [{
+              type: 'tool_use', id: 'refresh', name: 'UnknownTool', input: {},
+            }] })
+            response.message.model = anchor.message.model
+            response.message.usage.input_tokens = 100000
+            response.message.usage.output_tokens = 10
+            yield response
+          }
+          else yield createAssistantMessage({ content: 'Done.' })
+        }, {
+          microcompact: async messages => ({ messages: clearOldToolResults(messages, 1)?.messages ?? messages }),
+          autocompact: async (messages, _context, _cache, _source, _tracking, tokensFreed = 0) => {
+            observed.push(tokenCountWithEstimation(messages) - tokensFreed)
+            return { wasCompacted: false }
+          },
+        }),
+      })
+      expect(terminal.reason).toBe('completed')
+      expect(observed).toHaveLength(['retry', 'malformed-retry', 'refresh'].includes(position) ? 2 : 1)
+      // Two 80K-character results become short markers; no second subtraction
+      // when the changed results are already after the API usage anchor.
+      for (const [index, count] of observed.entries()) {
+        if (position === 'refresh' && index === 1) {
+          expect(count).toBeGreaterThan(100000)
+          expect(count).toBeLessThan(101000)
+        } else if (['prefix', 'retry', 'malformed-retry', 'refresh'].includes(position)) {
+          expect(count).toBeGreaterThan(144000)
+          expect(count).toBeLessThan(146000)
+        } else if (position === 'tail' || position === 'split-response') {
+          expect(count).toBeGreaterThan(204000)
+          expect(count).toBeLessThan(206000)
+        } else {
+          expect(count).toBeGreaterThan(19000)
+          expect(count).toBeLessThan(21000)
+        }
+      }
+    },
+  )
+
   test('exhausted empty responses schedule recovery for an active interactive goal', async () => {
     const context = createContext()
     let appState = { ...context.getAppState(), goal: createThreadGoal({ objective: 'Finish fixture', tokenBudget: null, now: Date.now() }) }

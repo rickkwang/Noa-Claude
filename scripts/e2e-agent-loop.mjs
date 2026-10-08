@@ -18,7 +18,7 @@ const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'n
 mkdirSync(artifacts, { recursive: true });
 const model = 'claude-sonnet-4-6';
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'bedrock-overflow', 'field-reject'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'bedrock-overflow', 'field-reject'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -55,6 +55,14 @@ const server = createServer(async (req, res) => {
     if (active.case === 'compact-resume' && summary && raw.length > 500_000) {
       error(400, 'invalid_request_error', 'prompt is too long: 280000 tokens > 200000 maximum');
       return;
+    }
+    if (active.case === 'image-error') {
+      error(400, 'invalid_request_error', 'image exceeds 5 MB maximum: 5316852 bytes > 5242880 bytes'); return;
+    }
+    if (active.case === 'small-window-overflow' && !summary) {
+      active.endpointLimit ??= Math.ceil(JSON.stringify({system:body.system,tools:body.tools}).length/4)+2000;
+      const tokens=Math.ceil(JSON.stringify({system:body.system,tools:body.tools,messages:body.messages}).length/4);
+      if (n===3 || tokens>active.endpointLimit) {error(400,'invalid_request_error',`prompt is too long: ${Math.max(tokens,active.endpointLimit+1000)} tokens > ${active.endpointLimit} maximum`);return;}
     }
     if (active.case === 'field-reject') {
       if (body.metadata) { error(400, 'invalid_request_error', 'metadata: Extra inputs are not permitted'); return; }
@@ -111,6 +119,8 @@ const server = createServer(async (req, res) => {
       const agentName=body.tools.find(t=>t.name==='Task'||t.name==='Agent')?.name||'Task';
       const steps=[{name:'goal',input:{operation:'create_goal',objective:'Run the explicitly requested isolated child usage test and finish.',token_budget:100000}},{name:agentName,input:{prompt:'CHILD_USAGE_FIXTURE',description:'Read fixture',subagent_type:'general-purpose',run_in_background:false}},{name:'goal',input:{operation:'get_goal'}},{name:'goal',input:{operation:'update_goal',status:'complete'}}];
       const step=steps[n-1];content=step?[{type:'tool_use',id:'goal_'+n,...step}]:[{type:'text',text:'AUDIT_OK'}];stop=step?'tool_use':'end_turn';
+    } else if(active.case==='small-window-overflow' && n<=2) {
+      content=[{type:'tool_use',id:'small_output',name:'Bash',input:{command:n===1?'echo prior-round':"head -c 24000 /dev/zero | tr '\\0' x",description:'Generate bounded fixture output'}}];stop='tool_use';
     } else if (summary) {
       active.summaries++;
       assert.ok(JSON.stringify(body.messages).includes(sentinel), 'summary request lost original constraint');
@@ -216,6 +226,7 @@ const children = new Set();
 async function run(executable, scenario, extra = [], input = 'Run the local loop fixture.') {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => ['PATH', 'HOME', 'TMPDIR', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL'].includes(k)));
   Object.assign(env, {
+    ...(scenario==='blocking-limit' && {DISABLE_AUTO_COMPACT:'1'}),
     CLAUDE_CONFIG_DIR: join(active.dir, 'config'), ANTHROPIC_API_KEY: 'local-e2e-dummy', ANTHROPIC_BASE_URL: baseUrl,
     ANTHROPIC_MODEL: model, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', DISABLE_AUTOUPDATER: '1',
     ...(scenario === 'openai-overflow' && { CLAUDE_CODE_USE_OPENAI: '1', OPENAI_BASE_URL: `${baseUrl}/v1`, OPENAI_API_KEY: 'local-e2e-dummy' }),
@@ -225,12 +236,12 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   const harness = scenario.startsWith('task-') || scenario === 'goal-child-usage' || scenario==='agent-custom-fork';
   // Hooks are off under --bare, so the hook scenario runs the full startup path.
   // --bare drops run_in_background, so the deadline scenario needs the full startup path too.
-  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('concurrency-') || scenario === 'background-deadline' || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', model, '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':'TaskCreate,TaskUpdate,TaskGet,TaskList') : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'background-deadline' ? '4' : '2'];
+  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('concurrency-') || scenario === 'background-deadline' || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', model, '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':'TaskCreate,TaskUpdate,TaskGet,TaskList') : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'background-deadline' || scenario === 'small-window-overflow' ? '4' : '2'];
   if (scenario !== 'compact-resume' && scenario !== 'tombstone-resume' && scenario!=='agent-custom-fork') command.push('--no-session-persistence');
   if (scenario === 'fallback') command.push('--fallback-model', 'claude-haiku-4-5');
   // An allow rule that the narrower deny rule must still beat.
   if (scenario === 'deny-rule') command.push('--allowedTools', 'Bash', '--disallowedTools', 'Bash(printf:*)');
-  if (scenario === 'background-deadline') command.push('--allowedTools', 'Bash');
+  if (scenario === 'background-deadline' || scenario === 'small-window-overflow') command.push('--allowedTools', 'Bash');
   if (scenario === 'hook-block') command.push('--settings', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'printf ran > hook-ran.txt; echo HOOK_BLOCKED_42 >&2; exit 2' }] }] } }));
   if (scenario === 'hook-composition') command.push('--settings', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Read', hooks: [
     { type: 'command', command: 'printf ran > hook-ran.txt; echo HOOK_BLOCKED_42 >&2; exit 2' },
@@ -319,11 +330,13 @@ try {
           assert.ok(active.summaries > 0, 'compaction never executed');
           assert.equal(active.oversized, 1, 'only the pre-compaction request may overflow; an oversized tail reached the endpoint after compaction');
         } else {
-          runResult = await run(executable, scenario, [], scenario==='goal-child-usage'?'Create a temporary goal, run a child agent, report its usage and finish.':scenario.endsWith('-overflow')?`PROJECT_CONSTRAINT: ${sentinel}. Run the local loop fixture.`:'Run the local loop fixture.');
+          runResult = await run(executable, scenario, [], scenario==='blocking-limit'?'x'.repeat(5_000_000):scenario==='goal-child-usage'?'Create a temporary goal, run a child agent, report its usage and finish.':scenario.endsWith('-overflow')?`PROJECT_CONSTRAINT: ${sentinel}. Run the local loop fixture.`:'Run the local loop fixture.');
           const count = active.requests.length;
           // Without --bare the CLI also makes side requests; the loop's own carry the tool list.
           const main = active.requests.filter(r => r.body.tools?.length);
-          if(scenario==='agent-custom-fork'){
+          if(scenario==='blocking-limit' || scenario==='image-error') {
+            assert.equal(runResult.code,1);assert.equal(runResult.result.is_error,true);assert.equal(runResult.result.terminal_reason,scenario==='blocking-limit'?'blocking_limit':'image_error');assert.equal(count,scenario==='blocking-limit'?0:1);
+          } else if(scenario==='agent-custom-fork'){
             assert.equal(runResult.code,0);assert.equal(runResult.result.result,'AUDIT_OK');assert.ok(active.childRequests>=4,'resumed child never ran');
             const resumed=active.requests.find(r=>r.childStep===3);assert.ok(JSON.stringify(resumed.body.system).includes('FORK_CUSTOM_RULE_42'),'custom agent named fork lost its system prompt on resume');assert.deepEqual(resumed.body.tools.map(t=>t.name),['Read'],'resuming custom fork widened its tool pool');
           } else if (scenario.startsWith('task-') || scenario==='goal-child-usage') {
@@ -340,7 +353,7 @@ try {
             assert.equal(runResult.code, 0, `overflow surfaced as: ${runResult.result.result}`); assert.equal(runResult.result.result, 'AUDIT_OK');
             if (scenario === 'openai-overflow') assert.ok(active.requests.every(r => r.path.includes('/chat/completions')), 'request left the OpenAI-compatible transport');
             assert.equal(active.summaries, 1, 'context overflow did not trigger reactive compact');
-            assert.equal(count, 4);
+            assert.equal(count, scenario==='small-window-overflow'?5:4);
             assert.ok(JSON.stringify(active.requests.at(-1).body.messages).includes(sentinel), 'retry after compaction lost the original constraint');
           } else if (scenario === 'field-reject') {
             assert.equal(runResult.code, 0, `field rejection surfaced as: ${runResult.result.result}`); assert.equal(runResult.result.result, 'AUDIT_OK'); assert.equal(count, 3);

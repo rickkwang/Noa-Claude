@@ -261,7 +261,7 @@ export function applyGoalRuntimeEvaluation({
 
     const noProgress = madeProgress ? 0 : (current.noProgressTurns ?? 0) + 1
     if (evaluation.impossible || (!evaluation.achieved && noProgress >= MAX_NO_PROGRESS_TURNS)) {
-      const reason = evaluation.impossible ? evaluation.reason : 'No tool use for three evaluated turns; send a message with new direction to continue.'
+      const reason = evaluation.impossible ? evaluation.reason : 'No successful tool use for three evaluated turns; send a message with new direction to continue.'
       decision = { action: 'stop', userNotice: createSystemMessage(`Goal paused: ${reason}`, 'warning') }
       return { ...prev, goal: { ...current, status: 'paused', stopReason: evaluation.impossible ? 'impossible' : 'no_progress', lastEvaluatorReason: reason, retryAt: null, nextCheckInAt: null, updatedAt: now } }
     }

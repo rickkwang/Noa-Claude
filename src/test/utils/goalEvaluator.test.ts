@@ -12,6 +12,15 @@ import {
 } from '../../utils/messages.js'
 
 describe('goal evaluator context', () => {
+  test('bounds dense Unicode by UTF-8 bytes without splitting characters', () => {
+    const context = buildGoalEvaluatorContext([
+      createUserMessage({ content: 'HEAD_FAILURE ' + '汉🦊'.repeat(5000) + ' TAIL_EVIDENCE' }),
+    ], 2000)
+    expect(Buffer.byteLength(context, 'utf8')).toBeLessThan(2200)
+    expect(context).not.toContain('\ufffd')
+    expect(context).toContain('HEAD_FAILURE')
+    expect(context).toContain('TAIL_EVIDENCE')
+  })
   test('keeps MCP failure status and text as completion evidence', () => {
     const context = buildGoalEvaluatorContext([createUserMessage({
       content: [{ type: 'tool_result', tool_use_id: 'mcp_failure', is_error: true,

@@ -107,8 +107,10 @@ import {
 import {
   doesMostRecentAssistantMessageExceed200k,
   finalContextTokensFromLastResponse,
+  getTokenUsage,
   tokenCountWithEstimation,
 } from './utils/tokens.js'
+import { roughTokenCountEstimationForMessages } from './services/tokenEstimation.js'
 import { ESCALATED_MAX_TOKENS } from './utils/context.js'
 import { getStopHookBlockCap, isEnvTruthy } from './utils/envUtils.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from './services/analytics/growthbook.js'
@@ -442,6 +444,8 @@ async function* queryLoop(
   // have to thread it through nextState().
   let taskBudgetRemaining: number | undefined = undefined
   let usedToolsForGoal = false
+  let microcompactTokensFreed = 0
+  let microcompactUsage: ReturnType<typeof getTokenUsage>
   const hasNewUserPrompt = params.messages
     .slice(params.messages.findLastIndex(message => message.type === 'assistant') + 1)
     .some(message => message.type === 'user' && !message.toolUseResult &&
@@ -561,15 +565,28 @@ async function* queryLoop(
       ),
     )
 
-    const snipTokensFreed = 0
-
     // Apply microcompact before autocompact
     queryCheckpoint('query_microcompact_start')
+    const usageAnchor = messagesForQuery.findLast(message => getTokenUsage(message))
+    const usage = usageAnchor ? getTokenUsage(usageAnchor) : undefined
+    if (usage !== microcompactUsage) {
+      microcompactUsage = usage
+      microcompactTokensFreed = 0
+    }
     const microcompactResult = await deps.microcompact(
       messagesForQuery,
       toolUseContext,
       querySource,
     )
+    if (microcompactResult.messages !== messagesForQuery) {
+      // Tail savings already affect the estimator; only offset stale API usage.
+      const totalSaved = roughTokenCountEstimationForMessages(messagesForQuery) -
+        roughTokenCountEstimationForMessages(microcompactResult.messages)
+      const alreadyCounted = tokenCountWithEstimation(messagesForQuery) -
+        tokenCountWithEstimation(microcompactResult.messages)
+      microcompactTokensFreed += totalSaved - alreadyCounted
+    }
+    const contextTokensFreed = Math.max(0, microcompactTokensFreed)
     messagesForQuery = microcompactResult.messages
     // For cached microcompact (cache editing), defer boundary message until after
     // the API response so we can use actual cache_deleted_input_tokens.
@@ -596,7 +613,7 @@ async function* queryLoop(
       },
       querySource,
       tracking,
-      snipTokensFreed,
+      contextTokensFreed,
     )
     queryCheckpoint('query_autocompact_end')
 
@@ -678,6 +695,7 @@ async function* queryLoop(
       }
 
       const postCompactMessages = buildPostCompactMessages(compactionResult)
+      microcompactTokensFreed = 0
 
       for (const message of postCompactMessages) {
         yield message
@@ -843,10 +861,8 @@ async function* queryLoop(
     // Skip this check if compaction just happened - the compaction result is already
     // validated to be under the threshold, and tokenCountWithEstimation would use
     // stale input_tokens from kept messages that reflect pre-compaction context size.
-    // Same staleness applies to snip: subtract snipTokensFreed (otherwise we'd
-    // falsely block in the window where snip brought us under autocompact threshold
-    // but the stale usage is still above blocking limit — before this PR that
-    // window never existed because autocompact always fired on the stale count).
+    // Microcompact savings before the last API usage anchor are not yet reflected
+    // in that usage; subtract them until a real response refreshes the count.
     // Also skip for compact/session_memory queries — these are forked agents that
     // inherit the full conversation and would deadlock if blocked here (the compact
     // agent needs to run to REDUCE the token count).
@@ -868,7 +884,7 @@ async function* queryLoop(
       !reactiveRecoveryEnabled
     ) {
       const { isAtBlockingLimit } = calculateTokenWarningState(
-        tokenCountWithEstimation(messagesForQuery) - snipTokensFreed,
+        tokenCountWithEstimation(messagesForQuery) - contextTokensFreed,
         toolUseContext.options.mainLoopModel,
       )
       if (isAtBlockingLimit) {
@@ -1467,6 +1483,7 @@ async function* queryLoop(
           }
 
           const postCompactMessages = buildPostCompactMessages(compacted)
+          microcompactTokensFreed = 0
           for (const msg of postCompactMessages) {
             yield msg
           }
@@ -2062,7 +2079,13 @@ async function* queryLoop(
       }
     }
     queryCheckpoint('query_tool_execution_end')
-    usedToolsForGoal = true
+    usedToolsForGoal ||= toolResults.some(message =>
+      message.type === 'user' &&
+      Array.isArray(message.message.content) &&
+      message.message.content.some(block =>
+        block.type === 'tool_result' && block.is_error !== true,
+      ),
+    )
 
     const goalAccounting = accountGoalUsage({
       assistantMessages,

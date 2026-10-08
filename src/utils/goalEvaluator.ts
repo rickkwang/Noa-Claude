@@ -125,18 +125,23 @@ export async function runGoalVerifyCommand({
 
 function fitSegmentToEvaluatorContext(segment: string, maxLength: number): string {
   if (maxLength <= 0) return ''
-  if (segment.length <= maxLength) return segment
+  const bytes = Buffer.from(segment, 'utf8')
+  if (bytes.length <= maxLength) return segment
 
   const marker = '\n[truncated]\n'
-  const header = segment.slice(0, Math.max(0, Math.min(512, maxLength - marker.length - 1)))
+  let headEnd = Math.max(0, Math.min(512, maxLength - marker.length - 1))
+  while ((bytes[headEnd]! & 0xc0) === 0x80) headEnd--
+  const header = bytes.subarray(0, headEnd).toString('utf8')
   const availableTailLength = Math.max(
     0,
-    maxLength - header.length - marker.length,
+    maxLength - headEnd - marker.length,
   )
   if (availableTailLength === 0) {
     return header.slice(0, maxLength)
   }
-  return `${header}${marker}${segment.slice(-availableTailLength)}`
+  let tailStart = bytes.length - availableTailLength
+  while ((bytes[tailStart]! & 0xc0) === 0x80) tailStart++
+  return `${header}${marker}${bytes.subarray(tailStart).toString('utf8')}`
 }
 
 function toolResultText(result: unknown): string {
@@ -214,7 +219,8 @@ function formatMessageForEvaluator(message: Message): string | null {
 const OMITTED_NOTICE = '[Earlier conversation truncated to fit the evaluator context. If the required evidence may be in the omitted part, the goal is not achieved.]'
 
 function evaluatorContextBudget(fraction: number): number {
-  return Math.floor(getContextWindowForModel(getSmallFastModel()) * fraction) * 4
+  // UTF-8 bytes, conservatively budgeted at two bytes per token for dense text.
+  return Math.floor(getContextWindowForModel(getSmallFastModel()) * fraction) * 2
 }
 
 // Newest API rounds first, as many as fit; the newest round is always kept,
@@ -231,7 +237,7 @@ export function buildGoalEvaluatorContext(
   for (let i = rounds.length - 1; i >= 0; i--) {
     const text = rounds[i]!.map(formatMessageForEvaluator).filter(Boolean).join(separator)
     if (!text) continue
-    const added = text.length + (kept.length > 0 ? separator.length : 0)
+    const added = Buffer.byteLength(text, 'utf8') + (kept.length > 0 ? separator.length : 0)
     if (total + added > maxLength) {
       if (kept.length === 0) kept.push(fitSegmentToEvaluatorContext(text, maxLength))
       omitted = true
@@ -311,7 +317,8 @@ Decision:`,
         ? response.message.content
         : getContentText(response.message.content)
       : ''
-    const parsed = goalEvaluationSchema().safeParse(safeParseJSON(text?.match(/\{[\s\S]*\}/)?.[0] ?? text))
+    const json = (text ?? '').trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, '$1')
+    const parsed = goalEvaluationSchema().safeParse(safeParseJSON(json))
     if (!parsed.success) {
       logGoalAudit({
         goal,

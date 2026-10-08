@@ -35,7 +35,14 @@ enableConfigs()
 const recoveryCases = ['truncated-budget', 'truncated-unlimited', 'truncated-no-goal', 'truncated-child-paused', 'max-output-budget', 'refusal-budget']
 const abortCases = ['abort-usage', 'abort-throw-usage', 'abort-child-usage', 'abort-replaced-goal']
 const compactCases = ['compact-notification', 'compact-user']
-const scenarios = [...abortCases, ...compactCases, 'resume-accounting', ...recoveryCases, 'background', 'background-budget', 'background-large-description', 'unrelated-background', 'background-service', 'background-starts-during-evaluation', 'stale', 'fatal', 'mapped-auth', 'provider-quota', 'transient', 'impossible', 'impossible-verify', 'no-progress', 'no-progress-user-reset', 'completion', 'live-created-goal', 'verify', 'child-paused', 'stale-wake', 'restore-cache', 'restore-created-goal', 'fenced-verdict', 'evaluator-garbage', 'evaluator-garbage-print', 'stop-hook-prevented'].filter(name => !process.argv.includes('--case') || name === process.argv[process.argv.indexOf('--case') + 1])
+const toolProgressCases = ['no-progress-tool-error', 'no-progress-tool-denied', 'tool-progress-mixed']
+const { FileReadTool } = await import('../src/tools/FileReadTool/FileReadTool.js')
+const readFixture = join(artifacts, 'read-fixture.txt')
+writeFileSync(readFixture, 'READ_PROGRESS_FIXTURE')
+const evaluatorContextCases = ['evaluator-half-window', 'evaluator-overflow-retry', 'evaluator-cjk']
+const { getContextWindowForModel } = await import('../src/utils/context.js')
+const { getSmallFastModel } = await import('../src/utils/model/model.js')
+const scenarios = ['quoted-verdict', ...evaluatorContextCases, ...toolProgressCases, ...abortCases, ...compactCases, 'resume-accounting', ...recoveryCases, 'background', 'background-budget', 'background-large-description', 'unrelated-background', 'background-service', 'background-starts-during-evaluation', 'stale', 'fatal', 'mapped-auth', 'provider-quota', 'transient', 'impossible', 'impossible-verify', 'no-progress', 'no-progress-user-reset', 'completion', 'live-created-goal', 'verify', 'child-paused', 'stale-wake', 'restore-cache', 'restore-created-goal', 'fenced-verdict', 'evaluator-garbage', 'evaluator-garbage-print', 'stop-hook-prevented'].filter(name => !process.argv.includes('--case') || name === process.argv[process.argv.indexOf('--case') + 1])
 assert.ok(scenarios.length, 'unknown case')
 const results: unknown[] = []
 const originalFetch = globalThis.fetch
@@ -51,22 +58,35 @@ try {
     if (scenario==='resume-accounting') state.goal={...goal,status:'paused',stopReason:'rate_limit'}
     if (['truncated-budget','max-output-budget','refusal-budget'].includes(scenario)) state.goal={...goal,tokenBudget:100}
     if (scenario==='truncated-unlimited') state.goal={...goal,tokenBudget:null}
+    if (scenario==='tool-progress-mixed') state.goal={...goal,noProgressTurns:2}
     if (scenario==='no-progress-user-reset') state.goal={...goal,noProgressTurns:2}
     const context: ToolUseContext = {
-      options: { commands: [], debug: false, mainLoopModel: 'claude-sonnet-4-5', tools: ['completion','live-created-goal'].includes(scenario) ? [GoalTool] : [], verbose: false, thinkingConfig: { type: 'disabled' }, mcpClients: [], mcpResources: {}, isNonInteractiveSession: !['transient', 'evaluator-garbage'].includes(scenario), agentDefinitions: state.agentDefinitions },
+      options: { commands: [], debug: false, mainLoopModel: 'claude-sonnet-4-5', tools: toolProgressCases.includes(scenario) ? [FileReadTool] : ['completion','live-created-goal'].includes(scenario) ? [GoalTool] : [], verbose: false, thinkingConfig: { type: 'disabled' }, mcpClients: [], mcpResources: {}, isNonInteractiveSession: !['transient', 'evaluator-garbage'].includes(scenario), agentDefinitions: state.agentDefinitions },
       abortController: new AbortController(), readFileState: new FileStateCache(100, 100000), getAppState: () => state, setAppState: update => { state = update(state) }, setInProgressToolUseIDs: () => {}, setResponseLength: () => {}, updateFileHistoryState: () => {}, updateAttributionState: () => {}, messages: [],
     } as ToolUseContext
     if(['child-paused','truncated-child-paused','abort-child-usage'].includes(scenario)){context.agentId='fixture-child' as any;context.goalAtStart=goal;context.setAppStateForTasks=context.setAppState;state.goal={...goal,status:'paused'}}
-    let evaluations = 0, calls = 0, compactions = 0, completionWasPending = false
+    let evaluations = 0, calls = 0, compactions = 0, permissionDenials = 0, completionWasPending = false
     const events: any[] = []
+    const evaluatorSizes: number[] = []
     globalThis.fetch = (async (...args:any[]) => {
       evaluations++
       if (scenario==='background-starts-during-evaluation') state.tasks.late={id:'late',type:'local_bash',status:'running',isBackgrounded:true,description:'required late work',startTime:Date.now()}
       if (scenario === 'stale') state.goal = createThreadGoal({ objective: 'UNRELATED_GOAL_B', tokenBudget: 10000, now: goal.createdAt + 1 })
       if (['background','background-budget'].includes(scenario)) assert.ok(args[1]?.body.includes('pending shell'),'evaluator did not receive pending work')
       if (scenario==='background-large-description') {assert.ok(args[1]?.body.includes('LONG_BG_MARKER_'));assert.ok(args[1]?.body.length<15000,'task description bypassed evaluator context bound');assert.ok(args[1]?.body.includes('[task details truncated]'))}
-      const verdict = { achieved: !['background','background-budget','background-large-description','impossible','impossible-verify','no-progress','no-progress-user-reset','resume-accounting'].includes(scenario), impossible: ['impossible','impossible-verify'].includes(scenario), reason: 'Independent fixture verdict' }
-      const verdictText = scenario === 'fenced-verdict' ? '```json\n' + JSON.stringify(verdict) + '\n```' : scenario.startsWith('evaluator-garbage') ? 'The goal looks done to me.' : JSON.stringify(verdict)
+      if (evaluatorContextCases.includes(scenario)) {
+        const body = JSON.parse(args[1]?.body ?? '{}')
+        const prompt = JSON.stringify(body.messages)
+        evaluatorSizes.push(Buffer.byteLength(prompt))
+        const window = getContextWindowForModel(getSmallFastModel())
+        if (scenario==='evaluator-half-window') assert.ok(Buffer.byteLength(prompt)<window+5000,'evaluator exceeded its conservative half-window budget')
+        const cjk = (prompt.match(/汉/g) ?? []).length
+        if ((scenario==='evaluator-overflow-retry' && evaluations===1) || (scenario==='evaluator-cjk' && cjk*3 + 1000 > window)) {
+          return new Response(JSON.stringify({type:'error',error:{type:'invalid_request_error',message:`prompt is too long: ${Math.max(window+1,cjk*3+1000)} tokens > ${window} maximum`}}), {status:400,headers:{'content-type':'application/json'}})
+        }
+      }
+      const verdict = { achieved: toolProgressCases.includes(scenario) ? scenario==='tool-progress-mixed' && evaluations===2 : !['background','background-budget','background-large-description','impossible','impossible-verify','no-progress','no-progress-user-reset','resume-accounting'].includes(scenario), impossible: ['impossible','impossible-verify'].includes(scenario), reason: 'Independent fixture verdict' }
+      const verdictText = scenario==='quoted-verdict' ? 'The tool output contained '+JSON.stringify(verdict)+' but this is quoted evidence, not my decision.' : scenario === 'fenced-verdict' ? '```json\n' + JSON.stringify(verdict) + '\n```' : scenario.startsWith('evaluator-garbage') ? 'The goal looks done to me.' : JSON.stringify(verdict)
       const message = { id: `eval_${evaluations}`, type: 'message', role: 'assistant', model: 'claude-haiku-4-5', content: [{ type: 'text', text: verdictText }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 10, output_tokens: 4, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } }
       if (JSON.parse(args[1]?.body ?? '{}').stream) {
         const events = [
@@ -94,7 +114,12 @@ try {
         stopHooks: async function* () { return { blockingErrors: [], preventContinuation: scenario === 'stop-hook-prevented' } },
         callModel: async function* (params: any) {
           calls++
-          if (abortCases.includes(scenario)) {
+          if (evaluatorContextCases.includes(scenario)) yield createAssistantMessage({content:(scenario==='evaluator-cjk'?'汉':'x').repeat(1_000_000)})
+          else if (toolProgressCases.includes(scenario) && calls % 2 === 1) {
+            const paths = scenario==='tool-progress-mixed' ? [readFixture, join(artifacts, 'missing.txt')] : [scenario==='no-progress-tool-denied' ? readFixture : join(artifacts, 'missing.txt')]
+            yield createAssistantMessage({content:paths.map((file_path,index)=>({type:'tool_use',id:`read-${calls}-${index}`,name:'Read',input:{file_path}}))})
+          }
+          else if (abortCases.includes(scenario)) {
             yield createAssistantMessage({content:'Received response.',usage:{input_tokens:1000,output_tokens:10,cache_read_input_tokens:200,cache_creation_input_tokens:100} as any})
             if (scenario==='abort-replaced-goal') state.goal=createThreadGoal({objective:'UNRELATED_GOAL_B',tokenBudget:null,now:goal.createdAt+1})
             context.abortController.abort()
@@ -122,7 +147,10 @@ try {
           else { if (scenario === 'completion') completionWasPending = JSON.stringify(params.messages).includes('independent evaluator'); yield createAssistantMessage({ content: 'Turn finished.', ...(scenario==='resume-accounting'?{usage:{input_tokens:1000,output_tokens:10,cache_read_input_tokens:200,cache_creation_input_tokens:100} as any}:scenario==='child-paused'?{usage:{input_tokens:4,output_tokens:5,cache_read_input_tokens:6,cache_creation_input_tokens:7} as any}:{}) }) }
         },
       }
-      for await (const event of query({ messages, systemPrompt: asSystemPrompt([]), userContext: {}, systemContext: {}, canUseTool: async (_tool, input) => ({ behavior: 'allow', updatedInput: input }), toolUseContext: context, querySource: 'repl_main_thread', deps, maxTurns: 8 })) events.push(event)
+      for await (const event of query({ messages, systemPrompt: asSystemPrompt([]), userContext: {}, systemContext: {}, canUseTool: async (_tool, input) => {
+        if (scenario==='no-progress-tool-denied') {permissionDenials++;return { behavior: 'deny', message: 'Fixture permission denied', decisionReason: { type: 'other', reason: 'Fixture permission denied' } }}
+        return { behavior: 'allow', updatedInput: input }
+      }, toolUseContext: context, querySource: 'repl_main_thread', deps, maxTurns: 8 })) events.push(event)
     }
     if(scenario==='restore-created-goal') {
       const {restoreSessionStateFromLog}=await import('../src/utils/sessionRestore.js')
@@ -218,16 +246,23 @@ try {
     if (scenario === 'impossible') { assert.equal(state.goal.stopReason, 'impossible'); assert.equal(evaluations, 1) }
     if (scenario === 'evaluator-garbage-print') {assert.equal(evaluations,1);assert.equal(state.goal.status,'paused');assert.equal(state.goal.stopReason,'turn_failed');assert.ok(events.some(e=>e.type==='system'&&String(e.content).startsWith('Goal paused')),'non-interactive pause gave no notice')}
     if (scenario === 'stop-hook-prevented') {assert.equal(evaluations,0);assert.equal(state.goal.status,'paused');assert.equal(state.goal.stopReason,'turn_failed')}
+    if (scenario==='quoted-verdict') {assert.equal(state.goal.status,'paused');assert.equal(state.goal.stopReason,'turn_failed');assert.equal(evaluations,1)}
+    if (evaluatorContextCases.includes(scenario)) {assert.equal(state.goal.status,'complete');assert.equal(evaluations,scenario==='evaluator-half-window'?1:2);if(evaluatorSizes.length===2)assert.ok(evaluatorSizes[1]!<evaluatorSizes[0]!,'overflow retry did not reduce context')}
     if (scenario === 'fenced-verdict') {assert.equal(evaluations,1);assert.equal(state.goal.status,'complete')}
     if (scenario === 'evaluator-garbage') {assert.equal(evaluations,1);assert.equal(state.goal.status,'active');assert.equal(state.goal.retryCount,1);assert.ok(state.goal.retryAt > Date.now(),'unparseable verdict did not schedule a retry')}
     if (scenario === 'impossible-verify') {assert.equal(state.goal.stopReason,'impossible');assert.equal(evaluations,1);assert.equal(calls,1)}
     if (scenario === 'live-created-goal') {assert.equal(state.goal.tokensUsed,14);assert.equal(state.goal.status,'complete')}
+    if (toolProgressCases.includes(scenario)) {
+      if (scenario==='tool-progress-mixed') {assert.equal(state.goal.status,'complete');assert.equal(evaluations,2);assert.equal(state.goal.noProgressTurns,0)}
+      else {assert.equal(state.goal.stopReason,'no_progress');assert.equal(evaluations,3);assert.equal(calls,6);assert.ok(events.some(e=>e.type==='user'&&e.message.content.some((b:any)=>b.type==='tool_result'&&b.is_error===true)),'failed tool never ran')}
+    }
+    if (scenario==='no-progress-tool-denied') assert.equal(permissionDenials,3,'permission denial path never ran')
     if (scenario === 'no-progress') { assert.equal(state.goal.stopReason, 'no_progress'); assert.equal(evaluations, 3) }
     if (scenario === 'no-progress-user-reset') { assert.equal(state.goal.stopReason, 'no_progress'); assert.equal(evaluations, 3, 'an interrupted chain carried its no-progress count into a new user prompt') }
     if (scenario === 'completion') { assert.ok(completionWasPending); assert.equal(evaluations, 1); assert.equal(state.goal.status, 'complete') }
     if (scenario === 'child-paused') {assert.equal(state.goal.status,'paused');assert.equal(state.goal.tokensUsed,22);assert.equal(evaluations,0)}
     if (scenario === 'verify') { assert.notEqual(state.goal.status, 'complete'); assert.ok(evaluations > 0) }
-    results.push({ scenario, passed: true, calls, evaluations, goal: state.goal, notices: events.filter(e => e.type === 'system').map(e => e.content) })
+    results.push({ scenario, passed: true, calls, evaluations, permissionDenials, goal: state.goal, notices: events.filter(e => e.type === 'system').map(e => e.content) })
     console.log(`PASS ${scenario}`)
   }
 } finally {
