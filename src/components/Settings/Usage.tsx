@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { extraUsage as extraUsageCommand } from 'src/commands/usage-credits/index.js';
 import { formatAutoModeClassifierUsage, formatCost, formatPromptCacheUsage, formatTotalCost, getModelUsage, getTotalCacheCreationInputTokens, getTotalCacheReadInputTokens, getTotalInputTokens, getTotalOutputTokens } from 'src/cost-tracker.js';
 import { currentLimits } from 'src/services/claudeAiLimits.js';
+import { getRequestLatchSummary } from 'src/services/api/requestLatches.js';
 import { getSubscriptionType, isClaudeAISubscriber } from 'src/utils/auth.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { Box, Text } from '../../ink.js';
@@ -288,8 +289,10 @@ const EXTRA_USAGE_SECTION_TITLE = 'Usage credits';
 // get their plan state and classifier counts, everyone else gets total cost,
 // API duration and per-model breakdown.
 function SessionCostSection(): React.ReactNode {
+  const fallbacks = getRequestLatchSummary();
+  const compatibility = fallbacks ? `\nAPI compatibility fallbacks: ${fallbacks}` : '';
   if (!isClaudeAISubscriber()) {
-    return <Text>{formatTotalCost()}</Text>;
+    return <Text>{formatTotalCost()}{compatibility}</Text>;
   }
   const plan = currentLimits.isUsingOverage
     ? 'You are currently using your overages to power your Noa Claude usage. We will automatically switch you back to your subscription rate limits when they reset'
@@ -301,6 +304,7 @@ function SessionCostSection(): React.ReactNode {
       {process.env.USER_TYPE === 'ant' && <Text>{'[ANT-ONLY] Showing cost anyway:\n ' + formatTotalCost()}</Text>}
       {promptCache && <Text>{promptCache}</Text>}
       {autoMode && <Text>{autoMode}</Text>}
+      {compatibility && <Text>{compatibility.trim()}</Text>}
     </Box>;
 }
 function LocalUsageSummary(): React.ReactNode {

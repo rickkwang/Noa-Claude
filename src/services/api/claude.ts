@@ -641,7 +641,7 @@ export async function verifyApiKey(
         async anthropic => {
           const messages: MessageParam[] = [{ role: 'user', content: 'test' }]
           // biome-ignore lint/plugin: API key verification is intentionally a minimal direct call
-          await anthropic.beta.messages.create({
+          await anthropic.beta.messages.create(applyRequestLatches({
             model,
             max_tokens: 1,
             messages,
@@ -649,7 +649,7 @@ export async function verifyApiKey(
             ...(betas.length > 0 && { betas }),
             metadata: getAPIMetadata(),
             ...getExtraBodyParams(),
-          })
+          }, model))
           return true
         },
         { maxRetries: 2, model, thinkingConfig: { type: 'disabled' } }, // Use fewer retries for API key verification

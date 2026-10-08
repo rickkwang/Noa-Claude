@@ -1,4 +1,4 @@
-// Compiled CLI: repository helper trust and auto-memory UTF-8 limits.
+// Compiled CLI trust/memory/UI boundaries and source API-key verification.
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
@@ -13,6 +13,8 @@ const entry = resolve(option('--entry') || join(repo, 'dist/cli'));
 const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'noa-startup-e2e-')));
 mkdirSync(artifacts, { recursive: true });
 const definitions = [
+  { name: 'verify-key-latch', verifyKey: true },
+  { name: 'latch-usage', latchUsage: true, trust: true },
   { name: 'project-untrusted', trust: false, run: false },
   { name: 'project-untrusted-bidi', trust: false, run: false, projectName: 'project\u202eevil' },
   { name: 'project-trusted', trust: true, run: true },
@@ -53,6 +55,10 @@ try {
         res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, result })); return;
       }
       if (req.url.includes('/messages') && !req.url.includes('count_tokens')) {
+        if ((c.verifyKey || c.latchUsage) && body.metadata) {
+          res.writeHead(400, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'metadata: Extra inputs are not permitted' } })); return;
+        }
         const message = { id: 'msg_fixture', type: 'message', role: 'assistant', model: body.model, content: [{ type: 'text', text: 'BOUNDARY_OK' }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 10, output_tokens: 5 } };
         if (!body.stream) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(message)); return; }
         const events = [
@@ -89,7 +95,25 @@ try {
       writeFileSync(join(config, '.config.json'), JSON.stringify(globalConfig));
       writeFileSync(join(config, 'settings.json'), JSON.stringify(settings));
       const env = { ...secrets, PATH: process.env.PATH, HOME: home, CLAUDE_CONFIG_DIR: config, ANTHROPIC_API_KEY: 'local-dummy', ANTHROPIC_BASE_URL: url, DISABLE_TELEMETRY: '1', DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', CLAUDE_CODE_MAX_RETRIES: '0' };
-      if (c.cd) {
+      if (c.latchUsage) env.CLAUDE_CODE_MAX_RETRIES = '2';
+      if (c.verifyKey) {
+        const probe = join(dir, 'verify-key.ts');
+        writeFileSync(probe, `globalThis.MACRO={VERSION:'test',DISPLAY_VERSION:'test'};
+          const {enableConfigs}=await import(${JSON.stringify(join(repo, 'src/utils/config.ts'))}); enableConfigs();
+          const {verifyApiKey}=await import(${JSON.stringify(join(repo, 'src/services/api/claude.ts'))});
+          console.log(JSON.stringify([await verifyApiKey('local-dummy',false),await verifyApiKey('local-dummy',false)]));
+          process.exit(0);`);
+        const child = spawn('bun', [probe], { cwd: project, env: { ...env, NODE_ENV: 'development', CLAUDE_CODE_MAX_RETRIES: '2' }, stdio: ['ignore', 'pipe', 'pipe'] });
+        let stdout = '', stderr = ''; child.stdout.on('data', d => stdout += d); child.stderr.on('data', d => stderr += d);
+        const timer = setTimeout(() => child.kill('SIGKILL'), 10000);
+        const exit = await new Promise(r => child.on('close', r)); clearTimeout(timer);
+        writeFileSync(join(dir, 'observed.json'), JSON.stringify({ exit, stdout, stderr, requests }, null, 2));
+        assert.equal(exit, 0, stderr); assert.deepEqual(JSON.parse(stdout.trim().split('\n').at(-1)), [true, true]);
+        assert.equal(requests.length, 3); assert.ok(requests[0].body.metadata);
+        assert.ok(requests.slice(1).every(r => !('metadata' in r.body)), 'verification resent rejected metadata');
+        results.push({ name: c.name, passed: true }); console.log('PASS ' + c.name); continue;
+      }
+      if (c.cd || c.latchUsage) {
         const target = join(dir, 'target'); mkdirSync(target); execFileSync('git', ['init', '-q'], { cwd: target });
         const socket = 'noa-startup-' + process.pid, tmux = (...a) => execFileSync('tmux', ['-L', socket, ...a], { encoding: 'utf8' });
         const sh = v => "'" + v.replaceAll("'", "'\\''") + "'";
@@ -101,12 +125,19 @@ try {
         tmux('new-session', '-d', '-s', 'cd', '-x', '120', '-y', '40', ['cd', sh(project), '&&', 'env', '-i', 'TERM=xterm-256color', ...Object.entries(env).map(([k, v]) => sh(k + '=' + v)), sh(entry), '--model', 'claude-opus-5-5'].join(' '));
         try {
           await until('prompt', () => /shift\+tab to cycle/.test(screen()));
-          tmux('send-keys', '-t', 'cd', '-l', '/cd ' + realpathSync(target)); await new Promise(r => setTimeout(r, 300));
-          tmux('send-keys', '-t', 'cd', 'Enter');
-          await until('cd confirmation', () => screen().includes('Yes, move here'));
-          tmux('send-keys', '-t', 'cd', 'Enter');
-          await until('persisted trust', () => readConfig().projects?.[realpathSync(target)]?.hasTrustDialogAccepted === true);
-          observation = { name: c.name, screen: screen(), projects: readConfig().projects };
+          if (c.latchUsage) {
+            tmux('send-keys', '-t', 'cd', '-l', 'Run the compatibility fixture.'); tmux('send-keys', '-t', 'cd', 'Enter');
+            await until('answer after field rejection', () => screen().includes('BOUNDARY_OK'));
+            tmux('send-keys', '-t', 'cd', '-l', '/usage'); tmux('send-keys', '-t', 'cd', 'Enter');
+            await until('latch summary in usage', () => screen().includes('API compatibility fallbacks:') && screen().includes('metadata'));
+          } else {
+            tmux('send-keys', '-t', 'cd', '-l', '/cd ' + realpathSync(target)); await new Promise(r => setTimeout(r, 300));
+            tmux('send-keys', '-t', 'cd', 'Enter');
+            await until('cd confirmation', () => screen().includes('Yes, move here'));
+            tmux('send-keys', '-t', 'cd', 'Enter');
+            await until('persisted trust', () => readConfig().projects?.[realpathSync(target)]?.hasTrustDialogAccepted === true);
+          }
+          observation = { name: c.name, screen: screen(), projects: readConfig().projects, requests };
           writeFileSync(join(dir, 'observed.json'), JSON.stringify(observation, null, 2));
         } finally { try { observation ??= { name: c.name, screen: screen() }; writeFileSync(join(dir, 'observed.json'), JSON.stringify(observation, null, 2)); } catch {} try { tmux('kill-server'); } catch {} }
         assert.equal(observation.projects[realpathSync(project)].hasTrustDialogAccepted, true);
@@ -161,5 +192,5 @@ try {
 } finally {
   writeFileSync(join(artifacts, 'results.json'), JSON.stringify(results, null, 2));
   let revision = 'unavailable'; try { revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim() } catch {}
-  writeFileSync(join(artifacts, 'verification.manifest.json'), JSON.stringify({ command: process.argv, revision, entry, entry_sha256: createHash('sha256').update(readFileSync(entry)).digest('hex'), inputs: definitions.map(c => ({ ...c, memory: c.memory === undefined ? undefined : { utf8_bytes: Buffer.byteLength(c.memory), sha256: createHash('sha256').update(c.memory).digest('hex') } })), transport: 'Compiled CLI, real project discovery/MCP initialize/auto-memory request, localhost scripted API, isolated HOME/config', passed: results.length, expected: definitions.length, exit_code: results.length === definitions.length ? 0 : 1 }, null, 2));
+  writeFileSync(join(artifacts, 'verification.manifest.json'), JSON.stringify({ command: process.argv, revision, entry, entry_sha256: createHash('sha256').update(readFileSync(entry)).digest('hex'), inputs: definitions.map(c => ({ ...c, memory: c.memory === undefined ? undefined : { utf8_bytes: Buffer.byteLength(c.memory), sha256: createHash('sha256').update(c.memory).digest('hex') } })), transport: 'Compiled CLI trust/memory/UI plus source API-key verification, localhost scripted API, isolated HOME/config', passed: results.length, expected: definitions.length, exit_code: results.length === definitions.length ? 0 : 1 }, null, 2));
 }

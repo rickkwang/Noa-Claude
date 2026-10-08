@@ -22,6 +22,13 @@ const OPTIONAL_ROOTS = new Set([
   'top_k',
 ])
 
+export function getRequestLatchSummary(): string {
+  return [...rejectedFields].flatMap(([key, fields]) => {
+    const model = key.slice(key.lastIndexOf('|') + 1)
+    return key === endpointKey(model) ? [`${model}: ${[...fields].join(', ')}`] : []
+  }).join('; ')
+}
+
 function endpointKey(model: string): string {
   const provider = getAPIProvider()
   const baseUrl = provider === 'openaiCompatible' ? process.env.OPENAI_BASE_URL : process.env.ANTHROPIC_BASE_URL
@@ -53,10 +60,9 @@ export function classifyRejectedField(
   }
   if (
     lower.includes('cache_control') &&
-    /not permitted|cannot be set|unknown (?:name|field)|unrecognized|additional propert/.test(lower) &&
-    !/system messages?\b|role .{0,2}system|\bttl\b|tool_result/i.test(message)
+    /not permitted|cannot be set|unknown (?:name|field)|unrecognized|additional propert|not supported/.test(lower)
   ) {
-    return 'cache_control'
+    return /\bttl\b/.test(lower) ? 'cache_control.ttl' : 'cache_control'
   }
   const named =
     /\b([a-z_]+(?:\.[a-z_]+)?): Extra inputs are not permitted/.exec(message) ??
@@ -87,10 +93,16 @@ export function healRejectedRequest(
   return field
 }
 
-function stripCacheControl<T>(blocks: T): T {
+function stripCacheControl<T>(blocks: T, ttlOnly = false): T {
   if (!Array.isArray(blocks)) return blocks
   return blocks.map(block => {
     if (!block || typeof block !== 'object' || !('cache_control' in block)) return block
+    if (ttlOnly) {
+      const control = (block as Record<string, any>).cache_control
+      if (!control || typeof control !== 'object' || !('ttl' in control)) return block
+      const { ttl: _, ...rest } = control
+      return { ...block, cache_control: rest }
+    }
     const { cache_control: _, ...rest } = block as Record<string, unknown>
     return rest
   }) as T
@@ -127,12 +139,13 @@ export function applyRequestLatches<T extends object>(params: T, model: string):
       if (field.startsWith('thinking.type:')) continue
       if (field.startsWith('beta:')) {
         out.betas = out.betas?.filter((beta: string) => beta !== field.slice(5))
-      } else if (field === 'cache_control') {
-        out.system = stripCacheControl(out.system)
-        out.tools = stripCacheControl(out.tools)
+      } else if (field === 'cache_control' || field === 'cache_control.ttl') {
+        const ttlOnly = field === 'cache_control.ttl'
+        out.system = stripCacheControl(out.system, ttlOnly)
+        out.tools = stripCacheControl(out.tools, ttlOnly)
         out.messages = out.messages?.map((m: Record<string, unknown>) => ({
           ...m,
-          content: stripCacheControl(m.content),
+          content: stripCacheControl(m.content, ttlOnly),
         }))
       } else {
         const [root, leaf] = field.split('.') as [string, string | undefined]
