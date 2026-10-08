@@ -36,3 +36,7 @@ CLAUDE.local.md
 **/.noa/settings.local.json
 **/.claude/settings.local.json
 **/.noa/worktrees/
+
+# per-run variant dirs and running summaries stay local; only <flow>/_state.json and inputs.md are tracked
+.claude/hillclimb/*/*/
+.claude/hillclimb/*/narrative.md

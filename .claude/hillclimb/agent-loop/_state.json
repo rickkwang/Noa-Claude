@@ -1,0 +1,66 @@
+{
+  "flow": "agent-loop",
+  "primary_metric": "tests_pass",
+  "metrics": [
+    {
+      "id": "tests_pass",
+      "label": "Tests pass",
+      "kind": "binary"
+    },
+    {
+      "id": "scope_ok",
+      "label": "In scope",
+      "kind": "binary"
+    },
+    {
+      "id": "not_noop",
+      "label": "Not a no-op",
+      "kind": "binary"
+    },
+    {
+      "id": "neg_ok",
+      "label": "No-action ok",
+      "kind": "binary"
+    }
+  ],
+  "perf_fields": [
+    "latency_s",
+    "num_turns",
+    "tool_calls",
+    "files_changed",
+    "cost_usd_reported",
+    "leak_suspect"
+  ],
+  "prices": {
+    "claude-haiku-5-5": {
+      "in": 0.1,
+      "out": 0.5
+    }
+  },
+  "harness_paths": [
+    "scripts/evals/agent-loop/cases.json",
+    "scripts/evals/agent-loop/fake-noa.mjs"
+  ],
+  "harness_sha": "1b3db0b39af6ae11f783034b510c335af0a19ae604be53264c5d8618de44c428",
+  "goal": {
+    "target": "tests_pass",
+    "direction": "higher",
+    "hold": [
+      "scope_ok",
+      "neg_ok"
+    ]
+  },
+  "approve_each_round": false,
+  "split": "none: 13 positives is too small to split; whole-set scoring, all deltas directional (eval-hillclimb Step 3, small-set option)",
+  "budget_usd_ceiling": 20,
+  "current_round": 1,
+  "best": {
+    "round": 0,
+    "test_score": 0.82,
+    "note": "whole-set positives, directional; v1 regressed (0.71) and is reverted"
+  },
+  "spent_before_rewrite_usd": 4.49,
+  "reps": 5,
+  "history_note": "2026-10-08: rewrote prompts of loop-bash-removal, loop-bypass-removal, loop-nul-path, loop-ptl-opening, loop-keychain-locked to state the contract the hidden test checks (oracle 5/5 pass, null 0/5). Earlier rounds archived in _archive/20261008T-pre-case-rewrite.",
+  "spent_total_usd": 12.97
+}
