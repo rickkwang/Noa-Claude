@@ -652,7 +652,7 @@ export type Tool<
    * Used for additional metadata like timeout, model, resume ID, etc.
    * Returns null to not display anything.
    */
-  renderToolUseTag?(input: Partial<z.infer<Input>>): React.ReactNode
+  renderToolUseTag?(input: Partial<z.infer<Input>>, context?: { toolUseId: string; toolUseResult: unknown; progressMessages: ProgressMessage<ToolProgressData>[] | undefined }): React.ReactNode
   /**
    * Optional. When omitted, no progress UI is shown while the tool runs.
    */

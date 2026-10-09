@@ -1,10 +1,9 @@
 // @ts-nocheck
-import { c as _c } from "react/compiler-runtime";
 import { feature } from 'bun:bundle';
 import { basename } from 'path';
-import React, { useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { useMinDisplayTime } from '../../hooks/useMinDisplayTime.js';
-import { Ansi, Box, Text, useTheme } from '../../ink.js';
+import { Ansi, Box, Text } from '../../ink.js';
 import { findToolByName, type Tools } from '../../Tool.js';
 import { getReplPrimitiveTools } from '../../tools/REPLTool/primitiveTools.js';
 import type { CollapsedReadSearchGroup, NormalizedAssistantMessage } from '../../types/message.js';
@@ -14,11 +13,13 @@ import { getDisplayPath } from '../../utils/file.js';
 import { formatDuration, formatSecondsShort } from '../../utils/format.js';
 import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js';
 import type { buildMessageLookups } from '../../utils/messages.js';
-import type { ThemeName } from '../../utils/theme.js';
+import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { CtrlOToExpand } from '../CtrlOToExpand.js';
 import { useSelectedMessageBg } from '../messageActions.js';
 import { PrBadge } from '../PrBadge.js';
 import { ToolUseLoader } from '../ToolUseLoader.js';
+import { AssistantToolUseMessage } from './AssistantToolUseMessage.js';
+import { UserToolResultMessage } from './UserToolResultMessage/UserToolResultMessage.js';
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 const teamMemCollapsed = feature('TEAMMEM') ? require('./teamMemCollapsed.js') as typeof import('./teamMemCollapsed.js') : null;
@@ -39,106 +40,31 @@ type Props = {
   isActiveGroup?: boolean;
 };
 
-/** Render a single tool use in verbose mode */
-function VerboseToolUse(t0) {
-  const $ = _c(24);
-  const {
-    content,
-    tools,
-    lookups,
-    inProgressToolUseIDs,
-    shouldAnimate,
-    theme
-  } = t0;
+/** Render a single tool use in verbose mode with the same header and result renderers as ungrouped calls */
+function VerboseToolUse({
+  content,
+  tools,
+  lookups,
+  inProgressToolUseIDs,
+  shouldAnimate
+}: {
+  content: { id: string; name: string; input: unknown };
+  tools: Tools;
+  lookups: ReturnType<typeof buildMessageLookups>;
+  inProgressToolUseIDs: Set<string>;
+  shouldAnimate: boolean;
+}): React.ReactNode {
   const bg = useSelectedMessageBg();
-  let t1;
-  let t2;
-  if ($[0] !== bg || $[1] !== content.id || $[2] !== content.input || $[3] !== content.name || $[4] !== inProgressToolUseIDs || $[5] !== lookups || $[6] !== shouldAnimate || $[7] !== theme || $[8] !== tools) {
-    t2 = Symbol.for("react.early_return_sentinel");
-    bb0: {
-      const tool = findToolByName(tools, content.name) ?? findToolByName(getReplPrimitiveTools(), content.name);
-      if (!tool) {
-        t2 = null;
-        break bb0;
-      }
-      let t3;
-      if ($[11] !== content.id || $[12] !== lookups.resolvedToolUseIDs) {
-        t3 = lookups.resolvedToolUseIDs.has(content.id);
-        $[11] = content.id;
-        $[12] = lookups.resolvedToolUseIDs;
-        $[13] = t3;
-      } else {
-        t3 = $[13];
-      }
-      const isResolved = t3;
-      let t4;
-      if ($[14] !== content.id || $[15] !== lookups.erroredToolUseIDs) {
-        t4 = lookups.erroredToolUseIDs.has(content.id);
-        $[14] = content.id;
-        $[15] = lookups.erroredToolUseIDs;
-        $[16] = t4;
-      } else {
-        t4 = $[16];
-      }
-      const isError = t4;
-      let t5;
-      if ($[17] !== content.id || $[18] !== inProgressToolUseIDs) {
-        t5 = inProgressToolUseIDs.has(content.id);
-        $[17] = content.id;
-        $[18] = inProgressToolUseIDs;
-        $[19] = t5;
-      } else {
-        t5 = $[19];
-      }
-      const isInProgress = t5;
-      const resultMsg = lookups.toolResultByToolUseID.get(content.id);
-      const rawToolResult = resultMsg?.type === "user" ? resultMsg.toolUseResult : undefined;
-      const parsedOutput = tool.outputSchema?.safeParse(rawToolResult);
-      const toolResult = parsedOutput?.success ? parsedOutput.data : undefined;
-      const parsedInput = tool.inputSchema.safeParse(content.input);
-      const input = parsedInput.success ? parsedInput.data : undefined;
-      const userFacingName = tool.userFacingName(input);
-      const toolUseMessage = input ? tool.renderToolUseMessage(input, {
-        theme,
-        verbose: true
-      }) : null;
-      const t6 = shouldAnimate && isInProgress;
-      const t7 = !isResolved;
-      let t8;
-      if ($[20] !== isError || $[21] !== t6 || $[22] !== t7) {
-        t8 = <ToolUseLoader shouldAnimate={t6} isUnresolved={t7} isError={isError} />;
-        $[20] = isError;
-        $[21] = t6;
-        $[22] = t7;
-        $[23] = t8;
-      } else {
-        t8 = $[23];
-      }
-      t1 = <Box key={content.id} flexDirection="column" marginTop={1} backgroundColor={bg}><Box flexDirection="row">{t8}<Text><Text bold={true}>{userFacingName}</Text>{toolUseMessage && <Text>({toolUseMessage})</Text>}</Text>{input && tool.renderToolUseTag?.(input)}</Box>{isResolved && !isError && toolResult !== undefined && <Box>{tool.renderToolResultMessage?.(toolResult, [], {
-            verbose: true,
-            tools,
-            theme
-          })}</Box>}</Box>;
-    }
-    $[0] = bg;
-    $[1] = content.id;
-    $[2] = content.input;
-    $[3] = content.name;
-    $[4] = inProgressToolUseIDs;
-    $[5] = lookups;
-    $[6] = shouldAnimate;
-    $[7] = theme;
-    $[8] = tools;
-    $[9] = t1;
-    $[10] = t2;
-  } else {
-    t1 = $[9];
-    t2 = $[10];
-  }
-  if (t2 !== Symbol.for("react.early_return_sentinel")) {
-    return t2;
-  }
-  return t1;
+  const { columns } = useTerminalSize();
+  // REPL primitive tools are not part of `tools`, but their calls still render here.
+  const callTools = useMemo(() => findToolByName(tools, content.name) ? tools : [...tools, ...getReplPrimitiveTools()], [tools, content.name]);
+  const progressMessages = lookups.progressMessagesByToolUseID.get(content.id) ?? [];
+  const resultMsg = lookups.toolResultByToolUseID.get(content.id);
+  const resultParam = resultMsg?.type === 'user' ? resultMsg.message.content.find(block => block.type === 'tool_result') : undefined;
+  return <Box flexDirection="column" marginTop={1} backgroundColor={bg}>
+      <AssistantToolUseMessage param={content as never} addMargin={false} tools={callTools} commands={[]} verbose={true} inProgressToolUseIDs={inProgressToolUseIDs} progressMessagesForMessage={progressMessages} shouldAnimate={shouldAnimate} shouldShowDot={true} lookups={lookups} />
+      {resultMsg?.type === 'user' && resultParam && <UserToolResultMessage param={resultParam} message={resultMsg} lookups={lookups} progressMessagesForMessage={progressMessages} tools={callTools} verbose={true} width={columns - 5} />}
+    </Box>;
 }
 export function CollapsedReadSearchContent({
   message,
@@ -160,7 +86,6 @@ export function CollapsedReadSearchContent({
     memoryWriteCount,
     messages: groupMessages
   } = message;
-  const [theme] = useTheme();
   const toolUseIds = getToolUseIdsFromCollapsedGroup(message);
   const anyError = toolUseIds.some(id => lookups.erroredToolUseIDs.has(id));
   const hasMemoryOps = memorySearchCount > 0 || memoryReadCount > 0 || memoryWriteCount > 0;
@@ -232,7 +157,7 @@ export function CollapsedReadSearchContent({
         {toolUses.map(msg_0 => {
         const content = msg_0.message.content[0];
         if (content?.type !== 'tool_use') return null;
-        return <VerboseToolUse key={content.id} content={content} tools={tools} lookups={lookups} inProgressToolUseIDs={inProgressToolUseIDs} shouldAnimate={shouldAnimate} theme={theme} />;
+        return <VerboseToolUse key={content.id} content={content} tools={tools} lookups={lookups} inProgressToolUseIDs={inProgressToolUseIDs} shouldAnimate={shouldAnimate} />;
       })}
         {message.hookInfos && message.hookInfos.length > 0 && <>
             <Text dimColor>

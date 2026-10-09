@@ -12,7 +12,6 @@ import { useAppStateMaybeOutsideOfProvider } from '../../state/AppState.js';
 import { findToolByName, type Tool, type ToolProgressData, type Tools } from '../../Tool.js';
 import { getAgentPersonalityName, getPersonalityNameColor, shouldUseAgentPersonalityName } from '../../tools/AgentTool/constants.js';
 import type { ProgressMessage } from '../../types/message.js';
-import { useIsClassifierChecking } from '../../utils/classifierApprovalsHook.js';
 import { logError } from '../../utils/log.js';
 import type { buildMessageLookups } from '../../utils/messages.js';
 import { MessageResponse } from '../MessageResponse.js';
@@ -107,7 +106,7 @@ function getAgentMetadataFromToolResult(toolResultMessage: unknown): {
   return {};
 }
 export function AssistantToolUseMessage(t0) {
-  const $ = _c(81);
+  const $ = _c(85);
   const {
     param,
     addMargin,
@@ -126,11 +125,15 @@ export function AssistantToolUseMessage(t0) {
   const [theme] = useTheme();
   const bg = useSelectedMessageBg();
   const pendingWorkerRequest = useAppStateMaybeOutsideOfProvider(_temp);
-  const isClassifierCheckingRaw = useIsClassifierChecking(param.id);
-  const permissionMode = useAppStateMaybeOutsideOfProvider(_temp2);
-  const hasStrippedRules = useAppStateMaybeOutsideOfProvider(_temp3);
-  const isAutoClassifier = permissionMode === "auto" || permissionMode === "plan" && hasStrippedRules;
-  const isClassifierChecking = false && isClassifierCheckingRaw && permissionMode !== "auto";
+  // Background task for this call (matched by toolUseId), as upstream's header does.
+  const taskStatus = useAppStateMaybeOutsideOfProvider(state => {
+    for (const task of Object.values(state.tasks)) {
+      if (task.toolUseId === param.id) return task.status;
+    }
+    return undefined;
+  });
+  const isTaskRunning = taskStatus === 'running';
+  const isTaskFailed = taskStatus === 'failed' || taskStatus === 'killed';
   let t1;
   if ($[0] !== param.input || $[1] !== param.name || $[2] !== tools) {
     bb0: {
@@ -276,8 +279,8 @@ export function AssistantToolUseMessage(t0) {
   const t5 = addMargin ? 1 : 0;
   const t6 = stringWidth(displayToolName) + (shouldShowDot ? 2 : 0);
   let t7;
-  if ($[31] !== isQueued || $[32] !== isResolved || $[33] !== lookups.erroredToolUseIDs || $[34] !== param.id || $[35] !== shouldAnimate || $[36] !== shouldShowDot) {
-    t7 = shouldShowDot && (isQueued ? <Box minWidth={2}><Text dimColor={isQueued}>{BLACK_CIRCLE}</Text></Box> : <ToolUseLoader shouldAnimate={shouldAnimate} isUnresolved={!isResolved} isError={lookups.erroredToolUseIDs.has(param.id)} />);
+  if ($[31] !== isQueued || $[32] !== isResolved || $[33] !== lookups.erroredToolUseIDs || $[34] !== param.id || $[35] !== shouldAnimate || $[36] !== shouldShowDot || $[81] !== isTaskRunning || $[82] !== isTaskFailed) {
+    t7 = shouldShowDot && (isQueued ? <Box minWidth={2}><Text dimColor={isQueued}>{BLACK_CIRCLE}</Text></Box> : <ToolUseLoader shouldAnimate={shouldAnimate || isTaskRunning} isUnresolved={!isResolved} isError={lookups.erroredToolUseIDs.has(param.id) || isTaskFailed} />);
     $[31] = isQueued;
     $[32] = isResolved;
     $[33] = lookups.erroredToolUseIDs;
@@ -285,6 +288,8 @@ export function AssistantToolUseMessage(t0) {
     $[35] = shouldAnimate;
     $[36] = shouldShowDot;
     $[37] = t7;
+    $[81] = isTaskRunning;
+    $[82] = isTaskFailed;
   } else {
     t7 = $[37];
   }
@@ -309,12 +314,21 @@ export function AssistantToolUseMessage(t0) {
     t10 = $[43];
   }
   let t11;
-  if ($[44] !== input_0.data || $[45] !== input_0.success || $[46] !== tool_0) {
-    t11 = input_0.success && tool_0.renderToolUseTag && tool_0.renderToolUseTag(input_0.data);
+  const tagResultMsg = lookups.toolResultByToolUseID.get(param.id);
+  const tagToolUseResult = tagResultMsg?.type === 'user' ? tagResultMsg.toolUseResult : undefined;
+  const tagProgressMessages = lookups.progressMessagesByToolUseID.get(param.id);
+  if ($[44] !== input_0.data || $[45] !== input_0.success || $[46] !== tool_0 || $[83] !== tagToolUseResult || $[84] !== tagProgressMessages) {
+    t11 = input_0.success && tool_0.renderToolUseTag && tool_0.renderToolUseTag(input_0.data, {
+      toolUseId: param.id,
+      toolUseResult: tagToolUseResult,
+      progressMessages: tagProgressMessages
+    });
     $[44] = input_0.data;
     $[45] = input_0.success;
     $[46] = tool_0;
     $[47] = t11;
+    $[83] = tagToolUseResult;
+    $[84] = tagProgressMessages;
   } else {
     t11 = $[47];
   }
@@ -331,15 +345,13 @@ export function AssistantToolUseMessage(t0) {
     t12 = $[53];
   }
   let t13;
-  if ($[54] !== inProgressToolCallCount || $[55] !== isAutoClassifier || $[56] !== isClassifierChecking || $[57] !== isQueued || $[58] !== isResolved || $[59] !== isTranscriptMode || $[60] !== isWaitingForPermission || $[61] !== lookups || $[62] !== param.id || $[63] !== progressMessagesForMessage || $[64] !== terminalSize || $[65] !== tool_0 || $[66] !== tools || $[67] !== verbose) {
-    t13 = !isResolved && !isQueued && (isClassifierChecking ? <MessageResponse height={1}><Text dimColor={true}>{isAutoClassifier ? "Auto classifier checking\u2026" : "Bash classifier checking\u2026"}</Text></MessageResponse> : isWaitingForPermission ? <MessageResponse height={1}><Text dimColor={true}>Waiting for permission…</Text></MessageResponse> : renderToolUseProgressMessage(tool_0, tools, lookups, param.id, progressMessagesForMessage, {
+  if ($[54] !== inProgressToolCallCount || $[57] !== isQueued || $[58] !== isResolved || $[59] !== isTranscriptMode || $[60] !== isWaitingForPermission || $[61] !== lookups || $[62] !== param.id || $[63] !== progressMessagesForMessage || $[64] !== terminalSize || $[65] !== tool_0 || $[66] !== tools || $[67] !== verbose) {
+    t13 = !isResolved && !isQueued && (isWaitingForPermission ?<MessageResponse height={1}><Text dimColor={true}>Waiting for permission…</Text></MessageResponse> : renderToolUseProgressMessage(tool_0, tools, lookups, param.id, progressMessagesForMessage, {
       verbose,
       inProgressToolCallCount,
       isTranscriptMode
     }, terminalSize));
     $[54] = inProgressToolCallCount;
-    $[55] = isAutoClassifier;
-    $[56] = isClassifierChecking;
     $[57] = isQueued;
     $[58] = isResolved;
     $[59] = isTranscriptMode;
@@ -386,12 +398,6 @@ export function AssistantToolUseMessage(t0) {
     t16 = $[80];
   }
   return t16;
-}
-function _temp3(state_1) {
-  return !!state_1.toolPermissionContext.strippedDangerousRules;
-}
-function _temp2(state_0) {
-  return state_0.toolPermissionContext.mode;
 }
 function _temp(state) {
   return state.pendingWorkerRequest;

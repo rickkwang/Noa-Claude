@@ -216,6 +216,20 @@ export const INTERRUPT_MESSAGE_FOR_TOOL_USE =
  */
 export const TURN_ENDED_FOR_MESSAGE_TOOL_RESULT =
   '[Tool call did not complete: the turn was ended to deliver the message that follows. Nothing refused it; re-run it if still needed.]'
+export const TOOL_CALL_INTERRUPTED_RESULT =
+  "[Tool call interrupted: the session ended before this call's result was recorded, so its outcome is unknown. Check whether it took effect before relying on it or running it again.]"
+export const TOOL_CALL_RESULT_NOT_IN_COPY =
+  "[Tool call result not in this copy: this session was copied from another session before that session recorded this call's result. The call may have finished there, may still be running there, or may never have run. Check whether it took effect before relying on it or running it again.]"
+const TOOL_CALL_INTERRUPTED_MARKERS = [
+  INTERRUPT_MESSAGE_FOR_TOOL_USE,
+  TURN_ENDED_FOR_MESSAGE_TOOL_RESULT,
+  TOOL_CALL_INTERRUPTED_RESULT,
+  TOOL_CALL_RESULT_NOT_IN_COPY,
+]
+/** Tool results where the call was cut off, not refused or failed. */
+export function isToolCallInterruptedResult(content: unknown): boolean {
+  return typeof content === 'string' && TOOL_CALL_INTERRUPTED_MARKERS.some(marker => content.includes(marker))
+}
 
 // Abort signals of turns send-now ended to deliver a message. The reason stays
 // 'interrupt' — shells check that to background rather than kill — so the

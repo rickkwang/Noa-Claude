@@ -4,7 +4,9 @@ import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs
 import * as React from 'react';
 import type { Tools } from '../../../Tool.js';
 import type { NormalizedUserMessage, ProgressMessage } from '../../../types/message.js';
-import { type buildMessageLookups, CANCEL_MESSAGE, INTERRUPT_MESSAGE_FOR_TOOL_USE, REJECT_MESSAGE, TURN_ENDED_FOR_MESSAGE_TOOL_RESULT } from '../../../utils/messages.js';
+import { type buildMessageLookups, CANCEL_MESSAGE, isToolCallInterruptedResult, REJECT_MESSAGE } from '../../../utils/messages.js';
+import { InterruptedByUser } from '../../InterruptedByUser.js';
+import { MessageResponse } from '../../MessageResponse.js';
 import { UserToolCanceledMessage } from './UserToolCanceledMessage.js';
 import { UserToolErrorMessage } from './UserToolErrorMessage.js';
 import { UserToolRejectMessage } from './UserToolRejectMessage.js';
@@ -48,7 +50,10 @@ export function UserToolResultMessage(t0) {
     }
     return t1;
   }
-  if (typeof param.content === "string" && param.content.startsWith(REJECT_MESSAGE) || param.content === INTERRUPT_MESSAGE_FOR_TOOL_USE || param.content === TURN_ENDED_FOR_MESSAGE_TOOL_RESULT) {
+  if (isToolCallInterruptedResult(param.content)) {
+    return <MessageResponse height={1}><InterruptedByUser /></MessageResponse>;
+  }
+  if (typeof param.content === "string" && param.content.startsWith(REJECT_MESSAGE)) {
     const t1 = toolUse.toolUse.input as {
       [key: string]: unknown;
     };
