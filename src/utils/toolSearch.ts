@@ -633,18 +633,6 @@ export type DeferredToolsDeltaScanContext = {
 }
 
 /**
- * True → announce deferred tools via persisted delta attachments.
- * False → claude.ts keeps its per-call <available-deferred-tools>
- * header prepend (the attachment does not fire).
- */
-export function isDeferredToolsDeltaEnabled(): boolean {
-  return (
-    process.env.USER_TYPE === 'ant' ||
-    getFeatureValue_CACHED_MAY_BE_STALE('tengu_glacier_2xr', false)
-  )
-}
-
-/**
  * Diff the current deferred-tool pool against what's already been
  * announced in this conversation (reconstructed by scanning for prior
  * deferred_tools_delta attachments). Returns null if nothing changed.

@@ -646,7 +646,9 @@ export async function runForkedAgent({
         agentId &&
         (msg.type === 'assistant' ||
           msg.type === 'user' ||
-          msg.type === 'progress')
+          msg.type === 'progress' ||
+          (msg.type === 'attachment' &&
+            msg.attachment.type === 'deferred_tools_delta'))
       ) {
         await recordSidechainTranscript([msg], agentId, lastRecordedUuid).catch(
           err =>

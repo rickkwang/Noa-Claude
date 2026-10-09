@@ -168,7 +168,6 @@ import {
 import type { QuerySource } from '../constants/querySource.js'
 import {
   getDeferredToolsDelta,
-  isDeferredToolsDeltaEnabled,
   isToolSearchEnabledOptimistic,
   isToolSearchToolAvailable,
   modelSupportsToolReference,
@@ -1871,14 +1870,13 @@ function getUltrathinkEffortAttachment(input: string | null): Attachment[] {
   return [{ type: 'ultrathink_effort', level: 'high' }]
 }
 
-// Exported for compact.ts — the gate must be identical at both call sites.
+// Shared by the input attachments, the query loop, and compact.ts (post-compaction re-announce).
 export function getDeferredToolsDeltaAttachment(
   tools: Tools,
   model: string,
   messages: Message[] | undefined,
   scanContext?: DeferredToolsDeltaScanContext,
 ): Attachment[] {
-  if (!isDeferredToolsDeltaEnabled()) return []
   // These three checks mirror the sync parts of isToolSearchEnabled —
   // the attachment text says "available via ToolSearch", so ToolSearch
   // has to actually be in the request. The async auto-threshold check

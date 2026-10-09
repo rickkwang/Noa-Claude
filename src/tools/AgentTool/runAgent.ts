@@ -35,6 +35,7 @@ import type { Command } from '../../types/command.js'
 import type { AgentId } from '../../types/ids.js'
 import type {
   AssistantMessage,
+  AttachmentMessage,
   Message,
   ProgressMessage,
   RequestStartEvent,
@@ -252,7 +253,7 @@ type QueryMessage =
 
 /**
  * Type guard to check if a message from query() is a recordable Message type.
- * Matches the types we want to record: assistant, user, progress, or system compact_boundary.
+ * Includes deferred-tool announcements so resumed agents retain their prefix.
  */
 function isRecordableMessage(
   msg: QueryMessage,
@@ -260,11 +261,14 @@ function isRecordableMessage(
   | AssistantMessage
   | UserMessage
   | ProgressMessage
-  | SystemCompactBoundaryMessage {
+  | SystemCompactBoundaryMessage
+  | AttachmentMessage {
   return (
     msg.type === 'assistant' ||
     msg.type === 'user' ||
     msg.type === 'progress' ||
+    (msg.type === 'attachment' &&
+      msg.attachment.type === 'deferred_tools_delta') ||
     (msg.type === 'system' &&
       'subtype' in msg &&
       msg.subtype === 'compact_boundary')
@@ -853,8 +857,11 @@ export async function* runAgent({
         continue
       }
 
-      // Yield attachment messages (e.g., structured_output) without recording them
-      if (message.type === 'attachment') {
+      // Most attachments are ephemeral; deferred-tool announcements must survive resume.
+      if (
+        message.type === 'attachment' &&
+        message.attachment.type !== 'deferred_tools_delta'
+      ) {
         // Handle max turns reached signal from query.ts
         if (message.attachment.type === 'max_turns_reached') {
           logForDebugging(

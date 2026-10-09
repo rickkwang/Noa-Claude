@@ -24,6 +24,7 @@ bun run e2e:loop          # compiled CLI loop/transport
 bun run e2e:bare          # compiled CLI `--bare` request shape + tool loop
 bun run e2e:goal          # source query/tool/evaluator, async goal boundaries
 bun run e2e:state         # task/mailbox persistence, snapshot acknowledgment
+bun run e2e:deferred      # deferred-tool announcements persist across query, resume, subagent, fork (local scripted API)
 bun run e2e:startup       # MCP headersHelper trust/cwd/credential env, /cd trust persistence (tmux), UTF-8 auto-memory limits
 bun run e2e:background    # query/queue/transcript pipeline + tmux/PTY replies and failure UI; requires tmux
 # Manual; skip without an upstream binary

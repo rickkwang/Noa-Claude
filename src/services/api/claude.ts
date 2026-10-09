@@ -196,13 +196,11 @@ import {
 } from 'src/utils/thinking.js'
 import {
   extractDiscoveredToolNames,
-  isDeferredToolsDeltaEnabled,
   isToolSearchEnabled,
 } from 'src/utils/toolSearch.js'
 import { API_MAX_MEDIA_PER_REQUEST } from '../../constants/apiLimits.js'
 import { ADVISOR_BETA_HEADER } from '../../constants/betas.js'
 import {
-  formatDeferredToolLine,
   isDeferredTool,
   TOOL_SEARCH_TOOL_NAME,
 } from '../../tools/ToolSearchTool/prompt.js'
@@ -1411,29 +1409,7 @@ async function* queryModel(
   })
 
   // Compute fingerprint from first user message for attribution.
-  // Must run BEFORE injecting synthetic messages (e.g. deferred tool names)
-  // so the fingerprint reflects the actual user input.
   const fingerprint = computeFingerprintFromMessages(messagesForAPI)
-
-  // When the delta attachment is enabled, deferred tools are announced
-  // via persisted deferred_tools_delta attachments instead of this
-  // ephemeral prepend (which busts cache whenever the pool changes).
-  if (useToolSearch && !isDeferredToolsDeltaEnabled()) {
-    const deferredToolList = tools
-      .filter(t => deferredToolNames.has(t.name))
-      .map(formatDeferredToolLine)
-      .sort()
-      .join('\n')
-    if (deferredToolList) {
-      messagesForAPI = [
-        createUserMessage({
-          content: `<available-deferred-tools>\n${deferredToolList}\n</available-deferred-tools>`,
-          isMeta: true,
-        }),
-        ...messagesForAPI,
-      ]
-    }
-  }
 
   // filter(Boolean) works by converting each element to a boolean - empty strings become false and are filtered out.
   systemPrompt = asSystemPrompt(

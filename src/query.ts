@@ -83,6 +83,7 @@ import {
   createAttachmentMessage,
   filterDuplicateMemoryAttachments,
   getAttachmentMessages,
+  getDeferredToolsDeltaAttachment,
   startRelevantMemoryPrefetch,
 } from './utils/attachments.js'
 /* eslint-disable @typescript-eslint/no-require-imports */
@@ -916,6 +917,27 @@ async function* queryLoop(
           let streamingFallbackOccured = false
           queryCheckpoint('query_api_streaming_start')
           toolUseContext = toolUseContext.refreshRuntimeContext?.(toolUseContext) ?? toolUseContext
+          // Direct agent/SDK callers may skip input attachments. Persist announcements
+          // before sending so every entry point keeps the same append-only history.
+          for (const delta of getDeferredToolsDeltaAttachment(
+            toolUseContext.options.tools,
+            currentModel,
+            messagesForQuery,
+            {
+              callSite: toolUseContext.agentId
+                ? 'attachments_subagent'
+                : 'attachments_main',
+              querySource,
+            },
+          )) {
+            const announcement = createAttachmentMessage(delta)
+            messagesForQuery.push(announcement)
+            yield announcement
+          }
+          // Forked children read toolUseContext.messages (AgentTool forkContextMessages),
+          // so it must include the announcements pushed above.
+          toolUseContext = { ...toolUseContext, messages: messagesForQuery }
+          updatedToolUseContext = toolUseContext
           if (signatureStripSessions.has(getSessionId())) {
             messagesForQuery = stripSignatureBlocks(messagesForQuery)
           }
