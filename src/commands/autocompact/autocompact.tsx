@@ -32,7 +32,7 @@ function AutoCompactWindowDialog({
   // Only an explicit setting starts from its own value; defaults start at auto.
   const initial =
     fromEnv || resolution.source === 'settings'
-      ? Math.min(MAX_WINDOW, Math.max(MIN_WINDOW, Math.round(resolution.window / STEP) * STEP))
+      ? Math.min(MAX_WINDOW, Math.max(MIN_WINDOW, Math.round(resolution.configured / STEP) * STEP))
       : 0
   const [value, setValue] = useState(initial)
   const [changed, setChanged] = useState(false)
