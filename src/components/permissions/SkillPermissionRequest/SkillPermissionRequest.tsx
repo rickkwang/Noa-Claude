@@ -312,7 +312,7 @@ export function SkillPermissionRequest(props) {
   const t14 = commandObj?.description;
   let t15;
   if ($[34] !== t14) {
-    t15 = <Box flexDirection="column" paddingX={2} paddingY={1}><Text dimColor={true}>{t14}</Text></Box>;
+    t15 = <Box flexDirection="column" paddingX={1}><Text dimColor={true}>{t14}</Text></Box>;
     $[34] = t14;
     $[35] = t15;
   } else {
@@ -348,7 +348,7 @@ export function SkillPermissionRequest(props) {
   }
   let t19;
   if ($[46] !== t12 || $[47] !== t15 || $[48] !== t18 || $[49] !== workerBadge) {
-    t19 = <PermissionDialog title={t12} workerBadge={workerBadge}>{t13}{t15}{t18}</PermissionDialog>;
+    t19 = <PermissionDialog title={t12} innerPaddingX={0} workerBadge={workerBadge}>{t13}{t15}{t18}</PermissionDialog>;
     $[46] = t12;
     $[47] = t15;
     $[48] = t18;

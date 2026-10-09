@@ -7,7 +7,7 @@ import type { PermissionUpdate } from '../../../utils/permissions/PermissionUpda
 import { shouldShowAlwaysAllowOptions } from '../../../utils/permissions/permissionsLoader.js';
 import type { OptionWithDescription } from '../../CustomSelect/select.js';
 import { generateShellSuggestionsLabel } from '../shellPermissionHelpers.js';
-export type BashToolUseOption = 'yes' | 'yes-apply-suggestions' | 'yes-prefix-edited' | 'yes-classifier-reviewed' | 'no';
+export type BashToolUseOption = 'yes' | 'yes-apply-suggestions' | 'yes-prefix-edited' | 'yes-classifier-reviewed' | 'yes-switch-auto' | 'no';
 
 /**
  * Check if a description already exists in the allow list.
@@ -41,7 +41,8 @@ export function bashToolUseOptions({
   yesInputMode = false,
   noInputMode = false,
   editablePrefix,
-  onEditablePrefixChange
+  onEditablePrefixChange,
+  autoModeAvailable = false
 }: {
   suggestions?: PermissionUpdate[];
   decisionReason?: PermissionDecisionReason;
@@ -58,6 +59,8 @@ export function bashToolUseOptions({
   editablePrefix?: string;
   /** Callback when the user edits the prefix value. */
   onEditablePrefixChange?: (value: string) => void;
+  /** Offer "Yes, and switch to auto mode" (only when auto mode can be enabled). */
+  autoModeAvailable?: boolean;
 }): OptionWithDescription<BashToolUseOption>[] {
   const options: OptionWithDescription<BashToolUseOption>[] = [];
   if (yesInputMode) {
@@ -127,6 +130,13 @@ export function bashToolUseOptions({
         resetCursorOnUpdate: true
       });
     }
+  }
+  if (autoModeAvailable) {
+    options.push({
+      label: 'Yes, and switch to auto mode',
+      value: 'yes-switch-auto',
+      description: '\u00b7 auto mode handles these prompts for you'
+    });
   }
   if (noInputMode) {
     options.push({

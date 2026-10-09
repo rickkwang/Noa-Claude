@@ -284,7 +284,7 @@ export function FallbackPermissionRequest(t0) {
   }
   let t16;
   if ($[41] !== t13 || $[42] !== t15) {
-    t16 = <Box flexDirection="column" paddingX={2} paddingY={1}>{t13}{t15}</Box>;
+    t16 = <Box flexDirection="column" paddingX={1}>{t13}{t15}</Box>;
     $[41] = t13;
     $[42] = t15;
     $[43] = t16;
@@ -321,7 +321,7 @@ export function FallbackPermissionRequest(t0) {
   }
   let t20;
   if ($[54] !== t16 || $[55] !== t19 || $[56] !== workerBadge) {
-    t20 = <PermissionDialog title="Tool use" workerBadge={workerBadge}>{t16}{t19}</PermissionDialog>;
+    t20 = <PermissionDialog title="Tool use" innerPaddingX={0} workerBadge={workerBadge}>{t16}{t19}</PermissionDialog>;
     $[54] = t16;
     $[55] = t19;
     $[56] = workerBadge;

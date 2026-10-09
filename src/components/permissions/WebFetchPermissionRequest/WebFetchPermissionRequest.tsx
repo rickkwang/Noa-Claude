@@ -195,7 +195,7 @@ export function WebFetchPermissionRequest(t0) {
   }
   let t9;
   if ($[22] !== t7 || $[23] !== t8) {
-    t9 = <Box flexDirection="column" paddingX={2} paddingY={1}>{t7}{t8}</Box>;
+    t9 = <Box flexDirection="column" paddingX={1} paddingY={1}>{t7}{t8}</Box>;
     $[22] = t7;
     $[23] = t8;
     $[24] = t9;
@@ -237,7 +237,7 @@ export function WebFetchPermissionRequest(t0) {
   }
   let t14;
   if ($[34] !== t10 || $[35] !== t13) {
-    t14 = <Box flexDirection="column">{t10}{t11}{t13}</Box>;
+    t14 = <Box flexDirection="column" paddingX={1}>{t10}{t11}{t13}</Box>;
     $[34] = t10;
     $[35] = t13;
     $[36] = t14;
@@ -246,7 +246,7 @@ export function WebFetchPermissionRequest(t0) {
   }
   let t15;
   if ($[37] !== t14 || $[38] !== t9 || $[39] !== workerBadge) {
-    t15 = <PermissionDialog title="Fetch" workerBadge={workerBadge}>{t9}{t14}</PermissionDialog>;
+    t15 = <PermissionDialog title="Fetch" innerPaddingX={0} workerBadge={workerBadge}>{t9}{t14}</PermissionDialog>;
     $[37] = t14;
     $[38] = t9;
     $[39] = workerBadge;

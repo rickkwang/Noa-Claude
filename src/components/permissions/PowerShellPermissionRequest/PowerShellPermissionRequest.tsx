@@ -193,8 +193,8 @@ export function PowerShellPermissionRequest(props: PermissionRequestProps): Reac
         }
     }
   }
-  return <PermissionDialog workerBadge={workerBadge} title="PowerShell command">
-      <Box flexDirection="column" paddingX={2} paddingY={1}>
+  return <PermissionDialog workerBadge={workerBadge} title="PowerShell command" innerPaddingX={0}>
+      <Box flexDirection="column" paddingX={1}>
         <Text dimColor={explainerState.visible}>
           {PowerShellTool.renderToolUseMessage({
           command,

@@ -8,7 +8,7 @@ import { useKeybinding } from '../../../keybindings/useKeybinding.js';
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../../services/analytics/growthbook.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from '../../../services/analytics/index.js';
 import { sanitizeToolNameForAnalytics } from '../../../services/analytics/metadata.js';
-import { useAppState } from '../../../state/AppState.js';
+import { useAppState, useSetAppState } from '../../../state/AppState.js';
 import { BashTool } from '../../../tools/BashTool/BashTool.js';
 import { getFirstWordPrefix, getSimpleCommandPrefix } from '../../../tools/BashTool/bashPermissions.js';
 import { getDestructiveCommandWarning } from '../../../tools/BashTool/destructiveCommandWarning.js';
@@ -17,9 +17,12 @@ import { shouldUseSandbox } from '../../../tools/BashTool/shouldUseSandbox.js';
 import { getCompoundCommandPrefixesStatic } from '../../../utils/bash/prefix.js';
 import { createPromptRuleContent, generateGenericDescription, getBashPromptAllowDescriptions, isClassifierPermissionsEnabled } from '../../../utils/permissions/bashClassifier.js';
 import { extractRules } from '../../../utils/permissions/PermissionUpdate.js';
+import type { PermissionDecisionReason } from '../../../utils/permissions/PermissionResult.js';
+import { isAutoModeGateEnabled, transitionPermissionMode } from '../../../utils/permissions/permissionSetup.js';
 import type { PermissionUpdate } from '../../../utils/permissions/PermissionUpdateSchema.js';
 import { SandboxManager } from '../../../utils/sandbox/sandbox-adapter.js';
 import { Select } from '../../CustomSelect/select.js';
+import { KeyboardShortcutHint } from '../../design-system/KeyboardShortcutHint.js';
 import { ShimmerChar } from '../../Spinner/ShimmerChar.js';
 import { useShimmerAnimation } from '../../Spinner/useShimmerAnimation.js';
 import { type UnaryEvent, usePermissionRequestLogging } from '../hooks.js';
@@ -133,6 +136,29 @@ export function BashPermissionRequest(props) {
   return t1;
 }
 
+// Same test as upstream: an ask rule, directly or inside a compound command's
+// sub-results, means auto mode can't be offered for this prompt.
+function isAskDecision(reason: PermissionDecisionReason | undefined): boolean {
+  if (reason?.type === 'rule') return reason.rule.ruleBehavior === 'ask';
+  if (reason?.type === 'subcommandResults') {
+    for (const result of reason.reasons.values()) {
+      if (result.behavior === 'ask' && isAskDecision(result.decisionReason)) return true;
+    }
+  }
+  return false;
+}
+
+// Safety checks the classifier can't approve (directly or in sub-results).
+function hasUnapprovableSafetyCheck(reason: PermissionDecisionReason | undefined): boolean {
+  if (reason?.type === 'safetyCheck') return !reason.classifierApprovable;
+  if (reason?.type === 'subcommandResults') {
+    for (const result of reason.reasons.values()) {
+      if (hasUnapprovableSafetyCheck(result.decisionReason)) return true;
+    }
+  }
+  return false;
+}
+
 // Inner component that uses hooks - only called for non-MCP CLI commands
 function BashPermissionRequestInner({
   toolUseConfirm,
@@ -149,6 +175,7 @@ function BashPermissionRequestInner({
 }): React.ReactNode {
   const [theme] = useTheme();
   const toolPermissionContext = useAppState(s => s.toolPermissionContext);
+  const setAppState = useSetAppState();
   const explainerState = usePermissionExplainerUI({
     toolName: toolUseConfirm.tool.name,
     toolInput: toolUseConfirm.input,
@@ -287,6 +314,11 @@ function BashPermissionRequestInner({
   }), []);
   usePermissionRequestLogging(toolUseConfirm, unaryEvent);
   const existingAllowDescriptions = useMemo(() => getBashPromptAllowDescriptions(toolPermissionContext), [toolPermissionContext]);
+  // Same offer rules as upstream: only from default/acceptEdits, not for ask
+  // rules, not when a prefix is being edited, and not for safety checks the
+  // classifier can't approve. Tip and option share this condition.
+  const decisionReason = toolUseConfirm.permissionResult.decisionReason;
+  const showAutoModeOption = feature('AUTO_MODE') && isAutoModeGateEnabled() && (toolPermissionContext.mode === 'default' || toolPermissionContext.mode === 'acceptEdits') && !editablePrefix && !isAskDecision(decisionReason) && decisionReason?.type !== 'hook' && !hasUnapprovableSafetyCheck(decisionReason);
   const options = useMemo(() => bashToolUseOptions({
     suggestions: toolUseConfirm.permissionResult.behavior === 'ask' ? toolUseConfirm.permissionResult.suggestions : undefined,
     decisionReason: toolUseConfirm.permissionResult.decisionReason,
@@ -299,8 +331,9 @@ function BashPermissionRequestInner({
     yesInputMode,
     noInputMode,
     editablePrefix,
-    onEditablePrefixChange
-  }), [toolUseConfirm, classifierDescription, initialClassifierDescriptionEmpty, existingAllowDescriptions, yesInputMode, noInputMode, editablePrefix, onEditablePrefixChange]);
+    onEditablePrefixChange,
+    autoModeAvailable: showAutoModeOption
+  }), [toolUseConfirm, classifierDescription, initialClassifierDescriptionEmpty, existingAllowDescriptions, yesInputMode, noInputMode, editablePrefix, onEditablePrefixChange, showAutoModeOption]);
 
   // Toggle permission debug info with keybinding
   const handleToggleDebug = useCallback(() => {
@@ -324,7 +357,8 @@ function BashPermissionRequestInner({
       yes: 1,
       'yes-apply-suggestions': 2,
       'yes-prefix-edited': 2,
-      no: 3
+      'yes-switch-auto': 3,
+      no: 4
     };
     if (feature('BASH_CLASSIFIER')) {
       optionIndex = {
@@ -332,7 +366,8 @@ function BashPermissionRequestInner({
         'yes-apply-suggestions': 2,
         'yes-prefix-edited': 2,
         'yes-classifier-reviewed': 3,
-        no: 4
+        'yes-switch-auto': 4,
+        no: 5
       };
     }
     logEvent('tengu_permission_request_option_selected', {
@@ -397,6 +432,22 @@ function BashPermissionRequestInner({
           onDone();
           break;
         }
+      case 'yes-switch-auto':
+        {
+          logUnaryPermissionEvent('tool_use_single', toolUseConfirm, 'accept');
+          // 'auto' is not an external permission mode, so it can't go through a
+          // setMode update; apply the same transition the mode cycle uses.
+          setAppState(prev => ({
+            ...prev,
+            toolPermissionContext: {
+              ...transitionPermissionMode(prev.toolPermissionContext.mode, 'auto', prev.toolPermissionContext),
+              mode: 'auto'
+            }
+          }));
+          toolUseConfirm.onAllow(toolUseConfirm.input, []);
+          onDone();
+          break;
+        }
       case 'yes-apply-suggestions':
         {
           logUnaryPermissionEvent('tool_use_single', toolUseConfirm, 'accept');
@@ -433,8 +484,10 @@ function BashPermissionRequestInner({
             {'"'}
           </Text>}
       </Text> : toolUseConfirm.classifierCheckInProgress ? <ClassifierCheckingSubtitle /> : classifierWasChecking ? <Text dimColor>Requires manual approval</Text> : undefined : undefined;
-  return <PermissionDialog workerBadge={workerBadge} title={sandboxingEnabled_0 && !isSandboxed_0 ? 'Bash command (unsandboxed)' : 'Bash command'} subtitle={classifierSubtitle}>
-      <Box flexDirection="column" paddingX={2} paddingY={1}>
+  const autoModeTip = showAutoModeOption ? <Text bold>Tip: auto mode handles these prompts for you — choose "switch to auto mode" below</Text> : classifierSubtitle;
+  return <PermissionDialog workerBadge={workerBadge} title={sandboxingEnabled_0 && !isSandboxed_0 ? 'Bash command (unsandboxed)' : 'Bash command'} subtitle={autoModeTip}>
+      <Box flexDirection="column" paddingX={1}>
+        {!explainerState.visible && <Text dimColor>{toolUseConfirm.description}</Text>}
         <Text dimColor={explainerState.visible}>
           {BashTool.renderToolUseMessage({
           command,
@@ -445,7 +498,6 @@ function BashPermissionRequestInner({
         } // always show the full command
         )}
         </Text>
-        {!explainerState.visible && <Text dimColor>{toolUseConfirm.description}</Text>}
         <PermissionExplainerContent visible={explainerState.visible} promise={explainerState.promise} />
       </Box>
       {showPermissionDebug ? <>
@@ -454,7 +506,7 @@ function BashPermissionRequestInner({
               <Text dimColor>Ctrl-D to hide debug info</Text>
             </Box>}
         </> : <>
-          <Box flexDirection="column">
+          <Box flexDirection="column" paddingX={1}>
             <PermissionRuleExplanation permissionResult={toolUseConfirm.permissionResult} toolType="command" />
             {destructiveWarning_0 && <Box marginBottom={1}>
                 <Text color="warning" dimColor={feature('BASH_CLASSIFIER') ? toolUseConfirm.classifierAutoApproved : false}>
@@ -469,9 +521,9 @@ function BashPermissionRequestInner({
           disabled: true
         })) : options : options} isDisabled={feature('BASH_CLASSIFIER') ? toolUseConfirm.classifierAutoApproved : false} inlineDescriptions onChange={onSelect} onCancel={() => handleReject()} onFocus={handleFocus} onInputModeToggle={handleInputModeToggle} />
           </Box>
-          <Box justifyContent="space-between" marginTop={1}>
-            <Text dimColor>
-              Esc to cancel
+          <Box justifyContent="space-between" marginTop={1} paddingX={1}>
+            <Text dimColor wrap="truncate-end">
+              <KeyboardShortcutHint shortcut="Esc" action="cancel" />
               {(focusedOption === 'yes' && !yesInputMode || focusedOption === 'no' && !noInputMode) && ' · Tab to amend'}
               {explainerState.enabled && ` · ctrl+e to ${explainerState.visible ? 'hide' : 'explain'}`}
             </Text>

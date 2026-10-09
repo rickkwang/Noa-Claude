@@ -15,6 +15,7 @@ import { usePermissionRequestLogging } from '../hooks.js';
 import { PermissionDialog } from '../PermissionDialog.js';
 import type { ToolUseConfirm } from '../PermissionRequest.js';
 import type { WorkerBadgeProps } from '../WorkerBadge.js';
+import { KeyboardShortcutHint } from '../../design-system/KeyboardShortcutHint.js';
 import type { IDEDiffSupport } from './ideDiffConfig.js';
 import type { FileOperationType, PermissionOption } from './permissionOptions.js';
 import { type ToolInput, useFilePermissionDialog } from './useFilePermissionDialog.js';
@@ -193,12 +194,12 @@ export function FilePermissionDialog<T extends ToolInput = ToolInput>({
           type: 'reject'
         })} onFocus={value_0 => setFocusedOption(value_0)} onInputModeToggle={handleInputModeToggle} />
         </Box>
+        <Box paddingX={1} marginTop={1}>
+          <Text dimColor wrap="truncate-end">
+            <KeyboardShortcutHint shortcut="Esc" action="cancel" />
+            {(focusedOption === 'yes' && !yesInputMode || focusedOption === 'no' && !noInputMode) && ' · Tab to amend'}
+          </Text>
+        </Box>
       </PermissionDialog>
-      <Box paddingX={1} marginTop={1}>
-        <Text dimColor>
-          Esc to cancel
-          {(focusedOption === 'yes' && !yesInputMode || focusedOption === 'no' && !noInputMode) && ' · Tab to amend'}
-        </Text>
-      </Box>
     </>;
 }

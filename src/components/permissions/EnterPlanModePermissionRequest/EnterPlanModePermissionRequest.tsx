@@ -108,7 +108,7 @@ export function EnterPlanModePermissionRequest(t0) {
   }
   let t9;
   if ($[15] !== t8 || $[16] !== workerBadge) {
-    t9 = <PermissionDialog color="planMode" title="Enter plan mode?" workerBadge={workerBadge}>{t8}</PermissionDialog>;
+    t9 = <PermissionDialog color="planMode" title="Enter plan mode?" innerPaddingX={0} workerBadge={workerBadge}>{t8}</PermissionDialog>;
     $[15] = t8;
     $[16] = workerBadge;
     $[17] = t9;

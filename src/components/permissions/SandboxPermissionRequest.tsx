@@ -145,7 +145,7 @@ export function SandboxPermissionRequest(t0) {
   }
   let t13;
   if ($[19] !== t12 || $[20] !== t9) {
-    t13 = <PermissionDialog title="Network request outside of sandbox"><Box flexDirection="column" paddingX={2} paddingY={1}>{t9}{t10}{t12}</Box></PermissionDialog>;
+    t13 = <PermissionDialog title="Network request outside of sandbox" innerPaddingX={0}><Box flexDirection="column" paddingX={1}>{t9}{t10}{t12}</Box></PermissionDialog>;
     $[19] = t12;
     $[20] = t9;
     $[21] = t13;
