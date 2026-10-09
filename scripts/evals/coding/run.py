@@ -39,6 +39,13 @@ profiles=json.loads((config/'provider-profiles.json').read_text())
 p=next(x for x in profiles if x.get('active'))
 root=Path(args.artifacts) if args.artifacts else Path(tempfile.mkdtemp(prefix='noa-coding-eval-'))
 root.mkdir(parents=True,exist_ok=True)
+if (root/'results.json').exists(): raise SystemExit('refusing to reuse artifacts dir with existing results: '+str(root))
+repo=Path(__file__).resolve().parents[3]
+def git(*a):
+    try: return subprocess.run(['git','-C',str(repo),*a],capture_output=True,text=True,timeout=10).stdout.strip()
+    except (OSError,subprocess.SubprocessError): return None
+dirty=git('status','--porcelain')
+run_meta={'run_id':root.name,'git_rev':git('rev-parse','HEAD'),'git_dirty':None if dirty is None else bool(dirty)}
 base_env={k:os.environ[k] for k in ['PATH','TMPDIR','USER','LOGNAME','LANG','SHELL'] if k in os.environ}
 base_env.update(ANTHROPIC_BASE_URL=p['baseUrl'],ANTHROPIC_AUTH_TOKEN=p['apiKey'],ANTHROPIC_MODEL=p['model'],ANTHROPIC_DEFAULT_OPUS_MODEL=p['model'],ANTHROPIC_DEFAULT_SONNET_MODEL=p['model'],ANTHROPIC_DEFAULT_HAIKU_MODEL=p['model'],CLAUDE_CODE_SUBAGENT_MODEL=p['model'],MAX_THINKING_TOKENS='0',CLAUDE_CODE_MAX_RETRIES='1',DISABLE_AUTOUPDATER='1',CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC='1',DISABLE_TELEMETRY='1')
 def run_one(label,binary,name,repeat):
@@ -66,16 +73,18 @@ def run_one(label,binary,name,repeat):
         stdout,stderr=child.communicate()
     stdout=stdout.replace(p['apiKey'],'[REDACTED]');stderr=stderr.replace(p['apiKey'],'[REDACTED]')
     (d/'stdout.jsonl').write_text(stdout);(d/'stderr.txt').write_text(stderr)
-    final=None;tools=[];tool_results=[];served_models=[]
+    final=None;tools=[];tool_results=[];served_models=[];seq=[]
     for line in stdout.splitlines():
         try:m=json.loads(line)
         except ValueError:continue
         if m.get('type')=='result':final=m
         if m.get('type')=='assistant':
-            tools += [x for x in m.get('message',{}).get('content',[]) if x.get('type')=='tool_use']
+            uses=[x for x in m.get('message',{}).get('content',[]) if x.get('type')=='tool_use']
+            tools += uses;seq += uses
             served_models.append(m.get('message',{}).get('model'))
         if m.get('type')=='user' and isinstance(m.get('message',{}).get('content'),list):
-            tool_results += [x for x in m['message']['content'] if x.get('type')=='tool_result']
+            results=[x for x in m['message']['content'] if x.get('type')=='tool_result']
+            tool_results += results;seq += results
     # Ordinary runs are judged only after exit; Goal runs may read the independent check.
     marker.unlink(missing_ok=True)
     try:judge=subprocess.run(['python3','-c',judge_source(task,d,marker)],cwd=d,text=True,capture_output=True,timeout=10)
@@ -83,8 +92,13 @@ def run_one(label,binary,name,repeat):
     try:unchanged=(d/'README.md').read_text()==task['spec'] and (d/'public_check.py').read_text()==task['public'] and (not args.goal or check.read_text()==judge_source(task,d,marker))
     except OSError:unchanged=False
     public_ids={t['id'] for t in tools if t['name']=='Bash' and re.search(r'\bpython(?:3)?\b.*public_check\.py',str(t.get('input',{}).get('command','')),re.S)}
-    public_test_observed=any(r['tool_use_id'] in public_ids and not r.get('is_error') and re.search(r'(?m)^PUBLIC_OK\s*$',r.get('content','') if isinstance(r.get('content'),str) else '\n'.join(b.get('text','') for b in r.get('content',[]) if isinstance(b,dict))) for r in tool_results)
-    result={'cli':label,'task':name,'repeat':repeat,'exit':child.returncode,'timeout':timed_out,'seconds':round(time.monotonic()-start,2),'judge_passed':judge_ok(judge,marker) and unchanged,'served_models':sorted({m for m in served_models if m and m!='<synthetic>'}),'public_test_observed':public_test_observed,'tool_calls':len(tools),'terminal':{k:final.get(k) for k in ['subtype','is_error','terminal_reason','num_turns','usage','modelUsage']} if final else None,'judge_error':judge.stderr[-1500:],'final_text':final.get('result') if final else None,'goal_status':json.loads((d/'goal-state.json').read_text()).get('status') if args.goal and (d/'goal-state.json').exists() else None}
+    def result_text(r):return r.get('content','') if isinstance(r.get('content'),str) else '\n'.join(b.get('text','') for b in r.get('content',[]) if isinstance(b,dict))
+    # Trace grades read the ordered stream: a passing public check only counts if it follows the last edit.
+    passing=[i for i,x in enumerate(seq) if x.get('type')=='tool_result' and x.get('tool_use_id') in public_ids and not x.get('is_error') and re.search(r'(?m)^PUBLIC_OK\s*$',result_text(x))]
+    edits=[i for i,x in enumerate(seq) if x.get('type')=='tool_use' and x.get('name') in ('Write','Edit')]
+    public_test_observed=bool(passing)
+    trace={'verified_before_stop':bool(passing) and (not edits or passing[-1]>edits[-1]),'tool_errors':sum(1 for r in tool_results if r.get('is_error')),'turns_within_budget':bool(final) and (final.get('num_turns') or 0)<=args.max_turns}
+    result={'cli':label,'task':name,'repeat':repeat,'trace':trace,'exit':child.returncode,'timeout':timed_out,'seconds':round(time.monotonic()-start,2),'judge_passed':judge_ok(judge,marker) and unchanged,'served_models':sorted({m for m in served_models if m and m!='<synthetic>'}),'public_test_observed':public_test_observed,'tool_calls':len(tools),'terminal':{k:final.get(k) for k in ['subtype','is_error','terminal_reason','num_turns','usage','modelUsage']} if final else None,'judge_error':judge.stderr[-1500:],'final_text':final.get('result') if final else None,'goal_status':json.loads((d/'goal-state.json').read_text()).get('status') if args.goal and (d/'goal-state.json').exists() else None}
     result['accepted']=result['judge_passed'] and result['exit']==0 and not (result['terminal'] or {}).get('is_error',True) and result['public_test_observed'] and (result['goal_status']=='complete' if args.goal else True)
     (d/'judge.json').write_text(json.dumps(result,ensure_ascii=False,indent=2))
     print(json.dumps({k:result[k] for k in ['cli','task','repeat','judge_passed','public_test_observed','seconds','tool_calls','exit']},ensure_ascii=False),flush=True)
@@ -94,7 +108,7 @@ for repeat in range(1,args.reps+1):
     for name in tasks:
         result=run_one(args.label,args.entry,name,repeat)
         results.append(result)
-        manifest={'provider':p['name'],'model':p['model'],'entry':args.entry,'entry_sha256':hashlib.sha256(Path(args.entry).read_bytes()).hexdigest(),'goal':args.goal,'fixture_sha256':hashlib.sha256(cases_path.read_bytes()).hexdigest(),'results':results}
+        manifest={**run_meta,'provider':p['name'],'model':p['model'],'entry':args.entry,'entry_sha256':hashlib.sha256(Path(args.entry).read_bytes()).hexdigest(),'goal':args.goal,'fixture_sha256':hashlib.sha256(cases_path.read_bytes()).hexdigest(),'results':results}
         (root/'results.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2))
 print('Evidence: '+str(root),flush=True)
 raise SystemExit(0 if all(r['accepted'] for r in results) else 1)
