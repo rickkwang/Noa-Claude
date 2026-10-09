@@ -30,10 +30,28 @@ export class ClickEvent extends Event {
    */
   readonly cellIsBlank: boolean
 
-  constructor(col: number, row: number, cellIsBlank: boolean) {
+  /**
+   * True for the click that only brings the terminal window forward (the first
+   * click after focus returns). Such clicks shouldn't act on what's underneath.
+   */
+  readonly isWindowActivation: boolean
+  /** Set by dropAsStray(): the click is ignored as if it never happened. */
+  droppedAsStray = false
+
+  constructor(
+    col: number,
+    row: number,
+    cellIsBlank: boolean,
+    isWindowActivation = false,
+  ) {
     super()
     this.col = col
     this.row = row
     this.cellIsBlank = cellIsBlank
+    this.isWindowActivation = isWindowActivation
+  }
+
+  dropAsStray(): void {
+    this.droppedAsStray = true
   }
 }

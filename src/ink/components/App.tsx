@@ -3,6 +3,7 @@ import React, { PureComponent, type ReactNode } from 'react';
 import { updateLastInteractionTime } from '../../bootstrap/state.js';
 import { logForDebugging } from '../../utils/debug.js';
 import { stopCapturingEarlyInput } from '../../utils/earlyInput.js';
+import type { ClickResult } from '../hit-test.js';
 import { isEnvTruthy } from '../../utils/envUtils.js';
 import { isMouseClicksDisabled } from '../../utils/fullscreen.js';
 import { logError } from '../../utils/log.js';
@@ -55,7 +56,7 @@ type Props = {
   // onClick handlers. Returns true if a DOM handler consumed the click.
   // No-op (returns false) outside fullscreen mode (Ink.dispatchClick
   // gates on altScreenActive).
-  readonly onClickAt: (col: number, row: number) => boolean;
+  readonly onClickAt: (col: number, row: number, isWindowActivation?: boolean) => ClickResult;
   // Dispatch hover (onMouseEnter/onMouseLeave) as the pointer moves over
   // DOM elements. Called for mode-1003 motion events with no button held.
   // No-op outside fullscreen (Ink.dispatchHover gates on altScreenActive).
@@ -104,6 +105,9 @@ type Props = {
 // Multi-click detection thresholds. 500ms is the macOS default; a small
 // position tolerance allows for trackpad jitter between clicks.
 const MULTI_CLICK_TIMEOUT_MS = 500;
+// Clicks within this window of terminal focus-in (or of other input) are
+// treated as window-activation clicks, matching upstream.
+const WINDOW_ACTIVATION_MS = 400;
 const MULTI_CLICK_DISTANCE = 1;
 type State = {
   readonly error?: Error;
@@ -152,10 +156,16 @@ export default class App extends PureComponent<Props, State> {
   lastClickCol = -1;
   lastClickRow = -1;
   clickCount = 0;
+  // The first click after the terminal regains focus only brings the window
+  // forward. Armed by focus-in (or focus-out); disarmed by the next left press.
+  windowActivationClickArmed = true;
+  lastActivationInputTime = Number.NEGATIVE_INFINITY;
+  terminalFocusGainedAt = 0;
+  pressIsWindowActivation = false;
   // Deferred hyperlink-open timer — cancelled if a second click arrives
   // within MULTI_CLICK_TIMEOUT_MS (so double-clicking a hyperlink selects
   // the word without also opening the browser). DOM onClick dispatch is
-  // NOT deferred — it returns true from onClickAt and skips this timer.
+  // NOT deferred — onClickAt returns 'handled' and skips this timer.
   pendingHyperlinkTimer: ReturnType<typeof setTimeout> | null = null;
   // Last mode-1003 motion position. Terminals already dedupe to cell
   // granularity but this also lets us skip dispatchHover entirely on
@@ -429,6 +439,11 @@ export default class App extends PureComponent<Props, State> {
     this.props.onExit(error);
   };
   handleTerminalFocus = (isFocused: boolean): void => {
+    // Focus-in not caused by recent input means the window was just activated.
+    if (!isFocused || Date.now() - this.lastActivationInputTime >= WINDOW_ACTIVATION_MS) {
+      this.windowActivationClickArmed = true;
+    }
+    if (isFocused) this.terminalFocusGainedAt = Date.now();
     // setTerminalFocused notifies subscribers: TerminalFocusProvider (context)
     // and Clock (interval speed) — no App setState needed.
     setTerminalFocused(isFocused);
@@ -632,8 +647,12 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
     // release, which meant (a) visible latency before the word highlights
     // and (b) double-click+drag fell through to char-mode selection.
     const now = Date.now();
+    const windowActivationArmed = app.windowActivationClickArmed;
+    app.lastActivationInputTime = now;
+    app.windowActivationClickArmed = false;
+    app.pressIsWindowActivation = windowActivationArmed && now - app.terminalFocusGainedAt < WINDOW_ACTIVATION_MS;
     const nearLast = now - app.lastClickTime < MULTI_CLICK_TIMEOUT_MS && Math.abs(col - app.lastClickCol) <= MULTI_CLICK_DISTANCE && Math.abs(row - app.lastClickRow) <= MULTI_CLICK_DISTANCE;
-    app.clickCount = nearLast ? app.clickCount + 1 : 1;
+    app.clickCount = nearLast && !app.pressIsWindowActivation ? app.clickCount + 1 : 1;
     app.lastClickTime = now;
     app.lastClickCol = col;
     app.lastClickRow = row;
@@ -688,7 +707,14 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
     // Single click: dispatch DOM click immediately (cursor repositioning
     // etc. are latency-sensitive). If no DOM handler consumed it, defer
     // the hyperlink check so a second click can cancel it.
-    if (!app.props.onClickAt(col, row)) {
+    const clickResult = app.props.onClickAt(col, row, app.pressIsWindowActivation);
+    // A dropped (stray) click breaks the click chain, as upstream does.
+    if (clickResult === 'stray') {
+      app.clickCount = 0;
+      app.lastClickTime = 0;
+    }
+    // Window-activation clicks neither reach a DOM handler nor open links.
+    if (clickResult === 'unhandled' && !app.pressIsWindowActivation) {
       // Resolve the hyperlink URL synchronously while the screen buffer
       // still reflects what the user clicked — deferring only the
       // browser-open so double-click can cancel it.

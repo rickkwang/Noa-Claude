@@ -24,7 +24,7 @@ import * as dom from './dom.js';
 import { KeyboardEvent } from './events/keyboard-event.js';
 import { FocusManager } from './focus.js';
 import { emptyFrame, type Frame, type FrameEvent } from './frame.js';
-import { dispatchClick, dispatchHover, dispatchWheel, selectionScopeAt } from './hit-test.js';
+import { type ClickResult, dispatchClick, dispatchHover, dispatchWheel, selectionScopeAt } from './hit-test.js';
 import instances from './instances.js';
 import { LogUpdate } from './log-update.js';
 import { nodeCache } from './node-cache.js';
@@ -1347,10 +1347,10 @@ export default class Ink {
    * altScreenActive — clicks only make sense with a fixed viewport where
    * nodeCache rects map 1:1 to terminal cells (no scrollback offset).
    */
-  dispatchClick(col: number, row: number): boolean {
-    if (!this.altScreenActive) return false;
+  dispatchClick(col: number, row: number, isWindowActivation = false): ClickResult {
+    if (!this.altScreenActive) return 'unhandled';
     const blank = isEmptyCellAt(this.frontFrame.screen, col, row);
-    return dispatchClick(this.rootNode, col, row, blank);
+    return dispatchClick(this.rootNode, col, row, blank, isWindowActivation);
   }
   dispatchHover(col: number, row: number): void {
     if (!this.altScreenActive) return;

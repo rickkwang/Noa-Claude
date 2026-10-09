@@ -5,7 +5,7 @@ import { hitTest } from '../../ink/hit-test.js'
 
 // Trackpad momentum from scrolling the transcript keeps arriving for a beat
 // after a dialog opens over it; without this it would scroll the new list.
-const MOUNT_SETTLE_MS = 300
+export const MOUNT_SETTLE_MS = 300
 
 type SelectWheelProps = {
   isDisabled: boolean

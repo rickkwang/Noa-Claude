@@ -64,18 +64,21 @@ export function hitTest(
  * fire. Stops when a handler calls stopImmediatePropagation(). Returns
  * true if at least one onClick handler fired.
  */
+export type ClickResult = 'handled' | 'unhandled' | 'stray'
+
 export function dispatchClick(
   root: DOMElement,
   col: number,
   row: number,
   cellIsBlank = false,
-): boolean {
+  isWindowActivation = false,
+): ClickResult {
   let target: DOMElement | undefined = hitTest(root, col, row) ?? undefined
-  if (!target) return false
+  if (!target) return 'unhandled'
 
   // Click-to-focus: find the closest focusable ancestor and focus it.
   // root is always ink-root, which owns the FocusManager.
-  if (root.focusManager) {
+  if (root.focusManager && !isWindowActivation) {
     let focusTarget: DOMElement | undefined = target
     while (focusTarget) {
       if (typeof focusTarget.attributes['tabIndex'] === 'number') {
@@ -85,7 +88,7 @@ export function dispatchClick(
       focusTarget = focusTarget.parentNode
     }
   }
-  const event = new ClickEvent(col, row, cellIsBlank)
+  const event = new ClickEvent(col, row, cellIsBlank, isWindowActivation)
   let handled = false
   while (target) {
     const handler = target._eventHandlers?.onClick as
@@ -99,11 +102,14 @@ export function dispatchClick(
         event.localRow = row - rect.y
       }
       handler(event)
-      if (event.didStopImmediatePropagation()) return true
+      if (event.didStopImmediatePropagation()) {
+        return event.droppedAsStray ? 'stray' : 'handled'
+      }
     }
     target = target.parentNode
   }
-  return handled
+  if (event.droppedAsStray) return 'stray'
+  return handled ? 'handled' : 'unhandled'
 }
 
 /**
