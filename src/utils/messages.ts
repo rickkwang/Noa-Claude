@@ -220,16 +220,10 @@ export const TOOL_CALL_INTERRUPTED_RESULT =
   "[Tool call interrupted: the session ended before this call's result was recorded, so its outcome is unknown. Check whether it took effect before relying on it or running it again.]"
 export const TOOL_CALL_RESULT_NOT_IN_COPY =
   "[Tool call result not in this copy: this session was copied from another session before that session recorded this call's result. The call may have finished there, may still be running there, or may never have run. Check whether it took effect before relying on it or running it again.]"
-const TOOL_CALL_INTERRUPTED_MARKERS = [
-  INTERRUPT_MESSAGE_FOR_TOOL_USE,
-  TURN_ENDED_FOR_MESSAGE_TOOL_RESULT,
-  TOOL_CALL_INTERRUPTED_RESULT,
-  TOOL_CALL_RESULT_NOT_IN_COPY,
-]
-/** Tool results where the call was cut off, not refused or failed. */
-export function isToolCallInterruptedResult(content: unknown): boolean {
-  return typeof content === 'string' && TOOL_CALL_INTERRUPTED_MARKERS.some(marker => content.includes(marker))
-}
+export const TOOL_CALL_SKIPPED_BY_DENIAL_RESULT =
+  '[Tool call skipped: the turn was stopped before this call ran, by the check whose denial is on another call in this batch. Nothing refused this call and it had no effects; re-run it if still needed.]'
+export const TOOL_CALL_SKIPPED_FOR_MESSAGE_RESULT =
+  '[Tool call skipped: the turn ended to deliver the message that follows before this call ran. Nothing refused it; re-run it if still needed.]'
 
 // Abort signals of turns send-now ended to deliver a message. The reason stays
 // 'interrupt' — shells check that to background rather than kill — so the
@@ -729,6 +723,34 @@ export function createProgressMessage<P extends Progress>({
     uuid: randomUUID(),
     timestamp: new Date().toISOString(),
   }
+}
+
+const TOOL_CALL_INTERRUPTED_MARKERS = [
+  INTERRUPT_MESSAGE,
+  INTERRUPT_MESSAGE_FOR_TOOL_USE,
+  TURN_ENDED_FOR_MESSAGE_TOOL_RESULT,
+  TOOL_CALL_INTERRUPTED_RESULT,
+  TOOL_CALL_RESULT_NOT_IN_COPY,
+  CANCEL_MESSAGE,
+  TOOL_CALL_SKIPPED_BY_DENIAL_RESULT,
+  TOOL_CALL_SKIPPED_FOR_MESSAGE_RESULT,
+]
+/**
+ * `toolUseResult` of a tool call the user rejected in the streaming executor.
+ * Upstream renders these as interrupted, not as a rejection.
+ */
+export const USER_REJECTED_TOOL_USE_RESULT = 'User rejected tool use'
+/**
+ * Error tool results whose call was cut off, not refused or failed. Matches
+ * upstream: errors only, and the marker must open the result text.
+ */
+export function isToolCallInterruptedResult(
+  param: { content: unknown; is_error?: boolean },
+  toolUseResult?: unknown,
+): boolean {
+  if (param.is_error !== true) return false
+  if (toolUseResult === USER_REJECTED_TOOL_USE_RESULT) return true
+  return typeof param.content === 'string' && TOOL_CALL_INTERRUPTED_MARKERS.some(marker => param.content.startsWith(marker))
 }
 
 export function createToolResultStopMessage(

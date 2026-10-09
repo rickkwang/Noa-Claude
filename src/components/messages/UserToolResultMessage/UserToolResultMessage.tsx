@@ -4,10 +4,9 @@ import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs
 import * as React from 'react';
 import type { Tools } from '../../../Tool.js';
 import type { NormalizedUserMessage, ProgressMessage } from '../../../types/message.js';
-import { type buildMessageLookups, CANCEL_MESSAGE, isToolCallInterruptedResult, REJECT_MESSAGE } from '../../../utils/messages.js';
+import { type buildMessageLookups, isToolCallInterruptedResult, REJECT_MESSAGE } from '../../../utils/messages.js';
 import { InterruptedByUser } from '../../InterruptedByUser.js';
 import { MessageResponse } from '../../MessageResponse.js';
-import { UserToolCanceledMessage } from './UserToolCanceledMessage.js';
 import { UserToolErrorMessage } from './UserToolErrorMessage.js';
 import { UserToolRejectMessage } from './UserToolRejectMessage.js';
 import { UserToolSuccessMessage } from './UserToolSuccessMessage.js';
@@ -40,17 +39,7 @@ export function UserToolResultMessage(t0) {
   if (!toolUse) {
     return null;
   }
-  if (typeof param.content === "string" && param.content.startsWith(CANCEL_MESSAGE)) {
-    let t1;
-    if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
-      t1 = <UserToolCanceledMessage />;
-      $[0] = t1;
-    } else {
-      t1 = $[0];
-    }
-    return t1;
-  }
-  if (isToolCallInterruptedResult(param.content)) {
+  if (isToolCallInterruptedResult(param, message.toolUseResult)) {
     return <MessageResponse height={1}><InterruptedByUser /></MessageResponse>;
   }
   if (typeof param.content === "string" && param.content.startsWith(REJECT_MESSAGE)) {

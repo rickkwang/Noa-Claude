@@ -446,7 +446,6 @@
     "src/components/messages/UserTextMessage.tsx",
     "src/components/messages/UserToolResultMessage/RejectedPlanMessage.tsx",
     "src/components/messages/UserToolResultMessage/RejectedToolUseMessage.tsx",
-    "src/components/messages/UserToolResultMessage/UserToolCanceledMessage.tsx",
     "src/components/messages/UserToolResultMessage/UserToolErrorMessage.tsx",
     "src/components/messages/UserToolResultMessage/UserToolRejectMessage.tsx",
     "src/components/messages/UserToolResultMessage/UserToolResultMessage.tsx",
