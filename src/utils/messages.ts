@@ -243,12 +243,20 @@ export const PLAN_REJECTION_PREFIX =
 /**
  * Shared guidance for permission denials, instructing the model on appropriate workarounds.
  */
-export const DENIAL_WORKAROUND_GUIDANCE =
+const DENIAL_WORKAROUND_BASE =
   `IMPORTANT: You *may* attempt to accomplish this action using other tools that might naturally be used to accomplish this goal, ` +
   `e.g. using head instead of cat. But you *should not* attempt to work around this denial in malicious ways, ` +
   `e.g. do not use your ability to run tests to execute non-test actions. ` +
-  `You should only try to work around this restriction in reasonable ways that do not attempt to bypass the intent behind this denial. ` +
+  `You should only try to work around this restriction in reasonable ways that do not attempt to bypass the intent behind this denial. `
+export const DENIAL_WORKAROUND_GUIDANCE =
+  DENIAL_WORKAROUND_BASE +
   `If you believe this capability is essential to complete the user's request, STOP and explain to the user ` +
+  `what you were trying to do and why you need this permission. Let the user decide how to proceed.`
+// Classifier verdicts use this tail: the model is told to try a safer method first.
+const CLASSIFIER_VERDICT_GUIDANCE =
+  DENIAL_WORKAROUND_BASE +
+  `If you believe this capability is essential to complete the user's request, first try a safer method. ` +
+  `Get as much of the rest of the task done as you can, then STOP and explain to the user ` +
   `what you were trying to do and why you need this permission. Let the user decide how to proceed.`
 
 export function AUTO_REJECT_MESSAGE(toolName: string): string {
@@ -266,27 +274,30 @@ export const NO_RESPONSE_REQUESTED = 'No response requested.'
 export const SYNTHETIC_TOOL_RESULT_PLACEHOLDER =
   '[Tool result missing due to internal error]'
 
-// Prefix used by UI to detect classifier denials and render them concisely
+// Prefixes used by UI to detect classifier denials and render them concisely.
+// Verdicts and the refusal/unavailable paths use different wording.
+const CLASSIFIER_VERDICT_PREFIX =
+  'Permission for this action was denied by the Noa Claude auto mode classifier. Reason: '
 const AUTO_MODE_REJECTION_PREFIX =
   'Permission for this action has been denied. Reason: '
 
 /**
- * Stops an agent that just lost the classifier from reporting itself fully
- * blocked. Names the tools on the auto mode allowlist rather than "read-only
- * operations": this fork has no isReadOnly surface, so a read-only Bash command
- * still goes through the classifier and would still be denied.
+ * Appended to the classifier-unavailable message only, so the agent does not
+ * report itself fully blocked. Upstream's refusal message omits it. Read-only
+ * Bash commands skip the classifier via BashTool.isReadOnly.
  */
 const CLASSIFIER_READ_ONLY_NOTE =
-  'Note: the Read, Grep, and Glob tools never reach the classifier, ' +
-  'so reading files and searching code are still available ' +
-  '(read-only Bash commands are not exempt).'
+  'Note: reading files, searching code, and other read-only operations do not require the classifier and can still be used.'
 
 /**
  * Check if a tool result message is a classifier denial.
  * Used by the UI to render a short summary instead of the full message.
  */
 export function isClassifierDenial(content: string): boolean {
-  return content.startsWith(AUTO_MODE_REJECTION_PREFIX)
+  return (
+    content.startsWith(CLASSIFIER_VERDICT_PREFIX) ||
+    content.startsWith(AUTO_MODE_REJECTION_PREFIX)
+  )
 }
 
 /**
@@ -294,21 +305,30 @@ export function isClassifierDenial(content: string): boolean {
  * Encourages continuing with other tasks and suggests permission rules.
  *
  * @param reason - The classifier's reason for denying the action
+ * @param allowRuleToolName - Tool a permission rule could name; omitted when no
+ *   such rule can be offered (MCP tools, managed-rules-only settings)
  */
-export function buildYoloRejectionMessage(reason: string): string {
-  const prefix = AUTO_MODE_REJECTION_PREFIX
+export function buildYoloRejectionMessage(
+  reason: string,
+  allowRuleToolName?: string,
+): string {
+  const head =
+    `${CLASSIFIER_VERDICT_PREFIX}${reason}. ` +
+    `If you have other tasks that don't depend on this action, continue working on those. ` +
+    CLASSIFIER_VERDICT_GUIDANCE
 
-  const ruleHint = feature('BASH_CLASSIFIER')
-    ? `To allow this type of action in the future, the user can add a permission rule like ` +
+  if (feature('BASH_CLASSIFIER')) {
+    return (
+      `${head} ` +
+      `To allow this type of action in the future, the user can add a permission rule like ` +
       `Bash(prompt: <description of allowed action>) to their settings. ` +
       `At the end of your session, recommend what permission rules to add so you don't get blocked again.`
-    : `To allow this type of action in the future, the user can add a Bash permission rule to their settings.`
-
+    )
+  }
+  if (allowRuleToolName === undefined) return head
   return (
-    `${prefix}${reason}. ` +
-    `If you have other tasks that don't depend on this action, continue working on those. ` +
-    `${DENIAL_WORKAROUND_GUIDANCE} ` +
-    ruleHint
+    `${head} ` +
+    `To allow this type of action in the future, the user can add a permission rule for ${allowRuleToolName} to their settings.`
   )
 }
 
@@ -334,8 +354,7 @@ export function buildClassifierRefusalMessage(reason: string): string {
     `Continue with other tasks that don't require this action. ` +
     `If it is essential, stop and tell the user that auto mode could not evaluate it, ` +
     `and suggest running this action outside auto mode (switch back to the default permission mode) ` +
-    `or starting a fresh session. ` +
-    CLASSIFIER_READ_ONLY_NOTE
+    `or starting a fresh session.`
   )
 }
 

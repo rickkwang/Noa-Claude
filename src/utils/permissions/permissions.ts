@@ -743,11 +743,10 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
       // Known intentional simplification of upstream 2.1.221's still-eligible
       // check (xUp): upstream additionally requires a plan-mode tool to be
       // read-only (or allow-rule matched) before trusting the verdict, and
-      // honors a web domain-consent flag for other modes. This fork has no
-      // isReadOnly / domain-consent surface, so the check stays at the mode
-      // level. Gap scenario: a mid-call switch auto→plan with the auto latch
-      // still active trusts the classifier verdict for a write tool where
-      // upstream re-prompts. Revisit if isReadOnly is ever ported.
+      // honors a web domain-consent flag for other modes. This check only
+      // looks at the mode (tools' isReadOnly is not consulted here). Gap
+      // scenario: a mid-call switch auto→plan with the auto latch still active
+      // trusts the classifier verdict for a write tool where upstream re-prompts.
       const stillClassifierEligible = () =>
         currentMode === 'auto' || (currentMode === 'plan' && currentAutoActive)
       if (!modeUnchanged && !stillClassifierEligible()) {
@@ -1077,7 +1076,12 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
             classifier: 'auto-mode',
             reason: classifierResult.reason,
           },
-          message: buildYoloRejectionMessage(classifierResult.reason),
+          message: buildYoloRejectionMessage(
+            classifierResult.reason,
+            tool.isMcp || shouldAllowManagedPermissionRulesOnly()
+              ? undefined
+              : tool.name,
+          ),
         }
       }
 

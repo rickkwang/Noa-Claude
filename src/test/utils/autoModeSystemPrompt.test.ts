@@ -30,29 +30,21 @@ function sha256(path: string): string {
 // failure here means someone reworded the ported upstream text.
 // Re-verify against upstream and only then update the digest, never the reverse.
 //
-// The base prompt is the 2.1.233 port. The permissions template is that port
-// plus two changes from 2.1.270 (its zstd asset permissions_external-*.txt.zst):
-// the provenance-based rewrite of Code from External, and the
-// URL-encodes-content clause of Public Data-Sharing Upload.
-//
-// Partial on purpose — 2.1.270's other four rules stay out:
-//   - Command Network Lists, Unrequested Artifact Publish: key off
-//     `allowed_domains` on Bash and an `Artifact` action, neither of which
-//     exists here. They could only misfire on lookalikes.
-//   - Containment Escape (+ its Host containment slot), Unverifiable Deletion
-//     Scope: assume containers, shared clusters, or cloud credentials. Inert on
-//     a single-user machine, but still cost tokens and can false-positive on
-//     cloud-auth debugging. Port them if the deployment changes.
+// The base prompt tracks upstream 2.1.295's text, minus the host-context
+// paragraph (the `${akt}` slot): noa never emits host-context lines, so that
+// paragraph would describe input that never occurs. The permissions template
+// matches upstream 2.1.295's template, rule slots included (their entries are
+// what `claude auto-mode defaults` prints); the digests below pin that text.
 describe('upstream prompt port integrity', () => {
-  test('base system prompt matches upstream 2.1.233 hci()', () => {
+  test('base system prompt matches upstream 2.1.295 text (minus host-context slot)', () => {
     expect(sha256(join(PROMPTS_DIR, 'auto_mode_system_prompt.txt'))).toBe(
-      '7897d23ee226cff448f918741b759ff296ee89962d1cf0667f3753fcc4ac8264',
+      '6a530642c2908dcc17b8243da23b5eec52d2a657395390dde0ea84624822e275',
     )
   })
 
-  test('external permissions template is the 2.1.233 port with the two selected 2.1.270 changes', () => {
+  test('external permissions template rule slots match upstream 2.1.295 defaults', () => {
     expect(sha256(join(PROMPTS_DIR, 'permissions_external.txt'))).toBe(
-      'f2a68e868f52c8c2836ae987ddf3d183c70a9647774646f85a26b9bd8294b3a2',
+      '462193cad790fec6fc6a48b05d72b3ab024705db053368245a07962ff9b1af54',
     )
   })
 })
