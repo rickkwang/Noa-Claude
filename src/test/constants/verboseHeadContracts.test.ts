@@ -94,13 +94,13 @@ describe('both tiers defer to a configured output style', () => {
 
   test('the default stays the software-engineering wording', () => {
     expect(getSimpleIntroSection()).toContain(
-      'helps users with software engineering tasks. Follow the instructions below',
+      'helps users with software engineering tasks. Use the instructions below',
     )
   })
 
   test('the style branch keeps the sentence that follows it', () => {
     expect(getSimpleIntroSection(true)).toContain(
-      'respond to user queries. Follow the instructions below and use the available tools.',
+      'respond to user queries. Use the instructions below and the tools available to you to assist the user.',
     )
   })
 
