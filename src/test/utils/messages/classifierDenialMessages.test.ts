@@ -30,6 +30,12 @@ describe('buildClassifierUnavailableMessage', () => {
       buildClassifierUnavailableMessage('Bash', 'claude-haiku-4-5'),
     ).not.toContain(DENIAL_WORKAROUND_GUIDANCE)
   })
+
+  test('names the failure the API reported', () => {
+    expect(
+      buildClassifierUnavailableMessage('Bash', 'claude-haiku-4-5', 'http_529'),
+    ).toContain('is temporarily unavailable (overloaded), so auto mode')
+  })
 })
 
 describe('buildYoloRejectionMessage', () => {

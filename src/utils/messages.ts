@@ -361,18 +361,36 @@ export function buildClassifierRefusalMessage(reason: string): string {
 /**
  * Build a message for when the auto mode classifier is temporarily unavailable.
  * Tells the agent to wait and retry, and suggests working on other tasks.
+ *
+ * @param errorKind - `http_NNN`, `wall_clock_timeout`, `connection_error`, or
+ *   `unknown_error`, as classified in yoloClassifier
  */
 export function buildClassifierUnavailableMessage(
   toolName: string,
   classifierModel: string,
+  errorKind?: string,
 ): string {
   return (
-    `${classifierModel} is temporarily unavailable, so auto mode cannot determine the safety of ${toolName} right now. ` +
-    `This is not a judgment that the action is unsafe. ` +
-    `Wait briefly and then try this action again as-is; don't rewrite it. ` +
+    `${classifierModel} is temporarily unavailable${unavailableDetail(errorKind)}, ` +
+    `so auto mode cannot determine the safety of ${toolName} right now. ` +
+    `Wait a moment and then try this action again. ` +
     `If it keeps failing, continue with other tasks that don't require this action and come back to it later. ` +
     CLASSIFIER_READ_ONLY_NOTE
   )
+}
+
+function unavailableDetail(errorKind: string | undefined): string {
+  const status = errorKind?.startsWith('http_')
+    ? Number(errorKind.slice('http_'.length))
+    : undefined
+  if (status === 429) return ' (rate-limited)'
+  if (status === 529) return ' (overloaded)'
+  if (status !== undefined && status >= 500 && status < 600) {
+    return ' (server error)'
+  }
+  if (errorKind === 'wall_clock_timeout') return ' (timed out)'
+  if (errorKind === 'connection_error') return ' (connection failed)'
+  return ''
 }
 
 export const SYNTHETIC_MODEL = '<synthetic>'
