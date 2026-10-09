@@ -17,7 +17,7 @@ import { assertCanStartBackgroundAgent, createActivityDescriptionResolver, creat
 import { checkRemoteAgentEligibility, formatPreconditionError, getRemoteTaskSessionUrl, registerRemoteAgentTask } from '../../tasks/RemoteAgentTask/RemoteAgentTask.js';
 import { assembleToolPool } from '../../tools.js';
 import { asAgentId } from '../../types/ids.js';
-import { runWithAgentContext } from '../../utils/agentContext.js';
+import { getAgentContext, nextSubagentDepth, runWithAgentContext } from '../../utils/agentContext.js';
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js';
 import { getCwd, runWithCwdOverride } from '../../utils/cwd.js';
 import { logForDebugging } from '../../utils/debug.js';
@@ -31,7 +31,7 @@ import { permissionModeSchema } from '../../utils/permissions/PermissionMode.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js';
 import { filterDeniedAgents, getDenyRuleForAgent } from '../../utils/permissions/permissions.js';
 import { enqueueSdkEvent } from '../../utils/sdkEventQueue.js';
-import { decrementTotalAgentSpawns, getMaxSubagentsPerSession, getTotalAgentSpawns, incrementTotalAgentSpawns } from '../../utils/task/sessionBudget.js';
+import { decrementTotalAgentSpawns, getMaxSubagentSpawnDepth, getMaxSubagentsPerSession, getTotalAgentSpawns, incrementTotalAgentSpawns } from '../../utils/task/sessionBudget.js';
 import { readAgentMetadata, writeAgentMetadata } from '../../utils/sessionStorage.js';
 import { sleep, withTimeout } from '../../utils/sleep.js';
 import { buildEffectiveSystemPrompt } from '../../utils/systemPrompt.js';
@@ -282,6 +282,13 @@ export const AgentTool = buildTool({
     // can manage their own background agents.
     if (isInProcessTeammate() && teamName && run_in_background === true) {
       throw new Error('In-process teammates cannot spawn background agents. Use run_in_background=false for synchronous subagents.');
+    }
+
+    // Checked before the reservation below, so a depth refusal never consumes budget.
+    const spawnDepth = nextSubagentDepth(getAgentContext());
+    const maxSpawnDepth = getMaxSubagentSpawnDepth();
+    if (spawnDepth > maxSpawnDepth) {
+      throw new Error(`Subagent nesting limit reached (depth ${spawnDepth} of ${maxSpawnDepth}). Complete this task directly using your tools instead of spawning another agent. If the user explicitly requested deeper nesting, ask them to raise CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH.`);
     }
 
     // Reserve before asynchronous validation so concurrent calls cannot exceed
@@ -798,7 +805,8 @@ export const AgentTool = buildTool({
         isBuiltIn: isBuiltInAgent(selectedAgent),
         invokingRequestId: assistantMessage?.requestId,
         invocationKind: 'spawn' as const,
-        invocationEmitted: false
+        invocationEmitted: false,
+        depth: spawnDepth
       };
 
       // Workload propagation: handlePromptSubmit wraps the entire turn in
@@ -854,7 +862,8 @@ export const AgentTool = buildTool({
         isBuiltIn: isBuiltInAgent(selectedAgent),
         invokingRequestId: assistantMessage?.requestId,
         invocationKind: 'spawn' as const,
-        invocationEmitted: false
+        invocationEmitted: false,
+        depth: spawnDepth
       };
 
       // Wrap entire sync agent execution in context for analytics attribution

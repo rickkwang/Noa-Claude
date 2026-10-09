@@ -332,6 +332,8 @@ export function startBackgroundSession({
     agentType: 'subagent',
     subagentName: 'main-session',
     isBuiltIn: true,
+    // The background session is the main conversation, so its spawns are depth 1.
+    depth: 0,
   }
 
   void runWithAgentContext(agentContext, async () => {

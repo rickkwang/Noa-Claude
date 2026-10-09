@@ -51,6 +51,10 @@ export type SubagentContext = {
    *  Reset to false on each spawn/resume; flipped true by
    *  consumeInvokingRequestId() on the first terminal API event. */
   invocationEmitted?: boolean
+  /** Spawn depth: 0 = main-thread-equivalent, 1 = started by the main thread,
+   *  2 = started by a depth-1 subagent. Undefined means unknown (e.g. resumed
+   *  agents), and nextSubagentDepth() then refuses to nest from it. */
+  depth?: number
 }
 
 /**
@@ -116,6 +120,18 @@ export function isSubagentContext(
   context: AgentContext | undefined,
 ): context is SubagentContext {
   return context?.agentType === 'subagent'
+}
+
+/**
+ * Depth of a subagent spawned from `parent`. Main-thread and teammate callers
+ * spawn depth-1 agents. A subagent without a recorded depth (resumed agents)
+ * returns Infinity so the spawn-depth cap refuses it: failing closed matches
+ * the pre-nesting behavior for those agents.
+ */
+export function nextSubagentDepth(parent: AgentContext | undefined): number {
+  if (!isSubagentContext(parent)) return 1
+  if (parent.depth === undefined) return Number.POSITIVE_INFINITY
+  return parent.depth + 1
 }
 
 /**

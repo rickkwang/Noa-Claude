@@ -206,14 +206,8 @@ export function resolveAgentTools(
         // Parse comma-separated agent types: "worker, researcher" → ["worker", "researcher"]
         allowedAgentTypes = ruleContent.split(',').map(s => s.trim())
       }
-      // For sub-agents, Agent is excluded by filterToolsForAgent — mark the spec
-      // valid for allowedAgentTypes tracking but skip tool resolution.
-      if (!isMainThread) {
-        validTools.push(toolSpec)
-        continue
-      }
-      // For main thread, filtering was skipped so Agent is in availableToolMap —
-      // fall through to normal resolution below.
+      // Agent resolves like any other tool: filterToolsForAgent keeps it for
+      // subagents, and the spawn depth cap in AgentTool.call() bounds nesting.
     }
 
     const tool = availableToolMap.get(toolName)

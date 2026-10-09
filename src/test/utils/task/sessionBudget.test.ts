@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import { nextSubagentDepth } from '../../../utils/agentContext.js'
 import {
   getMaxConcurrentAgents,
+  getMaxSubagentSpawnDepth,
   getMaxSubagentsPerSession,
   getMaxWebSearchesPerSession,
   getTotalAgentSpawns,
@@ -18,6 +20,8 @@ const ENV_KEYS = [
   'CLAUDE_CODE_MAX_WEB_SEARCHES_PER_SESSION',
   'NOA_CLAUDE_MAX_CONCURRENT_AGENTS',
   'CLAUDE_CODE_MAX_CONCURRENT_AGENTS',
+  'NOA_CLAUDE_MAX_SUBAGENT_SPAWN_DEPTH',
+  'CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH',
 ] as const
 
 afterEach(() => {
@@ -56,6 +60,51 @@ describe('sessionBudget limits', () => {
   test('zero disables the budget entirely (0 >= 0 blocks immediately)', () => {
     process.env.NOA_CLAUDE_MAX_SUBAGENTS_PER_SESSION = '0'
     expect(getMaxSubagentsPerSession()).toBe(0)
+  })
+})
+
+// Failure modes covered: wrong default, env precedence inverted, invalid value
+// accepted, and nesting computed from the wrong parent (teammate/background
+// session treated as a subagent, or a resumed agent allowed to nest).
+describe('subagent spawn depth', () => {
+  test('defaults to 2 and honors both env spellings with NOA_ precedence', () => {
+    expect(getMaxSubagentSpawnDepth()).toBe(2)
+    process.env.CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH = '4'
+    expect(getMaxSubagentSpawnDepth()).toBe(4)
+    process.env.NOA_CLAUDE_MAX_SUBAGENT_SPAWN_DEPTH = '3'
+    expect(getMaxSubagentSpawnDepth()).toBe(3)
+  })
+
+  test('invalid values fall back to the default', () => {
+    process.env.NOA_CLAUDE_MAX_SUBAGENT_SPAWN_DEPTH = 'deep'
+    expect(getMaxSubagentSpawnDepth()).toBe(2)
+  })
+
+  test('main thread and teammates spawn depth 1', () => {
+    expect(nextSubagentDepth(undefined)).toBe(1)
+    expect(
+      nextSubagentDepth({
+        agentId: 'lead@team',
+        agentName: 'lead',
+        teamName: 'team',
+        planModeRequired: false,
+        parentSessionId: 's',
+        isTeamLead: true,
+        agentType: 'teammate',
+      }),
+    ).toBe(1)
+  })
+
+  test('background main session (depth 0) spawns depth 1', () => {
+    expect(nextSubagentDepth({ agentId: 't', agentType: 'subagent', depth: 0 })).toBe(1)
+  })
+
+  test('a subagent spawns one level deeper', () => {
+    expect(nextSubagentDepth({ agentId: 'a', agentType: 'subagent', depth: 1 })).toBe(2)
+  })
+
+  test('a subagent with unknown depth (resumed) fails closed', () => {
+    expect(nextSubagentDepth({ agentId: 'r', agentType: 'subagent' })).toBe(Number.POSITIVE_INFINITY)
   })
 })
 

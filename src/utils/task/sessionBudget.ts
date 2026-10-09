@@ -12,6 +12,7 @@
  */
 
 const DEFAULT_MAX_SUBAGENTS_PER_SESSION = 200
+const DEFAULT_MAX_SUBAGENT_SPAWN_DEPTH = 2
 const DEFAULT_MAX_WEB_SEARCHES_PER_SESSION = 200
 const DEFAULT_MAX_CONCURRENT_AGENTS = 20
 
@@ -30,6 +31,20 @@ export function getMaxSubagentsPerSession(): number {
     parseLimit(process.env.NOA_CLAUDE_MAX_SUBAGENTS_PER_SESSION) ??
     parseLimit(process.env.CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION) ??
     DEFAULT_MAX_SUBAGENTS_PER_SESSION
+  )
+}
+
+/**
+ * Deepest Agent-tool nesting allowed: 1 = main thread may spawn subagents,
+ * 2 = subagents may spawn one more level, and so on. Set to 0 to disable
+ * Agent spawns entirely. The default of 2 is a local choice; upstream reads
+ * its value from a remote flag that Noa does not fetch.
+ */
+export function getMaxSubagentSpawnDepth(): number {
+  return (
+    parseLimit(process.env.NOA_CLAUDE_MAX_SUBAGENT_SPAWN_DEPTH) ??
+    parseLimit(process.env.CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH) ??
+    DEFAULT_MAX_SUBAGENT_SPAWN_DEPTH
   )
 }
 
