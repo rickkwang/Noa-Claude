@@ -42,6 +42,7 @@ import {
   HAIKU_55_EARLY_STOPPING_SECTION,
   TURN_UPDATES_SECTION,
 } from '../../constants/systemPromptCompact.js'
+import { OUTPUT_STYLE_CONFIG } from '../../constants/outputStyles.js'
 import { getDescription as getGlobDescription } from '../../tools/GlobTool/prompt.js'
 import { getDescription as getGrepDescription } from '../../tools/GrepTool/prompt.js'
 import { getEditToolDescription } from '../../tools/FileEditTool/prompt.js'
@@ -168,6 +169,10 @@ export function buildPortedSubjects(): Record<string, string> {
     'PowerShell edition (unknown)': getPowerShellEditionSection(null),
     // Rendered at the unknown edition: getPrompt()'s probe returns null off
     // Windows, and the edition text is pinned separately above.
+    'Proactive output style': OUTPUT_STYLE_CONFIG.Proactive!.prompt,
+    'Proactive turnReminder': OUTPUT_STYLE_CONFIG.Proactive!.turnReminder!,
+    'Concise output style': OUTPUT_STYLE_CONFIG.Concise!.prompt,
+    'Concise turnReminder': OUTPUT_STYLE_CONFIG.Concise!.turnReminder!,
     'PowerShell description': renderPowerShellPrompt(
       null,
       getPowerShellBackgroundNote(),
@@ -253,4 +258,10 @@ export const PORTED_DIGESTS: Record<string, string> = {
   'PowerShell edition (core)': 'b911baef6ada701e',
   'PowerShell edition (unknown)': '029e116530be9302',
   'PowerShell description': '770183cff1c206af',
+  // Verbatim ports from upstream 2.1.237. Digests are the sha256 prefix that
+  // outputStyles.test.ts used to pin in full.
+  'Proactive output style': 'a8402e1396f828e5',
+  'Proactive turnReminder': '35d4cfdfe7e68d2f',
+  'Concise output style': 'd161e375b32fbd03',
+  'Concise turnReminder': '830941eabb16069c',
 }

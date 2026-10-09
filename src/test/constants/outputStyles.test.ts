@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { describe, expect, test } from 'bun:test'
 import { buildDynamicSystemPromptSections } from '../../constants/systemPromptAssemblyHelpers.js'
 import {
@@ -11,10 +10,6 @@ import {
 } from '../../constants/outputStyles.js'
 import { getOutputStyleSection } from '../../constants/systemPromptDynamicSections.js'
 
-function sha256(text: string): string {
-  return createHash('sha256').update(text, 'utf8').digest('hex')
-}
-
 describe('Proactive output style', () => {
   const proactive = OUTPUT_STYLE_CONFIG.Proactive
 
@@ -23,21 +18,6 @@ describe('Proactive output style', () => {
     expect(proactive?.source).toBe('built-in')
     expect(proactive?.name).toBe('Proactive')
     expect(proactive?.keepCodingInstructions).toBe(true)
-  })
-
-  // Verbatim port from upstream Claude Code 2.1.237 (Proactive). Same
-  // rule as below: a digest failure means the port was reworded, so re-verify
-  // upstream rather than refreshing the digest.
-  test('prompt matches the pinned upstream port', () => {
-    expect(sha256(proactive!.prompt)).toBe(
-      'a8402e1396f828e5c86faad0ae6aa7790379c007475a412084dcabba1d236ac8',
-    )
-  })
-
-  test('turn reminder matches the pinned upstream port', () => {
-    expect(sha256(proactive!.turnReminder!)).toBe(
-      '35d4cfdfe7e68d2f56f2ab08cf25a2edbde2803fa171504deb234b2696f9f8c0',
-    )
   })
 
   // The two safety rails are what keep "execute immediately" from reading as a
@@ -59,21 +39,6 @@ describe('Concise output style', () => {
     expect(concise?.source).toBe('built-in')
     expect(concise?.name).toBe('Concise')
     expect(concise?.keepCodingInstructions).toBe(true)
-  })
-
-  // Verbatim port from upstream Claude Code 2.1.237 (Concise). A digest
-  // failure means someone reworded the port: re-verify against upstream and
-  // update the digest, never the other way round.
-  test('prompt matches the pinned upstream port', () => {
-    expect(sha256(concise!.prompt)).toBe(
-      'd161e375b32fbd0396ba8110b735f8099e7aa7f72dff40e82ad3b503e467054a',
-    )
-  })
-
-  test('turn reminder matches the pinned upstream port', () => {
-    expect(sha256(concise!.turnReminder!)).toBe(
-      '830941eabb16069c8f1984bcbd09049b29a9d3276b5389d9f3d28d227c60a8f9',
-    )
   })
 
   test('prompt carries the style header and the six numbered rules', () => {

@@ -403,7 +403,7 @@ describe('max output tokens for provider profile models', () => {
     })
   })
 
-  test('a profile entry overrides one model without dropping the type defaults', () => {
+  test('a profile entry overrides one model max output tokens without dropping the type defaults', () => {
     const env = buildProviderEnv(
       profile({
         maxOutputTokens: { 'k3-256k': { default: 8_192, upperLimit: 16_384 } },

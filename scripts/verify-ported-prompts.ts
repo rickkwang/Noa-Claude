@@ -34,9 +34,6 @@ const { PROVIDER_ENV_KEYS } = await import(
 )
 for (const key of PROVIDER_ENV_KEYS) delete process.env[key]
 
-const { OUTPUT_STYLE_CONFIG } = await import(
-  '../src/constants/outputStyles.js'
-)
 const { buildPortedSubjects, PORTED_DIGESTS } = await import(
   '../src/test/constants/portedPromptRegistry.js'
 )
@@ -47,18 +44,9 @@ const { buildPortedSubjects, PORTED_DIGESTS } = await import(
  * The first group comes from the shared registry rather than a second copy of
  * the list: the two used to be maintained in parallel and drifted, so a port
  * could be digest-pinned here and never byte-verified — see the note in
- * portedPromptRegistry.ts. The output styles are pinned in outputStyles.test.ts
- * instead (whole sha256, its own describe blocks), so they are named here.
+ * portedPromptRegistry.ts, output styles included.
  */
-const SUBJECTS: Record<string, string> = {
-  ...buildPortedSubjects(),
-  // Upstream interpolates the rules body into the head (`${NAT}` / `${$AT}`),
-  // so these land as "assembled" rather than one literal.
-  'Proactive output style': OUTPUT_STYLE_CONFIG.Proactive!.prompt,
-  'Proactive turnReminder': OUTPUT_STYLE_CONFIG.Proactive!.turnReminder!,
-  'Concise output style': OUTPUT_STYLE_CONFIG.Concise!.prompt,
-  'Concise turnReminder': OUTPUT_STYLE_CONFIG.Concise!.turnReminder!,
-}
+const SUBJECTS: Record<string, string> = buildPortedSubjects()
 
 // A port that is digest-pinned but not verified here is the exact gap that let
 // six transcription errors through. The shared registry makes it structurally

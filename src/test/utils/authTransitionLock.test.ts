@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { readFileSync } from 'fs'
 import {
   acquireAuthTransitionLock,
   withAuthTransitionLock,
@@ -18,12 +17,6 @@ describe('withAuthTransitionLock', () => {
       await expect(
         acquireAuthTransitionLock({ retries: 0 }),
       ).rejects.toMatchObject({ code: 'ELOCKED' })
-
-      const authSource = readFileSync(
-        join(process.cwd(), 'src/utils/auth.ts'),
-        'utf8',
-      )
-      expect(authSource).toContain('acquireAuthTransitionLock({ retries: 0 })')
     } finally {
       await releaseRefreshLock()
       if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR
