@@ -34,6 +34,7 @@ These commands are callable, but they are not core product workflows:
 - `/reload-skills`
 - `/pause-memory`
 - `/background`
+- `/agents`
 
 Policy:
 
@@ -55,6 +56,7 @@ Tracked surfaces:
 - `/reload-skills`
 - `/pause-memory`
 - `/background`
+- `/agents`
 
 ### Build-Excluded
 

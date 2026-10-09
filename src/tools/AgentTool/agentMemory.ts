@@ -150,8 +150,9 @@ export function loadAgentMemoryPrompt(
   const memoryDir = getAgentMemoryDir(agentType, scope)
 
   // Fire-and-forget: this runs at agent-spawn time inside a sync
-  // getSystemPrompt() callback (called from React render, so it cannot be async). The spawned agent won't try to Write until after
-  // a full API round-trip, by which time mkdir will have completed. Even if
+  // getSystemPrompt() callback (called from React render, so it cannot be
+  // async). The spawned agent won't try to Write until after a full API
+  // round-trip, by which time mkdir will have completed. Even if
   // it hasn't, FileWriteTool does its own mkdir of the parent directory.
   void ensureMemoryDirExists(memoryDir)
 
