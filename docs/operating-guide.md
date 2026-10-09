@@ -176,6 +176,12 @@ Only a direct first-party endpoint uses threads. Other providers retain full req
 
 Deliberate deviation from upstream: continuations omit static `system`/`tools` by default, where upstream sends them in full unless its `tengu_quiet_heron` gate is on. A fingerprint mismatch that names an omitted field switches the session to full fields. Unrecognised HTTP 400s are surfaced, not retried stateless.
 
+### Auto-compact
+
+Proactive auto-compact summarizes the whole conversation; no verbatim tail is kept. A configured window (`/autocompact` or `CLAUDE_CODE_AUTO_COMPACT_WINDOW`) routes compaction through the reactive compactor, which keeps the most recent rounds when they fit. When the current window would block and the last served model has a larger window, the summary is written by that model.
+
+Deliberate deviation from upstream: for model ids upstream does not recognize (window source `unknown-model`), upstream also sends proactive compaction to its reactive path. In a scripted probe with a 200k default window, that path sent no summary at 170k or 190k, so the conversation grew toward the API limit. Noa summarizes at its threshold (167k on that window) instead. Only `claude-test-200k` was probed; recognized model ids were not compared.
+
 ### Progress Artifacts
 
 Use a project-local path inside the product namespace:

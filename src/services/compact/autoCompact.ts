@@ -84,8 +84,21 @@ export function parseAutoCompactWindowEnv(raw: string): number | undefined {
     : /^[+-]?\d{1,3}([_,\u00A0\u202F ])\d{3}(?:\1\d{3})*$/.test(s)
       ? parseInt(s.replace(/[_,\u00A0\u202F ]/g, ''), 10)
       : parseInt(s, 10)
-  if (!Number.isInteger(n) || n <= 0) return undefined
-  return Math.min(Math.max(n, AUTO_COMPACT_WINDOW_MIN), AUTO_COMPACT_WINDOW_MAX)
+  if (!Number.isInteger(n) || n <= 0) {
+    logForDebugging(
+      `CLAUDE_CODE_AUTO_COMPACT_WINDOW=${raw} is not a positive number; using the /autocompact setting`,
+      { level: 'warn' },
+    )
+    return undefined
+  }
+  const clamped = Math.min(Math.max(n, AUTO_COMPACT_WINDOW_MIN), AUTO_COMPACT_WINDOW_MAX)
+  if (clamped !== n) {
+    logForDebugging(
+      `CLAUDE_CODE_AUTO_COMPACT_WINDOW=${raw} clamped to ${clamped} (allowed range ${AUTO_COMPACT_WINDOW_MIN}-${AUTO_COMPACT_WINDOW_MAX})`,
+      { level: 'warn' },
+    )
+  }
+  return clamped
 }
 
 /**
@@ -434,6 +447,23 @@ function maybeArmPrecompute(
   })
 }
 
+let keepTailEnvWarned = false
+
+/** The keep-tail partial path is gone; say so once when the old toggle is still set. */
+function warnIfKeepTailEnvIgnored(context: ToolUseContext): void {
+  if (keepTailEnvWarned || process.env.CLAUDE_CODE_AUTOCOMPACT_KEEP_TAIL === undefined) return
+  keepTailEnvWarned = true
+  const text =
+    'CLAUDE_CODE_AUTOCOMPACT_KEEP_TAIL is ignored: auto-compact summarizes the whole conversation'
+  logForDebugging(text, { level: 'warn' })
+  context.addNotification?.({
+    key: 'autocompact-keep-tail-env-ignored',
+    text,
+    priority: 'immediate',
+    color: 'warning',
+  })
+}
+
 export function isAutoCompactWindowConfigured(): boolean {
   return getConfiguredAutoCompactWindow() !== undefined
 }
@@ -529,6 +559,7 @@ export async function autoCompactIfNeeded(
     return { wasCompacted: false }
   }
 
+  warnIfKeepTailEnvIgnored(toolUseContext)
   const canCompact = canAutoCompactSource(querySource)
   noteOverflowCanCompact(toolUseContext.agentId, canCompact)
   const model = toolUseContext.options.mainLoopModel

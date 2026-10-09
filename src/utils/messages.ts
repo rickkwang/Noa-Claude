@@ -5002,7 +5002,7 @@ export function getMessagesAfterCompactBoundary<
 
 /**
  * Main-screen projection only: keep compact's model/resume payload intact,
- * but hide the preserved pre-compact tail under a keep-tail compact notice.
+ * but hide the preserved pre-compact tail under the partial-compact notice.
  *
  * Only hides messages inside `boundary.compactMetadata.preservedSegment` (the
  * range a partial compact intentionally kept verbatim for the model). Full

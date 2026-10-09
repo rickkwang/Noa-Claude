@@ -123,6 +123,8 @@ beforeEach(() => {
   delete process.env.DISABLE_COMPACT
   delete process.env.DISABLE_AUTO_COMPACT
   delete process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
+  // A configured window routes to the reactive path, which skips precompute.
+  delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
   partialCalls = []
   fullCalls = 0
   preCompactBlockedBy = undefined

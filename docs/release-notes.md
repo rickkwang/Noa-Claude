@@ -1,5 +1,13 @@
 # Release Notes
 
+## Unreleased
+
+- Auto-compact no longer keeps a verbatim recent tail by default: the summary replaces the whole conversation. `CLAUDE_CODE_AUTOCOMPACT_KEEP_TAIL` is ignored, and a notice says so once per session when it is set.
+- `CLAUDE_CODE_AUTO_COMPACT_WINDOW` accepts `1e5` and digit-grouped numbers like `1,000,000`, and is clamped to 100K–1M. Values that are not positive numbers fall back to the `/autocompact` setting. The clamp is logged at debug level; `50000` now means 100K and `600k` no longer disables auto-compact.
+- A configured auto-compact window routes compaction through the reactive compactor, which keeps the most recent rounds when they fit.
+- When the current window would block and the last served model has a larger window, the summary is written by that larger-window model.
+- Auto mode: when the classifier's transcript is too long, the call is denied without a permission prompt, and the next turn compacts the conversation and tells the model which calls did not run. Headless sessions with no pending compaction still abort as before.
+
 ## 1.19.0
 
 - New: Claude Haiku 5.5 (`claude-haiku-5-5`) with 1M native context, 128K output and effort from low to max (default medium); the `haiku` alias resolves to it on first party, and Bedrock, Vertex and Foundry stay on Haiku 4.5
