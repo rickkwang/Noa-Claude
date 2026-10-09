@@ -488,6 +488,7 @@ function BashPermissionRequestInner({
   return <PermissionDialog workerBadge={workerBadge} title={sandboxingEnabled_0 && !isSandboxed_0 ? 'Bash command (unsandboxed)' : 'Bash command'} subtitle={autoModeTip}>
       <Box flexDirection="column" paddingX={1}>
         {!explainerState.visible && <Text dimColor>{toolUseConfirm.description}</Text>}
+        <Box flexDirection="column" borderStyle="dashed" borderColor="subtle" borderLeft={false} borderRight={false} overflow="hidden">
         <Text dimColor={explainerState.visible}>
           {BashTool.renderToolUseMessage({
           command,
@@ -498,6 +499,7 @@ function BashPermissionRequestInner({
         } // always show the full command
         )}
         </Text>
+        </Box>
         <PermissionExplainerContent visible={explainerState.visible} promise={explainerState.promise} />
       </Box>
       {showPermissionDebug ? <>

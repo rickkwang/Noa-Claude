@@ -136,10 +136,11 @@ function extractConversationContext(
 
 /**
  * Check if the permission explainer feature is enabled.
- * Enabled by default; users can opt out via config.
+ * Off by default; users opt in via config. Upstream has no such explainer, so
+ * no extra model call is made on permission prompts unless the user enables it.
  */
 export function isPermissionExplainerEnabled(): boolean {
-  return getGlobalConfig().permissionExplainerEnabled !== false
+  return getGlobalConfig().permissionExplainerEnabled === true
 }
 
 /**
