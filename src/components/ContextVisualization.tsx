@@ -253,7 +253,7 @@ export function ContextVisualization(t0) {
   }
   let t11;
   if ($[56] !== agents) {
-    t11 = agents.length > 0 && <Box flexDirection="column" marginTop={1}><Box><Text bold={true}>Custom agents</Text><Text dimColor={true}> · /agents</Text></Box>{Array.from(groupBySource(agents).entries()).map(_temp22)}</Box>;
+    t11 = agents.length > 0 && <Box flexDirection="column" marginTop={1}><Box><Text bold={true}>Custom agents</Text></Box>{Array.from(groupBySource(agents).entries()).map(_temp22)}</Box>;
     $[56] = agents;
     $[57] = t11;
   } else {

@@ -38,7 +38,7 @@ Use `/status` to inspect current runtime state:
 - plugin state
 - search tool state
 - sandbox runtime compatibility
-- running/pending agent visibility from `/agents`
+- running/pending agent visibility (the `/agents` UI has been removed)
 
 ### `/doctor` vs `noa doctor`
 
@@ -216,7 +216,7 @@ The product should treat worktree context as first-class state:
 
 ## Agents
 
-This product supports local subagents through `/agents`.
+This product supports local subagents defined as markdown files in `.noa/agents/` (project) and `~/.noa/agents/` (user). `/agents` no longer has a management UI; it only prints this guidance.
 
 Agents can come from these scopes:
 
@@ -227,7 +227,7 @@ Agents can come from these scopes:
 - plugin sources
 - managed policy sources
 
-The `/agents` UI resolves precedence for you.
+The loader resolves precedence across these scopes.
 
 ## Auto-fix
 

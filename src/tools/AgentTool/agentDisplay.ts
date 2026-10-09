@@ -1,7 +1,7 @@
 // @ts-nocheck
 /**
  * Shared utilities for displaying agent information.
- * Used by both the CLI `claude agents` handler and the interactive `/agents` command.
+ * Used by the CLI `claude agents` handler.
  */
 
 import { compareAsciiFirst } from '../../utils/compareAsciiFirst.js'

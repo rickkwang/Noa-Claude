@@ -154,7 +154,7 @@ const largeAgentDescriptionsNotice: StatusNoticeDefinition = {
           Large cumulative agent descriptions will impact performance (~
           {formatNumber(totalTokens)} tokens &gt;{' '}
           {formatNumber(AGENT_DESCRIPTIONS_THRESHOLD)})
-          <Text dimColor> · /agents to manage</Text>
+          <Text dimColor> · edit .noa/agents/ to manage</Text>
         </Text>
       </Box>;
   }

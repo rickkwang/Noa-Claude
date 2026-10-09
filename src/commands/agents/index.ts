@@ -1,10 +1,13 @@
 // @ts-nocheck
 import type { Command } from '../../commands.js'
 
+// Matches upstream: the wizard is removed, so the command only prints guidance.
 const agents = {
-  type: 'local-jsx',
+  type: 'local',
   name: 'agents',
-  description: 'Manage local subagents, background agents, and delegation settings',
+  description: '(removed) Ask Claude to create/manage subagents, or edit .noa/agents/',
+  isHidden: true,
+  supportsNonInteractive: true,
   load: () => import('./agents.js'),
 } satisfies Command
 

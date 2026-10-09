@@ -79,7 +79,7 @@ The session-fork workflow (`/fork`) is smoke-checked. Other listed commands are 
 - `/login` / `/logout` — Authenticate with your Anthropic account via OAuth (Anthropic-specific)
 
 **Agent execution**
-- `/agents` — Manage sub-agents for parallel task execution
+- `/agents` — Removed; ask Claude to create or update sub-agents, or edit `.noa/agents/` (project) and `~/.noa/agents/` (user)
 
 **Verification and diagnostics**
 - `/doctor` (alias `/checkup`) — Agentic health check: runs read-only diagnostics
