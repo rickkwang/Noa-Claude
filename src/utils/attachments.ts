@@ -213,6 +213,7 @@ import {
 import {
   getEffectiveContextWindowSize,
   isAutoCompactEnabled,
+  type AutoCompactWindowOverride,
 } from '../services/compact/autoCompact.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growthbook.js'
 import {
@@ -1346,6 +1347,7 @@ export async function getAttachments(
               getCompactionReminderAttachment(
                 messages ?? [],
                 toolUseContext.options.mainLoopModel,
+                toolUseContext.options.autoCompactWindow,
               ),
           ),
           maybe('context_efficiency', () =>
@@ -1381,6 +1383,7 @@ export async function getAttachments(
             getTokenUsageAttachment(
               messages ?? [],
               toolUseContext.options.mainLoopModel,
+              toolUseContext.options.autoCompactWindow,
             ),
           ),
         ),
@@ -4281,12 +4284,13 @@ function getTeamContextAttachment(messages: Message[]): Attachment[] {
 function getTokenUsageAttachment(
   messages: Message[],
   model: string,
+  autoCompactWindow?: AutoCompactWindowOverride,
 ): Attachment[] {
   if (!isEnvTruthy(process.env.CLAUDE_CODE_ENABLE_TOKEN_USAGE_ATTACHMENT)) {
     return []
   }
 
-  const contextWindow = getEffectiveContextWindowSize(model)
+  const contextWindow = getEffectiveContextWindowSize(model, autoCompactWindow)
   const usedTokens = tokenCountFromLastAPIResponse(messages)
 
   return [
@@ -4402,6 +4406,7 @@ async function getVerifyPlanReminderAttachment(
 export function getCompactionReminderAttachment(
   messages: Message[],
   model: string,
+  autoCompactWindow?: AutoCompactWindowOverride,
 ): Attachment[] {
   if (!getFeatureValue_CACHED_MAY_BE_STALE('tengu_marble_fox', false)) {
     return []
@@ -4416,7 +4421,7 @@ export function getCompactionReminderAttachment(
     return []
   }
 
-  const effectiveWindow = getEffectiveContextWindowSize(model)
+  const effectiveWindow = getEffectiveContextWindowSize(model, autoCompactWindow)
   const usedTokens = tokenCountWithEstimation(messages)
   if (usedTokens < effectiveWindow * 0.25) {
     return []

@@ -1,6 +1,6 @@
 import { feature } from 'bun:bundle'
 import { markPostCompaction } from 'src/bootstrap/state.js'
-import { getSdkBetas } from '../../bootstrap/state.js'
+import { getSdkBetas, isLongContext1mCreditsBlocked } from '../../bootstrap/state.js'
 import type { QuerySource } from '../../constants/querySource.js'
 import type { ToolUseContext } from '../../Tool.js'
 import type { Message } from '../../types/message.js'
@@ -12,6 +12,12 @@ import type { CacheSafeParams } from '../../utils/forkedAgent.js'
 import { logError } from '../../utils/log.js'
 import { tokenCountWithEstimation } from '../../utils/tokens.js'
 import { roughTokenCountEstimationForMessages } from '../tokenEstimation.js'
+import { getEffortModelKey } from '../../utils/effort.js'
+import { getEnabledSettingSources } from '../../utils/settings/constants.js'
+import { getSettingsForSource } from '../../utils/settings/settings.js'
+import { getMarketingNameForModel } from '../../utils/model/model.js'
+import { isModelAllowed } from '../../utils/model/modelAllowlist.js'
+import { currentLimits } from '../claudeAiLimits.js'
 import { createAttachmentMessage } from '../../utils/attachments.js'
 import { SYNTHETIC_MODEL } from '../../utils/messages.js'
 import {
@@ -71,6 +77,13 @@ export function getModelEffectiveContextWindowSize(model: string): number {
 const AUTO_COMPACT_WINDOW_MIN = 100_000
 const AUTO_COMPACT_WINDOW_MAX = 1_000_000
 
+const warnedEnvValues = new Set<string>()
+function warnEnvOnce(raw: string, message: string): void {
+  if (warnedEnvValues.has(raw)) return
+  warnedEnvValues.add(raw)
+  logForDebugging(message, { level: 'warn' })
+}
+
 /**
  * Parses CLAUDE_CODE_AUTO_COMPACT_WINDOW like upstream: exponent or
  * digit-grouped numbers, otherwise a leading-integer parseInt. Invalid values
@@ -84,46 +97,180 @@ export function parseAutoCompactWindowEnv(raw: string): number | undefined {
     : /^[+-]?\d{1,3}([_,\u00A0\u202F ])\d{3}(?:\1\d{3})*$/.test(s)
       ? parseInt(s.replace(/[_,\u00A0\u202F ]/g, ''), 10)
       : parseInt(s, 10)
+  // Called on every threshold read, so warn once per distinct value.
   if (!Number.isInteger(n) || n <= 0) {
-    logForDebugging(
-      `CLAUDE_CODE_AUTO_COMPACT_WINDOW=${raw} is not a positive number; using the /autocompact setting`,
-      { level: 'warn' },
+    warnEnvOnce(
+      raw,
+      `CLAUDE_CODE_AUTO_COMPACT_WINDOW=${raw} is not a positive number; using the settings value`,
     )
     return undefined
   }
   const clamped = Math.min(Math.max(n, AUTO_COMPACT_WINDOW_MIN), AUTO_COMPACT_WINDOW_MAX)
   if (clamped !== n) {
-    logForDebugging(
+    warnEnvOnce(
+      raw,
       `CLAUDE_CODE_AUTO_COMPACT_WINDOW=${raw} clamped to ${clamped} (allowed range ${AUTO_COMPACT_WINDOW_MIN}-${AUTO_COMPACT_WINDOW_MAX})`,
-      { level: 'warn' },
     )
   }
   return clamped
 }
 
+export type AutoCompactWindowSource =
+  | 'env'
+  | 'settings'
+  | 'model-default'
+  | 'unknown-model'
+  | 'auto'
+
+export type AutoCompactWindowResolution = {
+  /** The window in effect: the configured value capped to the model's window. */
+  window: number
+  /** The requested value, or the model's window when nothing is configured. */
+  configured: number
+  source: AutoCompactWindowSource
+}
+
 /**
- * The user-configured auto-compact window, if any: a valid env value overrides
- * the persisted /autocompact setting.
+ * The model's `auto`-setting value from settings: per-model entry first, then
+ * the top-level value, taking the highest-priority file that sets either. Same
+ * lookup as effort, so `/autocompact` and `/effort` agree on what "this model"
+ * means.
  */
-function getConfiguredAutoCompactWindow(): number | undefined {
-  const fromEnv = parseAutoCompactWindowEnv(
-    process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW ?? '',
-  )
-  if (fromEnv !== undefined) return fromEnv
-  const configWindow = getGlobalConfig().autoCompactWindow
-  return configWindow != null && configWindow > 0 ? configWindow : undefined
+function getSettingsAutoCompactWindow(
+  model: string,
+): number | 'auto' | undefined {
+  const key = getEffortModelKey(model)
+  for (const source of [...getEnabledSettingSources()].reverse()) {
+    const settings = getSettingsForSource(source)
+    const table = settings?.modelSettings
+    const scoped =
+      table &&
+      (Object.hasOwn(table, key) && table[key]?.autoCompactWindow !== undefined
+        ? table[key]
+        : Object.entries(table).find(
+            ([name, entry]) =>
+              entry?.autoCompactWindow !== undefined &&
+              getEffortModelKey(name) === key,
+          )?.[1])
+    if (scoped?.autoCompactWindow !== undefined) {
+      return scoped.autoCompactWindow
+    }
+    if (settings?.autoCompactWindow !== undefined) {
+      return settings.autoCompactWindow
+    }
+  }
+  return undefined
+}
+
+/**
+ * A window set above the settings files: a session value, or an agent's
+ * ceiling wrapping the value it inherits. `undefined` reads the settings files,
+ * `'auto'` skips them. A ceiling only lowers the window it resolves to.
+ */
+export type AutoCompactWindowOverride =
+  | number
+  | 'auto'
+  | { inner?: AutoCompactWindowOverride; ceiling: number }
+
+// Upstream's default window for models that bill past 200k without credits.
+const AUTO_COMPACT_BILLED_CAP = 200_000
+
+/**
+ * Where the auto-compact window comes from, mirroring upstream's aE. The source
+ * decides the label `/autocompact` shows and whether compaction is routed
+ * through the reactive compactor (every source except "auto").
+ */
+export function resolveAutoCompactWindow(
+  model: string,
+  override?: AutoCompactWindowOverride,
+): AutoCompactWindowResolution {
+  const contextWindow = getContextWindowForModel(model, getSdkBetas())
+
+  if (typeof override === 'object') {
+    const inner = resolveAutoCompactWindow(model, override.inner)
+    if (inner.source === 'env' || inner.window <= override.ceiling) return inner
+    return {
+      window: Math.min(contextWindow, override.ceiling),
+      configured: override.ceiling,
+      source: 'settings',
+    }
+  }
+
+  // Empty means unset, which upstream does not parse or warn about.
+  const envRaw = process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+  const fromEnv = envRaw ? parseAutoCompactWindowEnv(envRaw) : undefined
+  if (fromEnv !== undefined) {
+    return {
+      window: Math.min(contextWindow, fromEnv),
+      configured: fromEnv,
+      source: 'env',
+    }
+  }
+
+  const configured =
+    override === undefined ? getSettingsAutoCompactWindow(model) : override
+  if (typeof configured === 'number') {
+    return {
+      window: Math.min(contextWindow, configured),
+      configured,
+      source: 'settings',
+    }
+  }
+
+  // Credits-blocked accounts get the 200k default for models that would
+  // otherwise bill past it; DISABLE_COMPACT with a max-tokens value opts out.
+  const compactMaxTokens = isEnvTruthy(process.env.DISABLE_COMPACT)
+    ? Number(process.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS)
+    : NaN
+  if (
+    contextWindow < 1_000_000 &&
+    contextWindow > AUTO_COMPACT_BILLED_CAP &&
+    isLongContext1mCreditsBlocked() &&
+    !(compactMaxTokens > 0)
+  ) {
+    return {
+      window: Math.min(contextWindow, AUTO_COMPACT_BILLED_CAP),
+      configured: AUTO_COMPACT_BILLED_CAP,
+      source: 'model-default',
+    }
+  }
+
+  // Upstream reads this flag from a cached store that defaults to on, so the
+  // resolver (which can run before config is readable) falls back the same way.
+  let enabled = true
+  try {
+    enabled = isAutoCompactEnabled()
+  } catch {
+    enabled = true
+  }
+  // Upstream reports no model-based source while auto-compact is off.
+  if (!enabled) {
+    return { window: contextWindow, configured: contextWindow, source: 'auto' }
+  }
+  if (contextWindow >= 1_000_000) {
+    return { window: contextWindow, configured: contextWindow, source: 'model-default' }
+  }
+  // A [1m] suffix is an explicit opt-in, and an unresolved inference profile
+  // cannot be identified, so neither is treated as unknown.
+  const unknownModel =
+    !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT) &&
+    !/\[1m\]$/i.test(model) &&
+    !model.includes('application-inference-profile') &&
+    getMarketingNameForModel(model) === undefined
+  return {
+    window: contextWindow,
+    configured: contextWindow,
+    source: unknownModel ? 'unknown-model' : 'auto',
+  }
 }
 
 // Returns the auto-compact window minus the summary output reserve
-export function getEffectiveContextWindowSize(model: string): number {
+export function getEffectiveContextWindowSize(
+  model: string,
+  override?: AutoCompactWindowOverride,
+): number {
   const reservedTokensForSummary = getSummaryOutputReserve(model)
-  let contextWindow = getContextWindowForModel(model, getSdkBetas())
-
-  // The window is capped to the model's real context window below.
-  const configuredWindow = getConfiguredAutoCompactWindow()
-  if (configuredWindow !== undefined) {
-    contextWindow = Math.min(contextWindow, configuredWindow)
-  }
+  const contextWindow = resolveAutoCompactWindow(model, override).window
 
   const effectiveContext = contextWindow - reservedTokensForSummary
 
@@ -183,8 +330,11 @@ export const MANUAL_COMPACT_BUFFER_TOKENS = 3_000
 // on every turn.
 const MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3
 
-export function getAutoCompactThreshold(model: string): number {
-  const effectiveContextWindow = getEffectiveContextWindowSize(model)
+export function getAutoCompactThreshold(
+  model: string,
+  override?: AutoCompactWindowOverride,
+): number {
+  const effectiveContextWindow = getEffectiveContextWindowSize(model, override)
 
   const autocompactThreshold =
     effectiveContextWindow - AUTOCOMPACT_BUFFER_TOKENS
@@ -207,6 +357,7 @@ export function getAutoCompactThreshold(model: string): number {
 export function calculateTokenWarningState(
   tokenUsage: number,
   model: string,
+  override?: AutoCompactWindowOverride,
 ): {
   percentLeft: number
   isAboveWarningThreshold: boolean
@@ -214,10 +365,10 @@ export function calculateTokenWarningState(
   isAboveAutoCompactThreshold: boolean
   isAtBlockingLimit: boolean
 } {
-  const autoCompactThreshold = getAutoCompactThreshold(model)
+  const autoCompactThreshold = getAutoCompactThreshold(model, override)
   const threshold = isAutoCompactEnabled()
     ? autoCompactThreshold
-    : getEffectiveContextWindowSize(model)
+    : getEffectiveContextWindowSize(model, override)
 
   const percentLeft =
     threshold > 0
@@ -301,6 +452,7 @@ export async function shouldAutoCompact(
   // pre-snip context, so tokenCountWithEstimation can't see the savings.
   // Subtract the rough-delta that snip already computed.
   snipTokensFreed = 0,
+  override?: AutoCompactWindowOverride,
 ): Promise<boolean> {
   // Recursion guards: session_memory and compact are forked agents that
   // would deadlock.
@@ -316,8 +468,8 @@ export async function shouldAutoCompact(
   }
 
   const tokenCount = tokenCountWithEstimation(messages) - snipTokensFreed
-  const threshold = getAutoCompactThreshold(model)
-  const effectiveWindow = getEffectiveContextWindowSize(model)
+  const threshold = getAutoCompactThreshold(model, override)
+  const effectiveWindow = getEffectiveContextWindowSize(model, override)
 
   // Threshold collapses to ~0 when effective window hits its floor (small
   // CLAUDE_CODE_AUTO_COMPACT_WINDOW or an unusually small context model).
@@ -341,6 +493,7 @@ export async function shouldAutoCompact(
   const { isAboveAutoCompactThreshold } = calculateTokenWarningState(
     tokenCount,
     model,
+    override,
   )
 
   if (
@@ -395,9 +548,12 @@ export function isFixedPrefixOverThreshold(
 // and we fall back to a fresh synchronous compact.
 const PRECOMPUTE_TAIL_BUDGET_FRACTION = 0.4
 
-function precomputeTailBudget(model: string): number {
+function precomputeTailBudget(
+  model: string,
+  override?: AutoCompactWindowOverride,
+): number {
   return Math.floor(
-    getAutoCompactThreshold(model) * PRECOMPUTE_TAIL_BUDGET_FRACTION,
+    getAutoCompactThreshold(model, override) * PRECOMPUTE_TAIL_BUDGET_FRACTION,
   )
 }
 
@@ -436,14 +592,14 @@ function maybeArmPrecompute(
   if (!isAutoCompactEnabled()) return
   const tokenCount = tokenCountWithEstimation(messages)
   const { isAboveWarningThreshold, isAboveAutoCompactThreshold } =
-    calculateTokenWarningState(tokenCount, model)
+    calculateTokenWarningState(tokenCount, model, context.options.autoCompactWindow)
   // Only in the warning band: at/over threshold is the consume path, not arm.
   if (!isAboveWarningThreshold || isAboveAutoCompactThreshold) return
   armPrecompute({
     messages,
     context,
     cacheSafeParams,
-    maxTailTokens: precomputeTailBudget(model),
+    maxTailTokens: precomputeTailBudget(model, context.options.autoCompactWindow),
   })
 }
 
@@ -464,10 +620,6 @@ function warnIfKeepTailEnvIgnored(context: ToolUseContext): void {
   })
 }
 
-export function isAutoCompactWindowConfigured(): boolean {
-  return getConfiguredAutoCompactWindow() !== undefined
-}
-
 /**
  * Whether this query source may compact at all. Forked summarizers and
  * background side-task forks never do (see shouldAutoCompact).
@@ -483,6 +635,21 @@ function canAutoCompactSource(querySource: QuerySource | undefined): boolean {
   )
 }
 
+function isQuotaRejectedWithoutOverage(limits: {
+  status: string
+  resetsAt?: number
+  isUsingOverage?: boolean
+  overageInUse?: boolean
+}): boolean {
+  return (
+    limits.status === 'rejected' &&
+    limits.resetsAt !== undefined &&
+    Number.isFinite(limits.resetsAt) &&
+    limits.isUsingOverage !== true &&
+    limits.overageInUse !== true
+  )
+}
+
 /**
  * The model the conversation was last served by, when it has a larger window
  * than the current one and the current window would block. Upstream also gates
@@ -493,6 +660,7 @@ function findLargerWindowModel(
   messages: Message[],
   model: string,
   snipTokensFreed: number,
+  override?: AutoCompactWindowOverride,
 ): string | undefined {
   let candidate: string | undefined
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -503,11 +671,17 @@ function findLargerWindowModel(
     }
   }
   if (candidate === undefined || candidate === model) return undefined
+  // Upstream's gates: the candidate is recognized and allowed by the model
+  // allowlist, has the larger window, and the account is not rejected for
+  // quota (rejected without overage).
+  if (getMarketingNameForModel(candidate) === undefined) return undefined
+  if (!isModelAllowed(candidate)) return undefined
   if (getContextWindowForModel(candidate, getSdkBetas()) <= getContextWindowForModel(model, getSdkBetas())) {
     return undefined
   }
+  if (isQuotaRejectedWithoutOverage(currentLimits)) return undefined
   const tokenCount = tokenCountWithEstimation(messages) - snipTokensFreed
-  return calculateTokenWarningState(tokenCount, model).isAtBlockingLimit
+  return calculateTokenWarningState(tokenCount, model, override).isAtBlockingLimit
     ? candidate
     : undefined
 }
@@ -524,6 +698,45 @@ function compactRouted(
   querySource: QuerySource,
   summaryModel?: string,
 ): Promise<ReactiveCompactOutcome> {
+  // A ready precompute summary is swapped in before the reactive compactor
+  // runs, as upstream does; the swap skips the pre-compact hooks, which only
+  // run when the summary is produced fresh.
+  if (summaryModel === undefined && isPrecomputeOwner(querySource) && isPrecomputeEnabled()) {
+    const model = toolUseContext.options.mainLoopModel
+    const override = toolUseContext.options.autoCompactWindow
+    const pre = consumePrecompute({
+      messages,
+      maxTailTokens: precomputeTailBudget(model, override),
+    })
+    if (pre) {
+      return partialCompactConversation(
+        messages,
+        pre.pivotIndex,
+        toolUseContext,
+        cacheSafeParams,
+        undefined,
+        'up_to',
+        {
+          trigger: 'auto',
+          suppressFollowUpQuestions: true,
+          autoCompactThreshold: getAutoCompactThreshold(model, override),
+          precomputedSummary: pre.summaryText,
+        },
+      ).then(
+        result => {
+          runPostCompactCleanup(querySource)
+          markPostCompaction()
+          return { kind: 'compacted' as const, result }
+        },
+        error => {
+          if (!isCompactionUserAbort(error, toolUseContext.abortController.signal)) {
+            logError(error)
+          }
+          return { kind: 'failed' as const }
+        },
+      )
+    }
+  }
   const context =
     summaryModel === undefined
       ? toolUseContext
@@ -563,13 +776,14 @@ export async function autoCompactIfNeeded(
   const canCompact = canAutoCompactSource(querySource)
   noteOverflowCanCompact(toolUseContext.agentId, canCompact)
   const model = toolUseContext.options.mainLoopModel
+  const override = toolUseContext.options.autoCompactWindow
   let failures = tracking?.consecutiveFailures
 
   // Larger-window retry: when the current window would block and the last
   // served model had a larger one, summarize with that model. Skipped once a
   // previous compaction has failed.
   if ((failures ?? 0) === 0 && querySource !== undefined && canCompact) {
-    const largerModel = findLargerWindowModel(messages, model, snipTokensFreed ?? 0)
+    const largerModel = findLargerWindowModel(messages, model, snipTokensFreed ?? 0, override)
     if (largerModel !== undefined) {
       logForDebugging(
         `autocompact: summarizing with larger-window model ${largerModel} (current window would block)`,
@@ -614,7 +828,7 @@ export async function autoCompactIfNeeded(
 
   const shouldCompact =
     forced !== undefined ||
-    (await shouldAutoCompact(messages, model, querySource, snipTokensFreed))
+    (await shouldAutoCompact(messages, model, querySource, snipTokensFreed, override))
 
   if (!shouldCompact) {
     // Below threshold: arm a background precompute if we're in the warning band
@@ -638,7 +852,8 @@ export async function autoCompactIfNeeded(
   }
 
   const routed =
-    forced !== undefined || isAutoCompactWindowConfigured()
+    forced !== undefined ||
+    resolveAutoCompactWindow(model, override).source !== 'auto'
   if (routed && querySource !== undefined) {
     return finishRoutedCompaction({
       outcome: await compactRouted(messages, toolUseContext, cacheSafeParams, querySource),
@@ -653,7 +868,7 @@ export async function autoCompactIfNeeded(
     isRecompactionInChain: tracking?.compacted === true,
     turnsSincePreviousCompact: tracking?.turnCounter ?? -1,
     previousCompactTurnId: tracking?.turnId,
-    autoCompactThreshold: getAutoCompactThreshold(model),
+    autoCompactThreshold: getAutoCompactThreshold(model, override),
     querySource,
   }
 
@@ -703,7 +918,7 @@ export async function autoCompactIfNeeded(
     ) {
       const pre = consumePrecompute({
         messages,
-        maxTailTokens: precomputeTailBudget(model),
+        maxTailTokens: precomputeTailBudget(model, override),
       })
       if (pre) {
         const compactionResult = await partialCompactConversation(

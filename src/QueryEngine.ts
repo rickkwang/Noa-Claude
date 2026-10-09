@@ -51,6 +51,7 @@ import { SYNTHETIC_OUTPUT_TOOL_NAME } from './tools/SyntheticOutputTool/Syntheti
 import type { Message, SystemAPIErrorMessage } from './types/message.js'
 import type { OrphanedPermission } from './types/textInputTypes.js'
 import { createAbortController, createChildAbortController } from './utils/abortController.js'
+import type { AutoCompactWindowOverride } from './services/compact/autoCompact.js'
 import type { AttributionState } from './utils/commitAttribution.js'
 import { getGlobalConfig } from './utils/config.js'
 import { getCwd } from './utils/cwd.js'
@@ -141,6 +142,8 @@ export type QueryEngineConfig = {
   fallbackModel?: string
   thinkingConfig?: ThinkingConfig
   maxTurns?: number
+  /** Session auto-compact window (SDK), above the settings files. */
+  autoCompactWindow?: AutoCompactWindowOverride
   maxBudgetUsd?: number
   taskBudget?: { total: number }
   jsonSchema?: Record<string, unknown>
@@ -367,6 +370,7 @@ export class QueryEngine {
         tools,
         verbose,
         mainLoopModel: initialMainLoopModel,
+        autoCompactWindow: this.config.autoCompactWindow,
         thinkingConfig: initialThinkingConfig,
         mcpClients,
         mcpResources: {},
@@ -516,6 +520,7 @@ export class QueryEngine {
         tools,
         verbose,
         mainLoopModel,
+        autoCompactWindow: this.config.autoCompactWindow,
         thinkingConfig: initialThinkingConfig,
         mcpClients,
         mcpResources: {},

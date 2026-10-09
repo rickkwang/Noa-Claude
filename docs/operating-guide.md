@@ -178,9 +178,15 @@ Deliberate deviation from upstream: continuations omit static `system`/`tools` b
 
 ### Auto-compact
 
-Proactive auto-compact summarizes the whole conversation; no verbatim tail is kept. A configured window (`/autocompact` or `CLAUDE_CODE_AUTO_COMPACT_WINDOW`) routes compaction through the reactive compactor, which keeps the most recent rounds when they fit. When the current window would block and the last served model has a larger window, the summary is written by that model.
+`/autocompact` opens a dialog for the current model; `/autocompact <auto|500k|1m|200000>` sets it directly. Values are 100k–1M tokens or `auto`. The choice is saved as `modelSettings.<model>.autoCompactWindow` in user settings; a top-level `autoCompactWindow` sets the default for every model.
 
-Deliberate deviation from upstream: for model ids upstream does not recognize (window source `unknown-model`), upstream also sends proactive compaction to its reactive path. In a scripted probe with a 200k default window, that path sent no summary at 170k or 190k, so the conversation grew toward the API limit. Noa summarizes at its threshold (167k on that window) instead. Only `claude-test-200k` was probed; recognized model ids were not compared.
+Precedence: a valid `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (the dialog is read-only then), then the per-model setting, then the top-level setting, then the model default.
+
+A subagent's `autoCompactWindow` frontmatter (100k–1M) is a ceiling on the window it inherits; it never raises the window and has no effect on the main session. Credits-blocked accounts get a 200k default for models that would otherwise bill past it. With auto-compact disabled, every source reports as `auto`.
+
+The label shown comes from the source: `from CLAUDE_CODE_AUTO_COMPACT_WINDOW`, `from settings`, `default for this model` (models with a 1M window), `default for an unrecognized model`, or `auto` for other recognized models. Unknown-model labelling is skipped for `[1m]` ids, unresolved inference profiles, and when `CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT` is set. The threshold is the window minus the summary reserve and the autocompact buffer, capped to the model's window.
+
+Every source except `auto` routes compaction through the reactive compactor, which keeps the most recent rounds verbatim when they fit. With `auto`, proactive compaction summarizes the whole conversation. When the current window would block, the last served model is recognized, allowed by the model allowlist, has a larger window, and the account is not quota-rejected, the summary is written by that larger model. A ready precompute summary is swapped in before the reactive compactor runs. When no verbatim tail fits, the reactive path summarizes everything.
 
 ### Progress Artifacts
 

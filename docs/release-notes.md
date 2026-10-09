@@ -2,10 +2,12 @@
 
 ## Unreleased
 
-- Auto-compact no longer keeps a verbatim recent tail by default: the summary replaces the whole conversation. `CLAUDE_CODE_AUTOCOMPACT_KEEP_TAIL` is ignored, and a notice says so once per session when it is set.
-- `CLAUDE_CODE_AUTO_COMPACT_WINDOW` accepts `1e5` and digit-grouped numbers like `1,000,000`, and is clamped to 100K–1M. Values that are not positive numbers fall back to the `/autocompact` setting. The clamp is logged at debug level; `50000` now means 100K and `600k` no longer disables auto-compact.
-- A configured auto-compact window routes compaction through the reactive compactor, which keeps the most recent rounds when they fit.
+- Auto-compact no longer keeps a verbatim recent tail for proactive compaction. `CLAUDE_CODE_AUTOCOMPACT_KEEP_TAIL` is ignored, and a notice says so once per session when it is set.
+- `/autocompact` opens a dialog: ←/→ adjusts the window in 100K steps (`auto` at the ends), Enter applies, Esc cancels. The dialog and `/autocompact <value>` both save per model under `modelSettings.<model>.autoCompactWindow` in user settings; a top-level `autoCompactWindow` sets the default for all models.
+- `CLAUDE_CODE_AUTO_COMPACT_WINDOW` accepts `1e5` and digit-grouped numbers like `1,000,000`, and is clamped to 100K–1M. Values that are not positive numbers fall back to the settings. The clamp is logged at debug level; `50000` now means 100K and `600k` no longer disables auto-compact.
+- Compaction for any window source other than `auto` (a configured window, the default for 1M-window models, and unrecognized model ids) goes through the reactive compactor, which keeps the most recent rounds when they fit.
 - When the current window would block and the last served model has a larger window, the summary is written by that larger-window model.
+- Auto-compact window follows upstream more closely: subagents can set `autoCompactWindow` in their frontmatter as a ceiling, SDK sessions can pass a session window, credits-blocked accounts get a 200k default for models that would bill past it, and `CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT` turns off unknown-model labelling. An empty `CLAUDE_CODE_AUTO_COMPACT_WINDOW` is treated as unset.
 - Auto mode: when the classifier's transcript is too long, the call is denied without a permission prompt, and the next turn compacts the conversation and tells the model which calls did not run. Headless sessions with no pending compaction still abort as before.
 
 ## 1.19.0

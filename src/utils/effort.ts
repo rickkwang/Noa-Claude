@@ -270,7 +270,7 @@ export function getInitialEffortSetting(
   return toPersistableEffort(getInitialSettings().effortLevel, model)
 }
 
-function getEffortModelKey(model: string): string {
+export function getEffortModelKey(model: string): string {
   return parseUserSpecifiedModel(model).replace(/\[1m\]$/i, '')
 }
 

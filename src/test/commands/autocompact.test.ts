@@ -3,7 +3,7 @@ import { parseWindowArg } from '../../commands/autocompact/autocompact.js'
 
 describe('parseWindowArg', () => {
   test('reset aliases clear the override', () => {
-    for (const s of ['auto', 'reset', 'default', 'unset', 'none', ' AUTO ']) {
+    for (const s of ['auto', 'reset', 'default', 'unset', ' AUTO ']) {
       expect(parseWindowArg(s)).toBe('auto')
     }
   })
@@ -13,7 +13,7 @@ describe('parseWindowArg', () => {
     expect(parseWindowArg('1m')).toBe(1_000_000)
     expect(parseWindowArg('1M')).toBe(1_000_000)
     expect(parseWindowArg('250K')).toBe(250_000)
-    expect(parseWindowArg('1.5m')).toBe(1_500_000)
+    expect(parseWindowArg('1.5m')).toBeNull() // above the 1M ceiling
   })
 
   test('bare large integers pass through unchanged', () => {
@@ -39,7 +39,7 @@ describe('parseWindowArg', () => {
   })
 
   test('rejects unparseable input', () => {
-    for (const s of ['', 'abc', '500kb', '5 0 0', '-200k', 'k', '1.2.3']) {
+    for (const s of ['', 'abc', '5 0 0', '-200k', 'k', '1.2.3', 'none']) {
       expect(parseWindowArg(s)).toBeNull()
     }
   })

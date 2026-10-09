@@ -9,6 +9,7 @@ import type {
 import type { UUID } from 'crypto'
 import type { z } from 'zod/v4'
 import type { Command } from './commands.js'
+import type { AutoCompactWindowOverride } from './services/compact/autoCompact.js'
 import type { CanUseToolFn } from './hooks/useCanUseTool.js'
 import type { ThinkingConfig } from './utils/thinking.js'
 import type { ThreadGoal } from './types/goal.js'
@@ -161,6 +162,8 @@ export type ToolUseContext = {
     commands: Command[]
     debug: boolean
     mainLoopModel: string
+    /** Session or agent auto-compact window above the settings files. */
+    autoCompactWindow?: AutoCompactWindowOverride
     tools: Tools
     verbose: boolean
     thinkingConfig: ThinkingConfig

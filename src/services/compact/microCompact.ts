@@ -937,7 +937,10 @@ async function maybeSizeBasedMicrocompact(
   const { getEffectiveContextWindowSize } =
     require('./autoCompact.js') as typeof import('./autoCompact.js')
   const model = toolUseContext?.options.mainLoopModel ?? getMainLoopModel()
-  const effectiveWindow = getEffectiveContextWindowSize(model)
+  const effectiveWindow = getEffectiveContextWindowSize(
+    model,
+    toolUseContext?.options.autoCompactWindow,
+  )
   const estimatedTokens = estimateMessageTokens(messages)
 
   if (!shouldSizeTrigger(estimatedTokens, effectiveWindow, config)) {

@@ -12,6 +12,13 @@ import { MarketplaceSourceSchema } from '../plugins/schemas.js'
 import { CLAUDE_CODE_SETTINGS_SCHEMA_URL } from './constants.js'
 import { PermissionRuleSchema } from './permissionValidation.js'
 
+// Auto-compact window: a token count (100k–1M) or "auto" for the window tuned
+// for the model. Shared by the top-level setting and per-model entries.
+const autoCompactWindowSettingSchema = z.union([
+  z.literal('auto'),
+  z.number().int().min(100_000).max(1_000_000),
+])
+
 // Re-export hook schemas and types from centralized location for backward compatibility
 export {
   type AgentHook,
@@ -808,8 +815,10 @@ export const SettingsSchema = lazySchema(() =>
         .optional()
         .catch(undefined)
         .describe('Persisted effort level for supported models.'),
+      autoCompactWindow: autoCompactWindowSettingSchema.optional().catch(undefined),
       modelSettings: z.record(z.string(), z.object({
         effortLevel: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().catch(undefined),
+        autoCompactWindow: autoCompactWindowSettingSchema.optional().catch(undefined),
       }).passthrough()).optional(),
       advisorModel: z
         .string()

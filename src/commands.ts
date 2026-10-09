@@ -2,6 +2,7 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import addDir from './commands/add-dir/index.js'
 import autocompact from './commands/autocompact/index.js'
+import autocompactHeadless from './commands/autocompact/headless.js'
 import cd from './commands/cd/index.js'
 import background from './commands/background/index.js'
 import stop from './commands/stop/index.js'
@@ -226,6 +227,7 @@ const COMMANDS = memoize((): Command[] => [
   usage,
   usageReport,
   autocompact,
+  autocompactHeadless,
   ...(forkCmd ? [forkCmd] : []),
   ...(bridge ? [bridge] : []),
   ...(voiceCommand ? [voiceCommand] : []),

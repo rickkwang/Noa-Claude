@@ -97,7 +97,7 @@ function uid(m: Message | undefined): string {
 
 function ctx() {
   return {
-    options: { mainLoopModel: 'test-model' },
+    options: { mainLoopModel: 'claude-3-7-sonnet-20250219' },
     abortController: new AbortController(),
     getAppState: () => ({ toolPermissionContext: { mode: 'default' } }),
   } as never
