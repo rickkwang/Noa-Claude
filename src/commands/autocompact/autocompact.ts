@@ -2,6 +2,7 @@
 import {
   getAutoCompactThreshold,
   isAutoCompactEnabled,
+  parseAutoCompactWindowEnv,
 } from '../../services/compact/autoCompact.js'
 import type { LocalCommandCall } from '../../types/command.js'
 import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
@@ -46,7 +47,8 @@ export const call: LocalCommandCall = async (args: string, context) => {
   // getDefaultMainLoopModel path during a normal invocation).
   const model = context?.options?.mainLoopModel ?? getMainLoopModel()
   const modelWindow = getContextWindowForModel(model)
-  const envWindow = process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+  const rawEnvWindow = process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+  const envWindow = rawEnvWindow ? parseAutoCompactWindowEnv(rawEnvWindow) : undefined
   const trimmed = (args ?? '').trim()
 
   const statusSuffix = () => {
@@ -58,10 +60,10 @@ export const call: LocalCommandCall = async (args: string, context) => {
 
   // No argument: show current state.
   if (trimmed === '') {
-    if (envWindow) {
+    if (envWindow !== undefined) {
       return {
         type: 'text',
-        value: `Auto-compact window: ${envWindow} (from CLAUDE_CODE_AUTO_COMPACT_WINDOW env, overrides settings).${statusSuffix()}`,
+        value: `Auto-compact window: ${fmt(envWindow)} (from CLAUDE_CODE_AUTO_COMPACT_WINDOW env, overrides settings).${statusSuffix()}`,
       }
     }
     const configWindow = getGlobalConfig().autoCompactWindow
@@ -96,8 +98,8 @@ export const call: LocalCommandCall = async (args: string, context) => {
       delete next.autoCompactWindow
       return next
     })
-    const envNote = envWindow
-      ? `\nNote: CLAUDE_CODE_AUTO_COMPACT_WINDOW=${envWindow} is set and still overrides this.`
+    const envNote = envWindow !== undefined
+      ? `\nNote: CLAUDE_CODE_AUTO_COMPACT_WINDOW=${rawEnvWindow} is set and still overrides this.`
       : ''
     return {
       type: 'text',
@@ -112,8 +114,8 @@ export const call: LocalCommandCall = async (args: string, context) => {
     capped < parsed
       ? ` (capped to the model's ${fmt(modelWindow)}-token limit)`
       : ''
-  const envNote = envWindow
-    ? `\nNote: CLAUDE_CODE_AUTO_COMPACT_WINDOW=${envWindow} is set and takes precedence over this setting.`
+  const envNote = envWindow !== undefined
+    ? `\nNote: CLAUDE_CODE_AUTO_COMPACT_WINDOW=${rawEnvWindow} is set and takes precedence over this setting.`
     : ''
   return {
     type: 'text',

@@ -99,14 +99,14 @@ function ctx() {
   return {
     options: { mainLoopModel: 'test-model' },
     abortController: new AbortController(),
-    getAppState: () => ({}),
+    getAppState: () => ({ toolPermissionContext: { mode: 'default' } }),
   } as never
 }
 
-// Two large messages push the estimated count past the (shrunken) threshold;
-// the small third keeps the post-arm tail inside the consume budget.
+// Two large messages push the estimated count past the threshold; the small
+// third keeps the post-arm tail inside the consume budget.
 function overThresholdMessages(): Message[] {
-  return [asst(40_000), asst(40_000), asst(100)]
+  return [asst(400_000), asst(400_000), asst(100)]
 }
 
 /** Arm a ready summary whose pivot covers the first two messages. */
@@ -120,9 +120,6 @@ function armReadyAt2(messages: Message[]): void {
 
 beforeEach(() => {
   process.env.NOA_CLAUDE_PRECOMPUTE_COMPACT = '1'
-  // Shrink the window so the synthetic messages sit above the auto-compact
-  // threshold: effective = max(40000 - 20000, 13000) = 20000, threshold = 7000.
-  process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = '40000'
   delete process.env.DISABLE_COMPACT
   delete process.env.DISABLE_AUTO_COMPACT
   delete process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE

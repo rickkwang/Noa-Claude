@@ -7,7 +7,7 @@
 // it crosses the auto-compact threshold — and consuming the ready result when
 // the compaction actually fires.
 //
-// Design (reuses noa's keep-tail / partial 'up_to' path):
+// Design (reuses noa's partial 'up_to' path):
 //   - ARM: while approaching the threshold, background-summarize the current
 //     message set (the prefix). The expensive streamCompactSummary API call
 //     runs on a detached promise with a UI-stubbed context clone, so the main

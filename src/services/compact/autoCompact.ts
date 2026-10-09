@@ -12,6 +12,15 @@ import type { CacheSafeParams } from '../../utils/forkedAgent.js'
 import { logError } from '../../utils/log.js'
 import { tokenCountWithEstimation } from '../../utils/tokens.js'
 import { roughTokenCountEstimationForMessages } from '../tokenEstimation.js'
+import { createAttachmentMessage } from '../../utils/attachments.js'
+import { SYNTHETIC_MODEL } from '../../utils/messages.js'
+import {
+  noteOverflowCanCompact,
+  overflowReminderText,
+  type PendingOverflow,
+  settleOverflow,
+  takeOverflow,
+} from './classifierOverflowCompact.js'
 import { getMaxOutputTokensForModel } from '../api/claude.js'
 import { notifyCompaction } from '../api/promptCacheBreakDetection.js'
 import {
@@ -25,14 +34,13 @@ import {
   type PreCompactHookResult,
   type RecompactionInfo,
 } from './compact.js'
-import { estimateMessageTokens } from './microCompact.js'
 import {
   armPrecompute,
   consumePrecompute,
   isPrecomputeEnabled,
 } from './precomputedCompact.js'
 import { runPostCompactCleanup } from './postCompactCleanup.js'
-import { adjustIndexToPreserveAPIInvariants } from './preservedTail.js'
+import { runReactiveCompaction, type ReactiveCompactOutcome } from './reactiveCompact.js'
 import { executePreCompactHooks } from '../../utils/hooks.js'
 
 // Reserve this many tokens for output during compaction
@@ -60,23 +68,48 @@ export function getModelEffectiveContextWindowSize(model: string): number {
   )
 }
 
+const AUTO_COMPACT_WINDOW_MIN = 100_000
+const AUTO_COMPACT_WINDOW_MAX = 1_000_000
+
+/**
+ * Parses CLAUDE_CODE_AUTO_COMPACT_WINDOW like upstream: exponent or
+ * digit-grouped numbers, otherwise a leading-integer parseInt. Invalid values
+ * return undefined so the /autocompact setting applies; valid ones are clamped
+ * to [100k, 1M].
+ */
+export function parseAutoCompactWindowEnv(raw: string): number | undefined {
+  const s = raw.trim()
+  const n = /^[+-]?(\d+(\.\d*)?|\.\d+)[eE][+-]?\d+$/.test(s)
+    ? Number(s)
+    : /^[+-]?\d{1,3}([_,\u00A0\u202F ])\d{3}(?:\1\d{3})*$/.test(s)
+      ? parseInt(s.replace(/[_,\u00A0\u202F ]/g, ''), 10)
+      : parseInt(s, 10)
+  if (!Number.isInteger(n) || n <= 0) return undefined
+  return Math.min(Math.max(n, AUTO_COMPACT_WINDOW_MIN), AUTO_COMPACT_WINDOW_MAX)
+}
+
+/**
+ * The user-configured auto-compact window, if any: a valid env value overrides
+ * the persisted /autocompact setting.
+ */
+function getConfiguredAutoCompactWindow(): number | undefined {
+  const fromEnv = parseAutoCompactWindowEnv(
+    process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW ?? '',
+  )
+  if (fromEnv !== undefined) return fromEnv
+  const configWindow = getGlobalConfig().autoCompactWindow
+  return configWindow != null && configWindow > 0 ? configWindow : undefined
+}
+
 // Returns the auto-compact window minus the summary output reserve
 export function getEffectiveContextWindowSize(model: string): number {
   const reservedTokensForSummary = getSummaryOutputReserve(model)
   let contextWindow = getContextWindowForModel(model, getSdkBetas())
 
-  // Env override wins; otherwise fall back to the persisted /autocompact
-  // setting. Either way the value is capped to the model's real context
-  // window below (Math.min), so a too-large setting can never exceed the model.
-  const envWindow = process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
-  const configWindow = getGlobalConfig().autoCompactWindow
-  const autoCompactWindow =
-    envWindow || (configWindow != null ? String(configWindow) : undefined)
-  if (autoCompactWindow) {
-    const parsed = parseInt(autoCompactWindow, 10)
-    if (!isNaN(parsed) && parsed > 0) {
-      contextWindow = Math.min(contextWindow, parsed)
-    }
+  // The window is capped to the model's real context window below.
+  const configuredWindow = getConfiguredAutoCompactWindow()
+  if (configuredWindow !== undefined) {
+    contextWindow = Math.min(contextWindow, configuredWindow)
   }
 
   const effectiveContext = contextWindow - reservedTokensForSummary
@@ -156,152 +189,6 @@ export function getAutoCompactThreshold(model: string): number {
   }
 
   return autocompactThreshold
-}
-
-// --- Keep-tail partial auto-compaction ---
-//
-// The full-compact path replaces the whole conversation with a summary
-// (messagesKept: 0). Keeping a verbatim recent tail and summarizing only the
-// older prefix preserves the exact recent context the next turn needs, while
-// still relieving context pressure. The machinery already exists
-// (partialCompactConversation + adjustIndexToPreserveAPIInvariants); these
-// helpers pick the pivot for the *auto* path.
-
-// Below this many verbatim-tail tokens, partial compaction isn't worth it
-// (too little recent context kept, too little prefix relieved) — use full.
-export const AUTOCOMPACT_KEEP_TAIL_MIN_TOKENS = 4_000
-const KEEP_TAIL_FRACTION = 0.12
-const KEEP_TAIL_FLOOR_TOKENS = 10_000
-const KEEP_TAIL_CEIL_TOKENS = 25_000
-// Cap the kept tail at this fraction of the auto-compact threshold so the
-// post-compact context (summary + tail + attachments) lands with headroom and
-// doesn't immediately re-trigger compaction.
-const KEEP_TAIL_THRESHOLD_CAP_FRACTION = 0.3
-// Tokens that survive compaction regardless of the kept tail: system prompt +
-// tool schemas + userContext + the summary + restored attachments. Partial only
-// relieves pressure if the threshold has room for the tail PLUS this. Compared
-// against the threshold in the same window-token units (no rough/real estimator
-// mixing). Approximate and intentionally conservative; refine via the
-// compaction-quality eval.
-const POST_COMPACT_OVERHEAD_RESERVE_TOKENS = 40_000
-// adjustIndexToPreserveAPIInvariants can grow the tail past the budget when a
-// tool chain straddles the boundary. Bail if the snapped tail blew well past the
-// requested budget — both sides measured with estimateMessageTokens (consistent
-// units).
-const KEEP_TAIL_SNAP_TOLERANCE = 3
-
-// Default on; set CLAUDE_CODE_AUTOCOMPACT_KEEP_TAIL=0 to fall back to full
-// summarize-everything compaction.
-export function isKeepTailEnabled(): boolean {
-  const value = process.env.CLAUDE_CODE_AUTOCOMPACT_KEEP_TAIL
-  if (value === undefined || value === '') return true
-  const normalized = value.trim().toLowerCase()
-  return normalized !== '0' && normalized !== 'false' && normalized !== 'off'
-}
-
-/**
- * Pick the index where the verbatim tail begins: walk from the end accumulating
- * estimated tokens until reaching `keepTailTokens`, then snap the boundary back
- * via adjustIndexToPreserveAPIInvariants so a kept tool_result never loses its
- * tool_use. Returns null when the whole conversation fits within the budget
- * (nothing to summarize) or the snapped pivot reaches the start.
- */
-export function selectTailPivot(
-  messages: Message[],
-  keepTailTokens: number,
-): number | null {
-  if (messages.length === 0 || keepTailTokens <= 0) {
-    return null
-  }
-  let accumulated = 0
-  let candidate: number | null = null
-  for (let i = messages.length - 1; i >= 0; i--) {
-    accumulated += estimateMessageTokens([messages[i]!])
-    if (accumulated >= keepTailTokens) {
-      candidate = i
-      break
-    }
-  }
-  // Never reached the budget → the whole conversation is smaller than the tail
-  // we'd keep, so there's no prefix worth summarizing.
-  if (candidate === null) {
-    return null
-  }
-  const pivot = adjustIndexToPreserveAPIInvariants(messages, candidate)
-  if (pivot <= 0) {
-    return null
-  }
-  return pivot
-}
-
-/**
- * Decide whether the auto-compact path should keep a verbatim tail, and if so
- * where it starts. Returns the pivot index for partialCompactConversation
- * (direction 'up_to'), or null to fall back to full compaction.
- */
-export function computeAutoCompactPivot(
-  messages: Message[],
-  model: string,
-): number | null {
-  if (!isKeepTailEnabled()) {
-    return null
-  }
-  const effectiveWindow = getEffectiveContextWindowSize(model)
-  const threshold = getAutoCompactThreshold(model)
-  const base = Math.min(
-    Math.max(
-      Math.floor(effectiveWindow * KEEP_TAIL_FRACTION),
-      KEEP_TAIL_FLOOR_TOKENS,
-    ),
-    KEEP_TAIL_CEIL_TOKENS,
-  )
-  const keepTailTokens = Math.min(
-    base,
-    Math.floor(threshold * KEEP_TAIL_THRESHOLD_CAP_FRACTION),
-  )
-  if (keepTailTokens < AUTOCOMPACT_KEEP_TAIL_MIN_TOKENS) {
-    return null
-  }
-  // Partial only relieves pressure if the threshold has room for the kept tail
-  // PLUS the non-compactable overhead that survives compaction. Measured in the
-  // same window-token units as `threshold` — avoids mixing rough message-token
-  // estimates with the real-token trigger. (A low-threshold run exposed this: a
-  // messages-only tail never approaches a threshold that includes ~30K of
-  // system/tools/userContext overhead, so the old guard never fired.)
-  if (keepTailTokens + POST_COMPACT_OVERHEAD_RESERVE_TOKENS >= threshold) {
-    return null
-  }
-  const pivot = selectTailPivot(messages, keepTailTokens)
-  if (pivot === null) {
-    return null
-  }
-  // adjustIndexToPreserveAPIInvariants can grow the tail past the budget when a
-  // tool chain straddles the boundary. Both sides use estimateMessageTokens
-  // (consistent units): bail if the snapped tail blew well past the budget.
-  if (
-    estimateMessageTokens(messages.slice(pivot)) >
-    keepTailTokens * KEEP_TAIL_SNAP_TOLERANCE
-  ) {
-    return null
-  }
-  return pivot
-}
-
-/**
- * Auto-path entry: returns the keep-tail pivot, or null to use full
- * compaction. Forces full when we're already re-compacting in a chain — a
- * previous compact (possibly itself partial) failed to relieve enough, so
- * keeping another tail risks a re-compaction loop; full maximizes relief.
- */
-export function resolveAutoCompactPivot(
-  messages: Message[],
-  model: string,
-  recompactionInfo?: RecompactionInfo,
-): number | null {
-  if (recompactionInfo?.isRecompactionInChain) {
-    return null
-  }
-  return computeAutoCompactPivot(messages, model)
 }
 
 export function calculateTokenWarningState(
@@ -547,6 +434,80 @@ function maybeArmPrecompute(
   })
 }
 
+export function isAutoCompactWindowConfigured(): boolean {
+  return getConfiguredAutoCompactWindow() !== undefined
+}
+
+/**
+ * Whether this query source may compact at all. Forked summarizers and
+ * background side-task forks never do (see shouldAutoCompact).
+ */
+function canAutoCompactSource(querySource: QuerySource | undefined): boolean {
+  if (isEnvTruthy(process.env.DISABLE_COMPACT)) return false
+  if (!isAutoCompactEnabled()) return false
+  return (
+    querySource !== undefined &&
+    querySource !== 'compact' &&
+    querySource !== 'session_memory' &&
+    !isBackgroundForkQuerySource(querySource)
+  )
+}
+
+/**
+ * The model the conversation was last served by, when it has a larger window
+ * than the current one and the current window would block. Upstream also gates
+ * this on the model's recognition and billing state, which Noa has no source
+ * for; the window comparison stands in for "recognized".
+ */
+function findLargerWindowModel(
+  messages: Message[],
+  model: string,
+  snipTokensFreed: number,
+): string | undefined {
+  let candidate: string | undefined
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (message?.type === 'assistant' && message.message.model !== SYNTHETIC_MODEL) {
+      candidate = message.message.model
+      break
+    }
+  }
+  if (candidate === undefined || candidate === model) return undefined
+  if (getContextWindowForModel(candidate, getSdkBetas()) <= getContextWindowForModel(model, getSdkBetas())) {
+    return undefined
+  }
+  const tokenCount = tokenCountWithEstimation(messages) - snipTokensFreed
+  return calculateTokenWarningState(tokenCount, model).isAtBlockingLimit
+    ? candidate
+    : undefined
+}
+
+/**
+ * Compacts through the reactive ladder. Used when the window is configured,
+ * when a classifier overflow is pending, and for the larger-window retry (with
+ * the summary request sent to that model).
+ */
+function compactRouted(
+  messages: Message[],
+  toolUseContext: ToolUseContext,
+  cacheSafeParams: CacheSafeParams,
+  querySource: QuerySource,
+  summaryModel?: string,
+): Promise<ReactiveCompactOutcome> {
+  const context =
+    summaryModel === undefined
+      ? toolUseContext
+      : {
+          ...toolUseContext,
+          options: { ...toolUseContext.options, mainLoopModel: summaryModel },
+        }
+  return runReactiveCompaction({
+    messages,
+    cacheSafeParams: { ...cacheSafeParams, toolUseContext: context },
+    querySource,
+  })
+}
+
 export async function autoCompactIfNeeded(
   messages: Message[],
   toolUseContext: ToolUseContext,
@@ -568,29 +529,67 @@ export async function autoCompactIfNeeded(
     return { wasCompacted: false }
   }
 
+  const canCompact = canAutoCompactSource(querySource)
+  noteOverflowCanCompact(toolUseContext.agentId, canCompact)
+  const model = toolUseContext.options.mainLoopModel
+  let failures = tracking?.consecutiveFailures
+
+  // Larger-window retry: when the current window would block and the last
+  // served model had a larger one, summarize with that model. Skipped once a
+  // previous compaction has failed.
+  if ((failures ?? 0) === 0 && querySource !== undefined && canCompact) {
+    const largerModel = findLargerWindowModel(messages, model, snipTokensFreed ?? 0)
+    if (largerModel !== undefined) {
+      logForDebugging(
+        `autocompact: summarizing with larger-window model ${largerModel} (current window would block)`,
+      )
+      const outcome = await compactRouted(
+        messages,
+        toolUseContext,
+        cacheSafeParams,
+        querySource,
+        largerModel,
+      )
+      if (outcome.kind === 'compacted') {
+        return {
+          wasCompacted: true,
+          compactionResult: outcome.result,
+          consecutiveFailures: 0,
+          consecutiveRapidRefills: countConsecutiveRapidRefills(tracking),
+        }
+      }
+      if (outcome.kind === 'hook_blocked') {
+        return { wasCompacted: false, consecutiveFailures: failures }
+      }
+      failures = (failures ?? 0) + 1
+    }
+  }
+
+  const currentMode = toolUseContext.getAppState().toolPermissionContext.mode
+  const forced = takeOverflow({
+    messages,
+    agentId: toolUseContext.agentId,
+    mode: currentMode,
+    canCompact,
+  })
+
   // Circuit breaker: stop retrying after N consecutive failures.
   // Without this, sessions where context is irrecoverably over the limit
-  // hammer the API with doomed compaction attempts on every turn.
-  if (
-    tracking?.consecutiveFailures !== undefined &&
-    tracking.consecutiveFailures >= MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES
-  ) {
+  // hammer the API with doomed compaction attempts on every turn. A pending
+  // classifier overflow bypasses it: its compaction is what unblocks the turn.
+  if (forced === undefined && (failures ?? 0) >= MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES) {
     return { wasCompacted: false }
   }
 
-  const model = toolUseContext.options.mainLoopModel
-  const shouldCompact = await shouldAutoCompact(
-    messages,
-    model,
-    querySource,
-    snipTokensFreed,
-  )
+  const shouldCompact =
+    forced !== undefined ||
+    (await shouldAutoCompact(messages, model, querySource, snipTokensFreed))
 
   if (!shouldCompact) {
     // Below threshold: arm a background precompute if we're in the warning band
     // so the eventual compaction can consume a ready summary instead of blocking.
     maybeArmPrecompute(messages, toolUseContext, cacheSafeParams, model, querySource)
-    return { wasCompacted: false }
+    return { wasCompacted: false, consecutiveFailures: failures }
   }
 
   // Rapid-refill breaker. Checked before spending a summary call: when the
@@ -601,7 +600,22 @@ export async function autoCompactIfNeeded(
       `autocompact: rapid-refill breaker tripped — ${consecutiveRapidRefills} consecutive refills within <${RAPID_REFILL_TURN_WINDOW} turns each (last was ${tracking?.turnCounter} turns)`,
       { level: 'warn' },
     )
+    if (forced !== undefined) {
+      settleOverflow(toolUseContext.agentId, forced, false)
+    }
     return { wasCompacted: false, rapidRefillTripped: consecutiveRapidRefills }
+  }
+
+  const routed =
+    forced !== undefined || isAutoCompactWindowConfigured()
+  if (routed && querySource !== undefined) {
+    return finishRoutedCompaction({
+      outcome: await compactRouted(messages, toolUseContext, cacheSafeParams, querySource),
+      forced,
+      toolUseContext,
+      failures,
+      consecutiveRapidRefills,
+    })
   }
 
   const recompactionInfo: RecompactionInfo = {
@@ -631,7 +645,7 @@ export async function autoCompactIfNeeded(
       )
       return {
         wasCompacted: false,
-        consecutiveFailures: tracking?.consecutiveFailures,
+        consecutiveFailures: failures,
       }
     }
 
@@ -642,10 +656,9 @@ export async function autoCompactIfNeeded(
     // 'up_to' keeping the current tail verbatim, skipping the summary API call.
     // Skipped when a pre-compact hook injected custom instructions the armed
     // summary didn't honor, or when we're already re-compacting in a chain
-    // (mirrors resolveAutoCompactPivot: a prior compact under-relieved, so force
-    // full for max relief instead of consuming a tail-preserving partial). On
-    // any mismatch, consumePrecompute returns null and we fall through to the
-    // keep-tail / full paths.
+    // (a prior compact under-relieved, so force full for max relief). On any
+    // mismatch, consumePrecompute returns null and we fall through to full
+    // compaction.
     //
     // Gated on isPrecomputeOwner for the same reason arming is: a subagent
     // compacting its own context would find the main thread's slot, fail the
@@ -692,48 +705,16 @@ export async function autoCompactIfNeeded(
       }
     }
 
-    // Keep-tail partial compaction: when a verbatim recent tail can be
-    // preserved (and we're not already re-compacting in a chain), summarize
-    // only the older prefix and keep the tail, instead of replacing the whole
-    // conversation with a summary. Falls back to full compaction otherwise.
-    const keepTailPivot = resolveAutoCompactPivot(
+    const compactionResult = await compactConversation(
       messages,
-      model,
+      toolUseContext,
+      cacheSafeParams,
+      true, // Suppress user questions for autocompact
+      undefined, // Hook instructions are merged from preCompactHookResult
+      true, // isAutoCompact
       recompactionInfo,
+      preCompactHookResult,
     )
-    if (keepTailPivot != null) {
-      logForDebugging(
-        `autocompact: keep-tail partial compaction (pivot=${keepTailPivot}, kept=${messages.length - keepTailPivot})`,
-      )
-    }
-    const compactionResult =
-      keepTailPivot != null
-        ? await partialCompactConversation(
-            messages,
-            keepTailPivot,
-            toolUseContext,
-            cacheSafeParams,
-            undefined, // no user feedback on the auto path
-            'up_to', // keep the recent tail, summarize the older prefix
-            {
-              trigger: 'auto',
-              suppressFollowUpQuestions: true,
-              preCompactHookResult,
-              // autoCompactIfNeeded owns begin/endCompactLifecycle
-              ownsLifecycle: false,
-              autoCompactThreshold: recompactionInfo.autoCompactThreshold,
-            },
-          )
-        : await compactConversation(
-            messages,
-            toolUseContext,
-            cacheSafeParams,
-            true, // Suppress user questions for autocompact
-            undefined, // Hook instructions are merged from preCompactHookResult
-            true, // isAutoCompact
-            recompactionInfo,
-            preCompactHookResult,
-          )
 
     runPostCompactCleanup(querySource)
 
@@ -748,7 +729,7 @@ export async function autoCompactIfNeeded(
     if (isCompactionUserAbort(error, toolUseContext.abortController.signal)) {
       return {
         wasCompacted: false,
-        consecutiveFailures: tracking?.consecutiveFailures,
+        consecutiveFailures: failures,
       }
     }
 
@@ -756,8 +737,7 @@ export async function autoCompactIfNeeded(
     // Increment consecutive failure count for circuit breaker.
     // The caller threads this through autoCompactTracking so the
     // next query loop iteration can skip futile retry attempts.
-    const prevFailures = tracking?.consecutiveFailures ?? 0
-    const nextFailures = prevFailures + 1
+    const nextFailures = (failures ?? 0) + 1
     if (nextFailures >= MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES) {
       logForDebugging(
         `autocompact: circuit breaker tripped after ${nextFailures} consecutive failures — skipping future attempts this session`,
@@ -767,5 +747,56 @@ export async function autoCompactIfNeeded(
     return { wasCompacted: false, consecutiveFailures: nextFailures }
   } finally {
     endCompactLifecycle(toolUseContext)
+  }
+}
+
+function finishRoutedCompaction(args: {
+  outcome: ReactiveCompactOutcome
+  forced: PendingOverflow | undefined
+  toolUseContext: ToolUseContext
+  failures: number | undefined
+  consecutiveRapidRefills: number
+}): {
+  wasCompacted: boolean
+  compactionResult?: CompactionResult
+  consecutiveFailures?: number
+  consecutiveRapidRefills?: number
+} {
+  const { outcome, forced, toolUseContext, failures } = args
+  const aborted = toolUseContext.abortController.signal.aborted
+  if (forced !== undefined) {
+    settleOverflow(toolUseContext.agentId, forced, aborted)
+  }
+  if (outcome.kind === 'hook_blocked') {
+    return { wasCompacted: false, consecutiveFailures: failures }
+  }
+  if (outcome.kind === 'failed') {
+    const nextFailures = (failures ?? 0) + 1
+    if (nextFailures >= MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES) {
+      logForDebugging(
+        `autocompact: circuit breaker tripped after ${nextFailures} consecutive failures (reactive path) — skipping future attempts this session`,
+        { level: 'warn' },
+      )
+    }
+    return { wasCompacted: false, consecutiveFailures: nextFailures }
+  }
+  const result =
+    forced === undefined
+      ? outcome.result
+      : {
+          ...outcome.result,
+          attachments: [
+            ...outcome.result.attachments,
+            createAttachmentMessage({
+              type: 'critical_system_reminder',
+              content: overflowReminderText(forced.deniedToolNames),
+            }),
+          ],
+        }
+  return {
+    wasCompacted: true,
+    compactionResult: result,
+    consecutiveFailures: 0,
+    consecutiveRapidRefills: args.consecutiveRapidRefills,
   }
 }

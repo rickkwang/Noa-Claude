@@ -6,6 +6,7 @@ import {
   mcpInfoFromString,
 } from '../../services/mcp/mcpStringUtils.js'
 import type { Tool, ToolPermissionContext, ToolUseContext } from '../../Tool.js'
+import { ASK_USER_QUESTION_TOOL_NAME } from '../../tools/AskUserQuestionTool/prompt.js'
 import { AGENT_TOOL_NAME } from '../../tools/AgentTool/constants.js'
 import { shouldUseSandbox } from '../../tools/BashTool/shouldUseSandbox.js'
 import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
@@ -14,6 +15,7 @@ import { REPL_TOOL_NAME } from '../../tools/REPLTool/constants.js'
 import type { AssistantMessage } from '../../types/message.js'
 import { extractOutputRedirections } from '../bash/commands.js'
 import { logForDebugging } from '../debug.js'
+import { recordOverflowDenial } from '../../services/compact/classifierOverflowCompact.js'
 import { AbortError, toError } from '../errors.js'
 import { logError } from '../log.js'
 import { SandboxManager } from '../sandbox/sandbox-adapter.js'
@@ -973,6 +975,57 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
         // error, won't recover on retry. Skip iron_gate and fall back to
         // normal prompting so the user can approve/deny manually.
         if (classifierResult.transcriptTooLong) {
+          // The transcript only grows, so retrying cannot succeed. With prompts
+          // available the call is denied without a prompt, and the overflow is
+          // recorded so the next turn compacts and the model can re-issue it.
+          const toolName = tool.name
+          const promptsAvailable =
+            !appState.toolPermissionContext.shouldAvoidPermissionPrompts
+          const compactPending = recordOverflowDenial({
+            messages: context.messages,
+            agentId: context.agentId,
+            mode: appState.toolPermissionContext.mode,
+            toolName,
+            denied:
+              promptsAvailable || toolName !== ASK_USER_QUESTION_TOOL_NAME,
+          })
+          const transcriptReason =
+            'Auto mode classifier transcript exceeded context window'
+          if (promptsAvailable) {
+            logForDebugging(
+              `Auto mode classifier transcript too long for ${toolName}, denying (no prompt fallback)`,
+              { level: 'warn' },
+            )
+            return {
+              behavior: 'deny',
+              decisionReason: {
+                type: 'classifier',
+                classifier: 'auto-mode',
+                reason: transcriptReason,
+              },
+              message: compactPending
+                ? `${toolName} was not reviewed and did not run: the conversation is too long for auto mode's classifier, and no permission prompt is raised for this tool. This is not a judgment that the action is unsafe. Claude Code will try to compact the conversation before the next request; if this action is still needed after that, issue it again.`
+                : `${toolName} was not reviewed: the auto mode classifier transcript exceeded its context window, and no permission prompt is raised for this tool. This is not a judgment that the action is unsafe; the same call will hit the same limit until the conversation is shorter.`,
+            }
+          }
+          if (toolName === ASK_USER_QUESTION_TOOL_NAME) {
+            return {
+              behavior: 'allow',
+              updatedInput: input,
+              decisionReason: { type: 'mode', mode: 'auto' },
+            }
+          }
+          if (compactPending) {
+            return {
+              behavior: 'deny',
+              decisionReason: {
+                type: 'classifier',
+                classifier: 'auto-mode',
+                reason: transcriptReason,
+              },
+              message: `${toolName} was not reviewed and did not run: the conversation is too long for auto mode's classifier. Claude Code will try to compact the conversation before the next request; if this action is still needed after that, issue it again and it will be reviewed normally.`,
+            }
+          }
           if (appState.toolPermissionContext.shouldAvoidPermissionPrompts) {
             // Permanent condition (transcript only grows) — deny-retry-deny
             // wastes tokens without ever hitting the denial-limit abort.
@@ -980,19 +1033,8 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
               'Agent aborted: auto mode classifier transcript exceeded context window in headless mode',
             )
           }
-          logForDebugging(
-            'Auto mode classifier transcript too long, falling back to normal permission handling',
-            { level: 'warn' },
-          )
-          return {
-            ...result,
-            decisionReason: {
-              type: 'other',
-              reason:
-                'Auto mode classifier transcript exceeded context window — falling back to manual approval',
-            },
-          }
         }
+
         // Classifier unavailable (API error) — deny unconditionally (fail
         // closed). Matches upstream 2.1.210, which removed the
         // tengu_iron_gate_closed gate and hardcoded this deny-with-retry path.

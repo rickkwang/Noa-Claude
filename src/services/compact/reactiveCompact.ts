@@ -210,28 +210,30 @@ function isExcludedSource(querySource: QuerySource): boolean {
   return false
 }
 
+export type ReactiveCompactOutcome =
+  | { kind: 'compacted'; result: CompactionResult }
+  | { kind: 'hook_blocked' }
+  | { kind: 'failed' }
+
 /**
- * Returns a CompactionResult to retry with, or null to surface the original
- * error. Single-shot per turn (hasAttempted) so a repeated overflow cannot
- * spiral.
+ * Compacts with the reactive ladder: recent rounds stay verbatim when they fit
+ * the tail budget, otherwise everything is summarized. Shared by withheld-error
+ * recovery and by the proactive path when the window is configured or the
+ * auto-mode classifier overflowed, which upstream routes here as well.
  */
-export async function tryReactiveCompact(params: {
-  hasAttempted: boolean
-  querySource: QuerySource
-  aborted: boolean
+export async function runReactiveCompaction(params: {
   messages: Message[]
   cacheSafeParams: CacheSafeParams
-  /** The withheld API error that triggered recovery. */
+  querySource: QuerySource
+  /** The withheld API error that triggered recovery, if any. */
   error?: AssistantMessage
-}): Promise<CompactionResult | null> {
-  const { hasAttempted, querySource, aborted, cacheSafeParams, error } = params
-  if (!canReactivelyCompact(querySource) || aborted || hasAttempted) return null
-
+}): Promise<ReactiveCompactOutcome> {
+  const { querySource, cacheSafeParams, error } = params
   if (groupMessagesByApiRound(params.messages).length < MIN_GROUPS_TO_COMPACT) {
     logForDebugging(
       '[REACTIVE] too few rounds — compaction cannot help; surfacing error',
     )
-    return null
+    return { kind: 'failed' }
   }
 
   const context = cacheSafeParams.toolUseContext
@@ -261,7 +263,7 @@ export async function tryReactiveCompact(params: {
   beginCompactLifecycle(context)
   try {
     logForDebugging(
-      `[REACTIVE] recovering from withheld ${isMediaError ? 'media error' : 'overflow'} via ${pivot === null ? 'full' : `keep-tail (pivot=${pivot}/${messages.length})`} compact`,
+      `[REACTIVE] ${error === undefined ? 'routed' : isMediaError ? 'withheld media error' : 'withheld overflow'} compact via ${pivot === null ? 'full' : `keep-tail (pivot=${pivot}/${messages.length})`}`,
     )
     const preCompactHookResult = await executePreCompactHooks(
       { trigger: 'auto', customInstructions: null },
@@ -274,7 +276,7 @@ export async function tryReactiveCompact(params: {
         `[REACTIVE] ${ERROR_MESSAGE_COMPACT_BLOCKED_BY_HOOK}: ${preCompactHookResult.blockedBy}`,
         { level: 'warn' },
       )
-      return null
+      return { kind: 'hook_blocked' }
     }
     context.onCompactProgress?.({ type: 'compact_start' })
     const result =
@@ -305,13 +307,33 @@ export async function tryReactiveCompact(params: {
           )
     runPostCompactCleanup(querySource)
     suppressCompactWarning()
-    return result
+    return { kind: 'compacted', result }
   } catch (compactError) {
     if (!isCompactionUserAbort(compactError, context.abortController.signal)) {
       logError(compactError)
     }
-    return null
+    return { kind: 'failed' }
   } finally {
     endCompactLifecycle(context)
   }
+}
+
+/**
+ * Returns a CompactionResult to retry with, or null to surface the original
+ * error. Single-shot per turn (hasAttempted) so a repeated overflow cannot
+ * spiral.
+ */
+export async function tryReactiveCompact(params: {
+  hasAttempted: boolean
+  querySource: QuerySource
+  aborted: boolean
+  messages: Message[]
+  cacheSafeParams: CacheSafeParams
+  /** The withheld API error that triggered recovery. */
+  error?: AssistantMessage
+}): Promise<CompactionResult | null> {
+  const { hasAttempted, querySource, aborted } = params
+  if (!canReactivelyCompact(querySource) || aborted || hasAttempted) return null
+  const outcome = await runReactiveCompaction(params)
+  return outcome.kind === 'compacted' ? outcome.result : null
 }

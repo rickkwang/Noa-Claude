@@ -2776,7 +2776,7 @@ export function REPL({
         // unchanged).
         if (isFullscreenEnvEnabled()) {
           setMessages(old => {
-            // Suffix-preserving compactions (auto keep-tail partial,
+            // Suffix-preserving compactions (precomputed partial,
             // session-memory) re-yield the kept tail after the boundary, so
             // each seg-boundary leaves two copies in the array: the
             // pre-boundary originals (these stay visible — the projection
