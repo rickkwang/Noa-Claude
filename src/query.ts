@@ -929,6 +929,7 @@ async function* queryLoop(
                 : 'attachments_main',
               querySource,
             },
+            toolUseContext.options.mcpClients,
           )) {
             const announcement = createAttachmentMessage(delta)
             messagesForQuery.push(announcement)

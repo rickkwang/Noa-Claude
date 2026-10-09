@@ -25,6 +25,7 @@ import {
   isDeferredTool,
   TOOL_SEARCH_TOOL_NAME,
 } from '../tools/ToolSearchTool/prompt.js'
+import { getMcpPrefix } from '../services/mcp/mcpStringUtils.js'
 import type { Message } from '../types/message.js'
 import {
   countToolDefinitionTokens,
@@ -611,7 +612,11 @@ export type DeferredToolsDelta = {
   addedNames: string[]
   /** Rendered lines for addedNames; the scan reconstructs from names. */
   addedLines: string[]
+  /** Announced earlier in this conversation and back in the pool. Absent in older transcripts. */
+  readdedNames?: string[]
   removedNames: string[]
+  /** ToolSearch is not in the pool, so the tools are callable directly. */
+  toolSearchAbsent?: boolean
 }
 
 /**
@@ -641,13 +646,18 @@ export type DeferredToolsDeltaScanContext = {
  * is still in the base pool — is NOT reported as removed. It's now
  * loaded directly, so telling the model "no longer available" would be
  * wrong.
+ *
+ * A deferred name that returns after an earlier removal is reported as
+ * readded rather than added: the model still has its earlier announcement.
  */
 export function getDeferredToolsDelta(
   tools: Tools,
   messages: Message[],
   scanContext?: DeferredToolsDeltaScanContext,
+  mcpClients?: readonly { name: string; type: string }[],
 ): DeferredToolsDelta | null {
   const announced = new Set<string>()
+  const everAnnounced = new Set<string>()
   let attachmentCount = 0
   let dtdCount = 0
   const attachmentTypesSeen = new Set<string>()
@@ -657,23 +667,42 @@ export function getDeferredToolsDelta(
     attachmentTypesSeen.add(msg.attachment.type)
     if (msg.attachment.type !== 'deferred_tools_delta') continue
     dtdCount++
-    for (const n of msg.attachment.addedNames) announced.add(n)
+    for (const n of msg.attachment.addedNames) {
+      announced.add(n)
+      everAnnounced.add(n)
+    }
+    for (const n of msg.attachment.readdedNames ?? []) announced.add(n)
     for (const n of msg.attachment.removedNames) announced.delete(n)
   }
 
   const deferred: Tool[] = tools.filter(isDeferredTool)
   const deferredNames = new Set(deferred.map(t => t.name))
   const poolNames = new Set(tools.map(t => t.name))
+  const toolSearchAbsent = !isToolSearchToolAvailable(tools)
 
-  const added = deferred.filter(t => !announced.has(t.name))
+  const added: Tool[] = []
+  const readded: Tool[] = []
+  for (const t of deferred) {
+    if (announced.has(t.name)) continue
+    if (everAnnounced.has(t.name)) readded.push(t)
+    else added.push(t)
+  }
+  // A server that is still reconnecting drops its tools from the pool
+  // briefly. Holding the removal keeps a flap from announcing the tool as
+  // gone and then again as back.
+  const reconnectingPrefixes = (mcpClients ?? [])
+    .filter(c => c.type === 'pending')
+    .map(c => getMcpPrefix(c.name))
   const removed: string[] = []
   for (const n of announced) {
     if (deferredNames.has(n)) continue
-    if (!poolNames.has(n)) removed.push(n)
-    // else: undeferred — silent
+    if (poolNames.has(n)) continue // undeferred — silent
+    if (reconnectingPrefixes.some(p => n.startsWith(p))) continue
+    removed.push(n)
   }
 
-  if (added.length === 0 && removed.length === 0) return null
+  if (added.length === 0 && readded.length === 0 && removed.length === 0)
+    return null
 
   // Diagnostic for the inc-4747 scan-finds-nothing bug. Round-1 fields
   // (messagesLength/attachmentCount/dtdCount from #23167) showed 45.6% of
@@ -700,7 +729,9 @@ export function getDeferredToolsDelta(
   return {
     addedNames: added.map(t => t.name).sort(),
     addedLines: added.map(formatDeferredToolLine).sort(),
+    readdedNames: readded.map(t => t.name).sort(),
     removedNames: removed.sort(),
+    ...(toolSearchAbsent && { toolSearchAbsent: true }),
   }
 }
 

@@ -106,8 +106,14 @@ try {
   await turn('restored-B')
   assert.equal(deltas().length, 3, 'Restored history must suppress repeated B announcements')
   passed.push('restored-history-does-not-reannounce')
+  context.options.tools = [FileReadTool, ToolSearchTool, toolA, toolB]
+  await turn('readd-A')
+  assert.deepEqual(deltas().at(-1).readdedNames, ['DeferredA'])
+  assert.deepEqual(deltas().at(-1).addedNames, [])
+  assert.ok(text(requests.at(-1).body).includes('1 deferred tool is available again in this session'))
+  passed.push('readded-tool-not-relisted')
   // Every historical announcement remains byte-identical in later API bodies.
-  const announcements = (body: any) => body.messages.flatMap((m: any) => Array.isArray(m.content) ? m.content : []).filter((b: any) => b.type === 'text' && /The following deferred tools/.test(b.text)).map((b: any) => b.text)
+  const announcements = (body: any) => body.messages.flatMap((m: any) => Array.isArray(m.content) ? m.content : []).filter((b: any) => b.type === 'text' && /The following deferred tools|available again/.test(b.text)).map((b: any) => b.text)
   const first = announcements(requests[0].body)[0]
   for (const { body } of requests.slice(1)) assert.equal(announcements(body).filter((s: string) => s === first).length, 1)
   assert.deepEqual(announcements(requests[5].body), announcements(requests[4].body), 'Restore changed historical announcement text')
@@ -118,8 +124,8 @@ try {
   process.env.ENABLE_TOOL_SEARCH = 'false'
   context.options.tools = [FileReadTool, ToolSearchTool, toolA, toolB]
   await turn('toolsearch-off')
-  assert.equal(deltas().length, 3, 'Disabled ToolSearch emitted an announcement')
-  assert.deepEqual(announcements(requests.at(-1).body), announcements(requests[5].body))
+  assert.equal(deltas().length, 4, 'Disabled ToolSearch emitted an announcement')
+  assert.deepEqual(announcements(requests.at(-1).body), announcements(requests[6].body))
   passed.push('toolsearch-off-no-new-announcement')
   writeFileSync(join(artifacts, 'lifecycle-history.json'), JSON.stringify(history, null, 2))
   process.env.ENABLE_TOOL_SEARCH = 'true'

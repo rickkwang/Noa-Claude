@@ -169,7 +169,6 @@ import type { QuerySource } from '../constants/querySource.js'
 import {
   getDeferredToolsDelta,
   isToolSearchEnabledOptimistic,
-  isToolSearchToolAvailable,
   modelSupportsToolReference,
   type DeferredToolsDeltaScanContext,
 } from './toolSearch.js'
@@ -1275,6 +1274,7 @@ export async function getAttachments(
               : 'attachments_subagent',
             querySource,
           },
+          toolUseContext.options.mcpClients,
         ),
       ),
     ),
@@ -1876,18 +1876,21 @@ export function getDeferredToolsDeltaAttachment(
   model: string,
   messages: Message[] | undefined,
   scanContext?: DeferredToolsDeltaScanContext,
+  mcpClients?: readonly { name: string; type: string }[],
 ): Attachment[] {
-  // These three checks mirror the sync parts of isToolSearchEnabled —
-  // the attachment text says "available via ToolSearch", so ToolSearch
-  // has to actually be in the request. The async auto-threshold check
-  // is not replicated (would double-fire tengu_tool_search_mode_decision);
-  // in tst-auto below-threshold the attachment can fire while ToolSearch
-  // is filtered out, but that's a narrow case and the tools announced
-  // are directly callable anyway.
+  // These checks mirror the sync parts of isToolSearchEnabled. When the
+  // ToolSearch tool itself is filtered out, the deferred tools are sent
+  // directly, so the delta says so instead of mentioning ToolSearch.
+  // The async auto-threshold check is not replicated (would double-fire
+  // tengu_tool_search_mode_decision).
   if (!isToolSearchEnabledOptimistic()) return []
   if (!modelSupportsToolReference(model)) return []
-  if (!isToolSearchToolAvailable(tools)) return []
-  const delta = getDeferredToolsDelta(tools, messages ?? [], scanContext)
+  const delta = getDeferredToolsDelta(
+    tools,
+    messages ?? [],
+    scanContext,
+    mcpClients,
+  )
   if (!delta) return []
   return [{ type: 'deferred_tools_delta', ...delta }]
 }

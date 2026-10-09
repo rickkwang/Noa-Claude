@@ -3278,6 +3278,21 @@ export function wrapInSystemReminder(content: string): string {
   return `<system-reminder>\n${neutralizeSystemReminderTags(content)}\n</system-reminder>`
 }
 
+// Groups MCP tool names by server (mcp__server__*) once a list gets long.
+function summarizeMcpToolNames(names: string[]): string {
+  const counts = new Map<string, number>()
+  for (const name of names) {
+    const key = name.startsWith('mcp__')
+      ? `${name.split('__', 2).join('__')}__*`
+      : name
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, count]) => (count > 1 ? `${key} (${count})` : key))
+    .join(', ')
+}
+
 export function wrapMessagesInSystemReminder(
   messages: UserMessage[],
 ): UserMessage[] {
@@ -4419,14 +4434,55 @@ You have exited auto mode. The user may now want to interact more directly. You 
     }
     case 'deferred_tools_delta': {
       const parts: string[] = []
+      // With ToolSearch filtered out the tools are callable directly, so the
+      // announcement names them as plain tools.
+      const absent = attachment.toolSearchAbsent === true
+      const noun = absent ? 'tool' : 'deferred tool'
       if (attachment.addedLines.length > 0) {
         parts.push(
-          `The following deferred tools are now available via ToolSearch:\n${attachment.addedLines.join('\n')}`,
+          absent
+            ? `The following tools are now available:\n${attachment.addedLines.join('\n')}`
+            : `The following deferred tools are now available via ToolSearch. Their schemas are NOT loaded — calling them directly will fail with InputValidationError. Use ToolSearch with query "select:<name>[,<name>...]" to load tool schemas before calling them:\n${attachment.addedLines.join('\n')}`,
         )
       }
-      if (attachment.removedNames.length > 0) {
+      const readdedMcp = (attachment.readdedNames ?? []).filter(n =>
+        n.startsWith('mcp__'),
+      )
+      const readdedOther = (attachment.readdedNames ?? []).filter(
+        n => !n.startsWith('mcp__'),
+      )
+      const loadNote = absent ? '' : ' Load via ToolSearch as before.'
+      if (readdedMcp.length > 0) {
         parts.push(
-          `The following deferred tools are no longer available (their MCP server disconnected). Do not search for them — ToolSearch will return no match:\n${attachment.removedNames.join('\n')}`,
+          `${readdedMcp.length} ${noun}${readdedMcp.length === 1 ? ' is' : 's are'} available again (MCP server reconnected — names announced earlier in this conversation): ${summarizeMcpToolNames(readdedMcp)}.${loadNote}`,
+        )
+      }
+      if (readdedOther.length > 0) {
+        parts.push(
+          `${readdedOther.length} ${noun}${readdedOther.length === 1 ? ' is' : 's are'} available again in this session (announced earlier in this conversation): ${readdedOther.join(', ')}.${loadNote}`,
+        )
+      }
+      const removedMcp = attachment.removedNames.filter(n =>
+        n.startsWith('mcp__'),
+      )
+      const removedOther = attachment.removedNames.filter(
+        n => !n.startsWith('mcp__'),
+      )
+      const doNotSearch = absent
+        ? 'Do not call them'
+        : 'Do not search for them — ToolSearch will return no match'
+      if (removedMcp.length > 6) {
+        parts.push(
+          `${removedMcp.length} ${noun}s are no longer available (MCP server disconnected): ${summarizeMcpToolNames(removedMcp)}. ${doNotSearch}.`,
+        )
+      } else if (removedMcp.length > 0) {
+        parts.push(
+          `The following ${noun}s are no longer available (their MCP server disconnected). ${doNotSearch}:\n${removedMcp.join('\n')}`,
+        )
+      }
+      if (removedOther.length > 0) {
+        parts.push(
+          `The following ${noun}s are no longer available in this session. ${doNotSearch}:\n${removedOther.join('\n')}`,
         )
       }
       return wrapMessagesInSystemReminder([

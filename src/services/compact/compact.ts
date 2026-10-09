@@ -2084,6 +2084,7 @@ export async function createPostCompactContextAttachments({
     context.options.mainLoopModel,
     preservedMessages,
     { callSite },
+    context.options.mcpClients,
   )) {
     attachments.push(createAttachmentMessage(att))
   }
