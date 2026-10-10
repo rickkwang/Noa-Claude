@@ -153,11 +153,14 @@ resolve_root_dir() {
   # A script file on disk counts as a checkout only if it sits in this repo.
   # A standalone-downloaded install.sh must fall through to the download path
   # instead of running bun install in whatever directory it happens to sit in.
+  # The installed copy also ships install.sh; rebuilding it in place would skip
+  # the backup and smoke test, so it updates through the download path too.
   if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
     local candidate
     candidate="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     if [[ -f "$candidate/bin/noa.js" ]] && \
-       grep -q '"name":[[:space:]]*"@rickkwang/noa-claude"' "$candidate/package.json" 2>/dev/null; then
+       grep -q '"name":[[:space:]]*"@rickkwang/noa-claude"' "$candidate/package.json" 2>/dev/null && \
+       [[ "$(canonical_path "$candidate")" != "$PERSISTENT_INSTALL_DIR" ]]; then
       ROOT_DIR="$candidate"
       return
     fi

@@ -200,7 +200,7 @@ describe('install.sh symlink replacement', () => {
 // call reaches the real runtime; everything else is stubbed. curl serves one
 // release and an empty tarball; tar fails with a marker status proving the
 // download path was taken.
-function runScriptFile(sourceDir: string) {
+function runScriptFile(sourceDir: string, targetDir?: string) {
   const testRoot = mkdtempSync(resolve(tmpdir(), 'noa-install-checkout-'))
   const fakeBin = resolve(testRoot, 'fake-bin')
   mkdirSync(fakeBin)
@@ -237,7 +237,7 @@ exit 1
       ...process.env,
       HOME: testRoot,
       PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
-      NOA_INSTALL_TARGET_DIR: resolve(testRoot, 'install'),
+      NOA_INSTALL_TARGET_DIR: targetDir ?? resolve(testRoot, 'install'),
       NOA_INSTALL_SOURCE_DIR: '',
       NOA_INSTALL_REF: '',
       NOA_INSTALL_REPO_TARBALL_URL: '',
@@ -267,6 +267,25 @@ describe('install.sh checkout detection', () => {
       expect(run.result.status).toBe(0)
       expect(run.result.stdout).not.toContain('Downloading Noa Claude source')
       expect(readlinkSync(run.binLink)).toBe(run.expectedTarget)
+    } finally {
+      run.cleanup()
+      rmSync(testRoot, { recursive: true, force: true })
+    }
+  })
+
+  test('the installed copy updates through the download path, not in place', () => {
+    const testRoot = mkdtempSync(resolve(tmpdir(), 'noa-install-installed-'))
+    const installDir = resolve(testRoot, 'install')
+    mkdirSync(resolve(installDir, 'bin'), { recursive: true })
+    writeFileSync(resolve(installDir, 'bin/noa.js'), '')
+    writeFileSync(
+      resolve(installDir, 'package.json'),
+      '{"name":"@rickkwang/noa-claude"}\n',
+    )
+    const run = runScriptFile(installDir, installDir)
+    try {
+      expect(run.result.status).toBe(42)
+      expect(run.result.stdout).toContain('Downloading Noa Claude source (v9.9.9)')
     } finally {
       run.cleanup()
       rmSync(testRoot, { recursive: true, force: true })
