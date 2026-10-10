@@ -1,5 +1,9 @@
 # Release Notes
 
+## Unreleased
+
+- Fixed newly launched background sessions missing from `noa agents --json`: `noa --bg` now waits up to five seconds for its host to register before reporting success, and a host that exits early or misses that deadline makes the launch fail and leaves a failed job record for inspection.
+
 ## 1.20.0
 
 - New: nested subagents — a subagent can start its own subagents up to a spawn depth of 2 (`NOA_CLAUDE_MAX_SUBAGENT_SPAWN_DEPTH` or `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`; `0` turns Agent spawns off)
