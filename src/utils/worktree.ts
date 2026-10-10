@@ -1427,8 +1427,8 @@ export async function execIntoTmuxWorktree(args: string[]): Promise<{
       }
     }
     repoName = basename(findCanonicalGitRoot(getCwd()) ?? getCwd())
-    // biome-ignore lint/suspicious/noConsole: intentional console output
-    console.log(`Using worktree via hook: ${worktreeDir}`)
+    // stderr: stdout is reserved for output in --output-format=stream-json
+    process.stderr.write(`Using worktree via hook: ${worktreeDir}\n`)
   } else {
     // Get main git repo root (resolves through worktrees)
     const repoRoot = findCanonicalGitRoot(getCwd())
@@ -1448,9 +1448,8 @@ export async function execIntoTmuxWorktree(args: string[]): Promise<{
       )
       worktreeDir = result.worktreePath
       if (!result.existed) {
-        // biome-ignore lint/suspicious/noConsole: intentional console output
-        console.log(
-          `Created worktree: ${worktreeDir} (based on ${result.baseBranch})`,
+        process.stderr.write(
+          `Created worktree: ${worktreeDir} (based on ${result.baseBranch})\n`,
         )
         await performPostCreationSetup(repoRoot, worktreeDir)
       }
@@ -1540,8 +1539,8 @@ export async function execIntoTmuxWorktree(args: string[]): Promise<{
   // Print hint about iTerm2 preferences when using control mode
   if (useControlMode && !sessionExists) {
     const y = chalk.yellow
-    // biome-ignore lint/suspicious/noConsole: intentional user guidance
-    console.log(
+    // stderr: stdout is reserved for output in --output-format=stream-json
+    process.stderr.write(
       `\n${y('╭─ iTerm2 Tip ────────────────────────────────────────────────────────╮')}\n` +
         `${y('│')} To open as a tab instead of a new window:                           ${y('│')}\n` +
         `${y('│')} iTerm2 > Settings > General > tmux > "Tabs in attaching window"     ${y('│')}\n` +

@@ -247,11 +247,11 @@ export async function setup(
         worktreeSession.worktreePath,
       )
       if (tmuxResult.created) {
-        // biome-ignore lint/suspicious/noConsole:: intentional console output
-        console.log(
+        // stderr: stdout is reserved for output in --output-format=stream-json
+        process.stderr.write(
           chalk.green(
             `Created tmux session: ${chalk.bold(tmuxSessionName)}\nTo attach: ${chalk.bold(`tmux attach -t ${tmuxSessionName}`)}`,
-          ),
+          ) + '\n',
         )
       } else {
         // biome-ignore lint/suspicious/noConsole:: intentional console output
