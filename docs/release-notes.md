@@ -23,7 +23,7 @@
 - Fixed message-thread recovery on the direct first-party endpoint: a rejected thread falls back to stateless requests for that session and model, and a rejected beta header turns threads off for the session
 - Fixed OpenAI-compatible responses dropping cached input usage
 - Fixed `--bare` reading `settings.json` env; under `--bare` only the caller's env and `--settings` apply, and missing-credential messages no longer point at `/login`
-- Removed the built-in MiniMax base URL and model defaults; provider routing comes only from the configured base URL and model
+- Removed the built-in MiniMax base URL and model defaults from provider routing, which now comes only from the configured base URL and model; the login picker still offers MiniMax as a preset
 - Fixed curl `update` and `uninstall` acting on the global symlink instead of the running copy; uninstall never removes `HOME`, `--purge` removes only the default `~/.noa`, and update fails on download errors
 - Fixed the `Grep` count mode on a single file returning zero matches; the output keeps the path
 - Fixed `Grep` content mode splitting paths at colons or dashes in matched text, and `-C` context lines keeping absolute paths
