@@ -357,7 +357,8 @@ export const GrepTool = buildTool({
     if (output_mode === 'files_with_matches') {
       args.push('-l')
     } else if (output_mode === 'count') {
-      args.push('-c')
+      // -H keeps the path on a single-file search, which the count parse needs
+      args.push('-c', '-H')
     }
 
     // Content lines always carry line numbers and a NUL after the path, so the
