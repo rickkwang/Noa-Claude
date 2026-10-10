@@ -76,7 +76,7 @@ const inputSchema = lazySchema(() =>
       'Case insensitive search (rg -i)',
     ),
     '-o': semanticBoolean(z.boolean().optional()).describe(
-      'Print only the matched (non-empty) parts of each matching line, one match per output line (rg -o / --only-matching); with multiline, a match that spans lines is printed across several lines. Requires output_mode: "content", ignored otherwise. Defaults to false.',
+      'Print only the matched (non-empty) parts of each matching line, one match per output line (rg -o / --only-matching). Requires output_mode: "content", ignored otherwise. Defaults to false.',
     ),
     type: z
       .string()
@@ -205,7 +205,22 @@ export const GrepTool = buildTool({
   async preparePermissionMatcher({ pattern }) {
     return rulePattern => matchWildcardPattern(rulePattern, pattern)
   },
-  async validateInput({ path }): Promise<ValidationResult> {
+  async validateInput({
+    path,
+    '-o': only_matching,
+    multiline,
+    output_mode,
+  }): Promise<ValidationResult> {
+    // A match that spans lines cannot be printed one per output line
+    if (only_matching && multiline && output_mode === 'content') {
+      return {
+        result: false,
+        message:
+          'Cannot combine "-o" with "multiline": a match that spans lines cannot be printed one per output line. Use one of them.',
+        errorCode: 1,
+      }
+    }
+
     // If path is provided, validate that it exists
     if (path) {
       const fs = getFsImplementation()
