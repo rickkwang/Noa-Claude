@@ -1,7 +1,16 @@
 # Release Notes
 
-## Unreleased
+## 1.20.0
 
+- New: nested subagents — a subagent can start its own subagents up to a spawn depth of 2 (`NOA_CLAUDE_MAX_SUBAGENT_SPAWN_DEPTH` or `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`; `0` turns Agent spawns off)
+- New: `bashOutputMaxChars` setting sets the persistence threshold for Bash and PowerShell results (default 30K, clamped to 4K–128K); `BASH_MAX_OUTPUT_LENGTH` sizes only the inline cap, or both when the setting is set
+- New: `Grep` accepts `-o` (only-matching) in content mode
+- New: curl installs check for a newer release at most once a day and show a one-line notice; nothing installs automatically. Disabled by `DISABLE_UPDATES`, `DISABLE_AUTOUPDATER` or `autoUpdates: false`
+- New: the transcript footer shows "dialog waiting" while a dialog is awaiting input
+- Removed: the `SendFeedback` and `TaskOutput` tools; `/feedback` stays, gated by its existing kill switches
+- `/agents` prints guidance for creating and editing subagent files instead of opening the management wizard
+- `WebFetch` and `WebSearch` load through `ToolSearch`; `AskUserQuestion` loads eagerly
+- Scheduling, cancelling, and team-creation tools ask for permission before running; bypass mode still allows them
 - Auto-compact no longer keeps a verbatim recent tail for proactive compaction. `CLAUDE_CODE_AUTOCOMPACT_KEEP_TAIL` is ignored, and a notice says so once per session when it is set.
 - `/autocompact` opens a dialog: ←/→ adjusts the window in 100K steps (`auto` at the ends), Enter applies, Esc cancels. The dialog and `/autocompact <value>` both save per model under `modelSettings.<model>.autoCompactWindow` in user settings; a top-level `autoCompactWindow` sets the default for all models.
 - `CLAUDE_CODE_AUTO_COMPACT_WINDOW` accepts `1e5` and digit-grouped numbers like `1,000,000`, and is clamped to 100K–1M. Values that are not positive numbers fall back to the settings. The clamp is logged at debug level; `50000` now means 100K and `600k` no longer disables auto-compact.
@@ -9,6 +18,22 @@
 - When the current window would block and the last served model has a larger window, the summary is written by that larger-window model.
 - Auto-compact window follows upstream more closely: subagents can set `autoCompactWindow` in their frontmatter as a ceiling, SDK sessions can pass a session window, credits-blocked accounts get a 200k default for models that would bill past it, and `CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT` turns off unknown-model labelling. An empty `CLAUDE_CODE_AUTO_COMPACT_WINDOW` is treated as unset.
 - Auto mode: when the classifier's transcript is too long, the call is denied without a permission prompt, and the next turn compacts the conversation and tells the model which calls did not run. Headless sessions with no pending compaction still abort as before.
+- Fixed `/model` and `/effort` results disappearing from the transcript
+- Fixed deferred-tool announcements shifting the request prefix on every pool change; they are now saved as history, returning tools are announced as available again, and removals wait while an MCP server reconnects
+- Fixed message-thread recovery on the direct first-party endpoint: a rejected thread falls back to stateless requests for that session and model, and a rejected beta header turns threads off for the session
+- Fixed OpenAI-compatible responses dropping cached input usage
+- Fixed `--bare` reading `settings.json` env; under `--bare` only the caller's env and `--settings` apply, and missing-credential messages no longer point at `/login`
+- Removed the built-in MiniMax base URL and model defaults; provider routing comes only from the configured base URL and model
+- Fixed curl `update` and `uninstall` acting on the global symlink instead of the running copy; uninstall never removes `HOME`, `--purge` removes only the default `~/.noa`, and update fails on download errors
+- Fixed the `Grep` count mode on a single file returning zero matches; the output keeps the path
+- Fixed `Grep` content mode splitting paths at colons or dashes in matched text, and `-C` context lines keeping absolute paths
+- Fixed `Grep` single-file output keeping line numbers when `-n` is false
+- Fixed interrupted tool results rendering as errors; verbose tool groups show errors and running state, and the loader follows the matching background task
+- Fixed clicks in fullscreen lists confirming an option during the first 300ms after mount or when they only re-focus the window
+- Fixed the permission dialog layout: the Bash prompt offers "Yes, and switch to auto mode" when auto mode is available, and the permission explainer is off by default
+- Fixed the stale-read error naming the two causes (a user or linter edit) and telling the model to read the file again
+- Tool descriptions for Agent, Bash, Read, Write, Edit, TaskUpdate and LSP match the reference wording; Write and Edit always state the read-first rule
+- Developers: the coding eval records trace grades, a run manifest and per-task summaries; `bun run e2e:install` covers the install lifecycle and `bun run e2e:deferred` covers deferred-tool announcements
 
 ## 1.19.0
 
