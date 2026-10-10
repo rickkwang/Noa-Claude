@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { getFeatureValue_CACHED_MAY_BE_STALE } from 'src/services/analytics/growthbook.js'
 import { splitCommand_DEPRECATED } from '../../utils/bash/commands.js'
+import type { PermissionResult } from '../../types/permissions.js'
 import { SandboxManager } from '../../utils/sandbox/sandbox-adapter.js'
 import { getSettings_DEPRECATED } from '../../utils/settings/settings.js'
 import {
@@ -151,4 +152,41 @@ export function shouldUseSandbox(input: Partial<SandboxInput>): boolean {
   }
 
   return true
+}
+
+/**
+ * Turn a dangerouslyDisableSandbox call that would really run unsandboxed into
+ * an explicit ask. Deny and ask stand as they are, and so does a rule-decided
+ * allow: the user wrote that rule. A call that stays sandboxed (sandboxing off,
+ * policy forbids unsandboxed commands, or the command is excluded) is left alone.
+ */
+export function requireSandboxOverrideApproval(
+  input: Partial<SandboxInput>,
+  result: PermissionResult,
+): PermissionResult {
+  if (!input.dangerouslyDisableSandbox) return result
+  if (result.behavior === 'deny' || result.behavior === 'ask') return result
+  if (isRuleDecision(result.decisionReason)) return result
+  if (shouldUseSandbox(input)) return result
+  if (!shouldUseSandbox({ ...input, dangerouslyDisableSandbox: false })) {
+    return result
+  }
+  return {
+    behavior: 'ask',
+    message: 'Run outside of the sandbox',
+    decisionReason: {
+      type: 'sandboxOverride',
+      reason: 'dangerouslyDisableSandbox',
+    },
+  }
+}
+
+function isRuleDecision(reason: PermissionResult['decisionReason']): boolean {
+  if (reason?.type === 'rule') return true
+  if (reason?.type === 'subcommandResults') {
+    return [...reason.reasons.values()].every(sub =>
+      isRuleDecision(sub.decisionReason),
+    )
+  }
+  return false
 }

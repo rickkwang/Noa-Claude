@@ -541,9 +541,12 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
       // auto. classifierApprovable safetyChecks (sensitive-file paths) fall
       // through to the classifier — the fast-paths below naturally don't fire
       // because the tool's own checkPermissions still returns 'ask'.
+      // sandboxOverride asks (dangerouslyDisableSandbox) get the same treatment:
+      // a sandbox escape is never auto-approved by the classifier or fast paths.
       if (
-        result.decisionReason?.type === 'safetyCheck' &&
-        !result.decisionReason.classifierApprovable
+        (result.decisionReason?.type === 'safetyCheck' &&
+          !result.decisionReason.classifierApprovable) ||
+        result.decisionReason?.type === 'sandboxOverride'
       ) {
         if (appState.toolPermissionContext.shouldAvoidPermissionPrompts) {
           return {
@@ -1358,12 +1361,14 @@ export async function checkRuleBasedPermissions(
     return toolPermissionResult
   }
 
-  // 1g. Safety checks (e.g. .git/, .noa/, .vscode/, shell configs) are
-  // bypass-immune — they must prompt even when a PreToolUse hook returned
-  // allow. checkPathSafetyForAutoEdit returns {type:'safetyCheck'} for these.
+  // 1g. Safety checks (e.g. .git/, .noa/, .vscode/, shell configs) and sandbox
+  // escapes are bypass-immune — they must prompt even when a PreToolUse hook
+  // returned allow. checkPathSafetyForAutoEdit returns {type:'safetyCheck'} for
+  // these; Bash/PowerShell return {type:'sandboxOverride'} for dangerouslyDisableSandbox.
   if (
     toolPermissionResult?.behavior === 'ask' &&
-    toolPermissionResult.decisionReason?.type === 'safetyCheck'
+    (toolPermissionResult.decisionReason?.type === 'safetyCheck' ||
+      toolPermissionResult.decisionReason?.type === 'sandboxOverride')
   ) {
     return toolPermissionResult
   }
@@ -1466,12 +1471,14 @@ async function hasPermissionsToUseToolInner(
     return toolPermissionResult
   }
 
-  // 1g. Safety checks (e.g. .git/, .noa/, .vscode/, shell configs) are
-  // bypass-immune — they must prompt even in bypassPermissions mode.
-  // checkPathSafetyForAutoEdit returns {type:'safetyCheck'} for these paths.
+  // 1g. Safety checks (e.g. .git/, .noa/, .vscode/, shell configs) and sandbox
+  // escapes are bypass-immune — they must prompt even in bypassPermissions mode.
+  // checkPathSafetyForAutoEdit returns {type:'safetyCheck'} for these paths;
+  // Bash/PowerShell return {type:'sandboxOverride'} for dangerouslyDisableSandbox.
   if (
     toolPermissionResult?.behavior === 'ask' &&
-    toolPermissionResult.decisionReason?.type === 'safetyCheck'
+    (toolPermissionResult.decisionReason?.type === 'safetyCheck' ||
+      toolPermissionResult.decisionReason?.type === 'sandboxOverride')
   ) {
     return toolPermissionResult
   }

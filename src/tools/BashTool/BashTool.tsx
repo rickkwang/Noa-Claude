@@ -47,7 +47,11 @@ import { getBackgroundDeadlineMs } from '../../tasks/LocalShellTask/backgroundDe
 import { checkReadOnlyConstraints } from './readOnlyValidation.js';
 import { maybeRegisterGrepRead } from './grepReadRegistration.js';
 import { hashSedBaseContent, parseSedEditCommand } from './sedEditParser.js';
-import { shouldUseSandbox } from './shouldUseSandbox.js';
+import { logError } from '../../utils/log.js';
+import {
+  requireSandboxOverrideApproval,
+  shouldUseSandbox,
+} from './shouldUseSandbox.js';
 import { BASH_TOOL_NAME } from './toolName.js';
 import { BackgroundHint, renderToolResultMessage, renderToolUseErrorMessage, renderToolUseMessage, renderToolUseProgressMessage, renderToolUseQueuedMessage } from './UI.js';
 import { buildImageToolResult, isBashResultTruncated, isImageOutput, resetCwdIfOutsideProject, resizeShellImageOutput, stdErrAppendShellResetMessage, stripEmptyLines } from './utils.js';
@@ -586,7 +590,10 @@ export const BashTool = buildTool({
     };
   },
   async checkPermissions(input, context): Promise<PermissionResult> {
-    return bashToolHasPermission(input, context);
+    return requireSandboxOverrideApproval(
+      input,
+      await bashToolHasPermission(input, context),
+    );
   },
   renderToolUseMessage,
   renderToolUseProgressMessage,
@@ -1029,7 +1036,7 @@ async function* runShellCommand({
       if (backgroundFn) {
         backgroundFn(shellId);
       }
-    });
+    }).catch(error => logError(error));
   }
 
   // Set up auto-backgrounding on timeout if enabled

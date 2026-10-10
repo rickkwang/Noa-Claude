@@ -35,7 +35,10 @@ import { getTaskOutputPath } from '../../utils/task/diskOutput.js';
 import { TaskOutput } from '../../utils/task/TaskOutput.js';
 import { isOutputLineTruncated } from '../../utils/terminal.js';
 import { buildLargeToolResultMessage, generatePreview, PREVIEW_SIZE_BYTES } from '../../utils/toolResultStorage.js';
-import { shouldUseSandbox } from '../BashTool/shouldUseSandbox.js';
+import {
+  requireSandboxOverrideApproval,
+  shouldUseSandbox,
+} from '../BashTool/shouldUseSandbox.js';
 import { BackgroundHint } from '../BashTool/UI.js';
 import { buildImageToolResult, isImageOutput, resetCwdIfOutsideProject, resizeShellImageOutput, stdErrAppendShellResetMessage, stripEmptyLines } from '../BashTool/utils.js';
 import { trackGitOperations } from '../shared/gitOperationTracking.js';
@@ -348,7 +351,10 @@ export const PowerShellTool = buildTool({
     };
   },
   async checkPermissions(input: PowerShellToolInput, context: Parameters<Tool['checkPermissions']>[1]): Promise<PermissionResult> {
-    return await powershellToolHasPermission(input, context);
+    return requireSandboxOverrideApproval(
+      input,
+      await powershellToolHasPermission(input, context),
+    );
   },
   renderToolUseMessage,
   renderToolUseProgressMessage,
