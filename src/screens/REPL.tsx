@@ -378,10 +378,12 @@ function TranscriptModeFooter({
   virtualScroll,
   searchBadge,
   suppressShowAll = false,
-  status
+  status,
+  dialogWaiting = false
 }: {
   showAllInTranscript: boolean;
   virtualScroll: boolean;
+  dialogWaiting?: boolean;
   searchBadge?: {
     current: number;
     count: number;
@@ -398,10 +400,11 @@ function TranscriptModeFooter({
   const openLabel = editorName ? `open in ${editorName}` : 'open in editor';
   const scrollHints = `${figures.arrowUp}${figures.arrowDown} scroll · v to ${openLabel} · ? for shortcuts`;
   // Narrow terminals keep only the help pointer rather than truncating mid-hint.
-  const virtualHint = TRANSCRIPT_FOOTER_PADDING + stringWidth(['Showing detailed transcript', `${toggleShortcut} to toggle`, scrollHints].join(' · ')) + stringWidth(status ? `${status} ` : 'verbose ') < columns ? scrollHints : '? for shortcuts';
+  const dialogLabel = dialogWaiting ? ['dialog waiting'] : [];
+  const virtualHint = TRANSCRIPT_FOOTER_PADDING + stringWidth([...dialogLabel, 'Showing detailed transcript', `${toggleShortcut} to toggle`, scrollHints].join(' · ')) + stringWidth(status ? `${status} ` : 'verbose ') < columns ? scrollHints : '? for shortcuts';
   const hint = searchBadge ? 'n/N to navigate' : virtualScroll ? virtualHint : suppressShowAll ? `v to ${openLabel}` : `${showAllShortcut} to ${showAllInTranscript ? 'collapse' : 'show all'}`;
   return <Box noSelect={true} alignItems="center" alignSelf="center" borderTopDimColor={true} borderBottom={false} borderLeft={false} borderRight={false} borderStyle="single" marginTop={1} paddingLeft={TRANSCRIPT_FOOTER_PADDING} width="100%">
-      <Text dimColor={true} wrap="truncate-end">Showing detailed transcript · {toggleShortcut} to toggle · {hint}</Text>
+      <Text dimColor={true} wrap="truncate-end">{dialogWaiting && <Text color="permission">dialog waiting · </Text>}Showing detailed transcript · {toggleShortcut} to toggle · {hint}</Text>
       <Box flexGrow={1} />
       {status ? <Text>{status} </Text> : searchBadge ? <Text dimColor={true}>{searchBadge.current}/{searchBadge.count}{"  "}</Text> : <Text dimColor={true}>verbose </Text>}
     </Box>;
@@ -4845,11 +4848,11 @@ export function REPL({
       }} setHighlight={setHighlight} /> : transcriptHelpOpen ? <TranscriptHelp /> : <TranscriptModeFooter showAllInTranscript={showAllInTranscript} virtualScroll={true} status={editorStatus || undefined} searchBadge={searchQuery && searchCount > 0 ? {
         current: searchCurrent,
         count: searchCount
-      } : undefined} />} /> : <>
+      } : undefined} dialogWaiting={focusedInputDialog !== undefined} />} /> : <>
             {transcriptMessagesElement}
             {transcriptToolJSX}
             <SandboxViolationExpandedView />
-            <TranscriptModeFooter showAllInTranscript={showAllInTranscript} virtualScroll={false} suppressShowAll={dumpMode} status={editorStatus || undefined} />
+            <TranscriptModeFooter showAllInTranscript={showAllInTranscript} virtualScroll={false} suppressShowAll={dumpMode} status={editorStatus || undefined} dialogWaiting={focusedInputDialog !== undefined} />
           </>}
       </KeybindingSetup>;
     // The virtual-scroll branch (FullscreenLayout above) needs
