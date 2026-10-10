@@ -334,6 +334,7 @@ export type Out = z.infer<OutputSchema>;
 // Re-export BashProgress from centralized types to break import cycles
 export type { BashProgress } from '../../types/tools.js';
 import type { BashProgress } from '../../types/tools.js';
+import { getMaxOutputLength } from '../../utils/shell/outputLimits.js';
 
 /**
  * Checks if a command is allowed to be automatically backgrounded
@@ -463,8 +464,9 @@ export function resolveTimeoutMs(timeout?: number): number {
 export const BashTool = buildTool({
   name: BASH_TOOL_NAME,
   searchHint: 'execute shell commands',
-  // 30K chars - tool result persistence threshold
-  maxResultSizeChars: 30_000,
+  // Persistence threshold follows the same limit as the inline output cap, so
+  // BASH_MAX_OUTPUT_LENGTH moves both (default 30K)
+  maxResultSizeChars: getMaxOutputLength(),
   strict: true,
   async description({
     description
