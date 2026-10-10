@@ -195,8 +195,10 @@ const INTERPOLATED = [
   // Command lists are a shared constant upstream, joined in at runtime.
   '`find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo`',
   '`cat`, `head`, `tail`, `sed`, `awk`, or `echo`',
-  // Resolved limits (timeouts, line caps) are `${fn()}` calls upstream.
-  '\\d{4,}',
+  // Resolved limits are `${fn()}` calls upstream. Match only the exact
+  // shapes they appear in, so a changed number elsewhere still fails.
+  'default \\d+, max \\d+',
+  'up to \\d+ lines',
   '\\d+ hours',
   // Tool names the Agent prompt interpolates; SendMessage is one of them.
   'SendMessage',
@@ -317,32 +319,47 @@ const render = (s: string) =>
 
 /**
  * Lines that differ from upstream on purpose. A missing run is accepted only
- * when it contains one of these texts; each reason says why it differs.
+ * when it matches one of these entries: `exact` compares the whole run, and
+ * `contains` looks for the text inside it. Each reason says why it differs.
  */
-const ADAPTATIONS: Record<string, Array<[string, string]>> = {
+type Adaptation = { text: string; mode: 'exact' | 'contains'; reason: string }
+const ADAPTATIONS: Record<string, Adaptation[]> = {
   'Agent lean': [
-    [
-      'Reach for this when the task matches',
-      'upstream adds an effort clause; noa has no per-call effort',
-    ],
-    [
-      'call starts fresh.',
-      'upstream ends this sentence inside a conditional branch',
-    ],
+    {
+      text: 'Reach for this when the task matches',
+      mode: 'contains',
+      reason: 'upstream adds an effort clause; noa has no per-call effort',
+    },
+    {
+      text: 'call starts fresh.',
+      mode: 'exact',
+      reason: 'upstream ends this sentence inside a conditional branch',
+    },
   ],
   'Agent verbose': [
-    [
-      'call starts a fresh agent with no memory',
-      'upstream splits this sentence around its fork-only branch; noa has no forks',
-    ],
-    [
-      'For fresh agents, terse',
-      'upstream stores this sentence with bytes inside it, so it cannot be matched as text',
-    ],
+    {
+      text: 'call starts a fresh agent with no memory',
+      mode: 'contains',
+      reason:
+        'upstream splits this sentence around its fork-only branch; noa has no forks',
+    },
+    {
+      text: 'Any agent starts with zero context',
+      mode: 'contains',
+      reason: 'upstream says "any agent other than a fork"; noa has no forks',
+    },
+    {
+      text: 'For fresh agents, terse',
+      mode: 'contains',
+      reason:
+        'the binary stores this sentence with stray bytes inside it, so it cannot be matched',
+    },
   ],
 }
 const isAdaptation = (name: string, run: string) =>
-  (ADAPTATIONS[name] ?? []).some(([text]) => run.includes(text))
+  (ADAPTATIONS[name] ?? []).some(({ text, mode }) =>
+    mode === 'exact' ? run.trim() === text : run.includes(text),
+  )
 
 const binary = findBinary()
 if (binary === null) {
