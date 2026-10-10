@@ -1,6 +1,9 @@
 // @ts-nocheck
 export const LSP_TOOL_NAME = 'LSP' as const
 
+// Intentional deviation: upstream says "Search for symbols matching a query",
+// but LSPTool sends an empty query (src/tools/LSPTool/LSPTool.ts), so this
+// line describes what the operation does.
 export const DESCRIPTION = `Interact with Language Server Protocol (LSP) servers to get code intelligence features.
 
 Supported operations:

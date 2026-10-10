@@ -1974,6 +1974,8 @@ export function getAgentListingDeltaAttachment(
       addedLines: added.map(formatAgentLine),
       removedTypes: removed,
       isInitial: announced.size === 0,
+      // Upstream also requires the subagent steer to be "default". Noa has no
+      // remote steer config, so that check always passes and is left out.
       showConcurrencyNote: getSubscriptionType() !== 'pro',
     },
   ]
