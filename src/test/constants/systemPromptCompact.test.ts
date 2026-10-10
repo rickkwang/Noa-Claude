@@ -55,9 +55,9 @@ beforeEach(() => {
 })
 
 // Extracted from the local official Claude Code binaries: the first three
-// capabilities from 2.1.220
+// capabilities from the earlier binary
 // (sha256: 8addc857f3fe64d5a0368af9ee50321b50afb4a6918ba3ef018ab84f5dbbe081),
-// `fable51PromptBundle` and the two `-5-1` rows from 2.1.258
+// `fable51PromptBundle` and the two `-5-1` rows from the later binary
 // (sha256: b63136194160791c27cfa7b0403060d85eb0752991625fde8c09f9acacb17c78),
 // where `fable_5_1_prompt_bundle` appears on exactly two manifest rows.
 // These are effective capability facts, not a claim that Noa's

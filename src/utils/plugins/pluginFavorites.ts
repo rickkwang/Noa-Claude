@@ -1,7 +1,7 @@
 /**
  * Plugin favorites (plugin panel "Favorites" section, `f` key).
  *
- * CC 2.1.283 keeps favorites account-side; Noa is local-first, so they live in
+ * Claude Code keeps favorites account-side; Noa is local-first, so they live in
  * user settings (`favoritePlugins: string[]`, pluginId = `name@marketplace`).
  * Favorites are a per-user preference — always written to userSettings,
  * never project/local scope.

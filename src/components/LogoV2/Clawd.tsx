@@ -3,7 +3,7 @@ import * as React from 'react';
 import { Box, Text } from '../../ink.js';
 import { env } from '../../utils/env.js';
 
-// Clawd pose model, aligned with upstream Claude Code 2.1.285: a pose is
+// Clawd pose model, aligned with upstream Claude Code: a pose is
 // parameterized as {eyes, arms, feet} instead of a flat per-pose glyph table.
 //   eyes: open | left | right | closed (4-segment blink) | wink (3-segment)
 //   arms: down | up | one-up (noa-only: left down, right up — kept from the

@@ -34,7 +34,7 @@ const THINKING_INACTIVE_SHIMMER = {
 };
 const THINKING_DELAY_MS = 3000;
 const THINKING_GLOW_PERIOD_S = 2;
-// Thresholds match upstream CC 2.1.283: 10s still, 20s more,
+// Thresholds match upstream CC: 10s still, 20s more,
 // 30s some more, 45s deep in thought.
 function progressiveThinkingText(thinkingMs: number): string {
   if (thinkingMs >= 45_000) return 'deep in thought';
@@ -95,7 +95,7 @@ export type SpinnerAnimationRowProps = {
   effortSuffix: string;
   // Show `running tool for Ns` / `ran tool for Ns` in the status line.
   showToolCallTimer?: boolean;
-  /** While compacting: timer runs from compaction start (upstream 2.1.287).
+  /** While compacting: timer runs from compaction start.
    *  The token count stays on the shared streamed-char counter — REPL resets
    *  responseLengthRef to 0 on compact_start and the summary stream counts up
    *  from there, same as upstream. */

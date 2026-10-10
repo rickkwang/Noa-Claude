@@ -826,7 +826,7 @@ export function ManagePlugins({
       unified.push(...standaloneMcpsInScope);
     }
 
-    // Smart sections (CC 2.1.283 list assembly parity): attention (enabled
+    // Smart sections (CC list assembly parity): attention (enabled
     // plugins with errors, failed/flagged plugins, failing MCP connectors),
     // then favorites, then the main scope groups. Disabled plugins/MCPs go
     // last under a collapsed "Show N disabled" header (expanded via Space).
@@ -1346,7 +1346,7 @@ export function ManagePlugins({
     }
   }, [selectedIndex, filteredItems, pendingToggles, pluginStates, toggleMcpServer, onManageComplete, trackToggle, setShowDisabled]);
 
-  // Handle favorite toggle (f key). CC 2.1.283 favorites any list row — both
+  // Handle favorite toggle (f key). CC favorites any list row — both
   // plugins and MCP connectors; failed/flagged entries and the disabled
   // header are skipped.
   const followAfterFavoriteRef = useRef<string | null>(null);
@@ -1476,7 +1476,7 @@ export function ManagePlugins({
       label: isEnabled_1 ? 'Disable plugin' : 'Enable plugin',
       action: () => void handleSingleOperation(isEnabled_1 ? 'disable' : 'enable')
     });
-    // CC 2.1.283 details-menu parity: favorite entry right after enable/disable
+    // CC details-menu parity: favorite entry right after enable/disable
     menuItems.push({
       label: favoriteIds.has(pluginId_5) ? 'Remove from favorites' : 'Add to favorites',
       action: () => {

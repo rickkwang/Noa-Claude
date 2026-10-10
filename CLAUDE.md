@@ -59,7 +59,7 @@ Tests live in `src/test/` mirroring `src/`; self-contained (no preload).
 
 `shouldUseCompactSystemPrompt(model)` in `src/constants/systemPromptCompact.ts` picks the compact prompt head + short tool descriptions (newer models) or the long ones (older models still need them).
 
-- Most lean-branch text is a verbatim port of the upstream binary; the reference version for each section is noted in the comments of `src/test/constants/portedPromptRegistry.ts`, and `verify:ports` diffs it. Re-verify any change to ported text.
+- Most lean-branch text is a verbatim port of the upstream binary; `verify:ports` byte-diffs each port (listed in `src/test/constants/portedPromptRegistry.ts`) against the installed upstream binary. Re-verify any change to ported text.
 - Intentional deviations are commented at their definition (`src/constants/systemPromptDynamicSections.ts`, `src/tools/AgentTool/prompt.ts`, `src/constants/systemPromptCompact.ts`) — keep them.
 - Anything whose text depends on the gate must vary its cache key: `toolToAPISchema()` (`src/utils/api.ts`) and `resolveSystemPromptSections()` (`src/constants/systemPromptSections.ts`) memoize per session, so suffix with `:L` as upstream does, or a mid-session `/model` switch serves the wrong tier.
 - Only `firstParty` is a trusted model identity. Bedrock/Vertex/Foundry and Anthropic-compatible third parties keep the verbose prompt and other first-party-only relaxations (e.g. `NOA_CLAUDE_WRITE_REQUIRE_READ`), since a configured id (inference profile, ARN, alias, proxy) proves nothing about the model. Opt in via `lean_prompt` in `ANTHROPIC_DEFAULT_*_MODEL_SUPPORTED_CAPABILITIES`.

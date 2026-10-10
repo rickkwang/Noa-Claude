@@ -1,7 +1,7 @@
 /**
  * Where a typeahead query matched inside a suggestion row.
  *
- * Ported from upstream Claude Code (>= 2.1.224). The old renderer sliced the
+ * Ported from upstream Claude Code. The old renderer sliced the
  * text at the first UTF-16 `indexOf` hit and recolored the slice; the new one
  * computes ranges first so the renderer can bold them instead — and so a
  * range never lands in the middle of a grapheme cluster.

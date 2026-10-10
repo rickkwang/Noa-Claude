@@ -269,7 +269,7 @@ export function shouldSendThinkingBindingControls(model: string): boolean {
 
 /**
  * Models whose Bedrock / Vertex deployments accept the per-tool
- * `eager_input_streaming` field, from upstream's catalog (2.1.280). Bedrock
+ * `eager_input_streaming` field, from upstream's catalog. Bedrock
  * only takes it on its newer serving stack; older deployments 400 on it.
  *
  * @[MODEL LAUNCH]: mirror the new model's catalog `eager_input_streaming`.
@@ -361,12 +361,12 @@ export function modelSupportsStructuredOutputs(model: string): boolean {
 // @[MODEL LAUNCH]: auto mode is allow-by-default — only add a model here if it
 // does NOT support auto mode (specifically PI probes).
 /**
- * Mirrors upstream 2.1.210's model gate: a denylist of known-unsupported models
+ * Mirrors upstream's model gate: a denylist of known-unsupported models
  * rather than an allowlist, so newer families (fable, opus/sonnet 4.7+, …) are
  * supported by default without a code change on every launch.
  *
  * Upstream additionally short-circuits on a provider predicate, but that
- * predicate returns true for every provider in 2.1.210, so it is omitted here.
+ * predicate returns true for every provider, so it is omitted here.
  * The narrower provider rule below (non-first-party can't run 4-6 or haiku) is
  * the only provider gating that actually fires. Auto mode's separate
  * provider/plan/settings gates still apply upstream of this check.

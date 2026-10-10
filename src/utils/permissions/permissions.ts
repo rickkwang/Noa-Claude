@@ -573,7 +573,7 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
       // POWERSHELL_AUTO_MODE (ant-only build flag) is on. When disabled, this
       // guard keeps PS out of the classifier and skips the acceptEdits
       // fast-path below. When enabled, PS flows through to the classifier like
-      // Bash — the 2.1.233 classifier prompt covers PS idioms inline
+      // Bash — the classifier prompt covers PS idioms inline
       // (`iex (iwr ...)` as Code from External, etc.).
       // Note: this runs inside the behavior === 'ask' branch, so allow rules
       // that fire earlier (step 2b toolAlwaysAllowedRule, PS prefix allow)
@@ -742,7 +742,7 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
       const modeUnchanged =
         currentMode === eligibilitySnapshot.mode &&
         currentAutoActive === eligibilitySnapshot.autoActive
-      // Known intentional simplification of upstream 2.1.221's still-eligible
+      // Known intentional simplification of upstream's still-eligible
       // check (xUp): upstream additionally requires a plan-mode tool to be
       // read-only (or allow-rule matched) before trusting the verdict, and
       // honors a web domain-consent flag for other modes. This check only
@@ -1036,7 +1036,7 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
         }
 
         // Classifier unavailable (API error) — deny unconditionally (fail
-        // closed). Matches upstream 2.1.210, which removed the
+        // closed). Matches upstream, which removed the
         // tengu_iron_gate_closed gate and hardcoded this deny-with-retry path.
         if (classifierResult.unavailable) {
           logForDebugging(

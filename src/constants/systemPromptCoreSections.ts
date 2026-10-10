@@ -256,8 +256,8 @@ export const CONTEXT_MANAGEMENT_SECTION = `# Context management
 When the conversation grows long, some or all of the current context is summarized; the summary, along with any remaining unsummarized context, is provided in the next context window so work can continue — you don't need to wrap up early or hand off mid-task.`
 
 /**
- * Ported verbatim from upstream's `autonomy_append` section (2.1.226), byte
- * compared against the shipped binary; re-verified against 2.1.258, where the
+ * Ported verbatim from upstream's `autonomy_append` section, byte
+ * compared against the shipped binary; re-verified against a later build, where the
  * text is unchanged. The four paragraphs are separated by blank lines, not
  * single newlines — an earlier port collapsed them, which is invisible in a
  * diff and survived a digest pinned to the collapsed text.

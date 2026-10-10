@@ -154,7 +154,7 @@ When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to sel
   //
   // Everything else follows upstream's lean branch. Note that its "## When not
   // to use" text is built into a local and then never interpolated into either
-  // return — dead on their side, and absent from a real 2.1.220 transcript — so
+  // return — dead on their side, and absent from a real transcript — so
   // what ships here is its "## When to use" section instead. Upstream picks
   // between a long and a short variant on a steering-mode flag we don't have,
   // and suppresses the section entirely behind a plan-tier notice we also don't

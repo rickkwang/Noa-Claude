@@ -49,7 +49,7 @@ export function getSleepGuidance(): string | null {
  * editions but it can't tell which one it's targeting, so it either emits
  * pwsh-7 syntax on 5.1 (parser error → exit 1) or needlessly avoids && on 7.
  *
- * Ported verbatim from upstream 2.1.258. Exported so verify:ports can byte-diff
+ * Ported verbatim from upstream. Exported so verify:ports can byte-diff
  * each branch: the whole description is assembled behind an async edition probe
  * that returns null off Windows, so the branches are unreachable from a
  * rendered prompt on the machines this is verified from.
@@ -77,7 +77,7 @@ export function getEditionSection(edition: PowerShellEdition | null): string {
 }
 
 /**
- * Ported verbatim from upstream 2.1.258, which ships one tier here — there is no
+ * Ported verbatim from upstream, which ships one tier here — there is no
  * lean/verbose split for this description upstream, so this fork has none either.
  *
  * One upstream interpolation is deliberately absent: the "Developer tools

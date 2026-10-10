@@ -1,6 +1,6 @@
 // @ts-nocheck
 // Renders every Clawd animation frame-by-frame to stdout for visual
-// verification against upstream 2.1.285 frame tables.
+// verification against upstream frame tables.
 // Usage: bun scripts/render-clawd-frames.ts [animation ...]
 import { ANIMATIONS } from '../src/components/LogoV2/AnimatedClawd.js';
 

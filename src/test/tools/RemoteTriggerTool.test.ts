@@ -8,7 +8,7 @@ import { RemoteTriggerTool } from '../../tools/RemoteTriggerTool/RemoteTriggerTo
 // So the mode==='auto' branch below can't be driven true through the public
 // checkPermissions() entrypoint here; only the non-auto path is exercisable.
 // The auto-mode branch was verified by direct code read against upstream
-// Claude Code 2.1.233 (RemoteTrigger's checkPermissions), not by this test.
+// Claude Code (RemoteTrigger's checkPermissions), not by this test.
 function makeContext(mode) {
   return {
     getAppState: () => ({

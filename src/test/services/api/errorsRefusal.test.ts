@@ -114,7 +114,7 @@ describe('third-party 401 handling', () => {
   })
 })
 
-// Upstream 2.1.258 arms a refusal fallback only for models whose safety
+// Upstream arms a refusal fallback only for models whose safety
 // classifiers can decline a request: `claude-fable-*` and Opus 5. Its target is
 // the constant `claude-opus-4-8`, resolved through ANTHROPIC_DEFAULT_OPUS_MODEL
 // when set. Mythos models are guarded out ahead of the capability check and get

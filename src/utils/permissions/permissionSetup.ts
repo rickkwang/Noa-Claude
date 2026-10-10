@@ -754,7 +754,7 @@ export function initialPermissionModeFromCLI({
   }
   if (settings.permissions?.defaultMode) {
     const settingsMode = settings.permissions.defaultMode as PermissionMode
-    // CCR supports acceptEdits, plan, default, and auto (upstream 2.1.233's
+    // CCR supports acceptEdits, plan, default, and auto (upstream's
     // $ud) — ignore other defaultModes from settings (e.g. bypassPermissions
     // would otherwise silently grant full access in a remote environment).
     if (

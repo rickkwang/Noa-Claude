@@ -12,7 +12,7 @@
  *
  * Deliberately NOT part of `bun test` or `check:quality`: it needs an upstream
  * binary on disk, which no CI runner and most contributors will not have. Run
- * it by hand when adding a port or bumping the upstream reference version.
+ * it by hand when adding a port or after the upstream binary changes.
  *
  *   bun run verify:ports
  *   NOA_UPSTREAM_CLAUDE_BINARY=/path/to/claude bun run verify:ports
@@ -345,7 +345,7 @@ if (whitespace.length || missing.length) {
     '\nWhitespace: the words are right but the spacing is not. Fix the string,\n' +
       'then recompute its digest FROM THE CORRECTED TEXT, not from the file.\n' +
       'Mismatched: either a transcription error, or this binary predates the\n' +
-      'port — check the version noted at the string definition first.',
+      'port — check whether upstream has changed this text since the port.',
   )
   process.exit(1)
 }

@@ -42,7 +42,7 @@ describe('allowsWriteWithoutPriorRead', () => {
     'claude-3-7-sonnet',
     'claude-3-5-sonnet',
     'claude-3-5-haiku',
-  ])('%s is on upstream 2.1.228 denylist and keeps the guard', model => {
+  ])('%s is on upstream denylist and keeps the guard', model => {
     expect(allowsWriteWithoutPriorRead(model)).toBe(false)
   })
 

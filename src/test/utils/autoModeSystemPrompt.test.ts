@@ -30,19 +30,19 @@ function sha256(path: string): string {
 // failure here means someone reworded the ported upstream text.
 // Re-verify against upstream and only then update the digest, never the reverse.
 //
-// The base prompt tracks upstream 2.1.295's text, minus the host-context
+// The base prompt tracks upstream's text, minus the host-context
 // paragraph (the `${akt}` slot): noa never emits host-context lines, so that
 // paragraph would describe input that never occurs. The permissions template
-// matches upstream 2.1.295's template, rule slots included (their entries are
+// matches upstream's template, rule slots included (their entries are
 // what `claude auto-mode defaults` prints); the digests below pin that text.
 describe('upstream prompt port integrity', () => {
-  test('base system prompt matches upstream 2.1.295 text (minus host-context slot)', () => {
+  test('base system prompt matches upstream text (minus host-context slot)', () => {
     expect(sha256(join(PROMPTS_DIR, 'auto_mode_system_prompt.txt'))).toBe(
       '6a530642c2908dcc17b8243da23b5eec52d2a657395390dde0ea84624822e275',
     )
   })
 
-  test('external permissions template rule slots match upstream 2.1.295 defaults', () => {
+  test('external permissions template rule slots match upstream defaults', () => {
     expect(sha256(join(PROMPTS_DIR, 'permissions_external.txt'))).toBe(
       '462193cad790fec6fc6a48b05d72b3ab024705db053368245a07962ff9b1af54',
     )

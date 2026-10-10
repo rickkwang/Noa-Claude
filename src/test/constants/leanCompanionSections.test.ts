@@ -275,7 +275,7 @@ describe('autonomy guidance', () => {
   })
 })
 
-// Fable 5.1 and Mythos 5.1 are the only rows in upstream 2.1.258's manifest
+// Fable 5.1 and Mythos 5.1 are the only rows in upstream's manifest
 // carrying `fable_5_1_prompt_bundle`. It overlaps `fable_5_mitigations`, which
 // they also carry, and wins where the two disagree — so these tests pin the
 // precedence, not just the presence.

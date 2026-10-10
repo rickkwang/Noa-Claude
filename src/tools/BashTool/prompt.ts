@@ -344,11 +344,11 @@ function getLeanCommitAndPRInstructions(): string {
  * The output-visibility bullet ("Command output is displayed to you, not
  * reliably to the user.") used to ride on the opus_5_prompt_bundle capability,
  * gated the same as the compact head's companion sections — that was accurate
- * through upstream 2.1.223. Upstream 2.1.224 dropped the gate and made the
+ * until upstream dropped the gate and made the
  * bullet unconditional for every model on the lean prompt; ported here to
  * match.
  * Confirmed by diffing the minified `d4y()`/`ITy()` builders across the
- * 2.1.222–2.1.224 binaries, not inferred from the changelog.
+ * builds on either side of that change, not inferred from the changelog.
  */
 function getLeanPrompt(model?: string): string {
   const avoidCommands = hasEmbeddedSearchTools()

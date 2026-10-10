@@ -191,7 +191,7 @@ export function isInProtectedNamespace(): boolean {
 // @[MODEL LAUNCH]: Add a Vertex region override env var for the new model.
 /**
  * Model prefix → env var for Vertex region overrides. Names mirror upstream's
- * catalog `vertex_region_env_var` field (2.1.280); Mythos has none.
+ * catalog `vertex_region_env_var` field; Mythos has none.
  * Order matters: more specific prefixes must come before less specific ones
  * (e.g., 'claude-opus-4-1' before 'claude-opus-4').
  */

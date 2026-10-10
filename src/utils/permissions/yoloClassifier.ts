@@ -2293,7 +2293,7 @@ function getTwoStageMode(): TwoStageMode {
 }
 
 // ============================================================================
-// Intentional non-ports from upstream 2.1.233
+// Intentional non-ports from upstream
 // ============================================================================
 // These upstream auto-mode knobs are deliberately NOT implemented. Recorded
 // here so nobody "fixes" the absence later.
@@ -2301,7 +2301,7 @@ function getTwoStageMode(): TwoStageMode {
 // Do not assume "upstream gates it" means "off upstream too" — that blanket
 // justification is stale. When GrowthBook serves nothing, upstream falls back
 // to in-code SITE DEFAULTS, not an empty object, and several are `true` there
-// (2.1.270: repoVisibility, gitStatusType, severityByModel). A GrowthBook-less
+// (repoVisibility, gitStatusType, severityByModel). A GrowthBook-less
 // fork is exactly the client that bundle targets, so each entry states its own
 // reason.
 //   - priorAssistantContext (assistant prose in the transcript) — default off

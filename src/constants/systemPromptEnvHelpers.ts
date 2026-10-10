@@ -111,7 +111,7 @@ export async function computeMainSessionEnvInfo(
 
 function getKnowledgeCutoff(modelId: string): string | null {
   const canonical = getCanonicalName(modelId)
-  // Values from upstream's baked model catalog (`knowledge_cutoff`, 2.1.280).
+  // Values from upstream's baked model catalog (`knowledge_cutoff`).
   // Order matters: each `.1`/`-5` release is a prefix match of its successor.
   if (
     canonical.includes('claude-opus-5-5') ||

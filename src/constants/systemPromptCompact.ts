@@ -36,7 +36,7 @@ function isEarlyAccessModel(model: string): boolean {
  * gate while a companion section or cache key stays on an older rule.
  *
  * Source of each fact: `leanPrompt`, `opus5PromptBundle` and `fable5Mitigations`
- * from the 2.1.220 manifest; `fable51PromptBundle` from 2.1.258 (Fable 5.1 and
+ * from the upstream model manifest; `fable51PromptBundle` from the newer manifest (Fable 5.1 and
  * Mythos 5.1 only); `haiku55EarlyStopping` for Haiku 5.5 only.
  */
 export type BuiltInPromptCapabilities = {
@@ -75,7 +75,7 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     haiku55EarlyStopping: false,
   },
   // Opus 5.5 declares `lean_prompt` plus its own `opus_5_5_prompt_bundle`
-  // (2.1.280), not Opus 5's bundle. Every section that bundle switches on is
+  // not Opus 5's bundle. Every section that bundle switches on is
   // harness behaviour (silent-turn reminder, hook-notice visibility, Bash
   // steering variant) with no ported counterpart here, so the row carries no
   // bundle bit. Listed explicitly so the third-party "upstream" policy treats
@@ -87,7 +87,7 @@ const BUILT_IN_PROMPT_CAPABILITIES: Record<
     fable51PromptBundle: false,
     haiku55EarlyStopping: false,
   },
-  // Sonnet 5.5 declares `lean_prompt` (2.1.284 catalog; Sonnet 5 does not), so it
+  // Sonnet 5.5 declares `lean_prompt` (Sonnet 5 does not), so it
   // needs an explicit row: without one, needsLegacyPromptCapabilities() folds
   // every `sonnet` id into the verbose head. Like Opus 5.5, its remaining
   // capabilities (silent_turn_reminder, org_locked_thinking) are harness
@@ -165,7 +165,7 @@ function needsLegacyPromptCapabilities(canonical: string): boolean {
 }
 
 /**
- * Resolve the capability facts in the 2.1.220 model manifest, plus its denylist
+ * Resolve the capability facts in the upstream model manifest, plus its denylist
  * fallback for legacy and future models.
  */
 export function getBuiltInPromptCapabilities(
@@ -183,7 +183,7 @@ export function getBuiltInPromptCapabilities(
 /**
  * Models that still have to Read a file before Write/Edit may overwrite it.
  *
- * Upstream 2.1.228 gates this on exactly this denylist, so an unrecognized id
+ * Upstream gates this on exactly this denylist, so an unrecognized id
  * is allowed by default. Noa can't inherit that fail-open: the skipped branch
  * also skips the mtime staleness check, and upstream backs it with shadow
  * telemetry plus a remote kill switch that Noa has neither of. Untrusted model
@@ -222,7 +222,7 @@ export function allowsWriteWithoutPriorRead(model: string | undefined): boolean 
 /**
  * Models that still get the task-tracking tools (TaskCreate/Get/Update/List or
  * TodoWrite). Newer generations track multi-step work on their own, so upstream
- * stopped registering either family for them in 2.1.285.
+ * stopped registering either family for them.
  */
 const MODELS_WITH_TODO_TOOLS = new Set([
   'claude-3-opus',
@@ -349,7 +349,7 @@ export function shouldUseCompactSystemPrompt(model: string | undefined): boolean
  * shorter action-caution wording).
  *
  * The Bash "Command output is displayed to you" bullet is not part of this
- * bundle: upstream made it unconditional for lean-prompt models in 2.1.224 (see
+ * bundle: upstream made it unconditional for lean-prompt models (see
  * getLeanPrompt() in tools/BashTool/prompt.ts). The GrowthBook-gated Bash bullet
  * (`tengu_gorse_plover`) is not ported.
  *
@@ -583,7 +583,7 @@ export function getAntiVerbositySection(model: string | undefined): string | nul
  *
  * The "look at the target" sentence is bare for every lean model. Upstream
  * dropped the trailing clause that earlier versions added for models without
- * the prompt bundle (2.1.290).
+ * the prompt bundle.
  */
 export function getActionCautionSection(model: string | undefined): string | null {
   if (!shouldUseCompactSystemPrompt(model)) return null
@@ -593,7 +593,7 @@ export function getActionCautionSection(model: string | undefined): string | nul
 
 /**
  * Byte-for-byte upstream text, placed the same way in both tiers. Upstream
- * references the constant twice in the 2.1.220 binary:
+ * references the constant twice in the upstream binary:
  *
  * - Verbose intro: identity, blank line, policy, then the URL rule on the next
  *   line with a single newline. getSimpleIntroSection() reproduces this.

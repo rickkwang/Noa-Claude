@@ -647,7 +647,7 @@ export const SettingsSchema = lazySchema(() =>
           'Enabled plugins using plugin-id@marketplace-id format. Example: { "formatter@anthropic-tools": true }. Also supports extended format with version constraints.',
         ),
       // Favorite plugins (plugin panel "Favorites" section, f key). Local-only;
-      // CC 2.1.283 keeps favorites account-side, Noa stores them in settings.
+      // Claude Code keeps favorites account-side, Noa stores them in settings.
       favoritePlugins: z
         .array(z.string())
         .optional()

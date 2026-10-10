@@ -47,7 +47,7 @@ describe('the coding-style gate omits Doing tasks', () => {
 })
 
 describe('security policy reaches both prompt tiers', () => {
-  // Both placements are byte-level ports from 2.1.220 — see the comment on
+  // Both placements are byte-level ports from upstream — see the comment on
   // SECURITY_POLICY for the two upstream builders they mirror. What the tests
   // pin is that neither tier drops it: a model on the verbose tier — every
   // Sonnet/Haiku/Opus 4.x model, and every Bedrock/Vertex/Foundry or

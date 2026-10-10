@@ -56,8 +56,7 @@ type Props = {
   /** Leader's turn has completed (no active query). Used to suppress stall-red spinner when only teammates are running. */
   leaderIsIdle?: boolean;
   /** While compacting: the timer runs from compaction start instead of the
-   *  turn's loading start. The token count stays on the streamed-char counter
-   *  (upstream 2.1.287). */
+   *  turn's loading start. The token count stays on the streamed-char counter. */
   compact?: { startedAt: number };
 };
 

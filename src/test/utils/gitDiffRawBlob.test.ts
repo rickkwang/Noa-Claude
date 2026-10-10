@@ -14,7 +14,7 @@ import { fetchSingleFileGitDiff } from '../../utils/gitDiff.js'
 /**
  * Diff output we parse ourselves must come from the raw git blobs, never from
  * a workspace-configured diff driver or textconv filter. Upstream Claude Code
- * 2.1.222 passes --no-ext-diff --no-textconv on these paths; these tests pin
+ * passes --no-ext-diff --no-textconv on these paths; these tests pin
  * that behaviour by configuring both in a throwaway repo.
  *
  * Without --no-textconv the hunks would read "SECOND LINE"/"CHANGED LINE"

@@ -1,6 +1,6 @@
 /**
  * Session-wide budgets for runaway-loop protection, mirroring upstream
- * Claude Code 2.1.212's per-session caps:
+ * Claude Code's per-session caps:
  * - Subagent spawns (default 200) — hard failure when exceeded
  * - WebSearch tool calls (default 200) — soft failure (message to the model)
  *

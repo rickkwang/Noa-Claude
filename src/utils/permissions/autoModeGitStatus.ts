@@ -9,7 +9,7 @@ import { POWERSHELL_TOOL_NAME } from '../../tools/PowerShellTool/toolName.js'
 /**
  * `{"meta":{"gitStatus":…}}` ground-truth lines for the auto-mode classifier,
  * which auto_mode_system_prompt.txt ("## Input") already tells the model how to
- * read. Ports upstream 2.1.270's git-status reader, minus the `gitStatusUploads` half
+ * read. Ports upstream's git-status reader, minus the `gitStatusUploads` half
  * (counts only, never the file listing), plus `--no-optional-locks` so a read-only
  * probe doesn't refresh the index under a concurrent user.
  *
@@ -17,7 +17,7 @@ import { POWERSHELL_TOOL_NAME } from '../../tools/PowerShellTool/toolName.js'
  * a missing line is "proceed on the existing rules as usual".
  */
 
-/** Upstream 2.1.270's site default for the git-status line. */
+/** Upstream's site default for the git-status line. */
 const GIT_STATUS_SITE_DEFAULT = true
 
 const MAX_COMMAND_SCAN_CHARS = 10_000

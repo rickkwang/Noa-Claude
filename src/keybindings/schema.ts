@@ -175,7 +175,7 @@ export const KEYBINDING_ACTIONS = [
   'plugin:toggle',
   'plugin:install',
   'plugin:favorite',
-  // Declared for user keybindings; unbound by default (matches CC 2.1.283)
+  // Declared for user keybindings; unbound by default (matches CC)
   'plugin:cycleMarketplace',
   // Permission dialog actions
   'permission:toggleDebug',

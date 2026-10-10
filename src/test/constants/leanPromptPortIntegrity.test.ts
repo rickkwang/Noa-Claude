@@ -90,8 +90,8 @@ describe('ported lean text inside interpolated descriptions', () => {
     )
   })
 
-  // Upstream promoted this bullet from opus_5_prompt_bundle-gated (2.1.222) to
-  // unconditional on the lean prompt (2.1.224) — assert it survives even for a
+  // Upstream promoted this bullet from opus_5_prompt_bundle-gated to
+  // unconditional on the lean prompt — assert it survives even for a
   // lean model that does NOT carry the bundle, so a regression back to the old
   // gate would fail here.
   test('Bash output-visibility bullet is unconditional on the lean prompt', () => {
@@ -159,7 +159,7 @@ describe('ported lean text inside interpolated descriptions', () => {
       'when something is done and verified, state it plainly without hedging.',
     )
 
-    // 2.1.290 sends the same sentence to lean models without the bundle.
+    // Upstream sends the same sentence to lean models without the bundle.
     expect(getActionCautionSection(UNBUNDLED_MODEL)).toBe(withBundle)
   })
 })

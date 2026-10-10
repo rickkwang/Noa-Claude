@@ -29,7 +29,7 @@ describe('classifierQueue', () => {
     }
   })
 
-  // Upstream Claude Code 2.1.221 made the queue unconditional — serializing
+  // Upstream Claude Code made the queue unconditional — serializing
   // is what lets a parallel tool batch share one cached conversation prefix.
   test('is enabled by default', () => {
     delete process.env.NOA_CLAUDE_AUTO_MODE_CLASSIFIER_QUEUE

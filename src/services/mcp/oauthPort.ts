@@ -23,7 +23,7 @@ const REDIRECT_PORT_FALLBACK = 3118
  * `http://localhost/callback` carries no such obligation, so a strict server is
  * within spec to reject the ephemeral port we actually listen on.
  *
- * Upstream tried the IP literal (2.1.229) and reverted to `localhost` (2.1.231)
+ * Upstream tried the IP literal and reverted to `localhost`
  * because pre-registered OAuth clients are exact-match and cannot re-register
  * the way a DCR client can. For them a host swap is unrecoverable, and that
  * cohort is the larger one.

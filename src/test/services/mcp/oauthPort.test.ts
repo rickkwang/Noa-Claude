@@ -11,7 +11,7 @@ describe('buildRedirectUri', () => {
   // Pins the default to localhost. The 127.0.0.1 change broke pre-registered
   // OAuth clients (Slack) and was reverted, so it must not come back.
   // See REDIRECT_HOST.
-  test('defaults to localhost, matching upstream 2.1.231', () => {
+  test('defaults to localhost, matching upstream', () => {
     expect(buildRedirectUri(51004)).toBe('http://localhost:51004/callback')
   })
 

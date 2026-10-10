@@ -161,7 +161,7 @@ Refer to `FEATURE_AVAILABILITY_MATRIX.md` for command-level availability.
 
 ## Upstream Parity Notes
 
-- **Custom themes (`/theme`)** — aligned with upstream Claude Code 2.1.220:
+- **Custom themes (`/theme`)** — aligned with upstream Claude Code:
   user themes from `<config>/themes/*.json`, plugin-provided themes
   (`themes/` dir or `themes`/`experimental.themes` manifest paths, slugs
   namespaced `<plugin>:`), `custom:<slug>` values for the `theme` setting,
@@ -170,7 +170,7 @@ Refer to `FEATURE_AVAILABILITY_MATRIX.md` for command-level availability.
   custom themes behind safe mode (`--safe-mode` / `CLAUDE_CODE_SAFE_MODE=1`)
   and shows a "disabled in safe mode" notice; this fork has no safe-mode
   concept, so that gate and its copy are absent.
-- **`/status` "Session kind" row** — the upstream 2.1.221 row uses
+- **`/status` "Session kind" row** — the upstream row uses
   `CLAUDE_CODE_SESSION_KIND=bg` and `attacherCaps`. This fork has detached
   background sessions with its own `NOA_CLAUDE_BG_JOB` marker and PTY
   attach/detach protocol (`src/utils/background/`); it does not use those

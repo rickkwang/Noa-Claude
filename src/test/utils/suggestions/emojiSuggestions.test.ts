@@ -92,7 +92,7 @@ describe('getEmojiSuggestions', () => {
   })
 })
 
-describe('EMOJI_ALIASES (upstream 2.1.221 alias layer)', () => {
+describe('EMOJI_ALIASES (upstream alias layer)', () => {
   test('every alias resolves to a glyph the base table defines', () => {
     for (const [alias, canonical] of Object.entries(EMOJI_ALIASES)) {
       const glyph = EMOJI_SHORTCODES[canonical]

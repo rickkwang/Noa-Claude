@@ -63,7 +63,7 @@ function crouchPoof(x?: number): Frame[] {
 const BLINK_REST: Frame = { pose: { eyes: 'closed', arms: 'down', feet: 'both' }, offset: 0 };
 const REST: Frame = { pose: 'default', offset: 0 };
 
-// Spec helpers for the parameterized poses (upstream 2.1.285).
+// Spec helpers for the parameterized poses.
 const spec = (eyes, arms = 'down', feet = 'both') => ({ eyes, arms, feet });
 const facing = (f) => ({ facing: f });
 const facingRun = (stages, shadowKind?) =>
@@ -106,7 +106,7 @@ const SKIP: readonly Frame[] = [
   ...hold('arms-up', 0, 2, 0), ...crouchPoof(0), ...hold('default', 0, 1, 0),
 ];
 
-// ---- New in upstream Claude Code 2.1.285, ported frame-for-frame. ----
+// ---- New in upstream Claude Code, ported frame-for-frame. ----
 
 // Duck down deep, glance around, spring up with arms raised, blink.
 const PEEKABOO: readonly Frame[] = [

@@ -13,7 +13,7 @@ afterEach(() => {
 })
 
 /**
- * Mirrors the `fallback_3p` column of upstream's baked catalog (2.1.258).
+ * Mirrors the `fallback_3p` column of upstream's baked catalog.
  * These feed the "Model 'X' not found. Try 'Y' instead" suggestion — upstream
  * does not auto-retry on an unavailable third-party model either, so this
  * chain is the whole recovery story on both sides.

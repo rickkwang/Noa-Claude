@@ -20,7 +20,7 @@
  * Keep this value honest. It must name a version whose behaviour Noa actually
  * implements, and it should be raised only alongside the port work that earns
  * it — never to unlock a model whose contract is unhandled. What the current
- * value rests on, all verified against the 2.1.258 binary and covered by tests:
+ * value rests on, all verified against the upstream binary and covered by tests:
  * adaptive-only thinking with `budget_tokens` removed; the three distinct
  * shapes of "thinking off" (explicit `{type:'disabled'}`, omission, and models
  * that reject the explicit form); forced `tool_choice` rejection; the `refusal`

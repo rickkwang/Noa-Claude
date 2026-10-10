@@ -1372,7 +1372,7 @@ export function categorizeRetryableAPIError(
 
 /**
  * Upstream's armed refusal-fallback target: the model a safeguard refusal is
- * re-served on. Verified against 2.1.258: the constant `claude-opus-4-8`,
+ * re-served on. Verified against the upstream binary: the constant `claude-opus-4-8`,
  * resolved through ANTHROPIC_DEFAULT_OPUS_MODEL when the
  * catalog is unavailable — the same pinned-opus preference the other fallback
  * suggestions in this file use.

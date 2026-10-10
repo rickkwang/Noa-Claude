@@ -4,7 +4,7 @@ import { matchesPattern } from '../../utils/hooks.js'
 // Regression: hyphenated identifiers (e.g. `code-reviewer`, `mcp__brave-search`)
 // used to fall through to regex and accidentally substring-match. For
 // identifier-style events (useExactMatch=true) they must now compare as exact
-// strings. Mirrors Claude Code v2.1.195.
+// strings.
 describe('matchesPattern — hyphenated identifiers exact-match', () => {
   test('hyphenated agent name matches itself exactly', () => {
     expect(matchesPattern('code-reviewer', 'code-reviewer', true)).toBe(true)

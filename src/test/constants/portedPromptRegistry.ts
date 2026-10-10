@@ -175,13 +175,12 @@ export function buildPortedSubjects(): Record<string, string> {
 }
 
 /**
- * These strings are verbatim ports from the upstream Claude Code binary
- * (@anthropic-ai/claude-code 2.1.220 unless noted), not text authored here.
+ * These strings are verbatim ports from the upstream Claude Code binary, not text authored here.
  * Every line was matched byte-for-byte against that binary; the handful of
  * intentional deviations are commented at their definition.
  *
- * AUTONOMY_SECTION was matched against 2.1.226 instead — it postdates the
- * 2.1.220 sweep. Its prompt text is identical in 2.1.223: the whole assembly
+ * AUTONOMY_SECTION was matched against a later build instead — it postdates the
+ * first sweep. Its prompt text is identical across the two builds: the whole assembly
  * module was diffed line-by-line between the two builds and every difference
  * was minifier renaming, not prompt wording.
  *
@@ -233,11 +232,11 @@ export const PORTED_DIGESTS: Record<string, string> = {
   WRITING_FOR_USER_SECTION: '5ba735a24922bdc1',
   SUBAGENT_AUTHORITY_NOTICE: '79ef93928642628c',
   // Upstream ships one tier for PowerShell — there is no lean branch to pin, so
-  // the single description is the port. Refreshed against 2.1.258; the earlier
+  // the single description is the port. Refreshed against the upstream binary; the earlier
   // transcription predated it and had drifted (a wrong 5.1 encoding default, a
   // missing Unix-equivalents section, a locally added sleep duration).
   // Upstream's verbose head and its text-output section, re-ported against
-  // 2.1.291. `# System` omits the closing context-is-unlimited bullet (see its
+  // the current binary. `# System` omits the closing context-is-unlimited bullet (see its
   // definition); `# Doing tasks` is hashed without its /help sub-bullets.
   'verbose # System': '9134b25ababd619d',
   'verbose # Doing tasks': 'cd52ea6235a08a31',
@@ -249,7 +248,7 @@ export const PORTED_DIGESTS: Record<string, string> = {
   'PowerShell edition (core)': 'b911baef6ada701e',
   'PowerShell edition (unknown)': '029e116530be9302',
   'PowerShell description': '770183cff1c206af',
-  // Verbatim ports from upstream 2.1.237. Digests are the sha256 prefix that
+  // Verbatim ports from upstream. Digests are the sha256 prefix that
   // outputStyles.test.ts used to pin in full.
   'Proactive output style': 'a8402e1396f828e5',
   'Proactive turnReminder': '35d4cfdfe7e68d2f',

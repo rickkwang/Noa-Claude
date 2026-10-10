@@ -127,7 +127,7 @@ export function getBestModel(): ModelName {
 
 /**
  * Per-provider alias defaults, mirroring the `aliases` table in upstream's
- * baked model catalog (read out of the 2.1.258 binary; opus re-checked against 2.1.280). A family resolves to
+ * baked model catalog (read out of the upstream binary; opus re-checked against a later build). A family resolves to
  * its `per_provider` entry when the current provider has one, and to `default`
  * otherwise — the same lookup upstream performs.
  *

@@ -17,7 +17,7 @@ export type ParsedCommand =
       scope?: 'user' | 'project' | 'local'
       /** `marketplace add --sparse`: git sparse-checkout paths (github/git sources only) */
       sparsePaths?: string[]
-      /** Flags CC 2.1.283 accepts but Noa has no backend for — rejected with a
+      /** Flags CC accepts but Noa has no backend for — rejected with a
        *  clear error instead of being swallowed into the target path */
       unsupportedFlags?: string[]
     }

@@ -60,7 +60,7 @@ async function collectHistory(): Promise<string[]> {
   return out
 }
 
-describe('history flush durability (CC 2.1.218 alignment)', () => {
+describe('history flush durability (CC alignment)', () => {
   beforeEach(() => {
     appendShouldFail = false
     originalConfigDir = process.env.CLAUDE_CONFIG_DIR

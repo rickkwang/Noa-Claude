@@ -37,7 +37,7 @@ afterEach(() => {
 })
 
 /**
- * Mirrors the `aliases` table in upstream's baked model catalog (2.1.280).
+ * Mirrors the `aliases` table in upstream's baked model catalog.
  * Asserted on the canonical substring, since Bedrock/Vertex render their own
  * provider-specific id shapes.
  */

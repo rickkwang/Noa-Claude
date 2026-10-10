@@ -1345,7 +1345,7 @@ async function execCommandHook(
 // Hook events whose matcher is an identifier (tool/agent/server name) and so
 // must be compared as an exact string (or pipe/comma-separated list), not a
 // regex. FileChanged is intentionally excluded — its matcher is a path pattern
-// that should stay regex. Mirrors Claude Code v2.1.195.
+// that should stay regex.
 const EXACT_MATCH_HOOK_EVENTS: ReadonlySet<string> = new Set([
   'PreToolUse',
   'PostToolUse',
@@ -1368,7 +1368,7 @@ const EXACT_MATCH_HOOK_EVENTS: ReadonlySet<string> = new Set([
 
 // Tool-style events where a bare `mcp__<server>` matcher (no `__<tool>` suffix)
 // now matches nothing because matchers are exact-compared. Used to warn users
-// to migrate to the `mcp__<server>__.*` regex form. Mirrors Claude Code v2.1.195.
+// to migrate to the `mcp__<server>__.*` regex form.
 const NO_TOOL_WARN_HOOK_EVENTS: ReadonlySet<string> = new Set([
   'PreToolUse',
   'PostToolUse',
@@ -1383,7 +1383,7 @@ const warnedNoToolMatchers = new Set<string>()
 /**
  * Warn (once per matcher) when a hook matcher is a bare `mcp__<server>` name
  * that now matches no tool because matchers are exact-compared, suggesting the
- * `mcp__<server>__.*` regex form. Mirrors Claude Code v2.1.195.
+ * `mcp__<server>__.*` regex form.
  */
 function warnIfMatcherMatchesNoTool(
   hookEvent: string,
