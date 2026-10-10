@@ -76,7 +76,7 @@ const inputSchema = lazySchema(() =>
       'Case insensitive search (rg -i)',
     ),
     '-o': semanticBoolean(z.boolean().optional()).describe(
-      'Print only the matched (non-empty) parts of each matching line, one match per output line (rg -o / --only-matching). Requires output_mode: "content", ignored otherwise. Defaults to false.',
+      'Print only the matched (non-empty) parts of each matching line, one match per output line (rg -o / --only-matching); with multiline, a match that spans lines is printed across several lines. Requires output_mode: "content", ignored otherwise. Defaults to false.',
     ),
     type: z
       .string()
@@ -467,7 +467,13 @@ export const GrepTool = buildTool({
       )
 
       const finalLines = limitedResults.map(line => {
-        // Lines have format: /absolute/path:line_content or /absolute/path:num:content
+        // Match lines are /absolute/path:num:content and -C context lines are
+        // /absolute/path-num-content. Relativize only the path part.
+        const filePath = (line.match(/^(.+?):\d+:/) ?? line.match(/^(.+?)-\d+-/))?.[1]
+        if (filePath) {
+          return toRelativePath(filePath) + line.substring(filePath.length)
+        }
+        // Without -n, lines are /absolute/path:content
         const colonIndex = line.indexOf(':')
         if (colonIndex > 0) {
           const filePath = line.substring(0, colonIndex)
