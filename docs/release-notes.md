@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Fixed Bash and PowerShell running a command outside the sandbox with `dangerouslyDisableSandbox` without asking: such a call now gets an explicit "Run outside of the sandbox" prompt, and auto mode never auto-approves it. A hook-allowed call whose permission check throws is now denied instead of running.
+- Fixed Bash and PowerShell running a command outside the sandbox with `dangerouslyDisableSandbox` without asking: such a call now gets an explicit "Run outside of the sandbox" prompt that a whole-tool `Bash` allow rule does not skip, and auto mode never auto-approves it; bypassPermissions mode still runs it without asking. A hook-allowed call whose permission check throws is now denied instead of running.
 - Fixed newly launched background sessions missing from `noa agents --json`: `noa --bg` now waits up to five seconds for its host to register before reporting success, and a host that exits early or misses that deadline makes the launch fail and leaves a failed job record for inspection.
 
 ## 1.20.0

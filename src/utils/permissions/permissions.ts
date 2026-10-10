@@ -541,8 +541,9 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
       // auto. classifierApprovable safetyChecks (sensitive-file paths) fall
       // through to the classifier — the fast-paths below naturally don't fire
       // because the tool's own checkPermissions still returns 'ask'.
-      // sandboxOverride asks (dangerouslyDisableSandbox) get the same treatment:
-      // a sandbox escape is never auto-approved by the classifier or fast paths.
+      // sandboxOverride asks (dangerouslyDisableSandbox) get the same treatment.
+      // Intentionally stricter than upstream, which lets the classifier approve
+      // a sandbox escape: escapes are rare, so a prompt costs little.
       if (
         (result.decisionReason?.type === 'safetyCheck' &&
           !result.decisionReason.classifierApprovable) ||
@@ -1477,14 +1478,12 @@ async function hasPermissionsToUseToolInner(
     return toolPermissionResult
   }
 
-  // 1g. Safety checks (e.g. .git/, .noa/, .vscode/, shell configs) and sandbox
-  // escapes are bypass-immune — they must prompt even in bypassPermissions mode.
-  // checkPathSafetyForAutoEdit returns {type:'safetyCheck'} for these paths;
-  // Bash/PowerShell return {type:'sandboxOverride'} for dangerouslyDisableSandbox.
+  // 1g. Safety checks (e.g. .git/, .noa/, .vscode/, shell configs) are
+  // bypass-immune — they must prompt even in bypassPermissions mode.
+  // checkPathSafetyForAutoEdit returns {type:'safetyCheck'} for these paths.
   if (
     toolPermissionResult?.behavior === 'ask' &&
-    (toolPermissionResult.decisionReason?.type === 'safetyCheck' ||
-      toolPermissionResult.decisionReason?.type === 'sandboxOverride')
+    toolPermissionResult.decisionReason?.type === 'safetyCheck'
   ) {
     return toolPermissionResult
   }
@@ -1508,6 +1507,16 @@ async function hasPermissionsToUseToolInner(
         mode: appState.toolPermissionContext.mode,
       },
     }
+  }
+
+  // Sandbox escapes (dangerouslyDisableSandbox) yield to bypassPermissions,
+  // which the user chose explicitly, but not to a whole-tool allow rule (`Bash`):
+  // that rule was written for sandboxed runs.
+  if (
+    toolPermissionResult?.behavior === 'ask' &&
+    toolPermissionResult.decisionReason?.type === 'sandboxOverride'
+  ) {
+    return toolPermissionResult
   }
 
   // 2b. Entire tool is allowed

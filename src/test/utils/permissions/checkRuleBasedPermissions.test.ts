@@ -4,9 +4,8 @@ import type { Tool, ToolUseContext } from '../../../Tool.js'
 import { getEmptyToolPermissionContext } from '../../../Tool.js'
 import { checkRuleBasedPermissions } from '../../../utils/permissions/permissions.js'
 
-// Failure modes covered: a throwing checkPermissions must not leave a hook
-// 'allow' standing; a sandboxOverride ask must survive a hook 'allow'; a plain
-// allow is no objection (null).
+// A throwing checkPermissions must not leave a hook 'allow' standing. The
+// sandboxOverride hook path is covered by scripts/e2e-sandbox-override.ts.
 function fakeTool(checkPermissions: () => Promise<unknown>): Tool {
   return {
     name: 'FakeTool',
@@ -32,20 +31,5 @@ describe('checkRuleBasedPermissions', () => {
       decisionReason: { type: 'other', reason: 'permission check failed' },
       message: 'FakeTool was not run: its permission check failed.',
     })
-  })
-
-  test('keeps a sandboxOverride ask so a hook allow cannot skip it', async () => {
-    const ask = {
-      behavior: 'ask',
-      message: 'Run outside of the sandbox',
-      decisionReason: { type: 'sandboxOverride', reason: 'dangerouslyDisableSandbox' },
-    }
-    const decision = await checkRuleBasedPermissions(fakeTool(async () => ask), {}, fakeContext())
-    expect(decision).toBe(ask as never)
-  })
-
-  test('reports no objection for a plain allow', async () => {
-    const tool = fakeTool(async () => ({ behavior: 'allow', updatedInput: {} }))
-    expect(await checkRuleBasedPermissions(tool, {}, fakeContext())).toBeNull()
   })
 })
