@@ -818,12 +818,14 @@ type ToolDefaults = typeof TOOL_DEFAULTS
 type AnyToolDef = ToolDef<any, any, any>
 
 export function buildTool<D extends AnyToolDef>(def: D): BuiltTool<D> {
-  // The runtime spread is straightforward; the `as` bridges the gap between
-  // the structural-any constraint and the precise BuiltTool<D> return. The
-  // type semantics are proven by the 0-error typecheck across all 60+ tools.
-  return {
-    ...TOOL_DEFAULTS,
-    userFacingName: () => def.name,
-    ...def,
-  } as BuiltTool<D>
+  // Descriptors are copied instead of spread so a getter in the definition
+  // stays lazy: it is read on each access, not once at build time. The `as`
+  // bridges the gap between the structural-any constraint and the precise
+  // BuiltTool<D> return. The type semantics are proven by the 0-error
+  // typecheck across all 60+ tools.
+  const built = { ...TOOL_DEFAULTS, userFacingName: () => def.name }
+  return Object.defineProperties(
+    built,
+    Object.getOwnPropertyDescriptors(def),
+  ) as BuiltTool<D>
 }

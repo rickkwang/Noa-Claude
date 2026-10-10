@@ -816,6 +816,15 @@ export const SettingsSchema = lazySchema(() =>
         .catch(undefined)
         .describe('Persisted effort level for supported models.'),
       autoCompactWindow: autoCompactWindowSettingSchema.optional().catch(undefined),
+      bashOutputMaxChars: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .catch(undefined)
+        .describe(
+          'How many characters of a successful Bash command output the model receives inline (default 30000; values clamp to 4000-128000). Output past this is saved to a file and the model receives a short preview plus the path. When set, this also replaces BASH_MAX_OUTPUT_LENGTH.',
+        ),
       modelSettings: z.record(z.string(), z.object({
         effortLevel: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().catch(undefined),
         autoCompactWindow: autoCompactWindowSettingSchema.optional().catch(undefined),
