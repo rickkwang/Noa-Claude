@@ -10,6 +10,7 @@ import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import { findToolByName, type Tools, type ToolUseContext } from '../../Tool.js'
 import type { AssistantMessage, Message } from '../../types/message.js'
 import { createChildAbortController } from '../../utils/abortController.js'
+import { logError } from '../../utils/log.js'
 import { formatUnknownToolError } from '../../utils/toolName.js'
 import {
   buildSameTurnToolUses,
@@ -462,9 +463,11 @@ export class StreamingToolExecutor {
     tool.promise = promise
 
     // Process more queue when done
-    void promise.finally(() => {
-      void this.processQueue()
-    })
+    void promise
+      .finally(() => {
+        void this.processQueue()
+      })
+      .catch(error => logError(error))
   }
 
   /**

@@ -354,7 +354,8 @@ export type ToolResult<T> = {
     | AttachmentMessage
     | SystemMessage
   )[]
-  // contextModifier is only honored for tools that aren't concurrency safe.
+  // Serial tools apply contextModifier as each result arrives; concurrency-safe
+  // batches apply them in call order once the batch settles.
   contextModifier?: (context: ToolUseContext) => ToolUseContext
   /** MCP protocol metadata (structuredContent, _meta) to pass through to SDK consumers */
   mcpMeta?: {
