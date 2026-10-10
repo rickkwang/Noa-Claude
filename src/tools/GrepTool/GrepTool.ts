@@ -205,22 +205,7 @@ export const GrepTool = buildTool({
   async preparePermissionMatcher({ pattern }) {
     return rulePattern => matchWildcardPattern(rulePattern, pattern)
   },
-  async validateInput({
-    path,
-    '-o': only_matching,
-    multiline,
-    output_mode,
-  }): Promise<ValidationResult> {
-    // A match that spans lines cannot be printed one per output line
-    if (only_matching && multiline && output_mode === 'content') {
-      return {
-        result: false,
-        message:
-          'Cannot combine "-o" with "multiline": a match that spans lines cannot be printed one per output line. Use one of them.',
-        errorCode: 1,
-      }
-    }
-
+  async validateInput({ path }): Promise<ValidationResult> {
     // If path is provided, validate that it exists
     if (path) {
       const fs = getFsImplementation()
@@ -375,9 +360,11 @@ export const GrepTool = buildTool({
       args.push('-c')
     }
 
-    // Add line numbers if requested
-    if (show_line_numbers && output_mode === 'content') {
-      args.push('-n')
+    // Content lines always carry line numbers and a NUL after the path, so the
+    // path can be split off without guessing; the numbers are dropped below
+    // when -n is false
+    if (output_mode === 'content') {
+      args.push('-n', '--null')
     }
 
     // Print only the matched parts, one match per line (content mode only)
@@ -482,20 +469,21 @@ export const GrepTool = buildTool({
       )
 
       const finalLines = limitedResults.map(line => {
-        // Match lines are /absolute/path:num:content and -C context lines are
-        // /absolute/path-num-content. Relativize only the path part.
-        const filePath = (line.match(/^(.+?):\d+:/) ?? line.match(/^(.+?)-\d+-/))?.[1]
-        if (filePath) {
-          return toRelativePath(filePath) + line.substring(filePath.length)
+        // rg --null puts a NUL where the path separator was, then num:content
+        // for matches or num-content for -C context lines
+        const nul = line.indexOf('\0')
+        const numbered = line.substring(nul + 1).match(/^(\d+)([:-])/)
+        if (nul < 0 || !numbered) {
+          return line
         }
-        // Without -n, lines are /absolute/path:content
-        const colonIndex = line.indexOf(':')
-        if (colonIndex > 0) {
-          const filePath = line.substring(0, colonIndex)
-          const rest = line.substring(colonIndex)
-          return toRelativePath(filePath) + rest
-        }
-        return line
+        const [prefix, lineNumber, separator] = numbered
+        const location = show_line_numbers ? lineNumber + separator : ''
+        return (
+          toRelativePath(line.substring(0, nul)) +
+          separator +
+          location +
+          line.substring(nul + 1 + prefix.length)
+        )
       })
       const output = {
         mode: 'content' as const,
