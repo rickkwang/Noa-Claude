@@ -73,7 +73,8 @@ every name those call sites read (see `CLAUDE.md`, "Feature flags").
 - `CACHED_MICROCOMPACT` — `services/compact/cachedMCConfig.ts` returns a config
   with `enabled: false` and no supported models, so cache editing never engages.
 - `EXPERIMENTAL_SKILL_SEARCH` — `services/skillSearch/` returns no results
-  (`isSkillSearchEnabled()` is `false`).
+  (`isSkillSearchEnabled()` is `false`); the `DiscoverSkills` tool is a
+  name-constant stub with no implementation.
 - `HISTORY_SNIP` — `services/compact/snipCompact.ts` never snips
   (`isSnipRuntimeEnabled()` is `false`); the `Snip` tool is a null shell.
 - `OVERFLOW_TEST_TOOL` — the tool is a null shell and never registers.
