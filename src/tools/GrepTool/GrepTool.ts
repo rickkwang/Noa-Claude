@@ -470,20 +470,21 @@ export const GrepTool = buildTool({
 
       const finalLines = limitedResults.map(line => {
         // rg --null puts a NUL where the path separator was, then num:content
-        // for matches or num-content for -C context lines
+        // for matches or num-content for -C context lines. A single-file search
+        // prints no path, so there is no NUL to split on.
         const nul = line.indexOf('\0')
-        const numbered = line.substring(nul + 1).match(/^(\d+)([:-])/)
-        if (nul < 0 || !numbered) {
+        const rest = nul < 0 ? line : line.substring(nul + 1)
+        const numbered = rest.match(/^(\d+)([:-])/)
+        if (!numbered) {
           return line
         }
         const [prefix, lineNumber, separator] = numbered
+        const text = rest.substring(prefix.length)
         const location = show_line_numbers ? lineNumber + separator : ''
-        return (
-          toRelativePath(line.substring(0, nul)) +
-          separator +
-          location +
-          line.substring(nul + 1 + prefix.length)
-        )
+        if (nul < 0) {
+          return location + text
+        }
+        return toRelativePath(line.substring(0, nul)) + separator + location + text
       })
       const output = {
         mode: 'content' as const,
