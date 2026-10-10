@@ -255,6 +255,21 @@ function checkLines(haystack: string, text: string): { miss: string[] } {
 }
 
 /**
+ * Paragraph breaks confirmed by reading the upstream template source (the
+ * binary holds only the literal parts), keyed by the line that ends the
+ * paragraph. A blank line is correct in each case:
+ * - PowerShell: upstream renders `${edition notes}\n${devTools}\nBefore…`, and
+ *   devTools is empty without detected PATH tools, so the result is a blank line.
+ * - Agent verbose: upstream renders `${head}\n${Rt}`, where Rt starts with
+ *   "\n## When not to use", and `${Rt}\n## Usage notes`, where Rt ends in "\n".
+ */
+const HAND_CONFIRMED_BLANK = [
+  'Unconditionally: `A; B`.',
+  'If omitted, the general-purpose agent is used.',
+  'or tasks that match an available agent type.',
+]
+
+/**
  * The part a line-by-line check cannot see, and the part that actually broke:
  * whether each paragraph break is a blank line upstream or a single newline.
  * Each adjacent line pair is searched with our separator and with the other
@@ -303,11 +318,24 @@ function checkBreaks(
       wrong.push(describe(`uses ${blank ? 'a single newline' : 'a blank line'}`))
     } else if (weak(ours)) ok++
     else if (weak(other)) {
+      // Checked by hand against the template source, where the binary shows
+      // only the parts. Each entry names the line that ends the paragraph.
+      const byHand = blank && HAND_CONFIRMED_BLANK.some(end => before.trim().endsWith(end))
+      if (byHand) {
+        ok++
+        continue
+      }
       suspect.push(
         describe(
           `may use ${blank ? 'a single newline' : 'a blank line'} — ` +
             'interpolation-adjacent, confirm by hand',
         ),
+      )
+    } else if (present(haystack, tail) && present(haystack, head)) {
+      // Both lines exist upstream, but not next to each other. A line can
+      // match text that belongs to another tool, so this is a suspect, not a pass.
+      suspect.push(
+        describe('both lines exist upstream but not adjacent — check by hand'),
       )
     } else unverified++
   }
