@@ -112,7 +112,7 @@ describe('Agent lean description', () => {
   test('carries upstream\'s When-to-use section, not the dead one', async () => {
     const lean = await agentPrompt([], false, undefined, LEAN_MODEL)
 
-    expect(lean).toContain('## When to use\nReach for this when the task matches an available agent type')
+    expect(lean).toContain('## When to use\n\nReach for this when the task matches an available agent type')
     expect(lean).toContain(
       "For a single-fact lookup where you already know the file, symbol, or value, search directly. Once you've delegated a search, don't also run it yourself — wait for the result.",
     )

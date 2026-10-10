@@ -183,6 +183,7 @@ ${agentListSection}
 ${subagentTypeLine}
 
 ## When to use
+
 Reach for this when the task matches an available agent type, when you have independent work to run in parallel, or when answering would mean reading across several files — delegate it and you keep the conclusion, not the file dumps. For a single-fact lookup where you already know the file, symbol, or value, search directly. Once you've delegated a search, don't also run it yourself — wait for the result.
 
 - The agent's final report is not shown to the user — relay what matters.
@@ -226,8 +227,8 @@ When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to sel
   // Non-coordinator gets the full prompt with all sections
   return `${verboseHead}
 ${whenNotToUseSection}
+## Usage notes
 
-Usage notes:
 - Always include a short description summarizing what the agent will do
 - When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.${
     // eslint-disable-next-line custom-rules/no-process-env-top-level
