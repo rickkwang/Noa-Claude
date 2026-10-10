@@ -51,7 +51,7 @@ async function execTmux(
     // command line to bash which eats `#` as a comment: `display-message -p
     // #{socket_path},#{pid}` below becomes `display-message -p ` → exit 1 →
     // we silently fall back to the guessed path and never learn the real
-    // server PID. Same root cause as TungstenTool/utils.ts:execTmuxCommand.
+    // server PID.
     const result = await execFileNoThrow('wsl', ['-e', TMUX_COMMAND, ...args], {
       env: { ...process.env, WSL_UTF8: '1' },
       ...opts,
