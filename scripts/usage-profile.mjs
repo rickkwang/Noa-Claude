@@ -20,10 +20,9 @@
  *    several times (streaming progress snapshots, one record per content
  *    block). Raw record counts run ~2.2x the real request count.
  * 2. Per id, keep the variant with the largest `cache_read_input_tokens`.
- *    On openaiCompatible providers the pre-normalization snapshot reports the
- *    whole prompt as `input_tokens` with `cache_read_input_tokens: 0`; the
- *    normalized one carries the real split (see normalizeUsageForCostAccounting
- *    in src/cost-tracker.ts, which applies the same correction at runtime).
+ *    Older transcripts can contain both raw and normalized usage snapshots.
+ *    Current OpenAI shim responses split cached input at the transport boundary;
+ *    streaming snapshots may still precede the final usage update.
  *    Summing every record instead inflates uncached input by >20x.
  */
 import { readdirSync, readFileSync } from 'fs'

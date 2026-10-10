@@ -51,6 +51,7 @@ type OpenAIStreamChunk = {
   usage?: {
     prompt_tokens?: number
     completion_tokens?: number
+    prompt_tokens_details?: { cached_tokens?: number }
   }
   // Providers that signal failure inside a 200 SSE stream.
   error?: { message?: string }
@@ -360,11 +361,16 @@ function convertChunkUsage(
   usage: OpenAIStreamChunk['usage'] | undefined,
 ): AnthropicLikeMessage['usage'] | undefined {
   if (!usage) return undefined
+  const promptTokens = usage.prompt_tokens ?? 0
+  const cacheRead = Math.min(
+    promptTokens,
+    Math.max(0, usage.prompt_tokens_details?.cached_tokens ?? 0),
+  )
   return {
-    input_tokens: usage.prompt_tokens ?? 0,
+    input_tokens: promptTokens - cacheRead,
     output_tokens: usage.completion_tokens ?? 0,
     cache_creation_input_tokens: 0,
-    cache_read_input_tokens: 0,
+    cache_read_input_tokens: cacheRead,
   }
 }
 
@@ -900,10 +906,7 @@ class OpenAIShimMessages {
         }
         finish_reason?: string
       }>
-      usage?: {
-        prompt_tokens?: number
-        completion_tokens?: number
-      }
+      usage?: OpenAIStreamChunk['usage']
     },
     model: string,
   ): AnthropicLikeMessage {
@@ -951,12 +954,7 @@ class OpenAIShimMessages {
       model: data.model ?? model,
       stop_reason: stopReason,
       stop_sequence: null,
-      usage: {
-        input_tokens: data.usage?.prompt_tokens ?? 0,
-        output_tokens: data.usage?.completion_tokens ?? 0,
-        cache_creation_input_tokens: 0,
-        cache_read_input_tokens: 0,
-      },
+      usage: convertChunkUsage(data.usage ?? {})!,
     }
   }
 }

@@ -18,7 +18,7 @@ const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'n
 mkdirSync(artifacts, { recursive: true });
 const model = 'claude-sonnet-4-6';
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['agent-nested', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'bedrock-overflow', 'field-reject'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['agent-nested', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'bedrock-overflow', 'field-reject'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -47,7 +47,7 @@ const server = createServer(async (req, res) => {
     const customChild=active.case==='agent-custom-fork'&&((lastText.includes('CHILD_CUSTOM_FORK_')||body.tools?.every(t=>t.name==='Read'))||body.messages?.at(-1)?.content?.some?.(b=>b.type==='tool_result'&&b.tool_use_id.startsWith('custom_read_')));
     const child = customChild || active.case === 'goal-child-usage' && (lastText.includes('CHILD_USAGE_FIXTURE') || body.messages?.at(-1)?.content?.some?.(b => b.type === 'tool_result' && b.tool_use_id === 'child_read'));
     active.requests.at(-1).child = child;
-    const n = active.requests.filter(r => (harness || active.case.startsWith('hook-') || active.case.startsWith('concurrency-') || active.case === 'background-deadline') ? r.body.tools?.length && !r.child : !r.summary).length;
+    const n = active.requests.filter(r => active.case !== 'openai-usage-nonstream' || !r.body.stream).filter(r => (harness || active.case.startsWith('hook-') || active.case.startsWith('concurrency-') || active.case === 'background-deadline') ? r.body.tools?.length && !r.child : !r.summary).length;
     const error = (status, type, message) => {
       res.writeHead(status, { 'content-type': 'application/json', 'retry-after': '0', 'x-should-retry': status === 529 ? 'true' : 'false' });
       res.end(JSON.stringify({ type: 'error', error: { type, message } }));
@@ -173,7 +173,7 @@ const server = createServer(async (req, res) => {
         : { command: 'sleep 4', description: 'Wait past the deadline' } }]; stop = 'tool_use';
     } else if (active.case.startsWith('concurrency-') && n === 1) {
       content = [1, 2].map(i => ({ type: 'tool_use', id: 'write_' + i, name: 'Bash', input: { command: 'pwd' } })); stop = 'tool_use';
-    } else if (active.case === 'max-turns' || ((active.case === 'read' || active.case.endsWith('-overflow') || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3) || (active.case === 'field-reject' && n === 2)) {
+    } else if (active.case === 'max-turns' || ((active.case === 'read' || active.case.startsWith('openai-usage') || active.case.endsWith('-overflow') || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3) || (active.case === 'field-reject' && n === 2)) {
       content = [
         ...(active.case === 'compact-resume' ? [{ type: 'text', text: 'prior-context '.repeat(5000) }] : []),
         { type: 'tool_use', id: `toolu_${n}`, name: 'Read', input: { file_path: join(active.dir, 'fixture.txt') } },
@@ -183,10 +183,15 @@ const server = createServer(async (req, res) => {
     }
     const msg = { id: `msg_${active.requests.length}`, type: 'message', role: 'assistant', model: body.model, content, stop_reason: stop, stop_sequence: null, usage: child ? {input_tokens:1,output_tokens:1,cache_read_input_tokens:5000,cache_creation_input_tokens:4000} : harness ? {input_tokens:1,output_tokens:1} : {input_tokens:100,output_tokens:10} };
     if (openai) {
+      if (active.case === 'openai-usage-nonstream' && body.stream) {
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        res.end(`data: ${JSON.stringify({ error: { message: 'Scripted non-streaming fallback' } })}\n\n`);
+        return;
+      }
       const text = textOf(content) || null;
       const toolCalls = content.filter(b => b.type === 'tool_use').map(b => ({ id: b.id, type: 'function', function: { name: b.name, arguments: JSON.stringify(b.input) } }));
       const finish = toolCalls.length ? 'tool_calls' : 'stop';
-      const usage = { prompt_tokens: msg.usage.input_tokens, completion_tokens: msg.usage.output_tokens, total_tokens: msg.usage.input_tokens + msg.usage.output_tokens };
+      const usage = { prompt_tokens: msg.usage.input_tokens, completion_tokens: msg.usage.output_tokens, total_tokens: msg.usage.input_tokens + msg.usage.output_tokens, ...(active.case.startsWith('openai-usage') && { prompt_tokens_details: { cached_tokens: 60 } }) };
       if (!body.stream) {
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ id: msg.id, object: 'chat.completion', model: body.model, choices: [{ index: 0, message: { role: 'assistant', content: text, ...(toolCalls.length && { tool_calls: toolCalls }) }, finish_reason: finish }], usage }));
@@ -242,7 +247,7 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
     ...(scenario==='blocking-limit' && {DISABLE_AUTO_COMPACT:'1'}),
     CLAUDE_CONFIG_DIR: join(active.dir, 'config'), ANTHROPIC_API_KEY: 'local-e2e-dummy', ANTHROPIC_BASE_URL: baseUrl,
     ANTHROPIC_MODEL: model, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', DISABLE_AUTOUPDATER: '1',
-    ...(scenario === 'openai-overflow' && { CLAUDE_CODE_USE_OPENAI: '1', OPENAI_BASE_URL: `${baseUrl}/v1`, OPENAI_API_KEY: 'local-e2e-dummy' }),
+    ...(scenario.startsWith('openai-') && { CLAUDE_CODE_USE_OPENAI: '1', OPENAI_BASE_URL: `${baseUrl}/v1`, OPENAI_API_KEY: 'local-e2e-dummy' }),
     CLAUDE_CODE_TASK_LIST_ID: 'harness-probe', NOA_CLAUDE_STREAMING_TOOL_EXECUTION: ['budget-nonstream', 'concurrency-nonstream'].includes(scenario) ? '0' : '1', FALLBACK_FOR_ALL_PRIMARY_MODELS: '1', CLAUDE_CODE_EAGER_FLUSH: '1',
   });
   const streamingInput = scenario.startsWith('budget-');
@@ -378,6 +383,28 @@ try {
             assert.equal(active.summaries, 1, 'context overflow did not trigger reactive compact');
             assert.equal(count, scenario==='small-window-overflow'?5:4);
             assert.ok(JSON.stringify(active.requests.at(-1).body.messages).includes(sentinel), 'retry after compaction lost the original constraint');
+          } else if (scenario.startsWith('openai-usage')) {
+            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
+            const completed = active.requests.filter(r => scenario !== 'openai-usage-nonstream' || !r.body.stream);
+            assert.equal(completed.length, 2);
+            assert.ok(active.requests.every(r => r.path.includes('/chat/completions')));
+            assert.ok(JSON.stringify(completed[1].body.messages).includes('LOCAL_FIXTURE_42'));
+            const usage = runResult.result.modelUsage[model];
+            assert.equal(usage.inputTokens, 80, 'cached input was lost or subtracted twice');
+            assert.equal(usage.cacheReadInputTokens, 120);
+            assert.equal(usage.outputTokens, 20);
+            assert.equal(usage.inputTokens + usage.cacheReadInputTokens, 200, 'prompt tokens were double-counted');
+            assert.ok(Math.abs(runResult.result.total_cost_usd - (80 * 3 + 120 * 0.3 + 20 * 15) / 1_000_000) < 1e-10);
+            if (scenario === 'openai-usage') {
+              assert.equal(runResult.result.usage.input_tokens, 80);
+              assert.equal(runResult.result.usage.cache_read_input_tokens, 120);
+              assert.equal(runResult.result.usage.output_tokens, 20);
+            } else {
+              const events = readFileSync(join(dir, 'run-stdout.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+              const responses = events.filter(e => e.type === 'assistant').map(e => e.message.usage);
+              assert.equal(responses.length, 2);
+              assert.ok(responses.every(u => u.input_tokens === 40 && u.cache_read_input_tokens === 60 && u.output_tokens === 10));
+            }
           } else if (scenario === 'field-reject') {
             assert.equal(runResult.code, 0, `field rejection surfaced as: ${runResult.result.result}`); assert.equal(runResult.result.result, 'AUDIT_OK'); assert.equal(count, 3);
             assert.ok(active.requests.slice(1).every(r => !('metadata' in r.body)), 'the rejected field was sent again on a later turn');
@@ -465,7 +492,7 @@ try {
   const shaOf = file => existsSync(file) ? sha(readFileSync(file)) : 'missing';
   writeFileSync(join(artifacts, 'verification.manifest.json'), JSON.stringify({
     command: [process.execPath, ...process.argv.slice(1)], revision, runtime: process.version,
-    transport: 'deterministic localhost Anthropic SSE (OpenAI-compatible chat completions for openai-overflow); no actual model-quality benchmark',
+    transport: 'deterministic localhost Anthropic SSE (OpenAI-compatible chat completions for openai-*); no actual model-quality benchmark',
     entry, entry_sha256: shaOf(entry), comparison: compare ? { entry: resolve(compare), sha256: shaOf(resolve(compare)) } : undefined,
     script_sha256: sha(readFileSync(fileURLToPath(import.meta.url))),
     results_sha256: shaOf(join(artifacts, 'results.json')),
