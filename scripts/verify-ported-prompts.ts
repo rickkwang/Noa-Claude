@@ -48,6 +48,36 @@ const { buildPortedSubjects, PORTED_DIGESTS } = await import(
  */
 const SUBJECTS: Record<string, string> = buildPortedSubjects()
 
+// Model-visible tool descriptions, rendered in both tiers. They live here, not
+// in buildPortedSubjects(): the integrity test pins that key list, and these
+// renders are async (the Agent prompt awaits its permission context). The
+// models match the registry's LEAN_MODEL and VERBOSE_MODEL.
+await import('../src/tools.ts')
+const { getEmptyToolPermissionContext } = await import('../src/Tool.ts')
+const { FileReadTool } = await import('../src/tools/FileReadTool/FileReadTool.ts')
+const { BashTool } = await import('../src/tools/BashTool/BashTool.tsx')
+const { AgentTool } = await import('../src/tools/AgentTool/AgentTool.tsx')
+for (const [tier, model] of [
+  ['lean', 'claude-opus-5'],
+  ['verbose', 'claude-sonnet-4-5'],
+] as const) {
+  // "Noa Claude" is a deliberate rename of the upstream product name.
+  const brand = (text: string) =>
+    text
+      .replace(/Noa Claude/g, 'Claude Code')
+      .replace('https://github.com/rickkwang/Noa-Claude', 'https://claude.com/claude-code')
+  const args = {
+    agents: [],
+    tools: [],
+    allowedAgentTypes: undefined,
+    getToolPermissionContext: async () => getEmptyToolPermissionContext(),
+    model,
+  }
+  SUBJECTS[`Read ${tier}`] = brand(String(await FileReadTool.prompt(args)))
+  SUBJECTS[`Bash ${tier}`] = brand(String(await BashTool.prompt(args)))
+  SUBJECTS[`Agent ${tier}`] = brand(String(await AgentTool.prompt(args)))
+}
+
 // A port that is digest-pinned but not verified here is the exact gap that let
 // six transcription errors through. The shared registry makes it structurally
 // impossible; this asserts it rather than trusting the refactor to stay done.
@@ -104,7 +134,15 @@ function encodings(text: string): string[] {
     let uesc = ''
     for (const char of body) {
       const code = char.codePointAt(0)!
-      uesc += code > 127 ? `\\u${code.toString(16).padStart(4, '0')}` : char
+      if (code > 0xffff) {
+        // Astral characters are written as a UTF-16 surrogate pair in JS source.
+        const offset = code - 0x10000
+        const high = (0xd800 + (offset >> 10)).toString(16).toUpperCase()
+        const low = (0xdc00 + (offset & 0x3ff)).toString(16).toUpperCase()
+        uesc += `\\u${high}\\u${low}`
+      } else {
+        uesc += code > 127 ? `\\u${code.toString(16).padStart(4, '0')}` : char
+      }
     }
     for (const base of [Buffer.from(body, 'utf8').toString('latin1'), uesc]) {
       forms.add(base)
@@ -154,6 +192,18 @@ function findWhitespaceTolerant(
  * further at these tokens when the whole line does not appear.
  */
 const INTERPOLATED = [
+  // Command lists are a shared constant upstream, joined in at runtime.
+  '`find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo`',
+  '`cat`, `head`, `tail`, `sed`, `awk`, or `echo`',
+  // Resolved limits (timeouts, line caps) are `${fn()}` calls upstream.
+  '\\d{4,}',
+  '\\d+ hours',
+  // Tool names the Agent prompt interpolates; SendMessage is one of them.
+  'SendMessage',
+  // The config directory is per product: `.claude/agents` upstream, `.noa/agents` here.
+  '\\.(?:claude|noa)/agents/\\*\\.md',
+  // The product link is a constant upstream (`${rot}`).
+  'https://claude\\.com/claude-code',
   'PowerShell',
   'NotebookEdit',
   'TodoWrite',
@@ -194,7 +244,7 @@ function checkLines(haystack: string, text: string): { miss: string[] } {
     // Bulleted sections are stored upstream as bare item strings and joined
     // with their ` - ` / `  - ` prefix at runtime, so the prefix never appears
     // next to the text in the binary.
-    const body = line.replace(/^ {1,2}- /, '')
+    const body = line.replace(/^ {0,2}- /, '')
     for (const run of body.split(splitter)) {
       if (run.trim().length >= MIN_RUN && !present(haystack, run)) miss.push(run)
     }
@@ -265,6 +315,35 @@ function checkBreaks(
 const render = (s: string) =>
   s.replace(/\n/g, '⏎').replace(/\\n/g, '\\n').slice(0, 240)
 
+/**
+ * Lines that differ from upstream on purpose. A missing run is accepted only
+ * when it contains one of these texts; each reason says why it differs.
+ */
+const ADAPTATIONS: Record<string, Array<[string, string]>> = {
+  'Agent lean': [
+    [
+      'Reach for this when the task matches',
+      'upstream adds an effort clause; noa has no per-call effort',
+    ],
+    [
+      'call starts fresh.',
+      'upstream ends this sentence inside a conditional branch',
+    ],
+  ],
+  'Agent verbose': [
+    [
+      'call starts a fresh agent with no memory',
+      'upstream splits this sentence around its fork-only branch; noa has no forks',
+    ],
+    [
+      'For fresh agents, terse',
+      'upstream stores this sentence with bytes inside it, so it cannot be matched as text',
+    ],
+  ],
+}
+const isAdaptation = (name: string, run: string) =>
+  (ADAPTATIONS[name] ?? []).some(([text]) => run.includes(text))
+
 const binary = findBinary()
 if (binary === null) {
   console.log(
@@ -304,7 +383,8 @@ for (const [name, ours] of Object.entries(SUBJECTS)) {
 
   // Upstream assembles this one from parts. Verify the parts instead, and say
   // exactly how much of it the run actually covered.
-  const { miss } = checkLines(haystack, ours)
+  const { miss: rawMiss } = checkLines(haystack, ours)
+  const miss = rawMiss.filter(run => !isAdaptation(name, run))
   const breaks = checkBreaks(haystack, ours)
   if (miss.length === 0 && breaks.wrong.length === 0) {
     assembled++
@@ -328,7 +408,9 @@ for (const [name, ours] of Object.entries(SUBJECTS)) {
   if (miss.length > 0) {
     missing.push(name)
     console.log(`  MISMATCH     ${name} — ${miss.length} run(s) absent upstream`)
-    for (const run of miss.slice(0, 3)) {
+    // NOA_VERIFY_SHOW=all prints every absent run instead of the first three.
+    const shown = process.env.NOA_VERIFY_SHOW === 'all' ? miss.length : 3
+    for (const run of miss.slice(0, shown)) {
       console.log(`      ${render(run).slice(0, 150)}`)
     }
   }
