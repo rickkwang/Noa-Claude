@@ -150,18 +150,26 @@ resolve_root_dir() {
     return
   fi
 
+  # A script file on disk counts as a checkout only if it sits in this repo.
+  # A standalone-downloaded install.sh must fall through to the download path
+  # instead of running bun install in whatever directory it happens to sit in.
   if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
-    ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    return
+    local candidate
+    candidate="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [[ -f "$candidate/bin/noa.js" ]] && \
+       grep -q '"name":[[:space:]]*"@rickkwang/noa-claude"' "$candidate/package.json" 2>/dev/null; then
+      ROOT_DIR="$candidate"
+      return
+    fi
   fi
 
   if ! command -v curl >/dev/null 2>&1; then
-    echo "curl is required for piped installation." >&2
+    echo "curl is required to download the source." >&2
     exit 1
   fi
 
   if ! command -v tar >/dev/null 2>&1; then
-    echo "tar is required for piped installation." >&2
+    echo "tar is required to download the source." >&2
     exit 1
   fi
 

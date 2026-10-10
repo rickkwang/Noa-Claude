@@ -194,3 +194,100 @@ describe('install.sh symlink replacement', () => {
     }
   })
 })
+
+// Runs install.sh as a file on disk (not piped), so the BASH_SOURCE branch in
+// resolve_root_dir decides between checkout and download. bun's canonical-path
+// call reaches the real runtime; everything else is stubbed. curl serves one
+// release and an empty tarball; tar fails with a marker status proving the
+// download path was taken.
+function runScriptFile(sourceDir: string) {
+  const testRoot = mkdtempSync(resolve(tmpdir(), 'noa-install-checkout-'))
+  const fakeBin = resolve(testRoot, 'fake-bin')
+  mkdirSync(fakeBin)
+  writeFileSync(
+    resolve(fakeBin, 'bun'),
+    `#!/usr/bin/env bash\nif [[ "$1" == "-e" ]]; then exec ${JSON.stringify(process.execPath)} "$@"; fi\nexit 0\n`,
+  )
+  writeFileSync(
+    resolve(fakeBin, 'curl'),
+    `#!/usr/bin/env bash
+url=""
+output=""
+while (($#)); do
+  case "$1" in
+    -o) shift; output="$1" ;;
+    http*) url="$1" ;;
+  esac
+  shift
+done
+if [[ "$url" == *"/releases?"* ]]; then printf '[{"tag_name":"v9.9.9"}]'; exit 0; fi
+if [[ -n "$output" ]]; then : > "$output"; exit 0; fi
+exit 1
+`,
+  )
+  writeFileSync(resolve(fakeBin, 'tar'), '#!/usr/bin/env bash\nexit 42\n')
+  for (const f of ['bun', 'curl', 'tar']) {
+    chmodSync(resolve(fakeBin, f), 0o755)
+  }
+  writeFileSync(resolve(sourceDir, 'install.sh'), installScript)
+
+  const result = spawnSync('bash', [resolve(sourceDir, 'install.sh')], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      HOME: testRoot,
+      PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+      NOA_INSTALL_TARGET_DIR: resolve(testRoot, 'install'),
+      NOA_INSTALL_SOURCE_DIR: '',
+      NOA_INSTALL_REF: '',
+      NOA_INSTALL_REPO_TARBALL_URL: '',
+    },
+  })
+  return {
+    result,
+    testRoot,
+    binLink: resolve(testRoot, '.local/bin/noa'),
+    expectedTarget: resolve(realpathSync(testRoot), 'install/bin/noa.js'),
+    cleanup: () => rmSync(testRoot, { recursive: true, force: true }),
+  }
+}
+
+describe('install.sh checkout detection', () => {
+  test('a script sitting in this repo runs from the checkout', () => {
+    const testRoot = mkdtempSync(resolve(tmpdir(), 'noa-install-source-'))
+    const sourceDir = resolve(testRoot, 'source')
+    mkdirSync(resolve(sourceDir, 'bin'), { recursive: true })
+    writeFileSync(resolve(sourceDir, 'bin/noa.js'), '')
+    writeFileSync(
+      resolve(sourceDir, 'package.json'),
+      '{"name":"@rickkwang/noa-claude"}\n',
+    )
+    const run = runScriptFile(sourceDir)
+    try {
+      expect(run.result.status).toBe(0)
+      expect(run.result.stdout).not.toContain('Downloading Noa Claude source')
+      expect(readlinkSync(run.binLink)).toBe(run.expectedTarget)
+    } finally {
+      run.cleanup()
+      rmSync(testRoot, { recursive: true, force: true })
+    }
+  })
+
+  test('a standalone-downloaded script falls through to the download path', () => {
+    const testRoot = mkdtempSync(resolve(tmpdir(), 'noa-install-foreign-'))
+    const sourceDir = resolve(testRoot, 'foreign')
+    mkdirSync(sourceDir)
+    writeFileSync(
+      resolve(sourceDir, 'package.json'),
+      '{"name":"someone-else"}\n',
+    )
+    const run = runScriptFile(sourceDir)
+    try {
+      expect(run.result.status).toBe(42)
+      expect(run.result.stdout).toContain('Downloading Noa Claude source (v9.9.9)')
+    } finally {
+      run.cleanup()
+      rmSync(testRoot, { recursive: true, force: true })
+    }
+  })
+})
