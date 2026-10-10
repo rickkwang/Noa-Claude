@@ -46,7 +46,7 @@ import {
   PDF_TARGET_RAW_SIZE,
 } from '../../constants/apiLimits.js'
 import { PRODUCT_USAGE_URL } from '../../constants/links.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
+import { isBareMode, isEnvTruthy } from '../../utils/envUtils.js'
 import { formatFileSize } from '../../utils/format.js'
 import { ImageResizeError } from '../../utils/imageResizer.js'
 import { ImageSizeError } from '../../utils/imageValidation.js'
@@ -200,6 +200,8 @@ export const API_KEY_HELPER_FAILING_ERROR_MESSAGE =
   "Your apiKeyHelper script is failing · This usually means you need to re-authenticate with your provider · Run /status to see the script's error output"
 export const INVALID_API_KEY_ERROR_MESSAGE_EXTERNAL =
   'Invalid API key · Fix external API key'
+export const BARE_NO_CREDENTIAL_ERROR_MESSAGE =
+  "Not logged in · Bare mode doesn't use the sign-in from /login. It reads ANTHROPIC_API_KEY or an apiKeyHelper from --settings: set one and restart"
 export const ORG_DISABLED_ERROR_MESSAGE_ENV_KEY_WITH_OAUTH =
   'Your ANTHROPIC_API_KEY belongs to a disabled organization · Unset the environment variable to use your subscription instead'
 export const ORG_DISABLED_ERROR_MESSAGE_ENV_KEY =
@@ -953,7 +955,9 @@ function mapAssistantMessageFromError(
       error: 'authentication_failed',
       content: isExternalSource
         ? INVALID_API_KEY_ERROR_MESSAGE_EXTERNAL
-        : INVALID_API_KEY_ERROR_MESSAGE,
+        : isBareMode() && source === 'none'
+          ? BARE_NO_CREDENTIAL_ERROR_MESSAGE
+          : INVALID_API_KEY_ERROR_MESSAGE,
     })
   }
 
@@ -1007,7 +1011,7 @@ function mapAssistantMessageFromError(
     return createAssistantAPIErrorMessage({
       error: thirdParty ? 'invalid_request' : 'authentication_failed',
       content:
-        getIsNonInteractiveSession() || thirdParty
+        getIsNonInteractiveSession() || thirdParty || isBareMode()
           ? `Failed to authenticate. ${API_ERROR_MESSAGE_PREFIX}: ${error.message}`
           : `Please run /login · ${API_ERROR_MESSAGE_PREFIX}: ${error.message}`,
     })

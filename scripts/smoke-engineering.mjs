@@ -16,11 +16,11 @@ process.env.CLAUDE_CONFIG_DIR = smokeConfigDir;
 const {
   DEFAULT_CACHE_DIR,
   DEFAULT_CONFIG_DIR,
-  DEFAULT_MINIMAX_CN_BASE_URL,
   PRODUCT_SETTINGS_PATH,
   applyLauncherDefaults,
   getResolvedLauncherConfig,
 } = await import('../launcher-config.js');
+const DEFAULT_MINIMAX_CN_BASE_URL = 'https://api.minimaxi.com/anthropic';
 
 function fail(message, details) {
   if (details) {
@@ -123,9 +123,6 @@ function assertConfig() {
     }
     if (apiBaseUrl !== DEFAULT_MINIMAX_CN_BASE_URL) {
       fail(`Resolved base URL mismatch: ${apiBaseUrl}`);
-    }
-    if (model !== 'MiniMax-M2.7') {
-      fail(`Resolved model mismatch: ${model}`);
     }
   }
 }

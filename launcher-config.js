@@ -53,10 +53,6 @@ const PRODUCT_GLOBAL_CONFIG_PATH = join(
   DEFAULT_CONFIG_DIR,
   getOauthGlobalConfigFilename(process.env, process.env.USER_TYPE === 'ant'),
 );
-export const DEFAULT_MINIMAX_CN_BASE_URL =
-  'https://api.minimaxi.com/anthropic';
-export const DEFAULT_PRODUCT_MODEL =
-  process.env.CLAUDE_AGENT_DEFAULT_MODEL ?? 'MiniMax-M2.7';
 
 export const LAUNCHER_MACRO = {
   VERSION: pkg.version,
@@ -100,6 +96,14 @@ function getSettingString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
+function isTruthyEnv(value) {
+  return ['1', 'true', 'yes', 'on'].includes(String(value ?? '').toLowerCase().trim());
+}
+
+function isBareLaunch() {
+  return process.argv.includes('--bare') || isTruthyEnv(process.env.CLAUDE_CODE_SIMPLE);
+}
+
 export function getResolvedLauncherConfig({ skipGlobalConfig = false } = {}) {
   const settings = safeReadJsonFile(PRODUCT_SETTINGS_PATH, 'product settings');
   const globalConfig = skipGlobalConfig
@@ -126,8 +130,11 @@ export function getResolvedLauncherConfig({ skipGlobalConfig = false } = {}) {
     (persistedLauncherProvider === undefined && globalConfig?.oauthAccount)
       ? 'anthropic'
       : 'product-default';
+  // --bare reads only the caller's env (and --settings), never settings.json env,
+  // matching the official CLI.
+  const bare = isBareLaunch();
   const settingsEnv =
-    settings && typeof settings === 'object' && settings.env && typeof settings.env === 'object'
+    !bare && settings && typeof settings === 'object' && settings.env && typeof settings.env === 'object'
       ? settings.env
       : {};
 
@@ -140,14 +147,11 @@ export function getResolvedLauncherConfig({ skipGlobalConfig = false } = {}) {
   const authToken =
     getSettingString(settingsEnv.ANTHROPIC_AUTH_TOKEN) ??
     getSettingString(process.env.ANTHROPIC_AUTH_TOKEN);
-  const useProductDefaults = launcherProvider !== 'anthropic';
-  const apiBaseUrl =
-    configuredBaseUrl ??
-    (useProductDefaults ? DEFAULT_MINIMAX_CN_BASE_URL : undefined);
+  // Same as the official CLI: no third-party base URL or model unless configured.
+  const apiBaseUrl = configuredBaseUrl;
   const model =
-    getSettingString(settings.model) ??
-    getSettingString(process.env.ANTHROPIC_MODEL) ??
-    (useProductDefaults ? DEFAULT_PRODUCT_MODEL : undefined);
+    (bare ? undefined : getSettingString(settings.model)) ??
+    getSettingString(process.env.ANTHROPIC_MODEL);
 
   return {
     apiBaseUrl,
@@ -224,7 +228,9 @@ export function validateLauncherConfiguration(
     throw new Error(
       formatDiagnosticError(
         DIAGNOSTIC_ERROR_CODES.AUTH_ERROR,
-        `Missing API credentials. Set env.ANTHROPIC_API_KEY or env.ANTHROPIC_AUTH_TOKEN in ${PRODUCT_SETTINGS_PATH}`,
+        isBareLaunch()
+          ? 'Missing API credentials. --bare reads ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN from the environment (or apiKeyHelper from --settings), not settings.json'
+          : `Missing API credentials. Set env.ANTHROPIC_API_KEY or env.ANTHROPIC_AUTH_TOKEN in ${PRODUCT_SETTINGS_PATH}`,
       ),
     );
   }

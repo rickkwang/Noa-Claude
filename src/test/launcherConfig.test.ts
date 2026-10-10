@@ -110,7 +110,6 @@ function runLauncherFixture({
         ANTHROPIC_MODEL: undefined,
         ANTHROPIC_API_KEY: undefined,
         ANTHROPIC_AUTH_TOKEN: undefined,
-        CLAUDE_AGENT_DEFAULT_MODEL: undefined,
         ...env,
       } as NodeJS.ProcessEnv,
     })
@@ -193,15 +192,15 @@ describe('launcher provider defaults', () => {
     })
   })
 
-  test('keeps MiniMax defaults for a fresh unauthenticated install', () => {
+  test('has no third-party default for a fresh unauthenticated install', () => {
     const result = runLauncherFixture({
       name: 'fresh',
       script: RESOLVE_PROVIDER_SCRIPT,
     })
     if (result.status !== 0) throw new Error(result.stderr)
     expect(JSON.parse(result.stdout)).toEqual({
-      baseUrl: 'https://api.minimaxi.com/anthropic',
-      model: 'MiniMax-M2.7',
+      baseUrl: null,
+      model: null,
       provider: 'product-default',
     })
     expectTypeOf<ReturnType<typeof getResolvedLauncherConfig>['model']>()
