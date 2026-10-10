@@ -1,6 +1,6 @@
 # Features Audit
 
-Last updated: 2026-10-08
+Last updated: 2026-10-10
 
 This file is the build/runtime audit for experimental feature flags in this repository.
 
@@ -87,6 +87,22 @@ every name those call sites read (see `CLAUDE.md`, "Feature flags").
 tool), but its `Sleep`, `SendUserFile` and `PushNotification` tools are class
 shells that the tool registry drops, and its session-transcript segment writer
 is a no-op.
+
+The remaining tool shells are gated outside `feature()` and are inert in every
+build profile. In each case only the tool's main file is a shell — sibling
+constant modules are real and referenced:
+
+- `REPLTool` and `SuggestBackgroundPRTool` — empty classes behind
+  `USER_TYPE === 'ant'`, which `build.ts` pins to `'external'`. `REPLTool/constants.ts`
+  (`REPL_TOOL_NAME`, repl-mode logic) and `primitiveTools.ts` are live code.
+- `TungstenTool` — a name-only object behind `USER_TYPE === 'ant'`.
+  `TungstenLiveMonitor.ts` is also an empty class, but `REPL.tsx` imports it
+  unconditionally, so the module must keep resolving.
+- `VerifyPlanExecutionTool` — an empty class, loaded only when
+  `CLAUDE_CODE_VERIFY_PLAN === 'true'`, which `build.ts` defines as `'false'`;
+  the registry then drops it because it has no `isEnabled`. Its `constants.ts`
+  (`VERIFY_PLAN_EXECUTION_TOOL_NAME`) is read from the ant-only branch of
+  `classifierDecision.ts`.
 
 ## Not Unlockable in This Build (by flag-only unlock)
 
