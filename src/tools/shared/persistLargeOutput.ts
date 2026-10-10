@@ -17,7 +17,7 @@ export type PersistedOutput = {
  * Persist a command's output file so the model can read past the inline cap.
  *
  * The inline result only ever carries the first getMaxOutputLength() bytes
- * (TaskOutput reads the file head), so anything longer needs a path. Hardlink
+ * (readers only see the file head), so anything longer needs a path. Hardlink
  * the output file into the tool-results dir, falling back to a copy across
  * filesystems. Over 64 MB the source is truncated first — link() shares the
  * inode, so the cap applies to both names.

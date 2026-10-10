@@ -71,6 +71,7 @@ function webFetchToolInputToPermissionRuleContent(input: {
 export const WebFetchTool = buildTool({
   name: WEB_FETCH_TOOL_NAME,
   searchHint: 'fetch and extract content from a URL',
+  shouldDefer: true,
   // 100K chars - tool result persistence threshold
   maxResultSizeChars: 100_000,
   async description(input) {

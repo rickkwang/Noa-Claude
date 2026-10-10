@@ -744,7 +744,7 @@ export async function runAsyncAgentLifecycle({
 
     const agentResult = finalizeAgentTool(agentMessages, taskId, metadata)
 
-    // Mark task completed FIRST so TaskOutput(block=true) unblocks
+    // Mark task completed FIRST so waiters unblock
     // immediately. classifyHandoffIfNeeded (API call) and getWorktreeResult
     // (git exec) are notification embellishments that can hang — they must
     // not gate the status transition (gh-20236).
@@ -799,7 +799,7 @@ export async function runAsyncAgentLifecycle({
       // killAsyncAgent is a no-op if TaskStop already set status='killed' —
       // but only this catch handler has agentMessages, so the notification
       // must fire unconditionally. Transition status BEFORE worktree cleanup
-      // so TaskOutput unblocks even if git hangs (gh-20236).
+      // so waiters unblock even if git hangs (gh-20236).
       killAsyncAgent(taskId, rootSetAppState)
       logEvent('tengu_agent_tool_terminated', {
         agent_type:

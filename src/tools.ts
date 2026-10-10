@@ -45,7 +45,6 @@ const PushNotificationTool =
         .PushNotificationTool
     : null
 /* eslint-enable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
-import { TaskOutputTool } from './tools/TaskOutputTool/TaskOutputTool.js'
 import { WebSearchTool } from './tools/WebSearchTool/WebSearchTool.js'
 import { TodoWriteTool } from './tools/TodoWriteTool/TodoWriteTool.js'
 import { ExitPlanModeV2Tool } from './tools/ExitPlanModeTool/ExitPlanModeV2Tool.js'
@@ -78,7 +77,6 @@ import { TaskCreateTool } from './tools/TaskCreateTool/TaskCreateTool.js'
 import { TaskGetTool } from './tools/TaskGetTool/TaskGetTool.js'
 import { TaskUpdateTool } from './tools/TaskUpdateTool/TaskUpdateTool.js'
 import { TaskListTool } from './tools/TaskListTool/TaskListTool.js'
-import { SendFeedbackTool } from './tools/SendFeedbackTool/SendFeedbackTool.js'
 import uniqBy from 'lodash-es/uniqBy.js'
 import { isToolSearchEnabledOptimistic } from './utils/toolSearch.js'
 import { isTodoV2Enabled } from './utils/tasks.js'
@@ -187,7 +185,6 @@ export function getAllBaseTools(): Tools {
     typeof (tool as Partial<Tool> | null)?.isEnabled === 'function'
   const candidates: unknown[] = [
     AgentTool,
-    TaskOutputTool,
     BashTool,
     // Ant-native builds have bfs/ugrep embedded in the bun binary (same ARGV0
     // trick as ripgrep). When available, find/grep in Claude's shell are aliased
@@ -227,7 +224,6 @@ export function getAllBaseTools(): Tools {
     ...cronTools,
     ...(RemoteTriggerTool ? [RemoteTriggerTool] : []),
     BriefTool,
-    SendFeedbackTool,
     ...(SendUserFileTool ? [SendUserFileTool] : []),
     ...(PushNotificationTool ? [PushNotificationTool] : []),
     ...(getPowerShellTool() ? [getPowerShellTool()] : []),

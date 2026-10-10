@@ -317,7 +317,7 @@ export function startBackgroundSession({
   )
 
   // Persist the pre-backgrounding conversation to the task's isolated
-  // transcript so TaskOutput shows context immediately. Subsequent messages
+  // transcript so the task view shows context immediately. Subsequent messages
   // are written incrementally below.
   void recordSidechainTranscript(messages, taskId).catch(err =>
     logForDebugging(`bg-session initial transcript write failed: ${err}`),
@@ -375,7 +375,7 @@ export function startBackgroundSession({
         bgMessages.push(event)
 
         // Per-message write (matches runAgent.ts pattern) — gives live
-        // TaskOutput progress and keeps the transcript file current even if
+        // task progress and keeps the transcript file current even if
         // /clear re-links the symlink mid-run.
         void recordSidechainTranscript([event], taskId, lastRecordedUuid).catch(
           err => logForDebugging(`bg-session transcript write failed: ${err}`),

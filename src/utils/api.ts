@@ -34,7 +34,6 @@ import type { Tool, ToolPermissionContext, Tools } from '../Tool.js'
 import { AGENT_TOOL_NAME } from '../tools/AgentTool/constants.js'
 import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
 import { EXIT_PLAN_MODE_V2_TOOL_NAME } from '../tools/ExitPlanModeTool/constants.js'
-import { TASK_OUTPUT_TOOL_NAME } from '../tools/TaskOutputTool/constants.js'
 import type { Message } from '../types/message.js'
 import { isAgentSwarmsEnabled } from './agentSwarmsEnabled.js'
 import {
@@ -63,12 +62,7 @@ import { getPlatform } from './platform.js'
 import { countFilesRoundedRg } from './ripgrep.js'
 import { jsonStringify } from './slowOperations.js'
 import type { SystemPrompt } from './systemPromptType.js'
-import {
-  allowsWriteWithoutPriorRead,
-  shouldUseCompactSystemPrompt,
-} from '../constants/systemPromptCompact.js'
-import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
-import { FILE_WRITE_TOOL_NAME } from '../tools/FileWriteTool/prompt.js'
+import { shouldUseCompactSystemPrompt } from '../constants/systemPromptCompact.js'
 import {
   getToolSchemaCache,
   getToolSchemaCacheGeneration,
@@ -234,13 +228,6 @@ export async function toolToAPISchema(
   // same problem on its dynamic prompt sections.
   const lean = shouldUseCompactSystemPrompt(options.model)
   const leanSuffix = lean ? ':L' : ''
-  // Write/Edit also drop their pre-read line for models allowed to overwrite an
-  // unread file, which flips independently of the lean/verbose split.
-  const preReadSuffix =
-    (tool.name === FILE_WRITE_TOOL_NAME || tool.name === FILE_EDIT_TOOL_NAME) &&
-    allowsWriteWithoutPriorRead(options.model)
-      ? ':G'
-      : ''
   const supportsStructuredOutputs =
     options.model !== undefined && modelSupportsStructuredOutputs(options.model)
   // Per-model on Bedrock/Vertex, so it must vary the key like the bits above.
@@ -258,7 +245,6 @@ export async function toolToAPISchema(
       ? `${tool.name}:${jsonStringify(tool.inputJSONSchema)}`
       : tool.name) +
     leanSuffix +
-    preReadSuffix +
     (supportsStructuredOutputs ? ':X' : '') +
     (eagerInputStreaming ? ':E' : '')
   const cache = getToolSchemaCache()
@@ -786,23 +772,6 @@ export function normalizeToolInput<T extends Tool>(
         content: isMarkdown
           ? parsedInput.content
           : stripTrailingWhitespace(parsedInput.content),
-      } as z.infer<T['inputSchema']>
-    }
-    case TASK_OUTPUT_TOOL_NAME: {
-      // Normalize legacy parameter names from AgentOutputTool/BashOutputTool
-      const legacyInput = input as Record<string, unknown>
-      const taskId =
-        legacyInput.task_id ?? legacyInput.agentId ?? legacyInput.bash_id
-      const timeout =
-        legacyInput.timeout ??
-        (typeof legacyInput.wait_up_to === 'number'
-          ? legacyInput.wait_up_to * 1000
-          : undefined)
-      // SAFETY: See comment in BashTool case above
-      return {
-        task_id: taskId ?? '',
-        block: legacyInput.block ?? true,
-        timeout: timeout ?? 30000,
       } as z.infer<T['inputSchema']>
     }
     default:

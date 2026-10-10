@@ -363,7 +363,7 @@ function getLeanPrompt(model?: string): string {
     "- Working directory persists between calls, but prefer absolute paths — `cd` in a compound command can trigger a permission prompt. Shell state (env vars, functions) does not persist; the shell is initialized from the user's profile.",
     `- IMPORTANT: Avoid using this tool to run ${avoidCommands} commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user.`,
     '- Command output is displayed to you, not reliably to the user.',
-    `- \`timeout\` is in milliseconds: default ${getDefaultTimeoutMs()}, max ${getMaxTimeoutMs()}.`,
+    `- \`timeout\` is in milliseconds: default ${getDefaultTimeoutMs()}, max ${getMaxTimeoutMs()} for a foreground command.`,
     ...(getBackgroundUsageNote() !== null
       ? [
           `- \`run_in_background\` runs the command detached: it keeps running across turns and re-invokes you when it exits.${isBackgroundDeadlineEnabled() ? ` With it, \`timeout\` is how long the command may run in the background (default ${DEFAULT_BACKGROUND_TIMEOUT_MS}, max ${getMaxBackgroundTimeoutMs()}); at that limit it is stopped and you are re-invoked.` : ''} No \`&\` needed.`,
@@ -418,14 +418,14 @@ export function getSimplePrompt(model?: string): string {
     'Do not retry failing commands in a sleep loop — diagnose the root cause.',
     'If waiting for a background task you started with `run_in_background`, you will be notified when it completes — do not poll.',
     'If you must poll an external process, use a check command (e.g. `gh run view`) rather than sleeping first.',
-    'If you must sleep, keep the duration short (1-5 seconds) to avoid blocking the user.',
+    'If you must sleep, keep the duration short to avoid blocking the user.',
   ]
   const backgroundNote = getBackgroundUsageNote()
 
   const instructionItems: Array<string | string[]> = [
-    'If your command will create new directories or files and the target path is uncertain, verify the parent directory first. Do not add a separate check when the correct path is already clear from context.',
+    'If your command will create new directories or files, first use this tool to run `ls` to verify the parent directory exists and is the correct location.',
     'Always quote file paths that contain spaces with double quotes in your command (e.g., cd "path with spaces/file.txt")',
-    'Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of `cd`. You may use `cd` if the User explicitly requests it.',
+    'Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of `cd`. You may use `cd` if the User explicitly requests it. In particular, never prepend `cd <current-directory>` to a `git` command — `git` already operates on the current working tree, and the compound triggers a permission prompt.',
     `You may specify an optional timeout in milliseconds (up to ${getMaxTimeoutMs()}ms / ${getMaxTimeoutMs() / 60000} minutes for a foreground command). By default, your command will timeout after ${getDefaultTimeoutMs()}ms (${getDefaultTimeoutMs() / 60000} minutes).`,
     ...(backgroundNote !== null ? [backgroundNote] : []),
     'When issuing multiple commands:',
@@ -434,15 +434,10 @@ export function getSimplePrompt(model?: string): string {
     gitSubitems,
     'Avoid unnecessary `sleep` commands:',
     sleepSubitems,
-    ...(embedded
-      ? [
-          // bfs (which backs `find`) uses Oniguruma for -regex, which picks the
-          // FIRST matching alternative (leftmost-first), unlike GNU find's
-          // POSIX leftmost-longest. This silently drops matches when a shorter
-          // alternative is a prefix of a longer one.
-          "When using `find -regex` with alternation, put the longest alternative first. Example: use `'.*\\.\\(tsx\\|ts\\)'` not `'.*\\.\\(ts\\|tsx\\)'` — the second form silently skips `.tsx` files.",
-        ]
-      : []),
+    'When running `find`, search from `.` (or a specific path), not `/` — scanning the full filesystem can exhaust system resources on large trees.',
+    // bfs (which backs `find` in ant builds) uses Oniguruma for -regex, which
+    // picks the FIRST matching alternative; the rule holds for both backends.
+    "When using `find -regex` with alternation, put the longest alternative first. Example: use `'.*\\.\\(tsx\\|ts\\)'` not `'.*\\.\\(ts\\|tsx\\)'` — the second form silently skips `.tsx` files.",
   ]
 
   return [

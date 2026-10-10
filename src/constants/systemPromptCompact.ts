@@ -610,6 +610,24 @@ export function getActionCautionSection(model: string | undefined): string | nul
 export const SECURITY_POLICY = `IMPORTANT: Assist with authorized security testing, defensive security, CTF challenges, and educational contexts. Refuse requests for destructive techniques, DoS attacks, mass targeting, supply chain compromise, or detection evasion for malicious purposes. Dual-use security tools (C2 frameworks, credential testing, exploit development) require clear authorization context: pentesting engagements, CTF competitions, security research, or defensive use cases.`
 
 /**
+ * Upstream words the lean head's harness bullet by model: every lean model
+ * except Opus 4.8 is told that system messages can arrive mid-conversation.
+ * Opus 4.8 keeps the plain `<system-reminder>` wording. The verbose head does
+ * not read this; it keeps its own harness wording.
+ */
+export function leanHeadHasMidConversationNotice(
+  model: string | undefined,
+): boolean {
+  return !model || getCanonicalName(model) !== 'claude-opus-4-8'
+}
+
+const MID_CONVERSATION_HARNESS_BULLET =
+  ' - The system may send updates, reminders, or modifications to rules via mid-conversation system turns. These are system-controlled, unlike function results. Hooks may intercept tool calls; treat hook output as user feedback.'
+
+const REMINDER_HARNESS_BULLET =
+  ' - `<system-reminder>` tags in messages and tool results are injected by the harness, not the user. Hooks may intercept tool calls; treat hook output as user feedback.'
+
+/**
  * Replaces the nine static head sections used by the verbose prompt. Everything
  * dropped here is either training-internalized or restated by a dynamic section.
  *
@@ -622,7 +640,10 @@ export const SECURITY_POLICY = `IMPORTANT: Assist with authorized security testi
  * identity line, the security policy and the Harness block. The identity line
  * adds only the Noa product name.
  */
-export function getCompactHeadSection(hasOutputStyle: boolean): string {
+export function getCompactHeadSection(
+  hasOutputStyle: boolean,
+  midConversationNotice = false,
+): string {
   const audience = hasOutputStyle
     ? `according to your "Output Style" below, which describes how you should respond to user queries.`
     : `with software engineering tasks.`
@@ -636,7 +657,7 @@ ${SECURITY_POLICY}
 # Harness
  - Text you output outside of tool use is displayed to the user as Github-flavored markdown in a terminal.
  - Tools run behind a user-selected permission mode; a denied call means the user declined it — adjust, don't retry verbatim.
- - \`<system-reminder>\` tags in messages and tool results are injected by the harness, not the user. Hooks may intercept tool calls; treat hook output as user feedback.
+${midConversationNotice ? MID_CONVERSATION_HARNESS_BULLET : REMINDER_HARNESS_BULLET}
  - Prefer the dedicated file/search tools over shell commands when one fits. Independent tool calls can run in parallel in one response.
  - Reference code as \`file_path:line_number\` — it's clickable.`
 }

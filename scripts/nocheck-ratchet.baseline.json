@@ -1120,7 +1120,6 @@
     "src/tools/TaskGetTool/prompt.ts",
     "src/tools/TaskListTool/TaskListTool.ts",
     "src/tools/TaskListTool/prompt.ts",
-    "src/tools/TaskOutputTool/TaskOutputTool.tsx",
     "src/tools/TaskStopTool/TaskStopTool.ts",
     "src/tools/TaskStopTool/UI.tsx",
     "src/tools/TaskUpdateTool/TaskUpdateTool.ts",

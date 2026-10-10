@@ -27,6 +27,9 @@ import {
   AUTONOMY_SECTION,
   CONTEXT_MANAGEMENT_SECTION,
   CORRECTIONS_SECTION,
+  OPUS5_REDUCED_DELEGATION_SECTION,
+  SUBAGENT_AUTHORITY_NOTICE,
+  WRITING_FOR_USER_SECTION,
   DELIVERING_WORK_SECTION,
   getActionsSection,
   getDoingTasksSection,
@@ -96,15 +99,6 @@ const VERBOSE_HEAD_TOOLS = new Set([
   'TaskCreate',
 ])
 
-function withPreReadRequired(render: () => string): string {
-  process.env.NOA_CLAUDE_WRITE_REQUIRE_READ = '1'
-  try {
-    return render()
-  } finally {
-    delete process.env.NOA_CLAUDE_WRITE_REQUIRE_READ
-  }
-}
-
 /**
  * The /help sub-bullets name this product and its issue tracker, so they are
  * the one part of the section that is not upstream text and are dropped before
@@ -150,12 +144,11 @@ export function buildPortedSubjects(): Record<string, string> {
     'TodoWrite lean': getTodoWritePrompt(LEAN_MODEL),
     'Glob lean': getGlobDescription(LEAN_MODEL),
     'Grep lean': getGrepDescription(LEAN_MODEL),
-    'Write lean': withPreReadRequired(() =>
-      getWriteToolDescription(LEAN_MODEL),
-    ),
-    'Edit lean': withPreReadRequired(() => getEditToolDescription(LEAN_MODEL)),
-    'Write lean (pre-read skipped)': getWriteToolDescription(LEAN_MODEL),
-    'Edit lean (pre-read skipped)': getEditToolDescription(LEAN_MODEL),
+    'Write lean': getWriteToolDescription(LEAN_MODEL),
+    'Edit lean': getEditToolDescription(LEAN_MODEL),
+    OPUS5_REDUCED_DELEGATION_SECTION,
+    WRITING_FOR_USER_SECTION,
+    SUBAGENT_AUTHORITY_NOTICE,
     'verbose # System': getSimpleSystemSection(),
     'verbose # Doing tasks': renderVerboseDoingTasks(),
     'verbose # Executing actions with care': getActionsSection(),
@@ -236,11 +229,9 @@ export const PORTED_DIGESTS: Record<string, string> = {
   'Grep lean': 'dde2d0b4701de45b',
   'Write lean': 'c5d31bd0010938b8',
   'Edit lean': '2eaaa8e08e0b58bc',
-  // 2.1.228 drops the pre-read line for models allowed to overwrite an unread
-  // file. Both variants are pinned: the skip is a second ported branch, not a
-  // replacement for the one above.
-  'Write lean (pre-read skipped)': 'db96dfd3a76a57ab',
-  'Edit lean (pre-read skipped)': '5f160e3e9fb9ef6e',
+  OPUS5_REDUCED_DELEGATION_SECTION: '2b4ae7f4b3dfdf67',
+  WRITING_FOR_USER_SECTION: '5ba735a24922bdc1',
+  SUBAGENT_AUTHORITY_NOTICE: '79ef93928642628c',
   // Upstream ships one tier for PowerShell — there is no lean branch to pin, so
   // the single description is the port. Refreshed against 2.1.258; the earlier
   // transcription predated it and had drifted (a wrong 5.1 encoding default, a

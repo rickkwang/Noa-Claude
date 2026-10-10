@@ -4,6 +4,7 @@ import type { MCPServerConnection } from '../services/mcp/types.js'
 import { isAutoCompactEnabled } from '../services/compact/autoCompact.js'
 import type { Tools } from '../Tool.js'
 import { getSkillToolCommands } from 'src/commands.js'
+import { FILE_WRITE_TOOL_NAME } from '../tools/FileWriteTool/prompt.js'
 import { getIsNonInteractiveSession } from '../bootstrap/state.js'
 import { getSessionStartDate } from './common.js'
 import { getCwd } from '../utils/cwd.js'
@@ -36,7 +37,10 @@ import {
   CONTEXT_MANAGEMENT_SECTION,
   CORRECTIONS_SECTION,
   DELIVERING_WORK_SECTION,
+  OPUS5_REDUCED_DELEGATION_SECTION,
   PRONOUNS_SECTION,
+  SUBAGENT_AUTHORITY_NOTICE,
+  WRITING_FOR_USER_SECTION,
   getActionsSection,
   getDoingTasksSection,
   getSimpleIntroSection,
@@ -79,11 +83,15 @@ const skillSearchFeatureCheck = feature('EXPERIMENTAL_SKILL_SEARCH')
   : null
 /* eslint-enable @typescript-eslint/no-require-imports */
 
-const SYSTEM_PROMPT_ENV_NOTES = `Notes:
+function getSubagentNotes(): string {
+  return `Notes:
 - Agent threads always have their cwd reset between bash calls, as a result please only use absolute file paths.
 - In your final response, share file paths (always absolute, never relative) that are relevant to the task. Include code snippets only when the exact text is load-bearing (e.g., a bug you found, a function signature the caller asked for) — do not recap code you merely read.
 - For clear communication with the user, avoid emojis unless the user explicitly asks for them.
+- Do not use a colon before tool calls. Text like "Let me read the file:" followed by a read tool call should just be "Let me read the file." with a period.
+- Do NOT ${FILE_WRITE_TOOL_NAME} report/summary/findings/analysis .md files. Return findings directly as your final assistant message — the parent agent reads your text output, not files you create. (Files written as input to another tool are fine; this note is about report files.)
 - Write naturally around tool calls; do not assume the user can see the raw tool call immediately after your sentence.`
+}
 
 export async function resolveSystemPromptBuildInputs(tools: Tools): Promise<{
   settings: ReturnType<typeof getInitialSettings>
@@ -265,8 +273,16 @@ export function buildDynamicSystemPromptSections(params: {
       `delivering_work${bundle || fable51 ? ':L' : ''}`,
       () => (bundle || fable51 ? DELIVERING_WORK_SECTION : null),
     ),
+    // Fable 5.1 bundle only; the final-message rules follow the delivery rules.
+    systemPromptSection(`writing_for_user${fable51 ? ':L' : ''}`, () =>
+      fable51 ? WRITING_FOR_USER_SECTION : null,
+    ),
     systemPromptSection(`corrections${bundleSuffix}`, () =>
       bundle ? CORRECTIONS_SECTION : null,
+    ),
+    // Upstream's last lean-body line; it sits after the corrections section.
+    systemPromptSection(`opus5_reduced_delegation${bundleSuffix}`, () =>
+      bundle ? OPUS5_REDUCED_DELEGATION_SECTION : null,
     ),
     // Haiku 5.5 early-stopping guidance, placed just ahead of `autonomy_append`.
     systemPromptSection(
@@ -290,6 +306,7 @@ export function buildStaticSystemPromptSections(params: {
   resolvedDynamicSections: Array<string | null>
   proactiveSection: string | null
   useCompactPrompt?: boolean
+  midConversationNotice?: boolean
   hasOutputStyle?: boolean
 }): Array<string | null> {
   const {
@@ -299,13 +316,14 @@ export function buildStaticSystemPromptSections(params: {
     resolvedDynamicSections,
     proactiveSection,
     useCompactPrompt = false,
+    midConversationNotice = false,
     hasOutputStyle = false,
   } = params
 
   // Only the static head swaps; the boundary marker and everything after it
   // stay identical so cache splitting and dynamic content are unaffected.
   const head = useCompactPrompt
-    ? [getCompactHeadSection(hasOutputStyle)]
+    ? [getCompactHeadSection(hasOutputStyle, midConversationNotice)]
     : [
         getSimpleIntroSection(hasOutputStyle),
         getSimpleSystemSection(),
@@ -341,7 +359,8 @@ export async function enhanceSystemPromptWithAssemblyDetails(
 
   return [
     ...existingSystemPrompt,
-    SYSTEM_PROMPT_ENV_NOTES,
+    SUBAGENT_AUTHORITY_NOTICE,
+    getSubagentNotes(),
     ...(discoverSkillsGuidance !== null ? [discoverSkillsGuidance] : []),
     envInfo,
   ]
