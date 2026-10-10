@@ -1,3 +1,4 @@
+import { getSubscriptionType } from '../../utils/auth.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
 import { hasEmbeddedSearchTools } from '../../utils/embeddedTools.js'
 import { isEnvDefinedFalsy, isEnvTruthy } from '../../utils/envUtils.js'
@@ -213,8 +214,15 @@ ${agentListSection}
 When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.`
 
   // Verbose variant. Sentences follow upstream's wording where the binary
-  // confirms them. Fork subagents, per-call effort, and the plan-tier notice
-  // have no counterpart in this build, so those sentences are left out.
+  // confirms them. Fork subagents and per-call effort have no counterpart in
+  // this build, so those sentences are left out.
+  // Upstream shows the spawn restriction only on the pro plan.
+  const doNotSpawnNote =
+    getSubscriptionType() === 'pro'
+      ? `
+
+**Do not spawn agents unless the user asks.** Each spawn starts cold and re-derives context you already have — it's the expensive path on this plan. A task with "multiple angles," "thorough," or several parts is not a request to spawn; handle it inline with your own tools. Only use this tool when the user explicitly says to use a subagent, or names one of the available agent types.`
+      : ''
   // Non-coordinator gets the full prompt with all sections
   return `${verboseHead}
 ${whenNotToUseSection}
@@ -250,5 +258,5 @@ Usage notes:
         : ''
   }${writingThePromptSection}
 
-${currentExamples}`
+${currentExamples}${doNotSpawnNote}`
 }
