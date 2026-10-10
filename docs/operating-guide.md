@@ -168,6 +168,8 @@ An orphaned session with a live child prevents duplicate revival. Stopping it re
 
 Background hosts explicitly inherit the active configuration directory. An inherited default product directory must not redirect a child away from a caller's custom `CLAUDE_CONFIG_DIR`.
 
+`noa --bg` reports success only after its PTY host publishes `host.json`, so an immediate `noa agents --json` can list the new session. A host that exits before registering or does not register within five seconds makes the launch fail and leaves a failed job record for inspection. This confirms host startup; it does not wait for the model's response.
+
 ### Experimental first-party message threads
 
 `NOA_CLAUDE_TETHER_LIVE=1` (legacy alias `CLAUDE_CODE_TETHER_LIVE=1`) opts in to the `message-threads-2026-08-12` beta observed in official CC. The default remains stateless. This path retains conversation state at the first-party service; its public Messages API contract and credential eligibility are not established by local scripted tests.

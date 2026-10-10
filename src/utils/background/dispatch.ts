@@ -71,8 +71,37 @@ async function spawnHost(short: string, cwd: string, sessionArgs: string[]): Pro
       child.once('error', reject)
       child.once('spawn', resolve)
     })
-    child.unref()
+    // A successful spawn only means the process exists. Until the host has
+    // written host.json, listJobs sees no live host and agents --json hides
+    // the job. Confirm this host's registration before reporting success;
+    // reviveJob also holds its spawn lock through this handshake.
+    const deadline = Date.now() + 5000
+    while (Date.now() < deadline) {
+      if (await readHostPid(short) === child.pid && isProcessRunning(child.pid!)) {
+        child.unref()
+        return
+      }
+      if (child.exitCode !== null || child.signalCode !== null) {
+        throw new Error(`background host exited before registering (${child.signalCode ?? child.exitCode})`)
+      }
+      await new Promise(r => setTimeout(r, 50))
+    }
+    throw new Error('background host did not register within 5 seconds')
   } catch (e) {
+    // Do not leave a timed-out host starting the session after we report a
+    // failed launch. Allow its normal shutdown (including the child's 5s
+    // kill fallback), then reap even a host stuck before it registered.
+    if (child.pid && child.exitCode === null && child.signalCode === null) {
+      await new Promise<void>(resolve => {
+        const timer = setTimeout(() => child.kill('SIGKILL'), 6000)
+        child.once('exit', () => {
+          clearTimeout(timer)
+          resolve()
+        })
+        child.kill('SIGTERM')
+      })
+    }
+    child.unref()
     await patchJob(short, { state: 'failed', tempo: 'idle', exitCode: 1, needs: undefined, detail: `failed to start: ${e instanceof Error ? e.message : String(e)}`.slice(0, 200) }).catch(() => {})
     throw e
   }
@@ -254,14 +283,9 @@ export async function reviveJob(job: Job): Promise<void> {
       job.launchArgs && !transcriptExists(job.sessionId)
         ? job.launchArgs
         : [...job.respawnFlags, '--resume', job.sessionId]
+    // spawnHost returns only after this host has registered, so the next
+    // lock holder observes it rather than starting a duplicate session.
     await spawnHost(job.short, job.cwd, args)
-    // Hold the lock until the new host has recorded its pid: released any
-    // earlier, the next holder finds no live host and spawns a second one.
-    for (let i = 0; i < 100; i++) {
-      const hostPid = await readHostPid(job.short)
-      if (hostPid !== undefined && isProcessRunning(hostPid)) break
-      await new Promise(r => setTimeout(r, 50))
-    }
   } finally {
     release()
   }

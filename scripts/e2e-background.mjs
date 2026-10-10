@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 const repo=resolve(dirname(fileURLToPath(import.meta.url)),'..');const option=name=>process.argv.includes(name)?process.argv[process.argv.indexOf(name)+1]:undefined;
 const entry=resolve(option('--entry')||join(repo,'dist/cli'));const caseName=option('--case')||'all';const root=resolve(option('--artifacts')||mkdtempSync(join(tmpdir(),'noa-bg-e2e-')));mkdirSync(root,{recursive:true});
-const config=join(root,'config');mkdirSync(config,{recursive:true});writeFileSync(config+'/.config.json',JSON.stringify({theme:'dark',hasCompletedOnboarding:true,lastOnboardingVersion:'1.17.0',customApiKeyResponses:{approved:['isolated-dummy'],rejected:[]},projects:{[realpathSync(root)]:{hasTrustDialogAccepted:true,allowedTools:[]}}}));const socket='noa-reply-e2e-'+process.pid;const requests=[];const steps=[];let short;let passed=false;
+const config=join(root,'config');mkdirSync(config,{recursive:true});writeFileSync(config+'/.config.json',JSON.stringify({theme:'dark',hasCompletedOnboarding:true,lastOnboardingVersion:'1.17.0',customApiKeyResponses:{approved:['isolated-dummy'],rejected:[]},projects:{[realpathSync(root)]:{hasTrustDialogAccepted:true,allowedTools:[]}}}));const socket='noa-reply-e2e-'+process.pid;const requests=[];const steps=[];let short;let passed=false;let failure;
 const text=c=>typeof c==='string'?c:(c||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
 const server=createServer(async(req,res)=>{let raw='';for await(const c of req)raw+=c;const body=JSON.parse(raw||'{}');if(!req.url.includes('/messages')||req.url.includes('count_tokens')){res.writeHead(200,{'content-type':'application/json'});res.end('{"input_tokens":100}');return;}
  const main=body.tools?.some(t=>t.name==='Bash');requests.push({main,body});const n=requests.filter(x=>x.main).length;let content,stop='end_turn';
@@ -22,13 +22,24 @@ const server=createServer(async(req,res)=>{let raw='';for await(const c of req)r
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
 const env={...Object.fromEntries(Object.entries(process.env).filter(([k])=>['PATH','HOME','USER','TMPDIR','LANG','SHELL'].includes(k))),CLAUDE_CONFIG_DIR:config,ANTHROPIC_BASE_URL:base,ANTHROPIC_API_KEY:'isolated-dummy',ANTHROPIC_MODEL:'claude-sonnet-4-6',CLAUDE_CODE_SIMPLE:'1',NOA_CLAUDE_BG_ISOLATION:'none',DISABLE_AUTOUPDATER:'1'};
 const cli=(args)=>{const r=spawnSync(entry,args,{env,cwd:root,encoding:'utf8',timeout:12000});steps.push({args,exit:r.status,stdout:r.stdout,stderr:r.stderr});assert.equal(r.status,0,r.stderr);return r.stdout;};
-const tmux=(...args)=>execFileSync('tmux',['-L',socket,...args],{encoding:'utf8'});const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const inheritedProduct=join(root,'inherited-product');mkdirSync(inheritedProduct,{recursive:true});
+// Exercise a launch from an agent whose product directory differs from this fixture.
+const tmux=(...args)=>execFileSync('tmux',['-L',socket,...args],{encoding:'utf8',env:{...process.env,CLAUDE_CODE_PRODUCT_DIR:inheritedProduct}});const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const wait=async(fn)=>{for(let i=0;i<120;i++){if(fn())return;await sleep(100);}throw Error('condition timed out');};
 const sh=s=>"'"+s.replaceAll("'","'\\''")+"'";
+const isolatedCli=args=>['env','-i','TERM=xterm-256color',...Object.entries(env).map(([k,v])=>k+'='+v),entry,...args].map(sh).join(' ');
+const readReadyJob=()=>{
+ if(!existsSync(join(config,'jobs')))return;
+ for(const id of readdirSync(join(config,'jobs')).filter(x=>/^[a-f0-9]{8}$/.test(x))){
+  let record;try{record=JSON.parse(readFileSync(join(config,'jobs',id,'state.json'),'utf8'));}catch(e){if(e.code==='ENOENT'||e instanceof SyntaxError)continue;throw e;}
+  if(record.short===id&&['working','blocked','done','failed'].includes(record.state))return record;
+ }
+};
 try{
  cli(['--bg','PUBLIC_REPLY_FIXTURE','--model','claude-sonnet-4-6','--permission-mode','default','--tools','Bash,Read','--setting-sources','','--strict-mcp-config']);
- await wait(()=>existsSync(config+'/jobs')&&readdirSync(config+'/jobs').some(x=>/^[a-f0-9]{8}$/.test(x)));short=readdirSync(config+'/jobs').find(x=>/^[a-f0-9]{8}$/.test(x));
- const cmd=['env',...Object.entries(env).filter(([k])=>!['PATH','HOME','USER','TMPDIR','LANG','SHELL'].includes(k)).map(([k,v])=>k+'='+v),entry,'attach',short].map(sh).join(' ');
+ await wait(()=>{const record=readReadyJob();if(!record)return false;short=record.short;return true;});
+ const listed=JSON.parse(cli(['agents','--json','--all']));assert.ok(listed.some(row=>row.kind==='background'&&row.id===short),'compiled CLI cannot list the persisted background job before attach');
+ const cmd=isolatedCli(['attach',short])+' 2>'+sh(join(root,'attach-stderr.txt'));
  tmux('new-session','-d','-s','view','-x','100','-y','35',cmd);
  await wait(()=>{const screen=tmux('capture-pane','-p','-t','view');if(screen.includes('trust')&&screen.includes('folder'))tmux('send-keys','-t','view','Enter');return requests.some(x=>x.main)});await sleep(400);assert.equal(requests.filter(x=>x.main).length,1);assert.ok(!existsSync(root+'/forbidden.txt'));
  cli(['reply',short,'/stop']);await sleep(1800);assert.equal(requests.filter(x=>x.main).length,1,'reply answered permission dialog');assert.ok(!existsSync(root+'/forbidden.txt'));
@@ -36,7 +47,7 @@ try{
  tmux('send-keys','-t','view','Escape');await wait(()=>requests.filter(x=>x.main).some(x=>text(x.body.messages.at(-1).content).includes('/stop')));
  cli(['reply',short,'!rm forbidden.txt']);await wait(()=>requests.filter(x=>x.main).some(x=>text(x.body.messages.at(-1).content).includes('!rm forbidden.txt')));
  if(caseName!=='fleet')await wait(()=>readdirSync(join(config,'jobs',short,'inbox')).filter(x=>x.endsWith('.json')).length===0);
- const fleetCmd=['env',...Object.entries(env).filter(([k])=>!['PATH','HOME','USER','TMPDIR','LANG','SHELL'].includes(k)).map(([k,v])=>k+'='+v),entry,'agents'].map(sh).join(' ');
+ const fleetCmd=isolatedCli(['agents']);
  tmux('new-window','-t','view','-n','fleet',fleetCmd);
  await wait(()=>tmux('capture-pane','-p','-t','view:fleet').includes('PUBLIC_REPLY_FIXTURE'));
  tmux('send-keys','-t','view:fleet','Space');
@@ -75,10 +86,16 @@ try{
   assert.ok(tmux('capture-pane','-p','-t','view:guard').includes('PEEK_DRAFT_MUST_SURVIVE_42'),'failed peek send erased the unsaved draft');writeFileSync(root+'/fleet-peek-draft-screen.txt',tmux('capture-pane','-p','-t','view:guard'));steps.push({unsaved_drafts_preserved:true});
  }
  passed=true;console.log('PASS compiled PTY permission dialog, literal background replies and Fleet controls');
-}finally{
+}catch(e){failure={message:e.message,stack:e.stack};throw e;}finally{
  if(caseName!=='inbox')try{writeFileSync(root+'/guard-final-screen.txt',tmux('capture-pane','-p','-t','view:guard'));}catch{}
  try{writeFileSync(root+'/final-screen.txt',tmux('capture-pane','-p','-t','view'));}catch{}
+ // Preserve the evidence before stop changes working/failed into done/stopped.
+ const beforeCleanup=[];if(existsSync(join(config,'jobs')))for(const id of readdirSync(join(config,'jobs')).filter(x=>/^[a-f0-9]{8}$/.test(x))){
+  const files={};for(const name of ['state.json','host.json'])try{files[name]=readFileSync(join(config,'jobs',id,name),'utf8');}catch(e){files[name]={error:e.message,code:e.code};}
+  beforeCleanup.push({id,...files});
+ }
+ writeFileSync(root+'/jobs-before-cleanup.json',JSON.stringify(beforeCleanup,null,2));
  if(short){try{cli(['stop',short]);}catch{} }try{tmux('kill-server');}catch{}
  server.closeAllConnections();await new Promise(r=>server.close(r));writeFileSync(root+'/requests.json',JSON.stringify(requests,null,2));writeFileSync(root+'/steps.json',JSON.stringify(steps,null,2));
- let revision;try{revision=execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim()}catch{revision='unavailable'};writeFileSync(root+'/verification.manifest.json',JSON.stringify({command:process.argv,revision,entry,entry_sha256:createHash('sha256').update(readFileSync(entry)).digest('hex'),script_sha256:createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex'),transport:'Local scripted API, real compiled CLI/tmux/Bun.Terminal, isolated config and fixture-only permissions',passed,exit_code:passed?0:1,steps},null,2));
+ let revision;try{revision=execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim()}catch{revision='unavailable'};writeFileSync(root+'/verification.manifest.json',JSON.stringify({command:process.argv,revision,entry,entry_sha256:createHash('sha256').update(readFileSync(entry)).digest('hex'),script_sha256:createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex'),transport:'Local scripted API, real compiled CLI/tmux/Bun.Terminal, isolated config and fixture-only permissions',passed,exit_code:passed?0:1,failure,steps},null,2));
 }
