@@ -1,11 +1,10 @@
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
-import { getSubscriptionType } from '../../utils/auth.js'
 import { hasEmbeddedSearchTools } from '../../utils/embeddedTools.js'
 import { isEnvDefinedFalsy, isEnvTruthy } from '../../utils/envUtils.js'
 import { isTeammate } from '../../utils/teammate.js'
 import { isInProcessTeammate } from '../../utils/teammateContext.js'
 import { FILE_READ_TOOL_NAME } from '../FileReadTool/prompt.js'
-import { GLOB_TOOL_NAME } from '../GlobTool/prompt.js'
+import { GREP_TOOL_NAME } from '../GrepTool/prompt.js'
 import { SEND_MESSAGE_TOOL_NAME } from '../SendMessageTool/constants.js'
 import { AGENT_TOOL_NAME } from './constants.js'
 import { shouldUseCompactSystemPrompt } from '../../constants/systemPromptCompact.js'
@@ -81,10 +80,10 @@ Brief the agent like a smart colleague who just walked into the room — it hasn
 - Explain what you're trying to accomplish and why.
 - Describe what you've already learned or ruled out.
 - Give enough context about the surrounding problem that the agent can make judgment calls rather than just following a narrow instruction.
-- If you need a short response, say so (e.g. "a punch list, not a narrative").
+- If you need a short response, say so ("report in under 200 words").
 - Lookups: hand over the exact command. Investigations: hand over the question — prescribed steps become dead weight when the premise is wrong.
 
-Terse command-style prompts produce shallow, generic work.
+For fresh agents, terse command-style prompts produce shallow, generic work.
 
 **Never delegate understanding.** Don't write "based on your findings, fix the bug" or "based on the research, implement it." Those phrases push synthesis onto the agent instead of doing it yourself. Write prompts that prove you understood: include file paths, line numbers, what specifically to change.
 `
@@ -96,10 +95,10 @@ user: "What's left on this branch before we can ship?"
 assistant: <thinking>A survey question across git state, tests, and config. I'll delegate it and ask for a short report so the raw command output stays out of my context.</thinking>
 ${AGENT_TOOL_NAME}({
   description: "Branch ship-readiness audit",
-  prompt: "Audit what's left before this branch can ship. Check: uncommitted changes, commits ahead of main, whether tests exist, whether the GrowthBook gate is wired up, whether CI-relevant files changed. Report a punch list — done vs. missing."
+  prompt: "Audit what's left before this branch can ship. Check: uncommitted changes, commits ahead of main, whether tests exist, whether the GrowthBook gate is wired up, whether CI-relevant files changed. Report a punch list — done vs. missing. Under 200 words."
 })
 <commentary>
-The prompt is self-contained: it states the goal, lists what to check, and asks for a punch list. The agent's report comes back as the tool result; relay the findings to the user.
+The prompt is self-contained: it states the goal, lists what to check, and caps the response length. The agent's report comes back as the tool result; relay the findings to the user.
 </commentary>
 </example>
 
@@ -125,11 +124,11 @@ The agent starts with no context from this conversation, so the prompt briefs it
 
   const agentListSection = listViaAttachment
     ? `Available agent types are listed in <system-reminder> messages in the conversation.`
-    : `Available agent types and the tools they have access to:
+    : `Available agent types:
 ${effectiveAgents.map(agent => formatAgentLine(agent)).join('\n')}`
 
   // Shared core prompt used by both coordinator and non-coordinator modes
-  const shared = `Launch a new agent to handle complex, multi-step tasks autonomously.
+  const shared = `Launch a new agent to handle complex, multi-step tasks.
 
 The ${AGENT_TOOL_NAME} tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.
 
@@ -190,56 +189,52 @@ Reach for this when the task matches an available agent type, when you have inde
 - \`isolation: "worktree"\` gives the agent its own git worktree (auto-cleaned if unchanged).${backgroundNote}${teammateNote}`
   }
 
-  // Ant-native builds alias find/grep to embedded bfs/ugrep and remove the
-  // dedicated Glob/Grep tools, so point at find via Bash instead.
+  // Ant-native builds alias grep to embedded ugrep and remove the dedicated
+  // Grep tool, so point at grep via Bash instead.
   const embedded = hasEmbeddedSearchTools()
-  const fileSearchHint = embedded
-    ? '`find` via the Bash tool'
-    : `the ${GLOB_TOOL_NAME} tool`
-  // The "class Foo" example is about content search. Non-embedded stays Glob
-  // (original intent: find-the-file-containing). Embedded gets grep because
-  // find -name doesn't look at file contents.
   const contentSearchHint = embedded
     ? '`grep` via the Bash tool'
-    : `the ${GLOB_TOOL_NAME} tool`
+    : GREP_TOOL_NAME
   const whenNotToUseSection = `
-When NOT to use the ${AGENT_TOOL_NAME} tool:
-- If you want to read a specific file path, use the ${FILE_READ_TOOL_NAME} tool or ${fileSearchHint} instead of the ${AGENT_TOOL_NAME} tool, to find the match more quickly
-- If you are searching for a specific class definition like "class Foo", use ${contentSearchHint} instead, to find the match more quickly
-- If you are searching for code within a specific file or set of 2-3 files, use the ${FILE_READ_TOOL_NAME} tool instead of the ${AGENT_TOOL_NAME} tool, to find the match more quickly
-- Other tasks that are not related to the agent descriptions above
+## When not to use
+
+If the target is already known, use the direct tool: ${FILE_READ_TOOL_NAME} for a known path, ${contentSearchHint} for a specific symbol or string. Reserve this tool for open-ended questions that span the codebase, or tasks that match an available agent type.
 `
 
-  // When listing via attachment, the "launch multiple agents" note is in the
-  // attachment message (conditioned on subscription there). When inline, keep
-  // the existing per-call getSubscriptionType() check.
-  const concurrencyNote =
-    !listViaAttachment && getSubscriptionType() !== 'pro'
-      ? `
-- Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses`
-      : ''
+  // Verbose head, following upstream's default branch wording. The coordinator
+  // keeps the shared text above.
+  const verboseHead = `Launch a new agent to handle complex, multi-step tasks
 
+Each agent type has specific capabilities and tools available to it.
+
+${agentListSection}
+
+When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.`
+
+  // Verbose variant, following upstream's default branch wording. Fork
+  // subagents, per-call effort, and the plan-tier notice have no counterpart in
+  // this build, so those sentences are left out rather than adapted.
   // Non-coordinator gets the full prompt with all sections
-  return `${shared}
+  return `${verboseHead}
 ${whenNotToUseSection}
 
 Usage notes:
-- Always include a short description (3-5 words) summarizing what the agent will do${concurrencyNote}
+- Always include a short description summarizing what the agent will do
 - When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.${
     // eslint-disable-next-line custom-rules/no-process-env-top-level
     !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS) &&
     !isInProcessTeammate()
       ? `
 - Agents run in the background by default. When an agent runs in the background, you will be automatically notified when it completes — do NOT sleep, poll, or proactively check on its progress. Continue with other work or respond to the user instead.
-- **Foreground vs background**: Pass run_in_background: false only when your very next action depends on the result and nothing else could usefully happen while it runs — otherwise leave it in the background so the user can interject.`
+- **Foreground vs background**: Pass \`run_in_background: false\` only when your very next action depends on the agent's result and nothing else could usefully happen while it runs — e.g., a research agent whose finding gates the edit you're about to make. Otherwise let it run in the background (the default) — this includes fire-and-forget work, independent investigations, and anything where the user might hand you something else in the meantime. Wanting the result "next" is not enough on its own.`
       : ''
   }
-- To continue a previously spawned agent, use ${SEND_MESSAGE_TOOL_NAME} with the agent's ID or name as the \`to\` field. The agent resumes with its full context preserved. Each Agent invocation starts fresh — provide a complete task description.
+- To continue a previously spawned agent, use ${SEND_MESSAGE_TOOL_NAME} with the agent's ID or name as the \`to\` field — that resumes it with full context. A new ${AGENT_TOOL_NAME} call starts a fresh agent with no memory of prior runs, so the prompt must be self-contained.
 - Trust but verify: an agent's summary describes what it intended to do, not necessarily what it did. When an agent writes or edits code, check the actual changes before reporting the work as done.
-- Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent
-- If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your judgement.
+- Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since a fresh agent is not aware of the user's intent
+- If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first.
 - If the user specifies that they want you to run agents "in parallel", you MUST send a single message with multiple ${AGENT_TOOL_NAME} tool use content blocks. For example, if you need to launch both a build-validator agent and a test-runner agent in parallel, send a single message with both tool calls.
-- You can optionally set \`isolation: "worktree"\` to run the agent in a temporary git worktree, giving it an isolated copy of the repository. The worktree is automatically cleaned up if the agent makes no changes; if changes are made, the worktree path and branch are returned in the result.${
+- With \`isolation: "worktree"\`, the worktree is automatically cleaned up if the agent makes no changes; otherwise the path and branch are returned in the result.${
     process.env.USER_TYPE === 'ant'
       ? `\n- You can set \`isolation: "remote"\` to run the agent in a remote CCR environment. This is always a background task; you'll be notified when it completes. Use for long-running tasks that need a fresh sandbox.`
       : ''
