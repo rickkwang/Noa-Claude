@@ -18,6 +18,7 @@ import { extractClaudeCodeHints } from '../../utils/claudeCodeHints.js';
 import { isEnvTruthy } from '../../utils/envUtils.js';
 import { errorMessage as getErrorMessage, ShellError } from '../../utils/errors.js';
 import { formatFileSize, truncate } from '../../utils/format.js';
+import { getBashPersistenceThreshold } from '../../utils/shell/outputLimits.js';
 import { lazySchema } from '../../utils/lazySchema.js';
 import { logError } from '../../utils/log.js';
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js';
@@ -253,7 +254,10 @@ function getCommandTypeForLogging(command: string): AnalyticsMetadata_I_VERIFIED
 export const PowerShellTool = buildTool({
   name: POWERSHELL_TOOL_NAME,
   searchHint: 'execute Windows PowerShell commands',
-  maxResultSizeChars: 30_000,
+  // Same persistence threshold as Bash, from the bashOutputMaxChars setting
+  get maxResultSizeChars() {
+    return getBashPersistenceThreshold()
+  },
   strict: true,
   async description({
     description
