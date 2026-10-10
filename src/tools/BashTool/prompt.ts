@@ -122,7 +122,7 @@ Git Safety Protocol:
   - Ensure it accurately reflects the changes and their purpose
 3. Run the following commands in parallel:
    - Add relevant untracked files to the staging area.
-   - Create the commit with a message${commitAttribution ? ` ending with:\n   ${commitAttribution}` : '.'}
+   - Create the commit with a message${commitAttribution ? ` ending with:\n   ${commitAttribution}` : ''}
    - Run git status after the commit completes to verify success.
    Note: git status depends on the commit completing, so run it sequentially after the commit.
 4. If the commit fails due to pre-commit hook: fix the issue and create a NEW commit
@@ -399,13 +399,6 @@ export function getSimplePrompt(model?: string): string {
     ? '`cat`, `head`, `tail`, `sed`, `awk`, or `echo`'
     : '`find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo`'
 
-  const multipleCommandsSubitems = [
-    `If the commands are independent and can run in parallel, make multiple ${BASH_TOOL_NAME} tool calls in a single message. Example: if you need to run "git status" and "git diff", send a single message with two ${BASH_TOOL_NAME} tool calls in parallel.`,
-    `If the commands depend on each other and must run sequentially, use a single ${BASH_TOOL_NAME} call with '&&' to chain them together.`,
-    "Use ';' only when you need to run commands sequentially but don't care if earlier commands fail.",
-    'DO NOT use newlines to separate commands (newlines are ok in quoted strings).',
-  ]
-
   const gitSubitems = [
     'Prefer to create a new commit rather than amending an existing commit.',
     'Before running destructive operations (e.g., git reset --hard, git push --force, git checkout --), consider whether there is a safer alternative that achieves the same goal. Only use destructive operations when they are truly the best approach.',
@@ -428,8 +421,6 @@ export function getSimplePrompt(model?: string): string {
     'Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of `cd`. You may use `cd` if the User explicitly requests it. In particular, never prepend `cd <current-directory>` to a `git` command — `git` already operates on the current working tree, and the compound triggers a permission prompt.',
     `You may specify an optional timeout in milliseconds (up to ${getMaxTimeoutMs()}ms / ${getMaxTimeoutMs() / 60000} minutes for a foreground command). By default, your command will timeout after ${getDefaultTimeoutMs()}ms (${getDefaultTimeoutMs() / 60000} minutes).`,
     ...(backgroundNote !== null ? [backgroundNote] : []),
-    'When issuing multiple commands:',
-    multipleCommandsSubitems,
     'For git commands:',
     gitSubitems,
     'Avoid unnecessary `sleep` commands:',
