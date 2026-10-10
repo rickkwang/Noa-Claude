@@ -10,7 +10,7 @@ export const GLOBAL_PRODUCT_CONFIG_FOLDER_PERMISSION_PATTERN =
   '~/.noa/**'
 
 export const FILE_UNEXPECTEDLY_MODIFIED_ERROR =
-  'File has been unexpectedly modified. Read it again before attempting to write it.'
+  'File has been modified since read, either by the user or by a linter. Read it again before attempting to write it.'
 
 // Appended to a successful Edit/Write result so the model does not spend a
 // turn reading the file back.

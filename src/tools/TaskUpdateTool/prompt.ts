@@ -2,7 +2,9 @@
 export const DESCRIPTION = 'Update a task in the task list'
 
 export const PROMPT = `Use this tool to update a task in the task list.
+
 ## When to Use This Tool
+
 **Mark tasks as resolved:**
 - When you have completed the work described in a task
 - When a task is no longer needed or has been superseded
