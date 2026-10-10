@@ -201,6 +201,10 @@ export type GlobalConfig = {
   autoUpdates?: boolean
   // Flag to distinguish protection-based disabling from user preference
   autoUpdatesProtectedForNative?: boolean
+  // Last successful release lookup for the "update available" notice
+  updateCheckAt?: number
+  updateCheckLatestTag?: string
+  updateCheckFailedAt?: number
   // Session count when Doctor was last shown
   doctorShownAtSession?: number
   userID?: string

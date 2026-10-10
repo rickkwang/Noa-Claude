@@ -300,6 +300,7 @@ import { clearSessionCaches } from '../commands/clear/caches.js';
 import { useRateLimitWarningNotification } from 'src/hooks/notifs/useRateLimitWarningNotification.js';
 import { useDeprecationWarningNotification } from 'src/hooks/notifs/useDeprecationWarningNotification.js';
 import { useNpmDeprecationNotification } from 'src/hooks/notifs/useNpmDeprecationNotification.js';
+import { useUpdateAvailableNotification } from 'src/hooks/notifs/useUpdateAvailableNotification.js';
 import { useIDEStatusIndicator } from 'src/hooks/notifs/useIDEStatusIndicator.js';
 import { useModelMigrationNotifications } from 'src/hooks/notifs/useModelMigrationNotifications.js';
 import { useCanSwitchToExistingSubscription } from 'src/hooks/notifs/useCanSwitchToExistingSubscription.js';
@@ -839,6 +840,7 @@ export function REPL({
   useFastModeNotification();
   useDeprecationWarningNotification(mainLoopModel);
   useNpmDeprecationNotification();
+  useUpdateAvailableNotification();
   useAntOrgWarningNotification();
   useInstallMessages();
   useOfficialMarketplaceNotification();
