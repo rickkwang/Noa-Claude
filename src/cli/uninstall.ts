@@ -5,12 +5,10 @@ import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { logEvent } from 'src/services/analytics/index.js'
 import { logForDebugging } from 'src/utils/debug.js'
+import { canonicalPath, getOwnInstallRoot } from 'src/utils/distribution.js'
 import { getClaudeConfigHomeDir } from 'src/utils/envUtils.js'
 import { gracefulShutdown } from 'src/utils/gracefulShutdown.js'
-import {
-  cleanupNpmInstallations,
-  cleanupShellAliases,
-} from 'src/utils/nativeInstaller/index.js'
+import { cleanupShellAliases } from 'src/utils/nativeInstaller/index.js'
 import { writeToStdout } from 'src/utils/process.js'
 
 interface UninstallOptions {
@@ -35,11 +33,18 @@ async function symlinkTargetsInto(
     const stat = await lstat(symlinkPath)
     if (!stat.isSymbolicLink()) return false
     const raw = await readlink(symlinkPath)
-    const resolved = resolve(symlinkPath, '..', raw)
-    return resolved === parentDir || resolved.startsWith(parentDir + sep)
+    // Canonical on both sides: the link and the running copy may spell the same
+    // directory differently (/tmp vs /private/tmp).
+    const target = canonicalPath(resolve(symlinkPath, '..', raw))
+    const parent = canonicalPath(parentDir)
+    return target === parent || target.startsWith(parent + sep)
   } catch {
     return false
   }
+}
+
+function isDefaultConfigDir(dir: string): boolean {
+  return canonicalPath(dir) === canonicalPath(join(homedir(), '.noa'))
 }
 
 async function confirmYesNo(prompt: string): Promise<boolean> {
@@ -60,7 +65,25 @@ export async function uninstall(
   logEvent('tengu_uninstall_command', { purge: String(!!options.purge) })
 
   const configHome = getClaudeConfigHomeDir()
-  const installDir = join(configHome, 'install')
+  const installDir = getOwnInstallRoot()
+  if (!installDir) {
+    writeToStdout(
+      'This copy is not an installed Noa Claude, so nothing was removed.\n' +
+        'Run `noa uninstall` from the installed copy (~/.noa/install).\n',
+    )
+    await gracefulShutdown(1)
+    return
+  }
+  // --purge only removes the default ~/.noa. A custom config directory may hold
+  // data that is not Noa's, so the user deletes it by hand.
+  if (options.purge && !isDefaultConfigDir(configHome)) {
+    writeToStdout(
+      `Refusing to purge ${configHome}: only the default ~/.noa is removed automatically.\n` +
+        `To delete it yourself: rm -rf ${configHome}\n`,
+    )
+    await gracefulShutdown(1)
+    return
+  }
   const binDir = join(homedir(), '.local', 'bin')
   const symlinkCandidates = [
     join(binDir, 'noa'),
@@ -146,20 +169,6 @@ export async function uninstall(
   } catch (err) {
     logForDebugging(
       `uninstall: cleanupShellAliases failed: ${(err as Error).message}`,
-    )
-  }
-
-  try {
-    const { removed, errors } = await cleanupNpmInstallations()
-    if (removed > 0) {
-      writeToStdout(`removed ${removed} npm installation(s)\n`)
-    }
-    for (const e of errors) {
-      logForDebugging(`uninstall: npm cleanup error: ${e}`)
-    }
-  } catch (err) {
-    logForDebugging(
-      `uninstall: cleanupNpmInstallations failed: ${(err as Error).message}`,
     )
   }
 

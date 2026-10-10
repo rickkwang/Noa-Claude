@@ -47,7 +47,8 @@
     "lint": "echo \"lint alias: running quality checks (typecheck + docs consistency)\" && bun run check:quality",
     "e2e:state": "NODE_ENV=development bun ./scripts/e2e-harness-state.ts",
     "e2e:deferred": "NODE_ENV=development bun ./scripts/e2e-deferred-tools.ts",
-    "e2e:startup": "node ./scripts/e2e-startup-boundaries.mjs"
+    "e2e:startup": "node ./scripts/e2e-startup-boundaries.mjs",
+    "e2e:install": "node ./scripts/e2e-install-lifecycle.mjs"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^0.33.8",

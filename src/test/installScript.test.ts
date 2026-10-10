@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -105,7 +106,12 @@ function runLocalInstall(existingTarget: (installDir: string) => string) {
   mkdirSync(resolve(sourceDir, 'bin'), { recursive: true })
   mkdirSync(victimDir)
   writeFileSync(resolve(sourceDir, 'bin/noa.js'), '')
-  writeFileSync(resolve(fakeBin, 'bun'), '#!/usr/bin/env bash\nexit 0\n')
+  // install.sh canonicalizes paths with `bun -e`; that call must reach the real
+  // runtime, while the build and smoke-test calls stay stubbed out.
+  writeFileSync(
+    resolve(fakeBin, 'bun'),
+    `#!/usr/bin/env bash\nif [[ "$1" == "-e" ]]; then exec ${JSON.stringify(process.execPath)} "$@"; fi\nexit 0\n`,
+  )
   chmodSync(resolve(fakeBin, 'bun'), 0o755)
   symlinkSync(existingTarget(installDir), resolve(binDir, 'noa'))
 
@@ -124,7 +130,8 @@ function runLocalInstall(existingTarget: (installDir: string) => string) {
   return {
     result,
     binLink: resolve(binDir, 'noa'),
-    expectedTarget: resolve(installDir, 'bin/noa.js'),
+    // install.sh writes the canonical spelling (macOS tmpdir is /var -> /private/var).
+    expectedTarget: resolve(realpathSync(testRoot), 'install/bin/noa.js'),
     victimEntry: resolve(victimDir, 'noa.js'),
     cleanup: () => rmSync(testRoot, { recursive: true, force: true }),
   }
@@ -170,7 +177,7 @@ describe('install.sh symlink replacement', () => {
     const run = runLocalInstall(installDir => `${installDir}/../victim`)
     try {
       expect(run.result.status).toBe(1)
-      expect(run.result.stderr).toContain('does not point to a Noa Claude installation')
+      expect(run.result.stderr).toContain('does not point to this installation')
       expect(existsSync(run.victimEntry)).toBeFalse()
     } finally {
       run.cleanup()

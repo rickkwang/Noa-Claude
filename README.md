@@ -51,7 +51,7 @@ Uninstall (removes `~/.local/bin/noa` symlink and `~/.noa/install/`, scrubs inst
 
 ```bash
 noa uninstall
-noa uninstall --purge   # ALSO removes ~/.noa (settings, plugins, history)
+noa uninstall --purge   # ALSO removes ~/.noa (settings, plugins, history); a custom CLAUDE_CONFIG_DIR is never removed automatically
 noa uninstall --yes     # non-interactive
 ```
 

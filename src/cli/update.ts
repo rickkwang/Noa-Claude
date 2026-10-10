@@ -15,6 +15,7 @@ import {
 import { logForDebugging } from 'src/utils/debug.js'
 import { getDoctorDiagnostic } from 'src/utils/doctorDiagnostic.js'
 import {
+  getOwnInstallRoot,
   NOA_CURL_INSTALL_COMMAND,
   usesCurlInstallerBuild,
 } from 'src/utils/distribution.js'
@@ -52,6 +53,17 @@ async function confirmYesNo(prompt: string): Promise<boolean> {
 }
 
 async function runCurlReinstall(autoConfirm: boolean): Promise<void> {
+  // Reinstall over the copy that is running, not wherever the global link points.
+  // Without an identity, guessing a target could leave the real install behind.
+  const installDir = getOwnInstallRoot()
+  if (!installDir) {
+    writeToStdout(
+      'This copy is not an installed Noa Claude, so it cannot tell where to update.\n' +
+        'Update from the installed launcher instead: noa update\n',
+    )
+    await gracefulShutdown(1)
+    return
+  }
   writeToStdout('\n')
   writeToStdout(
     'Noa Claude updates by re-running the curl installer.\n',
@@ -104,9 +116,15 @@ async function runCurlReinstall(autoConfirm: boolean): Promise<void> {
 
   const { spawn } = await import('node:child_process')
   const code: number = await new Promise(resolve => {
-    const child = spawn('bash', ['-c', NOA_CURL_INSTALL_COMMAND], {
-      stdio: 'inherit',
-    })
+    // pipefail: a failed download must fail the update, not run an empty script.
+    const child = spawn(
+      'bash',
+      ['-o', 'pipefail', '-c', NOA_CURL_INSTALL_COMMAND],
+      {
+        stdio: 'inherit',
+        env: { ...process.env, NOA_INSTALL_TARGET_DIR: installDir },
+      },
+    )
     child.on('exit', c => resolve(c ?? 1))
     child.on('error', err => {
       process.stderr.write(`Failed to spawn installer: ${err.message}\n`)

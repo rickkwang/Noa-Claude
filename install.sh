@@ -23,6 +23,24 @@ if ! command -v bun >/dev/null 2>&1; then
   exit 1
 fi
 
+# Canonical path: symlinks in the existing part are resolved (macOS /tmp is
+# /private/tmp), the not-yet-created tail is kept. Must agree with canonicalPath()
+# in src/utils/distribution.ts, which the running copy uses to name itself.
+canonical_path() {
+  NOA_RAW_PATH="$1" bun -e '
+    const fs = require("fs"), path = require("path");
+    let current = path.resolve(process.env.NOA_RAW_PATH), tail = [];
+    while (!fs.existsSync(current) && path.dirname(current) !== current) {
+      tail.unshift(path.basename(current));
+      current = path.dirname(current);
+    }
+    process.stdout.write(path.join(fs.realpathSync(current), ...tail));
+  '
+}
+
+# The one spelling written into the `noa` symlink and compared by later runs.
+PERSISTENT_INSTALL_DIR="$(canonical_path "$PERSISTENT_INSTALL_DIR")"
+
 cleanup() {
   if [[ -n "$TEMP_DIR" && -d "$TEMP_DIR" ]]; then
     rm -rf "$TEMP_DIR"
@@ -192,18 +210,25 @@ check_binary_conflict() {
     existing="$(readlink "$link")"
   fi
 
-  case "$existing" in
-    "$PERSISTENT_INSTALL_DIR/bin/noa.js"|"$PERSISTENT_INSTALL_DIR/dist/cli"|"$ROOT_DIR/bin/noa.js"|"$ROOT_DIR/dist/cli")
-      return # already ours
-      ;;
-  esac
+  # Compare canonical paths on both sides: the link and the install may spell the
+  # same directory differently (/tmp vs /private/tmp).
+  if [[ -n "$existing" ]]; then
+    case "$existing" in /*) ;; *) existing="$(dirname "$link")/$existing" ;; esac
+    local existing_real ours
+    existing_real="$(canonical_path "$existing")"
+    for ours in "$PERSISTENT_INSTALL_DIR/bin/noa.js" "$PERSISTENT_INSTALL_DIR/dist/cli" "$ROOT_DIR/bin/noa.js" "$ROOT_DIR/dist/cli"; do
+      if [[ "$existing_real" == "$(canonical_path "$ours")" ]]; then
+        return # already ours
+      fi
+    done
+  fi
 
   if [[ "${NOA_INSTALL_FORCE_SYMLINK:-}" == "1" ]]; then
     echo "Warning: overwriting existing $link (${existing:-regular file}) per NOA_INSTALL_FORCE_SYMLINK=1"
     return
   fi
 
-  echo "Error: $link already exists and does not point to a Noa Claude installation." >&2
+  echo "Error: $link already exists and does not point to this installation." >&2
   echo "It currently resolves to: ${existing:-a regular file}" >&2
   echo "Refusing to overwrite. Remove it yourself, or re-run with NOA_INSTALL_FORCE_SYMLINK=1." >&2
   exit 1

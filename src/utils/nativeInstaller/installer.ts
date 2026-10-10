@@ -18,6 +18,7 @@ import {
   lstat,
   mkdir,
   readdir,
+  readFile,
   readlink,
   realpath,
   rename,
@@ -1522,6 +1523,23 @@ export async function cleanupShellAliases(): Promise<SetupMessage[]> {
   return messages
 }
 
+// A launcher is only ours if it points into this package. The name is not
+// enough: `claude` is also the official CLI's launcher.
+async function launcherPointsInto(
+  filePath: string,
+  packageName: string,
+): Promise<boolean> {
+  try {
+    const isLink = (await lstat(filePath)).isSymbolicLink()
+    const text = isLink
+      ? await readlink(filePath)
+      : await readFile(filePath, 'utf8')
+    return text.replace(/\\/g, '/').includes(`node_modules/${packageName}/`)
+  } catch {
+    return false
+  }
+}
+
 async function manualRemoveNpmPackage(
   packageName: string,
 ): Promise<{ success: boolean; error?: string; warning?: string }> {
@@ -1546,6 +1564,9 @@ async function manualRemoveNpmPackage(
     // A stat() pre-check would add a syscall and a TOCTOU window where
     // concurrent cleanup causes a false-negative return.
     async function tryRemove(filePath: string, description: string) {
+      if (!(await launcherPointsInto(filePath, packageName))) {
+        return false
+      }
       try {
         await unlink(filePath)
         logForDebugging(`Manually removed ${description}: ${filePath}`)
@@ -1557,9 +1578,9 @@ async function manualRemoveNpmPackage(
 
     if (getPlatform().startsWith('win32')) {
       // Windows - only remove executables, not the package directory
-      const binCmd = join(globalPrefix, 'claude.cmd')
-      const binPs1 = join(globalPrefix, 'claude.ps1')
-      const binExe = join(globalPrefix, 'claude')
+      const binCmd = join(globalPrefix, 'noa.cmd')
+      const binPs1 = join(globalPrefix, 'noa.ps1')
+      const binExe = join(globalPrefix, 'noa')
 
       if (await tryRemove(binCmd, 'bin script')) {
         manuallyRemoved = true
@@ -1574,7 +1595,7 @@ async function manualRemoveNpmPackage(
       }
     } else {
       // Unix/Mac - only remove symlink, not the package directory
-      const binSymlink = join(globalPrefix, 'bin', 'claude')
+      const binSymlink = join(globalPrefix, 'bin', 'noa')
 
       if (await tryRemove(binSymlink, 'bin symlink')) {
         manuallyRemoved = true
@@ -1661,20 +1682,8 @@ export async function cleanupNpmInstallations(): Promise<{
   const warnings: string[] = []
   let removed = 0
 
-  // Always attempt to remove @anthropic-ai/claude-code
-  const codePackageResult = await attemptNpmUninstall(
-    '@anthropic-ai/claude-code',
-  )
-  if (codePackageResult.success) {
-    removed++
-    if (codePackageResult.warning) {
-      warnings.push(codePackageResult.warning)
-    }
-  } else if (codePackageResult.error) {
-    errors.push(codePackageResult.error)
-  }
-
-  // Also attempt to remove MACRO.PACKAGE_URL if it's defined and different
+  // Never touch @anthropic-ai/claude-code here: it is Anthropic's official CLI,
+  // which a user may have installed separately. Only Noa's own package counts.
   if (MACRO.PACKAGE_URL && MACRO.PACKAGE_URL !== '@anthropic-ai/claude-code') {
     const macroPackageResult = await attemptNpmUninstall(MACRO.PACKAGE_URL)
     if (macroPackageResult.success) {

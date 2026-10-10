@@ -69,7 +69,9 @@ if (cwdOverride) {
   }
 }
 
-globalThis.MACRO = LAUNCHER_MACRO;
+// INSTALL_ROOT is the copy actually running, so update/uninstall act on it and
+// not on whatever the global `noa` symlink happens to point at.
+globalThis.MACRO = { ...LAUNCHER_MACRO, INSTALL_ROOT: import.meta.dirname };
 
 const launcherDebugEnabled =
   process.env.CLAUDE_CODE_LAUNCHER_DEBUG === '1' ||

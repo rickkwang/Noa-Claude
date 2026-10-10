@@ -59,6 +59,18 @@ jobs:
           bun run e2e:startup
           bun run e2e:background
 
+      # Install / update / uninstall lifecycle of the curl-installed copy. Needs
+      # network for bun install and the pinned GitHub release.
+      - name: Install lifecycle E2E
+        run: bun run e2e:install
+
+      - name: Upload install lifecycle evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-install-lifecycle
+          path: dist/e2e-install-lifecycle
+
       # build:dev:full only proves the bundle resolves; the placeholder modules
       # behind the experimental flags have crashed it at startup before.
       - name: Full-feature build agent loop E2E
