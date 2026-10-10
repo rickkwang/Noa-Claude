@@ -1343,6 +1343,12 @@ export async function checkRuleBasedPermissions(
       throw e
     }
     logError(e)
+    // Fail closed: a hook 'allow' must not stand on a check that threw.
+    return {
+      behavior: 'deny',
+      decisionReason: { type: 'other', reason: 'permission check failed' },
+      message: `${tool.name} was not run: its permission check failed.`,
+    }
   }
 
   // 1d. Tool implementation denied (catches bash subcommand denies wrapped
