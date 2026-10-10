@@ -133,6 +133,11 @@ export const CronCreateTool = buildTool({
     }
     return { result: true }
   },
+  // Schedules a prompt that later runs without the user present, so it needs
+  // the same confirmation as any other write.
+  async checkPermissions() {
+    return { behavior: 'passthrough', message: 'Schedule a recurring prompt?' }
+  },
   async call({ cron, prompt, recurring = true, durable = false }) {
     // Kill switch forces session-only; schema stays stable so the model sees
     // no validation errors when the gate flips mid-session.

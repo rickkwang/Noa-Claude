@@ -69,6 +69,9 @@ export const TeamDeleteTool: Tool<InputSchema, Output> = buildTool({
     }
   },
 
+  async checkPermissions() {
+    return { behavior: 'passthrough', message: 'Delete the team?' }
+  },
   async call(_input, context) {
     const { setAppState, getAppState } = context
     const appState = getAppState()

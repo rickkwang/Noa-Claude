@@ -126,6 +126,9 @@ export const TeamCreateTool: Tool<InputSchema, Output> = buildTool({
     }
   },
 
+  async checkPermissions() {
+    return { behavior: 'passthrough', message: 'Create a team of agents?' }
+  },
   async call(input, context) {
     const { setAppState, getAppState } = context
     const { team_name, description: _description, agent_type } = input
