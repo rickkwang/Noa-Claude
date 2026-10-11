@@ -78,11 +78,14 @@ export async function autoModeCritiqueHandler(options: {
   model?: string
 }): Promise<void> {
   const config = getAutoModeConfig()
-  const hasCustomRules =
-    (config?.allow?.length ?? 0) > 0 ||
-    (config?.soft_deny?.length ?? 0) > 0 ||
-    (config?.hard_deny?.length ?? 0) > 0 ||
-    (config?.environment?.length ?? 0) > 0
+  // A lone "$defaults" entry only splices the built-in defaults back in, so it
+  // is not a custom rule (upstream y()).
+  const hasCustomRules = [
+    config?.allow,
+    config?.soft_deny,
+    config?.hard_deny,
+    config?.environment,
+  ].some(list => (list ?? []).some(rule => rule !== '$defaults'))
 
   if (!hasCustomRules) {
     process.stdout.write(
@@ -136,7 +139,7 @@ export async function autoModeCritiqueHandler(options: {
             '<classifier_system_prompt>\n' +
             classifierPrompt +
             '\n</classifier_system_prompt>\n\n' +
-            "Here are the user's custom rules (a literal \"$defaults\" entry splices the built-in defaults back in at that position):\n\n" +
+            "Here are the user's custom rules (each section header notes whether they replace or extend the defaults):\n\n" +
             userRulesSummary +
             '\nPlease critique these custom rules.',
         },
@@ -163,17 +166,23 @@ function formatRulesForCritique(
   userRules: string[],
   defaultRules: string[],
 ): string {
-  if (userRules.length === 0) return ''
-  const customLines = userRules.map(r => '- ' + r).join('\n')
+  const custom = userRules.filter(r => r !== '$defaults')
+  if (custom.length === 0) return ''
+  // A "$defaults" entry means the user's rules extend the defaults; otherwise
+  // they replace them (upstream w()).
+  const extend = custom.length !== userRules.length
+  const customLines = custom.map(r => '- ' + r).join('\n')
   const defaultLines = defaultRules.map(r => '- ' + r).join('\n')
   return (
     '## ' +
     section +
-    ' (custom rules — a literal "$defaults" entry splices the defaults back in at that position)\n' +
+    (extend
+      ? ' (custom rules added alongside the defaults)\n'
+      : ' (custom rules replacing defaults)\n') +
     'Custom:\n' +
     customLines +
     '\n\n' +
-    'Built-in defaults:\n' +
+    (extend ? 'Defaults also in effect:\n' : 'Defaults being replaced:\n') +
     defaultLines +
     '\n\n'
   )

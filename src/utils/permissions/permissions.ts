@@ -12,6 +12,7 @@ import { shouldUseSandbox } from '../../tools/BashTool/shouldUseSandbox.js'
 import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
 import { POWERSHELL_TOOL_NAME } from '../../tools/PowerShellTool/toolName.js'
 import { REPL_TOOL_NAME } from '../../tools/REPLTool/constants.js'
+import { SEND_MESSAGE_TOOL_NAME } from '../../tools/SendMessageTool/constants.js'
 import type { AssistantMessage } from '../../types/message.js'
 import { extractOutputRedirections } from '../bash/commands.js'
 import { logForDebugging } from '../debug.js'
@@ -482,8 +483,30 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
   assistantMessage,
   toolUseID,
 ): Promise<PermissionDecision> => {
-  const result = await hasPermissionsToUseToolInner(tool, input, context)
+  let result = await hasPermissionsToUseToolInner(tool, input, context)
 
+  // In auto mode upstream sends a SendMessage allow with no stated reason to
+  // the classifier. This is deliberately narrow: other bare allows are not
+  // verified upstream, so only SendMessage is re-entered as an ask. An explicit
+  // allow rule still skips review, as upstream does (checked with a settings
+  // allow rule). The result goes through the auto branch without the acceptEdits
+  // shortcut below, which would just re-allow it.
+  const appStateForAuto = context.getAppState()
+  const selfAllowedInAuto = feature('AUTO_MODE')
+    ? result.behavior === 'allow' &&
+      (appStateForAuto.toolPermissionContext.mode === 'auto' ||
+        (appStateForAuto.toolPermissionContext.mode === 'plan' &&
+          (autoModeStateModule?.isAutoModeActive() ?? false))) &&
+      result.decisionReason === undefined &&
+      tool.name === SEND_MESSAGE_TOOL_NAME
+    : false
+  if (selfAllowedInAuto) {
+    result = {
+      behavior: 'ask',
+      message: `${tool.name} is reviewed by the auto mode classifier`,
+      decisionReason: { type: 'other', reason: 'auto mode review' },
+    }
+  }
 
   // Reset consecutive denials on any allowed tool use in auto mode.
   // This ensures that a successful tool use (even one auto-allowed by rules)
@@ -615,6 +638,7 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
       // must see the glue JavaScript, not just the inner tool calls.
       if (
         result.behavior === 'ask' &&
+        !selfAllowedInAuto &&
         tool.name !== AGENT_TOOL_NAME &&
         tool.name !== REPL_TOOL_NAME
       ) {

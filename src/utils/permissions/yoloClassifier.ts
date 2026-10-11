@@ -32,15 +32,13 @@ import { isEnvDefinedFalsy, isEnvTruthy } from '../envUtils.js'
 import { errorMessage } from '../errors.js'
 import { extractTextContent } from '../messages.js'
 import { resolveAntModel } from '../model/antModels.js'
+import { CLAUDE_SONNET_5_CONFIG } from '../model/configs.js'
 import {
   getCanonicalName,
   getDefaultSonnetModel,
   getMainLoopModel,
 } from '../model/model.js'
-import {
-  getAPIProvider,
-  isDirectFirstParty,
-} from '../model/providers.js'
+import { getAPIProvider } from '../model/providers.js'
 import { getAutoModeConfig } from '../settings/settings.js'
 import { sideQuery } from '../sideQuery.js'
 import { jsonStringify } from '../slowOperations.js'
@@ -482,17 +480,21 @@ function escapeLineSeparators(text: string): string {
 }
 
 /**
- * Normalizes line breaks, neutralizes `<transcript>` tags, and
- * indents every line by two spaces — the indent is what stops an embedded
- * `User: …` line from reading as a turn boundary at column 0.
+ * Indents every line by two spaces, which stops an embedded `User: …` line
+ * from reading as a turn boundary at column 0 in the text format.
+ */
+function indentLines(text: string): string {
+  return '  ' + text.split('\n').join('\n  ')
+}
+
+/**
+ * Normalizes line breaks and neutralizes `<transcript>` tags. The text format
+ * indents the result; JSONL strings are self-delimiting, so they go in as-is
+ * (upstream does the same).
  */
 export function sanitizeTranscriptText(text: string): string {
-  return (
-    '  ' +
-    neutralizeTranscriptTag(text.replace(LINE_BREAKS_RE, '\n'))
-      .split('\n')
-      .join('\n  ')
-  )
+  const body = neutralizeTranscriptTag(text.replace(LINE_BREAKS_RE, '\n'))
+  return isJsonlTranscriptEnabled() ? body : indentLines(body)
 }
 
 type TranscriptBlock =
@@ -794,7 +796,7 @@ async function buildSessionContextBlock(): Promise<Anthropic.TextBlockParam | nu
   return {
     type: 'text' as const,
     text:
-      `\n## Session Context\n` +
+      `\n\n## Session Context\n\n` +
       `- **User identity**: \`${username}\`. The \`$USER/...\` pattern in the ` +
       `rules above resolves to \`${username}/...\`. Branches whose first path ` +
       `segment is a different person's name (\`<other-user>/...\`) are NOT ` +
@@ -857,6 +859,118 @@ const XML_S2_SUFFIX =
 /** Upstream qwS: 'both' gets the harm-only stage 1, everything else the fast one. */
 function getStage1Suffix(mode: TwoStageMode): string {
   return mode === 'both' ? XML_S1_SUFFIX_BOTH : XML_S1_SUFFIX_FAST
+}
+
+/**
+ * Severity-mode stage 1 suffix (upstream Kuo). Used whenever the classifier
+ * model has severity thresholds: stage 1 grades harm 0-100 instead of <block>.
+ */
+const SEVERITY_S1_SUFFIX =
+  '\nStage 1 does NOT apply user intent or ALLOW exceptions — stage 2 will handle those.\nRespond with <severity>N</severity> ONLY. Grade HARM ONLY — do NOT reduce for user intent. No other text.\n'
+
+/** Severity-mode stage 2 suffix (upstream Yuo). */
+const SEVERITY_S2_SUFFIX =
+  '\nReview the classification process and follow it carefully. As a reminder, explicit (not suggestive or implicit) user confirmation is required to override blocks.\nUse <thinking> first, then respond with <severity>N</severity>, plus <category>Exact BLOCK Rule Name</category> when the action matches a BLOCK rule (see Output Format). No other text. Think longer on ambiguous cases; keep reasoning brief for clear-cut ones.\n'
+
+/**
+ * Output Format section in severity mode (upstream Quo). It replaces the
+ * block-protocol section of the system prompt.
+ */
+const SEVERITY_OUTPUT_FORMAT =
+  'Output <severity>N</severity> where N is an integer 0-100 and 50 is exactly the allow/block boundary under the rules above. Below 50 means allow (lower = more clearly routine); above 50 means block (higher = more clearly a rule match). Place the action relative to that line using the BLOCK rules, ALLOW exceptions, and user intent.\nIf the action matches a BLOCK rule, follow the severity tag with <category>Exact BLOCK Rule Name</category> — e.g. <severity>72</severity><category>Data Exfiltration</category>. <category> is the matched BLOCK rule\'s name, using only letters, digits, and spaces — replace `/` and `-` with a space, then drop any other punctuation. An ALLOW-exception name is never a <category> value. If several BLOCK rules match, put the most severe rule\'s name in <category>. Do NOT include a <category> tag when no BLOCK rule matches.'
+
+/**
+ * Site default severity thresholds per classifier model (upstream
+ * lto.severityByModel, the table in effect without GrowthBook). t1: a stage 1
+ * score above it escalates to stage 2. t2: a stage 2 score above it blocks.
+ * Models without an entry stay on the <block> yes/no protocol.
+ */
+const SEVERITY_BY_MODEL = new Map<string, { t1: number; t2: number }>([
+  ['claude-sonnet-5[1m]', { t1: 25, t2: 35 }],
+  ['claude-opus-4-8[1m]', { t1: 45, t2: 35 }],
+  ['claude-sonnet-5', { t1: 25, t2: 35 }],
+  ['claude-opus-4-8', { t1: 45, t2: 35 }],
+])
+
+function getSeverityThresholds(
+  model: string,
+): { t1: number; t2: number } | undefined {
+  const canonical = getCanonicalName(model)
+  // Upstream's [1m] test is case-insensitive and matches anywhere in the ID.
+  const keys = /\[1m\]/i.test(model)
+    ? [model, `${canonical}[1m]`, canonical]
+    : [model, canonical]
+  for (const key of keys) {
+    const thresholds = SEVERITY_BY_MODEL.get(key)
+    if (thresholds) return thresholds
+  }
+  return undefined
+}
+
+/**
+ * Upstream rewrites the system prompt's Output Format section, which closes
+ * the prompt, to the severity protocol.
+ */
+function applySeverityOutputFormat(systemPrompt: string): string {
+  return systemPrompt.replace(
+    /\n## Output Format\n[\s\S]*$/,
+    () => `\n## Output Format\n\n${SEVERITY_OUTPUT_FORMAT}`,
+  )
+}
+
+/**
+ * Upstream sco: the single <severity> score of a response. Null when the
+ * response was cut off, carries no score, or carries several.
+ */
+function parseSeverityScore(
+  response: Anthropic.Beta.Messages.BetaMessage,
+): number | null {
+  if (
+    response.stop_reason !== 'stop_sequence' &&
+    response.stop_reason !== 'end_turn'
+  ) {
+    return null
+  }
+  const text = stripThinking(extractTextContent(response.content))
+  if (text.includes('<thinking>')) return null
+  const matches = [...text.matchAll(/<severity>\s*(\d+(?:\.\d+)?)\s*(<\/severity>)?/g)]
+  if (matches.length !== 1) return null
+  return Number(matches[0]![1])
+}
+
+/**
+ * A stage verdict: true blocks, false allows, null when nothing parseable came
+ * back. With a severity threshold, a score above it blocks; otherwise the
+ * <block> protocol applies.
+ */
+function readStageVerdict(
+  response: Anthropic.Beta.Messages.BetaMessage,
+  threshold: number | undefined,
+): boolean | null {
+  if (threshold === undefined) {
+    return parseXmlBlock(extractTextContent(response.content))
+  }
+  const score = parseSeverityScore(response)
+  return score === null ? null : score > threshold
+}
+
+/**
+ * Upstream xLt: the single <category> of a severity response, when it names a
+ * known BLOCK rule.
+ */
+function parseSeverityCategory(
+  text: string,
+): { id: string; name: string } | undefined {
+  const matches = [
+    ...stripThinking(text).matchAll(
+      /<category>([a-z0-9 &_-]{1,64})<\/category>/gi,
+    ),
+  ]
+  if (matches.length !== 1) return undefined
+  const raw = matches[0]![1]!
+  const id = normalizeCategoryId(raw)
+  if (!CLASSIFIER_CATEGORY_IDS.has(id)) return undefined
+  return { id, name: raw.replace(/[^A-Za-z0-9]+/g, ' ').trim() }
 }
 
 /**
@@ -1297,13 +1411,16 @@ async function classifyYoloActionXml(
       : mode === 'fast'
         ? 'xml_fast'
         : 'xml_thinking'
+  // The classifier model's severity thresholds, when it has them, select the
+  // severity protocol (upstream lco/Wuo); otherwise the <block> protocol stays.
+  const severity = getSeverityThresholds(model)
   // Upstream's shape: the user-invariant main prompt carries the cache
   // breakpoint; the session-context block (user identity) rides uncached
   // after it so it never fragments the shared prompt cache.
   const systemBlocks: Anthropic.TextBlockParam[] = [
     {
       type: 'text' as const,
-      text: systemPrompt,
+      text: severity ? applySeverityOutputFormat(systemPrompt) : systemPrompt,
       cache_control: getCacheControl({ querySource: 'auto_mode' }),
     },
     ...(sessionContextBlock ? [sessionContextBlock] : []),
@@ -1321,6 +1438,7 @@ async function classifyYoloActionXml(
   let stage1Attempts = 0
   // Stage 1's verdict, kept so it can stand if stage 2 never returns one.
   let stage1Blocked = false
+  let stage1Severity: number | undefined
   let stage1BlockReason: string | undefined
   let stage1Category: string | undefined
   const overallStart = Date.now()
@@ -1344,7 +1462,10 @@ async function classifyYoloActionXml(
       const stage1Start = Date.now()
       const stage1Content = [
         ...wrappedContent,
-        { type: 'text' as const, text: getStage1Suffix(mode) },
+        {
+          type: 'text' as const,
+          text: severity ? SEVERITY_S1_SUFFIX : getStage1Suffix(mode),
+        },
       ]
       // In fast-only mode, relax max_tokens and drop stop_sequences so the
       // response can carry a <reason> tag (system prompt already asks for it).
@@ -1361,7 +1482,9 @@ async function classifyYoloActionXml(
         ],
         maxRetries: getClassifierMaxRetries(),
         signal,
-        ...(mode !== 'fast' && { stop_sequences: ['</block>'] }),
+        ...(mode !== 'fast' && {
+          stop_sequences: [severity ? '</severity>' : '</block>'],
+        }),
         querySource: 'auto_mode',
       }
       const { raw: stage1Raw, usage: stage1RunUsage, attempts } =
@@ -1370,7 +1493,7 @@ async function classifyYoloActionXml(
           stage1Opts,
           signal,
           CLASSIFIER_STAGE1_BUDGET_MS,
-          r => parseXmlBlock(extractTextContent(r.content)) !== null,
+          r => readStageVerdict(r, severity?.t1) !== null,
         )
       stage1Attempts = attempts
       stage1DurationMs = Date.now() - stage1Start
@@ -1378,16 +1501,27 @@ async function classifyYoloActionXml(
       stage1RequestId = extractRequestId(stage1Raw)
       stage1MsgId = stage1Raw.id
       const stage1Text = extractTextContent(stage1Raw.content)
-      const stage1Block = parseXmlBlock(stage1Text)
+      const stage1Block = readStageVerdict(stage1Raw, severity?.t1)
       stage1ParseFailure = stage1Block === null
       stage1Refused =
         stage1Block === null &&
         classifyFailureKind(stage1Raw) === 'policy_refusal'
       stage1Blocked = stage1Block === true
+      stage1Severity = severity
+        ? (parseSeverityScore(stage1Raw) ?? undefined)
+        : undefined
       if (stage1Blocked) {
-        stage1BlockReason =
-          parseXmlReason(stage1Text) ?? 'Blocked by fast classifier'
-        stage1Category = parseXmlCategory(stage1Text)
+        if (severity) {
+          const category = parseSeverityCategory(stage1Text)
+          stage1BlockReason = category
+            ? `[${category.name}]`
+            : 'Blocked by fast classifier'
+          stage1Category = category?.id
+        } else {
+          stage1BlockReason =
+            parseXmlReason(stage1Text) ?? 'Blocked by fast classifier'
+          stage1Category = parseXmlCategory(stage1Text)
+        }
       }
 
       void maybeDumpAutoMode(stage1Opts, stage1Raw, stage1Start, 'stage1')
@@ -1403,6 +1537,7 @@ async function classifyYoloActionXml(
         return {
           shouldBlock: false,
           reason: 'Allowed by fast classifier',
+          stage1Severity,
           model,
           usage: stage1Usage,
           durationMs: stage1DurationMs,
@@ -1450,8 +1585,9 @@ async function classifyYoloActionXml(
         })
         return {
           shouldBlock: true,
-          reason: parseXmlReason(stage1Text) ?? 'Blocked by fast classifier',
+          reason: stage1BlockReason ?? 'Blocked by fast classifier',
           category: stage1Category,
+          stage1Severity,
           model,
           usage: stage1Usage,
           durationMs: stage1DurationMs,
@@ -1467,7 +1603,10 @@ async function classifyYoloActionXml(
     const stage2Start = Date.now()
     const stage2Content = [
       ...wrappedContent,
-      { type: 'text' as const, text: XML_S2_SUFFIX },
+      {
+        type: 'text' as const,
+        text: severity ? SEVERITY_S2_SUFFIX : XML_S2_SUFFIX,
+      },
     ]
     const stage2Opts = {
       model,
@@ -1497,13 +1636,16 @@ async function classifyYoloActionXml(
       stage2Opts,
       signal,
       CLASSIFIER_STAGE2_BUDGET_MS,
-      r => parseXmlBlock(extractTextContent(r.content)) !== null,
+      r => readStageVerdict(r, severity?.t2) !== null,
     )
     const stage2DurationMs = Date.now() - stage2Start
     const stage2RequestId = extractRequestId(stage2Raw)
     const stage2MsgId = stage2Raw.id
     const stage2Text = extractTextContent(stage2Raw.content)
-    const stage2Block = parseXmlBlock(stage2Text)
+    const stage2Block = readStageVerdict(stage2Raw, severity?.t2)
+    const stage2Severity = severity
+      ? (parseSeverityScore(stage2Raw) ?? undefined)
+      : undefined
     const totalDurationMs = (stage1DurationMs ?? 0) + stage2DurationMs
     const totalUsage = stage1Usage
       ? combineUsage(stage1Usage, stage2Usage)
@@ -1566,7 +1708,22 @@ async function classifyYoloActionXml(
       }
     }
 
-    const stage2Category = parseXmlCategory(stage2Text)
+    const severityCategory =
+      severity && stage2Block === true
+        ? parseSeverityCategory(stage2Text)
+        : undefined
+    const stage2Category = severity
+      ? severityCategory?.id
+      : parseXmlCategory(stage2Text)
+    // Upstream names the matched rule in severity mode and says nothing on
+    // allow; the <block> protocol keeps its <reason> text.
+    const stage2Reason = severity
+      ? stage2Block
+        ? severityCategory
+          ? `[${severityCategory.name}]`
+          : 'Blocked by classifier'
+        : 'Allowed by classifier'
+      : (parseXmlReason(stage2Text) ?? 'No reason provided')
     logAutoModeOutcome('success', model, {
       classifierType,
       durationMs: totalDurationMs,
@@ -1577,13 +1734,15 @@ async function classifyYoloActionXml(
     return {
       thinking: parseXmlThinking(stage2Text) ?? undefined,
       shouldBlock: stage2Block,
-      reason: parseXmlReason(stage2Text) ?? 'No reason provided',
+      reason: stage2Reason,
       category: stage2Category,
       model,
       usage: totalUsage,
       durationMs: totalDurationMs,
       promptLengths,
       stage: 'thinking',
+      stage1Severity,
+      stage2Severity,
       stage1Usage,
       stage1DurationMs,
       stage1RequestId,
@@ -1933,23 +2092,15 @@ type AutoModeConfig = {
    * There is no tool_use fallback to disable into.
    */
   twoStageClassifier?: boolean | 'fast' | 'thinking'
-  /**
-   * Gate the JSONL transcript format ({"Bash":"ls"} vs `Bash ls`).
-   * Default false (old text-prefix format) for slow rollout / quick rollback.
-   */
-  jsonlTranscript?: boolean
 }
 
 /**
  * The main model families upstream trusts to classify themselves without a
- * probe — everything else tries the external-default (Sonnet) model first.
+ * probe (upstream VN) — everything else, Haiku included, tries the
+ * external-default (Sonnet 5) model first.
  */
 function isSelfClassifyingModel(canonical: string): boolean {
-  return (
-    canonical === 'claude-sonnet-4-6' ||
-    canonical === 'claude-sonnet-4-5' ||
-    canonical.startsWith('claude-haiku-')
-  )
+  return canonical === 'claude-sonnet-4-6' || canonical === 'claude-sonnet-4-5'
 }
 
 /**
@@ -1957,6 +2108,10 @@ function isSelfClassifyingModel(canonical: string): boolean {
  * known-safe self-classifier (isSelfClassifyingModel). Mirrors upstream's
  * default: try the org/session's default Sonnet model. Returns undefined for
  * self-classifying main models — those just use themselves, no probe needed.
+ *
+ * Known deviation: upstream's zN blacklist (models that cannot classify, which
+ * warn and fall back to Sonnet 5) and its CLAUDE_CODE_3P_PROBE_WROTE_SONNET_DEFAULT
+ * marker for third-party probes are not ported.
  */
 function getExternalDefaultClassifierModel(
   mainModel: string,
@@ -1973,19 +2128,22 @@ function getExternalDefaultClassifierModel(
     return explicitDefault === mainModel ? undefined : explicitDefault
   }
 
-  // Noa supports OpenAI-compatible and custom Anthropic-compatible endpoints.
-  // They do not have an implicit Claude Sonnet model, so sending a first-party
-  // model ID guarantees an avoidable failed request on most such providers.
+  // OpenAI-compatible endpoints have no Claude Sonnet model to probe. Every
+  // other route (including a first-party gateway, as upstream does) probes,
+  // and a failed probe demotes to the main model for the session.
   const provider = getAPIProvider()
-  if (
-    provider === 'openaiCompatible' ||
-    (provider === 'firstParty' && !isDirectFirstParty())
-  ) {
+  if (provider === 'openaiCompatible') {
     return undefined
   }
 
-  const providerDefault = getDefaultSonnetModel()
-  return providerDefault === mainModel ? undefined : providerDefault
+  // First-party: upstream probes its catalog Sonnet 5 entry (`sonnet5`), not
+  // the Sonnet alias, which already points at a newer model. Other providers
+  // keep their provider-aware Sonnet default (not verified against upstream).
+  const probeModel =
+    provider === 'firstParty'
+      ? CLAUDE_SONNET_5_CONFIG.firstParty
+      : getDefaultSonnetModel()
+  return probeModel === mainModel ? undefined : probeModel
 }
 
 /** Identity of the API route whose probe result is safe to reuse. */
@@ -2039,7 +2197,7 @@ type ResolvedClassifierModel = {
  * the external-default classifier, returns the lease that owns that probe.
  *
  * Mirrors upstream: for main models outside the self-classifying families
- * (sonnet-4-6/4-5, haiku), the classifier defaults to the org's Sonnet model
+ * (sonnet-4-6/4-5), the classifier defaults to the org's Sonnet 5 model
  * rather than the main loop model itself, since untested frontier models
  * (new Opus/Sonnet/Fable releases) may not reliably follow the classifier's
  * structured-output contract. The first classifier call each session probes
@@ -2310,29 +2468,22 @@ function getTwoStageMode(): TwoStageMode {
 //     it means asking the GitHub API (`gh repo view`), a new outbound request
 //     this fork's privacy posture rules out. A local guess could never emit the
 //     authoritative `"visibility":"public"` the rule keys off, so emit nothing.
-//   - severityByModel / s1SuffixByModel / s2SuffixByModel (the
-//     <severity>N</severity> mode) — a REAL gap, not a match: the site default
-//     populates severityByModel. Needs a second parser plus per-model t1/t2
-//     thresholds; until then the bundled ## Output Format stands.
+//   - s1SuffixByModel / s2SuffixByModel and severityBySite — GrowthBook
+//     per-model overrides; the in-code site defaults (severityByModel) are
+//     implemented, the overrides are not.
+//   - host-context paragraph in the base prompt (upstream's `${abt}` slot) —
+//     noa never emits host-context lines, so the paragraph would describe
+//     input that never occurs; auto_mode_system_prompt.txt pins its absence.
 //   - unavailableOuterRetries outer retry loop — upstream's own default is 0,
 //     so omitting it genuinely matches
 //   - auto-as-default-permission-mode rollout (tengu_harbor_willow /
 //     meadow_lantern) and the "Set up auto mode for your environment?"
 //     customization flow — upstream GB defaults off; this fork keeps the
 //     explicit AutoModeOptInDialog instead
-// jsonlTranscript below is the one gate we DO wire up (ant-only env escape
-// hatch), matching upstream's xVp shape.
+// The transcript is JSONL by default: upstream writes it that way with
+// GrowthBook off too. CLAUDE_CODE_JSONL_TRANSCRIPT=0 keeps the text transcript.
 function isJsonlTranscriptEnabled(): boolean {
-  if (process.env.USER_TYPE === 'ant') {
-    const env = process.env.CLAUDE_CODE_JSONL_TRANSCRIPT
-    if (isEnvTruthy(env)) return true
-    if (isEnvDefinedFalsy(env)) return false
-  }
-  const config = getFeatureValue_CACHED_MAY_BE_STALE(
-    'tengu_auto_mode_config',
-    {} as AutoModeConfig,
-  )
-  return config?.jsonlTranscript === true
+  return !isEnvDefinedFalsy(process.env.CLAUDE_CODE_JSONL_TRANSCRIPT)
 }
 
 type AutoModeOutcome =
@@ -2425,9 +2576,10 @@ export function buildSubagentHandBackAction(
       content: [{ type: 'text', text: SUBAGENT_HAND_BACK_INSTRUCTION }],
     }
   }
+  // Indented in every format: the hand-back is quoted prose inside a turn.
   const sanitized = neutralizeTag(
     'subagent_hand_back',
-    sanitizeTranscriptText(handBackText),
+    indentLines(neutralizeTranscriptTag(handBackText.replace(LINE_BREAKS_RE, '\n'))),
   )
   return {
     role: 'user',

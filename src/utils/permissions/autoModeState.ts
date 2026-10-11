@@ -12,8 +12,8 @@ let autoModeCircuitBroken = false
 /**
  * Session-scoped probe state for the "external default" classifier model
  * (upstream tries the default Sonnet model as classifier for main models
- * outside the sonnet-4-6/4-5/haiku families, since those are the only
- * families confirmed safe to classify themselves).
+ * outside the sonnet-4-6/4-5 families, since those are the only families
+ * confirmed safe to classify themselves).
  * - 'unprobed': no classifier call has been attempted yet this session.
  * - 'probing': one classifier call owns the probe; concurrent callers wait for
  *   it to settle instead of launching competing probes.
