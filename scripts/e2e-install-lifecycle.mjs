@@ -152,6 +152,14 @@ try {
   bunVersion = step(['bun', '--version']).output.trim()
   mkdirSync(join(home, '.local', 'bin'), { recursive: true })
 
+  // Refuse foreign targets before touching their contents.
+  const foreignTarget = join(work, 'foreign-target')
+  mkdirSync(foreignTarget)
+  writeFileSync(join(foreignTarget, 'sentinel.txt'), 'important')
+  const foreignInstall = install({ NOA_INSTALL_TARGET_DIR: foreignTarget })
+  check('install refuses a foreign target', foreignInstall.status === 1)
+  check('foreign target data preserved', readFileSync(join(foreignTarget, 'sentinel.txt'), 'utf8') === 'important')
+
   // 2. Default install: canonical link, launcher works from anywhere, config written.
   const d = install()
   check('default install exits 0', d.status === 0, d.output.slice(-300))
@@ -247,27 +255,21 @@ try {
   check('foreign project intact', existsSync(join(project, 'keep.txt')))
   check('foreign link kept', linkTarget() === entry(project))
 
-  // 7. HOME guard: a copy installed at exactly its own HOME must refuse to uninstall
-  //    even when HOME is spelled through a symlink (macOS tmpdir: /var -> /private/var).
-  //    The copy is a real install (dist built), so refusal is the only way it exits 1.
+  // 7. Refuse HOME and its ancestors at install time, even through symlinks.
   const guardHome = join(work, 'home-guard')
-  const guardInstall = install(
-    { HOME: guardHome, NOA_INSTALL_TARGET_DIR: guardHome },
-    'install whose install root is HOME',
-  )
-  check('install rooted at HOME exits 0', guardInstall.status === 0, guardInstall.output.slice(-300))
-  writeFileSync(join(guardHome, 'sentinel.txt'), 'home')
-  const guard = step(['bun', entry(guardHome), 'uninstall', '--yes'], {
-    note: 'uninstall of a copy whose install root is HOME',
-    env: { HOME: guardHome },
-  })
-  check(
-    'uninstall of a copy rooted at HOME refuses',
-    guard.status === 1 && guard.output.includes(notInstalled),
-    `status=${guard.status} ${guard.output.slice(-200)}`,
-  )
-  check('HOME guard kept the sentinel', existsSync(join(guardHome, 'sentinel.txt')))
-  check('HOME guard kept the copy', existsSync(entry(guardHome)))
+  mkdirSync(guardHome)
+  writeFileSync(join(work, 'home-sentinel.txt'), 'home')
+  for (const target of [guardHome, work, '/']) {
+    const guardInstall = install(
+      { HOME: guardHome, NOA_INSTALL_TARGET_DIR: target },
+      'refuse HOME or an ancestor as the install root',
+    )
+    check(`install refuses dangerous target ${target}`,
+      guardInstall.status === 1 && guardInstall.output.includes('refusing to install into HOME or its ancestor'),
+      guardInstall.output)
+  }
+  check('HOME guard kept the sentinel', readFileSync(join(work, 'home-sentinel.txt'), 'utf8') === 'home')
+  check('HOME guard did not install a copy', !existsSync(entry(guardHome)))
 
   // 8. Purge boundary and config retention, on a fresh default install.
   const d2 = install({ NOA_INSTALL_FORCE_SYMLINK: '1' }, 'default reinstall for purge checks')
@@ -298,8 +300,36 @@ try {
   )
   check('custom config directory kept its data', existsSync(join(docs, 'work.txt')))
 
-  const normal = step(['bun', entry(defaultInstall), 'uninstall', '--yes'], {
-    note: 'normal uninstall, config kept',
+  // Recovery must not depend on valid settings, global config, or credentials.
+  const settingsFile = join(configDir, 'settings.json')
+  const globalFile = join(configDir, '.config.json')
+  const settingsBefore = readFileSync(settingsFile, 'utf8')
+  const globalBefore = existsSync(globalFile) ? readFileSync(globalFile, 'utf8') : null
+  for (const fixture of ['settings', 'global', 'credentials']) {
+    writeFileSync(settingsFile, fixture === 'settings' ? '{invalid' : settingsBefore)
+    if (fixture === 'global') writeFileSync(globalFile, '{invalid')
+    else if (globalBefore !== null) writeFileSync(globalFile, globalBefore)
+    else rmSync(globalFile, { force: true })
+    const refused = step([bin, 'uninstall'], {
+      note: `non-interactive uninstall with broken ${fixture}`,
+      env: fixture === 'credentials' ? { ANTHROPIC_AUTH_TOKEN: 'fixture-token' } : {},
+    })
+    check(`uninstall reaches confirmation with broken ${fixture}`,
+      refused.status === 1 && refused.output.includes('Re-run with --yes'), refused.output)
+    check(`unconfirmed uninstall preserves copy with broken ${fixture}`, existsSync(entry(defaultInstall)))
+  }
+  writeFileSync(settingsFile, '{invalid')
+  writeFileSync(globalFile, '{invalid')
+  const version = step([bin, '--version'])
+  check('version works with broken settings and global config', version.status === 0 && version.output.includes('Noa Claude'), version.output)
+  const badOption = step([bin, 'uninstall', '--yes', '--unknown'])
+  check('uninstall rejects unknown options without deleting', badOption.status === 1 && existsSync(entry(defaultInstall)))
+  const help = step([bin, 'uninstall', '--help'])
+  check('uninstall help works with broken config', help.status === 0 && help.output.includes('--purge') && existsSync(entry(defaultInstall)), help.output)
+
+  const normal = step([bin, 'uninstall', '--yes'], {
+    note: 'normal uninstall with broken settings, global config and credentials; config kept',
+    env: { ANTHROPIC_AUTH_TOKEN: 'fixture-token' },
   })
   check('normal uninstall exits 0', normal.status === 0, normal.output.slice(-300))
   check(
@@ -307,11 +337,17 @@ try {
     !existsSync(defaultInstall) && linkTarget() === null,
   )
   check('normal uninstall kept the config markers', existsSync(join(configDir, 'marker-settings.json')))
+  check('normal uninstall preserves broken config contents',
+    readFileSync(settingsFile, 'utf8') === '{invalid' && readFileSync(globalFile, 'utf8') === '{invalid')
 
   const d3 = install({}, 'default reinstall before purge')
   check('reinstall before purge exits 0', d3.status === 0, d3.output.slice(-300))
-  const purge = step(['bun', entry(defaultInstall), 'uninstall', '--purge', '--yes'], {
-    note: 'normal purge of the default config directory',
+  // Installation and uninstall --purge must also recover from broken config.
+  writeFileSync(settingsFile, '{invalid')
+  writeFileSync(globalFile, '{invalid')
+  const purge = step([bin, 'uninstall', '--purge', '--yes'], {
+    note: 'purge with broken settings, global config and credentials',
+    env: { ANTHROPIC_AUTH_TOKEN: 'fixture-token' },
   })
   check('normal purge exits 0', purge.status === 0, purge.output.slice(-300))
   check('normal purge removed the config directory', !existsSync(configDir))

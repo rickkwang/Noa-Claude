@@ -4,7 +4,7 @@ set -euo pipefail
 REPO="rickkwang/Noa-Claude"
 # Used when the GitHub API is unreachable (rate limit, offline). Bump per
 # release — see the Release Checklist in docs/product-governance.md.
-FALLBACK_REF="v1.20.0"
+FALLBACK_REF="v1.20.1"
 PERSISTENT_INSTALL_DIR="${NOA_INSTALL_TARGET_DIR:-${HOME}/.noa/install}"
 ROOT_DIR=""
 TEMP_DIR=""
@@ -245,6 +245,32 @@ check_binary_conflict() {
   exit 1
 }
 
+# persist_downloaded_source moves whatever sits at the target aside and deletes it
+# after a successful smoke test, so refuse anything that is not an empty directory
+# or an existing copy of this package. A checkout keeps its .git, so it is refused.
+check_install_target() {
+  local target="$PERSISTENT_INSTALL_DIR"
+  local home_real
+  home_real="$(canonical_path "$HOME")"
+  if [[ "$target" == "/" || "$target" == "$home_real" || "$home_real" == "$target/"* ]]; then
+    echo "Error: refusing to install into HOME or its ancestor: $target" >&2
+    exit 1
+  fi
+  if [[ ! -e "$target" && ! -L "$target" ]]; then
+    return
+  fi
+  if [[ -d "$target" && -z "$(ls -A "$target")" ]]; then
+    return
+  fi
+  if [[ ! -e "$target/.git" && -f "$target/package.json" ]] && \
+     grep -q '"name":[[:space:]]*"@rickkwang/noa-claude"' "$target/package.json"; then
+    return
+  fi
+  echo "Error: $target already exists and is not a Noa Claude installation." >&2
+  echo "Refusing to replace it. Move it aside, or set NOA_INSTALL_TARGET_DIR to another path." >&2
+  exit 1
+}
+
 persist_downloaded_source() {
   if [[ "$ROOT_DIR" == "$PERSISTENT_INSTALL_DIR" ]]; then
     return
@@ -301,14 +327,14 @@ persist_downloaded_source() {
   TEMP_DIR=""
 }
 
+check_install_target
 resolve_root_dir
-
 check_binary_conflict
 
 cd "$ROOT_DIR"
 
 echo "Installing dependencies..."
-bun install
+bun install --frozen-lockfile
 
 echo "Building Noa Claude..."
 bun run build
@@ -342,3 +368,8 @@ case ":$PATH:" in
     echo "Or run noa directly: $BIN_DIR/noa --version"
     ;;
 esac
+
+if ! command -v rg >/dev/null 2>&1; then
+  echo ""
+  echo "Warning: ripgrep (rg) is not installed. File search needs it: brew install ripgrep / apt install ripgrep"
+fi

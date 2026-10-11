@@ -15,6 +15,7 @@ import {
 import { logForDebugging } from 'src/utils/debug.js'
 import { getDoctorDiagnostic } from 'src/utils/doctorDiagnostic.js'
 import {
+  curlInstallerUrl,
   getOwnInstallRoot,
   NOA_CURL_INSTALL_COMMAND,
   usesCurlInstallerBuild,
@@ -69,41 +70,51 @@ async function runCurlReinstall(autoConfirm: boolean): Promise<void> {
     'Noa Claude updates by re-running the curl installer.\n',
   )
 
+  // The installer script comes from the release it installs, not from master:
+  // master can carry changes that no release has shipped. NOA_INSTALL_REF names
+  // the release explicitly; escape-hatch sources without a ref keep master.
+  let scriptRef = process.env.NOA_INSTALL_REF || 'master'
   if (!hasExplicitInstallSource()) {
     const latestTag = await fetchLatestReleaseTag()
-    let currentIsSemver = true
-    if (latestTag) {
-      const latestVersion = stripTagPrefix(latestTag)
-      const upToDate = isCurrentVersionAtLeast(MACRO.VERSION, latestTag)
-      currentIsSemver = upToDate !== null
-      if (upToDate) {
-        writeToStdout(
-          chalk.green(`Noa Claude is up to date (${MACRO.VERSION})`) + '\n',
-        )
-        writeToStdout('To repair a corrupted install, re-run the installer:\n')
-        writeToStdout(chalk.bold(`  ${NOA_CURL_INSTALL_COMMAND}\n`))
-        await gracefulShutdown(0)
-        return
-      }
-      if (currentIsSemver) {
-        writeToStdout(
-          `New version available: ${latestVersion} (current: ${MACRO.VERSION})\n`,
-        )
-      }
+    if (!latestTag) {
+      // Without the latest tag the target is unknown, and the installer's own
+      // fallback could be older than this copy. Refuse rather than guess.
+      writeToStdout(
+        chalk.red(
+          'Could not determine the latest release (GitHub unreachable or rate-limited). Not updating.',
+        ) + '\n',
+      )
+      writeToStdout('To choose a release yourself: NOA_INSTALL_REF=<tag> noa update\n')
+      await gracefulShutdown(1)
+      return
     }
-    if (!latestTag || !currentIsSemver) {
+    scriptRef = latestTag
+    const upToDate = isCurrentVersionAtLeast(MACRO.VERSION, latestTag)
+    if (upToDate) {
+      writeToStdout(
+        chalk.green(`Noa Claude is up to date (${MACRO.VERSION})`) + '\n',
+      )
+      writeToStdout('To repair a corrupted install, re-run the installer:\n')
+      writeToStdout(chalk.bold(`  ${NOA_CURL_INSTALL_COMMAND}\n`))
+      await gracefulShutdown(0)
+      return
+    }
+    if (upToDate === null) {
       writeToStdout(
         chalk.yellow(
-          currentIsSemver
-            ? 'Could not check the latest release (GitHub unreachable); proceeding without a version check.'
-            : `Current version (${MACRO.VERSION}) is not a release version; proceeding without a version check.`,
+          `Current version (${MACRO.VERSION}) is not a release version; proceeding without a version check.`,
         ) + '\n',
+      )
+    } else {
+      writeToStdout(
+        `New version available: ${stripTagPrefix(latestTag)} (current: ${MACRO.VERSION})\n`,
       )
     }
   }
 
+  const scriptUrl = curlInstallerUrl(scriptRef)
   writeToStdout('Command:\n')
-  writeToStdout(chalk.bold(`  ${NOA_CURL_INSTALL_COMMAND}\n`))
+  writeToStdout(chalk.bold(`  curl -fsSL ${scriptUrl} | bash\n`))
   writeToStdout('\n')
 
   const proceed =
@@ -116,10 +127,11 @@ async function runCurlReinstall(autoConfirm: boolean): Promise<void> {
 
   const { spawn } = await import('node:child_process')
   const code: number = await new Promise(resolve => {
-    // pipefail: a failed download must fail the update, not run an empty script.
+    // The URL is passed as $1, not spliced into the script: NOA_INSTALL_REF comes
+    // from the environment. pipefail: a failed download must fail the update.
     const child = spawn(
       'bash',
-      ['-o', 'pipefail', '-c', NOA_CURL_INSTALL_COMMAND],
+      ['-o', 'pipefail', '-c', 'curl -fsSL "$1" | bash', 'noa-update', scriptUrl],
       {
         stdio: 'inherit',
         env: { ...process.env, NOA_INSTALL_TARGET_DIR: installDir },

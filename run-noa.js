@@ -13,6 +13,7 @@ import { dirname, join } from 'path';
 
 import {
   applyLauncherDefaults,
+  DEFAULT_CONFIG_DIR,
   DIAGNOSTIC_ERROR_CODES,
   formatDiagnosticError,
   LAUNCHER_MACRO,
@@ -29,10 +30,18 @@ try {
   const infoOnly = launcherArgs.some(arg =>
     ['-h', '--help', '-v', '--version'].includes(arg),
   );
-  const resolvedLauncherConfig = applyLauncherDefaults({
-    skipGlobalConfig: infoOnly,
-  });
-  validateLauncherConfiguration(process.argv, resolvedLauncherConfig);
+  // Uninstall is a recovery command; version checks also validate reinstall
+  // health. Neither should depend on settings JSON or model credentials.
+  const versionOnly = launcherArgs.length === 1 &&
+    ['-v', '-V', '--version'].includes(launcherArgs[0]);
+  if (launcherArgs[0] === 'uninstall' || versionOnly) {
+    process.env.CLAUDE_CONFIG_DIR = DEFAULT_CONFIG_DIR;
+  } else {
+    const resolvedLauncherConfig = applyLauncherDefaults({
+      skipGlobalConfig: infoOnly,
+    });
+    validateLauncherConfiguration(process.argv, resolvedLauncherConfig);
+  }
 } catch (error) {
   printAndExit(
     DIAGNOSTIC_ERROR_CODES.CONFIG_ERROR,

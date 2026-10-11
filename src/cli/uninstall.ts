@@ -131,8 +131,14 @@ export async function uninstall(
   const proceed =
     options.yes === true || (await confirmYesNo('Proceed? [y/N] '))
   if (!proceed) {
-    writeToStdout('Aborted.\n')
-    await gracefulShutdown(0)
+    // No terminal to ask on: a script that forgot --yes must see a failure.
+    const nonInteractive = !process.stdin.isTTY
+    writeToStdout(
+      nonInteractive
+        ? 'Aborted: no terminal to confirm. Re-run with --yes.\n'
+        : 'Aborted.\n',
+    )
+    await gracefulShutdown(nonInteractive ? 1 : 0)
     return
   }
 
@@ -198,9 +204,17 @@ export async function uninstall(
   writeToStdout('Noa Claude uninstalled.\n')
   if (!options.purge) {
     writeToStdout(
-      `Config preserved at ${configHome}. Run \`rm -rf ${configHome}\` to fully remove.\n`,
+      `Config preserved at ${configHome}. Delete it manually if you no longer need it.\n`,
     )
   }
+  writeToStdout('Not removed (delete by hand if you no longer need them):\n')
+  if (process.platform === 'darwin') {
+    writeToStdout(
+      '  - Keychain items with service names starting with "Claude Code" (may include a config-directory suffix; other installs may share them)\n',
+    )
+  }
+  writeToStdout('  - log caches outside the config directory (custom CLAUDE_CODE_CACHE_DIR or system claude-cli cache)\n')
+  writeToStdout('  - editor and terminal keybindings written by /terminal-setup\n')
   writeToStdout(
     'If you added `export PATH="$HOME/.local/bin:$PATH"` to your shell profile, remove it manually.\n',
   )

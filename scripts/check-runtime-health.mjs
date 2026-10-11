@@ -696,7 +696,7 @@ function checkLauncherFailurePaths() {
         ANTHROPIC_API_KEY: 'sk-test-valid-shape',
       },
     });
-    const invalidBase = runAgent(['--version'], {
+    const invalidBase = runAgent(['--print', '--tools', '', 'Reply with exactly ok'], {
       env: {
         ...process.env,
         CLAUDE_CODE_PRODUCT_DIR: invalidBaseDir,

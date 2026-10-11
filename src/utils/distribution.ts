@@ -18,8 +18,12 @@ export function canonicalPath(path: string): string {
   return join(realpathSync(current), ...tail)
 }
 
-export const NOA_CURL_INSTALL_COMMAND =
-  'curl -fsSL https://raw.githubusercontent.com/rickkwang/Noa-Claude/master/install.sh | bash'
+/** install.sh at a git ref (tag, branch, or commit). */
+export function curlInstallerUrl(ref: string): string {
+  return `https://raw.githubusercontent.com/rickkwang/Noa-Claude/${ref}/install.sh`
+}
+
+export const NOA_CURL_INSTALL_COMMAND = `curl -fsSL ${curlInstallerUrl('master')} | bash`
 
 export function usesCurlInstallerBuild(): boolean {
   return MACRO.DISTRIBUTION === 'curl'

@@ -1,7 +1,16 @@
 # Release Notes
 
-## Unreleased
+## 1.20.1
 
+- Fixed the curl installer replacing unrelated directories: it now refuses HOME, its ancestors, Git checkouts and non-Noa install targets before downloading or building.
+- Fixed `noa uninstall`, `uninstall --help` and `--version` failing on broken configuration or incomplete model credentials; reinstall health checks also work with broken configuration.
+- Non-interactive uninstall without `--yes` now exits with an error, and uninstall explains which credentials, caches and terminal settings are preserved after `--purge`.
+- `noa update` now fetches the installer from the selected release and leaves the current install untouched when the latest release cannot be determined.
+- Fixed standalone `install.sh` downloads running in an unrelated directory, and installed copies now rebuild through the download and rollback path.
+- Installation uses the frozen dependency lockfile and prints an install hint when ripgrep is missing.
+- Fixed model and effort names not being highlighted in `/model` confirmations.
+- Fixed example prompts keeping a placeholder after the project's frequently modified files become available.
+- Worktree and tmux status messages now go to stderr so stdout remains usable for streamed JSON.
 - Fixed Bash and PowerShell running a command outside the sandbox with `dangerouslyDisableSandbox` without asking: such a call now gets an explicit "Run outside of the sandbox" prompt that a whole-tool `Bash` allow rule does not skip, and auto mode never auto-approves it; bypassPermissions mode still runs it without asking. A hook-allowed call whose permission check throws is now denied instead of running.
 - Fixed newly launched background sessions missing from `noa agents --json`: `noa --bg` now waits up to five seconds for its host to register before reporting success, and a host that exits early or misses that deadline makes the launch fail and leaves a failed job record for inspection.
 

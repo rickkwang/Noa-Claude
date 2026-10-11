@@ -6,12 +6,12 @@ Noa is a productized reconstruction based on publicly exposed Claude Code source
 
 ## Quick Start
 
-Prerequisites: [Bun](https://bun.sh) and [ripgrep](https://github.com/BurntSushi/ripgrep) (`brew install ripgrep` / `apt install ripgrep`) — file search is built on the system `rg` and fails with an install hint when it is missing.
+Prerequisites: [Bun](https://bun.sh) (CI tests 1.3.9) and [ripgrep](https://github.com/BurntSushi/ripgrep) (`brew install ripgrep` / `apt install ripgrep`) — file search is built on the system `rg` and fails with an install hint when it is missing.
 
 Install with `curl`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rickkwang/Noa-Claude/v1.20.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/rickkwang/Noa-Claude/v1.20.1/install.sh | bash
 ```
 
 Install from a repository checkout:
@@ -55,7 +55,7 @@ noa uninstall --purge   # ALSO removes ~/.noa (settings, plugins, history); a cu
 noa uninstall --yes     # non-interactive
 ```
 
-If `~/.local/bin` is not on your `PATH`, the installer prints the line to add — `noa uninstall` will not remove it automatically.
+If `~/.local/bin` is not on your `PATH`, the installer prints the line to add — `noa uninstall` will not remove it automatically. Uninstall works even with broken settings or missing model credentials. `--purge` removes the default user config directory; shared Keychain credentials, external caches, project `.noa/` files, and editor/terminal settings are preserved.
 
 ## Core Features
 

@@ -48,6 +48,23 @@ export async function bootstrapCli(): Promise<void> {
     return;
   }
 
+  // Uninstall must work even when model settings or credentials are broken.
+  // Parse only its own options before importing the full session startup.
+  if (args[0] === 'uninstall') {
+    const { Command } = await import('@commander-js/extra-typings');
+    const program = new Command('noa');
+    program.command('uninstall')
+      .description('Uninstall Noa Claude (curl-installer build)')
+      .option('--purge', 'Also remove ~/.noa config directory')
+      .option('-y, --yes', 'Skip confirmation prompt')
+      .action(async options => {
+        const { uninstall } = await import('../cli/uninstall.js');
+        await uninstall(options);
+      });
+    await program.parseAsync(process.argv);
+    return;
+  }
+
   // For all other paths, load the startup profiler
   const {
     profileCheckpoint
