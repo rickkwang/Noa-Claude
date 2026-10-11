@@ -126,9 +126,15 @@ try {
         try {
           await until('prompt', () => /shift\+tab to cycle/.test(screen()));
           if (c.latchUsage) {
-            tmux('send-keys', '-t', 'cd', '-l', 'Run the compatibility fixture.'); tmux('send-keys', '-t', 'cd', 'Enter');
+            // Wait for React to commit the pasted input before sending Enter;
+            // back-to-back tmux writes can submit the previous empty value.
+            tmux('send-keys', '-t', 'cd', '-l', 'Run the compatibility fixture.');
+            await until('fixture input', () => screen().includes('Run the compatibility fixture.'));
+            tmux('send-keys', '-t', 'cd', 'Enter');
             await until('answer after field rejection', () => screen().includes('BOUNDARY_OK'));
-            tmux('send-keys', '-t', 'cd', '-l', '/usage'); tmux('send-keys', '-t', 'cd', 'Enter');
+            tmux('send-keys', '-t', 'cd', '-l', '/usage');
+            await until('usage input', () => /❯\s*\/usage/.test(screen()));
+            tmux('send-keys', '-t', 'cd', 'Enter');
             await until('latch summary in usage', () => screen().includes('API compatibility fallbacks:') && screen().includes('metadata'));
           } else {
             tmux('send-keys', '-t', 'cd', '-l', '/cd ' + realpathSync(target)); await new Promise(r => setTimeout(r, 300));
