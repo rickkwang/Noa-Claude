@@ -1,6 +1,6 @@
 // @ts-nocheck
 import memoize from 'lodash-es/memoize.js'
-import sample from 'lodash-es/sample.js'
+import { getSessionId } from '../bootstrap/state.js'
 import { getCwd } from '../utils/cwd.js'
 import { getCurrentProjectConfig, saveCurrentProjectConfig } from './config.js'
 import { env } from './env.js'
@@ -124,11 +124,23 @@ async function getFrequentlyModifiedFiles(): Promise<string[]> {
 
 const ONE_WEEK_IN_MS = 7 * 24 * 60 * 60 * 1000
 
-export const getExampleCommandFromCache = memoize(() => {
+// Seeds the example pick by session so it stays stable across re-renders
+// without memoizing it.
+function hashSeed(seed: string): number {
+  let hash = 0
+  for (let i = 0; i < seed.length; i++) {
+    hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0
+  }
+  return Math.abs(hash)
+}
+
+// Not memoized: exampleFiles is filled in asynchronously after startup, so
+// each call must re-read it. The caller's useMemo decides when to recompute.
+export function getExampleCommandFromCache(): string {
   const projectConfig = getCurrentProjectConfig()
-  const frequentFile = projectConfig.exampleFiles?.length
-    ? sample(projectConfig.exampleFiles)
-    : '<filepath>'
+  const hash = hashSeed(getSessionId())
+  const files = projectConfig.exampleFiles ?? []
+  const frequentFile = files[hash % files.length] ?? '<filepath>'
 
   const commands = [
     'fix lint errors',
@@ -141,8 +153,8 @@ export const getExampleCommandFromCache = memoize(() => {
     'create a util logging.py that...',
   ]
 
-  return `Try "${sample(commands)}"`
-})
+  return `Try "${commands[(hash >>> 8) % commands.length]}"`
+}
 
 export const refreshExampleCommands = memoize(async (): Promise<void> => {
   const projectConfig = getCurrentProjectConfig()
