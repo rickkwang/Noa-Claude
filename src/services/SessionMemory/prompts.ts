@@ -53,10 +53,10 @@ The file {{notesPath}} has already been read for you. Here are its current conte
 
 Your ONLY task is to use the Edit tool to update the notes file, then stop. You can make multiple edits (update every section as needed) - make all Edit tool calls in parallel in a single message. Do not call any other tools.
 
-CRITICAL RULES FOR EDITING:
+Rules for editing:
 - The file must maintain its exact structure with all sections, headers, and italic descriptions intact
--- NEVER modify, delete, or add section headers (the lines starting with '#' like # Task specification)
--- NEVER modify or delete the italic _section description_ lines (these are the lines in italics immediately following each header - they start and end with underscores)
+-- Do not modify, delete, or add section headers (the lines starting with '#' like # Task specification)
+-- Do not modify or delete the italic _section description_ lines (these are the lines in italics immediately following each header - they start and end with underscores)
 -- The italic _section descriptions_ are TEMPLATE INSTRUCTIONS that must be preserved exactly as-is - they guide what content belongs in each section
 -- ONLY update the actual content that appears BELOW the italic _section descriptions_ within each existing section
 -- Do NOT add any new sections, summaries, or information outside the existing structure
@@ -67,7 +67,7 @@ CRITICAL RULES FOR EDITING:
 - Do not include information that's already in the CLAUDE.md files included in the context
 - Keep each section under ~${MAX_SECTION_LENGTH} tokens/words - if a section is approaching this limit, condense it by cycling out less important details while preserving the most critical information
 - Focus on actionable, specific information that would help someone understand or recreate the work discussed in the conversation
-- IMPORTANT: Always update "Current State" to reflect the most recent work - this is critical for continuity after compaction
+- Always update "Current State" to reflect the most recent work; it is what keeps the session continuous after compaction
 
 Use the Edit tool with file_path: {{notesPath}}
 
@@ -183,13 +183,13 @@ function generateSectionReminders(
 
   if (overBudget) {
     parts.push(
-      `\n\nCRITICAL: The session memory file is currently ~${totalTokens} tokens, which exceeds the maximum of ${MAX_TOTAL_SESSION_MEMORY_TOKENS} tokens. You MUST condense the file to fit within this budget. Aggressively shorten oversized sections by removing less important details, merging related items, and summarizing older entries. Prioritize keeping "Current State" and "Errors & Corrections" accurate and detailed.`,
+      `\n\nThe session memory file is currently ~${totalTokens} tokens, over the maximum of ${MAX_TOTAL_SESSION_MEMORY_TOKENS} tokens. Condense it to fit within this budget. Aggressively shorten oversized sections by removing less important details, merging related items, and summarizing older entries. Prioritize keeping "Current State" and "Errors & Corrections" accurate and detailed.`,
     )
   }
 
   if (oversizedSections.length > 0) {
     parts.push(
-      `\n\n${overBudget ? 'Oversized sections to condense' : 'IMPORTANT: The following sections exceed the per-section limit and MUST be condensed'}:\n${oversizedSections.join('\n')}`,
+      `\n\n${overBudget ? 'Oversized sections to condense' : 'The following sections exceed the per-section limit and must be condensed'}:\n${oversizedSections.join('\n')}`,
     )
   }
 
