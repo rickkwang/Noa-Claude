@@ -57,6 +57,8 @@ noa uninstall --yes     # non-interactive
 
 If `~/.local/bin` is not on your `PATH`, the installer prints the line to add — `noa uninstall` will not remove it automatically. Uninstall works even with broken settings or missing model credentials. `--purge` removes the default user config directory; shared Keychain credentials, external caches, project `.noa/` files, and editor/terminal settings are preserved.
 
+Keep your config directory outside the installation directory. Install, update, and ordinary uninstall refuse a config directory inside the installation directory; move it outside first to preserve your settings and history.
+
 ## Core Features
 
 The session-fork workflow (`/fork`) is smoke-checked. Other listed commands are non-baseline — see [docs/product-governance.md](docs/product-governance.md).

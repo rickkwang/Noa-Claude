@@ -7,7 +7,9 @@ REPO="rickkwang/Noa-Claude"
 FALLBACK_REF="v1.20.1"
 PERSISTENT_INSTALL_DIR="${NOA_INSTALL_TARGET_DIR:-${HOME}/.noa/install}"
 ROOT_DIR=""
+SOURCE_ROOT_DIR=""
 TEMP_DIR=""
+BIN_TEMP_DIR=""
 BIN_DIR="${HOME}/.local/bin"
 
 # Install ref resolution: NOA_INSTALL_REF pins a tag/branch/commit; otherwise
@@ -42,6 +44,9 @@ canonical_path() {
 PERSISTENT_INSTALL_DIR="$(canonical_path "$PERSISTENT_INSTALL_DIR")"
 
 cleanup() {
+  if [[ -n "$BIN_TEMP_DIR" && -d "$BIN_TEMP_DIR" ]]; then
+    rm -rf "$BIN_TEMP_DIR"
+  fi
   if [[ -n "$TEMP_DIR" && -d "$TEMP_DIR" ]]; then
     rm -rf "$TEMP_DIR"
   fi
@@ -227,7 +232,7 @@ check_binary_conflict() {
     case "$existing" in /*) ;; *) existing="$(dirname "$link")/$existing" ;; esac
     local existing_real ours
     existing_real="$(canonical_path "$existing")"
-    for ours in "$PERSISTENT_INSTALL_DIR/bin/noa.js" "$PERSISTENT_INSTALL_DIR/dist/cli" "$ROOT_DIR/bin/noa.js" "$ROOT_DIR/dist/cli"; do
+    for ours in "$PERSISTENT_INSTALL_DIR/bin/noa.js" "$PERSISTENT_INSTALL_DIR/dist/cli" "$SOURCE_ROOT_DIR/bin/noa.js" "$SOURCE_ROOT_DIR/dist/cli"; do
       if [[ "$existing_real" == "$(canonical_path "$ours")" ]]; then
         return # already ours
       fi
@@ -250,10 +255,16 @@ check_binary_conflict() {
 # or an existing copy of this package. A checkout keeps its .git, so it is refused.
 check_install_target() {
   local target="$PERSISTENT_INSTALL_DIR"
-  local home_real
+  local home_real config_real
   home_real="$(canonical_path "$HOME")"
+  config_real="$(canonical_path "${CLAUDE_CODE_PRODUCT_DIR-${CLAUDE_CONFIG_DIR-${HOME}/.noa}}")"
   if [[ "$target" == "/" || "$target" == "$home_real" || "$home_real" == "$target/"* ]]; then
     echo "Error: refusing to install into HOME or its ancestor: $target" >&2
+    exit 1
+  fi
+  if [[ "$config_real" == "$target" || "$config_real" == "$target/"* ]]; then
+    echo "Error: config $config_real is inside installation directory $target." >&2
+    echo "Move your config outside the installation directory before installing or updating." >&2
     exit 1
   fi
   if [[ ! -e "$target" && ! -L "$target" ]]; then
@@ -329,6 +340,7 @@ persist_downloaded_source() {
 
 check_install_target
 resolve_root_dir
+SOURCE_ROOT_DIR="$(canonical_path "$ROOT_DIR")"
 check_binary_conflict
 
 cd "$ROOT_DIR"
@@ -339,12 +351,16 @@ bun install --frozen-lockfile
 echo "Building Noa Claude..."
 bun run build
 
+# Stage the new entry before swapping the install; a failed ln leaves both intact.
+mkdir -p "$BIN_DIR"
+BIN_TEMP_DIR="$(mktemp -d "$BIN_DIR/.noa-link.XXXXXX")"
+ln -s "$PERSISTENT_INSTALL_DIR/bin/noa.js" "$BIN_TEMP_DIR/noa"
+
 persist_downloaded_source
 
-mkdir -p "$BIN_DIR"
 check_binary_conflict
-rm -f -- "$BIN_DIR/noa"
-ln -s "$ROOT_DIR/bin/noa.js" "$BIN_DIR/noa"
+# rename replaces the entry atomically, including when the old entry is a symlink.
+bun -e 'require("fs").renameSync(process.argv[1], process.argv[2])' "$BIN_TEMP_DIR/noa" "$BIN_DIR/noa"
 
 echo "Installed: Noa Claude"
 echo "  $BIN_DIR/noa"

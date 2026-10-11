@@ -1,5 +1,6 @@
 // @ts-nocheck
 import chalk from 'chalk'
+import { sep } from 'node:path'
 import { logEvent } from 'src/services/analytics/index.js'
 import {
   getLatestVersion,
@@ -15,6 +16,7 @@ import {
 import { logForDebugging } from 'src/utils/debug.js'
 import { getDoctorDiagnostic } from 'src/utils/doctorDiagnostic.js'
 import {
+  canonicalPath,
   curlInstallerUrl,
   getOwnInstallRoot,
   NOA_CURL_INSTALL_COMMAND,
@@ -61,6 +63,15 @@ async function runCurlReinstall(autoConfirm: boolean): Promise<void> {
     writeToStdout(
       'This copy is not an installed Noa Claude, so it cannot tell where to update.\n' +
         'Update from the installed launcher instead: noa update\n',
+    )
+    await gracefulShutdown(1)
+    return
+  }
+  const configDir = canonicalPath(getClaudeConfigHomeDir())
+  if (configDir === installDir || configDir.startsWith(installDir + sep)) {
+    writeToStdout(
+      `Refusing to update: config ${configDir} is inside installation directory ${installDir}.\n` +
+        'Move your config outside the installation directory before updating.\n',
     )
     await gracefulShutdown(1)
     return
@@ -120,8 +131,11 @@ async function runCurlReinstall(autoConfirm: boolean): Promise<void> {
   const proceed =
     autoConfirm || (await confirmYesNo('Run this now? [y/N] '))
   if (!proceed) {
-    writeToStdout('Aborted. Run the command above to update manually.\n')
-    await gracefulShutdown(0)
+    const nonInteractive = !process.stdin.isTTY
+    writeToStdout(nonInteractive
+      ? 'Aborted: no terminal to confirm. Re-run with --yes.\n'
+      : 'Aborted. Run the command above to update manually.\n')
+    await gracefulShutdown(nonInteractive ? 1 : 0)
     return
   }
 

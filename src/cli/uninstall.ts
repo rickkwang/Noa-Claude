@@ -84,6 +84,15 @@ export async function uninstall(
     await gracefulShutdown(1)
     return
   }
+  const configPath = canonicalPath(configHome)
+  if (!options.purge && (configPath === installDir || configPath.startsWith(installDir + sep))) {
+    writeToStdout(
+      `Refusing to uninstall: config ${configHome} is inside installation directory ${installDir}.\n` +
+        'Move your config outside the installation directory before uninstalling.\n',
+    )
+    await gracefulShutdown(1)
+    return
+  }
   const binDir = join(homedir(), '.local', 'bin')
   const symlinkCandidates = [
     join(binDir, 'noa'),

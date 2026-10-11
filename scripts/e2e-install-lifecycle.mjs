@@ -12,6 +12,7 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -193,6 +194,70 @@ try {
     c2.status === 0 && linkTarget() === entry(canonicalCustom),
     c2.output.slice(-300),
   )
+
+  // Existing source launchers must hand off to the installed copy without force.
+  const sourceHome = join(work, 'source-home')
+  const sourceBin = join(sourceHome, '.local', 'bin', 'noa')
+  mkdirSync(dirname(sourceBin), { recursive: true })
+  mkdirSync(join(snapshot, '.git'))
+  mkdirSync(join(snapshot, 'dist'), { recursive: true })
+  copyFileSync(entry(snapshot), join(snapshot, 'dist', 'cli'))
+  chmodSync(join(snapshot, 'dist', 'cli'), 0o755)
+  for (const sourceEntry of [entry(snapshot), join(snapshot, 'dist', 'cli')]) {
+    if (existsSync(sourceBin)) unlinkSync(sourceBin)
+    symlinkSync(sourceEntry, sourceBin)
+    const migrated = step(['bash', join(snapshot, 'install.sh')], {
+      cwd: snapshot,
+      env: { HOME: sourceHome },
+      note: `install over source entry ${sourceEntry}`,
+    })
+    check(`source ${basename(dirname(sourceEntry))} entry migrates without force`,
+      migrated.status === 0 && readlinkSync(sourceBin) === entry(join(realpathSync(sourceHome), '.noa', 'install')), migrated.output.slice(-400))
+    check('source checkout survives migration', existsSync(join(snapshot, '.git')) && existsSync(sourceEntry))
+  }
+
+  const unconfirmedUpdate = step(['bun', entry(canonicalCustom), 'update'], {
+    env: { NOA_INSTALL_REF: 'v1.19.0' },
+    note: 'non-interactive update must fail when confirmation is unavailable',
+  })
+  check('unconfirmed update exits 1 and requests --yes',
+    unconfirmedUpdate.status === 1 && unconfirmedUpdate.output.includes('Re-run with --yes'), unconfirmedUpdate.output)
+  check('unconfirmed update preserves install and link', existsSync(entry(canonicalCustom)) && linkTarget() === entry(canonicalCustom))
+
+  // Configuration inside the install must be rejected before any replacement or deletion.
+  const nestedConfig = join(canonicalCustom, 'user-config')
+  const nestedHistory = join(nestedConfig, 'history.jsonl')
+  for (const action of ['update', 'reinstall', 'uninstall']) {
+    mkdirSync(nestedConfig, { recursive: true })
+    writeFileSync(join(nestedConfig, 'settings.json'), '{}\n')
+    writeFileSync(nestedHistory, 'keep history\n')
+    const env = { CLAUDE_CONFIG_DIR: nestedConfig }
+    const guarded = action === 'reinstall'
+      ? install({ ...env, NOA_INSTALL_TARGET_DIR: canonicalCustom }, 'reinstall with nested config')
+      : step(['bun', entry(canonicalCustom), action, '--yes'], {
+          env: { ...env, NOA_INSTALL_REF: 'v1.19.0' },
+          note: `${action} with nested config`,
+        })
+    check(`${action} refuses nested config`, guarded.status === 1 && guarded.output.includes('inside'), guarded.output.slice(-400))
+    check(`${action} preserves nested history`, existsSync(nestedHistory) && readFileSync(nestedHistory, 'utf8') === 'keep history\n')
+    // Keep the remaining cases independent when running against the unfixed code.
+    if (action === 'update' && guarded.status === 0 || !existsSync(entry(canonicalCustom))) {
+      install({ NOA_INSTALL_TARGET_DIR: canonicalCustom }, 'restore fixture after destructive regression')
+    }
+  }
+
+  const shimDir = join(work, 'link-failure-shim')
+  mkdirSync(shimDir)
+  writeFileSync(join(shimDir, 'ln'), '#!/bin/sh\nexit 73\n')
+  chmodSync(join(shimDir, 'ln'), 0o755)
+  const oldMarker = join(canonicalCustom, 'old-install-marker')
+  writeFileSync(oldMarker, 'original copy')
+  const linkFailure = install({ NOA_INSTALL_TARGET_DIR: canonicalCustom, PATH: `${shimDir}:${process.env.PATH}` }, 'failed link creation')
+  check('link creation failure exits 73', linkFailure.status === 73, linkFailure.output.slice(-300))
+  check('link creation failure keeps original entry', linkTarget() === entry(canonicalCustom))
+  check('link creation failure keeps original install', existsSync(oldMarker))
+  check('link staging directories are cleaned', !step(['bash', '-c', 'compgen -G "$HOME/.local/bin/.noa-link.*"']).output.trim())
+  if (!existsSync(bin)) symlinkSync(entry(canonicalCustom), bin)
 
   // 4. Checkout copies must not act on the installed copy.
   const notInstalled = 'not an installed Noa Claude'
