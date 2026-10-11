@@ -1,6 +1,5 @@
 // @ts-nocheck
 import { c as _c } from "react/compiler-runtime";
-import chalk from 'chalk';
 import * as React from 'react';
 import type { CommandResultDisplay } from '../../commands.js';
 import { ModelPicker } from '../../components/ModelPicker.js';
@@ -35,7 +34,7 @@ function ModelPickerWrapper(t0) {
         action: "cancel" as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
       });
       const displayModel = renderModelLabel(mainLoopModel);
-      onDone(`Kept model as ${chalk.bold(displayModel)}`, {
+      onDone(`Kept model as \`${displayModel}\``, {
         display: "system"
       });
     };
@@ -59,9 +58,9 @@ function ModelPickerWrapper(t0) {
         mainLoopModel: model,
         mainLoopModelForSession: null
       }));
-      let message = `Set model to ${chalk.bold(renderModelLabel(model))} and saved as your default for new sessions`;
+      let message = `Set model to \`${renderModelLabel(model)}\` and saved as your default for new sessions`;
       if (effort !== undefined) {
-        message = message + ` with ${chalk.bold(effort)} effort`;
+        message = message + ` with \`${effort}\` effort`;
       }
       let wasFastModeToggledOn = undefined;
       if (isFastModeEnabled()) {
@@ -107,9 +106,9 @@ function ModelPickerWrapper(t0) {
         ...prev_1,
         mainLoopModelForSession: model ?? getDefaultMainLoopModelSetting()
       }));
-      let message = `Set model to ${chalk.bold(renderModelLabel(model))} for this session only`;
+      let message = `Set model to \`${renderModelLabel(model)}\` for this session only`;
       if (effort !== undefined) {
-        message = message + ` with ${chalk.bold(effort)} effort`;
+        message = message + ` with \`${effort}\` effort`;
       }
       onDone(message);
     };
@@ -236,7 +235,7 @@ function SetModelAndClose({
         mainLoopModel: modelValue,
         mainLoopModelForSession: null
       }));
-      let message = `Set model to ${chalk.bold(renderModelLabel(modelValue))}`;
+      let message = `Set model to \`${renderModelLabel(modelValue)}\``;
       let wasFastModeToggledOn = undefined;
       if (isFastModeEnabled()) {
         clearFastModeCooldown();
@@ -290,7 +289,7 @@ function ShowModelAndClose(t0) {
   const displayModel = renderModelLabel(mainLoopModel);
   const effortInfo = effortValue !== undefined ? ` (effort: ${effortValue})` : "";
   if (mainLoopModelForSession) {
-    onDone(`Current model: ${chalk.bold(renderModelLabel(mainLoopModelForSession))} for this session only (base model: ${displayModel})${effortInfo}`);
+    onDone(`Current model: \`${renderModelLabel(mainLoopModelForSession)}\` for this session only (base model: ${displayModel})${effortInfo}`);
   } else {
     onDone(`Current model: ${displayModel}${effortInfo}`);
   }
