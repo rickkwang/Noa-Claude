@@ -6,6 +6,17 @@ import { getGlobalConfig, saveGlobalConfig } from './config.js'
 import { normalizeApiKeyForConfig } from './authPortable.js'
 import { withAuthTransitionLock } from './authTransitionLock.js'
 import { logForDebugging } from './debug.js'
+import { logError } from './log.js'
+import {
+  commitProviderApiKeys,
+  finishProviderApiKeys,
+  providerKeychainSupported,
+  readProviderApiKeys,
+  rollbackProviderApiKeys,
+  sameApiKeys,
+  type ProviderApiKeys,
+  type ProviderKeyCommit,
+} from './providerKeychain.js'
 import { getClaudeConfigHomeDir, isBareMode } from './envUtils.js'
 import { isModelAlias } from './model/aliases.js'
 import {
@@ -163,13 +174,52 @@ function providerProfilesPath(): string {
 // let other scripts through while blocking pasted prose in one language.
 const INVALID_CREDENTIAL_CHARS = /[^\x21-\x7e]/
 
-export async function loadProviderProfiles(): Promise<ProviderProfile[]> {
+async function readProviderProfilesFile(): Promise<ProviderProfile[]> {
   try {
     const content = await readFile(providerProfilesPath(), 'utf-8')
     return JSON.parse(content)
   } catch {
     return []
   }
+}
+
+// Throws on keychain failure so a save cannot write back a profile whose key
+// was merely unreadable, which would delete it.
+async function hydrateProviderApiKeys(profiles: ProviderProfile[]): Promise<{
+  profiles: ProviderProfile[]
+  storedKeys: ProviderApiKeys
+}> {
+  if (!providerKeychainSupported) return { profiles, storedKeys: {} }
+  const storedKeys = await readProviderApiKeys()
+  return {
+    profiles: profiles.map(profile => {
+      const apiKey = profile.apiKey ?? storedKeys[profile.id]
+      return apiKey ? { ...profile, apiKey } : profile
+    }),
+    storedKeys,
+  }
+}
+
+export async function loadProviderProfiles(): Promise<ProviderProfile[]> {
+  const stored = await readProviderProfilesFile()
+  let profiles: ProviderProfile[]
+  try {
+    profiles = (await hydrateProviderApiKeys(stored)).profiles
+  } catch (error) {
+    // Profiles still load, but without keys: requests would fail as unauthenticated, so record why.
+    logError(error)
+    return stored
+  }
+  // Earlier versions left plaintext keys in the file. Migrate under the lock
+  // from fresh contents: saving this load's snapshot could resurrect a profile
+  // deleted by another process since it was read.
+  if (providerKeychainSupported && stored.some(p => p.apiKey)) {
+    await mutateProviderProfiles(current => ({
+      next: current,
+      result: undefined,
+    })).catch(error => logError(error))
+  }
+  return profiles
 }
 
 export async function saveProviderProfiles(
@@ -205,10 +255,12 @@ async function mutateProviderProfiles<T>(
     retries: { retries: 20, minTimeout: 5, maxTimeout: 50 },
   })
   try {
-    const profiles = await loadProviderProfiles()
+    const { profiles, storedKeys } = await hydrateProviderApiKeys(
+      await readProviderProfilesFile(),
+    )
     const { next, result } = mutate(profiles)
     if (next) {
-      await writeProviderProfilesUnlocked(next)
+      await writeProviderProfilesUnlocked(next, storedKeys)
     }
     return result
   } finally {
@@ -218,12 +270,45 @@ async function mutateProviderProfiles<T>(
 
 async function writeProviderProfilesUnlocked(
   profiles: ProviderProfile[],
+  storedKeys: ProviderApiKeys,
 ): Promise<void> {
-  await writeFile(
-    providerProfilesPath(),
-    JSON.stringify(profiles, null, 2),
-    'utf8',
-  )
+  let persisted = profiles
+  let commit: ProviderKeyCommit | undefined
+  if (providerKeychainSupported) {
+    const keys: ProviderApiKeys = {}
+    for (const profile of profiles) {
+      if (profile.apiKey) keys[profile.id] = profile.apiKey
+    }
+    // Removed profiles and cleared keys drop out of the map here.
+    if (!sameApiKeys(keys, storedKeys)) {
+      commit = await commitProviderApiKeys(keys)
+    }
+    persisted = profiles.map(({ apiKey: _apiKey, ...rest }) => rest)
+  }
+  try {
+    await writeFile(
+      providerProfilesPath(),
+      JSON.stringify(persisted, null, 2),
+      'utf8',
+    )
+  } catch (error) {
+    // The keychain must not move ahead of the file: undo the commit so a
+    // failed save leaves both where they were.
+    if (commit) {
+      try {
+        await rollbackProviderApiKeys(commit)
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [error, rollbackError],
+          'provider profile save and keychain rollback both failed',
+        )
+      }
+    }
+    throw error
+  }
+  if (commit) {
+    await finishProviderApiKeys(commit).catch(error => logError(error))
+  }
 }
 
 export async function withDeactivatedProviderProfiles<T>(
@@ -236,18 +321,22 @@ export async function withDeactivatedProviderProfiles<T>(
     retries: { retries: 20, minTimeout: 5, maxTimeout: 50 },
   })
   try {
-    const profiles = await loadProviderProfiles()
+    // Hydrate directly: loadProviderProfiles() takes this same lock to migrate.
+    const { profiles, storedKeys } = await hydrateProviderApiKeys(
+      await readProviderProfilesFile(),
+    )
     const active = getActiveProviderProfile(profiles)
     try {
       if (active) {
         await writeProviderProfilesUnlocked(
           profiles.map(profile => ({ ...profile, active: false })),
+          storedKeys,
         )
       }
       return await operation(active)
     } catch (error) {
       try {
-        if (active) await writeProviderProfilesUnlocked(profiles)
+        if (active) await writeProviderProfilesUnlocked(profiles, storedKeys)
         await rollback?.(active)
       } catch (rollbackError) {
         throw new AggregateError(

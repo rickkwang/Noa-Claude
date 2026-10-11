@@ -99,6 +99,8 @@ function runAnthropicSwitch({ settingsModel }: { settingsModel: string }) {
       env: {
         ...process.env,
         NODE_ENV: undefined,
+        // Keep the child on file storage: it would otherwise leave keychain items behind.
+        NOA_CLAUDE_PROVIDER_KEYCHAIN: '0',
         CLAUDE_CONFIG_DIR: configDir,
         CLAUDE_CODE_PRODUCT_DIR: configDir,
         // What the launcher hands a profile-routed session: settings.env
