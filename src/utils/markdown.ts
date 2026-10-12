@@ -79,8 +79,7 @@ function isWebDisplayableUrl(url: string): boolean {
   return !/^(file:|\/|~|\.\.?\/)/i.test(url)
 }
 
-// Terminals known to render ANSI strikethrough. Mirrors upstream's allowlist so
-// that terminals which draw it badly (Apple Terminal, linux console) get ~~x~~.
+// Terminals known to render ANSI strikethrough; other terminals get ~~x~~.
 const STRIKETHROUGH_TERM_PROGRAMS = new Set([
   'iTerm.app',
   'vscode',
@@ -326,8 +325,8 @@ export function formatToken(
                 ? token.text
                 : token.text.replace(NBSP_ENTITY_RE, ' '),
             )
-        // Keep a list marker like "2." glued to the word before it, so a wrap
-        // never strands the number at the start of a line.
+        // In list items, glue "N." to the word before it with a non-breaking
+        // space so a wrap never strands the number at the start of a line.
         const glued =
           parent?.type === 'list_item'
             ? rendered.replace(/ (\d{1,9}[.)])(?!\w)/g, '\u00a0$1')
@@ -452,7 +451,7 @@ function linkifyIssueReferences(text: string): string {
     issueHostLookupCwd = getCwd()
     void detectCurrentRepositoryWithHost()
   }
-  // Strip a trailing port before classifying, as upstream does.
+  // Strip a trailing port before classifying the host.
   const host = (getCachedRepositoryHost() ?? 'github.com')
     .replace(/:\d+$/, '')
     .toLowerCase()

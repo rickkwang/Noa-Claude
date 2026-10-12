@@ -1,10 +1,11 @@
 // @ts-nocheck
 import { marked, type Token, type Tokens } from 'marked';
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useRef, useSyncExternalStore } from 'react';
 import { useSettings } from '../hooks/useSettings.js';
 import { Ansi, Box, Text, useTheme } from '../ink.js';
 import { type CliHighlight, useCliHighlight } from '../utils/cliHighlight.js';
 import { logForDebugging } from '../utils/debug.js';
+import { subscribeRepositoryHost, getCachedRepositoryHost } from '../utils/detectRepository.js';
 import { hashContent } from '../utils/hash.js';
 import {
   configureMarked,
@@ -53,7 +54,7 @@ function plainParagraphTokens(content: string): Token[] {
 }
 
 // marked throws RangeError on pathological nesting. Fall back to one plain
-// paragraph so the message still renders (upstream does the same).
+// paragraph so the message still renders.
 function lexMarkdown(content: string): Token[] {
   try {
     return marked.lexer(content);
@@ -117,12 +118,14 @@ function MarkdownBody({
 }) {
   const [theme] = useTheme();
   configureMarked();
+  // Issue links depend on the git host, which resolves asynchronously; re-render when it arrives.
+  const repoHost = useSyncExternalStore(subscribeRepositoryHost, getCachedRepositoryHost);
   const blocks = useMemo(() => renderBlocks(cachedLexer(stripPromptXMLTags(children)), {
     theme,
     highlight,
     dimColor,
     maxProseWidth
-  }, null, 0), [children, dimColor, highlight, theme, maxProseWidth]);
+  }, null, 0), [children, dimColor, highlight, theme, maxProseWidth, repoHost]);
   return <Box flexDirection="column">{blocks}</Box>;
 }
 
@@ -166,7 +169,7 @@ function renderBlocks(tokens, ctx, parent, listDepth, leadingText = '') {
       continue;
     }
     blankLines += leading;
-    // The task checkbox goes on the item's first prose block, as upstream does.
+    // The task checkbox goes on the item's first prose block.
     if (prefix && (token.type === 'text' || token.type === 'paragraph')) {
       text = prefix + text;
       prefix = '';

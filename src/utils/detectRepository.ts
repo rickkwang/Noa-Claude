@@ -10,6 +10,20 @@ export type ParsedRepository = {
 }
 
 const repositoryWithHostCache = new Map<string, ParsedRepository | null>()
+const repositoryWithHostListeners = new Set<() => void>()
+
+function setRepositoryWithHost(cwd: string, value: ParsedRepository | null): void {
+  repositoryWithHostCache.set(cwd, value)
+  for (const listener of repositoryWithHostListeners) listener()
+}
+
+/** Subscribes to changes of the cached git host; returns an unsubscribe fn. */
+export function subscribeRepositoryHost(listener: () => void): () => void {
+  repositoryWithHostListeners.add(listener)
+  return () => {
+    repositoryWithHostListeners.delete(listener)
+  }
+}
 
 export function clearRepositoryCaches(): void {
   repositoryWithHostCache.clear()
@@ -42,7 +56,7 @@ export async function detectCurrentRepositoryWithHost(): Promise<ParsedRepositor
     logForDebugging(`Git remote URL: ${remoteUrl}`)
     if (!remoteUrl) {
       logForDebugging('No git remote URL found')
-      repositoryWithHostCache.set(cwd, null)
+      setRepositoryWithHost(cwd, null)
       return null
     }
 
@@ -50,11 +64,11 @@ export async function detectCurrentRepositoryWithHost(): Promise<ParsedRepositor
     logForDebugging(
       `Parsed repository: ${parsed ? `${parsed.host}/${parsed.owner}/${parsed.name}` : null} from URL: ${remoteUrl}`,
     )
-    repositoryWithHostCache.set(cwd, parsed)
+    setRepositoryWithHost(cwd, parsed)
     return parsed
   } catch (error) {
     logForDebugging(`Error detecting repository: ${error}`)
-    repositoryWithHostCache.set(cwd, null)
+    setRepositoryWithHost(cwd, null)
     return null
   }
 }
