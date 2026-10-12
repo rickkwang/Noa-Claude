@@ -1,3 +1,5 @@
+import { homedir } from 'os'
+import { resolve } from 'path'
 import { type CwdOverride, getCwdOverride } from './cwd.js'
 import { getPathsForPermissionCheck } from './fsOperations.js'
 import { pathInWorkingPath } from './permissions/filesystem.js'
@@ -54,4 +56,38 @@ export function checkWorktreeEscape(
     `overwrite work from the main session or a parallel agent. Use the copy of this file ` +
     `inside ${cwd} instead.`
   )
+}
+
+const CD_TARGET_PATTERN = /(?:^|[;&|(])\s*(?:cd|pushd)\s+(?:"([^"]*)"|'([^']*)'|([^\s;&|()]+))/g
+// git options that point git at a repository or worktree, plus the env forms.
+const GIT_PATH_PATTERN = /\bgit\b[^;&|()\n]*?(?:\s-C\s*|\s--git-dir[= ]|\s--work-tree[= ])("[^"]*"|'[^']*'|[^\s;&|()]+)|(?:^|\s)(?:GIT_DIR|GIT_WORK_TREE)=("[^"]*"|'[^']*'|[^\s;&|()]+)/g
+const RUNTIME_TARGET = /[$`]/
+
+/**
+ * Best-effort static check of a shell command for an isolated agent: `cd` and
+ * `pushd` targets, and git's -C / --git-dir / --work-tree / GIT_DIR /
+ * GIT_WORK_TREE targets. The shell only moves its cwd after the command runs,
+ * so checkWorktreeEscape on the current cwd misses `cd <shared checkout> && <write>`
+ * in one command. A target computed at runtime cannot be checked, so it is refused.
+ */
+export function checkWorktreeEscapeForCommand(
+  command: string,
+  from: string,
+): string | null {
+  const override = getCwdOverride()
+  if (override === undefined || (override.isolated === false && !override.isolationRoot)) return null
+  const targets = [
+    ...[...command.matchAll(CD_TARGET_PATTERN)].map(m => m[1] ?? m[2] ?? m[3] ?? ''),
+    ...[...command.matchAll(GIT_PATH_PATTERN)].map(m => m[1] ?? m[2] ?? ''),
+  ]
+  for (const raw of targets) {
+    const target = raw.replace(/^["']|["']$/g, '')
+    if (RUNTIME_TARGET.test(target)) {
+      return `This command points at a directory computed at runtime (${raw}), which cannot be verified to stay inside this agent's worktree. Use a literal path.`
+    }
+    const path = target.startsWith('~') ? homedir() + target.slice(1) : target
+    const error = checkWorktreeEscape(resolve(from, path))
+    if (error) return error
+  }
+  return null
 }

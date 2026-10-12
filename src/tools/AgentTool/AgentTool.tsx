@@ -51,7 +51,7 @@ import { setAgentColor } from './agentColorManager.js';
 import { agentToolResultSchema, classifyHandoffIfNeeded, emitTaskProgress, finalizeAgentTool, findAgentsByType, getLastToolUseName, runAsyncAgentLifecycle } from './agentToolUtils.js';
 import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js';
 import { AGENT_TOOL_NAME, assignAgentPersonalityName, LEGACY_AGENT_TOOL_NAME, ONE_SHOT_BUILTIN_AGENT_TYPES, releaseAgentPersonalityName, shouldUseAgentPersonalityName } from './constants.js';
-import { buildForkedMessages, buildWorktreeNotice, FORK_AGENT, isForkSubagentEnabled, isInForkChild } from './forkSubagent.js';
+import { buildForkedMessages, buildWorktreeNotice, FORK_AGENT, FORK_SUBAGENT_TYPE, isForkSubagentEnabled, isInForkChild } from './forkSubagent.js';
 import type { AgentDefinition } from './loadAgentsDir.js';
 import { filterAgentsByMcpRequirements, hasRequiredMcpServers, isBuiltInAgent } from './loadAgentsDir.js';
 import { getPrompt } from './prompt.js';
@@ -342,8 +342,8 @@ export const AgentTool = buildTool({
     // - subagent_type set: use it (explicit wins)
     // - subagent_type omitted, gate on: fork path (undefined)
     // - subagent_type omitted, gate off: default general-purpose
-    const effectiveType = subagent_type ?? (isForkSubagentEnabled() ? undefined : GENERAL_PURPOSE_AGENT.agentType);
-    const isForkPath = effectiveType === undefined;
+    const effectiveType = subagent_type ?? GENERAL_PURPOSE_AGENT.agentType;
+    const isForkPath = effectiveType === FORK_SUBAGENT_TYPE && isForkSubagentEnabled();
     let selectedAgent: AgentDefinition;
     if (isForkPath) {
       // Recursive fork guard: fork children keep the Agent tool in their

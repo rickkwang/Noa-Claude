@@ -148,14 +148,14 @@ const lightTheme: Theme = {
   diffAddedWord: 'rgb(47,157,68)', // Medium green
   diffRemovedWord: 'rgb(209,69,75)', // Medium red
   // Agent colors
-  red_FOR_SUBAGENTS_ONLY: 'rgb(220,38,38)', // Red 600
-  blue_FOR_SUBAGENTS_ONLY: 'rgb(37,99,235)', // Blue 600
-  green_FOR_SUBAGENTS_ONLY: 'rgb(22,163,74)', // Green 600
-  yellow_FOR_SUBAGENTS_ONLY: 'rgb(202,138,4)', // Yellow 600
-  purple_FOR_SUBAGENTS_ONLY: 'rgb(147,51,234)', // Purple 600
-  orange_FOR_SUBAGENTS_ONLY: 'rgb(234,88,12)', // Orange 600
-  pink_FOR_SUBAGENTS_ONLY: 'rgb(219,39,119)', // Pink 600
-  cyan_FOR_SUBAGENTS_ONLY: 'rgb(8,145,178)', // Cyan 600
+  red_FOR_SUBAGENTS_ONLY: 'rgb(160,70,70)',
+  blue_FOR_SUBAGENTS_ONLY: 'rgb(60,90,160)',
+  green_FOR_SUBAGENTS_ONLY: 'rgb(70,120,80)',
+  yellow_FOR_SUBAGENTS_ONLY: 'rgb(150,120,40)',
+  purple_FOR_SUBAGENTS_ONLY: 'rgb(115,85,150)',
+  orange_FOR_SUBAGENTS_ONLY: 'rgb(160,100,60)',
+  pink_FOR_SUBAGENTS_ONLY: 'rgb(150,85,115)',
+  cyan_FOR_SUBAGENTS_ONLY: 'rgb(60,120,125)',
   // Grove colors
   professionalBlue: 'rgb(106,155,204)',
   // Chrome colors
@@ -473,14 +473,14 @@ const darkTheme: Theme = {
   diffAddedWord: 'rgb(56,166,96)', // Medium green
   diffRemovedWord: 'rgb(179,89,107)', // Softer red (less intense than bright red)
   // Agent colors
-  red_FOR_SUBAGENTS_ONLY: 'rgb(220,38,38)', // Red 600
-  blue_FOR_SUBAGENTS_ONLY: 'rgb(37,99,235)', // Blue 600
-  green_FOR_SUBAGENTS_ONLY: 'rgb(22,163,74)', // Green 600
-  yellow_FOR_SUBAGENTS_ONLY: 'rgb(202,138,4)', // Yellow 600
-  purple_FOR_SUBAGENTS_ONLY: 'rgb(147,51,234)', // Purple 600
-  orange_FOR_SUBAGENTS_ONLY: 'rgb(234,88,12)', // Orange 600
-  pink_FOR_SUBAGENTS_ONLY: 'rgb(219,39,119)', // Pink 600
-  cyan_FOR_SUBAGENTS_ONLY: 'rgb(8,145,178)', // Cyan 600
+  red_FOR_SUBAGENTS_ONLY: 'rgb(196,120,120)',
+  blue_FOR_SUBAGENTS_ONLY: 'rgb(110,140,200)',
+  green_FOR_SUBAGENTS_ONLY: 'rgb(124,170,130)',
+  yellow_FOR_SUBAGENTS_ONLY: 'rgb(196,174,110)',
+  purple_FOR_SUBAGENTS_ONLY: 'rgb(162,130,190)',
+  orange_FOR_SUBAGENTS_ONLY: 'rgb(204,150,110)',
+  pink_FOR_SUBAGENTS_ONLY: 'rgb(200,130,160)',
+  cyan_FOR_SUBAGENTS_ONLY: 'rgb(110,172,178)',
   // Grove colors
   professionalBlue: 'rgb(106,155,204)',
   // Chrome colors

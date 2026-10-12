@@ -9,7 +9,15 @@ import { GREP_TOOL_NAME } from '../GrepTool/prompt.js'
 import { SEND_MESSAGE_TOOL_NAME } from '../SendMessageTool/constants.js'
 import { AGENT_TOOL_NAME } from './constants.js'
 import { shouldUseCompactSystemPrompt } from '../../constants/systemPromptCompact.js'
+import { isForkSubagentEnabled } from './forkSubagent.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
+
+// Appended only when forks are on, so the ported general-purpose sentence stays byte-identical.
+function forkSubagentSentence(): string {
+  return isForkSubagentEnabled()
+    ? ' To fork your conversation instead, set subagent_type to "fork": the fork inherits your full conversation context, always runs on your model (a model override is ignored), and runs in the background.'
+    : ''
+}
 
 function getToolsDescription(agent: AgentDefinition): string {
   const { tools, disallowedTools } = agent
@@ -73,12 +81,11 @@ export async function getPrompt(
     ? agentDefinitions.filter(a => allowedAgentTypes.includes(a.agentType))
     : agentDefinitions
 
-  // Upstream says "any agent other than a fork"; this build has no forks.
   const writingThePromptSection = `
 
 ## Writing the prompt
 
-Any agent starts with zero context. Brief the agent like a smart colleague who just walked into the room — it hasn't seen this conversation, doesn't know what you've tried, doesn't understand why this task matters.
+${isForkSubagentEnabled() ? 'Any agent other than a fork starts with zero context.' : 'Any agent starts with zero context.'} Brief the agent like a smart colleague who just walked into the room — it hasn't seen this conversation, doesn't know what you've tried, doesn't understand why this task matters.
 - Explain what you're trying to accomplish and why.
 - Describe what you've already learned or ruled out.
 - Give enough context about the surrounding problem that the agent can make judgment calls rather than just following a narrow instruction.
@@ -136,7 +143,7 @@ The ${AGENT_TOOL_NAME} tool launches specialized agents (subprocesses) that auto
 
 ${agentListSection}
 
-When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.`
+When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.${forkSubagentSentence()}`
 
   // Coordinator mode gets the slim prompt -- the coordinator system prompt
   // already covers usage notes, examples, and when-not-to-use guidance.
@@ -161,7 +168,7 @@ When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to sel
   // and suppresses the section entirely behind a plan-tier notice we also don't
   // have; the long variant is the one its default mode emits.
   if (shouldUseCompactSystemPrompt(model)) {
-    const subagentTypeLine = `When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.`
+    const subagentTypeLine = `When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.${forkSubagentSentence()}`
 
 
     const backgroundNote =
@@ -212,7 +219,7 @@ Each agent type has specific capabilities and tools available to it.
 
 ${agentListSection}
 
-When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.`
+When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.${forkSubagentSentence()}`
 
   // Verbose variant. Sentences follow upstream's wording where the binary
   // confirms them. Fork subagents and per-call effort have no counterpart in

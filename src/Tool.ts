@@ -256,6 +256,9 @@ export type ToolUseContext = {
   setConversationId?: (id: UUID) => void
   agentId?: AgentId // Only set for subagents; use getSessionId() for session ID. Hooks use this to distinguish subagent calls.
   agentType?: string // Subagent type name. For the main thread's --agent type, hooks fall back to getMainThreadAgentType().
+  /** Set for a subagent running in an isolated worktree: the directory its shell must stay in.
+   *  Lives on the context so it survives a lost cwd override (see BashTool validateInput). */
+  isolatedWorktreeRoot?: string
   /** When true, canUseTool must always be called even when hooks auto-approve.
    *  Used by speculation for overlay file path rewriting. */
   requireCanUseTool?: boolean

@@ -4,7 +4,7 @@ import { feature } from 'bun:bundle';
 import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
 import * as React from 'react';
 import { NO_CONTENT_MESSAGE } from '../../constants/messages.js';
-import { COMMAND_MESSAGE_TAG, LOCAL_COMMAND_CAVEAT_TAG, TASK_NOTIFICATION_TAG, TEAMMATE_MESSAGE_TAG, TICK_TAG } from '../../constants/xml.js';
+import { COMMAND_MESSAGE_TAG, FORK_BOILERPLATE_TAG, LOCAL_COMMAND_CAVEAT_TAG, TASK_NOTIFICATION_TAG, TEAMMATE_MESSAGE_TAG, TICK_TAG } from '../../constants/xml.js';
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js';
 import { extractTag, INTERRUPT_MESSAGE, INTERRUPT_MESSAGE_FOR_TOOL_USE } from '../../utils/messages.js';
 import { InterruptedByUser } from '../InterruptedByUser.js';
@@ -19,6 +19,7 @@ import { UserPlanMessage } from './UserPlanMessage.js';
 import { UserPromptMessage } from './UserPromptMessage.js';
 import { UserResourceUpdateMessage } from './UserResourceUpdateMessage.js';
 import { UserTeammateMessage } from './UserTeammateMessage.js';
+import { parseForkDirective, UserForkBoilerplateMessage } from './UserForkBoilerplateMessage.js';
 type Props = {
   addMargin: boolean;
   param: TextBlockParam;
@@ -140,6 +141,9 @@ export function UserTextMessage(t0) {
       t1 = $[25];
     }
     return t1;
+  }
+  if (param.text.startsWith(`<${FORK_BOILERPLATE_TAG}>`) && parseForkDirective(param.text) !== null) {
+    return <UserForkBoilerplateMessage addMargin={addMargin} param={param} verbose={verbose} />;
   }
   if (param.text.includes(`<${TASK_NOTIFICATION_TAG}`)) {
     let t1;

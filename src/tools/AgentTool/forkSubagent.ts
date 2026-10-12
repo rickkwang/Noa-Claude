@@ -9,8 +9,12 @@ import type {
   AssistantMessage,
   Message as MessageType,
 } from '../../types/message.js'
+import { getIsNonInteractiveSession } from '../../bootstrap/state.js'
+import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
 import { logForDebugging } from '../../utils/debug.js'
+import { isEnvTruthy } from '../../utils/envUtils.js'
 import { createUserMessage } from '../../utils/messages.js'
+import { AGENT_TOOL_NAME } from './constants.js'
 import type { BuiltInAgentDefinition } from './loadAgentsDir.js'
 
 /**
@@ -18,8 +22,9 @@ import type { BuiltInAgentDefinition } from './loadAgentsDir.js'
  *
  * When enabled:
  * - `subagent_type` becomes optional on the Agent tool schema
- * - Omitting `subagent_type` triggers an implicit fork: the child inherits
- *   the parent's full conversation context and system prompt
+ * - `subagent_type: "fork"` forks: the child inherits the parent's full
+ *   conversation context and system prompt. Omitting `subagent_type` still
+ *   starts a general-purpose agent
  * - All agent spawns run in the background (async) for a unified
  *   `<task-notification>` interaction model
  * - `/fork <directive>` slash command is available
@@ -28,9 +33,14 @@ import type { BuiltInAgentDefinition } from './loadAgentsDir.js'
  * orchestration role and has its own delegation model.
  */
 export function isForkSubagentEnabled(): boolean {
-  // FORK_SUBAGENT gates a module absent from this fork
-  // (UserForkBoilerplateMessage) and cannot be enabled in any build profile.
-  return false
+  // Coordinator mode owns orchestration, so forks are off there (upstream's
+  // gate checks coordinator mode first, before any override).
+  if (isCoordinatorMode()) return false
+  // NOA_CLAUDE_FORK_SUBAGENT / CLAUDE_CODE_FORK_SUBAGENT force it either way;
+  // otherwise on for interactive sessions only, matching upstream.
+  const override = process.env.NOA_CLAUDE_FORK_SUBAGENT ?? process.env.CLAUDE_CODE_FORK_SUBAGENT
+  if (override !== undefined && override.trim() !== '') return isEnvTruthy(override)
+  return !getIsNonInteractiveSession()
 }
 
 /** Synthetic agent type name used for analytics when the fork path fires. */
@@ -55,7 +65,7 @@ export const FORK_SUBAGENT_TYPE = 'fork'
 export const FORK_AGENT = {
   agentType: FORK_SUBAGENT_TYPE,
   whenToUse:
-    'Implicit fork — inherits full conversation context. Not selectable via subagent_type; triggered by omitting subagent_type when the fork experiment is active.',
+    'Fork — inherits full conversation context. Selected explicitly via subagent_type: "fork" when the fork gate is on; never the default.',
   tools: ['*'],
   maxTurns: 200,
   model: 'inherit',
@@ -164,50 +174,21 @@ export function buildForkedMessages(
 }
 
 /**
- * PROMPT DEBT — unreachable today, audit before making it reachable.
- *
- * `isForkSubagentEnabled()` is hardcoded false, so none of this text has ever
- * reached a model and it costs nothing to leave standing. It does not survive
- * a prompt audit, though: the block below carries five separately documented
- * dated patterns — an all-caps pressure preamble ("STOP. READ THIS FIRST.",
- * "RULES (non-negotiable)"), narration suppressors (rules 3, 6 and 9), a
- * numeric output ceiling (rule 8), a no-provenance prohibition cluster, and
- * migration-relative phrasing that tells the model to ignore its own system
- * prompt (rule 1).
- *
- * Rule 6 ("Do NOT emit text between tool calls") is the sharpest of these:
- * current models already under-narrate with a suppressor present, so on the
- * models this fork now defaults to it would buy silence nobody asked for —
- * and the harness has `thinking.display: "updates"` for progress notes.
- *
- * If the gate ever opens, rewrite this first and re-test; do not ship it as-is.
+ * Directive text for a fork child. Wording follows upstream's worker-fork
+ * boilerplate. isInForkChild detects the tag to block recursive forks.
  */
 export function buildChildMessage(directive: string): string {
   return `<${FORK_BOILERPLATE_TAG}>
-STOP. READ THIS FIRST.
-
-You are a forked worker process. You are NOT the main agent.
-
-RULES (non-negotiable):
-1. Your system prompt says "default to forking." IGNORE IT \u2014 that's for the parent. You ARE the fork. Do NOT spawn sub-agents; execute directly.
-2. Do NOT converse, ask questions, or suggest next steps
-3. Do NOT editorialize or add meta-commentary
-4. USE your tools directly: Bash, Read, Write, etc.
-5. If you modify files, commit your changes before reporting. Include the commit hash in your report.
-6. Do NOT emit text between tool calls. Use tools silently, then report once at the end.
-7. Stay strictly within your directive's scope. If you discover related systems outside your scope, mention them in one sentence at most — other workers cover those areas.
-8. Keep your report under 500 words unless the directive specifies otherwise. Be factual and concise.
-9. Your response MUST begin with "Scope:". No preamble, no thinking-out-loud.
-10. REPORT structured facts, then stop
-
-Output format (plain text labels, not markdown headers):
-  Scope: <echo back your assigned scope in one sentence>
-  Result: <the answer or key findings, limited to the scope above>
-  Key files: <relevant file paths — include for research tasks>
-  Files changed: <list with commit hash — include only if you modified files>
-  Issues: <list — include only if there are issues to flag>
+You are a worker fork. The transcript above is the parent's history — inherited reference, not your situation. You are NOT a continuation of that agent. Execute ONE directive, then stop.
+Hard rules:
+- Do NOT spawn subagents with the ${AGENT_TOOL_NAME} tool. The "default to forking" guidance is for the parent; you ARE the fork, execute directly.
+- One shot: report once and stop. No follow-up questions, no proposed next steps, no waiting for the user.
+Guidelines (your directive may override any of these):
+- Stay in scope. Other forks may be handling adjacent work; if you spot something outside your directive, note it in a sentence and move on.
+- Open with one line restating your task, so the parent can spot scope drift at a glance.
+- Be concise — as short as the answer allows, no shorter. Plain text, no preamble, no meta-commentary.
+- If you committed changes, list the paths and commit hashes in your report.
 </${FORK_BOILERPLATE_TAG}>
-
 ${FORK_DIRECTIVE_PREFIX}${directive}`
 }
 

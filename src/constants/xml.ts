@@ -58,8 +58,7 @@ export const CHANNEL_TAG = 'channel'
 // XML tag wrapping the rules/format boilerplate in a fork child's first message.
 // Lets the transcript renderer collapse the boilerplate and show only the directive.
 export const FORK_BOILERPLATE_TAG = 'fork-boilerplate'
-// Prefix before the directive text, stripped by the renderer. Keep in sync
-// across buildChildMessage (generates) and UserForkBoilerplateMessage (parses).
+// Prefix before the directive text. Keep in sync with buildChildMessage.
 export const FORK_DIRECTIVE_PREFIX = 'Your directive: '
 
 // Common argument patterns for slash commands that request help

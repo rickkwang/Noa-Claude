@@ -339,6 +339,8 @@ export type Out = z.infer<OutputSchema>;
 export type { BashProgress } from '../../types/tools.js';
 import type { BashProgress } from '../../types/tools.js';
 import { getBashPersistenceThreshold } from '../../utils/shell/outputLimits.js';
+import { getCwdOverride, pwd } from '../../utils/cwd.js';
+import { checkWorktreeEscape, checkWorktreeEscapeForCommand } from '../../utils/worktreeEscape.js';
 
 /**
  * Checks if a command is allowed to be automatically backgrounded
@@ -584,7 +586,25 @@ export const BashTool = buildTool({
     const desc = input.description ?? truncate(input.command, TOOL_SUMMARY_MAX_LENGTH);
     return `Running ${desc}`;
   },
-  async validateInput(): Promise<ValidationResult> {
+  async validateInput(input, context): Promise<ValidationResult> {
+    // A cwd override lost mid-run makes pwd() fall back to the parent session's directory.
+    if (context.isolatedWorktreeRoot && !getCwdOverride()) {
+      return {
+        result: false,
+        message: `The working-directory isolation context for this agent was lost, so this command would run in the parent session's directory instead of ${context.isolatedWorktreeRoot}. Refusing to run it. Retry the command; if this keeps failing, report that worktree isolation was lost.`,
+        errorCode: 4
+      };
+    }
+    // An isolated agent's shell must not run in the shared checkout (e.g. after `cd` out of its worktree).
+    const cwd = pwd();
+    const escapeError = checkWorktreeEscape(cwd) ?? checkWorktreeEscapeForCommand(input.command, cwd);
+    if (escapeError) {
+      return {
+        result: false,
+        message: escapeError,
+        errorCode: 4
+      };
+    }
     return {
       result: true
     };

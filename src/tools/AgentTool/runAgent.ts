@@ -758,10 +758,14 @@ export async function* runAgent({
     // Create subagent context using shared helper
     // - Sync agents share setAppState, setResponseLength, abortController with parent
     // - Async agents are fully isolated (but with explicit unlinked abortController)
+    const cwdOverride = getCwdOverride()
     agentToolUseContext = createSubagentContext(toolUseContext, {
       options: agentOptions,
       agentId,
       agentType: agentDefinition.agentType,
+      isolatedWorktreeRoot: cwdOverride?.isolated
+        ? (cwdOverride.isolationRoot ?? cwdOverride.cwd)
+        : undefined,
       messages: initialMessages,
       readFileState: agentReadFileState,
       abortController: agentAbortController,
