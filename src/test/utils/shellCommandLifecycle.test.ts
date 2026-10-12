@@ -1,8 +1,11 @@
 // @ts-nocheck
 import { afterEach, describe, expect, test } from 'bun:test'
 import { spawn } from 'child_process'
-import { mkdir, open, rm, stat } from 'fs/promises'
+import { mkdir, mkdtemp, open, readFile, rm, stat } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { generateTaskId } from '../../Task.js'
+import { isProcessRunning } from '../../utils/genericProcessUtils.js'
 import { type ShellCommand, wrapSpawn } from '../../utils/ShellCommand.js'
 import { getTaskOutputDir } from '../../utils/task/diskOutput.js'
 import { TaskOutput } from '../../utils/task/TaskOutput.js'
@@ -181,6 +184,38 @@ describe('ShellCommand abort', () => {
     expect(result.code).toBe(0)
     expect(result.stdout).toContain('survived')
   }, 15_000)
+})
+
+describe('ShellCommand kill', () => {
+  test('kill() also takes down a background grandchild reparented to init', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'shell-kill-'))
+    const pidFile = join(dir, 'grandchild.pid')
+    let pid = 0
+    try {
+      // The inner sh exits right after backgrounding sleep, so sleep is
+      // reparented to launchd but stays in the leader's process group.
+      const { shellCommand } = await runInFileMode(
+        `sh -c 'sleep 300 & echo $! > ${pidFile}'; sleep 300`,
+      )
+      for (let i = 0; i < 50 && !pid; i++) {
+        await Bun.sleep(40)
+        pid = Number((await readFile(pidFile, 'utf8').catch(() => '')).trim())
+      }
+      expect(pid).toBeGreaterThan(1)
+      expect(isProcessRunning(pid)).toBe(true)
+
+      shellCommand.kill()
+      await shellCommand.result
+
+      for (let i = 0; i < 50 && isProcessRunning(pid); i++) {
+        await Bun.sleep(40)
+      }
+      expect(isProcessRunning(pid)).toBe(false)
+    } finally {
+      if (isProcessRunning(pid)) process.kill(pid, 'SIGKILL')
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('ShellCommand exit-code mapping', () => {
