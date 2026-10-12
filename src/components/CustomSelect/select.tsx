@@ -735,34 +735,11 @@ function _temp(c_0) {
   return c_0.type === "image";
 }
 function TwoColumnRow(t0) {
-  const $ = _c(6);
   const {
-    isFocused,
     children,
     onClick
   } = t0;
-  let t1;
-  if ($[0] !== isFocused) {
-    t1 = {
-      line: 0,
-      column: 0,
-      active: isFocused
-    };
-    $[0] = isFocused;
-    $[1] = t1;
-  } else {
-    t1 = $[1];
-  }
-  const cursorRef = useDeclaredCursor(t1);
-  let t2;
-  if ($[2] !== children || $[3] !== cursorRef || $[5] !== onClick) {
-    t2 = <Box ref={cursorRef} flexDirection="row" onClick={onClick}>{children}</Box>;
-    $[2] = children;
-    $[3] = cursorRef;
-    $[4] = t2;
-    $[5] = onClick;
-  } else {
-    t2 = $[4];
-  }
-  return t2;
+  // No declared terminal cursor: upstream's list rows leave the cursor hidden,
+  // so the focus marker stays a plain ❯ instead of a visible block cursor.
+  return <Box flexDirection="row" onClick={onClick}>{children}</Box>;
 }
