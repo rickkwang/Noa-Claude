@@ -15,6 +15,10 @@ import { useTerminalSize } from '../../hooks/useTerminalSize.js'
 import { useWandActive } from './ClawdWand.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 import { GREETINGS } from './greetings.js'
+import { openLogoEgg, useLogoEgg } from './LogoEasterEgg.js'
+import type { ClickEvent } from '../../ink.js'
+import useStdin from '../../ink/hooks/use-stdin.js'
+import { useTheme } from '../design-system/ThemeProvider.js'
 
 declare const MACRO: { VERSION: string; DISPLAY_VERSION?: string }
 
@@ -52,6 +56,8 @@ function gradAt(stops: RGB[], t: number): RGB {
 const ACCENT_HEX = rgbToHex(240, 148, 100)
 const DIM_HEX = rgbToHex(136, 136, 136)
 const MODEL_HEX = rgbToHex(190, 190, 190)
+// The egg's cubes are one solid color: the gradient's middle stop.
+const EGG_COLOR = SUNSET_GRAD[2]!
 
 // Module scope: one greeting per process, stable across re-renders.
 const GREETING = GREETINGS[Math.floor(Math.random() * GREETINGS.length)]!
@@ -86,15 +92,22 @@ const RIPPLE_HIGHLIGHT: RGB = lerp(SUNSET_GRAD[0]!, [255, 240, 190], 0.75)
 
 // Elapsed ms of the running ripple (null when it isn't playing) plus a replay
 // trigger for clicks. Clicks are ignored mid-ripple and under reduced motion.
-// With `loop` the sweep restarts after a rest instead of stopping.
-function useStartupRipple(loop: boolean): [number | null, () => void] {
+// With `loop` the sweep restarts after a rest instead of stopping. `paused`
+// (the logo egg is playing) stops any sweep and keeps it from restarting.
+function useStartupRipple(loop: boolean, paused: boolean): [number | null, () => void] {
   const reducedMotion = getInitialSettings().prefersReducedMotion ?? false
   const loopRef = useRef(loop && !reducedMotion)
   loopRef.current = loop && !reducedMotion
   const [ms, setMs] = useState<number | null>(() => (rippleDone && !loopRef.current) || reducedMotion ? null : 0)
   const playing = ms !== null
   useEffect(() => {
-    if (!playing) return
+    if (paused) {
+      rippleDone = true
+      setMs(null)
+    }
+  }, [paused])
+  useEffect(() => {
+    if (!playing || paused) return
     let start = Date.now()
     let resting = false
     const id = setInterval(() => {
@@ -121,19 +134,23 @@ function useStartupRipple(loop: boolean): [number | null, () => void] {
       }
     }, RIPPLE_TICK_MS)
     return () => clearInterval(id)
-  }, [playing])
+  }, [playing, paused])
   // Effort just went high after the ripple had finished: start sweeping.
   useEffect(() => {
-    if (loop && !reducedMotion && ms === null) setMs(0)
-  }, [loop, reducedMotion, ms === null])
+    if (loop && !paused && !reducedMotion && ms === null) setMs(0)
+  }, [loop, paused, reducedMotion, ms === null])
   const replay = () => {
-    if (!playing && !reducedMotion) setMs(0)
+    if (!playing && !paused && !reducedMotion) setMs(0)
   }
   return [ms, replay]
 }
 
 export function GradientBanner() {
-  const [rippleMs, replayRipple] = useStartupRipple(useWandActive())
+  const eggOpen = useLogoEgg() !== null
+  const [rippleMs, replayRipple] = useStartupRipple(useWandActive(), eggOpen)
+  const reducedMotion = getInitialSettings().prefersReducedMotion ?? false
+  const { internal_querier } = useStdin()
+  const [themeName] = useTheme()
   // Band center in columns: starts 3 sigma left of the logo, ends 3 sigma right.
   const front = rippleMs === null || rippleMs >= RIPPLE_END_MS ? null : ((rippleMs - RIPPLE_DELAY_MS) / 1000) * RIPPLE_SPEED - 3 * RIPPLE_SIGMA
   // Login/provider switch bumps authVersion; subscribe so the model row
@@ -170,12 +187,20 @@ export function GradientBanner() {
 
   const version = MACRO.DISPLAY_VERSION ?? MACRO.VERSION
 
-  return (
-    <Box flexDirection={stacked ? 'column' : 'row'} gap={stacked ? 1 : 2} alignItems="flex-start" onClick={replayRipple}>
-      {/* Logo */}
-      <Box flexDirection="column">{logoTop}</Box>
+  // The egg covers the whole screen; the click gives the logo's screen position
+  // so the cubes fly out of, and land back into, the banner.
+  const openEgg = (event: ClickEvent) => {
+    if (reducedMotion) return
+    const origin = { column: event.col - event.localCol, row: event.row - event.localRow }
+    void openLogoEgg({ logo: LOGO_OPEN, color: EGG_COLOR, origin }, internal_querier, themeName.startsWith('light'))
+  }
 
-      <Box flexDirection="column" flexShrink={1}>
+  return (
+    <Box flexDirection={stacked ? 'column' : 'row'} gap={stacked ? 1 : 2} alignItems="flex-start">
+      {/* Logo */}
+      <Box flexDirection="column" onClick={openEgg}>{logoTop}</Box>
+
+      <Box flexDirection="column" flexShrink={1} onClick={replayRipple}>
         <Text>
           <Text bold>Noa Claude</Text>
           <Text color={DIM_HEX}>{` v${version}`}</Text>

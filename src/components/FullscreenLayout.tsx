@@ -4,6 +4,7 @@ import figures from 'figures';
 import React, { createContext, type ReactNode, type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { fileURLToPath } from 'url';
 import { ModalContext } from '../context/modalContext.js';
+import { LogoEggOverlay } from './LogoV2/LogoEasterEgg.js';
 import { PromptOverlayProvider, usePromptOverlay, usePromptOverlayDialog } from '../context/promptOverlayContext.js';
 import { useTerminalSize } from '../hooks/useTerminalSize.js';
 import ScrollBox, { type ScrollBoxHandle } from '../ink/components/ScrollBox.js';
@@ -503,6 +504,7 @@ export function FullscreenLayout(t0) {
         </Box>
         {t17}
         {t18}
+        <LogoEggOverlay />
       </PromptOverlayProvider>;
   }
   let t8;

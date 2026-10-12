@@ -79,7 +79,7 @@ export function themeFromOscColor(data: string): SystemTheme | undefined {
 
 type Rgb = { r: number; g: number; b: number }
 
-function parseOscRgb(data: string): Rgb | undefined {
+export function parseOscRgb(data: string): Rgb | undefined {
   // rgb:RRRR/GGGG/BBBB — each component is 1–4 hex digits.
   // Some terminals append an alpha component (rgba:…/…/…/…); ignore it.
   const rgbMatch =

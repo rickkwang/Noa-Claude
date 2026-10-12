@@ -8,6 +8,7 @@ import { Ansi, Box, Text, useInput } from '../ink.js';
 import type { BaseInputState, BaseTextInputProps } from '../types/textInputTypes.js';
 import type { TextHighlight } from '../utils/textHighlighting.js';
 import { HighlightedInput } from './PromptInput/ShimmeredInput.js';
+import { useLogoEgg } from './LogoV2/LogoEasterEgg.js';
 type BaseTextInputComponentProps = BaseTextInputProps & {
   inputState: BaseInputState;
   children?: React.ReactNode;
@@ -36,7 +37,9 @@ export function BaseTextInput(t0) {
     cursorLine,
     cursorColumn
   } = inputState;
-  const t1 = Boolean(props.focus && props.showCursor && terminalFocus);
+  // The logo egg paints over the whole screen; park no cursor under it.
+  const eggOpen = useLogoEgg() !== null;
+  const t1 = Boolean(props.focus && props.showCursor && terminalFocus && !eggOpen);
   let t2;
   if ($[0] !== cursorColumn || $[1] !== cursorLine || $[2] !== t1) {
     t2 = {

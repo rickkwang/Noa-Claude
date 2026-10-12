@@ -95,6 +95,7 @@ When changing product surface, run `check:docs` + `smoke:features` and keep `REA
 
 - Config lives in `~/.noa/` and project `.noa/` (e.g. `.noa/progress.md`). Resolve the user dir with `getClaudeConfigHomeDir()` (`src/utils/envUtils.ts`, honors `CLAUDE_CONFIG_DIR`), never a hardcoded `~/.noa`. Toggles prefer `NOA_CLAUDE_*`; legacy `CLAUDE_CODE_*` still accepted.
 - Privacy is hardcoded: telemetry, GrowthBook remote fetch, and remote policy/settings overlays are disabled; GB gates use in-code defaults. Don't reintroduce remote-fetch or telemetry sinks.
+- `Text` from `src/ink.ts` is `ThemedText`: `color` accepts raw values, but `backgroundColor` only resolves theme keys, so a raw hex background is silently dropped (typecheck won't catch it). Use `BaseText` for raw background colors.
 - Commit messages must not describe work as an upstream port; history stays as-is.
 - `CLAUDE.md` is tracked; `AGENTS.md`, `CLAUDE.local.md`, `*.log` are gitignored — durable rules go here.
 - Stability invariants: interactive startup stays alive, `--print` works, resume/continue survive compaction, MCP startup degrades gracefully, permission boundaries hold. Failure-mode checklist: `docs/operating-guide.md`.

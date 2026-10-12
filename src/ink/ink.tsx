@@ -971,6 +971,24 @@ export default class Ink {
     return this.altScreenActive;
   }
 
+  /** The last painted frame, one ANSI-styled string per row (for full-screen effects). */
+  snapshotAnsiLines(): string[] {
+    const screen = this.frontFrame.screen;
+    const lines: string[] = [];
+    for (let y = 0; y < screen.height; y++) {
+      let line = '';
+      let style = this.stylePool.none;
+      for (let x = 0; x < screen.width; x++) {
+        const cell = cellAt(screen, x, y);
+        if (!cell || cell.width === CellWidth.SpacerTail || cell.width === CellWidth.SpacerHead) continue;
+        line += this.stylePool.transition(style, cell.styleId) + cell.char;
+        style = cell.styleId;
+      }
+      lines.push(line + this.stylePool.transition(style, this.stylePool.none));
+    }
+    return lines;
+  }
+
   shouldSuppressAltScreenExitSequence(): boolean {
     return this.suppressAltScreenExitSequence;
   }
