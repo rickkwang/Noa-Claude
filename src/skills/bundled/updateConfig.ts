@@ -105,6 +105,7 @@ Plugin syntax: \`plugin-name@source\` where source is \`claude-code-marketplace\
 - \`spinnerVerbs\`: Customize spinner verbs (\`{ "mode": "append" | "replace", "verbs": [...] }\`)
 - \`spinnerTipsOverride\`: Add your own spinner tips (\`{ "excludeDefault": true, "tips": ["Custom tip", { "id": "my-tip", "text": "...", "cooldownSessions": 5, "priority": 1 }], "tipsFile": "~/tips.json", "label": "Org: " }\`). Object tips, \`tipsFile\`, and \`label\` are only honored from user or managed settings — project settings may only contribute plain strings.
 - \`syntaxHighlightingDisabled\`: Disable diff highlighting
+- \`maxProseWidth\`: Wrap response prose (paragraphs, headings, lists, blockquotes) at this many columns, minimum 40; tables and code blocks keep full width. Unset uses the full terminal width.
 `
 
 // Note: We keep hand-written examples for common patterns since they're more

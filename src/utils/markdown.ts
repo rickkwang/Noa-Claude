@@ -9,6 +9,7 @@ import { supportsHyperlinks } from '../ink/supports-hyperlinks.js'
 import type { CliHighlight } from './cliHighlight.js'
 import { logForDebugging } from './debug.js'
 import { createHyperlink } from './hyperlink.js'
+import { isEnvTruthy } from './envUtils.js'
 import { stripPromptXMLTags } from './messages.js'
 import type { ThemeName } from './theme.js'
 
@@ -23,12 +24,20 @@ export function configureMarked(): void {
   if (markedConfigured) return
   markedConfigured = true
 
-  // Disable strikethrough parsing - the model often uses ~ for "approximate"
-  // (e.g., ~100) and rarely intends actual strikethrough formatting
+  // Only ~~double~~ tildes strike through. A lone ~ stays literal because the
+  // model often uses it for "approximate" (e.g., ~100).
   marked.use({
     tokenizer: {
-      del() {
-        return undefined
+      del(src) {
+        const match =
+          /^~~(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))~~(?=[^~]|$)/.exec(src)
+        if (!match) return undefined
+        return {
+          type: 'del',
+          raw: match[0],
+          text: match[1],
+          tokens: this.lexer.inlineTokens(match[1]),
+        }
       },
     },
   })
@@ -46,6 +55,67 @@ export function applyMarkdown(
     .join('')
     .trim()
 }
+
+// Characters that can hide or spoof text in a terminal: C0/C1 controls, bidi and
+// zero-width format marks, and the ⧉ marker reserved for link warnings.
+function sanitizeDisplay(text: string): string {
+  return text.replace(
+    /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u29c9\ufeff]/g,
+    '',
+  )
+}
+
+// A link is shown as clickable text only when its URL is a plain address.
+// Local paths, file: URLs, and URLs with control characters stay visible as text.
+function isWebDisplayableUrl(url: string): boolean {
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(url) || url !== url.trimEnd()) {
+    return false
+  }
+  return !/^(file:|\/|~|\.\.?\/)/i.test(url)
+}
+
+// Terminals known to render ANSI strikethrough. Mirrors upstream's allowlist so
+// that terminals which draw it badly (Apple Terminal, linux console) get ~~x~~.
+const STRIKETHROUGH_TERM_PROGRAMS = new Set([
+  'iTerm.app',
+  'vscode',
+  'WezTerm',
+  'WarpTerminal',
+  'Hyper',
+  'Tabby',
+  'rio',
+  'contour',
+  'alacritty',
+])
+
+function supportsStrikethrough(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (isEnvTruthy(env.NOA_CLAUDE_FORCE_STRIKETHROUGH ?? env.CLAUDE_CODE_FORCE_STRIKETHROUGH)) {
+    return true
+  }
+  const term = env.TERM
+  const termProgram = env.TERM_PROGRAM
+  if (termProgram === 'Apple_Terminal' || term === 'linux') return false
+  return (
+    STRIKETHROUGH_TERM_PROGRAMS.has(termProgram ?? '') ||
+    termProgram === 'ghostty' ||
+    term === 'xterm-ghostty' ||
+    termProgram === 'mintty' ||
+    (process.platform === 'win32' && !!env.MSYSTEM) ||
+    env.TERMINAL_EMULATOR === 'JetBrains-JediTerm' ||
+    env.LC_TERMINAL === 'iTerm2' ||
+    !!term?.includes('kitty') ||
+    !!term?.includes('alacritty') ||
+    !!term?.startsWith('foot') ||
+    !!env.KITTY_WINDOW_ID ||
+    !!env.ALACRITTY_LOG ||
+    !!env.KONSOLE_VERSION ||
+    !!env.WT_SESSION ||
+    !!env.ZED_TERM ||
+    parseInt(env.VTE_VERSION ?? '', 10) >= 4400
+  )
+}
+
+const NBSP_ENTITY_RE = /&(?:nbsp|#0{0,4}160|#[xX]0{0,4}[aA]0);/g
 
 export function formatToken(
   token: Token,
@@ -71,20 +141,32 @@ export function formatToken(
         .join(EOL)
     }
     case 'code': {
+      // Fenced blocks without a language get the inline-code tint; indented
+      // blocks stay plain.
+      if (!token.lang && token.codeBlockStyle !== 'indented') {
+        const tint = color('permission', theme)
+        return token.text.replace(/\S(?:.*\S)?/g, s => tint(s)) + EOL
+      }
+      const lang = token.lang ?? ''
+      // Unknown language: show its name dimmed above the block.
+      const label =
+        lang && !highlight?.supportsLanguage(lang) ? chalk.dim(lang) + EOL : ''
       if (!highlight) {
-        return token.text + EOL
+        return label + token.text + EOL
       }
+      // Accept info strings like "js title=x" by falling back to the first word.
+      const firstWord = lang.match(/^[\w.+#-]+/)?.[0] ?? ''
       let language = 'plaintext'
-      if (token.lang) {
-        if (highlight.supportsLanguage(token.lang)) {
-          language = token.lang
-        } else {
-          logForDebugging(
-            `Language not supported while highlighting code, falling back to plaintext: ${token.lang}`,
-          )
-        }
+      if (highlight.supportsLanguage(lang)) {
+        language = lang
+      } else if (highlight.supportsLanguage(firstWord)) {
+        language = firstWord
+      } else if (lang) {
+        logForDebugging(
+          `Language not supported while highlighting code, falling back to plaintext: ${lang}`,
+        )
       }
-      return highlight.highlight(token.text, { language }) + EOL
+      return label + highlight.highlight(token.text, { language }) + EOL
     }
     case 'codespan': {
       // inline code
@@ -137,28 +219,46 @@ export function formatToken(
       }
     case 'hr':
       return '---'
-    case 'image':
-      return token.href
+    case 'image': {
+      // Alt text followed by the URL; a bare image shows only the URL.
+      const url = sanitizeDisplay(token.href)
+      const title = token.title ? ` "${token.title}"` : ''
+      if (!token.text && !token.title) return url
+      return token.text ? `${token.text} (${url}${title})` : `(${url}${title})`
+    }
     case 'link': {
-      // Prevent mailto links from being displayed as clickable links
-      if (token.href.startsWith('mailto:')) {
-        // Extract email from mailto: link and display as plain text
-        const email = token.href.replace(/^mailto:/, '')
-        return email
+      const title = token.title ? ` ("${token.title}")` : ''
+      // mailto: links are never clickable; show the address, after the text if it differs.
+      if (/^mailto:/i.test(token.href)) {
+        const email = sanitizeDisplay(token.href.replace(/^mailto:/i, ''))
+        if (token.text && token.text !== email) {
+          return `${token.text} (${email})${title}`
+        }
+        return email + title
       }
-      // Extract display text from the link's child tokens
+      const url = sanitizeDisplay(token.href)
+      // Clickable only when the terminal supports OSC 8 and the URL is a plain web address.
+      const clickable = supportsHyperlinks() && isWebDisplayableUrl(token.href)
       const linkText = (token.tokens ?? [])
         .map(_ => formatToken(_, theme, 0, null, token, highlight))
         .join('')
       const plainLinkText = stripAnsi(linkText)
-      // If the link has meaningful display text (different from the URL),
-      // show it as a clickable hyperlink. In terminals that support OSC 8,
-      // users see the text and can hover/click to see the URL.
-      if (plainLinkText && plainLinkText !== token.href) {
-        return createHyperlink(token.href, linkText)
+      if (!plainLinkText || plainLinkText === token.href) {
+        return createHyperlink(url, undefined, { supportsHyperlinks: clickable }) + title
       }
-      // When the display text matches the URL (or is empty), just show the URL
-      return createHyperlink(token.href)
+      // Text that is just the URL (with or without scheme) is shown as the URL.
+      const textIsUrl =
+        plainLinkText === `http://${url}` || plainLinkText === `https://${url}`
+      if (clickable) {
+        const shown = textIsUrl ? sanitizeDisplay(plainLinkText) : linkText
+        const urlSuffix = token.title ? ` (${url})` : ''
+        return (
+          createHyperlink(url, shown, { supportsHyperlinks: true }) +
+          urlSuffix +
+          title
+        )
+      }
+      return (textIsUrl ? url : `${linkText} (${url})`) + title
     }
     case 'list': {
       return token.items
@@ -181,7 +281,7 @@ export function formatToken(
           ? '-'
           : getListNumber(listDepth + 1, orderedListNumber) + '.'
       const marker = token.task
-        ? `${bullet} ${token.checked ? color('success', theme)('[x]') : '[ ]'}`
+        ? `${bullet} ${token.checked ? '[x]' : '[ ]'}`
         : bullet
       const rendered = (token.tokens ?? [])
         .map(_ =>
@@ -216,7 +316,11 @@ export function formatToken(
                 formatToken(_, theme, listDepth, orderedListNumber, token, highlight),
               )
               .join('')
-          : linkifyIssueReferences(token.text)
+          : linkifyIssueReferences(
+              token.escaped === true
+                ? token.text
+                : token.text.replace(NBSP_ENTITY_RE, ' '),
+            )
         // Under list_item, append EOL so a following nested list (or sibling
         // text) starts on its own line. list_item itself owns the bullet now.
         return parent?.type === 'list_item' ? rendered + EOL : rendered
@@ -283,11 +387,18 @@ export function formatToken(
 
       return tableOutput + EOL
     }
+    case 'del': {
+      const inner = (token.tokens ?? [])
+        .map(_ => formatToken(_, theme, 0, null, parent, highlight))
+        .join('')
+      return chalk.level > 0 && supportsStrikethrough()
+        ? chalk.strikethrough(inner)
+        : `~~${inner}~~`
+    }
     case 'escape':
       // Markdown escape: \) → ), \\ → \, etc.
       return token.text
     case 'def':
-    case 'del':
     case 'html':
       // These token types are not rendered
       return ''
@@ -372,6 +483,17 @@ function getListNumber(listDepth: number, orderedListNumber: number): string {
     default:
       return orderedListNumber.toString()
   }
+}
+
+// Bullet or number for item `index` of `list`, as formatToken draws it.
+export function getListMarker(
+  list: Tokens.List,
+  index: number,
+  listDepth: number,
+): string {
+  return list.ordered
+    ? getListNumber(listDepth + 1, list.start + index) + '.'
+    : '-'
 }
 
 /**

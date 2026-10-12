@@ -794,6 +794,15 @@ export const SettingsSchema = lazySchema(() =>
         .boolean()
         .optional()
         .describe('Whether to disable syntax highlighting in diffs'),
+      maxProseWidth: z
+        .number()
+        .int()
+        .min(40)
+        .optional()
+        .catch(undefined)
+        .describe(
+          "Maximum width, in terminal columns, of the prose in Claude's responses (paragraphs, headings, lists, blockquotes). In a wider terminal the prose wraps at this width while tables and code blocks keep the full width; only the display wraps, the response text itself gains no line breaks. Minimum 40. Unset (the default) uses the full terminal width.",
+        ),
       terminalTitleFromRename: z
         .boolean()
         .optional()

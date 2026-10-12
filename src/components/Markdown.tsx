@@ -1,12 +1,16 @@
 // @ts-nocheck
-import { c as _c } from "react/compiler-runtime";
 import { marked, type Token, type Tokens } from 'marked';
 import React, { useMemo, useRef } from 'react';
 import { useSettings } from '../hooks/useSettings.js';
-import { Ansi, Box, useTheme } from '../ink.js';
+import { Ansi, Box, Text, useTheme } from '../ink.js';
 import { type CliHighlight, useCliHighlight } from '../utils/cliHighlight.js';
+import { logForDebugging } from '../utils/debug.js';
 import { hashContent } from '../utils/hash.js';
-import { configureMarked, formatToken } from '../utils/markdown.js';
+import {
+  configureMarked,
+  formatToken,
+  getListMarker,
+} from '../utils/markdown.js';
 import { stripPromptXMLTags } from '../utils/messages.js';
 import { MarkdownTable } from './MarkdownTable.js';
 type Props = {
@@ -35,22 +39,40 @@ function hasMarkdownSyntax(s: string): boolean {
   // code fence, list). Long tool outputs are mostly plain text tails.
   return MD_SYNTAX_RE.test(s.length > 500 ? s.slice(0, 500) : s);
 }
+function plainParagraphTokens(content: string): Token[] {
+  return [{
+    type: 'paragraph',
+    raw: content,
+    text: content,
+    tokens: [{
+      type: 'text',
+      raw: content,
+      text: content
+    }]
+  } as Token];
+}
+
+// marked throws RangeError on pathological nesting. Fall back to one plain
+// paragraph so the message still renders (upstream does the same).
+function lexMarkdown(content: string): Token[] {
+  try {
+    return marked.lexer(content);
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    logForDebugging(`marked.lexer overflow on ${content.length} chars`, {
+      level: 'error'
+    });
+    return plainParagraphTokens(content);
+  }
+}
+
 function cachedLexer(content: string): Token[] {
   // Fast path: plain text with no markdown syntax → single paragraph token.
   // Skips marked.lexer's full GFM parse (~3ms on long content). Not cached —
   // reconstruction is a single object allocation, and caching would retain
   // 4× content in raw/text fields plus the hash key for zero benefit.
   if (!hasMarkdownSyntax(content)) {
-    return [{
-      type: 'paragraph',
-      raw: content,
-      text: content,
-      tokens: [{
-        type: 'text',
-        raw: content,
-        text: content
-      }]
-    } as Token];
+    return plainParagraphTokens(content);
   }
   const key = hashContent(content);
   const hit = tokenCache.get(key);
@@ -61,7 +83,7 @@ function cachedLexer(content: string): Token[] {
     tokenCache.set(key, hit);
     return hit;
   }
-  const tokens = marked.lexer(content);
+  const tokens = lexMarkdown(content);
   if (tokenCache.size >= TOKEN_CACHE_MAX) {
     // LRU-ish: drop oldest. Map preserves insertion order.
     const first = tokenCache.keys().next().value;
@@ -83,58 +105,103 @@ export function Markdown(props) {
     <MarkdownBody
       {...props}
       highlight={settings.syntaxHighlightingDisabled ? null : highlight}
+      maxProseWidth={settings.maxProseWidth}
     />
   );
 }
-function MarkdownBody(t0) {
-  const $ = _c(7);
-  const {
-    children,
-    dimColor,
-    highlight
-  } = t0;
+function MarkdownBody({
+  children,
+  dimColor,
+  highlight,
+  maxProseWidth
+}) {
   const [theme] = useTheme();
   configureMarked();
-  let elements;
-  if ($[0] !== children || $[1] !== dimColor || $[2] !== highlight || $[3] !== theme) {
-    const tokens = cachedLexer(stripPromptXMLTags(children));
-    elements = [];
-    let nonTableContent = "";
-    const flushNonTableContent = function flushNonTableContent() {
-      if (nonTableContent) {
-        elements.push(<Ansi key={elements.length} dimColor={dimColor}>{nonTableContent.trim()}</Ansi>);
-        nonTableContent = "";
-      }
-    };
-    for (const token of tokens) {
-      if (token.type === "table") {
-        flushNonTableContent();
-        elements.push(<MarkdownTable key={elements.length} token={token as Tokens.Table} highlight={highlight} />);
-      } else {
-        nonTableContent = nonTableContent + formatToken(token, theme, 0, null, null, highlight);
-        nonTableContent;
-      }
-    }
-    flushNonTableContent();
-    $[0] = children;
-    $[1] = dimColor;
-    $[2] = highlight;
-    $[3] = theme;
-    $[4] = elements;
-  } else {
-    elements = $[4];
-  }
-  const elements_0 = elements;
-  let t1;
-  if ($[5] !== elements_0) {
-    t1 = <Box flexDirection="column" gap={1}>{elements_0}</Box>;
-    $[5] = elements_0;
-    $[6] = t1;
-  } else {
-    t1 = $[6];
-  }
-  return t1;
+  const blocks = useMemo(() => renderBlocks(cachedLexer(stripPromptXMLTags(children)), {
+    theme,
+    highlight,
+    dimColor,
+    maxProseWidth
+  }, null, 0), [children, dimColor, highlight, theme, maxProseWidth]);
+  return <Box flexDirection="column">{blocks}</Box>;
 }
+
+// Lays out tokens top to bottom. Blank lines come from marked `space` tokens
+// and from the trailing newlines of each block's output, matching the spacing
+// of the joined string. Tables and code keep the full width; other blocks at
+// the top level are capped at maxProseWidth. Lists are laid out as rows so
+// wrapped lines hang under the item text.
+function renderBlocks(tokens, ctx, parent, listDepth, leadingText = '') {
+  const nodes = [];
+  let blankLines = 0;
+  let prefix = leadingText;
+  // Ink treats an explicit undefined maxWidth as 0, so unset means 100%.
+  const proseWidth = ctx.maxProseWidth ?? '100%';
+  const place = (node, marginTop) => {
+    nodes.push(<Box key={nodes.length} flexDirection="column" marginTop={marginTop}>{node}</Box>);
+  };
+  for (const token of tokens) {
+    if (token.type === 'space') {
+      blankLines += 1;
+      continue;
+    }
+    if (token.type === 'list') {
+      const list = <MarkdownList token={token} ctx={ctx} listDepth={listDepth} />;
+      place(parent === null ? <Box flexDirection="column" maxWidth={proseWidth}>{list}</Box> : list, nodes.length === 0 ? 0 : blankLines);
+      blankLines = 0;
+      continue;
+    }
+    if (token.type === 'table') {
+      // Tables always sit a blank line away from their neighbours.
+      place(<MarkdownTable token={token} highlight={ctx.highlight} />, nodes.length === 0 ? 0 : Math.max(blankLines, 1));
+      blankLines = 1;
+      continue;
+    }
+    const raw = formatToken(token, ctx.theme, listDepth, null, parent, ctx.highlight);
+    const leading = raw.length - raw.replace(/^\n+/, '').length;
+    const trailing = raw.length - raw.replace(/\n+$/, '').length;
+    let text = raw.replace(/^\n+/, '').trimEnd();
+    if (!text) {
+      blankLines += leading + trailing;
+      continue;
+    }
+    blankLines += leading;
+    // The task checkbox goes on the item's first prose block, as upstream does.
+    if (prefix && (token.type === 'text' || token.type === 'paragraph')) {
+      text = prefix + text;
+      prefix = '';
+    }
+    const ansi = <Ansi dimColor={ctx.dimColor}>{text}</Ansi>;
+    // Code keeps the full width, like tables; other top-level prose is capped.
+    const node = token.type === 'code' || parent !== null ? ansi : <Box flexDirection="column" maxWidth={proseWidth}>{ansi}</Box>;
+    place(node, nodes.length === 0 ? 0 : blankLines);
+    // A block's last newline ends its line; each extra one is a blank line.
+    blankLines = Math.max(0, trailing - 1);
+  }
+  return nodes;
+}
+
+function MarkdownList({
+  token,
+  ctx,
+  listDepth
+}) {
+  return <Box flexDirection="column">
+      {token.items.map((item, index) => {
+      const marker = getListMarker(token, index, listDepth);
+      const checkbox = item.task ? item.checked ? '[x] ' : '[ ] ' : '';
+      return <Box key={index} flexDirection="row">
+          <Box width={marker.length + 1} flexShrink={0}>
+            <Text dimColor={ctx.dimColor}>{marker}</Text>
+          </Box>
+          <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+            {renderBlocks(item.tokens ?? [], ctx, item, listDepth + 1, checkbox)}
+          </Box>
+        </Box>;
+    })}
+    </Box>;
+}
+
 type StreamingProps = {
   children: string;
 };
@@ -198,7 +265,7 @@ export function StreamingMarkdown({
 
   // Lex only from current boundary — O(unstable length), not O(full text)
   const boundary = state.stablePrefix.length;
-  const tokens = marked.lexer(rest.substring(boundary));
+  const tokens = lexMarkdown(rest.substring(boundary));
 
   // Last non-space token is the growing block; everything before is final
   let lastContentIdx = tokens.length - 1;
