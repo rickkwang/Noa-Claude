@@ -8,11 +8,13 @@
  * over a unix socket. The session outlives any terminal: closing the agents
  * view, or the window it ran in, leaves the host and its session running.
  */
-import { unlinkSync } from 'fs'
+import { rmSync, unlinkSync } from 'fs'
 import { createServer, type Socket } from 'net'
 import {
   ensureJobSocketDir,
+  getJobDir,
   getJobSocketPath,
+  IDLE_NEEDS,
   patchJob,
   readJob,
   writeHostPid,
@@ -31,6 +33,11 @@ const REPLAY_BYTES = 1024 * 1024
 /** A client this far behind is dropped rather than buffered without bound. */
 const MAX_CLIENT_BACKLOG = 4 * 1024 * 1024
 const MAX_DIMENSION = 1000
+/** Finished and unattached this long, the session is stopped (upstream retires idle workers). */
+const IDLE_RECLAIM_MS = 60 * 60 * 1000
+/** Still waiting for its first prompt this long, unattached, it is stopped and its job removed. */
+const EMPTY_RECLAIM_MS = 5 * 60 * 1000
+const RECLAIM_CHECK_MS = 30 * 1000
 
 export async function runPtyHost(argv: string[]): Promise<never> {
   const sep = argv.indexOf('--')
@@ -51,6 +58,7 @@ export async function runPtyHost(argv: string[]): Promise<never> {
   let replayBytes = 0
   const clients = new Set<Socket>()
   let exited = false
+  let lastDetachAt = 0
 
   function broadcast(frame: Buffer): void {
     for (const client of clients) {
@@ -136,7 +144,10 @@ export async function runPtyHost(argv: string[]): Promise<never> {
   }
   const server = createServer(socket => {
     socket.on('error', () => socket.destroy())
-    socket.once('close', () => clients.delete(socket))
+    socket.once('close', () => {
+      clients.delete(socket)
+      lastDetachAt = Date.now()
+    })
     for (const chunk of replay) socket.write(encodeFrame(FRAME_DATA, chunk))
     socket.write(encodeControl({ t: 'live' }))
     if (exited) {
@@ -179,6 +190,34 @@ export async function runPtyHost(argv: string[]): Promise<never> {
     process.on(signal, stopSession)
   }
 
+  // Idle reclaim: the host stops its own session once nobody has attached
+  // for too long. Pinned sessions are never reclaimed.
+  let reclaiming = false
+  let reclaimDeletes = false
+  const reclaimTimer = setInterval(async () => {
+    if (reclaiming || exited || clients.size > 0) return
+    const job = await readJob(short)
+    if (!job || reclaiming || exited || clients.size > 0 || job.pinned || job.hasCron || job.stopRequested) return
+    const now = Date.now()
+    // Looking at a session counts: the idle clock restarts when the last client leaves.
+    const quietSince = Math.max(Date.parse(job.updatedAt), lastDetachAt)
+    const finished = job.tempo === 'idle' && now - quietSince >= IDLE_RECLAIM_MS
+    // Never given a prompt: nothing worth keeping, so the job goes too.
+    const neverPrompted = job.tempo === 'blocked' && job.needs === IDLE_NEEDS && !job.name &&
+      now - Math.max(Date.parse(job.createdAt), quietSince) >= EMPTY_RECLAIM_MS
+    if (!finished && !neverPrompted) return
+    reclaiming = true
+    await patchJob(short, { stopRequested: true }).catch(() => {})
+    if (clients.size > 0) {
+      // Attached while the flag was being written: leave the session running.
+      reclaiming = false
+      await patchJob(short, { stopRequested: undefined }).catch(() => {})
+      return
+    }
+    reclaimDeletes = neverPrompted
+    stopSession()
+  }, RECLAIM_CHECK_MS)
+
   let code: number
   try {
     code = await child.exited
@@ -187,6 +226,7 @@ export async function runPtyHost(argv: string[]): Promise<never> {
     return failBeforeStart(e)
   }
   exited = true
+  clearInterval(reclaimTimer)
 
   // A session that ends without reporting its own outcome (crash, kill)
   // must not stay listed as working or needing input.
@@ -202,6 +242,7 @@ export async function runPtyHost(argv: string[]): Promise<never> {
       detail: stopped ? 'stopped' : clean ? record.detail : lastLine(replay) ?? `exited with code ${code}`,
     }).catch(() => {})
   }
+  if (reclaimDeletes) rmSync(getJobDir(short), { recursive: true, force: true })
 
   broadcast(encodeControl({ t: 'exit', code }))
   for (const client of clients) client.end()

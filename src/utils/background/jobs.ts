@@ -49,6 +49,10 @@ export type JobRecord = {
   exitCode?: number | null
   /** Stopped on request (ctrl+x, `noa stop`), not by its own exit or a crash. */
   stopRequested?: boolean
+  /** Kept from idle reclaim and cleanup (ctrl+t in the agents view). */
+  pinned?: boolean
+  /** Holds cron tasks that only this running session will fire. */
+  hasCron?: boolean
   createdAt: string
   updatedAt: string
 }

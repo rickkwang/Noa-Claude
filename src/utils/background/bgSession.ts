@@ -24,6 +24,8 @@ export type BgActivity = {
   title?: string
   /** First user prompt, for naming an untitled session. */
   firstPrompt?: string
+  /** Cron tasks this session fires (session-only or in the project file). */
+  hasCron?: boolean
 }
 
 function firstLine(text: string, max = 200): string {
@@ -90,7 +92,7 @@ export function deriveBgActivity(
 let ranTurn = false
 
 function toPatch(a: BgActivity, current: JobRecord): Partial<JobRecord> {
-  const patch: Partial<JobRecord> = {}
+  const patch: Partial<JobRecord> = { hasCron: a.hasCron === true }
   if (a.title && (current.name !== a.title || current.nameSource !== 'user')) {
     patch.name = a.title
     patch.nameSource = 'user'

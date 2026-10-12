@@ -2,7 +2,8 @@
 import { c as _c } from "react/compiler-runtime";
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { feature } from 'bun:bundle';
-import { snapshotOutputTokensForTurn, getCurrentTurnTokenBudget, getTurnOutputTokens, getBudgetContinuationCount, getTotalInputTokens } from '../bootstrap/state.js';
+import { snapshotOutputTokensForTurn, getCurrentTurnTokenBudget, getTurnOutputTokens, getBudgetContinuationCount, getTotalInputTokens, getSessionCronTasks } from '../bootstrap/state.js';
+import { hasCronTasksSync } from '../utils/cronTasks.js';
 import { parseTokenBudget } from '../utils/tokenBudget.js';
 import { count } from '../utils/array.js';
 import { basename, dirname, join } from 'path';
@@ -1264,7 +1265,8 @@ export function REPL({
       ...bgActivity,
       status: sessionStatus,
       waitingFor,
-      title: getCurrentSessionTitle(getSessionId())
+      title: getCurrentSessionTitle(getSessionId()),
+      hasCron: getSessionCronTasks().length > 0 || hasCronTasksSync()
     });
   }, [bgActivity, sessionStatus, waitingFor]);
   // Stores the willowMode variant that was shown (or false if no hint shown).

@@ -12,6 +12,7 @@ import * as lockfile from './lockfile.js'
 import { logError } from './log.js'
 import { cleanupOldVersions } from './nativeInstaller/index.js'
 import { cleanupOldPastes } from './pasteStore.js'
+import { getJobDir, listJobs } from './background/jobs.js'
 import { getProjectsDir } from './sessionStorage.js'
 import {
   getSettings_DEPRECATED,
@@ -325,6 +326,30 @@ export function cleanupOldShellSnapshotDirs(): Promise<CleanupResult> {
   return cleanupSingleDirectory(shellSnapshotsDir, '', false)
 }
 
+/**
+ * Background session records (`jobs/<short>`) that have finished and have not
+ * been touched since the cutoff. A job whose host or session is still running
+ * is kept, whatever its age.
+ */
+export async function cleanupOldJobs(): Promise<CleanupResult> {
+  const cutoffDate = getCutoffDate()
+  const result: CleanupResult = { messages: 0, errors: 0 }
+
+  for (const job of await listJobs()) {
+    if (job.alive || job.sessionPid || job.pinned || new Date(job.updatedAt) >= cutoffDate) {
+      continue
+    }
+    try {
+      await fs.rm(getJobDir(job.short), { recursive: true, force: true })
+      result.messages++
+    } catch {
+      result.errors++
+    }
+  }
+
+  return result
+}
+
 export async function cleanupOldFileHistoryBackups(): Promise<CleanupResult> {
   const cutoffDate = getCutoffDate()
   const result: CleanupResult = { messages: 0, errors: 0 }
@@ -616,6 +641,7 @@ export async function cleanupOldMessageFilesInBackground(): Promise<void> {
   }
   await cleanupOldTaskFiles()
   await cleanupOldShellSnapshotDirs()
+  await cleanupOldJobs()
   if (process.env.USER_TYPE === 'ant') {
     await cleanupNpmCacheForAnthropicPackages()
   }

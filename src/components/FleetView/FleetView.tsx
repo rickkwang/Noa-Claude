@@ -49,6 +49,7 @@ const HELP: Array<[string, string]> = [
   ['ctrl+s', 'send the draft to the selected session'],
   ['ctrl+x', 'stop the selected session, again to delete it'],
   ['ctrl+r', 'rename the selected session'],
+  ['ctrl+t', 'pin the selected session, keeping it from idle stop and cleanup'],
   ['esc', 'clear the draft, return to the moved conversation, or quit'],
   ['ctrl+c ×2', 'quit — sessions keep running']
 ];
@@ -361,6 +362,12 @@ export function FleetView({
       setRenaming({ short: selectedJob.short, draft: selectedJob.name ?? '' });
       return;
     }
+    if (key.ctrl && char === 't') {
+      if (!selectedJob) return;
+      const pinned = !selectedJob.pinned;
+      void patchJob(selectedJob.short, { pinned }).then(refresh, e => setHint(`Couldn't ${pinned ? 'pin' : 'unpin'}: ${e instanceof Error ? e.message : String(e)}`));
+      return;
+    }
     // ctrl+x on a running session stops it (transcript kept); on a stopped
     // one it asks, then deletes.
     if (key.ctrl && char === 'x') {
@@ -457,7 +464,7 @@ export function FleetView({
   // Columns: a label as wide as the longest name (12–40, or a third of a
   // wide screen), the age right-aligned, the detail taking the rest.
   const indent = columns >= 120 ? 1 : 0;
-  const labelOf = (job: Job) => rowLabel(job, job.short === originShort);
+  const labelOf = (job: Job) => rowLabel(job, job.short === originShort) + (job.pinned ? ' (pinned)' : '');
   const ageWidth = Math.max(3, ...flat.map(j => stringWidth(formatAge(j.updatedAt, now))));
   const labelWidth = Math.min(Math.max(40, Math.floor(columns / 3)), Math.max(12, ...flat.map(j => stringWidth(labelOf(j))), renaming ? stringWidth(renaming.draft) + 1 : 0));
 
