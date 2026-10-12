@@ -11,6 +11,7 @@ import type { AppState } from '../../state/AppStateStore.js'
 import { getOriginalCwd } from '../../bootstrap/state.js'
 import { renderModelName } from '../../utils/model/model.js'
 import { useMainLoopModel } from '../../hooks/useMainLoopModel.js'
+import { useTerminalSize } from '../../hooks/useTerminalSize.js'
 import { useWandActive } from './ClawdWand.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 import { GREETINGS } from './greetings.js'
@@ -25,7 +26,7 @@ const SUNSET_GRAD: RGB[] = [
   [217, 119, 87],
   [193, 95, 60],
   [160, 75, 55],
-  [130, 60, 50],
+  [165, 88, 70],
 ]
 
 function rgbToHex(r: number, g: number, b: number): string {
@@ -50,14 +51,15 @@ function gradAt(stops: RGB[], t: number): RGB {
 
 const ACCENT_HEX = rgbToHex(240, 148, 100)
 const DIM_HEX = rgbToHex(136, 136, 136)
+const MODEL_HEX = rgbToHex(190, 190, 190)
 
 // Module scope: one greeting per process, stable across re-renders.
 const GREETING = GREETINGS[Math.floor(Math.random() * GREETINGS.length)]!
 
 const LOGO_OPEN = [
-  "░█▀█░█▀█░█▀█░░░█▀▀░█░░░█▀█░█░█░█▀▄░█▀▀░",
-  "░█░█░█░█░█▀█░░░█░░░█░░░█▀█░█░█░█░█░█▀▀░",
-  "░▀░▀░▀▀▀░▀░▀░░░▀▀▀░▀▀▀░▀░▀░▀▀▀░▀▀░░▀▀▀░",
+  "░█▀█░█▀█░█▀█░",
+  "░█░█░█░█░█▀█░",
+  "░▀░▀░▀▀▀░▀░▀░",
 ]
 
 // Startup ripple: one soft band of light sweeps left to right across the logo,
@@ -138,6 +140,9 @@ export function GradientBanner() {
   // re-reads the active provider immediately after auth changes.
   useAppState((s: AppState) => s.authVersion)
   const modelLine = renderModelName(useMainLoopModel())
+  // Too narrow for logo and info side by side: stack them instead.
+  const { columns } = useTerminalSize()
+  const stacked = columns < 60
 
   const renderLogoSection = (lines: string[], offset: number, total: number): React.ReactNode[] =>
     lines.map((line, i) => {
@@ -166,19 +171,21 @@ export function GradientBanner() {
   const version = MACRO.DISPLAY_VERSION ?? MACRO.VERSION
 
   return (
-    <Box flexDirection="column" onClick={replayRipple}>
+    <Box flexDirection={stacked ? 'column' : 'row'} gap={stacked ? 1 : 2} alignItems="flex-start" onClick={replayRipple}>
       {/* Logo */}
-      {logoTop}
-      <Box height={1} />
+      <Box flexDirection="column">{logoTop}</Box>
 
-      <Text>
-        <Text bold>Noa Claude</Text>
-        <Text color={DIM_HEX}>{` v${version}`}</Text>
-      </Text>
-      <Text color={DIM_HEX} wrap="truncate-middle">{`${modelLine} · ${cwdDisplay}`}</Text>
-
-      <Box height={1} />
-      <Text color={ACCENT_HEX}>{GREETING}</Text>
+      <Box flexDirection="column" flexShrink={1}>
+        <Text>
+          <Text bold>Noa Claude</Text>
+          <Text color={DIM_HEX}>{` v${version}`}</Text>
+        </Text>
+        <Text wrap="truncate-middle">
+          <Text color={MODEL_HEX}>{modelLine}</Text>
+          <Text color={DIM_HEX}>{` · ${cwdDisplay}`}</Text>
+        </Text>
+        <Text color={ACCENT_HEX}>{GREETING}</Text>
+      </Box>
     </Box>
   )
 }
