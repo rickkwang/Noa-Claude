@@ -66,6 +66,7 @@ export function getMaxWebSearchesPerSession(): number {
 export function getMaxConcurrentAgents(): number {
   return (
     parseLimit(process.env.NOA_CLAUDE_MAX_CONCURRENT_AGENTS) ??
+    parseLimit(process.env.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS) ??
     parseLimit(process.env.CLAUDE_CODE_MAX_CONCURRENT_AGENTS) ??
     DEFAULT_MAX_CONCURRENT_AGENTS
   )

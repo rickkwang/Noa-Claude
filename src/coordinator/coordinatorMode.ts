@@ -161,7 +161,7 @@ Format:
 \`\`\`
 
 - \`<result>\` and \`<usage>\` are optional sections
-- The \`<summary>\` describes the outcome: "completed", "failed: {error}", or "was stopped"
+- The \`<summary>\` describes the outcome: "finished", "failed: {error}", "was stopped by user", "was stopped by Claude", or "stopped at its N-turn limit (partial result)"
 - The \`<task-id>\` value is the agent ID — use SendMessage with that ID as \`to\` to continue that worker
 
 ### Example
@@ -180,7 +180,7 @@ User:
   <task-notification>
   <task-id>agent-a1b</task-id>
   <status>completed</status>
-  <summary>Agent "Investigate auth bug" completed</summary>
+  <summary>Agent "Investigate auth bug" finished</summary>
   <result>Found null pointer in src/auth/validate.ts:42...</result>
   </task-notification>
 
@@ -351,7 +351,7 @@ User:
   <task-notification>
   <task-id>agent-a1b</task-id>
   <status>completed</status>
-  <summary>Agent "Investigate auth bug" completed</summary>
+  <summary>Agent "Investigate auth bug" finished</summary>
   <result>Found null pointer in src/auth/validate.ts:42. The user field on Session is undefined when the session expires but ...</result>
   </task-notification>
 

@@ -39,6 +39,7 @@ import {
   updateProgressFromMessage,
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { asAgentId } from '../../types/ids.js'
+import { isAgentStoppedByUser } from '../../utils/sessionStorage.js'
 import type {
   AssistantMessage,
   Message as MessageType,
@@ -792,6 +793,7 @@ export async function runAsyncAgentLifecycle({
       },
       personalityName: agentResult.personalityName,
       toolUseId: toolUseContext.toolUseId,
+      maxTurnsReached: getMaxTurnsReached(agentMessages),
       ...worktreeResult,
     })
   } catch (error) {
@@ -819,6 +821,7 @@ export async function runAsyncAgentLifecycle({
         description,
         status: 'killed',
         setAppState: rootSetAppState,
+        stoppedByUser: isAgentStoppedByUser(asAgentId(taskId)),
         personalityName: metadata.personalityName,
         toolUseId: toolUseContext.toolUseId,
         finalMessage: partialResult,

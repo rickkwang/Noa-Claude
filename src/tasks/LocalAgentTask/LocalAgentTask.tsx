@@ -231,7 +231,9 @@ export function enqueueAgentNotification({
   usage,
   toolUseId,
   worktreePath,
-  worktreeBranch
+  worktreeBranch,
+  maxTurnsReached,
+  stoppedByUser
 }: {
   taskId: string;
   description: string;
@@ -248,6 +250,10 @@ export function enqueueAgentNotification({
   toolUseId?: string;
   worktreePath?: string;
   worktreeBranch?: string;
+  /** Set when the run ended at its turn cap; finalMessage is then partial. */
+  maxTurnsReached?: number;
+  /** Set when a killed run was stopped by the user rather than by Claude. */
+  stoppedByUser?: boolean;
 }): void {
   // Atomically check and set notified flag to prevent duplicate notifications.
   // If the task was already marked as notified (e.g., by TaskStopTool), skip
@@ -272,7 +278,7 @@ export function enqueueAgentNotification({
   // preserved; only the pre-computed response is discarded.
   abortSpeculation(setAppState);
   const subject = personalityName ?? 'Agent';
-  const summary = status === 'completed' ? `${subject} "${description}" completed` : status === 'failed' ? `${subject} "${description}" failed: ${error || 'Unknown error'}` : `${subject} "${description}" was stopped`;
+  const summary = status === 'completed' ? (maxTurnsReached !== undefined ? `${subject} "${description}" stopped at its ${maxTurnsReached}-turn limit (partial result)` : `${subject} "${description}" finished`) : status === 'failed' ? `${subject} "${description}" failed: ${error || 'Unknown error'}` : `${subject} "${description}" was stopped ${stoppedByUser ? 'by user' : 'by Claude'}`;
   // The report and description are model-written; unescaped, a `</result>`
   // in them could close the tags and pose as harness text.
   const outputPath = getTaskOutputPath(taskId);
