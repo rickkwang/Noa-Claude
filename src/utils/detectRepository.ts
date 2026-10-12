@@ -60,6 +60,14 @@ export async function detectCurrentRepositoryWithHost(): Promise<ParsedRepositor
 }
 
 /**
+ * Synchronously returns the cached git remote host for the current cwd, or
+ * null if it hasn't been resolved yet or there is no remote.
+ */
+export function getCachedRepositoryHost(): string | null {
+  return repositoryWithHostCache.get(getCwd())?.host ?? null
+}
+
+/**
  * Synchronously returns the cached github.com repository for the current cwd
  * as "owner/name", or null if it hasn't been resolved yet or the host is not
  * github.com. Call detectCurrentRepository() first to populate the cache.

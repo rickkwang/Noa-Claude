@@ -8,7 +8,12 @@ import { stringWidth } from '../ink/stringWidth.js'
 import { supportsHyperlinks } from '../ink/supports-hyperlinks.js'
 import type { CliHighlight } from './cliHighlight.js'
 import { logForDebugging } from './debug.js'
+import { getCwd } from './cwd.js'
 import { createHyperlink } from './hyperlink.js'
+import {
+  detectCurrentRepositoryWithHost,
+  getCachedRepositoryHost,
+} from './detectRepository.js'
 import { isEnvTruthy } from './envUtils.js'
 import { stripPromptXMLTags } from './messages.js'
 import type { ThemeName } from './theme.js'
@@ -422,19 +427,46 @@ export function formatToken(
 const ISSUE_REF_PATTERN =
   /(^|[^\w./-])([A-Za-z0-9][\w-]*\/[A-Za-z0-9][\w.-]*)#(\d+)\b/g
 
+// Hosts that have no issue URL scheme we link to; references stay plain text.
+const NO_ISSUE_LINK_HOSTS = new Set([
+  'bitbucket.org',
+  'codeberg.org',
+  'gitea.com',
+  'git.sr.ht',
+  'dev.azure.com',
+])
+
+// Remote lookup is async and cached per cwd; kick it off once per cwd so the
+// first render without a known host falls back to github.com.
+let issueHostLookupCwd: string | null = null
+
 /**
- * Replaces owner/repo#123 references with clickable hyperlinks to GitHub.
+ * Replaces owner/repo#123 references with hyperlinks to the issue on the
+ * current repository's git host (falls back to github.com).
  */
 function linkifyIssueReferences(text: string): string {
   if (!supportsHyperlinks()) {
     return text
   }
+  if (issueHostLookupCwd !== getCwd()) {
+    issueHostLookupCwd = getCwd()
+    void detectCurrentRepositoryWithHost()
+  }
+  // Strip a trailing port before classifying, as upstream does.
+  const host = (getCachedRepositoryHost() ?? 'github.com')
+    .replace(/:\d+$/, '')
+    .toLowerCase()
+  if (NO_ISSUE_LINK_HOSTS.has(host)) {
+    return text
+  }
+  // Only gitlab.com uses GitLab's /-/issues/ path; self-hosted hosts use /issues/.
+  const issuePath = host === 'gitlab.com' ? '/-/issues/' : '/issues/'
   return text.replace(
     ISSUE_REF_PATTERN,
     (_match, prefix, repo, num) =>
       prefix +
       createHyperlink(
-        `https://github.com/${repo}/issues/${num}`,
+        `https://${host}/${repo}${issuePath}${num}`,
         `${repo}#${num}`,
       ),
   )
