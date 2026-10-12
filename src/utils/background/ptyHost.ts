@@ -33,7 +33,7 @@ const REPLAY_BYTES = 1024 * 1024
 /** A client this far behind is dropped rather than buffered without bound. */
 const MAX_CLIENT_BACKLOG = 4 * 1024 * 1024
 const MAX_DIMENSION = 1000
-/** Finished and unattached this long, the session is stopped (upstream retires idle workers). */
+/** Finished or waiting for a prompt, and unattached this long, the session is stopped (upstream retires idle workers). */
 const IDLE_RECLAIM_MS = 60 * 60 * 1000
 /** Still waiting for its first prompt this long, unattached, it is stopped and its job removed. */
 const EMPTY_RECLAIM_MS = 5 * 60 * 1000
@@ -201,11 +201,13 @@ export async function runPtyHost(argv: string[]): Promise<never> {
     const now = Date.now()
     // Looking at a session counts: the idle clock restarts when the last client leaves.
     const quietSince = Math.max(Date.parse(job.updatedAt), lastDetachAt)
-    const finished = job.tempo === 'idle' && now - quietSince >= IDLE_RECLAIM_MS
+    // Waiting for a prompt with nobody around (named or not) is idle too.
+    const waitingForPrompt = job.tempo === 'blocked' && job.needs === IDLE_NEEDS
+    const idleLongEnough = (job.tempo === 'idle' || waitingForPrompt) && now - quietSince >= IDLE_RECLAIM_MS
     // Never given a prompt: nothing worth keeping, so the job goes too.
     const neverPrompted = job.tempo === 'blocked' && job.needs === IDLE_NEEDS && !job.name &&
       now - Math.max(Date.parse(job.createdAt), quietSince) >= EMPTY_RECLAIM_MS
-    if (!finished && !neverPrompted) return
+    if (!idleLongEnough && !neverPrompted) return
     reclaiming = true
     await patchJob(short, { stopRequested: true }).catch(() => {})
     if (clients.size > 0) {
