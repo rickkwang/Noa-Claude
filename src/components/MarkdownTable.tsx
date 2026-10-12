@@ -25,6 +25,9 @@ const MIN_COLUMN_WIDTH = 3;
  */
 const MAX_ROW_LINES = 4;
 
+/** Rows shown before the rest are replaced by a "not shown" notice. */
+const MAX_ROWS = 200;
+
 /** ANSI escape codes for text formatting */
 const ANSI_BOLD_START = '\x1b[1m';
 const ANSI_BOLD_END = '\x1b[22m';
@@ -80,6 +83,12 @@ export function MarkdownTable({
     columns: actualTerminalWidth
   } = useTerminalSize();
   const terminalWidth = forceWidth ?? actualTerminalWidth;
+  const rows = token.rows.slice(0, MAX_ROWS);
+  const hiddenRows = token.rows.length - rows.length;
+  const hiddenRowsNotice =
+    hiddenRows > 0
+      ? `… ${hiddenRows.toLocaleString()} more ${hiddenRows === 1 ? 'row' : 'rows'} not shown`
+      : '';
 
   // Format cell content to ANSI string
   function formatCell(tokens: Token[] | undefined): string {
@@ -108,14 +117,14 @@ export function MarkdownTable({
   // Step 1: Get minimum (longest word) and ideal (full content) widths
   const minWidths = token.header.map((header, colIndex) => {
     let maxMinWidth = getMinWidth(header.tokens);
-    for (const row of token.rows) {
+    for (const row of rows) {
       maxMinWidth = Math.max(maxMinWidth, getMinWidth(row[colIndex]?.tokens));
     }
     return maxMinWidth;
   });
   const idealWidths = token.header.map((header_0, colIndex_0) => {
     let maxIdeal = getIdealWidth(header_0.tokens);
-    for (const row_0 of token.rows) {
+    for (const row_0 of rows) {
       maxIdeal = Math.max(maxIdeal, getIdealWidth(row_0[colIndex_0]?.tokens));
     }
     return maxIdeal;
@@ -166,7 +175,7 @@ export function MarkdownTable({
       });
       maxLines = Math.max(maxLines, wrapped.length);
     }
-    for (const row_1 of token.rows) {
+    for (const row_1 of rows) {
       for (let i_2 = 0; i_2 < row_1.length; i_2++) {
         const content_0 = formatCell(row_1[i_2]?.tokens);
         const wrapped_0 = wrapText(content_0, columnWidths[i_2]!, {
@@ -244,7 +253,7 @@ export function MarkdownTable({
     const separator = '─'.repeat(separatorWidth);
     // Small indent for wrapped lines (just 2 spaces)
     const wrapIndent = '  ';
-    token.rows.forEach((row_2, rowIndex) => {
+    rows.forEach((row_2, rowIndex) => {
       if (rowIndex > 0) {
         lines_2.push(separator);
       }
@@ -283,6 +292,7 @@ export function MarkdownTable({
         }
       });
     });
+    if (hiddenRowsNotice) lines_2.push(hiddenRowsNotice);
     return lines_2.join('\n');
   }
 
@@ -296,13 +306,14 @@ export function MarkdownTable({
   tableLines.push(renderBorderLine('top'));
   tableLines.push(...renderRowLines(token.header, true));
   tableLines.push(renderBorderLine('middle'));
-  token.rows.forEach((row_3, rowIndex_0) => {
+  rows.forEach((row_3, rowIndex_0) => {
     tableLines.push(...renderRowLines(row_3, false));
-    if (rowIndex_0 < token.rows.length - 1) {
+    if (rowIndex_0 < rows.length - 1) {
       tableLines.push(renderBorderLine('middle'));
     }
   });
   tableLines.push(renderBorderLine('bottom'));
+  if (hiddenRowsNotice) tableLines.push(hiddenRowsNotice);
 
   // Safety check: verify no line exceeds terminal width.
   // This catches edge cases during terminal resize where calculations
