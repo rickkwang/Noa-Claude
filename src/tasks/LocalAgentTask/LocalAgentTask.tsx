@@ -172,7 +172,7 @@ export function assertCanStartBackgroundAgent(tasks: AppState['tasks']): void {
   if (maxConcurrent === 0) return;
   const runningAgents = Object.values(tasks).filter(t => isPanelAgentTask(t) && t.status === 'running' && t.isBackgrounded).length;
   if (runningAgents >= maxConcurrent) {
-    throw new Error(`Concurrent background agent limit reached (${runningAgents} of ${maxConcurrent} running). Wait for a running agent to complete, use run_in_background=false, or ask the user to raise NOA_CLAUDE_MAX_CONCURRENT_AGENTS.`);
+    throw new Error(`Concurrent subagent limit reached. You can run ${maxConcurrent} background subagents at once. Do not retry. If the user wants more concurrent subagents, ask them to increase NOA_CLAUDE_MAX_CONCURRENT_AGENTS.`)
   }
 }
 

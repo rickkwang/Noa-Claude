@@ -35,7 +35,7 @@ import {
   writeToMailbox,
 } from '../../utils/teammateMailbox.js'
 import { AGENT_TOOL_NAME } from '../AgentTool/constants.js'
-import { resumeAgentBackground } from '../AgentTool/resumeAgent.js'
+import { isAgentWaking, resumeAgentBackground } from '../AgentTool/resumeAgent.js'
 import { SEND_MESSAGE_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, getPrompt } from './prompt.js'
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
@@ -669,6 +669,16 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
         const agentId = registered ?? toAgentId(input.to)
         if (agentId) {
           const task = appState.tasks[agentId]
+          // A resume still starting up has no registered task yet, so a message
+          // queued now would be dropped when the new task is created. Refuse instead.
+          if (isAgentWaking(agentId) && !(isLocalAgentTask(task) && task.status === 'running')) {
+            return {
+              data: {
+                success: false,
+                message: `Agent "${input.to}" is still starting up; the message was not delivered. Retry in a moment.`,
+              },
+            }
+          }
           if (isLocalAgentTask(task) && !isMainSessionTask(task)) {
             if (task.stoppedByUser) {
               return {

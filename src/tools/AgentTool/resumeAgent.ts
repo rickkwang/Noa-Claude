@@ -84,7 +84,25 @@ export type ResumeAgentResult = {
   description: string
   outputFile: string
 }
-export async function resumeAgentBackground({
+const wakingAgentIds = new Set<string>()
+
+/** True while a resume for this agent is starting up and its task is not yet registered. */
+export function isAgentWaking(agentId: string): boolean {
+  return wakingAgentIds.has(agentId)
+}
+
+export async function resumeAgentBackground(
+  args: Parameters<typeof resumeAgentBackgroundInner>[0],
+): Promise<ResumeAgentResult> {
+  wakingAgentIds.add(args.agentId)
+  try {
+    return await resumeAgentBackgroundInner(args)
+  } finally {
+    wakingAgentIds.delete(args.agentId)
+  }
+}
+
+async function resumeAgentBackgroundInner({
   agentId,
   prompt,
   toolUseContext,

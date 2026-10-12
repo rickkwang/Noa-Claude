@@ -44,7 +44,7 @@ describe('background agent capacity', () => {
     ).assertCanStartBackgroundAgent
 
     expect(() => assertCapacity(tasks)).toThrow(
-      'Concurrent background agent limit reached (1 of 1 running)',
+      'Concurrent subagent limit reached',
     )
   })
 
