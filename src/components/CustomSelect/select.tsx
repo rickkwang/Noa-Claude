@@ -101,6 +101,11 @@ export type SelectProps<T> = {
   readonly visibleOptionCount?: number;
 
   /**
+   * Called with the visible option range (`[from, to)`) whenever it changes.
+   */
+  readonly onViewportChange?: (visibleFromIndex: number, visibleToIndex: number) => void;
+
+  /**
    * Highlight text in option labels.
    */
   readonly highlightText?: string;
@@ -109,6 +114,13 @@ export type SelectProps<T> = {
    * Options.
    */
   readonly options: OptionWithDescription<T>[];
+
+  /**
+   * Options used to size the label column of the two-column (label + description)
+   * layout. Pass the full list so the column width stays stable while scrolling.
+   * Defaults to the visible options.
+   */
+  readonly columnSizingOptions?: OptionWithDescription<T>[];
 
   /**
    * Default value.
@@ -194,7 +206,7 @@ export type SelectProps<T> = {
   readonly onRemoveImage?: (id: number) => void;
 };
 export function Select(t0) {
-  const $ = _c(74);
+  const $ = _c(75);
   const {
     isDisabled: t1,
     hideIndexes: t2,
@@ -215,7 +227,9 @@ export function Select(t0) {
     onOpenEditor,
     onImagePaste,
     pastedContents,
-    onRemoveImage
+    onRemoveImage,
+    onViewportChange,
+    columnSizingOptions
   } = t0;
   const isDisabled = t1 === undefined ? false : t1;
   const hideIndexes = t2 === undefined ? false : t2;
@@ -303,6 +317,9 @@ export function Select(t0) {
     t11 = $[14];
   }
   const state = useSelectState(t11);
+  useEffect(() => {
+    onViewportChange?.(state.visibleFromIndex, state.visibleToIndex);
+  }, [onViewportChange, state.visibleFromIndex, state.visibleToIndex]);
   const t12 = disableSelection || (hideIndexes ? "numeric" : false);
   let t13;
   if ($[15] !== pastedContents) {
@@ -377,7 +394,7 @@ export function Select(t0) {
   let t15;
   let t16;
   let t17;
-  if ($[28] !== hideIndexes || $[29] !== highlightText || $[30] !== imagesSelected || $[31] !== inlineDescriptions || $[32] !== inputValues || $[33] !== isDisabled || $[34] !== layout || $[35] !== onCancel || $[36] !== onChange || $[37] !== onImagePaste || $[38] !== onOpenEditor || $[39] !== onRemoveImage || $[40] !== options.length || $[41] !== pastedContents || $[42] !== selectedImageIndex || $[43] !== state.focusedValue || $[44] !== state.options || $[45] !== state.value || $[46] !== state.visibleFromIndex || $[47] !== state.visibleOptions || $[48] !== state.visibleToIndex || $[72] !== wheel || $[73] !== columns) {
+  if ($[74] !== columnSizingOptions || $[28] !== hideIndexes || $[29] !== highlightText || $[30] !== imagesSelected || $[31] !== inlineDescriptions || $[32] !== inputValues || $[33] !== isDisabled || $[34] !== layout || $[35] !== onCancel || $[36] !== onChange || $[37] !== onImagePaste || $[38] !== onOpenEditor || $[39] !== onRemoveImage || $[40] !== options.length || $[41] !== pastedContents || $[42] !== selectedImageIndex || $[43] !== state.focusedValue || $[44] !== state.options || $[45] !== state.value || $[46] !== state.visibleFromIndex || $[47] !== state.visibleOptions || $[48] !== state.visibleToIndex || $[72] !== wheel || $[73] !== columns) {
     t17 = Symbol.for("react.early_return_sentinel");
     bb0: {
       const styles = {
@@ -536,7 +553,11 @@ export function Select(t0) {
         }
         // Cap the label column so a long label can't take the whole row and
         // squeeze the description to nothing; labels past the cap truncate.
-        const maxLabelWidth = Math.min(Math.max(...optionData.map(t19)), Math.floor(columns * TWO_COLUMN_LABEL_RATIO));
+        const sizingData = columnSizingOptions ? columnSizingOptions.map(option_4 => ({
+          option: option_4,
+          isSelected: option_4.value === state.value
+        })) : optionData;
+        const maxLabelWidth = Math.min(Math.max(...sizingData.map(t19)), Math.floor(columns * TWO_COLUMN_LABEL_RATIO));
         let t20;
         if ($[64] !== hideIndexes || $[65] !== maxIndexWidth_1 || $[66] !== maxLabelWidth) {
           t20 = data_0 => {
@@ -633,6 +654,7 @@ export function Select(t0) {
     $[48] = state.visibleToIndex;
     $[72] = wheel;
     $[73] = columns;
+    $[74] = columnSizingOptions;
     $[49] = T0;
     $[50] = t15;
     $[51] = t16;

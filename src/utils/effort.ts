@@ -252,6 +252,9 @@ export function toPersistableEffort(
 export function getInitialEffortSetting(
   model?: string,
 ): EffortLevel | undefined {
+  // A top-level effortLevel in user settings is the legacy key from before
+  // per-model levels; it does not apply to Opus 5.5 and later.
+  const ignoreUserTopLevel = model !== undefined && isOpusFiveFiveOrLater(model)
   if (model !== undefined) {
     const key = getEffortModelKey(model)
     for (const source of [...getEnabledSettingSources()].reverse()) {
@@ -262,12 +265,23 @@ export function getInitialEffortSetting(
       if (scoped?.effortLevel !== undefined) {
         return toPersistableEffort(scoped.effortLevel, model)
       }
-      if (settings?.effortLevel !== undefined) {
+      if (settings?.effortLevel !== undefined && !(ignoreUserTopLevel && source === 'userSettings')) {
         return toPersistableEffort(settings.effortLevel, model)
       }
     }
   }
-  return toPersistableEffort(getInitialSettings().effortLevel, model)
+  return toPersistableEffort(
+    ignoreUserTopLevel ? undefined : getInitialSettings().effortLevel,
+    model,
+  )
+}
+
+function isOpusFiveFiveOrLater(model: string): boolean {
+  const match = getCanonicalName(model).match(/claude-opus-(\d+)(?:-(\d+))?/)
+  if (!match) return false
+  const major = Number(match[1])
+  const minor = Number(match[2] ?? 0)
+  return major > 5 || (major === 5 && minor >= 5)
 }
 
 export function getEffortModelKey(model: string): string {
@@ -502,13 +516,13 @@ export function getDefaultEffortForModel(
   // still gate on providers known to support effort so unknown 3P proxies keep
   // the legacy "unset/high" path.
   //
-  // Opus 4.8 intentionally does NOT default to xhigh: per the official models
-  // overview ("On Claude Opus 4.8, the effort parameter defaults to high on all
-  // surfaces, including the Claude API and Claude Code") and the 4.8 migration
-  // guide ("start at high as the default rather than defaulting to xhigh" — its
-  // higher intelligence ceiling makes xhigh prone to overthinking), 4.8 falls
-  // through to undefined → the API resolves that to high. xhigh remains an
-  // available level (see getSupportedEffortLevelsForModel) for users who opt in.
+  // Opus 4.8 does NOT default to xhigh: per the official models overview ("On
+  // Claude Opus 4.8, the effort parameter defaults to high on all surfaces,
+  // including the Claude API and Claude Code") and the 4.8 migration guide
+  // ("start at high as the default rather than defaulting to xhigh" — its
+  // higher intelligence ceiling makes xhigh prone to overthinking), 4.8 gets
+  // `high`, matching upstream. xhigh remains an available level (see
+  // getSupportedEffortLevelsForModel) for users who opt in.
   //
   // Opus 5.5 / Sonnet 5.5 / Haiku 5.5 default to `medium`, sent explicitly.
   // For Sonnet 5.5 that is below the API's own default (`high`), so leaving it
@@ -527,7 +541,12 @@ export function getDefaultEffortForModel(
     return 'medium'
   }
 
-  // Fallback to undefined, which means we don't set an effort level. This
-  // should resolve to high effort level in the API.
+  // Upstream falls back to `high` for every effort-capable model without a
+  // catalog default (including Mythos 5). Models without effort support stay
+  // unset so the effort callout does not appear for them.
+  if (supported.includes('high')) {
+    return 'high'
+  }
+
   return undefined
 }

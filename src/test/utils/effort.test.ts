@@ -64,9 +64,9 @@ describe('effort model support', () => {
       'xhigh',
       'max',
     ])
-    // ...but unlike 4.7 it does NOT default to xhigh — it sends no effort param,
-    // which the API resolves to high (per the official 4.8 docs).
-    expect(resolveAppliedEffort('claude-opus-4-8', undefined)).toBeUndefined()
+    // ...but unlike 4.7 it does NOT default to xhigh — it defaults to high
+    // (per the official 4.8 docs), matching upstream.
+    expect(resolveAppliedEffort('claude-opus-4-8', undefined)).toBe('high')
     expect(getDisplayedEffortLevel('claude-opus-4-8', undefined)).toBe('high')
     // Opting in to xhigh still works.
     expect(resolveAppliedEffort('claude-opus-4-8', 'xhigh')).toBe('xhigh')

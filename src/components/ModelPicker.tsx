@@ -9,12 +9,15 @@ import { getFastModeModelDisplay, isFastModeAvailable, isFastModeCooldown, isFas
 import { Box, Text } from '../ink.js';
 import { useKeybindings } from '../keybindings/useKeybinding.js';
 import { useAppState, useSetAppState } from '../state/AppState.js';
-import { convertEffortValueToLevel, type EffortLevel, getApiDefaultEffortForModel, getDefaultEffortForModel, getEffortEnvOverride, getEffortSettingsUpdate, getInitialEffortSetting, getSupportedEffortLevelsForModel, modelSupportsEffort, toPersistableEffort } from '../utils/effort.js';
+import { convertEffortValueToLevel, type EffortLevel, getApiDefaultEffortForModel, getDefaultEffortForModel, getEffortEnvOverride, getEffortSettingsUpdate, getSupportedEffortLevelsForModel, modelSupportsEffort, toPersistableEffort } from '../utils/effort.js';
 import { getDefaultMainLoopModel, type ModelSetting, modelDisplayString, parseUserSpecifiedModel, renderDefaultModelSetting, getDefaultMainLoopModelSetting } from '../utils/model/model.js';
 import { getModelOptions } from '../utils/model/modelOptions.js';
 import { updateSettingsForSource } from '../utils/settings/settings.js';
 import { ConfigurableShortcutHint } from './ConfigurableShortcutHint.js';
 import { Select } from './CustomSelect/index.js';
+import { useTheme } from './design-system/ThemeProvider.js';
+import { colorize } from '../ink/colorize.js';
+import { getTheme } from '../utils/theme.js';
 import { Byline } from './design-system/Byline.js';
 import { KeyboardShortcutHint } from './design-system/KeyboardShortcutHint.js';
 import { Pane } from './design-system/Pane.js';
@@ -63,6 +66,9 @@ export function ModelPicker(t0) {
   const exitState = useExitOnCtrlCDWithKeybindings(onCancel);
   const initialValue = safeInitial === null ? NO_PREFERENCE : safeInitial;
   const [focusedValue, setFocusedValue] = useState(initialValue);
+  const [visibleToIndex, setVisibleToIndex] = useState(10);
+  const [currentTheme] = useTheme();
+  const handleViewportChange = useCallback((_visibleFromIndex: number, nextVisibleToIndex: number) => setVisibleToIndex(nextVisibleToIndex), []);
   const isFastMode = useAppState(_temp);
   const [hasToggledEffort, setHasToggledEffort] = useState(false);
   const effortValue = useAppState(_temp2);
@@ -92,49 +98,31 @@ export function ModelPicker(t0) {
     t3 = $[3];
   }
   const modelOptions = t3;
-  let t4;
-  bb0: {
-    if (safeInitial !== null && !modelOptions.some(opt => opt.value === safeInitial)) {
-      let t5;
-      if ($[4] !== safeInitial) {
-        t5 = modelDisplayString(safeInitial);
-        $[4] = safeInitial;
-        $[5] = t5;
-      } else {
-        t5 = $[5];
-      }
-      let t6;
-      if ($[6] !== safeInitial || $[7] !== t5) {
-        t6 = {
-          value: safeInitial,
-          label: t5,
-          description: "Current model"
-        };
-        $[6] = safeInitial;
-        $[7] = t5;
-        $[8] = t6;
-      } else {
-        t6 = $[8];
-      }
-      let t7;
-      if ($[9] !== modelOptions || $[10] !== t6) {
-        t7 = [...modelOptions, t6];
-        $[9] = modelOptions;
-        $[10] = t6;
-        $[11] = t7;
-      } else {
-        t7 = $[11];
-      }
-      t4 = t7;
-      break bb0;
+  // Like upstream: add the effective model ("Current model") and, when a
+  // session override is set, the base model ("Base model") if not listed.
+  // They go before the first disabled option, or at the end.
+  const extraOptions: { value: string; label: string; description: string }[] = [];
+  for (const [value, description] of [
+    [sessionModel ?? safeInitial, "Current model"],
+    [sessionModel ? safeInitial : null, "Base model"],
+  ] as const) {
+    if (value !== null && !modelOptions.some(opt => opt.value === value) && !extraOptions.some(opt => opt.value === value)) {
+      extraOptions.push({ value, label: modelDisplayString(value), description });
     }
-    t4 = modelOptions;
   }
-  const optionsWithInitial = t4;
+  const firstDisabledIndex = modelOptions.findIndex(opt => opt.disabled === true);
+  const optionsWithInitial = extraOptions.length === 0 ? modelOptions
+    : firstDisabledIndex === -1 ? [...modelOptions, ...extraOptions]
+    : [...modelOptions.slice(0, firstDisabledIndex), ...extraOptions, ...modelOptions.slice(firstDisabledIndex)];
+  // Upstream colors "Opus 5.5" in descriptions with the theme's claude color.
+  const claudeColor = getTheme(currentTheme).claude;
+  const optionsColored = optionsWithInitial.map(opt => opt.description
+    ? { ...opt, description: opt.description.replaceAll("Opus 5.5", colorize("Opus 5.5", claudeColor, "foreground")) }
+    : opt);
   let t5;
-  if ($[12] !== optionsWithInitial) {
-    t5 = optionsWithInitial.map(_temp3);
-    $[12] = optionsWithInitial;
+  if ($[12] !== optionsColored) {
+    t5 = optionsColored.map(_temp3);
+    $[12] = optionsColored;
     $[13] = t5;
   } else {
     t5 = $[13];
@@ -151,7 +139,6 @@ export function ModelPicker(t0) {
   }
   const initialFocusValue = t6;
   const visibleCount = Math.min(10, selectOptions.length);
-  const hiddenCount = Math.max(0, selectOptions.length - visibleCount);
   let t7;
   if ($[17] !== focusedValue || $[18] !== selectOptions) {
     t7 = selectOptions.find(opt_1 => opt_1.value === focusedValue)?.label;
@@ -175,7 +162,7 @@ export function ModelPicker(t0) {
   const focusedSupportedEffortLevels = focusedModelForEffort ? getSupportedEffortLevelsForModel(focusedModelForEffort) : [];
   let t9;
   if ($[23] !== focusedValue || $[94] !== effortValue) {
-    t9 = getDefaultEffortLevelForOption(focusedValue, effortValue !== null);
+    t9 = getDefaultEffortLevelForOption(focusedValue);
     $[23] = focusedValue;
     $[94] = effortValue;
     $[24] = t9;
@@ -189,7 +176,7 @@ export function ModelPicker(t0) {
     t10 = value => {
       setFocusedValue(value);
       if (!hasToggledEffort && effortValue == null) {
-        setEffort(getDefaultEffortLevelForOption(value, effortValue !== null));
+        setEffort(getDefaultEffortLevelForOption(value));
       }
     };
     $[25] = effortValue;
@@ -337,7 +324,7 @@ export function ModelPicker(t0) {
   const t20 = onCancel ?? _temp4;
   let t21;
   if ($[49] !== handleFocus || $[50] !== handleSelect || $[51] !== initialFocusValue || $[52] !== initialValue || $[53] !== selectOptions || $[54] !== t20 || $[55] !== visibleCount) {
-    t21 = <Box flexDirection="column"><Select defaultValue={initialValue} defaultFocusValue={initialFocusValue} options={selectOptions} onChange={handleSelect} onFocus={handleFocus} onCancel={t20} visibleOptionCount={visibleCount} /></Box>;
+    t21 = <Box flexDirection="column"><Select defaultValue={initialValue} defaultFocusValue={initialFocusValue} options={selectOptions} onChange={handleSelect} onFocus={handleFocus} onCancel={t20} visibleOptionCount={visibleCount} onViewportChange={handleViewportChange} columnSizingOptions={selectOptions} /></Box>;
     $[49] = handleFocus;
     $[50] = handleSelect;
     $[51] = initialFocusValue;
@@ -349,23 +336,8 @@ export function ModelPicker(t0) {
   } else {
     t21 = $[56];
   }
-  let t22;
-  if ($[57] !== hiddenCount) {
-    t22 = hiddenCount > 0 && <Box paddingLeft={3}><Text dimColor={true}>...+{hiddenCount} models</Text></Box>;
-    $[57] = hiddenCount;
-    $[58] = t22;
-  } else {
-    t22 = $[58];
-  }
-  let t23;
-  if ($[59] !== t21 || $[60] !== t22) {
-    t23 = <Box flexDirection="column" marginBottom={1}>{t21}{t22}</Box>;
-    $[59] = t21;
-    $[60] = t22;
-    $[61] = t23;
-  } else {
-    t23 = $[61];
-  }
+  const hiddenBelow = Math.max(0, selectOptions.length - visibleToIndex);
+  const t23 = <Box flexDirection="column" marginBottom={1}>{t21}{hiddenBelow > 0 && <Box paddingLeft={3}><Text dimColor={true}>...+{hiddenBelow} models</Text></Box>}</Box>;
   let t24;
   if ($[62] !== displayEffort || $[63] !== focusedDefaultEffort || $[64] !== focusedModelName || $[65] !== focusedSupportsEffort) {
     t24 = <Box marginBottom={1} flexDirection="column">{focusedSupportsEffort ? <Text dimColor={true}><EffortLevelIndicator effort={displayEffort} />{" "}{capitalize(displayEffort)} effort{displayEffort === focusedDefaultEffort ? " (default)" : ""}{" "}<Text color="subtle">← → to adjust</Text></Text> : <Text color="subtle"><EffortLevelIndicator effort={undefined} /> Effort not supported{focusedModelName ? ` for ${focusedModelName}` : ""}</Text>}{focusedSupportsEffort && getEffortEnvOverride() !== undefined ? <Text color="warning">CLAUDE_CODE_EFFORT_LEVEL={process.env.CLAUDE_CODE_EFFORT_LEVEL} overrides this session</Text> : null}</Box>;
@@ -495,8 +467,9 @@ function clampEffortLevelForModel(effort: EffortLevel | undefined, supportedLeve
   if (supportedLevels.includes('medium')) return 'medium';
   return supportedLevels[0];
 }
-function getDefaultEffortLevelForOption(value?: string, inherit = true): EffortLevel {
+function getDefaultEffortLevelForOption(value?: string): EffortLevel {
   const resolved = resolveOptionModel(value) ?? getDefaultMainLoopModel();
-  const defaultValue = (inherit ? getInitialEffortSetting(resolved) : undefined) ?? getDefaultEffortForModel(resolved);
+  // Model default only (matches upstream's picker): user settings are not applied here.
+  const defaultValue = getDefaultEffortForModel(resolved);
   return defaultValue !== undefined ? convertEffortValueToLevel(defaultValue) : getApiDefaultEffortForModel(resolved);
 }
