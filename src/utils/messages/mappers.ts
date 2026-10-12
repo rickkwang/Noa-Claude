@@ -21,7 +21,10 @@ import type {
 } from 'src/types/message.js'
 import type { DeepImmutable } from 'src/types/utils.js'
 import stripAnsi from 'strip-ansi'
-import { createAssistantMessage } from '../messages.js'
+import {
+  createAssistantMessage,
+  stripOriginalToolInputs,
+} from '../messages.js'
 import { getPlan } from '../plans.js'
 import {
   fromSDKSummarizeMetadata,
@@ -282,9 +285,10 @@ export function toSDKRateLimitInfo(
 function normalizeAssistantMessageForSDK(
   message: AssistantMessage,
 ): AssistantMessage['message'] {
-  const content = message.message.content
+  const sdkMessage = stripOriginalToolInputs(message.message)
+  const content = sdkMessage.content
   if (!Array.isArray(content)) {
-    return message.message
+    return sdkMessage
   }
 
   const normalizedContent = content.map((block): BetaContentBlock => {
@@ -306,7 +310,7 @@ function normalizeAssistantMessageForSDK(
   })
 
   return {
-    ...message.message,
+    ...sdkMessage,
     content: normalizedContent,
   }
 }

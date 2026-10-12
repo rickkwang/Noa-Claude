@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,7 +18,7 @@ const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'n
 mkdirSync(artifacts, { recursive: true });
 const model = 'claude-sonnet-4-6';
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['agent-nested', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'bedrock-overflow', 'field-reject'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['agent-nested', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'bedrock-overflow', 'field-reject'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -52,6 +52,12 @@ const server = createServer(async (req, res) => {
       res.writeHead(status, { 'content-type': 'application/json', 'retry-after': '0', 'x-should-retry': status === 529 ? 'true' : 'false' });
       res.end(JSON.stringify({ type: 'error', error: { type, message } }));
     };
+    if (active.case === 'tool-input-nonstream' && body.stream) {
+      // Fail before any output so the real Anthropic transport takes its JSON fallback.
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end(`event: error\ndata: ${JSON.stringify({ type: 'error', error: { type: 'api_error', message: 'Scripted non-streaming fallback' } })}\n\n`);
+      return;
+    }
     if (active.case === 'compact-resume' && summary && raw.length > 500_000) {
       error(400, 'invalid_request_error', 'prompt is too long: 280000 tokens > 200000 maximum');
       return;
@@ -152,6 +158,8 @@ const server = createServer(async (req, res) => {
       content = [{ type: 'text', text: 'Calling a tool now.' }]; stop = 'tool_use';
     } else if ((active.case === 'empty' && n === 1) || (active.case === 'alternating' && n <= 8 && n % 2 === 0)) {
       content = [];
+    } else if (active.case.startsWith('tool-input-') && active.phase !== 'resume' && !body.messages.some(m => Array.isArray(m.content) && m.content.some(b => b.type === 'tool_result' && b.tool_use_id === 'write_original'))) {
+      content = [{ type: 'thinking', thinking: 'Local input preservation fixture.', signature: 'synthetic-input-signature' }, { type: 'tool_use', id: 'write_original', name: 'Write', input: { file_path: join(active.dir, 'normalized.txt'), content: 'KEEP_TRAILING_SPACES  \n' } }]; stop = 'tool_use';
     } else if (active.case === 'truncated' && n === 1) {
       content = [{ type: 'text', text: 'PARTIAL_' }];
     } else if (active.case === 'stale-signature' && n === 1) {
@@ -159,6 +167,8 @@ const server = createServer(async (req, res) => {
     } else if (active.case === 'stale-signature' && n === 2) {
       error(400, 'invalid_request_error', 'messages.1.content.0: Invalid `signature` in `thinking` block');
       return;
+    } else if (active.case === 'stale-signature' && n === 3) {
+      content = [{ type: 'thinking', thinking: '', signature: 'fresh-sig' }, { type: 'tool_use', id: 'toolu_fresh', name: 'Read', input: { file_path: join(active.dir, 'fixture.txt') } }]; stop = 'tool_use';
     } else if ((active.case === 'refusal' && n === 1) || active.case === 'refusal-repeat') {
       content = [{ type: 'text', text: 'Partial answer.' }]; stop = 'refusal';
     } else if (active.case.startsWith('budget-')) {
@@ -254,8 +264,9 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   const harness = scenario.startsWith('task-') || scenario === 'goal-child-usage' || scenario==='agent-custom-fork' || scenario==='agent-nested';
   // Hooks are off under --bare, so the hook scenario runs the full startup path.
   // --bare drops run_in_background, so the deadline scenario needs the full startup path too.
-  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('concurrency-') || scenario === 'background-deadline' || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', model, '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'?'Task':'TaskCreate,TaskUpdate,TaskGet,TaskList') : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'background-deadline' || scenario === 'small-window-overflow' ? '4' : '2'];
-  if (scenario !== 'compact-resume' && scenario !== 'tombstone-resume' && scenario!=='agent-custom-fork') command.push('--no-session-persistence');
+  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('concurrency-') || scenario.startsWith('tool-input-') || scenario === 'background-deadline' || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', model, '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'?'Task':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'stale-signature' ? '3' : scenario === 'background-deadline' || scenario === 'small-window-overflow' ? '4' : '2'];
+  if (!scenario.startsWith('tool-input-') && scenario !== 'compact-resume' && scenario !== 'tombstone-resume' && scenario !== 'stale-signature' && scenario!=='agent-custom-fork') command.push('--no-session-persistence');
+  if (scenario.startsWith('tool-input-')) command.push('--allowedTools', 'Write');
   if (scenario === 'fallback') command.push('--fallback-model', 'claude-haiku-4-5');
   // An allow rule that the narrower deny rule must still beat.
   if (scenario === 'deny-rule') command.push('--allowedTools', 'Bash', '--disallowedTools', 'Bash(printf:*)');
@@ -442,9 +453,44 @@ try {
             assert.equal(writes[0].slice(6), writes[1].slice(4)); assert.equal(writes[2].slice(6), writes[3].slice(4));
             active.finalState = writes;
           } else if (scenario === 'stale-signature') {
-            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK'); assert.equal(count, 3);
+            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK'); assert.equal(count, 4);
             assert.ok(JSON.stringify(active.requests[1].body.messages).includes('"thinking"'), 'fixture never replayed a thinking block');
             assert.ok(!JSON.stringify(active.requests[2].body.messages).includes('"thinking"'), 'retry still sent the rejected thinking block');
+            const fresh = active.requests[3].body.messages.flatMap(m => m.content).filter(b => b.type === 'thinking');
+            assert.deepEqual(fresh, [{ type: 'thinking', thinking: '', signature: 'fresh-sig' }], 'recovery stripped newly generated thinking');
+            const projects = join(dir, 'config', 'projects');
+            const transcripts = readdirSync(projects, { recursive: true }).filter(path => path.endsWith(`${runResult.result.session_id}.jsonl`));
+            assert.equal(transcripts.length, 1, 'session transcript missing');
+            const transcript = readFileSync(join(projects, transcripts[0]), 'utf8');
+            const recovery = transcript.split('\n').filter(Boolean).map(line => JSON.parse(line)).find(m => m.subtype === 'thinking_signature_recovery');
+            assert.ok(recovery?.signatureStripMessageUuids?.length, 'recovery boundary was not persisted');
+            writeFileSync(join(dir, 'recovery-record.json'), JSON.stringify(recovery, null, 2));
+            // Resume strips every signature (conversationRecovery), so this checks the
+            // persisted marker loads cleanly, not that it drives later stripping.
+            active.phase = 'resume';
+            const resumed = await run(executable, scenario, ['--resume', runResult.result.session_id], 'Continue after signature recovery.');
+            assert.equal(resumed.code, 0); assert.equal(resumed.result.result, 'AUDIT_OK');
+          } else if (scenario.startsWith('tool-input-')) {
+            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
+            assert.equal(readFileSync(join(dir, 'normalized.txt'), 'utf8'), 'KEEP_TRAILING_SPACES\n', 'Write execution lost its existing whitespace normalization');
+            const expected = { file_path: join(dir, 'normalized.txt'), content: 'KEEP_TRAILING_SPACES  \n' };
+            const assertReplay = (request, expectThinking = true) => {
+              const blocks = request.body.messages.flatMap(m => Array.isArray(m.content) ? m.content : []);
+              const use = blocks.find(b => b.type === 'tool_use' && b.id === 'write_original');
+              assert.deepEqual(use?.input, expected, 'API replay changed the original SDK tool input');
+              assert.equal('originalInput' in use, false, 'local metadata leaked to the API');
+              if (expectThinking) assert.deepEqual(blocks.filter(b => b.type === 'thinking'), [{ type: 'thinking', thinking: 'Local input preservation fixture.', signature: 'synthetic-input-signature' }]);
+              assert.ok(blocks.some(b => b.type === 'tool_result' && b.tool_use_id === 'write_original' && !b.is_error), 'Write did not execute successfully');
+            };
+            const completed = main.filter(r => scenario !== 'tool-input-nonstream' || !r.body.stream);
+            assert.equal(completed.length, 2);
+            assert.ok(completed.every(r => !!r.body.stream === (scenario === 'tool-input-streaming')), 'wrong response transport exercised');
+            assertReplay(completed[1]);
+            assert.ok(!readFileSync(join(dir, 'run-stdout.jsonl'), 'utf8').includes('originalInput'), 'local metadata leaked to SDK output');
+            active.phase = 'resume';
+            const resumed = await run(executable, scenario, ['--resume', runResult.result.session_id], 'Continue after original input fixture.');
+            assert.equal(resumed.code, 0); assert.equal(resumed.result.result, 'AUDIT_OK');
+            assertReplay(active.requests.at(-1), false);
           } else if (scenario === 'background-deadline') {
             assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
             const bash = main[0].body.tools.find(t => t.name === 'Bash');

@@ -28,7 +28,11 @@ import {
   createFileStateCacheWithSizeLimit,
   type FileStateCache,
 } from './fileStateCache.js'
-import { isNotEmptyMessage, normalizeMessages } from './messages.js'
+import {
+  isNotEmptyMessage,
+  normalizeMessages,
+  stripOriginalToolInputs,
+} from './messages.js'
 import { expandPath } from './path.js'
 import type {
   inputSchema as permissionToolInputSchema,
@@ -114,7 +118,7 @@ export function* normalizeMessage(message: Message): Generator<SDKMessage> {
         }
         yield {
           type: 'assistant',
-          message: _.message,
+          message: stripOriginalToolInputs(_.message),
           parent_tool_use_id: null,
           session_id: getSessionId(),
           uuid: _.uuid,
@@ -136,7 +140,7 @@ export function* normalizeMessage(message: Message): Generator<SDKMessage> {
               }
               yield {
                 type: 'assistant',
-                message: _.message,
+                message: stripOriginalToolInputs(_.message),
                 parent_tool_use_id: message.parentToolUseID,
                 session_id: getSessionId(),
                 uuid: _.uuid,

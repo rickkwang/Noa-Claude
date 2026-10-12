@@ -456,7 +456,10 @@ function roughTokenCountEstimationForBlock(
     // commands, Edit diffs, file contents).  Stringify once for the
     // char count; the API re-serializes anyway so this is what it sees.
     return roughTokenCountEstimation(
-      block.name + jsonStringify(block.input ?? {}),
+      block.name +
+        jsonStringify(
+          ('originalInput' in block ? block.originalInput : block.input) ?? {},
+        ),
     )
   }
   if (block.type === 'thinking') {

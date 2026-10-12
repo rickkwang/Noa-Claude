@@ -1726,25 +1726,14 @@ async function* queryModel(
     //
     // 'drop_block' is the degrade-instead-of-fail setting: the API drops the
     // first mismatched block and every thinking block after it, then proceeds.
-    // Set it explicitly rather than relying on a default — the defaults differ
-    // by surface (unset + no header records the mismatch server-side only;
-    // the header alone silently switches to drop_block).
-    //
-    // One path deliberately does rely on that header-alone default: turning
-    // thinking off on a Fable model leaves `thinking` unset entirely (the
-    // family's thinking cannot be disabled, so modelThinkingCannotBeDisabled
-    // says omit rather than send {type:'disabled'}), and block_binding is a
-    // field *inside* thinking with nowhere to live. The header still ships, so
-    // the request still gets drop_block. Reconstructing a thinking param just
-    // to carry the field would mean editing the adaptive-vs-budget selection
-    // above, which is change-controlled, for no behavioural difference.
+    // Set it explicitly, creating adaptive thinking when the param is unset
+    // to carry the block_binding setting.
     if (
-      thinking &&
-      thinking.type !== 'disabled' &&
+      thinking?.type !== 'disabled' &&
       betasParams.includes(THINKING_BINDING_CONTROLS_BETA_HEADER)
     ) {
       thinking = {
-        ...thinking,
+        ...(thinking ?? { type: 'adaptive' }),
         block_binding: { prefix_mismatch_behavior: 'drop_block' },
       } satisfies BetaMessageStreamParams['thinking']
     }

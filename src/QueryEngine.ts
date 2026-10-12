@@ -722,7 +722,9 @@ export class QueryEngine {
       if (
         message.type === 'assistant' ||
         message.type === 'user' ||
-        (message.type === 'system' && message.subtype === 'compact_boundary')
+        (message.type === 'system' &&
+          (message.subtype === 'compact_boundary' ||
+            message.subtype === 'thinking_signature_recovery'))
       ) {
         // Before writing a compact boundary, flush any in-memory-only
         // messages up through the preservedSegment tail. Attachments and

@@ -15,6 +15,7 @@ import type {
 } from '@anthropic-ai/sdk/resources/index.mjs'
 import { randomUUID, type UUID } from 'crypto'
 import isObject from 'lodash-es/isObject.js'
+import isEqual from 'lodash-es/isEqual.js'
 import last from 'lodash-es/last.js'
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -2353,19 +2354,26 @@ export function normalizeMessagesForAPI(
               ...message.message,
               content: message.message.content.map(block => {
                 if (block.type === 'tool_use') {
+                  const { originalInput, ...apiBlock } = block as BetaToolUseBlock & {
+                    originalInput?: BetaToolUseBlock['input']
+                  }
                   const tool = tools.find(t => toolMatchesName(t, block.name))
-                  const normalizedInput = tool
-                    ? normalizeToolInputForAPI(
-                        tool,
-                        block.input as Record<string, unknown>,
-                      )
-                    : block.input
+                  // New responses retain the SDK input; legacy transcripts still
+                  // need to strip fields injected by local normalization.
+                  const normalizedInput = 'originalInput' in block
+                    ? originalInput
+                    : tool
+                      ? normalizeToolInputForAPI(
+                          tool,
+                          block.input as Record<string, unknown>,
+                        )
+                      : block.input
                   const canonicalName = tool?.name ?? block.name
 
                   // When tool search is enabled, preserve all fields including 'caller'
                   if (toolSearchEnabled) {
                     return {
-                      ...block,
+                      ...apiBlock,
                       name: canonicalName,
                       input: normalizedInput,
                     }
@@ -2849,6 +2857,12 @@ export function normalizeContentFromAPI(
           normalizedInput = contentBlock.input
         }
 
+        // Persist the parsed SDK input on the block so streamed same-id merges
+        // and JSON resume retain it. Execution/UI/hooks keep the normalized input.
+        const originalInput = 'originalInput' in contentBlock
+          ? contentBlock.originalInput
+          : structuredClone(normalizedInput)
+
         // Then apply tool-specific corrections
         if (typeof normalizedInput === 'object' && normalizedInput !== null) {
           const tool = findToolByName(tools, contentBlock.name)
@@ -2868,6 +2882,7 @@ export function normalizeContentFromAPI(
 
         return {
           ...contentBlock,
+          ...(('originalInput' in contentBlock || !isEqual(originalInput, normalizedInput)) && { originalInput }),
           input: normalizedInput,
         }
       }
@@ -5483,6 +5498,26 @@ export function filterOrphanedThinkingOnlyMessages(
   })
 
   return filtered
+}
+
+// originalInput is local replay metadata; SDK consumers see the standard block.
+export function stripOriginalToolInputs(
+  message: AssistantMessage['message'],
+): AssistantMessage['message'] {
+  if (
+    !Array.isArray(message.content) ||
+    !message.content.some(block => 'originalInput' in block)
+  ) {
+    return message
+  }
+  return {
+    ...message,
+    content: message.content.map(block => {
+      if (!('originalInput' in block)) return block
+      const { originalInput: _, ...rest } = block
+      return rest
+    }),
+  }
 }
 
 /**

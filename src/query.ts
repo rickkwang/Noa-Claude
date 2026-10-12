@@ -213,9 +213,23 @@ const TRUNCATED_RESUME_PROMPT = 'Your response above was cut off mid-stream. Res
 // A subagent delivers only its final message, so it rewrites the whole answer.
 const TRUNCATED_REWRITE_PROMPT = 'Your response above was cut off mid-stream and only your next message is delivered. Write the complete response again from the start — no apology, no mention of the cut-off.'
 const INVALID_THINKING_SIGNATURE = /invalid `?signature`? in `?thinking`? block/i
-// Sessions whose history carries thinking signatures the API rejected (a model
-// switch, proxy or resumed transcript): thinking blocks are stripped from then on.
-const signatureStripSessions = new Set<string>()
+// Persist the rejected history boundary without stripping thinking from later turns.
+function applyRecordedSignatureStrips(messages: Message[]): Message[] {
+  const rejected = new Set<string>()
+  for (const message of messages) {
+    if (
+      message.type !== 'system' ||
+      message.subtype !== 'thinking_signature_recovery'
+    ) continue
+    const uuids = message.signatureStripMessageUuids
+    if (Array.isArray(uuids)) {
+      for (const uuid of uuids) if (typeof uuid === 'string') rejected.add(uuid)
+    }
+  }
+  return messages.map(message =>
+    rejected.has(message.uuid) ? stripSignatureBlocks([message])[0]! : message,
+  )
+}
 
 /**
  * Is this a max_output_tokens error message? If so, the streaming loop should
@@ -416,8 +430,9 @@ async function* queryLoop(
   // Mutable cross-iteration state. The loop body destructures this at the top
   // of each iteration so reads stay bare-name (`messages`, `toolUseContext`).
   // Continue sites write `state = { ... }` instead of 9 separate assignments.
+  let hasRetriedThinkingSignature = false
   let state: State = {
-    messages: params.messages,
+    messages: applyRecordedSignatureStrips(params.messages),
     toolUseContext: params.toolUseContext,
     maxOutputTokensOverride: params.maxOutputTokensOverride,
     autoCompactTracking: undefined,
@@ -939,9 +954,6 @@ async function* queryLoop(
           // so it must include the announcements pushed above.
           toolUseContext = { ...toolUseContext, messages: messagesForQuery }
           updatedToolUseContext = toolUseContext
-          if (signatureStripSessions.has(getSessionId())) {
-            messagesForQuery = stripSignatureBlocks(messagesForQuery)
-          }
           for await (const message of deps.callModel({
             messages: prependUserContext(messagesForQuery, userContext),
             systemPrompt: fullSystemPrompt,
@@ -1651,13 +1663,25 @@ async function* queryLoop(
 
       if (
         lastMessage?.isApiErrorMessage &&
-        !signatureStripSessions.has(getSessionId()) &&
+        !hasRetriedThinkingSignature &&
         INVALID_THINKING_SIGNATURE.test(JSON.stringify(lastMessage.message.content))
       ) {
-        signatureStripSessions.add(getSessionId())
+        hasRetriedThinkingSignature = true
         yield { type: 'tombstone' as const, message: lastMessage }
+        const strippedMessages = stripSignatureBlocks(messagesForQuery)
+        const recovery = {
+          ...createSystemMessage(
+            'Recovered from an invalid thinking signature; earlier reasoning was discarded.',
+            'warning',
+          ),
+          subtype: 'thinking_signature_recovery',
+          signatureStripMessageUuids: messagesForQuery
+            .filter((message, index) => message !== strippedMessages[index])
+            .map(message => message.uuid),
+        }
+        yield recovery
         state = nextState(state, {
-          messages: stripSignatureBlocks(messagesForQuery),
+          messages: [...strippedMessages, recovery],
           toolUseContext,
           autoCompactTracking: tracking,
           transition: { reason: 'thinking_signature_retry' },

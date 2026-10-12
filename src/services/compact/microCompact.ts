@@ -253,7 +253,10 @@ export function estimateMessageTokens(messages: Message[]): number {
         // Match roughTokenCountEstimationForBlock: count name + input,
         // not the JSON wrapper or id field.
         totalTokens += roughTokenCountEstimation(
-          block.name + jsonStringify(block.input ?? {}),
+          block.name +
+            jsonStringify(
+              ('originalInput' in block ? block.originalInput : block.input) ?? {},
+            ),
         )
       } else {
         // server_tool_use, web_search_tool_result, etc.
@@ -595,6 +598,7 @@ async function persistClearedContent(
           block.type !== 'tool_use' ||
           !clearSet.has(block.id) ||
           !INPUT_CLEARABLE_TOOLS.has(block.name) ||
+          'originalInput' in block ||
           !block.input ||
           typeof block.input !== 'object'
         ) {
@@ -737,6 +741,8 @@ export function clearOldToolResults(
     name: string
     input?: unknown
   }): typeof block {
+    // API replay uses the preserved input, so clearing its execution copy saves nothing.
+    if ('originalInput' in block) return block
     const input = block.input
     if (!input || typeof input !== 'object') {
       return block
