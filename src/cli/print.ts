@@ -2586,7 +2586,9 @@ function runHeadlessStreaming(
           const hasActiveTeammates =
             hasActiveInProcessTeammates(refreshedState) ||
             (refreshedState.teamContext &&
-              Object.keys(refreshedState.teamContext.teammates).length > 0)
+              Object.keys(refreshedState.teamContext.teammates).some(
+                id => id !== refreshedState.teamContext!.leadAgentId,
+              ))
 
           if (!hasActiveTeammates) {
             logForDebugging(
@@ -2718,7 +2720,9 @@ function runHeadlessStreaming(
         const refreshedTeamContext = refreshedAppState.teamContext
         const hasTeamMembersNotCleanedUp =
           refreshedTeamContext &&
-          Object.keys(refreshedTeamContext.teammates).length > 0
+          Object.keys(refreshedTeamContext.teammates).some(
+            id => id !== refreshedTeamContext.leadAgentId,
+          )
 
         return (
           hasTeamMembersNotCleanedUp ||

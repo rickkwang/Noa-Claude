@@ -45,6 +45,7 @@ import type {
   ToolUseSummaryMessage,
   UserMessage,
 } from '../../types/message.js'
+import { getAgentContext } from '../../utils/agentContext.js'
 import { createAttachmentMessage } from '../../utils/attachments.js'
 import { getCwd, getCwdOverride } from '../../utils/cwd.js'
 import { AbortError } from '../../utils/errors.js'
@@ -861,8 +862,10 @@ export async function* runAgent({
       logForDebugging(`Failed to record sidechain transcript: ${_err}`),
     )
     // Finish the initial metadata write before this run can clear it on exit.
+    const agentContext = getAgentContext()
     await writeAgentMetadata(agentId, {
       agentType: agentDefinition.agentType,
+      depth: agentContext?.agentType === 'subagent' ? agentContext.depth : undefined,
       cwd: getCwd(),
       cwdIsolated: getCwdOverride()?.isolated ?? false,
       isolationRoot: getCwdOverride()?.isolationRoot,

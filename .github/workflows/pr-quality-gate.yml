@@ -77,3 +77,4 @@ jobs:
         run: |
           bun run build:dev:full
           bun ./scripts/e2e-agent-loop.mjs --entry dist/main-dev.js
+          bun ./scripts/e2e-agent-lifecycle.mjs --entry dist/main-dev.js

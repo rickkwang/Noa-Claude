@@ -336,6 +336,11 @@ async function resumeAgentBackgroundInner({
     parentSessionId: getParentSessionId(),
     agentType: 'subagent' as const,
     subagentName: selectedAgent.agentType,
+    // Preserve the original depth, regardless of who resumes this agent.
+    // Missing/invalid legacy metadata must not reset the agent to depth 1.
+    depth: Number.isSafeInteger(settledMeta?.depth) && settledMeta.depth! > 0
+      ? settledMeta.depth
+      : undefined,
     isBuiltIn: isBuiltInAgent(selectedAgent),
     invokingRequestId,
     invocationKind: 'resume' as const,

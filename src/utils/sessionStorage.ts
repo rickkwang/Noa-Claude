@@ -306,6 +306,8 @@ export function isAgentStoppedByUser(agentId: AgentId): boolean {
 
 export type AgentMetadata = {
   agentType: string
+  /** Original spawn depth. Missing in older metadata; resume then fails closed. */
+  depth?: number
   cwd?: string
   cwdIsolated?: boolean
   isolationRoot?: string

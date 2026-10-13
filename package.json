@@ -34,7 +34,7 @@
     "smoke:perf": "bun ./scripts/smoke-perf.mjs",
     "smoke:engine": "bun ./scripts/smoke-engineering.mjs",
     "smoke:engine:live": "bun ./scripts/smoke-engineering-live.mjs",
-    "e2e:loop": "bun ./scripts/e2e-agent-loop.mjs",
+    "e2e:loop": "bun ./scripts/e2e-agent-loop.mjs && bun ./scripts/e2e-agent-lifecycle.mjs",
     "e2e:bare": "bun ./scripts/e2e-bare.mjs",
     "e2e:restricted-safe": "bun ./scripts/e2e-restricted-safe.mjs",
     "e2e:multiedit": "bun ./scripts/e2e-multiedit.mjs",
