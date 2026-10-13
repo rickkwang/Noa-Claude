@@ -54,6 +54,10 @@ export type TaskStateBase = {
   totalPausedMs?: number
   outputFile: string
   outputOffset: number
+  // Invariant: once a task can no longer enqueue its notification, this must
+  // be true. --print exit and waitForOwnedAgentNotifications wait on
+  // `!notified`, so any path that suppresses the notification (TaskStopTool,
+  // markAgentsNotified) must set it itself, or those waits never end.
   notified: boolean
 }
 

@@ -367,19 +367,30 @@ export function killAsyncAgent(taskId: string, setAppState: SetAppState, {
 
 /**
  * Stop the running agents a stopped agent spawned (recursively, via
- * killAsyncAgent). Their owner is gone, so their results have no reader.
+ * killAsyncAgent). A stop request covers the whole subtree: results
+ * re-addressed to the main thread after the owner is gone would report work
+ * the caller already abandoned.
  */
 export function killOwnedAgents(ownerAgentId: string, setAppState: SetAppState, options: {
   stoppedByUser?: boolean;
 } = {}): void {
   const owned: string[] = [];
+  for (const [id, task] of Object.entries(readTasksSnapshot(setAppState) ?? {})) {
+    if (isLocalAgentTask(task) && task.status === 'running' && task.ownerAgentId === ownerAgentId) owned.push(id);
+  }
+  for (const id of owned) killAsyncAgent(id, setAppState, options);
+}
+
+// This store applies setState updaters synchronously, so a read-only updater
+// snapshots the state where no getAppState is in scope (kill paths receive
+// setAppState only).
+function readTasksSnapshot(setAppState: SetAppState): AppState['tasks'] {
+  let tasks: AppState['tasks'] = {};
   setAppState(prev => {
-    for (const [id, task] of Object.entries(prev.tasks)) {
-      if (isLocalAgentTask(task) && task.status === 'running' && task.ownerAgentId === ownerAgentId) owned.push(id);
-    }
+    tasks = prev.tasks;
     return prev;
   });
-  for (const id of owned) killAsyncAgent(id, setAppState, options);
+  return tasks;
 }
 
 // Pending until notified, not just until terminal: a completed run awaits the

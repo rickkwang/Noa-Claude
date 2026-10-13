@@ -1224,8 +1224,8 @@ export const AgentTool = buildTool({
           // Cancel auto-background timer if agent completed before it fired
           cancelAutoBackground?.();
 
-          // An interrupted foreground agent takes the agents it spawned with it;
-          // nothing is left to receive their results.
+          // An interrupted foreground agent takes the agents it spawned with
+          // it: the interrupt abandons the whole subtree's work.
           if (!wasBackgrounded && (foregroundAbortController ?? toolUseContext.abortController).signal.aborted) {
             killOwnedAgents(syncAgentId, rootSetAppState);
           }
