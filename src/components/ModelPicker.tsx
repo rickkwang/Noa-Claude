@@ -9,7 +9,7 @@ import { getFastModeModelDisplay, isFastModeAvailable, isFastModeCooldown, isFas
 import { Box, Text } from '../ink.js';
 import { useKeybindings } from '../keybindings/useKeybinding.js';
 import { useAppState, useSetAppState } from '../state/AppState.js';
-import { convertEffortValueToLevel, type EffortLevel, getApiDefaultEffortForModel, getDefaultEffortForModel, getEffortEnvOverride, getEffortSettingsUpdate, getSupportedEffortLevelsForModel, modelSupportsEffort, toPersistableEffort } from '../utils/effort.js';
+import { convertEffortValueToLevel, type EffortLevel, getApiDefaultEffortForModel, getDefaultEffortForModel, getEffortEnvOverride, getEffortSettingsUpdate, getMaxEffortCap, getSupportedEffortLevelsForModel, EFFORT_LEVELS, modelSupportsEffort, toPersistableEffort } from '../utils/effort.js';
 import { getDefaultMainLoopModel, type ModelSetting, modelDisplayString, parseUserSpecifiedModel, renderDefaultModelSetting, getDefaultMainLoopModelSetting } from '../utils/model/model.js';
 import { getModelOptions } from '../utils/model/modelOptions.js';
 import { updateSettingsForSource } from '../utils/settings/settings.js';
@@ -170,7 +170,11 @@ export function ModelPicker(t0) {
     t9 = $[24];
   }
   const focusedDefaultEffort = t9;
-  const displayEffort = clampEffortLevelForModel(effort ?? focusedDefaultEffort, focusedSupportedEffortLevels);
+  // Show the level the API receives: maxEffortLevel caps the requested one.
+  const effortCap = getMaxEffortCap(focusedModelName);
+  const requestedEffort = effort ?? focusedDefaultEffort;
+  const cappedEffort = effortCap && requestedEffort && EFFORT_LEVELS.indexOf(requestedEffort) > EFFORT_LEVELS.indexOf(effortCap) ? effortCap : requestedEffort;
+  const displayEffort = clampEffortLevelForModel(cappedEffort, focusedSupportedEffortLevels);
   let t10;
   if ($[25] !== effortValue || $[26] !== hasToggledEffort) {
     t10 = value => {
