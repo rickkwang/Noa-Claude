@@ -276,6 +276,35 @@ export function getInitialEffortSetting(
   )
 }
 
+/**
+ * Effort cap from maxEffortLevel. Within one settings file the per-model value
+ * replaces the top-level one; "max" exempts that file. Across files the lowest
+ * remaining cap wins.
+ */
+export function getMaxEffortCap(model: string): EffortLevel | undefined {
+  const key = getEffortModelKey(model)
+  let cap: EffortLevel | undefined
+  for (const source of getEnabledSettingSources()) {
+    const settings = getSettingsForSource(source)
+    const table = settings?.modelSettings
+    const scoped =
+      table &&
+      (Object.hasOwn(table, key) && table[key]?.maxEffortLevel !== undefined
+        ? table[key]
+        : Object.entries(table).find(
+            ([name, entry]) =>
+              entry?.maxEffortLevel !== undefined &&
+              getEffortModelKey(name) === key,
+          )?.[1])
+    const fileCap = scoped?.maxEffortLevel ?? settings?.maxEffortLevel
+    if (fileCap === undefined || fileCap === 'max') continue
+    if (cap === undefined || EFFORT_LEVEL_RANK[fileCap] < EFFORT_LEVEL_RANK[cap]) {
+      cap = fileCap
+    }
+  }
+  return cap
+}
+
 function isOpusFiveFiveOrLater(model: string): boolean {
   const match = getCanonicalName(model).match(/claude-opus-(\d+)(?:-(\d+))?/)
   if (!match) return false
@@ -349,7 +378,12 @@ export function resolveAppliedEffort(
     return undefined
   }
   if (typeof resolved === 'string') {
-    return clampEffortToSupportedLevels(resolved, supportedLevels)
+    const cap = getMaxEffortCap(model)
+    const capped =
+      cap !== undefined && EFFORT_LEVEL_RANK[resolved] > EFFORT_LEVEL_RANK[cap]
+        ? cap
+        : resolved
+    return clampEffortToSupportedLevels(capped, supportedLevels)
   }
   return process.env.USER_TYPE === 'ant' ? resolved : undefined
 }

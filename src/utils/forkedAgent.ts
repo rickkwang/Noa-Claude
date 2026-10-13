@@ -122,7 +122,7 @@ export type ForkedAgentParams = {
    */
   modelOverride?: string
   /** Model the query loop switches to if the fork's model is overloaded. */
-  fallbackModel?: string
+  fallbackModel?: string | string[]
 }
 
 export type ForkedAgentResult = {

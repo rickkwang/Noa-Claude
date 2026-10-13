@@ -343,9 +343,11 @@ export async function* withRetry<T>(
       // Track consecutive 529 errors
       if (
         is529Error(error) &&
-        // If FALLBACK_FOR_ALL_PRIMARY_MODELS is not set, fall through only if the primary model is a non-custom Opus model.
+        // Fall through when a fallback model is configured, when FALLBACK_FOR_ALL_PRIMARY_MODELS is set,
+        // or (without a configured fallback) only for a non-custom Opus primary model.
         // TODO: Check whether the isNonCustomOpusModel gate is still needed; it may predate the current model lineup.
-        (process.env.FALLBACK_FOR_ALL_PRIMARY_MODELS ||
+        (options.fallbackModel !== undefined ||
+          process.env.FALLBACK_FOR_ALL_PRIMARY_MODELS ||
           (!isClaudeAISubscriber() && isNonCustomOpusModel(options.model)))
       ) {
         consecutive529Errors++

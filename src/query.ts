@@ -322,7 +322,7 @@ export type QueryParams = {
   systemContext: { [k: string]: string }
   canUseTool: CanUseToolFn
   toolUseContext: ToolUseContext
-  fallbackModel?: string
+  fallbackModel?: string | string[]
   querySource: QuerySource
   maxOutputTokensOverride?: number
   maxTurns?: number
@@ -921,7 +921,11 @@ async function* queryLoop(
       }
     }
 
-    let remainingFallbackModel = currentModel === fallbackModel ? undefined : fallbackModel
+    // Fallback models are tried in order, skipping the model already in use.
+    let fallbackChain = (
+      Array.isArray(fallbackModel) ? fallbackModel : fallbackModel ? [fallbackModel] : []
+    ).filter(m => m !== currentModel)
+    let remainingFallbackModel = fallbackChain[0]
     let attemptWithFallback = true
 
     queryCheckpoint('query_api_loop_start')
@@ -1199,7 +1203,8 @@ async function* queryLoop(
           if (innerError instanceof FallbackTriggeredError && remainingFallbackModel) {
             // Fallback was triggered - switch model and retry
             currentModel = remainingFallbackModel
-            remainingFallbackModel = undefined
+            fallbackChain = fallbackChain.filter(m => m !== currentModel)
+            remainingFallbackModel = fallbackChain[0]
             attemptWithFallback = true
 
             // Clear assistant messages since we'll retry the entire request

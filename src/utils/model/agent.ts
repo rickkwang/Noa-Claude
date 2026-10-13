@@ -62,8 +62,12 @@ export function getAgentModel(
     return resolvedModel
   }
 
+  // CLAUDE_CODE_SUBAGENT_MODEL_FORCE makes the subagent env model win over the
+  // per-call and definition models, including 'inherit'.
+  const forceSubagentModel = !!process.env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE
+
   // Prioritize tool-specified model if provided
-  if (toolSpecifiedModel) {
+  if (toolSpecifiedModel && !forceSubagentModel) {
     if (aliasMatchesParentTier(toolSpecifiedModel, parentModel)) {
       return parentModel
     }
@@ -71,7 +75,9 @@ export function getAgentModel(
     return applyParentRegionPrefix(model, toolSpecifiedModel)
   }
 
-  const agentModelWithExp = agentModel ?? getDefaultSubagentModel()
+  const agentModelWithExp = forceSubagentModel
+    ? getDefaultSubagentModel()
+    : (agentModel ?? getDefaultSubagentModel())
 
   if (agentModelWithExp === 'inherit') {
     // Apply runtime model resolution for inherit to get the effective model

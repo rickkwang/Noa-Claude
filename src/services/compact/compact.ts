@@ -1710,14 +1710,13 @@ export function createCompactCanUseTool(): CanUseToolFn {
 }
 
 /**
- * The session's --fallback-model, unless it is the model already in use —
+ * The first session fallback model that is not the model already in use —
  * falling back to the same model would only repeat the overloaded request.
  */
 function getCompactFallbackModel(context: ToolUseContext): string | undefined {
   const { fallbackModel, mainLoopModel } = context.options
-  return fallbackModel && fallbackModel !== mainLoopModel
-    ? fallbackModel
-    : undefined
+  const candidates = Array.isArray(fallbackModel) ? fallbackModel : [fallbackModel]
+  return candidates.find(m => m && m !== mainLoopModel)
 }
 
 export async function streamCompactSummary({

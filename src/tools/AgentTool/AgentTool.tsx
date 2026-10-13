@@ -123,9 +123,13 @@ export const inputSchema = lazySchema(() => {
   // by forceAsync) or "schema hides a param that would've worked" (gate
   // flips off mid-session: everything still runs async via memoized
   // forceAsync). No Zod rejection, no crash — unlike required→optional.
-  return isBackgroundTasksDisabled || isForkSubagentEnabled() ? schema.omit({
+  // CLAUDE_CODE_SUBAGENT_MODEL_FORCE ignores the model parameter, so hide it.
+  const withoutModel = process.env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE
+    ? schema.omit({ model: true })
+    : schema;
+  return isBackgroundTasksDisabled || isForkSubagentEnabled() ? withoutModel.omit({
     run_in_background: true
-  }) : schema;
+  }) : withoutModel;
 });
 type InputSchema = ReturnType<typeof inputSchema>;
 

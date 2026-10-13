@@ -824,6 +824,16 @@ export const SettingsSchema = lazySchema(() =>
         .optional()
         .catch(undefined)
         .describe('Persisted effort level for supported models.'),
+      fallbackModel: z
+        .array(z.string())
+        .optional()
+        .catch(undefined)
+        .describe('Fallback model(s) tried in order when the primary model is overloaded. CLI --fallback-model takes precedence.'),
+      maxEffortLevel: z
+        .enum(['low', 'medium', 'high', 'xhigh', 'max'])
+        .optional()
+        .catch(undefined)
+        .describe('Maximum effort level. Anything above it is clamped to it.'),
       autoCompactWindow: autoCompactWindowSettingSchema.optional().catch(undefined),
       bashOutputMaxChars: z
         .number()
@@ -836,6 +846,7 @@ export const SettingsSchema = lazySchema(() =>
         ),
       modelSettings: z.record(z.string(), z.object({
         effortLevel: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().catch(undefined),
+        maxEffortLevel: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().catch(undefined),
         autoCompactWindow: autoCompactWindowSettingSchema.optional().catch(undefined),
       }).passthrough()).optional(),
       advisorModel: z
