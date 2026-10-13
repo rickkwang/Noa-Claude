@@ -20,8 +20,9 @@ const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const PROJECT_RULE = 'PROJECT_RULE_SAFE_77';
 const HOOK_MARKER = 'SAFE_HOOK_RAN_77';
 
-// The fixture returns a plain text reply; the requests are what is under test.
-let active = { requests: [] };
+// By default the fixture returns a plain text reply; the requests are what is under test.
+// A case may script the first reply as tool calls (toolUses) to exercise a tool path.
+let active = { requests: [], toolUses: null };
 const server = createServer(async (req, res) => {
   let raw = '';
   for await (const chunk of req) raw += chunk;
@@ -32,11 +33,21 @@ const server = createServer(async (req, res) => {
   active.requests.push({ path: req.url, headers: req.headers, body });
   res.writeHead(200, { 'content-type': 'text/event-stream' });
   const emit = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify({ type: event, ...data })}\n\n`);
+  const scripted = active.toolUses && active.requests.length === 1 ? active.toolUses : null;
   emit('message_start', { message: { id: `msg_${active.requests.length}`, type: 'message', role: 'assistant', model: body.model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 100, output_tokens: 0 } } });
-  emit('content_block_start', { index: 0, content_block: { type: 'text', text: '' } });
-  emit('content_block_delta', { index: 0, delta: { type: 'text_delta', text: 'SAFE_OK' } });
-  emit('content_block_stop', { index: 0 });
-  emit('message_delta', { delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 10 } });
+  if (scripted) {
+    scripted.forEach((call, index) => {
+      emit('content_block_start', { index, content_block: { type: 'tool_use', id: call.id, name: call.name, input: {} } });
+      emit('content_block_delta', { index, delta: { type: 'input_json_delta', partial_json: JSON.stringify(call.input) } });
+      emit('content_block_stop', { index });
+    });
+    emit('message_delta', { delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 10 } });
+  } else {
+    emit('content_block_start', { index: 0, content_block: { type: 'text', text: '' } });
+    emit('content_block_delta', { index: 0, delta: { type: 'text_delta', text: 'SAFE_OK' } });
+    emit('content_block_stop', { index: 0 });
+    emit('message_delta', { delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 10 } });
+  }
   emit('message_stop', {});
   res.end();
 });
@@ -66,6 +77,34 @@ const cases = {
     flags: ['--safe-mode'],
     expect: 'completed',
   },
+  // --restricted ignores the project settings file, so its SessionStart hook never runs.
+  'restricted-ignores-project-settings': {
+    flags: ['--restricted'],
+    project: true,
+    expect: 'completed',
+  },
+  // --restricted confines writes to cwd: an in-workspace Write succeeds, one outside is refused
+  // even with acceptEdits auto-approving edits. The second request carries the tool results.
+  'restricted-write-confinement': {
+    flags: ['--restricted', '--permission-mode', 'acceptEdits'],
+    requests: 2,
+    toolUses: ({ dir, workspace }) => [
+      { id: 'w_inside', name: 'Write', input: { file_path: join(workspace, 'inside.txt'), content: 'INSIDE_OK' } },
+      { id: 'w_outside', name: 'Write', input: { file_path: join(dir, 'outside.txt'), content: 'OUTSIDE_LEAK' } },
+    ],
+    expect: 'completed',
+  },
+  // Control for the case above: without --restricted the same outside Write goes through,
+  // so the refusal is caused by the mode, not by the fixture.
+  'write-outside-control': {
+    flags: ['--permission-mode', 'acceptEdits'],
+    requests: 2,
+    toolUses: ({ dir, workspace }) => [
+      { id: 'w_inside', name: 'Write', input: { file_path: join(workspace, 'inside.txt'), content: 'INSIDE_OK' } },
+      { id: 'w_outside', name: 'Write', input: { file_path: join(dir, 'outside.txt'), content: 'OUTSIDE_LEAK' } },
+    ],
+    expect: 'completed',
+  },
 };
 const selected = Object.keys(cases).filter(name => !option('--case') || name === option('--case'));
 assert.ok(selected.length > 0, 'unknown --case');
@@ -86,8 +125,8 @@ async function run(name) {
   mkdirSync(dir, { recursive: true });
   const workspace = scenario.project ? writeProject(dir) : join(dir, 'workspace');
   mkdirSync(workspace, { recursive: true });
-  active = { requests: [] };
-  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => ['PATH', 'HOME', 'TMPDIR', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL'].includes(k)));
+  active = { requests: [], toolUses: scenario.toolUses?.({ dir, workspace }) ?? null };
+  const env =Object.fromEntries(Object.entries(process.env).filter(([k]) => ['PATH', 'HOME', 'TMPDIR', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL'].includes(k)));
   Object.assign(env, {
     CLAUDE_CONFIG_DIR: join(dir, 'config'),
     ANTHROPIC_API_KEY: 'local-e2e-dummy',
@@ -120,7 +159,8 @@ function check(name, { dir, exit, stdout, stderr, workspace }) {
   assert.equal(exit.code, 0, `exit ${exit.code}: ${stderr.slice(0, 300)}`);
   const result = JSON.parse(stdout);
   assert.equal(result.terminal_reason, 'completed');
-  assert.equal(active.requests.length, 1, `expected 1 request, got ${active.requests.length}`);
+  const expected = cases[name].requests ?? 1;
+  assert.equal(active.requests.length, expected, `expected ${expected} request(s), got ${active.requests.length}`);
   const { body, headers } = active.requests[0];
   if (name === 'restricted-drops-bash') {
     const names = body.tools.map(t => t.name);
@@ -136,6 +176,27 @@ function check(name, { dir, exit, stdout, stderr, workspace }) {
   }
   if (name === 'safe-mode-auth-works') {
     assert.equal(headers['x-api-key'], 'local-e2e-dummy', 'API key was not sent under --safe-mode');
+  }
+  if (name === 'restricted-ignores-project-settings') {
+    assert.equal(existsSync(join(dir, 'hook-ran.txt')), false, 'project SessionStart hook ran under --restricted');
+  }
+  if (name === 'restricted-write-confinement' || name === 'write-outside-control') {
+    const results = active.requests[1].body.messages.flatMap(m => Array.isArray(m.content) ? m.content : []).filter(b => b.type === 'tool_result');
+    const byId = Object.fromEntries(results.map(r => [r.tool_use_id, r]));
+    assert.ok(byId.w_inside, 'in-workspace Write produced no tool result');
+    assert.ok(!byId.w_inside.is_error, `in-workspace Write refused: ${JSON.stringify(byId.w_inside)}`);
+    assert.equal(readFileSync(join(workspace, 'inside.txt'), 'utf8'), 'INSIDE_OK', 'in-workspace file content wrong');
+    if (name === 'restricted-write-confinement') {
+      assert.ok(byId.w_outside?.is_error, `outside Write was not refused: ${JSON.stringify(byId.w_outside)}`);
+      assert.match(String(byId.w_outside.content), /not allowed in --restricted mode/, 'refusal did not come from restricted confinement');
+      assert.equal(existsSync(join(dir, 'outside.txt')), false, 'file outside the workspace was written');
+    } else {
+      // Without --restricted the outside Write still fails, but through the ordinary permission
+      // prompt (print mode cannot answer it), not the restricted-mode confinement message.
+      assert.ok(byId.w_outside?.is_error, `control outside Write was not refused: ${JSON.stringify(byId.w_outside)}`);
+      assert.doesNotMatch(String(byId.w_outside.content), /restricted mode/, 'control refusal came from --restricted');
+      assert.equal(existsSync(join(dir, 'outside.txt')), false, 'control outside file was written');
+    }
   }
 }
 
