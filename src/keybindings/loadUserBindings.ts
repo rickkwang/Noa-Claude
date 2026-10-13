@@ -57,6 +57,13 @@ const FILE_STABILITY_THRESHOLD_MS = 500
 const FILE_STABILITY_POLL_INTERVAL_MS = 200
 
 /**
+ * Poll under Bun: its native fs.watch() can deadlock against the File Watcher
+ * thread when atomic writes make chokidar reopen the watcher (oven-sh/bun#27469).
+ */
+const USE_POLLING = typeof Bun !== 'undefined'
+const POLLING_INTERVAL_MS = 1000
+
+/**
  * Result of loading keybindings, including any validation warnings.
  */
 export type KeybindingsLoadResult = {
@@ -393,7 +400,8 @@ export async function initializeKeybindingWatcher(): Promise<void> {
       pollInterval: FILE_STABILITY_POLL_INTERVAL_MS,
     },
     ignorePermissionErrors: true,
-    usePolling: false,
+    usePolling: USE_POLLING,
+    interval: POLLING_INTERVAL_MS,
     atomic: true,
   })
 
