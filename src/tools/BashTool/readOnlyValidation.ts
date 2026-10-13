@@ -123,6 +123,108 @@ const FD_SAFE_FLAGS: Record<string, FlagArgType> = {
   '--format': 'string',
 }
 
+const GREP_SAFE_FLAGS: Record<string, FlagArgType> = {
+  // Pattern flags
+  '-e': 'string', // Pattern
+  '--regexp': 'string',
+  '-f': 'string', // File with patterns
+  '--file': 'string',
+  '-F': 'none', // Fixed strings
+  '--fixed-strings': 'none',
+  '-G': 'none', // Basic regexp (default)
+  '--basic-regexp': 'none',
+  '-E': 'none', // Extended regexp
+  '--extended-regexp': 'none',
+  '-P': 'none', // Perl regexp
+  '--perl-regexp': 'none',
+
+  // Matching control
+  '-i': 'none', // Ignore case
+  '--ignore-case': 'none',
+  '--no-ignore-case': 'none',
+  '-v': 'none', // Invert match
+  '--invert-match': 'none',
+  '-w': 'none', // Word regexp
+  '--word-regexp': 'none',
+  '-x': 'none', // Line regexp
+  '--line-regexp': 'none',
+
+  // Output control
+  '-c': 'none', // Count
+  '--count': 'none',
+  '--color': 'string',
+  '--colour': 'string',
+  '-L': 'none', // Files without match
+  '--files-without-match': 'none',
+  '-l': 'none', // Files with matches
+  '--files-with-matches': 'none',
+  '-m': 'number', // Max count
+  '--max-count': 'number',
+  '-o': 'none', // Only matching
+  '--only-matching': 'none',
+  '-q': 'none', // Quiet
+  '--quiet': 'none',
+  '--silent': 'none',
+  '-s': 'none', // No messages
+  '--no-messages': 'none',
+
+  // Output line prefix
+  '-b': 'none', // Byte offset
+  '--byte-offset': 'none',
+  '-H': 'none', // With filename
+  '--with-filename': 'none',
+  '-h': 'none', // No filename
+  '--no-filename': 'none',
+  '--label': 'string',
+  '-n': 'none', // Line number
+  '--line-number': 'none',
+  '-T': 'none', // Initial tab
+  '--initial-tab': 'none',
+  '-u': 'none', // Unix byte offsets
+  '--unix-byte-offsets': 'none',
+  '-Z': 'none', // Null after filename
+  '--null': 'none',
+  '-z': 'none', // Null data
+  '--null-data': 'none',
+
+  // Context control
+  '-A': 'number', // After context
+  '--after-context': 'number',
+  '-B': 'number', // Before context
+  '--before-context': 'number',
+  '-C': 'number', // Context
+  '--context': 'number',
+  '--group-separator': 'string',
+  '--no-group-separator': 'none',
+
+  // File and directory selection
+  '-a': 'none', // Text (process binary as text)
+  '--text': 'none',
+  '--binary-files': 'string',
+  '-D': 'string', // Devices
+  '--devices': 'string',
+  '-d': 'string', // Directories
+  '--directories': 'string',
+  '--exclude': 'string',
+  '--exclude-from': 'string',
+  '--exclude-dir': 'string',
+  '--include': 'string',
+  '-r': 'none', // Recursive
+  '--recursive': 'none',
+  '-R': 'none', // Dereference-recursive
+  '--dereference-recursive': 'none',
+
+  // Other options
+  '--line-buffered': 'none',
+  '-U': 'none', // Binary
+  '--binary': 'none',
+
+  // Help and version
+  '--help': 'none',
+  '-V': 'none',
+  '--version': 'none',
+}
+
 // Central configuration for allowlist-based command validation
 // All commands and flags here should only allow reading files. They should not
 // allow writing to files, executing code, or creating network requests.
@@ -454,109 +556,10 @@ const COMMAND_ALLOWLIST: Record<string, CommandConfig> = {
       '--version': 'none', // Version
     },
   },
-  grep: {
-    safeFlags: {
-      // Pattern flags
-      '-e': 'string', // Pattern
-      '--regexp': 'string',
-      '-f': 'string', // File with patterns
-      '--file': 'string',
-      '-F': 'none', // Fixed strings
-      '--fixed-strings': 'none',
-      '-G': 'none', // Basic regexp (default)
-      '--basic-regexp': 'none',
-      '-E': 'none', // Extended regexp
-      '--extended-regexp': 'none',
-      '-P': 'none', // Perl regexp
-      '--perl-regexp': 'none',
-
-      // Matching control
-      '-i': 'none', // Ignore case
-      '--ignore-case': 'none',
-      '--no-ignore-case': 'none',
-      '-v': 'none', // Invert match
-      '--invert-match': 'none',
-      '-w': 'none', // Word regexp
-      '--word-regexp': 'none',
-      '-x': 'none', // Line regexp
-      '--line-regexp': 'none',
-
-      // Output control
-      '-c': 'none', // Count
-      '--count': 'none',
-      '--color': 'string',
-      '--colour': 'string',
-      '-L': 'none', // Files without match
-      '--files-without-match': 'none',
-      '-l': 'none', // Files with matches
-      '--files-with-matches': 'none',
-      '-m': 'number', // Max count
-      '--max-count': 'number',
-      '-o': 'none', // Only matching
-      '--only-matching': 'none',
-      '-q': 'none', // Quiet
-      '--quiet': 'none',
-      '--silent': 'none',
-      '-s': 'none', // No messages
-      '--no-messages': 'none',
-
-      // Output line prefix
-      '-b': 'none', // Byte offset
-      '--byte-offset': 'none',
-      '-H': 'none', // With filename
-      '--with-filename': 'none',
-      '-h': 'none', // No filename
-      '--no-filename': 'none',
-      '--label': 'string',
-      '-n': 'none', // Line number
-      '--line-number': 'none',
-      '-T': 'none', // Initial tab
-      '--initial-tab': 'none',
-      '-u': 'none', // Unix byte offsets
-      '--unix-byte-offsets': 'none',
-      '-Z': 'none', // Null after filename
-      '--null': 'none',
-      '-z': 'none', // Null data
-      '--null-data': 'none',
-
-      // Context control
-      '-A': 'number', // After context
-      '--after-context': 'number',
-      '-B': 'number', // Before context
-      '--before-context': 'number',
-      '-C': 'number', // Context
-      '--context': 'number',
-      '--group-separator': 'string',
-      '--no-group-separator': 'none',
-
-      // File and directory selection
-      '-a': 'none', // Text (process binary as text)
-      '--text': 'none',
-      '--binary-files': 'string',
-      '-D': 'string', // Devices
-      '--devices': 'string',
-      '-d': 'string', // Directories
-      '--directories': 'string',
-      '--exclude': 'string',
-      '--exclude-from': 'string',
-      '--exclude-dir': 'string',
-      '--include': 'string',
-      '-r': 'none', // Recursive
-      '--recursive': 'none',
-      '-R': 'none', // Dereference-recursive
-      '--dereference-recursive': 'none',
-
-      // Other options
-      '--line-buffered': 'none',
-      '-U': 'none', // Binary
-      '--binary': 'none',
-
-      // Help and version
-      '--help': 'none',
-      '-V': 'none',
-      '--version': 'none',
-    },
-  },
+  grep: { safeFlags: { ...GREP_SAFE_FLAGS } },
+  // egrep/fgrep are grep aliases in upstream; same flag set
+  egrep: { safeFlags: { ...GREP_SAFE_FLAGS } },
+  fgrep: { safeFlags: { ...GREP_SAFE_FLAGS } },
   ...RIPGREP_READ_ONLY_COMMANDS,
   // Checksum commands - these only read files and compute/verify hashes
   // All flags are safe as they only affect output format or verification behavior
@@ -1387,7 +1390,10 @@ export function isCommandSafeViaFlagParsing(command: string): boolean {
   // Block newlines and carriage returns in grep/rg patterns as they can be used for injection
   if (
     !commandConfig.regex &&
-    (tokens[0] === 'rg' || tokens[0] === 'grep') &&
+    (tokens[0] === 'rg' ||
+      tokens[0] === 'grep' ||
+      tokens[0] === 'egrep' ||
+      tokens[0] === 'fgrep') &&
     /[\n\r]/.test(command)
   ) {
     return false
@@ -1494,7 +1500,6 @@ const READONLY_COMMANDS = [
   'type',
   'expr', // Evaluate expressions (arithmetic, string matching)
   'test', // Conditional evaluation (file checks, comparisons)
-  'getconf', // Get system configuration values
   'seq', // Generate number sequences
   'tsort', // Topological sort
   'pr', // Paginate files for printing
