@@ -34,6 +34,7 @@ import {
   getClaudeConfigHomeDir,
   isBareMode,
   isEnvTruthy,
+  isSafeMode,
 } from '../utils/envUtils.js'
 import { isENOENT, isFsInaccessible } from '../utils/errors.js'
 import {
@@ -692,6 +693,9 @@ export const getSkillDirCommands = memoize(
 
     // Load from /skills/ directories, additional dirs, and legacy /commands/ in parallel
     // (all independent — different directories, no shared state)
+    // --safe-mode: keep only managed (policy) skills. User, project,
+    // --add-dir and legacy commands-dir skills are customizations.
+    const safeMode = isSafeMode()
     const [
       managedSkillsNested,
       userSkills,
@@ -706,17 +710,17 @@ export const getSkillDirCommands = memoize(
               loadSkillsFromSkillsDir(dir, 'policySettings'),
             ),
           ),
-      isSettingSourceEnabled('userSettings') && !skillsLocked
+      isSettingSourceEnabled('userSettings') && !skillsLocked && !safeMode
         ? loadSkillsFromSkillsDir(userSkillsDir, 'userSettings')
         : Promise.resolve([]),
-      projectSettingsEnabled
+      projectSettingsEnabled && !safeMode
         ? Promise.all(
             projectSkillsDirs.map(dir =>
               loadSkillsFromSkillsDir(dir, 'projectSettings'),
             ),
           )
         : Promise.resolve([]),
-      projectSettingsEnabled
+      projectSettingsEnabled && !safeMode
         ? Promise.all(
             additionalDirs.flatMap(dir =>
               getProjectSubdirCandidates(dir, 'skills').map(skillDir =>
@@ -729,7 +733,7 @@ export const getSkillDirCommands = memoize(
       // subdir='commands', which our agents-only guard there skips. Block
       // here when skills are locked — these ARE skills, regardless of the
       // directory they load from.
-      skillsLocked ? Promise.resolve([]) : loadSkillsFromCommandsDir(cwd),
+      skillsLocked || safeMode ? Promise.resolve([]) : loadSkillsFromCommandsDir(cwd),
     ])
 
     // Flatten and combine all skills

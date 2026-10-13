@@ -4,6 +4,7 @@ import { AgentTool } from './tools/AgentTool/AgentTool.js'
 import { SkillTool } from './tools/SkillTool/SkillTool.js'
 import { BashTool } from './tools/BashTool/BashTool.js'
 import { FileEditTool } from './tools/FileEditTool/FileEditTool.js'
+import { MultiEditTool } from './tools/MultiEditTool/MultiEditTool.js'
 import { FileReadTool } from './tools/FileReadTool/FileReadTool.js'
 import { FileWriteTool } from './tools/FileWriteTool/FileWriteTool.js'
 import { GlobTool } from './tools/GlobTool/GlobTool.js'
@@ -119,7 +120,7 @@ const SnipTool = feature('HISTORY_SNIP')
 import type { ToolPermissionContext } from './Tool.js'
 import { getDenyRuleForTool } from './utils/permissions/permissions.js'
 import { hasEmbeddedSearchTools } from './utils/embeddedTools.js'
-import { isEnvTruthy } from './utils/envUtils.js'
+import { isEnvTruthy, isRestrictedMode } from './utils/envUtils.js'
 import { isPowerShellToolEnabled } from './utils/shell/shellToolUtils.js'
 import { isAgentSwarmsEnabled } from './utils/agentSwarmsEnabled.js'
 import { getMainLoopModel } from './utils/model/model.js'
@@ -193,6 +194,7 @@ export function getAllBaseTools(): Tools {
     ExitPlanModeV2Tool,
     FileReadTool,
     FileEditTool,
+    MultiEditTool,
     FileWriteTool,
     NotebookEditTool,
     WebFetchTool,
@@ -235,7 +237,43 @@ export function getAllBaseTools(): Tools {
     // The actual decision to defer tools happens at request time in claude.ts
     ...(isToolSearchEnabledOptimistic() ? [ToolSearchTool] : []),
   ]
-  return candidates.filter(isImplemented)
+  // --restricted drops the code-running tools and WebFetch unless --tools
+  // names them. Filtered here, not in the --tools deny path: --tools is
+  // computed against this list, so a tool removed here cannot be re-enabled.
+  const restricted = isRestrictedMode()
+  const namedByToolsFlag = restricted ? toolsFlagNames() : new Set<string>()
+  return candidates
+    .filter(isImplemented)
+    .filter(
+      tool =>
+        !restricted ||
+        !RESTRICTED_DENIED_TOOL_NAMES.has(tool.name) ||
+        namedByToolsFlag.has(tool.name),
+    )
+}
+
+// Code-running built-ins and WebFetch removed by --restricted.
+const RESTRICTED_DENIED_TOOL_NAMES = new Set<string>([
+  'Bash',
+  'PowerShell',
+  'REPL',
+  'WebFetch',
+])
+
+// Tool names given to --tools (space- or comma-separated, variadic). Read from
+// argv because this list is built before main.tsx's action handler runs.
+function toolsFlagNames(): Set<string> {
+  const names = new Set<string>()
+  const argv = process.argv
+  const at = argv.indexOf('--tools')
+  if (at === -1) return names
+  for (let i = at + 1; i < argv.length && !argv[i]!.startsWith('-'); i++) {
+    for (const name of argv[i]!.split(',')) {
+      const trimmed = name.trim()
+      if (trimmed) names.add(trimmed.replace(/\(.*\)$/, ''))
+    }
+  }
+  return names
 }
 
 /**

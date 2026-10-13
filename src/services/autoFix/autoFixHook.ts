@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { FILE_EDIT_TOOL_NAME } from '../../tools/FileEditTool/constants.js'
+import { MULTI_EDIT_TOOL_NAME } from '../../tools/MultiEditTool/constants.js'
 import { FILE_WRITE_TOOL_NAME } from '../../tools/FileWriteTool/prompt.js'
 import { getAutoFixConfig } from './autoFixConfig.js'
 import {

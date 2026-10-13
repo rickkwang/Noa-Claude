@@ -113,7 +113,7 @@ import { assertMinVersion } from './utils/autoUpdater.js';
 import { getContextWindowForModel } from './utils/context.js';
 import { loadConversationForResume } from './utils/conversationRecovery.js';
 import { buildDeepLinkBanner } from './utils/deepLink/banner.js';
-import { hasNodeOption, isBareMode, isEnvTruthy, isInProtectedNamespace } from './utils/envUtils.js';
+import { hasNodeOption, isBareMode, isEnvTruthy, isInProtectedNamespace, isRestrictedMode, isSafeMode } from './utils/envUtils.js';
 import { refreshExampleCommands } from './utils/exampleCommands.js';
 import type { FpsMetrics } from './utils/fpsTracker.js';
 import { getWorktreePaths } from './utils/getWorktreePaths.js';
@@ -537,7 +537,14 @@ function eagerLoadSettings(): void {
 
   // Parse --setting-sources flag early to control which sources are loaded
   const settingSourcesArg = eagerParseCliFlag('--setting-sources');
-  if (settingSourcesArg !== undefined) {
+  if (isRestrictedMode() || isSafeMode()) {
+    // --restricted / --safe-mode ignore user/project/local settings files,
+    // so they win over an explicit --setting-sources. Policy and --settings
+    // still load: getEnabledSettingSources() always adds policySettings and
+    // flagSettings on top of this list.
+    setAllowedSettingSources([]);
+    resetSettingsCache();
+  } else if (settingSourcesArg !== undefined) {
     loadSettingSourcesFromFlag(settingSourcesArg);
   }
   profileCheckpoint('eagerLoadSettings_end');
@@ -942,6 +949,14 @@ async function run(): Promise<CommanderCommand> {
       process.env.CLAUDE_CODE_SIMPLE = '1';
       process.env.CLAUDE_CODE_LOCAL_ONLY = '1';
     }
+    // --restricted / --safe-mode: set the env so subprocesses and later
+    // gates see the same mode (same propagation as --bare above).
+    if ((options as { restricted?: boolean }).restricted) {
+      process.env.NOA_CLAUDE_RESTRICTED = '1';
+    }
+    if ((options as { safeMode?: boolean }).safeMode) {
+      process.env.NOA_CLAUDE_SAFE_MODE = '1';
+    }
     const bareMode = isBareMode();
 
     // Ignore "code" as a prompt - treat it the same as no prompt
@@ -1265,6 +1280,13 @@ async function run(): Promise<CommanderCommand> {
       dangerouslySkipPermissions,
       inheritedPermissionMode: options.inheritPermissionMode
     });
+
+    // --restricted refuses bypassPermissions outright; a bypass session
+    // would silently skip the write confinement and approval gates.
+    if (isRestrictedMode() && (permissionMode === 'bypassPermissions' || allowDangerouslySkipPermissions)) {
+      process.stderr.write(chalk.red('Error: --restricted cannot be combined with bypassPermissions (--dangerously-skip-permissions, --permission-mode bypassPermissions, or an inherited bypass mode). Remove the bypass flag or drop --restricted.\n'));
+      process.exit(1);
+    }
 
     // Store session bypass permissions mode for trust dialog check
     setSessionBypassPermissionsMode(permissionMode === 'bypassPermissions');

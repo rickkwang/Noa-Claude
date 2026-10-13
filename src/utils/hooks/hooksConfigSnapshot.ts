@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { isSafeMode } from '../envUtils.js'
 import { isRestrictedToPluginOnly } from '../settings/pluginOnlyPolicy.js'
 // Import as module object so spyOn works in tests (direct imports bypass spies)
 import * as settingsModule from '../settings/settings.js'
@@ -21,6 +22,12 @@ function getHooksFromAllowedSources(): HooksSettings {
   // If managed settings disables all hooks, return empty
   if (policySettings?.disableAllHooks === true) {
     return {}
+  }
+
+  // --safe-mode: user/project/local hooks are customizations; only managed
+  // (policy) hooks run.
+  if (isSafeMode()) {
+    return policySettings?.hooks ?? {}
   }
 
   // If allowManagedHooksOnly is set in managed settings, only use managed hooks

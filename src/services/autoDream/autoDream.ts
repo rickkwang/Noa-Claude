@@ -50,6 +50,7 @@ import {
   isDreamTask,
 } from '../../tasks/DreamTask/DreamTask.js'
 import { FILE_EDIT_TOOL_NAME } from '../../tools/FileEditTool/constants.js'
+import { MULTI_EDIT_TOOL_NAME } from '../../tools/MultiEditTool/constants.js'
 import { FILE_WRITE_TOOL_NAME } from '../../tools/FileWriteTool/prompt.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 
@@ -338,6 +339,7 @@ function makeDreamProgressWatcher(
         toolUseCount++
         if (
           block.name === FILE_EDIT_TOOL_NAME ||
+          block.name === MULTI_EDIT_TOOL_NAME ||
           block.name === FILE_WRITE_TOOL_NAME
         ) {
           const input = block.input as { file_path?: unknown }

@@ -41,6 +41,16 @@ export function configureProgramOptions(program: CommanderCommand): void {
       () => true
     )
     .option('--local-only', 'Local-only startup profile. Equivalent to --bare and explicitly enables CLAUDE_CODE_LOCAL_ONLY=1.', () => true)
+    .option(
+      '--restricted',
+      'Restricted mode: removes the built-in tools that run commands or code (Bash, PowerShell, REPL and the other code-running tools) and WebFetch unless --tools names them, and ignores user, project and local settings files (managed settings and --settings still apply; add --strict-mcp-config to skip MCP servers too). Also confines the file tools to the working directories (--add-dir included), refuses bypassPermissions, and lets only a person or the configured permission handler approve writes to settings, git and tool-configuration files.',
+      () => true
+    )
+    .option(
+      '--safe-mode',
+      'Start with all customizations (CLAUDE.md, skills, installed plugins, hooks, MCP servers, custom commands and agents, output styles, workflows, custom themes, keybindings, and more) disabled — useful for troubleshooting a broken configuration. Admin-managed (policy) settings still apply. Auth, model selection, built-in tools and plugins, and permissions work normally.',
+      () => true
+    )
     .addOption(new Option('--init', 'Run Setup hooks with init trigger, then continue').hideHelp())
     .option('--bg', 'Start a background session on the prompt and return to the shell (see `noa agents`)', () => true)
     .addOption(new Option('--background', 'Alias for --bg').hideHelp())

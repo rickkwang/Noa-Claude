@@ -11,6 +11,7 @@ import { runTools } from '../services/tools/toolOrchestration.js'
 import { findToolByName, type Tool, type Tools } from '../Tool.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
+import { MULTI_EDIT_TOOL_NAME } from '../tools/MultiEditTool/constants.js'
 import type { Input as FileReadInput } from '../tools/FileReadTool/FileReadTool.js'
 import {
   FILE_READ_TOOL_NAME,
@@ -422,7 +423,8 @@ export function extractReadFilesFromMessages(
           }
         } else if (
           content.type === 'tool_use' &&
-          content.name === FILE_EDIT_TOOL_NAME
+          (content.name === FILE_EDIT_TOOL_NAME ||
+            content.name === MULTI_EDIT_TOOL_NAME)
         ) {
           // Edit's input has old_string/new_string, not the resulting content.
           // Track the path so the second pass can read current disk state.

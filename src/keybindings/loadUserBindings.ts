@@ -18,7 +18,7 @@ import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growt
 import { logEvent } from '../services/analytics/index.js'
 import { registerCleanup } from '../utils/cleanupRegistry.js'
 import { logForDebugging } from '../utils/debug.js'
-import { getClaudeConfigHomeDir } from '../utils/envUtils.js'
+import { getClaudeConfigHomeDir, isSafeMode } from '../utils/envUtils.js'
 import { errorMessage, isENOENT } from '../utils/errors.js'
 import { createSignal } from '../utils/signal.js'
 import { jsonParse } from '../utils/slowOperations.js'
@@ -134,8 +134,9 @@ function getDefaultParsedBindings(): ParsedBinding[] {
 export async function loadKeybindings(): Promise<KeybindingsLoadResult> {
   const defaultBindings = getDefaultParsedBindings()
 
-  // Skip user config loading for external users
-  if (!isKeybindingCustomizationEnabled()) {
+  // Skip user config loading for external users, and under --safe-mode
+  // (custom keybindings are a customization; there is no managed layer).
+  if (!isKeybindingCustomizationEnabled() || isSafeMode()) {
     return { bindings: defaultBindings, warnings: [] }
   }
 

@@ -36,6 +36,8 @@
     "smoke:engine:live": "bun ./scripts/smoke-engineering-live.mjs",
     "e2e:loop": "bun ./scripts/e2e-agent-loop.mjs",
     "e2e:bare": "bun ./scripts/e2e-bare.mjs",
+    "e2e:restricted-safe": "bun ./scripts/e2e-restricted-safe.mjs",
+    "e2e:multiedit": "bun ./scripts/e2e-multiedit.mjs",
     "e2e:goal": "NODE_ENV=development bun ./scripts/e2e-goal-runtime.ts",
     "e2e:background": "NODE_ENV=development bun ./scripts/e2e-background-pipeline.ts && node ./scripts/e2e-background-startup.mjs && node ./scripts/e2e-background.mjs",
     "scan:pr-intent": "node ./scripts/pr-intent-scan.mjs --fail-on high",

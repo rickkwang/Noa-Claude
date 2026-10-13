@@ -5,6 +5,7 @@ import { findToolByName, type Tools } from '../Tool.js'
 import { extractBashCommentLabel } from '../tools/BashTool/commentLabel.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
+import { MULTI_EDIT_TOOL_NAME } from '../tools/MultiEditTool/constants.js'
 import { FILE_WRITE_TOOL_NAME } from '../tools/FileWriteTool/prompt.js'
 import { REPL_TOOL_NAME } from '../tools/REPLTool/constants.js'
 import { getReplPrimitiveTools } from '../tools/REPLTool/primitiveTools.js'
@@ -108,7 +109,11 @@ function isMemorySearch(toolInput: unknown): boolean {
  * Check if a Write or Edit tool use targets a memory file and should be collapsed.
  */
 function isMemoryWriteOrEdit(toolName: string, toolInput: unknown): boolean {
-  if (toolName !== FILE_WRITE_TOOL_NAME && toolName !== FILE_EDIT_TOOL_NAME) {
+  if (
+    toolName !== FILE_WRITE_TOOL_NAME &&
+    toolName !== FILE_EDIT_TOOL_NAME &&
+    toolName !== MULTI_EDIT_TOOL_NAME
+  ) {
     return false
   }
   const filePath = getFilePathFromToolInput(toolInput)

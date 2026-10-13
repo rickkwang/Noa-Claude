@@ -57,7 +57,7 @@ import {
 } from './config.js'
 import { logForDebugging } from './debug.js'
 import { logForDiagnosticsNoPII } from './diagLogs.js'
-import { getClaudeConfigHomeDir, isBareMode, isEnvTruthy } from './envUtils.js'
+import { getClaudeConfigHomeDir, isBareMode, isEnvTruthy, isSafeMode } from './envUtils.js'
 import { getErrnoCode } from './errors.js'
 import { normalizePathForComparison } from './file.js'
 import { cacheKeys, type FileStateCache } from './fileStateCache.js'
@@ -887,6 +887,12 @@ export const getMemoryFiles = memoize(
         conditionalRule: false,
       })),
     )
+
+    // --safe-mode: only the managed (policy) CLAUDE.md above loads. User,
+    // project, local and --add-dir CLAUDE.md are all customizations.
+    if (isSafeMode()) {
+      return dedupeMemoryFiles(result)
+    }
 
     // Process User file (only if userSettings is enabled)
     if (isSettingSourceEnabled('userSettings')) {

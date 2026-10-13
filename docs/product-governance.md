@@ -1,6 +1,6 @@
 # Product Governance
 
-Last updated: 2026-08-07
+Last updated: 2026-10-13
 
 This document replaces the separate command surface, feature gap, and roadmap notes with one product-facing control surface.
 
@@ -42,7 +42,7 @@ Policy:
 - do not claim full product parity
 - promotion to baseline requires smoke coverage and user-value justification
 - `/output-style` is a direct entry to the picker that `/config` hosts; both write `outputStyle` to local settings, so the two entry points must stay interchangeable
-- `/background` (alias `/bg`), ← on an empty prompt, `noa agents`, `noa --bg`, `noa reply` and `noa attach|logs|stop|kill|respawn|rm` are one surface: background sessions run in detached PTY hosts with no daemon. `scripts/e2e-background.mjs` covers compiled terminal replies, permission dialogs and Fleet controls with a scripted local API; `scripts/e2e-agents-view.mjs` covers the broader live workflow (needs tmux and a working model). Not covered: prewarmed spares, groups/pins, cloud sessions, and carrying running shells/subagents into the fork (the move asks first and stops them). Background sessions are isolated like upstream: Edit/Write/NotebookEdit into the shared checkout is rejected until the session calls EnterWorktree — `worktree.bgIsolation: "none"` (or `NOA_CLAUDE_BG_ISOLATION=none` / `CLAUDE_BG_ISOLATION=none`) works in place
+- `/background` (alias `/bg`), ← on an empty prompt, `noa agents`, `noa --bg`, `noa reply` and `noa attach|logs|stop|kill|respawn|rm` are one surface: background sessions run in detached PTY hosts with no daemon. `scripts/e2e-multiedit.mjs` covers MultiEdit atomicity and reading a background shell's output file with Read; `scripts/e2e-background.mjs` covers compiled terminal replies, permission dialogs and Fleet controls with a scripted local API; `scripts/e2e-agents-view.mjs` covers the broader live workflow (needs tmux and a working model). Not covered: prewarmed spares, groups/pins, cloud sessions, and carrying running shells/subagents into the fork (the move asks first and stops them). Background sessions are isolated like upstream: Edit/MultiEdit/Write/NotebookEdit into the shared checkout is rejected until the session calls EnterWorktree — `worktree.bgIsolation: "none"` (or `NOA_CLAUDE_BG_ISOLATION=none` / `CLAUDE_BG_ISOLATION=none`) works in place
 
 Tracked surfaces:
 
@@ -111,6 +111,13 @@ The current gap inventory is split into three buckets:
 - stubbed
 
 The authoritative table lives in this document.
+
+Startup modes are not slash commands and are tracked under "Runtime Modes Outside Slash Commands" in `FEATURE_AVAILABILITY_MATRIX.md`. Open gaps for `--restricted`:
+
+- read confinement to the working directories is not enforced (writes are; `pathInAllowedWorkingPath` in `src/utils/permissions/filesystem.ts` is the hook point for reads in `checkReadPermissionForTool`)
+- the approval gate for settings, git and tool-configuration writes relies on the existing `ask` safety checks (`checkPathSafetyForAutoEdit`), not a dedicated restricted-mode approval path
+
+`--safe-mode` is a troubleshooting profile, not a command surface, and does not change the buckets above.
 
 ## Roadmap
 

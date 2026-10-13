@@ -4,7 +4,7 @@ import type { HookResultMessage, Message } from '../types/message.js'
 import { createAttachmentMessage } from './attachments.js'
 import { logForDebugging } from './debug.js'
 import { withDiagnosticsTiming } from './diagLogs.js'
-import { isBareMode } from './envUtils.js'
+import { isBareMode, isSafeMode } from './envUtils.js'
 import { updateWatchPaths } from './hooks/fileChangedWatcher.js'
 import { shouldAllowManagedHooksOnly } from './hooks/hooksConfigSnapshot.js'
 import { executeSessionStartHooks, executeSetupHooks } from './hooks.js'
@@ -93,8 +93,10 @@ export async function processSessionStartHooks(
   const allWatchPaths: string[] = []
 
   // Skip loading plugin hooks if restricted to managed hooks only
-  // Plugin hooks are untrusted external code that should be blocked by policy
-  if (shouldAllowManagedHooksOnly()) {
+  // Plugin hooks are untrusted external code that should be blocked by policy.
+  // --safe-mode also skips them: plugins are customizations. Policy-sourced
+  // hooks still run through the snapshot in hooksConfigSnapshot.ts.
+  if (shouldAllowManagedHooksOnly() || isSafeMode()) {
     logForDebugging('Skipping plugin hooks - allowManagedHooksOnly is enabled')
   } else {
     // Ensure plugin hooks are loaded before executing SessionStart hooks.
@@ -226,7 +228,7 @@ export async function processSetupHooks(
   const hookMessages: HookResultMessage[] = []
   const additionalContexts: string[] = []
 
-  if (shouldAllowManagedHooksOnly()) {
+  if (shouldAllowManagedHooksOnly() || isSafeMode()) {
     logForDebugging('Skipping plugin hooks - allowManagedHooksOnly is enabled')
   } else {
     try {

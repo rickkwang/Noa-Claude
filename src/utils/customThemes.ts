@@ -13,7 +13,7 @@ import chokidar from 'chokidar'
 import { mkdir, readFile, readdir, stat, writeFile } from 'fs/promises'
 import { basename, extname, join } from 'path'
 import { logForDebugging } from './debug.js'
-import { getClaudeConfigHomeDir } from './envUtils.js'
+import { getClaudeConfigHomeDir, isSafeMode } from './envUtils.js'
 import { errorMessage } from './errors.js'
 import { getTheme, THEME_NAMES, type Theme, type ThemeName } from './theme.js'
 
@@ -307,7 +307,11 @@ export function getCachedCustomThemes(): readonly CustomTheme[] {
 export function loadCustomThemes(): Promise<readonly CustomTheme[]> {
   loadInFlight ??= (async () => {
     try {
-      const themes = await readThemesFromPathAsync(getThemesDir(), 'user')
+      // --safe-mode: user custom themes are a customization. Built-in themes
+      // are not read from this path, so they stay available.
+      const themes = isSafeMode()
+        ? []
+        : await readThemesFromPathAsync(getThemesDir(), 'user')
       baseCache = new Map(themes.map(theme => [theme.slug, theme.base]))
       addToBaseCache(pluginThemesStore.getState())
       themes.sort((a, b) => a.name.localeCompare(b.name))

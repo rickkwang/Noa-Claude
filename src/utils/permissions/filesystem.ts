@@ -19,7 +19,7 @@ import type { AnyObject, Tool, ToolPermissionContext } from '../../Tool.js'
 import { FILE_READ_TOOL_NAME } from '../../tools/FileReadTool/prompt.js'
 import { GLOB_TOOL_NAME } from '../../tools/GlobTool/prompt.js'
 import { getCwd } from '../cwd.js'
-import { getClaudeConfigHomeDir } from '../envUtils.js'
+import { getClaudeConfigHomeDir, isRestrictedMode } from '../envUtils.js'
 import {
   getFsImplementation,
   getPathsForPermissionCheck,
@@ -1414,6 +1414,23 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
   )
   if (internalEditResult.behavior !== 'passthrough') {
     return internalEditResult
+  }
+
+  // --restricted: writes must stay inside the working directories (cwd and
+  // --add-dir). Hard deny rather than ask, so no allow rule or acceptEdits
+  // mode can widen it. Runs after the internal-path exemption above.
+  if (
+    isRestrictedMode() &&
+    !pathInAllowedWorkingPath(path, toolPermissionContext, pathsToCheck)
+  ) {
+    return {
+      behavior: 'deny',
+      message: `Writes outside the working directories are not allowed in --restricted mode: ${path}`,
+      decisionReason: {
+        type: 'workingDir',
+        reason: 'Path is outside allowed working directories (--restricted)',
+      },
+    }
   }
 
   // 1.6. Check for .noa/** allow rules BEFORE safety checks

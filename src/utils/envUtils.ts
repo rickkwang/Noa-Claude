@@ -108,6 +108,38 @@ export function isBareMode(): boolean {
 }
 
 /**
+ * --restricted / NOA_CLAUDE_RESTRICTED — drop code-running built-in tools
+ * (Bash, PowerShell, REPL, WebFetch) unless --tools names them, ignore
+ * user/project/local settings files, confine file tools to the working
+ * directories, and refuse bypassPermissions. Managed settings and --settings
+ * still apply. Unlike bare mode this does not touch auth or keychain reads.
+ *
+ * Checks argv too, for the same reason as isBareMode: some gates run before
+ * the action handler sets the env var.
+ */
+export function isRestrictedMode(): boolean {
+  return (
+    isEnvTruthy(process.env.NOA_CLAUDE_RESTRICTED) ||
+    process.argv.includes('--restricted')
+  )
+}
+
+/**
+ * --safe-mode / NOA_CLAUDE_SAFE_MODE — disable every user-facing customization
+ * loader (CLAUDE.md, skills, plugins, hooks, MCP, custom commands/agents,
+ * output styles, keybindings) for troubleshooting. Admin-managed policy still
+ * applies. Deliberately NOT built on isBareMode(): bare also blocks keychain
+ * and OAuth reads, and safe mode must leave auth, model selection, built-in
+ * tools and permissions working.
+ */
+export function isSafeMode(): boolean {
+  return (
+    isEnvTruthy(process.env.NOA_CLAUDE_SAFE_MODE) ||
+    process.argv.includes('--safe-mode')
+  )
+}
+
+/**
  * Parses an array of environment variable strings into a key-value object
  * @param envVars Array of strings in KEY=VALUE format
  * @returns Object with key-value pairs

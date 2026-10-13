@@ -61,7 +61,7 @@ import type {
   PluginManifest,
 } from '../../types/plugin.js'
 import { logForDebugging } from '../debug.js'
-import { isEnvTruthy } from '../envUtils.js'
+import { isEnvTruthy, isSafeMode } from '../envUtils.js'
 import {
   errorMessage,
   getErrnoPath,
@@ -3291,6 +3291,12 @@ async function assemblePluginLoadResult(
     errors: PluginError[]
   }>,
 ): Promise<PluginLoadResult> {
+  // --safe-mode: installed and session plugins are customizations. Returning
+  // an empty result here empties every consumer (commands, skills, agents,
+  // output styles, hooks, MCP) without changing each one.
+  if (isSafeMode()) {
+    return { enabled: [], disabled: [], errors: [] }
+  }
   // Load marketplace plugins and session-only plugins in parallel.
   // getInlinePlugins() is a synchronous state read with no dependency on
   // marketplace loading, so these two sources can be fetched concurrently.

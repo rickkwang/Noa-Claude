@@ -4,6 +4,7 @@ import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs
 import type { QuerySource } from '../../constants/querySource.js'
 import type { ToolUseContext } from '../../Tool.js'
 import { FILE_EDIT_TOOL_NAME } from '../../tools/FileEditTool/constants.js'
+import { MULTI_EDIT_TOOL_NAME } from '../../tools/MultiEditTool/constants.js'
 import { FILE_READ_TOOL_NAME } from '../../tools/FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from '../../tools/FileWriteTool/prompt.js'
 import { GLOB_TOOL_NAME } from '../../tools/GlobTool/prompt.js'
@@ -77,6 +78,7 @@ const COMPACTABLE_TOOLS = new Set<string>([
   WEB_SEARCH_TOOL_NAME,
   WEB_FETCH_TOOL_NAME,
   FILE_EDIT_TOOL_NAME,
+  MULTI_EDIT_TOOL_NAME,
   FILE_WRITE_TOOL_NAME,
 ])
 

@@ -21,7 +21,7 @@ import {
   getEffortValueOptionsDescription,
   parseEffortValue,
 } from '../../utils/effort.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
+import { isEnvTruthy, isSafeMode } from '../../utils/envUtils.js'
 import { parsePositiveIntFromFrontmatter } from '../../utils/frontmatterParser.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
@@ -310,7 +310,11 @@ export const getAgentDefinitionsWithOverrides = memoize(
     }
 
     try {
-      const markdownFiles = await loadMarkdownFilesForSubdir('agents', cwd)
+      // --safe-mode: keep only policy-managed agent files; user and project
+      // agents are customizations.
+      const markdownFiles = (
+        await loadMarkdownFilesForSubdir('agents', cwd)
+      ).filter(file => !isSafeMode() || file.source === 'policySettings')
 
       const failedFiles: Array<{ path: string; error: string }> = []
       const customAgents = markdownFiles

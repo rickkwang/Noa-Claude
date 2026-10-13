@@ -2,6 +2,7 @@
 import { BASH_TOOL_NAME } from 'src/tools/BashTool/toolName.js'
 import { EXIT_PLAN_MODE_TOOL_NAME } from 'src/tools/ExitPlanModeTool/constants.js'
 import { FILE_EDIT_TOOL_NAME } from 'src/tools/FileEditTool/constants.js'
+import { MULTI_EDIT_TOOL_NAME } from 'src/tools/MultiEditTool/constants.js'
 import { FILE_WRITE_TOOL_NAME } from 'src/tools/FileWriteTool/prompt.js'
 import { NOTEBOOK_EDIT_TOOL_NAME } from 'src/tools/NotebookEditTool/constants.js'
 import { WEB_FETCH_TOOL_NAME } from 'src/tools/WebFetchTool/prompt.js'
@@ -141,6 +142,7 @@ export const VERIFICATION_AGENT: BuiltInAgentDefinition = {
     AGENT_TOOL_NAME,
     EXIT_PLAN_MODE_TOOL_NAME,
     FILE_EDIT_TOOL_NAME,
+    MULTI_EDIT_TOOL_NAME,
     FILE_WRITE_TOOL_NAME,
     NOTEBOOK_EDIT_TOOL_NAME,
   ],

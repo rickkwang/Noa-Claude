@@ -5,6 +5,7 @@ import type { OutputStyleConfig } from '../constants/outputStyles.js'
 import { logForDebugging } from '../utils/debug.js'
 import { coerceDescriptionToString } from '../utils/frontmatterParser.js'
 import { logError } from '../utils/log.js'
+import { isSafeMode } from '../utils/envUtils.js'
 import {
   extractDescriptionFromMarkdown,
   loadMarkdownFilesForSubdir,
@@ -28,10 +29,11 @@ import {
 export const getOutputStyleDirStyles = memoize(
   async (cwd: string): Promise<OutputStyleConfig[]> => {
     try {
-      const markdownFiles = await loadMarkdownFilesForSubdir(
-        'output-styles',
-        cwd,
-      )
+      // --safe-mode: keep only policy-managed styles; user and project
+      // styles are customizations.
+      const markdownFiles = (
+        await loadMarkdownFilesForSubdir('output-styles', cwd)
+      ).filter(file => !isSafeMode() || file.source === 'policySettings')
 
       const styles = markdownFiles
         .map(({ filePath, frontmatter, content, source }) => {

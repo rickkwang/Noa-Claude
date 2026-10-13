@@ -27,6 +27,7 @@ import { getPluginMcpServers } from '../../utils/plugins/mcpPluginIntegration.js
 import { loadAllPluginsCacheOnly } from '../../utils/plugins/pluginLoader.js'
 import { isSettingSourceEnabled } from '../../utils/settings/constants.js'
 import { getManagedFilePath } from '../../utils/settings/managedPath.js'
+import { isSafeMode } from '../../utils/envUtils.js'
 import { isRestrictedToPluginOnly } from '../../utils/settings/pluginOnlyPolicy.js'
 import {
   getInitialSettings,
@@ -1141,7 +1142,9 @@ export async function getClaudeCodeMcpConfigs(
 
   // Load other scopes — unless the managed policy locks MCP to plugin-only.
   // Unlike the enterprise-exclusive block above, this keeps plugin servers.
-  const mcpLocked = isRestrictedToPluginOnly('mcp')
+  // --safe-mode also empties user/project/local scopes; plugin servers come
+  // back empty because assemblePluginLoadResult returns no plugins.
+  const mcpLocked = isRestrictedToPluginOnly('mcp') || isSafeMode()
   const noServers: { servers: Record<string, ScopedMcpServerConfig> } = {
     servers: {},
   }

@@ -13,6 +13,8 @@ import {
 } from '../services/analytics/index.js'
 import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
 import { inputSchema as editInputSchema } from '../tools/FileEditTool/types.js'
+import { MultiEditTool } from '../tools/MultiEditTool/MultiEditTool.js'
+import { MULTI_EDIT_TOOL_NAME } from '../tools/MultiEditTool/constants.js'
 import { FileReadTool } from '../tools/FileReadTool/FileReadTool.js'
 import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
 import { FileWriteTool } from '../tools/FileWriteTool/FileWriteTool.js'
@@ -58,6 +60,10 @@ function getFilePathFromInput(
     }
     case FILE_EDIT_TOOL_NAME: {
       const parsed = editInputSchema().safeParse(toolInput)
+      return parsed.success ? parsed.data.file_path : null
+    }
+    case MULTI_EDIT_TOOL_NAME: {
+      const parsed = MultiEditTool.inputSchema.safeParse(toolInput)
       return parsed.success ? parsed.data.file_path : null
     }
     case FILE_WRITE_TOOL_NAME: {
@@ -174,6 +180,7 @@ async function handleSessionFileAccess(
         logEvent('tengu_memdir_file_read', { ...subagentProps })
         break
       case FILE_EDIT_TOOL_NAME:
+      case MULTI_EDIT_TOOL_NAME:
         logEvent('tengu_memdir_file_edit', { ...subagentProps })
         break
       case FILE_WRITE_TOOL_NAME:
@@ -194,6 +201,7 @@ async function handleSessionFileAccess(
         logEvent('tengu_team_mem_file_read', { ...subagentProps })
         break
       case FILE_EDIT_TOOL_NAME:
+      case MULTI_EDIT_TOOL_NAME:
         logEvent('tengu_team_mem_file_edit', { ...subagentProps })
         teamMemWatcher?.notifyTeamMemoryWrite()
         break
@@ -209,6 +217,7 @@ async function handleSessionFileAccess(
     if (
       scope !== null &&
       (input.tool_name === FILE_EDIT_TOOL_NAME ||
+        input.tool_name === MULTI_EDIT_TOOL_NAME ||
         input.tool_name === FILE_WRITE_TOOL_NAME)
     ) {
       memoryShapeTelemetry!.logMemoryWriteShape(
@@ -241,6 +250,7 @@ export function registerSessionFileAccessHooks(): void {
       { matcher: GREP_TOOL_NAME, hooks: [hook] },
       { matcher: GLOB_TOOL_NAME, hooks: [hook] },
       { matcher: FILE_EDIT_TOOL_NAME, hooks: [hook] },
+      { matcher: MULTI_EDIT_TOOL_NAME, hooks: [hook] },
       { matcher: FILE_WRITE_TOOL_NAME, hooks: [hook] },
     ],
   })
