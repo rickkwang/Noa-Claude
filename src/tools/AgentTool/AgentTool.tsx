@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { feature } from 'bun:bundle';
 import * as React from 'react';
-import { buildTool, type ToolDef, toolMatchesName } from 'src/Tool.js';
+import { buildTool, type ToolDef, toolMatchesName, type Tool } from 'src/Tool.js';
 import type { Message as MessageType, NormalizedUserMessage } from 'src/types/message.js';
 import { getQuerySourceForAgent } from 'src/utils/promptCategory.js';
 import { z } from 'zod/v4';
@@ -16,6 +16,7 @@ import { clearDumpState } from '../../services/api/dumpPrompts.js';
 import { assertCanStartBackgroundAgent, createActivityDescriptionResolver, createProgressTracker, finishAgentRun, getAgentRunToken, getProgressUpdate, isLocalAgentTask, killOwnedAgents, registerAgentForeground, registerAsyncAgent, unregisterAgentForeground, updateAgentProgress as updateAsyncAgentProgress, updateProgressFromMessage } from '../../tasks/LocalAgentTask/LocalAgentTask.js';
 import { checkRemoteAgentEligibility, formatPreconditionError, getRemoteTaskSessionUrl, registerRemoteAgentTask } from '../../tasks/RemoteAgentTask/RemoteAgentTask.js';
 import { assembleToolPool } from '../../tools.js';
+import { createSyntheticOutputTool } from '../SyntheticOutputTool/SyntheticOutputTool.js';
 import { asAgentId } from '../../types/ids.js';
 import { getAgentContext, nextSubagentDepth, runWithAgentContext } from '../../utils/agentContext.js';
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js';
@@ -88,7 +89,8 @@ const baseInputSchema = lazySchema(() => z.object({
   prompt: z.string().describe('The task for the agent to perform'),
   subagent_type: z.string().optional().describe('The type of specialized agent to use for this task'),
   model: z.enum(['sonnet', 'opus', 'haiku', 'fable']).optional().describe("Optional model override for this agent. Takes precedence over the agent definition's model frontmatter and the configured default subagent model. If omitted, uses the agent definition's model, else the default (inherits from the parent unless a default subagent model is configured)."),
-  run_in_background: z.boolean().optional().describe("Agents run in the background by default; you will be notified when one completes. Set to false only when your very next action depends on this agent's result and nothing else could usefully happen while it runs — otherwise leave it in the background so the user can hand you other work.")
+  run_in_background: z.boolean().optional().describe("Agents run in the background by default; you will be notified when one completes. Set to false only when your very next action depends on this agent's result and nothing else could usefully happen while it runs — otherwise leave it in the background so the user can hand you other work."),
+  schema: z.record(z.string(), z.unknown()).optional().describe('JSON Schema for structured output. When set, the agent must finish by calling StructuredOutput with a conforming object, which is returned as `structured_output` in the result (and embedded in the completion notification for background agents) — no parsing needed. Not available with subagent_type "fork".')
 }));
 
 // Full schema combining base + multi-agent params + isolation
@@ -255,7 +257,8 @@ export const AgentTool = buildTool({
     team_name,
     mode: spawnMode,
     isolation,
-    cwd
+    cwd,
+    schema
   }: AgentToolInput, toolUseContext, canUseTool, assistantMessage, onProgress?) {
     const startTime = Date.now();
     const model = isCoordinatorMode() ? undefined : modelParam;
@@ -286,6 +289,11 @@ export const AgentTool = buildTool({
     // can manage their own background agents.
     if (isInProcessTeammate() && teamName && run_in_background === true) {
       throw new Error('In-process teammates cannot spawn background agents. Use run_in_background=false for synchronous subagents.');
+    }
+    // Teammate spawns return before the schema wiring below; refuse loudly
+    // instead of silently dropping the parameter.
+    if (teamName && name && schema) {
+      throw new Error('The schema parameter is not supported for teammate spawns.');
     }
 
     // Checked before the reservation below, so a depth refusal never consumes budget.
@@ -348,6 +356,39 @@ export const AgentTool = buildTool({
     // - subagent_type omitted, gate off: default general-purpose
     const effectiveType = subagent_type ?? GENERAL_PURPOSE_AGENT.agentType;
     const isForkPath = effectiveType === FORK_SUBAGENT_TYPE && isForkSubagentEnabled();
+    // Fork children must keep a cache-identical tool prefix, and the schema
+    // tool + instruction would diverge it. Validated early via AJV so a bad
+    // schema never spawns an agent that can only fail at the end.
+    let structuredOutputTool: Tool | undefined;
+    if (schema) {
+      if (isForkPath) {
+        throw new Error('The schema parameter is not available with subagent_type "fork" — the fork path requires a cache-identical tool prefix.');
+      }
+      const created = createSyntheticOutputTool(schema);
+      if ('error' in created) {
+        throw new Error(`Invalid schema parameter: ${created.error}`);
+      }
+      // Upstream parity: bound failed validation attempts so a schema the
+      // model cannot satisfy doesn't retry until the turn cap. The failed
+      // call's AJV error still reaches the model below the cap.
+      let failedAttempts = 0;
+      const MAX_STRUCTURED_OUTPUT_FAILURES = 3;
+      const innerCall = created.tool.call;
+      structuredOutputTool = {
+        ...created.tool,
+        async call(input, ...rest) {
+          try {
+            return await innerCall(input, ...rest);
+          } catch (e) {
+            failedAttempts++;
+            if (failedAttempts >= MAX_STRUCTURED_OUTPUT_FAILURES) {
+              throw new Error(`StructuredOutput validation failed ${failedAttempts} times; the schema cannot be satisfied in this run. Do not call this tool again — end your turn.`);
+            }
+            throw e;
+          }
+        }
+      };
+    }
     let selectedAgent: AgentDefinition;
     if (isForkPath) {
       // Recursive fork guard: fork children keep the Agent tool in their
@@ -576,6 +617,13 @@ export const AgentTool = buildTool({
         content: prompt
       })];
     }
+    if (schema) {
+      // Trailing user message so the schema is the most recent instruction the
+      // agent sees; the SubagentStop function hook re-nags until it complies.
+      promptMessages.push(createUserMessage({
+        content: `You MUST call the StructuredOutput tool exactly once as your final action, passing an object that conforms to this JSON Schema:\n\n${JSON.stringify(schema, null, 2)}\n\nDo not end your turn before calling it.`
+      }));
+    }
     // Use inline env check instead of coordinatorModule to avoid circular
     // dependency issues during test module loading.
     const isCoordinator = feature('COORDINATOR_MODE') ? isEnvTruthy(process.env.CLAUDE_CODE_COORDINATOR_MODE) : false;
@@ -677,6 +725,7 @@ export const AgentTool = buildTool({
       worktreePath: worktreeInfo?.worktreePath,
       description,
       personalityName,
+      structuredOutputTool,
       onPromptFallback: () => {
         metadata.promptFallback = true;
       }
@@ -689,7 +738,8 @@ export const AgentTool = buildTool({
       agentType: selectedAgent.agentType,
       isAsync: runInBackground && !isBackgroundTasksDisabled,
       personalityName,
-      promptFallback: false
+      promptFallback: false,
+      requiresStructuredOutput: schema !== undefined
     };
 
     // Helper to wrap execution with a cwd override: explicit cwd arg (KAIROS)

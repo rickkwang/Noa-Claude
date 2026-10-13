@@ -22,6 +22,7 @@ import type {
   ToolUseContext,
 } from '../../Tool.js'
 import { toolMatchesName } from '../../Tool.js'
+import { SYNTHETIC_OUTPUT_TOOL_NAME } from '../SyntheticOutputTool/SyntheticOutputTool.js'
 import {
   completeAgentTask as completeAsyncAgent,
   createActivityDescriptionResolver,
@@ -242,6 +243,10 @@ export const agentToolResultSchema = lazySchema(() =>
     // result trailer — one-shot built-ins skip the SendMessage hint.
     agentType: z.string().optional(),
     content: z.array(z.object({ type: z.literal('text'), text: z.string() })),
+    // Present when the agent was spawned with a `schema`: the validated object
+    // from its StructuredOutput call. toolExecution surfaces this as
+    // structured_content for SDK consumers.
+    structured_output: z.unknown().optional(),
     totalToolUseCount: z.number(),
     totalDurationMs: z.number(),
     totalTokens: z.number(),
@@ -327,6 +332,41 @@ function getMaxTurnsReached(messages: MessageType[]): number | undefined {
   return undefined
 }
 
+/**
+ * Input of the last StructuredOutput call that PASSED validation, if any.
+ * A failed call (schema mismatch) leaves an error tool_result; only calls
+ * whose tool_result is not an error are schema-conforming.
+ */
+export function extractStructuredOutput(
+  messages: MessageType[],
+): unknown {
+  const succeededIds = new Set<string>()
+  for (const m of messages) {
+    if (m.type !== 'user') continue
+    const content = m.message.content
+    if (!Array.isArray(content)) continue
+    for (const block of content) {
+      if (block.type === 'tool_result' && block.is_error !== true) {
+        succeededIds.add(block.tool_use_id)
+      }
+    }
+  }
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!
+    if (m.type !== 'assistant') continue
+    for (const block of m.message.content) {
+      if (
+        block.type === 'tool_use' &&
+        block.name === SYNTHETIC_OUTPUT_TOOL_NAME &&
+        succeededIds.has(block.id)
+      ) {
+        return block.input
+      }
+    }
+  }
+  return undefined
+}
+
 export function finalizeAgentTool(
   agentMessages: MessageType[],
   agentId: string,
@@ -339,6 +379,9 @@ export function finalizeAgentTool(
     isAsync: boolean
     personalityName?: string
     promptFallback?: boolean
+    /** Set when the spawn carried a `schema`: a run that ends with no
+     * validated StructuredOutput call is a failure, not a text result. */
+    requiresStructuredOutput?: boolean
   },
 ): AgentToolResult {
   const {
@@ -350,6 +393,7 @@ export function finalizeAgentTool(
     isAsync,
     personalityName,
     promptFallback,
+    requiresStructuredOutput,
   } = metadata
 
   let lastAssistantMessage = getLastAssistantMessage(agentMessages)
@@ -450,11 +494,33 @@ export function finalizeAgentTool(
     content = [{ type: 'text', text: apiErrorNote }, ...content]
   }
 
+  // Schema-mode agents may end with a bare StructuredOutput call and no
+  // closing text; embed the validated object so the parent (and background
+  // completion notifications, which serialize content) always carry it.
+  // No validated call means the run failed — same contract as upstream's
+  // "subagent completed without calling StructuredOutput" error.
+  const structuredOutput = extractStructuredOutput(agentMessages)
+  if (requiresStructuredOutput && structuredOutput === undefined) {
+    throw new Error('Agent completed without a valid StructuredOutput call: the schema parameter was set but no call passed validation.')
+  }
+  if (structuredOutput !== undefined) {
+    content = [
+      ...content,
+      {
+        type: 'text',
+        text: `Structured output:\n\`\`\`json\n${JSON.stringify(structuredOutput, null, 2)}\n\`\`\``,
+      },
+    ]
+  }
+
   return {
     agentId,
     ...(personalityName && { personalityName }),
     agentType,
     content,
+    ...(structuredOutput !== undefined && {
+      structured_output: structuredOutput,
+    }),
     totalDurationMs: Date.now() - startTime,
     totalTokens,
     totalToolUseCount,

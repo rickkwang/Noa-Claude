@@ -59,7 +59,7 @@ import {
   createSubagentContext,
 } from '../../utils/forkedAgent.js'
 import { registerFrontmatterHooks } from '../../utils/hooks/registerFrontmatterHooks.js'
-import { clearSessionHooks } from '../../utils/hooks/sessionHooks.js'
+import { addFunctionHook, clearSessionHooks } from '../../utils/hooks/sessionHooks.js'
 import { executeSubagentStartHooks } from '../../utils/hooks.js'
 import { createUserMessage } from '../../utils/messages.js'
 import { getAgentModel } from '../../utils/model/agent.js'
@@ -86,7 +86,7 @@ import {
 } from '../../utils/telemetry/perfettoTracing.js'
 import type { ContentReplacementState } from '../../utils/toolResultStorage.js'
 import { createAgentId } from '../../utils/uuid.js'
-import { filterToolsForAgent, resolveAgentTools } from './agentToolUtils.js'
+import { filterToolsForAgent, resolveAgentTools, extractStructuredOutput } from './agentToolUtils.js'
 import { createDenialTrackingState } from '../../utils/permissions/denialTracking.js'
 import { type AgentDefinition, isBuiltInAgent } from './loadAgentsDir.js'
 
@@ -299,6 +299,7 @@ export async function* runAgent({
   transcriptSubdir,
   onQueryProgress,
   onPromptFallback,
+  structuredOutputTool,
 }: {
   agentDefinition: AgentDefinition
   promptMessages: Message[]
@@ -364,6 +365,11 @@ export async function* runAgent({
    * during long single-block streams (e.g. thinking) where no assistant
    * message is yielded for >60s. */
   onQueryProgress?: () => void
+  /** When set, appended to the agent's tool pool (after filtering, so agents
+   * with explicit tool lists still get it) and enforced via a SubagentStop
+   * function hook until the agent calls it. Built by AgentTool from the
+   * `schema` input parameter. */
+  structuredOutputTool?: Tool
 }): AsyncGenerator<Message, void> {
   const appState = toolUseContext.getAppState()
   const permissionMode = appState.toolPermissionContext.mode
@@ -601,6 +607,22 @@ export async function* runAgent({
       })
       initialMessages.push(contextMessage)
     }
+    // Schema-mode agents must end with a validated StructuredOutput call.
+    // Subagents fire SubagentStop (not Stop), keyed by agentId. The predicate
+    // accepts ANY successful call — hasSuccessfulToolCall would nag again if
+    // a later, invalid call followed a valid one.
+    if (structuredOutputTool) {
+      addFunctionHook(
+        rootSetAppState,
+        agentId,
+        'SubagentStop',
+        '',
+        messages => extractStructuredOutput(messages) !== undefined,
+        `You MUST call the StructuredOutput tool to complete this request. Call this tool now.`,
+        { timeout: 5000 },
+      )
+    }
+
     // Register agent's frontmatter hooks (scoped to agent lifecycle)
     // Pass isAgent=true to convert Stop hooks to SubagentStop (since subagents trigger SubagentStop)
     // Same admin-trusted gate for frontmatter hooks: under ["hooks"] alone
@@ -712,10 +734,16 @@ export async function* runAgent({
     // Merge agent MCP tools with resolved agent tools, deduplicating by name.
     // resolvedTools is already deduplicated (see resolveAgentTools), so skip
     // the spread + uniqBy overhead when there are no agent-specific MCP tools.
-    const allTools =
+    const mergedTools =
       agentMcpTools.length > 0
         ? uniqBy([...resolvedTools, ...agentMcpTools], 'name')
         : resolvedTools
+    // StructuredOutput goes first so it wins over any same-named tool already
+    // in the pool (uniqBy keeps the first occurrence), and lands after
+    // resolveAgentTools so explicit `tools: [...]` lists can't strip it.
+    const allTools = structuredOutputTool
+      ? uniqBy([structuredOutputTool, ...mergedTools], 'name')
+      : mergedTools
 
     const agentOptions: ToolUseContext['options'] = {
       isNonInteractiveSession: useExactTools
@@ -925,7 +953,7 @@ export async function* runAgent({
     // holding the event loop open at process exit.
     await withTimeout(mcpCleanup(), 1000, 'MCP cleanup timed out').catch(() => {})
     // Clean up agent's session hooks
-    if (agentDefinition.hooks) {
+    if (agentDefinition.hooks || structuredOutputTool) {
       clearSessionHooks(rootSetAppState, agentId)
     }
     // Clean up prompt cache tracking state for this agent
