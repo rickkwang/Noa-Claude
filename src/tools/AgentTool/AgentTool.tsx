@@ -13,7 +13,7 @@ import { startAgentSummarization } from '../../services/AgentSummary/agentSummar
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from '../../services/analytics/index.js';
 import { clearDumpState } from '../../services/api/dumpPrompts.js';
-import { assertCanStartBackgroundAgent, createActivityDescriptionResolver, createProgressTracker, finishAgentRun, getAgentRunToken, getProgressUpdate, isLocalAgentTask, registerAgentForeground, registerAsyncAgent, unregisterAgentForeground, updateAgentProgress as updateAsyncAgentProgress, updateProgressFromMessage } from '../../tasks/LocalAgentTask/LocalAgentTask.js';
+import { assertCanStartBackgroundAgent, createActivityDescriptionResolver, createProgressTracker, finishAgentRun, getAgentRunToken, getProgressUpdate, isLocalAgentTask, killOwnedAgents, registerAgentForeground, registerAsyncAgent, unregisterAgentForeground, updateAgentProgress as updateAsyncAgentProgress, updateProgressFromMessage } from '../../tasks/LocalAgentTask/LocalAgentTask.js';
 import { checkRemoteAgentEligibility, formatPreconditionError, getRemoteTaskSessionUrl, registerRemoteAgentTask } from '../../tasks/RemoteAgentTask/RemoteAgentTask.js';
 import { assembleToolPool } from '../../tools.js';
 import { asAgentId } from '../../types/ids.js';
@@ -780,7 +780,8 @@ export const AgentTool = buildTool({
         // Don't link to parent's abort controller -- background agents should
         // survive when the user presses ESC to cancel the main thread.
         // They are killed explicitly via chat:killAgents.
-        toolUseId: toolUseContext.toolUseId
+        toolUseId: toolUseContext.toolUseId,
+        ownerAgentId: toolUseContext.agentId
       });
       spawnReservationCommitted = true;
 
@@ -921,7 +922,8 @@ export const AgentTool = buildTool({
             selectedAgent,
             setAppState: rootSetAppState,
             toolUseId: toolUseContext.toolUseId,
-            autoBackgroundMs: getAutoBackgroundMs() || undefined
+            autoBackgroundMs: getAutoBackgroundMs() || undefined,
+            ownerAgentId: toolUseContext.agentId
           });
           foregroundTaskId = registration.taskId;
           syncRunToken = getAgentRunToken(syncAgentId);
@@ -1221,6 +1223,12 @@ export const AgentTool = buildTool({
 
           // Cancel auto-background timer if agent completed before it fired
           cancelAutoBackground?.();
+
+          // An interrupted foreground agent takes the agents it spawned with it;
+          // nothing is left to receive their results.
+          if (!wasBackgrounded && (foregroundAbortController ?? toolUseContext.abortController).signal.aborted) {
+            killOwnedAgents(syncAgentId, rootSetAppState);
+          }
 
           // Clean up worktree if applicable (in finally to handle abort/error paths)
           // Skip if backgrounded — the background continuation is still running in it

@@ -328,6 +328,21 @@ export function removeByFilter(
 }
 
 /**
+ * Hand a finished agent's undrained task-notifications to the main thread,
+ * at main's notification priority.
+ */
+export function readdressAgentNotifications(agentId: string): void {
+  let changed = false
+  for (let i = 0; i < commandQueue.length; i++) {
+    const cmd = commandQueue[i]!
+    if (cmd.mode !== 'task-notification' || cmd.agentId !== agentId) continue
+    commandQueue[i] = { ...cmd, agentId: undefined, priority: 'later' }
+    changed = true
+  }
+  if (changed) notifySubscribers()
+}
+
+/**
  * Clear all commands from the queue.
  * Discard queued notifications/input, preserving durable background replies.
  */

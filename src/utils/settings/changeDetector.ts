@@ -56,6 +56,16 @@ const INTERNAL_WRITE_WINDOW_MS = 5000
 const MDM_POLL_INTERVAL_MS = 30 * 60 * 1000 // 30 minutes
 
 /**
+ * Bun's native fs.watch() can deadlock the main thread against its File
+ * Watcher thread when a watcher closes while events are in flight
+ * (oven-sh/bun#27469). Atomic settings writes (temp file + rename) make
+ * chokidar close and reopen the per-file watcher, which hit this in --print
+ * runs. Poll under Bun instead, as skillChangeDetector does.
+ */
+const USE_POLLING = typeof Bun !== 'undefined'
+const POLLING_INTERVAL_MS = 1000
+
+/**
  * Grace period in milliseconds before processing a settings file deletion.
  * Handles the common delete-and-recreate pattern during auto-updates or when
  * another session starts up. If an `add` or `change` event fires within this
@@ -141,7 +151,8 @@ export async function initialize(): Promise<void> {
     },
     // Additional options for stability
     ignorePermissionErrors: true,
-    usePolling: false, // Use native file system events
+    usePolling: USE_POLLING,
+    interval: POLLING_INTERVAL_MS,
     atomic: true, // Handle atomic writes better
   })
 

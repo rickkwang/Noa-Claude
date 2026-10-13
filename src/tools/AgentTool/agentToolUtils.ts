@@ -112,12 +112,13 @@ export function filterToolsForAgent({
       return false
     }
     if (isAsync && !ASYNC_AGENT_ALLOWED_TOOLS.has(tool.name)) {
+      // Background agents may delegate too: results of agents they spawn are
+      // routed back to them, and AgentTool.call() enforces the nesting depth.
+      // For in-process teammates it also blocks background and teammate spawns.
+      if (toolMatchesName(tool, AGENT_TOOL_NAME)) {
+        return true
+      }
       if (isAgentSwarmsEnabled() && isInProcessTeammate()) {
-        // Allow AgentTool for in-process teammates to spawn sync subagents.
-        // Validation in AgentTool.call() prevents background agents and teammate spawning.
-        if (toolMatchesName(tool, AGENT_TOOL_NAME)) {
-          return true
-        }
         // Allow task tools for in-process teammates to coordinate via shared task list
         if (IN_PROCESS_TEAMMATE_ALLOWED_TOOLS.has(tool.name)) {
           return true

@@ -43,6 +43,8 @@ export type Continue =
   // The response had no visible output (thinking only, or nothing); nudge
   // the model once to answer.
   | { reason: 'empty_response_retry' }
+  // A subagent about to stop received results from agents it spawned.
+  | { reason: 'owned_agent_results' }
   // Normal turn boundary: tool results collected, recurse.
   | { reason: 'next_turn' }
 

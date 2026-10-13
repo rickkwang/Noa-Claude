@@ -12,10 +12,12 @@ import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js';
 import { SYNTHETIC_OUTPUT_TOOL_NAME } from '../../tools/SyntheticOutputTool/SyntheticOutputTool.js';
 import { asAgentId } from '../../types/ids.js';
 import type { Message } from '../../types/message.js';
+import type { QueuedCommand } from '../../types/textInputTypes.js';
 import { createAbortController, createChildAbortController } from '../../utils/abortController.js';
 import { registerCleanup } from '../../utils/cleanupRegistry.js';
 import { getToolSearchOrReadInfo } from '../../utils/collapseReadSearch.js';
-import { enqueuePendingNotification } from '../../utils/messageQueueManager.js';
+import { enqueuePendingNotification, getCommandQueueSnapshot, readdressAgentNotifications, removeByFilter } from '../../utils/messageQueueManager.js';
+import { sleep } from '../../utils/sleep.js';
 import { escapeXml } from '../../utils/xml.js';
 import { getAgentTranscriptPath, markAgentStoppedByUser } from '../../utils/sessionStorage.js';
 import { evictTaskOutput, getTaskOutputPath, initTaskOutputAsSymlink } from '../../utils/task/diskOutput.js';
@@ -136,6 +138,9 @@ export type LocalAgentTaskState = TaskStateBase & {
   lastReportedTokenCount: number;
   // Whether the task has been backgrounded (false = foreground running, true = backgrounded)
   isBackgrounded: boolean;
+  // Agent whose Agent tool call spawned this one; undefined = main thread.
+  // Routes the completion notification and scopes cascade stops.
+  ownerAgentId?: string;
   // Messages queued mid-turn via SendMessage, drained at tool-round boundaries
   pendingMessages: string[];
   // UI is holding this task: blocks eviction, enables stream-append, triggers
@@ -259,11 +264,13 @@ export function enqueueAgentNotification({
   // If the task was already marked as notified (e.g., by TaskStopTool), skip
   // enqueueing to avoid sending redundant messages to the model.
   let shouldEnqueue = false;
+  let ownerAgentId: string | undefined;
   updateTaskState<LocalAgentTaskState>(taskId, setAppState, task => {
     if (task.notified) {
       return task;
     }
     shouldEnqueue = true;
+    ownerAgentId = task.ownerAgentId;
     return {
       ...task,
       notified: true
@@ -292,9 +299,17 @@ export function enqueueAgentNotification({
 <${STATUS_TAG}>${status}</${STATUS_TAG}>
 <${SUMMARY_TAG}>${escapeXml(summary)}</${SUMMARY_TAG}>${resultSection}${usageSection}${worktreeSection}
 </${TASK_NOTIFICATION_TAG}>`;
+  // A live owning agent drains it at its next tool round (or while waiting on
+  // its children before it stops); otherwise the main thread gets it.
+  // finishAgentRun re-addresses anything the owner leaves undrained.
+  const toOwner = ownerAgentId !== undefined && activeAgentRuns.has(ownerAgentId);
   enqueuePendingNotification({
     value: message,
-    mode: 'task-notification'
+    mode: 'task-notification',
+    ...(toOwner && {
+      agentId: asAgentId(ownerAgentId!),
+      priority: 'next'
+    })
   });
 }
 
@@ -344,7 +359,55 @@ export function killAsyncAgent(taskId: string, setAppState: SetAppState, {
     void evictTaskOutput(taskId);
     // Abort is cooperative. Keep the id owned until the run exits: a late
     // catch or cleanup still addresses state by id and could affect a resume.
+    killOwnedAgents(taskId, setAppState, {
+      stoppedByUser
+    });
   }
+}
+
+/**
+ * Stop the running agents a stopped agent spawned (recursively, via
+ * killAsyncAgent). Their owner is gone, so their results have no reader.
+ */
+export function killOwnedAgents(ownerAgentId: string, setAppState: SetAppState, options: {
+  stoppedByUser?: boolean;
+} = {}): void {
+  const owned: string[] = [];
+  setAppState(prev => {
+    for (const [id, task] of Object.entries(prev.tasks)) {
+      if (isLocalAgentTask(task) && task.status === 'running' && task.ownerAgentId === ownerAgentId) owned.push(id);
+    }
+    return prev;
+  });
+  for (const id of owned) killAsyncAgent(id, setAppState, options);
+}
+
+// Pending until notified, not just until terminal: a completed run awaits the
+// handoff classifier and worktree probe before it enqueues its notification.
+// Stops that suppress the notification set `notified` themselves.
+function hasPendingOwnedAgents(ownerAgentId: string, tasks: AppState['tasks']): boolean {
+  return Object.values(tasks).some(t => isLocalAgentTask(t) && t.ownerAgentId === ownerAgentId && (t.status === 'running' || !t.notified));
+}
+
+const OWNED_AGENT_POLL_MS = 100;
+
+/**
+ * Called when an agent is about to stop. While agents it spawned are still
+ * running, wait for their task-notifications so the agent that asked for the
+ * work receives the results instead of the main thread. Returns the drained
+ * notifications ([] once nothing is outstanding). Polls rather than
+ * subscribes: a child stopped with its notification suppressed never enqueues,
+ * so its task state must also end the wait.
+ */
+export async function waitForOwnedAgentNotifications(ownerAgentId: string, getAppState: () => AppState, signal: AbortSignal): Promise<QueuedCommand[]> {
+  if (!activeAgentRuns.has(ownerAgentId)) return [];
+  const addressed = (cmd: QueuedCommand) => cmd.mode === 'task-notification' && cmd.agentId === ownerAgentId;
+  while (!signal.aborted) {
+    if (getCommandQueueSnapshot().some(addressed)) return removeByFilter(addressed);
+    if (!hasPendingOwnedAgents(ownerAgentId, getAppState().tasks)) return [];
+    await sleep(OWNED_AGENT_POLL_MS, signal);
+  }
+  return [];
 }
 
 /**
@@ -556,6 +619,9 @@ export function getAgentRunToken(agentId: string): symbol | undefined {
 export function finishAgentRun(agentId: string, runToken: symbol | undefined): void {
   if (activeAgentRuns.get(agentId) !== runToken) return;
   activeAgentRuns.delete(agentId);
+  // Results that reached this agent after its last drain would otherwise sit
+  // in the queue forever; later ones route to main via enqueueAgentNotification.
+  readdressAgentNotifications(asAgentId(agentId));
 }
 
 /**
@@ -571,7 +637,8 @@ export function registerAsyncAgent({
   getAppState,
   setAppState,
   parentAbortController,
-  toolUseId
+  toolUseId,
+  ownerAgentId
 }: {
   agentId: string;
   description: string;
@@ -582,6 +649,7 @@ export function registerAsyncAgent({
   setAppState: SetAppState;
   parentAbortController?: AbortController;
   toolUseId?: string;
+  ownerAgentId?: string;
 }): LocalAgentTaskState {
   if (activeAgentRuns.has(agentId)) {
     throw new Error(`Agent '${agentId}' is still active or finishing cleanup. Retry once it finishes; if its cleanup is wedged, this id stays unavailable for the rest of the session.`);
@@ -605,6 +673,7 @@ export function registerAsyncAgent({
     lastReportedToolCount: 0,
     lastReportedTokenCount: 0,
     isBackgrounded: true,
+    ownerAgentId,
     pendingMessages: [],
     retain: false,
     diskLoaded: false
@@ -639,7 +708,8 @@ export function registerAgentForeground({
   selectedAgent,
   setAppState,
   autoBackgroundMs,
-  toolUseId
+  toolUseId,
+  ownerAgentId
 }: {
   agentId: string;
   description: string;
@@ -649,6 +719,7 @@ export function registerAgentForeground({
   setAppState: SetAppState;
   autoBackgroundMs?: number;
   toolUseId?: string;
+  ownerAgentId?: string;
 }): {
   taskId: string;
   backgroundSignal: Promise<void>;
@@ -674,6 +745,7 @@ export function registerAgentForeground({
     lastReportedToolCount: 0,
     lastReportedTokenCount: 0,
     isBackgrounded: false,
+    ownerAgentId,
     pendingMessages: [],
     retain: false,
     diskLoaded: false

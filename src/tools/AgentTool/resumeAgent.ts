@@ -245,6 +245,8 @@ async function resumeAgentBackgroundInner({
     getAppState: toolUseContext.getAppState,
     setAppState: rootSetAppState,
     toolUseId: toolUseContext.toolUseId,
+    // The resumer is who asked for this run, so it receives the result.
+    ownerAgentId: toolUseContext.agentId,
   })
 
   // registerAsyncAgent is the ownership gate. Before it returns, a previous run

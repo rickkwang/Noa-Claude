@@ -353,6 +353,7 @@ import { removeTeammateFromTeamFile } from '../utils/swarm/teamHelpers.js'
 import { unassignTeammateTasks } from '../utils/tasks.js'
 import { getRunningTasks } from '../utils/task/framework.js'
 import { isBackgroundTask } from '../tasks/types.js'
+import { isLocalAgentTask } from '../tasks/LocalAgentTask/LocalAgentTask.js'
 import { stopTask } from '../tasks/stopTask.js'
 import { drainSdkEvents } from '../utils/sdkEventQueue.js'
 import { initializeGrowthBook } from '../services/analytics/growthbook.js'
@@ -2453,9 +2454,15 @@ function runHeadlessStreaming(
         waitingForAgents = false
         {
           const state = getAppState()
-          const hasRunningBg = getRunningTasks(state).some(
-            t => isBackgroundTask(t) && t.type !== 'in_process_teammate',
-          )
+          // A completed background agent still owes its notification while
+          // the handoff review and worktree cleanup run; exiting then drops it.
+          const hasRunningBg =
+            getRunningTasks(state).some(
+              t => isBackgroundTask(t) && t.type !== 'in_process_teammate',
+            ) ||
+            Object.values(state.tasks).some(
+              t => isLocalAgentTask(t) && t.isBackgrounded && !t.notified,
+            )
           const hasMainThreadQueued = peek(isMainThread) !== undefined
           if (hasRunningBg || hasMainThreadQueued) {
             waitingForAgents = true

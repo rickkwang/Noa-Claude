@@ -84,8 +84,10 @@ import {
   filterDuplicateMemoryAttachments,
   getAttachmentMessages,
   getDeferredToolsDeltaAttachment,
+  getQueuedCommandAttachments,
   startRelevantMemoryPrefetch,
 } from './utils/attachments.js'
+import { waitForOwnedAgentNotifications } from './tasks/LocalAgentTask/LocalAgentTask.js'
 /* eslint-disable @typescript-eslint/no-require-imports */
 const skillPrefetch = feature('EXPERIMENTAL_SKILL_SEARCH')
   ? (require('./services/skillSearch/prefetch.js') as typeof import('./services/skillSearch/prefetch.js'))
@@ -1765,6 +1767,49 @@ async function* queryLoop(
           error: 'empty_response',
         })
         return { reason: 'completed', failure: 'transient' }
+      }
+
+      // A subagent whose own agents are still running waits for their results
+      // before stopping, so delegated work reports back to the agent that
+      // asked for it. Skipped when no turn is left to read them: they then
+      // reach the main thread once this agent's run finishes.
+      if (
+        toolUseContext.agentId &&
+        !toolUseContext.abortController.signal.aborted &&
+        !(maxTurns && turnCount + 1 > maxTurns)
+      ) {
+        const ownedResults = await waitForOwnedAgentNotifications(
+          toolUseContext.agentId,
+          toolUseContext.getAppState,
+          toolUseContext.abortController.signal,
+        )
+        if (toolUseContext.abortController.signal.aborted) {
+          yield* yieldInterruptionNotice(toolUseContext, { toolUse: false })
+          return { reason: 'aborted_streaming' }
+        }
+        if (ownedResults.length > 0) {
+          const notices = (await getQueuedCommandAttachments(ownedResults)).map(
+            createAttachmentMessage,
+          )
+          for (const notice of notices) yield notice
+          for (const cmd of ownedResults) {
+            if (cmd.uuid) {
+              consumedCommandUuids.push(cmd.uuid)
+              notifyCommandLifecycle(cmd.uuid, 'started')
+            }
+          }
+          state = nextState(state, {
+            messages: [...messagesForQuery, ...assistantMessages, ...notices],
+            toolUseContext,
+            autoCompactTracking: tracking,
+            maxOutputTokensRecoveryCount: 0,
+            hasAttemptedReactiveCompact: false,
+            stopHookBlockingCount: 0,
+            turnCount: turnCount + 1,
+            transition: { reason: 'owned_agent_results' },
+          })
+          continue
+        }
       }
 
       const stopHookResult = yield* deps.stopHooks(
