@@ -297,7 +297,28 @@ function getDefaultOpusSetting(): ModelName {
 }
 
 /**
+ * Model named by ANTHROPIC_DEFAULT_MODEL for new sessions. `default`, `inherit`,
+ * `opusplan` and `haiku` are ignored, matching upstream.
+ */
+function getEnvDefaultModel(): string | undefined {
+  const value = process.env.ANTHROPIC_DEFAULT_MODEL?.trim()
+  if (!value) return undefined
+  const lower = value.toLowerCase()
+  if (
+    lower === 'default' ||
+    lower === 'inherit' ||
+    lower === 'opusplan' ||
+    lower === 'haiku'
+  ) {
+    return undefined
+  }
+  return value
+}
+
+/**
  * Get the default main loop model setting.
+ *
+ * ANTHROPIC_DEFAULT_MODEL, when set, takes precedence over the built-in default.
  *
  * This handles the built-in default:
  * - Subscribers: Opus for the plans in isOpusDefaultSubscriber(), else Sonnet
@@ -308,6 +329,11 @@ function getDefaultOpusSetting(): ModelName {
  * @returns The default model setting to use
  */
 export function getDefaultMainLoopModelSetting(): ModelName | ModelAlias {
+  const envDefaultModel = getEnvDefaultModel()
+  if (envDefaultModel) {
+    return envDefaultModel
+  }
+
   // Ants default to defaultModel from flag config, or Opus 1M if not configured
   if (process.env.USER_TYPE === 'ant') {
     return (
