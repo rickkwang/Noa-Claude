@@ -4,6 +4,7 @@ import { stat } from 'fs/promises'
 import type { Readable } from 'stream'
 import treeKill from 'tree-kill'
 import { generateTaskId } from '../Task.js'
+import { logForDebugging } from './debug.js'
 import { formatDuration, formatFileSize } from './format.js'
 import { MAX_TASK_OUTPUT_BYTES } from './task/diskOutput.js'
 import { TaskOutput } from './task/TaskOutput.js'
@@ -268,6 +269,7 @@ class ShellCommandImpl implements ShellCommand {
         : signal === 'SIGTERM'
           ? 144
           : 1
+    const resolveExit = () => this.#resolveExitCode(exitCode)
     // Only a foreground bash command: a backgrounded one is owned by its task,
     // and hooks (pipe mode) are not ours to reap. The shell is gone, but anything
     // it left behind (`cmd &`) still sits in its process group, which nothing
@@ -279,9 +281,12 @@ class ShellCommandImpl implements ShellCommand {
     ) {
       this.#clearSampler()
       this.#killProcessGroup()
-      this.#killDescendants()
+      // Resolve only after the orphan sweep has sent SIGTERM, so the result
+      // never reaches the caller while those processes are still running
+      this.#killDescendants(resolveExit)
+      return
     }
-    this.#resolveExitCode(exitCode)
+    resolveExit()
   }
 
   #sampleDescendants(): void {
@@ -304,7 +309,7 @@ class ShellCommandImpl implements ShellCommand {
     }
   }
 
-  #killDescendants(): void {
+  #killDescendants(done: () => void): void {
     // Exited processes are the common case; skip the ps snapshot if none remain
     const pids = [...this.#descendants.keys()].filter(pid => {
       try {
@@ -314,11 +319,12 @@ class ShellCommandImpl implements ShellCommand {
         return false
       }
     })
-    if (pids.length === 0) return
+    if (pids.length === 0) return done()
     // Signal only pids whose start time still matches the sample
     const sameProcess = (table: ProcessTable | null, pid: number) =>
       table?.get(pid)?.start === this.#descendants.get(pid)
     listProcesses(table => {
+      if (!table) logForDebugging('ShellCommand: ps failed, orphaned descendants not swept')
       const targets = pids.filter(pid => sameProcess(table, pid))
       for (const pid of targets) {
         try {
@@ -327,6 +333,7 @@ class ShellCommandImpl implements ShellCommand {
           // Already exited
         }
       }
+      done()
       if (targets.length === 0) return
       const escalate = setTimeout(() => {
         listProcesses(later => {
