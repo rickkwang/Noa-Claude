@@ -382,7 +382,7 @@ export const AgentTool = buildTool({
           } catch (e) {
             failedAttempts++;
             if (failedAttempts >= MAX_STRUCTURED_OUTPUT_FAILURES) {
-              throw new Error(`StructuredOutput validation failed ${failedAttempts} times; the schema cannot be satisfied in this run. Do not call this tool again — end your turn.`);
+              throw new Error(`StructuredOutput validation failed ${failedAttempts} times (last input: ${JSON.stringify(input).slice(0, 300)}); the schema cannot be satisfied in this run. Do not call this tool again — end your turn.`);
             }
             throw e;
           }

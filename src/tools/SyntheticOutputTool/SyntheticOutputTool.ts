@@ -129,6 +129,11 @@ function buildSyntheticOutputTool(
   jsonSchema: Record<string, unknown>,
 ): CreateResult {
   try {
+    // The API only accepts an object-rooted tool input schema; any other root
+    // would reject every request.
+    if (jsonSchema.type !== 'object') {
+      return { error: "the root schema must declare type: 'object' (the API rejects any other root type for a tool input schema)" }
+    }
     const ajv = new Ajv({ allErrors: true })
     const isValidSchema = ajv.validateSchema(jsonSchema)
     if (!isValidSchema) {

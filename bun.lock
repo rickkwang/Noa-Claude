@@ -30,6 +30,7 @@
         "@opentelemetry/sdk-trace-base": "^1.30.0",
         "@opentelemetry/sdk-trace-node": "^1.30.0",
         "@opentelemetry/semantic-conventions": "^1.28.0",
+        "ajv": "^8.18.0",
         "asciichart": "^1.5.25",
         "audio-capture-napi": "^0.0.1",
         "axios": "^1.14.0",
