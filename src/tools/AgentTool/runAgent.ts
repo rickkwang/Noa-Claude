@@ -67,6 +67,7 @@ import { getAgentModel } from '../../utils/model/agent.js'
 import type { ModelAlias } from '../../utils/model/aliases.js'
 import {
   clearAgentTranscriptSubdir,
+  isLoggableMessage,
   recordSidechainTranscript,
   setAgentTranscriptSubdir,
   writeAgentMetadata,
@@ -254,7 +255,7 @@ type QueryMessage =
 
 /**
  * Type guard to check if a message from query() is a recordable Message type.
- * Includes deferred-tool announcements so resumed agents retain their prefix.
+ * Includes model-visible attachments so resume retains the actual context.
  */
 function isRecordableMessage(
   msg: QueryMessage,
@@ -268,8 +269,7 @@ function isRecordableMessage(
     msg.type === 'assistant' ||
     msg.type === 'user' ||
     msg.type === 'progress' ||
-    (msg.type === 'attachment' &&
-      msg.attachment.type === 'deferred_tools_delta') ||
+    msg.type === 'attachment' ||
     (msg.type === 'system' &&
       'subtype' in msg &&
       msg.subtype === 'compact_boundary')
@@ -858,7 +858,7 @@ export async function* runAgent({
 
     // Record initial messages before the query loop starts, plus the agentType
     // so resume can route correctly when subagent_type is omitted.
-    void recordSidechainTranscript(initialMessages, agentId).catch(_err =>
+    await recordSidechainTranscript(initialMessages, agentId).catch(_err =>
       logForDebugging(`Failed to record sidechain transcript: ${_err}`),
     )
     // Finish the initial metadata write before this run can clear it on exit.
@@ -876,7 +876,7 @@ export async function* runAgent({
     }).catch(_err => logForDebugging(`Failed to write agent metadata: ${_err}`))
 
     // Track the last recorded message UUID for parent chain continuity
-    let lastRecordedUuid: UUID | null = initialMessages.at(-1)?.uuid ?? null
+    let lastRecordedUuid: UUID | null = initialMessages.findLast(isLoggableMessage)?.uuid ?? null
 
     for await (const message of query({
       messages: initialMessages,
@@ -900,23 +900,13 @@ export async function* runAgent({
         continue
       }
 
-      // Most attachments are ephemeral; deferred-tool announcements must survive resume.
-      if (
-        message.type === 'attachment' &&
-        message.attachment.type !== 'deferred_tools_delta'
-      ) {
-        // Handle max turns reached signal from query.ts
-        if (message.attachment.type === 'max_turns_reached') {
-          logForDebugging(
-            `[Agent: ${agentDefinition.agentType}] Reached max turns limit (${message.attachment.maxTurns})`,
-          )
-          // Forward the signal so finalizeAgentTool can mark the report as
-          // partial; without it the parent reads a cut-off run as finished.
-          yield message
-          break
-        }
+      if (message.type === 'attachment' && message.attachment.type === 'max_turns_reached') {
+        logForDebugging(
+          `[Agent: ${agentDefinition.agentType}] Reached max turns limit (${message.attachment.maxTurns})`,
+        )
+        // Preserve the partial-result signal without treating it as model input.
         yield message
-        continue
+        break
       }
 
       if (isRecordableMessage(message)) {
@@ -928,7 +918,7 @@ export async function* runAgent({
         ).catch(err =>
           logForDebugging(`Failed to record sidechain transcript: ${err}`),
         )
-        if (message.type !== 'progress') {
+        if (isLoggableMessage(message)) {
           lastRecordedUuid = message.uuid
         }
         yield message

@@ -145,7 +145,64 @@ try {
   assert.equal(afterClear.data.success, false, 'session change lost user cancellation'); assert.match(afterClear.data.message, /stopped by the user/)
   assert.equal(state.tasks[id], undefined)
 
-  passed = true; console.log('PASS task edge truthfulness and snapshot ACKs, including identical messages, replay and legacy data')
+  // This microtask boundary cannot be rendezvoused through the HTTP CLI
+  // fixture. Exercise the real query and both callers' shared inbox here:
+  // a pre-check arrival must run; a post-check or cleanup arrival must refuse.
+  const { query } = await import('../src/query.js')
+  const { asSystemPrompt } = await import('../src/utils/systemPromptType.js')
+  const { queuePendingMessage } = await import('../src/tasks/LocalAgentTask/LocalAgentTask.js')
+  const deliveryChecks: unknown[] = []
+  for (const mode of ['before-check', 'at-check', 'after-query']) {
+    const deliveryId = 'a1123456789abcdef'
+    let afterStop = false, injected = false, calls = 0
+    let sent: Promise<any> | undefined
+    state = getDefaultAppState()
+    state.tasks[deliveryId] = {
+      id: deliveryId, agentId: deliveryId, type: 'local_agent', agentType: 'general-purpose',
+      status: 'running', isBackgrounded: true, retain: false,
+      get pendingMessages() {
+        if (mode === 'at-check' && afterStop && !injected) {
+          injected = true
+          queueMicrotask(() => { sent = sendDelivery() })
+        }
+        return []
+      },
+    }
+    const sendDelivery = () => SendMessageTool.call({ to: deliveryId, message: 'DELIVERY_WINDOW_42', summary: 'Closing inbox fixture' }, agentContext, async () => ({ behavior: 'allow' }), createAssistantMessage({ content: 'Sender fixture' }))
+    const delivered: boolean[] = []
+    const generator = query({
+      messages: [createUserMessage({ content: 'Start delivery fixture' })],
+      systemPrompt: asSystemPrompt([]), userContext: {}, systemContext: {},
+      canUseTool: async (_tool, input) => ({ behavior: 'allow', updatedInput: input }),
+      toolUseContext: { ...agentContext, agentId: asAgentId(deliveryId), setAppStateForTasks: setAppState },
+      querySource: 'agent:custom', maxTurns: 3,
+      deps: {
+        callModel: async function* (messages) { calls++; delivered.push(JSON.stringify(messages).includes('DELIVERY_WINDOW_42')); yield createAssistantMessage({ content: 'Done' }) },
+        microcompact: async messages => ({ messages }), autocompact: async () => ({ wasCompacted: false }),
+        stopHooks: async function* () {
+          afterStop = true
+          if (mode === 'before-check' && !injected) { injected = true; sent = sendDelivery(); await sent }
+          return { preventContinuation: false, blockingErrors: [] }
+        },
+      },
+    })
+    let next = await generator.next()
+    while (!next.done) next = await generator.next()
+    if (mode === 'after-query') sent = sendDelivery()
+    const sendResult = await sent
+    const directAccepted = mode === 'after-query' ? queuePendingMessage(deliveryId, 'TUI_WINDOW_42', setAppState) : undefined
+    const observed = { mode, calls, delivered, terminal: next.value.reason, success: sendResult?.data.success, pending: state.tasks[deliveryId].pendingMessages, finishing: state.tasks[deliveryId].isFinishing, ...(mode === 'after-query' && { directAccepted }) }
+    deliveryChecks.push(observed)
+    results.push({ case: 'inbox-' + mode, ...observed })
+  }
+  writeFileSync(join(artifacts, 'results.json'), JSON.stringify(results, null, 2))
+  assert.deepEqual(deliveryChecks, [
+    { mode: 'before-check', calls: 2, delivered: [false, true], terminal: 'completed', success: true, pending: [], finishing: true },
+    { mode: 'at-check', calls: 1, delivered: [false], terminal: 'completed', success: false, pending: [], finishing: true },
+    { mode: 'after-query', calls: 1, delivered: [false], terminal: 'completed', success: false, pending: [], finishing: true, directAccepted: false },
+  ], 'closing inbox accepted a message it could not deliver')
+
+  passed = true; console.log('PASS task edges, snapshot ACKs, cancellation persistence and atomic agent inbox closure')
 } finally {
   writeFileSync(join(artifacts, 'results.json'), JSON.stringify(results, null, 2))
   let revision = 'unavailable'; try { revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: resolve(import.meta.dir, '..'), encoding: 'utf8' }).trim() } catch {}

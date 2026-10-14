@@ -1315,7 +1315,10 @@ class Project {
         // For tool_result messages, use the assistant message UUID from the message
         // if available (set at creation time), otherwise fall back to sequential parent
         let effectiveParentUuid = parentUuid
-        if (message.type === 'user') {
+        // Sidechains are recorded in query emission order, including hook
+        // context between an assistant and its tool result. Re-anchoring that
+        // result to the assistant would orphan the intervening context.
+        if (message.type === 'user' && !isSidechain) {
           const sourceToolAssistantUUID = validateUuid(
             message.sourceToolAssistantUUID,
           )
@@ -4913,6 +4916,9 @@ export async function loadAllSubagentTranscriptsFromDisk(): Promise<{
 // without awaiting recordTranscript's return value (race-free hint tracking).
 export function isLoggableMessage(m: Message): boolean {
   if (m.type === 'progress') return false
+  // Empty attachment placeholders carry no model context and must not move
+  // the transcript cursor to an unrecorded or unusable entry.
+  if (m.type === 'attachment' && typeof m.attachment?.type !== 'string') return false
   // Attachments persist so resume replays the context the model actually saw:
   // post-compact file restores and notes, plan, invoked skills (read back by
   // restoreSkillStateFromMessages), and delta announcements that later turns

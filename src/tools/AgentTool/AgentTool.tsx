@@ -17,7 +17,7 @@ import { assertCanStartAgent, createActivityDescriptionResolver, createProgressT
 import { checkRemoteAgentEligibility, formatPreconditionError, getRemoteTaskSessionUrl, registerRemoteAgentTask } from '../../tasks/RemoteAgentTask/RemoteAgentTask.js';
 import { assembleToolPool } from '../../tools.js';
 import { createSyntheticOutputTool } from '../SyntheticOutputTool/SyntheticOutputTool.js';
-import { asAgentId } from '../../types/ids.js';
+import { asAgentId, toAgentId } from '../../types/ids.js';
 import { getAgentContext, nextSubagentDepth, runWithAgentContext } from '../../utils/agentContext.js';
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js';
 import { jsonStringify } from '../../utils/slowOperations.js';
@@ -98,7 +98,10 @@ const baseInputSchema = lazySchema(() => z.object({
 const fullInputSchema = lazySchema(() => {
   // Multi-agent parameters
   const multiAgentInputSchema = z.object({
-    name: z.string().optional().describe('Name for the spawned agent. Makes it addressable via SendMessage({to: name}) while running.'),
+    name: z.string()
+      .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/, 'Name must start with a letter or digit and contain only letters, digits, underscores, or hyphens (max 64 chars).')
+      .refine(name => !['main', 'team-lead', 'user', 'system'].includes(name.toLowerCase()) && !toAgentId(name), 'Name must not be a reserved recipient or have the shape of an agent ID.')
+      .optional().describe('Name for the spawned agent. Makes it addressable via SendMessage({to: name}) while running.'),
     team_name: z.string().optional().describe('Team name for spawning. Uses current team context if omitted.'),
     mode: permissionModeSchema().optional().describe('Permission mode for spawned teammate (e.g., "plan" to require plan approval).')
   });
@@ -818,6 +821,15 @@ export const AgentTool = buildTool({
       }
       throw error;
     }
+    // Explicit names address foreground and background agents alike.
+    const registerName = () => {
+      if (!name) return;
+      rootSetAppState(prev => {
+        const next = new Map(prev.agentNameRegistry);
+        next.set(name, asAgentId(earlyAgentId));
+        return { ...prev, agentNameRegistry: next };
+      });
+    };
     if (shouldRunAsync) {
       const asyncAgentId = earlyAgentId;
       const agentBackgroundTask = registerAsyncAgent({
@@ -836,19 +848,7 @@ export const AgentTool = buildTool({
       });
       spawnReservationCommitted = true;
 
-      // Register only explicit user-provided names for SendMessage routing.
-      // Auto-assigned personality names are display-only and must not become
-      // addressable aliases.
-      if (name) {
-        rootSetAppState(prev => {
-          const next = new Map(prev.agentNameRegistry);
-          next.set(name, asAgentId(asyncAgentId));
-          return {
-            ...prev,
-            agentNameRegistry: next
-          };
-        });
-      }
+      registerName();
 
       // Wrap async agent execution in agent context for analytics attribution
       const asyncAgentContext = {
@@ -979,6 +979,7 @@ export const AgentTool = buildTool({
         foregroundTaskId = registration.taskId;
         syncRunToken = getAgentRunToken(syncAgentId);
         spawnReservationCommitted = true;
+        registerName();
         if (!isBackgroundTasksDisabled) {
           backgroundPromise = registration.backgroundSignal.then(() => ({
             type: 'background' as const

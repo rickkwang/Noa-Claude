@@ -82,12 +82,14 @@ import type { ApiFailureCategory } from './types/message.js'
 import {
   createAttachmentMessage,
   filterDuplicateMemoryAttachments,
+  getAgentPendingMessageAttachments,
   getAttachmentMessages,
   getDeferredToolsDeltaAttachment,
   getQueuedCommandAttachments,
   startRelevantMemoryPrefetch,
 } from './utils/attachments.js'
-import { waitForOwnedAgentNotifications } from './tasks/LocalAgentTask/LocalAgentTask.js'
+import { isPanelAgentTask, waitForOwnedAgentNotifications } from './tasks/LocalAgentTask/LocalAgentTask.js'
+import { updateTaskState } from './utils/task/framework.js'
 /* eslint-disable @typescript-eslint/no-require-imports */
 const skillPrefetch = feature('EXPERIMENTAL_SKILL_SEARCH')
   ? (require('./services/skillSearch/prefetch.js') as typeof import('./services/skillSearch/prefetch.js'))
@@ -352,17 +354,25 @@ export async function* query(
   Terminal
 > {
   const consumedCommandUuids: string[] = []
-  const terminal = yield* queryLoop(params, consumedCommandUuids)
-  const goalNotice = goalFailureNotice(terminal, params.toolUseContext)
-  if (goalNotice) yield goalNotice
-  // Only reached if queryLoop returned normally. Skipped on throw (error
-  // propagates through yield*) and on .return() (Return completion closes
-  // both generators). This gives the same asymmetric started-without-completed
-  // signal as print.ts's drainCommandQueue when the turn fails.
-  for (const uuid of consumedCommandUuids) {
-    notifyCommandLifecycle(uuid, 'completed')
+  try {
+    const terminal = yield* queryLoop(params, consumedCommandUuids)
+    const goalNotice = goalFailureNotice(terminal, params.toolUseContext)
+    if (goalNotice) yield goalNotice
+    // Only reached if queryLoop returned normally; failed commands remain started.
+    for (const uuid of consumedCommandUuids) {
+      notifyCommandLifecycle(uuid, 'completed')
+    }
+    return terminal
+  } finally {
+    const context = params.toolUseContext
+    if (context.agentId) {
+      updateTaskState(context.agentId, context.setAppStateForTasks ?? context.setAppState, task =>
+        isPanelAgentTask(task) && task.status === 'running' && !task.isFinishing
+          ? { ...task, isFinishing: true }
+          : task,
+      )
+    }
   }
-  return terminal
 }
 
 function goalFailureForTerminal(terminal: Terminal): ApiFailureCategory | undefined {
@@ -2110,6 +2120,54 @@ async function* queryLoop(
             continue
           }
         }
+      }
+
+      // SendMessage can arrive during the final text response or Stop hooks,
+      // after the last tool boundary drained this agent's inbox. Check and
+      // close receipt in one synchronous update, before generator return can
+      // yield to a sender. The outer finally also closes abnormal exits.
+      if (toolUseContext.agentId) {
+        updateTaskState(toolUseContext.agentId, toolUseContext.setAppStateForTasks ?? toolUseContext.setAppState, task =>
+          isPanelAgentTask(task) && task.status === 'running' && !task.isFinishing &&
+          (task.pendingMessages.length === 0 || toolUseContext.abortController.signal.aborted || (maxTurns && turnCount + 1 > maxTurns))
+            ? { ...task, isFinishing: true }
+            : task,
+        )
+      }
+      const agentTask = toolUseContext.agentId
+        ? toolUseContext.getAppState().tasks[toolUseContext.agentId]
+        : undefined
+      if (
+        isPanelAgentTask(agentTask) &&
+        agentTask.pendingMessages.length > 0 &&
+        !toolUseContext.abortController.signal.aborted
+      ) {
+        const nextTurnCount = turnCount + 1
+        if (maxTurns && nextTurnCount > maxTurns) {
+          // Save accepted input as unanswered continuation context. Do not call
+          // the model beyond the turn cap; an explicit resume can consume it.
+          for (const notice of getAgentPendingMessageAttachments(toolUseContext).map(createAttachmentMessage)) {
+            yield notice
+          }
+          yield createAttachmentMessage({ type: 'max_turns_reached', maxTurns, turnCount: nextTurnCount })
+          return { reason: 'max_turns', turnCount: nextTurnCount }
+        }
+        const notices = getAgentPendingMessageAttachments(toolUseContext).map(createAttachmentMessage)
+        for (const notice of notices) yield notice
+        state = nextState(state, {
+          messages: [...messagesForQuery, ...assistantMessages, ...notices],
+          toolUseContext,
+          autoCompactTracking: tracking,
+          maxOutputTokensRecoveryCount: 0,
+          hasRetriedMalformedToolUse: false,
+          hasRetriedEmptyResponse: false,
+          hasAttemptedReactiveCompact: false,
+          stopHookActive: false,
+          stopHookBlockingCount: 0,
+          turnCount: nextTurnCount,
+          transition: { reason: 'agent_pending_messages' },
+        })
+        continue
       }
 
       return { reason: 'completed' }

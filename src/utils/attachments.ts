@@ -1510,9 +1510,10 @@ export function getAgentPendingMessageAttachments(
   )
   return drained.map(msg => ({
     type: 'queued_command' as const,
-    prompt: msg,
-    origin: { kind: 'coordinator' as const },
-    isMeta: true,
+    prompt: typeof msg === 'string' ? msg : msg.text,
+    source_uuid: typeof msg === 'string' ? undefined : msg.uuid,
+    origin: typeof msg === 'string' ? { kind: 'coordinator' as const } : msg.origin,
+    isMeta: typeof msg === 'string' || msg.origin.kind !== 'human',
   }))
 }
 

@@ -3757,15 +3757,21 @@ export function REPL({
   // Callback for when user submits input while viewing a teammate's transcript
   const onAgentSubmit = useCallback(async (input: string, task: InProcessTeammateTaskState | LocalAgentTaskState, helpers: PromptInputHelpers) => {
     if (isLocalAgentTask(task)) {
-      appendMessageToLocalAgent(task.id, createUserMessage({
-        content: input
-      }), setAppState);
-      if (task.status === 'running') {
-        queuePendingMessage(task.id, input, setAppState);
-      } else {
+      const inputMessage = createUserMessage({ content: input, origin: { kind: 'human' } });
+      if (task.status === 'running' && !queuePendingMessage(task.id, input, setAppState, { uuid: inputMessage.uuid, origin: { kind: 'human' } })) {
+        addNotification({
+          key: `agent-message-refused-${task.id}`,
+          jsx: <Text color="error">Agent is finishing or no longer running. Your message was not sent; retry once it finishes.</Text>,
+          priority: 'low'
+        });
+        return;
+      }
+      appendMessageToLocalAgent(task.id, inputMessage, setAppState);
+      if (task.status !== 'running') {
         void resumeAgentBackground({
           agentId: task.id,
           prompt: input,
+          promptMessage: inputMessage,
           toolUseContext: getToolUseContext(messagesRef.current, [], new AbortController(), mainLoopModel),
           canUseTool
         }).catch(err => {

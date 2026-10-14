@@ -42,6 +42,7 @@ import { enqueuePendingNotification } from '../utils/messageQueueManager.js'
 import { emitTaskTerminatedSdk } from '../utils/sdkEventQueue.js'
 import {
   getAgentTranscriptPath,
+  isLoggableMessage,
   recordSidechainTranscript,
 } from '../utils/sessionStorage.js'
 import {
@@ -319,7 +320,7 @@ export function startBackgroundSession({
   // Persist the pre-backgrounding conversation to the task's isolated
   // transcript so the task view shows context immediately. Subsequent messages
   // are written incrementally below.
-  void recordSidechainTranscript(messages, taskId).catch(err =>
+  const initialTranscript = recordSidechainTranscript(messages, taskId).catch(err =>
     logForDebugging(`bg-session initial transcript write failed: ${err}`),
   )
 
@@ -338,11 +339,12 @@ export function startBackgroundSession({
 
   void runWithAgentContext(agentContext, async () => {
     try {
+      await initialTranscript;
       const bgMessages: Message[] = [...messages]
       const recentActivities: ToolActivity[] = []
       let toolCount = 0
       let tokenCount = 0
-      let lastRecordedUuid: UUID | null = messages.at(-1)?.uuid ?? null
+      let lastRecordedUuid: UUID | null = messages.findLast(isLoggableMessage)?.uuid ?? null
 
       for await (const event of query({
         messages: bgMessages,
@@ -367,7 +369,8 @@ export function startBackgroundSession({
         if (
           event.type !== 'user' &&
           event.type !== 'assistant' &&
-          event.type !== 'system'
+          event.type !== 'system' &&
+          event.type !== 'attachment'
         ) {
           continue
         }
@@ -377,10 +380,10 @@ export function startBackgroundSession({
         // Per-message write (matches runAgent.ts pattern) — gives live
         // task progress and keeps the transcript file current even if
         // /clear re-links the symlink mid-run.
-        void recordSidechainTranscript([event], taskId, lastRecordedUuid).catch(
+        await recordSidechainTranscript([event], taskId, lastRecordedUuid).catch(
           err => logForDebugging(`bg-session transcript write failed: ${err}`),
         )
-        lastRecordedUuid = event.uuid
+        if (isLoggableMessage(event)) lastRecordedUuid = event.uuid
 
         if (event.type === 'assistant') {
           for (const block of event.message.content) {

@@ -36,7 +36,7 @@ import {
 } from './messages.js'
 import { createDenialTrackingState } from './permissions/denialTracking.js'
 import { parseToolListFromCLI } from './permissions/permissionSetup.js'
-import { recordSidechainTranscript } from './sessionStorage.js'
+import { isLoggableMessage, recordSidechainTranscript } from './sessionStorage.js'
 import type { SystemPrompt } from './systemPromptType.js'
 import {
   type ContentReplacementState,
@@ -586,7 +586,7 @@ export async function runForkedAgent({
     // Track the last recorded message UUID for parent chain continuity
     lastRecordedUuid =
       initialMessages.length > 0
-        ? initialMessages[initialMessages.length - 1]!.uuid
+        ? initialMessages.findLast(isLoggableMessage)?.uuid ?? null
         : null
   }
 
@@ -651,8 +651,9 @@ export async function runForkedAgent({
         (msg.type === 'assistant' ||
           msg.type === 'user' ||
           msg.type === 'progress' ||
-          (msg.type === 'attachment' &&
-            msg.attachment.type === 'deferred_tools_delta'))
+          msg.type === 'attachment' ||
+          (msg.type === 'system' && msg.subtype === 'compact_boundary')) &&
+        isLoggableMessage(msg)
       ) {
         await recordSidechainTranscript([msg], agentId, lastRecordedUuid).catch(
           err =>

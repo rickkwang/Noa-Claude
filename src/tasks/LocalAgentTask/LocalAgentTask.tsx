@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { randomUUID } from 'node:crypto';
 import { getSdkAgentProgressSummariesEnabled } from '../../bootstrap/state.js';
 import { OUTPUT_FILE_TAG, STATUS_TAG, SUMMARY_TAG, TASK_ID_TAG, TASK_NOTIFICATION_TAG, TOOL_USE_ID_TAG, WORKTREE_BRANCH_TAG, WORKTREE_PATH_TAG, WORKTREE_TAG } from '../../constants/xml.js';
 import { abortSpeculation } from '../../services/PromptSuggestion/speculation.js';
@@ -25,6 +26,15 @@ import { PANEL_GRACE_MS, registerTask, updateTaskState } from '../../utils/task/
 import { getMaxConcurrentAgents } from '../../utils/task/sessionBudget.js';
 import { emitTaskProgress } from '../../utils/task/sdkProgress.js';
 import type { TaskState } from '../types.js';
+export type PendingAgentMessage = {
+  text: string;
+  uuid: string;
+  origin: { kind: 'human' | 'coordinator'; agentId?: string };
+};
+export type PendingAgentMessageOptions = {
+  uuid?: string;
+  origin?: PendingAgentMessage['origin'];
+};
 export type ToolActivity = {
   toolName: string;
   input: Record<string, unknown>;
@@ -142,8 +152,10 @@ export type LocalAgentTaskState = TaskStateBase & {
   // Agent whose Agent tool call spawned this one; undefined = main thread.
   // Routes the completion notification and scopes cascade stops.
   ownerAgentId?: string;
-  // Messages queued mid-turn via SendMessage, drained at tool-round boundaries
-  pendingMessages: string[];
+  // Messages queued via SendMessage, drained at tool boundaries and before stopping
+  pendingMessages: (PendingAgentMessage | string)[];
+  // The query is closing; scoped cleanup may still hold the run's ID.
+  isFinishing?: boolean;
   // UI is holding this task: blocks eviction, enables stream-append, triggers
   // disk bootstrap. Set by enterTeammateView. Separate from viewingAgentTaskId
   // (which is "what am I LOOKING at") — retain is "what am I HOLDING."
@@ -192,11 +204,19 @@ function hasAgentCapacity(tasks: AppState['tasks'], existingAgentId: string): bo
   }
 }
 
-export function queuePendingMessage(taskId: string, msg: string, setAppState: (f: (prev: AppState) => AppState) => void): void {
-  updateTaskState<LocalAgentTaskState>(taskId, setAppState, task => ({
-    ...task,
-    pendingMessages: [...task.pendingMessages, msg]
-  }));
+export function queuePendingMessage(taskId: string, msg: string, setAppState: (f: (prev: AppState) => AppState) => void, options: PendingAgentMessageOptions = {}): boolean {
+  const message: PendingAgentMessage = {
+    text: msg,
+    uuid: options.uuid ?? randomUUID(),
+    origin: options.origin ?? { kind: 'coordinator' },
+  };
+  let accepted = false;
+  updateTaskState<LocalAgentTaskState>(taskId, setAppState, task => {
+    if (!isLocalAgentTask(task) || task.status !== 'running' || task.isFinishing || task.stoppedByUser) return task;
+    accepted = true;
+    return { ...task, pendingMessages: [...task.pendingMessages, message] };
+  });
+  return accepted;
 }
 
 /**
@@ -211,7 +231,7 @@ export function appendMessageToLocalAgent(taskId: string, message: Message, setA
     messages: [...(task.messages ?? []), message]
   }));
 }
-export function drainPendingMessages(taskId: string, getAppState: () => AppState, setAppState: (f: (prev: AppState) => AppState) => void): string[] {
+export function drainPendingMessages(taskId: string, getAppState: () => AppState, setAppState: (f: (prev: AppState) => AppState) => void): (PendingAgentMessage | string)[] {
   const task = getAppState().tasks[taskId];
   if (!isLocalAgentTask(task) || task.pendingMessages.length === 0) {
     return [];

@@ -9,6 +9,7 @@ import {
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { isMainSessionTask } from '../../tasks/LocalMainSessionTask.js'
 import { toAgentId } from '../../types/ids.js'
+import { createAttachmentMessage } from '../../utils/attachments.js'
 import { generateRequestId } from '../../utils/agentId.js'
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import { logForDebugging } from '../../utils/debug.js'
@@ -668,6 +669,9 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
         const registered = appState.agentNameRegistry.get(input.to)
         const agentId = registered ?? toAgentId(input.to)
         if (agentId) {
+          const origin = { kind: 'coordinator' as const, ...(context.agentId && { agentId: context.agentId }) }
+          const incoming = createAttachmentMessage({ type: 'queued_command', prompt: input.message, origin, isMeta: true })
+          incoming.attachment.source_uuid = incoming.uuid
           const task = appState.tasks[agentId]
           // A resume still starting up has no registered task yet, so a message
           // queued now would be dropped when the new task is created. Refuse instead.
@@ -689,11 +693,20 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
               }
             }
             if (task.status === 'running') {
-              queuePendingMessage(
+              const accepted = queuePendingMessage(
                 agentId,
                 input.message,
                 context.setAppStateForTasks ?? context.setAppState,
+                { uuid: incoming.uuid, origin },
               )
+              if (!accepted) {
+                return {
+                  data: {
+                    success: false,
+                    message: `Agent "${input.to}" is finishing or no longer running; the message was not delivered. Retry once it finishes.`,
+                  },
+                }
+              }
               return {
                 data: {
                   success: true,
@@ -706,6 +719,7 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
               const result = await resumeAgentBackground({
                 agentId,
                 prompt: input.message,
+                promptMessage: incoming,
                 toolUseContext: context,
                 canUseTool,
                 invokingRequestId: assistantMessage?.requestId,
@@ -733,6 +747,7 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
               const result = await resumeAgentBackground({
                 agentId,
                 prompt: input.message,
+                promptMessage: incoming,
                 toolUseContext: context,
                 canUseTool,
                 invokingRequestId: assistantMessage?.requestId,

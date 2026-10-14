@@ -45,6 +45,8 @@ export type Continue =
   | { reason: 'empty_response_retry' }
   // A subagent about to stop received results from agents it spawned.
   | { reason: 'owned_agent_results' }
+  // A message arrived during the subagent's final response or Stop hooks.
+  | { reason: 'agent_pending_messages' }
   // Normal turn boundary: tool results collected, recurse.
   | { reason: 'next_turn' }
 

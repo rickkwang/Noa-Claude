@@ -13,6 +13,7 @@ import {
   registerAsyncAgent,
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { assembleToolPool } from '../../tools.js'
+import type { Message } from '../../types/message.js'
 import { asAgentId } from '../../types/ids.js'
 import { runWithAgentContext } from '../../utils/agentContext.js'
 import { getCwd, getCwdOverride, runWithCwdOverride } from '../../utils/cwd.js'
@@ -105,12 +106,14 @@ export async function resumeAgentBackground(
 async function resumeAgentBackgroundInner({
   agentId,
   prompt,
+  promptMessage,
   toolUseContext,
   canUseTool,
   invokingRequestId,
 }: {
   agentId: string
   prompt: string
+  promptMessage?: Message
   toolUseContext: ToolUseContext
   canUseTool: CanUseToolFn
   invokingRequestId?: string
@@ -300,7 +303,7 @@ async function resumeAgentBackgroundInner({
     agentDefinition: selectedAgent,
     promptMessages: [
       ...resumedMessages,
-      createUserMessage({ content: prompt }),
+      promptMessage ?? createUserMessage({ content: prompt }),
     ],
     toolUseContext,
     canUseTool,
