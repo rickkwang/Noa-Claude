@@ -216,6 +216,39 @@ describe('ShellCommand kill', () => {
       await rm(dir, { recursive: true, force: true })
     }
   })
+
+  test('kill() reaps a setsid descendant that was reparented away from the shell', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'shell-kill-'))
+    const pidFile = join(dir, 'daemon.pid')
+    let pid = 0
+    try {
+      // The middle sh starts a setsid'd sleep and exits after 0.8s, so the
+      // sleep is sampled under it, then reparented to init and left outside
+      // the shell's process group. treeKill cannot find it, only the sweep can.
+      const { shellCommand } = await runInFileMode(
+        `sh -c "perl -MPOSIX -e 'POSIX::setsid(); exec(\\"sleep\\", \\"300\\")' & echo \\$! > ${pidFile}; sleep 0.8"; sleep 300`,
+      )
+      for (let i = 0; i < 50 && !pid; i++) {
+        await Bun.sleep(40)
+        pid = Number((await readFile(pidFile, 'utf8').catch(() => '')).trim())
+      }
+      expect(pid).toBeGreaterThan(1)
+      // Let the middle sh exit and the sampler record the daemon
+      await Bun.sleep(1200)
+      expect(isProcessRunning(pid)).toBe(true)
+
+      shellCommand.kill()
+      await shellCommand.result
+
+      for (let i = 0; i < 50 && isProcessRunning(pid); i++) {
+        await Bun.sleep(40)
+      }
+      expect(isProcessRunning(pid)).toBe(false)
+    } finally {
+      if (isProcessRunning(pid)) process.kill(pid, 'SIGKILL')
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('ShellCommand exit-code mapping', () => {

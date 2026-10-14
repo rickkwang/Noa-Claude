@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { type ChildProcess, execFile, execFileSync } from 'child_process'
+import { type ChildProcess, execFile } from 'child_process'
 import { stat } from 'fs/promises'
 import type { Readable } from 'stream'
 import treeKill from 'tree-kill'
@@ -54,12 +54,18 @@ const SIGTERM = 143
 // run and matched again at exit by pid plus start time, so a pid reused by an
 // unrelated process is never signalled.
 const PS_ARGS = ['-A', '-o', 'pid=', '-o', 'ppid=', '-o', 'lstart=']
+// lstart is locale- and zone-dependent; pin both so every sample compares equal
+const PS_OPTIONS = {
+  encoding: 'utf8' as const,
+  timeout: 1000,
+  env: { ...process.env, LC_ALL: 'C', TZ: 'UTC' },
+}
 const SAMPLE_INTERVAL_MS = 500
 const KILL_ESCALATION_MS = 5000
 
-function parseProcessTable(
-  stdout: string,
-): Map<number, { ppid: number; start: string }> {
+type ProcessTable = Map<number, { ppid: number; start: string }>
+
+function parseProcessTable(stdout: string): ProcessTable {
   const table = new Map()
   for (const line of stdout.split('\n')) {
     const m = line.match(/^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/)
@@ -68,11 +74,15 @@ function parseProcessTable(
   return table
 }
 
+/** Process table from ps; null if ps fails or times out. */
+function listProcesses(callback: (table: ProcessTable | null) => void): void {
+  execFile('ps', PS_ARGS, PS_OPTIONS, (error, stdout) =>
+    callback(error ? null : parseProcessTable(stdout)),
+  )
+}
+
 /** Descendants of `root` as pid -> start time. */
-function descendantsOf(
-  table: Map<number, { ppid: number; start: string }>,
-  root: number,
-): Map<number, string> {
+function descendantsOf(table: ProcessTable, root: number): Map<number, string> {
   const children = new Map<number, number[]>()
   for (const [pid, { ppid }] of table) {
     children.set(ppid, [...(children.get(ppid) ?? []), pid])
@@ -258,10 +268,15 @@ class ShellCommandImpl implements ShellCommand {
         : signal === 'SIGTERM'
           ? 144
           : 1
-    // Only a foreground command: a backgrounded one is owned by its task.
-    // The shell is gone, but anything it left behind (`cmd &`) still sits in
-    // its process group, which nothing else tracks once the result is returned.
-    if (this.#status === 'running') {
+    // Only a foreground bash command: a backgrounded one is owned by its task,
+    // and hooks (pipe mode) are not ours to reap. The shell is gone, but anything
+    // it left behind (`cmd &`) still sits in its process group, which nothing
+    // else tracks once the result is returned. A killed shell was already
+    // SIGKILLed by #doKill, but its orphans may not have been.
+    if (
+      this.taskOutput.stdoutToFile &&
+      (this.#status === 'running' || this.#status === 'killed')
+    ) {
       this.#clearSampler()
       this.#killProcessGroup()
       this.#killDescendants()
@@ -273,10 +288,10 @@ class ShellCommandImpl implements ShellCommand {
     const root = this.#childProcess?.pid
     if (!root || this.#sampling) return
     this.#sampling = true
-    execFile('ps', PS_ARGS, { encoding: 'utf8' }, (error, stdout) => {
+    listProcesses(table => {
       this.#sampling = false
-      if (error || this.#status !== 'running') return
-      for (const [pid, start] of descendantsOf(parseProcessTable(stdout), root)) {
+      if (!table || this.#status !== 'running') return
+      for (const [pid, start] of descendantsOf(table, root)) {
         this.#descendants.set(pid, start)
       }
     })
@@ -300,44 +315,43 @@ class ShellCommandImpl implements ShellCommand {
       }
     })
     if (pids.length === 0) return
-    const alive = () => {
-      try {
-        return parseProcessTable(execFileSync('ps', PS_ARGS, { encoding: 'utf8' }))
-      } catch {
-        return null
-      }
-    }
-    const isSame = (table, pid, start) => table?.get(pid)?.start === start
-    const table = alive()
-    const targets = pids
-      .map(pid => [pid, this.#descendants.get(pid)])
-      .filter(([pid, start]) => isSame(table, pid, start))
-    for (const [pid] of targets) {
-      try {
-        process.kill(pid, 'SIGTERM')
-      } catch {
-        // Already exited
-      }
-    }
-    if (targets.length === 0) return
-    const escalate = setTimeout(() => {
-      const later = alive()
-      for (const [pid, start] of targets) {
-        if (!isSame(later, pid, start)) continue
+    // Signal only pids whose start time still matches the sample
+    const sameProcess = (table: ProcessTable | null, pid: number) =>
+      table?.get(pid)?.start === this.#descendants.get(pid)
+    listProcesses(table => {
+      const targets = pids.filter(pid => sameProcess(table, pid))
+      for (const pid of targets) {
         try {
-          process.kill(pid, 'SIGKILL')
+          process.kill(pid, 'SIGTERM')
         } catch {
           // Already exited
         }
       }
-    }, KILL_ESCALATION_MS)
-    escalate.unref()
+      if (targets.length === 0) return
+      const escalate = setTimeout(() => {
+        listProcesses(later => {
+          for (const pid of targets) {
+            if (!sameProcess(later, pid)) continue
+            try {
+              process.kill(pid, 'SIGKILL')
+            } catch {
+              // Already exited
+            }
+          }
+        })
+      }, KILL_ESCALATION_MS)
+      escalate.unref()
+    })
   }
 
   #killProcessGroup(): void {
     const pid = this.#childProcess.pid
     if (process.platform === 'win32' || !pid || pid <= 1) return
+    // The shell is already reaped, so its pid may be reused once its group is
+    // empty. A group that still exists has a live member, which keeps the id
+    // reserved, so only signal after confirming the group is there.
     try {
+      process.kill(-pid, 0)
       process.kill(-pid, 'SIGTERM')
     } catch {
       // Group already empty
@@ -356,7 +370,7 @@ class ShellCommandImpl implements ShellCommand {
       } catch {
         // Group exited
       }
-    }, 5000)
+    }, KILL_ESCALATION_MS)
     escalate.unref()
   }
 
@@ -430,7 +444,7 @@ class ShellCommandImpl implements ShellCommand {
     // 'exit' fires when the shell itself exits, returning control immediately.
     this.#childProcess.once('exit', this.#exitHandler.bind(this))
     // ps is unavailable on Windows; the group kill is skipped there too
-    if (process.platform !== 'win32') {
+    if (process.platform !== 'win32' && this.taskOutput.stdoutToFile) {
       this.#sampler = setInterval(
         () => this.#sampleDescendants(),
         SAMPLE_INTERVAL_MS,
