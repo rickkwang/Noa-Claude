@@ -1,5 +1,5 @@
 // @ts-nocheck
-import type { ChildProcess } from 'child_process'
+import { type ChildProcess, execFile, execFileSync } from 'child_process'
 import { stat } from 'fs/promises'
 import type { Readable } from 'stream'
 import treeKill from 'tree-kill'
@@ -48,6 +48,48 @@ export type ShellCommand = {
 
 const SIGKILL = 137
 const SIGTERM = 143
+
+// Commands that leave their shell's process group (setsid, daemons) are only
+// findable by ancestry while the shell is alive, so they are sampled during the
+// run and matched again at exit by pid plus start time, so a pid reused by an
+// unrelated process is never signalled.
+const PS_ARGS = ['-A', '-o', 'pid=', '-o', 'ppid=', '-o', 'lstart=']
+const SAMPLE_INTERVAL_MS = 500
+const KILL_ESCALATION_MS = 5000
+
+function parseProcessTable(
+  stdout: string,
+): Map<number, { ppid: number; start: string }> {
+  const table = new Map()
+  for (const line of stdout.split('\n')) {
+    const m = line.match(/^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/)
+    if (m) table.set(Number(m[1]), { ppid: Number(m[2]), start: m[3] })
+  }
+  return table
+}
+
+/** Descendants of `root` as pid -> start time. */
+function descendantsOf(
+  table: Map<number, { ppid: number; start: string }>,
+  root: number,
+): Map<number, string> {
+  const children = new Map<number, number[]>()
+  for (const [pid, { ppid }] of table) {
+    children.set(ppid, [...(children.get(ppid) ?? []), pid])
+  }
+  const found = new Map<number, string>()
+  const queue = [root]
+  while (queue.length > 0) {
+    const pid = queue.shift()!
+    for (const child of children.get(pid) ?? []) {
+      if (child > 1 && !found.has(child)) {
+        found.set(child, table.get(child)!.start)
+        queue.push(child)
+      }
+    }
+  }
+  return found
+}
 
 // In file mode, stdout/stderr go straight to a file fd with no JS in the loop,
 // so nothing counts bytes and a stuck append loop can fill the disk. Poll file
@@ -125,6 +167,9 @@ class ShellCommandImpl implements ShellCommand {
   #stderrWrapper: StreamWrapper | null
   #childProcess: ChildProcess
   #timeoutId: NodeJS.Timeout | null = null
+  #descendants = new Map<number, string>()
+  #sampler: NodeJS.Timeout | null = null
+  #sampling = false
   #sizeWatchdog: NodeJS.Timeout | null = null
   #killedForSize = false
   #maxOutputBytes: number
@@ -213,7 +258,106 @@ class ShellCommandImpl implements ShellCommand {
         : signal === 'SIGTERM'
           ? 144
           : 1
+    // Only a foreground command: a backgrounded one is owned by its task.
+    // The shell is gone, but anything it left behind (`cmd &`) still sits in
+    // its process group, which nothing else tracks once the result is returned.
+    if (this.#status === 'running') {
+      this.#clearSampler()
+      this.#killProcessGroup()
+      this.#killDescendants()
+    }
     this.#resolveExitCode(exitCode)
+  }
+
+  #sampleDescendants(): void {
+    const root = this.#childProcess?.pid
+    if (!root || this.#sampling) return
+    this.#sampling = true
+    execFile('ps', PS_ARGS, { encoding: 'utf8' }, (error, stdout) => {
+      this.#sampling = false
+      if (error || this.#status !== 'running') return
+      for (const [pid, start] of descendantsOf(parseProcessTable(stdout), root)) {
+        this.#descendants.set(pid, start)
+      }
+    })
+  }
+
+  #clearSampler(): void {
+    if (this.#sampler) {
+      clearInterval(this.#sampler)
+      this.#sampler = null
+    }
+  }
+
+  #killDescendants(): void {
+    // Exited processes are the common case; skip the ps snapshot if none remain
+    const pids = [...this.#descendants.keys()].filter(pid => {
+      try {
+        process.kill(pid, 0)
+        return true
+      } catch {
+        return false
+      }
+    })
+    if (pids.length === 0) return
+    const alive = () => {
+      try {
+        return parseProcessTable(execFileSync('ps', PS_ARGS, { encoding: 'utf8' }))
+      } catch {
+        return null
+      }
+    }
+    const isSame = (table, pid, start) => table?.get(pid)?.start === start
+    const table = alive()
+    const targets = pids
+      .map(pid => [pid, this.#descendants.get(pid)])
+      .filter(([pid, start]) => isSame(table, pid, start))
+    for (const [pid] of targets) {
+      try {
+        process.kill(pid, 'SIGTERM')
+      } catch {
+        // Already exited
+      }
+    }
+    if (targets.length === 0) return
+    const escalate = setTimeout(() => {
+      const later = alive()
+      for (const [pid, start] of targets) {
+        if (!isSame(later, pid, start)) continue
+        try {
+          process.kill(pid, 'SIGKILL')
+        } catch {
+          // Already exited
+        }
+      }
+    }, KILL_ESCALATION_MS)
+    escalate.unref()
+  }
+
+  #killProcessGroup(): void {
+    const pid = this.#childProcess.pid
+    if (process.platform === 'win32' || !pid || pid <= 1) return
+    try {
+      process.kill(-pid, 'SIGTERM')
+    } catch {
+      // Group already empty
+      return
+    }
+    // Escalate for members that ignore SIGTERM
+    const escalate = setTimeout(() => {
+      // Once the group is empty its id can be reused by an unrelated process
+      try {
+        process.kill(-pid, 0)
+      } catch {
+        return
+      }
+      try {
+        process.kill(-pid, 'SIGKILL')
+      } catch {
+        // Group exited
+      }
+    }, 5000)
+    escalate.unref()
   }
 
   #errorHandler(): void {
@@ -231,6 +375,7 @@ class ShellCommandImpl implements ShellCommand {
   // the result promise to resolve. They clean up when the child process exits.
   #cleanupListeners(): void {
     this.#clearSizeWatchdog()
+    this.#clearSampler()
     const timeoutId = this.#timeoutId
     if (timeoutId) {
       clearTimeout(timeoutId)
@@ -284,6 +429,14 @@ class ShellCommandImpl implements ShellCommand {
     // grandchild processes that inherit file descriptors (e.g. `sleep 30 &`).
     // 'exit' fires when the shell itself exits, returning control immediately.
     this.#childProcess.once('exit', this.#exitHandler.bind(this))
+    // ps is unavailable on Windows; the group kill is skipped there too
+    if (process.platform !== 'win32') {
+      this.#sampler = setInterval(
+        () => this.#sampleDescendants(),
+        SAMPLE_INTERVAL_MS,
+      )
+      this.#sampler.unref()
+    }
     this.#childProcess.once('error', this.#errorHandler.bind(this))
 
     this.#timeoutId = setTimeout(
