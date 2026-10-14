@@ -138,6 +138,7 @@ export type LocalAgentTaskState = TaskStateBase & {
   lastReportedTokenCount: number;
   // Whether the task has been backgrounded (false = foreground running, true = backgrounded)
   isBackgrounded: boolean;
+  canBackground?: boolean;
   // Agent whose Agent tool call spawned this one; undefined = main thread.
   // Routes the completion notification and scopes cascade stops.
   ownerAgentId?: string;
@@ -172,18 +173,19 @@ export function isPanelAgentTask(t: unknown): t is LocalAgentTaskState {
   return isLocalAgentTask(t) && t.agentType !== 'main-session';
 }
 
-export function assertCanStartBackgroundAgent(tasks: AppState['tasks']): void {
+export function assertCanStartAgent(tasks: AppState['tasks'], existingAgentId?: string): void {
   const maxConcurrent = getMaxConcurrentAgents();
   if (maxConcurrent === 0) return;
-  const runningAgents = Object.values(tasks).filter(t => isPanelAgentTask(t) && t.status === 'running' && t.isBackgrounded).length;
+  const runningAgents = Object.values(tasks).filter(t => isPanelAgentTask(t) && t.status === 'running' && t.agentId !== existingAgentId).length;
   if (runningAgents >= maxConcurrent) {
-    throw new Error(`Concurrent subagent limit reached. You can run ${maxConcurrent} background subagents at once. Do not retry. If the user wants more concurrent subagents, ask them to increase NOA_CLAUDE_MAX_CONCURRENT_AGENTS.`)
+    throw new Error(`Concurrent subagent limit reached. You can run ${maxConcurrent} subagents at once. Do not retry. If the user wants more concurrent subagents, ask them to increase NOA_CLAUDE_MAX_CONCURRENT_AGENTS.`)
   }
 }
 
-function hasBackgroundAgentCapacity(tasks: AppState['tasks']): boolean {
+function hasAgentCapacity(tasks: AppState['tasks'], existingAgentId: string): boolean {
   try {
-    assertCanStartBackgroundAgent(tasks);
+    // A foreground-to-background transition keeps its existing slot.
+    assertCanStartAgent(tasks, existingAgentId);
     return true;
   } catch {
     return false;
@@ -665,7 +667,7 @@ export function registerAsyncAgent({
   if (activeAgentRuns.has(agentId)) {
     throw new Error(`Agent '${agentId}' is still active or finishing cleanup. Retry once it finishes; if its cleanup is wedged, this id stays unavailable for the rest of the session.`);
   }
-  assertCanStartBackgroundAgent(getAppState().tasks);
+  assertCanStartAgent(getAppState().tasks);
   void initTaskOutputAsSymlink(agentId, getAgentTranscriptPath(asAgentId(agentId)));
 
   // Create abort controller - if parent provided, create child that auto-aborts with parent
@@ -717,7 +719,9 @@ export function registerAgentForeground({
   personalityName,
   prompt,
   selectedAgent,
+  getAppState,
   setAppState,
+  canBackground = true,
   autoBackgroundMs,
   toolUseId,
   ownerAgentId
@@ -727,7 +731,9 @@ export function registerAgentForeground({
   personalityName?: string;
   prompt: string;
   selectedAgent: AgentDefinition;
+  getAppState: () => AppState;
   setAppState: SetAppState;
+  canBackground?: boolean;
   autoBackgroundMs?: number;
   toolUseId?: string;
   ownerAgentId?: string;
@@ -736,6 +742,7 @@ export function registerAgentForeground({
   backgroundSignal: Promise<void>;
   cancelAutoBackground?: () => void;
 } {
+  assertCanStartAgent(getAppState().tasks);
   void initTaskOutputAsSymlink(agentId, getAgentTranscriptPath(asAgentId(agentId)));
   const abortController = createAbortController();
   const unregisterCleanup = registerCleanup(async () => {
@@ -756,6 +763,7 @@ export function registerAgentForeground({
     lastReportedToolCount: 0,
     lastReportedTokenCount: 0,
     isBackgrounded: false,
+    canBackground,
     ownerAgentId,
     pendingMessages: [],
     retain: false,
@@ -772,7 +780,7 @@ export function registerAgentForeground({
 
   // Auto-background after timeout if configured
   let cancelAutoBackground: (() => void) | undefined;
-  if (autoBackgroundMs !== undefined && autoBackgroundMs > 0) {
+  if (canBackground && autoBackgroundMs !== undefined && autoBackgroundMs > 0) {
     const timer = setTimeout((setAppState, agentId) => {
       // Mark task as backgrounded and resolve the signal
       let didBackground = false;
@@ -780,7 +788,7 @@ export function registerAgentForeground({
         const prevTask = prev.tasks[agentId];
         // status: a killed agent is still unwinding in the foreground; see
         // backgroundAgentTask for why handing it off is unsafe.
-        if (!isLocalAgentTask(prevTask) || prevTask.status !== 'running' || prevTask.isBackgrounded || !hasBackgroundAgentCapacity(prev.tasks)) {
+        if (!isLocalAgentTask(prevTask) || prevTask.status !== 'running' || prevTask.isBackgrounded || !hasAgentCapacity(prev.tasks, agentId)) {
           return prev;
         }
         didBackground = true;
@@ -821,7 +829,7 @@ export function backgroundAgentTask(taskId: string, getAppState: () => AppState,
   // Abort is cooperative, so a killed agent keeps looping in the foreground for
   // a while. Backgrounding it would resolve the signal and hand the lifecycle a
   // task whose abortController killAsyncAgent has already cleared.
-  if (!isLocalAgentTask(task) || task.status !== 'running' || task.isBackgrounded || !hasBackgroundAgentCapacity(state.tasks)) {
+  if (!isLocalAgentTask(task) || task.status !== 'running' || task.isBackgrounded || task.canBackground === false || !hasAgentCapacity(state.tasks, taskId)) {
     return false;
   }
 

@@ -57,11 +57,11 @@ export function getMaxWebSearchesPerSession(): number {
 }
 
 /**
- * Cap on simultaneously RUNNING background agents (distinct from the
- * cumulative spawn budget above — that one bounds total spawns, this one
- * bounds pile-up). Each running agent holds an API stream plus possibly MCP
- * connections, and there is no API-layer semaphore, so unbounded background
- * spawns translate directly into rate-limit pressure. Set to 0 to disable.
+ * Cap on simultaneously RUNNING local subagents, foreground and background
+ * (distinct from the cumulative spawn budget above). A running parent holds
+ * its slot while waiting for descendants; exhausted capacity rejects a spawn
+ * rather than queuing it. Backgrounding keeps the existing slot. Set to 0 to
+ * disable the cap.
  */
 export function getMaxConcurrentAgents(): number {
   return (

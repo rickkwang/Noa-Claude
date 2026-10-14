@@ -80,6 +80,7 @@ Bridge/remote runtime modules can exist in source, but this build does not regis
 | Environment runner | Build-Excluded | `src/environment-runner/main.ts` |
 | Self-hosted runner | Build-Excluded | `src/self-hosted-runner/main.ts` |
 | Background sessions + agents view (`noa agents`, `noa --bg <task>`, `noa attach/logs/stop/kill/respawn/rm <id>`, `noa reply <id> <message>`) | Available (core) | `src/utils/background/`, `src/components/FleetView/` — detached PTY host per session, no daemon. `disableAgentView` / `NOA_CLAUDE_DISABLE_AGENT_VIEW=1` turns it off; `leftArrowOpensAgents: false` (or ← opens agents in `/config`) keeps ← a cursor key. Writes into the shared checkout are blocked until the session isolates via EnterWorktree (`worktree.bgIsolation` / `NOA_CLAUDE_BG_ISOLATION`, default `worktree`) |
+| Local subagent coordination | Available | Ordinary background subagents can use `SendMessage` for peer communication, subject to parent permissions and agent tool restrictions. Foreground and background ordinary local subagents share `NOA_CLAUDE_MAX_CONCURRENT_AGENTS` (default 20; `0` disables the cap); running parents retain their slot while awaiting children. Covered by `scripts/e2e-agent-coordination.mjs` |
 | Template jobs | Build-Excluded | `src/cli/handlers/templateJobs.ts` |
 | Remote control in this build | Build-Excluded | `src/bridge/bridgeEnabled.ts` |
 | Channels in print mode | Build-Excluded | `src/cli/print.ts` |

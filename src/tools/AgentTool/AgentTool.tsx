@@ -13,7 +13,7 @@ import { startAgentSummarization } from '../../services/AgentSummary/agentSummar
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from '../../services/analytics/index.js';
 import { clearDumpState } from '../../services/api/dumpPrompts.js';
-import { assertCanStartBackgroundAgent, createActivityDescriptionResolver, createProgressTracker, finishAgentRun, getAgentRunToken, getProgressUpdate, isLocalAgentTask, killOwnedAgents, registerAgentForeground, registerAsyncAgent, unregisterAgentForeground, updateAgentProgress as updateAsyncAgentProgress, updateProgressFromMessage } from '../../tasks/LocalAgentTask/LocalAgentTask.js';
+import { assertCanStartAgent, createActivityDescriptionResolver, createProgressTracker, finishAgentRun, getAgentRunToken, getProgressUpdate, isLocalAgentTask, killOwnedAgents, registerAgentForeground, registerAsyncAgent, unregisterAgentForeground, updateAgentProgress as updateAsyncAgentProgress, updateProgressFromMessage } from '../../tasks/LocalAgentTask/LocalAgentTask.js';
 import { checkRemoteAgentEligibility, formatPreconditionError, getRemoteTaskSessionUrl, registerRemoteAgentTask } from '../../tasks/RemoteAgentTask/RemoteAgentTask.js';
 import { assembleToolPool } from '../../tools.js';
 import { createSyntheticOutputTool } from '../SyntheticOutputTool/SyntheticOutputTool.js';
@@ -641,11 +641,9 @@ export const AgentTool = buildTool({
     // below (registerAsyncAgentTask + notifyOnCompletion).
     const assistantForceAsync = feature('KAIROS') ? appState.kairosEnabled : false;
     const shouldRunAsync = (runInBackground || isCoordinator || forceAsync || assistantForceAsync || (proactiveModule?.isProactiveActive() ?? false)) && !isBackgroundTasksDisabled;
-    if (shouldRunAsync) {
-      // Preflight before personality/worktree allocation. Registration checks
-      // again after any asynchronous worktree setup.
-      assertCanStartBackgroundAgent(toolUseContext.getAppState().tasks);
-    }
+    // Check before allocation, then again after asynchronous worktree setup.
+    // Foreground and background subagents share the same capacity budget.
+    assertCanStartAgent(toolUseContext.getAppState().tasks);
     // Assemble the worker's tool pool independently of the parent's.
     // Workers always get their tools from assembleToolPool with their own
     // permission mode, so they aren't affected by the parent's tool
@@ -797,27 +795,27 @@ export const AgentTool = buildTool({
         worktreeBranch
       };
     };
-    if (shouldRunAsync) {
-      try {
-        assertCanStartBackgroundAgent(toolUseContext.getAppState().tasks);
-      } catch (error) {
-        let retainedWorktreePath: string | undefined;
-        if (worktreeInfo) {
-          try {
-            const removed = await removeAgentWorktree(worktreeInfo.worktreePath, worktreeInfo.worktreeBranch, worktreeInfo.gitRoot, worktreeInfo.hookBased);
-            if (!removed) retainedWorktreePath = worktreeInfo.worktreePath;
-          } catch (cleanupError) {
-            logForDebugging(`Failed to roll back rejected agent worktree: ${errorMessage(cleanupError)}`, { level: 'warn' });
-            retainedWorktreePath = worktreeInfo.worktreePath;
-          }
-          worktreeInfo = null;
+    try {
+      assertCanStartAgent(toolUseContext.getAppState().tasks);
+    } catch (error) {
+      let retainedWorktreePath: string | undefined;
+      if (worktreeInfo) {
+        try {
+          const removed = await removeAgentWorktree(worktreeInfo.worktreePath, worktreeInfo.worktreeBranch, worktreeInfo.gitRoot, worktreeInfo.hookBased);
+          if (!removed) retainedWorktreePath = worktreeInfo.worktreePath;
+        } catch (cleanupError) {
+          logForDebugging(`Failed to roll back rejected agent worktree: ${errorMessage(cleanupError)}`, { level: 'warn' });
+          retainedWorktreePath = worktreeInfo.worktreePath;
         }
-        if (personalityName) releaseAgentPersonalityName(earlyAgentId);
-        if (retainedWorktreePath) {
-          throw new Error(`${errorMessage(error)} Worktree cleanup failed; retained at ${retainedWorktreePath}.`);
-        }
-        throw error;
+        worktreeInfo = null;
       }
+      if (personalityName) releaseAgentPersonalityName(earlyAgentId);
+      if (retainedWorktreePath) {
+        throw new Error(`${errorMessage(error)} Worktree cleanup failed; retained at ${retainedWorktreePath}.`);
+      }
+      throw error;
+    }
+    if (shouldRunAsync) {
       const asyncAgentId = earlyAgentId;
       const agentBackgroundTask = registerAsyncAgent({
         agentId: asyncAgentId,
@@ -930,7 +928,6 @@ export const AgentTool = buildTool({
       let syncRunToken: symbol | undefined;
       let syncWorktreeCleanup: ReturnType<typeof cleanupWorktreeIfNeeded> | undefined;
       return runWithAgentContext(syncAgentContext, () => wrapWithCwd(async () => {
-        spawnReservationCommitted = true;
         const agentMessages: MessageType[] = [];
         const agentStartTime = Date.now();
         const syncTracker = createProgressTracker();
@@ -953,8 +950,8 @@ export const AgentTool = buildTool({
           }
         }
 
-        // Register as foreground task immediately so it can be backgrounded at any time
-        // Skip registration if background tasks are disabled
+        // Register every foreground run for capacity accounting, including
+        // when backgrounding is disabled. Only the handoff is conditional.
         let foregroundTaskId: string | undefined;
         // Create the background race promise once outside the loop — otherwise
         // each iteration adds a new .then() reaction to the same pending
@@ -963,20 +960,23 @@ export const AgentTool = buildTool({
           type: 'background';
         }> | undefined;
         let cancelAutoBackground: (() => void) | undefined;
+        const registration = registerAgentForeground({
+          agentId: syncAgentId,
+          description,
+          personalityName,
+          prompt,
+          selectedAgent,
+          getAppState: toolUseContext.getAppState,
+          setAppState: rootSetAppState,
+          canBackground: !isBackgroundTasksDisabled,
+          toolUseId: toolUseContext.toolUseId,
+          autoBackgroundMs: getAutoBackgroundMs() || undefined,
+          ownerAgentId: toolUseContext.agentId
+        });
+        foregroundTaskId = registration.taskId;
+        syncRunToken = getAgentRunToken(syncAgentId);
+        spawnReservationCommitted = true;
         if (!isBackgroundTasksDisabled) {
-          const registration = registerAgentForeground({
-            agentId: syncAgentId,
-            description,
-            personalityName,
-            prompt,
-            selectedAgent,
-            setAppState: rootSetAppState,
-            toolUseId: toolUseContext.toolUseId,
-            autoBackgroundMs: getAutoBackgroundMs() || undefined,
-            ownerAgentId: toolUseContext.agentId
-          });
-          foregroundTaskId = registration.taskId;
-          syncRunToken = getAgentRunToken(syncAgentId);
           backgroundPromise = registration.backgroundSignal.then(() => ({
             type: 'background' as const
           }));

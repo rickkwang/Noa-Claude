@@ -6,7 +6,7 @@ import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
 import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import type { ToolUseContext } from '../../Tool.js'
 import {
-  assertCanStartBackgroundAgent,
+  assertCanStartAgent,
   finishAgentRun,
   getAgentRunToken,
   killAsyncAgent,
@@ -120,7 +120,7 @@ async function resumeAgentBackgroundInner({
   }
   const startTime = Date.now()
   const appState = toolUseContext.getAppState()
-  assertCanStartBackgroundAgent(appState.tasks)
+  assertCanStartAgent(appState.tasks)
   // In-process teammates get a no-op setAppState; setAppStateForTasks
   // reaches the root store so task registration/progress/kill stay visible.
   const rootSetAppState =
@@ -220,7 +220,7 @@ async function resumeAgentBackgroundInner({
 
   // Transcript/system-prompt reconstruction can await; recheck immediately
   // before allocating personality or a running background task.
-  assertCanStartBackgroundAgent(toolUseContext.getAppState().tasks)
+  assertCanStartAgent(toolUseContext.getAppState().tasks)
   if (isAgentStoppedByUser(asAgentId(agentId))) {
     throw new Error(`Agent "${agentId}" was stopped by the user. Treat its work as cancelled; only start a new agent if the user explicitly asks.`)
   }

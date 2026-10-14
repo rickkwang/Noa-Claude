@@ -44,6 +44,8 @@ Policy:
 - `/output-style` is a direct entry to the picker that `/config` hosts; both write `outputStyle` to local settings, so the two entry points must stay interchangeable
 - `/background` (alias `/bg`), ← on an empty prompt, `noa agents`, `noa --bg`, `noa reply` and `noa attach|logs|stop|kill|respawn|rm` are one surface: background sessions run in detached PTY hosts with no daemon. `scripts/e2e-multiedit.mjs` covers MultiEdit atomicity and reading a background shell's output file with Read; `scripts/e2e-background.mjs` covers compiled terminal replies, permission dialogs and Fleet controls with a scripted local API; `scripts/e2e-agents-view.mjs` covers the broader live workflow (needs tmux and a working model). Not covered: prewarmed spares, groups/pins, cloud sessions, and carrying running shells/subagents into the fork (the move asks first and stops them). Background sessions are isolated like upstream: Edit/MultiEdit/Write/NotebookEdit into the shared checkout is rejected until the session calls EnterWorktree — `worktree.bgIsolation: "none"` (or `NOA_CLAUDE_BG_ISOLATION=none` / `CLAUDE_BG_ISOLATION=none`) works in place
 
+Ordinary local subagents share a foreground/background concurrency budget (`NOA_CLAUDE_MAX_CONCURRENT_AGENTS`, default 20; `0` disables the cap). Spawns and resumes are refused when full, including when backgrounding is disabled; a waiting parent retains its slot and backgrounding keeps the same slot. Ordinary background subagents may use `SendMessage` for peer communication within inherited permissions and their configured tool restrictions. `scripts/e2e-agent-coordination.mjs` covers delivery, denied messaging, mixed capacity, slot reuse, nested refusal and resume capacity.
+
 Tracked surfaces:
 
 - `/cleanup-data`

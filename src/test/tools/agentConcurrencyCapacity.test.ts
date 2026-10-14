@@ -33,39 +33,15 @@ afterEach(() => {
   delete process.env.NOA_CLAUDE_MAX_CONCURRENT_AGENTS
 })
 
-describe('background agent capacity', () => {
-  test('rejects a new background agent when the running background cap is full', () => {
+describe('foreground to background capacity', () => {
+  // Failures: counting the held slot twice, rejecting a handoff at capacity,
+  // or allowing a handoff when backgrounding is disabled. The TUI and the
+  // two-minute auto-background timer are not exercised by CLI spawn E2E.
+  test.each([true, false])('keeps the held slot with backgrounding enabled=%s', enabled => {
     process.env.NOA_CLAUDE_MAX_CONCURRENT_AGENTS = '1'
-    const tasks = { existing: agentTask('existing') }
-    const assertCapacity = (
-      LocalAgentTask as typeof LocalAgentTask & {
-        assertCanStartBackgroundAgent(tasks: Record<string, any>): void
-      }
-    ).assertCanStartBackgroundAgent
-
-    expect(() => assertCapacity(tasks)).toThrow(
-      'Concurrent subagent limit reached',
-    )
-  })
-
-  test('does not count a foreground agent against the background cap', () => {
-    process.env.NOA_CLAUDE_MAX_CONCURRENT_AGENTS = '1'
-    const tasks = { foreground: agentTask('foreground', { backgrounded: false }) }
-    const assertCapacity = (
-      LocalAgentTask as typeof LocalAgentTask & {
-        assertCanStartBackgroundAgent(tasks: Record<string, any>): void
-      }
-    ).assertCanStartBackgroundAgent
-
-    expect(() => assertCapacity(tasks)).not.toThrow()
-  })
-
-  test('refuses foreground to background transition when the cap is full', () => {
-    process.env.NOA_CLAUDE_MAX_CONCURRENT_AGENTS = '1'
-    const store = makeStore(
-      agentTask('existing'),
-      agentTask('foreground', { backgrounded: false }),
-    )
+    const foreground = agentTask('foreground', { backgrounded: false })
+    foreground.canBackground = enabled
+    const store = makeStore(foreground)
 
     expect(
       LocalAgentTask.backgroundAgentTask(
@@ -73,7 +49,7 @@ describe('background agent capacity', () => {
         store.getState,
         store.setState,
       ),
-    ).toBe(false)
-    expect(store.getState().tasks.foreground.isBackgrounded).toBe(false)
+    ).toBe(enabled)
+    expect(store.getState().tasks.foreground.isBackgrounded).toBe(enabled)
   })
 })

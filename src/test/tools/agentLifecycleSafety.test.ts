@@ -444,7 +444,7 @@ describe('agent setup rollback', () => {
     const { store, agent } = fixture()
     const id = 'agent-lifecycle-kill-then-background'
     const registration = tasks.registerAgentForeground({
-      agentId: id, description: 'test', prompt: 'test', selectedAgent: agent as any, setAppState: store.setState,
+      agentId: id, description: 'test', prompt: 'test', selectedAgent: agent as any, getAppState: store.getState, setAppState: store.setState,
     })
     let signalled = false
     void registration.backgroundSignal.then(() => { signalled = true })
