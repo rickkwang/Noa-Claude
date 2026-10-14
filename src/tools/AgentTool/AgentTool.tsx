@@ -20,6 +20,7 @@ import { createSyntheticOutputTool } from '../SyntheticOutputTool/SyntheticOutpu
 import { asAgentId } from '../../types/ids.js';
 import { getAgentContext, nextSubagentDepth, runWithAgentContext } from '../../utils/agentContext.js';
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js';
+import { jsonStringify } from '../../utils/slowOperations.js';
 import { getCwd, runWithCwdOverride } from '../../utils/cwd.js';
 import { logForDebugging } from '../../utils/debug.js';
 import { isEnvTruthy } from '../../utils/envUtils.js';
@@ -382,7 +383,9 @@ export const AgentTool = buildTool({
           } catch (e) {
             failedAttempts++;
             if (failedAttempts >= MAX_STRUCTURED_OUTPUT_FAILURES) {
-              throw new Error(`StructuredOutput validation failed ${failedAttempts} times (last input: ${JSON.stringify(input).slice(0, 300)}); the schema cannot be satisfied in this run. Do not call this tool again — end your turn.`);
+              const lastInput = jsonStringify(input);
+              const shown = lastInput.length > 300 ? `${lastInput.slice(0, 300)}…` : lastInput;
+              throw new Error(`StructuredOutput validation failed ${failedAttempts} times (last input: ${shown}); the schema cannot be satisfied in this run. Do not call this tool again — end your turn.`);
             }
             throw e;
           }
