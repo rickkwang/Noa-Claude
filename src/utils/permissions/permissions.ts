@@ -1459,7 +1459,7 @@ async function hasPermissionsToUseToolInner(
   }
 
   // 1c. Ask the tool implementation for a permission result
-  // Overridden unless tool input schema is not valid
+  // A failed check must deny before any broad allow rule can apply.
   let toolPermissionResult: PermissionResult = {
     behavior: 'passthrough',
     message: createPermissionRequestMessage(tool.name),
@@ -1473,6 +1473,12 @@ async function hasPermissionsToUseToolInner(
       throw e
     }
     logError(e)
+    // Match the hook-allow path: an unsuccessful check cannot authorize a call.
+    return {
+      behavior: 'deny',
+      decisionReason: { type: 'other', reason: 'permission check failed' },
+      message: `${tool.name} was not run: its permission check failed.`,
+    }
   }
 
   // 1d. Tool implementation denied permission

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { afterEach, describe, expect, test } from 'bun:test'
-import { spawn } from 'child_process'
+import { type ChildProcess, spawn } from 'child_process'
 import { mkdir, mkdtemp, open, readFile, rm, stat } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -28,7 +28,7 @@ async function runInFileMode(
     maxOutputBytes?: number
     signal?: AbortSignal
   } = {},
-): Promise<{ shellCommand: ShellCommand; taskOutput: TaskOutput }> {
+): Promise<{ shellCommand: ShellCommand; taskOutput: TaskOutput; childProcess: ChildProcess }> {
   await mkdir(getTaskOutputDir(), { recursive: true })
   const taskOutput = new TaskOutput(generateTaskId('local_bash'), null, true)
   const handle = await open(taskOutput.path, 'w')
@@ -46,7 +46,7 @@ async function runInFileMode(
   )
   await handle.close()
   spawned.push(shellCommand)
-  return { shellCommand, taskOutput }
+  return { shellCommand, taskOutput, childProcess }
 }
 
 afterEach(async () => {
@@ -187,6 +187,37 @@ describe('ShellCommand abort', () => {
 })
 
 describe('ShellCommand kill', () => {
+  // tree-kill's callback and the child's exit event can arrive in either order.
+  // cleanup() is allowed immediately after kill(), before either one arrives.
+  test('handles a late exit after kill and immediate cleanup', async () => {
+    const { shellCommand, childProcess } = await runInFileMode('sleep 30')
+    const exited = new Promise<void>(resolve => {
+      childProcess.prependOnceListener('exit', () => resolve())
+    })
+
+    shellCommand.kill()
+    shellCommand.cleanup()
+    const [result] = await Promise.all([shellCommand.result, exited])
+
+    expect(result.code).toBe(137)
+    expect(result.interrupted).toBe(true)
+    expect(shellCommand.status).toBe('killed')
+  }, 15_000)
+
+  test('kill and cleanup can be repeated after resources are released', async () => {
+    const { shellCommand, childProcess } = await runInFileMode('sleep 30')
+    const exited = new Promise<void>(resolve => {
+      childProcess.prependOnceListener('exit', () => resolve())
+    })
+    shellCommand.kill()
+    shellCommand.cleanup()
+
+    expect(() => shellCommand.kill()).not.toThrow()
+    expect(() => shellCommand.cleanup()).not.toThrow()
+    await Promise.all([shellCommand.result, exited])
+    expect(shellCommand.status).toBe('killed')
+  }, 15_000)
+
   test('kill() also takes down a background grandchild reparented to init', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'shell-kill-'))
     const pidFile = join(dir, 'grandchild.pid')

@@ -320,7 +320,7 @@ export async function ripGrep(
         return
       }
 
-      // For all other errors, try to return partial results if available
+      // Only known truncation failures can yield usable partial results.
       const hasOutput = stdout && stdout.trim().length > 0
       const isTimeout =
         error.signal === 'SIGTERM' ||
@@ -328,6 +328,11 @@ export async function ripGrep(
         error.code === 'ABORT_ERR'
       const isBufferOverflow =
         error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
+
+      if (!isTimeout && !isBufferOverflow) {
+        reject(error)
+        return
+      }
 
       let lines: string[] = []
       if (hasOutput) {
@@ -362,6 +367,11 @@ export async function ripGrep(
             lines,
           ),
         )
+        return
+      }
+
+      if (isBufferOverflow && lines.length === 0) {
+        reject(error)
         return
       }
 

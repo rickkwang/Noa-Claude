@@ -16,10 +16,12 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.3.9
 
@@ -36,6 +38,9 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Workflow security checks
+        run: bun ./scripts/check-workflow-security.mjs
 
       - name: Quality checks
         run: bun run check:quality
@@ -54,6 +59,10 @@ jobs:
           bun run compile
           bun run e2e:loop
           bun run e2e:bare
+          bun run e2e:tool-boundaries
+          bun run e2e:restricted-safe
+          bun run e2e:multiedit
+          bun run e2e:deferred
           bun run e2e:goal
           bun run e2e:state
           bun run e2e:startup
@@ -66,7 +75,7 @@ jobs:
 
       - name: Upload install lifecycle evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: e2e-install-lifecycle
           path: dist/e2e-install-lifecycle

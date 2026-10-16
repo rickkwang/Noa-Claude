@@ -173,6 +173,7 @@ class StreamWrapper {
  */
 class ShellCommandImpl implements ShellCommand {
   #status: 'running' | 'backgrounded' | 'completed' | 'killed' = 'running'
+  #killCode: number | undefined
   #backgroundTaskId: string | undefined
   #stdoutWrapper: StreamWrapper | null
   #stderrWrapper: StreamWrapper | null
@@ -269,7 +270,8 @@ class ShellCommandImpl implements ShellCommand {
         : signal === 'SIGTERM'
           ? 144
           : 1
-    const resolveExit = () => this.#resolveExitCode(exitCode)
+    // Preserve the requested kill/timeout result whichever callback arrives first.
+    const resolveExit = () => this.#resolveExitCode(this.#killCode ?? exitCode)
     // Only a foreground bash command: a backgrounded one is owned by its task,
     // and hooks (pipe mode) are not ours to reap. The shell is gone, but anything
     // it left behind (`cmd &`) still sits in its process group, which nothing
@@ -352,7 +354,9 @@ class ShellCommandImpl implements ShellCommand {
   }
 
   #killProcessGroup(): void {
-    const pid = this.#childProcess.pid
+    // cleanup() can precede this exit callback. The pending tree-kill callback
+    // retains its own pid and still sweeps the group after killing descendants.
+    const pid = this.#childProcess?.pid
     if (process.platform === 'win32' || !pid || pid <= 1) return
     // The shell is already reaped, so its pid may be reused once its group is
     // empty. A group that still exists has a live member, which keeps the id
@@ -523,7 +527,15 @@ class ShellCommandImpl implements ShellCommand {
   }
 
   #doKill(code?: number): void {
+    if (
+      !this.#childProcess ||
+      this.#status === 'completed' ||
+      this.#status === 'killed'
+    ) {
+      return
+    }
     this.#status = 'killed'
+    this.#killCode = code ?? SIGKILL
     const pid = this.#childProcess.pid
     // Once the shell has been reaped its pid may already be reused, so signal
     // neither its group nor its tree.

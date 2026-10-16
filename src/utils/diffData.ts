@@ -80,7 +80,10 @@ const BASE_DIFF_FLAGS = [
   '--no-optional-locks',
   '-c',
   'diff.relative=false',
+  '-c',
+  'core.quotePath=false',
   'diff',
+  ...RAW_DIFF_FLAGS,
   '--ignore-submodules=dirty',
   '--submodule=short',
 ] as const
@@ -159,7 +162,7 @@ export async function fetchDiffHunksForRef(
   }
 
   const { stdout, code } = await runGit(
-    [...BASE_DIFF_FLAGS, ...RAW_DIFF_FLAGS, ref],
+    [...BASE_DIFF_FLAGS, '--src-prefix=a/', '--dst-prefix=b/', '--raw', '-z', '-p', ref],
     signal,
   )
   if (code !== 0) return null
@@ -369,13 +372,14 @@ function runGit(args: string[], signal?: AbortSignal) {
     timeout: GIT_TIMEOUT_MS,
     preserveOutputOnError: false,
     abortSignal: signal,
+    env: { ...process.env, LC_ALL: 'C', LANGUAGE: '' },
   })
 }
 
 async function numstatUnstaged(
   signal?: AbortSignal,
 ): Promise<NumstatSnapshot | null> {
-  const { stdout, code } = await runGit([...BASE_DIFF_FLAGS, '--numstat'], signal)
+  const { stdout, code } = await runGit([...BASE_DIFF_FLAGS, '--numstat', '-z'], signal)
   if (code !== 0) return null
   return parseGitNumstat(stdout, Number.POSITIVE_INFINITY)
 }
@@ -402,7 +406,7 @@ async function numstatAgainst(
   }
 
   const { stdout, code } = await runGit(
-    [...BASE_DIFF_FLAGS, ref, '--numstat'],
+    [...BASE_DIFF_FLAGS, ref, '--numstat', '-z'],
     signal,
   )
   if (code !== 0) return null
@@ -466,20 +470,20 @@ async function listUntrackedFiles(
       '-C',
       root,
       'ls-files',
+      '-z',
       '--others',
       '--exclude-standard',
       '--full-name',
     ],
     signal,
   )
-  if (code !== 0 || !stdout.trim()) return null
+  if (code !== 0 || stdout === '') return null
 
   const sessionStart = getSessionStartTime()
   const listed = await Promise.all(
     stdout
-      .trim()
-      .split('\n')
-      .filter(Boolean)
+      .split('\0')
+      .filter(path => path !== '')
       .slice(0, UNTRACKED_SCAN_CAP)
       .map(async path => {
         try {

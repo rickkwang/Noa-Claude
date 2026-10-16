@@ -45,8 +45,8 @@ export type NumstatResult = {
 }
 
 /**
- * Parse git diff --numstat output into stats.
- * Format: <added>\t<removed>\t<filename>
+ * Parse git diff --numstat -z output into stats.
+ * NUL-terminated records preserve paths verbatim; renames have two path records.
  * Binary files show '-' for counts.
  * Only stores first MAX_FILES entries in perFileStats.
  */
@@ -54,21 +54,24 @@ export function parseGitNumstat(
   stdout: string,
   maxFiles: number = MAX_FILES,
 ): NumstatResult {
-  const lines = stdout.trim().split('\n').filter(Boolean)
+  const records = stdout.split('\0')
   let added = 0
   let removed = 0
   let validFileCount = 0
   const perFileStats = new Map<string, PerFileStats>()
 
-  for (const line of lines) {
-    const parts = line.split('\t')
-    // Valid numstat lines have exactly 3 tab-separated parts: added, removed, filename
+  for (let at = 0; at < records.length; at++) {
+    const parts = records[at]!.split('\t')
     if (parts.length < 3) continue
+
+    const renamed = parts.length === 3 && parts[2] === ''
+    const filePath = renamed ? records[at + 2] : parts.slice(2).join('\t')
+    if (renamed) at += 2 // old and new paths follow the empty inline path
+    if (!filePath) continue
 
     validFileCount++
     const addStr = parts[0]
     const remStr = parts[1]
-    const filePath = parts.slice(2).join('\t') // filename may contain tabs
     const isBinary = addStr === '-' || remStr === '-'
     const fileAdded = isBinary ? 0 : parseInt(addStr ?? '0', 10) || 0
     const fileRemoved = isBinary ? 0 : parseInt(remStr ?? '0', 10) || 0
@@ -119,18 +122,51 @@ export function parseGitDiff(stdout: string): ParsedDiff {
   const skippedLarge = new Set<string>()
   if (!stdout.trim()) return { hunks: result, skippedLarge }
 
-  // Split by file diffs
-  const fileDiffs = stdout.split(/^diff --git /m).filter(Boolean)
+  // Pair patches with the raw NUL-terminated paths, as git emits them in
+  // the same order. Quoted patch titles are display text, not filesystem paths.
+  const rawPaths: string[] = []
+  if (stdout.startsWith(':') && stdout.includes('\0')) {
+    const fields = stdout.split('\0')
+    let at = 0
+    while (fields[at]?.startsWith(':')) {
+      const metadata = fields[at++]!
+      const from = fields[at++]
+      const path = / [RC]\d+$/.test(metadata) ? fields[at++] : from
+      if (!path) return { hunks: result, skippedLarge }
+      rawPaths.push(path)
+    }
+    while (fields[at] === '') at++
+    stdout = fields.slice(at).join('\0')
+  }
 
-  for (const fileDiff of fileDiffs) {
+  // A type change emits adjacent deletion/addition patches with the same
+  // title, but only one raw record. Group them before pairing paths so both
+  // hunks share the existing per-file size and line limits.
+  const fileDiffs: string[] = []
+  let previousHeader: string | undefined
+  for (const fileDiff of stdout.split(/^diff --git /m).filter(Boolean)) {
+    const newline = fileDiff.indexOf('\n')
+    const header = fileDiff.slice(0, newline)
+    if (header === previousHeader) {
+      fileDiffs[fileDiffs.length - 1] += fileDiff.slice(newline)
+    } else {
+      fileDiffs.push(fileDiff)
+      previousHeader = header
+    }
+  }
+  if (rawPaths.length > 0 && rawPaths.length !== fileDiffs.length) {
+    return { hunks: result, skippedLarge }
+  }
+
+  for (const [index, fileDiff] of fileDiffs.entries()) {
     if (result.size + skippedLarge.size >= MAX_FILES) break
 
     const lines = fileDiff.split('\n')
 
-    // Extract filename from first line: "a/path/to/file b/path/to/file"
+    // Retain support for ordinary unified patches without a raw listing.
     const headerMatch = lines[0]?.match(/^a\/(.+?) b\/(.+)$/)
-    if (!headerMatch) continue
-    const filePath = headerMatch[2] ?? headerMatch[1] ?? ''
+    const filePath = rawPaths[index] ?? headerMatch?.[2] ?? headerMatch?.[1]
+    if (!filePath) continue
 
     // Skip files larger than 1MB
     if (fileDiff.length > MAX_DIFF_SIZE_BYTES) {

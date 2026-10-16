@@ -5,6 +5,8 @@ import {
   mkdtempSync,
   realpathSync,
   rmSync,
+  symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -93,6 +95,99 @@ describe('fetchDiffSnapshot', () => {
     expect(snapshot?.stats.filesCount).toBe(1)
     expect(snapshot?.stats.linesAdded).toBe(1)
     expect(diffRefForSnapshot(snapshot!)).toBe('HEAD')
+  })
+
+  test('preserves tracked filenames and pairs hunks with their actual paths', async () => {
+    const dir = makeRepo()
+    const paths = ['plain.txt', '中文.txt', 'tab\tname.txt', 'line\nname.txt', 'quote"name.txt', 'back\\slash.txt', 'trailing.txt ']
+    for (const path of paths) writeFileSync(join(dir, path), 'before\n')
+    git(dir, 'add', '.')
+    git(dir, 'commit', '-qm', 'first')
+    for (const path of paths) writeFileSync(join(dir, path), 'after\n')
+    useRepo(dir)
+
+    const snapshot = await fetchDiffSnapshot('uncommitted')
+    expect([...snapshot!.perFileStats.keys()].sort()).toEqual([...paths].sort())
+    const details = await fetchDiffHunksForRef()
+    expect([...details!.hunks.keys()].sort()).toEqual([...paths].sort())
+    for (const path of paths) {
+      expect(details!.hunks.get(path)!.flatMap(hunk => hunk.lines)).toContain('+after')
+    }
+  })
+
+  test.each(['symlink-to-file', 'file-to-symlink'])(
+    'preserves both type-change patches and unrelated hunks for %s',
+    async direction => {
+      const dir = makeRepo()
+      const path = '中文\tlink.txt'
+      writeFileSync(join(dir, 'a.txt'), 'before\n')
+      writeFileSync(join(dir, 'z.txt'), 'before\n')
+      if (direction === 'symlink-to-file') symlinkSync('a.txt', join(dir, path))
+      else writeFileSync(join(dir, path), 'regular content\n')
+      git(dir, 'add', '.')
+      git(dir, 'commit', '-qm', 'first')
+
+      unlinkSync(join(dir, path))
+      if (direction === 'symlink-to-file') writeFileSync(join(dir, path), 'regular content\n')
+      else symlinkSync('a.txt', join(dir, path))
+      writeFileSync(join(dir, 'a.txt'), 'after\n')
+      writeFileSync(join(dir, 'z.txt'), 'after\n')
+      useRepo(dir)
+
+      const details = await fetchDiffHunksForRef()
+      expect([...details!.hunks.keys()].sort()).toEqual(['a.txt', 'z.txt', path].sort())
+      for (const ordinary of ['a.txt', 'z.txt']) {
+        expect(details!.hunks.get(ordinary)!.flatMap(hunk => hunk.lines)).toContain('+after')
+      }
+      const lines = details!.hunks.get(path)!.flatMap(hunk => hunk.lines)
+      expect(lines).toContain(direction === 'symlink-to-file' ? '-a.txt' : '-regular content')
+      expect(lines).toContain(direction === 'symlink-to-file' ? '+regular content' : '+a.txt')
+    },
+  )
+
+  test('uses the destination path for renamed files, including their edited hunks', async () => {
+    const dir = makeRepo()
+    writeFileSync(join(dir, 'old.txt'), 'unchanged\n'.repeat(20))
+    git(dir, 'add', '.')
+    git(dir, 'commit', '-qm', 'first')
+    git(dir, 'mv', 'old.txt', '新\tname.txt')
+    writeFileSync(join(dir, '新\tname.txt'), 'unchanged\n'.repeat(19) + 'edited\n')
+    useRepo(dir)
+
+    const snapshot = await fetchDiffSnapshot('uncommitted')
+    expect([...snapshot!.perFileStats.keys()]).toEqual(['新\tname.txt'])
+    expect(snapshot!.stats.filesCount).toBe(1)
+    const details = await fetchDiffHunksForRef()
+    expect([...details!.hunks.keys()]).toEqual(['新\tname.txt'])
+    expect(details!.hunks.get('新\tname.txt')!.flatMap(hunk => hunk.lines)).toContain('+edited')
+  })
+
+  test.each(['diff.noprefix', 'diff.mnemonicPrefix'])('ignores the user’s %s when reading hunks', async setting => {
+    const dir = makeRepo()
+    writeFileSync(join(dir, 'a.txt'), 'before\n')
+    git(dir, 'add', '.')
+    git(dir, 'commit', '-qm', 'first')
+    git(dir, 'config', setting, 'true')
+    writeFileSync(join(dir, 'a.txt'), 'after\n')
+    useRepo(dir)
+
+    const details = await fetchDiffHunksForRef()
+    expect([...details!.hunks.keys()]).toEqual(['a.txt'])
+    expect(details!.hunks.get('a.txt')!.flatMap(hunk => hunk.lines)).toContain('+after')
+  })
+
+  test('preserves untracked filenames without trimming or decoding them', async () => {
+    const dir = makeRepo()
+    writeFileSync(join(dir, 'a.txt'), 'one\n')
+    git(dir, 'add', '.')
+    git(dir, 'commit', '-qm', 'first')
+    const paths = ['中文.txt', 'tab\tname.txt', 'line\nname.txt', 'trailing.txt ']
+    for (const path of paths) writeFileSync(join(dir, path), 'new\n')
+    useRepo(dir)
+
+    const snapshot = await fetchDiffSnapshot('session')
+    expect([...snapshot!.perFileStats.keys()].sort()).toEqual([...paths].sort())
+    for (const path of paths) expect(snapshot!.perFileStats.get(path)!.isUntracked).toBe(true)
   })
 
   test('includes untracked files in the count', async () => {
