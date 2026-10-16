@@ -531,16 +531,22 @@ class ShellCommandImpl implements ShellCommand {
       this.#childProcess.exitCode !== null ||
       this.#childProcess.signalCode !== null
     if (pid && !reaped) {
-      // A detached shell leads its own process group. Signal the group too:
-      // grandchildren it orphaned (ppid 1) are invisible to treeKill's ppid walk.
-      if (process.platform !== 'win32' && pid > 1) {
-        try {
-          process.kill(-pid, 'SIGKILL')
-        } catch {
-          // Not a group leader (non-detached spawn) or group already gone
+      // Enumerate and kill the tree before killing its process group. A shell
+      // with job control can put children in other groups; killing the shell
+      // first reparents those children before treeKill can discover them.
+      treeKill(pid, 'SIGKILL', () => {
+        // A detached shell leads its own group. Also stop group members that
+        // were already reparented and therefore absent from the tree walk.
+        if (process.platform !== 'win32' && pid > 1) {
+          try {
+            process.kill(-pid, 'SIGKILL')
+          } catch {
+            // Not a group leader (non-detached spawn) or group already gone
+          }
         }
-      }
-      treeKill(pid, 'SIGKILL')
+        this.#resolveExitCode(code ?? SIGKILL)
+      })
+      return
     }
     this.#resolveExitCode(code ?? SIGKILL)
   }

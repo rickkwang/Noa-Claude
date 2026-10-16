@@ -240,10 +240,11 @@ const server = createServer(async (req, res) => {
     } else if ((active.case === 'permission-deny' || active.case === 'deny-rule') && n === 1) {
       content = [{ type: 'tool_use', id: `toolu_${n}`, name: 'Bash', input: { command: 'printf denied > denied.txt' } }]; stop = 'tool_use';
     } else if (active.case === 'background-deadline' && n <= 2) {
-      // A background command that outlives its limit, then a foreground wait
-      // long enough for the limit to fire while the turn is still open.
+      // Job control deliberately puts sleep in a different process group, so
+      // killing only the parent shell's group cannot satisfy this fixture.
+      // Then wait long enough for the limit to fire while the turn stays open.
       content = [{ type: 'tool_use', id: `toolu_${n}`, name: 'Bash', input: n === 1
-        ? { command: 'sleep 37.25', run_in_background: true, timeout: 2000, description: 'Deadline fixture' }
+        ? { command: 'bash -c \'set -m; sleep 37.25 & { ps -o pgid= -p "$$"; ps -o pgid= -p "$(jobs -p)"; } > deadline-groups.txt; wait\'', run_in_background: true, timeout: 2000, description: 'Deadline fixture' }
         : { command: 'sleep 4', description: 'Wait past the deadline' } }]; stop = 'tool_use';
     } else if (active.case.startsWith('concurrency-') && n === 1) {
       content = [1, 2].map(i => ({ type: 'tool_use', id: 'write_' + i, name: 'Bash', input: { command: 'pwd' } })); stop = 'tool_use';
@@ -586,6 +587,9 @@ try {
             const sameTurn = JSON.stringify(main[2].body.messages.slice(-1));
             assert.ok(sameTurn.includes('was stopped after reaching its background time limit'), 'limit notification did not arrive within the turn');
             assert.ok(sameTurn.includes('<note>If the work in progress still needs it'), 'notification lacks the next-step note');
+            const groups = readFileSync(join(dir, 'deadline-groups.txt'), 'utf8').trim().split(/\s+/);
+            assert.equal(groups.length, 2, 'fixture did not record both process groups');
+            assert.notEqual(groups[0], groups[1], 'fixture did not put the child in a separate process group');
             // The fixture's unusual duration is its fingerprint in the process table.
             let survivors = '';
             try { survivors = execFileSync('pgrep', ['-f', 'sleep 37.25'], { encoding: 'utf8' }).trim(); } catch {}
