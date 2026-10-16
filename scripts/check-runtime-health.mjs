@@ -11,8 +11,10 @@ import {
 } from '../src/QueryEngine.ts';
 import {
   consumePostCompaction,
+  getIsInteractive,
   getSessionId,
   isSessionPersistenceDisabled,
+  setIsInteractive,
   setSessionPersistenceDisabled,
 } from '../src/bootstrap/state.ts';
 import { getSystemPrompt } from '../src/constants/prompts.ts';
@@ -1184,38 +1186,54 @@ function checkResumeDiagnostics() {
 }
 
 function checkForkSubagentRuntimeGate() {
-  const previousForkSubagentEnv = process.env.CLAUDE_CODE_FORK_SUBAGENT;
-  const previousUserType = process.env.USER_TYPE;
+  const envKeys = ['NOA_CLAUDE_FORK_SUBAGENT', 'CLAUDE_CODE_FORK_SUBAGENT', 'USER_TYPE'];
+  const previousEnv = envKeys.map(key => process.env[key]);
+  const previousInteractive = getIsInteractive();
   try {
-    delete process.env.CLAUDE_CODE_FORK_SUBAGENT;
-    delete process.env.USER_TYPE;
-    assert(
-      !isForkSubagentEnabled(),
-      'fork subagent should be disabled in this build',
-    );
+    for (const key of envKeys) delete process.env[key];
+    for (const interactive of [false, true]) {
+      setIsInteractive(interactive);
+      const mode = interactive ? 'interactive' : 'non-interactive';
+      assert(
+        isForkSubagentEnabled() === interactive,
+        `fork subagent default should follow ${mode} session mode`,
+      );
 
-    process.env.CLAUDE_CODE_FORK_SUBAGENT = '1';
-    assert(
-      !isForkSubagentEnabled(),
-      'CLAUDE_CODE_FORK_SUBAGENT should not unlock fork subagents in this build',
-    );
-
-    process.env.USER_TYPE = 'ant';
-    assert(
-      !isForkSubagentEnabled(),
-      'internal user type should not unlock fork subagents in this build',
-    );
-  } finally {
-    if (previousForkSubagentEnv === undefined) {
-      delete process.env.CLAUDE_CODE_FORK_SUBAGENT;
-    } else {
-      process.env.CLAUDE_CODE_FORK_SUBAGENT = previousForkSubagentEnv;
-    }
-    if (previousUserType === undefined) {
+      process.env.USER_TYPE = 'ant';
+      assert(
+        isForkSubagentEnabled() === interactive,
+        `internal user type should not change the ${mode} fork default`,
+      );
       delete process.env.USER_TYPE;
-    } else {
-      process.env.USER_TYPE = previousUserType;
+
+      for (const key of envKeys.slice(0, 2)) {
+        for (const [value, expected] of [['1', true], ['0', false], ['', interactive], ['   ', interactive]]) {
+          process.env[key] = value;
+          assert(
+            isForkSubagentEnabled() === expected,
+            `${key}=${JSON.stringify(value)} should set the ${mode} fork gate to ${expected}`,
+          );
+        }
+        delete process.env[key];
+      }
+
+      for (const [preferred, legacy, expected] of [['0', '1', false], ['1', '0', true], ['', '1', interactive]]) {
+        process.env.NOA_CLAUDE_FORK_SUBAGENT = preferred;
+        process.env.CLAUDE_CODE_FORK_SUBAGENT = legacy;
+        assert(
+          isForkSubagentEnabled() === expected,
+          `NOA_CLAUDE_FORK_SUBAGENT should take precedence in ${mode} mode`,
+        );
+      }
+      delete process.env.NOA_CLAUDE_FORK_SUBAGENT;
+      delete process.env.CLAUDE_CODE_FORK_SUBAGENT;
     }
+  } finally {
+    setIsInteractive(previousInteractive);
+    envKeys.forEach((key, index) => {
+      if (previousEnv[index] === undefined) delete process.env[key];
+      else process.env[key] = previousEnv[index];
+    });
   }
 }
 
@@ -1691,10 +1709,10 @@ function checkOpusUserPaths() {
   assert(modelSupportsEffort('claude-opus-5') === true, 'claude-opus-5 should support effort');
   assert(modelSupportsMaxEffort('claude-opus-5') === true, 'claude-opus-5 should support max effort');
   assert(modelSupportsXhighEffort('claude-opus-5') === true, 'claude-opus-5 should support xhigh effort');
-  // Like Opus 4.8, Opus 5 does not force a default — the API resolves unset to high.
+  // Effort-capable models without a catalog default explicitly use high.
   assert(
-    getDefaultEffortForModel('claude-opus-5') === undefined,
-    'claude-opus-5 should not force a default effort',
+    getDefaultEffortForModel('claude-opus-5') === 'high',
+    'claude-opus-5 should default to high effort',
   );
   assert(
     modelSupportsAdaptiveThinking('claude-opus-5') === true,
@@ -1726,12 +1744,12 @@ function checkOpusUserPaths() {
     'claude-opus-4-7 should resolve to xhigh effort by default for first-party external users',
   );
   assert(
-    getDefaultEffortForModel('claude-opus-4-6') === undefined,
-    'claude-opus-4-6 should not force a default effort',
+    getDefaultEffortForModel('claude-opus-4-6') === 'high',
+    'claude-opus-4-6 should default to high effort',
   );
   assert(
-    resolveAppliedEffort('claude-opus-4-6', undefined) === undefined,
-    'claude-opus-4-6 should not inject effort by default',
+    resolveAppliedEffort('claude-opus-4-6', undefined) === 'high',
+    'claude-opus-4-6 should apply high effort by default',
   );
 
   // Opus 4.7 should use adaptive thinking.
@@ -1801,17 +1819,14 @@ function checkOpus47ThirdPartyEffortDefaults() {
       modelSupportsEffort('claude-opus-4-7') === true,
       'ANTHROPIC_BASE_URL proxy with effort capability should support effort',
     );
-    // No xhigh capability advertised, so the xhigh-only first-party default
-    // path in effort.ts:400-402 is skipped — proxy falls through to
-    // undefined (API-side default). Don't inject xhigh on a proxy that
-    // didn't advertise it.
+    // An effort-capable proxy without xhigh support uses the base high default.
     assert(
-      getDefaultEffortForModel('claude-opus-4-7') === undefined,
-      'ANTHROPIC_BASE_URL proxy without xhigh capability should not inject a default effort',
+      getDefaultEffortForModel('claude-opus-4-7') === 'high',
+      'ANTHROPIC_BASE_URL proxy without xhigh capability should default to high effort',
     );
     assert(
-      resolveAppliedEffort('claude-opus-4-7', undefined) === undefined,
-      'ANTHROPIC_BASE_URL proxy without xhigh capability should not inject a default effort at resolve time',
+      resolveAppliedEffort('claude-opus-4-7', undefined) === 'high',
+      'ANTHROPIC_BASE_URL proxy without xhigh capability should apply high effort',
     );
     const supportedProxyEffort = executeEffort('max', 'claude-opus-4-7');
     assert(
@@ -1869,12 +1884,10 @@ function checkOpus47ThirdPartyEffortDefaults() {
       modelSupportsEffort(supported3PModel) === true,
       '3P max_effort capability should still allow base effort support',
     );
-    // 3P opus-4-7 with max_effort but no xhigh capability keeps the legacy
-    // "unset/high" path (effort.ts:397-402 — only xhigh-capable providers get
-    // an explicit default). API still resolves missing effort to high.
+    // max_effort implies base effort support, but does not advertise xhigh.
     assert(
-      getDefaultEffortForModel(supported3PModel) === undefined,
-      '3P opus-4-7 should not inject an explicit default unless xhigh is advertised',
+      getDefaultEffortForModel(supported3PModel) === 'high',
+      '3P opus-4-7 without xhigh capability should default to high effort',
     );
   } finally {
     if (prevConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR;

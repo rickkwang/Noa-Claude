@@ -78,7 +78,11 @@ describe('SendMessage without agent teams', () => {
     const store = makeStore(agentTask())
     const data = await send(store, AGENT_ID)
     expect(data.success).toBe(true)
-    expect(store.getState().tasks[AGENT_ID].pendingMessages).toEqual(['keep going'])
+    expect(store.getState().tasks[AGENT_ID].pendingMessages).toEqual([{
+      uuid: expect.any(String),
+      text: 'keep going',
+      origin: { kind: 'coordinator' },
+    }])
   })
 
   test('an unknown recipient errors instead of writing a team mailbox', async () => {

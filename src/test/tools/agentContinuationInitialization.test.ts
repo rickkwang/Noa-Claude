@@ -16,7 +16,7 @@ afterEach(() => mock.restore())
 test('a foreground iterator adopts the full background context without reinitialization', async () => {
   const store = createStore(getDefaultAppState())
   const id = 'background-context-test'
-  store.setState(s => ({ ...s, tasks: { [id]: { id, type: 'local_agent', status: 'running', isBackgrounded: false } as any } }))
+  store.setState(s => ({ ...s, tasks: { [id]: { id, type: 'local_agent', status: 'running', isBackgrounded: false, pendingMessages: [] } as any } }))
   const context: any = {
     getAppState: store.getState, setAppState: store.setState,
     options: { mainLoopModel: 'test-model', tools: [TaskCreateTool], mcpClients: [], isNonInteractiveSession: false },
@@ -65,7 +65,7 @@ test('a foreground iterator adopts the full background context without reinitial
 test('the live query refreshes model schemas and tool contexts after handoff', async () => {
   const store = createStore(getDefaultAppState())
   const id = 'background-live-query'
-  store.setState(s => ({ ...s, tasks: { [id]: { id, type: 'local_agent', status: 'running', isBackgrounded: false } as any } }))
+  store.setState(s => ({ ...s, tasks: { [id]: { id, type: 'local_agent', status: 'running', isBackgrounded: false, pendingMessages: [] } as any } }))
   let toolCalls = 0
   const readTool: any = {
     name: 'Read', inputSchema: z.object({}), maxResultSizeChars: 1000,
