@@ -3085,7 +3085,12 @@ const sentSkillNames = new Map<string, Set<string>>()
 // Called when the skill set genuinely changes (plugin reload, skill file
 // change on disk) so new skills get announced. NOT called on compact —
 // post-compact re-injection costs ~4K tokens/event for marginal benefit.
-export function resetSentSkillNames(): void {
+// With an agent key, only that agent's record is cleared ('' = main thread).
+export function resetSentSkillNames(agentKey?: string): void {
+  if (agentKey !== undefined) {
+    sentSkillNames.delete(agentKey)
+    return
+  }
   sentSkillNames.clear()
   suppressNext = false
 }

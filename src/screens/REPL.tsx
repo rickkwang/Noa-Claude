@@ -333,7 +333,7 @@ import { ScrollKeybindingHandler } from '../components/ScrollKeybindingHandler.j
 import { useMessageActions, MessageActionsKeybindings, MessageActionsBar, type MessageActionsState, type MessageActionsNav, type MessageActionCaps } from '../components/messageActions.js';
 import { setClipboard } from '../ink/termio/osc.js';
 import type { ScrollBoxHandle } from '../ink/components/ScrollBox.js';
-import { createAttachmentMessage, getQueuedCommandAttachments } from '../utils/attachments.js';
+import { createAttachmentMessage, getQueuedCommandAttachments, resetSentSkillNames } from '../utils/attachments.js';
 
 // Stable empty array for hooks that accept MCPServerConnection[] — avoids
 // creating a new [] literal on every render in remote mode, which would
@@ -4087,6 +4087,12 @@ export function REPL({
       rewindToMessageIndex: messageIndex
     });
     setMessages(prev.slice(0, messageIndex));
+    // If the rewind cut a skill_listing attachment, unlatch the sent-skills
+    // tracker so skills are re-announced on the next turn — otherwise the
+    // model never sees the listing again after rewinding past it.
+    if (prev.slice(messageIndex).some(m => m.type === 'attachment' && m.attachment.type === 'skill_listing')) {
+      resetSentSkillNames('');
+    }
     // Careful, this has to happen after setMessages
     setConversationId(randomUUID());
     // Reset cached microcompact state so stale pinned cache edits
