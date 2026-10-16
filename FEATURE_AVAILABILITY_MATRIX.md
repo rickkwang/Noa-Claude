@@ -42,6 +42,7 @@ Last updated: 2026-09-13
 | `/reload-skills` | Available | Re-scans skill directories mid-session. Covers the gap the file watcher cannot: it only watches directories that existed at startup. |
 | `/pause-memory` | Available | Session-scoped auto-memory pause. One-directional — resuming falls back to `CLAUDE_CODE_DISABLE_AUTO_MEMORY` / `autoMemoryEnabled`, it cannot override them. |
 | `/goal` | Available | Long-running objective with evaluator loop, auto-continue limits, token budget, and optional verify command. |
+| `/code-review` | Available | Review the local diff (default), a PR number, branch, or path with effort tiers `low`–`max`, optional `--fix`, `--comment` (PR only), and `--max-findings`; alias `/review`. Runs as a forked agent; the last effort and cap typed are reused. `ultra` (cloud review) is not supported. `scripts/e2e-code-review.mjs` covers argument handling and prompt construction with a scripted model. |
 | `/background` | Available | Alias `/bg`. Forks the conversation into a background session and exits (bare `/bg` mid-turn stops the turn and the background session finishes it; `/bg <prompt>` waits for the turn). ← on an empty prompt moves it and opens the agents view instead. `/exit` in a background session detaches; `/stop` ends it. |
 
 ## Slash Commands: Product-Available

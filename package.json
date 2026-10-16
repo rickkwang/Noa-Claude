@@ -36,6 +36,7 @@
     "smoke:engine:live": "bun ./scripts/smoke-engineering-live.mjs",
     "e2e:loop": "bun ./scripts/e2e-agent-loop.mjs && bun ./scripts/e2e-agent-lifecycle.mjs && bun ./scripts/e2e-agent-coordination.mjs",
     "e2e:bare": "bun ./scripts/e2e-bare.mjs",
+    "e2e:code-review": "bun ./scripts/e2e-code-review.mjs",
     "e2e:tool-boundaries": "bun ./scripts/e2e-tool-boundaries.mjs",
     "e2e:restricted-safe": "bun ./scripts/e2e-restricted-safe.mjs",
     "e2e:multiedit": "bun ./scripts/e2e-multiedit.mjs",

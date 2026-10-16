@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { registerCodeReviewSkill } from './codeReview.js'
 import { registerBatchSkill } from './batch.js'
 import { registerDebugSkill } from './debug.js'
 import { registerKeybindingsSkill } from './keybindings.js'
@@ -26,6 +27,7 @@ export function initBundledSkills(): void {
   registerRememberSkill()
   registerSimplifySkill()
   registerBatchSkill()
+  registerCodeReviewSkill()
   {
     /* eslint-disable @typescript-eslint/no-require-imports */
     const { registerDreamSkill } = require('./dream.js')

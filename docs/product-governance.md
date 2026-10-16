@@ -35,10 +35,12 @@ These commands are callable, but they are not core product workflows:
 - `/pause-memory`
 - `/background`
 - `/agents`
+- `/code-review` (alias `/review`)
 
 Policy:
 
 - keep behavior stable
+- `/code-review` replaces the former `/review` prompt; it is user-invoked only and is not exposed through the MCP server
 - do not claim full product parity
 - promotion to baseline requires smoke coverage and user-value justification
 - `/output-style` is a direct entry to the picker that `/config` hosts; both write `outputStyle` to local settings, so the two entry points must stay interchangeable
@@ -59,6 +61,7 @@ Tracked surfaces:
 - `/pause-memory`
 - `/background`
 - `/agents`
+- `/code-review`
 
 ### Build-Excluded
 

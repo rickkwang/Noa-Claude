@@ -6,6 +6,7 @@ import pickBy from 'lodash-es/pickBy.js'
 import { homedir } from 'os'
 import { basename, dirname, join, resolve } from 'path'
 import { getOriginalCwd, getSessionTrustAccepted } from '../bootstrap/state.js'
+import type { EffortLevel } from './effort.js'
 import { getAutoMemEntrypoint } from '../memdir/paths.js'
 import { logEvent } from '../services/analytics/index.js'
 import type { McpServerConfig } from '../services/mcp/types.js'
@@ -485,6 +486,10 @@ export type GlobalConfig = {
 
   // Copy command behavior
   copyFullResponse: boolean // Whether /copy always copies the full response instead of showing the picker
+
+  // /code-review: last effort level and finding cap typed by the user, reused when not typed again
+  codeReviewLastEffort?: EffortLevel
+  codeReviewLastMaxFindings?: number | 'all'
 
   // Fullscreen in-app text selection behavior
   copyOnSelect?: boolean // Auto-copy to clipboard on mouse-up (undefined → true; lets cmd+c "work" via no-op)

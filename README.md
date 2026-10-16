@@ -73,6 +73,7 @@ The session-fork workflow (`/fork`) is smoke-checked. Other listed commands are 
 - `/export` — Export conversation to a file
 - `/rename` — Rename the current session
 - `/rewind` (aliases `/checkpoint`, `/undo`) — Restore the code and/or conversation to a previous point
+- `/code-review` (alias `/review`) — Review the local diff, a PR, a branch, or a path at effort tiers `low` through `max`; `--fix` applies findings, `--comment` posts them to a PR, `--max-findings` caps the count
 - `/goal` — Set a long-running objective that survives turns: auto-continues with turn/token limits and an optional verify command (details in [docs/operating-guide.md](docs/operating-guide.md))
 
 **Provider routing**

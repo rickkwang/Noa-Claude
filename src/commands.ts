@@ -31,7 +31,6 @@ import mcp from './commands/mcp/index.js'
 import releaseNotes from './commands/release-notes/index.js'
 import rename from './commands/rename/index.js'
 import resume from './commands/resume/index.js'
-import review from './commands/review.js'
 import session from './commands/session/index.js'
 import skills from './commands/skills/index.js'
 import status from './commands/status/index.js'
@@ -215,7 +214,6 @@ const COMMANDS = memoize((): Command[] => [
   theme,
   tui,
   feedback,
-  review,
   rewind,
   securityReview,
   terminalSetup,

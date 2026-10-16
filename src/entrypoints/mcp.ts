@@ -8,7 +8,6 @@ import {
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js'
 import { getDefaultAppState } from 'src/state/AppStateStore.js'
-import review from '../commands/review.js'
 import type { Command } from '../commands.js'
 import {
   findToolByName,
@@ -30,7 +29,7 @@ import { zodToJsonSchema } from '../utils/zodToJsonSchema.js'
 type ToolInput = Tool['inputSchema']
 type ToolOutput = Tool['outputSchema']
 
-const MCP_COMMANDS: Command[] = [review]
+const MCP_COMMANDS: Command[] = []
 
 export async function startMCPServer(
   cwd: string,
