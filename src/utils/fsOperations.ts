@@ -682,11 +682,12 @@ export const NodeFsOperations: FsOperations = {
     }
     const handle = await open(fsPath, 'r')
     try {
-      const { size } = await handle.stat()
-      // Non-regular files (pipes, devices) report size 0 — read them up to
-      // maxBytes instead of trusting the stat size, so callers can bound
-      // reads from sources that may never end.
-      const readSize = size > 0 ? Math.min(size, maxBytes) : maxBytes
+      const stat = await handle.stat()
+      // Regular files are read to their size; non-regular files (pipes,
+      // devices) report size 0, so read them up to maxBytes instead of
+      // trusting the stat size, letting callers bound reads from sources
+      // that may never end.
+      const readSize = stat.isFile() ? Math.min(stat.size, maxBytes) : maxBytes
       const buffer = Buffer.allocUnsafe(readSize)
       let offset = 0
       while (offset < readSize) {

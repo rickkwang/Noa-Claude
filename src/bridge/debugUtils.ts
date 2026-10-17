@@ -14,6 +14,7 @@ const SECRET_FIELD_NAMES = [
   'access_token',
   'secret',
   'token',
+  'authorization',
 ]
 
 const REDACT_MIN_LENGTH = 16
@@ -31,12 +32,13 @@ const SECRET_PATTERN = new RegExp(
   'g',
 )
 
-/** Unquoted key/value forms: `token=…`, `Authorization: …`. */
+/** Unquoted key/value forms: `token=…`, `AWS_SECRET_ACCESS_KEY=…`. */
 const SECRET_KEY_VALUE_PATTERN =
-  /(\b(?:api[_-]?key|access[_-]?token|session_ingress_token|environment_secret|token|secret|password|authorization)\b["']?\s*[:=]\s*)(["']?)([^\s"',;}]{16,})\2/gi
+  /([A-Za-z0-9_-]*(?:secret|token|password|authorization|api[_-]?key)[A-Za-z0-9_-]*["']?\s*[:=]\s*)(["']?)([^\s"',;}]{16,})\2/gi
 
-/** Scheme-prefixed credentials: `Bearer eyJ…`, `token ghp_…`. */
-const SECRET_SCHEME_PATTERN = /\b(Bearer|token)\s+([A-Za-z0-9._~+/=-]{16,})/gi
+/** Scheme-prefixed credentials: `Bearer eyJ…`, `Basic dXNl…`. */
+const SECRET_SCHEME_PATTERN =
+  /\b(Bearer|Basic|Digest|token)\s+([A-Za-z0-9._~+/=-]{8,})/gi
 
 /**
  * Well-known credential families, mirroring the upstream redaction set:
@@ -45,7 +47,7 @@ const SECRET_SCHEME_PATTERN = /\b(Bearer|token)\s+([A-Za-z0-9._~+/=-]{16,})/gi
 const SECRET_TOKEN_PATTERNS: RegExp[] = [
   /sk-ant-[A-Za-z0-9_-]{10,}/g,
   /sk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{10,}/g,
-  /ghp_[A-Za-z0-9]{20,}/g,
+  /gh[oprsu]_[A-Za-z0-9]{20,}/g,
   /github_pat_[A-Za-z0-9_]{20,}/g,
   /glpat-[A-Za-z0-9_-]{10,}/g,
   /xox[baprs]-[A-Za-z0-9-]{10,}/g,
@@ -61,8 +63,8 @@ export function redactSecrets(s: string): string {
   )
   result = result.replace(
     SECRET_KEY_VALUE_PATTERN,
-    (_match, prefix: string, _quote: string, value: string) =>
-      `${prefix}${redactValue(value)}`,
+    (_match, prefix: string, quote: string, value: string) =>
+      `${prefix}${quote}${redactValue(value)}${quote}`,
   )
   result = result.replace(
     SECRET_SCHEME_PATTERN,
