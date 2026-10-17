@@ -1064,6 +1064,9 @@ async function callInner(
   return { data }
 }
 
+/** Upstream parity (2.1.302): image sources over 128 MB are refused. */
+const IMAGE_MAX_BYTES = 134217728 // 128 MB
+
 /**
  * Reads an image file and applies token-based compression if needed.
  * Reads the file ONCE, then applies standard resize. If the result exceeds
@@ -1071,18 +1074,43 @@ async function callInner(
  *
  * @param filePath - Path to the image file
  * @param maxTokens - Maximum token budget for the image
+ * @param maxBytes - Hard cap on the source size (defaults to 128 MB)
  * @returns Image data with appropriate compression applied
  */
 export async function readImageWithTokenBudget(
   filePath: string,
   maxTokens: number = getDefaultFileReadingLimits().maxTokens,
-  maxBytes?: number,
+  maxBytes: number = IMAGE_MAX_BYTES,
 ): Promise<ImageResult> {
+  // Guard before reading: a regular file over the cap is refused outright;
+  // anything else (a pipe or device named like an image) is read capped and
+  // refused if it fails to end. Without this, a huge file or an endless
+  // source would be buffered whole.
+  let fileSize: number | undefined
+  try {
+    const stat = getFsImplementation().statSync(filePath)
+    if (stat.isFile()) {
+      fileSize = stat.size
+    }
+  } catch {
+    // Let the read below surface the real error (e.g. ENOENT)
+  }
+  if (fileSize !== undefined && fileSize > maxBytes) {
+    throw new Error(
+      `File is too large to read as an image (the limit is ${formatFileSize(maxBytes)}): ${filePath}. If it is an image, resize it or export a smaller copy, then read that.`,
+    )
+  }
+
   // Read file ONCE — capped to maxBytes to avoid OOM on huge files
   const imageBuffer = await getFsImplementation().readFileBytes(
     filePath,
     maxBytes,
   )
+  if (fileSize === undefined && imageBuffer.length >= maxBytes) {
+    throw new Error(
+      `Cannot read this as an image: ${filePath} is a pipe or a device, not a regular file, and it sent more than ${formatFileSize(maxBytes)} without ending.`,
+    )
+  }
   const originalSize = imageBuffer.length
 
   if (originalSize === 0) {

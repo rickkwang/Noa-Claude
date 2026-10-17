@@ -16,21 +16,63 @@ const SECRET_FIELD_NAMES = [
   'token',
 ]
 
+const REDACT_MIN_LENGTH = 16
+
+function redactValue(value: string): string {
+  if (value.length < REDACT_MIN_LENGTH) {
+    return '[REDACTED]'
+  }
+  return `${value.slice(0, 8)}...${value.slice(-4)}`
+}
+
+/** Quoted pairs: `"token": "value"`. */
 const SECRET_PATTERN = new RegExp(
   `"(${SECRET_FIELD_NAMES.join('|')})"\\s*:\\s*"([^"]*)"`,
   'g',
 )
 
-const REDACT_MIN_LENGTH = 16
+/** Unquoted key/value forms: `token=…`, `Authorization: …`. */
+const SECRET_KEY_VALUE_PATTERN =
+  /(\b(?:api[_-]?key|access[_-]?token|session_ingress_token|environment_secret|token|secret|password|authorization)\b["']?\s*[:=]\s*)(["']?)([^\s"',;}]{16,})\2/gi
+
+/** Scheme-prefixed credentials: `Bearer eyJ…`, `token ghp_…`. */
+const SECRET_SCHEME_PATTERN = /\b(Bearer|token)\s+([A-Za-z0-9._~+/=-]{16,})/gi
+
+/**
+ * Well-known credential families, mirroring the upstream redaction set:
+ * Anthropic, OpenAI, GitHub, GitLab, Slack, AWS and JWT.
+ */
+const SECRET_TOKEN_PATTERNS: RegExp[] = [
+  /sk-ant-[A-Za-z0-9_-]{10,}/g,
+  /sk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{10,}/g,
+  /ghp_[A-Za-z0-9]{20,}/g,
+  /github_pat_[A-Za-z0-9_]{20,}/g,
+  /glpat-[A-Za-z0-9_-]{10,}/g,
+  /xox[baprs]-[A-Za-z0-9-]{10,}/g,
+  /(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}/g,
+  /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}/g,
+]
 
 export function redactSecrets(s: string): string {
-  return s.replace(SECRET_PATTERN, (_match, field: string, value: string) => {
-    if (value.length < REDACT_MIN_LENGTH) {
-      return `"${field}":"[REDACTED]"`
-    }
-    const redacted = `${value.slice(0, 8)}...${value.slice(-4)}`
-    return `"${field}":"${redacted}"`
-  })
+  let result = s.replace(
+    SECRET_PATTERN,
+    (_match, field: string, value: string) =>
+      `"${field}":"${redactValue(value)}"`,
+  )
+  result = result.replace(
+    SECRET_KEY_VALUE_PATTERN,
+    (_match, prefix: string, _quote: string, value: string) =>
+      `${prefix}${redactValue(value)}`,
+  )
+  result = result.replace(
+    SECRET_SCHEME_PATTERN,
+    (_match, scheme: string, value: string) =>
+      `${scheme} ${redactValue(value)}`,
+  )
+  for (const pattern of SECRET_TOKEN_PATTERNS) {
+    result = result.replace(pattern, match => redactValue(match))
+  }
+  return result
 }
 
 /** Truncate a string for debug logging, collapsing newlines. */

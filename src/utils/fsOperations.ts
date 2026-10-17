@@ -120,7 +120,8 @@ export type FsOperations = {
   /** Create a writable stream for writing data to a file. */
   createWriteStream(path: string): fs.WriteStream
   /** Reads raw file bytes as Buffer asynchronously.
-   *  When maxBytes is set, only reads up to that many bytes. */
+   *  When maxBytes is set, only reads up to that many bytes; non-regular
+   *  files (pipes, devices) are read up to maxBytes too. */
   readFileBytes(path: string, maxBytes?: number): Promise<Buffer>
 }
 
@@ -682,7 +683,10 @@ export const NodeFsOperations: FsOperations = {
     const handle = await open(fsPath, 'r')
     try {
       const { size } = await handle.stat()
-      const readSize = Math.min(size, maxBytes)
+      // Non-regular files (pipes, devices) report size 0 — read them up to
+      // maxBytes instead of trusting the stat size, so callers can bound
+      // reads from sources that may never end.
+      const readSize = size > 0 ? Math.min(size, maxBytes) : maxBytes
       const buffer = Buffer.allocUnsafe(readSize)
       let offset = 0
       while (offset < readSize) {

@@ -157,6 +157,13 @@ export function PromptInputFooterLeftSide(t0) {
     historyFailedMatch,
     onOpenTasksDialog
   } = t0;
+  // Upstream parity (2.1.302): the plain "← for agents" hint hides itself 10
+  // seconds after the session opens; counts of waiting agents still show.
+  const [agentsHintExpired, setAgentsHintExpired] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setAgentsHintExpired(true), 10000);
+    return () => clearTimeout(timer);
+  }, []);
   if (exitMessage.show) {
     let t1;
     if ($[0] !== exitMessage.key) {
@@ -466,7 +473,7 @@ function ModeIndicator({
       flash,
       justDone
     } = agentsNudge;
-    parts.push(needsInput === 0 && justDone > 0 ? <Text key="agents-hint">
+    if (needsInput > 0 || justDone > 0 || !agentsHintExpired) parts.push(needsInput === 0 && justDone > 0 ? <Text key="agents-hint">
           <Text dimColor>← </Text>
           <Text color="success">{justDone > 99 ? '99+' : justDone}</Text>
           <Text dimColor> done</Text>

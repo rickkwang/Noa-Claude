@@ -40,7 +40,7 @@ import { getPreferredCliCommandName } from './commandName.js'
 import { logForDebugging } from './debug.js'
 import { logForDiagnosticsNoPII } from './diagLogs.js'
 import { isEnvTruthy } from './envUtils.js'
-import { getCurrentSessionTitle, sessionIdExists } from './sessionStorage.js'
+import { sessionIdExists } from './sessionStorage.js'
 import { profileReport } from './startupProfiler.js'
 
 /**
@@ -187,17 +187,9 @@ function printResumeHint(): void {
       if (!sessionIdExists(sessionId)) {
         return
       }
-      const customTitle = getCurrentSessionTitle(sessionId)
-
-      // Use custom title if available, otherwise fall back to session ID
-      let resumeArg: string
-      if (customTitle) {
-        // Wrap in double quotes, escape backslashes first then quotes
-        const escaped = customTitle.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-        resumeArg = `"${escaped}"`
-      } else {
-        resumeArg = sessionId
-      }
+      // Name the session by its ID, never by its title: nothing in a title
+      // can run when the printed command is pasted (upstream 2.1.299).
+      const resumeArg = sessionId
 
       const cliCommand = getPreferredCliCommandName()
       writeSync(

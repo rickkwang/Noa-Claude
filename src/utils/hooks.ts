@@ -173,6 +173,12 @@ import { errorMessage, getErrnoCode } from './errors.js'
 const TOOL_HOOK_EXECUTION_TIMEOUT_MS = 10 * 60 * 1000
 
 /**
+ * Upstream parity (2.1.302): at most 12 prompt/agent hooks of one event run
+ * at a time; the rest wait their turn.
+ */
+const HOOK_CONCURRENCY_LIMIT = 12
+
+/**
  * SessionEnd hooks run during shutdown/clear and need a much tighter bound
  * than TOOL_HOOK_EXECUTION_TIMEOUT_MS. This value is used by callers as both
  * the per-hook default timeout AND the overall AbortSignal cap (hooks run in
@@ -2841,8 +2847,8 @@ async function* executeHooks({
 
   let permissionBehavior: PermissionResult['behavior'] | undefined
 
-  // Run all hooks in parallel and wait for all to complete
-  for await (const result of all(hookPromises)) {
+  // Run all hooks with the concurrency cap and wait for all to complete
+  for await (const result of all(hookPromises, HOOK_CONCURRENCY_LIMIT)) {
     outcomes[result.outcome]++
 
     if (result.preventContinuation) {
