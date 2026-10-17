@@ -173,8 +173,8 @@ import { errorMessage, getErrnoCode } from './errors.js'
 const TOOL_HOOK_EXECUTION_TIMEOUT_MS = 10 * 60 * 1000
 
 /**
- * Upstream parity (2.1.302): at most 12 prompt/agent hooks of one event run
- * at a time; the rest wait their turn.
+ * At most 12 prompt/agent hooks of one event run at a time; the rest wait
+ * their turn.
  */
 const HOOK_CONCURRENCY_LIMIT = 12
 

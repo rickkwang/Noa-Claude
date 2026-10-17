@@ -1064,7 +1064,7 @@ async function callInner(
   return { data }
 }
 
-/** Upstream parity (2.1.302): image sources over 128 MB are refused. */
+/** Image sources over 128 MB are refused. */
 const IMAGE_MAX_BYTES = 134217728 // 128 MB
 
 /**

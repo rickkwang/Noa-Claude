@@ -157,8 +157,8 @@ export function PromptInputFooterLeftSide(t0) {
     historyFailedMatch,
     onOpenTasksDialog
   } = t0;
-  // Upstream parity (2.1.302): the plain "← for agents" hint hides itself 10
-  // seconds after the session opens; counts of waiting agents still show.
+  // The plain "← for agents" hint hides itself 10 seconds after the session
+  // opens; counts of waiting agents still show.
   const [agentsHintExpired, setAgentsHintExpired] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setAgentsHintExpired(true), 10000);

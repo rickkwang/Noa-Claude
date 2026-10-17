@@ -188,7 +188,7 @@ function printResumeHint(): void {
         return
       }
       // Name the session by its ID, never by its title: nothing in a title
-      // can run when the printed command is pasted (upstream 2.1.299).
+      // can run when the printed command is pasted.
       const resumeArg = sessionId
 
       const cliCommand = getPreferredCliCommandName()

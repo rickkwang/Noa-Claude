@@ -41,7 +41,7 @@ const SECRET_SCHEME_PATTERN =
   /\b(Bearer|Basic|Digest|token)\s+([A-Za-z0-9._~+/=-]{8,})/gi
 
 /**
- * Well-known credential families, mirroring the upstream redaction set:
+ * Well-known credential families:
  * Anthropic, OpenAI, GitHub, GitLab, Slack, AWS and JWT.
  */
 const SECRET_TOKEN_PATTERNS: RegExp[] = [
