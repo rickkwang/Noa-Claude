@@ -443,7 +443,6 @@ export function useTextInput({
     }
   }
 
-  // Check if this is a kill command (Ctrl+K, Ctrl+U, Ctrl+W, or Meta+Backspace/Delete)
   function isKillKey(key: Key, input: string): boolean {
     if (key.ctrl && (input === 'k' || input === 'u' || input === 'w')) {
       return true
@@ -454,7 +453,6 @@ export function useTextInput({
     return false
   }
 
-  // Check if this is a yank command (Ctrl+Y or Alt+Y)
   function isYankKey(key: Key, input: string): boolean {
     return (key.ctrl || key.meta) && input === 'y'
   }
@@ -462,16 +460,13 @@ export function useTextInput({
   function onInput(input: string, key: Key): void {
     // Note: Image paste shortcut (chat:imagePaste) is handled via useKeybindings in PromptInput
 
-    // Apply filter if provided
     const filteredInput = inputFilter ? inputFilter(input, key) : input
 
-    // If the input was filtered out, do nothing
     if (filteredInput === '' && input !== '') {
       return
     }
 
-    // Fix Issue #1853: Filter DEL characters that interfere with backspace in SSH/tmux
-    // In SSH/tmux environments, backspace generates both key events and raw DEL chars
+    // SSH/tmux can generate both key events and raw DEL chars for backspace.
     if (!key.backspace && !key.delete && input.includes('\x7f')) {
       const delCount = (input.match(/\x7f/g) || []).length
 
@@ -483,7 +478,6 @@ export function useTextInput({
           currentCursor.deleteTokenBefore() ?? currentCursor.backspace()
       }
 
-      // Update state once with the final result
       if (!cursor.equals(currentCursor)) {
         if (cursor.text !== currentCursor.text) {
           onChange(currentCursor.text)
@@ -495,12 +489,10 @@ export function useTextInput({
       return
     }
 
-    // Reset kill accumulation for non-kill keys
     if (!isKillKey(key, filteredInput)) {
       resetKillAccumulation()
     }
 
-    // Reset yank state for non-yank keys (breaks yank-pop chain)
     if (!isYankKey(key, filteredInput)) {
       resetYankState()
     }

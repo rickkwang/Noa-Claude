@@ -145,9 +145,6 @@ export class RemoteSessionManager {
     void this.websocket.connect()
   }
 
-  /**
-   * Handle messages from WebSocket
-   */
   private handleMessage(
     message:
       | SDKMessage
@@ -155,13 +152,11 @@ export class RemoteSessionManager {
       | SDKControlResponse
       | SDKControlCancelRequest,
   ): void {
-    // Handle control requests (permission prompts from CCR)
     if (message.type === 'control_request') {
       this.handleControlRequest(message)
       return
     }
 
-    // Handle control cancel requests (server cancelling a pending permission prompt)
     if (message.type === 'control_cancel_request') {
       const { request_id } = message
       const pendingRequest = this.pendingPermissionRequests.get(request_id)
@@ -174,21 +169,16 @@ export class RemoteSessionManager {
       return
     }
 
-    // Handle control responses (acknowledgments)
     if (message.type === 'control_response') {
       logForDebugging('[RemoteSessionManager] Received control response')
       return
     }
 
-    // Forward SDK messages to callback (type guard ensures proper narrowing)
     if (isSDKMessage(message)) {
       this.callbacks.onMessage(message)
     }
   }
 
-  /**
-   * Handle control requests from CCR (e.g., permission requests)
-   */
   private handleControlRequest(request: SDKControlRequest): void {
     const { request_id, request: inner } = request
 

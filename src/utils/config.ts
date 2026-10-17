@@ -173,7 +173,7 @@ export type AccountInfo = {
   accountUuid: string
   emailAddress: string
   organizationUuid?: string
-  organizationName?: string | null // added 4/23/2025, not populated for existing users
+  organizationName?: string | null // Not populated for existing users
   organizationRole?: string | null
   workspaceRole?: string | null
   // Populated by /api/oauth/profile
@@ -184,7 +184,7 @@ export type AccountInfo = {
   subscriptionCreatedAt?: string
 }
 
-// TODO: 'emacs' is kept for backward compatibility - remove after a few releases
+// 'emacs' remains accepted for backward compatibility.
 export type EditorMode = 'emacs' | (typeof EDITOR_MODES)[number]
 
 export type DiffTool = 'terminal' | 'auto'

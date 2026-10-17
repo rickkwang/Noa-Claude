@@ -1297,7 +1297,6 @@ export const AgentTool = buildTool({
         }
 
         // Re-throw abort errors
-        // TODO: Find a cleaner way to express this
         const lastMessage = agentMessages.findLast(_ => _.type !== 'system' && _.type !== 'progress');
         if (lastMessage && isSyntheticMessage(lastMessage)) {
           logEvent('tengu_agent_tool_terminated', {

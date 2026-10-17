@@ -427,14 +427,10 @@ export function isEmptyCellAt(screen: Screen, x: number, y: number): boolean {
   return isEmptyCellByIndex(screen, y * screen.width + x)
 }
 
-/**
- * Check if a Cell (view object) represents an empty cell.
- */
 export function isCellEmpty(screen: Screen, cell: Cell): boolean {
-  // Check if cell looks like an empty cell (space, empty style, narrow, no link).
-  // Note: After cellAt mapping, unwritten cells have emptyStyleId, so this
-  // returns true for both unwritten AND cleared cells. Use isEmptyCellAt
-  // for the internal distinction.
+  // After cellAt mapping, unwritten cells have emptyStyleId, so this returns
+  // true for both unwritten AND cleared cells. Use isEmptyCellAt for the
+  // internal distinction.
   return (
     cell.char === ' ' &&
     cell.styleId === screen.emptyStyleId &&
@@ -447,8 +443,6 @@ function internHyperlink(screen: Screen, hyperlink: Hyperlink): number {
   return screen.hyperlinkPool.intern(hyperlink)
 }
 
-// ---
-
 export function createScreen(
   width: number,
   height: number,
@@ -456,11 +450,9 @@ export function createScreen(
   charPool: CharPool,
   hyperlinkPool: HyperlinkPool,
 ): Screen {
-  // Warn if dimensions are not valid integers (likely bad yoga layout output)
   warn.ifNotInteger(width, 'createScreen width')
   warn.ifNotInteger(height, 'createScreen height')
 
-  // Ensure width and height are valid integers to prevent crashes
   if (!Number.isInteger(width) || width < 0) {
     width = Math.max(0, Math.floor(width) || 0)
   }
@@ -504,11 +496,9 @@ export function resetScreen(
   width: number,
   height: number,
 ): void {
-  // Warn if dimensions are not valid integers
   warn.ifNotInteger(width, 'resetScreen width')
   warn.ifNotInteger(height, 'resetScreen height')
 
-  // Ensure width and height are valid integers to prevent crashes
   if (!Number.isInteger(width) || width < 0) {
     width = Math.max(0, Math.floor(width) || 0)
   }
@@ -673,21 +663,8 @@ export function charInCellAt(
   return screen.charPool.get(screen.cells[ci]!)
 }
 /**
- * Set a cell, optionally creating a spacer for wide characters.
- *
- * Wide characters (CJK, emoji) occupy 2 cells in the buffer:
- * 1. First cell: Contains the actual character with width = Wide
- * 2. Second cell: Spacer cell with width = SpacerTail (empty, not rendered)
- *
- * If the cell has width = Wide, this function automatically creates the
- * corresponding SpacerTail in the next column. This two-cell model keeps
- * the buffer aligned to visual columns, making cursor positioning
- * straightforward.
- *
- * TODO: When soft-wrapping is implemented, SpacerHead cells will be explicitly
- * placed by the wrapping logic at line-end positions where wide characters
- * wrap to the next line. This function doesn't need to handle SpacerHead
- * automatically - it will be set directly by the wrapping code.
+ * Sets a cell, adding a SpacerTail after wide characters so buffer columns
+ * match visual columns. Wrapping logic owns SpacerHead cells at line ends.
  */
 export function setCellAt(
   screen: Screen,

@@ -210,7 +210,6 @@ export async function update(options: { yes?: boolean } = {}) {
     }
   }
 
-  // Update config if installMethod is not set (but skip for package managers)
   const config = getGlobalConfig()
   if (
     !config.installMethod &&
@@ -220,7 +219,6 @@ export async function update(options: { yes?: boolean } = {}) {
     writeToStdout('Updating configuration to track installation method...\n')
     let detectedMethod: 'local' | 'native' | 'global' | 'unknown' = 'unknown'
 
-    // Map diagnostic installation type to config install method
     switch (diagnostic.installationType) {
       case 'npm-local':
         detectedMethod = 'local'
@@ -242,7 +240,6 @@ export async function update(options: { yes?: boolean } = {}) {
     writeToStdout(`Installation method set to: ${detectedMethod}\n`)
   }
 
-  // Check if running from development build
   if (diagnostic.installationType === 'development') {
     writeToStdout('\n')
     writeToStdout(
@@ -251,7 +248,6 @@ export async function update(options: { yes?: boolean } = {}) {
     await gracefulShutdown(1)
   }
 
-  // Check if running from a package manager
   if (diagnostic.installationType === 'package-manager') {
     const packageManager = await getPackageManager()
     writeToStdout('\n')
@@ -302,7 +298,6 @@ export async function update(options: { yes?: boolean } = {}) {
     await gracefulShutdown(0)
   }
 
-  // Check for config/reality mismatch (skip for package-manager installs)
   if (
     config.installMethod &&
     diagnostic.configInstallMethod !== 'not set' &&
@@ -311,7 +306,6 @@ export async function update(options: { yes?: boolean } = {}) {
     const runningType = diagnostic.installationType
     const configExpects = diagnostic.configInstallMethod
 
-    // Map installation types for comparison
     const typeMapping: Record<string, string> = {
       'npm-local': 'local',
       'npm-global': 'global',
@@ -336,7 +330,6 @@ export async function update(options: { yes?: boolean } = {}) {
         ) + '\n',
       )
 
-      // Update config to match reality
       saveGlobalConfig(current => ({
         ...current,
         installMethod: normalizedRunningType as InstallMethod,
@@ -347,7 +340,6 @@ export async function update(options: { yes?: boolean } = {}) {
     }
   }
 
-  // Handle native installation updates first
   if (diagnostic.installationType === 'native') {
     logForDebugging(
       'update: Detected native installation, using native updater',
@@ -441,7 +433,6 @@ export async function update(options: { yes?: boolean } = {}) {
     await gracefulShutdown(1)
   }
 
-  // Check if versions match exactly, including any build metadata (like SHA)
   if (latestVersion === MACRO.VERSION) {
     writeToStdout(
       chalk.green(`Noa Claude is up to date (${MACRO.VERSION})`) + '\n',
@@ -454,7 +445,6 @@ export async function update(options: { yes?: boolean } = {}) {
   )
   writeToStdout('Installing update...\n')
 
-  // Determine update method based on what's actually running
   let useLocalUpdate = false
   let updateMethodName = ''
 

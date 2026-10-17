@@ -53,11 +53,10 @@ function embedTextInBorder(
   } else if (align === 'start') {
     position = offset + 1 // +1 to account for corner character
   } else {
-    // align === 'end'
     position = borderLength - textLength - offset - 1 // -1 for corner character
   }
 
-  // Ensure position is valid
+  // Keep embedded text between the corner cells.
   position = Math.max(1, Math.min(position, borderLength - textLength - 1))
 
   const before = borderLine.substring(0, 1) + borderChar.repeat(position - 1)
@@ -131,7 +130,6 @@ const renderBorder = (
         (showRightBorder ? box.topRight : '')
       : ''
 
-    // Handle text in top border
     let topBorder: string | undefined
     if (showTopBorder && node.style.borderText?.position === 'top') {
       const [before, text, after] = embedTextInBorder(
@@ -187,7 +185,6 @@ const renderBorder = (
         (showRightBorder ? box.bottomRight : '')
       : ''
 
-    // Handle text in bottom border
     let bottomBorder: string | undefined
     if (showBottomBorder && node.style.borderText?.position === 'bottom') {
       const [before, text, after] = embedTextInBorder(

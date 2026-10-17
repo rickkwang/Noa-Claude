@@ -20,16 +20,8 @@ import { fromSDKCompactMetadata } from '../utils/messages/mappers.js'
 import { fromSDKSummarizeMetadata } from '../utils/messages/summarizeMetadata.js'
 import { createUserMessage } from '../utils/messages.js'
 
-/**
- * Converts SDKMessage from CCR to REPL Message types.
- *
- * The CCR backend sends SDK-format messages via WebSocket. The REPL expects
- * internal Message types for rendering. This adapter bridges the two.
- */
+// Adapts CCR SDK messages received over WebSocket to internal REPL messages.
 
-/**
- * Convert an SDKAssistantMessage to an AssistantMessage
- */
 function convertAssistantMessage(msg: SDKAssistantMessage): AssistantMessage {
   return {
     type: 'assistant',
@@ -41,9 +33,6 @@ function convertAssistantMessage(msg: SDKAssistantMessage): AssistantMessage {
   }
 }
 
-/**
- * Convert an SDKPartialAssistantMessage (streaming) to a StreamEvent
- */
 function convertStreamEvent(msg: SDKPartialAssistantMessage): StreamEvent {
   return {
     type: 'stream_event',
@@ -51,9 +40,6 @@ function convertStreamEvent(msg: SDKPartialAssistantMessage): StreamEvent {
   }
 }
 
-/**
- * Convert an SDKResultMessage to a SystemMessage
- */
 function convertResultMessage(msg: SDKResultMessage): SystemMessage {
   const isError = msg.subtype !== 'success'
   const content = isError
@@ -70,9 +56,6 @@ function convertResultMessage(msg: SDKResultMessage): SystemMessage {
   }
 }
 
-/**
- * Convert an SDKSystemMessage (init) to a SystemMessage
- */
 function convertInitMessage(msg: SDKSystemMessage): SystemMessage {
   return {
     type: 'system',
@@ -84,9 +67,6 @@ function convertInitMessage(msg: SDKSystemMessage): SystemMessage {
   }
 }
 
-/**
- * Convert an SDKStatusMessage to a SystemMessage
- */
 function convertStatusMessage(msg: SDKStatusMessage): SystemMessage | null {
   if (!msg.status) {
     return null
@@ -106,9 +86,8 @@ function convertStatusMessage(msg: SDKStatusMessage): SystemMessage | null {
 }
 
 /**
- * Convert an SDKToolProgressMessage to a SystemMessage.
- * We use a system message instead of ProgressMessage since the Progress type
- * is a complex union that requires tool-specific data we don't have from CCR.
+ * Uses SystemMessage because ProgressMessage requires tool-specific data
+ * unavailable from CCR.
  */
 function convertToolProgressMessage(
   msg: SDKToolProgressMessage,
@@ -124,9 +103,6 @@ function convertToolProgressMessage(
   }
 }
 
-/**
- * Convert an SDKCompactBoundaryMessage to a SystemMessage
- */
 function convertCompactBoundaryMessage(
   msg: SDKCompactBoundaryMessage,
 ): SystemMessage {
@@ -141,9 +117,6 @@ function convertCompactBoundaryMessage(
   }
 }
 
-/**
- * Result of converting an SDKMessage
- */
 export type ConvertedMessage =
   | { type: 'message'; message: Message }
   | { type: 'stream_event'; event: StreamEvent }
@@ -164,9 +137,6 @@ type ConvertOptions = {
   convertUserTextMessages?: boolean
 }
 
-/**
- * Convert an SDKMessage to REPL message format
- */
 export function convertSDKMessage(
   msg: SDKMessage,
   opts?: ConvertOptions,

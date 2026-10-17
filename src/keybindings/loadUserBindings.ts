@@ -4,10 +4,6 @@
  *
  * Loads keybindings from ~/.noa/keybindings.json and watches
  * for changes to reload them automatically.
- *
- * NOTE: User keybinding customization is currently only available for
- * Anthropic employees (USER_TYPE === 'ant'). External users always
- * use the default bindings.
  */
 
 import chokidar, { type FSWatcher } from 'chokidar'
@@ -134,15 +130,12 @@ function getDefaultParsedBindings(): ParsedBinding[] {
 /**
  * Load and parse keybindings from user config file.
  * Returns merged default + user bindings along with validation warnings.
- *
- * For external users, always returns default bindings only.
- * User customization is currently gated to Anthropic employees.
+ * Returns only default bindings when customization is disabled or safe mode is active.
  */
 export async function loadKeybindings(): Promise<KeybindingsLoadResult> {
   const defaultBindings = getDefaultParsedBindings()
 
-  // Skip user config loading for external users, and under --safe-mode
-  // (custom keybindings are a customization; there is no managed layer).
+  // Safe mode disables custom keybindings; there is no managed layer.
   if (!isKeybindingCustomizationEnabled() || isSafeMode()) {
     return { bindings: defaultBindings, warnings: [] }
   }
@@ -261,9 +254,7 @@ export function loadKeybindingsSync(): ParsedBinding[] {
 /**
  * Load keybindings synchronously with validation warnings.
  * Uses cached values if available.
- *
- * For external users, always returns default bindings only.
- * User customization is currently gated to Anthropic employees.
+ * Returns only default bindings when customization is disabled.
  */
 export function loadKeybindingsSyncWithWarnings(): KeybindingsLoadResult {
   if (cachedBindings) {
@@ -272,7 +263,6 @@ export function loadKeybindingsSyncWithWarnings(): KeybindingsLoadResult {
 
   const defaultBindings = getDefaultParsedBindings()
 
-  // Skip user config loading for external users
   if (!isKeybindingCustomizationEnabled()) {
     cachedBindings = defaultBindings
     cachedWarnings = []

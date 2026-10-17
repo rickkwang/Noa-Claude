@@ -197,7 +197,6 @@ export function createLSPServerManager(): LSPServerManager {
       return undefined
     }
 
-    // Use first server (can add priority later)
     const serverName = serverNames[0]
     if (!serverName) {
       return undefined
@@ -303,7 +302,6 @@ export function createLSPServerManager(): LSPServerManager {
         `Failed to sync file open ${filePath}: ${errorMessage(error)}`,
       )
       logError(err)
-      // Re-throw to propagate error to caller
       throw err
     }
   }
@@ -336,7 +334,6 @@ export function createLSPServerManager(): LSPServerManager {
         `Failed to sync file change ${filePath}: ${errorMessage(error)}`,
       )
       logError(err)
-      // Re-throw to propagate error to caller
       throw err
     }
   }
@@ -361,7 +358,6 @@ export function createLSPServerManager(): LSPServerManager {
         `Failed to sync file save ${filePath}: ${errorMessage(error)}`,
       )
       logError(err)
-      // Re-throw to propagate error to caller
       throw err
     }
   }
@@ -393,7 +389,6 @@ export function createLSPServerManager(): LSPServerManager {
         `Failed to sync file close ${filePath}: ${errorMessage(error)}`,
       )
       logError(err)
-      // Re-throw to propagate error to caller
       throw err
     }
   }

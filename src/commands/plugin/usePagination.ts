@@ -61,34 +61,28 @@ export function usePagination<T>({
 }: UsePaginationOptions): UsePaginationResult<T> {
   const needsPagination = totalItems > maxVisible
 
-  // Use a ref to track the previous scroll offset for smooth scrolling
   const scrollOffsetRef = useRef(0)
   // Bumped by a wheel scroll so the offset below recomputes even when the
   // selection didn't have to move.
   const [scrollTick, setScrollTick] = useState(0)
 
-  // Compute the scroll offset based on selectedIndex
-  // This ensures the selected item is always visible
+  // Keep the selection visible and clamp the offset to the list bounds.
   const scrollOffset = useMemo(() => {
     if (!needsPagination) return 0
 
     const prevOffset = scrollOffsetRef.current
 
-    // If selected item is above the visible window, scroll up
     if (selectedIndex < prevOffset) {
       scrollOffsetRef.current = selectedIndex
       return selectedIndex
     }
 
-    // If selected item is below the visible window, scroll down
     if (selectedIndex >= prevOffset + maxVisible) {
       const newOffset = selectedIndex - maxVisible + 1
       scrollOffsetRef.current = newOffset
       return newOffset
     }
 
-    // Selected item is within visible window, keep current offset
-    // But ensure offset is still valid
     const maxOffset = Math.max(0, totalItems - maxVisible)
     const clampedOffset = Math.min(prevOffset, maxOffset)
     scrollOffsetRef.current = clampedOffset
@@ -120,21 +114,16 @@ export function usePagination<T>({
     [startIndex, endIndex],
   )
 
-  // These are mostly no-ops for continuous scrolling but kept for API compatibility
+  // Legacy page APIs are no-ops; selectedIndex controls continuous scrolling.
   const goToPage = useCallback((_page: number) => {
-    // No-op - scrolling is controlled by selectedIndex
   }, [])
 
   const nextPage = useCallback(() => {
-    // No-op - scrolling is controlled by selectedIndex
   }, [])
 
   const prevPage = useCallback(() => {
-    // No-op - scrolling is controlled by selectedIndex
   }, [])
 
-  // Simple selection handler - just updates the index
-  // Scrolling happens automatically via the useMemo above
   const handleSelectionChange = useCallback(
     (newIndex: number, setSelectedIndex: (index: number) => void) => {
       const clampedIndex = Math.max(0, Math.min(newIndex, totalItems - 1))
@@ -143,7 +132,6 @@ export function usePagination<T>({
     [totalItems],
   )
 
-  // Page navigation - disabled for continuous scrolling
   const handlePageNavigation = useCallback(
     (
       _direction: 'left' | 'right',
@@ -174,7 +162,6 @@ export function usePagination<T>({
     [totalItems, maxVisible, onScroll],
   )
 
-  // Calculate page-like values for backwards compatibility
   const totalPages = Math.max(1, Math.ceil(totalItems / maxVisible))
   const currentPage = Math.floor(scrollOffset / maxVisible)
 

@@ -2553,11 +2553,8 @@ export function checkSemantics(commands: SimpleCommand[]): SemanticCheckResult {
     }
 
     // Check argv (not .text) to catch both single-quote (`'\n#'`) and
-    // double-quote (`"\n#"`) variants. Env vars and redirects are also
-    // part of the .text span so the same downstream bug applies.
-    // Heredoc bodies are excluded from argv so markdown `##` headers
-    // don't trigger this.
-    // TODO: remove once downstream path validation operates on argv.
+    // double-quote (`"\n#"`) variants. Heredoc bodies are excluded from argv
+    // so markdown `##` headers don't trigger this.
     for (const arg of cmd.argv) {
       if (arg.includes('\n') && NEWLINE_HASH_RE.test(arg)) {
         return {

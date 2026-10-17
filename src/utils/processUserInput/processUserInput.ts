@@ -243,7 +243,6 @@ export async function processUserInput({
       )
     }
 
-    // TODO: Clean this up
     if (hookResult.message) {
       switch (hookResult.message.attachment.type) {
         case 'hook_success':

@@ -87,11 +87,9 @@ export async function getBridgeDisabledReason(): Promise<string | null> {
   return 'Remote Control is not available in this build.'
 }
 
-// try/catch: main.tsx:5698 calls isBridgeEnabled() while defining the Commander
-// program, before enableConfigs() runs. isClaudeAISubscriber() → getGlobalConfig()
-// throws "Config accessed before allowed" there. Pre-config, no OAuth token can
-// exist anyway — false is correct. Same swallow getFeatureValue_CACHED_MAY_BE_STALE
-// already does at growthbook.ts:775-780.
+// isBridgeEnabled() runs during Commander setup, before enableConfigs().
+// isClaudeAISubscriber() can throw on pre-init config access; false is correct
+// before OAuth initialization. Cached GrowthBook reads use the same fallback.
 function isClaudeAISubscriber(): boolean {
   try {
     return authModule.isClaudeAISubscriber()

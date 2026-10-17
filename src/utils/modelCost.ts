@@ -58,12 +58,9 @@ export const COST_TIER_3_15 = {
 
 // Pricing tier for Sonnet 5: $2 input / $10 output per Mtok.
 //
-// This is Sonnet 5's standing rate, NOT a promotion. Upstream's baked model
-// catalog maps `claude-sonnet-5` to a plain `tier_2_10` entry with no expiry
-// field, and the upstream bundle contains no date-gated pricing path at all.
-// An earlier reading of these numbers as introductory added a 2026-09-01 cliff
-// back to $3/$15, which would have started over-reporting Sonnet 5 spend by 50%
-// in /cost, the stats cache and the model picker. Don't reintroduce it.
+// Standing Sonnet 5 rate, not a promotion. Upstream's catalog has no expiry
+// or date-gated pricing path; do not add a cliff back to $3/$15, which would
+// over-report spend.
 export const COST_TIER_2_10 = {
   inputTokens: 2,
   outputTokens: 10,

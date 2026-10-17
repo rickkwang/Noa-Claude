@@ -1722,8 +1722,8 @@ async function run(): Promise<CommanderCommand> {
     // Parallelize setup() with commands+agents loading. setup()'s ~28ms is
     // mostly startUdsMessaging (socket bind, ~20ms) — not disk-bound, so it
     // doesn't contend with getCommands' file reads. Gated on !worktreeEnabled
-    // since --worktree makes setup() process.chdir() (setup.ts:203), and
-    // commands/agents need the post-chdir cwd.
+    // since --worktree makes setup() process.chdir(), and commands/agents need
+    // the post-chdir cwd.
     const preSetupCwd = getCwd();
     // Register bundled skills/plugins before kicking getCommands() — they're
     // pure in-memory array pushes (<1ms, zero I/O) that getBundledSkills()
@@ -1765,8 +1765,8 @@ async function run(): Promise<CommanderCommand> {
 
       // Spawn git status/log/branch now so the subprocess execution overlaps
       // with the getCommands await below and startDeferredPrefetches. After
-      // setup() so cwd is final (setup.ts:254 may process.chdir(worktreePath)
-      // for --worktree) and after the applyConfigEnvironmentVariables above
+      // setup() so cwd is final (it may process.chdir(worktreePath) for
+      // --worktree) and after the applyConfigEnvironmentVariables above
       // so PATH/GIT_DIR/GIT_WORK_TREE from all sources (trusted + project)
       // are applied. getSystemContext is memoized; the
       // prefetchSystemContextIfSafe call in startDeferredPrefetches becomes
@@ -1781,8 +1781,8 @@ async function run(): Promise<CommanderCommand> {
       // startDeferredPrefetches becomes a memoize cache-hit.
       void getUserContext();
       // Kick ensureModelStringsInitialized now — for Bedrock this triggers
-      // a 100-200ms profile fetch that was awaited serially at
-      // print.ts:739. updateBedrockModelStrings is sequential()-wrapped so
+      // a 100-200ms profile fetch that would otherwise be awaited serially by
+      // print mode. updateBedrockModelStrings is sequential()-wrapped so
       // the await joins the in-flight fetch. Non-Bedrock is a sync
       // early-return (zero-cost).
       void ensureModelStringsInitialized();

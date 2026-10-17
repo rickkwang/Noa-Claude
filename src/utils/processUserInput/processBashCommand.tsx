@@ -46,7 +46,6 @@ export async function processBashCommand(inputString: string, precedingInputBloc
   try {
     const bashModeContext: ProcessUserInputContext = {
       ...context,
-      // TODO: Clean up this hack
       setToolJSX: _ => {
         jsx = _?.jsx;
       }

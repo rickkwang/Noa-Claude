@@ -107,13 +107,11 @@ export function useNotifications(): {
     // Immediate notifications cut the line — except while the diff panel holds
     // the row, where they queue marked `heldDuringDiffPanel` instead.
     if (notif.priority === 'immediate' && !store.getState().diffPanelVisible) {
-      // Clear any existing timeout since we're showing a new immediate notification
       if (currentTimeoutId) {
         clearTimeout(currentTimeoutId);
         currentTimeoutId = null;
       }
 
-      // Set up timeout for the immediate notification
       currentTimeoutId = setTimeout((setAppState, notif, processQueue) => {
         currentTimeoutId = null;
         setAppState(prev => {
@@ -132,7 +130,6 @@ export function useNotifications(): {
         processQueue();
       }, notif.timeoutMs ?? DEFAULT_TIMEOUT_MS, setAppState, notif, processQueue);
 
-      // Show the immediate notification right away
       setAppState(prev => ({
         ...prev,
         notifications: {
@@ -140,7 +137,7 @@ export function useNotifications(): {
           queue: [...(prev.notifications.current ? [prev.notifications.current] : []), ...prev.notifications.queue].filter(_ => survivesPreemption(_, notif))
         }
       }));
-      return; // IMPORTANT: Exit addNotification for immediate notifications
+      return;
     }
 
     const queued = notif.priority === 'immediate' ? {
@@ -148,12 +145,9 @@ export function useNotifications(): {
       heldDuringDiffPanel: true
     } : notif;
     setAppState(prev => {
-      // Check if we can fold into an existing notification with the same key
       if (queued.fold) {
-        // Fold into current notification if keys match
         if (prev.notifications.current?.key === queued.key) {
           const folded = queued.fold(prev.notifications.current, queued);
-          // Reset timeout for the folded notification
           if (currentTimeoutId) {
             clearTimeout(currentTimeoutId);
             currentTimeoutId = null;

@@ -18,9 +18,9 @@ import { skillChangeDetector } from '../utils/skills/skillChangeDetector.js'
  * 2. GrowthBook init/refresh — memo-only clear, since only `isEnabled()`
  *    predicates may have changed. Handles commands like /btw whose gate
  *    reads a flag that isn't in the disk cache yet on first session after
- *    a flag rename: getCommands() runs before GB init (main.tsx:2855 vs
- *    showSetupScreens at :3106), so the memoized list is baked with the
- *    default. Once init populates remoteEvalFeatureValues, re-filter.
+ *    a flag rename: getCommands() can run before GB init, so the memoized
+ *    list is baked with the default. Once init populates
+ *    remoteEvalFeatureValues, re-filter.
  */
 export function useSkillsChange(
   cwd: string | undefined,

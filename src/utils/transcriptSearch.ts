@@ -8,9 +8,9 @@ import {
 
 const SYSTEM_REMINDER_CLOSE = '</system-reminder>'
 
-// UserTextMessage.tsx:~84 replaces these with <InterruptedByUser />
-// (renders 'Interrupted · /issue...'). Raw text never appears on screen;
-// searching it yields phantom matches — /terr → in[terr]upted.
+// UserTextMessage replaces these with <InterruptedByUser /> (renders
+// 'Interrupted · /issue...'). Raw text never appears on screen; searching it
+// yields phantom matches — /terr → in[terr]upted.
 const RENDERED_AS_SENTINEL = new Set([
   INTERRUPT_MESSAGE,
   INTERRUPT_MESSAGE_FOR_TOOL_USE,
@@ -90,8 +90,8 @@ function computeSearchText(msg: RenderableMessage): string {
         raw = msg.attachment.memories.map(m => m.content).join('\n')
       } else if (
         // Mid-turn prompts — queued while an agent is running. Render via
-        // UserTextMessage (AttachmentMessage.tsx:~348). stickyPromptText
-        // (VirtualMessageList.tsx:~103) has the same guards — mirror here.
+        // UserTextMessage in AttachmentMessage. stickyPromptText in
+        // VirtualMessageList has the same guards — mirror here.
         msg.attachment.type === 'queued_command' &&
         msg.attachment.commandMode !== 'task-notification' &&
         !msg.attachment.isMeta

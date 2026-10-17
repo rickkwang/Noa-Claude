@@ -2456,12 +2456,12 @@ function appendTrailingDescendants(
  * Post-pass for buildConversationChain: recover sibling assistant blocks and
  * tool_results that the single-parent walk orphaned.
  *
- * Streaming (claude.ts:~2024) emits one AssistantMessage per content_block_stop
- * — N parallel tool_uses → N messages, distinct uuid, same message.id. Each
- * tool_result's sourceToolAssistantUUID points to its own one-block assistant,
- * so insertMessageChain's override (line ~894) writes each TR's parentUuid to a
- * DIFFERENT assistant. The topology is a DAG; the walk above is a linked-list
- * traversal and keeps only one branch.
+ * Streaming emits one AssistantMessage per content_block_stop — N parallel
+ * tool_uses → N messages, distinct uuid, same message.id. Each tool_result's
+ * sourceToolAssistantUUID points to its own one-block assistant, so
+ * insertMessageChain's override writes each TR's parentUuid to a DIFFERENT
+ * assistant. The topology is a DAG; the walk above is a linked-list traversal
+ * and keeps only one branch.
  *
  * Two loss modes observed in production (both fixed here):
  *   1. Sibling assistant orphaned: walk goes prev→asstA→TR_A→next, drops asstB

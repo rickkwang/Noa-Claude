@@ -76,7 +76,6 @@ export async function setup(
     process.exit(1)
   }
 
-  // Set custom session ID if provided
   if (customSessionId) {
     switchSession(asSessionId(customSessionId))
   }
@@ -128,7 +127,6 @@ export async function setup(
       }
     }
 
-    // Check and restore Terminal.app backup if setup was interrupted
     try {
       const restoredTerminalBackup = await checkAndRestoreTerminalBackup()
       if (restoredTerminalBackup.status === 'restored') {
@@ -163,11 +161,9 @@ export async function setup(
     duration_ms: Date.now() - hooksStart,
   })
 
-  // Initialize FileChanged hook watcher — sync, reads hook config snapshot
   initializeFileChangedWatcher(cwd)
 
-  // Handle worktree creation if requested
-  // IMPORTANT: this must be called befiore getCommands(), otherwise /eject won't be available.
+  // Worktree creation must run before getCommands() so /eject is available.
   if (worktreeEnabled) {
     // Mirrors bridgeMain.ts: hook-configured sessions can proceed without git
     // so createWorktreeForSession() can delegate to the hook (non-git VCS).
@@ -240,7 +236,6 @@ export async function setup(
 
     logEvent('tengu_worktree_created', { tmux_enabled: tmuxEnabled })
 
-    // Create tmux session for the worktree if enabled
     if (tmuxEnabled && tmuxSessionName) {
       const tmuxResult = await createTmuxSessionForWorktree(
         tmuxSessionName,

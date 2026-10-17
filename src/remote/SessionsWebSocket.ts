@@ -75,10 +75,7 @@ type WebSocketLike = {
 /**
  * WebSocket client for connecting to CCR sessions via /v1/sessions/ws/{id}/subscribe
  *
- * Protocol:
- * 1. Connect to wss://api.anthropic.com/v1/sessions/ws/{sessionId}/subscribe?organization_uuid=...
- * 2. Send auth message: { type: 'auth', credential: { type: 'oauth', token: '...' } }
- * 3. Receive SDKMessage stream from the session
+ * Connects with an Authorization Bearer header and receives the session's SDKMessage stream.
  */
 export class SessionsWebSocket {
   private ws: WebSocketLike | null = null

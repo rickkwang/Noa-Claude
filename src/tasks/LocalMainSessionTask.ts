@@ -111,8 +111,7 @@ export function registerMainSessionTask(
     getAgentTranscriptPath(asAgentId(taskId)),
   )
 
-  // Use the existing abort controller if provided (important for backgrounding an active query)
-  // This ensures that aborting the task will abort the actual query
+  // Reuse the active query's controller so task cancellation aborts that query.
   const abortController = existingAbortController ?? createAbortController()
 
   const unregisterCleanup = registerCleanup(async () => {
@@ -123,10 +122,8 @@ export function registerMainSessionTask(
     })
   })
 
-  // Use provided agent definition or default
   const selectedAgent = mainThreadAgentDefinition ?? DEFAULT_MAIN_SESSION_AGENT
 
-  // Create task state - already backgrounded since this is called when user backgrounds
   const taskState: LocalMainSessionTaskState = {
     ...createTaskStateBase(taskId, 'local_agent', description),
     type: 'local_agent',
@@ -140,7 +137,7 @@ export function registerMainSessionTask(
     retrieved: false,
     lastReportedToolCount: 0,
     lastReportedTokenCount: 0,
-    isBackgrounded: true, // Already backgrounded
+    isBackgrounded: true,
     pendingMessages: [],
     retain: false,
     diskLoaded: false,
@@ -151,7 +148,6 @@ export function registerMainSessionTask(
   )
   registerTask(taskState, setAppState)
 
-  // Verify task was registered by checking state
   setAppState(prev => {
     const hasTask = taskId in prev.tasks
     logForDebugging(

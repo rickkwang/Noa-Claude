@@ -194,7 +194,6 @@ export class DiagnosticTrackingService {
       return []
     }
 
-    // Check if we have any files with diagnostic changes
     let allDiagnosticFiles: DiagnosticFile[] = []
     try {
       const result = await callIdeRpc(
@@ -227,16 +226,13 @@ export class DiagnosticTrackingService {
 
     const newDiagnosticFiles: DiagnosticFile[] = []
 
-    // Process file:// protocol diagnostics
     for (const file of diagnosticsForFileUrisWithBaselines) {
       const normalizedPath = this.normalizeFileUri(file.uri)
       const baselineDiagnostics = this.baseline.get(normalizedPath) || []
 
-      // Get the _claude_fs_right file if it exists
       const claudeFsRightFile =
         diagnosticsForClaudeFsRightUrisWithBaselinesMap.get(normalizedPath)
 
-      // Determine which file to use based on the state of right file diagnostics
       let fileToUse = file
 
       if (claudeFsRightFile) {
@@ -256,14 +252,12 @@ export class DiagnosticTrackingService {
           fileToUse = claudeFsRightFile
         }
 
-        // Update our tracking of right file diagnostics
         this.rightFileDiagnosticsState.set(
           normalizedPath,
           claudeFsRightFile.diagnostics,
         )
       }
 
-      // Find new diagnostics that aren't in the baseline
       const newDiagnostics = fileToUse.diagnostics.filter(
         d => !baselineDiagnostics.some(b => this.areDiagnosticsEqual(d, b)),
       )
@@ -275,7 +269,6 @@ export class DiagnosticTrackingService {
         })
       }
 
-      // Update baseline with current diagnostics
       this.baseline.set(normalizedPath, fileToUse.diagnostics)
     }
 
@@ -309,7 +302,6 @@ export class DiagnosticTrackingService {
   private areDiagnosticArraysEqual(a: Diagnostic[], b: Diagnostic[]): boolean {
     if (a.length !== b.length) return false
 
-    // Check if every diagnostic in 'a' exists in 'b'
     return (
       a.every(diagA =>
         b.some(diagB => this.areDiagnosticsEqual(diagA, diagB)),
@@ -319,25 +311,18 @@ export class DiagnosticTrackingService {
   }
 
   /**
-   * Handle the start of a new query. This method:
-   * - Initializes the diagnostic tracker if not already initialized
-   * - Resets the tracker if already initialized (for new query loops)
-   * - Automatically finds the IDE client from the provided clients list
+   * Initializes with the connected IDE client on first use; resets state on later queries.
    *
    * @param clients Array of MCP clients that may include an IDE client
-   * @param shouldQuery Whether a query is actually being made (not just a command)
    */
   async handleQueryStart(clients: MCPServerConnection[]): Promise<void> {
-    // Only proceed if we should query and have clients
     if (!this.initialized) {
-      // Find the connected IDE client
       const connectedIdeClient = getConnectedIdeClient(clients)
 
       if (connectedIdeClient) {
         this.initialize(connectedIdeClient)
       }
     } else {
-      // Reset diagnostic tracking for new query loops
       this.reset()
     }
   }

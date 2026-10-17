@@ -628,7 +628,7 @@ export function isUnsafeCompoundCommand_DEPRECATED(command: string): boolean {
  * Extracts output redirections from a command if present.
  * Only handles simple string targets (no variables or command substitutions).
  *
- * TODO(inigo): Refactor and simplify once we have AST parsing
+ * TODO: Use AST parsing to simplify this extraction.
  *
  * @returns Object containing the command without redirections and the target paths if found
  */

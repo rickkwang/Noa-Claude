@@ -12,7 +12,6 @@ import {
   getActiveProviderMaxOutputTokens,
 } from './model/providerModels.js'
 
-// Model context window size (200k tokens for all models right now)
 export const MODEL_CONTEXT_WINDOW_DEFAULT = 200_000
 
 // Fallback context window for unknown OpenAI-compatible models (128k).

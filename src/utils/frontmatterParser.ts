@@ -240,11 +240,9 @@ export function splitPathInFrontmatter(input: string | string[]): string[] {
  * expandBraces("{a,b}/{c,d}") // returns ["a/c", "a/d", "b/c", "b/d"]
  */
 function expandBraces(pattern: string): string[] {
-  // Find the first brace group
   const braceMatch = pattern.match(/^([^{]*)\{([^}]+)\}(.*)$/)
 
   if (!braceMatch) {
-    // No braces found, return pattern as-is
     return [pattern]
   }
 
@@ -252,14 +250,11 @@ function expandBraces(pattern: string): string[] {
   const alternatives = braceMatch[2] || ''
   const suffix = braceMatch[3] || ''
 
-  // Split alternatives by comma and expand each one
   const parts = alternatives.split(',').map(alt => alt.trim())
 
-  // Recursively expand remaining braces in suffix
   const expanded: string[] = []
   for (const part of parts) {
     const combined = prefix + part + suffix
-    // Recursively handle additional brace groups
     const furtherExpanded = expandBraces(combined)
     expanded.push(...furtherExpanded)
   }

@@ -36,14 +36,12 @@ export function ExportDialog({
     columns
   } = useTerminalSize();
 
-  // Handle going back from filename input to option selection
   const handleGoBack = useCallback(() => {
     setShowFilenameInput(false);
     setSelectedOption(null);
   }, []);
   const handleSelectOption = async (value: string): Promise<void> => {
     if (value === 'clipboard') {
-      // Copy to clipboard immediately
       const raw = await setClipboard(content);
       if (raw) process.stdout.write(raw);
       onDone({
@@ -94,7 +92,6 @@ export function ExportDialog({
     description: 'Save the conversation to a file in the current directory'
   }];
 
-  // Custom input guide that changes based on dialog state
   function renderInputGuide(exitState: ExitState): React.ReactNode {
     if (showFilenameInput) {
       return <Byline>

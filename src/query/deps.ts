@@ -16,9 +16,6 @@ import { handleStopHooks } from './stopHooks.js'
 // the production factory — tests that import this file for typing are
 // already importing query.ts (which imports everything), so there's no
 // new module-graph cost.
-//
-// Scope is intentionally narrow (4 deps) to prove the pattern. Followup
-// PRs can add runTools, handleStopHooks, logEvent, queue ops, etc.
 export type QueryDeps = {
   // -- model
   callModel: typeof queryModelWithStreaming
