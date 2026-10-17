@@ -84,7 +84,32 @@ export function generateProgressiveArgumentHint(
 }
 
 /**
+ * Sentinel characters used while substituting. \uFFFF temporarily stands in
+ * for a literal `$` inside an inserted value; \uFFFE wraps the value so it
+ * can be removed again after all passes complete.
+ */
+const DOLLAR_SENTINEL = '\uFFFF'
+const VALUE_WRAP = '\uFFFE'
+
+function neutralizeSentinels(value: string): string {
+  return value
+    .replaceAll(DOLLAR_SENTINEL, '\uFFFD')
+    .replaceAll(VALUE_WRAP, '\uFFFD')
+}
+
+/** Mask a value for insertion: it must not be scanned by later passes. */
+function formatInsertedValue(value: string): string {
+  const masked = neutralizeSentinels(value).replaceAll('$', DOLLAR_SENTINEL)
+  return VALUE_WRAP + masked + VALUE_WRAP
+}
+
+/**
  * Substitute $ARGUMENTS placeholders in content with actual argument values.
+ *
+ * Inserted values are masked so their `$` can never be re-read as a
+ * placeholder by a later substitution pass (e.g. an argument value of
+ * `$ARGUMENTS` or `$1` stays literal). \uFFFF marks a masked dollar and
+ * \uFFFE wraps each inserted value; both are restored/stripped at the end.
  *
  * @param content - The content containing placeholders
  * @param args - The raw arguments string (may be undefined/null)
@@ -104,8 +129,11 @@ export function substituteArguments(
     return content
   }
 
-  const parsedArgs = parseArguments(args)
+  // The template must not be able to spoof the sentinels used below.
+  content = neutralizeSentinels(content)
   const originalContent = content
+
+  const parsedArgs = parseArguments(args)
 
   // Replace named arguments (e.g., $foo, $bar) with their values
   // Named arguments map to positions: argumentNames[0] -> parsedArgs[0], etc.
@@ -118,30 +146,30 @@ export function substituteArguments(
     const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     content = content.replace(
       new RegExp(`\\$${escapedName}(?![\\[\\w])`, 'g'),
-      parsedArgs[i] ?? '',
+      () => formatInsertedValue(parsedArgs[i] ?? ''),
     )
   }
 
   // Replace indexed arguments ($ARGUMENTS[0], $ARGUMENTS[1], etc.)
   content = content.replace(/\$ARGUMENTS\[(\d+)\]/g, (_, indexStr: string) => {
     const index = parseInt(indexStr, 10)
-    return parsedArgs[index] ?? ''
+    return formatInsertedValue(parsedArgs[index] ?? '')
   })
 
   // Replace shorthand indexed arguments ($0, $1, etc.)
   content = content.replace(/\$(\d+)(?!\w)/g, (_, indexStr: string) => {
     const index = parseInt(indexStr, 10)
-    return parsedArgs[index] ?? ''
+    return formatInsertedValue(parsedArgs[index] ?? '')
   })
 
   // Replace $ARGUMENTS with the full arguments string
-  content = content.replaceAll('$ARGUMENTS', args)
+  content = content.replaceAll('$ARGUMENTS', () => formatInsertedValue(args))
 
   // If no placeholders were found and appendIfNoPlaceholder is true, append
   // But only if args is non-empty (empty string means command invoked with no args)
   if (content === originalContent && appendIfNoPlaceholder && args) {
-    content = content + `\n\nARGUMENTS: ${args}`
+    content = content + `\n\nARGUMENTS: ${formatInsertedValue(args)}`
   }
 
-  return content
+  return content.replaceAll(DOLLAR_SENTINEL, '$').replaceAll(VALUE_WRAP, '')
 }

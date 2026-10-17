@@ -2,6 +2,7 @@ import { feature } from 'bun:bundle'
 import { APIUserAbortError } from '@anthropic-ai/sdk'
 import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import {
+  getMcpPrefix,
   getToolNameForPermissionCheck,
   mcpInfoFromString,
 } from '../../services/mcp/mcpStringUtils.js'
@@ -89,6 +90,7 @@ import {
 } from './classifierQueue.js'
 import { isInProtectedNamespace } from '../envUtils.js'
 import { executePermissionRequestHooks } from '../hooks.js'
+import { validateHookUpdatedInput } from '../../services/tools/hookUpdatedInput.js'
 import {
   AUTO_REJECT_MESSAGE,
   buildClassifierRefusalMessage,
@@ -264,10 +266,33 @@ function toolMatchesRule(
   // MCP server-level permission: rule "mcp__server1" matches tool "mcp__server1__tool1"
   // Also supports wildcard: rule "mcp__server1__*" matches all tools from server1
   const ruleInfo = mcpInfoFromString(rule.ruleValue.toolName)
-  const toolInfo = mcpInfoFromString(nameForRuleMatch)
+  if (ruleInfo === null) {
+    return false
+  }
 
+  // Derive the server-level rule text from the tool's authoritative server
+  // identity. Parsing the rule and the tool name independently truncates
+  // server names that contain "__" and makes a rule for one server match a
+  // tool from a prefix-overlapping server (e.g. "foo" vs "foo__bar").
+  const serverName =
+    tool.mcpInfo?.serverName ??
+    mcpInfoFromString(nameForRuleMatch)?.serverName
+  if (serverName !== undefined) {
+    const prefix = getMcpPrefix(serverName)
+    if (
+      rule.ruleValue.toolName === `${prefix}*` ||
+      rule.ruleValue.toolName === prefix.slice(0, -2)
+    ) {
+      return true
+    }
+  }
+
+  if (tool.mcpInfo !== undefined) {
+    return false
+  }
+
+  const toolInfo = mcpInfoFromString(nameForRuleMatch)
   return (
-    ruleInfo !== null &&
     toolInfo !== null &&
     (ruleInfo.toolName === undefined || ruleInfo.toolName === '*') &&
     ruleInfo.serverName === toolInfo.serverName
@@ -426,7 +451,30 @@ async function runPermissionRequestHooksForHeadlessAgent(
       }
       const decision = hookResult.permissionRequestResult
       if (decision.behavior === 'allow') {
-        const finalInput = decision.updatedInput ?? input
+        let finalInput = decision.updatedInput ?? input
+        if (decision.updatedInput !== undefined) {
+          // The hook rewrote the input after the model's input was validated;
+          // re-check the rewrite and fail closed on a bad one.
+          const checked = await validateHookUpdatedInput(
+            tool,
+            decision.updatedInput,
+            input,
+            context,
+            'PermissionRequest',
+          )
+          if (!checked.ok) {
+            return {
+              behavior: 'deny',
+              message: checked.message,
+              decisionReason: {
+                type: 'hook',
+                hookName: 'PermissionRequest',
+                reason: checked.message,
+              },
+            }
+          }
+          finalInput = checked.input
+        }
         // Persist permission updates if provided
         if (decision.updatedPermissions?.length) {
           persistPermissionUpdates(decision.updatedPermissions)

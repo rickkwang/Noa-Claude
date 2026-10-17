@@ -30,6 +30,7 @@ import {
 import { checkRuleBasedPermissions } from '../../utils/permissions/permissions.js'
 import { formatError } from '../../utils/toolErrors.js'
 import { isMcpTool } from '../mcp/utils.js'
+import { validateHookUpdatedInput } from './hookUpdatedInput.js'
 import type { McpServerType, MessageUpdateLazy } from './toolExecution.js'
 
 export type PostToolUseHooksResult<Output> =
@@ -514,6 +515,40 @@ export async function* runPreToolUseHooks(
             yield { type: 'stopReason', stopReason: result.stopReason }
           }
         }
+        // A hook may rewrite the input. Re-check the rewrite before it is
+        // applied; a schema-invalid or tool-refused replacement denies the
+        // call instead of running the tool on unchecked input.
+        let hookUpdatedInput = result.updatedInput
+        if (
+          hookUpdatedInput !== undefined &&
+          result.permissionBehavior !== 'deny'
+        ) {
+          const checked = await validateHookUpdatedInput(
+            tool,
+            hookUpdatedInput,
+            processedInput,
+            toolUseContext,
+            'PreToolUse',
+          )
+          if (!checked.ok) {
+            yield {
+              type: 'hookPermissionResult',
+              hookPermissionResult: {
+                behavior: 'deny',
+                message: checked.message,
+                decisionReason: {
+                  type: 'hook',
+                  hookName: `PreToolUse:${tool.name}`,
+                  hookSource: result.hookSource,
+                  reason: checked.message,
+                },
+              },
+            }
+            continue
+          }
+          hookUpdatedInput = checked.input
+        }
+
         // Check for hook-defined permission behavior
         if (result.permissionBehavior !== undefined) {
           logForDebugging(
@@ -530,7 +565,7 @@ export async function* runPreToolUseHooks(
               type: 'hookPermissionResult',
               hookPermissionResult: {
                 behavior: 'allow',
-                updatedInput: result.updatedInput,
+                updatedInput: hookUpdatedInput,
                 decisionReason,
               },
             }
@@ -539,7 +574,7 @@ export async function* runPreToolUseHooks(
               type: 'hookPermissionResult',
               hookPermissionResult: {
                 behavior: 'ask',
-                updatedInput: result.updatedInput,
+                updatedInput: hookUpdatedInput,
                 message:
                   result.hookPermissionDecisionReason ||
                   `Hook PreToolUse:${tool.name} ${getRuleBehaviorDescription(result.permissionBehavior)} this tool`,
@@ -563,10 +598,10 @@ export async function* runPreToolUseHooks(
 
         // Yield updatedInput for passthrough case (no permission decision)
         // This allows hooks to modify input while letting normal permission flow continue
-        if (result.updatedInput && result.permissionBehavior === undefined) {
+        if (hookUpdatedInput && result.permissionBehavior === undefined) {
           yield {
             type: 'hookUpdatedInput',
-            updatedInput: result.updatedInput,
+            updatedInput: hookUpdatedInput,
           }
         }
 
