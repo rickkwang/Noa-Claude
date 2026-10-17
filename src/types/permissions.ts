@@ -390,16 +390,16 @@ export type YoloClassifierResult = {
    */
   stage2Failed?: boolean
   /**
-   * How a non-verdict response failed. 'unparseable' is a malformed answer and
-   * is retried within the stage deadline; 'policy_refusal' is the API's own
-   * safety safeguard declining to answer at all, which no retry fixes.
-   */
-  /**
    * Severity-protocol scores (0-100) of the stage(s) that produced one; absent
    * under the <block> protocol. Shows how far a verdict sat from its threshold.
    */
   stage1Severity?: number
   stage2Severity?: number
+  /**
+   * How a non-verdict response failed. 'unparseable' is a malformed answer and
+   * is retried within the stage deadline; 'policy_refusal' is the API's own
+   * safety safeguard declining to answer at all, which no retry fixes.
+   */
   failureMode?: 'unparseable' | 'policy_refusal'
   /**
    * The API safeguard refused the classifier request itself — a check separate

@@ -6,7 +6,7 @@ const uuidRegex =
 
 /**
  * Validate uuid
- * @param maybeUUID The value to be checked if it is a uuid
+ * @param maybeUuid The value to be checked if it is a uuid
  * @returns string as UUID or null if it is not valid
  */
 export function validateUuid(maybeUuid: unknown): UUID | null {

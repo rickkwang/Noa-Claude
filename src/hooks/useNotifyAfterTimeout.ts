@@ -27,14 +27,10 @@ function shouldNotify(threshold: number): boolean {
 // the main 'readable' listener and cause dropped input characters.
 
 /**
- * Hook that manages desktop notifications after a timeout period.
- *
- * Shows a notification in two cases:
- * 1. Immediately if the app has been idle for longer than the threshold
- * 2. After the specified timeout if the user doesn't interact within that time
+ * Notifies once when the app remains idle past the interaction threshold.
  *
  * @param message - The notification message to display
- * @param timeout - The timeout in milliseconds (defaults to 6000ms)
+ * @param notificationType - The notification type to send
  */
 export function useNotifyAfterTimeout(
   message: string,

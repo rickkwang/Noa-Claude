@@ -101,15 +101,13 @@ function extractLspInfoFromManifest(
 }
 
 /**
- * Extract LSP info from a server config record (inline object format)
- */
-/**
  * Type guard to check if a value is a record object
  */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
+/** Extracts LSP info from an inline server config record. */
 function extractFromServerConfigRecord(
   serverConfigs: Record<string, unknown>,
 ): LspInfo | null {

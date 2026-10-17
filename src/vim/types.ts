@@ -108,16 +108,16 @@ export type PersistentState = {
   registerIsLinewise: boolean
 }
 
-/**
- * Recorded change for dot-repeat.
- * Captures everything needed to replay a command.
- */
 /** Text typed in the insert mode a change opened (see changeToExtend). */
 type InsertTail = { insertText?: string }
 
 /** The key that entered insert mode; `.` re-enters the same way (A → line end). */
 export type InsertEntry = 'i' | 'I' | 'a' | 'A'
 
+/**
+ * Recorded change for dot-repeat.
+ * Captures everything needed to replay a command.
+ */
 export type RecordedChange =
   | { type: 'insert'; text: string; entry?: InsertEntry }
   | ({

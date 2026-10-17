@@ -386,7 +386,6 @@ export async function findBackgroundHolder(
   )
 }
 
-/** Why `--continue` / `--resume <id>` refuses a conversation a background session holds. */
 /**
  * Tag the resume picker's rows whose conversation a live background session
  * is running (`bg:<id>`): resuming one here would put two writers on it.
@@ -406,6 +405,7 @@ export async function markBackgroundHeld<T extends { sessionId?: string; message
   return logs
 }
 
+/** Why `--continue` / `--resume <id>` refuses a conversation a background session holds. */
 export function heldByBackgroundMessage(job: Job, via: 'continue' | 'resume'): string {
   return via === 'continue'
     ? `Your most recent conversation is running in the background (session ${job.sessionId}). Use \`noa agents\` to find and attach to it, or \`noa --resume\` to pick another session.`

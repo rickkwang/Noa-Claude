@@ -482,17 +482,6 @@ async function cachedMicrocompactPath(
 }
 
 /**
- * Time-based microcompact: when the gap since the last main-loop assistant
- * message exceeds the configured threshold, content-clear all but the most
- * recent N compactable tool results.
- *
- * Returns null when the trigger doesn't fire (disabled, wrong source, gap
- * under threshold, nothing to clear) — caller falls through to other paths.
- *
- * Unlike cached MC, this mutates message content directly. The cache is cold,
- * so there's no cached prefix to preserve via cache_edits.
- */
-/**
  * Check whether the time-based trigger should fire for this request.
  *
  * Returns the measured gap (minutes since last assistant message) when the
@@ -871,6 +860,17 @@ function finalizeContentClear(querySource: QuerySource | undefined): void {
   }
 }
 
+/**
+ * Time-based microcompact: when the gap since the last main-loop assistant
+ * message exceeds the configured threshold, content-clear all but the most
+ * recent N compactable tool results.
+ *
+ * Returns null when the trigger doesn't fire (disabled, wrong source, gap
+ * under threshold, nothing to clear) — caller falls through to other paths.
+ *
+ * Unlike cached MC, this mutates message content directly. The cache is cold,
+ * so there's no cached prefix to preserve via cache_edits.
+ */
 async function maybeTimeBasedMicrocompact(
   messages: Message[],
   querySource: QuerySource | undefined,

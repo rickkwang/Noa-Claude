@@ -141,7 +141,7 @@ export function isSafeMode(): boolean {
 
 /**
  * Parses an array of environment variable strings into a key-value object
- * @param envVars Array of strings in KEY=VALUE format
+ * @param rawEnvArgs Array of strings in KEY=VALUE format
  * @returns Object with key-value pairs
  */
 export function parseEnvVars(

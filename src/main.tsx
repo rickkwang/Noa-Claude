@@ -3776,12 +3776,6 @@ async function run(): Promise<CommanderCommand> {
     await authLogout();
   });
 
-  /**
-   * Helper function to handle marketplace command errors consistently.
-   * Logs the error and exits the process with status 1.
-   * @param error The error that occurred
-   * @param action Description of the action that failed
-   */
   // Hidden flag on all plugin/marketplace subcommands to target cowork_plugins.
   const coworkOption = () => new Option('--cowork', 'Use cowork_plugins directory').hideHelp();
 

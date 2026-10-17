@@ -42,8 +42,8 @@ type Props = {
  * Wrap text to fit within a given width, returning array of lines.
  * ANSI-aware: preserves styling across line breaks.
  *
- * @param hard - If true, break words that exceed width (needed when columns
- *               are narrower than the longest word). Default false.
+ * @param options.hard - If true, break words that exceed width (needed when
+ *                       columns are narrower than the longest word). Default false.
  */
 function wrapText(text: string, width: number, options?: {
   hard?: boolean;

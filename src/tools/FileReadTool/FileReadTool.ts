@@ -134,15 +134,6 @@ function isBlockedDevicePath(filePath: string): boolean {
 const THIN_SPACE = String.fromCharCode(8239)
 
 /**
- * Resolves macOS screenshot paths that may have different space characters.
- * macOS uses either regular space or thin space (U+202F) before AM/PM in screenshot
- * filenames depending on the macOS version. This function tries the alternate space
- * character if the file doesn't exist with the given path.
- *
- * @param filePath - The normalized file path to resolve
- * @returns The path to the actual file on disk (may differ in space character)
- */
-/**
  * For macOS screenshot paths with AM/PM, the space before AM/PM may be a
  * regular space or a thin space depending on the macOS version.  Returns
  * the alternate path to try if the original doesn't exist, or undefined.

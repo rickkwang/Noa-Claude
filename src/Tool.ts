@@ -708,10 +708,6 @@ export type Tool<
   ): React.ReactNode
 
   /**
-   * Renders multiple parallel instances of this tool as a group.
-   * @returns React node to render, or null to fall back to individual rendering
-   */
-  /**
    * Renders multiple tool uses as a group (non-verbose mode only).
    * In verbose mode, individual tool uses render at their original positions.
    * @returns React node to render, or null to fall back to individual rendering

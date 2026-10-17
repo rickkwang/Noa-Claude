@@ -2126,13 +2126,6 @@ export function getDirectoriesToProcess(
   return { nestedDirs, cwdLevelDirs }
 }
 
-/**
- * Converts memory files to attachments, filtering out already-loaded files.
- *
- * @param memoryFiles The memory files to convert
- * @param toolUseContext The tool use context (for tracking loaded files)
- * @returns Array of nested memory attachments
- */
 function isInstructionsMemoryType(
   type: MemoryFileInfo['type'],
 ): type is InstructionsMemoryType {
@@ -2144,7 +2137,10 @@ function isInstructionsMemoryType(
   )
 }
 
-/** Exported for testing — regression guard for LRU-eviction re-injection. */
+/**
+ * Converts memory files to attachments, filtering out already-loaded files.
+ * Exported for testing as a regression guard for LRU-eviction re-injection.
+ */
 export function memoryFilesToAttachments(
   memoryFiles: MemoryFileInfo[],
   toolUseContext: ToolUseContext,
@@ -3448,15 +3444,6 @@ export async function* getAttachmentMessages(
 }
 
 /**
- * Generates a file attachment by reading a file with proper validation and truncation.
- * This is the core file reading logic shared between @-mentioned files and post-compact restoration.
- *
- * @param filename The absolute path to the file to read
- * @param toolUseContext The tool use context for calling FileReadTool
- * @param options Optional configuration for file reading
- * @returns A new_file attachment or null if the file couldn't be read
- */
-/**
  * Check if a PDF file should be represented as a lightweight reference
  * instead of being inlined. Returns a PDFReferenceAttachment for large PDFs
  * (more than PDF_AT_MENTION_INLINE_THRESHOLD pages), or null otherwise.
@@ -3503,6 +3490,7 @@ export async function tryGetPDFReference(
   return null
 }
 
+/** Reads and validates a file for @-mentions or post-compact restoration. */
 export async function generateFileAttachment(
   filename: string,
   toolUseContext: ToolUseContext,

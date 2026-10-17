@@ -374,7 +374,7 @@ export function resolveDeepestExistingAncestorSync(
  * This is important for security: a deny rule for /etc/passwd should block
  * access even if the file is actually at /private/etc/passwd (as on macOS).
  *
- * @param path - The path to check (will be converted to absolute)
+ * @param inputPath - The path to check (will be converted to absolute)
  * @returns An array of absolute paths to check permissions for
  */
 export function getPathsForPermissionCheck(inputPath: string): string[] {

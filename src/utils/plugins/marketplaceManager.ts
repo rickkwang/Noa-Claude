@@ -2204,14 +2204,6 @@ export const getMarketplace = memoize(
 )
 
 /**
- * Get plugin by ID from cache only (no network calls).
- * Returns null if marketplace cache is missing or corrupted.
- * Use this for startup paths that should never block on network.
- *
- * @param pluginId - The plugin ID in format "name@marketplace"
- * @returns The plugin entry or null if not found/cache missing
- */
-/**
  * Resolve a user-facing marketplace name to its canonical key in
  * known_marketplaces.json.
  *
@@ -2246,6 +2238,7 @@ function resolveCanonicalMarketplaceKey(
   return null
 }
 
+/** Gets a plugin by ID using only cached data; returns null on missing or corrupt cache. */
 export async function getPluginByIdCacheOnly(pluginId: string): Promise<{
   entry: PluginMarketplaceEntry
   marketplaceInstallLocation: string

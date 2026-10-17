@@ -156,12 +156,7 @@ export function parseToolPreset(preset: string): ToolPreset | null {
   return presetString as ToolPreset
 }
 
-/**
- * Get the list of tool names for a given preset
- * Filters out tools that are disabled via isEnabled() check
- * @param preset The preset name
- * @returns Array of tool names
- */
+/** Returns enabled tool names for the default preset. */
 export function getToolsForDefaultPreset(): string[] {
   const tools = getAllBaseTools()
   const isEnabled = tools.map(tool => tool.isEnabled())
@@ -169,12 +164,9 @@ export function getToolsForDefaultPreset(): string[] {
 }
 
 /**
- * Get the complete exhaustive list of all tools that could be available
- * in the current environment (respecting process.env flags).
- * This is the source of truth for ALL tools.
- */
-/**
- * NOTE: This MUST stay in sync with https://console.statsig.com/4aF3Ewatb6xPVpCwxb5nA3/dynamic_configs/claude_code_global_system_caching, in order to cache the system prompt across users.
+ * Returns every base tool available in the current environment.
+ * Keep in sync with https://console.statsig.com/4aF3Ewatb6xPVpCwxb5nA3/dynamic_configs/claude_code_global_system_caching
+ * to cache the system prompt across users.
  */
 export function getAllBaseTools(): Tools {
   // Several flag-gated tools are placeholder shells here (a bare class, or a

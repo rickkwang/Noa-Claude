@@ -223,11 +223,6 @@ function applyCurlySingleQuotes(str: string): string {
   return result.join('')
 }
 
-/**
- * Transform edits to ensure replace_all always has a boolean value
- * @param edits Array of edits with optional replace_all
- * @returns Array of edits with replace_all guaranteed to be boolean
- */
 export function applyEditToFile(
   originalContent: string,
   oldString: string,

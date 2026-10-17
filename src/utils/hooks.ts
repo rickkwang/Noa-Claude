@@ -1975,9 +1975,9 @@ export async function getMatchingHooks(
 }
 
 /**
- * Format a list of blocking errors from a PreTool hook's configured commands.
+ * Format a blocking error from a PreTool hook.
  * @param hookName The name of the hook (e.g., 'PreToolUse:Write', 'PreToolUse:Edit', 'PreToolUse:Bash')
- * @param blockingErrors Array of blocking errors from hooks
+ * @param blockingError The blocking error from the hook
  * @returns Formatted blocking message
  */
 export function getPreToolHookBlockingMessage(
@@ -1988,8 +1988,8 @@ export function getPreToolHookBlockingMessage(
 }
 
 /**
- * Format a list of blocking errors from a Stop hook's configured commands.
- * @param blockingErrors Array of blocking errors from hooks
+ * Format a blocking error from a Stop hook.
+ * @param blockingError The blocking error from the hook
  * @returns Formatted message to give feedback to the model
  */
 export function getStopHookMessage(blockingError: HookBlockingError): string {
@@ -2030,8 +2030,8 @@ export function getTaskCompletedHookMessage(
 }
 
 /**
- * Format a list of blocking errors from a UserPromptSubmit hook's configured commands.
- * @param blockingErrors Array of blocking errors from hooks
+ * Format a blocking error from a UserPromptSubmit hook.
+ * @param blockingError The blocking error from the hook
  * @returns Formatted blocking message
  */
 export function getUserPromptSubmitHookBlockingMessage(
@@ -3735,7 +3735,7 @@ export async function executeStopFailureHooks(
  * @param permissionMode permission mode from toolPermissionContext
  * @param signal AbortSignal to cancel hook execution
  * @param stopHookActive Whether this call is happening within another stop hook
- * @param isSubagent Whether the current execution context is a subagent
+ * @param subagentId Agent ID when executing SubagentStop hooks
  * @param messages Optional conversation history for prompt/function hooks
  * @returns Async generator that yields progress messages and blocking errors
  */

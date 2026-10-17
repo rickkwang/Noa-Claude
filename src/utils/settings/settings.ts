@@ -184,8 +184,7 @@ function handleFileSystemError(error: unknown, path: string): void {
 
 /**
  * Parses a settings file into a structured format
- * @param path The path to the permissions file
- * @param source The source of the settings (optional, for error reporting)
+ * @param path The path to the settings file
  * @returns Parsed settings data and validation errors
  */
 export function parseSettingsFile(path: string): {
@@ -1133,13 +1132,6 @@ export function getSettingsWithErrors(): SettingsWithErrors {
 }
 
 /**
- * Check if any raw settings file contains a specific key, regardless of validation.
- * This is useful for detecting user intent even when settings validation fails.
- * For example, if a user set cleanupPeriodDays but has validation errors elsewhere,
- * we can detect they explicitly configured cleanup and skip cleanup rather than
- * falling back to defaults.
- */
-/**
  * Returns true if any trusted settings source has accepted the bypass
  * permissions mode dialog. projectSettings is intentionally excluded —
  * a malicious project could otherwise auto-bypass the dialog (RCE risk).
@@ -1260,6 +1252,13 @@ export function getAutoModeConfig():
   return undefined
 }
 
+/**
+ * Check if any raw settings file contains a specific key, regardless of validation.
+ * This is useful for detecting user intent even when settings validation fails.
+ * For example, if a user set cleanupPeriodDays but has validation errors elsewhere,
+ * we can detect they explicitly configured cleanup and skip cleanup rather than
+ * falling back to defaults.
+ */
 export function rawSettingsContainsKey(key: string): boolean {
   for (const source of getEnabledSettingSources()) {
     // Skip policySettings - we only care about user-configured settings

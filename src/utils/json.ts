@@ -77,12 +77,6 @@ export function safeParseJSONC(json: string | null | undefined): unknown {
 }
 
 /**
- * Modify a jsonc string by adding a new item to an array, preserving comments and formatting.
- * @param content The jsonc string to modify
- * @param newItem The new item to add to the array
- * @returns The modified jsonc string
- */
-/**
  * Bun.JSONL.parseChunk if available, false otherwise.
  * Supports both strings and Buffers, minimizing memory usage and copies.
  * Also handles BOM stripping internally.
@@ -232,6 +226,12 @@ export async function readJSONLFile<T>(filePath: string): Promise<T[]> {
   return parseJSONL<T>(buf.subarray(0, totalRead))
 }
 
+/**
+ * Modify a jsonc string by adding a new item to an array, preserving comments and formatting.
+ * @param content The jsonc string to modify
+ * @param newItem The new item to add to the array
+ * @returns The modified jsonc string
+ */
 export function addItemToJSONCArray(content: string, newItem: unknown): string {
   try {
     // If the content is empty or whitespace, create a new JSON file

@@ -78,9 +78,6 @@ export type SettingsWithErrors = {
 }
 
 /**
- * Format a Zod validation error into human-readable validation errors
- */
-/**
  * Get the type string for an unknown value (for error messages)
  */
 function getReceivedType(value: unknown): string {
@@ -95,6 +92,7 @@ function extractReceivedFromMessage(msg: string): string | undefined {
   return match ? match[1] : undefined
 }
 
+/** Format a Zod validation error into human-readable validation errors. */
 export function formatZodError(
   error: ZodError,
   filePath: string,

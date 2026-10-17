@@ -175,7 +175,7 @@ export function parseChangelog(content: string): Record<string, string[]> {
  *
  * @param currentVersion - The current app version
  * @param previousVersion - The last version where release notes were seen (or null if first time)
- * @param readChangelog - Function to read the changelog (defaults to readChangelogFile)
+ * @param changelogContent - Changelog text (defaults to the stored changelog)
  * @returns Array of release notes to display
  */
 export function getRecentReleaseNotes(
@@ -226,7 +226,7 @@ export function getRecentReleaseNotes(
  * Gets all release notes as an array of [version, notes] arrays.
  * Versions are sorted with oldest first.
  *
- * @param readChangelog - Function to read the changelog (defaults to readChangelogFile)
+ * @param changelogContent - Changelog text (defaults to the stored changelog)
  * @returns Array of [version, notes[]] arrays
  */
 export function getAllReleaseNotes(

@@ -4616,16 +4616,6 @@ export async function loadAllProjectsMessageLogsProgressive(
 }
 
 /**
- * Loads message logs from all worktrees of the same git repository.
- * Falls back to loadMessageLogs if no worktrees provided.
- *
- * Uses pure filesystem metadata for fast loading.
- *
- * @param worktreePaths Array of worktree paths (from getWorktreePaths)
- * @param limit Optional limit on number of session files to load per project
- * @returns List of message logs sorted by date
- */
-/**
  * Result of loading session logs with progressive enrichment support.
  */
 export type SessionLogResult = {
@@ -4637,6 +4627,7 @@ export type SessionLogResult = {
   nextIndex: number
 }
 
+/** Loads session logs from all worktrees using filesystem metadata. */
 export async function loadSameRepoMessageLogs(
   worktreePaths: string[],
   limit?: number,
