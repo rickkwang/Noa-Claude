@@ -3,10 +3,16 @@ import { APIError } from '@anthropic-ai/sdk'
 import { logForDebugging } from '../../utils/debug.js'
 import { logError } from '../../utils/log.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
+import { getSessionId } from '../../bootstrap/state.js'
 import {
   classifyOpenAICompatibleError,
   resolveMaxTokensParam,
 } from './openaiCompatibleHelpers.js';
+import {
+  buildResponsesBody,
+  collectAnthropicMessage,
+  responsesStreamToAnthropic,
+} from './openaiResponses.js'
 
 type OpenAIMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool'
@@ -645,8 +651,12 @@ class OpenAIShimStream {
   controller = new AbortController()
   private generator: AsyncGenerator<Record<string, unknown>>
 
-  constructor(response: Response, model: string) {
-    this.generator = openaiStreamToAnthropic(
+  constructor(
+    response: Response,
+    model: string,
+    convert: typeof openaiStreamToAnthropic = openaiStreamToAnthropic,
+  ) {
+    this.generator = convert(
       response,
       model,
       this.controller.signal,
@@ -665,6 +675,8 @@ class OpenAIShimMessages {
     defaultHeaders: Record<string, string>
     timeoutMs: number
     fetchOverride?: typeof fetch
+    // Send /responses instead of /chat/completions (Sign in with ChatGPT).
+    responsesApi?: boolean
   }) {}
 
   create(
@@ -685,6 +697,28 @@ class OpenAIShimMessages {
     options?: { signal?: AbortSignal; headers?: Record<string, string>; timeout?: number },
   ) {
     const promise = (async () => {
+      if (this.config.responsesApi) {
+        const response = await this._post(
+          '/responses',
+          buildResponsesBody({
+            model: params.model,
+            instructions: convertSystemPrompt(params.system),
+            messages: params.messages,
+            tools: params.tools ? convertTools(params.tools, false) : undefined,
+            toolChoice:
+              params.tool_choice !== undefined
+                ? convertToolChoice(params.tool_choice)
+                : undefined,
+            effort: (params.output_config as { effort?: unknown } | undefined)?.effort,
+            promptCacheKey: getSessionId(),
+          }),
+          options,
+        )
+        // The route only streams; non-streaming callers get the drained stream.
+        const stream = new OpenAIShimStream(response, params.model, responsesStreamToAnthropic)
+        return params.stream ? stream : await collectAnthropicMessage(stream)
+      }
+
       const response = await this._doRequest(params, options)
       if (params.stream) {
         return new OpenAIShimStream(response, params.model)
@@ -725,17 +759,6 @@ class OpenAIShimMessages {
     },
     options?: { signal?: AbortSignal; headers?: Record<string, string>; timeout?: number },
   ): Promise<Response> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...this.config.defaultHeaders,
-      ...(options?.headers ?? {}),
-    }
-
-    const apiKey = this.config.apiKey ?? process.env.OPENAI_API_KEY ?? ''
-    if (apiKey && !headers['x-goog-api-key']) {
-      headers.Authorization = `Bearer ${apiKey}`
-    }
-
     if (params.thinking !== undefined) {
       // Anthropic-style thinking has no portable OpenAI equivalent. Drop it
       // explicitly and log so callers see why extended reasoning isn't
@@ -816,8 +839,27 @@ class OpenAIShimMessages {
       ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
     }
 
+    return this._post('/chat/completions', body, options)
+  }
+
+  private async _post(
+    path: string,
+    body: Record<string, unknown>,
+    options?: { signal?: AbortSignal; headers?: Record<string, string>; timeout?: number },
+  ): Promise<Response> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...this.config.defaultHeaders,
+      ...(options?.headers ?? {}),
+    }
+
+    const apiKey = this.config.apiKey ?? process.env.OPENAI_API_KEY ?? ''
+    if (apiKey && !headers['x-goog-api-key']) {
+      headers.Authorization = `Bearer ${apiKey}`
+    }
+
     const baseURL = this.config.baseURL.replace(/\/+$/, '')
-    const chatCompletionsUrl = `${baseURL}/chat/completions`
+    const url = `${baseURL}${path}`
     const fetchImpl = this.config.fetchOverride ?? globalThis.fetch
     // Honor the timeout client.ts passes in — the Anthropic SDK client applies
     // its `timeout` option itself, but this shim must. Match SDK semantics
@@ -839,7 +881,7 @@ class OpenAIShimMessages {
       : timeoutController.signal
     let response: Response
     try {
-      response = await fetchImpl(chatCompletionsUrl, {
+      response = await fetchImpl(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
@@ -965,6 +1007,7 @@ export function createOpenAIShimClient(config: {
   defaultHeaders: Record<string, string>
   timeoutMs: number
   fetchOverride?: typeof fetch
+  responsesApi?: boolean
 }) {
   const messages = new OpenAIShimMessages(config)
   return {

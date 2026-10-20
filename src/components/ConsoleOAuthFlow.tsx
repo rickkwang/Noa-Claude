@@ -14,6 +14,7 @@ import { getOauthAccountInfo, validateForceLoginOrg } from '../utils/auth.js';
 import { isBareMode } from '../utils/envUtils.js';
 import { logError } from '../utils/log.js';
 import { discoverProviderModelNames } from '../utils/model/openaiModelDiscovery.js';
+import { loginWithChatGPT } from '../services/api/chatgptAuth.js';
 import { renderModelName } from '../utils/model/model.js';
 import {
   addProviderProfile,
@@ -109,6 +110,14 @@ const PLATFORM_PRESETS: PlatformPreset[] = [{
   profileName: 'GitHub Models',
   baseUrl: 'https://models.inference.ai.dev/api',
   model: 'gpt-4o'
+}, {
+  value: 'chatgpt',
+  name: 'ChatGPT',
+  description: 'ChatGPT plan via Sign in with ChatGPT (no API key)',
+  type: 'chatgpt',
+  profileName: 'ChatGPT',
+  baseUrl: 'https://api.openai.com/v1',
+  model: 'gpt-6.1-sol'
 }, {
   value: 'codex',
   name: 'OpenAI Codex',
@@ -280,7 +289,7 @@ type ProviderSetupWizardProps = {
   onComplete: (message: string) => void;
   onError: (message: string) => void;
 };
-type ProviderSetupStep = 'select' | 'name' | 'baseUrl' | 'apiKey' | 'modelSelect' | 'model';
+type ProviderSetupStep = 'select' | 'chatgptLogin' | 'name' | 'baseUrl' | 'apiKey' | 'modelSelect' | 'model';
 const PROVIDER_FORM_STEPS: Array<{
   key: Exclude<ProviderSetupStep, 'select' | 'modelSelect'>;
   label: string;
@@ -324,14 +333,23 @@ function ProviderSetupWizard({
   const [cursorOffset, setCursorOffset] = useState(0);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [chatgptAuthUrl, setChatgptAuthUrl] = useState<string | null>(null);
+  const chatgptLoginAbort = useRef<AbortController | null>(null);
   const inputColumns = Math.max(24, useTerminalSize().columns - 9);
   useEffect(() => {
     setCursorOffset(0);
   }, [step]);
+  // Frees the sign-in callback port if the dialog closes mid-login.
+  useEffect(() => () => chatgptLoginAbort.current?.abort(), []);
   const handleStepBack = () => {
     if (saving) return;
     if (step === 'select') {
       onCancel();
+      return;
+    }
+    if (step === 'chatgptLogin' || selectedPreset?.type === 'chatgpt' && (step === 'modelSelect' || step === 'model')) {
+      chatgptLoginAbort.current?.abort();
+      setStep('select');
       return;
     }
     if (step === 'name') {
@@ -377,7 +395,40 @@ function ProviderSetupWizard({
     setDiscoveryStatus(null);
     setInputValue(preset.profileName);
     setFormError(null);
+    if (preset.type === 'chatgpt') {
+      startChatGPTLogin(preset);
+      return;
+    }
     setStep('name');
+  };
+  // Browser sign-in replaces the name/baseUrl/apiKey steps; the plan's model
+  // list is fetched with the new token.
+  const startChatGPTLogin = (preset: PlatformPreset) => {
+    chatgptLoginAbort.current?.abort();
+    const controller = new AbortController();
+    chatgptLoginAbort.current = controller;
+    setChatgptAuthUrl(null);
+    setStep('chatgptLogin');
+    void loginWithChatGPT({
+      onAuthUrl: setChatgptAuthUrl,
+      signal: controller.signal
+    }).then(() => discoverProviderModelNames({
+      type: 'chatgpt',
+      baseUrl: preset.baseUrl
+    })).then(names => {
+      if (controller.signal.aborted) return;
+      if (names.length > 0) {
+        setDiscoveredModels(names);
+        setStep('modelSelect');
+        return;
+      }
+      setDiscoveryStatus('Could not fetch models for this ChatGPT account.');
+      setInputValue(preset.model);
+      setStep('model');
+    }).catch(err => {
+      if (controller.signal.aborted) return;
+      setFormError(err instanceof Error ? err.message : String(err));
+    });
   };
   const isValidHttpUrl = (value: string): boolean => {
     try {
@@ -536,6 +587,16 @@ function ProviderSetupWizard({
           }} onCancel={onCancel} />
           </Box>
           <Text dimColor={true}>China endpoints included: DeepSeek, Kimi Code, MiniMax, Moonshot CN, Z.AI GLM.</Text>
+        </Box> : step === 'chatgptLogin' ? <Box flexDirection="column" gap={1}>
+          <Text color="remember" bold={true}>Sign in with ChatGPT</Text>
+          <Text>{formError ? <Text color="error">{formError}</Text> : 'Finish signing in in your browser…'}</Text>
+          {chatgptAuthUrl ? <Text dimColor={true}>If the browser did not open, visit: <Link url={chatgptAuthUrl}>{chatgptAuthUrl}</Link></Text> : null}
+          <Box>
+            <Select options={[{
+            label: <Text>Cancel</Text>,
+            value: 'cancel'
+          }]} onChange={handleStepBack} onCancel={handleStepBack} />
+          </Box>
         </Box> : step === 'modelSelect' ? <Box flexDirection="column" gap={1}>
           <Text color="remember" bold={true}>Select model</Text>
           <Text dimColor={true}>Fetched from {selectedPreset?.name} endpoint.</Text>

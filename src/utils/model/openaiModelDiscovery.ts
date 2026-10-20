@@ -10,6 +10,11 @@ type OpenAIModelsResponse = {
   data?: Array<{
     id?: string | null
   }>
+  // Sign in with ChatGPT lists the account's models here instead.
+  models?: Array<{
+    slug?: string | null
+    visibility?: string | null
+  }>
 }
 
 type OllamaTagsResponse = {
@@ -91,6 +96,13 @@ function getModelListUrls(baseUrl: string): string[] {
     return [addApiVersion(primary)]
   }
   return [addApiVersion(primary), addApiVersion(secondary)]
+}
+
+async function getChatGPTAuthHeaders(): Promise<Record<string, string>> {
+  const { getChatGPTAccessToken } = await import(
+    '../../services/api/chatgptAuth.js'
+  )
+  return { Authorization: `Bearer ${await getChatGPTAccessToken()}` }
 }
 
 function getOpenAIAuthHeaders(
@@ -175,9 +187,12 @@ async function fetchOpenAIModels(
         timeout: DISCOVERY_TIMEOUT_MS,
       })
       const modelNames = uniqueModelNames(
-        (response.data?.data ?? [])
-          .map(model => model.id ?? '')
-          .filter(isNonEmptyString),
+        [
+          ...(response.data?.data ?? []).map(model => model.id ?? ''),
+          ...(response.data?.models ?? [])
+            .filter(model => model.visibility === 'list')
+            .map(model => model.slug ?? ''),
+        ].filter(isNonEmptyString),
       )
       if (modelNames.length > 0) return modelNames
     } catch (error) {
@@ -247,7 +262,10 @@ export async function discoverOpenAICompatibleModelOptions(): Promise<
   }
 
   const baseUrl = getNormalizedOpenAIBaseUrl()
-  const headers = getOpenAIAuthHeaders(baseUrl)
+  const headers =
+    process.env.NOA_CLAUDE_OPENAI_AUTH === 'chatgpt'
+      ? await getChatGPTAuthHeaders()
+      : getOpenAIAuthHeaders(baseUrl)
   let names = await fetchOpenAIModels(getModelListUrls(baseUrl), headers)
   if (names.length === 0) {
     const ollamaTagsUrl = getOllamaTagsUrl(baseUrl)
@@ -292,6 +310,11 @@ export async function discoverProviderModelNames({
       const tagsUrl = getOllamaTagsUrl(normalizedBaseUrl)
       return tagsUrl ? fetchOllamaModels(tagsUrl, {}) : []
     }
+    case 'chatgpt':
+      return fetchOpenAIModels(
+        getModelListUrls(normalizedBaseUrl),
+        await getChatGPTAuthHeaders(),
+      )
     case 'openai':
     case 'gemini':
     case 'github':

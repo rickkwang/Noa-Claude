@@ -53,6 +53,7 @@ export type ProviderType =
   | 'openrouter'
   | 'lmstudio'
   | 'mimo'
+  | 'chatgpt'
 
 export interface ProviderProfile {
   id: string
@@ -147,6 +148,12 @@ export const PROVIDER_TYPE_CONTEXT_WINDOWS: Partial<
     'k3-256k': 262_144,
     'kimi-for-coding': 1_048_576,
     'kimi-for-coding-highspeed': 262_144,
+  },
+  // Exception to "documented only": the API model serves 1.05M, but the window
+  // for plan usage is undocumented (Codex has served 272K and 500K). 272K, the
+  // long-context pricing threshold, under-reports, which only compacts early.
+  chatgpt: {
+    'gpt-6.1-sol': 272_000,
   },
 }
 
@@ -427,6 +434,7 @@ export const PROVIDER_TYPE_LABELS: Record<ProviderType, string> = {
   openrouter: 'OpenRouter',
   lmstudio: 'LM Studio',
   mimo: 'Xiaomi MiMo',
+  chatgpt: 'ChatGPT subscription',
 }
 
 function setEnvKey(target: Record<string, string>, key: string, value?: string): void {
@@ -500,7 +508,10 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
     case 'openrouter':
     case 'lmstudio':
     case 'mimo':
+    case 'chatgpt':
       env.CLAUDE_CODE_USE_OPENAI = '1'
+      // OAuth from /login instead of an API key (src/services/api/chatgptAuth.ts).
+      if (normalizedProfile.type === 'chatgpt') env.NOA_CLAUDE_OPENAI_AUTH = 'chatgpt'
       setEnvKey(env, 'OPENAI_BASE_URL', normalizedBaseUrl)
       setEnvKey(env, 'OPENAI_API_KEY', normalizedProfile.apiKey)
       // Keep the runtime model in sync with the selected provider too.
@@ -692,6 +703,7 @@ const PROVIDER_ENV_KEYS = [
   'OPENAI_BASE_URL',
   'OPENAI_API_KEY',
   'OPENAI_MODEL',
+  'NOA_CLAUDE_OPENAI_AUTH',
   'AWS_BEARER_TOKEN_BEDROCK',
   'ANTHROPIC_FOUNDRY_API_KEY',
   'CLAUDE_CODE_SKIP_BEDROCK_AUTH',

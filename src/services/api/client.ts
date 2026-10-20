@@ -366,6 +366,28 @@ export async function getAnthropicClient({
   }
 
   if (isEnvTruthy(process.env.CLAUDE_CODE_USE_OPENAI)) {
+    if (process.env.NOA_CLAUDE_OPENAI_AUTH === 'chatgpt') {
+      // ChatGPT plan usage: OAuth token, Responses API only. Resolved per
+      // client so a token near expiry is refreshed before the request.
+      const { expireChatGPTAccessToken, getChatGPTAccessToken } = await import('./chatgptAuth.js')
+      const accessToken = await getChatGPTAccessToken()
+      const baseFetch = (resolvedFetch as typeof fetch | undefined) ?? globalThis.fetch
+      return createOpenAIShimClient({
+        apiKey: accessToken,
+        baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+        defaultHeaders: { ...defaultHeaders },
+        timeoutMs: parseInt(process.env.API_TIMEOUT_MS || String(600 * 1000), 10),
+        // A token revoked before its expiry still 401s; expire it so the
+        // retry's fresh client refreshes instead of resending it.
+        fetchOverride: (async (input, init) => {
+          const response = await baseFetch(input, init)
+          if (response.status === 401) await expireChatGPTAccessToken(accessToken)
+          return response
+        }) as typeof fetch,
+        responsesApi: true,
+      }) as unknown as Anthropic
+    }
+
     // OpenAI-compatible provider using the local shim.
     // Supports OPENAI_BASE_URL for custom endpoint and OPENAI_MODEL for model override.
     const resolvedApiKey = apiKey || process.env.OPENAI_API_KEY

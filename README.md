@@ -135,6 +135,8 @@ Noa ships first-party support for multiple backends:
 
 Provider profiles enable saved configurations for providers like Kimi, MiniMax, DeepSeek, and other Anthropic-compatible endpoints using Bearer token auth (`ANTHROPIC_AUTH_TOKEN`).
 
+To use a ChatGPT plan instead of an API key, run `/login` → provider setup → **ChatGPT**. It signs in through the browser ([Sign in with ChatGPT](https://developers.openai.com/siwc/token-sharing-open-source)), stores the tokens in `~/.noa/chatgpt-auth.json`, and sends requests to the OpenAI Responses API (`store: false`, encrypted reasoning replayed across tool calls).
+
 Optional per-profile fields in `~/.noa/provider-profiles.json` declare what the endpoint serves; each merges over the built-in defaults for that provider:
 - `contextWindows` — `{ "<model>": <tokens> }`
 - `effortLevels` — `{ "<model>": ["low", "high", "max"] }` (`[]` declares none)

@@ -76,6 +76,11 @@ export function getSupportedEffortLevelsForModel(
     return thirdPartyLevels
   }
 
+  const gpt = getGptResponsesEffort(model)
+  if (gpt !== undefined) {
+    return gpt.levels
+  }
+
   const provider = getAPIProvider()
   // OpenAI-compatible providers (OpenAI, Gemini OpenAI-compat, etc.) accept a
   // top-level `reasoning_effort` field on /chat/completions. The shim only
@@ -134,6 +139,36 @@ export function getSupportedEffortLevelsForModel(
     return ['low', 'medium', 'high']
   }
   return []
+}
+
+// GPT reasoning models on the Responses route (Sign in with ChatGPT), which
+// takes reasoning.effort for all of them. Checked against OpenAI's model pages
+// (gpt-5, 5.1, 5.2, 5.4, 5.5, 5.6, 6 Astra/Luna, 6.1 Sol, 5/5.2/5.5-pro): low
+// to high from GPT-5, xhigh from 5.2, max from 5.6; -pro has no low, and
+// gpt-5-pro only high. `apiDefault` is what OpenAI runs when no effort is sent:
+// medium from 5.5, high for -pro; 5.1 to 5.4 default to `none`, which is not a
+// Noa level, so it stays unset.
+function getGptResponsesEffort(
+  model: string,
+): { levels: EffortLevel[]; apiDefault?: EffortLevel } | undefined {
+  if (process.env.NOA_CLAUDE_OPENAI_AUTH !== 'chatgpt') return undefined
+  const id = model.toLowerCase()
+  const match = /^gpt-(\d+)(?:\.(\d+))?/.exec(id)
+  if (!match || Number(match[1]) < 5) return undefined
+  const version = Number(match[1]) * 100 + Number(match[2] ?? 0)
+  const levels: EffortLevel[] =
+    version >= 506
+      ? ['low', 'medium', 'high', 'xhigh', 'max']
+      : version >= 502
+        ? ['low', 'medium', 'high', 'xhigh']
+        : ['low', 'medium', 'high']
+  if (id.includes('-pro')) {
+    return {
+      levels: version < 502 ? ['high'] : levels.filter(level => level !== 'low'),
+      apiDefault: 'high',
+    }
+  }
+  return { levels, apiDefault: version >= 505 ? 'medium' : undefined }
 }
 
 function getThirdPartyEffortLevels(model: string): EffortLevel[] | undefined {
@@ -396,6 +431,8 @@ export function resolveAppliedEffort(
  * @[MODEL LAUNCH]: add models whose API-side default effort is not `high`.
  */
 export function getApiDefaultEffortForModel(model: string): EffortLevel {
+  const gptDefault = getGptResponsesEffort(model)?.apiDefault
+  if (gptDefault !== undefined) return gptDefault
   const canonical = getCanonicalName(model)
   return canonical.includes('claude-opus-5-5') ||
     canonical.includes('claude-sonnet-5-5') ||
@@ -573,6 +610,12 @@ export function getDefaultEffortForModel(
     supported.includes('medium')
   ) {
     return 'medium'
+  }
+
+  // GPT models send no effort by default, so OpenAI applies its own
+  // per-model default (see getGptResponsesEffort).
+  if (getGptResponsesEffort(model) !== undefined) {
+    return undefined
   }
 
   // Upstream falls back to `high` for every effort-capable model without a

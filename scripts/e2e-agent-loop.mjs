@@ -18,9 +18,9 @@ const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'n
 mkdirSync(artifacts, { recursive: true });
 const model = 'claude-sonnet-4-6';
 // A 200k-window model, so a gateway naming a 1M model in its responses offers a "larger window".
-const modelFor = scenario => scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : model;
+const modelFor = scenario => scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model;
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['agent-nested', 'agent-owned-results', 'agent-owned-auto', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'bedrock-overflow', 'field-reject', 'gateway-model-name'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['agent-nested', 'agent-owned-results', 'agent-owned-auto', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'field-reject', 'gateway-model-name'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -33,7 +33,8 @@ const server = createServer(async (req, res) => {
     for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw || '{}');
     const openai = req.url.includes('/chat/completions');
-    if (!openai && !req.url.includes('/messages')) {
+    const responses = req.url.endsWith('/responses');
+    if (!openai && !responses && !req.url.includes('/messages')) {
       res.writeHead(200, { 'content-type': 'application/json' }); res.end('{}'); return;
     }
     if (req.url.includes('count_tokens')) {
@@ -43,7 +44,7 @@ const server = createServer(async (req, res) => {
     }
     const lastText = textOf(body.messages?.at(-1)?.content);
     const summary = lastText.startsWith('CRITICAL: Respond with TEXT ONLY.') || /create a detailed continuation summary|summarize the recent messages|summary of the conversation|summarizing.*conversation/i.test(lastText);
-    active.requests.push({ path: req.url, body, summary });
+    active.requests.push({ path: req.url, body, summary, auth: req.headers.authorization });
     writeFileSync(join(active.dir, 'requests.json'), JSON.stringify(active.requests, null, 2));
     const harness = active.case.startsWith('task-') || active.case === 'goal-child-usage' || active.case==='agent-custom-fork' || active.case==='agent-nested' || active.case.startsWith('agent-owned-') || active.case==='agent-cascade-stop' || active.case.startsWith('agent-schema');
     const customChild=active.case==='agent-custom-fork'&&((lastText.includes('CHILD_CUSTOM_FORK_')||body.tools?.every(t=>t.name==='Read'))||body.messages?.at(-1)?.content?.some?.(b=>b.type==='tool_result'&&b.tool_use_id.startsWith('custom_read_')));
@@ -252,7 +253,7 @@ const server = createServer(async (req, res) => {
         : { command: 'sleep 4', description: 'Wait past the deadline' } }]; stop = 'tool_use';
     } else if (active.case.startsWith('concurrency-') && n === 1) {
       content = [1, 2].map(i => ({ type: 'tool_use', id: 'write_' + i, name: 'Bash', input: { command: 'pwd' } })); stop = 'tool_use';
-    } else if (active.case === 'max-turns' || ((active.case === 'read' || active.case.startsWith('openai-usage') || active.case.endsWith('-overflow') || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3) || (active.case === 'field-reject' && n === 2)) {
+    } else if (active.case === 'max-turns' || ((active.case === 'read' || active.case.startsWith('openai-usage') || active.case.startsWith('openai-responses') || active.case.endsWith('-overflow') || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3) || (active.case === 'field-reject' && n === 2)) {
       content = [
         ...(active.case === 'compact-resume' ? [{ type: 'text', text: 'prior-context '.repeat(5000) }] : []),
         { type: 'tool_use', id: `toolu_${n}`, name: 'Read', input: { file_path: join(active.dir, 'fixture.txt') } },
@@ -263,6 +264,28 @@ const server = createServer(async (req, res) => {
     // gateway-model-name: the gateway names another model than requested and reports a near-full context.
     const gateway = active.case === 'gateway-model-name';
     const msg = { id: `msg_${active.requests.length}`, type: 'message', role: 'assistant', model: gateway ? 'claude-opus-5-5' : body.model, content, stop_reason: stop, stop_sequence: null, usage: child ? {input_tokens:1,output_tokens:1,cache_read_input_tokens:5000,cache_creation_input_tokens:4000} : harness ? {input_tokens:1,output_tokens:1} : gateway && n === 1 && !summary ? {input_tokens:190000,output_tokens:10} : {input_tokens:100,output_tokens:10} };
+    if (responses) {
+      // Sign in with ChatGPT transport: every turn opens with an encrypted
+      // reasoning item, which the next request must replay.
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      const emit = data => res.write(`event: ${data.type}\ndata: ${JSON.stringify(data)}\n\n`);
+      const items = [
+        { type: 'reasoning', id: `rs_${n}`, summary: [{ type: 'summary_text', text: `REASONING_SUMMARY_${n}` }], encrypted_content: `ENC_${n}` },
+        ...content.map(b => b.type === 'tool_use'
+          ? { type: 'function_call', id: `fc_${n}`, call_id: b.id, name: b.name, arguments: JSON.stringify(b.input) }
+          : { type: 'message', id: `msg_${n}`, role: 'assistant', content: [{ type: 'output_text', text: b.text }] }),
+      ];
+      items.forEach((item, output_index) => {
+        emit({ type: 'response.output_item.added', output_index, item: item.type === 'reasoning' ? { type: 'reasoning', id: item.id, summary: [] } : item.type === 'function_call' ? { ...item, arguments: '' } : { ...item, content: [] } });
+        if (item.type === 'reasoning') emit({ type: 'response.reasoning_summary_text.delta', output_index, summary_index: 0, delta: item.summary[0].text });
+        if (item.type === 'function_call') emit({ type: 'response.function_call_arguments.delta', output_index, delta: item.arguments });
+        if (item.type === 'message') emit({ type: 'response.output_text.delta', output_index, content_index: 0, delta: item.content[0].text });
+        emit({ type: 'response.output_item.done', output_index, item });
+      });
+      emit({ type: 'response.completed', response: { status: 'completed', usage: { input_tokens: 200, input_tokens_details: { cached_tokens: 120 }, output_tokens: 20 } } });
+      res.end();
+      return;
+    }
     if (openai) {
       if (active.case === 'openai-usage-nonstream' && body.stream) {
         res.writeHead(200, { 'content-type': 'text/event-stream' });
@@ -329,8 +352,14 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
     CLAUDE_CONFIG_DIR: join(active.dir, 'config'), ANTHROPIC_API_KEY: 'local-e2e-dummy', ANTHROPIC_BASE_URL: baseUrl,
     ANTHROPIC_MODEL: modelFor(scenario), CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', DISABLE_AUTOUPDATER: '1',
     ...(scenario.startsWith('openai-') && { CLAUDE_CODE_USE_OPENAI: '1', OPENAI_BASE_URL: `${baseUrl}/v1`, OPENAI_API_KEY: 'local-e2e-dummy' }),
+    ...(scenario.startsWith('openai-responses') && { NOA_CLAUDE_OPENAI_AUTH: 'chatgpt' }),
+    ...(scenario === 'openai-responses-effort' && { CLAUDE_CODE_EFFORT_LEVEL: 'xhigh' }),
     CLAUDE_CODE_TASK_LIST_ID: 'harness-probe', NOA_CLAUDE_STREAMING_TOOL_EXECUTION: ['budget-nonstream', 'concurrency-nonstream'].includes(scenario) ? '0' : '1', FALLBACK_FOR_ALL_PRIMARY_MODELS: '1', CLAUDE_CODE_EAGER_FLUSH: '1',
   });
+  if (scenario.startsWith('openai-responses')) {
+    mkdirSync(env.CLAUDE_CONFIG_DIR, { recursive: true });
+    writeFileSync(join(env.CLAUDE_CONFIG_DIR, 'chatgpt-auth.json'), JSON.stringify({ hostId: 'urn:uuid:00000000-0000-4000-8000-000000000000', clientId: 'e2e-client', accessToken: 'e2e-chatgpt-access', refreshToken: 'e2e-chatgpt-refresh', expiresAt: Date.now() + 3_600_000 }));
+  }
   const streamingInput = scenario.startsWith('budget-');
   const harness = scenario.startsWith('task-') || scenario === 'goal-child-usage' || scenario==='agent-custom-fork' || scenario==='agent-nested' || scenario.startsWith('agent-owned-') || scenario==='agent-cascade-stop' || scenario.startsWith('agent-schema');
   // Hooks are off under --bare, so the hook scenario runs the full startup path.
@@ -514,6 +543,24 @@ try {
               assert.equal(responses.length, 2);
               assert.ok(responses.every(u => u.input_tokens === 40 && u.cache_read_input_tokens === 60 && u.output_tokens === 10));
             }
+          } else if (scenario.startsWith('openai-responses')) {
+            assert.equal(runResult.code, 0, `run failed: ${runResult.result?.result}`); assert.equal(runResult.result.result, 'AUDIT_OK');
+            assert.equal(active.requests.length, 2);
+            for (const r of active.requests) {
+              assert.ok(r.path.endsWith('/v1/responses'), `request left the Responses transport: ${r.path}`);
+              assert.equal(r.auth, 'Bearer e2e-chatgpt-access', 'stored ChatGPT token was not sent');
+              assert.equal(r.body.store, false); assert.equal(r.body.stream, true);
+              assert.equal(r.body.model, 'gpt-6.1-sol'); // Unset effort is left to OpenAI's per-model default; a chosen one is sent.
+              assert.equal(r.body.reasoning?.effort, scenario === 'openai-responses-effort' ? 'xhigh' : undefined, 'reasoning.effort does not match the chosen effort');
+              for (const field of ['max_output_tokens', 'temperature', 'top_p', 'metadata', 'previous_response_id', 'messages']) assert.ok(!(field in r.body), `${field} sent on the ChatGPT route`);
+              assert.ok(r.body.tools.some(t => t.type === 'function' && t.name === 'Read' && t.parameters), 'tools not in Responses shape');
+            }
+            const input = active.requests[1].body.input;
+            const reasoning = input.findIndex(i => i.type === 'reasoning' && i.encrypted_content === 'ENC_1');
+            const call = input.findIndex(i => i.type === 'function_call' && i.call_id === 'toolu_1' && i.name === 'Read');
+            assert.ok(reasoning >= 0 && !('id' in input[reasoning]), 'encrypted reasoning was not replayed (or kept its server id)');
+            assert.ok(call > reasoning, 'reasoning must precede the call it led to');
+            assert.ok(input.some(i => i.type === 'function_call_output' && i.call_id === 'toolu_1' && i.output.includes('LOCAL_FIXTURE_42')), 'tool result missing');
           } else if (scenario === 'field-reject') {
             assert.equal(runResult.code, 0, `field rejection surfaced as: ${runResult.result.result}`); assert.equal(runResult.result.result, 'AUDIT_OK'); assert.equal(count, 3);
             assert.ok(active.requests.slice(1).every(r => !('metadata' in r.body)), 'the rejected field was sent again on a later turn');
