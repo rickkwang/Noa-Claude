@@ -21,10 +21,10 @@ type SkillModeCarrier = Pick<
 export function getSkillMode(skill: SkillModeCarrier): SkillMode {
   const userInvocable = skill.userInvocable !== false
   const modelInvocable = skill.disableModelInvocation !== true
-  if (userInvocable && modelInvocable && skill.nameOnly === true) {
+  if (modelInvocable && skill.nameOnly === true) {
     return 'name-only'
   }
-  if (userInvocable && modelInvocable) return 'on'
+  if (modelInvocable) return 'on'
   if (userInvocable && !modelInvocable) return 'user-only'
   return 'off'
 }

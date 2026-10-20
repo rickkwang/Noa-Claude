@@ -190,6 +190,7 @@ export function useVirtualScroll(
   // into heightCache. Render #3 has accurate heights → normal recompute.
   const prevRangeRef = useRef<readonly [number, number] | null>(null)
   const freezeRendersRef = useRef(0)
+  const freezeItemCountRef = useRef(0)
   if (prevColumns.current !== columns) {
     const ratio = prevColumns.current / columns
     prevColumns.current = columns
@@ -205,6 +206,13 @@ export function useVirtualScroll(
     offsetVersionRef.current++
     skipMeasurementRef.current = true
     freezeRendersRef.current = 2
+    freezeItemCountRef.current = itemKeys.length
+  }
+  // The list may not re-render until long after the resize (e.g. while a
+  // dialog covers it). Items added since then fall outside the pre-resize
+  // range and would render as bare spacer, so the freeze ends there.
+  if (freezeRendersRef.current > 0 && itemKeys.length !== freezeItemCountRef.current) {
+    freezeRendersRef.current = 0
   }
   const frozenRange = freezeRendersRef.current > 0 ? prevRangeRef.current : null
   // List origin in content-wrapper coords. scrollTop is content-wrapper-
@@ -322,10 +330,7 @@ export function useVirtualScroll(
 
   if (frozenRange) {
     // Column just changed. Keep the pre-resize range to avoid mount churn.
-    // Clamp to n in case messages were removed (/clear, compaction).
     ;[start, end] = frozenRange
-    start = Math.min(start, n)
-    end = Math.min(end, n)
   } else if (viewportH === 0 || scrollTop < 0) {
     // Cold start: ScrollBox hasn't laid out yet. Render the tail — sticky
     // scroll pins to the bottom on first Ink render, so these are the items

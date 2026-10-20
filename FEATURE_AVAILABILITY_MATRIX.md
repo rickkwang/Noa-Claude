@@ -30,6 +30,8 @@ Last updated: 2026-09-13
 | MiniMax Anthropic-compatible backend | Available | Default product path and launcher checks in place. |
 | Official Claude OAuth fallback on 3P path | Disabled by policy | Missing/invalid 3P token fails clearly; no OAuth fallback. |
 
+The `/skills` picker combines sources in one list with aligned name/details columns. Enter and Space cycle skill modes, `/` searches, `t` sorts by estimated token usage, and Esc saves and closes. Author-disabled model invocation stays locked in the picker.
+
 ## Slash Commands: Implemented but Non-Baseline
 | Command | Status | Notes |
 |---|---|---|

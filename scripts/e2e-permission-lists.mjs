@@ -10,11 +10,23 @@ import { createHash } from 'node:crypto';
 const root=resolve(import.meta.dir, '..');
 const entryFlag=process.argv.indexOf('--entry');
 const entry=entryFlag < 0 ? join(root,'dist/main-dev.js') : resolve(process.argv[entryFlag+1]);
-const dir=join(tmpdir(),`noa-align-e2e-${process.pid}`);mkdirSync(dir,{recursive:true});const cwd=dir+'/workspace';const config=dir+'/config';mkdirSync(cwd);mkdirSync(config);
+const skillsOnly=process.argv.includes('--skills-only');
+const upstream=process.argv.includes('--upstream');
+const projectDirName=upstream?'.claude':'.noa';
+const dir=join(tmpdir(),`noa-align-e2e-${process.pid}`);mkdirSync(dir,{recursive:true});const cwd=dir+'/workspace';const config=dir+'/config';mkdirSync(cwd);mkdirSync(config);mkdirSync(dir+'/home');
 for(let i=1;i<=24;i++) {
  const name=`e2e-skill-${String(i).padStart(2,'0')}`;
- const skillDir=join(cwd,'.noa','skills',name);mkdirSync(skillDir,{recursive:true});
+ const skillDir=join(cwd,projectDirName,'skills',name);mkdirSync(skillDir,{recursive:true});
  writeFileSync(join(skillDir,'SKILL.md'),`---\nname: ${name}\ndescription: Terminal verification fixture ${i}\n---\nUse only for this verification.\n`);
+}
+for(const [base,name,description,frontmatter] of [
+ [join(cwd,projectDirName),'zz-heavy-project','Long description '.repeat(80),''],
+ [config,'a-user','User fixture',''],
+ [config,'locked-author','Author fixture','disable-model-invocation: true\n'],
+ [config,'model-only-author','Model fixture','user-invocable: false\n'],
+]) {
+ const skillDir=join(base,'skills',name);mkdirSync(skillDir,{recursive:true});
+ writeFileSync(join(skillDir,'SKILL.md'),`---\nname: ${name}\ndescription: ${description}\n${frontmatter}---\nDo nothing until invoked.\n`);
 }
 const mcpFile=join(dir,'mcp-fixture.mjs');
 const mcpValuesFile=join(dir,'mcp-values.json');
@@ -62,17 +74,22 @@ const server=createServer(async(req,res)=>{let text='';for await(const c of req)
  emit('message_delta',{type:'message_delta',delta:{stop_reason:msg.stop_reason,stop_sequence:null},usage:{output_tokens:30}});emit('message_stop',{type:'message_stop'});res.end();
 });
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const port=server.address().port;
-writeFileSync(config+'/.config.json',JSON.stringify({theme:'dark-ansi',hasCompletedOnboarding:true,lastOnboardingVersion:'99.0.0',customApiKeyResponses:{approved:['sk-noa-e2e'],rejected:[]},projects:{[realpathSync(cwd)]:{hasTrustDialogAccepted:true,allowedTools:[],mcpContextUris:[]}}}));
+const globalConfig=JSON.stringify({theme:'dark-ansi',hasCompletedOnboarding:true,lastOnboardingVersion:'99.0.0',customApiKeyResponses:{approved:['sk-noa-e2e'],rejected:[]},projects:{[realpathSync(cwd)]:{hasTrustDialogAccepted:true,allowedTools:[],mcpContextUris:[]}}});
+writeFileSync(config+'/.config.json',globalConfig);writeFileSync(config+'/.claude.json',globalConfig);
 writeFileSync(config+'/settings.json',JSON.stringify({permissions:{ask:['Bash']},autoUpdatesChannel:'latest'}));
-const env={CLAUDE_CONFIG_DIR:config,ANTHROPIC_API_KEY:'sk-noa-e2e',ANTHROPIC_BASE_URL:`http://127.0.0.1:${port}`,NOA_CLAUDE_NO_FLICKER:'1',CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:'1',DISABLE_AUTOUPDATER:'1',NOA_CLAUDE_NO_THINKING:'1'};
+const env={PATH:process.env.PATH,HOME:dir+'/home',TERM:'xterm-256color',CLAUDE_CONFIG_DIR:config,CLAUDE_CODE_PRODUCT_DIR:config,ANTHROPIC_API_KEY:'sk-noa-e2e',ANTHROPIC_BASE_URL:`http://127.0.0.1:${port}`,NOA_CLAUDE_NO_FLICKER:'1',CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:'1',DISABLE_AUTOUPDATER:'1',NOA_CLAUDE_NO_THINKING:'1'};
 const quote=s=>`'${s.replaceAll("'","'\\''")}'`;
 let exit=0;
 try{
- const cmd='env '+Object.entries(env).map(([k,v])=>`${k}=${quote(v)}`).join(' ')+` bun ${quote(entry)} --bare --add-dir ${quote(cwd)} --mcp-config ${quote(mcpConfig)} --allowedTools mcp__fixture__form --permission-mode default --model claude-sonnet-4-5`;
+ const invocation=entry.endsWith('.js')?`bun ${quote(entry)}`:quote(entry);
+ const cliArgs=skillsOnly?'--strict-mcp-config --permission-mode default --model claude-sonnet-4-5':`--bare --add-dir ${quote(cwd)} --mcp-config ${quote(mcpConfig)} --allowedTools mcp__fixture__form --permission-mode default --model claude-sonnet-4-5`;
+ const cmd='env -i '+Object.entries(env).map(([k,v])=>`${k}=${quote(v)}`).join(' ')+` ${invocation} ${cliArgs}`;
  tmux('new-session','-d','-s','ui','-x','100','-y','30','-c',cwd,cmd);
- await wait('startup',s=>s.includes('manual mode on'));await sleep(800);
+ await wait('startup',s=>s.includes('manual mode on')||s.includes('shift+tab to cycle'));await sleep(800);
+ let s,line,x,y;
+ if(!skillsOnly) {
  type('/config');await sleep(300);save('settings-input');keys('Enter');await wait('settings-top',s=>/↓ \d+ more/.test(s));
- let s=screen();let line=s.split('\n').findIndex(l=>/↓ \d+ more/.test(l));let x=s.split('\n')[line].indexOf('↓')+1;let y=line+1;
+ s=screen();line=s.split('\n').findIndex(l=>/↓ \d+ more/.test(l));x=s.split('\n')[line].indexOf('↓')+1;y=line+1;
  sgr(35,x,y);await sleep(100);save('settings-hover');assert(/\x1b\[7m↓/.test(screen(true)),'hover inverse missing');
  click(x,y);await sleep(60);save('settings-pressed');assert(/\x1b\[7m ↓ \d+ more/.test(screen(true)),'pressed state missing');await wait('settings-bottom',s=>/↑ \d+ more/.test(s)&&!/↓ \d+ more/.test(s));
  s=screen();line=s.split('\n').findIndex(l=>/↑ \d+ more/.test(l));x=s.split('\n')[line].indexOf('↑')+1;y=line+1;
@@ -81,12 +98,48 @@ try{
  await sleep(1100);click(50,y);await wait('settings-normal-click',s=>/Auto-compact +false/.test(s));
  await sleep(600);click(50,y);await wait('settings-restored',s=>/Auto-compact +true/.test(s));
  keys('Escape');await sleep(200);keys('Escape');await sleep(200);keys('Escape');await sleep(200);
- type('/skills');await sleep(200);keys('Enter');await wait('skills-top',s=>s.includes('e2e-skill-01')&&/↓ \d+ more/.test(s));
+ }
+ type('/skills');await sleep(200);keys('Enter');await wait('skills-top',s=>s.includes('e2e-skill-01')&&s.includes('Search skills'));
+ assert(!/^\s*Project\s+User\s*$/m.test(screen()),'skills still split sources into Project/User tabs');
+ assert(screen().includes('enter/space to cycle'),'skills still invoke on Enter');
+ assert(/↓ \d+ more/.test(screen()),'skills overflow control is not visible');
  s=screen();line=s.split('\n').findIndex(l=>/↓ \d+ more/.test(l));x=s.split('\n')[line].indexOf('↓')+1;y=line+1;
- click(x,y);await wait('skills-bottom',s=>s.includes('e2e-skill-24')&&/↑ \d+ more/.test(s)&&!/↓ \d+ more/.test(s));
+ if(upstream)keys(...Array(27).fill('Down'));else click(x,y);await wait('skills-bottom',s=>s.includes('e2e-skill-24')&&s.includes('a-user')&&/↑ \d+ more/.test(s)&&!/↓ \d+ more/.test(s));
  s=screen();line=s.split('\n').findIndex(l=>/↑ \d+ more/.test(l));x=s.split('\n')[line].indexOf('↑')+1;y=line+1;
- click(x,y);await wait('skills-return-top',s=>s.includes('e2e-skill-01')&&!/↑ \d+ more/.test(s));
- keys('Escape');await sleep(300);keys('Escape');await sleep(200);
+ if(upstream)keys(...Array(27).fill('Up'));else click(x,y);await wait('skills-return-top',s=>s.includes('e2e-skill-01')&&!/↑ \d+ more/.test(s));
+ tmux('resize-window','-t','ui','-x','120','-y','46');
+ await wait('skills-all-sources',s=>s.includes('a-user')&&s.includes('locked-author')&&s.includes('e2e-skill-01'));
+ const row=name=>screen().split('\n').find(l=>l.includes(name)&&/[✔◯○✓]/.test(l))??'';
+ assert(row('e2e-skill-01').indexOf('project ·')===row('a-user').indexOf('user ·'),'skill detail columns are not aligned');
+ assert(row('locked-author').includes('locked by author'),'author lock missing');
+ assert(/✔|✓/.test(row('model-only-author')),'model-only skill incorrectly shown as off');
+ keys('t');await wait('skills-token-sort',s=>s.includes('sorted by tokens')&&/❯.*zz-heavy-project/.test(s));
+ keys('t');await wait('skills-source-sort',s=>/❯.*e2e-skill-01/.test(s)&&!s.includes('sorted by tokens'));
+ keys('Enter');await wait('skills-name-only',()=>row('e2e-skill-01').includes('name-only'));
+ keys('Space');await wait('skills-user-only',()=>row('e2e-skill-01').includes('user-only'));
+ keys('Enter');await wait('skills-off',()=>/◯|○/.test(row('e2e-skill-01')));
+ keys('Space');await wait('skills-on',()=>/✔|✓/.test(row('e2e-skill-01'))&&!/name-only|user-only/.test(row('e2e-skill-01')));
+ keys('Enter');await wait('skills-pending-mode',()=>row('e2e-skill-01').includes('name-only'));
+ keys('/');type('locked-author');await wait('skills-filter',s=>s.includes('1/28 skills')&&s.includes('type to filter'));
+ keys('Enter');await wait('skills-search-select',s=>s.includes('enter/space to cycle')&&row('locked-author').includes('user-only'));
+ keys('Enter');keys('Space');await sleep(200);save('skills-author-locked');
+ assert(row('locked-author').includes('locked by author')&&row('locked-author').includes('user-only'),'author restriction was changed');
+ keys('/');keys('Escape');await wait('skills-search-clear',s=>s.includes('Search skills')&&s.includes('type to filter'));
+ keys('Escape');await wait('skills-search-exit',s=>s.includes('enter/space to cycle')&&s.includes('a-user'));
+ type('i');await wait('skills-type-search',s=>/⌕ i\s/.test(s)&&s.includes('type to filter'));
+ keys('Escape');keys('Escape');await wait('skills-browse-again',s=>s.includes('enter/space to cycle'));
+ tmux('resize-window','-t','ui','-x','40','-y','22');await wait('skills-narrow',s=>s.includes('Search skills')&&s.includes('e2e-skill'));
+ tmux('resize-window','-t','ui','-x','100','-y','30');await wait('skills-restored',s=>s.includes('enter/space to cycle'));
+ keys('Escape');await wait('skills-saved',s=>s.includes('Updated 1 skill override')&&!s.includes('Search skills'));
+ const modes=()=>JSON.parse(readFileSync(join(cwd,projectDirName,'settings.local.json'),'utf8'))[upstream?'skillOverrides':'skillModes']??{};
+ assert(modes()['e2e-skill-01']==='name-only'&&modes()['locked-author']===undefined,'skill changes were not persisted correctly');
+ type('/skills');await sleep(200);keys('Enter');await wait('skills-reopened',()=>row('e2e-skill-01').includes('name-only'));
+ keys('Enter');await wait('skills-reopen-user-only',()=>row('e2e-skill-01').includes('user-only'));
+ keys('Space');await wait('skills-reopen-off',()=>/◯|○/.test(row('e2e-skill-01')));
+ keys('Enter');await wait('skills-revert',()=>/✔|✓/.test(row('e2e-skill-01'))&&!/name-only|user-only/.test(row('e2e-skill-01')));
+ keys('Escape');await wait('skills-revert-saved',s=>!s.includes('Search skills')&&s.includes('Updated 1 skill override'));
+ assert(modes()['e2e-skill-01']===undefined,'reverting left an unnecessary override');
+ if(!skillsOnly) {
  type('test permission batch');await sleep(200);keys('Enter');await wait('permission-1',s=>s.includes('1 of 5'));
  tmux('resize-window','-t','ui','-x','18');await wait('permission-narrow',s=>s.includes('Bash')&&!s.includes('of 5'));
  tmux('resize-window','-t','ui','-x','100');await wait('permission-wide',s=>s.includes('1 of 5'));
@@ -119,6 +172,7 @@ try{
  steps.push({name:'hook-interrupt',debugFile:hookDebug});
  assert(!screen().includes('non-interactive'),'hook deny was converted to generic cancellation');
  type('/exit');await sleep(100);keys('Enter');await sleep(500);
+ }
 }catch(e){exit=1;steps.push({error:String(e),screen:screen()});console.error(String(e));}
 finally{try{execFileSync('tmux',['-L',socket,'kill-server'],{stdio:'ignore'})}catch{}server.close();const bundleFile=entry===join(root,'bin','noa.js')?join(root,'dist','main.js'):entry;const bundle=readFileSync(bundleFile);const artifact={command:['bun',...process.argv.slice(1)].join(' '),revision:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim()+(execFileSync('git',['status','--porcelain'],{cwd:root,encoding:'utf8'}).trim()?'-dirty':''),entry,bundleFile,bundleSha256:createHash('sha256').update(bundle).digest('hex'),inputs:{env,args:`--bare --add-dir ${cwd} --mcp-config ${mcpConfig} --allowedTools mcp__fixture__form --permission-mode default --model claude-sonnet-4-5`,terminal:{columns:100,rows:30}},requests,steps,exit};writeFileSync(dir+'/manifest.json',JSON.stringify(artifact,null,2));console.log(JSON.stringify({artifact:dir+'/manifest.json',exit,steps:steps.map(s=>s.name??s.error)}));}
 process.exit(exit);

@@ -97,6 +97,7 @@ The session-fork workflow (`/fork`) is smoke-checked. Other listed commands are 
 **Configuration**
 - `/config` — View and edit settings
 - `/output-style` — Pick how Noa communicates in its responses (same picker as `/config` → Output style)
+- `/skills` — View skills from all sources together; Enter/Space cycles modes, `/` searches, `t` sorts by token usage, and Esc saves and closes
 - `/reload-skills` — Re-scan skill directories after editing `SKILL.md` files mid-session
 - `/pause-memory` — Pause auto-memory reads and writes for this session only
 - `AGENTS.md` / `CLAUDE.md` — Project-level context files

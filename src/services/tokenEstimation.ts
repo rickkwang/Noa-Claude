@@ -4,6 +4,7 @@ import type { BetaMessageParam as MessageParam } from '@anthropic-ai/sdk/resourc
 // @aws-sdk/client-bedrock-runtime is imported dynamically in countTokensWithBedrock()
 // to defer ~279KB of AWS SDK code until a Bedrock call is actually made
 import type { CountTokensCommandInput } from '@aws-sdk/client-bedrock-runtime'
+import { getCanonicalName, parseUserSpecifiedModel } from 'src/utils/model/model.js'
 import { getAPIProvider } from 'src/utils/model/providers.js'
 import { VERTEX_COUNT_TOKENS_ALLOWED_BETAS } from '../constants/betas.js'
 import type { Attachment } from '../utils/attachments.js'
@@ -257,6 +258,32 @@ export function bytesPerTokenForFileType(fileExtension: string): number {
     default:
       return 4
   }
+}
+
+// Models whose tokenizer averages ~4 bytes per token; newer ones are denser.
+const FOUR_BYTES_PER_TOKEN_MODELS = new Set([
+  'claude-3-opus',
+  'claude-3-sonnet',
+  'claude-3-haiku',
+  'claude-3-5-sonnet',
+  'claude-3-5-haiku',
+  'claude-3-7-sonnet',
+  'claude-opus-4-0',
+  'claude-opus-4-1',
+  'claude-opus-4-5',
+  'claude-opus-4-6',
+  'claude-sonnet-4-0',
+  'claude-sonnet-4-5',
+  'claude-sonnet-4-6',
+  'claude-haiku-4-5',
+])
+
+export function bytesPerTokenForModel(model: string | undefined | null): number {
+  if (!model) return 4
+  const canonical = getCanonicalName(parseUserSpecifiedModel(model))
+    .replace(/\[1m\]$/i, '')
+    .replace(/[._]/g, '-')
+  return FOUR_BYTES_PER_TOKEN_MODELS.has(canonical) ? 4 : 3
 }
 
 /**
