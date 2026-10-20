@@ -5,7 +5,6 @@ import type { Message } from 'src/types/message.js'
 import { logForDebugging } from '../debug.js'
 import type { AggregatedHookResult } from '../hooks.js'
 import type { HookCommand } from '../settings/types.js'
-import { isHookEqual } from './hooksSettings.js'
 
 type OnHookSuccess = (
   hook: HookCommand | FunctionHook,
@@ -41,6 +40,7 @@ type SessionHookMatcher = {
 }
 
 export type SessionStore = {
+  skillHookBudgets?: Map<string, { count: number; matcherChars: number }>
   hooks: {
     [event in HookEvent]?: SessionHookMatcher[]
   }
@@ -158,7 +158,7 @@ function addHookToSession(
 
     const newHooks = { ...store.hooks, [event]: updatedMatchers }
 
-    prev.sessionHooks.set(sessionId, { hooks: newHooks })
+    prev.sessionHooks.set(sessionId, { ...store, hooks: newHooks })
     return prev
   })
 
@@ -188,12 +188,10 @@ export function removeSessionHook(
 
     const eventMatchers = store.hooks[event] || []
 
-    // Remove the hook from all matchers
+    // Remove only this registration, even when another skill uses the same command.
     const updatedMatchers = eventMatchers
       .map(matcher => {
-        const updatedHooks = matcher.hooks.filter(
-          h => !isHookEqual(h.hook, hook),
-        )
+        const updatedHooks = matcher.hooks.filter(h => h.hook !== hook)
 
         return updatedHooks.length > 0
           ? { ...matcher, hooks: updatedHooks }
@@ -350,7 +348,6 @@ export function getSessionHookCallback(
   appState: AppState,
   sessionId: string,
   event: HookEvent,
-  matcher: string,
   hook: HookCommand | FunctionHook,
 ):
   | {
@@ -368,14 +365,10 @@ export function getSessionHookCallback(
     return undefined
   }
 
-  // Find the hook in the matchers
+  // Match the exact registration; regex matchers need not equal the tool name.
   for (const matcherEntry of eventMatchers) {
-    if (matcherEntry.matcher === matcher || matcher === '') {
-      const hookEntry = matcherEntry.hooks.find(h => isHookEqual(h.hook, hook))
-      if (hookEntry) {
-        return hookEntry
-      }
-    }
+    const hookEntry = matcherEntry.hooks.find(h => h.hook === hook)
+    if (hookEntry) return hookEntry
   }
 
   return undefined

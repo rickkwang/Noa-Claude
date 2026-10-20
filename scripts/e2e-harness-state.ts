@@ -337,6 +337,248 @@ try {
     assert.ok(restored.some(a => a.content.includes('maintenance-fixture')), 'compaction lost unused skill discovery')
     process.env.CLAUDE_CODE_SIMPLE = '1'
   })
+  await maintenance('skill-once-hooks-own-their-registration', async () => {
+    const { registerSkillHooks } = await import('../src/utils/hooks/registerSkillHooks.js')
+    const { clearSessionHooks } = await import('../src/utils/hooks/sessionHooks.js')
+    const { executePreToolHooks } = await import('../src/utils/hooks.js')
+    const { getSessionId, setIsInteractive, getIsInteractive } = await import('../src/bootstrap/state.js')
+    const session = getSessionId(), interactive = getIsInteractive(), log = join(artifacts, 'once-hooks.log')
+    const hook = () => ({ type: 'command', command: `printf 'ran\\n' >> '${log}'`, once: true })
+    for (const [name, matcher] of [['first', '^Read$'], ['second', 'Write']]) {
+      registerSkillHooks(setAppState, session, { PreToolUse: [{ matcher, hooks: [hook()] }] } as any, name!, join(artifacts, name!))
+    }
+    delete process.env.CLAUDE_CODE_SIMPLE; setIsInteractive(false)
+    try {
+      for await (const _ of executePreToolHooks('Read', 'first-hook', {}, agentContext)) {}
+      assert.equal(readFileSync(log, 'utf8'), 'ran\n', 'first hook never ran')
+      assert.equal(state.sessionHooks.get(session)?.hooks.PreToolUse?.length, 1, 'one-shot hook removed another skill registration')
+      for await (const _ of executePreToolHooks('Write', 'second-hook', {}, agentContext)) {}
+      for await (const _ of executePreToolHooks('Read', 'already-ran', {}, agentContext)) {}
+      for await (const _ of executePreToolHooks('Write', 'already-ran-too', {}, agentContext)) {}
+      assert.equal(readFileSync(log, 'utf8'), 'ran\nran\n', 'once hooks did not execute exactly once each')
+      const worker = 'skill-hook-worker', workerContext = { ...agentContext, agentId: worker }
+      try {
+        for (const [name, once] of [['once', true], ['persistent', false]] as const) {
+          registerSkillHooks(setAppState, worker, { PreToolUse: [{ matcher: 'Read', hooks: [{ ...hook(), once }] }] } as any, name, join(artifacts, name))
+        }
+        for (const id of ['worker-first', 'worker-second']) {
+          for await (const _ of executePreToolHooks('Read', id, {}, workerContext)) {}
+        }
+        assert.equal(readFileSync(log, 'utf8'), 'ran\n'.repeat(5), 'worker one-shot hook removed another skill or ran again')
+        assert.equal(state.sessionHooks.get(worker)?.hooks.PreToolUse?.flatMap((m: any) => m.hooks).length, 1)
+      } finally { clearSessionHooks(setAppState, worker) }
+    } finally { clearSessionHooks(setAppState, session); setIsInteractive(interactive); process.env.CLAUDE_CODE_SIMPLE = '1' }
+  })
+  await maintenance('skill-hooks-background-context', async () => {
+    const { createSubagentContext } = await import('../src/utils/forkedAgent.js')
+    const { processPromptSlashCommand } = await import('../src/utils/processUserInput/processSlashCommand.js')
+    const { clearSessionHooks } = await import('../src/utils/hooks/sessionHooks.js')
+    const { executePreToolHooks } = await import('../src/utils/hooks.js')
+    const { setIsInteractive, getIsInteractive } = await import('../src/bootstrap/state.js')
+    const interactive = getIsInteractive(), log = join(artifacts, 'background-skill-hooks.log')
+    const background = createSubagentContext(agentContext, { agentId: asAgentId('background-skill') })
+    const nested = createSubagentContext(background, { agentId: asAgentId('nested-background-skill') })
+    const command: any = { type: 'prompt', name: 'background-fixture', source: 'userSettings', description: 'fixture', skillRoot: artifacts, hooks: { PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: `printf 'ran\\n' >> '${log}'`, once: true }] }] }, getPromptForCommand: async () => [{ type: 'text', text: 'fixture' }] }
+    try {
+      setIsInteractive(false)
+      for (const worker of [background, nested]) {
+        process.env.CLAUDE_CODE_SIMPLE = '1'
+        await processPromptSlashCommand(command.name, '', [command], worker)
+        assert.equal(state.sessionHooks.get(worker.agentId)?.hooks.PreToolUse?.length, 1, 'background skill never registered its hook')
+        delete process.env.CLAUDE_CODE_SIMPLE
+        for (const id of ['first', 'again']) for await (const _ of executePreToolHooks('Read', id, {}, worker)) {}
+        assert.equal(state.sessionHooks.get(worker.agentId)?.hooks.PreToolUse, undefined, 'background once hook was not removed')
+      }
+      assert.equal(readFileSync(log, 'utf8'), 'ran\nran\n')
+    } finally {
+      for (const worker of [background, nested]) clearSessionHooks(setAppState, worker.agentId!)
+      setIsInteractive(interactive); process.env.CLAUDE_CODE_SIMPLE = '1'
+    }
+  })
+  await maintenance('skill-hooks-agent-exit-and-resume', async () => {
+    // Replace only the model query; run the real agent setup, skill invocation,
+    // hook execution and finally blocks for foreground/background agents.
+    const { spyOn } = await import('bun:test')
+    const queryModule = await import('../src/query.js')
+    const { runAgent } = await import('../src/tools/AgentTool/runAgent.js')
+    const { processPromptSlashCommand } = await import('../src/utils/processUserInput/processSlashCommand.js')
+    const { executePreToolHooks } = await import('../src/utils/hooks.js')
+    const { clearSessionHooks } = await import('../src/utils/hooks/sessionHooks.js')
+    const { setIsInteractive, getIsInteractive } = await import('../src/bootstrap/state.js')
+    const interactive = getIsInteractive(), log = join(artifacts, 'stale-agent-hook.log')
+    const agent: any = { agentType: 'skill-worker', source: 'custom', tools: [], getSystemPrompt: () => 'fixture' }
+    const command: any = { type: 'prompt', name: 'lifecycle-fixture', source: 'userSettings', description: 'fixture', skillRoot: artifacts, hooks: { PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: `printf stale >> '${log}'` }] }] }, getPromptForCommand: async () => [{ type: 'text', text: 'fixture' }] }
+    const query = spyOn(queryModule, 'query')
+    const workers: string[] = []
+    try {
+      setIsInteractive(false)
+      for (const isAsync of [false, true]) for (const ending of ['complete', 'error', 'abort']) {
+        const id = `skill-${isAsync}-${ending}`; workers.push(id)
+        const controller = new AbortController()
+        const params: any = { agentDefinition: agent, promptMessages: [], toolUseContext: agentContext, isAsync, querySource: 'agent:custom', availableTools: [], override: { agentId: id, abortController: controller, systemPrompt: ['fixture'], userContext: {}, systemContext: {} } }
+        query.mockImplementation((async function* ({ toolUseContext }: any) {
+          await processPromptSlashCommand(command.name, '', [command], toolUseContext)
+          assert.ok(state.sessionHooks.has(id), 'agent never registered its skill hooks')
+          if (ending === 'error') throw new Error('fixture query failed')
+          if (ending === 'abort') controller.abort()
+        }) as any)
+        if (ending === 'complete') { for await (const _ of runAgent(params)) {} }
+        else await assert.rejects(async () => { for await (const _ of runAgent(params)) {} }, ending === 'error' ? /fixture query failed/ : /abort/i)
+        assert.equal(state.sessionHooks.has(id), false, `skill hooks survived ${isAsync}/${ending}`)
+        query.mockImplementation((async function* ({ toolUseContext }: any) {
+          delete process.env.CLAUDE_CODE_SIMPLE
+          for await (const _ of executePreToolHooks('Read', 'resumed-read', {}, toolUseContext)) {}
+          process.env.CLAUDE_CODE_SIMPLE = '1'
+        }) as any)
+        params.override.abortController = new AbortController()
+        for await (const _ of runAgent(params)) {}
+        assert.equal(existsSync(log), false, 'old skill hook ran after agent resume')
+      }
+    } finally {
+      query.mockRestore()
+      for (const id of workers) clearSessionHooks(setAppState, id)
+      setIsInteractive(interactive); process.env.CLAUDE_CODE_SIMPLE = '1'
+    }
+  })
+  await maintenance('skill-hook-source-budgets', async () => {
+    const { registerSkillHooks } = await import('../src/utils/hooks/registerSkillHooks.js')
+    const { clearSessionHooks } = await import('../src/utils/hooks/sessionHooks.js')
+    const session = 'hook-budget-fixture'
+    const count = () => Object.values(state.sessionHooks.get(session)?.hooks ?? {}).flatMap((matchers: any) => matchers.flatMap((m: any) => m.hooks)).length
+    try {
+      const hooks = { PreToolUse: [{ matcher: 'Read', hooks: Array.from({ length: 600 }, (_, i) => ({ type: 'command', command: `printf ${i}` })) }] }
+      for (const skill of ['a', 'b', 'c']) registerSkillHooks(setAppState, session, hooks as any, skill, join(artifacts, skill), 'same-repository')
+      assert.equal(count(), 1024, 'same source bypassed its cumulative hook budget')
+      registerSkillHooks(setAppState, session, { PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'printf other' }] }] } as any, 'other', artifacts, 'another-source')
+      assert.equal(count(), 1025, 'one source exhausted another source budget')
+      const longMatcher = { PreToolUse: [{ matcher: 'x'.repeat(16385), hooks: [{ type: 'command', command: 'printf long' }] }] }
+      registerSkillHooks(setAppState, session, longMatcher as any, 'long', artifacts, 'matcher-source')
+      assert.equal(count(), 1025, 'oversized matcher registered hooks')
+      for (const name of ['a', 'b', 'c']) {
+        registerSkillHooks(setAppState, session, { PreToolUse: [{ matcher: name.repeat(8192), hooks: [{ type: 'command', command: `printf ${name}` }] }] } as any, name, artifacts, 'matcher-source')
+      }
+      assert.equal(count(), 1027, 'multiple skills bypassed their source matcher budget')
+    } finally { clearSessionHooks(setAppState, session) }
+  })
+  await maintenance('skill-argument-name-bounds', async () => {
+    const { parseArgumentNames, substituteArguments } = await import('../src/utils/argumentSubstitution.js')
+    const names = Array.from({ length: 3000 }, (_, i) => `name_${i}`)
+    assert.equal(parseArgumentNames(names).length, 64, 'argument name count is unbounded')
+    const long = 'x'.repeat(65)
+    assert.ok(parseArgumentNames([long]).every(name => name.length <= 64), 'argument name length is unbounded')
+    assert.equal(substituteArguments('$second', 'first second', false, parseArgumentNames([long, 'second'])), 'second', 'skipped argument name shifted later values')
+    assert.equal(parseArgumentNames(names.join(' ')).length, 64, 'string argument name count is unbounded')
+    assert.equal(substituteArguments('$name_0 $name_63 $name_64', Array.from({ length: 65 }, (_, i) => `v${i}`).join(' '), false, names), 'v0 v63 $name_64')
+    assert.equal(substituteArguments('$first $ARGUMENTS[1] $2 $ARGUMENTS', '"$second" b c', false, ['first', 'second']), '$second b c "$second" b c', 'inserted values were re-expanded')
+    assert.equal(substituteArguments('$' + long, 'value', false, [long]), '$' + long, 'oversized argument name was expanded')
+  })
+  await maintenance('skill-policy-withholds-permissions-with-hooks', async () => {
+    const probe = join(artifacts, 'skill-policy.ts'), source = resolve(import.meta.dir, '../src')
+    writeFileSync(probe, `
+      globalThis.MACRO = { VERSION: 'fixture' };
+      const { enableConfigs } = await import(${JSON.stringify(source)} + '/utils/config.ts'); enableConfigs();
+      const { getSettingsForSource } = await import(${JSON.stringify(source)} + '/utils/settings/settings.ts');
+      const { processPromptSlashCommand } = await import(${JSON.stringify(source)} + '/utils/processUserInput/processSlashCommand.tsx');
+      const { getDefaultAppState } = await import(${JSON.stringify(source)} + '/state/AppStateStore.ts');
+      const { createSkillCommand } = await import(${JSON.stringify(source)} + '/skills/loadSkillsDir.ts');
+      const { prepareForkedCommandContext } = await import(${JSON.stringify(source)} + '/utils/forkedAgent.ts');
+      const { hasPermissionsToUseTool } = await import(${JSON.stringify(source)} + '/utils/permissions/permissions.ts');
+      const { createAssistantMessage } = await import(${JSON.stringify(source)} + '/utils/messages.ts');
+      const { BashTool } = await import(${JSON.stringify(source)} + '/tools/BashTool/BashTool.tsx');
+      const { createFileStateCacheWithSizeLimit } = await import(${JSON.stringify(source)} + '/utils/fileStateCache.ts');
+      const { existsSync } = await import('node:fs');
+      let state = getDefaultAppState(); state.toolPermissionContext.mode = 'default';
+      const context = { options: { tools: [BashTool], commands: [], mainLoopModel: 'claude-sonnet-4-6', mcpClients: [], mcpResources: {}, agentDefinitions: { activeAgents: [{ agentType: 'general-purpose', source: 'built-in', getSystemPrompt: () => 'fixture' }] } }, messages: [], getAppState: () => state, setAppState: fn => { state = fn(state); }, abortController: new AbortController(), readFileState: createFileStateCacheWithSizeLimit(10), updateFileHistoryState: () => {}, updateAttributionState: () => {}, setInProgressToolUseIDs: () => {}, setResponseLength: () => {} };
+      const command = { type: 'prompt', name: 'policy-fixture', description: 'fixture', source: process.argv[2], allowedTools: ['Bash'], hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'printf hook' }] }] }, getPromptForCommand: async () => [{ type: 'text', text: 'fixture' }] };
+      const result = await processPromptSlashCommand(command.name, '', [command], context);
+      const marker = process.env.CLAUDE_CODE_MANAGED_SETTINGS_PATH + '/' + process.argv[2] + '-inline.txt';
+      const inline = createSkillCommand({ skillName: 'inline-fixture', description: 'fixture', markdownContent: '!\\x60printf ok > ' + marker + '\\x60', allowedTools: ['Bash'], argumentNames: [], source: process.argv[2], loadedFrom: 'user' });
+      let inlineError;
+      try { await inline.getPromptForCommand('', context); } catch (error) { inlineError = String(error); }
+      const fork = await prepareForkedCommandContext({ ...command, context: 'fork' }, '', context);
+      const forkContext = { ...context, getAppState: fork.modifiedGetAppState };
+      const shell = { command: 'printf fixture > ' + marker + '-fork' };
+      const permission = await hasPermissionsToUseTool(BashTool, shell, forkContext, createAssistantMessage({ content: [] }), '');
+      state.toolPermissionContext.alwaysDenyRules.cliArg = ['Bash'];
+      const denied = await hasPermissionsToUseTool(BashTool, shell, forkContext, createAssistantMessage({ content: [] }), '');
+      delete state.toolPermissionContext.alwaysDenyRules.cliArg;
+      state.toolPermissionContext.alwaysAllowRules.cliArg = ['Bash'];
+      const explicit = await hasPermissionsToUseTool(BashTool, shell, forkContext, createAssistantMessage({ content: [] }), '');
+      console.log(JSON.stringify({ policy: getSettingsForSource('policySettings')?.strictPluginOnlyCustomization, allowedTools: result.allowedTools, hooks: [...state.sessionHooks.values()].flatMap(s => Object.values(s.hooks)).length, inlineRan: existsSync(marker), inlineError, forkRules: fork.modifiedGetAppState().toolPermissionContext.alwaysAllowRules.command ?? [], forkPermission: permission.behavior, deniedPermission: denied.behavior, explicitPermission: explicit.behavior }));
+    `)
+    const observations = []
+    for (const restricted of [false, true]) {
+      const managed = join(artifacts, `managed-${restricted}`); mkdirSync(managed)
+      writeFileSync(join(managed, 'managed-settings.json'), JSON.stringify(restricted ? { strictPluginOnlyCustomization: ['hooks'] } : {}))
+      for (const source of ['userSettings', 'plugin']) {
+        const output = execFileSync('bun', [probe, source], { encoding: 'utf8', env: { ...process.env, USER_TYPE: 'ant', CLAUDE_CODE_MANAGED_SETTINGS_PATH: managed } })
+        const observed = JSON.parse(output.trim()); observations.push({ restricted, source, ...observed })
+        writeFileSync(join(artifacts, 'skill-policy.json'), JSON.stringify(observations, null, 2))
+        assert.equal(observed.hooks, restricted && source === 'userSettings' ? 0 : 1)
+        assert.equal(observed.inlineRan, !(restricted && source === 'userSettings'), `inline permission boundary failed: ${observed.inlineError}`)
+        if (restricted && source === 'userSettings') assert.match(observed.inlineError, /permission/i)
+        assert.deepEqual(observed.allowedTools, restricted && source === 'userSettings' ? [] : ['Bash'], 'skill kept permissions while its hooks were excluded')
+        assert.deepEqual(observed.forkRules, observed.allowedTools, 'fork skill bypassed permission policy')
+        assert.equal(observed.forkPermission, restricted && source === 'userSettings' ? 'ask' : 'allow')
+        assert.equal(observed.deniedPermission, 'deny', 'skill overrode an explicit deny')
+        assert.equal(observed.explicitPermission, 'allow', 'policy removed explicit CLI permission')
+      }
+    }
+  })
+  await maintenance('transcript-tombstone-write-failure-keeps-history', async () => {
+    if (process.platform === 'win32') return
+    // Real file-size limit injects write failure. Cover middle/last entries,
+    // the >64KiB slow path, and the ordinary successful deletion path.
+    const probe = join(artifacts, 'tombstone-failure.ts'), source = resolve(import.meta.dir, '../src')
+    writeFileSync(probe, `
+      process.on('SIGXFSZ', () => {}); globalThis.MACRO = { VERSION: 'fixture' };
+      const { setSessionFileForTesting, removeTranscriptMessage } = await import(${JSON.stringify(source)} + '/utils/sessionStorage.ts');
+      setSessionFileForTesting(process.argv[2]); await removeTranscriptMessage('55555555-5555-4555-8555-555555555555');
+    `)
+    for (const mode of ['middle', 'slow', 'last', 'success']) {
+      const file = join(artifacts, `tombstone-${mode}.jsonl`)
+      const before = JSON.stringify({ uuid: '44444444-4444-4444-8444-444444444444', content: 'KEEP_BEFORE' }) + '\n'
+      const target = JSON.stringify({ uuid: '55555555-5555-4555-8555-555555555555', content: 'REMOVE_ME' }) + '\n'
+      const after = mode === 'last' ? '' : JSON.stringify({ uuid: '66666666-6666-4666-8666-666666666666', content: 'KEEP_AFTER' + 'x'.repeat(mode === 'slow' ? 70000 : mode === 'middle' ? 4096 : 0) }) + '\n'
+      const original = before + target + after
+      writeFileSync(file, original)
+      execFileSync('bash', ['-c', `${mode === 'success' ? '' : 'ulimit -f 1; '}exec bun "$1" "$2"`, '--', probe, file], { env: process.env, stdio: 'pipe', timeout: 10000 })
+      assert.equal(readFileSync(file, 'utf8'), mode === 'last' || mode === 'success' ? before + after : original, `tombstone ${mode} lost history after a write failure`)
+      assert.equal(readdirSync(artifacts).filter(name => name.startsWith(`tombstone-${mode}.jsonl.`) && name.endsWith('.tmp')).length, 0, 'failed transcript replacement left a temp file')
+    }
+    const { setSessionFileForTesting, enqueueEntryForTesting, removeTranscriptMessage, getTranscriptPath } = await import('../src/utils/sessionStorage.js')
+    const file = join(artifacts, 'tombstone-queued.jsonl')
+    const target = { type: 'user', uuid: '55555555-5555-4555-8555-555555555555', message: { role: 'user', content: 'REMOVE_ME' } }
+    writeFileSync(file, JSON.stringify(target) + '\n')
+    setSessionFileForTesting(file)
+    try {
+      const queued = enqueueEntryForTesting({ type: 'custom-title', customTitle: 'KEEP_QUEUED', sessionId: '33333333-3333-4333-8333-333333333333' } as any)
+      await removeTranscriptMessage(target.uuid as any); await queued
+      assert.match(readFileSync(file, 'utf8'), /KEEP_QUEUED/)
+      assert.ok(!readFileSync(file, 'utf8').includes('REMOVE_ME'))
+    } finally { setSessionFileForTesting(getTranscriptPath()) }
+  })
+  await maintenance('transcript-large-tail-tombstone', async () => {
+    const probe = join(artifacts, 'tombstone-large.ts'), source = resolve(import.meta.dir, '../src')
+    writeFileSync(probe, `
+      process.on('SIGXFSZ', () => {}); globalThis.MACRO = { VERSION: 'fixture' };
+      const { setSessionFileForTesting, removeTranscriptMessage } = await import(${JSON.stringify(source)} + '/utils/sessionStorage.ts');
+      setSessionFileForTesting(process.argv[2]); await removeTranscriptMessage('55555555-5555-4555-8555-555555555555');
+    `)
+    const prefix = (JSON.stringify({ type: 'system', content: 'x'.repeat(65536) + '你好🙂' }) + '\n').repeat(801)
+    const target = JSON.stringify({ uuid: '55555555-5555-4555-8555-555555555555', content: 'REMOVE_ME' }) + '\n'
+    const metadata = JSON.stringify({ type: 'custom-title', customTitle: 'KEEP_METADATA' }) + '\n'
+    const hash = (text: string) => createHash('sha256').update(text).digest('hex')
+    for (const mode of ['middle', 'last', ...(process.platform === 'win32' ? [] : ['write-failure'])]) {
+      const file = join(artifacts, `large-${mode}.jsonl`), suffix = mode === 'last' ? '' : metadata
+      const original = prefix + target + suffix
+      writeFileSync(file, original)
+      if (mode === 'write-failure') execFileSync('bash', ['-c', 'ulimit -f 1; exec bun "$1" "$2"', '--', probe, file], { env: process.env, stdio: 'pipe', timeout: 10000 })
+      else execFileSync('bun', [probe, file], { env: process.env, stdio: 'pipe', timeout: 10000 })
+      assert.equal(hash(readFileSync(file, 'utf8')), hash(mode === 'write-failure' ? original : prefix + suffix), `large transcript ${mode} was not safely edited`)
+      assert.equal(readdirSync(artifacts).filter(name => name.startsWith(`large-${mode}.jsonl.`) && name.endsWith('.tmp')).length, 0)
+    }
+  })
   writeFileSync(join(artifacts, 'results.json'), JSON.stringify(results, null, 2))
   assert.deepEqual(maintenanceFailures, [], 'maintenance boundary regressions')
 

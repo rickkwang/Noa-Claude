@@ -37,6 +37,7 @@ import {
 import { createDenialTrackingState } from './permissions/denialTracking.js'
 import { parseToolListFromCLI } from './permissions/permissionSetup.js'
 import { isLoggableMessage, recordSidechainTranscript } from './sessionStorage.js'
+import { isRestrictedToPluginOnly, isSourceAdminTrusted } from './settings/pluginOnlyPolicy.js'
 import type { SystemPrompt } from './systemPromptType.js'
 import {
   type ContentReplacementState,
@@ -240,7 +241,9 @@ export async function prepareForkedCommandContext(
     .join('\n')
 
   // Parse and prepare allowed tools
-  const allowedTools = parseToolListFromCLI(command.allowedTools ?? [])
+  const allowedTools = !isRestrictedToPluginOnly('hooks') || isSourceAdminTrusted(command.source)
+    ? parseToolListFromCLI(command.allowedTools ?? [])
+    : []
 
   // Create modified context with allowed tools
   const modifiedGetAppState = createGetAppStateWithAllowedTools(

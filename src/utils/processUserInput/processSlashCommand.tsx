@@ -7,7 +7,7 @@ import { builtInCommandNames, type Command, type CommandBase, findBuiltInCommand
 import { NO_CONTENT_MESSAGE } from 'src/constants/messages.js';
 import type { SetToolJSXFn, ToolUseContext } from 'src/Tool.js';
 import type { AssistantMessage, AttachmentMessage, Message, NormalizedUserMessage, ProgressMessage, UserMessage } from 'src/types/message.js';
-import { addInvokedSkill, getSessionId } from '../../bootstrap/state.js';
+import { addInvokedSkill, getProjectRoot, getSessionId } from '../../bootstrap/state.js';
 import { COMMAND_MESSAGE_TAG, COMMAND_NAME_TAG } from '../../constants/xml.js';
 import type { CanUseToolFn } from '../../hooks/useCanUseTool.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, type AnalyticsMetadata_I_VERIFIED_THIS_IS_PII_TAGGED, logEvent } from '../../services/analytics/index.js';
@@ -934,8 +934,13 @@ async function getMessagesForPromptSlashCommand(command: CommandBase & PromptCom
   // where source is known. Mirrors the agent frontmatter gate in runAgent.ts.
   const hooksAllowedForThisSkill = !isRestrictedToPluginOnly('hooks') || isSourceAdminTrusted(command.source);
   if (command.hooks && hooksAllowedForThisSkill) {
-    const sessionId = getSessionId();
-    registerSkillHooks(context.setAppState, sessionId, command.hooks, command.name, command.type === 'prompt' ? command.skillRoot : undefined);
+    const sessionId = context.agentId ?? getSessionId();
+    const sourceKey = command.source === 'plugin'
+      ? `plugin:${command.pluginInfo?.repository ?? command.name.split(':')[0]}`
+      : command.source === 'projectSettings' || command.source === 'localSettings'
+        ? `repo:${getProjectRoot()}`
+        : command.source ?? 'unknown';
+    registerSkillHooks(context.setAppStateForTasks ?? context.setAppState, sessionId, command.hooks, command.name, command.type === 'prompt' ? command.skillRoot : undefined, sourceKey);
   }
 
   // Record skill invocation for compaction preservation, scoped by agent context.
@@ -945,7 +950,7 @@ async function getMessagesForPromptSlashCommand(command: CommandBase & PromptCom
   const skillContent = result.filter((b): b is TextBlockParam => b.type === 'text').map(b => b.text).join('\n\n');
   addInvokedSkill(command.name, skillPath, skillContent, getAgentContext()?.agentId ?? null);
   const metadata = formatCommandLoadingMetadata(command, args);
-  const additionalAllowedTools = parseToolListFromCLI(command.allowedTools ?? []);
+  const additionalAllowedTools = hooksAllowedForThisSkill ? parseToolListFromCLI(command.allowedTools ?? []) : [];
 
   // Create content for the main message, including any pasted images
   const mainMessageContent: ContentBlockParam[] = imageContentBlocks.length > 0 || precedingInputBlocks.length > 0 ? [...imageContentBlocks, ...precedingInputBlocks, ...result] : result;

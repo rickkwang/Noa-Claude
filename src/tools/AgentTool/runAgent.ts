@@ -945,10 +945,8 @@ export async function* runAgent({
     // unrefs its timer, so the common case where cleanup wins leaves nothing
     // holding the event loop open at process exit.
     await withTimeout(mcpCleanup(), 1000, 'MCP cleanup timed out').catch(() => {})
-    // Clean up agent's session hooks
-    if (agentDefinition.hooks || structuredOutputTool) {
-      clearSessionHooks(rootSetAppState, agentId)
-    }
+    // Skills can register hooks during the run even without agent frontmatter.
+    clearSessionHooks(rootSetAppState, agentId)
     // Clean up prompt cache tracking state for this agent
     if (feature('PROMPT_CACHE_BREAK_DETECTION')) {
       cleanupAgentTracking(agentId)

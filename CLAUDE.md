@@ -57,4 +57,7 @@ Don't claim command parity beyond `docs/product-governance.md`, which is authori
 - `Text` from `src/ink.ts` is `ThemedText`: `color` accepts raw values, but `backgroundColor` only resolves theme keys, so a raw hex background is silently dropped (typecheck won't catch it). Use `BaseText` for raw background colors.
 - Commit messages must not describe work as an upstream port; history stays as-is.
 - `CLAUDE.md` is tracked; durable rules go here.
+- Skill hook cleanup and success callbacks use registration identity, not command equality. Budgets are cumulative per source and session (1,024 hooks / 16,384 matcher characters), including hooks already consumed by `once`. When plugin-only hook policy excludes a skill's hooks, its `allowed-tools` must also be excluded, including inline shell expansion and fork execution.
+- Agent skill hooks must register and clean up through `setAppStateForTasks ?? setAppState`; background agents' `setAppState` may be a no-op. Agent exit always clears session hooks, including hooks registered by skills during the run.
+- Transcript tombstones may truncate the last entry directly; removing earlier entries must preserve the original file on write failure. Finish pending appends before replacing a transcript. Tail entries remain removable above the full-rewrite size limit using bounded buffers.
 - Stability invariants: interactive startup stays alive, `--print` works, resume/continue survive compaction, MCP startup degrades gracefully, permission boundaries hold. Failure-mode checklist: `docs/operating-guide.md`.

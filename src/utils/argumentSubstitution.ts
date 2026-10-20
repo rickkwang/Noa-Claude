@@ -13,6 +13,9 @@
 
 import { tryParseShellCommand } from './bash/shellQuote.js'
 
+const MAX_ARGUMENT_NAMES = 64
+const MAX_ARGUMENT_NAME_LENGTH = 64
+
 /**
  * Parse an arguments string into an array of individual arguments.
  * Uses shell-quote for proper shell argument parsing including quoted strings.
@@ -58,12 +61,14 @@ export function parseArgumentNames(
   // Filter out empty strings and numeric-only names (which conflict with $0, $1 shorthand)
   const isValidName = (name: string): boolean =>
     typeof name === 'string' && name.trim() !== '' && !/^\d+$/.test(name)
+  // Empty slots preserve the position of names too long to expand safely.
+  const boundName = (name: string): string => name.length <= MAX_ARGUMENT_NAME_LENGTH ? name : ''
 
   if (Array.isArray(argumentNames)) {
-    return argumentNames.filter(isValidName)
+    return argumentNames.slice(0, MAX_ARGUMENT_NAMES).filter(isValidName).map(boundName)
   }
   if (typeof argumentNames === 'string') {
-    return argumentNames.split(/\s+/).filter(isValidName)
+    return argumentNames.trim().split(/\s+/, MAX_ARGUMENT_NAMES).filter(isValidName).map(boundName)
   }
   return []
 }
@@ -78,7 +83,7 @@ export function generateProgressiveArgumentHint(
   argNames: string[],
   typedArgs: string[],
 ): string | undefined {
-  const remaining = argNames.slice(typedArgs.length)
+  const remaining = argNames.slice(typedArgs.length).filter(Boolean)
   if (remaining.length === 0) return undefined
   return remaining.map(name => `[${name}]`).join(' ')
 }
@@ -137,9 +142,9 @@ export function substituteArguments(
 
   // Replace named arguments (e.g., $foo, $bar) with their values
   // Named arguments map to positions: argumentNames[0] -> parsedArgs[0], etc.
-  for (let i = 0; i < argumentNames.length; i++) {
+  for (let i = 0; i < Math.min(argumentNames.length, MAX_ARGUMENT_NAMES); i++) {
     const name = argumentNames[i]
-    if (!name) continue
+    if (!name || name.length > MAX_ARGUMENT_NAME_LENGTH) continue
 
     // Match $name but not $name[...] or $nameXxx (word chars)
     // Also ensure we match word boundaries to avoid partial matches

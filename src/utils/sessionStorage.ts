@@ -4,7 +4,7 @@ import type { Dirent } from 'fs'
 // Sync fs primitives for transcript reads and cancellation markers — separate from fs/promises
 // imports above. Named (not wildcard) per CLAUDE.md style; no collisions
 // with the async-suffixed names.
-import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readSync, writeFileSync } from 'fs'
+import { closeSync, existsSync, fstatSync, fsyncSync, ftruncateSync, mkdirSync, openSync, readFileSync, readSync, renameSync, unlinkSync, writeFileSync } from 'fs'
 import {
   appendFile as fsAppendFile,
   open as fsOpen,
@@ -1166,88 +1166,111 @@ class Project {
    * Remove a message from the transcript by UUID.
    * Used for tombstoning orphaned messages from failed streaming attempts.
    *
-   * The target is almost always the most recently appended entry, so we
-   * read only the tail, locate the line, and splice it out with a
-   * positional write + truncate instead of rewriting the whole file.
+   * The target is almost always the last entry, which only needs truncation.
+   * Middle entries use an atomic replacement so failed writes preserve history.
    */
   async removeMessageByUuid(targetUuid: UUID): Promise<void> {
     return this.trackWrite(async () => {
-      if (this.sessionFile === null) return
+      const filePath = this.sessionFile
+      if (filePath === null) return
+      let tempPath: string | undefined
       try {
-        let fileSize = 0
-        const fh = await fsOpen(this.sessionFile, 'r+')
+        // Finish in-flight appends, then keep the edit synchronous so queued
+        // appends cannot land on the old inode during an atomic replacement.
+        if (this.activeDrain) await this.activeDrain
+        this.syncFlushQueuedWrites(filePath)
+        const fd = openSync(filePath, 'r')
+        let fileSize: number
+        let tailRemoval: { start: number; end: number } | undefined
         try {
-          const { size } = await fh.stat()
+          const { size } = fstatSync(fd)
           fileSize = size
           if (size === 0) return
-
           const chunkLen = Math.min(size, LITE_READ_BUF_SIZE)
           const tailStart = size - chunkLen
           const buf = Buffer.allocUnsafe(chunkLen)
-          const { bytesRead } = await fh.read(buf, 0, chunkLen, tailStart)
+          const bytesRead = readSync(fd, buf, 0, chunkLen, tailStart)
           const tail = buf.subarray(0, bytesRead)
-
-          // Entries are serialized via JSON.stringify (no key-value
-          // whitespace). Search for the full `"uuid":"..."` pattern, not
-          // just the bare UUID, so we do not match the same value sitting
-          // in `parentUuid` of a child entry. UUIDs are pure ASCII so a
-          // byte-level search is correct.
           const needle = `"uuid":"${targetUuid}"`
           const matchIdx = tail.lastIndexOf(needle)
-
           if (matchIdx >= 0) {
-            // 0x0a never appears inside a UTF-8 multi-byte sequence, so
-            // byte-scanning for line boundaries is safe even if the chunk
-            // starts mid-character.
             const prevNl = tail.lastIndexOf(0x0a, matchIdx)
-            // If the preceding newline is outside our chunk and we did not
-            // read from the start of the file, the line is longer than the
-            // window - fall through to the slow path.
-            if (prevNl >= 0 || tailStart === 0) {
-              const lineStart = prevNl + 1 // 0 when prevNl === -1
-              const nextNl = tail.indexOf(0x0a, matchIdx + needle.length)
-              const lineEnd = nextNl >= 0 ? nextNl + 1 : bytesRead
-
-              const absLineStart = tailStart + lineStart
-              const afterLen = bytesRead - lineEnd
-              // Truncate first, then re-append the trailing lines. In the
-              // common case (target is the last entry) afterLen is 0 and
-              // this is a single ftruncate.
-              await fh.truncate(absLineStart)
-              if (afterLen > 0) {
-                await fh.write(tail, lineEnd, afterLen, absLineStart)
-              }
-              return
+            const nextNl = tail.indexOf(0x0a, matchIdx + needle.length)
+            const lineEnd = nextNl >= 0 ? nextNl + 1 : bytesRead
+            if (tailStart + bytesRead === size && (prevNl >= 0 || tailStart === 0) &&
+                jsonParse(tail.toString('utf8', prevNl + 1, lineEnd)).uuid === targetUuid) {
+              tailRemoval = { start: tailStart + prevNl + 1, end: tailStart + lineEnd }
             }
           }
         } finally {
-          await fh.close()
+          closeSync(fd)
         }
-
-        // Slow path: target was not in the last 64KB. Rare - requires many
-        // large entries to have landed between the write and the tombstone.
-        if (fileSize > MAX_TOMBSTONE_REWRITE_BYTES) {
-          logForDebugging(
-            `Skipping tombstone removal: session file too large (${formatFileSize(fileSize)})`,
-            { level: 'warn' },
-          )
+        // Removing the last entry needs no writes or replacement allocation.
+        if (tailRemoval?.end === fileSize) {
+          const fd = openSync(filePath, 'r+')
+          try { ftruncateSync(fd, tailRemoval.start) } finally { closeSync(fd) }
           return
         }
-        const content = await readFile(this.sessionFile, { encoding: 'utf-8' })
-        const lines = content.split('\n').filter((line: string) => {
-          if (!line.trim()) return true
-          try {
-            const entry = jsonParse(line)
-            return entry.uuid !== targetUuid
-          } catch {
-            return true // Keep malformed lines
+        let replacement: string | undefined
+        if (!tailRemoval) {
+          if (fileSize > MAX_TOMBSTONE_REWRITE_BYTES) {
+            logForDebugging(
+              `Skipping tombstone removal: session file too large (${formatFileSize(fileSize)})`,
+              { level: 'warn' },
+            )
+            return
           }
-        })
-        await writeFile(this.sessionFile, lines.join('\n'), {
-          encoding: 'utf8',
-        })
-      } catch {
-        // Silently ignore errors - the file might not exist yet
+          const content = readFileSync(filePath, 'utf8')
+          let found = false
+          const lines = content.split('\n').filter(line => {
+            if (!line.trim()) return true
+            try {
+              if (jsonParse(line).uuid !== targetUuid) return true
+              found = true
+              return false
+            } catch {
+              return true
+            }
+          })
+          if (!found) return
+          replacement = lines.join('\n')
+        }
+        tempPath = `${filePath}.${randomUUID()}.tmp`
+        const tempFd = openSync(tempPath, 'wx', 0o600)
+        try {
+          if (tailRemoval) {
+            // A known tail entry can be removed from arbitrarily large files
+            // with bounded memory. Never truncate the original to splice it.
+            const sourceFd = openSync(filePath, 'r')
+            try {
+              const buffer = Buffer.allocUnsafe(LITE_READ_BUF_SIZE)
+              for (const [start, end] of [[0, tailRemoval.start], [tailRemoval.end, fileSize]] as const) {
+                let offset = start
+                while (offset < end) {
+                  const bytes = readSync(sourceFd, buffer, 0, Math.min(buffer.length, end - offset), offset)
+                  if (bytes === 0) throw new Error('Transcript changed during tombstone removal')
+                  writeFileSync(tempFd, buffer.subarray(0, bytes))
+                  offset += bytes
+                }
+              }
+            } finally {
+              closeSync(sourceFd)
+            }
+          } else {
+            writeFileSync(tempFd, replacement!, 'utf8')
+          }
+          fsyncSync(tempFd)
+        } finally {
+          closeSync(tempFd)
+        }
+        renameSync(tempPath, filePath)
+      } catch (error) {
+        // A failed replacement leaves the original history intact.
+        logForDebugging(`Could not remove transcript message: ${error}`, { level: 'warn' })
+      } finally {
+        if (tempPath) {
+          try { unlinkSync(tempPath) } catch { /* Already renamed or removed. */ }
+        }
       }
     })
   }
