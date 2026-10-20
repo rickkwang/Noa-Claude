@@ -485,13 +485,12 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
       setEnvKey(env, 'ANTHROPIC_BASE_URL', normalizedBaseUrl)
       setEnvKey(env, 'ANTHROPIC_AUTH_TOKEN', normalizedProfile.apiKey)
       setEnvKey(env, 'ANTHROPIC_MODEL', normalizedProfile.model)
-      // Both serve a single model, so the Claude tier aliases and the subagent
-      // model have to be pinned to it or those lookups fall back to a
-      // claude-* id the endpoint does not serve.
+      // The Claude tier aliases have to be pinned to a served model or those
+      // lookups fall back to a claude-* id the endpoint does not serve.
+      // Subagents are left to inherit the session model, as /model sets it.
       setEnvKey(env, 'ANTHROPIC_DEFAULT_OPUS_MODEL', normalizedProfile.model)
       setEnvKey(env, 'ANTHROPIC_DEFAULT_SONNET_MODEL', normalizedProfile.model)
       setEnvKey(env, 'ANTHROPIC_DEFAULT_HAIKU_MODEL', normalizedProfile.model)
-      setEnvKey(env, 'CLAUDE_CODE_SUBAGENT_MODEL', normalizedProfile.model)
       break
     case 'openai':
     case 'gemini':
@@ -518,13 +517,12 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
       setEnvKey(env, 'ANTHROPIC_MODEL', normalizedProfile.model)
       setEnvKey(env, 'OPENAI_MODEL', normalizedProfile.model)
       // Same reason as the kimi/minimax pins above: without these, tier-alias
-      // and subagent lookups fall back to claude-* ids the endpoint does not
-      // serve, and every small-model call (permission precheck, titles,
-      // summaries) fails closed.
+      // lookups fall back to claude-* ids the endpoint does not serve, and
+      // every small-model call (permission precheck, titles, summaries) fails
+      // closed. Subagents inherit the session model.
       setEnvKey(env, 'ANTHROPIC_DEFAULT_OPUS_MODEL', normalizedProfile.model)
       setEnvKey(env, 'ANTHROPIC_DEFAULT_SONNET_MODEL', normalizedProfile.model)
       setEnvKey(env, 'ANTHROPIC_DEFAULT_HAIKU_MODEL', normalizedProfile.model)
-      setEnvKey(env, 'CLAUDE_CODE_SUBAGENT_MODEL', normalizedProfile.model)
       break
   }
 

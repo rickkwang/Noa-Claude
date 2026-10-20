@@ -546,8 +546,8 @@ describe('provider profile credentials', () => {
     }
   })
 
-  test('pins the Claude tier aliases for MiniMax as well as Kimi', () => {
-    for (const type of ['kimi', 'minimax'] as const) {
+  test('pins the Claude tier aliases but not subagents, on both protocol branches', () => {
+    for (const type of ['kimi', 'minimax', 'chatgpt'] as const) {
       const env = buildProviderEnv(
         profile({ type, model: 'single-served-model', apiKey: 'sk-token' }),
       )
@@ -556,7 +556,8 @@ describe('provider profile credentials', () => {
       expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('single-served-model')
       expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('single-served-model')
       expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('single-served-model')
-      expect(env.CLAUDE_CODE_SUBAGENT_MODEL).toBe('single-served-model')
+      // Subagents inherit the session model rather than the profile default.
+      expect(env.CLAUDE_CODE_SUBAGENT_MODEL).toBeUndefined()
     }
   })
 
