@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdirSync, mkdtempSync, writeFileSync, appendFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, appendFileSync, readFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +27,9 @@ writeFileSync(join(fixture, 'a.ts'), 'export function ok(x: number) {\n  return 
 git('add', '.'); git('commit', '-qm', 'base');
 writeFileSync(join(fixture, 'a.ts'), 'export function ok(x: number) {\n  return x < 0\n}\n');
 git('commit', '-qam', 'invert guard');
+writeFileSync(join(fixture, 'new.ts'), 'export const newFile = true;\n');
+writeFileSync(join(artifacts, 'outside.ts'), 'export const outside = true;\n');
+symlinkSync(join(artifacts, 'outside.ts'), join(fixture, 'outside-link.ts'));
 
 const requests = [];
 const sse = (res, text) => {
@@ -118,8 +121,9 @@ try {
     assert.ok(req.includes('Noa does not support'), 'ultra was not refused');
     assert.ok(!req.includes('expert code reviewer'), 'ultra started a review');
   });
-  await scenario('invalid-effort-and-max-notices', '/code-review hig --max-findings 0', ALL_TOOLS, req => {
-    assert.ok(req.includes('Ignoring unrecognized effort \\"hig\\"; valid: low, medium, high, xhigh, max.'), 'unrecognized effort notice missing');
+  await scenario('branch-target-and-invalid-max-notice', '/code-review hig --max-findings 0', ALL_TOOLS, req => {
+    assert.ok(req.includes('Review the target `hig`'), 'non-level token was swallowed instead of kept as a target');
+    assert.ok(!req.includes('Ignoring unrecognized effort'), 'target was treated as an invalid effort');
     assert.ok(req.includes('was ignored: type a whole number above zero'), 'invalid max-findings notice missing');
     assert.ok(req.includes('You set `--max-findings 3` last time.'), 'stored max not reported when the bad flag falls back to it');
     assert.ok(!req.includes('Using the usual limit.'), 'usual-limit notice shown although the stored limit is reused');
@@ -148,6 +152,33 @@ try {
   });
   await scenario('xhigh-candidate-budget', '/code-review max', ALL_TOOLS, req => {
     assert.ok(req.includes('up to 8 candidates'), 'xhigh/max finder budget does not match the tier line');
+  });
+  await scenario('branch-name-preserved', '/code-review highlight', ALL_TOOLS, req => {
+    assert.ok(req.includes('Review the target `highlight`'), 'branch target was swallowed');
+  });
+  await scenario('local-path-fix', '/code-review a.ts --fix', ALL_TOOLS, req => {
+    assert.ok(req.includes('Apply a fix for each CONFIRMED finding'), 'local path fix was refused');
+    assert.ok(req.includes('Restrict edits to the reviewed target `a.ts`'), 'path fix scope missing');
+    assert.ok(!req.includes('is not checked out here'), 'local path reported as not checked out');
+  });
+  await scenario('local-path-fix-boundary', '/code-review outside-link.ts --fix', ALL_TOOLS, req => {
+    assert.ok(req.includes('change no files and say so'), 'symlink outside the working directory allowed');
+    assert.ok(!req.includes('Apply a fix for each'), 'outside target received fix instruction');
+  });
+  await scenario('untracked-path-fix', '/code-review new.ts --fix', ALL_TOOLS, req => {
+    assert.ok(req.includes('Apply a fix for each CONFIRMED finding'), 'untracked local path refused');
+    assert.ok(req.includes('Restrict edits to the reviewed target `new.ts`'), 'untracked path scope missing');
+  });
+  for (const value of ['9007199254740993', '9'.repeat(400)]) {
+    await scenario(`invalid-cap-${value.length}`, `/code-review --max-findings ${value}`, ALL_TOOLS, req => {
+      assert.ok(req.includes('was ignored: type a whole number'), 'unsafe finding cap accepted');
+      assert.ok(!req.includes('Infinity findings'), 'overflow leaked into prompt');
+    });
+  }
+  await scenario('gather-and-dedup-rules', '/code-review medium', ALL_TOOLS, req => {
+    assert.ok(req.includes('git ls-files --others --exclude-standard'), 'untracked file discovery missing');
+    assert.ok(req.includes('Do not stop while untracked files remain unread'), 'empty diff can bypass new files');
+    assert.ok(req.includes('same defect, same location, and same cause'), 'dedup rule can merge distinct defects');
   });
   await scenario('comment-without-pr', '/code-review --comment', ALL_TOOLS, req => {
     assert.ok(req.includes('needs a PR target'), '--comment without PR not refused');

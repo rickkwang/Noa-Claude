@@ -32,7 +32,8 @@ const cases = [
     { name: 'hook-invalid-limit', hook: true, invalid: true },
     { name: 'hook-allow-invalid-limit', hook: true, invalid: true, allow: true },
     { name: 'hook-valid-rewrite', hook: true },
-    { name: 'write-hook-malformed', hook: true, unknown: true, tool: 'Write' },
+    { name: 'write-hook-malformed', hook: true, invalid: true, tool: 'Write' },
+    { name: 'write-hook-unknown-key', hook: true, unknown: true, tool: 'Write' },
   ].map(c => ({ tool: 'Read', ...c, mode, name: `${c.name}-${mode}` }))),
   ...['Grep', 'Glob'].flatMap(tool => [0, 1, 2, 3, 137, 'segv', 'partial', 'buffer'].map(code => ({
     name: `${tool.toLowerCase()}-${code}`, tool, code,
@@ -109,7 +110,7 @@ async function run(scenario) {
     '--tools', scenario.tool, '--allowedTools', scenario.tool, '--max-turns', '2', '--no-session-persistence'];
   if (scenario.denied) command.push('--disallowedTools', `Read(/${secret})`);
   if (scenario.hook) {
-    const updatedInput = scenario.tool === 'Write' ? { file_path: newFile, content: 'HOOK_WRITE' }
+    const updatedInput = scenario.tool === 'Write' ? { file_path: newFile, content: scenario.invalid ? 42 : 'HOOK_WRITE' }
       : { file_path: scenario.denied ? secret : rewritten, ...(scenario.invalid && { limit: -1 }) };
     if (scenario.unknown) updatedInput.unknown_boundary_key = 42;
     writeFileSync(join(dir, 'hook-output.json'), JSON.stringify({ hookSpecificOutput: {
@@ -164,13 +165,15 @@ async function run(scenario) {
     } else {
       assert.equal(result.is_error, true, `search failure reported as success: ${textOf(result)}`);
     }
-  } else if (scenario.denied || scenario.invalid || scenario.unknown) {
+  } else if (scenario.denied || scenario.invalid) {
     assert.equal(result.is_error, true, `invalid/denied input executed: ${textOf(result)}`);
     assert.ok(!textOf(result).includes(DENIED_MARKER));
     assert.ok(!existsSync(newFile), 'rejected Write must not create a file');
   } else {
     assert.ok(!result.is_error, textOf(result));
-    assert.ok(textOf(result).includes(scenario.hook ? 'REWRITTEN_READ_42' : READ_MARKER));
+    // Keys a hook adds outside the schema are dropped; the rest of the rewrite runs.
+    if (scenario.tool === 'Write') assert.equal(readFileSync(newFile, 'utf8'), 'HOOK_WRITE');
+    else assert.ok(textOf(result).includes(scenario.hook ? 'REWRITTEN_READ_42' : READ_MARKER));
   }
   return { dir, observed: result };
 }

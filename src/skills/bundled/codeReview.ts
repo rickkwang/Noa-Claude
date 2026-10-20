@@ -1,7 +1,9 @@
-import { join } from 'path'
+import { realpath } from 'fs/promises'
+import { isAbsolute, join, relative, resolve, sep } from 'path'
 import type { ToolUseContext } from '../../Tool.js'
 import { AGENT_TOOL_NAME } from '../../tools/AgentTool/constants.js'
 import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
+import { getCwd } from '../../utils/cwd.js'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 import { EFFORT_LEVELS, isEffortLevel } from '../../utils/effort.js'
 import { registerBundledSkill } from '../bundledSkills.js'
@@ -22,17 +24,12 @@ type MaxFindingsFlag = number | 'all' | 'default'
 type ParsedArgs = {
   ultra: boolean
   explicitEffort?: ReviewEffort
-  unrecognizedEffort?: string
   maxFindings?: MaxFindingsFlag
   maxFindingsIgnored: boolean
   fix: boolean
   comment: boolean
   target: string
 }
-
-// Same prefix rule as upstream: a leading word that starts with a level name
-// is read as an effort, even when it is not a valid level.
-const EFFORT_WORD = /^(low|med|hig|xhi|max)[a-z]*$/i
 
 function parseCodeReviewArgs(raw: string): ParsedArgs {
   const tokens = raw.trim().split(/\s+/).filter(Boolean)
@@ -42,14 +39,9 @@ function parseCodeReviewArgs(raw: string): ParsedArgs {
     tokens.shift()
   }
   const first = tokens[0]
-  if (first !== undefined && EFFORT_WORD.test(first)) {
+  if (first !== undefined && isEffortLevel(first.toLowerCase())) {
     tokens.shift()
-    const level = first.toLowerCase()
-    if (isEffortLevel(level)) {
-      parsed.explicitEffort = level as ReviewEffort
-    } else {
-      parsed.unrecognizedEffort = first
-    }
+    parsed.explicitEffort = first.toLowerCase() as ReviewEffort
   }
   const rest: string[] = []
   for (let i = 0; i < tokens.length; i++) {
@@ -65,7 +57,7 @@ function parseCodeReviewArgs(raw: string): ParsedArgs {
         : next !== undefined && !next.startsWith('--') ? tokens[++i] : undefined
       if (value === 'all' || value === 'default') {
         parsed.maxFindings = value
-      } else if (value !== undefined && /^[1-9]\d*$/.test(value)) {
+      } else if (value !== undefined && /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value))) {
         parsed.maxFindings = Number(value)
       } else {
         parsed.maxFindingsIgnored = true
@@ -125,11 +117,11 @@ const cleanupAngles = (userRules: string) => [
 
 const PHASE_GATHER = `## Phase 0 — Gather the diff
 Get the unified diff under review:
-- Default (no target): \`git diff @{upstream}...HEAD\`, plus \`git diff HEAD\` for uncommitted changes. If there is no upstream, use \`git diff main...HEAD\` or \`git diff HEAD~1\`. Include working-tree changes, since the review often runs before the commit.
+- Default (no target): first run \`git status --short\` and \`git ls-files --others --exclude-standard\`. Read non-ignored untracked files as new-file changes. Then gather \`git diff @{upstream}...HEAD\`, plus \`git diff HEAD\` for staged and unstaged changes. If there is no upstream, use \`git diff main...HEAD\` or \`git diff HEAD~1\`.
 - PR (number, \`#number\`, or URL): \`gh pr view <target>\` for context and \`gh pr diff <target>\` for the diff.
 - Branch name: \`git diff <base>...<branch>\`.
-- File path: restrict the diff to that path.
-If the diff is empty, say there is nothing to review and stop.`
+- File path: restrict the diff and untracked-file discovery to that path; read untracked files in that scope as new-file changes.
+Stop only when both the diff and in-scope untracked-file list are empty. Do not stop while untracked files remain unread. If a file cannot be read, disclose the coverage gap rather than declaring there is nothing to review.`
 
 const TIER_TEXT: Record<ReviewEffort, string> = {
   low: 'low effort → 1 diff pass → no verify',
@@ -154,7 +146,7 @@ function outputCap(max: number | 'all'): string {
 
 function lowEffortPrompt(cap: string): string {
   return `## Review at low effort: one diff pass, no verification, no subagents
-Read the diff in one tool call. Skip test and fixture hunks (\`test/\`, \`spec/\`, \`__tests__/\`, \`*_test.*\`, \`*.test.*\`, \`fixtures/\`, \`testdata/\`); test-file changes are not reviewed at this level. Do not read whole files.
+Read the diff and in-scope untracked files as new-file additions. Skip test and fixture hunks (\`test/\`, \`spec/\`, \`__tests__/\`, \`*_test.*\`, \`*.test.*\`, \`fixtures/\`, \`testdata/\`); test-file changes are not reviewed at this level. Do not read whole tracked files.
 Flag runtime-correctness bugs visible from the hunk alone: inverted or wrong conditions, off-by-one, null/undefined dereference where the adjacent lines show the value can be absent, removed guards, falsy-zero checks, missing \`await\`, wrong-variable copy-paste, errors swallowed in a catch that should propagate. Also flag new code that duplicates a helper visible in the diff context, and dead code the diff leaves behind.
 Do not flag style, naming, performance, missing tests, or anything outside the changed lines.
 Output ${cap}, most severe first, one line each: \`path/to/file.ext:123 — what's wrong and the concrete failure\`. If nothing qualifies, output exactly \`(none)\`.`
@@ -171,7 +163,7 @@ Run each angle as its own subagent via the ${AGENT_TOOL_NAME} tool, all in one m
 }
 
 function verifySection(hasAgent: boolean, recallBiased: boolean): string {
-  const dedup = `Dedup candidates that point at the same line or mechanism, keeping the one with the most concrete failure scenario.`
+  const dedup = `Dedup only candidates describing the same defect, same location, and same cause, keeping the most concrete failure scenario. Keep distinct defects on the same line and separate occurrences of the same mechanism at different locations.`
   const verdicts = `Return exactly one verdict:
 - **CONFIRMED** — you can name the inputs or state that trigger it and the wrong output or crash. Quote the line.
 - **PLAUSIBLE** — the mechanism is real but the trigger is uncertain (timing, environment, config). State what would confirm it.
@@ -243,16 +235,28 @@ function parsePrNumber(target: string): string | undefined {
   return match?.[1]
 }
 
-function actionSections(args: ParsedArgs, hasPr: boolean, effort: ReviewEffort): string {
+async function isLocalPathTarget(target: string): Promise<boolean> {
+  if (!target || parsePrNumber(target) !== undefined) return false
+  try {
+    const cwd = await realpath(getCwd())
+    const path = await realpath(resolve(cwd, target))
+    const rel = relative(cwd, path)
+    return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
+  } catch {
+    return false
+  }
+}
+
+function actionSections(args: ParsedArgs, hasPr: boolean, effort: ReviewEffort, localPathTarget: boolean): string {
   const sections: string[] = []
   if (args.fix) {
     // --fix edits the working tree, so it only runs on the local changes that are checked out.
     sections.push(
-      args.target !== ''
+      args.target !== '' && !localPathTarget
         ? `## After the review: --fix
---fix only applies to the local changes. Target \`${args.target}\` is not checked out here, so change no files and say so.`
+--fix only applies to the local changes. Target \`${args.target}\` is not a confirmed path in the current working directory, so change no files and say so.`
         : `## After the review: --fix
-Apply a fix for ${effort === 'low' ? 'each finding (low effort does not verify findings)' : 'each CONFIRMED finding'} in the working tree with the file-edit tools${effort === 'low' ? '' : '; leave PLAUSIBLE findings unfixed and list them'}. Make the smallest change that fixes the stated failure and do not touch unrelated code. Afterwards, report which findings you fixed and which you skipped and why.`,
+Apply a fix for ${effort === 'low' ? 'each finding (low effort does not verify findings)' : 'each CONFIRMED finding'} in the working tree with the file-edit tools${effort === 'low' ? '' : '; leave PLAUSIBLE findings unfixed and list them'}. Make the smallest change that fixes the stated failure and do not touch unrelated code.${localPathTarget ? ` Restrict edits to the reviewed target \`${args.target}\`.` : ''} Afterwards, report which findings you fixed and which you skipped and why.`,
     )
   }
   if (args.comment) {
@@ -269,13 +273,10 @@ Post each surviving finding with \`gh api\`: as an inline review comment when it
 
 function buildCodeReviewPrompt(
   args: ParsedArgs,
-  context: { effort: ReviewEffort; cap: string; reused: boolean; capSource: CapSource; storedMax?: number | 'all'; hasAgent: boolean; userRules: string },
+  context: { effort: ReviewEffort; cap: string; reused: boolean; capSource: CapSource; storedMax?: number | 'all'; hasAgent: boolean; userRules: string; localPathTarget: boolean },
 ): string {
   const hasPr = parsePrNumber(args.target) !== undefined
   const notices: string[] = []
-  if (args.unrecognizedEffort !== undefined) {
-    notices.push(`Ignoring unrecognized effort "${args.unrecognizedEffort}"; valid: ${EFFORT_LEVELS.join(', ')}.`)
-  }
   if (args.maxFindingsIgnored) {
     notices.push(`\`--max-findings\` was ignored: type a whole number above zero, \`all\`, or \`default\` after it.${context.capSource === 'stored' ? '' : ' Using the usual limit.'}`)
   }
@@ -291,7 +292,7 @@ function buildCodeReviewPrompt(
     context.effort === 'low'
       ? [PHASE_GATHER, lowEffortPrompt(context.cap)].join('\n\n')
       : fullPrompt(context.effort, context.cap, context.hasAgent, context.userRules)
-  return [header, body, actionSections(args, hasPr, context.effort)].filter(Boolean).join('\n\n')
+  return [header, body, actionSections(args, hasPr, context.effort, context.localPathTarget)].filter(Boolean).join('\n\n')
 }
 
 function resolveEffort(args: ParsedArgs): { effort: ReviewEffort; reused: boolean } {
@@ -353,6 +354,7 @@ export function registerCodeReviewSkill(): void {
         reused,
         hasAgent,
         userRules: join(getClaudeConfigHomeDir(), 'CLAUDE.md'),
+        localPathTarget: args.fix && await isLocalPathTarget(args.target),
       })
       return [{ type: 'text', text: prompt }]
     },

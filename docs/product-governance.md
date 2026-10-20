@@ -40,7 +40,7 @@ These commands are callable, but they are not core product workflows:
 Policy:
 
 - keep behavior stable
-- `/code-review` replaces the former `/review` prompt; it is user-invoked only and is not exposed through the MCP server
+- `/code-review` replaces the former `/review` prompt; it is user-invoked only and is not exposed through the MCP server. Only exact effort names are parsed as levels; other tokens remain review targets. Local reviews include non-ignored untracked files. `--fix` accepts an existing path inside the current working directory, including untracked paths, and confines its instructions to that target; PRs and targets outside that directory remain report-only.
 - do not claim full product parity
 - promotion to baseline requires smoke coverage and user-value justification
 - `/skills` shows all skill sources in one list. Enter/Space cycles modes, `/` searches, `t` sorts by token usage, and Esc saves and closes. Author-disabled model invocation is locked in the picker. `scripts/e2e-permission-lists.mjs --skills-only` covers the rendered controls, persistence, scrolling and narrow terminals.
