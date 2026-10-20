@@ -2,7 +2,7 @@
 import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { useCallback, useEffect, useState } from 'react';
-import { getAllOutputStyles, OUTPUT_STYLE_CONFIG, type OutputStyleConfig } from '../constants/outputStyles.js';
+import { clearAllOutputStylesCache, getAllOutputStyles, OUTPUT_STYLE_CONFIG, type OutputStyleConfig } from '../constants/outputStyles.js';
 import { Box, Text } from '../ink.js';
 import type { OutputStyle } from '../utils/config.js';
 import { getCwd } from '../utils/cwd.js';
@@ -40,6 +40,10 @@ export function OutputStylePicker(t0) {
   let t3;
   if ($[1] === Symbol.for("react.memo_cache_sentinel")) {
     t2 = () => {
+      // Upstream clears on settings sync and SDK style queries, which Noa
+      // lacks; opening the picker is where a style file added mid-session
+      // needs to show up, so refresh here instead.
+      clearAllOutputStylesCache();
       getAllOutputStyles(getCwd()).then(allStyles => {
         const options = mapConfigsToOptions(allStyles);
         setStyleOptions(options);

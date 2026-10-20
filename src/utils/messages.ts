@@ -24,7 +24,8 @@ import {
 import { sanitizeToolNameForAnalytics } from 'src/services/analytics/metadata.js'
 import type { AgentId } from 'src/types/ids.js'
 import { NO_CONTENT_MESSAGE } from '../constants/messages.js'
-import { OUTPUT_STYLE_CONFIG } from '../constants/outputStyles.js'
+import { MAX_OUTPUT_STYLE_NAME_LENGTH } from '../constants/outputStyles.js'
+import { escapeXml } from './xml.js'
 import { isAutoMemoryEnabled } from '../memdir/paths.js'
 import {
   checkStatsigFeatureGate_CACHED_MAY_BE_STALE,
@@ -4072,24 +4073,24 @@ Read the team config to discover your teammates' names. Check the task list peri
       ])
     }
     case 'output_style': {
-      const outputStyle =
-        OUTPUT_STYLE_CONFIG[
-          attachment.style as keyof typeof OUTPUT_STYLE_CONFIG
-        ]
-      if (!outputStyle) {
+      if (typeof attachment.style !== 'string' || attachment.style === '') {
         return []
       }
-      // Read off the attachment, not off outputStyle: the name lookup above
-      // only ever resolves built-ins, so a custom style file shadowing a
-      // built-in name (~/.noa/output-styles/Concise.md) would otherwise get the
-      // built-in one-liner injected under its own prompt. The attachment
-      // carries the *resolved* style's reminder, which is undefined there.
+      // The name is user-controlled (custom style frontmatter), so cap it and
+      // escape it before it lands inside a system-reminder.
+      if (attachment.style.length > MAX_OUTPUT_STYLE_NAME_LENGTH) {
+        logForDebugging(
+          `Output style name exceeds ${MAX_OUTPUT_STYLE_NAME_LENGTH} characters (${attachment.style.length}); suppressing its per-turn reminder`,
+          { level: 'error' },
+        )
+        return []
+      }
       const turnReminder =
         attachment.turnReminder ??
         'Remember to follow the specific guidelines for this style.'
       return wrapMessagesInSystemReminder([
         createUserMessage({
-          content: `${outputStyle.name} output style is active. ${turnReminder}`,
+          content: `${escapeXml(attachment.style)} output style is active. ${turnReminder}`,
           isMeta: true,
         }),
       ])

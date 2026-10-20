@@ -164,6 +164,8 @@ export function buildPortedSubjects(): Record<string, string> {
     // Windows, and the edition text is pinned separately above.
     'Proactive output style': OUTPUT_STYLE_CONFIG.Proactive!.prompt,
     'Proactive turnReminder': OUTPUT_STYLE_CONFIG.Proactive!.turnReminder!,
+    'Proactive waitingTurnReminder':
+      OUTPUT_STYLE_CONFIG.Proactive!.waitingTurnReminder!,
     'Concise output style': OUTPUT_STYLE_CONFIG.Concise!.prompt,
     'Concise turnReminder': OUTPUT_STYLE_CONFIG.Concise!.turnReminder!,
     'PowerShell description': renderPowerShellPrompt(
@@ -252,6 +254,7 @@ export const PORTED_DIGESTS: Record<string, string> = {
   // outputStyles.test.ts used to pin in full.
   'Proactive output style': 'a8402e1396f828e5',
   'Proactive turnReminder': '35d4cfdfe7e68d2f',
+  'Proactive waitingTurnReminder': '76226e141e3ed2d9',
   'Concise output style': 'd161e375b32fbd03',
   'Concise turnReminder': '830941eabb16069c',
 }

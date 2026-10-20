@@ -95,3 +95,6 @@ export const getOutputStyleDirStyles = memoize(
   },
 )
 
+export function clearOutputStyleDirCache(): void {
+  getOutputStyleDirStyles.cache?.clear?.()
+}

@@ -564,7 +564,7 @@ export type Attachment =
   | {
       type: 'output_style'
       style: string
-      /** Per-turn one-liner from the style config; falls back to a generic nudge */
+      /** Per-turn one-liner from the resolved style config; falls back to a generic nudge */
       turnReminder?: string
     }
   | {
@@ -1367,7 +1367,7 @@ export async function getAttachments(
         maybe('ide_opened_file', async () =>
           getOpenedFileFromIDE(ideSelection, toolUseContext),
         ),
-        maybe('output_style', () => getOutputStyleAttachment()),
+        maybe('output_style', () => getOutputStyleAttachment(toolUseContext)),
         maybe('diagnostics', async () =>
           getDiagnosticAttachments(toolUseContext),
         ),
@@ -2014,7 +2014,9 @@ function getCriticalSystemReminderAttachment(
   return [{ type: 'critical_system_reminder', content: reminder }]
 }
 
-async function getOutputStyleAttachment(): Promise<Attachment[]> {
+async function getOutputStyleAttachment(
+  toolUseContext: ToolUseContext,
+): Promise<Attachment[]> {
   const settings = getSettings_DEPRECATED()
   const outputStyle = settings?.outputStyle || 'default'
 
@@ -2023,17 +2025,35 @@ async function getOutputStyleAttachment(): Promise<Attachment[]> {
     return []
   }
 
-  // turnReminder comes from the resolved config (a plugin-forced style's
-  // reminder is honored when the user also picked a style), but the early
-  // return above keys off raw settings — a plugin-forced style with default
-  // settings gets no reminder. Same shape as upstream.
+  // Name and reminder both come from the resolved config, so a custom style
+  // gets its own name and a plugin-forced style wins over the raw setting. The
+  // early return above still keys off raw settings: a plugin-forced style with
+  // default settings gets no reminder. Same shape as upstream.
   const config = await getOutputStyleConfig()
+  if (!config) {
+    return []
+  }
+
+  // Swap in the waiting variant while a background shell or monitor started by
+  // a main-thread tool call is still running, so the model ends its turn
+  // instead of polling for the completion notification.
+  const waiting =
+    config.waitingTurnReminder !== undefined &&
+    Object.values(toolUseContext.getAppState().tasks ?? {}).some(
+      task =>
+        task.status === 'running' &&
+        task.toolUseId !== undefined &&
+        !('agentId' in task && task.agentId !== undefined) &&
+        ((task.type === 'local_bash' &&
+          (task.kind === 'monitor' || task.isBackgrounded)) ||
+          task.type === 'monitor_mcp'),
+    )
 
   return [
     {
       type: 'output_style',
-      style: outputStyle,
-      turnReminder: config?.turnReminder,
+      style: config.name,
+      turnReminder: waiting ? config.waitingTurnReminder : config.turnReminder,
     },
   ]
 }

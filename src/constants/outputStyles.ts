@@ -1,7 +1,10 @@
 // @ts-nocheck
 import figures from 'figures'
 import memoize from 'lodash-es/memoize.js'
-import { getOutputStyleDirStyles } from '../outputStyles/loadOutputStylesDir.js'
+import {
+  clearOutputStyleDirCache,
+  getOutputStyleDirStyles,
+} from '../outputStyles/loadOutputStylesDir.js'
 import type { OutputStyle } from '../utils/config.js'
 import { getCwd } from '../utils/cwd.js'
 import { logForDebugging } from '../utils/debug.js'
@@ -23,6 +26,11 @@ export type OutputStyleConfig = {
    * drifting back to default behavior once the system prompt is far away.
    */
   turnReminder?: string
+  /**
+   * Replaces turnReminder while a background shell or monitor started by the
+   * main thread is still running (see getOutputStyleAttachment).
+   */
+  waitingTurnReminder?: string
   /**
    * If true, this output style will be automatically applied when the plugin is enabled.
    * Only applicable to plugin output styles.
@@ -61,6 +69,9 @@ const PROACTIVE_FEATURE_PROMPT = `The user chose continuous, autonomous executio
 const PROACTIVE_TURN_REMINDER =
   'Execute autonomously, minimize interruptions, prefer action over planning.'
 
+const PROACTIVE_WAITING_TURN_REMINDER =
+  'Execute autonomously and minimize interruptions. If the only work left is waiting for a background task or monitor you started, end your turn now: you will be notified when it finishes or fires. Do not poll, sleep, or re-read its output while you wait.'
+
 const CONCISE_FEATURE_PROMPT = `The user chose brevity over narration. You should:
 
 1. **Lead with the result** \u2014 Your first sentence answers "what happened" or "what's the answer." No preamble ("Let me...", "Now I'll...") and no closing recap of what you already said.
@@ -77,6 +88,9 @@ const CONCISE_TURN_REMINDER =
 
 export const DEFAULT_OUTPUT_STYLE_NAME = 'default'
 
+// Longer names are rejected from the per-turn reminder.
+export const MAX_OUTPUT_STYLE_NAME_LENGTH = 256
+
 export const OUTPUT_STYLE_CONFIG: OutputStyles = {
   [DEFAULT_OUTPUT_STYLE_NAME]: null,
   Proactive: {
@@ -90,6 +104,7 @@ export const OUTPUT_STYLE_CONFIG: OutputStyles = {
 # Proactive Style Active
 ${PROACTIVE_FEATURE_PROMPT}`,
     turnReminder: PROACTIVE_TURN_REMINDER,
+    waitingTurnReminder: PROACTIVE_WAITING_TURN_REMINDER,
   },
   Concise: {
     name: 'Concise',
@@ -240,6 +255,7 @@ export const getAllOutputStyles = memoize(async function getAllOutputStyles(
 })
 
 export function clearAllOutputStylesCache(): void {
+  clearOutputStyleDirCache()
   getAllOutputStyles.cache?.clear?.()
 }
 
