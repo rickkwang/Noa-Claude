@@ -52,7 +52,6 @@ import { getCACertificates } from '../caCerts.js'
 import { registerCleanup } from '../cleanupRegistry.js'
 import { getHasFormattedOutput, logForDebugging } from '../debug.js'
 import { isEnvTruthy } from '../envUtils.js'
-import { errorMessage } from '../errors.js'
 import { getMTLSConfig } from '../mtls.js'
 import { getProxyUrl, shouldBypassProxy } from '../proxy.js'
 import { getSettings_DEPRECATED } from '../settings/settings.js'
@@ -695,52 +694,6 @@ Current timeout: ${timeoutMs}ms
   registerCleanup(shutdownTelemetry)
 
   return meterProvider.getMeter('com.anthropic.claude_code', MACRO.VERSION)
-}
-
-/**
- * Flush all pending telemetry data immediately.
- * This should be called before logout or org switching to prevent data leakage.
- */
-export async function flushTelemetry(): Promise<void> {
-  const meterProvider = getMeterProvider()
-  if (!meterProvider) {
-    return
-  }
-
-  const timeoutMs = parseInt(
-    process.env.CLAUDE_CODE_OTEL_FLUSH_TIMEOUT_MS || '5000',
-  )
-
-  try {
-    const flushPromises = [meterProvider.forceFlush()]
-    const loggerProvider = getLoggerProvider()
-    if (loggerProvider) {
-      flushPromises.push(loggerProvider.forceFlush())
-    }
-    const tracerProvider = getTracerProvider()
-    if (tracerProvider) {
-      flushPromises.push(tracerProvider.forceFlush())
-    }
-
-    await Promise.race([
-      Promise.all(flushPromises),
-      telemetryTimeout(timeoutMs, 'OpenTelemetry flush timeout'),
-    ])
-
-    logForDebugging('Telemetry flushed successfully')
-  } catch (error) {
-    if (error instanceof TelemetryTimeoutError) {
-      logForDebugging(
-        `Telemetry flush timed out after ${timeoutMs}ms. Some metrics may not be exported.`,
-        { level: 'warn' },
-      )
-    } else {
-      logForDebugging(`Telemetry flush failed: ${errorMessage(error)}`, {
-        level: 'error',
-      })
-    }
-    // Don't throw - allow logout to continue even if flush fails
-  }
 }
 
 function parseOtelHeadersEnvVar(): Record<string, string> {

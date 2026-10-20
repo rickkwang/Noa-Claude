@@ -13,17 +13,10 @@
  */
 
 import { createHash } from 'crypto'
-import { sep } from 'path'
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_PII_TAGGED,
-  logEvent,
 } from '../../services/analytics/index.js'
-import type {
-  LoadedPlugin,
-  PluginError,
-  PluginManifest,
-} from '../../types/plugin.js'
+import type { PluginManifest } from '../../types/plugin.js'
 import {
   isOfficialMarketplaceName,
   parsePluginIdentifier,
@@ -82,35 +75,6 @@ export function getTelemetryPluginScope(
 }
 
 /**
- * How a plugin arrived in the session. Splits self-selected from org-pushed
- * — plugin_scope alone doesn't (an official plugin can be user-installed OR
- * org-pushed; both are scope='official').
- */
-export type EnabledVia =
-  | 'user-install'
-  | 'org-policy'
-  | 'default-enable'
-  | 'seed-mount'
-
-export function getEnabledVia(
-  plugin: LoadedPlugin,
-  managedNames: Set<string> | null,
-  seedDirs: string[],
-): EnabledVia {
-  if (plugin.isBuiltin) return 'default-enable'
-  if (managedNames?.has(plugin.name)) return 'org-policy'
-  // Trailing sep: /opt/plugins must not match /opt/plugins-extra
-  if (
-    seedDirs.some(dir =>
-      plugin.path.startsWith(dir.endsWith(sep) ? dir : dir + sep),
-    )
-  ) {
-    return 'seed-mount'
-  }
-  return 'user-install'
-}
-
-/**
  * Common plugin telemetry fields keyed off name@marketplace. Returns the
  * hash, scope enum, and the redacted-twin columns. Callers add the raw
  * _PROTO_* fields separately (those require the PII-tagged marker type).
@@ -148,64 +112,16 @@ export function buildPluginTelemetryFields(
   }
 }
 
-/**
- * Per-invocation callers (SkillTool, processSlashCommand) pass
- * managedNames=null — the session-level tengu_plugin_enabled_for_session
- * event carries the authoritative plugin_scope, and per-invocation rows can
- * join on plugin_id_hash to recover it. This keeps hot-path call sites free
- * of the extra settings read.
- */
+/** Build plugin fields for skill and slash-command invocations. */
 export function buildPluginCommandTelemetryFields(
   pluginInfo: { pluginManifest: PluginManifest; repository: string },
-  managedNames: Set<string> | null = null,
 ): ReturnType<typeof buildPluginTelemetryFields> {
   const { marketplace } = parsePluginIdentifier(pluginInfo.repository)
   return buildPluginTelemetryFields(
     pluginInfo.pluginManifest.name,
     marketplace,
-    managedNames,
+    null,
   )
-}
-
-/**
- * Emit tengu_plugin_enabled_for_session once per enabled plugin at session
- * start. Supplements tengu_skill_loaded (which still fires per-skill) — use
- * this for plugin-level aggregates instead of DISTINCT-on-prefix hacks.
- * A plugin with 5 skills emits 5 skill_loaded rows but 1 of these.
- */
-export function logPluginsEnabledForSession(
-  plugins: LoadedPlugin[],
-  managedNames: Set<string> | null,
-  seedDirs: string[],
-): void {
-  for (const plugin of plugins) {
-    const { marketplace } = parsePluginIdentifier(plugin.repository)
-
-    logEvent('tengu_plugin_enabled_for_session', {
-      _PROTO_plugin_name:
-        plugin.name as AnalyticsMetadata_I_VERIFIED_THIS_IS_PII_TAGGED,
-      ...(marketplace && {
-        _PROTO_marketplace_name:
-          marketplace as AnalyticsMetadata_I_VERIFIED_THIS_IS_PII_TAGGED,
-      }),
-      ...buildPluginTelemetryFields(plugin.name, marketplace, managedNames),
-      enabled_via: getEnabledVia(
-        plugin,
-        managedNames,
-        seedDirs,
-      ) as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      skill_path_count:
-        (plugin.skillsPath ? 1 : 0) + (plugin.skillsPaths?.length ?? 0),
-      command_path_count:
-        (plugin.commandsPath ? 1 : 0) + (plugin.commandsPaths?.length ?? 0),
-      has_mcp: plugin.manifest.mcpServers !== undefined,
-      has_hooks: plugin.hooksConfig !== undefined,
-      ...(plugin.manifest.version && {
-        version: plugin.manifest
-          .version as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      }),
-    })
-  }
 }
 
 /**
@@ -241,34 +157,4 @@ export function classifyPluginCommandError(
     return 'validation'
   }
   return 'unknown'
-}
-
-/**
- * Emit tengu_plugin_load_failed once per error surfaced by session-start
- * plugin loading. Pairs with tengu_plugin_enabled_for_session so dashboards
- * can compute a load-success rate. PluginError.type is already a bounded
- * enum — use it directly as error_category.
- */
-export function logPluginLoadErrors(
-  errors: PluginError[],
-  managedNames: Set<string> | null,
-): void {
-  for (const err of errors) {
-    const { name, marketplace } = parsePluginIdentifier(err.source)
-    // Not all PluginError variants carry a plugin name (some have pluginId,
-    // some are marketplace-level). Use the 'plugin' property if present,
-    // fall back to the name parsed from err.source.
-    const pluginName = 'plugin' in err && err.plugin ? err.plugin : name
-    logEvent('tengu_plugin_load_failed', {
-      error_category:
-        err.type as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      _PROTO_plugin_name:
-        pluginName as AnalyticsMetadata_I_VERIFIED_THIS_IS_PII_TAGGED,
-      ...(marketplace && {
-        _PROTO_marketplace_name:
-          marketplace as AnalyticsMetadata_I_VERIFIED_THIS_IS_PII_TAGGED,
-      }),
-      ...buildPluginTelemetryFields(pluginName, marketplace, managedNames),
-    })
-  }
 }

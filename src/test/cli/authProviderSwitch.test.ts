@@ -72,10 +72,6 @@ function runOAuthInstallScenario(
           },
         }),
       }))
-      mock.module('./src/utils/telemetry/instrumentation.js', () => ({
-        flushTelemetry: async () => {},
-      }))
-
       const { enableConfigs } = await import('./src/utils/config.ts')
       enableConfigs()
       const { installOAuthTokens } = await import('./src/cli/handlers/auth.ts')

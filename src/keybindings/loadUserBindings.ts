@@ -446,11 +446,3 @@ function handleDelete(path: string): void {
 
   keybindingsChanged.emit({ bindings: defaultBindings, warnings: [] })
 }
-
-/**
- * Get the cached keybinding warnings.
- * Returns empty array if no warnings or bindings haven't been loaded yet.
- */
-export function getCachedKeybindingWarnings(): KeybindingWarning[] {
-  return cachedWarnings
-}
