@@ -128,6 +128,8 @@ try{
  keys('Escape');await wait('skills-search-exit',s=>s.includes('enter/space to cycle')&&s.includes('a-user'));
  type('i');await wait('skills-type-search',s=>/⌕ i\s/.test(s)&&s.includes('type to filter'));
  keys('Escape');keys('Escape');await wait('skills-browse-again',s=>s.includes('enter/space to cycle'));
+ tmux('resize-window','-t','ui','-x','70','-y','46');await wait('skills-medium',()=>row('locked-author').includes('user-only'));
+ assert(!row('locked-author').includes('tok')&&!row('locked-author').includes('…')&&row('a-user').includes('tok'),'narrow details are cut mid-item instead of dropping trailing items');
  tmux('resize-window','-t','ui','-x','40','-y','22');await wait('skills-narrow',s=>s.includes('Search skills')&&s.includes('e2e-skill'));
  tmux('resize-window','-t','ui','-x','100','-y','30');await wait('skills-restored',s=>s.includes('enter/space to cycle'));
  keys('Escape');await wait('skills-saved',s=>s.includes('Updated 1 skill override')&&!s.includes('Search skills'));

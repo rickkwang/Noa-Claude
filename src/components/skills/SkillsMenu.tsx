@@ -79,6 +79,14 @@ function isAuthorLocked(skill: SkillCommand): boolean {
   return baseMode === 'user-only' || baseMode === 'off'
 }
 
+// Longest run of leading details that fits; the first one always stays and
+// is truncated by the row instead.
+function fitDetails(details: string[], width: number): string {
+  return details
+    .map((_, i) => details.slice(0, i + 1).join(' · '))
+    .findLast((joined, i) => i === 0 || stringWidth(joined) <= width) ?? ''
+}
+
 function canToggleSkillMode(skill: SkillCommand): boolean {
   return isSettingsToggleableSkill(skill) && !isAuthorLocked(skill)
 }
@@ -294,11 +302,47 @@ export function SkillsMenu({ onExit, commands, bytesPerToken }: Props): React.Re
     }
     return list
   }, [orderedSkills, sortByTokens, query, bytesPerToken])
-  const nameColumnWidth = Math.max(1, Math.min(
-    50,
-    Math.max(0, ...displaySkills.map(skill => stringWidth(getCommandName(skill)))),
-    terminalColumns - 30,
-  ))
+  const getSkillDetails = (skill: SkillCommand): string[] => {
+    const estimatedTokens = estimateSkillFrontmatterTokens(skill, bytesPerToken)
+    const tokenDisplay = estimatedTokens < 20 ? '< 20' : `~${formatTokens(Math.round(estimatedTokens / 10) * 10)}`
+    const pluginName =
+      skill.source === 'plugin'
+        ? skill.pluginInfo?.pluginManifest.name
+        : undefined
+    const sourceLabel = skill.source === 'plugin' || skill.source === 'mcp'
+      ? skill.source
+      : getSettingSourceName(skill.source as SettingSource)
+    const mode = getSkillMode(skill)
+    const blockingSource = blockingSources.get(skill.name) ?? null
+    const overriddenBy =
+      blockingSource !== null
+        ? `overridden by ${getSettingSourceDisplayNameLowercase(blockingSource)}`
+        : ''
+    // ✔ / ◯ is the whole on/off signal; the partial modes are still "on" and
+    // carry their word in the details instead of widening a status column.
+    const modeWord =
+      mode === 'name-only' ? 'name-only' : mode === 'user-only' ? 'user-only' : ''
+    // Most telling first: narrow terminals drop trailing details first.
+    return [
+      isAuthorLocked(skill) ? 'locked by author' : '',
+      overriddenBy,
+      modeWord,
+      pluginName || sourceLabel,
+      `${tokenDisplay} tok`,
+      !isSettingsToggleableSkill(skill) ? 'read-only' : '',
+    ].filter(Boolean)
+  }
+  const skillDetails = new Map(displaySkills.map(skill => [skill, getSkillDetails(skill)]))
+  // Column budget: the row is pointer(2) + icon(2) + name + gap(3) + details,
+  // inside the dialog's horizontal padding.
+  const rowWidth = Math.max(0, terminalColumns - 6 - 2 - 2 - 3)
+  const maxNameWidth = Math.min(50, Math.max(0, ...displaySkills.map(skill => stringWidth(getCommandName(skill)))))
+  const maxDetailsWidth = Math.max(0, ...[...skillDetails.values()].map(d => stringWidth(d.join(' · '))))
+  const detailsBudget = rowWidth - Math.min(maxNameWidth, Math.max(Math.ceil(rowWidth / 2), rowWidth - maxDetailsWidth))
+  const detailsColumnWidth = maxNameWidth + maxDetailsWidth > rowWidth && rowWidth < 12
+    ? 0
+    : Math.min(detailsBudget, Math.max(0, ...[...skillDetails.values()].map(d => stringWidth(fitDetails(d, detailsBudget)))))
+  const nameColumnWidth = Math.max(1, Math.min(maxNameWidth, rowWidth - detailsColumnWidth))
 
   const clampedIdx =
     displaySkills.length === 0
@@ -468,37 +512,8 @@ export function SkillsMenu({ onExit, commands, bytesPerToken }: Props): React.Re
     // While the search box owns the keyboard, keep the row marker but drop
     // the highlight so two pointers don't read as focused at once.
     const isHighlighted = isSelected && !isSearchMode
-    const estimatedTokens = estimateSkillFrontmatterTokens(skill, bytesPerToken)
-    const tokenDisplay = estimatedTokens < 20 ? '< 20' : `~${formatTokens(Math.round(estimatedTokens / 10) * 10)}`
-    const pluginName =
-      skill.source === 'plugin'
-        ? skill.pluginInfo?.pluginManifest.name
-        : undefined
-    const sourceLabel = skill.source === 'plugin' || skill.source === 'mcp'
-      ? skill.source
-      : getSettingSourceName(skill.source as SettingSource)
-    const mode = getSkillMode(skill)
-    const blockingSource = blockingSources.get(skill.name) ?? null
-    const overriddenBy =
-      blockingSource !== null
-        ? `overridden by ${getSettingSourceDisplayNameLowercase(blockingSource)}`
-        : ''
-    const authorLocked = isAuthorLocked(skill)
-    const readOnly = !isSettingsToggleableSkill(skill) ? 'read-only' : ''
-    // ✔ / ◯ is the whole on/off signal; the partial modes are still "on" and
-    // carry their word in the details instead of widening a status column.
-    const isOn = mode !== 'off'
-    const modeWord =
-      mode === 'name-only' ? 'name-only' : mode === 'user-only' ? 'user-only' : ''
-    // Most telling first, so truncation on a narrow terminal cuts the least.
-    const details = [
-      authorLocked ? 'locked by author' : '',
-      overriddenBy,
-      modeWord,
-      pluginName || sourceLabel,
-      `${tokenDisplay} tok`,
-      readOnly,
-    ].filter(Boolean)
+    const isOn = getSkillMode(skill) !== 'off'
+    const details = fitDetails(skillDetails.get(skill) ?? [], detailsColumnWidth)
     return (
       <Box key={`${skill.name}-${skill.source}`}>
         <Text color={isHighlighted ? 'suggestion' : undefined}>
@@ -509,14 +524,16 @@ export function SkillsMenu({ onExit, commands, bytesPerToken }: Props): React.Re
             {isOn ? figures.tick : figures.circle}
           </Text>
         </Box>
-        <Box width={nameColumnWidth} flexShrink={0} marginRight={3}>
+        <Box width={nameColumnWidth} flexShrink={0} marginRight={detailsColumnWidth > 0 ? 3 : 0}>
           <Text wrap="truncate-end" color={isHighlighted ? 'suggestion' : undefined}>
             {getCommandName(skill)}
           </Text>
         </Box>
-        <Box flexShrink={1}>
-          <Text dimColor wrap="truncate-end">{details.join(' · ')}</Text>
-        </Box>
+        {detailsColumnWidth > 0 && (
+          <Box flexShrink={1} maxWidth={detailsColumnWidth}>
+            <Text dimColor wrap="truncate-end">{details}</Text>
+          </Box>
+        )}
       </Box>
     )
   }
