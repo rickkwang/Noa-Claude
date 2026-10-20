@@ -32,6 +32,8 @@ import {
 import { logFileOperation } from '../../utils/fileOperationAnalytics.js'
 import {
   type LineEndingType,
+  classifyNotText,
+  notTextWriteRefusal,
   readFileSyncWithMetadata,
 } from '../../utils/fileRead.js'
 import { formatFileSize } from '../../utils/format.js'
@@ -225,6 +227,14 @@ export const FileEditTool = buildTool({
     let fileContent: string | null
     try {
       const fileBuffer = await fs.readFileBytes(fullFilePath)
+      const notText = classifyNotText(fileBuffer)
+      if (notText) {
+        return {
+          result: false,
+          message: notTextWriteRefusal(notText),
+          errorCode: 13,
+        }
+      }
       const encoding: BufferEncoding =
         fileBuffer.length >= 2 &&
         fileBuffer[0] === 0xff &&

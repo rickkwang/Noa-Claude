@@ -25,7 +25,11 @@ import {
   fileHistoryTrackEdit,
 } from '../../utils/fileHistory.js'
 import { logFileOperation } from '../../utils/fileOperationAnalytics.js'
-import { readFileSyncWithMetadata } from '../../utils/fileRead.js'
+import {
+  classifyNotText,
+  notTextWriteRefusal,
+  readFileSyncWithMetadata,
+} from '../../utils/fileRead.js'
 import {
   getFsImplementation,
   reachesNetworkPath,
@@ -206,14 +210,28 @@ export const FileWriteTool = buildTool({
 
     const fs = getFsImplementation()
     let fileMtimeMs: number
+    let isRegularFile: boolean
     try {
       const fileStat = await fs.stat(fullFilePath)
       fileMtimeMs = fileStat.mtimeMs
+      isRegularFile = fileStat.isFile()
     } catch (e) {
       if (isENOENT(e)) {
         return { result: true }
       }
       throw e
+    }
+
+    // Regular files only: reading a FIFO would block, a directory throws.
+    const notText = isRegularFile
+      ? classifyNotText(await fs.readFileBytes(fullFilePath))
+      : undefined
+    if (notText) {
+      return {
+        result: false,
+        message: notTextWriteRefusal(notText),
+        errorCode: 8,
+      }
     }
 
     const readTimestamp = toolUseContext.readFileState.get(fullFilePath)

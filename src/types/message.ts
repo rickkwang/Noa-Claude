@@ -117,6 +117,8 @@ export type AssistantMessage = MessageBase & {
   timestamp: string
   message: BetaMessage
   requestId?: string
+  /** The model this request asked for; a gateway may name another in `message.model`. */
+  requestedModel?: string
   apiError?: string
   apiFailureCategory?: ApiFailureCategory
   error?: SDKAssistantMessageError

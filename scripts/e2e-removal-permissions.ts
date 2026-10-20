@@ -25,6 +25,8 @@ const dangerous = [
   'find / -name "**" -delete', 'find / -name "fixture-specific-file" -o -delete',
   'find / -name "*" -a -delete -o -false', 'find / ! -false -delete',
   'find -delete', 'find -L -delete', 'find "$(pwd)" -delete',
+  'rm -rf /Volumes/External', 'rm -r /Volumes/External/Project', 'rm -R /media/user/USB',
+  'rm -rf /mnt/c', 'rm --recursive /run/media/user/USB/',
 ]
 const benign = [
   'sudo -iu root rm -rf build', 'sudo -uroot rm -rf build',
@@ -33,6 +35,7 @@ const benign = [
   'find build -name "*.o" -o -delete',
   'find . -name "*.o" -delete', 'find / -name "fixture-specific-file" -delete',
   'find build -name "*" -delete', 'find build -delete', 'rm -rf build',
+  'rm -rf /Volumes/External/Project/build', 'rm /mnt/c/notes.txt',
 ]
 const observed: unknown[] = []
 let passed = false

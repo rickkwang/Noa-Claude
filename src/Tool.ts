@@ -394,6 +394,14 @@ export function findToolByName(tools: Tools, name: unknown): Tool | undefined {
   return tools.find(t => toolMatchesName(t, name))
 }
 
+/** Validates model-sent input after the tool's coerceInput repair, if any. */
+export function safeParseToolInput(
+  tool: Pick<Tool, 'inputSchema' | 'coerceInput'>,
+  input: unknown,
+) {
+  return tool.inputSchema.safeParse(tool.coerceInput?.(input)?.input ?? input)
+}
+
 export type Tool<
   Input extends AnyObject = AnyObject,
   Output = unknown,
@@ -514,6 +522,13 @@ export type Tool<
    * hook/permission returns a fresh updatedInput — those own their shape.
    */
   backfillObservableInput?(input: Record<string, unknown>): void
+
+  /**
+   * Repairs known misnamed fields in model-sent input before schema
+   * validation (e.g. Bash `command_description` → `description`). Returns
+   * null when the input needs no repair.
+   */
+  coerceInput?(input: unknown): { input: Record<string, unknown> } | null
 
   /**
    * Determines if this tool is allowed to run with this input in the current context.

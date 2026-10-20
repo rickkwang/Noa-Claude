@@ -18,6 +18,41 @@ import { getFsImplementation, safeResolvePath } from './fsOperations.js'
 
 export type LineEndingType = 'CRLF' | 'LF'
 
+export type NotTextReason = 'not_utf8' | 'nul' | 'utf16be'
+
+const NOT_TEXT_DESCRIPTION: Record<NotTextReason, string> = {
+  not_utf8:
+    'is not valid UTF-8: it uses a legacy encoding such as Windows-1252, Shift-JIS or GBK, or it is binary',
+  nul: 'has NUL bytes in its first 8 KB: binary data, UTF-16/UTF-32 without a byte-order mark, or text with embedded NULs',
+  utf16be:
+    'is UTF-16 big-endian (it starts FE FF), which these tools cannot write',
+}
+
+/**
+ * Why Edit/Write cannot round-trip a file's bytes, or undefined when they can.
+ * Those tools decode as UTF-8 (or UTF-16LE behind its BOM) and write back
+ * UTF-8, so any other encoding would be silently replaced with U+FFFD.
+ */
+export function classifyNotText(buffer: Buffer): NotTextReason | undefined {
+  if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
+    return undefined
+  }
+  if (buffer.length >= 2 && buffer[0] === 0xfe && buffer[1] === 0xff) {
+    return 'utf16be'
+  }
+  if (buffer.subarray(0, 8000).includes(0)) return 'nul'
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(buffer)
+    return undefined
+  } catch {
+    return 'not_utf8'
+  }
+}
+
+export function notTextWriteRefusal(reason: NotTextReason): string {
+  return `File ${NOT_TEXT_DESCRIPTION[reason]}. These tools write UTF-8 (or UTF-16LE behind its byte-order mark) and never convert a file's encoding on their own, so nothing was written. If the file is text, make the change with a shell command that reads and writes it in its own encoding (iconv, or PowerShell Get-Content/Set-Content -Encoding), or ask the user whether to convert it to UTF-8 first. To replace the whole file with new UTF-8 text anyway, delete it first, then Write it.`
+}
+
 export function detectEncodingForResolvedPath(
   resolvedPath: string,
 ): BufferEncoding {

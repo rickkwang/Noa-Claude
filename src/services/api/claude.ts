@@ -2362,6 +2362,7 @@ async function* queryModel(
               timestamp: new Date().toISOString(),
               ...(process.env.USER_TYPE === 'ant' &&
                 research !== undefined && { research }),
+              requestedModel: options.model,
               ...(advisorModel && { advisorModel }),
             }
             newMessages.push(m)
@@ -2824,6 +2825,7 @@ async function* queryModel(
           research !== undefined && {
             research,
           }),
+        requestedModel: options.model,
         ...(advisorModel && {
           advisorModel,
         }),
@@ -2943,6 +2945,7 @@ async function* queryModel(
           timestamp: new Date().toISOString(),
           ...(process.env.USER_TYPE === 'ant' &&
             research !== undefined && { research }),
+          requestedModel: options.model,
           ...(advisorModel && { advisorModel }),
         }
         if (

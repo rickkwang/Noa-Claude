@@ -85,18 +85,23 @@ function warnEnvOnce(raw: string, message: string): void {
 }
 
 /**
- * Parses CLAUDE_CODE_AUTO_COMPACT_WINDOW like upstream: exponent or
- * digit-grouped numbers, otherwise a leading-integer parseInt. Invalid values
- * return undefined so the /autocompact setting applies; valid ones are clamped
- * to [100k, 1M].
+ * Parses CLAUDE_CODE_AUTO_COMPACT_WINDOW like upstream: a `k` or `M` suffix
+ * (200k, 1M), exponent or digit-grouped numbers, otherwise a leading-integer
+ * parseInt. Invalid values return undefined so the /autocompact setting
+ * applies; valid ones are clamped to [100k, 1M].
  */
 export function parseAutoCompactWindowEnv(raw: string): number | undefined {
   const s = raw.trim()
-  const n = /^[+-]?(\d+(\.\d*)?|\.\d+)[eE][+-]?\d+$/.test(s)
-    ? Number(s)
-    : /^[+-]?\d{1,3}([_,\u00A0\u202F ])\d{3}(?:\1\d{3})*$/.test(s)
-      ? parseInt(s.replace(/[_,\u00A0\u202F ]/g, ''), 10)
-      : parseInt(s, 10)
+  const suffix = s.slice(-1).toLowerCase()
+  const multiplier = suffix === 'm' ? 1_000_000 : suffix === 'k' ? 1000 : undefined
+  const n =
+    multiplier !== undefined
+      ? Math.round(parseFloat(s) * multiplier)
+      : /^[+-]?(\d+(\.\d*)?|\.\d+)[eE][+-]?\d+$/.test(s)
+        ? Number(s)
+        : /^[+-]?\d{1,3}([_,\u00A0\u202F ])\d{3}(?:\1\d{3})*$/.test(s)
+          ? parseInt(s.replace(/[_,\u00A0\u202F ]/g, ''), 10)
+          : parseInt(s, 10)
   // Called on every threshold read, so warn once per distinct value.
   if (!Number.isInteger(n) || n <= 0) {
     warnEnvOnce(
@@ -651,10 +656,12 @@ function isQuotaRejectedWithoutOverage(limits: {
 }
 
 /**
- * The model the conversation was last served by, when it has a larger window
- * than the current one and the current window would block. Upstream also gates
- * this on the model's recognition and billing state, which Noa has no source
- * for; the window comparison stands in for "recognized".
+ * The model the conversation last requested, when it has a larger window than
+ * the current one and the current window would block. Read from
+ * `requestedModel`, not the response's `message.model`: a gateway may name a
+ * different model there, which would summarize on a model nobody picked.
+ * Upstream also gates this on the model's recognition and billing state, which
+ * Noa has no source for; the window comparison stands in for "recognized".
  */
 function findLargerWindowModel(
   messages: Message[],
@@ -666,7 +673,7 @@ function findLargerWindowModel(
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i]
     if (message?.type === 'assistant' && message.message.model !== SYNTHETIC_MODEL) {
-      candidate = message.message.model
+      candidate = message.requestedModel
       break
     }
   }

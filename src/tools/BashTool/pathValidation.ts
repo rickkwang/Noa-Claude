@@ -86,6 +86,9 @@ export type PathCommand =
   | 'fgrep'
   | 'tee'
 
+const MOUNTED_DRIVE_PATH =
+  /^\/(?:system\/)?volumes(?:\/[^/]+){0,2}$|^\/mnt\/(?:[^/]+|[a-z]\/[^/]+)$|^\/(?:run\/)?media(?:\/[^/]+){0,3}$/i
+
 /**
  * Checks if an rm/rmdir command targets dangerous paths that should always
  * require explicit user approval, even if allowlist rules exist.
@@ -105,6 +108,10 @@ function checkDangerousRemovalPaths(
   // Extract paths using the existing path extractor
   const extractor = PATH_EXTRACTORS[command]
   const paths = extractor(args)
+  const optionArgs = args.includes('--') ? args.slice(0, args.indexOf('--')) : args
+  const recursive = optionArgs.some(arg => /^--r|^-[a-zA-Z]*[rR]/.test(arg))
+  // Held back so a stronger finding on a later path still wins.
+  let mountedDriveAsk: PermissionResult | undefined
 
   for (const path of paths) {
     // Expand tilde and resolve to absolute path
@@ -157,7 +164,34 @@ function checkDangerousRemovalPaths(
         suggestions: [],
       }
     }
+
+    // A mounted drive, the folder holding them, or the top level of a drive
+    // (/Volumes/X, /media/user/X, WSL's /mnt/c): `rm -r` there wipes a whole
+    // disk, which the root-child check above misses. Trailing globs are
+    // already caught by isDangerousRemovalPath.
+    if (
+      mountedDriveAsk === undefined &&
+      recursive &&
+      command === 'rm' &&
+      !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_MOUNTED_DRIVE_RM_PROMPT) &&
+      [resolve(absolutePath), ...targets].some(target =>
+        MOUNTED_DRIVE_PATH.test(target),
+      )
+    ) {
+      mountedDriveAsk = {
+        behavior: 'ask',
+        message: `Dangerous ${label} operation detected: '${absolutePath}'\n\nThis command would remove a mounted drive, the folder that holds mounted drives, or a file or folder at the top level of a drive. This requires explicit approval and cannot be auto-allowed by permission rules.\nIf you meant something deeper inside, name it by its full path.`,
+        decisionReason: {
+          type: 'safetyCheck',
+          classifierApprovable: true,
+          reason: `Dangerous ${label} operation on mounted drive path: ${absolutePath}`,
+        },
+        suggestions: [],
+      }
+    }
   }
+
+  if (mountedDriveAsk) return mountedDriveAsk
 
   // No dangerous paths found
   return {

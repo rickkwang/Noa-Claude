@@ -298,6 +298,36 @@ const inputSchema = lazySchema(() => isBackgroundTasksDisabled || isEnvTruthy(pr
 }));
 type InputSchema = ReturnType<typeof inputSchema>;
 
+// Models sometimes send `timeout_ms` or `command_description`, which the
+// strict schema would reject outright.
+function coerceBashInput(input: unknown): {
+  input: Record<string, unknown>;
+} | null {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return null;
+  const next: Record<string, unknown> = {
+    ...input
+  };
+  let changed = false;
+  if ('timeout_ms' in next && !('timeout' in next)) {
+    const value = next.timeout_ms;
+    if (typeof value === 'number' || typeof value === 'string' && /^\d+$/.test(value)) {
+      next.timeout = value;
+      delete next.timeout_ms;
+      changed = true;
+    }
+  }
+  if ('command_description' in next) {
+    if (!('description' in next) && typeof next.command_description === 'string') {
+      next.description = next.command_description;
+    }
+    delete next.command_description;
+    changed = true;
+  }
+  return changed ? {
+    input: next
+  } : null;
+}
+
 // Use fullInputSchema for the type to always include run_in_background
 // (even when it's omitted from the schema, the code needs to handle it)
 export type BashToolInput = z.infer<ReturnType<typeof fullInputSchema>>;
@@ -543,6 +573,7 @@ export const BashTool = buildTool({
   get inputSchema(): InputSchema {
     return inputSchema();
   },
+  coerceInput: coerceBashInput,
   get outputSchema(): OutputSchema {
     return outputSchema();
   },

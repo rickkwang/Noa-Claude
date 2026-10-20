@@ -8,7 +8,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Drives MultiEdit and background-shell output through the real CLI tools.
+// Drives MultiEdit, background-shell output, encoding refusals and Bash input
+// repair through the real CLI tools.
 // Only the model transport is scripted: each request n returns the n-th scripted step.
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -47,6 +48,12 @@ const steps = [
     assert.ok(path, `background output path missing from: ${output.slice(0, 200)}`);
     return { tool: 'Read', id: 'read_bg', input: { file_path: path } };
   },
+  // A GBK file: Edit and Write must refuse rather than rewrite it as U+FFFD.
+  () => ({ tool: 'Read', id: 'read_gbk', input: { file_path: join(active.workspace, 'gbk.txt') } }),
+  () => ({ tool: 'Edit', id: 'edit_gbk', input: { file_path: join(active.workspace, 'gbk.txt'), old_string: 'hello', new_string: 'world' } }),
+  () => ({ tool: 'Write', id: 'write_gbk', input: { file_path: join(active.workspace, 'gbk.txt'), content: 'replaced\n' } }),
+  // Field names models commonly send instead of `description` / `timeout`.
+  () => ({ tool: 'Bash', id: 'bash_alias', input: { command: 'echo BASH_ALIAS_OK', command_description: 'Echo marker', timeout_ms: 5000 } }),
   () => ({ text: 'MULTIEDIT_DONE' }),
 ];
 
@@ -81,6 +88,8 @@ await new Promise(r => server.listen(0, '127.0.0.1', r));
 const local = `http://127.0.0.1:${server.address().port}`;
 
 const FIXTURE = 'ALPHA BETA\n';
+// "中文 hello" encoded as GBK.
+const GBK_FIXTURE = Buffer.from([0xd6, 0xd0, 0xce, 0xc4, 0x20, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x0a]);
 
 async function run() {
   const dir = join(artifacts, 'multiedit');
@@ -88,6 +97,7 @@ async function run() {
   const workspace = join(dir, 'workspace');
   mkdirSync(workspace, { recursive: true });
   writeFileSync(join(workspace, 'fixture.txt'), FIXTURE);
+  writeFileSync(join(workspace, 'gbk.txt'), GBK_FIXTURE);
   active = { requests: [], workspace };
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => ['PATH', 'HOME', 'TMPDIR', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL'].includes(k)));
   Object.assign(env, {
@@ -132,7 +142,19 @@ function check({ exit, stdout, stderr, workspace }) {
 
   const bgRead = toolResultText(active.requests[6].body, 'read_bg');
   assert.ok(bgRead?.text.includes(BG_MARK), `background output not readable via Read: ${bgRead?.text?.slice(0, 200)}`);
-  return { final_file: finalFile, bad_edit_result: bad.text.slice(0, 200), bg_read_contains_marker: true };
+
+  for (const [index, id] of [[8, 'edit_gbk'], [9, 'write_gbk']]) {
+    const refused = toolResultText(active.requests[index].body, id);
+    assert.ok(refused?.isError, `${id} was not refused: ${refused?.text}`);
+    assert.match(refused.text, /not valid UTF-8/);
+  }
+  const gbkAfter = readFileSync(join(workspace, 'gbk.txt'));
+  assert.ok(gbkAfter.equals(GBK_FIXTURE), `GBK file changed: ${gbkAfter.toString('hex')}`);
+
+  const alias = toolResultText(active.requests[10].body, 'bash_alias');
+  assert.ok(!alias?.isError, `Bash with aliased fields failed: ${alias?.text}`);
+  assert.match(alias.text, /BASH_ALIAS_OK/);
+  return { final_file: finalFile, bad_edit_result: bad.text.slice(0, 200), bg_read_contains_marker: true, gbk_unchanged: true, bash_alias_ok: true };
 }
 
 const results = [];

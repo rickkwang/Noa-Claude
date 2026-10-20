@@ -9,7 +9,7 @@ import { BLACK_CIRCLE } from '../../constants/figures.js';
 import { stringWidth } from '../../ink/stringWidth.js';
 import { Box, Text, useTheme } from '../../ink.js';
 import { useAppStateMaybeOutsideOfProvider } from '../../state/AppState.js';
-import { findToolByName, type Tool, type ToolProgressData, type Tools } from '../../Tool.js';
+import { findToolByName, safeParseToolInput, type Tool, type ToolProgressData, type Tools } from '../../Tool.js';
 import { getAgentPersonalityName, getPersonalityNameColor, shouldUseAgentPersonalityName } from '../../tools/AgentTool/constants.js';
 import type { ProgressMessage } from '../../types/message.js';
 import { logError } from '../../utils/log.js';
@@ -146,7 +146,7 @@ export function AssistantToolUseMessage(t0) {
         t1 = null;
         break bb0;
       }
-      const input = tool.inputSchema.safeParse(param.input);
+      const input = safeParseToolInput(tool, param.input);
       const data = input.success ? input.data : undefined;
       t1 = {
         tool,
@@ -412,7 +412,7 @@ function renderToolUseMessage(tool: Tool, input: unknown, {
   commands: Command[];
 }): React.ReactNode {
   try {
-    const parsed = tool.inputSchema.safeParse(input);
+    const parsed = safeParseToolInput(tool, input);
     if (!parsed.success) {
       return '';
     }

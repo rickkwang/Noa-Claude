@@ -208,7 +208,15 @@ const DEFAULT_MCP_TOOL_TIMEOUT_MS = 10 * 60 * 1000
  * OpenAPI-generated MCP servers have been observed dumping 15-60KB of endpoint
  * docs into tool.description; this caps the p95 tail without losing the intent.
  */
-const MAX_MCP_DESCRIPTION_LENGTH = 2048
+const DEFAULT_MCP_DESCRIPTION_LENGTH = 4096
+
+function getMaxMcpDescriptionLength(): number {
+  const configured = parseInt(
+    process.env.CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH || '',
+    10,
+  )
+  return configured > 0 ? configured : DEFAULT_MCP_DESCRIPTION_LENGTH
+}
 
 /**
  * Gets the timeout for MCP tool calls in milliseconds.
@@ -1185,15 +1193,13 @@ export const connectToServer = memoize(
       const serverVersion = client.getServerVersion()
       const rawInstructions = client.getInstructions()
       let instructions = rawInstructions
-      if (
-        rawInstructions &&
-        rawInstructions.length > MAX_MCP_DESCRIPTION_LENGTH
-      ) {
+      const maxInstructionsLength = getMaxMcpDescriptionLength()
+      if (rawInstructions && rawInstructions.length > maxInstructionsLength) {
         instructions =
-          rawInstructions.slice(0, MAX_MCP_DESCRIPTION_LENGTH) + '… [truncated]'
+          rawInstructions.slice(0, maxInstructionsLength) + '… [truncated]'
         logMCPDebug(
           name,
-          `Server instructions truncated from ${rawInstructions.length} to ${MAX_MCP_DESCRIPTION_LENGTH} chars`,
+          `Server instructions truncated from ${rawInstructions.length} to ${maxInstructionsLength} chars`,
         )
       }
 
@@ -1815,8 +1821,9 @@ export const fetchToolsForClient = memoizeWithLRU(
             },
             async prompt() {
               const desc = tool.description ?? ''
-              return desc.length > MAX_MCP_DESCRIPTION_LENGTH
-                ? desc.slice(0, MAX_MCP_DESCRIPTION_LENGTH) + '… [truncated]'
+              const maxLength = getMaxMcpDescriptionLength()
+              return desc.length > maxLength
+                ? desc.slice(0, maxLength) + '… [truncated]'
                 : desc
             },
             isConcurrencySafe() {
