@@ -1,6 +1,6 @@
 // Real task and mailbox persistence boundaries, with all state isolated in /tmp.
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -202,7 +202,145 @@ try {
     { mode: 'after-query', calls: 1, delivered: [false], terminal: 'completed', success: false, pending: [], finishing: true, directAccepted: false },
   ], 'closing inbox accepted a message it could not deliver')
 
-  passed = true; console.log('PASS task edges, snapshot ACKs, cancellation persistence and atomic agent inbox closure')
+  // Maintenance boundaries use real files, Git and attachment generation.
+  const maintenanceFailures: string[] = []
+  const maintenance = async (name: string, check: () => Promise<void>) => {
+    try { await check(); results.push({ case: name, passed: true }) }
+    catch (error) { maintenanceFailures.push(name); results.push({ case: name, passed: false, error: String(error) }) }
+  }
+  await maintenance('image-idle-pipe-refused', async () => {
+    if (process.platform === 'win32') return
+    const fifo = join(artifacts, 'idle.png')
+    execFileSync('mkfifo', [fifo])
+    const source = resolve(import.meta.dir, '../src/tools/FileReadTool/FileReadTool.ts')
+    const output = execFileSync('bun', ['-e', `
+      const { readImageWithTokenBudget } = await import(${JSON.stringify(source)});
+      try { await readImageWithTokenBudget(${JSON.stringify(fifo)}); throw Error('pipe accepted'); }
+      catch (e) { if (!/not a regular file/.test(e.message)) throw e; console.log('PIPE_REFUSED'); }
+    `], { encoding: 'utf8', env: process.env, timeout: 3000 })
+    assert.match(output, /PIPE_REFUSED/)
+    const { readImageWithTokenBudget } = await import('../src/tools/FileReadTool/FileReadTool.js')
+    const png = join(artifacts, 'regular.png')
+    writeFileSync(png, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64'))
+    assert.equal((await readImageWithTokenBudget(png)).type, 'image')
+  })
+  await maintenance('transcript-torn-tail-sync-and-async', async () => {
+    const { saveCustomTitle, getAgentTranscriptPath } = await import('../src/utils/sessionStorage.js')
+    const transcript = join(artifacts, 'torn.jsonl')
+    writeFileSync(transcript, '{"type":"user","message":')
+    await saveCustomTitle('44444444-4444-4444-8444-444444444444' as any, 'RECOVERED_TITLE', transcript)
+    const rows = (file: string) => readFileSync(file, 'utf8').split('\n').flatMap(line => { try { return [JSON.parse(line)] } catch { return [] } })
+    assert.ok(rows(transcript).some(row => row.customTitle === 'RECOVERED_TITLE'), 'first metadata after torn tail was lost')
+    const sideId = asAgentId('a9988776655443322')
+    const sidePath = getAgentTranscriptPath(sideId)
+    mkdirSync(resolve(sidePath, '..'), { recursive: true })
+    writeFileSync(sidePath, '{"type":"assistant",')
+    await recordSidechainTranscript([createUserMessage({ content: 'TORN_TAIL_RECOVERED' })], sideId)
+    await flushSessionStorage()
+    assert.ok(rows(sidePath).some(row => JSON.stringify(row).includes('TORN_TAIL_RECOVERED')), 'first queued message after torn tail was lost')
+  })
+  await maintenance('worktree-switched-head-and-failed-check', async () => {
+    const { restoreWorktreeSession, hasWorktreeChanges } = await import('../src/utils/worktree.js')
+    const { ExitWorktreeTool } = await import('../src/tools/ExitWorktreeTool/ExitWorktreeTool.js')
+    const repo = join(artifacts, 'worktree-repo'), wt = join(artifacts, 'worktree-checkout')
+    mkdirSync(repo)
+    const git = (args: string[], cwd = repo) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+    git(['init', '-b', 'main']); git(['config', 'user.email', 'fixture@example.invalid']); git(['config', 'user.name', 'Fixture'])
+    writeFileSync(join(repo, 'file'), 'base'); git(['add', '.']); git(['commit', '-m', 'base'])
+    const base = git(['rev-parse', 'HEAD'])
+    git(['branch', 'other', base])
+    git(['worktree', 'add', '-b', 'fixture-work', wt])
+    const session: any = { originalCwd: repo, worktreePath: wt, worktreeBranch: 'fixture-work', originalHeadCommit: base }
+    restoreWorktreeSession(session)
+    try {
+      assert.equal((await ExitWorktreeTool.validateInput!({ action: 'remove' }, agentContext)).result, true, 'clean worktree should be removable even from another cwd')
+      writeFileSync(join(wt, 'file'), 'commit to preserve'); git(['add', '.'], wt); git(['commit', '-m', 'preserve'], wt)
+      for (const checkout of [['checkout', '--detach', base], ['checkout', 'other']]) {
+        git(checkout, wt)
+        assert.equal((await ExitWorktreeTool.validateInput!({ action: 'remove' }, agentContext)).result, false, 'switched HEAD allowed deleting a branch with commits')
+        assert.equal(await hasWorktreeChanges(wt, base, 'fixture-work'), true, 'agent cleanup considered switched HEAD safe')
+      }
+      git(['checkout', 'fixture-work'], wt)
+      restoreWorktreeSession({ ...session, originalHeadCommit: 'missing-baseline' })
+      assert.equal((await ExitWorktreeTool.validateInput!({ action: 'remove' }, agentContext)).result, false)
+    } finally { restoreWorktreeSession(null) }
+  })
+  await maintenance('stale-worktree-keeps-original-branch', async () => {
+    const { cleanupStaleAgentWorktrees, worktreeBranchName } = await import('../src/utils/worktree.js')
+    const { getCwd } = await import('../src/utils/cwd.js')
+    const { setCwd } = await import('../src/utils/Shell.js')
+    const previous = getCwd(), repo = join(artifacts, 'worktree-repo')
+    const wt = join(repo, '.noa', 'worktrees', 'agent-a1234567'), branch = worktreeBranchName('agent-a1234567')
+    const git = (args: string[], cwd = repo) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+    const base = git(['rev-parse', 'main'])
+    git(['update-ref', 'refs/remotes/origin/main', base])
+    git(['worktree', 'add', '-b', branch, wt, base])
+    git(['commit', '--allow-empty', '-m', 'preserve stale branch'], wt)
+    const saved = git(['rev-parse', branch])
+    git(['checkout', '--detach', base], wt)
+    utimesSync(wt, new Date(0), new Date(0))
+    setCwd(repo)
+    try {
+      assert.equal(await cleanupStaleAgentWorktrees(new Date()), 0, 'stale sweep deleted a branch with unpushed commits')
+      assert.ok(existsSync(wt)); assert.equal(git(['rev-parse', branch]), saved)
+    } finally { setCwd(previous) }
+  })
+  await maintenance('skill-reload-resume-and-compaction', async () => {
+    delete process.env.CLAUDE_CODE_SIMPLE
+    const { getAttachments, createAttachmentMessage } = await import('../src/utils/attachments.js')
+    const { SkillTool } = await import('../src/tools/SkillTool/SkillTool.js')
+    const { call: reloadSkills } = await import('../src/commands/reload-skills/reload-skills.js')
+    const { restoreSkillStateFromMessages } = await import('../src/utils/conversationRecovery.js')
+    const { getMessagesAfterCompactBoundary, createCompactBoundaryMessage } = await import('../src/utils/messages.js')
+    const command: any = { type: 'prompt', name: 'maintenance-fixture', description: 'First description', loadedFrom: 'mcp', source: 'mcp' }
+    state.mcp.commands = [command]
+    const skillContext: any = { ...agentContext, options: { ...agentContext.options, tools: [SkillTool] } }
+    const history: any[] = []
+    const listing = async (messages = history) => (await getAttachments(null, skillContext, null, [], messages, 'repl_main_thread', { skipSkillDiscovery: true })).filter(a => a.type === 'skill_listing')
+    const first = await listing(); assert.equal(first.length, 1)
+    for (const keepNames of [false, true]) {
+      const legacyHistory = [createAttachmentMessage({ ...first[0]!, names: keepNames ? first[0]!.names : undefined, digests: undefined })]
+      restoreSkillStateFromMessages(legacyHistory)
+      assert.equal((await listing(legacyHistory)).length, 0, 'unchanged legacy listing was resent')
+      command.description = 'Legacy changed description'
+      await reloadSkills('', skillContext)
+      const legacyChanged = await listing(legacyHistory)
+      assert.equal(legacyChanged.length, 1, 'legacy listing suppressed a changed description after reload')
+      assert.equal(legacyChanged[0]!.skillCount, 1)
+      assert.match(legacyChanged[0]!.content, /Legacy changed description/)
+      legacyHistory.push(createAttachmentMessage(legacyChanged[0]!))
+      assert.equal((await listing(legacyHistory)).length, 0, 'migrated legacy listing was resent')
+      command.description = 'First description'
+    }
+    const namesOnlyHistory = [createAttachmentMessage({ ...first[0]!, content: first[0]!.names!.map(name => `- ${name}`).join('\n'), digests: undefined })]
+    const refreshed = await listing(namesOnlyHistory)
+    assert.equal(refreshed.length, 1, 'legacy names-only listing did not refresh its missing descriptions')
+    assert.match(refreshed[0]!.content, /First description/)
+    namesOnlyHistory.push(createAttachmentMessage(refreshed[0]!))
+    assert.equal((await listing(namesOnlyHistory)).length, 0, 'legacy refresh repeated after migration')
+    history.push(createAttachmentMessage(first[0]!))
+    await reloadSkills('', skillContext)
+    assert.equal((await listing()).length, 0, 'unchanged reload resent the listing')
+    command.description = 'Changed description'
+    await reloadSkills('', skillContext)
+    const changed = await listing(); assert.equal(changed.length, 1); assert.equal(changed[0]!.skillCount, 1); assert.match(changed[0]!.content, /Changed description/)
+    history.push(createAttachmentMessage(changed[0]!))
+    command.description = 'First description'
+    const reverted = await listing(); assert.equal(reverted.length, 1); assert.match(reverted[0]!.content, /First description/)
+    history.push(createAttachmentMessage(reverted[0]!))
+    restoreSkillStateFromMessages(history)
+    assert.equal((await listing()).length, 0, 'resume resent unchanged skills')
+    state.mcp.commands.push({ ...command, name: 'added-after-resume' })
+    const added = await listing(); assert.equal(added.length, 1); assert.equal(added[0]!.skillCount, 1); assert.match(added[0]!.content, /added-after-resume/)
+    const compacted = getMessagesAfterCompactBoundary([...history, createCompactBoundaryMessage('manual', 100)])
+    const restored = await listing(compacted)
+    assert.ok(restored.some(a => a.content.includes('maintenance-fixture')), 'compaction lost unused skill discovery')
+    process.env.CLAUDE_CODE_SIMPLE = '1'
+  })
+  writeFileSync(join(artifacts, 'results.json'), JSON.stringify(results, null, 2))
+  assert.deepEqual(maintenanceFailures, [], 'maintenance boundary regressions')
+
+  passed = true; console.log('PASS task edges, snapshot ACKs, cancellation persistence, atomic agent inbox closure and maintenance boundaries')
 } finally {
   writeFileSync(join(artifacts, 'results.json'), JSON.stringify(results, null, 2))
   let revision = 'unavailable'; try { revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: resolve(import.meta.dir, '..'), encoding: 'utf8' }).trim() } catch {}

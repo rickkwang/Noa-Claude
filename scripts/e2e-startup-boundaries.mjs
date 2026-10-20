@@ -26,6 +26,7 @@ const definitions = [
   { name: 'user-helper', trust: false, scope: 'user', run: true },
   // Real TUI via tmux: /cd into an untrusted repository, confirm, and the trust lands on that repository.
   { name: 'cd-trust', cd: true, trust: true },
+  { name: 'worktree-exit-switched-head', worktreeExit: true, trust: true },
   { name: 'memory-ascii', memory: 'MEMORY_SENTINEL_', expected: 1 },
   { name: 'memory-cjk', memory: '汉'.repeat(20000), expected: 8333, marker: '汉', warning: 'everything after the first 8333 characters of line 1 was cut off' },
   { name: 'memory-emoji', memory: '🦊'.repeat(8000), expected: 6250, marker: '🦊', warning: 'everything after the first 6250 characters of line 1 was cut off' },
@@ -80,6 +81,7 @@ try {
       const projects = { [realpathSync(project)]: { hasTrustDialogAccepted: c.trust ?? false }, [realpathSync(parent)]: { hasTrustDialogAccepted: c.parentTrust ?? false } };
       const globalConfig = { hasCompletedOnboarding: true, projects, customApiKeyResponses: { approved: ['local-dummy'], rejected: [] } };
       const settings = { enableAllProjectMcpServers: true };
+      if (c.worktreeExit) settings.worktree = { baseRef: 'head' };
       if (c.memory !== undefined) {
         const memory = join(dir, 'memory'); mkdirSync(memory); writeFileSync(join(memory, 'MEMORY.md'), c.memory);
         settings.autoMemoryEnabled = true; settings.autoMemoryDirectory = memory;
@@ -113,19 +115,41 @@ try {
         assert.ok(requests.slice(1).every(r => !('metadata' in r.body)), 'verification resent rejected metadata');
         results.push({ name: c.name, passed: true }); console.log('PASS ' + c.name); continue;
       }
-      if (c.cd || c.latchUsage) {
+      if (c.worktreeExit) {
+        execFileSync('git', ['config', 'user.email', 'fixture@example.invalid'], { cwd: project });
+        execFileSync('git', ['config', 'user.name', 'Fixture'], { cwd: project });
+        execFileSync('git', ['commit', '--allow-empty', '-qm', 'base'], { cwd: project });
+      }
+      if (c.cd || c.latchUsage || c.worktreeExit) {
         const target = join(dir, 'target'); mkdirSync(target); execFileSync('git', ['init', '-q'], { cwd: target });
         const socket = 'noa-startup-' + process.pid, tmux = (...a) => execFileSync('tmux', ['-L', socket, ...a], { encoding: 'utf8' });
         const sh = v => "'" + v.replaceAll("'", "'\\''") + "'";
         const screen = () => tmux('capture-pane', '-p', '-t', 'cd');
+        const scrollback = () => tmux('capture-pane', '-p', '-S', '-', '-t', 'cd');
         const until = async (what, fn) => { for (let i = 0; i < 150; i++) { if (fn()) return; await new Promise(r => setTimeout(r, 100)); } throw new Error(`timed out waiting for ${what}:\n${screen()}`); };
         const readConfig = () => JSON.parse(readFileSync(join(config, '.config.json'), 'utf8'));
         // env -i: the tmux server inherits the caller's environment, and a caller
         // running inside Noa (CLAUDE_CODE_PRODUCT_DIR) would point the TUI at the real config.
-        tmux('new-session', '-d', '-s', 'cd', '-x', '120', '-y', '40', ['cd', sh(project), '&&', 'env', '-i', 'TERM=xterm-256color', ...Object.entries(env).map(([k, v]) => sh(k + '=' + v)), sh(entry), '--model', 'claude-opus-5-5'].join(' '));
+        tmux('new-session', '-d', '-s', 'cd', '-x', '120', '-y', '40', ['cd', sh(project), '&&', 'env', '-i', 'TERM=xterm-256color', ...Object.entries(env).map(([k, v]) => sh(k + '=' + v)), sh(entry), '--model', 'claude-opus-5-5', ...(c.worktreeExit ? ['--worktree', 'fixture'] : [])].join(' ') + (c.worktreeExit ? '; printf "\\nCLI_EXIT=%s\\n" "$?"; read -r fixture_end' : ''));
         try {
           await until('prompt', () => /shift\+tab to cycle/.test(screen()));
-          if (c.latchUsage) {
+          if (c.worktreeExit) {
+            const listing = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: project, encoding: 'utf8' });
+            const wt = [...listing.matchAll(/^worktree (.+)$/gm)].map(m => m[1]).find(p => p !== realpathSync(project));
+            assert.ok(wt, listing);
+            const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: wt, encoding: 'utf8' }).trim();
+            execFileSync('git', ['commit', '--allow-empty', '-qm', 'preserve'], { cwd: wt });
+            const branch = execFileSync('git', ['symbolic-ref', '--short', 'HEAD'], { cwd: wt, encoding: 'utf8' }).trim();
+            const saved = execFileSync('git', ['rev-parse', branch], { cwd: wt, encoding: 'utf8' }).trim();
+            execFileSync('git', ['checkout', '--detach', base], { cwd: wt, stdio: 'pipe' });
+            tmux('send-keys', '-t', 'cd', '-l', '/exit');
+            await until('exit input', () => /❯\s*\/exit/.test(screen()));
+            tmux('send-keys', '-t', 'cd', 'Enter');
+            await until('worktree preservation prompt', () => screen().includes('Could not verify') && screen().includes('Keep worktree'));
+            observation = { name: c.name, screen: screen(), projects: readConfig().projects, requests, branch, saved };
+            assert.equal(execFileSync('git', ['rev-parse', branch], { cwd: project, encoding: 'utf8' }).trim(), saved);
+            assert.ok(existsSync(wt), 'exit silently removed detached worktree');
+          } else if (c.latchUsage) {
             // Wait for React to commit the pasted input before sending Enter;
             // back-to-back tmux writes can submit the previous empty value.
             tmux('send-keys', '-t', 'cd', '-l', 'Run the compatibility fixture.');
@@ -143,9 +167,9 @@ try {
             tmux('send-keys', '-t', 'cd', 'Enter');
             await until('persisted trust', () => readConfig().projects?.[realpathSync(target)]?.hasTrustDialogAccepted === true);
           }
-          observation = { name: c.name, screen: screen(), projects: readConfig().projects, requests };
+          observation ??= { name: c.name, screen: screen(), projects: readConfig().projects, requests };
           writeFileSync(join(dir, 'observed.json'), JSON.stringify(observation, null, 2));
-        } finally { try { observation ??= { name: c.name, screen: screen() }; writeFileSync(join(dir, 'observed.json'), JSON.stringify(observation, null, 2)); } catch {} try { tmux('kill-server'); } catch {} }
+        } finally { try { observation ??= { name: c.name, screen: screen() }; if (c.worktreeExit) observation.scrollback = scrollback(); writeFileSync(join(dir, 'observed.json'), JSON.stringify(observation, null, 2)); } catch {} try { tmux('kill-server'); } catch {} }
         assert.equal(observation.projects[realpathSync(project)].hasTrustDialogAccepted, true);
         results.push({ name: c.name, passed: true }); console.log('PASS ' + c.name); continue;
       }

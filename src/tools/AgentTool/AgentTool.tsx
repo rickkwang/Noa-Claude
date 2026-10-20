@@ -780,7 +780,7 @@ export const AgentTool = buildTool({
         };
       }
       if (headCommit) {
-        const changed = await hasWorktreeChanges(worktreePath, headCommit);
+        const changed = await hasWorktreeChanges(worktreePath, headCommit, worktreeBranch);
         if (!changed) {
           await removeAgentWorktree(worktreePath, worktreeBranch, gitRoot);
           // Finish metadata cleanup before allowing a same-id resume.

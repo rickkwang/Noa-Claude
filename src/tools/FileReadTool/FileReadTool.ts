@@ -1082,10 +1082,7 @@ export async function readImageWithTokenBudget(
   maxTokens: number = getDefaultFileReadingLimits().maxTokens,
   maxBytes: number = IMAGE_MAX_BYTES,
 ): Promise<ImageResult> {
-  // Guard before reading: a regular file over the cap is refused outright;
-  // anything else (a pipe or device named like an image) is read capped and
-  // refused if it fails to end. Without this, a huge file or an endless
-  // source would be buffered whole.
+  // The capped reader opens nonblocking and rejects non-regular files.
   let fileSize: number | undefined
   try {
     const stat = getFsImplementation().statSync(filePath)
@@ -1106,11 +1103,6 @@ export async function readImageWithTokenBudget(
     filePath,
     maxBytes,
   )
-  if (fileSize === undefined && imageBuffer.length >= maxBytes) {
-    throw new Error(
-      `Cannot read this as an image: ${filePath} is a pipe or a device, not a regular file, and it sent more than ${formatFileSize(maxBytes)} without ending.`,
-    )
-  }
   const originalSize = imageBuffer.length
 
   if (originalSize === 0) {

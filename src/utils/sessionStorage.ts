@@ -122,6 +122,24 @@ function getTranscriptMessagePayload(
 // See: https://github.com/oven-sh/bun/issues/26168
 const VERSION = typeof MACRO !== 'undefined' ? MACRO.VERSION : 'unknown'
 
+/** Separate a crash-truncated record from the next append without discarding it. */
+function transcriptAppendPrefix(filePath: string): string {
+  let fd: number | undefined
+  try {
+    fd = openSync(filePath, 'r')
+    const { size } = fstatSync(fd)
+    if (size === 0) return ''
+    const last = Buffer.allocUnsafe(1)
+    if (readSync(fd, last, 0, 1, size - 1) !== 1) throw new Error('Could not read transcript tail')
+    return last[0] === 0x0a ? '' : '\n'
+  } catch (error) {
+    if (getErrnoCode(error) === 'ENOENT') return ''
+    throw error
+  } finally {
+    if (fd !== undefined) closeSync(fd)
+  }
+}
+
 type Transcript = (
   | UserMessage
   | AssistantMessage
@@ -870,7 +888,7 @@ class Project {
     content: string,
     resolvers: Array<() => void>,
   ): void {
-    const prefix = this.failedWritePaths.has(filePath) ? '\n' : ''
+    const prefix = this.failedWritePaths.has(filePath) ? '\n' : transcriptAppendPrefix(filePath)
     try {
       fs.appendFileSync(filePath, prefix + content, { mode: 0o600 })
     } catch (error) {
@@ -884,7 +902,7 @@ class Project {
 
   private async appendToFile(filePath: string, data: string): Promise<void> {
     try {
-      await fsAppendFile(filePath, data, { mode: 0o600 })
+      await fsAppendFile(filePath, transcriptAppendPrefix(filePath) + data, { mode: 0o600 })
     } catch (error) {
       // Directory may not exist — some NFS-like filesystems return
       // unexpected error codes, so don't discriminate on code.
@@ -2940,7 +2958,7 @@ function appendEntryToFile(
   // breaking JSONL insertion order.
   project?.syncFlushQueuedWrites(fullPath)
   const fs = getFsImplementation()
-  const line = jsonStringify(entry) + '\n'
+  const line = transcriptAppendPrefix(fullPath) + jsonStringify(entry) + '\n'
   try {
     fs.appendFileSync(fullPath, line, { mode: 0o600 })
   } catch {
@@ -3238,7 +3256,7 @@ export async function saveTitleAndAgentName(
   const agentLine =
     jsonStringify({ type: 'agent-name', agentName: name, sessionId }) + '\n'
   const fs = getFsImplementation()
-  const combined = titleLine + agentLine
+  const combined = transcriptAppendPrefix(resolvedPath) + titleLine + agentLine
   try {
     fs.appendFileSync(resolvedPath, combined, { mode: 0o600 })
   } catch {

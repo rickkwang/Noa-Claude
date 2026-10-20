@@ -213,9 +213,8 @@ export function stripImagesFromMessages(messages: Message[]): Message[] {
 
 /**
  * Strip attachment types that are re-injected post-compaction anyway.
- * skill_discovery/skill_listing are re-surfaced by resetSentSkillNames()
- * + the next turn's discovery signal, so feeding them to the summarizer
- * wastes tokens and pollutes the summary with stale skill suggestions.
+ * Skill discovery and listings are regenerated from the remaining history.
+ * Feeding them to the summarizer wastes tokens on stale discovery hints.
  *
  * No-op when EXPERIMENTAL_SKILL_SEARCH is off (the attachment types
  * don't exist on external builds).
@@ -1016,13 +1015,6 @@ export async function compactConversation(
     context.readFileState.clear()
     context.loadedNestedMemoryPaths?.clear()
 
-    // Intentionally NOT resetting sentSkillNames: re-injecting the full
-    // skill_listing (~4K tokens) post-compact is pure cache_creation with
-    // marginal benefit. The model still has SkillTool in its schema and
-    // invoked_skills attachment (below) preserves used-skill content. Ants
-    // with EXPERIMENTAL_SKILL_SEARCH already skip re-injection via the
-    // early-return in getSkillListingAttachments.
-
     // Compaction ate prior delta attachments. Re-announce from the current
     // state so the model has tool/instruction context on the first
     // post-compact turn. Empty preserved history → diff against nothing →
@@ -1481,9 +1473,6 @@ export async function partialCompactConversation(
     preCompactContextState = snapshotCompactContextState(context)
     context.readFileState.clear()
     context.loadedNestedMemoryPaths?.clear()
-    // Intentionally NOT resetting sentSkillNames — see compactConversation()
-    // for rationale (~4K tokens saved per compact event).
-
     // Re-announce only what was in the summarized portion — messagesToKeep
     // is scanned, so anything already announced there is skipped.
     const postCompactContextAttachments =

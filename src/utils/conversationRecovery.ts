@@ -20,7 +20,6 @@ import type {
 } from '../types/message.js'
 import type { ThreadGoal } from '../types/goal.js'
 import { PERMISSION_MODES } from '../types/permissions.js'
-import { suppressNextSkillListing } from './attachments.js'
 import {
   copyFileHistoryForResume,
   type FileHistorySnapshot,
@@ -111,7 +110,8 @@ export function isWellFormedAttachmentPayload(attachment: unknown): boolean {
     case 'hook_success':
       return 'content' in a && typeof a.content === 'string'
     case 'skill_listing':
-      return !('names' in a) || a.names === undefined || Array.isArray(a.names)
+      return ['names', 'digests'].every(key => a[key] === undefined ||
+        (Array.isArray(a[key]) && a[key].every(value => typeof value === 'string')))
     case 'hook_additional_context':
       return (
         'content' in a &&
@@ -567,13 +567,6 @@ export function restoreSkillStateFromMessages(messages: Message[]): void {
           addInvokedSkill(skill.name, skill.path, skill.content, null)
         }
       }
-    }
-    // A prior process already injected the skills-available reminder — it's
-    // in the transcript the model is about to see. sentSkillNames is
-    // process-local, so without this every resume re-announces the same
-    // ~600 tokens. Fire-once latch; consumed on the first attachment pass.
-    if (message.attachment.type === 'skill_listing') {
-      suppressNextSkillListing()
     }
   }
 }

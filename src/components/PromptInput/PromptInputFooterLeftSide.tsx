@@ -157,13 +157,6 @@ export function PromptInputFooterLeftSide(t0) {
     historyFailedMatch,
     onOpenTasksDialog
   } = t0;
-  // The plain "← for agents" hint hides itself 10 seconds after the session
-  // opens; counts of waiting agents still show.
-  const [agentsHintExpired, setAgentsHintExpired] = useState(false);
-  useEffect(() => {
-    const timer = setTimeout(() => setAgentsHintExpired(true), 10000);
-    return () => clearTimeout(timer);
-  }, []);
   if (exitMessage.show) {
     let t1;
     if ($[0] !== exitMessage.key) {
@@ -322,6 +315,11 @@ function ModeIndicator({
   const voiceWarmingUp = feature('VOICE_MODE') ?
   // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
   useVoiceState(s_6 => s_6.voiceWarmingUp) : false;
+  const [agentsHintExpired, setAgentsHintExpired] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setAgentsHintExpired(true), 10000);
+    return () => clearTimeout(timer);
+  }, []);
   const hasSelection = useHasSelection();
   const selGetState = useSelection().getState;
   const hasNextTick = nextTickAt !== null;

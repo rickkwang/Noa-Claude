@@ -1260,7 +1260,7 @@ export async function cleanupStaleAgentWorktrees(
         ),
         execFileNoThrowWithCwd(
           gitExe(),
-          ['rev-list', '--max-count=1', 'HEAD', '--not', '--remotes'],
+          ['rev-list', '--max-count=1', 'HEAD', `refs/heads/${worktreeBranchName(slug)}`, '--not', '--remotes'],
           { cwd: worktreePath },
         ),
       ])
@@ -1294,41 +1294,33 @@ export async function cleanupStaleAgentWorktrees(
   return removed
 }
 
-/**
- * Check whether a worktree has uncommitted changes or new commits since creation.
- * Returns true if there are uncommitted changes (dirty working tree), if commits
- * were made on the worktree branch since `headCommit`, or if git commands fail
- * — callers use this to decide whether to remove a worktree, so fail-closed.
- */
+export async function countWorktreeChanges(
+  worktreePath: string,
+  headCommit: string | undefined,
+  worktreeBranch: string | undefined,
+): Promise<{ changedFiles: number; commits: number } | null> {
+  if (!headCommit || !worktreeBranch) return null
+  const run = (args: string[]) => execFileNoThrowWithCwd(gitExe(), args, { cwd: worktreePath })
+  const [status, branch] = await Promise.all([
+    run(['status', '--porcelain']),
+    run(['symbolic-ref', '--quiet', '--short', 'HEAD']),
+  ])
+  // A detached or switched HEAD cannot prove the branch we'll delete is safe.
+  if (status.code !== 0 || branch.code !== 0 || branch.stdout.trim() !== worktreeBranch) return null
+  const revList = await run(['rev-list', '--count', `${headCommit}..HEAD`])
+  const commits = Number(revList.stdout.trim())
+  if (revList.code !== 0 || !/^\d+$/.test(revList.stdout.trim()) || !Number.isSafeInteger(commits)) return null
+  return { changedFiles: status.stdout.split('\n').filter(line => line.trim()).length, commits }
+}
+
+/** Unknown state, a switched HEAD or changes all require retaining an agent worktree. */
 export async function hasWorktreeChanges(
   worktreePath: string,
   headCommit: string,
+  worktreeBranch: string | undefined,
 ): Promise<boolean> {
-  const { code: statusCode, stdout: statusOutput } =
-    await execFileNoThrowWithCwd(gitExe(), ['status', '--porcelain'], {
-      cwd: worktreePath,
-    })
-  if (statusCode !== 0) {
-    return true
-  }
-  if (statusOutput.trim().length > 0) {
-    return true
-  }
-
-  const { code: revListCode, stdout: revListOutput } =
-    await execFileNoThrowWithCwd(
-      gitExe(),
-      ['rev-list', '--count', `${headCommit}..HEAD`],
-      { cwd: worktreePath },
-    )
-  if (revListCode !== 0) {
-    return true
-  }
-  if (parseInt(revListOutput.trim(), 10) > 0) {
-    return true
-  }
-
-  return false
+  const summary = await countWorktreeChanges(worktreePath, headCommit, worktreeBranch)
+  return summary === null || summary.changedFiles > 0 || summary.commits > 0
 }
 
 /**

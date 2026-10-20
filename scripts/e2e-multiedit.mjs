@@ -54,6 +54,7 @@ const steps = [
   () => ({ tool: 'Write', id: 'write_gbk', input: { file_path: join(active.workspace, 'gbk.txt'), content: 'replaced\n' } }),
   // Field names models commonly send instead of `description` / `timeout`.
   () => ({ tool: 'Bash', id: 'bash_alias', input: { command: 'echo BASH_ALIAS_OK', command_description: 'Echo marker', timeout_ms: 5000 } }),
+  ...(process.platform === 'win32' ? [] : [() => ({ tool: 'Read', id: 'read_pipe', input: { file_path: join(active.workspace, 'idle.png') } })]),
   () => ({ text: 'MULTIEDIT_DONE' }),
 ];
 
@@ -98,6 +99,7 @@ async function run() {
   mkdirSync(workspace, { recursive: true });
   writeFileSync(join(workspace, 'fixture.txt'), FIXTURE);
   writeFileSync(join(workspace, 'gbk.txt'), GBK_FIXTURE);
+  if (process.platform !== 'win32') execFileSync('mkfifo', [join(workspace, 'idle.png')]);
   active = { requests: [], workspace };
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => ['PATH', 'HOME', 'TMPDIR', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL'].includes(k)));
   Object.assign(env, {
@@ -154,6 +156,11 @@ function check({ exit, stdout, stderr, workspace }) {
   const alias = toolResultText(active.requests[10].body, 'bash_alias');
   assert.ok(!alias?.isError, `Bash with aliased fields failed: ${alias?.text}`);
   assert.match(alias.text, /BASH_ALIAS_OK/);
+  if (process.platform !== 'win32') {
+    const refused = toolResultText(active.requests.at(-1).body, 'read_pipe');
+    assert.ok(refused?.isError, 'Read did not refuse the idle image pipe');
+    assert.match(refused.text, /not a regular file/);
+  }
   return { final_file: finalFile, bad_edit_result: bad.text.slice(0, 200), bg_read_contains_marker: true, gbk_unchanged: true, bash_alias_ok: true };
 }
 

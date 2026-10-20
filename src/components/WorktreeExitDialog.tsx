@@ -4,10 +4,9 @@ import type { CommandResultDisplay } from 'src/commands.js';
 import { logEvent } from 'src/services/analytics/index.js';
 import { logForDebugging } from 'src/utils/debug.js';
 import { Box, Text } from '../ink.js';
-import { execFileNoThrow } from '../utils/execFileNoThrow.js';
 import { getPlansDirectory } from '../utils/plans.js';
 import { setCwd } from '../utils/Shell.js';
-import { cleanupWorktree, getCurrentWorktreeSession, keepWorktree, killTmuxSession } from '../utils/worktree.js';
+import { cleanupWorktree, countWorktreeChanges, getCurrentWorktreeSession, keepWorktree, killTmuxSession } from '../utils/worktree.js';
 import { Select } from './CustomSelect/select.js';
 import { Dialog } from './design-system/Dialog.js';
 import { Spinner } from './Spinner.js';
@@ -32,8 +31,9 @@ export function WorktreeExitDialog({
   onCancel
 }: Props): React.ReactNode {
   const [status, setStatus] = useState<'loading' | 'asking' | 'keeping' | 'removing' | 'done'>('loading');
-  const [changes, setChanges] = useState<string[]>([]);
+  const [changedFiles, setChangedFiles] = useState(0);
   const [commitCount, setCommitCount] = useState<number>(0);
+  const [stateUnknown, setStateUnknown] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | undefined>();
   const worktreeSession = getCurrentWorktreeSession();
   useEffect(() => {
@@ -47,24 +47,14 @@ export function WorktreeExitDialog({
         setStatus('done');
         return;
       }
-      let changeLines: string[] = [];
-      const gitStatus = await execFileNoThrow('git', ['status', '--porcelain']);
-      if (gitStatus.stdout) {
-        changeLines = gitStatus.stdout.split('\n').filter(_ => _.trim() !== '');
-        setChanges(changeLines);
-      }
-
-      // Check for commits to eject
       if (worktreeSession) {
-        // Get commits in worktree that are not in original branch
-        const {
-          stdout: commitsStr
-        } = await execFileNoThrow('git', ['rev-list', '--count', `${worktreeSession.originalHeadCommit}..HEAD`]);
-        const count = parseInt(commitsStr.trim()) || 0;
+        const summary = await countWorktreeChanges(worktreeSession.worktreePath, worktreeSession.originalHeadCommit, worktreeSession.worktreeBranch);
+        setStateUnknown(summary === null);
+        const count = summary?.commits ?? 0;
         setCommitCount(count);
+        setChangedFiles(summary?.changedFiles ?? 0);
 
-        // If no changes and no commits, clean up silently
-        if (changeLines.length === 0 && count === 0) {
+        if (summary !== null && summary.changedFiles === 0 && count === 0) {
           setStatus('removing');
           void cleanupWorktree().then(() => {
             process.chdir(worktreeSession.originalCwd);
@@ -111,7 +101,7 @@ export function WorktreeExitDialog({
       setStatus('keeping');
       logEvent('tengu_worktree_kept', {
         commits: commitCount,
-        changed_files: changes.length
+        changed_files: changedFiles
       });
       await keepWorktree();
       process.chdir(worktreeSession.originalCwd);
@@ -128,7 +118,7 @@ export function WorktreeExitDialog({
       setStatus('keeping');
       logEvent('tengu_worktree_kept', {
         commits: commitCount,
-        changed_files: changes.length
+        changed_files: changedFiles
       });
       if (worktreeSession.tmuxSessionName) {
         await killTmuxSession(worktreeSession.tmuxSessionName);
@@ -144,7 +134,7 @@ export function WorktreeExitDialog({
       setStatus('removing');
       logEvent('tengu_worktree_removed', {
         commits: commitCount,
-        changed_files: changes.length
+        changed_files: changedFiles
       });
       if (worktreeSession.tmuxSessionName) {
         await killTmuxSession(worktreeSession.tmuxSessionName);
@@ -164,11 +154,11 @@ export function WorktreeExitDialog({
         return;
       }
       const tmuxNote = hasTmux ? ' Tmux session terminated.' : '';
-      if (commitCount > 0 && changes.length > 0) {
+      if (commitCount > 0 && changedFiles > 0) {
         setResultMessage(`Worktree removed. ${commitCount} ${commitCount === 1 ? 'commit' : 'commits'} and uncommitted changes were discarded.${tmuxNote}`);
       } else if (commitCount > 0) {
         setResultMessage(`Worktree removed. ${commitCount} ${commitCount === 1 ? 'commit' : 'commits'} on ${worktreeSession.worktreeBranch} ${commitCount === 1 ? 'was' : 'were'} discarded.${tmuxNote}`);
-      } else if (changes.length > 0) {
+      } else if (changedFiles > 0) {
         setResultMessage(`Worktree removed. Uncommitted changes were discarded.${tmuxNote}`);
       } else {
         setResultMessage(`Worktree removed.${tmuxNote}`);
@@ -189,13 +179,15 @@ export function WorktreeExitDialog({
       </Box>;
   }
   const branchName = worktreeSession.worktreeBranch;
-  const hasUncommitted = changes.length > 0;
+  const hasUncommitted = changedFiles > 0;
   const hasCommits = commitCount > 0;
   let subtitle = '';
-  if (hasUncommitted && hasCommits) {
-    subtitle = `You have ${changes.length} uncommitted ${changes.length === 1 ? 'file' : 'files'} and ${commitCount} ${commitCount === 1 ? 'commit' : 'commits'} on ${branchName}. All will be lost if you remove.`;
+  if (stateUnknown) {
+    subtitle = 'Could not verify that the worktree and its original branch are safe to delete. Keep them unless you intend to discard their files and commits.';
+  } else if (hasUncommitted && hasCommits) {
+    subtitle = `You have ${changedFiles} uncommitted ${changedFiles === 1 ? 'file' : 'files'} and ${commitCount} ${commitCount === 1 ? 'commit' : 'commits'} on ${branchName}. All will be lost if you remove.`;
   } else if (hasUncommitted) {
-    subtitle = `You have ${changes.length} uncommitted ${changes.length === 1 ? 'file' : 'files'}. These will be lost if you remove the worktree.`;
+    subtitle = `You have ${changedFiles} uncommitted ${changedFiles === 1 ? 'file' : 'files'}. These will be lost if you remove the worktree.`;
   } else if (hasCommits) {
     subtitle = `You have ${commitCount} ${commitCount === 1 ? 'commit' : 'commits'} on ${branchName}. The branch will be deleted if you remove the worktree.`;
   } else {
@@ -210,7 +202,7 @@ export function WorktreeExitDialog({
     // Fallback: treat Escape as "keep" if no onCancel provided
     void handleSelect('keep');
   }
-  const removeDescription = hasUncommitted || hasCommits ? 'All changes and commits will be lost.' : 'Clean up the worktree directory.';
+  const removeDescription = stateUnknown || hasUncommitted || hasCommits ? 'All changes and commits will be lost.' : 'Clean up the worktree directory.';
   const hasTmuxSession = Boolean(worktreeSession.tmuxSessionName);
   const options = hasTmuxSession ? [{
     label: 'Keep worktree and tmux session',

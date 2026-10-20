@@ -15,7 +15,6 @@ import {
   getSkillsPath,
   onDynamicSkillsLoaded,
 } from '../../skills/loadSkillsDir.js'
-import { resetSentSkillNames } from '../attachments.js'
 import { registerCleanup } from '../cleanupRegistry.js'
 import { logForDebugging } from '../debug.js'
 import { getFsImplementation } from '../fsOperations.js'
@@ -279,7 +278,6 @@ function scheduleReload(changedPath: string): void {
     }
     clearSkillCaches()
     clearCommandsCache()
-    resetSentSkillNames()
     skillsChanged.emit()
   }, testOverrides?.reloadDebounce ?? RELOAD_DEBOUNCE_MS)
 }
@@ -300,7 +298,6 @@ function scheduleReload(changedPath: string): void {
 export function reloadNow(): void {
   clearSkillCaches()
   clearCommandsCache()
-  resetSentSkillNames()
   skillsChanged.emit()
 }
 

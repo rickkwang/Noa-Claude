@@ -680,14 +680,14 @@ export const NodeFsOperations: FsOperations = {
     if (maxBytes === undefined) {
       return readFilePromise(fsPath)
     }
-    const handle = await open(fsPath, 'r')
+    // Nonblocking open also covers a regular path replaced by a FIFO before open.
+    const handle = await open(fsPath, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | fs.constants.O_NOCTTY)
     try {
       const stat = await handle.stat()
-      // Regular files are read to their size; non-regular files (pipes,
-      // devices) report size 0, so read them up to maxBytes instead of
-      // trusting the stat size, letting callers bound reads from sources
-      // that may never end.
-      const readSize = stat.isFile() ? Math.min(stat.size, maxBytes) : maxBytes
+      if (!stat.isFile()) {
+        throw new Error(`Cannot read ${fsPath}: it is a pipe or a device, not a regular file`)
+      }
+      const readSize = Math.min(stat.size, maxBytes)
       const buffer = Buffer.allocUnsafe(readSize)
       let offset = 0
       while (offset < readSize) {
