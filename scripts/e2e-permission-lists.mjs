@@ -99,6 +99,9 @@ try{
  await sleep(600);click(50,y);await wait('settings-restored',s=>/Auto-compact +true/.test(s));
  keys('Escape');await sleep(200);keys('Escape');await sleep(200);keys('Escape');await sleep(200);
  }
+ // --bare (the default run) loads only --add-dir skills, never the user fixtures
+ // this block asserts on; run it with --skills-only.
+ if(skillsOnly) {
  type('/skills');await sleep(200);keys('Enter');await wait('skills-top',s=>s.includes('e2e-skill-01')&&s.includes('Search skills'));
  assert(!/^\s*Project\s+User\s*$/m.test(screen()),'skills still split sources into Project/User tabs');
  assert(screen().includes('enter/space to cycle'),'skills still invoke on Enter');
@@ -141,6 +144,7 @@ try{
  keys('Enter');await wait('skills-revert',()=>/✔|✓/.test(row('e2e-skill-01'))&&!/name-only|user-only/.test(row('e2e-skill-01')));
  keys('Escape');await wait('skills-revert-saved',s=>!s.includes('Search skills')&&s.includes('Updated 1 skill override'));
  assert(modes()['e2e-skill-01']===undefined,'reverting left an unnecessary override');
+ }
  if(!skillsOnly) {
  type('test permission batch');await sleep(200);keys('Enter');await wait('permission-1',s=>s.includes('1 of 5'));
  tmux('resize-window','-t','ui','-x','18');await wait('permission-narrow',s=>s.includes('Bash')&&!s.includes('of 5'));
