@@ -591,14 +591,6 @@ export type GlobalConfig = {
   // Additional model options for the model picker (fetched during bootstrap).
   additionalModelOptionsCache?: ModelOption[]
 
-  // Disk cache for /api/claude_code/organizations/metrics_enabled.
-  // Org-level settings change rarely; persisting across processes avoids a
-  // cold API call on every `claude -p` invocation.
-  metricsStatusCache?: {
-    enabled: boolean
-    timestamp: number
-  }
-
   // Version of the last-applied migration set. When equal to
   // CURRENT_MIGRATION_VERSION, runMigrations() skips all sync migrations
   // (avoiding 11× saveGlobalConfig lock+re-read on every startup).

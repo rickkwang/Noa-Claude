@@ -211,15 +211,3 @@ export const init = memoize(async (): Promise<void> => {
     }
   }
 })
-
-/**
- * Initialize telemetry after trust has been granted.
- * For remote-settings-eligible users, waits for settings to load (non-blocking),
- * then re-applies env vars (to include remote settings) before initializing telemetry.
- * For non-eligible users, initializes telemetry immediately.
- * This should only be called once, after the trust dialog has been accepted.
- */
-export function initializeTelemetryAfterTrust(): void {
-  // Telemetry is hard-disabled in this build. Kept as a no-op because
-  // main.tsx and interactiveHelpers.tsx still call it after the trust dialog.
-}

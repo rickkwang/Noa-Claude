@@ -1,10 +1,7 @@
 // @ts-nocheck
 import type { BetaMessageStreamParams } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
-import type { Attributes, Meter, MetricOptions } from '@opentelemetry/api'
+import type { Attributes, Meter } from '@opentelemetry/api'
 import type { logs } from '@opentelemetry/api-logs'
-import type { LoggerProvider } from '@opentelemetry/sdk-logs'
-import type { MeterProvider } from '@opentelemetry/sdk-metrics'
-import type { BasicTracerProvider } from '@opentelemetry/sdk-trace-base'
 import { realpathSync } from 'fs'
 import sumBy from 'lodash-es/sumBy.js'
 import { cwd } from 'process'
@@ -158,12 +155,7 @@ type State = {
   // Parent session ID for tracking session lineage (e.g., plan mode -> implementation)
   parentSessionId: SessionId | undefined
   // Logger state
-  loggerProvider: LoggerProvider | null
   eventLogger: ReturnType<typeof logs.getLogger> | null
-  // Meter provider state
-  meterProvider: MeterProvider | null
-  // Tracer provider state
-  tracerProvider: BasicTracerProvider | null
   // Agent color state
   agentColorMap: Map<string, AgentColorName>
   agentColorIndex: number
@@ -389,11 +381,7 @@ function getInitialState(): State {
     sessionId: randomUUID() as SessionId,
     parentSessionId: undefined,
     // Logger state
-    loggerProvider: null,
     eventLogger: null,
-    // Meter provider state
-    meterProvider: null,
-    tracerProvider: null,
     // Agent color state
     agentColorMap: new Map(),
     agentColorIndex: 0,
@@ -1084,47 +1072,6 @@ export function clearModelStrings(): void {
   STATE.modelStrings = null
 }
 
-export function setMeter(
-  meter: Meter,
-  createCounter: (name: string, options: MetricOptions) => AttributedCounter,
-): void {
-  STATE.meter = meter
-
-  // Initialize all counters using the provided factory
-  STATE.sessionCounter = createCounter('claude_code.session.count', {
-    description: 'Count of CLI sessions started',
-  })
-  STATE.locCounter = createCounter('claude_code.lines_of_code.count', {
-    description:
-      "Count of lines of code modified, with the 'type' attribute indicating whether lines were added or removed",
-  })
-  STATE.prCounter = createCounter('claude_code.pull_request.count', {
-    description: 'Number of pull requests created',
-  })
-  STATE.commitCounter = createCounter('claude_code.commit.count', {
-    description: 'Number of git commits created',
-  })
-  STATE.costCounter = createCounter('claude_code.cost.usage', {
-    description: 'Cost of the Claude Code session',
-    unit: 'USD',
-  })
-  STATE.tokenCounter = createCounter('claude_code.token.usage', {
-    description: 'Number of tokens used',
-    unit: 'tokens',
-  })
-  STATE.codeEditToolDecisionCounter = createCounter(
-    'claude_code.code_edit_tool.decision',
-    {
-      description:
-        'Count of code editing tool permission decisions (accept/reject) for Edit, Write, and NotebookEdit tools',
-    },
-  )
-  STATE.activeTimeCounter = createCounter('claude_code.active_time.total', {
-    description: 'Total active time in seconds',
-    unit: 's',
-  })
-}
-
 export function getMeter(): Meter | null {
   return STATE.meter
 }
@@ -1161,36 +1108,8 @@ export function getActiveTimeCounter(): AttributedCounter | null {
   return STATE.activeTimeCounter
 }
 
-export function getLoggerProvider(): LoggerProvider | null {
-  return STATE.loggerProvider
-}
-
-export function setLoggerProvider(provider: LoggerProvider | null): void {
-  STATE.loggerProvider = provider
-}
-
 export function getEventLogger(): ReturnType<typeof logs.getLogger> | null {
   return STATE.eventLogger
-}
-
-export function setEventLogger(
-  logger: ReturnType<typeof logs.getLogger> | null,
-): void {
-  STATE.eventLogger = logger
-}
-
-export function getMeterProvider(): MeterProvider | null {
-  return STATE.meterProvider
-}
-
-export function setMeterProvider(provider: MeterProvider | null): void {
-  STATE.meterProvider = provider
-}
-export function getTracerProvider(): BasicTracerProvider | null {
-  return STATE.tracerProvider
-}
-export function setTracerProvider(provider: BasicTracerProvider | null): void {
-  STATE.tracerProvider = provider
 }
 
 export function getIsNonInteractiveSession(): boolean {

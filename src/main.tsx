@@ -45,7 +45,7 @@ import React from 'react';
 import { getOauthConfig } from './constants/oauth.js';
 import { getRemoteSessionUrl } from './constants/product.js';
 import { getSystemContext, getUserContext } from './context.js';
-import { init, initializeTelemetryAfterTrust } from './entrypoints/init.js';
+import { init } from './entrypoints/init.js';
 import { addToHistory } from './history.js';
 import type { Root } from './ink.js';
 import { launchRepl } from './replLauncher.js';
@@ -2389,12 +2389,6 @@ async function run(): Promise<CommanderCommand> {
       // This includes potentially dangerous environment variables from untrusted sources
       // but print mode is considered trusted (as documented in help text)
       applyConfigEnvironmentVariables();
-
-      if (!bareMode) {
-        // Initialize telemetry after env vars are applied so OTEL endpoint env vars and
-        // otelHeadersHelper (which requires trust to execute) are available.
-        initializeTelemetryAfterTrust();
-      }
 
       // Kick SessionStart hooks now so the subprocess spawn overlaps with
       // MCP connect + plugin init + print.ts import below. loadInitialMessages

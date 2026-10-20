@@ -61,7 +61,6 @@ import {
   isRunningOnHomespace,
 } from './envUtils.js'
 import { errorMessage } from './errors.js'
-import { execSyncWithDefaults_DEPRECATED } from './execFileNoThrow.js'
 import { acquireAuthTransitionLock } from './authTransitionLock.js'
 import { logError } from './log.js'
 import { memoizeWithTTLAsync } from './memoize.js'
@@ -1701,31 +1700,6 @@ export function hasProfileScope(): boolean {
   )
 }
 
-export function is1PApiCustomer(): boolean {
-  // 1P API customers are users who are NOT:
-  // 1. Claude.ai subscribers (Max, Pro, Enterprise, Team)
-  // 2. Vertex AI users
-  // 3. AWS Bedrock users
-  // 4. Foundry users
-
-  // Exclude Vertex, Bedrock, and Foundry customers
-  if (
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_BEDROCK) ||
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_VERTEX) ||
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_FOUNDRY)
-  ) {
-    return false
-  }
-
-  // Exclude Claude.ai subscribers
-  if (isClaudeAISubscriber()) {
-    return false
-  }
-
-  // Everyone else is an API customer (OAuth API customers, direct API key users, etc.)
-  return true
-}
-
 /**
  * Gets OAuth account information when Anthropic auth is enabled.
  * Returns undefined when using external API keys or third-party services.
@@ -1853,108 +1827,6 @@ export function isUsing3PServices(): boolean {
     isEnvTruthy(process.env.CLAUDE_CODE_USE_VERTEX) ||
     isEnvTruthy(process.env.CLAUDE_CODE_USE_FOUNDRY)
   )
-}
-
-/**
- * Get the configured otelHeadersHelper from settings
- */
-function getConfiguredOtelHeadersHelper(): string | undefined {
-  const mergedSettings = getSettings_DEPRECATED() || {}
-  return mergedSettings.otelHeadersHelper
-}
-
-/**
- * Check if the configured otelHeadersHelper comes from project settings (projectSettings or localSettings)
- */
-export function isOtelHeadersHelperFromProjectOrLocalSettings(): boolean {
-  const otelHeadersHelper = getConfiguredOtelHeadersHelper()
-  if (!otelHeadersHelper) {
-    return false
-  }
-
-  const projectSettings = getSettingsForSource('projectSettings')
-  const localSettings = getSettingsForSource('localSettings')
-  return (
-    projectSettings?.otelHeadersHelper === otelHeadersHelper ||
-    localSettings?.otelHeadersHelper === otelHeadersHelper
-  )
-}
-
-// Cache for debouncing otelHeadersHelper calls
-let cachedOtelHeaders: Record<string, string> | null = null
-let cachedOtelHeadersTimestamp = 0
-const DEFAULT_OTEL_HEADERS_DEBOUNCE_MS = 29 * 60 * 1000 // 29 minutes
-
-export function getOtelHeadersFromHelper(): Record<string, string> {
-  const otelHeadersHelper = getConfiguredOtelHeadersHelper()
-
-  if (!otelHeadersHelper) {
-    return {}
-  }
-
-  // Return cached headers if still valid (debounce)
-  const debounceMs = parseInt(
-    process.env.CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS ||
-      DEFAULT_OTEL_HEADERS_DEBOUNCE_MS.toString(),
-  )
-  if (
-    cachedOtelHeaders &&
-    Date.now() - cachedOtelHeadersTimestamp < debounceMs
-  ) {
-    return cachedOtelHeaders
-  }
-
-  if (isOtelHeadersHelperFromProjectOrLocalSettings()) {
-    // Check if trust has been established for this project
-    const hasTrust = checkHasTrustDialogAccepted()
-    if (!hasTrust) {
-      return {}
-    }
-  }
-
-  try {
-    const result = execSyncWithDefaults_DEPRECATED(otelHeadersHelper, {
-      timeout: 30000, // 30 seconds - allows for auth service latency
-    })
-      ?.toString()
-      .trim()
-    if (!result) {
-      throw new Error('otelHeadersHelper did not return a valid value')
-    }
-
-    const headers = jsonParse(result)
-    if (
-      typeof headers !== 'object' ||
-      headers === null ||
-      Array.isArray(headers)
-    ) {
-      throw new Error(
-        'otelHeadersHelper must return a JSON object with string key-value pairs',
-      )
-    }
-
-    // Validate all values are strings
-    for (const [key, value] of Object.entries(headers)) {
-      if (typeof value !== 'string') {
-        throw new Error(
-          `otelHeadersHelper returned non-string value for key "${key}": ${typeof value}`,
-        )
-      }
-    }
-
-    // Cache the result
-    cachedOtelHeaders = headers as Record<string, string>
-    cachedOtelHeadersTimestamp = Date.now()
-
-    return cachedOtelHeaders
-  } catch (error) {
-    logError(
-      new Error(
-        `Error getting OpenTelemetry headers from otelHeadersHelper (in settings): ${errorMessage(error)}`,
-      ),
-    )
-    throw error
-  }
 }
 
 function isConsumerPlan(plan: SubscriptionType): plan is 'max' | 'pro' {
