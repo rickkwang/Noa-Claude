@@ -15,7 +15,7 @@ Non-obvious requirements:
 - Exception: a system that can only be tested in isolation — first list every way it could fail, then write the test.
 - Keep an existing isolated test only if it catches a concrete bug E2E misses; delete ones that restate implementation or duplicate E2E coverage.
 
-Tests are self-contained (no preload).
+Tests are self-contained (no preload). Assemble credential-shaped fixtures at runtime (`['xoxb', '123…', 'abc…'].join('-')`): GitHub push protection rejects pushes whose history contains a literal that matches a real token format, even an obviously fake one.
 
 **`typecheck` proves little**: ~85% of non-test source carries `@ts-nocheck`, so green `tsc` covers ~15%. The agent loop is checked — `query.ts`, `QueryEngine.ts`, `tools.ts`, `services/tools/`, `utils/permissions/permissions.ts`, `services/compact/compact.ts` — against the `Message` union in `types/message.ts`. Prefer E2E evidence. `check:nocheck`'s baseline may only shrink; after removing a `@ts-nocheck`, run `node scripts/check-nocheck-ratchet.mjs --update`.
 
