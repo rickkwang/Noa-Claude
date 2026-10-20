@@ -1,5 +1,47 @@
 # Release Notes
 
+## 1.21.0
+
+- New: `/code-review` (alias `/review`) reviews the local diff, a PR number or URL, a branch, or a path. Effort tiers `low` to `max` set how many candidates are checked, and each finding is verified before it is reported. `--fix` applies confirmed findings to local changes or a local path, `--comment` posts to a PR, and `--max-findings` caps the count; the last effort and cap are reused.
+- New: `--restricted` removes code-running tools (Bash, PowerShell, REPL, WebFetch) unless they are named in `--tools`, ignores user, project and local settings, refuses bypassPermissions, and confines writes to the working directory and `--add-dir`.
+- New: `--safe-mode` starts without CLAUDE.md, skills, plugins, hooks, user and project MCP servers, custom agents, output styles, keybindings and themes. Policy settings and authentication still apply.
+- New: the `MultiEdit` tool applies an ordered list of replacements to one file and writes nothing unless every edit applies.
+- New: fork subagents (`subagent_type: "fork"`) are on by default in interactive sessions; `NOA_CLAUDE_FORK_SUBAGENT` overrides this. Bash in an isolated worktree subagent refuses to run against the shared checkout.
+- New: the Agent tool accepts a JSON Schema in `schema`. The subagent must finish with output that passes validation, returned as `structured_output`; a run that ends without it fails.
+- New: background agents report results to the agent that started them, a subagent waits for the agents it started before stopping, and stopping an agent also stops them. Background agents can message each other with `SendMessage`, and foreground, background and resumed subagents share one concurrency limit (`NOA_CLAUDE_MAX_CONCURRENT_AGENTS`).
+- New: on macOS, provider API keys are stored in the keychain instead of `provider-profiles.json`, and existing keys move there on first load. `NOA_CLAUDE_PROVIDER_KEYCHAIN=0` keeps them in the file.
+- New: `maxEffortLevel` caps effort per model. `fallbackModel` accepts an ordered list (the first three entries are used) and fallback steps through it. `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` fixes the subagent model, and `ANTHROPIC_DEFAULT_MODEL` sets the default for new sessions when nothing else selects a model.
+- New: pin a background session with ctrl+t in the agents view. Unpinned sessions left unattached for an hour, finished or waiting for a prompt, are stopped; a session never sent a prompt is removed after five minutes; sessions holding scheduled tasks are kept.
+- New: the `maxProseWidth` setting wraps prose at a column limit while code and tables keep the full width.
+- New: `owner/repo#N` references link to the repository's own git host; hosts without an issue URL scheme keep plain text.
+- New: `noa doctor` reports skills whose frontmatter fails to parse.
+- New: the startup banner shows the NOA logo beside the version, model and path. In fullscreen mode, clicking the logo plays an animation; Esc or another click returns.
+- Markdown rendering: wrapped list lines hang under the item text, list numbers stay on one line, tables show at most 200 rows, fenced code without a language is tinted, links are clickable only for plain web URLs on terminals that support it (otherwise shown as "text (url)"), and strikethrough needs double tildes.
+- Default effort is high for Sonnet 5, Opus 5, Fable 5.x, Mythos 5.1 and Opus 4.8. A top-level `effortLevel` in user settings is ignored for Opus 5.5 and later.
+- `/skills` lists every skill source together: Enter or Space cycles the mode, `t` sorts by tokens, and Esc saves.
+- `CLAUDE_CODE_AUTO_COMPACT_WINDOW` accepts `k` and `M` suffixes (`200k`, `1M`). Larger-window compaction uses the requested model rather than the one a gateway names in its response.
+- `rm -r` on a mounted drive or its top level (`/Volumes/X`, `/media/...`, `/mnt/c`) asks for approval; `CLAUDE_CODE_DISABLE_MOUNTED_DRIVE_RM_PROMPT` turns this off.
+- MCP tool descriptions and server instructions are cut at 4096 characters (`CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH`).
+- In auto mode, the classifier also reviews `SendMessage` calls.
+- Fixed hook `updatedInput` being applied without checks: a rewrite is now schema-checked and validated by the tool, keys outside the schema are dropped, and an invalid rewrite denies the call. At most 12 hooks of one event run at the same time.
+- Fixed MCP server-level permission rules matching a different server whose name contains `__` or shares a prefix.
+- Fixed processes left behind by a foreground Bash command (`cmd &`, daemons, `setsid` children) running on after it returned or was killed, including jobs in separate process groups on Linux.
+- Fixed Edit, MultiEdit and Write rewriting non-UTF-8, NUL-containing or UTF-16BE files with replacement characters; they now refuse such files.
+- Fixed a failed permission check granting access, and unexpected ripgrep errors being reported as empty results.
+- Fixed diffs losing every hunk when a file was replaced by a symlink or the reverse.
+- Fixed Read decoding HEIC and AVIF images, archives (zst, lz4, whl, dmg, apk) and macro or template Office files as text. Image sources over 128 MB and pipes or devices that never end are refused before buffering.
+- Fixed thinking being dropped for the rest of a session after one invalid thinking signature.
+- Fixed the skill list going missing or repeating unchanged descriptions after rewind, resume, reload or compaction.
+- Fixed custom and plugin output styles getting no per-turn reminder, and styles added mid-session not appearing in the picker.
+- Fixed messages added while a dialog covered the transcript showing blank after a resize.
+- Fixed skill hooks leaking to other agents or outliving the agent that registered them. Transcript edits are now atomic and keep history when a write fails.
+- Fixed the curl installer losing configuration kept inside the install directory or leaving a broken launcher; an unconfirmed non-interactive update now fails.
+- Fixed settings and keybindings file watching hanging under Bun; both files are now polled.
+- Fixed `--print` exiting before a finished background agent delivered its result.
+- Fixed the exit resume hint printing the session title, which could carry text a user might paste and run; it now prints the session ID.
+- Fixed bridge debug logs leaking Basic and Digest credentials, Bearer tokens, unquoted key/value secrets and several more token formats.
+- `egrep` and `fgrep` are treated like `grep` in read-only checks, and `getconf` is no longer auto-allowed.
+
 ## 1.20.1
 
 - Fixed the curl installer replacing unrelated directories: it now refuses HOME, its ancestors, Git checkouts and non-Noa install targets before downloading or building.
