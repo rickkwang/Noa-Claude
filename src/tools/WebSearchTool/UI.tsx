@@ -78,9 +78,7 @@ export function renderToolUseProgressMessage(progressMessages: ProgressMessage<W
   }
 }
 export function renderToolResultMessage(output: Output): React.ReactNode {
-  const {
-    searchCount
-  } = getSearchSummary(output.results ?? []);
+  const searchCount = output.searchCount ?? getSearchSummary(output.results ?? []).searchCount;
   const timeDisplay = output.durationSeconds >= 1 ? `${Math.round(output.durationSeconds)}s` : `${Math.round(output.durationSeconds * 1000)}ms`;
   return <Box justifyContent="space-between" width="100%">
       <MessageResponse height={1}>

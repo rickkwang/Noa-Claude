@@ -94,6 +94,7 @@ export function buildResponsesBody(options: {
   toolChoice?: unknown
   effort?: unknown
   promptCacheKey?: string
+  webSearch?: boolean
 }): Record<string, unknown> {
   const toolChoice = options.toolChoice as { type?: string; function?: { name?: string } } | string | undefined
   return {
@@ -107,7 +108,14 @@ export function buildResponsesBody(options: {
       summary: 'auto',
       ...(typeof options.effort === 'string' && EFFORT_LEVELS.has(options.effort) ? { effort: options.effort } : {}),
     },
-    ...(options.tools?.length ? { tools: options.tools.map(t => ({ type: 'function', ...t.function })) } : {}),
+    ...(options.tools?.length || options.webSearch
+      ? {
+          tools: [
+            ...(options.tools ?? []).map(t => ({ type: 'function', ...t.function })),
+            ...(options.webSearch ? [{ type: 'web_search' }] : []),
+          ],
+        }
+      : {}),
     ...(toolChoice !== undefined
       ? {
           tool_choice:
@@ -198,6 +206,10 @@ export async function* responsesStreamToAnthropic(
   const blocks = new Map<number, { index: number; streamed: boolean }>()
   let nextIndex = 0
   let sawToolCall = false
+  // Hosted web_search calls surface as Anthropic server_tool_use blocks, and
+  // the message's url_citation annotations as a web_search_tool_result for
+  // the latest call, the shapes WebSearchTool reads.
+  let lastSearchId: string | undefined
   const decoder = new TextDecoder()
   let buffer = ''
 
@@ -232,6 +244,13 @@ export async function* responsesStreamToAnthropic(
               type: 'content_block_start',
               index,
               content_block: { type: 'tool_use', id: item.call_id, name: item.name, input: {} },
+            }
+          } else if (item.type === 'web_search_call') {
+            lastSearchId = item.id
+            yield {
+              type: 'content_block_start',
+              index,
+              content_block: { type: 'server_tool_use', id: item.id, name: 'web_search', input: {} },
             }
           } else {
             yield { type: 'content_block_start', index, content_block: { type: 'text', text: '' } }
@@ -284,6 +303,15 @@ export async function* responsesStreamToAnthropic(
                 },
               }
             }
+          } else if (item.type === 'web_search_call') {
+            const query = item.action?.query
+            if (typeof query === 'string') {
+              yield {
+                type: 'content_block_delta',
+                index: block.index,
+                delta: { type: 'input_json_delta', partial_json: JSON.stringify({ query }) },
+              }
+            }
           } else if (!block.streamed) {
             const text = (item.content ?? []).map((c: { text?: string }) => c.text ?? '').join('')
             if (text) {
@@ -291,6 +319,22 @@ export async function* responsesStreamToAnthropic(
             }
           }
           yield { type: 'content_block_stop', index: block.index }
+          if (item.type === 'message' && lastSearchId) {
+            const seen = new Set<string>()
+            const hits = (item.content ?? [])
+              .flatMap((c: { annotations?: Array<Record<string, any>> }) => c.annotations ?? [])
+              .filter((a: Record<string, any>) => a.type === 'url_citation' && typeof a.url === 'string' && !seen.has(a.url) && seen.add(a.url))
+              .map((a: Record<string, any>) => ({ type: 'web_search_result', title: a.title ?? a.url, url: a.url }))
+            if (hits.length > 0) {
+              const index = nextIndex++
+              yield {
+                type: 'content_block_start',
+                index,
+                content_block: { type: 'web_search_tool_result', tool_use_id: lastSearchId, content: hits },
+              }
+              yield { type: 'content_block_stop', index }
+            }
+          }
           break
         }
         case 'response.completed':

@@ -17,6 +17,7 @@ import type { PermissionResult } from 'src/utils/permissions/PermissionResult.js
 import { z } from 'zod/v4'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
 import { queryModelWithStreaming } from '../../services/api/claude.js'
+import { isGeminiOpenAIBaseUrl } from '../../services/api/client.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
@@ -29,6 +30,12 @@ import {
   getWebSearchCalls,
   incrementWebSearchCalls,
 } from '../../utils/task/sessionBudget.js'
+import {
+  filterHitsByDomain,
+  getConfiguredSearchBackend,
+  searchWithBackend,
+  searchWithGemini,
+} from './backends.js'
 import { getWebSearchPrompt, WEB_SEARCH_TOOL_NAME } from './prompt.js'
 import {
   getToolUseSummary,
@@ -58,6 +65,10 @@ const searchResultSchema = lazySchema(() => {
   const searchHitSchema = z.object({
     title: z.string().describe('The title of the search result'),
     url: z.string().describe('The URL of the search result'),
+    snippet: z
+      .string()
+      .optional()
+      .describe('Text excerpt, from search APIs that return one'),
   })
 
   return z.object({
@@ -77,6 +88,10 @@ const outputSchema = lazySchema(() =>
     durationSeconds: z
       .number()
       .describe('Time taken to complete the search operation'),
+    searchCount: z
+      .number()
+      .optional()
+      .describe('Searches run, when it differs from the result blocks'),
   }),
 )
 type OutputSchema = ReturnType<typeof outputSchema>
@@ -103,6 +118,21 @@ function makeToolSchema(
     blocked_domains: input.blocked_domains,
     max_uses: 8, // Hardcoded to 8 searches maximum
   }
+}
+
+function isChatGPTResponsesRoute(): boolean {
+  return (
+    getAPIProvider() === 'openaiCompatible' &&
+    process.env.NOA_CLAUDE_OPENAI_AUTH === 'chatgpt'
+  )
+}
+
+function isGeminiRoute(): boolean {
+  return (
+    getAPIProvider() === 'openaiCompatible' &&
+    process.env.NOA_CLAUDE_OPENAI_AUTH !== 'chatgpt' &&
+    isGeminiOpenAIBaseUrl(process.env.OPENAI_BASE_URL ?? '')
+  )
 }
 
 function makeOutputFromSearchResponse(
@@ -190,6 +220,11 @@ export const WebSearchTool = buildTool({
   isEnabled() {
     const provider = getAPIProvider()
 
+    // A search API the user configured serves every provider.
+    if (getConfiguredSearchBackend()) {
+      return true
+    }
+
     // Enable for direct firstParty only. A custom ANTHROPIC_BASE_URL also reports
     // firstParty, but Anthropic-compatible 3P endpoints may not support the
     // server-side web_search tool.
@@ -208,7 +243,10 @@ export const WebSearchTool = buildTool({
       return true
     }
 
-    return false
+    // The ChatGPT Responses route has OpenAI's hosted web_search tool, which
+    // the shim maps from the Anthropic server tool; Gemini searches through
+    // native grounding (see backends.ts).
+    return isChatGPTResponsesRoute() || isGeminiRoute()
   },
   get inputSchema(): InputSchema {
     return inputSchema()
@@ -240,7 +278,12 @@ export const WebSearchTool = buildTool({
     }
   },
   async prompt({ model }) {
-    return getWebSearchPrompt(model)
+    return getWebSearchPrompt(
+      model,
+      !getConfiguredSearchBackend() &&
+        !isChatGPTResponsesRoute() &&
+        !isGeminiRoute(),
+    )
   },
   renderToolUseMessage,
   renderToolUseProgressMessage,
@@ -292,8 +335,52 @@ export const WebSearchTool = buildTool({
     }
     incrementWebSearchCalls()
 
+    const backend = getConfiguredSearchBackend()
+    if (backend || isGeminiRoute()) {
+      const signal = context.abortController.signal
+      const results: Output['results'] = []
+      if (backend) {
+        const hits = await searchWithBackend(backend, input, signal)
+        results.push({ tool_use_id: 'search-1', content: hits })
+      } else {
+        const { text, hits } = await searchWithGemini(
+          input,
+          context.options.mainLoopModel,
+          signal,
+        )
+        if (text.trim()) results.push(text.trim())
+        results.push({ tool_use_id: 'search-1', content: hits })
+      }
+      onProgress?.({
+        toolUseID: 'search-1',
+        data: {
+          type: 'search_results_received',
+          resultCount: (results.at(-1) as SearchResult).content.length,
+          query,
+        },
+      })
+      return {
+        data: {
+          query,
+          results,
+          durationSeconds: (performance.now() - startTime) / 1000,
+        },
+      }
+    }
+
+    // OpenAI's hosted web_search takes no blocked list, and the ChatGPT route
+    // is not known to accept its allowed-domain filter, so both lists travel
+    // as instructions and the returned links are filtered here.
+    const chatgpt = isChatGPTResponsesRoute()
+    const domainHint = !chatgpt
+      ? ''
+      : input.allowed_domains?.length
+        ? `\nOnly use sources from: ${input.allowed_domains.join(', ')}`
+        : input.blocked_domains?.length
+          ? `\nDo not use sources from: ${input.blocked_domains.join(', ')}`
+          : ''
     const userMessage = createUserMessage({
-      content: 'Perform a web search for the query: ' + query,
+      content: 'Perform a web search for the query: ' + query + domainHint,
     })
     const useHaiku = getFeatureValue_CACHED_MAY_BE_STALE(
       'tengu_plum_vx3',
@@ -448,6 +535,25 @@ export const WebSearchTool = buildTool({
       query,
       durationSeconds,
     )
+    if (chatgpt) {
+      // OpenAI cites sources per answer, not per search, so every citation
+      // lands in one result block however many searches ran.
+      data.searchCount = allContentBlocks.filter(
+        b => b.type === 'server_tool_use',
+      ).length
+      data.results = data.results.map(result =>
+        typeof result === 'string'
+          ? result
+          : {
+              ...result,
+              content: filterHitsByDomain(
+                result.content,
+                input.allowed_domains,
+                input.blocked_domains,
+              ),
+            },
+      )
+    }
     return { data }
   },
   mapToolResultToToolResultBlockParam(output, toolUseID) {

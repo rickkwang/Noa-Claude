@@ -1,5 +1,9 @@
 # Release Notes
 
+## Unreleased
+
+- New: WebSearch works beyond Anthropic. With Sign in with ChatGPT it uses OpenAI's hosted web search, and on a Gemini endpoint it uses Google Search grounding. On any provider, `NOA_CLAUDE_WEB_SEARCH_BACKEND=searxng|brave|tavily` sends searches to that service instead (`NOA_CLAUDE_WEB_SEARCH_URL` for SearXNG, `NOA_CLAUDE_WEB_SEARCH_API_KEY` for Brave and Tavily). Off these paths, WebSearch stays unavailable as before.
+
 ## 1.21.0
 
 - New: `/code-review` (alias `/review`) reviews the local diff, a PR number or URL, a branch, or a path. Effort tiers `low` to `max` set how many candidates are checked, and each finding is verified before it is reported. `--fix` applies confirmed findings to local changes or a local path, `--comment` posts to a PR, and `--max-findings` caps the count; the last effort and cap are reused.

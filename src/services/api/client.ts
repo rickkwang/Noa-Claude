@@ -132,7 +132,7 @@ function isLikelyLocalOpenAIEndpoint(baseUrl: string): boolean {
   )
 }
 
-function isGeminiOpenAIBaseUrl(baseUrl: string): boolean {
+export function isGeminiOpenAIBaseUrl(baseUrl: string): boolean {
   const lower = baseUrl.trim().toLowerCase()
   return (
     lower.includes('generativelanguage.googleapis.com') ||

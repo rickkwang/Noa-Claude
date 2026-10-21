@@ -4,7 +4,12 @@ import { shouldUseCompactSystemPrompt } from '../../constants/systemPromptCompac
 
 export const WEB_SEARCH_TOOL_NAME = 'WebSearch'
 
-export function getWebSearchPrompt(model?: string): string {
+// anthropicSearch: false when searches go to a configured search API, OpenAI
+// or Gemini, where Anthropic's "US-only" limit doesn't apply.
+export function getWebSearchPrompt(
+  model?: string,
+  anthropicSearch = true,
+): string {
   const currentMonthYear = getLocalMonthYear()
   if (shouldUseCompactSystemPrompt(model)) {
     // Ported verbatim from upstream's lean variant. "US-only" holds here too:
@@ -14,7 +19,7 @@ export function getWebSearchPrompt(model?: string): string {
     // describes, and the two variants differ only in dynamic filtering. The
     // mandatory "Sources:" list is stricter than our verbose text, which no
     // lean model ever sees.
-    return `Search the web. Returns result blocks with titles and URLs. US-only.
+    return `Search the web. Returns result blocks with titles and URLs.${anthropicSearch ? ' US-only.' : ''}
 
 - The current month is ${currentMonthYear} — use this when searching for recent information.
 - \`allowed_domains\` / \`blocked_domains\` filter results.

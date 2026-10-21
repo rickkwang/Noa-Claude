@@ -699,13 +699,19 @@ class OpenAIShimMessages {
   ) {
     const promise = (async () => {
       if (this.config.responsesApi) {
+        // Anthropic's server-side web_search tool (WebSearchTool's request)
+        // becomes OpenAI's hosted web_search; the rest are function tools.
+        const isWebSearch = (t: { type?: string }) =>
+          typeof t.type === 'string' && t.type.startsWith('web_search_')
+        const functionTools = params.tools?.filter(t => !isWebSearch(t))
         const response = await this._post(
           '/responses',
           buildResponsesBody({
             model: params.model,
             instructions: convertSystemPrompt(params.system),
             messages: params.messages,
-            tools: params.tools ? convertTools(params.tools, false) : undefined,
+            tools: functionTools?.length ? convertTools(functionTools, false) : undefined,
+            webSearch: params.tools?.some(isWebSearch),
             toolChoice:
               params.tool_choice !== undefined
                 ? convertToolChoice(params.tool_choice)

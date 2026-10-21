@@ -145,6 +145,13 @@ Optional per-profile fields in `~/.noa/provider-profiles.json` declare what the 
 
 Changing a profile's `baseUrl` clears these fields.
 
+**Web search:** WebSearch uses Anthropic's server-side search on the Anthropic API, Vertex and Foundry, OpenAI's hosted web search with a ChatGPT sign-in, and Google Search grounding on a Gemini endpoint. Elsewhere (Bedrock, other OpenAI-compatible or Anthropic-compatible endpoints) it is unavailable unless you configure a search API, which then serves every provider:
+- `NOA_CLAUDE_WEB_SEARCH_BACKEND` — `searxng`, `brave` or `tavily`
+- `NOA_CLAUDE_WEB_SEARCH_URL` — SearXNG instance URL (`searxng` only)
+- `NOA_CLAUDE_WEB_SEARCH_API_KEY` — Brave or Tavily key
+
+Queries go to the configured service. SearXNG needs its JSON output format enabled.
+
 **OpenAI-compatible configuration:**
 - `OPENAI_BASE_URL` — API endpoint (default: `https://api.openai.com/v1`)
 - `OPENAI_API_KEY` — API key
@@ -300,6 +307,7 @@ bun run check:runtime                    # Runtime health check
 bun run smoke:features                   # Feature surface smoke
 bun run smoke:engine                     # Engine smoke (no live API)
 bun run scan:pr-intent                   # Block suspicious PR links
+bun run e2e:web-search                   # WebSearch on ChatGPT, Gemini and a configured search API (needs compile)
 ```
 
 Release candidate provider check:
