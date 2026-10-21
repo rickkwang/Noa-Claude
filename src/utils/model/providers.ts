@@ -1,6 +1,7 @@
 // @ts-nocheck
 import type { AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from '../../services/analytics/index.js'
 import { isEnvTruthy } from '../envUtils.js'
+import { chatReasoningSignature } from '../../services/api/openaiCompatibleHelpers.js'
 
 export type APIProvider = 'firstParty' | 'bedrock' | 'vertex' | 'foundry' | 'openaiCompatible'
 
@@ -40,6 +41,27 @@ export function isFirstPartyAnthropicBaseUrl(): boolean {
   } catch {
     return false
   }
+}
+
+/** The OpenAI shim's /chat/completions route, not the ChatGPT /responses route. */
+export function isOpenAIChatCompletionsRoute(): boolean {
+  return (
+    getAPIProvider() === 'openaiCompatible' &&
+    process.env.NOA_CLAUDE_OPENAI_AUTH !== 'chatgpt'
+  )
+}
+
+/**
+ * The marker the active endpoint's Chat Completions reasoning carries, or
+ * undefined off that route. Resume and compaction keep blocks with this
+ * marker; a provider switch strips them all (providerSwitch.ts).
+ */
+export function getActiveChatReasoningSignature(): string | undefined {
+  if (!isOpenAIChatCompletionsRoute()) return undefined
+  // Same default as the shim client (services/api/client.ts).
+  return chatReasoningSignature(
+    process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+  )
 }
 
 export function isThirdPartyAnthropicCompatibleProvider(): boolean {

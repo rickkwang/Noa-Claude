@@ -9,8 +9,9 @@ import { useAppState, useSetAppState } from '../../state/AppState.js';
 import type { LocalJSXCommandOnDone } from '../../types/command.js';
 import { type EffortValue, convertEffortValueToLevel, getDisplayedEffortLevel, getEffortEnvOverride, getEffortSettingsUpdate, getInitialEffortSetting, getEffortValueDescription, isEffortLevel, modelSupportsEffort, resolveAppliedEffort, toPersistableEffort } from '../../utils/effort.js';
 import { getMainLoopModel } from '../../utils/model/model.js';
-import { get3PModelCapabilityOverride } from '../../utils/model/modelSupportOverrides.js';
-import { getAPIProvider, isFirstPartyAnthropicBaseUrl } from '../../utils/model/providers.js';
+import { getActiveProviderEffortLevels } from '../../utils/model/providerModels.js';
+import { isOpenAIChatCompletionsRoute } from '../../utils/model/providers.js';
+import { isEnvTruthy } from '../../utils/envUtils.js';
 import { updateSettingsForSource } from '../../utils/settings/settings.js';
 import { Box, Text, useInput } from '../../ink.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
@@ -76,11 +77,13 @@ function setEffortValue(effortValue: EffortValue, model?: string): EffortCommand
     }
   };
 }
+// Callers have already checked modelSupportsEffort. Every Anthropic-format
+// route and the ChatGPT /responses route then send the effort
+// (configureEffortParams); only the shim's /chat/completions route drops it
+// unless the profile declares levels or the env opt-in is set.
 function isEffortSentToProvider(model: string): boolean {
-  const provider = getAPIProvider();
-  if (provider === 'foundry') return true;
-  if (provider === 'firstParty' && isFirstPartyAnthropicBaseUrl()) return true;
-  return get3PModelCapabilityOverride(model, 'effort') === true || get3PModelCapabilityOverride(model, 'max_effort') === true || get3PModelCapabilityOverride(model, 'xhigh_effort') === true;
+  if (!isOpenAIChatCompletionsRoute()) return true;
+  return isEnvTruthy(process.env.CLAUDE_CODE_OPENAI_REASONING_EFFORT) || (getActiveProviderEffortLevels(model)?.length ?? 0) > 0;
 }
 
 export function showCurrentEffort(appStateEffort: EffortValue | null | undefined, model: string): EffortCommandResult {

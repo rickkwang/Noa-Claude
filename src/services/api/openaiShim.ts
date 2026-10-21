@@ -4,7 +4,9 @@ import { logForDebugging } from '../../utils/debug.js'
 import { logError } from '../../utils/log.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { getSessionId } from '../../bootstrap/state.js'
+import { getActiveProviderEffortLevels } from '../../utils/model/providerModels.js'
 import {
+  chatReasoningSignature,
   classifyOpenAICompatibleError,
   resolveMaxTokensParam,
 } from './openaiCompatibleHelpers.js';
@@ -25,6 +27,7 @@ type OpenAIMessage = {
   }>
   tool_call_id?: string
   name?: string
+  reasoning_content?: string
 }
 
 type OpenAITool = {
@@ -96,16 +99,17 @@ function makeToolUseId(): string {
  * OpenAI accepts: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | null
  * Gemini OpenAI-compat accepts the same field with low/medium/high/minimal/none.
  *
- * `max` is Anthropic-only. In the normal flow it never reaches here:
- * getSupportedEffortLevelsForModel omits 'max' for openaiCompatible providers,
- * so resolveAppliedEffort clamps a requested 'max' down to 'xhigh' before the
- * request is built. We still map it to 'xhigh' (the highest portable level,
- * matching that clamp) to stay consistent if 'max' is ever injected directly
- * via CLAUDE_CODE_EXTRA_BODY.
+ * `max` is only portable to an endpoint that documents it (DeepSeek names it
+ * alongside low/high). For the generic opt-in case the provider profile
+ * declares no levels, and getSupportedEffortLevelsForModel has already clamped
+ * 'max' down to 'xhigh' before the request is built; mapping it here to
+ * 'xhigh' keeps that behavior if 'max' is injected directly via
+ * CLAUDE_CODE_EXTRA_BODY.
  */
 function mapAnthropicEffortToOpenAI(
   effort: string,
-): 'low' | 'medium' | 'high' | 'xhigh' | undefined {
+  providerSupportsMax: boolean,
+): 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined {
   switch (effort) {
     case 'low':
     case 'medium':
@@ -113,7 +117,7 @@ function mapAnthropicEffortToOpenAI(
     case 'xhigh':
       return effort
     case 'max':
-      return 'xhigh'
+      return providerSupportsMax ? 'max' : 'xhigh'
     default:
       return undefined
   }
@@ -178,6 +182,7 @@ function convertContentBlocks(
 function convertMessages(
   messages: Array<{ role: string; message?: { role?: string; content?: unknown }; content?: unknown }>,
   system: unknown,
+  reasoningSignature: string,
 ): OpenAIMessage[] {
   const result: OpenAIMessage[] = []
   const sysText = convertSystemPrompt(system)
@@ -251,6 +256,18 @@ function convertMessages(
               },
             }),
           )
+          // Only tool-call turns: that is all DeepSeek requires, and other
+          // reasoning_content emitters may not accept the field on input.
+          const reasoning = content
+            .filter(
+              (b: { type?: string; signature?: string }) =>
+                b.type === 'thinking' && b.signature === reasoningSignature,
+            )
+            .map((b: { thinking?: string }) => b.thinking ?? '')
+            .join('')
+          if (reasoning) {
+            assistantMsg.reasoning_content = reasoning
+          }
         }
         result.push(assistantMsg)
       } else {
@@ -384,7 +401,8 @@ function convertChunkUsage(
 async function* openaiStreamToAnthropic(
   response: Response,
   model: string,
-  signal?: AbortSignal,
+  signal: AbortSignal | undefined,
+  reasoningSignature: string,
 ): AsyncGenerator<Record<string, unknown>> {
   const messageId = makeMessageId()
   let contentBlockIndex = 0
@@ -474,9 +492,9 @@ async function* openaiStreamToAnthropic(
         const delta = choice.delta
 
         // Map provider reasoning streams to Anthropic thinking blocks so
-        // reasoning-heavy models (DeepSeek-R1, GLM, OpenRouter/Groq) don't
-        // render a blank UI or a silently empty reply. No signature is forged
-        // — the block is display-only.
+        // reasoning-heavy models (DeepSeek, GLM, OpenRouter/Groq) don't
+        // render a blank UI or a silently empty reply. The marker signature
+        // lets convertMessages replay it as `reasoning_content`.
         if (delta.reasoning_content) {
           if (openBlock !== 'thinking') {
             if (openBlock) {
@@ -487,6 +505,11 @@ async function* openaiStreamToAnthropic(
               type: 'content_block_start',
               index: contentBlockIndex,
               content_block: { type: 'thinking', thinking: '' },
+            }
+            yield {
+              type: 'content_block_delta',
+              index: contentBlockIndex,
+              delta: { type: 'signature_delta', signature: reasoningSignature },
             }
             openBlock = 'thinking'
           }
@@ -655,7 +678,11 @@ class OpenAIShimStream {
   constructor(
     response: Response,
     model: string,
-    convert: typeof openaiStreamToAnthropic = openaiStreamToAnthropic,
+    convert: (
+      response: Response,
+      model: string,
+      signal: AbortSignal,
+    ) => AsyncGenerator<Record<string, unknown>>,
   ) {
     this.generator = convert(
       response,
@@ -678,7 +705,11 @@ class OpenAIShimMessages {
     fetchOverride?: typeof fetch
     // Send /responses instead of /chat/completions (Sign in with ChatGPT).
     responsesApi?: boolean
-  }) {}
+  }) {
+    this.reasoningSignature = chatReasoningSignature(config.baseURL)
+  }
+
+  private reasoningSignature: string
 
   create(
     params: {
@@ -731,7 +762,9 @@ class OpenAIShimMessages {
 
       const response = await this._doRequest(params, options)
       if (params.stream) {
-        return new OpenAIShimStream(response, params.model)
+        return new OpenAIShimStream(response, params.model, (res, model, signal) =>
+          openaiStreamToAnthropic(res, model, signal, this.reasoningSignature),
+        )
       }
 
       const data = await response.json()
@@ -781,19 +814,26 @@ class OpenAIShimMessages {
 
     // Anthropic output_config is {format, effort, task_budget}. We translate
     // `effort` → top-level `reasoning_effort` (the field name accepted by both
-    // OpenAI Chat Completions and Gemini's OpenAI-compat endpoint) when the
-    // user opts in via CLAUDE_CODE_OPENAI_REASONING_EFFORT (any truthy value
-    // accepted by isEnvTruthy, matching the capability gate in effort.ts).
-    // `format` and `task_budget` have no portable OpenAI equivalent and are
-    // dropped.
+    // OpenAI Chat Completions and Gemini's OpenAI-compat endpoint) in two
+    // cases: the provider profile declares effort levels for this model (the
+    // documented DeepSeek/Kimi shape, which also gates the /effort UI), or the
+    // user opts in via CLAUDE_CODE_OPENAI_REASONING_EFFORT for an endpoint
+    // with no profile declaration (any truthy value accepted by isEnvTruthy,
+    // matching the capability gate in effort.ts). `format` and `task_budget`
+    // have no portable OpenAI equivalent and are dropped.
+    const providerEffortLevels = getActiveProviderEffortLevels(params.model)
     let reasoningEffort: string | undefined
     if (params.output_config !== undefined) {
       const outputConfig = params.output_config as Record<string, unknown>
       if (
-        isEnvTruthy(process.env.CLAUDE_CODE_OPENAI_REASONING_EFFORT) &&
+        (isEnvTruthy(process.env.CLAUDE_CODE_OPENAI_REASONING_EFFORT) ||
+          (providerEffortLevels?.length ?? 0) > 0) &&
         typeof outputConfig.effort === 'string'
       ) {
-        reasoningEffort = mapAnthropicEffortToOpenAI(outputConfig.effort)
+        reasoningEffort = mapAnthropicEffortToOpenAI(
+          outputConfig.effort,
+          providerEffortLevels?.includes('max') ?? false,
+        )
       }
       const droppedKeys = Object.keys(outputConfig).filter(
         k => k !== 'effort' || reasoningEffort === undefined,
@@ -808,7 +848,7 @@ class OpenAIShimMessages {
 
     const body: Record<string, unknown> = {
       model: params.model,
-      messages: convertMessages(params.messages, params.system),
+      messages: convertMessages(params.messages, params.system, this.reasoningSignature),
       stream: !!params.stream,
       // Opt out of provider-side retention/training. This is the only transport
       // where the field exists — the Anthropic Messages API has no `store`.
@@ -965,9 +1005,12 @@ class OpenAIShimMessages {
     const choice = data.choices?.[0]
     const content: Array<Record<string, unknown>> = []
 
-    // Display-only thinking block; no signature is forged.
     if (choice?.message?.reasoning_content) {
-      content.push({ type: 'thinking', thinking: choice.message.reasoning_content })
+      content.push({
+        type: 'thinking',
+        thinking: choice.message.reasoning_content,
+        signature: this.reasoningSignature,
+      })
     }
 
     if (choice?.message?.content) {

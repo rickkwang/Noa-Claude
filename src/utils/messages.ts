@@ -5526,8 +5526,14 @@ export function stripOriginalToolInputs(
  * from all assistant messages. Their signatures are bound to the API key that
  * generated them; after a credential change (e.g. /login) they're invalid and
  * the API rejects them with a 400.
+ *
+ * `keepSignature` keeps thinking carrying that exact marker: the active
+ * endpoint's Chat Completions reasoning, which is bound to no key.
  */
-export function stripSignatureBlocks(messages: Message[]): Message[] {
+export function stripSignatureBlocks(
+  messages: Message[],
+  keepSignature?: string,
+): Message[] {
   let changed = false
   const result = messages.map(msg => {
     if (msg.type !== 'assistant') return msg
@@ -5536,6 +5542,13 @@ export function stripSignatureBlocks(messages: Message[]): Message[] {
     if (!Array.isArray(content)) return msg
 
     const filtered = content.filter(block => {
+      if (
+        keepSignature !== undefined &&
+        block.type === 'thinking' &&
+        block.signature === keepSignature
+      ) {
+        return true
+      }
       if (isThinkingBlock(block)) return false
       if (feature('CONNECTOR_TEXT')) {
         if (isConnectorTextBlock(block)) return false

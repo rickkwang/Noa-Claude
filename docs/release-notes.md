@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- New: DeepSeek exposes its thinking effort. The DeepSeek preset and an Anthropic-compatible profile at `api.deepseek.com` declare the documented `low`/`medium`/`high`/`xhigh`/`max` ladder, `/effort` offers those levels, and the request sends `reasoning_effort` (DeepSeek maps medium and xhigh to high itself). `max` now reaches the endpoint as `max` instead of being clamped to `xhigh`. Reasoning from OpenAI-compatible endpoints is now sent back on tool-call turns, as DeepSeek requires, including after resume and compaction, and `/effort` no longer warns that the effort may not be sent on routes that do send it.
 - New: WebSearch works beyond Anthropic. With Sign in with ChatGPT it uses OpenAI's hosted web search, and on a Gemini endpoint it uses Google Search grounding. On any provider, `NOA_CLAUDE_WEB_SEARCH_BACKEND=searxng|brave|tavily` sends searches to that service instead (`NOA_CLAUDE_WEB_SEARCH_URL` for SearXNG, `NOA_CLAUDE_WEB_SEARCH_API_KEY` for Brave and Tavily). Off these paths, WebSearch stays unavailable as before.
 
 ## 1.21.0

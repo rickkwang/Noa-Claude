@@ -16,6 +16,7 @@ const ENV_KEYS = [
   'CLAUDE_CODE_USE_FOUNDRY',
   'CLAUDE_CODE_USE_OPENAI',
   'CLAUDE_CODE_USE_VERTEX',
+  'NOA_CLAUDE_PROVIDER_EFFORT_LEVELS',
   'USER_TYPE',
 ] as const
 
@@ -193,6 +194,27 @@ describe('effort model support', () => {
     // Gemini OpenAI-compat), the proxy rejects — user can dial back.
     expect(resolveAppliedEffort('gpt-5', 'max')).toBe('xhigh')
     expect(resolveAppliedEffort('gpt-5', 'xhigh')).toBe('xhigh')
+  })
+
+  test('DeepSeek Anthropic endpoint exposes its documented ladder', () => {
+    process.env.ANTHROPIC_BASE_URL = 'https://api.deepseek.com/anthropic'
+
+    // The endpoint accepts the whole ladder and maps medium/xhigh to high
+    // itself, so no local clamping takes place.
+    expect(getSupportedEffortLevelsForModel('deepseek-flash')).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ])
+    expect(resolveAppliedEffort('deepseek-flash', 'medium')).toBe('medium')
+    expect(resolveAppliedEffort('deepseek-flash', 'max')).toBe('max')
+  })
+
+  test('other Anthropic-compatible hosts still require capability overrides', () => {
+    process.env.ANTHROPIC_BASE_URL = 'https://api.deepseek.example.test'
+    expect(getSupportedEffortLevelsForModel('deepseek-flash')).toEqual([])
   })
 
   test('numeric effort values are ant-only', () => {

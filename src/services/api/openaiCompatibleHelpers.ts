@@ -1,3 +1,18 @@
+/**
+ * The marker signature on thinking blocks built from a Chat Completions
+ * `reasoning_content` stream. Not a real signature: normalizeMessagesForAPI
+ * drops unsigned thinking, and DeepSeek requires a tool-call turn's
+ * `reasoning_content` on every later request. Scoped to the endpoint host so
+ * a transcript resumed against another endpoint never replays it there.
+ */
+export function chatReasoningSignature(baseURL: string): string {
+  let host = baseURL;
+  try {
+    host = new URL(baseURL).host;
+  } catch {}
+  return `openai-chat-reasoning:${host}`;
+}
+
 export function readTrimmedOverride(
   key: keyof NodeJS.ProcessEnv,
 ): string | undefined {

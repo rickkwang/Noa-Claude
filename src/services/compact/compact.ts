@@ -67,6 +67,7 @@ import {
   normalizeMessagesForAPI,
   stripSignatureBlocks,
 } from '../../utils/messages.js'
+import { getActiveChatReasoningSignature } from '../../utils/model/providers.js'
 import { expandPath } from '../../utils/path.js'
 import { getPlan, getPlanFilePath } from '../../utils/plans.js'
 import {
@@ -261,6 +262,8 @@ export function buildCompactSummaryMessages(
           summaryRequest,
         ]),
       ),
+      // DeepSeek requires Chat Completions reasoning on replayed tool-call turns.
+      getActiveChatReasoningSignature(),
     ),
     tools,
   )

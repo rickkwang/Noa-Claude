@@ -63,6 +63,23 @@ describe('provider profile model catalogue', () => {
     expect(env.ANTHROPIC_MODEL).toBe('kimi-for-coding')
   })
 
+  test('a deepseek profile declares the ladder its models document', () => {
+    const env = buildProviderEnv(
+      profile({
+        name: 'DeepSeek',
+        type: 'deepseek',
+        baseUrl: 'https://api.deepseek.com/v1',
+        model: 'deepseek-flash',
+        models: ['deepseek-flash', 'deepseek-v4-pro'],
+      }),
+    )
+
+    expect(env[PROVIDER_EFFORT_LEVELS_ENV_KEY]).toBe(
+      'deepseek-flash=low:medium:high:xhigh:max,' +
+        'deepseek-v4-pro=low:medium:high:xhigh:max',
+    )
+  })
+
   test('omits the key entirely for a profile with no discovered models', () => {
     expect(buildProviderEnv(profile())[PROVIDER_MODELS_ENV_KEY]).toBeUndefined()
     expect(serializeProviderList([])).toBeUndefined()
@@ -327,8 +344,10 @@ describe('effort support for provider profile models', () => {
   })
 
   test('a type with no verified effort support declares none', () => {
+    // DeepSeek moved out of this group: its guide documents reasoning_effort
+    // for both served models, so the type default now names them.
     const env = buildProviderEnv(
-      profile({ type: 'deepseek', baseUrl: 'https://api.deepseek.com/v1', models: ['deepseek-chat'] }),
+      profile({ type: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', models: ['deepseek-chat'] }),
     )
     expect(env[PROVIDER_EFFORT_LEVELS_ENV_KEY]).toBeUndefined()
   })

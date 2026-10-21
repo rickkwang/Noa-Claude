@@ -20,6 +20,7 @@ import {
 import { getClaudeConfigHomeDir, isBareMode } from './envUtils.js'
 import { isModelAlias } from './model/aliases.js'
 import {
+  DEEPSEEK_EFFORT_LEVELS,
   PROVIDER_CATALOGUE_ENV_KEYS,
   PROVIDER_CONTEXT_WINDOWS_ENV_KEY,
   PROVIDER_EFFORT_LEVELS_ENV_KEY,
@@ -118,6 +119,13 @@ export const PROVIDER_TYPE_EFFORT_LEVELS: Partial<
     'k3-256k': ['low', 'high', 'max'],
     'kimi-for-coding': ['low', 'high', 'max'],
     'kimi-for-coding-highspeed': [],
+  },
+  // Per DeepSeek's Thinking Mode guide, both served models take the documented
+  // ladder (see DEEPSEEK_EFFORT_LEVELS). Thinking is on by default with effort
+  // high, so nothing else needs sending.
+  deepseek: {
+    'deepseek-flash': [...DEEPSEEK_EFFORT_LEVELS],
+    'deepseek-v4-pro': [...DEEPSEEK_EFFORT_LEVELS],
   },
 }
 

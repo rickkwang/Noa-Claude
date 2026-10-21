@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { createOpenAIShimClient } from '../../../services/api/openaiShim.js'
+import { PROVIDER_EFFORT_LEVELS_ENV_KEY } from '../../../utils/model/providerModels.js'
 
 type CapturedRequest = {
   url: string
@@ -78,10 +79,12 @@ async function collectStream(
 }
 
 const PREV_ENV = process.env.CLAUDE_CODE_OPENAI_REASONING_EFFORT
+const PREV_PROVIDER_LEVELS = process.env[PROVIDER_EFFORT_LEVELS_ENV_KEY]
 
 describe('openaiShim reasoning_effort translation', () => {
   beforeEach(() => {
     delete process.env.CLAUDE_CODE_OPENAI_REASONING_EFFORT
+    delete process.env[PROVIDER_EFFORT_LEVELS_ENV_KEY]
   })
 
   afterEach(() => {
@@ -90,6 +93,52 @@ describe('openaiShim reasoning_effort translation', () => {
     } else {
       process.env.CLAUDE_CODE_OPENAI_REASONING_EFFORT = PREV_ENV
     }
+    if (PREV_PROVIDER_LEVELS === undefined) {
+      delete process.env[PROVIDER_EFFORT_LEVELS_ENV_KEY]
+    } else {
+      process.env[PROVIDER_EFFORT_LEVELS_ENV_KEY] = PREV_PROVIDER_LEVELS
+    }
+  })
+
+  test('provider-declared levels: translates without the env opt-in', async () => {
+    // The DeepSeek/Kimi profile shape: the declaration is what surfaces the
+    // levels in /effort, so the shim must send them without a second opt-in.
+    process.env[PROVIDER_EFFORT_LEVELS_ENV_KEY] =
+      'deepseek-flash=low:medium:high:xhigh:max'
+    const { client, captured } = captureClient()
+    await client.messages.create({
+      model: 'deepseek-flash',
+      messages: [{ role: 'user', content: 'hi' }],
+      max_tokens: 16,
+      output_config: { effort: 'high' },
+    })
+    expect(captured[0]!.body.reasoning_effort).toBe('high')
+  })
+
+  test('provider-declared max is sent through rather than clamped to xhigh', async () => {
+    process.env[PROVIDER_EFFORT_LEVELS_ENV_KEY] =
+      'deepseek-flash=low:medium:high:xhigh:max'
+    const { client, captured } = captureClient()
+    await client.messages.create({
+      model: 'deepseek-flash',
+      messages: [{ role: 'user', content: 'hi' }],
+      max_tokens: 16,
+      output_config: { effort: 'max' },
+    })
+    expect(captured[0]!.body.reasoning_effort).toBe('max')
+  })
+
+  test('a model the profile does not declare still drops effort', async () => {
+    process.env[PROVIDER_EFFORT_LEVELS_ENV_KEY] =
+      'deepseek-flash=low:medium:high:xhigh:max'
+    const { client, captured } = captureClient()
+    await client.messages.create({
+      model: 'some-other-model',
+      messages: [{ role: 'user', content: 'hi' }],
+      max_tokens: 16,
+      output_config: { effort: 'high' },
+    })
+    expect(captured[0]!.body.reasoning_effort).toBeUndefined()
   })
 
   test('env unset: output_config.effort is dropped, body has no reasoning_effort', async () => {
@@ -713,6 +762,9 @@ describe('openaiShim streaming tool_call translation', () => {
 })
 
 describe('openaiShim reasoning_content translation', () => {
+  // captureClient's base URL is https://api.example.test/v1.
+  const SIG = 'openai-chat-reasoning:api.example.test'
+
   test('reasoning_content maps to thinking blocks, then text opens a new block', async () => {
     const { client } = streamingCaptureClient([
       { choices: [{ delta: { reasoning_content: 'thinking hard' } }] },
@@ -733,10 +785,58 @@ describe('openaiShim reasoning_content translation', () => {
       index: 0,
       content_block: { type: 'thinking' },
     })
-    // No signature is forged — a forged one would be replayed and rejected
-    // if the conversation ever went back to a first-party endpoint.
-    expect((starts[0]?.content_block as { signature?: string }).signature).toBeUndefined()
+    // The marker signature keeps the block past normalizeMessagesForAPI's
+    // unsigned-thinking filter so it can be replayed below.
+    expect(events).toContainEqual({
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'signature_delta', signature: SIG },
+    })
     expect(starts[1]).toMatchObject({ index: 1, content_block: { type: 'text' } })
+  })
+
+  test('replays marked reasoning as reasoning_content on the tool-call turn', async () => {
+    // DeepSeek documents a 400 for a tool-call turn sent back without its reasoning.
+    const { client, captured } = captureClient()
+    await client.messages.create({
+      model: 'deepseek-flash',
+      max_tokens: 16,
+      messages: [
+        { role: 'user', content: 'hi' },
+        {
+          role: 'assistant',
+          content: [
+            { type: 'thinking', thinking: 'greet', signature: SIG },
+            { type: 'text', text: 'hello' },
+          ],
+        },
+        { role: 'user', content: 'add 1 and 2' },
+        {
+          role: 'assistant',
+          content: [
+            { type: 'thinking', thinking: 'use ', signature: SIG },
+            { type: 'thinking', thinking: 'add', signature: SIG },
+            // Reasoning from another endpoint, e.g. a transcript resumed after
+            // switching profiles, is never replayed here.
+            { type: 'thinking', thinking: 'other', signature: 'openai-chat-reasoning:api.deepseek.com' },
+            { type: 'tool_use', id: 'call_1', name: 'add', input: { a: 1, b: 2 } },
+          ],
+        },
+        {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: 'call_1', content: '3' }],
+        },
+      ],
+    })
+    const messages = captured[0]!.body.messages as Array<Record<string, unknown>>
+    // A turn without tool calls doesn't need it, and other endpoints that
+    // emit reasoning_content may reject it on input.
+    expect(messages[1]!.reasoning_content).toBeUndefined()
+    expect(messages[3]).toMatchObject({
+      role: 'assistant',
+      reasoning_content: 'use add',
+      tool_calls: [{ id: 'call_1' }],
+    })
   })
 })
 

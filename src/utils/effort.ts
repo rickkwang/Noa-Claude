@@ -5,7 +5,10 @@ import { getEnabledSettingSources } from './settings/constants.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from 'src/services/analytics/growthbook.js'
 import { getAPIProvider, isFirstPartyAnthropicBaseUrl } from './model/providers.js'
 import { get3PModelCapabilityOverride } from './model/modelSupportOverrides.js'
-import { getActiveProviderEffortLevels } from './model/providerModels.js'
+import {
+  DEEPSEEK_EFFORT_LEVELS,
+  getActiveProviderEffortLevels,
+} from './model/providerModels.js'
 import { getCanonicalName, parseUserSpecifiedModel } from './model/model.js'
 import {
   getAntModelOverrideConfig,
@@ -74,6 +77,11 @@ export function getSupportedEffortLevelsForModel(
   const thirdPartyLevels = getThirdPartyEffortLevels(model)
   if (thirdPartyLevels !== undefined) {
     return thirdPartyLevels
+  }
+
+  const endpointLevels = getAnthropicEndpointEffortLevels()
+  if (endpointLevels !== undefined) {
+    return endpointLevels
   }
 
   const gpt = getGptResponsesEffort(model)
@@ -169,6 +177,32 @@ function getGptResponsesEffort(
     }
   }
   return { levels, apiDefault: version >= 505 ? 'medium' : undefined }
+}
+
+/**
+ * Effort levels an Anthropic-compatible endpoint documents for every model it
+ * serves, keyed by host. Only the DeepSeek Anthropic endpoint
+ * (https://api.deepseek.com/anthropic) declares them so far: the same ladder
+ * as its OpenAI-compatible preset, but that route has no provider type and so
+ * no profile declaration to read.
+ */
+function getAnthropicEndpointEffortLevels(): EffortLevel[] | undefined {
+  if (getAPIProvider() !== 'firstParty' || isFirstPartyAnthropicBaseUrl()) {
+    return undefined
+  }
+  let host: string
+  try {
+    host = new URL(process.env.ANTHROPIC_BASE_URL ?? '').hostname.replace(
+      /\.$/,
+      '',
+    )
+  } catch {
+    return undefined
+  }
+  if (host === 'api.deepseek.com') {
+    return [...DEEPSEEK_EFFORT_LEVELS]
+  }
+  return undefined
 }
 
 function getThirdPartyEffortLevels(model: string): EffortLevel[] | undefined {
@@ -275,9 +309,10 @@ export function toPersistableEffort(
   if (
     value === 'max' &&
     model !== undefined &&
-    (
+    ((
       getActiveProviderEffortLevels(model) ?? getThirdPartyEffortLevels(model)
-    )?.includes('max')
+    )?.includes('max') ||
+      getAnthropicEndpointEffortLevels()?.includes('max'))
   ) {
     return value
   }

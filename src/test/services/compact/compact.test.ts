@@ -146,6 +146,56 @@ describe('buildCompactSummaryMessages', () => {
     expect(texts).toContain('answer one')
     expect(texts).toContain('answer two')
   })
+
+  // DeepSeek requires a tool-call turn's reasoning_content on every later
+  // request, the compaction request included.
+  test("keeps the active endpoint's Chat Completions reasoning only", () => {
+    const messages: Message[] = [
+      createUserMessage({ content: 'q1' }),
+      makeAssistantMessage('a-chat', 'answer', {
+        message: {
+          id: 'a-chat',
+          role: 'assistant',
+          content: [
+            thinking('openai-chat-reasoning:api.deepseek.com'),
+            thinking('openai-chat-reasoning:api.openai.com'),
+            thinking('stale-cross-provider-sig'),
+            { type: 'text', text: 'answer' },
+          ],
+        },
+      } as Partial<Message>),
+    ]
+    const summaryRequest = createUserMessage({ content: 'Summarize.' })
+    const prev = {
+      openai: process.env.CLAUDE_CODE_USE_OPENAI,
+      auth: process.env.NOA_CLAUDE_OPENAI_AUTH,
+      baseUrl: process.env.OPENAI_BASE_URL,
+    }
+    try {
+      delete process.env.NOA_CLAUDE_OPENAI_AUTH
+      process.env.CLAUDE_CODE_USE_OPENAI = '1'
+      process.env.OPENAI_BASE_URL = 'https://api.deepseek.com/v1'
+      expect(
+        thinkingBlocksIn(buildCompactSummaryMessages(messages, summaryRequest, [])).map(
+          b => (b as { signature: string }).signature,
+        ),
+      ).toEqual(['openai-chat-reasoning:api.deepseek.com'])
+
+      delete process.env.CLAUDE_CODE_USE_OPENAI
+      expect(
+        thinkingBlocksIn(buildCompactSummaryMessages(messages, summaryRequest, [])),
+      ).toHaveLength(0)
+    } finally {
+      for (const [key, value] of [
+        ['CLAUDE_CODE_USE_OPENAI', prev.openai],
+        ['NOA_CLAUDE_OPENAI_AUTH', prev.auth],
+        ['OPENAI_BASE_URL', prev.baseUrl],
+      ] as const) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+    }
+  })
 })
 
 describe('createPostCompactContextAttachments', () => {

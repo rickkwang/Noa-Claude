@@ -52,6 +52,24 @@ export const PROVIDER_MAX_OUTPUT_TOKENS_ENV_KEY =
   'NOA_CLAUDE_PROVIDER_MAX_OUTPUT_TOKENS'
 
 /**
+ * The effort values DeepSeek documents for its thinking models, shared by the
+ * OpenAI-compatible preset (a profile declaration) and the Anthropic-format
+ * endpoint (a host default, since that route has no provider type of its own).
+ *
+ * The endpoint accepts the whole ladder and maps it itself: minimal→low,
+ * medium→high, xhigh→high, max→max. Declaring exactly these keeps the mapping
+ * on the provider's side — clamping locally would turn a requested `medium`
+ * into `low`, the opposite of what DeepSeek does.
+ */
+export const DEEPSEEK_EFFORT_LEVELS = [
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+] as const
+
+/**
  * Every env key carrying the active profile's catalogue. Listed once so the
  * apply/reset paths in providerProfile.ts can't drift from the writers here.
  */

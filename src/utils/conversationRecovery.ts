@@ -36,6 +36,7 @@ import {
   normalizeMessages,
   stripSignatureBlocks,
 } from './messages.js'
+import { getActiveChatReasoningSignature } from './model/providers.js'
 import { copyPlanForResume } from './plans.js'
 import {
   dropRepeatedSessionStartContext,
@@ -324,8 +325,11 @@ export function deserializeMessagesWithInterruptDetection(
     // fingerprint to distinguish stale from current; the cost is losing
     // interleaved-thinking continuity across a resume, which is acceptable since
     // resume already starts a fresh context.
+    // The active endpoint's Chat Completions reasoning is kept: DeepSeek
+    // requires it on replayed tool-call turns.
     const filteredSignatures = stripSignatureBlocks(
       filteredThinking,
+      getActiveChatReasoningSignature(),
     ) as NormalizedMessage[]
 
     // Filter out assistant messages with only whitespace text content.
