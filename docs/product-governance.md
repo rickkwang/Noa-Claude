@@ -129,12 +129,6 @@ Startup modes are not slash commands and are tracked under "Runtime Modes Outsid
 
 The implementation roadmap is in this document.
 
-## Maintenance Freeze
-
-The current freeze policy lives in [maintenance-freeze-plan.md](./maintenance-freeze-plan.md).
-
-Use it as the default freeze-period decision framework for bug fixes, stability work, validation changes, and any proposed product-surface expansion. This page remains the command-surface boundary; the maintenance plan defines what changes are allowed during freeze.
-
 ## Operating Principles
 
 - Treat `/fork` as the supported product baseline.

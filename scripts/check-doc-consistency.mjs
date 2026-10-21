@@ -11,10 +11,6 @@ const readme = readFileSync(resolve(root, 'README.md'), 'utf8')
 const matrix = readFileSync(resolve(root, 'FEATURE_AVAILABILITY_MATRIX.md'), 'utf8')
 const operatingGuide = readFileSync(resolve(root, 'docs', 'operating-guide.md'), 'utf8')
 const productGovernance = readFileSync(resolve(root, 'docs', 'product-governance.md'), 'utf8')
-const maintenanceFreezePlan = readFileSync(
-  resolve(root, 'docs', 'maintenance-freeze-plan.md'),
-  'utf8',
-)
 const initPrompt = readFileSync(resolve(root, 'src', 'commands', 'init.ts'), 'utf8')
 const productPaths = readFileSync(
   resolve(root, 'src', 'utils', 'productPaths.ts'),
@@ -246,28 +242,6 @@ for (const command of stubCommands) {
   if (!productGovernance.includes(command)) {
     failures.push(`Product governance doc is missing stub command ${command}`)
   }
-}
-
-if (!productGovernance.includes('maintenance-freeze-plan.md')) {
-  failures.push('Product governance doc is missing maintenance freeze plan link')
-}
-
-if (!/command-surface boundary[\s\S]*maintenance plan defines what changes are allowed during freeze/i.test(productGovernance)) {
-  failures.push(
-    'Product governance doc must distinguish command-surface boundary from freeze policy',
-  )
-}
-
-if (!/Noa Claude is in feature freeze/.test(maintenanceFreezePlan)) {
-  failures.push('Maintenance freeze plan is missing feature freeze status')
-}
-
-if (!/New baseline commands/.test(maintenanceFreezePlan)) {
-  failures.push('Maintenance freeze plan is missing new baseline command restriction')
-}
-
-if (!/smoke:engine:live[\s\S]*ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN/.test(maintenanceFreezePlan)) {
-  failures.push('Maintenance freeze plan must document both supported credentials for live smoke')
 }
 
 if (!/## Runtime Health/.test(operatingGuide)) {
