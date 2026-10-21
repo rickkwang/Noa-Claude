@@ -775,6 +775,7 @@ export async function* runAgent({
       mcpClients: mergedMcpClients,
       mcpResources: toolUseContext.options.mcpResources,
       agentDefinitions: toolUseContext.options.agentDefinitions,
+      maxBudgetUsd: toolUseContext.options.maxBudgetUsd,
       // Fork children (useExactTools path) need querySource on context.options
       // for the recursive-fork guard at AgentTool.tsx call() — it checks
       // options.querySource === 'agent:builtin:fork'. This survives autocompact

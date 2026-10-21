@@ -11,6 +11,8 @@
  * /clear resets both (see commands/clear/conversation.ts).
  */
 
+import { getTotalCostUSD } from '../../bootstrap/state.js'
+
 const DEFAULT_MAX_SUBAGENTS_PER_SESSION = 200
 const DEFAULT_MAX_SUBAGENT_SPAWN_DEPTH = 2
 const DEFAULT_MAX_WEB_SEARCHES_PER_SESSION = 200
@@ -90,6 +92,15 @@ export function getWebSearchCalls(): number {
 
 export function incrementWebSearchCalls(): void {
   webSearchCalls++
+}
+
+/**
+ * The main loop checks --max-budget-usd only between its own messages, so a
+ * background agent could otherwise keep starting agents after it is spent.
+ */
+export function assertBudgetAllowsAgentStart(maxBudgetUsd: number | undefined): void {
+  if (maxBudgetUsd === undefined || getTotalCostUSD() < maxBudgetUsd) return
+  throw new Error(`Budget limit reached ($${getTotalCostUSD().toFixed(2)} spent of the $${maxBudgetUsd} maximum). New agents cannot be started. Complete the remaining work directly with your tools, or wrap up with the results you already have.`)
 }
 
 /** Reset both budgets — called by /clear so a fresh session gets a fresh budget. */

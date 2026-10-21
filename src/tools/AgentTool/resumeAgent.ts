@@ -26,6 +26,8 @@ import {
 } from '../../utils/messages.js'
 import { getAgentModel } from '../../utils/model/agent.js'
 import { getQuerySourceForAgent } from '../../utils/promptCategory.js'
+import { AbortError } from '../../utils/errors.js'
+import { assertBudgetAllowsAgentStart } from '../../utils/task/sessionBudget.js'
 import {
   flushSessionStorage,
   getAgentTranscript,
@@ -222,7 +224,10 @@ async function resumeAgentBackgroundInner({
       )
 
   // Transcript/system-prompt reconstruction can await; recheck immediately
-  // before allocating personality or a running background task.
+  // before allocating personality or a running background task. A resumer
+  // stopped meanwhile has had its owned agents killed already.
+  if (toolUseContext.abortController.signal.aborted) throw new AbortError()
+  assertBudgetAllowsAgentStart(toolUseContext.options.maxBudgetUsd)
   assertCanStartAgent(toolUseContext.getAppState().tasks)
   if (isAgentStoppedByUser(asAgentId(agentId))) {
     throw new Error(`Agent "${agentId}" was stopped by the user. Treat its work as cancelled; only start a new agent if the user explicitly asks.`)

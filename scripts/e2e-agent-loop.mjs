@@ -20,7 +20,7 @@ const model = 'claude-sonnet-4-6';
 // A 200k-window model, so a gateway naming a 1M model in its responses offers a "larger window".
 const modelFor = scenario => scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' ? 'claude-opus-5-5' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model;
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['agent-nested', 'agent-owned-results', 'agent-owned-auto', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'field-reject', 'gateway-model-name', 'preserved-thinking'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'field-reject', 'gateway-model-name', 'preserved-thinking'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -46,7 +46,7 @@ const server = createServer(async (req, res) => {
     const summary = lastText.startsWith('CRITICAL: Respond with TEXT ONLY.') || /create a detailed continuation summary|summarize the recent messages|summary of the conversation|summarizing.*conversation/i.test(lastText);
     active.requests.push({ path: req.url, body, summary, auth: req.headers.authorization, sessionHeader: req.headers['session-id'] });
     writeFileSync(join(active.dir, 'requests.json'), JSON.stringify(active.requests, null, 2));
-    const harness = active.case.startsWith('task-') || active.case === 'goal-child-usage' || active.case==='agent-custom-fork' || active.case==='agent-nested' || active.case.startsWith('agent-owned-') || active.case==='agent-cascade-stop' || active.case.startsWith('agent-schema');
+    const harness = active.case.startsWith('task-') || active.case === 'goal-child-usage' || active.case==='agent-custom-fork' || active.case==='agent-nested' || active.case.startsWith('agent-owned-') || active.case==='agent-cascade-stop' || active.case==='agent-stop-pending' || active.case.startsWith('agent-budget') || active.case.startsWith('agent-schema');
     const customChild=active.case==='agent-custom-fork'&&((lastText.includes('CHILD_CUSTOM_FORK_')||body.tools?.every(t=>t.name==='Read'))||body.messages?.at(-1)?.content?.some?.(b=>b.type==='tool_result'&&b.tool_use_id.startsWith('custom_read_')));
     const child = customChild || active.case === 'goal-child-usage' && (lastText.includes('CHILD_USAGE_FIXTURE') || body.messages?.at(-1)?.content?.some?.(b => b.type === 'tool_result' && b.tool_use_id === 'child_read'));
     active.requests.at(-1).child = child;
@@ -170,6 +170,58 @@ const server = createServer(async (req, res) => {
       else if(!all.includes('"tool_use_id":"schema_p"'))step={type:'tool_use',id:'schema_p',name:agentName,input:{prompt:'SCHEMA_CHILD_FIXTURE',description:'Schema fixture',subagent_type:'general-purpose',run_in_background:active.case==='agent-schema-bg',schema:{type:'object',properties:{ok:{type:'boolean'},answer:{type:'string'}},required:['ok','answer']}}};
       else text=all.includes('SCHEMA_ANSWER_42')?'AUDIT_OK':(active.case==='agent-schema-bg'?'WAITING_FOR_CHILD':'SCHEMA_MISSING');
       content=step?[step]:[{type:'text',text}];stop=step?'tool_use':'end_turn';
+    } else if(active.case==='agent-budget' && body.tools?.length) {
+      // A background child spends past --max-budget-usd while the main loop is
+      // idle, then tries to spawn a grandchild; the spawn must be refused.
+      const agentName=body.tools.find(t=>t.name==='Task'||t.name==='Agent')?.name||'Task';
+      const all=JSON.stringify(body.messages);const first=textOf(body.messages[0]?.content);
+      const has=id=>all.includes(`"tool_use_id":"${id}"`);
+      const spawn=(id,prompt,background)=>({type:'tool_use',id,name:agentName,input:{prompt,description:'Budget fixture',subagent_type:'general-purpose',run_in_background:background}});
+      let step=null,text;
+      if(first.includes('BUDGET_GRANDCHILD')){active.grandchildRequests=(active.grandchildRequests||0)+1;text='GRANDCHILD_DONE';}
+      else if(first.includes('BUDGET_CHILD')){
+        if(!has('budget_spend')){active.spend=true;step={type:'tool_use',id:'budget_spend',name:'Bash',input:{command:'true',description:'Spend the budget'}};}
+        else if(!has('budget_g'))step=spawn('budget_g','BUDGET_GRANDCHILD',false);
+        else text='CHILD_DONE';
+      }
+      else if(!has('budget_p'))step=spawn('budget_p','BUDGET_CHILD',true);
+      else text=all.includes('CHILD_DONE')?'AUDIT_OK':'WAITING_FOR_CHILD';
+      content=step?[step]:[{type:'text',text}];stop=step?'tool_use':'end_turn';
+    } else if(active.case==='agent-budget-resume' && body.tools?.length) {
+      // A finished agent is resumed by SendMessage after the budget is spent;
+      // resuming must be refused like a fresh spawn.
+      const agentName=body.tools.find(t=>t.name==='Task'||t.name==='Agent')?.name||'Task';
+      const all=JSON.stringify(body.messages);const first=textOf(body.messages[0]?.content);
+      const has=id=>all.includes(`"tool_use_id":"${id}"`);
+      const spawn=(id,prompt)=>({type:'tool_use',id,name:agentName,input:{prompt,description:'Budget resume fixture',subagent_type:'general-purpose',run_in_background:true}});
+      let step=null,text;
+      if(first.includes('RESUME_TARGET')){if(all.includes('RESUME_AGAIN'))active.resumedRequests=(active.resumedRequests||0)+1;text='TARGET_DONE';}
+      else if(first.includes('RESUME_SPENDER')){
+        if(!has('budget_spend')){active.spend=true;step={type:'tool_use',id:'budget_spend',name:'Bash',input:{command:'true',description:'Spend the budget'}};}
+        else if(!has('budget_msg'))step={type:'tool_use',id:'budget_msg',name:'SendMessage',input:{to:first.match(/RESUME_SPENDER (\S+)/)[1],message:'RESUME_AGAIN',summary:'Resume target'}};
+        else text='SPENDER_DONE';
+      }
+      else if(!has('budget_a'))step=spawn('budget_a','RESUME_TARGET');
+      else if(!all.includes('TARGET_DONE'))text='WAITING_FOR_TARGET';
+      else if(!has('budget_b'))step=spawn('budget_b',`RESUME_SPENDER ${all.match(/agentId:\s*([a-zA-Z0-9_-]+)/)[1]}`);
+      else text='WAITING_FOR_SPENDER';
+      content=step?[step]:[{type:'text',text}];stop=step?'tool_use':'end_turn';
+    } else if(active.case==='agent-stop-pending' && body.tools?.length) {
+      // The parent is stopped while its grandchild spawn waits on the worktree
+      // hook; the spawn must not start an agent its stopped parent cannot own.
+      const agentName=body.tools.find(t=>t.name==='Task'||t.name==='Agent')?.name||'Task';
+      const all=JSON.stringify(body.messages);const first=textOf(body.messages[0]?.content);
+      const has=id=>all.includes(`"tool_use_id":"${id}"`);
+      let step=null,text;
+      if(first.includes('PENDING_GRANDCHILD')){active.grandchildRequests=(active.grandchildRequests||0)+1;text='GRANDCHILD_DONE';}
+      else if(first.includes('PENDING_PARENT'))step=has('pending_g')?{type:'tool_use',id:'parent_busy',name:'Bash',input:{command:'sleep 8',description:'Stay busy'}}:{type:'tool_use',id:'pending_g',name:agentName,input:{prompt:'PENDING_GRANDCHILD',description:'Pending fixture',subagent_type:'general-purpose',run_in_background:true,isolation:'worktree'}};
+      else if(!has('pending_p'))step={type:'tool_use',id:'pending_p',name:agentName,input:{prompt:'PENDING_PARENT',description:'Pending fixture',subagent_type:'general-purpose',run_in_background:true}};
+      else if(!has('pending_stop')){
+        if(!existsSync(join(active.dir,'wt-started')))step={type:'tool_use',id:'pending_wait_'+active.requests.length,name:'Bash',input:{command:'sleep 0.3',description:'Wait for the worktree hook'}};
+        else step={type:'tool_use',id:'pending_stop',name:'TaskStop',input:{task_id:all.match(/agentId:\s*([a-zA-Z0-9_-]+)/)?.[1]}};
+      } else if(!has('pending_settle'))step={type:'tool_use',id:'pending_settle',name:'Bash',input:{command:'sleep 4',description:'Outlast the worktree hook'}};
+      else text='AUDIT_OK';
+      content=step?[step]:[{type:'text',text}];stop=step?'tool_use':'end_turn';
     } else if(active.case==='agent-cascade-stop' && body.tools?.length) {
       // Stopping a background parent must stop the grandchild it spawned; the
       // grandchild's reply is slow, so a survivor would deliver GRANDCHILD_DONE.
@@ -266,7 +318,7 @@ const server = createServer(async (req, res) => {
     }
     // gateway-model-name: the gateway names another model than requested and reports a near-full context.
     const gateway = active.case === 'gateway-model-name';
-    const msg = { id: `msg_${active.requests.length}`, type: 'message', role: 'assistant', model: gateway ? 'claude-opus-5-5' : body.model, content, stop_reason: stop, stop_sequence: null, usage: child ? {input_tokens:1,output_tokens:1,cache_read_input_tokens:5000,cache_creation_input_tokens:4000} : harness ? {input_tokens:1,output_tokens:1} : gateway && n === 1 && !summary ? {input_tokens:190000,output_tokens:10} : {input_tokens:100,output_tokens:10} };
+    const msg = { id: `msg_${active.requests.length}`, type: 'message', role: 'assistant', model: gateway ? 'claude-opus-5-5' : body.model, content, stop_reason: stop, stop_sequence: null, usage: active.spend ? (active.spend=false,{input_tokens:100000,output_tokens:1}) : child ? {input_tokens:1,output_tokens:1,cache_read_input_tokens:5000,cache_creation_input_tokens:4000} : harness ? {input_tokens:1,output_tokens:1} : gateway && n === 1 && !summary ? {input_tokens:190000,output_tokens:10} : {input_tokens:100,output_tokens:10} };
     if (responses) {
       // Sign in with ChatGPT transport: every turn opens with an encrypted
       // reasoning item, which the next request must replay.
@@ -366,17 +418,20 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
     writeFileSync(join(env.CLAUDE_CONFIG_DIR, 'chatgpt-auth.json'), JSON.stringify({ hostId: 'urn:uuid:00000000-0000-4000-8000-000000000000', clientId: 'e2e-client', accessToken: 'e2e-chatgpt-access', refreshToken: 'e2e-chatgpt-refresh', expiresAt: Date.now() + 3_600_000 }));
   }
   const streamingInput = scenario.startsWith('budget-');
-  const harness = scenario.startsWith('task-') || scenario === 'goal-child-usage' || scenario==='agent-custom-fork' || scenario==='agent-nested' || scenario.startsWith('agent-owned-') || scenario==='agent-cascade-stop' || scenario.startsWith('agent-schema');
+  const harness = scenario.startsWith('task-') || scenario === 'goal-child-usage' || scenario==='agent-custom-fork' || scenario==='agent-nested' || scenario.startsWith('agent-owned-') || scenario==='agent-cascade-stop' || scenario==='agent-stop-pending' || scenario.startsWith('agent-budget') || scenario.startsWith('agent-schema');
   // Hooks are off under --bare, so the hook scenario runs the full startup path.
   // --bare drops run_in_background, so the deadline scenario needs the full startup path too.
-  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('concurrency-') || scenario.startsWith('tool-input-') || scenario === 'background-deadline' || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', modelFor(scenario), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'||scenario.startsWith('agent-owned-')||scenario.startsWith('agent-schema')?'Task':scenario==='agent-cascade-stop'?'Task,Bash,TaskStop':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'stale-signature' ? '3' : scenario === 'preserved-thinking' ? '5' : scenario === 'background-deadline' || scenario === 'small-window-overflow' ? '4' : '2'];
-  if (!scenario.startsWith('tool-input-') && scenario !== 'compact-resume' && scenario !== 'tombstone-resume' && scenario !== 'stale-signature' && scenario!=='agent-custom-fork') command.push('--no-session-persistence');
+  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('concurrency-') || scenario.startsWith('tool-input-') || scenario === 'background-deadline' || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', modelFor(scenario), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'||scenario.startsWith('agent-owned-')||scenario.startsWith('agent-schema')?'Task':scenario==='agent-cascade-stop'||scenario==='agent-stop-pending'?'Task,Bash,TaskStop':scenario==='agent-budget'?'Task,Bash':scenario==='agent-budget-resume'?'Task,Bash,SendMessage':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'stale-signature' ? '3' : scenario === 'preserved-thinking' ? '5' : scenario === 'background-deadline' || scenario === 'small-window-overflow' ? '4' : '2'];
+  if (!scenario.startsWith('tool-input-') && scenario !== 'compact-resume' && scenario !== 'tombstone-resume' && scenario !== 'stale-signature' && scenario!=='agent-custom-fork' && scenario!=='agent-budget-resume') command.push('--no-session-persistence');
   if (scenario.startsWith('tool-input-')) command.push('--allowedTools', 'Write');
   if (scenario === 'fallback') command.push('--fallback-model', 'claude-haiku-4-5');
   // An allow rule that the narrower deny rule must still beat.
   if (scenario === 'deny-rule') command.push('--allowedTools', 'Bash', '--disallowedTools', 'Bash(printf:*)');
   if (scenario === 'background-deadline' || scenario === 'small-window-overflow') command.push('--allowedTools', 'Bash');
   if (scenario === 'agent-cascade-stop') command.push('--allowedTools', 'Bash,TaskStop');
+  // A slow worktree hook holds the parent inside its Agent call while it is stopped.
+  if (scenario === 'agent-stop-pending') command.push('--allowedTools', 'Bash,TaskStop', '--settings', JSON.stringify({ hooks: { WorktreeCreate: [{ hooks: [{ type: 'command', command: `touch '${join(active.dir, 'wt-started')}'; sleep 2; mkdir -p '${join(active.dir, 'wt')}'; echo '${join(active.dir, 'wt')}'` }] }] } }));
+  if (scenario.startsWith('agent-budget')) command.push('--allowedTools', 'Bash', '--max-budget-usd', '0.01');
   if (scenario === 'agent-owned-auto') command[command.indexOf('dontAsk')] = 'auto';
   if (scenario==='hook-output' || scenario==='hook-output-null') command.push('--settings',JSON.stringify({hooks:{PostToolUse:[{matcher:'Read',hooks:[{type:'command',command:`echo '${JSON.stringify({hookSpecificOutput:{hookEventName:'PostToolUse',updatedToolOutput:scenario==='hook-output-null'?null:'HOOK_REDACTED',updatedMCPToolOutput:'LEGACY_MUST_NOT_WIN'}})}'`}]}]}}));
   if (scenario === 'hook-block') command.push('--settings', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'printf ran > hook-ran.txt; echo HOOK_BLOCKED_42 >&2; exit 2' }] }] } }));
@@ -483,6 +538,18 @@ try {
             assert.ok(promptReached('NEST_DEPTH_2'),'depth-2 subagent never started');
             assert.ok(!promptReached('NEST_DEPTH_3'),'depth-3 subagent started despite the spawn-depth cap');
             assert.ok(main.some(r=>JSON.stringify(r.body.messages).includes('nesting limit reached (depth 3 of 2)')),'refusal was not returned to the depth-2 subagent');
+          } else if(scenario==='agent-stop-pending'){
+            assert.equal(runResult.code,0);assert.equal(runResult.result.result,'AUDIT_OK');
+            assert.equal(active.grandchildRequests,undefined,'a stopped parent still started its pending grandchild');
+          } else if(scenario==='agent-budget-resume'){
+            assert.equal(runResult.result.subtype,'error_max_budget_usd');
+            assert.ok(active.requests.some(r=>JSON.stringify(r.body.messages).includes('"tool_use_id":"budget_msg"')),'the spender never tried to resume the target');
+            assert.equal(active.resumedRequests,undefined,'a finished agent was resumed after the budget was spent');
+            assert.ok(active.requests.some(r=>JSON.stringify(r.body.messages).includes('Budget limit reached')),'budget refusal was not returned to the spender');
+          } else if(scenario==='agent-budget'){
+            assert.equal(runResult.result.subtype,'error_max_budget_usd');
+            assert.equal(active.grandchildRequests,undefined,'a subagent spawned a grandchild after the budget was spent');
+            assert.ok(active.requests.some(r=>JSON.stringify(r.body.messages).includes('Budget limit reached')),'budget refusal was not returned to the child');
           } else if(scenario==='agent-schema'){
             assert.equal(runResult.code,0);assert.equal(runResult.result.result,'AUDIT_OK','structured output never reached the main thread');
             const childReqs=active.requests.filter(r=>textOf(r.body.messages?.[0]?.content).includes('SCHEMA_CHILD_FIXTURE'));

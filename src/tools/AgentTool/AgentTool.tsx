@@ -33,7 +33,7 @@ import { permissionModeSchema } from '../../utils/permissions/PermissionMode.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js';
 import { filterDeniedAgents, getDenyRuleForAgent } from '../../utils/permissions/permissions.js';
 import { enqueueSdkEvent } from '../../utils/sdkEventQueue.js';
-import { decrementTotalAgentSpawns, getMaxSubagentSpawnDepth, getMaxSubagentsPerSession, getTotalAgentSpawns, incrementTotalAgentSpawns } from '../../utils/task/sessionBudget.js';
+import { assertBudgetAllowsAgentStart, decrementTotalAgentSpawns, getMaxSubagentSpawnDepth, getMaxSubagentsPerSession, getTotalAgentSpawns, incrementTotalAgentSpawns } from '../../utils/task/sessionBudget.js';
 import { readAgentMetadata, writeAgentMetadata } from '../../utils/sessionStorage.js';
 import { sleep, withTimeout } from '../../utils/sleep.js';
 import { buildEffectiveSystemPrompt } from '../../utils/systemPrompt.js';
@@ -299,6 +299,8 @@ export const AgentTool = buildTool({
     if (teamName && name && schema) {
       throw new Error('The schema parameter is not supported for teammate spawns.');
     }
+
+    assertBudgetAllowsAgentStart(toolUseContext.options.maxBudgetUsd);
 
     // Checked before the reservation below, so a depth refusal never consumes budget.
     const spawnDepth = nextSubagentDepth(getAgentContext());
@@ -802,6 +804,9 @@ export const AgentTool = buildTool({
       };
     };
     try {
+      // A caller stopped during the awaits above has already had its owned
+      // agents killed; registering now would leave an orphan running.
+      if (toolUseContext.abortController.signal.aborted) throw new AbortError();
       assertCanStartAgent(toolUseContext.getAppState().tasks);
     } catch (error) {
       let retainedWorktreePath: string | undefined;
