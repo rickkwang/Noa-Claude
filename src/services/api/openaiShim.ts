@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { APIError } from '@anthropic-ai/sdk'
+import { APIError, APIUserAbortError } from '@anthropic-ai/sdk'
 import { logForDebugging } from '../../utils/debug.js'
 import { logError } from '../../utils/log.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
@@ -683,6 +683,7 @@ class OpenAIShimStream {
       model: string,
       signal: AbortSignal,
     ) => AsyncGenerator<Record<string, unknown>>,
+    private userSignal?: AbortSignal,
   ) {
     this.generator = convert(
       response,
@@ -692,7 +693,16 @@ class OpenAIShimStream {
   }
 
   async *[Symbol.asyncIterator]() {
-    yield* this.generator
+    try {
+      yield* this.generator
+    } catch (error) {
+      // As the SDK's Stream: a read cut off by the caller's abort ends the
+      // stream quietly. fetch rejects it with the raw abort reason (Esc
+      // aborts with the string 'user-cancel'), which would otherwise surface
+      // as a bare "API Error".
+      if (this.userSignal?.aborted) return
+      throw error
+    }
   }
 }
 
@@ -754,22 +764,38 @@ class OpenAIShimMessages {
         )
         // The route only streams; non-streaming callers get the drained stream.
         const optionalArgs = optionalToolArgs(params.tools)
-        const stream = new OpenAIShimStream(response, params.model, (res, model, signal) =>
-          responsesStreamToAnthropic(res, model, signal, optionalArgs),
+        const stream = new OpenAIShimStream(
+          response,
+          params.model,
+          (res, model, signal) =>
+            responsesStreamToAnthropic(res, model, signal, optionalArgs),
+          options?.signal,
         )
-        return params.stream ? stream : await collectAnthropicMessage(stream)
+        if (params.stream) return stream
+        const message = await collectAnthropicMessage(stream)
+        if (options?.signal?.aborted) throw new APIUserAbortError()
+        return message
       }
 
       const response = await this._doRequest(params, options)
       if (params.stream) {
-        return new OpenAIShimStream(response, params.model, (res, model, signal) =>
-          openaiStreamToAnthropic(res, model, signal, this.reasoningSignature),
+        return new OpenAIShimStream(
+          response,
+          params.model,
+          (res, model, signal) =>
+            openaiStreamToAnthropic(res, model, signal, this.reasoningSignature),
+          options?.signal,
         )
       }
 
       const data = await response.json()
       return this._convertNonStreamingResponse(data, params.model)
-    })()
+    })().catch(error => {
+      // As the SDK's makeRequest: an aborted caller gets APIUserAbortError,
+      // whatever the fetch rejected with, so claude.ts treats it as Esc.
+      if (options?.signal?.aborted) throw new APIUserAbortError()
+      throw error
+    })
 
     ;(promise as unknown as Record<string, unknown>).withResponse = async () => {
       const data = await promise

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { APIUserAbortError } from '@anthropic-ai/sdk'
 import { createOpenAIShimClient } from '../../../services/api/openaiShim.js'
 import { PROVIDER_EFFORT_LEVELS_ENV_KEY } from '../../../utils/model/providerModels.js'
 
@@ -929,5 +930,68 @@ describe('openaiShim tool_result translation', () => {
     ).find(m => m.role === 'tool')
     expect(toolMessage?.content).toContain('see this')
     expect(toolMessage?.content).toContain('[image omitted')
+  })
+})
+
+describe('openaiShim user abort', () => {
+  // Like Bun's fetch: an aborted request, and a body read cut off by the
+  // abort, both reject with the raw signal reason. Esc aborts with a string.
+  function abortingClient(phase: 'headers' | 'body') {
+    const fetchOverride = (async (_url: string, init: RequestInit) => {
+      const signal = init.signal!
+      if (phase === 'headers') {
+        return new Promise((_, reject) =>
+          signal.addEventListener('abort', () => reject(signal.reason)),
+        )
+      }
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              `data: ${JSON.stringify({ id: 'x', choices: [{ delta: { content: 'partial' } }] })}\n\n`,
+            ),
+          )
+          signal.addEventListener('abort', () => controller.error(signal.reason))
+        },
+      })
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    }) as unknown as typeof fetch
+    return createOpenAIShimClient({
+      apiKey: 'test-key',
+      baseURL: 'https://api.example.test/v1',
+      defaultHeaders: {},
+      timeoutMs: 5000,
+      fetchOverride,
+    })
+  }
+
+  test('an abort before headers rejects with APIUserAbortError', async () => {
+    const controller = new AbortController()
+    const request = abortingClient('headers').messages.create(
+      { model: 'm', messages: [{ role: 'user', content: 'hi' }], stream: true },
+      { signal: controller.signal },
+    )
+    controller.abort('user-cancel')
+    const error = await request.catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(APIUserAbortError)
+  })
+
+  test('an abort mid-stream ends the stream instead of throwing the reason', async () => {
+    const controller = new AbortController()
+    const stream = await abortingClient('body').messages.create(
+      { model: 'm', messages: [{ role: 'user', content: 'hi' }], stream: true },
+      { signal: controller.signal },
+    )
+    const events: Array<Record<string, unknown>> = []
+    for await (const event of stream as AsyncIterable<Record<string, unknown>>) {
+      events.push(event)
+      if (event.type === 'content_block_delta') controller.abort('user-cancel')
+    }
+    expect(events.some(e => e.type === 'content_block_delta')).toBe(true)
+    // Incomplete, so no message_stop either.
+    expect(events.some(e => e.type === 'message_stop')).toBe(false)
   })
 })
