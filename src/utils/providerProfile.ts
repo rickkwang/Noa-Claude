@@ -514,6 +514,7 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
       setEnvKey(env, 'ANTHROPIC_DEFAULT_OPUS_MODEL', normalizedProfile.model)
       setEnvKey(env, 'ANTHROPIC_DEFAULT_SONNET_MODEL', normalizedProfile.model)
       setEnvKey(env, 'ANTHROPIC_DEFAULT_HAIKU_MODEL', normalizedProfile.model)
+      setEnvKey(env, 'ANTHROPIC_DEFAULT_FABLE_MODEL', normalizedProfile.model)
       break
     case 'openai':
     case 'gemini':
@@ -546,6 +547,7 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
       setEnvKey(env, 'ANTHROPIC_DEFAULT_OPUS_MODEL', normalizedProfile.model)
       setEnvKey(env, 'ANTHROPIC_DEFAULT_SONNET_MODEL', normalizedProfile.model)
       setEnvKey(env, 'ANTHROPIC_DEFAULT_HAIKU_MODEL', normalizedProfile.model)
+      setEnvKey(env, 'ANTHROPIC_DEFAULT_FABLE_MODEL', normalizedProfile.model)
       break
   }
 
@@ -557,6 +559,8 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
   setEnvKey(env, 'ANTHROPIC_DEFAULT_OPUS_MODEL', tierModels.opus)
   setEnvKey(env, 'ANTHROPIC_DEFAULT_SONNET_MODEL', tierModels.sonnet)
   setEnvKey(env, 'ANTHROPIC_DEFAULT_HAIKU_MODEL', tierModels.haiku)
+  // Fable is the tier above Opus; endpoints pin no model for it separately.
+  setEnvKey(env, 'ANTHROPIC_DEFAULT_FABLE_MODEL', tierModels.opus)
   setEnvKey(env, 'CLAUDE_CODE_SUBAGENT_MODEL', tierModels.subagent)
 
   // Independent of protocol: every profile type declares what its endpoint
@@ -737,6 +741,7 @@ const PROVIDER_ENV_KEYS = [
   'ANTHROPIC_DEFAULT_OPUS_MODEL',
   'ANTHROPIC_DEFAULT_SONNET_MODEL',
   'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+  'ANTHROPIC_DEFAULT_FABLE_MODEL',
   'CLAUDE_CODE_SUBAGENT_MODEL',
   ...PROVIDER_CATALOGUE_ENV_KEYS,
 ] as const

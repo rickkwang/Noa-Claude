@@ -556,6 +556,7 @@ describe('provider profile credentials', () => {
       expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('single-served-model')
       expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('single-served-model')
       expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('single-served-model')
+      expect(env.ANTHROPIC_DEFAULT_FABLE_MODEL).toBe('single-served-model')
       // Subagents inherit the session model rather than the profile default.
       expect(env.CLAUDE_CODE_SUBAGENT_MODEL).toBeUndefined()
     }
