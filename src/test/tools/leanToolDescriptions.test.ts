@@ -18,6 +18,7 @@ const PROVIDER_ENV_KEYS = [
   'CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT',
   'NOA_CLAUDE_THIRD_PARTY_PROMPT_POLICY',
   'NOA_CLAUDE_WRITE_REQUIRE_READ',
+  'CLAUDE_CODE_AGENT_LIST_IN_MESSAGES',
 ] as const
 const originalProviderEnv = Object.fromEntries(
   PROVIDER_ENV_KEYS.map(k => [k, process.env[k]]),
@@ -42,6 +43,8 @@ import { getTodoWritePrompt } from '../../tools/TodoWriteTool/prompt.js'
 import { getPrompt as agentPrompt } from '../../tools/AgentTool/prompt.js'
 import { EXPLORE_AGENT } from '../../tools/AgentTool/built-in/exploreAgent.js'
 import * as auth from '../../utils/auth.js'
+import { getAgentListingDeltaAttachment } from '../../utils/attachments.js'
+import { getEmptyToolPermissionContext } from '../../Tool.js'
 import {
   LINE_FORMAT_INSTRUCTION,
   OFFSET_INSTRUCTION_TARGETED,
@@ -143,6 +146,19 @@ describe('Agent lean description', () => {
     const full = await agentPrompt([EXPLORE_AGENT], false, undefined, FULL_MODEL)
     expect(lean).toContain('- Explore: Read-only search agent for broad fan-out searches')
     expect(full).toContain('- Explore: Fast read-only search agent for locating code.')
+  })
+
+  test('the agent-listing attachment follows the same lean choice', () => {
+    process.env.CLAUDE_CODE_AGENT_LIST_IN_MESSAGES = '1'
+    const lines = (mainLoopModel: string) => {
+      const [delta] = getAgentListingDeltaAttachment({
+        options: { tools: [{ name: 'Agent' }], agentDefinitions: { activeAgents: [EXPLORE_AGENT] }, mainLoopModel },
+        getAppState: () => ({ toolPermissionContext: getEmptyToolPermissionContext() }),
+      } as never, [])
+      return (delta as { addedLines: string[] }).addedLines.join('\n')
+    }
+    expect(lines(LEAN_MODEL)).toContain('- Explore: Read-only search agent for broad fan-out searches')
+    expect(lines(FULL_MODEL)).toContain('- Explore: Fast read-only search agent for locating code.')
   })
 
   test('falls back to the full description without a model', async () => {

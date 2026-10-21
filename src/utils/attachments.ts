@@ -226,6 +226,7 @@ import { jsonStringify } from './slowOperations.js'
 import { isPDFExtension } from './pdfUtils.js'
 import { getOutputStyleConfig } from '../constants/outputStyles.js'
 import { getLocalISODate } from '../constants/common.js'
+import { shouldUseCompactSystemPrompt } from '../constants/systemPromptCompact.js'
 import { getPDFPageCount } from './pdf.js'
 import { PDF_AT_MENTION_INLINE_THRESHOLD } from '../constants/apiLimits.js'
 import { isAgentSwarmsEnabled } from './agentSwarmsEnabled.js'
@@ -1969,12 +1970,13 @@ export function getAgentListingDeltaAttachment(
   // (plugin load races, MCP async connect).
   added.sort((a, b) => compareAsciiFirst(a.agentType, b.agentType))
   removed.sort()
+  const lean = shouldUseCompactSystemPrompt(toolUseContext.options.mainLoopModel)
 
   return [
     {
       type: 'agent_listing_delta',
       addedTypes: added.map(a => a.agentType),
-      addedLines: added.map(agent => formatAgentLine(agent)),
+      addedLines: added.map(agent => formatAgentLine(agent, lean)),
       removedTypes: removed,
       isInitial: announced.size === 0,
       // Upstream also requires the subagent steer to be "default". Noa has no
