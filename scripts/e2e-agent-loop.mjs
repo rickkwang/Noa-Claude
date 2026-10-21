@@ -258,8 +258,8 @@ const server = createServer(async (req, res) => {
     } else if (active.case === 'max-turns' || ((active.case === 'read' || active.case.startsWith('openai-usage') || active.case.startsWith('openai-responses') || active.case.endsWith('-overflow') || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3) || (active.case === 'field-reject' && n === 2)) {
       content = [
         ...(active.case === 'compact-resume' ? [{ type: 'text', text: 'prior-context '.repeat(5000) }] : []),
-        // GPT fills optional arguments with "" (pages: "" fails Read's validation).
-        { type: 'tool_use', id: `toolu_${n}`, name: 'Read', input: { file_path: join(active.dir, 'fixture.txt'), ...(active.case.startsWith('openai-responses') && { pages: '' }) } },
+        // GPT and Kimi fill optional arguments with "" (pages: "" must not fail Read).
+        { type: 'tool_use', id: `toolu_${n}`, name: 'Read', input: { file_path: join(active.dir, 'fixture.txt'), ...((active.case === 'read' || active.case.startsWith('openai-responses')) && { pages: '' }) } },
       ]; stop = 'tool_use';
     } else {
       content = [{ type: 'text', text: 'AUDIT_OK' }];
