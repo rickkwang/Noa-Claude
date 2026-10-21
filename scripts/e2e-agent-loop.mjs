@@ -44,7 +44,7 @@ const server = createServer(async (req, res) => {
     }
     const lastText = textOf(body.messages?.at(-1)?.content);
     const summary = lastText.startsWith('CRITICAL: Respond with TEXT ONLY.') || /create a detailed continuation summary|summarize the recent messages|summary of the conversation|summarizing.*conversation/i.test(lastText);
-    active.requests.push({ path: req.url, body, summary, auth: req.headers.authorization });
+    active.requests.push({ path: req.url, body, summary, auth: req.headers.authorization, sessionHeader: req.headers['session-id'] });
     writeFileSync(join(active.dir, 'requests.json'), JSON.stringify(active.requests, null, 2));
     const harness = active.case.startsWith('task-') || active.case === 'goal-child-usage' || active.case==='agent-custom-fork' || active.case==='agent-nested' || active.case.startsWith('agent-owned-') || active.case==='agent-cascade-stop' || active.case.startsWith('agent-schema');
     const customChild=active.case==='agent-custom-fork'&&((lastText.includes('CHILD_CUSTOM_FORK_')||body.tools?.every(t=>t.name==='Read'))||body.messages?.at(-1)?.content?.some?.(b=>b.type==='tool_result'&&b.tool_use_id.startsWith('custom_read_')));
@@ -258,7 +258,8 @@ const server = createServer(async (req, res) => {
     } else if (active.case === 'max-turns' || ((active.case === 'read' || active.case.startsWith('openai-usage') || active.case.startsWith('openai-responses') || active.case.endsWith('-overflow') || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3) || (active.case === 'field-reject' && n === 2)) {
       content = [
         ...(active.case === 'compact-resume' ? [{ type: 'text', text: 'prior-context '.repeat(5000) }] : []),
-        { type: 'tool_use', id: `toolu_${n}`, name: 'Read', input: { file_path: join(active.dir, 'fixture.txt') } },
+        // GPT fills optional arguments with "" (pages: "" fails Read's validation).
+        { type: 'tool_use', id: `toolu_${n}`, name: 'Read', input: { file_path: join(active.dir, 'fixture.txt'), ...(active.case.startsWith('openai-responses') && { pages: '' }) } },
       ]; stop = 'tool_use';
     } else {
       content = [{ type: 'text', text: 'AUDIT_OK' }];
@@ -555,6 +556,7 @@ try {
               assert.ok(r.path.endsWith('/v1/responses'), `request left the Responses transport: ${r.path}`);
               assert.equal(r.auth, 'Bearer e2e-chatgpt-access', 'stored ChatGPT token was not sent');
               assert.equal(r.body.store, false); assert.equal(r.body.stream, true);
+              assert.ok(r.sessionHeader && r.sessionHeader === r.body.prompt_cache_key, 'session-id header (ChatGPT cache affinity) missing or not the session id');
               assert.equal(r.body.model, 'gpt-6.1-sol'); // Unset effort is left to OpenAI's per-model default; a chosen one is sent.
               assert.equal(r.body.reasoning?.effort, scenario === 'openai-responses-effort' ? 'xhigh' : undefined, 'reasoning.effort does not match the chosen effort');
               for (const field of ['max_output_tokens', 'temperature', 'top_p', 'metadata', 'previous_response_id', 'messages']) assert.ok(!(field in r.body), `${field} sent on the ChatGPT route`);
@@ -566,6 +568,7 @@ try {
             assert.ok(reasoning >= 0 && !('id' in input[reasoning]), 'encrypted reasoning was not replayed (or kept its server id)');
             assert.ok(call > reasoning, 'reasoning must precede the call it led to');
             assert.ok(input.some(i => i.type === 'function_call_output' && i.call_id === 'toolu_1' && i.output.includes('LOCAL_FIXTURE_42')), 'tool result missing');
+            assert.ok(!('pages' in JSON.parse(input[call].arguments)), 'empty optional argument reached the tool');
           } else if (scenario === 'field-reject') {
             assert.equal(runResult.code, 0, `field rejection surfaced as: ${runResult.result.result}`); assert.equal(runResult.result.result, 'AUDIT_OK'); assert.equal(count, 3);
             assert.ok(active.requests.slice(1).every(r => !('metadata' in r.body)), 'the rejected field was sent again on a later turn');

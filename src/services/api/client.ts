@@ -375,7 +375,8 @@ export async function getAnthropicClient({
       return createOpenAIShimClient({
         apiKey: accessToken,
         baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
-        defaultHeaders: { ...defaultHeaders },
+        // Codex sends this header: ChatGPT derives prompt-cache affinity from it.
+        defaultHeaders: { ...defaultHeaders, 'session-id': getSessionId() },
         timeoutMs: parseInt(process.env.API_TIMEOUT_MS || String(600 * 1000), 10),
         // A token revoked before its expiry still 401s; expire it so the
         // retry's fresh client refreshes instead of resending it.

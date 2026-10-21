@@ -279,6 +279,16 @@ export function modelSupportsToolReference(model: string): boolean {
  */
 let loggedOptimistic = false
 
+// On the ChatGPT Responses route a discovered tool is appended to `tools`,
+// which heads OpenAI's cache prefix, so each discovery re-bills the whole
+// conversation uncached. Sending every tool up front keeps the prefix stable.
+function isChatGPTRouteWithoutToolSearch(): boolean {
+  return (
+    !process.env.ENABLE_TOOL_SEARCH &&
+    process.env.NOA_CLAUDE_OPENAI_AUTH === 'chatgpt'
+  )
+}
+
 export function isToolSearchEnabledOptimistic(): boolean {
   const mode = getToolSearchMode()
   if (mode === 'standard') {
@@ -317,6 +327,16 @@ export function isToolSearchEnabledOptimistic(): boolean {
       loggedOptimistic = true
       logForDebugging(
         `[ToolSearch:optimistic] disabled: ANTHROPIC_BASE_URL=${process.env.ANTHROPIC_BASE_URL} is not a first-party Anthropic host. Set ENABLE_TOOL_SEARCH=true (or auto / auto:N) if your proxy forwards tool_reference blocks.`,
+      )
+    }
+    return false
+  }
+
+  if (isChatGPTRouteWithoutToolSearch()) {
+    if (!loggedOptimistic) {
+      loggedOptimistic = true
+      logForDebugging(
+        '[ToolSearch:optimistic] disabled on the ChatGPT route to keep the prompt cache prefix stable',
       )
     }
     return false
@@ -430,6 +450,13 @@ export async function isToolSearchEnabled(
         'external') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       ...extraProps,
     })
+  }
+
+  // Re-checked per request: a provider profile's env is applied after
+  // startup, so the tool pool may still carry ToolSearchTool.
+  if (isChatGPTRouteWithoutToolSearch()) {
+    logModeDecision(false, 'standard', 'chatgpt_route')
+    return false
   }
 
   // Check if model supports tool_reference
