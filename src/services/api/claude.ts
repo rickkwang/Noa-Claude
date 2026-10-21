@@ -1717,11 +1717,12 @@ async function* queryModel(
       thinking = { type: 'disabled' } satisfies BetaMessageStreamParams['thinking']
     }
 
-    // Preserved thinking (Fable 5.1 / Mythos 5.1): a thinking block's signature
-    // binds it to the conversation prefix that produced it, and Noa edits that
-    // prefix routinely — compaction rewrites the transcript, snipping removes
-    // turns from the middle, and the system prompt is rebuilt per request. On
-    // an enforced account that is a hard 400 decided before any output, and
+    // Preserved thinking (Fable 5.1 / Opus 5.5 / Sonnet 5.5 / Haiku 5.5): a
+    // thinking block's signature binds it to the conversation prefix that
+    // produced it. History is kept append-only, except that partial compaction
+    // (prompt-too-long fallback, precompute, partial summarize from the message
+    // selector) keeps a verbatim tail whose thinking no longer matches. On an
+    // enforced account that is a hard 400 decided before any output, and
     // retrying the same body fails identically.
     //
     // 'drop_block' is the degrade-instead-of-fail setting: the API drops the

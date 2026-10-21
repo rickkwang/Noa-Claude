@@ -12,6 +12,7 @@ import { GREP_TOOL_NAME } from '../../tools/GrepTool/prompt.js'
 import { WEB_FETCH_TOOL_NAME } from '../../tools/WebFetchTool/prompt.js'
 import { WEB_SEARCH_TOOL_NAME } from '../../tools/WebSearchTool/prompt.js'
 import type { Message } from '../../types/message.js'
+import { modelEnforcesThinkingPrefixBinding } from '../../utils/betas.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { getMainLoopModel } from '../../utils/model/model.js'
 import { SHELL_TOOL_NAMES } from '../../utils/shell/shellToolUtils.js'
@@ -938,13 +939,20 @@ async function maybeSizeBasedMicrocompact(
     return null
   }
 
+  // Preserved thinking binds each thinking block to every earlier byte, so
+  // clearing a tool result already sent invalidates all reasoning after it.
+  // Leave these models' history append-only; autocompact still bounds it.
+  const model = toolUseContext?.options.mainLoopModel ?? getMainLoopModel()
+  if (modelEnforcesThinkingPrefixBinding(model)) {
+    return null
+  }
+
   // Lazy require to avoid the init-time circular dependency this file is
   // sensitive to (see the toolResultStorage inline note above) — autoCompact
   // pulls in a chain that loops back here at module-load time.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { getEffectiveContextWindowSize } =
     require('./autoCompact.js') as typeof import('./autoCompact.js')
-  const model = toolUseContext?.options.mainLoopModel ?? getMainLoopModel()
   const effectiveWindow = getEffectiveContextWindowSize(
     model,
     toolUseContext?.options.autoCompactWindow,

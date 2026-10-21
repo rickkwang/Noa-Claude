@@ -167,6 +167,8 @@ try {
   const { roughTokenCountEstimationForMessages } = await import('../src/services/tokenEstimation.js')
   const { normalizeMessagesForAPI } = await import('../src/utils/messages.js')
   context.options.tools = [FileReadTool, FileWriteTool]
+  // Size microcompact stays off on prefix-binding models; exercise it where it still clears.
+  context.options.mainLoopModel = 'claude-opus-5'
   history = [createUserMessage({ content: 'Write both local fixtures, read fixture.txt, and respond DONE.' })]
   context.messages = history
   const microcompactStart = requests.length

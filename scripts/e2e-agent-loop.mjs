@@ -18,9 +18,9 @@ const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'n
 mkdirSync(artifacts, { recursive: true });
 const model = 'claude-sonnet-4-6';
 // A 200k-window model, so a gateway naming a 1M model in its responses offers a "larger window".
-const modelFor = scenario => scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model;
+const modelFor = scenario => scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' ? 'claude-opus-5-5' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model;
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['agent-nested', 'agent-owned-results', 'agent-owned-auto', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'field-reject', 'gateway-model-name'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['agent-nested', 'agent-owned-results', 'agent-owned-auto', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'field-reject', 'gateway-model-name', 'preserved-thinking'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -238,6 +238,8 @@ const server = createServer(async (req, res) => {
       return;
     } else if (active.case === 'stale-signature' && n === 3) {
       content = [{ type: 'thinking', thinking: '', signature: 'fresh-sig' }, { type: 'tool_use', id: 'toolu_fresh', name: 'Read', input: { file_path: join(active.dir, 'fixture.txt') } }]; stop = 'tool_use';
+    } else if (active.case === 'preserved-thinking' && n <= 3) {
+      content = [{ type: 'thinking', thinking: '', signature: `pt-sig-${n}` }, { type: 'tool_use', id: `toolu_pt_${n}`, name: 'Read', input: { file_path: join(active.dir, `pt${n}.txt`) } }]; stop = 'tool_use';
     } else if ((active.case === 'refusal' && n === 1) || active.case === 'refusal-repeat') {
       content = [{ type: 'text', text: 'Partial answer.' }]; stop = 'refusal';
     } else if (active.case.startsWith('budget-')) {
@@ -349,6 +351,8 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => ['PATH', 'HOME', 'TMPDIR', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL'].includes(k)));
   Object.assign(env, {
     ...(scenario==='blocking-limit' && {DISABLE_AUTO_COMPACT:'1'}),
+    // Size-based microcompact fires on the second large tool result here.
+    ...(scenario==='preserved-thinking' && {CLAUDE_CODE_SIZE_MICROCOMPACT_PCT:'1', CLAUDE_CODE_SIZE_MICROCOMPACT_KEEP:'1'}),
     CLAUDE_CONFIG_DIR: join(active.dir, 'config'), ANTHROPIC_API_KEY: 'local-e2e-dummy', ANTHROPIC_BASE_URL: baseUrl,
     ANTHROPIC_MODEL: modelFor(scenario), CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', DISABLE_AUTOUPDATER: '1',
     ...(scenario.startsWith('openai-') && { CLAUDE_CODE_USE_OPENAI: '1', OPENAI_BASE_URL: `${baseUrl}/v1`, OPENAI_API_KEY: 'local-e2e-dummy' }),
@@ -364,7 +368,7 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   const harness = scenario.startsWith('task-') || scenario === 'goal-child-usage' || scenario==='agent-custom-fork' || scenario==='agent-nested' || scenario.startsWith('agent-owned-') || scenario==='agent-cascade-stop' || scenario.startsWith('agent-schema');
   // Hooks are off under --bare, so the hook scenario runs the full startup path.
   // --bare drops run_in_background, so the deadline scenario needs the full startup path too.
-  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('concurrency-') || scenario.startsWith('tool-input-') || scenario === 'background-deadline' || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', modelFor(scenario), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'||scenario.startsWith('agent-owned-')||scenario.startsWith('agent-schema')?'Task':scenario==='agent-cascade-stop'?'Task,Bash,TaskStop':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'stale-signature' ? '3' : scenario === 'background-deadline' || scenario === 'small-window-overflow' ? '4' : '2'];
+  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('concurrency-') || scenario.startsWith('tool-input-') || scenario === 'background-deadline' || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', modelFor(scenario), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'||scenario.startsWith('agent-owned-')||scenario.startsWith('agent-schema')?'Task':scenario==='agent-cascade-stop'?'Task,Bash,TaskStop':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'stale-signature' ? '3' : scenario === 'preserved-thinking' ? '5' : scenario === 'background-deadline' || scenario === 'small-window-overflow' ? '4' : '2'];
   if (!scenario.startsWith('tool-input-') && scenario !== 'compact-resume' && scenario !== 'tombstone-resume' && scenario !== 'stale-signature' && scenario!=='agent-custom-fork') command.push('--no-session-persistence');
   if (scenario.startsWith('tool-input-')) command.push('--allowedTools', 'Write');
   if (scenario === 'fallback') command.push('--fallback-model', 'claude-haiku-4-5');
@@ -438,6 +442,7 @@ try {
       const dir = join(artifacts, `${executable === entry ? 'candidate' : 'comparison'}-${scenario}`);
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, 'fixture.txt'), 'LOCAL_FIXTURE_42\n');
+      if (scenario === 'preserved-thinking') for (const i of [1, 2, 3]) writeFileSync(join(dir, `pt${i}.txt`), Array.from({ length: 1500 }, (_, l) => `pt${i} line ${l} ${'x'.repeat(30)}`).join('\n'));
       active = { case: scenario, dir, requests: [], invocations: [], summaries: 0, oversized: 0 };
       let passed = false, failure, observation, runResult;
       try {
@@ -597,6 +602,19 @@ try {
             assert.deepEqual(writes.map(line => line.split('-')[0]), ['start', 'end', 'start', 'end']);
             assert.equal(writes[0].slice(6), writes[1].slice(4)); assert.equal(writes[2].slice(6), writes[3].slice(4));
             active.finalState = writes;
+          } else if (scenario === 'preserved-thinking') {
+            // Thinking blocks are bound to every earlier byte on Opus 5.5 and peers:
+            // each request must resend the previous one's messages unchanged.
+            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK'); assert.equal(count, 4);
+            // The binding ignores cache_control and string-versus-single-text-block content.
+            const strip = m => JSON.stringify({ ...m, content: typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : m.content }, (key, v) => key === 'cache_control' ? undefined : v);
+            for (let i = 1; i < count; i++) {
+              const before = active.requests[i - 1].body.messages, after = active.requests[i].body.messages;
+              assert.ok(after.length >= before.length, `request ${i + 1} dropped messages`);
+              // The reply to request i is bound to all of its messages, the last user turn included.
+              before.forEach((m, j) => assert.ok(strip(after[j]) === strip(m), `request ${i + 1} rewrote messages[${j}]`));
+            }
+            assert.ok(active.requests.at(-1).body.messages.some(m => Array.isArray(m.content) && m.content.some(b => b.type === 'thinking')), 'fixture never replayed a thinking block');
           } else if (scenario === 'stale-signature') {
             assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK'); assert.equal(count, 4);
             assert.ok(JSON.stringify(active.requests[1].body.messages).includes('"thinking"'), 'fixture never replayed a thinking block');

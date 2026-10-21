@@ -227,10 +227,9 @@ export function modelRejectsForcedToolChoice(model: string): boolean {
  * Fable 5.1 / Opus 5.5 / Sonnet 5.5 / Haiku 5.5 enforce "preserved thinking": a thinking block's
  * signature records the conversation prefix that produced it (top-level
  * `system`, the `tools` set, and every earlier message), so editing an earlier
- * turn invalidates every later block. Noa edits history routinely — compaction
- * rewrites the transcript, snipping drops turns from the middle, and the
- * system prompt is rebuilt per request — so an enforced account would take a
- * 400 on the first request after any of those.
+ * turn invalidates every later block. Partial compaction keeps a verbatim
+ * tail after a summary, so an enforced account would take a 400 on the first
+ * request after one. Size-based microcompact is skipped for these models.
  *
  * We degrade instead of failing: send the controls beta and ask the API to
  * drop the mismatched blocks (see claude.ts). Enforcement is on by default
