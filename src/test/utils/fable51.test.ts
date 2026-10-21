@@ -15,7 +15,6 @@ import { getModelCosts } from '../../utils/modelCost.js'
 import {
   modelSupportsAdaptiveThinking,
   modelOmitsThinkingByDefault,
-  modelRejectsSamplingParams,
   modelRequiresExplicitThinkingDisable,
 } from '../../utils/thinking.js'
 import { getSupportedEffortLevelsForModel } from '../../utils/effort.js'
@@ -74,7 +73,6 @@ describe('Fable 5.1 request surface', () => {
   test('inherits the Fable thinking surface', () => {
     expect(modelSupportsAdaptiveThinking('claude-fable-5-1')).toBe(true)
     expect(modelOmitsThinkingByDefault('claude-fable-5-1')).toBe(true)
-    expect(modelRejectsSamplingParams('claude-fable-5-1')).toBe(true)
     // Thinking is always on: the request omits `thinking` rather than sending
     // an explicit {type:'disabled'}, which the API rejects with a 400.
     expect(modelRequiresExplicitThinkingDisable('claude-fable-5-1')).toBe(false)

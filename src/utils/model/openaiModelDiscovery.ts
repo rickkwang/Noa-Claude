@@ -134,7 +134,7 @@ function getAnthropicAuthHeaders(
   apiKey: string | undefined,
 ): Record<string, string> {
   const headers: Record<string, string> = {
-    'anthropic-version': '2023-06-01',
+    'anthropic-version': '2026-10-21',
   }
   if (!apiKey) return headers
   if (type === 'kimi' || type === 'minimax') {

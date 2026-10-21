@@ -42,6 +42,11 @@ const server = createServer(async (req, res) => {
       res.end('{"input_tokens":100}');
       return;
     }
+    // The 2026-10-21 Messages API rejects sampling params even at default values.
+    if (!openai && !responses && ['temperature', 'top_p', 'top_k'].some(k => k in body)) {
+      error(400, 'invalid_request_error', 'sampling parameter: Extra inputs are not permitted');
+      return;
+    }
     const lastText = textOf(body.messages?.at(-1)?.content);
     const summary = lastText.startsWith('CRITICAL: Respond with TEXT ONLY.') || /create a detailed continuation summary|summarize the recent messages|summary of the conversation|summarizing.*conversation/i.test(lastText);
     active.requests.push({ path: req.url, body, summary, auth: req.headers.authorization, sessionHeader: req.headers['session-id'] });

@@ -572,7 +572,7 @@ export class CCRClient {
           headers: {
             ...authHeaders,
             'Content-Type': 'application/json',
-            'anthropic-version': '2023-06-01',
+            'anthropic-version': '2026-10-21',
             'User-Agent': getClaudeCodeUserAgent(),
           },
           validateStatus: alwaysValidStatus,
@@ -914,7 +914,7 @@ export class CCRClient {
         response = await this.http.get<T>(url, {
           headers: {
             ...authHeaders,
-            'anthropic-version': '2023-06-01',
+            'anthropic-version': '2026-10-21',
             'User-Agent': getClaudeCodeUserAgent(),
           },
           validateStatus: alwaysValidStatus,

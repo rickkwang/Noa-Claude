@@ -100,7 +100,6 @@ export function createApiQueryHook<TResult>(
             context.toolUseContext.options.isNonInteractiveSession,
           hasAppendSystemPrompt:
             !!context.toolUseContext.options.appendSystemPrompt,
-          temperatureOverride: 0,
           agents: context.toolUseContext.options.agentDefinitions.activeAgents,
           querySource: config.name,
           mcpTools: [],

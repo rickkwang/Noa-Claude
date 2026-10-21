@@ -6,11 +6,11 @@
       "name": "claude-code",
       "dependencies": {
         "@anthropic-ai/bedrock-sdk": "^0.33.8",
-        "@anthropic-ai/foundry-sdk": "^0.4.9",
+        "@anthropic-ai/foundry-sdk": "^1.0.0",
         "@anthropic-ai/mcpb": "file:./vendor/anthropic-ai-mcpb",
         "@anthropic-ai/sandbox-runtime": "^0.0.71",
-        "@anthropic-ai/sdk": "^0.128.0",
-        "@anthropic-ai/vertex-sdk": "^0.19.11",
+        "@anthropic-ai/sdk": "^1.0.0",
+        "@anthropic-ai/vertex-sdk": "^1.0.0",
         "@aws-sdk/client-bedrock": "^3.700.0",
         "@aws-sdk/client-bedrock-runtime": "^3.700.0",
         "@aws-sdk/client-sts": "^3.1022.0",
@@ -85,15 +85,15 @@
 
     "@anthropic-ai/bedrock-sdk": ["@anthropic-ai/bedrock-sdk@0.33.8", "", { "dependencies": { "@anthropic-ai/sdk": ">=0.115.1 <1", "@aws-crypto/sha256-js": "^4.0.0", "@aws-sdk/client-bedrock-runtime": "^3.797.0", "@aws-sdk/credential-providers": "^3.796.0", "@smithy/eventstream-serde-node": "^2.0.10", "@smithy/fetch-http-handler": "^5.0.4", "@smithy/protocol-http": "^3.0.6", "@smithy/signature-v4": "^3.1.1", "@smithy/smithy-client": "^2.1.9", "@smithy/types": "^2.3.4", "@smithy/util-base64": "^2.0.0" } }, "sha512-hEaKRFCR4JCSNpXbB/2dE/GI8DWrwPbz4e6Ymj8cODUCBbkUBczkXDnIRrVZC8W+1CyC4ngbGnfsavoM8f0w3w=="],
 
-    "@anthropic-ai/foundry-sdk": ["@anthropic-ai/foundry-sdk@0.4.9", "", { "dependencies": { "@anthropic-ai/sdk": ">=0.115.1 <1" } }, "sha512-+ZGzRT1pIhaxX4wro/op8ExGfBXXA9FLif4fKakTMTzLl5/ard6pPtboekhjE24Hp6dNQlLNOxl69X3X79xfUw=="],
+    "@anthropic-ai/foundry-sdk": ["@anthropic-ai/foundry-sdk@1.0.0", "", { "dependencies": { "@anthropic-ai/sdk": ">=1.0.0 <2", "@opentelemetry/api": "^1.4.1" } }, "sha512-0rjLXKXNTbDnL1TMvHTcMFBBkpIkgoxMlqkufDN3tWJHaFCAKfYrs4TOW6G4foUySBroIo0vCTupp4Frbf6p1w=="],
 
     "@anthropic-ai/mcpb": ["@anthropic-ai/mcpb@file:vendor/anthropic-ai-mcpb", {}],
 
     "@anthropic-ai/sandbox-runtime": ["@anthropic-ai/sandbox-runtime@0.0.71", "", { "dependencies": { "@pondwader/socks5-server": "^1.0.10", "commander": "^12.1.0", "node-forge": "^1.4.0", "zod": "^3.24.1" }, "bin": { "srt": "dist/cli.js" } }, "sha512-/ZMCavpMElD0ku2BlA95vezKUsVN0DD/wVd3WIEAfFjkTF2nsmzQA+MhejIWhuSUS9HpxMtTj57eFL+kdbKZ/A=="],
 
-    "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.128.0", "", { "dependencies": { "json-schema-to-ts": "^3.1.1", "standardwebhooks": "^1.0.0" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-tl5cBFZC1jVFrTuQyvQObA4WmuNgcYVeXfriqOumgtLAHUm4gPUj18YnszBW60v0PrjDB8nBDOC6wd9CmHQFlA=="],
+    "@anthropic-ai/sdk": ["@anthropic-ai/sdk@1.1.0", "", { "dependencies": { "@opentelemetry/api": "^1.4.1", "json-schema-to-ts": "^3.1.1", "standardwebhooks": "^1.0.0" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-Op/fKMsfVwFCfObc87leLOFlORE0RjOvLzRzPCWWLI7Ww6bobpKR6YmYC8ZYgulRh+m2a/3/61VUXoWHFtCXIw=="],
 
-    "@anthropic-ai/vertex-sdk": ["@anthropic-ai/vertex-sdk@0.19.11", "", { "dependencies": { "@anthropic-ai/sdk": ">=0.115.1 <1", "google-auth-library": "^10.2.0" } }, "sha512-yrXCUBL4RiW1dK/So/jyMCutDX2KeiY7jyOIWkU1qiZbuhWoIzPk7s1BDL+QaTKnScX+Ygg+/HHLAcgp9jEsUg=="],
+    "@anthropic-ai/vertex-sdk": ["@anthropic-ai/vertex-sdk@1.0.0", "", { "dependencies": { "@anthropic-ai/sdk": ">=1.0.0 <2", "@opentelemetry/api": "^1.4.1", "google-auth-library": "^10.2.0" } }, "sha512-OZ0vNSrfaS951/cIGio/YMWbT57Yle4OrbjgiQ9KUtx3ek8OSh5iVmjE8Vxf7s+H3mCu4oYSuAT6DNdBM73ygA=="],
 
     "@aws-crypto/crc32": ["@aws-crypto/crc32@5.2.0", "", { "dependencies": { "@aws-crypto/util": "^5.2.0", "@aws-sdk/types": "^3.222.0", "tslib": "^2.6.2" } }, "sha512-nLbCWqQNgUiwwtFsen1AdzAtvuLRsQS8rYgMuxCrdKf9kOssamGLuPwyTY9wyYblNr9+1XM8v6zoDTPPSIeANg=="],
 
@@ -916,6 +916,8 @@
     "zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
 
     "zod-to-json-schema": ["zod-to-json-schema@3.25.2", "", { "peerDependencies": { "zod": "^3.25.28 || ^4" } }, "sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA=="],
+
+    "@anthropic-ai/bedrock-sdk/@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.128.0", "", { "dependencies": { "json-schema-to-ts": "^3.1.1", "standardwebhooks": "^1.0.0" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-tl5cBFZC1jVFrTuQyvQObA4WmuNgcYVeXfriqOumgtLAHUm4gPUj18YnszBW60v0PrjDB8nBDOC6wd9CmHQFlA=="],
 
     "@aws-crypto/crc32/@aws-crypto/util": ["@aws-crypto/util@5.2.0", "", { "dependencies": { "@aws-sdk/types": "^3.222.0", "@smithy/util-utf8": "^2.0.0", "tslib": "^2.6.2" } }, "sha512-4RkU9EsI6ZpBve5fseQlGNUWKMa1RLPQ1dnjnQoe07ldfIzcsGb5hC5W0Dm7u423KWzawlrpbjXBrXCEv9zazQ=="],
 

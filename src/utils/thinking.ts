@@ -178,22 +178,6 @@ export function modelSupportsAdaptiveThinking(model: string): boolean {
   return directFirstParty || provider === 'foundry'
 }
 
-// Opus 4.7+ rejects non-default temperature/top_p/top_k values. Omit these
-// fields entirely so callers never depend on model-specific default handling.
-// @[MODEL LAUNCH]: Update when new models also remove sampling params.
-export function modelRejectsSamplingParams(model: string): boolean {
-  const canonical = getCanonicalName(model)
-  return (
-    canonical.includes('opus-4-7') ||
-    canonical.includes('opus-4-8') ||
-    canonical.includes('claude-opus-5') ||
-    canonical.includes('fable-5') ||
-    canonical.includes('mythos') ||
-    canonical.includes('sonnet-5') ||
-    canonical.includes('haiku-5-5')
-  )
-}
-
 // Opus 4.7+ omit thinking content by default — adaptive `thinking` blocks
 // stream with empty text unless display is set to 'summarized'. On Opus 4.6 /
 // Sonnet 4.6 summarized is already the default and `display` is a no-op/newer

@@ -113,7 +113,7 @@ export class SessionsWebSocket {
     const accessToken = this.getAccessToken()
     const headers = {
       Authorization: `Bearer ${accessToken}`,
-      'anthropic-version': '2023-06-01',
+      'anthropic-version': '2026-10-21',
     }
 
     if (typeof Bun !== 'undefined') {

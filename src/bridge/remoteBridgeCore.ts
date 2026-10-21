@@ -72,7 +72,7 @@ import type {
 } from '../entrypoints/sdk/controlTypes.js'
 import type { PermissionMode } from '../utils/permissions/PermissionMode.js'
 
-const ANTHROPIC_VERSION = '2023-06-01'
+const ANTHROPIC_VERSION = '2026-10-21'
 
 // Telemetry discriminator for ws_connected. 'initial' is the default and
 // never passed to rebuildTransport (which can only be called post-init);

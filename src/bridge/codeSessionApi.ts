@@ -14,7 +14,7 @@ import { errorMessage } from '../utils/errors.js'
 import { jsonStringify } from '../utils/slowOperations.js'
 import { extractErrorDetail } from './debugUtils.js'
 
-const ANTHROPIC_VERSION = '2023-06-01'
+const ANTHROPIC_VERSION = '2026-10-21'
 
 function oauthHeaders(accessToken: string): Record<string, string> {
   return {

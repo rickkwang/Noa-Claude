@@ -105,7 +105,7 @@ export async function registerWorker(
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
-        'anthropic-version': '2023-06-01',
+        'anthropic-version': '2026-10-21',
       },
       timeout: 10_000,
     },

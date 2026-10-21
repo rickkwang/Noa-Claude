@@ -3,7 +3,6 @@ import {
   modelOmitsThinkingByDefault,
   effortRejectedWithDisabledThinking,
   MAX_EFFORT_WITH_DISABLED_THINKING,
-  modelRejectsSamplingParams,
   modelRequiresExplicitThinkingDisable,
   modelSupportsAdaptiveThinking,
   modelSupportsThinking,
@@ -49,10 +48,6 @@ describe('Fable 5 — shares the Opus 4.8 request surface', () => {
   test('omits thinking content by default (needs display: summarized)', () => {
     expect(modelOmitsThinkingByDefault('claude-fable-5')).toBe(true)
   })
-
-  test('rejects sampling params (temperature/top_p/top_k)', () => {
-    expect(modelRejectsSamplingParams('claude-fable-5')).toBe(true)
-  })
 })
 
 describe('Sonnet 5 — Opus 4.7/4.8 request surface, but adaptive-by-default', () => {
@@ -63,10 +58,6 @@ describe('Sonnet 5 — Opus 4.7/4.8 request surface, but adaptive-by-default', (
 
   test('omits thinking content by default (needs display: summarized)', () => {
     expect(modelOmitsThinkingByDefault('claude-sonnet-5')).toBe(true)
-  })
-
-  test('rejects sampling params (temperature/top_p/top_k)', () => {
-    expect(modelRejectsSamplingParams('claude-sonnet-5')).toBe(true)
   })
 
   test('requires an explicit {type: "disabled"} to actually turn thinking off', () => {

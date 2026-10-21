@@ -96,7 +96,7 @@ describe('discoverProviderModelNames', () => {
       url: 'https://api.kimi.com/coding/v1/models',
       headers: {
         Authorization: 'Bearer moonshot-test',
-        'anthropic-version': '2023-06-01',
+        'anthropic-version': '2026-10-21',
       },
     })
 
@@ -111,7 +111,7 @@ describe('discoverProviderModelNames', () => {
       url: 'https://api.minimaxi.com/anthropic/v1/models',
       headers: {
         Authorization: 'Bearer minimax-test',
-        'anthropic-version': '2023-06-01',
+        'anthropic-version': '2026-10-21',
       },
     })
   })

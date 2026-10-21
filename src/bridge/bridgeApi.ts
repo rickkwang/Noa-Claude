@@ -78,7 +78,7 @@ export function createBridgeApiClient(deps: BridgeApiDeps): BridgeApiClient {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
-      'anthropic-version': '2023-06-01',
+      'anthropic-version': '2026-10-21',
       'anthropic-beta': BETA_HEADER,
       'x-environment-runner-version': deps.runnerVersion,
     }

@@ -172,7 +172,6 @@ function getBuildAgeMinutes(): number | undefined {
 export function logAPIQuery({
   model,
   messagesLength,
-  temperature,
   betas,
   permissionMode,
   querySource,
@@ -184,7 +183,6 @@ export function logAPIQuery({
 }: {
   model: string
   messagesLength: number
-  temperature: number
   betas?: string[]
   permissionMode?: PermissionMode
   querySource: string
@@ -197,7 +195,6 @@ export function logAPIQuery({
   logEvent('tengu_api_query', {
     model: model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
     messagesLength,
-    temperature: temperature,
     provider: getAPIProviderForStatsig(),
     buildAgeMins: getBuildAgeMinutes(),
     ...(betas?.length

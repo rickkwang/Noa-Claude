@@ -1183,15 +1183,6 @@ function combineUsage(a: ClassifierUsage, b: ClassifierUsage): ClassifierUsage {
  * property-name strings don't survive minification into external builds.
  */
 /**
- * Classifier sampling temperature. Upstream defaults to 1 with a
- * CLAUDE_CODE_AUTO_MODE_TEMPERATURE env override.
- */
-function getClassifierTemperature(): number {
-  const t = Number(process.env.CLAUDE_CODE_AUTO_MODE_TEMPERATURE)
-  return Number.isFinite(t) ? t : 1
-}
-
-/**
  * Max retries for classifier API calls. Upstream reads
  * tengu_auto_mode_config.maxRetries with an in-code default of 4 — NOT the
  * generic sideQuery default of 10, which would stall the permission check
@@ -1474,7 +1465,6 @@ async function classifyYoloActionXml(
         max_tokens: (mode === 'fast' ? 256 : 64) + thinkingPadding,
         system: systemBlocks,
         skipSystemPromptPrefix: true,
-        temperature: getClassifierTemperature(),
         thinking: disableThinking,
         messages: [
           ...prefixMessages,
@@ -1617,7 +1607,6 @@ async function classifyYoloActionXml(
       max_tokens: 8192 + thinkingPadding,
       system: systemBlocks,
       skipSystemPromptPrefix: true,
-      temperature: getClassifierTemperature(),
       thinking: disableThinking,
       messages: [
         ...prefixMessages,

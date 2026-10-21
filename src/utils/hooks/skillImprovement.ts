@@ -261,7 +261,6 @@ Rules:
       toolChoice: undefined,
       isNonInteractiveSession: false,
       hasAppendSystemPrompt: false,
-      temperatureOverride: 0,
       agents: [],
       querySource: 'skill_improvement_apply',
       mcpTools: [],

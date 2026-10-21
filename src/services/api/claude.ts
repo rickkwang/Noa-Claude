@@ -188,7 +188,6 @@ import {
   getHeadlessOmitsThinkingDisplay,
   MAX_EFFORT_WITH_DISABLED_THINKING,
   modelOmitsThinkingByDefault,
-  modelRejectsSamplingParams,
   modelRequiresExplicitThinkingDisable,
   modelSupportsAdaptiveThinking,
   modelSupportsThinking,
@@ -642,7 +641,6 @@ export async function verifyApiKey(
             model,
             max_tokens: 1,
             messages,
-            ...(!modelRejectsSamplingParams(model) && { temperature: 1 }),
             ...(betas.length > 0 && { betas }),
             metadata: getAPIMetadata(),
             ...getExtraBodyParams(),
@@ -780,7 +778,6 @@ export type Options = {
   fetchOverride?: ClientOptions['fetch']
   enablePromptCaching?: boolean
   skipCacheWrite?: boolean
-  temperatureOverride?: number
   effortValue?: EffortValue | null
   mcpTools: Tools
   hasPendingMcpServers?: boolean
@@ -1812,14 +1809,6 @@ async function* queryModel(
       )
     }
 
-    // Only send temperature when thinking is disabled — the API requires
-    // temperature: 1 when thinking is enabled, which is already the default.
-    // Opus 4.7+ removed sampling params entirely; sending temperature 400s.
-    const temperature =
-      !hasThinking && !modelRejectsSamplingParams(apiModel)
-        ? (options.temperatureOverride ?? 1)
-        : undefined
-
     const params = applyRequestLatches({
       model: normalizeModelStringForAPI(options.model),
       messages: addCacheBreakpoints(
@@ -1838,7 +1827,6 @@ async function* queryModel(
       metadata: getAPIMetadata(),
       max_tokens: maxOutputTokens,
       thinking,
-      ...(temperature !== undefined && { temperature }),
       ...(contextManagement &&
         betasParams.includes(CONTEXT_MANAGEMENT_BETA_HEADER) && {
           context_management: contextManagement,
@@ -1870,7 +1858,6 @@ async function* queryModel(
       logAPIQuery({
         model: options.model,
         messagesLength: logMessagesLength,
-        temperature: options.temperatureOverride ?? 1,
         betas: logBetas,
         permissionMode: permissionContext.mode,
         querySource: options.querySource,
