@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 
 // Read's description resolves PDF support, which walks through model defaults
 // into auth. Tests here are self-contained (no preload), so seed a key first.
@@ -40,6 +40,8 @@ import { getEditToolDescription } from '../../tools/FileEditTool/prompt.js'
 import { getWebSearchPrompt } from '../../tools/WebSearchTool/prompt.js'
 import { getTodoWritePrompt } from '../../tools/TodoWriteTool/prompt.js'
 import { getPrompt as agentPrompt } from '../../tools/AgentTool/prompt.js'
+import { EXPLORE_AGENT } from '../../tools/AgentTool/built-in/exploreAgent.js'
+import * as auth from '../../utils/auth.js'
 import {
   LINE_FORMAT_INSTRUCTION,
   OFFSET_INSTRUCTION_TARGETED,
@@ -117,6 +119,30 @@ describe('Agent lean description', () => {
       "For a single-fact lookup where you already know the file, symbol, or value, search directly. Once you've delegated a search, don't also run it yourself — wait for the result.",
     )
     expect(lean).not.toContain('## When not to use')
+  })
+
+  // A Pro subscription is only reachable through first-party OAuth, which the
+  // mock-server E2E harness cannot provide (a custom base URL disables OAuth).
+  test('Pro plan replaces When-to-use with the do-not-spawn note', async () => {
+    mock.module('../../utils/auth.js', () => ({ ...auth, getSubscriptionType: () => 'pro' }))
+    try {
+      const lean = await agentPrompt([], false, undefined, LEAN_MODEL)
+      expect(lean).toContain('**Do not spawn agents unless the user asks.**')
+      expect(lean).not.toContain('## When to use')
+      // The full variant keeps the note at its head, ahead of the sections.
+      const full = await agentPrompt([], false, undefined, FULL_MODEL)
+      expect(full.indexOf('**Do not spawn agents unless the user asks.**'))
+        .toBeLessThan(full.indexOf('## When not to use'))
+    } finally {
+      mock.module('../../utils/auth.js', () => auth)
+    }
+  })
+
+  test('lists Explore with its lean description only in the lean variant', async () => {
+    const lean = await agentPrompt([EXPLORE_AGENT], false, undefined, LEAN_MODEL)
+    const full = await agentPrompt([EXPLORE_AGENT], false, undefined, FULL_MODEL)
+    expect(lean).toContain('- Explore: Read-only search agent for broad fan-out searches')
+    expect(full).toContain('- Explore: Fast read-only search agent for locating code.')
   })
 
   test('falls back to the full description without a model', async () => {

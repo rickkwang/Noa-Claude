@@ -109,6 +109,8 @@ const AgentsJsonSchema = lazySchema(() =>
 export type BaseAgentDefinition = {
   agentType: string
   whenToUse: string
+  /** Shorter description for the lean Agent prompt; built-in agents only. */
+  whenToUseLean?: string
   tools?: string[]
   disallowedTools?: string[]
   skills?: string[] // Skill names to preload (parsed from comma-separated frontmatter)

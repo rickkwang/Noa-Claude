@@ -47,9 +47,10 @@ function getToolsDescription(agent: AgentDefinition): string {
  * Format one agent line for the agent_listing_delta attachment message:
  * `- type: whenToUse (Tools: ...)`.
  */
-export function formatAgentLine(agent: AgentDefinition): string {
+export function formatAgentLine(agent: AgentDefinition, lean = false): string {
   const toolsDescription = getToolsDescription(agent)
-  return `- ${agent.agentType}: ${agent.whenToUse} (Tools: ${toolsDescription})`
+  const whenToUse = (lean && agent.whenToUseLean) || agent.whenToUse
+  return `- ${agent.agentType}: ${whenToUse} (Tools: ${toolsDescription})`
 }
 
 /**
@@ -130,11 +131,12 @@ The agent starts with no context from this conversation, so the prompt briefs it
   // tool description static across MCP/plugin/permission changes so the
   // tools-block prompt cache doesn't bust every time an agent loads.
   const listViaAttachment = shouldInjectAgentListInMessages()
+  const lean = shouldUseCompactSystemPrompt(model)
 
   const agentListSection = listViaAttachment
     ? `Available agent types are listed in <system-reminder> messages in the conversation.`
     : `Available agent types:
-${effectiveAgents.map(agent => formatAgentLine(agent)).join('\n')}`
+${effectiveAgents.map(agent => formatAgentLine(agent, lean)).join('\n')}`
 
   // Shared core prompt used by both coordinator and non-coordinator modes
   const shared = `Launch a new agent to handle complex, multi-step tasks autonomously.
@@ -164,10 +166,19 @@ When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to sel
   // to use" text is built into a local and then never interpolated into either
   // return — dead on their side, and absent from a real transcript — so
   // what ships here is its "## When to use" section instead. Upstream picks
-  // between a long and a short variant on a steering-mode flag we don't have,
-  // and suppresses the section entirely behind a plan-tier notice we also don't
-  // have; the long variant is the one its default mode emits.
-  if (shouldUseCompactSystemPrompt(model)) {
+  // between a long and a short variant on a steering-mode flag we don't have;
+  // the long variant is the one its default mode emits.
+  //
+  // The spawn restriction shows only on the pro plan, in both variants; the
+  // lean one then drops its When-to-use section, as upstream does.
+  const doNotSpawnNote =
+    getSubscriptionType() === 'pro'
+      ? `
+
+**Do not spawn agents unless the user asks.** Each spawn starts cold and re-derives context you already have — it's the expensive path on this plan. A task with "multiple angles," "thorough," or several parts is not a request to spawn; handle it inline with your own tools. Only use this tool when the user explicitly says to use a subagent, or names one of the available agent types.`
+      : ''
+
+  if (lean) {
     const subagentTypeLine = `When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.${forkSubagentSentence()}`
 
 
@@ -190,13 +201,13 @@ When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to sel
 
     return `Launch a new agent to handle complex, multi-step tasks. Each agent type has specific capabilities and tools available to it.
 
-${agentListSection}
+${agentListSection}${doNotSpawnNote}
 
-${subagentTypeLine}
+${subagentTypeLine}${doNotSpawnNote ? '' : `
 
 ## When to use
 
-Reach for this when the task matches an available agent type, when you have independent work to run in parallel, or when answering would mean reading across several files — delegate it and you keep the conclusion, not the file dumps. For a single-fact lookup where you already know the file, symbol, or value, search directly. Once you've delegated a search, don't also run it yourself — wait for the result.
+Reach for this when the task matches an available agent type, when you have independent work to run in parallel, or when answering would mean reading across several files — delegate it and you keep the conclusion, not the file dumps. For a single-fact lookup where you already know the file, symbol, or value, search directly. Once you've delegated a search, don't also run it yourself — wait for the result.`}
 
 - The agent's final report is not shown to the user — relay what matters.
 - Use ${SEND_MESSAGE_TOOL_NAME} with the agent's ID or name to continue a previously spawned agent with its context intact; a new ${AGENT_TOOL_NAME} call starts fresh.
@@ -222,20 +233,13 @@ If the target is already known, use the direct tool: ${FILE_READ_TOOL_NAME} for 
 
 Each agent type has specific capabilities and tools available to it.
 
-${agentListSection}
+${agentListSection}${doNotSpawnNote}
 
 When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.${forkSubagentSentence()}`
 
   // Verbose variant. Sentences follow upstream's wording where the binary
   // confirms them. Fork subagents and per-call effort have no counterpart in
   // this build, so those sentences are left out.
-  // Upstream shows the spawn restriction only on the pro plan.
-  const doNotSpawnNote =
-    getSubscriptionType() === 'pro'
-      ? `
-
-**Do not spawn agents unless the user asks.** Each spawn starts cold and re-derives context you already have — it's the expensive path on this plan. A task with "multiple angles," "thorough," or several parts is not a request to spawn; handle it inline with your own tools. Only use this tool when the user explicitly says to use a subagent, or names one of the available agent types.`
-      : ''
   // Non-coordinator gets the full prompt with all sections
   return `${verboseHead}
 ${whenNotToUseSection}
@@ -271,5 +275,5 @@ ${whenNotToUseSection}
         : ''
   }${writingThePromptSection}
 
-${currentExamples}${doNotSpawnNote}`
+${currentExamples}`
 }

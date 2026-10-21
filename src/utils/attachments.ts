@@ -1974,7 +1974,7 @@ export function getAgentListingDeltaAttachment(
     {
       type: 'agent_listing_delta',
       addedTypes: added.map(a => a.agentType),
-      addedLines: added.map(formatAgentLine),
+      addedLines: added.map(agent => formatAgentLine(agent)),
       removedTypes: removed,
       isInitial: announced.size === 0,
       // Upstream also requires the subagent steer to be "default". Noa has no
