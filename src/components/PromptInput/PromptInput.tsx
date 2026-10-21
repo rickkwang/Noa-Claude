@@ -76,6 +76,7 @@ import type { ImageDimensions } from '../../utils/imageResizer.js';
 import { cacheImagePath, storeImage } from '../../utils/imageStore.js';
 import { isMacosOptionChar, MACOS_OPTION_SPECIAL_CHARS } from '../../utils/keyboardShortcuts.js';
 import { logError } from '../../utils/log.js';
+import { setActiveProviderProfileModel } from '../../utils/providerProfile.js';
 import { getDefaultMainLoopModelSetting, isOpus1mMergeEnabled, modelDisplayString } from '../../utils/model/model.js';
 import { setAutoModeActive } from '../../utils/permissions/autoModeState.js';
 import { cyclePermissionMode, getNextPermissionMode } from '../../utils/permissions/getNextPermissionMode.js';
@@ -2154,6 +2155,7 @@ function PromptInput({
       };
     });
     setShowModelPicker(false);
+    void setActiveProviderProfileModel(model).catch(logError);
     const effectiveFastMode = (isFastMode ?? false) && !wasFastModeDisabled;
     let message = `Model set to ${modelDisplayString(model)} and saved as your default for new sessions`;
     if (isBilledAsExtraUsage(model, effectiveFastMode, isOpus1mMergeEnabled())) {

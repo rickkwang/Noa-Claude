@@ -18,6 +18,8 @@ import { checkOpus1mAccess, checkSonnet1mAccess } from '../../utils/model/check1
 import { getDefaultMainLoopModelSetting, isOpus1mMergeEnabled, renderDefaultModelSetting } from '../../utils/model/model.js';
 import { isModelAllowed } from '../../utils/model/modelAllowlist.js';
 import { validateModel } from '../../utils/model/validateModel.js';
+import { logError } from '../../utils/log.js';
+import { setActiveProviderProfileModel } from '../../utils/providerProfile.js';
 function ModelPickerWrapper(t0) {
   const $ = _c(22);
   const {
@@ -58,6 +60,7 @@ function ModelPickerWrapper(t0) {
         mainLoopModel: model,
         mainLoopModelForSession: null
       }));
+      void setActiveProviderProfileModel(model).catch(logError);
       let message = `Set model to \`${renderModelLabel(model)}\` and saved as your default for new sessions`;
       if (effort !== undefined) {
         message = message + ` with \`${effort}\` effort`;
@@ -235,6 +238,7 @@ function SetModelAndClose({
         mainLoopModel: modelValue,
         mainLoopModelForSession: null
       }));
+      void setActiveProviderProfileModel(modelValue).catch(logError);
       let message = `Set model to \`${renderModelLabel(modelValue)}\``;
       let wasFastModeToggledOn = undefined;
       if (isFastModeEnabled()) {

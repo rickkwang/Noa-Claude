@@ -415,6 +415,29 @@ export async function updateProviderProfile(
   })
 }
 
+/**
+ * Makes a model saved as the default in /model the active profile's default
+ * too, so from the next session it is what the Default row shows and the tier
+ * aliases resolve to — as the saved pick becomes the account default
+ * upstream. Default (null), aliases and ids the profile does not list as
+ * served leave it alone.
+ */
+export async function setActiveProviderProfileModel(
+  model: string | null,
+): Promise<void> {
+  if (model === null || isBareMode()) return
+  await mutateProviderProfiles(profiles => {
+    const index = profiles.findIndex(profile => profile.active)
+    const active = profiles[index]
+    if (!active || active.model === model || !active.models?.includes(model)) {
+      return { result: undefined }
+    }
+    const next = [...profiles]
+    next[index] = { ...active, model }
+    return { next, result: undefined }
+  })
+}
+
 export const PROVIDER_TYPE_LABELS: Record<ProviderType, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',

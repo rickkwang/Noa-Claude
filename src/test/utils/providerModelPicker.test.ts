@@ -117,6 +117,61 @@ describe('/model options for an active provider profile', () => {
 })
 
 describe('model selection under an active provider profile', () => {
+  test('a saved /model choice becomes the profile default for the next session', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'noa-provider-model-default-'))
+    try {
+      writeFileSync(
+        join(configDir, 'provider-profiles.json'),
+        JSON.stringify([
+          profile({
+            active: true,
+            apiKey: 'sk-kimi-test-token',
+            models: ['kimi-for-coding', 'kimi-k2-turbo'],
+          }),
+        ]),
+      )
+
+      const script = `
+        process.env.CLAUDE_CONFIG_DIR = ${JSON.stringify(configDir)}
+        delete process.env.CLAUDE_CODE_SIMPLE
+        delete process.env.ANTHROPIC_MODEL
+        delete process.env.ANTHROPIC_API_KEY
+        delete process.env.ANTHROPIC_AUTH_TOKEN
+
+        const { readFileSync } = await import('fs')
+        const profileModel = () =>
+          JSON.parse(readFileSync(${JSON.stringify(join(configDir, 'provider-profiles.json'))}, 'utf8'))[0].model
+        // What /model calls when a pick is saved as the default.
+        const { setActiveProviderProfileModel: pick } =
+          await import('./src/utils/providerProfile.ts')
+
+        // Default and aliases the endpoint does not list leave the profile alone.
+        await pick(null)
+        await pick('opus')
+        if (profileModel() !== 'kimi-for-coding') throw new Error('non-served pick written: ' + profileModel())
+
+        await pick('kimi-k2-turbo')
+        if (profileModel() !== 'kimi-k2-turbo') throw new Error('pick not saved: ' + profileModel())
+
+        // Next session: the profile applies the pick as its default.
+        const { applyActiveProviderProfileEnv } = await import('./src/utils/providerProfile.ts')
+        await applyActiveProviderProfileEnv()
+        if (process.env.ANTHROPIC_MODEL !== 'kimi-k2-turbo') {
+          throw new Error('default not applied: ' + process.env.ANTHROPIC_MODEL)
+        }
+      `
+      const result = spawnSync('bun', ['--eval', script], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      })
+
+      if (result.status !== 0) throw new Error(result.stderr)
+      expect(result.status).toBe(0)
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
   test('a saved /model choice outranks the profile default, a caller env var still wins', () => {
     const configDir = mkdtempSync(join(tmpdir(), 'noa-provider-model-choice-'))
     try {
