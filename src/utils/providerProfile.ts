@@ -157,6 +157,16 @@ export const PROVIDER_TYPE_CONTEXT_WINDOWS: Partial<
     'kimi-for-coding': 1_048_576,
     'kimi-for-coding-highspeed': 262_144,
   },
+  // Per DeepSeek's Models & Pricing table (1M for both) and its Codex guide,
+  // which configures context_window 1048576.
+  deepseek: {
+    'deepseek-flash': 1_048_576,
+    'deepseek-v4-pro': 1_048_576,
+  },
+  // Per Kimi's model table and K2.6 guide: 256K.
+  moonshot: { 'kimi-k2.6': 256_000 },
+  // Per Z.AI's GLM-5.1 page: 200K.
+  glm: { 'glm-5.1': 200_000 },
   // Exception to "documented only": the API model serves 1.05M, but the window
   // for plan usage is undocumented (Codex has served 272K and 500K). 272K, the
   // long-context pricing threshold, under-reports, which only compacts early.
