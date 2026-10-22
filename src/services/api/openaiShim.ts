@@ -62,6 +62,10 @@ type OpenAIStreamChunk = {
     prompt_tokens?: number
     completion_tokens?: number
     prompt_tokens_details?: { cached_tokens?: number }
+    // DeepSeek reports cache reads here instead (hit + miss = prompt_tokens).
+    prompt_cache_hit_tokens?: number
+    // Moonshot/Kimi also mirror cache reads at the top level.
+    cached_tokens?: number
   }
   // Providers that signal failure inside a 200 SSE stream.
   error?: { message?: string }
@@ -385,9 +389,16 @@ function convertChunkUsage(
 ): AnthropicLikeMessage['usage'] | undefined {
   if (!usage) return undefined
   const promptTokens = usage.prompt_tokens ?? 0
+  // All three name the same count. Take the largest, so an endpoint that
+  // zero-fills the OpenAI field beside its own doesn't hide the hits.
   const cacheRead = Math.min(
     promptTokens,
-    Math.max(0, usage.prompt_tokens_details?.cached_tokens ?? 0),
+    Math.max(
+      0,
+      usage.prompt_tokens_details?.cached_tokens ?? 0,
+      usage.prompt_cache_hit_tokens ?? 0,
+      usage.cached_tokens ?? 0,
+    ),
   )
   return {
     input_tokens: promptTokens - cacheRead,
