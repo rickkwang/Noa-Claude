@@ -428,8 +428,8 @@ describe('context window for provider profile models', () => {
     // A type with no defaults of its own, so this sees the serializer alone.
     const env = buildProviderEnv(
       profile({
-        type: 'deepseek',
-        baseUrl: 'https://api.deepseek.com/v1',
+        type: 'minimax',
+        baseUrl: 'https://api.minimaxi.com/anthropic',
         contextWindows: {
           'a=b': 100,
           'c,d': 100,
@@ -492,8 +492,9 @@ describe('max output tokens for provider profile models', () => {
   test('drops entries that would be sent as an invalid max_tokens', () => {
     const env = buildProviderEnv(
       profile({
-        type: 'deepseek',
-        baseUrl: 'https://api.deepseek.com/v1',
+        // A type with no defaults of its own, so this sees the serializer alone.
+        type: 'minimax',
+        baseUrl: 'https://api.minimaxi.com/anthropic',
         maxOutputTokens: {
           // default above the ceiling would be rejected as max_tokens
           inverted: { default: 100, upperLimit: 50 },
