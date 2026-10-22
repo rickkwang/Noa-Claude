@@ -279,13 +279,16 @@ export function modelSupportsToolReference(model: string): boolean {
  */
 let loggedOptimistic = false
 
-// On the ChatGPT Responses route a discovered tool is appended to `tools`,
-// which heads OpenAI's cache prefix, so each discovery re-bills the whole
-// conversation uncached. Sending every tool up front keeps the prefix stable.
-function isChatGPTRouteWithoutToolSearch(): boolean {
+// The OpenAI shim (Chat Completions and the ChatGPT Responses route) has no
+// tool_reference block: it can only flatten one to text, so the model reads
+// its search as having failed. A discovered tool is also inserted into
+// `tools`, which providers render ahead of the conversation, so each discovery
+// can cost the prompt cache prefix. Sending every tool up front avoids both, as
+// upstream falls back to inline tools where tool search is unsupported.
+function isOpenAICompatibleRouteWithoutToolSearch(): boolean {
   return (
     !process.env.ENABLE_TOOL_SEARCH &&
-    process.env.NOA_CLAUDE_OPENAI_AUTH === 'chatgpt'
+    getAPIProvider() === 'openaiCompatible'
   )
 }
 
@@ -332,11 +335,11 @@ export function isToolSearchEnabledOptimistic(): boolean {
     return false
   }
 
-  if (isChatGPTRouteWithoutToolSearch()) {
+  if (isOpenAICompatibleRouteWithoutToolSearch()) {
     if (!loggedOptimistic) {
       loggedOptimistic = true
       logForDebugging(
-        '[ToolSearch:optimistic] disabled on the ChatGPT route to keep the prompt cache prefix stable',
+        '[ToolSearch:optimistic] disabled on the OpenAI-compatible route: it has no tool_reference blocks, and a stable tools list keeps the prompt cache prefix',
       )
     }
     return false
@@ -454,8 +457,8 @@ export async function isToolSearchEnabled(
 
   // Re-checked per request: a provider profile's env is applied after
   // startup, so the tool pool may still carry ToolSearchTool.
-  if (isChatGPTRouteWithoutToolSearch()) {
-    logModeDecision(false, 'standard', 'chatgpt_route')
+  if (isOpenAICompatibleRouteWithoutToolSearch()) {
+    logModeDecision(false, 'standard', 'openai_compatible_route')
     return false
   }
 

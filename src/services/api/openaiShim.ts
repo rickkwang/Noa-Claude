@@ -333,7 +333,6 @@ function convertTools(
   strictMode: boolean,
 ): OpenAITool[] {
   return tools
-    .filter(t => t.name !== 'ToolSearchTool')
     .map(t => {
       const schema = { ...(t.input_schema ?? { type: 'object', properties: {} }) } as Record<
         string,
