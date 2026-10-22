@@ -197,7 +197,7 @@ const PLATFORM_PRESETS: PlatformPreset[] = [{
   type: 'glm',
   profileName: 'Z.AI GLM',
   baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
-  model: 'glm-5.1'
+  model: 'glm-5.3'
 }, {
   value: 'azure-openai',
   name: 'Azure OpenAI',

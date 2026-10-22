@@ -165,8 +165,13 @@ export const PROVIDER_TYPE_CONTEXT_WINDOWS: Partial<
   },
   // Per Kimi's model table and K2.6 guide: 256K.
   moonshot: { 'kimi-k2.6': 256_000 },
-  // Per Z.AI's GLM-5.1 page: 200K.
-  glm: { 'glm-5.1': 200_000 },
+  // Per Z.AI's GLM-5.1 page: 200K. Its Coding Plan guide sets Context Window
+  // Size 1000000 for glm-5.3 and glm-5.3-flash.
+  glm: {
+    'glm-5.1': 200_000,
+    'glm-5.3': 1_000_000,
+    'glm-5.3-flash': 1_000_000,
+  },
   // Exception to "documented only": the API model serves 1.05M, but the window
   // for plan usage is undocumented (Codex has served 272K and 500K). 272K, the
   // long-context pricing threshold, under-reports, which only compacts early.
@@ -188,6 +193,14 @@ export const PROVIDER_TYPE_MAX_OUTPUT_TOKENS: Partial<
   // Kimi's K3 docs: max_completion_tokens defaults to 131072 and can be set as
   // high as 1048576. Only K3 is documented, so nothing else is declared.
   kimi: { k3: { default: 131_072, upperLimit: 1_048_576 } },
+  // DeepSeek's Chat Completions reference: max_tokens from 1 to 384K (393216),
+  // 64K by default in thinking mode, which is on by default.
+  deepseek: {
+    'deepseek-flash': { default: 65_536, upperLimit: 393_216 },
+    'deepseek-v4-pro': { default: 65_536, upperLimit: 393_216 },
+  },
+  // Z.AI's GLM-5.3 page: 128K max output; its examples send max_tokens 65536.
+  glm: { 'glm-5.3': { default: 65_536, upperLimit: 128_000 } },
 }
 
 // Resolved per call, not at module load: CLAUDE_CONFIG_DIR is set by the
