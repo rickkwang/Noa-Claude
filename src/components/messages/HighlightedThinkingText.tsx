@@ -15,7 +15,7 @@ type Props = {
   showPointer?: boolean;
 };
 export function HighlightedThinkingText(t0) {
-  const $ = _c(32);
+  const $ = _c(35);
   const {
     text,
     useBriefLayout,
@@ -25,6 +25,8 @@ export function HighlightedThinkingText(t0) {
   const isQueued = useQueuedMessage()?.isQueued ?? false;
   const isSelected = useContext(MessageActionsSelectedContext);
   const pointerColor = isSelected ? "suggestion" : "subtle";
+  // Matches upstream's queued styling in the default layout; brief layout is handled below.
+  const bodyColor = isQueued ? "inactive" : "text";
   if (useBriefLayout) {
     let t1;
     if ($[0] !== timestamp) {
@@ -84,16 +86,17 @@ export function HighlightedThinkingText(t0) {
   }
   let parts;
   let t1;
-  if ($[15] !== pointerColor || $[16] !== text || $[31] !== showPointer) {
+  if ($[15] !== pointerColor || $[16] !== text || $[31] !== showPointer || $[32] !== bodyColor) {
     t1 = Symbol.for("react.early_return_sentinel");
     bb0: {
       const triggers = isUltrathinkEnabled() ? findThinkingTriggerPositions(text) : [];
       if (triggers.length === 0) {
         if (!showPointer) {
           let t2;
-          if ($[19] !== text) {
-            t2 = <Text color="text">{text}</Text>;
+          if ($[19] !== text || $[33] !== bodyColor) {
+            t2 = <Text color={bodyColor}>{text}</Text>;
             $[19] = text;
+            $[33] = bodyColor;
             $[20] = t2;
           } else {
             t2 = $[20];
@@ -110,9 +113,10 @@ export function HighlightedThinkingText(t0) {
           t2 = $[20];
         }
         let t3;
-        if ($[21] !== text) {
-          t3 = <Text color="text">{text}</Text>;
+        if ($[21] !== text || $[34] !== bodyColor) {
+          t3 = <Text color={bodyColor}>{text}</Text>;
           $[21] = text;
+          $[34] = bodyColor;
           $[22] = t3;
         } else {
           t3 = $[22];
@@ -133,7 +137,7 @@ export function HighlightedThinkingText(t0) {
       let cursor = 0;
       for (const t of triggers) {
         if (t.start > cursor) {
-          parts.push(<Text key={`plain-${cursor}`} color="text">{text.slice(cursor, t.start)}</Text>);
+          parts.push(<Text key={`plain-${cursor}`} color={bodyColor}>{text.slice(cursor, t.start)}</Text>);
         }
         for (let i = t.start; i < t.end; i++) {
           parts.push(<Text key={`rb-${i}`} color={getRainbowColor(i - t.start)}>{text[i]}</Text>);
@@ -141,12 +145,13 @@ export function HighlightedThinkingText(t0) {
         cursor = t.end;
       }
       if (cursor < text.length) {
-        parts.push(<Text key={`plain-${cursor}`} color="text">{text.slice(cursor)}</Text>);
+        parts.push(<Text key={`plain-${cursor}`} color={bodyColor}>{text.slice(cursor)}</Text>);
       }
     }
     $[15] = pointerColor;
     $[16] = text;
     $[31] = showPointer;
+    $[32] = bodyColor;
     $[17] = parts;
     $[18] = t1;
   } else {
