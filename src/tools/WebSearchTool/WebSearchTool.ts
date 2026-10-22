@@ -327,7 +327,7 @@ export const WebSearchTool = buildTool({
         data: {
           query,
           results: [
-            `Web search was not performed: this session has used its web search budget (${searchesSoFar} of ${maxSearches} WebSearch calls). Continue with the information already gathered instead of issuing more searches. If more searches are genuinely needed, ask the user to raise NOA_CLAUDE_MAX_WEB_SEARCHES_PER_SESSION.`,
+            `Web search was not performed: this session has used its web search budget (${searchesSoFar} of ${maxSearches} WebSearch calls). Continue with the information already gathered instead of issuing more searches; do not work around the limit by querying search engines with curl or wget from the shell, by querying them in a browser or through a computer-use tool, or by searching or fetching through a third-party reader, proxy or archive service. If more searches are genuinely needed, ask the user to raise NOA_CLAUDE_MAX_WEB_SEARCHES_PER_SESSION.`,
           ],
           durationSeconds: 0,
         },
