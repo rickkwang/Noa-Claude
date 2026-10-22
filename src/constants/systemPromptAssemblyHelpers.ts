@@ -67,6 +67,7 @@ import {
   getProactiveSection,
   SUMMARIZE_TOOL_RESULTS_SECTION,
 } from './systemPromptFeatureSections.js'
+import { getSubagentSteer } from '../utils/subagentSteer.js'
 
 // Dead code elimination: conditional imports for feature-gated modules
 /* eslint-disable @typescript-eslint/no-require-imports */
@@ -169,6 +170,7 @@ export function buildDynamicSystemPromptSections(params: {
   // possible texts (the Fable branch, the lean one-liner, nothing), so the key
   // names the branch rather than carrying a single lean bit.
   const antiVerbosity = getAntiVerbositySection(model)
+  const subagentSteer = getSubagentSteer(model)
   const antiVerbosityName = fable51
     ? 'anti_verbosity:turn_updates'
     : fable
@@ -182,13 +184,14 @@ export function buildDynamicSystemPromptSections(params: {
       getActionCautionSection(model),
     ),
     systemPromptSection(
-      `session_guidance:${autoCompactEnabled ? 'ac' : 'noac'}${lean ? ':L' : ''}`,
+      `session_guidance:${autoCompactEnabled ? 'ac' : 'noac'}${lean ? ':L' : ''}:${subagentSteer}`,
       () => getSessionSpecificGuidanceSection(
         enabledTools,
         skillToolCommands,
         DISCOVER_SKILLS_TOOL_NAME,
         autoCompactEnabled,
         lean,
+        subagentSteer,
       ),
     ),
     // Text depends on the lean gate, so the key carries it (see above).

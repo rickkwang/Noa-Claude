@@ -26,6 +26,7 @@ import type {
 } from '../services/mcp/types.js'
 import type { OutputStyleConfig } from './outputStyles.js'
 import { prependBullets } from './systemPromptCoreSections.js'
+import type { SubagentSteer } from '../utils/subagentSteer.js'
 
 export function getAntModelOverrideSection(): string | null {
   if (process.env.USER_TYPE !== 'ant') return null
@@ -96,12 +97,6 @@ The following MCP servers have provided instructions for how to use their tools 
 ${instructionBlocks}`
 }
 
-// Upstream shows this only at steer level "counter_steer"; its default is
-// "default", so it stays off unless NOA_CLAUDE_SUBAGENT_STEER opts in.
-function isCounterSteerDelegation(): boolean {
-  return (process.env.NOA_CLAUDE_SUBAGENT_STEER ?? process.env.CLAUDE_CODE_THISTLE_GREBE) === 'counter_steer'
-}
-
 // Upstream's delegation guidance. Keeps subagents from being used for work the
 // main agent can finish inline, and stops fan-out on a single small task.
 const DELEGATION_GUIDANCE = `## Delegating to subagents
@@ -113,10 +108,13 @@ Subagents multiply cost and time: each one re-establishes context, re-explores, 
 - Keep spawn counts low. One well-briefed subagent for a large independent chunk is worth more than several loosely-briefed ones; brief it precisely the first time rather than launching, waiting, and re-briefing.
 Delegate for work that is genuinely independent, large enough to justify a fresh context, or naturally parallel. Otherwise, do it yourself.`
 
-function getAgentToolSection(): string {
-  return isForkSubagentEnabled()
-    ? `Calling ${AGENT_TOOL_NAME} with subagent_type: "fork" creates a fork — it inherits your full conversation context, runs in the background, and keeps its tool output out of your context — so you can keep chatting with the user while it works. Reach for it when research or multi-step implementation work would otherwise fill your context with raw output you won't need again. Other subagent_type values start fresh agents with no context. **If you ARE the fork** — execute directly; do not re-delegate.`
-    : `Use the ${AGENT_TOOL_NAME} tool with specialized agents when the task at hand matches the agent's description. Subagents are valuable for parallelizing independent queries or for protecting the main context window from excessive results, but they should not be used excessively when not needed. Importantly, avoid duplicating work that subagents are already doing - if you delegate research to a subagent, do not also perform the same searches yourself.`
+function getAgentToolSection(steer: SubagentSteer): string {
+  if (isForkSubagentEnabled()) {
+    return `Calling ${AGENT_TOOL_NAME} with subagent_type: "fork" creates a fork — it inherits your full conversation context, runs in the background, and keeps its tool output out of your context — so you can keep chatting with the user while it works. Reach for it when research or multi-step implementation work would otherwise fill your context with raw output you won't need again. Other subagent_type values start fresh agents with no context. **If you ARE the fork** — execute directly; do not re-delegate.`
+  }
+  return steer === 'default'
+    ? `Use the ${AGENT_TOOL_NAME} tool with specialized agents when the task at hand matches the agent's description. Subagents are valuable for parallelizing independent queries or for protecting the main context window from excessive results, but they should not be used excessively when not needed. Importantly, avoid duplicating work that subagents are already doing - if you delegate research to a subagent, do not also perform the same searches yourself.`
+    : `Use the ${AGENT_TOOL_NAME} tool with specialized agents when the task at hand matches the agent's description. Importantly, avoid duplicating work that subagents are already doing - if you delegate research to a subagent, do not also perform the same searches yourself.`
 }
 
 export function getDiscoverSkillsGuidance(
@@ -147,6 +145,7 @@ export function getSessionSpecificGuidanceSection(
   discoverSkillsToolName: string | null,
   autoCompactEnabled: boolean,
   lean = false,
+  steer: SubagentSteer = 'default',
 ): string | null {
   const hasSkills =
     skillToolCommands.length > 0 && enabledTools.has(SKILL_TOOL_NAME)
@@ -183,8 +182,9 @@ export function getSessionSpecificGuidanceSection(
     // post-boundary or it fragments the static prefix on session type.
     // Upstream's lean head carries neither the Agent nor the Explore guidance
     // (the Agent tool's own description covers it) nor the routing hints below.
-    hasAgentTool && !lean ? getAgentToolSection() : null,
-    hasAgentTool && !lean && isCounterSteerDelegation() ? DELEGATION_GUIDANCE : null,
+    hasAgentTool && !lean ? getAgentToolSection(steer) : null,
+    // Upstream shows this only at steer level "counter_steer".
+    hasAgentTool && !lean && steer === 'counter_steer' ? DELEGATION_GUIDANCE : null,
     ...(hasAgentTool &&
     !lean &&
     areExplorePlanAgentsEnabled() &&

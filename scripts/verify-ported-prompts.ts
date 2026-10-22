@@ -354,11 +354,6 @@ type Adaptation = { text: string; mode: 'exact' | 'contains'; reason: string }
 const ADAPTATIONS: Record<string, Adaptation[]> = {
   'Agent lean': [
     {
-      text: 'Reach for this when the task matches',
-      mode: 'contains',
-      reason: 'upstream adds an effort clause; noa has no per-call effort',
-    },
-    {
       text: 'call starts fresh.',
       mode: 'exact',
       reason: 'upstream ends this sentence inside a conditional branch',

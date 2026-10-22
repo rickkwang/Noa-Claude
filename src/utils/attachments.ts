@@ -134,7 +134,8 @@ import {
   shouldInjectAgentListInMessages,
 } from '../tools/AgentTool/prompt.js'
 import { filterDeniedAgents } from './permissions/permissions.js'
-import { getSubscriptionType } from './auth.js'
+import { isAgentSpawnRestricted } from './auth.js'
+import { getSubagentSteer } from './subagentSteer.js'
 import { mcpInfoFromString } from '../services/mcp/mcpStringUtils.js'
 import {
   matchingRuleForInput,
@@ -1979,9 +1980,9 @@ export function getAgentListingDeltaAttachment(
       addedLines: added.map(agent => formatAgentLine(agent, lean)),
       removedTypes: removed,
       isInitial: announced.size === 0,
-      // Upstream also requires the subagent steer to be "default". Noa has no
-      // remote steer config, so that check always passes and is left out.
-      showConcurrencyNote: getSubscriptionType() !== 'pro',
+      showConcurrencyNote:
+        !isAgentSpawnRestricted() &&
+        getSubagentSteer(toolUseContext.options.mainLoopModel) === 'default',
     },
   ]
 }

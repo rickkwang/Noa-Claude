@@ -15,6 +15,7 @@ import {
   getAPIProvider,
   isDirectFirstParty,
   isThirdPartyAnthropicCompatibleProvider,
+  isThirdPartyModelProvider,
 } from 'src/utils/model/providers.js'
 import {
   getIsNonInteractiveSession,
@@ -1789,6 +1790,13 @@ export function isEnterpriseSubscriber(): boolean {
 
 export function isProSubscriber(): boolean {
   return getSubscriptionType() === 'pro'
+}
+
+// Upstream steers away from spawning subagents on the usage-capped Pro plan.
+// Third-party providers get the same steer: their models otherwise fan out
+// far more readily, and each spawn re-bills its context on a capped plan.
+export function isAgentSpawnRestricted(): boolean {
+  return isProSubscriber() || isThirdPartyModelProvider()
 }
 
 export function getRateLimitTier(): string | null {

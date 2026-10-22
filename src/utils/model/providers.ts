@@ -70,6 +70,14 @@ export function isThirdPartyAnthropicCompatibleProvider(): boolean {
   )
 }
 
+/** Any non-Anthropic endpoint: OpenAI-compatible or an Anthropic-compatible third party. */
+export function isThirdPartyModelProvider(): boolean {
+  return (
+    getAPIProvider() === 'openaiCompatible' ||
+    isThirdPartyAnthropicCompatibleProvider()
+  )
+}
+
 /**
  * Direct Anthropic first-party API (api.anthropic.com or unset base URL) — i.e.
  * provider 'firstParty' AND not a custom base URL. A proxy / third-party

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
 // Read's description resolves PDF support, which walks through model defaults
 // into auth. Tests here are self-contained (no preload), so seed a key first.
@@ -42,8 +42,10 @@ import { getWebSearchPrompt } from '../../tools/WebSearchTool/prompt.js'
 import { getTodoWritePrompt } from '../../tools/TodoWriteTool/prompt.js'
 import { getPrompt as agentPrompt } from '../../tools/AgentTool/prompt.js'
 import { EXPLORE_AGENT } from '../../tools/AgentTool/built-in/exploreAgent.js'
-import * as auth from '../../utils/auth.js'
 import { getAgentListingDeltaAttachment } from '../../utils/attachments.js'
+import { getSubagentSteer, resetSubagentSteerLatch } from '../../utils/subagentSteer.js'
+import { getSessionSpecificGuidanceSection } from '../../constants/systemPromptDynamicSections.js'
+import { AGENT_TOOL_NAME } from '../../tools/AgentTool/constants.js'
 import { getEmptyToolPermissionContext } from '../../Tool.js'
 import {
   LINE_FORMAT_INSTRUCTION,
@@ -117,28 +119,64 @@ describe('Agent lean description', () => {
   test('carries upstream\'s When-to-use section, not the dead one', async () => {
     const lean = await agentPrompt([], false, undefined, LEAN_MODEL)
 
-    expect(lean).toContain('## When to use\n\nReach for this when the task matches an available agent type')
-    expect(lean).toContain(
-      "For a single-fact lookup where you already know the file, symbol, or value, search directly. Once you've delegated a search, don't also run it yourself — wait for the result.",
-    )
+    expect(lean).toContain('## When to use\n\nA fresh agent costs more than it looks.')
+    expect(lean).toContain("When in doubt, don't spawn.")
     expect(lean).not.toContain('## When not to use')
   })
 
-  // A Pro subscription is only reachable through first-party OAuth, which the
-  // mock-server E2E harness cannot provide (a custom base URL disables OAuth).
-  test('Pro plan replaces When-to-use with the do-not-spawn note', async () => {
-    mock.module('../../utils/auth.js', () => ({ ...auth, getSubscriptionType: () => 'pro' }))
-    try {
-      const lean = await agentPrompt([], false, undefined, LEAN_MODEL)
-      expect(lean).toContain('**Do not spawn agents unless the user asks.**')
-      expect(lean).not.toContain('## When to use')
-      // The full variant keeps the note at its head, ahead of the sections.
-      const full = await agentPrompt([], false, undefined, FULL_MODEL)
-      expect(full.indexOf('**Do not spawn agents unless the user asks.**'))
-        .toBeLessThan(full.indexOf('## When not to use'))
-    } finally {
-      mock.module('../../utils/auth.js', () => auth)
+  // Pro subscriptions and third-party providers share the do-not-spawn gate
+  // (isAgentSpawnRestricted); the provider side is reachable from env alone.
+  // The parallel nudges follow the session-latched subagent steer.
+  const spawnSteer = async () => {
+    resetSubagentSteerLatch()
+    process.env.CLAUDE_CODE_AGENT_LIST_IN_MESSAGES = '1'
+    const [delta] = getAgentListingDeltaAttachment({
+      options: { tools: [{ name: 'Agent' }], agentDefinitions: { activeAgents: [EXPLORE_AGENT] }, mainLoopModel: FULL_MODEL },
+      getAppState: () => ({ toolPermissionContext: getEmptyToolPermissionContext() }),
+    } as never, [])
+    const full = await agentPrompt([], false, undefined, FULL_MODEL)
+    return {
+      note: full.includes('**Do not spawn agents unless the user asks.**'),
+      parallelNudge: full.includes('run agents "in parallel", you MUST'),
+      concurrencyNote: (delta as { showConcurrencyNote: boolean }).showConcurrencyNote,
     }
+  }
+
+  test('third-party providers get the do-not-spawn note and no parallel nudges', async () => {
+    expect(await spawnSteer()).toEqual({ note: false, parallelNudge: true, concurrencyNote: true })
+    process.env.ANTHROPIC_BASE_URL = 'https://api.kimi.com/coding'
+    expect(await spawnSteer()).toEqual({ note: true, parallelNudge: false, concurrencyNote: false })
+    delete process.env.ANTHROPIC_BASE_URL
+    process.env.CLAUDE_CODE_USE_OPENAI = '1'
+    expect(await spawnSteer()).toEqual({ note: true, parallelNudge: false, concurrencyNote: false })
+  })
+
+  test('subagent steer follows upstream: Opus 5 bundle drops the nudges, env wins', () => {
+    const steer = (model: string) => (resetSubagentSteerLatch(), getSubagentSteer(model))
+    expect(steer(FULL_MODEL)).toBe('default')
+    expect(steer('claude-opus-5')).toBe('no_nudges')
+    process.env.NOA_CLAUDE_SUBAGENT_STEER = 'counter_steer'
+    try {
+      expect(steer('claude-opus-5')).toBe('counter_steer')
+    } finally {
+      delete process.env.NOA_CLAUDE_SUBAGENT_STEER
+    }
+    // Latched for the session once a model is known: a later model does not flip it.
+    resetSubagentSteerLatch()
+    expect(getSubagentSteer(undefined)).toBe('default')
+    expect(getSubagentSteer('claude-opus-5')).toBe('no_nudges')
+    expect(getSubagentSteer(FULL_MODEL)).toBe('no_nudges')
+    expect(getSessionSpecificGuidanceSection(new Set([AGENT_TOOL_NAME]), [], null, true, false, 'no_nudges'))
+      .not.toContain('parallelizing independent queries')
+    expect(getSessionSpecificGuidanceSection(new Set([AGENT_TOOL_NAME]), [], null, true, false, 'default'))
+      .toContain('parallelizing independent queries')
+  })
+
+  test('the lean variant drops When-to-use under the note', async () => {
+    process.env.CLAUDE_CODE_USE_OPENAI = '1'
+    const lean = await agentPrompt([], false, undefined, LEAN_MODEL)
+    expect(lean).toContain('**Do not spawn agents unless the user asks.**')
+    expect(lean).not.toContain('## When to use')
   })
 
   test('lists Explore with its lean description only in the lean variant', async () => {
