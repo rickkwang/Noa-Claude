@@ -20,7 +20,7 @@ const model = 'claude-sonnet-4-6';
 // A 200k-window model, so a gateway naming a 1M model in its responses offers a "larger window".
 const modelFor = scenario => scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' ? 'claude-opus-5-5' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model;
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'field-reject', 'gateway-model-name', 'preserved-thinking'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'field-reject', 'gateway-model-name', 'preserved-thinking'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -46,6 +46,20 @@ const server = createServer(async (req, res) => {
     if (!openai && !responses && ['temperature', 'top_p', 'top_k'].some(k => k in body)) {
       error(400, 'invalid_request_error', 'sampling parameter: Extra inputs are not permitted');
       return;
+    }
+    // A small model behind an OpenAI-compatible endpoint: output capped at 8192
+    // (OpenAI's wording), or a 32768 window holding 20000 prompt tokens (vLLM's).
+    if (openai && active.case.startsWith('openai-max-tokens')) {
+      const mt = body.max_tokens;
+      const message = active.case === 'openai-max-tokens-vllm'
+        ? mt + 20000 > 32768 && `This model's maximum context length is 32768 tokens. However, you requested ${mt + 20000} tokens (20000 in the messages, ${mt} in the completion). Please reduce the length of the messages or completion.`
+        : mt > 8192 && `max_tokens is too large: ${mt}. This model supports at most 8192 completion tokens, whereas you provided ${mt}.`;
+      if (message) {
+        active.rejected.push(mt);
+        res.writeHead(400, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: { message, type: 'invalid_request_error' } }));
+        return;
+      }
     }
     const lastText = textOf(body.messages?.at(-1)?.content);
     const summary = lastText.startsWith('CRITICAL: Respond with TEXT ONLY.') || /create a detailed continuation summary|summarize the recent messages|summary of the conversation|summarizing.*conversation/i.test(lastText);
@@ -312,7 +326,7 @@ const server = createServer(async (req, res) => {
         : { command: 'sleep 4', description: 'Wait past the deadline' } }]; stop = 'tool_use';
     } else if (active.case.startsWith('concurrency-') && n === 1) {
       content = [1, 2].map(i => ({ type: 'tool_use', id: 'write_' + i, name: 'Bash', input: { command: 'pwd' } })); stop = 'tool_use';
-    } else if (active.case === 'max-turns' || ((active.case === 'read' || active.case.startsWith('openai-usage') || active.case === 'openai-tools' || active.case.startsWith('openai-responses') || active.case.endsWith('-overflow') || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3) || (active.case === 'field-reject' && n === 2)) {
+    } else if (active.case === 'max-turns' || ((active.case === 'read' || active.case.startsWith('openai-usage') || active.case === 'openai-tools' || active.case.startsWith('openai-max-tokens') || active.case.startsWith('openai-responses') || active.case.endsWith('-overflow') || active.case.startsWith('hook-')) && n === 1) || (active.case === 'compact-resume' && n <= 3) || (active.case === 'field-reject' && n === 2)) {
       content = [
         ...(active.case === 'compact-resume' ? [{ type: 'text', text: 'prior-context '.repeat(5000) }] : []),
         // GPT and Kimi fill optional arguments with "" (pages: "" must not fail Read).
@@ -505,7 +519,7 @@ try {
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, 'fixture.txt'), 'LOCAL_FIXTURE_42\n');
       if (scenario === 'preserved-thinking') for (const i of [1, 2, 3]) writeFileSync(join(dir, `pt${i}.txt`), Array.from({ length: 1500 }, (_, l) => `pt${i} line ${l} ${'x'.repeat(30)}`).join('\n'));
-      active = { case: scenario, dir, requests: [], invocations: [], summaries: 0, oversized: 0 };
+      active = { case: scenario, dir, requests: [], invocations: [], summaries: 0, oversized: 0, rejected: [] };
       let passed = false, failure, observation, runResult;
       try {
         if (scenario === 'tombstone-resume') {
@@ -600,6 +614,17 @@ try {
             assert.equal(active.summaries, 1, 'near-full context did not compact');
             const models = [...new Set(active.requests.map(r => r.body.model))];
             assert.deepEqual(models, ['claude-haiku-4-5'], `requests left the selected model: ${models}`);
+          } else if (scenario.startsWith('openai-max-tokens')) {
+            assert.equal(runResult.code, 0, `run failed: ${runResult.result?.result}`); assert.equal(runResult.result.result, 'AUDIT_OK');
+            const sent = active.requests.filter(r => r.body.tools?.length).map(r => r.body.max_tokens);
+            assert.equal(sent.length, 2);
+            assert.equal(active.summaries, 0, 'an output-token rejection was compacted');
+            if (scenario === 'openai-max-tokens-cap') {
+              assert.deepEqual(sent, [8192, 8192]);
+              assert.deepEqual(active.rejected, [32000], 'the cap was not kept: a later turn was rejected again');
+            } else {
+              assert.ok(sent.every(mt => mt + 20000 <= 32768), `retry still overflows: ${sent}`);
+            }
           } else if (scenario === 'openai-tools') {
             // The shim has no tool_reference block, so a deferred tool must be sent up front.
             assert.equal(runResult.code, 0, `run failed: ${runResult.result?.result}`); assert.equal(runResult.result.result, 'AUDIT_OK');

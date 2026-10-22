@@ -592,6 +592,28 @@ export function parseMaxTokensContextOverflowError(error: APIError):
     return undefined
   }
 
+  // vLLM through v0.10: "...maximum context length is 32768 tokens. However,
+  // you requested 52000 tokens (20000 in the messages, 32000 in the
+  // completion)". v0.11: "...maximum context length is 32768 tokens and your
+  // request has 20000 input tokens (32000 > 32768 - 20000)". Its prompt-only
+  // overflow matches neither and stays a prompt-too-long error.
+  const vllm =
+    /maximum context length is (\d+) tokens\. However, you requested \d+ tokens \((\d+) in the messages, (\d+) in the completion\)/.exec(
+      error.message,
+    )
+  const vllmNewer =
+    /maximum context length is (\d+) tokens and your request has (\d+) input tokens \((\d+) > /.exec(
+      error.message,
+    )
+  const openaiMatch = vllm ?? vllmNewer
+  if (openaiMatch) {
+    return {
+      inputTokens: parseInt(openaiMatch[2]!, 10),
+      maxTokens: parseInt(openaiMatch[3]!, 10),
+      contextLimit: parseInt(openaiMatch[1]!, 10),
+    }
+  }
+
   if (
     !error.message.includes(
       'input length and `max_tokens` exceed context limit',

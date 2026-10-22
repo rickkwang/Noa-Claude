@@ -10,6 +10,8 @@ import { getAPIProvider } from '../../utils/model/providers.js'
 // messages, tools or model.
 const rejectedFields = new Map<string, Set<string>>()
 const sentBetas = new Map<string, readonly string[]>()
+// The output-token ceiling an endpoint named when it rejected max_tokens.
+const outputCaps = new Map<string, number>()
 
 const OPTIONAL_ROOTS = new Set([
   'thinking',
@@ -23,10 +25,29 @@ const OPTIONAL_ROOTS = new Set([
 ])
 
 export function getRequestLatchSummary(): string {
-  return [...rejectedFields].flatMap(([key, fields]) => {
+  const keys = new Set([...rejectedFields.keys(), ...outputCaps.keys()])
+  return [...keys].flatMap(key => {
     const model = key.slice(key.lastIndexOf('|') + 1)
-    return key === endpointKey(model) ? [`${model}: ${[...fields].join(', ')}`] : []
+    if (key !== endpointKey(model)) return []
+    const cap = outputCaps.get(key)
+    const entries = [
+      ...(rejectedFields.get(key) ?? []),
+      ...(cap !== undefined ? [`max_tokens ≤ ${cap}`] : []),
+    ]
+    return [`${model}: ${entries.join(', ')}`]
   }).join('; ')
+}
+
+// OpenAI: "max_tokens is too large: 32000. This model supports at most 8192
+// completion tokens, whereas you provided 32000."
+// Anthropic: "max_tokens: 32000 > 8192, which is the maximum allowed number of
+// output tokens for …"
+function parseOutputTokensCap(message: string): number | undefined {
+  const match =
+    /supports at most (\d+) completion tokens/i.exec(message) ??
+    /max_tokens: \d+ > (\d+), which is the maximum allowed number of output tokens/.exec(message)
+  const cap = match ? parseInt(match[1]!, 10) : NaN
+  return cap > 0 ? cap : undefined
 }
 
 function endpointKey(model: string): string {
@@ -80,6 +101,17 @@ export function healRejectedRequest(
 ): string | undefined {
   if (!(error instanceof APIError) || error.status !== 400) return undefined
   const key = endpointKey(model)
+  const cap = parseOutputTokensCap(error.message)
+  if (cap !== undefined) {
+    const current = outputCaps.get(key)
+    if (current !== undefined && current <= cap) return undefined
+    outputCaps.set(key, cap)
+    logForDebugging(
+      `[request-latch] ${model} caps max_tokens at ${cap}; clamping for the rest of the session and retrying`,
+      { level: 'warn' },
+    )
+    return 'max_tokens'
+  }
   const field = classifyRejectedField(error.message, sentBetas.get(key) ?? [])
   if (!field) return undefined
   const fields = rejectedFields.get(key) ?? new Set<string>()
@@ -132,6 +164,16 @@ export function applyRequestLatches<T extends object>(params: T, model: string):
   const key = endpointKey(model)
   const fields = rejectedFields.get(key)
   const out = { ...params } as Record<string, any>
+  const cap = outputCaps.get(key)
+  if (cap !== undefined && typeof out.max_tokens === 'number' && out.max_tokens > cap) {
+    out.max_tokens = cap
+    // budget_tokens must stay below max_tokens and at or above 1024.
+    const budget = out.thinking?.budget_tokens
+    if (typeof budget === 'number' && budget >= cap) {
+      if (cap > 1024) out.thinking = { ...out.thinking, budget_tokens: cap - 1 }
+      else delete out.thinking
+    }
+  }
   if (fields) {
     out.thinking = rewriteThinking(out.thinking, fields, out.max_tokens, model)
     if (out.thinking === undefined) delete out.thinking
