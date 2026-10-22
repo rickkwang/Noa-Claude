@@ -156,6 +156,12 @@ describe('native-1M model-setting normalization', () => {
     expect(renderModelName(resolved)).toBe('Opus 5.5 (1M context)')
   })
 
+  test('resolves an alias with [1m] when 1M context is disabled', () => {
+    process.env.CLAUDE_CODE_DISABLE_1M_CONTEXT = '1'
+    expect(parseUserSpecifiedModel('opus[1m]')).toBe('claude-opus-5-5')
+    expect(parseUserSpecifiedModel('sonnet[1m]')).not.toContain('[1m]')
+  })
+
   test('does not enable the merged Opus 1M setting for Pro', () => {
     process.env.USER_TYPE = 'ant'
     setMockSubscriptionType('pro')

@@ -725,9 +725,9 @@ export function parseUserSpecifiedModel(
   const normalizedModel = modelInputTrimmed.toLowerCase()
 
   const has1mTag = has1mContext(normalizedModel)
-  const modelString = has1mTag
-    ? normalizedModel.replace(/\[1m]$/i, '').trim()
-    : normalizedModel
+  // Strip the suffix even when 1M is disabled, so `opus[1m]` still resolves
+  // as the `opus` alias instead of being sent as a literal model id.
+  const modelString = normalizedModel.replace(/\[1m]$/i, '').trim()
 
   if (isModelAlias(modelString)) {
     switch (modelString) {
