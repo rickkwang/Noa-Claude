@@ -593,7 +593,7 @@ export const AgentTool = buildTool({
           appendSystemPrompt: toolUseContext.options.appendSystemPrompt
         });
       }
-      promptMessages = buildForkedMessages(prompt, assistantMessage);
+      promptMessages = buildForkedMessages(prompt, assistantMessage, toolUseContext.toolUseId);
     } else {
       try {
         const additionalWorkingDirectories = Array.from(appState.toolPermissionContext.additionalWorkingDirectories.keys());

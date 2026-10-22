@@ -14,7 +14,7 @@ import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { createUserMessage } from '../../utils/messages.js'
-import { AGENT_TOOL_NAME } from './constants.js'
+import { AGENT_TOOL_NAME, LEGACY_AGENT_TOOL_NAME } from './constants.js'
 import type { BuiltInAgentDefinition } from './loadAgentsDir.js'
 
 /**
@@ -93,25 +93,29 @@ export function isInForkChild(messages: MessageType[]): boolean {
   })
 }
 
-/** Placeholder text used for all tool_result blocks in the fork prefix.
- * Must be identical across all fork children for prompt cache sharing. */
-const FORK_PLACEHOLDER_RESULT = 'Fork started — processing in background'
+// Placeholder tool_results for the fork prefix. Each child sees its own launch
+// marked as its own, so forks launched together don't pick up each other's
+// work; the differing results sit in the last message, which already differs
+// per child, so the cached prefix is still shared.
+const FORK_OWN_AGENT_RESULT = 'Fork started — that fork is you.'
+const FORK_OWN_OTHER_RESULT =
+  "This call started a fork, and that fork is you. The call's other work and its result belong to the parent."
+const FORK_PARENT_RESULT =
+  "This is the parent's call, not yours. It may not have run yet, and its result goes to the parent."
 
 /**
  * Build the forked conversation messages for the child agent.
  *
- * For prompt cache sharing, all fork children must produce byte-identical
- * API request prefixes. This function:
  * 1. Keeps the full parent assistant message (all tool_use blocks, thinking, text)
- * 2. Builds a single user message with tool_results for every tool_use block
- *    using an identical placeholder, then appends a per-child directive text block
+ * 2. Builds a single user message with a placeholder tool_result for every
+ *    tool_use block, then appends a per-child directive text block
  *
  * Result: [...history, assistant(all_tool_uses), user(placeholder_results..., directive)]
- * Only the final text block differs per child, maximizing cache hits.
  */
 export function buildForkedMessages(
   directive: string,
   assistantMessage: AssistantMessage,
+  ownToolUseId: string | undefined,
 ): MessageType[] {
   // Clone the assistant message to avoid mutating the original, keeping all
   // content blocks (thinking, text, and every tool_use)
@@ -143,14 +147,21 @@ export function buildForkedMessages(
     ]
   }
 
-  // Build tool_result blocks for every tool_use, all with identical placeholder text
+  const ownId =
+    toolUseBlocks.length === 1 ? toolUseBlocks[0]!.id : ownToolUseId
   const toolResultBlocks = toolUseBlocks.map(block => ({
     type: 'tool_result' as const,
     tool_use_id: block.id,
     content: [
       {
         type: 'text' as const,
-        text: FORK_PLACEHOLDER_RESULT,
+        text:
+          block.id !== ownId
+            ? FORK_PARENT_RESULT
+            : block.name === AGENT_TOOL_NAME ||
+                block.name === LEGACY_AGENT_TOOL_NAME
+              ? FORK_OWN_AGENT_RESULT
+              : FORK_OWN_OTHER_RESULT,
       },
     ],
   }))
