@@ -331,6 +331,7 @@ const server = createServer(async (req, res) => {
         ...(active.case === 'compact-resume' ? [{ type: 'text', text: 'prior-context '.repeat(5000) }] : []),
         // GPT and Kimi fill optional arguments with "" (pages: "" must not fail Read).
         { type: 'tool_use', id: `toolu_${n}`, name: 'Read', input: { file_path: join(active.dir, 'fixture.txt'), ...((active.case === 'read' || active.case.startsWith('openai-responses')) && { pages: '' }) } },
+        ...(active.case.startsWith('openai-responses') ? [{ type: 'tool_use', id: 'clear_task', name: 'TaskUpdate', input: { taskId: '1', description: '', owner: '' } }] : []),
       ]; stop = 'tool_use';
     } else {
       content = [{ type: 'text', text: 'AUDIT_OK' }];
@@ -433,7 +434,8 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
     CLAUDE_CODE_TASK_LIST_ID: 'harness-probe', NOA_CLAUDE_STREAMING_TOOL_EXECUTION: ['budget-nonstream', 'concurrency-nonstream'].includes(scenario) ? '0' : '1', FALLBACK_FOR_ALL_PRIMARY_MODELS: '1', CLAUDE_CODE_EAGER_FLUSH: '1',
   });
   if (scenario.startsWith('openai-responses')) {
-    mkdirSync(env.CLAUDE_CONFIG_DIR, { recursive: true });
+    mkdirSync(join(env.CLAUDE_CONFIG_DIR, 'tasks', 'harness-probe'), { recursive: true });
+    writeFileSync(join(env.CLAUDE_CONFIG_DIR, 'tasks', 'harness-probe', '1.json'), JSON.stringify({ id: '1', subject: 'Clear optional fields', description: 'before', owner: 'fixture-owner', status: 'pending', blocks: [], blockedBy: [] }));
     writeFileSync(join(env.CLAUDE_CONFIG_DIR, 'chatgpt-auth.json'), JSON.stringify({ hostId: 'urn:uuid:00000000-0000-4000-8000-000000000000', clientId: 'e2e-client', accessToken: 'e2e-chatgpt-access', refreshToken: 'e2e-chatgpt-refresh', expiresAt: Date.now() + 3_600_000 }));
   }
   const streamingInput = scenario.startsWith('budget-');
@@ -441,7 +443,7 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
   // Hooks are off under --bare, so the hook scenario runs the full startup path.
   // --bare drops run_in_background, so the deadline scenario needs the full startup path too.
   // --bare also keeps only the simple tools, so openai-tools runs it to keep WebFetch and ToolSearch.
-  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('concurrency-') || scenario.startsWith('tool-input-') || scenario === 'background-deadline' || scenario === 'openai-tools' || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', modelFor(scenario), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'||scenario.startsWith('agent-owned-')||scenario.startsWith('agent-schema')?'Task':scenario==='agent-cascade-stop'||scenario==='agent-stop-pending'?'Task,Bash,TaskStop':scenario==='agent-budget'?'Task,Bash':scenario==='agent-budget-resume'?'Task,Bash,SendMessage':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : scenario === 'openai-tools' ? 'Read,Bash,WebFetch,ToolSearch' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'stale-signature' ? '3' : scenario === 'preserved-thinking' ? '5' : scenario === 'background-deadline' || scenario === 'small-window-overflow' ? '4' : '2'];
+  const command = [...(scenario.startsWith('hook-') || scenario.startsWith('concurrency-') || scenario.startsWith('tool-input-') || scenario === 'background-deadline' || scenario === 'openai-tools' || scenario.startsWith('openai-responses') || harness ? [] : ['--bare']), '--print', '--verbose', '--output-format', 'stream-json', '--model', modelFor(scenario), '--strict-mcp-config', '--setting-sources', '', '--permission-mode', 'dontAsk', '--tools', harness ? (scenario==='agent-custom-fork'?'Read,Bash,Task,SendMessage':scenario==='goal-child-usage'?'Read,Task,goal':scenario==='agent-nested'||scenario.startsWith('agent-owned-')||scenario.startsWith('agent-schema')?'Task':scenario==='agent-cascade-stop'||scenario==='agent-stop-pending'?'Task,Bash,TaskStop':scenario==='agent-budget'?'Task,Bash':scenario==='agent-budget-resume'?'Task,Bash,SendMessage':'TaskCreate,TaskUpdate,TaskGet,TaskList') : scenario.startsWith('tool-input-') ? 'Read,Bash,Write' : scenario === 'openai-tools' ? 'Read,Bash,WebFetch,ToolSearch' : scenario.startsWith('openai-responses') ? 'Read,Bash,TaskUpdate' : 'Read,Bash', '--max-turns', harness ? '8' : scenario === 'compact-resume' ? '6' : scenario === 'stale-signature' ? '3' : scenario === 'preserved-thinking' ? '5' : scenario === 'background-deadline' || scenario === 'small-window-overflow' ? '4' : '2'];
   if (!scenario.startsWith('tool-input-') && scenario !== 'compact-resume' && scenario !== 'tombstone-resume' && scenario !== 'stale-signature' && scenario!=='agent-custom-fork' && scenario!=='agent-budget-resume') command.push('--no-session-persistence');
   if (scenario.startsWith('tool-input-')) command.push('--allowedTools', 'Write');
   if (scenario === 'fallback') command.push('--fallback-model', 'claude-haiku-4-5');
@@ -677,7 +679,13 @@ try {
             assert.ok(reasoning >= 0 && !('id' in input[reasoning]), 'encrypted reasoning was not replayed (or kept its server id)');
             assert.ok(call > reasoning, 'reasoning must precede the call it led to');
             assert.ok(input.some(i => i.type === 'function_call_output' && i.call_id === 'toolu_1' && i.output.includes('LOCAL_FIXTURE_42')), 'tool result missing');
-            assert.ok(!('pages' in JSON.parse(input[call].arguments)), 'empty optional argument reached the tool');
+            assert.equal(JSON.parse(input[call].arguments).pages, '', 'empty optional argument was rewritten');
+            const clear = input.find(i => i.type === 'function_call' && i.call_id === 'clear_task');
+            assert.ok(clear, 'TaskUpdate call missing');
+            assert.deepEqual(JSON.parse(clear.arguments), { taskId: '1', description: '', owner: '' });
+            const task = JSON.parse(readFileSync(join(dir, 'config', 'tasks', 'harness-probe', '1.json'), 'utf8'));
+            assert.equal(task.description, '', 'task description was not cleared');
+            assert.equal(task.owner, '', 'task owner was not cleared');
           } else if (scenario === 'field-reject') {
             assert.equal(runResult.code, 0, `field rejection surfaced as: ${runResult.result.result}`); assert.equal(runResult.result.result, 'AUDIT_OK'); assert.equal(count, 3);
             assert.ok(active.requests.slice(1).every(r => !('metadata' in r.body)), 'the rejected field was sent again on a later turn');

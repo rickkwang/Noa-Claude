@@ -13,7 +13,6 @@ import {
 import {
   buildResponsesBody,
   collectAnthropicMessage,
-  optionalToolArgs,
   responsesStreamToAnthropic,
 } from './openaiResponses.js'
 
@@ -762,12 +761,10 @@ class OpenAIShimMessages {
           options,
         )
         // The route only streams; non-streaming callers get the drained stream.
-        const optionalArgs = optionalToolArgs(params.tools)
         const stream = new OpenAIShimStream(
           response,
           params.model,
-          (res, model, signal) =>
-            responsesStreamToAnthropic(res, model, signal, optionalArgs),
+          responsesStreamToAnthropic,
           options?.signal,
         )
         if (params.stream) return stream

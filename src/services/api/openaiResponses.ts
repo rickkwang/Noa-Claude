@@ -139,45 +139,10 @@ function convertUsage(usage: Record<string, any> | undefined) {
   }
 }
 
-// GPT models fill optional string arguments with "" instead of leaving them
-// out, which tools then reject (Read's pages: "" fails validation and costs a
-// round trip). Maps tool name → its optional parameter names.
-export function optionalToolArgs(
-  tools: Array<{ name: string; input_schema?: Record<string, unknown> }> | undefined,
-): Map<string, Set<string>> {
-  const out = new Map<string, Set<string>>()
-  for (const tool of tools ?? []) {
-    const schema = tool.input_schema as { properties?: Record<string, unknown>; required?: string[] } | undefined
-    const required = new Set(schema?.required ?? [])
-    const optional = Object.keys(schema?.properties ?? {}).filter(key => !required.has(key))
-    if (optional.length > 0) out.set(tool.name, new Set(optional))
-  }
-  return out
-}
-
-function dropEmptyOptionalArgs(args: string, optional: Set<string> | undefined): string {
-  if (!optional) return args
-  try {
-    const parsed = JSON.parse(args)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return args
-    let changed = false
-    for (const key of optional) {
-      if (parsed[key] === '') {
-        delete parsed[key]
-        changed = true
-      }
-    }
-    return changed ? JSON.stringify(parsed) : args
-  } catch {
-    return args
-  }
-}
-
 export async function* responsesStreamToAnthropic(
   response: Response,
   model: string,
   signal?: AbortSignal,
-  optionalArgs: Map<string, Set<string>> = new Map(),
 ): AsyncGenerator<Record<string, unknown>> {
   yield {
     type: 'message_start',
@@ -274,8 +239,7 @@ export async function* responsesStreamToAnthropic(
           }
           break
         case 'response.function_call_arguments.delta':
-          // Arguments are emitted whole at output_item.done, once they can be
-          // parsed and cleaned.
+          // Arguments arrive whole at output_item.done.
           break
         case 'response.output_item.done': {
           if (!block) break
@@ -299,7 +263,7 @@ export async function* responsesStreamToAnthropic(
                 index: block.index,
                 delta: {
                   type: 'input_json_delta',
-                  partial_json: dropEmptyOptionalArgs(item.arguments, optionalArgs.get(item.name)),
+                  partial_json: item.arguments,
                 },
               }
             }
