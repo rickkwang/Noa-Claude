@@ -11,6 +11,7 @@ import {
 } from '../../utils/betas.js'
 import {
   CONTEXT_MANAGEMENT_BETA_HEADER,
+  PROMPT_CACHING_SCOPE_BETA_HEADER,
   THINKING_BINDING_CONTROLS_BETA_HEADER,
 } from '../../constants/betas.js'
 
@@ -208,6 +209,9 @@ describe('thinking binding controls beta', () => {
     expect(shouldIncludeFirstPartyOnlyBetas()).toBe(true)
     expect(getAllModelBetas('claude-fable-5-1')).not.toContain(
       THINKING_BINDING_CONTROLS_BETA_HEADER,
+    )
+    expect(getAllModelBetas('claude-fable-5-1')).not.toContain(
+      PROMPT_CACHING_SCOPE_BETA_HEADER,
     )
   })
 

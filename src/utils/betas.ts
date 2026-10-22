@@ -574,8 +574,9 @@ export const getAllModelBetas = memoize((model: string): string[] => {
     betaHeaders.push(WEB_SEARCH_BETA_HEADER)
   }
 
-  // Always send the beta header for 1P. The header is a no-op without a scope field.
-  if (includeFirstPartyOnlyBetas) {
+  // Same gate as the scope field itself: Foundry and custom base URLs ignore
+  // the header, so sending it there only adds noise.
+  if (shouldUseGlobalCacheScope()) {
     betaHeaders.push(PROMPT_CACHING_SCOPE_BETA_HEADER)
   }
 
