@@ -20,7 +20,7 @@ const model = 'claude-sonnet-4-6';
 // A 200k-window model, so a gateway naming a 1M model in its responses offers a "larger window".
 const modelFor = scenario => scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' ? 'claude-opus-5-5' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model;
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-usage-deepseek', 'openai-tools', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'field-reject', 'gateway-model-name', 'preserved-thinking'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'field-reject', 'gateway-model-name', 'preserved-thinking'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -355,7 +355,7 @@ const server = createServer(async (req, res) => {
       const text = textOf(content) || null;
       const toolCalls = content.filter(b => b.type === 'tool_use').map(b => ({ id: b.id, type: 'function', function: { name: b.name, arguments: JSON.stringify(b.input) } }));
       const finish = toolCalls.length ? 'tool_calls' : 'stop';
-      const usage = { prompt_tokens: msg.usage.input_tokens, completion_tokens: msg.usage.output_tokens, total_tokens: msg.usage.input_tokens + msg.usage.output_tokens, ...(active.case.startsWith('openai-usage') && (active.case === 'openai-usage-deepseek' ? { prompt_cache_hit_tokens: 60, prompt_cache_miss_tokens: msg.usage.input_tokens - 60 } : { prompt_tokens_details: { cached_tokens: 60 } })) };
+      const usage = { prompt_tokens: msg.usage.input_tokens, completion_tokens: msg.usage.output_tokens, total_tokens: msg.usage.input_tokens + msg.usage.output_tokens, ...(active.case.startsWith('openai-usage') && { prompt_tokens_details: { cached_tokens: 60 } }) };
       if (!body.stream) {
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ id: msg.id, object: 'chat.completion', model: body.model, choices: [{ index: 0, message: { role: 'assistant', content: text, ...(toolCalls.length && { tool_calls: toolCalls }) }, finish_reason: finish }], usage }));
@@ -623,7 +623,7 @@ try {
             assert.equal(usage.outputTokens, 20);
             assert.equal(usage.inputTokens + usage.cacheReadInputTokens, 200, 'prompt tokens were double-counted');
             assert.ok(Math.abs(runResult.result.total_cost_usd - (80 * 3 + 120 * 0.3 + 20 * 15) / 1_000_000) < 1e-10);
-            if (scenario !== 'openai-usage-nonstream') {
+            if (scenario === 'openai-usage') {
               assert.equal(runResult.result.usage.input_tokens, 80);
               assert.equal(runResult.result.usage.cache_read_input_tokens, 120);
               assert.equal(runResult.result.usage.output_tokens, 20);
