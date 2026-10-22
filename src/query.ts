@@ -213,6 +213,8 @@ function* yieldInterruptionNotice(
  */
 const MAX_OUTPUT_TOKENS_RECOVERY_LIMIT = 3
 
+const MAX_MALFORMED_TOOL_USE_RETRIES = 2
+
 const TRUNCATED_RESUME_PROMPT = 'Your response above was cut off mid-stream. Resume directly from where it stops — no apology, no recap. If none of it survived, answer the request from the start.'
 // A subagent delivers only its final message, so it rewrites the whole answer.
 const TRUNCATED_REWRITE_PROMPT = 'Your response above was cut off mid-stream and only your next message is delivered. Write the complete response again from the start — no apology, no mention of the cut-off.'
@@ -450,7 +452,7 @@ async function* queryLoop(
     autoCompactTracking: undefined,
     stopHookActive: undefined,
     maxOutputTokensRecoveryCount: 0,
-    hasRetriedMalformedToolUse: false,
+    malformedToolUseRetryCount: 0,
     hasRetriedEmptyResponse: false,
     hasRetriedRefusal: false,
     hasAttemptedReactiveCompact: false,
@@ -1713,7 +1715,7 @@ async function* queryLoop(
       // stop_reason says a tool call follows, but none parsed (leaked or
       // malformed call). Ending here drops the action the model announced.
       if (lastMessage?.message.stop_reason === 'tool_use') {
-        if (!state.hasRetriedMalformedToolUse) {
+        if (state.malformedToolUseRetryCount < MAX_MALFORMED_TOOL_USE_RETRIES) {
           for (const msg of assistantMessages) {
             yield { type: 'tombstone' as const, message: msg }
           }
@@ -1728,7 +1730,7 @@ async function* queryLoop(
             ],
             toolUseContext,
             autoCompactTracking: tracking,
-            hasRetriedMalformedToolUse: true,
+            malformedToolUseRetryCount: state.malformedToolUseRetryCount + 1,
             transition: { reason: 'malformed_tool_use_retry' },
           })
           continue
@@ -1894,7 +1896,7 @@ async function* queryLoop(
           toolUseContext,
           autoCompactTracking: tracking,
           maxOutputTokensRecoveryCount: 0,
-          hasRetriedMalformedToolUse: false,
+          malformedToolUseRetryCount: 0,
           hasAttemptedReactiveCompact: false,
           stopHookActive: true,
           stopHookBlockingCount: blockCount,
@@ -2158,7 +2160,7 @@ async function* queryLoop(
           toolUseContext,
           autoCompactTracking: tracking,
           maxOutputTokensRecoveryCount: 0,
-          hasRetriedMalformedToolUse: false,
+          malformedToolUseRetryCount: 0,
           hasRetriedEmptyResponse: false,
           hasAttemptedReactiveCompact: false,
           stopHookActive: false,
@@ -2521,7 +2523,7 @@ async function* queryLoop(
       autoCompactTracking: tracking,
       turnCount: nextTurnCount,
       maxOutputTokensRecoveryCount: 0,
-      hasRetriedMalformedToolUse: false,
+      malformedToolUseRetryCount: 0,
       hasRetriedEmptyResponse: false,
       hasAttemptedReactiveCompact: false,
       stopHookBlockingCount: 0,

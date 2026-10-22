@@ -371,7 +371,7 @@ describe('query loop recovery', () => {
     expect(terminal).toEqual({ reason: 'completed' })
   }, 5000)
 
-  test('malformed tool call: a second failure surfaces an error', async () => {
+  test('malformed tool call: failing after two retries surfaces an error', async () => {
     let calls = 0
     const deps = makeDeps(async function* () {
       calls++
@@ -382,7 +382,7 @@ describe('query loop recovery', () => {
 
     const { events, terminal } = await drain({ deps })
 
-    expect(calls).toBe(2)
+    expect(calls).toBe(3)
     const error = events.find(e => e.type === 'assistant' && e.isApiErrorMessage)
     expect(JSON.stringify(error)).toContain('could not be parsed')
     expect(terminal).toEqual({ reason: 'malformed_tool_use_exhausted' })

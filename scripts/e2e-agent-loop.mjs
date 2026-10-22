@@ -689,7 +689,8 @@ try {
             assert.equal(runResult.result.is_error, true);
             // An error before the first request also ends with is_error; that is a crash, not bounded recovery.
             assert.ok(count >= 2, `recovery never ran: ${count} requests`);
-            assert.ok(count <= (scenario === 'fallback' ? 6 : 3), `unbounded recovery: ${count} requests`);
+            // alternating: first request + two malformed-tool-call retries + one empty-response retry.
+            assert.ok(count <= (scenario === 'fallback' ? 6 : scenario === 'alternating' ? 4 : 3), `unbounded recovery: ${count} requests`);
           } else if (scenario === 'refusal-repeat') {
             assert.equal(runResult.result.is_error, true); assert.equal(count, 2, `refusal retried ${count - 1} times`);
           } else if (scenario === 'large-output') {

@@ -91,7 +91,7 @@ export type State = {
   toolUseContext: ToolUseContext
   autoCompactTracking: AutoCompactTrackingState | undefined
   maxOutputTokensRecoveryCount: number
-  hasRetriedMalformedToolUse: boolean
+  malformedToolUseRetryCount: number
   hasRetriedEmptyResponse: boolean
   // Spent once per query() call, not per turn: a second refusal surfaces.
   hasRetriedRefusal: boolean
@@ -142,7 +142,7 @@ export function nextState(
 ): State {
   return {
     maxOutputTokensRecoveryCount: prev.maxOutputTokensRecoveryCount,
-    hasRetriedMalformedToolUse: prev.hasRetriedMalformedToolUse,
+    malformedToolUseRetryCount: prev.malformedToolUseRetryCount,
     hasRetriedEmptyResponse: prev.hasRetriedEmptyResponse,
     hasRetriedRefusal: prev.hasRetriedRefusal,
     hasAttemptedReactiveCompact: prev.hasAttemptedReactiveCompact,
