@@ -19,9 +19,9 @@ type CdTrustPromptProps = {
 const CONFIRM_GUARD_MS = 500
 
 /**
- * Shown by /cd before moving into a directory that is not trusted yet. The
- * untrusted-directory gate matches upstream: accepting persists trust for the
- * destination, then the move runs.
+ * Shown by /cd before moving into a directory that is not trusted yet, and
+ * after a move that leaves project grants gated. Accepting persists trust for
+ * the destination; the caller then applies the grants or runs the move.
  */
 export function CdTrustPrompt({
   directory,

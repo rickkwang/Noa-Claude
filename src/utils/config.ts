@@ -713,10 +713,6 @@ export type ProjectConfigKey = (typeof PROJECT_CONFIG_KEYS)[number]
  */
 let _trustAccepted = false
 
-export function resetTrustDialogAcceptedCacheForTesting(): void {
-  _trustAccepted = false
-}
-
 /** Drops the latched result once the working directory changes (/cd). */
 export function resetTrustDialogAcceptedCache(): void {
   _trustAccepted = false

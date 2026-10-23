@@ -19,8 +19,9 @@ import type { SettingsJson } from '../settings/types.js'
 
 const PROJECT_SOURCES: SettingSource[] = ['projectSettings', 'localSettings']
 
-const UNSAFE_DISPLAY =
-  /[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩﻿]/g
+/** Control and bidi characters: a path or rule containing them is not echoed as-is. */
+export const UNSAFE_DISPLAY =
+  /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/
 
 function realOrResolved(path: string): string {
   try {
@@ -78,7 +79,7 @@ export function projectSettingsFilesFor(directory: string): {
 }
 
 function ruleText(rule: string): string {
-  const text = rule.replace(UNSAFE_DISPLAY, '').trim()
+  const text = rule.replace(new RegExp(UNSAFE_DISPLAY.source, 'g'), '').trim()
   return text.length > 60 ? `${text.slice(0, 59)}…` : text
 }
 

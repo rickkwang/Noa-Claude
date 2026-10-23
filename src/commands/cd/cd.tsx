@@ -47,6 +47,7 @@ import { settingsChangeDetector } from '../../utils/settings/changeDetector.js'
 import { resetSettingsCache } from '../../utils/settings/settingsCache.js'
 import { setCwd } from '../../utils/Shell.js'
 import type { LocalJSXCommandOnDone } from '../../types/command.js'
+import { UNSAFE_DISPLAY } from '../../utils/permissions/projectGrants.js'
 import { syncProjectGrants } from '../../utils/permissions/projectGrantSync.js'
 import { checkCdPermission, describeCdPermissionDenial } from './cdPermission.js'
 import { CdTrustPrompt } from './CdTrustPrompt.js'
@@ -55,8 +56,6 @@ const bold = chalk.bold
 
 // Control and bidi characters would let a path render as something else in
 // the trust prompt, so such paths are not echoed.
-const UNSAFE_DISPLAY =
-  /[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩﻿]/
 
 const MISSING_DIRECTORY_ERRNOS = ['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM']
 
@@ -128,7 +127,7 @@ function trustRootFor(directory: string): string | undefined {
 
 async function trustDirectory(directory: string): Promise<void> {
   try {
-    // Home trust lasts for this session only, matching upstream.
+    // Home trust lasts for this session only; it is not persisted.
     if ((await canonicalize(homedir())) === (await canonicalize(directory))) {
       setSessionTrustedDirectory(directory)
       return
@@ -219,8 +218,7 @@ async function relocate(target: string, context: LocalJSXCommandContext): Promis
     return { modelMessage: '', gatedNotice: '', projectGrantsGated: false, pendingServers: [] }
   }
   // Noa rebuilds the system prompt every turn, so the environment block already
-  // names the new directory and upstream's "still names the previous directory"
-  // sentence is omitted.
+  // names the new directory; no "previous directory" sentence is needed.
   const notice = wrapInSystemReminder(
     `The session's working directory has changed to ${target} (via /cd). ` +
       `All tool calls and relative paths now resolve from ${target}. ` +
