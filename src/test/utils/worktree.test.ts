@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'bun:test'
@@ -84,6 +84,27 @@ describe('worktree creation', () => {
       expect(created.headCommit).toBe(remoteHead)
       expect(worktreeHead).toBe(remoteHead)
       expect(worktreeHead).not.toBe(localHead)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test('ignores replace refs when creating a worktree', async () => {
+    const { root, repo } = await createRepoWithRemote()
+
+    try {
+      await writeFile(join(repo, 'file.txt'), 'second\n')
+      git(repo, ['commit', '-am', 'second'])
+      const localHead = git(repo, ['rev-parse', 'HEAD'])
+      const remoteHead = git(repo, ['rev-parse', 'origin/main'])
+      git(repo, ['replace', remoteHead, localHead])
+
+      const created = await getOrCreateWorktree(repo, 'replace-ref-test')
+
+      expect(created.headCommit).toBe(remoteHead)
+      expect(await readFile(join(created.worktreePath, 'file.txt'), 'utf8')).toBe(
+        'first\n',
+      )
     } finally {
       await rm(root, { recursive: true, force: true })
     }

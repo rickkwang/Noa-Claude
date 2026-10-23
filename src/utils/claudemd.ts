@@ -1282,10 +1282,12 @@ export async function getMemoryFilesForNestedDirectory(
   processedPaths: Set<string>,
 ): Promise<MemoryFileInfo[]> {
   const result: MemoryFileInfo[] = []
+  const directMemoryPaths = new Set<string>()
 
   // Process the preferred project memory file (CLAUDE.md, falling back to AGENTS.md).
   if (isSettingSourceEnabled('projectSettings')) {
     for (const projectPath of getProjectMemoryFileCandidates(dir)) {
+      directMemoryPaths.add(projectPath)
       result.push(
         ...(await processMemoryFile(
           projectPath,
@@ -1300,6 +1302,7 @@ export async function getMemoryFilesForNestedDirectory(
   // Process local memory file (CLAUDE.local.md)
   if (isSettingSourceEnabled('localSettings')) {
     const localPath = join(dir, 'CLAUDE.local.md')
+    directMemoryPaths.add(localPath)
     result.push(
       ...(await processMemoryFile(localPath, 'Local', processedPaths, false)),
     )
@@ -1332,6 +1335,24 @@ export async function getMemoryFilesForNestedDirectory(
   // processedPaths must be seeded with unconditional paths for subsequent directories
   for (const path of unconditionalProcessedPaths) {
     processedPaths.add(path)
+  }
+
+  // Oversized nested files are cut to their start, with a pointer to Read for
+  // the rest (upstream does the same when attaching nested_memory).
+  for (const memoryFile of result) {
+    if (
+      directMemoryPaths.has(memoryFile.path) &&
+      memoryFile.content.length > MAX_MEMORY_CHARACTER_COUNT
+    ) {
+      const content = memoryFile.content
+      const cut = content.slice(0, MAX_MEMORY_CHARACTER_COUNT)
+      const lastNewline = cut.lastIndexOf('\n')
+      const shown = lastNewline > 0 ? content.slice(0, lastNewline) : cut
+      const nextOffset = lastNewline > 0 ? shown.split('\n').length + 1 : 1
+      memoryFile.rawContent ??= content
+      memoryFile.content = `${shown}\n\n> Only the start of this file is shown. For the rest, call Read on ${memoryFile.path} with offset=${nextOffset} and a limit.`
+      memoryFile.contentDiffersFromDisk = true
+    }
   }
 
   return result

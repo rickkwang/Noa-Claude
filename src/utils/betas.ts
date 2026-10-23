@@ -301,6 +301,23 @@ const EAGER_INPUT_STREAMING_BEDROCK = new Set([
   'claude-fable-5-1',
 ])
 
+// Mirrors upstream's Bedrock own-host check (sor()/ownHost in the 2.1.309 build):
+// an https URL on the AWS Bedrock runtime host for a real region is the default
+// endpoint, not a proxy, so it keeps the catalog's eager_input_streaming answer.
+function isDefaultBedrockRuntimeEndpoint(baseUrl: string): boolean {
+  try {
+    const url = new URL(baseUrl)
+    return (
+      url.protocol === 'https:' &&
+      /^(?:vpce-[a-z0-9-]+\.)?bedrock(?:-runtime)?\.[a-z]{2,4}(?:-[a-z]{2,5})?-[a-z]+-\d+\.(?:vpce\.)?amazonaws\.com$/.test(
+        url.hostname.replace(/\.$/, ''),
+      )
+    )
+  } catch {
+    return false
+  }
+}
+
 /**
  * Whether Bedrock / Vertex should get `eager_input_streaming` on tools for
  * this model. A custom ANTHROPIC_{BEDROCK,VERTEX}_BASE_URL may be a proxy that
@@ -319,8 +336,9 @@ export function cloudProviderSupportsEagerInputStreaming(
     )
   }
   if (provider === 'bedrock') {
+    const baseUrl = process.env.ANTHROPIC_BEDROCK_BASE_URL
     return (
-      !process.env.ANTHROPIC_BEDROCK_BASE_URL &&
+      (!baseUrl || isDefaultBedrockRuntimeEndpoint(baseUrl)) &&
       EAGER_INPUT_STREAMING_BEDROCK.has(canonical)
     )
   }

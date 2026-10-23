@@ -25,6 +25,7 @@ import {
   createContentReplacementState,
   cloneContentReplacementState,
   enforceToolResultBudget,
+  generatePreview,
   getPerMessageBudgetLimit,
   getPersistenceThreshold,
   isToolResultContentEmpty,
@@ -109,6 +110,16 @@ describe('getPersistenceThreshold', () => {
 describe('getPerMessageBudgetLimit', () => {
   test('falls back to the constant when no override is served', () => {
     expect(getPerMessageBudgetLimit()).toBe(MAX_TOOL_RESULTS_PER_MESSAGE_CHARS)
+  })
+})
+
+describe('generatePreview', () => {
+  test('does not split a surrogate pair at the truncation boundary', () => {
+    const { preview, hasMore } = generatePreview('a😀bc', 2)
+
+    expect(preview).toBe('a')
+    expect(hasMore).toBe(true)
+    expect(Buffer.from(preview, 'utf8').toString('utf8')).toBe(preview)
   })
 })
 

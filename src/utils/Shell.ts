@@ -253,7 +253,7 @@ export async function exec(
   //     `pwsh -NoProfile -NonInteractive -EncodedCommand <base64>` — base64
   //     survives the runtime's shellquote.quote() layer
   //   • pass /bin/sh as the sandbox's inner shell to exec that invocation
-  //   • outer spawn is also /bin/sh -c to parse the runtime's POSIX output
+  //   • outer sandboxed spawns use /bin/sh so startup files run only inside the sandbox
   // /bin/sh exists on every platform where sandbox is supported.
   const isSandboxedPowerShell = shouldUseSandbox && shellType === 'powershell'
   const sandboxBinShell = isSandboxedPowerShell ? '/bin/sh' : binShell
@@ -274,8 +274,8 @@ export async function exec(
     }
   }
 
-  const spawnBinary = isSandboxedPowerShell ? '/bin/sh' : binShell
-  const shellArgs = isSandboxedPowerShell
+  const spawnBinary = shouldUseSandbox ? '/bin/sh' : binShell
+  const shellArgs = shouldUseSandbox
     ? ['-c', commandString]
     : provider.getSpawnArgs(commandString)
   const envOverrides = await provider.getEnvironmentOverrides(command)

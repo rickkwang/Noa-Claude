@@ -62,6 +62,13 @@ describe('server-tool and per-tool field gating', () => {
     expect(modelSupportsWebSearchDynamicFiltering('claude-opus-5')).toBe(false)
   })
 
+  test('the default Bedrock endpoint keeps eager_input_streaming enabled', () => {
+    process.env.CLAUDE_CODE_USE_BEDROCK = '1'
+    process.env.ANTHROPIC_BEDROCK_BASE_URL =
+      'https://bedrock-runtime.us-west-2.amazonaws.com'
+    expect(cloudProviderSupportsEagerInputStreaming('claude-opus-4-8')).toBe(true)
+  })
+
   test('eager_input_streaming follows the catalog per provider', () => {
     process.env.CLAUDE_CODE_USE_BEDROCK = '1'
     expect(cloudProviderSupportsEagerInputStreaming('claude-opus-4-8')).toBe(true)

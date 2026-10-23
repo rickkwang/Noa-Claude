@@ -354,7 +354,15 @@ export function generatePreview(
 
   // If we found a newline reasonably close to the limit, use it
   // Otherwise fall back to the exact limit
-  const cutPoint = lastNewline > maxBytes * 0.5 ? lastNewline : maxBytes
+  let cutPoint = lastNewline > maxBytes * 0.5 ? lastNewline : maxBytes
+  if (
+    cutPoint > 0 &&
+    cutPoint < content.length &&
+    /[\uD800-\uDBFF]/.test(content[cutPoint - 1]!) &&
+    /[\uDC00-\uDFFF]/.test(content[cutPoint]!)
+  ) {
+    cutPoint--
+  }
 
   return { preview: content.slice(0, cutPoint), hasMore: true }
 }

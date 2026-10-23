@@ -270,9 +270,10 @@ type WorktreeBaseRef = 'fresh' | 'head'
 // GIT_TERMINAL_PROMPT=0 prevents git from opening /dev/tty for credential prompts.
 // GIT_ASKPASS='' disables askpass GUI programs.
 // stdin: 'ignore' closes stdin so interactive prompts can't block.
-const GIT_NO_PROMPT_ENV = {
+export const GIT_WORKTREE_ENV = {
   GIT_TERMINAL_PROMPT: '0',
   GIT_ASKPASS: '',
+  GIT_NO_REPLACE_OBJECTS: '1',
 }
 
 function getConfiguredWorktreeBaseRef(): WorktreeBaseRef {
@@ -280,7 +281,7 @@ function getConfiguredWorktreeBaseRef(): WorktreeBaseRef {
 }
 
 async function resolveFreshWorktreeBaseBranch(repoRoot: string): Promise<string> {
-  const fetchEnv = { ...process.env, ...GIT_NO_PROMPT_ENV }
+  const fetchEnv = { ...process.env, ...GIT_WORKTREE_ENV }
   const { code: remoteCode } = await execFileNoThrowWithCwd(
     gitExe(),
     ['remote', 'get-url', 'origin'],
@@ -412,7 +413,7 @@ export async function getOrCreateWorktree(
   // New worktree: pick a base commit then add
   await mkdir(worktreesDir(repoRoot), { recursive: true })
 
-  const fetchEnv = { ...process.env, ...GIT_NO_PROMPT_ENV }
+  const fetchEnv = { ...process.env, ...GIT_WORKTREE_ENV }
 
   let baseBranch: string
   let baseSha: string | null = null
@@ -440,7 +441,7 @@ export async function getOrCreateWorktree(
     const { stdout, code: shaCode } = await execFileNoThrowWithCwd(
       gitExe(),
       ['rev-parse', baseBranch],
-      { cwd: repoRoot },
+      { cwd: repoRoot, env: GIT_WORKTREE_ENV },
     )
     if (shaCode !== 0) {
       throw new Error(
@@ -460,7 +461,10 @@ export async function getOrCreateWorktree(
   addArgs.push('-B', worktreeBranch, worktreePath, baseBranch)
 
   const { code: createCode, stderr: createStderr } =
-    await execFileNoThrowWithCwd(gitExe(), addArgs, { cwd: repoRoot })
+    await execFileNoThrowWithCwd(gitExe(), addArgs, {
+      cwd: repoRoot,
+      env: GIT_WORKTREE_ENV,
+    })
   if (createCode !== 0) {
     throw new Error(`Failed to create worktree: ${createStderr}`)
   }
@@ -490,7 +494,7 @@ export async function getOrCreateWorktree(
     const { code: coCode, stderr: coErr } = await execFileNoThrowWithCwd(
       gitExe(),
       ['checkout', 'HEAD'],
-      { cwd: worktreePath },
+      { cwd: worktreePath, env: GIT_WORKTREE_ENV },
     )
     if (coCode !== 0) {
       await tearDown(`Failed to checkout sparse worktree: ${coErr}`)
