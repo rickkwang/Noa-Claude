@@ -58,7 +58,6 @@
     "src/commands/bridge/index.ts",
     "src/commands/btw/btw.tsx",
     "src/commands/btw/index.ts",
-    "src/commands/cd/CdConfirm.tsx",
     "src/commands/cd/cd.tsx",
     "src/commands/clear/caches.ts",
     "src/commands/clear/clear.ts",

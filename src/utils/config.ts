@@ -717,6 +717,11 @@ export function resetTrustDialogAcceptedCacheForTesting(): void {
   _trustAccepted = false
 }
 
+/** Drops the latched result once the working directory changes (/cd). */
+export function resetTrustDialogAcceptedCache(): void {
+  _trustAccepted = false
+}
+
 export function checkHasTrustDialogAccepted(): boolean {
   // Trust only transitions false→true during a session (never the reverse),
   // so once true we can latch it. false is not cached — it gets re-checked
@@ -1702,8 +1707,13 @@ export function getCurrentProjectConfig(): ProjectConfig {
   return projectConfig
 }
 
+/**
+ * Persist project config for `dir` (default: the session's project). /cd
+ * trusts the destination before moving there, so it cannot use the cwd key.
+ */
 export function saveCurrentProjectConfig(
   updater: (currentConfig: ProjectConfig) => ProjectConfig,
+  dir?: string,
 ): void {
   if (process.env.NODE_ENV === 'test') {
     const config = updater(TEST_PROJECT_CONFIG_FOR_TESTING)
@@ -1714,7 +1724,7 @@ export function saveCurrentProjectConfig(
     Object.assign(TEST_PROJECT_CONFIG_FOR_TESTING, config)
     return
   }
-  const absolutePath = getProjectPathForConfig()
+  const absolutePath = dir ? getProjectTrustKey(dir) : getProjectPathForConfig()
 
   let written: GlobalConfig | null = null
   try {

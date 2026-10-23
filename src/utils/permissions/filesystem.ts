@@ -878,7 +878,7 @@ export function getFileReadIgnorePatterns(
   return result
 }
 
-function patternWithRoot(
+export function patternWithRoot(
   pattern: string,
   source: PermissionRuleSource,
 ): {

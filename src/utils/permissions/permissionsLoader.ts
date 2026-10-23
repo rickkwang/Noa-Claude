@@ -10,6 +10,7 @@ import {
   updateSettingsForSource,
 } from '../settings/settings.js'
 import type { SettingsJson } from '../settings/types.js'
+import { isProjectGrantSourceGated } from './projectGrants.js'
 import type {
   PermissionBehavior,
   PermissionRule,
@@ -91,7 +92,13 @@ export function loadAllPermissionRulesFromDisk(): PermissionRule[] {
   const rules: PermissionRule[] = []
 
   for (const source of getEnabledSettingSources()) {
-    rules.push(...getPermissionRulesForSource(source))
+    const sourceRules = getPermissionRulesForSource(source)
+    // Project and local allow rules wait for explicit trust; deny and ask still apply.
+    rules.push(
+      ...(isProjectGrantSourceGated(source)
+        ? sourceRules.filter(rule => rule.ruleBehavior !== 'allow')
+        : sourceRules),
+    )
   }
   return rules
 }

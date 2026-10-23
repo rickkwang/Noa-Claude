@@ -125,6 +125,7 @@ import { getDefaultMainLoopModel, getUserSpecifiedModelSetting, normalizeModelSt
 import { setTodoToolsOptInFromCLI } from './utils/todoTools.js';
 import { ensureModelStringsInitialized } from './utils/model/modelStrings.js';
 import { PERMISSION_MODES } from './utils/permissions/PermissionMode.js';
+import { syncProjectGrants } from './utils/permissions/projectGrantSync.js';
 import { checkAndDisableBypassPermissions, getAutoModeEnabledStateIfCached, initializeToolPermissionContext, initialPermissionModeFromCLI, isDefaultPermissionModeAuto, parseToolListFromCLI, removeDangerousPermissions, stripDangerousPermissionsForAutoMode, verifyAutoModeGateAccess } from './utils/permissions/permissionSetup.js';
 import { cleanupOrphanedPluginVersionsInBackground } from './utils/plugins/cacheUtils.js';
 import { initializeVersionedPlugins } from './utils/plugins/installedPluginsManager.js';
@@ -1506,6 +1507,9 @@ async function run(): Promise<CommanderCommand> {
     // This await replaces blocking existsSync/statSync calls that were already in
     // the startup path. Wall-clock time is unchanged; we just yield to the event
     // loop during the fs I/O instead of blocking it. See #19661.
+    // Project grants depend on the workspace and trust, which setup() (worktree)
+    // and the trust dialog can change; both re-sync below.
+    const launchDirectory = getOriginalCwd();
     const initResult = await initializeToolPermissionContext({
       allowedToolsCli: allowedTools,
       disallowedToolsCli: disallowedTools,
@@ -1718,6 +1722,7 @@ async function run(): Promise<CommanderCommand> {
     commandsPromise?.catch(() => {});
     agentDefsPromise?.catch(() => {});
     await setupPromise;
+    toolPermissionContext = syncProjectGrants(toolPermissionContext, launchDirectory);
     logForDebugging(`[STARTUP] setup() completed in ${Date.now() - setupStart}ms`);
     profileCheckpoint('action_after_setup');
 
@@ -2020,6 +2025,7 @@ async function run(): Promise<CommanderCommand> {
       logForDebugging('[STARTUP] Running showSetupScreens()...');
       const setupScreensStart = Date.now();
       const onboardingShown = await showSetupScreens(root, permissionMode, allowDangerouslySkipPermissions, commands, devChannels);
+      toolPermissionContext = syncProjectGrants(toolPermissionContext, getOriginalCwd());
       logForDebugging(`[STARTUP] showSetupScreens() completed in ${Date.now() - setupScreensStart}ms`);
 
       // Now that trust is established and GrowthBook has auth headers,

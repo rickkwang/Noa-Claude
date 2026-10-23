@@ -3,6 +3,8 @@ import type { BetaMessageStreamParams } from '@anthropic-ai/sdk/resources/beta/m
 import type { Attributes, Meter } from '@opentelemetry/api'
 import type { logs } from '@opentelemetry/api-logs'
 import { realpathSync } from 'fs'
+import { homedir } from 'os'
+import { resolve, sep } from 'path'
 import sumBy from 'lodash-es/sumBy.js'
 import { cwd } from 'process'
 import type { HookEvent, ModelUsage } from 'src/entrypoints/agentSdkTypes.js'
@@ -198,7 +200,7 @@ type State = {
   // Session-only trust flag for home directory (not persisted to disk)
   // When running from home dir, trust dialog is shown but not saved to disk.
   // This flag allows features requiring trust to work during the session.
-  sessionTrustAccepted: boolean
+  sessionTrustedDirectory: string | null
   // Session-only flag to disable session persistence to disk
   sessionPersistenceDisabled: boolean
   // Track if user has exited plan mode in this session (for re-entry guidance)
@@ -405,7 +407,7 @@ function getInitialState(): State {
     sessionCronTasks: [],
     sessionCreatedTeams: new Set(),
     // Session-only trust flag (not persisted to disk)
-    sessionTrustAccepted: false,
+    sessionTrustedDirectory: null,
     // Session-only flag to disable session persistence to disk
     sessionPersistenceDisabled: false,
     // Track if user has exited plan mode in this session
@@ -1381,12 +1383,27 @@ export function removeSessionCronTasks(ids: readonly string[]): number {
   return removed
 }
 
+/**
+ * Session trust covers the directory it was granted for and that directory's
+ * subdirectories, so /cd into an untrusted directory does not inherit it. Home
+ * covers only itself, matching shouldSkipInheritedHomeTrust.
+ */
 export function setSessionTrustAccepted(accepted: boolean): void {
-  STATE.sessionTrustAccepted = accepted
+  STATE.sessionTrustedDirectory = accepted ? STATE.originalCwd : null
+}
+
+export function setSessionTrustedDirectory(directory: string | null): void {
+  STATE.sessionTrustedDirectory = directory
 }
 
 export function getSessionTrustAccepted(): boolean {
-  return STATE.sessionTrustAccepted
+  const trusted = STATE.sessionTrustedDirectory
+  if (trusted === null) return false
+  const current = cwd()
+  if (current === trusted) return true
+  return (
+    current.startsWith(trusted + sep) && trusted !== resolve(homedir())
+  )
 }
 
 export function setSessionPersistenceDisabled(disabled: boolean): void {

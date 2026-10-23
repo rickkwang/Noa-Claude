@@ -17,6 +17,7 @@ import { getCwd } from '../cwd.js'
 import { isEnvTruthy } from '../envUtils.js'
 import type { SettingSource } from '../settings/constants.js'
 import { SETTING_SOURCES } from '../settings/constants.js'
+import { grantedAdditionalDirectories } from './projectGrants.js'
 import {
   getSettings_DEPRECATED,
   getSettingsFilePathForSource,
@@ -1018,7 +1019,7 @@ export async function initializeToolPermissionContext({
 
   // Add directories from settings and --add-dir
   const allAdditionalDirectories = [
-    ...(settings.permissions?.additionalDirectories || []),
+    ...grantedAdditionalDirectories(),
     ...addDirs,
   ]
   // Parallelize fs validation; apply updates serially (cumulative context).
