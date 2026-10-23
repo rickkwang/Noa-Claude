@@ -245,15 +245,10 @@ const MODELS_WITH_TODO_TOOLS = new Set([
 
 /**
  * Upstream keeps the tools when the model id is unknown or an inference
- * profile. Noa goes further, as with the verbose head: any untrusted identity
- * keeps them, since dropping a tool the model relies on costs more than
- * carrying one it ignores.
+ * profile.
  */
 export function modelNeedsTodoTools(model: string | undefined): boolean {
   if (!model) return true
-  if (isUntrustedModelIdentity() && !trustsThirdPartyModelIdentity()) {
-    return true
-  }
   if (model.includes('application-inference-profile')) return true
   return MODELS_WITH_TODO_TOOLS.has(getCanonicalName(model))
 }

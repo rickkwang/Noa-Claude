@@ -5,9 +5,8 @@ import { TASK_GET_TOOL_NAME } from '../tools/TaskGetTool/constants.js'
 import { TASK_LIST_TOOL_NAME } from '../tools/TaskListTool/constants.js'
 import { TASK_UPDATE_TOOL_NAME } from '../tools/TaskUpdateTool/constants.js'
 import { TODO_WRITE_TOOL_NAME } from '../tools/TodoWriteTool/constants.js'
-import { isAgentSwarmsEnabled } from './agentSwarmsEnabled.js'
 import { isBgSession } from './background/bgJob.js'
-import { isEnvDefinedFalsy, isEnvTruthy } from './envUtils.js'
+import { isEnvTruthy } from './envUtils.js'
 
 const TODO_TOOL_NAMES = new Set([
   TODO_WRITE_TOOL_NAME,
@@ -34,17 +33,15 @@ export function setTodoToolsOptInFromCLI(toolNames: string[]): void {
  * it gets is isTodoV2Enabled()'s call; this only decides whether to offer one.
  *
  * NOA_CLAUDE_ENABLE_TODO_TOOLS (legacy: CLAUDE_CODE_ENABLE_TODO_TOOLS) forces
- * either answer. Agent teams keep them because teammates coordinate through
- * the shared task list.
+ * them on, as upstream does.
  */
 export function areTodoToolsEnabled(model: string | undefined): boolean {
   const override =
     process.env.NOA_CLAUDE_ENABLE_TODO_TOOLS ??
     process.env.CLAUDE_CODE_ENABLE_TODO_TOOLS
   if (isEnvTruthy(override)) return true
-  if (isEnvDefinedFalsy(override)) return false
 
-  if (launchOptIn || isBgSession() || isAgentSwarmsEnabled()) return true
+  if (launchOptIn || isBgSession()) return true
   return modelNeedsTodoTools(model)
 }
 
