@@ -29,8 +29,9 @@ export const PROVIDER_CONTEXT_WINDOWS_ENV_KEY =
  * profile's single default model, so nothing else the endpoint serves can ever
  * match one. Their `effort`/`xhigh_effort`/`max_effort` flags also only say
  * low+medium+high plus optional extras on top, so an endpoint offering
- * low/high/max — no medium — is unrepresentable by them. Kimi K3 is exactly
- * that shape.
+ * low/high/max — no medium — is unrepresentable by them. Kimi's K3 documents
+ * low/high/max as its own levels, with medium and xhigh mapped onto them by
+ * the endpoint.
  *
  * Per model, not per endpoint: one endpoint serves models that differ here.
  * Kimi's coding endpoint serves K3 and the K2.8 Preview behind

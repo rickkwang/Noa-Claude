@@ -263,10 +263,18 @@ describe('effort support for provider profile models', () => {
 
     // k3 is not any of the four pinned tier ids — the case that used to render
     // "Effort not supported for k3".
-    expect(getSupportedEffortLevelsForModel('k3')).toEqual(['low', 'high', 'max'])
+    expect(getSupportedEffortLevelsForModel('k3')).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ])
     expect(getSupportedEffortLevelsForModel('k3-256k')).toEqual([
       'low',
+      'medium',
       'high',
+      'xhigh',
       'max',
     ])
   })
@@ -280,7 +288,9 @@ describe('effort support for provider profile models', () => {
     // low/high/max reasoning_effort levels as K3.
     expect(getSupportedEffortLevelsForModel('kimi-for-coding')).toEqual([
       'low',
+      'medium',
       'high',
+      'xhigh',
       'max',
     ])
   })
@@ -297,19 +307,21 @@ describe('effort support for provider profile models', () => {
     ).toEqual([])
   })
 
-  test('offers exactly the levels the platform documents, skipping medium and xhigh', async () => {
+  test('sends medium and xhigh through for the endpoint to map, not clamped down', async () => {
     const { getSupportedEffortLevelsForModel, resolveAppliedEffort } =
       await import('../../utils/effort.js')
 
-    const levels = getSupportedEffortLevelsForModel('k3')
-    expect(levels).not.toContain('medium')
-    expect(levels).not.toContain('xhigh')
-
-    // Anything off the ladder is clamped down to a documented level rather than
-    // sent through as a value K3 never defined.
-    expect(resolveAppliedEffort('k3', 'medium')).toBe('low')
-    expect(resolveAppliedEffort('k3', 'xhigh')).toBe('high')
-    expect(resolveAppliedEffort('k3', 'max')).toBe('max')
+    // The endpoint maps medium to high and xhigh to max itself (Kimi's effort
+    // mapping table), so the client must not round them down first.
+    expect(getSupportedEffortLevelsForModel('k3')).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ])
+    expect(resolveAppliedEffort('k3', 'medium')).toBe('medium')
+    expect(resolveAppliedEffort('k3', 'xhigh')).toBe('xhigh')
   })
 
   test('a model the profile does not serve gets nothing from it', async () => {
@@ -325,7 +337,7 @@ describe('effort support for provider profile models', () => {
     // the field existed still has on disk.
     const env = buildProviderEnv(profile({ models: ['k3'] }))
     expect(env[PROVIDER_EFFORT_LEVELS_ENV_KEY]).toBe(
-      'k3=low:high:max,k3-256k=low:high:max,kimi-for-coding=low:high:max,kimi-for-coding-highspeed=',
+      'k3=low:medium:high:xhigh:max,k3-256k=low:medium:high:xhigh:max,kimi-for-coding=low:medium:high:xhigh:max,k3.1-pro=low:medium:high:xhigh:max,k3.1-pro-highspeed=low:medium:high:xhigh:max,kimi-for-coding-highspeed=',
     )
   })
 
@@ -338,7 +350,9 @@ describe('effort support for provider profile models', () => {
     expect(getSupportedEffortLevelsForModel('k3')).toEqual([])
     expect(getSupportedEffortLevelsForModel('k3-256k')).toEqual([
       'low',
+      'medium',
       'high',
+      'xhigh',
       'max',
     ])
   })
@@ -362,7 +376,9 @@ describe('effort support for provider profile models', () => {
 
     expect(getSupportedEffortLevelsForModel('k3[1m]')).toEqual([
       'low',
+      'medium',
       'high',
+      'xhigh',
       'max',
     ])
   })

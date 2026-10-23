@@ -102,22 +102,21 @@ export type TierModels = Partial<
 export const PROVIDER_TYPE_EFFORT_LEVELS: Partial<
   Record<ProviderType, Record<string, string[]>>
 > = {
-  // Per Kimi's model table (docs kimi-code/models.html): K3 (`k3`, `k3-256k`)
-  // and the K2.8 Preview now serving under `kimi-for-coding` take top-level
-  // reasoning_effort low / high / max. No `medium` and no `xhigh` — a requested
-  // one of those is clamped down to the next level this list does contain (see
-  // clampEffortToSupportedLevels), rather than sent through: the endpoint maps
-  // unknown effort values to a 400, and its own published mapping rounds
-  // `medium` up to `high` (the clamp-down here is a deliberate difference).
+  // Per Kimi's model table (docs kimi-code/models.html): the K3 family, the
+  // K2.8 Preview behind `kimi-for-coding`, and K3.1 Pro take the full ladder.
+  // The endpoint maps medium to high and xhigh to max itself, so both are sent
+  // through unchanged rather than clamped down.
   //
   // `kimi-for-coding-highspeed` is still K2.7 Code HighSpeed — `Thinking:ON`
   // with no reasoning_effort at all — so it is listed empty rather than
   // omitted, declaring "none" outright instead of falling through to a
   // resolution that knows only Claude ids.
   kimi: {
-    k3: ['low', 'high', 'max'],
-    'k3-256k': ['low', 'high', 'max'],
-    'kimi-for-coding': ['low', 'high', 'max'],
+    k3: ['low', 'medium', 'high', 'xhigh', 'max'],
+    'k3-256k': ['low', 'medium', 'high', 'xhigh', 'max'],
+    'kimi-for-coding': ['low', 'medium', 'high', 'xhigh', 'max'],
+    'k3.1-pro': ['low', 'medium', 'high', 'xhigh', 'max'],
+    'k3.1-pro-highspeed': ['low', 'medium', 'high', 'xhigh', 'max'],
     'kimi-for-coding-highspeed': [],
   },
   // Per DeepSeek's Thinking Mode guide, both served models take the documented
@@ -141,19 +140,23 @@ export const PROVIDER_TYPE_EFFORT_LEVELS: Partial<
 export const PROVIDER_TYPE_CONTEXT_WINDOWS: Partial<
   Record<ProviderType, Record<string, number>>
 > = {
-  // Per Kimi Code's model table: `k3` and the K2.8 Preview behind
-  // `kimi-for-coding` up to 1M — for kimi-for-coding across all membership
-  // tiers — while the 256k K3 variant and K2.7 Code HighSpeed sit at 256k.
+  // Per Kimi Code's model table: `k3`, K3.1 Pro (and its highspeed variant)
+  // and the K2.8 Preview behind `kimi-for-coding` up to 1M — for
+  // kimi-for-coding across all membership tiers — while the 256k K3 variant
+  // and K2.7 Code HighSpeed sit at 256k.
   // Kimi's own Claude Code guide configures 1048576 for K3 on this endpoint,
   // and its CLI pins max_context_size to the same value.
   //
-  // Caveat on `k3`: the 1M window is a membership tier unlock ("最高 1M"), and
-  // what a lower tier actually gets is not documented. This follows Kimi's own
-  // Claude Code instructions; a lower-tier user who sees the session overflow
-  // rather than compact should point the profile at `k3-256k`.
+  // Caveat on `k3` and K3.1 Pro: the 1M window is a membership tier unlock
+  // (documented as "up to 1M"), and what a lower tier actually gets is not
+  // documented. This follows Kimi's own Claude Code instructions; a lower-tier
+  // user who sees the session overflow rather than compact should point the
+  // profile at `k3-256k`.
   kimi: {
     k3: 1_048_576,
     'k3-256k': 262_144,
+    'k3.1-pro': 1_048_576,
+    'k3.1-pro-highspeed': 1_048_576,
     'kimi-for-coding': 1_048_576,
     'kimi-for-coding-highspeed': 262_144,
   },
