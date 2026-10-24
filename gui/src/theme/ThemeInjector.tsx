@@ -34,8 +34,8 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       root.style.setProperty('--sidebar-material-tint', '70%');
       // Four stacked layers approximate light falloff; a single shadow reads as a band with a visible edge on dark.
       root.style.setProperty('--sidebar-preview-shadow', '0 0 0 1px rgba(0,0,0,0.07), 3px 0 6px -2px rgba(0,0,0,0.09), 10px 0 22px -6px rgba(0,0,0,0.11), 26px 0 54px -16px rgba(0,0,0,0.12)');
-      // Dark text tiers follow Codex's dark primary (#F7F7F7); secondary and tertiary stay one step down the ramp.
-      root.style.setProperty('--text-primary', '#F7F7F7');
+      // Absolutely (dark) foreground; secondary and tertiary stay one step down the ramp.
+      root.style.setProperty('--text-primary', '#F9F9F7');
       root.style.setProperty('--text-secondary', '#9C9B96');
       root.style.setProperty('--text-tertiary', '#9C9B96');
       // Solid sidebar text tiers (primary is --text-primary): alpha text over the translucent material washes out.
@@ -54,8 +54,8 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       root.style.setProperty('--sidebar-material-tint', '70%');
       // Light counterpart of the dark stack, at lower weight since light floors don't band.
       root.style.setProperty('--sidebar-preview-shadow', '0 0 0 1px rgba(45,45,43,0.03), 3px 0 6px -2px rgba(45,45,43,0.035), 10px 0 22px -6px rgba(45,45,43,0.04), 26px 0 54px -16px rgba(45,45,43,0.05)');
-      // Light text tiers as Codex's light palette: primary #0D0D0D, secondary #5D5D5D, tertiary gray-400 #8F8F8F.
-      root.style.setProperty('--text-primary', '#0D0D0D');
+      // Absolutely (light) foreground; secondary and tertiary follow Codex's light gray ramp.
+      root.style.setProperty('--text-primary', '#2D2D2B');
       root.style.setProperty('--text-secondary', '#5D5D5D');
       root.style.setProperty('--text-tertiary', '#8F8F8F');
       root.style.setProperty('--sidebar-text', '#52514E');
