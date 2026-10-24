@@ -28,6 +28,7 @@ const shortcuts: [string, string[]][] = [
   ["Settings", ["⌘", ","]],
   ["Run instruction", ["Enter"]],
   ["New line", ["Shift", "Enter"]],
+  ["Reorder task", ["⌥", "↑/↓"]],
   ["Stop agent", ["Esc"]],
 ]
 

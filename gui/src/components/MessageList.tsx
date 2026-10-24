@@ -290,31 +290,57 @@ function BlockView({ block }: { block: Block }) {
 // Collapsed once the reasoning is done, as in Codex; open while it streams.
 function ThinkingBlock({ block }: { block: Extract<Block, { kind: "thinking" }> }) {
   const [open, setOpen] = useState(!block.done)
+  // The block mounts with its first token, so this is close to the reasoning's start.
+  const startedAt = useRef<number | undefined>(block.done ? undefined : Date.now())
+  const [elapsed, setElapsed] = useState<number>()
+  const [copied, setCopied] = useState(false)
   useEffect(() => {
-    if (block.done) setOpen(false)
+    if (!block.done) return
+    if (startedAt.current !== undefined) setElapsed((value) => value ?? Date.now() - startedAt.current!)
+    setOpen(false)
   }, [block.done])
+  const label =
+    elapsed === undefined ? "Thought process" : elapsed < 1000 ? "Thought for <1s" : `Thought for ${formatDuration(elapsed)}`
+  async function copyQuote() {
+    await navigator.clipboard.writeText(block.text.split("\n").map((line) => `> ${line}`).join("\n"))
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
   return (
-    <div className="text-[length:var(--text-chat-sm)] leading-5 text-[var(--sidebar-text-muted,#898781)]">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className="inline-flex cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left select-none hover:text-[var(--text-primary,#2D2D2B)]"
-      >
-        {block.done ? (
-          <span>Thought process</span>
-        ) : (
-          <span className="flex items-center gap-2">
-            <span className="noa-quiet-dots" aria-hidden="true">
-              <span />
-              <span />
-              <span />
+    <div className="group/thinking flex flex-col text-[length:var(--text-chat-sm)] leading-5 text-[var(--sidebar-text-muted,#898781)]">
+      <div className="flex min-w-0 items-center gap-1">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+          className="inline-flex cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left select-none hover:text-[var(--text-primary,#2D2D2B)]"
+        >
+          {block.done ? (
+            <span>{label}</span>
+          ) : (
+            <span className="flex items-center gap-2">
+              <span className="noa-quiet-dots" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+              <span className="noa-shimmer">Thinking…</span>
             </span>
-            <span className="noa-shimmer">Thinking…</span>
-          </span>
+          )}
+          <ChevronRight size={14} className={`transition-transform duration-150 ${open ? "rotate-90" : ""}`} />
+        </button>
+        {block.done && block.text.trim() !== "" && (
+          <button
+            type="button"
+            onClick={copyQuote}
+            aria-label="Copy thought as quote"
+            className="flex h-6 items-center gap-1 rounded-md px-1.5 text-caption text-[var(--text-secondary,#5D5D5D)] opacity-0 transition-opacity hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] hover:text-[var(--text-primary,#2D2D2B)] focus-visible:opacity-100 group-hover/thinking:opacity-100 noa-press"
+          >
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+            {copied ? "Copied" : "Copy as quote"}
+          </button>
         )}
-        <ChevronRight size={14} className={`transition-transform duration-150 ${open ? "rotate-90" : ""}`} />
-      </button>
+      </div>
       <Collapsible open={open}>
         <div className="mt-1.5 whitespace-pre-wrap border-l border-[var(--divider-subtle)] pl-3 font-mono">{block.text}</div>
       </Collapsible>

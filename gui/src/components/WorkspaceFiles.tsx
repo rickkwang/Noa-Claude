@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react"
 import { query } from "../api"
+import { useConfirm } from "./ConfirmDialog"
 import { ArrowLeft, CheckCircle2, GitBranch, BrandCss3, BrandHtml5, BrandJavascript, BrandPython, BrandReact, BrandTypescript, ChevronDown, Copy, FileText, Folder, Json, ListDetails, Markdown, MoreHorizontal, Photo, Plus, RefreshCcw, RotateCcw, Search } from "../lib/icons"
 
 const CodeView = lazy(() => import("./CodeView"))
@@ -88,6 +89,7 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
   const [action, setAction] = useState("")
   const [closed, setClosed] = useState<Set<string>>(new Set())
   const [viewed, setViewed] = useState<Record<string, string>>({})
+  const { confirm, dialog } = useConfirm()
   const current = preview?.path === selected && preview?.scope === scope && preview?.view === view ? preview : undefined
   const dirty = editing && draft !== current?.content
   const draftKey = selected ? `noa-file-draft:${cwd}:${selected}` : ""
@@ -142,19 +144,31 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
     return () => controller.abort()
   }, [cwd, selected, view, scope, expanded, search, changes, tick, refreshKey, active, editing, context])
 
-  const select = (path?: string, nextView = changes ? "diff" : "file") => {
-    if (dirty && !window.confirm("Discard your unsaved file edits?")) return
+  const select = async (path?: string, nextView = changes ? "diff" : "file") => {
+    if (dirty && !(await confirm({
+      title: "Discard unsaved edits?",
+      description: `Changes to ${selected} have not been saved.`,
+      confirmLabel: "Discard",
+      danger: true,
+    }))) return
     if (draftKey) sessionStorage.removeItem(draftKey)
     setEditing(false); setSelected(path); setView(nextView); setContext(""); setFindRequest(0); setError(undefined)
   }  // Opening a file from the turn's change summary jumps straight to its diff.
-  useEffect(() => { if (focus) select(focus.path, "diff") }, [focus]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (focus) void select(focus.path, "diff") }, [focus]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const gitAction = async (kind: string, hunk?: number) => {
-    if (kind.startsWith("revert") && !window.confirm(hunk !== undefined ? `Revert hunk ${hunk + 1} in ${selected}? This cannot be undone.` : scope === "staged" ? `Remove the staged changes for ${selected}? Working files will be kept.` : `Discard changes to ${selected}? This cannot be undone. Untracked files will be deleted.`)) return
+    if (kind.startsWith("revert")) {
+      const ok = await confirm(hunk !== undefined
+        ? { title: "Revert this hunk?", description: `Revert hunk ${hunk + 1} in ${selected}? This cannot be undone.`, confirmLabel: "Revert", danger: true }
+        : scope === "staged"
+          ? { title: "Unstage these changes?", description: `Remove the staged changes for ${selected}? Working files will be kept.`, confirmLabel: "Unstage", danger: true }
+          : { title: "Discard these changes?", description: `Discard changes to ${selected}? This cannot be undone. Untracked files will be deleted.`, confirmLabel: "Discard", danger: true })
+      if (!ok) return
+    }
     setAction(kind); setError(undefined)
     try {
       await load("git-action", cwd, { scope, context }, undefined, { action: kind, path: selected, snapshot: current?.snapshot, hunk })
-      if (hunk === undefined) select()
+      if (hunk === undefined) await select()
       setTick((n) => n + 1); onUpdated?.()
     } catch (e) { setError((e as Error).message) } finally { setAction("") }
   }
@@ -206,6 +220,7 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
   const button = "noa-panel-button"
 
   return <div className={`noa-workspace-panel${changes ? " is-review" : ""}`}>
+    {dialog}
     {(selected || changes) && <div className="noa-panel-toolbar">
       {selected && <button type="button" className={button} aria-label="Back to files" onClick={() => select()}><ArrowLeft size={14} /></button>}
       <span className="noa-panel-title" title={selected ?? cwd}>{selected ? <MiddlePath path={selected} /> : (changes ? <span className="noa-branch">{status?.isGit && <GitBranch size={14} />}{status?.branch || "Changes"}</span> : "Project files")}</span>
@@ -231,7 +246,7 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
             <button type="button" className={button} disabled={!!action} onClick={() => gitAction("revert")}><RotateCcw size={13} />Revert file</button>
           </div>
         </details>}
-        {view === "file" && current?.kind === "text" && (editing ? <><button type="button" className={button} disabled={!!action} onClick={() => { if (!dirty || window.confirm("Discard your unsaved file edits?")) { sessionStorage.removeItem(draftKey); setEditing(false) } }}>Cancel</button><button type="button" className={button} disabled={!dirty || !!action} onClick={save}>{action === "save" ? "Saving…" : "Save"}</button></> : <button type="button" className={button} onClick={() => { setDraft(current.content ?? ""); setEditing(true) }}>Edit</button>)}
+        {view === "file" && current?.kind === "text" && (editing ? <><button type="button" className={button} disabled={!!action} onClick={async () => { if (!dirty || (await confirm({ title: "Discard unsaved edits?", description: `Changes to ${selected} have not been saved.`, confirmLabel: "Discard", danger: true }))) { sessionStorage.removeItem(draftKey); setEditing(false) } }}>Cancel</button><button type="button" className={button} disabled={!dirty || !!action} onClick={save}>{action === "save" ? "Saving…" : "Save"}</button></> : <button type="button" className={button} onClick={() => { setDraft(current.content ?? ""); setEditing(true) }}>Edit</button>)}
       </div>
     </> : <>
       {changes && status?.isGit && <div className="noa-panel-toolbar"><div className="noa-segmented" role="radiogroup" aria-label="Changes scope">{[["all", "All"], ["unstaged", "Unstaged"], ["staged", "Staged"]].map(([id, label]) => <button key={id} type="button" role="radio" aria-checked={scope === id} onClick={() => { setScope(id!); setPreview(undefined) }}>{label}</button>)}</div></div>}

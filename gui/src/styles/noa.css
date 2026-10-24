@@ -2190,3 +2190,27 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-slash-option.is-selected {
   background: color-mix(in srgb, var(--text-primary) 7.5%, transparent);
 }
+
+/* In-app confirmation dialog (ConfirmDialog.tsx): a scrim over the workspace, with the
+   same dialog shadow ladder as other floating surfaces. */
+.noa-confirm-scrim {
+  background: rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(2px);
+}
+.noa-confirm-dialog {
+  box-shadow: var(--shadow-dialog);
+  animation: noa-confirm-in 160ms var(--ease-out);
+}
+@keyframes noa-confirm-in {
+  from { opacity: 0; transform: scale(0.97) translateY(2px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .noa-confirm-dialog { animation: none; }
+}
+
+/* Sidebar session ordering: the dragged row dims, the drop edge draws an accent rail. */
+.noa-session-row-dragging { opacity: 0.55; }
+.noa-session-drop-before { box-shadow: inset 0 2px 0 var(--accent-color); }
+.noa-session-drop-after { box-shadow: inset 0 -2px 0 var(--accent-color); }
+body.noa-session-dragging,
+body.noa-session-dragging * { cursor: grabbing !important; }
