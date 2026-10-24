@@ -1,6 +1,6 @@
 # Feature Availability Matrix
 
-Last updated: 2026-09-13
+Last updated: 2026-10-24
 
 ## Scope
 - This matrix reflects the current repository build/runtime behavior.
@@ -27,6 +27,7 @@ Last updated: 2026-09-13
 | CLI startup (`noa`) | Available | Stable, isolated product directory defaults. |
 | Non-interactive (`--print`) | Available | Regular MCP now uses bounded wait + background continue. |
 | Interactive REPL | Available | Mainline usable; some historical complexity remains. |
+| Desktop GUI (`gui/`) | Implemented but Non-Baseline | Development Electron shell; searchable files, guarded text editing, unified/split local Git review and per-file and staged/unstaged-hunk stage/unstage/revert, context and tool activity. 512 KiB preview / 3,000 rendered-line limits; no full Codex parity claim. Verified with `scripts/e2e-gui-workspace.mjs`. |
 | MiniMax Anthropic-compatible backend | Available | Default product path and launcher checks in place. |
 | Official Claude OAuth fallback on 3P path | Disabled by policy | Missing/invalid 3P token fails clearly; no OAuth fallback. |
 

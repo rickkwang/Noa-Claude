@@ -55,6 +55,17 @@ export interface ContextUsage {
   maxTokens: number
   percentage: number
   model: string
+  rawMaxTokens?: number
+  categories?: { name: string; tokens: number; isDeferred?: boolean }[]
+  memoryFiles?: { path: string; type: string; tokens: number }[]
+  mcpTools?: { name: string; serverName: string; tokens: number; isLoaded?: boolean }[]
+  systemTools?: { name: string; tokens: number }[]
+  systemPromptSections?: { name: string; tokens: number }[]
+  agents?: { agentType: string; source: string; tokens: number }[]
+  skills?: { totalSkills: number; includedSkills: number; tokens: number; skillFrontmatter: { name: string; source: string; tokens: number }[] }
+  isAutoCompactEnabled?: boolean
+  autoCompactThreshold?: number
+  apiUsage?: { input_tokens: number; output_tokens: number; cache_creation_input_tokens: number; cache_read_input_tokens: number } | null
 }
 
 // Responses to requests the GUI sent, keyed by request_id on the client.

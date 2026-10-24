@@ -165,3 +165,7 @@ Before tagging a release:
 3. Bump `FALLBACK_REF` in `install.sh` to the new tag — it is the offline/rate-limited default when the GitHub API is unreachable. `src/test/installScript.test.ts` reads this value from the script, so no test edit is needed.
 4. Commit the release changes, create the tag, and verify `git show <tag>:install.sh` resolves.
 5. Publish the GitHub Release for that existing tag — an unpublished tag is invisible to the installer, which reads `/releases`, not `/tags`.
+
+## Desktop GUI development surface
+
+The Electron shell in `gui/` is implemented but non-baseline; the default product build remains the CLI. The Files/Changes panel provides recursive file search, text/image previews, explicit text saves with revision conflict checks, working-tree/staged/unstaged unified or split diffs, and per-file or individual staged/unstaged-hunk stage, unstage, and confirmed revert. Context and Activity show Noa SDK context analysis and local tool lifecycle data. Git actions require a current file snapshot; no GUI action commits, pushes, or publishes. File previews stop at 512 KiB and code rendering at 3,000 lines. This is not a claim of complete Codex desktop parity. `scripts/e2e-gui-workspace.mjs` verifies workspace behavior against disposable Git repositories.

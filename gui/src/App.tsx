@@ -139,7 +139,7 @@ function Workspace({ cwd }: { cwd: string }) {
     return () => {
       cancelled = true
     }
-  }, [session.cwd, state.result])
+  }, [session.cwd, state.result, refreshTick])
 
   const activeId = state.sessionId ?? session.resume
   const panelToggle = (
@@ -351,6 +351,7 @@ function Workspace({ cwd }: { cwd: string }) {
             tab={rightTab}
             onTab={setRightTab}
             onReference={(path) => setReference({ path, key: Date.now() })}
+            onWorkspaceChange={() => setRefreshTick((n) => n + 1)}
           />
         </div>
       </div>

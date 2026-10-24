@@ -344,3 +344,9 @@ This repository is a reconstruction based on publicly exposed source code. The o
 - Not an official Anthropic release or supported product
 - Independently maintained — this project does not actively track or sync upstream Claude Code source changes
 - Anthropic, Claude, and Claude Code are trademarks of their respective owners
+
+### Desktop GUI (development)
+
+Run `bun run --cwd gui desktop` to build and open the local Electron GUI. This is an implemented, non-baseline development surface, separate from the CLI workflow. Its right panel supports a searchable file tree, text/image previews, guarded text editing, working-tree/staged/unstaged review with unified or split diffs, per-file and staged/unstaged-hunk stage/unstage/revert, Noa context breakdowns, and tool activity. Git and file actions are local; they do not commit, push, or publish.
+
+Previews are limited to 512 KiB and code rendering to 3,000 lines. This GUI does not claim complete Codex desktop feature parity. Run `node scripts/e2e-gui-workspace.mjs` for isolated workspace API verification.

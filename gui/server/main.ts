@@ -105,16 +105,22 @@ Bun.serve<SocketData>({
   hostname: "127.0.0.1",
   async fetch(req, server) {
     const url = new URL(req.url)
+    // Reject DNS-rebinding requests: the Host must be a loopback name.
+    if (!["localhost", "127.0.0.1"].includes(url.hostname)) return json({ error: "Host not allowed" }, 403)
     const origin = req.headers.get("origin")
     if (origin && origin !== url.origin && origin !== "http://localhost:5173")
       return json({ error: "Origin not allowed" }, 403)
     const cwd = resolveCwd(url.searchParams.get("cwd"))
 
-    if (["/api/files", "/api/file", "/api/changes", "/api/diff"].includes(url.pathname)) {
-      if (req.method !== "GET") return json({ error: "Method not allowed" }, 405)
+    if (["/api/files", "/api/file", "/api/changes", "/api/diff", "/api/git-action"].includes(url.pathname)) {
+      if (req.method !== "GET" && !(req.method === "POST" && ["/api/file", "/api/git-action"].includes(url.pathname))) return json({ error: "Method not allowed" }, 405)
+      if (url.pathname === "/api/git-action" && req.method !== "POST") return json({ error: "Method not allowed" }, 405)
       if (!cwd) return json({ error: "cwd is not a directory" }, 400)
+      // Writes are limited to listed projects (or folders inside them).
+      if (req.method === "POST" && !listProjects(REPO_ROOT).some((p) => cwd === p.path || cwd.startsWith(p.path + sep)))
+        return json({ error: "Writes are only allowed inside listed projects" }, 403)
       try {
-        return json(await workspaceRequest(url, cwd))
+        return json(await workspaceRequest(url, cwd, req.method === "POST" ? await req.json() : undefined))
       } catch (error) {
         return json({ error: (error as Error).message }, 400)
       }

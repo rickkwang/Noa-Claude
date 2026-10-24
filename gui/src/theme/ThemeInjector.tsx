@@ -49,6 +49,12 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       root.style.setProperty('--border-primary', 'var(--divider-subtle)');
       root.style.setProperty('--panel-divider', 'var(--divider-subtle)');
       root.style.setProperty('--control-shadow-ink', '#000000');
+      // Codex model/effort popover (dark, sampled from the running app).
+      root.style.setProperty('--effort-menu', '#40403E');
+      root.style.setProperty('--effort-chip', '#4F4F4C');
+      root.style.setProperty('--effort-track', '#525250');
+      root.style.setProperty('--effort-dot', 'rgba(249,249,247,0.35)');
+      root.style.setProperty('--effort-thumb', '#F9F9F7');
     } else {
       root.removeAttribute('data-theme');
       root.style.setProperty('--sidebar-material-tint', '70%');
@@ -68,6 +74,11 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       root.style.setProperty('--border-primary', 'var(--border-default)');
       root.style.setProperty('--panel-divider', 'var(--divider-subtle)');
       root.style.setProperty('--control-shadow-ink', '#E6E2DA');
+      root.style.setProperty('--effort-menu', '#FFFFFF');
+      root.style.setProperty('--effort-chip', 'rgba(45,45,43,0.05)');
+      root.style.setProperty('--effort-track', 'rgba(45,45,43,0.1)');
+      root.style.setProperty('--effort-dot', 'rgba(45,45,43,0.3)');
+      root.style.setProperty('--effort-thumb', '#FFFFFF');
     }
 
     // Accent is a fixed theme token (coral in both themes), not user-configurable.

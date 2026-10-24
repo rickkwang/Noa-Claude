@@ -1,7 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import type { ModelInfo, PermissionMode, SlashCommand } from "../agent/protocol"
-import { ChevronDown, FileText, Folder, Monitor, Plus, Settings, X } from "../lib/icons"
-import { IconArrowUp, IconShieldCheck } from "@tabler/icons-react"
+import { Check, FileText, RotateCcw, X } from "../lib/icons"
+import { IconShieldCheck } from "@tabler/icons-react"
+import {
+  ComposerApprovalIcon,
+  ComposerChevronIcon,
+  ComposerComputerIcon,
+  ComposerFolderIcon,
+  ComposerPlusIcon,
+  ComposerSendIcon,
+  ComposerSettingsIcon,
+} from "./ComposerIcons"
 import type { ReactNode } from "react"
 import type { ProjectInfo } from "../api"
 
@@ -193,30 +202,13 @@ export function Composer({
   const currentMode = MODE_OPTIONS.find((m) => m.value === mode)
   const modelItems: PickerItem[] = models.map((m, i) => ({
     key: m.value,
-    title: m.displayName,
-    description: m.description,
+    title: m.value === "default" ? "Default" : m.displayName,
+    description: m.value === "default" ? "Use the recommended model" : "",
     active: m.value === currentModel?.value,
     onSelect: () => onModel(m.value),
-    heading: i === 0 ? "Model" : undefined,
+    heading: i === 0 ? "Select model" : undefined,
   }))
-  if (currentModel?.supportsEffort) {
-    modelItems.push({
-      key: "effort-default",
-      title: "Default effort",
-      description: "Use the model's default",
-      active: !effort,
-      onSelect: () => onEffort(null),
-      heading: "Reasoning effort",
-    })
-    for (const level of currentModel.supportedEffortLevels ?? [])
-      modelItems.push({
-        key: `effort-${level}`,
-        title: level.charAt(0).toUpperCase() + level.slice(1),
-        description: "",
-        active: effort === level,
-        onSelect: () => onEffort(level),
-      })
-  }
+  const effortLevels = currentModel?.supportsEffort ? (currentModel.supportedEffortLevels ?? []) : []
 
   return (
     <div className="noa-agent-composer relative">
@@ -234,12 +226,13 @@ export function Composer({
         </div>
       )}
       {newTask && (
-        <div className="noa-agent-environment flex items-center gap-4 text-body text-[var(--sidebar-text)]">
+        <div className="noa-agent-environment flex items-center gap-2 text-chat-sm text-[var(--sidebar-text)]">
           <Picker
             align="left"
+            hideChevron
             label={
               <>
-                <Folder size={15} />
+                <ComposerFolderIcon />
                 <span className="max-w-36 truncate">{cwd.split("/").pop()}</span>
               </>
             }
@@ -253,8 +246,8 @@ export function Composer({
                 onSelect: () => onProject(p.path),
               }))}
           />
-          <span className="flex items-center gap-2 whitespace-nowrap">
-            <Monitor size={15} />
+          <span className="flex h-7 items-center gap-1.5 whitespace-nowrap px-2">
+            <ComposerComputerIcon />
             This computer
           </span>
           <div ref={envRef} className="relative ml-auto">
@@ -263,9 +256,9 @@ export function Composer({
               onClick={() => setEnvOpen((open) => !open)}
               aria-label="Configure local environment"
               aria-expanded={envOpen}
-              className="block rounded-md p-1 noa-sidebar-hover-surface-subtle"
+              className="flex size-7 items-center justify-center rounded-full noa-sidebar-hover-surface-subtle"
             >
-              <Settings size={16} />
+              <ComposerSettingsIcon />
             </button>
             {envOpen && (
               <div
@@ -365,12 +358,12 @@ export function Composer({
           className="w-full min-h-[44px] max-h-60 resize-none border-none bg-transparent px-3 py-0 text-body leading-5 outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)]"
         />
         <div className="noa-agent-footer mb-2 mt-1 flex min-h-7 items-center justify-between gap-[5px] px-2">
-          <div className="flex min-w-0 items-center gap-1">
+          <div className="flex min-w-0 items-center gap-[5px]">
             <Picker
               align="left"
               hideChevron
               iconOnly
-              label={<Plus size={20} />}
+              label={<ComposerPlusIcon />}
               ariaLabel="Add task context"
               items={[
                 {
@@ -397,11 +390,12 @@ export function Composer({
               hideChevron
               label={
                 <>
-                  <IconShieldCheck size={16} stroke={1.5} />
+                  {mode === "default" || !mode ? <ComposerApprovalIcon /> : <IconShieldCheck size={16} stroke={1.5} />}
                   <span className="noa-agent-mode-label">{currentMode?.label ?? "Permissions"}</span>
                 </>
               }
               ariaLabel={currentMode?.label ?? "Permissions"}
+              compactPadding
               disabled={disabled || busy}
               tone={mode === "bypassPermissions" ? "danger" : undefined}
               items={MODE_OPTIONS.filter(
@@ -415,34 +409,58 @@ export function Composer({
               }))}
             />
           </div>
-          <div className="ml-auto flex min-w-0 items-center gap-2">
+          <div className="ml-auto flex min-w-0 items-center gap-1">
             {contextPercent !== undefined && (
-              <span
+              <svg
                 role="img"
                 aria-label={`Context usage ${Math.round(contextPercent)}%`}
-                title={`Context usage: ${Math.round(contextPercent)}%`}
-                className="size-3.5 shrink-0 rounded-full"
-                style={{
-                  background: `conic-gradient(var(--sidebar-text-muted) ${Math.min(100, contextPercent)}%, var(--divider-subtle) 0)`,
-                }}
+                width={12}
+                height={12}
+                viewBox="0 0 12 12"
+                className="shrink-0 text-[var(--sidebar-text-muted)]"
               >
-                <span className="m-[2.5px] block size-[9px] rounded-full bg-[var(--surface-page)]" />
-              </span>
+                <title>{`Context usage: ${Math.round(contextPercent)}%`}</title>
+                <circle cx={6} cy={6} r={5} stroke="currentColor" strokeWidth={2} fill="none" opacity={0.16} />
+                <circle
+                  cx={6}
+                  cy={6}
+                  r={5}
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  fill="none"
+                  pathLength={100}
+                  strokeDasharray={100}
+                  strokeDashoffset={100 - Math.min(100, Math.max(0, contextPercent))}
+                  opacity={contextPercent > 0 ? 1 : 0}
+                  transform="rotate(-90 6 6)"
+                />
+              </svg>
             )}
             <Picker
               ariaLabel="Model and reasoning effort"
+              modelPicker
               label={
                 <>
                   <span className="noa-agent-model-name max-w-[112px] truncate text-[var(--text-primary)]">
                     {currentModel?.displayName ?? model ?? "Model"}
                   </span>
-                  {currentModel?.supportsEffort && effort && (
+                  {currentModel?.supportsEffort && effort && currentModel.supportedEffortLevels?.includes(effort) && (
                     <span className="noa-agent-effort-label capitalize text-[var(--sidebar-text-muted)]">{effort}</span>
                   )}
                 </>
               }
               disabled={disabled || busy || models.length === 0}
               items={modelItems}
+              header={effortLevels.length > 0 ? (toggleModels) => (
+                <EffortSlider
+                  levels={effortLevels}
+                  effort={effort ?? null}
+                  modelName={currentModel?.displayName ?? ""}
+                  onEffort={onEffort}
+                  onToggleModels={toggleModels}
+                />
+              ) : undefined}
             />
             {busy ? (
               <button
@@ -450,7 +468,7 @@ export function Composer({
                 onClick={onInterrupt}
                 aria-label="Stop (Esc)"
                 title="Stop (Esc)"
-                className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] noa-press"
+                className="ml-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] noa-press"
               >
                 <span aria-hidden="true" className="block size-2.5 rounded-[2px] bg-current" />
               </button>
@@ -460,9 +478,9 @@ export function Composer({
                 onClick={submit}
                 disabled={disabled || !text.trim()}
                 aria-label="Run task"
-                className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] transition-opacity hover:opacity-90 disabled:opacity-25 noa-press"
+                className="ml-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] transition-opacity hover:opacity-90 disabled:opacity-25 noa-press"
               >
-                <IconArrowUp size={18} stroke={1.8} />
+                <ComposerSendIcon />
               </button>
             )}
           </div>
@@ -490,6 +508,102 @@ interface PickerItem {
   heading?: string
 }
 
+function EffortSlider({
+  levels,
+  effort,
+  modelName,
+  onEffort,
+  onToggleModels,
+}: {
+  levels: string[]
+  effort: string | null
+  modelName: string
+  onEffort: (effort: string | null) => void
+  onToggleModels: () => void
+}) {
+  const trackRef = useRef<HTMLDivElement>(null)
+  const last = levels.length - 1
+  // No explicit effort (or one this model lacks) means the model default, shown as "Default" with no thumb.
+  const selected = effort ? levels.indexOf(effort) : -1
+  const pct = selected >= 0 && last > 0 ? (selected / last) * 100 : 0
+  const label = selected >= 0 ? levels[selected]!.charAt(0).toUpperCase() + levels[selected]!.slice(1) : "Default"
+
+  const pick = (clientX: number) => {
+    const rect = trackRef.current!.getBoundingClientRect()
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left - 14) / Math.max(1, rect.width - 28)))
+    const level = levels[Math.round(ratio * last)]!
+    if (level !== effort) onEffort(level)
+  }
+
+  return (
+    <div className="noa-model-picker-header">
+      <div className="noa-model-picker-controls">
+        <button type="button" onClick={onToggleModels} aria-label="Select model" className="noa-model-picker-view">
+          <span className="noa-model-picker-labels">
+            <span
+              className={`text-[13px] font-medium ${selected >= 0 ? "text-[var(--accent-color)]" : "text-[var(--sidebar-text-muted)]"}`}
+            >
+              {label}
+            </span>
+            <span className="noa-model-picker-model">{modelName}</span>
+            <ComposerChevronIcon width={12} height={12} />
+          </span>
+        </button>
+        <button
+          type="button"
+          aria-label="Use default effort"
+          title="Use default effort"
+          disabled={selected < 0}
+          onClick={() => onEffort(null)}
+          className="noa-model-picker-reset"
+        >
+          <RotateCcw size={16} />
+        </button>
+      </div>
+      <div className="noa-model-picker-slider">
+        <div
+          ref={trackRef}
+          role="slider"
+          tabIndex={0}
+          aria-label="Reasoning effort"
+          aria-valuemin={0}
+          aria-valuemax={last}
+          aria-valuenow={Math.max(0, selected)}
+          aria-valuetext={label}
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId)
+            pick(e.clientX)
+          }}
+          onPointerMove={(e) => {
+            if (e.buttons) pick(e.clientX)
+          }}
+          onKeyDown={(e) => {
+            if (["ArrowRight", "ArrowUp", "ArrowLeft", "ArrowDown"].includes(e.key)) e.preventDefault()
+            if (e.key === "ArrowRight" || e.key === "ArrowUp") onEffort(levels[Math.min(last, selected + 1)]!)
+            if (e.key === "ArrowLeft" || e.key === "ArrowDown") onEffort(levels[Math.max(0, selected - 1)]!)
+          }}
+          className="noa-model-picker-track relative flex cursor-pointer touch-none select-none items-center rounded-full bg-[var(--effort-track)]"
+        >
+          <div className="absolute inset-y-0 left-0 rounded-full bg-[var(--accent-color)]" style={{ width: selected >= 0 ? `calc(14px + (100% - 28px) * ${pct / 100})` : 0 }} />
+          {levels.map((level, i) => (
+            <span
+              key={level}
+              className="absolute top-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--effort-dot)]"
+              style={{ left: `calc(14px + (100% - 28px) * ${last > 0 ? i / last : 0})` }}
+            />
+          ))}
+          {selected >= 0 && (
+            <span
+              className="absolute top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--effort-thumb)] shadow-[0_1px_3px_rgba(0,0,0,0.3)]"
+              style={{ left: `calc(14px + (100% - 28px) * ${pct / 100})` }}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Picker({
   label,
   items,
@@ -499,6 +613,9 @@ function Picker({
   hideChevron,
   ariaLabel,
   iconOnly,
+  header,
+  modelPicker,
+  compactPadding,
 }: {
   label: ReactNode
   items: PickerItem[]
@@ -508,8 +625,12 @@ function Picker({
   hideChevron?: boolean
   ariaLabel?: string
   iconOnly?: boolean
+  modelPicker?: boolean
+  compactPadding?: boolean
+  header?: (toggleModels: () => void) => ReactNode
 }) {
   const [open, setOpen] = useState(false)
+  const [showingModels, setShowingModels] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -538,46 +659,55 @@ function Picker({
         disabled={disabled}
         aria-label={ariaLabel}
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className={`flex min-h-7 min-w-0 items-center gap-1 whitespace-nowrap rounded-full ${iconOnly ? "w-7 justify-center p-0" : "px-2"} text-body font-normal leading-[18px] transition-colors hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] disabled:opacity-50 ${
+        onClick={() => {
+          setShowingModels(false)
+          setOpen((o) => !o)
+        }}
+        className={`flex h-7 min-w-0 items-center gap-1 whitespace-nowrap rounded-full ${iconOnly ? "w-7 justify-center p-0" : compactPadding ? "px-1.5" : "px-2"} text-chat-sm font-normal leading-[18px] transition-colors hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] disabled:opacity-50 ${
           tone === "danger" ? "text-[#C24444]" : "text-[var(--sidebar-text,#52514E)]"
         }`}
       >
         {label}
-        {!hideChevron && <ChevronDown size={11} />}
+        {!hideChevron && <ComposerChevronIcon className="shrink-0 text-[var(--sidebar-text-muted)]" />}
       </button>
       {open && (
         <div
-          className={`noa-floating-panel absolute bottom-full ${align === "left" ? "left-0" : "right-0"} z-30 mb-2 max-h-[55vh] w-64 max-w-[80vw] overflow-auto rounded-panel bg-[var(--bg-card,#FFFFFF)] p-1`}
+          className={`${modelPicker ? "noa-model-picker" : ""} noa-floating-panel absolute bottom-full ${align === "left" ? "left-0" : "right-0"} z-30 mb-2 max-h-[55vh] w-64 max-w-[80vw] overflow-auto rounded-panel p-1 ${header ? "bg-[var(--effort-menu)]" : "bg-[var(--bg-card,#FFFFFF)]"}`}
         >
-          {items.map((item) => (
-            <div key={item.key}>
-              {item.heading && (
-                <div className="px-2.5 pb-1 pt-2 text-caption text-[var(--sidebar-text-muted)]">{item.heading}</div>
-              )}
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => {
-                  item.onSelect()
-                  setOpen(false)
-                }}
-                aria-pressed={item.active}
-                className={`flex w-full flex-col gap-0.5 rounded-md px-2.5 py-1.5 text-left ${
-                  item.active
-                    ? "bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_8%,transparent)]"
-                    : "hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_5%,transparent)]"
-                }`}
-              >
-                <span className="text-body font-medium">{item.title}</span>
-                {item.description && (
-                  <span className="break-words text-caption text-[var(--sidebar-text-muted,#898781)]">
-                    {item.description}
-                  </span>
+          {!showingModels && header?.(() => setShowingModels(true))}
+          <div className={modelPicker ? "noa-model-picker-list" : undefined} hidden={!!header && !showingModels}>
+            {items.map((item) => (
+              <div key={item.key}>
+                {item.heading && (
+                  <div className="px-2.5 pb-1 pt-2 text-caption text-[var(--sidebar-text-muted)]">{item.heading}</div>
                 )}
-              </button>
-            </div>
-          ))}
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => {
+                    item.onSelect()
+                    setOpen(false)
+                  }}
+                  aria-pressed={item.active}
+                  className={modelPicker ? "noa-model-picker-option" : `flex w-full flex-col gap-0.5 rounded-md px-2.5 py-1.5 text-left ${
+                    item.active
+                      ? "bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_8%,transparent)]"
+                      : "hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_5%,transparent)]"
+                  }`}
+                >
+                  <span className={modelPicker ? "noa-model-picker-option-label" : "text-body font-medium"}>
+                    {item.title}
+                    {modelPicker && item.active && <Check size={16} aria-hidden="true" />}
+                  </span>
+                  {item.description && (
+                    <span className="break-words text-caption text-[var(--sidebar-text-muted,#898781)]">
+                      {item.description}
+                    </span>
+                  )}
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

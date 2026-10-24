@@ -1,5 +1,6 @@
-import type { KeyboardEvent } from "react"
+import { useEffect, useState, type KeyboardEvent } from "react"
 import type { AgentState } from "../agent/reducer"
+import { Check, ChevronRight, RefreshCcw } from "../lib/icons"
 import { WorkspaceFiles } from "./WorkspaceFiles"
 
 export type PanelTab = "files" | "changes" | "context" | "activity"
@@ -19,15 +20,17 @@ interface RightPanelProps {
   tab: PanelTab
   onTab: (tab: PanelTab) => void
   onReference: (path: string) => void
+  onWorkspaceChange?: () => void
 }
 
 // Right column: one pane under a tab strip, as in Codex's side panel.
-export function RightPanel({ state, cwd, sessionId, onRefreshContext, tab, onTab, onReference }: RightPanelProps) {
+export function RightPanel({ state, cwd, sessionId, onRefreshContext, tab, onTab, onReference, onWorkspaceChange }: RightPanelProps) {
   // Arrow keys move between tabs, as in a WAI-ARIA tablist.
   const onTabKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return
+    e.preventDefault()
     const index = TABS.findIndex((t) => t.id === tab)
-    const nextId = TABS[(index + (e.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length]?.id
+    const nextId = TABS[e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1 : (index + (e.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length]?.id
     if (!nextId) return
     onTab(nextId)
     e.currentTarget.querySelector<HTMLElement>(`[data-tab="${nextId}"]`)?.focus()
@@ -50,6 +53,8 @@ export function RightPanel({ state, cwd, sessionId, onRefreshContext, tab, onTab
                 type="button"
                 role="tab"
                 data-tab={t.id}
+                id={`panel-tab-${t.id}`}
+                aria-controls={`panel-${t.id}`}
                 aria-selected={active}
                 tabIndex={active ? 0 : -1}
                 onClick={() => onTab(t.id)}
@@ -65,110 +70,56 @@ export function RightPanel({ state, cwd, sessionId, onRefreshContext, tab, onTab
           })}
         </div>
       </div>
-      <div role="tabpanel" className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {tab === "files" && (
-          <WorkspaceFiles
-            key={`files-${cwd}`}
-            cwd={cwd}
-            refreshKey={state.busy ? 0 : state.turns.length}
-            onReference={onReference}
-          />
-        )}
-        {tab === "changes" && (
-          <WorkspaceFiles
-            key={`changes-${cwd}`}
-            cwd={cwd}
-            changes
-            refreshKey={state.busy ? 0 : state.turns.length}
-            onReference={onReference}
-          />
-        )}
-        {tab === "context" && (
-          <ContextTab state={state} cwd={cwd} sessionId={sessionId} onRefreshContext={onRefreshContext} />
-        )}
-        {tab === "activity" && <ActivityTab state={state} />}
+      <div id="panel-files" role="tabpanel" aria-labelledby="panel-tab-files" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "files" ? "flex" : "none" }}>
+        <WorkspaceFiles key={`files-${cwd}`} cwd={cwd} active={tab === "files"} refreshKey={state.busy ? 0 : state.turns.length} onReference={onReference} onUpdated={onWorkspaceChange} />
+      </div>
+      <div id="panel-changes" role="tabpanel" aria-labelledby="panel-tab-changes" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "changes" ? "flex" : "none" }}>
+        <WorkspaceFiles key={`changes-${cwd}`} cwd={cwd} changes active={tab === "changes"} refreshKey={state.busy ? 0 : state.turns.length} onReference={onReference} onUpdated={onWorkspaceChange} />
+      </div>
+      <div id="panel-context" role="tabpanel" aria-labelledby="panel-tab-context" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "context" ? "flex" : "none" }}>
+        <ContextTab state={state} cwd={cwd} sessionId={sessionId} active={tab === "context"} onRefreshContext={onRefreshContext} onReference={onReference} />
+      </div>
+      <div id="panel-activity" role="tabpanel" aria-labelledby="panel-tab-activity" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "activity" ? "flex" : "none" }}>
+        <ActivityTab state={state} />
       </div>
     </div>
   )
 }
 
-function ContextTab({
-  state,
-  cwd,
-  sessionId,
-  onRefreshContext,
-}: {
-  state: AgentState
-  cwd: string
-  sessionId?: string
-  onRefreshContext: () => void
+function ContextTab({ state, cwd, sessionId, active, onRefreshContext, onReference }: {
+  state: AgentState; cwd: string; sessionId?: string; active: boolean; onRefreshContext: () => void; onReference: (path: string) => void
 }) {
+  useEffect(() => { if (active && state.connection === "ready") onRefreshContext() }, [active, state.connection, onRefreshContext])
   const usage = state.contextUsage
-  const percent = usage ? Math.min(100, Math.round(usage.percentage)) : 0
-  const last = state.result
-  const label = "text-[var(--sidebar-text-muted,#898781)]"
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-3 text-body">
-      <dl className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-1.5">
-        <dt className={label}>Workspace</dt>
-        <dd className="min-w-0 truncate font-mono text-caption" title={cwd}>
-          {cwd}
-        </dd>
-        <dt className={label}>Model</dt>
-        <dd className="min-w-0 truncate font-mono text-caption">{state.model ?? "—"}</dd>
-        <dt className={label}>Mode</dt>
-        <dd className="min-w-0 truncate font-mono text-caption">{state.permissionMode ?? "—"}</dd>
-        <dt className={label}>Session</dt>
-        <dd className="min-w-0 truncate font-mono text-caption">{sessionId ? sessionId.slice(0, 8) : "new"}</dd>
-      </dl>
-      <div className="flex flex-col gap-2">
-        <div className="h-1 overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_8%,transparent)]">
-          <div className="h-full rounded-full bg-[var(--accent-color,#CC7D5E)]" style={{ width: `${percent}%` }} />
-        </div>
-        <div className="flex items-center justify-between gap-2 text-caption">
-          <span className={label}>
-            {usage
-              ? `${usage.totalTokens.toLocaleString()} of ${usage.maxTokens.toLocaleString()} tokens · ${percent}%`
-              : "Not measured yet"}
-          </span>
-          <button
-            type="button"
-            onClick={onRefreshContext}
-            className="h-6 shrink-0 rounded-md px-2.5 hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] transition-colors noa-press"
-          >
-            Refresh
-          </button>
-        </div>
-      </div>
-      {last && (
-        <div className={`text-caption ${label}`}>
-          {last.interrupted
-            ? "Task stopped"
-            : last.isError
-              ? "Finished with an error"
-              : `Done in ${(last.durationMs / 1000).toFixed(1)}s`}
-          {last.costUsd !== undefined && ` · $${last.costUsd.toFixed(4)}`}
-        </div>
-      )}
+  const percent = usage ? Math.max(0, Math.min(100, usage.percentage)) : 0
+  const categories = usage?.categories?.filter((c) => c.tokens > 0 && c.name !== "Free space" && c.name !== "Autocompact buffer" && !c.isDeferred) ?? []
+  const colors = ["#748FFC", "#DA77F2", "#51CF66", "#FCC419", "#FF922B", "#66D9E8", "#F783AC"]
+  return <div className="noa-panel-details">
+    <div className="noa-panel-section-title">Context window<button type="button" className="noa-panel-button" onClick={onRefreshContext} aria-label="Refresh context"><RefreshCcw size={14} /></button></div>
+    <div className="noa-context-total">{Math.round(percent)}%<span>{usage ? `${usage.totalTokens.toLocaleString()} / ${usage.maxTokens.toLocaleString()} tokens` : "Not measured yet"}</span></div>
+    <div className="noa-context-bar" role="meter" aria-label="Context usage" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
+      {categories.length ? categories.map((c, i) => <span key={c.name} style={{ width: `${Math.min(100, c.tokens / (usage!.maxTokens || 1) * 100)}%`, background: colors[i % colors.length] }} title={`${c.name}: ${c.tokens.toLocaleString()} tokens`} />) : <span style={{ width: `${percent}%`, background: "var(--accent-color)" }} />}
     </div>
-  )
+    {!!categories.length && <div className="noa-context-categories">{categories.map((c, i) => <div key={c.name}><span className="noa-context-dot" style={{ background: colors[i % colors.length] }} /><span>{c.name}</span><span>{c.tokens.toLocaleString()}</span></div>)}</div>}
+    <dl className="noa-context-metadata"><dt>Workspace</dt><dd title={cwd}>{cwd}</dd><dt>Model</dt><dd>{state.model ?? "—"}</dd><dt>Permissions</dt><dd>{state.permissionMode ?? "—"}</dd><dt>Session</dt><dd title={sessionId}>{sessionId ?? "New task"}</dd>{usage?.isAutoCompactEnabled !== undefined && <><dt>Auto compact</dt><dd>{usage.isAutoCompactEnabled ? "Enabled" : "Disabled"}</dd></>}</dl>
+    {!!usage?.memoryFiles?.length && <details open><summary>Instructions and memory <span>{usage.memoryFiles.length}</span></summary>{usage.memoryFiles.map((file) => <button type="button" key={file.path} className="noa-file-row" title="Add to chat" onClick={() => onReference(file.path)}><span className="noa-file-name" title={file.path}>{file.path}</span><span className="noa-file-status">{file.tokens.toLocaleString()}</span></button>)}</details>}
+    {!!usage?.systemPromptSections?.length && <details><summary>System prompt <span>{usage.systemPromptSections.length} sections</span></summary>{usage.systemPromptSections.map((section) => <div className="noa-context-detail-row" key={section.name}><span>{section.name}</span><span>{section.tokens.toLocaleString()}</span></div>)}</details>}
+    {!!usage?.mcpTools?.length && <details><summary>MCP tools <span>{usage.mcpTools.length}</span></summary>{usage.mcpTools.map((tool) => <div className="noa-context-detail-row" key={`${tool.serverName}:${tool.name}`}><span title={tool.serverName}>{tool.name}{tool.isLoaded === false && " · deferred"}</span><span>{tool.tokens.toLocaleString()}</span></div>)}</details>}
+    {usage?.skills && <details><summary>Skills <span>{usage.skills.includedSkills} / {usage.skills.totalSkills}</span></summary>{usage.skills.skillFrontmatter.map((skill) => <div className="noa-context-detail-row" key={`${skill.source}:${skill.name}`}><span>{skill.name}</span><span>{skill.tokens.toLocaleString()}</span></div>)}</details>}
+    {!!usage?.agents?.length && <details><summary>Agents <span>{usage.agents.length}</span></summary>{usage.agents.map((agent) => <div className="noa-context-detail-row" key={`${agent.source}:${agent.agentType}`}><span>{agent.agentType}</span><span>{agent.tokens.toLocaleString()}</span></div>)}</details>}
+    {usage?.apiUsage && <details><summary>Last API usage</summary>{Object.entries(usage.apiUsage).map(([name, value]) => <div className="noa-context-detail-row" key={name}><span>{name.replaceAll("_", " ")}</span><span>{value.toLocaleString()}</span></div>)}</details>}
+  </div>
 }
 
 function ActivityTab({ state }: { state: AgentState }) {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-3">
-      <p className="text-caption text-[var(--sidebar-text-muted,#898781)]">
-        {state.connection === "closed"
-          ? "Agent disconnected"
-          : state.permissions.length
-            ? "Waiting for approval"
-            : state.busy
-              ? "Agent is working"
-              : "Ready for a task"}
-      </p>
-      <pre className="whitespace-pre-wrap break-words font-mono text-caption">
-        {state.logs.join("\n") || "No agent diagnostics"}
-      </pre>
-    </div>
-  )
+  const [filter, setFilter] = useState("all")
+  const tools = state.turns.flatMap((turn) => turn.role === "assistant" ? turn.blocks.filter((block) => block.kind === "tool") : [])
+  const visible = tools.filter((tool) => filter === "all" || tool.status === filter)
+  return <div className="noa-panel-details">
+    <div className="noa-panel-section-title">{state.connection === "closed" ? "Agent disconnected" : state.permissions.length ? "Waiting for approval" : state.busy ? "Agent is working" : "Ready"}<span className={`noa-activity-dot ${state.busy ? "is-running" : ""}`} /></div>
+    {state.result && <p className="noa-panel-muted">{state.result.interrupted ? "Stopped" : state.result.isError ? "Finished with an error" : "Completed"} · {(state.result.durationMs / 1000).toFixed(1)}s{state.result.costUsd !== undefined && ` · $${state.result.costUsd.toFixed(4)}`}</p>}
+    <div className="noa-panel-toolbar noa-panel-actions"><span className="noa-panel-muted">{tools.length} tool calls</span><span className="flex-1" /><select aria-label="Filter activity" value={filter} onChange={(e) => setFilter(e.target.value)}><option value="all">All activity</option><option value="running">Running</option><option value="done">Completed</option><option value="error">Errors</option></select></div>
+    {visible.length ? visible.map((tool) => <details className="noa-activity-item" key={tool.id} open={tool.status === "running"}><summary>{tool.status === "done" ? <Check size={14} /> : <ChevronRight size={14} className="noa-activity-expand" />}<span>{tool.name}</span><span className={`noa-activity-state is-${tool.status}`}>{tool.status === "done" ? "Completed" : tool.status === "error" ? "Failed" : "Running"}</span></summary><div className="noa-activity-content"><h4>Input</h4><pre>{Object.keys(tool.input).length ? JSON.stringify(tool.input, null, 2) : tool.partialJson || "No input"}</pre>{tool.output !== undefined && <><h4>Output</h4><pre>{tool.output || "No output"}</pre></>}</div></details>) : <p className="noa-panel-empty">{tools.length ? "No matching activity" : "Tool activity will appear here"}</p>}
+    <details><summary>Diagnostics <span>{state.logs.length}</span></summary><pre className="noa-activity-log">{state.logs.join("\n") || "No agent diagnostics"}</pre></details>
+  </div>
 }
