@@ -90,7 +90,7 @@ function Workspace({ cwd }: { cwd: string }) {
   const [rightOpen, setRightOpen] = useState(true)
   const [addingProject, setAddingProject] = useState(false)
   const [reference, setReference] = useState<{ path: string; key: number }>()
-  const [changes, setChanges] = useState<{ count: number; additions: number; deletions: number; branch: string }>()
+  const [changes, setChanges] = useState<{ count: number; additions: number; deletions: number; branch: string; files: { path: string; additions: number; deletions: number; binary: boolean }[] }>()
   const [rightTab, setRightTab] = useState<PanelTab>("files")
 
   const { state, sendMessage, interrupt, answerPermission, setModel, setPermissionMode, setEffort, refreshContext } =
@@ -133,6 +133,7 @@ function Workspace({ cwd }: { cwd: string }) {
             additions: body.additions,
             deletions: body.deletions,
             branch: body.branch,
+            files: body.files,
           })
       })
       .catch(() => {})
@@ -184,9 +185,11 @@ function Workspace({ cwd }: { cwd: string }) {
     pushHistory({ cwd: dir, resume: id })
     setSession((s) => ({ cwd: dir, resume: id, key: s.key + 1 }))
   }
-  const showWorkspacePane = (tab: "files" | "changes") => {
+  const [focusChange, setFocusChange] = useState<{ path: string; at: number }>()
+  const showWorkspacePane = (tab: "files" | "changes", path?: string) => {
     setRightOpen(true)
     setRightTab(tab)
+    if (path) setFocusChange({ path, at: Date.now() })
   }
 
   async function addProjectPath(path: string) {
@@ -249,6 +252,16 @@ function Workspace({ cwd }: { cwd: string }) {
   const rightTarget = Math.round(Math.min(right.width, Math.max(250, windowWidth - sidebarTarget - 480)))
   const sidebarWidth = sidebarOpen ? sidebarTarget : 0
   const rightWidth = rightOpen ? rightTarget : 0
+
+  const footerRef = useRef<HTMLDivElement>(null)
+  const [footerHeight, setFooterHeight] = useState(0)
+  useEffect(() => {
+    const el = footerRef.current
+    if (!el) return
+    const observer = new ResizeObserver(() => setFooterHeight(el.offsetHeight))
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
 
   return (
     <div
@@ -352,6 +365,7 @@ function Workspace({ cwd }: { cwd: string }) {
             onTab={setRightTab}
             onReference={(path) => setReference({ path, key: Date.now() })}
             onWorkspaceChange={() => setRefreshTick((n) => n + 1)}
+            focusChange={focusChange}
           />
         </div>
       </div>
@@ -394,7 +408,7 @@ function Workspace({ cwd }: { cwd: string }) {
       <div className="flex-1 flex min-h-0 overflow-visible relative">
         <div
           className={`relative flex min-w-0 flex-1 flex-col ${resizing ? "" : "transition-[margin-left,margin-right] duration-500 ease-in-out"}`}
-          style={{ marginLeft: sidebarWidth, marginRight: rightWidth }}
+          style={{ marginLeft: sidebarWidth, marginRight: rightWidth, "--composer-overlay": `${footerHeight}px` } as React.CSSProperties}
         >
           {hasTurns ? (
             <MessageList
@@ -403,6 +417,8 @@ function Workspace({ cwd }: { cwd: string }) {
               busy={state.busy}
               result={state.result}
               readingWidth={readingWidth}
+              changes={changes}
+              onChanges={(path) => showWorkspacePane("changes", path)}
             />
           ) : (
             <EmptyState
@@ -412,7 +428,9 @@ function Workspace({ cwd }: { cwd: string }) {
               onAddProject={() => setAddingProject(true)}
             />
           )}
-          <div className="shrink-0 px-[29px] pb-3 pt-2">
+          {/* With a conversation the composer floats over the list, as Codex's conversation-footer does:
+              messages scroll beneath it and a gradient fades them out above the card. */}
+          <div ref={footerRef} className={hasTurns ? "noa-conversation-footer" : "shrink-0 px-[29px] pb-3 pt-2"}>
             <div className="mx-auto flex flex-col gap-2" style={{ maxWidth: readingWidth + 22 }}>
               {(state.connection === "closed" || state.permissions.length > 0 || state.busy) && (
                 <div
@@ -422,6 +440,7 @@ function Workspace({ cwd }: { cwd: string }) {
                   <span
                     className={`size-1.5 rounded-full ${state.connection === "closed" ? "bg-red-500" : "animate-pulse bg-[var(--accent-color)]"}`}
                   />
+                  <span className={state.connection === "closed" ? undefined : "noa-shimmer"}>
                   {state.connection === "closed"
                     ? "Agent disconnected"
                     : state.permissions.length
@@ -429,6 +448,7 @@ function Workspace({ cwd }: { cwd: string }) {
                       : state.stopping
                         ? "Stopping…"
                         : "Running task…"}
+                  </span>
                   {state.connection === "closed" && (
                     <button
                       className="text-[var(--accent-color)]"
@@ -464,8 +484,6 @@ function Workspace({ cwd }: { cwd: string }) {
                 onFiles={() => showWorkspacePane("files")}
                 newTask={!hasTurns}
                 contextPercent={state.contextUsage?.percentage}
-                changes={changes}
-                onChanges={() => showWorkspacePane("changes")}
                 disabled={state.connection !== "ready"}
                 busy={state.busy}
                 models={state.models}

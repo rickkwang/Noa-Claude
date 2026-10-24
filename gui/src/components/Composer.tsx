@@ -49,8 +49,6 @@ interface ComposerProps {
   onFiles: () => void
   newTask: boolean
   contextPercent?: number
-  changes?: { count: number; additions: number; deletions: number }
-  onChanges: () => void
 }
 
 // Noa-styled composer: a rounded card with a hairline ring, slash menu, model and mode pickers.
@@ -76,8 +74,6 @@ export function Composer({
   onFiles,
   newTask,
   contextPercent,
-  changes,
-  onChanges,
 }: ComposerProps) {
   const [text, setText] = useState(() => localStorage.getItem(draftKey) ?? "")
   const [references, setReferences] = useState<string[]>(() => {
@@ -212,19 +208,6 @@ export function Composer({
 
   return (
     <div className="noa-agent-composer relative">
-      {changes && changes.count > 0 && !newTask && (
-        <div className="mb-3 flex justify-center">
-          <button
-            onClick={onChanges}
-            title="Workspace changes; line totals cover tracked files"
-            className="noa-press flex items-center gap-1.5 rounded-2xl border border-[var(--divider-subtle)] bg-[var(--surface-page)] px-3 py-1.5 text-body text-[var(--sidebar-text)]"
-          >
-            {changes.count} files changed
-            {changes.additions > 0 && <span className="text-[#16A34A]">+{changes.additions}</span>}
-            {changes.deletions > 0 && <span className="text-[#EF654B]">-{changes.deletions}</span>}
-          </button>
-        </div>
-      )}
       {newTask && (
         <div className="noa-agent-environment flex items-center gap-2 text-chat-sm text-[var(--sidebar-text)]">
           <Picker

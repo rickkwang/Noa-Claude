@@ -5,6 +5,7 @@ import {
   IconAlertTriangle,
   IconAlignLeft,
   IconArrowBackUp,
+  IconArrowDown,
   IconArrowLeft,
   IconArrowRight,
   IconArrowsDiagonal,
@@ -40,13 +41,12 @@ import {
   IconBrandPython,
   IconPhoto,
   IconListDetails,
-  IconSquareMinus,
-  IconSquareDot,
   IconFileZip,
   IconFilter,
   IconFolder,
   IconFolderOpen,
   IconFolderPlus,
+  IconGitBranch,
   IconInfoCircle,
   IconLayoutSidebar,
   IconLayoutSidebarRight,
@@ -64,7 +64,6 @@ import {
   IconKeyboard,
   IconSettings,
   IconSquareCheck,
-  IconSquarePlus,
   IconStack2,
   IconSun,
   IconTag,
@@ -89,6 +88,7 @@ function icon(Cmp: Icon) {
 export const AlertTriangle = icon(IconAlertTriangle);
 export const AlignLeft = icon(IconAlignLeft);
 export const ArrowUpDown = icon(IconArrowsDownUp);
+export const ArrowDown = icon(IconArrowDown);
 export const ArrowLeft = icon(IconArrowLeft);
 export const ArrowRight = icon(IconArrowRight);
 export const BookOpen = icon(IconBook);
@@ -147,12 +147,11 @@ export const BrandHtml5 = icon(IconBrandHtml5);
 export const BrandPython = icon(IconBrandPython);
 export const Photo = icon(IconPhoto);
 export const ListDetails = icon(IconListDetails);
-export const SquareMinus = icon(IconSquareMinus);
-export const SquareDot = icon(IconSquareDot);
 export const Filter = icon(IconFilter);
 export const Folder = icon(IconFolder);
 export const FolderOpen = icon(IconFolderOpen);
 export const FolderPlus = icon(IconFolderPlus);
+export const GitBranch = icon(IconGitBranch);
 export const Tag = icon(IconTag);
 export const HardDrive = icon(IconServer);
 export const Info = icon(IconInfoCircle);
@@ -171,7 +170,6 @@ export const Palette = icon(IconPalette);
 export const PanelLeft = icon(IconLayoutSidebar);
 export const PanelRight = icon(IconLayoutSidebarRight);
 export const Plus = icon(IconPlus);
-export const PlusSquare = icon(IconSquarePlus);
 export const RefreshCcw = icon(IconRefresh);
 export const RotateCcw = icon(IconArrowBackUp);
 export const Search = icon(IconSearch);

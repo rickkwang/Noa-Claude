@@ -1131,26 +1131,6 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
 .prose li::marker { color: #2D2D2B; }
 [data-theme="dark"] .prose li::marker { color: #F9F9F7 !important; }
 
-/* ── Scrollbar: no !important (it would beat the fade keyframes). Use background-color, never the shorthand,
-   which resets background-clip and undoes the thumb's transparent-border inset. */
-@keyframes scrollbar-fadeout-dark {
-  from { background-color: rgba(225,224,217,0.35); }
-  to   { background-color: rgba(225,224,217,0); }
-}
-@keyframes scrollbar-fadein-dark {
-  from { background-color: rgba(225,224,217,0); }
-  to   { background-color: rgba(225,224,217,0.35); }
-}
-[data-theme="dark"] ::-webkit-scrollbar-thumb       { background-color: rgba(225,224,217,0); }
-[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background-color: rgba(225,224,217,0.5); }
-[data-theme="dark"] .is-scrolling::-webkit-scrollbar-thumb {
-  background-color: rgba(225,224,217,0.35);
-  animation: scrollbar-fadein-dark 0.15s ease;
-}
-[data-theme="dark"] .is-scrolling-out::-webkit-scrollbar-thumb {
-  animation: scrollbar-fadeout-dark 0.6s ease-out;
-}
-
 /* Just-checked task: the accent fill fades in and the tick flips from ink to page colour at 75%. */
 @keyframes noa-task-check-in {
   from { background-color: transparent; }
@@ -1354,30 +1334,21 @@ html[data-capture-redact="true"] [data-capture-redact]::after {
 ::-webkit-scrollbar-track  { background: transparent; }
 ::-webkit-scrollbar-corner { background: transparent; }
 
-@keyframes scrollbar-fadeout {
-  from { background-color: rgba(30, 30, 29, 0.35); }
-  to   { background-color: rgba(30, 30, 29, 0); }
-}
-@keyframes scrollbar-fadein {
-  from { background-color: rgba(30, 30, 29, 0); }
-  to   { background-color: rgba(30, 30, 29, 0.35); }
-}
-/* Transparent border + padding-box clip centres the thumb (webkit scrollbars have no margin). */
+/* As Codex: the thumb is clear until the pointer is over its scroller, then shows at the strong border tone
+   (ink 12%). Use background-color, never the shorthand, which resets background-clip and undoes the inset. */
 ::-webkit-scrollbar-thumb {
-  background-color: rgba(30, 30, 29, 0);
+  background-color: transparent;
   background-clip: padding-box;
   border: 1px solid transparent;
   border-radius: 4px;
 }
-::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(30, 30, 29, 0.5);
+:hover::-webkit-scrollbar-thumb,
+:active::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--text-primary) 12%, transparent);
 }
-.is-scrolling::-webkit-scrollbar-thumb {
-  background-color: rgba(30, 30, 29, 0.35);
-  animation: scrollbar-fadein 0.15s ease;
-}
-.is-scrolling-out::-webkit-scrollbar-thumb {
-  animation: scrollbar-fadeout 0.6s ease-out;
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
+  background-color: color-mix(in srgb, var(--text-primary) 24%, transparent);
 }
 
 /* ── Tab content fade-in ── */
@@ -1527,13 +1498,6 @@ html[data-capture-redact="true"] [data-capture-redact]::after {
   }
   .noa-top-scroll-fade {
     transition: none;
-  }
-  ::-webkit-scrollbar-thumb,
-  .is-scrolling::-webkit-scrollbar-thumb,
-  .is-scrolling-out::-webkit-scrollbar-thumb,
-  [data-theme="dark"] .is-scrolling::-webkit-scrollbar-thumb,
-  [data-theme="dark"] .is-scrolling-out::-webkit-scrollbar-thumb {
-    animation: none;
   }
 }
 
@@ -1990,44 +1954,38 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 
 /* Workspace review: line gutters and change surfaces keep syntax colours readable. */
 .noa-workspace-panel { display: flex; flex: 1; flex-direction: column; min-height: 0; font-size: var(--text-chat-sm); }
-.noa-panel-toolbar { display: flex; align-items: center; gap: 4px; min-height: 32px; padding: 2px 12px; flex-shrink: 0; }
+.noa-panel-toolbar { display: flex; align-items: center; gap: 4px; min-height: 32px; padding: 2px 10px; flex-shrink: 0; }
 .noa-panel-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sidebar-text); }
 .noa-panel-button { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 4px; min-height: 24px; padding: 2px 6px; border-radius: 6px; font-size: var(--text-caption); line-height: 18px; color: var(--sidebar-text); }
 .noa-panel-button:hover:not(:disabled), .noa-panel-button[aria-pressed="true"] { background: color-mix(in srgb, var(--text-primary) 7.5%, transparent); color: var(--text-primary); }
 .noa-panel-button:disabled { opacity: .4; }
 .noa-panel-button:focus-visible, .noa-file-row:focus-visible  { outline: 2px solid var(--accent-color); outline-offset: -2px; }
-.noa-panel-actions { flex-wrap: wrap; padding-block: 4px; border-bottom: 1px solid var(--divider-subtle); }
+.noa-panel-actions { flex-wrap: wrap; padding-block: 4px; border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 5%, transparent); }
 .noa-panel-actions select { min-width: 0; max-width: 100%; padding: 3px 5px; border-radius: 6px; background: var(--bg-card); font: inherit; color: var(--sidebar-text); }
 .noa-panel-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-.noa-file-root { padding: 8px 8px 0; }
-.noa-file-root-chip { display: inline-flex; min-width: 0; max-width: 70%; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--text-primary) 6%, transparent); color: var(--text-primary); }
+.noa-file-root { padding: 8px 10px 0 16px; }
+.noa-file-root-chip { display: inline-flex; min-width: 0; max-width: 70%; align-items: center; gap: 6px; height: 26px; padding: 0; border-radius: 8px; color: var(--text-primary); }
+.noa-file-root-chip > svg { color: var(--sidebar-text-muted); }
 .noa-file-root-chip > svg { flex-shrink: 0; }
 .noa-file-search { display: flex; flex-shrink: 0; align-items: center; gap: 4px; padding: 8px 8px 4px; }
-.noa-file-search-field { display: flex; min-width: 0; flex: 1; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border: 1px solid var(--divider-subtle); border-radius: 999px; background: transparent; color: var(--sidebar-text-muted); }
-.noa-file-search-field:focus-within { border-color: color-mix(in srgb, var(--text-primary) 35%, transparent); }
+.noa-file-search-field { display: flex; min-width: 0; flex: 1; align-items: center; gap: 6px; height: 30px; padding: 0 7px; border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent); border-radius: 8px; background: transparent; color: var(--sidebar-text-muted); transition: border-color 120ms; }
+.noa-file-search-field:focus-within { border-color: color-mix(in srgb, var(--text-primary) 22%, transparent); }
 .noa-file-search-field input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; font: inherit; font-size: 13px; color: var(--text-primary); }
 .noa-file-search-field input::placeholder { color: var(--sidebar-text-muted); }
 .noa-file-search-field svg { flex-shrink: 0; }
-.noa-file-tree, .noa-changes-list { padding: 4px 4px 8px; font-size: 13px; }
-.noa-file-row { display: flex; align-items: center; gap: 5px; height: 28px; width: 100%; padding: 0 3px 0 6px; border-radius: 6px; text-align: left; color: var(--sidebar-text); }
-.noa-file-section { color: var(--text-primary); }
-.noa-file-dot { width: 6px; height: 6px; margin-right: 6px; flex-shrink: 0; border-radius: 50%; background: #B8795A; }
+.noa-file-tree { padding: 4px 8px 8px; font-size: 13px; }
+.noa-file-row { display: flex; align-items: center; gap: 5px; height: 28px; width: 100%; padding: 0 8px; border-radius: 6px; text-align: left; color: var(--sidebar-text); }
+.noa-file-icon { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 16px; color: var(--sidebar-text-muted); }
+.noa-file-icon > svg { transition: transform 120ms ease; }
+.noa-git-lane { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 20px; }
+.noa-file-divider { height: 1px; margin: 4px 0; background: color-mix(in srgb, var(--text-primary) 8%, transparent); }
+.noa-file-dot { width: 5px; height: 5px; flex-shrink: 0; border-radius: 50%; background: var(--git-modified); opacity: .5; }
 .noa-git-mark { flex-shrink: 0; }
-.noa-git-mark.is-added { color: #168447; } .noa-git-mark.is-modified { color: #A8741A; } .noa-git-mark.is-deleted { color: #C24444; }
-[data-theme="dark"] .noa-git-mark.is-added { color: #4CC27A; } [data-theme="dark"] .noa-git-mark.is-modified { color: #E0B25C; } [data-theme="dark"] .noa-git-mark.is-deleted { color: #EE8A8A; }
-.noa-file-row.is-sticky { background: var(--surface-page, #F9F9F7); }
-.noa-file-row.is-sticky:hover { background: color-mix(in srgb, var(--text-primary) 6%, var(--surface-page, #F9F9F7)); }
-.noa-file-row.is-added .noa-file-name, .noa-file-row.is-added .noa-file-status { color: #168447; }
-.noa-file-row.is-modified .noa-file-name, .noa-file-row.is-modified .noa-file-status { color: #A8741A; }
-.noa-file-row.is-deleted .noa-file-name, .noa-file-row.is-deleted .noa-file-status { color: #C24444; text-decoration: line-through; }
-[data-theme="dark"] .noa-file-row.is-added .noa-file-name, [data-theme="dark"] .noa-file-row.is-added .noa-file-status { color: #69C98B; }
-[data-theme="dark"] .noa-file-row.is-modified .noa-file-name, [data-theme="dark"] .noa-file-row.is-modified .noa-file-status { color: #E0B25C; }
-[data-theme="dark"] .noa-file-row.is-deleted .noa-file-name, [data-theme="dark"] .noa-file-row.is-deleted .noa-file-status { color: #EE8A8A; }
-.noa-file-row:hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+.noa-file-row.is-sticky { background-color: var(--surface-page, #F9F9F7); }
+.noa-file-row.is-sticky:hover { background-color: color-mix(in srgb, var(--text-primary) 6%, var(--surface-page, #F9F9F7)); }
+.noa-file-row:hover { background-color: color-mix(in srgb, var(--text-primary) 5%, transparent); }
 .noa-file-row > svg, .noa-panel-button > svg { flex-shrink: 0; }
-.noa-file-indent { width: 12px; flex-shrink: 0; }
 .noa-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.noa-file-directory { margin-left: 6px; font-size: var(--text-caption); color: var(--sidebar-text-muted); }
 .noa-file-status { flex-shrink: 0; color: var(--sidebar-text-muted); font-size: var(--text-caption); font-variant-numeric: tabular-nums; }
 .noa-change-count { display: inline-flex; flex-shrink: 0; gap: 6px; font-size: var(--text-caption); font-variant-numeric: tabular-nums; }
 .noa-change-count .is-added { color: #168447; }
@@ -2040,7 +1998,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-viewed-label input { accent-color: var(--accent-color); }
 .noa-panel-empty { margin: 0; padding: 24px 16px; text-align: center; color: var(--sidebar-text-muted); font-size: var(--text-chat-sm); }
 .noa-panel-empty p { margin-bottom: 8px; }
-.noa-panel-error, .noa-panel-notice { margin: 0; padding: 8px 12px; flex-shrink: 0; font-size: var(--text-caption); overflow-wrap: anywhere; }
+.noa-panel-error, .noa-panel-notice { margin: 0; padding: 8px 16px; flex-shrink: 0; font-size: var(--text-caption); overflow-wrap: anywhere; }
 .noa-panel-error { color: #C24444; background: color-mix(in srgb, #C24444 6%, transparent); }
 .noa-panel-notice { color: var(--sidebar-text-muted); }
 .noa-image-preview { display: flex; align-items: center; justify-content: center; padding: 16px; min-height: 160px; }
@@ -2073,40 +2031,11 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 [data-theme="dark"] .noa-code-view .hljs-string, [data-theme="dark"] .noa-code-view .hljs-regexp { color: #A3C98E; }
 [data-theme="dark"] .noa-code-view .hljs-number, [data-theme="dark"] .noa-code-view .hljs-attr { color: #E7BD86; }
 [data-theme="dark"] .noa-code-view .hljs-title, [data-theme="dark"] .noa-code-view .hljs-built_in, [data-theme="dark"] .noa-code-view .hljs-type { color: #82AAFF; }
-.noa-panel-details { display: flex; flex: 1; flex-direction: column; gap: 12px; min-height: 0; padding: 12px; overflow: auto; font-size: var(--text-chat-sm); }
-.noa-panel-section-title { display: flex; align-items: center; justify-content: space-between; min-height: 24px; font-weight: 500; }
 .noa-panel-muted { margin: 0; color: var(--sidebar-text-muted); font-size: var(--text-caption); }
-.noa-context-total { display: flex; gap: 12px; align-items: baseline; font-size: 24px; }
-.noa-context-total > span { font-size: var(--text-caption); color: var(--sidebar-text-muted); }
-.noa-context-bar { display: flex; height: 6px; overflow: hidden; border-radius: 9999px; background: var(--divider-subtle); }
-.noa-context-bar > span { flex-shrink: 0; height: 100%; }
-.noa-context-categories { display: flex; flex-direction: column; gap: 6px; }
-.noa-context-categories > div { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 8px; }
-.noa-context-dot { width: 6px; height: 6px; border-radius: 50%; }
-.noa-context-metadata { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 6px 12px; margin: 4px 0; }
-.noa-context-metadata dt { color: var(--sidebar-text-muted); }
-.noa-context-metadata dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.noa-panel-details details { border-top: 1px solid var(--divider-subtle); padding-top: 8px; }
-.noa-panel-details summary { display: flex; gap: 6px; align-items: center; cursor: pointer; min-height: 24px; }
-.noa-panel-details summary::before { content: "›"; color: var(--sidebar-text-muted); }
-.noa-panel-details details[open] > summary::before { transform: rotate(90deg); }
-.noa-panel-details summary > span:last-child { margin-left: auto; font-size: var(--text-caption); color: var(--sidebar-text-muted); }
-.noa-context-detail-row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; }
-.noa-context-detail-row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
-.noa-context-detail-row > span:last-child { flex-shrink: 0; color: var(--sidebar-text-muted); font-variant-numeric: tabular-nums; }
-.noa-activity-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sidebar-text-muted); }
-.noa-activity-dot.is-running { background: #43A66A; }
-.noa-activity-state { font-size: var(--text-caption); }
-.noa-panel-details .noa-activity-state.is-error { color: #C24444; }
-.noa-activity-content { margin-left: 18px; }
-.noa-activity-content h4 { margin: 8px 0 4px; font-size: var(--text-caption); color: var(--sidebar-text-muted); font-weight: 400; }
-.noa-activity-content pre, .noa-activity-log { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--code-font-size, 12px); line-height: 1.6; margin: 0; }
 .noa-code-search { position: sticky; top: 0; left: 0; z-index: 2; display: flex; justify-content: flex-end; align-items: center; gap: 4px; padding: 2px 8px; background: var(--surface-page); font-family: var(--font-ui); font-size: var(--text-caption); border-bottom: 1px solid var(--divider-subtle); }
 .noa-code-search input { min-width: 0; width: 160px; padding: 2px 5px; border: 1px solid var(--divider-subtle); border-radius: 5px; background: var(--bg-card); }
 .noa-code-view [data-search-match] code { background: color-mix(in srgb, #DDBB33 14%, transparent); }
 .noa-code-view [data-search-current] code { outline: 1px solid var(--accent-color); outline-offset: -1px; }
-.noa-activity-item > summary::before { content: none; }
-.noa-activity-item[open] > summary > .noa-activity-expand { transform: rotate(90deg); }
 .noa-diff-hunk-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .noa-hunk-actions { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
 .noa-review-menu { position: relative; flex-shrink: 0; margin-left: auto; }
@@ -2115,3 +2044,153 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-review-menu-content { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; display: flex; flex-direction: column; gap: 2px; min-width: 156px; padding: 4px; border-radius: 10px; background: var(--bg-card); }
 .noa-review-menu-content > .noa-panel-button { justify-content: flex-start; }
 .noa-review-menu-content .noa-viewed-label { padding: 4px 6px; }
+
+.noa-panel-details { display: flex; flex: 1; flex-direction: column; gap: 14px; min-height: 0; padding: 8px 16px 16px; overflow: auto; overscroll-behavior: contain; font-size: var(--text-chat-sm); }
+.noa-panel-section-title { display: flex; align-items: center; justify-content: space-between; min-height: 24px; }
+.noa-panel-eyebrow { font-size: var(--text-caption); color: var(--sidebar-text-muted); }
+.noa-context-card { display: flex; flex-direction: column; gap: 10px; padding: 0; }
+.noa-context-total { display: flex; gap: 10px; align-items: baseline; margin-top: -4px; font-size: 28px; line-height: 1.1; font-weight: 400; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.noa-context-total > b { font-weight: inherit; }
+.noa-context-total small { font-size: 16px; margin-left: 2px; color: var(--sidebar-text-muted); }
+.noa-context-total > span { font-size: var(--text-caption); letter-spacing: 0; color: var(--sidebar-text-muted); }
+.noa-context-total.is-warning { color: #A8741A; } .noa-context-total.is-critical { color: #C24444; }
+.noa-context-bar { display: flex; gap: 1px; height: 6px; overflow: hidden; border-radius: 9999px; background: color-mix(in srgb, var(--text-primary) 8%, transparent); }
+.noa-context-bar > span { flex-shrink: 0; height: 100%; min-width: 2px; }
+.noa-context-categories { display: flex; flex-direction: column; gap: 2px; font-size: var(--text-caption); }
+.noa-context-categories > div { display: grid; grid-template-columns: 6px minmax(0, 1fr) auto 44px; align-items: center; gap: 8px; min-height: 20px; color: var(--sidebar-text); }
+.noa-context-categories > div > span:last-child { text-align: right; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.noa-context-share { color: var(--sidebar-text-muted); font-variant-numeric: tabular-nums; }
+.noa-context-dot { width: 6px; height: 6px; border-radius: 50%; }
+.noa-context-metadata { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 6px 12px; margin: 0; padding: 14px 0; border-block: 1px solid color-mix(in srgb, var(--text-primary) 5%, transparent); font-size: var(--text-caption); }
+.noa-context-metadata dt { color: var(--sidebar-text-muted); }
+.noa-context-metadata dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+.noa-panel-sections { display: flex; flex-direction: column; gap: 2px; margin: 0 -8px; }
+.noa-panel-section { border-radius: 8px; }
+.noa-panel-section > summary { display: flex; gap: 6px; align-items: center; min-height: 30px; padding: 0 8px; border-radius: 8px; cursor: pointer; list-style: none; user-select: none; color: var(--sidebar-text); }
+.noa-panel-section > summary:hover { background: color-mix(in srgb, var(--text-primary) 5%, transparent); color: var(--text-primary); }
+.noa-panel-section > summary:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
+.noa-panel-section > summary::-webkit-details-marker { display: none; }
+.noa-panel-section > summary:hover .noa-panel-section-chevron { color: var(--text-primary); }
+.noa-panel-section-chevron { flex-shrink: 0; color: var(--sidebar-text-muted); transition: transform 150ms ease; }
+.noa-panel-section[open] > summary .noa-panel-section-chevron { transform: rotate(90deg); }
+.noa-panel-section-count { margin-left: auto; font-size: var(--text-caption); color: var(--sidebar-text-muted); font-variant-numeric: tabular-nums; }
+.noa-panel-section-body { padding: 2px 8px 8px 26px; font-size: var(--text-caption); }
+.noa-context-detail-row { display: flex; width: calc(100% + 12px); justify-content: space-between; gap: 12px; padding: 3px 6px; margin-inline: -6px; border-radius: 6px; text-align: left; color: var(--sidebar-text); }
+.noa-context-detail-row > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.noa-context-detail-row > span:last-child { flex-shrink: 0; color: var(--sidebar-text-muted); font-variant-numeric: tabular-nums; }
+.noa-context-detail-row em { font-style: normal; color: var(--sidebar-text-muted); }
+.noa-context-detail-row.is-action:hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); color: var(--text-primary); }
+.noa-context-detail-row.is-action:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
+.noa-segmented { display: inline-flex; align-self: flex-start; gap: 2px; font-size: var(--text-caption); }
+.noa-segmented > button { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 6px; border-radius: 6px; color: var(--sidebar-text-muted); transition: color 120ms, background 120ms; }
+.noa-segmented > button:hover { color: var(--text-primary); }
+.noa-segmented > button:hover { background: color-mix(in srgb, var(--text-primary) 5%, transparent); }
+.noa-segmented > button[aria-checked="true"] { background: color-mix(in srgb, var(--text-primary) 7.5%, transparent); color: var(--text-primary); }
+.noa-segmented > button:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
+.noa-segmented > button > span { font-variant-numeric: tabular-nums; opacity: .7; }
+.noa-branch { display: inline-flex; align-items: center; gap: 6px; color: var(--text-primary); }
+.noa-branch > svg { flex-shrink: 0; color: var(--sidebar-text-muted); }
+.noa-panel-empty > svg { margin: 0 auto 8px; color: var(--sidebar-text-muted); opacity: .7; }
+.noa-activity-status { display: flex; align-items: center; gap: 10px; padding: 2px 0 0; color: var(--text-primary); }
+.noa-activity-dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; background: var(--sidebar-text-muted); }
+.noa-activity-status[data-kind="ready"] .noa-activity-dot { background: #43A66A; }
+.noa-activity-status[data-kind="running"] .noa-activity-dot { background: var(--accent-color); animation: noa-status-blink 1.2s ease-in-out infinite; }
+.noa-activity-status[data-kind="waiting"] .noa-activity-dot { background: #D9A43B; }
+.noa-activity-status[data-kind="closed"] .noa-activity-dot { background: #C24444; }
+.noa-activity-list { display: flex; flex-direction: column; margin: -6px -16px 0; }
+.noa-activity-log { max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--code-font-size, 12px); line-height: 1.6; margin: 0; color: var(--sidebar-text); }
+@media (prefers-reduced-motion: reduce) { .noa-activity-status .noa-activity-dot { animation: none; } }
+/* Indent guides as in Codex's tree: 1px per ancestor under its icon center (8px inset + half the 16px slot, 9px per level); shown only while the tree is hovered. */
+.noa-file-tree .noa-file-row { --guide: transparent; background-image: repeating-linear-gradient(90deg, var(--guide) 0 1px, transparent 1px 9px); background-position: 15.5px 0; background-size: calc(var(--depth, 0) * 9px) 100%; background-repeat: no-repeat; }
+.noa-file-tree:hover .noa-file-row { --guide: color-mix(in srgb, var(--sidebar-text-muted) 19%, transparent); }
+/* Codex review tree stats: 12px "+N -N" in git colours, 4px apart, before the git lane. */
+.noa-row-stats { display: inline-flex; flex-shrink: 0; gap: 4px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.noa-row-stats .is-added { color: #168447; } .noa-row-stats .is-removed { color: #C24444; }
+[data-theme="dark"] .noa-row-stats .is-added { color: #69C98B; } [data-theme="dark"] .noa-row-stats .is-removed { color: #EE8A8A; }
+/* Diff colours follow Codex's @pierre/diffs tokens: line = 12% of the base over the page, gutter = 9%, inline emphasis = 15% alpha, hunk rows tinted with the info colour, 20px lines. */
+.noa-code-view { --diff-add-base: #0DBE4E; --diff-del-base: #FF2E3F; --code-addition: color-mix(in lab, var(--surface-page, #F9F9F7) 88%, var(--diff-add-base)); --code-deletion: color-mix(in lab, var(--surface-page, #F9F9F7) 88%, var(--diff-del-base)); --code-addition-gutter: color-mix(in lab, var(--surface-page, #F9F9F7) 91%, var(--diff-add-base)); --code-deletion-gutter: color-mix(in lab, var(--surface-page, #F9F9F7) 91%, var(--diff-del-base)); line-height: 20px; }
+[data-theme="dark"] .noa-code-view { --diff-add-base: #5ECC71; --diff-del-base: #FF6762; --code-addition: color-mix(in lab, var(--surface-page) 80%, var(--diff-add-base)); --code-deletion: color-mix(in lab, var(--surface-page) 80%, var(--diff-del-base)); --code-addition-gutter: color-mix(in lab, var(--surface-page) 85%, var(--diff-add-base)); --code-deletion-gutter: color-mix(in lab, var(--surface-page) 85%, var(--diff-del-base)); }
+.noa-code-line, .noa-source-line { min-height: 20px; }
+.noa-code-number { opacity: 1; color: color-mix(in srgb, var(--text-primary) 40%, transparent); }
+.noa-code-line.is-add .noa-code-number { background: var(--code-addition-gutter); }
+.noa-code-line.is-remove .noa-code-number { background: var(--code-deletion-gutter); }
+.noa-code-line.is-add .noa-code-sign { color: var(--diff-add-base); }
+.noa-code-line.is-remove .noa-code-sign { color: var(--diff-del-base); }
+.noa-code-line mark { background: color-mix(in srgb, var(--diff-add-base) 15%, transparent); }
+.noa-code-line.is-remove mark { background: color-mix(in srgb, var(--diff-del-base) 15%, transparent); }
+.noa-diff-hunk-header { padding: 2px 12px; min-height: 28px; border-block: 0; background: color-mix(in srgb, var(--surface-page, #F9F9F7) 94%, #009FFF); color: color-mix(in srgb, var(--text-primary) 55%, transparent); font-family: var(--font-mono); font-size: 11.5px; }
+.noa-diff-pair .noa-code-line:first-child { border-right: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent); }
+.noa-panel-actions select { appearance: none; height: 24px; padding: 0 22px 0 8px; border: 0; background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23898781' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 6px center; cursor: pointer; }
+.noa-panel-actions select:hover { background-color: color-mix(in srgb, var(--text-primary) 5%, transparent); color: var(--text-primary); }
+.noa-panel-actions .noa-segmented { align-self: center; }
+.noa-panel-actions:has(.noa-review-menu) { flex-wrap: nowrap; gap: 2px; padding-inline: 8px; }
+/* Panel alignment grid: leading icons and text sit 16px from the panel edge in every tab. */
+.noa-panel-title { padding-left: 6px; }
+.noa-panel-toolbar > .noa-panel-button:first-child + .noa-panel-title { padding-left: 2px; }
+.noa-panel-toolbar > .noa-segmented, .noa-panel-details > .noa-segmented { margin-left: 0; }
+.noa-panel-details > .noa-segmented { margin-left: -6px; }
+.noa-activity-list > div > button { padding-inline: 16px; }
+/* Codex's vertical-scroll-fade-mask-top: the top edge fades over 40px once scrolled (scroll-driven); the bottom is covered by the floating composer. */
+@property --top-fade { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes noa-edge-fade { 0%, 1% { --top-fade: 0px; } 99%, 100% { --top-fade: var(--edge-fade-distance); } }
+.noa-scroll-fade { --edge-fade-distance: 40px; }
+@supports (animation-timeline: scroll()) {
+  /* A second, solid 6px layer on the right keeps the scrollbar out of the fade (must match ::-webkit-scrollbar). */
+  .noa-scroll-fade { mask: linear-gradient(to bottom, transparent, #000 var(--top-fade)), linear-gradient(#000, #000) right / 6px 100% no-repeat; animation: noa-edge-fade linear both; animation-timeline: scroll(self y); }
+}
+/* Codex's scroll-to-bottom (h-8 w-8 rounded-full border-default bg-surface text-secondary), 24px above the composer card (the overlay includes its 32px gradient), no shadow. */
+.noa-scroll-bottom { position: absolute; bottom: calc(var(--composer-overlay, 0px) - 8px); left: 50%; z-index: 30; display: flex; width: 32px; height: 32px; translate: -50% 0; align-items: center; justify-content: center; border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent); border-radius: 999px; background: var(--surface-page, #F9F9F7) padding-box; color: var(--sidebar-text-muted); transition: opacity 200ms ease, color 120ms; }
+.noa-scroll-bottom:hover { color: var(--text-primary); }
+.noa-scroll-bottom[data-show="false"] { opacity: 0; pointer-events: none; }
+.noa-turn-diff { display: inline-flex; min-width: 0; align-items: center; gap: 4px; border-radius: 4px; color: inherit; font-variant-numeric: tabular-nums; transition: color 120ms; }
+.noa-turn-diff:hover { color: var(--text-primary); }
+.noa-turn-diff:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }
+.noa-turn-diff .is-added { color: #168447; } .noa-turn-diff .is-removed { color: #C24444; }
+[data-theme="dark"] .noa-turn-diff .is-added { color: #69C98B; } [data-theme="dark"] .noa-turn-diff .is-removed { color: #EE8A8A; }
+@media (prefers-reduced-motion: reduce) { .noa-scroll-bottom { transition: none; } }
+/* Floating composer: the page colour ramps in over 32px above the card so text dissolves instead of being cut. */
+/* Stops 6px short of the right edge so the scrollbar runs the full height beside it, as in Codex; the right padding drops by the same 6px to keep the card centred. */
+.noa-conversation-footer { position: absolute; inset-inline: 0 6px; bottom: 0; z-index: 20; padding: 32px 23px 12px 29px; background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-page, #F9F9F7) 0%, transparent), var(--surface-page, #F9F9F7) 32px); pointer-events: none; }
+.noa-conversation-footer > * { pointer-events: auto; }
+/* Codex's loading shimmer: text at 55% of its colour with a lighter band sweeping left to right. */
+.noa-shimmer { --shimmer-base: color-mix(in srgb, currentColor 55%, transparent); color: transparent; background: linear-gradient(90deg, var(--shimmer-base) 0 35%, var(--text-primary) 50%, var(--shimmer-base) 65% 100%) 0 0 / 300% 100%; -webkit-background-clip: text; background-clip: text; animation: noa-shimmer 2s linear infinite; }
+@keyframes noa-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .noa-shimmer { animation: none; color: inherit; background: none; } }
+
+/* Per-file change list, opened on hover/focus above the summary (Codex: min-w-64, max-h-72, rows px-3 py-1.5). */
+.noa-turn-diff-wrap { position: relative; display: inline-flex; min-width: 0; }
+.noa-turn-diff-files { position: absolute; left: -8px; bottom: calc(100% + 4px); z-index: 40; display: flex; flex-direction: column; gap: 0; min-width: 256px; max-width: min(420px, 80vw); max-height: 288px; margin: 0; padding: 4px; overflow-y: auto; list-style: none; border-radius: 10px; background: var(--bg-card, #FFFFFF); opacity: 0; visibility: hidden; transition: opacity 120ms ease, visibility 0s linear 120ms; }
+.noa-turn-diff-files::after { content: ""; position: absolute; inset-inline: 0; top: 100%; height: 6px; }
+.noa-turn-diff-wrap:hover .noa-turn-diff-files, .noa-turn-diff-wrap:focus-within .noa-turn-diff-files { opacity: 1; visibility: visible; transition-delay: 0s; }
+.noa-turn-diff-files button { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 12px; border-radius: 6px; text-align: start; color: var(--text-primary); }
+.noa-turn-diff-files button:hover { background: color-mix(in srgb, var(--text-primary) 5%, transparent); }
+.noa-turn-diff-files button:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
+.noa-turn-diff-stats { display: inline-flex; flex-shrink: 0; gap: 4px; font-size: var(--text-caption); font-variant-numeric: tabular-nums; color: var(--sidebar-text-muted); }
+.noa-turn-diff-stats .is-added { color: #168447; } .noa-turn-diff-stats .is-removed { color: #C24444; }
+[data-theme="dark"] .noa-turn-diff-stats .is-added { color: #69C98B; } [data-theme="dark"] .noa-turn-diff-stats .is-removed { color: #EE8A8A; }
+
+/* Working dots in the scroll button; hover or focus shows the arrow again. */
+.noa-scroll-bottom-dots { display: inline-flex; gap: 2px; }
+.noa-scroll-bottom-dots > span { width: 3px; height: 3px; border-radius: 50%; background: currentColor; animation: noa-working-dot 1.2s ease-in-out infinite; }
+.noa-scroll-bottom-dots > span:nth-child(2) { animation-delay: .15s; } .noa-scroll-bottom-dots > span:nth-child(3) { animation-delay: .3s; }
+@keyframes noa-working-dot { 0%, 60%, 100% { opacity: .35; } 30% { opacity: 1; } }
+.noa-scroll-bottom-arrow { display: none; }
+.noa-scroll-bottom:hover .noa-scroll-bottom-dots, .noa-scroll-bottom:focus-visible .noa-scroll-bottom-dots { display: none; }
+.noa-scroll-bottom:hover .noa-scroll-bottom-arrow, .noa-scroll-bottom:focus-visible .noa-scroll-bottom-arrow { display: block; }
+@media (prefers-reduced-motion: reduce) { .noa-scroll-bottom-dots > span { animation: none; opacity: .7; } }
+
+/* Middle-truncated path: the directory ellipsises, the file name never does. */
+.noa-middle-path { display: flex; min-width: 0; }
+.noa-middle-path-dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sidebar-text-muted); }
+.noa-middle-path-base { flex-shrink: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Git decoration as in Codex's file tree: icon, name and lane glyph share one status colour; folders holding
+   changes get a half-opacity modified dot. Modified is orange in Files and blue in the Changes (review) tree. */
+.noa-workspace-panel { --git-added: #168447; --git-deleted: #C24444; --git-modified: #C2410C; }
+.noa-workspace-panel.is-review { --git-modified: #3A83F7; }
+[data-theme="dark"] .noa-workspace-panel { --git-added: #4ADE80; --git-deleted: #F87171; --git-modified: #FB923C; }
+[data-theme="dark"] .noa-workspace-panel.is-review { --git-modified: #60A5FA; }
+.noa-file-row.is-added { --git-tone: var(--git-added); } .noa-file-row.is-modified { --git-tone: var(--git-modified); } .noa-file-row.is-deleted { --git-tone: var(--git-deleted); }
+.noa-file-row.is-added .noa-file-name, .noa-file-row.is-modified .noa-file-name, .noa-file-row.is-deleted .noa-file-name { color: var(--git-tone, inherit); }
+.noa-file-row.is-deleted .noa-file-name { text-decoration: line-through; }
+.noa-file-row.is-added .noa-file-icon svg, .noa-file-row.is-modified .noa-file-icon svg, .noa-file-row.is-deleted .noa-file-icon svg { color: var(--git-tone) !important; }
+.noa-git-mark { color: var(--git-tone); }

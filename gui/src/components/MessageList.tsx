@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import type { AgentState, Block, Turn } from "../agent/reducer"
-import { Check, ChevronRight, Copy } from "../lib/icons"
+import { ArrowDown, Check, ChevronRight, Copy } from "../lib/icons"
 import { Collapsible } from "./Collapsible"
 import { Markdown } from "./Markdown"
 import { ToolCard } from "./ToolCard"
@@ -10,13 +10,15 @@ interface MessageListProps {
   busy: boolean
   result?: AgentState["result"]
   readingWidth: number
+  changes?: { count: number; additions: number; deletions: number; files?: { path: string; additions: number; deletions: number; binary: boolean }[] }
+  onChanges: (path?: string) => void
 }
 
 // Follows the bottom while the user is near it; a scroll away releases the pin.
 const PIN_THRESHOLD = 40
 const JUMP_THRESHOLD = 120
 
-export function MessageList({ turns, busy, result, readingWidth }: MessageListProps) {
+export function MessageList({ turns, busy, result, readingWidth, changes, onChanges }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
   const [showJump, setShowJump] = useState(false)
@@ -46,8 +48,9 @@ export function MessageList({ turns, busy, result, readingWidth }: MessageListPr
   const showResult = result && !busy
 
   return (
-    <div ref={scrollRef} onScroll={onScroll} className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain">
-      <div className="mx-auto flex flex-col gap-4 px-5 py-8" style={{ maxWidth: readingWidth }}>
+    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div ref={scrollRef} onScroll={onScroll} className="noa-scroll-fade relative flex-1 min-h-0 overflow-y-auto overscroll-contain">
+      <div className="mx-auto flex flex-col gap-4 px-5 pt-8" style={{ maxWidth: readingWidth, paddingBottom: "calc(var(--composer-overlay, 0px) + 32px)" }}>
         {segments.map((segment, index) =>
           segment.role === "user" ? (
             // The user's message is a right-aligned bubble, as in Codex: chat-size text, relaxed leading.
@@ -64,29 +67,65 @@ export function MessageList({ turns, busy, result, readingWidth }: MessageListPr
           ),
         )}
 
-        {showResult && (
-          <div
-            className={`font-mono text-caption ${result.isError ? "text-[#C24444]" : "text-[var(--sidebar-text-muted,#898781)]"}`}
-          >
-            {result.interrupted
-              ? "Task stopped"
-              : result.isError
-                ? "Finished with an error"
-                : `Done in ${(result.durationMs / 1000).toFixed(1)}s`}
-            {result.costUsd !== undefined && ` · $${result.costUsd.toFixed(4)}`}
+        {/* Turn footer, as Codex's TurnDiffContent: status, then "· N files changed +a -d" as quiet inline text. */}
+        {!busy && (showResult || !!changes?.count) && (
+          <div className="flex min-w-0 flex-wrap items-center gap-2 text-[length:var(--text-chat-sm)] text-[var(--sidebar-text-muted,#898781)]">
+            {showResult && (
+              <span className={result.isError ? "text-[#C24444]" : undefined}>
+                {result.interrupted
+                  ? "Task stopped"
+                  : result.isError
+                    ? "Finished with an error"
+                    : `Done in ${(result.durationMs / 1000).toFixed(1)}s`}
+                {result.costUsd !== undefined && ` · $${result.costUsd.toFixed(4)}`}
+              </span>
+            )}
+            {!!changes?.count && (
+              <>
+                {showResult && <span aria-hidden="true">·</span>}
+                {/* Hover or focus reveals the per-file list, as Codex's TurnDiffContent tooltip does. */}
+                <span className="noa-turn-diff-wrap">
+                  <button type="button" onClick={() => onChanges()} className="noa-turn-diff">
+                    <span className="truncate">{changes.count} {changes.count === 1 ? "file" : "files"} changed</span>
+                    {changes.additions > 0 && <span className="is-added">+{changes.additions}</span>}
+                    {changes.deletions > 0 && <span className="is-removed">-{changes.deletions}</span>}
+                  </button>
+                  {!!changes.files?.length && (
+                    <ul className="noa-turn-diff-files noa-floating-panel">
+                      {changes.files.map((file) => (
+                        <li key={file.path}>
+                          <button type="button" onClick={() => onChanges(file.path)} title={file.path}>
+                            <span className="noa-middle-path">{file.path.includes("/") && <span className="noa-middle-path-dir">{file.path.slice(0, file.path.lastIndexOf("/") + 1)}</span>}<span className="noa-middle-path-base">{file.path.split("/").pop()}</span></span>
+                            <span className="noa-turn-diff-stats">
+                              {file.binary ? "Binary" : <>{file.additions > 0 && <span className="is-added">+{file.additions}</span>}{file.deletions > 0 && <span className="is-removed">-{file.deletions}</span>}</>}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </span>
+              </>
+            )}
           </div>
         )}
       </div>
 
-      {showJump && (
-        <button
-          type="button"
-          onClick={jumpToBottom}
-          className="sticky bottom-2 mx-auto block h-6 rounded-full bg-[var(--bg-card,#FFFFFF)] px-3 text-[length:var(--text-chat-sm)] shadow-[var(--shadow-floating)] noa-press"
-        >
-          Jump to latest
-        </button>
-      )}
+    </div>
+      {/* Codex's scroll-to-bottom: a 32px round button that fades rather than mounts. */}
+      <button
+        type="button"
+        aria-label="Scroll to bottom"
+        aria-hidden={!showJump}
+        tabIndex={showJump ? undefined : -1}
+        onClick={jumpToBottom}
+        data-show={showJump}
+        className="noa-scroll-bottom noa-press"
+      >
+        {/* While the agent works the button shows Codex's working dots; hover swaps back to the arrow. */}
+        {busy && <span className="noa-scroll-bottom-dots" aria-hidden="true"><span /><span /><span /></span>}
+        <ArrowDown size={14} className={busy ? "noa-scroll-bottom-arrow" : undefined} />
+      </button>
     </div>
   )
 }

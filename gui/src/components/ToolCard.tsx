@@ -21,7 +21,7 @@ export function ToolCard({ block }: { block: ToolBlock }) {
           className="size-1.5 shrink-0 rounded-full bg-[var(--sidebar-text-muted,#898781)] data-[kind=error]:bg-[#D45555] data-[kind=running]:noa-status-running data-[kind=running]:bg-[var(--accent-color,#CC7D5E)]"
         />
         <span className="shrink-0 font-mono text-[var(--text-primary,#2D2D2B)]">{block.name}</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[var(--text-tertiary,#8F8F8F)]">{previewOf(block)}</span>
+        <span className={`min-w-0 flex-1 truncate font-mono text-[var(--text-tertiary,#8F8F8F)] ${kind === "running" ? "noa-shimmer" : ""}`}>{previewOf(block)}</span>
         <ChevronRight size={12} className={`shrink-0 transition-transform duration-150 ${open ? "rotate-90" : ""}`} />
       </button>
       <Collapsible open={open}>
