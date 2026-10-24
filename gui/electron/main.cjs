@@ -16,6 +16,10 @@ const ICON = path.join(__dirname, 'icon.icns')
 let bridge = null
 let win = null
 let quitting = false
+// NOA_GUI_DEV=1 serves the UI from Vite with hot reload instead of the built dist/.
+const DEV = process.env.NOA_GUI_DEV === '1'
+const VITE_PORT = 5173
+let vite = null
 
 // Page zoom goes through Electron's zoom factor, not the default Cmd+/- roles, so the renderer
 // can be told the factor. noa.css reads --noa-zoom-factor to keep the traffic-light clearance fixed
@@ -97,11 +101,11 @@ function waitForBridge(port, timeoutMs = 15000) {
 }
 
 async function startBridge() {
-  if (!fs.existsSync(path.join(DIST_DIR, 'index.html'))) {
+  if (!DEV && !fs.existsSync(path.join(DIST_DIR, 'index.html'))) {
     throw new Error('The UI is not built. Run `bun run build` in gui/ first.')
   }
   const port = await freePort()
-  bridge = spawn(findBun(), ['run', 'server/main.ts'], {
+  bridge = spawn(findBun(), [...(DEV ? ['--hot'] : []), 'run', 'server/main.ts'], {
     cwd: GUI_DIR,
     env: { ...process.env, NOA_GUI_PORT: String(port) },
     stdio: ['ignore', 'inherit', 'inherit'],
@@ -114,11 +118,20 @@ async function startBridge() {
     }
   })
   await waitForBridge(port)
+  if (DEV) {
+    // The Vite proxy reads NOA_GUI_PORT, so it follows the bridge's free port.
+    vite = spawn(findBun(), ['x', 'vite', '--host', '127.0.0.1', '--port', String(VITE_PORT), '--strictPort'], {
+      cwd: GUI_DIR,
+      env: { ...process.env, NOA_GUI_PORT: String(port) },
+      stdio: ['ignore', 'inherit', 'inherit'],
+    })
+    await waitForBridge(VITE_PORT)
+  }
   return port
 }
 
 function createWindow(port) {
-  const origin = `http://127.0.0.1:${port}`
+  const origin = DEV ? `http://127.0.0.1:${VITE_PORT}` : `http://127.0.0.1:${port}`
   win = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -173,4 +186,5 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   quitting = true
   bridge?.kill('SIGTERM')
+  vite?.kill('SIGTERM')
 })

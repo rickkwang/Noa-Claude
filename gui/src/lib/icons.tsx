@@ -30,6 +30,18 @@ import {
   IconExternalLink,
   IconEye,
   IconFileText,
+  IconBrandTypescript,
+  IconBrandReact,
+  IconBrandJavascript,
+  IconJson,
+  IconMarkdown,
+  IconBrandCss3,
+  IconBrandHtml5,
+  IconBrandPython,
+  IconPhoto,
+  IconListDetails,
+  IconSquareMinus,
+  IconSquareDot,
   IconFileZip,
   IconFilter,
   IconFolder,
@@ -125,6 +137,18 @@ export const ExternalLink = icon(IconExternalLink);
 export const Eye = icon(IconEye);
 export const FileArchive = icon(IconFileZip);
 export const FileText = icon(IconFileText);
+export const BrandTypescript = icon(IconBrandTypescript);
+export const BrandReact = icon(IconBrandReact);
+export const BrandJavascript = icon(IconBrandJavascript);
+export const Json = icon(IconJson);
+export const Markdown = icon(IconMarkdown);
+export const BrandCss3 = icon(IconBrandCss3);
+export const BrandHtml5 = icon(IconBrandHtml5);
+export const BrandPython = icon(IconBrandPython);
+export const Photo = icon(IconPhoto);
+export const ListDetails = icon(IconListDetails);
+export const SquareMinus = icon(IconSquareMinus);
+export const SquareDot = icon(IconSquareDot);
 export const Filter = icon(IconFilter);
 export const Folder = icon(IconFolder);
 export const FolderOpen = icon(IconFolderOpen);

@@ -108,7 +108,7 @@ Bun.serve<SocketData>({
     // Reject DNS-rebinding requests: the Host must be a loopback name.
     if (!["localhost", "127.0.0.1"].includes(url.hostname)) return json({ error: "Host not allowed" }, 403)
     const origin = req.headers.get("origin")
-    if (origin && origin !== url.origin && origin !== "http://localhost:5173")
+    if (origin && origin !== url.origin && !["http://localhost:5173", "http://127.0.0.1:5173"].includes(origin))
       return json({ error: "Origin not allowed" }, 403)
     const cwd = resolveCwd(url.searchParams.get("cwd"))
 

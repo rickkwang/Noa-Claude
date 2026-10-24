@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto"
-import { readdir, realpath, stat, readFile, writeFile, rename, unlink } from "node:fs/promises"
+import { opendir, readdir, realpath, stat, readFile, writeFile, rename, unlink } from "node:fs/promises"
 import { dirname, relative, resolve, sep, extname } from "node:path"
 import { createTwoFilesPatch, parsePatch, formatPatch } from "diff"
 
@@ -209,5 +209,22 @@ export async function workspaceRequest(url: URL, cwd: string, body?: unknown): P
   const entries = (await readdir(target, { withFileTypes: true })).filter((e) => e.name !== ".git" && !e.isSymbolicLink()).sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name))
   const ignored = new Set((await git(cwd, ["check-ignore", "-z", "--stdin"], [0, 1], entries.map((e) => `${path ? `${path}/` : ""}${e.name}${e.isDirectory() ? "/" : ""}\0`).join("")).catch(() => "")).split("\0"))
   const visible = entries.filter((e) => !ignored.has(`${path ? `${path}/` : ""}${e.name}${e.isDirectory() ? "/" : ""}`))
-  return { entries: visible.slice(0, 500).map((e) => ({ name: e.name, path: path ? `${path}/${e.name}` : e.name, directory: e.isDirectory() })), truncated: visible.length > 500 }
+  // Directories that only contain one directory are shown as one row ("a/b/c"), pointing at the deepest one.
+  const flatten = async (rel: string) => {
+    for (let hops = 0; hops < 8; hops++) {
+      const dir = await opendir(await inside(cwd, rel)).catch(() => undefined)
+      if (!dir) break
+      const seen: import("node:fs").Dirent[] = []
+      try { for (let e = await dir.read(); e && seen.length < 3; e = await dir.read()) if (e.name !== ".git") seen.push(e) } finally { await Promise.resolve(dir.close()).catch(() => {}) }
+      if (seen.length !== 1 || !seen[0]!.isDirectory()) break
+      rel = `${rel}/${seen[0]!.name}`
+    }
+    return rel
+  }
+  const entriesOut = await Promise.all(visible.slice(0, 500).map(async (e) => {
+    const own = path ? `${path}/${e.name}` : e.name
+    const deepest = e.isDirectory() ? await flatten(own) : own
+    return { name: deepest === own ? e.name : deepest.slice(own.length - e.name.length), path: deepest, directory: e.isDirectory() }
+  }))
+  return { entries: entriesOut, truncated: visible.length > 500 }
 }
