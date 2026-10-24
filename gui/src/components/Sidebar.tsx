@@ -1,0 +1,400 @@
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import type { ProjectInfo, SessionSummary } from "../api"
+import {
+  Check,
+  ChevronRight,
+  Folder,
+  FolderPlus,
+  MoreHorizontal,
+  Plus,
+  Search,
+  Settings,
+  SquarePen,
+} from "../lib/icons"
+
+const dragRegion = { WebkitAppRegion: "drag" } as CSSProperties
+const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
+
+export interface ActiveSession {
+  cwd: string
+  id?: string
+}
+
+interface SidebarProps {
+  projects: ProjectInfo[]
+  // Sessions per project path, newest first.
+  sessions: Record<string, SessionSummary[]>
+  active: ActiveSession
+  // Without a path the active project is used.
+  onNewSession: (cwd?: string) => void
+  onSelect: (cwd: string, id: string) => void
+  onAddProject: () => void
+  onRemoveProject: (path: string) => void
+  onRevealProject: (path: string) => void
+  onSettings: () => void
+}
+
+// Noa's sidebar: search, a Projects toolbar, then one collapsible group per project folder.
+export function Sidebar({
+  projects,
+  sessions,
+  active,
+  onNewSession,
+  onSelect,
+  onAddProject,
+  onRemoveProject,
+  onRevealProject,
+  onSettings,
+}: SidebarProps) {
+  const [query, setQuery] = useState("")
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
+  const [projectsOpen, setProjectsOpen] = useState(true)
+  const q = query.trim().toLowerCase()
+
+  // While searching, every project with a match opens so the hits are visible.
+  const groups = useMemo(
+    () =>
+      projects.map((project) => {
+        const all = sessions[project.path] ?? []
+        const matches = q ? all.filter((s) => s.title.toLowerCase().includes(q)) : all
+        const nameMatches = q !== "" && project.name.toLowerCase().includes(q)
+        return { project, visible: nameMatches ? all : matches }
+      }),
+    [projects, sessions, q],
+  )
+
+  function toggle(path: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
+
+  return (
+    <div className="noa-sidebar-surface noa-sidebar-fade-scope w-full h-full min-h-0 flex flex-col shrink-0 relative">
+      {/* Titlebar band: the traffic lights and sidebar toggle sit over it, so it stays draggable. */}
+      <div className="h-11 shrink-0" style={dragRegion} />
+
+      <div className="noa-sidebar-search mx-2 mb-[9px] flex h-[26px] shrink-0 cursor-text items-center gap-0.5 rounded-[6px]">
+        <span
+          aria-hidden="true"
+          className="flex size-7 shrink-0 items-center justify-center text-[var(--sidebar-text-muted,#898781)]"
+        >
+          <Search size={16} />
+        </span>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault()
+              setQuery("")
+              e.currentTarget.blur()
+            }
+          }}
+          placeholder="Search"
+          aria-label="Search tasks"
+          className="noa-sidebar-search-input min-w-0 flex-1 bg-transparent text-body font-ui outline-none"
+        />
+      </div>
+
+      <button
+        type="button"
+        onClick={() => onNewSession()}
+        className="noa-sidebar-tree-item noa-sidebar-tree-row noa-sidebar-hover-surface-subtle mx-2 mb-0.5 flex min-h-[26px] shrink-0 items-center gap-2 rounded-lg px-2"
+      >
+        <SquarePen size={14} className="shrink-0" />
+        New task
+      </button>
+
+      <div className="group/projects noa-sidebar-toolbar-mask h-8 flex items-center pl-[10px] pr-2 gap-0.5 shrink-0 z-10 overflow-visible">
+        <button
+          type="button"
+          aria-expanded={projectsOpen}
+          onClick={() => setProjectsOpen((open) => !open)}
+          className="flex min-w-0 flex-1 items-center gap-1 pl-2 text-body text-[var(--sidebar-text-muted,#898781)] font-ui"
+        >
+          Projects
+          <ChevronRight
+            size={12}
+            className={`shrink-0 transition-transform duration-150 ${projectsOpen ? "rotate-90" : ""}`}
+          />
+        </button>
+        {/* Hidden until the header is hovered or focused, as Codex's Projects toolbar is. */}
+        <span className="flex opacity-0 transition-opacity group-hover/projects:opacity-100 group-focus-within/projects:opacity-100">
+          <IconButton title="Add project folder" label="Add project" onClick={onAddProject}>
+            <FolderPlus size={14} />
+          </IconButton>
+        </span>
+      </div>
+
+      <div className="noa-sidebar-scroll noa-sidebar-scroll-fade group/tree flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+        <div className="pt-1 pb-2">
+          {projects.length === 0 && (
+            <button
+              type="button"
+              onClick={onAddProject}
+              className="mx-4 mt-2 text-left text-caption text-[var(--accent-color,#CC7D5E)] hover:underline"
+            >
+              Add a project folder to start
+            </button>
+          )}
+          {projectsOpen &&
+            groups.map(({ project, visible }) => {
+              const isOpen = q !== "" || expanded.has(project.path)
+              const isActiveProject = active.cwd === project.path
+              return (
+                <div key={project.path} className="font-ui mb-px">
+                  <ProjectRow
+                    project={project}
+                    open={isOpen}
+                    onToggle={() => toggle(project.path)}
+                    onNewSession={() => onNewSession(project.path)}
+                    onRemove={() => onRemoveProject(project.path)}
+                    onReveal={() => onRevealProject(project.path)}
+                  />
+                  {isOpen && (
+                    <>
+                      {visible.map((session) => (
+                        <SessionRow
+                          key={session.id}
+                          title={session.title}
+                          active={isActiveProject && session.id === active.id}
+                          indent
+                          onClick={() => onSelect(project.path, session.id)}
+                        />
+                      ))}
+                      {visible.length === 0 && q !== "" && (
+                        <div className="pl-9 py-1 text-caption text-[var(--sidebar-text-muted,#898781)]">
+                          No tasks match
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )
+            })}
+          {projectsOpen && projects.length > 0 && q === "" && groups.every((g) => g.visible.length === 0) && (
+            <div className="px-4 py-2 text-caption text-[var(--sidebar-text-muted,#898781)]">No tasks yet</div>
+          )}
+        </div>
+      </div>
+      <div className="shrink-0 border-t border-[var(--divider-subtle)] p-2" style={noDragRegion}>
+        <button
+          onClick={onSettings}
+          className="flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-body text-[var(--text-primary)] hover:bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)] active:bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)]"
+        >
+          <Settings size={16} />
+          Settings
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function IconButton({
+  title,
+  label,
+  onClick,
+  children,
+}: {
+  title: string
+  label: string
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <button
+      onClick={(event) => {
+        event.stopPropagation()
+        onClick()
+      }}
+      className="flex size-6 items-center justify-center rounded-md noa-sidebar-hover-surface text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] transition-colors noa-press"
+      title={title}
+      aria-label={label}
+    >
+      {children}
+    </button>
+  )
+}
+
+// A project folder header; its actions appear on hover, as Noa's tree rows do.
+function ProjectRow({
+  project,
+  open,
+  onToggle,
+  onNewSession,
+  onRemove,
+  onReveal,
+}: {
+  project: ProjectInfo
+  open: boolean
+  onToggle: () => void
+  onNewSession: () => void
+  onRemove: () => void
+  onReveal: () => void
+}) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!menuOpen) return
+    const close = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false)
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault()
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", close)
+    document.addEventListener("keydown", escape)
+    return () => {
+      document.removeEventListener("mousedown", close)
+      document.removeEventListener("keydown", escape)
+    }
+  }, [menuOpen])
+  return (
+    <div className="noa-sidebar-tree-item mb-px">
+      <div
+        role="button"
+        tabIndex={0}
+        title={project.path}
+        aria-expanded={open}
+        onClick={onToggle}
+        onKeyDown={(e) => {
+          if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+            e.preventDefault()
+            onToggle()
+          }
+        }}
+        className={`noa-sidebar-tree-row noa-agent-sidebar-row group flex min-h-[26px] items-center gap-1 px-2 mx-2 rounded-lg cursor-pointer select-none ${menuOpen ? "is-active" : ""}`}
+        style={{ paddingLeft: "4px" }}
+      >
+        <ChevronRight
+          size={12}
+          className={`shrink-0 text-[var(--sidebar-text-muted,#898781)] transition-transform duration-150 ${open ? "rotate-90" : ""}`}
+        />
+        <span className="shrink-0 text-[var(--sidebar-text-muted,#898781)]">
+          <Folder size={14} />
+        </span>
+        <span
+          className={`min-w-0 flex-1 truncate text-body font-medium ${project.missing ? "text-[var(--sidebar-text-muted,#898781)] line-through" : ""}`}
+        >
+          {project.name}
+        </span>
+        {project.missing && <span className="shrink-0 text-caption text-[#C24444]">missing</span>}
+        <span
+          className={`flex shrink-0 items-center gap-2 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 ${menuOpen ? "opacity-100" : "opacity-0"}`}
+          style={noDragRegion}
+        >
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              aria-label={`Project actions for ${project.name}`}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              title="Project actions"
+              onClick={(event) => {
+                event.stopPropagation()
+                setMenuOpen((open) => !open)
+              }}
+              className="flex size-5 items-center justify-center rounded-md text-[var(--sidebar-text-muted)] hover:text-[var(--sidebar-text)]"
+            >
+              <MoreHorizontal size={14} />
+            </button>
+            {menuOpen && (
+              <div
+                role="menu"
+                className="noa-floating-panel absolute right-0 top-full z-50 mt-1 w-44 rounded-panel bg-[var(--bg-card)] p-1"
+                onClick={(event) => event.stopPropagation()}
+              >
+                {!project.missing && (
+                  <>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        onReveal()
+                      }}
+                      className="w-full rounded-md px-2.5 py-1.5 text-left text-body hover:bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)]"
+                    >
+                      Reveal in Finder
+                    </button>
+                    <div className="my-1 h-px bg-[var(--divider-subtle)]" />
+                  </>
+                )}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onRemove()
+                  }}
+                  className="w-full rounded-md px-2.5 py-1.5 text-left text-body hover:bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)]"
+                >
+                  Remove project
+                </button>
+              </div>
+            )}
+          </div>
+          {!project.missing && (
+            <button
+              type="button"
+              aria-label="New task in project"
+              title={`New task in ${project.name}`}
+              onClick={(event) => {
+                event.stopPropagation()
+                onNewSession()
+              }}
+              className="flex size-5 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] transition-colors noa-press"
+            >
+              <SquarePen size={14} />
+            </button>
+          )}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+// Same row shell as Noa's FileNode (noa-sidebar-tree-item / noa-sidebar-tree-row).
+function SessionRow({
+  title,
+  active,
+  indent,
+  onClick,
+}: {
+  title: string
+  active: boolean
+  indent?: boolean
+  onClick?: () => void
+}) {
+  return (
+    <div className="font-ui mb-px noa-sidebar-tree-item">
+      <div
+        role="button"
+        aria-current={active ? "page" : undefined}
+        tabIndex={0}
+        title={title}
+        onClick={onClick}
+        onKeyDown={(e) => {
+          if (onClick && e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+            e.preventDefault()
+            onClick()
+          }
+        }}
+        className={`noa-sidebar-tree-row flex min-h-[26px] items-center justify-between py-0 px-2 mx-2 rounded-lg cursor-pointer select-none group ${
+          active ? "noa-agent-sidebar-row is-active" : "noa-agent-sidebar-row"
+        }`}
+        style={{ paddingLeft: indent ? "26px" : "7px" }}
+      >
+        <span className="noa-fade-truncate">{title}</span>
+      </div>
+    </div>
+  )
+}

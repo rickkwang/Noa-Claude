@@ -1,0 +1,1886 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+.noa-agent-composer { container-type: inline-size; }
+.noa-app-shell {
+  font-size: 14px;
+  font-weight: 430;
+  line-height: 20px;
+  letter-spacing: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+.noa-agent-input {
+  border-radius: 22px;
+  background: #FAFAF8;
+  box-shadow: 0 0 0 1px #0000000a, 0 2px 8px #0000000a, 0 4px 40px 8px #00000006;
+}
+[data-theme="dark"] .noa-agent-input { background: var(--bg-card); box-shadow: inset 0 0 1px #fff3; }
+.noa-agent-environment {
+  height: 52px;
+  margin: 0 13px -16px;
+  padding: 4px 4px 20px;
+  border-radius: 16px 16px 0 0;
+  background: #EEEEEC;
+}
+[data-theme="dark"] .noa-agent-environment { background: var(--bg-secondary); }
+.noa-agent-footer { container: noa-agent-footer / inline-size; }
+.noa-sidebar-surface {
+  --font-weight-medium: 400;
+  --font-weight-bold: 450;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+}
+.noa-sidebar-surface, .noa-sidebar-surface .font-ui {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif !important;
+}
+.noa-agent-sidebar-row { min-height: 29px; transition: background-color 120ms ease; }
+.noa-agent-sidebar-row:hover,
+.noa-agent-sidebar-row.is-active { background: #EAEAE8; }
+[data-theme="dark"] .noa-agent-sidebar-row:hover,
+[data-theme="dark"] .noa-agent-sidebar-row.is-active { background: color-mix(in srgb, var(--text-primary) 7.8%, transparent); }
+@supports (corner-shape: superellipse(1.5)) {
+  .noa-agent-sidebar-row { border-radius: 10px; corner-shape: superellipse(1.5); }
+}
+.noa-resize-indicator {
+  position: absolute;
+  inset-block: 0;
+  left: 4px;
+  width: 1px;
+  background: linear-gradient(transparent, color-mix(in srgb, var(--text-primary) 25%, transparent), transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+[role="separator"]:hover .noa-resize-indicator,
+[role="separator"]:focus-visible .noa-resize-indicator,
+[role="separator"][data-resizing="true"] .noa-resize-indicator { opacity: 1; }
+@container noa-agent-footer (max-width: 475px) {
+  .noa-agent-mode-label { display: none; }
+}
+@container noa-agent-footer (max-width: 480px) {
+  .noa-agent-effort-label { display: none; }
+}
+@container noa-agent-footer (max-width: 300px) {
+  .noa-agent-model-name { max-width: 110px; }
+}
+
+@theme {
+  /* `font-ui` is the app-wide "use the UI font" utility (~80 call
+     sites). This value only paints until ThemeInjector applies the user's chosen font, so
+     it must match SYSTEM_FONT_STACK in src/lib/fontFamily.ts — otherwise the
+     first frame renders in a different face than every frame after it. */
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* Corner radius tiers. Pair with Tailwind's rounded-md (6px, controls) and rounded-lg (8px, rows).
+     Nested surfaces use outer radius minus the inner padding, e.g. a 10px menu with p-1 holds 6px items. */
+  --radius-chip: 3px;
+  --radius-panel: 10px;
+  --radius-dialog: 14px;
+
+  --font-weight-bold: 700;
+  --font-weight-medium: 500;
+
+  /* Off-grid sizes fold into the 12px (text-xs) and 13px (text-body) tiers. text-micro and text-caption cover the small labels
+     that were previously 10px and 11px. Tiers differ by 1px, so text-caption is never a substitute for text-body. */
+  --text-body: 14px;
+  --text-micro: calc(var(--text-body) - 4px);
+  --text-caption: calc(var(--text-body) - 2px);
+  --text-title: calc(var(--text-body) * 2);
+  /* Codex text-size-chat-sm: one step under chat text, for disclosures, file bars and pills. */
+  --text-chat-sm: calc(var(--text-body) - 1px);
+}
+
+/* One chat typography token set, as Codex's --font-text-md-*: chat text follows the UI font size setting,
+   with Codex's relaxed leading (1.625). Every chat surface reads these, so one setting drives them all. */
+:root {
+  --font-text-md-size: var(--text-body);
+  --font-text-md-line-height: calc(var(--font-text-md-size) * 1.625);
+}
+
+/* Motion: feedback (hover, menus, reveals) eases out; layout moves keep their own 500ms ease-in-out clocks.
+   Bare `transition-*` utilities pick up the defaults. `static` emits every token even when no utility uses it,
+   since inline styles read var(--ease-out) and var(--dur-*) directly. */
+@theme static {
+  --ease-out: cubic-bezier(.165, .84, .44, 1);
+  --ease-snap: cubic-bezier(.32, .72, 0, 1);
+  --default-transition-timing-function: var(--ease-out);
+  --default-transition-duration: 120ms;
+  --dur-fast: 60ms;
+  --dur-snap: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 450ms;
+  /* Button spring: overshoots ~9% and settles. Used for a press releasing. */
+  --spring-press: linear(0, .2459, .6526, .9468, 1.0764, 1.0915, 1.0585, 1.0219, .9993, .9914, .9921, .9957, .9988, 1.0004, 1);
+}
+
+/* Press feedback: sink to .975 fast on press, spring back on release. The
+   same .975 applies to icon and text buttons alike; full-width list rows get none. */
+.noa-press {
+  /* Unlayered, so it outranks Tailwind's transition-* utilities; restate their colour/opacity fades. */
+  --noa-press-fades: color 120ms var(--ease-out), background-color 120ms var(--ease-out), border-color 120ms var(--ease-out), opacity 120ms var(--ease-out);
+  transform-origin: center;
+  transition: transform var(--dur-slow) var(--spring-press), var(--noa-press-fades);
+}
+.noa-press:not(:disabled):active {
+  transform: scale(.975);
+  transition: transform var(--dur-fast) ease-out, var(--noa-press-fades);
+}
+@media (prefers-reduced-motion: reduce) {
+  .noa-press, .noa-press:not(:disabled):active { transform: none; transition: none; }
+}
+
+/* Content bold (`**strong**`, table headers, callout titles) in preview and CodeMirror. Kept off @theme so chrome gets no
+   `font-*` utility. This is the first-paint value for a Regular body; ThemeInjector resets it on body to the UI font
+   style's weight + 200. */
+:root { --font-weight-content-bold: 600; }
+:root[data-reduce-motion="true"] *, :root[data-reduce-motion="true"] *::before, :root[data-reduce-motion="true"] *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+/* Heading weights and sizes: Obsidian 1.14's defaults (its variable-font weight set), shared by the Reading view, the
+   CodeMirror themes in useCodeMirror.ts and the HTML export in lib/export.ts. Absolute, as in Obsidian: they don't follow
+   the body weight. A static font rounds 620–680 to its nearest face, so with a Bold face H2–H5 draw at 700. */
+:root {
+  --noa-h1-weight: 700;
+  --noa-h2-weight: 680;
+  --noa-h3-weight: 660;
+  --noa-h4-weight: 640;
+  --noa-h5-weight: 620;
+  --noa-h6-weight: 600;
+}
+
+/* Titlebar clearance for macOS traffic lights (data-desktop set by main.tsx). Inset must track
+   trafficLightPosition.x in electron/main.cjs. */
+:root { --noa-titlebar-inset: 0.5rem; }
+/* --noa-zoom-factor comes from preload.cjs: below zoom 1 the native buttons don't shrink, so neither may their clearance. */
+:root[data-desktop="true"] { --noa-titlebar-inset: calc(85.5px / min(var(--noa-zoom-factor, 1), 1)); }
+/* Native traffic lights keep their physical size at any zoom, so their centre (22px) is fixed in device pixels.
+   CSS controls scale with the zoom factor, so the toolbar is lifted by the difference to stay on that centre. */
+:root[data-desktop="true"] { --noa-titlebar-lift: calc(22px / var(--noa-zoom-factor, 1) - 22px); }
+/* TopBar's left cluster: sidebar toggle, gap-0.5, back + forward (each h-6 w-6), then 10px before the lifted tab strip.
+   Adding a button there means adding its 24px here. */
+:root { --noa-titlebar-reserve: calc(var(--noa-titlebar-inset) + 3 * 24px + 2px + 10px); }
+
+/* Must never be transitioned: an animated inherited registered property re-invalidates the whole subtree each frame.
+   Veils animate transform instead. */
+@property --noa-sidebar-material-width {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+button {
+  appearance: none;
+  -webkit-appearance: none;
+  box-shadow: none;
+}
+
+/* Sidebar tree rows are focusable divs: same keyboard ring as buttons, without the browser default outline. */
+.noa-sidebar-tree-row:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-shadow);
+}
+
+/* One keyboard focus ring for buttons. Links and inputs keep their own treatment: inline links would draw a box per wrapped line, and the title-bar search is borderless on purpose. */
+:where(button, [role="button"]):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-shadow);
+}
+
+/* The compact title-bar search is framed by its parent. Keep the input itself
+   borderless so focus does not introduce a second accent rectangle. */
+.noa-titlebar-search-input {
+  appearance: none;
+  border: 0;
+  color: var(--text-primary, #2D2D2B);
+  outline: none;
+  /* Stays mounted so open/close animate both ways; visibility flips only after the fade-out. */
+  transition: opacity 200ms ease-out, visibility 0s;
+}
+.noa-titlebar-search-input[aria-hidden='true'] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 200ms ease-out, visibility 0s linear 200ms;
+}
+.noa-titlebar-search-input::placeholder {
+  color: var(--text-secondary, rgba(45,45,43,0.55));
+}
+
+body {
+  /* Pre-hydration fallback only; ThemeInjector overrides this with the
+     resolved user font once settings load. See --font-ui above. */
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #FCFCFB;
+  color: #2D2D2B;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.5;
+  --panel-divider: var(--divider-subtle, #E6E2DA);
+  /* Shadows: ambient = in-flow cards, elevated = raised graph panels, floating = dropdowns/toasts, dialog = modal dialogs. Floating and dialog stack a tight contact layer over a soft spread. */
+  /* Floating surfaces draw their edge as a 1px ring in the shadow not a border. */
+  --shadow-floating: 0 0 0 1px rgba(11,11,11,0.10), 0 8px 24px 0 rgba(0,0,0,0.12), 0 2px 6px 0 rgba(0,0,0,0.08);
+  --shadow-dialog: 0 0 0 1px rgba(11,11,11,0.10), 0 4px 8px 0 rgba(45,45,43,0.08), 0 12px 28px -2px rgba(45,45,43,0.10);
+  /* Keyboard focus ring, drawn inside the control: an outside ring is clipped by scroll containers that edge the control. */
+  --focus-ring-color: var(--accent-color, #CC7D5E);
+  --focus-shadow: inset 0 0 0 2px var(--focus-ring-color);
+}
+
+.noa-app-shell {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.noa-selectable,
+.noa-app-shell :where(input, textarea, [contenteditable]:not([contenteditable="false"]), .cm-content) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Resize-handle highlight, drawn on the divider itself (inside the handle it sits 1px off and reads as a double line). Neutral colour, not accent. */
+[data-sidebar-separator]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom,
+    transparent,
+    color-mix(in srgb, var(--text-primary, #2D2D2B) 40%, transparent) 50%,
+    transparent);
+  opacity: 0;
+  transition: opacity 140ms ease-out;
+}
+.noa-app-shell:has(.noa-resize-handle[data-edge="right"]:is(:hover, :focus-visible)) [data-sidebar-separator]::after { opacity: 0.7; }
+.noa-app-shell:has(.noa-resize-handle[data-edge="right"][data-dragging="true"]) [data-sidebar-separator]::after { opacity: 1; }
+
+/* Titlebar hairline animates its left edge only during the sidebar dock motion (opt-in via the shell attribute);
+   every other edge move (hover preview, resize drag, promotion) snaps. */
+[data-titlebar="true"]::after {
+  transition: none;
+}
+.noa-app-shell[data-sidebar-dock-motion="true"] [data-titlebar="true"]::after {
+  transition: left 500ms ease-in-out;
+}
+
+/* Carries the editor header's floor across its left traffic-light margin so the band reads as one surface under a
+   translucent sidebar. Base-layer paint (transforms ghost the native material), pointer-events none (don't swallow
+   the buttons beneath), background inherit (follows the dark remap). `right: 100%` gives it width; `left` animates. */
+.noa-editor-header-floor::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 100%;
+  background-color: inherit;
+  pointer-events: none;
+  transition: left 500ms ease-in-out;
+}
+.noa-editor-header-floor-reserved::before {
+  left: calc(-1 * var(--noa-titlebar-reserve));
+}
+
+/* Opaque, neutral control surface for the graph's floating controls (translucent lets the canvas bleed through).
+   Mixing --text-primary into --bg-primary keeps it theme-adaptive. Accent is reserved for the buttons on it. */
+.noa-graph-control-surface {
+  background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, var(--bg-primary, #FCFCFB));
+}
+/* The mix lands too close to the dark card (--bg-card); step it up. */
+[data-theme="dark"] .noa-graph-control-surface {
+  background-color: #3D3D3B;
+}
+.noa-graph-control-button:hover {
+  background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent);
+}
+
+/* Sidebar is a plane: separated from the editor by a tiny background step only (same hue, so it reads as depth). */
+.noa-sidebar-surface {
+  background-color: var(--bg-sidebar, #F4F4F2);
+}
+
+/* Tree rows use the solid sidebar text tier; accent is reserved for active/hover feedback. */
+.noa-sidebar-tree-item {
+  color: var(--sidebar-text, #52514E);
+}
+
+/* Sidebar sections share its floor; border-t does the separating. */
+.noa-sidebar-section-surface {
+  background-color: var(--bg-sidebar, #F4F4F2);
+}
+
+/* Keep the sidebar actions on a solid plane, then dissolve just enough of the
+   scrollable content below them to avoid a hard visual seam at the boundary. */
+.noa-sidebar-toolbar-mask {
+  position: relative;
+  background-color: var(--bg-sidebar, #F4F4F2);
+}
+/* Stops 6px short of the right edge to clear the scrollbar gutter (must match ::-webkit-scrollbar width).
+   A colored overlay (not a mask) on a fixed 28px band with the stops of a 28px fade. Its opacity is the tree's top
+   edge, driven by the tree's own scroll timeline (see .noa-sidebar-fade-scope), so it appears once rows scroll under it. */
+.noa-sidebar-toolbar-mask::after {
+  content: '';
+  position: absolute;
+  right: 6px;
+  bottom: -28px;
+  left: 0;
+  height: 28px;
+  pointer-events: none;
+  opacity: var(--noa-fade-top, 0);
+  animation-name: noa-fade-top-in;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+  animation-timeline: --noa-sidebar-tree;
+  animation-range: 0px 28px;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--bg-sidebar, #F4F4F2) 100%, transparent) 0%,
+    color-mix(in srgb, var(--bg-sidebar, #F4F4F2) 85%, transparent) 13%,
+    color-mix(in srgb, var(--bg-sidebar, #F4F4F2) 50%, transparent) 40%,
+    color-mix(in srgb, var(--bg-sidebar, #F4F4F2) 15%, transparent) 70%,
+    color-mix(in srgb, var(--bg-sidebar, #F4F4F2) 0%, transparent) 100%);
+}
+
+/* The sidebar root exposes the tree's scroll timeline to the toolbar overlay, which is the list's sibling. */
+.noa-sidebar-fade-scope {
+  timeline-scope: --noa-sidebar-tree;
+}
+
+/* ── Scroll-edge fades ──
+   Each edge is a number from 0 to 1 that a scroll-driven animation writes from the scroll position itself: no
+   script runs per scroll frame. The top (left) edge eases in over the first 28px of scroll and the
+   bottom (right) edge eases out over the last 28px. Both are gone at rest, and a surface with nothing to scroll has
+   no fade. The ramp is restated per surface: var() in a custom property is substituted at declaration, so a :root
+   ramp would freeze. */
+@property --noa-fade-top { syntax: '<number>'; inherits: false; initial-value: 0; }
+@property --noa-fade-bottom { syntax: '<number>'; inherits: false; initial-value: 0; }
+@property --noa-fade-left { syntax: '<number>'; inherits: false; initial-value: 0; }
+@property --noa-fade-right { syntax: '<number>'; inherits: false; initial-value: 0; }
+@keyframes noa-fade-top-in { from { --noa-fade-top: 0; } to { --noa-fade-top: 1; } }
+@keyframes noa-fade-bottom-out { from { --noa-fade-bottom: 1; } to { --noa-fade-bottom: 0; } }
+@keyframes noa-fade-left-in { from { --noa-fade-left: 0; } to { --noa-fade-left: 1; } }
+@keyframes noa-fade-right-out { from { --noa-fade-right: 1; } to { --noa-fade-right: 0; } }
+
+/* Preview pane: leading edge dissolves under the tab strip. The right-edge solid strip keeps the scrollbar fully
+   opaque; its 6px must match ::-webkit-scrollbar. */
+.noa-top-scroll-fade {
+  --noa-fade-ramp:
+    rgb(0 0 0 / 0) calc(var(--noa-fade-top, 0) * 0px),
+    rgb(0 0 0 / 0.05) calc(var(--noa-fade-top, 0) * 4.2px),
+    rgb(0 0 0 / 0.15) calc(var(--noa-fade-top, 0) * 8.4px),
+    rgb(0 0 0 / 0.3) calc(var(--noa-fade-top, 0) * 12.6px),
+    rgb(0 0 0 / 0.5) calc(var(--noa-fade-top, 0) * 16.8px),
+    rgb(0 0 0 / 0.7) calc(var(--noa-fade-top, 0) * 21px),
+    rgb(0 0 0 / 0.85) calc(var(--noa-fade-top, 0) * 25.2px),
+    rgb(0 0 0 / 1) calc(var(--noa-fade-top, 0) * 28px);
+  -webkit-mask-image: linear-gradient(to bottom, var(--noa-fade-ramp)), linear-gradient(to bottom, black, black);
+  mask-image: linear-gradient(to bottom, var(--noa-fade-ramp)), linear-gradient(to bottom, black, black);
+  -webkit-mask-size: 100% 100%, 6px 100%;
+  mask-size: 100% 100%, 6px 100%;
+  -webkit-mask-position: top left, top right;
+  mask-position: top left, top right;
+  -webkit-mask-repeat: no-repeat, no-repeat;
+  mask-repeat: no-repeat, no-repeat;
+  animation-name: noa-fade-top-in;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+  animation-timeline: scroll(self block);
+  animation-range: 0px 28px;
+  scroll-padding-top: 28px;
+}
+
+/* The tab strip's two overflow edges. A mask rather than a colored overlay because the header background is themed
+   at runtime and an overlay would have to match it exactly. Both edges are independent: scrolling away from the left
+   edge eases its ramp in while the right one eases out as the last tab arrives. */
+.noa-edge-fade-x {
+  --noa-fade-ramp:
+    rgb(0 0 0 / 0) calc(var(--noa-fade-left, 0) * 0px),
+    rgb(0 0 0 / 0.05) calc(var(--noa-fade-left, 0) * 4.2px),
+    rgb(0 0 0 / 0.15) calc(var(--noa-fade-left, 0) * 8.4px),
+    rgb(0 0 0 / 0.3) calc(var(--noa-fade-left, 0) * 12.6px),
+    rgb(0 0 0 / 0.5) calc(var(--noa-fade-left, 0) * 16.8px),
+    rgb(0 0 0 / 0.7) calc(var(--noa-fade-left, 0) * 21px),
+    rgb(0 0 0 / 0.85) calc(var(--noa-fade-left, 0) * 25.2px),
+    rgb(0 0 0 / 1) calc(var(--noa-fade-left, 0) * 28px),
+    rgb(0 0 0 / 1) calc(100% - var(--noa-fade-right, 0) * 28px),
+    rgb(0 0 0 / 0.85) calc(100% - var(--noa-fade-right, 0) * 25.2px),
+    rgb(0 0 0 / 0.7) calc(100% - var(--noa-fade-right, 0) * 21px),
+    rgb(0 0 0 / 0.5) calc(100% - var(--noa-fade-right, 0) * 16.8px),
+    rgb(0 0 0 / 0.3) calc(100% - var(--noa-fade-right, 0) * 12.6px),
+    rgb(0 0 0 / 0.15) calc(100% - var(--noa-fade-right, 0) * 8.4px),
+    rgb(0 0 0 / 0.05) calc(100% - var(--noa-fade-right, 0) * 4.2px),
+    rgb(0 0 0 / 0) calc(100% - var(--noa-fade-right, 0) * 0px);
+  -webkit-mask-image: linear-gradient(to right, var(--noa-fade-ramp));
+  mask-image: linear-gradient(to right, var(--noa-fade-ramp));
+  animation-name: noa-fade-left-in, noa-fade-right-out;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+  animation-timeline: scroll(self inline), scroll(self inline);
+  animation-range: 0px 28px, calc(100% - 28px) 100%;
+  scroll-padding-inline: 28px;
+}
+
+/* Right-panel card bodies: both vertical edges dissolve over 28px. The 6px solid strip keeps the scrollbar opaque;
+   it must match ::-webkit-scrollbar. */
+.noa-edge-fade-y {
+  --noa-fade-ramp:
+    rgb(0 0 0 / 0) calc(var(--noa-fade-top, 0) * 0px),
+    rgb(0 0 0 / 0.05) calc(var(--noa-fade-top, 0) * 4.2px),
+    rgb(0 0 0 / 0.15) calc(var(--noa-fade-top, 0) * 8.4px),
+    rgb(0 0 0 / 0.3) calc(var(--noa-fade-top, 0) * 12.6px),
+    rgb(0 0 0 / 0.5) calc(var(--noa-fade-top, 0) * 16.8px),
+    rgb(0 0 0 / 0.7) calc(var(--noa-fade-top, 0) * 21px),
+    rgb(0 0 0 / 0.85) calc(var(--noa-fade-top, 0) * 25.2px),
+    rgb(0 0 0 / 1) calc(var(--noa-fade-top, 0) * 28px),
+    rgb(0 0 0 / 1) calc(100% - var(--noa-fade-bottom, 0) * 28px),
+    rgb(0 0 0 / 0.85) calc(100% - var(--noa-fade-bottom, 0) * 25.2px),
+    rgb(0 0 0 / 0.7) calc(100% - var(--noa-fade-bottom, 0) * 21px),
+    rgb(0 0 0 / 0.5) calc(100% - var(--noa-fade-bottom, 0) * 16.8px),
+    rgb(0 0 0 / 0.3) calc(100% - var(--noa-fade-bottom, 0) * 12.6px),
+    rgb(0 0 0 / 0.15) calc(100% - var(--noa-fade-bottom, 0) * 8.4px),
+    rgb(0 0 0 / 0.05) calc(100% - var(--noa-fade-bottom, 0) * 4.2px),
+    rgb(0 0 0 / 0) calc(100% - var(--noa-fade-bottom, 0) * 0px);
+  -webkit-mask-image: linear-gradient(to bottom, var(--noa-fade-ramp)), linear-gradient(to bottom, black, black);
+  mask-image: linear-gradient(to bottom, var(--noa-fade-ramp)), linear-gradient(to bottom, black, black);
+  -webkit-mask-size: 100% 100%, 6px 100%;
+  mask-size: 100% 100%, 6px 100%;
+  -webkit-mask-position: top left, top right;
+  mask-position: top left, top right;
+  -webkit-mask-repeat: no-repeat, no-repeat;
+  mask-repeat: no-repeat, no-repeat;
+  animation-name: noa-fade-top-in, noa-fade-bottom-out;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+  animation-timeline: scroll(self block), scroll(self block);
+  animation-range: 0px 28px, calc(100% - 28px) 100%;
+  scroll-padding-block: 28px;
+}
+
+/* A keyboard focus inside a scroller would be dimmed by its edge fade, so the fade steps aside while focus is there. */
+.noa-top-scroll-fade:has(:focus-visible),
+.noa-edge-fade-x:has(:focus-visible),
+.noa-edge-fade-y:has(:focus-visible),
+.noa-sidebar-scroll-fade:has(:focus-visible) {
+  --noa-fade-top: 0 !important;
+  --noa-fade-bottom: 0 !important;
+  --noa-fade-left: 0 !important;
+  --noa-fade-right: 0 !important;
+  scroll-padding: 0 !important;
+}
+.noa-sidebar-fade-scope:has(.noa-sidebar-scroll-fade:has(:focus-visible)) .noa-sidebar-toolbar-mask::after {
+  --noa-fade-top: 0 !important;
+}
+
+/* Inside the settings dialog the shared 8% divider is too faint to read: its
+   rules and card borders sit on a panel the eye is scanning for structure, not
+   on a document surface where a hairline is meant to disappear. Redefining the
+   token on the dialog keeps every consumer in there on one value — nothing
+   opts in per-border. */
+[data-settings-surface="true"] {
+  /* Opaque, so every hairline in the dialog resolves to the same colour whatever
+     surface it sits on (cards, nav column, content pane). Light matches the global 10% ink. */
+  --divider-subtle: color-mix(in srgb, #0b0b0b 10%, var(--bg-secondary));
+}
+[data-theme="dark"] [data-settings-surface="true"] {
+  --divider-subtle: color-mix(in srgb, var(--text-primary) 9%, var(--bg-secondary));
+}
+
+/* Settings dialog: fills are ink washes (5% hover, 10% selected), rows are split by a 5%
+   rule, secondary text is #52514E and descriptions #898782; fields are a half-white well with a 1px inset ring. */
+[data-settings-surface="true"] {
+  --settings-fill-hover: rgba(11,11,11,0.05);
+  --settings-fill-active: rgba(11,11,11,0.10);
+  --settings-row-rule: rgba(11,11,11,0.05);
+  --settings-text-secondary: #52514E;
+  --settings-text-muted: #898781;
+  --settings-field-bg: rgba(255,255,255,0.5);
+  --settings-field-ring: rgba(11,11,11,0.10);
+  --settings-switch-off: rgba(11,11,11,0.15);
+}
+[data-theme="dark"] [data-settings-surface="true"] {
+  --settings-fill-hover: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  --settings-fill-active: color-mix(in srgb, var(--text-primary) 11%, transparent);
+  --settings-row-rule: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  --settings-text-secondary: #C3C2B7;
+  --settings-text-muted: #898781;
+  --settings-field-bg: rgba(0,0,0,0.12);
+  --settings-field-ring: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  --settings-switch-off: color-mix(in srgb, var(--text-primary) 18%, transparent);
+}
+
+/* Dialog: a 12px card with a 1px ring and two soft layers. */
+.noa-settings-dialog {
+  box-shadow: 0 0 0 1px rgba(11,11,11,0.10), 0 1px 2px 0 rgba(11,11,11,0.06), 0 2px 8px 0 rgba(11,11,11,0.08);
+}
+[data-theme="dark"] .noa-settings-dialog {
+  box-shadow: 0 0 0 1px rgba(249,249,247,0.08), 0 8px 24px 0 rgba(0,0,0,0.45), 0 2px 6px 0 rgba(0,0,0,0.30);
+}
+
+.noa-settings-field {
+  background-color: var(--settings-field-bg);
+  box-shadow: inset 0 0 0 1px var(--settings-field-ring);
+}
+.noa-settings-field:focus-within,
+.noa-settings-field:focus {
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+/* Softer corners throughout the dialog. Restated here rather than edited into
+   ~60 utility classes across a dozen section files: the radii come in exactly
+   two sizes (3px chips, 4px cards), so scoping the two utilities keeps the
+   dialog on one curve and leaves the app's squarer language untouched.
+   rounded-full is a different class and stays circular. */
+[data-settings-surface="true"] .rounded-\[3px\],
+[data-settings-surface="true"] .rounded-chip {
+  border-radius: 6px;
+}
+
+[data-settings-surface="true"] .rounded {
+  border-radius: 8px;
+}
+
+/* The settings pane scrolls its full height under the 40px top fade, but its
+   scrollbar track starts at the fade's lower edge, so the thumb never runs
+   up into the gradient. */
+.noa-settings-scroll::-webkit-scrollbar-track {
+  margin-top: 40px;
+}
+
+/* Flash for a setting reached from the search. Colour, not motion: the row is
+   already scrolling into place, and a second moving thing there competes with
+   it. Fades out on its own so nothing has to clear a class. */
+[data-setting-revealed="true"] {
+  animation: noa-setting-reveal 1200ms ease-out;
+}
+
+@keyframes noa-setting-reveal {
+  0%, 40% { background-color: color-mix(in srgb, var(--accent-color) 14%, transparent); }
+  100% { background-color: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-setting-revealed="true"] {
+    animation-duration: 1ms;
+    background-color: color-mix(in srgb, var(--accent-color) 14%, transparent);
+  }
+}
+
+/* Landed-line flash: the line a jump (task, backlink, outline) landed on washes out from the accent
+   over 1.6s. Fades on its own; landedLine.ts drops the decoration after the same span. */
+.cm-line.noa-landed-line {
+  animation: noa-landed 1600ms ease-out;
+}
+
+@keyframes noa-landed {
+  0% { background-color: color-mix(in srgb, var(--accent-color, #CC7D5E) 22%, transparent); }
+  100% { background-color: transparent; }
+}
+
+/* Hint fade-in, for quiet status text (empty states) as it appears. */
+.noa-hint-in {
+  animation: noa-hint-in 400ms cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+
+/* List entry: rows rise 4px into place, staggered 30ms by --noa-i (capped at 8 so long lists don't trail). */
+.noa-row-in {
+  animation: noa-row-in var(--dur-base) var(--ease-out) backwards;
+  animation-delay: calc(min(var(--noa-i, 0), 8) * 30ms);
+}
+
+@keyframes noa-row-in {
+  0% { opacity: 0; transform: translateY(4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .noa-row-in { animation: none; }
+}
+
+@keyframes noa-hint-in {
+  0% { opacity: 0.4; transform: translateY(1px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Image preview open/close (ZoomableImage): a view transition. The thumbnail grows
+   into the viewer; old/new don't crossfade, and the thumbnail snapshot is hidden on the way in. */
+::view-transition-group(noa-image-preview) {
+  animation-duration: 350ms;
+  animation-timing-function: var(--ease-snap);
+}
+html.noa-vt-image-closing::view-transition-group(noa-image-preview) {
+  animation-duration: 250ms;
+}
+::view-transition-old(noa-image-preview),
+::view-transition-new(noa-image-preview) {
+  mix-blend-mode: normal;
+  object-fit: cover;
+  width: 100%;
+  height: 100%;
+  animation: none;
+}
+html:not(.noa-vt-image-closing)::view-transition-old(noa-image-preview) {
+  display: none;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 350ms;
+}
+html.noa-vt-image-closing::view-transition-old(root),
+html.noa-vt-image-closing::view-transition-new(root) {
+  animation-duration: 250ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cm-line.noa-landed-line { animation-duration: 1ms; }
+  .noa-hint-in { animation: none; }
+}
+
+/* Inline code gets a half-pixel hairline (an inset ring, so it adds no width). */
+.prose :not(pre) > code,
+.cm-inline-code {
+  box-shadow: inset 0 0 0 0.5px var(--divider-subtle);
+}
+
+/* Track uses a low ink wash: a palette step disappears in one theme or the other. */
+.noa-segmented-track {
+  background-color: rgba(11, 11, 11, 0.05);
+}
+
+[data-theme="dark"] .noa-segmented-track {
+  background-color: rgba(0, 0, 0, 0.22);
+}
+
+/* Only the pill moves; transform/width are cheap here (no layout of its own). */
+.noa-segmented-pill {
+  box-shadow: inset 0 0 0 1px rgba(11, 11, 11, 0.10), 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+[data-theme="dark"] .noa-segmented-pill {
+  box-shadow: inset 0 0 0 1px rgba(249, 249, 247, 0.08), 0 1px 2px 0 rgba(0, 0, 0, 0.30);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .noa-segmented-pill {
+    transition: none;
+  }
+}
+
+/* Translucent docked-sidebar glass (Electron supplies the native material; this adds the tint).
+   Gated on :where(:not([data-settings-open])) because the settings scrim's backdrop-filter blurs transparent
+   pixels in premultiplied alpha, haloing sidebar text. :where() adds no specificity. */
+html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])) [data-sidebar-expanded="true"][data-sidebar-column-surface="true"] {
+  background-color: color-mix(in srgb, var(--sidebar-material-color, #FAFAF8) var(--sidebar-material-tint, 70%), transparent) !important;
+}
+
+html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])) body {
+  background-color: transparent;
+}
+
+/* Opaque plane is a translated layer, not a gradient whose stop animates (translateX rides the compositor). */
+html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])) .noa-app-shell:has([data-sidebar-expanded="true"]) {
+  background: transparent !important;
+  /* Contains the veil's negative z-index (no containing block, so fixed toasts still use the viewport). */
+  isolation: isolate;
+}
+
+/* Exempt from the settings gate: gating destroys the element, and @starting-style would replay the expansion
+   when the dialog closes. Existence tracks the sidebar alone; the dialog hides it below. */
+html[data-translucent-sidebar="enabled"] .noa-app-shell:has([data-sidebar-expanded="true"])::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: var(--bg-primary, #FCFCFB);
+  transform: translateX(var(--noa-sidebar-material-width));
+  /* Parked; only the dock-motion rule below arms a transition. */
+  transition: none;
+
+  /* Opening starts at 0 so the translucent region grows with the edge (otherwise it flashes at full width).
+     Inert unless armed, since the hover preview also brings this element into existence. */
+  @starting-style {
+    transform: translateX(0);
+  }
+}
+
+/* Veil animates only on the sidebar's own dock motion (data-sidebar-dock-motion from App.tsx), not for
+   preview, resize drag, or settle frames. The painted flag excludes first paint (no entry animation on restart). */
+html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])) .noa-app-shell[data-sidebar-dock-motion="true"][data-sidebar-material-painted="true"]:has([data-sidebar-expanded="true"])::before {
+  transition: transform 500ms ease-in-out;
+}
+
+/* Dialog hides the veil rather than destroying it (keeps @starting-style sidebar-only). transition: none
+   covers enabling translucency from inside the dialog. */
+html[data-translucent-sidebar="enabled"][data-settings-open="true"] .noa-app-shell:has([data-sidebar-expanded="true"])::before {
+  opacity: 0;
+  transition: none;
+}
+
+/* Titlebar goes transparent so the shell veil shows through; no veil of its own (it would re-rasterize icon strokes). */
+html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])) [data-translucent-sidebar-titlebar="true"] {
+  background: transparent !important;
+}
+
+html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])) [data-sidebar-expanded="true"][data-sidebar-container] .noa-sidebar-surface,
+html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])) [data-sidebar-expanded="true"][data-sidebar-container] .noa-sidebar-section-surface {
+  background-color: transparent;
+}
+
+/* Toolbar mask must go transparent in a translucent column, or it shows as a horizontal band. */
+html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])) [data-sidebar-expanded="true"][data-sidebar-container] .noa-sidebar-toolbar-mask,
+[data-sidebar-preview="true"] .noa-sidebar-toolbar-mask,
+[data-sidebar-promoting="true"][data-sidebar-container] .noa-sidebar-toolbar-mask {
+  background-color: transparent;
+}
+html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])) [data-sidebar-expanded="true"][data-sidebar-container] .noa-sidebar-toolbar-mask::after,
+[data-sidebar-preview="true"] .noa-sidebar-toolbar-mask::after,
+[data-sidebar-promoting="true"][data-sidebar-container] .noa-sidebar-toolbar-mask::after {
+  display: none;
+}
+
+/* Preview and promotion: the full-height shell paints once, so inner sidebar surfaces stay transparent
+   (opaque inner surfaces would snap on frame one and hide the shell's floor fade). */
+[data-sidebar-preview="true"] .noa-sidebar-surface,
+[data-sidebar-preview="true"] .noa-sidebar-section-surface,
+[data-sidebar-promoting="true"][data-sidebar-container] .noa-sidebar-surface,
+[data-sidebar-promoting="true"][data-sidebar-container] .noa-sidebar-section-surface {
+  background-color: transparent;
+}
+
+/* Semantic sidebar states, opted into explicitly. The shared ink scale: 10% for the active row, 7.5% on hover;
+   text-primary flips with the theme, so one rule serves both. Hover rules stay !important to beat base-surface utilities. */
+.noa-sidebar-active-surface {
+  background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 10%, transparent) !important;
+}
+.noa-sidebar-hover-surface:hover,
+.noa-sidebar-hover-surface-subtle:hover {
+  background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 7.5%, transparent) !important;
+}
+
+.noa-floating-panel {
+  box-shadow: var(--shadow-floating);
+}
+/* Menus and popovers: 12px corners and, in light mode, a white sheet that lifts off the page. !important because
+   the page-surface token (--surface-page) is set per theme in ThemeInjector. */
+.noa-floating-panel.rounded-panel { border-radius: 12px; }
+:root:not([data-theme="dark"]) .noa-floating-panel.rounded-panel { background-color: #FFFFFF !important; }
+.noa-floating-panel.rounded-dialog {
+  box-shadow: var(--shadow-dialog);
+}
+
+/* DARK MODE: data-theme="dark" on <html>; [data-theme] selectors for specificity over Tailwind. */
+
+[data-theme="dark"] body {
+  background-color: var(--bg-primary, #262624);
+  color: #F9F9F7;
+  --panel-divider: var(--divider-subtle, rgba(249,249,247,0.15));
+  --shadow-floating: 0 0 0 1px rgba(249,249,247,0.08), 0 8px 24px 0 rgba(0,0,0,0.45), 0 2px 6px 0 rgba(0,0,0,0.30);
+  --shadow-dialog: 0 0 0 1px rgba(249,249,247,0.08), 0 4px 8px 0 rgba(0,0,0,0.35), 0 12px 28px -2px rgba(0,0,0,0.50);
+}
+
+/* ── Dark-mode colour remap ──
+   These !important rules rewrite Tailwind arbitrary colour classes globally; ThemeInjector.tsx injects a later,
+   unconditional set that wins overlaps (treat it as source of truth). A colour *value* stands in for a *role*, so a
+   light mark on a dark surface gets inverted silently. For foreground colours, use a token instead of a literal hex:
+   `bg-[var(--text-primary,#2D2D2B)]` (keep the fallback: --text-primary is undefined until ThemeInjector runs). */
+
+/* ── Backgrounds ── */
+[data-theme="dark"] .bg-\[\#EFEAE3\]    { background-color: var(--bg-secondary) !important; }
+[data-theme="dark"] .bg-\[\#EFEAE3\]\/30 { background-color: rgba(37,37,35,0.50) !important; }
+[data-theme="dark"] .bg-\[\#EFEAE3\]\/50 { background-color: rgba(37,37,35,0.70) !important; }
+[data-theme="dark"] .bg-\[\#CC7D5E\]    { background-color: #CC7D5E !important; }
+[data-theme="dark"] .bg-\[\#CC7D5E\]\/10 { background-color: rgba(204,125,94,0.12) !important; }
+[data-theme="dark"] .bg-\[\#2D2D2B\]\/10 { background-color: rgba(249,249,247,0.06) !important; }
+[data-theme="dark"] .bg-\[\#2D2D2B\]\/20 { background-color: rgba(249,249,247,0.10) !important; }
+
+/* ── Text ── */
+[data-theme="dark"] .text-\[\#2D2D2B\]      { color: #F0EFEC !important; }
+[data-theme="dark"] .text-\[\#2D2D2B\]\/10  { color: rgba(249,249,247,0.10) !important; }
+[data-theme="dark"] .text-\[\#2D2D2B\]\/15  { color: rgba(249,249,247,0.15) !important; }
+[data-theme="dark"] .text-\[\#2D2D2B\]\/20  { color: rgba(249,249,247,0.20) !important; }
+[data-theme="dark"] .text-\[\#2D2D2B\]\/30  { color: rgba(249,249,247,0.30) !important; }
+[data-theme="dark"] .text-\[\#2D2D2B\]\/35  { color: rgba(249,249,247,0.35) !important; }
+[data-theme="dark"] .text-\[\#2D2D2B\]\/40  { color: rgba(249,249,247,0.40) !important; }
+[data-theme="dark"] .text-\[\#2D2D2B\]\/50  { color: rgba(249,249,247,0.50) !important; }
+[data-theme="dark"] .text-\[\#2D2D2B\]\/60  { color: rgba(249,249,247,0.60) !important; }
+[data-theme="dark"] .text-\[\#2D2D2B\]\/70  { color: rgba(220,220,214,0.70) !important; }
+[data-theme="dark"] .text-\[\#2D2D2B\]\/75  { color: rgba(220,220,214,0.75) !important; }
+[data-theme="dark"] .text-\[\#2D2D2B\]\/80  { color: rgba(220,220,214,0.80) !important; }
+[data-theme="dark"] .text-\[\#2D2D2B\]\/85  { color: rgba(220,220,214,0.85) !important; }
+[data-theme="dark"] .text-\[\#2D2D2B\]\/90  { color: rgba(220,220,214,0.90) !important; }
+[data-theme="dark"] .text-\[\#CC7D5E\]      { color: #CC7D5E !important; }
+
+/* ── Status dots: 3px markers need the same lift as status text or they vanish on the dark floor ── */
+[data-theme="dark"] .bg-\[\#D9862B\] { background-color: #F0A94E !important; }
+[data-theme="dark"] .bg-\[\#C24444\] { background-color: #E08A8A !important; }
+
+/* ── Status text: light-theme hues lifted for dark floors ── */
+[data-theme="dark"] .text-\[\#A93B3B\] { color: #E08A8A !important; }
+[data-theme="dark"] .text-\[\#C24444\] { color: #E08A8A !important; }
+[data-theme="dark"] .text-\[\#953333\] { color: #E08A8A !important; }
+[data-theme="dark"] .text-\[\#74491A\] { color: #E5B17E !important; }
+[data-theme="dark"] .text-\[\#A26721\] { color: #E5B17E !important; }
+[data-theme="dark"] .text-\[\#D9862B\] { color: #F0A94E !important; }
+[data-theme="dark"] .text-\[\#37876B\] { color: #6FBF9E !important; }
+[data-theme="dark"] .text-\[\#2C6E57\] { color: #6FBF9E !important; }
+[data-theme="dark"] .hover\:text-\[\#A93B3B\]:hover { color: #E08A8A !important; }
+
+/* ── Hover text ── */
+[data-theme="dark"] .hover\:text-\[\#2D2D2B\]:hover     { color: #F0EFEC !important; }
+[data-theme="dark"] .hover\:text-\[\#2D2D2B\]\/70:hover { color: rgba(220,220,214,0.70) !important; }
+[data-theme="dark"] .hover\:text-\[\#CC7D5E\]:hover     { color: #CC7D5E !important; }
+[data-theme="dark"] .group:hover .group-hover\:text-\[\#CC7D5E\] { color: #CC7D5E !important; }
+
+/* ── Borders ── */
+[data-theme="dark"] .border-\[\#2D2D2B\]      { border-color: var(--border-default) !important; }
+[data-theme="dark"] .border-\[\#2D2D2B\]\/10  { border-color: var(--divider-subtle) !important; }
+[data-theme="dark"] .border-\[\#2D2D2B\]\/15  { border-color: var(--divider-subtle) !important; }
+[data-theme="dark"] .border-\[\#2D2D2B\]\/20  { border-color: var(--divider-subtle) !important; }
+[data-theme="dark"] .border-\[\#2D2D2B\]\/30  { border-color: var(--divider-subtle) !important; }
+[data-theme="dark"] .border-\[\#2D2D2B\]\/40  { border-color: rgba(249,249,247,0.30) !important; }
+[data-theme="dark"] .border-\[\#2D2D2B\]\/90  { border-color: rgba(249,249,247,0.12) !important; }
+[data-theme="dark"] .border-\[\#CC7D5E\]       { border-color: #CC7D5E !important; }
+[data-theme="dark"] .hover\:border-\[\#2D2D2B\]:hover { border-color: #3A3A37 !important; }
+[data-theme="dark"] .hover\:border-\[\#2D2D2B\]\/30:hover { border-color: rgba(249,249,247,0.22) !important; }
+[data-theme="dark"] .hover\:border-\[\#2D2D2B\]\/40:hover { border-color: rgba(249,249,247,0.30) !important; }
+[data-theme="dark"] .hover\:border-\[\#2D2D2B\]\/50:hover { border-color: rgba(249,249,247,0.38) !important; }
+[data-theme="dark"] .hover\:border-\[\#2D2D2B\]\/60:hover { border-color: rgba(249,249,247,0.45) !important; }
+[data-theme="dark"] .hover\:border-\[\#CC7D5E\]:hover { border-color: #CC7D5E !important; }
+[data-theme="dark"] .divide-\[\#2D2D2B\] > :not(:last-child) { border-color: var(--divider-subtle) !important; }
+
+/* Restore a visible border on sidebar confirm buttons (the remap makes it near-invisible). */
+[data-theme="dark"] .noa-confirm-btn { border-color: var(--border-strong, rgba(249,249,247,0.30)) !important; }
+
+/* Settings: ordinary ink borders follow the divider token; semantic accent/warning/error borders keep theirs. */
+[data-settings-surface="true"] .border-\[\#2D2D2B\],
+[data-settings-surface="true"] .border-\[\#2D2D2B\]\/10,
+[data-settings-surface="true"] .border-\[\#2D2D2B\]\/15,
+[data-settings-surface="true"] .border-\[\#2D2D2B\]\/20,
+[data-settings-surface="true"] .border-\[\#2D2D2B\]\/30,
+[data-settings-surface="true"] .border-\[\#2D2D2B\]\/40,
+[data-settings-surface="true"] .border-\[\#2D2D2B\]\/50,
+[data-settings-surface="true"] .border-\[\#2D2D2B\]\/60,
+[data-settings-surface="true"] .border-\[\#2D2D2B\]\/90 {
+  border-color: var(--divider-subtle) !important;
+}
+[data-settings-surface="true"] .border-t-transparent {
+  border-top-color: transparent !important;
+}
+
+/* ── Shadows ── */
+[data-theme="dark"] .shadow-\[inset_4px_0px_0px_0px_\#CC7D5E\]        { box-shadow: inset 4px 0px 0px 0px #CC7D5E !important; }
+
+/* ── Placeholder ── */
+[data-theme="dark"] .placeholder-\[\#2D2D2B\]\/40::placeholder { color: rgba(249,249,247,0.32) !important; }
+[data-theme="dark"] .placeholder-\[\#2D2D2B\]\/50::placeholder { color: rgba(249,249,247,0.38) !important; }
+
+/* ── Selection ── */
+[data-theme="dark"] .selection\:bg-\[\#CC7D5E\] *::selection { background-color: rgba(204,125,94,0.40) !important; }
+[data-theme="dark"] .selection\:bg-\[\#CC7D5E\]::selection    { background-color: rgba(204,125,94,0.40) !important; }
+
+/* ── Inline #tag pills (Markdown preview) ── */
+.noa-tag { color: #CC7D5E; background: rgba(204,125,94,0.12); border-radius: 4px; padding: 0 0.3em; font-size: 0.9em; font-weight: 600; white-space: nowrap; }
+[data-theme="dark"] .noa-tag { color: #CC7D5E; background: rgba(204,125,94,0.15); }
+
+/* ── Tags card: the five most-used tags get distinct hues (bar segment + row swatch); every other tag shares
+   one neutral grey. Same values in both themes. ── */
+.noa-tag-swatch[data-swatch="0"] { background: #2A78D6; }
+.noa-tag-swatch[data-swatch="1"] { background: #EB6834; }
+.noa-tag-swatch[data-swatch="2"] { background: #1BAF7A; }
+.noa-tag-swatch[data-swatch="3"] { background: #EDA100; }
+.noa-tag-swatch[data-swatch="4"] { background: #8E6AD8; }
+.noa-tag-swatch[data-swatch="other"] { background: #898781; }
+/* Tag tree: mirrors the file tree above — neutral rows, chevron for groups, hue only on the leaf dot. */
+.noa-tag-row {
+  --tag-fg: #52514E;
+  color: var(--tag-fg);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.noa-tag-row:hover { background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent); color: var(--text-primary, #2D2D2B); }
+.noa-tag-group { font-weight: 500; }
+.noa-tag-bar { background: rgba(137, 135, 129, 0.15); }
+.noa-tag-count { color: var(--text-secondary, #7B7974); }
+.noa-tag-muted { color: color-mix(in srgb, var(--text-primary, #2D2D2B) 45%, transparent); }
+.noa-tag-similar {
+  color: var(--text-secondary, #7B7974);
+  background: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent);
+}
+/* Search hits: titles in the sidebar tier, darkening on hover or when open; matches are marked by weight and ink, not a wash. */
+.noa-search-hit-title { color: var(--sidebar-text, #52514E); transition: color 120ms ease; }
+.noa-search-hit:hover .noa-search-hit-title,
+.noa-search-hit[data-active] .noa-search-hit-title,
+.noa-search-hit b { color: var(--text-primary, #2D2D2B); }
+.noa-search-hit b { font-weight: 600; }
+/* Filter field: a raised card (surface + hairline + soft drop) so it reads as an input, not a stripe. */
+.noa-tag-filter {
+  color: var(--text-primary, #2D2D2B);
+  background: var(--bg-card, #FFFFFF);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--text-primary, #2D2D2B) 9%, transparent),
+    0 1px 2px color-mix(in srgb, var(--text-primary, #2D2D2B) 6%, transparent);
+  transition: box-shadow 120ms ease;
+}
+.noa-tag-filter:hover {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--text-primary, #2D2D2B) 13%, transparent),
+    0 1px 3px color-mix(in srgb, var(--text-primary, #2D2D2B) 8%, transparent);
+}
+.noa-tag-filter:focus-within {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--text-primary, #2D2D2B) 20%, transparent),
+    0 1px 3px color-mix(in srgb, var(--text-primary, #2D2D2B) 8%, transparent);
+}
+/* Dark: lift with a lighter top edge and a real shadow; text-primary-based shadows would glow. */
+[data-theme="dark"] .noa-tag-filter {
+  background: color-mix(in srgb, #F9F9F7 5%, transparent);
+  box-shadow: inset 0 0 0 1px rgba(249,249,247,0.08), inset 0 1px 0 rgba(249,249,247,0.05), 0 1px 2px rgba(0,0,0,0.35);
+}
+[data-theme="dark"] .noa-tag-filter:hover,
+[data-theme="dark"] .noa-tag-filter:focus-within {
+  box-shadow: inset 0 0 0 1px rgba(249,249,247,0.16), inset 0 1px 0 rgba(249,249,247,0.06), 0 1px 3px rgba(0,0,0,0.4);
+}
+.noa-tag-filter input::placeholder { color: color-mix(in srgb, var(--text-primary, #2D2D2B) 40%, transparent); }
+.noa-tag-icon-button { color: color-mix(in srgb, var(--text-primary, #2D2D2B) 45%, transparent); transition: background-color 120ms ease, color 120ms ease; }
+.noa-tag-icon-button:hover { background: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent); color: var(--text-primary, #2D2D2B); }
+[data-theme="dark"] .noa-tag-row { --tag-fg: #C3C2B7; }
+
+/* Active (filtering on this tag): accent wash; theme-qualified so it wins over the dark base rule. */
+/* One ink scale for state washes: 5% hover, 10% selected or pressed, 20% for a ring. The accent stays on text and links. */
+.noa-ink-selected,
+.noa-tag-row[data-active="true"],
+[data-theme="dark"] .noa-tag-row[data-active="true"] {
+  background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 10%, transparent);
+  color: var(--text-primary, #2D2D2B);
+}
+
+/* Calendar presets: the settings SegmentedControl look (shared track, same pill), but nothing may be selected. */
+.noa-segment {
+  color: var(--text-secondary, #7B7974);
+  transition: color 120ms ease;
+}
+.noa-segment:hover,
+.noa-segment[aria-pressed="true"] { color: var(--text-primary, #2D2D2B); }
+.noa-segment-indicator {
+  background: var(--bg-primary, #FCFCFB);
+  box-shadow: inset 0 0 0 1px rgba(11, 11, 11, 0.10), 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.noa-segment-indicator[data-visible="true"] { opacity: 1; }
+.noa-segment-indicator[data-slide="true"] { transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 160ms ease; }
+@media (prefers-reduced-motion: reduce) { .noa-segment-indicator[data-slide="true"] { transition: opacity 160ms ease; } }
+[data-theme="dark"] .noa-segment-indicator {
+  box-shadow: inset 0 0 0 1px rgba(249, 249, 247, 0.08), 0 1px 2px 0 rgba(0, 0, 0, 0.30);
+}
+
+/* ── Prose (Markdown preview) ── */
+[data-theme="dark"] .prose-a\:text-\[\#CC7D5E\] a            { color: #CC7D5E !important; }
+[data-theme="dark"] .prose-pre\:text-\[\#2D2D2B\] pre        { color: #F0EFEC !important; }
+[data-theme="dark"] .prose-code\:text-\[\#CC7D5E\] code      { color: #CC7D5E !important; }
+
+/* ── highlight.js: backgrounds transparent in both themes; the pre's tint is owned by CodeBlock in PreviewPane.tsx. */
+.hljs                                       { background: transparent !important; }
+[data-theme="dark"] .hljs                   { background: transparent !important; color: #F9F9F7 !important; border: none !important; border-radius: 0 !important; }
+[data-theme="dark"] pre:has(.hljs)          { border: none !important; border-radius: 0 !important; }
+[data-theme="dark"] .hljs-keyword,
+[data-theme="dark"] .hljs-selector-tag,
+[data-theme="dark"] .hljs-type             { color: #CC7D5E !important; }
+[data-theme="dark"] .hljs-string,
+[data-theme="dark"] .hljs-attr             { color: #4CAF8A !important; }
+[data-theme="dark"] .hljs-comment,
+[data-theme="dark"] .hljs-quote            { color: rgba(249,249,247,0.38) !important; font-style: italic; }
+[data-theme="dark"] .hljs-number,
+[data-theme="dark"] .hljs-literal          { color: #9B7FD4 !important; }
+[data-theme="dark"] .hljs-built_in,
+[data-theme="dark"] .hljs-title            { color: #5B9BD5 !important; }
+[data-theme="dark"] .hljs-variable,
+[data-theme="dark"] .hljs-template-variable { color: #F9F9F7 !important; }
+[data-theme="dark"] .hljs-name,
+[data-theme="dark"] .hljs-tag              { color: #CC7D5E !important; }
+[data-theme="dark"] .hljs-meta             { color: rgba(249,249,247,0.45) !important; }
+
+/* ── Footnotes: separator is owned by PreviewPane.tsx; only list indent lives here. */
+.prose .footnotes ol         { padding-left: 1.25rem; }
+.prose a[data-footnote-ref] { color: #CC7D5E; font-weight: 600; text-decoration: none; }
+.prose a[data-footnote-ref]:hover { text-decoration: underline; }
+.prose a[data-footnote-backref]   { color: #CC7D5E; text-decoration: none; }
+[data-theme="dark"] .prose a[data-footnote-ref]  { color: #CC7D5E !important; }
+[data-theme="dark"] .prose a[data-footnote-backref] { color: #CC7D5E !important; }
+
+/* ── Preview weights: strong uses the content bold, headings their own step (below). `.prose h1` (0,1,1) outranks the
+   plugin's :where() selectors without !important; inline weights in PreviewPane.tsx are set there. */
+.prose strong, .prose b, .prose thead th { font-weight: var(--font-weight-content-bold); }
+/* Bold takes the colour of the text around it, as in Live Preview and Obsidian; the plugin's default is a cool gray-900
+   that reads darker than the warm body ink. */
+.prose { --tw-prose-bold: currentColor; }
+
+/* ── Preview heading scale: Obsidian 1.14's, mirrored in useCodeMirror.ts so headings don't jump between modes. */
+.prose h1 { font-size: 1.618em; line-height: 1.2; font-weight: var(--noa-h1-weight); }
+.prose h2 { font-size: 1.462em; line-height: 1.2; font-weight: var(--noa-h2-weight); }
+.prose h3 { font-size: 1.318em; line-height: 1.3; font-weight: var(--noa-h3-weight); }
+.prose h4 { font-size: 1.188em; line-height: 1.4; font-weight: var(--noa-h4-weight); }
+.prose h5 { font-size: 1.076em; line-height: 1.5; font-weight: var(--noa-h5-weight); }
+.prose h6 { font-size: 1em; line-height: 1.5; font-weight: var(--noa-h6-weight); }
+
+/* ── Preview heading spacing: Obsidian's model: 1rem above and below, 2.5rem section break after body content. rem keeps it constant across sizes. */
+.prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 { margin-block: 1rem; }
+/* Code blocks and tables render inside a wrapper div, so the wrapper is matched too (Obsidian's .el-pre / .el-table). */
+.prose :is(p, pre, table, ul, ol, blockquote, div:has(> :is(pre, table))) + :is(h1, h2, h3, h4, h5, h6) { margin-top: 2.5rem; }
+/* Paragraphs and lists sit one blank line apart (1lh), the same gap a blank line leaves in Live Preview, so the text
+   doesn't shift when switching views. Obsidian's reading view uses 1rem here and does shift. Top level only (a long
+   note's body sits one level down, in its [data-preview-chunk] wrappers): nested lists keep prose's own spacing. */
+.prose > :is(p, ul, ol),
+.prose > [data-preview-chunk] > :is(p, ul, ol) { margin-block: 1lh; }
+/* A tight list's items are consecutive lines in Live Preview; a loose list's (items holding <p>) keep prose's spacing. */
+.prose > :is(ul, ol) > li:not(:has(> p)),
+.prose > [data-preview-chunk] > :is(ul, ol) > li:not(:has(> p)) { margin-block: 0; }
+/* Those rules outrank the typography plugin's edge reset (and the first chunk's), so it is restated: no gap above the
+   first block or below the last, as in a PDF export, which has no inline title above the body. The first chunk also
+   follows the title and Properties; its content-visibility keeps margins from collapsing across it. */
+.prose > :first-child,
+.prose > [data-preview-chunk]:not([data-preview-chunk] ~ *) > :first-child { margin-top: 0; }
+.prose > :last-child,
+.prose > [data-preview-chunk]:last-child > :last-child { margin-bottom: 0; }
+
+/* ── Math source (Obsidian's stex colours): Live Preview marks (.cm-lp-tex-*) and, in a table cell open for editing,
+   the same colours painted through the CSS Custom Highlight API (livePreviewBlocks.tsx, paintCellMath). */
+:root {
+  --noa-tex-command: #e93147;
+  --noa-tex-variable: #00bfbc;
+  --noa-tex-number: #7852ee;
+  --noa-tex-bracket: rgba(45, 45, 43, 0.5);
+  --noa-tex-comment: rgba(45, 45, 43, 0.35);
+}
+[data-theme="dark"] {
+  --noa-tex-command: #fb464c;
+  --noa-tex-variable: #53dfdd;
+  --noa-tex-number: #a882ff;
+  --noa-tex-bracket: rgba(249, 249, 247, 0.5);
+  --noa-tex-comment: rgba(249, 249, 247, 0.35);
+}
+.cm-lp-math-src { font-family: var(--font-mono); font-style: italic; font-size: 0.875em; }
+.cm-lp-math-delim { color: var(--accent-color, #CC7D5E); }
+.cm-lp-tex-command { color: var(--noa-tex-command); }
+.cm-lp-tex-variable { color: var(--noa-tex-variable); }
+.cm-lp-tex-number { color: var(--noa-tex-number); }
+.cm-lp-tex-bracket { color: var(--noa-tex-bracket); }
+.cm-lp-tex-comment { color: var(--noa-tex-comment); }
+/* Scoped to the open cell: a page-wide ::highlight() rule makes Chromium compute highlight styles for every element,
+   which roughly doubled the layout cost of scrolling the editor. */
+.cm-lp-cell[contenteditable="true"]::highlight(noa-tex-delim) { color: var(--accent-color, #CC7D5E); }
+.cm-lp-cell[contenteditable="true"]::highlight(noa-tex-command) { color: var(--noa-tex-command); }
+.cm-lp-cell[contenteditable="true"]::highlight(noa-tex-variable) { color: var(--noa-tex-variable); }
+.cm-lp-cell[contenteditable="true"]::highlight(noa-tex-number) { color: var(--noa-tex-number); }
+.cm-lp-cell[contenteditable="true"]::highlight(noa-tex-bracket) { color: var(--noa-tex-bracket); }
+.cm-lp-cell[contenteditable="true"]::highlight(noa-tex-comment) { color: var(--noa-tex-comment); }
+
+/* ── Inline title (file name): Obsidian h1 metrics; edit mode is a CM widget, preview the prose column's first child. */
+/* Padding, not margin: CodeMirror sizes a block widget by its box, so a margin there skews every click below it. */
+.cm-noa-inline-title, .noa-inline-title {
+  font-size: 1.618em;
+  line-height: 1.2;
+  font-weight: var(--noa-h1-weight);
+  padding-bottom: 0.5em;
+}
+.prose .noa-inline-title + * { margin-top: 0; }
+
+/* ── Blockquote: Obsidian-style accent bar, upright text. Dimmed via colour (not opacity) so the bar keeps full strength. */
+.prose blockquote.noa-blockquote {
+  border-left: 2px solid var(--accent-color, #CC7D5E);
+  padding-left: 1rem;
+  margin: 0.5rem 0;
+  font-style: normal;
+  font-weight: inherit;
+  quotes: none;
+}
+.prose blockquote.noa-blockquote,
+.prose blockquote.noa-blockquote p { color: rgba(45, 45, 43, 0.75); }
+/* Loose task list wraps item text in <p>; drop its margin so text aligns with the checkbox. */
+.prose .noa-task-text > p:first-child { margin-top: 0; }
+[data-theme="dark"] .prose blockquote.noa-blockquote,
+[data-theme="dark"] .prose blockquote.noa-blockquote p { color: rgba(249, 249, 247, 0.72); }
+.prose blockquote.noa-blockquote p::before,
+.prose blockquote.noa-blockquote p::after { content: none; }
+
+/* ── External link icon: masked (takes a token colour); viewBox cropped to the stroke so baseline alignment is exact. */
+.prose a.noa-external-link::after {
+  content: '';
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  margin-left: 0.25em;
+  vertical-align: baseline;
+  background-color: var(--text-secondary, rgba(45,45,43,0.55));
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='2 2 20 20' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h6v6'/%3E%3Cpath d='M10 14 21 3'/%3E%3Cpath d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='2 2 20 20' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h6v6'/%3E%3Cpath d='M10 14 21 3'/%3E%3Cpath d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* Property URL values: a tint on hover is the only cue that the value is a link. */
+.noa-property-link:hover {
+  background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent);
+}
+
+/* ── List markers: typography's default grays wash out on cream; pin to body text colour per theme. */
+.prose li::marker { color: #2D2D2B; }
+[data-theme="dark"] .prose li::marker { color: #F9F9F7 !important; }
+
+/* ── Scrollbar: no !important (it would beat the fade keyframes). Use background-color, never the shorthand,
+   which resets background-clip and undoes the thumb's transparent-border inset. */
+@keyframes scrollbar-fadeout-dark {
+  from { background-color: rgba(225,224,217,0.35); }
+  to   { background-color: rgba(225,224,217,0); }
+}
+@keyframes scrollbar-fadein-dark {
+  from { background-color: rgba(225,224,217,0); }
+  to   { background-color: rgba(225,224,217,0.35); }
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb       { background-color: rgba(225,224,217,0); }
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background-color: rgba(225,224,217,0.5); }
+[data-theme="dark"] .is-scrolling::-webkit-scrollbar-thumb {
+  background-color: rgba(225,224,217,0.35);
+  animation: scrollbar-fadein-dark 0.15s ease;
+}
+[data-theme="dark"] .is-scrolling-out::-webkit-scrollbar-thumb {
+  animation: scrollbar-fadeout-dark 0.6s ease-out;
+}
+
+/* Just-checked task: the accent fill fades in and the tick flips from ink to page colour at 75%. */
+@keyframes noa-task-check-in {
+  from { background-color: transparent; }
+}
+@keyframes noa-task-check-glyph {
+  0%, 74.9% { color: var(--text-primary, #2D2D2B); }
+  75%, to { color: var(--bg-primary, #FCFCFB); }
+}
+.noa-task-check-in { animation: noa-task-check-in calc(2 * var(--dur-snap)) linear both; }
+.noa-task-check-glyph { animation: noa-task-check-glyph calc(2 * var(--dur-snap)) linear both; }
+@media (prefers-reduced-motion: reduce) {
+  .noa-task-check-in, .noa-task-check-glyph { animation: none; }
+}
+
+/* In-app "Reduce Motion" (Settings > Appearance) wins over the system setting: every animation and transition finishes instantly. */
+:root[data-reduce-motion="true"] *,
+:root[data-reduce-motion="true"] *::before,
+:root[data-reduce-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* ── Skeleton pulse ── */
+[data-theme="dark"] .animate-pulse { --tw-bg-opacity: 1; }
+[data-theme="dark"] .bg-\[\#2D2D2B\]\/10.animate-pulse,
+[data-theme="dark"] .animate-pulse.bg-\[\#2D2D2B\]\/10 { background-color: rgba(249,249,247,0.06) !important; }
+
+/* Sidebar drag & drop (after Obsidian's explorer): drop targets are *washes*, never outlines. The wash sits on the
+   block (folder + subtree) via a ::before inset by the rows' 6px, so rows don't shift and the scrollbar strip isn't
+   painted. z-index:0 on the block keeps the -1 wash above the sidebar floor. Corners match the rows' 8px. */
+.noa-sidebar-drop-root,
+.noa-sidebar-drop-branch {
+  position: relative;
+  z-index: 0;
+}
+.noa-sidebar-drop-root::before,
+.noa-sidebar-drop-branch::before {
+  content: '';
+  position: absolute;
+  inset: 0 6px;
+  border-radius: 8px;
+  background-color: color-mix(in srgb, var(--accent-color, #CC7D5E) 10%, transparent);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Targeted folder's title row: colour only, naming the target inside the block wash. */
+.noa-sidebar-drop-row {
+  color: var(--accent-color, #CC7D5E);
+}
+
+/* Source row is filled solid (not dimmed). FileNode drops hover/selected classes during drag; the !important is only a
+   guard against future surface classes, since Chromium freezes :hover at dragstart and would stick the wash. */
+.noa-sidebar-row-dragging {
+  background-color: var(--accent-color, #CC7D5E) !important;
+  color: #F9F9F7;
+  border-radius: 8px;
+}
+
+/* No hover while dragging (Obsidian gates hover behind is-grabbing). :not() guards keep drag/drop fills intact. */
+[data-grabbing='true'] .noa-sidebar-hover-surface:hover:not(.noa-sidebar-row-dragging):not(.noa-sidebar-drop-row),
+[data-grabbing='true'] .noa-sidebar-hover-surface-subtle:hover:not(.noa-sidebar-row-dragging):not(.noa-sidebar-drop-row) {
+  background-color: transparent !important;
+}
+[data-grabbing='true'] .noa-sidebar-row-actions {
+  opacity: 0 !important;
+}
+
+/* Drag chip (lib/treeDragImage.ts), geometry from Obsidian's .drag-ghost. Dark in both themes so it reads over anything. */
+.noa-tree-drag-ghost {
+  position: fixed;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 300px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  background-color: rgba(30, 30, 29, 0.9);
+  color: #F9F9F7;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+[data-theme='dark'] .noa-tree-drag-ghost {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(249, 249, 247, 0.14);
+}
+
+/* Scrollbar overlays the row gutter: stable reserves it, and the -6px pull-back returns the strip to content so rows
+   keep equal 6px margins. This 6px must equal ::-webkit-scrollbar width and the rows' mx-1.5, or corners clip. */
+.noa-sidebar-scroll {
+  scrollbar-gutter: stable;
+}
+.noa-sidebar-scroll > * {
+  margin-right: -6px;
+}
+
+/* Top and bottom edges of the sidebar list, on the shared 28px curve. The list is the timeline's source (see
+   .noa-sidebar-fade-scope); its own edges are driven by its own scroll position. At rest the ramp collapses, so the
+   first row is not dimmed until the list scrolls. The right-edge solid strip keeps the scrollbar opaque; its 6px must
+   match ::-webkit-scrollbar. */
+.noa-sidebar-scroll-fade {
+  scroll-timeline: --noa-sidebar-tree block;
+  scroll-padding-block: 28px;
+  --noa-fade-ramp:
+    rgb(0 0 0 / 0) calc(var(--noa-fade-top, 0) * 0px),
+    rgb(0 0 0 / 0.05) calc(var(--noa-fade-top, 0) * 4.2px),
+    rgb(0 0 0 / 0.15) calc(var(--noa-fade-top, 0) * 8.4px),
+    rgb(0 0 0 / 0.3) calc(var(--noa-fade-top, 0) * 12.6px),
+    rgb(0 0 0 / 0.5) calc(var(--noa-fade-top, 0) * 16.8px),
+    rgb(0 0 0 / 0.7) calc(var(--noa-fade-top, 0) * 21px),
+    rgb(0 0 0 / 0.85) calc(var(--noa-fade-top, 0) * 25.2px),
+    rgb(0 0 0 / 1) calc(var(--noa-fade-top, 0) * 28px),
+    rgb(0 0 0 / 1) calc(100% - var(--noa-fade-bottom, 0) * 28px),
+    rgb(0 0 0 / 0.85) calc(100% - var(--noa-fade-bottom, 0) * 25.2px),
+    rgb(0 0 0 / 0.7) calc(100% - var(--noa-fade-bottom, 0) * 21px),
+    rgb(0 0 0 / 0.5) calc(100% - var(--noa-fade-bottom, 0) * 16.8px),
+    rgb(0 0 0 / 0.3) calc(100% - var(--noa-fade-bottom, 0) * 12.6px),
+    rgb(0 0 0 / 0.15) calc(100% - var(--noa-fade-bottom, 0) * 8.4px),
+    rgb(0 0 0 / 0.05) calc(100% - var(--noa-fade-bottom, 0) * 4.2px),
+    rgb(0 0 0 / 0) calc(100% - var(--noa-fade-bottom, 0) * 0px);
+  animation-name: noa-fade-top-in, noa-fade-bottom-out;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+  animation-timeline: scroll(self block), scroll(self block);
+  animation-range: 0px 28px, calc(100% - 28px) 100%;
+  -webkit-mask-image: linear-gradient(to bottom, var(--noa-fade-ramp)), linear-gradient(to bottom, black, black);
+  mask-image: linear-gradient(to bottom, var(--noa-fade-ramp)), linear-gradient(to bottom, black, black);
+  -webkit-mask-size: 100% 100%, 6px 100%;
+  mask-size: 100% 100%, 6px 100%;
+  -webkit-mask-position: top left, top right;
+  mask-position: top left, top right;
+  -webkit-mask-repeat: no-repeat, no-repeat;
+  mask-repeat: no-repeat, no-repeat;
+}
+
+
+/* Long names fade out over the last 24px instead of ending in an ellipsis. Takes the remaining row width,
+   so a name that fits never reaches the ramp. */
+.noa-fade-truncate {
+  flex: 1 1 0%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+}
+
+/* Window capture (useWindowCapture): names are hidden and stood in for by a soft bar, so the
+   screenshot holds no glyphs to un-blur. The bar has a fixed width so it doesn't leak name length. */
+html[data-capture-redact="true"] [data-capture-redact] {
+  position: relative;
+  visibility: hidden !important;
+}
+/* Window capture: stand-ins for the native traffic lights, which capturePage can't see. Matches main.cjs:
+   button centres at 22px (TRAFFIC_LIGHT_POSITION + TRAFFIC_LIGHT_RADIUS) in CSS px at any zoom, while the
+   14px buttons and 23px pitch (measured from a native window capture) stay native-size, so they shrink by
+   the zoom factor in CSS px. */
+html[data-capture-chrome="true"]::after {
+  --noa-light: calc(14px / var(--noa-zoom-factor, 1));
+  --noa-light-pitch: calc(23px / var(--noa-zoom-factor, 1));
+  content: "";
+  position: fixed;
+  z-index: 2147483647;
+  top: calc(22px - var(--noa-light) / 2);
+  left: calc(22px - var(--noa-light) / 2);
+  width: var(--noa-light);
+  height: var(--noa-light);
+  border-radius: 50%;
+  pointer-events: none;
+  background: #FA7C73;
+  box-shadow:
+    var(--noa-light-pitch) 0 0 0 #FEC637,
+    calc(var(--noa-light-pitch) * 2) 0 0 0 #80D55A;
+}
+
+html[data-capture-redact="true"] [data-capture-redact]::after {
+  content: "";
+  visibility: visible;
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: min(100%, 7em);
+  height: 0.6em;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 30%, transparent);
+  filter: blur(1.5px);
+}
+
+
+/* Scrollbar (light mode) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+  background: transparent;
+}
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+@keyframes scrollbar-fadeout {
+  from { background-color: rgba(30, 30, 29, 0.35); }
+  to   { background-color: rgba(30, 30, 29, 0); }
+}
+@keyframes scrollbar-fadein {
+  from { background-color: rgba(30, 30, 29, 0); }
+  to   { background-color: rgba(30, 30, 29, 0.35); }
+}
+/* Transparent border + padding-box clip centres the thumb (webkit scrollbars have no margin). */
+::-webkit-scrollbar-thumb {
+  background-color: rgba(30, 30, 29, 0);
+  background-clip: padding-box;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(30, 30, 29, 0.5);
+}
+.is-scrolling::-webkit-scrollbar-thumb {
+  background-color: rgba(30, 30, 29, 0.35);
+  animation: scrollbar-fadein 0.15s ease;
+}
+.is-scrolling-out::-webkit-scrollbar-thumb {
+  animation: scrollbar-fadeout 0.6s ease-out;
+}
+
+/* ── Tab content fade-in ── */
+@keyframes tab-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.tab-fade-in {
+  animation: tab-fade-in 150ms ease-out both;
+}
+
+/* ── Editor tab strip ── */
+/* Every tab is exactly --noa-tab-w (flex-none), so opening/closing one doesn't re-average and resize its siblings in one
+   frame. When the strip runs short, EditorHeader writes --noa-tab-fit-w (clamped to [44px, 9rem]); data-tab-resizing eases
+   siblings on the enter/exit clock. Below 44px the strip scrolls. */
+.editor-tab {
+  --noa-tab-w: var(--noa-tab-fit-w, 9rem);
+  /* Inset eases from 12px down to 6px as the tab compresses, so the title keeps room for its ellipsis. */
+  --noa-tab-pad: clamp(0.375rem, calc((var(--noa-tab-w) - 44px) / 4 + 0.375rem), 0.75rem);
+  padding-left: var(--noa-tab-pad);
+  padding-right: var(--noa-tab-pad);
+  backface-visibility: hidden;
+}
+/* Below TAB_ACTIVE_MIN_W the active tab stops compressing (close glyph and rename field keep room). */
+.editor-tab[data-active-tab="true"],
+.editor-tab[data-closing-active-tab="true"] {
+  --noa-tab-w: var(--noa-tab-active-fit-w, var(--noa-tab-fit-w, 9rem));
+}
+[data-tab-resizing="true"] .editor-tab:not(.editor-tab-enter):not(.editor-tab-exit) {
+  transition-property: color, background-color, width;
+  transition-duration: 170ms;
+  transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.editor-tab-divider {
+  transition: opacity 140ms ease-out;
+}
+/* Active tab: the shared ink scale's 10% wash (5% on hover for the rest), flat in both themes. Set here, not via a
+   colour utility, so the dark-mode remap can't flatten it. */
+.editor-tab[data-active-tab="true"] {
+  background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 10%, transparent);
+}
+.editor-tab[data-active-tab="false"]:hover {
+  background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent);
+}
+/* The close button sits 2px inside the tab's right edge, whatever the tab's inset. */
+.editor-tab .noa-tab-close { margin-right: calc(2px - var(--noa-tab-pad)); }
+.noa-tab-close { color: var(--text-secondary, #7B7974); transition: color 60ms var(--ease-out), background-color 60ms var(--ease-out); }
+.noa-tab-close:hover { color: var(--text-primary, #2D2D2B); background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 10%, transparent); }
+/* Dragged tab takes an opaque surface so neighbours' titles don't show through; the extra attribute outranks the hover rule. */
+.editor-tab[data-dragging-tab="true"][data-active-tab],
+.editor-tab[data-active-tab]:active:not(:has(button:active)) {
+  background-color: #FFFFFF;
+  box-shadow: 0 0 0 0.5px rgba(45, 45, 43, 0.06), 0 2px 6px -1px rgba(45, 45, 43, 0.14);
+}
+/* Picked-up feel from press, not the drag threshold, so the grab answers at once (the close button opts out): a slight scale and a slightly deeper shadow ease in on grab. Kept tight — a wide blur halos on dark
+   and gets clipped by the strip's scroll mask. `scale` is its own property, so it
+   composes with the inline translateX that tracks the pointer (whose inline `transition: none` would kill a transition). */
+.editor-tab[data-dragging-tab="true"],
+.editor-tab[data-active-tab]:active:not(:has(button:active)) {
+  scale: 1.02;
+  cursor: grabbing;
+  animation: noa-tab-lift 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes noa-tab-lift {
+  from { scale: 1; }
+}
+[data-theme="dark"] .editor-tab[data-dragging-tab="true"][data-active-tab],
+[data-theme="dark"] .editor-tab[data-active-tab]:active:not(:has(button:active)) {
+  background-color: color-mix(in srgb, var(--text-primary, #F9F9F7) 12%, var(--bg-primary, #262624));
+  box-shadow: inset 0 0.5px 0 0 rgba(249, 249, 247, 0.12), 0 0 0 0.5px rgba(249, 249, 247, 0.10), 0 2px 5px -1px rgba(0, 0, 0, 0.3);
+}
+
+/* Both animations drive `width` against --noa-tab-w and take the tab out of flex
+   sizing (`flex: 0 0 auto`) for the duration, so the growing/collapsing tab is
+   the only box whose size changes.
+   `width` rather than `max-width`, because max-width cannot drive the box below
+   its declared width. The `min-width: 0` below is redundant with the
+   `overflow: hidden` that already zeroes the flex automatic minimum (verified:
+   the collapse bottoms out at the same 1.9px either way) — it is kept so the
+   collapse does not silently depend on that overflow rule. */
+@keyframes editor-tab-slot-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-8px) scale(0.96);
+    width: 0;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    width: var(--noa-tab-w, 9rem);
+    padding-left: var(--noa-tab-pad);
+    padding-right: var(--noa-tab-pad);
+  }
+}
+.editor-tab-enter {
+  transform-origin: left center;
+  animation: editor-tab-slot-enter 170ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  flex: 0 0 auto;
+  min-width: 0 !important;
+  overflow: hidden;
+  will-change: transform, opacity;
+}
+
+/* The exit mirrors the enter. Both used to need --noa-tab-w stamped inline from
+   a measured sibling, because a tab's real width depended on how many tabs were
+   open; with a fixed width the declared value is already the right one. */
+@keyframes editor-tab-slot-exit {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    width: var(--noa-tab-w, 9rem);
+    padding-left: var(--noa-tab-pad);
+    padding-right: var(--noa-tab-pad);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-8px) scale(0.96);
+    width: 0;
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+.editor-tab-exit {
+  pointer-events: none;
+  transform-origin: left center;
+  animation: editor-tab-slot-exit 170ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  flex: 0 0 auto;
+  min-width: 0 !important;
+  overflow: hidden;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-tab-resizing="true"] .editor-tab:not(.editor-tab-enter):not(.editor-tab-exit) {
+    transition-property: color, background-color;
+  }
+  .editor-tab-enter,
+  .editor-tab-exit,
+  .tab-fade-in,
+  .slide-down,
+  .noa-confirm-reveal,
+  .editor-tab[data-dragging-tab="true"],
+  .editor-tab[data-active-tab]:active:not(:has(button:active)) {
+    animation: none;
+  }
+  .noa-top-scroll-fade {
+    transition: none;
+  }
+  ::-webkit-scrollbar-thumb,
+  .is-scrolling::-webkit-scrollbar-thumb,
+  .is-scrolling-out::-webkit-scrollbar-thumb,
+  [data-theme="dark"] .is-scrolling::-webkit-scrollbar-thumb,
+  [data-theme="dark"] .is-scrolling-out::-webkit-scrollbar-thumb {
+    animation: none;
+  }
+}
+
+/* Note rail cards: a 1px hairline ring at 10px radius, sitting on the page rather than on a fill.
+   The title is the collapse button; its hover is an ink wash. */
+.noa-rail-card {
+  background-color: var(--bg-primary, #FCFCFB);
+  box-shadow: 0 0 0 1px var(--divider-subtle);
+}
+.noa-rail-card-title {
+  color: var(--text-primary, #2D2D2B);
+  transition: background-color 60ms var(--ease-out);
+}
+.noa-rail-card-title:hover {
+  background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent);
+}
+.noa-rail-muted {
+  color: var(--text-secondary, #7B7974);
+}
+/* While a card is being dragged, nothing inside the rail answers the pointer: rows passed over don't light up. The drag
+   itself listens on window, so it doesn't need these targets. */
+[data-note-rail][data-dragging="true"] .noa-rail-card * { pointer-events: none; }
+[data-rail-grabbing="true"], [data-rail-grabbing="true"] * { cursor: grabbing !important; }
+.noa-backlink-row { transition: background-color 60ms var(--ease-out); }
+.noa-backlink-row:hover { background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent); }
+/* The rail over the editor while the right panel is open: one floating panel, its cards flat and ruled apart. */
+.noa-rail-overlay {
+  background-color: var(--bg-primary, #FCFCFB);
+  border: 1px solid var(--divider-subtle);
+  box-shadow: 0 2px 4px rgba(11, 11, 11, 0.07), 0 6px 16px rgba(11, 11, 11, 0.08);
+}
+[data-theme="dark"] .noa-rail-overlay { box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25), 0 6px 16px rgba(0, 0, 0, 0.35); }
+/* Each later card keeps its 10px corners under a top-only rule, so the rule curves down at both ends like a tab
+   edge instead of running straight across. */
+.noa-rail-overlay .noa-rail-card { box-shadow: none; }
+.noa-rail-overlay .noa-rail-card:not([data-rail-first]) { border-top: 1px solid var(--divider-subtle); }
+
+/* Rail calendar. Neutral ink throughout, as in the rest of the rail: washes for today, the range and hover,
+   a solid ink fill for the open daily note. Only task dots carry a hue. */
+.noa-cal-month { color: var(--text-primary, #2D2D2B); transition: background-color 60ms var(--ease-out); }
+.noa-cal-month[data-today="false"] { text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
+.noa-cal-month:hover,
+.noa-cal-nav:hover { background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent); }
+.noa-cal-nav:hover { color: var(--text-primary, #2D2D2B); }
+.noa-cal-day {
+  color: color-mix(in srgb, var(--text-primary, #2D2D2B) 85%, transparent);
+  transition: background-color 60ms var(--ease-out);
+}
+.noa-cal-day:hover { background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent); }
+.noa-cal-day[data-outside] { color: color-mix(in srgb, var(--text-primary, #2D2D2B) 30%, transparent); }
+.noa-cal-day[data-range="mid"] { background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent); border-radius: 0; }
+.noa-cal-day[data-range="edge"] { background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 10%, transparent); color: var(--text-primary, #2D2D2B); }
+.noa-cal-day[data-today] { background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 10%, transparent); color: var(--text-primary, #2D2D2B); font-weight: 500; }
+.noa-cal-day[data-active] { background-color: var(--text-primary, #2D2D2B); color: var(--bg-primary, #FCFCFB); font-weight: 500; }
+.noa-cal-dot[data-dot="note"] { background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 28%, transparent); }
+.noa-cal-dot[data-dot="daily"] { background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 60%, transparent); }
+.noa-cal-dot[data-dot="due"] { background-color: #EDA100; }
+.noa-cal-dot[data-dot="overdue"] { background-color: #EB6834; }
+
+/* ── Slide-down reveal (delete confirm bar, banners) ── */
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.slide-down {
+  animation: slide-down 150ms ease-out both;
+}
+
+/* Sidebar delete confirm: grows open from zero height so the tree below eases down instead of jumping. */
+@keyframes noa-confirm-reveal {
+  from { max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0; }
+  to   { max-height: 16rem; opacity: 1; }
+}
+.noa-confirm-reveal {
+  overflow: hidden;
+  animation: noa-confirm-reveal 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* ── PDF export: hidden portal of a light-themed PreviewPane copy; on print it replaces the app. */
+#noa-print-root {
+  display: none;
+}
+@media print {
+  body > #root {
+    display: none !important;
+  }
+  #noa-print-root {
+    display: block !important;
+    background: #fff !important;
+  }
+  #noa-print-root pre,
+  #noa-print-root table,
+  #noa-print-root blockquote,
+  #noa-print-root img {
+    break-inside: avoid;
+  }
+  @page {
+    margin: 18mm 15mm;
+  }
+}
+
+.noa-sidebar-preview-motion {
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+}
+
+.noa-sidebar-preview-motion[data-sidebar-preview-closing="true"] {
+  opacity: 0;
+  transform: translateX(-4px);
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
+  pointer-events: none;
+}
+
+.noa-sidebar-preview-shell {
+  /* Fallback mirrors ThemeInjector's light token; only paints before that runs. */
+  box-shadow: var(--sidebar-preview-shadow, 0 0 0 1px rgba(45,45,43,0.03), 3px 0 6px -2px rgba(45,45,43,0.035), 10px 0 22px -6px rgba(45,45,43,0.04), 26px 0 54px -16px rgba(45,45,43,0.05));
+}
+
+/* Opens the docked gap under a promoted preview. Must share the 500ms clock with the header reservation, or the strip creeps. */
+.noa-sidebar-promotion-spacer {
+  width: var(--noa-sidebar-width, 325px);
+  transition: width 500ms ease-in-out;
+
+  @starting-style {
+    width: 0;
+  }
+}
+
+.noa-sidebar-promotion-spacer[data-sidebar-promotion-closing="true"] {
+  width: 0;
+}
+
+/* Translucent promotion: the editor starts under the column and slides out on the spacer's clock while the glass tint
+   fades in, so without this it ghosts through. Clip whatever of the editor is still under the column: its left
+   W·(1−progress). A transition on the same clock as the spacer's (not a keyframe animation) so a mid-flight reversal
+   gets the same reversing shortening and both stay in step. The preview parks the value at W so promotion starts there.
+   Other insets are open: the lifted tab strip overflows the top. The editor root (Editor, EmptyState or a fallback)
+   is always the element right after the sidebar container. */
+@property --noa-promotion-clip {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+html[data-translucent-sidebar="enabled"] [data-sidebar-container][data-sidebar-preview="true"] + * {
+  --noa-promotion-clip: var(--noa-sidebar-width, 325px);
+}
+html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer + [data-sidebar-container] + * {
+  --noa-promotion-clip: 0px;
+  clip-path: inset(-100vh -100vw -100vh var(--noa-promotion-clip));
+  transition: --noa-promotion-clip 500ms ease-in-out;
+}
+html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-sidebar-promotion-closing="true"] + [data-sidebar-container] + * {
+  --noa-promotion-clip: var(--noa-sidebar-width, 325px);
+}
+
+.noa-sidebar-promotion-divider {
+  left: var(--noa-sidebar-width, 325px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-translucent-sidebar="enabled"] .noa-app-shell,
+  html[data-translucent-sidebar="enabled"] .noa-app-shell::before {
+    transition: none !important;
+  }
+
+  .noa-sidebar-preview-motion,
+  .noa-sidebar-preview-motion[data-sidebar-preview-closing="true"] {
+    transition: none;
+  }
+
+  .noa-sidebar-promotion-spacer {
+    transition: none;
+  }
+
+  /* Inline docked-collapse styles need !important to reach; the titlebar hairline joins since it shares the edge. */
+  [data-sidebar-container],
+  [data-sidebar-content-layer="true"],
+  [data-sidebar-separator="true"],
+  [data-sidebar-column-surface="true"],
+  [data-titlebar="true"]::after {
+    transition: none !important;
+  }
+
+  /* Right column's inline mask and width, plus the titlebar actions edge that rides them. */
+  [data-right-panel-column="true"],
+  [data-right-panel-column="true"] > *,
+  [data-right-panel-anchor="true"] {
+    transition: none !important;
+  }
+}
+
+/* During sidebar/right-column layout motion, hide scrollbar thumbs (they'd flash in and out). */
+.noa-app-shell[data-layout-motion="true"] ::-webkit-scrollbar-thumb,
+.noa-app-shell[data-layout-motion="true"] ::-webkit-scrollbar-thumb:hover {
+  background-color: transparent !important;
+  animation: none !important;
+}
+
+/* Only the moving side gives up pointer input during motion (a right-panel toggle must not block sidebar clicks). */
+.noa-app-shell[data-layout-motion="true"] [data-right-panel-column="true"],
+.noa-app-shell[data-sidebar-moving="true"] [data-sidebar-container] {
+  pointer-events: none;
+}
+
+/* Properties dates are edited segment by segment, like Obsidian — no calendar popup. */
+.noa-properties input[type="date"]::-webkit-calendar-picker-indicator,
+.noa-properties input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  display: none;
+}
+/* Chrome pads the date fields by default, which nudged dates right of the other values. */
+.noa-properties ::-webkit-datetime-edit,
+.noa-properties ::-webkit-datetime-edit-fields-wrapper {
+  padding: 0;
+}
+
+/* Range sliders (graph drawer, window capture): a hairline track filled with accent up to the value (--noa-range-fill, set inline),
+   and a small raised thumb — the native control's heavy black track and large thumb read as foreign here. */
+.noa-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+.noa-range::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(to right,
+    var(--accent-color, #CC7D5E) var(--noa-range-fill, 0%),
+    color-mix(in srgb, var(--text-primary, #2D2D2B) 14%, transparent) var(--noa-range-fill, 0%));
+}
+.noa-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -5px;
+  border-radius: 999px;
+  background: var(--bg-card, #FFFFFF);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--text-primary, #2D2D2B) 22%, transparent), 0 1px 3px rgba(0, 0, 0, 0.18);
+  transition: transform var(--dur-snap) var(--ease-out);
+}
+.noa-range:active::-webkit-slider-thumb { transform: scale(1.15); }
+.noa-range:focus-visible { outline: none; }
+.noa-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--accent-color, #CC7D5E); }
+.noa-range:disabled { cursor: default; opacity: 0.4; }
+@media (prefers-reduced-motion: reduce) {
+  .noa-range::-webkit-slider-thumb { transition: none; }
+}
+
+/* Sidebar search field: half-white well (5% ink in dark), 0.5px inset ring plus a 1px
+   drop at rest; hover deepens the well and firms the ring to a full pixel. */
+.noa-sidebar-search {
+  background-color: rgb(255 255 255 / 0.5);
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--text-primary, #2D2D2B) 10%, transparent), 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+[data-theme="dark"] .noa-sidebar-search {
+  background-color: color-mix(in srgb, var(--text-primary, #F9F9F7) 5%, transparent);
+}
+.noa-sidebar-search:hover {
+  background-color: color-mix(in srgb, var(--text-primary, #2D2D2B) 5%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary, #2D2D2B) 10%, transparent), 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+.noa-sidebar-search-input {
+  appearance: none;
+  border: 0;
+  color: var(--text-primary, #2D2D2B);
+}
+.noa-sidebar-search-input::placeholder {
+  color: var(--sidebar-text-muted, #898781);
+}
+[data-theme="dark"] .noa-sidebar-search:hover {
+  background-color: color-mix(in srgb, var(--text-primary, #F9F9F7) 9%, transparent);
+}
+
+/* Moving-edge fade for the sidebar and right panel, after Noa's 28px scroll-edge ramp: the content nearest the edge
+   dissolves as the column collapses and is solid again as it opens. --noa-edge-fade is registered so it can transition. */
+@property --noa-edge-fade { syntax: '<length>'; inherits: false; initial-value: 0px; }
+.noa-edge-fade-right {
+  -webkit-mask-image: linear-gradient(to right,
+    #000 calc(100% - var(--noa-edge-fade)),
+    rgb(0 0 0 / 0.85) calc(100% - var(--noa-edge-fade) * 0.75),
+    rgb(0 0 0 / 0.5) calc(100% - var(--noa-edge-fade) * 0.5),
+    rgb(0 0 0 / 0.15) calc(100% - var(--noa-edge-fade) * 0.25),
+    transparent 100%);
+  mask-image: linear-gradient(to right,
+    #000 calc(100% - var(--noa-edge-fade)),
+    rgb(0 0 0 / 0.85) calc(100% - var(--noa-edge-fade) * 0.75),
+    rgb(0 0 0 / 0.5) calc(100% - var(--noa-edge-fade) * 0.5),
+    rgb(0 0 0 / 0.15) calc(100% - var(--noa-edge-fade) * 0.25),
+    transparent 100%);
+}
+.noa-edge-fade-left {
+  -webkit-mask-image: linear-gradient(to left,
+    #000 calc(100% - var(--noa-edge-fade)),
+    rgb(0 0 0 / 0.85) calc(100% - var(--noa-edge-fade) * 0.75),
+    rgb(0 0 0 / 0.5) calc(100% - var(--noa-edge-fade) * 0.5),
+    rgb(0 0 0 / 0.15) calc(100% - var(--noa-edge-fade) * 0.25),
+    transparent 100%);
+  mask-image: linear-gradient(to left,
+    #000 calc(100% - var(--noa-edge-fade)),
+    rgb(0 0 0 / 0.85) calc(100% - var(--noa-edge-fade) * 0.75),
+    rgb(0 0 0 / 0.5) calc(100% - var(--noa-edge-fade) * 0.5),
+    rgb(0 0 0 / 0.15) calc(100% - var(--noa-edge-fade) * 0.25),
+    transparent 100%);
+}
+
+/* Running-state label: a light sweep across secondary text, as Codex's loading-shimmer does (2s loop).
+   Off under reduced motion, where the label stays still in its secondary colour. */
+.noa-shimmer {
+  --noa-shimmer-base: color-mix(in srgb, var(--text-primary, #2D2D2B) 55%, transparent);
+  --noa-shimmer-highlight: rgba(255, 255, 255, 0.75);
+  background: var(--noa-shimmer-base) linear-gradient(to right, transparent 0%, var(--noa-shimmer-highlight) 40%, var(--noa-shimmer-highlight) 60%, transparent 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: noa-shimmer 2s linear infinite;
+}
+[data-theme="dark"] .noa-shimmer { --noa-shimmer-highlight: rgba(0, 0, 0, 0.6); }
+@keyframes noa-shimmer {
+  0% { background-position: -100% 0; }
+  to { background-position: 250% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .noa-shimmer { animation: none; color: var(--noa-shimmer-base); background: none; -webkit-text-fill-color: currentColor; }
+}
+
+/* Thinking indicator: three 3px dots, 3.5px apart, hopping in sequence (open-claude-ui: 1.9s, 0 / .15s / .3s delays). */
+.noa-quiet-dots { display: inline-flex; align-items: center; gap: 3.5px; }
+.noa-quiet-dots > span {
+  width: 3px; height: 3px; border-radius: 9999px; background: var(--accent-color);
+  animation: noa-quiet-dot 1.9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.noa-quiet-dots > span:nth-child(2) { animation-delay: 0.15s; }
+.noa-quiet-dots > span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes noa-quiet-dot {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+/* Running status dot: 1.2s blink (open-claude-ui dframe-dot-blink). */
+.noa-status-running { animation: noa-status-blink 1.2s ease-in-out infinite; }
+@keyframes noa-status-blink { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) {
+  .noa-quiet-dots > span, .noa-status-running { animation: none; }
+}

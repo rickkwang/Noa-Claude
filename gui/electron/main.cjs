@@ -1,0 +1,176 @@
+// Desktop shell: starts the Bun bridge (server/main.ts) on a free port, serves the
+// built UI from it, and shows it in a native window. The bridge is the only
+// process that talks to the agent; the window is a plain client of it.
+const { app, BrowserWindow, Menu, dialog, nativeImage, shell } = require('electron')
+const { spawn } = require('child_process')
+const fs = require('fs')
+const http = require('http')
+const net = require('net')
+const os = require('os')
+const path = require('path')
+
+const GUI_DIR = path.join(__dirname, '..')
+const DIST_DIR = path.join(GUI_DIR, 'dist')
+const ICON = path.join(__dirname, 'icon.icns')
+
+let bridge = null
+let win = null
+let quitting = false
+
+// Page zoom goes through Electron's zoom factor, not the default Cmd+/- roles, so the renderer
+// can be told the factor. noa.css reads --noa-zoom-factor to keep the traffic-light clearance fixed
+// while content shrinks below 1.
+const ZOOM_MIN = 0.5
+const ZOOM_MAX = 2
+const ZOOM_STEP = 0.1
+let zoom = 1
+
+function syncZoom() {
+  if (!win) return
+  win.webContents.setZoomFactor(zoom)
+  win.webContents.executeJavaScript(`document.documentElement.style.setProperty('--noa-zoom-factor', '${zoom}')`).catch(() => {})
+}
+
+function setZoom(next) {
+  zoom = Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next)) * 100) / 100
+  syncZoom()
+}
+
+function buildMenu() {
+  const isMac = process.platform === 'darwin'
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      ...(isMac ? [{ role: 'appMenu' }] : []),
+      { role: 'editMenu' },
+      {
+        label: 'View',
+        submenu: [
+          { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: () => setZoom(1) },
+          { label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: () => setZoom(zoom + ZOOM_STEP) },
+          { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: () => setZoom(zoom - ZOOM_STEP) },
+          { type: 'separator' },
+          { role: 'togglefullscreen' },
+        ],
+      },
+      { role: 'windowMenu' },
+    ]),
+  )
+}
+
+app.setName('Noa Agent')
+// Keep this shell's profile apart from the Noa note app, which uses the default "Noa" folder.
+app.setPath('userData', path.join(app.getPath('appData'), 'Noa Agent'))
+
+// Electron launched from Finder has a minimal PATH, so look for bun in the usual places.
+function findBun() {
+  const candidates = [process.env.BUN_PATH, path.join(os.homedir(), '.bun', 'bin', 'bun'), '/opt/homebrew/bin/bun', '/usr/local/bin/bun']
+  return candidates.find((p) => p && fs.existsSync(p)) ?? 'bun'
+}
+
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer()
+    server.unref()
+    server.on('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address()
+      server.close(() => resolve(port))
+    })
+  })
+}
+
+function waitForBridge(port, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs
+  return new Promise((resolve, reject) => {
+    const attempt = () => {
+      const req = http.get({ host: '127.0.0.1', port, path: '/' }, (res) => {
+        res.resume()
+        resolve()
+      })
+      req.on('error', () => {
+        if (Date.now() > deadline) reject(new Error('The local bridge did not start in time.'))
+        else setTimeout(attempt, 100)
+      })
+    }
+    attempt()
+  })
+}
+
+async function startBridge() {
+  if (!fs.existsSync(path.join(DIST_DIR, 'index.html'))) {
+    throw new Error('The UI is not built. Run `bun run build` in gui/ first.')
+  }
+  const port = await freePort()
+  bridge = spawn(findBun(), ['run', 'server/main.ts'], {
+    cwd: GUI_DIR,
+    env: { ...process.env, NOA_GUI_PORT: String(port) },
+    stdio: ['ignore', 'inherit', 'inherit'],
+  })
+  bridge.on('exit', (code) => {
+    bridge = null
+    if (!quitting) {
+      dialog.showErrorBox('Noa Agent stopped', `The local bridge exited (code ${code ?? 'null'}).`)
+      app.quit()
+    }
+  })
+  await waitForBridge(port)
+  return port
+}
+
+function createWindow(port) {
+  const origin = `http://127.0.0.1:${port}`
+  win = new BrowserWindow({
+    width: 1280,
+    height: 820,
+    minWidth: 960,
+    minHeight: 600,
+    title: 'Noa Agent',
+    backgroundColor: '#FCFCFB',
+    // Same titlebar as the Noa note app: hidden title with the traffic lights centred in a 44px bar.
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 15, y: 15 },
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  })
+
+  win.loadURL(`${origin}/`)
+  // Reload drops the injected CSS variable, so set it again after every page load.
+  win.webContents.on('did-finish-load', syncZoom)
+
+  // Only the bridge origin renders inside the app; any other link opens in the default browser.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith(origin)) {
+      event.preventDefault()
+      shell.openExternal(url)
+    }
+  })
+
+  win.on('closed', () => {
+    win = null
+  })
+}
+
+app.whenReady().then(async () => {
+  buildMenu()
+  if (process.platform === 'darwin' && fs.existsSync(ICON)) {
+    app.dock.setIcon(nativeImage.createFromPath(ICON))
+  }
+  try {
+    createWindow(await startBridge())
+  } catch (err) {
+    dialog.showErrorBox('Noa Agent could not start', String(err.message ?? err))
+    app.quit()
+  }
+})
+
+app.on('window-all-closed', () => {
+  app.quit()
+})
+
+app.on('before-quit', () => {
+  quitting = true
+  bridge?.kill('SIGTERM')
+})

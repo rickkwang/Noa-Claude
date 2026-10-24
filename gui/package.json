@@ -1,0 +1,30 @@
+{
+  "name": "noa-gui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "server": "bun run server/main.ts",
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "desktop": "bun run build && electron ."
+  },
+  "dependencies": {
+    "@tabler/icons-react": "3.48.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "0.5.20",
+    "@tailwindcss/vite": "4.2.2",
+    "@types/bun": "1.3.9",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "4.3.4",
+    "electron": "41.10.6",
+    "tailwindcss": "4.2.2",
+    "typescript": "5.7.2",
+    "vite": "5.4.11"
+  },
+  "main": "electron/main.cjs"
+}
