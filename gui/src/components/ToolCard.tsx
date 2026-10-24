@@ -15,13 +15,13 @@ export function ToolCard({ block }: { block: ToolBlock }) {
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="flex min-h-7 w-full min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-sm px-3 py-1.5 text-left text-[length:var(--font-text-md-size)] leading-5 select-none text-[var(--text-secondary,#52514E)] hover:bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)] hover:text-[var(--text-primary,#2D2D2B)]">
+        className="flex min-h-7 w-full min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-sm px-3 py-1.5 text-left text-[length:var(--text-chat-sm)] leading-5 select-none text-[var(--text-tertiary,#8F8F8F)] hover:bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)] hover:text-[var(--text-primary,#2D2D2B)]">
         <span
           data-kind={kind}
           className="size-1.5 shrink-0 rounded-full bg-[var(--sidebar-text-muted,#898781)] data-[kind=error]:bg-[#D45555] data-[kind=running]:noa-status-running data-[kind=running]:bg-[var(--accent-color,#CC7D5E)]"
         />
         <span className="shrink-0 font-mono text-[var(--text-primary,#2D2D2B)]">{block.name}</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[var(--text-secondary,#52514E)]">{previewOf(block)}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-[var(--text-tertiary,#8F8F8F)]">{previewOf(block)}</span>
         <ChevronRight size={12} className={`shrink-0 transition-transform duration-150 ${open ? "rotate-90" : ""}`} />
       </button>
       <Collapsible open={open}>

@@ -10,7 +10,7 @@ export const defaultSettings: AppSettings = {
     theme: 'system',
     fontFamily: SYSTEM_DEFAULT_FONT,
     uiFontStyle: DEFAULT_UI_FONT_STYLE,
-    maxWidth: 768,
+    maxWidth: 800,
     usePointerCursors: true,
     translucentSidebar: false,
     reduceMotion: false,

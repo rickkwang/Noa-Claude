@@ -216,7 +216,7 @@ export function SettingsDialog({
                     value={String(appearance.maxWidth)}
                     options={[
                       ["680", "Compact"],
-                      ["768", "Comfortable"],
+                      ["800", "Comfortable"],
                       ["1040", "Wide"],
                     ]}
                     onChange={(maxWidth) => change({ maxWidth: Number(maxWidth) })}
@@ -260,11 +260,11 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   const rows = Children.toArray(children)
   return (
     <section className="flex flex-col gap-4">
-      <h3 className="text-body">{title}</h3>
+      <h3 className="text-[length:var(--text-heading-sm)] font-semibold leading-6">{title}</h3>
       <div className="flex flex-col rounded-2xl border border-[var(--divider-subtle)] py-1">
         {rows.map((row, i) => (
           <div key={i}>
-            {i > 0 && <div className="mx-4 h-px bg-[var(--divider-subtle)]" />}
+            {i > 0 && <div className="mx-3 h-px bg-[var(--divider-subtle)]" />}
             {row}
           </div>
         ))}
@@ -275,7 +275,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 function Row({ label, description, children }: { label: string; description?: string; children?: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
+    <div className="flex items-center justify-between gap-4 px-3 py-3">
       <div className="flex min-w-0 flex-col gap-0.5">
         <span className="text-body font-medium">{label}</span>
         {description && <span className="text-caption leading-[1.4] text-[var(--sidebar-text-muted)]">{description}</span>}

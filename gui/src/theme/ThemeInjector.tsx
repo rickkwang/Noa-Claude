@@ -34,9 +34,10 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       root.style.setProperty('--sidebar-material-tint', '70%');
       // Four stacked layers approximate light falloff; a single shadow reads as a band with a visible edge on dark.
       root.style.setProperty('--sidebar-preview-shadow', '0 0 0 1px rgba(0,0,0,0.07), 3px 0 6px -2px rgba(0,0,0,0.09), 10px 0 22px -6px rgba(0,0,0,0.11), 26px 0 54px -16px rgba(0,0,0,0.12)');
-      // Dark text tiers are solid steps of one warm ramp, primary held off pure white (#F0EFEC).
-      root.style.setProperty('--text-primary', '#F0EFEC');
+      // Dark text tiers follow Codex's dark primary (#F7F7F7); secondary and tertiary stay one step down the ramp.
+      root.style.setProperty('--text-primary', '#F7F7F7');
       root.style.setProperty('--text-secondary', '#9C9B96');
+      root.style.setProperty('--text-tertiary', '#9C9B96');
       // Solid sidebar text tiers (primary is --text-primary): alpha text over the translucent material washes out.
       root.style.setProperty('--sidebar-text', '#C3C2B7');
       root.style.setProperty('--sidebar-text-muted', '#898781');
@@ -53,9 +54,10 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       root.style.setProperty('--sidebar-material-tint', '70%');
       // Light counterpart of the dark stack, at lower weight since light floors don't band.
       root.style.setProperty('--sidebar-preview-shadow', '0 0 0 1px rgba(45,45,43,0.03), 3px 0 6px -2px rgba(45,45,43,0.035), 10px 0 22px -6px rgba(45,45,43,0.04), 26px 0 54px -16px rgba(45,45,43,0.05)');
-      root.style.setProperty('--text-primary', '#2D2D2B');
-      // Solid, as in dark.
-      root.style.setProperty('--text-secondary', '#7B7974');
+      // Light text tiers as Codex's light palette: primary #0D0D0D, secondary #5D5D5D, tertiary gray-400 #8F8F8F.
+      root.style.setProperty('--text-primary', '#0D0D0D');
+      root.style.setProperty('--text-secondary', '#5D5D5D');
+      root.style.setProperty('--text-tertiary', '#8F8F8F');
       root.style.setProperty('--sidebar-text', '#52514E');
       root.style.setProperty('--sidebar-text-muted', '#898781');
       root.style.setProperty('--icon-ink', '#52514E');
@@ -88,6 +90,8 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
 
   const fontFamilyStyle = resolveFontFamily(settings.appearance.fontFamily);
   const uiFont = UI_FONT_STYLES[settings.appearance.uiFontStyle];
+  const uiFontSize = settings.appearance.uiFontSize;
+  const textScale = uiFontSize / 13;
 
   // Second of two !important colour-remap layers (index.css holds the dark set). This sheet is later in
   // document order and wins any overlap; keep the two in sync.
@@ -146,9 +150,16 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
       }
       /* Code keeps its upright face; the UI font style is for prose and chrome. */
       code, pre, kbd, samp { font-style: normal; }
-      /* Text tiers scale together from the 13px body baseline so caption and micro stay one step below body. */
+      /* Text tiers scale proportionally with the UI font size, as Codex does: each reference size times
+         uiFontSize / 13 (the 13px default), so the default matches noa.css fallbacks exactly. */
       :root {
-        --text-body: ${settings.appearance.uiFontSize}px;
+        --font-ui-size: ${uiFontSize}px;
+        --text-body: ${uiFontSize}px;
+        --text-chat-sm: ${Math.round(12 * textScale)}px;
+        --text-caption: ${Math.round(11 * textScale)}px;
+        --text-micro: ${Math.round(10 * textScale)}px;
+        --text-title: ${Math.round(26 * textScale)}px;
+        --text-heading-sm: ${Math.round(18 * textScale)}px;
         --code-font-size: ${settings.appearance.codeFontSize}px;
       }
       code, pre { font-size: var(--code-font-size); }

@@ -3,15 +3,14 @@
 
 .noa-agent-composer { container-type: inline-size; }
 .noa-app-shell {
-  font-size: 14px;
-  font-weight: 430;
+  font-size: var(--text-body);
   line-height: 20px;
   letter-spacing: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 .noa-agent-input {
-  border-radius: 22px;
+  border-radius: 28px;
   background: #FAFAF8;
   box-shadow: 0 0 0 1px #0000000a, 0 2px 8px #0000000a, 0 4px 40px 8px #00000006;
 }
@@ -28,7 +27,7 @@
 .noa-sidebar-surface {
   --font-weight-medium: 400;
   --font-weight-bold: 450;
-  font-size: 12px;
+  font-size: var(--text-chat-sm);
   font-weight: 400;
   line-height: 18px;
 }
@@ -88,6 +87,7 @@
   --text-micro: calc(var(--text-body) - 3px);
   --text-caption: calc(var(--text-body) - 2px);
   --text-title: calc(var(--text-body) * 2);
+  --text-heading-sm: 18px;
   /* Codex text-size-chat-sm: one step under chat text, for disclosures, file bars and pills. */
   --text-chat-sm: calc(var(--text-body) - 1px);
 }
@@ -96,7 +96,7 @@
    with Codex's relaxed leading (1.625). Every chat surface reads these, so one setting drives them all. */
 :root {
   --font-text-md-size: var(--text-body);
-  --font-text-md-line-height: calc(var(--font-text-md-size) * 1.625);
+  --font-text-md-line-height: calc(var(--font-text-md-size) * 1.5);
 }
 
 /* Motion: feedback (hover, menus, reveals) eases out; layout moves keep their own 500ms ease-in-out clocks.
@@ -217,7 +217,7 @@ body {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  font-size: 12px;
+  font-size: var(--text-body);
   line-height: 1.5;
   --panel-divider: var(--divider-subtle, #E6E2DA);
   /* Shadows: ambient = in-flow cards, elevated = raised graph panels, floating = dropdowns/toasts, dialog = modal dialogs. Floating and dialog stack a tight contact layer over a soft spread. */

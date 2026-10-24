@@ -47,7 +47,7 @@ export function MessageList({ turns, busy, result, readingWidth }: MessageListPr
 
   return (
     <div ref={scrollRef} onScroll={onScroll} className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain">
-      <div className="mx-auto flex flex-col gap-6 px-8 py-8" style={{ maxWidth: readingWidth }}>
+      <div className="mx-auto flex flex-col gap-4 px-5 py-8" style={{ maxWidth: readingWidth }}>
         {segments.map((segment, index) =>
           segment.role === "user" ? (
             // The user's message is a right-aligned bubble, as in Codex: chat-size text, relaxed leading.
@@ -143,7 +143,7 @@ function WorkGroup({ blocks, live, durationMs }: { blocks: Block[]; live: boolea
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left text-[length:var(--font-text-md-size)] leading-5 text-[var(--sidebar-text-muted,#898781)] select-none hover:text-[var(--text-primary,#2D2D2B)]"
+        className="inline-flex cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left text-[length:var(--text-chat-sm)] font-medium leading-5 text-[var(--text-tertiary,#8F8F8F)] select-none hover:text-[var(--text-primary,#2D2D2B)]"
       >
         {live ? (
           <span className="noa-shimmer">Working…</span>
@@ -184,7 +184,7 @@ function UserBubble({ text }: { text: string }) {
     <>
       <div
         ref={ref}
-        className={`max-w-[85%] whitespace-pre-wrap break-words rounded-[18px] bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] px-4 py-2.5 text-[length:var(--font-text-md-size)] leading-[var(--font-text-md-line-height)] ${
+        className={`max-w-[85%] whitespace-pre-wrap break-words rounded-[22px] bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] px-4 py-2.5 text-[length:var(--font-text-md-size)] leading-[var(--font-text-md-line-height)] ${
           folded ? "max-h-[300px] overflow-hidden [mask-image:linear-gradient(to_bottom,black_calc(100%_-_3rem),transparent)]" : ""
         }`}
       >
@@ -216,7 +216,7 @@ function MessageActions({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
   if (!text) return null
   return (
-    <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+    <div className="mx-0.5 mb-1 flex gap-2 leading-4 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
       <button
         type="button"
         onClick={async () => {
@@ -224,7 +224,7 @@ function MessageActions({ text }: { text: string }) {
           setCopied(true)
           setTimeout(() => setCopied(false), 2000)
         }}
-        className="flex h-6 items-center gap-1 rounded-md px-1.5 text-caption text-[var(--sidebar-text-muted,#898781)] hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] hover:text-[var(--text-primary,#2D2D2B)] noa-press"
+        className="flex h-6 items-center gap-1 rounded-md px-1.5 text-caption text-[var(--text-secondary,#5D5D5D)] hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] hover:text-[var(--text-primary,#2D2D2B)] noa-press"
         aria-label="Copy task output"
       >
         {copied ? <Check size={12} /> : <Copy size={12} />}
