@@ -3174,11 +3174,19 @@ function runHeadlessStreaming(
 
             sendControlResponseSuccess(message, {
               commands: currentCommands
-                .filter(cmd => cmd.userInvocable !== false)
+                .filter(cmd =>
+                  cmd.userInvocable !== false &&
+                  ((cmd.type === 'prompt' && !cmd.disableNonInteractive) ||
+                    (cmd.type === 'local' && cmd.supportsNonInteractive)),
+                )
                 .map(cmd => ({
                   name: getCommandName(cmd),
                   description: formatDescriptionWithSource(cmd),
                   argumentHint: cmd.argumentHint || '',
+                  type: cmd.type,
+                  source: cmd.type === 'prompt' ? cmd.source : 'builtin',
+                  aliases: cmd.aliases,
+                  hidden: cmd.isHidden,
                 })),
               agents: currentAgents.map(a => ({
                 name: a.agentType,
@@ -4532,11 +4540,19 @@ async function handleInitializeRequest(
   }
   const initResponse: SDKControlInitializeResponse = {
     commands: commands
-      .filter(cmd => cmd.userInvocable !== false)
+      .filter(cmd =>
+        cmd.userInvocable !== false &&
+        ((cmd.type === 'prompt' && !cmd.disableNonInteractive) ||
+          (cmd.type === 'local' && cmd.supportsNonInteractive)),
+      )
       .map(cmd => ({
         name: getCommandName(cmd),
         description: formatDescriptionWithSource(cmd),
         argumentHint: cmd.argumentHint || '',
+        type: cmd.type,
+        source: cmd.type === 'prompt' ? cmd.source : 'builtin',
+        aliases: cmd.aliases,
+        hidden: cmd.isHidden,
       })),
     agents: agents.map(agent => ({
       name: agent.agentType,

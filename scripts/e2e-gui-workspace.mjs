@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, readFile, rename, symlink, stat, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, rename, symlink, stat, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawn, execFileSync } from 'node:child_process'
+import net from 'node:net'
 
 const root = resolve(import.meta.dirname, '..')
 const dir = await mkdtemp(join(tmpdir(), 'noa-workspace-e2e-'))
@@ -18,6 +19,14 @@ const api = async (route, params = {}, body, cwd = repo) => {
   const response = await fetch(`http://127.0.0.1:${port}/api/${route}?${new URLSearchParams({ cwd, ...params })}`, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   return { status: response.status, body: await response.json() }
 }
+const rawStatus = (path, host) => new Promise((resolve, reject) => {
+  const socket = net.createConnection(port, '127.0.0.1')
+  let data = ''
+  socket.on('connect', () => socket.write(`GET ${path} HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`))
+  socket.on('data', (chunk) => { data += chunk })
+  socket.on('end', () => resolve(Number(data.match(/^HTTP\/\d(?:\.\d)? (\d+)/)?.[1])))
+  socket.on('error', reject)
+})
 const ok = async (...args) => { const result = await api(...args); assert.equal(result.status, 200, JSON.stringify(result.body)); return result.body }
 const action = async (kind, path, scope = 'all', snapshot, hunk) => {
   const loaded = snapshot ?? (await ok('diff', { path, scope })).snapshot
@@ -80,7 +89,7 @@ try {
   assert.deepEqual((await ok('files', { search: 'a.txt' }, undefined, join(repo, 'nested'))).entries.map((e) => e.path), ['a.txt'])
   assert.ok(!(await ok('files', { search: 'deleted' })).entries.some((e) => e.path === 'deleted.txt'))
   assert.equal((await api('file', { path: 'main.ts' }, { content: 'x', revision: 'x' }, dir)).status, 403)
-  assert.equal((await fetch(`http://127.0.0.1:${port}/api/files?cwd=${encodeURIComponent(repo)}`, { headers: { Host: 'evil.example:8787' } })).status, 403)
+  assert.equal(await rawStatus(`/api/files?cwd=${encodeURIComponent(repo)}`, 'evil.example:8787'), 403)
   await writeFile(join(repo, 'latin1.txt'), Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]))
   const latin = await ok('file', { path: 'latin1.txt' })
   assert.equal((await api('file', { path: 'latin1.txt' }, { content: latin.content, revision: latin.revision })).status, 400)
@@ -156,6 +165,26 @@ try {
   assert.equal(first.additions, 1); assert.equal(first.deletions, 0)
   assert.match((await ok('diff', { path: 'first.txt', scope: 'unstaged' }, undefined, unborn)).content, /-first line/)
   check('non-repository initialization and unborn working-tree diff')
+  const collisionA = join(dir, 'a-b'), collisionB = join(dir, 'a/b')
+  await mkdir(collisionA); await mkdir(collisionB, { recursive: true })
+  const collisionId = crypto.randomUUID()
+  const collisionDir = join(dir, 'config', 'projects', (await realpath(collisionA)).replace(/[^a-zA-Z0-9]/g, '-'))
+  await mkdir(collisionDir, { recursive: true })
+  await writeFile(join(collisionDir, `${collisionId}.jsonl`), [
+    { type: 'user', cwd: collisionA, message: { content: 'project A task' } },
+    { type: 'user', cwd: collisionA, isCompactSummary: true, message: { content: 'internal compact summary' } },
+  ].map((entry) => JSON.stringify(entry)).join('\n') + '\n')
+  assert.equal((await ok('sessions', {}, undefined, collisionA)).length, 1)
+  assert.deepEqual(await ok('sessions', {}, undefined, collisionB), [])
+  const collisionFile = join(collisionDir, `${collisionId}.jsonl`)
+  const collisionBefore = await readFile(collisionFile, 'utf8')
+  assert.equal((await api(`sessions/${collisionId}`, {}, undefined, collisionB)).status, 404)
+  const forbiddenRename = await fetch(`http://127.0.0.1:${port}/api/sessions/${collisionId}?${new URLSearchParams({ cwd: collisionB })}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'cross-project rename' }) })
+  assert.equal(forbiddenRename.status, 400)
+  assert.equal(await readFile(collisionFile, 'utf8'), collisionBefore)
+  const restored = await ok(`sessions/${collisionId}`, {}, undefined, collisionA)
+  assert.deepEqual(restored.filter((item) => item.kind === 'user').map((item) => item.text), ['project A task'])
+  check('colliding project paths stay isolated and compact summaries stay internal')
   console.log(JSON.stringify({ result: 'PASS', checks, revision: execFileSync('git', ['-C', root, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim(), command: 'node scripts/e2e-gui-workspace.mjs', fixture: dir }))
 } finally {
   child.kill('SIGTERM')

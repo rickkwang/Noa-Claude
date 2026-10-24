@@ -49,8 +49,10 @@ Microphone capture, a terminal emulator and repository publishing are not implem
 ## Verification
 
 From `gui/`: `bun run typecheck`, `bun run build`, `bun run scripts/e2e-workspace.ts`.
-The workspace E2E starts a real HTTP bridge against temporary Git repositories.
-CU checks cover layout measurements, menus, drafts, file references and agent approvals.
+The workspace E2E starts real HTTP bridges against temporary Git repositories.
+It covers workspace boundaries, file saves, Git mutations, session metadata and
+transcript restoration. Browser-level layout, menu, draft, file-reference and
+agent-approval checks are not automated yet.
 
 Sidebar exception requested by the user: retain Noa's original system font stack,
 12px inherited text, 400 normal/medium weight and original text color tiers.
@@ -103,3 +105,56 @@ close control, replacing the stacked cards, per-card minimise/expand, move handl
 titlebar checklist. Tabs follow the WAI-ARIA tablist pattern (`role="tab"`, `aria-selected`,
 arrow-key navigation), as Codex's `TabsList` / `TabsTrigger` do. The titlebar toggle shows or
 hides the column. Not ported from Codex: tab drag-to-move, detached windows, tab thumbnails.
+
+## Agent wiring, first usability batch
+
+UI references were inspected in the installed app's `app-initial-fc48ea5ad55c.js`
+and `app-primary-c377f30f532d.js`: queued follow-ups, image attachments and
+subagent activity. Noa keeps its existing CLI and stream-json protocol.
+
+- The bridge owns agent processes. Switching tasks or reconnecting the renderer
+  detaches/reattaches its subscription; it does not stop a running task. Quitting
+  the app stops the bridge and its agents. Detached idle sessions are reclaimed
+  and resume in a fresh CLI; running or waiting sessions stay alive.
+- Follow-ups queue in the bridge and send on the CLI's authoritative idle event.
+  Stop pauses the queue; errors also require an explicit next send. Queue items
+  can be removed. Unexpected CLI exits retain queued follow-ups for reconnect. Initialize is shared across concurrent/reconnecting clients.
+- Activity consumes task started/progress/completed events and child-agent output,
+  retaining the mapping between task IDs and tool-use IDs. Tasks can be stopped.
+- MCP form and URL requests have accept/decline/cancel responses. Unsupported
+  request kinds receive an explicit error instead of hanging silently.
+- PNG/JPEG/GIF/WebP images can be chosen, pasted or dropped, previewed and removed.
+  Image drafts use IndexedDB; sent images use base64 blocks through the Noa CLI.
+- History uses the CLI's path sanitizer and transcript recovery rules, including
+  branches and preserved compact segments. Error results retain their details.
+
+Verification commands from `gui/`: `bun run test` (regression checks),
+`bun run test:bridge` (real CLI with a local model/MCP fixture; no paid API),
+`bun run typecheck`, and `bun run build`. Existing workspace E2E commands still apply.
+
+## Slash commands
+
+The command popover follows the installed Codex `V5s` / `q5s` presentation:
+Commands/Skills groups, icon + single-line title/description, a selected-row
+surface, scroll-to-selection, and model/effort/permission submenus. It retains
+Noa's existing floating surface, font, palette and elevation.
+
+GUI actions route `/new` (`/clear`, `/reset`), `/resume`, `/model`, `/effort`,
+`/permissions`, `/plan`, `/config` (`/settings`), `/context` (`/cost`), `/status`,
+`/skills`, `/help` and `/stop` to their existing controls. Native local commands
+and prompt skills continue through the CLI. `/reload-plugins` uses the CLI's
+reload control and refreshes the command list, including on reconnect.
+
+The CLI's initialize/reload descriptors include optional type, source, aliases
+and hidden fields. Terminal-only and hidden/removed commands are excluded from
+the GUI menu. Unknown slash names receive local feedback instead of a model call.
+Local result text and its transcript wrappers are rendered and restored. Image
+blocks precede the final text block so slash skills with images still parse.
+
+Enter selects, Tab completes, arrows navigate, and Escape closes the list before
+it can stop a running turn. Skills with arguments stay editable before sending.
+Browsing commands from the plus menu preserves an existing text/image draft.
+
+GUI history lookup canonicalizes symlinked project paths to match the CLI. GUI
+agents use the existing eager-flush option so completed local commands are
+immediately available to history readers.

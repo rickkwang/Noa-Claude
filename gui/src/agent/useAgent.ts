@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useReducer, useRef } from "react"
-import { query } from "../api"
 import type {
   ContextUsage,
   ControlRequest,
   Envelope,
-  HistoryItem,
+  UserContent,
   ModelInfo,
   Outgoing,
   PermissionMode,
@@ -18,6 +17,7 @@ interface AgentOptions {
   resume?: string
   // Changing sessionKey opens a fresh socket even when cwd and resume are unchanged.
   sessionKey: number
+  runtimeId: string
   // GUI default for new sessions; the CLI's own default applies when unset.
   defaultPermissionMode?: PermissionMode
 }
@@ -29,19 +29,24 @@ type ResponseKind =
   | "settings"
   | "startup_settings"
   | "effort"
+  | "commands"
   | { model: string }
   | { mode: PermissionMode }
 
-export function useAgent({ cwd, resume, sessionKey, defaultPermissionMode }: AgentOptions) {
+export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermissionMode }: AgentOptions) {
   const [state, dispatch] = useReducer(reducer, initialState)
+  const ownerRef = useRef(runtimeId)
   const defaultModeRef = useRef(defaultPermissionMode)
   defaultModeRef.current = defaultPermissionMode
   const socketRef = useRef<WebSocket | null>(null)
+  const modeRef = useRef<PermissionMode | undefined>(undefined)
   const pendingRef = useRef(new Map<string, ResponseKind>())
 
   const write = useCallback((message: Outgoing) => {
     const socket = socketRef.current
-    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message))
+    if (socket?.readyState !== WebSocket.OPEN) return false
+    socket.send(JSON.stringify(message))
+    return true
   }, [])
 
   const control = useCallback(
@@ -54,12 +59,15 @@ export function useAgent({ cwd, resume, sessionKey, defaultPermissionMode }: Age
   )
 
   useEffect(() => {
+    ownerRef.current = runtimeId
     dispatch({ type: "reset" })
     pendingRef.current.clear()
+    modeRef.current = undefined
 
     const params = new URLSearchParams()
     if (cwd) params.set("cwd", cwd)
     if (resume) params.set("resume", resume)
+    params.set("runtime", runtimeId)
     const url = new URL(`/ws?${params}`, window.location.href)
     url.protocol = url.protocol.replace("http", "ws")
 
@@ -68,43 +76,34 @@ export function useAgent({ cwd, resume, sessionKey, defaultPermissionMode }: Age
     // Under StrictMode the effect runs twice; events from a replaced socket are ignored.
     const isCurrent = () => socketRef.current === socket
 
-    const history = resume
-      ? loadHistory(cwd, resume)
-          .then((items) => {
-            if (!isCurrent()) return
-            for (const item of items) {
-              if (item.kind === "user") dispatch({ type: "history-user", id: crypto.randomUUID(), text: item.text })
-              else dispatch({ type: "agent", message: item.message })
-            }
-          })
-          .catch((error) => {
-            if (isCurrent()) dispatch({ type: "error", text: `Cannot restore task: ${(error as Error).message}` })
-            return false
-          })
-      : Promise.resolve()
-
-    // The agent prints system/init only after the first user turn, so the
-    // initialize response is what marks the connection ready.
-    socket.onopen = async () => {
-      try {
-        if ((await history) === false) {
-          socket.close()
-          return
-        }
-        if (isCurrent()) control({ subtype: "initialize" }, "initialize")
-      } catch (error) {
-        if (!isCurrent()) return
-        dispatch({ type: "error", text: `Cannot restore task: ${(error as Error).message}` })
-        socket.close()
-      }
+    socket.onopen = () => {
+      if (isCurrent()) control({ subtype: "initialize" }, "initialize")
     }
 
     socket.onmessage = (event) => {
       if (!isCurrent()) return
       const envelope = JSON.parse(String(event.data)) as Envelope
       switch (envelope.kind) {
+        case "interrupt":
+          dispatch({ type: "interrupt-requested" })
+          break
+        case "attached":
+          break
+        case "history":
+          for (const item of envelope.items) {
+            if (item.kind === "user") dispatch({ type: "history-user", id: crypto.randomUUID(), text: item.text, images: item.images })
+            else dispatch({ type: "agent", message: item.message })
+          }
+          break
+        case "user":
+          dispatch({ type: "user-sent", id: envelope.id, content: envelope.content })
+          break
+        case "queue":
+          dispatch({ type: "queue", messages: envelope.messages })
+          break
         case "agent": {
           const message = envelope.message
+          if (message.type === "system" && (message.subtype === "init" || message.subtype === "status") && message.permissionMode) modeRef.current = message.permissionMode
           if (message.type === "control_response") {
             const kind = pendingRef.current.get(message.response.request_id)
             if (kind) {
@@ -115,7 +114,10 @@ export function useAgent({ cwd, resume, sessionKey, defaultPermissionMode }: Age
               } else routeResponse(kind, message.response.response)
             }
           }
-          if (message.type === "result") control({ subtype: "get_context_usage" }, "context_usage")
+          if (message.type === "control_request" && !["can_use_tool", "elicitation"].includes(message.request.subtype)) {
+            socket.send(JSON.stringify({ type: "control_response", response: { subtype: "error", request_id: message.request_id, error: `Unsupported GUI request: ${message.request.subtype}` } }))
+          }
+          if (message.type === "result" && !message.parent_tool_use_id && pendingRef.current.size === 0) control({ subtype: "get_context_usage" }, "context_usage")
           dispatch({ type: "agent", message })
           break
         }
@@ -138,7 +140,14 @@ export function useAgent({ cwd, resume, sessionKey, defaultPermissionMode }: Age
         if ("model" in kind) {
           dispatch({ type: "model-set", model: kind.model })
           control({ subtype: "get_settings" }, "settings")
-        } else dispatch({ type: "permission-mode-set", mode: kind.mode })
+        } else { modeRef.current = kind.mode; dispatch({ type: "permission-mode-set", mode: kind.mode }) }
+        return
+      }
+      if (kind === "commands") {
+        const commands = (response as { commands?: SlashCommand[] })?.commands ?? []
+        dispatch({ type: "control", payload: { kind: "commands", commands } })
+        const errors = (response as { error_count?: number })?.error_count ?? 0
+        dispatch({ type: "notice", text: `Reloaded ${commands.filter((command) => !command.hidden).length} commands and skills${errors ? ` · ${errors} plugin errors` : ""}` })
         return
       }
       if (kind === "effort") {
@@ -164,9 +173,9 @@ export function useAgent({ cwd, resume, sessionKey, defaultPermissionMode }: Age
         if (applied?.model) dispatch({ type: "model-set", model: applied.model })
         dispatch({ type: "effort-set", effort: applied?.effort ?? undefined })
         if (kind === "startup_settings") {
-          const cliMode = effective?.permissions?.defaultMode ?? "default"
+          const cliMode = modeRef.current ?? effective?.permissions?.defaultMode ?? "default"
           const guiMode = defaultModeRef.current
-          if (guiMode && guiMode !== cliMode) control({ subtype: "set_permission_mode", mode: guiMode }, { mode: guiMode })
+          if (!resume && !modeRef.current && guiMode && guiMode !== cliMode) control({ subtype: "set_permission_mode", mode: guiMode }, { mode: guiMode })
           else dispatch({ type: "permission-mode-set", mode: cliMode })
         }
       } else {
@@ -178,15 +187,11 @@ export function useAgent({ cwd, resume, sessionKey, defaultPermissionMode }: Age
       socketRef.current = null
       socket.close()
     }
-  }, [cwd, resume, sessionKey, control])
+  }, [cwd, resume, sessionKey, runtimeId, control])
 
   const sendMessage = useCallback(
-    (text: string) => {
-      if (state.connection !== "ready") return
-      dispatch({ type: "user-sent", id: crypto.randomUUID(), text })
-      write({ type: "user", message: { role: "user", content: text }, parent_tool_use_id: null })
-    },
-    [state.connection, write],
+    (content: UserContent) => write({ type: "user", message: { role: "user", content }, parent_tool_use_id: null }),
+    [write],
   )
 
   const interrupt = useCallback(() => {
@@ -212,7 +217,7 @@ export function useAgent({ cwd, resume, sessionKey, defaultPermissionMode }: Age
 
   const answerPermission = useCallback(
     (permission: Permission, allow: boolean, remember: boolean, updatedInput?: Record<string, unknown>) => {
-      write({
+      const sent = write({
         type: "control_response",
         response: {
           subtype: "success",
@@ -226,7 +231,7 @@ export function useAgent({ cwd, resume, sessionKey, defaultPermissionMode }: Age
             : { behavior: "deny", message: "User denied tool execution" },
         },
       })
-      dispatch({ type: "permission-answered", requestId: permission.requestId })
+      if (sent) dispatch({ type: "permission-answered", requestId: permission.requestId })
     },
     [write],
   )
@@ -236,11 +241,13 @@ export function useAgent({ cwd, resume, sessionKey, defaultPermissionMode }: Age
     [control],
   )
 
-  return { state, sendMessage, interrupt, answerPermission, setModel, setPermissionMode, setEffort, refreshContext }
-}
+  const answerElicitation = useCallback((requestId: string, action: "accept" | "decline" | "cancel", content?: Record<string, unknown>) => {
+    if (write({ type: "control_response", response: { subtype: "success", request_id: requestId, response: { action, content } } })) dispatch({ type: "permission-answered", requestId })
+  }, [write])
+  const removeQueued = useCallback((id: string) => { write({ type: "queue_remove", id }) }, [write])
+  const runQueued = useCallback(() => { write({ type: "queue_run" }) }, [write])
+  const reloadCommands = useCallback(() => control({ subtype: "reload_plugins" }, "commands"), [control])
+  const stopTask = useCallback((taskId: string) => control({ subtype: "stop_task", task_id: taskId }), [control])
 
-async function loadHistory(cwd: string | undefined, sessionId: string): Promise<HistoryItem[]> {
-  const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}${query(cwd)}`)
-  if (!response.ok) throw new Error(`History request failed (${response.status})`)
-  return (await response.json()) as HistoryItem[]
+  return { state: ownerRef.current === runtimeId ? state : initialState, sendMessage, reloadCommands, answerElicitation, removeQueued, runQueued, stopTask, interrupt, answerPermission, setModel, setPermissionMode, setEffort, refreshContext }
 }

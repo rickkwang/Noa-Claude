@@ -8,7 +8,9 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "desktop": "NOA_GUI_DEV=1 electron .",
-    "desktop:dist": "bun run build && electron ."
+    "desktop:dist": "bun run build && electron .",
+    "test": "bun test tests/agent.test.ts",
+    "test:bridge": "bun run tests/bridge.e2e.ts"
   },
   "dependencies": {
     "@tabler/icons-react": "3.48.0",

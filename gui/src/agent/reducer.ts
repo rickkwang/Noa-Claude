@@ -1,5 +1,9 @@
 import type {
   AgentMessage,
+  ElicitationRequest,
+  ImageBlock,
+  QueuedMessage,
+  UserContent,
   ContentBlock,
   ContextUsage,
   ControlPayload,
@@ -23,7 +27,7 @@ export type ToolBlock = {
 export type Block = { kind: "text"; text: string } | { kind: "thinking"; text: string; done: boolean } | ToolBlock
 
 export type Turn =
-  | { role: "user"; id: string; text: string }
+  | { role: "user"; id: string; text: string; images?: ImageBlock[] }
   | { role: "assistant"; id: string; blocks: Block[]; streaming: boolean }
 
 export interface Permission {
@@ -34,6 +38,18 @@ export interface Permission {
   title?: string
   description?: string
   suggestions: unknown[]
+}
+
+export interface AgentTask {
+  id: string
+  toolUseId?: string
+  description: string
+  status: "running" | "completed" | "failed" | "stopped"
+  summary?: string
+  outputFile?: string
+  lastTool?: string
+  usage?: { total_tokens: number; tool_uses: number; duration_ms: number }
+  turns: Turn[]
 }
 
 export interface AgentState {
@@ -49,17 +65,23 @@ export interface AgentState {
   turns: Turn[]
   busy: boolean
   stopping?: boolean
+  elicitations: (ElicitationRequest & { requestId: string })[]
+  tasks: AgentTask[]
+  queue: QueuedMessage[]
+  status?: string
   permissions: Permission[]
   result?: { durationMs: number; costUsd?: number; isError: boolean; interrupted?: boolean }
   logs: string[]
   error?: string
+  notice?: string
 }
 
 export type Action =
   | { type: "reset" }
+  | { type: "queue"; messages: QueuedMessage[] }
   | { type: "connection"; status: AgentState["connection"] }
-  | { type: "user-sent"; id: string; text: string }
-  | { type: "history-user"; id: string; text: string }
+  | { type: "user-sent"; id: string; text?: string; content?: UserContent }
+  | { type: "history-user"; id: string; text: string; images?: ImageBlock[] }
   | { type: "agent"; message: AgentMessage }
   | { type: "control"; payload: ControlPayload }
   | { type: "model-set"; model: string }
@@ -68,6 +90,7 @@ export type Action =
   | { type: "log"; text: string }
   | { type: "permission-answered"; requestId: string }
   | { type: "error"; text: string }
+  | { type: "notice"; text: string }
   | { type: "interrupt-requested" }
 
 export const initialState: AgentState = {
@@ -77,6 +100,9 @@ export const initialState: AgentState = {
   turns: [],
   busy: false,
   permissions: [],
+  elicitations: [],
+  tasks: [],
+  queue: [],
   logs: [],
 }
 
@@ -84,6 +110,8 @@ const MAX_LOGS = 50
 
 export function reducer(state: AgentState, action: Action): AgentState {
   switch (action.type) {
+    case "queue":
+      return { ...state, queue: action.messages }
     case "reset":
       return initialState
     case "connection":
@@ -94,18 +122,21 @@ export function reducer(state: AgentState, action: Action): AgentState {
         busy: true,
         stopping: false,
         error: undefined,
-        turns: [...state.turns, { role: "user", id: action.id, text: action.text }],
+        notice: undefined,
+        turns: [...state.turns, userTurn(action.id, action.content ?? action.text ?? "")],
       }
     case "history-user":
-      return { ...state, turns: [...state.turns, { role: "user", id: action.id, text: action.text }] }
+      return { ...state, turns: [...state.turns, { role: "user", id: action.id, text: action.text, images: action.images }] }
     case "log":
       return { ...state, logs: [...state.logs, action.text].slice(-MAX_LOGS) }
+    case "notice":
+      return { ...state, notice: action.text }
     case "error":
-      return { ...state, error: action.text, logs: [...state.logs, action.text].slice(-MAX_LOGS) }
+      return { ...state, notice: undefined, error: action.text, logs: [...state.logs, action.text].slice(-MAX_LOGS) }
     case "interrupt-requested":
       return { ...state, stopping: true }
     case "permission-answered":
-      return { ...state, permissions: state.permissions.filter((p) => p.requestId !== action.requestId) }
+      return { ...state, permissions: state.permissions.filter((p) => p.requestId !== action.requestId), elicitations: state.elicitations.filter((p) => p.requestId !== action.requestId) }
     case "model-set":
       return { ...state, model: action.model }
     case "effort-set":
@@ -113,6 +144,7 @@ export function reducer(state: AgentState, action: Action): AgentState {
     case "permission-mode-set":
       return { ...state, permissionMode: action.mode }
     case "control":
+      if (action.payload.kind === "commands") return { ...state, commands: action.payload.commands }
       if (action.payload.kind === "initialize") {
         return { ...state, models: action.payload.models, commands: action.payload.commands }
       }
@@ -123,11 +155,32 @@ export function reducer(state: AgentState, action: Action): AgentState {
 }
 
 function applyAgentMessage(state: AgentState, m: AgentMessage): AgentState {
-  // Messages tagged with a parent tool use come from sub-agents; not rendered yet.
-  if ("parent_tool_use_id" in m && m.parent_tool_use_id) return state
+  if ("parent_tool_use_id" in m && m.parent_tool_use_id) {
+    const id = m.parent_tool_use_id
+    const task = state.tasks.find((t) => t.id === id || t.toolUseId === id) ?? { id, toolUseId: id, description: "Subagent", status: "running" as const, turns: [] }
+    const child = applyAgentMessage({ ...initialState, turns: task.turns }, { ...m, parent_tool_use_id: null } as AgentMessage)
+    return { ...state, tasks: [...state.tasks.filter((t) => t !== task), { ...task, turns: child.turns }] }
+  }
 
   switch (m.type) {
     case "system":
+      if (m.subtype === "task_started" || m.subtype === "task_progress" || m.subtype === "task_notification") {
+        const existing = state.tasks.find((t) => t.id === m.task_id || (m.tool_use_id !== undefined && (t.id === m.tool_use_id || t.toolUseId === m.tool_use_id)))
+        const task: AgentTask = {
+          id: m.task_id,
+          toolUseId: m.tool_use_id ?? existing?.toolUseId,
+          description: m.description ?? existing?.description ?? "Background task",
+          status: m.status ?? existing?.status ?? "running",
+          summary: m.summary ?? existing?.summary,
+          outputFile: m.output_file ?? existing?.outputFile,
+          lastTool: m.last_tool_name ?? existing?.lastTool,
+          usage: m.usage ?? existing?.usage,
+          turns: existing?.turns ?? [],
+        }
+        return { ...state, tasks: [...state.tasks.filter((t) => t !== existing), task] }
+      }
+      if (m.subtype === "status") return { ...state, status: m.status ?? undefined, permissionMode: m.permissionMode ?? state.permissionMode }
+      if (m.subtype === "session_state_changed") return { ...state, status: m.state, busy: m.state === "idle" ? false : state.busy }
       if (m.subtype !== "init") return state
       return {
         ...state,
@@ -150,7 +203,9 @@ function applyAgentMessage(state: AgentState, m: AgentMessage): AgentState {
       return {
         ...state,
         busy: false,
-        turns: closeStreaming(state.turns),
+        stopping: false,
+        error: m.is_error ? m.errors?.join("\n") || `Agent failed (${m.subtype})` : undefined,
+        turns: completeResult(state.turns, m.result),
         result: {
           durationMs: m.duration_ms,
           costUsd: m.total_cost_usd,
@@ -160,14 +215,15 @@ function applyAgentMessage(state: AgentState, m: AgentMessage): AgentState {
       }
 
     case "control_request":
-      if (m.request.subtype !== "can_use_tool") return state
+      if (m.request.subtype === "elicitation") return { ...state, elicitations: [...state.elicitations, { ...(m.request as ElicitationRequest), requestId: m.request_id }] }
+      if (m.request.subtype !== "can_use_tool") return { ...state, error: `Unsupported agent request: ${m.request.subtype}` }
       return {
         ...state,
         permissions: [...state.permissions, toPermission(m.request_id, m.request as PermissionRequest)],
       }
 
     case "control_cancel_request":
-      return { ...state, permissions: state.permissions.filter((p) => p.requestId !== m.request_id) }
+      return { ...state, permissions: state.permissions.filter((p) => p.requestId !== m.request_id), elicitations: state.elicitations.filter((p) => p.requestId !== m.request_id) }
 
     default:
       return state
@@ -339,4 +395,17 @@ function stringifyContent(content: unknown): string {
       .join("\n")
   }
   return JSON.stringify(content, null, 2)
+}
+
+function userTurn(id: string, content: UserContent): Turn {
+  return { role: "user", id, text: typeof content === "string" ? content : content.filter((b) => b.type === "text").map((b) => b.text).join("\n"), images: typeof content === "string" ? undefined : content.filter((b): b is ImageBlock => b.type === "image") }
+}
+
+function completeResult(turns: Turn[], result?: string): Turn[] {
+  const closed = closeStreaming(turns)
+  if (!result?.trim()) return closed
+  let lastUser = closed.length - 1
+  while (lastUser >= 0 && closed[lastUser]?.role !== "user") lastUser--
+  const hasAnswer = closed.slice(lastUser + 1).some((turn) => turn.role === "assistant" && turn.blocks.some((block) => block.kind === "text" && block.text.trim()))
+  return hasAnswer ? closed : [...closed, { role: "assistant", id: crypto.randomUUID(), blocks: [{ kind: "text", text: result }], streaming: false }]
 }

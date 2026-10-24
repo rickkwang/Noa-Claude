@@ -4,6 +4,7 @@ export interface SessionSummary {
   id: string
   title: string
   updatedAt: number
+  status?: "running" | "waiting" | "queued"
 }
 
 export interface ProjectInfo {

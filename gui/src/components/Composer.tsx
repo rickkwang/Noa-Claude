@@ -1,5 +1,8 @@
+import { SlashCommandMenu } from "./SlashCommandMenu"
+import { composerCommands, findComposerCommand, filterComposerCommands, type ComposerCommand, type GuiCommandAction } from "../agent/commands"
+import { loadImageDraft, saveImageDraft } from "../agent/imageDrafts"
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
-import type { ModelInfo, PermissionMode, SlashCommand } from "../agent/protocol"
+import type { ImageAttachment, UserContent, ModelInfo, PermissionMode, SlashCommand } from "../agent/protocol"
 import { Check, FileText, RotateCcw, X } from "../lib/icons"
 import { IconShieldCheck } from "@tabler/icons-react"
 import {
@@ -33,7 +36,8 @@ interface ComposerProps {
   model?: string
   mode?: PermissionMode
   commands: SlashCommand[]
-  onSend: (text: string) => void
+  onSend: (content: UserContent) => boolean
+  onCommand: (action: GuiCommandAction) => void
   onInterrupt: () => void
   onModel: (model: string) => void
   onMode: (mode: PermissionMode) => void
@@ -60,6 +64,7 @@ export function Composer({
   mode,
   commands,
   onSend,
+  onCommand,
   onInterrupt,
   onModel,
   onMode,
@@ -83,7 +88,58 @@ export function Composer({
       return []
     }
   })
+  const [images, setImages] = useState<ImageAttachment[]>([])
+  const [imagesLoaded, setImagesLoaded] = useState(false)
+  const initialDraftKey = useRef(draftKey)
+  useEffect(() => {
+    let cancelled = false
+    loadImageDraft(initialDraftKey.current).then((saved) => {
+      if (!cancelled) { setImages(saved); setImagesLoaded(true) }
+    }).catch(() => {
+      if (!cancelled) { setAttachmentError("Could not restore image attachments."); setImagesLoaded(true) }
+    })
+    return () => { cancelled = true }
+  }, [])
+  useEffect(() => {
+    if (!imagesLoaded) return
+    saveImageDraft(draftKey, images).catch(() => setAttachmentError("Could not save image drafts. Keep this task open until you send or copy the images."))
+  }, [imagesLoaded, images, draftKey])
+  const [attachmentError, setAttachmentError] = useState<string>()
+  const [loadingImages, setLoadingImages] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+  async function addImages(files: File[]) {
+    if (!imagesLoaded) return
+    setAttachmentError(undefined)
+    setLoadingImages(true)
+    try {
+      const loaded: ImageAttachment[] = []
+      for (const file of files) {
+        if (!["image/png", "image/jpeg", "image/gif", "image/webp"].includes(file.type)) throw new Error("Use PNG, JPEG, GIF or WebP images.")
+        if (file.size > 5 * 1024 * 1024) throw new Error(`${file.name} exceeds the 5 MB image limit.`)
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(String(reader.result))
+          reader.onerror = () => reject(new Error(`Could not read ${file.name}`))
+          reader.readAsDataURL(file)
+        })
+        loaded.push({ id: crypto.randomUUID(), name: file.name, dataUrl })
+      }
+      setImages((current) => {
+        if ([...current, ...loaded].reduce((size, image) => size + image.dataUrl.length, 0) > 28 * 1024 * 1024) {
+          setAttachmentError("Images exceed the 20 MB combined limit. Remove an image and try again.")
+          return current
+        }
+        return [...current, ...loaded]
+      })
+    } catch (error) { setAttachmentError((error as Error).message) }
+    finally { setLoadingImages(false) }
+  }
   const [composing, setComposing] = useState(false)
+  const [inputFocused, setInputFocused] = useState(false)
+  const [browserOpen, setBrowserOpen] = useState(false)
+  const [browserAction, setBrowserAction] = useState<GuiCommandAction>()
+  const [browserFilter, setBrowserFilter] = useState<string>()
+  const composerRef = useRef<HTMLDivElement>(null)
   const [menuIndex, setMenuIndex] = useState(0)
   const [menuDismissed, setMenuDismissed] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -120,19 +176,37 @@ export function Composer({
     textareaRef.current?.focus()
   }, [reference])
 
-  // Slash menu: shown while the input is a single "/word" token.
-  const slashQuery = text.match(/^\/(\S*)$/)?.[1]
-  const menuItems = useMemo(() => {
-    if (slashQuery === undefined) return []
-    const q = slashQuery.toLowerCase()
-    return commands.filter((c) => c.name.toLowerCase().startsWith(q)).slice(0, 8)
-  }, [commands, slashQuery])
-  const menuOpen = slashQuery !== undefined && menuItems.length > 0 && !menuDismissed
+  const currentModel = findModel(models, model)
+  const currentMode = MODE_OPTIONS.find((m) => m.value === mode)
+  const effortLevels = currentModel?.supportsEffort ? (currentModel.supportedEffortLevels ?? []) : []
+  const allCommands = useMemo(() => composerCommands(commands).map((command) => ({
+    ...command,
+    disabled: command.action === "stop" ? !busy : ["model", "effort", "permissions", "plan", "reload"].includes(command.action ?? "") ? disabled || busy : command.action ? false : disabled,
+  })), [commands, disabled, busy])
+  const slash = text.match(/^\/([^\s]*)(?:[ \t](.*))?$/)
+  const argumentCommand = slash?.[2] !== undefined ? findComposerCommand(allCommands, slash[1]!) : undefined
+  const submenu = browserAction ?? (argumentCommand?.action && ["model", "effort", "permissions"].includes(argumentCommand.action) ? argumentCommand.action : undefined)
+  const slashQuery = browserAction ? "" : submenu ? slash?.[2] ?? "" : slash?.[2] === undefined ? slash?.[1] : undefined
+  const choices: ComposerCommand[] = submenu === "model"
+    ? models.map((m) => ({ name: m.displayName, value: m.value, aliases: [m.value], description: m.description, argumentHint: "", action: "model", group: "Models", active: m.value === currentModel?.value, disabled: disabled || busy }))
+    : submenu === "effort"
+      ? [{ name: "Default", value: "default", description: "Use the model default", argumentHint: "", action: "effort", group: "Reasoning effort", active: !effort, disabled: disabled || busy }, ...effortLevels.map((level) => ({ name: level, value: level, description: "", argumentHint: "", action: "effort" as const, group: "Reasoning effort", active: level === effort, disabled: disabled || busy }))]
+      : submenu === "permissions"
+        ? MODE_OPTIONS.filter((option) => option.value !== "auto" || currentModel?.supportsAutoMode || mode === "auto").map((option) => ({ name: option.label, value: option.value, description: option.description, argumentHint: "", action: "permissions", group: "Permissions", active: option.value === mode, disabled: disabled || busy }))
+        : allCommands.filter((command) => !browserFilter || command.group === browserFilter)
+  const menuItems = filterComposerCommands(choices, slashQuery ?? "")
+  const menuOpen = !menuDismissed && (browserOpen || (!browserAction && inputFocused && slashQuery !== undefined))
+  const menuTitle = submenu === "model" ? "Model" : submenu === "effort" ? "Reasoning effort" : submenu === "permissions" ? "Permissions" : browserFilter
 
+  useEffect(() => { setMenuIndex(0); setMenuDismissed(false) }, [slashQuery, submenu, browserFilter, menuItems.length])
   useEffect(() => {
-    setMenuIndex(0)
-    setMenuDismissed(false)
-  }, [slashQuery])
+    if (!menuOpen) return
+    const onOutside = (event: MouseEvent) => {
+      if (!composerRef.current?.contains(event.target as Node)) { setMenuDismissed(true); setBrowserOpen(false); setBrowserAction(undefined) }
+    }
+    document.addEventListener("mousedown", onOutside)
+    return () => document.removeEventListener("mousedown", onOutside)
+  }, [menuOpen])
 
   // Grow the textarea with its content, up to the CSS max-height.
   useEffect(() => {
@@ -144,18 +218,63 @@ export function Composer({
 
   function submit() {
     const trimmed = text.trim()
-    if (!trimmed || disabled || busy) return
-    onSend(
-      references.length
+    if ((!trimmed && !images.length) || disabled || loadingImages || !imagesLoaded) return
+    const parsed = trimmed.match(/^\/([\w:.-]+)(?:\s+([\s\S]*))?$/)
+    if (parsed) {
+      const command = findComposerCommand(allCommands, parsed[1]!)
+      if (!command) { setAttachmentError(`Unknown command /${parsed[1]}. Use /help to browse available commands.`); return }
+      if (command.action) { runGuiCommand(command, parsed[2]?.trim() ?? ""); return }
+    } else if (trimmed === "/") { setMenuDismissed(false); return }
+    const prompt = references.length
         ? `${trimmed}\n\nReferenced project files:\n${references.map((path) => `- ${JSON.stringify(path)}`).join("\n")}`
-        : trimmed,
-    )
+        : trimmed
+    const content: UserContent = images.length ? [
+      ...images.map((image) => ({ type: "image" as const, source: { type: "base64" as const, media_type: image.dataUrl.slice(5, image.dataUrl.indexOf(";")), data: image.dataUrl.slice(image.dataUrl.indexOf(",") + 1) } })),
+      ...(prompt ? [{ type: "text" as const, text: prompt }] : []),
+    ] : prompt
+    if (!onSend(content)) { setAttachmentError("Message was not sent. Reconnect and try again."); return }
+    setAttachmentError(undefined)
+    setImages([])
     setText("")
     setReferences([])
   }
 
-  function pickCommand(command: SlashCommand) {
-    setText(`/${command.name} `)
+  function runGuiCommand(command: ComposerCommand, value: string) {
+    if (command.disabled) { setAttachmentError(busy ? "Stop the current turn before changing this setting." : "Noa is still connecting."); return }
+    setAttachmentError(undefined)
+    const action = command.action!
+    if (["model", "effort", "permissions"].includes(action) && !value) {
+      if (text.startsWith("/")) { setText(`/${command.name} `); setBrowserOpen(false) }
+      else { setBrowserAction(action); setBrowserOpen(true) }
+      textareaRef.current?.focus(); return
+    }
+    if (action === "model") onModel(value)
+    else if (action === "effort") {
+      if (value !== "default" && !effortLevels.includes(value)) { setAttachmentError("Choose one of this model’s supported effort levels."); return }
+      onEffort(value === "default" ? null : value)
+    } else if (action === "permissions") {
+      if (!MODE_OPTIONS.some((option) => option.value === value && (value !== "auto" || currentModel?.supportsAutoMode || mode === "auto"))) { setAttachmentError("Choose an available permission mode."); return }
+      onMode(value as PermissionMode)
+    } else if (action === "help" || action === "skills") {
+      setBrowserFilter(action === "skills" ? "Skills" : undefined)
+      setBrowserOpen(true); setBrowserAction(undefined); setMenuDismissed(false); if (text.startsWith("/")) setText("/"); textareaRef.current?.focus(); return
+    } else {
+      if (value) { setAttachmentError(`/${command.name} does not take arguments.`); return }
+      onCommand(action)
+    }
+    if (text.startsWith("/")) setText("")
+    setBrowserOpen(false); setBrowserAction(undefined); setMenuDismissed(true)
+  }
+
+  function pickCommand(command: ComposerCommand, completeOnly = false) {
+    if (command.disabled) return
+    if (command.value !== undefined) { runGuiCommand(command, command.value); return }
+    if (command.action && !completeOnly) { runGuiCommand(command, ""); return }
+    if (command.type === "local" && !command.argumentHint && !completeOnly) {
+      if (!onSend(`/${command.name}`)) { setAttachmentError("Message was not sent. Reconnect and try again."); return }
+      if (text.startsWith("/")) setText("")
+    } else setText(`/${command.name} ${browserOpen && !text.startsWith("/") ? text : ""}`)
+    setBrowserOpen(false); setBrowserAction(undefined); setBrowserFilter(undefined); setMenuDismissed(false)
     textareaRef.current?.focus()
   }
 
@@ -167,17 +286,27 @@ export function Composer({
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault()
         const step = e.key === "ArrowDown" ? 1 : -1
-        setMenuIndex((i) => (i + step + menuItems.length) % menuItems.length)
+        if (menuItems.length) setMenuIndex((i) => {
+          let next = i
+          for (let attempts = 0; attempts < menuItems.length; attempts++) {
+            next = (next + step + menuItems.length) % menuItems.length
+            if (!menuItems[next]?.disabled) return next
+          }
+          return i
+        })
         return
       }
       if (e.key === "Enter" || e.key === "Tab") {
         e.preventDefault()
-        pickCommand(menuItems[menuIndex]!)
+        if (menuItems[menuIndex]) pickCommand(menuItems[menuIndex], e.key === "Tab")
+        else if (e.key === "Enter") submit()
         return
       }
       if (e.key === "Escape") {
         e.preventDefault()
         setMenuDismissed(true)
+        setBrowserOpen(false)
+        setBrowserAction(undefined)
         return
       }
     }
@@ -194,8 +323,6 @@ export function Composer({
     }
   }
 
-  const currentModel = findModel(models, model)
-  const currentMode = MODE_OPTIONS.find((m) => m.value === mode)
   const modelItems: PickerItem[] = models.map((m, i) => ({
     key: m.value,
     title: m.value === "default" ? "Default" : m.displayName,
@@ -204,10 +331,9 @@ export function Composer({
     onSelect: () => onModel(m.value),
     heading: i === 0 ? "Select model" : undefined,
   }))
-  const effortLevels = currentModel?.supportsEffort ? (currentModel.supportedEffortLevels ?? []) : []
 
   return (
-    <div className="noa-agent-composer relative">
+    <div ref={composerRef} className="noa-agent-composer relative">
       {newTask && (
         <div className="noa-agent-environment flex items-center gap-2 text-chat-sm text-[var(--sidebar-text)]">
           <Picker
@@ -274,37 +400,32 @@ export function Composer({
           </div>
         </div>
       )}
-      {menuOpen && (
-        <div className="noa-floating-panel absolute bottom-full left-0 right-0 z-30 mb-2 max-h-80 overflow-y-auto rounded-panel bg-[var(--bg-card,#FFFFFF)] p-1">
-          {menuItems.map((command, i) => (
-            <button
-              key={command.name}
-              type="button"
-              aria-selected={i === menuIndex}
-              onMouseEnter={() => setMenuIndex(i)}
-              onMouseDown={(e) => {
-                e.preventDefault()
-                pickCommand(command)
-              }}
-              className={`flex w-full flex-col gap-0.5 rounded-md px-2.5 py-1.5 text-left ${
-                i === menuIndex ? "bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_8%,transparent)]" : ""
-              }`}
-            >
-              <span className="text-body font-medium">
-                /{command.name}
-                {command.argumentHint && (
-                  <span className="text-[var(--sidebar-text-muted,#898781)]"> {command.argumentHint}</span>
-                )}
-              </span>
-              <span className="line-clamp-2 text-caption text-[var(--sidebar-text-muted,#898781)]">
-                {command.description}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+      {menuOpen && <SlashCommandMenu items={menuItems} index={menuIndex} title={menuTitle} disabled={disabled} onIndex={setMenuIndex} onSelect={pickCommand} onBack={() => { if (text.startsWith("/")) setText("/"); setBrowserAction(undefined); setBrowserFilter(undefined); setBrowserOpen(!text.startsWith("/")); textareaRef.current?.focus() }} />}
 
-      <div className="noa-agent-input relative flex flex-col">
+      <div className="noa-agent-input relative flex flex-col" onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault() }} onDrop={(event) => { event.preventDefault(); void addImages(Array.from(event.dataTransfer.files)) }}>
+        <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden onChange={(event) => { void addImages(Array.from(event.target.files ?? [])); event.target.value = "" }} />
+        {images.length > 0 && (
+          <div className="flex flex-wrap gap-2 px-3 pt-3">
+            {images.map((image) => (
+              <div key={image.id} className="relative">
+                <img
+                  src={image.dataUrl}
+                  alt={image.name}
+                  className="size-16 rounded-lg border border-[var(--divider-subtle)] object-cover"
+                />
+                <button
+                  type="button"
+                  aria-label={`Remove image ${image.name}`}
+                  onClick={() => setImages((current) => current.filter((i) => i.id !== image.id))}
+                  className="absolute -right-1 -top-1 rounded-full bg-[var(--bg-card)] p-0.5 shadow-sm"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {attachmentError && <p role="alert" className="m-0 px-3 pt-2 text-caption text-[#C24444]">{attachmentError}</p>}
         {references.length === 0 && <div aria-hidden="true" className="h-3.5 shrink-0" />}
         {references.length > 0 && (
           <div className="flex flex-wrap gap-1 px-2 pb-1.5 pt-2">
@@ -331,15 +452,25 @@ export function Composer({
           ref={textareaRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onPaste={(event) => {
+            const files = Array.from(event.clipboardData.items).filter((item) => item.kind === "file").map((item) => item.getAsFile()).filter((file): file is File => file !== null)
+            if (files.length) { event.preventDefault(); void addImages(files) }
+          }}
           onKeyDown={onKeyDown}
+          onFocus={() => { setInputFocused(true); setMenuDismissed(false) }}
+          onBlur={() => { setInputFocused(false); setBrowserOpen(false); setBrowserAction(undefined) }}
+          aria-autocomplete="list"
+          aria-controls={menuOpen ? "noa-slash-commands" : undefined}
+          aria-activedescendant={menuOpen && menuItems[menuIndex] ? `noa-slash-option-${menuIndex}` : undefined}
           onCompositionStart={() => setComposing(true)}
           onCompositionEnd={() => setComposing(false)}
-          placeholder={disabled ? "Starting Noa…" : newTask ? "Do anything" : "Work with Noa"}
+          placeholder={disabled ? "Starting Noa…" : busy ? "Add a follow-up to the queue…" : newTask ? "Do anything" : "Work with Noa"}
           aria-label="Task instruction"
           disabled={disabled}
           rows={1}
           className="w-full min-h-[44px] max-h-60 resize-none border-none bg-transparent px-3 py-0 text-body leading-5 outline-none placeholder:text-[color-mix(in_srgb,var(--text-primary)_50%,transparent)]"
         />
+        {argumentCommand?.argumentHint && !submenu && <p className="m-0 px-3 pb-1 text-caption text-[var(--sidebar-text-muted)]">/{argumentCommand.name} {argumentCommand.argumentHint}</p>}
         <div className="noa-agent-footer mb-2 mt-1 flex min-h-7 items-center justify-between gap-[5px] px-2">
           <div className="flex min-w-0 items-center gap-[5px]">
             <Picker
@@ -349,6 +480,7 @@ export function Composer({
               label={<ComposerPlusIcon />}
               ariaLabel="Add task context"
               items={[
+                { key: "images", title: "Add images", description: "Choose images, paste a screenshot, or drop images here", active: false, onSelect: () => fileRef.current?.click() },
                 {
                   key: "files",
                   title: "Reference project files",
@@ -362,7 +494,9 @@ export function Composer({
                   description: "Browse Noa commands and skills",
                   active: false,
                   onSelect: () => {
-                    setText("/")
+                    setBrowserOpen(true)
+                    setBrowserFilter(undefined)
+                    setMenuDismissed(false)
                     textareaRef.current?.focus()
                   },
                 },
@@ -445,7 +579,7 @@ export function Composer({
                 />
               ) : undefined}
             />
-            {busy ? (
+            {busy && (
               <button
                 type="button"
                 onClick={onInterrupt}
@@ -455,17 +589,17 @@ export function Composer({
               >
                 <span aria-hidden="true" className="block size-2.5 rounded-[2px] bg-current" />
               </button>
-            ) : (
+            )}
               <button
                 type="button"
                 onClick={submit}
-                disabled={disabled || !text.trim()}
-                aria-label="Run task"
+                disabled={disabled || loadingImages || !imagesLoaded || (!text.trim() && !images.length)}
+                aria-label={busy ? "Queue message" : "Run task"}
+                title={busy ? "Queue after the current turn" : "Run task"}
                 className="ml-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] transition-opacity hover:opacity-90 disabled:opacity-25 noa-press"
               >
                 <ComposerSendIcon />
               </button>
-            )}
           </div>
         </div>
       </div>

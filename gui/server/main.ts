@@ -1,83 +1,14 @@
-// Local bridge between the browser UI and the agent's stream-json mode.
-// One agent process per WebSocket connection. Client messages are written
-// verbatim as NDJSON to the agent's stdin; stdout lines come back wrapped in
-// an envelope so the client can tell agent messages from log lines.
+// Local HTTP and WebSocket bridge for the Noa CLI.
 import { existsSync, statSync } from "node:fs"
-import { join, resolve, sep } from "node:path"
-import type { ServerWebSocket, Subprocess } from "bun"
+import { resolve, sep } from "node:path"
 import { SESSION_ID, listSessions, loadHistory, renameSession } from "./sessions"
 import { addProject, listProjects, removeProject } from "./projects"
 import { workspaceRequest } from "./workspace"
+import { attachAgent, agentMessage, detachAgent, listAgentRuns, type SocketData } from "./agents"
 
 const REPO_ROOT = resolve(import.meta.dir, "../..")
 const DIST_DIR = resolve(import.meta.dir, "../dist")
 const PORT = Number(process.env.NOA_GUI_PORT ?? 8787)
-
-type Envelope =
-  | { kind: "agent"; message: unknown }
-  | { kind: "log"; text: string }
-  | { kind: "exit"; code: number | null }
-
-interface SocketData {
-  proc?: Subprocess<"pipe", "pipe", "pipe">
-  cwd: string
-  resume?: string
-}
-
-function send(ws: ServerWebSocket<SocketData>, envelope: Envelope) {
-  ws.send(JSON.stringify(envelope))
-}
-
-async function forwardLines(stream: ReadableStream<Uint8Array>, onLine: (line: string) => void) {
-  const reader = stream.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ""
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    let newline = buffer.indexOf("\n")
-    while (newline !== -1) {
-      onLine(buffer.slice(0, newline))
-      buffer = buffer.slice(newline + 1)
-      newline = buffer.indexOf("\n")
-    }
-  }
-  if (buffer.length > 0) onLine(buffer)
-}
-
-function spawnAgent(ws: ServerWebSocket<SocketData>) {
-  const args = [
-    process.execPath,
-    join(REPO_ROOT, "run-noa.js"),
-    "-p",
-    "--input-format",
-    "stream-json",
-    "--output-format",
-    "stream-json",
-    "--verbose",
-    "--include-partial-messages",
-    // Without this, "ask" decisions are denied in headless mode instead of
-    // being sent to the client as can_use_tool control requests.
-    "--permission-prompt-tool",
-    "stdio",
-  ]
-  if (ws.data.resume) args.push("--resume", ws.data.resume)
-
-  const proc = Bun.spawn(args, { cwd: ws.data.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe" })
-  ws.data.proc = proc
-
-  forwardLines(proc.stdout, (line) => {
-    if (line.trim() === "") return
-    try {
-      send(ws, { kind: "agent", message: JSON.parse(line) })
-    } catch {
-      send(ws, { kind: "log", text: line })
-    }
-  })
-  forwardLines(proc.stderr, (line) => send(ws, { kind: "log", text: line }))
-  proc.exited.then((code) => send(ws, { kind: "exit", code }))
-}
 
 function resolveCwd(raw: string | null): string | null {
   if (!raw) return REPO_ROOT
@@ -158,9 +89,13 @@ Bun.serve<SocketData>({
       if (!cwd) return new Response("cwd is not a directory", { status: 400 })
       const resume = url.searchParams.get("resume") ?? undefined
       if (resume && !SESSION_ID.test(resume)) return new Response("invalid session id", { status: 400 })
-      if (server.upgrade(req, { data: { cwd, resume } })) return undefined
+      const runtimeId = url.searchParams.get("runtime") ?? crypto.randomUUID()
+      if (!SESSION_ID.test(runtimeId)) return new Response("invalid runtime id", { status: 400 })
+      if (server.upgrade(req, { data: { cwd, resume, runtimeId } })) return undefined
       return new Response("Expected WebSocket upgrade", { status: 426 })
     }
+
+    if (url.pathname === "/api/runs") return json(listAgentRuns())
 
     if (url.pathname === "/api/info") {
       if (!cwd) return json({ error: "cwd is not a directory" }, 400)
@@ -186,25 +121,17 @@ Bun.serve<SocketData>({
         }
       }
       if (req.method !== "GET") return json({ error: "Method not allowed" }, 405)
-      const items = loadHistory(cwd, decodeURIComponent(historyMatch[1]!))
+      const items = await loadHistory(cwd, decodeURIComponent(historyMatch[1]!))
       return items ? json(items) : json({ error: "session not found" }, 404)
     }
 
     return serveStatic(url.pathname)
   },
   websocket: {
-    open(ws) {
-      spawnAgent(ws)
-    },
-    message(ws, raw) {
-      const proc = ws.data.proc
-      if (!proc || typeof raw !== "string") return
-      proc.stdin.write(raw.endsWith("\n") ? raw : `${raw}\n`)
-      proc.stdin.flush()
-    },
-    close(ws) {
-      ws.data.proc?.kill()
-    },
+    maxPayloadLength: 32 * 1024 * 1024,
+    open(ws) { attachAgent(ws, REPO_ROOT) },
+    message: agentMessage,
+    close: detachAgent,
   },
 })
 

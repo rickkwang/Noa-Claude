@@ -183,9 +183,6 @@ export function SettingsDialog({
                     onChange={(uiFontStyle) => change({ uiFontStyle: uiFontStyle as AppSettings["appearance"]["uiFontStyle"] })}
                   />
                 </Row>
-                <Row label="Translucent sidebar" description="Let the desktop show through the sidebar.">
-                  <Toggle checked={appearance.translucentSidebar} onChange={(translucentSidebar) => change({ translucentSidebar })} />
-                </Row>
               </Section>
 
               <Section title="Fonts">

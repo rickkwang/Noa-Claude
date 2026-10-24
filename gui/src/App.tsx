@@ -1,3 +1,4 @@
+import { ElicitationCard } from "./components/ElicitationCard"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useAgent } from "./agent/useAgent"
 import {
@@ -82,7 +83,13 @@ function Workspace({ cwd }: { cwd: string }) {
   }, [settings])
   const readingWidth = settings.appearance.maxWidth
   // cwd travels with resume: a session belongs to the project it was started in.
-  const [session, setSession] = useState<{ cwd: string; resume?: string; key: number }>({ cwd, key: 0 })
+  const [session, setSession] = useState<{ cwd: string; resume?: string; runtimeId: string; key: number }>(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem("noa-agent.current") ?? "null")
+      if (saved?.cwd && saved?.runtimeId) return { ...saved, key: 0 }
+    } catch {}
+    return { cwd, runtimeId: crypto.randomUUID(), key: 0 }
+  })
   const [projects, setProjects] = useState<ProjectInfo[]>([])
   const [sessionsByProject, setSessionsByProject] = useState<Record<string, SessionSummary[]>>({})
   const [refreshTick, setRefreshTick] = useState(0)
@@ -93,11 +100,12 @@ function Workspace({ cwd }: { cwd: string }) {
   const [changes, setChanges] = useState<{ count: number; additions: number; deletions: number; branch: string; files: { path: string; additions: number; deletions: number; binary: boolean }[] }>()
   const [rightTab, setRightTab] = useState<PanelTab>("files")
 
-  const { state, sendMessage, interrupt, answerPermission, setModel, setPermissionMode, setEffort, refreshContext } =
+  const { state, sendMessage, reloadCommands, interrupt, answerPermission, answerElicitation, removeQueued, runQueued, stopTask, setModel, setPermissionMode, setEffort, refreshContext } =
     useAgent({
       cwd: session.cwd,
       resume: session.resume,
       sessionKey: session.key,
+      runtimeId: session.runtimeId,
       defaultPermissionMode: settings.agent.defaultPermissionMode,
     })
 
@@ -107,11 +115,27 @@ function Workspace({ cwd }: { cwd: string }) {
 
   useEffect(() => {
     let cancelled = false
-    Promise.all(projects.map(async (p) => [p.path, await fetchSessions(p.path)] as const)).then((entries) => {
-      if (!cancelled) setSessionsByProject(Object.fromEntries(entries))
-    })
+    const refresh = async () => {
+      try {
+        const runsResponse = await fetch("/api/runs")
+        const runs = await runsResponse.json() as { cwd: string; sessionId?: string; title?: string; busy: boolean; waiting: boolean; queued: number }[]
+        const entries = await Promise.all(projects.map(async (p) => {
+          const sessions = await fetchSessions(p.path)
+          for (const run of runs.filter((r) => r.cwd === p.path && r.sessionId)) {
+            let summary = sessions.find((s) => s.id === run.sessionId)
+            if (!summary) { summary = { id: run.sessionId!, title: run.title ?? "New task", updatedAt: Date.now() }; sessions.unshift(summary) }
+            summary.status = run.waiting ? "waiting" : run.busy ? "running" : run.queued ? "queued" : undefined
+          }
+          return [p.path, sessions] as const
+        }))
+        if (!cancelled) setSessionsByProject(Object.fromEntries(entries))
+      } catch {}
+    }
+    void refresh()
+    const timer = setInterval(refresh, 2000)
     return () => {
       cancelled = true
+      clearInterval(timer)
     }
   }, [projects, refreshTick])
 
@@ -143,6 +167,9 @@ function Workspace({ cwd }: { cwd: string }) {
   }, [session.cwd, state.result, refreshTick])
 
   const activeId = state.sessionId ?? session.resume
+  useEffect(() => {
+    sessionStorage.setItem("noa-agent.current", JSON.stringify({ cwd: session.cwd, resume: activeId, runtimeId: session.runtimeId }))
+  }, [session.cwd, session.runtimeId, activeId])
   const panelToggle = (
     <button
       type="button"
@@ -157,33 +184,37 @@ function Workspace({ cwd }: { cwd: string }) {
   )
 
   // Back and forward step through the tasks the user has opened, like the browser history Codex shows.
-  const [history, setHistory] = useState<{ entries: { cwd: string; resume?: string }[]; index: number }>()
-  const pushHistory = (target: { cwd: string; resume?: string }) =>
+  const [history, setHistory] = useState<{ entries: { cwd: string; resume?: string; runtimeId?: string }[]; index: number }>()
+  const pushHistory = (target: { cwd: string; resume?: string; runtimeId?: string }) =>
     setHistory((h) => {
-      const past = h ? h.entries.slice(0, h.index + 1) : [{ cwd: session.cwd, resume: session.resume }]
+      const past = h ? h.entries.slice(0, h.index + 1) : [{ cwd: session.cwd, resume: activeId, runtimeId: session.runtimeId }]
       return { entries: [...past, target], index: past.length }
     })
+  useEffect(() => {
+    if (!activeId) return
+    setHistory((h) => h ? { ...h, entries: h.entries.map((entry, i) => i === h.index ? { ...entry, resume: activeId, runtimeId: session.runtimeId } : entry) } : h)
+  }, [activeId, session.runtimeId])
   const goHistory = (step: -1 | 1) => {
     if (!history) return
     const index = history.index + step
     const target = history.entries[index]
-    if (!target || (state.busy && !window.confirm("Switching tasks stops the running agent. Continue?"))) return
+    if (!target) return
     setHistory({ ...history, index })
     setReference(undefined)
-    setSession((s) => ({ cwd: target.cwd, resume: target.resume, key: s.key + 1 }))
+    setSession((s) => ({ cwd: target.cwd, resume: target.resume, runtimeId: target.runtimeId ?? crypto.randomUUID(), key: s.key + 1 }))
   }
   const newSession = (dir?: string) => {
-    if (state.busy && !window.confirm("Switching tasks stops the running agent. Continue?")) return
     setReference(undefined)
-    pushHistory({ cwd: dir ?? session.cwd })
-    setSession((s) => ({ cwd: dir ?? s.cwd, resume: undefined, key: s.key + 1 }))
+    const runtimeId = crypto.randomUUID()
+    pushHistory({ cwd: dir ?? session.cwd, runtimeId })
+    setSession((s) => ({ cwd: dir ?? s.cwd, resume: undefined, runtimeId, key: s.key + 1 }))
   }
   const selectSession = (dir: string, id: string) => {
     if (dir === session.cwd && id === activeId) return
-    if (state.busy && !window.confirm("Switching tasks stops the running agent. Continue?")) return
     setReference(undefined)
-    pushHistory({ cwd: dir, resume: id })
-    setSession((s) => ({ cwd: dir, resume: id, key: s.key + 1 }))
+    const runtimeId = crypto.randomUUID()
+    pushHistory({ cwd: dir, resume: id, runtimeId })
+    setSession((s) => ({ cwd: dir, resume: id, runtimeId, key: s.key + 1 }))
   }
   const [focusChange, setFocusChange] = useState<{ path: string; at: number }>()
   const showWorkspacePane = (tab: "files" | "changes", path?: string) => {
@@ -220,7 +251,7 @@ function Workspace({ cwd }: { cwd: string }) {
         state.busy &&
         !e.defaultPrevented &&
         !(e.target instanceof HTMLTextAreaElement) &&
-        !document.querySelector("dialog[open]")
+        !document.querySelector('dialog[open], [role="dialog"], [role="menu"]')
       ) {
         e.preventDefault()
         interrupt()
@@ -228,7 +259,7 @@ function Workspace({ cwd }: { cwd: string }) {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [state.busy])
+  }, [state.busy, activeId, session, history])
 
   const firstUserText = state.turns.find((t) => t.role === "user")?.text
   const title =
@@ -358,6 +389,7 @@ function Workspace({ cwd }: { cwd: string }) {
         >
           <RightPanel
             state={state}
+            onStopTask={stopTask}
             cwd={session.cwd}
             sessionId={activeId}
             onRefreshContext={refreshContext}
@@ -432,7 +464,7 @@ function Workspace({ cwd }: { cwd: string }) {
               messages scroll beneath it and a gradient fades them out above the card. */}
           <div ref={footerRef} className={hasTurns ? "noa-conversation-footer" : "shrink-0 px-[29px] pb-3 pt-2"}>
             <div className="mx-auto flex flex-col gap-2" style={{ maxWidth: readingWidth + 22 }}>
-              {(state.connection === "closed" || state.permissions.length > 0 || state.busy) && (
+              {(state.connection === "closed" || state.permissions.length > 0 || state.elicitations.length > 0 || state.busy) && (
                 <div
                   role="status"
                   className="flex items-center justify-center gap-2 text-caption text-[var(--sidebar-text-muted)]"
@@ -443,11 +475,11 @@ function Workspace({ cwd }: { cwd: string }) {
                   <span className={state.connection === "closed" ? undefined : "noa-shimmer"}>
                   {state.connection === "closed"
                     ? "Agent disconnected"
-                    : state.permissions.length
+                    : state.permissions.length || state.elicitations.length
                       ? "Approval required"
                       : state.stopping
                         ? "Stopping…"
-                        : "Running task…"}
+                        : state.status === "compacting" ? "Compacting context…" : "Running task…"}
                   </span>
                   {state.connection === "closed" && (
                     <button
@@ -466,6 +498,14 @@ function Workspace({ cwd }: { cwd: string }) {
                   ))}
                 </div>
               )}
+              {state.elicitations.map((request) => <ElicitationCard key={request.requestId} request={request} onAnswer={answerElicitation} />)}
+              {state.queue.length > 0 && (
+                <div aria-label="Queued messages" className="rounded-panel border border-[var(--divider-subtle)] bg-[var(--bg-card)] px-3 py-2">
+                  <div className="mb-1 flex items-center justify-between text-caption text-[var(--sidebar-text-muted)]"><span>{state.queue.length} queued · {state.busy ? "sends after this turn" : "ready to send"}</span>{!state.busy && <button onClick={runQueued} className="text-[var(--accent-color)]">Send next</button>}</div>
+                  {state.queue.map((message) => <div key={message.id} className="flex items-center gap-2 py-1 text-body"><span className="min-w-0 flex-1 truncate">{typeof message.content === "string" ? message.content : message.content.filter((b) => b.type === "text").map((b) => b.text).join(" ") || "Image message"}</span><button aria-label="Remove queued message" onClick={() => removeQueued(message.id)} className="text-caption text-[var(--sidebar-text-muted)]">Remove</button></div>)}
+                </div>
+              )}
+              {state.notice && <p role="status" className="m-0 px-1 text-caption text-[var(--sidebar-text-muted)]">{state.notice}</p>}
               {state.error && (
                 <p role="alert" className="m-0 break-words px-1 text-caption text-[#C24444]">
                   {state.error}
@@ -473,7 +513,7 @@ function Workspace({ cwd }: { cwd: string }) {
               )}
               <Composer
                 key={session.key}
-                draftKey={`noa-agent.draft:${session.cwd}:${session.resume ?? "new"}`}
+                draftKey={`noa-agent.draft:${session.cwd}:${activeId ?? session.runtimeId}`}
                 reference={reference}
                 effort={state.effort}
                 onEffort={setEffort}
@@ -491,6 +531,18 @@ function Workspace({ cwd }: { cwd: string }) {
                 mode={state.permissionMode}
                 commands={state.commands}
                 onSend={sendMessage}
+                onCommand={(action) => {
+                  if (action === "new") newSession()
+                  else if (action === "resume") {
+                    setSidebarOpen(true)
+                    requestAnimationFrame(() => document.querySelector<HTMLInputElement>('[aria-label="Search tasks"]')?.focus())
+                  } else if (action === "settings") setSettingsOpen(true)
+                  else if (action === "context") { setRightOpen(true); setRightTab("context"); refreshContext() }
+                  else if (action === "activity") { setRightOpen(true); setRightTab("activity") }
+                  else if (action === "plan") setPermissionMode("plan")
+                  else if (action === "stop") interrupt()
+                  else if (action === "reload") reloadCommands()
+                }}
                 onInterrupt={interrupt}
                 onModel={setModel}
                 onMode={setPermissionMode}

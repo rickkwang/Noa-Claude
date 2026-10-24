@@ -15,6 +15,7 @@ const TABS: { id: PanelTab; label: string }[] = [
 
 interface RightPanelProps {
   state: AgentState
+  onStopTask: (id: string) => void
   cwd: string
   sessionId?: string
   onRefreshContext: () => void
@@ -26,7 +27,7 @@ interface RightPanelProps {
 }
 
 // Right column: one pane under a tab strip, as in Codex's side panel.
-export function RightPanel({ state, cwd, sessionId, onRefreshContext, tab, onTab, onReference, onWorkspaceChange, focusChange }: RightPanelProps) {
+export function RightPanel({ state, onStopTask, cwd, sessionId, onRefreshContext, tab, onTab, onReference, onWorkspaceChange, focusChange }: RightPanelProps) {
   // Arrow keys move between tabs, as in a WAI-ARIA tablist.
   const onTabKey = (e: KeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return
@@ -82,7 +83,7 @@ export function RightPanel({ state, cwd, sessionId, onRefreshContext, tab, onTab
         <ContextTab state={state} cwd={cwd} sessionId={sessionId} active={tab === "context"} onRefreshContext={onRefreshContext} onReference={onReference} />
       </div>
       <div id="panel-activity" role="tabpanel" aria-labelledby="panel-tab-activity" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "activity" ? "flex" : "none" }}>
-        <ActivityTab state={state} />
+        <ActivityTab state={state} onStopTask={onStopTask} />
       </div>
     </div>
   )
@@ -125,6 +126,7 @@ function ContextTab({ state, cwd, sessionId, active, onRefreshContext, onReferen
       <dt>Workspace</dt><dd title={cwd}>{home ? `~${cwd.slice(home.length)}` : cwd}</dd>
       <dt>Model</dt><dd>{state.model ?? "—"}</dd>
       <dt>Permissions</dt><dd>{state.permissionMode ?? "—"}</dd>
+      {state.result?.costUsd !== undefined && <><dt>Session cost</dt><dd>${state.result.costUsd.toFixed(4)}</dd></>}
       <dt>Session</dt><dd title={sessionId}>{sessionId ? sessionId.slice(0, 8) : "New task"}</dd>
       {usage?.isAutoCompactEnabled !== undefined && <><dt>Auto compact</dt><dd>{usage.isAutoCompactEnabled ? "On" : "Off"}</dd></>}
     </dl>
@@ -141,13 +143,13 @@ function ContextTab({ state, cwd, sessionId, active, onRefreshContext, onReferen
 
 const FILTERS = [{ id: "all", label: "All" }, { id: "running", label: "Running" }, { id: "error", label: "Failed" }] as const
 
-function ActivityTab({ state }: { state: AgentState }) {
+function ActivityTab({ state, onStopTask }: { state: AgentState; onStopTask: (id: string) => void }) {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("all")
   // Newest first: the latest call is what the user is usually looking for.
   const tools = state.turns.flatMap((turn) => turn.role === "assistant" ? turn.blocks.filter((block): block is ToolBlock => block.kind === "tool") : []).reverse()
   const counts = { all: tools.length, running: tools.filter((t) => t.status === "running").length, error: tools.filter((t) => t.status === "error").length }
   const visible = tools.filter((tool) => filter === "all" || tool.status === filter)
-  const statusKind = state.connection === "closed" ? "closed" : state.permissions.length ? "waiting" : state.busy ? "running" : "ready"
+  const statusKind = state.connection === "closed" ? "closed" : state.permissions.length || state.elicitations.length ? "waiting" : state.busy ? "running" : "ready"
   return <div className="noa-panel-details">
     <section className="noa-activity-status" data-kind={statusKind}>
       <span className="noa-activity-dot" />
@@ -156,6 +158,51 @@ function ActivityTab({ state }: { state: AgentState }) {
         {state.result && <p className="noa-panel-muted">{state.result.interrupted ? "Stopped" : state.result.isError ? "Finished with an error" : "Last run completed"} · {(state.result.durationMs / 1000).toFixed(1)}s{state.result.costUsd !== undefined && ` · $${state.result.costUsd.toFixed(4)}`}</p>}
       </div>
     </section>
+    {state.tasks.length > 0 && (
+      <div className="noa-panel-sections">
+        <Section title="Background tasks" count={state.tasks.length} open>
+          {state.tasks.map((task) => (
+            <details key={task.id} className="rounded-lg border border-[var(--divider-subtle)] p-2 text-body">
+              <summary className="cursor-pointer">
+                <span className={task.status === "running" ? "noa-shimmer" : ""}>{task.description}</span>
+                <span className="ml-2 text-caption text-[var(--sidebar-text-muted)]">{task.status}</span>
+              </summary>
+              {task.summary && <p className="whitespace-pre-wrap text-caption">{task.summary}</p>}
+              {task.lastTool && <p className="text-caption text-[var(--sidebar-text-muted)]">Using {task.lastTool}</p>}
+              {task.usage && (
+                <p className="text-caption text-[var(--sidebar-text-muted)]">
+                  {task.usage.tool_uses} tools · {(task.usage.duration_ms / 1000).toFixed(1)}s
+                </p>
+              )}
+              {task.turns.map((turn) =>
+                turn.role === "assistant"
+                  ? turn.blocks.map((block, i) =>
+                      block.kind === "tool" ? (
+                        <ToolCard key={`${turn.id}-${i}`} block={block} />
+                      ) : (
+                        <p key={`${turn.id}-${i}`} className="whitespace-pre-wrap text-caption">
+                          {block.text}
+                        </p>
+                      ),
+                    )
+                  : null,
+              )}
+              {task.status === "running" && task.id !== task.toolUseId && (
+                <button
+                  className="noa-confirm-btn mt-2 rounded-md border border-[var(--divider-subtle)] px-2 py-1 text-caption"
+                  onClick={() => onStopTask(task.id)}
+                >
+                  Stop task
+                </button>
+              )}
+              {task.outputFile && (
+                <p className="break-all text-caption text-[var(--sidebar-text-muted)]">Output: {task.outputFile}</p>
+              )}
+            </details>
+          ))}
+        </Section>
+      </div>
+    )}
     <div className="noa-segmented" role="radiogroup" aria-label="Filter activity">
       {FILTERS.map((f) => <button key={f.id} type="button" role="radio" aria-checked={filter === f.id} onClick={() => setFilter(f.id)}>{f.label}<span>{counts[f.id]}</span></button>)}
     </div>

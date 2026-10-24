@@ -1,8 +1,10 @@
 // Reads the agent's transcripts (<config>/projects/<sanitized cwd>/<id>.jsonl)
 // so the GUI can list past sessions and rebuild their history.
-import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import type { ContentBlock, ImageBlock } from "../src/agent/protocol"
+import { sanitizePath } from "../../src/utils/sessionStoragePortable"
 
 export const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_SESSIONS = 50
@@ -15,15 +17,25 @@ export interface SessionSummary {
   updatedAt: number
 }
 
-// Mirrors the agent's sessionStoragePortable.sanitizePath (without its long-path hash).
+function canonicalCwd(cwd: string): string {
+  return (existsSync(cwd) ? realpathSync(cwd) : cwd).normalize("NFC")
+}
+
 function projectDir(cwd: string): string {
   const configHome = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".noa")
-  return join(configHome, "projects", cwd.replace(/[^a-zA-Z0-9]/g, "-"))
+  return join(configHome, "projects", sanitizePath(canonicalCwd(cwd)))
 }
 
 interface Entry {
   type: string
+  subtype?: string
+  content?: string
+  uuid?: string
+  parentUuid?: string | null
+  timestamp?: string
+  cwd?: string
   isMeta?: boolean
+  isCompactSummary?: boolean
   isSidechain?: boolean
   message?: { id?: string; content?: unknown }
   customTitle?: string
@@ -43,7 +55,7 @@ function readEntries(file: string): Entry[] {
 }
 
 function userText(entry: Entry): string | null {
-  if (entry.type !== "user" || entry.isMeta || entry.isSidechain) return null
+  if (entry.type !== "user" || entry.isMeta || entry.isCompactSummary || entry.isSidechain) return null
   const content = entry.message?.content
   const text =
     typeof content === "string"
@@ -54,7 +66,13 @@ function userText(entry: Entry): string | null {
             .map((b) => b.text as string)
             .join("\n")
         : ""
-  if (!text.trim() || SYSTEM_WRAPPER.test(text.trimStart())) return null
+  if (!text.trim()) return Array.isArray(content) && content.some((b: any) => b?.type === "image") ? "[Image]" : null
+  const command = text.trimStart().match(/^<command-name>(\/[^<]+)<\/command-name>/)?.[1]
+  if (command) {
+    const args = text.match(/<command-args>([\s\S]*?)<\/command-args>/)?.[1]?.trim()
+    return `${command}${args ? ` ${args}` : ""}`
+  }
+  if (SYSTEM_WRAPPER.test(text.trimStart())) return null
   return text
 }
 
@@ -62,25 +80,32 @@ export function listSessions(cwd: string): SessionSummary[] {
   const dir = projectDir(cwd)
   if (!existsSync(dir)) return []
 
-  const sessions: SessionSummary[] = []
-  for (const file of readdirSync(dir)) {
+  const files = readdirSync(dir).flatMap((file) => {
     const id = file.endsWith(".jsonl") ? file.slice(0, -".jsonl".length) : ""
-    if (!SESSION_ID.test(id)) continue
+    if (!SESSION_ID.test(id)) return []
     const path = join(dir, file)
-    const entries = readEntries(path)
+    return [{ id, path, updatedAt: statSync(path).mtimeMs }]
+  }).sort((a, b) => b.updatedAt - a.updatedAt)
+
+  const sessions: SessionSummary[] = []
+  for (const file of files) {
+    const entries = readEntries(file.path)
+    const owner = entries.find((entry) => typeof entry.cwd === "string")?.cwd
+    if (owner && canonicalCwd(owner) !== canonicalCwd(cwd)) continue
     const first = entries.map(userText).find((t): t is string => t !== null)
     if (!first) continue
     sessions.push({
-      id,
+      id: file.id,
       title:
         [...entries]
           .reverse()
           .find((entry) => entry.type === "custom-title")
           ?.customTitle?.trim() || first.replace(/\s+/g, " ").trim().slice(0, 80),
-      updatedAt: statSync(path).mtimeMs,
+      updatedAt: file.updatedAt,
     })
+    if (sessions.length === MAX_SESSIONS) break
   }
-  return sessions.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_SESSIONS)
+  return sessions
 }
 
 export function renameSession(cwd: string, id: string, title: string): void {
@@ -89,27 +114,56 @@ export function renameSession(cwd: string, id: string, title: string): void {
   if (!name || name.length > 120) throw new Error("Use a task name between 1 and 120 characters")
   const file = join(projectDir(cwd), `${id}.jsonl`)
   if (!existsSync(file)) throw new Error("Task not found")
+  const entries = readEntries(file)
+  const owner = entries.find((entry) => typeof entry.cwd === "string")?.cwd
+  if (owner && canonicalCwd(owner) !== canonicalCwd(cwd)) throw new Error("Task not found")
   appendFileSync(file, `${JSON.stringify({ type: "custom-title", customTitle: name, sessionId: id })}\n`)
+}
+
+async function conversationChain(file: string, entries: Entry[]): Promise<Entry[]> {
+  if (!entries.some((entry) => entry.uuid)) return entries
+  // Load the CLI's recovery rules, including compact/snip and orphaned tool results.
+  const modulePath = "../../src/utils/sessionStorage.ts"
+  const { loadTranscriptFile, buildConversationChain } = await import(modulePath)
+  const { messages, leafUuids } = await loadTranscriptFile(file) as { messages: Map<string, Entry>; leafUuids: Set<string> }
+  let leaf: Entry | undefined
+  for (const entry of messages.values()) {
+    if (entry.isSidechain || (entry.type !== "user" && entry.type !== "assistant")) continue
+    if (leafUuids.size && !leafUuids.has(entry.uuid!)) continue
+    if (!leaf || (entry.timestamp ?? "") >= (leaf.timestamp ?? "")) leaf = entry
+  }
+  return leaf ? buildConversationChain(messages, leaf) : []
 }
 
 // History items use the same shapes as live stream-json messages, so the
 // client feeds them through the same reducer.
 export type HistoryItem =
-  | { kind: "user"; text: string }
+  | { kind: "user"; text: string; images?: ImageBlock[] }
   | {
       kind: "agent"
       messageId?: string
-      message: { type: "assistant" | "user"; message: { content: unknown[] }; parent_tool_use_id: null }
+      message: { type: "assistant" | "user"; message: { content: ContentBlock[] }; parent_tool_use_id: null }
     }
 
-export function loadHistory(cwd: string, id: string): HistoryItem[] | null {
+export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[] | null> {
   if (!SESSION_ID.test(id)) return null
   const file = join(projectDir(cwd), `${id}.jsonl`)
   if (!existsSync(file)) return null
 
+  const entries = readEntries(file)
+  const owner = entries.find((entry) => typeof entry.cwd === "string")?.cwd
+  if (owner && canonicalCwd(owner) !== canonicalCwd(cwd)) return null
+
   const items: HistoryItem[] = []
-  for (const entry of readEntries(file)) {
+  for (const entry of await conversationChain(file, entries)) {
     if (entry.isSidechain) continue
+
+    if (entry.type === "system" && entry.subtype === "local_command" && entry.content) {
+      const output = entry.content.match(/^<local-command-(?:stdout|stderr)>([\s\S]*?)<\/local-command-(?:stdout|stderr)>$/)?.[1]
+      if (output) items.push({ kind: "agent", message: { type: "assistant", message: { content: [{ type: "text", text: output }] }, parent_tool_use_id: null } })
+      else if (entry.content.startsWith("/")) items.push({ kind: "user", text: entry.content })
+      continue
+    }
 
     if (entry.type === "assistant") {
       const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []).filter(
@@ -134,14 +188,15 @@ export function loadHistory(cwd: string, id: string): HistoryItem[] | null {
     }
 
     const text = userText(entry)
-    if (text !== null) {
-      items.push({ kind: "user", text })
+    const images = Array.isArray(entry.message?.content) ? entry.message.content.filter((b: any) => b?.type === "image") : []
+    if (text !== null || (entry.type === "user" && !entry.isMeta && !entry.isCompactSummary && images.length)) {
+      items.push({ kind: "user", text: text ?? "", images: Array.isArray(entry.message?.content) ? entry.message.content.filter((b: any) => b?.type === "image") : undefined })
       continue
     }
 
     const content = entry.message?.content
     if (entry.type === "user" && Array.isArray(content) && content.some((b: any) => b?.type === "tool_result")) {
-      items.push({ kind: "agent", message: { type: "user", message: { content }, parent_tool_use_id: null } })
+      items.push({ kind: "agent", message: { type: "user", message: { content: content as ContentBlock[] }, parent_tool_use_id: null } })
     }
   }
   return items

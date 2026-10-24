@@ -176,6 +176,7 @@ export function Sidebar({
                         <SessionRow
                           key={session.id}
                           title={session.title}
+                          status={session.status}
                           active={isActiveProject && session.id === active.id}
                           indent
                           onClick={() => onSelect(project.path, session.id)}
@@ -384,11 +385,13 @@ function ProjectRow({
 // Same row shell as Noa's FileNode (noa-sidebar-tree-item / noa-sidebar-tree-row).
 function SessionRow({
   title,
+  status,
   active,
   indent,
   onClick,
 }: {
   title: string
+  status?: "running" | "waiting" | "queued"
   active: boolean
   indent?: boolean
   onClick?: () => void
@@ -413,6 +416,7 @@ function SessionRow({
         style={{ paddingLeft: indent ? "31px" : "7px" }}
       >
         <span className="noa-fade-truncate">{title}</span>
+        {status && <span role="status" aria-label={status === "waiting" ? "Approval required" : status === "running" ? "Running" : "Queued"} title={status} className={`ml-2 size-1.5 shrink-0 rounded-full ${status === "waiting" ? "bg-amber-500" : "animate-pulse bg-[var(--accent-color)]"}`} />}
       </div>
     </div>
   )

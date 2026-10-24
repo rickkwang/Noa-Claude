@@ -55,7 +55,8 @@ export function MessageList({ turns, busy, result, readingWidth, changes, onChan
           segment.role === "user" ? (
             // The user's message is a right-aligned bubble, as in Codex: chat-size text, relaxed leading.
             <div key={segment.id} className="group flex flex-col items-end gap-1">
-              <UserBubble text={segment.text} />
+              {segment.images?.length ? <div className="flex flex-wrap justify-end gap-2">{segment.images.map((image, i) => <a key={i} href={`data:${image.source.media_type};base64,${image.source.data}`} target="_blank" rel="noreferrer"><img src={`data:${image.source.media_type};base64,${image.source.data}`} alt={`Attached image ${i + 1}`} className="max-h-56 max-w-64 rounded-xl border border-[var(--divider-subtle)] object-contain" /></a>)}</div> : null}
+              {segment.text && <UserBubble text={segment.text} />}
               <MessageActions text={segment.text} />
             </div>
           ) : (
@@ -131,7 +132,7 @@ export function MessageList({ turns, busy, result, readingWidth, changes, onChan
 }
 
 type AssistantSegmentData = { role: "assistant"; id: string; blocks: Block[]; streaming: boolean }
-type Segment = { role: "user"; id: string; text: string } | AssistantSegmentData
+type Segment = Extract<Turn, { role: "user" }> | AssistantSegmentData
 
 // Consecutive assistant turns after one user message form one reply, as in Codex.
 function groupTurns(turns: Turn[]): Segment[] {
