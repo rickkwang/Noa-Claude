@@ -58,8 +58,10 @@ try {
   await writeFile(join(root, "untracked.txt"), "new\n")
   body = await (await request("changes")).json()
   assert.equal(body.files.length, 2)
-  assert.equal(body.additions, 2)
+  // Tracked edit adds 2 and removes 1; the untracked file counts its 1 line as an addition.
+  assert.equal(body.additions, 3)
   assert.equal(body.deletions, 1)
+  assert.equal(body.files.find((f: { path: string }) => f.path === "untracked.txt").additions, 1)
   check("working tree changes, untracked files and line totals")
   body = await (await request("changes", "", join(root, "nested"))).json()
   assert.equal(body.files[0].path, "tracked.txt")
@@ -83,18 +85,23 @@ try {
   check("traversal, Git metadata and external symlinks rejected")
   await writeFile(join(root, "binary.dat"), new Uint8Array([1, 0, 2]))
   await writeFile(join(root, "large.txt"), "x".repeat(512 * 1024 + 1))
-  assert.equal((await request("file", "binary.dat")).status, 400)
+  // Binary files open as a "cannot preview" placeholder; oversized files are still rejected.
+  const binary = await request("file", "binary.dat")
+  assert.equal(binary.status, 200)
+  assert.equal((await binary.json()).kind, "binary")
   assert.equal((await request("file", "large.txt")).status, 400)
-  check("binary and oversized previews rejected")
+  check("binary placeholder and oversized previews rejected")
   body = await (await request("files")).json()
   assert(!body.entries.some((e: { name: string }) => e.name === ".git" || e.name === "outside-link"))
   check("directory listing excludes Git metadata and symlinks")
-  assert.equal((await request("file", "untracked.txt", root, { method: "POST" })).status, 405)
+  // File saves exist now, but only inside listed projects; other write methods stay disallowed.
+  assert.equal((await request("file", "untracked.txt", root, { method: "POST", body: "{}" })).status, 403)
+  assert.equal((await request("file", "untracked.txt", root, { method: "PUT" })).status, 405)
   assert.equal(
     (await request("file", "untracked.txt", root, { headers: { origin: "https://example.invalid" } })).status,
     403,
   )
-  check("read-only endpoints and cross-origin rejection")
+  check("writes outside listed projects and cross-origin rejected")
   const sessionId = crypto.randomUUID()
   const sessions = join(config, "projects", root.replace(/[^a-zA-Z0-9]/g, "-"))
   await mkdir(sessions, { recursive: true })
