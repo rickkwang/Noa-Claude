@@ -1,9 +1,10 @@
 import { SlashCommandMenu } from "./SlashCommandMenu"
-import { composerCommands, findComposerCommand, filterComposerCommands, type ComposerCommand, type GuiCommandAction } from "../agent/commands"
+import { composerCommands, findComposerCommand, filterComposerCommands, slashAtCaret, type ComposerCommand, type GuiCommandAction } from "../agent/commands"
 import { loadImageDraft, saveImageDraft } from "../agent/imageDrafts"
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import type { ImageAttachment, UserContent, ModelInfo, PermissionMode, SlashCommand } from "../agent/protocol"
-import { Check, FileText, RotateCcw, X } from "../lib/icons"
+import { Check, Edit2, FileText, RotateCcw, X } from "../lib/icons"
+import { Lightbox } from "./Lightbox"
 import { IconShieldCheck } from "@tabler/icons-react"
 import {
   ComposerApprovalIcon,
@@ -29,6 +30,18 @@ export const MODE_OPTIONS: { value: PermissionMode; label: string; description: 
   { value: "bypassPermissions", label: "Bypass permissions", description: "Runs tools without asking" },
 ]
 
+type MentionEntry = { name: string; path: string; directory: boolean }
+
+// An @ token at a word boundary, from the @ through the caret. Email addresses don't match because
+// the @ must follow the start of the line or whitespace.
+function mentionAtCaret(value: string, caret: number): { query: string; start: number; end: number } | undefined {
+  const before = value.slice(0, caret)
+  const match = before.match(/(?:^|\s)@([^\s@]*)$/)
+  if (!match) return undefined
+  const query = match[1]!
+  return { query, start: caret - query.length - 1, end: caret }
+}
+
 interface ComposerProps {
   disabled: boolean
   busy: boolean
@@ -43,6 +56,9 @@ interface ComposerProps {
   onMode: (mode: PermissionMode) => void
   draftKey: string
   reference?: { path: string; key: number }
+  // Loads an existing user message back into the composer when the user clicks Edit.
+  editDraft?: { text: string; images: ImageAttachment[]; key: number; label?: string }
+  onCancelEdit?: () => void
   effort?: string
   onEffort: (effort: string | null) => void
   cwd: string
@@ -70,6 +86,8 @@ export function Composer({
   onMode,
   draftKey,
   reference,
+  editDraft,
+  onCancelEdit,
   effort,
   onEffort,
   cwd,
@@ -135,6 +153,15 @@ export function Composer({
     finally { setLoadingImages(false) }
   }
   const [composing, setComposing] = useState(false)
+  // macOS Electron dispatches a final Enter with isComposing=false just after compositionend.
+  // The timestamp guard keeps that phantom key from sending a half-finished CJK sentence.
+  const compositionEndAt = useRef(-1)
+  const [imagePreview, setImagePreview] = useState<number>()
+  const [caret, setCaret] = useState(0)
+  const [mentionItems, setMentionItems] = useState<MentionEntry[]>([])
+  const [mentionIndex, setMentionIndex] = useState(0)
+  const [mentionDismissed, setMentionDismissed] = useState(false)
+  const [mentionLoading, setMentionLoading] = useState(false)
   const [inputFocused, setInputFocused] = useState(false)
   const [browserOpen, setBrowserOpen] = useState(false)
   const [browserAction, setBrowserAction] = useState<GuiCommandAction>()
@@ -142,6 +169,7 @@ export function Composer({
   const composerRef = useRef<HTMLDivElement>(null)
   const [menuIndex, setMenuIndex] = useState(0)
   const [menuDismissed, setMenuDismissed] = useState(false)
+  const [browserSearch, setBrowserSearch] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const envRef = useRef<HTMLDivElement>(null)
   const [envOpen, setEnvOpen] = useState(false)
@@ -176,6 +204,20 @@ export function Composer({
     textareaRef.current?.focus()
   }, [reference])
 
+  // Editing a sent message replaces the draft with its text and images.
+  useEffect(() => {
+    if (!editDraft) return
+    setText(editDraft.text)
+    setImages(editDraft.images)
+    setReferences([])
+    requestAnimationFrame(() => {
+      const el = textareaRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(editDraft.text.length, editDraft.text.length)
+    })
+  }, [editDraft?.key])
+
   const currentModel = findModel(models, model)
   const currentMode = MODE_OPTIONS.find((m) => m.value === mode)
   const effortLevels = currentModel?.supportsEffort ? (currentModel.supportedEffortLevels ?? []) : []
@@ -183,10 +225,10 @@ export function Composer({
     ...command,
     disabled: command.action === "stop" ? !busy : ["model", "effort", "permissions", "plan", "reload"].includes(command.action ?? "") ? disabled || busy : command.action ? false : disabled,
   })), [commands, disabled, busy])
-  const slash = text.match(/^\/([^\s]*)(?:[ \t](.*))?$/)
-  const argumentCommand = slash?.[2] !== undefined ? findComposerCommand(allCommands, slash[1]!) : undefined
+  const slash = slashAtCaret(text, caret)
+  const argumentCommand = slash?.argument !== undefined ? findComposerCommand(allCommands, slash.query) : undefined
   const submenu = browserAction ?? (argumentCommand?.action && ["model", "effort", "permissions"].includes(argumentCommand.action) ? argumentCommand.action : undefined)
-  const slashQuery = browserAction ? "" : submenu ? slash?.[2] ?? "" : slash?.[2] === undefined ? slash?.[1] : undefined
+  const slashQuery = browserOpen ? browserSearch : submenu ? slash?.argument ?? "" : slash?.argument === undefined ? slash?.query : undefined
   const choices: ComposerCommand[] = submenu === "model"
     ? models.map((m) => ({ name: m.displayName, value: m.value, aliases: [m.value], description: m.description, argumentHint: "", action: "model", group: "Models", active: m.value === currentModel?.value, disabled: disabled || busy }))
     : submenu === "effort"
@@ -197,15 +239,56 @@ export function Composer({
   const menuItems = filterComposerCommands(choices, slashQuery ?? "")
   const menuOpen = !menuDismissed && (browserOpen || (!browserAction && inputFocused && slashQuery !== undefined))
   const menuTitle = submenu === "model" ? "Model" : submenu === "effort" ? "Reasoning effort" : submenu === "permissions" ? "Permissions" : browserFilter
+  const mention = inputFocused ? mentionAtCaret(text, caret) : undefined
+  const mentionOpen = !!mention && !mentionDismissed && !menuOpen && !disabled
+
+  useEffect(() => { setMentionDismissed(false); setMentionIndex(0) }, [mention?.query])
+  useEffect(() => {
+    if (!mention) { setMentionItems([]); return }
+    let cancelled = false
+    const controller = new AbortController()
+    // Debounced: typing a path shouldn't fire a git ls-files walk per keystroke.
+    const timer = setTimeout(() => {
+      setMentionLoading(true)
+      fetch(`/api/files?cwd=${encodeURIComponent(cwd)}&search=${encodeURIComponent(mention.query)}`, { signal: controller.signal })
+        .then((response) => response.ok ? response.json() : { entries: [] })
+        .then((body: { entries?: MentionEntry[] }) => {
+          if (!cancelled) setMentionItems((body.entries ?? []).filter((entry) => !entry.directory).slice(0, 50))
+        })
+        .catch(() => {})
+        .finally(() => { if (!cancelled) setMentionLoading(false) })
+    }, 120)
+    return () => { cancelled = true; clearTimeout(timer); controller.abort() }
+  }, [mention?.query, cwd])
 
   useEffect(() => { setMenuIndex(0); setMenuDismissed(false) }, [slashQuery, submenu, browserFilter, menuItems.length])
   useEffect(() => {
     if (!menuOpen) return
     const onOutside = (event: MouseEvent) => {
-      if (!composerRef.current?.contains(event.target as Node)) { setMenuDismissed(true); setBrowserOpen(false); setBrowserAction(undefined) }
+      if (!composerRef.current?.contains(event.target as Node)) {
+        setMenuDismissed(true)
+        setBrowserOpen(false)
+        setBrowserAction(undefined)
+        setBrowserSearch("")
+      }
     }
     document.addEventListener("mousedown", onOutside)
     return () => document.removeEventListener("mousedown", onOutside)
+  }, [menuOpen])
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const onEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      event.preventDefault()
+      setMenuDismissed(true)
+      setBrowserOpen(false)
+      setBrowserAction(undefined)
+      setBrowserSearch("")
+      requestAnimationFrame(() => textareaRef.current?.focus())
+    }
+    window.addEventListener("keydown", onEscape, true)
+    return () => window.removeEventListener("keydown", onEscape, true)
   }, [menuOpen])
 
   // Grow the textarea with its content, up to the CSS max-height.
@@ -244,7 +327,8 @@ export function Composer({
     setAttachmentError(undefined)
     const action = command.action!
     if (["model", "effort", "permissions"].includes(action) && !value) {
-      if (text.startsWith("/")) { setText(`/${command.name} `); setBrowserOpen(false) }
+      setBrowserSearch("")
+      if (slash) { replaceSlash(`/${command.name} `); setBrowserOpen(false) }
       else { setBrowserAction(action); setBrowserOpen(true) }
       textareaRef.current?.focus(); return
     }
@@ -257,13 +341,13 @@ export function Composer({
       onMode(value as PermissionMode)
     } else if (action === "help" || action === "skills") {
       setBrowserFilter(action === "skills" ? "Skills" : undefined)
-      setBrowserOpen(true); setBrowserAction(undefined); setMenuDismissed(false); if (text.startsWith("/")) setText("/"); textareaRef.current?.focus(); return
+      setBrowserSearch(""); setBrowserOpen(true); setBrowserAction(undefined); setMenuDismissed(false); if (slash) replaceSlash(""); textareaRef.current?.focus(); return
     } else {
       if (value) { setAttachmentError(`/${command.name} does not take arguments.`); return }
       onCommand(action)
     }
-    if (text.startsWith("/")) setText("")
-    setBrowserOpen(false); setBrowserAction(undefined); setMenuDismissed(true)
+    if (slash) replaceSlash("")
+    setBrowserOpen(false); setBrowserAction(undefined); setBrowserSearch(""); setMenuDismissed(true)
   }
 
   function pickCommand(command: ComposerCommand, completeOnly = false) {
@@ -272,15 +356,67 @@ export function Composer({
     if (command.action && !completeOnly) { runGuiCommand(command, ""); return }
     if (command.type === "local" && !command.argumentHint && !completeOnly) {
       if (!onSend(`/${command.name}`)) { setAttachmentError("Message was not sent. Reconnect and try again."); return }
-      if (text.startsWith("/")) setText("")
-    } else setText(`/${command.name} ${browserOpen && !text.startsWith("/") ? text : ""}`)
-    setBrowserOpen(false); setBrowserAction(undefined); setBrowserFilter(undefined); setMenuDismissed(false)
+      if (slash) replaceSlash("")
+    } else if (slash) replaceSlash(`/${command.name} `)
+    else setText(`/${command.name} `)
+    setBrowserOpen(false); setBrowserAction(undefined); setBrowserFilter(undefined); setBrowserSearch(""); setMenuDismissed(false)
     textareaRef.current?.focus()
   }
 
-  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+  function replaceSlash(next: string, focus = true) {
+    if (!slash) return
+    setText((value) => value.slice(0, slash.start) + next + value.slice(slash.end))
+    const position = slash.start + next.length
+    setCaret(position)
+    if (!focus) return
+    requestAnimationFrame(() => {
+      const el = textareaRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(position, position)
+    })
+  }
+
+  function pickMention(entry: MentionEntry) {
+    if (!mention) return
+    setReferences((items) => (items.includes(entry.path) ? items : [...items, entry.path]))
+    setText((value) => value.slice(0, mention.start) + value.slice(mention.end))
+    setCaret(mention.start)
+    setMentionDismissed(true)
+    requestAnimationFrame(() => {
+      const el = textareaRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(mention.start, mention.start)
+    })
+  }
+
+  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) {
     // CJK IME: Enter confirms a composition and must not send.
     if (composing || e.nativeEvent.isComposing || e.keyCode === 229) return
+    if (e.defaultPrevented) return
+    if (e.key === "Enter" && performance.now() - compositionEndAt.current < 500) return
+
+    if (mentionOpen) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault()
+        if (mentionItems.length) setMentionIndex((i) => (i + (e.key === "ArrowDown" ? 1 : -1) + mentionItems.length) % mentionItems.length)
+        return
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        if (mentionItems.length) {
+          e.preventDefault()
+          pickMention(mentionItems[mentionIndex] ?? mentionItems[0]!)
+          return
+        }
+        if (mentionLoading) { e.preventDefault(); return }
+      }
+      if (e.key === "Escape") {
+        e.preventDefault()
+        setMentionDismissed(true)
+        return
+      }
+    }
 
     if (menuOpen) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -300,13 +436,6 @@ export function Composer({
         e.preventDefault()
         if (menuItems[menuIndex]) pickCommand(menuItems[menuIndex], e.key === "Tab")
         else if (e.key === "Enter") submit()
-        return
-      }
-      if (e.key === "Escape") {
-        e.preventDefault()
-        setMenuDismissed(true)
-        setBrowserOpen(false)
-        setBrowserAction(undefined)
         return
       }
     }
@@ -400,19 +529,102 @@ export function Composer({
           </div>
         </div>
       )}
-      {menuOpen && <SlashCommandMenu items={menuItems} index={menuIndex} title={menuTitle} disabled={disabled} onIndex={setMenuIndex} onSelect={pickCommand} onBack={() => { if (text.startsWith("/")) setText("/"); setBrowserAction(undefined); setBrowserFilter(undefined); setBrowserOpen(!text.startsWith("/")); textareaRef.current?.focus() }} />}
+      {mentionOpen && (
+        <div className="noa-slash-menu noa-floating-panel absolute bottom-full left-0 right-0 z-30 mb-2 overflow-hidden rounded-panel bg-[var(--bg-card)]">
+          <div className="flex items-center justify-between gap-3 border-b border-[var(--divider-subtle)] px-2.5 py-1.5 text-caption text-[var(--sidebar-text-muted)]">
+            <span>Reference a file</span>
+            {mention?.query && <span className="truncate font-mono">@{mention.query}</span>}
+          </div>
+          <div id="noa-file-mentions" role="listbox" aria-label="Project files" className="max-h-[min(320px,45vh)] overflow-y-auto p-1">
+            {!mentionItems.length && (
+              <p className="m-0 px-3 py-5 text-center text-body text-[var(--sidebar-text-muted)]">
+                {mentionLoading ? "Searching…" : "No matching files"}
+              </p>
+            )}
+            {mentionItems.map((entry, i) => {
+              const cut = entry.path.lastIndexOf("/")
+              return (
+                <button
+                  id={`noa-file-option-${i}`}
+                  key={entry.path}
+                  type="button"
+                  role="option"
+                  aria-selected={i === mentionIndex}
+                  onMouseEnter={() => setMentionIndex(i)}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => pickMention(entry)}
+                  className={`noa-slash-option flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-body ${i === mentionIndex ? "is-selected" : ""}`}
+                >
+                  <FileText size={15} className="shrink-0 text-[var(--sidebar-text-muted)]" />
+                  <span className="min-w-0 truncate">{entry.name}</span>
+                  {cut > 0 && <span className="min-w-0 flex-1 truncate text-right text-caption text-[var(--sidebar-text-muted)]">{entry.path.slice(0, cut + 1)}</span>}
+                </button>
+              )
+            })}
+          </div>
+          <div className="flex gap-3 border-t border-[var(--divider-subtle)] px-3 py-1.5 text-[11px] text-[var(--sidebar-text-muted)]">
+            <span>↑↓ Navigate</span>
+            <span>↵ Reference</span>
+            <span className="ml-auto">Esc Close</span>
+          </div>
+        </div>
+      )}
+      {menuOpen && (
+        <SlashCommandMenu
+          items={menuItems}
+          index={menuIndex}
+          title={menuTitle}
+          query={slashQuery}
+          disabled={disabled}
+          onIndex={setMenuIndex}
+          onSelect={pickCommand}
+          onQuery={(value) => {
+            if (argumentCommand) {
+              replaceSlash(`/${argumentCommand.name} ${value}`, false)
+            } else {
+              setBrowserSearch(value)
+            }
+          }}
+          onKeyDown={onKeyDown}
+        />
+      )}
 
       <div className="noa-agent-input relative flex flex-col" onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault() }} onDrop={(event) => { event.preventDefault(); void addImages(Array.from(event.dataTransfer.files)) }}>
+        {editDraft && (
+          <div className="flex items-center gap-2 border-b border-[var(--divider-subtle)] px-3 py-1.5 text-caption text-[var(--sidebar-text-muted)]">
+            <Edit2 size={12} />
+            <span className="min-w-0 flex-1 truncate">{editDraft.label ?? "Edit and resend"}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setText("")
+                setImages([])
+                setReferences([])
+                onCancelEdit?.()
+              }}
+              className="rounded p-0.5 hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] hover:text-[var(--text-primary)]"
+              aria-label="Cancel edit"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        )}
         <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden onChange={(event) => { void addImages(Array.from(event.target.files ?? [])); event.target.value = "" }} />
         {images.length > 0 && (
           <div className="flex flex-wrap gap-2 px-3 pt-3">
             {images.map((image) => (
               <div key={image.id} className="relative">
-                <img
-                  src={image.dataUrl}
-                  alt={image.name}
-                  className="size-16 rounded-lg border border-[var(--divider-subtle)] object-cover"
-                />
+                <button
+                  type="button"
+                  aria-label={`Preview ${image.name}`}
+                  onClick={() => {
+                    const index = images.findIndex((item) => item.id === image.id)
+                    if (index >= 0) setImagePreview(index)
+                  }}
+                  className="block cursor-zoom-in overflow-hidden rounded-lg border border-[var(--divider-subtle)] noa-press"
+                >
+                  <img src={image.dataUrl} alt={image.name} className="size-16 object-cover" />
+                </button>
                 <button
                   type="button"
                   aria-label={`Remove image ${image.name}`}
@@ -451,19 +663,26 @@ export function Composer({
         <textarea
           ref={textareaRef}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length) }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
           onPaste={(event) => {
             const files = Array.from(event.clipboardData.items).filter((item) => item.kind === "file").map((item) => item.getAsFile()).filter((file): file is File => file !== null)
             if (files.length) { event.preventDefault(); void addImages(files) }
           }}
           onKeyDown={onKeyDown}
-          onFocus={() => { setInputFocused(true); setMenuDismissed(false) }}
-          onBlur={() => { setInputFocused(false); setBrowserOpen(false); setBrowserAction(undefined) }}
+          onFocus={() => setInputFocused(true)}
+          onBlur={(event) => {
+            if (event.relatedTarget instanceof Node && composerRef.current?.contains(event.relatedTarget)) return
+            setInputFocused(false)
+            setBrowserOpen(false)
+            setBrowserAction(undefined)
+            setBrowserSearch("")
+          }}
           aria-autocomplete="list"
-          aria-controls={menuOpen ? "noa-slash-commands" : undefined}
-          aria-activedescendant={menuOpen && menuItems[menuIndex] ? `noa-slash-option-${menuIndex}` : undefined}
+          aria-controls={mentionOpen ? "noa-file-mentions" : menuOpen ? "noa-slash-commands" : undefined}
+          aria-activedescendant={mentionOpen && mentionItems[mentionIndex] ? `noa-file-option-${mentionIndex}` : menuOpen && menuItems[menuIndex] ? `noa-slash-option-${menuIndex}` : undefined}
           onCompositionStart={() => setComposing(true)}
-          onCompositionEnd={() => setComposing(false)}
+          onCompositionEnd={() => { setComposing(false); compositionEndAt.current = performance.now() }}
           placeholder={disabled ? "Starting Noa…" : busy ? "Add a follow-up to the queue…" : newTask ? "Do anything" : "Work with Noa"}
           aria-label="Task instruction"
           disabled={disabled}
@@ -494,6 +713,7 @@ export function Composer({
                   description: "Browse Noa commands and skills",
                   active: false,
                   onSelect: () => {
+                    setBrowserSearch("")
                     setBrowserOpen(true)
                     setBrowserFilter(undefined)
                     setMenuDismissed(false)
@@ -579,30 +799,30 @@ export function Composer({
                 />
               ) : undefined}
             />
-            {busy && (
-              <button
-                type="button"
-                onClick={onInterrupt}
-                aria-label="Stop (Esc)"
-                title="Stop (Esc)"
-                className="ml-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] noa-press"
-              >
-                <span aria-hidden="true" className="block size-2.5 rounded-[2px] bg-current" />
-              </button>
-            )}
-              <button
-                type="button"
-                onClick={submit}
-                disabled={disabled || loadingImages || !imagesLoaded || (!text.trim() && !images.length)}
-                aria-label={busy ? "Queue message" : "Run task"}
-                title={busy ? "Queue after the current turn" : "Run task"}
-                className="ml-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] transition-opacity hover:opacity-90 disabled:opacity-25 noa-press"
-              >
-                <ComposerSendIcon />
-              </button>
+            <button
+              type="button"
+              onClick={busy && !text.trim() && !images.length ? onInterrupt : submit}
+              disabled={!busy && (disabled || loadingImages || !imagesLoaded || (!text.trim() && !images.length))}
+              aria-label={busy && !text.trim() && !images.length ? "Stop (Esc)" : busy ? "Queue message" : "Run task"}
+              title={busy && !text.trim() && !images.length ? "Stop (Esc)" : busy ? "Queue after the current turn" : "Run task"}
+              data-action={busy && !text.trim() && !images.length ? "stop" : busy ? "queue" : "send"}
+              className="noa-primary-action ml-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] transition-[opacity,transform] hover:opacity-90 disabled:opacity-25 noa-press"
+            >
+              {busy && !text.trim() && !images.length
+                ? <span aria-hidden="true" className="block size-2.5 rounded-[2px] bg-current" />
+                : <ComposerSendIcon />}
+            </button>
           </div>
         </div>
       </div>
+      {imagePreview !== undefined && images.length > 0 && (
+        <Lightbox
+          items={images.map((image) => ({ src: image.dataUrl, alt: image.name, name: image.name }))}
+          index={Math.min(imagePreview, images.length - 1)}
+          onIndex={setImagePreview}
+          onClose={() => setImagePreview(undefined)}
+        />
+      )}
     </div>
   )
 }

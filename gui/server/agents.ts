@@ -29,6 +29,9 @@ interface AgentRun {
   exited: boolean
 }
 const runs = new Map<string, AgentRun>()
+function queueEnvelope(run: AgentRun): Envelope {
+  return { kind: "queue", messages: [...run.queue], paused: run.queuePaused }
+}
 function emit(run: AgentRun, envelope: Envelope) {
   if (envelope.kind === "queue") run.journal = run.journal.filter((entry) => entry.kind !== "queue")
   if (envelope.kind === "agent" && envelope.message.type === "assistant") {
@@ -70,7 +73,7 @@ function startNext(run: AgentRun) {
   const next = run.queue.shift()!
   run.busy = true
   run.turnSucceeded = undefined
-  emit(run, { kind: "queue", messages: [...run.queue] })
+  emit(run, queueEnvelope(run))
   emit(run, { kind: "user", id: next.id, content: next.content })
   write(run, { type: "user", message: { role: "user", content: next.content }, parent_tool_use_id: null })
 }
@@ -111,7 +114,7 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
       sessionId: ws.data.resume,
       proc,
       clients: new Set(),
-      journal: retainedQueue.length ? [{ kind: "queue", messages: retainedQueue }] : [],
+      journal: retainedQueue.length ? [{ kind: "queue", messages: retainedQueue, paused: false }] : [],
       queue: retainedQueue,
       busy: false,
       waiting: new Set(),
@@ -213,11 +216,36 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
         ).slice(0, 80) || "Image task"
     if (!run.busy) run.queuePaused = false
     run.queue.push({ id: crypto.randomUUID(), content })
-    emit(run, { kind: "queue", messages: [...run.queue] })
+    emit(run, queueEnvelope(run))
     startNext(run)
   } else if (message.type === "queue_remove") {
     run.queue = run.queue.filter((m) => m.id !== message.id)
-    emit(run, { kind: "queue", messages: [...run.queue] })
+    emit(run, queueEnvelope(run))
+  } else if (message.type === "queue_move") {
+    const from = run.queue.findIndex((item) => item.id === message.id)
+    if (from !== -1) {
+      const [item] = run.queue.splice(from, 1)
+      if (item) run.queue.splice(Math.max(0, Math.min(message.toIndex, run.queue.length)), 0, item)
+      emit(run, queueEnvelope(run))
+    }
+  } else if (message.type === "queue_update") {
+    const item = run.queue.find((candidate) => candidate.id === message.id)
+    if (item) {
+      item.content = message.content
+      emit(run, queueEnvelope(run))
+    }
+  } else if (message.type === "queue_steer") {
+    const index = run.queue.findIndex((item) => item.id === message.id)
+    const item = index === -1 ? undefined : run.queue[index]
+    if (item && run.busy) {
+      run.queue.splice(index, 1)
+      emit(run, queueEnvelope(run))
+      emit(run, { kind: "user", id: item.id, content: item.content })
+      write(run, { type: "user", message: { role: "user", content: item.content }, parent_tool_use_id: null })
+    }
+  } else if (message.type === "queue_pause") {
+    run.queuePaused = message.paused
+    emit(run, queueEnvelope(run))
   } else if (message.type === "queue_run") {
     run.queuePaused = false
     startNext(run)

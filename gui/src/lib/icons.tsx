@@ -69,6 +69,8 @@ import {
   IconStack2,
   IconSun,
   IconTag,
+  IconTerminal2,
+  IconTool,
   IconTopologyStar3,
   IconTrash,
   IconUnlink,
@@ -155,6 +157,8 @@ export const FolderOpen = icon(IconFolderOpen);
 export const FolderPlus = icon(IconFolderPlus);
 export const GitBranch = icon(IconGitBranch);
 export const Tag = icon(IconTag);
+export const Terminal = icon(IconTerminal2);
+export const Tool = icon(IconTool);
 export const HardDrive = icon(IconServer);
 export const Info = icon(IconInfoCircle);
 // The note rail toggle: a stack of cards, since the rail holds more than the calendar.

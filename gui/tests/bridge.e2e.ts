@@ -67,6 +67,7 @@ const provider = Bun.serve({
       JSON.stringify(last).includes("GUI_BACKGROUND") &&
       !JSON.stringify(last).includes("GUI_BACKGROUND_OK")
     if (JSON.stringify(last).includes("GUI_SLOW")) await Bun.sleep(1500)
+    if (JSON.stringify(last).includes("GUI_STEER")) await Bun.sleep(10000)
     const block = mcp
       ? {
           type: "tool_use",
@@ -250,6 +251,23 @@ try {
   first.send({ type: "user", message: { role: "user", content: "remove this" }, parent_tool_use_id: null })
   await wait(() => first.events.some((e) => e.kind === "queue" && e.messages.length === 2), "queue")
   const queued = first.events.filter((e) => e.kind === "queue").at(-1) as Extract<Envelope, { kind: "queue" }>
+  first.send({ type: "queue_update", id: queued.messages[0]!.id, content: "second updated" })
+  await wait(
+    () => first.events.some((e) => e.kind === "queue" && e.messages[0]?.content === "second updated"),
+    "queue update",
+  )
+  first.send({ type: "queue_move", id: queued.messages[1]!.id, toIndex: 0 })
+  await wait(
+    () => first.events.some((e) => e.kind === "queue" && e.messages[0]?.id === queued.messages[1]!.id),
+    "queue reorder",
+  )
+  first.send({ type: "queue_move", id: queued.messages[1]!.id, toIndex: 1 })
+  first.send({ type: "queue_pause", paused: true })
+  await wait(
+    () => first.events.some((e) => e.kind === "queue" && e.paused === true),
+    "queue pause",
+  )
+  first.send({ type: "queue_pause", paused: false })
   first.send({ type: "queue_remove", id: queued.messages[1]!.id })
   first.socket.close()
   await Bun.sleep(50)
@@ -529,6 +547,27 @@ try {
   const cachedInit = await cached.initialize()
   assert.ok(cachedInit.commands.some((c: any) => c.name === "gui-slash"))
   console.log("PASS slash skills expand through Noa with image input, and refreshed commands survive reconnect")
+
+  const steering = connect(crypto.randomUUID())
+  await steering.initialize()
+  steering.send({ type: "user", message: { role: "user", content: "GUI_STEER steering" }, parent_tool_use_id: null })
+  await wait(() => steering.events.some((e) => e.kind === "user"), "steering active turn")
+  steering.send({ type: "user", message: { role: "user", content: "Steer this now" }, parent_tool_use_id: null })
+  await wait(
+    () => steering.events.some((e) => e.kind === "queue" && e.messages.some((message) => message.content === "Steer this now")),
+    "steering queue",
+  )
+  const steerMessage = steering.events.findLast(
+    (e) => e.kind === "queue" && e.messages.some((message) => message.content === "Steer this now"),
+  ) as Extract<Envelope, { kind: "queue" }>
+  const steerId = steerMessage.messages[0]!.id
+  steering.send({ type: "queue_steer", id: steerId })
+  await wait(
+    () => steering.events.some((e) => e.kind === "user" && e.id === steerId),
+    "steering transcript echo",
+  )
+  assert.equal(steering.events.find((e) => e.kind === "user" && e.id === steerId)?.content, "Steer this now")
+  console.log("PASS steering removes the queued message and writes it back into the live transcript")
 } finally {
   for (const socket of sockets) socket.close()
   bridge.kill("SIGTERM")

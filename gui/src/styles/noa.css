@@ -57,6 +57,9 @@
 [role="separator"]:hover .noa-resize-indicator,
 [role="separator"]:focus-visible .noa-resize-indicator,
 [role="separator"][data-resizing="true"] .noa-resize-indicator { opacity: 1; }
+/* A panel drag owns the cursor for the whole window, so it doesn't flicker over child surfaces. */
+body[data-pane-dragging="true"],
+body[data-pane-dragging="true"] * { cursor: col-resize !important; user-select: none; }
 @container noa-agent-footer (max-width: 475px) {
   .noa-agent-mode-label { display: none; }
 }
@@ -1806,26 +1809,6 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
     transparent 100%);
 }
 
-/* Running-state label: a light sweep across secondary text, as Codex's loading-shimmer does (2s loop).
-   Off under reduced motion, where the label stays still in its secondary colour. */
-.noa-shimmer {
-  --noa-shimmer-base: color-mix(in srgb, var(--text-primary, #2D2D2B) 55%, transparent);
-  --noa-shimmer-highlight: rgba(255, 255, 255, 0.75);
-  background: var(--noa-shimmer-base) linear-gradient(to right, transparent 0%, var(--noa-shimmer-highlight) 40%, var(--noa-shimmer-highlight) 60%, transparent 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: noa-shimmer 2s linear infinite;
-}
-[data-theme="dark"] .noa-shimmer { --noa-shimmer-highlight: rgba(0, 0, 0, 0.6); }
-@keyframes noa-shimmer {
-  0% { background-position: -100% 0; }
-  to { background-position: 250% 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .noa-shimmer { animation: none; color: var(--noa-shimmer-base); background: none; -webkit-text-fill-color: currentColor; }
-}
-
 /* Thinking indicator: three 3px dots, 3.5px apart, hopping in sequence (open-claude-ui: 1.9s, 0 / .15s / .3s delays). */
 .noa-quiet-dots { display: inline-flex; align-items: center; gap: 3.5px; }
 .noa-quiet-dots > span {
@@ -2144,10 +2127,46 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 /* Stops 6px short of the right edge so the scrollbar runs the full height beside it, as in Codex; the right padding drops by the same 6px to keep the card centred. */
 .noa-conversation-footer { position: absolute; inset-inline: 0 6px; bottom: 0; z-index: 20; padding: 32px 23px 12px 29px; background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-page, #F9F9F7) 0%, transparent), var(--surface-page, #F9F9F7) 32px); pointer-events: none; }
 .noa-conversation-footer > * { pointer-events: auto; }
-/* Codex's loading shimmer: text at 55% of its colour with a lighter band sweeping left to right. */
-.noa-shimmer { --shimmer-base: color-mix(in srgb, currentColor 55%, transparent); color: transparent; background: linear-gradient(90deg, var(--shimmer-base) 0 35%, var(--text-primary) 50%, var(--shimmer-base) 65% 100%) 0 0 / 300% 100%; -webkit-background-clip: text; background-clip: text; animation: noa-shimmer 2s linear infinite; }
-@keyframes noa-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
-@media (prefers-reduced-motion: reduce) { .noa-shimmer { animation: none; color: inherit; background: none; } }
+/* Codex's loading shimmer: a stable base with a narrow highlight band. */
+.noa-shimmer {
+  --noa-shimmer-foreground: var(--text-secondary, #5D5D5D);
+  --noa-shimmer-base: var(--noa-shimmer-foreground);
+  --noa-shimmer-highlight: rgba(255, 255, 255, 0.75);
+  color: var(--noa-shimmer-foreground);
+  background: var(--noa-shimmer-base) linear-gradient(to right, transparent 0%, var(--noa-shimmer-highlight) 40%, var(--noa-shimmer-highlight) 60%, transparent 100%);
+  background-position: -100% 0;
+  background-repeat: no-repeat;
+  background-size: 50% 200%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: noa-shimmer 2s linear infinite;
+}
+[data-theme="dark"] .noa-shimmer { --noa-shimmer-highlight: rgba(0, 0, 0, 0.6); }
+
+/* Shell output keeps the newest terminal lines visible without letting a large command
+   take over the conversation. */
+.noa-shell-output {
+  display: flex;
+  flex-direction: column-reverse;
+  max-height: 9rem;
+  overflow: auto;
+  color: var(--text-secondary);
+}
+.noa-shell-output[data-overflow="true"] {
+  mask-image: linear-gradient(to bottom, transparent, #000 1rem, #000 calc(100% - 1rem), transparent);
+}
+@keyframes noa-shimmer { from { background-position: -100% 0; } to { background-position: 250% 0; } }
+@media (prefers-reduced-motion: reduce) { .noa-shimmer { animation: none; color: var(--text-secondary, #5D5D5D); background: none; -webkit-text-fill-color: currentColor; } }
+
+.noa-thinking-output {
+  display: flex;
+  flex-direction: column-reverse;
+  max-height: 8.75rem;
+  overflow: auto;
+  color: var(--text-secondary);
+  mask-image: linear-gradient(to bottom, transparent, #000 1rem, #000 calc(100% - 1rem), transparent);
+}
 
 /* Per-file change list, opened on hover/focus above the summary (Codex: min-w-64, max-h-72, rows px-3 py-1.5). */
 .noa-turn-diff-wrap { position: relative; display: inline-flex; min-width: 0; }
@@ -2190,6 +2209,14 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-slash-option.is-selected {
   background: color-mix(in srgb, var(--text-primary) 7.5%, transparent);
 }
+.noa-slash-option:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: -2px;
+}
+.noa-slash-list {
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
+}
 
 /* In-app confirmation dialog (ConfirmDialog.tsx): a scrim over the workspace, with the
    same dialog shadow ladder as other floating surfaces. */
@@ -2214,3 +2241,28 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-session-drop-after { box-shadow: inset 0 -2px 0 var(--accent-color); }
 body.noa-session-dragging,
 body.noa-session-dragging * { cursor: grabbing !important; }
+
+.noa-turn-item {
+  content-visibility: auto;
+  contain-intrinsic-block-size: 160px;
+  animation: noa-turn-in 180ms cubic-bezier(.19,1,.22,1);
+}
+@keyframes noa-turn-in { from { opacity: 0; transform: translateY(3px); } }
+@media (prefers-reduced-motion: reduce) {
+  .noa-turn-item { animation: none; }
+}
+
+/* ── Image lightbox ──
+   The image rides a CSS transform (translate then scale); zoom re-anchors around the pointer. Panning
+   drops the transition so the image tracks the cursor exactly. */
+.noa-lightbox { animation: noa-lightbox-in 140ms ease-out; }
+@keyframes noa-lightbox-in { from { opacity: 0; } }
+.noa-lightbox-stage { cursor: default; }
+.noa-lightbox-stage[data-zoomed] { cursor: grab; }
+.noa-lightbox-stage[data-dragging] { cursor: grabbing; }
+.noa-lightbox-img { transition: transform 160ms cubic-bezier(.165, .84, .44, 1); will-change: transform; }
+.noa-lightbox-stage[data-dragging] .noa-lightbox-img { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .noa-lightbox { animation: none; }
+  .noa-lightbox-img { transition: none; }
+}

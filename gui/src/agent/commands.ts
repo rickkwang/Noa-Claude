@@ -112,7 +112,7 @@ export function composerCommands(commands: SlashCommand[]): ComposerCommand[] {
           !command.description.startsWith("(removed)"),
       )
       .map((command) => ({ ...command, group: command.type === "prompt" ? "Skills" : "Commands" })),
-  ].sort((a, b) => a.group.localeCompare(b.group))
+  ].sort((a, b) => a.group.localeCompare(b.group) || a.name.localeCompare(b.name))
 }
 export function findComposerCommand(commands: ComposerCommand[], name: string): ComposerCommand | undefined {
   const normalized = name.toLowerCase()
@@ -123,9 +123,55 @@ export function findComposerCommand(commands: ComposerCommand[], name: string): 
 }
 export function filterComposerCommands(commands: ComposerCommand[], query: string): ComposerCommand[] {
   const normalized = query.trim().toLowerCase()
-  return commands.filter((command) =>
-    [command.name, command.value, ...(command.aliases ?? []), command.description].some((value) =>
-      value?.toLowerCase().includes(normalized),
-    ),
-  )
+  if (!normalized) return commands
+  const groupOrder = new Map<string, number>()
+  commands.forEach((command) => {
+    if (!groupOrder.has(command.group)) groupOrder.set(command.group, groupOrder.size)
+  })
+  return commands
+    .map((command) => ({
+      command,
+      score: Math.max(...[command.name, command.value, ...(command.aliases ?? [])].map((value) => commandMatchScore(value, normalized))),
+    }))
+    .filter(({ score }) => score > 0)
+    .sort(
+      (a, b) =>
+        (groupOrder.get(a.command.group) ?? Number.MAX_SAFE_INTEGER) -
+          (groupOrder.get(b.command.group) ?? Number.MAX_SAFE_INTEGER) ||
+        b.score - a.score ||
+        a.command.name.localeCompare(b.command.name),
+    )
+    .map(({ command }) => command)
+}
+
+function commandMatchScore(value: string | undefined, query: string): number {
+  if (!value) return 0
+  const text = value.toLowerCase()
+  if (text.startsWith(query)) return 300 - text.length
+  const substring = text.indexOf(query)
+  if (substring >= 0) return 200 - substring - text.length
+  let cursor = 0
+  for (const character of text) {
+    if (character === query[cursor]) cursor++
+    if (cursor === query.length) return 100 - text.length
+  }
+  return 0
+}
+
+export function slashAtCaret(value: string, caret: number): {
+  query: string
+  argument?: string
+  start: number
+  end: number
+} | undefined {
+  const before = value.slice(0, caret)
+  const match = before.match(/(?:^|\s)\/([^\s]*)(?:[ \t](.*))?$/)
+  if (!match) return undefined
+  const leading = /^\s/.test(match[0]) ? 1 : 0
+  return {
+    query: match[1] ?? "",
+    argument: match[2],
+    start: caret - match[0].length + leading,
+    end: caret,
+  }
 }

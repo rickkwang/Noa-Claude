@@ -9,7 +9,8 @@ import { sanitizePath } from "../../src/utils/sessionStoragePortable"
 export const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_SESSIONS = 50
 // Injected wrappers such as <local-command-caveat> are not user-authored text.
-const SYSTEM_WRAPPER = /^<(local-command-|command-)/
+const SYSTEM_WRAPPER = /^<(local-command-|command-|system-reminder|task-notification)/
+const INTERRUPT_MARKER = /^\[Request interrupted by user(?:\s+for tool use)?\]$/
 
 export interface SessionSummary {
   id: string
@@ -37,7 +38,9 @@ interface Entry {
   isMeta?: boolean
   isCompactSummary?: boolean
   isSidechain?: boolean
+  durationMs?: number
   message?: { id?: string; content?: unknown }
+  toolUseResult?: unknown
   customTitle?: string
 }
 
@@ -73,6 +76,7 @@ function userText(entry: Entry): string | null {
     return `${command}${args ? ` ${args}` : ""}`
   }
   if (SYSTEM_WRAPPER.test(text.trimStart())) return null
+  if (INTERRUPT_MARKER.test(text.trim())) return null
   return text
 }
 
@@ -139,6 +143,7 @@ async function conversationChain(file: string, entries: Entry[]): Promise<Entry[
 // client feeds them through the same reducer.
 export type HistoryItem =
   | { kind: "user"; text: string; images?: ImageBlock[] }
+  | { kind: "turn-duration"; durationMs: number; interrupted?: boolean }
   | {
       kind: "agent"
       messageId?: string
@@ -155,8 +160,15 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
   if (owner && canonicalCwd(owner) !== canonicalCwd(cwd)) return null
 
   const items: HistoryItem[] = []
+  let interrupted = false
   for (const entry of await conversationChain(file, entries)) {
     if (entry.isSidechain) continue
+
+    if (entry.type === "system" && entry.subtype === "turn_duration" && typeof entry.durationMs === "number") {
+      items.push({ kind: "turn-duration", durationMs: entry.durationMs, interrupted })
+      interrupted = false
+      continue
+    }
 
     if (entry.type === "system" && entry.subtype === "local_command" && entry.content) {
       const output = entry.content.match(/^<local-command-(?:stdout|stderr)>([\s\S]*?)<\/local-command-(?:stdout|stderr)>$/)?.[1]
@@ -187,16 +199,34 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
       continue
     }
 
-    const text = userText(entry)
-    const images = Array.isArray(entry.message?.content) ? entry.message.content.filter((b: any) => b?.type === "image") : []
-    if (text !== null || (entry.type === "user" && !entry.isMeta && !entry.isCompactSummary && images.length)) {
-      items.push({ kind: "user", text: text ?? "", images: Array.isArray(entry.message?.content) ? entry.message.content.filter((b: any) => b?.type === "image") : undefined })
+    const content = entry.message?.content
+    if (entry.type === "user" && typeof content === "string" && INTERRUPT_MARKER.test(content.trim())) {
+      interrupted = true
       continue
     }
 
-    const content = entry.message?.content
+    const text = userText(entry)
+    const images = Array.isArray(content) ? content.filter((b: any) => b?.type === "image") : []
+    if (text !== null || (entry.type === "user" && !entry.isMeta && !entry.isCompactSummary && images.length)) {
+      items.push({ kind: "user", text: text ?? "", images: Array.isArray(content) ? content.filter((b: any) => b?.type === "image") : undefined })
+      continue
+    }
+
     if (entry.type === "user" && Array.isArray(content) && content.some((b: any) => b?.type === "tool_result")) {
-      items.push({ kind: "agent", message: { type: "user", message: { content: content as ContentBlock[] }, parent_tool_use_id: null } })
+      items.push({
+        kind: "agent",
+        message: {
+          type: "user",
+          message: {
+            content: content.map((block: any) =>
+              block?.type === "tool_result"
+                ? { ...block, tool_use_result: entry.toolUseResult }
+                : block,
+            ) as ContentBlock[],
+          },
+          parent_tool_use_id: null,
+        },
+      })
     }
   }
   return items

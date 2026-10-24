@@ -28,7 +28,7 @@ export type ContentBlock =
   | { type: "text"; text: string }
   | { type: "thinking"; thinking: string }
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
-  | { type: "tool_result"; tool_use_id: string; content: unknown; is_error?: boolean }
+  | { type: "tool_result"; tool_use_id: string; content: unknown; is_error?: boolean; tool_use_result?: unknown }
 
 export type StreamEvent =
   | {
@@ -133,7 +133,7 @@ export type Envelope =
   | { kind: "attached"; runtimeId: string }
   | { kind: "history"; items: HistoryItem[] }
   | { kind: "user"; id: string; content: UserContent }
-  | { kind: "queue"; messages: QueuedMessage[] }
+  | { kind: "queue"; messages: QueuedMessage[]; paused?: boolean }
   | { kind: "agent"; message: AgentMessage }
   | { kind: "log"; text: string }
   | { kind: "exit"; code: number | null }
@@ -142,6 +142,10 @@ export type Envelope =
 export type Outgoing =
   | { type: "user"; message: { role: "user"; content: UserContent }; parent_tool_use_id: null }
   | { type: "queue_remove"; id: string }
+  | { type: "queue_move"; id: string; toIndex: number }
+  | { type: "queue_update"; id: string; content: UserContent }
+  | { type: "queue_steer"; id: string }
+  | { type: "queue_pause"; paused: boolean }
   | { type: "queue_run" }
   | { type: "control_request"; request_id: string; request: ControlRequest }
   | {
@@ -170,6 +174,7 @@ export type ControlRequest =
 // Shape of the bridge's /api/sessions/:id response.
 export type HistoryItem =
   | { kind: "user"; text: string; images?: ImageBlock[] }
+  | { kind: "turn-duration"; durationMs: number; interrupted?: boolean }
   | {
       kind: "agent"
       messageId?: string

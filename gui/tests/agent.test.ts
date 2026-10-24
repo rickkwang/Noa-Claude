@@ -2,9 +2,12 @@ import { afterAll, expect, test } from "bun:test"
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { createElement } from "react"
+import { renderToStaticMarkup } from "react-dom/server"
 import { sanitizePath } from "../../src/utils/sessionStoragePortable"
 import { loadHistory, listSessions } from "../server/sessions"
 import { initialState, reducer } from "../src/agent/reducer"
+import { MessageList } from "../src/components/MessageList"
 
 const config = mkdtempSync(join(tmpdir(), "noa-gui-agent-test-"))
 const originalConfig = process.env.CLAUDE_CONFIG_DIR
@@ -200,8 +203,204 @@ test("result text does not duplicate an already rendered model answer", () => {
   expect(state.turns.filter((turn) => turn.role === "assistant")).toHaveLength(1)
 })
 
+test("tool result images are preserved without stringifying base64 into output", () => {
+  let state = reducer(initialState, { type: "user-sent", id: "image-task", text: "Inspect screenshots" })
+  state = reducer(state, {
+    type: "agent",
+    message: {
+      type: "assistant",
+      parent_tool_use_id: null,
+      message: {
+        content: [
+          { type: "tool_use", id: "tool-1", name: "Read", input: { file_path: "/tmp/before.png" } },
+        ],
+      },
+    },
+  })
+  state = reducer(state, {
+    type: "agent",
+    message: {
+      type: "user",
+      parent_tool_use_id: null,
+      message: {
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tool-1",
+            content: [
+              { type: "image", source: { type: "base64", media_type: "image/png", data: "YWJj" } },
+              { type: "text", text: "The screenshot is valid." },
+            ],
+          },
+        ],
+      },
+    },
+  })
+  const tool = state.turns
+    .flatMap((turn) => turn.role === "assistant" ? turn.blocks : [])
+    .find((block) => block.kind === "tool")
+  expect(tool).toMatchObject({
+    output: "The screenshot is valid.",
+    images: [{ type: "image", source: { media_type: "image/png", data: "YWJj" } }],
+  })
+})
+
+test("tool result metadata preserves command exit status", () => {
+  let state = reducer(initialState, { type: "user-sent", id: "command-task", text: "Run tests" })
+  state = reducer(state, {
+    type: "agent",
+    message: {
+      type: "assistant",
+      parent_tool_use_id: null,
+      message: { content: [{ type: "tool_use", id: "tool-1", name: "Bash", input: { command: "bun test" } }] },
+    },
+  })
+  state = reducer(state, {
+    type: "agent",
+    message: {
+      type: "user",
+      parent_tool_use_id: null,
+      message: {
+        content: [{
+          type: "tool_result",
+          tool_use_id: "tool-1",
+          content: "1 failed",
+          is_error: true,
+          tool_use_result: { stdout: "1 failed", stderr: "", exitCode: 1, interrupted: false },
+        }],
+      },
+    },
+  })
+  const tool = state.turns.flatMap((turn) => turn.role === "assistant" ? turn.blocks : []).find((block) => block.kind === "tool")
+  expect(tool).toMatchObject({ output: "1 failed", exitCode: 1, status: "error" })
+})
+
+test("history hides internal transcript envelopes and interruption markers", async () => {
+  const cwd = "/private/tmp/hidden-envelope-project"
+  const id = transcript(cwd, [
+    { type: "user", message: { content: "<system-reminder>internal policy</system-reminder>" } },
+    {
+      type: "user",
+      message: {
+        content: "<task-notification>\n<task-id>task-1</task-id>\n<summary>background finished</summary>\n</task-notification>",
+      },
+    },
+    { type: "user", message: { content: "[Request interrupted by user for tool use]" } },
+    { type: "user", message: { content: "Visible request" } },
+  ])
+  const history = await loadHistory(cwd, id)
+  expect(history).toEqual([{ kind: "user", text: "Visible request" }])
+  expect(listSessions(cwd)[0]?.title).toBe("Visible request")
+})
+
+test("history restores turn duration and interruption state", async () => {
+  const cwd = "/private/tmp/turn-duration-project"
+  const id = transcript(cwd, [
+    { type: "user", message: { content: "Run the checks" } },
+    { type: "assistant", message: { id: "answer", content: [{ type: "text", text: "Checks finished" }] } },
+    { type: "user", message: { content: "[Request interrupted by user]" } },
+    { type: "system", subtype: "turn_duration", durationMs: 4321 },
+  ])
+  expect(await loadHistory(cwd, id)).toEqual([
+    { kind: "user", text: "Run the checks", images: undefined },
+    {
+      kind: "agent",
+      messageId: "answer",
+      message: {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "Checks finished" }] },
+        parent_tool_use_id: null,
+      },
+    },
+    { kind: "turn-duration", durationMs: 4321, interrupted: true },
+  ])
+})
+
+test("live results stamp duration and completion onto the final assistant message", () => {
+  let state = reducer(initialState, { type: "user-sent", id: "turn", text: "Run the checks" })
+  state = reducer(state, {
+    type: "agent",
+    message: {
+      type: "stream_event",
+      parent_tool_use_id: null,
+      event: { type: "content_block_start", content_block: { type: "text" } },
+    },
+  })
+  state = reducer(state, {
+    type: "agent",
+    message: {
+      type: "stream_event",
+      parent_tool_use_id: null,
+      event: { type: "content_block_delta", delta: { type: "text_delta", text: "Done" } },
+    },
+  })
+  state = reducer(state, {
+    type: "agent",
+    message: {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      duration_ms: 4321,
+      parent_tool_use_id: null,
+    },
+  })
+  const assistant = state.turns.find((turn) => turn.role === "assistant")
+  expect(assistant).toMatchObject({
+    durationMs: 4321,
+    blocks: [{ kind: "text", text: "Done", done: true }],
+  })
+})
+
+test("a turn duration without an assistant does not overwrite the previous turn", () => {
+  let state = reducer(initialState, { type: "user-sent", id: "first", text: "First" })
+  state = reducer(state, {
+    type: "agent",
+    message: { type: "result", subtype: "success", is_error: false, duration_ms: 1000, parent_tool_use_id: null },
+  })
+  state = reducer(state, { type: "user-sent", id: "second", text: "Second" })
+  state = reducer(state, { type: "turn-duration", durationMs: 2000, interrupted: true })
+  expect(state.turns.map((turn) => turn.role)).toEqual(["user", "assistant", "user", "assistant"])
+  expect(state.turns[1]).toMatchObject({ durationMs: 1000, interrupted: false })
+  expect(state.turns[3]).toMatchObject({ durationMs: 2000, interrupted: true, blocks: [] })
+})
+
+test("assistant actions wait for completed text and completed turns show worked time", () => {
+  const render = (turns: Parameters<typeof MessageList>[0]["turns"], busy: boolean) =>
+    renderToStaticMarkup(createElement(MessageList, {
+      turns,
+      busy,
+      readingWidth: 800,
+      onChanges: () => {},
+    }))
+  const streaming = render([
+    { role: "user", id: "user", text: "Work" },
+    {
+      role: "assistant",
+      id: "assistant",
+      streaming: true,
+      blocks: [{ kind: "text", text: "Partial", done: false }],
+    },
+  ], true)
+  expect(streaming).not.toContain('aria-label="Copy response"')
+  expect(streaming).toContain('aria-label="Copy message"')
+
+  const completed = render([
+    { role: "user", id: "user", text: "Work" },
+    {
+      role: "assistant",
+      id: "assistant",
+      streaming: false,
+      durationMs: 4321,
+      blocks: [{ kind: "text", text: "Complete", done: true }],
+    },
+  ], false)
+  expect(completed).toContain("Worked for 4s")
+  expect(completed).toContain('aria-label="Copy response"')
+  expect(completed).not.toContain("Copy task output")
+})
+
 test("composer commands keep GUI actions, CLI commands and skills distinct", async () => {
-  const { composerCommands, findComposerCommand, filterComposerCommands } = await import("../src/agent/commands")
+  const { composerCommands, findComposerCommand, filterComposerCommands, slashAtCaret } = await import("../src/agent/commands")
   const commands = composerCommands([
     {
       name: "project-check",
@@ -221,8 +420,11 @@ test("composer commands keep GUI actions, CLI commands and skills distinct", asy
   expect(findComposerCommand(commands, "compact")).toMatchObject({ group: "Commands", type: "local" })
   expect(findComposerCommand(commands, "agents")).toBeUndefined()
   expect(filterComposerCommands(commands, "target").length).toBe(0)
-  expect(filterComposerCommands(commands, "workspace").map((command) => command.name)).toContain("project-check")
+  expect(filterComposerCommands(commands, "workspace").map((command) => command.name)).not.toContain("project-check")
+  expect(filterComposerCommands(commands, "prj-c").map((command) => command.name)).toContain("project-check")
   expect(commands.filter((command) => command.name === "model")).toHaveLength(1)
+  expect(slashAtCaret("Please use /mo", 14)).toMatchObject({ query: "mo", start: 11, end: 14 })
+  expect(slashAtCaret("foo@example.com", 15)).toBeUndefined()
 })
 
 test("local command input and output survive transcript restoration", async () => {

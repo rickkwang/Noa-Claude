@@ -1,6 +1,7 @@
 import { ElicitationCard } from "./components/ElicitationCard"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useAgent } from "./agent/useAgent"
+import type { ImageAttachment, ImageBlock, UserContent } from "./agent/protocol"
 import {
   addProject,
   fetchProjects,
@@ -17,6 +18,7 @@ import { Composer } from "./components/Composer"
 import { EmptyState } from "./components/EmptyState"
 import { MessageList } from "./components/MessageList"
 import { PermissionCard } from "./components/PermissionCard"
+import { QueuedMessages } from "./components/QueuedMessages"
 import { RightPanel, type PanelTab } from "./components/RightPanel"
 import { ResizeHandle } from "./components/ResizeHandle"
 import { usePanelWidth } from "./hooks/usePanelWidth"
@@ -97,10 +99,12 @@ function Workspace({ cwd }: { cwd: string }) {
   const [rightOpen, setRightOpen] = useState(true)
   const [addingProject, setAddingProject] = useState(false)
   const [reference, setReference] = useState<{ path: string; key: number }>()
+  const [editDraft, setEditDraft] = useState<{ text: string; images: ImageAttachment[]; key: number }>()
+  const [queueEditId, setQueueEditId] = useState<string>()
   const [changes, setChanges] = useState<{ count: number; additions: number; deletions: number; branch: string; files: { path: string; additions: number; deletions: number; binary: boolean }[] }>()
   const [rightTab, setRightTab] = useState<PanelTab>("files")
 
-  const { state, sendMessage, reloadCommands, interrupt, answerPermission, answerElicitation, removeQueued, runQueued, stopTask, setModel, setPermissionMode, setEffort, refreshContext } =
+  const { state, sendMessage, reloadCommands, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setPermissionMode, setEffort, refreshContext } =
     useAgent({
       cwd: session.cwd,
       resume: session.resume,
@@ -201,10 +205,14 @@ function Workspace({ cwd }: { cwd: string }) {
     if (!target) return
     setHistory({ ...history, index })
     setReference(undefined)
+    setEditDraft(undefined)
+    setQueueEditId(undefined)
     setSession((s) => ({ cwd: target.cwd, resume: target.resume, runtimeId: target.runtimeId ?? crypto.randomUUID(), key: s.key + 1 }))
   }
   const newSession = (dir?: string) => {
     setReference(undefined)
+    setEditDraft(undefined)
+    setQueueEditId(undefined)
     const runtimeId = crypto.randomUUID()
     pushHistory({ cwd: dir ?? session.cwd, runtimeId })
     setSession((s) => ({ cwd: dir ?? s.cwd, resume: undefined, runtimeId, key: s.key + 1 }))
@@ -212,6 +220,8 @@ function Workspace({ cwd }: { cwd: string }) {
   const selectSession = (dir: string, id: string) => {
     if (dir === session.cwd && id === activeId) return
     setReference(undefined)
+    setEditDraft(undefined)
+    setQueueEditId(undefined)
     const runtimeId = crypto.randomUUID()
     pushHistory({ cwd: dir, resume: id, runtimeId })
     setSession((s) => ({ cwd: dir, resume: id, runtimeId, key: s.key + 1 }))
@@ -265,6 +275,52 @@ function Workspace({ cwd }: { cwd: string }) {
   const title =
     sessionsByProject[session.cwd]?.find((s) => s.id === activeId)?.title ??
     firstUserText?.replace(/\s+/g, " ").trim().slice(0, 80)
+
+  // Retry resends the last prompt: the bridge has no regenerate call, so this is a new turn with the same content.
+  function retryLast() {
+    const last = [...state.turns].reverse().find((turn) => turn.role === "user")
+    if (!last) return
+    const content = last.images?.length
+      ? [...last.images, ...(last.text ? [{ type: "text" as const, text: last.text }] : [])]
+      : last.text
+    if (content) sendMessage(content)
+  }
+
+  // Edit loads the message back into the composer; sending it again adds a new turn rather than rewriting history.
+  function editMessage(text: string, images?: ImageBlock[], queuedId?: string) {
+    setQueueEditId(queuedId)
+    setEditDraft({
+      text,
+      images: (images ?? []).map((image, index) => ({
+        id: crypto.randomUUID(),
+        name: `image-${index + 1}.${image.source.media_type.split("/")[1] ?? "png"}`,
+        dataUrl: `data:${image.source.media_type};base64,${image.source.data}`,
+      })),
+      key: Date.now(),
+    })
+  }
+  function editQueued(message: typeof state.queue[number]) {
+    const content = typeof message.content === "string"
+      ? { text: message.content, images: [] as ImageBlock[] }
+      : {
+          text: message.content.filter((block) => block.type === "text").map((block) => block.text).join("\n"),
+          images: message.content.filter((block): block is ImageBlock => block.type === "image"),
+        }
+    editMessage(content.text, content.images, message.id)
+  }
+  useEffect(() => {
+    if (queueEditId && !state.queue.some((message) => message.id === queueEditId)) {
+      setQueueEditId(undefined)
+      setEditDraft(undefined)
+    }
+  }, [queueEditId, state.queue])
+  function sendComposer(content: UserContent) {
+    const sent = queueEditId ? updateQueued(queueEditId, content) : sendMessage(content)
+    if (!sent) return false
+    setQueueEditId(undefined)
+    setEditDraft(undefined)
+    return true
+  }
   const hasTurns = state.turns.length > 0
   const sidebar = usePanelWidth("noa-agent.sidebarWidth", SIDEBAR_DEFAULT_WIDTH, 220)
   const right = usePanelWidth("noa-agent.rightPanelWidth", RIGHT_PANEL_DEFAULT_WIDTH)
@@ -348,6 +404,7 @@ function Workspace({ cwd }: { cwd: string }) {
           label="Resize right panel"
           grow={-1}
           width={rightWidth}
+          defaultWidth={RIGHT_PANEL_DEFAULT_WIDTH}
           onResize={right.set}
           onDraggingChange={setResizing}
           style={{ right: rightWidth - 4, zIndex: 40 }}
@@ -364,6 +421,7 @@ function Workspace({ cwd }: { cwd: string }) {
           label="Resize sidebar"
           grow={1}
           width={sidebarWidth}
+          defaultWidth={SIDEBAR_DEFAULT_WIDTH}
           onResize={sidebar.set}
           onDraggingChange={setResizing}
           style={{ left: sidebarWidth - 4 }}
@@ -451,6 +509,9 @@ function Workspace({ cwd }: { cwd: string }) {
               readingWidth={readingWidth}
               changes={changes}
               onChanges={(path) => showWorkspacePane("changes", path)}
+              onRetry={retryLast}
+              onEdit={editMessage}
+              tasks={state.tasks}
             />
           ) : (
             <EmptyState
@@ -464,7 +525,7 @@ function Workspace({ cwd }: { cwd: string }) {
               messages scroll beneath it and a gradient fades them out above the card. */}
           <div ref={footerRef} className={hasTurns ? "noa-conversation-footer" : "shrink-0 px-[29px] pb-3 pt-2"}>
             <div className="mx-auto flex flex-col gap-2" style={{ maxWidth: readingWidth + 22 }}>
-              {(state.connection === "closed" || state.permissions.length > 0 || state.elicitations.length > 0 || state.busy) && (
+              {(state.connection === "closed" || state.status === "compacting") && (
                 <div
                   role="status"
                   className="flex items-center justify-center gap-2 text-caption text-[var(--sidebar-text-muted)]"
@@ -475,11 +536,7 @@ function Workspace({ cwd }: { cwd: string }) {
                   <span className={state.connection === "closed" ? undefined : "noa-shimmer"}>
                   {state.connection === "closed"
                     ? "Agent disconnected"
-                    : state.permissions.length || state.elicitations.length
-                      ? "Approval required"
-                      : state.stopping
-                        ? "Stopping…"
-                        : state.status === "compacting" ? "Compacting context…" : "Running task…"}
+                    : "Compacting context…"}
                   </span>
                   {state.connection === "closed" && (
                     <button
@@ -500,10 +557,22 @@ function Workspace({ cwd }: { cwd: string }) {
               )}
               {state.elicitations.map((request) => <ElicitationCard key={request.requestId} request={request} onAnswer={answerElicitation} />)}
               {state.queue.length > 0 && (
-                <div aria-label="Queued messages" className="rounded-panel border border-[var(--divider-subtle)] bg-[var(--bg-card)] px-3 py-2">
-                  <div className="mb-1 flex items-center justify-between text-caption text-[var(--sidebar-text-muted)]"><span>{state.queue.length} queued · {state.busy ? "sends after this turn" : "ready to send"}</span>{!state.busy && <button onClick={runQueued} className="text-[var(--accent-color)]">Send next</button>}</div>
-                  {state.queue.map((message) => <div key={message.id} className="flex items-center gap-2 py-1 text-body"><span className="min-w-0 flex-1 truncate">{typeof message.content === "string" ? message.content : message.content.filter((b) => b.type === "text").map((b) => b.text).join(" ") || "Image message"}</span><button aria-label="Remove queued message" onClick={() => removeQueued(message.id)} className="text-caption text-[var(--sidebar-text-muted)]">Remove</button></div>)}
-                </div>
+                <QueuedMessages
+                  messages={state.queue}
+                  busy={state.busy}
+                  paused={state.queuePaused}
+                  onMove={moveQueued}
+                  onRemove={removeQueued}
+                  onEdit={editQueued}
+                  onSteer={steerQueued}
+                  onRetry={(id) => {
+                    moveQueued(id, 0)
+                    setQueuePaused(false)
+                    runQueued()
+                  }}
+                  onRun={runQueued}
+                  onPaused={setQueuePaused}
+                />
               )}
               {state.notice && <p role="status" className="m-0 px-1 text-caption text-[var(--sidebar-text-muted)]">{state.notice}</p>}
               {state.error && (
@@ -515,6 +584,11 @@ function Workspace({ cwd }: { cwd: string }) {
                 key={session.key}
                 draftKey={`noa-agent.draft:${session.cwd}:${activeId ?? session.runtimeId}`}
                 reference={reference}
+                editDraft={editDraft ? { ...editDraft, label: queueEditId ? "Edit queued message" : "Edit and resend" } : undefined}
+                onCancelEdit={() => {
+                  setEditDraft(undefined)
+                  setQueueEditId(undefined)
+                }}
                 effort={state.effort}
                 onEffort={setEffort}
                 cwd={session.cwd}
@@ -530,7 +604,7 @@ function Workspace({ cwd }: { cwd: string }) {
                 model={state.model}
                 mode={state.permissionMode}
                 commands={state.commands}
-                onSend={sendMessage}
+                onSend={sendComposer}
                 onCommand={(action) => {
                   if (action === "new") newSession()
                   else if (action === "resume") {

@@ -1,4 +1,5 @@
-import { Fragment, useState, type ReactNode } from "react"
+import { Fragment, useMemo, useState, type ReactNode } from "react"
+import hljs from "highlight.js/lib/common"
 
 // Small Markdown subset: fenced code, headings, lists, quotes, rules, paragraphs,
 // and inline code, bold, italic, links. Text is rendered as React children, so no
@@ -211,6 +212,18 @@ function BlockView({ block }: { block: Block }) {
 
 export function CodeBlock({ lang, code }: { lang: string; code: string }) {
   const [copied, setCopied] = useState(false)
+  const highlighted = useMemo(() => {
+    const name = ({
+      ts: "typescript",
+      tsx: "typescript",
+      js: "javascript",
+      jsx: "javascript",
+      sh: "bash",
+      yml: "yaml",
+    } as Record<string, string>)[lang.toLowerCase()] ?? lang.toLowerCase()
+    if (name && hljs.getLanguage(name)) return hljs.highlight(code, { language: name, ignoreIllegals: true }).value
+    return code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  }, [code, lang])
 
   function copy() {
     navigator.clipboard.writeText(code).catch(() => {})
@@ -219,14 +232,14 @@ export function CodeBlock({ lang, code }: { lang: string; code: string }) {
   }
 
   return (
-    <div className="not-prose my-3 overflow-hidden rounded-[20px] border border-[var(--divider-subtle)] bg-[var(--bg-card)]">
+    <div className="not-prose my-3 overflow-hidden rounded-xl border border-[var(--divider-subtle)] bg-[var(--bg-card)]">
       <div className="flex h-9 items-center justify-between border-b border-[var(--divider-subtle)] px-4 font-mono text-caption text-[var(--sidebar-text-muted,#898781)]">
         <span>{lang || "text"}</span>
         <button type="button" onClick={copy}>
           {copied ? "Copied" : "Copy code"}
         </button>
       </div>
-      <pre className="m-0 overflow-auto p-4 font-mono text-[length:var(--code-font-size)] leading-[1.6] whitespace-pre">{code}</pre>
+      <pre className="m-0 overflow-auto p-4 font-mono text-[length:var(--code-font-size)] leading-[1.6] whitespace-pre"><code className="hljs bg-transparent p-0" dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>
     </div>
   )
 }

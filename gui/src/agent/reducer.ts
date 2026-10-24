@@ -22,13 +22,26 @@ export type ToolBlock = {
   partialJson: string
   status: "running" | "done" | "error"
   output?: string
+  images?: ImageBlock[]
+  exitCode?: number
+  interrupted?: boolean
 }
 
-export type Block = { kind: "text"; text: string } | { kind: "thinking"; text: string; done: boolean } | ToolBlock
+export type Block =
+  | { kind: "text"; text: string; done?: boolean }
+  | { kind: "thinking"; text: string; done: boolean }
+  | ToolBlock
 
 export type Turn =
   | { role: "user"; id: string; text: string; images?: ImageBlock[] }
-  | { role: "assistant"; id: string; blocks: Block[]; streaming: boolean }
+  | {
+      role: "assistant"
+      id: string
+      blocks: Block[]
+      streaming: boolean
+      durationMs?: number
+      interrupted?: boolean
+    }
 
 export interface Permission {
   requestId: string
@@ -37,6 +50,7 @@ export interface Permission {
   input: Record<string, unknown>
   title?: string
   description?: string
+  decisionReason?: string
   suggestions: unknown[]
 }
 
@@ -68,6 +82,7 @@ export interface AgentState {
   elicitations: (ElicitationRequest & { requestId: string })[]
   tasks: AgentTask[]
   queue: QueuedMessage[]
+  queuePaused: boolean
   status?: string
   permissions: Permission[]
   result?: { durationMs: number; costUsd?: number; isError: boolean; interrupted?: boolean }
@@ -78,10 +93,11 @@ export interface AgentState {
 
 export type Action =
   | { type: "reset" }
-  | { type: "queue"; messages: QueuedMessage[] }
+  | { type: "queue"; messages: QueuedMessage[]; paused?: boolean }
   | { type: "connection"; status: AgentState["connection"] }
   | { type: "user-sent"; id: string; text?: string; content?: UserContent }
   | { type: "history-user"; id: string; text: string; images?: ImageBlock[] }
+  | { type: "turn-duration"; durationMs: number; interrupted?: boolean }
   | { type: "agent"; message: AgentMessage }
   | { type: "control"; payload: ControlPayload }
   | { type: "model-set"; model: string }
@@ -103,6 +119,7 @@ export const initialState: AgentState = {
   elicitations: [],
   tasks: [],
   queue: [],
+  queuePaused: false,
   logs: [],
 }
 
@@ -111,7 +128,7 @@ const MAX_LOGS = 50
 export function reducer(state: AgentState, action: Action): AgentState {
   switch (action.type) {
     case "queue":
-      return { ...state, queue: action.messages }
+      return { ...state, queue: action.messages, queuePaused: action.paused ?? state.queuePaused }
     case "reset":
       return initialState
     case "connection":
@@ -127,6 +144,11 @@ export function reducer(state: AgentState, action: Action): AgentState {
       }
     case "history-user":
       return { ...state, turns: [...state.turns, { role: "user", id: action.id, text: action.text, images: action.images }] }
+    case "turn-duration":
+      return {
+        ...state,
+        turns: applyTurnDuration(state.turns, action.durationMs, action.interrupted),
+      }
     case "log":
       return { ...state, logs: [...state.logs, action.text].slice(-MAX_LOGS) }
     case "notice":
@@ -199,13 +221,14 @@ function applyAgentMessage(state: AgentState, m: AgentMessage): AgentState {
       if (typeof m.message.content === "string") return state
       return { ...state, turns: applyToolResults(state.turns, m.message.content) }
 
-    case "result":
+    case "result": {
+      const turns = applyTurnDuration(completeResult(state.turns, m.result), m.duration_ms, state.stopping)
       return {
         ...state,
         busy: false,
         stopping: false,
         error: m.is_error ? m.errors?.join("\n") || `Agent failed (${m.subtype})` : undefined,
-        turns: completeResult(state.turns, m.result),
+        turns,
         result: {
           durationMs: m.duration_ms,
           costUsd: m.total_cost_usd,
@@ -213,6 +236,7 @@ function applyAgentMessage(state: AgentState, m: AgentMessage): AgentState {
           interrupted: state.stopping,
         },
       }
+    }
 
     case "control_request":
       if (m.request.subtype === "elicitation") return { ...state, elicitations: [...state.elicitations, { ...(m.request as ElicitationRequest), requestId: m.request_id }] }
@@ -238,6 +262,7 @@ function toPermission(requestId: string, req: PermissionRequest): Permission {
     input: req.input,
     title: req.title,
     description: req.description,
+    decisionReason: req.decision_reason,
     suggestions: req.permission_suggestions ?? [],
   }
 }
@@ -268,7 +293,7 @@ function applyStreamEvent(turns: Turn[], event: StreamEvent): Turn[] {
     const block = event.content_block
     const created: Block =
       block.type === "text"
-        ? { kind: "text", text: "" }
+        ? { kind: "text", text: "", done: false }
         : block.type === "thinking"
           ? { kind: "thinking", text: "", done: false }
           : { kind: "tool", id: block.id, name: block.name, input: {}, partialJson: "", status: "running" }
@@ -310,7 +335,7 @@ function applyStreamEvent(turns: Turn[], event: StreamEvent): Turn[] {
 // stream accumulated, and keeps tool results that already arrived.
 function finalizeAssistant(turns: Turn[], content: ContentBlock[]): Turn[] {
   const blocks: Block[] = content.flatMap((block): Block[] => {
-    if (block.type === "text") return [{ kind: "text", text: block.text }]
+    if (block.type === "text") return [{ kind: "text", text: block.text, done: true }]
     if (block.type === "thinking") return [{ kind: "thinking", text: block.thinking, done: true }]
     if (block.type === "tool_use") {
       const existing = findTool(turns, block.id)
@@ -323,6 +348,9 @@ function finalizeAssistant(turns: Turn[], content: ContentBlock[]): Turn[] {
           partialJson: "",
           status: existing?.status ?? "running",
           output: existing?.output,
+          images: existing?.images,
+          exitCode: existing?.exitCode,
+          interrupted: existing?.interrupted,
         },
       ]
     }
@@ -332,7 +360,15 @@ function finalizeAssistant(turns: Turn[], content: ContentBlock[]): Turn[] {
   const index = streamingIndex(turns)
   if (index !== -1) {
     const next = [...turns]
-    next[index] = { role: "assistant", id: (turns[index] as Turn).id, blocks, streaming: false }
+    const current = turns[index] as Extract<Turn, { role: "assistant" }>
+    next[index] = {
+      role: "assistant",
+      id: current.id,
+      blocks,
+      streaming: false,
+      durationMs: current.durationMs,
+      interrupted: current.interrupted,
+    }
     return next
   }
   return [...turns, { role: "assistant", id: crypto.randomUUID(), blocks, streaming: false }]
@@ -353,10 +389,14 @@ function applyToolResults(turns: Turn[], content: ContentBlock[]): Turn[] {
         if (b.kind !== "tool") return b
         const result = results.find((r) => r.tool_use_id === b.id)
         if (!result) return b
+        const content = splitToolContent(result.content, result.tool_use_result)
         return {
           ...b,
           status: result.is_error ? "error" : "done",
-          output: stringifyContent(result.content),
+          output: content.output,
+          images: content.images,
+          exitCode: content.exitCode,
+          interrupted: content.interrupted,
         }
       }),
     }
@@ -371,7 +411,36 @@ function closeStreaming(turns: Turn[]): Turn[] {
   next[index] = {
     ...turn,
     streaming: false,
-    blocks: turn.blocks.map((b) => (b.kind === "thinking" ? { ...b, done: true } : b)),
+    blocks: turn.blocks.map((b) =>
+      b.kind === "thinking" || b.kind === "text" ? { ...b, done: true } : b,
+    ),
+  }
+  return next
+}
+
+function applyTurnDuration(turns: Turn[], durationMs: number, interrupted = false): Turn[] {
+  const closed = closeStreaming(turns)
+  const lastAssistant = closed.map((turn) => turn.role).lastIndexOf("assistant")
+  const lastUser = closed.map((turn) => turn.role).lastIndexOf("user")
+  if (lastAssistant === -1 || lastAssistant < lastUser) {
+    if (!closed.length) return closed
+    return [
+      ...closed,
+      {
+        role: "assistant",
+        id: crypto.randomUUID(),
+        blocks: [],
+        streaming: false,
+        durationMs,
+        interrupted,
+      },
+    ]
+  }
+  const next = [...closed]
+  next[lastAssistant] = {
+    ...(next[lastAssistant] as Extract<Turn, { role: "assistant" }>),
+    durationMs,
+    interrupted,
   }
   return next
 }
@@ -387,6 +456,7 @@ function findTool(turns: Turn[], id: string): ToolBlock | undefined {
 
 function stringifyContent(content: unknown): string {
   if (typeof content === "string") return content
+  if (typeof content === "object" && content !== null && "text" in content) return String(content.text)
   if (Array.isArray(content)) {
     return content
       .map((part) =>
@@ -395,6 +465,44 @@ function stringifyContent(content: unknown): string {
       .join("\n")
   }
   return JSON.stringify(content, null, 2)
+}
+
+function splitToolContent(content: unknown, toolUseResult?: unknown): {
+  output?: string
+  images?: ImageBlock[]
+  exitCode?: number
+  interrupted?: boolean
+} {
+  const parts = Array.isArray(content) ? content : [content]
+  const images = parts.filter(
+    (part): part is ImageBlock =>
+      typeof part === "object" &&
+      part !== null &&
+      "type" in part &&
+      part.type === "image" &&
+      "source" in part &&
+      typeof part.source === "object" &&
+      part.source !== null,
+  )
+  const textParts = parts.filter((part) => !images.includes(part as ImageBlock))
+  const result = typeof toolUseResult === "object" && toolUseResult !== null ? toolUseResult as Record<string, unknown> : undefined
+  const stdout = typeof result?.stdout === "string" ? result.stdout : ""
+  const stderr = typeof result?.stderr === "string" ? result.stderr : ""
+  const fallback = [stdout, stderr].filter((value) => value.trim()).join("\n")
+  const output = textParts.length > 0
+    ? stringifyContent(textParts.length === 1 ? textParts[0] : textParts)
+    : fallback || undefined
+  const exitCode = typeof result?.exitCode === "number"
+    ? result.exitCode
+    : typeof result?.exit_code === "number"
+      ? result.exit_code
+      : undefined
+  return {
+    output: output?.trim() ? output : undefined,
+    images: images.length ? images : undefined,
+    exitCode,
+    interrupted: result?.interrupted === true,
+  }
 }
 
 function userTurn(id: string, content: UserContent): Turn {
@@ -407,5 +515,5 @@ function completeResult(turns: Turn[], result?: string): Turn[] {
   let lastUser = closed.length - 1
   while (lastUser >= 0 && closed[lastUser]?.role !== "user") lastUser--
   const hasAnswer = closed.slice(lastUser + 1).some((turn) => turn.role === "assistant" && turn.blocks.some((block) => block.kind === "text" && block.text.trim()))
-  return hasAnswer ? closed : [...closed, { role: "assistant", id: crypto.randomUUID(), blocks: [{ kind: "text", text: result }], streaming: false }]
+  return hasAnswer ? closed : [...closed, { role: "assistant", id: crypto.randomUUID(), blocks: [{ kind: "text", text: result, done: true }], streaming: false }]
 }

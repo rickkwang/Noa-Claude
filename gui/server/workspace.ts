@@ -178,8 +178,10 @@ export async function workspaceRequest(url: URL, cwd: string, body?: unknown): P
     if (mime) return { kind: "image", dataUrl: `data:${mime};base64,${file.bytes.toString("base64")}` }
     return { kind: file.binary ? "binary" : "text", content: file.binary ? "Binary file cannot be previewed" : file.content, revision: file.revision }
   }
-  const search = url.searchParams.get("search")?.toLowerCase()
-  if (search) {
+  // A present-but-empty `search` means "list every file", which the composer's @ menu needs.
+  const search = url.searchParams.get("search")
+  if (search !== null) {
+    const needle = search.toLowerCase()
     let names: string[]
     try {
       // ls-files already prints paths relative to cwd; hide tracked files deleted from disk.
@@ -202,7 +204,7 @@ export async function workspaceRequest(url: URL, cwd: string, body?: unknown): P
       }
       await visit("")
     }
-    const matches = names.filter((p) => p.toLowerCase().includes(search))
+    const matches = names.filter((p) => p.toLowerCase().includes(needle))
     return { entries: matches.slice(0, 500).map((p) => ({ name: p.split("/").pop(), path: p, directory: false })), truncated: matches.length > 500 }
   }
   const target = await inside(cwd, path)

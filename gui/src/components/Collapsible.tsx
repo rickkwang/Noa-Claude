@@ -5,8 +5,8 @@ import type { ReactNode } from "react"
 export function Collapsible({ open, children }: { open: boolean; children: ReactNode }) {
   return (
     <div
-      className="grid transition-[grid-template-rows] duration-200 ease-[cubic-bezier(.19,1,.22,1)]"
-      style={{ gridTemplateRows: open ? "1fr" : "0fr" }}
+      className="grid transition-[grid-template-rows] ease-[cubic-bezier(.19,1,.22,1)]"
+      style={{ gridTemplateRows: open ? "1fr" : "0fr", transitionDuration: open ? "300ms" : "150ms" }}
       inert={!open}
     >
       <div className="min-h-0 overflow-hidden">{children}</div>

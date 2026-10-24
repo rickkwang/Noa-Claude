@@ -92,6 +92,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
         case "history":
           for (const item of envelope.items) {
             if (item.kind === "user") dispatch({ type: "history-user", id: crypto.randomUUID(), text: item.text, images: item.images })
+            else if (item.kind === "turn-duration") dispatch({ type: "turn-duration", durationMs: item.durationMs, interrupted: item.interrupted })
             else dispatch({ type: "agent", message: item.message })
           }
           break
@@ -99,7 +100,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
           dispatch({ type: "user-sent", id: envelope.id, content: envelope.content })
           break
         case "queue":
-          dispatch({ type: "queue", messages: envelope.messages })
+          dispatch({ type: "queue", messages: envelope.messages, paused: envelope.paused })
           break
         case "agent": {
           const message = envelope.message
@@ -245,9 +246,13 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     if (write({ type: "control_response", response: { subtype: "success", request_id: requestId, response: { action, content } } })) dispatch({ type: "permission-answered", requestId })
   }, [write])
   const removeQueued = useCallback((id: string) => { write({ type: "queue_remove", id }) }, [write])
+  const moveQueued = useCallback((id: string, toIndex: number) => { write({ type: "queue_move", id, toIndex }) }, [write])
+  const updateQueued = useCallback((id: string, content: UserContent) => write({ type: "queue_update", id, content }), [write])
+  const steerQueued = useCallback((id: string) => { write({ type: "queue_steer", id }) }, [write])
+  const setQueuePaused = useCallback((paused: boolean) => { write({ type: "queue_pause", paused }) }, [write])
   const runQueued = useCallback(() => { write({ type: "queue_run" }) }, [write])
   const reloadCommands = useCallback(() => control({ subtype: "reload_plugins" }, "commands"), [control])
   const stopTask = useCallback((taskId: string) => control({ subtype: "stop_task", task_id: taskId }), [control])
 
-  return { state: ownerRef.current === runtimeId ? state : initialState, sendMessage, reloadCommands, answerElicitation, removeQueued, runQueued, stopTask, interrupt, answerPermission, setModel, setPermissionMode, setEffort, refreshContext }
+  return { state: ownerRef.current === runtimeId ? state : initialState, sendMessage, reloadCommands, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setPermissionMode, setEffort, refreshContext }
 }
