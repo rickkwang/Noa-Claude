@@ -4,6 +4,7 @@ import {
   Check,
   ChevronRight,
   Folder,
+  FolderOpen,
   FolderPlus,
   MoreHorizontal,
   Plus,
@@ -11,6 +12,9 @@ import {
   Settings,
   SquarePen,
 } from "../lib/icons"
+
+// Tasks shown per project before "Show more".
+const TASK_PREVIEW = 5
 
 const dragRegion = { WebkitAppRegion: "drag" } as CSSProperties
 const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
@@ -48,6 +52,7 @@ export function Sidebar({
 }: SidebarProps) {
   const [query, setQuery] = useState("")
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
+  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set())
   const [projectsOpen, setProjectsOpen] = useState(true)
   const q = query.trim().toLowerCase()
 
@@ -62,6 +67,15 @@ export function Sidebar({
       }),
     [projects, sessions, q],
   )
+
+  function toggleUnfolded(path: string) {
+    setUnfolded((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
 
   function toggle(path: string) {
     setExpanded((prev) => {
@@ -80,7 +94,7 @@ export function Sidebar({
       <div className="noa-sidebar-search mx-2 mb-[9px] flex h-[26px] shrink-0 cursor-text items-center gap-0.5 rounded-[6px]">
         <span
           aria-hidden="true"
-          className="flex size-7 shrink-0 items-center justify-center text-[var(--sidebar-text-muted,#898781)]"
+          className="ml-[5px] mr-[7px] flex size-4 shrink-0 items-center justify-center text-[var(--sidebar-text-muted,#898781)]"
         >
           <Search size={16} />
         </span>
@@ -104,18 +118,18 @@ export function Sidebar({
       <button
         type="button"
         onClick={() => onNewSession()}
-        className="noa-sidebar-tree-item noa-sidebar-tree-row noa-sidebar-hover-surface-subtle mx-2 mb-0.5 flex min-h-[26px] shrink-0 items-center gap-2 rounded-lg px-2"
+        className="noa-sidebar-tree-item noa-sidebar-tree-row noa-sidebar-hover-surface-subtle mx-2 mb-0.5 flex min-h-[26px] shrink-0 items-center gap-2 rounded-lg px-[7px]"
       >
         <SquarePen size={14} className="shrink-0" />
         New task
       </button>
 
-      <div className="group/projects noa-sidebar-toolbar-mask h-8 flex items-center pl-[10px] pr-2 gap-0.5 shrink-0 z-10 overflow-visible">
+      <div className="group/projects noa-sidebar-toolbar-mask h-8 flex items-center pl-1 pr-2 gap-0.5 shrink-0 z-10 overflow-visible">
         <button
           type="button"
           aria-expanded={projectsOpen}
           onClick={() => setProjectsOpen((open) => !open)}
-          className="flex min-w-0 flex-1 items-center gap-1 pl-2 text-body text-[var(--sidebar-text-muted,#898781)] font-ui"
+          className="flex min-w-0 flex-1 items-center gap-1 pl-[11px] text-body text-[var(--sidebar-text-muted,#898781)] font-ui"
         >
           Projects
           <ChevronRight
@@ -124,7 +138,7 @@ export function Sidebar({
           />
         </button>
         {/* Hidden until the header is hovered or focused, as Codex's Projects toolbar is. */}
-        <span className="flex opacity-0 transition-opacity group-hover/projects:opacity-100 group-focus-within/projects:opacity-100">
+        <span className="flex opacity-0 transition-opacity group-hover/projects:opacity-100 focus-within:opacity-100">
           <IconButton title="Add project folder" label="Add project" onClick={onAddProject}>
             <FolderPlus size={14} />
           </IconButton>
@@ -158,7 +172,7 @@ export function Sidebar({
                   />
                   {isOpen && (
                     <>
-                      {visible.map((session) => (
+                      {(q !== "" || unfolded.has(project.path) ? visible : visible.slice(0, TASK_PREVIEW)).map((session) => (
                         <SessionRow
                           key={session.id}
                           title={session.title}
@@ -167,6 +181,16 @@ export function Sidebar({
                           onClick={() => onSelect(project.path, session.id)}
                         />
                       ))}
+                      {q === "" && visible.length > TASK_PREVIEW && (
+                        <button
+                          type="button"
+                          onClick={() => toggleUnfolded(project.path)}
+                          className="mb-px block w-full cursor-pointer py-0 text-left text-caption text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)]"
+                          style={{ paddingLeft: "31px" }}
+                        >
+                          {unfolded.has(project.path) ? "Show less" : "Show more"}
+                        </button>
+                      )}
                       {visible.length === 0 && q !== "" && (
                         <div className="pl-9 py-1 text-caption text-[var(--sidebar-text-muted,#898781)]">
                           No tasks match
@@ -182,10 +206,10 @@ export function Sidebar({
           )}
         </div>
       </div>
-      <div className="shrink-0 border-t border-[var(--divider-subtle)] p-2" style={noDragRegion}>
+      <div className="shrink-0 border-t border-[var(--divider-subtle)] px-2 py-1" style={noDragRegion}>
         <button
           onClick={onSettings}
-          className="flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-body text-[var(--text-primary)] hover:bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)] active:bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)]"
+          className="flex h-7 w-full items-center gap-2.5 rounded-lg px-[7px] text-body text-[var(--text-primary)] hover:bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)] active:bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)]"
         >
           <Settings size={16} />
           Settings
@@ -271,24 +295,19 @@ function ProjectRow({
             onToggle()
           }
         }}
-        className={`noa-sidebar-tree-row noa-agent-sidebar-row group flex min-h-[26px] items-center gap-1 px-2 mx-2 rounded-lg cursor-pointer select-none ${menuOpen ? "is-active" : ""}`}
-        style={{ paddingLeft: "4px" }}
+        className={`noa-sidebar-tree-row noa-agent-sidebar-row group flex min-h-[26px] items-center gap-2 px-[7px] mx-2 rounded-lg cursor-pointer select-none ${menuOpen ? "is-active" : ""}`}
       >
-        <ChevronRight
-          size={12}
-          className={`shrink-0 text-[var(--sidebar-text-muted,#898781)] transition-transform duration-150 ${open ? "rotate-90" : ""}`}
-        />
         <span className="shrink-0 text-[var(--sidebar-text-muted,#898781)]">
-          <Folder size={14} />
+          {open ? <FolderOpen size={16} /> : <Folder size={16} />}
         </span>
         <span
-          className={`min-w-0 flex-1 truncate text-body font-medium ${project.missing ? "text-[var(--sidebar-text-muted,#898781)] line-through" : ""}`}
+          className={`min-w-0 flex-1 truncate text-body text-[var(--sidebar-text,#52514E)] ${project.missing ? "text-[var(--sidebar-text-muted,#898781)] line-through" : ""}`}
         >
           {project.name}
         </span>
         {project.missing && <span className="shrink-0 text-caption text-[#C24444]">missing</span>}
         <span
-          className={`flex shrink-0 items-center gap-2 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 ${menuOpen ? "opacity-100" : "opacity-0"}`}
+          className={`flex shrink-0 items-center gap-2 transition-opacity group-hover:opacity-100 focus-within:opacity-100 ${menuOpen ? "opacity-100" : "opacity-0"}`}
           style={noDragRegion}
         >
           <div className="relative" ref={menuRef}>
@@ -388,10 +407,10 @@ function SessionRow({
             onClick()
           }
         }}
-        className={`noa-sidebar-tree-row flex min-h-[26px] items-center justify-between py-0 px-2 mx-2 rounded-lg cursor-pointer select-none group ${
+        className={`noa-sidebar-tree-row flex min-h-[26px] items-center justify-between py-0 px-[7px] mx-2 rounded-lg cursor-pointer select-none group ${
           active ? "noa-agent-sidebar-row is-active" : "noa-agent-sidebar-row"
         }`}
-        style={{ paddingLeft: indent ? "26px" : "7px" }}
+        style={{ paddingLeft: indent ? "31px" : "7px" }}
       >
         <span className="noa-fade-truncate">{title}</span>
       </div>

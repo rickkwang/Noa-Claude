@@ -84,8 +84,8 @@
 
   /* Off-grid sizes fold into the 12px (text-xs) and 13px (text-body) tiers. text-micro and text-caption cover the small labels
      that were previously 10px and 11px. Tiers differ by 1px, so text-caption is never a substitute for text-body. */
-  --text-body: 14px;
-  --text-micro: calc(var(--text-body) - 4px);
+  --text-body: 13px;
+  --text-micro: calc(var(--text-body) - 3px);
   --text-caption: calc(var(--text-body) - 2px);
   --text-title: calc(var(--text-body) * 2);
   /* Codex text-size-chat-sm: one step under chat text, for disclosures, file bars and pills. */

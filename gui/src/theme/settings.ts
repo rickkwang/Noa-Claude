@@ -14,7 +14,7 @@ export const defaultSettings: AppSettings = {
     usePointerCursors: true,
     translucentSidebar: false,
     reduceMotion: false,
-    uiFontSize: 14,
+    uiFontSize: 13,
     codeFontSize: 12,
     fontSmoothing: true,
     emptyStateScene: 'island',

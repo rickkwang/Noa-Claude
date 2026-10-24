@@ -75,7 +75,14 @@ export function parseBlocks(src: string): Block[] {
       const ordered = OL.test(line)
       const matcher = ordered ? OL : UL
       const items: string[] = []
-      while (i < lines.length && matcher.test(lines[i]!)) items.push(lines[i++]!.match(matcher)![1]!)
+      // Items separated by blank lines still belong to one list, so numbering continues.
+      for (;;) {
+        while (i < lines.length && matcher.test(lines[i]!)) items.push(lines[i++]!.match(matcher)![1]!)
+        let next = i
+        while (next < lines.length && lines[next]!.trim() === "") next++
+        if (next === i || next >= lines.length || !matcher.test(lines[next]!)) break
+        i = next
+      }
       blocks.push({ type: ordered ? "ol" : "ul", items })
       continue
     }
@@ -129,7 +136,7 @@ export function renderInline(text: string): ReactNode[] {
 
 export function Markdown({ text }: { text: string }) {
   return (
-    <div className="prose prose-neutral max-w-none text-[length:var(--font-text-md-size)] leading-[var(--font-text-md-line-height)] text-[var(--text-primary,#2D2D2B)] [&_p]:my-2 [&_li]:my-0.5 [&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:text-[1.15em] [&_h3]:font-semibold [&_code]:font-mono [&_code]:text-[0.875em] [&_code]:font-medium [&_code]:rounded-[4px] [&_code]:bg-[color-mix(in_srgb,var(--text-primary)_4%,transparent)] [&_code]:px-[0.3rem] [&_code]:py-px [&_code]:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-primary)_8%,transparent)]">
+    <div className="prose prose-neutral max-w-none text-[length:var(--font-text-md-size)] leading-[var(--font-text-md-line-height)] text-[var(--text-primary,#2D2D2B)] [&>:first-child]:mt-0 [&_p]:my-0 [&_p]:mb-[3.5px] [&>:not(:first-child)>p]:mt-[7px] [&_p+p]:mt-[14px] [&_li>p]:my-0 [&_li>p+p]:mt-[14px][&_ul]:my-0 [&_ul]:pl-10 [&_ol]:my-0 [&_ol]:pl-10 [&_li]:my-0 [&_li]:pl-[5.25px] [&_ol>li::marker]:font-semibold [&_ol>li::marker]:text-[var(--text-primary,#2D2D2B)][&_:is(h1,h2,h3,h4)]:mt-5 [&_:is(h1,h2,h3,h4)]:mb-3 [&_:is(h1,h2,h3,h4)]:font-bold [&_:is(h1,h2,h3,h4)]:leading-[1.5] [&_h1]:text-[2em] [&_h2]:text-[1.5em] [&_h3]:text-[1.17em] [&_h4]:text-[1em] [&_:is(h1,h2,h3,h4)+p]:mt-0 [&_:is(ul,ol)+:is(h1,h2,h3,h4)]:mt-3.5 [&_code]:font-mono [&_code]:text-[0.875em] [&_code]:font-medium [&_code]:rounded-[4px] [&_code]:bg-[color-mix(in_srgb,var(--text-primary)_4%,transparent)] [&_code]:px-[0.3rem] [&_code]:py-px [&_code]:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-primary)_8%,transparent)]">
       {parseBlocks(text).map((block, i) => (
         <BlockView key={i} block={block} />
       ))}
@@ -165,7 +172,7 @@ function BlockView({ block }: { block: Block }) {
         </div>
       )
     case "heading": {
-      const Tag = `h${Math.min(block.level + 2, 6)}` as "h3"
+      const Tag = `h${Math.min(block.level, 4)}` as "h1"
       return <Tag>{renderInline(block.text)}</Tag>
     }
     case "ul":
