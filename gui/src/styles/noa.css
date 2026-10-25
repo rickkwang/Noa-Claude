@@ -2153,13 +2153,20 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 @keyframes noa-shimmer { from { background-position: -100% 0; } to { background-position: 250% 0; } }
 @media (prefers-reduced-motion: reduce) { .noa-shimmer { animation: none; color: var(--text-secondary, #5D5D5D); background: none; -webkit-text-fill-color: currentColor; } }
 
-.noa-thinking-output {
-  display: flex;
-  flex-direction: column-reverse;
-  max-height: 8.75rem;
-  overflow: auto;
-  color: var(--text-secondary);
-  mask-image: linear-gradient(to bottom, transparent, #000 1rem, #000 calc(100% - 1rem), transparent);
+/* New live text and block decorations fade in as they arrive, matching
+   Codex's 0.7s adaptive-streaming fade. */
+.noa-stream-seg,
+.noa-stream-block {
+  animation: noa-stream-in 700ms cubic-bezier(.37, .55, .86, .88) both;
+}
+.noa-stream-block::marker {
+  animation: noa-stream-in 700ms cubic-bezier(.37, .55, .86, .88) both;
+}
+@keyframes noa-stream-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .noa-stream-seg,
+  .noa-stream-block,
+  .noa-stream-block::marker { animation: none; }
 }
 
 .noa-attachment-pending {

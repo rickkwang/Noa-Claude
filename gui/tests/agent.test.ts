@@ -523,6 +523,16 @@ test("markdown renders nested lists, ordered starts, tasks, table alignment and 
   expect(html).toContain('src="https://example.com/shot.png"')
 })
 
+test("streaming markdown fades live text and block decorations", () => {
+  const text = ["- one", "- two", "  - nested", "", "> quote", "", "---"].join("\n")
+  const streaming = renderToStaticMarkup(createElement(Markdown, { text, streaming: true, streamKey: "turn:0" }))
+  const final = renderToStaticMarkup(createElement(Markdown, { text }))
+  expect((streaming.match(/noa-stream-seg/g) ?? []).length).toBeGreaterThan(0)
+  expect((streaming.match(/noa-stream-block/g) ?? []).length).toBeGreaterThanOrEqual(5)
+  expect(final).not.toContain("noa-stream-seg")
+  expect(final).not.toContain("noa-stream-block")
+})
+
 test("composer commands keep GUI actions, CLI commands and skills distinct", async () => {
   const { composerCommands, findComposerCommand, filterComposerCommands, slashAtCaret } = await import("../src/agent/commands")
   const commands = composerCommands([

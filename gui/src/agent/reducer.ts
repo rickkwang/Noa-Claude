@@ -33,7 +33,7 @@ export type ToolBlock = {
 
 export type Block =
   | { kind: "text"; text: string; done?: boolean }
-  | { kind: "thinking"; text: string; done: boolean }
+  | { kind: "thinking"; text: string; done: boolean; startedAt?: number }
   | ToolBlock
 
 export type Turn =
@@ -348,7 +348,7 @@ function applyStreamEvent(turns: Turn[], event: StreamEvent): Turn[] {
       block.type === "text"
         ? { kind: "text", text: "", done: false }
         : block.type === "thinking"
-          ? { kind: "thinking", text: "", done: false }
+          ? { kind: "thinking", text: "", done: false, startedAt: Date.now() }
           : { kind: "tool", id: block.id, name: block.name, input: {}, partialJson: "", status: "running", startedAt: Date.now() }
     return withAssistant(next, index, (blocks) => [...blocks, created])
   }
@@ -387,9 +387,18 @@ function applyStreamEvent(turns: Turn[], event: StreamEvent): Turn[] {
 // The complete assistant message is authoritative: it replaces whatever the
 // stream accumulated, and keeps tool results that already arrived.
 function finalizeAssistant(turns: Turn[], content: ContentBlock[]): Turn[] {
+  const index = streamingIndex(turns)
+  const currentBlocks = index !== -1 ? (turns[index] as Extract<Turn, { role: "assistant" }>).blocks : []
+  let blockIndex = 0
   const blocks: Block[] = content.flatMap((block): Block[] => {
+    const prior = currentBlocks[blockIndex++]
     if (block.type === "text") return [{ kind: "text", text: block.text, done: true }]
-    if (block.type === "thinking") return [{ kind: "thinking", text: block.thinking, done: true }]
+    if (block.type === "thinking") return [{
+      kind: "thinking",
+      text: block.thinking,
+      done: true,
+      startedAt: prior?.kind === "thinking" ? prior.startedAt : undefined,
+    }]
     if (block.type === "tool_use") {
       const existing = findTool(turns, block.id)
       return [
@@ -412,7 +421,6 @@ function finalizeAssistant(turns: Turn[], content: ContentBlock[]): Turn[] {
     return []
   })
 
-  const index = streamingIndex(turns)
   if (index !== -1) {
     const next = [...turns]
     const current = turns[index] as Extract<Turn, { role: "assistant" }>

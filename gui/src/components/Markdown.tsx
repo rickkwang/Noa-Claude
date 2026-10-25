@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState, type ReactNode } from "react"
+import { Children, Fragment, cloneElement, isValidElement, useMemo, useState, type AnimationEvent, type ReactNode } from "react"
 import hljs from "highlight.js/lib/common"
 
 // Small Markdown subset: fenced code, headings, nested lists, task lists, tables,
@@ -194,7 +194,7 @@ function safeImageUrl(url: string): string | undefined {
   return undefined
 }
 
-export function renderInline(text: string): ReactNode[] {
+export function renderInline(text: string, streaming = false, streamKey?: string): ReactNode[] {
   const nodes: ReactNode[] = []
   let last = 0
   for (const match of text.matchAll(INLINE)) {
@@ -206,7 +206,10 @@ export function renderInline(text: string): ReactNode[] {
     if (image) {
       const src = safeImageUrl(image[2]!)
       if (src === undefined) nodes.push(image[1] || image[2])
-      else nodes.push(<img key={key} src={src} alt={image[1] ?? ""} loading="lazy" referrerPolicy="no-referrer" className="my-3 inline-block max-h-[420px] max-w-full rounded-lg border border-[var(--divider-subtle)] object-contain align-top" />)
+      else {
+        const block = streaming && streamKey ? streamBlock(`${streamKey}:img:${key}`) : undefined
+        nodes.push(<img key={key} src={src} alt={image[1] ?? ""} loading="lazy" referrerPolicy="no-referrer" className={`my-3 inline-block max-h-[420px] max-w-full rounded-lg border border-[var(--divider-subtle)] object-contain align-top${block?.className ? ` ${block.className}` : ""}`} onAnimationEnd={block?.onAnimationEnd} />)
+      }
     } else if (token.startsWith("`")) nodes.push(<code key={key}>{token.slice(1, -1)}</code>)
     else if (token.startsWith("**")) nodes.push(<strong key={key}>{token.slice(2, -2)}</strong>)
     else if (token.startsWith("~~")) nodes.push(<del key={key}>{token.slice(2, -2)}</del>)
@@ -225,18 +228,98 @@ export function renderInline(text: string): ReactNode[] {
   return nodes
 }
 
-export function Markdown({ text, tone = "default" }: { text: string; tone?: "default" | "muted" }) {
+const STREAM_SEGMENT = /([㐀-鿿]|[^\s㐀-鿿]+|\s+)/g
+const STREAM_SEGMENT_LIMIT = 240
+const settledStreamTokens = new Set<string>()
+
+// Keep the settled-token set bounded; evicting an old key only costs one
+// harmless re-fade if that block is ever mounted again.
+function settleStreamToken(key: string) {
+  settledStreamTokens.add(key)
+  if (settledStreamTokens.size > 4000) {
+    const oldest = settledStreamTokens.values().next().value
+    if (oldest !== undefined) settledStreamTokens.delete(oldest)
+  }
+}
+
+const settledStreamBlocks = new Set<string>()
+
+function settleStreamBlock(key: string) {
+  settledStreamBlocks.add(key)
+  if (settledStreamBlocks.size > 2000) {
+    const oldest = settledStreamBlocks.values().next().value
+    if (oldest !== undefined) settledStreamBlocks.delete(oldest)
+  }
+}
+
+function streamBlock(key: string): { className?: string; onAnimationEnd?: (event: AnimationEvent<Element>) => void } {
+  if (settledStreamBlocks.has(key)) return {}
+  return {
+    className: "noa-stream-block",
+    onAnimationEnd: (event) => {
+      // Token fade events bubble; only settle the block itself.
+      if (event.target === event.currentTarget) settleStreamBlock(key)
+    },
+  }
+}
+
+// Wrap the newest tokens of a live markdown block so they fade in as they
+// arrive; older tokens stay plain text to keep the span count bounded.
+function streamTokens(text: string, key: string, counter: { node: number }): ReactNode[] {
+  const tokens = text.match(STREAM_SEGMENT) ?? [text]
+  const start = Math.max(0, tokens.length - STREAM_SEGMENT_LIMIT)
+  const node = counter.node++
+  const nodes: ReactNode[] = []
+  if (start > 0) nodes.push(tokens.slice(0, start).join(""))
+  for (let i = start; i < tokens.length; i++) {
+    const token = tokens[i]!
+    if (token === "" || /^\s+$/.test(token)) {
+      nodes.push(token)
+      continue
+    }
+    const tokenKey = `${key}-${node}-${i}`
+    const settled = settledStreamTokens.has(tokenKey)
+    nodes.push(
+      <span
+        key={tokenKey}
+        className={settled ? undefined : "noa-stream-seg"}
+        onAnimationEnd={settled ? undefined : () => settleStreamToken(tokenKey)}
+      >
+        {token}
+      </span>,
+    )
+  }
+  return nodes
+}
+
+function streamInline(nodes: ReactNode[], key: string, counter: { node: number }): ReactNode[] {
+  return nodes.map((node) => {
+    if (typeof node === "string") return streamTokens(node, key, counter)
+    if (isValidElement<{ children?: ReactNode }>(node) && node.props.children !== undefined) {
+      return cloneElement(node, undefined, streamInline(Children.toArray(node.props.children), key, counter))
+    }
+    return node
+  })
+}
+
+function renderInlineText(text: string, streaming: boolean | undefined, key: string, streamKey?: string): ReactNode[] {
+  const nodes = renderInline(text, streaming, streamKey)
+  return streaming ? streamInline(nodes, streamKey ? `${streamKey}:${key}` : key, { node: 0 }) : nodes
+}
+
+export function Markdown({ text, tone = "default", streaming = false, streamKey }: { text: string; tone?: "default" | "muted"; streaming?: boolean; streamKey?: string }) {
+  const blocks = useMemo(() => parseBlocks(text), [text])
   const color = tone === "muted" ? "text-[var(--sidebar-text-muted,#898781)]" : "text-[var(--text-primary,#2D2D2B)]"
   return (
     <div className={`prose prose-neutral max-w-none text-[length:var(--font-text-md-size)] leading-[var(--font-text-md-line-height)] ${color} [&>:first-child]:mt-0 [&_p]:my-0 [&_p]:mb-4 [&_p:last-child]:mb-0 [&_li>p]:mb-0 [&_ul]:my-0 [&_ul]:mb-4 [&_ul:last-child]:mb-0 [&_ul]:pl-5 [&_ol]:my-0 [&_ol]:mb-4 [&_ol:last-child]:mb-0 [&_ol]:pl-5 [&_li]:my-0 [&_li]:pl-0.5 [&_li+li]:mt-2 [&_ol>li::marker]:font-semibold [&_ol>li::marker]:text-[var(--text-primary,#2D2D2B)] [&_:is(h1,h2,h3,h4,h5,h6)]:mt-7 [&_:is(h1,h2,h3,h4,h5,h6)]:mb-1 [&_:is(h1,h2,h3,h4,h5,h6)]:font-bold [&_:is(h1,h2,h3,h4,h5,h6)]:leading-[1.5] [&_h1]:text-[2em] [&_h2]:text-[1.5em] [&_h3]:text-[1.17em] [&_h4]:text-[1em] [&_h5]:text-[0.83em] [&_h6]:text-[0.67em] [&_:is(h1,h2,h3,h4,h5,h6)+p]:mt-0 [&_:is(ul,ol)+:is(h1,h2,h3,h4,h5,h6)]:mt-3.5 [&_code]:font-mono [&_code]:text-[0.92em] [&_code]:font-normal [&_code]:rounded-[4px] [&_code]:bg-[color-mix(in_srgb,var(--text-primary)_4%,transparent)] [&_code]:px-1 [&_code]:py-px`}>
-      {parseBlocks(text).map((block, i) => (
-        <BlockView key={i} block={block} />
+      {blocks.map((block, i) => (
+        <BlockView key={i} block={block} streaming={streaming} streamKey={streamKey ? `${streamKey}:b${i}` : undefined} />
       ))}
     </div>
   )
 }
 
-function BlockView({ block }: { block: Block }) {
+function BlockView({ block, streaming, streamKey }: { block: Block; streaming?: boolean; streamKey?: string }) {
   switch (block.type) {
     case "code":
       return <CodeBlock lang={block.lang} code={block.code} />
@@ -247,39 +330,46 @@ function BlockView({ block }: { block: Block }) {
             <thead>
               <tr>
                 {block.rows[0]?.map((cell, i) => (
-                  <th key={i} style={{ textAlign: block.align[i] }}>{renderInline(cell)}</th>
+                  <th key={i} style={{ textAlign: block.align[i] }}>{renderInlineText(cell, streaming, `th-${i}`, streamKey)}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {block.rows.slice(1).map((row, i) => (
-                <tr key={i}>
-                  {row.map((cell, j) => (
-                    <td key={j} style={{ textAlign: block.align[j] }}>{renderInline(cell)}</td>
-                  ))}
-                </tr>
-              ))}
+              {block.rows.slice(1).map((row, i) => {
+                const blockProps = streaming && streamKey ? streamBlock(`${streamKey}:tr:${i}`) : {}
+                return (
+                  <tr key={i} {...blockProps}>
+                    {row.map((cell, j) => (
+                      <td key={j} style={{ textAlign: block.align[j] }}>{renderInlineText(cell, streaming, `td-${i}-${j}`, streamKey)}</td>
+                    ))}
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
       )
     case "heading": {
       const Tag = `h${Math.min(block.level, 6)}` as "h1"
-      return <Tag>{renderInline(block.text)}</Tag>
+      return <Tag>{renderInlineText(block.text, streaming, "heading", streamKey)}</Tag>
     }
     case "list":
-      return <ListView items={block.items} ordered={block.ordered} start={block.start} />
-    case "quote":
-      return <blockquote>{renderInline(block.text)}</blockquote>
-    case "hr":
-      return <hr />
+      return <ListView items={block.items} ordered={block.ordered} start={block.start} streaming={streaming} streamKey={streamKey} />
+    case "quote": {
+      const blockProps = streaming && streamKey ? streamBlock(`${streamKey}:quote`) : {}
+      return <blockquote {...blockProps}>{renderInlineText(block.text, streaming, "quote", streamKey)}</blockquote>
+    }
+    case "hr": {
+      const blockProps = streaming && streamKey ? streamBlock(`${streamKey}:hr`) : {}
+      return <hr {...blockProps} />
+    }
     case "p":
       return (
         <p>
           {block.text.split("\n").map((line, i) => (
             <Fragment key={i}>
               {i > 0 && <br />}
-              {renderInline(line)}
+              {renderInlineText(line, streaming, `p-${i}`, streamKey)}
             </Fragment>
           ))}
         </p>
@@ -287,26 +377,34 @@ function BlockView({ block }: { block: Block }) {
   }
 }
 
-function ListView({ items, ordered, start }: { items: ListItem[]; ordered: boolean; start: number }) {
-  const rows = items.map((item, index) => (
-    <li key={index} className={item.checked === undefined ? undefined : "list-none"}>
-      {item.checked === undefined ? (
-        renderInline(item.text)
-      ) : (
-        <label className="flex items-start gap-2">
-          <input type="checkbox" checked={item.checked} readOnly className="mt-[0.35em] shrink-0 accent-[var(--accent-color,#CC7D5E)]" />
-          <span>{renderInline(item.text)}</span>
-        </label>
-      )}
-      {item.children.length > 0 && (
-        <ListView
-          items={item.children}
-          ordered={item.children[0]!.ordered}
-          start={item.children[0]!.number}
-        />
-      )}
-    </li>
-  ))
+function ListView({ items, ordered, start, streaming, streamKey, keyPrefix = "list" }: { items: ListItem[]; ordered: boolean; start: number; streaming?: boolean; streamKey?: string; keyPrefix?: string }) {
+  const rows = items.map((item, index) => {
+    const itemKey = `${keyPrefix}-${index}`
+    const blockProps = streaming && streamKey ? streamBlock(`${streamKey}:li:${itemKey}`) : {}
+    const classes = [item.checked === undefined ? null : "list-none", blockProps.className].filter(Boolean).join(" ")
+    return (
+      <li key={index} className={classes || undefined} onAnimationEnd={blockProps.onAnimationEnd}>
+        {item.checked === undefined ? (
+          renderInlineText(item.text, streaming, itemKey, streamKey)
+        ) : (
+          <label className="flex items-start gap-2">
+            <input type="checkbox" checked={item.checked} readOnly className="mt-[0.35em] shrink-0 accent-[var(--accent-color,#CC7D5E)]" />
+            <span>{renderInlineText(item.text, streaming, itemKey, streamKey)}</span>
+          </label>
+        )}
+        {item.children.length > 0 && (
+          <ListView
+            items={item.children}
+            ordered={item.children[0]!.ordered}
+            start={item.children[0]!.number}
+            streaming={streaming}
+            streamKey={streamKey}
+            keyPrefix={itemKey}
+          />
+        )}
+      </li>
+    )
+  })
   return ordered ? <ol start={start === 1 ? undefined : start}>{rows}</ol> : <ul>{rows}</ul>
 }
 

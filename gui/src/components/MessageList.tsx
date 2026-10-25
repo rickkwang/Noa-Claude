@@ -425,11 +425,22 @@ function AssistantSegment({ segment, durationMs, interrupted, liveDiff, tasks, o
       : undefined
   )
 
+  const blockIndexes = new Map<Block, number>()
+  segment.blocks.forEach((block, index) => blockIndexes.set(block, index))
+
+  function streamKeyFor(block: Block) {
+    return `${segment.id}:${blockIndexes.get(block) ?? -1}`
+  }
+
   function renderText(run: Extract<ActivityRun, { kind: "text" }>, index: number, workedFor?: ReactNode) {
     return (
       <div key={index} className="group/message flex flex-col gap-1">
         {workedFor}
-        <BlockView block={run.block} />
+        <BlockView
+          block={run.block}
+          streaming={segment.streaming && run.block === segment.blocks[segment.blocks.length - 1]}
+          streamKey={streamKeyFor(run.block)}
+        />
         <MessageActions text={run.block.text} complete={run.block.done ?? !segment.streaming} />
       </div>
     )
@@ -482,6 +493,7 @@ function AssistantSegment({ segment, durationMs, interrupted, liveDiff, tasks, o
             key={index}
             blocks={run.blocks}
             tasks={tasks}
+            streamKeyFor={streamKeyFor}
             onStopTask={onStopTask}
             onOpenTask={onOpenTask}
           />
@@ -501,9 +513,10 @@ function AssistantSegment({ segment, durationMs, interrupted, liveDiff, tasks, o
 
 // One collapsible summary per run of reasoning and tool calls, as Codex's
 // agent-activity group. The body stays folded unless the user opens it.
-function ActivityGroup({ blocks, tasks, onStopTask, onOpenTask }: {
+function ActivityGroup({ blocks, tasks, streamKeyFor, onStopTask, onOpenTask }: {
   blocks: (ToolBlock | ThinkingBlockData)[]
   tasks?: AgentTask[]
+  streamKeyFor?: (block: Block) => string
   onStopTask?: (id: string) => void
   onOpenTask?: () => void
 }) {
@@ -552,7 +565,7 @@ function ActivityGroup({ blocks, tasks, onStopTask, onOpenTask }: {
       <Collapsible open={open}>
         <div className="mt-2 flex flex-col gap-1">
           {blocks.map((block, i) => block.kind === "thinking"
-            ? <ThinkingBlock key={`thought-${i}`} block={block} />
+            ? <ThinkingBlock key={`thought-${i}`} block={block} streamKey={streamKeyFor?.(block)} />
             : (
               <ToolCard
                 key={`tool-${block.id}-${i}`}
@@ -705,10 +718,10 @@ function MessageActions({ text, kind = "assistant", onEdit, complete = true }: {
   )
 }
 
-function BlockView({ block }: { block: Block }) {
+function BlockView({ block, streaming, streamKey }: { block: Block; streaming?: boolean; streamKey?: string }) {
   switch (block.kind) {
     case "text":
-      return <Markdown text={block.text} />
+      return <Markdown text={block.text} streaming={streaming} streamKey={streamKey} />
     case "thinking":
       return (
         <ThinkingBlock block={block} />
@@ -719,10 +732,10 @@ function BlockView({ block }: { block: Block }) {
 }
 
 // Collapsed once the reasoning is done, as in Codex; open while it streams.
-function ThinkingBlock({ block }: { block: Extract<Block, { kind: "thinking" }> }) {
+function ThinkingBlock({ block, streamKey }: { block: Extract<Block, { kind: "thinking" }>; streamKey?: string }) {
   const [open, setOpen] = useState(!block.done)
   // The block mounts with its first token, so this is close to the reasoning's start.
-  const startedAt = useRef<number | undefined>(block.done ? undefined : Date.now())
+  const startedAt = useRef<number | undefined>(block.startedAt ?? (block.done ? undefined : Date.now()))
   const [elapsed, setElapsed] = useState<number>()
   const [copied, setCopied] = useState(false)
   useEffect(() => {
@@ -765,8 +778,8 @@ function ThinkingBlock({ block }: { block: Extract<Block, { kind: "thinking" }> 
         )}
       </div>
       <Collapsible open={open}>
-        <div className="noa-thinking-output mt-1.5 px-1">
-          <Markdown text={block.text} tone="muted" />
+        <div className="mt-1.5 px-1">
+          <Markdown text={block.text} tone="muted" streaming={!block.done} streamKey={streamKey} />
         </div>
       </Collapsible>
     </div>
