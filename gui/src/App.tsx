@@ -17,7 +17,7 @@ import { AddProjectDialog } from "./components/AddProjectDialog"
 import { Composer } from "./components/Composer"
 import { EmptyState } from "./components/EmptyState"
 import { MessageList } from "./components/MessageList"
-import { DiffActionDialog, LiveDiffSummary } from "./components/TurnDiffCard"
+import { DiffActionDialog } from "./components/TurnDiffCard"
 import { PermissionCard } from "./components/PermissionCard"
 import { QueuedMessages } from "./components/QueuedMessages"
 import { RightPanel, type PanelTab } from "./components/RightPanel"
@@ -554,6 +554,7 @@ function Workspace({ cwd }: { cwd: string }) {
               busy={state.busy}
               result={state.result}
               readingWidth={readingWidth}
+              liveDiff={state.liveDiff}
               onTurnDiff={(diff, path) => {
                 setTurnDiff({ diff, path, key: Date.now() })
                 setRightOpen(true)
@@ -647,17 +648,6 @@ function Workspace({ cwd }: { cwd: string }) {
                   {state.error}
                 </p>
               )}
-              {state.busy && state.liveDiff && state.liveDiff.files.length > 0
-                && state.permissions.length === 0 && state.elicitations.length === 0 && (
-                  <LiveDiffSummary
-                    diff={state.liveDiff}
-                    onOpen={() => {
-                      setTurnDiff({ diff: state.liveDiff!, key: Date.now() })
-                      setRightOpen(true)
-                      setRightTab("changes")
-                    }}
-                  />
-                )}
               <Composer
                 key={session.key}
                 draftKey={`noa-agent.draft:${session.cwd}:${activeId ?? session.runtimeId}`}
@@ -675,7 +665,7 @@ function Workspace({ cwd }: { cwd: string }) {
                 branch={changes?.branch}
                 onFiles={() => showWorkspacePane("files")}
                 newTask={!hasTurns}
-                contextPercent={state.contextUsage?.percentage}
+                contextUsage={state.contextUsage}
                 connection={state.connection}
                 busy={state.busy}
                 models={state.models}

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { createPortal } from "react-dom"
 import type { AgentTask, Block, ToolBlock, Turn } from "../agent/reducer"
-import { toolActivityLabel, toolDiffStats } from "../agent/toolActivity"
-import { BookOpen, Check, ChevronRight, Copy, Edit2, List, Photo, Search, Terminal, Tool, Users, X } from "../lib/icons"
+import { formatElapsed, toolActivityLabel, toolDiffStats, toolElapsedMs } from "../agent/toolActivity"
+import { BookOpen, Check, ChevronRight, ChevronUp, Copy, Edit2, List, Photo, Search, Stop, Terminal, Tool, Users, X } from "../lib/icons"
 import { Collapsible } from "./Collapsible"
 import { Lightbox, type LightboxItem } from "./Lightbox"
 import { CodeBlock, Markdown } from "./Markdown"
@@ -26,12 +26,26 @@ export function ToolCard({ block, defaultOpen = false, task, onStopTask, onOpenT
   const userToggled = useRef(false)
   const [preview, setPreview] = useState<number>()
   const [rawOpen, setRawOpen] = useState(false)
+  const [now, setNow] = useState(Date.now())
   const Icon = toolIcon(block)
   const diffStats = toolDiffStats(block)
+  const elapsed = toolElapsedMs(block, now)
+  const elapsedLabel = block.name === "Bash" && elapsed !== undefined
+    ? block.status === "running"
+      ? `for ${formatElapsed(elapsed)}`
+      : block.status === "stopped"
+        ? `after ${formatElapsed(elapsed)}`
+        : block.status === "done" ? `in ${formatElapsed(elapsed)}` : undefined
+    : undefined
 
   useEffect(() => {
     if (!userToggled.current) setOpen(defaultOpen)
   }, [defaultOpen])
+  useEffect(() => {
+    if (block.status !== "running") return
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [block.status])
 
   return (
     <div className="group/tool not-prose text-body" data-tool-activity={block.id}>
@@ -43,12 +57,13 @@ export function ToolCard({ block, defaultOpen = false, task, onStopTask, onOpenT
           userToggled.current = true
           setOpen((value) => !value)
         }}
-        className="flex min-h-7 w-full min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-sm px-3 py-1.5 text-left text-[length:var(--text-chat-sm)] leading-5 select-none text-[var(--text-tertiary,#8F8F8F)] hover:bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)] hover:text-[var(--text-primary,#2D2D2B)]">
-        <Icon size={14} className="shrink-0 text-[var(--text-tertiary,#8F8F8F)]" aria-hidden="true" />
+        className="flex min-h-7 w-full min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-sm px-3 py-1.5 text-left text-[length:var(--text-chat-sm)] leading-5 select-none text-[color-mix(in_srgb,var(--text-primary)_45%,transparent)] hover:bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)] hover:text-[var(--text-primary,#2D2D2B)]">
+        <Icon size={14} className="shrink-0" aria-hidden="true" />
         <span className={`min-w-0 flex-1 truncate ${block.status === "running" ? "noa-shimmer" : ""}`}>
-          <span className="font-medium text-[var(--text-secondary,#5D5D5D)] group-hover/tool:text-[var(--text-primary,#2D2D2B)]">{label.action}</span>
-          {label.detail && <span className="text-[var(--text-tertiary,#8F8F8F)]"> {label.detail}</span>}
+          <span>{label.action}</span>
+          {label.detail && <span> {label.detail}</span>}
         </span>
+        {elapsedLabel && <span className="shrink-0 tabular-nums opacity-80">{elapsedLabel}</span>}
         {diffStats && (
           <span className="shrink-0 text-caption tabular-nums">
             {diffStats.additions > 0 && <span className="text-[#168447]">+{diffStats.additions}</span>}
@@ -59,7 +74,7 @@ export function ToolCard({ block, defaultOpen = false, task, onStopTask, onOpenT
       </button>
       <Collapsible open={open}>
         <div className="mt-1 mb-2 flex flex-col gap-2 ps-1">
-          {task ? <TaskDetail task={task} onStopTask={onStopTask} onOpenTask={onOpenTask} /> : renderBody(block, () => setRawOpen(true))}
+          {task ? <TaskDetail task={task} onStopTask={onStopTask} onOpenTask={onOpenTask} /> : renderBody(block, () => setRawOpen(true), () => setOpen(false))}
           {!!block.images?.length && (
             <ToolImages
               images={block.images}
@@ -132,6 +147,7 @@ function TaskBlock({ block }: { block: Block }) {
 
 function toolIcon(block: ToolBlock) {
   const file = str(block.input.file_path)
+  if (block.status === "stopped" && block.name === "Bash") return Stop
   if (block.name === "Bash") return Terminal
   if (block.name === "Grep" || block.name === "Glob") return Search
   if (block.name === "Task") return Users
@@ -150,7 +166,7 @@ function basename(path: string): string {
   return path.split("/").filter(Boolean).pop() ?? path
 }
 
-function renderBody(block: ToolBlock, onRaw: () => void) {
+function renderBody(block: ToolBlock, onRaw: () => void, onCollapse: () => void) {
   const i = block.input
   const output = block.output?.trim() ? <CodeBlock lang="output" code={block.output} /> : null
   const image = /\.(?:avif|gif|jpe?g|png|webp)$/i.test(str(i.file_path))
@@ -158,7 +174,7 @@ function renderBody(block: ToolBlock, onRaw: () => void) {
 
   switch (block.name) {
     case "Bash":
-      return <ShellOutput block={block} />
+      return <ShellOutput block={block} onCollapse={onCollapse} />
     case "Read":
     case "Grep":
     case "Glob":
@@ -309,10 +325,11 @@ function ToolImages({ images, onOpen, preview, onPreview }: {
   )
 }
 
-function ShellOutput({ block }: { block: ToolBlock }) {
+function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () => void }) {
   const command = str(block.input.command).replace(/\s+/g, " ").trim()
   const output = block.output ?? ""
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<"all" | "command" | "output">()
+  const [commandExpanded, setCommandExpanded] = useState(false)
   const [overflowing, setOverflowing] = useState(false)
   const outputRef = useRef<HTMLDivElement>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -328,46 +345,97 @@ function ShellOutput({ block }: { block: ToolBlock }) {
     return () => observer.disconnect()
   }, [output])
 
-  async function copy() {
-    await navigator.clipboard.writeText([`$ ${command}`, output].filter(Boolean).join("\n"))
-    setCopied(true)
+  async function copy(kind: "all" | "command" | "output", text: string) {
+    await navigator.clipboard.writeText(text)
+    setCopied(kind)
     clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => setCopied(false), 1500)
+    timerRef.current = setTimeout(() => setCopied(undefined), 1500)
   }
 
   return (
     <div className="overflow-hidden rounded-lg border border-[var(--divider-subtle)] bg-[var(--bg-secondary,#F9F9F7)]">
       <div className="flex h-8 items-center justify-between border-b border-[var(--divider-subtle)] px-3 text-caption text-[var(--sidebar-text-muted,#898781)]">
         <span>Shell</span>
+        <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover/tool:opacity-100 focus-within:opacity-100">
+          <button
+            type="button"
+            onClick={() => copy("all", [`$ ${command}`, output].filter(Boolean).join("\n"))}
+            className="flex size-5 items-center justify-center rounded hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]"
+            aria-label={copied === "all" ? "Copied shell contents" : "Copy shell contents"}
+            title={copied === "all" ? "Copied shell contents" : "Copy shell contents"}
+          >
+            {copied === "all" ? <Check size={12} /> : <Copy size={12} />}
+          </button>
+          <button
+            type="button"
+            onClick={onCollapse}
+            className="flex size-5 items-center justify-center rounded hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]"
+            aria-label="Collapse shell"
+            title="Collapse shell"
+          >
+            <ChevronUp size={12} />
+          </button>
+        </div>
+      </div>
+      <div className="group/command relative">
+        <pre
+          role="button"
+          tabIndex={0}
+          aria-expanded={commandExpanded}
+          onClick={() => setCommandExpanded((value) => !value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return
+            event.preventDefault()
+            setCommandExpanded((value) => !value)
+          }}
+          className={`m-0 cursor-pointer whitespace-pre-wrap break-words py-2 pe-8 ps-3 font-mono text-[length:var(--code-font-size)] leading-5 text-[var(--text-secondary,#5D5D5D)] ${commandExpanded ? "" : "line-clamp-2"}`}
+        >
+          <span className="text-[var(--text-tertiary,#8F8F8F)]">$</span> {command}
+        </pre>
         <button
           type="button"
-          onClick={copy}
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 opacity-0 transition-opacity group-hover/tool:opacity-100 focus-visible:opacity-100 hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]"
-          aria-label="Copy shell command and output"
+          onClick={() => copy("command", command)}
+          className="absolute end-1 top-1 flex size-5 items-center justify-center rounded text-[var(--sidebar-text-muted,#898781)] opacity-0 transition-opacity hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] focus-visible:opacity-100 group-hover/command:opacity-100"
+          aria-label={copied === "command" ? "Copied command" : "Copy command"}
+          title={copied === "command" ? "Copied command" : "Copy command"}
         >
-          {copied ? <Check size={12} /> : <Copy size={12} />}
-          {copied ? "Copied" : "Copy"}
+          {copied === "command" ? <Check size={12} /> : <Copy size={12} />}
         </button>
       </div>
-      <pre className="m-0 whitespace-pre-wrap break-words px-3 pt-2 font-mono text-[length:var(--code-font-size)] leading-5 text-[var(--text-secondary,#5D5D5D)]"><span className="text-[var(--text-tertiary,#8F8F8F)]">$</span> {command}</pre>
       {output ? (
-        <div ref={outputRef} className="noa-shell-output" data-overflow={overflowing}>
-          <pre className="m-0 px-3 py-2 font-mono text-[length:var(--code-font-size)] leading-5 whitespace-pre">{output}</pre>
+        <div className="group/output relative">
+          <div ref={outputRef} className="noa-shell-output" data-overflow={overflowing}>
+            <pre className="m-0 px-3 py-2 font-mono text-[length:var(--code-font-size)] leading-5 whitespace-pre">{output}</pre>
+          </div>
+          <button
+            type="button"
+            onClick={() => copy("output", output)}
+            className="absolute end-1 top-1 flex size-5 items-center justify-center rounded text-[var(--sidebar-text-muted,#898781)] opacity-0 transition-opacity hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] focus-visible:opacity-100 group-hover/output:opacity-100"
+            aria-label={copied === "output" ? "Copied output" : "Copy output"}
+            title={copied === "output" ? "Copied output" : "Copy output"}
+          >
+            {copied === "output" ? <Check size={12} /> : <Copy size={12} />}
+          </button>
         </div>
       ) : block.status === "running" ? (
         <div className="px-3 pb-2 text-caption text-[var(--sidebar-text-muted,#898781)]">Waiting for output…</div>
       ) : (
         <div className="px-3 pb-2 text-caption text-[var(--sidebar-text-muted,#898781)]">No output</div>
       )}
-      <div className={`flex items-center justify-end border-t border-[var(--divider-subtle)] px-3 py-1 text-caption ${block.status === "error" ? "text-[#C24444]" : "text-[var(--sidebar-text-muted,#898781)]"}`}>
-        {block.status === "running"
-          ? "Running"
-          : block.interrupted
-            ? "Interrupted"
-            : block.exitCode !== undefined
-              ? `Exit code ${block.exitCode}`
-              : block.status === "error" ? "Error" : "Success"}
-      </div>
+      {block.status !== "running" && (
+        <div className={`flex items-center justify-end gap-1 border-t border-[var(--divider-subtle)] px-3 py-1 text-caption ${block.status === "error" ? "text-[#C24444]" : "text-[var(--sidebar-text-muted,#898781)]"}`}>
+          {block.status === "error" ? (
+            block.exitCode !== undefined ? `Exit code ${block.exitCode}` : "Error"
+          ) : block.status === "stopped" || block.interrupted ? (
+            "Stopped"
+          ) : (
+            <>
+              <Check size={12} aria-hidden="true" />
+              Success
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { groupActivityBlocks, groupActivityRuns, toolActivityLabel, toolActivitySummary, toolDiffStats } from "../src/agent/toolActivity"
+import { formatElapsed, groupActivityBlocks, groupActivityRuns, toolActivityLabel, toolActivitySummary, toolDiffStats, toolElapsedMs } from "../src/agent/toolActivity"
 
 test("tool activity uses action phrases instead of raw tool names", () => {
   expect(toolActivityLabel({ name: "Bash", status: "running", input: { command: "npm test" } }))
@@ -28,6 +28,17 @@ test("failed and unknown tools remain explicit", () => {
     .toEqual({ action: "Calling CustomTool", detail: "hello" })
   expect(toolActivityLabel({ name: "mcp__filesystem__read_file", status: "done", input: { path: "/tmp/a" } }))
     .toEqual({ action: "Used read_file", detail: "filesystem" })
+})
+
+test("stopped tools read as stopped and keep elapsed time", () => {
+  expect(toolActivityLabel({ name: "Bash", status: "stopped", input: { command: "bun test" } }))
+    .toEqual({ action: "Stopped", detail: "bun test" })
+  expect(toolActivityLabel({ name: "Edit", status: "stopped", input: { file_path: "/repo/App.tsx" } }))
+    .toEqual({ action: "Stopped editing", detail: "App.tsx" })
+  expect(toolElapsedMs({ status: "stopped", startedAt: 1_000, endedAt: 4_500 })).toBe(3_500)
+  expect(toolElapsedMs({ status: "running", startedAt: 1_000 }, 3_000)).toBe(2_000)
+  expect(formatElapsed(3_500)).toBe("4s")
+  expect(formatElapsed(65_000)).toBe("1m 5s")
 })
 
 test("completed activity summaries combine semantic tool actions", () => {

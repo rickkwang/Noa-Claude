@@ -58,6 +58,7 @@ import {
   IconPencil,
   IconPin,
   IconPinned,
+  IconPlayerStop,
   IconPlus,
   IconRefresh,
   IconSearch,
@@ -186,6 +187,7 @@ export const Settings = icon(IconSettings);
 export const SlidersHorizontal = icon(IconAdjustmentsHorizontal);
 export const Sun = icon(IconSun);
 export const SquarePen = icon(IconEdit);
+export const Stop = icon(IconPlayerStop);
 export const Trash2 = icon(IconTrash);
 export const Link = icon(IconLink);
 export const Unlink = icon(IconUnlink);

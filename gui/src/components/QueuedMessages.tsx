@@ -80,8 +80,8 @@ export function QueuedMessages({
   }
 
   return (
-    <section aria-label="Queued messages" className="overflow-hidden rounded-panel border border-[var(--divider-subtle)] bg-[var(--bg-card)]">
-      <div className="flex h-9 items-center gap-2 border-b border-[var(--divider-subtle)] px-3 text-caption text-[var(--sidebar-text-muted)]">
+    <section aria-label="Queued messages" className="flex max-h-[30dvh] flex-col overflow-hidden rounded-panel border border-[var(--divider-subtle)] bg-[var(--bg-card)]">
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--divider-subtle)] px-3 text-caption text-[var(--sidebar-text-muted)]">
         <span className="min-w-0 flex-1 truncate">
           {visible.length} queued · {paused ? "paused" : busy ? "sends after this turn" : "ready to send"}
         </span>
@@ -96,7 +96,7 @@ export function QueuedMessages({
           </button>
         )}
       </div>
-      <div className="p-1">
+      <div className="min-h-0 flex-1 overflow-y-auto p-1">
         {visible.map((message, index) => {
           const content = parts(message)
           const images = content.images.map((image, imageIndex) => ({

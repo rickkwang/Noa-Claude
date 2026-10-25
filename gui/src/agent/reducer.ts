@@ -22,11 +22,13 @@ export type ToolBlock = {
   name: string
   input: Record<string, unknown>
   partialJson: string
-  status: "running" | "done" | "error"
+  status: "running" | "done" | "error" | "stopped"
   output?: string
   images?: ImageBlock[]
   exitCode?: number
   interrupted?: boolean
+  startedAt?: number
+  endedAt?: number
 }
 
 export type Block =
@@ -41,6 +43,7 @@ export type Turn =
       id: string
       blocks: Block[]
       streaming: boolean
+      startedAt?: number
       durationMs?: number
       interrupted?: boolean
       diff?: TurnDiff
@@ -337,7 +340,7 @@ function applyStreamEvent(turns: Turn[], event: StreamEvent): Turn[] {
 
   if (event.type === "content_block_start") {
     if (index === -1) {
-      next = [...turns, { role: "assistant", id: crypto.randomUUID(), blocks: [], streaming: true }]
+      next = [...turns, { role: "assistant", id: crypto.randomUUID(), blocks: [], streaming: true, startedAt: Date.now() }]
       index = next.length - 1
     }
     const block = event.content_block
@@ -346,7 +349,7 @@ function applyStreamEvent(turns: Turn[], event: StreamEvent): Turn[] {
         ? { kind: "text", text: "", done: false }
         : block.type === "thinking"
           ? { kind: "thinking", text: "", done: false }
-          : { kind: "tool", id: block.id, name: block.name, input: {}, partialJson: "", status: "running" }
+          : { kind: "tool", id: block.id, name: block.name, input: {}, partialJson: "", status: "running", startedAt: Date.now() }
     return withAssistant(next, index, (blocks) => [...blocks, created])
   }
 
@@ -401,6 +404,8 @@ function finalizeAssistant(turns: Turn[], content: ContentBlock[]): Turn[] {
           images: existing?.images,
           exitCode: existing?.exitCode,
           interrupted: existing?.interrupted,
+          startedAt: existing?.startedAt,
+          endedAt: existing?.endedAt,
         },
       ]
     }
@@ -416,6 +421,7 @@ function finalizeAssistant(turns: Turn[], content: ContentBlock[]): Turn[] {
       id: current.id,
       blocks,
       streaming: false,
+      startedAt: current.startedAt,
       durationMs: current.durationMs,
       interrupted: current.interrupted,
     }
@@ -442,11 +448,12 @@ function applyToolResults(turns: Turn[], content: ContentBlock[], toolUseResult?
         const content = splitToolContent(result.content, result.tool_use_result ?? toolUseResult)
         return {
           ...b,
-          status: result.is_error ? "error" : "done",
+          status: content.interrupted ? "stopped" : result.is_error ? "error" : "done",
           output: content.output,
           images: content.images,
           exitCode: content.exitCode,
           interrupted: content.interrupted,
+          endedAt: Date.now(),
         }
       }),
     }

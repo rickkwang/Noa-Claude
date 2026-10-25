@@ -2194,7 +2194,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   color: var(--text-secondary);
 }
 .noa-shell-output[data-overflow="true"] {
-  mask-image: linear-gradient(to bottom, transparent, #000 1rem, #000 calc(100% - 1rem), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 2rem, #000 calc(100% - 2rem), transparent);
 }
 @keyframes noa-shimmer { from { background-position: -100% 0; } to { background-position: 250% 0; } }
 @media (prefers-reduced-motion: reduce) { .noa-shimmer { animation: none; color: var(--text-secondary, #5D5D5D); background: none; -webkit-text-fill-color: currentColor; } }

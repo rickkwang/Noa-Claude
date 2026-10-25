@@ -8,6 +8,8 @@ import { sanitizePath } from "../../src/utils/sessionStoragePortable"
 import { loadHistory, listSessions } from "../server/sessions"
 import { initialState, reducer } from "../src/agent/reducer"
 import { MessageList } from "../src/components/MessageList"
+import { Markdown } from "../src/components/Markdown"
+import { ToolCard } from "../src/components/ToolCard"
 
 const config = mkdtempSync(join(tmpdir(), "noa-gui-agent-test-"))
 const originalConfig = process.env.CLAUDE_CONFIG_DIR
@@ -298,6 +300,37 @@ test("live tool result metadata is read from the message envelope", () => {
   expect(tool).toMatchObject({ output: "1 failed", exitCode: 1, status: "error" })
 })
 
+test("interrupted tool results become stopped instead of failed", () => {
+  let state = reducer(initialState, { type: "user-sent", id: "command-task", text: "Run tests" })
+  state = reducer(state, {
+    type: "agent",
+    message: {
+      type: "assistant",
+      parent_tool_use_id: null,
+      message: { content: [{ type: "tool_use", id: "tool-1", name: "Bash", input: { command: "bun test" } }] },
+    },
+  })
+  state = reducer(state, {
+    type: "agent",
+    message: {
+      type: "user",
+      parent_tool_use_id: null,
+      message: {
+        content: [{
+          type: "tool_result",
+          tool_use_id: "tool-1",
+          content: "Interrupted",
+          is_error: true,
+          tool_use_result: { stdout: "", stderr: "", exitCode: 130, interrupted: true },
+        }],
+      },
+    },
+  })
+  const tool = state.turns.flatMap((turn) => turn.role === "assistant" ? turn.blocks : []).find((block) => block.kind === "tool")
+  expect(tool).toMatchObject({ status: "stopped", interrupted: true })
+  if (tool?.kind === "tool") expect(typeof tool.endedAt).toBe("number")
+})
+
 test("history hides internal transcript envelopes and interruption markers", async () => {
   const cwd = "/private/tmp/hidden-envelope-project"
   const id = transcript(cwd, [
@@ -417,9 +450,77 @@ test("assistant actions wait for completed text and completed turns show worked 
       blocks: [{ kind: "text", text: "Complete", done: true }],
     },
   ], false)
-  expect(completed).toContain("Worked for 4s")
+  // A plain answer has no activity to fold, so it shows no worked-for divider.
+  expect(completed).not.toContain("Worked for 4s")
   expect(completed).toContain('aria-label="Copy response"')
   expect(completed).not.toContain("Copy task output")
+
+  const withActivity = render([
+    { role: "user", id: "user", text: "Work" },
+    {
+      role: "assistant",
+      id: "assistant",
+      streaming: false,
+      durationMs: 4321,
+      blocks: [
+        { kind: "tool", id: "tool", name: "Bash", input: { command: "bun test" }, partialJson: "", status: "done" },
+        { kind: "text", text: "Complete", done: true },
+      ],
+    },
+  ], false)
+  expect(withActivity).toContain("Worked for 4s")
+})
+
+test("tool cards show elapsed time and shell controls", () => {
+  const block = {
+    kind: "tool" as const,
+    id: "tool",
+    name: "Bash",
+    input: { command: "bun test" },
+    partialJson: "",
+    status: "done" as const,
+    startedAt: 1_000,
+    endedAt: 5_000,
+    exitCode: 0,
+  }
+  const html = renderToStaticMarkup(createElement(ToolCard, { block, defaultOpen: true }))
+  expect(html).toContain("in 4s")
+  expect(html).toContain("Copy shell contents")
+  expect(html).toContain("Collapse shell")
+  expect(html).toContain("line-clamp-2")
+  expect(html).toContain("Success")
+
+  const stopped = renderToStaticMarkup(createElement(ToolCard, {
+    block: { ...block, status: "stopped", interrupted: true },
+    defaultOpen: true,
+  }))
+  expect(stopped).toContain("Stopped")
+})
+
+test("markdown renders nested lists, ordered starts, tasks, table alignment and images", () => {
+  const html = renderToStaticMarkup(createElement(Markdown, {
+    text: [
+      "3. third",
+      "4. fourth",
+      "   - nested",
+      "- [x] done",
+      "- [ ] todo",
+      "",
+      "| left | right |",
+      "| :--- | ---: |",
+      "| a | b |",
+      "",
+      "~~gone~~ and ![shot](https://example.com/shot.png)",
+    ].join("\n"),
+  }))
+  expect(html).toContain('<ol start="3">')
+  expect(html).toContain("<ul>")
+  expect(html).toContain('type="checkbox"')
+  expect(html).toContain('checked=""')
+  expect(html).toContain("text-align:left")
+  expect(html).toContain("text-align:right")
+  expect(html).toContain("<del>gone</del>")
+  expect(html).toContain('src="https://example.com/shot.png"')
 })
 
 test("composer commands keep GUI actions, CLI commands and skills distinct", async () => {

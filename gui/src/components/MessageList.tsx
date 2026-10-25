@@ -3,24 +3,28 @@ import type { AgentState, AgentTask, Block, ToolBlock, Turn } from "../agent/red
 import type { ImageBlock, TurnDiff } from "../agent/protocol"
 import { Lightbox, type LightboxItem } from "./Lightbox"
 import {
+  formatElapsed,
   groupActivityBlocks,
   groupActivityRuns,
   toolActivityLabel,
   toolActivitySummary,
+  toolElapsedMs,
   type ActivityRun,
   type ThinkingBlock as ThinkingBlockData,
 } from "../agent/toolActivity"
-import { ArrowDown, BookOpen, Check, ChevronRight, Copy, Edit2, Photo, Terminal, Tool } from "../lib/icons"
+import { ArrowDown, BookOpen, Check, ChevronDown, ChevronRight, Copy, Edit2, Photo, Terminal, Tool } from "../lib/icons"
 import { Collapsible } from "./Collapsible"
+import { ErrorBoundary } from "./ErrorBoundary"
 import { Markdown } from "./Markdown"
 import { ToolCard } from "./ToolCard"
-import { TurnDiffCard } from "./TurnDiffCard"
+import { LiveDiffSummary, TurnDiffCard } from "./TurnDiffCard"
 
 interface MessageListProps {
   turns: Turn[]
   busy: boolean
   result?: AgentState["result"]
   readingWidth: number
+  liveDiff?: TurnDiff
   onTurnDiff?: (diff: TurnDiff, path?: string) => void
   onTurnDiffAction?: (diff: TurnDiff, action: "undo" | "reapply") => void
   diffActionPending?: number
@@ -32,13 +36,13 @@ interface MessageListProps {
 }
 
 // Follows the bottom while the user is near it; a scroll away releases the pin.
-const PIN_THRESHOLD = 40
-const JUMP_THRESHOLD = 120
+const PIN_THRESHOLD = 24
+const JUMP_THRESHOLD = 24
 const TURN_GAP = 16
 const TURN_OVERSCAN = 2
 const ESTIMATED_TURN_HEIGHT = 160
 
-export function MessageList({ turns, busy, result, readingWidth, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, tasks, onStopTask, onOpenTask }: MessageListProps) {
+export function MessageList({ turns, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, tasks, onStopTask, onOpenTask }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
@@ -128,13 +132,19 @@ export function MessageList({ turns, busy, result, readingWidth, onTurnDiff, onT
     visibleRows.sort((a, b) => a.index - b.index)
   }
 
+  const lastUserIndex = segments.reduce((last, segment, index) => segment.role === "user" ? index : last, -1)
+
   function renderSegment(segment: Segment, index: number) {
     if (segment.role === "user") {
       return (
         <div className="group/message flex flex-col items-end gap-1">
           {segment.images?.length ? <MessageImages images={segment.images} onOpen={(items, imageIndex) => setPreview({ items, index: imageIndex })} /> : null}
           {segment.text && <UserBubble text={segment.text} />}
-          <MessageActions text={segment.text} kind="user" onEdit={onEdit ? () => onEdit(segment.text, segment.images) : undefined} />
+          <MessageActions
+            text={segment.text}
+            kind="user"
+            onEdit={onEdit && index === lastUserIndex ? () => onEdit(segment.text, segment.images) : undefined}
+          />
         </div>
       )
     }
@@ -143,6 +153,7 @@ export function MessageList({ turns, busy, result, readingWidth, onTurnDiff, onT
         segment={segment}
         durationMs={segment.durationMs ?? (index === segments.length - 1 && !busy ? result?.durationMs : undefined)}
         interrupted={segment.interrupted ?? (index === segments.length - 1 && !busy ? result?.interrupted : undefined)}
+        liveDiff={liveDiff}
         tasks={tasks}
         onStopTask={onStopTask}
         onOpenTask={onOpenTask}
@@ -168,7 +179,9 @@ export function MessageList({ turns, busy, result, readingWidth, onTurnDiff, onT
         <div className="relative w-full" style={{ height: layoutHeight }}>
           {visibleRows.map((row) => (
             <VirtualTurnRow key={row.segment.id} id={row.segment.id} top={row.top} onHeight={measureTurn}>
-              <div className="noa-turn-item noa-virtual-turn">{renderSegment(row.segment, row.index)}</div>
+              <ErrorBoundary resetKey={row.segment.id}>
+                <div className="noa-turn-item noa-virtual-turn">{renderSegment(row.segment, row.index)}</div>
+              </ErrorBoundary>
             </VirtualTurnRow>
           ))}
         </div>
@@ -238,6 +251,7 @@ type AssistantSegmentData = {
   id: string
   blocks: Block[]
   streaming: boolean
+  startedAt?: number
   durationMs?: number
   interrupted?: boolean
   diff?: TurnDiff
@@ -303,6 +317,12 @@ function visibleTurnRange(
   }
 }
 
+function earliest(a: number | undefined, b: number | undefined): number | undefined {
+  if (a === undefined) return b
+  if (b === undefined) return a
+  return Math.min(a, b)
+}
+
 // Consecutive assistant turns after one user message form one reply, as in Codex.
 function groupTurns(turns: Turn[]): Segment[] {
   const segments: Segment[] = []
@@ -317,6 +337,7 @@ function groupTurns(turns: Turn[]): Segment[] {
         ...last,
         blocks: [...last.blocks, ...turn.blocks],
         streaming: last.streaming || turn.streaming,
+        startedAt: earliest(last.startedAt, turn.startedAt),
         durationMs: turn.durationMs ?? last.durationMs,
         interrupted: turn.interrupted ?? last.interrupted,
         diff: turn.diff ?? last.diff,
@@ -326,6 +347,7 @@ function groupTurns(turns: Turn[]): Segment[] {
       id: turn.id,
       blocks: turn.blocks,
       streaming: turn.streaming,
+      startedAt: turn.startedAt,
       durationMs: turn.durationMs,
       interrupted: turn.interrupted,
       diff: turn.diff,
@@ -335,10 +357,11 @@ function groupTurns(turns: Turn[]): Segment[] {
 }
 
 // Tool calls and reasoning fold into one "Worked for" row; the final answer stays visible.
-function AssistantSegment({ segment, durationMs, interrupted, tasks, onStopTask, onOpenTask, onTurnDiff, onTurnDiffAction, diffActionPending }: {
+function AssistantSegment({ segment, durationMs, interrupted, liveDiff, tasks, onStopTask, onOpenTask, onTurnDiff, onTurnDiffAction, diffActionPending }: {
   segment: AssistantSegmentData
   durationMs?: number
   interrupted?: boolean
+  liveDiff?: TurnDiff
   tasks?: AgentTask[]
   onStopTask?: (id: string) => void
   onOpenTask?: () => void
@@ -348,6 +371,26 @@ function AssistantSegment({ segment, durationMs, interrupted, tasks, onStopTask,
 }) {
   const units = groupActivityBlocks(segment.blocks)
   const runs = groupActivityRuns(units)
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    if (!segment.streaming) return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [segment.streaming])
+  const hasActivity = runs.some((run) => run.kind === "activity")
+  const finalTextIndex = runs.map((run) => run.kind).lastIndexOf("text")
+  const lastActivityIndex = runs.map((run) => run.kind).lastIndexOf("activity")
+  const finalRun = finalTextIndex > lastActivityIndex ? runs[finalTextIndex] : undefined
+  const finalTextStarted = finalRun?.kind === "text" && finalRun.block.text.trim().length > 0
+  const [finalStartedAt, setFinalStartedAt] = useState<number>()
+  useEffect(() => {
+    if (!segment.streaming || !finalTextStarted || finalStartedAt !== undefined) return
+    setFinalStartedAt(Date.now())
+  }, [segment.streaming, finalTextStarted, finalStartedAt])
+  const liveDuration = segment.streaming && hasActivity && finalStartedAt === undefined && segment.startedAt !== undefined
+    ? Math.max(0, now - segment.startedAt)
+    : undefined
   // Codex collapses everything that happened before the final answer into one disclosure. Noa's
   // protocol has no final-channel flag, so the last text run is the final answer.
   const finalIndex = runs.map((run) => run.kind).lastIndexOf("text")
@@ -372,10 +415,15 @@ function AssistantSegment({ segment, durationMs, interrupted, tasks, onStopTask,
     setActivityCollapsed((collapsed) => !collapsed)
   }
   // A turn that cannot fold (stopped, or no final answer yet) keeps the inline worked-for divider.
-  const lastActivity = runs.map((run) => run.kind === "activity").lastIndexOf(true)
+  const lastActivity = lastActivityIndex
   const workedForBefore = lastActivity === -1
     ? -1
     : runs.findIndex((run, index) => index > lastActivity && run.kind === "text")
+  const displayDuration = durationMs ?? (
+    finalStartedAt !== undefined && segment.startedAt !== undefined
+      ? Math.max(0, finalStartedAt - segment.startedAt)
+      : undefined
+  )
 
   function renderText(run: Extract<ActivityRun, { kind: "text" }>, index: number, workedFor?: ReactNode) {
     return (
@@ -423,9 +471,10 @@ function AssistantSegment({ segment, durationMs, interrupted, tasks, onStopTask,
           onToggle={toggleActivity}
         />
       )}
+      {liveDuration !== undefined && <WorkedFor durationMs={liveDuration} live collapsed={false} />}
       {runs.map((run, index) => {
-        const workedFor = !canCollapse && index === workedForBefore && durationMs !== undefined
-          ? <WorkedFor durationMs={durationMs} interrupted={interrupted} collapsed={false} />
+        const workedFor = !canCollapse && index === workedForBefore && displayDuration !== undefined
+          ? <WorkedFor durationMs={displayDuration} interrupted={interrupted} collapsed={false} />
           : null
         if (run.kind === "text") return renderText(run, index, workedFor)
         return (
@@ -438,8 +487,11 @@ function AssistantSegment({ segment, durationMs, interrupted, tasks, onStopTask,
           />
         )
       })}
-      {!canCollapse && durationMs !== undefined && workedForBefore === -1 && (
+      {!canCollapse && durationMs !== undefined && workedForBefore === -1 && lastActivity !== -1 && (
         <WorkedFor durationMs={durationMs} interrupted={interrupted} collapsed={false} />
+      )}
+      {segment.streaming && liveDiff && !segment.diff && (
+        <LiveDiffSummary diff={liveDiff} onOpen={() => onTurnDiff?.(liveDiff)} />
       )}
       {turnDiff}
       {segment.streaming && segment.blocks.length === 0 && <Working />}
@@ -460,6 +512,13 @@ function ActivityGroup({ blocks, tasks, onStopTask, onOpenTask }: {
     (block) => block.kind === "thinking" ? !block.done : block.status === "running",
   )
   const live = liveBlock !== undefined
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    if (!live) return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [live])
   const tools = blocks.filter((block): block is ToolBlock => block.kind === "tool")
   const thoughtCount = blocks.length - tools.length
   const summary = toolActivitySummary(tools)
@@ -469,7 +528,7 @@ function ActivityGroup({ blocks, tasks, onStopTask, onOpenTask }: {
   const liveLabel = liveBlock?.kind === "thinking"
     ? "Thinking"
     : liveBlock?.kind === "tool"
-      ? labelForTool(liveBlock)
+      ? labelForTool(liveBlock, now)
       : completedLabel
   const SummaryIcon =
     summary?.kind === "edits" ? Edit2
@@ -484,7 +543,7 @@ function ActivityGroup({ blocks, tasks, onStopTask, onOpenTask }: {
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="group/activity inline-flex max-w-full cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left text-[length:var(--text-chat-sm)] font-medium leading-5 text-[var(--text-tertiary,#8F8F8F)] select-none hover:text-[var(--text-primary,#2D2D2B)]"
+        className="group/activity flex w-full min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left text-[length:var(--text-chat-sm)] font-normal leading-5 text-[color-mix(in_srgb,var(--text-primary)_60%,transparent)] select-none hover:text-[var(--text-primary,#2D2D2B)]"
       >
         <SummaryIcon size={14} className="shrink-0" aria-hidden="true" />
         <span className={`min-w-0 truncate ${live ? "noa-shimmer" : ""}`}>{live ? liveLabel : completedLabel}</span>
@@ -499,7 +558,7 @@ function ActivityGroup({ blocks, tasks, onStopTask, onOpenTask }: {
                 key={`tool-${block.id}-${i}`}
                 block={block}
                 task={tasks?.find((candidate) => candidate.id === block.id || candidate.toolUseId === block.id)}
-                defaultOpen={block.status === "running"}
+                defaultOpen={false}
                 onStopTask={onStopTask}
                 onOpenTask={onOpenTask}
               />
@@ -510,21 +569,26 @@ function ActivityGroup({ blocks, tasks, onStopTask, onOpenTask }: {
   )
 }
 
-function labelForTool(block: ToolBlock): string {
+function labelForTool(block: ToolBlock, now = Date.now()): string {
   const label = toolActivityLabel(block)
-  return label.detail ? `${label.action} ${label.detail}` : label.action
+  const base = label.detail ? `${label.action} ${label.detail}` : label.action
+  const elapsed = block.name === "Bash" && block.status === "running" ? toolElapsedMs(block, now) : undefined
+  return elapsed === undefined ? base : `${base} for ${formatElapsed(elapsed)}`
 }
 
-function WorkedFor({ durationMs, count, interrupted, collapsed, onToggle }: {
+function WorkedFor({ durationMs, count, interrupted, collapsed, live, onToggle }: {
   durationMs?: number
   count?: number
   interrupted?: boolean
   collapsed: boolean
+  live?: boolean
   onToggle?: () => void
 }) {
-  const label = durationMs !== undefined
-    ? interrupted ? `You stopped after ${formatDuration(durationMs)}` : `Worked for ${formatDuration(durationMs)}`
-    : count !== undefined ? `${count} previous ${count === 1 ? "message" : "messages"}` : "Activity"
+  const label = live
+    ? durationMs === undefined || durationMs < 1000 ? "Working" : `Working for ${formatDuration(durationMs)}`
+    : durationMs !== undefined
+      ? interrupted ? `You stopped after ${formatDuration(durationMs)}` : `Worked for ${formatDuration(durationMs)}`
+      : count !== undefined ? `${count} previous ${count === 1 ? "message" : "messages"}` : "Activity"
   if (!onToggle) {
     return (
       <div className="flex w-full flex-col items-start gap-1 px-1 py-0.5 text-[length:var(--text-chat-sm)] tabular-nums text-[var(--sidebar-text-muted)]">
@@ -549,9 +613,7 @@ function WorkedFor({ durationMs, count, interrupted, collapsed, onToggle }: {
   )
 }
 
-// Long user messages fold under a fade, as in Claude's chat bubbles; measured with ResizeObserver so width changes re-check.
-const USER_COLLAPSE_HEIGHT = 300
-
+// Long user messages fold after 20 lines under a fade, as in Codex.
 function UserBubble({ text }: { text: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const [long, setLong] = useState(false)
@@ -559,19 +621,24 @@ function UserBubble({ text }: { text: string }) {
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    const measure = () => setLong(el.scrollHeight > USER_COLLAPSE_HEIGHT)
+    const measure = () => {
+      // Measure while folded: an expanded bubble has no max-height to compare against.
+      if (!expanded) setLong(el.scrollHeight > el.clientHeight + 1)
+    }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(el)
     return () => observer.disconnect()
-  }, [])
+  }, [expanded])
   const folded = long && !expanded
   return (
     <>
       <div
         ref={ref}
-        className={`max-w-[85%] whitespace-pre-wrap break-words rounded-[22px] bg-[color-mix(in_srgb,var(--accent-color)_8%,transparent)] px-4 py-2.5 text-[length:var(--font-text-md-size)] leading-[var(--font-text-md-line-height)] ${
-          folded ? "max-h-[300px] overflow-hidden [mask-image:linear-gradient(to_bottom,black_calc(100%_-_3rem),transparent)]" : ""
+        className={`max-w-[70%] whitespace-pre-wrap break-words rounded-[22px] bg-[color-mix(in_srgb,var(--accent-color)_8%,transparent)] px-4 py-2.5 text-[length:var(--font-text-md-size)] leading-[var(--font-text-md-line-height)] ${
+          expanded
+            ? ""
+            : `relative max-h-[20lh] overflow-hidden ${folded ? "[mask-image:linear-gradient(to_bottom,black_calc(100%_-_3rem),transparent)] after:pointer-events-none after:absolute after:bottom-1 after:right-3 after:content-['…'] after:text-[var(--sidebar-text-muted,#898781)]" : ""}`
         }`}
       >
         {text}
@@ -579,10 +646,11 @@ function UserBubble({ text }: { text: string }) {
       {long && (
         <button
           type="button"
-          onClick={() => setExpanded((e) => !e)}
-          className="text-caption text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)]"
+          onClick={() => setExpanded((value) => !value)}
+          className="flex items-center gap-1 self-start text-caption text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)]"
         >
           {expanded ? "Show less" : "Show more"}
+          <ChevronDown size={12} className={expanded ? "rotate-180" : undefined} />
         </button>
       )}
     </>
@@ -697,8 +765,8 @@ function ThinkingBlock({ block }: { block: Extract<Block, { kind: "thinking" }> 
         )}
       </div>
       <Collapsible open={open}>
-        <div className="noa-thinking-output mt-1.5">
-          <pre className="m-0 px-1 font-mono text-[length:var(--code-font-size)] leading-5 whitespace-pre-wrap">{block.text}</pre>
+        <div className="noa-thinking-output mt-1.5 px-1">
+          <Markdown text={block.text} tone="muted" />
         </div>
       </Collapsible>
     </div>

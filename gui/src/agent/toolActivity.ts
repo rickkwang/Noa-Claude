@@ -64,6 +64,7 @@ function firstText(input: Record<string, unknown>): string {
 export function toolActivityLabel(block: Pick<ToolBlock, "name" | "input" | "status" | "images">): ToolActivityLabel {
   const running = block.status === "running"
   const failed = block.status === "error"
+  const stopped = block.status === "stopped"
   const command = oneLine(block.input.command)
   const target = basename(block.input.file_path)
   const pattern = oneLine(block.input.pattern)
@@ -71,41 +72,78 @@ export function toolActivityLabel(block: Pick<ToolBlock, "name" | "input" | "sta
     const [, server, ...toolParts] = block.name.split("__")
     const tool = toolParts.join("__") || server || block.name
     return {
-      action: failed ? `Couldn’t call ${tool}` : running ? `Calling ${tool}` : `Used ${tool}`,
+      action: failed ? `Couldn’t call ${tool}` : stopped ? `Stopped calling ${tool}` : running ? `Calling ${tool}` : `Used ${tool}`,
       detail: server && server !== tool ? server : "",
     }
   }
 
   switch (block.name) {
     case "Bash":
-      return { action: failed ? "Failed to run" : running ? "Running" : "Ran", detail: command || "command" }
+      return {
+        action: failed ? "Failed to run" : stopped ? "Stopped" : running ? "Running" : "Ran",
+        detail: command || "command",
+      }
     case "Read":
       if (/\.(?:avif|gif|jpe?g|png|webp)$/i.test(target))
         return {
-          action: failed ? "Couldn’t view" : running ? "Viewing" : "Viewed",
+          action: failed ? "Couldn’t view" : stopped ? "Stopped viewing" : running ? "Viewing" : "Viewed",
           detail: (block.images?.length ?? 0) > 1 ? `${block.images!.length} images` : "an image",
         }
-      return { action: failed ? "Couldn’t read" : running ? "Reading" : "Read", detail: target || "file" }
+      return {
+        action: failed ? "Couldn’t read" : stopped ? "Stopped reading" : running ? "Reading" : "Read",
+        detail: target || "file",
+      }
     case "Write":
-      return { action: failed ? "Couldn’t write" : running ? "Writing" : "Wrote", detail: target || "file" }
+      return {
+        action: failed ? "Couldn’t write" : stopped ? "Stopped writing" : running ? "Writing" : "Wrote",
+        detail: target || "file",
+      }
     case "Edit":
     case "MultiEdit":
-      return { action: failed ? "Couldn’t edit" : running ? "Editing" : "Edited", detail: target || "file" }
+      return {
+        action: failed ? "Couldn’t edit" : stopped ? "Stopped editing" : running ? "Editing" : "Edited",
+        detail: target || "file",
+      }
     case "Grep":
-      return { action: failed ? "Search failed for" : running ? "Searching for" : "Searched for", detail: pattern || "files" }
+      return {
+        action: failed ? "Search failed for" : stopped ? "Stopped searching for" : running ? "Searching for" : "Searched for",
+        detail: pattern || "files",
+      }
     case "Glob":
-      return { action: failed ? "Couldn’t find" : running ? "Finding" : "Found", detail: pattern || "files" }
+      return {
+        action: failed ? "Couldn’t find" : stopped ? "Stopped finding" : running ? "Finding" : "Found",
+        detail: pattern || "files",
+      }
     case "Task":
       return {
-        action: failed ? "Subagent failed:" : running ? "Starting subagent:" : "Ran subagent:",
+        action: failed ? "Subagent failed:" : stopped ? "Subagent stopped:" : running ? "Starting subagent:" : "Ran subagent:",
         detail: oneLine(block.input.description) || block.name,
       }
     default:
       return {
-        action: failed ? `Failed using ${block.name}` : running ? `Calling ${block.name}` : `Used ${block.name}`,
+        action: failed ? `Failed using ${block.name}` : stopped ? `Stopped using ${block.name}` : running ? `Calling ${block.name}` : `Used ${block.name}`,
         detail: firstText(block.input),
       }
   }
+}
+
+/** Elapsed time for the tool row, frozen once the result arrives. */
+export function toolElapsedMs(
+  block: Pick<ToolBlock, "startedAt" | "endedAt" | "status">,
+  now = Date.now(),
+): number | undefined {
+  if (block.startedAt === undefined) return undefined
+  const end = block.endedAt ?? (block.status === "running" ? now : undefined)
+  if (end === undefined) return undefined
+  const elapsed = end - block.startedAt
+  return elapsed > 0 ? elapsed : undefined
+}
+
+export function formatElapsed(ms: number): string {
+  if (ms < 1000) return "<1s"
+  const seconds = Math.round(ms / 1000)
+  if (seconds < 60) return `${seconds}s`
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
 }
 
 export function toolActivitySummary(blocks: Pick<ToolBlock, "name" | "input">[]): ToolActivitySummary | undefined {

@@ -2,7 +2,7 @@ import { SlashCommandMenu } from "./SlashCommandMenu"
 import { composerCommands, findComposerCommand, filterComposerCommands, slashAtCaret, type ComposerCommand, type GuiCommandAction } from "../agent/commands"
 import { loadImageDraft, saveImageDraft } from "../agent/imageDrafts"
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
-import type { ImageAttachment, UserContent, ModelInfo, PermissionMode, SlashCommand } from "../agent/protocol"
+import type { ContextUsage, ImageAttachment, UserContent, ModelInfo, PermissionMode, SlashCommand } from "../agent/protocol"
 import { Check, Edit2, FileText, RotateCcw, X } from "../lib/icons"
 import { Lightbox } from "./Lightbox"
 import { IconShieldCheck } from "@tabler/icons-react"
@@ -69,7 +69,7 @@ interface ComposerProps {
   branch?: string
   onFiles: () => void
   newTask: boolean
-  contextPercent?: number
+  contextUsage?: ContextUsage
 }
 
 // Noa-styled composer: a rounded card with a hairline ring, slash menu, model and mode pickers.
@@ -97,7 +97,7 @@ export function Composer({
   branch,
   onFiles,
   newTask,
-  contextPercent,
+  contextUsage,
 }: ComposerProps) {
   const disabled = connection !== "ready"
   const [text, setText] = useState(() => localStorage.getItem(draftKey) ?? "")
@@ -799,32 +799,49 @@ export function Composer({
             />
           </div>
           <div className="ml-auto flex min-w-0 items-center gap-1">
-            {contextPercent !== undefined && (
-              <svg
+            {contextUsage && (
+              <span
+                tabIndex={0}
                 role="img"
-                aria-label={`Context usage ${Math.round(contextPercent)}%`}
-                width={12}
-                height={12}
-                viewBox="0 0 12 12"
-                className="shrink-0 text-[var(--sidebar-text-muted)]"
+                aria-label={`Context usage ${Math.round(contextUsage.percentage)}%`}
+                className="group/context relative inline-flex shrink-0 items-center text-[var(--sidebar-text-muted)]"
               >
-                <title>{`Context usage: ${Math.round(contextPercent)}%`}</title>
-                <circle cx={6} cy={6} r={5} stroke="currentColor" strokeWidth={2} fill="none" opacity={0.16} />
-                <circle
-                  cx={6}
-                  cy={6}
-                  r={5}
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  fill="none"
-                  pathLength={100}
-                  strokeDasharray={100}
-                  strokeDashoffset={100 - Math.min(100, Math.max(0, contextPercent))}
-                  opacity={contextPercent > 0 ? 1 : 0}
-                  transform="rotate(-90 6 6)"
-                />
-              </svg>
+                <svg
+                  width={12}
+                  height={12}
+                  viewBox="0 0 12 12"
+                  className="shrink-0"
+                  aria-hidden="true"
+                >
+                  <circle cx={6} cy={6} r={5} stroke="currentColor" strokeWidth={2} fill="none" opacity={0.16} />
+                  <circle
+                    cx={6}
+                    cy={6}
+                    r={5}
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    fill="none"
+                    pathLength={100}
+                    strokeDasharray={100}
+                    strokeDashoffset={100 - Math.min(100, Math.max(0, contextUsage.percentage))}
+                    opacity={contextUsage.percentage > 0 ? 1 : 0}
+                    transform="rotate(-90 6 6)"
+                  />
+                </svg>
+                <span
+                  role="tooltip"
+                  className="pointer-events-none absolute bottom-full right-0 z-40 mb-2 hidden w-44 flex-col gap-0.5 rounded-panel border border-[var(--divider-subtle)] bg-[var(--bg-card)] px-2.5 py-2 text-left text-caption text-[var(--text-primary)] shadow-[var(--shadow-dialog)] group-hover/context:flex group-focus/context:flex"
+                >
+                  <span className="text-[var(--sidebar-text-muted)]">Context window:</span>
+                  <span>
+                    {Math.round(contextUsage.percentage)}% used ({Math.max(0, 100 - Math.round(contextUsage.percentage))}% left)
+                  </span>
+                  <span className="text-[var(--sidebar-text-muted)]">
+                    {compactTokens(contextUsage.totalTokens)} / {compactTokens(contextUsage.maxTokens)} tokens used
+                  </span>
+                </span>
+              </span>
             )}
             <Picker
               ariaLabel="Model and reasoning effort"
@@ -877,6 +894,12 @@ export function Composer({
       )}
     </div>
   )
+}
+
+function compactTokens(tokens: number): string {
+  if (tokens >= 1_000_000) return `${+(tokens / 1_000_000).toFixed(1)}M`
+  if (tokens >= 1000) return `${+(tokens / 1000).toFixed(1)}K`
+  return String(tokens)
 }
 
 // The agent reports full model IDs (claude-opus-5-5) while the list uses aliases (opus, default).
