@@ -87,8 +87,8 @@ function Workspace({ cwd }: { cwd: string }) {
   // cwd travels with resume: a session belongs to the project it was started in.
   const [session, setSession] = useState<{ cwd: string; resume?: string; runtimeId: string; key: number }>(() => {
     try {
-      const saved = JSON.parse(sessionStorage.getItem("noa-agent.current") ?? "null")
-      if (saved?.cwd && saved?.runtimeId) return { ...saved, key: 0 }
+      const saved = JSON.parse(localStorage.getItem("noa-agent.current") ?? "null")
+      if (saved?.cwd && saved?.runtimeId && (!new URLSearchParams(window.location.search).get("cwd") || saved.cwd === cwd)) return { ...saved, key: 0 }
     } catch {}
     return { cwd, runtimeId: crypto.randomUUID(), key: 0 }
   })
@@ -172,7 +172,7 @@ function Workspace({ cwd }: { cwd: string }) {
 
   const activeId = state.sessionId ?? session.resume
   useEffect(() => {
-    sessionStorage.setItem("noa-agent.current", JSON.stringify({ cwd: session.cwd, resume: activeId, runtimeId: session.runtimeId }))
+    localStorage.setItem("noa-agent.current", JSON.stringify({ cwd: session.cwd, resume: activeId, runtimeId: session.runtimeId }))
   }, [session.cwd, session.runtimeId, activeId])
   const panelToggle = (
     <button
@@ -300,6 +300,7 @@ function Workspace({ cwd }: { cwd: string }) {
     })
   }
   function editQueued(message: typeof state.queue[number]) {
+    setQueuePaused(true)
     const content = typeof message.content === "string"
       ? { text: message.content, images: [] as ImageBlock[] }
       : {
@@ -551,6 +552,11 @@ function Workspace({ cwd }: { cwd: string }) {
                       Reconnect
                     </button>
                   )}
+                  {state.connection === "closed" && (
+                    <button className="text-[var(--accent-color)]" onClick={() => { setRightOpen(true); setRightTab("activity") }}>
+                      Diagnostics
+                    </button>
+                  )}
                 </div>
               )}
               {state.permissions.length > 0 && (
@@ -566,6 +572,7 @@ function Workspace({ cwd }: { cwd: string }) {
                   messages={state.queue}
                   busy={state.busy}
                   paused={state.queuePaused}
+                  editing={!!queueEditId}
                   onMove={moveQueued}
                   onRemove={removeQueued}
                   onEdit={editQueued}
@@ -589,7 +596,7 @@ function Workspace({ cwd }: { cwd: string }) {
                 key={session.key}
                 draftKey={`noa-agent.draft:${session.cwd}:${activeId ?? session.runtimeId}`}
                 reference={reference}
-                editDraft={editDraft ? { ...editDraft, label: queueEditId ? "Edit queued message" : "Edit and resend" } : undefined}
+                editDraft={editDraft ? { ...editDraft, queued: !!queueEditId, label: queueEditId ? "Edit queued message" : "Edit and resend" } : undefined}
                 onCancelEdit={() => {
                   setEditDraft(undefined)
                   setQueueEditId(undefined)
@@ -603,7 +610,7 @@ function Workspace({ cwd }: { cwd: string }) {
                 onFiles={() => showWorkspacePane("files")}
                 newTask={!hasTurns}
                 contextPercent={state.contextUsage?.percentage}
-                disabled={state.connection !== "ready"}
+                connection={state.connection}
                 busy={state.busy}
                 models={state.models}
                 model={state.model}

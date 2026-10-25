@@ -228,7 +228,7 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
       {!selected && changes && status?.isGit && (status.additions > 0 || status.deletions > 0) && <span className="noa-row-stats"><span className="is-added">+{status.additions}</span><span className="is-removed">-{status.deletions}</span></span>}
       {selected && <><button type="button" className={button} aria-label="Copy file path" title="Copy path" onClick={copyPath}><Copy size={14} /></button><button type="button" className={button} title="Add to chat" aria-label="Add file to chat" onClick={() => onReference(selected)}><Plus size={14} /></button></>}
       {!selected && !changes && expanded.size > 0 && <button type="button" className={button} onClick={() => setExpanded(new Set())}>Collapse all</button>}
-      <button type="button" className={button} aria-label={changes ? "Refresh changes" : "Refresh files"} disabled={editing || !!action} onClick={() => setTick((n) => n + 1)}><RefreshCcw size={14} /></button>
+      <button type="button" className={button} aria-label={editing ? "Reload file" : changes ? "Refresh changes" : "Refresh files"} disabled={!!action} onClick={() => { if (editing) void select(selected, view); else setTick((n) => n + 1) }}><RefreshCcw size={14} /></button>
     </div>}
     {selected ? <>
       {selectedChange?.oldPath && <div className="noa-file-breadcrumb">{selectedChange.oldPath} → {selected}</div>}

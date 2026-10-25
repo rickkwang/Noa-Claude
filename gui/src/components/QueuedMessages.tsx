@@ -7,6 +7,7 @@ interface QueuedMessagesProps {
   messages: QueuedMessage[]
   busy: boolean
   paused: boolean
+  editing?: boolean
   onMove: (id: string, toIndex: number) => void
   onRemove: (id: string) => void
   onEdit: (message: QueuedMessage) => void
@@ -28,6 +29,7 @@ export function QueuedMessages({
   messages,
   busy,
   paused,
+  editing,
   onMove,
   onRemove,
   onEdit,
@@ -84,12 +86,12 @@ export function QueuedMessages({
           {visible.length} queued · {paused ? "paused" : busy ? "sends after this turn" : "ready to send"}
         </span>
         {(busy || paused) && (
-          <button type="button" onClick={() => onPaused(!paused)} className="rounded px-1.5 py-0.5 hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] hover:text-[var(--text-primary)]">
+          <button type="button" disabled={editing} onClick={() => onPaused(!paused)} className="rounded px-1.5 py-0.5 hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] hover:text-[var(--text-primary)]">
             {paused ? "Resume" : "Pause"}
           </button>
         )}
         {!busy && !paused && (
-          <button type="button" onClick={onRun} className="rounded px-1.5 py-0.5 text-[var(--accent-color)] hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]">
+          <button type="button" disabled={editing} onClick={onRun} className="rounded px-1.5 py-0.5 text-[var(--accent-color)] hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]">
             Send next
           </button>
         )}
@@ -135,15 +137,15 @@ export function QueuedMessages({
               </div>
               <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/queue:opacity-100 group-focus-within/queue:opacity-100">
                 {busy && (
-                  <button type="button" aria-label="Steer current turn with queued message" title="Steer now" onClick={() => onSteer(message.id)} className="rounded p-1 hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]">
+                  <button type="button" disabled={editing} aria-label="Steer current turn with queued message" title="Steer now" onClick={() => onSteer(message.id)} className="rounded p-1 hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]">
                     <ArrowRight size={13} />
                   </button>
                 )}
                 <button type="button" aria-label="Edit queued message" title="Edit" onClick={() => onEdit(message)} className="rounded p-1 hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]">
                   <Edit2 size={13} />
                 </button>
-                <button type="button" aria-label="Retry queued message" title="Retry next" onClick={() => onRetry(message.id)} className="rounded px-1 py-0.5 text-caption hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]">
-                  Retry
+                <button type="button" disabled={editing} aria-label="Send queued message next" title="Send next" onClick={() => onRetry(message.id)} className="rounded px-1 py-0.5 text-caption hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]">
+                  Send next
                 </button>
                 <button type="button" aria-label="Delete queued message" title="Delete" onClick={() => remove(message, index)} className="rounded p-1 hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]">
                   <X size={13} />

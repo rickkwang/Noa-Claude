@@ -17,6 +17,7 @@ import {
 } from "./ComposerIcons"
 import type { ReactNode } from "react"
 import type { ProjectInfo } from "../api"
+import type { AgentState } from "../agent/reducer"
 
 export const MODE_OPTIONS: { value: PermissionMode; label: string; description: string }[] = [
   { value: "default", label: "Ask before acting", description: "Asks before editing files or running commands" },
@@ -43,7 +44,7 @@ function mentionAtCaret(value: string, caret: number): { query: string; start: n
 }
 
 interface ComposerProps {
-  disabled: boolean
+  connection: AgentState["connection"]
   busy: boolean
   models: ModelInfo[]
   model?: string
@@ -57,7 +58,7 @@ interface ComposerProps {
   draftKey: string
   reference?: { path: string; key: number }
   // Loads an existing user message back into the composer when the user clicks Edit.
-  editDraft?: { text: string; images: ImageAttachment[]; key: number; label?: string }
+  editDraft?: { text: string; images: ImageAttachment[]; key: number; label?: string; queued?: boolean }
   onCancelEdit?: () => void
   effort?: string
   onEffort: (effort: string | null) => void
@@ -73,7 +74,7 @@ interface ComposerProps {
 
 // Noa-styled composer: a rounded card with a hairline ring, slash menu, model and mode pickers.
 export function Composer({
-  disabled,
+  connection,
   busy,
   models,
   model,
@@ -98,6 +99,7 @@ export function Composer({
   newTask,
   contextPercent,
 }: ComposerProps) {
+  const disabled = connection !== "ready"
   const [text, setText] = useState(() => localStorage.getItem(draftKey) ?? "")
   const [references, setReferences] = useState<string[]>(() => {
     try {
@@ -353,6 +355,10 @@ export function Composer({
   }
 
   function runGuiCommand(command: ComposerCommand, value: string) {
+    if (editDraft?.queued) {
+      setAttachmentError("This command cannot be queued. Cancel editing to run it.")
+      return
+    }
     if (command.disabled) { setAttachmentError(busy ? "Stop the current turn before changing this setting." : "Noa is still connecting."); return }
     setAttachmentError(undefined)
     const action = command.action!
@@ -729,7 +735,7 @@ export function Composer({
           aria-activedescendant={mentionOpen && mentionItems[mentionIndex] ? `noa-file-option-${mentionIndex}` : menuOpen && menuItems[menuIndex] ? `noa-slash-option-${menuIndex}` : undefined}
           onCompositionStart={() => setComposing(true)}
           onCompositionEnd={() => { setComposing(false); compositionEndAt.current = performance.now() }}
-          placeholder={disabled ? "Starting Noa…" : busy ? "Add a follow-up to the queue…" : newTask ? "Do anything" : "Work with Noa"}
+          placeholder={connection === "closed" ? "Noa disconnected" : disabled ? "Starting Noa…" : busy ? "Add a follow-up to the queue…" : newTask ? "Do anything" : "Work with Noa"}
           aria-label="Task instruction"
           disabled={disabled}
           rows={1}
@@ -847,14 +853,14 @@ export function Composer({
             />
             <button
               type="button"
-              onClick={busy && !text.trim() && !images.length ? onInterrupt : submit}
-              disabled={!busy && (disabled || loadingImages || !imagesLoaded || (!text.trim() && !images.length))}
-              aria-label={busy && !text.trim() && !images.length ? "Stop (Esc)" : busy ? "Queue message" : "Run task"}
-              title={busy && !text.trim() && !images.length ? "Stop (Esc)" : busy ? "Queue after the current turn" : "Run task"}
+              onClick={busy && !editDraft?.queued && !text.trim() && !images.length ? onInterrupt : submit}
+              disabled={(!busy || editDraft?.queued) && (disabled || loadingImages || !imagesLoaded || (!text.trim() && !images.length))}
+              aria-label={editDraft?.queued ? "Save queued message" : busy && !text.trim() && !images.length ? "Stop (Esc)" : busy ? "Queue message" : "Run task"}
+              title={editDraft?.queued ? "Save queued message; queue stays paused" : busy && !text.trim() && !images.length ? "Stop (Esc)" : busy ? "Queue after the current turn" : "Run task"}
               data-action={busy && !text.trim() && !images.length ? "stop" : busy ? "queue" : "send"}
               className="noa-primary-action ml-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--text-primary,#2D2D2B)] text-[var(--surface-page,#FFFFFF)] transition-[opacity,transform] hover:opacity-90 disabled:opacity-25 noa-press"
             >
-              {busy && !text.trim() && !images.length
+              {busy && !editDraft?.queued && !text.trim() && !images.length
                 ? <span aria-hidden="true" className="block size-2.5 rounded-[2px] bg-current" />
                 : <ComposerSendIcon />}
             </button>

@@ -132,7 +132,12 @@ export function reducer(state: AgentState, action: Action): AgentState {
     case "reset":
       return initialState
     case "connection":
-      return { ...state, connection: action.status, busy: action.status === "closed" ? false : state.busy }
+      return {
+        ...state,
+        connection: action.status,
+        busy: action.status === "closed" ? false : state.busy,
+        error: state.error ?? (action.status === "closed" && state.connection === "connecting" ? "Noa could not start. Open Activity → Diagnostics for details." : undefined),
+      }
     case "user-sent":
       return {
         ...state,
@@ -150,7 +155,13 @@ export function reducer(state: AgentState, action: Action): AgentState {
         turns: applyTurnDuration(state.turns, action.durationMs, action.interrupted),
       }
     case "log":
-      return { ...state, logs: [...state.logs, action.text].slice(-MAX_LOGS) }
+      return {
+        ...state,
+        logs: [...state.logs, action.text].slice(-MAX_LOGS),
+        error: state.connection !== "ready" && /\[(?:CONFIG|AUTH)_ERROR\]/.test(action.text)
+          ? action.text.replace(/\[(?:CONFIG|AUTH)_ERROR\]\s*/g, "").trim()
+          : state.error,
+      }
     case "notice":
       return { ...state, notice: action.text }
     case "error":
@@ -227,12 +238,13 @@ function applyAgentMessage(state: AgentState, m: AgentMessage): AgentState {
         ...state,
         busy: false,
         stopping: false,
-        error: m.is_error ? m.errors?.join("\n") || `Agent failed (${m.subtype})` : undefined,
+        error: m.is_error && !state.stopping ? m.errors?.join("\n") || `Agent failed (${m.subtype})` : undefined,
+        logs: m.is_error && m.errors?.length ? [...state.logs, ...m.errors].slice(-MAX_LOGS) : state.logs,
         turns,
         result: {
           durationMs: m.duration_ms,
           costUsd: m.total_cost_usd,
-          isError: m.is_error,
+          isError: m.is_error && !state.stopping,
           interrupted: state.stopping,
         },
       }

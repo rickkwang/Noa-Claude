@@ -191,7 +191,7 @@ export function MessageList({ turns, busy, result, readingWidth, changes, onChan
                 {/* Hover or focus reveals the per-file list, as Codex's TurnDiffContent tooltip does. */}
                 <span className="noa-turn-diff-wrap">
                   <button type="button" onClick={() => onChanges()} className="noa-turn-diff">
-                    <span className="truncate">{changes.count} {changes.count === 1 ? "file" : "files"} changed</span>
+                    <span className="truncate">Working tree: {changes.count} {changes.count === 1 ? "file" : "files"} changed</span>
                     {changes.additions > 0 && <span className="is-added">+{changes.additions}</span>}
                     {changes.deletions > 0 && <span className="is-removed">-{changes.deletions}</span>}
                   </button>

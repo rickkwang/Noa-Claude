@@ -350,3 +350,7 @@ This repository is a reconstruction based on publicly exposed source code. The o
 Run `bun run --cwd gui desktop` to build and open the local Electron GUI. This is an implemented, non-baseline development surface, separate from the CLI workflow. Its right panel supports a searchable file tree, text/image previews, guarded text editing, working-tree/staged/unstaged review with unified or split diffs, per-file and staged/unstaged-hunk stage/unstage/revert, Noa context breakdowns, and tool activity. Git and file actions are local; they do not commit, push, or publish.
 
 Previews are limited to 512 KiB and code rendering to 3,000 lines. This GUI does not claim complete Codex desktop feature parity. Run `node scripts/e2e-gui-workspace.mjs` for isolated workspace API verification.
+
+The built desktop GUI uses `http://127.0.0.1:18787` so browser settings and drafts remain available across launches. A second launch focuses the existing window; the desktop bridge requires port 18787 to be free.
+
+Editing a queued message pauses the queue; saving or cancelling leaves it paused until you continue. Closing the desktop app asks for confirmation when tasks are running or messages are queued. Queued messages are discarded on exit, not restored on relaunch. An explicit `?cwd=` workspace takes precedence over the last saved task.

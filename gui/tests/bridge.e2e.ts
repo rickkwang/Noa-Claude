@@ -442,6 +442,16 @@ try {
   await wait(() => third.results().length > beforeInterrupt, "interrupted result")
   await Bun.sleep(100)
   assert.equal(third.events.filter((e) => e.kind === "user").length, thirdUserBase + 5)
+  let stopped = initialState
+  for (const event of third.events) {
+    if (event.kind === "user") stopped = reducer(stopped, { type: "user-sent", id: event.id, content: event.content })
+    if (event.kind === "interrupt") stopped = reducer(stopped, { type: "interrupt-requested" })
+    if (event.kind === "agent") stopped = reducer(stopped, { type: "agent", message: event.message })
+  }
+  assert.equal(stopped.result?.interrupted, true)
+  assert.equal(stopped.error, undefined, "Stopping is not a GUI error")
+  assert.equal(stopped.result?.isError, false)
+  assert.ok(stopped.logs.some((line) => line.includes("[ede_diagnostic]")))
   console.log("PASS real CLI interruption terminates the active turn and pauses queued follow-ups")
   const crashRuntime = crypto.randomUUID()
   const crashing = connect(crashRuntime)
