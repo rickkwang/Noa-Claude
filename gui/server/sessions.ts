@@ -101,6 +101,13 @@ export function findTurnUserMessage(cwd: string, id: string, offset: number): st
   return parse(raw.slice(offset)) ?? parse(raw)
 }
 
+export interface TurnResultRecord { index: number; userMessageId?: string; durationMs: number; error: string }
+export function appendTurnResult(cwd: string, id: string, record: TurnResultRecord): void {
+  const file = join(projectDir(cwd), `${id}.turn-results.jsonl`)
+  mkdirSync(dirname(file), { recursive: true })
+  appendFileSync(file, `${JSON.stringify(record)}\n`)
+}
+
 interface Entry {
   type: string
   subtype?: string
@@ -113,6 +120,7 @@ interface Entry {
   isCompactSummary?: boolean
   isSidechain?: boolean
   durationMs?: number
+  compactMetadata?: { trigger?: "manual" | "auto" }
   message?: { id?: string; content?: unknown }
   toolUseResult?: unknown
   customTitle?: string
@@ -251,7 +259,8 @@ async function conversationChain(file: string, entries: Entry[]): Promise<Entry[
 // client feeds them through the same reducer.
 export type HistoryItem =
   | { kind: "user"; text: string; images?: ImageBlock[] }
-  | { kind: "turn-duration"; durationMs: number; interrupted?: boolean }
+  | { kind: "turn-duration"; durationMs: number; interrupted?: boolean; error?: string }
+  | { kind: "compaction"; trigger: "manual" | "auto" }
   | { kind: "turn-diff"; diff: TurnDiff }
   | {
       kind: "agent"
@@ -277,9 +286,23 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
     if (record.userMessageId) byUser.set(record.userMessageId, diff)
     byIndex.set(record.index, diff)
   }
+  const results = new Map<string | number, TurnResultRecord>()
+  const resultFile = join(projectDir(cwd), `${id}.turn-results.jsonl`)
+  if (existsSync(resultFile)) for (const line of readFileSync(resultFile, "utf8").split("\n")) {
+    try {
+      const record = JSON.parse(line) as TurnResultRecord
+      if (record.error && typeof record.durationMs === "number") results.set(record.userMessageId ?? record.index, record)
+    } catch { /* A live final line may be incomplete. */ }
+  }
   let turnNumber = 0
   let currentUserMessageId: string | undefined
   const flushTurnDiff = () => {
+    const resultKey = currentUserMessageId && results.has(currentUserMessageId) ? currentUserMessageId : turnNumber
+    const result = results.get(resultKey)
+    if (result) {
+      items.push({ kind: "turn-duration", durationMs: result.durationMs, error: result.error })
+      results.delete(resultKey)
+    }
     if (currentUserMessageId === undefined && !byIndex.has(turnNumber)) return
     const diff = (currentUserMessageId ? byUser.get(currentUserMessageId) : undefined) ?? byIndex.get(turnNumber)
     if (diff) items.push({ kind: "turn-diff", diff })
@@ -289,6 +312,10 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
   for (const entry of await conversationChain(file, entries)) {
     if (entry.isSidechain) continue
 
+    if (entry.type === "system" && entry.subtype === "compact_boundary") {
+      items.push({ kind: "compaction", trigger: entry.compactMetadata?.trigger ?? "auto" })
+      continue
+    }
     if (entry.type === "system" && entry.subtype === "turn_duration" && typeof entry.durationMs === "number") {
       items.push({ kind: "turn-duration", durationMs: entry.durationMs, interrupted })
       flushTurnDiff()
@@ -338,6 +365,7 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
     const text = userText(entry)
     const images = Array.isArray(content) ? content.filter((b: any) => b?.type === "image") : []
     if (text !== null || (entry.type === "user" && !entry.isMeta && !entry.isCompactSummary && images.length)) {
+      if (currentUserMessageId !== undefined) flushTurnDiff()
       if (currentUserMessageId === undefined) turnNumber++
       currentUserMessageId = entry.uuid ?? currentUserMessageId
       items.push({ kind: "user", text: text ?? "", images: Array.isArray(content) ? content.filter((b: any) => b?.type === "image") : undefined })
@@ -362,5 +390,13 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
     }
   }
   flushTurnDiff()
+  // The CLI records /compact after its new boundary; show the action before its outcome.
+  for (let i = 0; i < items.length - 1; i++) {
+    const boundary = items[i]!, command = items[i + 1]!
+    if (boundary.kind === "compaction" && boundary.trigger === "manual" && command.kind === "user" && /^\/compact(?:\s|$)/.test(command.text)) {
+      items[i] = command
+      items[++i] = boundary
+    }
+  }
   return items
 }

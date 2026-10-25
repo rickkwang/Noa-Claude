@@ -59,6 +59,12 @@ export function SettingsDialog({
   ]
   if (appearance.fontFamily !== SYSTEM_DEFAULT_FONT && !localFonts.includes(appearance.fontFamily))
     fontOptions.push([appearance.fontFamily, appearance.fontFamily])
+  const codeFontOptions: [string, string][] = [
+    [SYSTEM_DEFAULT_FONT, "System monospace"],
+    ...localFonts.map((font) => [font, font] as [string, string]),
+  ]
+  if (appearance.codeFontFamily !== SYSTEM_DEFAULT_FONT && !localFonts.includes(appearance.codeFontFamily))
+    codeFontOptions.push([appearance.codeFontFamily, appearance.codeFontFamily])
 
   useEffect(() => {
     if (page !== "appearance") return
@@ -187,6 +193,13 @@ export function SettingsDialog({
               </Section>
 
               <Section title="Fonts">
+                <Row label="Code font" description="Typeface for code blocks and diffs, separate from the interface font.">
+                  <Select
+                    value={appearance.codeFontFamily}
+                    options={codeFontOptions}
+                    onChange={(codeFontFamily) => change({ codeFontFamily })}
+                  />
+                </Row>
                 <Row label="UI font size" description="Base size for interface text (11–16 px).">
                   <NumberField
                     value={appearance.uiFontSize}

@@ -190,18 +190,12 @@ export async function diffTrees(cwd: string, before: TreeSnapshot, after: TreeSn
   return { files, additions, deletions, patch }
 }
 
-function splitPatch(patch: string): string[] {
-  const starts = [...patch.matchAll(/^diff --git /gm)].map((match) => match.index ?? 0)
-  if (starts.length === 0) return [patch]
-  return starts.map((start, index) => patch.slice(start, starts[index + 1] ?? patch.length))
-}
-
-async function applyFile(root: string, section: string, reverse: boolean) {
+async function applyFile(root: string, patch: string, reverse: boolean, check = false) {
   const proc = Bun.spawn(
-    ["git", "--no-optional-locks", "-C", root, "apply", ...(reverse ? ["--reverse"] : []), "--whitespace=nowarn", "-"],
+    ["git", "--no-optional-locks", "-C", root, "apply", "--binary", ...(check ? ["--check"] : []), ...(reverse ? ["--reverse"] : []), "--whitespace=nowarn", "-"],
     { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
   )
-  proc.stdin.write(section)
+  proc.stdin.write(patch)
   proc.stdin.flush()
   proc.stdin.end()
   const stderr = await new Response(proc.stderr).text()
@@ -217,25 +211,18 @@ export async function applyTurnDiff(cwd: string, patch: string | undefined, reve
   if (!patch || !patch.trim())
     return { ok: false, errorCode: "no-patch", appliedPaths: [], skippedPaths: [], conflictedPaths: [] }
   const root = (await git(cwd, ["rev-parse", "--show-toplevel"])).trim()
-  const sections = splitPatch(patch)
-  const appliedPaths: string[] = []
-  const skippedPaths: string[] = []
-  const conflictedPaths: string[] = []
-  let error: string | undefined
-  // Codex applies patch batches in reverse for undo, forward for reapply.
-  const ordered = [...sections.entries()]
-  if (reverse) ordered.reverse()
-  for (const [index, section] of ordered) {
-    const path = paths[index] ?? `file ${index + 1}`
-    const result = await applyFile(root, section, reverse)
-    if (result.ok) appliedPaths.push(path)
-    else {
-      error ??= result.stderr
-      if (/conflict|does not apply|patch failed/i.test(result.stderr)) conflictedPaths.push(path)
-      else skippedPaths.push(path)
-    }
+  // Check and apply the complete batch atomically, as Codex's atomic mode.
+  const check = await applyFile(root, patch, reverse, true)
+  if (!check.ok) return {
+    ok: false, errorCode: "apply-failed", error: check.stderr,
+    appliedPaths: [], skippedPaths: [],
+    conflictedPaths: /conflict|does not apply|patch failed/i.test(check.stderr) ? paths : [],
   }
-  return { ok: appliedPaths.length === sections.length && sections.length > 0, error, appliedPaths, skippedPaths, conflictedPaths }
+  const result = await applyFile(root, patch, reverse)
+  return {
+    ok: result.ok, errorCode: result.ok ? undefined : "apply-failed", error: result.stderr || undefined,
+    appliedPaths: result.ok ? paths : [], skippedPaths: result.ok ? [] : paths, conflictedPaths: [],
+  }
 }
 
 /**

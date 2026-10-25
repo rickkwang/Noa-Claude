@@ -18,7 +18,7 @@ export function ToolCard({ block, defaultOpen = false, task, onStopTask, onOpenT
   const baseLabel = toolActivityLabel(block)
   const label = task
     ? {
-        action: task.status === "running" ? "Subagent working:" : task.status === "failed" ? "Subagent failed:" : task.status === "stopped" ? "Subagent stopped:" : "Subagent finished:",
+        action: task.status === "unknown" ? "Subagent disconnected:" : task.status === "running" ? "Subagent working:" : task.status === "failed" ? "Subagent failed:" : task.status === "stopped" ? "Subagent stopped:" : "Subagent finished:",
         detail: task.description,
       }
     : baseLabel
@@ -100,7 +100,7 @@ function TaskDetail({ task, onStopTask, onOpenTask }: {
   return (
     <div className="flex flex-col gap-1 rounded-lg border border-[var(--divider-subtle)] bg-[var(--bg-secondary)] px-2.5 py-2 text-caption">
       <div className="flex items-center gap-2">
-        <span className={`size-1.5 rounded-full ${task.status === "failed" ? "bg-[#C24444]" : task.status === "running" ? "bg-[var(--accent-color)] noa-status-running" : "bg-[#168447]"}`} />
+        <span className={`size-1.5 rounded-full ${task.status === "failed" ? "bg-[#C24444]" : task.status === "running" ? "bg-[var(--accent-color)] noa-status-running" : task.status === "completed" ? "bg-[#168447]" : "bg-[var(--sidebar-text-muted)]"}`} />
         <span className="font-medium capitalize text-[var(--text-secondary)]">{task.status}</span>
         {task.lastTool && <span className="min-w-0 truncate text-[var(--sidebar-text-muted)]">· {task.lastTool}</span>}
       </div>
@@ -170,7 +170,7 @@ function renderBody(block: ToolBlock, onRaw: () => void, onCollapse: () => void)
   const i = block.input
   const output = block.output?.trim() ? <CodeBlock lang="output" code={block.output} /> : null
   const image = /\.(?:avif|gif|jpe?g|png|webp)$/i.test(str(i.file_path))
-  if (block.name === "ViewImage" || (block.name === "Read" && (image || block.images?.length))) return null
+  if (block.name === "ViewImage" || (block.name === "Read" && (image || block.images?.length))) return block.status === "error" || !block.images?.length ? output : null
 
   switch (block.name) {
     case "Bash":
@@ -326,9 +326,10 @@ function ToolImages({ images, onOpen, preview, onPreview }: {
 }
 
 function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () => void }) {
-  const command = str(block.input.command).replace(/\s+/g, " ").trim()
+  const command = str(block.input.command)
   const output = block.output ?? ""
   const [copied, setCopied] = useState<"all" | "command" | "output">()
+  const [copyError, setCopyError] = useState(false)
   const [commandExpanded, setCommandExpanded] = useState(false)
   const [overflowing, setOverflowing] = useState(false)
   const outputRef = useRef<HTMLDivElement>(null)
@@ -346,7 +347,8 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
   }, [output])
 
   async function copy(kind: "all" | "command" | "output", text: string) {
-    await navigator.clipboard.writeText(text)
+    try { await navigator.clipboard.writeText(text) } catch { setCopyError(true); return }
+    setCopyError(false)
     setCopied(kind)
     clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => setCopied(undefined), 1500)
@@ -377,7 +379,7 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
           </button>
         </div>
       </div>
-      <div className="group/command relative">
+      <div className="group/command relative py-2">
         <pre
           role="button"
           tabIndex={0}
@@ -388,7 +390,7 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
             event.preventDefault()
             setCommandExpanded((value) => !value)
           }}
-          className={`m-0 cursor-pointer whitespace-pre-wrap break-words py-2 pe-8 ps-3 font-mono text-[length:var(--code-font-size)] leading-5 text-[var(--text-secondary,#5D5D5D)] ${commandExpanded ? "" : "line-clamp-2"}`}
+          className={`m-0 cursor-pointer whitespace-pre-wrap break-words pe-8 ps-3 font-mono text-[length:var(--code-font-size)] leading-[max(1.5em,20px)] text-[var(--text-secondary,#5D5D5D)] ${commandExpanded ? "" : "line-clamp-2"}`}
         >
           <span className="text-[var(--text-tertiary,#8F8F8F)]">$</span> {command}
         </pre>
@@ -404,8 +406,8 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
       </div>
       {output ? (
         <div className="group/output relative">
-          <div ref={outputRef} className="noa-shell-output" data-overflow={overflowing}>
-            <pre className="m-0 px-3 py-2 font-mono text-[length:var(--code-font-size)] leading-5 whitespace-pre">{output}</pre>
+          <div ref={outputRef} role="region" aria-label="Command output" tabIndex={0} onKeyDown={(event) => { if (event.key === "Home" || event.key === "End") { event.preventDefault(); event.currentTarget.scrollTop = event.key === "End" ? 0 : -event.currentTarget.scrollHeight } }} className="noa-shell-output" data-overflow={overflowing}>
+            <pre className="m-0 px-3 py-2 font-mono text-[length:var(--code-font-size)] leading-[max(1.5em,20px)] whitespace-pre">{output}</pre>
           </div>
           <button
             type="button"
@@ -422,10 +424,13 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
       ) : (
         <div className="px-3 pb-2 text-caption text-[var(--sidebar-text-muted,#898781)]">No output</div>
       )}
+      {copyError && <span role="status" className="px-3 text-caption text-[#C24444]">Could not copy. Try again.</span>}
       {block.status !== "running" && (
         <div className={`flex items-center justify-end gap-1 border-t border-[var(--divider-subtle)] px-3 py-1 text-caption ${block.status === "error" ? "text-[#C24444]" : "text-[var(--sidebar-text-muted,#898781)]"}`}>
           {block.status === "error" ? (
             block.exitCode !== undefined ? `Exit code ${block.exitCode}` : "Error"
+          ) : block.status === "unknown" ? (
+            "Connection lost"
           ) : block.status === "stopped" || block.interrupted ? (
             "Stopped"
           ) : (

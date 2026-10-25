@@ -99,6 +99,8 @@ export type ControlPayload =
   | { kind: "commands"; commands: SlashCommand[] }
 
 export type AgentMessage =
+  | { type: "system"; subtype: "compact_boundary"; compact_metadata: { trigger: "manual" | "auto"; pre_tokens?: number } }
+  | { type: "system"; subtype: "api_retry"; attempt: number; max_retries: number; retry_delay_ms: number; error_status?: number | null }
   | { type: "system"; subtype: "task_started" | "task_progress" | "task_notification"; task_id: string; tool_use_id?: string; description?: string; summary?: string; status?: "completed" | "failed" | "stopped"; last_tool_name?: string; output_file?: string; usage?: { total_tokens: number; tool_uses: number; duration_ms: number } }
   | { type: "system"; subtype: "status" | "session_state_changed"; status?: string | null; permissionMode?: PermissionMode; state?: "idle" | "running" | "requires_action" }
   | {
@@ -221,7 +223,8 @@ export type ControlRequest =
 // Shape of the bridge's /api/sessions/:id response.
 export type HistoryItem =
   | { kind: "user"; text: string; images?: ImageBlock[] }
-  | { kind: "turn-duration"; durationMs: number; interrupted?: boolean }
+  | { kind: "turn-duration"; durationMs: number; interrupted?: boolean; error?: string }
+  | { kind: "compaction"; trigger: "manual" | "auto" }
   | { kind: "turn-diff"; diff: TurnDiff }
   | {
       kind: "agent"

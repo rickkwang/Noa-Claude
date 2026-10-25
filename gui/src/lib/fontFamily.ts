@@ -36,10 +36,13 @@ export function isSafeFontFamilyName(value: string): boolean {
  * system stack as a suffix so uninstalling a font degrades to the platform UI
  * face instead of the browser's default serif.
  */
-export function resolveFontFamily(fontFamily: string): string {
-  if (!fontFamily || fontFamily === SYSTEM_DEFAULT_FONT) return SYSTEM_FONT_STACK;
-  if (!isSafeFontFamilyName(fontFamily)) return SYSTEM_FONT_STACK;
-  return `"${fontFamily}", ${SYSTEM_FONT_STACK}`;
+export const MONO_FONT_STACK =
+  'ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace';
+
+export function resolveFontFamily(fontFamily: string, fallback = SYSTEM_FONT_STACK): string {
+  if (!fontFamily || fontFamily === SYSTEM_DEFAULT_FONT) return fallback;
+  if (!isSafeFontFamilyName(fontFamily)) return fallback;
+  return `"${fontFamily}", ${fallback}`;
 }
 
 /**

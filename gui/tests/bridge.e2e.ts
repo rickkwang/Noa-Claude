@@ -178,6 +178,11 @@ const provider = Bun.serve({
     )
   },
 })
+const settingsPath = join(config, "settings.json")
+writeFileSync(settingsPath, JSON.stringify({
+  ...JSON.parse(readFileSync(settingsPath, "utf8")),
+  env: { ANTHROPIC_API_KEY: "local-fixture", ANTHROPIC_BASE_URL: `http://127.0.0.1:${provider.port}` },
+}))
 const reservation = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() })
 const port = reservation.port!
 reservation.stop(true)
@@ -206,8 +211,8 @@ const bridge = Bun.spawn([process.execPath, "run", "server/main.ts"], {
     NOA_CLAUDE_PROVIDER_CONTEXT_WINDOWS: "",
     NOA_CLAUDE_PROVIDER_EFFORT_LEVELS: "",
     NOA_CLAUDE_PROVIDER_MAX_OUTPUT_TOKENS: "",
-    ANTHROPIC_API_KEY: "local-fixture",
-    ANTHROPIC_BASE_URL: `http://127.0.0.1:${provider.port}`,
+    ANTHROPIC_API_KEY: "",
+    ANTHROPIC_BASE_URL: "",
     ANTHROPIC_MODEL: "claude-sonnet-4-6",
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
     ENABLE_TOOL_SEARCH: "false",
@@ -216,9 +221,9 @@ const bridge = Bun.spawn([process.execPath, "run", "server/main.ts"], {
   stderr: "pipe",
 })
 const sockets: WebSocket[] = []
-const wait = async (predicate: () => boolean, label: string, timeout = 20000) => {
+const wait = async (predicate: () => boolean | Promise<boolean>, label: string, timeout = 20000) => {
   const deadline = Date.now() + timeout
-  while (!predicate()) {
+  while (!(await predicate())) {
     if (Date.now() > deadline) throw new Error(`Timed out: ${label}`)
     await Bun.sleep(25)
   }
@@ -322,8 +327,9 @@ try {
   assert.ok(initMessage?.message.session_id)
   second.socket.close()
   const third = connect(crypto.randomUUID(), initMessage.message.session_id)
-  const selected = await third.initialize()
-  assert.notEqual(selected.pid, init.pid)
+  await third.initialize()
+  // Reopening during finalization reuses the CLI; after settling it is reclaimed.
+  // Assert the resulting process is released, not an intermediate PID transition.
   await wait(() => {
     try {
       process.kill(init.pid, 0)
@@ -464,6 +470,10 @@ try {
   assert.equal(turnDiff.diff.turnIndex, 1, JSON.stringify(turnDiff.diff))
   console.log("PASS a turn's git diff streams live and is persisted")
 
+  await wait(async () => {
+    const runs = await (await fetch(`http://127.0.0.1:${port}/api/runs`)).json() as { busy: boolean; waiting: boolean }[]
+    return runs.every((run) => !run.busy && !run.waiting)
+  }, "workspace tasks idle")
   diffRun.send({ type: "turn_diff_action", turnIndex: 1, action: "undo" })
   await wait(
     () => diffRun.events.some((e) => e.kind === "turn-diff-action" && e.action === "undo"),
@@ -489,6 +499,19 @@ try {
   assert.ok(reapply.result.ok, JSON.stringify(reapply.result))
   assert.equal(readFileSync(join(cwd, "turn-diff.txt"), "utf8"), "one\ntwo\n")
   console.log("PASS a turn diff can be undone and reapplied")
+
+  const priorResults = diffRun.results().length
+  diffRun.send({ type: "user", message: { role: "user", content: "GUI_SLOW" }, parent_tool_use_id: null })
+  await wait(() => diffRun.events.some((e) => e.kind === "user" && e.content === "GUI_SLOW"), "slow turn started")
+  const priorActions = diffRun.events.filter((e) => e.kind === "turn-diff-action").length
+  diffRun.send({ type: "turn_diff_action", turnIndex: 1, action: "undo" })
+  await wait(() => diffRun.events.filter((e) => e.kind === "turn-diff-action").length > priorActions, "busy undo refusal")
+  const busyUndo = diffRun.events.findLast((e) => e.kind === "turn-diff-action") as Extract<Envelope, { kind: "turn-diff-action" }>
+  assert.equal(busyUndo.result.ok, false, JSON.stringify(busyUndo.result))
+  assert.match(busyUndo.result.error ?? "", /running tasks/)
+  assert.equal(readFileSync(join(cwd, "turn-diff.txt"), "utf8"), "one\ntwo\n")
+  await wait(() => diffRun.results().length > priorResults, "slow turn complete")
+  console.log("PASS turn Undo is refused while a task is running")
 
   const plainRun = connect(crypto.randomUUID(), undefined, plainCwd)
   await plainRun.initialize()
@@ -524,6 +547,10 @@ try {
   )
   assert.ok(plainDiff.diff.patch?.includes("+one"), JSON.stringify(plainDiff.diff))
   const plainIndex = plainDiff.diff.turnIndex!
+  const crossProject = connect(crypto.randomUUID())
+  await crossProject.initialize()
+  crossProject.send({ type: "user", message: { role: "user", content: "GUI_SLOW cross-project" }, parent_tool_use_id: null })
+  await wait(() => crossProject.events.some((e) => e.kind === "user" && e.content === "GUI_SLOW cross-project"), "other project running")
   plainRun.send({ type: "turn_diff_action", turnIndex: plainIndex, action: "undo" })
   await wait(
     () => plainRun.events.some((e) => e.kind === "turn-diff-action" && e.action === "undo"),
@@ -620,6 +647,8 @@ try {
   ) as any
   process.kill(crashInit.pid, "SIGTERM")
   await wait(() => crashing.events.some((e) => e.kind === "exit"), "CLI crash")
+  const crashHistory = await fetch(`http://127.0.0.1:${port}/api/sessions/${crashSession.message.session_id}?${new URLSearchParams({ cwd })}`).then(r => r.json())
+  assert.ok(crashHistory.some((item: any) => item.kind === "turn-duration" && item.error?.includes("exited")), "Unexpected exit survives history reload")
   crashing.socket.close()
   const recovered = connect(crashRuntime, crashSession.message.session_id)
   await recovered.initialize()

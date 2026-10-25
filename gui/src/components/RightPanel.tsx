@@ -26,11 +26,12 @@ interface RightPanelProps {
   onReference: (path: string) => void
   onWorkspaceChange?: () => void
   focusChange?: { path: string; at: number }
+  focusFile?: { path: string; at: number; line?: number }
   turnDiff?: { diff: TurnDiff; path?: string; key: number }
 }
 
 // Right column: one pane under a tab strip, as in Codex's side panel.
-export function RightPanel({ state, onStopTask, cwd, sessionId, onRefreshContext, tab, onTab, onReference, onWorkspaceChange, focusChange, turnDiff }: RightPanelProps) {
+export function RightPanel({ state, onStopTask, cwd, sessionId, onRefreshContext, tab, onTab, onReference, onWorkspaceChange, focusChange, focusFile, turnDiff }: RightPanelProps) {
   const [changeMode, setChangeMode] = useState<"turn" | "working">("working")
   useEffect(() => {
     setChangeMode(turnDiff ? "turn" : "working")
@@ -81,7 +82,7 @@ export function RightPanel({ state, onStopTask, cwd, sessionId, onRefreshContext
         </div>
       </div>
       <div id="panel-files" role="tabpanel" aria-labelledby="panel-tab-files" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "files" ? "flex" : "none" }}>
-        <WorkspaceFiles key={`files-${cwd}`} cwd={cwd} active={tab === "files"} refreshKey={state.busy ? 0 : state.turns.length} onReference={onReference} onUpdated={onWorkspaceChange} onOpenChanges={() => onTab("changes")} />
+        <WorkspaceFiles key={`files-${cwd}`} cwd={cwd} active={tab === "files"} focus={focusFile} refreshKey={state.busy ? 0 : state.turns.length} onReference={onReference} onUpdated={onWorkspaceChange} onOpenChanges={() => onTab("changes")} />
       </div>
       <div id="panel-changes" role="tabpanel" aria-labelledby="panel-tab-changes" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "changes" ? "flex" : "none" }}>
         {turnDiff && (
@@ -206,11 +207,11 @@ function ActivityTab({ state, onStopTask }: { state: AgentState; onStopTask: (id
                   ? turn.blocks.map((block, i) =>
                       block.kind === "tool" ? (
                         <ToolCard key={`${turn.id}-${i}`} block={block} />
-                      ) : (
+                      ) : (block.kind === "text" || block.kind === "thinking") ? (
                         <p key={`${turn.id}-${i}`} className="whitespace-pre-wrap text-caption">
                           {block.text}
                         </p>
-                      ),
+                      ) : null,
                     )
                   : null,
               )}

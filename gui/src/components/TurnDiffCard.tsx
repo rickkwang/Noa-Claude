@@ -2,6 +2,7 @@ import { useState } from "react"
 import { IconFileDiff } from "@tabler/icons-react"
 import type { TurnDiff, TurnDiffActionResult, TurnDiffFile } from "../agent/protocol"
 import { ChevronDown, ChevronRight, ChevronUp } from "../lib/icons"
+import { useConfirm } from "./ConfirmDialog"
 
 export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
   diff: TurnDiff
@@ -10,10 +11,11 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
   pending?: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
+  const { confirm, dialog } = useConfirm()
   const single = diff.files.length === 1
   const shown = expanded ? diff.files : diff.files.slice(0, 3)
   const hidden = diff.files.length - shown.length
-  const title = single ? `Edited ${basename(diff.files[0]!.path)}` : `Edited ${diff.files.length} files`
+  const title = single ? `Workspace change: ${basename(diff.files[0]!.path)}` : `Workspace changes: ${diff.files.length} files`
   const action = diff.reverted ? "reapply" : "undo"
   const canAct = onAction !== undefined && diff.turnIndex !== undefined
 
@@ -41,7 +43,19 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
             type="button"
             className="noa-turn-diff-action"
             disabled={pending}
-            onClick={() => onAction(action)}
+            onClick={async () => {
+              if (await confirm({
+                title: action === "undo" ? "Undo workspace changes?" : "Reapply workspace changes?",
+                description: <>
+                  <p className="m-0">This snapshot includes changes made while this turn ran, including edits from you or other tasks. This action affects all files listed below.</p>
+                  <ul className="mt-2 max-h-48 overflow-auto break-all pl-5">
+                    {diff.files.map((file) => <li key={file.path}>{file.path}</li>)}
+                  </ul>
+                </>,
+                confirmLabel: action === "undo" ? "Undo changes" : "Reapply changes",
+                danger: true,
+              })) onAction(action)
+            }}
             title={action === "undo" ? "Undo" : "Reapply"}
           >
             {pending ? (action === "reapply" ? "Reapplying…" : "Undoing…") : action === "reapply" ? "Reapply" : "Undo"}
@@ -71,6 +85,7 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
         </div>
       )}
       {diff.truncated && <p className="noa-turn-diff-note">Diff too large to preview</p>}
+      {dialog}
     </div>
   )
 }

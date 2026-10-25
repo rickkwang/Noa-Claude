@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto"
-import { opendir, readdir, realpath, stat, readFile, writeFile, rename, unlink } from "node:fs/promises"
+import { opendir, readdir, realpath, stat, lstat, readFile, writeFile, rename, unlink } from "node:fs/promises"
 import { dirname, relative, resolve, sep, extname } from "node:path"
 import { createTwoFilesPatch, parsePatch, formatPatch } from "diff"
 
@@ -126,6 +126,14 @@ export async function workspaceRequest(url: URL, cwd: string, body?: unknown): P
     if (!current.snapshot || current.snapshot !== action.snapshot) throw new Error("The file changed since it was loaded. Refresh before continuing.")
     if ("status" in current && /U|AA|DD/.test(current.status)) throw new Error("Resolve merge conflicts before applying this action")
     const paths = "oldPath" in current && current.oldPath ? [current.oldPath, action.path] : [action.path]
+    if (action.action === "revert" && scope === "all" && "oldPath" in current && current.oldPath) {
+      const oldTarget = await inside(cwd, current.oldPath, true)
+      const existing = await lstat(oldTarget).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error
+        return undefined
+      })
+      if (existing) throw new Error(`Cannot restore ${current.oldPath}: that path was recreated. Move it before reverting ${action.path}.`)
+    }
     if (action.action?.endsWith("-hunk")) {
       if (scope === "all" || action.action === "stage-hunk" && scope !== "unstaged" || action.action === "unstage-hunk" && scope !== "staged") throw new Error("Choose the staged or unstaged view before applying a hunk")
       if ("oldPath" in current && current.oldPath) throw new Error("Apply renamed files as a whole")

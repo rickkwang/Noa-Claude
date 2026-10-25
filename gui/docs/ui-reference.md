@@ -158,3 +158,55 @@ Browsing commands from the plus menu preserves an existing text/image draft.
 GUI history lookup canonicalizes symlinked project paths to match the CLI. GUI
 agents use the existing eager-flush option so completed local commands are
 immediately available to history readers.
+
+Turn change cards show workspace snapshots taken during that turn, including concurrent manual or other-task edits. Undo/Reapply lists all affected files and requires confirmation. Snapshot capture, completion and patch actions are serialized per workspace; different projects do not block each other. The bridge refuses patch actions while that workspace has a running or waiting task, and applies the whole patch atomically.
+
+## Message actions, activity, approvals and code typography
+
+Checked against Codex 26.1021.31345 packed assets on 2026-10-25:
+`subagent-activity-chip-group-a0fc2223efe0.js`,
+`agent-activity-item-row-fa5342a7c173.js`,
+`composer-approval-request-card-ef55e8ccb5d5.js`, and the code snippet renderer
+in `app-shared-2cae01273bae.js` / `app-shared-bd3e4e649b69.css`.
+The reliability pass also inspected its native worker `applyPatch` atomic mode,
+per-scope turn-diff finalization, bounded code highlighting, stopped-command
+labels and disabled approval actions. Noa keeps its own CLI process lifecycle;
+only workspace operation ordering, atomic patches and render boundaries are shared.
+
+Noa has no final-channel flag, so reply actions appear only on the last text run
+once the assistant segment finishes. Intermediate commentary has no action row.
+Activity headers use zero padding, 16px icons and a 6px icon/text gap. Approval
+cards use a neutral bordered surface, 16px header/footer insets and 28px buttons;
+permission responses and remembered scopes remain those supplied by Noa.
+Code blocks use a 20px corner radius, a 48px UI-font toolbar, icon-only Copy,
+12px default code text and line height max(1.5em, 20px). Code font family and size
+are independent of the interface font and apply to snippets and workspace diffs.
+
+Worked-for/activity dividers use the same content edges as the answer, with no horizontal inset, an 8px label/rule gap and a full-width top border (`worked-for-item-content-78a5b53d07f6.js`).
+
+Expanded tool-activity lists use Codex's 224px cap and 24px scroll-driven top/bottom fade, leaving their summary outside the scroll area. Tool rows use 20px line height with 4px gaps and no horizontal inset. The approval split button uses the default unseparated style: no border between the primary action and dropdown.
+
+## Output lifecycle and Markdown rendering
+
+The 2026-10-25 output pass also reads `_MarkdownRoot_16avx_2`, `_InlineCode_16avx_2`
+and `uC` / `Bw` from the installed initial CSS and activity bundle. Local chat
+Markdown uses a quarter-body-font spacing unit, H1/H2/H3 scales 1.5/1.25/1.125,
+upright quotes, and inline code at 0.92em. Inline code must not inherit the
+independent fenced-code size. A successful final response has a 20px action row;
+interrupted and failed replies do not reserve that row before their status.
+Shell command clamping excludes vertical padding; the wrapper owns that padding.
+
+Markdown uses the existing `marked` lexer with React rendering. Raw HTML and
+unsafe URL schemes remain inert. Pathological single-line input stays plain
+instead of blocking the renderer; fenced code highlighting has bounded input.
+Workspace file references use the existing file pane and preserve line targets,
+including special characters in project/file names; local images use the bounded
+`/api/file` handler and Lightbox. Files outside the workspace are not granted access.
+Collapsed tool details are unmounted after the close animation.
+
+Compaction is a timeline item: running, delayed, manual/automatic completion,
+interrupted or disconnected. API retry notices settle when output resumes.
+An actual process exit settles pending tools; a transport loss records uncertainty
+and does not claim the CLI stopped. Errors belong to their reply, with bridge-owned
+failure metadata in `<session>.turn-results.jsonl` so history can restore them.
+User interruption is excluded from failure metadata. CLI transcripts are not rewritten.

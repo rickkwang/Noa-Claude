@@ -22,7 +22,7 @@ export type ToolBlock = {
   name: string
   input: Record<string, unknown>
   partialJson: string
-  status: "running" | "done" | "error" | "stopped"
+  status: "running" | "done" | "error" | "stopped" | "unknown"
   output?: string
   images?: ImageBlock[]
   exitCode?: number
@@ -31,7 +31,11 @@ export type ToolBlock = {
   endedAt?: number
 }
 
+export type CompactionBlock = { kind: "compaction"; status: "running" | "done" | "stopped" | "unknown"; startedAt?: number; trigger?: "manual" | "auto" }
+export type RetryBlock = { kind: "retry"; attempt: number; maxRetries: number; delayMs: number; errorStatus?: number | null; done?: boolean }
 export type Block =
+  | CompactionBlock
+  | RetryBlock
   | { kind: "text"; text: string; done?: boolean }
   | { kind: "thinking"; text: string; done: boolean; startedAt?: number }
   | ToolBlock
@@ -46,6 +50,8 @@ export type Turn =
       startedAt?: number
       durationMs?: number
       interrupted?: boolean
+      error?: string
+      incomplete?: boolean
       diff?: TurnDiff
     }
 
@@ -64,7 +70,7 @@ export interface AgentTask {
   id: string
   toolUseId?: string
   description: string
-  status: "running" | "completed" | "failed" | "stopped"
+  status: "running" | "completed" | "failed" | "stopped" | "unknown"
   summary?: string
   outputFile?: string
   lastTool?: string
@@ -107,7 +113,9 @@ export type Action =
   | { type: "connection"; status: AgentState["connection"] }
   | { type: "user-sent"; id: string; text?: string; content?: UserContent }
   | { type: "history-user"; id: string; text: string; images?: ImageBlock[] }
-  | { type: "turn-duration"; durationMs: number; interrupted?: boolean }
+  | { type: "turn-duration"; durationMs: number; interrupted?: boolean; error?: string }
+  | { type: "exit"; code: number | null }
+  | { type: "compaction"; trigger: "manual" | "auto" }
   | { type: "turn-diff"; diff: TurnDiff }
   | { type: "turn-diff-live"; diff: TurnDiff }
   | { type: "turn-diff-action"; turnIndex: number; action: "undo" | "reapply"; result: TurnDiffActionResult }
@@ -145,14 +153,31 @@ export function reducer(state: AgentState, action: Action): AgentState {
       return { ...state, queue: action.messages, queuePaused: action.paused ?? state.queuePaused }
     case "reset":
       return initialState
-    case "connection":
+    case "compaction":
+      return { ...state, turns: updateCompaction(state.turns, "done", action.trigger) }
+    case "exit": {
+      const unfinished = state.busy || state.turns.some(t => t.role === "assistant" && (t.streaming || t.blocks.some(b => b.kind === "tool" && (b.status === "running" || b.status === "unknown"))))
+      const error = unfinished && !state.stopping ? `Agent exited before completing this turn (code ${action.code ?? "unknown"}).` : undefined
+      return { ...state, connection: "closed", busy: false, stopping: false, permissions: [], elicitations: [], liveDiff: undefined,
+        turns: unfinished ? stampTurn(settlePending(state.turns, "stopped"), undefined, state.stopping, error) : state.turns,
+        tasks: state.tasks.map(task => task.status === "running" || task.status === "unknown" ? { ...task, status: "stopped", turns: settlePending(task.turns, "stopped") } : task), error: error ?? state.error }
+    }
+    case "connection": {
+      const turns = action.status === "closed" ? settlePending(state.turns, "unknown") : state.turns
+      const last = turns.at(-1)
+      if (action.status === "closed" && state.busy && last?.role === "assistant") turns[turns.length - 1] = { ...last, incomplete: true }
       return {
         ...state,
         connection: action.status,
+        turns,
+        tasks: action.status === "closed" ? state.tasks.map(task => task.status === "running" ? { ...task, status: "unknown", turns: settlePending(task.turns, "unknown") } : task) : state.tasks,
         busy: action.status === "closed" ? false : state.busy,
         liveDiff: action.status === "closed" ? undefined : state.liveDiff,
+        permissions: action.status === "closed" ? [] : state.permissions,
+        elicitations: action.status === "closed" ? [] : state.elicitations,
         error: state.error ?? (action.status === "closed" && state.connection === "connecting" ? "Noa could not start. Open Activity → Diagnostics for details." : undefined),
       }
+    }
     case "user-sent":
       return {
         ...state,
@@ -168,7 +193,7 @@ export function reducer(state: AgentState, action: Action): AgentState {
     case "turn-duration":
       return {
         ...state,
-        turns: applyTurnDuration(state.turns, action.durationMs, action.interrupted),
+        turns: stampTurn(action.error ? settlePending(state.turns, "stopped") : state.turns, action.durationMs, action.interrupted, action.error),
       }
     case "turn-diff": {
       // A bridge update carries turnIndex and replaces that turn in place; the
@@ -178,9 +203,8 @@ export function reducer(state: AgentState, action: Action): AgentState {
         : state.turns.findIndex(
             (turn) => turn.role === "assistant" && turn.diff?.turnIndex === action.diff.turnIndex,
           )
-      const index = matching === -1
-        ? state.turns.map((turn) => turn.role).lastIndexOf("assistant")
-        : matching
+      const fallback = state.turns.map((turn) => turn.role === "assistant" && turn.blocks.some((block) => block.kind !== "compaction" && block.kind !== "retry")).lastIndexOf(true)
+      const index = matching === -1 ? fallback : matching
       if (index === -1) return state
       const turns = state.turns.slice()
       turns[index] = { ...(turns[index] as Extract<Turn, { role: "assistant" }>), diff: action.diff }
@@ -253,7 +277,9 @@ function applyAgentMessage(state: AgentState, m: AgentMessage): AgentState {
         }
         return { ...state, tasks: [...state.tasks.filter((t) => t !== existing), task] }
       }
-      if (m.subtype === "status") return { ...state, status: m.status ?? undefined, permissionMode: m.permissionMode ?? state.permissionMode }
+      if (m.subtype === "compact_boundary") return { ...state, status: undefined, turns: updateCompaction(state.turns, "done", m.compact_metadata.trigger) }
+      if (m.subtype === "api_retry") return { ...state, turns: appendNotice(settleRetry(state.turns), { kind: "retry", attempt: m.attempt, maxRetries: m.max_retries, delayMs: m.retry_delay_ms, errorStatus: m.error_status }) }
+      if (m.subtype === "status") return { ...state, status: m.status ?? undefined, permissionMode: m.permissionMode ?? state.permissionMode, turns: m.status === "compacting" ? updateCompaction(state.turns, "running") : state.turns }
       if (m.subtype === "session_state_changed") return { ...state, status: m.state, busy: m.state === "idle" ? false : state.busy }
       if (m.subtype !== "init") return state
       return {
@@ -264,22 +290,23 @@ function applyAgentMessage(state: AgentState, m: AgentMessage): AgentState {
       }
 
     case "stream_event":
-      return { ...state, turns: applyStreamEvent(state.turns, m.event) }
+      return { ...state, turns: applyStreamEvent(settleRetry(state.turns), m.event) }
 
     case "assistant":
-      return { ...state, turns: finalizeAssistant(state.turns, m.message.content) }
+      return { ...state, turns: finalizeAssistant(settleRetry(state.turns), m.message.content) }
 
     case "user":
       if (typeof m.message.content === "string") return state
       return { ...state, turns: applyToolResults(state.turns, m.message.content, m.tool_use_result) }
 
     case "result": {
-      const turns = applyTurnDuration(completeResult(state.turns, m.result), m.duration_ms, state.stopping)
+      const error = m.is_error && !state.stopping ? m.errors?.join("\n") || `Agent failed (${m.subtype})` : undefined
+      const turns = stampTurn(settlePending(completeResult(state.turns, m.result), "stopped"), m.duration_ms, state.stopping, error)
       return {
         ...state,
         busy: false,
         stopping: false,
-        error: m.is_error && !state.stopping ? m.errors?.join("\n") || `Agent failed (${m.subtype})` : undefined,
+        error,
         logs: m.is_error && m.errors?.length ? [...state.logs, ...m.errors].slice(-MAX_LOGS) : state.logs,
         turns,
         result: {
@@ -427,7 +454,7 @@ function finalizeAssistant(turns: Turn[], content: ContentBlock[]): Turn[] {
     next[index] = {
       role: "assistant",
       id: current.id,
-      blocks,
+      blocks: [...current.blocks.filter(b => b.kind === "compaction" || b.kind === "retry"), ...blocks],
       streaming: false,
       startedAt: current.startedAt,
       durationMs: current.durationMs,
@@ -468,6 +495,44 @@ function applyToolResults(turns: Turn[], content: ContentBlock[], toolUseResult?
   })
 }
 
+function appendNotice(turns: Turn[], block: CompactionBlock | RetryBlock): Turn[] {
+  const last = turns.at(-1)
+  if (last?.role === "assistant") return [...turns.slice(0, -1), { ...last, blocks: [...last.blocks, block] }]
+  return [...turns, { role: "assistant", id: crypto.randomUUID(), streaming: false, blocks: [block] }]
+}
+
+function updateCompaction(turns: Turn[], status: CompactionBlock["status"], trigger?: CompactionBlock["trigger"]): Turn[] {
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const turn = turns[i]!
+    if (turn.role === "user") break
+    if (turn.role !== "assistant") continue
+    if (turn.blocks.some(b => b.kind === "compaction" && b.status === "running")) return turns.map((t, index) => index === i ? { ...turn, blocks: turn.blocks.map(b => b.kind === "compaction" && b.status === "running" ? { ...b, status, trigger } : b) } : t)
+  }
+  return appendNotice(turns, { kind: "compaction", status, trigger, startedAt: status === "running" ? Date.now() : undefined })
+}
+
+function settleRetry(turns: Turn[]): Turn[] {
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const turn = turns[i]!
+    if (turn.role === "user") break
+    if (turn.role === "assistant" && turn.blocks.some(b => b.kind === "retry" && !b.done)) {
+      const next = [...turns]
+      next[i] = { ...turn, blocks: turn.blocks.map(b => b.kind === "retry" ? { ...b, done: true } : b) }
+      return next
+    }
+  }
+  return turns
+}
+
+function settlePending(turns: Turn[], status: "unknown" | "stopped"): Turn[] {
+  return closeStreaming(turns).map(t => t.role === "assistant" ? { ...t, blocks: t.blocks.map(b => {
+    if (b.kind === "tool" && (b.status === "running" || b.status === "unknown")) return { ...b, status, endedAt: Date.now() }
+    if (b.kind === "compaction" && (b.status === "running" || b.status === "unknown")) return { ...b, status }
+    if (b.kind === "retry") return { ...b, done: true }
+    return b
+  }) } : t)
+}
+
 function closeStreaming(turns: Turn[]): Turn[] {
   const index = streamingIndex(turns)
   if (index === -1) return turns
@@ -483,7 +548,7 @@ function closeStreaming(turns: Turn[]): Turn[] {
   return next
 }
 
-function applyTurnDuration(turns: Turn[], durationMs: number, interrupted = false): Turn[] {
+function stampTurn(turns: Turn[], durationMs?: number, interrupted = false, error?: string): Turn[] {
   const closed = closeStreaming(turns)
   const lastAssistant = closed.map((turn) => turn.role).lastIndexOf("assistant")
   const lastUser = closed.map((turn) => turn.role).lastIndexOf("user")
@@ -498,6 +563,7 @@ function applyTurnDuration(turns: Turn[], durationMs: number, interrupted = fals
         streaming: false,
         durationMs,
         interrupted,
+        error,
       },
     ]
   }
@@ -506,6 +572,8 @@ function applyTurnDuration(turns: Turn[], durationMs: number, interrupted = fals
     ...(next[lastAssistant] as Extract<Turn, { role: "assistant" }>),
     durationMs,
     interrupted,
+    error,
+    incomplete: false,
   }
   return next
 }

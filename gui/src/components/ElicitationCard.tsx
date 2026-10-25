@@ -16,7 +16,7 @@ type Field = {
   maxLength?: number
   format?: string
 }
-const button = "noa-confirm-btn h-7 rounded-md border border-[var(--divider-subtle)] px-3 text-caption"
+const button = "noa-approval-button noa-press border border-[var(--divider-subtle)]"
 export function ElicitationCard({
   request,
   onAnswer,
@@ -36,7 +36,7 @@ export function ElicitationCard({
   return (
     <form
       aria-label={`Input requested by ${request.mcp_server_name}`}
-      className="noa-confirm-reveal flex max-h-[50vh] flex-col gap-3 overflow-y-auto rounded-panel bg-[var(--bg-card)] p-3 shadow-[0_0_0_1px_var(--divider-subtle)]"
+      className="noa-approval-card flex max-h-[50vh] shrink-0 flex-col gap-3 overflow-y-auto rounded-3xl border border-[var(--divider-subtle)] p-4"
       onSubmit={(event) => {
         event.preventDefault()
         const data = new FormData(event.currentTarget)
@@ -159,7 +159,7 @@ export function ElicitationCard({
         <button
           type="submit"
           disabled={request.mode === "url" ? !url : !supported}
-          className={`${button} bg-[var(--accent-color)] text-white disabled:opacity-40`}
+          className={`${button} bg-[var(--text-primary)] text-[var(--surface-page)] disabled:opacity-40`}
         >
           {request.mode === "url" ? "I’ve authorized" : "Continue"}
         </button>

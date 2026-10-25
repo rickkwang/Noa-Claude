@@ -821,17 +821,17 @@ export async function applyActiveProviderProfileEnv(
       return null
     }
 
-    // Strip only vars a previous profile application persisted into user
-    // settings (matched by value). Caller-supplied env — e.g. CI's
-    // ANTHROPIC_API_KEY — must survive: deleting it unconditionally made
-    // `--print` fail under CI=true on machines with no profiles configured.
+    // Restore only profile-owned values; handwritten settings and caller env survive.
     const persistedEnv = getSettingsForSource('userSettings')?.env ?? {}
+    const ownedEnv = readProviderEnvOwnership()
     for (const key of providerEnvKeys) {
       if (
+        key in ownedEnv &&
         persistedEnv[key] !== undefined &&
         process.env[key] === persistedEnv[key]
       ) {
-        delete process.env[key]
+        if (ownedEnv[key] === null) delete process.env[key]
+        else process.env[key] = ownedEnv[key]!
       }
     }
     logProviderSettingsPersistenceFailure(persistProviderEnvToUserSettings({}))

@@ -12,15 +12,17 @@ import {
   type ActivityRun,
   type ThinkingBlock as ThinkingBlockData,
 } from "../agent/toolActivity"
-import { ArrowDown, BookOpen, Check, ChevronDown, ChevronRight, Copy, Edit2, Photo, Terminal, Tool } from "../lib/icons"
+import { ArrowDown, AlertTriangle, BookOpen, Check, ChevronDown, ChevronRight, Copy, Edit2, Photo, Terminal, Tool } from "../lib/icons"
 import { Collapsible } from "./Collapsible"
 import { ErrorBoundary } from "./ErrorBoundary"
-import { Markdown } from "./Markdown"
+import { Markdown, OutputContext } from "./Markdown"
 import { ToolCard } from "./ToolCard"
 import { LiveDiffSummary, TurnDiffCard } from "./TurnDiffCard"
 
 interface MessageListProps {
   turns: Turn[]
+  cwd?: string
+  onOpenFile?: (path: string, line?: number) => void
   busy: boolean
   result?: AgentState["result"]
   readingWidth: number
@@ -42,7 +44,7 @@ const TURN_GAP = 16
 const TURN_OVERSCAN = 2
 const ESTIMATED_TURN_HEIGHT = 160
 
-export function MessageList({ turns, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, tasks, onStopTask, onOpenTask }: MessageListProps) {
+export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, tasks, onStopTask, onOpenTask }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
@@ -151,6 +153,7 @@ export function MessageList({ turns, busy, result, readingWidth, liveDiff, onTur
     return (
       <AssistantSegment
         segment={segment}
+        busy={busy && index === segments.length - 1}
         durationMs={segment.durationMs ?? (index === segments.length - 1 && !busy ? result?.durationMs : undefined)}
         interrupted={segment.interrupted ?? (index === segments.length - 1 && !busy ? result?.interrupted : undefined)}
         liveDiff={liveDiff}
@@ -165,7 +168,7 @@ export function MessageList({ turns, busy, result, readingWidth, liveDiff, onTur
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <OutputContext value={{ cwd, onOpenFile }}><div className="relative flex min-h-0 flex-1 flex-col">
     <div
       ref={scrollRef}
       onScroll={onScroll}
@@ -188,7 +191,7 @@ export function MessageList({ turns, busy, result, readingWidth, liveDiff, onTur
 
         {!busy && result?.isError && !result.interrupted && onRetry && (
           <div className="flex min-w-0 flex-wrap items-center gap-2 text-[length:var(--text-chat-sm)] text-[var(--sidebar-text-muted,#898781)]">
-            <span className="text-[#C24444]">Finished with an error</span>
+            {!turns.some(turn => turn.role === "assistant" && turn.error) && <span className="text-[#C24444]">Finished with an error</span>}
             <button
               type="button"
               onClick={onRetry}
@@ -217,7 +220,7 @@ export function MessageList({ turns, busy, result, readingWidth, liveDiff, onTur
         <ArrowDown size={14} className={busy ? "noa-scroll-bottom-arrow" : undefined} />
       </button>
       {preview && <Lightbox items={preview.items} index={preview.index} onIndex={(index) => setPreview({ ...preview, index })} onClose={() => setPreview(undefined)} />}
-    </div>
+    </div></OutputContext>
   )
 }
 
@@ -254,6 +257,8 @@ type AssistantSegmentData = {
   startedAt?: number
   durationMs?: number
   interrupted?: boolean
+  error?: string
+  incomplete?: boolean
   diff?: TurnDiff
 }
 type Segment = Extract<Turn, { role: "user" }> | AssistantSegmentData
@@ -340,6 +345,8 @@ function groupTurns(turns: Turn[]): Segment[] {
         startedAt: earliest(last.startedAt, turn.startedAt),
         durationMs: turn.durationMs ?? last.durationMs,
         interrupted: turn.interrupted ?? last.interrupted,
+        error: turn.error ?? last.error,
+        incomplete: turn.incomplete ?? last.incomplete,
         diff: turn.diff ?? last.diff,
       }
     } else segments.push({
@@ -350,6 +357,8 @@ function groupTurns(turns: Turn[]): Segment[] {
       startedAt: turn.startedAt,
       durationMs: turn.durationMs,
       interrupted: turn.interrupted,
+      error: turn.error,
+      incomplete: turn.incomplete,
       diff: turn.diff,
     })
   }
@@ -357,8 +366,9 @@ function groupTurns(turns: Turn[]): Segment[] {
 }
 
 // Tool calls and reasoning fold into one "Worked for" row; the final answer stays visible.
-function AssistantSegment({ segment, durationMs, interrupted, liveDiff, tasks, onStopTask, onOpenTask, onTurnDiff, onTurnDiffAction, diffActionPending }: {
+function AssistantSegment({ segment, busy, durationMs, interrupted, liveDiff, tasks, onStopTask, onOpenTask, onTurnDiff, onTurnDiffAction, diffActionPending }: {
   segment: AssistantSegmentData
+  busy: boolean
   durationMs?: number
   interrupted?: boolean
   liveDiff?: TurnDiff
@@ -378,9 +388,9 @@ function AssistantSegment({ segment, durationMs, interrupted, liveDiff, tasks, o
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [segment.streaming])
-  const hasActivity = runs.some((run) => run.kind === "activity")
+  const hasActivity = runs.some((run) => run.kind === "activity" || run.kind === "standalone")
   const finalTextIndex = runs.map((run) => run.kind).lastIndexOf("text")
-  const lastActivityIndex = runs.map((run) => run.kind).lastIndexOf("activity")
+  const lastActivityIndex = runs.map((run) => run.kind === "standalone" ? "activity" : run.kind).lastIndexOf("activity")
   const finalRun = finalTextIndex > lastActivityIndex ? runs[finalTextIndex] : undefined
   const finalTextStarted = finalRun?.kind === "text" && finalRun.block.text.trim().length > 0
   const [finalStartedAt, setFinalStartedAt] = useState<number>()
@@ -396,12 +406,12 @@ function AssistantSegment({ segment, durationMs, interrupted, liveDiff, tasks, o
   const finalIndex = runs.map((run) => run.kind).lastIndexOf("text")
   // Trailing tool calls after the final answer still fold into the turn; Codex
   // collapses as soon as the final assistant message has started.
-  const canCollapse = !segment.streaming && !interrupted && finalIndex > 0
+  const canCollapse = !busy && !segment.streaming && !interrupted && !segment.error && !segment.incomplete && !segment.blocks.some(b => b.kind === "tool" && (b.status === "error" || b.status === "unknown" || b.status === "stopped")) && finalIndex > 0 && runs.slice(0, finalIndex).some(run => run.kind === "text" || run.kind === "activity")
   const collapsedCount = finalIndex > 0
     ? runs.reduce(
         (count, run, index) => index === finalIndex
           ? count
-          : count + (run.kind === "text" ? 1 : run.blocks.length),
+          : count + (run.kind === "activity" ? run.blocks.length : run.kind === "text" ? 1 : 0),
         0,
       )
     : 0
@@ -441,9 +451,15 @@ function AssistantSegment({ segment, durationMs, interrupted, liveDiff, tasks, o
           streaming={segment.streaming && run.block === segment.blocks[segment.blocks.length - 1]}
           streamKey={streamKeyFor(run.block)}
         />
-        <MessageActions text={run.block.text} complete={run.block.done ?? !segment.streaming} />
+        {!busy && !segment.streaming && !interrupted && !segment.error && !segment.incomplete && index === finalTextIndex && (
+          <MessageActions text={run.block.text} complete={run.block.done ?? true} />
+        )}
       </div>
     )
+  }
+
+  function renderStandalone(block: ToolBlock, index: number) {
+    return <ToolCard key={`standalone-${index}`} block={block} defaultOpen={!!block.images?.length || block.name === "Task"} task={tasks?.find(task => task.id === block.id || task.toolUseId === block.id)} onStopTask={onStopTask} onOpenTask={onOpenTask} />
   }
 
   const turnDiff = segment.diff && onTurnDiff
@@ -460,6 +476,7 @@ function AssistantSegment({ segment, durationMs, interrupted, liveDiff, tasks, o
   if (canCollapse && activityCollapsed) {
     return (
       <div className="group flex flex-col gap-3">
+        {runs.filter((run) => run.kind === "status" || run.kind === "standalone").map((run, i) => run.kind === "status" ? <StatusBlock key={`status-${i}`} block={run.block} /> : run.kind === "standalone" ? renderStandalone(run.block, i) : null)}
         <WorkedFor
           durationMs={durationMs}
           count={durationMs === undefined ? collapsedCount : undefined}
@@ -488,6 +505,8 @@ function AssistantSegment({ segment, durationMs, interrupted, liveDiff, tasks, o
           ? <WorkedFor durationMs={displayDuration} interrupted={interrupted} collapsed={false} />
           : null
         if (run.kind === "text") return renderText(run, index, workedFor)
+        if (run.kind === "status") return <StatusBlock key={index} block={run.block} />
+        if (run.kind === "standalone") return renderStandalone(run.block, index)
         return (
           <ActivityGroup
             key={index}
@@ -502,10 +521,12 @@ function AssistantSegment({ segment, durationMs, interrupted, liveDiff, tasks, o
       {!canCollapse && durationMs !== undefined && workedForBefore === -1 && lastActivity !== -1 && (
         <WorkedFor durationMs={durationMs} interrupted={interrupted} collapsed={false} />
       )}
-      {segment.streaming && liveDiff && !segment.diff && (
+      {busy && liveDiff && !segment.diff && (
         <LiveDiffSummary diff={liveDiff} onOpen={() => onTurnDiff?.(liveDiff)} />
       )}
       {turnDiff}
+      {interrupted && !hasActivity && <WorkedFor durationMs={durationMs} interrupted collapsed={false} />}
+      {segment.error && <div role="alert" className="flex items-start gap-2 text-[length:var(--text-chat-sm)] text-[#C24444]"><AlertTriangle size={16} className="shrink-0" /><span className="whitespace-pre-wrap break-words">{segment.error}</span></div>}
       {segment.streaming && segment.blocks.length === 0 && <Working />}
     </div>
   )
@@ -521,6 +542,12 @@ function ActivityGroup({ blocks, tasks, streamKeyFor, onStopTask, onOpenTask }: 
   onOpenTask?: () => void
 }) {
   const [open, setOpen] = useState(false)
+  const activityRef = useRef<HTMLDivElement>(null)
+  const following = useRef(true)
+  useLayoutEffect(() => {
+    const element = activityRef.current
+    if (open && following.current && element) element.scrollTop = element.scrollHeight
+  }, [open, blocks.length])
   const liveBlock = [...blocks].reverse().find(
     (block) => block.kind === "thinking" ? !block.done : block.status === "running",
   )
@@ -535,7 +562,9 @@ function ActivityGroup({ blocks, tasks, streamKeyFor, onStopTask, onOpenTask }: 
   const tools = blocks.filter((block): block is ToolBlock => block.kind === "tool")
   const thoughtCount = blocks.length - tools.length
   const summary = toolActivitySummary(tools)
-  const completedLabel = [thoughtCount ? "Thought" : null, summary?.label]
+  const failedCount = tools.filter(tool => tool.status === "error" || tool.status === "stopped").length
+  const uncertainCount = tools.filter(tool => tool.status === "unknown").length
+  const completedLabel = [thoughtCount ? "Thought" : null, summary?.label, tools.some(tool => tool.status === "error") ? `${failedCount} failed` : uncertainCount ? "connection lost" : null]
     .filter(Boolean)
     .join(", ") || "Worked"
   const liveLabel = liveBlock?.kind === "thinking"
@@ -544,7 +573,7 @@ function ActivityGroup({ blocks, tasks, streamKeyFor, onStopTask, onOpenTask }: 
       ? labelForTool(liveBlock, now)
       : completedLabel
   const SummaryIcon =
-    summary?.kind === "edits" ? Edit2
+    failedCount || uncertainCount ? AlertTriangle : summary?.kind === "edits" ? Edit2
       : summary?.kind === "images" ? Photo
         : summary?.kind === "commands" ? Terminal
           : summary?.kind === "reads" ? BookOpen
@@ -556,14 +585,16 @@ function ActivityGroup({ blocks, tasks, streamKeyFor, onStopTask, onOpenTask }: 
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="group/activity flex w-full min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left text-[length:var(--text-chat-sm)] font-normal leading-5 text-[color-mix(in_srgb,var(--text-primary)_60%,transparent)] select-none hover:text-[var(--text-primary,#2D2D2B)]"
+        className="group/activity relative inline-flex max-w-full min-w-0 cursor-pointer items-center gap-1 p-0 text-left text-[length:var(--font-text-md-size)] font-normal leading-5 text-[color-mix(in_srgb,var(--text-primary)_60%,transparent)] select-none hover:text-[var(--text-primary,#2D2D2B)]"
       >
-        <SummaryIcon size={14} className="shrink-0" aria-hidden="true" />
-        <span className={`min-w-0 truncate ${live ? "noa-shimmer" : ""}`}>{live ? liveLabel : completedLabel}</span>
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <SummaryIcon size={16} className="shrink-0" aria-hidden="true" />
+          <span className={`min-w-0 truncate ${live ? "noa-shimmer" : ""}`}>{live ? liveLabel : completedLabel}</span>
+        </span>
         <ChevronRight size={14} className={`shrink-0 opacity-0 transition-[transform,opacity] duration-300 group-hover/activity:opacity-100 group-focus-visible/activity:opacity-100 ${open ? "rotate-90" : ""}`} />
       </button>
       <Collapsible open={open}>
-        <div className="mt-2 flex flex-col gap-1">
+        <div ref={activityRef} onScroll={(event) => { const e = event.currentTarget; following.current = e.scrollHeight - e.clientHeight - e.scrollTop <= 24 }} className="noa-activity-scroll mt-2 flex max-h-56 flex-col gap-1 overflow-x-hidden overflow-y-auto overscroll-contain focus-visible:outline-auto" role="region" aria-label="Tool activity" tabIndex={open ? 0 : -1}>
           {blocks.map((block, i) => block.kind === "thinking"
             ? <ThinkingBlock key={`thought-${i}`} block={block} streamKey={streamKeyFor?.(block)} />
             : (
@@ -604,9 +635,9 @@ function WorkedFor({ durationMs, count, interrupted, collapsed, live, onToggle }
       : count !== undefined ? `${count} previous ${count === 1 ? "message" : "messages"}` : "Activity"
   if (!onToggle) {
     return (
-      <div className="flex w-full flex-col items-start gap-1 px-1 py-0.5 text-[length:var(--text-chat-sm)] tabular-nums text-[var(--sidebar-text-muted)]">
+      <div className="flex w-full min-h-0 flex-col items-start gap-2 text-[length:var(--font-text-md-size)] tabular-nums text-[var(--sidebar-text-muted)]">
         <span className="whitespace-nowrap">{label}</span>
-        <span className="h-px w-full bg-[var(--divider-subtle)]" aria-hidden="true" />
+        <span className="w-full border-t border-[var(--divider-subtle)]" aria-hidden="true" />
       </div>
     )
   }
@@ -615,13 +646,13 @@ function WorkedFor({ durationMs, count, interrupted, collapsed, live, onToggle }
       type="button"
       aria-expanded={!collapsed}
       onClick={onToggle}
-      className="group/worked flex w-full flex-col items-start gap-1 rounded-md px-1 py-0.5 text-left text-[length:var(--text-chat-sm)] tabular-nums text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary)]"
+      className="group/worked flex w-full min-h-0 flex-col items-start gap-2 rounded-md p-0 text-left text-[length:var(--font-text-md-size)] tabular-nums text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary)]"
     >
       <span className="flex items-center gap-1 whitespace-nowrap">
         {label}
         <ChevronRight size={12} className={`opacity-0 transition-[transform,opacity] duration-150 group-hover/worked:opacity-100 group-focus-visible/worked:opacity-100 ${collapsed ? "" : "rotate-90"}`} />
       </span>
-      <span className="h-px w-full bg-[var(--divider-subtle)]" aria-hidden="true" />
+      <span className="w-full border-t border-[var(--divider-subtle)]" aria-hidden="true" />
     </button>
   )
 }
@@ -686,23 +717,26 @@ function MessageActions({ text, kind = "assistant", onEdit, complete = true }: {
   complete?: boolean
 }) {
   const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState(false)
   if (!text || !complete) return null
   const copyLabel = kind === "user" ? "Copy message" : "Copy response"
   return (
-    <div className="mx-0.5 mb-1 flex gap-2 leading-4 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100">
+    <div className={`${kind === "assistant" ? "-ml-1 mt-0.5 min-h-5 gap-0.5" : "mx-0.5 mb-1 gap-2"} flex leading-4 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100`}>
       <button
         type="button"
         onClick={async () => {
-          await navigator.clipboard.writeText(text)
+          try { await navigator.clipboard.writeText(text) } catch { setCopyError(true); return }
+          setCopyError(false)
           setCopied(true)
           setTimeout(() => setCopied(false), 2000)
         }}
-        className="flex size-6 items-center justify-center rounded-md text-[var(--text-secondary,#5D5D5D)] hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] hover:text-[var(--text-primary,#2D2D2B)] noa-press"
+        className={`${kind === "assistant" ? "size-5" : "size-6"} flex items-center justify-center rounded-md text-[var(--text-secondary,#5D5D5D)] hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,transparent)] hover:text-[var(--text-primary,#2D2D2B)] noa-press`}
         aria-label={copied ? "Copied" : copyLabel}
         title={copied ? "Copied" : copyLabel}
       >
-        {copied ? <Check size={12} /> : <Copy size={12} />}
+        {copied ? <Check size={kind === "assistant" ? 16 : 12} /> : <Copy size={kind === "assistant" ? 16 : 12} />}
       </button>
+      {copyError && <span role="status" className="self-center text-caption text-[#C24444]">Could not copy. Try again.</span>}
       {onEdit && (
         <button
           type="button"
@@ -720,6 +754,9 @@ function MessageActions({ text, kind = "assistant", onEdit, complete = true }: {
 
 function BlockView({ block, streaming, streamKey }: { block: Block; streaming?: boolean; streamKey?: string }) {
   switch (block.kind) {
+    case "compaction":
+    case "retry":
+      return <StatusBlock block={block} />
     case "text":
       return <Markdown text={block.text} streaming={streaming} streamKey={streamKey} />
     case "thinking":
@@ -738,6 +775,7 @@ function ThinkingBlock({ block, streamKey }: { block: Extract<Block, { kind: "th
   const startedAt = useRef<number | undefined>(block.startedAt ?? (block.done ? undefined : Date.now()))
   const [elapsed, setElapsed] = useState<number>()
   const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState(false)
   useEffect(() => {
     if (!block.done) return
     if (startedAt.current !== undefined) setElapsed((value) => value ?? Date.now() - startedAt.current!)
@@ -745,7 +783,8 @@ function ThinkingBlock({ block, streamKey }: { block: Extract<Block, { kind: "th
   }, [block.done])
   const label = elapsed === undefined ? "Thought" : elapsed < 1000 ? "Thought for <1s" : `Thought for ${formatDuration(elapsed)}`
   async function copyQuote() {
-    await navigator.clipboard.writeText(block.text.split("\n").map((line) => `> ${line}`).join("\n"))
+    try { await navigator.clipboard.writeText(block.text.split("\n").map((line) => `> ${line}`).join("\n")) } catch { setCopyError(true); return }
+    setCopyError(false)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -777,6 +816,7 @@ function ThinkingBlock({ block, streamKey }: { block: Extract<Block, { kind: "th
           </button>
         )}
       </div>
+      {copyError && <span role="status">Could not copy. Try again.</span>}
       <Collapsible open={open}>
         <div className="mt-1.5 px-1">
           <Markdown text={block.text} tone="muted" streaming={!block.done} streamKey={streamKey} />
@@ -784,4 +824,23 @@ function ThinkingBlock({ block, streamKey }: { block: Extract<Block, { kind: "th
       </Collapsible>
     </div>
   )
+}
+
+function StatusBlock({ block }: { block: Extract<Block, { kind: "compaction" | "retry" }> }) {
+  const [delayed, setDelayed] = useState(false)
+  useEffect(() => {
+    if (block.kind !== "compaction" || block.status !== "running" || !block.startedAt) return
+    const timer = setTimeout(() => setDelayed(true), Math.max(0, block.startedAt + 10000 - Date.now()))
+    return () => clearTimeout(timer)
+  }, [block])
+  if (block.kind === "retry" && block.done) return null
+  const live = block.kind === "retry" || block.status === "running"
+  const label = block.kind === "retry" ? `Retrying ${block.attempt}/${block.maxRetries} · ${block.errorStatus ? `HTTP ${block.errorStatus} · ` : ""}${Math.ceil(block.delayMs / 1000)}s delay`
+    : block.status === "running" ? `Compacting context${delayed ? " · This can take a few minutes" : ""}`
+      : block.status === "unknown" ? "Compaction connection lost" : block.status === "stopped" ? "Compaction interrupted" : block.trigger === "auto" ? "Context automatically compacted" : "Context compacted"
+  return <div role="status" className="flex items-center gap-1.5 text-[length:var(--font-text-md-size)] leading-5 text-[color-mix(in_srgb,var(--text-primary)_60%,transparent)]"><span aria-hidden="true">{block.kind === "compaction" ? <ListCollapseIcon /> : <AlertTriangle size={16} />}</span><span className={live ? "noa-shimmer" : undefined}>{label}</span></div>
+}
+
+function ListCollapseIcon() {
+  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h2M16 3h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2M9 8h6M9 12h6M9 16h3" /></svg>
 }

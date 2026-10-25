@@ -64,7 +64,7 @@ async function load<T>(route: string, cwd: string, params: Record<string, string
 }
 
 export function WorkspaceFiles({ cwd, changes = false, focus, active = true, refreshKey, onReference, onUpdated, onOpenChanges }: {
-  cwd: string; changes?: boolean; focus?: { path: string; at: number }; active?: boolean; refreshKey: number; onReference: (path: string) => void; onUpdated?: () => void; onOpenChanges?: () => void
+  cwd: string; changes?: boolean; focus?: { path: string; at: number; line?: number }; active?: boolean; refreshKey: number; onReference: (path: string) => void; onUpdated?: () => void; onOpenChanges?: () => void
 }) {
   const [selected, setSelected] = useState<string>()
   const [view, setView] = useState(changes ? "diff" : "file")
@@ -154,7 +154,7 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
     if (draftKey) sessionStorage.removeItem(draftKey)
     setEditing(false); setSelected(path); setView(nextView); setContext(""); setFindRequest(0); setError(undefined)
   }  // Opening a file from the turn's change summary jumps straight to its diff.
-  useEffect(() => { if (focus) void select(focus.path, "diff") }, [focus]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (focus) void select(focus.path, changes ? "diff" : "file") }, [focus]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const gitAction = async (kind: string, hunk?: number) => {
     if (kind.startsWith("revert")) {
@@ -268,7 +268,7 @@ export function WorkspaceFiles({ cwd, changes = false, focus, active = true, ref
     {error && <p className="noa-panel-error" role="alert">{error}</p>}
     {loading && !current && selected && <p className="noa-panel-empty" role="status">Loading…</p>}
     <div className="noa-panel-body">
-      {selected ? current && (editing ? <textarea aria-label="Edit file content" className="noa-file-editor" value={draft} onChange={(e) => setDraft(e.target.value)} spellCheck={false} /> : current.kind === "image" ? <div className="noa-image-preview"><img src={current.dataUrl} alt={selected} /></div> : current.kind === "binary" ? <p className="noa-panel-empty">Binary file cannot be previewed</p> : current.truncated ? <p className="noa-panel-empty">Diff too large to display. Open the file in your editor to review it.</p> : <Suspense fallback={<p className="noa-panel-empty">Loading code viewer…</p>}><CodeView path={selected} content={current.content ?? ""} diff={view === "diff"} split={split} wrap={wrap} hunkScope={scope !== "all" && !selectedChange?.oldPath && !action ? scope : undefined} onHunkAction={gitAction} findRequest={findRequest} onCloseFind={() => setFindRequest(0)} /></Suspense>)
+      {selected ? current && (editing ? <textarea aria-label="Edit file content" className="noa-file-editor" value={draft} onChange={(e) => setDraft(e.target.value)} spellCheck={false} /> : current.kind === "image" ? <div className="noa-image-preview"><img src={current.dataUrl} alt={selected} /></div> : current.kind === "binary" ? <p className="noa-panel-empty">Binary file cannot be previewed</p> : current.truncated ? <p className="noa-panel-empty">Diff too large to display. Open the file in your editor to review it.</p> : <Suspense fallback={<p className="noa-panel-empty">Loading code viewer…</p>}><CodeView focusRequest={focus?.path === selected ? focus.at : undefined} focusLine={focus?.path === selected ? focus.line : undefined} path={selected} content={current.content ?? ""} diff={view === "diff"} split={split} wrap={wrap} hunkScope={scope !== "all" && !selectedChange?.oldPath && !action ? scope : undefined} onHunkAction={gitAction} findRequest={findRequest} onCloseFind={() => setFindRequest(0)} /></Suspense>)
         : changes ? !status ? <p className="noa-panel-empty" role="status">Loading changes…</p> : status.isGit === false ? <div className="noa-panel-empty"><p>This folder is not a Git repository</p><button type="button" className={button} disabled={!!action} onClick={() => gitAction("init")}>Create Git repository</button></div> : <div role="tree" aria-label="Changed files" className="noa-file-tree">{changeFiles.length ? changedRows(changeTree(changeFiles), "", 0) : <div className="noa-panel-empty">{!filter && <CheckCircle2 size={20} />}<p>{filter ? "No matching files" : scope === "staged" ? "No staged changes" : scope === "unstaged" ? "No unstaged changes" : "Working tree clean"}</p></div>}</div>
         : <div role={search ? undefined : "tree"} aria-label="Project files" className="noa-file-tree">{!search && onOpenChanges && status?.isGit && <button type="button" className="noa-file-row" onClick={onOpenChanges}><span className="noa-file-icon"><ListDetails size={15} /></span><span className="noa-file-name">All changes</span></button>}
           {sectioned && <>{section("@changed", "Changed files")}{!closed.has("@changed") && <div role="group">{changedRows(changeTree(status!.files))}</div>}

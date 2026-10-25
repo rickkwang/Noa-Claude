@@ -94,9 +94,10 @@ describe('settings env under --bare', () => {
           await import('./src/utils/managedEnv.ts')
         applySafeConfigEnvironmentVariables()
 
-        // Asserted synchronously: the void applyActiveProviderProfileEnv()
-        // at the end of the apply deletes these keys, but only after its
-        // async profile-file read resolves — sync code runs first.
+        const { applyActiveProviderProfileEnv } =
+          await import('./src/utils/providerProfile.ts')
+        await applyActiveProviderProfileEnv()
+
         if (process.env.ANTHROPIC_BASE_URL !== 'https://stale-provider.example') {
           throw new Error('settings.env ANTHROPIC_BASE_URL not applied')
         }

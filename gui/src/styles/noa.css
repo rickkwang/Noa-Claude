@@ -2147,9 +2147,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   overflow: auto;
   color: var(--text-secondary);
 }
-.noa-shell-output[data-overflow="true"] {
-  mask-image: linear-gradient(to bottom, transparent, #000 2rem, #000 calc(100% - 2rem), transparent);
-}
+
 @keyframes noa-shimmer { from { background-position: -100% 0; } to { background-position: 250% 0; } }
 @media (prefers-reduced-motion: reduce) { .noa-shimmer { animation: none; color: var(--text-secondary, #5D5D5D); background: none; -webkit-text-fill-color: currentColor; } }
 
@@ -2292,3 +2290,94 @@ body.noa-session-dragging * { cursor: grabbing !important; }
   .noa-lightbox { animation: none; }
   .noa-lightbox-img { transition: none; }
 }
+
+.noa-approval-card { background: color-mix(in srgb, var(--text-primary) 3%, var(--bg-card)); }
+.noa-approval-button { height: 28px; padding: 0 8px; border-radius: 999px; font-size: var(--text-chat-sm); line-height: 18px; white-space: nowrap; }
+.noa-code-block { background: color-mix(in srgb, var(--text-primary) 3%, var(--surface-page)); }
+@supports (corner-shape: superellipse(1.1)) {
+  .noa-code-block { corner-shape: superellipse(1.1); }
+}
+
+@property --bottom-fade { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes noa-activity-edge-fade {
+  0%, 1% { --top-fade: 0px; --bottom-fade: var(--edge-fade-distance); }
+  99%, 100% { --top-fade: var(--edge-fade-distance); --bottom-fade: 0px; }
+}
+@supports (animation-timeline: scroll()) {
+  .noa-activity-scroll {
+    --edge-fade-distance: 24px;
+    mask-image: linear-gradient(to bottom, transparent, #000 var(--top-fade) calc(100% - var(--bottom-fade)), transparent);
+    animation: noa-activity-edge-fade linear both;
+    animation-timeline: scroll(self y);
+  }
+}
+
+.noa-activity-scroll > [data-tool-activity] > button {
+  min-height: 20px;
+  padding: 0;
+  font-size: var(--font-text-md-size);
+  color: color-mix(in srgb, var(--text-primary) 60%, transparent);
+}
+.noa-activity-scroll > [data-tool-activity] > button:hover { color: var(--text-primary); }
+.noa-activity-scroll > [data-tool-activity] > button > svg:first-child { width: 16px; height: 16px; }
+
+/* Match the conversation code palette to the existing file viewer. */
+.noa-code-block .hljs-keyword, .noa-code-block .hljs-selector-tag, .noa-code-block .hljs-type { color: #A626A4; }
+.noa-code-block .hljs-string, .noa-code-block .hljs-regexp { color: #3F7E35; }
+.noa-code-block .hljs-number, .noa-code-block .hljs-attr, .noa-code-block .hljs-literal { color: #986801; }
+.noa-code-block .hljs-title, .noa-code-block .hljs-built_in { color: #2868A8; }
+.noa-code-block .hljs-comment, .noa-code-block .hljs-quote { color: var(--sidebar-text-muted); }
+@supports (animation-timeline: scroll()) {
+  .noa-shell-output[data-overflow="true"] {
+    --edge-fade-distance: 32px;
+    mask-image: linear-gradient(to bottom, transparent, #000 var(--top-fade), #000 calc(100% - var(--bottom-fade)), transparent);
+    animation: noa-activity-edge-fade linear both reverse;
+    animation-timeline: scroll(self y);
+  }
+}
+
+.noa-output-markdown :not(pre) > code::before,
+.noa-output-markdown :not(pre) > code::after,
+.noa-output-markdown blockquote p::before,
+.noa-output-markdown blockquote p::after { content: none; }
+
+/* Codex local conversation Markdown (_MarkdownRoot_16avx_2), scaled to Noa's chat font. */
+.noa-output-markdown {
+  --output-space: calc(var(--font-text-md-size) / 4);
+  font-size: var(--font-text-md-size);
+  line-height: var(--font-text-md-line-height);
+  overflow-wrap: anywhere;
+}
+.noa-output-markdown p { margin: 0 0 var(--output-space); }
+.noa-output-markdown > p:not(:first-child) { margin-top: calc(var(--output-space) * 2); }
+.noa-output-markdown > p + p { margin-block: calc(var(--output-space) * 4); }
+.noa-output-markdown :is(h1,h2,h3,h4,h5,h6), .noa-output-markdown strong { font-weight: var(--font-weight-content-bold, 600); }
+.noa-output-markdown h1 { font-size: 1.5em; line-height: calc(var(--output-space) * 8); margin: calc(var(--output-space) * 4) 0 calc(var(--output-space) * 2); }
+.noa-output-markdown h2 { font-size: 1.25em; line-height: calc(var(--output-space) * 7); margin: calc(var(--output-space) * 4) 0 var(--output-space); }
+.noa-output-markdown h3 { font-size: 1.125em; line-height: calc(var(--output-space) * 7); margin: calc(var(--output-space) * 4) 0 var(--output-space); }
+.noa-output-markdown h4 { font-size: 1em; line-height: calc(var(--output-space) * 6); margin: calc(var(--output-space) * 4) 0 0; }
+.noa-output-markdown :is(h5,h6) { font-size: 1em; line-height: inherit; margin: 0; }
+.noa-output-markdown :is(h1,h2,h3,h4) + p { margin-top: 0; }
+.noa-output-markdown :is(ul,ol) { margin: 0; padding-inline-start: var(--font-text-md-line-height); }
+.noa-output-markdown li { margin: 0; padding-inline-start: calc(var(--output-space) * 1.5); }
+.noa-output-markdown li::marker { color: inherit; font-weight: var(--font-weight-content-bold, 600); }
+.noa-output-markdown li > p { margin: 0; }
+.noa-output-markdown li > p + p { margin-top: calc(var(--output-space) * 4); }
+.noa-output-markdown li:has(> input[type="checkbox"]) { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 8px; padding-inline-start: 0; }
+.noa-output-markdown li > input[type="checkbox"] { margin-top: calc(var(--output-space) * 1.5); }
+.noa-output-markdown blockquote { position: relative; margin: 0 0 calc(var(--output-space) * 2); padding: calc(var(--output-space) * 2) 0 calc(var(--output-space) * 2) calc(var(--output-space) * 6); border: 0; color: inherit; font-style: normal; font-weight: normal; line-height: calc(var(--output-space) * 6); }
+.noa-output-markdown blockquote::after { content: ""; position: absolute; inset-inline-start: 0; top: calc(var(--output-space) * 2); bottom: calc(var(--output-space) * 2); width: var(--output-space); border-radius: calc(var(--output-space) / 2); background: var(--border-strong); }
+.noa-output-markdown blockquote > p { margin: 0; }
+.noa-output-markdown hr { margin: calc(var(--output-space) * 7) 0; border-color: var(--border-strong); }
+.noa-output-markdown :not(pre) > code { font-size: .92em; line-height: inherit; font-weight: normal; font-family: var(--font-mono); border-radius: 6px; padding: 1px 6px; background: color-mix(in srgb, var(--text-primary) 6%, transparent); box-shadow: none; box-decoration-break: clone; }
+.noa-output-markdown .noa-code-block { margin-block: calc(var(--output-space) * 5); }
+.noa-output-markdown > div:has(> table) { margin-top: calc(var(--output-space) * 4); }
+.noa-output-markdown table { margin: 0; font-size: max(var(--code-font-size), calc(var(--font-text-md-size) * .875)); line-height: var(--font-text-md-line-height); border-collapse: separate; border-spacing: 0; }
+.noa-output-markdown :is(th,td) { padding-inline: 0 calc(var(--output-space) * 6); }
+.noa-output-markdown th { padding-block: calc(var(--output-space) * 2); line-height: calc(var(--output-space) * 4); }
+.noa-output-markdown td { padding-block: calc(var(--output-space) * 2.5); }
+.noa-output-markdown tbody tr:last-child td { border-bottom: 0; padding-bottom: calc(var(--output-space) * 6); }
+.noa-output-markdown > :first-child { margin-top: 0; }
+.noa-output-markdown > :last-child { margin-bottom: 0; }
+
+.noa-source-line[data-reference-line] { background: color-mix(in srgb, var(--accent-color) 10%, transparent); }

@@ -1,6 +1,5 @@
 import type { Permission } from "../agent/reducer"
 import { useEffect, useRef, useState } from "react"
-import { IconShieldCheck } from "@tabler/icons-react"
 import { ChevronDown } from "../lib/icons"
 import { Markdown } from "./Markdown"
 
@@ -10,7 +9,7 @@ interface PermissionCardProps {
 }
 
 const button =
-  "noa-confirm-btn h-6 rounded-md px-3 text-caption min-w-16 text-center border border-[var(--divider-subtle)] noa-press"
+  "noa-approval-button noa-press min-w-16 text-center border border-[var(--divider-subtle)]"
 
 export function permissionRememberLabel(suggestions: unknown[]): string {
   const destinations = suggestions.flatMap((suggestion) =>
@@ -22,7 +21,7 @@ export function permissionRememberLabel(suggestions: unknown[]): string {
     : "Always allow"
 }
 
-// Noa's confirmation reveal: an accent-tinted strip with small text buttons.
+// Approval controls keep the CLI permission decisions and scopes.
 export function PermissionCard({ permission, onAnswer }: PermissionCardProps) {
   if (permission.toolName === "AskUserQuestion" && Array.isArray(permission.input.questions))
     return <QuestionCard permission={permission} onAnswer={onAnswer} />
@@ -50,7 +49,8 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
     setSubmitting(remember ? "remember" : allow ? "allow" : "deny")
     onAnswer(permission, allow, remember)
   }
-  const properties = Object.entries(permission.input).filter(([key]) => !["command", "file_path", "content", "old_string", "new_string", "plan", "questions"].includes(key))
+  const description = permission.description ?? (typeof permission.input.description === "string" ? permission.input.description : undefined)
+  const properties = Object.entries(permission.input).filter(([key, value]) => !["command", "file_path", "old_string", "new_string", "plan", "questions"].includes(key) && (key !== "description" || value !== description))
   const command = typeof permission.input.command === "string" ? permission.input.command : undefined
   const file = typeof permission.input.file_path === "string" ? permission.input.file_path : undefined
   const plan = typeof permission.input.plan === "string" ? permission.input.plan : undefined
@@ -68,39 +68,39 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
           answer(false, false)
         }
       }}
-      className="noa-confirm-reveal flex flex-col gap-2 rounded-panel bg-[color-mix(in_srgb,var(--accent-color,#CC7D5E)_10%,transparent)] px-3 py-2.5 font-ui"
+      className="noa-approval-card flex min-w-0 flex-col overflow-hidden shrink-0 rounded-3xl border border-[var(--divider-subtle)] font-ui text-[var(--text-primary)]"
     >
-      <div className="flex items-start gap-2">
-        <IconShieldCheck size={17} stroke={1.5} className="mt-0.5 shrink-0 text-[var(--accent-color)]" aria-hidden="true" />
-        <div className="min-w-0 flex-1">
-          <h3 className="m-0 text-balance text-body font-medium text-[var(--text-primary,#2D2D2B)]">
+      <div className="flex min-h-0 min-w-0 shrink-0 flex-col gap-2 px-4 pt-4 pb-3">
+        <div className="min-w-0" role="alert" aria-atomic="true">
+          <h3 className="m-0 break-words text-[length:var(--font-text-md-size)] font-medium leading-5">
             {permission.title ?? `Allow ${permission.toolName}?`}
           </h3>
-          {(permission.description || permission.decisionReason) && (
-            <p className="m-0 mt-0.5 text-pretty text-caption leading-relaxed text-[var(--sidebar-text,#52514E)]">
-              {permission.description ?? permission.decisionReason}
-            </p>
-          )}
+          {description && <p className="m-0 mt-0.5 text-[length:var(--text-chat-sm)] text-[var(--text-secondary)]">{description}</p>}
         </div>
+        {permission.decisionReason && (
+          <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 text-[length:var(--font-text-md-size)]">
+            <dt className="text-[var(--sidebar-text-muted)]">Reason</dt>
+            <dd className="m-0 min-w-0 break-words">{permission.decisionReason}</dd>
+          </dl>
+        )}
+        {!!properties.length && (
+          <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-[length:var(--font-text-md-size)]">
+            {properties.map(([key, value]) => (
+              <div key={key} className="contents">
+                <dt className="text-[var(--sidebar-text-muted)]">{key.replace(/_/g, " ")}</dt>
+                <dd className="m-0 min-w-0">{key === "content" || typeof value === "object" || String(value).length > 120 ? <details><summary className="cursor-pointer break-words">{key === "content" ? "View proposed content" : typeof value === "object" ? "View full input" : "View value"}</summary><pre className="m-0 mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[length:var(--code-font-size)] leading-[max(1.5em,20px)]">{formatValue(value)}</pre></details> : formatValue(value)}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
       </div>
-      {!!properties.length && (
-        <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-lg border border-[var(--divider-subtle)] bg-[color-mix(in_srgb,var(--bg-card)_80%,transparent)] px-2.5 py-2 text-caption">
-          {properties.map(([key, value]) => (
-            <div key={key} className="contents">
-              <dt className="text-[var(--sidebar-text-muted)]">{key.replace(/_/g, " ")}</dt>
-              <dd className="m-0 min-w-0 truncate text-right tabular-nums text-[var(--text-secondary)]" title={formatValue(value)}>{formatValue(value)}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
       {command && (
-        <div className="overflow-hidden rounded-lg border border-[var(--divider-subtle)] bg-[var(--surface-page)]">
-          <div className="border-b border-[var(--divider-subtle)] px-2.5 py-1 text-caption text-[var(--sidebar-text-muted)]">Command</div>
-          <pre className="m-0 max-h-32 overflow-auto px-2.5 py-2 font-mono text-caption whitespace-pre-wrap break-words">{command}</pre>
+        <div className="mx-3 overflow-hidden rounded-md bg-[color-mix(in_srgb,var(--text-primary)_4%,transparent)]">
+          <pre className="m-0 max-h-80 overflow-auto p-2 font-mono text-[length:var(--code-font-size)] font-medium leading-[max(1.5em,20px)] whitespace-pre-wrap break-words text-[var(--text-secondary)]">{command}</pre>
         </div>
       )}
       {file && (
-        <div className="flex items-center gap-2 rounded-lg border border-[var(--divider-subtle)] bg-[var(--surface-page)] px-2.5 py-2 text-caption">
+        <div className="mx-3 flex items-center gap-2 rounded-md border border-[var(--divider-subtle)] bg-[var(--surface-page)] px-2.5 py-2 text-caption">
           <span className="text-[var(--sidebar-text-muted)]">File</span>
           <span className="min-w-0 truncate text-right text-[var(--text-secondary)]" title={file}>{file}</span>
         </div>
@@ -116,12 +116,12 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
           {permission.input.new_string.split("\n").map((line, index) => <div key={`new-${index}`} className="whitespace-pre-wrap bg-[rgba(16,185,129,0.10)] px-2.5">+{line}</div>)}
         </pre>
       )}
-      <div className="flex justify-end gap-2">
+      <div className="flex shrink-0 justify-end gap-2 px-4 pt-2 pb-4">
         <button
           type="button"
           disabled={!!submitting}
           onClick={() => answer(false, false)}
-          className={`${button} bg-[#D45555] text-white border-transparent disabled:opacity-50`}
+          className={`noa-approval-button noa-press border border-[var(--divider-subtle)] bg-transparent text-[var(--text-primary)] hover:bg-[color-mix(in_srgb,var(--text-primary)_7.5%,transparent)] disabled:opacity-40`}
         >
           {submitting === "deny" ? "Denying…" : "Deny"}
         </button>
@@ -131,7 +131,7 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
             type="button"
             disabled={!!submitting}
             onClick={() => answer(true, false)}
-            className={`${button} bg-[var(--accent-color,#CC7D5E)] text-white border-transparent disabled:opacity-50 ${canRemember ? "rounded-e-none border-e-0" : ""}`}
+            className={`noa-approval-button noa-press border border-transparent bg-[var(--text-primary)] text-[var(--surface-page)] hover:opacity-80 disabled:opacity-40 ${canRemember ? "!rounded-e-none border-e-0 !pe-1" : ""}`}
           >
             {submitting === "allow" ? "Allowing…" : "Allow once"}
           </button>
@@ -139,9 +139,9 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
             <details ref={optionsRef} className="relative">
               <summary
                 aria-label="Approval options"
-                className="noa-confirm-btn flex h-6 w-7 cursor-pointer list-none items-center justify-center rounded-e-md border border-[var(--divider-subtle)] bg-[var(--accent-color,#CC7D5E)] text-white [&::-webkit-details-marker]:hidden"
+                className="noa-approval-button flex w-6 cursor-pointer list-none items-center justify-center !rounded-s-none border border-transparent border-s-0 bg-[var(--text-primary)] !px-0 text-[var(--surface-page)] [&::-webkit-details-marker]:hidden"
               >
-                <ChevronDown size={12} aria-hidden="true" />
+                <ChevronDown size={14} className="opacity-50" aria-hidden="true" />
               </summary>
               <div role="menu" className="noa-floating-panel absolute bottom-full end-0 z-30 mb-1 w-48 rounded-lg bg-[var(--bg-card)] p-1 text-caption">
                 <button
@@ -178,11 +178,7 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
 }
 
 function formatValue(value: unknown): string {
-  if (typeof value === "string") return value.length > 120 ? `${value.slice(0, 117)}…` : value
-  if (typeof value === "number" || typeof value === "boolean") return String(value)
-  if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? "" : "s"}`
-  if (value && typeof value === "object") return `${Object.keys(value).length} fields`
-  return "—"
+  return typeof value === "string" ? value : JSON.stringify(value, null, 2) ?? "—"
 }
 
 type Question = {
@@ -209,7 +205,7 @@ function QuestionCard({ permission, onAnswer }: PermissionCardProps) {
         e.preventDefault()
         onAnswer(permission, true, false, { ...permission.input, answers })
       }}
-      className="noa-confirm-reveal flex max-h-[50vh] flex-col gap-3 overflow-auto rounded-panel bg-[var(--bg-card)] p-3 shadow-[0_0_0_1px_var(--divider-subtle)]"
+      className="noa-approval-card flex max-h-[50vh] shrink-0 flex-col gap-3 overflow-auto rounded-3xl border border-[var(--divider-subtle)] p-4"
     >
       {questions.map((q) => (
         <fieldset key={q.question} className="flex min-w-0 flex-col gap-1.5">
@@ -261,7 +257,7 @@ function QuestionCard({ permission, onAnswer }: PermissionCardProps) {
         <button
           type="submit"
           disabled={Object.values(answers).some((answer) => !answer)}
-          className={`${button} bg-[var(--accent-color)] text-white disabled:opacity-40`}
+          className={`${button} bg-[var(--text-primary)] text-[var(--surface-page)] disabled:opacity-40`}
         >
           Continue task
         </button>

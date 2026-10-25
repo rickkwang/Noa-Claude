@@ -1,6 +1,6 @@
 import type { ServerWebSocket, Subprocess } from "bun"
 import { join } from "node:path"
-import { appendTurnDiff, countUserTurns, findTurnDiff, findTurnUserMessage, loadHistory, readTurnDiffs, setTurnDiffReverted, transcriptPath } from "./sessions"
+import { appendTurnResult, appendTurnDiff, countUserTurns, findTurnDiff, findTurnUserMessage, loadHistory, readTurnDiffs, setTurnDiffReverted, transcriptPath } from "./sessions"
 import {
   applyTurnDiff,
   captureTree,
@@ -37,6 +37,8 @@ interface AgentRun {
   turn?: {
     index: number
     transcriptOffset: number
+    startedAt: number
+    interrupted?: boolean
     before: TreeSnapshot | null
     // Tool-result fallback for projects outside git.
     changes: ChangeCollector
@@ -53,6 +55,25 @@ interface AgentRun {
   exited: boolean
 }
 const runs = new Map<string, AgentRun>()
+const workspaceOperations = new Map<string, Promise<void>>()
+
+function reclaimIfIdle(run: AgentRun): void {
+  if (!run.clients.size && !run.busy && !run.queue.length && !run.waiting.size && !run.exited) {
+    run.proc.kill()
+    runs.delete(run.id)
+  }
+}
+
+// Serialize snapshots and mutations within one workspace, never across projects.
+function afterWorkspaceOperation<T>(cwd: string, operation: () => Promise<T>): Promise<T> {
+  const previous = workspaceOperations.get(cwd) ?? Promise.resolve()
+  const result = previous.then(operation)
+  const settled = result.then(() => undefined, () => undefined)
+  workspaceOperations.set(cwd, settled)
+  settled.then(() => { if (workspaceOperations.get(cwd) === settled) workspaceOperations.delete(cwd) })
+  return result
+}
+
 function queueEnvelope(run: AgentRun): Envelope {
   return { kind: "queue", messages: [...run.queue], paused: run.queuePaused }
 }
@@ -99,8 +120,12 @@ async function lines(stream: ReadableStream<Uint8Array>, onLine: (line: string) 
   if (buffer) onLine(buffer)
 }
 async function startNext(run: AgentRun) {
+  await afterWorkspaceOperation(run.cwd, () => startNextSerialized(run))
+}
+
+async function startNextSerialized(run: AgentRun) {
   if (run.busy || run.waiting.size || run.exited || !run.queue.length) return
-  const next = run.queue.shift()!
+  const next = run.queue[0]!
   run.busy = true
   run.turnSucceeded = undefined
   const index = ++run.turnCounter
@@ -109,9 +134,12 @@ async function startNext(run: AgentRun) {
   const before = await captureTree(run.cwd).catch(() => null)
   if (run.exited) {
     await disposeSnapshot(before)
+    run.busy = false
+    emit(run, queueEnvelope(run))
     return
   }
-  run.turn = { index, transcriptOffset, before, changes: createChangeCollector() }
+  run.queue.shift()
+  run.turn = { index, transcriptOffset, startedAt: Date.now(), before, changes: createChangeCollector() }
   emit(run, queueEnvelope(run))
   emit(run, { kind: "user", id: next.id, content: next.content })
   write(run, { type: "user", message: { role: "user", content: next.content }, parent_tool_use_id: null })
@@ -160,22 +188,26 @@ async function computeLiveDiff(run: AgentRun) {
 async function turnDiffAction(run: AgentRun, turnIndex: number, action: "undo" | "reapply") {
   const fail = (result: TurnDiffActionResult) =>
     emit(run, { kind: "turn-diff-action", turnIndex, action, result })
-  if (!run.sessionId)
-    return fail({ ok: false, errorCode: "no-patch", appliedPaths: [], skippedPaths: [], conflictedPaths: [] })
-  const record = findTurnDiff(run.cwd, run.sessionId, turnIndex)
-  if (!record)
-    return fail({ ok: false, errorCode: "no-patch", appliedPaths: [], skippedPaths: [], conflictedPaths: [] })
-  const result = await applyTurnDiff(
-    run.cwd,
-    record.patch ?? record.diff.patch,
-    action === "undo",
-    record.diff.files.map((file) => file.path),
-  )
-  if (result.ok) {
-    const updated = setTurnDiffReverted(run.cwd, run.sessionId, turnIndex, action === "undo")
-    if (updated) emit(run, { kind: "turn-diff", diff: updated.diff })
-  }
-  emit(run, { kind: "turn-diff-action", turnIndex, action, result })
+  await afterWorkspaceOperation(run.cwd, async () => {
+    if ([...runs.values()].some((active) => active.cwd === run.cwd && !active.exited && (active.busy || active.waiting.size)))
+      return fail({ ok: false, errorCode: "apply-failed", error: "Wait for running tasks in this workspace to finish before changing a workspace snapshot.", appliedPaths: [], skippedPaths: [], conflictedPaths: [] })
+    if (!run.sessionId)
+      return fail({ ok: false, errorCode: "no-patch", appliedPaths: [], skippedPaths: [], conflictedPaths: [] })
+    const record = findTurnDiff(run.cwd, run.sessionId, turnIndex)
+    if (!record)
+      return fail({ ok: false, errorCode: "no-patch", appliedPaths: [], skippedPaths: [], conflictedPaths: [] })
+    const result = await applyTurnDiff(
+      run.cwd,
+      record.patch ?? record.diff.patch,
+      action === "undo",
+      record.diff.files.map((file) => file.path),
+    )
+    if (result.ok) {
+      const updated = setTurnDiffReverted(run.cwd, run.sessionId, turnIndex, action === "undo")
+      if (updated) emit(run, { kind: "turn-diff", diff: updated.diff })
+    }
+    emit(run, { kind: "turn-diff-action", turnIndex, action, result })
+  })
 }
 
 function finalizeTurnDiff(run: AgentRun): Promise<void> {
@@ -183,7 +215,7 @@ function finalizeTurnDiff(run: AgentRun): Promise<void> {
   if (!turn) return Promise.resolve()
   if (turn.finalizing) return turn.finalizing
   if (turn.liveTimer) clearTimeout(turn.liveTimer)
-  turn.finalizing = (async () => {
+  turn.finalizing = afterWorkspaceOperation(run.cwd, async () => {
     try {
       const after = await captureTree(run.cwd).catch(() => null)
       try {
@@ -219,7 +251,7 @@ function finalizeTurnDiff(run: AgentRun): Promise<void> {
     } finally {
       run.turn = undefined
     }
-  })()
+  })
   return turn.finalizing
 }
 export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
@@ -230,8 +262,8 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
         r.cwd === ws.data.cwd &&
         r.sessionId === ws.data.resume &&
         !r.exited &&
-        // A run that is only computing its turn diff is finished; don't attach a
-        // fresh renderer to it. Real turns, queues and waiting requests stay alive.
+        // A replacement can start while the previous CLI finalizes; the
+        // workspace operation queue orders its snapshot after the old one.
         (r.clients.size > 0 || (r.busy && !r.turn?.finalizing) || r.queue.length > 0 || r.waiting.size > 0),
     )
   if (run && run.cwd !== ws.data.cwd) {
@@ -339,6 +371,11 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
       trackTurnResult(current, message)
       emit(current, { kind: "agent", message })
       if (message.type === "result" && !message.parent_tool_use_id) {
+        if (message.is_error && current.sessionId && current.turn && !current.turn.interrupted) {
+          try {
+            appendTurnResult(current.cwd, current.sessionId, { index: current.turn.index, userMessageId: findTurnUserMessage(current.cwd, current.sessionId, current.turn.transcriptOffset), durationMs: message.duration_ms, error: message.errors?.join("\n") || `Agent failed (${message.subtype})` })
+          } catch (error) { emit(current, { kind: "log", text: `Could not save turn result: ${String(error)}` }) }
+        }
         current.turnSucceeded = !message.is_error
         void finalizeTurnDiff(current)
       }
@@ -354,6 +391,16 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
     }).catch((error) => emit(current, { kind: "log", text: String(error) }))
     lines(proc.stderr, (text) => emit(current, { kind: "log", text })).catch(() => {})
     proc.exited.then((code) => {
+      if (current.turn && current.sessionId && current.turnSucceeded === undefined && !current.turn.interrupted) {
+        try {
+          appendTurnResult(current.cwd, current.sessionId, {
+            index: current.turn.index,
+            userMessageId: findTurnUserMessage(current.cwd, current.sessionId, current.turn.transcriptOffset),
+            durationMs: Date.now() - current.turn.startedAt,
+            error: `Agent exited before completing this turn (code ${code}).`,
+          })
+        } catch (error) { emit(current, { kind: "log", text: `Could not save turn result: ${String(error)}` }) }
+      }
       current.exited = true
       current.busy = false
       void finalizeTurnDiff(current)
@@ -452,6 +499,7 @@ export async function agentMessage(ws: ServerWebSocket<SocketData>, raw: string 
   } else {
     if (message.type === "control_request" && message.request.subtype === "interrupt") {
       run.queuePaused = true
+      if (run.turn) run.turn.interrupted = true
       emit(run, { kind: "interrupt" })
     }
     if (message.type === "control_response") {
@@ -468,18 +516,14 @@ export function detachAgent(ws: ServerWebSocket<SocketData>) {
   run.initializeWaiters.delete(ws)
   const idle = () => !run.clients.size && !run.busy && !run.queue.length && !run.waiting.size && !run.exited
   if (idle()) {
-    run.proc.kill()
-    runs.delete(run.id)
+    reclaimIfIdle(run)
     return
   }
   // The turn's diff is computed after the result while busy stays true; reap the
   // CLI once finalization has settled rather than leaving an orphaned run.
   if (!run.clients.size && run.turn?.finalizing) {
-    void run.turn.finalizing.then(() => setTimeout(() => {
-      if (idle()) {
-        run.proc.kill()
-        runs.delete(run.id)
-      }
+    void run.turn?.finalizing?.then(() => setTimeout(() => {
+      reclaimIfIdle(run)
     }, 0))
   }
 }

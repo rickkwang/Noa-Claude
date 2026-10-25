@@ -440,6 +440,16 @@ test("assistant actions wait for completed text and completed turns show worked 
   expect(streaming).not.toContain('aria-label="Copy response"')
   expect(streaming).toContain('aria-label="Copy message"')
 
+  const commentary = render([
+    { role: "user", id: "user", text: "Work" },
+    { role: "assistant", id: "assistant", streaming: false, blocks: [
+      { kind: "text", text: "First check the workspace.", done: true },
+      { kind: "tool", id: "tool", name: "Bash", input: { command: "git status" }, status: "running" },
+    ] },
+  ], true)
+  expect(commentary).toContain("First check the workspace.")
+  expect(commentary).not.toContain('aria-label="Copy response"')
+
   const completed = render([
     { role: "user", id: "user", text: "Work" },
     {
@@ -604,4 +614,29 @@ test("symlinked project paths restore the CLI’s canonical transcript", async (
   const id = transcript(physical, [{ type: "user", message: { content: "canonical task" } }])
   expect(listSessions(link).map((session) => session.id)).toContain(id)
   expect((await loadHistory(link, id))?.[0]).toMatchObject({ kind: "user", text: "canonical task" })
+})
+
+test("compaction markers and failed turn results survive history restoration", async () => {
+  const { appendTurnResult } = await import("../server/sessions")
+  const cwd = "/private/tmp/output-history"
+  const id = transcript(cwd, [
+    { type: "user", uuid: "u", message: { content: "task" } },
+    { type: "assistant", uuid: "a", parentUuid: "u", message: { content: [{ type: "text", text: "partial" }] } },
+    { type: "system", subtype: "compact_boundary", uuid: "compact", parentUuid: "a", compactMetadata: { trigger: "manual" } },
+  ])
+  appendTurnResult(cwd, id, { index: 1, userMessageId: "u", durationMs: 100, error: "Provider failed" })
+  const history = await loadHistory(cwd, id)
+  expect(history).toContainEqual({ kind: "compaction", trigger: "manual" })
+  expect(history).toContainEqual({ kind: "turn-duration", durationMs: 100, error: "Provider failed" })
+})
+
+test("manual compact history shows the command before its completion", async () => {
+  const id = transcript("/private/tmp/compact-command-order", [
+    { type: "system", subtype: "compact_boundary", uuid: "b", parentUuid: null, compactMetadata: { trigger: "manual" } },
+    { type: "user", uuid: "s", parentUuid: "b", isCompactSummary: true, message: { content: "summary" } },
+    { type: "user", uuid: "c", parentUuid: "s", message: { content: "<command-name>/compact</command-name>" } },
+  ])
+  const history = await loadHistory("/private/tmp/compact-command-order", id)
+  expect(history?.[0]).toMatchObject({ kind: "user", text: "/compact" })
+  expect(history?.[1]).toMatchObject({ kind: "compaction", trigger: "manual" })
 })

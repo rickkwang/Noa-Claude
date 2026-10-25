@@ -20,6 +20,7 @@ const MAX_DIFF_CELLS = 250_000
 export type ThinkingBlock = Extract<Block, { kind: "thinking" }>
 
 export type ActivityUnit =
+  | { kind: "status"; block: Extract<Block, { kind: "compaction" | "retry" }> }
   | { kind: "tools"; blocks: ToolBlock[] }
   | { kind: "thinking"; block: ThinkingBlock }
   | { kind: "text"; block: Extract<Block, { kind: "text" }> }
@@ -27,6 +28,8 @@ export type ActivityUnit =
 // Codex renders one collapsible activity group per run of reasoning and tool
 // calls. Text breaks the run and is always visible outside the group.
 export type ActivityRun =
+  | { kind: "status"; block: Extract<Block, { kind: "compaction" | "retry" }> }
+  | { kind: "standalone"; block: ToolBlock }
   | { kind: "activity"; blocks: (ToolBlock | ThinkingBlock)[] }
   | { kind: "text"; block: Extract<Block, { kind: "text" }> }
 
@@ -38,11 +41,14 @@ export function groupActivityRuns(units: ActivityUnit[]): ActivityRun[] {
     blocks = []
   }
   for (const unit of units) {
-    if (unit.kind === "text") {
+    if (unit.kind === "text" || unit.kind === "status") {
       flush()
       runs.push(unit)
     } else if (unit.kind === "thinking") blocks.push(unit.block)
-    else blocks.push(...unit.blocks)
+    else for (const block of unit.blocks) {
+      if (isStandaloneActivity(block)) { flush(); runs.push({ kind: "standalone", block }) }
+      else blocks.push(block)
+    }
   }
   flush()
   return runs
@@ -63,6 +69,7 @@ function firstText(input: Record<string, unknown>): string {
 
 export function toolActivityLabel(block: Pick<ToolBlock, "name" | "input" | "status" | "images">): ToolActivityLabel {
   const running = block.status === "running"
+  if (block.status === "unknown") return { action: "Connection lost during", detail: block.name === "Bash" ? oneLine(block.input.command) : block.name }
   const failed = block.status === "error"
   const stopped = block.status === "stopped"
   const command = oneLine(block.input.command)
@@ -146,7 +153,7 @@ export function formatElapsed(ms: number): string {
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
 }
 
-export function toolActivitySummary(blocks: Pick<ToolBlock, "name" | "input">[]): ToolActivitySummary | undefined {
+export function toolActivitySummary(blocks: Pick<ToolBlock, "name" | "input" | "status">[]): ToolActivitySummary | undefined {
   let commands = 0
   let images = 0
   let reads = 0
@@ -170,9 +177,11 @@ export function toolActivitySummary(blocks: Pick<ToolBlock, "name" | "input">[])
   const edits = editedFiles.size
 
   const parts: string[] = []
+  const stopped = blocks.some(block => block.name === "Bash" && block.status === "stopped")
+  if (stopped) parts.push("Stopped command")
   if (edits) parts.push(edits === 1 ? "Edited a file" : "Edited files")
   if (reads) parts.push("Read files")
-  if (commands) parts.push(commands === 1 ? "Ran a command" : "Ran commands")
+  if (!stopped && commands) parts.push(commands === 1 ? "Ran a command" : "Ran commands")
   if (images) parts.push(images === 1 ? "Viewed an image" : `Viewed ${images} images`)
   if (tools) parts.push(tools === 1 ? "Used a tool" : "Used tools")
   if (parts.length === 0) return undefined
@@ -263,6 +272,7 @@ export function groupActivityBlocks(blocks: Block[]): ActivityUnit[] {
   }
 
   for (const block of blocks) {
+    if (block.kind === "compaction" || block.kind === "retry") { flush(); units.push({ kind: "status", block }); continue }
     if (block.kind === "tool" && !isStandaloneActivity(block)) {
       tools.push(block)
       continue

@@ -12,6 +12,7 @@ export const defaultSettings: AppSettings = {
     reduceMotion: false,
     uiFontSize: 13,
     codeFontSize: 12,
+    codeFontFamily: SYSTEM_DEFAULT_FONT,
     fontSmoothing: true,
   },
   agent: {

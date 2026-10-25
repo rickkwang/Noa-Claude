@@ -9,6 +9,7 @@ export interface AppSettings {
     reduceMotion: boolean;
     uiFontSize: number;
     codeFontSize: number;
+    codeFontFamily: string;
     fontSmoothing: boolean;
   };
   agent: {

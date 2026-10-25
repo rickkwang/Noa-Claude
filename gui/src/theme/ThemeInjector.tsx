@@ -1,6 +1,6 @@
 import { useLayoutEffect } from 'react';
 import { useIsDark } from '../hooks/useIsDark';
-import { UI_FONT_STYLES, resolveFontFamily } from '../lib/fontFamily';
+import { UI_FONT_STYLES, MONO_FONT_STACK, resolveFontFamily } from '../lib/fontFamily';
 import { themeSurfaces } from '../lib/themePalette';
 import type { AppSettings } from '../types';
 
@@ -100,6 +100,7 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
   }, [isDark, settings.appearance.theme, settings.appearance.translucentSidebar, settings.appearance.usePointerCursors, settings.appearance.reduceMotion]);
 
   const fontFamilyStyle = resolveFontFamily(settings.appearance.fontFamily);
+  const codeFontFamilyStyle = resolveFontFamily(settings.appearance.codeFontFamily, MONO_FONT_STACK);
   const uiFont = UI_FONT_STYLES[settings.appearance.uiFontStyle];
   const uiFontSize = settings.appearance.uiFontSize;
   const textScale = uiFontSize / 13;
@@ -172,6 +173,7 @@ export default function ThemeInjector({ settings }: ThemeInjectorProps) {
         --text-title: ${Math.round(26 * textScale)}px;
         --text-heading-sm: ${Math.round(18 * textScale)}px;
         --code-font-size: ${settings.appearance.codeFontSize}px;
+        --font-mono: ${codeFontFamilyStyle};
       }
       code, pre { font-size: var(--code-font-size); }
 

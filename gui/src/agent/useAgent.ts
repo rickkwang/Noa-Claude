@@ -106,7 +106,8 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
         case "history":
           for (const item of envelope.items) {
             if (item.kind === "user") dispatch({ type: "history-user", id: crypto.randomUUID(), text: item.text, images: item.images })
-            else if (item.kind === "turn-duration") dispatch({ type: "turn-duration", durationMs: item.durationMs, interrupted: item.interrupted })
+            else if (item.kind === "turn-duration") dispatch({ type: "turn-duration", durationMs: item.durationMs, interrupted: item.interrupted, error: item.error })
+            else if (item.kind === "compaction") dispatch({ type: "compaction", trigger: item.trigger })
             else if (item.kind === "turn-diff") dispatch({ type: "turn-diff", diff: item.diff })
             else dispatch({ type: "agent", message: item.message })
           }
@@ -142,7 +143,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
           break
         case "exit":
           dispatch({ type: "log", text: `agent exited (code ${envelope.code ?? "null"})` })
-          dispatch({ type: "connection", status: "closed" })
+          dispatch({ type: "exit", code: envelope.code })
           break
       }
     }

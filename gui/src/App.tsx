@@ -272,6 +272,7 @@ function Workspace({ cwd }: { cwd: string }) {
     setSession((s) => ({ cwd: dir, resume: id, runtimeId, key: s.key + 1 }))
   }
   const [focusChange, setFocusChange] = useState<{ path: string; at: number }>()
+  const [focusFile, setFocusFile] = useState<{ path: string; at: number; line?: number }>()
   const showWorkspacePane = (tab: "files" | "changes", path?: string) => {
     setRightOpen(true)
     setRightTab(tab)
@@ -502,6 +503,7 @@ function Workspace({ cwd }: { cwd: string }) {
             onReference={(path) => setReference({ path, key: Date.now() })}
             onWorkspaceChange={() => setRefreshTick((n) => n + 1)}
             focusChange={focusChange}
+            focusFile={focusFile}
             turnDiff={turnDiff}
           />
         </div>
@@ -550,6 +552,8 @@ function Workspace({ cwd }: { cwd: string }) {
           {hasTurns ? (
             <MessageList
               key={session.key}
+              cwd={session.cwd}
+              onOpenFile={(path, line) => { setRightOpen(true); setRightTab("files"); setFocusFile({ path, line, at: Date.now() }) }}
               turns={state.turns}
               busy={state.busy}
               result={state.result}
@@ -587,7 +591,7 @@ function Workspace({ cwd }: { cwd: string }) {
               messages scroll beneath it and a gradient fades them out above the card. */}
           <div ref={footerRef} className={hasTurns ? "noa-conversation-footer" : "shrink-0 px-[29px] pb-3 pt-2"}>
             <div className="mx-auto flex flex-col gap-2" style={{ maxWidth: readingWidth + 22 }}>
-              {(state.connection === "closed" || state.status === "compacting") && (
+              {(state.connection === "closed") && (
                 <div
                   role="status"
                   className="flex items-center justify-center gap-2 text-caption text-[var(--sidebar-text-muted)]"
@@ -643,7 +647,7 @@ function Workspace({ cwd }: { cwd: string }) {
                 />
               )}
               {state.notice && <p role="status" className="m-0 px-1 text-caption text-[var(--sidebar-text-muted)]">{state.notice}</p>}
-              {state.error && (
+              {state.error && !state.turns.some(turn => turn.role === "assistant" && turn.error === state.error) && (
                 <p role="alert" className="m-0 break-words px-1 text-caption text-[#C24444]">
                   {state.error}
                 </p>
