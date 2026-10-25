@@ -1,4 +1,4 @@
-import { useState, type DragEvent, type KeyboardEvent } from "react"
+import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react"
 import type { ImageBlock, QueuedMessage } from "../agent/protocol"
 import { ArrowRight, ArrowUpDown, Edit2, X } from "../lib/icons"
 import { Lightbox, type LightboxItem } from "./Lightbox"
@@ -37,7 +37,32 @@ export function QueuedMessages({
   onPaused,
 }: QueuedMessagesProps) {
   const [dragId, setDragId] = useState<string>()
+  const [exiting, setExiting] = useState<Record<string, { message: QueuedMessage; beforeId?: string }>>({})
   const [preview, setPreview] = useState<{ items: LightboxItem[]; index: number }>()
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+
+  useEffect(() => () => {
+    for (const timer of timers.current.values()) clearTimeout(timer)
+  }, [])
+
+  function remove(message: QueuedMessage, index: number) {
+    if (timers.current.has(message.id)) return
+    setExiting((items) => ({
+      ...items,
+      [message.id]: { message, beforeId: messages[index + 1]?.id },
+    }))
+    onRemove(message.id)
+    timers.current.set(message.id, setTimeout(() => {
+      timers.current.delete(message.id)
+      setExiting((items) => {
+        const next = { ...items }
+        delete next[message.id]
+        return next
+      })
+    }, 180))
+  }
+
+  const visible = mergeExitingMessages(messages, exiting)
 
   function drop(event: DragEvent, index: number) {
     event.preventDefault()
@@ -56,7 +81,7 @@ export function QueuedMessages({
     <section aria-label="Queued messages" className="overflow-hidden rounded-panel border border-[var(--divider-subtle)] bg-[var(--bg-card)]">
       <div className="flex h-9 items-center gap-2 border-b border-[var(--divider-subtle)] px-3 text-caption text-[var(--sidebar-text-muted)]">
         <span className="min-w-0 flex-1 truncate">
-          {messages.length} queued · {paused ? "paused" : busy ? "sends after this turn" : "ready to send"}
+          {visible.length} queued · {paused ? "paused" : busy ? "sends after this turn" : "ready to send"}
         </span>
         {(busy || paused) && (
           <button type="button" onClick={() => onPaused(!paused)} className="rounded px-1.5 py-0.5 hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] hover:text-[var(--text-primary)]">
@@ -70,7 +95,7 @@ export function QueuedMessages({
         )}
       </div>
       <div className="p-1">
-        {messages.map((message, index) => {
+        {visible.map((message, index) => {
           const content = parts(message)
           const images = content.images.map((image, imageIndex) => ({
             src: `data:${image.source.media_type};base64,${image.source.data}`,
@@ -86,6 +111,7 @@ export function QueuedMessages({
               onDrop={(event) => drop(event, index)}
               onKeyDown={(event) => keyboard(event, index)}
               tabIndex={0}
+              data-exiting={exiting[message.id] ? true : undefined}
               className={`group/queue flex min-h-9 items-start gap-2 rounded-md px-2 py-1.5 text-body outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-color)] ${dragId === message.id ? "opacity-50" : "hover:bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)]"}`}
             >
               <ArrowUpDown size={13} className="mt-1 shrink-0 cursor-grab text-[var(--sidebar-text-muted)]" aria-hidden="true" />
@@ -119,7 +145,7 @@ export function QueuedMessages({
                 <button type="button" aria-label="Retry queued message" title="Retry next" onClick={() => onRetry(message.id)} className="rounded px-1 py-0.5 text-caption hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]">
                   Retry
                 </button>
-                <button type="button" aria-label="Delete queued message" title="Delete" onClick={() => onRemove(message.id)} className="rounded p-1 hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]">
+                <button type="button" aria-label="Delete queued message" title="Delete" onClick={() => remove(message, index)} className="rounded p-1 hover:bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]">
                   <X size={13} />
                 </button>
               </div>
@@ -130,4 +156,29 @@ export function QueuedMessages({
       {preview && <Lightbox items={preview.items} index={preview.index} onIndex={(index) => setPreview({ ...preview, index })} onClose={() => setPreview(undefined)} />}
     </section>
   )
+}
+
+function mergeExitingMessages(
+  messages: QueuedMessage[],
+  exiting: Record<string, { message: QueuedMessage; beforeId?: string }>,
+) {
+  const rows = [...messages]
+  const pending = new Map(Object.entries(exiting).filter(([id]) => !messages.some((message) => message.id === id)))
+  while (pending.size > 0) {
+    let inserted = false
+    for (const [id, entry] of pending) {
+      const index = entry.beforeId === undefined
+        ? rows.length
+        : rows.findIndex((message) => message.id === entry.beforeId)
+      if (index === -1) continue
+      rows.splice(index, 0, entry.message)
+      pending.delete(id)
+      inserted = true
+    }
+    if (!inserted) {
+      for (const entry of pending.values()) rows.push(entry.message)
+      break
+    }
+  }
+  return rows
 }

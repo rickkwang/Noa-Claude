@@ -768,6 +768,20 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
 
 .noa-floating-panel {
   box-shadow: var(--shadow-floating);
+  animation: noa-floating-in 120ms cubic-bezier(.19,1,.22,1);
+}
+@starting-style {
+  .noa-floating-panel { opacity: 0; scale: .98; }
+}
+@keyframes noa-floating-in {
+  from { opacity: 0; scale: .98; }
+}
+.noa-floating-panel[data-state="closing"] {
+  pointer-events: none;
+  animation: noa-floating-out 90ms cubic-bezier(.4,0,1,1) forwards;
+}
+@keyframes noa-floating-out {
+  to { opacity: 0; scale: .98; }
 }
 /* Menus and popovers: 12px corners and, in light mode, a white sheet that lifts off the page. !important because
    the page-surface token (--surface-page) is set per theme in ThemeInjector. */
@@ -2168,6 +2182,30 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   mask-image: linear-gradient(to bottom, transparent, #000 1rem, #000 calc(100% - 1rem), transparent);
 }
 
+.noa-attachment-pending {
+  background: linear-gradient(100deg, var(--bg-secondary) 20%, color-mix(in srgb, var(--text-primary) 8%, var(--bg-secondary)) 45%, var(--bg-secondary) 70%) 0 0 / 220% 100%;
+  animation: noa-attachment-shimmer 1.2s ease-in-out infinite;
+}
+@keyframes noa-attachment-shimmer {
+  to { background-position: -120% 0; }
+}
+
+.group\/queue[data-exiting="true"] {
+  pointer-events: none;
+  max-height: 96px;
+  animation: noa-queue-exit 180ms ease forwards;
+}
+@keyframes noa-queue-exit {
+  to {
+    min-height: 0;
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    opacity: 0;
+    overflow: hidden;
+  }
+}
+
 /* Per-file change list, opened on hover/focus above the summary (Codex: min-w-64, max-h-72, rows px-3 py-1.5). */
 .noa-turn-diff-wrap { position: relative; display: inline-flex; min-width: 0; }
 .noa-turn-diff-files { position: absolute; left: -8px; bottom: calc(100% + 4px); z-index: 40; display: flex; flex-direction: column; gap: 0; min-width: 256px; max-width: min(420px, 80vw); max-height: 288px; margin: 0; padding: 4px; overflow-y: auto; list-style: none; border-radius: 10px; background: var(--bg-card, #FFFFFF); opacity: 0; visibility: hidden; transition: opacity 120ms ease, visibility 0s linear 120ms; }
@@ -2246,6 +2284,13 @@ body.noa-session-dragging * { cursor: grabbing !important; }
   content-visibility: auto;
   contain-intrinsic-block-size: 160px;
   animation: noa-turn-in 180ms cubic-bezier(.19,1,.22,1);
+}
+.noa-virtual-turn {
+  content-visibility: visible;
+  animation: none;
+}
+.noa-agent-scroll {
+  overflow-anchor: none;
 }
 @keyframes noa-turn-in { from { opacity: 0; transform: translateY(3px); } }
 @media (prefers-reduced-motion: reduce) {

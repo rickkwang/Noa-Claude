@@ -219,7 +219,7 @@ function applyAgentMessage(state: AgentState, m: AgentMessage): AgentState {
 
     case "user":
       if (typeof m.message.content === "string") return state
-      return { ...state, turns: applyToolResults(state.turns, m.message.content) }
+      return { ...state, turns: applyToolResults(state.turns, m.message.content, m.tool_use_result) }
 
     case "result": {
       const turns = applyTurnDuration(completeResult(state.turns, m.result), m.duration_ms, state.stopping)
@@ -374,7 +374,7 @@ function finalizeAssistant(turns: Turn[], content: ContentBlock[]): Turn[] {
   return [...turns, { role: "assistant", id: crypto.randomUUID(), blocks, streaming: false }]
 }
 
-function applyToolResults(turns: Turn[], content: ContentBlock[]): Turn[] {
+function applyToolResults(turns: Turn[], content: ContentBlock[], toolUseResult?: unknown): Turn[] {
   const results = content.filter(
     (block): block is Extract<ContentBlock, { type: "tool_result" }> => block.type === "tool_result",
   )
@@ -389,7 +389,7 @@ function applyToolResults(turns: Turn[], content: ContentBlock[]): Turn[] {
         if (b.kind !== "tool") return b
         const result = results.find((r) => r.tool_use_id === b.id)
         if (!result) return b
-        const content = splitToolContent(result.content, result.tool_use_result)
+        const content = splitToolContent(result.content, result.tool_use_result ?? toolUseResult)
         return {
           ...b,
           status: result.is_error ? "error" : "done",

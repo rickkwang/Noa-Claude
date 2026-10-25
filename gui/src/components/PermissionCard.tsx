@@ -1,6 +1,7 @@
 import type { Permission } from "../agent/reducer"
 import { useEffect, useRef, useState } from "react"
 import { IconShieldCheck } from "@tabler/icons-react"
+import { ChevronDown } from "../lib/icons"
 import { Markdown } from "./Markdown"
 
 interface PermissionCardProps {
@@ -11,6 +12,16 @@ interface PermissionCardProps {
 const button =
   "noa-confirm-btn h-6 rounded-md px-3 text-caption min-w-16 text-center border border-[var(--divider-subtle)] noa-press"
 
+export function permissionRememberLabel(suggestions: unknown[]): string {
+  const destinations = suggestions.flatMap((suggestion) =>
+    typeof suggestion === "object" && suggestion !== null && "destination" in suggestion &&
+    typeof suggestion.destination === "string" ? [suggestion.destination] : [],
+  )
+  return destinations.length > 0 && destinations.every((destination) => destination === "session")
+    ? "Allow this conversation"
+    : "Always allow"
+}
+
 // Noa's confirmation reveal: an accent-tinted strip with small text buttons.
 export function PermissionCard({ permission, onAnswer }: PermissionCardProps) {
   if (permission.toolName === "AskUserQuestion" && Array.isArray(permission.input.questions))
@@ -20,11 +31,21 @@ export function PermissionCard({ permission, onAnswer }: PermissionCardProps) {
 
 function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
   const canRemember = permission.suggestions.length > 0
+  const rememberLabel = permissionRememberLabel(permission.suggestions)
   const [submitting, setSubmitting] = useState<"allow" | "remember" | "deny">()
-  const denyRef = useRef<HTMLButtonElement>(null)
+  const allowRef = useRef<HTMLButtonElement>(null)
+  const optionsRef = useRef<HTMLDetailsElement>(null)
   useEffect(() => {
-    denyRef.current?.focus()
+    allowRef.current?.focus()
   }, [permission.requestId])
+  useEffect(() => {
+    const close = (event: MouseEvent) => {
+      const options = optionsRef.current
+      if (options?.open && !options.contains(event.target as Node)) options.open = false
+    }
+    document.addEventListener("mousedown", close)
+    return () => document.removeEventListener("mousedown", close)
+  }, [])
   function answer(allow: boolean, remember: boolean) {
     setSubmitting(remember ? "remember" : allow ? "allow" : "deny")
     onAnswer(permission, allow, remember)
@@ -40,6 +61,10 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
       onKeyDown={(event) => {
         if (event.key === "Escape" && !submitting) {
           event.preventDefault()
+          if (optionsRef.current?.open) {
+            optionsRef.current.open = false
+            return
+          }
           answer(false, false)
         }
       }}
@@ -93,7 +118,6 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
       )}
       <div className="flex justify-end gap-2">
         <button
-          ref={denyRef}
           type="button"
           disabled={!!submitting}
           onClick={() => answer(false, false)}
@@ -101,24 +125,53 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
         >
           {submitting === "deny" ? "Denying…" : "Deny"}
         </button>
-        {canRemember && (
+        <div className="flex">
           <button
+            ref={allowRef}
             type="button"
             disabled={!!submitting}
-            onClick={() => answer(true, true)}
-            className={`${button} bg-[var(--surface-page,#F9F9F7)] hover:bg-[color-mix(in_srgb,var(--text-primary,#2D2D2B)_7.5%,var(--surface-page,#F9F9F7))] disabled:opacity-50`}
+            onClick={() => answer(true, false)}
+            className={`${button} bg-[var(--accent-color,#CC7D5E)] text-white border-transparent disabled:opacity-50 ${canRemember ? "rounded-e-none border-e-0" : ""}`}
           >
-            {submitting === "remember" ? "Allowing…" : "Always allow"}
+            {submitting === "allow" ? "Allowing…" : "Allow once"}
           </button>
-        )}
-        <button
-          type="button"
-          disabled={!!submitting}
-          onClick={() => answer(true, false)}
-          className={`${button} bg-[var(--accent-color,#CC7D5E)] text-white border-transparent disabled:opacity-50`}
-        >
-          {submitting === "allow" ? "Allowing…" : "Allow once"}
-        </button>
+          {canRemember && (
+            <details ref={optionsRef} className="relative">
+              <summary
+                aria-label="Approval options"
+                className="noa-confirm-btn flex h-6 w-7 cursor-pointer list-none items-center justify-center rounded-e-md border border-[var(--divider-subtle)] bg-[var(--accent-color,#CC7D5E)] text-white [&::-webkit-details-marker]:hidden"
+              >
+                <ChevronDown size={12} aria-hidden="true" />
+              </summary>
+              <div role="menu" className="noa-floating-panel absolute bottom-full end-0 z-30 mb-1 w-48 rounded-lg border border-[var(--divider-subtle)] bg-[var(--bg-card)] p-1 text-caption">
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!!submitting}
+                  onClick={() => {
+                    if (optionsRef.current) optionsRef.current.open = false
+                    answer(true, false)
+                  }}
+                  className="block w-full rounded px-2 py-1.5 text-left hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] disabled:opacity-50"
+                >
+                  Allow once
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!!submitting}
+                  onClick={() => {
+                    if (optionsRef.current) optionsRef.current.open = false
+                    answer(true, true)
+                  }}
+                  className="block w-full rounded px-2 py-1.5 text-left hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] disabled:opacity-50"
+                >
+                  {submitting === "remember" ? "Allowing…" : rememberLabel}
+                </button>
+              </div>
+            </details>
+          )}
+        </div>
       </div>
     </section>
   )

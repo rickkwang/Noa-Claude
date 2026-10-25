@@ -54,6 +54,7 @@ export function SlashCommandMenu({
   title,
   query,
   disabled,
+  closing,
   onIndex,
   onSelect,
   onQuery,
@@ -64,6 +65,7 @@ export function SlashCommandMenu({
   title?: string
   query?: string
   disabled: boolean
+  closing?: boolean
   onIndex: (index: number) => void
   onSelect: (command: ComposerCommand) => void
   onQuery?: (query: string) => void
@@ -74,7 +76,7 @@ export function SlashCommandMenu({
     list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" })
   }, [index])
   return (
-    <div className="noa-slash-menu noa-floating-panel absolute bottom-full left-0 right-0 z-30 mb-2 overflow-hidden rounded-panel border border-[color-mix(in_srgb,var(--text-primary)_8%,transparent)] bg-[var(--bg-card)]">
+    <div data-state={closing ? "closing" : "open"} className="noa-slash-menu noa-floating-panel absolute bottom-full left-0 right-0 z-30 mb-2 overflow-hidden rounded-panel border border-[color-mix(in_srgb,var(--text-primary)_8%,transparent)] bg-[var(--bg-card)]">
       {title && onQuery ? (
         <div className="flex h-9 items-center gap-2 px-3 text-[var(--sidebar-text-muted)]">
           <IconSearch size={15} stroke={1.5} className="shrink-0" />

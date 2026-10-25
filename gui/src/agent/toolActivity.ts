@@ -10,6 +10,13 @@ export interface ToolActivitySummary {
   kind: "commands" | "edits" | "images" | "reads" | "tools"
 }
 
+export interface ToolDiffStats {
+  additions: number
+  deletions: number
+}
+
+const MAX_DIFF_CELLS = 250_000
+
 export type ActivityUnit =
   | { kind: "tools"; blocks: ToolBlock[] }
   | { kind: "thinking"; block: Extract<Block, { kind: "thinking" }> }
@@ -34,6 +41,14 @@ export function toolActivityLabel(block: Pick<ToolBlock, "name" | "input" | "sta
   const command = oneLine(block.input.command)
   const target = basename(block.input.file_path)
   const pattern = oneLine(block.input.pattern)
+  if (block.name.startsWith("mcp__")) {
+    const [, server, ...toolParts] = block.name.split("__")
+    const tool = toolParts.join("__") || server || block.name
+    return {
+      action: failed ? `Couldn’t call ${tool}` : running ? `Calling ${tool}` : `Used ${tool}`,
+      detail: server && server !== tool ? server : "",
+    }
+  }
 
   switch (block.name) {
     case "Bash":
@@ -108,10 +123,71 @@ export function toolActivitySummary(blocks: Pick<ToolBlock, "name" | "input">[])
   return { label, kind }
 }
 
+export function toolDiffStats(block: Pick<ToolBlock, "name" | "input">): ToolDiffStats | undefined {
+  if (block.name === "Write") {
+    const content = typeof block.input.content === "string" ? block.input.content : ""
+    return { additions: textLines(content).length, deletions: 0 }
+  }
+  if (block.name === "Edit") {
+    return lineDiffStats(
+      typeof block.input.old_string === "string" ? block.input.old_string : "",
+      typeof block.input.new_string === "string" ? block.input.new_string : "",
+    )
+  }
+  if (block.name === "MultiEdit" && Array.isArray(block.input.edits)) {
+    return block.input.edits.reduce<ToolDiffStats | undefined>((total, edit) => {
+      if (!total || typeof edit !== "object" || edit === null) return total
+      const value = edit as Record<string, unknown>
+      const stats = lineDiffStats(
+        typeof value.old_string === "string" ? value.old_string : "",
+        typeof value.new_string === "string" ? value.new_string : "",
+      )
+      if (!stats) return undefined
+      return {
+        additions: total.additions + stats.additions,
+        deletions: total.deletions + stats.deletions,
+      }
+    }, { additions: 0, deletions: 0 })
+  }
+  return undefined
+}
+
+function textLines(text: string): string[] {
+  if (!text) return []
+  const lines = text.split("\n")
+  if (lines.at(-1) === "") lines.pop()
+  return lines
+}
+
+function lineDiffStats(oldText: string, newText: string): ToolDiffStats | undefined {
+  const before = textLines(oldText)
+  const after = textLines(newText)
+  if (before.length * after.length > MAX_DIFF_CELLS) return undefined
+  let previous = new Uint32Array(after.length + 1)
+  for (let i = 1; i <= before.length; i++) {
+    const next = new Uint32Array(after.length + 1)
+    for (let j = 1; j <= after.length; j++) {
+      next[j] = before[i - 1] === after[j - 1]
+        ? previous[j - 1]! + 1
+        : Math.max(previous[j]!, next[j - 1]!)
+    }
+    previous = next
+  }
+  const common = previous[after.length]!
+  return {
+    additions: after.length - common,
+    deletions: before.length - common,
+  }
+}
+
 export function isImageActivity(block: Pick<ToolBlock, "name" | "input" | "images">): boolean {
   return !!block.images?.length ||
     block.name === "ViewImage" ||
     (block.name === "Read" && /\.(?:avif|gif|jpe?g|png|webp)$/i.test(oneLine(block.input.file_path)))
+}
+
+export function isStandaloneActivity(block: Pick<ToolBlock, "name" | "input" | "images">): boolean {
+  return block.name === "Task" || isImageActivity(block)
 }
 
 export function groupActivityBlocks(blocks: Block[]): ActivityUnit[] {
@@ -123,7 +199,7 @@ export function groupActivityBlocks(blocks: Block[]): ActivityUnit[] {
   }
 
   for (const block of blocks) {
-    if (block.kind === "tool" && !isImageActivity(block)) {
+    if (block.kind === "tool" && !isStandaloneActivity(block)) {
       tools.push(block)
       continue
     }

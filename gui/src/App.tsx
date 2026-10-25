@@ -512,6 +512,11 @@ function Workspace({ cwd }: { cwd: string }) {
               onRetry={retryLast}
               onEdit={editMessage}
               tasks={state.tasks}
+              onStopTask={stopTask}
+              onOpenTask={() => {
+                setRightOpen(true)
+                setRightTab("activity")
+              }}
             />
           ) : (
             <EmptyState

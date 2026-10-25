@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "desktop": "NOA_GUI_DEV=1 electron .",
     "desktop:dist": "bun run build && electron .",
-    "test": "bun test tests/agent.test.ts",
+    "test": "bun test",
     "test:bridge": "bun run tests/bridge.e2e.ts"
   },
   "dependencies": {

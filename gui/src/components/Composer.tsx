@@ -124,11 +124,16 @@ export function Composer({
   }, [imagesLoaded, images, draftKey])
   const [attachmentError, setAttachmentError] = useState<string>()
   const [loadingImages, setLoadingImages] = useState(false)
+  const [pendingImages, setPendingImages] = useState(0)
+  const [removedImage, setRemovedImage] = useState<{ image: ImageAttachment; index: number }>()
+  const removedImageTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const fileRef = useRef<HTMLInputElement>(null)
+  useEffect(() => () => clearTimeout(removedImageTimer.current), [])
   async function addImages(files: File[]) {
     if (!imagesLoaded) return
     setAttachmentError(undefined)
     setLoadingImages(true)
+    setPendingImages(files.length)
     try {
       const loaded: ImageAttachment[] = []
       for (const file of files) {
@@ -150,7 +155,26 @@ export function Composer({
         return [...current, ...loaded]
       })
     } catch (error) { setAttachmentError((error as Error).message) }
-    finally { setLoadingImages(false) }
+    finally { setLoadingImages(false); setPendingImages(0) }
+  }
+  function removeImage(image: ImageAttachment) {
+    const index = images.findIndex((candidate) => candidate.id === image.id)
+    if (index === -1) return
+    setImages((current) => current.filter((candidate) => candidate.id !== image.id))
+    setRemovedImage({ image, index })
+    clearTimeout(removedImageTimer.current)
+    removedImageTimer.current = setTimeout(() => setRemovedImage(undefined), 5000)
+  }
+  function undoRemoveImage() {
+    if (!removedImage) return
+    clearTimeout(removedImageTimer.current)
+    setImages((current) => {
+      if (current.some((image) => image.id === removedImage.image.id)) return current
+      const next = [...current]
+      next.splice(Math.min(removedImage.index, next.length), 0, removedImage.image)
+      return next
+    })
+    setRemovedImage(undefined)
   }
   const [composing, setComposing] = useState(false)
   // macOS Electron dispatches a final Enter with isComposing=false just after compositionend.
@@ -210,6 +234,8 @@ export function Composer({
     setText(editDraft.text)
     setImages(editDraft.images)
     setReferences([])
+    setRemovedImage(undefined)
+    clearTimeout(removedImageTimer.current)
     requestAnimationFrame(() => {
       const el = textareaRef.current
       if (!el) return
@@ -241,6 +267,8 @@ export function Composer({
   const menuTitle = submenu === "model" ? "Model" : submenu === "effort" ? "Reasoning effort" : submenu === "permissions" ? "Permissions" : browserFilter
   const mention = inputFocused ? mentionAtCaret(text, caret) : undefined
   const mentionOpen = !!mention && !mentionDismissed && !menuOpen && !disabled
+  const mentionPresence = usePresence(mentionOpen)
+  const slashMenuPresence = usePresence(menuOpen)
 
   useEffect(() => { setMentionDismissed(false); setMentionIndex(0) }, [mention?.query])
   useEffect(() => {
@@ -318,6 +346,8 @@ export function Composer({
     if (!onSend(content)) { setAttachmentError("Message was not sent. Reconnect and try again."); return }
     setAttachmentError(undefined)
     setImages([])
+    setRemovedImage(undefined)
+    clearTimeout(removedImageTimer.current)
     setText("")
     setReferences([])
   }
@@ -529,8 +559,8 @@ export function Composer({
           </div>
         </div>
       )}
-      {mentionOpen && (
-        <div className="noa-slash-menu noa-floating-panel absolute bottom-full left-0 right-0 z-30 mb-2 overflow-hidden rounded-panel bg-[var(--bg-card)]">
+      {mentionPresence.mounted && (
+        <div data-state={mentionPresence.closing ? "closing" : "open"} className="noa-slash-menu noa-floating-panel absolute bottom-full left-0 right-0 z-30 mb-2 overflow-hidden rounded-panel bg-[var(--bg-card)]">
           <div className="flex items-center justify-between gap-3 border-b border-[var(--divider-subtle)] px-2.5 py-1.5 text-caption text-[var(--sidebar-text-muted)]">
             <span>Reference a file</span>
             {mention?.query && <span className="truncate font-mono">@{mention.query}</span>}
@@ -569,13 +599,14 @@ export function Composer({
           </div>
         </div>
       )}
-      {menuOpen && (
+      {slashMenuPresence.mounted && (
         <SlashCommandMenu
           items={menuItems}
           index={menuIndex}
           title={menuTitle}
           query={slashQuery}
           disabled={disabled}
+          closing={slashMenuPresence.closing}
           onIndex={setMenuIndex}
           onSelect={pickCommand}
           onQuery={(value) => {
@@ -628,13 +659,28 @@ export function Composer({
                 <button
                   type="button"
                   aria-label={`Remove image ${image.name}`}
-                  onClick={() => setImages((current) => current.filter((i) => i.id !== image.id))}
+                  onClick={() => removeImage(image)}
                   className="absolute -right-1 -top-1 rounded-full bg-[var(--bg-card)] p-0.5 shadow-sm"
                 >
                   <X size={12} />
                 </button>
               </div>
             ))}
+          </div>
+        )}
+        {pendingImages > 0 && (
+          <div className="flex flex-wrap gap-2 px-3 pt-3" aria-label="Adding images">
+            {Array.from({ length: pendingImages }, (_, index) => (
+              <div key={index} className="noa-attachment-pending size-16 rounded-lg border border-[var(--divider-subtle)]" />
+            ))}
+          </div>
+        )}
+        {removedImage && (
+          <div role="status" className="mx-3 mt-2 flex items-center justify-between gap-3 rounded-md bg-[var(--surface-page)] px-2.5 py-1.5 text-caption text-[var(--text-secondary)]">
+            <span className="truncate">Image removed</span>
+            <button type="button" onClick={undoRemoveImage} className="text-[var(--accent-color)]">
+              Undo
+            </button>
           </div>
         )}
         {attachmentError && <p role="alert" className="m-0 px-3 pt-2 text-caption text-[#C24444]">{attachmentError}</p>}
@@ -967,6 +1013,7 @@ function Picker({
   header?: (toggleModels: () => void) => ReactNode
 }) {
   const [open, setOpen] = useState(false)
+  const presence = usePresence(open)
   const [showingModels, setShowingModels] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -1007,8 +1054,9 @@ function Picker({
         {label}
         {!hideChevron && <ComposerChevronIcon className="shrink-0 text-[var(--sidebar-text-muted)]" />}
       </button>
-      {open && (
+      {presence.mounted && (
         <div
+          data-state={presence.closing ? "closing" : "open"}
           className={`${modelPicker ? "noa-model-picker" : ""} noa-floating-panel absolute bottom-full ${align === "left" ? "left-0" : "right-0"} z-30 mb-2 max-h-[55vh] w-64 max-w-[80vw] overflow-auto rounded-panel p-1 ${header ? "bg-[var(--effort-menu)]" : "bg-[var(--bg-card,#FFFFFF)]"}`}
         >
           {!showingModels && header?.(() => setShowingModels(true))}
@@ -1049,4 +1097,18 @@ function Picker({
       )}
     </div>
   )
+}
+
+function usePresence(open: boolean, duration = 90) {
+  const [mounted, setMounted] = useState(open)
+  useEffect(() => {
+    if (open) {
+      setMounted(true)
+      return
+    }
+    if (!mounted) return
+    const timer = setTimeout(() => setMounted(false), duration)
+    return () => clearTimeout(timer)
+  }, [duration, mounted, open])
+  return { mounted, closing: mounted && !open }
 }

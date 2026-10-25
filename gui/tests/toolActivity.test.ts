@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { groupActivityBlocks, toolActivityLabel, toolActivitySummary } from "../src/agent/toolActivity"
+import { groupActivityBlocks, toolActivityLabel, toolActivitySummary, toolDiffStats } from "../src/agent/toolActivity"
 
 test("tool activity uses action phrases instead of raw tool names", () => {
   expect(toolActivityLabel({ name: "Bash", status: "running", input: { command: "npm test" } }))
@@ -26,6 +26,8 @@ test("failed and unknown tools remain explicit", () => {
     .toEqual({ action: "Couldn’t edit", detail: "App.tsx" })
   expect(toolActivityLabel({ name: "CustomTool", status: "running", input: { query: "hello" } }))
     .toEqual({ action: "Calling CustomTool", detail: "hello" })
+  expect(toolActivityLabel({ name: "mcp__filesystem__read_file", status: "done", input: { path: "/tmp/a" } }))
+    .toEqual({ action: "Used read_file", detail: "filesystem" })
 })
 
 test("completed activity summaries combine semantic tool actions", () => {
@@ -44,17 +46,38 @@ test("completed activity summaries combine semantic tool actions", () => {
   ])).toEqual({ label: "Edited a file", kind: "edits" })
 })
 
+test("file changes expose per-file line counts", () => {
+  expect(toolDiffStats({
+    name: "Edit",
+    input: { old_string: "one\ntwo", new_string: "one\nthree\nfour" },
+  })).toEqual({ additions: 2, deletions: 1 })
+  expect(toolDiffStats({
+    name: "Edit",
+    input: { old_string: "a\nb\nc\nd\ne", new_string: "a\nx\nc\ny\ne" },
+  })).toEqual({ additions: 2, deletions: 2 })
+  expect(toolDiffStats({
+    name: "MultiEdit",
+    input: { edits: [
+      { old_string: "a", new_string: "b" },
+      { old_string: "c\nd", new_string: "c" },
+    ] },
+  })).toEqual({ additions: 1, deletions: 2 })
+  expect(toolDiffStats({ name: "Write", input: { content: "a\nb\n" } })).toEqual({ additions: 2, deletions: 0 })
+})
+
 test("activity grouping follows Codex boundaries", () => {
   const read = { kind: "tool" as const, id: "read", name: "Read", input: { file_path: "/repo/src/App.tsx" }, partialJson: "", status: "done" as const }
   const run = { kind: "tool" as const, id: "run", name: "Bash", input: { command: "bun test" }, partialJson: "", status: "done" as const }
   const image = { kind: "tool" as const, id: "image", name: "Read", input: { file_path: "/tmp/preview.png" }, partialJson: "", status: "done" as const }
   const thought = { kind: "thinking" as const, text: "Inspect", done: true }
+  const task = { kind: "tool" as const, id: "task", name: "Task", input: { description: "Inspect rendering" }, partialJson: "", status: "done" as const }
   const text = { kind: "text" as const, text: "Now implementing." }
   const empty = { kind: "text" as const, text: "" }
 
-  expect(groupActivityBlocks([read, thought, empty, run, image, read, thought, text])).toMatchObject([
+  expect(groupActivityBlocks([read, thought, empty, run, image, task, read, thought, text])).toMatchObject([
     { kind: "tools", blocks: [{ id: "read" }, { id: "run" }] },
     { kind: "tools", blocks: [{ id: "image" }] },
+    { kind: "tools", blocks: [{ id: "task" }] },
     { kind: "tools", blocks: [{ id: "read" }] },
     { kind: "text" },
   ])

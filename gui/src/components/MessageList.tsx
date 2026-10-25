@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import type { AgentState, AgentTask, Block, Turn } from "../agent/reducer"
 import type { ImageBlock } from "../agent/protocol"
 import { Lightbox, type LightboxItem } from "./Lightbox"
-import { groupActivityBlocks, isImageActivity, toolActivitySummary } from "../agent/toolActivity"
+import { groupActivityBlocks, toolActivitySummary } from "../agent/toolActivity"
 import { ArrowDown, BookOpen, Check, ChevronRight, Copy, Edit2, Photo, Terminal, Tool } from "../lib/icons"
 import { Collapsible } from "./Collapsible"
 import { Markdown } from "./Markdown"
@@ -18,34 +18,48 @@ interface MessageListProps {
   onRetry?: () => void
   onEdit?: (text: string, images?: ImageBlock[]) => void
   tasks?: AgentTask[]
+  onStopTask?: (id: string) => void
+  onOpenTask?: () => void
 }
 
 // Follows the bottom while the user is near it; a scroll away releases the pin.
 const PIN_THRESHOLD = 40
 const JUMP_THRESHOLD = 120
+const TURN_GAP = 16
+const TURN_OVERSCAN = 2
+const ESTIMATED_TURN_HEIGHT = 160
 
-export function MessageList({ turns, busy, result, readingWidth, changes, onChanges, onRetry, onEdit, tasks }: MessageListProps) {
+export function MessageList({ turns, busy, result, readingWidth, changes, onChanges, onRetry, onEdit, tasks, onStopTask, onOpenTask }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
+  const scrollFrame = useRef<number | undefined>(undefined)
+  const heightsRef = useRef(new Map<string, number>())
+  const offsetsRef = useRef(new Map<string, number>())
+  const focusedTurn = useRef<string | undefined>(undefined)
   const [showJump, setShowJump] = useState(false)
   const [preview, setPreview] = useState<{ items: LightboxItem[]; index: number }>()
+  const [viewport, setViewport] = useState({ top: 0, height: 0 })
+  const [, setMeasured] = useState(0)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = scrollRef.current
-    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
+    if (!el) return
+    if (pinnedRef.current) el.scrollTop = el.scrollHeight
+    setViewport({ top: el.scrollTop, height: el.clientHeight })
   }, [turns])
 
-  // Tool bodies animate independently of turns. Follow the bottom only while pinned.
   useEffect(() => {
     const el = scrollRef.current
-    const content = contentRef.current
-    if (!el || !content) return
+    if (!el) return
     const observer = new ResizeObserver(() => {
-      if (pinnedRef.current) el.scrollTop = el.scrollHeight
+      setViewport({ top: el.scrollTop, height: el.clientHeight })
     })
-    observer.observe(content)
-    return () => observer.disconnect()
+    observer.observe(el)
+    return () => {
+      observer.disconnect()
+      if (scrollFrame.current !== undefined) cancelAnimationFrame(scrollFrame.current)
+    }
   }, [])
 
   function onScroll() {
@@ -54,6 +68,12 @@ export function MessageList({ turns, busy, result, readingWidth, changes, onChan
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight
     pinnedRef.current = distance <= PIN_THRESHOLD
     setShowJump(distance > JUMP_THRESHOLD)
+    if (scrollFrame.current === undefined) {
+      scrollFrame.current = requestAnimationFrame(() => {
+        scrollFrame.current = undefined
+        setViewport({ top: el.scrollTop, height: el.clientHeight })
+      })
+    }
   }
 
   function jumpToBottom() {
@@ -61,35 +81,86 @@ export function MessageList({ turns, busy, result, readingWidth, changes, onChan
     if (!el) return
     pinnedRef.current = true
     el.scrollTop = el.scrollHeight
+    setViewport({ top: el.scrollTop, height: el.clientHeight })
     setShowJump(false)
   }
 
   const segments = groupTurns(turns)
+  const layout = layoutTurns(segments, heightsRef.current)
+  const layoutHeight = layout.length ? layout[layout.length - 1]!.top + layout[layout.length - 1]!.height : 0
+  const visible = visibleTurnRange(
+    layout,
+    pinnedRef.current ? Math.max(0, layoutHeight - (viewport.height || 800)) : viewport.top,
+    viewport.height || 800,
+    TURN_OVERSCAN,
+  )
+  offsetsRef.current = new Map(layout.map((row) => [row.segment.id, row.top]))
+  const measureTurn = useCallback((id: string, height: number) => {
+    const previousHeight = heightsRef.current.get(id)
+    if (previousHeight === height) return
+    heightsRef.current.set(id, height)
+    const el = scrollRef.current
+    if (el && previousHeight !== undefined && !pinnedRef.current) {
+      const top = offsetsRef.current.get(id)
+      if (top !== undefined && top < el.scrollTop) el.scrollTop += height - previousHeight
+    }
+    setMeasured((value) => value + 1)
+    if (pinnedRef.current) requestAnimationFrame(() => {
+      const scroller = scrollRef.current
+      if (!scroller) return
+      scroller.scrollTop = scroller.scrollHeight
+      setViewport({ top: scroller.scrollTop, height: scroller.clientHeight })
+    })
+  }, [])
   const showResult = result && !busy
+  const visibleRows = layout.slice(visible.start, visible.end)
+  const focusedRow = layout.find((row) => row.segment.id === focusedTurn.current)
+  if (focusedRow && !visibleRows.some((row) => row.segment.id === focusedRow.segment.id)) {
+    visibleRows.push(focusedRow)
+    visibleRows.sort((a, b) => a.index - b.index)
+  }
+
+  function renderSegment(segment: Segment, index: number) {
+    if (segment.role === "user") {
+      return (
+        <div className="group/message flex flex-col items-end gap-1">
+          {segment.images?.length ? <MessageImages images={segment.images} onOpen={(items, imageIndex) => setPreview({ items, index: imageIndex })} /> : null}
+          {segment.text && <UserBubble text={segment.text} />}
+          <MessageActions text={segment.text} kind="user" onEdit={onEdit ? () => onEdit(segment.text, segment.images) : undefined} />
+        </div>
+      )
+    }
+    return (
+      <AssistantSegment
+        segment={segment}
+        durationMs={segment.durationMs ?? (index === segments.length - 1 && !busy ? result?.durationMs : undefined)}
+        interrupted={segment.interrupted ?? (index === segments.length - 1 && !busy ? result?.interrupted : undefined)}
+        tasks={tasks}
+        onStopTask={onStopTask}
+        onOpenTask={onOpenTask}
+      />
+    )
+  }
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-    <div ref={scrollRef} onScroll={onScroll} className="noa-scroll-fade relative flex-1 min-h-0 overflow-y-auto overscroll-contain">
+    <div
+      ref={scrollRef}
+      onScroll={onScroll}
+      onFocusCapture={(event) => {
+        const turn = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-virtual-turn-id]") : null
+        if (turn?.dataset.virtualTurnId) focusedTurn.current = turn.dataset.virtualTurnId
+      }}
+      className="noa-agent-scroll noa-scroll-fade relative flex-1 min-h-0 overflow-y-auto overscroll-contain"
+    >
       <div ref={contentRef} className="mx-auto flex flex-col gap-4 px-5 pt-8" style={{ maxWidth: readingWidth, paddingBottom: "calc(var(--composer-overlay, 0px) + 32px)" }}>
-        {segments.map((segment, index) => (
-          <div key={segment.id} className="noa-turn-item">
-            {segment.role === "user" ? (
-              // The user's message is a right-aligned bubble, as in Codex: chat-size text, relaxed leading.
-              <div className="group/message flex flex-col items-end gap-1">
-                {segment.images?.length ? <MessageImages images={segment.images} onOpen={(items, imageIndex) => setPreview({ items, index: imageIndex })} /> : null}
-                {segment.text && <UserBubble text={segment.text} />}
-                <MessageActions text={segment.text} kind="user" onEdit={onEdit ? () => onEdit(segment.text, segment.images) : undefined} />
-              </div>
-            ) : (
-              <AssistantSegment
-                segment={segment}
-                durationMs={segment.durationMs ?? (index === segments.length - 1 && !busy ? result?.durationMs : undefined)}
-                interrupted={segment.interrupted ?? (index === segments.length - 1 && !busy ? result?.interrupted : undefined)}
-                tasks={tasks}
-              />
-            )}
-          </div>
-        ))}
+        <div className="relative w-full" style={{ height: layoutHeight }}>
+          {visibleRows.map((row) => (
+            <VirtualTurnRow key={row.segment.id} id={row.segment.id} top={row.top} onHeight={measureTurn}>
+              <div className="noa-turn-item noa-virtual-turn">{renderSegment(row.segment, row.index)}</div>
+            </VirtualTurnRow>
+          ))}
+        </div>
 
         {/* Turn footer, as Codex's TurnDiffContent: status, then "· N files changed +a -d" as quiet inline text. */}
         {!busy && (showResult || !!changes?.count) && (
@@ -200,6 +271,65 @@ type AssistantSegmentData = {
 }
 type Segment = Extract<Turn, { role: "user" }> | AssistantSegmentData
 
+type TurnLayoutRow = {
+  segment: Segment
+  index: number
+  top: number
+  height: number
+}
+
+function VirtualTurnRow({ id, top, onHeight, children }: {
+  id: string
+  top: number
+  onHeight: (id: string, height: number) => void
+  children: ReactNode
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const element = ref.current
+    if (!element) return
+    const report = () => onHeight(id, element.offsetHeight)
+    report()
+    const observer = new ResizeObserver(report)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [id, onHeight])
+  return (
+    <div ref={ref} data-virtual-turn-id={id} className="absolute inset-x-0" style={{ top }}>
+      {children}
+    </div>
+  )
+}
+
+function layoutTurns(segments: Segment[], heights: Map<string, number>): TurnLayoutRow[] {
+  let top = 0
+  return segments.map((segment, index) => {
+    const height = heights.get(segment.id) ?? ESTIMATED_TURN_HEIGHT
+    const row = { segment, index, top, height }
+    top += height + TURN_GAP
+    return row
+  })
+}
+
+function visibleTurnRange(
+  layout: TurnLayoutRow[],
+  scrollTop: number,
+  viewportHeight: number,
+  overscan: number,
+): { start: number; end: number } {
+  if (!layout.length) return { start: 0, end: 0 }
+  const top = Math.max(0, scrollTop)
+  const bottom = top + Math.max(0, viewportHeight)
+  let start = 0
+  while (start < layout.length && layout[start]!.top + layout[start]!.height < top) start++
+  let end = start
+  while (end < layout.length && layout[end]!.top < bottom) end++
+  return {
+    start: Math.max(0, start - overscan),
+    end: Math.min(layout.length, Math.max(start + 1, end) + overscan),
+  }
+}
+
 // Consecutive assistant turns after one user message form one reply, as in Codex.
 function groupTurns(turns: Turn[]): Segment[] {
   const segments: Segment[] = []
@@ -230,17 +360,33 @@ function groupTurns(turns: Turn[]): Segment[] {
 }
 
 // Tool calls and reasoning fold into one "Worked for" row; the final answer stays visible.
-function AssistantSegment({ segment, durationMs, interrupted, tasks }: { segment: AssistantSegmentData; durationMs?: number; interrupted?: boolean; tasks?: AgentTask[] }) {
+function AssistantSegment({ segment, durationMs, interrupted, tasks, onStopTask, onOpenTask }: {
+  segment: AssistantSegmentData
+  durationMs?: number
+  interrupted?: boolean
+  tasks?: AgentTask[]
+  onStopTask?: (id: string) => void
+  onOpenTask?: () => void
+}) {
   const units = groupActivityBlocks(segment.blocks)
+  const [activityCollapsed, setActivityCollapsed] = useState(durationMs !== undefined && !segment.streaming)
+  const activityToggled = useRef(false)
   const lastToolUnit = units.map((unit) => unit.kind === "tools").lastIndexOf(true)
   const workedForBefore = lastToolUnit === -1
     ? -1
     : units.findIndex((unit, index) => index > lastToolUnit && unit.kind === "text")
+  useEffect(() => {
+    if (!activityToggled.current && !segment.streaming && durationMs !== undefined) setActivityCollapsed(true)
+  }, [durationMs, segment.streaming])
+  function toggleActivity() {
+    activityToggled.current = true
+    setActivityCollapsed((collapsed) => !collapsed)
+  }
   return (
     <div className="group flex flex-col gap-3">
       {units.map((unit, index) => {
         const workedFor = index === workedForBefore && durationMs !== undefined
-          ? <WorkedFor durationMs={durationMs} interrupted={interrupted} />
+          ? <WorkedFor durationMs={durationMs} interrupted={interrupted} collapsed={activityCollapsed} onToggle={toggleActivity} />
           : null
         if (unit.kind === "thinking") return <ThinkingBlock key={index} block={unit.block} />
         if (unit.kind === "text") {
@@ -252,10 +398,11 @@ function AssistantSegment({ segment, durationMs, interrupted, tasks }: { segment
             </div>
           )
         }
+        if (activityCollapsed) return null
         const block = unit.blocks.length === 1 ? unit.blocks[0] : undefined
-        if (block && (block.status !== "done" || block.name === "Task" || isImageActivity(block))) {
+        if (block) {
           const task = tasks?.find((candidate) => candidate.id === block.id || candidate.toolUseId === block.id)
-          return <ToolCard key={index} block={block} task={task} defaultOpen={block.status === "running"} />
+          return <ToolCard key={index} block={block} task={task} defaultOpen={block.status === "running"} onStopTask={onStopTask} onOpenTask={onOpenTask} />
         }
         return (
           <WorkGroup
@@ -263,16 +410,31 @@ function AssistantSegment({ segment, durationMs, interrupted, tasks }: { segment
             blocks={unit.blocks}
             live={unit.blocks.some((block) => block.status === "running")}
             tasks={tasks}
+            onStopTask={onStopTask}
+            onOpenTask={onOpenTask}
           />
         )
       })}
-      {durationMs !== undefined && workedForBefore === -1 && <WorkedFor durationMs={durationMs} interrupted={interrupted} />}
+      {durationMs !== undefined && workedForBefore === -1 && (
+        <WorkedFor
+          durationMs={durationMs}
+          interrupted={interrupted}
+          collapsed={activityCollapsed}
+          onToggle={lastToolUnit === -1 ? undefined : toggleActivity}
+        />
+      )}
       {segment.streaming && segment.blocks.length === 0 && <Working />}
     </div>
   )
 }
 
-function WorkGroup({ blocks, live, tasks }: { blocks: Extract<Block, { kind: "tool" }>[]; live: boolean; tasks?: AgentTask[] }) {
+function WorkGroup({ blocks, live, tasks, onStopTask, onOpenTask }: {
+  blocks: Extract<Block, { kind: "tool" }>[]
+  live: boolean
+  tasks?: AgentTask[]
+  onStopTask?: (id: string) => void
+  onOpenTask?: () => void
+}) {
   const [open, setOpen] = useState(live)
   const userToggled = useRef(false)
   const startedAt = useRef(live ? Date.now() : undefined)
@@ -321,7 +483,13 @@ function WorkGroup({ blocks, live, tasks }: { blocks: Extract<Block, { kind: "to
       <Collapsible open={open}>
         <div className="mt-2 flex flex-col gap-1">
           {blocks.map((block, i) => (
-            <ToolCard key={i} block={block} task={tasks?.find((candidate) => candidate.id === block.id || candidate.toolUseId === block.id)} />
+            <ToolCard
+              key={i}
+              block={block}
+              task={tasks?.find((candidate) => candidate.id === block.id || candidate.toolUseId === block.id)}
+              onStopTask={onStopTask}
+              onOpenTask={onOpenTask}
+            />
           ))}
         </div>
       </Collapsible>
@@ -329,14 +497,34 @@ function WorkGroup({ blocks, live, tasks }: { blocks: Extract<Block, { kind: "to
   )
 }
 
-function WorkedFor({ durationMs, interrupted }: { durationMs: number; interrupted?: boolean }) {
+function WorkedFor({ durationMs, interrupted, collapsed, onToggle }: {
+  durationMs: number
+  interrupted?: boolean
+  collapsed: boolean
+  onToggle?: () => void
+}) {
+  const label = interrupted ? `You stopped after ${formatDuration(durationMs)}` : `Worked for ${formatDuration(durationMs)}`
+  if (!onToggle) {
+    return (
+      <div className="flex w-full flex-col items-start gap-1 px-1 py-0.5 text-[length:var(--text-chat-sm)] text-[var(--sidebar-text-muted)]">
+        <span className="whitespace-nowrap">{label}</span>
+        <span className="h-px w-full bg-[var(--divider-subtle)]" aria-hidden="true" />
+      </div>
+    )
+  }
   return (
-    <div className="flex items-center gap-3 text-[length:var(--text-chat-sm)] text-[var(--sidebar-text-muted)]">
-      <span className="whitespace-nowrap">
-        {interrupted ? `You stopped after ${formatDuration(durationMs)}` : `Worked for ${formatDuration(durationMs)}`}
+    <button
+      type="button"
+      aria-expanded={!collapsed}
+      onClick={onToggle}
+      className="group/worked flex w-full flex-col items-start gap-1 rounded-md px-1 py-0.5 text-left text-[length:var(--text-chat-sm)] text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary)]"
+    >
+      <span className="flex items-center gap-1 whitespace-nowrap">
+        {label}
+        <ChevronRight size={12} className={`opacity-0 transition-[transform,opacity] duration-150 group-hover/worked:opacity-100 group-focus-visible/worked:opacity-100 ${collapsed ? "" : "rotate-90"}`} />
       </span>
-      <span className="h-px min-w-4 flex-1 bg-[var(--divider-subtle)]" aria-hidden="true" />
-    </div>
+      <span className="h-px w-full bg-[var(--divider-subtle)]" aria-hidden="true" />
+    </button>
   )
 }
 

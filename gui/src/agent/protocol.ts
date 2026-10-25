@@ -110,7 +110,12 @@ export type AgentMessage =
     }
   | { type: "stream_event"; event: StreamEvent; parent_tool_use_id: string | null }
   | { type: "assistant"; message: { content: ContentBlock[] }; parent_tool_use_id: string | null }
-  | { type: "user"; message: { content: ContentBlock[] | string }; parent_tool_use_id: string | null }
+  | {
+      type: "user"
+      message: { content: ContentBlock[] | string }
+      parent_tool_use_id: string | null
+      tool_use_result?: unknown
+    }
   | {
       type: "result"
       subtype: string

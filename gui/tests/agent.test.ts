@@ -275,6 +275,29 @@ test("tool result metadata preserves command exit status", () => {
   expect(tool).toMatchObject({ output: "1 failed", exitCode: 1, status: "error" })
 })
 
+test("live tool result metadata is read from the message envelope", () => {
+  let state = reducer(initialState, { type: "user-sent", id: "command-task", text: "Run tests" })
+  state = reducer(state, {
+    type: "agent",
+    message: {
+      type: "assistant",
+      parent_tool_use_id: null,
+      message: { content: [{ type: "tool_use", id: "tool-1", name: "Bash", input: { command: "bun test" } }] },
+    },
+  })
+  state = reducer(state, {
+    type: "agent",
+    message: {
+      type: "user",
+      parent_tool_use_id: null,
+      message: { content: [{ type: "tool_result", tool_use_id: "tool-1", content: "1 failed", is_error: true }] },
+      tool_use_result: { stdout: "1 failed", stderr: "", exitCode: 1, interrupted: false },
+    },
+  })
+  const tool = state.turns.flatMap((turn) => turn.role === "assistant" ? turn.blocks : []).find((block) => block.kind === "tool")
+  expect(tool).toMatchObject({ output: "1 failed", exitCode: 1, status: "error" })
+})
+
 test("history hides internal transcript envelopes and interruption markers", async () => {
   const cwd = "/private/tmp/hidden-envelope-project"
   const id = transcript(cwd, [
@@ -425,6 +448,13 @@ test("composer commands keep GUI actions, CLI commands and skills distinct", asy
   expect(commands.filter((command) => command.name === "model")).toHaveLength(1)
   expect(slashAtCaret("Please use /mo", 14)).toMatchObject({ query: "mo", start: 11, end: 14 })
   expect(slashAtCaret("foo@example.com", 15)).toBeUndefined()
+})
+
+test("approval scope labels follow permission destinations", async () => {
+  const { permissionRememberLabel } = await import("../src/components/PermissionCard")
+  expect(permissionRememberLabel([{ destination: "session" }])).toBe("Allow this conversation")
+  expect(permissionRememberLabel([{ destination: "localSettings" }])).toBe("Always allow")
+  expect(permissionRememberLabel([{ destination: "session" }, { destination: "projectSettings" }])).toBe("Always allow")
 })
 
 test("local command input and output survive transcript restoration", async () => {
