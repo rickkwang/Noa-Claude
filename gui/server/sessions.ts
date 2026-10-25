@@ -1,9 +1,9 @@
 // Reads the agent's transcripts (<config>/projects/<sanitized cwd>/<id>.jsonl)
 // so the GUI can list past sessions and rebuild their history.
-import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
 import { homedir } from "node:os"
-import { join } from "node:path"
-import type { ContentBlock, ImageBlock } from "../src/agent/protocol"
+import { dirname, join } from "node:path"
+import type { ContentBlock, ImageBlock, TurnDiff } from "../src/agent/protocol"
 import { sanitizePath } from "../../src/utils/sessionStoragePortable"
 
 export const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -22,9 +22,83 @@ function canonicalCwd(cwd: string): string {
   return (existsSync(cwd) ? realpathSync(cwd) : cwd).normalize("NFC")
 }
 
-function projectDir(cwd: string): string {
+export function projectDir(cwd: string): string {
   const configHome = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".noa")
   return join(configHome, "projects", sanitizePath(canonicalCwd(cwd)))
+}
+
+export function transcriptPath(cwd: string, id: string): string {
+  return join(projectDir(cwd), `${id}.jsonl`)
+}
+
+export interface TurnDiffRecord {
+  index: number
+  userMessageId?: string
+  diff: TurnDiff
+  // Uncapped patch for Undo; `diff.patch` may be omitted for large diffs.
+  patch?: string
+}
+
+function turnDiffPath(cwd: string, id: string): string {
+  return join(projectDir(cwd), `${id}.turn-diffs.jsonl`)
+}
+
+export function appendTurnDiff(cwd: string, id: string, record: TurnDiffRecord): void {
+  const file = turnDiffPath(cwd, id)
+  mkdirSync(dirname(file), { recursive: true })
+  appendFileSync(file, `${JSON.stringify(record)}\n`)
+}
+
+/** Latest record for a turn; a later line replaces an earlier one. */
+export function findTurnDiff(cwd: string, id: string, index: number): TurnDiffRecord | undefined {
+  const records = readTurnDiffs(cwd, id)
+  for (let i = records.length - 1; i >= 0; i--) if (records[i]!.index === index) return records[i]
+  return undefined
+}
+
+export function setTurnDiffReverted(cwd: string, id: string, index: number, reverted: boolean): TurnDiffRecord | undefined {
+  const record = findTurnDiff(cwd, id, index)
+  if (!record) return undefined
+  const updated: TurnDiffRecord = { ...record, diff: { ...record.diff, reverted } }
+  appendTurnDiff(cwd, id, updated)
+  return updated
+}
+
+export function readTurnDiffs(cwd: string, id: string): TurnDiffRecord[] {
+  const file = turnDiffPath(cwd, id)
+  if (!existsSync(file)) return []
+  const records: TurnDiffRecord[] = []
+  for (const line of readFileSync(file, "utf8").split("\n")) {
+    if (!line) continue
+    try {
+      const record = JSON.parse(line) as TurnDiffRecord
+      if (typeof record.index === "number" && record.diff?.files) records.push(record)
+    } catch {
+      // A partially written line; skip it.
+    }
+  }
+  return records
+}
+
+/** Find the user message that opened the turn, starting at the transcript offset. */
+export function findTurnUserMessage(cwd: string, id: string, offset: number): string | undefined {
+  const file = transcriptPath(cwd, id)
+  if (!existsSync(file)) return undefined
+  const raw = readFileSync(file, "utf8")
+  const parse = (text: string) => {
+    for (const line of text.split("\n")) {
+      if (!line) continue
+      try {
+        const entry = JSON.parse(line) as Entry
+        if (entry.type === "user" && entry.uuid && !entry.isSidechain && !entry.isMeta && !entry.isCompactSummary)
+          return entry.uuid
+      } catch {
+        // Live transcript tail may be incomplete.
+      }
+    }
+    return undefined
+  }
+  return parse(raw.slice(offset)) ?? parse(raw)
 }
 
 interface Entry {
@@ -78,6 +152,40 @@ function userText(entry: Entry): string | null {
   if (SYSTEM_WRAPPER.test(text.trimStart())) return null
   if (INTERRUPT_MARKER.test(text.trim())) return null
   return text
+}
+
+/**
+ * Number of user turns in a transcript. Turn diffs use it so a resumed session
+ * keeps numbering turns the way the transcript does, instead of restarting
+ * from the highest stored diff.
+ */
+export function countUserTurns(cwd: string, id: string): number {
+  if (!SESSION_ID.test(id)) return 0
+  const file = transcriptPath(cwd, id)
+  if (!existsSync(file)) return 0
+  let count = 0
+  for (const entry of readEntries(file)) {
+    if (entry.isSidechain) continue
+    if (entry.type === "system" && entry.subtype === "local_command" && entry.content?.startsWith("/")) {
+      count++
+      continue
+    }
+    if (userText(entry) !== null) {
+      count++
+      continue
+    }
+    const content = entry.message?.content
+    if (
+      entry.type === "user" &&
+      !entry.isMeta &&
+      !entry.isCompactSummary &&
+      Array.isArray(content) &&
+      content.some((block: any) => block?.type === "image") &&
+      !content.some((block: any) => block?.type === "tool_result")
+    )
+      count++
+  }
+  return count
 }
 
 export function listSessions(cwd: string): SessionSummary[] {
@@ -144,6 +252,7 @@ async function conversationChain(file: string, entries: Entry[]): Promise<Entry[
 export type HistoryItem =
   | { kind: "user"; text: string; images?: ImageBlock[] }
   | { kind: "turn-duration"; durationMs: number; interrupted?: boolean }
+  | { kind: "turn-diff"; diff: TurnDiff }
   | {
       kind: "agent"
       messageId?: string
@@ -160,12 +269,29 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
   if (owner && canonicalCwd(owner) !== canonicalCwd(cwd)) return null
 
   const items: HistoryItem[] = []
+  const byUser = new Map<string, TurnDiff>()
+  const byIndex = new Map<number, TurnDiff>()
+  for (const record of readTurnDiffs(cwd, id)) {
+    // Old records predate turnIndex; derive it so Undo works on their cards.
+    const diff = { ...record.diff, turnIndex: record.diff.turnIndex ?? record.index }
+    if (record.userMessageId) byUser.set(record.userMessageId, diff)
+    byIndex.set(record.index, diff)
+  }
+  let turnNumber = 0
+  let currentUserMessageId: string | undefined
+  const flushTurnDiff = () => {
+    if (currentUserMessageId === undefined && !byIndex.has(turnNumber)) return
+    const diff = (currentUserMessageId ? byUser.get(currentUserMessageId) : undefined) ?? byIndex.get(turnNumber)
+    if (diff) items.push({ kind: "turn-diff", diff })
+    currentUserMessageId = undefined
+  }
   let interrupted = false
   for (const entry of await conversationChain(file, entries)) {
     if (entry.isSidechain) continue
 
     if (entry.type === "system" && entry.subtype === "turn_duration" && typeof entry.durationMs === "number") {
       items.push({ kind: "turn-duration", durationMs: entry.durationMs, interrupted })
+      flushTurnDiff()
       interrupted = false
       continue
     }
@@ -173,7 +299,11 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
     if (entry.type === "system" && entry.subtype === "local_command" && entry.content) {
       const output = entry.content.match(/^<local-command-(?:stdout|stderr)>([\s\S]*?)<\/local-command-(?:stdout|stderr)>$/)?.[1]
       if (output) items.push({ kind: "agent", message: { type: "assistant", message: { content: [{ type: "text", text: output }] }, parent_tool_use_id: null } })
-      else if (entry.content.startsWith("/")) items.push({ kind: "user", text: entry.content })
+      else if (entry.content.startsWith("/")) {
+        if (currentUserMessageId === undefined) turnNumber++
+        currentUserMessageId = entry.uuid ?? currentUserMessageId
+        items.push({ kind: "user", text: entry.content })
+      }
       continue
     }
 
@@ -208,6 +338,8 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
     const text = userText(entry)
     const images = Array.isArray(content) ? content.filter((b: any) => b?.type === "image") : []
     if (text !== null || (entry.type === "user" && !entry.isMeta && !entry.isCompactSummary && images.length)) {
+      if (currentUserMessageId === undefined) turnNumber++
+      currentUserMessageId = entry.uuid ?? currentUserMessageId
       items.push({ kind: "user", text: text ?? "", images: Array.isArray(content) ? content.filter((b: any) => b?.type === "image") : undefined })
       continue
     }
@@ -229,5 +361,6 @@ export async function loadHistory(cwd: string, id: string): Promise<HistoryItem[
       })
     }
   }
+  flushTurnDiff()
   return items
 }

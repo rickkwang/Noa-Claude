@@ -12,6 +12,8 @@ import type {
   PermissionRequest,
   SlashCommand,
   StreamEvent,
+  TurnDiff,
+  TurnDiffActionResult,
 } from "./protocol"
 
 export type ToolBlock = {
@@ -41,6 +43,7 @@ export type Turn =
       streaming: boolean
       durationMs?: number
       interrupted?: boolean
+      diff?: TurnDiff
     }
 
 export interface Permission {
@@ -77,6 +80,10 @@ export interface AgentState {
   commands: SlashCommand[]
   contextUsage?: ContextUsage
   turns: Turn[]
+  // Compact diff summary while the current turn is still running.
+  liveDiff?: TurnDiff
+  // Result of an Undo/Reapply request, shown in a dialog.
+  diffAction?: { turnIndex: number; action: "undo" | "reapply"; result: TurnDiffActionResult; id: number }
   busy: boolean
   stopping?: boolean
   elicitations: (ElicitationRequest & { requestId: string })[]
@@ -98,6 +105,10 @@ export type Action =
   | { type: "user-sent"; id: string; text?: string; content?: UserContent }
   | { type: "history-user"; id: string; text: string; images?: ImageBlock[] }
   | { type: "turn-duration"; durationMs: number; interrupted?: boolean }
+  | { type: "turn-diff"; diff: TurnDiff }
+  | { type: "turn-diff-live"; diff: TurnDiff }
+  | { type: "turn-diff-action"; turnIndex: number; action: "undo" | "reapply"; result: TurnDiffActionResult }
+  | { type: "diff-action-clear" }
   | { type: "agent"; message: AgentMessage }
   | { type: "control"; payload: ControlPayload }
   | { type: "model-set"; model: string }
@@ -136,6 +147,7 @@ export function reducer(state: AgentState, action: Action): AgentState {
         ...state,
         connection: action.status,
         busy: action.status === "closed" ? false : state.busy,
+        liveDiff: action.status === "closed" ? undefined : state.liveDiff,
         error: state.error ?? (action.status === "closed" && state.connection === "connecting" ? "Noa could not start. Open Activity → Diagnostics for details." : undefined),
       }
     case "user-sent":
@@ -145,6 +157,7 @@ export function reducer(state: AgentState, action: Action): AgentState {
         stopping: false,
         error: undefined,
         notice: undefined,
+        liveDiff: undefined,
         turns: [...state.turns, userTurn(action.id, action.content ?? action.text ?? "")],
       }
     case "history-user":
@@ -154,6 +167,31 @@ export function reducer(state: AgentState, action: Action): AgentState {
         ...state,
         turns: applyTurnDuration(state.turns, action.durationMs, action.interrupted),
       }
+    case "turn-diff": {
+      // A bridge update carries turnIndex and replaces that turn in place; the
+      // first event after a result belongs to the latest assistant turn.
+      const matching = action.diff.turnIndex === undefined
+        ? -1
+        : state.turns.findIndex(
+            (turn) => turn.role === "assistant" && turn.diff?.turnIndex === action.diff.turnIndex,
+          )
+      const index = matching === -1
+        ? state.turns.map((turn) => turn.role).lastIndexOf("assistant")
+        : matching
+      if (index === -1) return state
+      const turns = state.turns.slice()
+      turns[index] = { ...(turns[index] as Extract<Turn, { role: "assistant" }>), diff: action.diff }
+      return { ...state, turns, liveDiff: undefined }
+    }
+    case "turn-diff-live":
+      return { ...state, liveDiff: action.diff }
+    case "turn-diff-action":
+      return {
+        ...state,
+        diffAction: { turnIndex: action.turnIndex, action: action.action, result: action.result, id: Date.now() },
+      }
+    case "diff-action-clear":
+      return { ...state, diffAction: undefined }
     case "log":
       return {
         ...state,

@@ -1,7 +1,7 @@
 import { ElicitationCard } from "./components/ElicitationCard"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useAgent } from "./agent/useAgent"
-import type { ImageAttachment, ImageBlock, UserContent } from "./agent/protocol"
+import type { ImageAttachment, ImageBlock, TurnDiff, UserContent } from "./agent/protocol"
 import {
   addProject,
   fetchProjects,
@@ -17,6 +17,7 @@ import { AddProjectDialog } from "./components/AddProjectDialog"
 import { Composer } from "./components/Composer"
 import { EmptyState } from "./components/EmptyState"
 import { MessageList } from "./components/MessageList"
+import { DiffActionDialog, LiveDiffSummary } from "./components/TurnDiffCard"
 import { PermissionCard } from "./components/PermissionCard"
 import { QueuedMessages } from "./components/QueuedMessages"
 import { RightPanel, type PanelTab } from "./components/RightPanel"
@@ -102,9 +103,12 @@ function Workspace({ cwd }: { cwd: string }) {
   const [editDraft, setEditDraft] = useState<{ text: string; images: ImageAttachment[]; key: number }>()
   const [queueEditId, setQueueEditId] = useState<string>()
   const [changes, setChanges] = useState<{ count: number; additions: number; deletions: number; branch: string; files: { path: string; additions: number; deletions: number; binary: boolean }[] }>()
+  const [turnDiff, setTurnDiff] = useState<{ diff: TurnDiff; path?: string; key: number }>()
+  const [pendingDiffAction, setPendingDiffAction] = useState<number>()
   const [rightTab, setRightTab] = useState<PanelTab>("files")
+  useEffect(() => { setTurnDiff(undefined) }, [session.key])
 
-  const { state, sendMessage, reloadCommands, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setPermissionMode, setEffort, refreshContext } =
+  const { state, sendMessage, reloadCommands, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setPermissionMode, setEffort, refreshContext, turnDiffAction, clearDiffAction } =
     useAgent({
       cwd: session.cwd,
       resume: session.resume,
@@ -149,6 +153,12 @@ function Workspace({ cwd }: { cwd: string }) {
   }, [state.result])
 
   useEffect(() => {
+    if (!state.diffAction) return
+    setPendingDiffAction(undefined)
+    if (state.diffAction.result.ok) setRefreshTick((n) => n + 1)
+  }, [state.diffAction])
+
+  useEffect(() => {
     let cancelled = false
     setChanges(undefined)
     fetch(`/api/changes${query(session.cwd)}`)
@@ -169,6 +179,41 @@ function Workspace({ cwd }: { cwd: string }) {
       cancelled = true
     }
   }, [session.cwd, state.result, refreshTick])
+
+  // A new user turn makes the previous turn's diff stale. If Changes is open,
+  // follow the new turn's live/final diff instead, as Codex's Changes tab does.
+  const lastUserId = state.turns.reduce<string | undefined>(
+    (id, turn) => (turn.role === "user" ? turn.id : id),
+    undefined,
+  )
+  const lastUserIdRef = useRef(lastUserId)
+  useEffect(() => {
+    if (lastUserIdRef.current === lastUserId) return
+    lastUserIdRef.current = lastUserId
+    setTurnDiff(undefined)
+  }, [lastUserId])
+
+  const lastUserIndex = state.turns.reduce((index, turn, i) => (turn.role === "user" ? i : index), -1)
+  let currentTurnDiff: TurnDiff | undefined
+  for (let i = state.turns.length - 1; i > lastUserIndex; i--) {
+    const turn = state.turns[i]
+    if (turn?.role === "assistant" && turn.diff) {
+      currentTurnDiff = turn.diff
+      break
+    }
+  }
+  useEffect(() => {
+    if (!rightOpen || rightTab !== "changes") return
+    const diff = state.liveDiff ?? currentTurnDiff
+    if (!diff) return
+    setTurnDiff((current) => {
+      // Keep a turn the user explicitly opened; follow this turn's updates.
+      if (current && current.diff.turnIndex !== undefined && current.diff.turnIndex !== diff.turnIndex) return current
+      // Live updates keep the same key so they don't re-force the Turn scope.
+      const key = current && current.diff.turnIndex === diff.turnIndex ? current.key : Date.now()
+      return { diff, path: current?.path, key }
+    })
+  }, [state.liveDiff, currentTurnDiff, rightOpen, rightTab])
 
   const activeId = state.sessionId ?? session.resume
   useEffect(() => {
@@ -457,6 +502,7 @@ function Workspace({ cwd }: { cwd: string }) {
             onReference={(path) => setReference({ path, key: Date.now() })}
             onWorkspaceChange={() => setRefreshTick((n) => n + 1)}
             focusChange={focusChange}
+            turnDiff={turnDiff}
           />
         </div>
       </div>
@@ -508,8 +554,17 @@ function Workspace({ cwd }: { cwd: string }) {
               busy={state.busy}
               result={state.result}
               readingWidth={readingWidth}
-              changes={changes}
-              onChanges={(path) => showWorkspacePane("changes", path)}
+              onTurnDiff={(diff, path) => {
+                setTurnDiff({ diff, path, key: Date.now() })
+                setRightOpen(true)
+                setRightTab("changes")
+              }}
+              onTurnDiffAction={(diff, action) => {
+                if (diff.turnIndex === undefined) return
+                setPendingDiffAction(diff.turnIndex)
+                turnDiffAction(diff.turnIndex, action)
+              }}
+              diffActionPending={pendingDiffAction}
               onRetry={retryLast}
               onEdit={editMessage}
               tasks={state.tasks}
@@ -592,6 +647,17 @@ function Workspace({ cwd }: { cwd: string }) {
                   {state.error}
                 </p>
               )}
+              {state.busy && state.liveDiff && state.liveDiff.files.length > 0
+                && state.permissions.length === 0 && state.elicitations.length === 0 && (
+                  <LiveDiffSummary
+                    diff={state.liveDiff}
+                    onOpen={() => {
+                      setTurnDiff({ diff: state.liveDiff!, key: Date.now() })
+                      setRightOpen(true)
+                      setRightTab("changes")
+                    }}
+                  />
+                )}
               <Composer
                 key={session.key}
                 draftKey={`noa-agent.draft:${session.cwd}:${activeId ?? session.runtimeId}`}
@@ -639,6 +705,13 @@ function Workspace({ cwd }: { cwd: string }) {
       </div>
 
       {addingProject && <AddProjectDialog onAdd={addProjectPath} onClose={() => setAddingProject(false)} />}
+      {state.diffAction && (
+        <DiffActionDialog
+          action={state.diffAction.action}
+          result={state.diffAction.result}
+          onClose={clearDiffAction}
+        />
+      )}
       {settingsOpen && (
         <SettingsDialog settings={settings} onChange={setSettings} onClose={() => setSettingsOpen(false)} />
       )}

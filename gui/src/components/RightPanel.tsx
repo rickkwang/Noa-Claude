@@ -1,7 +1,9 @@
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react"
 import type { AgentState, ToolBlock } from "../agent/reducer"
+import type { TurnDiff } from "../agent/protocol"
 import { ChevronRight, RefreshCcw } from "../lib/icons"
 import { ToolCard } from "./ToolCard"
+import { TurnReview } from "./TurnReview"
 import { WorkspaceFiles } from "./WorkspaceFiles"
 
 export type PanelTab = "files" | "changes" | "context" | "activity"
@@ -24,10 +26,15 @@ interface RightPanelProps {
   onReference: (path: string) => void
   onWorkspaceChange?: () => void
   focusChange?: { path: string; at: number }
+  turnDiff?: { diff: TurnDiff; path?: string; key: number }
 }
 
 // Right column: one pane under a tab strip, as in Codex's side panel.
-export function RightPanel({ state, onStopTask, cwd, sessionId, onRefreshContext, tab, onTab, onReference, onWorkspaceChange, focusChange }: RightPanelProps) {
+export function RightPanel({ state, onStopTask, cwd, sessionId, onRefreshContext, tab, onTab, onReference, onWorkspaceChange, focusChange, turnDiff }: RightPanelProps) {
+  const [changeMode, setChangeMode] = useState<"turn" | "working">("working")
+  useEffect(() => {
+    setChangeMode(turnDiff ? "turn" : "working")
+  }, [turnDiff?.key, turnDiff === undefined])
   // Arrow keys move between tabs, as in a WAI-ARIA tablist.
   const onTabKey = (e: KeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return
@@ -77,7 +84,27 @@ export function RightPanel({ state, onStopTask, cwd, sessionId, onRefreshContext
         <WorkspaceFiles key={`files-${cwd}`} cwd={cwd} active={tab === "files"} refreshKey={state.busy ? 0 : state.turns.length} onReference={onReference} onUpdated={onWorkspaceChange} onOpenChanges={() => onTab("changes")} />
       </div>
       <div id="panel-changes" role="tabpanel" aria-labelledby="panel-tab-changes" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "changes" ? "flex" : "none" }}>
-        <WorkspaceFiles key={`changes-${cwd}`} cwd={cwd} changes focus={focusChange} active={tab === "changes"} refreshKey={state.busy ? 0 : state.turns.length} onReference={onReference} onUpdated={onWorkspaceChange} />
+        {turnDiff && (
+          <div className="noa-panel-toolbar noa-turn-scope">
+            <div className="noa-segmented" role="radiogroup" aria-label="Change scope">
+              <button type="button" role="radio" aria-checked={changeMode === "turn"} onClick={() => setChangeMode("turn")}>This turn</button>
+              <button type="button" role="radio" aria-checked={changeMode === "working"} onClick={() => setChangeMode("working")}>Working tree</button>
+            </div>
+            {changeMode === "turn" && (
+              <span className="min-w-0 truncate text-caption text-[var(--sidebar-text-muted)]">
+                {turnDiff.diff.files.length} {turnDiff.diff.files.length === 1 ? "file" : "files"}
+              </span>
+            )}
+          </div>
+        )}
+        <div className="min-h-0 flex-1 flex-col" style={{ display: tab === "changes" && changeMode === "working" ? "flex" : "none" }}>
+          <WorkspaceFiles key={`changes-${cwd}`} cwd={cwd} changes focus={focusChange} active={tab === "changes" && changeMode === "working"} refreshKey={state.busy ? 0 : state.turns.length} onReference={onReference} onUpdated={onWorkspaceChange} />
+        </div>
+        {turnDiff && (
+          <div className="min-h-0 flex-1 flex-col" style={{ display: tab === "changes" && changeMode === "turn" ? "flex" : "none" }}>
+            <TurnReview diff={turnDiff.diff} focusPath={turnDiff.path} />
+          </div>
+        )}
       </div>
       <div id="panel-context" role="tabpanel" aria-labelledby="panel-tab-context" className="min-h-0 flex-1 flex-col overflow-hidden" style={{ display: tab === "context" ? "flex" : "none" }}>
         <ContextTab state={state} cwd={cwd} sessionId={sessionId} active={tab === "context"} onRefreshContext={onRefreshContext} onReference={onReference} />

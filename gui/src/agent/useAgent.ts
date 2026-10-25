@@ -89,10 +89,25 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
           break
         case "attached":
           break
+        case "turn-diff":
+          dispatch({ type: "turn-diff", diff: envelope.diff })
+          break
+        case "turn-diff-live":
+          dispatch({ type: "turn-diff-live", diff: envelope.diff })
+          break
+        case "turn-diff-action":
+          dispatch({
+            type: "turn-diff-action",
+            turnIndex: envelope.turnIndex,
+            action: envelope.action,
+            result: envelope.result,
+          })
+          break
         case "history":
           for (const item of envelope.items) {
             if (item.kind === "user") dispatch({ type: "history-user", id: crypto.randomUUID(), text: item.text, images: item.images })
             else if (item.kind === "turn-duration") dispatch({ type: "turn-duration", durationMs: item.durationMs, interrupted: item.interrupted })
+            else if (item.kind === "turn-diff") dispatch({ type: "turn-diff", diff: item.diff })
             else dispatch({ type: "agent", message: item.message })
           }
           break
@@ -253,6 +268,11 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
   const runQueued = useCallback(() => { write({ type: "queue_run" }) }, [write])
   const reloadCommands = useCallback(() => control({ subtype: "reload_plugins" }, "commands"), [control])
   const stopTask = useCallback((taskId: string) => control({ subtype: "stop_task", task_id: taskId }), [control])
+  const turnDiffAction = useCallback(
+    (turnIndex: number, action: "undo" | "reapply") => write({ type: "turn_diff_action", turnIndex, action }),
+    [write],
+  )
+  const clearDiffAction = useCallback(() => dispatch({ type: "diff-action-clear" }), [])
 
-  return { state: ownerRef.current === runtimeId ? state : initialState, sendMessage, reloadCommands, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setPermissionMode, setEffort, refreshContext }
+  return { state: ownerRef.current === runtimeId ? state : initialState, sendMessage, reloadCommands, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setPermissionMode, setEffort, refreshContext, turnDiffAction, clearDiffAction }
 }

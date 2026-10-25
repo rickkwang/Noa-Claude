@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { initialState, reducer } from "../src/agent/reducer"
@@ -7,8 +7,10 @@ import type { Envelope, Outgoing } from "../src/agent/protocol"
 
 const directory = mkdtempSync(join(tmpdir(), "noa-gui-runtime-"))
 const cwd = join(directory, "workspace")
+const plainCwd = join(directory, "plain")
 const config = join(directory, "config")
 mkdirSync(cwd)
+mkdirSync(plainCwd)
 mkdirSync(config)
 writeFileSync(
   join(config, "settings.json"),
@@ -38,6 +40,18 @@ writeFileSync(
   join(cwd, ".noa", "mcp.json"),
   JSON.stringify({ mcpServers: { fixture: { type: "stdio", command: process.execPath, args: [mcpScript] } } }),
 )
+// Per-turn diffs need a git worktree; seed one file so the write below is the only change.
+writeFileSync(join(cwd, "seed.txt"), "seed\n")
+for (const args of [
+  ["init", "-q"],
+  ["config", "user.email", "t@t"],
+  ["config", "user.name", "t"],
+  ["add", "-A"],
+  ["commit", "-qm", "init"],
+]) {
+  const result = Bun.spawnSync(["git", "-C", cwd, ...args])
+  if (result.exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr.toString()}`)
+}
 let sawSkillWithImage = false
 let sawImage = false
 const observedModels = new Set<string>()
@@ -66,6 +80,16 @@ const provider = Bun.serve({
       !hasResult &&
       JSON.stringify(last).includes("GUI_BACKGROUND") &&
       !JSON.stringify(last).includes("GUI_BACKGROUND_OK")
+    const plainWrite = !hasResult && JSON.stringify(last).includes("GUI_WRITE_PLAIN")
+    const write =
+      !hasResult &&
+      !plainWrite &&
+      JSON.stringify(last).includes("GUI_WRITE") &&
+      !JSON.stringify(last).includes("GUI_WRITE_OK")
+    // Leave the turn running after the write result, so the live diff arrives
+    // before the final text and the turn diff.
+    if (hasResult && !JSON.stringify(last).includes("GUI_WRITE_PLAIN") && JSON.stringify(body.messages).includes("GUI_WRITE"))
+      await Bun.sleep(800)
     if (JSON.stringify(last).includes("GUI_SLOW")) await Bun.sleep(1500)
     if (JSON.stringify(last).includes("GUI_STEER")) await Bun.sleep(10000)
     const block = mcp
@@ -106,7 +130,21 @@ const provider = Bun.serve({
                 run_in_background: true,
               },
             }
-          : { type: "text", text: `GUI_REPLY_${calls}` }
+          : plainWrite
+            ? {
+                type: "tool_use",
+                id: `plain_write_${calls}`,
+                name: "Write",
+                input: { file_path: join(plainCwd, "turn-diff.txt"), content: "one\ntwo\n" },
+              }
+            : write
+              ? {
+                  type: "tool_use",
+                  id: `write_${calls}`,
+                  name: "Write",
+                  input: { file_path: join(cwd, "turn-diff.txt"), content: "one\ntwo\n" },
+                }
+              : { type: "text", text: `GUI_REPLY_${calls}` }
     const reason = block.type === "text" ? "end_turn" : "tool_use"
     const message = {
       id: `msg_${crypto.randomUUID()}`,
@@ -185,10 +223,10 @@ const wait = async (predicate: () => boolean, label: string, timeout = 20000) =>
     await Bun.sleep(25)
   }
 }
-function connect(runtime: string, resume?: string) {
+function connect(runtime: string, resume?: string, workdir = cwd) {
   const events: Envelope[] = []
   const socket = new WebSocket(
-    `ws://127.0.0.1:${port}/ws?${new URLSearchParams({ cwd, runtime, ...(resume ? { resume } : {}) })}`,
+    `ws://127.0.0.1:${port}/ws?${new URLSearchParams({ cwd: workdir, runtime, ...(resume ? { resume } : {}) })}`,
   )
   sockets.push(socket)
   socket.onmessage = (event) => events.push(JSON.parse(String(event.data)))
@@ -385,6 +423,119 @@ try {
   })
   await wait(() => third.results().length === thirdResultBase + 3, "MCP form completed")
   console.log("PASS real stdio MCP form request and accept response complete the tool call")
+
+  const diffRun = connect(crypto.randomUUID())
+  await diffRun.initialize()
+  diffRun.send({ type: "user", message: { role: "user", content: "GUI_WRITE" }, parent_tool_use_id: null })
+  await wait(
+    () =>
+      diffRun.events.some(
+        (e) =>
+          e.kind === "agent" &&
+          e.message.type === "control_request" &&
+          (e.message.request as any).subtype === "can_use_tool",
+      ),
+    "write permission",
+  )
+  const writePermission = diffRun.events.findLast(
+    (e) => e.kind === "agent" && e.message.type === "control_request",
+  ) as any
+  diffRun.send({
+    type: "control_response",
+    response: {
+      subtype: "success",
+      request_id: writePermission.message.request_id,
+      response: { behavior: "allow", updatedInput: writePermission.message.request.input },
+    },
+  })
+  await wait(() => diffRun.events.some((e) => e.kind === "turn-diff"), "turn diff", 30000)
+  const turnDiff = diffRun.events.findLast((e) => e.kind === "turn-diff") as Extract<Envelope, { kind: "turn-diff" }>
+  assert.ok(
+    turnDiff.diff.files.some((file) => file.path === "turn-diff.txt"),
+    JSON.stringify(turnDiff.diff),
+  )
+  assert.ok(turnDiff.diff.additions >= 2, JSON.stringify(turnDiff.diff))
+  const sidecars = readdirSync(join(config, "projects")).flatMap((project) =>
+    readdirSync(join(config, "projects", project)).filter((file) => file.endsWith(".turn-diffs.jsonl")),
+  )
+  assert.ok(sidecars.length > 0, "turn diff sidecar missing")
+  const live = diffRun.events.filter((e) => e.kind === "turn-diff-live") as Extract<Envelope, { kind: "turn-diff-live" }>[]
+  assert.ok(live.some((e) => e.diff.files.some((file) => file.path === "turn-diff.txt")), "live turn diff missing")
+  assert.equal(turnDiff.diff.turnIndex, 1, JSON.stringify(turnDiff.diff))
+  console.log("PASS a turn's git diff streams live and is persisted")
+
+  diffRun.send({ type: "turn_diff_action", turnIndex: 1, action: "undo" })
+  await wait(
+    () => diffRun.events.some((e) => e.kind === "turn-diff-action" && e.action === "undo"),
+    "undo result",
+  )
+  const undo = diffRun.events.findLast(
+    (e) => e.kind === "turn-diff-action" && e.action === "undo",
+  ) as Extract<Envelope, { kind: "turn-diff-action" }>
+  assert.ok(undo.result.ok, JSON.stringify(undo.result))
+  assert.equal(existsSync(join(cwd, "turn-diff.txt")), false)
+  await wait(
+    () => diffRun.events.some((e) => e.kind === "turn-diff" && e.diff.reverted === true),
+    "reverted turn diff",
+  )
+  diffRun.send({ type: "turn_diff_action", turnIndex: 1, action: "reapply" })
+  await wait(
+    () => diffRun.events.some((e) => e.kind === "turn-diff-action" && e.action === "reapply"),
+    "reapply result",
+  )
+  const reapply = diffRun.events.findLast(
+    (e) => e.kind === "turn-diff-action" && e.action === "reapply",
+  ) as Extract<Envelope, { kind: "turn-diff-action" }>
+  assert.ok(reapply.result.ok, JSON.stringify(reapply.result))
+  assert.equal(readFileSync(join(cwd, "turn-diff.txt"), "utf8"), "one\ntwo\n")
+  console.log("PASS a turn diff can be undone and reapplied")
+
+  const plainRun = connect(crypto.randomUUID(), undefined, plainCwd)
+  await plainRun.initialize()
+  plainRun.send({ type: "user", message: { role: "user", content: "GUI_WRITE_PLAIN" }, parent_tool_use_id: null })
+  await wait(
+    () =>
+      plainRun.events.some(
+        (e) =>
+          e.kind === "agent" &&
+          e.message.type === "control_request" &&
+          (e.message.request as any).subtype === "can_use_tool",
+      ),
+    "plain write permission",
+  )
+  const plainPermission = plainRun.events.findLast(
+    (e) => e.kind === "agent" && e.message.type === "control_request",
+  ) as any
+  plainRun.send({
+    type: "control_response",
+    response: {
+      subtype: "success",
+      request_id: plainPermission.message.request_id,
+      response: { behavior: "allow", updatedInput: plainPermission.message.request.input },
+    },
+  })
+  await wait(() => plainRun.events.some((e) => e.kind === "turn-diff"), "plain turn diff", 30000)
+  const plainDiff = plainRun.events.findLast(
+    (e) => e.kind === "turn-diff",
+  ) as Extract<Envelope, { kind: "turn-diff" }>
+  assert.ok(
+    plainDiff.diff.files.some((file) => file.path === "turn-diff.txt"),
+    JSON.stringify(plainDiff.diff),
+  )
+  assert.ok(plainDiff.diff.patch?.includes("+one"), JSON.stringify(plainDiff.diff))
+  const plainIndex = plainDiff.diff.turnIndex!
+  plainRun.send({ type: "turn_diff_action", turnIndex: plainIndex, action: "undo" })
+  await wait(
+    () => plainRun.events.some((e) => e.kind === "turn-diff-action" && e.action === "undo"),
+    "plain undo result",
+  )
+  const plainUndo = plainRun.events.findLast(
+    (e) => e.kind === "turn-diff-action" && e.action === "undo",
+  ) as Extract<Envelope, { kind: "turn-diff-action" }>
+  assert.equal(plainUndo.result.errorCode, "not-git-repo", JSON.stringify(plainUndo.result))
+  assert.equal(readFileSync(join(plainCwd, "turn-diff.txt"), "utf8"), "one\ntwo\n")
+  console.log("PASS a non-git turn diff comes from tool results and Undo reports not-git-repo")
+
   third.send({ type: "user", message: { role: "user", content: "GUI_BACKGROUND" }, parent_tool_use_id: null })
   await wait(
     () =>

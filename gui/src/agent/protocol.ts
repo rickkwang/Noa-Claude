@@ -133,6 +133,37 @@ export type AgentMessage =
       response: { subtype: "success" | "error"; request_id: string; response?: unknown; error?: string }
     }
 
+export interface TurnDiffFile {
+  path: string
+  // Repo-relative path used inside the patch, when it differs from `path`.
+  patchPath?: string
+  additions: number
+  deletions: number
+  binary?: boolean
+  tooLarge?: boolean
+}
+
+export interface TurnDiff {
+  files: TurnDiffFile[]
+  additions: number
+  deletions: number
+  patch?: string
+  truncated?: boolean
+  // Bridge-assigned turn number; used to update or revert one turn in place.
+  turnIndex?: number
+  // Set after Undo so the same card offers Reapply.
+  reverted?: boolean
+}
+
+export interface TurnDiffActionResult {
+  ok: boolean
+  errorCode?: "not-git-repo" | "no-patch" | "apply-failed"
+  error?: string
+  appliedPaths: string[]
+  skippedPaths: string[]
+  conflictedPaths: string[]
+}
+
 export type Envelope =
   | { kind: "interrupt" }
   | { kind: "attached"; runtimeId: string }
@@ -140,6 +171,16 @@ export type Envelope =
   | { kind: "user"; id: string; content: UserContent }
   | { kind: "queue"; messages: QueuedMessage[]; paused?: boolean }
   | { kind: "agent"; message: AgentMessage }
+  | { kind: "turn-diff"; diff: TurnDiff }
+  // While a turn runs, the bridge streams its diff so the composer can show a
+  // live summary, as Codex does above the composer.
+  | { kind: "turn-diff-live"; diff: TurnDiff }
+  | {
+      kind: "turn-diff-action"
+      turnIndex: number
+      action: "undo" | "reapply"
+      result: TurnDiffActionResult
+    }
   | { kind: "log"; text: string }
   | { kind: "exit"; code: number | null }
 
@@ -152,6 +193,7 @@ export type Outgoing =
   | { type: "queue_steer"; id: string }
   | { type: "queue_pause"; paused: boolean }
   | { type: "queue_run" }
+  | { type: "turn_diff_action"; turnIndex: number; action: "undo" | "reapply" }
   | { type: "control_request"; request_id: string; request: ControlRequest }
   | {
       type: "control_response"
@@ -180,6 +222,7 @@ export type ControlRequest =
 export type HistoryItem =
   | { kind: "user"; text: string; images?: ImageBlock[] }
   | { kind: "turn-duration"; durationMs: number; interrupted?: boolean }
+  | { kind: "turn-diff"; diff: TurnDiff }
   | {
       kind: "agent"
       messageId?: string

@@ -17,10 +17,36 @@ export interface ToolDiffStats {
 
 const MAX_DIFF_CELLS = 250_000
 
+export type ThinkingBlock = Extract<Block, { kind: "thinking" }>
+
 export type ActivityUnit =
   | { kind: "tools"; blocks: ToolBlock[] }
-  | { kind: "thinking"; block: Extract<Block, { kind: "thinking" }> }
+  | { kind: "thinking"; block: ThinkingBlock }
   | { kind: "text"; block: Extract<Block, { kind: "text" }> }
+
+// Codex renders one collapsible activity group per run of reasoning and tool
+// calls. Text breaks the run and is always visible outside the group.
+export type ActivityRun =
+  | { kind: "activity"; blocks: (ToolBlock | ThinkingBlock)[] }
+  | { kind: "text"; block: Extract<Block, { kind: "text" }> }
+
+export function groupActivityRuns(units: ActivityUnit[]): ActivityRun[] {
+  const runs: ActivityRun[] = []
+  let blocks: (ToolBlock | ThinkingBlock)[] = []
+  const flush = () => {
+    if (blocks.length) runs.push({ kind: "activity", blocks })
+    blocks = []
+  }
+  for (const unit of units) {
+    if (unit.kind === "text") {
+      flush()
+      runs.push(unit)
+    } else if (unit.kind === "thinking") blocks.push(unit.block)
+    else blocks.push(...unit.blocks)
+  }
+  flush()
+  return runs
+}
 
 function oneLine(value: unknown): string {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : ""
@@ -209,7 +235,8 @@ export function groupActivityBlocks(blocks: Block[]): ActivityUnit[] {
       continue
     }
     if (block.kind === "thinking") {
-      if (!block.done) {
+      // Completed reasoning stays as a collapsed row; only empty placeholders are dropped.
+      if (!block.done || block.text.trim()) {
         flush()
         units.push({ kind: "thinking", block })
       }

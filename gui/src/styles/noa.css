@@ -2131,11 +2131,37 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-scroll-bottom { position: absolute; bottom: calc(var(--composer-overlay, 0px) - 8px); left: 50%; z-index: 30; display: flex; width: 32px; height: 32px; translate: -50% 0; align-items: center; justify-content: center; border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent); border-radius: 999px; background: var(--surface-page, #F9F9F7) padding-box; color: var(--sidebar-text-muted); transition: opacity 200ms ease, color 120ms; }
 .noa-scroll-bottom:hover { color: var(--text-primary); }
 .noa-scroll-bottom[data-show="false"] { opacity: 0; pointer-events: none; }
-.noa-turn-diff { display: inline-flex; min-width: 0; align-items: center; gap: 4px; border-radius: 4px; color: inherit; font-variant-numeric: tabular-nums; transition: color 120ms; }
-.noa-turn-diff:hover { color: var(--text-primary); }
-.noa-turn-diff:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }
-.noa-turn-diff .is-added { color: #168447; } .noa-turn-diff .is-removed { color: #C24444; }
-[data-theme="dark"] .noa-turn-diff .is-added { color: #69C98B; } [data-theme="dark"] .noa-turn-diff .is-removed { color: #EE8A8A; }
+/* Per-turn diff card, as Codex's TurnDiffContent: header + up to three file rows. */
+.noa-turn-diff-card { margin-top: 2px; overflow: hidden; border: 1px solid var(--divider-subtle); border-radius: 10px; background: color-mix(in srgb, var(--bg-card) 70%, transparent); }
+.noa-live-diff { display: inline-flex; max-width: 100%; align-items: center; gap: 6px; align-self: center; padding: 2px 6px; border-radius: 6px; color: var(--sidebar-text-muted); font-size: var(--text-caption); }
+.noa-live-diff:hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 5%, transparent); }
+.noa-turn-diff-headrow { display: flex; align-items: center; }
+.noa-turn-diff-header { display: flex; min-width: 0; flex: 1; min-height: 36px; align-items: center; gap: 8px; padding: 4px 10px; text-align: left; }
+.noa-turn-diff-action { margin-right: 8px; flex-shrink: 0; height: 26px; padding: 0 8px; border-radius: 6px; font-size: var(--text-caption); color: var(--text-secondary); white-space: nowrap; }
+.noa-turn-diff-action:hover:not(:disabled) { background: color-mix(in srgb, var(--text-primary) 7%, transparent); color: var(--text-primary); }
+.noa-turn-diff-action:disabled { opacity: .55; cursor: default; }
+.noa-turn-diff-header:hover { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
+.noa-turn-diff-default { display: inline-flex; flex-shrink: 0; }
+.noa-turn-diff-hover { display: none; flex-shrink: 0; align-items: center; gap: 2px; color: var(--text-secondary); }
+.noa-turn-diff-header:hover .noa-turn-diff-default,
+.noa-turn-diff-header:focus-visible .noa-turn-diff-default { display: none; }
+.noa-turn-diff-header:hover .noa-turn-diff-hover,
+.noa-turn-diff-header:focus-visible .noa-turn-diff-hover { display: inline-flex; }
+.noa-turn-diff-list { display: flex; flex-direction: column; border-top: 1px solid var(--divider-subtle); }
+.noa-turn-diff-row { display: flex; width: 100%; min-width: 0; min-height: 36px; align-items: center; gap: 8px; padding: 4px 10px; text-align: left; color: var(--text-primary); }
+.noa-turn-diff-row + .noa-turn-diff-row { border-top: 1px solid color-mix(in srgb, var(--text-primary) 4%, transparent); }
+.noa-turn-diff-row:hover { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
+.noa-turn-diff-row .noa-middle-path { flex: 1; }
+.noa-turn-diff-more { display: flex; width: 100%; min-height: 32px; align-items: center; justify-content: center; gap: 4px; border-top: 1px solid var(--divider-subtle); color: var(--sidebar-text-muted); font-size: var(--text-caption); }
+.noa-turn-diff-more:hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
+.noa-turn-diff-note { font-size: var(--text-caption); color: var(--sidebar-text-muted); }
+.noa-turn-diff-card > .noa-turn-diff-note { margin: 0; padding: 4px 10px 6px; border-top: 1px solid var(--divider-subtle); }
+.noa-turn-review-files { max-height: 40%; overflow-y: auto; border-bottom: 1px solid var(--divider-subtle); }
+.noa-turn-review-row { display: flex; width: 100%; min-width: 0; min-height: 30px; align-items: center; gap: 8px; padding: 3px 10px; text-align: left; color: var(--text-primary); }
+.noa-turn-review-row:hover { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
+.noa-turn-review-row[data-selected] { background: color-mix(in srgb, var(--text-primary) 7%, transparent); }
+.noa-turn-review-row .noa-middle-path { flex: 1; }
+.noa-turn-scope { justify-content: space-between; }
 @media (prefers-reduced-motion: reduce) { .noa-scroll-bottom { transition: none; } }
 /* Floating composer: the page colour ramps in over 32px above the card so text dissolves instead of being cut. */
 /* Stops 6px short of the right edge so the scrollbar runs the full height beside it, as in Codex; the right padding drops by the same 6px to keep the card centred. */
@@ -2207,13 +2233,6 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 }
 
 /* Per-file change list, opened on hover/focus above the summary (Codex: min-w-64, max-h-72, rows px-3 py-1.5). */
-.noa-turn-diff-wrap { position: relative; display: inline-flex; min-width: 0; }
-.noa-turn-diff-files { position: absolute; left: -8px; bottom: calc(100% + 4px); z-index: 40; display: flex; flex-direction: column; gap: 0; min-width: 256px; max-width: min(420px, 80vw); max-height: 288px; margin: 0; padding: 4px; overflow-y: auto; list-style: none; border-radius: 10px; background: var(--bg-card, #FFFFFF); opacity: 0; visibility: hidden; transition: opacity 120ms ease, visibility 0s linear 120ms; }
-.noa-turn-diff-files::after { content: ""; position: absolute; inset-inline: 0; top: 100%; height: 6px; }
-.noa-turn-diff-wrap:hover .noa-turn-diff-files, .noa-turn-diff-wrap:focus-within .noa-turn-diff-files { opacity: 1; visibility: visible; transition-delay: 0s; }
-.noa-turn-diff-files button { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 12px; border-radius: 6px; text-align: start; color: var(--text-primary); }
-.noa-turn-diff-files button:hover { background: color-mix(in srgb, var(--text-primary) 5%, transparent); }
-.noa-turn-diff-files button:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
 .noa-turn-diff-stats { display: inline-flex; flex-shrink: 0; gap: 4px; font-size: var(--text-caption); font-variant-numeric: tabular-nums; color: var(--sidebar-text-muted); }
 .noa-turn-diff-stats .is-added { color: #168447; } .noa-turn-diff-stats .is-removed { color: #C24444; }
 [data-theme="dark"] .noa-turn-diff-stats .is-added { color: #69C98B; } [data-theme="dark"] .noa-turn-diff-stats .is-removed { color: #EE8A8A; }

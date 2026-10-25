@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { groupActivityBlocks, toolActivityLabel, toolActivitySummary, toolDiffStats } from "../src/agent/toolActivity"
+import { groupActivityBlocks, groupActivityRuns, toolActivityLabel, toolActivitySummary, toolDiffStats } from "../src/agent/toolActivity"
 
 test("tool activity uses action phrases instead of raw tool names", () => {
   expect(toolActivityLabel({ name: "Bash", status: "running", input: { command: "npm test" } }))
@@ -75,16 +75,33 @@ test("activity grouping follows Codex boundaries", () => {
   const empty = { kind: "text" as const, text: "" }
 
   expect(groupActivityBlocks([read, thought, empty, run, image, task, read, thought, text])).toMatchObject([
-    { kind: "tools", blocks: [{ id: "read" }, { id: "run" }] },
+    { kind: "tools", blocks: [{ id: "read" }] },
+    { kind: "thinking" },
+    { kind: "tools", blocks: [{ id: "run" }] },
     { kind: "tools", blocks: [{ id: "image" }] },
     { kind: "tools", blocks: [{ id: "task" }] },
     { kind: "tools", blocks: [{ id: "read" }] },
+    { kind: "thinking" },
     { kind: "text" },
   ])
 })
 
-test("only active thinking is rendered", () => {
+test("active and completed thinking are rendered", () => {
   const thought = { kind: "thinking" as const, text: "Inspecting", done: false }
   expect(groupActivityBlocks([thought])).toMatchObject([{ kind: "thinking" }])
-  expect(groupActivityBlocks([{ ...thought, done: true }])).toEqual([])
+  expect(groupActivityBlocks([{ ...thought, done: true }])).toMatchObject([{ kind: "thinking" }])
+  expect(groupActivityBlocks([{ ...thought, text: "", done: true }])).toEqual([])
+})
+
+test("activity runs group consecutive reasoning and tool calls", () => {
+  const thought = { kind: "thinking" as const, text: "Inspect", done: true }
+  const read = { kind: "tool" as const, id: "read", name: "Read", input: { file_path: "/repo/a.ts" }, partialJson: "", status: "done" as const }
+  const run = { kind: "tool" as const, id: "run", name: "Bash", input: { command: "bun test" }, partialJson: "", status: "done" as const }
+  const text = { kind: "text" as const, text: "Done." }
+
+  expect(groupActivityRuns(groupActivityBlocks([thought, read, thought, text, run]))).toMatchObject([
+    { kind: "activity", blocks: [{ kind: "thinking" }, { kind: "tool" }, { kind: "thinking" }] },
+    { kind: "text" },
+    { kind: "activity", blocks: [{ kind: "tool" }] },
+  ])
 })

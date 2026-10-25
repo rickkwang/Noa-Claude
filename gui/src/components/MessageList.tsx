@@ -1,20 +1,29 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
-import type { AgentState, AgentTask, Block, Turn } from "../agent/reducer"
-import type { ImageBlock } from "../agent/protocol"
+import type { AgentState, AgentTask, Block, ToolBlock, Turn } from "../agent/reducer"
+import type { ImageBlock, TurnDiff } from "../agent/protocol"
 import { Lightbox, type LightboxItem } from "./Lightbox"
-import { groupActivityBlocks, toolActivitySummary } from "../agent/toolActivity"
+import {
+  groupActivityBlocks,
+  groupActivityRuns,
+  toolActivityLabel,
+  toolActivitySummary,
+  type ActivityRun,
+  type ThinkingBlock as ThinkingBlockData,
+} from "../agent/toolActivity"
 import { ArrowDown, BookOpen, Check, ChevronRight, Copy, Edit2, Photo, Terminal, Tool } from "../lib/icons"
 import { Collapsible } from "./Collapsible"
 import { Markdown } from "./Markdown"
 import { ToolCard } from "./ToolCard"
+import { TurnDiffCard } from "./TurnDiffCard"
 
 interface MessageListProps {
   turns: Turn[]
   busy: boolean
   result?: AgentState["result"]
   readingWidth: number
-  changes?: { count: number; additions: number; deletions: number; files?: { path: string; additions: number; deletions: number; binary: boolean }[] }
-  onChanges: (path?: string) => void
+  onTurnDiff?: (diff: TurnDiff, path?: string) => void
+  onTurnDiffAction?: (diff: TurnDiff, action: "undo" | "reapply") => void
+  diffActionPending?: number
   onRetry?: () => void
   onEdit?: (text: string, images?: ImageBlock[]) => void
   tasks?: AgentTask[]
@@ -29,7 +38,7 @@ const TURN_GAP = 16
 const TURN_OVERSCAN = 2
 const ESTIMATED_TURN_HEIGHT = 160
 
-export function MessageList({ turns, busy, result, readingWidth, changes, onChanges, onRetry, onEdit, tasks, onStopTask, onOpenTask }: MessageListProps) {
+export function MessageList({ turns, busy, result, readingWidth, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, tasks, onStopTask, onOpenTask }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
@@ -112,7 +121,6 @@ export function MessageList({ turns, busy, result, readingWidth, changes, onChan
       setViewport({ top: scroller.scrollTop, height: scroller.clientHeight })
     })
   }, [])
-  const showResult = result && !busy
   const visibleRows = layout.slice(visible.start, visible.end)
   const focusedRow = layout.find((row) => row.segment.id === focusedTurn.current)
   if (focusedRow && !visibleRows.some((row) => row.segment.id === focusedRow.segment.id)) {
@@ -138,6 +146,9 @@ export function MessageList({ turns, busy, result, readingWidth, changes, onChan
         tasks={tasks}
         onStopTask={onStopTask}
         onOpenTask={onOpenTask}
+        onTurnDiff={onTurnDiff}
+        onTurnDiffAction={onTurnDiffAction}
+        diffActionPending={diffActionPending}
       />
     )
   }
@@ -162,56 +173,17 @@ export function MessageList({ turns, busy, result, readingWidth, changes, onChan
           ))}
         </div>
 
-        {/* Turn footer, as Codex's TurnDiffContent: status, then "· N files changed +a -d" as quiet inline text. */}
-        {!busy && (showResult || !!changes?.count) && (
+        {!busy && result?.isError && !result.interrupted && onRetry && (
           <div className="flex min-w-0 flex-wrap items-center gap-2 text-[length:var(--text-chat-sm)] text-[var(--sidebar-text-muted,#898781)]">
-            {showResult && (
-              <span className={result.isError ? "text-[#C24444]" : undefined}>
-                {result.interrupted
-                  ? "Task stopped"
-                  : result.isError
-                    ? "Finished with an error"
-                    : `Done in ${(result.durationMs / 1000).toFixed(1)}s`}
-                {result.costUsd !== undefined && ` · $${result.costUsd.toFixed(4)}`}
-              </span>
-            )}
-            {result?.isError && !result.interrupted && onRetry && (
-              <button
-                type="button"
-                onClick={onRetry}
-                className="noa-press flex h-6 items-center rounded-md px-1.5 text-caption text-[var(--accent-color)] hover:bg-[color-mix(in_srgb,var(--text-primary)_7.5%,transparent)]"
-                title="Send the last message again"
-              >
-                Retry
-              </button>
-            )}
-            {!!changes?.count && (
-              <>
-                {showResult && <span aria-hidden="true">·</span>}
-                {/* Hover or focus reveals the per-file list, as Codex's TurnDiffContent tooltip does. */}
-                <span className="noa-turn-diff-wrap">
-                  <button type="button" onClick={() => onChanges()} className="noa-turn-diff">
-                    <span className="truncate">Working tree: {changes.count} {changes.count === 1 ? "file" : "files"} changed</span>
-                    {changes.additions > 0 && <span className="is-added">+{changes.additions}</span>}
-                    {changes.deletions > 0 && <span className="is-removed">-{changes.deletions}</span>}
-                  </button>
-                  {!!changes.files?.length && (
-                    <ul className="noa-turn-diff-files noa-floating-panel">
-                      {changes.files.map((file) => (
-                        <li key={file.path}>
-                          <button type="button" onClick={() => onChanges(file.path)} title={file.path}>
-                            <span className="noa-middle-path">{file.path.includes("/") && <span className="noa-middle-path-dir">{file.path.slice(0, file.path.lastIndexOf("/") + 1)}</span>}<span className="noa-middle-path-base">{file.path.split("/").pop()}</span></span>
-                            <span className="noa-turn-diff-stats">
-                              {file.binary ? "Binary" : <>{file.additions > 0 && <span className="is-added">+{file.additions}</span>}{file.deletions > 0 && <span className="is-removed">-{file.deletions}</span>}</>}
-                            </span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </span>
-              </>
-            )}
+            <span className="text-[#C24444]">Finished with an error</span>
+            <button
+              type="button"
+              onClick={onRetry}
+              className="noa-press flex h-6 items-center rounded-md px-1.5 text-caption text-[var(--accent-color)] hover:bg-[color-mix(in_srgb,var(--text-primary)_7.5%,transparent)]"
+              title="Send the last message again"
+            >
+              Retry
+            </button>
           </div>
         )}
       </div>
@@ -268,6 +240,7 @@ type AssistantSegmentData = {
   streaming: boolean
   durationMs?: number
   interrupted?: boolean
+  diff?: TurnDiff
 }
 type Segment = Extract<Turn, { role: "user" }> | AssistantSegmentData
 
@@ -346,6 +319,7 @@ function groupTurns(turns: Turn[]): Segment[] {
         streaming: last.streaming || turn.streaming,
         durationMs: turn.durationMs ?? last.durationMs,
         interrupted: turn.interrupted ?? last.interrupted,
+        diff: turn.diff ?? last.diff,
       }
     } else segments.push({
       role: "assistant",
@@ -354,106 +328,149 @@ function groupTurns(turns: Turn[]): Segment[] {
       streaming: turn.streaming,
       durationMs: turn.durationMs,
       interrupted: turn.interrupted,
+      diff: turn.diff,
     })
   }
   return segments
 }
 
 // Tool calls and reasoning fold into one "Worked for" row; the final answer stays visible.
-function AssistantSegment({ segment, durationMs, interrupted, tasks, onStopTask, onOpenTask }: {
+function AssistantSegment({ segment, durationMs, interrupted, tasks, onStopTask, onOpenTask, onTurnDiff, onTurnDiffAction, diffActionPending }: {
   segment: AssistantSegmentData
   durationMs?: number
   interrupted?: boolean
   tasks?: AgentTask[]
   onStopTask?: (id: string) => void
   onOpenTask?: () => void
+  onTurnDiff?: (diff: TurnDiff, path?: string) => void
+  onTurnDiffAction?: (diff: TurnDiff, action: "undo" | "reapply") => void
+  diffActionPending?: number
 }) {
   const units = groupActivityBlocks(segment.blocks)
-  const [activityCollapsed, setActivityCollapsed] = useState(durationMs !== undefined && !segment.streaming)
+  const runs = groupActivityRuns(units)
+  // Codex collapses everything that happened before the final answer into one disclosure. Noa's
+  // protocol has no final-channel flag, so the last text run is the final answer.
+  const finalIndex = runs.map((run) => run.kind).lastIndexOf("text")
+  // Trailing tool calls after the final answer still fold into the turn; Codex
+  // collapses as soon as the final assistant message has started.
+  const canCollapse = !segment.streaming && !interrupted && finalIndex > 0
+  const collapsedCount = finalIndex > 0
+    ? runs.reduce(
+        (count, run, index) => index === finalIndex
+          ? count
+          : count + (run.kind === "text" ? 1 : run.blocks.length),
+        0,
+      )
+    : 0
+  const [activityCollapsed, setActivityCollapsed] = useState(canCollapse)
   const activityToggled = useRef(false)
-  const lastToolUnit = units.map((unit) => unit.kind === "tools").lastIndexOf(true)
-  const workedForBefore = lastToolUnit === -1
-    ? -1
-    : units.findIndex((unit, index) => index > lastToolUnit && unit.kind === "text")
   useEffect(() => {
-    if (!activityToggled.current && !segment.streaming && durationMs !== undefined) setActivityCollapsed(true)
-  }, [durationMs, segment.streaming])
+    if (!activityToggled.current) setActivityCollapsed(canCollapse)
+  }, [canCollapse])
   function toggleActivity() {
     activityToggled.current = true
     setActivityCollapsed((collapsed) => !collapsed)
   }
+  // A turn that cannot fold (stopped, or no final answer yet) keeps the inline worked-for divider.
+  const lastActivity = runs.map((run) => run.kind === "activity").lastIndexOf(true)
+  const workedForBefore = lastActivity === -1
+    ? -1
+    : runs.findIndex((run, index) => index > lastActivity && run.kind === "text")
+
+  function renderText(run: Extract<ActivityRun, { kind: "text" }>, index: number, workedFor?: ReactNode) {
+    return (
+      <div key={index} className="group/message flex flex-col gap-1">
+        {workedFor}
+        <BlockView block={run.block} />
+        <MessageActions text={run.block.text} complete={run.block.done ?? !segment.streaming} />
+      </div>
+    )
+  }
+
+  const turnDiff = segment.diff && onTurnDiff
+    ? (
+        <TurnDiffCard
+          diff={segment.diff}
+          onOpen={(path) => onTurnDiff(segment.diff!, path)}
+          onAction={onTurnDiffAction ? (action) => onTurnDiffAction(segment.diff!, action) : undefined}
+          pending={diffActionPending !== undefined && diffActionPending === segment.diff.turnIndex}
+        />
+      )
+    : null
+
+  if (canCollapse && activityCollapsed) {
+    return (
+      <div className="group flex flex-col gap-3">
+        <WorkedFor
+          durationMs={durationMs}
+          count={durationMs === undefined ? collapsedCount : undefined}
+          collapsed
+          onToggle={toggleActivity}
+        />
+        {renderText(runs[finalIndex] as Extract<ActivityRun, { kind: "text" }>, finalIndex)}
+        {turnDiff}
+      </div>
+    )
+  }
+
   return (
     <div className="group flex flex-col gap-3">
-      {units.map((unit, index) => {
-        const workedFor = index === workedForBefore && durationMs !== undefined
-          ? <WorkedFor durationMs={durationMs} interrupted={interrupted} collapsed={activityCollapsed} onToggle={toggleActivity} />
+      {canCollapse && (
+        <WorkedFor
+          durationMs={durationMs}
+          count={durationMs === undefined ? collapsedCount : undefined}
+          collapsed={false}
+          onToggle={toggleActivity}
+        />
+      )}
+      {runs.map((run, index) => {
+        const workedFor = !canCollapse && index === workedForBefore && durationMs !== undefined
+          ? <WorkedFor durationMs={durationMs} interrupted={interrupted} collapsed={false} />
           : null
-        if (unit.kind === "thinking") return <ThinkingBlock key={index} block={unit.block} />
-        if (unit.kind === "text") {
-          return (
-            <div key={index} className="group/message flex flex-col gap-1">
-              {workedFor}
-              <BlockView block={unit.block} />
-              <MessageActions text={unit.block.text} complete={unit.block.done ?? !segment.streaming} />
-            </div>
-          )
-        }
-        if (activityCollapsed) return null
-        const block = unit.blocks.length === 1 ? unit.blocks[0] : undefined
-        if (block) {
-          const task = tasks?.find((candidate) => candidate.id === block.id || candidate.toolUseId === block.id)
-          return <ToolCard key={index} block={block} task={task} defaultOpen={block.status === "running"} onStopTask={onStopTask} onOpenTask={onOpenTask} />
-        }
+        if (run.kind === "text") return renderText(run, index, workedFor)
         return (
-          <WorkGroup
+          <ActivityGroup
             key={index}
-            blocks={unit.blocks}
-            live={unit.blocks.some((block) => block.status === "running")}
+            blocks={run.blocks}
             tasks={tasks}
             onStopTask={onStopTask}
             onOpenTask={onOpenTask}
           />
         )
       })}
-      {durationMs !== undefined && workedForBefore === -1 && (
-        <WorkedFor
-          durationMs={durationMs}
-          interrupted={interrupted}
-          collapsed={activityCollapsed}
-          onToggle={lastToolUnit === -1 ? undefined : toggleActivity}
-        />
+      {!canCollapse && durationMs !== undefined && workedForBefore === -1 && (
+        <WorkedFor durationMs={durationMs} interrupted={interrupted} collapsed={false} />
       )}
+      {turnDiff}
       {segment.streaming && segment.blocks.length === 0 && <Working />}
     </div>
   )
 }
 
-function WorkGroup({ blocks, live, tasks, onStopTask, onOpenTask }: {
-  blocks: Extract<Block, { kind: "tool" }>[]
-  live: boolean
+// One collapsible summary per run of reasoning and tool calls, as Codex's
+// agent-activity group. The body stays folded unless the user opens it.
+function ActivityGroup({ blocks, tasks, onStopTask, onOpenTask }: {
+  blocks: (ToolBlock | ThinkingBlockData)[]
   tasks?: AgentTask[]
   onStopTask?: (id: string) => void
   onOpenTask?: () => void
 }) {
-  const [open, setOpen] = useState(live)
-  const userToggled = useRef(false)
-  const startedAt = useRef(live ? Date.now() : undefined)
-  const [, setClock] = useState(0)
-
-  useEffect(() => {
-    if (!live) return
-    const timer = setInterval(() => setClock((value) => value + 1), 1000)
-    return () => clearInterval(timer)
-  }, [live])
-
-  useEffect(() => {
-    if (!userToggled.current) setOpen(live)
-  }, [live])
-
-  const elapsedMs = live && startedAt.current !== undefined ? Date.now() - startedAt.current : undefined
-  const workingLabel = elapsedMs !== undefined && elapsedMs >= 1000 ? `Working for ${formatDuration(elapsedMs)}` : "Working"
-  const completedLabel = "Worked"
-  const summary = toolActivitySummary(blocks)
+  const [open, setOpen] = useState(false)
+  const liveBlock = [...blocks].reverse().find(
+    (block) => block.kind === "thinking" ? !block.done : block.status === "running",
+  )
+  const live = liveBlock !== undefined
+  const tools = blocks.filter((block): block is ToolBlock => block.kind === "tool")
+  const thoughtCount = blocks.length - tools.length
+  const summary = toolActivitySummary(tools)
+  const completedLabel = [thoughtCount ? "Thought" : null, summary?.label]
+    .filter(Boolean)
+    .join(", ") || "Worked"
+  const liveLabel = liveBlock?.kind === "thinking"
+    ? "Thinking"
+    : liveBlock?.kind === "tool"
+      ? labelForTool(liveBlock)
+      : completedLabel
   const SummaryIcon =
     summary?.kind === "edits" ? Edit2
       : summary?.kind === "images" ? Photo
@@ -461,52 +478,56 @@ function WorkGroup({ blocks, live, tasks, onStopTask, onOpenTask }: {
           : summary?.kind === "reads" ? BookOpen
             : Tool
 
-  function toggle() {
-    userToggled.current = true
-    setOpen((value) => !value)
-  }
-
   return (
     <div className="not-prose" data-work-activity={live ? "live" : "done"}>
       <button
         type="button"
         aria-expanded={open}
-        onClick={toggle}
-        className="group/activity inline-flex cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left text-[length:var(--text-chat-sm)] font-medium leading-5 text-[var(--text-tertiary,#8F8F8F)] select-none hover:text-[var(--text-primary,#2D2D2B)]"
+        onClick={() => setOpen((value) => !value)}
+        className="group/activity inline-flex max-w-full cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left text-[length:var(--text-chat-sm)] font-medium leading-5 text-[var(--text-tertiary,#8F8F8F)] select-none hover:text-[var(--text-primary,#2D2D2B)]"
       >
-        <SummaryIcon size={14} aria-hidden="true" />
-        <span className={live ? "noa-shimmer" : undefined}>
-          {live ? workingLabel : summary?.label ?? completedLabel}
-        </span>
-        <ChevronRight size={14} className={`opacity-0 transition-[transform,opacity] duration-300 group-hover/activity:opacity-100 group-focus-visible/activity:opacity-100 ${open ? "rotate-90" : ""}`} />
+        <SummaryIcon size={14} className="shrink-0" aria-hidden="true" />
+        <span className={`min-w-0 truncate ${live ? "noa-shimmer" : ""}`}>{live ? liveLabel : completedLabel}</span>
+        <ChevronRight size={14} className={`shrink-0 opacity-0 transition-[transform,opacity] duration-300 group-hover/activity:opacity-100 group-focus-visible/activity:opacity-100 ${open ? "rotate-90" : ""}`} />
       </button>
       <Collapsible open={open}>
         <div className="mt-2 flex flex-col gap-1">
-          {blocks.map((block, i) => (
-            <ToolCard
-              key={i}
-              block={block}
-              task={tasks?.find((candidate) => candidate.id === block.id || candidate.toolUseId === block.id)}
-              onStopTask={onStopTask}
-              onOpenTask={onOpenTask}
-            />
-          ))}
+          {blocks.map((block, i) => block.kind === "thinking"
+            ? <ThinkingBlock key={`thought-${i}`} block={block} />
+            : (
+              <ToolCard
+                key={`tool-${block.id}-${i}`}
+                block={block}
+                task={tasks?.find((candidate) => candidate.id === block.id || candidate.toolUseId === block.id)}
+                defaultOpen={block.status === "running"}
+                onStopTask={onStopTask}
+                onOpenTask={onOpenTask}
+              />
+            ))}
         </div>
       </Collapsible>
     </div>
   )
 }
 
-function WorkedFor({ durationMs, interrupted, collapsed, onToggle }: {
-  durationMs: number
+function labelForTool(block: ToolBlock): string {
+  const label = toolActivityLabel(block)
+  return label.detail ? `${label.action} ${label.detail}` : label.action
+}
+
+function WorkedFor({ durationMs, count, interrupted, collapsed, onToggle }: {
+  durationMs?: number
+  count?: number
   interrupted?: boolean
   collapsed: boolean
   onToggle?: () => void
 }) {
-  const label = interrupted ? `You stopped after ${formatDuration(durationMs)}` : `Worked for ${formatDuration(durationMs)}`
+  const label = durationMs !== undefined
+    ? interrupted ? `You stopped after ${formatDuration(durationMs)}` : `Worked for ${formatDuration(durationMs)}`
+    : count !== undefined ? `${count} previous ${count === 1 ? "message" : "messages"}` : "Activity"
   if (!onToggle) {
     return (
-      <div className="flex w-full flex-col items-start gap-1 px-1 py-0.5 text-[length:var(--text-chat-sm)] text-[var(--sidebar-text-muted)]">
+      <div className="flex w-full flex-col items-start gap-1 px-1 py-0.5 text-[length:var(--text-chat-sm)] tabular-nums text-[var(--sidebar-text-muted)]">
         <span className="whitespace-nowrap">{label}</span>
         <span className="h-px w-full bg-[var(--divider-subtle)]" aria-hidden="true" />
       </div>
@@ -517,7 +538,7 @@ function WorkedFor({ durationMs, interrupted, collapsed, onToggle }: {
       type="button"
       aria-expanded={!collapsed}
       onClick={onToggle}
-      className="group/worked flex w-full flex-col items-start gap-1 rounded-md px-1 py-0.5 text-left text-[length:var(--text-chat-sm)] text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary)]"
+      className="group/worked flex w-full flex-col items-start gap-1 rounded-md px-1 py-0.5 text-left text-[length:var(--text-chat-sm)] tabular-nums text-[var(--sidebar-text-muted)] hover:text-[var(--text-primary)]"
     >
       <span className="flex items-center gap-1 whitespace-nowrap">
         {label}
