@@ -32,7 +32,7 @@ export function AddProjectDialog({ onAdd, onClose }: AddProjectDialogProps) {
       <form
         role="dialog"
         aria-label="Add project folder"
-        className="flex w-[420px] flex-col gap-3 rounded-[10px] border border-[var(--divider-subtle)] bg-[var(--bg-card,#FFFFFF)] p-5 font-ui shadow-[0_8px_24px_#0000001f,0_2px_6px_#00000014]"
+        className="flex w-[420px] flex-col gap-3 rounded-[10px] bg-[var(--bg-card,#FFFFFF)] p-5 font-ui shadow-[var(--shadow-dialog)]"
         onSubmit={(e) => {
           e.preventDefault()
           void submit()
@@ -42,8 +42,8 @@ export function AddProjectDialog({ onAdd, onClose }: AddProjectDialogProps) {
         }}
       >
         <div>
-          <h2 className="m-0 text-body font-semibold text-[var(--text-primary,#2D2D2B)]">Add project folder</h2>
-          <p className="m-0 mt-1 text-caption text-[var(--sidebar-text-muted,#898781)]">
+          <h2 className="m-0 text-balance text-body font-semibold text-[var(--text-primary,#2D2D2B)]">Add project folder</h2>
+          <p className="m-0 mt-1 text-balance text-caption text-[var(--sidebar-text-muted,#898781)]">
             Sessions started in this folder are grouped under it.
           </p>
         </div>

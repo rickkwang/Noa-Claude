@@ -103,9 +103,9 @@ function ConfirmDialog({
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         onKeyDown={onKeyDown}
-        className="noa-confirm-dialog w-full max-w-[440px] rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5 font-ui"
+        className="noa-confirm-dialog w-full max-w-[440px] rounded-2xl bg-[var(--bg-card)] p-5 font-ui"
       >
-        <h2 id={titleId} className="m-0 text-[length:var(--font-text-md-size)] font-semibold text-[var(--text-primary)]">
+        <h2 id={titleId} className="m-0 text-balance text-[length:var(--font-text-md-size)] font-semibold text-[var(--text-primary)]">
           {title}
         </h2>
         {description && (

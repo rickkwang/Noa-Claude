@@ -243,7 +243,7 @@ function BlockView({ block }: { block: Block }) {
     case "table":
       return (
         <div className="overflow-x-auto">
-          <table>
+          <table className="tabular-nums">
             <thead>
               <tr>
                 {block.rows[0]?.map((cell, i) => (

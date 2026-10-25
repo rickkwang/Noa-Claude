@@ -106,7 +106,7 @@ function TaskDetail({ task, onStopTask, onOpenTask }: {
       </div>
       {task.summary && <p className="m-0 whitespace-pre-wrap break-words text-[var(--text-secondary)]">{task.summary}</p>}
       {task.usage && (
-        <span className="text-[var(--sidebar-text-muted)]">
+        <span className="tabular-nums text-[var(--sidebar-text-muted)]">
           {task.usage.tool_uses} tools · {(task.usage.duration_ms / 1000).toFixed(1)}s · {task.usage.total_tokens.toLocaleString()} tokens
         </span>
       )}

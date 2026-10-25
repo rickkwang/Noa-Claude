@@ -91,7 +91,7 @@ export function RightPanel({ state, onStopTask, cwd, sessionId, onRefreshContext
               <button type="button" role="radio" aria-checked={changeMode === "working"} onClick={() => setChangeMode("working")}>Working tree</button>
             </div>
             {changeMode === "turn" && (
-              <span className="min-w-0 truncate text-caption text-[var(--sidebar-text-muted)]">
+              <span className="min-w-0 truncate text-caption tabular-nums text-[var(--sidebar-text-muted)]">
                 {turnDiff.diff.files.length} {turnDiff.diff.files.length === 1 ? "file" : "files"}
               </span>
             )}
@@ -182,7 +182,7 @@ function ActivityTab({ state, onStopTask }: { state: AgentState; onStopTask: (id
       <span className="noa-activity-dot" />
       <div className="min-w-0 flex-1">
         <div>{statusKind === "closed" ? "Agent disconnected" : statusKind === "waiting" ? "Waiting for approval" : statusKind === "running" ? "Agent is working" : "Ready"}</div>
-        {state.result && <p className="noa-panel-muted">{state.result.interrupted ? "Stopped" : state.result.isError ? "Finished with an error" : "Last run completed"} · {(state.result.durationMs / 1000).toFixed(1)}s{state.result.costUsd !== undefined && ` · $${state.result.costUsd.toFixed(4)}`}</p>}
+        {state.result && <p className="noa-panel-muted tabular-nums">{state.result.interrupted ? "Stopped" : state.result.isError ? "Finished with an error" : "Last run completed"} · {(state.result.durationMs / 1000).toFixed(1)}s{state.result.costUsd !== undefined && ` · $${state.result.costUsd.toFixed(4)}`}</p>}
       </div>
     </section>
     {state.tasks.length > 0 && (
@@ -197,7 +197,7 @@ function ActivityTab({ state, onStopTask }: { state: AgentState; onStopTask: (id
               {task.summary && <p className="whitespace-pre-wrap text-caption">{task.summary}</p>}
               {task.lastTool && <p className="text-caption text-[var(--sidebar-text-muted)]">Using {task.lastTool}</p>}
               {task.usage && (
-                <p className="text-caption text-[var(--sidebar-text-muted)]">
+                <p className="text-caption tabular-nums text-[var(--sidebar-text-muted)]">
                   {task.usage.tool_uses} tools · {(task.usage.duration_ms / 1000).toFixed(1)}s
                 </p>
               )}

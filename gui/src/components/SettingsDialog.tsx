@@ -258,7 +258,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   const rows = Children.toArray(children)
   return (
     <section className="flex flex-col gap-4">
-      <h3 className="text-[length:var(--text-heading-sm)] font-semibold leading-6">{title}</h3>
+      <h3 className="text-balance text-[length:var(--text-heading-sm)] font-semibold leading-6">{title}</h3>
       <div className="flex flex-col rounded-2xl border border-[var(--divider-subtle)] py-1">
         {rows.map((row, i) => (
           <div key={i}>

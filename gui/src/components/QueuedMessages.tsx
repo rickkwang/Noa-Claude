@@ -82,7 +82,7 @@ export function QueuedMessages({
   return (
     <section aria-label="Queued messages" className="flex max-h-[30dvh] flex-col overflow-hidden rounded-panel border border-[var(--divider-subtle)] bg-[var(--bg-card)]">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--divider-subtle)] px-3 text-caption text-[var(--sidebar-text-muted)]">
-        <span className="min-w-0 flex-1 truncate">
+        <span className="min-w-0 flex-1 truncate tabular-nums">
           {visible.length} queued · {paused ? "paused" : busy ? "sends after this turn" : "ready to send"}
         </span>
         {(busy || paused) && (

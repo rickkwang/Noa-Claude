@@ -73,11 +73,11 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
       <div className="flex items-start gap-2">
         <IconShieldCheck size={17} stroke={1.5} className="mt-0.5 shrink-0 text-[var(--accent-color)]" aria-hidden="true" />
         <div className="min-w-0 flex-1">
-          <h3 className="m-0 text-body font-medium text-[var(--text-primary,#2D2D2B)]">
+          <h3 className="m-0 text-balance text-body font-medium text-[var(--text-primary,#2D2D2B)]">
             {permission.title ?? `Allow ${permission.toolName}?`}
           </h3>
           {(permission.description || permission.decisionReason) && (
-            <p className="m-0 mt-0.5 text-caption leading-relaxed text-[var(--sidebar-text,#52514E)]">
+            <p className="m-0 mt-0.5 text-pretty text-caption leading-relaxed text-[var(--sidebar-text,#52514E)]">
               {permission.description ?? permission.decisionReason}
             </p>
           )}
@@ -88,7 +88,7 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
           {properties.map(([key, value]) => (
             <div key={key} className="contents">
               <dt className="text-[var(--sidebar-text-muted)]">{key.replace(/_/g, " ")}</dt>
-              <dd className="m-0 min-w-0 truncate text-right text-[var(--text-secondary)]" title={formatValue(value)}>{formatValue(value)}</dd>
+              <dd className="m-0 min-w-0 truncate text-right tabular-nums text-[var(--text-secondary)]" title={formatValue(value)}>{formatValue(value)}</dd>
             </div>
           ))}
         </dl>
@@ -143,7 +143,7 @@ function ToolPermissionCard({ permission, onAnswer }: PermissionCardProps) {
               >
                 <ChevronDown size={12} aria-hidden="true" />
               </summary>
-              <div role="menu" className="noa-floating-panel absolute bottom-full end-0 z-30 mb-1 w-48 rounded-lg border border-[var(--divider-subtle)] bg-[var(--bg-card)] p-1 text-caption">
+              <div role="menu" className="noa-floating-panel absolute bottom-full end-0 z-30 mb-1 w-48 rounded-lg bg-[var(--bg-card)] p-1 text-caption">
                 <button
                   type="button"
                   role="menuitem"

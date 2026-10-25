@@ -119,10 +119,10 @@ export function DiffActionDialog({ action, result, onClose }: {
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="w-full max-w-md rounded-xl border border-[var(--divider-subtle)] bg-[var(--surface-page,#F9F9F7)] p-4 text-[var(--text-primary)] shadow-xl"
+        className="w-full max-w-md rounded-xl bg-[var(--surface-page,#F9F9F7)] p-4 text-[var(--text-primary)] shadow-[var(--shadow-dialog)]"
         onClick={(event) => event.stopPropagation()}
       >
-        <h2 className="m-0 text-[length:var(--font-text-md-size)] font-semibold">{title}</h2>
+        <h2 className="m-0 text-balance text-[length:var(--font-text-md-size)] font-semibold tabular-nums">{title}</h2>
         {result.errorCode === "no-patch" && (
           <p className="mt-2 text-caption text-[var(--sidebar-text-muted)]">This turn has no stored patch to apply.</p>
         )}
@@ -133,7 +133,7 @@ export function DiffActionDialog({ action, result, onClose }: {
           <div className="mt-3 flex max-h-[40vh] flex-col gap-3 overflow-y-auto">
             {groups.map((group) => (
               <div key={group.label}>
-                <p className={`m-0 text-caption font-medium ${group.color}`}>{group.label}</p>
+                <p className={`m-0 text-caption font-medium tabular-nums ${group.color}`}>{group.label}</p>
                 <ul className="m-0 mt-1 list-none break-all p-0 text-caption text-[var(--sidebar-text-muted)]">
                   {group.paths.map((path) => <li key={path}>{path}</li>)}
                 </ul>

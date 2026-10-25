@@ -831,7 +831,7 @@ export function Composer({
                 </svg>
                 <span
                   role="tooltip"
-                  className="pointer-events-none absolute bottom-full right-0 z-40 mb-2 hidden w-44 flex-col gap-0.5 rounded-panel border border-[var(--divider-subtle)] bg-[var(--bg-card)] px-2.5 py-2 text-left text-caption text-[var(--text-primary)] shadow-[var(--shadow-dialog)] group-hover/context:flex group-focus/context:flex"
+                  className="pointer-events-none absolute bottom-full right-0 z-40 mb-2 hidden w-44 flex-col gap-0.5 rounded-panel bg-[var(--bg-card)] px-2.5 py-2 text-left text-caption tabular-nums text-[var(--text-primary)] shadow-[var(--shadow-dialog)] group-hover/context:flex group-focus/context:flex"
                 >
                   <span className="text-[var(--sidebar-text-muted)]">Context window:</span>
                   <span>

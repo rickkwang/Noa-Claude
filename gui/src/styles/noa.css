@@ -226,6 +226,9 @@ body {
   font-size: var(--text-body);
   line-height: 1.5;
   --panel-divider: var(--divider-subtle, #E6E2DA);
+  /* Unlike Codex's single-layer fade mask, keep this strip fully opaque so the
+     fade never washes out the scrollbar thumb. */
+  --noa-scrollbar-strip: 8px;
   /* Shadows: ambient = in-flow cards, elevated = raised graph panels, floating = dropdowns/toasts, dialog = modal dialogs. Floating and dialog stack a tight contact layer over a soft spread. */
   /* Floating surfaces draw their edge as a 1px ring in the shadow not a border. */
   --shadow-floating: 0 0 0 1px rgba(11,11,11,0.10), 0 8px 24px 0 rgba(0,0,0,0.12), 0 2px 6px 0 rgba(0,0,0,0.08);
@@ -322,13 +325,12 @@ body {
   position: relative;
   background-color: var(--bg-sidebar, #F4F4F2);
 }
-/* Stops 6px short of the right edge to clear the scrollbar gutter (must match ::-webkit-scrollbar width).
-   A colored overlay (not a mask) on a fixed 28px band with the stops of a 28px fade. Its opacity is the tree's top
+/* A colored overlay (not a mask) on a fixed 28px band with the stops of a 28px fade. Its opacity is the tree's top
    edge, driven by the tree's own scroll timeline (see .noa-sidebar-fade-scope), so it appears once rows scroll under it. */
 .noa-sidebar-toolbar-mask::after {
   content: '';
   position: absolute;
-  right: 6px;
+  right: var(--noa-scrollbar-strip);
   bottom: -28px;
   left: 0;
   height: 28px;
@@ -368,8 +370,7 @@ body {
 @keyframes noa-fade-left-in { from { --noa-fade-left: 0; } to { --noa-fade-left: 1; } }
 @keyframes noa-fade-right-out { from { --noa-fade-right: 1; } to { --noa-fade-right: 0; } }
 
-/* Preview pane: leading edge dissolves under the tab strip. The right-edge solid strip keeps the scrollbar fully
-   opaque; its 6px must match ::-webkit-scrollbar. */
+/* Preview pane: leading edge dissolves under the tab strip. */
 .noa-top-scroll-fade {
   --noa-fade-ramp:
     rgb(0 0 0 / 0) calc(var(--noa-fade-top, 0) * 0px),
@@ -382,8 +383,8 @@ body {
     rgb(0 0 0 / 1) calc(var(--noa-fade-top, 0) * 28px);
   -webkit-mask-image: linear-gradient(to bottom, var(--noa-fade-ramp)), linear-gradient(to bottom, black, black);
   mask-image: linear-gradient(to bottom, var(--noa-fade-ramp)), linear-gradient(to bottom, black, black);
-  -webkit-mask-size: 100% 100%, 6px 100%;
-  mask-size: 100% 100%, 6px 100%;
+  -webkit-mask-size: 100% 100%, var(--noa-scrollbar-strip) 100%;
+  mask-size: 100% 100%, var(--noa-scrollbar-strip) 100%;
   -webkit-mask-position: top left, top right;
   mask-position: top left, top right;
   -webkit-mask-repeat: no-repeat, no-repeat;
@@ -427,8 +428,7 @@ body {
   scroll-padding-inline: 28px;
 }
 
-/* Right-panel card bodies: both vertical edges dissolve over 28px. The 6px solid strip keeps the scrollbar opaque;
-   it must match ::-webkit-scrollbar. */
+/* Right-panel card bodies: both vertical edges dissolve over 28px. */
 .noa-edge-fade-y {
   --noa-fade-ramp:
     rgb(0 0 0 / 0) calc(var(--noa-fade-top, 0) * 0px),
@@ -449,8 +449,8 @@ body {
     rgb(0 0 0 / 0) calc(100% - var(--noa-fade-bottom, 0) * 0px);
   -webkit-mask-image: linear-gradient(to bottom, var(--noa-fade-ramp)), linear-gradient(to bottom, black, black);
   mask-image: linear-gradient(to bottom, var(--noa-fade-ramp)), linear-gradient(to bottom, black, black);
-  -webkit-mask-size: 100% 100%, 6px 100%;
-  mask-size: 100% 100%, 6px 100%;
+  -webkit-mask-size: 100% 100%, var(--noa-scrollbar-strip) 100%;
+  mask-size: 100% 100%, var(--noa-scrollbar-strip) 100%;
   -webkit-mask-position: top left, top right;
   mask-position: top left, top right;
   -webkit-mask-repeat: no-repeat, no-repeat;
@@ -546,13 +546,6 @@ body {
   border-radius: 8px;
 }
 
-/* The settings pane scrolls its full height under the 40px top fade, but its
-   scrollbar track starts at the fade's lower edge, so the thumb never runs
-   up into the gradient. */
-.noa-settings-scroll::-webkit-scrollbar-track {
-  margin-top: 40px;
-}
-
 /* Flash for a setting reached from the search. Colour, not motion: the row is
    already scrolling into place, and a second moving thing there competes with
    it. Fades out on its own so nothing has to clear a class. */
@@ -586,20 +579,6 @@ body {
 /* Hint fade-in, for quiet status text (empty states) as it appears. */
 .noa-hint-in {
   animation: noa-hint-in 400ms cubic-bezier(0.215, 0.61, 0.355, 1);
-}
-
-/* List entry: rows rise 4px into place, staggered 30ms by --noa-i (capped at 8 so long lists don't trail). */
-.noa-row-in {
-  animation: noa-row-in var(--dur-base) var(--ease-out) backwards;
-  animation-delay: calc(min(var(--noa-i, 0), 8) * 30ms);
-}
-
-@keyframes noa-row-in {
-  0% { opacity: 0; transform: translateY(4px); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .noa-row-in { animation: none; }
 }
 
 @keyframes noa-hint-in {
@@ -1170,8 +1149,8 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
 [data-theme="dark"] .animate-pulse.bg-\[\#2D2D2B\]\/10 { background-color: rgba(249,249,247,0.06) !important; }
 
 /* Sidebar drag & drop (after Obsidian's explorer): drop targets are *washes*, never outlines. The wash sits on the
-   block (folder + subtree) via a ::before inset by the rows' 6px, so rows don't shift and the scrollbar strip isn't
-   painted. z-index:0 on the block keeps the -1 wash above the sidebar floor. Corners match the rows' 8px. */
+   block (folder + subtree) via a ::before inset by the rows' 6px, so rows don't shift. z-index:0 on the block keeps
+   the -1 wash above the sidebar floor. Corners match the rows' 8px. */
 .noa-sidebar-drop-root,
 .noa-sidebar-drop-branch {
   position: relative;
@@ -1231,19 +1210,15 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(249, 249, 247, 0.14);
 }
 
-/* Scrollbar overlays the row gutter: stable reserves it, and the -6px pull-back returns the strip to content so rows
-   keep equal 6px margins. This 6px must equal ::-webkit-scrollbar width and the rows' mx-1.5, or corners clip. */
+/* Keep a stable gutter where scrollbars are classic (Windows/Linux); overlay
+   scrollbars on macOS ignore it. */
 .noa-sidebar-scroll {
   scrollbar-gutter: stable;
-}
-.noa-sidebar-scroll > * {
-  margin-right: -6px;
 }
 
 /* Top and bottom edges of the sidebar list, on the shared 28px curve. The list is the timeline's source (see
    .noa-sidebar-fade-scope); its own edges are driven by its own scroll position. At rest the ramp collapses, so the
-   first row is not dimmed until the list scrolls. The right-edge solid strip keeps the scrollbar opaque; its 6px must
-   match ::-webkit-scrollbar. */
+   first row is not dimmed until the list scrolls. */
 .noa-sidebar-scroll-fade {
   scroll-timeline: --noa-sidebar-tree block;
   scroll-padding-block: 28px;
@@ -1271,8 +1246,8 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
   animation-range: 0px 28px, calc(100% - 28px) 100%;
   -webkit-mask-image: linear-gradient(to bottom, var(--noa-fade-ramp)), linear-gradient(to bottom, black, black);
   mask-image: linear-gradient(to bottom, var(--noa-fade-ramp)), linear-gradient(to bottom, black, black);
-  -webkit-mask-size: 100% 100%, 6px 100%;
-  mask-size: 100% 100%, 6px 100%;
+  -webkit-mask-size: 100% 100%, var(--noa-scrollbar-strip) 100%;
+  mask-size: 100% 100%, var(--noa-scrollbar-strip) 100%;
   -webkit-mask-position: top left, top right;
   mask-position: top left, top right;
   -webkit-mask-repeat: no-repeat, no-repeat;
@@ -1334,30 +1309,17 @@ html[data-capture-redact="true"] [data-capture-redact]::after {
 }
 
 
-/* Scrollbar (light mode) */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-  background: transparent;
+/* As Codex: thin overlay scrollbars. They never reserve layout space, so panels
+   don't reflow when content crosses the overflow threshold. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-primary) 30%, transparent) transparent;
 }
-::-webkit-scrollbar-track  { background: transparent; }
-::-webkit-scrollbar-corner { background: transparent; }
-
-/* As Codex: the thumb is clear until the pointer is over its scroller, then shows at the strong border tone
-   (ink 12%). Use background-color, never the shorthand, which resets background-clip and undoes the inset. */
-::-webkit-scrollbar-thumb {
-  background-color: transparent;
-  background-clip: padding-box;
-  border: 1px solid transparent;
-  border-radius: 4px;
+.hide-scrollbar {
+  scrollbar-width: none;
 }
-:hover::-webkit-scrollbar-thumb,
-:active::-webkit-scrollbar-thumb {
-  background-color: color-mix(in srgb, var(--text-primary) 12%, transparent);
-}
-::-webkit-scrollbar-thumb:hover,
-::-webkit-scrollbar-thumb:active {
-  background-color: color-mix(in srgb, var(--text-primary) 24%, transparent);
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 /* ── Tab content fade-in ── */
@@ -1706,13 +1668,6 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
   }
 }
 
-/* During sidebar/right-column layout motion, hide scrollbar thumbs (they'd flash in and out). */
-.noa-app-shell[data-layout-motion="true"] ::-webkit-scrollbar-thumb,
-.noa-app-shell[data-layout-motion="true"] ::-webkit-scrollbar-thumb:hover {
-  background-color: transparent !important;
-  animation: none !important;
-}
-
 /* Only the moving side gives up pointer input during motion (a right-panel toggle must not block sidebar clicks). */
 .noa-app-shell[data-layout-motion="true"] [data-right-panel-column="true"],
 .noa-app-shell[data-sidebar-moving="true"] [data-sidebar-container] {
@@ -1951,7 +1906,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-panel-button:focus-visible, .noa-file-row:focus-visible  { outline: 2px solid var(--accent-color); outline-offset: -2px; }
 .noa-panel-actions { flex-wrap: wrap; padding-block: 4px; border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 5%, transparent); }
 .noa-panel-actions select { min-width: 0; max-width: 100%; padding: 3px 5px; border-radius: 6px; background: var(--bg-card); font: inherit; color: var(--sidebar-text); }
-.noa-panel-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.noa-panel-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .noa-file-root { padding: 8px 10px 0 16px; }
 .noa-file-root-chip { display: inline-flex; min-width: 0; max-width: 70%; align-items: center; gap: 6px; height: 26px; padding: 0; border-radius: 8px; color: var(--text-primary); }
 .noa-file-root-chip > svg { color: var(--sidebar-text-muted); }
@@ -2034,7 +1989,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-review-menu-content > .noa-panel-button { justify-content: flex-start; }
 .noa-review-menu-content .noa-viewed-label { padding: 4px 6px; }
 
-.noa-panel-details { display: flex; flex: 1; flex-direction: column; gap: 14px; min-height: 0; padding: 8px 16px 16px; overflow: auto; overscroll-behavior: contain; font-size: var(--text-chat-sm); }
+.noa-panel-details { display: flex; flex: 1; flex-direction: column; gap: 14px; min-height: 0; padding: 8px 16px 16px; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; font-size: var(--text-chat-sm); }
 .noa-panel-section-title { display: flex; align-items: center; justify-content: space-between; min-height: 24px; }
 .noa-panel-eyebrow { font-size: var(--text-caption); color: var(--sidebar-text-muted); }
 .noa-context-card { display: flex; flex-direction: column; gap: 10px; padding: 0; }
@@ -2124,8 +2079,8 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 @keyframes noa-edge-fade { 0%, 1% { --top-fade: 0px; } 99%, 100% { --top-fade: var(--edge-fade-distance); } }
 .noa-scroll-fade { --edge-fade-distance: 40px; }
 @supports (animation-timeline: scroll()) {
-  /* A second, solid 6px layer on the right keeps the scrollbar out of the fade (must match ::-webkit-scrollbar). */
-  .noa-scroll-fade { mask: linear-gradient(to bottom, transparent, #000 var(--top-fade)), linear-gradient(#000, #000) right / 6px 100% no-repeat; animation: noa-edge-fade linear both; animation-timeline: scroll(self y); }
+  /* Keep the overlay scrollbar out of the fade. */
+  .noa-scroll-fade { mask: linear-gradient(to bottom, transparent, #000 var(--top-fade)), linear-gradient(#000, #000) right / var(--noa-scrollbar-strip) 100% no-repeat; animation: noa-edge-fade linear both; animation-timeline: scroll(self y); }
 }
 /* Codex's scroll-to-bottom (h-8 w-8 rounded-full border-default bg-surface text-secondary), 24px above the composer card (the overlay includes its 32px gradient), no shadow. */
 .noa-scroll-bottom { position: absolute; bottom: calc(var(--composer-overlay, 0px) - 8px); left: 50%; z-index: 30; display: flex; width: 32px; height: 32px; translate: -50% 0; align-items: center; justify-content: center; border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent); border-radius: 999px; background: var(--surface-page, #F9F9F7) padding-box; color: var(--sidebar-text-muted); transition: opacity 200ms ease, color 120ms; }
@@ -2156,7 +2111,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-turn-diff-more:hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
 .noa-turn-diff-note { font-size: var(--text-caption); color: var(--sidebar-text-muted); }
 .noa-turn-diff-card > .noa-turn-diff-note { margin: 0; padding: 4px 10px 6px; border-top: 1px solid var(--divider-subtle); }
-.noa-turn-review-files { max-height: 40%; overflow-y: auto; border-bottom: 1px solid var(--divider-subtle); }
+.noa-turn-review-files { max-height: 40%; overflow-y: auto; scrollbar-gutter: stable; border-bottom: 1px solid var(--divider-subtle); }
 .noa-turn-review-row { display: flex; width: 100%; min-width: 0; min-height: 30px; align-items: center; gap: 8px; padding: 3px 10px; text-align: left; color: var(--text-primary); }
 .noa-turn-review-row:hover { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
 .noa-turn-review-row[data-selected] { background: color-mix(in srgb, var(--text-primary) 7%, transparent); }
@@ -2164,8 +2119,7 @@ html[data-translucent-sidebar="enabled"] .noa-sidebar-promotion-spacer[data-side
 .noa-turn-scope { justify-content: space-between; }
 @media (prefers-reduced-motion: reduce) { .noa-scroll-bottom { transition: none; } }
 /* Floating composer: the page colour ramps in over 32px above the card so text dissolves instead of being cut. */
-/* Stops 6px short of the right edge so the scrollbar runs the full height beside it, as in Codex; the right padding drops by the same 6px to keep the card centred. */
-.noa-conversation-footer { position: absolute; inset-inline: 0 6px; bottom: 0; z-index: 20; padding: 32px 23px 12px 29px; background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-page, #F9F9F7) 0%, transparent), var(--surface-page, #F9F9F7) 32px); pointer-events: none; }
+.noa-conversation-footer { position: absolute; inset-inline: 0 var(--noa-scrollbar-strip); bottom: 0; z-index: 20; padding: 32px 21px 12px 29px; background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-page, #F9F9F7) 0%, transparent), var(--surface-page, #F9F9F7) 32px); pointer-events: none; }
 .noa-conversation-footer > * { pointer-events: auto; }
 /* Codex's loading shimmer: a stable base with a narrow highlight band. */
 .noa-shimmer {
@@ -2310,6 +2264,7 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 }
 .noa-agent-scroll {
   overflow-anchor: none;
+  scrollbar-gutter: stable;
 }
 @keyframes noa-turn-in { from { opacity: 0; transform: translateY(3px); } }
 @media (prefers-reduced-motion: reduce) {
