@@ -6,10 +6,6 @@ import {
 } from '../../../tools/BashTool/pathValidation.js'
 import { checkReadOnlyConstraints } from '../../../tools/BashTool/readOnlyValidation.js'
 
-// validatePath reaches getBundledSkillsRoot(), which interpolates MACRO, a
-// build-time global the bundler injects.
-;(globalThis as { MACRO?: unknown }).MACRO ??= { VERSION: 'test' }
-
 const OUTSIDE = '/etc/passwd'
 
 function pathBehavior(command: string): string {
