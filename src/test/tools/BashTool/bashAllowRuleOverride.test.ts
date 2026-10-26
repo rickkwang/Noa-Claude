@@ -13,11 +13,13 @@ async function decide(
   command: string,
   allowRules: string[] = [],
   mode = 'default',
+  denyRules: string[] = [],
 ): Promise<string> {
   const toolPermissionContext = {
     ...getEmptyToolPermissionContext(),
     mode,
     alwaysAllowRules: { localSettings: allowRules },
+    alwaysDenyRules: { userSettings: denyRules },
   }
   const context = {
     getAppState: () => ({ toolPermissionContext }),
@@ -54,6 +56,12 @@ describe('Bash allow rules approve in-workspace writes outside acceptEdits', () 
     ['rm -rf ..', ['Bash(rm:*)']],
   ])('%s with %p still asks', async (command, rules) => {
     expect(await decide(command, rules)).toBe('ask')
+  })
+
+  test('reading the parent directory with read rules asks instead of throwing', async () => {
+    expect(
+      await decide('ls ..', [], 'default', ['Read(**/*.lock)']),
+    ).toBe('ask')
   })
 
   test('sed -i keeps the path prompt and its acceptEdits suggestion', () => {

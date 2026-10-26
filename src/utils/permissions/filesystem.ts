@@ -1050,7 +1050,10 @@ export function matchingRuleForInput(
       fileAbsolutePath ?? getCwd(),
     )
 
-    if (relativePathStr.startsWith(`..${DIR_SEP}`)) {
+    if (
+      relativePathStr === '..' ||
+      relativePathStr.startsWith(`..${DIR_SEP}`)
+    ) {
       // The path is outside the root, so ignore it
       continue
     }
