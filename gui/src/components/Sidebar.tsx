@@ -657,15 +657,15 @@ function SessionRow({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
-        className={`noa-sidebar-tree-row flex min-h-[26px] items-center justify-between py-0 px-[7px] mx-2 rounded-lg cursor-pointer select-none group ${
+        className={`noa-sidebar-tree-row relative flex min-h-[26px] items-center justify-between py-0 px-[7px] mx-2 rounded-lg cursor-pointer select-none group ${
           active ? "noa-agent-sidebar-row is-active" : "noa-agent-sidebar-row"
         } ${dragging ? "noa-session-row-dragging" : ""} ${
           dropEdge === "before" ? "noa-session-drop-before" : dropEdge === "after" ? "noa-session-drop-after" : ""
         }`}
         style={{ paddingLeft: indent ? "31px" : "7px" }}
       >
-        <span className="noa-fade-truncate">{title}</span>
-        <span className="ml-2 flex shrink-0 items-center gap-1">
+        <span className={`noa-fade-truncate transition-[margin-right] duration-150 ease-out ${pinned || status ? "" : "-mr-[7px] group-hover:mr-6 group-focus-within:mr-6"}`}>{title}</span>
+        <span className={`${pinned || status ? "ml-2 flex shrink-0" : "absolute inset-y-0 right-[7px] flex"} items-center gap-1`}>
           {status && <span role="status" aria-label={status === "waiting" ? "Approval required" : status === "running" ? "Running" : "Queued"} title={status} className={`size-1.5 shrink-0 rounded-full ${status === "waiting" ? "bg-amber-500" : "animate-pulse bg-[var(--accent-color)]"}`} />}
           <button
             type="button"
@@ -677,7 +677,7 @@ function SessionRow({
               event.stopPropagation()
               onTogglePin?.()
             }}
-            className={`flex size-5 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] hover:text-[var(--text-primary,#2D2D2B)] noa-press ${
+            className={`flex size-5 items-center justify-center rounded-md text-[var(--sidebar-text-muted,#898781)] transition-opacity duration-150 ease-out hover:text-[var(--text-primary,#2D2D2B)] noa-press ${
               pinned ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
             }`}
           >

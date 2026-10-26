@@ -1255,15 +1255,15 @@ html[data-translucent-sidebar="enabled"]:where(:not([data-settings-open="true"])
 }
 
 
-/* Long names fade out over the last 24px instead of ending in an ellipsis. Takes the remaining row width,
+/* Long names fade out over the last 12px instead of ending in an ellipsis. Takes the remaining row width,
    so a name that fits never reaches the ramp. */
 .noa-fade-truncate {
   flex: 1 1 0%;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
-  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 12px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 12px), transparent);
 }
 
 /* Window capture (useWindowCapture): names are hidden and stood in for by a soft bar, so the
