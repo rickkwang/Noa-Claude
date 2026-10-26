@@ -18,9 +18,9 @@ const artifacts = resolve(option('--artifacts') || mkdtempSync(join(tmpdir(), 'n
 mkdirSync(artifacts, { recursive: true });
 const model = 'claude-sonnet-4-6';
 // A 200k-window model, so a gateway naming a 1M model in its responses offers a "larger window".
-const modelFor = scenario => scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' ? 'claude-opus-5-5' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model;
+const modelFor = scenario => scenario === 'gateway-model-name' ? 'claude-haiku-4-5' : scenario === 'preserved-thinking' ? 'claude-opus-5-5' : scenario === 'mandatory-thinking' ? 'kimi/k3.1-pro' : scenario.startsWith('openai-responses') ? 'gpt-6.1-sol' : model;
 const sentinel = 'KEEP_IDENTIFIER=loop-sentinel-42';
-const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'field-reject', 'gateway-model-name', 'preserved-thinking'].filter(name => !option('--case') || name === option('--case'));
+const cases = ['agent-nested', 'agent-budget', 'agent-budget-resume', 'agent-stop-pending', 'agent-owned-results', 'agent-owned-auto', 'agent-cascade-stop', 'agent-schema', 'agent-schema-bg', 'hook-output', 'hook-output-null', 'blocking-limit', 'image-error', 'small-window-overflow', 'read', 'large-output', 'max-turns', 'malformed', 'empty', 'alternating', 'fallback', 'provider-quota', 'refusal', 'refusal-repeat', 'truncated', 'tool-input-streaming', 'tool-input-nonstream', 'stale-signature', 'budget-streaming', 'budget-nonstream', 'permission-deny', 'deny-rule', 'hook-block', 'compact-resume', 'task-crud', 'task-metadata-race', 'task-dependency-race', 'goal-child-usage', 'agent-custom-fork', 'hook-composition', 'tombstone-resume', 'concurrency-streaming', 'concurrency-nonstream', 'background-deadline', 'openai-overflow', 'openai-usage', 'openai-usage-nonstream', 'openai-tools', 'openai-max-tokens-cap', 'openai-max-tokens-vllm', 'openai-responses', 'openai-responses-effort', 'bedrock-overflow', 'field-reject', 'gateway-model-name', 'preserved-thinking', 'mandatory-thinking'].filter(name => !option('--case') || name === option('--case'));
 assert.ok(cases.length > 0, 'unknown --case');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const textOf = content => typeof content === 'string' ? content : (content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -74,6 +74,10 @@ const server = createServer(async (req, res) => {
       res.writeHead(status, { 'content-type': 'application/json', 'retry-after': '0', 'x-should-retry': status === 529 ? 'true' : 'false' });
       res.end(JSON.stringify({ type: 'error', error: { type, message } }));
     };
+    if (active.case === 'mandatory-thinking' && (!body.thinking || body.thinking.type === 'disabled')) {
+      error(400, 'invalid_request_error', 'K3.1 Pro does not support disabled thinking mode. Please enable thinking and try again');
+      return;
+    }
     if (active.case === 'agent-owned-auto' && JSON.stringify(body.system || '').includes('<block>')) {
       // Auto-mode classifier. The grandchild's hand-back review is slow, which
       // holds its notification back after its task is already completed.
@@ -426,6 +430,7 @@ async function run(executable, scenario, extra = [], input = 'Run the local loop
     ...(scenario==='blocking-limit' && {DISABLE_AUTO_COMPACT:'1'}),
     // Size-based microcompact fires on the second large tool result here.
     ...(scenario==='preserved-thinking' && {CLAUDE_CODE_SIZE_MICROCOMPACT_PCT:'1', CLAUDE_CODE_SIZE_MICROCOMPACT_KEEP:'1'}),
+    ...(scenario==='mandatory-thinking' && {NOA_CLAUDE_PROVIDER_THINKING_MODELS:'kimi/k3.1-pro', NOA_CLAUDE_PROVIDER_REJECTS_DISABLED_THINKING_MODELS:'kimi/k3.1-pro', CLAUDE_CODE_DISABLE_THINKING:'1'}),
     CLAUDE_CONFIG_DIR: join(active.dir, 'config'), ANTHROPIC_API_KEY: 'local-e2e-dummy', ANTHROPIC_BASE_URL: baseUrl,
     ANTHROPIC_MODEL: modelFor(scenario), CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', DISABLE_AUTOUPDATER: '1',
     ...(scenario.startsWith('openai-') && { CLAUDE_CODE_USE_OPENAI: '1', OPENAI_BASE_URL: `${baseUrl}/v1`, OPENAI_API_KEY: 'local-e2e-dummy' }),
@@ -723,6 +728,13 @@ try {
             assert.deepEqual(writes.map(line => line.split('-')[0]), ['start', 'end', 'start', 'end']);
             assert.equal(writes[0].slice(6), writes[1].slice(4)); assert.equal(writes[2].slice(6), writes[3].slice(4));
             active.finalState = writes;
+          } else if (scenario === 'mandatory-thinking') {
+            assert.equal(runResult.code, 0); assert.equal(runResult.result.result, 'AUDIT_OK');
+            assert.ok(count > 0, 'fixture never sent a request');
+            for (const request of active.requests) {
+              assert.equal(request.body.thinking?.type, 'enabled', 'always-on model allowed disabled thinking');
+              assert.ok(request.body.thinking.budget_tokens > 0, 'enabled thinking has no budget');
+            }
           } else if (scenario === 'preserved-thinking') {
             // Thinking blocks are bound to every earlier byte on Opus 5.5 and peers:
             // each request must resend the previous one's messages unchanged.

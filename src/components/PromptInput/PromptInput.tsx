@@ -96,7 +96,7 @@ import { isInProcessTeammate } from '../../utils/teammateContext.js';
 import { writeToMailbox } from '../../utils/teammateMailbox.js';
 import type { TextHighlight } from '../../utils/textHighlighting.js';
 import type { Theme } from '../../utils/theme.js';
-import { findThinkingTriggerPositions, getRainbowColor, isUltrathinkEnabled } from '../../utils/thinking.js';
+import { findThinkingTriggerPositions, getRainbowColor, isUltrathinkEnabled, modelThinkingCannotBeDisabled } from '../../utils/thinking.js';
 import { findTokenBudgetPositions } from '../../utils/tokenBudget.js';
 import { findUltraplanTriggerPositions } from '../../utils/ultraplan/keyword.js';
 import { AutoModeOptInDialog } from '../AutoModeOptInDialog.js';
@@ -2194,7 +2194,7 @@ function PromptInput({
     logEvent('tengu_model_picker_hotkey', {
       model: model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
     });
-  }, [setAppState, addNotification]);
+  }, [setAppState, addNotification, mainLoopModel]);
 
   // Memoize the model picker element to prevent unnecessary re-renders
   // when AppState changes for unrelated reasons (e.g., notifications arriving)
@@ -2226,6 +2226,16 @@ function PromptInput({
 
   // Memoized callbacks for thinking toggle
   const handleThinkingSelect = useCallback((enabled: boolean) => {
+    if (!enabled && modelThinkingCannotBeDisabled(mainLoopModel)) {
+      setShowThinkingToggle(false);
+      addNotification({
+        key: 'thinking-always-on',
+        jsx: <Text>{`Thinking can't be turned off for ${modelDisplayString(mainLoopModel)}`}</Text>,
+        priority: 'immediate',
+        timeoutMs: 3000
+      });
+      return;
+    }
     setAppState(prev => ({
       ...prev,
       thinkingEnabled: enabled
@@ -2242,7 +2252,7 @@ function PromptInput({
       priority: 'immediate',
       timeoutMs: 3000
     });
-  }, [setAppState, addNotification]);
+  }, [setAppState, addNotification, mainLoopModel]);
   const handleThinkingCancel = useCallback(() => {
     setShowThinkingToggle(false);
   }, []);
@@ -2251,9 +2261,9 @@ function PromptInput({
   const thinkingToggleElement = useMemo(() => {
     if (!showThinkingToggle) return null;
     return <Box flexDirection="column" marginTop={1}>
-        <ThinkingToggle currentValue={thinkingEnabled ?? true} onSelect={handleThinkingSelect} onCancel={handleThinkingCancel} isMidConversation={messages.some(m => m.type === 'assistant')} />
+        <ThinkingToggle currentValue={(thinkingEnabled ?? true) || modelThinkingCannotBeDisabled(mainLoopModel)} onSelect={handleThinkingSelect} onCancel={handleThinkingCancel} isMidConversation={messages.some(m => m.type === 'assistant')} />
       </Box>;
-  }, [showThinkingToggle, thinkingEnabled, handleThinkingSelect, handleThinkingCancel, messages.length]);
+  }, [showThinkingToggle, thinkingEnabled, handleThinkingSelect, handleThinkingCancel, messages.length, mainLoopModel]);
 
   // Portal dialog to DialogOverlay in fullscreen so it escapes the bottom
   // slot's overflowY:hidden clip (same pattern as SuggestionsOverlay).

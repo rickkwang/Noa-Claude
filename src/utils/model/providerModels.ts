@@ -70,6 +70,12 @@ export const DEEPSEEK_EFFORT_LEVELS = [
   'max',
 ] as const
 
+export const PROVIDER_THINKING_MODELS_ENV_KEY =
+  'NOA_CLAUDE_PROVIDER_THINKING_MODELS'
+
+export const PROVIDER_REJECTS_DISABLED_THINKING_MODELS_ENV_KEY =
+  'NOA_CLAUDE_PROVIDER_REJECTS_DISABLED_THINKING_MODELS'
+
 /**
  * Every env key carrying the active profile's catalogue. Listed once so the
  * apply/reset paths in providerProfile.ts can't drift from the writers here.
@@ -78,6 +84,8 @@ export const PROVIDER_CATALOGUE_ENV_KEYS = [
   PROVIDER_MODELS_ENV_KEY,
   PROVIDER_CONTEXT_WINDOWS_ENV_KEY,
   PROVIDER_EFFORT_LEVELS_ENV_KEY,
+  PROVIDER_THINKING_MODELS_ENV_KEY,
+  PROVIDER_REJECTS_DISABLED_THINKING_MODELS_ENV_KEY,
   PROVIDER_MAX_OUTPUT_TOKENS_ENV_KEY,
 ] as const
 
@@ -156,6 +164,22 @@ function isPositiveInt(value: unknown): value is number {
 
 export function getActiveProviderModelNames(): string[] {
   return readList(PROVIDER_MODELS_ENV_KEY)
+}
+
+export function activeProviderSupportsThinking(model: string): boolean {
+  const wanted = normalizeModelId(model)
+  return readList(PROVIDER_THINKING_MODELS_ENV_KEY).some(
+    candidate => normalizeModelId(candidate) === wanted,
+  )
+}
+
+export function activeProviderRejectsDisabledThinking(
+  model: string,
+): boolean {
+  const wanted = normalizeModelId(model)
+  return readList(PROVIDER_REJECTS_DISABLED_THINKING_MODELS_ENV_KEY).some(
+    candidate => normalizeModelId(candidate) === wanted,
+  )
 }
 
 /**

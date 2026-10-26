@@ -22,6 +22,7 @@ import { normalizeModelStringForAPI } from './model/model.js'
 import {
   modelRequiresExplicitThinkingDisable,
   modelSupportsAdaptiveThinking,
+  modelThinkingCannotBeDisabled,
 } from './thinking.js'
 
 type MessageParam = Anthropic.MessageParam
@@ -177,7 +178,17 @@ export async function sideQuery(opts: SideQueryOptions): Promise<BetaMessage> {
   ].filter((block): block is TextBlockParam => block !== null)
 
   let thinkingConfig: BetaThinkingConfigParam | undefined
-  if (thinking === false) {
+  if (modelThinkingCannotBeDisabled(model)) {
+    thinkingConfig = modelSupportsAdaptiveThinking(model)
+      ? { type: 'adaptive' }
+      : {
+          type: 'enabled',
+          budget_tokens: Math.min(
+            typeof thinking === 'number' ? thinking : 2048,
+            max_tokens - 1,
+          ),
+        }
+  } else if (thinking === false) {
     // Turning thinking off is two different requests depending on the model.
     // Sonnet 5 / Opus 5 run adaptive thinking when `thinking` is omitted, so
     // they need an explicit {type:'disabled'}. Fable 5 / Fable 5.1 / Mythos

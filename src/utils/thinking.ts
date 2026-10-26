@@ -7,6 +7,10 @@ import { resolveAntModel } from './model/antModels.js'
 import { getCanonicalName } from './model/model.js'
 import { get3PModelCapabilityOverride } from './model/modelSupportOverrides.js'
 import {
+  activeProviderRejectsDisabledThinking,
+  activeProviderSupportsThinking,
+} from './model/providerModels.js'
+import {
   getAPIProvider,
   isDirectFirstParty,
   isThirdPartyAnthropicCompatibleProvider,
@@ -94,10 +98,12 @@ export function getRainbowColor(
 // TODO(inigo): add support for probing unknown models via API error detection
 // Provider-aware thinking support detection (aligns with modelSupportsISP in betas.ts)
 export function modelSupportsThinking(model: string): boolean {
+  if (modelThinkingCannotBeDisabled(model)) return true
   const supported3P = get3PModelCapabilityOverride(model, 'thinking')
   if (supported3P !== undefined) {
     return supported3P
   }
+  if (activeProviderSupportsThinking(model)) return true
   if (process.env.USER_TYPE === 'ant') {
     if (resolveAntModel(model.toLowerCase())) {
       return true
@@ -251,6 +257,18 @@ export function modelRequiresExplicitThinkingDisable(model: string): boolean {
  */
 export function modelThinkingCannotBeDisabled(model: string): boolean {
   const canonical = getCanonicalName(model)
+  if (
+    canonical.includes('sonnet-4-6') ||
+    canonical.includes('opus-4-6')
+  ) {
+    return false
+  }
+  const override = get3PModelCapabilityOverride(
+    model,
+    'rejects_disabled_thinking',
+  )
+  if (override !== undefined) return override
+  if (activeProviderRejectsDisabledThinking(model)) return true
   return (
     canonical.includes('fable-5') ||
     canonical.includes('mythos') ||

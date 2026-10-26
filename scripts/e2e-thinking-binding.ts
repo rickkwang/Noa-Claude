@@ -15,10 +15,11 @@ process.env.CLAUDE_CONFIG_DIR = join(artifacts, 'config')
 process.env.CLAUDE_CODE_PRODUCT_DIR = process.env.CLAUDE_CONFIG_DIR
 process.env.ANTHROPIC_API_KEY = 'isolated-dummy'
 process.env.ANTHROPIC_BASE_URL = 'https://api.anthropic.com'
+process.env.NOA_CLAUDE_PROVIDER_REJECTS_DISABLED_THINKING_MODELS = 'kimi/k3.1-pro'
 ;(globalThis as any).MACRO = { VERSION: '1.17.0', DISPLAY_VERSION: '1.17.0', BUILD_TIME: '' }
 process.chdir(artifacts)
 
-const inputs = ['claude-opus-5-5', 'claude-fable-5-1', 'claude-sonnet-5-5', 'claude-opus-5'].map(model => ({ model, thinkingConfig: { type: 'disabled' as const } }))
+const inputs = ['claude-opus-5-5', 'claude-fable-5-1', 'claude-sonnet-5-5', 'claude-opus-5', 'kimi/k3.1-pro'].map(model => ({ model, thinkingConfig: { type: 'disabled' as const } }))
 const requests: any[] = []
 const observed: any[] = []
 let exit = 1
@@ -37,7 +38,7 @@ const controlsBeta = 'thinking-binding-controls-2026-08-01'
 const guardedFetch = (async (input: any, init: any) => {
   const request = new Request(input, init)
   const url = new URL(request.url)
-  assert.equal(url.origin, 'https://api.anthropic.com', `Unexpected request origin: ${url.origin}`)
+  assert.ok(['https://api.anthropic.com', 'http://127.0.0.1:3425'].includes(url.origin), `Unexpected request origin: ${url.origin}`)
   assert.equal(url.pathname, '/v1/messages', `Unexpected request path: ${url.pathname}`)
   assert.equal(request.method, 'POST')
   const body = await request.json() as any
@@ -84,6 +85,7 @@ try {
   const { asSystemPrompt } = await import('../src/utils/systemPromptType.js')
   const { getEmptyToolPermissionContext } = await import('../src/Tool.js')
   for (const scenario of inputs) {
+    process.env.ANTHROPIC_BASE_URL = scenario.model === 'kimi/k3.1-pro' ? 'http://127.0.0.1:3425' : 'https://api.anthropic.com'
     const requestStart = requests.length
     const outputs: any[] = []
     for await (const event of queryModelWithStreaming({
@@ -105,19 +107,33 @@ try {
         maxOutputTokensOverride: 1024,
       },
     })) outputs.push(event)
-    assert.equal(requests.length, requestStart + 1, `${scenario.model}: expected one request without retry`)
+    assert.equal(requests.length, requestStart + 1, `${scenario.model}: expected one request without retry; events=${JSON.stringify(outputs)}`)
     assert.ok(outputs.some(event => event.type === 'assistant' && event.message.content.some((block: any) => block.type === 'text' && block.text === 'DONE')), `${scenario.model}: missing scripted assistant response`)
     const { body, beta } = requests[requestStart]
     assert.equal(body.model, scenario.model)
     if (scenario.model === 'claude-opus-5') {
       assert.deepEqual(body.thinking, { type: 'disabled' })
       assert.equal(body.thinking.block_binding, undefined)
+    } else if (scenario.model === 'kimi/k3.1-pro') {
+      assert.deepEqual(body.thinking, { type: 'enabled', budget_tokens: 1023 })
     } else {
       assert.ok(beta?.split(',').map((value: string) => value.trim()).includes(controlsBeta), `${scenario.model}: missing controls beta`)
-      assert.deepEqual(body.thinking, { type: 'adaptive', block_binding: { prefix_mismatch_behavior: 'drop_block' } })
+      assert.deepEqual(body.thinking, { type: 'adaptive', display: 'summarized', block_binding: { prefix_mismatch_behavior: 'drop_block' } })
     }
     observed.push({ model: body.model, input_thinking: scenario.thinkingConfig, thinking: body.thinking, beta, assistant: 'DONE', request_count: 1 })
   }
+  const { sideQuery } = await import('../src/utils/sideQuery.js')
+  const sideQueryStart = requests.length
+  await sideQuery({
+    model: 'kimi/k3.1-pro',
+    querySource: 'permission_explainer',
+    messages: [{ role: 'user', content: 'Local side-query thinking fixture.' }],
+    max_tokens: 64,
+  })
+  assert.equal(requests.length, sideQueryStart + 1)
+  assert.deepEqual(requests.at(-1).body.thinking, { type: 'enabled', budget_tokens: 63 })
+  observed.push({ scenario: 'side-query-always-on-thinking', request_count: 1, thinking: requests.at(-1).body.thinking })
+  process.env.ANTHROPIC_BASE_URL = 'https://api.anthropic.com'
   const { query } = await import('../src/query.js')
   const { handleMessageFromStream } = await import('../src/utils/messages.js')
   const { FileReadTool } = await import('../src/tools/FileReadTool/FileReadTool.js')
@@ -215,7 +231,7 @@ try {
   const revision = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() + (execFileSync('git', ['-C', repo, 'status', '--porcelain'], { encoding: 'utf8' }).trim() ? '-dirty' : '')
   writeFileSync(join(artifacts, 'requests.json'), JSON.stringify(requests, null, 2))
   writeFileSync(join(artifacts, 'recovery-events.json'), JSON.stringify(recoveryEvents, null, 2))
-  writeFileSync(join(artifacts, 'source.diff'), execFileSync('git', ['-C', repo, 'diff', '--', 'src/services/api/claude.ts', 'src/services/compact/microCompact.ts', 'src/services/tokenEstimation.ts'], { encoding: 'utf8' }))
+  writeFileSync(join(artifacts, 'source.diff'), execFileSync('git', ['-C', repo, 'diff', '--', 'src/services/api/claude.ts', 'src/utils/thinking.ts', 'src/utils/sideQuery.ts', 'src/utils/model/providerModels.ts', 'src/utils/model/modelSupportOverrides.ts', 'src/services/compact/microCompact.ts', 'src/services/tokenEstimation.ts'], { encoding: 'utf8' }))
   writeFileSync(join(artifacts, 'verification.manifest.json'), JSON.stringify({
     command: ['NODE_ENV=development', 'bun', import.meta.path, '--artifacts', artifacts],
     revision,

@@ -6,6 +6,7 @@ import {
   modelRequiresExplicitThinkingDisable,
   modelSupportsAdaptiveThinking,
   modelSupportsThinking,
+  modelThinkingCannotBeDisabled,
 } from '../../utils/thinking.js'
 
 const PROVIDER_ENV_KEYS = [
@@ -16,6 +17,9 @@ const PROVIDER_ENV_KEYS = [
   'ANTHROPIC_BASE_URL',
   'ANTHROPIC_DEFAULT_OPUS_MODEL',
   'ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES',
+  'NOA_CLAUDE_PROVIDER_THINKING_MODELS',
+  'NOA_CLAUDE_PROVIDER_REJECTS_DISABLED_THINKING_MODELS',
+  'CLAUDE_CODE_DISABLE_THINKING',
 ] as const
 
 const original = Object.fromEntries(
@@ -126,6 +130,35 @@ describe('modelSupportsThinking — third-party Anthropic-compatible', () => {
     // default) and sent an Anthropic thinking payload the endpoint may reject.
     process.env.ANTHROPIC_BASE_URL = 'https://api.kimi.com/coding'
     expect(modelSupportsThinking('kimi-for-coding')).toBe(false)
+  })
+
+  test('a provider profile opts in each gateway model explicitly', () => {
+    process.env.ANTHROPIC_BASE_URL = 'http://127.0.0.1:3425'
+    process.env.NOA_CLAUDE_PROVIDER_THINKING_MODELS =
+      'kimi/k3.1-pro,deepseek/deepseek-flash'
+    expect(modelSupportsThinking('kimi/k3.1-pro')).toBe(true)
+    expect(modelSupportsThinking('deepseek/deepseek-flash[1M]')).toBe(true)
+    expect(modelSupportsThinking('kimi/kimi-for-coding-highspeed')).toBe(false)
+  })
+
+  test('an always-on provider model cannot fall back to disabled thinking', () => {
+    process.env.ANTHROPIC_BASE_URL = 'http://127.0.0.1:3425'
+    process.env.CLAUDE_CODE_DISABLE_THINKING = '1'
+    process.env.NOA_CLAUDE_PROVIDER_REJECTS_DISABLED_THINKING_MODELS =
+      'kimi/k3.1-pro'
+
+    expect(modelThinkingCannotBeDisabled('kimi/k3.1-pro')).toBe(true)
+    expect(modelSupportsThinking('kimi/k3.1-pro')).toBe(true)
+    expect(modelRequiresExplicitThinkingDisable('kimi/k3.1-pro')).toBe(false)
+    expect(modelThinkingCannotBeDisabled('kimi/k3')).toBe(false)
+  })
+
+  test('a 3P endpoint can declare rejects_disabled_thinking via SUPPORTED_CAPABILITIES', () => {
+    process.env.ANTHROPIC_BASE_URL = 'https://gateway.example.com/anthropic'
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = 'kimi/k3.1-pro'
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES =
+      'rejects_disabled_thinking'
+    expect(modelThinkingCannotBeDisabled('kimi/k3.1-pro')).toBe(true)
   })
 
   test('a 3P endpoint can still opt in via SUPPORTED_CAPABILITIES override', () => {

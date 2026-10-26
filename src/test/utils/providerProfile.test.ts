@@ -21,6 +21,25 @@ function profile(overrides: Partial<ProviderProfile>): ProviderProfile {
 }
 
 describe('provider profile credentials', () => {
+  test('carries per-model thinking support through provider env', () => {
+    const env = buildProviderEnv(
+      profile({
+        type: 'anthropic',
+        baseUrl: 'http://127.0.0.1:3425',
+        model: 'kimi/k3.1-pro',
+        thinkingModels: ['kimi/k3.1-pro', 'kimi/k3.1-pro-highspeed'],
+        rejectsDisabledThinkingModels: ['kimi/k3.1-pro'],
+      }),
+    )
+
+    expect(env.NOA_CLAUDE_PROVIDER_THINKING_MODELS).toBe(
+      'kimi/k3.1-pro,kimi/k3.1-pro-highspeed',
+    )
+    expect(env.NOA_CLAUDE_PROVIDER_REJECTS_DISABLED_THINKING_MODELS).toBe(
+      'kimi/k3.1-pro',
+    )
+  })
+
   test('maps Kimi apiKey to Anthropic auth token for Bearer auth', () => {
     const env = buildProviderEnv(
       profile({
@@ -608,7 +627,7 @@ describe('provider profile credentials', () => {
     }
   })
 
-  test('does not carry a secret across a provider endpoint change', () => {
+  test('does not carry credentials or capabilities across a provider endpoint change', () => {
     const configDir = mkdtempSync(join(tmpdir(), 'noa-provider-endpoint-key-'))
     try {
       const script = `
@@ -619,6 +638,7 @@ describe('provider profile credentials', () => {
         const created = await addProviderProfile({
           name: 'Shared', type: 'openai', baseUrl: 'https://old.example/v1',
           model: 'old-model', apiKey: 'sk-old-secret',
+          rejectsDisabledThinkingModels: ['old-model'],
         })
         const updated = await updateProviderProfile(created.id, {
           type: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1',
@@ -626,6 +646,9 @@ describe('provider profile credentials', () => {
         })
         if (updated.apiKey !== undefined) {
           throw new Error('old key survived endpoint change')
+        }
+        if (updated.rejectsDisabledThinkingModels !== undefined) {
+          throw new Error('old thinking capability survived endpoint change')
         }
       `
       const result = spawnSync('bun', ['--eval', script], {

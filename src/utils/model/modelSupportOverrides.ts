@@ -11,6 +11,7 @@ export type ModelCapabilityOverride =
   | 'xhigh_effort'
   | 'thinking'
   | 'adaptive_thinking'
+  | 'rejects_disabled_thinking'
   | 'interleaved_thinking'
   | 'context_management'
   | 'claude_code_beta'

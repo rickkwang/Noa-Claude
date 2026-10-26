@@ -53,6 +53,8 @@ import { MoreRow, useMoreRowClickGuard } from '../ui/MoreRow.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { clearFastModeCooldown, getFastModeModelDisplay, isFastModeAvailable, isFastModeEnabled, getFastModeModel, isFastModeSupportedByModel } from '../../utils/fastMode.js';
 import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js';
+import { useMainLoopModel } from '../../hooks/useMainLoopModel.js';
+import { modelThinkingCannotBeDisabled } from '../../utils/thinking.js';
 type Props = {
   onClose: (result?: string, options?: {
     display?: CommandResultDisplay;
@@ -158,6 +160,8 @@ export function Config({
   // Labels truncate rather than wrap, so a row is always exactly one line.
   const labelColumnWidth = Math.min(44, Math.max(14, columns - 16));
   const mainLoopModel = useAppState(s => s.mainLoopModel);
+  const effectiveMainLoopModel = useMainLoopModel();
+  const thinkingCannotBeDisabled = modelThinkingCannotBeDisabled(effectiveMainLoopModel);
   const verbose = useAppState(s_0 => s_0.verbose);
   const thinkingEnabled = useAppState(s_1 => s_1.thinkingEnabled);
   const isFastMode = useAppState(s_2 => isFastModeEnabled() ? s_2.fastMode : false);
@@ -403,9 +407,10 @@ export function Config({
   }, {
     id: 'thinkingEnabled',
     label: 'Thinking mode',
-    value: thinkingEnabled ?? true,
+    value: (thinkingEnabled ?? true) || thinkingCannotBeDisabled,
     type: 'boolean' as const,
     onChange(enabled: boolean) {
+      if (!enabled && thinkingCannotBeDisabled) return;
       setAppState(prev_6 => ({
         ...prev_6,
         thinkingEnabled: enabled

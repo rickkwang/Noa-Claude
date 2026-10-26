@@ -191,6 +191,7 @@ import {
   modelRequiresExplicitThinkingDisable,
   modelSupportsAdaptiveThinking,
   modelSupportsThinking,
+  modelThinkingCannotBeDisabled,
   type ThinkingConfig,
 } from 'src/utils/thinking.js'
 import {
@@ -1655,8 +1656,9 @@ async function* queryModel(
       getMaxOutputTokensForModel(apiModel)
 
     const hasThinking =
-      thinkingConfig.type !== 'disabled' &&
-      !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_THINKING)
+      modelThinkingCannotBeDisabled(apiModel) ||
+      (thinkingConfig.type !== 'disabled' &&
+        !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_THINKING))
     let thinking: BetaMessageStreamParams['thinking'] | undefined = undefined
 
     // IMPORTANT: Do not change the adaptive-vs-budget thinking selection below

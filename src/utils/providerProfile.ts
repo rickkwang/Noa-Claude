@@ -26,6 +26,8 @@ import {
   PROVIDER_EFFORT_LEVELS_ENV_KEY,
   PROVIDER_MAX_OUTPUT_TOKENS_ENV_KEY,
   PROVIDER_MODELS_ENV_KEY,
+  PROVIDER_REJECTS_DISABLED_THINKING_MODELS_ENV_KEY,
+  PROVIDER_THINKING_MODELS_ENV_KEY,
   serializeProviderContextWindows,
   serializeProviderEffortLevels,
   serializeProviderList,
@@ -77,6 +79,8 @@ export interface ProviderProfile {
   // an explicit [] declares none, which is how a user turns off a default
   // their endpoint rejects.
   effortLevels?: Record<string, string[]>
+  thinkingModels?: string[]
+  rejectsDisabledThinkingModels?: string[]
   // Output-token limits per model id. Merged over
   // PROVIDER_TYPE_MAX_OUTPUT_TOKENS, like contextWindows.
   maxOutputTokens?: Record<string, MaxOutputTokens>
@@ -409,6 +413,8 @@ const ENDPOINT_SCOPED_KEYS = [
   'apiKey',
   'models',
   'effortLevels',
+  'thinkingModels',
+  'rejectsDisabledThinkingModels',
   'contextWindows',
   'maxOutputTokens',
   'tierModels',
@@ -613,6 +619,16 @@ export function buildProviderEnv(profile: ProviderProfile): Record<string, strin
       ...PROVIDER_TYPE_EFFORT_LEVELS[normalizedProfile.type],
       ...normalizedProfile.effortLevels,
     }),
+  )
+  setEnvKey(
+    env,
+    PROVIDER_THINKING_MODELS_ENV_KEY,
+    serializeProviderList(normalizedProfile.thinkingModels),
+  )
+  setEnvKey(
+    env,
+    PROVIDER_REJECTS_DISABLED_THINKING_MODELS_ENV_KEY,
+    serializeProviderList(normalizedProfile.rejectsDisabledThinkingModels),
   )
   setEnvKey(
     env,
