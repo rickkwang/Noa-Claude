@@ -162,12 +162,12 @@ function streamInline(nodes: ReactNode[], key: string, counter: { node: number }
   })
 }
 
-export function Markdown({ text, tone = "default", streaming = false, streamKey }: { text: string; tone?: "default" | "muted"; streaming?: boolean; streamKey?: string }) {
+export function Markdown({ text, tone = "default", streaming = false, streamKey, className }: { text: string; tone?: "default" | "muted"; streaming?: boolean; streamKey?: string; className?: string }) {
   const plainLine = text.split("\n").some(line => line.length > MAX_PARSER_LINE)
   const blocks = useMemo(() => plainLine ? [] : parseBlocks(text), [text, plainLine])
   const color = tone === "muted" ? "text-[var(--sidebar-text-muted,#898781)]" : "text-[var(--text-primary,#2D2D2B)]"
   return (
-    <div className={`noa-output-markdown prose prose-neutral max-w-none ${color}`}>
+    <div className={`noa-output-markdown prose prose-neutral max-w-none ${color}${className ? ` ${className}` : ""}`}>
       {plainLine ? text : blocks.map((block, i) => (
         <BlockView key={i} block={block} streaming={streaming} streamKey={streamKey ? `${streamKey}:b${i}` : undefined} />
       ))}

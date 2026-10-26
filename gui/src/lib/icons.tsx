@@ -12,6 +12,8 @@ import {
   IconArrowsDiagonalMinimize2,
   IconArrowsDownUp,
   IconBook,
+  IconBookmark,
+  IconBookmarkFilled,
   IconCalendar,
   IconCheck,
   IconChevronDown,
@@ -97,6 +99,8 @@ export const ArrowDown = icon(IconArrowDown);
 export const ArrowLeft = icon(IconArrowLeft);
 export const ArrowRight = icon(IconArrowRight);
 export const BookOpen = icon(IconBook);
+export const Bookmark = icon(IconBookmark);
+export const BookmarkFilled = icon(IconBookmarkFilled);
 export const Calendar = icon(IconCalendar);
 export const Check = icon(IconCheck);
 export const CheckCircle2 = icon(IconCircleCheck);

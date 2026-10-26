@@ -16,6 +16,7 @@ import { ArrowDown, AlertTriangle, BookOpen, Check, ChevronDown, ChevronRight, C
 import { Collapsible } from "./Collapsible"
 import { ErrorBoundary } from "./ErrorBoundary"
 import { Markdown, OutputContext } from "./Markdown"
+import { MessageRail, type MessageRailItem } from "./MessageRail"
 import { ToolCard } from "./ToolCard"
 import { LiveDiffSummary, TurnDiffCard } from "./TurnDiffCard"
 
@@ -35,6 +36,7 @@ interface MessageListProps {
   tasks?: AgentTask[]
   onStopTask?: (id: string) => void
   onOpenTask?: () => void
+  sessionId?: string
 }
 
 // Follows the bottom while the user is near it; a scroll away releases the pin.
@@ -44,14 +46,16 @@ const TURN_GAP = 16
 const TURN_OVERSCAN = 2
 const ESTIMATED_TURN_HEIGHT = 160
 
-export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, tasks, onStopTask, onOpenTask }: MessageListProps) {
+export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth, liveDiff, onTurnDiff, onTurnDiffAction, diffActionPending, onRetry, onEdit, tasks, onStopTask, onOpenTask, sessionId }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+  const layoutRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
   const scrollFrame = useRef<number | undefined>(undefined)
   const heightsRef = useRef(new Map<string, number>())
   const offsetsRef = useRef(new Map<string, number>())
   const focusedTurn = useRef<string | undefined>(undefined)
+  const jumpToken = useRef(0)
   const [showJump, setShowJump] = useState(false)
   const [preview, setPreview] = useState<{ items: LightboxItem[]; index: number }>()
   const [viewport, setViewport] = useState({ top: 0, height: 0 })
@@ -136,6 +140,102 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
 
   const lastUserIndex = segments.reduce((last, segment, index) => segment.role === "user" ? index : last, -1)
 
+  // The rail previews each prompt with the final answer of the reply that follows it, as Codex does.
+  const railItems: MessageRailItem[] = []
+  for (let index = 0; index < segments.length; index++) {
+    const segment = segments[index]!
+    if (segment.role !== "user") continue
+    const reply = segments[index + 1]
+    let preview = ""
+    if (reply?.role === "assistant") {
+      for (let blockIndex = reply.blocks.length - 1; blockIndex >= 0; blockIndex--) {
+        const block = reply.blocks[blockIndex]!
+        if (block.kind !== "text") continue
+        // The card clamps to three lines; copying only the head keeps streaming cheap.
+        const start = block.text.search(/\S/)
+        if (start === -1) continue
+        preview = block.text.slice(start, start + 800).trimEnd()
+        break
+      }
+    }
+    railItems.push({
+      id: segment.id,
+      ordinal: railItems.length,
+      label: firstLine(segment.text) || "(No content)",
+      preview,
+    })
+  }
+  // Every user message crossing the viewport is active, as Codex marks the whole
+  // visible range; when none is visible, the prompt the reader has passed stays lit.
+  const layoutOffset = layoutRef.current?.offsetTop ?? 32
+  const railTop = viewport.top
+  const railBottom = viewport.top + (viewport.height || 800)
+  const activeRailIds: string[] = []
+  for (const row of layout) {
+    if (row.segment.role !== "user") continue
+    const top = row.top + layoutOffset
+    if (top < railBottom && top + row.height > railTop + 16) activeRailIds.push(row.segment.id)
+  }
+  if (!activeRailIds.length) {
+    let passed = railItems[0]?.id
+    for (const row of layout) {
+      if (row.segment.role === "user" && row.top + layoutOffset <= railTop + 16) passed = row.segment.id
+    }
+    if (passed) activeRailIds.push(passed)
+  }
+
+  function scrollToSegment(id: string, behavior: ScrollBehavior) {
+    const scroller = scrollRef.current
+    const row = layout.find((candidate) => candidate.segment.id === id)
+    if (!scroller || !row) return
+    // A newer jump owns the viewport; older align/flash work must stand down.
+    const token = ++jumpToken.current
+    pinnedRef.current = false
+    setShowJump(false)
+    scroller.scrollTo({ top: Math.max(0, layoutOffset + row.top), behavior })
+    // Offscreen rows are laid out from estimated heights; once the target mounts,
+    // snap to its measured top so the prompt lands flush with the viewport edge.
+    const align = (attempt = 0) => {
+      if (token !== jumpToken.current) return
+      const target = scroller.querySelector<HTMLElement>(`[data-virtual-turn-id="${cssEscape(id)}"]`)
+      if (!target) {
+        if (attempt < 40) requestAnimationFrame(() => align(attempt + 1))
+        return
+      }
+      const delta = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top
+      if (Math.abs(delta) > 1) {
+        scroller.scrollTop += delta
+        if (attempt < 4) requestAnimationFrame(() => align(attempt + 1))
+      }
+    }
+    if (behavior === "smooth") {
+      const onEnd = () => align()
+      scroller.addEventListener("scrollend", onEnd, { once: true })
+      window.setTimeout(() => scroller.removeEventListener("scrollend", onEnd), 1200)
+    } else {
+      requestAnimationFrame(() => align())
+    }
+    const reduced = document.documentElement.dataset.reduceMotion === "true"
+      || window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    const deadline = performance.now() + 1500
+    const flash = () => {
+      if (token !== jumpToken.current) return
+      const bubble = scrollRef.current?.querySelector<HTMLElement>(
+        `[data-virtual-turn-id="${cssEscape(id)}"] [data-user-message-bubble]`,
+      )
+      if (bubble) {
+        bubble.animate([
+          { backgroundColor: "color-mix(in srgb, var(--accent-color) 26%, transparent)" },
+          { backgroundColor: "color-mix(in srgb, var(--accent-color) 26%, transparent)", offset: 0.35 },
+          { backgroundColor: "color-mix(in srgb, var(--accent-color) 8%, transparent)" },
+        ], { duration: reduced ? 0 : 900, easing: "cubic-bezier(0.23, 1, 0.32, 1)" })
+        return
+      }
+      if (performance.now() < deadline) requestAnimationFrame(flash)
+    }
+    requestAnimationFrame(flash)
+  }
+
   function renderSegment(segment: Segment, index: number) {
     if (segment.role === "user") {
       return (
@@ -178,8 +278,10 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
       }}
       className="noa-agent-scroll noa-scroll-fade relative flex-1 min-h-0 overflow-y-auto overscroll-contain"
     >
-      <div ref={contentRef} className="mx-auto flex flex-col gap-4 px-5 pt-8" style={{ maxWidth: readingWidth, paddingBottom: "calc(var(--composer-overlay, 0px) + 32px)" }}>
-        <div className="relative w-full" style={{ height: layoutHeight }}>
+      {/* Codex reserves 48px around the transcript column so the rail lives in the
+          gutter and its expanded tick never crosses the text on narrow windows. */}
+      <div ref={contentRef} className="mx-auto flex flex-col gap-4 px-5 pt-8" style={{ width: "calc(100% - 48px)", maxWidth: readingWidth, paddingBottom: "calc(var(--composer-overlay, 0px) + 32px)" }}>
+        <div ref={layoutRef} className="relative w-full" style={{ height: layoutHeight }}>
           {visibleRows.map((row) => (
             <VirtualTurnRow key={row.segment.id} id={row.segment.id} top={row.top} onHeight={measureTurn}>
               <ErrorBoundary resetKey={row.segment.id}>
@@ -205,6 +307,7 @@ export function MessageList({ turns, cwd, onOpenFile, busy, result, readingWidth
       </div>
 
     </div>
+      <MessageRail key={sessionId ?? "new"} items={railItems} activeIds={activeRailIds} sessionId={sessionId} onJump={scrollToSegment} />
       {/* Codex's scroll-to-bottom: a 32px round button that fades rather than mounts. */}
       <button
         type="button"
@@ -679,6 +782,7 @@ function UserBubble({ text }: { text: string }) {
     <>
       <div
         ref={ref}
+        data-user-message-bubble=""
         className={`max-w-[70%] whitespace-pre-wrap break-words rounded-[22px] bg-[color-mix(in_srgb,var(--accent-color)_8%,transparent)] px-4 py-2.5 text-[length:var(--font-text-md-size)] leading-[var(--font-text-md-line-height)] ${
           expanded
             ? ""
@@ -699,6 +803,18 @@ function UserBubble({ text }: { text: string }) {
       )}
     </>
   )
+}
+
+function firstLine(text: string): string {
+  const start = text.search(/\S/)
+  if (start === -1) return ""
+  const head = text.slice(start, start + 400)
+  const newline = head.indexOf("\n")
+  return (newline === -1 ? head : head.slice(0, newline)).trimEnd()
+}
+
+function cssEscape(value: string): string {
+  return typeof CSS !== "undefined" && CSS.escape ? CSS.escape(value) : value.replace(/"/g, '\\"')
 }
 
 function formatDuration(ms: number): string {

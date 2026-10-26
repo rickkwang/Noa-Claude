@@ -603,6 +603,7 @@ function Workspace({ cwd }: { cwd: string }) {
             <MessageList
               key={session.key}
               cwd={session.cwd}
+              sessionId={activeId}
               onOpenFile={(path, line) => { setRightOpen(true); setRightTab("files"); setFocusFile({ path, line, at: Date.now() }) }}
               turns={state.turns}
               busy={state.busy}

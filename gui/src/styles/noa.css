@@ -2792,3 +2792,164 @@ body.noa-session-dragging * { cursor: grabbing !important; }
 @media (prefers-reduced-motion: reduce) {
   .noa-project-dialog__spinner { animation: none; }
 }
+
+/* ── Conversation rail (Codex's floating user-message navigation) ──
+   Ticks rest at 6px, grow to 26px as they approach the hovered or scrubbed turn,
+   and the hover card anchors to the tick's vertical centre. */
+.noa-message-rail-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+.noa-message-rail {
+  position: absolute;
+  top: 50%;
+  left: 16px;
+  translate: 0 -50%;
+  pointer-events: auto;
+  animation: noa-message-rail-in 150ms var(--ease-out) both;
+}
+.noa-message-rail-list {
+  position: relative;
+  display: flex;
+  max-height: min(70vh, 40rem);
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.noa-message-rail-list::-webkit-scrollbar { display: none; }
+.noa-message-rail-list[data-scrollable="true"] {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 16px, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 16px, #000 calc(100% - 16px), transparent);
+}
+.noa-message-rail-item {
+  display: flex;
+  width: 36px;
+  height: 10px;
+  flex: none;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  outline: none;
+}
+.noa-message-rail-marker {
+  --marker-progress: 0;
+  position: relative;
+  display: flex;
+  width: 26px;
+  height: 2px;
+  color: var(--text-tertiary);
+  opacity: .4;
+}
+.noa-message-rail-marker[data-bookmarked="true"] { opacity: 1; }
+.noa-message-rail-marker[data-active="true"] {
+  color: var(--text-primary);
+  opacity: .6;
+}
+.noa-message-rail-marker[data-active="true"][data-bookmarked="true"] { opacity: 1; }
+.noa-message-rail-marker[data-hot="true"] {
+  color: var(--text-primary);
+  opacity: 1;
+}
+.noa-message-rail-line,
+.noa-message-rail-dot {
+  background-color: currentColor;
+  transition-duration: .16s;
+  transition-timing-function: linear(0, .398 10%, .682 20%, .843 30%, .925 40%, .972 50%, 1.004 60%, 1.008 70%, 1.003 80%, 1);
+}
+.noa-message-rail-line {
+  width: 100%;
+  height: 100%;
+  transform: scaleX(calc(.2308 + .7692 * var(--marker-progress)));
+  transform-origin: 0;
+  transition-property: transform;
+}
+.noa-message-rail-dot {
+  position: absolute;
+  left: 2px;
+  width: 2px;
+  height: 2px;
+  border-radius: 999px;
+  transform: translateX(calc(26px * (.2308 + .7692 * var(--marker-progress))));
+  transition-property: transform;
+}
+.noa-message-rail-list[data-scrubbing="true"] :is(.noa-message-rail-line, .noa-message-rail-dot) { transition-duration: 0s; }
+.noa-message-rail-card {
+  position: absolute;
+  left: 52px;
+  display: flex;
+  width: 320px;
+  max-width: min(20rem, calc(100% - 64px));
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-dialog);
+  color: var(--text-primary);
+  font-size: var(--text-body);
+  line-height: 20px;
+  text-align: start;
+  white-space: normal;
+  pointer-events: auto;
+}
+.noa-message-rail-card-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+.noa-message-rail-card-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.noa-message-rail-bookmark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+.noa-message-rail-bookmark:hover,
+.noa-message-rail-bookmark[aria-pressed="true"] { color: var(--text-primary); }
+.noa-message-rail-bookmark:hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+.noa-message-rail-preview {
+  display: -webkit-box;
+  margin-top: 4px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  color: var(--text-tertiary);
+  font-size: var(--text-body);
+  line-height: 20px;
+  overflow-wrap: break-word;
+}
+.noa-message-rail-preview p { margin: 0; }
+.noa-message-rail-preview:has(table) {
+  max-height: 60px;
+  -webkit-line-clamp: unset;
+}
+@keyframes noa-message-rail-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .noa-message-rail { animation: none; }
+  .noa-message-rail-line,
+  .noa-message-rail-dot { transition-duration: 0s; }
+}
