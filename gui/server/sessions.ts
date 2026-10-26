@@ -7,10 +7,19 @@ import type { ContentBlock, ImageBlock, TurnDiff } from "../src/agent/protocol"
 import { sanitizePath } from "../../src/utils/sessionStoragePortable"
 
 export const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const MAX_SESSIONS = 50
+const MAX_SESSION_SUMMARIES = 200
 // Injected wrappers such as <local-command-caveat> are not user-authored text.
 const SYSTEM_WRAPPER = /^<(local-command-|command-|system-reminder|task-notification)/
 const INTERRUPT_MARKER = /^\[Request interrupted by user(?:\s+for tool use)?\]$/
+
+interface SessionSummaryCacheEntry {
+  size: number
+  mtimeMs: number
+  owner?: string
+  title?: string
+}
+
+const sessionSummaryCaches = new Map<string, Map<string, SessionSummaryCacheEntry>>()
 
 export interface SessionSummary {
   id: string
@@ -84,9 +93,9 @@ export function readTurnDiffs(cwd: string, id: string): TurnDiffRecord[] {
 export function findTurnUserMessage(cwd: string, id: string, offset: number): string | undefined {
   const file = transcriptPath(cwd, id)
   if (!existsSync(file)) return undefined
-  const raw = readFileSync(file, "utf8")
-  const parse = (text: string) => {
-    for (const line of text.split("\n")) {
+  const raw = readFileSync(file)
+  const parse = (buffer: Buffer) => {
+    for (const line of buffer.toString("utf8").split("\n")) {
       if (!line) continue
       try {
         const entry = JSON.parse(line) as Entry
@@ -98,7 +107,7 @@ export function findTurnUserMessage(cwd: string, id: string, offset: number): st
     }
     return undefined
   }
-  return parse(raw.slice(offset)) ?? parse(raw)
+  return parse(raw.subarray(offset)) ?? parse(raw)
 }
 
 export interface TurnResultRecord { index: number; userMessageId?: string; durationMs: number; error: string }
@@ -199,33 +208,49 @@ export function countUserTurns(cwd: string, id: string): number {
 export function listSessions(cwd: string): SessionSummary[] {
   const dir = projectDir(cwd)
   if (!existsSync(dir)) return []
+  const currentOwner = canonicalCwd(cwd)
+  const cache = sessionSummaryCaches.get(dir) ?? new Map<string, SessionSummaryCacheEntry>()
+  sessionSummaryCaches.set(dir, cache)
+  const seen = new Set<string>()
 
   const files = readdirSync(dir).flatMap((file) => {
     const id = file.endsWith(".jsonl") ? file.slice(0, -".jsonl".length) : ""
     if (!SESSION_ID.test(id)) return []
     const path = join(dir, file)
-    return [{ id, path, updatedAt: statSync(path).mtimeMs }]
+    const info = statSync(path)
+    return [{ id, path, size: info.size, updatedAt: info.mtimeMs }]
   }).sort((a, b) => b.updatedAt - a.updatedAt)
 
   const sessions: SessionSummary[] = []
   for (const file of files) {
-    const entries = readEntries(file.path)
-    const owner = entries.find((entry) => typeof entry.cwd === "string")?.cwd
-    if (owner && canonicalCwd(owner) !== canonicalCwd(cwd)) continue
-    const first = entries.map(userText).find((t): t is string => t !== null)
-    if (!first) continue
+    seen.add(file.path)
+    let cached = cache.get(file.path)
+    if (!cached || cached.size !== file.size || cached.mtimeMs !== file.updatedAt) {
+      const entries = readEntries(file.path)
+      const owner = entries.find((entry) => typeof entry.cwd === "string")?.cwd
+      const first = entries.map(userText).find((t): t is string => t !== null)
+      cached = {
+        size: file.size,
+        mtimeMs: file.updatedAt,
+        owner: owner ? canonicalCwd(owner) : undefined,
+        title:
+          [...entries]
+            .reverse()
+            .find((entry) => entry.type === "custom-title")
+            ?.customTitle?.trim() || first?.replace(/\s+/g, " ").trim().slice(0, 80),
+      }
+      cache.set(file.path, cached)
+    }
+    if (cached.owner && cached.owner !== currentOwner) continue
+    if (!cached.title) continue
     sessions.push({
       id: file.id,
-      title:
-        [...entries]
-          .reverse()
-          .find((entry) => entry.type === "custom-title")
-          ?.customTitle?.trim() || first.replace(/\s+/g, " ").trim().slice(0, 80),
+      title: cached.title,
       updatedAt: file.updatedAt,
     })
-    if (sessions.length === MAX_SESSIONS) break
   }
-  return sessions
+  for (const path of cache.keys()) if (!seen.has(path)) cache.delete(path)
+  return sessions.slice(0, MAX_SESSION_SUMMARIES)
 }
 
 export function renameSession(cwd: string, id: string, title: string): void {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef } from "react"
 import type {
+  AccountInfo,
   ContextUsage,
   ControlRequest,
   Envelope,
@@ -25,6 +26,8 @@ interface AgentOptions {
 // Requests whose responses carry data the UI needs; everything else is fire-and-forget.
 type ResponseKind =
   | "initialize"
+  | "auth_urls"
+  | "auth_complete"
   | "context_usage"
   | "settings"
   | "startup_settings"
@@ -32,6 +35,8 @@ type ResponseKind =
   | "commands"
   | { model: string }
   | { mode: PermissionMode }
+
+const INITIALIZE_TIMEOUT_MS = 20_000
 
 export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermissionMode }: AgentOptions) {
   const [state, dispatch] = useReducer(reducer, initialState)
@@ -53,7 +58,9 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     (request: ControlRequest, expects?: ResponseKind) => {
       const requestId = crypto.randomUUID()
       if (expects) pendingRef.current.set(requestId, expects)
-      write({ type: "control_request", request_id: requestId, request })
+      const sent = write({ type: "control_request", request_id: requestId, request })
+      if (!sent && expects) pendingRef.current.delete(requestId)
+      return sent
     },
     [write],
   )
@@ -75,9 +82,23 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     socketRef.current = socket
     // Under StrictMode the effect runs twice; events from a replaced socket are ignored.
     const isCurrent = () => socketRef.current === socket
+    let initializationTimer: ReturnType<typeof setTimeout> | undefined
+    const clearInitializationTimer = () => {
+      if (initializationTimer !== undefined) clearTimeout(initializationTimer)
+      initializationTimer = undefined
+    }
 
     socket.onopen = () => {
-      if (isCurrent()) control({ subtype: "initialize" }, "initialize")
+      if (!isCurrent()) return
+      initializationTimer = setTimeout(() => {
+        if (!isCurrent()) return
+        dispatch({
+          type: "error",
+          text: "Noa did not finish starting within 20 seconds. Open Activity → Diagnostics for details.",
+        })
+        socket.close()
+      }, INITIALIZE_TIMEOUT_MS)
+      control({ subtype: "initialize" }, "initialize")
     }
 
     socket.onmessage = (event) => {
@@ -125,8 +146,11 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
             const kind = pendingRef.current.get(message.response.request_id)
             if (kind) {
               pendingRef.current.delete(message.response.request_id)
+              if (kind === "initialize") clearInitializationTimer()
               if (message.response.subtype === "error") {
-                dispatch({ type: "error", text: message.response.error ?? "Agent rejected the request" })
+                const error = message.response.error ?? "Agent rejected the request"
+                if (kind === "auth_urls" || kind === "auth_complete") dispatch({ type: "auth-error", error })
+                else dispatch({ type: "error", text: error })
                 if (kind === "initialize") socket.close()
               } else routeResponse(kind, message.response.response)
             }
@@ -149,6 +173,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     }
 
     socket.onclose = () => {
+      clearInitializationTimer()
       if (isCurrent()) dispatch({ type: "connection", status: "closed" })
     }
 
@@ -167,6 +192,19 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
         dispatch({ type: "notice", text: `Reloaded ${commands.filter((command) => !command.hidden).length} commands and skills${errors ? ` · ${errors} plugin errors` : ""}` })
         return
       }
+      if (kind === "auth_urls") {
+        const body = (response ?? {}) as { automaticUrl?: unknown; manualUrl?: unknown }
+        if (typeof body.automaticUrl === "string" && typeof body.manualUrl === "string")
+          dispatch({ type: "auth-urls", automaticUrl: body.automaticUrl, manualUrl: body.manualUrl })
+        else dispatch({ type: "auth-error", error: "Noa did not return a sign-in URL." })
+        return
+      }
+      if (kind === "auth_complete") {
+        const body = (response ?? {}) as { account?: AccountInfo }
+        dispatch({ type: "auth-complete", account: body.account ?? {} })
+        control({ subtype: "get_settings" }, "settings")
+        return
+      }
       if (kind === "effort") {
         control({ subtype: "get_settings" }, "settings")
         return
@@ -182,6 +220,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
             kind: "initialize",
             models: (body.models as ModelInfo[] | undefined) ?? [],
             commands: (body.commands as SlashCommand[] | undefined) ?? [],
+            account: body.account as AccountInfo | undefined,
           },
         })
       } else if (kind === "settings" || kind === "startup_settings") {
@@ -201,6 +240,7 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     }
 
     return () => {
+      clearInitializationTimer()
       socketRef.current = null
       socket.close()
     }
@@ -274,6 +314,48 @@ export function useAgent({ cwd, resume, sessionKey, runtimeId, defaultPermission
     [write],
   )
   const clearDiffAction = useCallback(() => dispatch({ type: "diff-action-clear" }), [])
+  const startAuthentication = useCallback(() => {
+    dispatch({ type: "auth-start" })
+    if (!control({ subtype: "claude_authenticate", loginWithClaudeAi: true }, "auth_urls"))
+      dispatch({ type: "auth-error", error: "Noa is not connected. Reconnect and try again." })
+  }, [control])
+  const waitForAuthentication = useCallback(() => {
+    if (!control({ subtype: "claude_oauth_wait_for_completion" }, "auth_complete"))
+      dispatch({ type: "auth-error", error: "Noa is not connected. Reconnect and try again." })
+  }, [control])
+  const submitAuthenticationCode = useCallback((raw: string) => {
+    const parsed = parseAuthorizationCode(raw)
+    if (!parsed) {
+      dispatch({ type: "auth-error", error: "Paste the authorization code and state from the browser." })
+      return
+    }
+    if (!control({
+      subtype: "claude_oauth_callback",
+      authorizationCode: parsed.authorizationCode,
+      state: parsed.state,
+    }, "auth_complete"))
+      dispatch({ type: "auth-error", error: "Noa is not connected. Reconnect and try again." })
+  }, [control])
+  const closeAuthentication = useCallback(() => dispatch({ type: "auth-close" }), [])
 
-  return { state: ownerRef.current === runtimeId ? state : initialState, sendMessage, reloadCommands, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setPermissionMode, setEffort, refreshContext, turnDiffAction, clearDiffAction }
+  return { state: ownerRef.current === runtimeId ? state : initialState, sendMessage, reloadCommands, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, interrupt, answerPermission, setModel, setPermissionMode, setEffort, refreshContext, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication }
+}
+
+export function parseAuthorizationCode(raw: string): { authorizationCode: string; state: string } | undefined {
+  const value = raw.trim()
+  if (!value) return undefined
+  try {
+    const url = new URL(value)
+    const authorizationCode = url.searchParams.get("code")
+    const state = url.searchParams.get("state")
+    if (authorizationCode && state) return { authorizationCode, state }
+  } catch {
+    // The browser success page also accepts the compact code#state form.
+  }
+  const separator = value.indexOf("#")
+  if (separator <= 0 || separator === value.length - 1) return undefined
+  return {
+    authorizationCode: value.slice(0, separator),
+    state: value.slice(separator + 1),
+  }
 }

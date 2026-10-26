@@ -66,14 +66,18 @@ function Workspace({ cwd }: { cwd: string }) {
     try {
       const appearance = JSON.parse(localStorage.getItem("noa-agent.appearance") ?? "{}")
       if (appearance.maxWidth === 880) appearance.maxWidth = defaultSettings.appearance.maxWidth
-      const agent = JSON.parse(localStorage.getItem("noa-agent.agent") ?? "{}")
+      const agent = { ...defaultSettings.agent, ...JSON.parse(localStorage.getItem("noa-agent.agent") ?? "{}") }
+      if (agent.defaultPermissionMode === "bypassPermissions") {
+        agent.defaultPermissionMode = defaultSettings.agent.defaultPermissionMode
+        agent.showFullAccess = true
+      }
       return {
         ...defaultSettings,
         appearance: {
           ...defaultSettings.appearance,
           ...appearance,
         },
-        agent: { ...defaultSettings.agent, ...agent },
+        agent,
       }
     } catch {
       return defaultSettings
@@ -99,6 +103,7 @@ function Workspace({ cwd }: { cwd: string }) {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [rightOpen, setRightOpen] = useState(true)
   const [addingProject, setAddingProject] = useState(false)
+  const [editingProject, setEditingProject] = useState<ProjectInfo>()
   const [reference, setReference] = useState<{ path: string; key: number }>()
   const [editDraft, setEditDraft] = useState<{ text: string; images: ImageAttachment[]; key: number }>()
   const [queueEditId, setQueueEditId] = useState<string>()
@@ -108,7 +113,7 @@ function Workspace({ cwd }: { cwd: string }) {
   const [rightTab, setRightTab] = useState<PanelTab>("files")
   useEffect(() => { setTurnDiff(undefined) }, [session.key])
 
-  const { state, sendMessage, reloadCommands, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setPermissionMode, setEffort, refreshContext, turnDiffAction, clearDiffAction } =
+  const { state, sendMessage, reloadCommands, interrupt, answerPermission, answerElicitation, removeQueued, moveQueued, updateQueued, steerQueued, setQueuePaused, runQueued, stopTask, setModel, setPermissionMode, setEffort, refreshContext, turnDiffAction, clearDiffAction, startAuthentication, waitForAuthentication, submitAuthenticationCode, closeAuthentication } =
     useAgent({
       cwd: session.cwd,
       resume: session.resume,
@@ -140,12 +145,50 @@ function Workspace({ cwd }: { cwd: string }) {
       } catch {}
     }
     void refresh()
+    return () => {
+      cancelled = true
+    }
+  }, [projects, refreshTick])
+
+  useEffect(() => {
+    let cancelled = false
+    const refresh = async () => {
+      try {
+        const runs = await (await fetch("/api/runs")).json() as { cwd: string; sessionId?: string; title?: string; busy: boolean; waiting: boolean; queued: number }[]
+        if (cancelled) return
+        setSessionsByProject((current) => {
+          const next = { ...current }
+          for (const project of projects) {
+            const sessions = current[project.path] ?? []
+            const updated: SessionSummary[] = sessions.map((session) => {
+              const run = runs.find((candidate) => candidate.cwd === project.path && candidate.sessionId === session.id)
+              return {
+                ...session,
+                status: run?.waiting ? "waiting" : run?.busy ? "running" : run?.queued ? "queued" : undefined,
+              }
+            })
+            for (const run of runs) {
+              if (run.cwd !== project.path || !run.sessionId || updated.some((session) => session.id === run.sessionId)) continue
+              updated.unshift({
+                id: run.sessionId,
+                title: run.title ?? "New task",
+                updatedAt: Date.now(),
+                status: run.waiting ? "waiting" : run.busy ? "running" : run.queued ? "queued" : undefined,
+              })
+            }
+            next[project.path] = updated
+          }
+          return next
+        })
+      } catch {}
+    }
+    void refresh()
     const timer = setInterval(refresh, 2000)
     return () => {
       cancelled = true
       clearInterval(timer)
     }
-  }, [projects, refreshTick])
+  }, [projects])
 
   // A finished turn may have created or renamed the current session.
   useEffect(() => {
@@ -279,8 +322,8 @@ function Workspace({ cwd }: { cwd: string }) {
     if (path) setFocusChange({ path, at: Date.now() })
   }
 
-  async function addProjectPath(path: string) {
-    setProjects(await addProject(path))
+  async function addProjectPaths(paths: string[], name: string) {
+    setProjects(await addProject(paths, name))
   }
 
   async function removeProjectPath(path: string) {
@@ -426,7 +469,14 @@ function Workspace({ cwd }: { cwd: string }) {
             active={{ cwd: session.cwd, id: activeId }}
             onNewSession={newSession}
             onSelect={selectSession}
-            onAddProject={() => setAddingProject(true)}
+            onAddProject={() => {
+              setEditingProject(undefined)
+              setAddingProject(true)
+            }}
+            onEditProject={(project) => {
+              setAddingProject(false)
+              setEditingProject(project)
+            }}
             onRemoveProject={removeProjectPath}
             onRevealProject={revealProject}
             onSettings={() => setSettingsOpen(true)}
@@ -675,6 +725,7 @@ function Workspace({ cwd }: { cwd: string }) {
                 models={state.models}
                 model={state.model}
                 mode={state.permissionMode}
+                showFullAccess={settings.agent.showFullAccess}
                 commands={state.commands}
                 onSend={sendComposer}
                 onCommand={(action) => {
@@ -698,7 +749,14 @@ function Workspace({ cwd }: { cwd: string }) {
         </div>
       </div>
 
-      {addingProject && <AddProjectDialog onAdd={addProjectPath} onClose={() => setAddingProject(false)} />}
+      {addingProject && <AddProjectDialog onAdd={addProjectPaths} onClose={() => setAddingProject(false)} />}
+      {editingProject && (
+        <AddProjectDialog
+          project={editingProject}
+          onAdd={addProjectPaths}
+          onClose={() => setEditingProject(undefined)}
+        />
+      )}
       {state.diffAction && (
         <DiffActionDialog
           action={state.diffAction.action}
@@ -707,7 +765,29 @@ function Workspace({ cwd }: { cwd: string }) {
         />
       )}
       {settingsOpen && (
-        <SettingsDialog settings={settings} onChange={setSettings} onClose={() => setSettingsOpen(false)} />
+        <SettingsDialog
+          settings={settings}
+          onChange={setSettings}
+          onClose={() => setSettingsOpen(false)}
+          account={state.account}
+          auth={state.auth}
+          onStartAuthentication={startAuthentication}
+          onWaitForAuthentication={waitForAuthentication}
+          onSubmitAuthenticationCode={submitAuthenticationCode}
+          onCloseAuthentication={() => {
+            const completed = state.auth?.status === "complete"
+            closeAuthentication()
+            if (completed) {
+              const resume = state.sessionId ?? session.resume
+              setSession((current) => ({
+                cwd: current.cwd,
+                resume,
+                runtimeId: crypto.randomUUID(),
+                key: current.key + 1,
+              }))
+            }
+          }}
+        />
       )}
     </div>
   )

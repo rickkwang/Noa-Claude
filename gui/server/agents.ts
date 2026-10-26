@@ -1,6 +1,7 @@
 import type { ServerWebSocket, Subprocess } from "bun"
 import { join } from "node:path"
 import { appendTurnResult, appendTurnDiff, countUserTurns, findTurnDiff, findTurnUserMessage, loadHistory, readTurnDiffs, setTurnDiffReverted, transcriptPath } from "./sessions"
+import { projectAdditionalDirectories } from "./projects"
 import {
   applyTurnDiff,
   captureTree,
@@ -10,6 +11,7 @@ import {
   diffTrees,
   disposeSnapshot,
   fileSize,
+  mergeTurnDiffs,
   trackToolResult,
   type ChangeCollector,
   type TreeSnapshot,
@@ -25,6 +27,7 @@ export interface SocketData {
 interface AgentRun {
   id: string
   cwd: string
+  additionalDirectories: string[]
   sessionId?: string
   proc: Subprocess<"pipe", "pipe", "pipe">
   clients: Set<ServerWebSocket<SocketData>>
@@ -196,6 +199,8 @@ async function turnDiffAction(run: AgentRun, turnIndex: number, action: "undo" |
     const record = findTurnDiff(run.cwd, run.sessionId, turnIndex)
     if (!record)
       return fail({ ok: false, errorCode: "no-patch", appliedPaths: [], skippedPaths: [], conflictedPaths: [] })
+    if (record.diff.undoable === false)
+      return fail({ ok: false, errorCode: "apply-failed", error: "Undo is unavailable when a turn changes multiple source folders.", appliedPaths: [], skippedPaths: [], conflictedPaths: [] })
     const result = await applyTurnDiff(
       run.cwd,
       record.patch ?? record.diff.patch,
@@ -223,6 +228,10 @@ function finalizeTurnDiff(run: AgentRun): Promise<void> {
         let diff = turn.before && after
           ? await diffTrees(run.cwd, turn.before, after, Number.POSITIVE_INFINITY).catch(() => null)
           : null
+        const fallback = run.additionalDirectories.length
+          ? await collectDiff(run.cwd, turn.changes).catch(() => null)
+          : null
+        if (fallback) diff = mergeTurnDiffs(diff, fallback)
         // Outside git, rebuild the turn from the tool results the CLI returned.
         if (!diff) diff = await collectDiff(run.cwd, turn.changes).catch(() => null)
         if (!diff || diff.files.length === 0) return
@@ -284,6 +293,8 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
       "--permission-prompt-tool",
       "stdio",
     ]
+    const additionalDirectories = projectAdditionalDirectories(root, ws.data.cwd)
+    if (additionalDirectories.length) args.push("--add-dir", ...additionalDirectories)
     if (ws.data.resume) args.push("--resume", ws.data.resume)
     const retainedQueue = run?.queue ?? []
     // A resumed session continues from its transcript turn count, not from the
@@ -310,6 +321,7 @@ export function attachAgent(ws: ServerWebSocket<SocketData>, root: string) {
     run = {
       id: ws.data.runtimeId,
       cwd: ws.data.cwd,
+      additionalDirectories,
       sessionId: ws.data.resume,
       proc,
       clients: new Set(),

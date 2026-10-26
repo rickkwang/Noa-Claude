@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto"
-import { opendir, readdir, realpath, stat, lstat, readFile, writeFile, rename, unlink } from "node:fs/promises"
+import { opendir, readdir, realpath, stat, lstat, readFile, writeFile, rename, chmod, unlink } from "node:fs/promises"
 import { dirname, relative, resolve, sep, extname } from "node:path"
 import { createTwoFilesPatch, parsePatch, formatPatch } from "diff"
 
@@ -178,6 +178,7 @@ export async function workspaceRequest(url: URL, cwd: string, body?: unknown): P
       try {
         await writeFile(temporary, content, { flag: "wx", mode: file.info.mode })
         if (digest(await readFile(file.target)) !== file.revision) throw new Error("The file changed on disk. Your draft was kept; reload before saving.")
+        await chmod(temporary, file.info.mode)
         await rename(temporary, file.target)
       } finally { await unlink(temporary).catch(() => {}) }
       return { content, revision: digest(content), kind: "text" }

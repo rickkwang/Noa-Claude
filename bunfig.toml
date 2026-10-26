@@ -8,5 +8,8 @@ disable = false
 [run]
 bun = true
 
+[test]
+preload = ["./scripts/bun-test-preload.ts"]
+
 [loader]
 ".md" = "text"

@@ -1,7 +1,7 @@
 // Desktop shell: starts the Bun bridge (server/main.ts), serves the
 // built UI from it, and shows it in a native window. The bridge is the only
 // process that talks to the agent; the window is a plain client of it.
-const { app, BrowserWindow, Menu, dialog, nativeImage, shell } = require('electron')
+const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, shell } = require('electron')
 const { spawn } = require('child_process')
 const fs = require('fs')
 const http = require('http')
@@ -152,7 +152,12 @@ function createWindow(port) {
     // Same titlebar as the Noa note app: hidden title with the traffic lights centred in a 44px bar.
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 15, y: 15 },
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.join(__dirname, 'preload.cjs'),
+      sandbox: true,
+    },
   })
 
   win.loadURL(`${origin}/`)
@@ -190,6 +195,20 @@ function createWindow(port) {
     win = null
   })
 }
+
+async function selectProjectDirectories(event, multiple) {
+  if (!win || event.sender !== win.webContents) return []
+  const result = await dialog.showOpenDialog(win, {
+    title: 'Add project folder',
+    properties: ['openDirectory', 'createDirectory', ...(multiple ? ['multiSelections'] : [])],
+  })
+  return result.canceled ? [] : result.filePaths
+}
+
+ipcMain.handle('noa:select-project-directories', (event) => selectProjectDirectories(event, true))
+ipcMain.handle('noa:select-project-directory', async (event) =>
+  (await selectProjectDirectories(event, false))[0],
+)
 
 async function requestQuit() {
   if (checkingQuit) return

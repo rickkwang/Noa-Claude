@@ -48,7 +48,9 @@ Bun.serve<SocketData>({
       if (url.pathname === "/api/git-action" && req.method !== "POST") return json({ error: "Method not allowed" }, 405)
       if (!cwd) return json({ error: "cwd is not a directory" }, 400)
       // Writes are limited to listed projects (or folders inside them).
-      if (req.method === "POST" && !listProjects(REPO_ROOT).some((p) => cwd === p.path || cwd.startsWith(p.path + sep)))
+      if (req.method === "POST" && !listProjects(REPO_ROOT).some((project) =>
+        project.sources.some((source) => cwd === source || cwd.startsWith(source + sep))
+      ))
         return json({ error: "Writes are only allowed inside listed projects" }, 403)
       try {
         return json(await workspaceRequest(url, cwd, req.method === "POST" ? await req.json() : undefined))
@@ -61,8 +63,18 @@ Bun.serve<SocketData>({
       const defaultCwd = resolveCwd(null)!
       if (req.method === "GET") return json(listProjects(defaultCwd))
       if (req.method === "POST") {
-        const body = (await req.json().catch(() => null)) as { path?: unknown } | null
-        const error = typeof body?.path === "string" ? addProject(defaultCwd, body.path) : "Missing path."
+        const body = (await req.json().catch(() => null)) as { path?: unknown; name?: unknown; sources?: unknown } | null
+        let error: string | null = "Missing path."
+        if (typeof body?.path === "string") {
+          try {
+            const sources = Array.isArray(body.sources)
+              ? body.sources.filter((source): source is string => typeof source === "string")
+              : undefined
+            error = addProject(defaultCwd, body.path, typeof body.name === "string" ? body.name : undefined, sources)
+          } catch (caught) {
+            error = (caught as Error).message
+          }
+        }
         return error ? json({ error }, 400) : json(listProjects(defaultCwd))
       }
       if (req.method === "DELETE") {

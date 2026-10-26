@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { applyTurnDiff, captureTree, diffTrees, disposeSnapshot } from "../server/turnDiff"
+import { applyTurnDiff, captureTree, diffTrees, disposeSnapshot, mergeTurnDiffs } from "../server/turnDiff"
 
 test("turn undo rejects a conflicting file without applying any other file", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "noa-turn-atomic-"))
@@ -29,4 +29,21 @@ test("turn undo rejects a conflicting file without applying any other file", asy
     expect(await readFile(join(cwd, "a.txt"), "utf8")).toBe("conflicting\n")
     expect(await readFile(join(cwd, "b.txt"), "utf8")).toBe("two\n")
   } finally { await rm(cwd, { recursive: true, force: true }) }
+})
+
+test("multi-source turn diffs include external files but disable single-root Undo", () => {
+  const merged = mergeTurnDiffs(
+    { files: [{ path: "a.txt", additions: 1, deletions: 0 }], additions: 1, deletions: 0, patch: "primary" },
+    {
+      files: [
+        { path: "a.txt", additions: 1, deletions: 0 },
+        { path: "../extra/b.txt", additions: 2, deletions: 1 },
+      ],
+      additions: 3,
+      deletions: 1,
+      patch: "fallback",
+    },
+  )
+  expect(merged.files.map((file) => file.path)).toEqual(["a.txt", "../extra/b.txt"])
+  expect(merged).toMatchObject({ additions: 3, deletions: 1, undoable: false })
 })

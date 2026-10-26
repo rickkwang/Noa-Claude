@@ -10,6 +10,7 @@ export interface SessionSummary {
 export interface ProjectInfo {
   path: string
   name: string
+  sources: string[]
   missing: boolean
 }
 
@@ -24,11 +25,11 @@ export async function fetchProjects(): Promise<ProjectInfo[]> {
 }
 
 // Resolves to the updated project list, or throws with the bridge's message.
-export async function addProject(path: string): Promise<ProjectInfo[]> {
+export async function addProject(paths: string[], name?: string): Promise<ProjectInfo[]> {
   const response = await fetch("/api/projects", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path }),
+    body: JSON.stringify({ path: paths[0], sources: paths, name }),
   })
   const body = await response.json()
   if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`)

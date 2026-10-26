@@ -17,5 +17,6 @@ export const defaultSettings: AppSettings = {
   },
   agent: {
     defaultPermissionMode: 'default',
+    showFullAccess: false,
   },
 };

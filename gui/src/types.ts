@@ -13,6 +13,17 @@ export interface AppSettings {
     fontSmoothing: boolean;
   };
   agent: {
-    defaultPermissionMode: 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions';
+    defaultPermissionMode: 'default' | 'acceptEdits' | 'plan';
+    showFullAccess: boolean;
   };
+}
+
+declare global {
+  interface Window {
+    noaDesktop?: {
+      selectProjectDirectories?: () => Promise<string[]>;
+      selectProjectDirectory?: () => Promise<string | undefined>;
+      getPathForFile?: (file: File) => string;
+    };
+  }
 }

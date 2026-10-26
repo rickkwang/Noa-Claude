@@ -86,7 +86,17 @@ export function QueuedMessages({
           {visible.length} queued · {paused ? "paused" : busy ? "sends after this turn" : "ready to send"}
         </span>
         {(busy || paused) && (
-          <button type="button" disabled={editing} onClick={() => onPaused(!paused)} className="rounded px-1.5 py-0.5 hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] hover:text-[var(--text-primary)]">
+          <button
+            type="button"
+            disabled={editing}
+            onClick={() => {
+              if (paused) {
+                onPaused(false)
+                if (!busy) onRun()
+              } else onPaused(true)
+            }}
+            className="rounded px-1.5 py-0.5 hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)] hover:text-[var(--text-primary)]"
+          >
             {paused ? "Resume" : "Pause"}
           </button>
         )}

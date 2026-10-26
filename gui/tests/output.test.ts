@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
 import { createElement } from "react"
 import { renderToStaticMarkup as render } from "react-dom/server"
 import { initialState, reducer, type AgentState } from "../src/agent/reducer"
@@ -81,6 +82,19 @@ test("Markdown preserves nested blocks, escaped table pipes and recursive inline
   const unsafe = render(createElement(Markdown, { text: '[unsafe](javascript:alert(1))\n\n<script>alert(1)</script>' }))
   expect(unsafe).not.toContain('href="javascript:')
   expect(unsafe).not.toContain('<script>')
+})
+test("remote Markdown images require an explicit external open", () => {
+  const html = render(createElement(Markdown, { text: "![tracker](https://tracker.example/pixel.png)" }))
+  expect(html).toContain("Remote image blocked")
+  expect(html).toContain('href="https://tracker.example/pixel.png"')
+  expect(html).not.toContain("<img")
+  expect(html).not.toContain("src=\"https://tracker.example")
+})
+test("renderer CSP blocks remote subresources", () => {
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8")
+  expect(html).toContain("default-src 'self'")
+  expect(html).toContain("img-src 'self' data: blob:")
+  expect(html).toContain("object-src 'none'")
 })
 
 test("local output references retain line targets and reject external schemes", async () => {

@@ -1,12 +1,13 @@
 import { afterAll, expect, test } from "bun:test"
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, realpathSync } from "node:fs"
+import { appendFileSync, mkdtempSync, mkdirSync, statSync, writeFileSync, rmSync, symlinkSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { sanitizePath } from "../../src/utils/sessionStoragePortable"
-import { loadHistory, listSessions } from "../server/sessions"
+import { findTurnUserMessage, loadHistory, listSessions, renameSession, transcriptPath } from "../server/sessions"
 import { initialState, reducer } from "../src/agent/reducer"
+import { parseAuthorizationCode } from "../src/agent/useAgent"
 import { MessageList } from "../src/components/MessageList"
 import { Markdown } from "../src/components/Markdown"
 import { ToolCard } from "../src/components/ToolCard"
@@ -31,6 +32,15 @@ test("long project paths use the CLI transcript directory", async () => {
   const id = transcript(cwd, [{ type: "user", message: { content: "long path task" } }])
   expect(listSessions(cwd).map((s) => s.id)).toContain(id)
   expect((await loadHistory(cwd, id))?.[0]).toMatchObject({ kind: "user", text: "long path task" })
+})
+test("task history is not truncated at 50 and cached titles refresh", () => {
+  const cwd = `/private/tmp/noa-many-sessions-${crypto.randomUUID()}`
+  const ids = Array.from({ length: 55 }, (_, index) => transcript(cwd, [{ type: "user", message: { content: `task ${index}` } }]))
+  expect(listSessions(cwd)).toHaveLength(55)
+
+  renameSession(cwd, ids[0]!, "Cached title updated")
+  const renamed = listSessions(cwd).find((session) => session.id === ids[0])
+  expect(renamed?.title).toBe("Cached title updated")
 })
 test("history follows the latest conversation leaf instead of replaying abandoned branches", async () => {
   const cwd = "/private/tmp/branched-project"
@@ -61,6 +71,27 @@ test("history follows the latest conversation leaf instead of replaying abandone
   expect(history?.length).toBe(2)
   expect(JSON.stringify(history)).toContain("current answer")
   expect(JSON.stringify(history)).not.toContain("obsolete")
+})
+test("turn offsets resolve the current user message in non-ASCII transcripts", () => {
+  const cwd = `/private/tmp/noa-unicode-offset-${crypto.randomUUID()}`
+  const id = crypto.randomUUID()
+  const file = transcriptPath(cwd, id)
+  mkdirSync(join(file, ".."), { recursive: true })
+  writeFileSync(file, JSON.stringify({
+    type: "user",
+    uuid: "11111111-1111-4111-8111-111111111111",
+    cwd,
+    message: { content: "你好，这是第一轮🙂" },
+  }) + "\n")
+  const offset = statSync(file).size
+  const current = "22222222-2222-4222-8222-222222222222"
+  appendFileSync(file, JSON.stringify({
+    type: "user",
+    uuid: current,
+    cwd,
+    message: { content: "第二轮" },
+  }) + "\n")
+  expect(findTurnUserMessage(cwd, id, offset)).toBe(current)
 })
 test("error results retain actionable details", () => {
   const state = reducer(initialState, {
@@ -203,6 +234,31 @@ test("result text does not duplicate an already rendered model answer", () => {
     message: { type: "result", subtype: "success", is_error: false, duration_ms: 1, result: "Skill result" } as any,
   })
   expect(state.turns.filter((turn) => turn.role === "assistant")).toHaveLength(1)
+})
+test("steering closes the in-flight assistant before starting the steered reply", () => {
+  let state = reducer(initialState, { type: "user-sent", id: "first", text: "Start" })
+  state = reducer(state, {
+    type: "agent",
+    message: { type: "stream_event", parent_tool_use_id: null, event: { type: "content_block_start", content_block: { type: "text" } } },
+  })
+  state = reducer(state, {
+    type: "agent",
+    message: { type: "stream_event", parent_tool_use_id: null, event: { type: "content_block_delta", delta: { type: "text_delta", text: "Partial" } } },
+  })
+  state = reducer(state, { type: "user-sent", id: "steer", text: "Steer now" })
+  state = reducer(state, {
+    type: "agent",
+    message: { type: "stream_event", parent_tool_use_id: null, event: { type: "content_block_start", content_block: { type: "text" } } },
+  })
+  state = reducer(state, {
+    type: "agent",
+    message: { type: "stream_event", parent_tool_use_id: null, event: { type: "content_block_delta", delta: { type: "text_delta", text: "Steered reply" } } },
+  })
+  state = reducer(state, {
+    type: "agent",
+    message: { type: "result", subtype: "success", is_error: false, result: "Steered reply", duration_ms: 10 },
+  })
+  expect(state.turns.filter((turn) => turn.role === "assistant").map((turn) => "streaming" in turn && turn.streaming)).toEqual([false, false])
 })
 
 test("tool result images are preserved without stringifying base64 into output", () => {
@@ -530,7 +586,8 @@ test("markdown renders nested lists, ordered starts, tasks, table alignment and 
   expect(html).toContain("text-align:left")
   expect(html).toContain("text-align:right")
   expect(html).toContain("<del>gone</del>")
-  expect(html).toContain('src="https://example.com/shot.png"')
+  expect(html).toContain("Remote image blocked")
+  expect(html).toContain('href="https://example.com/shot.png"')
 })
 
 test("streaming markdown fades live text and block decorations", () => {
@@ -569,6 +626,29 @@ test("composer commands keep GUI actions, CLI commands and skills distinct", asy
   expect(commands.filter((command) => command.name === "model")).toHaveLength(1)
   expect(slashAtCaret("Please use /mo", 14)).toMatchObject({ query: "mo", start: 11, end: 14 })
   expect(slashAtCaret("foo@example.com", 15)).toBeUndefined()
+})
+
+test("Anthropic sign-in codes and account responses stay in sync", () => {
+  expect(parseAuthorizationCode("https://localhost/callback?code=abc&state=xyz")).toEqual({
+    authorizationCode: "abc",
+    state: "xyz",
+  })
+  expect(parseAuthorizationCode("abc#xyz")).toEqual({ authorizationCode: "abc", state: "xyz" })
+  expect(parseAuthorizationCode("invalid")).toBeUndefined()
+
+  let state = reducer(initialState, { type: "auth-start" })
+  state = reducer(state, {
+    type: "auth-urls",
+    automaticUrl: "http://localhost/callback",
+    manualUrl: "https://example.invalid/login",
+  })
+  expect(state.auth?.status).toBe("waiting")
+  state = reducer(state, {
+    type: "auth-complete",
+    account: { email: "person@example.invalid", apiProvider: "firstParty" },
+  })
+  expect(state.auth?.status).toBe("complete")
+  expect(state.account?.email).toBe("person@example.invalid")
 })
 
 test("approval scope labels follow permission destinations", async () => {

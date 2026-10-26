@@ -64,6 +64,15 @@ export interface ModelInfo {
   supportsAutoMode?: boolean
 }
 
+export interface AccountInfo {
+  email?: string
+  organization?: string
+  subscriptionType?: string
+  tokenSource?: string
+  apiKeySource?: string
+  apiProvider?: string
+}
+
 export interface SlashCommand {
   type?: "prompt" | "local" | "local-jsx"
   source?: string
@@ -94,7 +103,7 @@ export interface ContextUsage {
 
 // Responses to requests the GUI sent, keyed by request_id on the client.
 export type ControlPayload =
-  | { kind: "initialize"; models: ModelInfo[]; commands: SlashCommand[] }
+  | { kind: "initialize"; models: ModelInfo[]; commands: SlashCommand[]; account?: AccountInfo }
   | { kind: "context_usage"; usage: ContextUsage }
   | { kind: "commands"; commands: SlashCommand[] }
 
@@ -151,6 +160,8 @@ export interface TurnDiff {
   deletions: number
   patch?: string
   truncated?: boolean
+  // Cross-source patches are reviewable but cannot be applied against one Git root.
+  undoable?: boolean
   // Bridge-assigned turn number; used to update or revert one turn in place.
   turnIndex?: number
   // Set after Undo so the same card offers Reapply.
@@ -219,6 +230,9 @@ export type ControlRequest =
   | { subtype: "get_settings" }
   | { subtype: "reload_plugins" }
   | { subtype: "apply_flag_settings"; settings: { effortLevel: string | null } }
+  | { subtype: "claude_authenticate"; loginWithClaudeAi?: boolean }
+  | { subtype: "claude_oauth_callback"; authorizationCode: string; state: string }
+  | { subtype: "claude_oauth_wait_for_completion" }
 
 // Shape of the bridge's /api/sessions/:id response.
 export type HistoryItem =

@@ -1,4 +1,5 @@
 import type {
+  AccountInfo,
   AgentMessage,
   ElicitationRequest,
   ImageBlock,
@@ -87,6 +88,13 @@ export interface AgentState {
   permissionMode?: PermissionMode
   models: ModelInfo[]
   commands: SlashCommand[]
+  account?: AccountInfo
+  auth?: {
+    status: "starting" | "waiting" | "complete" | "error"
+    automaticUrl?: string
+    manualUrl?: string
+    error?: string
+  }
   contextUsage?: ContextUsage
   turns: Turn[]
   // Compact diff summary while the current turn is still running.
@@ -130,6 +138,11 @@ export type Action =
   | { type: "error"; text: string }
   | { type: "notice"; text: string }
   | { type: "interrupt-requested" }
+  | { type: "auth-start" }
+  | { type: "auth-urls"; automaticUrl: string; manualUrl: string }
+  | { type: "auth-complete"; account: AccountInfo }
+  | { type: "auth-error"; error: string }
+  | { type: "auth-close" }
 
 export const initialState: AgentState = {
   connection: "connecting",
@@ -175,6 +188,9 @@ export function reducer(state: AgentState, action: Action): AgentState {
         liveDiff: action.status === "closed" ? undefined : state.liveDiff,
         permissions: action.status === "closed" ? [] : state.permissions,
         elicitations: action.status === "closed" ? [] : state.elicitations,
+        auth: action.status === "closed" && state.auth && state.auth.status !== "complete"
+          ? { ...state.auth, status: "error", error: "Noa disconnected during sign-in. Reconnect and try again." }
+          : state.auth,
         error: state.error ?? (action.status === "closed" && state.connection === "connecting" ? "Noa could not start. Open Activity → Diagnostics for details." : undefined),
       }
     }
@@ -186,7 +202,7 @@ export function reducer(state: AgentState, action: Action): AgentState {
         error: undefined,
         notice: undefined,
         liveDiff: undefined,
-        turns: [...state.turns, userTurn(action.id, action.content ?? action.text ?? "")],
+        turns: [...closeStreaming(state.turns), userTurn(action.id, action.content ?? action.text ?? "")],
       }
     case "history-user":
       return { ...state, turns: [...state.turns, { role: "user", id: action.id, text: action.text, images: action.images }] }
@@ -233,6 +249,16 @@ export function reducer(state: AgentState, action: Action): AgentState {
       return { ...state, notice: undefined, error: action.text, logs: [...state.logs, action.text].slice(-MAX_LOGS) }
     case "interrupt-requested":
       return { ...state, stopping: true }
+    case "auth-start":
+      return { ...state, auth: { status: "starting" } }
+    case "auth-urls":
+      return { ...state, auth: { status: "waiting", automaticUrl: action.automaticUrl, manualUrl: action.manualUrl } }
+    case "auth-complete":
+      return { ...state, account: action.account, auth: { status: "complete" } }
+    case "auth-error":
+      return { ...state, auth: { ...state.auth, status: "error", error: action.error } }
+    case "auth-close":
+      return { ...state, auth: undefined }
     case "permission-answered":
       return { ...state, permissions: state.permissions.filter((p) => p.requestId !== action.requestId), elicitations: state.elicitations.filter((p) => p.requestId !== action.requestId) }
     case "model-set":
@@ -244,7 +270,12 @@ export function reducer(state: AgentState, action: Action): AgentState {
     case "control":
       if (action.payload.kind === "commands") return { ...state, commands: action.payload.commands }
       if (action.payload.kind === "initialize") {
-        return { ...state, models: action.payload.models, commands: action.payload.commands }
+        return {
+          ...state,
+          models: action.payload.models,
+          commands: action.payload.commands,
+          account: action.payload.account ?? state.account,
+        }
       }
       return { ...state, contextUsage: action.payload.usage }
     case "agent":

@@ -46,13 +46,34 @@ Noa uses its existing React textarea and stream-json agent bridge. File referenc
 model/effort selection, permissions and task execution use real backend behavior.
 Microphone capture, a terminal emulator and repository publishing are not implemented.
 
+## Project creation and editing
+
+The Create project dialog follows Codex's local-project picker: a segmented project
+name field, multiple source folders, a primary folder, an inline Add folder row,
+folder drag-and-drop, and the same 520px dialog geometry. Additional folders are
+persisted in `gui-projects.json` and passed to the real CLI as `--add-dir`.
+
+Existing projects can be renamed and their additional source folders can be edited
+from the project menu. Noa keeps the existing primary folder immutable during edit:
+transcripts are keyed by that working directory, so silently changing it would hide
+the project's task history. Changing the primary folder is allowed while creating a
+new project. Turn changes made through Edit/Write in an additional source are merged
+into the turn review; cross-source patches are review-only because Undo must target
+one Git worktree.
+
+Anthropic sign-in starts through the CLI's stream-json control channel, opens the
+normal browser OAuth page, and accepts the browser redirect or the manual
+`code#state` fallback. Third-party provider profile creation and switching remain in
+the Noa CLI until their credential/keychain writes have an equivalent GUI flow.
+
 ## Verification
 
 From `gui/`: `bun run typecheck`, `bun run build`, `bun run scripts/e2e-workspace.ts`.
 The workspace E2E starts real HTTP bridges against temporary Git repositories.
-It covers workspace boundaries, file saves, Git mutations, session metadata and
-transcript restoration. Browser-level layout, menu, draft, file-reference and
-agent-approval checks are not automated yet.
+It covers workspace boundaries, file saves, Git mutations, project names and source
+folders, session metadata and transcript restoration. `bun run test:bridge` verifies
+that additional project folders reach the real CLI as `--add-dir`. Browser-level
+layout, menu, draft, file-reference and agent-approval checks are not automated yet.
 
 Sidebar exception requested by the user: retain Noa's original system font stack,
 12px inherited text, 400 normal/medium weight and original text color tiers.
@@ -199,6 +220,8 @@ Shell command clamping excludes vertical padding; the wrapper owns that padding.
 Markdown uses the existing `marked` lexer with React rendering. Raw HTML and
 unsafe URL schemes remain inert. Pathological single-line input stays plain
 instead of blocking the renderer; fenced code highlighting has bounded input.
+Remote HTTP(S) images are shown as explicit external-open links instead of loading
+automatically, and the page CSP permits images only from the app, data, and blob URLs.
 Workspace file references use the existing file pane and preserve line targets,
 including special characters in project/file names; local images use the bounded
 `/api/file` handler and Lightbox. Files outside the workspace are not granted access.

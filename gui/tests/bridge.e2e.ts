@@ -8,10 +8,13 @@ import type { Envelope, Outgoing } from "../src/agent/protocol"
 const directory = mkdtempSync(join(tmpdir(), "noa-gui-runtime-"))
 const cwd = join(directory, "workspace")
 const plainCwd = join(directory, "plain")
+const extraCwd = join(directory, "extra-source")
 const config = join(directory, "config")
 mkdirSync(cwd)
 mkdirSync(plainCwd)
+mkdirSync(extraCwd)
 mkdirSync(config)
+writeFileSync(join(extraCwd, "shared.txt"), "ADDED_SOURCE_CONTENT\n")
 writeFileSync(
   join(config, "settings.json"),
   JSON.stringify({
@@ -19,6 +22,10 @@ writeFileSync(
     permissions: { defaultMode: "default" },
     enableAllProjectMcpServers: true,
   }),
+)
+writeFileSync(
+  join(config, "gui-projects.json"),
+  JSON.stringify({ projects: [{ path: cwd, sources: [cwd, extraCwd] }] }),
 )
 const mcpScript = join(directory, "mcp.ts")
 writeFileSync(
@@ -54,6 +61,7 @@ for (const args of [
 }
 let sawSkillWithImage = false
 let sawImage = false
+let sawAdditionalSource = false
 const observedModels = new Set<string>()
 let calls = 0
 const provider = Bun.serve({
@@ -81,6 +89,7 @@ const provider = Bun.serve({
       JSON.stringify(last).includes("GUI_BACKGROUND") &&
       !JSON.stringify(last).includes("GUI_BACKGROUND_OK")
     const plainWrite = !hasResult && JSON.stringify(last).includes("GUI_WRITE_PLAIN")
+    const readAdditional = !hasResult && JSON.stringify(last).includes("GUI_ADD_DIR")
     const write =
       !hasResult &&
       !plainWrite &&
@@ -92,6 +101,8 @@ const provider = Bun.serve({
       await Bun.sleep(800)
     if (JSON.stringify(last).includes("GUI_SLOW")) await Bun.sleep(1500)
     if (JSON.stringify(last).includes("GUI_STEER")) await Bun.sleep(10000)
+    if (JSON.stringify(body.messages).includes("ADDED_SOURCE_CONTENT") && JSON.stringify(body.messages).includes("GUI_ADD_DIR"))
+      sawAdditionalSource = true
     const block = mcp
       ? {
           type: "tool_use",
@@ -130,7 +141,14 @@ const provider = Bun.serve({
                 run_in_background: true,
               },
             }
-          : plainWrite
+          : readAdditional
+            ? {
+                type: "tool_use",
+                id: `read_${calls}`,
+                name: "Read",
+                input: { file_path: join(extraCwd, "shared.txt") },
+              }
+            : plainWrite
             ? {
                 type: "tool_use",
                 id: `plain_write_${calls}`,
@@ -387,6 +405,11 @@ try {
   await wait(() => third.results().length === thirdResultBase + 2, "image turn")
   assert.ok(sawImage)
   console.log("PASS image content travels through bridge and CLI to the local provider")
+  const addDirResultBase = third.results().length
+  third.send({ type: "user", message: { role: "user", content: "GUI_ADD_DIR" }, parent_tool_use_id: null })
+  await wait(() => third.results().length === addDirResultBase + 1, "additional source read")
+  assert.ok(sawAdditionalSource, "CLI did not receive project source folders as --add-dir")
+  console.log("PASS additional project folders are passed to the real CLI as --add-dir")
   third.send({ type: "user", message: { role: "user", content: "GUI_MCP_FORM" }, parent_tool_use_id: null })
   await wait(
     () =>
@@ -609,7 +632,7 @@ try {
   }, "background session idle")
   const beforeInterrupt = third.results().length
   third.send({ type: "user", message: { role: "user", content: "GUI_SLOW interrupt" }, parent_tool_use_id: null })
-  await wait(() => third.events.filter((e) => e.kind === "user").length === thirdUserBase + 5, "interrupt turn started")
+  await wait(() => third.events.filter((e) => e.kind === "user").length === thirdUserBase + 6, "interrupt turn started")
   third.send({
     type: "user",
     message: { role: "user", content: "Keep this queued after stop" },
@@ -619,7 +642,7 @@ try {
   third.send({ type: "control_request", request_id: crypto.randomUUID(), request: { subtype: "interrupt" } })
   await wait(() => third.results().length > beforeInterrupt, "interrupted result")
   await Bun.sleep(100)
-  assert.equal(third.events.filter((e) => e.kind === "user").length, thirdUserBase + 5)
+  assert.equal(third.events.filter((e) => e.kind === "user").length, thirdUserBase + 6)
   let stopped = initialState
   for (const event of third.events) {
     if (event.kind === "user") stopped = reducer(stopped, { type: "user-sent", id: event.id, content: event.content })

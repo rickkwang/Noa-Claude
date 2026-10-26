@@ -78,6 +78,7 @@ interface SidebarProps {
   onNewSession: (cwd?: string) => void
   onSelect: (cwd: string, id: string) => void
   onAddProject: () => void
+  onEditProject: (project: ProjectInfo) => void
   onRemoveProject: (path: string) => void
   onRevealProject: (path: string) => void
   onSettings: () => void
@@ -91,6 +92,7 @@ export function Sidebar({
   onNewSession,
   onSelect,
   onAddProject,
+  onEditProject,
   onRemoveProject,
   onRevealProject,
   onSettings,
@@ -347,6 +349,7 @@ export function Sidebar({
                     open={isOpen}
                     onToggle={() => toggle(project.path)}
                     onNewSession={() => onNewSession(project.path)}
+                    onEdit={() => onEditProject(project)}
                     onRemove={() => onRemoveProject(project.path)}
                     onReveal={() => onRevealProject(project.path)}
                   />
@@ -447,6 +450,7 @@ function ProjectRow({
   open,
   onToggle,
   onNewSession,
+  onEdit,
   onRemove,
   onReveal,
 }: {
@@ -454,6 +458,7 @@ function ProjectRow({
   open: boolean
   onToggle: () => void
   onNewSession: () => void
+  onEdit: () => void
   onRemove: () => void
   onReveal: () => void
 }) {
@@ -527,6 +532,17 @@ function ProjectRow({
                 className="noa-floating-panel absolute right-0 top-full z-50 mt-1 w-44 rounded-panel bg-[var(--bg-card)] p-1"
                 onClick={(event) => event.stopPropagation()}
               >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onEdit()
+                  }}
+                  className="w-full rounded-md px-2.5 py-1.5 text-left text-body hover:bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)]"
+                >
+                  Edit project
+                </button>
                 {!project.missing && (
                   <>
                     <button

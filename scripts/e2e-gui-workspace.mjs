@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, readFile, rename, symlink, stat, rm, realpath } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, writeFile, readFile, rename, symlink, stat, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawn, execFileSync } from 'node:child_process'
@@ -128,6 +128,7 @@ try {
   assert.equal((await api('file', { path: 'main.ts' }, { revision: loaded.revision, content: 'overwrite' })).status, 400)
   assert.equal(await readFile(join(repo, 'main.ts'), 'utf8'), 'new disk content\n')
   const fresh = await ok('file', { path: 'main.ts' })
+  await chmod(join(repo, 'main.ts'), 0o666)
   const mode = (await stat(join(repo, 'main.ts'))).mode
   await ok('file', { path: 'main.ts' }, { revision: fresh.revision, content: 'saved safely\n' })
   assert.equal(await readFile(join(repo, 'main.ts'), 'utf8'), 'saved safely\n'); assert.equal((await stat(join(repo, 'main.ts'))).mode, mode)

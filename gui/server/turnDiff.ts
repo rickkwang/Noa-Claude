@@ -1,7 +1,7 @@
 // Per-turn diffs come from a disposable git index + object directory. The user's
 // real index and object database are never touched: `git add` writes blobs into a
 // temp object dir, and the diff reads the repo objects through an alternate.
-import { cp, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { delimiter, join, relative } from "node:path"
 import { createTwoFilesPatch, diffLines } from "diff"
@@ -38,13 +38,11 @@ export async function captureTree(cwd: string): Promise<TreeSnapshot | null> {
   const inside = await git(cwd, ["rev-parse", "--is-inside-work-tree"]).catch(() => "")
   if (inside.trim() !== "true") return null
 
-  const [repoObjects, indexPath, root] = await Promise.all([
+  const [repoObjects, root] = await Promise.all([
     git(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "objects"]),
-    git(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "index"]).catch(() => ""),
     git(cwd, ["rev-parse", "--show-toplevel"]),
   ])
   const repo = repoObjects.trim()
-  const indexSource = indexPath.trim()
   // Snapshot the whole worktree, as Codex's patch batches can cover cwds other
   // than the one the turn started in. Paths are narrowed to `cwd` for display.
   const top = root.trim()
@@ -59,7 +57,9 @@ export async function captureTree(cwd: string): Promise<TreeSnapshot | null> {
     GIT_ALTERNATE_OBJECT_DIRECTORIES: repo,
   }
   try {
-    if (indexSource) await cp(indexSource, index).catch(() => undefined)
+    // A copied index can preserve stale stat entries when a file is rewritten to
+    // the same size immediately, making `git add` reuse the old blob. Start from
+    // an empty index so every snapshot hashes the actual worktree contents.
     await git(top, ["add", "-A"], env)
     const tree = (await git(top, ["write-tree"], env)).trim()
     if (!tree) throw new Error("git write-tree returned nothing")
@@ -161,6 +161,23 @@ export async function collectDiff(cwd: string, collector: ChangeCollector): Prom
   if (!patch) return { files, additions, deletions, truncated: true }
   if (patch.length > MAX_PATCH) return { files, additions, deletions, truncated: true }
   return { files, additions, deletions, patch }
+}
+
+export function mergeTurnDiffs(primary: TurnDiff | null, fallback: TurnDiff): TurnDiff {
+  const external = fallback.files.filter((file) => file.path.startsWith("../"))
+  if (external.length === 0) return primary ?? fallback
+  if (!primary) return { ...fallback, undoable: false }
+  const existing = new Set(primary.files.map((file) => file.path))
+  const extra = external.filter((file) => !existing.has(file.path))
+  if (extra.length === 0) return primary
+  return {
+    files: [...primary.files, ...extra],
+    additions: primary.additions + extra.reduce((sum, file) => sum + file.additions, 0),
+    deletions: primary.deletions + extra.reduce((sum, file) => sum + file.deletions, 0),
+    patch: [primary.patch, fallback.patch].filter(Boolean).join("\n") || undefined,
+    truncated: primary.truncated || fallback.truncated,
+    undoable: false,
+  }
 }
 
 /** Diff two captured trees. Paths are reported relative to `cwd`. */

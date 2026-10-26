@@ -1,10 +1,13 @@
 import assert from "node:assert/strict"
 import { mkdtemp, mkdir, writeFile, symlink, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
+import { projectAdditionalDirectories } from "../server/projects"
+import { projectDir } from "../server/sessions"
 
-const root = await mkdtemp("/private/tmp/noa-gui-e2e-")
-const config = join(root, "config")
-await mkdir(config)
+const root = await mkdtemp(join(tmpdir(), "noa-gui-e2e-"))
+const config = await mkdtemp(join(tmpdir(), "noa-gui-e2e-config-"))
+const extraSource = await mkdtemp(join(tmpdir(), "noa-gui-e2e-source-"))
 const reservation = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() })
 const port = reservation.port!
 await reservation.stop(true)
@@ -15,6 +18,7 @@ const server = Bun.spawn([process.execPath, "run", "server/main.ts"], {
   stderr: "inherit",
 })
 const origin = `http://127.0.0.1:${port}`
+const previousConfig = process.env.CLAUDE_CONFIG_DIR
 let passed = 0
 function check(name: string) {
   passed++
@@ -47,9 +51,36 @@ try {
   await git("init", "-q")
   await mkdir(join(root, "nested"))
   await writeFile(join(root, "nested", "tracked.txt"), "before\n")
+  await writeFile(join(extraSource, "shared.txt"), "shared\n")
   await git("add", ".")
+  let body = await (await fetch(`${origin}/api/projects`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path: root, sources: [root, extraSource], name: "GUI project" }),
+  })).json()
+  const project = body.find((candidate: { path: string }) => candidate.path === root)
+  assert.equal(project.name, "GUI project")
+  assert.deepEqual(project.sources, [root, extraSource])
+  process.env.CLAUDE_CONFIG_DIR = config
+  assert.deepEqual(projectAdditionalDirectories(root, root), [extraSource])
+  check("custom project name and additional source folders persist")
+  await fetch(`${origin}/api/projects`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path: join(root, "nested"), sources: [join(root, "nested")] }),
+  })
+  assert.deepEqual(projectAdditionalDirectories(root, join(root, "nested")), [])
+  check("nested projects do not inherit an unrelated parent source folder")
+  body = await (await fetch(`${origin}/api/projects`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path: root, sources: [root], name: "Edited project" }),
+  })).json()
+  assert.equal(body.find((candidate: { path: string }) => candidate.path === root).name, "Edited project")
+  assert.deepEqual(body.find((candidate: { path: string }) => candidate.path === root).sources, [root])
+  check("existing projects can update their name and source folders")
   // A repository without HEAD is still a valid workspace.
-  let body = await (await request("changes")).json()
+  body = await (await request("changes")).json()
   assert.equal(body.files[0].status, "A ")
   assert.equal(body.additions, 1)
   check("unborn repository and staged additions")
@@ -95,7 +126,7 @@ try {
   assert(!body.entries.some((e: { name: string }) => e.name === ".git" || e.name === "outside-link"))
   check("directory listing excludes Git metadata and symlinks")
   // File saves exist now, but only inside listed projects; other write methods stay disallowed.
-  assert.equal((await request("file", "untracked.txt", root, { method: "POST", body: "{}" })).status, 403)
+  assert.equal((await request("file", "outside.txt", config, { method: "POST", body: "{}" })).status, 403)
   assert.equal((await request("file", "untracked.txt", root, { method: "PUT" })).status, 405)
   assert.equal(
     (await request("file", "untracked.txt", root, { headers: { origin: "https://example.invalid" } })).status,
@@ -103,7 +134,7 @@ try {
   )
   check("writes outside listed projects and cross-origin rejected")
   const sessionId = crypto.randomUUID()
-  const sessions = join(config, "projects", root.replace(/[^a-zA-Z0-9]/g, "-"))
+  const sessions = projectDir(root)
   await mkdir(sessions, { recursive: true })
   await writeFile(
     join(sessions, `${sessionId}.jsonl`),
@@ -139,5 +170,9 @@ try {
 } finally {
   server.kill()
   await server.exited
+  if (previousConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR
+  else process.env.CLAUDE_CONFIG_DIR = previousConfig
   await rm(root, { recursive: true, force: true })
+  await rm(config, { recursive: true, force: true })
+  await rm(extraSource, { recursive: true, force: true })
 }

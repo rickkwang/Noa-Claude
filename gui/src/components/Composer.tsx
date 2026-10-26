@@ -49,6 +49,7 @@ interface ComposerProps {
   models: ModelInfo[]
   model?: string
   mode?: PermissionMode
+  showFullAccess: boolean
   commands: SlashCommand[]
   onSend: (content: UserContent) => boolean
   onCommand: (action: GuiCommandAction) => void
@@ -79,6 +80,7 @@ export function Composer({
   models,
   model,
   mode,
+  showFullAccess,
   commands,
   onSend,
   onCommand,
@@ -248,6 +250,11 @@ export function Composer({
 
   const currentModel = findModel(models, model)
   const currentMode = MODE_OPTIONS.find((m) => m.value === mode)
+  const permissionModes = MODE_OPTIONS.filter(
+    (option) =>
+      (option.value !== "auto" || currentModel?.supportsAutoMode || mode === "auto") &&
+      (option.value !== "bypassPermissions" || showFullAccess || mode === "bypassPermissions"),
+  )
   const effortLevels = currentModel?.supportsEffort ? (currentModel.supportedEffortLevels ?? []) : []
   const allCommands = useMemo(() => composerCommands(commands).map((command) => ({
     ...command,
@@ -262,7 +269,7 @@ export function Composer({
     : submenu === "effort"
       ? [{ name: "Default", value: "default", description: "Use the model default", argumentHint: "", action: "effort", group: "Reasoning effort", active: !effort, disabled: disabled || busy }, ...effortLevels.map((level) => ({ name: level, value: level, description: "", argumentHint: "", action: "effort" as const, group: "Reasoning effort", active: level === effort, disabled: disabled || busy }))]
       : submenu === "permissions"
-        ? MODE_OPTIONS.filter((option) => option.value !== "auto" || currentModel?.supportsAutoMode || mode === "auto").map((option) => ({ name: option.label, value: option.value, description: option.description, argumentHint: "", action: "permissions", group: "Permissions", active: option.value === mode, disabled: disabled || busy }))
+        ? permissionModes.map((option) => ({ name: option.label, value: option.value, description: option.description, argumentHint: "", action: "permissions", group: "Permissions", active: option.value === mode, disabled: disabled || busy }))
         : allCommands.filter((command) => !browserFilter || command.group === browserFilter)
   const menuItems = filterComposerCommands(choices, slashQuery ?? "")
   const menuOpen = !menuDismissed && (browserOpen || (!browserAction && inputFocused && slashQuery !== undefined))
@@ -373,7 +380,7 @@ export function Composer({
       if (value !== "default" && !effortLevels.includes(value)) { setAttachmentError("Choose one of this model’s supported effort levels."); return }
       onEffort(value === "default" ? null : value)
     } else if (action === "permissions") {
-      if (!MODE_OPTIONS.some((option) => option.value === value && (value !== "auto" || currentModel?.supportsAutoMode || mode === "auto"))) { setAttachmentError("Choose an available permission mode."); return }
+      if (!permissionModes.some((option) => option.value === value)) { setAttachmentError("Choose an available permission mode."); return }
       onMode(value as PermissionMode)
     } else if (action === "help" || action === "skills") {
       setBrowserFilter(action === "skills" ? "Skills" : undefined)
@@ -787,9 +794,7 @@ export function Composer({
               compactPadding
               disabled={disabled || busy}
               tone={mode === "bypassPermissions" ? "danger" : undefined}
-              items={MODE_OPTIONS.filter(
-                (m) => m.value !== "auto" || currentModel?.supportsAutoMode || mode === "auto",
-              ).map((m) => ({
+              items={permissionModes.map((m) => ({
                 key: m.value,
                 title: m.label,
                 description: m.description,

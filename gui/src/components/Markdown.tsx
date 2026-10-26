@@ -45,14 +45,16 @@ function OutputLink({ href, children }: { href: string; children: ReactNode }) {
 function OutputImage({ href, alt }: { href: string; alt: string }) {
   const { cwd } = useContext(OutputContext)
   const local = localReference(href, cwd)
-  const remote = /^(?:https?:\/\/|data:image\/(?:png|jpe?g|gif|webp);base64,)/i.test(href)
-  const [src, setSrc] = useState<string | undefined>(remote ? href : undefined)
+  const remote = /^https?:\/\//i.test(href)
+  const dataImage = /^data:image\/(?:png|jpe?g|gif|webp);base64,/i.test(href)
+  const [src, setSrc] = useState<string | undefined>(dataImage ? href : undefined)
   const [error, setError] = useState(false)
   const [open, setOpen] = useState(false)
   useEffect(() => {
     setError(false)
-    setSrc(remote ? href : undefined)
-    if (!local) { if (!remote) setError(true); return }
+    setSrc(dataImage ? href : undefined)
+    if (remote) return
+    if (!local) { setError(true); return }
     const controller = new AbortController()
     fetch(`/api/file?${new URLSearchParams({ cwd: cwd!, path: local.path })}`, { signal: controller.signal })
       .then(async response => {
@@ -62,6 +64,7 @@ function OutputImage({ href, alt }: { href: string; alt: string }) {
       }).catch(() => { if (!controller.signal.aborted) setError(true) })
     return () => controller.abort()
   }, [href, cwd])
+  if (remote) return <span className="text-[var(--sidebar-text-muted)]">Remote image blocked: <OutputLink href={href}>{alt || "Open image"}</OutputLink></span>
   if (error) return <span className="text-[var(--sidebar-text-muted)]">{alt || "Image"} — image unavailable</span>
   return <>{src ? <button type="button" className="my-3 inline-block max-w-full cursor-zoom-in align-top" aria-label={`Open ${alt || "image"}`} onClick={() => setOpen(true)}><img src={src} alt={alt} loading="lazy" referrerPolicy="no-referrer" onError={() => setError(true)} className="max-h-[420px] max-w-full rounded-lg border border-[var(--divider-subtle)] object-contain" /></button> : <span className="text-[var(--sidebar-text-muted)]">Loading image…</span>}{open && src && <Lightbox items={[{ src, alt }]} index={0} onIndex={() => {}} onClose={() => setOpen(false)} />}</>
 }

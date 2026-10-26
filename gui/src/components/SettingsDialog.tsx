@@ -1,7 +1,12 @@
-import { Children, useEffect, useState, type CSSProperties, type ReactNode } from "react"
+import { Children, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 import type { AppSettings } from "../types"
+import type { AgentState } from "../agent/reducer"
+import type { AccountInfo } from "../agent/protocol"
 import { ArrowLeft, ChevronDown, Keyboard, Palette, Search, Settings } from "../lib/icons"
 import { SYSTEM_DEFAULT_FONT, UI_FONT_STYLES } from "../lib/fontFamily"
+import { useConfirm } from "./ConfirmDialog"
+import { AuthDialog } from "./AuthDialog"
 
 const dragRegion = { WebkitAppRegion: "drag" } as CSSProperties
 const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
@@ -36,20 +41,49 @@ export function SettingsDialog({
   settings,
   onChange,
   onClose,
+  account,
+  auth,
+  onStartAuthentication,
+  onWaitForAuthentication,
+  onSubmitAuthenticationCode,
+  onCloseAuthentication,
 }: {
   settings: AppSettings
   onChange: (settings: AppSettings) => void
   onClose: () => void
+  account?: AccountInfo
+  auth?: AgentState["auth"]
+  onStartAuthentication: () => void
+  onWaitForAuthentication: () => void
+  onSubmitAuthenticationCode: (code: string) => void
+  onCloseAuthentication: () => void
 }) {
   const [page, setPage] = useState<Page>("general")
   const [query, setQuery] = useState("")
+  const [authOpen, setAuthOpen] = useState(false)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const backRef = useRef<HTMLButtonElement>(null)
   const appearance = settings.appearance
   const permissionMode = settings.agent.defaultPermissionMode
-  const fullAccess = permissionMode === "bypassPermissions"
+  const showFullAccess = settings.agent.showFullAccess
+  const providerLabel = account?.apiProvider ? providerDisplayName(account.apiProvider) : undefined
+  const { confirm, dialog } = useConfirm()
   const change = (patch: Partial<AppSettings["appearance"]>) =>
     onChange({ ...settings, appearance: { ...appearance, ...patch } })
   const setPermission = (defaultPermissionMode: DefaultMode) =>
     onChange({ ...settings, agent: { ...settings.agent, defaultPermissionMode } })
+  const setFullAccess = async (on: boolean) => {
+    if (!on) {
+      onChange({ ...settings, agent: { ...settings.agent, showFullAccess: false } })
+      return
+    }
+    if (await confirm({
+      title: "Make Full access available?",
+      description: "When selected, Noa can access the internet and read and edit files without asking for approval, including potentially destructive commands. Turning this on only shows Full access in the composer; it does not switch this task.",
+      confirmLabel: "Confirm",
+      danger: true,
+    })) onChange({ ...settings, agent: { ...settings.agent, showFullAccess: true } })
+  }
   const [localFonts, setLocalFonts] = useState<string[]>([])
   const visiblePages = pages.filter((p) => p.label.toLowerCase().includes(query.trim().toLowerCase()))
   const current = pages.find((p) => p.key === page)
@@ -67,6 +101,12 @@ export function SettingsDialog({
     codeFontOptions.push([appearance.codeFontFamily, appearance.codeFontFamily])
 
   useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null
+    backRef.current?.focus()
+    return () => previous?.focus?.()
+  }, [])
+
+  useEffect(() => {
     if (page !== "appearance") return
     const query = (window as { queryLocalFonts?: () => Promise<{ family: string }[]> }).queryLocalFonts
     query?.()
@@ -75,17 +115,38 @@ export function SettingsDialog({
   }, [page])
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose()
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape" && !authOpen) onClose()
+    }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [onClose])
+  }, [authOpen, onClose])
 
-  return (
+  function onKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Tab") return
+    const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), [href], summary, [tabindex]:not([tabindex="-1"])',
+    )
+    if (!focusable?.length) return
+    const first = focusable[0]!
+    const last = focusable[focusable.length - 1]!
+    if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    } else if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last.focus()
+    }
+  }
+
+  return createPortal(
     <div
+      ref={dialogRef}
       role="dialog"
       data-settings-surface="true"
       aria-modal="true"
       aria-label="Settings"
+      onKeyDown={onKeyDown}
       className="fixed inset-0 z-50 flex bg-[var(--bg-primary,#FCFCFB)] text-body text-[var(--text-primary)]"
     >
       <nav className="flex w-[360px] shrink-0 flex-col bg-[var(--bg-sidebar,#F4F4F2)] px-2 pb-3">
@@ -100,6 +161,7 @@ export function SettingsDialog({
           }}
         >
           <button
+            ref={backRef}
             onClick={onClose}
             aria-label="Back to app"
             style={noDragRegion}
@@ -141,25 +203,49 @@ export function SettingsDialog({
           <h1 className="text-[length:var(--text-title)] font-normal">{current?.label}</h1>
 
           {page === "general" && (
-            <Section title="Permissions">
+            <>
+              <Section title="Account">
+                <Row
+                  label={account?.email ?? providerLabel ?? "Noa account"}
+                  description={
+                    account?.email
+                      ? account.organization ?? "Anthropic account"
+                      : providerLabel
+                        ? `Connected through ${providerLabel}`
+                        : "Sign in to use Anthropic through this desktop session."
+                  }
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthOpen(true)
+                      onStartAuthentication()
+                    }}
+                    className="h-8 rounded-lg border border-[var(--divider-subtle)] bg-[var(--bg-card)] px-3 text-body text-[var(--text-primary)] hover:bg-[var(--settings-fill-hover)]"
+                  >
+                    {account?.email ? "Sign in again" : "Sign in"}
+                  </button>
+                </Row>
+              </Section>
+              <Section title="Permissions">
               <Row
                 label="Default permissions"
                 description="By default, Noa can read and edit files in its workspace. It asks before running commands or making other changes."
               >
                 <Select
-                  value={fullAccess ? "default" : permissionMode}
-                  disabled={fullAccess}
+                  value={permissionMode}
                   options={permissionOptions}
                   onChange={(value) => setPermission(value as DefaultMode)}
                 />
               </Row>
               <Row
                 label="Full access"
-                description="When Noa runs with full access, it can edit any file on your computer and run commands without your approval. This significantly increases the risk of data loss, leaks, or unexpected behavior."
+                description="Show Full access in the composer permissions menu. It is never selected by default."
               >
-                <Toggle checked={fullAccess} onChange={(on) => setPermission(on ? "bypassPermissions" : "default")} />
+                <Toggle checked={showFullAccess} onChange={(on) => void setFullAccess(on)} />
               </Row>
-            </Section>
+              </Section>
+            </>
           )}
 
           {page === "appearance" && (
@@ -263,7 +349,22 @@ export function SettingsDialog({
           )}
         </div>
       </main>
-    </div>
+      {authOpen && auth && (
+        <AuthDialog
+          auth={auth}
+          account={account}
+          onClose={() => {
+            setAuthOpen(false)
+            onCloseAuthentication()
+          }}
+          onRetry={onStartAuthentication}
+          onWait={onWaitForAuthentication}
+          onSubmitCode={onSubmitAuthenticationCode}
+        />
+      )}
+      {dialog}
+    </div>,
+    document.body,
   )
 }
 
@@ -403,4 +504,15 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (checked: b
       />
     </button>
   )
+}
+
+function providerDisplayName(provider: string): string {
+  const labels: Record<string, string> = {
+    firstParty: "Anthropic",
+    openaiCompatible: "OpenAI-compatible",
+    bedrock: "Amazon Bedrock",
+    vertex: "Google Vertex",
+    foundry: "Microsoft Foundry",
+  }
+  return labels[provider] ?? provider
 }

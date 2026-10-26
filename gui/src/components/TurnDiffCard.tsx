@@ -17,7 +17,7 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
   const hidden = diff.files.length - shown.length
   const title = single ? `Workspace change: ${basename(diff.files[0]!.path)}` : `Workspace changes: ${diff.files.length} files`
   const action = diff.reverted ? "reapply" : "undo"
-  const canAct = onAction !== undefined && diff.turnIndex !== undefined
+  const canAct = onAction !== undefined && diff.turnIndex !== undefined && diff.undoable !== false
 
   return (
     <div className="noa-turn-diff-card">
@@ -85,6 +85,7 @@ export function TurnDiffCard({ diff, onOpen, onAction, pending }: {
         </div>
       )}
       {diff.truncated && <p className="noa-turn-diff-note">Diff too large to preview</p>}
+      {diff.undoable === false && <p className="noa-turn-diff-note">Undo is unavailable when a turn changes multiple source folders.</p>}
       {dialog}
     </div>
   )

@@ -406,7 +406,7 @@ function ShellOutput({ block, onCollapse }: { block: ToolBlock; onCollapse: () =
       </div>
       {output ? (
         <div className="group/output relative">
-          <div ref={outputRef} role="region" aria-label="Command output" tabIndex={0} onKeyDown={(event) => { if (event.key === "Home" || event.key === "End") { event.preventDefault(); event.currentTarget.scrollTop = event.key === "End" ? 0 : -event.currentTarget.scrollHeight } }} className="noa-shell-output" data-overflow={overflowing}>
+          <div ref={outputRef} role="region" aria-label="Command output" tabIndex={0} onKeyDown={(event) => { if (event.key === "Home" || event.key === "End") { event.preventDefault(); event.currentTarget.scrollTop = event.key === "Home" ? 0 : event.currentTarget.scrollHeight } }} className="noa-shell-output" data-overflow={overflowing}>
             <pre className="m-0 px-3 py-2 font-mono text-[length:var(--code-font-size)] leading-[max(1.5em,20px)] whitespace-pre">{output}</pre>
           </div>
           <button

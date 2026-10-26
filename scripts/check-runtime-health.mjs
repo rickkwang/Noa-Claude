@@ -1669,6 +1669,7 @@ function checkOpusUserPaths() {
   const prevUseOpenAI = process.env.CLAUDE_CODE_USE_OPENAI;
   const prevBaseUrl = process.env.ANTHROPIC_BASE_URL;
   const prevUserType = process.env.USER_TYPE;
+  const prevConfigDir = process.env.CLAUDE_CONFIG_DIR;
   const prevDefaultOpusModel = process.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
   const prevDefaultOpusCapabilities =
     process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES;
@@ -1677,9 +1678,11 @@ function checkOpusUserPaths() {
   delete process.env.CLAUDE_CODE_USE_FOUNDRY;
   delete process.env.CLAUDE_CODE_USE_OPENAI;
   delete process.env.ANTHROPIC_BASE_URL;
+  process.env.CLAUDE_CONFIG_DIR = '/nonexistent-noa-runtime-opus-paths';
   delete process.env.USER_TYPE;
   delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
   delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES;
+  resetSettingsCache();
   try {
   // getPublicModelDisplayName for opus-4-7
   const opus47DisplayName = getPublicModelDisplayName(getModelStrings().opus47);
@@ -1770,6 +1773,9 @@ function checkOpusUserPaths() {
     else process.env.ANTHROPIC_BASE_URL = prevBaseUrl;
     if (prevUserType === undefined) delete process.env.USER_TYPE;
     else process.env.USER_TYPE = prevUserType;
+    if (prevConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = prevConfigDir;
+    resetSettingsCache();
     if (prevDefaultOpusModel === undefined)
       delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
     else process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = prevDefaultOpusModel;
